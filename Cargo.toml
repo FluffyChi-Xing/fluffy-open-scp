@@ -5,6 +5,7 @@ members = [
     "crates/dbpf",
     "crates/rw4",
     "crates/sc-properties",
+    "crates/sc-registry",
     "crates/sc-exporter",
 ]
 
@@ -15,7 +16,9 @@ license = "MIT"
 
 [workspace.dependencies]
 thiserror = "2"
-byteorder = "1"
+serde = { version = "1", features = ["derive"] }
+memmap2 = "0.9"
+lru = "0.12"
 
 [profile.release]
 strip = true

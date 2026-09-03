@@ -1,0 +1,10 @@
+[package]
+name = "sc-registry"
+description = "Read-only access to SimCityPak descriptor databases (database_main/user.s3db)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+rusqlite = { version = "0.40", features = ["bundled"] }
+thiserror.workspace = true
