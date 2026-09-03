@@ -1,0 +1,23 @@
+[package]
+name = "fluffy-open-scp"
+description = "OpenSCP — SimCity (2013) package explorer, Tauri app shell"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "fluffy_open_scp_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+dbpf = { path = "../crates/dbpf" }
+rw4 = { path = "../crates/rw4" }
+sc-properties = { path = "../crates/sc-properties" }
+sc-exporter = { path = "../crates/sc-exporter" }

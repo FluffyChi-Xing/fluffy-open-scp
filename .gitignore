@@ -1,0 +1,24 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.idea
+.DS_Store
+/__tests__/
+/docs/prototype_design/
+
+# fluffy context
+.contextignored
+.context/
+
+# docs
+/docs/overview
+/docs/design
+/docs/todos
+/docs/roadmap
+
+# rust / tauri
+target/
+src-tauri/gen/
+dist/
+*.tsbuildinfo

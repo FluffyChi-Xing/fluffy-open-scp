@@ -1,0 +1,963 @@
+{
+  "schemaVersion": 2,
+  "cliVersion": "0.5.0",
+  "templateVersion": "0.2.0",
+  "createdAt": "2026-09-03T19:09:58.877Z",
+  "projectKind": "created",
+  "options": {
+    "name": "my-admin",
+    "packageManager": "pnpm",
+    "provider": "none",
+    "cloudflareTarget": "pages",
+    "themeColor": "#4f46e5",
+    "language": "zh-CN",
+    "darkMode": true,
+    "fluffyOss": false,
+    "fluffyLog": false,
+    "fluffyOssUrl": "",
+    "fluffyLogUrl": "",
+    "fluffyOssProxy": "",
+    "fluffyLogProxy": ""
+  },
+  "files": [
+    {
+      "path": ".env.example",
+      "owner": "generator-owned",
+      "baselineHash": "998ad1e9d2697a7f23c0d81649f1907a6ad0854a2c9de8be028bc076b3c46143",
+      "templateVersion": "0.2.0",
+      "templatePath": ".env.example"
+    },
+    {
+      "path": "components.json",
+      "owner": "generator-owned",
+      "baselineHash": "5b2043ae37e8c0c7defdda2e1db89d4b05978d0cb4602fddd35ad4ac5dbbf834",
+      "templateVersion": "0.2.0",
+      "templatePath": "components.json"
+    },
+    {
+      "path": ".gitignore",
+      "owner": "generator-owned",
+      "baselineHash": "c0c60d8636c41b09c834e349489f53f6f5ed328fa6a73a7fe593e85e994dc711",
+      "templateVersion": "0.2.0",
+      "templatePath": ".gitignore"
+    },
+    {
+      "path": "index.html",
+      "owner": "generator-owned",
+      "baselineHash": "9a220a0e1a26453e006dbe0d9960ac41ab38512b95ab2232f852ce04552cd5ce",
+      "templateVersion": "0.2.0",
+      "templatePath": "index.html"
+    },
+    {
+      "path": "package.json",
+      "owner": "generator-owned",
+      "baselineHash": "286b3b6a63cbacc19d0f0b3920f82d8179c289ea5cd0bfd1bceda39cce84b934",
+      "templateVersion": "0.2.0",
+      "templatePath": "package.json"
+    },
+    {
+      "path": "public/_redirects",
+      "owner": "generator-owned",
+      "baselineHash": "6036983e5fc00f0169c9e939b1816ed771eee00e27f2fcc517b819041460b9ef",
+      "templateVersion": "0.2.0",
+      "templatePath": "public/_redirects"
+    },
+    {
+      "path": "README.md",
+      "owner": "generator-owned",
+      "baselineHash": "e2244c244ee1f4bfcd39540201fbfe27b42387176291c72d4c28d52c5d33e955",
+      "templateVersion": "0.2.0",
+      "templatePath": "README.md"
+    },
+    {
+      "path": "src/api/base.ts",
+      "owner": "generator-owned",
+      "baselineHash": "27ae061e259000a3a3135522e9a7fcfb41296ebb3c051a52fed211d1060dde75",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/api/base.ts"
+    },
+    {
+      "path": "src/api/contracts.ts",
+      "owner": "generator-owned",
+      "baselineHash": "3517550d6dcff65e3d9d20103b9e207e0a82dcf9f1cb34991f960735e38407fe",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/api/contracts.ts"
+    },
+    {
+      "path": "src/api/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "c81bbc25904021920e100e750bf2b4b1ff8f619f5996941ef5a296540be4e66b",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/api/index.ts"
+    },
+    {
+      "path": "src/api/interceptors/index.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "8bdbd8163d43ebfe41541fc2de27610dee80b078bde33cfec9d36adf1c1c9009",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/api/interceptors/index.test.ts"
+    },
+    {
+      "path": "src/api/interceptors/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "9bf5af05bde18486f1c17d2f3489fd4d63e3154a06f362ddc387f16bc9a2cf4f",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/api/interceptors/index.ts"
+    },
+    {
+      "path": "src/api/token.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "4ad6e08cc542281ebeefbd7de68b804bf3caee3925a6562ee525899ac9325743",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/api/token.test.ts"
+    },
+    {
+      "path": "src/api/token.ts",
+      "owner": "generator-owned",
+      "baselineHash": "69539bfc1f734cf8e6a55e9cb1244974c925568cd39e84b9cea3e66c3a1f2ae6",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/api/token.ts"
+    },
+    {
+      "path": "src/App.vue",
+      "owner": "generator-owned",
+      "baselineHash": "d2defae4db386bc94bb733a97ff2b54e440101fd07bf8dfb8098deaef8cda62f",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/App.vue"
+    },
+    {
+      "path": "src/components/extensions/FChart.vue",
+      "owner": "generator-owned",
+      "baselineHash": "16bf1a33a484b91b88e78a6f409d1ee1d13349232cc40c46e46601ea3e77b515",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FChart.vue"
+    },
+    {
+      "path": "src/components/extensions/FEmpty.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "84d9288dd2d8d4a3b31f64ee5954791dfe26e63fa59a6bd9a10676adff8099aa",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FEmpty.test.ts"
+    },
+    {
+      "path": "src/components/extensions/FEmpty.vue",
+      "owner": "generator-owned",
+      "baselineHash": "f1e4bceab282655aee6390063d557b566c60c5dd7527f2f30b253f7f26273dba",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FEmpty.vue"
+    },
+    {
+      "path": "src/components/extensions/FIcon.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "3a928b8de4b69efeec56e4d469c7d93a2f79457a847c79caad27db5c0ec25236",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FIcon.test.ts"
+    },
+    {
+      "path": "src/components/extensions/FIcon.vue",
+      "owner": "generator-owned",
+      "baselineHash": "97bf1fa2088ec694fe4fe4457fc38c1d304823664d2e457234012bdc7c62b46c",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FIcon.vue"
+    },
+    {
+      "path": "src/components/extensions/FTree.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "63fc1cbe9cbcd0bb72f776c75fc8ce57701e6d6ce5a1066fce153c0543ed3973",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FTree.test.ts"
+    },
+    {
+      "path": "src/components/extensions/FTree.vue",
+      "owner": "generator-owned",
+      "baselineHash": "2d4f315fad43a1b7e2e86dca9307f931e99f5590746b61ff80291ceb812e5b9c",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FTree.vue"
+    },
+    {
+      "path": "src/components/extensions/FTreeNode.vue",
+      "owner": "generator-owned",
+      "baselineHash": "67dba5cf331df80c89d4d62a35da5c88638a3fdaafb0749e1524c4eb553096f8",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FTreeNode.vue"
+    },
+    {
+      "path": "src/components/extensions/FTypography.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "f81edbd15dbc2ae8d1f43d45147373523dfc289c1a1cbac59cdcf6ced72fc373",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FTypography.test.ts"
+    },
+    {
+      "path": "src/components/extensions/FTypography.vue",
+      "owner": "generator-owned",
+      "baselineHash": "26231f27a4b6ce4754fce3260561674344ce014a97a0993eb45668db2982a227",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FTypography.vue"
+    },
+    {
+      "path": "src/components/extensions/FTypographyParagraph.vue",
+      "owner": "generator-owned",
+      "baselineHash": "cab32d261d726c9a2bbbb57d8c436d28f47f4742c1faace88effd96b205235d3",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/FTypographyParagraph.vue"
+    },
+    {
+      "path": "src/components/extensions/tree.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "14f76a9253fc7cf22761ad286cc47fdeed01d6e3f0504379b2590300cbaece0a",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/tree.test.ts"
+    },
+    {
+      "path": "src/components/extensions/tree.ts",
+      "owner": "generator-owned",
+      "baselineHash": "9ff7a18d539d8808dd9cc3bcb48a186ba1a1d76e6ae3dae7484de247b0265534",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/extensions/tree.ts"
+    },
+    {
+      "path": "src/components/form/FForm.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "b78e1dc24f50705ed4dd100b02f9a04cb1429108214e6085ba31d77c33d4d33c",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/form/FForm.test.ts"
+    },
+    {
+      "path": "src/components/form/FForm.vue",
+      "owner": "generator-owned",
+      "baselineHash": "fb3abc361175e7922094ff058fff6a2d725a9fea79016e9acc68173e1b30bfe3",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/form/FForm.vue"
+    },
+    {
+      "path": "src/components/form/types.ts",
+      "owner": "generator-owned",
+      "baselineHash": "95af4254319893c5d960d405858141369538d3e7c815889c75faa5432820d0a8",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/form/types.ts"
+    },
+    {
+      "path": "src/components/layout/Navbar.vue",
+      "owner": "generator-owned",
+      "baselineHash": "27db69c7ff541636c19eca73aafd9d1540ae01a41d078b84b19edf421f28eaf3",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/layout/Navbar.vue"
+    },
+    {
+      "path": "src/components/layout/SidebarNav.vue",
+      "owner": "generator-owned",
+      "baselineHash": "74f101647939cbd9dc57c5d38644a1f4c575d9d1ebc149317a666a84b2bfd6b0",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/layout/SidebarNav.vue"
+    },
+    {
+      "path": "src/components/layout/TabBar.vue",
+      "owner": "generator-owned",
+      "baselineHash": "0c6e0fd7dd1facb1ac3e7ee22883f14cf8a2c87dc172f14d93aa7dc34f19a70c",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/layout/TabBar.vue"
+    },
+    {
+      "path": "src/components/markdown/FMarkdown.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "31d5b96eaf709e5a329e694446348b9fd6c53fa66d313a78f004ead4a84c611b",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/markdown/FMarkdown.test.ts"
+    },
+    {
+      "path": "src/components/markdown/FMarkdown.vue",
+      "owner": "generator-owned",
+      "baselineHash": "612e2d0d02450e0de4990061b0e4506d3ac4e7a2832719af3f6b794426f47041",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/markdown/FMarkdown.vue"
+    },
+    {
+      "path": "src/components/navigation/CommandPalette.vue",
+      "owner": "generator-owned",
+      "baselineHash": "18687f8ae6041fd25a777902e00014df24a6f35686d13bad72b25420c4caba04",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/navigation/CommandPalette.vue"
+    },
+    {
+      "path": "src/components/notification/NotificationsPanel.vue",
+      "owner": "generator-owned",
+      "baselineHash": "b2955eea88749d75a7c8955d2b755e3456168b4fed1c6098148e4a4e0ef29351",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/notification/NotificationsPanel.vue"
+    },
+    {
+      "path": "src/components/settings/SettingsPanel.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "ac7abcff168ecb5b3735d422d5909cca63cb93fe7a1b0763a899e4b1e902ecca",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/settings/SettingsPanel.test.ts"
+    },
+    {
+      "path": "src/components/settings/SettingsPanel.vue",
+      "owner": "generator-owned",
+      "baselineHash": "e675477b3935734ba4fd520366e7112d88b043203cb7597a466d9afe2322c00d",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/settings/SettingsPanel.vue"
+    },
+    {
+      "path": "src/components/ui/button/Button.vue",
+      "owner": "generator-owned",
+      "baselineHash": "e464c9a5b8e36668ece26cf0cfe6c67a43b6c70d5a23e51e6c61e3a6489becb8",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/button/Button.vue"
+    },
+    {
+      "path": "src/components/ui/button/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "d3707af714f67cbe2fdd4b31aa400942acfe684f07f99e2abd00b4b8dd3024d8",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/button/index.ts"
+    },
+    {
+      "path": "src/components/ui/card/Card.vue",
+      "owner": "generator-owned",
+      "baselineHash": "fd94664dfaab2f376b8ed482f153a76185d6f76d9ae4991d65dc4eac12f6505c",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/card/Card.vue"
+    },
+    {
+      "path": "src/components/ui/card/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "6a29dc6a22986ecfc9161bc3c5a4e21a29debc9f6a735fcffa9a2fb1d74bceee",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/card/index.ts"
+    },
+    {
+      "path": "src/components/ui/checkbox/Checkbox.vue",
+      "owner": "generator-owned",
+      "baselineHash": "6194147d1f3a8e15e514934daba30a1fae29aa641324aaff10258183ebef7b35",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/checkbox/Checkbox.vue"
+    },
+    {
+      "path": "src/components/ui/checkbox/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "3f056ff60e08e880ac9c0c4eb79c5cfe1f51c08070a38f544ced63dcc42039a5",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/checkbox/index.ts"
+    },
+    {
+      "path": "src/components/ui/FButton.vue",
+      "owner": "generator-owned",
+      "baselineHash": "dd736bddc46919e252f834ae29ecff38dd6c02807198b942cc52192574ad5cff",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FButton.vue"
+    },
+    {
+      "path": "src/components/ui/FCheckbox.vue",
+      "owner": "generator-owned",
+      "baselineHash": "47c4bb0920893648ec29ed4b5199e590dca1facd788e072f6314a224878d39c8",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FCheckbox.vue"
+    },
+    {
+      "path": "src/components/ui/FCode.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "2357c84a3426d6fb3d5b1f3702fbc67b8dc29661180e91fcc90ee0876708a366",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FCode.test.ts"
+    },
+    {
+      "path": "src/components/ui/FCode.vue",
+      "owner": "generator-owned",
+      "baselineHash": "83205fa384389572c616f500a7a6ac71f26d64f1e4dd085ff660574b0dfe0f44",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FCode.vue"
+    },
+    {
+      "path": "src/components/ui/FDropdown.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "29d471ac14e8ee98223be473fd0311fa95e80a8942d41a0264d466c3e917bfe8",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FDropdown.test.ts"
+    },
+    {
+      "path": "src/components/ui/FDropdown.vue",
+      "owner": "generator-owned",
+      "baselineHash": "49f0721d789c0133779a000b9b95fa8e1770c04fd4d524f88347d0c2b921105d",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FDropdown.vue"
+    },
+    {
+      "path": "src/components/ui/FFormItem.vue",
+      "owner": "generator-owned",
+      "baselineHash": "7928e1e25452228ef8e0e20c448615947a5e1667259016438827e10584bebd8e",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FFormItem.vue"
+    },
+    {
+      "path": "src/components/ui/FFullscreen.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "2a1effa61d9e147861f05bed828c2e015069b7fa484c68fef64d26f4d8fa74b1",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FFullscreen.test.ts"
+    },
+    {
+      "path": "src/components/ui/FFullscreen.vue",
+      "owner": "generator-owned",
+      "baselineHash": "55564eb769b05d340dbc82af73a3451e6d2542333541f023218066f8a64df36b",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FFullscreen.vue"
+    },
+    {
+      "path": "src/components/ui/FInput.vue",
+      "owner": "generator-owned",
+      "baselineHash": "602a43043dde4042a7fb8d941d36a3bf9e6c5fa970081d1c7e7194735ea18534",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FInput.vue"
+    },
+    {
+      "path": "src/components/ui/FPanel.vue",
+      "owner": "generator-owned",
+      "baselineHash": "b2763d6b39e031857ea439b421fbcd4b26a3598f9e84b5304c8b0cbad72ae8f9",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FPanel.vue"
+    },
+    {
+      "path": "src/components/ui/FPopover.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "ad8bf010bd66535bd75c397395327b63a89269f47c39f4f78c3534a35f41fce0",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FPopover.test.ts"
+    },
+    {
+      "path": "src/components/ui/FPopover.vue",
+      "owner": "generator-owned",
+      "baselineHash": "bd3411f42781db7a1dfd63721fa034f0002b6bacc108372b88573e3167cf6828",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FPopover.vue"
+    },
+    {
+      "path": "src/components/ui/FResult.vue",
+      "owner": "generator-owned",
+      "baselineHash": "eecfdf430156fd8dee12430f83f02aa56faf9b7cdc089a08d883cabe77cc08fc",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FResult.vue"
+    },
+    {
+      "path": "src/components/ui/FSelect.vue",
+      "owner": "generator-owned",
+      "baselineHash": "69047e4ff2e14c64a7f1398f80417c63aeafbdd3677dc824454d20346504e5b2",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FSelect.vue"
+    },
+    {
+      "path": "src/components/ui/FSheet.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "157b5fe082b4f14f3c67e853e17913df18c12eb2c1c586f288aa1ff14d0aab2a",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FSheet.test.ts"
+    },
+    {
+      "path": "src/components/ui/FSheet.vue",
+      "owner": "generator-owned",
+      "baselineHash": "2ce12fd281c3bd53d17402b78c69a2ba8b67abe284e4a1e5979099c90896a906",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FSheet.vue"
+    },
+    {
+      "path": "src/components/ui/FSkeleton.vue",
+      "owner": "generator-owned",
+      "baselineHash": "dbd428592a18c925830eeeded1e0709ca2588e6ad86d30e43765eaa3c8ceafaf",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FSkeleton.vue"
+    },
+    {
+      "path": "src/components/ui/FSpinner.vue",
+      "owner": "generator-owned",
+      "baselineHash": "de2a2e99dc41a0f813ccfaba1c1f66d55b10489eed2d46dd9507f3293e0eb5c3",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FSpinner.vue"
+    },
+    {
+      "path": "src/components/ui/FTextarea.vue",
+      "owner": "generator-owned",
+      "baselineHash": "aa2f114c1cd82ce2ad8cf54b0dbfddcbd38524a0d344cf5814e138672b58d128",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FTextarea.vue"
+    },
+    {
+      "path": "src/components/ui/FToastHost.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "93800a961a0dba0ce42a2ecdcd7af5d32e6fba37a396ed886d1c06a3f59af668",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FToastHost.test.ts"
+    },
+    {
+      "path": "src/components/ui/FToastHost.vue",
+      "owner": "generator-owned",
+      "baselineHash": "57932c4c4377bc575d353fc21708370b0d3ed292a2402b4622c29b949c5901ca",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/FToastHost.vue"
+    },
+    {
+      "path": "src/components/ui/input/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "09ebfb7b7805ec2c311ba2285b6f4ba2592f85244e1abe12c0dc2ac106c10318",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/input/index.ts"
+    },
+    {
+      "path": "src/components/ui/input/Input.vue",
+      "owner": "generator-owned",
+      "baselineHash": "ba62cef77847f8c172af2c5ec01a55664a34207ac5cd9de693ae23f8d7f80a5e",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/input/Input.vue"
+    },
+    {
+      "path": "src/components/ui/skeleton/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "63c46cdea19ddec2f05cca4e8c45d32e04b87a0ec5fdda7277fa6ab3b33051c2",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/skeleton/index.ts"
+    },
+    {
+      "path": "src/components/ui/skeleton/Skeleton.vue",
+      "owner": "generator-owned",
+      "baselineHash": "8d8de32bf93c0ea31557962290df9daaa2691449766a9c486a544c7abd585c37",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/skeleton/Skeleton.vue"
+    },
+    {
+      "path": "src/components/ui/textarea/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "1b7316231e53ee33c5e1536c24066a28655b9ccfeac9ccba5ff90a531ba07cf6",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/textarea/index.ts"
+    },
+    {
+      "path": "src/components/ui/textarea/Textarea.vue",
+      "owner": "generator-owned",
+      "baselineHash": "e66fa4a27cd850df668d5df22ba7b7234f4df940ab9dcf08bc3824b52c2c24ab",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/components/ui/textarea/Textarea.vue"
+    },
+    {
+      "path": "src/composables/useChart.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "80f5b1f33743d2f066a7bae4f88e567d297c839401d1e9444b5542feb6a4f953",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useChart.test.ts"
+    },
+    {
+      "path": "src/composables/useChart.ts",
+      "owner": "generator-owned",
+      "baselineHash": "c52d972bdf10455671caef9369667d5bdf8522d6e6cb24ff6a40fa7f95a4a4e0",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useChart.ts"
+    },
+    {
+      "path": "src/composables/useFloatingMenu.ts",
+      "owner": "generator-owned",
+      "baselineHash": "c1c20ffca08f4c4bcae1906b45faf9d7c1c2ecaa8919170294660a88703c4d08",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useFloatingMenu.ts"
+    },
+    {
+      "path": "src/composables/useForm.ts",
+      "owner": "generator-owned",
+      "baselineHash": "2761a1ac4b747c20a27bc1e1fbdf6d7e3a6076979220e87c25c12bc6ec749968",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useForm.ts"
+    },
+    {
+      "path": "src/composables/useFullscreen.ts",
+      "owner": "generator-owned",
+      "baselineHash": "6175f97202e9d46ac55a3446353ba2b57ce92be076393038ca6d5e519057a179",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useFullscreen.ts"
+    },
+    {
+      "path": "src/composables/useLoading.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "1fd16a1431e25432394b7cca995c4acb7c7b0df5c4b1e105078ca4a004624b5b",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useLoading.test.ts"
+    },
+    {
+      "path": "src/composables/useLoading.ts",
+      "owner": "generator-owned",
+      "baselineHash": "3062de71551cfbb4cb9ecb4b9da2c28c173df350dc3e9579f344ba0b7d7d4b6f",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useLoading.ts"
+    },
+    {
+      "path": "src/composables/useTable.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "50554676d637725858383fcd184852f8a8843112d4fd270d7477cec835204979",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useTable.test.ts"
+    },
+    {
+      "path": "src/composables/useTable.ts",
+      "owner": "generator-owned",
+      "baselineHash": "750d40fdce314e6d44c650da633e6bd4863e9f87965965ab42ab09d6036b3f36",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useTable.ts"
+    },
+    {
+      "path": "src/composables/useToast.ts",
+      "owner": "generator-owned",
+      "baselineHash": "9b1f6fdff06e5e2695be9e34b4bea0ff0bc1fe63794df143c8625c2e3121aa92",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/composables/useToast.ts"
+    },
+    {
+      "path": "src/config/app.ts",
+      "owner": "generator-owned",
+      "baselineHash": "f3ae04ad8dcb4561463278c0e07750ac3ea9870719fc432235b5b9408de0a880",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/config/app.ts"
+    },
+    {
+      "path": "src/config/env.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "c3b935475a0802cf0f5bcfdedf78a71dfdf4c724eaf599f84cc03a1c93736a26",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/config/env.test.ts"
+    },
+    {
+      "path": "src/config/env.ts",
+      "owner": "generator-owned",
+      "baselineHash": "d075477cae9557846e15c824c15a6d2ee548e3bb352fbd3a624c28d4d60c0ae9",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/config/env.ts"
+    },
+    {
+      "path": "src/directives/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "88552e634a31efd83d18042dc6df4a7daec4bc1c0584b1f9716b703c1f11875c",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/directives/index.ts"
+    },
+    {
+      "path": "src/directives/permission.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "da4ef52594c9dfd58b3adb4416f711f5766c0e886af16363b46325b70f1c98b6",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/directives/permission.test.ts"
+    },
+    {
+      "path": "src/directives/permission.ts",
+      "owner": "generator-owned",
+      "baselineHash": "252348ca3c5a6b254812427863e7f41ed5e380a28d340428b1c719c4e03fc317",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/directives/permission.ts"
+    },
+    {
+      "path": "src/layouts/DefaultLayout.vue",
+      "owner": "generator-owned",
+      "baselineHash": "f8df0e095c1e9a8edb219fe825c79f9f054aa7d28e07e45fa487597fa7b27fc2",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/layouts/DefaultLayout.vue"
+    },
+    {
+      "path": "src/lib/chart-modules.ts",
+      "owner": "generator-owned",
+      "baselineHash": "aa9da0d5722305dcf1a7d439efc425778cec222e38de1ee8dac295aca9cf811d",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/lib/chart-modules.ts"
+    },
+    {
+      "path": "src/lib/icons.ts",
+      "owner": "generator-owned",
+      "baselineHash": "0182576e2cb31fe84114e2b9cc33679cca9c2d1ba72e6755735eafb84b2a6725",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/lib/icons.ts"
+    },
+    {
+      "path": "src/lib/utils.ts",
+      "owner": "generator-owned",
+      "baselineHash": "e46429536f43f5910f5b2b0c50bb2769b510a4558bb4b5d20a3b0a9091dbf7c3",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/lib/utils.ts"
+    },
+    {
+      "path": "src/locales/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "f18f90ee55d478e91742631e397989e346ebdd86b3806aa47487beb3840684e3",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/locales/index.ts"
+    },
+    {
+      "path": "src/main.ts",
+      "owner": "generator-owned",
+      "baselineHash": "1e12bfcd67279df7f13188ee5d50f5d0e6547ef754779b75e76819f1d348d07a",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/main.ts"
+    },
+    {
+      "path": "src/pages/DeploymentsPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "89fda74c6b32e7ec5de4530954dc5887a014036d48a59af945532187d892cf7b",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/DeploymentsPage.vue"
+    },
+    {
+      "path": "src/pages/ExternalFramePage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "012551bc17ce6ed60f64ed1fbae70f6f0d4adc463b95d8e3654fd31f1d4baf71",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/ExternalFramePage.vue"
+    },
+    {
+      "path": "src/pages/HomePage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "2dccf0ec3abac42ddbfd0b4e0059bc1ea52e6ce36c924982d8319d6dec93c5eb",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/HomePage.vue"
+    },
+    {
+      "path": "src/pages/LoginPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "326212c52b2803d834ff8cd44feafc6e06df4706eeea315025f6911cc94fc7a6",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/LoginPage.vue"
+    },
+    {
+      "path": "src/pages/NotFoundPage.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "bf2734fe8fc25dfedeb7c496cca86d69c98f51728a8244ecc85e763a85d23b61",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/NotFoundPage.test.ts"
+    },
+    {
+      "path": "src/pages/NotFoundPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "5080040335754cf03e92d4408862714a28352843bd529a084902ed8ed2aa2b10",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/NotFoundPage.vue"
+    },
+    {
+      "path": "src/pages/ProjectsPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "a07d03c91b5549d6f21e13e7d7ccfbfe2b3de39e0996a4487b72c96b5d6f7bf0",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/ProjectsPage.vue"
+    },
+    {
+      "path": "src/pages/SettingsPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "c8f0863494bdb64ae6f2fca798b59630aad2ced794b3ad9b55bef14a3270a6c1",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/SettingsPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/ChartsPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "1bfb7d343fb02bce1943cc7c51cf741c30297d441bd989beff40d6696e263c91",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/ChartsPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/ComponentsPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "25397bfad28f54193637baff5cf48ab64e019f296080480ea8fbba9dff3e614f",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/ComponentsPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/FeedbackPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "97ec587ace300b3ce3fb56f5a003775118055089e8155b9d9dc355140ce1ce51",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/FeedbackPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/FormPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "097a75ebf2888833e8f97a251007f672657370ffd0013ebe7dd31211802ef0e2",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/FormPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/IconsPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "5bc56b77d584efb0d310a0c6b3e61d022a8824c967c34db6a5b4672c55efde7e",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/IconsPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/ResultPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "69a397b0c743d847b7b58e9f3ef30a0927a78ca1a31edecad6075993954fd121",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/ResultPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/TablePage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "a514d88f31bd7dca3ccf55e8aa49eba475694310b4c39c93af7526b429879586",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/TablePage.vue"
+    },
+    {
+      "path": "src/pages/showcase/TokensPage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "e337fe65569e26e4686fa40ed21d4dd558a994bd93ee282395468c1bacb56407",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/TokensPage.vue"
+    },
+    {
+      "path": "src/pages/showcase/TreePage.vue",
+      "owner": "generator-owned",
+      "baselineHash": "12d4c706100861dac16900a31b87122b92bed4b5dfefb3ab4193aafec171dd81",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/pages/showcase/TreePage.vue"
+    },
+    {
+      "path": "src/permissions/context.ts",
+      "owner": "generator-owned",
+      "baselineHash": "11ce933a4e0a8b6fc0ad6dd37fb09584745355de3b391a3d55d2223b8b2b0be5",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/permissions/context.ts"
+    },
+    {
+      "path": "src/permissions/types.ts",
+      "owner": "generator-owned",
+      "baselineHash": "efde93fd9f3f2f53f25b16afb8bf6429fc58744d0dd9d678070e33448a5eb69d",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/permissions/types.ts"
+    },
+    {
+      "path": "src/router/index.ts",
+      "owner": "generator-owned",
+      "baselineHash": "0361bd7c9a6dbfb7c4658770892a7ca1b37094f8cf3276a35401ce4ec746a0df",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/router/index.ts"
+    },
+    {
+      "path": "src/router/registry.ts",
+      "owner": "generator-owned",
+      "baselineHash": "70ab0f4492a7c2a1e24734236871a7c8c63d6696fd69b89c433d137504214a36",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/router/registry.ts"
+    },
+    {
+      "path": "src/router/routes/modules/dashboard.ts",
+      "owner": "generator-owned",
+      "baselineHash": "beae6413c92adb03d0d4e152b3c3034d93b9071514436afae2099caad00af6f8",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/router/routes/modules/dashboard.ts"
+    },
+    {
+      "path": "src/router/routes/modules/external.ts",
+      "owner": "generator-owned",
+      "baselineHash": "d025ebcfe373c8db4e501b03821cbb34d22e88ee3f17b00ed6995154ba7dad09",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/router/routes/modules/external.ts"
+    },
+    {
+      "path": "src/router/routes/modules/management.ts",
+      "owner": "generator-owned",
+      "baselineHash": "0527f93c87fd01ba4353eed25a821f947222b3dddbe0bb4c2deae662566bbcf7",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/router/routes/modules/management.ts"
+    },
+    {
+      "path": "src/router/routes/modules/showcase.ts",
+      "owner": "generator-owned",
+      "baselineHash": "01c8bed051168329a035fa66df47bcc45a455cf3a19626d856e08451efc2afa2",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/router/routes/modules/showcase.ts"
+    },
+    {
+      "path": "src/router/types.ts",
+      "owner": "generator-owned",
+      "baselineHash": "77e1aadfbd0a6cc212b066531e951f721dbcff6a0f3d375a5dcdb0efc41c2691",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/router/types.ts"
+    },
+    {
+      "path": "src/stores/app.test.ts",
+      "owner": "generator-owned",
+      "baselineHash": "6946ac1f504ec3754645b0195f685c04126a084ff207c0a3730053928753ca07",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/stores/app.test.ts"
+    },
+    {
+      "path": "src/stores/app.ts",
+      "owner": "generator-owned",
+      "baselineHash": "09084c701113568de67715c8b7b998921e223b79ed4793a1b0d1f7bbe4bf5476",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/stores/app.ts"
+    },
+    {
+      "path": "src/stores/tabs.ts",
+      "owner": "generator-owned",
+      "baselineHash": "d55ed7e62cd1679a7c58082752ea7c7e3d696d18421655e3ebcbbc51dcc7fc95",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/stores/tabs.ts"
+    },
+    {
+      "path": "src/styles/main.css",
+      "owner": "generator-owned",
+      "baselineHash": "04df1eb6bebf90db9b1cfe40fe6a6ddd46ff99854c0ea9a7e1b15b136c93a09b",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/styles/main.css"
+    },
+    {
+      "path": "src/styles/tokens.css",
+      "owner": "generator-owned",
+      "baselineHash": "392e49c70089e4823bbe74304e27a698cbfdb36b0296a926ced5777819516aa6",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/styles/tokens.css"
+    },
+    {
+      "path": "src/test/setup.ts",
+      "owner": "generator-owned",
+      "baselineHash": "b27fd247e270e2baa60c8abc70cf9f417671a337a44d188c4847bbbe6f653e6c",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/test/setup.ts"
+    },
+    {
+      "path": "src/vite-env.d.ts",
+      "owner": "generator-owned",
+      "baselineHash": "7f9cb254d35c6b7927fdfc6375941522ff817126240febc7abe630a4c496c2d0",
+      "templateVersion": "0.2.0",
+      "templatePath": "src/vite-env.d.ts"
+    },
+    {
+      "path": "tsconfig.app.json",
+      "owner": "generator-owned",
+      "baselineHash": "7cbd05bc8147cdb237b65aa3b857ff4293079b29996b9d1aed7ee0504cfbc1c6",
+      "templateVersion": "0.2.0",
+      "templatePath": "tsconfig.app.json"
+    },
+    {
+      "path": "tsconfig.json",
+      "owner": "generator-owned",
+      "baselineHash": "770b4140bbb581e2dfd9ea9946ffc9c75a1d86ba7d2db5f77c83e37cbdf9d808",
+      "templateVersion": "0.2.0",
+      "templatePath": "tsconfig.json"
+    },
+    {
+      "path": "tsconfig.node.json",
+      "owner": "generator-owned",
+      "baselineHash": "2fba2f25e1859f193b54edef5d2d2cd08cae2a37fab64c08699f6f8672bea2cc",
+      "templateVersion": "0.2.0",
+      "templatePath": "tsconfig.node.json"
+    },
+    {
+      "path": "vite.config.ts",
+      "owner": "generator-owned",
+      "baselineHash": "7fd6557194b9b424801d3ae57a1f6a76a6aedfe65b7aa52fa3a11fbc1c4833a8",
+      "templateVersion": "0.2.0",
+      "templatePath": "vite.config.ts"
+    },
+    {
+      "path": "vitest.config.ts",
+      "owner": "generator-owned",
+      "baselineHash": "5cc79c3541216827553449931d854bbab44d5d42e8bf42be39df6b84987de662",
+      "templateVersion": "0.2.0",
+      "templatePath": "vitest.config.ts"
+    }
+  ],
+  "migrations": []
+}

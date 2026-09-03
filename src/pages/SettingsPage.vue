@@ -1,0 +1,10 @@
+<script setup lang="ts">
+import { shallowRef } from 'vue'
+const name = shallowRef('Fluffy Team')
+const saved = shallowRef(false)
+function save() { saved.value = true }
+</script>
+<template><section class="page"><header><p class="eyebrow">{{ $t('settings.eyebrow') }}</p><h1>{{ $t('settings.title') }}</h1><p>{{ $t('settings.description') }}</p></header><form class="panel" @submit.prevent="save"><label>{{ $t('settings.workspaceName') }}<input v-model="name" /></label><label class="switch"><span><strong>{{ $t('settings.notifications') }}</strong><small>{{ $t('settings.notificationsDescription') }}</small></span><input type="checkbox" checked /></label><footer><span v-if="saved" class="saved">{{ $t('settings.saved') }}</span><button type="submit">{{ $t('settings.save') }}</button></footer></form></section></template>
+<style scoped>
+.page{display:grid;gap:24px;max-width:720px}.eyebrow{color:var(--primary);font-size:11px;font-weight:750;letter-spacing:.08em;margin:0 0 10px;text-transform:uppercase}h1{font-size:clamp(1.8rem,3vw,2.5rem);letter-spacing:-.045em;margin:0}header p:not(.eyebrow){color:var(--muted-foreground);font-size:14px;margin:10px 0 0}.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);display:grid;gap:22px;padding:22px}label{color:var(--foreground);display:grid;font-size:13px;font-weight:650;gap:8px}input[type=text],input:not([type]){background:var(--surface-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--foreground);padding:10px}.switch{align-items:center;border-top:1px solid var(--border);display:flex;justify-content:space-between;padding-top:20px}.switch small{color:var(--muted-foreground);display:block;font-size:12px;font-weight:400;margin-top:4px}.switch input{accent-color:var(--primary);height:18px;width:18px}footer{align-items:center;display:flex;justify-content:space-between}.saved{color:var(--success);font-size:12px;font-weight:700}button{background:var(--primary);border:0;border-radius:var(--radius-md);color:var(--primary-foreground);cursor:pointer;font-size:13px;font-weight:700;padding:10px 13px}
+</style>

@@ -1,0 +1,18 @@
+<script setup lang="ts">
+const projects = [
+  { name: 'console-web', framework: 'Vue 3', status: 'healthy', deployment: '4 minutes ago', owner: 'Fluffy' },
+  { name: 'edge-api', framework: 'Hono', status: 'healthy', deployment: '28 minutes ago', owner: 'Mina' },
+  { name: 'design-system', framework: 'Vite', status: 'review', deployment: 'Yesterday', owner: 'Leo' }
+]
+</script>
+
+<template>
+  <section class="page">
+    <header class="page-header"><div><p class="eyebrow">{{ $t('projects.eyebrow') }}</p><h1>{{ $t('projects.title') }}</h1><p>{{ $t('projects.description') }}</p></div><button class="primary-action" type="button">{{ $t('projects.newProject') }}</button></header>
+    <section class="panel"><div class="panel-heading"><div><h2>{{ $t('projects.active') }}</h2><p>{{ $t('projects.activeDescription') }}</p></div><span>{{ projects.length }} {{ $t('projects.items') }}</span></div><div class="project-list"><article v-for="project in projects" :key="project.name" class="project-row"><div class="project-mark">{{ project.name.slice(0, 1).toUpperCase() }}</div><div class="project-main"><strong>{{ project.name }}</strong><span>{{ project.framework }}</span></div><span class="status" :class="project.status">{{ project.status === 'healthy' ? $t('common.healthy') : $t('common.review') }}</span><span class="project-deployment">{{ project.deployment }}</span><span class="project-owner">{{ project.owner }}</span></article></div></section>
+  </section>
+</template>
+
+<style scoped>
+.page{display:grid;gap:24px}.page-header,.panel-heading{align-items:flex-end;display:flex;gap:20px;justify-content:space-between}.eyebrow{color:var(--primary);font-size:11px;font-weight:750;letter-spacing:.08em;margin:0 0 10px;text-transform:uppercase}.page-header h1{font-size:clamp(1.8rem,3vw,2.5rem);letter-spacing:-.045em;line-height:1.08;margin:0}.page-header p:not(.eyebrow),.panel-heading p{color:var(--muted-foreground);font-size:14px;line-height:1.6;margin:10px 0 0}.primary-action{background:var(--primary);border:0;border-radius:var(--radius-md);color:var(--primary-foreground);cursor:pointer;font-size:13px;font-weight:700;padding:10px 13px;transition:background-color 140ms ease,scale 140ms ease}.primary-action:hover{background:var(--primary-hover)}.primary-action:active{scale:.96}.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:20px}.panel-heading h2{font-size:14px;margin:0}.panel-heading>span{color:var(--subtle-foreground);font-size:12px}.project-list{margin-top:18px}.project-row{align-items:center;border-top:1px solid var(--border);display:grid;gap:14px;grid-template-columns:34px minmax(140px,1fr) auto minmax(105px,.8fr) 60px;padding:14px 0}.project-mark{align-items:center;background:var(--accent);border-radius:var(--radius-sm);color:var(--accent-foreground);display:flex;font-size:12px;font-weight:750;height:32px;justify-content:center;width:32px}.project-main{display:grid;gap:3px}.project-main strong{font-size:13px}.project-main span,.project-deployment,.project-owner{color:var(--muted-foreground);font-size:12px}.status{border-radius:999px;font-size:11px;font-weight:700;padding:4px 7px}.status.healthy{background:color-mix(in srgb,var(--success) 13%,transparent);color:var(--success)}.status.review{background:color-mix(in srgb,var(--warning) 13%,transparent);color:var(--warning)}@media(max-width:680px){.page-header{align-items:flex-start;flex-direction:column}.primary-action{width:100%}.project-row{grid-template-columns:34px 1fr auto}.project-deployment,.project-owner{display:none}}
+</style>

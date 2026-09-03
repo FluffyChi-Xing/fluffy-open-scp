@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+:root { --fluffy-brand: #4f46e5; }

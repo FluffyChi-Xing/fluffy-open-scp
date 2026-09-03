@@ -1,0 +1,8 @@
+[package]
+name = "rw4"
+description = "RenderWare4 (RW4) resource parsing: models, meshes, textures, skeletons, animations"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
