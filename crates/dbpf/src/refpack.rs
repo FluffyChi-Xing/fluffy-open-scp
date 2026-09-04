@@ -10,7 +10,11 @@ use crate::error::{Error, Result};
 /// - `(b & 0x3E) == 0x10` and second byte `0xFB` identify the format
 pub fn parse_stream_header(input: &[u8]) -> Result<(u32, usize)> {
     if input.len() < 2 {
-        return Err(Error::Truncated { needed: 2, at: 0, size: input.len() });
+        return Err(Error::Truncated {
+            needed: 2,
+            at: 0,
+            size: input.len(),
+        });
     }
     let (b0, b1) = (input[0], input[1]);
     if (b0 & 0x3E) != 0x10 || b1 != 0xFB {
@@ -21,7 +25,11 @@ pub fn parse_stream_header(input: &[u8]) -> Result<(u32, usize)> {
     let extra = (if is_long { 4 } else { 3 }) * (if has_more { 2 } else { 1 });
     let total = 2 + extra;
     if input.len() < total {
-        return Err(Error::Truncated { needed: total, at: 0, size: input.len() });
+        return Err(Error::Truncated {
+            needed: total,
+            at: 0,
+            size: input.len(),
+        });
     }
 
     let d = &input[2..];
@@ -117,7 +125,9 @@ pub fn decompress(input: &[u8], decompressed_size: usize) -> Result<Vec<u8>> {
 
 fn take<'a>(input: &'a [u8], pos: &mut usize, n: usize) -> Result<&'a [u8]> {
     let end = *pos + n;
-    let slice = input.get(*pos..end).ok_or(Error::Refpack("stream truncated"))?;
+    let slice = input
+        .get(*pos..end)
+        .ok_or(Error::Refpack("stream truncated"))?;
     *pos = end;
     Ok(slice)
 }
@@ -127,7 +137,13 @@ mod tests {
     use super::*;
 
     fn header(size: u32) -> Vec<u8> {
-        vec![0x10, 0xFB, (size >> 16) as u8, (size >> 8) as u8, size as u8]
+        vec![
+            0x10,
+            0xFB,
+            (size >> 16) as u8,
+            (size >> 8) as u8,
+            size as u8,
+        ]
     }
 
     fn decompress_ok(stream: &[u8], expected: &[u8]) {

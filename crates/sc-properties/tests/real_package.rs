@@ -7,8 +7,10 @@ use std::time::Instant;
 use dbpf::Package;
 use sc_properties::{Kind, PropertyFile};
 
-const REAL_PACKAGE: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/packages/app.package");
+const REAL_PACKAGE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/packages/app.package"
+);
 
 #[test]
 fn real_package_parses_all_property_lists() {
@@ -33,7 +35,11 @@ fn real_package_parses_all_property_lists() {
             panic!("prop #{i} {} failed to read: {err}", e.id);
         });
         let pf = PropertyFile::parse(&data).unwrap_or_else(|err| {
-            panic!("prop #{i} {} failed to parse ({} bytes): {err}", e.id, data.len());
+            panic!(
+                "prop #{i} {} failed to parse ({} bytes): {err}",
+                e.id,
+                data.len()
+            );
         });
         total_props += pf.values.len();
         for p in &pf.values {
@@ -55,13 +61,23 @@ fn real_package_parses_all_property_lists() {
     }
 
     // 常见类型必然出现（SimCity 属性表的构成，HANDOFF §4 有记录）
-    assert!(hist.iter().any(|(n, _)| *n == "Key"), "Key properties expected");
-    assert!(hist.iter().any(|(n, _)| *n == "float"), "float properties expected");
+    assert!(
+        hist.iter().any(|(n, _)| *n == "Key"),
+        "Key properties expected"
+    );
+    assert!(
+        hist.iter().any(|(n, _)| *n == "float"),
+        "float properties expected"
+    );
 
     // 数组与非空标量至少各出现一次
     let has_array = prop_entries.iter().any(|e| {
         let data = package.read(e).unwrap();
-        PropertyFile::parse(&data).unwrap().values.iter().any(|p| matches!(p.kind, Kind::Array(_)))
+        PropertyFile::parse(&data)
+            .unwrap()
+            .values
+            .iter()
+            .any(|p| matches!(p.kind, Kind::Array(_)))
     });
     assert!(has_array, "array properties expected");
 }
@@ -81,7 +97,11 @@ fn real_package_keys_reference_real_types() {
 
     let mut type_histogram: HashMap<u32, usize> = HashMap::new();
     let mut checked = 0usize;
-    for e in package.entries().iter().filter(|e| e.id.type_id == 0x00B1_B104) {
+    for e in package
+        .entries()
+        .iter()
+        .filter(|e| e.id.type_id == 0x00B1_B104)
+    {
         let data = package.read(e).unwrap();
         let pf = PropertyFile::parse(&data).unwrap();
         for p in &pf.values {
@@ -103,7 +123,10 @@ fn real_package_keys_reference_real_types() {
     }
 
     // 绝大多数非空引用的 type_id 必须存在于包索引（其余为跨包引用）
-    let total_known: usize = hist.iter().map(|(t, n)| if index_types.contains(t) { *n } else { 0 }).sum();
+    let total_known: usize = hist
+        .iter()
+        .map(|(t, n)| if index_types.contains(t) { *n } else { 0 })
+        .sum();
     eprintln!(
         "{total_known}/{checked} non-null key references target types present in the package index"
     );

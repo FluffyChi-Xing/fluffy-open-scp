@@ -8,7 +8,9 @@ use std::time::Instant;
 
 fn main() -> dbpf::Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: inspect <package> [dump <index> <out>]");
+    let path = args
+        .get(1)
+        .expect("usage: inspect <package> [dump <index> <out>]");
     let (index, dump) = match args.get(2).map(String::as_str) {
         Some("dump") => (
             args.get(3).expect("dump index").parse::<usize>().unwrap(),
@@ -32,15 +34,15 @@ fn main() -> dbpf::Result<()> {
         "index:         {} entries, {} bytes @ {:#x}",
         header.index_count, header.index_size, header.index_offset
     );
-    println!("parsed:       {} entries in {open_ms:.1} ms", package.entries().len());
+    println!(
+        "parsed:       {} entries in {open_ms:.1} ms",
+        package.entries().len()
+    );
 
     let entries = package.entries();
     let compressed = entries.iter().filter(|e| e.compressed).count();
     let stored_bytes: u64 = entries.iter().map(|e| e.stored_len()).sum();
-    let decompressed_bytes: u64 = entries
-        .iter()
-        .map(|e| u64::from(e.decompressed_size))
-        .sum();
+    let decompressed_bytes: u64 = entries.iter().map(|e| u64::from(e.decompressed_size)).sum();
     println!(
         "compression:   {compressed}/{} entries RefPack-compressed",
         entries.len()

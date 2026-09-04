@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use rusqlite::{OpenFlags, Connection};
+use rusqlite::{Connection, OpenFlags};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

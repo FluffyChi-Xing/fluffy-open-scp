@@ -34,7 +34,11 @@ fn le_i64(data: &[u8], at: usize) -> i64 {
 /// Parse the fixed-size package header (magic + 92/116 bytes).
 pub fn parse(data: &[u8]) -> Result<Header> {
     if data.len() < 4 {
-        return Err(Error::Truncated { needed: 4, at: 0, size: data.len() });
+        return Err(Error::Truncated {
+            needed: 4,
+            at: 0,
+            size: data.len(),
+        });
     }
     let kind = match &data[0..4] {
         b"DBPF" => PackageKind::Dbpf,
@@ -61,7 +65,10 @@ pub fn parse(data: &[u8]) -> Result<Header> {
             }
             let reserved = le_u32(data, 0x3C);
             if reserved != 3 {
-                return Err(Error::BadReservedField { at: 0x3C, got: reserved });
+                return Err(Error::BadReservedField {
+                    at: 0x3C,
+                    got: reserved,
+                });
             }
             Header {
                 kind,
@@ -82,7 +89,10 @@ pub fn parse(data: &[u8]) -> Result<Header> {
             }
             let reserved = le_u32(data, 0x34);
             if reserved != 3 {
-                return Err(Error::BadReservedField { at: 0x34, got: reserved });
+                return Err(Error::BadReservedField {
+                    at: 0x34,
+                    got: reserved,
+                });
             }
             Header {
                 kind,

@@ -8,8 +8,8 @@ use std::collections::HashMap;
 
 use dbpf::ResourceId;
 
-use crate::model::Value;
 use crate::PropertyFile;
+use crate::model::Value;
 
 /// Locale JSON string-table resource type id.
 pub const LOCALE_RESOURCE_TYPE: u32 = 0x0A98_EAF0;
@@ -66,9 +66,10 @@ pub fn parse_string_table(data: &[u8]) -> Result<HashMap<u32, String>, String> {
     if data.len() < 3 {
         return Err("resource shorter than 3-byte prefix".into());
     }
-    let json: serde_json::Value =
-        serde_json::from_slice(&data[3..]).map_err(|e| e.to_string())?;
-    let object = json.as_object().ok_or("locale resource is not a JSON object")?;
+    let json: serde_json::Value = serde_json::from_slice(&data[3..]).map_err(|e| e.to_string())?;
+    let object = json
+        .as_object()
+        .ok_or("locale resource is not a JSON object")?;
 
     let mut table = HashMap::new();
     for (key, value) in object {
@@ -77,7 +78,9 @@ pub fn parse_string_table(data: &[u8]) -> Result<HashMap<u32, String>, String> {
         }
         let id = u32::from_str_radix(key.trim_start_matches("0x"), 16)
             .map_err(|e| format!("bad locale key {key:?}: {e}"))?;
-        let translation = value.as_str().ok_or_else(|| format!("non-string value for {key:?}"))?;
+        let translation = value
+            .as_str()
+            .ok_or_else(|| format!("non-string value for {key:?}"))?;
         table.insert(id, translation.to_string());
     }
     Ok(table)
@@ -98,7 +101,9 @@ where
             if !NAME_PROPERTY_HASHES.contains(&prop.hash) {
                 continue;
             }
-            let Some(text) = name_text(prop) else { continue };
+            let Some(text) = name_text(prop) else {
+                continue;
+            };
             let Some(name) = locale.get(text.table_id, text.instance_id) else {
                 continue;
             };
@@ -117,9 +122,7 @@ where
 }
 
 /// `ArrayProperty[0] TextProperty` extraction from a name property.
-fn name_text(
-    prop: &crate::model::Property,
-) -> Option<crate::model::Text> {
+fn name_text(prop: &crate::model::Property) -> Option<crate::model::Text> {
     match &prop.kind {
         crate::model::Kind::Array(vals) => match vals.first() {
             Some(Value::Text(t)) => Some(*t),

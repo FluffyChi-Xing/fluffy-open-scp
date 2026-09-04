@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use dbpf::{Error, Package, PackageKind, CachedPackage};
+use dbpf::{CachedPackage, Error, Package, PackageKind};
 
 const SHARED_UNKNOWN: u32 = 0x00DE_AD00;
 
@@ -50,10 +50,18 @@ fn build_package(kind: PackageKind, values: i32, entries: &[TEntry]) -> Vec<u8> 
     }
 
     let mut record_len = 4 + 4 + 4 + 4 + 2 + 2; // instance, offset, csize, dsize, flags16, flags
-    if values & 1 == 0 { record_len += 4; }
-    if values & 2 == 0 { record_len += 4; }
-    if values & 4 == 0 { record_len += 4; }
-    if kind == PackageKind::Dbbf { record_len += 4; } // i64 offset
+    if values & 1 == 0 {
+        record_len += 4;
+    }
+    if values & 2 == 0 {
+        record_len += 4;
+    }
+    if values & 4 == 0 {
+        record_len += 4;
+    }
+    if kind == PackageKind::Dbbf {
+        record_len += 4;
+    } // i64 offset
 
     let records_len = record_len * entries.len();
     let mut payload_base = (header_len + idx.len() + records_len) as u64;
@@ -65,9 +73,15 @@ fn build_package(kind: PackageKind, values: i32, entries: &[TEntry]) -> Vec<u8> 
     }
 
     for (i, e) in entries.iter().enumerate() {
-        if values & 1 == 0 { idx.extend_from_slice(&e.type_id.to_le_bytes()); }
-        if values & 2 == 0 { idx.extend_from_slice(&e.group.to_le_bytes()); }
-        if values & 4 == 0 { idx.extend_from_slice(&0x1234_5678u32.to_le_bytes()); }
+        if values & 1 == 0 {
+            idx.extend_from_slice(&e.type_id.to_le_bytes());
+        }
+        if values & 2 == 0 {
+            idx.extend_from_slice(&e.group.to_le_bytes());
+        }
+        if values & 4 == 0 {
+            idx.extend_from_slice(&0x1234_5678u32.to_le_bytes());
+        }
         idx.extend_from_slice(&e.instance.to_le_bytes());
         match kind {
             PackageKind::Dbbf => idx.extend_from_slice(&(offsets[i] as i64).to_le_bytes()),
@@ -205,7 +219,12 @@ fn shared_tgi_entries() {
     let file = build_package(
         PackageKind::Dbpf,
         7, // type, group, unknown all shared in the index header
-        &[stored(0x0A0B_0C0D, 0x0A0B_0C0D, 0x0000_00FE, b"only-instance-varies")],
+        &[stored(
+            0x0A0B_0C0D,
+            0x0A0B_0C0D,
+            0x0000_00FE,
+            b"only-instance-varies",
+        )],
     );
     let path = write_temp("shared", &file);
     let package = Package::open(&path).unwrap();
@@ -223,7 +242,12 @@ fn dbbf_roundtrip_with_64bit_offsets() {
     let file = build_package(
         PackageKind::Dbbf,
         4,
-        &[stored(0x0000_0003, 0x0000_00BB, 0x0000_0033, b"big package")],
+        &[stored(
+            0x0000_0003,
+            0x0000_00BB,
+            0x0000_0033,
+            b"big package",
+        )],
     );
     let path = write_temp("dbbf", &file);
     let package = Package::open(&path).unwrap();

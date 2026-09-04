@@ -18,7 +18,11 @@ pub enum Error {
     BadCompressionFlags(i16),
 
     #[error("file truncated: need {needed} bytes at offset {at}, file size {size}")]
-    Truncated { needed: usize, at: usize, size: usize },
+    Truncated {
+        needed: usize,
+        at: usize,
+        size: usize,
+    },
 
     #[error("offset {offset} is outside the file (size {size})")]
     OffsetOutOfRange { offset: u64, size: u64 },

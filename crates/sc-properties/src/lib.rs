@@ -31,15 +31,13 @@ mod model;
 
 use std::fmt;
 
-pub use combine::{combine_assets, has_model_details, AssetGroup, MODEL_DETAILS_HASH};
+pub use combine::{AssetGroup, MODEL_DETAILS_HASH, combine_assets, has_model_details};
 pub use error::{Error, Result};
 pub use locale::{
-    collect_name_map, parse_string_table, Locale, MODEL_RESOURCE_TYPE, NAME_PROPERTY_HASHES,
-    LOCALE_RESOURCE_TYPE,
+    LOCALE_RESOURCE_TYPE, Locale, MODEL_RESOURCE_TYPE, NAME_PROPERTY_HASHES, collect_name_map,
+    parse_string_table,
 };
-pub use model::{
-    Kind, Key, PropType, Property, Text, Transform, Value,
-};
+pub use model::{Key, Kind, PropType, Property, Text, Transform, Value};
 
 /// A parsed `0x00B1B104` property list. Entries keep file order (hashes are
 /// sorted in files written by the game, but this is not relied on).
@@ -90,10 +88,17 @@ impl PropertyFile {
                 Kind::Empty
             };
 
-            values.push(Property { hash, prop_type, kind });
+            values.push(Property {
+                hash,
+                prop_type,
+                kind,
+            });
         }
 
-        Ok(PropertyFile { values, claimed_count })
+        Ok(PropertyFile {
+            values,
+            claimed_count,
+        })
     }
 
     /// Look up an entry by hash.
@@ -110,7 +115,9 @@ impl fmt::Display for PropertyFile {
         entries.sort_by_key(|p| p.hash);
         for p in entries {
             match &p.kind {
-                Kind::Scalar(v) => writeln!(f, "0x{:08X}  {}  = {}", p.hash, p.prop_type.name(), v)?,
+                Kind::Scalar(v) => {
+                    writeln!(f, "0x{:08X}  {}  = {}", p.hash, p.prop_type.name(), v)?
+                }
                 Kind::Array(vals) => {
                     if vals.is_empty() {
                         writeln!(f, "0x{:08X}  {}[]  = <empty>", p.hash, p.prop_type.name())?;
@@ -120,7 +127,12 @@ impl fmt::Display for PropertyFile {
                     }
                 }
                 Kind::Empty => {
-                    writeln!(f, "0x{:08X}  {}  = <empty variant>", p.hash, p.prop_type.name())?;
+                    writeln!(
+                        f,
+                        "0x{:08X}  {}  = <empty variant>",
+                        p.hash,
+                        p.prop_type.name()
+                    )?;
                 }
             }
         }
@@ -228,10 +240,11 @@ impl<'a> Reader<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let start = self.pos;
         let end = start + n;
-        let slice = self
-            .data
-            .get(start..end)
-            .ok_or(Error::Truncated { needed: n, at: start, size: self.data.len() })?;
+        let slice = self.data.get(start..end).ok_or(Error::Truncated {
+            needed: n,
+            at: start,
+            size: self.data.len(),
+        })?;
         self.pos = end;
         Ok(slice)
     }

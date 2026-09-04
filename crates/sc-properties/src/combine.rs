@@ -116,9 +116,7 @@ pub fn has_model_details(file: &PropertyFile) -> bool {
         p.hash == MODEL_DETAILS_HASH
             && match &p.kind {
                 Kind::Scalar(Value::Key(_)) => true,
-                Kind::Array(vals) => {
-                    vals.iter().any(|v| matches!(v, Value::Key(_)))
-                }
+                Kind::Array(vals) => vals.iter().any(|v| matches!(v, Value::Key(_))),
                 _ => false,
             }
     })

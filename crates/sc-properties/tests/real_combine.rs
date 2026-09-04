@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use dbpf::Package;
-use sc_properties::{combine_assets, has_model_details, PropertyFile};
+use sc_properties::{PropertyFile, combine_assets, has_model_details};
 
-const REAL_PACKAGE: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/packages/app.package");
+const REAL_PACKAGE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/packages/app.package"
+);
 
 #[test]
 fn real_package_combine_covers_all_entries() {
@@ -18,7 +20,11 @@ fn real_package_combine_covers_all_entries() {
 
     let mut entries = Vec::new();
     let mut model_details_files = 0usize;
-    for e in package.entries().iter().filter(|e| e.id.type_id == 0x00B1_B104) {
+    for e in package
+        .entries()
+        .iter()
+        .filter(|e| e.id.type_id == 0x00B1_B104)
+    {
         let data = package.read(e).unwrap();
         let pf = PropertyFile::parse(&data).unwrap();
         if has_model_details(&pf) {
@@ -33,7 +39,11 @@ fn real_package_combine_covers_all_entries() {
 
     // 覆盖性：所有条目恰好出现一次
     let member_count: usize = groups.iter().map(|g| g.members.len()).sum();
-    assert_eq!(member_count, entries.len(), "every entry must belong to exactly one group");
+    assert_eq!(
+        member_count,
+        entries.len(),
+        "every entry must belong to exactly one group"
+    );
     assert!(!groups.is_empty());
 
     let multi = groups.iter().filter(|g| g.members.len() > 1).count();

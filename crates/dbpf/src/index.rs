@@ -14,7 +14,11 @@ pub struct ResourceId {
 
 impl fmt::Display for ResourceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:08X}:{:08X}:{:08X}", self.type_id, self.group, self.instance)
+        write!(
+            f,
+            "{:08X}:{:08X}:{:08X}",
+            self.type_id, self.group, self.instance
+        )
     }
 }
 
@@ -60,9 +64,21 @@ pub(crate) fn parse(data: &[u8], header: &Header) -> Result<Vec<IndexEntry>> {
         return Err(Error::BadIndexHeaderValues(values));
     }
 
-    let shared_type = if values & (1 << 0) != 0 { Some(r.u32()?) } else { None };
-    let shared_group = if values & (1 << 1) != 0 { Some(r.u32()?) } else { None };
-    let shared_unknown = if values & (1 << 2) != 0 { Some(r.u32()?) } else { None };
+    let shared_type = if values & (1 << 0) != 0 {
+        Some(r.u32()?)
+    } else {
+        None
+    };
+    let shared_group = if values & (1 << 1) != 0 {
+        Some(r.u32()?)
+    } else {
+        None
+    };
+    let shared_unknown = if values & (1 << 2) != 0 {
+        Some(r.u32()?)
+    } else {
+        None
+    };
 
     let mut entries = Vec::with_capacity(header.index_count as usize);
     for _ in 0..header.index_count {
@@ -99,7 +115,11 @@ pub(crate) fn parse(data: &[u8], header: &Header) -> Result<Vec<IndexEntry>> {
         };
 
         entries.push(IndexEntry {
-            id: ResourceId { type_id, group, instance },
+            id: ResourceId {
+                type_id,
+                group,
+                instance,
+            },
             unknown,
             offset,
             compressed_size,

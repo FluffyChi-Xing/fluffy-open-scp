@@ -51,9 +51,9 @@ fn scalar_types_roundtrip() {
     s16.extend_from_slice(&[0x4E, 0xF6]); // "件" UTF-16BE
 
     let data = file(&[
-        entry(0x0000_0001, 1, 0, &[1]),            // bool true
+        entry(0x0000_0001, 1, 0, &[1]),               // bool true
         entry(0x0000_0002, 9, 0, &be32(0xFFFF_FFF0)), // int32
-        entry(0x0000_0003, 10, 0, &be32(42)),      // uint32
+        entry(0x0000_0003, 10, 0, &be32(42)),         // uint32
         {
             let mut p = Vec::new();
             push_f32(&mut p, 1.5);
@@ -74,14 +74,27 @@ fn scalar_types_roundtrip() {
     assert_eq!(pf.get(4).unwrap().scalar(), Some(&Value::Float(1.5)));
     assert_eq!(
         pf.get(5).unwrap().scalar(),
-        Some(&Value::Key(Key { instance: 0xAA, type_id: 0xBB, group: 0xCC }))
+        Some(&Value::Key(Key {
+            instance: 0xAA,
+            type_id: 0xBB,
+            group: 0xCC
+        }))
     );
     assert_eq!(
         pf.get(6).unwrap().scalar(),
-        Some(&Value::Text(Text { table_id: 7, instance_id: 8 }))
+        Some(&Value::Text(Text {
+            table_id: 7,
+            instance_id: 8
+        }))
     );
-    assert_eq!(pf.get(7).unwrap().scalar(), Some(&Value::String8("hello".into())));
-    assert_eq!(pf.get(8).unwrap().scalar(), Some(&Value::String16("件".into())));
+    assert_eq!(
+        pf.get(7).unwrap().scalar(),
+        Some(&Value::String8("hello".into()))
+    );
+    assert_eq!(
+        pf.get(8).unwrap().scalar(),
+        Some(&Value::String16("件".into()))
+    );
 }
 
 #[test]
@@ -112,20 +125,41 @@ fn float_vector_types() {
         entry(0x15, 57, 0, &bbox),
     ]);
     let pf = PropertyFile::parse(&data).unwrap();
-    assert_eq!(pf.get(0x10).unwrap().scalar(), Some(&Value::Vector2([1.0, 2.0])));
-    assert_eq!(pf.get(0x11).unwrap().scalar(), Some(&Value::Vector3([1.0, 2.0, 3.0])));
+    assert_eq!(
+        pf.get(0x10).unwrap().scalar(),
+        Some(&Value::Vector2([1.0, 2.0]))
+    );
+    assert_eq!(
+        pf.get(0x11).unwrap().scalar(),
+        Some(&Value::Vector3([1.0, 2.0, 3.0]))
+    );
     assert_eq!(
         pf.get(0x12).unwrap().scalar(),
-        Some(&Value::ColorRgb { r: 1.0, g: 2.0, b: 3.0 })
+        Some(&Value::ColorRgb {
+            r: 1.0,
+            g: 2.0,
+            b: 3.0
+        })
     );
-    assert_eq!(pf.get(0x13).unwrap().scalar(), Some(&Value::Vector4([1.0, 2.0, 3.0, 4.0])));
+    assert_eq!(
+        pf.get(0x13).unwrap().scalar(),
+        Some(&Value::Vector4([1.0, 2.0, 3.0, 4.0]))
+    );
     assert_eq!(
         pf.get(0x14).unwrap().scalar(),
-        Some(&Value::ColorRgba { r: 1.0, g: 2.0, b: 3.0, a: 4.0 })
+        Some(&Value::ColorRgba {
+            r: 1.0,
+            g: 2.0,
+            b: 3.0,
+            a: 4.0
+        })
     );
     assert_eq!(
         pf.get(0x15).unwrap().scalar(),
-        Some(&Value::BoundingBox { min: [0.0; 3], max: [9.0; 3] })
+        Some(&Value::BoundingBox {
+            min: [0.0; 3],
+            max: [9.0; 3]
+        })
     );
 }
 
@@ -218,7 +252,10 @@ fn string8_zero_length_with_flag_reads_u8_length() {
     payload.extend_from_slice(b"short");
     let data = file(&[entry(0x50, 18, 0x0100, &payload)]);
     let pf = PropertyFile::parse(&data).unwrap();
-    assert_eq!(pf.get(0x50).unwrap().scalar(), Some(&Value::String8("short".into())));
+    assert_eq!(
+        pf.get(0x50).unwrap().scalar(),
+        Some(&Value::String8("short".into()))
+    );
 }
 
 #[test]
@@ -233,11 +270,11 @@ fn claimed_count_exceeding_entries_is_tolerated() {
 
 #[test]
 fn duplicate_hash_rejected() {
-    let data = file(&[
-        entry(0x70, 10, 0, &be32(1)),
-        entry(0x70, 10, 0, &be32(2)),
-    ]);
-    assert!(matches!(PropertyFile::parse(&data), Err(Error::DuplicateHash(0x70))));
+    let data = file(&[entry(0x70, 10, 0, &be32(1)), entry(0x70, 10, 0, &be32(2))]);
+    assert!(matches!(
+        PropertyFile::parse(&data),
+        Err(Error::DuplicateHash(0x70))
+    ));
 }
 
 #[test]
@@ -252,7 +289,10 @@ fn unknown_type_rejected() {
 #[test]
 fn truncated_payload_rejected() {
     let data = file(&[entry(0x72, 13, 0, &[0x3F, 0x80])]); // float needs 4 bytes
-    assert!(matches!(PropertyFile::parse(&data), Err(Error::Truncated { .. })));
+    assert!(matches!(
+        PropertyFile::parse(&data),
+        Err(Error::Truncated { .. })
+    ));
 }
 
 #[test]
@@ -277,16 +317,23 @@ fn dump_display_sorted_by_hash() {
 
 mod combine_tests {
     use super::*;
-    use crate::{combine_assets, MODEL_DETAILS_HASH};
+    use crate::{MODEL_DETAILS_HASH, combine_assets};
     use dbpf::ResourceId;
 
     fn rid(instance: u32, group: u32) -> ResourceId {
-        ResourceId { type_id: 0x00B1_B104, group, instance }
+        ResourceId {
+            type_id: 0x00B1_B104,
+            group,
+            instance,
+        }
     }
 
     fn prop_file(props: Vec<Property>) -> PropertyFile {
         let claimed_count = props.len() as u32;
-        PropertyFile { values: props, claimed_count }
+        PropertyFile {
+            values: props,
+            claimed_count,
+        }
     }
 
     fn key_prop(hash: u32, target_instance: u32) -> Property {
@@ -317,34 +364,56 @@ mod combine_tests {
         let other_ref = key_prop(0x0DB9_FC63, 0x1111); // Parent-Menu 类引用，必须忽略
 
         let entries = [
-            (rid(0x1111, 0x40E1_C000), prop_file(vec![simple_prop(0x01, 1)])),
-            (rid(0x1111, 0x40E0_C000), prop_file(vec![simple_prop(0x02, 2)])),
-            (rid(0x2222, 0x0987_8A01), prop_file(vec![model_details, simple_prop(0x03, 3)])),
+            (
+                rid(0x1111, 0x40E1_C000),
+                prop_file(vec![simple_prop(0x01, 1)]),
+            ),
+            (
+                rid(0x1111, 0x40E0_C000),
+                prop_file(vec![simple_prop(0x02, 2)]),
+            ),
+            (
+                rid(0x2222, 0x0987_8A01),
+                prop_file(vec![model_details, simple_prop(0x03, 3)]),
+            ),
             (rid(0x3333, 0), prop_file(vec![simple_prop(0x04, 4)])),
-            (rid(0x4444, 0), prop_file(vec![key_prop(MODEL_DETAILS_HASH, 0x9999)])), // 悬空引用
+            (
+                rid(0x4444, 0),
+                prop_file(vec![key_prop(MODEL_DETAILS_HASH, 0x9999)]),
+            ), // 悬空引用
             (rid(0x5555, 0), prop_file(vec![other_ref])),
         ];
 
         let names = std::iter::once((0x1111_u32, "Central Station".to_string())).collect();
-        let groups = combine_assets(
-            entries.iter().map(|(id, f)| (*id, f)),
-            Some(&names),
-        );
+        let groups = combine_assets(entries.iter().map(|(id, f)| (*id, f)), Some(&names));
 
-        assert_eq!(groups.len(), 4, "6 entries, A+B+C merge -> 4 groups; got {groups:?}");
+        assert_eq!(
+            groups.len(),
+            4,
+            "6 entries, A+B+C merge -> 4 groups; got {groups:?}"
+        );
 
         // 排序后前三组是 group=0 的单成员（D、E、F），合并组按其最小成员组号排最后
         assert!(groups[0..3].iter().all(|g| g.members.len() == 1));
-        assert!(groups.iter().all(|g| g.members.contains(&rid(0x4444, 0)) == (g.members.len() == 1 && g.members[0].instance == 0x4444)));
+        assert!(groups.iter().all(|g| g.members.contains(&rid(0x4444, 0))
+            == (g.members.len() == 1 && g.members[0].instance == 0x4444)));
 
         let combined = groups
             .iter()
             .find(|g| g.members.len() == 3)
             .expect("A+B+C should merge into one group");
         assert_eq!(combined.name.as_deref(), Some("Central Station"));
-        assert!(combined.members.contains(&rid(0x2222, 0x0987_8A01)), "catalog prop joins via Model Details");
+        assert!(
+            combined.members.contains(&rid(0x2222, 0x0987_8A01)),
+            "catalog prop joins via Model Details"
+        );
         // 悬空引用组无名称
-        assert!(groups.iter().filter(|g| g.members.contains(&rid(0x4444, 0))).all(|g| g.name.is_none()));
+        assert!(
+            groups
+                .iter()
+                .filter(|g| g.members.contains(&rid(0x4444, 0)))
+                .all(|g| g.name.is_none())
+        );
     }
 
     #[test]
@@ -353,8 +422,16 @@ mod combine_tests {
             hash: MODEL_DETAILS_HASH,
             prop_type: PropType::Key,
             kind: Kind::Array(vec![
-                Value::Key(Key { instance: 0x7777, type_id: 0x00B1_B104, group: 0 }),
-                Value::Key(Key { instance: 0x8888, type_id: 0x00B1_B104, group: 0 }),
+                Value::Key(Key {
+                    instance: 0x7777,
+                    type_id: 0x00B1_B104,
+                    group: 0,
+                }),
+                Value::Key(Key {
+                    instance: 0x8888,
+                    type_id: 0x00B1_B104,
+                    group: 0,
+                }),
             ]),
         };
         let entries = [
@@ -373,14 +450,16 @@ mod combine_tests {
 mod locale_tests {
     use super::*;
     use crate::locale::{
-        collect_name_map, parse_string_table, Locale, MODEL_RESOURCE_TYPE,
-        NAME_PROPERTY_HASHES,
+        Locale, MODEL_RESOURCE_TYPE, NAME_PROPERTY_HASHES, collect_name_map, parse_string_table,
     };
     use dbpf::ResourceId;
 
-
     fn rid(instance: u32) -> ResourceId {
-        ResourceId { type_id: 0x00B1_B104, group: 0, instance }
+        ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0,
+            instance,
+        }
     }
 
     #[test]
@@ -396,14 +475,11 @@ mod locale_tests {
 
     #[test]
     fn collects_names_and_propagates_to_models() {
-        let locale = Locale::from_resources(vec![(
-            0xA000,
-            {
-                let mut d = vec![0xEF, 0xBB, 0xBF];
-                d.extend_from_slice(br#"{"0x0100": "Airship Hangar"}"#);
-                d
-            },
-        )])
+        let locale = Locale::from_resources(vec![(0xA000, {
+            let mut d = vec![0xEF, 0xBB, 0xBF];
+            d.extend_from_slice(br#"{"0x0100": "Airship Hangar"}"#);
+            d
+        })])
         .unwrap();
         assert_eq!(locale.table_count(), 1);
         assert_eq!(locale.get(0xA000, 0x0100), Some("Airship Hangar"));
@@ -414,17 +490,34 @@ mod locale_tests {
             hash: name_hash,
             prop_type: PropType::Text,
             kind: Kind::Array(vec![
-                Value::Text(crate::Text { table_id: 0xA000, instance_id: 0x0100 }),
-                Value::Key(Key { instance: 0xFEED, type_id: MODEL_RESOURCE_TYPE, group: 0 }),
+                Value::Text(crate::Text {
+                    table_id: 0xA000,
+                    instance_id: 0x0100,
+                }),
+                Value::Key(Key {
+                    instance: 0xFEED,
+                    type_id: MODEL_RESOURCE_TYPE,
+                    group: 0,
+                }),
             ]),
         };
-        let entries = [(rid(0x1234), PropertyFile {
-            values: vec![name_prop],
-            claimed_count: 1,
-        })];
+        let entries = [(
+            rid(0x1234),
+            PropertyFile {
+                values: vec![name_prop],
+                claimed_count: 1,
+            },
+        )];
 
         let names = collect_name_map(entries.iter().map(|(id, f)| (*id, f)), &locale);
-        assert_eq!(names.get(&0x1234).map(String::as_str), Some("Airship Hangar"));
-        assert_eq!(names.get(&0xFEED).map(String::as_str), Some("Airship Hangar"), "name propagates to referenced model");
+        assert_eq!(
+            names.get(&0x1234).map(String::as_str),
+            Some("Airship Hangar")
+        );
+        assert_eq!(
+            names.get(&0xFEED).map(String::as_str),
+            Some("Airship Hangar"),
+            "name propagates to referenced model"
+        );
     }
 }

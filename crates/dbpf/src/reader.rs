@@ -13,11 +13,17 @@ impl<'a> Reader<'a> {
 
     pub(super) fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let start = self.pos;
-        let end = start
-            .checked_add(n)
-            .ok_or(Error::Truncated { needed: usize::MAX, at: start, size: self.data.len() })?;
+        let end = start.checked_add(n).ok_or(Error::Truncated {
+            needed: usize::MAX,
+            at: start,
+            size: self.data.len(),
+        })?;
         if end > self.data.len() {
-            return Err(Error::Truncated { needed: n, at: start, size: self.data.len() });
+            return Err(Error::Truncated {
+                needed: n,
+                at: start,
+                size: self.data.len(),
+            });
         }
         self.pos = end;
         Ok(&self.data[start..end])
