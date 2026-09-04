@@ -14,7 +14,7 @@ export const appConfig = {
   defaultLocale: 'zh-CN' as const,
   defaultDarkMode: true,
   showTabBar: true,
-  themeColor: '#4f46e5',
+  themeColor: '#0878FE',
   permission: {
     tokens: [] as string[],
     tokenSeparator: '|'

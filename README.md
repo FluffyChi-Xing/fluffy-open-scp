@@ -57,11 +57,13 @@ cargo test            # Rust 测试（workspace）
 
 ## Roadmap
 
-- [ ] `dbpf`：DBPF 头 / 索引解析 + RefPack 解压，TGI 树视图
-- [ ] `rw4`：模型 / 贴图 / 骨骼 / 动画解析
-- [ ] `sc-exporter`：glTF / OBJ / 贴图 / 属性表导出
-- [ ] 资源查看器：十六进制 / 文本（Shiki）/ 贴图 / 模型 / 音视频预览
-- [ ] AI 助手集成（`@fluffy-design-pro/chat-assistant`，网关就绪后开启）
+当前路线分为两层：
+
+- **P0 底座**：DBPF/RefPack、RW4、属性表的可靠解析与写回，OBJ 导入、overlay package、精细错误和 roundtrip 测试
+- **P1 Modding Suite**：`openscp.mod.toml` 声明式项目、一键构建、LOD/依赖管理、自动校验、可行动诊断、预览与文件监听
+- **P2/P3**：高级材质/LOD/骨骼编辑，以及游戏联动、依赖生态和插件能力
+
+详细规划：[`docs/roadmap/modding-suite.md`](docs/roadmap/modding-suite.md)；底层迁移进度：[`docs/roadmap/migration.md`](docs/roadmap/migration.md)。
 
 ## 致谢 / Credits
 

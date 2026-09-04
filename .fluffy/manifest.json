@@ -9,7 +9,7 @@
     "packageManager": "pnpm",
     "provider": "none",
     "cloudflareTarget": "pages",
-    "themeColor": "#4f46e5",
+    "themeColor": "#0878FE",
     "language": "zh-CN",
     "darkMode": true,
     "fluffyOss": false,
