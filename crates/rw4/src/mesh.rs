@@ -122,6 +122,23 @@ impl DecodedVertex {
         self.find_usage(DeclarationUsage::BlendWeight)?.as_quad_f()
     }
 
+    /// shell-rig 刚体蒙皮标记：TEXCOORD **index 1** 的 UBYTE4 值
+    ///（HANDOFF §4：`(127,127,127,0)` = 静态外壳，其余为运动顶点分组键）。
+    pub fn shell_marker(&self) -> Option<[u8; 4]> {
+        self.components
+            .iter()
+            .find(|(e, _)| e.usage == DeclarationUsage::TexCoord && e.index == 1)
+            .and_then(|(_, v)| match v {
+                ComponentValue::UByte4(b) => Some(*b),
+                _ => None,
+            })
+    }
+
+    /// 是否为 shell-rig 静态外壳顶点（标记 `(127,127,127,0)`）。
+    pub fn is_rigid_shell_static(&self) -> bool {
+        self.shell_marker() == Some([127, 127, 127, 0])
+    }
+
     fn find_usage(&self, usage: DeclarationUsage) -> Option<&ComponentValue> {
         self.components
             .iter()
@@ -137,6 +154,15 @@ pub struct DecodedMesh {
     pub header: MeshHeader,
     pub triangles: Vec<[u16; 3]>,
     pub vertices: Vec<DecodedVertex>,
+}
+
+impl DecodedMesh {
+    /// NRE 防御对齐（C# `ExportRw4Bytes` 过滤 `vertices == null ||
+    /// triangles == null` 的 mesh）：有三角形且有顶点数据才可导出。
+    /// blend-shape mesh（`0x400000` 哨兵）在此返回 `false`。
+    pub fn is_exportable(&self) -> bool {
+        !self.triangles.is_empty() && !self.vertices.is_empty()
+    }
 }
 
 impl Rw4File {

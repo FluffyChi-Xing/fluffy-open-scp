@@ -951,3 +951,341 @@ fn raw_texture_is_bgra_to_rgba_and_dds_is_rejected() {
         Err(Error::UnsupportedTextureType(21))
     ));
 }
+
+// ---- M3 骨骼/动画/矩阵 fixture ----
+
+use crate::anim::COMPONENTS_LOC_ROT;
+use crate::anim::COMPONENTS_LOC_ROT_SCALE;
+use crate::math::{mat4_decompose_trs, mat4_inverse, mat4_mul};
+use crate::skeleton::{DecodedSkeleton, Hierarchy, Joint};
+
+fn hierarchy_payload(joints: &[(u32, u32, i32)], id: u32) -> Vec<u8> {
+    let mut p = Vec::new();
+    let p1 = 24u32;
+    let p2 = p1 + 4 * joints.len() as u32;
+    let p3 = p1 + 8 * joints.len() as u32;
+    p.extend(p2.to_le_bytes());
+    p.extend(p3.to_le_bytes());
+    p.extend(p1.to_le_bytes());
+    p.extend((joints.len() as u32).to_le_bytes());
+    p.extend(id.to_le_bytes());
+    p.extend((joints.len() as u32).to_le_bytes());
+    for (name, _, _) in joints {
+        p.extend(name.to_le_bytes());
+    }
+    for (_, flags, _) in joints {
+        p.extend(flags.to_le_bytes());
+    }
+    for (_, _, parent) in joints {
+        p.extend((*parent).to_le_bytes());
+    }
+    p
+}
+
+fn matrices_payload<const N: usize>(items: &[[f32; N]]) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend(16u32.to_le_bytes()); // p1
+    p.extend((items.len() as u32).to_le_bytes());
+    p.extend(0u32.to_le_bytes());
+    p.extend(0u32.to_le_bytes());
+    for item in items {
+        for v in item {
+            p.extend(v.to_le_bytes());
+        }
+    }
+    p
+}
+
+fn skeleton_payload(mat3_ref: u32, hierarchy_ref: u32, mat4_ref: u32) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend(0x400000u32.to_le_bytes());
+    p.extend(0x8d6da0u32.to_le_bytes()); // unk1（观察值）
+    p.extend((mat3_ref as i32).to_le_bytes());
+    p.extend((hierarchy_ref as i32).to_le_bytes());
+    p.extend((mat4_ref as i32).to_le_bytes());
+    p
+}
+
+#[test]
+fn skeleton_decodes_hierarchy_and_bind_matrices() {
+    let joints = [
+        (0x1111u32, 0u32, -1i32), // 根
+        (0x2222u32, 1u32, 0),
+        (0x3333u32, 3u32, 1),
+    ];
+    // 缩放平移矩阵（列主序），条数需 ≥ 关节数
+    let mat4: [[f32; 16]; 3] = [
+        [
+            2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 20.0, 30.0, 1.0,
+        ],
+        [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 3.0, 1.0,
+        ],
+        [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ],
+    ];
+    let mat3: [[f32; 12]; 3] = [[1.0; 12]; 3];
+    let specs = vec![
+        spec(SectionType::MATRICES_4X3, matrices_payload(&mat3)),
+        spec(
+            SectionType::HIERARCHY_INFO,
+            hierarchy_payload(&joints, 0xABCD),
+        ),
+        spec(0x70003, matrices_payload(&mat4)),
+        spec(SectionType::RW4_SKELETON, skeleton_payload(0, 1, 2)),
+    ];
+    let data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+
+    // 头部指针为绝对文件偏移：按真实 section pos 回补（C# `Matrices.Read`
+    // 的 `p1 == r.Position`、`HierarchyInfo` 的 p1/p2/p3 同为绝对值）
+    let base_m3 = file.section(0).unwrap().pos as u32;
+    let base_h = file.section(1).unwrap().pos as u32;
+    let base_m4 = file.section(2).unwrap().pos as u32;
+    let mut h = hierarchy_payload(&joints, 0xABCD);
+    let hp1 = base_h + 24;
+    h[0..4].copy_from_slice(&(hp1 + 4 * 3).to_le_bytes()); // p2
+    h[4..8].copy_from_slice(&(hp1 + 8 * 3).to_le_bytes()); // p3
+    h[8..12].copy_from_slice(&hp1.to_le_bytes()); // p1
+    let mut m3 = matrices_payload(&mat3);
+    m3[0..4].copy_from_slice(&(base_m3 + 16).to_le_bytes());
+    let mut m4 = matrices_payload(&mat4);
+    m4[0..4].copy_from_slice(&(base_m4 + 16).to_le_bytes());
+    // 用回补后的 payload 重建文件
+    let specs = vec![
+        spec(SectionType::MATRICES_4X3, m3),
+        spec(SectionType::HIERARCHY_INFO, h),
+        spec(0x70003, m4),
+        spec(SectionType::RW4_SKELETON, skeleton_payload(0, 1, 2)),
+    ];
+    let data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+
+    let skeleton = file.decode_skeleton(&data, 3).unwrap();
+    let DecodedSkeleton {
+        hierarchy,
+        bind_matrices,
+        matrices_4x3,
+        unknown,
+    } = skeleton;
+    assert_eq!(unknown, 0x8d6da0);
+    let Hierarchy { id, joints: parsed } = hierarchy;
+    assert_eq!(id, 0xABCD);
+    assert_eq!(parsed.len(), 3);
+    assert_eq!(
+        parsed[0],
+        Joint {
+            name_fnv: 0x1111,
+            flags: 0,
+            parent: -1
+        }
+    );
+    assert_eq!(parsed[2].parent, 1);
+    assert_eq!(bind_matrices.len(), 3);
+    assert_eq!(bind_matrices[0][12], 10.0);
+    assert_eq!(matrices_4x3.len(), 3);
+}
+
+fn anim_header(channels: usize, skeleton_id: u32, length: f32) -> (Vec<u8>, u32, u32, u32) {
+    let count = channels as u32;
+    let p_names = 48u32;
+    let p_info = p_names + count * 4;
+    let p_data = p_info + count * 12;
+    let mut p = Vec::new();
+    p.extend(p_names.to_le_bytes());
+    p.extend(count.to_le_bytes());
+    p.extend(skeleton_id.to_le_bytes());
+    p.extend(0u32.to_le_bytes());
+    p.extend(p_data.to_le_bytes());
+    p.extend(0u32.to_le_bytes()); // pPaddingEnd 占位
+    p.extend(count.to_le_bytes());
+    p.extend(0u32.to_le_bytes());
+    p.extend(length.to_le_bytes());
+    p.extend(0u32.to_le_bytes());
+    p.extend(0u32.to_le_bytes());
+    p.extend(p_info.to_le_bytes());
+    (p, p_names, p_info, p_data)
+}
+
+#[test]
+fn anim_decodes_locrot_channels() {
+    let key_bytes = |qx: f32, tx: f32, time: f32| {
+        let mut k = Vec::new();
+        for v in [qx, 0.0, 0.0, 1.0] {
+            k.extend(v.to_le_bytes());
+        }
+        for v in [tx, 0.0, 0.0] {
+            k.extend(v.to_le_bytes());
+        }
+        k.extend(time.to_le_bytes());
+        k.extend(0u32.to_le_bytes()); // stride 对齐填充（36B key）
+        k
+    };
+    let (mut p, _p_names, p_info, p_data) = anim_header(2, 0xFEED, 1.5);
+    let ch1_data = p_data + 36;
+    // pPaddingEnd
+    p[20..24].copy_from_slice(&(ch1_data + 36).to_le_bytes());
+    p.extend(0xAAAAu32.to_le_bytes());
+    p.extend(0xBBBBu32.to_le_bytes());
+
+    for (pos, id) in [(p_data, 0xAAAAu32), (ch1_data, 0xBBBBu32)] {
+        p.extend(pos.to_le_bytes());
+        p.extend(36u32.to_le_bytes());
+        p.extend(COMPONENTS_LOC_ROT.to_le_bytes());
+        let _ = id;
+    }
+    p.extend(key_bytes(0.0, 5.0, 0.0));
+    p.extend(key_bytes(1.0, 9.0, 0.5));
+
+    let specs = vec![spec(SectionType::ANIM, p.clone())];
+    let mut data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+    // pNames/pInfo 为绝对文件偏移：按真实 section pos 回补
+    let base = file.section(0).unwrap().pos as u32;
+    p[0..4].copy_from_slice(&(base + _p_names).to_le_bytes());
+    p[44..48].copy_from_slice(&(base + p_info).to_le_bytes());
+    data[base as usize..base as usize + p.len()].copy_from_slice(&p);
+    let file = Rw4File::parse(&data).unwrap();
+
+    let anim = file.decode_anim(&data, 0).unwrap();
+    assert_eq!(anim.skeleton_id, 0xFEED);
+    assert_eq!(anim.length, 1.5);
+    assert_eq!(anim.channels.len(), 2);
+    assert_eq!(anim.channels[0].keys.len(), 1);
+    let key = anim.channels[0].keys[0];
+    assert_eq!(key.tx, 5.0);
+    assert_eq!(key.qw, 1.0);
+    assert_eq!(key.sx, 1.0, "LocRot 无缩放 → 默认 1");
+    assert_eq!(anim.channels[1].keys[0].time, 0.5);
+}
+
+#[test]
+fn anim_locrotscale_reads_scale_and_pad() {
+    let (mut p, _, p_info, p_data) = anim_header(1, 1, 2.0);
+    p[20..24].copy_from_slice(&(p_data + 48).to_le_bytes());
+    p.extend(0xCCCCu32.to_le_bytes()); // 关节名
+    p.extend(p_data.to_le_bytes());
+    p.extend(48u32.to_le_bytes());
+    p.extend(COMPONENTS_LOC_ROT_SCALE.to_le_bytes());
+
+    let s = std::f32::consts::FRAC_1_SQRT_2;
+    for v in [0.0f32, 0.0, s, s] {
+        p.extend(v.to_le_bytes());
+    }
+    for v in [1.0f32, 2.0, 3.0] {
+        p.extend(v.to_le_bytes());
+    }
+    for v in [2.0f32, 2.0, 2.0] {
+        p.extend(v.to_le_bytes());
+    }
+    p.extend(0u32.to_le_bytes());
+    p.extend(0.25f32.to_le_bytes());
+
+    let specs = vec![spec(SectionType::ANIM, p.clone())];
+    let mut data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+    let base = file.section(0).unwrap().pos as u32;
+    let p_names = 48u32;
+    p[0..4].copy_from_slice(&(base + p_names).to_le_bytes());
+    p[44..48].copy_from_slice(&(base + p_info).to_le_bytes());
+    data[base as usize..base as usize + p.len()].copy_from_slice(&p);
+    let file = Rw4File::parse(&data).unwrap();
+    let anim = file.decode_anim(&data, 0).unwrap();
+    assert_eq!(anim.channels[0].keys.len(), 1);
+    let key = anim.channels[0].keys[0];
+    let s = std::f32::consts::FRAC_1_SQRT_2;
+    assert_eq!((key.qz, key.qw), (s, s));
+    assert_eq!(key.sz, 2.0);
+    assert_eq!(key.time, 0.25);
+}
+
+#[test]
+fn math_matches_csharp_reference_paths() {
+    let t: crate::math::Mat4 = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 4.0, 5.0, 1.0,
+    ];
+    // X 轴 90° 旋转
+    let r: crate::math::Mat4 = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    let tr = mat4_mul(&t, &r);
+    let inv = mat4_inverse(&tr);
+    let identity = mat4_mul(&tr, &inv);
+    for (i, v) in identity.iter().enumerate() {
+        let expected = if i % 5 == 0 { 1.0 } else { 0.0 };
+        assert!((v - expected).abs() < 1e-5, "inv*mul[{i}]={v}");
+    }
+    let (translation, quat, scale) = mat4_decompose_trs(&tr);
+    assert_eq!(translation, [3.0, 4.0, 5.0]);
+    assert!(
+        (quat[0] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5,
+        "X-90° 四元数 {quat:?}"
+    );
+    assert!((quat[3] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5);
+    assert!(scale.iter().all(|s| (*s - 1.0).abs() < 1e-6));
+}
+
+#[test]
+fn shell_rig_marker_is_decoded_from_texcoord1() {
+    // 声明：... BLENDWEIGHT@28 UBYTE4 | TEXCOORD1@32 UBYTE4，stride 36
+    let mut fmt = vertex_format_payload();
+    fmt[12..14].copy_from_slice(&6u16.to_le_bytes()); // 6 组件
+    fmt[14..16].copy_from_slice(&36u16.to_be_bytes()); // stride 36
+    // 元素4（BLENDWEIGHT）FLOAT4→UBYTE4：元素4 类型字段 @ 24+4*12+3
+    fmt[24 + 48 + 3..24 + 48 + 5].copy_from_slice(&5u16.to_be_bytes());
+    // 新增元素5：TEXCOORD index1 UBYTE4 @32
+    let mut e = Vec::new();
+    e.extend(0u8.to_le_bytes());
+    e.extend(32u16.to_be_bytes());
+    e.extend(5u16.to_be_bytes()); // UBYTE4
+    e.extend(5u16.to_be_bytes()); // TEXCOORD
+    e.extend(1u8.to_le_bytes()); // index 1
+    e.extend(0u8.to_le_bytes());
+    e.extend(0u16.to_be_bytes());
+    e.extend(0u8.to_le_bytes());
+    fmt.extend(e);
+
+    let vertex = |marker: [u8; 4]| {
+        let mut v = Vec::new();
+        for f in [1.0f32, 0.0, 0.0] {
+            v.extend(f.to_le_bytes());
+        }
+        v.extend([255u8, 128, 0, 1]); // normal
+        for f in [0.25f32, 0.75] {
+            v.extend(f.to_le_bytes());
+        } // uv
+        v.extend([0u8, 3, 9, 255]); // blend indices
+        v.extend([200u8, 0, 0, 0]); // blendweight(UBYTE4)
+        v.extend(marker);
+        assert_eq!(v.len(), 36);
+        v
+    };
+
+    let build_mesh = |marker: [u8; 4]| {
+        let specs = vec![
+            spec(SectionType::VERTEX_FORMAT, fmt.clone()),
+            spec(SectionType::VERTEX_ARRAY, vertex_array_payload(0, 2, 1, 36)),
+            spec(SectionType::BLOB, vertex(marker)),
+            Spec {
+                fixups: vec![(3, 0)],
+                ..spec(SectionType::BLOB, triangle_data_payload(&[[0, 0, 0]]))
+            },
+            spec(SectionType::TRIANGLE_ARRAY, triangle_array_payload(3, 3)),
+            spec(SectionType::MESH, mesh_payload(4, 1, 1, 1)),
+        ];
+        let data = build(1, &specs, &[]);
+        let file = Rw4File::parse(&data).unwrap();
+        file.decode_mesh(&data, 5).unwrap()
+    };
+
+    let moving = build_mesh([64, 0, 191, 255]);
+    assert_eq!(moving.vertices[0].shell_marker(), Some([64, 0, 191, 255]));
+    assert!(!moving.vertices[0].is_rigid_shell_static());
+
+    let shell = build_mesh([127, 127, 127, 0]);
+    assert!(
+        shell.vertices[0].is_rigid_shell_static(),
+        "(127,127,127,0) = 静态外壳"
+    );
+}

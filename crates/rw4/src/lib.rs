@@ -27,27 +27,36 @@
 //! let bytes = file.payload(&data, mesh.number).unwrap();
 //! ```
 
+pub mod anim;
 mod error;
 mod header;
 pub mod material;
+pub mod math;
 pub mod mesh;
 mod model;
 mod reader;
 mod section;
+mod skeleton;
 pub mod texture;
 mod vertex;
 
 #[cfg(test)]
 mod tests;
 
+pub use anim::{
+    COMPONENTS_BLEND_FACTOR, COMPONENTS_LOC_ROT, COMPONENTS_LOC_ROT_SCALE, Channel, DecodedAnim,
+    Key,
+};
 pub use error::{Error, Result};
 pub use material::{DecodedMaterial, MaterialSection, SHADER_DEF_MARKER, TextureSlotRef};
+pub use math::{Mat4, mat4_decompose_trs, mat4_inverse, mat4_mul};
 pub use mesh::{
     DecodedMesh, DecodedVertex, MeshHeader, NO_VERTEX_SECTION, TriangleArrayHeader,
     VertexArrayHeader,
 };
 pub use model::{FileType, Rw4File};
 pub use section::{Section, SectionType};
+pub use skeleton::{DecodedSkeleton, Hierarchy, Joint};
 pub use texture::{
     DecodedTexture, TEXTURE_TYPE_DXT1, TEXTURE_TYPE_DXT5, TEXTURE_TYPE_PALETTE_F32,
     TEXTURE_TYPE_RAW_BGRA, TextureFormat, decode_dxt1, decode_dxt5,

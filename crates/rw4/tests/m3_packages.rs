@@ -76,6 +76,9 @@ fn m3_packages_decode_all_meshes() {
                         match file.decode_mesh(&data, section.number) {
                             Ok(mesh) => {
                                 stats.meshes += 1;
+                                if mesh.is_exportable() {
+                                    stats.exportable_meshes += 1;
+                                }
                                 stats.triangles += mesh.triangles.len();
                                 stats.vertices += mesh.vertices.len();
                                 for v in &mesh.vertices {
@@ -108,6 +111,31 @@ fn m3_packages_decode_all_meshes() {
                                 } else {
                                     stats.mesh_failures.push((tgi.clone(), reason));
                                 }
+                            }
+                        }
+                    }
+                    // 骨骼/动画解码
+                    for section in file.sections_of_type(rw4::SectionType::RW4_SKELETON) {
+                        match file.decode_skeleton(&data, section.number) {
+                            Ok(skeleton) => {
+                                stats.skeletons += 1;
+                                stats.joints += skeleton.hierarchy.joints.len();
+                            }
+                            Err(e) => {
+                                stats.skeleton_failures.push((tgi.clone(), format!("{e}")));
+                            }
+                        }
+                    }
+                    for section in file.sections_of_type(rw4::SectionType::ANIM) {
+                        match file.decode_anim(&data, section.number) {
+                            Ok(anim) => {
+                                stats.anims += 1;
+                                stats.anim_channels += anim.channels.len();
+                                stats.anim_keys +=
+                                    anim.channels.iter().map(|c| c.keys.len()).sum::<usize>();
+                            }
+                            Err(e) => {
+                                stats.anim_failures.push((tgi.clone(), format!("{e}")));
                             }
                         }
                     }
@@ -206,6 +234,17 @@ fn m3_packages_decode_all_meshes() {
             "[{label}] texture failures: {:?}",
             &stats.texture_failures[..stats.texture_failures.len().min(10)]
         );
+        // 骨骼/动画失败零容忍（C# 有 try/catch，此处比 oracle 更严格）
+        assert!(
+            stats.skeleton_failures.is_empty(),
+            "[{label}] skeleton failures: {:?}",
+            &stats.skeleton_failures[..stats.skeleton_failures.len().min(10)]
+        );
+        assert!(
+            stats.anim_failures.is_empty(),
+            "[{label}] anim failures: {:?}",
+            &stats.anim_failures[..stats.anim_failures.len().min(10)]
+        );
         // 几何不变量
         assert_eq!(
             stats.non_finite_positions, 0,
@@ -255,6 +294,15 @@ struct SweepStats {
     texture_unsupported: std::collections::HashSet<u32>,
     material_failures: Vec<(String, String)>,
     texture_failures: Vec<(String, String)>,
+    // 骨骼/动画
+    skeletons: usize,
+    joints: usize,
+    anims: usize,
+    anim_channels: usize,
+    anim_keys: usize,
+    exportable_meshes: usize,
+    skeleton_failures: Vec<(String, String)>,
+    anim_failures: Vec<(String, String)>,
 }
 
 impl SweepStats {
@@ -273,6 +321,16 @@ impl SweepStats {
         eprintln!(
             "[{label}] materials: {} decoded / {} raw; slots {:#?}",
             self.materials_decoded, self.materials_raw, self.slot_histogram
+        );
+        eprintln!(
+            "[{label}] skeletons: {} ({} joints); anims: {} ({} channels / {} keys); exportable meshes {}/{}",
+            self.skeletons,
+            self.joints,
+            self.anims,
+            self.anim_channels,
+            self.anim_keys,
+            self.exportable_meshes,
+            self.meshes
         );
         eprintln!(
             "[{label}] textures: {} decoded ({} px, {:.1} Mpx/s), types {:#?}, unsupported {:?}",
