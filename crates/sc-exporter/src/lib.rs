@@ -14,6 +14,10 @@
 //! - `export-video`  → VP6 → mp4（经外部 ffmpeg，Tauri 层调度）
 
 mod error;
+pub mod gltf;
+pub mod obj;
 pub mod prop_json;
 
 pub use error::{Error, Result};
+pub use gltf::{AnimClip, AnimTrack, GlbOutput, SkinData, export_glb, extract_skin};
+pub use obj::export_obj;

@@ -2683,6 +2683,7 @@ name = "sc-exporter"
 version = "0.1.0"
 dependencies = [
  "dbpf",
+ "rw4",
  "sc-properties",
  "sc-registry",
  "serde",
