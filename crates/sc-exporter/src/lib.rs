@@ -13,11 +13,20 @@
 //! - `export-audio`  → Wwise Vorbis → wav（经外部 vgmstream，Tauri 层调度）
 //! - `export-video`  → VP6 → mp4（经外部 ffmpeg，Tauri 层调度）
 
+pub mod batch;
 mod error;
 pub mod gltf;
 pub mod obj;
 pub mod prop_json;
+pub mod texture;
+mod texture_index;
 
+pub use batch::{BatchExport, ExportFailure, ExportProgress, export_batch, export_textures};
 pub use error::{Error, Result};
-pub use gltf::{AnimClip, AnimTrack, GlbOutput, SkinData, export_glb, extract_skin};
+pub use gltf::{
+    AnimClip, AnimTrack, EmbeddedTextures, GlbOutput, SkinData, export_glb,
+    export_glb_with_textures, extract_skin,
+};
 pub use obj::export_obj;
+pub use texture::{TextureOutputFormat, export_texture};
+pub use texture_index::{ResolvedTexture, TextureConflict, TextureIndex};

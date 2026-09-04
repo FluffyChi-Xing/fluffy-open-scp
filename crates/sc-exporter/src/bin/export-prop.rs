@@ -18,6 +18,7 @@ struct Args {
     input: PathBuf,
     output_dir: PathBuf,
     registry: Option<PathBuf>,
+    format: String,
 }
 
 fn parse_args() -> Option<Args> {
@@ -25,9 +26,12 @@ fn parse_args() -> Option<Args> {
     let input = PathBuf::from(it.next()?);
     let output_dir = PathBuf::from(it.next()?);
     let mut registry = None;
+    let mut format = "json".to_string();
     while let Some(arg) = it.next() {
         if arg == "--registry" {
             registry = it.next().map(PathBuf::from);
+        } else if arg == "--format" {
+            format = it.next()?;
         } else {
             eprintln!("unknown argument: {arg}");
             return None;
@@ -37,6 +41,7 @@ fn parse_args() -> Option<Args> {
         input,
         output_dir,
         registry,
+        format,
     })
 }
 
@@ -47,7 +52,7 @@ fn fail(message: String) {
 fn run() -> Result<(), ()> {
     let Some(args) = parse_args() else {
         fail(
-            "Usage: export-prop <input.package> <outputDir> [--registry <database_main.s3db>]"
+            "Usage: export-prop <input.package> <outputDir> [--registry <database_main.s3db>] [--format json|text]"
                 .into(),
         );
         return Err(());
@@ -93,19 +98,32 @@ fn run() -> Result<(), ()> {
         .cloned()
         .collect();
 
+    let extension =
+        if args.format.eq_ignore_ascii_case("text") || args.format.eq_ignore_ascii_case("txt") {
+            "txt"
+        } else {
+            "json"
+        };
     for entry in &entries {
         let name = prop_json::fallback_name(entry.id);
         let outcome = prop_json::dump_resource(&package, entry, registry.as_ref())
             .map_err(|e| format!("dump: {e}"))
-            .and_then(|dump| prop_json::to_json(&dump).map_err(|e| format!("serialize: {e}")))
-            .and_then(|json| {
-                let path = args.output_dir.join(format!("{name}.json"));
-                std::fs::write(&path, json).map_err(|e| format!("write {}: {e}", path.display()))
+            .and_then(|dump| {
+                let body = if extension == "txt" {
+                    Ok(prop_json::to_text(&dump))
+                } else {
+                    prop_json::to_json(&dump)
+                };
+                body.map_err(|e| format!("serialize: {e}"))
+            })
+            .and_then(|body| {
+                let path = args.output_dir.join(format!("{name}.{extension}"));
+                std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))
             });
         match outcome {
             Ok(()) => {
                 ok += 1;
-                eprintln!("OK   {name}.json");
+                eprintln!("OK   {name}.{extension}");
             }
             Err(reason) => {
                 fails += 1;

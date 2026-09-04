@@ -4,7 +4,10 @@
 //! （17 关节 × T+R = 34 通道，时间 0..1.83s，四元数已归一）。
 
 use rw4::{DecodedAnim, DecodedMesh, DecodedSkeleton, DecodedVertex, FileType, Rw4File};
-use sc_exporter::{export_glb, export_obj};
+use sc_exporter::{
+    EmbeddedTextures, TextureOutputFormat, export_glb, export_glb_with_textures, export_obj,
+    export_texture,
+};
 const DLC0: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../docs/packages/m3/SimCity_DLC0.package"
@@ -73,6 +76,41 @@ fn obj_matches_csharp_layout() {
     assert!(!obj.contains("f  6 6 3"));
     assert!(obj.contains("# 1 faces\r\n"));
     assert!(obj.contains("# 3 vertices\r\n"));
+}
+
+#[test]
+fn glb_embeds_png_material_images() {
+    let mesh = synth_mesh();
+    let texture = rw4::DecodedTexture {
+        texture_type: rw4::TEXTURE_TYPE_RAW_BGRA,
+        unknown1: 0,
+        width: 1,
+        height: 1,
+        mipmap_info: 1 << 8,
+        data_section: 0,
+        blob: vec![10, 20, 30, 255],
+    };
+    let png = export_texture(&texture, TextureOutputFormat::Png).unwrap();
+    assert!(image::load_from_memory_with_format(&png, image::ImageFormat::Png).is_ok());
+    let glb = export_glb_with_textures(
+        &mesh,
+        None,
+        &[],
+        EmbeddedTextures {
+            base_color_png: Some(png.as_slice()),
+            normal_png: Some(png.as_slice()),
+        },
+    );
+    let json_len = u32::from_le_bytes(glb.bytes[12..16].try_into().unwrap()) as usize;
+    let json: serde_json::Value = serde_json::from_slice(&glb.bytes[20..20 + json_len]).unwrap();
+    assert_eq!(json["images"].as_array().unwrap().len(), 2);
+    assert_eq!(json["images"][0]["mimeType"], "image/png");
+    assert_eq!(
+        json["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"]["index"],
+        0
+    );
+    assert_eq!(json["materials"][0]["normalTexture"]["index"], 1);
+    assert!(glb.bytes.windows(png.len()).any(|window| window == png));
 }
 
 #[test]

@@ -14,6 +14,8 @@ pub enum Error {
     Properties(#[from] sc_properties::Error),
     #[error("registry error: {0}")]
     Registry(#[from] sc_registry::Error),
+    #[error("rw4 error: {0}")]
+    Rw4(#[from] rw4::Error),
     #[error("resource {0} not found in package")]
     ResourceNotFound(ResourceId),
 }

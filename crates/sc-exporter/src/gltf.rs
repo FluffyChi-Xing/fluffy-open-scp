@@ -17,7 +17,7 @@
 //!
 //! JSON 用 serde_json 生成（非移植 C# 手写 chunk），GLB 容器字节布局与
 //! C# `WriteGlb` 一致（JSON 块 0x20 填充、BIN 块 0x00 填充）。
-//! 嵌入式 PNG 材质待图像编码就绪后接入（C# 材质为可选段）。
+//! 可选 baseColor/normal PNG 作为 bufferView 嵌入 GLB，并写入 glTF 材质引用。
 
 use rw4::{DecodedAnim, DecodedMesh, DecodedSkeleton, mat4_decompose_trs, mat4_inverse, mat4_mul};
 
@@ -352,14 +352,28 @@ pub struct GlbOutput {
     pub bytes: Vec<u8>,
 }
 
-/// 导出一个网格为 GLB 字节。
-///
-/// `skeleton`/`anims` 来自同一 RW4 文件；提供骨骼时输出 skin/关节节点，
-/// 提供动画时逐剪辑输出 glTF animation。
+/// Export a mesh as GLB using the legacy no-texture behavior.
 pub fn export_glb(
     mesh: &DecodedMesh,
     skeleton: Option<&DecodedSkeleton>,
     anims: &[DecodedAnim],
+) -> GlbOutput {
+    export_glb_with_textures(mesh, skeleton, anims, EmbeddedTextures::default())
+}
+
+/// Optional PNG images embedded in the GLB BIN chunk.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EmbeddedTextures<'a> {
+    pub base_color_png: Option<&'a [u8]>,
+    pub normal_png: Option<&'a [u8]>,
+}
+
+/// Export a mesh as GLB, optionally embedding PNG base-color and normal maps.
+pub fn export_glb_with_textures(
+    mesh: &DecodedMesh,
+    skeleton: Option<&DecodedSkeleton>,
+    anims: &[DecodedAnim],
+    textures: EmbeddedTextures<'_>,
 ) -> GlbOutput {
     let v_count = mesh.vertices.len();
 
@@ -492,8 +506,24 @@ pub fn export_glb(
         }
     }
 
+    let base_color_offset = textures.base_color_png.map(|png| {
+        pad4(&mut bin);
+        let offset = bin.len();
+        bin.extend_from_slice(png);
+        offset
+    });
+    let normal_offset = textures.normal_png.map(|png| {
+        pad4(&mut bin);
+        let offset = bin.len();
+        bin.extend_from_slice(png);
+        offset
+    });
     let bin_len = bin.len();
     let json = build_json(
+        base_color_offset,
+        textures.base_color_png.map_or(0, |png| png.len()),
+        normal_offset,
+        textures.normal_png.map_or(0, |png| png.len()),
         v_count,
         idx_count,
         pos_offset,
@@ -532,6 +562,10 @@ fn put_f32s(bin: &mut Vec<u8>, values: &[f32]) {
 /// 组装 glTF JSON（serde_json 生成，结构与 C# `BuildJson` 一致）。
 #[allow(clippy::too_many_arguments)]
 fn build_json(
+    base_color_offset: Option<usize>,
+    base_color_len: usize,
+    normal_offset: Option<usize>,
+    normal_len: usize,
     v_count: usize,
     idx_count: usize,
     pos_offset: usize,
@@ -680,6 +714,16 @@ fn build_json(
         animations = Some(anim_list);
     }
 
+    let texture_bv_start = buffer_views.len();
+    if base_color_offset.is_some() || normal_offset.is_some() {
+        if let Some(offset) = base_color_offset {
+            buffer_views
+                .push(json!({"buffer": 0, "byteOffset": offset, "byteLength": base_color_len}));
+        }
+        if let Some(offset) = normal_offset {
+            buffer_views.push(json!({"buffer": 0, "byteOffset": offset, "byteLength": normal_len}));
+        }
+    }
     let mut gltf = json!({
         "asset": {"version": "2.0", "generator": "OpenSCP glTF exporter"},
         "scene": 0,
@@ -693,6 +737,27 @@ fn build_json(
         "bufferViews": buffer_views,
         "accessors": accessors,
     });
+    if base_color_offset.is_some() || normal_offset.is_some() {
+        let mut images = Vec::new();
+        let mut textures = Vec::new();
+        let mut material = serde_json::json!({"pbrMetallicRoughness": {}});
+        if base_color_offset.is_some() {
+            images.push(json!({"bufferView": texture_bv_start, "mimeType": "image/png"}));
+            textures.push(json!({"source": images.len() - 1}));
+            material["pbrMetallicRoughness"]["baseColorTexture"] =
+                json!({"index": textures.len() - 1});
+        }
+        if normal_offset.is_some() {
+            let view = texture_bv_start + if base_color_offset.is_some() { 1 } else { 0 };
+            images.push(json!({"bufferView": view, "mimeType": "image/png"}));
+            textures.push(json!({"source": images.len() - 1}));
+            material["normalTexture"] = json!({"index": textures.len() - 1});
+        }
+        gltf["images"] = json!(images);
+        gltf["textures"] = json!(textures);
+        gltf["materials"] = json!([material]);
+        gltf["meshes"][0]["primitives"][0]["material"] = json!(0);
+    }
     if let Some(nodes) = gltf_skin {
         gltf["skins"] = nodes;
     }

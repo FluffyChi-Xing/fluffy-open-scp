@@ -259,6 +259,19 @@ pub fn to_json(dump: &DumpFile) -> crate::Result<String> {
     Ok(serde_json::to_string_pretty(dump)?)
 }
 
+/// Serialize a property dump in the human-readable format used by the legacy CLI.
+pub fn to_text(dump: &DumpFile) -> String {
+    let mut out = format!("{}\nPropertyCount: {}\n", dump.name, dump.property_count);
+    for property in &dump.properties {
+        let name = property.name.as_deref().unwrap_or("");
+        out.push_str(&format!(
+            "{} {} {} = {}\n",
+            property.hash, property.type_name, name, property.value
+        ));
+    }
+    out
+}
+
 /// Read + parse + dump one `0x00B1B104` package resource.
 pub fn dump_resource(
     package: &Package,
@@ -269,4 +282,35 @@ pub fn dump_resource(
     let data = package.read(entry)?;
     let pf = PropertyFile::parse(&data)?;
     Ok(dump_property_file(&pf, &fallback_name(entry.id), registry))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_dump_has_stable_contract() {
+        let dump = DumpFile {
+            name: "asset".into(),
+            property_count: 2,
+            properties: vec![
+                DumpProperty {
+                    name: Some("Answer".into()),
+                    hash: "0x0000000a".into(),
+                    type_name: "UInt32",
+                    value: "0x0000002a".into(),
+                },
+                DumpProperty {
+                    name: None,
+                    hash: "0x0000000b".into(),
+                    type_name: "Bool",
+                    value: "False".into(),
+                },
+            ],
+        };
+        assert_eq!(
+            to_text(&dump),
+            "asset\nPropertyCount: 2\n0x0000000a UInt32 Answer = 0x0000002a\n0x0000000b Bool  = False\n"
+        );
+    }
 }

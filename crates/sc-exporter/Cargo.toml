@@ -13,3 +13,5 @@ dbpf = { path = "../dbpf" }
 sc-properties = { path = "../sc-properties" }
 sc-registry = { path = "../sc-registry" }
 rw4 = { path = "../rw4" }
+image.workspace = true
+rayon.workspace = true
