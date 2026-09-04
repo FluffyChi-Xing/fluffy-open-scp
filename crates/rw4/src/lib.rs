@@ -29,20 +29,27 @@
 
 mod error;
 mod header;
+pub mod material;
 pub mod mesh;
 mod model;
 mod reader;
 mod section;
+pub mod texture;
 mod vertex;
 
 #[cfg(test)]
 mod tests;
 
 pub use error::{Error, Result};
+pub use material::{DecodedMaterial, MaterialSection, SHADER_DEF_MARKER, TextureSlotRef};
 pub use mesh::{
     DecodedMesh, DecodedVertex, MeshHeader, NO_VERTEX_SECTION, TriangleArrayHeader,
     VertexArrayHeader,
 };
 pub use model::{FileType, Rw4File};
 pub use section::{Section, SectionType};
+pub use texture::{
+    DecodedTexture, TEXTURE_TYPE_DXT1, TEXTURE_TYPE_DXT5, TEXTURE_TYPE_PALETTE_F32,
+    TEXTURE_TYPE_RAW_BGRA, TextureFormat, decode_dxt1, decode_dxt5,
+};
 pub use vertex::{ComponentValue, DeclarationType, DeclarationUsage, VertexElement, VertexFormat};

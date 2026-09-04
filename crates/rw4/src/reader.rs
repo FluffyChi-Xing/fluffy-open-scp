@@ -28,7 +28,7 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    fn take(&mut self, n: usize, check: &'static str) -> Result<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize, check: &'static str) -> Result<&'a [u8]> {
         let start = self.pos;
         let end = start.checked_add(n).ok_or(Error::Overflow { check })?;
         let slice = self.data.get(start..end).ok_or(Error::Truncated {

@@ -727,3 +727,227 @@ fn declaration_metadata_is_complete() {
     assert_eq!(DeclarationUsage::from_u16(14), None);
     let _ = ComponentValue::Float1(0.0);
 }
+
+// ---- M3 材质与贴图 fixture ----
+
+use crate::material::{MaterialSection, SHADER_DEF_MARKER};
+use crate::texture::{TEXTURE_TYPE_DXT1, decode_dxt1, decode_dxt5};
+
+/// 材质 payload：Size + 28B 头 + 顶点格式副本 + 附加数据 + 0x2D 标记 + 6 引用 + 尾数据。
+fn material_payload(slot_instances: [(u32, u32); 6]) -> Vec<u8> {
+    let mut p = Vec::new();
+    let vf_copy = vertex_format_payload(); // 84B（5 组件 → 24+60）
+    let total = 4 + 28 + vf_copy.len() + 8 + 4 + 6 * 24 + 12;
+    p.extend((total as u32).to_le_bytes());
+    p.extend([0x11u8; 28]); // header
+    p.extend_from_slice(&vf_copy); // 顶点格式副本
+    p.extend([0xAAu8; 8]); // additional data（标记前）
+    p.extend(SHADER_DEF_MARKER.to_le_bytes()); // 0x2D 标记
+    for (slot, instance) in slot_instances {
+        p.extend(slot.to_le_bytes());
+        p.extend(0u32.to_le_bytes());
+        p.extend(instance.to_le_bytes());
+        p.extend(0u32.to_le_bytes());
+        p.extend(0u32.to_le_bytes());
+        p.extend(0u32.to_le_bytes());
+    }
+    p.extend([0x77u8; 12]); // 尾部数据
+    p
+}
+
+#[test]
+fn material_slots_and_shader_def_are_resolved() {
+    let payload = material_payload([
+        (0, 0xAAAA_0001), // 调色板
+        (1, 0xAAAA_0002), // 区域遮罩
+        (2, 0xAAAA_0003), // 法线
+        (3, 0xAAAA_0004), // 副遮罩
+        (4, 0xAAAA_0005),
+        (SHADER_DEF_MARKER, 0xDDDD_0001),
+    ]);
+    let specs = vec![
+        spec(SectionType::VERTEX_FORMAT, vertex_format_payload()),
+        spec(SectionType::MATERIAL, payload),
+        spec(
+            SectionType::MESH,
+            mesh_payload(0, 0, 0, crate::mesh::NO_VERTEX_SECTION),
+        ),
+    ];
+    let data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+
+    let material = file.decode_material(&data, 1).unwrap();
+    let MaterialSection::Decoded(ref m) = material else {
+        panic!("material should decode");
+    };
+    assert_eq!(m.header, [0x11; 28]);
+    assert_eq!(
+        m.vertex_format_data.len(),
+        24 + 12 * 5,
+        "顶点格式副本跟随模型声明"
+    );
+    assert_eq!(m.additional_data, vec![0xAA; 8]);
+    assert_eq!(m.data, vec![0x77; 12]);
+    assert_eq!(m.slot_texture(0), Some(0xAAAA_0001));
+    assert_eq!(m.slot_texture(1), Some(0xAAAA_0002));
+    assert_eq!(m.slot_texture(2), Some(0xAAAA_0003));
+    assert_eq!(m.slot_texture(3), Some(0xAAAA_0004));
+    assert_eq!(m.texture_slots().count(), 5, "shader-def 槽被跳过");
+    assert_eq!(material.texture_refs().len(), 6);
+}
+
+#[test]
+fn material_without_marker_falls_back_to_raw() {
+    // 全部槽位都不含 0x2D，并把标记位抹掉 → 扫描必然失败
+    let mut payload = material_payload([(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]);
+    let marker_at = 4 + 28 + 84 + 8; // size + header + 顶点格式副本 + 附加数据
+    payload[marker_at..marker_at + 4].copy_from_slice(&[0xEE, 0xEE, 0xEE, 0xEE]);
+    let specs = vec![spec(SectionType::MATERIAL, payload)];
+    let data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+
+    let material = file.decode_material(&data, 0).unwrap();
+    assert!(
+        matches!(material, MaterialSection::Raw(_)),
+        "无 0x2D 标记应回退 Raw（C# _rawSection 行为）"
+    );
+    assert!(material.texture_refs().is_empty());
+}
+
+/// 4×4 DXT1 块：c0=红(0xF800)、c1=蓝(0x001F)，4 色模式，逐像素索引 0..3。
+fn dxt1_block() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(0xF800u16.to_le_bytes());
+    b.extend(0x001Fu16.to_le_bytes());
+    b.extend(0b11100100u32.to_le_bytes()); // idx0=0,1=1,2=2,3=3
+    b
+}
+
+#[test]
+fn dxt1_decode_matches_reference_colors() {
+    let rgba = decode_dxt1(&dxt1_block(), 4, 4);
+    assert_eq!(rgba.len(), 64);
+    let px = |i: usize| &rgba[i * 4..i * 4 + 4];
+    assert_eq!(px(0), &[255, 0, 0, 255], "纯红");
+    assert_eq!(px(1), &[0, 0, 255, 255], "纯蓝");
+    // 2/3 插值：红*2/3 + 蓝*1/3
+    let expected = [170u8, 0, 85, 255];
+    let got = px(2);
+    assert!(
+        got.iter()
+            .zip(expected)
+            .all(|(a, b)| i16::from(*a) - i16::from(b).abs() <= 1),
+        "2/3 插值 {got:?}"
+    );
+    assert_eq!(px(3), &[85, 0, 170, 255], "1/3 插值");
+}
+
+#[test]
+fn dxt5_alpha_gradient_matches_reference() {
+    // DXT5 块：a0=255, a1=0（8 值模式），alpha 索引 2..7 渐变；颜色全红
+    let mut b = Vec::new();
+    b.extend(255u8.to_le_bytes());
+    b.extend(0u8.to_le_bytes());
+    // 索引 0..16 依次 0..7（3bit，4bit 边界跨字节）
+    let mut bits: u64 = 0;
+    for i in 0..16u64 {
+        bits |= (i % 8) << (i * 3);
+    }
+    b.extend(bits.to_le_bytes()[..6].to_vec());
+    b.extend(0xF800u16.to_le_bytes());
+    b.extend(0x0000u16.to_le_bytes());
+    b.extend(0u32.to_le_bytes()); // 全部索引 0 → 纯红
+
+    let rgba = decode_dxt5(&b, 4, 4);
+    let px = |i: usize| &rgba[i * 4..i * 4 + 4];
+    assert_eq!(px(0)[3], 255);
+    assert_eq!(px(1)[3], 0);
+    // 索引 2 → (6*255+0)/7 = 218；索引 9%8=1 → a1=0；索引 15%8=7 → (255+0)/7
+    assert_eq!(px(2)[3], 218);
+    assert_eq!(px(9)[3], 0, "索引 9 % 8 = 1 → a1");
+    assert_eq!(px(15)[3], 36, "(1*255+6*0)/7");
+    assert_eq!(px(0)[0], 255, "R 通道");
+}
+
+fn texture_payload(
+    texture_type: u32,
+    width: u16,
+    height: u16,
+    mips: u32,
+    data_section: u32,
+) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend(texture_type.to_le_bytes());
+    p.extend(8u32.to_le_bytes());
+    p.extend(0u32.to_le_bytes()); // unk1
+    p.extend(width.to_le_bytes());
+    p.extend(height.to_le_bytes());
+    p.extend((mips << 8).to_le_bytes()); // mipmapInfo
+    p.extend(0u32.to_le_bytes());
+    p.extend(0u32.to_le_bytes());
+    p.extend((data_section as i32).to_le_bytes());
+    p
+}
+
+#[test]
+fn texture_section_decodes_and_writes_dds() {
+    let blob = dxt1_block();
+    let specs = vec![
+        spec(
+            SectionType::TEXTURE,
+            texture_payload(TEXTURE_TYPE_DXT1, 4, 4, 7, 1),
+        ),
+        Spec {
+            fixups: vec![(1, 0)],
+            ..spec(SectionType::BLOB, blob.clone())
+        },
+    ];
+    let data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+
+    let texture = file.decode_texture(&data, 0).unwrap();
+    assert_eq!(texture.format(), crate::texture::TextureFormat::Dxt1);
+    assert_eq!(texture.mip_count(), 7, "0x708 → 7 级 mip");
+    assert_eq!(texture.blob, blob);
+
+    let rgba = texture.decode_top_mip_rgba().unwrap();
+    assert_eq!(&rgba[..4], &[255, 0, 0, 255]);
+
+    let dds = texture.write_dds().unwrap();
+    assert_eq!(&dds[..4], b"DDS ");
+    assert_eq!(
+        u32::from_le_bytes(dds[12..16].try_into().unwrap()),
+        4,
+        "height"
+    );
+    assert_eq!(
+        u32::from_le_bytes(dds[16..20].try_into().unwrap()),
+        4,
+        "width"
+    );
+    assert_eq!(dds.len(), 128 + blob.len());
+}
+
+#[test]
+fn raw_texture_is_bgra_to_rgba_and_dds_is_rejected() {
+    let blob: Vec<u8> = vec![10, 20, 30, 40, 50, 60, 70, 80]; // 2 px BGRA
+    let specs = vec![
+        spec(
+            SectionType::TEXTURE,
+            texture_payload(crate::texture::TEXTURE_TYPE_RAW_BGRA, 2, 1, 1, 1),
+        ),
+        spec(SectionType::BLOB, blob),
+    ];
+    let data = build(1, &specs, &[]);
+    let file = Rw4File::parse(&data).unwrap();
+
+    let texture = file.decode_texture(&data, 0).unwrap();
+    assert_eq!(
+        texture.decode_top_mip_rgba().unwrap(),
+        vec![30, 20, 10, 40, 70, 60, 50, 80]
+    );
+    assert!(matches!(
+        texture.write_dds(),
+        Err(Error::UnsupportedTextureType(21))
+    ));
+}

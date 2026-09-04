@@ -284,7 +284,12 @@ impl Rw4File {
         self.payload(data, section.number)
     }
 
-    fn section_for(&self, number: u32, check: &'static str, expected: u32) -> Result<&Section> {
+    pub(crate) fn section_for(
+        &self,
+        number: u32,
+        check: &'static str,
+        expected: u32,
+    ) -> Result<&Section> {
         let section = self.section(number).ok_or(Error::SectionNumberOutOfRange {
             number,
             count: self.sections().len() as u32,

@@ -59,6 +59,8 @@ pub enum Error {
         "unsupported vertex declaration type {0} (factory returns null, component skipped upstream)"
     )]
     UnsupportedDeclarationType(u16),
+    #[error("unsupported texture type 0x{0:08X}")]
+    UnsupportedTextureType(u32),
     #[error("offset overflow while computing {check}")]
     Overflow { check: &'static str },
 }

@@ -111,6 +111,59 @@ fn m3_packages_decode_all_meshes() {
                             }
                         }
                     }
+                    // 材质槽位解码
+                    for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
+                        match file.decode_material(&data, section.number) {
+                            Ok(material) => match material {
+                                rw4::MaterialSection::Decoded(m) => {
+                                    stats.materials_decoded += 1;
+                                    for r in m.texture_slots() {
+                                        *stats.slot_histogram.entry(r.slot).or_default() += 1;
+                                    }
+                                }
+                                rw4::MaterialSection::Raw(_) => stats.materials_raw += 1,
+                            },
+                            Err(e) => {
+                                stats.material_failures.push((tgi.clone(), format!("{e}")));
+                            }
+                        }
+                    }
+                    // 贴图 section 解码 + 顶层 mip DXT 解码
+                    for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
+                        match file.decode_texture(&data, section.number) {
+                            Ok(texture) => {
+                                *stats
+                                    .texture_type_histogram
+                                    .entry(texture.format())
+                                    .or_default() += 1;
+                                let t0 = std::time::Instant::now();
+                                match texture.decode_top_mip_rgba() {
+                                    Ok(rgba) => {
+                                        stats.textures_decoded += 1;
+                                        stats.texture_pixels += rgba.len() / 4;
+                                        stats.texture_decode_secs += t0.elapsed().as_secs_f64();
+                                    }
+                                    Err(rw4::Error::UnsupportedTextureType(t)) => {
+                                        stats.texture_unsupported.insert(t);
+                                    }
+                                    Err(e) => {
+                                        stats.texture_failures.push((tgi.clone(), format!("{e}")));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let reason = format!("{e}");
+                                // T001 是 C# `Texture.Read` 的严格 expect；
+                                // C# 的 Texture 分支无 try/catch，同样抛
+                                // ModelFormatException → oracle 对齐失败
+                                if reason.contains("T001") {
+                                    stats.oracle_texture_mismatches += 1;
+                                } else {
+                                    stats.texture_failures.push((tgi.clone(), reason));
+                                }
+                            }
+                        }
+                    }
                 }
                 Err((tgi, reason)) => {
                     if reason.contains("0xCAFED00D") {
@@ -141,6 +194,17 @@ fn m3_packages_decode_all_meshes() {
             hard_failures.is_empty(),
             "[{label}] mesh failures: {:?}",
             &hard_failures[..hard_failures.len().min(10)]
+        );
+        // 材质/贴图失败零容忍
+        assert!(
+            stats.material_failures.is_empty(),
+            "[{label}] material failures: {:?}",
+            &stats.material_failures[..stats.material_failures.len().min(10)]
+        );
+        assert!(
+            stats.texture_failures.is_empty(),
+            "[{label}] texture failures: {:?}",
+            &stats.texture_failures[..stats.texture_failures.len().min(10)]
         );
         // 几何不变量
         assert_eq!(
@@ -177,8 +241,20 @@ struct SweepStats {
     model_containers_without_mesh: usize,
     placeholders: usize,
     oracle_mesh_mismatches: usize,
+    oracle_texture_mismatches: usize,
     header_failures: Vec<(String, String)>,
     mesh_failures: Vec<(String, String)>,
+    // 材质/贴图
+    materials_decoded: usize,
+    materials_raw: usize,
+    slot_histogram: HashMap<u32, usize>,
+    textures_decoded: usize,
+    texture_pixels: usize,
+    texture_decode_secs: f64,
+    texture_type_histogram: HashMap<rw4::TextureFormat, usize>,
+    texture_unsupported: std::collections::HashSet<u32>,
+    material_failures: Vec<(String, String)>,
+    texture_failures: Vec<(String, String)>,
 }
 
 impl SweepStats {
@@ -195,8 +271,20 @@ impl SweepStats {
             self.placeholders,
         );
         eprintln!(
-            "[{label}] oracle mesh mismatches (C# fails identically): {}",
-            self.oracle_mesh_mismatches
+            "[{label}] materials: {} decoded / {} raw; slots {:#?}",
+            self.materials_decoded, self.materials_raw, self.slot_histogram
+        );
+        eprintln!(
+            "[{label}] textures: {} decoded ({} px, {:.1} Mpx/s), types {:#?}, unsupported {:?}",
+            self.textures_decoded,
+            self.texture_pixels,
+            self.texture_pixels as f64 / 1e6 / self.texture_decode_secs.max(1e-9),
+            self.texture_type_histogram,
+            self.texture_unsupported
+        );
+        eprintln!(
+            "[{label}] oracle mismatches (C# fails identically): mesh {}, texture {}",
+            self.oracle_mesh_mismatches, self.oracle_texture_mismatches
         );
         let mut kinds: HashMap<&str, usize> = HashMap::new();
         for (_, r) in &self.mesh_failures {
