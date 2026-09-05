@@ -8,6 +8,7 @@ members = [
     "crates/sc-registry",
     "crates/sc-exporter",
     "crates/sc-format",
+    "crates/sc-store",
 ]
 
 [workspace.package]

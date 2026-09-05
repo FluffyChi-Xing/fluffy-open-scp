@@ -8,6 +8,19 @@
 //! - 音频导出：bundled vgmstream（`Tools\vgmstream\`）
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
+mod activity;
+mod package_service;
+
+use activity::{
+    AppState, activity_clear, activity_list_events, activity_list_operations,
+    activity_list_packages,
+};
+use package_service::{
+    close_package, export, export_status, list_resources, open_package, read_resource_bytes,
+    resolve_name,
+};
+use tauri::Manager;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {name}! OpenSCP Tauri backend is running.")
@@ -16,7 +29,26 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet])
+        .setup(|app| {
+            let database_path = app.path().app_data_dir()?.join("openscp.db");
+            let store = sc_store::Store::open(database_path)?;
+            app.manage(AppState::new(app.handle().clone(), store));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            activity_list_operations,
+            activity_list_events,
+            activity_list_packages,
+            activity_clear,
+            open_package,
+            close_package,
+            list_resources,
+            read_resource_bytes,
+            resolve_name,
+            export,
+            export_status,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

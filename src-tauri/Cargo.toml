@@ -21,3 +21,6 @@ dbpf = { path = "../crates/dbpf" }
 rw4 = { path = "../crates/rw4" }
 sc-properties = { path = "../crates/sc-properties" }
 sc-exporter = { path = "../crates/sc-exporter" }
+sc-store = { path = "../crates/sc-store" }
+sc-registry = { path = "../crates/sc-registry" }
+thiserror.workspace = true

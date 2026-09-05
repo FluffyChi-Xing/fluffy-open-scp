@@ -857,10 +857,13 @@ dependencies = [
  "rw4",
  "sc-exporter",
  "sc-properties",
+ "sc-registry",
+ "sc-store",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -2794,6 +2797,16 @@ name = "sc-registry"
 version = "0.1.0"
 dependencies = [
  "rusqlite",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sc-store"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
  "thiserror 2.0.20",
 ]
 
