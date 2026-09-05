@@ -10,6 +10,7 @@
 
 mod activity;
 mod package_service;
+mod workspace;
 
 use activity::{
     AppState, activity_clear, activity_list_events, activity_list_operations,
@@ -20,6 +21,10 @@ use package_service::{
     resolve_name,
 };
 use tauri::Manager;
+use workspace::{
+    workspace_create_folder, workspace_create_markdown, workspace_get, workspace_list,
+    workspace_read_markdown, workspace_set_root, workspace_write_markdown,
+};
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -48,6 +53,13 @@ pub fn run() {
             resolve_name,
             export,
             export_status,
+            workspace_get,
+            workspace_set_root,
+            workspace_list,
+            workspace_create_folder,
+            workspace_read_markdown,
+            workspace_write_markdown,
+            workspace_create_markdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

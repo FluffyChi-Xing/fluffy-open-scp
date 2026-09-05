@@ -5,12 +5,14 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::package_service::PackageManager;
+use crate::workspace::WorkspaceManager;
 
 pub const ACTIVITY_EVENT: &str = "activity:event";
 
 pub struct AppState {
     pub(crate) store: Arc<Store>,
     pub(crate) packages: Arc<PackageManager>,
+    pub(crate) workspace: Arc<WorkspaceManager>,
     pub(crate) app: AppHandle,
 }
 
@@ -19,6 +21,7 @@ impl AppState {
         Self {
             store: Arc::new(store),
             packages: Arc::new(PackageManager::new()),
+            workspace: Arc::new(WorkspaceManager::new()),
             app,
         }
     }

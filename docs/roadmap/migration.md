@@ -194,6 +194,20 @@ workspace + 4 个空 crate 骨架 + fluffy-design-pro 应用壳 + Tauri 2 壳 + 
 
 **M5 后端进度（2026-09-05）**：已完成包句柄生命周期与容量保护、包摘要与资源分页、4KB 字节范围读取、Registry 缓存名称解析、raw/OBJ/GLB/PNG/JPG/TGA/DDS 异步导出、骨骼/动画接线、原子临时文件落盘、activity 埋点和 `export:progress`/job 状态查询。后端单元测试 11 项通过，耗时约 0.61s（含增量编译）；workspace 全量测试通过。前端页面、sidecar、完整多 Mesh/多材质跨 package glTF 与 chat-assistant 保持未建设。
 
+### M5.5 — 开发者文档工作区（后端，新增，2026-09-05）
+
+与 SCP/DBPF/RW4 解析无关，为未来 P1 模组开发者提供按模组、资产和组件文件夹组织的 Markdown/README 文档能力。一个资产可通过多级文件夹拆分为多个组件，各文件夹拥有自己的 `README.md`。
+
+- [x] `sc-store` schema v2：在 `openscp.db` 中持久化用户选择的工作区根目录，以及文件夹到 README 的相对路径缓存；正文不存入 SQLite
+- [x] Tauri workspace commands：`workspace_get`、`workspace_set_root`、`workspace_list`、`workspace_create_folder`、`workspace_read_markdown`、`workspace_write_markdown`、`workspace_create_markdown`
+- [x] 安全边界：仅允许工作区内相对路径；拒绝 `..`、绝对路径、盘符/UNC、NUL、符号链接和越界路径；Markdown 单文件上限 4 MiB；写入采用临时文件 + sync + 原子替换；revision 使用 SHA-256 防止并发覆盖
+- [ ] 前端 Notion 风格目录树、Markdown 编辑/预览、首次启动工作区选择向导
+- [ ] 富文本协同、多用户编辑、资产数据库实体和组件关系图
+- [ ] 程序 MSI/NSIS 安装目录选择：M5.5 只选择用户文档工作区，不修改程序安装位置
+- [ ] chat-assistant：未来功能，当前后端不建设，前端接入阶段暂时禁用
+
+**M5.5 后端进度（2026-09-05）**：已完成工作区配置持久化、文件夹/README 关系缓存、Markdown 创建/读取/写入、revision 冲突保护和路径安全校验。`sc-store` 6 项测试及 workspace 后端编译验证通过；前端编辑器与 chat-assistant 保持未建设。
+
 ### M6 — 发布
 - [ ] `pnpm tauri icon` 正式图标；MSI/NSIS 打包；bundled vgmstream/ffmpeg 许可证合规核查
 - [ ] 首启向导（游戏目录探测 `C:\Games\SimCity\SimCityData`）、设置持久化

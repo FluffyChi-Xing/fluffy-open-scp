@@ -2,11 +2,11 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 1;
+pub const CURRENT_SCHEMA_VERSION: i32 = 2;
 pub const DEFAULT_LIST_LIMIT: usize = 100;
 pub const MAX_LIST_LIMIT: usize = 1_000;
 
@@ -89,6 +89,21 @@ pub struct PackageInput {
     pub version: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceConfig {
+    pub root_path: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderCacheEntry {
+    pub relative_path: String,
+    pub readme_relative_path: Option<String>,
+    pub last_seen_at: i64,
+}
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityClearResult {
@@ -217,6 +232,77 @@ impl Store {
             .map_err(StoreError::from)
     }
 
+    pub fn workspace_config(&self) -> Result<Option<WorkspaceConfig>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection
+            .query_row(
+                "SELECT root_path, created_at, updated_at FROM workspace_config WHERE id = 1",
+                [],
+                |row| {
+                    Ok(WorkspaceConfig {
+                        root_path: row.get(0)?,
+                        created_at: row.get(1)?,
+                        updated_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::from)
+    }
+
+    pub fn set_workspace_config(&self, root_path: &str) -> Result<WorkspaceConfig> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let existing: Option<i64> = connection
+            .query_row(
+                "SELECT created_at FROM workspace_config WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let created_at = existing.unwrap_or(now);
+        connection.execute(
+            "INSERT INTO workspace_config (id, root_path, created_at, updated_at) VALUES (1, ?1, ?2, ?3)
+             ON CONFLICT(id) DO UPDATE SET root_path = excluded.root_path, updated_at = excluded.updated_at",
+            params![root_path, created_at, now],
+        )?;
+        connection.execute("DELETE FROM workspace_folder_cache", [])?;
+        Ok(WorkspaceConfig {
+            root_path: root_path.into(),
+            created_at,
+            updated_at: now,
+        })
+    }
+
+    pub fn replace_folder_cache(&self, entries: &[FolderCacheEntry]) -> Result<()> {
+        let mut connection = self.connection.lock().expect("store mutex poisoned");
+        let transaction = connection.transaction()?;
+        transaction.execute("DELETE FROM workspace_folder_cache", [])?;
+        for entry in entries {
+            transaction.execute(
+                "INSERT INTO workspace_folder_cache (relative_path, readme_relative_path, last_seen_at) VALUES (?1, ?2, ?3)",
+                params![entry.relative_path, entry.readme_relative_path, entry.last_seen_at],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn list_folder_cache(&self) -> Result<Vec<FolderCacheEntry>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT relative_path, readme_relative_path, last_seen_at FROM workspace_folder_cache ORDER BY relative_path",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(FolderCacheEntry {
+                relative_path: row.get(0)?,
+                readme_relative_path: row.get(1)?,
+                last_seen_at: row.get(2)?,
+            })
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
     pub fn clear_activity(&self) -> Result<ActivityClearResult> {
         let mut connection = self.connection.lock().expect("store mutex poisoned");
         let transaction = connection.transaction()?;
@@ -271,7 +357,36 @@ fn migrate(connection: &Connection) -> Result<()> {
              CREATE INDEX operations_created_at_idx ON operations(created_at DESC);
              CREATE INDEX operations_status_idx ON operations(status);
              CREATE INDEX packages_last_opened_at_idx ON packages(last_opened_at DESC);
-             PRAGMA user_version = 1;
+             CREATE TABLE workspace_config (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 root_path TEXT NOT NULL,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE workspace_folder_cache (
+                 relative_path TEXT PRIMARY KEY,
+                 readme_relative_path TEXT,
+                 last_seen_at INTEGER NOT NULL
+             );
+             PRAGMA user_version = 2;
+             COMMIT;",
+        )?;
+    }
+    if version == 1 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE workspace_config (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 root_path TEXT NOT NULL,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE workspace_folder_cache (
+                 relative_path TEXT PRIMARY KEY,
+                 readme_relative_path TEXT,
+                 last_seen_at INTEGER NOT NULL
+             );
+             PRAGMA user_version = 2;
              COMMIT;",
         )?;
     }
@@ -371,6 +486,43 @@ mod tests {
         clean(&path);
     }
 
+    #[test]
+    fn workspace_config_and_cache_are_persisted() {
+        let path = temp_path("workspace");
+        clean(&path);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.workspace_config().unwrap(), None);
+        let config = store.set_workspace_config("C:/workspace").unwrap();
+        assert_eq!(config.root_path, "C:/workspace");
+        store
+            .replace_folder_cache(&[FolderCacheEntry {
+                relative_path: "mods/example".into(),
+                readme_relative_path: Some("mods/example/README.md".into()),
+                last_seen_at: config.updated_at,
+            }])
+            .unwrap();
+        assert_eq!(store.list_folder_cache().unwrap().len(), 1);
+        store.set_workspace_config("C:/other").unwrap();
+        assert!(store.list_folder_cache().unwrap().is_empty());
+        drop(store);
+        clean(&path);
+    }
+
+    #[test]
+    fn v1_database_migrates_to_v2() {
+        let path = temp_path("v1");
+        clean(&path);
+        {
+            let connection = rusqlite::Connection::open(&path).unwrap();
+            connection
+                .execute_batch("PRAGMA user_version = 1;")
+                .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.workspace_config().unwrap(), None);
+        drop(store);
+        clean(&path);
+    }
     #[test]
     fn records_operation_event_and_package_history() {
         let path = temp_path("crud");
