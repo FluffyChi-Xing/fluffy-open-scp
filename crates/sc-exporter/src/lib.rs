@@ -16,6 +16,7 @@
 pub mod batch;
 mod error;
 pub mod gltf;
+pub mod magic;
 pub mod obj;
 pub mod prop_json;
 pub mod texture;
@@ -27,6 +28,7 @@ pub use gltf::{
     AnimClip, AnimTrack, EmbeddedTextures, GlbOutput, SkinData, export_glb,
     export_glb_with_textures, extract_skin,
 };
+pub use magic::{MAGIC_FORMATS, MagicFormat, detect_magic};
 pub use obj::export_obj;
 pub use texture::{TextureOutputFormat, export_texture};
 pub use texture_index::{ResolvedTexture, TextureConflict, TextureIndex};

@@ -31,9 +31,14 @@ mod index;
 mod package;
 mod reader;
 mod refpack;
+mod writer;
 
 pub use error::{Error, Result};
 pub use header::{Header, PackageKind};
 pub use index::{IndexEntry, ResourceId};
 pub use package::{CachedPackage, Package};
 pub use refpack::{decompress as refpack_decompress, parse_stream_header as refpack_stream_header};
+pub use writer::{
+    OverlayEntry, WriterError, WriterResult, write_uncompressed_overlay,
+    write_uncompressed_overlay_to_path,
+};

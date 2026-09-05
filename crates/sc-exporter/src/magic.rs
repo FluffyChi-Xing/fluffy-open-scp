@@ -232,8 +232,7 @@ pub fn detect_magic(bytes: &[u8]) -> Option<&'static MagicFormat> {
     // 其余按前缀最长优先
     let mut best: Option<&'static MagicFormat> = None;
     for rule in MAGIC_FORMATS {
-        if bytes.starts_with(rule.prefix)
-            && best.is_none_or(|b| rule.prefix.len() > b.prefix.len())
+        if bytes.starts_with(rule.prefix) && best.is_none_or(|b| rule.prefix.len() > b.prefix.len())
         {
             best = Some(rule);
         }
@@ -253,8 +252,14 @@ mod tests {
         assert_eq!(detect_magic(b"DDS |\x00\x00\x00").unwrap().extension, "dds");
         assert_eq!(detect_magic(b"OggS\x00\x02").unwrap().extension, "ogg");
         assert_eq!(detect_magic(b"DBPF\x0C\x00").unwrap().extension, "package");
-        assert_eq!(detect_magic(b"UnityFS\x00\x00").unwrap().extension, "unity3d");
-        assert_eq!(detect_magic(b"<?xml version=\"1.0\"?>").unwrap().extension, "xml");
+        assert_eq!(
+            detect_magic(b"UnityFS\x00\x00").unwrap().extension,
+            "unity3d"
+        );
+        assert_eq!(
+            detect_magic(b"<?xml version=\"1.0\"?>").unwrap().extension,
+            "xml"
+        );
         let gz: &[u8] = &[0x1F, 0x8B, 0x08, 0x00];
         assert_eq!(detect_magic(gz).unwrap().extension, "gz");
         let zlib: &[u8] = &[0x78, 0xDA, 0x01];

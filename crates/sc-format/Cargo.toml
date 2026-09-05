@@ -1,0 +1,8 @@
+[package]
+name = "sc-format"
+description = "Zero-dependency byte signature probing for SimCity asset formats"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
