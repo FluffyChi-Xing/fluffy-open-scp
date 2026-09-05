@@ -24,7 +24,7 @@ use package_service::{
     resolve_name,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
-use tauri::Manager;
+use tauri::{Manager, PhysicalPosition};
 use workspace::{
     workspace_create_folder, workspace_create_markdown, workspace_get, workspace_list,
     workspace_read_markdown, workspace_set_root, workspace_write_markdown,
@@ -49,6 +49,15 @@ pub fn run() {
             let database_path = app.path().app_data_dir()?.join("openscp.db");
             let store = sc_store::Store::open(database_path)?;
             app.manage(AppState::new(app.handle().clone(), store));
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(monitor) = window.primary_monitor()? {
+                    let area = monitor.work_area();
+                    let size = window.outer_size()?;
+                    let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
+                    let y = area.position.y + (area.size.height as i32 - size.height as i32) / 2;
+                    window.set_position(PhysicalPosition::new(x.max(area.position.x), y.max(area.position.y)))?;
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

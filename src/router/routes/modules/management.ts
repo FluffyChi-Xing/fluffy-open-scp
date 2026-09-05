@@ -1,4 +1,4 @@
-import SettingsPage from '@/pages/SettingsPage.vue'
+import SettingsPage from '@/pages/settings/index.vue'
 import type { RouteModule } from '@/router/types'
 
 export default {

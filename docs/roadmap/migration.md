@@ -194,6 +194,9 @@ workspace + 4 个空 crate 骨架 + fluffy-design-pro 应用壳 + Tauri 2 壳 + 
 - [ ] chat-assistant 网关：**未来功能，本阶段不建设；前端开发阶段暂时禁用**
 
 **M5 后端进度（2026-09-05）**：已完成包句柄生命周期与容量保护、包摘要与资源分页、4KB 字节范围读取、Registry 缓存名称解析、raw/OBJ/GLB/PNG/JPG/TGA/DDS/WAV/VP6/MP4 异步导出、骨骼/动画接线、媒体工具运行时探测、原子临时文件落盘、activity 埋点和 `export:progress`/job 状态查询。后端单元测试 19 项通过；workspace 全量测试通过。前端页面、sidecar 二进制分发、完整多 Mesh/多材质跨 package glTF 与 chat-assistant 保持未建设。
+- [x] 前端首版源文件解析工作区：目录树、当前目录 package 列表、多个 package Tab、资源分类 Tabs、默认空态和 5174 Mock 验证
+- [ ] 前端多格式详情预览：文本/代码 FCode、图片、音频、视频、Three.js 模型预览
+- [ ] Tauri 真实目录扫描 command 与完整前端联调
 
 ### M5.5 — 开发者文档工作区（后端，新增，2026-09-05）
 

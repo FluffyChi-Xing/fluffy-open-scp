@@ -71,7 +71,7 @@ onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer) })
     </header>
     <div v-show="!collapsed" class="f-code-body">
       <div v-if="highlighted" class="f-code-shiki" v-html="highlighted"></div>
-      <pre v-else class="f-code-plain"><code>{{ code }}</code></pre>
+      <pre v-else class="f-code-plain"><code>{{ plain }}</code></pre>
     </div>
   </section>
 </template>

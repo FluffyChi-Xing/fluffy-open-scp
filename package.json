@@ -8,6 +8,9 @@
     "build": "vue-tsc -b && vite build",
     "check": "vue-tsc -b --noEmit",
     "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write src/pages/**/*.vue",
+    "format:check": "prettier --check src/pages/**/*.vue",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -34,15 +37,22 @@
     "vue-tsc": "^2.2.10"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@fluffy-design-pro/cli": "^0.5.0",
     "@tailwindcss/vite": "^4.1.12",
     "@tauri-apps/cli": "^2",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.15.3",
     "@vue/test-utils": "^2.4.6",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.10.0",
+    "globals": "^17.12.0",
     "happy-dom": "^17.6.3",
+    "prettier": "^3.9.6",
     "shadcn-vue": "^2.8.2",
     "tailwindcss": "^4.1.12",
+    "typescript-eslint": "^8.69.0",
     "vitest": "^3.1.3"
   }
 }

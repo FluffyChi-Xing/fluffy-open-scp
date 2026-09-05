@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { NavigationGroup, NavigationItem } from '@/router/types'
 import FIcon from '@/components/extensions/FIcon.vue'
 
-interface Props { groups: NavigationGroup[] }
+interface Props { groups: NavigationGroup[]; topLevelItems?: NavigationItem[] }
 interface Emits { navigate: []; openExternal: [item: NavigationItem] }
 
 const props = defineProps<Props>()
@@ -25,6 +25,12 @@ function selectItem(item: NavigationItem) {
 
 <template>
   <nav class="sidebar-nav">
+    <div v-if="props.topLevelItems?.length" class="nav-top-level">
+      <button v-for="item in props.topLevelItems" :key="item.key" class="sidebar-link" :class="{ active: item.key === activeKey }" type="button" @click="selectItem(item)">
+        <FIcon :name="item.icon ?? 'Menu'" size="16" />
+        <span>{{ $t(item.titleKey) }}</span>
+      </button>
+    </div>
     <section v-for="group in props.groups" :key="group.key" class="nav-group">
       <p class="nav-label">{{ $t(group.titleKey) }}</p>
       <button v-for="item in group.items" :key="item.key" class="sidebar-link" :class="{ active: item.key === activeKey }" type="button" @click="selectItem(item)">
@@ -36,5 +42,5 @@ function selectItem(item: NavigationItem) {
 </template>
 
 <style scoped>
-.sidebar-nav{display:flex;flex:1;flex-direction:column;gap:18px;padding-top:15px}.nav-group{display:grid;gap:3px}.nav-label{color:var(--subtle-foreground);display:block;font-size:10px;font-weight:700;letter-spacing:.08em;margin:0 0 7px;padding-inline:8px;text-transform:uppercase}.sidebar-link{align-items:center;background:transparent;border:0;border-radius:var(--radius-sm);color:var(--muted-foreground);cursor:pointer;display:flex;font-size:13px;gap:10px;padding:8px;text-align:start;transition:background-color 140ms ease,color 140ms ease,scale 140ms ease;width:100%}.sidebar-link:hover{background:var(--sidebar-hover);color:var(--foreground)}.sidebar-link:active{scale:.98}.sidebar-link.active{background:var(--sidebar-active);color:var(--sidebar-active-foreground);font-weight:650}.sidebar-link :deep(svg){flex:none}
+.sidebar-nav{display:flex;flex:1;flex-direction:column;gap:18px;padding-top:15px}.nav-top-level{display:grid;gap:3px}.nav-top-level+.nav-group{margin-top:2px}.nav-label{color:var(--subtle-foreground);display:block;font-size:10px;font-weight:700;letter-spacing:.08em;margin:0 0 7px;padding-inline:8px;text-transform:uppercase}.sidebar-link{align-items:center;background:transparent;border:0;border-radius:var(--radius-sm);color:var(--muted-foreground);cursor:pointer;display:flex;font-size:13px;gap:10px;padding:8px;text-align:start;transition:background-color 140ms ease,color 140ms ease,scale 140ms ease;width:100%}.sidebar-link:hover{background:var(--sidebar-hover);color:var(--foreground)}.sidebar-link:active{scale:.98}.sidebar-link.active{background:var(--sidebar-active);color:var(--sidebar-active-foreground);font-weight:650}.sidebar-link :deep(svg){flex:none}
 </style>

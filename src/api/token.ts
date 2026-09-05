@@ -19,11 +19,15 @@ export function getAccessToken(): string | null {
 export function setAccessToken(token: string): void {
   try {
     getStorage()?.setItem(accessTokenKey, token)
-  } catch {}
+  } catch {
+    return
+  }
 }
 
 export function clearAccessToken(): void {
   try {
     getStorage()?.removeItem(accessTokenKey)
-  } catch {}
+  } catch {
+    return
+  }
 }

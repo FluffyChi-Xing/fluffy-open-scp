@@ -42,6 +42,7 @@ export interface ExternalRouteEntry {
   openMode: 'new-tab' | 'iframe'
   icon?: IconName
   groupKey?: string
+  hideInMenu?: boolean
   order?: number
 }
 

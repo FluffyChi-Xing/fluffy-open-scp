@@ -10,7 +10,7 @@ export interface HeaderActions {
 }
 
 export const appConfig = {
-  name: 'my-admin',
+  name: 'OpenSCP',
   defaultLocale: 'zh-CN' as const,
   defaultDarkMode: true,
   showTabBar: true,
@@ -30,7 +30,7 @@ export const appConfig = {
     theme: true,
     notifications: true,
     fullscreen: true,
-    account: true,
+    account: false,
     settings: true,
     uploadCenter: false
   } satisfies HeaderActions
