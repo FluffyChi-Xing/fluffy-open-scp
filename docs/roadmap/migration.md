@@ -210,8 +210,13 @@ workspace + 4 个空 crate 骨架 + fluffy-design-pro 应用壳 + Tauri 2 壳 + 
 **M5.5 后端进度（2026-09-05）**：已完成工作区配置持久化、文件夹/README 关系缓存、Markdown 创建/读取/写入、revision 冲突保护和路径安全校验。`sc-store` 6 项测试及 workspace 后端编译验证通过；前端编辑器与 chat-assistant 保持未建设。
 
 ### M6 — 发布
-- [ ] `pnpm tauri icon` 正式图标；MSI/NSIS 打包；bundled vgmstream/ffmpeg 许可证合规核查
-- [ ] 首启向导（游戏目录探测 `C:\Games\SimCity\SimCityData`）、设置持久化
+- [x] 后端应用设置与游戏目录探测：持久化 `game_data_path`（`sc-store` schema v3）、canonical 路径校验、默认候选 `C:\Games\SimCity\SimCityData` 和直接 `.package` marker 检查
+- [ ] 前端首启向导：选择游戏数据目录并展示探测结果；设置页持久化接入
+- [ ] `pnpm tauri icon` 正式图标；MSI/NSIS 打包
+- [ ] bundled vgmstream/ffmpeg 二进制随应用分发、许可证核查、x64/arm64 发布验证
+- [ ] chat-assistant：未来功能，当前后端不建设，前端接入阶段暂时禁用
+
+**M6 后端进度（2026-09-05）**：已完成应用设置持久化、游戏目录候选探测和安全路径校验；`sc-store` 7 项测试、Tauri 后端 21 项测试及 workspace 全量测试通过。后端定向测试耗时约 2.69s（含增量编译）。sidecar 二进制分发、安装器、前端首启向导和 chat-assistant 不在当前后端范围内。
 
 ---
 

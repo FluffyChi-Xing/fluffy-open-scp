@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 2;
+pub const CURRENT_SCHEMA_VERSION: i32 = 3;
 pub const DEFAULT_LIST_LIMIT: usize = 100;
 pub const MAX_LIST_LIMIT: usize = 1_000;
 
@@ -89,6 +89,13 @@ pub struct PackageInput {
     pub version: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    pub game_data_path: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceConfig {
@@ -232,6 +239,46 @@ impl Store {
             .map_err(StoreError::from)
     }
 
+    pub fn app_settings(&self) -> Result<Option<AppSettings>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection
+            .query_row(
+                "SELECT game_data_path, created_at, updated_at FROM app_settings WHERE id = 1",
+                [],
+                |row| {
+                    Ok(AppSettings {
+                        game_data_path: row.get(0)?,
+                        created_at: row.get(1)?,
+                        updated_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::from)
+    }
+
+    pub fn set_game_data_path(&self, game_data_path: Option<&str>) -> Result<AppSettings> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let created_at: Option<i64> = connection
+            .query_row(
+                "SELECT created_at FROM app_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let created_at = created_at.unwrap_or(now);
+        connection.execute(
+            "INSERT INTO app_settings (id, game_data_path, created_at, updated_at) VALUES (1, ?1, ?2, ?3)
+             ON CONFLICT(id) DO UPDATE SET game_data_path = excluded.game_data_path, updated_at = excluded.updated_at",
+            params![game_data_path, created_at, now],
+        )?;
+        Ok(AppSettings {
+            game_data_path: game_data_path.map(str::to_owned),
+            created_at,
+            updated_at: now,
+        })
+    }
     pub fn workspace_config(&self) -> Result<Option<WorkspaceConfig>> {
         let connection = self.connection.lock().expect("store mutex poisoned");
         connection
@@ -368,9 +415,16 @@ fn migrate(connection: &Connection) -> Result<()> {
                  readme_relative_path TEXT,
                  last_seen_at INTEGER NOT NULL
              );
-             PRAGMA user_version = 2;
+             CREATE TABLE app_settings (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 game_data_path TEXT,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             PRAGMA user_version = 3;
              COMMIT;",
         )?;
+        return Ok(());
     }
     if version == 1 {
         connection.execute_batch(
@@ -387,6 +441,19 @@ fn migrate(connection: &Connection) -> Result<()> {
                  last_seen_at INTEGER NOT NULL
              );
              PRAGMA user_version = 2;
+             COMMIT;",
+        )?;
+    }
+    if version <= 2 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE app_settings (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 game_data_path TEXT,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             PRAGMA user_version = 3;
              COMMIT;",
         )?;
     }
@@ -520,6 +587,20 @@ mod tests {
         }
         let store = Store::open(&path).unwrap();
         assert_eq!(store.workspace_config().unwrap(), None);
+        drop(store);
+        clean(&path);
+    }
+    #[test]
+    fn app_settings_are_persisted_and_overwritten() {
+        let path = temp_path("settings");
+        clean(&path);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.app_settings().unwrap(), None);
+        let first = store.set_game_data_path(Some("C:/Games/SimCity")).unwrap();
+        assert_eq!(first.game_data_path.as_deref(), Some("C:/Games/SimCity"));
+        let second = store.set_game_data_path(Some("D:/Games/SimCity")).unwrap();
+        assert_eq!(second.game_data_path.as_deref(), Some("D:/Games/SimCity"));
+        assert_eq!(store.app_settings().unwrap(), Some(second));
         drop(store);
         clean(&path);
     }

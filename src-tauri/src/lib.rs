@@ -11,6 +11,7 @@
 mod activity;
 mod media_tools;
 mod package_service;
+mod settings;
 mod workspace;
 
 use activity::{
@@ -22,6 +23,7 @@ use package_service::{
     close_package, export, export_status, list_resources, open_package, read_resource_bytes,
     resolve_name,
 };
+use settings::{game_directory_detect, settings_get, settings_set_game_directory};
 use tauri::Manager;
 use workspace::{
     workspace_create_folder, workspace_create_markdown, workspace_get, workspace_list,
@@ -63,6 +65,9 @@ pub fn run() {
             export,
             export_status,
             detect_media_tools,
+            settings_get,
+            settings_set_game_directory,
+            game_directory_detect,
             workspace_get,
             workspace_set_root,
             workspace_list,
