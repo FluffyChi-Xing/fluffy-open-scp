@@ -9,6 +9,7 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod media_tools;
 mod package_service;
 mod workspace;
 
@@ -16,6 +17,7 @@ use activity::{
     AppState, activity_clear, activity_list_events, activity_list_operations,
     activity_list_packages,
 };
+use media_tools::{MediaTools, application_dir, resolve_tools};
 use package_service::{
     close_package, export, export_status, list_resources, open_package, read_resource_bytes,
     resolve_name,
@@ -29,6 +31,13 @@ use workspace::{
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {name}! OpenSCP Tauri backend is running.")
+}
+
+#[tauri::command]
+fn detect_media_tools() -> MediaTools {
+    application_dir()
+        .map(|directory| resolve_tools(&directory, std::env::var_os("PATH").as_deref()))
+        .unwrap_or_else(|| resolve_tools(std::path::Path::new("."), None))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -53,6 +62,7 @@ pub fn run() {
             resolve_name,
             export,
             export_status,
+            detect_media_tools,
             workspace_get,
             workspace_set_root,
             workspace_list,

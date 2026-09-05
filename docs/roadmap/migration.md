@@ -189,10 +189,11 @@ workspace + 4 个空 crate 骨架 + fluffy-design-pro 应用壳 + Tauri 2 壳 + 
 - [x] 后端 commands：`open_package`（返回首批分页 TGI 树）、`close_package`、`list_resources(offset,limit,filter)`、`read_resource_bytes(range)`、`resolve_name(tgi)`、异步 `export`（raw/OBJ/GLB/PNG/JPG/TGA/DDS + 进度 event）、`export_status(job_id)`
 - [x] 后端 **OOM 防线（API 层）**：资源列表分页上限 1000；hex 单次最多 4KB；压缩资源声明解压上限 256 MiB；纹理像素/Blob 预算校验；大操作使用 `spawn_blocking`
 - [ ] 页面：包打开向导 → TGI 树（FTree）→ 资源详情（hex 分页 / 文本 Shiki / 贴图预览 / 模型 3D 预览评估 `three.js` / 视频内嵌 `<video>` + ffmpeg 转码临时文件 / 音频播放）
-- [ ] vgmstream/ffmpeg sidecar 集成与 PATH 探测（对齐 C# FindFfmpeg）
+- [x] 运行时媒体工具探测与导出接线：Wwise Vorbis → WAV（vgmstream bundled 路径）、EA VP6 → VP6/MP4（ffmpeg bundled 优先、PATH 回退），固定参数数组、输出签名校验与临时文件清理（对齐 C# `FindFfmpeg`）
+- [ ] vgmstream/ffmpeg 二进制随应用分发、Tauri bundle/externalBin、许可证和 x64/arm64 发布验证（留至 M6）
 - [ ] chat-assistant 网关：**未来功能，本阶段不建设；前端开发阶段暂时禁用**
 
-**M5 后端进度（2026-09-05）**：已完成包句柄生命周期与容量保护、包摘要与资源分页、4KB 字节范围读取、Registry 缓存名称解析、raw/OBJ/GLB/PNG/JPG/TGA/DDS 异步导出、骨骼/动画接线、原子临时文件落盘、activity 埋点和 `export:progress`/job 状态查询。后端单元测试 11 项通过，耗时约 0.61s（含增量编译）；workspace 全量测试通过。前端页面、sidecar、完整多 Mesh/多材质跨 package glTF 与 chat-assistant 保持未建设。
+**M5 后端进度（2026-09-05）**：已完成包句柄生命周期与容量保护、包摘要与资源分页、4KB 字节范围读取、Registry 缓存名称解析、raw/OBJ/GLB/PNG/JPG/TGA/DDS/WAV/VP6/MP4 异步导出、骨骼/动画接线、媒体工具运行时探测、原子临时文件落盘、activity 埋点和 `export:progress`/job 状态查询。后端单元测试 19 项通过；workspace 全量测试通过。前端页面、sidecar 二进制分发、完整多 Mesh/多材质跨 package glTF 与 chat-assistant 保持未建设。
 
 ### M5.5 — 开发者文档工作区（后端，新增，2026-09-05）
 

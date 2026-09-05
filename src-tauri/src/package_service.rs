@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
@@ -15,6 +16,7 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::activity::{ACTIVITY_EVENT, AppState, CommandError};
+use crate::media_tools::{self, MediaTools, ToolError};
 
 pub const RESOURCE_PAGE_DEFAULT_LIMIT: usize = 100;
 pub const RESOURCE_PAGE_MAX_LIMIT: usize = 1_000;
@@ -306,6 +308,9 @@ pub enum ExportFormat {
     Jpg,
     Tga,
     Dds,
+    Wav,
+    Vp6,
+    Mp4,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -357,6 +362,12 @@ enum PackageError {
     DecompressionLimitExceeded(u64),
     #[error("generated export exceeds the {0} byte limit")]
     OutputLimitExceeded(u64),
+    #[error("media tool was not found: {0}")]
+    ToolNotFound(&'static str),
+    #[error("media tool failed to start: {0}")]
+    ToolSpawn(#[from] ToolError),
+    #[error("media tool output is invalid: {0}")]
+    InvalidMediaOutput(&'static str),
     #[error("output path already exists: {0}")]
     OutputExists(String),
     #[error("package state is unavailable")]
@@ -394,6 +405,10 @@ impl PackageError {
             Self::Rw4(_) => "corrupt_resource",
             Self::UnsupportedExport => "unsupported",
             Self::Exporter(_) => "export_failed",
+            Self::ToolNotFound(_) => "tool_not_found",
+            Self::ToolSpawn(ToolError::Spawn { .. }) => "tool_spawn_failed",
+            Self::ToolSpawn(ToolError::Failed { .. }) => "tool_failed",
+            Self::InvalidMediaOutput(_) => "tool_output_invalid",
             Self::Io(_) => "io",
         }
     }
@@ -882,6 +897,14 @@ fn export_bytes(
     let data = package.read(entry)?;
     match format {
         ExportFormat::Raw => Ok(data),
+        ExportFormat::Vp6 => {
+            if tgi.type_id == VIDEO_TYPE_ID {
+                Ok(data)
+            } else {
+                Err(PackageError::UnsupportedExport)
+            }
+        }
+        ExportFormat::Wav | ExportFormat::Mp4 => Err(PackageError::UnsupportedExport),
         ExportFormat::Obj | ExportFormat::Glb => {
             let file = rw4::Rw4File::parse(&data)?;
             let section = file
@@ -971,6 +994,153 @@ fn validate_output_path(path: &Path) -> Result<(), PackageError> {
     Ok(())
 }
 
+const AUDIO_TYPE_ID: u32 = 0x0D9E_5710;
+const VIDEO_TYPE_ID: u32 = 0x3768_40D7;
+
+fn required_tool(tools: &MediaTools, format: ExportFormat) -> Result<&str, PackageError> {
+    let tool = match format {
+        ExportFormat::Wav => &tools.vgmstream,
+        ExportFormat::Mp4 => &tools.ffmpeg,
+        _ => return Err(PackageError::UnsupportedExport),
+    };
+    tool.path
+        .as_deref()
+        .ok_or(PackageError::ToolNotFound(match format {
+            ExportFormat::Wav => "vgmstream",
+            ExportFormat::Mp4 => "ffmpeg",
+            _ => "media tool",
+        }))
+}
+
+fn validate_media_request(tgi: ResourceId, format: ExportFormat) -> Result<(), PackageError> {
+    match format {
+        ExportFormat::Wav if tgi.type_id == AUDIO_TYPE_ID => Ok(()),
+        ExportFormat::Vp6 | ExportFormat::Mp4 if tgi.type_id == VIDEO_TYPE_ID => Ok(()),
+        ExportFormat::Wav | ExportFormat::Vp6 | ExportFormat::Mp4 => {
+            Err(PackageError::UnsupportedExport)
+        }
+        _ => Ok(()),
+    }
+}
+
+fn create_temp_file(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn validate_media_output(path: &Path, format: ExportFormat) -> Result<(), PackageError> {
+    let metadata = fs::metadata(path)?;
+    if metadata.len() == 0 || metadata.len() > RESOURCE_DECOMPRESSED_MAX {
+        return Err(PackageError::InvalidMediaOutput(
+            "media output size is invalid",
+        ));
+    }
+    let mut file = fs::File::open(path)?;
+    let mut header = [0u8; 12];
+    let count = file.read(&mut header)?;
+    let valid = match format {
+        ExportFormat::Wav => count >= 12 && &header[..4] == b"RIFF" && &header[8..12] == b"WAVE",
+        ExportFormat::Mp4 => count >= 8 && &header[4..8] == b"ftyp",
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(PackageError::InvalidMediaOutput(
+            "media output signature is invalid",
+        ))
+    }
+}
+
+fn install_media_output(source: &Path, target: &Path) -> Result<usize, PackageError> {
+    if let Err(error) = fs::rename(source, target) {
+        let _ = fs::remove_file(source);
+        return Err(error.into());
+    }
+    Ok(fs::metadata(target)?.len() as usize)
+}
+
+fn media_args(
+    format: ExportFormat,
+    input: &Path,
+    output: &Path,
+) -> Result<Vec<OsString>, PackageError> {
+    match format {
+        ExportFormat::Wav => Ok(vec![
+            OsString::from("-o"),
+            output.as_os_str().to_owned(),
+            input.as_os_str().to_owned(),
+        ]),
+        ExportFormat::Mp4 => Ok(vec![
+            OsString::from("-y"),
+            OsString::from("-hide_banner"),
+            OsString::from("-loglevel"),
+            OsString::from("error"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-an"),
+            output.as_os_str().to_owned(),
+        ]),
+        _ => Err(PackageError::UnsupportedExport),
+    }
+}
+
+fn export_media(
+    package: &Package,
+    tgi: ResourceId,
+    format: ExportFormat,
+    target: &Path,
+    job_id: u64,
+    tools: &MediaTools,
+) -> Result<usize, PackageError> {
+    let tool_name = match format {
+        ExportFormat::Wav => "vgmstream",
+        ExportFormat::Mp4 => "ffmpeg",
+        _ => "media tool",
+    };
+    let tool_path = required_tool(tools, format)?;
+    let entry = package
+        .entry(tgi)
+        .ok_or(PackageError::ResourceNotFound(tgi))?;
+    if u64::from(entry.decompressed_size) > RESOURCE_DECOMPRESSED_MAX {
+        return Err(PackageError::DecompressionLimitExceeded(
+            RESOURCE_DECOMPRESSED_MAX,
+        ));
+    }
+    let data = package.read(entry)?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| PackageError::InvalidArgument("output path has no parent".into()))?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| PackageError::InvalidArgument("output path has no file name".into()))?
+        .to_string_lossy();
+    let output_extension = match format {
+        ExportFormat::Wav => "wav",
+        ExportFormat::Mp4 => "mp4",
+        _ => return Err(PackageError::UnsupportedExport),
+    };
+    let input = parent.join(format!(".{file_name}.openscp-{job_id}.input"));
+    let output = parent.join(format!(".{file_name}.openscp-{job_id}.{output_extension}"));
+    let result = (|| -> Result<usize, PackageError> {
+        create_temp_file(&input, &data)?;
+        let args = media_args(format, &input, &output)?;
+        media_tools::run(tool_name, Path::new(tool_path), &args)?;
+        validate_media_output(&output, format)?;
+        install_media_output(&output, target)
+    })();
+    let _ = fs::remove_file(&input);
+    if result.is_err() {
+        let _ = fs::remove_file(&output);
+    }
+    result
+}
 fn write_export(path: &Path, bytes: &[u8], job_id: u64) -> Result<(), PackageError> {
     validate_output_path(path)?;
     let parent = path
@@ -1010,6 +1180,16 @@ pub async fn export(
         .map_err(CommandError::from)?;
     let output_path = PathBuf::from(&request.output_path);
     validate_output_path(&output_path).map_err(CommandError::from)?;
+    let tgi = request.tgi.clone().into();
+    validate_media_request(tgi, request.format).map_err(CommandError::from)?;
+    let tools = media_tools::application_dir()
+        .map(|directory| {
+            media_tools::resolve_tools(&directory, std::env::var_os("PATH").as_deref())
+        })
+        .unwrap_or_else(|| media_tools::resolve_tools(Path::new("."), None));
+    if matches!(request.format, ExportFormat::Wav | ExportFormat::Mp4) {
+        required_tool(&tools, request.format).map_err(CommandError::from)?;
+    }
     let job_id = manager
         .reserve_job(request.output_path.clone())
         .map_err(CommandError::from)?;
@@ -1041,13 +1221,24 @@ pub async fn export(
                 output_path: request.output_path.clone(),
             },
         );
-        let result =
-            export_bytes(&package, request.tgi.clone().into(), request.format).and_then(|bytes| {
-                if bytes.len() as u64 > RESOURCE_DECOMPRESSED_MAX {
-                    return Err(PackageError::OutputLimitExceeded(RESOURCE_DECOMPRESSED_MAX));
-                }
-                write_export(&output_path, &bytes, job_id).map(|()| bytes.len())
-            });
+        let result = match request.format {
+            ExportFormat::Wav | ExportFormat::Mp4 => export_media(
+                &package,
+                request.tgi.clone().into(),
+                request.format,
+                &output_path,
+                job_id,
+                &tools,
+            ),
+            _ => export_bytes(&package, request.tgi.clone().into(), request.format).and_then(
+                |bytes| {
+                    if bytes.len() as u64 > RESOURCE_DECOMPRESSED_MAX {
+                        return Err(PackageError::OutputLimitExceeded(RESOURCE_DECOMPRESSED_MAX));
+                    }
+                    write_export(&output_path, &bytes, job_id).map(|()| bytes.len())
+                },
+            ),
+        };
         match result {
             Ok(bytes_out) => {
                 let _ = jobs.update_job(job_id, "succeeded", None);
@@ -1173,6 +1364,70 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn media_formats_match_original_contract() {
+        let audio = ResourceId {
+            type_id: AUDIO_TYPE_ID,
+            group: 0,
+            instance: 0,
+        };
+        let video = ResourceId {
+            type_id: VIDEO_TYPE_ID,
+            group: 0,
+            instance: 0,
+        };
+        assert!(validate_media_request(audio, ExportFormat::Wav).is_ok());
+        assert!(validate_media_request(video, ExportFormat::Vp6).is_ok());
+        assert!(validate_media_request(video, ExportFormat::Mp4).is_ok());
+        assert!(matches!(
+            validate_media_request(audio, ExportFormat::Mp4),
+            Err(PackageError::UnsupportedExport)
+        ));
+    }
+
+    #[test]
+    fn ffmpeg_arguments_drop_audio_and_use_h264() {
+        let args = media_args(
+            ExportFormat::Mp4,
+            Path::new("input.vp6"),
+            Path::new("output.mp4"),
+        )
+        .unwrap();
+        let args = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            [
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                "input.vp6",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-an",
+                "output.mp4"
+            ]
+        );
+    }
+    #[test]
+    fn media_output_signatures_are_checked() {
+        let path =
+            std::env::temp_dir().join(format!("openscp-media-output-{}.tmp", std::process::id()));
+        fs::write(&path, b"RIFF0000WAVEfmt ").unwrap();
+        assert!(validate_media_output(&path, ExportFormat::Wav).is_ok());
+        fs::write(&path, b"not-media").unwrap();
+        assert!(matches!(
+            validate_media_output(&path, ExportFormat::Wav),
+            Err(PackageError::InvalidMediaOutput(_))
+        ));
+        let _ = fs::remove_file(path);
+    }
     #[test]
     fn byte_limits_are_fixed() {
         assert_eq!(RESOURCE_BYTES_MAX, 4096);
