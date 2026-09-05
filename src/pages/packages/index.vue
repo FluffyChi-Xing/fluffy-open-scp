@@ -1,71 +1,98 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
-import FEmpty from "@/components/extensions/FEmpty.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
+import { isTauri, tauriApi } from "@/api";
 import { useGamePackages } from "@/composables/useGamePackages";
 import GameFolderTree from "./components/GameFolderTree.vue";
-import PackageFileList from "./components/PackageFileList.vue";
+import HexPreview from "./components/preview/HexPreview.vue";
+import ResourcePreview from "./components/preview/ResourcePreview.vue";
+import {
+  Resizable,
+  ResizableHandle,
+  ResizablePanel,
+} from "@/components/ui/resizable";
+import {
+  resourceIconUrl,
+  resourceKind,
+  resourceKindMeta,
+  type ResourceKind,
+} from "@/lib/resource-types";
 
 const explorer = useGamePackages();
 const {
   root,
   folders,
-  files,
   opened,
   activePackage,
   activePackageId,
   activePage,
   selected,
+  preview,
+  previewLoading,
+  previewError,
   loadingFolders,
-  loadingFiles,
   demo,
-  selectedFolder,
 } = explorer;
 const importMode = shallowRef("folder");
 const category = shallowRef("all");
-const categories = computed(() => [
-  {
-    key: "all",
-    label: "package.all",
-    count: activePage.value?.total ?? 0,
-  },
-  { key: "rw4", label: "package.rw4", count: categoryCount("rw4") },
-  { key: "raster", label: "package.raster", count: categoryCount("raster") },
-  {
-    key: "property",
-    label: "package.property",
-    count: categoryCount("property"),
-  },
-  { key: "text", label: "package.text", count: categoryCount("text") },
-  { key: "media", label: "package.media", count: categoryCount("media") },
-]);
+const detailMode = shallowRef<"hex" | "preview">("hex");
+const categoryOrder: ResourceKind[] = [
+  "rw4",
+  "raster",
+  "property",
+  "text",
+  "media",
+  "other",
+];
+const categories = computed(() => {
+  const items = activePage.value?.items ?? [];
+  const present = new Set(items.map((item) => resourceKind(item.tgi.typeId)));
+  return [
+    { key: "all", label: "package.all", count: activePage.value?.total ?? 0 },
+    ...categoryOrder
+      .filter((key) => present.has(key))
+      .map((key) => ({
+        key,
+        label: resourceKindMeta[key].label,
+        count: categoryCount(key),
+      })),
+  ];
+});
 const visibleResources = computed(() => {
   const items = activePage.value?.items ?? [];
   if (category.value === "all") return items;
   return items.filter(
-    (item) => resourceCategory(item.tgi.typeId) === category.value,
+    (item) => resourceKind(item.tgi.typeId) === category.value,
   );
 });
-function categoryCount(key: string) {
+function categoryCount(key: ResourceKind) {
   return (activePage.value?.items ?? []).filter(
-    (item) => resourceCategory(item.tgi.typeId) === key,
+    (item) => resourceKind(item.tgi.typeId) === key,
   ).length;
-}
-function resourceCategory(typeId: number) {
-  if (typeId === 0x2f4e681b) return "rw4";
-  if (typeId === 0x2f4e681c) return "raster";
-  if (typeId === 0x00b1b104) return "property";
-  if (typeId === 0x0d9e5710) return "media";
-  return "text";
 }
 function selectImportMode(event: Event) {
   importMode.value = (event.target as HTMLSelectElement).value;
 }
 async function importFromSelection() {
-  if (importMode.value === "folder" || importMode.value === "default")
+  if (importMode.value === "folder") {
+    const path = isTauri()
+      ? await tauriApi.workspace.pickDirectory("选择 SimCity 数据目录")
+      : "D:/ea-games/SimCity";
+    if (path) {
+      root.value = path;
+      await explorer.loadFolders(path);
+    }
+  } else if (isTauri()) {
+    const status = await tauriApi.settings.get();
+    if (status.gameDataPath) {
+      root.value = status.gameDataPath;
+      await explorer.loadFolders(status.gameDataPath);
+    }
+  } else {
     await explorer.loadFolders("D:/ea-games/SimCity");
+  }
 }
 function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   return [tgi.typeId, tgi.group, tgi.instance]
@@ -85,9 +112,6 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
         ><FTypography paragraphy type="secondary">{{
           $t("package.ideDescription")
         }}</FTypography>
-      </div>
-      <div class="heading-mark" aria-hidden="true">
-        <FIcon name="Package" :size="22" />
       </div>
     </header>
     <div class="explorer-toolbar">
@@ -133,190 +157,219 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
         </button>
       </div>
     </div>
-    <div class="ide-shell">
-      <aside class="tree-column">
+    <Resizable
+      class="ide-shell"
+      direction="horizontal"
+      auto-save-id="openscp:package-layout:v1"
+    >
+      <ResizablePanel id="package-navigation" :default-size="23" :min-size="17">
         <GameFolderTree
           :folders="folders"
-          :selected-path="selectedFolder"
           :loading="loadingFolders"
-          @select="explorer.selectFolder"
-        /><PackageFileList
-          :files="files"
-          :selected-path="activePackage?.package.path ?? ''"
-          :loading="loadingFiles"
-          @select="explorer.openFile"
+          @open="explorer.openFile"
         />
-      </aside>
-      <section class="work-column">
-        <div
-          class="package-tabs"
-          role="tablist"
-          :aria-label="$t('package.openPackages')"
-        >
-          <FEmpty
-            v-if="!opened.length"
-            icon-name="Package"
-            :title="$t('package.emptyWorkspaceTitle')"
-            :desc="$t('package.emptyWorkspaceDescription')"
-            variant="compact"
-          /><template v-else
-            ><button
-              v-for="item in opened"
-              :key="item.package.packageId"
-              class="package-tab"
-              :class="{
-                active: item.package.packageId === activePackageId,
-              }"
-              type="button"
-              role="tab"
-              :aria-selected="item.package.packageId === activePackageId"
-              @click="explorer.choosePackage(item.package.packageId)"
-            >
-              <FIcon name="Package" :size="14" aria-label="" /><span>{{
-                item.package.path.split(/[\\/]/).pop()
-              }}</span
-              ><span
-                class="tab-close"
-                @click.stop="explorer.closePackage(item.package.packageId)"
-                >×</span
-              >
-            </button></template
-          >
-        </div>
-        <template v-if="activePackage"
-          ><div class="work-header">
-            <div>
-              <FTypography :header="3" spacing="none">{{
-                activePackage.package.path.split(/[\\/]/).pop()
-              }}</FTypography
-              ><FTypography paragraphy type="secondary" spacing="none"
-                >{{ activePackage.package.entryCount.toLocaleString() }}
-                {{ $t("package.resources") }} ·
-                {{ activePackage.package.kind }}</FTypography
-              >
-            </div>
-            <span class="work-status"
-              ><span aria-hidden="true" />{{ $t("common.ready") }}</span
-            >
-          </div>
-          <nav
-            class="category-tabs"
+      </ResizablePanel>
+      <ResizableHandle
+        orientation="horizontal"
+        :label="$t('package.resizeNavigation')"
+      />
+      <ResizablePanel id="package-workspace" :default-size="52" :min-size="34">
+        <section class="work-column">
+          <div
+            class="package-tabs"
             role="tablist"
-            :aria-label="$t('package.resourceCategories')"
+            :aria-label="$t('package.openPackages')"
           >
-            <button
-              v-for="item in categories"
-              :key="item.key"
-              class="category-tab"
-              :class="{ active: category === item.key }"
-              type="button"
-              role="tab"
-              :aria-selected="category === item.key"
-              @click="category = item.key"
-            >
-              {{ $t(item.label) }} <span>{{ item.count }}</span>
-            </button>
-          </nav>
-          <div class="resource-table-wrap">
-            <table class="resource-table">
-              <thead>
-                <tr>
-                  <th>{{ $t("package.tgi") }}</th>
-                  <th>{{ $t("package.storage") }}</th>
-                  <th>{{ $t("package.compression") }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="resource in visibleResources"
-                  :key="tgiLabel(resource.tgi)"
-                  :class="{ selected: selected === resource }"
-                  @click="explorer.selectResource(resource)"
+            <p v-if="!opened.length" class="tabs-hint">
+              {{ $t("package.emptyWorkspaceDescription") }}
+            </p>
+            <template v-else
+              ><button
+                v-for="item in opened"
+                :key="item.package.packageId"
+                class="package-tab"
+                :class="{
+                  active: item.package.packageId === activePackageId,
+                }"
+                type="button"
+                role="tab"
+                :aria-selected="item.package.packageId === activePackageId"
+                @click="explorer.choosePackage(item.package.packageId)"
+              >
+                <FIcon name="Package" :size="14" aria-label="" /><span>{{
+                  item.package.path.split(/[\\/]/).pop()
+                }}</span
+                ><span
+                  class="tab-close"
+                  @click.stop="explorer.closePackage(item.package.packageId)"
+                  >×</span
                 >
-                  <td>
-                    <FIcon name="FileText" :size="15" aria-label="" /><code>{{
-                      tgiLabel(resource.tgi)
-                    }}</code>
-                  </td>
-                  <td>{{ resource.decompressedSize.toLocaleString() }} B</td>
-                  <td>
-                    <span class="compression-badge">{{
-                      resource.compressed
-                        ? $t("package.compressed")
-                        : $t("package.stored")
-                    }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <FEmpty
-              v-if="!visibleResources.length"
-              icon-name="Search"
-              :title="$t('package.noCategoryResources')"
-              :desc="$t('package.adjustCategory')"
-              variant="compact"
-            /></div
-        ></template>
-        <div v-else class="work-empty">
-          <FIcon name="CircleDot" :size="24" aria-label="" /><FTypography
-            :header="3"
-            >{{ $t("package.selectPackageTitle") }}</FTypography
-          ><FTypography paragraphy type="secondary">{{
-            $t("package.selectPackageDescription")
-          }}</FTypography
-          ><FSkeleton width="70%" height="10px" rounded /><FSkeleton
-            width="45%"
-            height="10px"
-            rounded
-          />
-        </div>
-      </section>
-      <aside class="detail-column">
-        <template v-if="selected"
-          ><div class="detail-heading">
-            <div>
-              <FTypography :header="4" spacing="none">{{
-                $t("package.resourceDetail")
-              }}</FTypography
-              ><code>{{ tgiLabel(selected.tgi) }}</code>
+              </button></template
+            >
+          </div>
+          <template v-if="activePackage"
+            ><div class="work-header">
+              <div>
+                <FTypography :header="3" spacing="none">{{
+                  activePackage.package.path.split(/[\\/]/).pop()
+                }}</FTypography
+                ><FTypography paragraphy type="secondary" spacing="none"
+                  >{{ activePackage.package.entryCount.toLocaleString() }}
+                  {{ $t("package.resources") }} ·
+                  {{ activePackage.package.kind }}</FTypography
+                >
+              </div>
+              <span class="work-status"
+                ><span aria-hidden="true" />{{ $t("common.ready") }}</span
+              >
             </div>
-            <FIcon
-              name="FileText"
-              :size="19"
-              color="var(--primary)"
-              aria-label=""
+            <nav
+              class="category-tabs"
+              role="tablist"
+              :aria-label="$t('package.resourceCategories')"
+            >
+              <button
+                v-for="item in categories"
+                :key="item.key"
+                class="category-tab"
+                :class="{ active: category === item.key }"
+                type="button"
+                role="tab"
+                :aria-selected="category === item.key"
+                @click="category = item.key"
+              >
+                <img
+                  v-if="
+                    item.key !== 'all' &&
+                    resourceIconUrl(item.key as ResourceKind)
+                  "
+                  class="category-icon"
+                  :src="resourceIconUrl(item.key as ResourceKind)"
+                  alt=""
+                /><span>{{ $t(item.label) }}</span>
+                <span>{{ item.count }}</span>
+              </button>
+            </nav>
+            <div class="resource-table-wrap">
+              <table class="resource-table">
+                <thead>
+                  <tr>
+                    <th>{{ $t("package.tgi") }}</th>
+                    <th>{{ $t("package.storage") }}</th>
+                    <th>{{ $t("package.compression") }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="resource in visibleResources"
+                    :key="tgiLabel(resource.tgi)"
+                    :class="{ selected: selected === resource }"
+                    @click="explorer.selectResource(resource)"
+                  >
+                    <td>
+                      <img
+                        v-if="
+                          resourceIconUrl(resourceKind(resource.tgi.typeId))
+                        "
+                        class="resource-icon"
+                        :src="
+                          resourceIconUrl(resourceKind(resource.tgi.typeId))
+                        "
+                        alt=""
+                      /><span
+                        class="resource-name"
+                        :title="tgiLabel(resource.tgi)"
+                        >{{ explorer.resourceLabel(resource) }}</span
+                      >
+                    </td>
+                    <td>{{ resource.decompressedSize.toLocaleString() }} B</td>
+                    <td>
+                      <span class="compression-badge">{{
+                        resource.compressed
+                          ? $t("package.compressed")
+                          : $t("package.stored")
+                      }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="!visibleResources.length" class="empty-hint">
+                {{ $t("package.noCategoryResources") }}
+              </p>
+            </div></template
+          >
+          <div v-else class="work-empty">
+            <FTypography :header="3">{{
+              $t("package.selectPackageTitle")
+            }}</FTypography
+            ><FTypography paragraphy type="secondary">{{
+              $t("package.selectPackageDescription")
+            }}</FTypography>
+          </div>
+        </section>
+      </ResizablePanel>
+      <ResizableHandle
+        orientation="horizontal"
+        :label="$t('package.resizePreview')"
+      />
+      <ResizablePanel id="package-preview" :default-size="25" :min-size="20">
+        <aside class="detail-column">
+          <template v-if="selected"
+            ><div class="detail-heading">
+              <div>
+                <FTypography :header="4" spacing="none">{{
+                  explorer.resourceLabel(selected)
+                }}</FTypography
+                ><code>{{ tgiLabel(selected.tgi) }}</code>
+              </div>
+            </div>
+            <div class="detail-tabs" role="tablist">
+              <button
+                class="detail-tab"
+                :class="{ active: detailMode === 'hex' }"
+                type="button"
+                role="tab"
+                :aria-selected="detailMode === 'hex'"
+                @click="detailMode = 'hex'"
+              >
+                {{ $t("package.hex") }}</button
+              ><button
+                class="detail-tab"
+                :class="{ active: detailMode === 'preview' }"
+                type="button"
+                role="tab"
+                :aria-selected="detailMode === 'preview'"
+                @click="detailMode = 'preview'"
+              >
+                {{ $t("package.preview") }}
+              </button>
+            </div>
+            <div v-if="detailMode === 'hex'" class="detail-content">
+              <div v-if="previewLoading" class="detail-loading">
+                <FSkeleton height="18px" width="45%" rounded /><FSkeleton
+                  height="12px"
+                  width="80%"
+                /><FSkeleton height="12px" width="65%" />
+              </div>
+              <p v-else-if="previewError" class="detail-error" role="alert">
+                {{ previewError }}
+              </p>
+              <HexPreview v-else-if="preview" :preview="preview" />
+              <p v-else class="detail-hint">{{ $t("package.bytesReady") }}</p>
+            </div>
+            <ResourcePreview
+              v-else
+              :preview="preview"
+              :loading="previewLoading"
+              :error="previewError"
             />
-          </div>
-          <div class="detail-tabs" role="tablist">
-            <button
-              class="detail-tab active"
-              type="button"
-              role="tab"
-              aria-selected="true"
-            >
-              {{ $t("package.hex") }}</button
-            ><button
-              class="detail-tab"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              disabled
-            >
-              {{ $t("package.preview") }}
-            </button>
-          </div>
-          <pre class="hex-view">{{
-            selected ? $t("package.bytesReady") : ""
-          }}</pre></template
-        ><FEmpty
-          v-else
-          icon-name="FileText"
-          :title="$t('package.emptyDetailTitle')"
-          :desc="$t('package.emptyDetailDescription')"
-          variant="compact"
-        />
-      </aside>
-    </div>
+          </template>
+          <p v-else class="empty-hint">
+            {{ $t("package.emptyDetailDescription") }}
+          </p>
+        </aside>
+      </ResizablePanel>
+    </Resizable>
   </section>
 </template>
 
@@ -338,17 +391,6 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   letter-spacing: 0.08em;
   margin: 0 0 10px;
   text-transform: uppercase;
-}
-.heading-mark {
-  align-items: center;
-  background: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--primary);
-  display: flex;
-  height: 52px;
-  justify-content: center;
-  width: 52px;
 }
 .explorer-toolbar {
   align-items: center;
@@ -417,50 +459,56 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   opacity: 0.5;
 }
 .ide-shell {
-  display: grid;
-  gap: 1px;
-  grid-template-columns: minmax(210px, 240px) minmax(420px, 1fr) minmax(
-      260px,
-      340px
-    );
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
   height: min(720px, calc(100vh - 300px));
   max-height: 720px;
   min-height: 520px;
   overflow: hidden;
+  width: 100%;
 }
 .tree-column,
 .work-column,
 .detail-column {
   background: var(--surface);
-  border: 1px solid var(--border);
   min-width: 0;
-  overflow: auto;
-  padding: 10px;
-}
-.tree-column {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-.package-files {
-  margin-top: 0;
+  min-height: 0;
+  height: 100%;
 }
 .work-column {
   display: flex;
   flex-direction: column;
-  padding: 0;
+  overflow: hidden;
+}
+.detail-column {
+  overflow: auto;
+  padding: 14px;
+}
+.tabs-hint {
+  align-items: center;
+  color: var(--subtle-foreground);
+  display: flex;
+  flex: 1;
+  font-size: 11px;
+  justify-content: center;
+  margin: 0;
+}
+.empty-hint {
+  color: var(--subtle-foreground);
+  font-size: 12px;
+  margin: 0;
+  padding: 26px 12px;
+  text-align: center;
 }
 .package-tabs {
   align-items: stretch;
   background: var(--surface-elevated);
   border-bottom: 1px solid var(--border);
   display: flex;
-  min-height: 48px;
+  flex: none;
+  min-height: 40px;
   overflow-x: auto;
-}
-.package-tabs :deep(.f-empty) {
-  min-width: 100%;
-  padding: 12px;
 }
 .package-tab {
   align-items: center;
@@ -506,8 +554,13 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .work-header {
   align-items: flex-start;
   display: flex;
+  flex: none;
   justify-content: space-between;
+  min-width: 0;
   padding: 16px 18px 12px;
+}
+.work-header > div:first-child {
+  min-width: 0;
 }
 .work-status {
   align-items: center;
@@ -525,6 +578,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .category-tabs {
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex: none;
   gap: 3px;
   overflow-x: auto;
   padding: 0 14px;
@@ -556,6 +610,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   padding: 2px 5px;
 }
 .resource-table-wrap {
+  flex: 1 1 0;
   min-height: 0;
   overflow: auto;
   padding: 0 14px 14px;
@@ -594,6 +649,23 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .resource-table td:first-child svg {
   color: var(--primary);
 }
+.resource-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-icon,
+.category-icon {
+  flex: none;
+  height: 15px;
+  object-fit: contain;
+  width: 15px;
+}
+.category-tab {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+}
 .resource-table code,
 .detail-heading code {
   font:
@@ -606,9 +678,6 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .compression-badge {
   color: var(--muted-foreground);
   font-size: 10px;
-}
-.detail-column {
-  padding: 18px;
 }
 .detail-heading {
   align-items: flex-start;
@@ -661,26 +730,12 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   padding: 20px;
   text-align: center;
 }
-.work-empty svg {
-  color: var(--muted-foreground);
-}
-.work-empty .f-skeleton {
-  margin-top: 7px;
-}
 .sr-only {
   height: 1px;
   margin: -1px;
   overflow: hidden;
   position: absolute;
   width: 1px;
-}
-@media (max-width: 1000px) {
-  .ide-shell {
-    grid-template-columns: 210px minmax(400px, 1fr);
-  }
-  .detail-column {
-    display: none;
-  }
 }
 @media (max-width: 700px) {
   .explorer-toolbar {
@@ -693,23 +748,8 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   .toolbar-actions > * {
     flex: 1;
   }
-  .ide-shell {
-    grid-template-columns: 1fr;
-    height: min(700px, calc(100vh - 360px));
-    min-height: 480px;
-  }
-  .tree-column {
-    max-height: 240px;
-  }
-  .work-column {
-    min-height: 400px;
-  }
   .page-heading {
     gap: 12px;
-  }
-  .heading-mark {
-    height: 42px;
-    width: 42px;
   }
 }
 </style>

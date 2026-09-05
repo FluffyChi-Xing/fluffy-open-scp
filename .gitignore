@@ -23,3 +23,7 @@ target/
 src-tauri/gen/
 dist/
 *.tsbuildinfo
+
+
+# agent
+.claude/

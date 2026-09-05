@@ -4,6 +4,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import type { PackageFile } from "@/api/tauri";
+import { extensionIconUrl } from "@/lib/resource-types";
 
 interface Props {
   files: PackageFile[];
@@ -33,7 +34,7 @@ const emit = defineEmits<{ select: [file: PackageFile] }>();
         type="button"
         @click="emit('select', file)"
       >
-        <FIcon name="Package" :size="16" aria-label="" /><span
+        <img class="file-icon" :src="extensionIconUrl(file.name)" alt="" /><span
           ><strong>{{ file.name }}</strong
           ><small>{{ Math.round(file.size / 1_000_000) }} MB</small></span
         >
@@ -97,6 +98,12 @@ const emit = defineEmits<{ select: [file: PackageFile] }>();
 .file-item > svg {
   color: var(--primary);
   flex: none;
+}
+.file-icon {
+  flex: none;
+  height: 16px;
+  object-fit: contain;
+  width: 16px;
 }
 .file-item span {
   display: grid;

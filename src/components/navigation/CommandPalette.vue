@@ -16,10 +16,15 @@ const results = computed(() => props.items.filter((item) => `${t(item.titleKey)}
 function close() { emit('close') }
 function choose(item: NavigationItem) { emit('select', item) }
 function onKeydown(event: KeyboardEvent) {
+  if (!props.open) return
   if (event.key === 'Escape') { close(); return }
   if (event.key === 'ArrowDown') { event.preventDefault(); selectedIndex.value = Math.min(selectedIndex.value + 1, results.value.length - 1) }
   if (event.key === 'ArrowUp') { event.preventDefault(); selectedIndex.value = Math.max(selectedIndex.value - 1, 0) }
-  if (event.key === 'Enter' && results.value[selectedIndex.value]) { event.preventDefault(); choose(results.value[selectedIndex.value]) }
+  if (event.key === 'Enter' && results.value[selectedIndex.value]) {
+    const target = event.target as HTMLElement | null
+    if (target && (target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+    event.preventDefault(); choose(results.value[selectedIndex.value])
+  }
 }
 watch(() => props.open, async (open) => { if (!open) return; query.value = ''; selectedIndex.value = 0; await nextTick(); input.value?.focus() })
 watch(results, () => { selectedIndex.value = 0 })

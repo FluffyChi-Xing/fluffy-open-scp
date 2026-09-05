@@ -1,116 +1,84 @@
 <script setup lang="ts">
-import FEmpty from "@/components/extensions/FEmpty.vue";
-import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
-import FTypography from "@/components/extensions/FTypography.vue";
-import type { GameFolder } from "@/api/tauri";
+import type { GameFolder, PackageFile } from "@/api/tauri";
+import GameFolderTreeNode from "./GameFolderTreeNode.vue";
 
 interface Props {
   folders: GameFolder[];
-  selectedPath: string;
   loading: boolean;
 }
 const props = defineProps<Props>();
-const emit = defineEmits<{ select: [path: string] }>();
+const emit = defineEmits<{ open: [file: PackageFile] }>();
 </script>
 
 <template>
-  <section class="folder-tree panel">
-    <FTypography :header="4" spacing="none"
-      ><FIcon name="FolderOpen" :size="15" aria-label="" />{{
-        $t("package.fileTree")
-      }}</FTypography
-    >
-    <div v-if="props.loading" class="loading-list">
-      <FSkeleton v-for="index in 5" :key="index" height="30px" rounded />
+  <section class="folder-tree">
+    <p class="panel-label">{{ $t("package.fileTree") }}</p>
+    <div v-if="props.loading" class="tree-loading">
+      <FSkeleton v-for="index in 6" :key="index" height="22px" rounded />
     </div>
-    <div v-else-if="props.folders.length" class="folder-list">
-      <button
+    <div v-else-if="props.folders.length" class="tree-body" role="tree">
+      <GameFolderTreeNode
         v-for="folder in props.folders"
         :key="folder.path"
-        class="folder-item"
-        :class="{ active: folder.path === props.selectedPath }"
-        type="button"
-        @click="emit('select', folder.path)"
-      >
-        <FIcon name="FolderOpen" :size="16" aria-label="" /><span>{{
-          folder.name
-        }}</span
-        ><small>{{ folder.packageCount }}</small>
-      </button>
+        :folder="folder"
+        :depth="0"
+        :default-expanded="true"
+        @open="emit('open', $event)"
+      />
     </div>
-    <FEmpty
-      v-else
-      icon-name="FolderOpen"
-      :title="$t('package.noFolders')"
-      :desc="$t('package.chooseFolderHint')"
-      variant="compact"
-    />
+    <div v-else class="tree-empty">
+      <p>{{ $t("package.noFolders") }}</p>
+      <small>{{ $t("package.chooseFolderHint") }}</small>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.panel {
+.folder-tree {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  min-width: 0;
-  padding: 16px;
-}
-.folder-tree h4 {
-  align-items: center;
   display: flex;
-  gap: 7px;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
 }
-.folder-tree h4 svg {
-  color: var(--primary);
-}
-.folder-list {
-  display: grid;
-  gap: 3px;
-  margin-top: 14px;
-}
-.folder-item {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: flex;
-  font: inherit;
-  font-size: 12px;
-  gap: 9px;
-  min-height: 36px;
-  padding: 0 9px;
-  text-align: start;
-  width: 100%;
-}
-.folder-item:hover,
-.folder-item.active {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.folder-item.active {
-  font-weight: 700;
-}
-.folder-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.folder-item small {
+.panel-label {
+  background: var(--surface);
   color: var(--subtle-foreground);
-  margin-inline-start: auto;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0;
+  padding: 10px 12px 6px;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  z-index: 1;
 }
-.loading-list {
+.tree-loading {
   display: grid;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 6px;
+  padding: 8px 12px;
 }
-.folder-tree :deep(.f-empty) {
-  min-height: 180px;
-  width: 100%;
+.tree-body {
+  padding-bottom: 10px;
+}
+.tree-empty {
+  color: var(--subtle-foreground);
+  display: grid;
+  gap: 4px;
+  padding: 28px 16px;
+  text-align: center;
+}
+.tree-empty p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin: 0;
+}
+.tree-empty small {
+  font-size: 11px;
+  line-height: 1.5;
 }
 </style>

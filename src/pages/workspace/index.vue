@@ -2,20 +2,29 @@
 import { computed, onMounted, shallowRef } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import { isTauri } from "@/api";
-import type { FTreeNode } from "@/components/extensions/tree";
+import { isTauri, tauriApi } from "@/api";
 import WorkspaceDocument from "./components/WorkspaceDocument.vue";
-import WorkspaceTree from "./components/WorkspaceTree.vue";
+import WorkspaceTree, { type TreeAction } from "./components/WorkspaceTree.vue";
 import { useWorkspace } from "@/composables/useWorkspace";
 
 const workspace = useWorkspace();
 const { status, folders, document, saving, error, isConfigured } = workspace;
 const rootInput = shallowRef("");
-const folderInput = shallowRef("mods/example");
-const tree = computed(() => folderTree(folders.value));
+const pending = shallowRef<TreeAction | null>(null);
+const nameInput = shallowRef("");
+const moveTarget = shallowRef("");
+const actionError = shallowRef("");
+const moveTargets = computed(() => {
+  if (!pending.value) return [] as string[];
+  const current = pending.value.path;
+  return ["", ...folders.value.map((item) => item.relativePath)].filter(
+    (candidate) =>
+      !current ||
+      (candidate !== current && !candidate.startsWith(`${current}/`)),
+  );
+});
 
 onMounted(async () => {
-  if (!isTauri()) return;
   await workspace.loadStatus();
   if (workspace.isConfigured.value) await workspace.loadFolders();
 });
@@ -24,33 +33,64 @@ async function configureRoot() {
   await workspace.setRoot(rootInput.value.trim());
   await workspace.loadFolders();
 }
-async function createFolder() {
-  if (!folderInput.value.trim()) return;
-  await workspace.createFolder(folderInput.value.trim());
-}
-async function selectFolder(keys: string[]) {
-  const path = keys[0];
+async function chooseRoot() {
+  if (!isTauri()) return;
+  const path = await tauriApi.workspace.pickDirectory();
   if (!path) return;
-  const folder = folders.value.find((item) => item.relativePath === path);
-  await workspace.select(folder?.readmeRelativePath ?? `${path}/README.md`);
+  rootInput.value = path;
+  await configureRoot();
 }
-function folderTree(folders: readonly { relativePath: string }[]): FTreeNode[] {
-  const roots: FTreeNode[] = [];
-  for (const folder of folders) {
-    const parts = folder.relativePath.split("/");
-    let level = roots;
-    let path = "";
-    for (const part of parts) {
-      path = path ? `${path}/${part}` : part;
-      let node = level.find((item) => item.key === path);
-      if (!node) {
-        node = { key: path, label: part, icon: "FolderOpen", children: [] };
-        level.push(node);
+function openFile(readmePath: string) {
+  void workspace.select(readmePath);
+}
+function handleAction(action: TreeAction) {
+  actionError.value = "";
+  const baseName = action.path.split("/").pop() ?? "";
+  nameInput.value =
+    action.type === "rename"
+      ? baseName
+      : action.type === "create-markdown"
+        ? "README.md"
+        : "";
+  moveTarget.value = action.isFile ? action.parent : "";
+  pending.value = action;
+}
+function closeDialog() {
+  pending.value = null;
+  actionError.value = "";
+}
+function markdownName(value: string) {
+  return value.toLowerCase().endsWith(".md") ? value : `${value}.md`;
+}
+async function confirmAction() {
+  const action = pending.value;
+  if (!action) return;
+  const name = nameInput.value.trim();
+  try {
+    if (action.type === "create-folder") {
+      if (!name) return;
+      await workspace.createFolderIn(action.parent, name);
+    } else if (action.type === "create-markdown") {
+      if (!name) return;
+      await workspace.createMarkdownIn(action.parent, markdownName(name));
+    } else if (action.type === "rename") {
+      if (!name) return;
+      await workspace.renameEntry(action.path, name);
+      if (action.isFile) {
+        const parent = action.path.includes("/")
+          ? action.path.slice(0, action.path.lastIndexOf("/"))
+          : "";
+        await workspace.select(
+          `${parent ? `${parent}/` : ""}${markdownName(name)}`,
+        );
       }
-      level = node.children ?? (node.children = []);
+    } else if (action.type === "move") {
+      await workspace.moveEntry(action.path, moveTarget.value);
     }
+    closeDialog();
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : String(cause);
   }
-  return roots;
 }
 </script>
 
@@ -65,9 +105,6 @@ function folderTree(folders: readonly { relativePath: string }[]): FTreeNode[] {
         ><FTypography paragraphy type="secondary">{{
           $t("workspace.description")
         }}</FTypography>
-      </div>
-      <div class="heading-mark" aria-hidden="true">
-        <FIcon name="BookOpen" :size="22" />
       </div>
     </header>
     <p v-if="!isTauri()" class="runtime-note" role="status">
@@ -95,7 +132,16 @@ function folderTree(folders: readonly { relativePath: string }[]): FTreeNode[] {
             v-model="rootInput"
             :placeholder="$t('workspace.rootPlaceholder')"
             autocomplete="off"
-          /><button class="primary-button" type="submit">
+          /><button
+            v-if="isTauri()"
+            class="secondary-button"
+            type="button"
+            @click="chooseRoot"
+          >
+            <FIcon name="FolderOpen" :size="16" aria-label="" />{{
+              $t("workspace.chooseFolder")
+            }}</button
+          ><button class="primary-button" type="submit">
             <FIcon name="FolderOpen" :size="16" aria-label="" />{{
               $t("workspace.openRoot")
             }}
@@ -114,28 +160,15 @@ function folderTree(folders: readonly { relativePath: string }[]): FTreeNode[] {
             status?.rootPath
           }}</FTypography>
         </div>
-        <form class="folder-form" @submit.prevent="createFolder">
-          <label for="new-folder">{{ $t("workspace.newFolder") }}</label>
-          <div class="form-row">
-            <input
-              id="new-folder"
-              v-model="folderInput"
-              :placeholder="$t('workspace.folderPlaceholder')"
-              autocomplete="off"
-            /><button class="secondary-button" type="submit">
-              <FIcon name="Plus" :size="16" aria-label="" />{{
-                $t("workspace.createFolder")
-              }}
-            </button>
-          </div>
-        </form>
+        <p class="toolbar-hint">{{ $t("workspace.contextHint") }}</p>
       </div>
       <div class="workspace-grid">
         <WorkspaceTree
-          :nodes="tree"
+          :folders="folders"
           :title="$t('workspace.folders')"
-          :empty-title="$t('workspace.empty')"
-          @select="selectFolder"
+          :empty-hint="$t('workspace.empty')"
+          @open="openFile"
+          @action="handleAction"
         /><WorkspaceDocument
           :document="document"
           :saving="saving"
@@ -145,6 +178,67 @@ function folderTree(folders: readonly { relativePath: string }[]): FTreeNode[] {
           @save="workspace.save"
         /></div
     ></template>
+    <Teleport to="body">
+      <div v-if="pending" class="dialog-overlay" @mousedown.self="closeDialog">
+        <div
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="
+            $t(
+              `workspace.dialog${pending.type === 'create-folder' ? 'CreateFolder' : pending.type === 'create-markdown' ? 'CreateMarkdown' : pending.type === 'rename' ? 'Rename' : 'Move'}`,
+            )
+          "
+        >
+          <FTypography :header="4" spacing="none">{{
+            pending.type === "create-folder"
+              ? $t("workspace.dialogCreateFolder")
+              : pending.type === "create-markdown"
+                ? $t("workspace.dialogCreateMarkdown")
+                : pending.type === "rename"
+                  ? $t("workspace.dialogRename")
+                  : $t("workspace.dialogMove")
+          }}</FTypography>
+          <p v-if="pending.path" class="dialog-target">{{ pending.path }}</p>
+          <label v-if="pending.type !== 'move'" for="tree-action-name">{{
+            $t("workspace.nameLabel")
+          }}</label>
+          <input
+            v-if="pending.type !== 'move'"
+            id="tree-action-name"
+            v-model="nameInput"
+            autocomplete="off"
+            @keydown.enter.prevent="confirmAction"
+          />
+          <template v-else>
+            <label for="tree-action-target">{{
+              $t("workspace.targetLabel")
+            }}</label>
+            <select id="tree-action-target" v-model="moveTarget">
+              <option value="">{{ $t("workspace.targetRoot") }}</option>
+              <option
+                v-for="target in moveTargets.filter(Boolean)"
+                :key="target"
+                :value="target"
+              >
+                {{ target }}
+              </option>
+            </select>
+          </template>
+          <p v-if="actionError" class="error-message" role="alert">
+            {{ actionError }}
+          </p>
+          <div class="dialog-actions">
+            <button class="secondary-button" type="button" @click="closeDialog">
+              {{ $t("workspace.cancel") }}
+            </button>
+            <button class="primary-button" type="button" @click="confirmAction">
+              {{ $t("workspace.confirm") }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -165,17 +259,6 @@ function folderTree(folders: readonly { relativePath: string }[]): FTreeNode[] {
   letter-spacing: 0.08em;
   margin: 0 0 10px;
   text-transform: uppercase;
-}
-.heading-mark {
-  align-items: center;
-  background: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--primary);
-  display: flex;
-  height: 52px;
-  justify-content: center;
-  width: 52px;
 }
 .runtime-note,
 .setup-card,
@@ -210,16 +293,71 @@ function folderTree(folders: readonly { relativePath: string }[]): FTreeNode[] {
   justify-content: center;
   width: 42px;
 }
-.root-form,
-.folder-form {
+.root-form {
   grid-column: 1/-1;
 }
-.root-form label,
-.folder-form label {
+.root-form label {
   color: var(--muted-foreground);
   display: block;
   font-size: 12px;
   margin-bottom: 7px;
+}
+.toolbar-hint {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  margin: 0;
+}
+.dialog-overlay {
+  align-items: center;
+  background: oklch(0.1 0.01 260 / 0.45);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 70;
+}
+.dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  width: min(400px, calc(100vw - 32px));
+}
+.dialog-target {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  margin: -6px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dialog label {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.dialog input,
+.dialog select {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  min-width: 0;
+  padding: 9px 10px;
+  width: 100%;
+}
+.dialog input:focus-visible,
+.dialog select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 .form-row {
   display: flex;

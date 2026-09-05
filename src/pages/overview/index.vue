@@ -273,6 +273,8 @@ function age(timestamp: number) {
 .event-list {
   list-style: none;
   margin: 18px 0 0;
+  max-height: clamp(240px, 38vh, 420px);
+  overflow-y: auto;
   padding: 0;
 }
 .package-list li,
@@ -331,7 +333,7 @@ function age(timestamp: number) {
   display: flex;
   gap: 8px;
   justify-content: center;
-  min-height: 180px;
+  min-height: 120px;
   text-align: center;
 }
 .loading-state {

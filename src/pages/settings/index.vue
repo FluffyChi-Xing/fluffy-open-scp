@@ -73,9 +73,6 @@ function messageOf(cause: unknown) {
           $t("settings.description")
         }}</FTypography>
       </div>
-      <div class="heading-mark" aria-hidden="true">
-        <FIcon name="Settings" :size="22" />
-      </div>
     </header>
     <p v-if="!isTauri()" class="runtime-note" role="status">
       <FIcon name="Info" :size="16" aria-label="" />{{
@@ -193,17 +190,6 @@ function messageOf(cause: unknown) {
   letter-spacing: 0.08em;
   margin: 0 0 10px;
   text-transform: uppercase;
-}
-.heading-mark {
-  align-items: center;
-  background: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--primary);
-  display: flex;
-  height: 52px;
-  justify-content: center;
-  width: 52px;
 }
 .runtime-note,
 .settings-card {
