@@ -289,6 +289,20 @@ pub struct ResolveNameRequest {
     pub user_registry_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveNamesRequest {
+    pub package_id: u64,
+    pub tgis: Vec<TgiDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedResourceName {
+    pub tgi: TgiDto,
+    pub display_name: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NameResolution {
@@ -876,6 +890,82 @@ pub async fn resolve_name(
             instance_name: registry.instance_name(tgi.instance),
             tgi,
         })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+pub const RESOLVE_NAMES_MAX: usize = 500;
+const REGISTRY_DATABASE: &str = "database_main.s3db";
+const REGISTRY_USER_DATABASE: &str = "database_user.s3db";
+const REGISTRY_SEARCH_DEPTH: usize = 3;
+
+fn find_registry_database(start: &Path) -> Option<PathBuf> {
+    let mut current = Some(start.to_path_buf());
+    for _ in 0..=REGISTRY_SEARCH_DEPTH {
+        let Some(directory) = current else {
+            break;
+        };
+        let candidate = directory.join(REGISTRY_DATABASE);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        current = directory.parent().map(Path::to_path_buf);
+    }
+    None
+}
+
+fn semantic_instance_name(
+    registry: Option<&Arc<sc_registry::Registry>>,
+    instance: u32,
+) -> Option<String> {
+    let record = registry?.instances().get(&instance)?;
+    (!record.name.is_empty()).then(|| record.name.clone())
+}
+
+#[tauri::command]
+pub async fn resolve_names(
+    state: State<'_, AppState>,
+    request: ResolveNamesRequest,
+) -> Result<Vec<ResolvedResourceName>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        if request.tgis.len() > RESOLVE_NAMES_MAX {
+            return Err(CommandError::from(PackageError::LimitExceeded(
+                RESOLVE_NAMES_MAX,
+            )));
+        }
+        let package = manager
+            .get(request.package_id)
+            .map_err(CommandError::from)?;
+        let mut registry_paths: Vec<PathBuf> = Vec::new();
+        if let Some(path) = find_registry_database(package.path()) {
+            registry_paths.push(path);
+        }
+        if let Ok(Some(game_data_path)) = store
+            .app_settings()
+            .map(|settings| settings.and_then(|settings| settings.game_data_path))
+            && let Some(path) = find_registry_database(Path::new(&game_data_path))
+            && !registry_paths.contains(&path)
+        {
+            registry_paths.push(path);
+        }
+        let registry = registry_paths.first().and_then(|main| {
+            let user = main.with_file_name(REGISTRY_USER_DATABASE);
+            let user = user.is_file().then(|| user.to_string_lossy().into_owned());
+            manager
+                .registry(&main.to_string_lossy(), user.as_deref())
+                .ok()
+        });
+        Ok(request
+            .tgis
+            .iter()
+            .map(|tgi| ResolvedResourceName {
+                tgi: tgi.clone(),
+                display_name: semantic_instance_name(registry.as_ref(), tgi.instance),
+            })
+            .collect())
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
@@ -1548,5 +1638,23 @@ mod tests {
             output_path: "out.bin".into(),
         };
         assert_eq!(serde_json::to_value(progress).unwrap()["total"], 1);
+    }
+
+    #[test]
+    fn registry_discovery_walks_ancestors_and_names_fall_back() {
+        let root = test_package_path("registry-root");
+        let nested = root.join("SimCityData");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(root.join("database_main.s3db"), b"stub").unwrap();
+        assert_eq!(
+            find_registry_database(&nested),
+            Some(root.join("database_main.s3db"))
+        );
+        assert_eq!(
+            find_registry_database(Path::new("Q:/definitely/missing")),
+            None
+        );
+        assert_eq!(semantic_instance_name(None, 7), None);
+        let _ = fs::remove_dir_all(root);
     }
 }

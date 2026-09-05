@@ -268,3 +268,23 @@ P2/P3: 高级编辑器、游戏联动、依赖生态
 **MVP 交付定义**：最小可交付产物 = 前后端 P0 阶段打通后的**可运行 EXE**（原 SCP 核心能力的 Rust + Tauri 迁移版）。达成条件：M3 完成 + DBPF/property 只读链路经 Tauri command 暴露 + 前端资源工作台/属性/资产页面可用（见 `docs/roadmap/ui.md` U0–U2）+ 异常隔离验收通过 + `pnpm tauri build` 出包。
 
 P1 的 manifest、pipeline、diagnostics、dependency、preview/watch 接口和验收标准见 `docs/roadmap/modding-suite.md`。
+
+---
+
+## 7. P0 UI 收尾记录（2026-09-06）
+
+本轮完成 UI 十项修正 + Package 三列 IDE 工作台（详见 `docs/roadmap/ui.md` U1/U2 进展记录）。后端同步落地：
+
+- `package_browser`：目录树（含文件）扫描 / `.package` 列表；symlink 跳过、深度/数量上限、稳定排序
+- `resolve_names`：按 TGI 批量语义名称，registry s3db 就近发现（package 目录与游戏目录向上 3 级），失败回退 TGI
+- `workspace_rename` / `workspace_move`：root 校验、单一组件名、防覆盖、防移入自身子树，操作后刷新 folder cache
+- Tauri dialog plugin（原生目录选择）；窗口恢复 resizable/maximizable（min 960×600）
+
+验证与性能：
+
+- 前端：`vue-tsc` / `eslint` / `vitest` 50 通过 / `prettier` 全绿；后端：`cargo test` 26 通过、`clippy -D warnings` 零告警
+- 真实 `SimCity_DLC0.package`（93.4 MB）：DBPF 3.0，1806 条目，1536 RefPack；索引解析 ~0.7 ms；分类 643 Property / 785 RW4 / 55 Raster
+- 5174 浏览器 Playwright 实测：三列布局拖拽、文件树展开与 `.package` 打开、分类 tab 切换、Hex/图片预览与缩放旋转、文档树右键全流程（创建/重命名/移动/根级创建）、Markdown Enter 换行不跳页
+- 产物：`target/release/fluffy-open-scp.exe` + MSI + NSIS 安装包（内嵌 dist，不依赖 dev server）
+
+已知边界：Registry s3db 未随包分发，用户游戏目录缺失时语义名整体回退 TGI；Tauri Raster/音视频/GLB 预览待后续 command；属性/资产 inspector 为下一批。

@@ -25,3 +25,4 @@ sc-store = { path = "../crates/sc-store" }
 sc-registry = { path = "../crates/sc-registry" }
 thiserror.workspace = true
 sha2 = "0.10"
+tauri-plugin-dialog = "^2"

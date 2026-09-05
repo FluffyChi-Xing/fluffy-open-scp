@@ -10,6 +10,7 @@
 
 mod activity;
 mod media_tools;
+mod package_browser;
 mod package_service;
 mod settings;
 mod workspace;
@@ -19,15 +20,17 @@ use activity::{
     activity_list_packages,
 };
 use media_tools::{MediaTools, application_dir, resolve_tools};
+use package_browser::{list_game_tree, list_package_files};
 use package_service::{
     close_package, export, export_status, list_resources, open_package, read_resource_bytes,
-    resolve_name,
+    resolve_name, resolve_names,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
 use tauri::{Manager, PhysicalPosition};
 use workspace::{
     workspace_create_folder, workspace_create_markdown, workspace_get, workspace_list,
-    workspace_read_markdown, workspace_set_root, workspace_write_markdown,
+    workspace_move, workspace_read_markdown, workspace_rename, workspace_set_root,
+    workspace_write_markdown,
 };
 
 #[tauri::command]
@@ -45,18 +48,22 @@ fn detect_media_tools() -> MediaTools {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("openscp.db");
             let store = sc_store::Store::open(database_path)?;
             app.manage(AppState::new(app.handle().clone(), store));
-            if let Some(window) = app.get_webview_window("main") {
-                if let Some(monitor) = window.primary_monitor()? {
-                    let area = monitor.work_area();
-                    let size = window.outer_size()?;
-                    let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
-                    let y = area.position.y + (area.size.height as i32 - size.height as i32) / 2;
-                    window.set_position(PhysicalPosition::new(x.max(area.position.x), y.max(area.position.y)))?;
-                }
+            if let Some(window) = app.get_webview_window("main")
+                && let Some(monitor) = window.primary_monitor()?
+            {
+                let area = monitor.work_area();
+                let size = window.outer_size()?;
+                let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
+                let y = area.position.y + (area.size.height as i32 - size.height as i32) / 2;
+                window.set_position(PhysicalPosition::new(
+                    x.max(area.position.x),
+                    y.max(area.position.y),
+                ))?;
             }
             Ok(())
         })
@@ -66,11 +73,14 @@ pub fn run() {
             activity_list_events,
             activity_list_packages,
             activity_clear,
+            list_game_tree,
+            list_package_files,
             open_package,
             close_package,
             list_resources,
             read_resource_bytes,
             resolve_name,
+            resolve_names,
             export,
             export_status,
             detect_media_tools,
@@ -84,6 +94,8 @@ pub fn run() {
             workspace_read_markdown,
             workspace_write_markdown,
             workspace_create_markdown,
+            workspace_rename,
+            workspace_move,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

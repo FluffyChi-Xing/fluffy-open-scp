@@ -95,6 +95,20 @@ pub struct CreateMarkdownRequest {
     pub content: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameRequest {
+    pub relative_path: String,
+    pub new_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveRequest {
+    pub relative_path: String,
+    pub target_directory: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 enum WorkspaceError {
     #[error("workspace has not been configured")]
@@ -689,6 +703,90 @@ pub async fn workspace_create_markdown(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+fn resolve_entry(root: &Path, relative: &str) -> Result<PathBuf, WorkspaceError> {
+    let path = validate_relative_path(relative, false)?;
+    let full = existing_path(root, &path)?;
+    Ok(full)
+}
+
+#[command]
+pub async fn workspace_rename(
+    state: State<'_, AppState>,
+    request: RenameRequest,
+) -> Result<Vec<WorkspaceFolder>, CommandError> {
+    let manager = Arc::clone(&state.workspace);
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = manager.lock().map_err(CommandError::from)?;
+        let (root, _) = configured_root(&store).map_err(CommandError::from)?;
+        let source = resolve_entry(&root, &request.relative_path).map_err(CommandError::from)?;
+        let name = validate_relative_path(&request.new_name, false).map_err(CommandError::from)?;
+        if name.components().count() != 1 {
+            return Err(CommandError::from(WorkspaceError::InvalidPath(
+                "name must be a single path component".into(),
+            )));
+        }
+        let parent = source.parent().ok_or_else(|| {
+            CommandError::from(WorkspaceError::InvalidPath("entry has no parent".into()))
+        })?;
+        let target = parent.join(&name);
+        if fs::symlink_metadata(&target).is_ok() {
+            return Err(CommandError::from(WorkspaceError::AlreadyExists));
+        }
+        fs::rename(&source, &target)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+        refresh_cache(&store, &root).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[command]
+pub async fn workspace_move(
+    state: State<'_, AppState>,
+    request: MoveRequest,
+) -> Result<Vec<WorkspaceFolder>, CommandError> {
+    let manager = Arc::clone(&state.workspace);
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = manager.lock().map_err(CommandError::from)?;
+        let (root, _) = configured_root(&store).map_err(CommandError::from)?;
+        let source = resolve_entry(&root, &request.relative_path).map_err(CommandError::from)?;
+        let target_directory =
+            validate_relative_path(&request.target_directory, true).map_err(CommandError::from)?;
+        let target_directory = if target_directory.as_os_str().is_empty() {
+            root.clone()
+        } else {
+            existing_path(&root, &target_directory).map_err(CommandError::from)?
+        };
+        if !target_directory.is_dir() {
+            return Err(CommandError::from(WorkspaceError::NotDirectory));
+        }
+        let name = source.file_name().ok_or_else(|| {
+            CommandError::from(WorkspaceError::InvalidPath("entry has no name".into()))
+        })?;
+        let target = target_directory.join(name);
+        if source.starts_with(&target) {
+            return Err(CommandError::from(WorkspaceError::InvalidPath(
+                "cannot move an entry into itself".into(),
+            )));
+        }
+        if target.starts_with(&source) {
+            return Err(CommandError::from(WorkspaceError::InvalidPath(
+                "cannot move an entry into its own subtree".into(),
+            )));
+        }
+        if fs::symlink_metadata(&target).is_ok() {
+            return Err(CommandError::from(WorkspaceError::AlreadyExists));
+        }
+        fs::rename(&source, &target)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+        refresh_cache(&store, &root).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -696,7 +794,7 @@ mod tests {
     #[test]
     fn rejects_traversal_and_non_markdown_paths() {
         assert!(validate_relative_path("../escape", false).is_err());
-        assert!(validate_relative_path("mods\\escape", false).is_err());
+        assert!(validate_relative_path(r"mods\escape", false).is_err());
         assert!(markdown_path("mods/readme.txt").is_err());
         assert!(markdown_path("mods/README.md").is_ok());
     }
@@ -707,5 +805,24 @@ mod tests {
             revision(b"hello"),
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
+    }
+
+    #[test]
+    fn rename_names_must_be_single_components() {
+        assert!(validate_relative_path("ok-name", false).is_ok());
+        assert_eq!(Path::new("single").components().count(), 1);
+        assert!(Path::new("nested/name").components().count() > 1);
+    }
+
+    #[test]
+    fn move_into_own_subtree_is_detected() {
+        let root = std::env::temp_dir().join(format!("openscp-move-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let source = root.join("mods");
+        fs::create_dir_all(source.join("inner")).unwrap();
+        let moved_to = source.join("inner");
+        let target = moved_to.join("mods");
+        assert!(target.starts_with(&source));
+        let _ = fs::remove_dir_all(&root);
     }
 }

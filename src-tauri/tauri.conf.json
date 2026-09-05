@@ -5,7 +5,7 @@
   "identifier": "com.fluffy.openscp",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5174",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
@@ -18,8 +18,8 @@
         "height": 800,
         "minWidth": 960,
         "minHeight": 600,
-        "resizable": false,
-        "maximizable": false
+        "resizable": true,
+        "maximizable": true
       }
     ],
     "security": {

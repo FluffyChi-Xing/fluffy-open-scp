@@ -235,7 +235,7 @@ export interface CommandResult<T> {
 - [x] `navigation.*` i18n 词条（zh-CN/en-US）与 showcase/external 隐藏
 - [x] M5/M5.5/M6 后端 command 基础、typed adapter 与 workspace/settings 页面首版
 - [ ] `CommandResult<T>` + Diagnostic wire 类型完整进入 `src/api/contracts.ts`
-- [ ] 真实 Tauri runtime 打开 `D:\\ea-games\\SimCity` 下具体 package 并列出 TGI
+- [ ] 真实 Tauri runtime 打开 `D:\\ea-games\\SimCity` 下具体 package 并列出 TGI（目录扫描/导入链路已通并出包，最终手测由用户确认）
 - 验收：Mock 页面流程已通；真实 Tauri 联调待后续 Phase C
 
 ### U1 — `/pages/` 资源工作台（P0 DBPF）
@@ -251,6 +251,23 @@ export interface CommandResult<T> {
 - [ ] 统一预览 surface、格式徽标、状态、复制/导出和诊断面板
 - [ ] 诊断面板雏形（severity/code 过滤 + 重试/跳过）
 - 验收：Mock 全部 tabs 可操作；真实后端能力接入后，249 属性表、122 资产组真实数据可浏览
+
+### U1/U2 进展记录（2026-09-06 P0 UI 收尾）
+
+已落地：
+
+- Package 页重构为三列 Resizable IDE 布局（reka-ui Splitter + `autoSaveId` 持久化）：左列递归文件树（文件夹 + 普通文件 + `.package`，仅 `.package` 可打开）、中列解析工作区、右列预览
+- 基础预览组件：Hex（offset/hex/ASCII，4KB 窗口）、纯文本、图片（工具栏缩放/旋转/重置 + 滚轮缩放）；skeleton/spinner 加载与结构化错误态
+- 动态资源分类 tabbar：由 `ResourceKind` 派生（全部/RW4/Raster/Property/Text/Media/其他），仅显示有资源的分类
+- 文件类型图标：`.docs/assets/file-exptand` 33 个 SVG 迁入 `src/assets/file-extensions`，`src/lib/resource-types.ts` 白名单映射
+- 语义名称：后端 `resolve_names` 批量解析（registry `database_main.s3db` 就近发现 + TGI 回退），资源表语义名优先
+- 文档工作区树：reka-ui Context Menu 三级菜单（空白区/文件夹/文件：创建 Markdown/文件夹、重命名、移动），操作对话框替代手输路径；后端 `workspace_rename`/`workspace_move`（root 校验、防覆盖、防移入子树）
+- 全局修正：窗口恢复 resizable/maximizable（min 960×600）、Tauri 下禁用 WebView 原生右键（树区例外）、`CommandPalette` 全局 Enter 泄漏修复（此前会跳首页并吞 textarea 换行）、全局 h1/h2 收紧、移除装饰性 heading-mark 与 FEmpty 圆圈占位、概览两卡片 max-height
+
+未落地（后续）：
+
+- 属性/资产结构化 inspector、图片/音频/视频/模型真实解码预览（Tauri Raster 明确 unsupported 提示）
+- 资源表虚拟滚动（10 万条 60fps 目标）、复制 TGI/Filter by/导出右键组、诊断面板
 
 ### U3 — 模组/资产制作 + 导出（P1 核心，对齐 modding-suite）
 - [ ] 模组项目页（`openscp.mod.toml` 列表/向导——向导只生成 manifest）
