@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, shallowRef } from "vue";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import { isTauri, tauriApi } from "@/api";
@@ -7,8 +8,10 @@ import WorkspaceDocument from "./components/WorkspaceDocument.vue";
 import WorkspaceTree, { type TreeAction } from "./components/WorkspaceTree.vue";
 import { useWorkspace } from "@/composables/useWorkspace";
 
+const { t } = useI18n();
 const workspace = useWorkspace();
-const { status, folders, document, saving, error, isConfigured } = workspace;
+const { status, entries, selectedPath, document, saving, error, isConfigured } =
+  workspace;
 const rootInput = shallowRef("");
 const pending = shallowRef<TreeAction | null>(null);
 const nameInput = shallowRef("");
@@ -17,7 +20,12 @@ const actionError = shallowRef("");
 const moveTargets = computed(() => {
   if (!pending.value) return [] as string[];
   const current = pending.value.path;
-  return ["", ...folders.value.map((item) => item.relativePath)].filter(
+  return [
+    "",
+    ...entries.value
+      .filter((item) => item.kind === "folder")
+      .map((item) => item.relativePath),
+  ].filter(
     (candidate) =>
       !current ||
       (candidate !== current && !candidate.startsWith(`${current}/`)),
@@ -26,12 +34,12 @@ const moveTargets = computed(() => {
 
 onMounted(async () => {
   await workspace.loadStatus();
-  if (workspace.isConfigured.value) await workspace.loadFolders();
+  if (workspace.isConfigured.value) await workspace.loadEntries();
 });
 async function configureRoot() {
   if (!rootInput.value.trim()) return;
   await workspace.setRoot(rootInput.value.trim());
-  await workspace.loadFolders();
+  await workspace.loadEntries();
 }
 async function chooseRoot() {
   if (!isTauri()) return;
@@ -40,8 +48,8 @@ async function chooseRoot() {
   rootInput.value = path;
   await configureRoot();
 }
-function openFile(readmePath: string) {
-  void workspace.select(readmePath);
+function openFile(path: string) {
+  void workspace.select(path);
 }
 function handleAction(action: TreeAction) {
   actionError.value = "";
@@ -50,7 +58,7 @@ function handleAction(action: TreeAction) {
     action.type === "rename"
       ? baseName
       : action.type === "create-markdown"
-        ? "README.md"
+        ? t("workspace.newMarkdownName")
         : "";
   moveTarget.value = action.isFile ? action.parent : "";
   pending.value = action;
@@ -164,9 +172,10 @@ async function confirmAction() {
       </div>
       <div class="workspace-grid">
         <WorkspaceTree
-          :folders="folders"
+          :entries="entries"
           :title="$t('workspace.folders')"
           :empty-hint="$t('workspace.empty')"
+          :selected-path="selectedPath"
           @open="openFile"
           @action="handleAction"
         /><WorkspaceDocument

@@ -35,6 +35,28 @@ export function resourceKind(typeId: number): ResourceKind {
   return "other";
 }
 
+const textPreviewLanguages: Record<number, string> = {
+  0x67771f5c: "javascript",
+  0x2c978db6: "css",
+  0xdd6233d6: "html",
+  0x0469a3f7: "cpp",
+  0x0a98eaf0: "json",
+};
+
+export function textPreviewLanguage(typeId: number): string | null {
+  return textPreviewLanguages[typeId] ?? null;
+}
+
+const imageMimes: Record<number, string> = {
+  0x2f7d0004: "image/png",
+  0x3f8662ea: "image/jpeg",
+  0x2f7d0007: "image/gif",
+};
+
+export function imageMimeForType(typeId: number): string | null {
+  return imageMimes[typeId] ?? null;
+}
+
 export function resourceIconUrl(kind: ResourceKind): string | undefined {
   return iconUrls[resourceKindMeta[kind].icon];
 }

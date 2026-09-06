@@ -8,7 +8,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "reka-ui";
-import type { WorkspaceFolder } from "@/api/tauri";
+import type { WorkspaceEntry } from "@/api/tauri";
 
 export interface TreeAction {
   type: "create-folder" | "create-markdown" | "rename" | "move" | "open";
@@ -18,13 +18,14 @@ export interface TreeAction {
 }
 
 interface Props {
-  folders: readonly WorkspaceFolder[];
+  entries: readonly WorkspaceEntry[];
   title: string;
   emptyHint: string;
+  selectedPath?: string;
 }
 const props = defineProps<Props>();
 const emit = defineEmits<{
-  open: [readmePath: string];
+  open: [path: string];
   action: [action: TreeAction];
 }>();
 
@@ -38,28 +39,30 @@ interface TreeRow {
 }
 
 const rows = computed<TreeRow[]>(() => {
-  const result: TreeRow[] = [];
-  for (const folder of props.folders) {
-    const depth = folder.relativePath.split("/").length - 1;
-    result.push({
-      key: folder.relativePath,
-      type: "folder",
-      path: folder.relativePath,
-      label: folder.relativePath.split("/").pop() ?? folder.relativePath,
-      depth,
-      parent: folder.relativePath,
-    });
-    if (folder.readmeRelativePath) {
-      result.push({
-        key: folder.readmeRelativePath,
-        type: "file",
-        path: folder.readmeRelativePath,
-        label: folder.readmeRelativePath.split("/").pop() ?? "README.md",
-        depth: depth + 1,
-        parent: folder.relativePath,
-      });
-    }
+  const children = new Map<string, WorkspaceEntry[]>();
+  for (const entry of props.entries) {
+    const split = entry.relativePath.lastIndexOf("/");
+    const parent = split === -1 ? "" : entry.relativePath.slice(0, split);
+    const siblings = children.get(parent);
+    if (siblings) siblings.push(entry);
+    else children.set(parent, [entry]);
   }
+  const result: TreeRow[] = [];
+  const walk = (parent: string, depth: number) => {
+    for (const entry of children.get(parent) ?? []) {
+      const label = entry.relativePath.split("/").pop() ?? entry.relativePath;
+      result.push({
+        key: entry.relativePath,
+        type: entry.kind,
+        path: entry.relativePath,
+        label,
+        depth,
+        parent,
+      });
+      if (entry.kind === "folder") walk(entry.relativePath, depth + 1);
+    }
+  };
+  walk("", 0);
   return result;
 });
 
@@ -91,7 +94,7 @@ function openFile(row: TreeRow) {
               <ContextMenuTrigger as-child>
                 <button
                   class="tree-row"
-                  :class="row.type"
+                  :class="[row.type, { selected: row.path === props.selectedPath }]"
                   :style="{ paddingInlineStart: `${row.depth * 14 + 10}px` }"
                   type="button"
                   @click="openFile(row)"
@@ -236,6 +239,12 @@ function openFile(row: TreeRow) {
 .tree-row.folder {
   color: var(--foreground);
   font-weight: 550;
+}
+.tree-row.selected {
+  background: var(--accent);
+  box-shadow: inset 3px 0 0 var(--primary);
+  color: var(--foreground);
+  font-weight: 700;
 }
 .row-icon {
   fill: none;

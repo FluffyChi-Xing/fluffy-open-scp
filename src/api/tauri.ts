@@ -86,11 +86,17 @@ export interface ResourceSummary {
   decompressedSize: number;
   compressed: boolean;
 }
+export interface TypeCountInfo {
+  typeId: number;
+  name: string;
+  count: number;
+}
 export interface ResourcePage {
   items: ResourceSummary[];
   total: number;
   offset: number;
   limit: number;
+  typeCounts: TypeCountInfo[];
 }
 export interface PackageSummary {
   packageId: number;
@@ -124,6 +130,10 @@ export interface ResourceBytes {
   totalLength: number;
   bytes: number[];
 }
+export interface ResourceData {
+  totalLength: number;
+  dataBase64: string;
+}
 export interface ResolvedResourceName {
   tgi: Tgi;
   displayName: string | null;
@@ -137,6 +147,7 @@ export interface TextPreview extends PreviewData {
   kind: "text";
   content: string;
   encoding: string;
+  language: string;
   truncated: boolean;
 }
 export interface HexPreview extends PreviewData {
@@ -183,9 +194,9 @@ export interface WorkspaceStatus {
   rootPath?: string;
   available: boolean;
 }
-export interface WorkspaceFolder {
+export interface WorkspaceEntry {
   relativePath: string;
-  readmeRelativePath?: string;
+  kind: "folder" | "file";
 }
 export interface MarkdownDocument {
   relativePath: string;

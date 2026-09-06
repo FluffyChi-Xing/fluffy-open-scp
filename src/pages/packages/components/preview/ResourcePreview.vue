@@ -1,32 +1,36 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import type {
   ResourcePreview,
   TextPreview,
-  HexPreview,
   ImagePreview,
 } from "@/api/tauri";
 import TextPreviewView from "./TextPreview.vue";
-import HexPreviewView from "./HexPreview.vue";
 import ImagePreviewView from "./ImagePreview.vue";
 
 interface Props {
   preview: ResourcePreview | null;
+  typeName?: string;
   loading?: boolean;
   error?: string;
 }
-const props = withDefaults(defineProps<Props>(), { loading: false, error: "" });
+const props = withDefaults(defineProps<Props>(), {
+  typeName: "",
+  loading: false,
+  error: "",
+});
 const textPreview = computed(() =>
   props.preview?.kind === "text" ? (props.preview as TextPreview) : null,
 );
-const hexPreview = computed(() =>
-  props.preview?.kind === "hex" ? (props.preview as HexPreview) : null,
-);
 const imagePreview = computed(() =>
   props.preview?.kind === "image" ? (props.preview as ImagePreview) : null,
+);
+const unsupported = computed(
+  () => props.preview !== null && !textPreview.value && !imagePreview.value,
 );
 </script>
 
@@ -42,16 +46,14 @@ const imagePreview = computed(() =>
       {{ props.error }}
     </p>
     <TextPreviewView v-else-if="textPreview" :preview="textPreview" />
-    <HexPreviewView v-else-if="hexPreview" :preview="hexPreview" />
     <ImagePreviewView v-else-if="imagePreview" :preview="imagePreview" />
-    <div
-      v-else-if="props.preview?.kind === 'unsupported'"
-      class="preview-empty"
-    >
+    <div v-else-if="unsupported" class="preview-empty">
+      <FIcon name="FileQuestion" :size="26" aria-label="" />
       <FTypography :header="4" spacing="none">{{
-        $t("package.unsupportedPreview")
+        $t("package.previewUnavailableType", {
+          type: props.typeName || $t("package.other"),
+        })
       }}</FTypography>
-      <p>{{ props.preview.reason }}</p>
     </div>
     <div v-else class="preview-empty">
       <FTypography :header="4" spacing="none">{{

@@ -10,10 +10,12 @@ import type {
   ResourceSummary,
   ResolvedResourceName,
   Tgi,
-  WorkspaceFolder,
+  WorkspaceEntry,
   WorkspaceStatus,
+  TypeCountInfo,
 } from "./tauri";
 import { mockOverview } from "./mock-data";
+import { imageMimeForType, textPreviewLanguage } from "@/lib/resource-types";
 
 export interface LocalDemoConfig {
   version: 1;
@@ -29,6 +31,7 @@ export interface OpenScpDataSource {
     offset: number,
     limit: number,
     filter?: string,
+    typeId?: number,
   ): Promise<ResourcePage>;
   readResourceBytes(
     packageId: number,
@@ -44,7 +47,7 @@ export interface OpenScpDataSource {
   closePackage(packageId: number): Promise<void>;
   activityPackages(): Promise<PackageHistory[]>;
   workspaceStatus(): Promise<WorkspaceStatus>;
-  workspaceFolders(): Promise<WorkspaceFolder[]>;
+  workspaceEntries(): Promise<WorkspaceEntry[]>;
 }
 
 export function localDemoConfig(): LocalDemoConfig | null {
@@ -93,7 +96,7 @@ function tauriDataSource(): OpenScpDataSource {
     closePackage: tauriApi.packages.close,
     activityPackages: tauriApi.activity.packages,
     workspaceStatus: tauriApi.workspace.get,
-    workspaceFolders: tauriApi.workspace.list,
+    workspaceEntries: tauriApi.workspace.list,
   };
 }
 
@@ -204,20 +207,24 @@ function mockDataSource(): OpenScpDataSource {
           total: entries.length,
           offset: 0,
           limit: 100,
+          typeCounts: mockTypeCounts(entries),
         },
       };
     },
-    async listResources(_packageId, offset, limit, filter) {
-      const filtered = filter
+    async listResources(_packageId, offset, limit, filter, typeId) {
+      let filtered = filter
         ? entries.filter((item) =>
             tgiText(item.tgi).includes(filter.toLowerCase()),
           )
         : entries;
+      if (typeId !== undefined)
+        filtered = filtered.filter((item) => item.tgi.typeId === typeId);
       return {
         items: filtered.slice(offset, offset + limit),
         total: filtered.length,
         offset,
         limit,
+        typeCounts: mockTypeCounts(entries),
       };
     },
     async readResourceBytes(_packageId, tgi, offset, length) {
@@ -250,9 +257,10 @@ function mockDataSource(): OpenScpDataSource {
           ...base,
           content: '{\\n  "locale": "zh-CN",\\n  "status": "ready"\\n}',
           encoding: "utf-8",
+          language: "json",
           truncated: false,
         };
-      if (resource.tgi.typeId === 0x2f4e681c)
+      if (imageMimeForType(resource.tgi.typeId) || resource.tgi.typeId === 0x2f4e681c)
         return {
           kind: "image",
           ...base,
@@ -274,25 +282,47 @@ function mockDataSource(): OpenScpDataSource {
         available: true,
       };
     },
-    async workspaceFolders() {
+    async workspaceEntries() {
       return [
-        {
-          relativePath: "mods/example",
-          readmeRelativePath: "mods/example/README.md",
-        },
-        {
-          relativePath: "assets/arcology",
-          readmeRelativePath: "assets/arcology/README.md",
-        },
-      ];
+        { relativePath: "mods", kind: "folder" },
+        { relativePath: "mods/example", kind: "folder" },
+        { relativePath: "mods/example/README.md", kind: "file" },
+        { relativePath: "mods/example/notes.md", kind: "file" },
+        { relativePath: "assets", kind: "folder" },
+        { relativePath: "assets/arcology", kind: "folder" },
+        { relativePath: "assets/arcology/README.md", kind: "file" },
+        { relativePath: "README.md", kind: "file" },
+      ] satisfies WorkspaceEntry[];
     },
   };
+}
+
+function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 async function tauriPreview(
   packageId: number,
   resource: ResourceSummary,
 ): Promise<ResourcePreview> {
+  const mime = imageMimeForType(resource.tgi.typeId);
+  if (mime) {
+    const data = await tauriApi.packages.readData(packageId, resource.tgi);
+    const blob = new Blob([base64ToBytes(data.dataBase64)], { type: mime });
+    return {
+      kind: "image",
+      offset: 0,
+      totalLength: data.totalLength,
+      bytes: [],
+      src: URL.createObjectURL(blob),
+      mime,
+    };
+  }
   const bytes = await tauriApi.packages.readBytes(
     packageId,
     resource.tgi,
@@ -304,14 +334,8 @@ async function tauriPreview(
     totalLength: bytes.totalLength,
     bytes: bytes.bytes,
   };
-  if (resource.tgi.typeId === 0x2f4e681c)
-    return {
-      kind: "unsupported",
-      ...base,
-      reason:
-        "Raster preview will be available after the image decode command is connected.",
-    };
-  if (resource.tgi.typeId === 0x0a98eaf0 || isTextBytes(bytes.bytes)) {
+  const language = textPreviewLanguage(resource.tgi.typeId);
+  if (language || isTextBytes(bytes.bytes)) {
     const content = new TextDecoder("utf-8", { fatal: false }).decode(
       Uint8Array.from(bytes.bytes),
     );
@@ -320,6 +344,7 @@ async function tauriPreview(
       ...base,
       content,
       encoding: "utf-8",
+      language: language ?? "text",
       truncated: bytes.totalLength > bytes.bytes.length,
     };
   }
@@ -355,6 +380,27 @@ function mockResources() {
       compressed: index % 3 === 0,
     };
   });
+}
+
+const mockTypeNames: Record<number, string> = {
+  0x2f4e681b: "rw4",
+  0x2f4e681c: "raster",
+  0x00b1b104: "property",
+  0x0a98eaf0: "text",
+  0x0d9e5710: "wav audio",
+};
+
+function mockTypeCounts(items: ResourceSummary[]): TypeCountInfo[] {
+  const counts = new Map<number, number>();
+  for (const item of items)
+    counts.set(item.tgi.typeId, (counts.get(item.tgi.typeId) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([typeId, count]) => ({
+      typeId,
+      name: mockTypeNames[typeId] ?? typeId.toString(16).padStart(8, "0"),
+      count,
+    }));
 }
 
 function tgiText(tgi: Tgi) {

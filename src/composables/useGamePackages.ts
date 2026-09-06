@@ -11,6 +11,8 @@ import type {
 } from "@/api/tauri";
 import { useToast } from "./useToast";
 
+const PAGE_SIZE = 100;
+
 export function useGamePackages() {
   const source = createDataSource();
   const toast = useToast();
@@ -20,6 +22,7 @@ export function useGamePackages() {
   const opened = shallowRef<OpenPackageResponse[]>([]);
   const activePackageId = shallowRef<number | null>(null);
   const activePage = shallowRef<ResourcePage | null>(null);
+  const typeFilter = shallowRef<number | null>(null);
   const selected = shallowRef<ResourceSummary | null>(null);
   const names = shallowRef<Record<string, string>>({});
   const preview = shallowRef<ResourcePreview | null>(null);
@@ -40,6 +43,19 @@ export function useGamePackages() {
         (item) => item.package.packageId === activePackageId.value,
       ) ?? null,
   );
+  const category = computed(() =>
+    typeFilter.value === null ? "all" : String(typeFilter.value),
+  );
+  const currentPage = computed(
+    () => Math.floor((activePage.value?.offset ?? 0) / PAGE_SIZE) + 1,
+  );
+  const totalPages = computed(() => {
+    const page = activePage.value;
+    if (!page || page.total === 0) return 1;
+    return Math.max(1, Math.ceil(page.total / (page.limit || PAGE_SIZE)));
+  });
+  const canPrev = computed(() => (activePage.value?.offset ?? 0) > 0);
+  const canNext = computed(() => currentPage.value < totalPages.value);
 
   async function loadFolders(path = root.value) {
     loadingFolders.value = true;
@@ -70,14 +86,17 @@ export function useGamePackages() {
       const existing = opened.value.find(
         (item) => item.package.path === file.path,
       );
-      if (existing) activePackageId.value = existing.package.packageId;
-      else {
+      if (existing) {
+        activePackageId.value = existing.package.packageId;
+        activePage.value = existing.resources;
+      } else {
         opened.value = [...opened.value, result];
         activePackageId.value = result.package.packageId;
+        activePage.value = result.resources;
       }
-      activePage.value = existing?.resources ?? result.resources;
+      typeFilter.value = null;
       selected.value = null;
-      void loadNames(result.package.packageId, activePage.value);
+      void loadNames(activePackageId.value, activePage.value);
     } catch {
       toast.error("Package 无法解析");
     } finally {
@@ -91,8 +110,9 @@ export function useGamePackages() {
       activePage.value = await source.listResources(
         activePackage.value.package.packageId,
         offset,
-        100,
+        PAGE_SIZE,
         filter.value || undefined,
+        typeFilter.value ?? undefined,
       );
       void loadNames(activePackage.value.package.packageId, activePage.value);
     } catch {
@@ -100,6 +120,19 @@ export function useGamePackages() {
     } finally {
       loadingPackage.value = false;
     }
+  }
+  async function chooseCategory(key: string) {
+    typeFilter.value = key === "all" ? null : Number(key);
+    await loadPage(0);
+  }
+  async function prevPage() {
+    const page = activePage.value;
+    if (page && canPrev.value)
+      await loadPage(Math.max(0, page.offset - page.limit));
+  }
+  async function nextPage() {
+    const page = activePage.value;
+    if (page && canNext.value) await loadPage(page.offset + page.limit);
   }
   function tgiKey(tgi: Tgi) {
     return `${tgi.typeId}:${tgi.group}:${tgi.instance}`;
@@ -125,8 +158,17 @@ export function useGamePackages() {
       // 名称解析失败不影响资源表，保留 TGI 回退显示
     }
   }
+  function releasePreviewUrl() {
+    if (
+      preview.value?.kind === "image" &&
+      preview.value.src.startsWith("blob:")
+    ) {
+      URL.revokeObjectURL(preview.value.src);
+    }
+  }
   async function selectResource(resource: ResourceSummary) {
     selected.value = resource;
+    releasePreviewUrl();
     preview.value = null;
     previewError.value = "";
     if (!activePackage.value) return;
@@ -138,6 +180,8 @@ export function useGamePackages() {
         resource,
       );
       if (request === previewRequest) preview.value = result;
+      else if (result.kind === "image" && result.src.startsWith("blob:"))
+        URL.revokeObjectURL(result.src);
     } catch {
       if (request === previewRequest) previewError.value = "资源预览失败";
       toast.error("资源读取失败");
@@ -155,7 +199,9 @@ export function useGamePackages() {
         const next = opened.value.at(-1);
         activePackageId.value = next?.package.packageId ?? null;
         activePage.value = next?.resources ?? null;
+        typeFilter.value = null;
         selected.value = null;
+        releasePreviewUrl();
         preview.value = null;
       }
     } catch {
@@ -167,7 +213,9 @@ export function useGamePackages() {
     if (item) {
       activePackageId.value = id;
       activePage.value = item.resources;
+      typeFilter.value = null;
       selected.value = null;
+      releasePreviewUrl();
       preview.value = null;
     }
   }
@@ -177,7 +225,18 @@ export function useGamePackages() {
       .join(":");
   }
   function resourceLabel(resource: ResourceSummary) {
-    return names.value[tgiKey(resource.tgi)] ?? tgiLabel(resource);
+    return (
+      names.value[tgiKey(resource.tgi)] ??
+      `0x${resource.tgi.instance.toString(16).padStart(8, "0")}`
+    );
+  }
+  function typeNameOf(resource: ResourceSummary) {
+    const found = activePage.value?.typeCounts.find(
+      (entry) => entry.typeId === resource.tgi.typeId,
+    );
+    return (
+      found?.name ?? resource.tgi.typeId.toString(16).padStart(8, "0").toUpperCase()
+    );
   }
 
   return {
@@ -188,8 +247,14 @@ export function useGamePackages() {
     activePackageId,
     activePackage,
     activePage,
+    category,
+    currentPage,
+    totalPages,
+    canPrev,
+    canNext,
     selected,
     resourceLabel,
+    typeNameOf,
     preview,
     previewLoading,
     previewError,
@@ -203,6 +268,9 @@ export function useGamePackages() {
     selectFolder,
     openFile,
     loadPage,
+    prevPage,
+    nextPage,
+    chooseCategory,
     selectResource,
     closePackage,
     choosePackage,

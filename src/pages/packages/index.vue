@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import { isTauri, tauriApi } from "@/api";
 import { useGamePackages } from "@/composables/useGamePackages";
+import { useTabScroller } from "@/composables/useTabScroller";
 import GameFolderTree from "./components/GameFolderTree.vue";
 import HexPreview from "./components/preview/HexPreview.vue";
 import ResourcePreview from "./components/preview/ResourcePreview.vue";
@@ -13,13 +15,9 @@ import {
   ResizableHandle,
   ResizablePanel,
 } from "@/components/ui/resizable";
-import {
-  resourceIconUrl,
-  resourceKind,
-  resourceKindMeta,
-  type ResourceKind,
-} from "@/lib/resource-types";
+import { resourceIconUrl, resourceKind } from "@/lib/resource-types";
 
+const { t } = useI18n();
 const explorer = useGamePackages();
 const {
   root,
@@ -28,6 +26,11 @@ const {
   activePackage,
   activePackageId,
   activePage,
+  category,
+  currentPage,
+  totalPages,
+  canPrev,
+  canNext,
   selected,
   preview,
   previewLoading,
@@ -36,41 +39,58 @@ const {
   demo,
 } = explorer;
 const importMode = shallowRef("folder");
-const category = shallowRef("all");
 const detailMode = shallowRef<"hex" | "preview">("hex");
-const categoryOrder: ResourceKind[] = [
-  "rw4",
-  "raster",
-  "property",
-  "text",
-  "media",
-  "other",
-];
-const categories = computed(() => {
-  const items = activePage.value?.items ?? [];
-  const present = new Set(items.map((item) => resourceKind(item.tgi.typeId)));
+const copied = shallowRef(false);
+let copiedTimer: number | undefined;
+
+const typeTabs = computed(() => {
+  const counts = activePage.value?.typeCounts ?? [];
   return [
-    { key: "all", label: "package.all", count: activePage.value?.total ?? 0 },
-    ...categoryOrder
-      .filter((key) => present.has(key))
-      .map((key) => ({
-        key,
-        label: resourceKindMeta[key].label,
-        count: categoryCount(key),
-      })),
+    {
+      key: "all",
+      label: t("package.all"),
+      count: activePage.value?.total ?? 0,
+    },
+    ...counts.map((entry) => ({
+      key: String(entry.typeId),
+      label: entry.name,
+      count: entry.count,
+    })),
   ];
 });
-const visibleResources = computed(() => {
-  const items = activePage.value?.items ?? [];
-  if (category.value === "all") return items;
-  return items.filter(
-    (item) => resourceKind(item.tgi.typeId) === category.value,
-  );
-});
-function categoryCount(key: ResourceKind) {
-  return (activePage.value?.items ?? []).filter(
-    (item) => resourceKind(item.tgi.typeId) === key,
-  ).length;
+const visibleResources = computed(() => activePage.value?.items ?? []);
+const {
+  scroller: tabsScroller,
+  canStart: canScrollStart,
+  canEnd: canScrollEnd,
+  scroll: scrollTabs,
+  update: updateTabScroll,
+} = useTabScroller(typeTabs);
+const {
+  scroller: packageScroller,
+  canStart: packageCanStart,
+  canEnd: packageCanEnd,
+  scroll: scrollPackageTabs,
+  update: updatePackageTabScroll,
+} = useTabScroller(opened);
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
+async function copyTgi() {
+  if (!selected.value) return;
+  try {
+    await navigator.clipboard.writeText(tgiLabel(selected.value.tgi));
+    copied.value = true;
+    window.clearTimeout(copiedTimer);
+    copiedTimer = window.setTimeout(() => (copied.value = false), 1500);
+  } catch {
+    // 剪贴板不可用时静默失败
+  }
 }
 function selectImportMode(event: Event) {
   importMode.value = (event.target as HTMLSelectElement).value;
@@ -183,29 +203,53 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
             <p v-if="!opened.length" class="tabs-hint">
               {{ $t("package.emptyWorkspaceDescription") }}
             </p>
-            <template v-else
-              ><button
-                v-for="item in opened"
-                :key="item.package.packageId"
-                class="package-tab"
-                :class="{
-                  active: item.package.packageId === activePackageId,
-                }"
+            <template v-else>
+              <button
+                class="tab-scroll-button"
                 type="button"
-                role="tab"
-                :aria-selected="item.package.packageId === activePackageId"
-                @click="explorer.choosePackage(item.package.packageId)"
+                :disabled="!packageCanStart"
+                :aria-label="$t('package.prevPage')"
+                @click="scrollPackageTabs(-1)"
               >
-                <FIcon name="Package" :size="14" aria-label="" /><span>{{
-                  item.package.path.split(/[\\/]/).pop()
-                }}</span
-                ><span
-                  class="tab-close"
-                  @click.stop="explorer.closePackage(item.package.packageId)"
-                  >×</span
+                <FIcon name="ChevronLeft" :size="14" aria-label="" />
+              </button>
+              <div
+                ref="packageScroller"
+                class="package-tabs-scroll"
+                @scroll.passive="updatePackageTabScroll"
+              >
+                <button
+                  v-for="item in opened"
+                  :key="item.package.packageId"
+                  class="package-tab"
+                  :class="{
+                    active: item.package.packageId === activePackageId,
+                  }"
+                  type="button"
+                  role="tab"
+                  :aria-selected="item.package.packageId === activePackageId"
+                  @click="explorer.choosePackage(item.package.packageId)"
                 >
-              </button></template
-            >
+                  <FIcon name="Package" :size="14" aria-label="" /><span>{{
+                    item.package.path.split(/[\\/]/).pop()
+                  }}</span
+                  ><span
+                    class="tab-close"
+                    @click.stop="explorer.closePackage(item.package.packageId)"
+                    >×</span
+                  >
+                </button>
+              </div>
+              <button
+                class="tab-scroll-button"
+                type="button"
+                :disabled="!packageCanEnd"
+                :aria-label="$t('package.nextPage')"
+                @click="scrollPackageTabs(1)"
+              >
+                <FIcon name="ChevronRight" :size="14" aria-label="" />
+              </button>
+            </template>
           </div>
           <template v-if="activePackage"
             ><div class="work-header">
@@ -229,32 +273,49 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
               :aria-label="$t('package.resourceCategories')"
             >
               <button
-                v-for="item in categories"
-                :key="item.key"
-                class="category-tab"
-                :class="{ active: category === item.key }"
+                class="tab-scroll-button"
                 type="button"
-                role="tab"
-                :aria-selected="category === item.key"
-                @click="category = item.key"
+                :disabled="!canScrollStart"
+                :aria-label="$t('package.prevPage')"
+                @click="scrollTabs(-1)"
               >
-                <img
-                  v-if="
-                    item.key !== 'all' &&
-                    resourceIconUrl(item.key as ResourceKind)
-                  "
-                  class="category-icon"
-                  :src="resourceIconUrl(item.key as ResourceKind)"
-                  alt=""
-                /><span>{{ $t(item.label) }}</span>
-                <span>{{ item.count }}</span>
+                <FIcon name="ChevronLeft" :size="14" aria-label="" />
+              </button>
+              <div
+                ref="tabsScroller"
+                class="category-tabs-scroll"
+                @scroll.passive="updateTabScroll"
+              >
+                <button
+                  v-for="item in typeTabs"
+                  :key="item.key"
+                  class="category-tab"
+                  :class="{ active: category === item.key }"
+                  type="button"
+                  role="tab"
+                  :aria-selected="category === item.key"
+                  @click="explorer.chooseCategory(item.key)"
+                >
+                  <span>{{ item.label }}</span>
+                  <span>{{ item.count }}</span>
+                </button>
+              </div>
+              <button
+                class="tab-scroll-button"
+                type="button"
+                :disabled="!canScrollEnd"
+                :aria-label="$t('package.nextPage')"
+                @click="scrollTabs(1)"
+              >
+                <FIcon name="ChevronRight" :size="14" aria-label="" />
               </button>
             </nav>
             <div class="resource-table-wrap">
               <table class="resource-table">
                 <thead>
                   <tr>
-                    <th>{{ $t("package.tgi") }}</th>
+                    <th>{{ $t("package.name") }}</th>
+                    <th>{{ $t("package.type") }}</th>
                     <th>{{ $t("package.storage") }}</th>
                     <th>{{ $t("package.compression") }}</th>
                   </tr>
@@ -282,7 +343,10 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                         >{{ explorer.resourceLabel(resource) }}</span
                       >
                     </td>
-                    <td>{{ resource.decompressedSize.toLocaleString() }} B</td>
+                    <td class="resource-type">
+                      {{ explorer.typeNameOf(resource) }}
+                    </td>
+                    <td>{{ formatSize(resource.decompressedSize) }}</td>
                     <td>
                       <span class="compression-badge">{{
                         resource.compressed
@@ -296,6 +360,38 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
               <p v-if="!visibleResources.length" class="empty-hint">
                 {{ $t("package.noCategoryResources") }}
               </p>
+              <div
+                v-if="activePage && activePage.total > 0"
+                class="pagination-bar"
+              >
+                <span class="pagination-summary">{{
+                  $t("package.pageSummary", {
+                    page: currentPage,
+                    total: activePage.total,
+                  })
+                }}</span>
+                <div class="pagination-actions">
+                  <button
+                    class="pagination-button"
+                    type="button"
+                    :disabled="!canPrev"
+                    @click="explorer.prevPage()"
+                  >
+                    {{ $t("package.prevPage") }}
+                  </button>
+                  <span class="pagination-page"
+                    >{{ currentPage }} / {{ totalPages }}</span
+                  >
+                  <button
+                    class="pagination-button"
+                    type="button"
+                    :disabled="!canNext"
+                    @click="explorer.nextPage()"
+                  >
+                    {{ $t("package.nextPage") }}
+                  </button>
+                </div>
+              </div>
             </div></template
           >
           <div v-else class="work-empty">
@@ -320,7 +416,18 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 <FTypography :header="4" spacing="none">{{
                   explorer.resourceLabel(selected)
                 }}</FTypography
-                ><code>{{ tgiLabel(selected.tgi) }}</code>
+                ><div class="detail-tgi">
+                  <code>{{ tgiLabel(selected.tgi) }}</code>
+                  <button class="copy-button" type="button" @click="copyTgi">
+                    <FIcon
+                      :name="copied ? 'Check' : 'Copy'"
+                      :size="13"
+                      aria-label=""
+                    />{{
+                      copied ? $t("package.copied") : $t("package.copyTgi")
+                    }}
+                  </button>
+                </div>
               </div>
             </div>
             <div class="detail-tabs" role="tablist">
@@ -360,6 +467,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
             <ResourcePreview
               v-else
               :preview="preview"
+              :type-name="selected ? explorer.typeNameOf(selected) : ''"
               :loading="previewLoading"
               :error="previewError"
             />
@@ -508,7 +616,16 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   display: flex;
   flex: none;
   min-height: 40px;
+}
+.package-tabs-scroll {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+.package-tabs-scroll::-webkit-scrollbar {
+  display: none;
 }
 .package-tab {
   align-items: center;
@@ -532,9 +649,10 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   color: var(--foreground);
 }
 .package-tab.active {
-  background: var(--surface);
+  background: var(--accent);
   box-shadow: inset 0 -2px var(--primary);
   color: var(--foreground);
+  font-weight: 700;
 }
 .package-tab span:nth-child(2) {
   overflow: hidden;
@@ -576,12 +694,42 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   width: 6px;
 }
 .category-tabs {
+  align-items: stretch;
   border-bottom: 1px solid var(--border);
   display: flex;
   flex: none;
+  gap: 2px;
+  padding: 0 8px;
+}
+.category-tabs-scroll {
+  display: flex;
+  flex: 1;
   gap: 3px;
+  min-width: 0;
   overflow-x: auto;
-  padding: 0 14px;
+  scrollbar-width: none;
+}
+.category-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+.tab-scroll-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  justify-content: center;
+  padding: 0 4px;
+}
+.tab-scroll-button:hover:not(:disabled) {
+  color: var(--foreground);
+}
+.tab-scroll-button:disabled {
+  color: var(--subtle-foreground);
+  cursor: default;
+  opacity: 0.45;
 }
 .category-tab {
   background: transparent;
@@ -602,12 +750,16 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   border-bottom-color: var(--primary);
   font-weight: 700;
 }
-.category-tab span {
+.category-tab span:last-child {
   background: var(--surface-hover);
   border-radius: 999px;
   font-size: 10px;
   margin-inline-start: 3px;
   padding: 2px 5px;
+}
+.category-tab.active span:last-child {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 .resource-table-wrap {
   flex: 1 1 0;
@@ -637,9 +789,16 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .resource-table tbody tr {
   cursor: pointer;
 }
-.resource-table tbody tr:hover,
+.resource-table tbody tr:hover {
+  background: var(--accent);
+}
 .resource-table tbody tr.selected {
   background: var(--accent);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+.resource-table tbody tr.selected .resource-name {
+  color: var(--foreground);
+  font-weight: 700;
 }
 .resource-table td:first-child {
   align-items: center;
@@ -654,8 +813,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.resource-icon,
-.category-icon {
+.resource-icon {
   flex: none;
   height: 15px;
   object-fit: contain;
@@ -674,6 +832,78 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
     Menlo,
     Consolas,
     monospace;
+}
+.resource-type {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.pagination-bar {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 10px 0 2px;
+}
+.pagination-summary {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+}
+.pagination-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.pagination-page {
+  color: var(--muted-foreground);
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+.pagination-button {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  min-height: 28px;
+  padding: 0 10px;
+}
+.pagination-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.detail-tgi {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.copy-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 10px;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 8px;
+}
+.copy-button:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
 }
 .compression-badge {
   color: var(--muted-foreground);

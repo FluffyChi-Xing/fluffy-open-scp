@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FCode from "@/components/ui/FCode.vue";
 import type { TextPreview } from "@/api/tauri";
 
 defineProps<{ preview: TextPreview }>();
@@ -8,11 +9,21 @@ defineProps<{ preview: TextPreview }>();
   <div class="text-preview">
     <div class="preview-meta">
       <span>{{ preview.encoding }}</span
+      ><span v-if="preview.language && preview.language !== 'text'">{{
+        preview.language
+      }}</span
       ><span v-if="preview.truncated">{{
         $t("package.previewTruncated")
       }}</span>
     </div>
-    <pre>{{ preview.content }}</pre>
+    <div class="text-preview-code">
+      <FCode
+        :code="preview.content"
+        :lang="preview.language"
+        :copy-label="$t('package.copy')"
+        :copied-label="$t('package.copied')"
+      />
+    </div>
   </div>
 </template>
 
@@ -31,23 +42,9 @@ defineProps<{ preview: TextPreview }>();
 .preview-meta span + span {
   color: var(--warning);
 }
-pre {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
-  font:
-    12px/1.65 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  margin: 0;
-  max-height: 380px;
+.text-preview-code {
+  max-height: 420px;
   min-height: 260px;
   overflow: auto;
-  padding: 14px;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 </style>

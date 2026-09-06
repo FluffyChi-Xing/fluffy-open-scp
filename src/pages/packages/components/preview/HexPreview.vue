@@ -68,9 +68,10 @@ function offsetLabel(value: number) {
   padding: 12px;
 }
 .hex-row {
+  column-gap: 14px;
   display: grid;
-  gap: 12px;
-  grid-template-columns: 76px minmax(0, 1fr) 140px;
+  grid-template-columns: 9ch 47ch 16ch;
+  justify-content: start;
   line-height: 1.8;
   white-space: pre;
 }
@@ -93,13 +94,5 @@ code {
 }
 .hex-ascii {
   color: var(--muted-foreground);
-}
-@media (max-width: 520px) {
-  .hex-row {
-    grid-template-columns: 68px minmax(0, 1fr);
-  }
-  .hex-ascii {
-    display: none;
-  }
 }
 </style>

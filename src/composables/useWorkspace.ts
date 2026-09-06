@@ -2,14 +2,14 @@ import { computed, shallowRef } from "vue";
 import {
   tauriApi,
   type MarkdownDocument,
-  type WorkspaceFolder,
+  type WorkspaceEntry,
   type WorkspaceStatus,
 } from "@/api";
 
 interface WorkspaceBackend {
   get(): Promise<WorkspaceStatus>;
-  list(): Promise<WorkspaceFolder[]>;
-  createFolder(relativePath: string): Promise<WorkspaceFolder[]>;
+  list(): Promise<WorkspaceEntry[]>;
+  createFolder(relativePath: string): Promise<WorkspaceEntry[]>;
   createMarkdown(
     relativePath: string,
     content: string,
@@ -20,11 +20,11 @@ interface WorkspaceBackend {
     content: string,
     expectedRevision?: string,
   ): Promise<MarkdownDocument>;
-  rename(relativePath: string, newName: string): Promise<WorkspaceFolder[]>;
+  rename(relativePath: string, newName: string): Promise<WorkspaceEntry[]>;
   move(
     relativePath: string,
     targetDirectory: string,
-  ): Promise<WorkspaceFolder[]>;
+  ): Promise<WorkspaceEntry[]>;
   setRoot(path: string): Promise<WorkspaceStatus>;
 }
 
@@ -34,23 +34,17 @@ function browserBackend(): WorkspaceBackend {
     rootPath: "D:/demo/workspace",
     available: true,
   };
-  let folders: WorkspaceFolder[] = [
-    {
-      relativePath: "mods/example",
-      readmeRelativePath: "mods/example/README.md",
-    },
-    {
-      relativePath: "mods/example/nested",
-      readmeRelativePath: "mods/example/nested/README.md",
-    },
-    {
-      relativePath: "assets/arcology",
-      readmeRelativePath: "assets/arcology/README.md",
-    },
+  let entries: WorkspaceEntry[] = [
+    { relativePath: "mods", kind: "folder" },
+    { relativePath: "mods/example", kind: "folder" },
+    { relativePath: "mods/example/README.md", kind: "file" },
+    { relativePath: "assets", kind: "folder" },
+    { relativePath: "assets/arcology", kind: "folder" },
+    { relativePath: "assets/arcology/README.md", kind: "file" },
   ];
   const documents = new Map<string, string>();
   const sorted = () =>
-    [...folders].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+    [...entries].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   const write = (relativePath: string, content: string): MarkdownDocument => {
     documents.set(relativePath, content);
     return {
@@ -60,21 +54,20 @@ function browserBackend(): WorkspaceBackend {
       revision: `mock-${content.length}-${documents.size}`,
     };
   };
+  const upsertFile = (relativePath: string) => {
+    if (!entries.some((entry) => entry.relativePath === relativePath)) {
+      entries = [...entries, { relativePath, kind: "file" }];
+    }
+  };
   const rebase = (from: string, to: string) => {
-    folders = folders.map((folder) => ({
+    entries = entries.map((entry) => ({
+      kind: entry.kind,
       relativePath:
-        folder.relativePath === from
+        entry.relativePath === from
           ? to
-          : folder.relativePath.startsWith(`${from}/`)
-            ? `${to}${folder.relativePath.slice(from.length)}`
-            : folder.relativePath,
-      readmeRelativePath: folder.readmeRelativePath
-        ? folder.readmeRelativePath === `${from}/README.md`
-          ? `${to}/README.md`
-          : folder.readmeRelativePath.startsWith(`${from}/`)
-            ? `${to}${folder.readmeRelativePath.slice(from.length)}`
-            : folder.readmeRelativePath
-        : undefined,
+          : entry.relativePath.startsWith(`${from}/`)
+            ? `${to}${entry.relativePath.slice(from.length)}`
+            : entry.relativePath,
     }));
   };
   return {
@@ -88,15 +81,14 @@ function browserBackend(): WorkspaceBackend {
       return status;
     },
     async createFolder(relativePath) {
-      folders = [
-        ...folders,
-        { relativePath, readmeRelativePath: `${relativePath}/README.md` },
-      ];
-      write(`${relativePath}/README.md`, "");
+      if (!entries.some((entry) => entry.relativePath === relativePath)) {
+        entries = [...entries, { relativePath, kind: "folder" }];
+      }
       return sorted();
     },
     async createMarkdown(relativePath, content) {
       write(relativePath, content);
+      upsertFile(relativePath);
       return {
         relativePath,
         content,
@@ -139,7 +131,7 @@ export function useWorkspace() {
       ? tauriApi.workspace
       : browserBackend();
   const status = shallowRef<WorkspaceStatus | null>(null);
-  const folders = shallowRef<WorkspaceFolder[]>([]);
+  const entries = shallowRef<WorkspaceEntry[]>([]);
   const selectedPath = shallowRef("");
   const document = shallowRef<MarkdownDocument | null>(null);
   const loading = shallowRef(false);
@@ -160,11 +152,11 @@ export function useWorkspace() {
       loading.value = false;
     }
   }
-  async function loadFolders() {
+  async function loadEntries() {
     loading.value = true;
     error.value = "";
     try {
-      folders.value = await backend.list();
+      entries.value = await backend.list();
     } catch (cause) {
       error.value = messageOf(cause);
     } finally {
@@ -183,27 +175,24 @@ export function useWorkspace() {
   }
   async function setRoot(path: string) {
     status.value = await backend.setRoot(path);
-    folders.value = [];
+    entries.value = [];
     document.value = null;
     selectedPath.value = "";
   }
-  async function createFolder(path: string) {
-    folders.value = await backend.createFolder(path);
-  }
   async function createFolderIn(parent: string, name: string) {
-    folders.value = await backend.createFolder(
+    entries.value = await backend.createFolder(
       parent ? `${parent}/${name}` : name,
     );
   }
   async function createMarkdownIn(parent: string, name: string) {
     await backend.createMarkdown(parent ? `${parent}/${name}` : name, "");
-    folders.value = await backend.list();
+    entries.value = await backend.list();
   }
   async function renameEntry(path: string, newName: string) {
-    folders.value = await backend.rename(path, newName);
+    entries.value = await backend.rename(path, newName);
   }
   async function moveEntry(path: string, targetDirectory: string) {
-    folders.value = await backend.move(path, targetDirectory);
+    entries.value = await backend.move(path, targetDirectory);
   }
   async function save(content: string) {
     if (!document.value) return;
@@ -223,7 +212,7 @@ export function useWorkspace() {
   }
   return {
     status,
-    folders,
+    entries,
     selectedPath,
     document,
     loading,
@@ -231,10 +220,9 @@ export function useWorkspace() {
     error,
     isConfigured,
     loadStatus,
-    loadFolders,
+    loadEntries,
     select,
     setRoot,
-    createFolder,
     createFolderIn,
     createMarkdownIn,
     renameEntry,

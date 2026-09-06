@@ -16,11 +16,12 @@ import {
   type PackageFile,
   type PackageHistory,
   type ResourceBytes,
+  type ResourceData,
   type ResourcePage,
   type ResolvedResourceName,
   type SettingsStatus,
   type Tgi,
-  type WorkspaceFolder,
+  type WorkspaceEntry,
   type WorkspaceStatus,
 } from "./tauri";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -38,13 +39,14 @@ export type {
   PackageFile,
   PackageHistory,
   ResourceBytes,
+  ResourceData,
   ResourcePage,
   ResourcePreview,
   ResourceSummary,
   ResolvedResourceName,
   SettingsStatus,
   Tgi,
-  WorkspaceFolder,
+  WorkspaceEntry,
   WorkspaceStatus,
 } from "./tauri";
 export const $request = axios.create({ baseURL: "/api/v1", timeout: 15_000 });
@@ -68,9 +70,9 @@ export const tauriApi = {
       ),
     setRoot: (path: string) =>
       command<WorkspaceStatus>("workspace_set_root", { request: { path } }),
-    list: () => command<WorkspaceFolder[]>("workspace_list"),
+    list: () => command<WorkspaceEntry[]>("workspace_list"),
     createFolder: (relativePath: string) =>
-      command<WorkspaceFolder[]>("workspace_create_folder", {
+      command<WorkspaceEntry[]>("workspace_create_folder", {
         request: { relativePath },
       }),
     readMarkdown: (relativePath: string) =>
@@ -90,11 +92,11 @@ export const tauriApi = {
         request: { relativePath, content },
       }),
     rename: (relativePath: string, newName: string) =>
-      command<WorkspaceFolder[]>("workspace_rename", {
+      command<WorkspaceEntry[]>("workspace_rename", {
         request: { relativePath, newName },
       }),
     move: (relativePath: string, targetDirectory: string) =>
-      command<WorkspaceFolder[]>("workspace_move", {
+      command<WorkspaceEntry[]>("workspace_move", {
         request: { relativePath, targetDirectory },
       }),
   },
@@ -110,13 +112,18 @@ export const tauriApi = {
       offset: number,
       limit: number,
       filter?: string,
+      typeId?: number,
     ) =>
       command<ResourcePage>("list_resources", {
-        request: { packageId, offset, limit, filter },
+        request: { packageId, offset, limit, filter, typeId },
       }),
     readBytes: (packageId: number, tgi: Tgi, offset: number, length: number) =>
       command<ResourceBytes>("read_resource_bytes", {
         request: { packageId, tgi, offset, length },
+      }),
+    readData: (packageId: number, tgi: Tgi) =>
+      command<ResourceData>("read_resource_data", {
+        request: { packageId, tgi },
       }),
     resolveNames: (packageId: number, tgis: Tgi[]) =>
       command<ResolvedResourceName[]>("resolve_names", {
