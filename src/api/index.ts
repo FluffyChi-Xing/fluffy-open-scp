@@ -1,10 +1,11 @@
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import axios from "axios";
 import { registerInterceptors } from "./interceptors";
 import {
   command,
   subscribe,
   type ActivityEvent,
+  type AudioPreview,
   type ExportProgress,
   type ExportStatus,
   type GameDirectoryDetection,
@@ -31,6 +32,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 
 export type {
   ActivityEvent,
+  AudioPreview,
   ExportProgress,
   ExportStatus,
   GameDirectoryDetection,
@@ -148,12 +150,23 @@ export const tauriApi = {
         request: { packageId, tgis },
       }),
     close: (packageId: number) => command<void>("close_package", { packageId }),
-    export: (packageId: number, tgi: Tgi, format: string, outputPath: string) =>
+    export: (
+      packageId: number,
+      tgi: Tgi,
+      format: string,
+      outputPath: string,
+      mediaId?: number,
+    ) =>
       command<{ jobId: number; outputPath: string }>("export", {
-        request: { packageId, tgi, format, outputPath },
+        request: { packageId, tgi, format, outputPath, mediaId },
       }),
     exportStatus: (jobId: number) =>
       command<ExportStatus>("export_status", { jobId }),
+    saveFile: (defaultPath: string, extension: string) =>
+      save({
+        defaultPath,
+        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+      }),
     mediaTools: () => command<MediaTools>("detect_media_tools"),
   },
   activity: {

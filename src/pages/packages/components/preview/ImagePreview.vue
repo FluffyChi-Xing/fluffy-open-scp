@@ -1,10 +1,23 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import type { ImagePreview } from "@/api/tauri";
+import { ref, toRef, watch } from "vue";
+import type { ImagePreview as ImagePreviewData } from "@/api/tauri";
+import {
+  defaultImageFormat,
+  useResourceExport,
+  type ResourceExportFormat,
+} from "@/composables/useResourceExport";
 
-const props = defineProps<{ preview: ImagePreview }>();
+const props = defineProps<{ preview: ImagePreviewData }>();
 const scale = ref(1);
 const rotation = ref(0);
+const imageFormat = ref<ResourceExportFormat>(defaultImageFormat(props.preview.mime));
+const { exporting, exportResource } = useResourceExport(toRef(props, "preview"));
+watch(
+  () => props.preview.mime,
+  (mime) => {
+    imageFormat.value = defaultImageFormat(mime);
+  },
+);
 function zoom(delta: number) {
   scale.value = Math.min(
     4,
@@ -58,6 +71,23 @@ function onKeydown(event: KeyboardEvent) {
       >
         ↻
       </button>
+      <button
+        type="button"
+        :aria-label="$t('package.exportResource')"
+        :disabled="exporting"
+        @click="exportResource(imageFormat)"
+      >
+        {{ exporting ? $t("package.exporting") : $t("package.export") }}
+      </button>
+      <select
+        v-model="imageFormat"
+        :aria-label="$t('package.exportFormat')"
+        :disabled="exporting"
+      >
+        <option value="png">PNG</option>
+        <option value="jpg">JPG</option>
+        <option value="gif">GIF</option>
+      </select>
       <button
         type="button"
         :aria-label="$t('package.resetImage')"
@@ -128,6 +158,25 @@ function onKeydown(event: KeyboardEvent) {
   min-width: 42px;
   text-align: center;
 }
+.image-toolbar select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 11px;
+  min-height: 28px;
+  padding: 0 6px;
+}
+.image-toolbar select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.image-toolbar button:active,
+.image-toolbar select:active {
+  transform: scale(0.96);
+}
+
 .image-viewport {
   align-items: center;
   background: repeating-conic-gradient(

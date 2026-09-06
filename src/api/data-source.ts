@@ -1,6 +1,10 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { join, tempDir } from "@tauri-apps/api/path";
 import { isTauri, tauriApi } from "./index";
 import type {
+  AudioPreview,
   GameFolder,
+  VideoPreview,
   OpenPackageResponse,
   PackageFile,
   PackageHistory,
@@ -20,8 +24,11 @@ import type {
 import { mockOverview } from "./mock-data";
 import {
   imageMimeForType,
+  AUDIO_TYPE_ID,
   PROPERTY_TYPE_ID,
   RW4_TYPE_ID,
+  VIDEO_TYPE_ID,
+  WWISE_BANK_TYPE_ID,
   textPreviewLanguage,
 } from "@/lib/resource-types";
 
@@ -300,12 +307,44 @@ function mockDataSource(): OpenScpDataSource {
       if (imageMimeForType(resource.tgi.typeId) || resource.tgi.typeId === 0x2f4e681c)
         return {
           kind: "image",
+          packageId: _packageId,
+          tgi: resource.tgi,
           ...base,
           src: svgPreviewUrl(resource.tgi.instance),
           mime: "image/svg+xml",
           width: 320,
           height: 180,
         };
+      if (resource.tgi.typeId === 0x376840d7) {
+        return {
+          kind: "video",
+          packageId: _packageId,
+          tgi: resource.tgi,
+          ...base,
+          src: null,
+          mime: "video/mp4",
+          toolAvailable: false,
+          toolName: "ffmpeg",
+          installCommand: "winget install --id Gyan.FFmpeg -e --source winget",
+        };
+      }
+      if (
+        resource.tgi.typeId === AUDIO_TYPE_ID ||
+        resource.tgi.typeId === WWISE_BANK_TYPE_ID
+      ) {
+        return {
+          kind: "audio",
+          packageId: _packageId,
+          tgi: resource.tgi,
+          ...base,
+          src: null,
+          mime: "audio/wav",
+          toolAvailable: false,
+          toolName: "vgmstream",
+          installCommand:
+            "winget install --id vgmstream.vgmstream -e --source winget",
+        };
+      }
       return { kind: "hex", ...base };
     },
     async readPropertyPreview(_packageId, _tgi) {
@@ -399,16 +438,82 @@ function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+async function waitForExport(jobId: number) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    const status = await tauriApi.packages.exportStatus(jobId);
+    if (status.phase === "succeeded") return status;
+    if (status.phase === "failed") {
+      throw new Error(status.error ?? "媒体转换失败");
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+  throw new Error("媒体转换超时");
+}
+
+async function tauriMediaPreview(
+  packageId: number,
+  resource: ResourceSummary,
+): Promise<AudioPreview | VideoPreview> {
+  const isVideo = resource.tgi.typeId === VIDEO_TYPE_ID;
+  const tools = await tauriApi.packages.mediaTools();
+  const tool = isVideo ? tools.ffmpeg : tools.vgmstream;
+  const kind = isVideo ? "video" : "audio";
+  const installCommand = isVideo
+    ? "winget install --id Gyan.FFmpeg -e --source winget"
+    : "winget install --id vgmstream.vgmstream -e --source winget";
+  const base = {
+    packageId,
+    tgi: resource.tgi,
+    offset: 0,
+    totalLength: resource.decompressedSize,
+    bytes: [],
+    src: null,
+    mime: isVideo ? ("video/mp4" as const) : ("audio/wav" as const),
+    toolAvailable: tool.available,
+    toolName: isVideo ? "ffmpeg" : "vgmstream",
+    installCommand,
+  };
+  if (!tool.available || !tool.path) {
+    return { kind, ...base } as AudioPreview | VideoPreview;
+  }
+  const directory = await tempDir();
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const outputPath = await join(directory, `openscp-preview-${suffix}.${isVideo ? "mp4" : "wav"}`);
+  const accepted = await tauriApi.packages.export(
+    packageId,
+    resource.tgi,
+    isVideo ? "mp4" : "wav",
+    outputPath,
+  );
+  await waitForExport(accepted.jobId);
+  return {
+    kind,
+    ...base,
+    src: convertFileSrc(outputPath),
+    toolAvailable: true,
+    outputBytes: undefined,
+  } as AudioPreview | VideoPreview;
+}
 async function tauriPreview(
   packageId: number,
   resource: ResourceSummary,
 ): Promise<ResourcePreview> {
+  if (
+    resource.tgi.typeId === AUDIO_TYPE_ID ||
+    resource.tgi.typeId === WWISE_BANK_TYPE_ID ||
+    resource.tgi.typeId === VIDEO_TYPE_ID
+  ) {
+    return tauriMediaPreview(packageId, resource);
+  }
+
   const mime = imageMimeForType(resource.tgi.typeId);
   if (mime) {
     const data = await tauriApi.packages.readData(packageId, resource.tgi);
     const blob = new Blob([base64ToBytes(data.dataBase64)], { type: mime });
     return {
       kind: "image",
+      packageId,
+      tgi: resource.tgi,
       offset: 0,
       totalLength: data.totalLength,
       bytes: [],
@@ -479,9 +584,15 @@ function svgPreviewUrl(instance: number) {
 
 function mockResources() {
   return Array.from({ length: 2489 }, (_, index) => {
-    const typeId = [0x2f4e681b, 0x2f4e681c, 0x00b1b104, 0x0a98eaf0, 0x0d9e5710][
-      index % 5
-    ];
+    const typeId = [
+      0x2f4e681b,
+      0x2f4e681c,
+      0x00b1b104,
+      0x0a98eaf0,
+      0x0d9e5710,
+      0x376840d7,
+      0x0a4d8d09,
+    ][index % 7];
     return {
       tgi: { typeId, group: index % 16, instance: 0x10000000 + index },
       offset: 1024 + index * 64,
@@ -498,6 +609,8 @@ const mockTypeNames: Record<number, string> = {
   0x00b1b104: "property",
   0x0a98eaf0: "text",
   0x0d9e5710: "wav audio",
+  0x376840d7: "vp6 video",
+  0x0a4d8d09: "Wwise SoundBank",
 };
 
 const mockPropertyEntries: PropertyResourceData["entries"] = [

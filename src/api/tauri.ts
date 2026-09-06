@@ -163,15 +163,40 @@ export interface HexPreview extends PreviewData {
 }
 export interface ImagePreview extends PreviewData {
   kind: "image";
+  packageId?: number;
+  tgi?: Tgi;
   src: string;
   mime: string;
   width?: number;
   height?: number;
 }
+export interface AudioPreview extends PreviewData {
+  kind: "audio";
+  packageId?: number;
+  tgi?: Tgi;
+  src: string | null;
+  mime: "audio/wav";
+  toolAvailable: boolean;
+  toolName: string;
+  installCommand: string;
+  outputBytes?: number;
+}
+export interface VideoPreview extends PreviewData {
+  kind: "video";
+  packageId?: number;
+  tgi?: Tgi;
+  src: string | null;
+  mime: "video/mp4";
+  toolAvailable: boolean;
+  toolName: string;
+  installCommand: string;
+  outputBytes?: number;
+}
 export interface UnsupportedPreview extends PreviewData {
   kind: "unsupported";
   reason: string;
 }
+
 export interface PropertyEntry {
   hash: number;
   name: string | null;
@@ -229,6 +254,8 @@ export type ResourcePreview =
   | HexPreview
   | ImagePreview
   | UnsupportedPreview
+  | AudioPreview
+  | VideoPreview
   | PropertyPreview
   | Rw4Preview;
 export interface MediaTool {

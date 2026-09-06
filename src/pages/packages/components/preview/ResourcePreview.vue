@@ -10,11 +10,15 @@ import type {
   ImagePreview,
   PropertyPreview,
   Rw4Preview,
+  AudioPreview,
+  VideoPreview,
 } from "@/api/tauri";
 import TextPreviewView from "./TextPreview.vue";
 import ImagePreviewView from "./ImagePreview.vue";
 import PropertyPreviewView from "./PropertyPreview.vue";
 import Rw4PreviewView from "./Rw4Preview.vue";
+import AudioPreviewView from "./AudioPreview.vue";
+import VideoPreviewView from "./VideoPreview.vue";
 
 interface Props {
   preview: ResourcePreview | null;
@@ -39,13 +43,21 @@ const propertyPreview = computed(() =>
 const rw4Preview = computed(() =>
   props.preview?.kind === "rw4" ? (props.preview as Rw4Preview) : null,
 );
+const audioPreview = computed(() =>
+  props.preview?.kind === "audio" ? (props.preview as AudioPreview) : null,
+);
+const videoPreview = computed(() =>
+  props.preview?.kind === "video" ? (props.preview as VideoPreview) : null,
+);
 const unsupported = computed(
   () =>
     props.preview !== null &&
     !textPreview.value &&
     !imagePreview.value &&
     !propertyPreview.value &&
-    !rw4Preview.value,
+    !rw4Preview.value &&
+    !audioPreview.value &&
+    !videoPreview.value,
 );
 </script>
 
@@ -67,6 +79,8 @@ const unsupported = computed(
       :preview="propertyPreview"
     />
     <Rw4PreviewView v-else-if="rw4Preview" :preview="rw4Preview" />
+    <AudioPreviewView v-else-if="audioPreview" :preview="audioPreview" />
+    <VideoPreviewView v-else-if="videoPreview" :preview="videoPreview" />
     <div v-else-if="unsupported" class="preview-empty">
       <FIcon name="FileQuestion" :size="26" aria-label="" />
       <FTypography :header="4" spacing="none">{{

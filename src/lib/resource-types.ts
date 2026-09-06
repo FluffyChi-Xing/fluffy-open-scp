@@ -3,6 +3,9 @@ export type ResourceKind =
 
 export const RW4_TYPE_ID = 0x2f4e681b;
 export const PROPERTY_TYPE_ID = 0x00b1b104;
+export const AUDIO_TYPE_ID = 0x0d9e5710;
+export const WWISE_BANK_TYPE_ID = 0x0a4d8d09;
+export const VIDEO_TYPE_ID = 0x376840d7;
 
 const extensionUrls = import.meta.glob("../assets/file-extensions/*.svg", {
   eager: true,
@@ -33,7 +36,8 @@ export function resourceKind(typeId: number): ResourceKind {
   if (typeId === 0x2f4e681b) return "rw4";
   if (typeId === 0x2f4e681c) return "raster";
   if (typeId === 0x00b1b104) return "property";
-  if (typeId === 0x0d9e5710) return "media";
+  if (typeId === AUDIO_TYPE_ID || typeId === WWISE_BANK_TYPE_ID || typeId === VIDEO_TYPE_ID)
+    return "media";
   if (typeId === 0x0a98eaf0) return "text";
   return "other";
 }
