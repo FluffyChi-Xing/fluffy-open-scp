@@ -134,6 +134,14 @@ export interface ResourceData {
   totalLength: number;
   dataBase64: string;
 }
+export interface PropertyResourceData {
+  claimedCount: number;
+  entries: PropertyEntry[];
+}
+export interface Rw4ResourceData {
+  fileType: string;
+  sections: Rw4Section[];
+}
 export interface ResolvedResourceName {
   tgi: Tgi;
   displayName: string | null;
@@ -164,8 +172,65 @@ export interface UnsupportedPreview extends PreviewData {
   kind: "unsupported";
   reason: string;
 }
+export interface PropertyEntry {
+  hash: number;
+  name: string | null;
+  typeName: string;
+  value: string;
+  arrayLen: number | null;
+}
+export interface PropertyPreview extends PreviewData {
+  kind: "property";
+  claimedCount: number;
+  entries: PropertyEntry[];
+}
+export interface Rw4Section {
+  number: number;
+  typeCode: number;
+  typeName: string | null;
+  size: number;
+}
+export interface Rw4Preview extends PreviewData {
+  kind: "rw4";
+  packageId: number;
+  tgi: Tgi;
+  fileType: string;
+  sections: Rw4Section[];
+}
+export interface Rw4MeshDetail {
+  triangleCount: number;
+  vertexCount: number;
+  decodedTriangles: number;
+  decodedVertices: number;
+  exportable: boolean;
+  boundsMin: [number, number, number] | null;
+  boundsMax: [number, number, number] | null;
+  objBase64: string | null;
+}
+export interface Rw4TextureDetail {
+  width: number;
+  height: number;
+  mipCount: number;
+  textureType: number;
+  pngBase64: string;
+}
+export interface Rw4SectionDetail {
+  number: number;
+  typeCode: number;
+  typeName: string | null;
+  size: number;
+  pos: number;
+  mesh: Rw4MeshDetail | null;
+  texture: Rw4TextureDetail | null;
+  hexDump: string | null;
+}
 export type ResourcePreview =
-  TextPreview | HexPreview | ImagePreview | UnsupportedPreview;
+  | TextPreview
+  | HexPreview
+  | ImagePreview
+  | UnsupportedPreview
+  | PropertyPreview
+  | Rw4Preview;
 export interface MediaTool {
   available: boolean;
   path?: string;

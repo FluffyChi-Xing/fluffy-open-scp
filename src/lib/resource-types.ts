@@ -1,6 +1,9 @@
 export type ResourceKind =
   "rw4" | "raster" | "property" | "text" | "media" | "other";
 
+export const RW4_TYPE_ID = 0x2f4e681b;
+export const PROPERTY_TYPE_ID = 0x00b1b104;
+
 const extensionUrls = import.meta.glob("../assets/file-extensions/*.svg", {
   eager: true,
   import: "default",

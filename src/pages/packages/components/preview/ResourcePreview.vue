@@ -8,9 +8,13 @@ import type {
   ResourcePreview,
   TextPreview,
   ImagePreview,
+  PropertyPreview,
+  Rw4Preview,
 } from "@/api/tauri";
 import TextPreviewView from "./TextPreview.vue";
 import ImagePreviewView from "./ImagePreview.vue";
+import PropertyPreviewView from "./PropertyPreview.vue";
+import Rw4PreviewView from "./Rw4Preview.vue";
 
 interface Props {
   preview: ResourcePreview | null;
@@ -29,8 +33,19 @@ const textPreview = computed(() =>
 const imagePreview = computed(() =>
   props.preview?.kind === "image" ? (props.preview as ImagePreview) : null,
 );
+const propertyPreview = computed(() =>
+  props.preview?.kind === "property" ? (props.preview as PropertyPreview) : null,
+);
+const rw4Preview = computed(() =>
+  props.preview?.kind === "rw4" ? (props.preview as Rw4Preview) : null,
+);
 const unsupported = computed(
-  () => props.preview !== null && !textPreview.value && !imagePreview.value,
+  () =>
+    props.preview !== null &&
+    !textPreview.value &&
+    !imagePreview.value &&
+    !propertyPreview.value &&
+    !rw4Preview.value,
 );
 </script>
 
@@ -47,6 +62,11 @@ const unsupported = computed(
     </p>
     <TextPreviewView v-else-if="textPreview" :preview="textPreview" />
     <ImagePreviewView v-else-if="imagePreview" :preview="imagePreview" />
+    <PropertyPreviewView
+      v-else-if="propertyPreview"
+      :preview="propertyPreview"
+    />
+    <Rw4PreviewView v-else-if="rw4Preview" :preview="rw4Preview" />
     <div v-else-if="unsupported" class="preview-empty">
       <FIcon name="FileQuestion" :size="26" aria-label="" />
       <FTypography :header="4" spacing="none">{{
@@ -68,7 +88,9 @@ const unsupported = computed(
   min-height: 300px;
   display: flex;
   flex-direction: column;
+  gap: 14px;
   min-width: 0;
+  padding-top: 14px;
 }
 .preview-loading {
   display: grid;

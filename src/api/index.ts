@@ -17,6 +17,9 @@ import {
   type PackageHistory,
   type ResourceBytes,
   type ResourceData,
+  type PropertyResourceData,
+  type Rw4ResourceData,
+  type Rw4SectionDetail,
   type ResourcePage,
   type ResolvedResourceName,
   type SettingsStatus,
@@ -40,6 +43,9 @@ export type {
   PackageHistory,
   ResourceBytes,
   ResourceData,
+  PropertyResourceData,
+  Rw4ResourceData,
+  Rw4SectionDetail,
   ResourcePage,
   ResourcePreview,
   ResourceSummary,
@@ -124,6 +130,18 @@ export const tauriApi = {
     readData: (packageId: number, tgi: Tgi) =>
       command<ResourceData>("read_resource_data", {
         request: { packageId, tgi },
+      }),
+    readPropertyPreview: (packageId: number, tgi: Tgi) =>
+      command<PropertyResourceData>("read_property_preview", {
+        request: { packageId, tgi },
+      }),
+    readRw4Preview: (packageId: number, tgi: Tgi) =>
+      command<Rw4ResourceData>("read_rw4_preview", {
+        request: { packageId, tgi },
+      }),
+    readRw4Section: (packageId: number, tgi: Tgi, number: number) =>
+      command<Rw4SectionDetail>("read_rw4_section_detail", {
+        request: { packageId, tgi, number },
       }),
     resolveNames: (packageId: number, tgis: Tgi[]) =>
       command<ResolvedResourceName[]>("resolve_names", {

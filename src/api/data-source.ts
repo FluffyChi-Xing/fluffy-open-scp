@@ -4,18 +4,26 @@ import type {
   OpenPackageResponse,
   PackageFile,
   PackageHistory,
+  PropertyResourceData,
   ResourceBytes,
   ResourcePage,
   ResourcePreview,
   ResourceSummary,
   ResolvedResourceName,
+  Rw4ResourceData,
+  Rw4SectionDetail,
   Tgi,
   WorkspaceEntry,
   WorkspaceStatus,
   TypeCountInfo,
 } from "./tauri";
 import { mockOverview } from "./mock-data";
-import { imageMimeForType, textPreviewLanguage } from "@/lib/resource-types";
+import {
+  imageMimeForType,
+  PROPERTY_TYPE_ID,
+  RW4_TYPE_ID,
+  textPreviewLanguage,
+} from "@/lib/resource-types";
 
 export interface LocalDemoConfig {
   version: 1;
@@ -44,6 +52,16 @@ export interface OpenScpDataSource {
     packageId: number,
     resource: ResourceSummary,
   ): Promise<ResourcePreview>;
+  readPropertyPreview(
+    packageId: number,
+    tgi: Tgi,
+  ): Promise<PropertyResourceData>;
+  readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
+  readRw4Section(
+    packageId: number,
+    tgi: Tgi,
+    number: number,
+  ): Promise<Rw4SectionDetail>;
   closePackage(packageId: number): Promise<void>;
   activityPackages(): Promise<PackageHistory[]>;
   workspaceStatus(): Promise<WorkspaceStatus>;
@@ -92,6 +110,9 @@ function tauriDataSource(): OpenScpDataSource {
     listResources: tauriApi.packages.listResources,
     readResourceBytes: tauriApi.packages.readBytes,
     resolveNames: tauriApi.packages.resolveNames,
+    readPropertyPreview: tauriApi.packages.readPropertyPreview,
+    readRw4Preview: tauriApi.packages.readRw4Preview,
+    readRw4Section: tauriApi.packages.readRw4Section,
     previewResource: tauriPreview,
     closePackage: tauriApi.packages.close,
     activityPackages: tauriApi.activity.packages,
@@ -260,6 +281,22 @@ function mockDataSource(): OpenScpDataSource {
           language: "json",
           truncated: false,
         };
+      if (resource.tgi.typeId === PROPERTY_TYPE_ID)
+        return {
+          kind: "property",
+          claimedCount: mockPropertyEntries.length,
+          entries: mockPropertyEntries,
+          ...base,
+        };
+      if (resource.tgi.typeId === RW4_TYPE_ID)
+        return {
+          kind: "rw4",
+          packageId: _packageId,
+          tgi: resource.tgi,
+          fileType: "Model",
+          sections: mockRw4Sections,
+          ...base,
+        };
       if (imageMimeForType(resource.tgi.typeId) || resource.tgi.typeId === 0x2f4e681c)
         return {
           kind: "image",
@@ -270,6 +307,62 @@ function mockDataSource(): OpenScpDataSource {
           height: 180,
         };
       return { kind: "hex", ...base };
+    },
+    async readPropertyPreview(_packageId, _tgi) {
+      return {
+        claimedCount: mockPropertyEntries.length,
+        entries: mockPropertyEntries,
+      };
+    },
+    async readRw4Preview(_packageId, _tgi) {
+      return { fileType: "Model", sections: mockRw4Sections };
+    },
+    async readRw4Section(_packageId, _tgi, number) {
+      const section = mockRw4Sections.find((item) => item.number === number) ?? mockRw4Sections[0];
+      return {
+        number: section.number,
+        typeCode: section.typeCode,
+        typeName: section.typeName,
+        size: section.size,
+        pos: 1024 + section.number * 64,
+        mesh:
+          section.typeName === "Mesh"
+            ? {
+                triangleCount: 12,
+                vertexCount: 8,
+                decodedTriangles: 12,
+                decodedVertices: 8,
+                exportable: true,
+                boundsMin: [-1, -1, 0],
+                boundsMax: [1, 1, 0],
+                objBase64: btoa(
+                  [
+                    "v -1 -1 0",
+                    "v 1 -1 0",
+                    "v 1 1 0",
+                    "v -1 1 0",
+                    "f 1 2 3",
+                    "f 1 3 4",
+                    "",
+                  ].join("\n"),
+                ),
+              }
+            : null,
+        texture:
+          section.typeName === "Texture"
+            ? {
+                width: 64,
+                height: 64,
+                mipCount: 1,
+                textureType: 1,
+                pngBase64: MOCK_PNG_BASE64,
+              }
+            : null,
+        hexDump:
+          section.typeName === "Mesh" || section.typeName === "Texture"
+            ? null
+            : "00000000  2F 2F 20 44 79 6E 61 6D 69 63 61 6C 6C 79 20 4C   // Dynamically L\n00000010  6F 61 64 65 64 20 44 4C 43 20 4A 61 76 61 53 63   oaded DLC JavaSc",
+      };
     },
     async closePackage() {},
     async activityPackages() {
@@ -334,6 +427,23 @@ async function tauriPreview(
     totalLength: bytes.totalLength,
     bytes: bytes.bytes,
   };
+  if (resource.tgi.typeId === PROPERTY_TYPE_ID) {
+    const data = await tauriApi.packages.readPropertyPreview(
+      packageId,
+      resource.tgi,
+    );
+    return { kind: "property", ...data, ...base };
+  }
+  if (resource.tgi.typeId === RW4_TYPE_ID) {
+    const data = await tauriApi.packages.readRw4Preview(packageId, resource.tgi);
+    return {
+      kind: "rw4",
+      packageId,
+      tgi: resource.tgi,
+      ...data,
+      ...base,
+    };
+  }
   const language = textPreviewLanguage(resource.tgi.typeId);
   if (language || isTextBytes(bytes.bytes)) {
     const content = new TextDecoder("utf-8", { fatal: false }).decode(
@@ -389,6 +499,40 @@ const mockTypeNames: Record<number, string> = {
   0x0a98eaf0: "text",
   0x0d9e5710: "wav audio",
 };
+
+const mockPropertyEntries: PropertyResourceData["entries"] = [
+  {
+    hash: 0x0975695f,
+    name: "Model Details",
+    typeName: "Key",
+    value: "T 2F4E681B - G 00000000 - I 10000001",
+    arrayLen: null,
+  },
+  {
+    hash: 0xcafe0002,
+    name: "Alias Names",
+    typeName: "string8",
+    value: "city_hall, city_hall_lod0",
+    arrayLen: 2,
+  },
+  {
+    hash: 0xcafe0003,
+    name: null,
+    typeName: "float",
+    value: "0.75",
+    arrayLen: null,
+  },
+];
+
+const mockRw4Sections: Rw4ResourceData["sections"] = [
+  { number: 0, typeCode: 0x80005, typeName: "BBox", size: 56 },
+  { number: 1, typeCode: 0x20009, typeName: "Mesh", size: 128 },
+  { number: 2, typeCode: 0x20003, typeName: "Texture", size: 512 },
+  { number: 3, typeCode: 0x10030, typeName: "Blob", size: 96 },
+];
+
+const MOCK_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 function mockTypeCounts(items: ResourceSummary[]): TypeCountInfo[] {
   const counts = new Map<number, number>();
