@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
@@ -17,10 +17,12 @@ const {
   loading,
   loadError,
   modelMeshes,
+  modelMaterial,
   modelState,
   selectedId,
   grouping,
   lotSize,
+  lotPlacement,
   lotMaskPng,
   selectedUnit,
   hiddenUnits,
@@ -29,6 +31,8 @@ const {
   toggleGroup,
   toggleUnit,
 } = usePropertyEditorSession(props.packageId, props.tgi);
+
+const renderMode = ref<"default" | "refined">("default");
 
 watch(open, (value) => {
   if (value) void load();
@@ -55,10 +59,18 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :aria-label="$t('package.renderMode')"
           :title="$t('package.renderModeHint')"
         >
-          <button type="button" class="active" disabled>
+          <button
+            type="button"
+            :class="{ active: renderMode === 'default' }"
+            @click="renderMode = 'default'"
+          >
             {{ $t("package.renderModeDefault") }}
           </button>
-          <button type="button" disabled>
+          <button
+            type="button"
+            :class="{ active: renderMode === 'refined' }"
+            @click="renderMode = 'refined'"
+          >
             {{ $t("package.renderModeRefined") }}
           </button>
         </div>
@@ -94,8 +106,11 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         />
         <PropertyEditorViewport
           :model-meshes="modelMeshes"
+          :model-material="modelMaterial"
+          :render-mode="renderMode"
           :grouping="grouping"
           :lot-size="lotSize"
+          :lot-placement="lotPlacement"
           :lot-mask-png="lotMaskPng"
           :selected-id="selectedId"
           :hidden-units="hiddenUnits"
@@ -118,8 +133,9 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
 
 <style scoped>
 .editor-root {
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  /* 条件渲染的诊断条/加载/错误会打乱 grid 行序，flex 列与子元素数量无关 */
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
 }
@@ -166,11 +182,10 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   color: var(--muted-foreground);
-  cursor: not-allowed;
+  cursor: pointer;
   font: inherit;
   font-size: 11px;
   min-height: 24px;
-  opacity: 0.6;
   padding: 2px 10px;
 }
 .render-mode button:first-child {
@@ -216,17 +231,21 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
 }
 .editor-loading {
   display: grid;
+  flex: 1;
   justify-items: center;
   align-content: center;
+  min-height: 0;
 }
 .editor-error {
   color: var(--danger);
+  flex: 1;
   font-size: 12px;
   padding: 24px 16px;
   text-align: center;
 }
 .editor-body {
   display: grid;
+  flex: 1;
   grid-template-columns: 220px minmax(0, 1fr) 300px;
   min-height: 0;
 }

@@ -10,6 +10,7 @@ import type {
   PackageHistory,
   PropertyResourceData,
   LotEditorSession,
+  LotModelMeshesData,
   RasterPreviewData,
   ResourceBytes,
   ResourcePage,
@@ -67,6 +68,7 @@ export interface OpenScpDataSource {
     tgi: Tgi,
   ): Promise<PropertyResourceData>;
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
+  readLotModelMeshes(packageId: number, tgi: Tgi): Promise<LotModelMeshesData>;
   readRasterPreview(packageId: number, tgi: Tgi): Promise<RasterPreviewData>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
   readRw4Section(
@@ -124,6 +126,7 @@ function tauriDataSource(): OpenScpDataSource {
     resolveNames: tauriApi.packages.resolveNames,
     readPropertyPreview: tauriApi.packages.readPropertyPreview,
     readLotEditorSession: tauriApi.packages.readLotEditorSession,
+    readLotModelMeshes: tauriApi.packages.readLotModelMeshes,
     readRasterPreview: tauriApi.packages.readRasterPreview,
     readRw4Preview: tauriApi.packages.readRw4Preview,
     readRw4Section: tauriApi.packages.readRw4Section,
@@ -370,6 +373,7 @@ function mockDataSource(): OpenScpDataSource {
         modelAvailable: true,
         modelKey: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 },
         lotSize: [136, 136],
+        lotPlacement: null,
         lotMaskPng: null,
         units: [
           {
@@ -426,6 +430,22 @@ function mockDataSource(): OpenScpDataSource {
     },
     async readRw4Preview(_packageId, _tgi) {
       return { fileType: "Model", sections: mockRw4Sections };
+    },
+    async readLotModelMeshes(_packageId, _tgi) {
+      // 简单立方体 OBJ（无顶点色），mock 会话材质不可解
+      const obj = btoa(
+        [
+          "v 0 0 0", "v 8 0 0", "v 8 8 0", "v 0 8 0",
+          "v 0 0 8", "v 8 0 8", "v 8 8 8", "v 0 8 8",
+          "f 1 4 3", "f 1 3 2", "f 5 6 7", "f 5 7 8",
+          "f 1 2 6", "f 1 6 5", "f 4 8 7", "f 4 7 3",
+          "f 1 5 8", "f 1 8 4", "f 2 3 7", "f 2 7 6",
+        ].join("\n"),
+      );
+      return {
+        meshes: [obj],
+        material: { baseColorPng: null, normalPng: null, hasUv: false },
+      } satisfies LotModelMeshesData;
     },
     async readRasterPreview(_packageId, _tgi) {
       return {

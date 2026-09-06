@@ -63,15 +63,21 @@ const modelLabel = computed(() => {
   border-top: 1px solid var(--border);
   color: var(--muted-foreground);
   display: flex;
-  flex-wrap: wrap;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
   font-size: 11px;
   gap: 8px;
-  min-height: 30px;
-  padding: 5px 16px;
+  height: 30px;
+  overflow: hidden;
+  padding: 0 16px;
+  white-space: nowrap;
 }
 .status-selection {
   color: var(--foreground);
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .status-divider {
   color: var(--subtle-foreground);

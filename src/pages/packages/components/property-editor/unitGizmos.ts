@@ -163,6 +163,67 @@ export function buildPathLine(
   );
 }
 
+/**
+ * 精细渲染：真实 three.js 光源（Point/Spot/Line）。
+ * Spot 锥轴 = 局部 +Y（与标记锥同约定）；强度/衰减为观感近似值，待用户对拍校准。
+ * Point/Spot 保留小发光球作灯具示意；Line 为氛围光——**本体完全不可见**，
+ * 沿灯带均匀布点近似"照亮周围"，仅留透明拾取代理供选择。
+ */
+export function buildRealLightUnit(
+  THREE: Three,
+  unit: LightUnit,
+): ThreeNamespace.Object3D {
+  const group = new THREE.Group();
+  const color = unit.color ?? [1, 1, 1];
+  const rgb = new THREE.Color(color[0], color[1], color[2]);
+  const radius = Math.max(unit.outerRadius ?? 4, 1);
+  const length = Math.max(unit.length ?? radius, 0.5);
+  const intensity = Math.max(unit.diffuse ?? 1, 0.05) * 8;
+
+  if (unit.lightType === "Spot") {
+    const angle = Math.min(Math.atan2(radius, length), 1.45);
+    const spot = new THREE.SpotLight(rgb.getHex(), intensity, radius * 2, angle, 0.5, 1);
+    spot.target.position.set(0, length, 0);
+    group.add(spot, spot.target);
+  } else if (unit.lightType === "Line") {
+    // 沿灯带（局部 +Y 自原点延伸）均匀布 N 个小范围点光，近似条形氛围照明
+    const segments = Math.min(Math.max(Math.ceil(length / 8), 2), 6);
+    for (let index = 0; index < segments; index += 1) {
+      const light = new THREE.PointLight(
+        rgb.getHex(),
+        intensity / segments,
+        Math.max(length, radius) * 1.2,
+        1,
+      );
+      light.position.set(0, (length * (index + 0.5)) / segments, 0);
+      group.add(light);
+    }
+  } else {
+    group.add(new THREE.PointLight(rgb.getHex(), intensity, radius * 2, 1));
+  }
+
+  if (unit.lightType === "Line") {
+    // 不可见拾取代理（透明不写深度；Raycaster 不过滤透明对象）
+    const proxyGeometry = new THREE.BoxGeometry(2, length, 2);
+    proxyGeometry.translate(0, length / 2, 0);
+    group.add(
+      new THREE.Mesh(
+        proxyGeometry,
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+      ),
+    );
+  } else {
+    group.add(
+      new THREE.Mesh(
+        new THREE.SphereGeometry(1, 16, 12),
+        new THREE.MeshBasicMaterial({ color: rgb }),
+      ),
+    );
+  }
+  applyTransform(THREE, group, unit.transform);
+  return group;
+}
+
 /** 由 Unit DTO 构建视口对象；userData 记录 unitId/kind 供拾取与可见性控制。 */
 export function buildUnitObject(
   THREE: Three,

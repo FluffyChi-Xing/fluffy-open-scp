@@ -336,11 +336,27 @@ export interface LotEditorSession {
   modelAvailable: boolean;
   modelKey: Tgi | null;
   lotSize: [number, number] | null;
+  /** LotPlacementTransform（0x0DB7FB17）行主序 12 floats；地面矩形取其逆对齐。 */
+  lotPlacement: number[] | null;
   /** LotMask 四色量化地面图 PNG（LotColor1-4 着色），无或不可解为 null。 */
   lotMaskPng: string | null;
   units: LotUnitDto[];
   pathPairs: number[];
   diagnostics: string[];
+}
+/** PE 精细渲染：模型材质资源（服务端跨包解码）。 */
+export interface LotModelMaterial {
+  /** slot1 区域遮罩红通道灰度 PNG（base64）；无 FLOAT2 UV 或不可解为 null。 */
+  baseColorPng: string | null;
+  /** slot2 法线（解 Swizzle R↔B）PNG（base64）。 */
+  normalPng: string | null;
+  /** 模型含 FLOAT2 真 UV（可贴图）。 */
+  hasUv: boolean;
+}
+/** PE 精细渲染：全部网格 OBJ（顶点色已按调色板烘焙）。 */
+export interface LotModelMeshesData {
+  meshes: string[];
+  material: LotModelMaterial;
 }
 export interface RasterPreviewData {
   rasterType: number;

@@ -6,15 +6,13 @@ import type {
   EffectUnit,
   LightUnit,
   LotEditorSession,
+  LotModelMaterial,
   LotUnitDto,
   PathPointUnit,
   PropUnit,
-  Rw4SectionDetail,
   SpawnerUnit,
   Tgi,
 } from "@/api/tauri";
-
-const RW4_MESH_TYPE_CODE = 0x20009;
 
 /** Outliner/状态栏共用的 Unit 显示名（灯光优先 DebugName）。 */
 export function unitLabel(unit: LotUnitDto, t: (key: string) => string): string {
@@ -56,6 +54,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const loading = ref(true);
   const loadError = ref("");
   const modelMeshes = shallowRef<string[]>([]);
+  const modelMaterial = shallowRef<LotModelMaterial | null>(null);
   const modelState = ref<ModelState>("pending");
   const selectedId = ref<string | null>(null);
   const hiddenUnits = ref(new Set<string>());
@@ -96,28 +95,18 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     }
   }
 
-  /** LOD1 模型几何链：RW4 section 列表 → 逐 mesh 取 OBJ。失败降级不阻塞。 */
+  /** LOD1 模型几何链：单次命令取全部网格 OBJ（含顶点色）+ 材质资源。失败降级不阻塞。 */
   async function loadModel(token: number, modelKey: Tgi) {
     modelState.value = "loading";
     try {
-      const preview = await source.readRw4Preview(packageId, modelKey);
-      const meshSections = preview.sections.filter(
-        (section) => section.typeCode === RW4_MESH_TYPE_CODE,
-      );
-      const details = await Promise.all(
-        meshSections.map((section) =>
-          source.readRw4Section(packageId, modelKey, section.number),
-        ),
-      );
+      const data = await source.readLotModelMeshes(packageId, modelKey);
       if (token !== requestToken) return;
-      const meshes = details
-        .map((detail: Rw4SectionDetail) => detail.mesh?.objBase64)
-        .filter((obj): obj is string => Boolean(obj));
-      if (!meshes.length) {
+      if (!data.meshes.length) {
         modelState.value = "missing";
         return;
       }
-      modelMeshes.value = meshes;
+      modelMeshes.value = data.meshes;
+      modelMaterial.value = data.material;
       modelState.value = "ready";
     } catch {
       if (token !== requestToken) return;
@@ -166,6 +155,11 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     () => session.value?.lotSize ?? null,
   );
 
+  const lotPlacement = computed<number[] | null>(() => {
+    const matrix = session.value?.lotPlacement;
+    return matrix && matrix.length === 12 ? matrix : null;
+  });
+
   const lotMaskPng = computed<string | null>(() => {
     const png = session.value?.lotMaskPng;
     // 后端返回裸 base64,TextureLoader 需要 data URL。
@@ -200,11 +194,13 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     loading,
     loadError,
     modelMeshes,
+    modelMaterial,
     modelState,
     selectedId,
     grouping,
     flatUnits,
     lotSize,
+    lotPlacement,
     lotMaskPng,
     selectedUnit,
     hiddenUnits,

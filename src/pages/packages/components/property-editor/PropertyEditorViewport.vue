@@ -6,14 +6,23 @@ import FSpinner from "@/components/ui/FSpinner.vue";
 import { ThreeViewer, disposeObject } from "@/lib/three-viewer";
 import { parseObjModel } from "@/lib/three-obj";
 import type * as ThreeNamespace from "three";
-import type { LotUnitDto } from "@/api/tauri";
+import type { LotModelMaterial, LotUnitDto } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
-import { buildPathLine, buildUnitObject, unitId } from "./unitGizmos";
+import {
+  buildPathLine,
+  buildRealLightUnit,
+  buildUnitObject,
+  unitId,
+} from "./unitGizmos";
 
 const props = defineProps<{
   modelMeshes: string[];
+  modelMaterial: LotModelMaterial | null;
+  renderMode: "default" | "refined";
   grouping: UnitGrouping;
   lotSize: [number, number] | null;
+  /** LotPlacementTransform 行主序 12 floats；地面矩形取其逆对齐建筑。 */
+  lotPlacement: number[] | null;
   lotMaskPng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
@@ -91,11 +100,74 @@ async function rebuild() {
     for (const object of modelObjects) disposeObject(object);
     return;
   }
-  for (const object of modelObjects) instance.group("model").add(object);
+  const refinedMaterials: ThreeNamespace.MeshStandardMaterial[] = [];
+  for (const object of modelObjects) {
+    if (props.renderMode === "refined") {
+      object.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (!mesh.isMesh) return;
+        // OBJLoader 原生解析 `v x y z r g b` 为 color 顶点属性（后端按调色板烘焙）
+        const refined = new THREE.MeshStandardMaterial({
+          vertexColors: Boolean(mesh.geometry.attributes.color),
+          roughness: 0.82,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        });
+        mesh.material = refined;
+        refinedMaterials.push(refined);
+      });
+    }
+    instance.group("model").add(object);
+  }
+  // 精细贴图：区域遮罩红通道 baseColor + 解 Swizzle 法线（仅 FLOAT2 UV 模型，服务端判定）
+  if (props.renderMode === "refined" && props.modelMaterial?.hasUv) {
+    const generation = token;
+    const loader = new THREE.TextureLoader();
+    if (props.modelMaterial.baseColorPng) {
+      loader.load(`data:image/png;base64,${props.modelMaterial.baseColorPng}`, (texture) => {
+        if (generation !== rebuildToken) {
+          texture.dispose();
+          return;
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        for (const material of refinedMaterials) {
+          material.map = texture;
+          material.needsUpdate = true;
+        }
+      });
+    }
+    if (props.modelMaterial.normalPng) {
+      loader.load(`data:image/png;base64,${props.modelMaterial.normalPng}`, (texture) => {
+        if (generation !== rebuildToken) {
+          texture.dispose();
+          return;
+        }
+        for (const material of refinedMaterials) {
+          material.normalMap = texture;
+          material.needsUpdate = true;
+        }
+      });
+    }
+  }
 
   // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
   if (props.lotSize) {
     const ground = buildLotRect(THREE, props.lotSize);
+    // C# CreateLotModel：地面按 LotPlacementTransform 的逆矩阵摆放——
+    // 建筑在地块内不居中时，逆变换把遮罩图案对回建筑原点。
+    if (props.lotPlacement) {
+      const m = props.lotPlacement;
+      const inverse = new THREE.Matrix4()
+        .set(
+          m[0], m[3], m[6], m[9],
+          m[1], m[4], m[7], m[10],
+          m[2], m[5], m[8], m[11],
+          0, 0, 0, 1,
+        )
+        .invert();
+      ground.matrixAutoUpdate = false;
+      ground.matrix.copy(inverse);
+    }
     instance.group("model").add(ground);
     if (props.lotMaskPng) {
       const generation = token;
@@ -129,7 +201,11 @@ async function rebuild() {
     ...props.grouping.pathPoints,
   ];
   for (const unit of units) {
-    const object = buildUnitObject(THREE, unit);
+    // 精细模式：光源用真实 three.js 光源；其余组件保持标记锥
+    const object =
+      props.renderMode === "refined" && unit.kind === "light"
+        ? buildRealLightUnit(THREE, unit)
+        : buildUnitObject(THREE, unit);
     if (!object) continue;
     instance.group(kindGroup(unit.kind)).add(object);
     unitObjects.set(unitId(unit), object);
@@ -205,7 +281,7 @@ function applySelection() {
 }
 
 watch(
-  () => [props.modelMeshes, props.grouping],
+  () => [props.modelMeshes, props.modelMaterial, props.renderMode, props.grouping],
   () => void rebuild(),
 );
 watch(() => props.groupVisibility, applyGroupVisibility, { deep: true });
