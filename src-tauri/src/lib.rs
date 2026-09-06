@@ -24,8 +24,9 @@ use media_tools::{MediaTools, application_dir, resolve_tools};
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
-    read_lot_editor_session, read_property_preview, read_resource_bytes, read_resource_data,
-    read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name, resolve_names,
+    read_lot_editor_session, read_property_preview, read_raster_preview, read_resource_bytes,
+    read_resource_data, read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name,
+    resolve_names,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
 use tauri::{Manager, PhysicalPosition};
@@ -83,6 +84,7 @@ pub fn run() {
             read_resource_bytes,
             read_resource_data,
             read_lot_editor_session,
+            read_raster_preview,
             patch_property_overlay,
             read_property_preview,
             read_rw4_preview,

@@ -102,6 +102,17 @@ impl PackageManager {
             .ok_or(PackageError::PackageNotFound(id))
     }
 
+    /// 所有已打开包的快照（跨包资源查找用，如 LotMask）。
+    fn all_packages(&self) -> Result<Vec<Arc<Package>>, PackageError> {
+        Ok(self
+            .packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?
+            .values()
+            .cloned()
+            .collect())
+    }
+
     fn next_job_id(&self) -> Result<u64, PackageError> {
         let id = self.next_job_id.fetch_add(1, Ordering::Relaxed);
         if id == 0 {
@@ -373,6 +384,27 @@ pub struct LotEditorSessionRequest {
     pub tgi: TgiDto,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterPreviewRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterPreviewData {
+    pub raster_type: u32,
+    pub width: u32,
+    pub height: u32,
+    pub mip_count: u32,
+    pub pixel_size: u32,
+    pub pixel_format: u32,
+    /// pixFmt 21（D3DFMT_A8R8G8B8，未压缩）可解码为 PNG；压缩变体仅元数据。
+    pub decodable: bool,
+    pub png_base64: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LotEditorSession {
@@ -384,6 +416,8 @@ pub struct LotEditorSession {
     pub model_key: Option<TgiDto>,
     /// Lot 地面尺寸（LotSize 0x0CCB7FC8，camelize 拷贝）。
     pub lot_size: Option<[f32; 2]>,
+    /// LotMask 四色量化地面图 PNG（LotColor1-4 着色，服务端解码）。
+    pub lot_mask_png: Option<String>,
     /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
     pub units: Vec<sc_properties::LotUnit>,
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
@@ -1534,14 +1568,21 @@ pub async fn read_lot_editor_session(
             if document.model.is_some() && !model_available {
                 diagnostics.push("LOD1 model resource is missing".into());
             }
-            if document.lot_mask.is_some() {
-                diagnostics.push("LotMask texture decoding is not available yet".into());
-            }
             let registry = package_registry(store, manager, package, bundled_registry.as_deref());
             let asset_name = semantic_instance_name(registry.as_deref(), tgi.instance);
             if registry.is_none() {
                 diagnostics.push("property registry is unavailable; using hash identifiers".into());
             }
+            let colors = lot_colors(&document);
+            let lot_mask_png = document
+                .lot_mask
+                .and_then(|key| match decode_lot_mask_png(package, manager, key, colors) {
+                    Ok(png) => Some(png),
+                    Err(message) => {
+                        diagnostics.push(message);
+                        None
+                    }
+                });
             Ok(LotEditorSession {
                 tgi,
                 asset_name,
@@ -1551,11 +1592,157 @@ pub async fn read_lot_editor_session(
                     instance: key.instance,
                 }),
                 lot_size: document.lot_size,
+                lot_mask_png,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,
                 document,
                 model_available,
                 diagnostics,
+            })
+        },
+    )
+    .await
+}
+
+/// LotMask 地面图：定位 raster 资源 → 四层量化 → PNG（任何失败转为诊断消息）。
+/// 查找顺序：当前包 → 所有已打开包（SCP 在全部已加载索引中查找，
+/// LotMask 引用常指向 graphics 包，Key 的 type/group 多为 0）。
+fn decode_lot_mask_png(
+    current: &Package,
+    manager: &PackageManager,
+    key: sc_properties::Key,
+    colors: [[u8; 3]; 4],
+) -> Result<String, String> {
+    if let Some(entry_id) = find_raster_entry(current, key) {
+        return decode_lot_mask_entry(current, &entry_id, colors);
+    }
+    if let Ok(packages) = manager.all_packages() {
+        for package in &packages {
+            if let Some(entry_id) = find_raster_entry(package, key) {
+                return decode_lot_mask_entry(package, &entry_id, colors);
+            }
+        }
+    }
+    Err(
+        "LotMask raster resource is missing (it may live in a package that is not open)"
+            .to_string(),
+    )
+}
+
+/// SCP 定位语义：先精确 TGI（须为 raster 类型），再按 instance + raster
+/// 类型扫描（忽略 group）。
+fn find_raster_entry(package: &Package, key: sc_properties::Key) -> Option<ResourceId> {
+    const RASTER_TYPE: u32 = 0x2F4E_681C;
+    let exact = ResourceId {
+        type_id: key.type_id,
+        group: key.group,
+        instance: key.instance,
+    };
+    if let Some(entry) = package.entry(exact) {
+        if entry.id.type_id == RASTER_TYPE {
+            return Some(exact);
+        }
+    }
+    package
+        .entries()
+        .iter()
+        .find(|entry| entry.id.type_id == RASTER_TYPE && entry.id.instance == key.instance)
+        .map(|entry| entry.id)
+}
+
+fn decode_lot_mask_entry(
+    package: &Package,
+    entry_id: &ResourceId,
+    colors: [[u8; 3]; 4],
+) -> Result<String, String> {
+    let entry = package
+        .entry(*entry_id)
+        .ok_or_else(|| "LotMask raster resource is missing".to_string())?;
+    if u64::from(entry.decompressed_size) > RESOURCE_DATA_MAX {
+        return Err("LotMask raster exceeds the size limit".to_string());
+    }
+    let data = package
+        .read(entry)
+        .map_err(|error| format!("LotMask raster read failed: {error}"))?;
+    let raster = rw4::RasterImage::parse(&data)
+        .map_err(|error| format!("LotMask raster parse failed: {error}"))?;
+    if !raster.is_raw_rgba() {
+        return Err(format!(
+            "LotMask raster uses compressed pixel format {}",
+            raster.pixel_format
+        ));
+    }
+    let rgba = raster
+        .decode_lot_mask_rgba(&colors)
+        .map_err(|error| error.to_string())?;
+    encode_rgba_png(raster.width, raster.height, rgba)
+}
+
+/// LotColor1-4（0x0D02D586..89）RGB；缺失用 SCP 的默认黑/红/绿/蓝。
+fn lot_colors(document: &sc_properties::LotEditorDocument) -> [[u8; 3]; 4] {
+    const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
+    const FALLBACKS: [[u8; 3]; 4] = [[0, 0, 0], [255, 0, 0], [0, 255, 0], [0, 0, 255]];
+    let mut colors = FALLBACKS;
+    for (index, hash) in LOT_COLOR_HASHES.iter().enumerate() {
+        if let Some(sc_properties::Value::ColorRgba { r, g, b, .. }) = document
+            .properties
+            .get(*hash)
+            .and_then(|property| property.scalar())
+        {
+            colors[index] = [
+                (r * 255.0).clamp(0.0, 255.0) as u8,
+                (g * 255.0).clamp(0.0, 255.0) as u8,
+                (b * 255.0).clamp(0.0, 255.0) as u8,
+            ];
+        }
+    }
+    colors
+}
+
+fn encode_rgba_png(width: u32, height: u32, rgba: Vec<u8>) -> Result<String, String> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let image = image::RgbaImage::from_raw(width, height, rgba)
+        .ok_or_else(|| "raster pixel buffer size mismatch".to_string())?;
+    let mut png = Vec::new();
+    image
+        .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|error| format!("raster PNG encode failed: {error}"))?;
+    Ok(STANDARD.encode(png))
+}
+
+#[tauri::command]
+pub async fn read_raster_preview(
+    state: State<'_, AppState>,
+    request: RasterPreviewRequest,
+) -> Result<RasterPreviewData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, _package, _manager, _store| {
+            let raster = rw4::RasterImage::parse(data)?;
+            let mut decodable = false;
+            let mut png_base64 = None;
+            if raster.is_raw_rgba() {
+                if let Ok(rgba) = raster.decode_top_mip_rgba() {
+                    if let Ok(png) = encode_rgba_png(raster.width, raster.height, rgba) {
+                        png_base64 = Some(png);
+                        decodable = true;
+                    }
+                }
+            }
+            Ok(RasterPreviewData {
+                raster_type: raster.raster_type,
+                width: raster.width,
+                height: raster.height,
+                mip_count: raster.mip_count,
+                pixel_size: raster.pixel_size,
+                pixel_format: raster.pixel_format,
+                decodable,
+                png_base64,
             })
         },
     )

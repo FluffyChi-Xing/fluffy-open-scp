@@ -61,6 +61,8 @@ pub enum Error {
     UnsupportedDeclarationType(u16),
     #[error("unsupported texture type 0x{0:08X}")]
     UnsupportedTextureType(u32),
+    #[error("unsupported raster pixel format {0} (only 21 / D3DFMT_A8R8G8B8 is decodable)")]
+    UnsupportedRasterPixelFormat(u32),
     #[error("offset overflow while computing {check}")]
     Overflow { check: &'static str },
 }

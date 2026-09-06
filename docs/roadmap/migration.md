@@ -463,3 +463,26 @@ P1 的 manifest、pipeline、diagnostics、dependency、preview/watch 接口和�
 Line 盒几何残留 Helix `Center(0,0,-len/2)` 偏移，去除 +90°X 旋转后该偏移经 M 映射为 -len/2·第 3 行——竖直灯带水平漂、水平灯带竖直漂，各漂半个长度（灯带间相对关系不变，与用户观察一致）。修复：偏移改为 `+len/2·局部+Y`，灯带从灯具原点沿发光方向延伸整段长度，与锥形灯"自原点展开"模式一致。vue-tsc / vitest 通过后重新出包。
 
 **✅ 用户多 property 交叉比对确认（2026-09-06）**：Unit 朝向、定位、灯带横竖与漂移修复全部通过，M-PE1 只读会话渲染侧验收完成。
+
+---
+
+## 17. Raster(0x2f4e681c) 解码与预览（2026-09-07 第十一轮，分支任务）
+
+用户判断验证：raster 是 RenderWare/D3D8-9 风格的未压缩纹理容器（`0x2f4e681c`），原 SCP 可导出 dds/png。
+
+- **`rw4::raster` 新模块**：6×u32 大端头（rasterType/width/height/mipCount/pixelSize/pixelFormat）+ 逐 mip `[u32 blockSize][载荷]`；`pixFmt==21`（D3DFMT_A8R8G8B8）内存字节序 B,G,R,A → RGBA 重排（与 texture.rs raw 路径一致）；`decode_lot_mask_rgba` 复刻 SCP `RasterChannel.Preview` 四层阈值量化（≥128 选层，字节→LotColor 按 C# 调用序交叉映射 byte3→color4/byte0→color3/byte1→color2/byte2→color1）；DXT 压缩变体（pixFmt≠21）仅元数据（C# CLI 同样未实现）。5 个单测
+- **`read_raster_preview` 命令**：工作区 raster 预览——返回元数据 + PNG base64（pixFmt21）；不可解时 `decodable:false` 回退通用"暂不支持"。前端 `tauriPreview` 新增 raster 分支，复用 ImagePreview（缩放/旋转/棋盘底）
+- **PE 地面真图**：`read_lot_editor_session` 服务端解码 LotMask→LotColor1-4（0x0D02D586..89，缺省黑/红/绿/蓝）四色量化 PNG，会话 DTO 增 `lotMaskPng`；视口地面矩形异步贴图（SRGB，带重建代际守卫），原"LotMask 解码不可用"诊断移除（失败时转具体诊断）
+- **真实包冒烟**：`rw4/examples/raster_probe.rs`——EP1 359 个、DLC0 55 个 raster 全部 pixFmt21、解析+解码 100% 通过零失败
+
+验证：cargo（rw4 38 + sc-properties 28）测试、后端 check、vue-tsc / vitest 59 通过。
+
+### 17.1 raster 字节序/模糊/跨包三修复（2026-09-07，用户对拍）
+
+- **通道顺序**：用户同文件对拍发现我们解出的图案与 SCP 的 A 通道视图一致——raster 像素实为**顺序 R,G,B,A 直读**（对齐 C# RasterImage 读取器），去除照搬 RW4 内嵌纹理的 BGRA 重排（两容器字节序不同，已在模块文档标注）
+- **模糊**：低分辨率 mask 用平滑插值放大所致；`ImagePreview` 增 `pixelated` 标志（`image-rendering: pixelated`），raster 预览启用像素风渲染，与 SCP 锐利边缘一致
+- **PE 地面跨包**：探针显示 EP1 2194 个带 LotMask 的 property 仅 97 个在同包找到 raster（Key 的 type/group 多为 0，raster 在 graphics 包）——`PackageManager` 增 `all_packages()` 快照，`decode_lot_mask_png` 查找顺序改为当前包 → 所有已打开包（对齐 SCP"全部已加载索引"语义）；跨包时提示打开对应包
+
+验证：cargo（rw4 38）测试、后端 check、vue-tsc / vitest 通过。
+
+**✅ 用户多文件交叉比对确认（2026-09-07）**：raster 预览与 PE 地面 LotMask 贴图全部正常（字节序/锐利度/跨包查找三修复均通过），本分支任务验收完成。
