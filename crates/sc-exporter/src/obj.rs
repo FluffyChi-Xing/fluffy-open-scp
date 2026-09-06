@@ -9,13 +9,25 @@ use rw4::DecodedMesh;
 
 /// 导出一个网格为 Wavefront OBJ 文本。
 pub fn export_obj(mesh: &DecodedMesh) -> String {
+    export_obj_with_colors(mesh, None)
+}
+
+/// 导出 OBJ，可选携带逐顶点 RGB（0..1）——`v x y z r g b` 扩展，
+/// three.js OBJLoader 原生解析为 `color` 顶点属性（PE 精细渲染用）。
+pub fn export_obj_with_colors(mesh: &DecodedMesh, colors: Option<&[[f32; 3]]>) -> String {
     let mut out = String::with_capacity(mesh.vertices.len() * 96 + mesh.triangles.len() * 32);
     out.push_str("# SimCityPak Wavefront OBJ Exporter\n");
     out.push_str("# File Created: (OpenSCP)\n\n");
 
-    for v in &mesh.vertices {
+    for (i, v) in mesh.vertices.iter().enumerate() {
         let p = v.position().unwrap_or([0.0; 3]);
-        out.push_str(&format!("v  {:.12} {:.12} {:.12}\r\n", p[0], p[1], p[2]));
+        match colors.and_then(|c| c.get(i)) {
+            Some([r, g, b]) => out.push_str(&format!(
+                "v  {:.12} {:.12} {:.12} {:.6} {:.6} {:.6}\r\n",
+                p[0], p[1], p[2], r, g, b
+            )),
+            None => out.push_str(&format!("v  {:.12} {:.12} {:.12}\r\n", p[0], p[1], p[2])),
+        }
     }
     out.push_str(&format!("# {} vertices\r\n\n", mesh.vertices.len()));
 

@@ -416,6 +416,8 @@ pub struct LotEditorSession {
     pub model_key: Option<TgiDto>,
     /// Lot 地面尺寸（LotSize 0x0CCB7FC8，camelize 拷贝）。
     pub lot_size: Option<[f32; 2]>,
+    /// LotPlacementTransform（0x0DB7FB17）行主序 12 floats；地面矩形需取其逆。
+    pub lot_placement: Option<[f32; 12]>,
     /// LotMask 四色量化地面图 PNG（LotColor1-4 着色，服务端解码）。
     pub lot_mask_png: Option<String>,
     /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
@@ -427,8 +429,7 @@ pub struct LotEditorSession {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ResourceBytes {
-    pub package_id: u64,
+pub struct ResourceBytes {    pub package_id: u64,
     pub tgi: TgiDto,
     pub offset: u64,
     pub total_length: u64,
@@ -448,6 +449,34 @@ pub struct ResolveNameRequest {
 pub struct ResolveNamesRequest {
     pub package_id: u64,
     pub tgis: Vec<TgiDto>,
+}
+
+/// PE 精细渲染：模型材质资源（跨包解析后的服务端解码结果）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotModelMaterial {
+    /// slot1 区域遮罩红通道灰度 PNG（base64）；无 FLOAT2 UV 或不可解为 None。
+    pub base_color_png: Option<String>,
+    /// slot2 法线（解 Swizzle R↔B）PNG（base64）。
+    pub normal_png: Option<String>,
+    /// 模型含 FLOAT2 真 UV（可贴图）。
+    pub has_uv: bool,
+}
+
+/// PE 精细渲染：全部网格 OBJ（顶点色已按调色板烘焙）+ 材质资源。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotModelMeshesData {
+    /// base64 OBJ 文本（`v x y z r g b` 顶点色扩展，three OBJLoader 原生支持）。
+    pub meshes: Vec<String>,
+    pub material: LotModelMaterial,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotModelMeshesRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1592,6 +1621,12 @@ pub async fn read_lot_editor_session(
                     instance: key.instance,
                 }),
                 lot_size: document.lot_size,
+                // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
+                lot_placement: document
+                    .placement
+                    .clone()
+                    .filter(|t| t.matrix.len() == 12)
+                    .map(|t| t.matrix.try_into().unwrap()),
                 lot_mask_png,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,
@@ -1708,6 +1743,262 @@ fn encode_rgba_png(width: u32, height: u32, rgba: Vec<u8>) -> Result<String, Str
         .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
         .map_err(|error| format!("raster PNG encode failed: {error}"))?;
     Ok(STANDARD.encode(png))
+}
+
+// ---- PE 精细渲染：模型材质解析（migration.md §18.4） ----
+
+const RW4_MODEL_TYPE: u32 = 0x2F4E_681B;
+const RASTER_IMAGE_TYPE: u32 = 0x2F4E_681C;
+
+/// 跨包定位资源（当前包 → 所有已打开包，对齐 SCP"全部已加载索引"语义）。
+fn find_resource_across_packages(
+    current: &Package,
+    manager: &PackageManager,
+    instance: u32,
+    type_ids: &[u32],
+) -> Option<(Vec<u8>, u32)> {
+    let lookup = |pkg: &Package| -> Option<(Vec<u8>, u32)> {
+        let entry = pkg
+            .entries()
+            .iter()
+            .find(|e| type_ids.contains(&e.id.type_id) && e.id.instance == instance)?
+            .clone();
+        Some((pkg.read(&entry).ok()?, entry.id.type_id))
+    };
+    lookup(current).or_else(|| {
+        manager
+            .all_packages()
+            .ok()?
+            .iter()
+            .find_map(|pkg| lookup(pkg))
+    })
+}
+
+/// 从 raster 或 RW4 包裹资源解出顶层 RGBA（不可解返回 None）。
+fn texture_rgba_from_resource(bytes: &[u8], type_id: u32) -> Option<(Vec<u8>, u32, u32)> {
+    match type_id {
+        RASTER_IMAGE_TYPE => {
+            let raster = rw4::RasterImage::parse(bytes).ok()?;
+            if !raster.is_raw_rgba() {
+                return None;
+            }
+            let rgba = raster.decode_top_mip_rgba().ok()?;
+            Some((rgba, u32::from(raster.width), u32::from(raster.height)))
+        }
+        RW4_MODEL_TYPE => {
+            let file = rw4::Rw4File::parse(bytes).ok()?;
+            let number = file
+                .sections_of_type(rw4::SectionType::TEXTURE)
+                .next()?
+                .number;
+            let texture = file.decode_texture(bytes, number).ok()?;
+            let rgba = texture.decode_top_mip_rgba().ok()?;
+            Some((rgba, u32::from(texture.width), u32::from(texture.height)))
+        }
+        _ => None,
+    }
+}
+
+/// slot0 调色板（RW4 包裹 textureType 116）→ 每元素 RGB（row0/row1 均值）。
+fn resolve_palette(
+    current: &Package,
+    manager: &PackageManager,
+    instance: u32,
+) -> Option<Vec<[f32; 3]>> {
+    let (bytes, type_id) =
+        find_resource_across_packages(current, manager, instance, &[RW4_MODEL_TYPE])?;
+    if type_id != RW4_MODEL_TYPE {
+        return None;
+    }
+    let file = rw4::Rw4File::parse(&bytes).ok()?;
+    let number = file
+        .sections_of_type(rw4::SectionType::TEXTURE)
+        .next()?
+        .number;
+    let texture = file.decode_texture(&bytes, number).ok()?;
+    let pixels = texture.decode_palette_f32().ok()?;
+    let columns = u32::from(texture.width) as usize;
+    if columns == 0 {
+        return None;
+    }
+    Some(
+        (0..columns)
+            .map(|x| {
+                let bottom = pixels.get(x).copied().unwrap_or([1.0; 4]);
+                let top = pixels.get(columns + x).copied().unwrap_or(bottom);
+                let mean = |i: usize| ((bottom[i] + top[i]) * 0.5).clamp(0.0, 1.0);
+                [mean(0), mean(1), mean(2)]
+            })
+            .collect(),
+    )
+}
+
+/// 模型材质包：调色板 + 遮罩/法线 PNG（都可为 None）。
+struct ModelMaterialBundle {
+    palette: Option<Vec<[f32; 3]>>,
+    base_color_png: Option<String>,
+    normal_png: Option<String>,
+    has_uv: bool,
+}
+
+fn resolve_model_material(
+    file: &rw4::Rw4File,
+    data: &[u8],
+    package: &Package,
+    manager: &PackageManager,
+) -> ModelMaterialBundle {
+    let slots: Vec<rw4::TextureSlotRef> = file
+        .sections_of_type(rw4::SectionType::MATERIAL)
+        .find_map(|s| file.decode_material(data, s.number).ok())
+        .and_then(|m| match m {
+            rw4::MaterialSection::Decoded(decoded) => {
+                Some(decoded.texture_slots().copied().collect::<Vec<_>>())
+            }
+            rw4::MaterialSection::Raw(_) => None,
+        })
+        .unwrap_or_default();
+    let slot_instance = |slot: u32| {
+        slots
+            .iter()
+            .find(|r| r.slot_byte() as u32 == slot)
+            .map(|r| r.texture_instance)
+            .filter(|i| *i != 0)
+    };
+
+    // 可贴图判定：有 FLOAT2 真 UV；或仅 FLOAT4（facade 世界投影）但全部 xy 范围 ≤8
+    //（C# GltfConverter 同规则；OBJ 的 vt 即 FLOAT4.xy，与判定一致）
+    let mut has_float2 = false;
+    let mut has_float4 = false;
+    let mut float4_max_xy = 0f32;
+    for mesh in file
+        .sections_of_type(rw4::SectionType::MESH)
+        .filter_map(|s| file.decode_mesh(data, s.number).ok())
+    {
+        for vertex in &mesh.vertices {
+            for (element, value) in &vertex.components {
+                if element.usage != rw4::DeclarationUsage::TexCoord {
+                    continue;
+                }
+                match value {
+                    rw4::ComponentValue::Float2(_) => has_float2 = true,
+                    rw4::ComponentValue::Float4(f) => {
+                        has_float4 = true;
+                        float4_max_xy = float4_max_xy.max(f[0].abs()).max(f[1].abs());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    let has_uv = has_float2 || (has_float4 && float4_max_xy <= 8.0);
+
+    let mut bundle = ModelMaterialBundle {
+        palette: None,
+        base_color_png: None,
+        normal_png: None,
+        has_uv,
+    };
+    if let Some(instance) = slot_instance(0) {
+        bundle.palette = resolve_palette(package, manager, instance);
+    }
+    if !has_uv {
+        return bundle;
+    }
+    if let Some(instance) = slot_instance(1) {
+        if let Some((bytes, type_id)) =
+            find_resource_across_packages(package, manager, instance, &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE])
+        {
+            if let Some((rgba, width, height)) = texture_rgba_from_resource(&bytes, type_id) {
+                // 区域遮罩红通道 = 调色板查表索引（GlassBox 语义）→ 灰度 baseColor
+                let mut gray = Vec::with_capacity(rgba.len());
+                for px in rgba.as_chunks::<4>().0 {
+                    gray.extend_from_slice(&[px[0], px[0], px[0], 255]);
+                }
+                bundle.base_color_png = encode_rgba_png(width, height, gray).ok();
+            }
+        }
+    }
+    if let Some(instance) = slot_instance(2) {
+        if let Some((bytes, type_id)) =
+            find_resource_across_packages(package, manager, instance, &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE])
+        {
+            if let Some((rgba, width, height)) = texture_rgba_from_resource(&bytes, type_id) {
+                bundle.normal_png =
+                    encode_rgba_png(width, height, rw4::unswizzle_simcity_normal(&rgba)).ok();
+            }
+        }
+    }
+    bundle
+}
+
+/// 逐顶点颜色：调色板列 = D3DCOLOR.G（越界钳到末列）；无 D3DCOLOR 的网格返回 None。
+fn mesh_vertex_colors(mesh: &rw4::DecodedMesh, palette: &[[f32; 3]]) -> Option<Vec<[f32; 3]>> {
+    let any = mesh.vertices.iter().any(|v| v.d3d_color_g().is_some());
+    if !any {
+        return None;
+    }
+    Some(
+        mesh.vertices
+            .iter()
+            .map(|v| {
+                v.d3d_color_g()
+                    .map(|g| palette.get(g as usize).or(palette.last()).copied())
+                    .flatten()
+                    .unwrap_or([1.0, 1.0, 1.0])
+            })
+            .collect(),
+    )
+}
+
+/// PE 精细渲染：一次返回模型全部网格 OBJ（顶点色已烘焙）+ 材质资源，
+/// 取代前端 1+N 次 section 请求。
+#[tauri::command]
+pub async fn read_lot_model_meshes(
+    state: State<'_, AppState>,
+    request: LotModelMeshesRequest,
+) -> Result<LotModelMeshesData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi.clone(),
+        move |data, package, manager, _store| {
+            if request.tgi.type_id != RW4_MODEL_TYPE {
+                return Err(PackageError::InvalidArgument(
+                    "lot model meshes requires an RW4 model resource".into(),
+                ));
+            }
+            let file = rw4::Rw4File::parse(data)?;
+            let bundle = resolve_model_material(&file, data, package, manager);
+            let mut meshes = Vec::new();
+            for section in file.sections_of_type(rw4::SectionType::MESH) {
+                let mesh = file.decode_mesh(data, section.number)?;
+                if !mesh.is_exportable() {
+                    continue;
+                }
+                let colors = bundle
+                    .palette
+                    .as_ref()
+                    .and_then(|palette| mesh_vertex_colors(&mesh, palette));
+                let obj_text = sc_exporter::export_obj_with_colors(&mesh, colors.as_deref());
+                if obj_text.len() <= MESH_OBJ_MAX_BYTES {
+                    use base64::{Engine as _, engine::general_purpose::STANDARD};
+                    meshes.push(STANDARD.encode(obj_text.as_bytes()));
+                }
+            }
+            Ok(LotModelMeshesData {
+                meshes,
+                material: LotModelMaterial {
+                    base_color_png: bundle.base_color_png,
+                    normal_png: bundle.normal_png,
+                    has_uv: bundle.has_uv,
+                },
+            })
+        },
+    )
+    .await
 }
 
 #[tauri::command]

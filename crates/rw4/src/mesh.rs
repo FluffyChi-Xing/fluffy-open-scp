@@ -134,6 +134,21 @@ impl DecodedVertex {
             })
     }
 
+    /// 是否带 FLOAT2 纹理坐标（真 UV；FLOAT4 世界投影坐标不算）。
+    pub fn has_float2_uv(&self) -> bool {
+        self.components
+            .iter()
+            .any(|(e, v)| e.usage == DeclarationUsage::TexCoord && matches!(v, ComponentValue::Float2(_)))
+    }
+
+    /// D3DCOLOR 的 G 通道（调色板列号，C# AdvancedCollada 协议）。
+    pub fn d3d_color_g(&self) -> Option<u8> {
+        self.components.iter().find_map(|(_, v)| match v {
+            ComponentValue::D3DColor { g, .. } => Some(*g),
+            _ => None,
+        })
+    }
+
     /// 是否为 shell-rig 静态外壳顶点（标记 `(127,127,127,0)`）。
     pub fn is_rigid_shell_static(&self) -> bool {
         self.shell_marker() == Some([127, 127, 127, 0])

@@ -733,17 +733,19 @@ fn declaration_metadata_is_complete() {
 use crate::material::{MaterialSection, SHADER_DEF_MARKER};
 use crate::texture::{TEXTURE_TYPE_DXT1, decode_dxt1, decode_dxt5};
 
-/// 材质 payload：Size + 28B 头 + 顶点格式副本 + 附加数据 + 0x2D 标记 + 6 引用 + 尾数据。
+/// 材质 payload：Size + 28B 头 + 顶点格式副本 + 附加数据
+/// + 7 条引用记录（shader-def 在前，slot 0..=5 在后）+ 尾数据。
 fn material_payload(slot_instances: [(u32, u32); 6]) -> Vec<u8> {
     let mut p = Vec::new();
     let vf_copy = vertex_format_payload(); // 84B（5 组件 → 24+60）
-    let total = 4 + 28 + vf_copy.len() + 8 + 4 + 6 * 24 + 12;
+    let total = 4 + 28 + vf_copy.len() + 8 + 7 * 24 + 12;
     p.extend((total as u32).to_le_bytes());
     p.extend([0x11u8; 28]); // header
     p.extend_from_slice(&vf_copy); // 顶点格式副本
-    p.extend([0xAAu8; 8]); // additional data（标记前）
-    p.extend(SHADER_DEF_MARKER.to_le_bytes()); // 0x2D 标记
-    for (slot, instance) in slot_instances {
+    p.extend([0xAAu8; 8]); // additional data（引用表前）
+    for (slot, instance) in [(SHADER_DEF_MARKER, 0xDDDD_0001)].iter().copied()
+        .chain(slot_instances)
+    {
         p.extend(slot.to_le_bytes());
         p.extend(0u32.to_le_bytes());
         p.extend(instance.to_le_bytes());
@@ -763,7 +765,7 @@ fn material_slots_and_shader_def_are_resolved() {
         (2, 0xAAAA_0003), // 法线
         (3, 0xAAAA_0004), // 副遮罩
         (4, 0xAAAA_0005),
-        (SHADER_DEF_MARKER, 0xDDDD_0001),
+        (5, 0xAAAA_0006),
     ]);
     let specs = vec![
         spec(SectionType::VERTEX_FORMAT, vertex_format_payload()),
@@ -792,8 +794,11 @@ fn material_slots_and_shader_def_are_resolved() {
     assert_eq!(m.slot_texture(1), Some(0xAAAA_0002));
     assert_eq!(m.slot_texture(2), Some(0xAAAA_0003));
     assert_eq!(m.slot_texture(3), Some(0xAAAA_0004));
-    assert_eq!(m.texture_slots().count(), 5, "shader-def 槽被跳过");
-    assert_eq!(material.texture_refs().len(), 6);
+    assert_eq!(m.texture_slots().count(), 6, "shader-def 槽被跳过");
+    assert_eq!(material.texture_refs().len(), 7);
+    // 第 0 条记录是 shader-def 引用（C# 错位读取的根因）
+    assert_eq!(material.texture_refs()[0].slot, SHADER_DEF_MARKER);
+    assert_eq!(material.texture_refs()[0].texture_instance, 0xDDDD_0001);
 }
 
 #[test]
@@ -840,6 +845,30 @@ fn dxt1_decode_matches_reference_colors() {
         "2/3 插值 {got:?}"
     );
     assert_eq!(px(3), &[85, 0, 170, 255], "1/3 插值");
+}
+
+#[test]
+fn palette_f32_decodes_row_major_columns() {
+    // 2×1 调色板条：两列各 16 字节（4×f32 = ColorBottom/Top/Int1/Int2）
+    let mut blob = Vec::new();
+    for x in 0..2u32 {
+        for value in [x as f32 + 0.1, x as f32 + 0.2, 9.0, 9.0] {
+            blob.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let texture = crate::texture::DecodedTexture {
+        texture_type: crate::texture::TEXTURE_TYPE_PALETTE_F32,
+        unknown1: 0,
+        width: 2,
+        height: 1,
+        mipmap_info: 0x100,
+        data_section: 0,
+        blob,
+    };
+    let pixels = texture.decode_palette_f32().unwrap();
+    assert_eq!(pixels.len(), 2);
+    assert_eq!(pixels[0][0], 0.1, "列 0 row0 = ColorBottom");
+    assert_eq!(pixels[1][1], 1.2, "列 1 row1 = ColorTop");
 }
 
 #[test]

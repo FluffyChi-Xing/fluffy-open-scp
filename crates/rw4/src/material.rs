@@ -1,18 +1,18 @@
-//! RW4Material（0x2000B）解析：材质头 + 槽位纹理引用。
+//! RW4Material（0x2000B）解析：材质头 + 引用记录表。
 //!
-//! 对齐 C# `RW4Material.Read`：`Size` u32 → 28B Header →（若模型含
-//! VertexFormat section）顶点格式副本 → 扫描 `0x2D` shader-def 标记
-//! （绝不越过 section 末尾，C# 防挂起补丁）→ AdditionalData → 固定
-//! 6×24B `MaterialTextureReference`（slot/unk2/**TextureInstanceId**/unk3/unk4/unk5）
-//! → 剩余 Data。
+//! 布局（EP1 0x63D180B9 逐字节核对 + 全包统计验证，2026-09-07）：
+//! `Size` u32 → 28B Header →（若模型含 VertexFormat section）顶点格式副本
+//! → AdditionalData → **7×24B 引用记录** → 剩余 Data。记录格式
+//! `(slot, unk, instance, unk, unk, unk)`：第 0 条 `slot == 0x2D` 是
+//! shader-def 引用，随后 slot `0..=5` 为纹理槽（0 调色板 / 1 区域遮罩 /
+//! 2 法线 / 3 副遮罩 / 4、5 补充槽），`instance` 是**外部资源** instance id
+//! （0x2F4E681B RW4 包裹 / 0x2F4E681C 光栅，常在其它包中）。
 //!
-//! 槽位语义（HANDOFF §4）：引用 `slot == 0x2D` 是 shader-def 槽；
-//! `0..=4` 为纹理槽（0 调色板 / 1 区域遮罩 / 2 法线 / 3 副遮罩）。
-//! 纹理本体在**独立资源**中（instance id → 0x2F4E681B RW4 包裹 /
-//! 0x2F4E681C 光栅），不追 SimCity 未用的 0x2001a 链路。
-//!
-//! 布局无法解析（找不到 0x2D 标记等）时与 C# 一致回退 `Raw`：
-//! 保留整个 section 原样，让模型其余部分继续可导出。
+//! C# `RW4Material.Read` 把 0x2D 记录当作要丢弃的"标记"，之后只读 6 条
+//! ——整体错位一条记录（其 `TextureInstanceId` 读到的是杂讯），下游只能
+//! 靠启发式猜贴图。本实现保留 0x2D 记录并连续读取 7 条；slot 序列
+//! （0x2D, 0..=5）校验失败时与 C# 一致回退 `Raw`（EP1 实测 4654/4703
+//! 材质符合，余者布局异常）。
 
 use crate::error::Result;
 use crate::model::Rw4File;
@@ -53,10 +53,10 @@ pub struct DecodedMaterial {
     pub header: [u8; 28],
     /// 材质内嵌的顶点格式副本（模型含 VertexFormat section 时存在）。
     pub vertex_format_data: Vec<u8>,
-    /// `0x2D` 标记之前的附加数据。
+    /// 引用表之前的附加数据。
     pub additional_data: Vec<u8>,
-    /// 固定 6 条纹理引用。
-    pub texture_refs: [TextureSlotRef; 6],
+    /// 引用记录：第 0 条为 shader-def（slot 0x2D），随后 slot 0..=5 纹理槽。
+    pub texture_refs: Vec<TextureSlotRef>,
     /// 引用表之后的剩余数据。
     pub data: Vec<u8>,
 }
@@ -155,24 +155,31 @@ fn decode_material_inner(
         return Err(());
     }
     let additional_data = payload[scan_start..r.pos() - 4].to_vec();
+    // 0x2D 位于引用表第 0 条记录的 slot 字段上，扫描已消费它——回退后随
+    // 记录表一起读取（C# 未回退，导致整表错位一条记录）。
+    r.seek(r.pos() - 4).map_err(drop)?;
 
-    let mut texture_refs = [const {
-        TextureSlotRef {
-            slot: 0,
-            unknown2: 0,
-            texture_instance: 0,
-            unknown3: 0,
-            unknown4: 0,
-            unknown5: 0,
-        }
-    }; 6];
-    for reference in &mut texture_refs {
-        reference.slot = r.u32("MA_slot").map_err(drop)?;
-        reference.unknown2 = r.u32("MA_unk2").map_err(drop)?;
-        reference.texture_instance = r.u32("MA_instance").map_err(drop)?;
-        reference.unknown3 = r.u32("MA_unk3").map_err(drop)?;
-        reference.unknown4 = r.u32("MA_unk4").map_err(drop)?;
-        reference.unknown5 = r.u32("MA_unk5").map_err(drop)?;
+    // 0x2D 是第 0 条记录的 slot（shader-def 引用），不丢弃；
+    // 其后固定 6 条纹理记录（slot 0..=5）。C# 从标记后读 6 条导致错位。
+    let mut texture_refs = Vec::with_capacity(7);
+    for _ in 0..7 {
+        let record = TextureSlotRef {
+            slot: r.u32("MA_slot").map_err(drop)?,
+            unknown2: r.u32("MA_unk2").map_err(drop)?,
+            texture_instance: r.u32("MA_instance").map_err(drop)?,
+            unknown3: r.u32("MA_unk3").map_err(drop)?,
+            unknown4: r.u32("MA_unk4").map_err(drop)?,
+            unknown5: r.u32("MA_unk5").map_err(drop)?,
+        };
+        texture_refs.push(record);
+    }
+    if texture_refs[0].slot != SHADER_DEF_MARKER
+        || texture_refs[1..]
+            .iter()
+            .enumerate()
+            .any(|(i, r)| r.slot != i as u32)
+    {
+        return Err(());
     }
     let data = payload[r.pos().min(payload.len())..].to_vec();
     Ok(DecodedMaterial {

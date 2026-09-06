@@ -11,11 +11,42 @@ fn main() {
     let mut shown = 0usize;
     let mut with_mask = 0usize;
     let mut ok = 0usize;
+    let mut with_placement = 0usize;
+    let mut placement_identity = 0usize;
+    let mut placement_offset = 0usize;
+    let mut with_box_offset = 0usize;
+    let mut box_offset_no_placement = 0usize;
+    let mut box_offset_samples: Vec<(u32, [f32; 2], Option<[f32; 2]>)> = Vec::new();
     for entry in package.entries() {
         if entry.id.type_id != 0x00B1_B104 { continue; }
         let Ok(data) = package.read(entry) else { continue };
         let Ok(file) = sc_properties::PropertyFile::parse_with_limits(&data, sc_properties::ParseLimits::default()) else { continue };
         let document = sc_properties::LotEditorDocument::from_property_file(file);
+        if let Some(t) = &document.placement {
+            with_placement += 1;
+            if t.matrix.len() == 12
+                && t.matrix[..9] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            {
+                if t.matrix[9].abs() + t.matrix[10].abs() + t.matrix[11].abs() < 0.01 {
+                    placement_identity += 1;
+                } else {
+                    placement_offset += 1;
+                    if shown < max {
+                        println!("  placement offset: t=({},{},{}) (lot 0x{:08X})",
+                            t.matrix[9], t.matrix[10], t.matrix[11], entry.id.instance);
+                    }
+                }
+            }
+        }
+        if let Some(off) = document.lot_offset {
+            with_box_offset += 1;
+            if document.placement.is_none() { box_offset_no_placement += 1; }
+            if box_offset_samples.len() < 14 {
+                let t = document.placement.as_ref().filter(|t| t.matrix.len() == 12)
+                    .map(|t| [t.matrix[9], t.matrix[10]]);
+                box_offset_samples.push((entry.id.instance, off, t));
+            }
+        }
         let Some(mask_key) = document.lot_mask else { continue };
         with_mask += 1;
         // 会话同款定位：先精确 TGI,再 instance+raster 类型（忽略 group）
@@ -46,5 +77,9 @@ fn main() {
             shown += 1;
         }
     }
-    println!("--- properties with_mask={with_mask} decode_ok={ok}");
+    println!("--- properties with_mask={with_mask} decode_ok={ok} placement={with_placement} identity={placement_identity} translated={placement_offset}");
+    println!("--- box_offset(0x0CCB7FC9): count={with_box_offset} no_placement={box_offset_no_placement}");
+    for (inst, off, t) in &box_offset_samples {
+        println!("    lot 0x{inst:08X} offset=({:.2},{:.2}) placement_t={t:?}", off[0], off[1]);
+    }
 }

@@ -94,10 +94,36 @@ impl DecodedTexture {
         })
     }
 
+    /// 解码 A32B32G32R32F 调色板条（textureType 116）为逐像素 4×f32，
+    /// 按像素顺序（行主序：`index = y * width + x`）。列 = 材质元素，
+    /// 行 = C# SCP 协议语义（row0 ColorBottom / row1 ColorTop / row2-3 UV 域）。
+    pub fn decode_palette_f32(&self) -> Result<Vec<[f32; 4]>> {
+        if self.texture_type != TEXTURE_TYPE_PALETTE_F32 {
+            return Err(Error::UnsupportedTextureType(self.texture_type));
+        }
+        let pixels = u32::from(self.width) as usize * u32::from(self.height) as usize;
+        let needed = pixels * 16;
+        if self.blob.len() < needed {
+            return Err(Error::InsufficientPayload {
+                check: "TX110",
+                needed,
+                actual: self.blob.len(),
+            });
+        }
+        Ok(self.blob[..needed]
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .map(|px| {
+                let f = |i: usize| f32::from_le_bytes(px[i * 4..i * 4 + 4].try_into().unwrap());
+                [f(0), f(1), f(2), f(3)]
+            })
+            .collect())
+    }
+
     /// 写出标准 DDS（magic + 128B 头 + 原始块压缩数据；C# `SaveDds` 同构）。
     /// raw 位图（textureType 21/116）不支持。
-    pub fn write_dds(&self) -> Result<Vec<u8>> {
-        if self.format() == TextureFormat::Raw || matches!(self.format(), TextureFormat::Unknown(_))
+    pub fn write_dds(&self) -> Result<Vec<u8>> {        if self.format() == TextureFormat::Raw || matches!(self.format(), TextureFormat::Unknown(_))
         {
             return Err(Error::UnsupportedTextureType(self.texture_type));
         }

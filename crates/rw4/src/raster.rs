@@ -118,6 +118,17 @@ impl RasterImage {
     }
 }
 
+/// SimCity 法线图解 Swizzle（C# `UnswizzleNormal`，GltfConverter 同款）：
+/// 法线存为"粉色"（平坦 ~255,128,128 = +Y 分量在 RED），对调 R↔B 得到
+/// three.js 切线空间约定（+Z 在 B），alpha 保持原样（内含 specular）。
+pub fn unswizzle_simcity_normal(rgba: &[u8]) -> Vec<u8> {
+    let mut out = rgba.to_vec();
+    for px in out.as_chunks_mut::<4>().0 {
+        px.swap(0, 2);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +161,15 @@ mod tests {
         assert_eq!(
             image.decode_top_mip_rgba().unwrap(),
             vec![10, 20, 30, 40, 50, 60, 70, 80]
+        );
+    }
+
+    #[test]
+    fn unswizzle_swaps_red_and_blue() {
+        // 粉色法线 (255,128,128) → three 切线空间 (128,128,255)
+        assert_eq!(
+            unswizzle_simcity_normal(&[255, 128, 128, 90]),
+            vec![128, 128, 255, 90]
         );
     }
 

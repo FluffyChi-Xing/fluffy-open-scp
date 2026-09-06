@@ -486,3 +486,89 @@ Line 盒几何残留 Helix `Center(0,0,-len/2)` 偏移，去除 +90°X 旋转后
 验证：cargo（rw4 38）测试、后端 check、vue-tsc / vitest 通过。
 
 **✅ 用户多文件交叉比对确认（2026-09-07）**：raster 预览与 PE 地面 LotMask 贴图全部正常（字节序/锐利度/跨包查找三修复均通过），本分支任务验收完成。
+
+---
+
+## 18. RW4 mesh↔material↔texture 绑定关系调研（2026-09-07 第十二轮，精细渲染前置）
+
+目标：为 PE「精细渲染」模式（unit model 绑定贴图材质 + 标记光源换真实光源）摸清 RW4 内部绑定结构。方法：C# SimCityPak 源码考古 + Rust 探针 `rw4/examples/material_bind_probe.rs` 在 EP1/Graphics/Game/DLC0 四包上逐字节验证。
+
+### 18.1 C# 端现状（考古结论）
+
+- **解析覆盖**：`RenderWare4/` 下 mesh/VA/TA/材质/贴图/调色板/DXT 解码齐全；glTF 导出器（`GltfConverter.cs`）能绑 baseColor/normal/specularTexture（`KHR_materials_specular`），metallic=0/roughness=1；OBJ 导出无 .mtl
+- **C# 材质解析有错位 bug**：`RW4Material.Read` 把引用表第 0 条的 slot 字段（0x2D）当"marker"丢弃后只读 6 条记录 → 整表错位一条，其 `TextureInstanceId` 读到杂讯（EP1 实测如 0x20D=材质自身大小），下游 `ResolveTextures` 只能靠内容启发式猜（textureType 116=调色板/粉色=法线/最大非蓝=baseColor）
+- **Spore 链路不适用**：`Mesh→MeshMaterialAssignment(0x2001a)→TexMetadata` 在 SimCity 被禁用（mesh 不引用 material；模型级 Material section 承载全部贴图引用）
+- **RW4 内无光源 section**（`SectionTypeCodes` 无 Light 类型）；光源全部在 property 的 scLight* 平行数组（已被我们 `lot_unit.rs` 解析：color/radius/diffuse/length/cull 齐全，直接可驱动 three.js 真光源）
+- 建筑真实 albedo 由 GlassBox deferred shader 运行时合成（mask→palette 混合+HDR tonemap），C# 逆向未完成，只能近似
+
+### 18.2 材质引用表真实布局（逐字节验证，修复错位）
+
+Material(0x2000B) payload = `Size` u32 → 28B 头 →（模型有 VF section 时）顶点格式副本 → 附加数据 → **7×24B 引用记录** → 尾数据。记录 = `(slot, unk, instance, unk, unk, unk)`，第 0 条 `slot=0x2D` 为 shader-def 引用（instance→shader 资源），随后 slot `0..=5` 为纹理槽。
+
+**EP1 全量统计**：4654/4703 材质完全符合（余 49 布局异常回退 Raw）；四包联合查找下 **slot0-5 引用 100% 解析**。槽位语义（detail 0x63D180B9 + HANDOFF 交叉印证）：
+
+| slot | 内容 | 容器（实测） |
+|---|---|---|
+| 0x2D | shader-def 资源引用 | 不在内容包（全局 shader 包） |
+| 0 | 调色板条：RW4 包裹 Texture type 0x74（A32B32G32R32F）如 119×4，每列 4×f32 = (ColorBottom, ColorTop, Int1, Int2)/256 | RW4(0x2f4e681b) |
+| 1 | 区域/分区遮罩（当 baseColor 用，共享图集） | raster 512×512 RGBA |
+| 2 | 法线（粉色编码，specular 在 alpha） | raster 512×512 |
+| 3 | 副遮罩 | raster 512×512 |
+| 4 | 竖条纹理（512×16 raw type 0x15） | RW4 包裹 |
+| 5 | DXT5 256×256 细节纹理 | RW4 包裹（内嵌 mip 链） |
+
+0x1188B12E（slot1）/0xA3791E5C（slot2）为 18+ 模型共享图集，印证 HANDOFF。**跨包查找必需**：EP1 模型 slot1-5 约半数引用落在 Graphics/Game/DLC0（与 LotMask 同模式：当前包 → 已打开包）。
+
+### 18.3 mesh 侧与贴图相关的顶点事实
+
+- **D3DCOLOR 元素分段**：相邻顶点 D3DCOLOR 变化即切"元素"（C# `RW4Mesh.Read`）；实测 EP1 建筑 0x63D180B9 有 419 个元素，**G 通道 = 调色板列号**（73/111/97/…指向 slot0 的 119 列），B 通道 = 变体 RNG（C# 导入器写 B=84 的约定与实测不符，仅参考）
+- **UV 两态**：FLOAT2 = 真 UV（glTF V 取反）；facade 建筑只有 FLOAT4 且是世界投影平铺坐标（max 值上万），范围 ≤8 才当 UV（C# 约定）
+- 模型内 Texture section 是 2×2 占位，真贴图全在外部资源（raster 0x2f4e681c 大图集 / RW4 0x2f4e681b 包裹调色板与压缩纹理）
+- app.package 538 模型仅 2 个带 Material 且引用为伪值（App 包是 UI/道具模型，无贴图绑定需求）；PE 场景的建筑模型在 EP1/Game
+
+### 18.4 精细渲染实现要点（结论）
+
+1. **服务端**（`package_service`）：会话返回新增 `modelTextures`——按 material 解析四包索引，slot0 调色板解码 f32 列、slot1 区域遮罩 PNG、slot2 法线 PNG（Unswizzle：R↔B 对调、alpha→specular 灰度）
+2. **前端**：按 D3DCOLOR G 通道把三角形分组为元素，元素色 = 调色板列（ColorBottom/Top 按 B 通道 RNG 混合或 v1 取均值）→ `vertexColors`；区域遮罩做 baseColorTexture；无 FLOAT2 UV 的 facade 用世界投影 shader（v1 可先用元素色+遮罩灰度）；slot5 DXT5 细节图 v1 可忽略
+3. **真实光源**：`lot_unit.rs` Light 已含 color([f32;3])/outer_radius/inner_radius/diffuse/length——Point→PointLight、Spot→SpotLight(angle=atan(outer/length))、Line→RectAreaLight 或双光灯管模型
+4. `rw4::material` 已按 7 记录布局修复（含 fixture 更新，38 测试通过）；`material_bind_probe.rs` 保留作跨包绑定率冒烟工具
+
+验证：cargo（rw4 38 + sc-properties 28）测试通过；EP1 4654 材质布局 98.96% 命中、四包联合引用解析 100%。
+
+---
+
+## 19. PE 精细渲染 v1（2026-09-07 第十三轮）
+
+启用 header「默认 | 精细」渲染模式开关（此前为置灰占位）。精细模式：unit model 重新绑定贴图材质，标记光源替换为真实 three.js 光源；props/decals/spawners/effects 小圆锥保持不变。
+
+### 19.1 后端
+
+- **`rw4::texture::decode_palette_f32`**：A32B32G32R32F 调色板条（textureType 116）→ 逐像素 4×f32（行主序）；列=材质元素，row0=ColorBottom / row1=ColorTop（C# SCP- 协议语义）
+- **`rw4::unswizzle_simcity_normal`**：法线解 Swizzle（粉色 ~255,128,128 = +Y 在 RED → R↔B 对调得 three 切线空间约定；alpha 保持含 specular）
+- **`sc_exporter::export_obj_with_colors`**：OBJ `v x y z r g b` 顶点色扩展（three OBJLoader 原生解析为 `color` 属性）
+- **新命令 `read_lot_model_meshes`**：一次返回模型全部网格 OBJ（顶点色已烘焙）+ 材质资源，取代前端 1+N 次 section 请求。材质链：Material 槽位引用 → **跨包查找**（当前包 → 已打开包）→ slot0 调色板（RW4 包裹 type 116，row0/row1 均值→逐列 RGB）→ D3DCOLOR.G 列号映射顶点色；slot1 区域遮罩红通道（=调色板查表索引，GlassBox 语义）→灰度 PNG；slot2 法线→解 Swizzle PNG；模型含 FLOAT2 真 UV 才发贴图（facade 世界投影 UV 不贴）
+- `DecodedVertex` 增 `has_float2_uv()` / `d3d_color_g()`
+
+### 19.2 前端
+
+- PropertyEditor header 开关启用（`renderMode: default | refined`），变更触发视口重建
+- 精细材质：`MeshStandardMaterial{ vertexColors, map, normalMap, roughness 0.82 }`，贴图 SRGB + 重建代际守卫
+- 真实光源（`buildRealLightUnit`）：Point→PointLight(distance=2×outerRadius)、Spot→SpotLight(angle=atan(outer/length) 钳位、penumbra 0.5、锥轴=局部 +Y)、Line→PointLight(管中点) + 发光管（自原点沿局部 +Y 延伸，同标记盒约定）；均带发光球拾取代理，outliner 选择/显隐不受影响；强度 = diffuse×8、decay=1（观感近似值，待对拍校准）
+
+### 19.3 地面纹理偏移结论（停止排查）
+
+用户确认：**同一 property 文件在原版 SCP 中也存在相同的地面纹理偏移**（偏移量一致）——该现象为原版行为而非本次迁移缺陷，不再处理。已验证的技术事实留存：placement 语义 = 模型坐标→地块坐标（脚印在 +t），mask 像素 Y 轴与地块 Y 反向；EP1 725/2194 带 placement（183 恒等 / 542 平移）；0x0CCB7FC9 offset 属性多为 (0,0)。
+
+### 19.4 性能
+
+真实包计时（EP1 建筑 0x63D180B9：2409 tri / 4682 verts，含模型解析、网格解码、材质解码、slot4 512×16 raw 与 slot5 DXT5 256×256 跨容器解码、顶点色映射）：**release 全链 8.65ms**（debug 69ms）。前端改为单命令后 IPC 往返从 1+N 降为 1。
+
+验证：cargo（rw4 40 + sc-properties 29 + sc-exporter 13 + 后端 41）测试、vue-tsc、vitest 59 通过。
+
+### 19.5 第二轮调整（2026-09-07，用户对拍）
+
+- **线光源不可见化**：删除发光管/发光球——线光源为氛围光照，本体不可见；沿灯带均匀布 2~6 个小范围点光（按长度自动分段，distance≈length×1.2、decay=1）近似条形照明；留透明拾取代理（opacity 0 + 不写深度，three Raycaster 不过滤透明对象，outliner 选择/显隐不受影响）
+- **贴图判定扩展**：`has_uv` = 有 FLOAT2 真 UV，或（仅 FLOAT4 且全部 xy 范围 ≤8——C# GltfConverter 同规则，OBJ vt 即 FLOAT4.xy）。EP1 实测：2819 带材质模型中 FLOAT2 仅 28、FLOAT4≤8 有 301、世界投影大坐标 696 → 贴图覆盖率 1%→11%
+- **下一阶段（用户明确）**：大部分建筑仍只有基础顶点色、无纹理/材质——需实现 **facade 世界投影 UV + 每元素 UV 裁剪窗**（SHORT4N TEXCOORD 分量携带 X=width/Y=height/Z=x/W=y 归一化裁剪域，见 §8.10 / HANDOFF），让 696 个大坐标 facade 也能正确采样区域遮罩与法线
+
+验证：后端 41 + vue-tsc + vitest 59 通过。
