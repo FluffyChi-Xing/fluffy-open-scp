@@ -355,3 +355,34 @@ P1 的 manifest、pipeline、diagnostics、dependency、preview/watch 接口和�
 - mock 数据源图片分支同步覆盖 PNG/JPG/GIF 类型
 
 验证：后端 `cargo test --lib` 31 通过（含签名用例）；前端 `vue-tsc` / `vite build` 通过。
+
+---
+
+## 12. Property / RW4 结构化预览（2026-09-06 第五轮）
+
+对齐原 SCP 的两种组合类型表单预览：
+
+**后端**（`read_property_preview` / `read_rw4_preview` / `read_rw4_section_detail`，统一经 `read_resource_with` 32MB 解压上限）：
+
+- Property：`sc_properties::PropertyFile::parse` 解析 0x00B1B104 → `{hash, 语义名(s3db Properties 表，无则 null), 类型名, 值文本, 数组长度}`；数组值 join 后 512 字符截断
+- RW4：`Rw4File::parse` → 全量 section 列表 `{number, typeCode, typeName(SectionType 表), size}`；section 详情按类型分流——Mesh 走 `decode_mesh`（三角/顶点计数、解码数量、可导出性、顶点包围盒），Texture 走 `decode_texture` + `export_texture` PNG（base64 内联预览，256MB 纹理预算），其余类型给前 128 字节 hex+ASCII dump
+- 真实 app.package 集成验证：property 条目解析非空、rw4 section 列表与详情可解析（env 门控测试）
+
+**前端**：
+
+- `PropertyPreview.vue`：工具栏（添加属性/编辑/查看子项/高级编辑器/工具下拉，全部置灰）+ Property|Value 双列表格（语义名回退 hash hex，类型徽标带数组长度）
+- `Rw4Preview.vue`：Number|TypeCode|Size 表格，行点击经 `read_rw4_section_detail` 懒加载后从右侧弹出 `FSheet` 详情；Mesh 详情含工具栏（导入/导出/贴图/网格工具下拉，置灰）+ 统计网格；Texture 详情内联 PNG；其余显示 hex dump
+- 预览路由：property/rw4 不再落入"暂不支持"，仍保留 4KB 头部字节供 Hex 标签页使用；mock 数据源同步
+
+验证：后端 32 测试通过；前端 vue-tsc / vitest 50 / vite build 通过；产物 `pnpm tauri build`。
+
+---
+
+## 13. 3D 网格预览与间距修正（2026-09-06 第六轮）
+
+- **MeshPreview 3D 组件**（three 0.185 动态导入，独立 chunk 不增主包体积）：OBJ 数据由 `sc_exporter::export_obj` 生成、base64 内联于 `Rw4MeshDetail.objBase64`（8MB 上限，超限返回 null）；交互含指针拖拽旋转、滚轮缩放（0.3×–12× 包围球半径）、点光源方位/仰角双滑杆（PointLight decay=0 + 环境光）；加载即包围球居中取景，法线缺失自动补算，卸载完整释放 geometry/material/renderer
+- **RW4 Sheet**：Texture 详情改用统一 `ImagePreview` 组件（缩放/旋转/棋盘底），数据 URL 直载；内容区包 `.sheet-body`（gap 12px + 顶部 14px），修复 header 与内容贴合
+- **预览面板**：`.resource-preview` 加 14px 顶部间距，修复 property/rw4 工具栏与 hex/预览 tab 贴合
+- 依赖：`three` + `@types/three`；mock 网格附带可渲染的微型 OBJ
+
+验证：后端 32 测试、前端 vue-tsc / vitest 50 通过。

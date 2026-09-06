@@ -413,6 +413,8 @@ enum PackageError {
     StatePoisoned,
     #[error("dbpf error: {0}")]
     Dbpf(#[from] dbpf::Error),
+    #[error("properties error: {0}")]
+    Properties(#[from] sc_properties::Error),
     #[error("registry error: {0}")]
     Registry(#[from] sc_registry::Error),
     #[error("rw4 error: {0}")]
@@ -440,6 +442,7 @@ impl PackageError {
             Self::OutputExists(_) => "output_exists",
             Self::StatePoisoned => "internal_error",
             Self::Dbpf(_) => "corrupt_package",
+            Self::Properties(_) => "corrupt_resource",
             Self::Registry(_) => "registry",
             Self::Rw4(_) => "corrupt_resource",
             Self::UnsupportedExport => "unsupported",
@@ -965,6 +968,337 @@ pub async fn read_resource_data(
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+const PROPERTY_PREVIEW_MAX_VALUES: usize = 512;
+const RW4_HEX_DUMP_BYTES: usize = 128;
+const MESH_OBJ_MAX_BYTES: usize = 8 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPreviewEntry {
+    pub hash: u32,
+    pub name: Option<String>,
+    pub type_name: String,
+    pub value: String,
+    pub array_len: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPreviewData {
+    pub claimed_count: u32,
+    pub entries: Vec<PropertyPreviewEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4SectionDto {
+    pub number: u32,
+    pub type_code: u32,
+    pub type_name: Option<String>,
+    pub size: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4PreviewData {
+    pub file_type: String,
+    pub sections: Vec<Rw4SectionDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4MeshDetail {
+    pub triangle_count: u32,
+    pub vertex_count: u32,
+    pub decoded_triangles: usize,
+    pub decoded_vertices: usize,
+    pub exportable: bool,
+    pub bounds_min: Option<[f32; 3]>,
+    pub bounds_max: Option<[f32; 3]>,
+    pub obj_base64: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4TextureDetail {
+    pub width: u16,
+    pub height: u16,
+    pub mip_count: u32,
+    pub texture_type: u32,
+    pub png_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4SectionDetail {
+    pub number: u32,
+    pub type_code: u32,
+    pub type_name: Option<String>,
+    pub size: u32,
+    pub pos: u32,
+    pub mesh: Option<Rw4MeshDetail>,
+    pub texture: Option<Rw4TextureDetail>,
+    pub hex_dump: Option<String>,
+}
+
+fn property_value_text(kind: &sc_properties::Kind) -> (String, Option<usize>) {
+    match kind {
+        sc_properties::Kind::Scalar(value) => (value.to_string(), None),
+        sc_properties::Kind::Array(values) => {
+            let mut text = values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if let Some(cut) = text.char_indices().nth(PROPERTY_PREVIEW_MAX_VALUES).map(|(i, _)| i)
+            {
+                text.truncate(cut);
+                text.push('…');
+            }
+            (text, Some(values.len()))
+        }
+        sc_properties::Kind::Empty => (String::new(), None),
+    }
+}
+
+fn property_preview(
+    data: &[u8],
+    registry: Option<&Arc<sc_registry::Registry>>,
+) -> Result<PropertyPreviewData, PackageError> {
+    let file = sc_properties::PropertyFile::parse(data)?;
+    let entries = file
+        .values
+        .iter()
+        .map(|property| {
+            let name = registry
+                .and_then(|registry| registry.properties().get(&property.hash))
+                .map(|record| record.name.clone())
+                .filter(|name| !name.is_empty());
+            let (value, array_len) = property_value_text(&property.kind);
+            PropertyPreviewEntry {
+                hash: property.hash,
+                name,
+                type_name: property.prop_type.name().to_string(),
+                value,
+                array_len,
+            }
+        })
+        .collect();
+    Ok(PropertyPreviewData {
+        claimed_count: file.claimed_count,
+        entries,
+    })
+}
+
+fn rw4_sections(data: &[u8]) -> Result<Rw4PreviewData, PackageError> {
+    let file = rw4::Rw4File::parse(data)?;
+    let sections = file
+        .sections()
+        .iter()
+        .map(|section| Rw4SectionDto {
+            number: section.number,
+            type_code: section.type_code,
+            type_name: section.type_name().map(str::to_owned),
+            size: section.size,
+        })
+        .collect();
+    Ok(Rw4PreviewData {
+        file_type: format!("{:?}", file.file_type()),
+        sections,
+    })
+}
+
+fn mesh_bounds(vertices: &[rw4::DecodedVertex]) -> (Option<[f32; 3]>, Option<[f32; 3]>) {
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for vertex in vertices {
+        if let Some(position) = vertex.position() {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(position[axis]);
+                max[axis] = max[axis].max(position[axis]);
+            }
+        }
+    }
+    let any = vertices.iter().any(|vertex| vertex.position().is_some());
+    (
+        any.then_some(min),
+        any.then_some(max),
+    )
+}
+
+fn rw4_section_detail(data: &[u8], number: u32) -> Result<Rw4SectionDetail, PackageError> {
+    let file = rw4::Rw4File::parse(data)?;
+    let section = file.section(number).ok_or_else(|| {
+        PackageError::Rw4(rw4::Error::SectionNumberOutOfRange {
+            number,
+            count: file.sections().len() as u32,
+        })
+    })?;
+    let mut detail = Rw4SectionDetail {
+        number: section.number,
+        type_code: section.type_code,
+        type_name: section.type_name().map(str::to_owned),
+        size: section.size,
+        pos: section.pos,
+        mesh: None,
+        texture: None,
+        hex_dump: None,
+    };
+    if section.type_code == rw4::SectionType::MESH {
+        let mesh = file.decode_mesh(data, number)?;
+        let (bounds_min, bounds_max) = mesh_bounds(&mesh.vertices);
+        let obj_text = sc_exporter::export_obj(&mesh);
+        let obj_base64 = (obj_text.len() <= MESH_OBJ_MAX_BYTES).then(|| {
+            use base64::{engine::general_purpose::STANDARD, Engine as _};
+            STANDARD.encode(obj_text.as_bytes())
+        });
+        detail.mesh = Some(Rw4MeshDetail {
+            triangle_count: mesh.header.triangle_count,
+            vertex_count: mesh.header.vertex_count,
+            decoded_triangles: mesh.triangles.len(),
+            decoded_vertices: mesh.vertices.len(),
+            exportable: mesh.is_exportable(),
+            bounds_min,
+            bounds_max,
+            obj_base64,
+        });
+    } else if section.type_code == rw4::SectionType::TEXTURE {
+        let texture = file.decode_texture(data, number)?;
+        validate_texture_budget(&texture)?;
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let png = sc_exporter::export_texture(&texture, sc_exporter::TextureOutputFormat::Png)?;
+        detail.texture = Some(Rw4TextureDetail {
+            width: texture.width,
+            height: texture.height,
+            mip_count: texture.mip_count(),
+            texture_type: texture.texture_type,
+            png_base64: STANDARD.encode(png),
+        });
+    } else {
+        let payload = file.payload(data, number)?;
+        detail.hex_dump = Some(hex_dump(payload, RW4_HEX_DUMP_BYTES));
+    }
+    Ok(detail)
+}
+
+fn hex_dump(data: &[u8], max_bytes: usize) -> String {
+    let mut out = String::new();
+    let take = data.len().min(max_bytes);
+    for (index, chunk) in data[..take].as_chunks::<16>().0.iter().enumerate() {
+        out.push_str(&format!("{:08X}  ", index * 16));
+        for byte in *chunk {
+            out.push_str(&format!("{byte:02X} "));
+        }
+        for _ in chunk.len()..16 {
+            out.push_str("   ");
+        }
+        out.push_str(" ");
+        for byte in *chunk {
+            out.push(if (32..=126).contains(&byte) {
+                byte as char
+            } else {
+                '.'
+            });
+        }
+        out.push('\n');
+    }
+    if data.len() > max_bytes {
+        out.push_str("…\n");
+    }
+    out
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4SectionRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    pub number: u32,
+}
+
+async fn read_resource_with<T, F>(
+    manager: Arc<PackageManager>,
+    store: Arc<sc_store::Store>,
+    package_id: u64,
+    tgi: TgiDto,
+    parse: F,
+) -> Result<T, CommandError>
+where
+    T: Send + 'static,
+    F: FnOnce(&[u8], &Package, &PackageManager, &sc_store::Store) -> Result<T, PackageError>
+        + Send
+        + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let tgi: ResourceId = tgi.into();
+        let package = manager.get(package_id).map_err(CommandError::from)?;
+        let entry = package
+            .entry(tgi)
+            .ok_or_else(|| CommandError::from(PackageError::ResourceNotFound(tgi)))?;
+        if u64::from(entry.decompressed_size) > RESOURCE_DATA_MAX {
+            return Err(CommandError::from(PackageError::LimitExceeded(
+                RESOURCE_DATA_MAX as usize,
+            )));
+        }
+        let data = package.read(entry).map_err(PackageError::Dbpf)?;
+        parse(&data, &package, &manager, &store).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[tauri::command]
+pub async fn read_property_preview(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<PropertyPreviewData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let bundled_registry = bundled_registry_path(&state.app);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, package, manager, store| {
+            let registry =
+                package_registry(store, manager, package, bundled_registry.as_deref());
+            property_preview(data, registry.as_ref())
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn read_rw4_preview(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<Rw4PreviewData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(manager, store, request.package_id, request.tgi, |data, _, _, _| {
+        rw4_sections(data)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn read_rw4_section_detail(
+    state: State<'_, AppState>,
+    request: Rw4SectionRequest,
+) -> Result<Rw4SectionDetail, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, _, _, _| rw4_section_detail(data, request.number),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1862,5 +2196,34 @@ mod tests {
             .expect("gif entry");
         let data = package.read(gif).unwrap();
         assert!(data.starts_with(b"GIF8"));
+    }
+
+    #[test]
+    fn property_and_rw4_previews_parse_real_package() {
+        let Some(path) = std::env::var_os("OPENSCP_PERF_PACKAGE").map(PathBuf::from) else {
+            return;
+        };
+        let package = Package::open(&path).unwrap();
+        let property = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == 0x00B1_B104)
+            .expect("property entry");
+        let data = package.read(property).unwrap();
+        let preview = property_preview(&data, None).unwrap();
+        assert!(!preview.entries.is_empty());
+        assert!(preview.entries.iter().any(|entry| !entry.value.is_empty()));
+
+        let model = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == 0x2F4E_681B)
+            .expect("rw4 entry");
+        let data = package.read(model).unwrap();
+        let preview = rw4_sections(&data).unwrap();
+        assert!(!preview.sections.is_empty());
+        let first = preview.sections[0].number;
+        let detail = rw4_section_detail(&data, first).unwrap();
+        assert_eq!(detail.number, first);
     }
 }
