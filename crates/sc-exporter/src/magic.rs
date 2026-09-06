@@ -79,6 +79,14 @@ pub const MAGIC_FORMATS: &[MagicFormat] = &[
         prefix: b"OggS",
     },
     MagicFormat {
+        hex: "42 4B 48 44",
+        ascii: "BKHD",
+        extension: "bnk",
+        format: "Wwise SoundBank",
+        usage: "Wwise 音效 Bank（不是视频）",
+        prefix: b"BKHD",
+    },
+    MagicFormat {
         hex: "37 7A BC AF 27 1C",
         ascii: "7z....'C",
         extension: "7z",
@@ -250,7 +258,8 @@ mod tests {
         assert_eq!(detect_magic(b"\x89PNG\r\n\x1a\n").unwrap().extension, "png");
         assert_eq!(detect_magic(b"\xFF\xD8\xFF\xE0").unwrap().extension, "jpg");
         assert_eq!(detect_magic(b"DDS |\x00\x00\x00").unwrap().extension, "dds");
-        assert_eq!(detect_magic(b"OggS\x00\x02").unwrap().extension, "ogg");
+        assert_eq!(detect_magic(b"BKHD\x04\x00").unwrap().extension, "bnk");
+
         assert_eq!(detect_magic(b"DBPF\x0C\x00").unwrap().extension, "package");
         assert_eq!(
             detect_magic(b"UnityFS\x00\x00").unwrap().extension,

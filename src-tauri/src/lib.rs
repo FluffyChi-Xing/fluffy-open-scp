@@ -14,6 +14,7 @@ mod package_browser;
 mod package_service;
 mod settings;
 mod workspace;
+mod wwise;
 
 use activity::{
     AppState, activity_clear, activity_list_events, activity_list_operations,
@@ -22,9 +23,9 @@ use activity::{
 use media_tools::{MediaTools, application_dir, resolve_tools};
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
-    close_package, export, export_status, list_resources, open_package, read_property_preview,
-    read_resource_bytes, read_resource_data, read_rw4_preview, read_rw4_section_detail,
-    resolve_name, resolve_names,
+    close_package, export, export_status, list_resources, open_package, patch_property_overlay,
+    read_lot_editor_session, read_property_preview, read_resource_bytes, read_resource_data,
+    read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name, resolve_names,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
 use tauri::{Manager, PhysicalPosition};
@@ -81,9 +82,12 @@ pub fn run() {
             list_resources,
             read_resource_bytes,
             read_resource_data,
+            read_lot_editor_session,
+            patch_property_overlay,
             read_property_preview,
             read_rw4_preview,
             read_rw4_section_detail,
+            read_wwise_bank,
             resolve_name,
             resolve_names,
             export,

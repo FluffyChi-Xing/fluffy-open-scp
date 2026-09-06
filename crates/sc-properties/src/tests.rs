@@ -35,6 +35,21 @@ fn file(entries: &[Vec<u8>]) -> Vec<u8> {
 }
 
 #[test]
+fn parse_limits_reject_large_entry_counts() {
+    let data = be32(2).to_vec();
+    assert!(matches!(
+        PropertyFile::parse_with_limits(
+            &data,
+            ParseLimits {
+                max_entries: 1,
+                ..ParseLimits::default()
+            }
+        ),
+        Err(Error::LimitExceeded("entry count"))
+    ));
+}
+
+#[test]
 fn scalar_types_roundtrip() {
     let mut key = Vec::new();
     push_u32(&mut key, 0xAA);
@@ -72,21 +87,21 @@ fn scalar_types_roundtrip() {
     assert_eq!(pf.get(2).unwrap().scalar(), Some(&Value::Int32(-16)));
     assert_eq!(pf.get(3).unwrap().scalar(), Some(&Value::UInt32(42)));
     assert_eq!(pf.get(4).unwrap().scalar(), Some(&Value::Float(1.5)));
-    assert_eq!(
-        pf.get(5).unwrap().scalar(),
-        Some(&Value::Key(Key {
-            instance: 0xAA,
-            type_id: 0xBB,
-            group: 0xCC
-        }))
-    );
-    assert_eq!(
-        pf.get(6).unwrap().scalar(),
-        Some(&Value::Text(Text {
-            table_id: 7,
-            instance_id: 8
-        }))
-    );
+    match pf.get(5).unwrap().scalar() {
+        Some(Value::Key(value)) => {
+            assert_eq!(value.instance, 0xAA);
+            assert_eq!(value.type_id, 0xBB);
+            assert_eq!(value.group, 0xCC);
+        }
+        other => panic!("expected key, got {other:?}"),
+    }
+    match pf.get(6).unwrap().scalar() {
+        Some(Value::Text(value)) => {
+            assert_eq!(value.table_id, 7);
+            assert_eq!(value.instance_id, 8);
+        }
+        other => panic!("expected text, got {other:?}"),
+    }
     assert_eq!(
         pf.get(7).unwrap().scalar(),
         Some(&Value::String8("hello".into()))
@@ -296,6 +311,70 @@ fn truncated_payload_rejected() {
 }
 
 #[test]
+fn parse_encode_parse_preserves_values_and_encoding_metadata() {
+    let mut array = be32(2).to_vec();
+    array.extend_from_slice(&be32(4));
+    array.extend_from_slice(&be32(7));
+    array.extend_from_slice(&be32(9));
+    let mut transform = be16(15).to_vec();
+    push_f32(&mut transform, 2.5);
+    for value in [1.0; 12] {
+        push_f32(&mut transform, value);
+    }
+    let data = file(&[
+        entry(0x20, 10, 0, &be32(42)),
+        entry(0x10, 10, 0x8090, &array),
+        entry(0x30, 56, 0, &transform),
+    ]);
+    let first = PropertyFile::parse(&data).unwrap();
+    assert_eq!(first.get(0x10).unwrap().encoding.flags, 0x8090);
+    assert_eq!(first.get(0x10).unwrap().encoding.array_item_size, Some(4));
+    let encoded = first.encode_canonical().unwrap();
+    let second = PropertyFile::parse(&encoded).unwrap();
+    for hash in [0x10, 0x20, 0x30] {
+        assert_eq!(second.get(hash), first.get(hash));
+    }
+}
+
+#[test]
+fn canonical_encoder_rejects_incompatible_array_item_size() {
+    let property = Property {
+        hash: 1,
+        prop_type: PropType::UInt32,
+        kind: Kind::Array(vec![Value::UInt32(1)]),
+        encoding: PropertyEncoding {
+            flags: 0x30,
+            array_item_size: Some(8),
+        },
+    };
+    let file = PropertyFile {
+        values: vec![property],
+        claimed_count: 1,
+    };
+    assert!(matches!(
+        file.encode_canonical(),
+        Err(Error::InvalidArrayItemSize { .. })
+    ));
+}
+
+#[test]
+fn canonical_encoder_rejects_incompatible_value_type() {
+    let property = Property {
+        hash: 1,
+        prop_type: PropType::UInt32,
+        kind: Kind::Scalar(Value::Int32(1)),
+        encoding: PropertyEncoding::default(),
+    };
+    let file = PropertyFile {
+        values: vec![property],
+        claimed_count: 1,
+    };
+    assert!(matches!(
+        file.encode_canonical(),
+        Err(Error::ValueTypeMismatch { .. })
+    ));
+}
+#[test]
 fn dump_display_sorted_by_hash() {
     let data = file(&[
         entry(0x02, 10, 0, &be32(1)),
@@ -345,6 +424,7 @@ mod combine_tests {
                 type_id: 0x00B1_B104,
                 group: 0,
             })),
+            encoding: PropertyEncoding::default(),
         }
     }
 
@@ -353,6 +433,7 @@ mod combine_tests {
             hash,
             prop_type: PropType::UInt32,
             kind: Kind::Scalar(Value::UInt32(value)),
+            encoding: PropertyEncoding::default(),
         }
     }
 
@@ -433,6 +514,7 @@ mod combine_tests {
                     group: 0,
                 }),
             ]),
+            encoding: PropertyEncoding::default(),
         };
         let entries = [
             (rid(0x7777, 0), prop_file(vec![simple_prop(1, 1)])),
@@ -500,6 +582,7 @@ mod locale_tests {
                     group: 0,
                 }),
             ]),
+            encoding: PropertyEncoding::default(),
         };
         let entries = [(
             rid(0x1234),

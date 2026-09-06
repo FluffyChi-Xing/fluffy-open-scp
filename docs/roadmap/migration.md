@@ -76,6 +76,17 @@ workspace + 4 个空 crate 骨架 + fluffy-design-pro 应用壳 + Tauri 2 壳 + 
 
 **M2 状态：解析与协议层完成；C# 真机差分依赖外部 oracle（环境门控已就绪）。**
 
+### M2.1 — Property Editor 后端基础（2026-09-06）
+
+- [x] `sc-properties` 保存 Property resource 的 `flags` 与数组 `item_size`，增加 `PropType` 文件 type id 反向映射
+- [x] 增加受限解析入口 `PropertyFile::parse_with_limits`，防止异常 entry/array/string 计数造成无界工作量
+- [x] 增加确定性的全大端 `PropertyFile::encode_canonical`，覆盖标量/数组/Empty、15 种值类型、String8/16 和 Transform；明确语义 round-trip，不承诺原始字节保真
+- [x] 增加 `LotEditorDocument`，提取 LOD1 模型、LotMask、Lot 尺寸、摆放变换，同时保留未知属性
+- [x] Tauri 增加 `read_lot_editor_session` 和受限 `patch_property_overlay`：仅修改已有 Property、保持类型/形态/数组长度，生成独立未压缩 DBPF overlay；输出使用临时文件 + sync + rename，禁止覆盖源包
+- [x] 单测覆盖 Property 编码 metadata round-trip、非法类型/item size、解析上限、patch hash/shape 约束和领域文档保留未知属性
+
+**M2.1 性能报告**：`cargo test --workspace` debug 构建总耗时约 23.0s（含编译）；Property 单元测试 19 项耗时 <0.01s；Tauri 后端 35 项耗时 0.04s；DBPF 真实包测试 3.15s。workspace 全量测试通过。
+
 ### M3 — `rw4`：RenderWare4 解析（P0 底座，✅ 全部完成 2026-09-05）
 **C# 参考**：`SimCityPak/RenderWare4/` 全目录；HANDOFF §4 export-gltf 各 done 小节（含全部格式结论）
 
@@ -189,13 +200,16 @@ workspace + 4 个空 crate 骨架 + fluffy-design-pro 应用壳 + Tauri 2 壳 + 
 - [x] 后端 commands：`open_package`（返回首批分页 TGI 树）、`close_package`、`list_resources(offset,limit,filter)`、`read_resource_bytes(range)`、`resolve_name(tgi)`、异步 `export`（raw/OBJ/GLB/PNG/JPG/TGA/DDS + 进度 event）、`export_status(job_id)`
 - [x] 后端 **OOM 防线（API 层）**：资源列表分页上限 1000；hex 单次最多 4KB；压缩资源声明解压上限 256 MiB；纹理像素/Blob 预算校验；大操作使用 `spawn_blocking`
 - [ ] 页面：包打开向导 → TGI 树（FTree）→ 资源详情（hex 分页 / 文本 Shiki / 贴图预览 / 模型 3D 预览评估 `three.js` / 视频内嵌 `<video>` + ffmpeg 转码临时文件 / 音频播放）
-- [x] 运行时媒体工具探测与导出接线：Wwise Vorbis → WAV（vgmstream bundled 路径）、EA VP6 → VP6/MP4（ffmpeg bundled 优先、PATH 回退），固定参数数组、输出签名校验与临时文件清理（对齐 C# `FindFfmpeg`）
+- [x] 运行时媒体工具探测与导出接线：Wwise Vorbis → WAV（vgmstream bundled 优先、PATH 回退）、EA VP6 → VP6/MP4（ffmpeg bundled 优先、PATH 回退），固定参数数组、严格 RIFF/MP4 结构校验、超时、并发限制、临时文件清理；BKHD SoundBank 可解析 BKHD/DIDX/DATA 并按 media id 提取 WEM
+- [x] 通用媒体导出：图片资源支持 PNG/JPG/GIF；Wwise/BKHD 音频支持 WAV/MP3/OGG/FLAC，替代格式采用 vgmstream 解码 WAV 后由 ffmpeg 转码
+- [x] 运行时可靠性：Windows 媒体子进程使用 `CREATE_NO_WINDOW`；转码失败通过 job 状态、activity 和稳定错误码返回，不导致应用退出
 - [ ] vgmstream/ffmpeg 二进制随应用分发、Tauri bundle/externalBin、许可证和 x64/arm64 发布验证（留至 M6）
 - [ ] chat-assistant 网关：**未来功能，本阶段不建设；前端开发阶段暂时禁用**
 
-**M5 后端进度（2026-09-05）**：已完成包句柄生命周期与容量保护、包摘要与资源分页、4KB 字节范围读取、Registry 缓存名称解析、raw/OBJ/GLB/PNG/JPG/TGA/DDS/WAV/VP6/MP4 异步导出、骨骼/动画接线、媒体工具运行时探测、原子临时文件落盘、activity 埋点和 `export:progress`/job 状态查询。后端单元测试 19 项通过；workspace 全量测试通过。前端页面、sidecar 二进制分发、完整多 Mesh/多材质跨 package glTF 与 chat-assistant 保持未建设。
+**M5 媒体性能/稳定性报告（2026-09-06）**：媒体后端单元测试 40 项耗时约 5.08s（含增量编译）；BKHD 合成 chunk 解析与 WEM 提取在微秒级完成；外部媒体进程并发上限为 2，单任务超时为 10 分钟。已在真实资源上运行应用内部导出路径：Wwise→WAV 输出 5,915,792 bytes，约 99.8ms；VP6→H.264 MP4 输出 1,741,310 bytes，约 1.72s。当前工具来自用户 PATH 的 WinGet 安装目录，真实转码集成测试通过；发布 bundle 仍未携带媒体二进制。
+
 - [x] 前端首版源文件解析工作区：目录树、当前目录 package 列表、多个 package Tab、资源分类 Tabs、默认空态和 5174 Mock 验证
-- [ ] 前端多格式详情预览：文本/代码 FCode、图片、音频、视频、Three.js 模型预览
+- [x] 前端媒体预览与导出 toolbar：图片 PNG/JPG/GIF，音频 WAV/MP3/OGG/FLAC；默认格式、保存对话框、导出状态和失败 toast 已接入
 - [ ] Tauri 真实目录扫描 command 与完整前端联调
 
 ### M5.5 — 开发者文档工作区（后端，新增，2026-09-05）

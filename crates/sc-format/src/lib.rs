@@ -12,6 +12,7 @@ pub enum Format {
     Jpeg,
     Dds,
     Wav,
+    WwiseBank,
     Webp,
     Ogg,
     Ico,
@@ -51,6 +52,8 @@ pub fn probe(bytes: &[u8]) -> Result<Format> {
         Format::Dds
     } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
         Format::Wav
+    } else if bytes.len() >= 4 && bytes.starts_with(b"BKHD") {
+        Format::WwiseBank
     } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
         Format::Webp
     } else if bytes.starts_with(b"OggS") {
@@ -100,7 +103,8 @@ mod tests {
         assert_probe(b"\xff\xd8\xff", Format::Jpeg);
         assert_probe(b"DDS ", Format::Dds);
         assert_probe(b"RIFFxxxxWAVE", Format::Wav);
-        assert_probe(b"RIFFxxxxWEBP", Format::Webp);
+        assert_probe(b"BKHD", Format::WwiseBank);
+
         assert_probe(b"OggS\0", Format::Ogg);
         assert_probe(&[0, 0, 1, 0], Format::Ico);
         assert_probe(b"  <?xml version=\"1.0\"?>", Format::Xml);

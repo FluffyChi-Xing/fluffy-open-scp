@@ -14,6 +14,7 @@ fn prop(hash: u32, t: PropType, kind: Kind) -> Property {
         hash,
         prop_type: t,
         kind,
+        encoding: sc_properties::PropertyEncoding::default(),
     }
 }
 

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Property element type, mirroring the C# `PropertyDefinitionAttribute`
 /// table (`PackageReader/Properties/Types/*.cs`).
@@ -46,6 +46,26 @@ impl PropType {
         Some(t)
     }
 
+    pub fn file_type(self) -> u16 {
+        match self {
+            PropType::Bool => 1,
+            PropType::Int32 => 9,
+            PropType::UInt32 => 10,
+            PropType::Float => 13,
+            PropType::String8 => 18,
+            PropType::String16 => 19,
+            PropType::Key => 32,
+            PropType::Text => 34,
+            PropType::Vector2 => 48,
+            PropType::Vector3 => 49,
+            PropType::ColorRgb => 50,
+            PropType::Vector4 => 51,
+            PropType::ColorRgba => 52,
+            PropType::Transform => 56,
+            PropType::BoundingBox => 57,
+        }
+    }
+
     /// The C# property name (`PropertyDefinitionAttribute.Name`), used in
     /// dumps and the frontend.
     pub fn name(&self) -> &'static str {
@@ -86,7 +106,7 @@ pub struct Text {
 }
 
 /// Transform: flags-derived matrix count, optional leading unknown float.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transform {
     pub flags: u16,
     /// Present only when flags == 15.
@@ -153,6 +173,22 @@ impl fmt::Display for Value {
     }
 }
 
+/// Encoding details retained from the property resource.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PropertyEncoding {
+    pub flags: u16,
+    pub array_item_size: Option<i32>,
+}
+
+impl Default for PropertyEncoding {
+    fn default() -> Self {
+        Self {
+            flags: 0,
+            array_item_size: None,
+        }
+    }
+}
+
 /// One entry in a property file.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Property {
@@ -160,6 +196,7 @@ pub struct Property {
     /// Element type (the file's 16-bit type id resolved through the table).
     pub prop_type: PropType,
     pub kind: Kind,
+    pub encoding: PropertyEncoding,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

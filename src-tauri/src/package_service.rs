@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
@@ -23,6 +23,9 @@ pub const RESOURCE_PAGE_MAX_LIMIT: usize = 1_000;
 pub const RESOURCE_BYTES_MAX: usize = 4 * 1024;
 pub const RESOURCE_DATA_MAX: u64 = 32 * 1024 * 1024;
 pub const RESOURCE_DECOMPRESSED_MAX: u64 = 256 * 1024 * 1024;
+pub const PROPERTY_PATCH_MAX: usize = 256;
+pub const PROPERTY_OVERLAY_MAX: u64 = 64 * 1024 * 1024;
+const PROPERTY_RESOURCE_TYPE: u32 = sc_properties::PROPERTY_RESOURCE_TYPE;
 pub const EXPORT_PROGRESS_EVENT: &str = "export:progress";
 pub const MAX_OPEN_PACKAGES: usize = 32;
 pub const MAX_EXPORT_JOBS: usize = 128;
@@ -296,6 +299,90 @@ pub struct ResourceData {
     pub data_base64: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    pub patches: Vec<PropertyPatch>,
+    pub output_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+pub enum PropertyPatchValue {
+    Bool(bool),
+    Int32(i32),
+    UInt32(u32),
+    Float(f32),
+    String8(String),
+    String16(String),
+    Key {
+        instance: u32,
+        type_id: u32,
+        group: u32,
+    },
+    Text {
+        table_id: u32,
+        instance_id: u32,
+    },
+    Vector2([f32; 2]),
+    Vector3([f32; 3]),
+    ColorRgb {
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    Vector4([f32; 4]),
+    ColorRgba {
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    },
+    Transform(sc_properties::Transform),
+    BoundingBox {
+        min: [f32; 3],
+        max: [f32; 3],
+    },
+    Array(Vec<PropertyPatchValue>),
+    Empty,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatch {
+    pub hash: u32,
+    pub value: PropertyPatchValue,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchResult {
+    pub output_path: String,
+    pub tgi: TgiDto,
+    pub changed_hashes: Vec<u32>,
+    pub property_bytes: u64,
+    pub overlay_bytes: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotEditorSessionRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotEditorSession {
+    pub tgi: TgiDto,
+    pub asset_name: Option<String>,
+    pub document: sc_properties::LotEditorDocument,
+    pub model_available: bool,
+    pub diagnostics: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceBytes {
@@ -345,9 +432,13 @@ pub enum ExportFormat {
     Glb,
     Png,
     Jpg,
+    Gif,
     Tga,
     Dds,
     Wav,
+    Mp3,
+    Ogg,
+    Flac,
     Vp6,
     Mp4,
 }
@@ -359,6 +450,7 @@ pub struct ExportRequest {
     pub tgi: TgiDto,
     pub format: ExportFormat,
     pub output_path: String,
+    pub media_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -413,8 +505,14 @@ enum PackageError {
     StatePoisoned,
     #[error("dbpf error: {0}")]
     Dbpf(#[from] dbpf::Error),
+    #[error("dbpf writer error: {0}")]
+    Overlay(#[from] dbpf::WriterError),
     #[error("properties error: {0}")]
     Properties(#[from] sc_properties::Error),
+    #[error("Wwise SoundBank error: {0}")]
+    Wwise(#[from] crate::wwise::WwiseError),
+    #[error("image error: {0}")]
+    Image(#[from] image::ImageError),
     #[error("registry error: {0}")]
     Registry(#[from] sc_registry::Error),
     #[error("rw4 error: {0}")]
@@ -442,7 +540,10 @@ impl PackageError {
             Self::OutputExists(_) => "output_exists",
             Self::StatePoisoned => "internal_error",
             Self::Dbpf(_) => "corrupt_package",
+            Self::Overlay(_) => "overlay_write_failed",
             Self::Properties(_) => "corrupt_resource",
+            Self::Wwise(_) => "corrupt_resource",
+            Self::Image(_) => "corrupt_resource",
             Self::Registry(_) => "registry",
             Self::Rw4(_) => "corrupt_resource",
             Self::UnsupportedExport => "unsupported",
@@ -450,6 +551,8 @@ impl PackageError {
             Self::ToolNotFound(_) => "tool_not_found",
             Self::ToolSpawn(ToolError::Spawn { .. }) => "tool_spawn_failed",
             Self::ToolSpawn(ToolError::Failed { .. }) => "tool_failed",
+            Self::ToolSpawn(ToolError::Timeout { .. }) => "tool_timeout",
+            Self::ToolSpawn(ToolError::Wait { .. }) => "tool_failed",
             Self::InvalidMediaOutput(_) => "tool_output_invalid",
             Self::Io(_) => "io",
         }
@@ -546,10 +649,7 @@ fn resource_page(
     })
 }
 
-fn type_counts(
-    package: &Package,
-    registry: Option<&sc_registry::Registry>,
-) -> Vec<TypeCount> {
+fn type_counts(package: &Package, registry: Option<&sc_registry::Registry>) -> Vec<TypeCount> {
     let mut counts = HashMap::new();
     for entry in package.entries() {
         *counts.entry(entry.id.type_id).or_insert(0usize) += 1;
@@ -960,7 +1060,7 @@ pub async fn read_resource_data(
             )));
         }
         let data = package.read(entry).map_err(PackageError::Dbpf)?;
-        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
         Ok(ResourceData {
             total_length: u64::from(entry.decompressed_size),
             data_base64: STANDARD.encode(data),
@@ -1052,7 +1152,10 @@ fn property_value_text(kind: &sc_properties::Kind) -> (String, Option<usize>) {
                 .map(|value| value.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            if let Some(cut) = text.char_indices().nth(PROPERTY_PREVIEW_MAX_VALUES).map(|(i, _)| i)
+            if let Some(cut) = text
+                .char_indices()
+                .nth(PROPERTY_PREVIEW_MAX_VALUES)
+                .map(|(i, _)| i)
             {
                 text.truncate(cut);
                 text.push('…');
@@ -1122,10 +1225,7 @@ fn mesh_bounds(vertices: &[rw4::DecodedVertex]) -> (Option<[f32; 3]>, Option<[f3
         }
     }
     let any = vertices.iter().any(|vertex| vertex.position().is_some());
-    (
-        any.then_some(min),
-        any.then_some(max),
-    )
+    (any.then_some(min), any.then_some(max))
 }
 
 fn rw4_section_detail(data: &[u8], number: u32) -> Result<Rw4SectionDetail, PackageError> {
@@ -1151,7 +1251,7 @@ fn rw4_section_detail(data: &[u8], number: u32) -> Result<Rw4SectionDetail, Pack
         let (bounds_min, bounds_max) = mesh_bounds(&mesh.vertices);
         let obj_text = sc_exporter::export_obj(&mesh);
         let obj_base64 = (obj_text.len() <= MESH_OBJ_MAX_BYTES).then(|| {
-            use base64::{engine::general_purpose::STANDARD, Engine as _};
+            use base64::{Engine as _, engine::general_purpose::STANDARD};
             STANDARD.encode(obj_text.as_bytes())
         });
         detail.mesh = Some(Rw4MeshDetail {
@@ -1167,7 +1267,7 @@ fn rw4_section_detail(data: &[u8], number: u32) -> Result<Rw4SectionDetail, Pack
     } else if section.type_code == rw4::SectionType::TEXTURE {
         let texture = file.decode_texture(data, number)?;
         validate_texture_budget(&texture)?;
-        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
         let png = sc_exporter::export_texture(&texture, sc_exporter::TextureOutputFormat::Png)?;
         detail.texture = Some(Rw4TextureDetail {
             width: texture.width,
@@ -1249,6 +1349,303 @@ where
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+fn patch_value(
+    expected: sc_properties::PropType,
+    value: &PropertyPatchValue,
+) -> Result<sc_properties::Value, PackageError> {
+    use sc_properties::Value;
+    let result = match (expected, value) {
+        (sc_properties::PropType::Bool, PropertyPatchValue::Bool(value)) => Value::Bool(*value),
+        (sc_properties::PropType::Int32, PropertyPatchValue::Int32(value)) => Value::Int32(*value),
+        (sc_properties::PropType::UInt32, PropertyPatchValue::UInt32(value)) => {
+            Value::UInt32(*value)
+        }
+        (sc_properties::PropType::Float, PropertyPatchValue::Float(value)) => Value::Float(*value),
+        (sc_properties::PropType::String8, PropertyPatchValue::String8(value)) => {
+            Value::String8(value.clone())
+        }
+        (sc_properties::PropType::String16, PropertyPatchValue::String16(value)) => {
+            Value::String16(value.clone())
+        }
+        (
+            sc_properties::PropType::Key,
+            PropertyPatchValue::Key {
+                instance,
+                type_id,
+                group,
+            },
+        ) => Value::Key(sc_properties::Key {
+            instance: *instance,
+            type_id: *type_id,
+            group: *group,
+        }),
+        (
+            sc_properties::PropType::Text,
+            PropertyPatchValue::Text {
+                table_id,
+                instance_id,
+            },
+        ) => Value::Text(sc_properties::Text {
+            table_id: *table_id,
+            instance_id: *instance_id,
+        }),
+        (sc_properties::PropType::Vector2, PropertyPatchValue::Vector2(value)) => {
+            Value::Vector2(*value)
+        }
+        (sc_properties::PropType::Vector3, PropertyPatchValue::Vector3(value)) => {
+            Value::Vector3(*value)
+        }
+        (sc_properties::PropType::ColorRgb, PropertyPatchValue::ColorRgb { r, g, b }) => {
+            Value::ColorRgb {
+                r: *r,
+                g: *g,
+                b: *b,
+            }
+        }
+        (sc_properties::PropType::Vector4, PropertyPatchValue::Vector4(value)) => {
+            Value::Vector4(*value)
+        }
+        (sc_properties::PropType::ColorRgba, PropertyPatchValue::ColorRgba { r, g, b, a }) => {
+            Value::ColorRgba {
+                r: *r,
+                g: *g,
+                b: *b,
+                a: *a,
+            }
+        }
+        (sc_properties::PropType::Transform, PropertyPatchValue::Transform(value)) => {
+            Value::Transform(value.clone())
+        }
+        (sc_properties::PropType::BoundingBox, PropertyPatchValue::BoundingBox { min, max }) => {
+            Value::BoundingBox {
+                min: *min,
+                max: *max,
+            }
+        }
+        _ => {
+            return Err(PackageError::InvalidArgument(
+                "property patch value type does not match the property".into(),
+            ));
+        }
+    };
+    Ok(result)
+}
+
+fn apply_property_patches(
+    file: &mut sc_properties::PropertyFile,
+    patches: &[PropertyPatch],
+) -> Result<Vec<u32>, PackageError> {
+    if patches.is_empty() || patches.len() > PROPERTY_PATCH_MAX {
+        return Err(PackageError::LimitExceeded(PROPERTY_PATCH_MAX));
+    }
+    let mut changed = Vec::with_capacity(patches.len());
+    for patch in patches {
+        if changed.contains(&patch.hash) {
+            return Err(PackageError::InvalidArgument(format!(
+                "duplicate property patch hash {:#010x}",
+                patch.hash
+            )));
+        }
+        let property = file
+            .values
+            .iter_mut()
+            .find(|property| property.hash == patch.hash)
+            .ok_or_else(|| {
+                PackageError::InvalidArgument(format!(
+                    "property hash {:#010x} was not found",
+                    patch.hash
+                ))
+            })?;
+        match (&mut property.kind, &patch.value) {
+            (sc_properties::Kind::Scalar(current), value) => {
+                *current = patch_value(property.prop_type, value)?;
+            }
+            (sc_properties::Kind::Array(current), PropertyPatchValue::Array(values)) => {
+                if values.len() != current.len() {
+                    return Err(PackageError::InvalidArgument(format!(
+                        "property array {:#010x} length cannot change",
+                        patch.hash
+                    )));
+                }
+                for (current, value) in current.iter_mut().zip(values) {
+                    *current = patch_value(property.prop_type, value)?;
+                }
+            }
+            (sc_properties::Kind::Empty, PropertyPatchValue::Empty) => {}
+            _ => {
+                return Err(PackageError::InvalidArgument(format!(
+                    "property {:#010x} shape cannot change",
+                    patch.hash
+                )));
+            }
+        }
+        changed.push(patch.hash);
+    }
+    Ok(changed)
+}
+
+#[tauri::command]
+pub async fn read_lot_editor_session(
+    state: State<'_, AppState>,
+    request: LotEditorSessionRequest,
+) -> Result<LotEditorSession, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let bundled_registry = bundled_registry_path(&state.app);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi.clone(),
+        move |data, package, manager, store| {
+            let tgi = request.tgi;
+            if tgi.type_id != PROPERTY_RESOURCE_TYPE {
+                return Err(PackageError::InvalidArgument(
+                    "lot editor requires a property resource".into(),
+                ));
+            }
+            let properties = sc_properties::PropertyFile::parse_with_limits(
+                data,
+                sc_properties::ParseLimits::default(),
+            )?;
+            let document = sc_properties::LotEditorDocument::from_property_file(properties);
+            let mut diagnostics = Vec::new();
+            let model_available = document
+                .model
+                .map(|key| {
+                    package
+                        .entry(ResourceId {
+                            type_id: key.type_id,
+                            group: key.group,
+                            instance: key.instance,
+                        })
+                        .is_some()
+                })
+                .unwrap_or(false);
+            if document.model.is_some() && !model_available {
+                diagnostics.push("LOD1 model resource is missing".into());
+            }
+            if document.lot_mask.is_some() {
+                diagnostics.push("LotMask texture decoding is not available yet".into());
+            }
+            let registry = package_registry(store, manager, package, bundled_registry.as_deref());
+            let asset_name = semantic_instance_name(registry.as_deref(), tgi.instance);
+            if registry.is_none() {
+                diagnostics.push("property registry is unavailable; using hash identifiers".into());
+            }
+            Ok(LotEditorSession {
+                tgi,
+                asset_name,
+                document,
+                model_available,
+                diagnostics,
+            })
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn patch_property_overlay(
+    state: State<'_, AppState>,
+    request: PropertyPatchRequest,
+) -> Result<PropertyPatchResult, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    tauri::async_runtime::spawn_blocking(move || {
+        let tgi: ResourceId = request.tgi.clone().into();
+        if tgi.type_id != PROPERTY_RESOURCE_TYPE {
+            return Err(CommandError::from(PackageError::InvalidArgument(
+                "property patch requires a property resource".into(),
+            )));
+        }
+        let package = manager
+            .get(request.package_id)
+            .map_err(CommandError::from)?;
+        let package_path = fs::canonicalize(package.path())
+            .map_err(PackageError::Io)
+            .map_err(CommandError::from)?;
+        let output_path = PathBuf::from(&request.output_path);
+        if output_path.exists()
+            && fs::canonicalize(&output_path).ok().as_deref() == Some(package_path.as_path())
+        {
+            return Err(CommandError::from(PackageError::InvalidArgument(
+                "property overlay output cannot replace the source package".into(),
+            )));
+        }
+        let entry = package
+            .entry(tgi)
+            .ok_or(PackageError::ResourceNotFound(tgi))
+            .map_err(CommandError::from)?;
+        if u64::from(entry.decompressed_size) > RESOURCE_DATA_MAX {
+            return Err(CommandError::from(PackageError::LimitExceeded(
+                RESOURCE_DATA_MAX as usize,
+            )));
+        }
+        let data = package
+            .read(entry)
+            .map_err(PackageError::Dbpf)
+            .map_err(CommandError::from)?;
+        let mut file = sc_properties::PropertyFile::parse_with_limits(
+            &data,
+            sc_properties::ParseLimits::default(),
+        )
+        .map_err(PackageError::Properties)
+        .map_err(CommandError::from)?;
+        let changed_hashes =
+            apply_property_patches(&mut file, &request.patches).map_err(CommandError::from)?;
+        let property_data = file
+            .encode_canonical()
+            .map_err(PackageError::Properties)
+            .map_err(CommandError::from)?;
+        let overlay = dbpf::write_uncompressed_overlay(&[dbpf::OverlayEntry::new(
+            tgi,
+            property_data.clone(),
+        )])
+        .map_err(PackageError::Overlay)
+        .map_err(CommandError::from)?;
+        if overlay.len() as u64 > PROPERTY_OVERLAY_MAX {
+            return Err(CommandError::from(PackageError::OutputLimitExceeded(
+                PROPERTY_OVERLAY_MAX,
+            )));
+        }
+        let job_id = manager.next_job_id().map_err(CommandError::from)?;
+        write_export(&output_path, &overlay, job_id).map_err(CommandError::from)?;
+        Ok(PropertyPatchResult {
+            output_path: request.output_path,
+            tgi: tgi.into(),
+            changed_hashes,
+            property_bytes: property_data.len() as u64,
+            overlay_bytes: overlay.len() as u64,
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+#[tauri::command]
+pub async fn read_wwise_bank(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<crate::wwise::WwiseBank, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let tgi = request.tgi.clone();
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, _, _, _| {
+            if tgi.type_id != WWISE_BANK_TYPE_ID {
+                return Err(PackageError::InvalidArgument(
+                    "Wwise bank inspection requires a BKHD resource".into(),
+                ));
+            }
+            Ok(crate::wwise::WwiseBankData::parse(data)?.bank)
+        },
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn read_property_preview(
     state: State<'_, AppState>,
@@ -1263,8 +1660,7 @@ pub async fn read_property_preview(
         request.package_id,
         request.tgi,
         move |data, package, manager, store| {
-            let registry =
-                package_registry(store, manager, package, bundled_registry.as_deref());
+            let registry = package_registry(store, manager, package, bundled_registry.as_deref());
             property_preview(data, registry.as_ref())
         },
     )
@@ -1278,9 +1674,13 @@ pub async fn read_rw4_preview(
 ) -> Result<Rw4PreviewData, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
-    read_resource_with(manager, store, request.package_id, request.tgi, |data, _, _, _| {
-        rw4_sections(data)
-    })
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        |data, _, _, _| rw4_sections(data),
+    )
     .await
 }
 
@@ -1356,9 +1756,7 @@ fn semantic_instance_name(
 
 fn registry_candidate(main: PathBuf) -> (PathBuf, Option<String>) {
     let user = main.with_file_name(REGISTRY_USER_DATABASE);
-    let user = user
-        .is_file()
-        .then(|| user.to_string_lossy().into_owned());
+    let user = user.is_file().then(|| user.to_string_lossy().into_owned());
     (main, user)
 }
 
@@ -1399,13 +1797,11 @@ fn package_registry(
     if let Some(path) = bundled_main {
         push_candidate(path.to_path_buf(), &mut candidates);
     }
-    candidates
-        .iter()
-        .find_map(|(main, user)| {
-            manager
-                .registry(&main.to_string_lossy(), user.as_deref())
-                .ok()
-        })
+    candidates.iter().find_map(|(main, user)| {
+        manager
+            .registry(&main.to_string_lossy(), user.as_deref())
+            .ok()
+    })
 }
 
 #[tauri::command]
@@ -1425,8 +1821,7 @@ pub async fn resolve_names(
         let package = manager
             .get(request.package_id)
             .map_err(CommandError::from)?;
-        let registry =
-            package_registry(&store, &manager, &package, bundled_registry.as_deref());
+        let registry = package_registry(&store, &manager, &package, bundled_registry.as_deref());
         Ok(request
             .tgis
             .iter()
@@ -1440,6 +1835,31 @@ pub async fn resolve_names(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+fn export_image_resource(
+    data: Vec<u8>,
+    type_id: u32,
+    format: ExportFormat,
+) -> Result<Vec<u8>, PackageError> {
+    let output = match format {
+        ExportFormat::Png => image::ImageFormat::Png,
+        ExportFormat::Jpg => image::ImageFormat::Jpeg,
+        ExportFormat::Gif => image::ImageFormat::Gif,
+        _ => return Err(PackageError::UnsupportedExport),
+    };
+    let same_format = matches!(
+        (type_id, format),
+        (PNG_TYPE_ID, ExportFormat::Png)
+            | (JPG_TYPE_ID, ExportFormat::Jpg)
+            | (GIF_TYPE_ID, ExportFormat::Gif)
+    );
+    if same_format {
+        return Ok(data);
+    }
+    let decoded = image::load_from_memory(&data)?;
+    let mut output_data = Cursor::new(Vec::new());
+    decoded.write_to(&mut output_data, output)?;
+    Ok(output_data.into_inner())
+}
 fn export_bytes(
     package: &Package,
     tgi: ResourceId,
@@ -1463,7 +1883,16 @@ fn export_bytes(
                 Err(PackageError::UnsupportedExport)
             }
         }
-        ExportFormat::Wav | ExportFormat::Mp4 => Err(PackageError::UnsupportedExport),
+        ExportFormat::Png | ExportFormat::Jpg | ExportFormat::Gif
+            if matches!(tgi.type_id, PNG_TYPE_ID | JPG_TYPE_ID | GIF_TYPE_ID) =>
+        {
+            export_image_resource(data, tgi.type_id, format)
+        }
+        ExportFormat::Wav
+        | ExportFormat::Mp3
+        | ExportFormat::Ogg
+        | ExportFormat::Flac
+        | ExportFormat::Mp4 => Err(PackageError::UnsupportedExport),
         ExportFormat::Obj | ExportFormat::Glb => {
             let file = rw4::Rw4File::parse(&data)?;
             let section = file
@@ -1493,6 +1922,12 @@ fn export_bytes(
                 Ok(sc_exporter::export_glb(&mesh, skeleton.as_ref(), &animations).bytes)
             }
         }
+        ExportFormat::Png | ExportFormat::Jpg | ExportFormat::Gif
+            if matches!(tgi.type_id, PNG_TYPE_ID | JPG_TYPE_ID | GIF_TYPE_ID) =>
+        {
+            export_image_resource(data, tgi.type_id, format)
+        }
+        ExportFormat::Gif => Err(PackageError::UnsupportedExport),
         ExportFormat::Png | ExportFormat::Jpg | ExportFormat::Tga | ExportFormat::Dds => {
             let file = rw4::Rw4File::parse(&data)?;
             let section = file
@@ -1554,30 +1989,45 @@ fn validate_output_path(path: &Path) -> Result<(), PackageError> {
 }
 
 const AUDIO_TYPE_ID: u32 = 0x0D9E_5710;
+const WWISE_BANK_TYPE_ID: u32 = 0x0A4D_8D09;
 const VIDEO_TYPE_ID: u32 = 0x3768_40D7;
+const PNG_TYPE_ID: u32 = 0x2F7D_0004;
+const JPG_TYPE_ID: u32 = 0x3F86_62EA;
+const GIF_TYPE_ID: u32 = 0x2F7D_0007;
 
 fn required_tool(tools: &MediaTools, format: ExportFormat) -> Result<&str, PackageError> {
     let tool = match format {
         ExportFormat::Wav => &tools.vgmstream,
-        ExportFormat::Mp4 => &tools.ffmpeg,
+        ExportFormat::Mp3 | ExportFormat::Ogg | ExportFormat::Flac | ExportFormat::Mp4 => {
+            &tools.ffmpeg
+        }
         _ => return Err(PackageError::UnsupportedExport),
     };
     tool.path
         .as_deref()
         .ok_or(PackageError::ToolNotFound(match format {
             ExportFormat::Wav => "vgmstream",
-            ExportFormat::Mp4 => "ffmpeg",
+            ExportFormat::Mp3 | ExportFormat::Ogg | ExportFormat::Flac | ExportFormat::Mp4 => {
+                "ffmpeg"
+            }
             _ => "media tool",
         }))
 }
 
 fn validate_media_request(tgi: ResourceId, format: ExportFormat) -> Result<(), PackageError> {
     match format {
-        ExportFormat::Wav if tgi.type_id == AUDIO_TYPE_ID => Ok(()),
-        ExportFormat::Vp6 | ExportFormat::Mp4 if tgi.type_id == VIDEO_TYPE_ID => Ok(()),
-        ExportFormat::Wav | ExportFormat::Vp6 | ExportFormat::Mp4 => {
-            Err(PackageError::UnsupportedExport)
+        ExportFormat::Wav | ExportFormat::Mp3 | ExportFormat::Ogg | ExportFormat::Flac
+            if tgi.type_id == AUDIO_TYPE_ID || tgi.type_id == WWISE_BANK_TYPE_ID =>
+        {
+            Ok(())
         }
+        ExportFormat::Vp6 | ExportFormat::Mp4 if tgi.type_id == VIDEO_TYPE_ID => Ok(()),
+        ExportFormat::Wav
+        | ExportFormat::Mp3
+        | ExportFormat::Ogg
+        | ExportFormat::Flac
+        | ExportFormat::Vp6
+        | ExportFormat::Mp4 => Err(PackageError::UnsupportedExport),
         _ => Ok(()),
     }
 }
@@ -1589,6 +2039,79 @@ fn create_temp_file(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
     Ok(())
 }
 
+fn validate_wave_bytes(data: &[u8]) -> bool {
+    if data.len() < 12 || &data[..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+        return false;
+    }
+    let declared = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
+    let Some(limit) = declared.checked_add(8) else {
+        return false;
+    };
+    if limit < 12 || limit > data.len() {
+        return false;
+    }
+    let mut offset = 12;
+    let mut has_fmt = false;
+    let mut has_data = false;
+    while offset < limit {
+        if limit - offset < 8 {
+            return false;
+        }
+        let size = u32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        let Some(end) = offset
+            .checked_add(8)
+            .and_then(|value| value.checked_add(size))
+        else {
+            return false;
+        };
+        let Some(padded_end) = end.checked_add(size & 1) else {
+            return false;
+        };
+        if padded_end > limit {
+            return false;
+        }
+        match &data[offset..offset + 4] {
+            b"fmt " if size >= 16 => has_fmt = true,
+            b"data" => has_data = true,
+            _ => {}
+        }
+        offset = padded_end;
+    }
+    offset == limit && has_fmt && has_data
+}
+
+fn validate_mp4_bytes(data: &[u8]) -> bool {
+    let mut offset = 0usize;
+    let mut has_ftyp = false;
+    let mut has_media = false;
+    while offset < data.len() {
+        if data.len() - offset < 8 {
+            return false;
+        }
+        let size32 = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap());
+        let size = if size32 == 1 {
+            if data.len() - offset < 16 {
+                return false;
+            }
+            u64::from_be_bytes(data[offset + 8..offset + 16].try_into().unwrap())
+        } else if size32 == 0 {
+            (data.len() - offset) as u64
+        } else {
+            u64::from(size32)
+        };
+        if size < 8 || size > (data.len() - offset) as u64 {
+            return false;
+        }
+        match &data[offset + 4..offset + 8] {
+            b"ftyp" => has_ftyp = true,
+            b"moov" | b"mdat" => has_media = true,
+            _ => {}
+        }
+        offset += size as usize;
+    }
+    offset == data.len() && has_ftyp && has_media
+}
+
 fn validate_media_output(path: &Path, format: ExportFormat) -> Result<(), PackageError> {
     let metadata = fs::metadata(path)?;
     if metadata.len() == 0 || metadata.len() > RESOURCE_DECOMPRESSED_MAX {
@@ -1597,11 +2120,14 @@ fn validate_media_output(path: &Path, format: ExportFormat) -> Result<(), Packag
         ));
     }
     let mut file = fs::File::open(path)?;
-    let mut header = [0u8; 12];
-    let count = file.read(&mut header)?;
+    let mut data = Vec::new();
+    file.read_to_end(&mut data)?;
     let valid = match format {
-        ExportFormat::Wav => count >= 12 && &header[..4] == b"RIFF" && &header[8..12] == b"WAVE",
-        ExportFormat::Mp4 => count >= 8 && &header[4..8] == b"ftyp",
+        ExportFormat::Wav => validate_wave_bytes(&data),
+        ExportFormat::Mp3 | ExportFormat::Ogg | ExportFormat::Flac => {
+            validate_audio_output(&data, format)
+        }
+        ExportFormat::Mp4 => validate_mp4_bytes(&data),
         _ => false,
     };
     if valid {
@@ -1621,22 +2147,65 @@ fn install_media_output(source: &Path, target: &Path) -> Result<usize, PackageEr
     Ok(fs::metadata(target)?.len() as usize)
 }
 
+fn validate_audio_output(data: &[u8], format: ExportFormat) -> bool {
+    match format {
+        ExportFormat::Wav => validate_wave_bytes(data),
+        ExportFormat::Mp3 => {
+            data.starts_with(b"ID3")
+                || (data.len() >= 2 && data[0] == 0xFF && data[1] & 0xE0 == 0xE0)
+        }
+        ExportFormat::Ogg => data.starts_with(b"OggS"),
+        ExportFormat::Flac => data.starts_with(b"fLaC"),
+        _ => false,
+    }
+}
+
 fn media_args(
     format: ExportFormat,
     input: &Path,
     output: &Path,
 ) -> Result<Vec<OsString>, PackageError> {
+    let mut args = vec![
+        OsString::from("-y"),
+        OsString::from("-nostdin"),
+        OsString::from("-hide_banner"),
+        OsString::from("-loglevel"),
+        OsString::from("error"),
+    ];
     match format {
-        ExportFormat::Wav => Ok(vec![
-            OsString::from("-o"),
-            output.as_os_str().to_owned(),
+        ExportFormat::Wav => {
+            args.clear();
+            args.extend([
+                OsString::from("-o"),
+                output.as_os_str().to_owned(),
+                input.as_os_str().to_owned(),
+            ]);
+        }
+        ExportFormat::Mp3 => args.extend([
+            OsString::from("-i"),
             input.as_os_str().to_owned(),
+            OsString::from("-vn"),
+            OsString::from("-c:a"),
+            OsString::from("libmp3lame"),
+            output.as_os_str().to_owned(),
         ]),
-        ExportFormat::Mp4 => Ok(vec![
-            OsString::from("-y"),
-            OsString::from("-hide_banner"),
-            OsString::from("-loglevel"),
-            OsString::from("error"),
+        ExportFormat::Ogg => args.extend([
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-vn"),
+            OsString::from("-c:a"),
+            OsString::from("libvorbis"),
+            output.as_os_str().to_owned(),
+        ]),
+        ExportFormat::Flac => args.extend([
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-vn"),
+            OsString::from("-c:a"),
+            OsString::from("flac"),
+            output.as_os_str().to_owned(),
+        ]),
+        ExportFormat::Mp4 => args.extend([
             OsString::from("-i"),
             input.as_os_str().to_owned(),
             OsString::from("-c:v"),
@@ -1646,13 +2215,15 @@ fn media_args(
             OsString::from("-an"),
             output.as_os_str().to_owned(),
         ]),
-        _ => Err(PackageError::UnsupportedExport),
+        _ => return Err(PackageError::UnsupportedExport),
     }
+    Ok(args)
 }
 
 fn export_media(
     package: &Package,
     tgi: ResourceId,
+    media_id: Option<u32>,
     format: ExportFormat,
     target: &Path,
     job_id: u64,
@@ -1660,8 +2231,8 @@ fn export_media(
 ) -> Result<usize, PackageError> {
     let tool_name = match format {
         ExportFormat::Wav => "vgmstream",
-        ExportFormat::Mp4 => "ffmpeg",
-        _ => "media tool",
+        ExportFormat::Mp3 | ExportFormat::Ogg | ExportFormat::Flac | ExportFormat::Mp4 => "ffmpeg",
+        _ => return Err(PackageError::UnsupportedExport),
     };
     let tool_path = required_tool(tools, format)?;
     let entry = package
@@ -1673,6 +2244,20 @@ fn export_media(
         ));
     }
     let data = package.read(entry)?;
+    let (data, input_extension) = if tgi.type_id == WWISE_BANK_TYPE_ID {
+        let bank = crate::wwise::WwiseBankData::parse(&data)?;
+        let media = bank
+            .bank
+            .media
+            .iter()
+            .find(|entry| media_id.is_none_or(|id| id == entry.id))
+            .ok_or(crate::wwise::WwiseError::NoMedia)?;
+        (bank.wem(media.id)?.to_vec(), "wem")
+    } else if tgi.type_id == VIDEO_TYPE_ID {
+        (data, "vp6")
+    } else {
+        (data, "wem")
+    };
     let parent = target
         .parent()
         .ok_or_else(|| PackageError::InvalidArgument("output path has no parent".into()))?;
@@ -1682,24 +2267,41 @@ fn export_media(
         .to_string_lossy();
     let output_extension = match format {
         ExportFormat::Wav => "wav",
+        ExportFormat::Mp3 => "mp3",
+        ExportFormat::Ogg => "ogg",
+        ExportFormat::Flac => "flac",
         ExportFormat::Mp4 => "mp4",
         _ => return Err(PackageError::UnsupportedExport),
     };
-    let input = parent.join(format!(".{file_name}.openscp-{job_id}.input"));
+    let input = parent.join(format!(".{file_name}.openscp-{job_id}.{input_extension}"));
+    let decoded_wav = parent.join(format!(".{file_name}.openscp-{job_id}.decoded.wav"));
     let output = parent.join(format!(".{file_name}.openscp-{job_id}.{output_extension}"));
     let result = (|| -> Result<usize, PackageError> {
         create_temp_file(&input, &data)?;
-        let args = media_args(format, &input, &output)?;
-        media_tools::run(tool_name, Path::new(tool_path), &args)?;
+        if matches!(
+            format,
+            ExportFormat::Mp3 | ExportFormat::Ogg | ExportFormat::Flac
+        ) {
+            let vgmstream = required_tool(tools, ExportFormat::Wav)?;
+            let decode_args = media_args(ExportFormat::Wav, &input, &decoded_wav)?;
+            media_tools::run("vgmstream", Path::new(vgmstream), &decode_args)?;
+            let encode_args = media_args(format, &decoded_wav, &output)?;
+            media_tools::run("ffmpeg", Path::new(tool_path), &encode_args)?;
+        } else {
+            let args = media_args(format, &input, &output)?;
+            media_tools::run(tool_name, Path::new(tool_path), &args)?;
+        }
         validate_media_output(&output, format)?;
         install_media_output(&output, target)
     })();
     let _ = fs::remove_file(&input);
+    let _ = fs::remove_file(&decoded_wav);
     if result.is_err() {
         let _ = fs::remove_file(&output);
     }
     result
 }
+
 fn write_export(path: &Path, bytes: &[u8], job_id: u64) -> Result<(), PackageError> {
     validate_output_path(path)?;
     let parent = path
@@ -1746,8 +2348,21 @@ pub async fn export(
             media_tools::resolve_tools(&directory, std::env::var_os("PATH").as_deref())
         })
         .unwrap_or_else(|| media_tools::resolve_tools(Path::new("."), None));
-    if matches!(request.format, ExportFormat::Wav | ExportFormat::Mp4) {
+    if matches!(
+        request.format,
+        ExportFormat::Wav
+            | ExportFormat::Mp3
+            | ExportFormat::Ogg
+            | ExportFormat::Flac
+            | ExportFormat::Mp4
+    ) {
         required_tool(&tools, request.format).map_err(CommandError::from)?;
+        if matches!(
+            request.format,
+            ExportFormat::Mp3 | ExportFormat::Ogg | ExportFormat::Flac
+        ) {
+            required_tool(&tools, ExportFormat::Wav).map_err(CommandError::from)?;
+        }
     }
     let job_id = manager
         .reserve_job(request.output_path.clone())
@@ -1781,9 +2396,14 @@ pub async fn export(
             },
         );
         let result = match request.format {
-            ExportFormat::Wav | ExportFormat::Mp4 => export_media(
+            ExportFormat::Wav
+            | ExportFormat::Mp3
+            | ExportFormat::Ogg
+            | ExportFormat::Flac
+            | ExportFormat::Mp4 => export_media(
                 &package,
                 request.tgi.clone().into(),
+                request.media_id,
                 request.format,
                 &output_path,
                 job_id,
@@ -1924,6 +2544,100 @@ mod tests {
     }
 
     #[test]
+    fn property_patches_replace_existing_values_without_changing_shape() {
+        let mut file = sc_properties::PropertyFile {
+            values: vec![sc_properties::Property {
+                hash: 1,
+                prop_type: sc_properties::PropType::UInt32,
+                kind: sc_properties::Kind::Scalar(sc_properties::Value::UInt32(7)),
+                encoding: sc_properties::PropertyEncoding::default(),
+            }],
+            claimed_count: 1,
+        };
+        let changed = apply_property_patches(
+            &mut file,
+            &[PropertyPatch {
+                hash: 1,
+                value: PropertyPatchValue::UInt32(42),
+            }],
+        )
+        .unwrap();
+        assert_eq!(changed, [1]);
+        assert_eq!(
+            file.get(1).unwrap().scalar(),
+            Some(&sc_properties::Value::UInt32(42))
+        );
+    }
+
+    #[test]
+    fn property_patches_reject_duplicate_and_shape_changes() {
+        let mut file = sc_properties::PropertyFile {
+            values: vec![sc_properties::Property {
+                hash: 1,
+                prop_type: sc_properties::PropType::UInt32,
+                kind: sc_properties::Kind::Scalar(sc_properties::Value::UInt32(7)),
+                encoding: sc_properties::PropertyEncoding::default(),
+            }],
+            claimed_count: 1,
+        };
+        let duplicate = vec![
+            PropertyPatch {
+                hash: 1,
+                value: PropertyPatchValue::UInt32(1),
+            },
+            PropertyPatch {
+                hash: 1,
+                value: PropertyPatchValue::UInt32(2),
+            },
+        ];
+        assert!(matches!(
+            apply_property_patches(&mut file, &duplicate),
+            Err(PackageError::InvalidArgument(_))
+        ));
+        assert!(matches!(
+            apply_property_patches(
+                &mut file,
+                &[PropertyPatch {
+                    hash: 1,
+                    value: PropertyPatchValue::Array(Vec::new())
+                }]
+            ),
+            Err(PackageError::InvalidArgument(_))
+        ));
+    }
+
+    #[test]
+    fn lot_document_extracts_editor_references_and_preserves_unknowns() {
+        let file = sc_properties::PropertyFile {
+            values: vec![
+                sc_properties::Property {
+                    hash: sc_properties::LOD1_MODEL_HASH,
+                    prop_type: sc_properties::PropType::Key,
+                    kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(
+                        sc_properties::Key {
+                            instance: 2,
+                            type_id: 3,
+                            group: 4,
+                        },
+                    )),
+                    encoding: sc_properties::PropertyEncoding::default(),
+                },
+                sc_properties::Property {
+                    hash: 0xDEAD_BEEF,
+                    prop_type: sc_properties::PropType::UInt32,
+                    kind: sc_properties::Kind::Scalar(sc_properties::Value::UInt32(9)),
+                    encoding: sc_properties::PropertyEncoding::default(),
+                },
+            ],
+            claimed_count: 2,
+        };
+        let document = sc_properties::LotEditorDocument::from_property_file(file.clone());
+        assert_eq!(document.model.unwrap().instance, 2);
+        assert_eq!(document.unknown_property_count, 1);
+        assert_eq!(document.into_property_file(), file);
+    }
+
+    #[test]
     fn media_formats_match_original_contract() {
         let audio = ResourceId {
             type_id: AUDIO_TYPE_ID,
@@ -1935,9 +2649,15 @@ mod tests {
             group: 0,
             instance: 0,
         };
+        let bank = ResourceId {
+            type_id: WWISE_BANK_TYPE_ID,
+            group: 0,
+            instance: 0,
+        };
         assert!(validate_media_request(audio, ExportFormat::Wav).is_ok());
         assert!(validate_media_request(video, ExportFormat::Vp6).is_ok());
         assert!(validate_media_request(video, ExportFormat::Mp4).is_ok());
+        assert!(validate_media_request(bank, ExportFormat::Wav).is_ok());
         assert!(matches!(
             validate_media_request(audio, ExportFormat::Mp4),
             Err(PackageError::UnsupportedExport)
@@ -1960,6 +2680,7 @@ mod tests {
             args,
             [
                 "-y",
+                "-nostdin",
                 "-hide_banner",
                 "-loglevel",
                 "error",
@@ -1978,13 +2699,39 @@ mod tests {
     fn media_output_signatures_are_checked() {
         let path =
             std::env::temp_dir().join(format!("openscp-media-output-{}.tmp", std::process::id()));
-        fs::write(&path, b"RIFF0000WAVEfmt ").unwrap();
+        let mut wav = b"RIFF".to_vec();
+        wav.extend_from_slice(&36u32.to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&8_000u32.to_le_bytes());
+        wav.extend_from_slice(&16_000u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&0u32.to_le_bytes());
+        fs::write(&path, wav).unwrap();
         assert!(validate_media_output(&path, ExportFormat::Wav).is_ok());
         fs::write(&path, b"not-media").unwrap();
         assert!(matches!(
             validate_media_output(&path, ExportFormat::Wav),
             Err(PackageError::InvalidMediaOutput(_))
         ));
+        fs::write(
+            &path,
+            [
+                &16u32.to_be_bytes()[..],
+                b"ftyp",
+                b"isom",
+                b"\x00\x00\x00\x00",
+                &8u32.to_be_bytes()[..],
+                b"mdat",
+            ]
+            .concat(),
+        )
+        .unwrap();
+        assert!(validate_media_output(&path, ExportFormat::Mp4).is_ok());
         let _ = fs::remove_file(path);
     }
     #[test]
@@ -2045,9 +2792,11 @@ mod tests {
         let (path, package) = test_package("types");
         let counts = type_counts(&package, None);
         assert_eq!(counts.len(), 2);
-        assert!(counts.iter().all(|entry| {
-            entry.count == 1 && entry.name == format!("{:08X}", entry.type_id)
-        }));
+        assert!(
+            counts.iter().all(|entry| {
+                entry.count == 1 && entry.name == format!("{:08X}", entry.type_id)
+            })
+        );
         let page = resource_page(&package, 0, 10, None, Some(4), counts).unwrap();
         assert_eq!(page.total, 1);
         assert_eq!(page.items[0].tgi.type_id, 4);
@@ -2151,7 +2900,11 @@ mod tests {
         let package = Package::open(&path).unwrap();
         let registry = path
             .parent()
-            .and_then(|parent| parent.ancestors().find(|dir| dir.join("database_main.s3db").is_file()))
+            .and_then(|parent| {
+                parent
+                    .ancestors()
+                    .find(|dir| dir.join("database_main.s3db").is_file())
+            })
             .and_then(|dir| sc_registry::Registry::open(dir.join("database_main.s3db")).ok());
         let started = Instant::now();
         let counts = type_counts(&package, registry.as_ref());
@@ -2160,7 +2913,10 @@ mod tests {
         let page = resource_page(&package, 0, 100, None, None, counts).unwrap();
         let page_elapsed = started.elapsed();
         for entry in &page.type_counts {
-            println!("type {:08X} {:>6}  {}", entry.type_id, entry.count, entry.name);
+            println!(
+                "type {:08X} {:>6}  {}",
+                entry.type_id, entry.count, entry.name
+            );
         }
         println!(
             "type_counts: {} types in {counts_elapsed:?}; first page: {} items in {page_elapsed:?}",
@@ -2225,5 +2981,77 @@ mod tests {
         let first = preview.sections[0].number;
         let detail = rw4_section_detail(&data, first).unwrap();
         assert_eq!(detail.number, first);
+    }
+
+    #[test]
+    fn perf_real_media_exports_when_tools_are_configured() {
+        let Some(audio_package_path) =
+            std::env::var_os("OPENSCP_PERF_AUDIO_PACKAGE").map(PathBuf::from)
+        else {
+            return;
+        };
+        let Some(video_package_path) =
+            std::env::var_os("OPENSCP_PERF_VIDEO_PACKAGE").map(PathBuf::from)
+        else {
+            return;
+        };
+        let tools =
+            media_tools::resolve_tools(Path::new("missing"), std::env::var_os("PATH").as_deref());
+        if !tools.ffmpeg.available || !tools.vgmstream.available {
+            return;
+        }
+        let package = Package::open(&audio_package_path).unwrap();
+        let audio = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == AUDIO_TYPE_ID)
+            .expect("audio entry");
+        let audio_output = test_package_path("real-audio-wav");
+        let _ = fs::remove_file(&audio_output);
+        let audio_started = Instant::now();
+        let audio_bytes = export_media(
+            &package,
+            audio.id,
+            None,
+            ExportFormat::Wav,
+            &audio_output,
+            991,
+            &tools,
+        )
+        .unwrap();
+        println!(
+            "Wwise WAV: {audio_bytes} bytes in {:?}",
+            audio_started.elapsed()
+        );
+        assert!(audio_bytes > 44);
+        let _ = fs::remove_file(&audio_output);
+
+        let video_package = Package::open(&video_package_path).unwrap();
+        let video = video_package
+            .entries()
+            .iter()
+            .find(|entry| {
+                entry.id.type_id == VIDEO_TYPE_ID && entry.decompressed_size < 16 * 1024 * 1024
+            })
+            .expect("small VP6 entry");
+        let video_output = test_package_path("real-video-mp4");
+        let _ = fs::remove_file(&video_output);
+        let video_started = Instant::now();
+        let video_bytes = export_media(
+            &video_package,
+            video.id,
+            None,
+            ExportFormat::Mp4,
+            &video_output,
+            992,
+            &tools,
+        )
+        .unwrap();
+        println!(
+            "VP6 MP4: {video_bytes} bytes in {:?}",
+            video_started.elapsed()
+        );
+        assert!(video_bytes > 0);
+        let _ = fs::remove_file(&video_output);
     }
 }
