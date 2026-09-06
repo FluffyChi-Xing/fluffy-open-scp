@@ -400,3 +400,66 @@ P1 的 manifest、pipeline、diagnostics、dependency、preview/watch 接口和�
 - 依赖：`three` + `@types/three`；mock 网格附带可渲染的微型 OBJ
 
 验证：后端 32 测试、前端 vue-tsc / vitest 50 通过。
+
+---
+
+## 14. Property Editor M-PE1 只读会话 + 3D 中键平移（2026-09-06 第七轮）
+
+按 `docs/design/property-editor.md` 第一里程碑落地只读 Lot 编辑会话（编辑/写回留 M-PE2）：
+
+**后端 Unit 结构层**（`sc-properties::lot_unit`，hash 常量迁移自 C# `PropertyConstants.cs`）：
+
+- 装配约定与 C# `PropertyFileObjectCollection.Load` 一致：每 hash 一列并行数组，Unit #N = 各列第 N 元素，容错不等长列；Light 14 列、Effect 5 列、Prop 前 14 分箱（Transform/Slot）、Decal 3 类别（Scale 藏 Transform.Unknown hack）、PathPoint、Spawner、pathPairs(0x0CAA6841)
+- LightType/CullDistance 枚举存 Key.instance（Point/Spot/Line、Near/Mid/Far/Max）；flags 15 的 Transform 提取 unknown 为 Scale；矩阵非 12 floats → 摆位置原点 + 诊断
+- `LotEditorSession` 扩展 `modelKey`/`units`/`pathPairs` 字段（camelCase DTO，tag="kind" 判别联合）；`read_lot_editor_session` 装配并合并诊断
+- 单测 11 个：不等长列、Spot 字段映射、未知枚举诊断、decal Scale hack、bin hash 选择、pathPairs、短矩阵降级等
+
+**前端 ThreeViewer 引擎**（`src/lib/three-viewer.ts` + `three-obj.ts`，MeshPreview 重构为薄壳）：
+
+- 相机：`orbitTarget` 泛化——左键轨道、**中键拖拽或 Shift+左键平移**（原生 mousedown 拦截 WebView2 中键自动滚动）、滚轮缩放限幅保留；三灯布光（key 滑杆 + fill/rim + 环境）替代单头灯
+- Z-up `world` 根组 + 图层组注册表（model/lights/decals/props/effects/spawners/paths）+ Raycaster 轻点拾取 + emissive 选中高亮 + `frameContent()` 包围球取中/构图/地面网格
+
+**Property Editor 全屏 Sheet**（Blender 三区，FSheet width 100vw）：
+
+- Outliner：六类分组树 + 计数 + 组/单项独眼可见性；视口：白模 + SCP 忠实 Unit 图形（Point 球/Spot 截锥 0.6 透明/Line 盒，按 LightColor 着色；Effect 金锥、Prop 红锥、Spawner 蓝锥、PathPoint 青球 + 折线、Decal 绿背矩形），WPF Matrix3D 行主序→three 列主序转置映射（unitMatrix 纯函数测试钉死）；右上角可见性开关 + 重置视角
+- 只读 Properties 面板（summary 行 + Unit 消费 hash 的属性行表）；状态栏（选中项/模型状态/各类计数）；视口↔Outliner 双向选中
+- 会话数据流：PropertyPreview 工具栏第 4 按钮（原"高级编辑器"改名"属性编辑器"）启用 → `readLotEditorSession` → 模型链复用 `readRw4Preview`/`readRw4Section`（filter 0x20009）；模型缺失/失败降级为仅 Unit 视图，不阻塞
+- `PropertyPreview` DTO 补 `packageId`/`tgi`（对齐 Rw4Preview）；mock 数据源罐头会话；zh-CN/en-US 双字典 40+ 键
+
+验证：后端 workspace 全测试通过（sc-properties 33 含新 11 例）；前端 vue-tsc / vitest 59（新增 unitGizmos 5 例）/ vite build 通过；改动文件 eslint 干净。
+
+---
+
+## 15. Unit 朝向校准与 Lot 地面矩形（2026-09-06 第八轮）
+
+用户对拍原 SCP 发现锥体/带状灯/道具朝向错位。用真实包取证工具（`sc-properties/examples/lot_axes.rs`，打印模型包围盒与 Unit 原始变换）交叉验证，锁定约定：
+
+- **数据帧 = Z-up**：模型 Z 跨度=楼高（Z[-1,128]）、地面矩形为 XY 平面贴地、Unit 平移第 3 槽位=离地高度（楼顶灯 z=127.67）；SCP 全链路零旋转渲染（`Positions.Add` 原样、`MatrixTransform3D` 原样），行向量 `p·R·M`
+- **显示轴向约定**（证据 + 用户对拍逐轮校准后的最终版；SCP `CreateGeometry` 里的 R(±90) 为无效死代码，净效果即行向量 `p·M`）：
+  - Spot 锥 = 开口沿 **M 第 2 行**（局部 +Y，无预旋转；门侧 M₁ 型 → (0,0,-1) 垂直朝下）
+  - Effect/Prop/Spawner 标记锥 = 宽端沿 **+M 第 3 行**（几何预旋转 +90°X；恒等变换下尖锥朝下 ▼；初版 -90°X 曾上下颠倒，已由用户对拍纠正）
+  - Line 盒 = 长轴沿 **M 第 2 行**（与 Spot 同用局部 +Y，无预旋转；初版取第 3 行曾横竖互换，已由用户对拍纠正）
+  - 贴花矩形法线 = M 第 3 行（原实现已正确）
+- **Lot 地面矩形**：会话 DTO 增 `lotSize`（0x0CCB7FC8 camelCase 拷贝）；视口按尺寸画地面细框+半透明填充锚定构图；LotMask 四色地面图待 Raster 解码（M-PE3）
+- 取证工具 `lot_axes.rs` 保留（rw4 加入 sc-properties dev-deps）
+
+验证：cargo 全测试、vue-tsc / vitest 59 通过。
+
+---
+
+## 16. 编辑器光照浮层与渲染模式占位（2026-09-06 第九轮，未打包）
+
+用户反馈后的小迭代（本批未出 EXE）：
+
+- **重置按钮 icon 修复**：`RotateCcw` 未注册导致 FIcon 回退问号占位；`src/lib/icons.ts` 注册 `RotateCcw` 与 `Lightbulb`
+- **光照编辑浮层**：视口右上角新增 Light 按钮（Lightbulb icon），点击展开浮层——方位/仰角双滑杆（复用 `package.lightAzimuth/lightElevation` i18n），实时驱动 `ThreeViewer.setKeyLight`；补齐原 3D 预览器的光源调节能力
+- **渲染模式开关占位**：编辑器 header 只读 tag 左侧新增「默认 | 精细」分段开关，当前置灰；后续启用后切换不同 LOD 模型、精细模式自动绑定贴图材质（slot0 调色板/slot2 法线）并把标记光源替换为对应类型真实光源
+- **后续计划（记录待办）**：property 的 LOD 模型族切换（0x00f9efbb/bc/bd/be）、RW4 Material→贴图实例绑定、Raster(0x2f4e681c) 解码（M-PE3）
+
+验证：vue-tsc / eslint（改动文件）/ vitest 59 通过；未执行 pnpm tauri build（按用户要求）。
+
+### 16.1 灯带定位漂移修复（2026-09-06 第十轮，用户对拍）
+
+Line 盒几何残留 Helix `Center(0,0,-len/2)` 偏移，去除 +90°X 旋转后该偏移经 M 映射为 -len/2·第 3 行——竖直灯带水平漂、水平灯带竖直漂，各漂半个长度（灯带间相对关系不变，与用户观察一致）。修复：偏移改为 `+len/2·局部+Y`，灯带从灯具原点沿发光方向延伸整段长度，与锥形灯"自原点展开"模式一致。vue-tsc / vitest 通过后重新出包。
+
+**✅ 用户多 property 交叉比对确认（2026-09-06）**：Unit 朝向、定位、灯带横竖与漂移修复全部通过，M-PE1 只读会话渲染侧验收完成。

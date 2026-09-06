@@ -380,6 +380,14 @@ pub struct LotEditorSession {
     pub asset_name: Option<String>,
     pub document: sc_properties::LotEditorDocument,
     pub model_available: bool,
+    /// LOD1 模型 TGI（camelCase 拷贝，前端无需触碰 document 内部结构）。
+    pub model_key: Option<TgiDto>,
+    /// Lot 地面尺寸（LotSize 0x0CCB7FC8，camelize 拷贝）。
+    pub lot_size: Option<[f32; 2]>,
+    /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
+    pub units: Vec<sc_properties::LotUnit>,
+    /// `0x0CAA6841` 的 Int32 对（路径点区间）。
+    pub path_pairs: Vec<i32>,
     pub diagnostics: Vec<String>,
 }
 
@@ -1509,7 +1517,8 @@ pub async fn read_lot_editor_session(
                 sc_properties::ParseLimits::default(),
             )?;
             let document = sc_properties::LotEditorDocument::from_property_file(properties);
-            let mut diagnostics = Vec::new();
+            let lot_units = document.assemble_units();
+            let mut diagnostics = lot_units.diagnostics;
             let model_available = document
                 .model
                 .map(|key| {
@@ -1536,6 +1545,14 @@ pub async fn read_lot_editor_session(
             Ok(LotEditorSession {
                 tgi,
                 asset_name,
+                model_key: document.model.map(|key| TgiDto {
+                    type_id: key.type_id,
+                    group: key.group,
+                    instance: key.instance,
+                }),
+                lot_size: document.lot_size,
+                units: lot_units.units,
+                path_pairs: lot_units.path_pairs,
                 document,
                 model_available,
                 diagnostics,

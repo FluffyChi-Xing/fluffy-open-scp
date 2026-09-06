@@ -12,3 +12,4 @@ serde_json = "1"
 dbpf = { path = "../dbpf" }
 
 [dev-dependencies]
+rw4 = { path = "../rw4" }

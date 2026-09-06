@@ -49,6 +49,11 @@ impl LotEditorDocument {
         self.properties
     }
 
+    /// 把文档属性字典装配为强类型 Unit 列表（见 [`crate::lot_unit`]）。
+    pub fn assemble_units(&self) -> crate::lot_unit::LotUnits {
+        crate::lot_unit::assemble_units(&self.properties)
+    }
+
     pub fn clone_deep(&self) -> Self {
         self.clone()
     }

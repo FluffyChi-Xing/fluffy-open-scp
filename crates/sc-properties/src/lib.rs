@@ -28,6 +28,7 @@ mod combine;
 mod error;
 pub mod locale;
 mod lot;
+mod lot_unit;
 mod model;
 
 use std::fmt;
@@ -41,6 +42,9 @@ pub use locale::{
 pub use lot::{
     LOD1_MODEL_HASH, LOT_MASK_HASH, LOT_PLACEMENT_HASH, LOT_SIZE_HASH, LotEditorDocument,
     PROPERTY_RESOURCE_TYPE,
+};
+pub use lot_unit::{
+    LotUnit, LotUnits, UnitField, UnitKey, UnitTransform, assemble_units,
 };
 pub use model::{Key, Kind, PropType, Property, PropertyEncoding, Text, Transform, Value};
 
