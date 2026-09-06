@@ -18,6 +18,7 @@ import {
   type PackageHistory,
   type ResourceBytes,
   type ResourceData,
+  type LotEditorSession,
   type PropertyResourceData,
   type Rw4ResourceData,
   type Rw4SectionDetail,
@@ -135,6 +136,10 @@ export const tauriApi = {
       }),
     readPropertyPreview: (packageId: number, tgi: Tgi) =>
       command<PropertyResourceData>("read_property_preview", {
+        request: { packageId, tgi },
+      }),
+    readLotEditorSession: (packageId: number, tgi: Tgi) =>
+      command<LotEditorSession>("read_lot_editor_session", {
         request: { packageId, tgi },
       }),
     readRw4Preview: (packageId: number, tgi: Tgi) =>

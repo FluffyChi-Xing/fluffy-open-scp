@@ -9,6 +9,7 @@ import type {
   PackageFile,
   PackageHistory,
   PropertyResourceData,
+  LotEditorSession,
   ResourceBytes,
   ResourcePage,
   ResourcePreview,
@@ -63,6 +64,7 @@ export interface OpenScpDataSource {
     packageId: number,
     tgi: Tgi,
   ): Promise<PropertyResourceData>;
+  readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
   readRw4Section(
     packageId: number,
@@ -118,6 +120,7 @@ function tauriDataSource(): OpenScpDataSource {
     readResourceBytes: tauriApi.packages.readBytes,
     resolveNames: tauriApi.packages.resolveNames,
     readPropertyPreview: tauriApi.packages.readPropertyPreview,
+    readLotEditorSession: tauriApi.packages.readLotEditorSession,
     readRw4Preview: tauriApi.packages.readRw4Preview,
     readRw4Section: tauriApi.packages.readRw4Section,
     previewResource: tauriPreview,
@@ -291,6 +294,8 @@ function mockDataSource(): OpenScpDataSource {
       if (resource.tgi.typeId === PROPERTY_TYPE_ID)
         return {
           kind: "property",
+          packageId: _packageId,
+          tgi: resource.tgi,
           claimedCount: mockPropertyEntries.length,
           entries: mockPropertyEntries,
           ...base,
@@ -352,6 +357,67 @@ function mockDataSource(): OpenScpDataSource {
         claimedCount: mockPropertyEntries.length,
         entries: mockPropertyEntries,
       };
+    },
+    async readLotEditorSession(_packageId, tgi) {
+      const matrix = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+      return {
+        tgi,
+        assetName: "Mock Residential Tower",
+        modelAvailable: true,
+        modelKey: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 },
+        lotSize: [136, 136],
+        units: [
+          {
+            kind: "light",
+            index: 0,
+            transform: { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 6] },
+            lightType: "Point",
+            color: [1, 0.85, 0.6],
+            outerRadius: 4,
+            innerRadius: 1,
+            diffuse: 1,
+            length: null,
+            cullDistance: "Mid",
+            isVolumetric: false,
+            debugName: "roof beacon",
+            fields: [],
+          },
+          {
+            kind: "light",
+            index: 1,
+            transform: { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, 2] },
+            lightType: "Spot",
+            color: [1, 1, 1],
+            outerRadius: 2.5,
+            innerRadius: 0.5,
+            diffuse: 0.8,
+            length: 5,
+            cullDistance: "Far",
+            isVolumetric: false,
+            debugName: null,
+            fields: [],
+          },
+          {
+            kind: "decal",
+            index: 0,
+            category: 0,
+            transform: { matrix: [...matrix.slice(0, 9), 2, 0, 0] },
+            scale: 3,
+            depth: 0.2,
+            materialData: [1, 0, 0],
+            fields: [],
+          },
+          {
+            kind: "spawner",
+            index: 0,
+            transform: { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0, 1] },
+            id: { typeId: 0x0, group: 0, instance: 0xcafe },
+            fields: [],
+          },
+        ],
+        pathPairs: [],
+        diagnostics: [],
+      } satisfies LotEditorSession;
     },
     async readRw4Preview(_packageId, _tgi) {
       return { fileType: "Model", sections: mockRw4Sections };
@@ -537,7 +603,7 @@ async function tauriPreview(
       packageId,
       resource.tgi,
     );
-    return { kind: "property", ...data, ...base };
+    return { kind: "property", packageId, tgi: resource.tgi, ...data, ...base };
   }
   if (resource.tgi.typeId === RW4_TYPE_ID) {
     const data = await tauriApi.packages.readRw4Preview(packageId, resource.tgi);

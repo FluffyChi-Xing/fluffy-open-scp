@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import type { PropertyPreview } from "@/api/tauri";
+import PropertyEditor from "../property-editor/PropertyEditor.vue";
 
 defineProps<{ preview: PropertyPreview }>();
+const editorOpen = ref(false);
 function hashLabel(hash: number) {
   return `0x${hash.toString(16).padStart(8, "0").toUpperCase()}`;
 }
@@ -26,7 +29,11 @@ function hashLabel(hash: number) {
           $t("package.toolbarViewChildren")
         }}
       </button>
-      <button type="button" disabled>
+      <button
+        type="button"
+        :aria-label="$t('package.propertyEditor')"
+        @click="editorOpen = true"
+      >
         <FIcon name="SquarePen" :size="13" aria-label="" />{{
           $t("package.toolbarAdvancedEditors")
         }}
@@ -38,6 +45,11 @@ function hashLabel(hash: number) {
         <FIcon name="ChevronDown" :size="11" aria-label="" />
       </button>
     </div>
+    <PropertyEditor
+      v-model:open="editorOpen"
+      :package-id="preview.packageId"
+      :tgi="preview.tgi"
+    />
     <div class="structured-table-wrap">
       <table class="structured-table">
         <thead>
@@ -88,14 +100,21 @@ function hashLabel(hash: number) {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--muted-foreground);
-  cursor: not-allowed;
+  cursor: pointer;
   display: inline-flex;
   font: inherit;
   font-size: 11px;
   gap: 5px;
   min-height: 28px;
-  opacity: 0.6;
   padding: 0 9px;
+}
+.preview-toolbar button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.preview-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 .structured-table-wrap {
   background: var(--surface-elevated);

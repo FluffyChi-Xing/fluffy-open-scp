@@ -206,6 +206,8 @@ export interface PropertyEntry {
 }
 export interface PropertyPreview extends PreviewData {
   kind: "property";
+  packageId: number;
+  tgi: Tgi;
   claimedCount: number;
   entries: PropertyEntry[];
 }
@@ -248,6 +250,93 @@ export interface Rw4SectionDetail {
   mesh: Rw4MeshDetail | null;
   texture: Rw4TextureDetail | null;
   hexDump: string | null;
+}
+export interface UnitKeyDto {
+  typeId: number;
+  group: number;
+  instance: number;
+}
+export interface UnitFieldDto {
+  hash: number;
+  typeName: string;
+  value: string;
+}
+export interface UnitTransformDto {
+  /** WPF Matrix3D 行主序 12 floats：行 1-3 基向量，行 4 平移。 */
+  matrix: number[];
+}
+export interface LightUnit {
+  kind: "light";
+  index: number;
+  transform: UnitTransformDto | null;
+  lightType: "Point" | "Spot" | "Line" | null;
+  color: [number, number, number] | null;
+  outerRadius: number | null;
+  innerRadius: number | null;
+  diffuse: number | null;
+  length: number | null;
+  cullDistance: "Near" | "Mid" | "Far" | "Max" | null;
+  isVolumetric: boolean | null;
+  debugName: string | null;
+  fields: UnitFieldDto[];
+}
+export interface EffectUnit {
+  kind: "effect";
+  index: number;
+  transform: UnitTransformDto | null;
+  effectId: UnitKeyDto | null;
+  enabled: boolean | null;
+  fields: UnitFieldDto[];
+}
+export interface DecalUnit {
+  kind: "decal";
+  index: number;
+  category: number;
+  transform: UnitTransformDto | null;
+  scale: number | null;
+  depth: number | null;
+  materialData: [number, number, number] | null;
+  fields: UnitFieldDto[];
+}
+export interface PropUnit {
+  kind: "prop";
+  index: number;
+  bin: number;
+  transform: UnitTransformDto | null;
+  slot: number | null;
+  fields: UnitFieldDto[];
+}
+export interface PathPointUnit {
+  kind: "pathPoint";
+  index: number;
+  point: [number, number, number] | null;
+  tangent: [number, number, number] | null;
+  pointIndex: number | null;
+  fields: UnitFieldDto[];
+}
+export interface SpawnerUnit {
+  kind: "spawner";
+  index: number;
+  transform: UnitTransformDto | null;
+  id: UnitKeyDto | null;
+  fields: UnitFieldDto[];
+}
+export type LotUnitDto =
+  | LightUnit
+  | EffectUnit
+  | DecalUnit
+  | PropUnit
+  | PathPointUnit
+  | SpawnerUnit;
+export interface LotEditorSession {
+  tgi: Tgi;
+  assetName: string | null;
+  modelAvailable: boolean;
+  modelKey: Tgi | null;
+  lotSize: [number, number] | null;
+  units: LotUnitDto[];
+  pathPairs: number[];
+  diagnostics: string[];
 }
 export type ResourcePreview =
   | TextPreview

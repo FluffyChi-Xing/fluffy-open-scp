@@ -75,6 +75,7 @@ import {
   Printer,
   RefreshCw,
   Rocket,
+  RotateCcw,
   Save,
   Search,
   Send,
@@ -97,6 +98,7 @@ import {
   UsersRound,
   X,
   Zap,
+  Lightbulb,
   type LucideIcon,
 } from 'lucide-vue-next'
 
@@ -195,6 +197,7 @@ const iconRegistry: Record<string, LucideIcon> = {
   Printer,
   RefreshCw,
   Rocket,
+  RotateCcw,
   Save,
   Search,
   Send,
@@ -217,6 +220,7 @@ const iconRegistry: Record<string, LucideIcon> = {
   UsersRound,
   X,
   Zap,
+  Lightbulb,
 }
 
 export const builtinIconNames: readonly string[] = Object.keys(iconRegistry)
