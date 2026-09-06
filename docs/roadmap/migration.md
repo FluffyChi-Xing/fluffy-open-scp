@@ -288,3 +288,70 @@ P1 的 manifest、pipeline、diagnostics、dependency、preview/watch 接口和�
 - 产物：`target/release/fluffy-open-scp.exe` + MSI + NSIS 安装包（内嵌 dist，不依赖 dev server）
 
 已知边界：Registry s3db 未随包分发，用户游戏目录缺失时语义名整体回退 TGI；Tauri Raster/音视频/GLB 预览待后续 command；属性/资产 inspector 为下一批。
+
+---
+
+## 8. 文档管理与源文件解析缺陷修复记录（2026-09-06）
+
+用户 EXE 手测报告 6 缺陷，本轮全部修复：
+
+文档管理（`workspace.rs`）：
+
+- 创建文件夹不再自动写入 README.md（空文件夹即合法条目）
+- 列表模型重构：`WorkspaceFolder(仅 README)` → `WorkspaceEntry{relativePath, kind}`，递归上报**全部 .md 文件**（非 README 改名文件可见可编辑）；根目录级 .md 允许创建（`existing_parent` 允许空 parent）；前端文档树改为按 parent 映射递归渲染文件节点
+- 保存 os error 32 根因：`ReplaceFileW` 要求目标 DELETE 权，索引器/杀软/同步盘以"无 FILE_SHARE_DELETE"句柄持锁即失败。改为 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` + 共享冲突退避重试（25/50/100/200ms）
+
+源文件解析（`package_service.rs` + 前端）：
+
+- `ResourcePage` 新增全量 `typeCounts`（按 TypeID 聚合整包条目，类型名走 registry FileTypes 表，缺失回退 8 位 hex）；`list_resources` 新增 `typeId` 服务端过滤参数
+- 类型 tab 改为按全量 typeCounts 渲染（此前只统计首页 100 条且仅 5 个硬编码 TypeID）；app.package 实测 17 类型（与原 SCP 可识别类型数吻合）
+- 命名对齐原 SCP：类型列显示 s3db 短类型名，资源名显示语义名或 `0x{instance:8x}`，完整 TGI 移入详情并附一键复制
+- 文件列表改**前端分页**（每页 100，上一页/下一页/页码/总数），避免大数据量全量渲染；分类切换走服务端过滤后重置到第 1 页
+
+验证与性能：
+
+- 后端 `cargo test --workspace` 31 套件全绿（含新增 scan/根级 parent/type_counts 过滤用例）；前端 `vue-tsc` / `vitest` 50 通过 / `vite build` 成功
+- 性能（release，`app.package` 316MB / 2489 条目）：`type_counts` 17 类型 **35.4µs**；首页 100 条 `resource_page` **8.7µs** —— 类型聚合为单次 O(n) 索引遍历，分页过滤开销可忽略
+- 产物：`target/release/fluffy-open-scp.exe`（内嵌最新 dist）
+
+已知边界：音视频（wav/vp6）转码预览与导出、其他类型转码导入为下一批（后端封装 ffmpeg/vgmstream）；Raster/GLB 预览 command 仍待接；语义名依赖 registry s3db 存在。
+
+---
+
+## 9. 手测反馈第二轮修复记录（2026-09-06）
+
+第二轮 EXE 手测反馈 6 项，全部修复：
+
+- **registry s3db 内置分发**（解决"类型字段显示 hex"根因）：`database_main.s3db`（493KB，社区描述符库）作为 bundle resource 打包（`src-tauri/resources/`），`package_registry` 升级为三级回退：包目录向上 3 级 → 设置的游戏目录向上 3 级 → 应用内置资源；`database_user.s3db` 与 main 同目录时自动叠加覆盖。本地实测 s3db 可解析 app.package 全部 17 类型（PNG File / RW4 File / Javascript File 等）
+- **Hex 预览重叠**：hex 列原为 `minmax(0, 1fr)` 会被压缩与 ASCII 列重叠；改固定 `9ch / 47ch / 16ch` 三列 + 容器横向滚动，窄面板不再互相覆盖
+- **类型 tab**：去掉图标（该尺寸看不清），仅"类型名 + 数量"；计数徽标 active 态反色
+- **tab 条滚动**：隐藏滚动条，两端加 ChevronLeft/Right 图标按钮（滚动 220px/次），到尽头置灰；scroll + ResizeObserver + tabs 变化三路驱动状态刷新
+- **选中高亮**：package tab active 加 accent 底 + 加粗；资源行 selected 加 3px 主色侧条 + 名称加粗
+- **大小显示**：存储列改 B/KB/MB/GB 自适应（<10 保留 1 位小数）
+
+验证：后端 `cargo test --lib` 30 通过；前端 `vue-tsc` / `vitest` 50 通过 / `vite build` 成功；产物经 `pnpm tauri build` 输出 EXE + MSI + NSIS（含内置 s3db 资源）。
+
+遗留：裸 `cargo build --release` 不带 `tauri/custom-protocol` feature 会产出连 devServer 的坏 EXE（第一轮已踩），给用户手测一律走 `pnpm tauri build`。
+
+---
+
+## 10. 预览器按文件类型路由（2026-09-06 第三轮）
+
+- **类型→语言映射**：`resource-types.ts` 新增 `textPreviewLanguage`——js(0x67771F5C)→javascript、css(0x2C978DB6)→css、html(0xDD6233D6)→html、c++(0x0469A3F7)→cpp、json/locale(0x0A98EAF0)→json；`TextPreview` DTO 增加 `language` 字段
+- **文本预览高亮**：`TextPreview.vue` 二次封装 `FCode`（shiki 高亮、主题跟随、语言标签、一键复制），保留编码/截断元信息；非映射类型字节嗅探为可读文本时以 text 语言高亮
+- **预览 tab 不再回退 hex**：`ResourcePreview` 仅接受 text/image 两类；hex/unsupported 一律显示「{类型名} 类型文件暂不支持预览」（类型名来自 registry，hex 数据仍保留供 Hex 标签页使用）
+- mock 数据源同步 `language` 字段；i18n 新增 `previewUnavailableType`/`copy`，移除失效的 `unsupportedPreview`
+
+验证：`vue-tsc` / `vitest` 50 通过；产物 `pnpm tauri build`。
+
+---
+
+## 11. 静态图片预览接入（2026-09-06 第四轮）
+
+- **后端**：新增 `read_resource_data` command——整资源解压读取（`RESOURCE_DATA_MAX` 32MB 上限），base64 编码返回（避免大资源 JSON 数字数组膨胀）；注册进 invoke_handler
+- **类型路由**：`resource-types.ts` 新增 `imageMimeForType`——PNG(0x2F7D0004)→image/png、JPG(0x3F86 62EA)→image/jpeg、GIF(0x2F7D0007)→image/gif；`tauriPreview` 优先走图片分支：base64 解码 → Blob → `URL.createObjectURL` → 复用现有 `ImagePreview`（缩放/旋转/棋盘底）
+- **blob 生命周期**：切换资源、切换/关闭 package 时 `revokeObjectURL` 释放；竞态请求（快速连点）失败侧同样释放
+- **签名验证**（env 门控测试，真实 app.package）：PNG 资源 = `89 50 4E 47`、JPG = `FF D8 FF`、GIF = `GIF8`——包内图片为标准文件，blob 直读成立；灰度图（0x03E421EC/ED）为裸像素非标准文件，仍走"暂不支持"
+- mock 数据源图片分支同步覆盖 PNG/JPG/GIF 类型
+
+验证：后端 `cargo test --lib` 31 通过（含签名用例）；前端 `vue-tsc` / `vite build` 通过。

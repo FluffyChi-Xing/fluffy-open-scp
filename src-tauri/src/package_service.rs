@@ -13,7 +13,7 @@ use dbpf::{IndexEntry, Package, ResourceId};
 use sc_store::{EventInput, PackageInput};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::activity::{ACTIVITY_EVENT, AppState, CommandError};
 use crate::media_tools::{self, MediaTools, ToolError};
@@ -21,6 +21,7 @@ use crate::media_tools::{self, MediaTools, ToolError};
 pub const RESOURCE_PAGE_DEFAULT_LIMIT: usize = 100;
 pub const RESOURCE_PAGE_MAX_LIMIT: usize = 1_000;
 pub const RESOURCE_BYTES_MAX: usize = 4 * 1024;
+pub const RESOURCE_DATA_MAX: u64 = 32 * 1024 * 1024;
 pub const RESOURCE_DECOMPRESSED_MAX: u64 = 256 * 1024 * 1024;
 pub const EXPORT_PROGRESS_EVENT: &str = "export:progress";
 pub const MAX_OPEN_PACKAGES: usize = 32;
@@ -233,11 +234,20 @@ impl From<&IndexEntry> for ResourceSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TypeCount {
+    pub type_id: u32,
+    pub name: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourcePage {
     pub items: Vec<ResourceSummary>,
     pub total: usize,
     pub offset: usize,
     pub limit: usize,
+    pub type_counts: Vec<TypeCount>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -260,6 +270,7 @@ pub struct ListResourcesRequest {
     pub offset: Option<usize>,
     pub limit: Option<usize>,
     pub filter: Option<String>,
+    pub type_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -269,6 +280,20 @@ pub struct ReadResourceBytesRequest {
     pub tgi: TgiDto,
     pub offset: u64,
     pub length: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadResourceDataRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceData {
+    pub total_length: u64,
+    pub data_base64: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -486,11 +511,16 @@ fn resource_page(
     offset: usize,
     limit: usize,
     filter: Option<&str>,
+    type_filter: Option<u32>,
+    type_counts: Vec<TypeCount>,
 ) -> Result<ResourcePage, PackageError> {
     let filter = normalized_filter(filter)?;
     let mut total = 0usize;
     let mut items = Vec::with_capacity(limit);
     for entry in package.entries() {
+        if type_filter.is_some_and(|type_id| entry.id.type_id != type_id) {
+            continue;
+        }
         if filter
             .as_deref()
             .is_some_and(|filter| !resource_matches(entry, filter))
@@ -509,7 +539,30 @@ fn resource_page(
         total,
         offset,
         limit,
+        type_counts,
     })
+}
+
+fn type_counts(
+    package: &Package,
+    registry: Option<&sc_registry::Registry>,
+) -> Vec<TypeCount> {
+    let mut counts = HashMap::new();
+    for entry in package.entries() {
+        *counts.entry(entry.id.type_id).or_insert(0usize) += 1;
+    }
+    let mut counts: Vec<(u32, usize)> = counts.into_iter().collect();
+    counts.sort_by_key(|(type_id, _)| *type_id);
+    counts
+        .into_iter()
+        .map(|(type_id, count)| TypeCount {
+            type_id,
+            name: registry
+                .map(|registry| registry.type_name(type_id))
+                .unwrap_or_else(|| format!("{type_id:08X}")),
+            count,
+        })
+        .collect()
 }
 
 fn emit_event(
@@ -602,6 +655,7 @@ pub async fn open_package(
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
     let app = state.app.clone();
+    let bundled_registry = bundled_registry_path(&state.app);
     tauri::async_runtime::spawn_blocking(move || {
         let started = Instant::now();
         let operation_id = store
@@ -612,7 +666,12 @@ pub async fn open_package(
             let canonical = fs::canonicalize(path)?;
             let package = Package::open(&canonical)?;
             let mut summary = package_summary(0, &package)?;
-            let page = resource_page(&package, 0, RESOURCE_PAGE_DEFAULT_LIMIT, None)?;
+            let counts = type_counts(
+                &package,
+                package_registry(&store, &manager, &package, bundled_registry.as_deref())
+                    .as_deref(),
+            );
+            let page = resource_page(&package, 0, RESOURCE_PAGE_DEFAULT_LIMIT, None, None, counts)?;
             let (package_id, _) = manager.insert(package)?;
             summary.package_id = package_id;
             let _ = store.record_package_open(&PackageInput {
@@ -731,6 +790,7 @@ pub async fn list_resources(
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
     let app = state.app.clone();
+    let bundled_registry = bundled_registry_path(&state.app);
     tauri::async_runtime::spawn_blocking(move || {
         let started = Instant::now();
         let operation_id = store
@@ -739,11 +799,18 @@ pub async fn list_resources(
         let result = (|| -> Result<ResourcePage, PackageError> {
             let limit = page_limit(request.limit)?;
             let package = manager.get(request.package_id)?;
+            let counts = type_counts(
+                &package,
+                package_registry(&store, &manager, &package, bundled_registry.as_deref())
+                    .as_deref(),
+            );
             resource_page(
                 &package,
                 request.offset.unwrap_or(0),
                 limit,
                 request.filter.as_deref(),
+                request.type_id,
+                counts,
             )
         })();
         match result {
@@ -871,6 +938,36 @@ pub async fn read_resource_bytes(
 }
 
 #[tauri::command]
+pub async fn read_resource_data(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<ResourceData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    tauri::async_runtime::spawn_blocking(move || {
+        let tgi: ResourceId = request.tgi.into();
+        let package = manager
+            .get(request.package_id)
+            .map_err(CommandError::from)?;
+        let entry = package
+            .entry(tgi)
+            .ok_or_else(|| CommandError::from(PackageError::ResourceNotFound(tgi)))?;
+        if u64::from(entry.decompressed_size) > RESOURCE_DATA_MAX {
+            return Err(CommandError::from(PackageError::LimitExceeded(
+                RESOURCE_DATA_MAX as usize,
+            )));
+        }
+        let data = package.read(entry).map_err(PackageError::Dbpf)?;
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        Ok(ResourceData {
+            total_length: u64::from(entry.decompressed_size),
+            data_base64: STANDARD.encode(data),
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[tauri::command]
 pub async fn resolve_name(
     state: State<'_, AppState>,
     request: ResolveNameRequest,
@@ -916,11 +1013,65 @@ fn find_registry_database(start: &Path) -> Option<PathBuf> {
 }
 
 fn semantic_instance_name(
-    registry: Option<&Arc<sc_registry::Registry>>,
+    registry: Option<&sc_registry::Registry>,
     instance: u32,
 ) -> Option<String> {
     let record = registry?.instances().get(&instance)?;
     (!record.name.is_empty()).then(|| record.name.clone())
+}
+
+fn registry_candidate(main: PathBuf) -> (PathBuf, Option<String>) {
+    let user = main.with_file_name(REGISTRY_USER_DATABASE);
+    let user = user
+        .is_file()
+        .then(|| user.to_string_lossy().into_owned());
+    (main, user)
+}
+
+fn bundled_registry_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .resolve(
+            "resources/database_main.s3db",
+            tauri::path::BaseDirectory::Resource,
+        )
+        .ok()
+        .filter(|path| path.is_file())
+}
+
+fn package_registry(
+    store: &sc_store::Store,
+    manager: &PackageManager,
+    package: &Package,
+    bundled_main: Option<&Path>,
+) -> Option<Arc<sc_registry::Registry>> {
+    let mut candidates: Vec<(PathBuf, Option<String>)> = Vec::new();
+    let push_candidate = |main: PathBuf, candidates: &mut Vec<_>| {
+        let candidate = registry_candidate(main);
+        if !candidates.iter().any(|(main, _)| *main == candidate.0) {
+            candidates.push(candidate);
+        }
+    };
+    if let Some(path) = find_registry_database(package.path()) {
+        push_candidate(path, &mut candidates);
+    }
+    if let Ok(Some(game_data_path)) = store
+        .app_settings()
+        .map(|settings| settings.and_then(|settings| settings.game_data_path))
+    {
+        if let Some(path) = find_registry_database(Path::new(&game_data_path)) {
+            push_candidate(path, &mut candidates);
+        }
+    }
+    if let Some(path) = bundled_main {
+        push_candidate(path.to_path_buf(), &mut candidates);
+    }
+    candidates
+        .iter()
+        .find_map(|(main, user)| {
+            manager
+                .registry(&main.to_string_lossy(), user.as_deref())
+                .ok()
+        })
 }
 
 #[tauri::command]
@@ -930,6 +1081,7 @@ pub async fn resolve_names(
 ) -> Result<Vec<ResolvedResourceName>, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
+    let bundled_registry = bundled_registry_path(&state.app);
     tauri::async_runtime::spawn_blocking(move || {
         if request.tgis.len() > RESOLVE_NAMES_MAX {
             return Err(CommandError::from(PackageError::LimitExceeded(
@@ -939,31 +1091,14 @@ pub async fn resolve_names(
         let package = manager
             .get(request.package_id)
             .map_err(CommandError::from)?;
-        let mut registry_paths: Vec<PathBuf> = Vec::new();
-        if let Some(path) = find_registry_database(package.path()) {
-            registry_paths.push(path);
-        }
-        if let Ok(Some(game_data_path)) = store
-            .app_settings()
-            .map(|settings| settings.and_then(|settings| settings.game_data_path))
-            && let Some(path) = find_registry_database(Path::new(&game_data_path))
-            && !registry_paths.contains(&path)
-        {
-            registry_paths.push(path);
-        }
-        let registry = registry_paths.first().and_then(|main| {
-            let user = main.with_file_name(REGISTRY_USER_DATABASE);
-            let user = user.is_file().then(|| user.to_string_lossy().into_owned());
-            manager
-                .registry(&main.to_string_lossy(), user.as_deref())
-                .ok()
-        });
+        let registry =
+            package_registry(&store, &manager, &package, bundled_registry.as_deref());
         Ok(request
             .tgis
             .iter()
             .map(|tgi| ResolvedResourceName {
                 tgi: tgi.clone(),
-                display_name: semantic_instance_name(registry.as_ref(), tgi.instance),
+                display_name: semantic_instance_name(registry.as_deref(), tgi.instance),
             })
             .collect())
     })
@@ -1564,10 +1699,26 @@ mod tests {
     #[test]
     fn resource_pages_filter_and_slice_entries() {
         let (path, package) = test_package("page");
-        let page = resource_page(&package, 0, 1, Some("00000001")).unwrap();
+        let page = resource_page(&package, 0, 1, Some("00000001"), None, Vec::new()).unwrap();
         assert_eq!(page.total, 1);
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].tgi.instance, 3);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn type_counts_aggregate_and_type_filter_paginates() {
+        let (path, package) = test_package("types");
+        let counts = type_counts(&package, None);
+        assert_eq!(counts.len(), 2);
+        assert!(counts.iter().all(|entry| {
+            entry.count == 1 && entry.name == format!("{:08X}", entry.type_id)
+        }));
+        let page = resource_page(&package, 0, 10, None, Some(4), counts).unwrap();
+        assert_eq!(page.total, 1);
+        assert_eq!(page.items[0].tgi.type_id, 4);
+        let empty = resource_page(&package, 0, 10, None, Some(99), Vec::new()).unwrap();
+        assert_eq!(empty.total, 0);
         let _ = fs::remove_file(path);
     }
 
@@ -1656,5 +1807,60 @@ mod tests {
         );
         assert_eq!(semantic_instance_name(None, 7), None);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn perf_type_counts_and_first_page_on_real_package() {
+        let Some(path) = std::env::var_os("OPENSCP_PERF_PACKAGE").map(PathBuf::from) else {
+            return;
+        };
+        let package = Package::open(&path).unwrap();
+        let registry = path
+            .parent()
+            .and_then(|parent| parent.ancestors().find(|dir| dir.join("database_main.s3db").is_file()))
+            .and_then(|dir| sc_registry::Registry::open(dir.join("database_main.s3db")).ok());
+        let started = Instant::now();
+        let counts = type_counts(&package, registry.as_ref());
+        let counts_elapsed = started.elapsed();
+        let started = Instant::now();
+        let page = resource_page(&package, 0, 100, None, None, counts).unwrap();
+        let page_elapsed = started.elapsed();
+        for entry in &page.type_counts {
+            println!("type {:08X} {:>6}  {}", entry.type_id, entry.count, entry.name);
+        }
+        println!(
+            "type_counts: {} types in {counts_elapsed:?}; first page: {} items in {page_elapsed:?}",
+            page.type_counts.len(),
+            page.items.len()
+        );
+    }
+
+    #[test]
+    fn image_resource_data_matches_file_signature() {
+        let Some(path) = std::env::var_os("OPENSCP_PERF_PACKAGE").map(PathBuf::from) else {
+            return;
+        };
+        let package = Package::open(&path).unwrap();
+        let png = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == 0x2F7D_0004)
+            .expect("png entry");
+        let data = package.read(png).unwrap();
+        assert_eq!(&data[..4], &[0x89, 0x50, 0x4E, 0x47]);
+        let jpg = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == 0x3F86_62EA)
+            .expect("jpg entry");
+        let data = package.read(jpg).unwrap();
+        assert_eq!(&data[..3], &[0xFF, 0xD8, 0xFF]);
+        let gif = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == 0x2F7D_0007)
+            .expect("gif entry");
+        let data = package.read(gif).unwrap();
+        assert!(data.starts_with(b"GIF8"));
     }
 }

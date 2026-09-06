@@ -853,6 +853,7 @@ dependencies = [
 name = "fluffy-open-scp"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "dbpf",
  "rw4",
  "sc-exporter",

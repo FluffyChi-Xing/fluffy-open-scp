@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": ["resources/database_main.s3db"],
     "icon": ["icons/icon.png", "icons/icon.ico"]
   }
 }

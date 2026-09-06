@@ -54,9 +54,9 @@ pub struct WorkspaceStatus {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkspaceFolder {
+pub struct WorkspaceEntry {
     pub relative_path: String,
-    pub readme_relative_path: Option<String>,
+    pub kind: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -272,12 +272,12 @@ fn existing_path(root: &Path, relative: &Path) -> Result<PathBuf, WorkspaceError
 }
 
 fn existing_parent(root: &Path, relative: &Path) -> Result<PathBuf, WorkspaceError> {
-    let parent = relative
+    let Some(parent) = relative
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
-        .ok_or(WorkspaceError::InvalidPath(
-            "file must be inside a folder".into(),
-        ))?;
+    else {
+        return Ok(root.to_path_buf());
+    };
     let path = existing_path(root, parent)?;
     if !path.is_dir() {
         return Err(WorkspaceError::NotDirectory);
@@ -311,11 +311,11 @@ fn read_markdown_file(path: &Path) -> Result<(String, usize, String), WorkspaceE
     Ok((content, size, hash))
 }
 
-fn scan_directories(
+fn scan_entries(
     root: &Path,
     current: &Path,
     relative: &str,
-    entries: &mut Vec<FolderCacheEntry>,
+    entries: &mut Vec<WorkspaceEntry>,
 ) -> Result<(), WorkspaceError> {
     let mut children = fs::read_dir(current)?.collect::<Result<Vec<_>, _>>()?;
     children.sort_by_key(|entry| entry.file_name());
@@ -325,33 +325,29 @@ fn scan_directories(
         if metadata.file_type().is_symlink() {
             continue;
         }
-        if !metadata.is_dir() {
-            continue;
-        }
-        let canonical = fs::canonicalize(&path)?;
-        if !canonical.starts_with(root) {
-            continue;
-        }
         let name = child.file_name().to_string_lossy().into_owned();
+        let is_markdown = name.to_ascii_lowercase().ends_with(".md");
         let child_relative = if relative.is_empty() {
             name
         } else {
             format!("{relative}/{name}")
         };
-        let readme = path.join("README.md");
-        let readme_relative = match fs::symlink_metadata(&readme) {
-            Ok(readme_metadata) if readme_metadata.file_type().is_symlink() => None,
-            Ok(readme_metadata) if readme_metadata.is_file() => {
-                Some(format!("{child_relative}/README.md"))
+        if metadata.is_dir() {
+            let canonical = fs::canonicalize(&path)?;
+            if !canonical.starts_with(root) {
+                continue;
             }
-            _ => None,
-        };
-        entries.push(FolderCacheEntry {
-            relative_path: child_relative.clone(),
-            readme_relative_path: readme_relative,
-            last_seen_at: current_time_millis(),
-        });
-        scan_directories(root, &canonical, &child_relative, entries)?;
+            entries.push(WorkspaceEntry {
+                relative_path: child_relative.clone(),
+                kind: "folder",
+            });
+            scan_entries(root, &canonical, &child_relative, entries)?;
+        } else if metadata.is_file() && is_markdown {
+            entries.push(WorkspaceEntry {
+                relative_path: child_relative,
+                kind: "file",
+            });
+        }
     }
     Ok(())
 }
@@ -363,17 +359,20 @@ fn current_time_millis() -> i64 {
         .unwrap_or(0)
 }
 
-fn refresh_cache(store: &Store, root: &Path) -> Result<Vec<WorkspaceFolder>, WorkspaceError> {
+fn refresh_cache(store: &Store, root: &Path) -> Result<Vec<WorkspaceEntry>, WorkspaceError> {
     let mut entries = Vec::new();
-    scan_directories(root, root, "", &mut entries)?;
-    store.replace_folder_cache(&entries)?;
-    Ok(entries
-        .into_iter()
-        .map(|entry| WorkspaceFolder {
-            relative_path: entry.relative_path,
-            readme_relative_path: entry.readme_relative_path,
+    scan_entries(root, root, "", &mut entries)?;
+    let folders = entries
+        .iter()
+        .filter(|entry| entry.kind == "folder")
+        .map(|entry| FolderCacheEntry {
+            relative_path: entry.relative_path.clone(),
+            readme_relative_path: None,
+            last_seen_at: current_time_millis(),
         })
-        .collect())
+        .collect::<Vec<_>>();
+    store.replace_folder_cache(&folders)?;
+    Ok(entries)
 }
 
 fn write_atomic(
@@ -409,6 +408,11 @@ fn write_atomic(
 #[cfg(windows)]
 fn atomic_install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    // 索引器/杀软/同步盘常以不含 FILE_SHARE_DELETE 的句柄短暂持有目标文件，
+    // ReplaceFileW 会直接失败；MoveFileExW + 短退避重试可跨过这类瞬时锁。
+    const RETRY_DELAYS_MS: [u64; 4] = [25, 50, 100, 200];
     let source: Vec<u16> = source
         .as_os_str()
         .encode_wide()
@@ -421,34 +425,22 @@ fn atomic_install(source: &Path, target: &Path, replace: bool) -> io::Result<()>
         .collect();
     unsafe extern "system" {
         fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-        fn ReplaceFileW(
-            replaced: *const u16,
-            replacement: *const u16,
-            backup: *const u16,
-            flags: u32,
-            exclude: *const std::ffi::c_void,
-            reserved: *const std::ffi::c_void,
-        ) -> i32;
     }
-    let ok = unsafe {
-        if replace {
-            ReplaceFileW(
-                target.as_ptr(),
-                source.as_ptr(),
-                std::ptr::null(),
-                0,
-                std::ptr::null(),
-                std::ptr::null(),
-            )
-        } else {
-            MoveFileExW(source.as_ptr(), target.as_ptr(), 0)
+    let flags = if replace { MOVEFILE_REPLACE_EXISTING } else { 0 };
+    for attempt in 0..=RETRY_DELAYS_MS.len() {
+        let ok = unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), flags) };
+        if ok != 0 {
+            return Ok(());
         }
-    };
-    if ok == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION)
+            || attempt == RETRY_DELAYS_MS.len()
+        {
+            return Err(error);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAYS_MS[attempt]));
     }
+    unreachable!("retry loop always returns")
 }
 
 #[cfg(not(windows))]
@@ -517,7 +509,7 @@ pub async fn workspace_set_root(
 #[command]
 pub async fn workspace_list(
     state: State<'_, AppState>,
-) -> Result<Vec<WorkspaceFolder>, CommandError> {
+) -> Result<Vec<WorkspaceEntry>, CommandError> {
     let manager = Arc::clone(&state.workspace);
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
@@ -533,7 +525,7 @@ pub async fn workspace_list(
 pub async fn workspace_create_folder(
     state: State<'_, AppState>,
     request: RelativePathRequest,
-) -> Result<Vec<WorkspaceFolder>, CommandError> {
+) -> Result<Vec<WorkspaceEntry>, CommandError> {
     let manager = Arc::clone(&state.workspace);
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
@@ -567,20 +559,6 @@ pub async fn workspace_create_folder(
                 return Err(CommandError::from(WorkspaceError::OutsideRoot));
             }
             current = canonical;
-        }
-        let readme = current.join("README.md");
-        match fs::symlink_metadata(&readme) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(CommandError::from(WorkspaceError::Symlink));
-            }
-            Ok(metadata) if !metadata.is_file() => {
-                return Err(CommandError::from(WorkspaceError::NotFile));
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                write_atomic(&manager, &readme, b"", false).map_err(CommandError::from)?
-            }
-            Err(error) => return Err(CommandError::from(WorkspaceError::Io(error))),
         }
         refresh_cache(&store, &root).map_err(CommandError::from)
     })
@@ -713,7 +691,7 @@ fn resolve_entry(root: &Path, relative: &str) -> Result<PathBuf, WorkspaceError>
 pub async fn workspace_rename(
     state: State<'_, AppState>,
     request: RenameRequest,
-) -> Result<Vec<WorkspaceFolder>, CommandError> {
+) -> Result<Vec<WorkspaceEntry>, CommandError> {
     let manager = Arc::clone(&state.workspace);
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
@@ -745,7 +723,7 @@ pub async fn workspace_rename(
 pub async fn workspace_move(
     state: State<'_, AppState>,
     request: MoveRequest,
-) -> Result<Vec<WorkspaceFolder>, CommandError> {
+) -> Result<Vec<WorkspaceEntry>, CommandError> {
     let manager = Arc::clone(&state.workspace);
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
@@ -824,5 +802,38 @@ mod tests {
         let target = moved_to.join("mods");
         assert!(target.starts_with(&source));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_lists_folders_and_markdown_files() {
+        let raw = std::env::temp_dir().join(format!("openscp-scan-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raw);
+        fs::create_dir_all(raw.join("mods/inner")).unwrap();
+        fs::write(raw.join("mods/notes.md"), b"# notes").unwrap();
+        fs::write(raw.join("root.md"), b"root").unwrap();
+        fs::write(raw.join("mods/ignore.txt"), b"x").unwrap();
+        let root = fs::canonicalize(&raw).unwrap();
+        let mut entries = Vec::new();
+        scan_entries(&root, &root, "", &mut entries).unwrap();
+        let found: Vec<_> = entries
+            .iter()
+            .map(|entry| (entry.relative_path.as_str(), entry.kind))
+            .collect();
+        assert!(found.contains(&("mods", "folder")));
+        assert!(found.contains(&("mods/inner", "folder")));
+        assert!(found.contains(&("mods/notes.md", "file")));
+        assert!(found.contains(&("root.md", "file")));
+        assert!(!found.iter().any(|(path, _)| *path == "mods/ignore.txt"));
+        let _ = fs::remove_dir_all(&raw);
+    }
+
+    #[test]
+    fn root_level_documents_resolve_to_root_parent() {
+        let raw = std::env::temp_dir().join(format!("openscp-parent-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raw);
+        fs::create_dir_all(&raw).unwrap();
+        let root = fs::canonicalize(&raw).unwrap();
+        assert_eq!(existing_parent(&root, Path::new("root.md")).unwrap(), root);
+        let _ = fs::remove_dir_all(&raw);
     }
 }
