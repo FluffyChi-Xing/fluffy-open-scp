@@ -21,6 +21,7 @@ const {
   selectedId,
   grouping,
   lotSize,
+  lotMaskPng,
   selectedUnit,
   hiddenUnits,
   groupVisibility,
@@ -95,6 +96,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :model-meshes="modelMeshes"
           :grouping="grouping"
           :lot-size="lotSize"
+          :lot-mask-png="lotMaskPng"
           :selected-id="selectedId"
           :hidden-units="hiddenUnits"
           :group-visibility="groupVisibility"

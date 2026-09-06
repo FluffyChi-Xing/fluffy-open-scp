@@ -14,6 +14,7 @@ const props = defineProps<{
   modelMeshes: string[];
   grouping: UnitGrouping;
   lotSize: [number, number] | null;
+  lotMaskPng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
   groupVisibility: Record<string, boolean>;
@@ -92,10 +93,31 @@ async function rebuild() {
   }
   for (const object of modelObjects) instance.group("model").add(object);
 
-  // Lot 地面矩形（LotSize；LotMask 四色贴图待 Raster 解码，M-PE3）。
+  // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
   if (props.lotSize) {
     const ground = buildLotRect(THREE, props.lotSize);
     instance.group("model").add(ground);
+    if (props.lotMaskPng) {
+      const generation = token;
+      new THREE.TextureLoader().load(props.lotMaskPng, (texture) => {
+        if (generation !== rebuildToken) {
+          texture.dispose();
+          return;
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const fill = ground.children.find((child) => (child as ThreeNamespace.Mesh).isMesh) as
+          | ThreeNamespace.Mesh
+          | undefined;
+        if (fill) {
+          const material = fill.material as ThreeNamespace.MeshBasicMaterial;
+          material.map = texture;
+          material.transparent = false;
+          material.opacity = 1;
+          material.color.set(0xffffff);
+          material.needsUpdate = true;
+        }
+      });
+    }
   }
 
   const units: LotUnitDto[] = [

@@ -10,6 +10,7 @@ import type {
   PackageHistory,
   PropertyResourceData,
   LotEditorSession,
+  RasterPreviewData,
   ResourceBytes,
   ResourcePage,
   ResourcePreview,
@@ -27,6 +28,7 @@ import {
   imageMimeForType,
   AUDIO_TYPE_ID,
   PROPERTY_TYPE_ID,
+  RASTER_TYPE_ID,
   RW4_TYPE_ID,
   VIDEO_TYPE_ID,
   WWISE_BANK_TYPE_ID,
@@ -65,6 +67,7 @@ export interface OpenScpDataSource {
     tgi: Tgi,
   ): Promise<PropertyResourceData>;
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
+  readRasterPreview(packageId: number, tgi: Tgi): Promise<RasterPreviewData>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
   readRw4Section(
     packageId: number,
@@ -121,6 +124,7 @@ function tauriDataSource(): OpenScpDataSource {
     resolveNames: tauriApi.packages.resolveNames,
     readPropertyPreview: tauriApi.packages.readPropertyPreview,
     readLotEditorSession: tauriApi.packages.readLotEditorSession,
+    readRasterPreview: tauriApi.packages.readRasterPreview,
     readRw4Preview: tauriApi.packages.readRw4Preview,
     readRw4Section: tauriApi.packages.readRw4Section,
     previewResource: tauriPreview,
@@ -366,6 +370,7 @@ function mockDataSource(): OpenScpDataSource {
         modelAvailable: true,
         modelKey: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 },
         lotSize: [136, 136],
+        lotMaskPng: null,
         units: [
           {
             kind: "light",
@@ -421,6 +426,18 @@ function mockDataSource(): OpenScpDataSource {
     },
     async readRw4Preview(_packageId, _tgi) {
       return { fileType: "Model", sections: mockRw4Sections };
+    },
+    async readRasterPreview(_packageId, _tgi) {
+      return {
+        rasterType: 2,
+        width: 0,
+        height: 0,
+        mipCount: 0,
+        pixelSize: 8,
+        pixelFormat: 21,
+        decodable: false,
+        pngBase64: null,
+      } satisfies RasterPreviewData;
     },
     async readRw4Section(_packageId, _tgi, number) {
       const section = mockRw4Sections.find((item) => item.number === number) ?? mockRw4Sections[0];
@@ -585,6 +602,34 @@ async function tauriPreview(
       bytes: [],
       src: URL.createObjectURL(blob),
       mime,
+    };
+  }
+  if (resource.tgi.typeId === RASTER_TYPE_ID) {
+    // Raster（0x2f4e681c）：pixFmt 21 未压缩可解为 PNG；压缩变体回退通用"暂不支持"。
+    const data = await tauriApi.packages.readRasterPreview(
+      packageId,
+      resource.tgi,
+    );
+    if (data.decodable && data.pngBase64) {
+      return {
+        kind: "image",
+        packageId,
+        tgi: resource.tgi,
+        offset: 0,
+        totalLength: resource.decompressedSize,
+        bytes: [],
+        src: `data:image/png;base64,${data.pngBase64}`,
+        mime: "image/png",
+        width: data.width,
+        height: data.height,
+        pixelated: true,
+      };
+    }
+    return {
+      kind: "hex",
+      offset: 0,
+      totalLength: resource.decompressedSize,
+      bytes: [],
     };
   }
   const bytes = await tauriApi.packages.readBytes(

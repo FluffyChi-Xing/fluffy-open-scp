@@ -19,6 +19,7 @@ import {
   type ResourceBytes,
   type ResourceData,
   type LotEditorSession,
+  type RasterPreviewData,
   type PropertyResourceData,
   type Rw4ResourceData,
   type Rw4SectionDetail,
@@ -140,6 +141,10 @@ export const tauriApi = {
       }),
     readLotEditorSession: (packageId: number, tgi: Tgi) =>
       command<LotEditorSession>("read_lot_editor_session", {
+        request: { packageId, tgi },
+      }),
+    readRasterPreview: (packageId: number, tgi: Tgi) =>
+      command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi },
       }),
     readRw4Preview: (packageId: number, tgi: Tgi) =>

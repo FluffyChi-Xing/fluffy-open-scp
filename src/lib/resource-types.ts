@@ -2,6 +2,7 @@ export type ResourceKind =
   "rw4" | "raster" | "property" | "text" | "media" | "other";
 
 export const RW4_TYPE_ID = 0x2f4e681b;
+export const RASTER_TYPE_ID = 0x2f4e681c;
 export const PROPERTY_TYPE_ID = 0x00b1b104;
 export const AUDIO_TYPE_ID = 0x0d9e5710;
 export const WWISE_BANK_TYPE_ID = 0x0a4d8d09;
@@ -33,9 +34,9 @@ export const resourceKindMeta: Record<
 };
 
 export function resourceKind(typeId: number): ResourceKind {
-  if (typeId === 0x2f4e681b) return "rw4";
-  if (typeId === 0x2f4e681c) return "raster";
-  if (typeId === 0x00b1b104) return "property";
+  if (typeId === RW4_TYPE_ID) return "rw4";
+  if (typeId === RASTER_TYPE_ID) return "raster";
+  if (typeId === PROPERTY_TYPE_ID) return "property";
   if (typeId === AUDIO_TYPE_ID || typeId === WWISE_BANK_TYPE_ID || typeId === VIDEO_TYPE_ID)
     return "media";
   if (typeId === 0x0a98eaf0) return "text";

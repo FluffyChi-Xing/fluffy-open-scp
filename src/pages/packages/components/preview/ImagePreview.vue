@@ -105,6 +105,7 @@ function onKeydown(event: KeyboardEvent) {
       <img
         :src="props.preview.src"
         :alt="$t('package.imagePreview')"
+        :class="{ pixelated: props.preview.pixelated }"
         :style="{ transform: `scale(${scale}) rotate(${rotation}deg)` }"
         draggable="false"
       />
@@ -199,6 +200,9 @@ function onKeydown(event: KeyboardEvent) {
   object-fit: contain;
   transition: transform 120ms ease;
   user-select: none;
+}
+.image-viewport img.pixelated {
+  image-rendering: pixelated;
 }
 .image-meta {
   color: var(--muted-foreground);

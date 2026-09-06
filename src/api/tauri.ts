@@ -169,6 +169,8 @@ export interface ImagePreview extends PreviewData {
   mime: string;
   width?: number;
   height?: number;
+  /** 像素风渲染（raster 等低分辨率纹理放大时保持锐利边缘）。 */
+  pixelated?: boolean;
 }
 export interface AudioPreview extends PreviewData {
   kind: "audio";
@@ -334,9 +336,22 @@ export interface LotEditorSession {
   modelAvailable: boolean;
   modelKey: Tgi | null;
   lotSize: [number, number] | null;
+  /** LotMask 四色量化地面图 PNG（LotColor1-4 着色），无或不可解为 null。 */
+  lotMaskPng: string | null;
   units: LotUnitDto[];
   pathPairs: number[];
   diagnostics: string[];
+}
+export interface RasterPreviewData {
+  rasterType: number;
+  width: number;
+  height: number;
+  mipCount: number;
+  pixelSize: number;
+  pixelFormat: number;
+  /** pixFmt 21（D3DFMT_A8R8G8B8，未压缩）可解码为 PNG；压缩变体仅元数据。 */
+  decodable: boolean;
+  pngBase64: string | null;
 }
 export type ResourcePreview =
   | TextPreview

@@ -166,6 +166,12 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     () => session.value?.lotSize ?? null,
   );
 
+  const lotMaskPng = computed<string | null>(() => {
+    const png = session.value?.lotMaskPng;
+    // 后端返回裸 base64,TextureLoader 需要 data URL。
+    return png ? `data:image/png;base64,${png}` : null;
+  });
+
   const selectedUnit = computed<LotUnitDto | null>(() => {
     if (!selectedId.value) return null;
     return (
@@ -199,6 +205,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     grouping,
     flatUnits,
     lotSize,
+    lotMaskPng,
     selectedUnit,
     hiddenUnits,
     groupVisibility,
