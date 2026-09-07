@@ -599,3 +599,29 @@ Material(0x2000B) payload = `Size` u32 → 28B 头 →（模型有 VF section �
 - **亮度滑条语义修正**：滑条此前把地块真实光源一起缩放（调 0 连灯都黑了）——改为仅缩放环境四灯，地块光源恒定常亮（夜间路灯依然亮，真昼夜模拟）；`baseIntensity` 机制随之删除
 - **推近复杂建筑掉帧**：WebGL 前向渲染每片元评估全部光源，多灯地块片元数×光源数爆炸。修复：真实光源总预算 24（超限从强度最弱单元起摘除光源本体、保留拾取代理）、线光分段上限 6→4、`pixelRatio` 钳制 min(DPR,1.5)、WebGL `powerPreference: high-performance`
 - **devUrl 错位修复**：tauri.conf.json devUrl 5174 → 5173 对齐 vite strictPort（此前 dev 模式无法启动）；注意 Windows 下停 pnpm 外层进程会残留 vite 子进程占端口
+
+## 20. 文本预览：字符集/二进制帧真相 + 不截断虚拟滚动（2026-09-07 第十四轮）
+
+### 20.1 "乱码"根因：不是字符集问题（探针逐字节取证）
+
+用户报告 cpp 类型（0x0469a3f7，SimCity 2013 shader 源码）UTF-8 解码后乱码。对 app.package 全部 32 个 cpp 资源探针（临时 Rust 测试，结论留档后已删）：
+
+- **0/32 是严格 UTF-8**——这些资源是**二进制容器**：NUL 结尾的名字（"NullVS"、"modelToClip"）+ 小端元数据块 + 内嵌 shader 源码交替出现；同类型下还有纯二进制查表资源（instance 0/1，`00 01` 重复）
+- 实测字节例：`"modelToClip"\0 | 06 00 06 00 04 00 00 00 00 | 40 01 00 00 00 00 | 06 "NullVS" | ...`——0x40='@' 是可打印字符会打断二进制段（旧预览显示的 `modelToClip@NullVS` 即由此来）
+- **C# SimCityPak 也没有该类型解析器**（全源码 grep 零命中，原版显示同样的噪声）；HANDOFF.md 无此格式记录 → 逐字节逆向属独立课题，本轮不做
+
+### 20.2 修复：三级解码 + 二进制段可见化（`src/lib/text-decode.ts`）
+
+1. BOM 识别（UTF-16LE / UTF-8 BOM）
+2. 严格 UTF-8，失败退宽松解码
+3. **关键判定**：解码结果含控制字符（NUL/C0/C1，Tab/LF/CR 除外）或 U+FFFD 即认定含二进制帧——**NUL 是合法 UTF-8，仅靠严格解码失败判定不住**（单测踩坑实证）；连续段折叠为 `⟦N B⟫` 可见标记，源码主体保持可读、二进制位置如实标注（encoding 显示 `utf-8+binary`）
+- `looksLikeText`（未知类型嗅探）同步强化：全可打印 ASCII，或严格 UTF-8 且无控制字符——纯二进制表落回 hex 视图
+- locale JSON（0x0a98eaf0）3 字节前缀保守剥离（前缀后须紧跟 `{`）
+
+### 20.3 不截断预览：全量读取 + 行级虚拟滚动
+
+- 截断根因：`previewResource` 只 `readBytes(0, min(4096, size))`，且 FCode 用 shiki 对**整段**内容高亮（放大限制直接卡死）
+- 新命令 `read_resource_text`：`tauri::ipc::Response` 原始字节通道全量返回（上限 8MB，超限置 truncated）
+- `TextPreview.vue` 重写：行级虚拟滚动（只渲染可视窗口 ±24 行，rAF 节流）+ shiki 仅高亮可视片段（token 守卫）+ 行数/编码徽标 + 全文复制按钮；预览上限从 4KB → 8MB（1.2MB shader 容器全量可读）
+
+验证：vue-tsc、vitest 73（新增 text-decode 11 项，含 NUL-合法-UTF-8 回归）、cargo workspace 全绿。

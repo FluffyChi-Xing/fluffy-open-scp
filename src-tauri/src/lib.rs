@@ -26,7 +26,7 @@ use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
     read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
     read_resource_bytes,
-    read_resource_data, read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name,
+    read_resource_data, read_resource_text, read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name,
     resolve_names,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
@@ -84,6 +84,7 @@ pub fn run() {
             list_resources,
             read_resource_bytes,
             read_resource_data,
+            read_resource_text,
             read_lot_editor_session,
             read_lot_model_meshes,
             read_raster_preview,

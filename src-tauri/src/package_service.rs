@@ -457,6 +457,33 @@ pub const LOT_MODEL_PAYLOAD_MAGIC: u32 = 0x4D54_4F4C;
 /// 单个网格 GLB 的体积上限（异常模型防御，对齐原 OBJ 8MB 量级）。
 const MESH_GLB_MAX_BYTES: usize = 8 * 1024 * 1024;
 
+/// 文本预览全量字节上限（虚拟滚动渲染下超大文本的内存护栏）。
+const TEXT_PREVIEW_MAX_BYTES: usize = 8 * 1024 * 1024;
+
+/// 文本预览：全量原始字节（`tauri::ipc::Response` 通道，避免 JSON 数字数组
+/// 膨胀）；由前端做字符集判定（严格 UTF-8 → BOM → 宽松解码 + 二进制段标记）
+/// 与虚拟滚动渲染。超出上限截断，`totalLength` 由前端对比得出。
+#[tauri::command]
+pub async fn read_resource_text(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<tauri::ipc::Response, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let bytes = read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, _package, _manager, _store| {
+            let take = data.len().min(TEXT_PREVIEW_MAX_BYTES);
+            Ok(data[..take].to_vec())
+        },
+    )
+    .await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LotModelMeshesRequest {
