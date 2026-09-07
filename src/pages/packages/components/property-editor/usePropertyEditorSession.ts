@@ -1,12 +1,13 @@
 import { computed, reactive, ref, shallowRef } from "vue";
 import { createDataSource } from "@/api/data-source";
+import { parseLotModelContainer } from "@/lib/three-gltf";
 import { unitId } from "./unitGizmos";
 import type {
   DecalUnit,
   EffectUnit,
   LightUnit,
   LotEditorSession,
-  LotModelMaterial,
+  LotModelPayload,
   LotUnitDto,
   PathPointUnit,
   PropUnit,
@@ -53,8 +54,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const session = shallowRef<LotEditorSession | null>(null);
   const loading = ref(true);
   const loadError = ref("");
-  const modelMeshes = shallowRef<string[]>([]);
-  const modelMaterial = shallowRef<LotModelMaterial | null>(null);
+  const modelPayload = shallowRef<LotModelPayload | null>(null);
   const modelState = ref<ModelState>("pending");
   const selectedId = ref<string | null>(null);
   const hiddenUnits = ref(new Set<string>());
@@ -75,7 +75,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     loading.value = true;
     loadError.value = "";
     session.value = null;
-    modelMeshes.value = [];
+    modelPayload.value = null;
     modelState.value = "pending";
     selectedId.value = null;
     try {
@@ -95,18 +95,18 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     }
   }
 
-  /** LOD1 模型几何链：单次命令取全部网格 OBJ（含顶点色）+ 材质资源。失败降级不阻塞。 */
+  /** LOD1 模型几何链：单次命令取全部网格 GLB（含顶点色）+ 材质资源。失败降级不阻塞。 */
   async function loadModel(token: number, modelKey: Tgi) {
     modelState.value = "loading";
     try {
-      const data = await source.readLotModelMeshes(packageId, modelKey);
+      const buffer = await source.readLotModelMeshes(packageId, modelKey);
       if (token !== requestToken) return;
-      if (!data.meshes.length) {
+      const payload = parseLotModelContainer(buffer);
+      if (!payload.glbs.length) {
         modelState.value = "missing";
         return;
       }
-      modelMeshes.value = data.meshes;
-      modelMaterial.value = data.material;
+      modelPayload.value = payload;
       modelState.value = "ready";
     } catch {
       if (token !== requestToken) return;
@@ -193,8 +193,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     session,
     loading,
     loadError,
-    modelMeshes,
-    modelMaterial,
+    modelPayload,
     modelState,
     selectedId,
     grouping,

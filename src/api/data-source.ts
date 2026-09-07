@@ -10,7 +10,6 @@ import type {
   PackageHistory,
   PropertyResourceData,
   LotEditorSession,
-  LotModelMeshesData,
   RasterPreviewData,
   ResourceBytes,
   ResourcePage,
@@ -68,7 +67,8 @@ export interface OpenScpDataSource {
     tgi: Tgi,
   ): Promise<PropertyResourceData>;
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
-  readLotModelMeshes(packageId: number, tgi: Tgi): Promise<LotModelMeshesData>;
+  /** 返回 `read_lot_model_meshes` 原始字节容器（LotModelPayload，见 tauri.ts）。 */
+  readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
   readRasterPreview(packageId: number, tgi: Tgi): Promise<RasterPreviewData>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
   readRw4Section(
@@ -432,20 +432,16 @@ function mockDataSource(): OpenScpDataSource {
       return { fileType: "Model", sections: mockRw4Sections };
     },
     async readLotModelMeshes(_packageId, _tgi) {
-      // 简单立方体 OBJ（无顶点色），mock 会话材质不可解
-      const obj = btoa(
-        [
-          "v 0 0 0", "v 8 0 0", "v 8 8 0", "v 0 8 0",
-          "v 0 0 8", "v 8 0 8", "v 8 8 8", "v 0 8 8",
-          "f 1 4 3", "f 1 3 2", "f 5 6 7", "f 5 7 8",
-          "f 1 2 6", "f 1 6 5", "f 4 8 7", "f 4 7 3",
-          "f 1 5 8", "f 1 8 4", "f 2 3 7", "f 2 7 6",
-        ].join("\n"),
-      );
-      return {
-        meshes: [obj],
-        material: { baseColorPng: null, normalPng: null, hasUv: false },
-      } satisfies LotModelMeshesData;
+      // 浏览器 demo 模式：合法空容器（0 网格、无贴图）；GLB 构建在 Rust 导出器侧
+      const out = new ArrayBuffer(21);
+      const view = new DataView(out);
+      view.setUint32(0, 0x4d544f4c, true); // "LOTM"
+      view.setUint32(4, 1, true);
+      view.setUint32(8, 0, true);
+      view.setUint32(12, 0, true);
+      view.setUint32(16, 0, true);
+      view.setUint8(20, 0);
+      return out;
     },
     async readRasterPreview(_packageId, _tgi) {
       return {

@@ -166,8 +166,8 @@ export function buildPathLine(
 /**
  * 精细渲染：真实 three.js 光源（Point/Spot/Line）。
  * Spot 锥轴 = 局部 +Y（与标记锥同约定）；强度/衰减为观感近似值，待用户对拍校准。
- * Point/Spot 保留小发光球作灯具示意；Line 为氛围光——**本体完全不可见**，
- * 沿灯带均匀布点近似"照亮周围"，仅留透明拾取代理供选择。
+ * 三种光源**本体完全不可见**（光源球体/灯带模型一律隐藏，避免遮挡精细模型），
+ * 仅留透明拾取代理供选择；强度不随环境亮度滑条缩放（夜间灯依然亮）。
  */
 export function buildRealLightUnit(
   THREE: Three,
@@ -178,7 +178,7 @@ export function buildRealLightUnit(
   const rgb = new THREE.Color(color[0], color[1], color[2]);
   const radius = Math.max(unit.outerRadius ?? 4, 1);
   const length = Math.max(unit.length ?? radius, 0.5);
-  const intensity = Math.max(unit.diffuse ?? 1, 0.05) * 8;
+  const intensity = Math.max(unit.diffuse ?? 1, 0.05) * 16;
 
   if (unit.lightType === "Spot") {
     const angle = Math.min(Math.atan2(radius, length), 1.45);
@@ -186,8 +186,9 @@ export function buildRealLightUnit(
     spot.target.position.set(0, length, 0);
     group.add(spot, spot.target);
   } else if (unit.lightType === "Line") {
-    // 沿灯带（局部 +Y 自原点延伸）均匀布 N 个小范围点光，近似条形氛围照明
-    const segments = Math.min(Math.max(Math.ceil(length / 8), 2), 6);
+    // 沿灯带（局部 +Y 自原点延伸）均匀布 N 个小范围点光，近似条形氛围照明；
+    // 上限 4——前向渲染片元成本随光源数线性涨，灯带多的大地块靠总预算裁剪兜底
+    const segments = Math.min(Math.max(Math.ceil(length / 8), 2), 4);
     for (let index = 0; index < segments; index += 1) {
       const light = new THREE.PointLight(
         rgb.getHex(),
@@ -202,24 +203,30 @@ export function buildRealLightUnit(
     group.add(new THREE.PointLight(rgb.getHex(), intensity, radius * 2, 1));
   }
 
+  // 不可见拾取代理（透明不写深度；Raycaster 不过滤透明对象）
+  let proxyGeometry: ThreeNamespace.BufferGeometry;
   if (unit.lightType === "Line") {
-    // 不可见拾取代理（透明不写深度；Raycaster 不过滤透明对象）
-    const proxyGeometry = new THREE.BoxGeometry(2, length, 2);
+    proxyGeometry = new THREE.BoxGeometry(2, length, 2);
     proxyGeometry.translate(0, length / 2, 0);
-    group.add(
-      new THREE.Mesh(
-        proxyGeometry,
-        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
-      ),
+  } else if (unit.lightType === "Spot") {
+    proxyGeometry = new THREE.CylinderGeometry(
+      Math.max(radius * 0.5, 1),
+      Math.max(radius * 0.5, 1),
+      length,
+      8,
+      1,
+      true,
     );
+    proxyGeometry.translate(0, length / 2, 0);
   } else {
-    group.add(
-      new THREE.Mesh(
-        new THREE.SphereGeometry(1, 16, 12),
-        new THREE.MeshBasicMaterial({ color: rgb }),
-      ),
-    );
+    proxyGeometry = new THREE.SphereGeometry(radius, 8, 6);
   }
+  group.add(
+    new THREE.Mesh(
+      proxyGeometry,
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+    ),
+  );
   applyTransform(THREE, group, unit.transform);
   return group;
 }

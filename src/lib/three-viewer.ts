@@ -13,6 +13,12 @@ export interface ThreeViewerOptions {
 
 type Three = typeof ThreeNamespace;
 
+// 三灯 + 环境光的基准强度；setEnvironmentBrightness 按倍率缩放这些基准值。
+const KEY_LIGHT_INTENSITY = 2.2;
+const FILL_LIGHT_INTENSITY = 0.5;
+const RIM_LIGHT_INTENSITY = 0.65;
+const AMBIENT_LIGHT_INTENSITY = 0.38;
+
 export function disposeObject(object: ThreeNamespace.Object3D) {
   object.traverse((child) => {
     const mesh = child as ThreeNamespace.Mesh;
@@ -45,6 +51,7 @@ export class ThreeViewer {
   private readonly keyLight: ThreeNamespace.PointLight;
   private readonly fillLight: ThreeNamespace.DirectionalLight;
   private readonly rimLight: ThreeNamespace.DirectionalLight;
+  private readonly ambientLight: ThreeNamespace.AmbientLight;
   private readonly raycaster: ThreeNamespace.Raycaster;
   private readonly groups = new Map<string, ThreeNamespace.Group>();
   private grid: ThreeNamespace.GridHelper | null = null;
@@ -84,18 +91,25 @@ export class ThreeViewer {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     this.orbitTarget = new THREE.Vector3();
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: "high-performance",
+    });
+    // 高 DPR 屏（125%/150% 缩放）全屏片元成本翻倍，钳制 1.5 保帧率
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     container.appendChild(this.renderer.domElement);
 
     // 三灯白模布光：key 跟随滑杆，fill/rim 固定相对方向，保证无贴图也有立体感。
-    this.keyLight = new THREE.PointLight(0xffffff, 2.2, 0, 0);
-    this.fillLight = new THREE.DirectionalLight(0xdde6ff, 0.5);
+    // 基准强度供 setEnvironmentBrightness 按倍率缩放。
+    this.keyLight = new THREE.PointLight(0xffffff, KEY_LIGHT_INTENSITY, 0, 0);
+    this.fillLight = new THREE.DirectionalLight(0xdde6ff, FILL_LIGHT_INTENSITY);
     this.fillLight.position.set(-1, 0.4, -0.8);
-    this.rimLight = new THREE.DirectionalLight(0xffffff, 0.65);
+    this.rimLight = new THREE.DirectionalLight(0xffffff, RIM_LIGHT_INTENSITY);
     this.rimLight.position.set(0.4, -0.6, -1);
+    this.ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_LIGHT_INTENSITY);
     this.scene.add(
-      new THREE.AmbientLight(0xffffff, 0.38),
+      this.ambientLight,
       this.keyLight,
       this.fillLight,
       this.rimLight,
@@ -205,6 +219,15 @@ export class ThreeViewer {
       radius * Math.sin(elevation),
       radius * Math.cos(elevation) * Math.cos(azimuth),
     );
+  }
+
+  /** 环境亮度倍率（日/夜模拟）：0 ≈ 夜、1 = 默认观感、2 ≈ 正午。 */
+  setEnvironmentBrightness(brightness: number) {
+    const scale = Math.max(0, brightness);
+    this.keyLight.intensity = KEY_LIGHT_INTENSITY * scale;
+    this.fillLight.intensity = FILL_LIGHT_INTENSITY * scale;
+    this.rimLight.intensity = RIM_LIGHT_INTENSITY * scale;
+    this.ambientLight.intensity = AMBIENT_LIGHT_INTENSITY * scale;
   }
 
   /** 选中高亮（emissive），object 为 null 清除。 */

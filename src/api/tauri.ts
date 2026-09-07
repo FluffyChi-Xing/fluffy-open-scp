@@ -344,19 +344,21 @@ export interface LotEditorSession {
   pathPairs: number[];
   diagnostics: string[];
 }
-/** PE 精细渲染：模型材质资源（服务端跨包解码）。 */
-export interface LotModelMaterial {
-  /** slot1 区域遮罩红通道灰度 PNG（base64）；无 FLOAT2 UV 或不可解为 null。 */
-  baseColorPng: string | null;
-  /** slot2 法线（解 Swizzle R↔B）PNG（base64）。 */
-  normalPng: string | null;
+/**
+ * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果。
+ * 容器（小端）：`magic("LOTM") | version=1 | mesh_count`，每 mesh
+ * `u32 len + GLB`（COLOR_0 顶点色已按调色板烘焙），随后
+ * `u32 len + baseColor PNG`、`u32 len + normal PNG`（0 = 无）、`has_uv u8`。
+ */
+export interface LotModelPayload {
+  /** 每个网格一个 GLB ArrayBuffer。 */
+  glbs: ArrayBuffer[];
+  /** slot1 区域遮罩红通道灰度 PNG；无 FLOAT2 UV 或不可解为 null。 */
+  baseColorPng: Uint8Array<ArrayBuffer> | null;
+  /** slot2 法线（解 Swizzle R↔B）PNG。 */
+  normalPng: Uint8Array<ArrayBuffer> | null;
   /** 模型含 FLOAT2 真 UV（可贴图）。 */
   hasUv: boolean;
-}
-/** PE 精细渲染：全部网格 OBJ（顶点色已按调色板烘焙）。 */
-export interface LotModelMeshesData {
-  meshes: string[];
-  material: LotModelMaterial;
 }
 export interface RasterPreviewData {
   rasterType: number;

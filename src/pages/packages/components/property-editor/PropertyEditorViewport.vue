@@ -4,9 +4,9 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { ThreeViewer, disposeObject } from "@/lib/three-viewer";
-import { parseObjModel } from "@/lib/three-obj";
+import { parseLotModelObjects, pngBlobUrl } from "@/lib/three-gltf";
 import type * as ThreeNamespace from "three";
-import type { LotModelMaterial, LotUnitDto } from "@/api/tauri";
+import type { LotModelPayload, LotUnitDto } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
 import {
   buildPathLine,
@@ -16,8 +16,7 @@ import {
 } from "./unitGizmos";
 
 const props = defineProps<{
-  modelMeshes: string[];
-  modelMaterial: LotModelMaterial | null;
+  modelPayload: LotModelPayload | null;
   renderMode: "default" | "refined";
   grouping: UnitGrouping;
   lotSize: [number, number] | null;
@@ -40,10 +39,13 @@ const sceneReady = ref(false);
 const lightPanelOpen = ref(false);
 const lightAzimuth = ref(45);
 const lightElevation = ref(55);
+/** 日/夜模拟：全局环境亮度倍率（1 = 当前观感，0 ≈ 夜，2 ≈ 正午）。 */
+const brightness = ref(1);
 
 watch([lightAzimuth, lightElevation], () => {
   viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
+watch(brightness, () => applyBrightness());
 
 const GROUP_KEYS = [
   "model",
@@ -56,6 +58,14 @@ const GROUP_KEYS = [
 ] as const;
 
 const unitObjects = new Map<string, ThreeNamespace.Object3D>();
+/** 当前 payload 派生的贴图 blob URL；rebuild 时回收上一代。 */
+const textureUrls: string[] = [];
+/**
+ * 场景真实光源总数上限：WebGL 前向渲染每个片元都评估全部光源，
+ * 多灯地块（路灯密集的建筑群）推近镜头时片元数×光源数导致掉帧。
+ * 超限时从整体强度最弱的单元开始摘除真实光源（保留透明拾取代理）。
+ */
+const MAX_REAL_LIGHTS = 24;
 let rebuildToken = 0;
 
 onMounted(async () => {
@@ -81,6 +91,8 @@ onBeforeUnmount(() => {
   viewer.value?.dispose();
   viewer.value = null;
   unitObjects.clear();
+  for (const url of textureUrls) URL.revokeObjectURL(url);
+  textureUrls.length = 0;
 });
 
 function kindGroup(kind: LotUnitDto["kind"]) {
@@ -94,57 +106,80 @@ async function rebuild() {
   const THREE = instance.THREE;
   for (const name of GROUP_KEYS) instance.clearGroup(name);
   unitObjects.clear();
+  for (const url of textureUrls) URL.revokeObjectURL(url);
+  textureUrls.length = 0;
 
-  const modelObjects = await Promise.all(props.modelMeshes.map(parseObjModel));
+  const payload = props.modelPayload;
+  const modelObjects = payload ? await parseLotModelObjects(payload.glbs) : [];
   if (token !== rebuildToken) {
     for (const object of modelObjects) disposeObject(object);
     return;
   }
+  const whiteMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb8c2cc,
+    roughness: 0.55,
+    metalness: 0.12,
+    side: THREE.DoubleSide,
+  });
   const refinedMaterials: ThreeNamespace.MeshStandardMaterial[] = [];
   for (const object of modelObjects) {
-    if (props.renderMode === "refined") {
-      object.traverse((child) => {
-        const mesh = child as ThreeNamespace.Mesh;
-        if (!mesh.isMesh) return;
-        // OBJLoader 原生解析 `v x y z r g b` 为 color 顶点属性（后端按调色板烘焙）
-        const refined = new THREE.MeshStandardMaterial({
-          vertexColors: Boolean(mesh.geometry.attributes.color),
-          roughness: 0.82,
-          metalness: 0,
-          side: THREE.DoubleSide,
-        });
-        mesh.material = refined;
-        refinedMaterials.push(refined);
+    object.traverse((child) => {
+      const mesh = child as ThreeNamespace.Mesh;
+      if (!mesh.isMesh) return;
+      if (props.renderMode !== "refined") {
+        mesh.material = whiteMaterial;
+        return;
+      }
+      // GLB 的 COLOR_0（调色板顶点色）→ GLTFLoader 的 color 顶点属性
+      const refined = new THREE.MeshStandardMaterial({
+        vertexColors: Boolean(mesh.geometry.attributes.color),
+        roughness: 0.82,
+        metalness: 0,
+        side: THREE.DoubleSide,
       });
-    }
+      mesh.material = refined;
+      refinedMaterials.push(refined);
+    });
     instance.group("model").add(object);
   }
   // 精细贴图：区域遮罩红通道 baseColor + 解 Swizzle 法线（仅 FLOAT2 UV 模型，服务端判定）
-  if (props.renderMode === "refined" && props.modelMaterial?.hasUv) {
+  if (props.renderMode === "refined" && payload?.hasUv) {
     const generation = token;
     const loader = new THREE.TextureLoader();
-    if (props.modelMaterial.baseColorPng) {
-      loader.load(`data:image/png;base64,${props.modelMaterial.baseColorPng}`, (texture) => {
-        if (generation !== rebuildToken) {
-          texture.dispose();
-          return;
-        }
+    const loadTexture = (
+      bytes: Uint8Array<ArrayBuffer>,
+      setup: (texture: ThreeNamespace.Texture) => void,
+    ) => {
+      const url = pngBlobUrl(bytes);
+      textureUrls.push(url);
+      loader.load(
+        url,
+        (texture) => {
+          if (generation !== rebuildToken) {
+            texture.dispose();
+            return;
+          }
+          setup(texture);
+          for (const material of refinedMaterials) {
+            material.needsUpdate = true;
+          }
+        },
+        undefined,
+        () => {},
+      );
+    };
+    if (payload.baseColorPng) {
+      loadTexture(payload.baseColorPng, (texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
         for (const material of refinedMaterials) {
           material.map = texture;
-          material.needsUpdate = true;
         }
       });
     }
-    if (props.modelMaterial.normalPng) {
-      loader.load(`data:image/png;base64,${props.modelMaterial.normalPng}`, (texture) => {
-        if (generation !== rebuildToken) {
-          texture.dispose();
-          return;
-        }
+    if (payload.normalPng) {
+      loadTexture(payload.normalPng, (texture) => {
         for (const material of refinedMaterials) {
           material.normalMap = texture;
-          material.needsUpdate = true;
         }
       });
     }
@@ -221,12 +256,54 @@ async function rebuild() {
   const line = buildPathLine(THREE, points);
   if (line) instance.group("paths").add(line);
 
+  pruneExcessLights(instance);
+
   instance.frameContent();
   instance.setKeyLight(45, 55);
+  applyBrightness();
   applyGroupVisibility();
   applyUnitVisibility();
   applySelection();
   sceneReady.value = true;
+}
+
+/** 日/夜亮度：仅缩放环境四灯；地块真实光源保持常亮（夜间灯依然亮）。 */
+function applyBrightness() {
+  viewer.value?.setEnvironmentBrightness(brightness.value);
+}
+
+/** 真实光源总数超限时，从强度最弱的单元开始摘除光源本体。 */
+function pruneExcessLights(instance: ThreeViewer) {
+  const perUnit: {
+    lights: ThreeNamespace.Light[];
+    intensity: number;
+  }[] = [];
+  let total = 0;
+  for (const [id, object] of unitObjects) {
+    if (!id.startsWith("light:")) continue;
+    const lights: ThreeNamespace.Light[] = [];
+    object.traverse((child) => {
+      if ((child as ThreeNamespace.Light).isLight) {
+        lights.push(child as ThreeNamespace.Light);
+      }
+    });
+    if (!lights.length) continue;
+    total += lights.length;
+    perUnit.push({
+      lights,
+      intensity: lights.reduce((sum, light) => sum + light.intensity, 0),
+    });
+  }
+  if (total <= MAX_REAL_LIGHTS) return;
+  perUnit.sort((a, b) => a.intensity - b.intensity);
+  for (const entry of perUnit) {
+    for (const light of entry.lights) {
+      if (total <= MAX_REAL_LIGHTS) return;
+      light.parent?.remove(light);
+      light.dispose();
+      total -= 1;
+    }
+  }
 }
 
 /** Lot 地面矩形：XY 平面（Z-up 贴地面）细边框 + 半透明填充。 */
@@ -281,7 +358,7 @@ function applySelection() {
 }
 
 watch(
-  () => [props.modelMeshes, props.modelMaterial, props.renderMode, props.grouping],
+  () => [props.modelPayload, props.renderMode, props.grouping],
   () => void rebuild(),
 );
 watch(() => props.groupVisibility, applyGroupVisibility, { deep: true });
@@ -334,6 +411,10 @@ watch(() => props.selectedId, applySelection);
       <label>
         <span>{{ $t("package.lightElevation") }}</span>
         <input v-model.number="lightElevation" type="range" min="5" max="175" />
+      </label>
+      <label>
+        <span>{{ $t("package.lightBrightness") }}</span>
+        <input v-model.number="brightness" type="range" min="0" max="2" step="0.05" />
       </label>
     </div>
     <div class="viewport-overlay viewport-visibility" role="group" :aria-label="$t('package.visibilityToggles')">

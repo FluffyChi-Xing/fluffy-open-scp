@@ -16,8 +16,7 @@ const {
   session,
   loading,
   loadError,
-  modelMeshes,
-  modelMaterial,
+  modelPayload,
   modelState,
   selectedId,
   grouping,
@@ -105,8 +104,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           @toggle-group="toggleGroup"
         />
         <PropertyEditorViewport
-          :model-meshes="modelMeshes"
-          :model-material="modelMaterial"
+          :model-payload="modelPayload"
           :render-mode="renderMode"
           :grouping="grouping"
           :lot-size="lotSize"
