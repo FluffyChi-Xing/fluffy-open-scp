@@ -687,7 +687,7 @@ fn decode_mesh_rejects_wrong_section_types() {
 }
 
 #[test]
-fn decode_mesh_rejects_triangle_count_mismatch() {
+fn decode_mesh_rejects_index_range_overflow() {
     let specs = vec![
         Spec {
             fixups: vec![(1, 0)],
@@ -701,11 +701,12 @@ fn decode_mesh_rejects_triangle_count_mismatch() {
     ];
     let data = build(1, &specs, &[]);
     let file = Rw4File::parse(&data).unwrap();
+    // TA 只有 3 个索引；mesh 声明 5 tri（=15 索引）→ 切片越界
     match file.decode_mesh(&data, 2) {
         Err(Error::UnexpectedValue {
             check: "ME100",
-            expected: 5,
-            actual: 1,
+            expected: 3,
+            actual: 15,
         }) => {}
         other => panic!("expected ME100, got {other:?}"),
     }

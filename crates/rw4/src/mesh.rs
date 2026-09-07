@@ -19,11 +19,23 @@ use crate::vertex::{
 /// mesh 头部中「无顶点缓冲」的哨兵 section 编号。
 pub const NO_VERTEX_SECTION: u32 = 0x40_0000;
 
-/// Mesh section 的 10×u32 头（有效字段 4 个）。
+/// Mesh section 的 10×u32 头。
+///
+/// 2026-09-07 重解读（migration.md §23，EP1 0x41B1BAC0 双变体逐字节取证）：
+/// 变体网格**共享** TriangleArray/VertexArray 池，用 `[start_index, count)`
+/// 切片；旧解析把 `[5]` 当恒 0、把 `[6][7]` 当 u64，仅在"独占池"的静态
+/// 网格（start=0、[7]=0）上碰巧成立——C# 同样如此（其 ME004 期望 0）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MeshHeader {
     pub tri_section: u32,
+    /// 本 mesh 的三角形数（= index_count / 3）。
     pub triangle_count: u32,
+    /// 在共享 TA 索引 blob 中的起始索引（u16 个）。
+    pub start_index: u32,
+    /// 本 mesh 的索引总数（= triangle_count × 3）。
+    pub index_count: u32,
+    /// 顶点池中本 mesh 用到的最小索引（信息性，游戏 draw-range 优化）。
+    pub min_vertex_index: u32,
     pub vertex_count: u32,
     pub vertex_section: u32,
 }
@@ -189,9 +201,37 @@ impl Rw4File {
         let payload = self.payload(data, mesh_number)?;
         let header = parse_mesh_header(payload)?;
 
-        let triangles = self.decode_triangles(data, header.tri_section, header.triangle_count)?;
+        let mut triangles = self.decode_triangles(
+            data,
+            header.tri_section,
+            header.start_index,
+            header.index_count,
+        )?;
         let vertices = if header.has_vertex_data() {
-            self.decode_vertices(data, header.vertex_section, header.vertex_count)?
+            // 变体网格与其它 mesh 共享顶点池：解码整池后按本 mesh 索引重映射
+            let pool = self.decode_vertices(data, header.vertex_section)?;
+            let mut remap = vec![u32::MAX; pool.len()];
+            let mut vertices: Vec<DecodedVertex> = Vec::new();
+            let mut remapped = triangles.clone();
+            for tri in &mut remapped {
+                for k in 0..3 {
+                    let pool_index = tri[k] as usize;
+                    let Some(entry) = pool.get(pool_index) else {
+                        return Err(Error::UnexpectedValue {
+                            check: "ME300",
+                            expected: u64::from(header.vertex_count),
+                            actual: u64::from(tri[k]),
+                        });
+                    };
+                    if remap[pool_index] == u32::MAX {
+                        remap[pool_index] = vertices.len() as u32;
+                        vertices.push(entry.clone());
+                    }
+                    tri[k] = remap[pool_index] as u16;
+                }
+            }
+            triangles = remapped;
+            vertices
         } else {
             Vec::new()
         };
@@ -208,7 +248,8 @@ impl Rw4File {
         &self,
         data: &[u8],
         tri_section: u32,
-        expected_count: u32,
+        start_index: u32,
+        index_count: u32,
     ) -> Result<Vec<[u16; 3]>> {
         self.section_for(tri_section, "TA000", SectionType::TRIANGLE_ARRAY)?;
         let header = parse_triangle_array_header(self.payload(data, tri_section)?)?;
@@ -220,27 +261,27 @@ impl Rw4File {
                 actual: u64::from(header.index_count % 3),
             });
         }
-        let tri_count = header.index_count / 3;
-        // C# ME100：mesh 头声明的三角形数必须与 buffer 一致
-        if tri_count != expected_count {
+        // 变体网格共享 TA：本 mesh 只取 [start_index, start_index+count) 切片
+        if start_index + index_count > header.index_count {
             return Err(Error::UnexpectedValue {
                 check: "ME100",
-                expected: u64::from(expected_count),
-                actual: u64::from(tri_count),
+                expected: u64::from(header.index_count),
+                actual: u64::from(start_index + index_count),
             });
         }
 
         let blob = self.blob_payload(data, header.data_section, "TA100")?;
-        let needed = tri_count as usize * 6;
-        if blob.len() < needed {
+        let byte_from = start_index as usize * 2;
+        let needed = index_count as usize * 2;
+        if blob.len() < byte_from + needed {
             return Err(Error::InsufficientPayload {
                 check: "TA101",
-                needed,
+                needed: byte_from + needed,
                 actual: blob.len(),
             });
         }
-        let mut triangles = Vec::with_capacity(tri_count as usize);
-        for tri in blob[..needed].as_chunks::<6>().0 {
+        let mut triangles = Vec::with_capacity(index_count as usize / 3);
+        for tri in blob[byte_from..byte_from + needed].as_chunks::<6>().0 {
             triangles.push([
                 u16::from_le_bytes([tri[0], tri[1]]),
                 u16::from_le_bytes([tri[2], tri[3]]),
@@ -250,23 +291,9 @@ impl Rw4File {
         Ok(triangles)
     }
 
-    fn decode_vertices(
-        &self,
-        data: &[u8],
-        vertex_section: u32,
-        expected_count: u32,
-    ) -> Result<Vec<DecodedVertex>> {
+    fn decode_vertices(&self, data: &[u8], vertex_section: u32) -> Result<Vec<DecodedVertex>> {
         self.section_for(vertex_section, "VA000", SectionType::VERTEX_ARRAY)?;
         let header = parse_vertex_array_header(self.payload(data, vertex_section)?)?;
-
-        // C# ME200：顶点数必须一致
-        if header.vertex_count != expected_count {
-            return Err(Error::UnexpectedValue {
-                check: "ME200",
-                expected: u64::from(expected_count),
-                actual: u64::from(header.vertex_count),
-            });
-        }
 
         let fmt_section =
             self.section_for(header.format_section, "VA101", SectionType::VERTEX_FORMAT)?;
@@ -359,14 +386,24 @@ pub(crate) fn parse_mesh_header(payload: &[u8]) -> Result<MeshHeader> {
     let tri_section = read_section_ref(&mut r, "ME_tri_section")?;
     let triangle_count = r.u32("ME_tri_count")?;
     r.expect_u32(1, "ME003")?;
-    r.expect_u32(0, "ME004")?;
-    r.expect_u64(u64::from(triangle_count) * 3, "ME005")?;
-    r.expect_u32(0, "ME006")?;
+    let start_index = r.u32("ME_start_index")?;
+    let index_count = r.u32("ME_index_count")?;
+    let min_vertex_index = r.u32("ME_min_vertex")?;
     let vertex_count = r.u32("ME_vertex_count")?;
     let vertex_section = read_section_ref(&mut r, "ME_vertex_section")?;
+    if index_count != triangle_count * 3 {
+        return Err(Error::UnexpectedValue {
+            check: "ME005",
+            expected: u64::from(triangle_count * 3),
+            actual: u64::from(index_count),
+        });
+    }
     Ok(MeshHeader {
         tri_section,
         triangle_count,
+        start_index,
+        index_count,
+        min_vertex_index,
         vertex_count,
         vertex_section,
     })

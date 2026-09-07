@@ -701,3 +701,36 @@ EP1 模型结构分布（shape histogram）：894 个 0/0、**1025 个 1 mesh/1 
 金样本 0x63D180B9（2409 tri/4682 verts，含 slot1/2 跨包解码与 PNG 编码）：**release 全链 11.36ms**（v1 8.65ms，+31% 来自逐材质槽位解析；单材质模型差异极小）。多材质开销 = 材质数 × 槽位解析，静态建筑均单材质，无感知。
 
 验证：rw4 金样本绑定测试、src-tauri v2 容器测试（结构/分组/计时）、cargo workspace、vue-tsc、vitest 73（容器 v2 3 项重写）通过。
+
+## 23. 阶段 2.5：共享池 mesh 头重解读——1839 栋双变体建筑解锁（2026-09-7 第十七轮）
+
+### 23.1 头布局重解读（0x41B1BAC0 逐字节取证）
+
+旧解析（对齐 C# ME001-ME006）把 mesh 头 [5] 当恒 0、[6][7] 当 u64 tri×3——仅在"独占 TA/VA 池"的静态网格上碰巧成立。金样本双变体模型 0x41B1BAC0 实测统一布局：
+
+| 槽位 | 语义 | mesh#10（变体 A） | mesh#11（变体 B） |
+|---|---|---|---|
+| [2] | tri_section | 5（共享） | 5（共享） |
+| [3] | triangle_count | 462 | 72 |
+| [5] | **start_index**（TA blob 内 u16 索引偏移） | 0 | 1386（=462×3，紧接 A） |
+| [6] | **index_count**（=triangle_count×3） | 1386 | 216（=72×3） |
+| [7] | **min_vertex_index**（draw-range 信息） | 0 | 451 |
+| [8] | vertex_count | 1068 | 581（=1031-451+1，与其索引切片范围精确吻合） |
+| [9] | vertex_section | 20（共享 VA，池 1068 顶点） | 同左 |
+
+**判定实验**：mesh#11 的 216 个索引切片范围 [451,1031]，max-min+1=581=vertex_count——索引为**池相对**（非局部+基址），min_vertex_index 恰为其下界。
+
+### 23.2 实现（`crates/rw4/src/mesh.rs`）
+
+- `parse_mesh_header` 重写：[5]=start_index、[6]=index_count（ME005 改为校验 index_count==triangle_count×3）、[7]=min_vertex_index
+- `decode_triangles` 按 `[start_index, start_index+index_count)` 切共享 TA（ME100 改为切片越界校验）
+- `decode_vertices` 解码整池（删除 ME200 相等校验——变体 mesh 的 vertex_count ≠ 池大小）
+- `decode_mesh` 新增**池顶点重映射**：按索引首次出现顺序收缩顶点、重写索引（mesh#11 导出 581 顶点而非全池 1068）；越界索引报 ME300
+
+### 23.3 效果与性能
+
+- **EP1：4703/4703 mesh 全部解码**（此前 1025）；顶点 2.10M→**6.47M**、三角 1.24M→**3.56M**；DLC0 571/571；**1839 栋双变体建筑获得几何**
+- 新解锁网格的构成：dual-UV 模型 376→**2099**、FLOAT4 大坐标 facade 696→**2532**——阶段 4（facade UV）的受益面扩大 3.6 倍
+- 导出 sweep：EP1 7.12s/4703 mesh（661 mesh/s，release）；金样本单 mesh 全链 16.67ms（debug；纯几何链路开销与 v1 同量级）
+
+验证：rw4 40 单测（含重写的 ME100 越界断言）+ 3 包 sweep、sc-exporter 9、后端 42、前端 73 全绿。C# 的 ME004/ME100/ME200 在变体网格上同样失败——本修复超越 C# 参照。

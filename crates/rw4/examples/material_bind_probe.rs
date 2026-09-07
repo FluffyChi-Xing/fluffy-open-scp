@@ -209,6 +209,36 @@ fn dump_detail(package: &dbpf::Package, instance: u32) {
     for sec in file.sections() {
         println!("  #{:<3} {:<20} size={:<7} align={}", sec.number,
             sec.type_name().unwrap_or("??"), sec.size, sec.alignment);
+        let ty = sec.type_name().unwrap_or("");
+        if matches!(ty, "Mesh" | "TriangleArray" | "VertexArray") {
+            let start = sec.pos as usize;
+            let end = (start + sec.size as usize).min(data.len());
+            println!("       bytes: {:02x?}", &data[start..end.min(start + 40)]);
+        }
+        if ty == "Mesh" {
+            // 解析扩展头并切 TA 索引切片，验证索引是否池相对
+            let start = sec.pos as usize;
+            let w = |i: usize| u32::from_le_bytes(data[start + i * 4..start + i * 4 + 4].try_into().unwrap());
+            let (tri_sec, tri_count, start_index, index_count, f7, vert_count) =
+                (w(2), w(3), w(5), w(6), w(7), w(8));
+            let ta = &file.sections()[tri_sec as usize];
+            let ta_start = ta.pos as usize;
+            let ta_index_count = u32::from_le_bytes(data[ta_start + 8..ta_start + 12].try_into().unwrap());
+            let blob_sec = u32::from_le_bytes(data[ta_start + 24..ta_start + 28].try_into().unwrap());
+            let blob = &file.sections()[blob_sec as usize];
+            let blob_start = blob.pos as usize;
+            let lo = (start_index * 2) as usize;
+            let hi = lo + (index_count * 2) as usize;
+            let slice = &data[blob_start + lo..blob_start + hi];
+            let mut mn = u16::MAX;
+            let mut mx = 0u16;
+            for i in (0..slice.len()).step_by(2) {
+                let v = u16::from_le_bytes([slice[i], slice[i + 1]]);
+                mn = mn.min(v);
+                mx = mx.max(v);
+            }
+            println!("       tri_sec={tri_sec} tri={tri_count} start_idx={start_index} idx_count={index_count} f7={f7} verts={vert_count} | TA total_idx={ta_index_count} slice idx range=[{mn},{mx}]");
+        }
     }
 
     for mat_sec in file.sections_of_type(rw4::SectionType::MATERIAL) {

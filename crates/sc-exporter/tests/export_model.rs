@@ -52,6 +52,9 @@ fn synth_mesh() -> DecodedMesh {
         header: rw4::MeshHeader {
             tri_section: 1,
             triangle_count: 1,
+            start_index: 0,
+            index_count: 1 * 3,
+            min_vertex_index: 0,
             vertex_count: 3,
             vertex_section: 0,
         },
@@ -200,6 +203,9 @@ fn synth_skinned() -> (DecodedMesh, DecodedSkeleton, DecodedAnim) {
         header: rw4::MeshHeader {
             tri_section: 1,
             triangle_count: 1,
+            start_index: 0,
+            index_count: 1 * 3,
+            min_vertex_index: 0,
             vertex_count: 2,
             vertex_section: 0,
         },
@@ -366,6 +372,9 @@ fn shell_rig_without_blend_falls_back_to_rigid_skin() {
         header: rw4::MeshHeader {
             tri_section: 1,
             triangle_count: 1,
+            start_index: 0,
+            index_count: 1 * 3,
+            min_vertex_index: 0,
             vertex_count: 2,
             vertex_section: 0,
         },
