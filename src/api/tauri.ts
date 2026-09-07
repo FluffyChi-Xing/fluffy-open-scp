@@ -351,16 +351,22 @@ export interface LotEditorSession {
   pathPairs: number[];
   diagnostics: string[];
 }
-/** 单个材质的贴图（slot1 区域遮罩灰度 / slot2 解 Swizzle 法线）。 */
+/** 单个材质的贴图集（官方 Material Set 通道拆分，见 §21.4/§24）。 */
 export interface LotMaterialTextures {
+  /** slot1 区域遮罩红通道灰度（元素分割索引）。 */
   baseColorPng: Uint8Array<ArrayBuffer> | null;
+  /** slot2 法线（解 Swizzle RGB）。 */
   normalPng: Uint8Array<ArrayBuffer> | null;
+  /** slot3 shader map B 反转 = 粗糙度灰度。 */
+  roughnessPng: Uint8Array<ArrayBuffer> | null;
+  /** slot2 alpha = AO 灰度。 */
+  aoPng: Uint8Array<ArrayBuffer> | null;
 }
 /**
- * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v2）。
- * 容器（小端）：`magic("LOTM") | version=2 | mesh_count`，每 mesh
+ * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v3）。
+ * 容器（小端）：`magic("LOTM") | version=3 | mesh_count`，每 mesh
  * `u32 len + GLB`（COLOR_0 顶点色按**该 mesh 材质**调色板烘焙）；
- * `material_count`，每材质 `u32 base_len + PNG | u32 normal_len + PNG`；
+ * `material_count`，每材质 4 张 `u32 len + PNG`（base/normal/rough/ao）；
  * 每 mesh `u32 material_index + u8 has_uv`（0x2001A 绑定，见 §21.1）。
  */
 export interface LotModelPayload {

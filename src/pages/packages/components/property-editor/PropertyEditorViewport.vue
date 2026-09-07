@@ -199,6 +199,24 @@ async function rebuild() {
           }
         });
       }
+      // shader map B 反转 = 粗糙度；normal alpha = AO（three 的 aoMap 读 R 通道）
+      if (material.roughnessPng) {
+        loadTexture(material.roughnessPng, (texture) => {
+          for (const refined of group) {
+            refined.roughnessMap = texture;
+            refined.roughness = 1;
+            refined.needsUpdate = true;
+          }
+        });
+      }
+      if (material.aoPng) {
+        loadTexture(material.aoPng, (texture) => {
+          for (const refined of group) {
+            refined.aoMap = texture;
+            refined.needsUpdate = true;
+          }
+        });
+      }
     });
   }
 

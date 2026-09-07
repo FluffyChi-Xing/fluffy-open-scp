@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { parseLotModelContainer } from "./three-gltf";
 
-/** 按 Rust 侧 v2 容器布局构建字节（小端）。 */
+/** 按 Rust 侧 v3 容器布局构建字节（小端）。 */
 function buildPayload(
   glbSizes: number[],
-  materials: { baseColorSize: number; normalSize: number }[],
+  materials: {
+    baseColorSize: number;
+    normalSize: number;
+    roughnessSize: number;
+    aoSize: number;
+  }[],
   meshMaterialIndices: number[],
   meshHasUv: boolean[],
 ): ArrayBuffer {
   const materialBytes = materials.reduce(
-    (total, material) => total + 8 + material.baseColorSize + material.normalSize,
+    (total, material) =>
+      total +
+      16 +
+      material.baseColorSize +
+      material.normalSize +
+      material.roughnessSize +
+      material.aoSize,
     0,
   );
   const size =
@@ -26,7 +37,7 @@ function buildPayload(
     offset += 4;
   };
   u32(0x4d544f4c); // "LOTM"
-  u32(2);
+  u32(3);
   u32(glbSizes.length);
   glbSizes.forEach((length, index) => {
     u32(length);
@@ -35,10 +46,15 @@ function buildPayload(
   });
   u32(materials.length);
   for (const material of materials) {
-    u32(material.baseColorSize);
-    offset += material.baseColorSize;
-    u32(material.normalSize);
-    offset += material.normalSize;
+    for (const size of [
+      material.baseColorSize,
+      material.normalSize,
+      material.roughnessSize,
+      material.aoSize,
+    ]) {
+      u32(size);
+      offset += size;
+    }
   }
   meshMaterialIndices.forEach((materialIndex, index) => {
     u32(materialIndex);
@@ -54,8 +70,8 @@ describe("parseLotModelContainer", () => {
       buildPayload(
         [8, 16],
         [
-          { baseColorSize: 32, normalSize: 64 },
-          { baseColorSize: 0, normalSize: 12 },
+          { baseColorSize: 32, normalSize: 64, roughnessSize: 16, aoSize: 16 },
+          { baseColorSize: 0, normalSize: 12, roughnessSize: 0, aoSize: 8 },
         ],
         [1, 0],
         [true, false],
@@ -67,8 +83,11 @@ describe("parseLotModelContainer", () => {
     expect(payload.materials).toHaveLength(2);
     expect(payload.materials[0].baseColorPng?.byteLength).toBe(32);
     expect(payload.materials[0].normalPng?.byteLength).toBe(64);
+    expect(payload.materials[0].roughnessPng?.byteLength).toBe(16);
+    expect(payload.materials[0].aoPng?.byteLength).toBe(16);
     expect(payload.materials[1].baseColorPng).toBeNull();
-    expect(payload.materials[1].normalPng?.byteLength).toBe(12);
+    expect(payload.materials[1].roughnessPng).toBeNull();
+    expect(payload.materials[1].aoPng?.byteLength).toBe(8);
     expect(payload.meshMaterialIndices).toEqual([1, 0]);
     expect(payload.meshHasUv).toEqual([true, false]);
   });
