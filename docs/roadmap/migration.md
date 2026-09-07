@@ -673,3 +673,13 @@ EP1 多 mesh 模型 0x41B1BAC0 的 section 布局：`#10 Mesh, #11 Mesh, #12 Mat
 - **Material Info Texture = 数据文件而非图片**（p09），由 OpalePlus/SimCityPak 写出，把"section→层→材质→调色板列"翻译给引擎——即 RW4 Material/0x2001A 绑定链的内容侧
 - Color control map 由引擎预处理加黑边分割元素（p28）；官方管线四步（p09）：section 定层 → 层取材质集 → 材质配调色板色 → 窗户配 interior map
 - 渲染侧：同风格建筑复用同一套 facade 纹理集合批；**Palletizing = 同纹理不同建筑/部位不同色**（p31），Base/Top 各自独立 palletize（p32）；高频细节走 normal map（p35）+ relief mapping（p36-39）
+
+### 21.5 阶段 1：slot0 调色板行语义校准（2026-09-07）
+
+**取证**（`palette_probe` 新探针，EP1 全量）：2528 个 slot0 调色板**全部为 W×4**（宽 119~435，无 512×16 标准布局，2×2 采样点展开不需要）；**columns 200620 中 192283（95.8%）row0≠row1（任一通道差 >0.1）**——旧实现取两行均值在 96% 的列上洗色。
+
+**校准**：`resolve_palette` 停用均值，顶点色烘焙改取 **row0（ColorBottom，基层色）**。row1（ColorTop 顶层）/row2-3（Interior）待阶段 2（按 mesh 材质）与阶段 4（合成着色器）接入。
+
+**新开放线索**：模型 0x63D180B9 实测 D3DCOLOR 的 **B 通道逐元素变化（1~80）且远超行数**——不是行号；假设：顶层列号（基层列=G、顶层列=B）或其它编码，待与遮罩绿通道/原版截图对拍（阶段 4 线索）。
+
+性能：烘焙成本不变（同等查表量）。

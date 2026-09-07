@@ -1894,7 +1894,13 @@ fn texture_rgba_from_resource(bytes: &[u8], type_id: u32) -> Option<(Vec<u8>, u3
     }
 }
 
-/// slot0 调色板（RW4 包裹 textureType 116）→ 每元素 RGB（row0/row1 均值）。
+/// slot0 调色板（RW4 包裹 textureType 116）→ 每元素 RGB。
+///
+/// 官方语义（migration.md §21.4）：材质元素分配调色板**列**，引擎分配**行**
+/// （行 = 色调变体）。资产调色板为 W×4：row0=ColorBottom（基层）、
+/// row1=ColorTop（顶层）、row2/3=Interior 1/2。顶点色烘焙取 **row0**——
+/// 此前取 row0/row1 均值，但 EP1 实测 96% 的列两行显著不同，均值在洗色；
+/// 顶层/内景行待阶段 2/4 的按 mesh 材质与合成着色器接入。
 fn resolve_palette(
     current: &Package,
     manager: &PackageManager,
@@ -1920,9 +1926,7 @@ fn resolve_palette(
         (0..columns)
             .map(|x| {
                 let bottom = pixels.get(x).copied().unwrap_or([1.0; 4]);
-                let top = pixels.get(columns + x).copied().unwrap_or(bottom);
-                let mean = |i: usize| ((bottom[i] + top[i]) * 0.5).clamp(0.0, 1.0);
-                [mean(0), mean(1), mean(2)]
+                [bottom[0].clamp(0.0, 1.0), bottom[1].clamp(0.0, 1.0), bottom[2].clamp(0.0, 1.0)]
             })
             .collect(),
     )
