@@ -136,8 +136,11 @@ fn main() {
                 if !u.is_finite() || !v.is_finite() {
                     return None;
                 }
-                let x = ((u.fract() * mask_w as f32) as usize).clamp(0, mask_w as usize - 1);
-                let y = ((v.fract() * mask_h as f32) as usize).clamp(0, mask_h as usize - 1);
+                // true modulo（Rust fract 保号，负 UV 会 clamp 到 0 列污染结果）
+                let fu = u - u.floor();
+                let fv = v - v.floor();
+                let x = ((fu * mask_w as f32) as usize).min(mask_w as usize - 1);
+                let y = ((fv * mask_h as f32) as usize).min(mask_h as usize - 1);
                 mask.get((y * mask_w as usize + x) * 4).copied()
             };
             println!("--- UV hypothesis solver (mask_red == D3DCOLOR.G match rate) ---");

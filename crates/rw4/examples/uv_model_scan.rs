@@ -31,6 +31,8 @@ fn main() {
             let mut total_tris = 0u32;
             let mut total_verts = 0u32;
             let mut has_uv = false;
+            let mut has_float2 = false;
+            let mut has_d3dcolor = false;
             for section in file.sections_of_type(rw4::SectionType::MESH) {
                 let Ok(mesh) = file.decode_mesh(&data, section.number) else { continue };
                 if !mesh.is_exportable() {
@@ -40,6 +42,12 @@ fn main() {
                 total_verts += mesh.vertices.len() as u32;
                 if mesh_has_uv(&mesh) {
                     has_uv = true;
+                    if mesh.vertices.iter().any(|v| v.has_float2_uv()) {
+                        has_float2 = true;
+                    }
+                }
+                if mesh.vertices.iter().any(|v| v.d3d_color_g().is_some()) {
+                    has_d3dcolor = true;
                 }
             }
             if !has_uv || total_tris < min_tris {
@@ -59,9 +67,15 @@ fn main() {
             if masks == 0 {
                 continue;
             }
+            let d3d = if has_d3dcolor { "+G" } else { "-G" };
+            let uv_type = if has_float2 {
+                format!("float2{d3d}")
+            } else {
+                format!("f4small{d3d}")
+            };
             found.push((
                 entry.id.instance,
-                package_name.clone(),
+                format!("{package_name} {uv_type}"),
                 total_tris,
                 total_verts,
                 masks,

@@ -766,3 +766,10 @@ EP1 模型结构分布（shape histogram）：894 个 0/0、**1025 个 1 mesh/1 
 - **facade 大坐标（2532 栋）：FLOAT4 与世界坐标线性**（逐面片不同斜率 0.18~0.49 UV/m 量级），但穷举尺度搜索（fract(f/s)，s∈[1,1200]，对 slot1/slot5 遮罩红 vs 顶点 D3DCOLOR.G 校验）全部为噪声底（~3%）——**缺的不是尺度而是图集参数**
 - 材质段 28B 头/附加数据/尾数据均无裁剪窗（全零/标志位）→ 裁剪窗与图集 cell 参数在 **shader-def 资源**（slot 0x2D 指向 0x259E950F 等，不在 EP1/app/DLC0，需定位全局 shader 包并解析）
 - 工具：`facade_probe`（FLOAT4 分布 + 逐顶点 dump + 假设求解器/尺度网格搜索）；前提校验注意：0xC2D6D136 等部分模型顶点**无 D3DCOLOR**，此时 LUT baseColor 是唯一着色
+
+### 24.y 阶段 4 取证修正（2026-09-08 续）
+
+- **f4small/huge 是 mesh 级属性**：0xC2D6D136 主 mesh #5（4563 verts）实为 facade 大坐标（f4 含 ±1900），仅 20 顶点的 mesh #6 是小 UV——此前"模型级"统计有误导，真实贴图覆盖需按 mesh 重算（待做）
+- shader-def（EP1 全部材质仅引用 **2 个**：0x259E950F/0x38869BDA）**不在任何游戏包内**（Game/Graphics/App/Locale/RegionTerrain 全查无）——疑似内嵌 SimCity.exe；工具 `shader_def_scan`
+- 求解器修复 true modulo（Rust fract 保号 bug）后 facade 尺度搜索仍为噪声；oracle（遮罩红==顶点G）在 facade 上未验证成立，需要一个「已知 UV + D3DCOLOR + 同包遮罩」的阳性对照
+- f2/f3 与 f0/f1 存在近常数倍率关系（~2.0-2.2，双通道=同投影不同世界尺度），支持"双 UV 通道 = 两层材质各自投影"模型
