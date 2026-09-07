@@ -132,12 +132,12 @@ function buildParamsTexture(
 function attachTintShader(
   material: ThreeNamespace.MeshStandardMaterial,
   uniforms: {
-    tintMap: { value: ThreeNamespace.Texture | null };
-    paletteMap: { value: ThreeNamespace.Texture | null };
+    tintMap: { value: ThreeNamespace.Texture };
+    paletteMap: { value: ThreeNamespace.Texture };
     paramsMap: { value: ThreeNamespace.Texture | null };
-  } | undefined,
+  },
+  paramsReady: boolean,
 ) {
-  if (!uniforms) return;
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -162,13 +162,20 @@ varying vec2 vTintUv;
 varying float vMatIndex;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
-uniform sampler2D paramsMap;`,
+#ifdef TINT_PARAMS
+uniform sampler2D paramsMap;
+#endif`,
       )
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
+#ifdef TINT_PARAMS
         vec4 xform = texelFetch(paramsMap, ivec2(int(vMatIndex + 0.5), 1), 0);
         vec4 palOrigin = texelFetch(paramsMap, ivec2(int(vMatIndex + 0.5), 2), 0);
+#else
+        vec4 xform = vec4(1.0, 1.0, 0.0, 0.0);
+        vec4 palOrigin = vec4(0.0);
+#endif
         vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
         vec4 tintValues = texture2D(tintMap, tUv);
         if (tintValues.a < 0.5) discard;
@@ -215,35 +222,33 @@ async function rebuild() {
   const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
     payload?.materials ?? []
   ).map(() => []);
-  // uvKind=2（facade tint 着色器）的 uniform 组（贴图异步填充）
-  const tintUniforms = (payload?.materials ?? []).map((material) => {
-    const uniforms = {
-      tintMap: { value: null as ThreeNamespace.Texture | null },
-      paletteMap: { value: null as ThreeNamespace.Texture | null },
-      paramsMap: {
-        value: buildParamsTexture(THREE, material),
-      },
-    };
-    const loader = new THREE.TextureLoader();
-    const load = (bytes: Uint8Array<ArrayBuffer>, target: { value: ThreeNamespace.Texture | null }, srgb: boolean) => {
+  // uvKind=2（facade tint 着色器）：贴图**预加载完成**后才建材质——
+  // 否则首次编译时 uniform 为 null，采样 alpha=0 → 全部 discard（模型隐形）
+  const loader = new THREE.TextureLoader();
+  const loadTex = (bytes: Uint8Array<ArrayBuffer>) =>
+    new Promise<ThreeNamespace.Texture>((resolve, reject) => {
       const url = pngBlobUrl(bytes);
       textureUrls.push(url);
       loader.load(
         url,
         (texture) => {
-          if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
           texture.wrapS = THREE.ClampToEdgeWrapping;
           texture.wrapT = THREE.ClampToEdgeWrapping;
-          target.value = texture;
+          resolve(texture);
         },
         undefined,
-        () => {},
+        reject,
       );
-    };
-    if (material.tintPng) load(material.tintPng, uniforms.tintMap, false);
-    if (material.palettePng) load(material.palettePng, uniforms.paletteMap, false);
-    return uniforms;
-  });
+    });
+  const tintResolved = await Promise.all(
+    (payload?.materials ?? []).map(async (material) => ({
+      tintTex: material.tintPng ? await loadTex(material.tintPng) : null,
+      paletteTex: material.palettePng ? await loadTex(material.palettePng) : null,
+      normalTex: material.normalPng ? await loadTex(material.normalPng) : null,
+      paramsTex: buildParamsTexture(THREE, material),
+    })),
+  );
+  if (token !== rebuildToken) return;
   for (const [index, object] of modelObjects.entries()) {
     const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
     const uvKind = payload?.meshUvKinds[index] ?? 0;
@@ -254,34 +259,27 @@ async function rebuild() {
         mesh.material = whiteMaterial;
         return;
       }
-      if (uvKind === 2) {
+      const tint = tintResolved[materialIndex];
+      if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
         // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
         const tinted = new THREE.MeshStandardMaterial({
           roughness: 0.9,
           metalness: 0,
           side: THREE.DoubleSide,
+          normalMap: tint.normalTex,
         });
         tinted.defines = { USE_UV: "" };
-        attachTintShader(tinted, tintUniforms[materialIndex]);
+        if (tint.paramsTex) tinted.defines.TINT_PARAMS = "";
+        attachTintShader(
+          tinted,
+          {
+            tintMap: { value: tint.tintTex },
+            paletteMap: { value: tint.paletteTex },
+            paramsMap: { value: tint.paramsTex },
+          },
+          Boolean(tint.paramsTex),
+        );
         mesh.material = tinted;
-        const normalPng = payload?.materials[materialIndex]?.normalPng;
-        if (normalPng) {
-          const url = pngBlobUrl(normalPng);
-          textureUrls.push(url);
-          new THREE.TextureLoader().load(
-            url,
-            (texture) => {
-              if (token !== rebuildToken) {
-                texture.dispose();
-                return;
-              }
-              tinted.normalMap = texture;
-              tinted.needsUpdate = true;
-            },
-            undefined,
-            () => {},
-          );
-        }
         return;
       }
       // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
