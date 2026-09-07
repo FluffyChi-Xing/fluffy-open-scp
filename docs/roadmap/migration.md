@@ -759,3 +759,10 @@ EP1 模型结构分布（shape histogram）：894 个 0/0、**1025 个 1 mesh/1 
 金样本 0x63D180B9：payload 627KB→**880KB**（+roughness/AO 两张 512² 灰度 PNG），全链 16.8ms（debug，v2 16.7ms——PNG 编码增量可忽略）。
 
 验证：workspace 31 个测试二进制全绿；vue-tsc + vitest 73（容器测试更新至 v3 四贴图断言）。
+
+### 24.x 阶段 4 前置取证（进行中，2026-09-08）
+
+- **f4small 模型（~332 栋）：FLOAT4 已是最终 UV**。金样本 0xC2D6D136 实测 f0==f2、f1==f3（双通道同值），范围 [0..2]（含 wrap），v014 干净 (0,1)——当前管线直接采样即可，配合 LUT baseColor 已正确渲染
+- **facade 大坐标（2532 栋）：FLOAT4 与世界坐标线性**（逐面片不同斜率 0.18~0.49 UV/m 量级），但穷举尺度搜索（fract(f/s)，s∈[1,1200]，对 slot1/slot5 遮罩红 vs 顶点 D3DCOLOR.G 校验）全部为噪声底（~3%）——**缺的不是尺度而是图集参数**
+- 材质段 28B 头/附加数据/尾数据均无裁剪窗（全零/标志位）→ 裁剪窗与图集 cell 参数在 **shader-def 资源**（slot 0x2D 指向 0x259E950F 等，不在 EP1/app/DLC0，需定位全局 shader 包并解析）
+- 工具：`facade_probe`（FLOAT4 分布 + 逐顶点 dump + 假设求解器/尺度网格搜索）；前提校验注意：0xC2D6D136 等部分模型顶点**无 D3DCOLOR**，此时 LUT baseColor 是唯一着色
