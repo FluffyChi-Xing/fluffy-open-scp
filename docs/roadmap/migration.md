@@ -831,3 +831,15 @@ clip(baseTintValues.a - 0.5f);                                // A 通道 = 元�
 金样本 0x63D180B9：18.2ms（debug，v3 16.8ms——两次纹理查表 ×4682 顶点，开销可忽略）。
 
 验证：workspace 31 个测试二进制全绿。待用户目检 facade 建筑颜色（此版本顶点色 = palette 查色链完整输出，含 tint.rg 空间渐变与 b 亮度）。
+
+## 26. 阶段 4 完成：逐像素 tint 着色器（LOTM v4，2026-09-08 第二十轮）
+
+用户目检：顶点色烘焙后建筑脱离纯色块，但缺逐像素纹理与法线 → 需要把 building4 公式下沉到片元着色器。
+
+- **容器 v4**：每材质 6 张 PNG（base/normal/rough/ao/**tintRaw**/**palette**）+ **slot0 参数表 f32** + paramCols；每 mesh `u8 uv_kind`（0 无 / 1 常规贴图 / 2 tint 着色器）；GLB 增加 **TEXCOORD_1 = (materialIndex/255, 0)**（gltf.rs `export_glb_with_colors` 新参）
+- **前端 tint 着色器**（`attachTintShader`，onBeforeCompile 逐像素复刻 building4）：`texelFetch(paramsMap, (matIndex,1))` 取 regionXform → `tUv = frac(vTintUv)×X.xy + X.zw` → tintMap 采样（**A<0.5 discard 镂空**）→ `paletteMap(palOrigin + tint.rg×0.125 + InvSize×0.25)` 查最终色 ×(tint.b×2)；法线图同 UV 重采样 + perturbNormal2Arb；paramsMap = DataTexture(cols×4, RGBA Float, Nearest)
+- uvKind 路由：2 = tinted（vertexColors 关、材质色全由着色器算）；1 = 常规贴图链（LUT baseColor 等）；0 = 白模
+
+性能：金样本 payload 858KB→1.2MB（+tint/palette PNG），22.3ms。覆盖率：**全部带 Float4 材质资产（含 2532 栋 facade）逐像素上色** —— 50% 目标达成且超额。
+
+验证：workspace 31 + 前端 73 全绿（容器测试更新至 v4 六贴图 + uvKind）。

@@ -361,13 +361,21 @@ export interface LotMaterialTextures {
   roughnessPng: Uint8Array<ArrayBuffer> | null;
   /** slot2 alpha = AO 灰度。 */
   aoPng: Uint8Array<ArrayBuffer> | null;
+  /** slot1 原始 color control map（tint 着色器查表键，§24.w）。 */
+  tintPng: Uint8Array<ArrayBuffer> | null;
+  /** slot4 原始 256×8 tint palette。 */
+  palettePng: Uint8Array<ArrayBuffer> | null;
+  /** slot0 参数表 f32（cols×4×float4：row1=regionXform、row2=palette 原点）。 */
+  paramsF32: Float32Array | null;
+  paramCols: number;
 }
 /**
- * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v3）。
- * 容器（小端）：`magic("LOTM") | version=3 | mesh_count`，每 mesh
- * `u32 len + GLB`（COLOR_0 顶点色按**该 mesh 材质**调色板烘焙）；
- * `material_count`，每材质 4 张 `u32 len + PNG`（base/normal/rough/ao）；
- * 每 mesh `u32 material_index + u8 has_uv`（0x2001A 绑定，见 §21.1）。
+ * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v4）。
+ * 容器（小端）：`magic("LOTM") | version=4 | mesh_count`，每 mesh
+ * `u32 len + GLB`（COLOR_0 调色板烘焙 + TEXCOORD_1.x=materialIndex/255）；
+ * `material_count`，每材质 6 张 PNG（base/normal/rough/ao/tintRaw/palette）+
+ * 参数表 f32 + paramCols；每 mesh `u32 material_index + u8 uv_kind`
+ * （0 无 / 1 常规贴图 / 2 tint 着色器）。
  */
 export interface LotModelPayload {
   /** 每个网格一个 GLB ArrayBuffer。 */
@@ -376,8 +384,8 @@ export interface LotModelPayload {
   materials: LotMaterialTextures[];
   /** 每 mesh 的材质下标（与 glbs 同序）。 */
   meshMaterialIndices: number[];
-  /** 每 mesh 可贴图判定（FLOAT2 或 FLOAT4≤8）。 */
-  meshHasUv: boolean[];
+  /** 每 mesh UV 类型（0 无 / 1 常规贴图 / 2 tint 着色器）。 */
+  meshUvKinds: number[];
 }
 export interface RasterPreviewData {
   rasterType: number;

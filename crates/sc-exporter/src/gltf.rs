@@ -358,7 +358,7 @@ pub fn export_glb(
     skeleton: Option<&DecodedSkeleton>,
     anims: &[DecodedAnim],
 ) -> GlbOutput {
-    export_glb_with_colors(mesh, skeleton, anims, EmbeddedTextures::default(), None)
+    export_glb_with_colors(mesh, skeleton, anims, EmbeddedTextures::default(), None, None)
 }
 
 /// Optional PNG images embedded in the GLB BIN chunk.
@@ -375,17 +375,21 @@ pub fn export_glb_with_textures(
     anims: &[DecodedAnim],
     textures: EmbeddedTextures<'_>,
 ) -> GlbOutput {
-    export_glb_with_colors(mesh, skeleton, anims, textures, None)
+    export_glb_with_colors(mesh, skeleton, anims, textures, None, None)
 }
 
 /// Export a mesh as GLB with embedded textures and/or per-vertex linear RGB
 ///（COLOR_0，three.js GLTFLoader 映射为 `color` 顶点属性）。
+///
+/// `mat_indices`：逐顶点材质索引（D3DCOLOR.G），写入 TEXCOORD_1.x（/255 归一），
+/// 供前端 tint 着色器按顶点选 regionXform。
 pub fn export_glb_with_colors(
     mesh: &DecodedMesh,
     skeleton: Option<&DecodedSkeleton>,
     anims: &[DecodedAnim],
     textures: EmbeddedTextures<'_>,
     colors: Option<&[[f32; 3]]>,
+    mat_indices: Option<&[f32]>,
 ) -> GlbOutput {
     let v_count = mesh.vertices.len();
 
@@ -462,6 +466,18 @@ pub fn export_glb_with_colors(
         offset
     });
     let color_len = v_count * 12;
+
+    // TEXCOORD_1 = (materialIndex/255, 0)：前端 tint 着色器的逐顶点材质索引
+    let texcoord1_offset = mat_indices.map(|indices| {
+        pad4(&mut bin);
+        let offset = bin.len();
+        for v in 0..v_count {
+            let m = indices.get(v).copied().unwrap_or(0.0) / 255.0;
+            put_f32s(&mut bin, &[m, 0.0]);
+        }
+        offset
+    });
+    let texcoord1_len = v_count * 8;
 
     let idx_offset = bin.len();
     let mut idx_count = 0usize;
@@ -557,6 +573,8 @@ pub fn export_glb_with_colors(
         uv_len,
         color_offset,
         color_len,
+        texcoord1_offset,
+        texcoord1_len,
         idx_offset,
         idx_len,
         bin_len,
@@ -601,6 +619,8 @@ fn build_json(
     uv_len: usize,
     color_offset: Option<usize>,
     color_len: usize,
+    texcoord1_offset: Option<usize>,
+    texcoord1_len: usize,
     idx_offset: usize,
     idx_len: usize,
     buffer_length: usize,
@@ -628,6 +648,16 @@ fn build_json(
     ];
 
     let mut primitive_attrs = json!({"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2});
+
+    let mut texcoord1_acc = None;
+    if let Some(offset) = texcoord1_offset {
+        let bv = buffer_views.len();
+        buffer_views.push(json!({"buffer": 0, "byteOffset": offset, "byteLength": texcoord1_len, "target": TARGET_ARRAY}));
+        let acc = accessors.len();
+        accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC2"}));
+        primitive_attrs["TEXCOORD_1"] = json!(acc);
+        texcoord1_acc = Some(acc);
+    }
 
     if let Some(offset) = color_offset {
         let bv = buffer_views.len();

@@ -446,7 +446,7 @@ function mockDataSource(): OpenScpDataSource {
       const out = new ArrayBuffer(16);
       const view = new DataView(out);
       view.setUint32(0, 0x4d544f4c, true); // "LOTM"
-      view.setUint32(4, 3, true);
+      view.setUint32(4, 4, true);
       view.setUint32(8, 0, true); // mesh_count
       view.setUint32(12, 0, true); // material_count
       return out;

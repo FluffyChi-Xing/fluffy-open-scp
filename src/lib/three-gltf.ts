@@ -24,7 +24,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     throw new Error("lot model payload magic mismatch");
   }
   const version = readU32();
-  if (version !== 3) {
+  if (version !== 4) {
     throw new Error(`unsupported lot model payload version ${version}`);
   }
   const meshCount = readU32();
@@ -50,24 +50,44 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
       offset += length;
       return new Uint8Array(bytes);
     };
+    const baseColorPng = readPng();
+    const normalPng = readPng();
+    const roughnessPng = readPng();
+    const aoPng = readPng();
+    const tintPng = readPng();
+    const palettePng = readPng();
+    const paramsLength = readU32();
+    let paramsF32: Float32Array | null = null;
+    if (paramsLength > 0) {
+      if (offset + paramsLength > buffer.byteLength) {
+        throw new Error("lot model payload params out of bounds");
+      }
+      paramsF32 = new Float32Array(buffer.slice(offset, offset + paramsLength));
+      offset += paramsLength;
+    }
+    const paramCols = readU32();
     materials.push({
-      baseColorPng: readPng(),
-      normalPng: readPng(),
-      roughnessPng: readPng(),
-      aoPng: readPng(),
+      baseColorPng,
+      normalPng,
+      roughnessPng,
+      aoPng,
+      tintPng,
+      palettePng,
+      paramsF32,
+      paramCols,
     });
   }
   const meshMaterialIndices: number[] = [];
-  const meshHasUv: boolean[] = [];
+  const meshUvKinds: number[] = [];
   for (let index = 0; index < meshCount; index += 1) {
     if (offset + 5 > buffer.byteLength) {
       throw new Error("lot model payload mesh attributes truncated");
     }
     meshMaterialIndices.push(readU32());
-    meshHasUv.push(view.getUint8(offset) !== 0);
+    meshUvKinds.push(view.getUint8(offset));
     offset += 1;
   }
-  return { glbs, materials, meshMaterialIndices, meshHasUv };
+  return { glbs, materials, meshMaterialIndices, meshUvKinds };
 }
 
 /** PNG 字节 → blob URL（TextureLoader 可直接加载，免去 data:URL base64 再解码）。 */

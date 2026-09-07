@@ -474,10 +474,11 @@ pub struct ResolveNamesRequest {
 
 /// PE 精细渲染二进制容器魔数："LOTM"（小端字节序）。
 ///
-/// v3 布局：`magic | version | mesh_count`，每 mesh `u32 len + GLB`
-/// （COLOR_0 按**该 mesh 材质**调色板烘焙）；`material_count`，每材质
-/// 4 张 `u32 len + PNG`（baseColor/normal/roughness/ao）；每 mesh
-/// `u32 material_index + u8 has_uv`。解析见前端 `three-gltf.ts`。
+/// v4 布局：`magic | version | mesh_count`，每 mesh `u32 len + GLB`
+/// （COLOR_0 调色板烘焙 + TEXCOORD_1.x=materialIndex/255）；`material_count`，
+/// 每材质 6 张 `u32 len + PNG`（base/normal/rough/ao/tintRaw/palette）+
+/// `u32 params_len + f32[] + u32 param_cols`（slot0 参数表）；每 mesh
+/// `u32 material_index + u8 uv_kind(0无/1贴图/2tint)`。解析见 `three-gltf.ts`。
 pub const LOT_MODEL_PAYLOAD_MAGIC: u32 = 0x4D54_4F4C;
 
 /// 单个网格 GLB 的体积上限（异常模型防御，对齐原 OBJ 8MB 量级）。
@@ -1957,6 +1958,13 @@ struct MaterialResources {
     normal_png: Option<Vec<u8>>,
     roughness_png: Option<Vec<u8>>,
     ao_png: Option<Vec<u8>>,
+    /// slot1 原始 color control map（tint 着色器查表键）
+    tint_png: Option<Vec<u8>>,
+    /// slot4 原始 256×8 调色板
+    palette_png: Option<Vec<u8>>,
+    /// slot0 参数表 f32 字节（row-major cols×4）
+    params_f32: Option<Vec<u8>>,
+    param_cols: usize,
 }
 
 /// 从 RGBA 取单通道转灰度 PNG（`invert` 时按 255-v 反转）。
@@ -2018,6 +2026,10 @@ fn resolve_material_resources(
         normal_png: None,
         roughness_png: None,
         ao_png: None,
+        tint_png: None,
+        palette_png: None,
+        params_f32: None,
+        param_cols: 0,
     };
     if let Some(instance) = slots
         .iter()
@@ -2082,6 +2094,17 @@ fn resolve_material_resources(
         (params, tint_raw.take(), palette_raw)
     {
         if param_cols > 0 {
+            resources.tint_png =
+                encode_rgba_png_bytes(tint_w, tint_h, tint_rgba.clone()).ok();
+            resources.palette_png = encode_rgba_png_bytes(pal_w, pal_h, pal_rgba.clone()).ok();
+            let mut f32_bytes = Vec::with_capacity(params_table.len() * 16);
+            for texel in &params_table {
+                for value in texel {
+                    f32_bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+            resources.params_f32 = Some(f32_bytes);
+            resources.param_cols = param_cols;
             resources.bake = Some(MaterialBake {
                 params: params_table,
                 param_cols,
@@ -2105,6 +2128,31 @@ fn resolve_material_resources(
         resources.roughness_png = channel_gray_png(&rgba, width, height, 2, true);
     }
     resources
+}
+
+/// 逐 mesh UV 类型：0=无 / 1=常规贴图（FLOAT2 或 FLOAT4≤8）/ 2=tint 着色器
+/// （FLOAT4 大坐标 facade 世界投影）。
+fn mesh_uv_kind(mesh: &rw4::DecodedMesh) -> u8 {
+    let mut kind = 0u8;
+    for vertex in &mesh.vertices {
+        for (element, value) in &vertex.components {
+            if element.usage != rw4::DeclarationUsage::TexCoord {
+                continue;
+            }
+            match value {
+                rw4::ComponentValue::Float2(_) => kind = kind.max(1),
+                rw4::ComponentValue::Float4(f) => {
+                    if f[0].abs() <= 8.0 && f[1].abs() <= 8.0 {
+                        kind = kind.max(1);
+                    } else {
+                        kind = kind.max(2);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    kind
 }
 
 /// 单 mesh 可贴图判定：有 FLOAT2 真 UV；或仅 FLOAT4（facade 世界投影）
@@ -2265,7 +2313,7 @@ fn build_lot_model_payload(
 
     let mut glbs: Vec<Vec<u8>> = Vec::new();
     let mut mesh_material: Vec<u32> = Vec::new();
-    let mut mesh_uv_flags: Vec<bool> = Vec::new();
+    let mut mesh_uv_kinds: Vec<u8> = Vec::new();
     let mut material_sections: Vec<u32> = Vec::new();
     let mut material_resources: Vec<MaterialResources> = Vec::new();
 
@@ -2312,24 +2360,30 @@ fn build_lot_model_payload(
                 .as_ref()
                 .and_then(|palette| mesh_vertex_colors(&mesh, palette)),
         };
+        let mat_indices: Vec<f32> = mesh
+            .vertices
+            .iter()
+            .map(|v| f32::from(v.d3d_color_g().unwrap_or(0)))
+            .collect();
         let glb = sc_exporter::export_glb_with_colors(
             &mesh,
             None,
             &[],
             sc_exporter::EmbeddedTextures::default(),
             colors.as_deref(),
+            Some(&mat_indices),
         );
         if glb.bytes.len() > MESH_GLB_MAX_BYTES {
             continue;
         }
         glbs.push(glb.bytes);
         mesh_material.push(material_index);
-        mesh_uv_flags.push(mesh_has_uv(&mesh));
+        mesh_uv_kinds.push(mesh_uv_kind(&mesh));
     }
 
     let mut out = Vec::new();
     out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
-    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(&4u32.to_le_bytes());
     out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
     for glb in &glbs {
         out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
@@ -2342,6 +2396,8 @@ fn build_lot_model_payload(
             &material.normal_png,
             &material.roughness_png,
             &material.ao_png,
+            &material.tint_png,
+            &material.palette_png,
         ] {
             match png {
                 Some(bytes) => {
@@ -2351,10 +2407,18 @@ fn build_lot_model_payload(
                 None => out.extend_from_slice(&0u32.to_le_bytes()),
             }
         }
+        match &material.params_f32 {
+            Some(bytes) => {
+                out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                out.extend_from_slice(bytes);
+            }
+            None => out.extend_from_slice(&0u32.to_le_bytes()),
+        }
+        out.extend_from_slice(&(material.param_cols as u32).to_le_bytes());
     }
-    for (index, has_uv) in mesh_material.iter().zip(&mesh_uv_flags) {
+    for (index, uv_kind) in mesh_material.iter().zip(&mesh_uv_kinds) {
         out.extend_from_slice(&index.to_le_bytes());
-        out.push(u8::from(*has_uv));
+        out.push(*uv_kind);
     }
     out
 }
@@ -3391,7 +3455,7 @@ mod lot_payload_tests {
             u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap())
         };
         assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
-        assert_eq!(read_u32(4), 3, "container version 3");
+        assert_eq!(read_u32(4), 4, "container version 4");
         let mesh_count = read_u32(8) as usize;
         assert_eq!(mesh_count, 1, "1 exportable mesh");
 
@@ -3404,10 +3468,13 @@ mod lot_payload_tests {
         offset += 4;
         assert_eq!(material_count, 1, "1 material via assignment");
         for _ in 0..material_count {
-            for _ in 0..4 {
-                // baseColor / normal / roughness / ao
+            for _ in 0..6 {
+                // baseColor / normal / roughness / ao / tint / palette
                 offset += 4 + read_u32(offset) as usize;
             }
+            // params f32 + paramCols
+            offset += 4 + read_u32(offset) as usize;
+            offset += 4;
         }
         let mesh0_material = read_u32(offset) as usize;
         let mesh0_has_uv = payload[offset + 4] != 0;
