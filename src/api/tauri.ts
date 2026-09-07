@@ -351,31 +351,38 @@ export interface LotEditorSession {
   pathPairs: number[];
   diagnostics: string[];
 }
-/** 单个材质的贴图集（官方 Material Set 通道拆分，见 §21.4/§24）。 */
+/** 单个材质的贴图集（官方 Material Set 通道拆分，§27 源码实证语义）。 */
 export interface LotMaterialTextures {
-  /** slot1 区域遮罩红通道灰度（元素分割索引）。 */
+  /** slot1 漫反射贴图（仅无 slot0 参数表的 simple diffuse 材质下发）。 */
   baseColorPng: Uint8Array<ArrayBuffer> | null;
-  /** slot2 法线（解 Swizzle RGB）。 */
+  /** slot2 法线（标准切线空间 RGB，B=沿法线轴；A=spec）。 */
   normalPng: Uint8Array<ArrayBuffer> | null;
   /** slot3 shader map B 反转 = 粗糙度灰度。 */
   roughnessPng: Uint8Array<ArrayBuffer> | null;
   /** slot2 alpha = AO 灰度。 */
   aoPng: Uint8Array<ArrayBuffer> | null;
-  /** slot1 原始 color control map（tint 着色器查表键，§24.w）。 */
+  /** slot1 原始 color control map（tint 着色器查表键）。 */
   tintPng: Uint8Array<ArrayBuffer> | null;
   /** slot4 原始 256×8 tint palette。 */
   palettePng: Uint8Array<ArrayBuffer> | null;
-  /** slot0 参数表 f32（cols×4×float4：row1=regionXform、row2=palette 原点）。 */
+  /**
+   * slot0 参数表 f32（cols×4 float4，源码行绑定）：row0=(palU,palU2,
+   * interiorScale,interiorOffset)、row1=regionXform(base)、row2=regionXform2(top)、
+   * row3=(tilePadding,interiorRoomInvSize)。palette V=buildingVariation
+   * 实例行不在表内。
+   */
   paramsF32: Float32Array | null;
   paramCols: number;
 }
 /**
- * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v4）。
- * 容器（小端）：`magic("LOTM") | version=4 | mesh_count`，每 mesh
- * `u32 len + GLB`（COLOR_0 调色板烘焙 + TEXCOORD_1.x=materialIndex/255）；
+ * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v5）。
+ * 容器（小端）：`magic("LOTM") | version=5 | mesh_count`，每 mesh
+ * `u32 len + GLB`（COLOR_0 烘焙 + TEXCOORD_1.x=materialIndex/255 +
+ * TEXCOORD_2/3=facade 世界投影 UV）；
  * `material_count`，每材质 6 张 PNG（base/normal/rough/ao/tintRaw/palette）+
  * 参数表 f32 + paramCols；每 mesh `u32 material_index + u8 uv_kind`
- * （0 无 / 1 常规贴图 / 2 tint 着色器）。
+ * （0 无 / 1 常规贴图 / 2 tint 着色器）；末尾 `u32 diag_len + UTF-8`
+ * 槽位诊断文本（mesh↔material↔slot 贴图及来源包）。
  */
 export interface LotModelPayload {
   /** 每个网格一个 GLB ArrayBuffer。 */
@@ -386,6 +393,8 @@ export interface LotModelPayload {
   meshMaterialIndices: number[];
   /** 每 mesh UV 类型（0 无 / 1 常规贴图 / 2 tint 着色器）。 */
   meshUvKinds: number[];
+  /** 模型槽位诊断文本（info 面板展示/复制）。 */
+  diagnostics: string;
 }
 export interface RasterPreviewData {
   rasterType: number;

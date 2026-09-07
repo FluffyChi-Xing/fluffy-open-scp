@@ -42,6 +42,9 @@ const viewer = shallowRef<ThreeViewer | null>(null);
 const sceneReady = ref(false);
 const lightPanelOpen = ref(false);
 const lodPanelOpen = ref(false);
+const infoPanelOpen = ref(false);
+const infoCopied = ref(false);
+let infoCopiedTimer: ReturnType<typeof setTimeout> | undefined;
 const lightAzimuth = ref(45);
 const lightElevation = ref(55);
 /** 日/夜模拟：全局环境亮度倍率（1 = 当前观感，0 ≈ 夜，2 ≈ 正午）。 */
@@ -51,6 +54,28 @@ watch([lightAzimuth, lightElevation], () => {
   viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
 watch(brightness, () => applyBrightness());
+
+/** 复制模型槽位诊断（mesh/material/texture 及来源包关系），供复盘。 */
+async function copyDiagnostics() {
+  const text = props.modelPayload?.diagnostics ?? "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // 剪贴板 API 不可用（非安全上下文等）时的兜底
+    const helper = document.createElement("textarea");
+    helper.value = text;
+    document.body.appendChild(helper);
+    helper.select();
+    document.execCommand("copy");
+    helper.remove();
+  }
+  infoCopied.value = true;
+  clearTimeout(infoCopiedTimer);
+  infoCopiedTimer = setTimeout(() => {
+    infoCopied.value = false;
+  }, 1600);
+}
 
 const GROUP_KEYS = [
   "model",
@@ -95,6 +120,7 @@ onBeforeUnmount(() => {
   rebuildToken += 1;
   viewer.value?.dispose();
   viewer.value = null;
+  clearTimeout(infoCopiedTimer);
   unitObjects.clear();
   for (const url of textureUrls) URL.revokeObjectURL(url);
   textureUrls.length = 0;
@@ -125,9 +151,11 @@ function buildParamsTexture(
 }
 
 /**
- * tint 着色器注入：逐像素复刻 building4 链（§24.w）。
+ * tint 着色器注入：逐像素复刻 building4 链（§27 源码逐字）。
+ * TEXCOORD_2 = facade 世界投影 UV（Float4.xy），TEXCOORD_1.x = materialIndex。
  * fragment：baseUv = frac(vTintUv)*regionXform.xy + regionXform.zw → tint 查表
- * → palette 查色 ×(tint.b*2)，A<0.5 镂空 discard；法线图同 UV 重采样。
+ * → palette 查色（palU=row0.x + tint.r×sub；palV=variation 行 0 + tint.g×sub）
+ * ×(tint.b*2)，A<0.5 镂空 discard；法线图同 UV 重采样。
  */
 function attachTintShader(
   material: ThreeNamespace.MeshStandardMaterial,
@@ -148,6 +176,7 @@ function attachTintShader(
         "#include <common>",
         `#include <common>
 attribute vec2 uv1;
+attribute vec2 uv2;
 uniform float uParamCols;
 varying vec2 vTintUv;
 varying float vMatU;`,
@@ -155,7 +184,7 @@ varying float vMatU;`,
       .replace(
         "#include <uv_vertex>",
         `#include <uv_vertex>
-vTintUv = uv;
+vTintUv = uv2;
 vMatU = (uv1.x * 255.0 + 0.5) / uParamCols;`,
       );
     shader.fragmentShader = shader.fragmentShader
@@ -175,7 +204,7 @@ uniform sampler2D paramsMap;
         `#include <map_fragment>
 #ifdef TINT_PARAMS
         vec4 xform = texture2D(paramsMap, vec2(vMatU, 0.375));
-        vec4 palOrigin = texture2D(paramsMap, vec2(vMatU, 0.625));
+        vec4 palOrigin = texture2D(paramsMap, vec2(vMatU, 0.125));
 #else
         vec4 xform = vec4(1.0, 1.0, 0.0, 0.0);
         vec4 palOrigin = vec4(0.0);
@@ -183,8 +212,8 @@ uniform sampler2D paramsMap;
         vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
         vec4 tintValues = texture2D(tintMap, tUv);
         if (tintValues.a < 0.5) discard;
-        vec2 sub = tintValues.rg * 0.125 + vec2(1.0 / 1024.0, 1.0 / 32.0);
-        vec4 palColor = texture2D(paletteMap, palOrigin.xy + sub);
+        vec2 sub = tintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
+        vec4 palColor = texture2D(paletteMap, vec2(palOrigin.x + sub.x, sub.y));
         diffuseColor.rgb *= palColor.rgb * (tintValues.b * 2.0);`,
       )
       .replace(
@@ -242,6 +271,9 @@ async function rebuild() {
         (texture) => {
           texture.wrapS = THREE.ClampToEdgeWrapping;
           texture.wrapT = THREE.ClampToEdgeWrapping;
+          // tint/palette/normal 按后端 bake 同坐标系采样（原始 UV，行 0 =
+          // PNG 首行），不做 three 默认的 flipY 翻转。
+          texture.flipY = false;
           resolve(texture);
         },
         undefined,
@@ -590,6 +622,16 @@ watch(() => props.selectedId, applySelection);
       </button>
       <button
         type="button"
+        :aria-label="$t('package.modelInfo')"
+        :title="$t('package.modelInfo')"
+        :aria-pressed="infoPanelOpen"
+        :class="{ active: infoPanelOpen }"
+        @click="infoPanelOpen = !infoPanelOpen"
+      >
+        <FIcon name="Info" :size="13" aria-label="" />
+      </button>
+      <button
+        type="button"
         :aria-label="$t('package.resetView')"
         :title="$t('package.resetView')"
         @click="viewer?.resetView()"
@@ -648,6 +690,34 @@ watch(() => props.selectedId, applySelection);
         <span>{{ $t("package.lightBrightness") }}</span>
         <input v-model.number="brightness" type="range" min="0" max="2" step="0.05" />
       </label>
+    </div>
+    <div v-if="infoPanelOpen" class="viewport-overlay info-panel">
+      <div class="info-card" role="dialog" :aria-label="$t('package.modelInfo')">
+        <header class="lod-card-header">
+          <span>{{ $t("package.modelInfo") }}</span>
+          <div class="info-header-actions">
+            <button
+              type="button"
+              class="lod-close"
+              :title="$t('package.copyDiagnostics')"
+              :aria-label="$t('package.copyDiagnostics')"
+              :disabled="!modelPayload?.diagnostics"
+              @click="copyDiagnostics"
+            >
+              <FIcon :name="infoCopied ? 'Check' : 'Copy'" :size="13" aria-label="" />
+            </button>
+            <button
+              type="button"
+              class="lod-close"
+              :aria-label="$t('common.close')"
+              @click="infoPanelOpen = false"
+            >
+              <FIcon name="X" :size="13" aria-label="" />
+            </button>
+          </div>
+        </header>
+        <pre class="info-pre">{{ modelPayload?.diagnostics || $t("package.modelInfoEmpty") }}</pre>
+      </div>
     </div>
     <div class="viewport-overlay viewport-visibility" role="group" :aria-label="$t('package.visibilityToggles')">
       <button
@@ -834,6 +904,35 @@ watch(() => props.selectedId, applySelection);
 .lod-tile-missing {
   color: var(--subtle-foreground);
   font-size: 10.5px;
+}
+.info-panel {
+  right: 10px;
+  top: 48px;
+}
+.info-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg, 0 8px 28px rgb(0 0 0 / 0.35));
+  display: grid;
+  gap: 8px;
+  max-height: min(60vh, 520px);
+  padding: 12px;
+  width: min(540px, calc(100vw - 32px));
+}
+.info-header-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+.info-pre {
+  color: var(--foreground);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  overflow: auto;
+  user-select: text;
+  white-space: pre;
 }
 .viewport-visibility {
   display: grid;

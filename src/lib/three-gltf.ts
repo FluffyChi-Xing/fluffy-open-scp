@@ -6,8 +6,8 @@ const PAYLOAD_MAGIC = 0x4d54_4f4c;
 
 /**
  * 解析 `read_lot_model_meshes` 返回的原始字节容器（零拷贝切片，
- * 见 `LotModelPayload` 注释里的 v2 布局：逐 mesh GLB + 逐材质贴图 +
- * 每 mesh 材质下标/可贴图标志）。
+ * 见 `LotModelPayload` 注释里的 v5 布局：逐 mesh GLB + 逐材质贴图 +
+ * 每 mesh 材质下标/uv 类型 + 诊断文本）。
  */
 export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
   const view = new DataView(buffer);
@@ -24,7 +24,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     throw new Error("lot model payload magic mismatch");
   }
   const version = readU32();
-  if (version !== 4) {
+  if (version !== 5) {
     throw new Error(`unsupported lot model payload version ${version}`);
   }
   const meshCount = readU32();
@@ -87,7 +87,17 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     meshUvKinds.push(view.getUint8(offset));
     offset += 1;
   }
-  return { glbs, materials, meshMaterialIndices, meshUvKinds };
+  let diagnostics = "";
+  if (offset + 4 <= buffer.byteLength) {
+    const diagLength = readU32();
+    if (offset + diagLength > buffer.byteLength) {
+      throw new Error("lot model payload diagnostics out of bounds");
+    }
+    diagnostics = new TextDecoder().decode(
+      buffer.slice(offset, offset + diagLength),
+    );
+  }
+  return { glbs, materials, meshMaterialIndices, meshUvKinds, diagnostics };
 }
 
 /** PNG 字节 → blob URL（TextureLoader 可直接加载，免去 data:URL base64 再解码）。 */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseLotModelContainer } from "./three-gltf";
 
-/** 按 Rust 侧 v4 容器布局构建字节（小端）——先压入数组再一次性分配。 */
+/** 按 Rust 侧 v5 容器布局构建字节（小端）——先压入数组再一次性分配。 */
 interface MaterialSpec {
   baseColorSize: number;
   normalSize: number;
@@ -17,6 +17,7 @@ function buildPayload(
   materials: MaterialSpec[],
   meshMaterialIndices: number[],
   meshUvKinds: number[],
+  diagnostics = "",
 ): ArrayBuffer {
   const bytes: number[] = [];
   const u32 = (value: number) => {
@@ -37,7 +38,7 @@ function buildPayload(
   };
 
   u32(0x4d544f4c); // "LOTM"
-  u32(4);
+  u32(5);
   u32(glbSizes.length);
   glbSizes.forEach((length, index) => {
     u32(length);
@@ -62,6 +63,9 @@ function buildPayload(
     u32(materialIndex);
     bytes.push(meshUvKinds[index]);
   });
+  const diagBytes = new TextEncoder().encode(diagnostics);
+  u32(diagBytes.length);
+  for (const byte of diagBytes) bytes.push(byte);
   return new Uint8Array(bytes).buffer;
 }
 
@@ -96,6 +100,7 @@ describe("parseLotModelContainer", () => {
     expect(payload.materials[1].paramsF32).toBeNull();
     expect(payload.meshMaterialIndices).toEqual([1, 0]);
     expect(payload.meshUvKinds).toEqual([2, 1]);
+    expect(payload.diagnostics).toBe("");
   });
 
   it("零材质单 mesh 容器", () => {
@@ -104,6 +109,15 @@ describe("parseLotModelContainer", () => {
     expect(payload.materials).toHaveLength(0);
     expect(payload.meshMaterialIndices).toEqual([0]);
     expect(payload.meshUvKinds).toEqual([0]);
+  });
+
+  it("解析末尾诊断文本", () => {
+    const payload = parseLotModelContainer(
+      buildPayload([4], [], [0], [0], "mesh #5 → material #6\nslot1 0x00000001 [a.package raster]"),
+    );
+    expect(payload.diagnostics).toBe(
+      "mesh #5 → material #6\nslot1 0x00000001 [a.package raster]",
+    );
   });
 
   it("魔数不符与截断容器抛错", () => {
