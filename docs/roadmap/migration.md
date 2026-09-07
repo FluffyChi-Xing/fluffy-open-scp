@@ -804,3 +804,30 @@ clip(baseTintValues.a - 0.5f);                                // A 通道 = 元�
 - D3DCOLOR 字节序注意：shader 读 `In.color.r`；我们的 {a,r,g,b} 解析与 HLSL 分量的对应需按 materialIndex∈[0,119) 校准
 
 **下一步（实现路径已完全清晰）**：① slot0 各行按 tint.a>0.5 oracle 定位 regionXform/regionXform2 ② 后端烘焙：frac(f0)*X.xy+X.zw → slot1 采样（RGB→palette U、A=镂空）→ 256×8 palette 查色 ③ 双层（uv2）接 Top 层。覆盖率将直达 ~100% 带材质资产。
+
+## 25. 阶段 4 实现完整烘焙链（2026-09-08 第十九轮）
+
+### 25.1 regionXform 行 oracle（决定性）
+
+`facade_probe` 双指标（tint.a>0.5 率 + per-G tint.rg 一致性）穷举 slot0 的 4 行作为 regionXform：
+
+| 行 | alpha>0.5 率 | per-G tint.rg spread |
+|---|---|---|
+| row0 | 61.5% | 88.26 |
+| **row1** | **96.0%** | **16.50** |
+| row2 | 65.7% | 7.25 |
+| row3 | 59.9% | 93.08 |
+
+→ **regionXform = slot0 row1**（96% 顶点落在 tint 有效区）。最终色烘焙 oracle：xform=row1 时 per-G 颜色离散度 27-40（其他行 96-155）✓。
+
+### 25.2 实现（`build_lot_model_payload` 烘焙链）
+
+- `MaterialBake { params(f32 4行), tint_rgba, palette_rgba }`：resolve 阶段取 slot0 f32 参数表、slot1 原始 RGBA、slot4 原始 RGBA
+- `bake_vertex_colors`：逐顶点 `materialIndex = D3DCOLOR.G` → xform=row1、palette 原点=row2 → `baseUv = frac(f0)×X.xy + X.zw` → tint 查表 → `palette[palUV + tint.rg×0.125 + InvSize×0.25] × (tint.b×2)` → **COLOR_0 = 最终 palette 色**（替代旧 row0 色彩误读）；无 bake 数据回退旧 palette-row0 路径
+- 前端零改动（COLOR_0 语义升级，vertexColors 照常）；facade mesh 的 hasUv 仍为 false（贴图变换待后续着色器化），但顶点色已带完整 palette 材质色
+
+### 25.3 性能
+
+金样本 0x63D180B9：18.2ms（debug，v3 16.8ms——两次纹理查表 ×4682 顶点，开销可忽略）。
+
+验证：workspace 31 个测试二进制全绿。待用户目检 facade 建筑颜色（此版本顶点色 = palette 查色链完整输出，含 tint.rg 空间渐变与 b 亮度）。

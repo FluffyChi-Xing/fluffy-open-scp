@@ -1937,9 +1937,22 @@ fn resolve_palette(
     )
 }
 
+/// 材质烘焙上下文（§24.w 公式）：slot0 参数表 + slot1 tint + slot4 palette 原始像素。
+struct MaterialBake {
+    params: Vec<[f32; 4]>,
+    param_cols: usize,
+    tint_rgba: Vec<u8>,
+    tint_w: usize,
+    tint_h: usize,
+    palette_rgba: Vec<u8>,
+    pal_w: usize,
+    pal_h: usize,
+}
+
 /// 单个材质的跨包解析产物（调色板 + 四张通道 PNG，均可为 None）。
 struct MaterialResources {
     palette: Option<Vec<[f32; 3]>>,
+    bake: Option<MaterialBake>,
     base_color_png: Option<Vec<u8>>,
     normal_png: Option<Vec<u8>>,
     roughness_png: Option<Vec<u8>>,
@@ -2000,6 +2013,7 @@ fn resolve_material_resources(
 
     let mut resources = MaterialResources {
         palette: None,
+        bake: None,
         base_color_png: None,
         normal_png: None,
         roughness_png: None,
@@ -2013,8 +2027,35 @@ fn resolve_material_resources(
     {
         resources.palette = resolve_palette(package, manager, instance);
     }
+    // slot0 f32 参数表（每材质 4 行 float4：row1=regionXform、row2=palette 原点，oracle 实测）
+    let mut params: Option<(Vec<[f32; 4]>, usize)> = None;
+    if let Some(instance) = slots
+        .iter()
+        .find(|r| r.slot_byte() == 0)
+        .map(|r| r.texture_instance)
+        .filter(|i| *i != 0)
+    {
+        if let Some((bytes, _)) =
+            find_resource_across_packages(package, manager, instance, &[RW4_MODEL_TYPE])
+        {
+            if let Ok(tex_file) = rw4::Rw4File::parse(&bytes) {
+                if let Some(sec) = tex_file
+                    .sections_of_type(rw4::SectionType::TEXTURE)
+                    .next()
+                    .map(|s| s.number)
+                {
+                    if let Ok(tex) = tex_file.decode_texture(&bytes, sec) {
+                        if let Ok(pixels) = tex.decode_palette_f32() {
+                            params = Some((pixels, usize::from(tex.width)));
+                        }
+                    }
+                }
+            }
+        }
+    }
     // slot1：区域遮罩红通道 = 调色板查表索引（GlassBox 语义）→ 调色板 LUT 上色；
-    // 无调色板时退回灰度（保留元素分割信息）
+    // 无调色板时退回灰度（保留元素分割信息）。原始 RGBA 留给烘焙链。
+    let mut tint_raw: Option<(Vec<u8>, u32, u32)> = None;
     if let Some((rgba, width, height)) = slot_rgba(1) {
         let mut colored = Vec::with_capacity(rgba.len());
         for px in rgba.as_chunks::<4>().0 {
@@ -2032,6 +2073,26 @@ fn resolve_material_resources(
             ]);
         }
         resources.base_color_png = encode_rgba_png_bytes(width, height, colored).ok();
+        tint_raw = Some((rgba, width, height));
+    }
+    // slot4 = 256×8 tint palette（512×16，2×2 像素块）——烘焙链最终查色表
+    let palette_raw = slot_rgba(4);
+    // 组装烘焙上下文
+    if let (Some((params_table, param_cols)), Some((tint_rgba, tint_w, tint_h)), Some((pal_rgba, pal_w, pal_h))) =
+        (params, tint_raw.take(), palette_raw)
+    {
+        if param_cols > 0 {
+            resources.bake = Some(MaterialBake {
+                params: params_table,
+                param_cols,
+                tint_rgba,
+                tint_w: usize::try_from(tint_w).unwrap_or(0),
+                tint_h: usize::try_from(tint_h).unwrap_or(0),
+                palette_rgba: pal_rgba,
+                pal_w: usize::try_from(pal_w).unwrap_or(0),
+                pal_h: usize::try_from(pal_h).unwrap_or(0),
+            });
+        }
     }
     // slot2：RGB=法线（解 Swizzle）+ A=AO
     if let Some((rgba, width, height)) = slot_rgba(2) {
@@ -2068,6 +2129,69 @@ fn mesh_has_uv(mesh: &rw4::DecodedMesh) -> bool {
         }
     }
     has_float2 || (has_float4 && float4_max_xy <= 8.0)
+}
+
+/// facade/常规顶点色烘焙（§24.w 着色器公式）：
+/// `baseUv = frac(uv) * regionXform.xy + regionXform.zw` → tint 查表（slot1）
+/// → palette 查色（slot4 256×8，tint.rg 为 cell 内偏移、b 为亮度 ×2）。
+/// regionXform = slot0 row1，palette cell 原点 = slot0 row2（tint.a>0.5 oracle 实测）。
+/// 顶点 D3DCOLOR.G = materialIndex。无 D3DCOLOR 的网格返回 None。
+fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Vec<[f32; 3]>> {
+    let any = mesh
+        .vertices
+        .iter()
+        .any(|v| v.d3d_color_g().is_some());
+    if !any || bake.param_cols == 0 || bake.tint_w == 0 || bake.pal_w == 0 {
+        return None;
+    }
+    Some(
+        mesh.vertices
+            .iter()
+            .map(|v| {
+                const FALLBACK: [f32; 3] = [1.0, 1.0, 1.0];
+                let Some(m) = v.d3d_color_g().map(|g| g as usize) else {
+                    return FALLBACK;
+                };
+                let Some(xform) = bake.params.get(bake.param_cols + m).copied() else {
+                    return FALLBACK;
+                };
+                let Some(pal_origin) = bake.params.get(2 * bake.param_cols + m).copied() else {
+                    return FALLBACK;
+                };
+                let Some(f) = v
+                    .components
+                    .iter()
+                    .find(|(e, _)| e.usage == rw4::DeclarationUsage::TexCoord)
+                    .and_then(|(_, value)| match value {
+                        rw4::ComponentValue::Float4(f) => Some(*f),
+                        _ => None,
+                    })
+                else {
+                    return FALLBACK;
+                };
+                let bu = (f[0] - f[0].floor()) * xform[0] + xform[2];
+                let bv = (f[1] - f[1].floor()) * xform[1] + xform[3];
+                let tx = ((bu - bu.floor()).clamp(0.0, 0.999) * bake.tint_w as f32) as usize;
+                let ty = ((bv - bv.floor()).clamp(0.0, 0.999) * bake.tint_h as f32) as usize;
+                let Some(t) = bake.tint_rgba.get((ty * bake.tint_w + tx) * 4..) else {
+                    return FALLBACK;
+                };
+                let pu = pal_origin[0] + f32::from(t[0]) / 255.0 * 0.125 + 1.0 / 1024.0;
+                let pv = pal_origin[1] + f32::from(t[1]) / 255.0 * 0.125 + 1.0 / 32.0;
+                let px = ((pu - pu.floor()).clamp(0.0, 0.999) * bake.pal_w as f32) as usize;
+                let py = ((pv - pv.floor()).clamp(0.0, 0.999) * bake.pal_h as f32) as usize;
+                let Some(p) = bake.palette_rgba.get((py * bake.pal_w + px) * 4..) else {
+                    return FALLBACK;
+                };
+                let bright = f32::from(t[2]) / 255.0 * 2.0;
+                [
+                    (f32::from(p[0]) * bright / 255.0).clamp(0.0, 1.0),
+                    (f32::from(p[1]) * bright / 255.0).clamp(0.0, 1.0),
+                    (f32::from(p[2]) * bright / 255.0).clamp(0.0, 1.0),
+                ]
+            })
+            .collect(),
+    )
 }
 
 /// 逐顶点颜色：调色板列 = D3DCOLOR.G（越界钳到末列）；无 D3DCOLOR 的网格返回 None。
@@ -2176,10 +2300,18 @@ fn build_lot_model_payload(
                 (material_resources.len() - 1) as u32
             }
         };
-        let colors = material_resources[material_index as usize]
-            .palette
-            .as_ref()
-            .and_then(|palette| mesh_vertex_colors(&mesh, palette));
+        let colors = match &material_resources[material_index as usize].bake {
+            Some(bake) => bake_vertex_colors(&mesh, bake).or_else(|| {
+                material_resources[material_index as usize]
+                    .palette
+                    .as_ref()
+                    .and_then(|palette| mesh_vertex_colors(&mesh, palette))
+            }),
+            None => material_resources[material_index as usize]
+                .palette
+                .as_ref()
+                .and_then(|palette| mesh_vertex_colors(&mesh, palette)),
+        };
         let glb = sc_exporter::export_glb_with_colors(
             &mesh,
             None,
