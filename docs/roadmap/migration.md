@@ -851,3 +851,30 @@ clip(baseTintValues.a - 0.5f);                                // A 通道 = 元�
 - slot0 四行 = [palette 原点, regionXform(base), regionXform2(top), 整数格参数]
 
 验证：workspace 31 全绿。烘焙色待用户目检。
+
+## 27. 阶段 4 修复：四症状根因清零 + info 诊断浮层（LOTM v5，2026-09-08 第二十一轮）
+
+用户目检 v4 后报四症状：①发绿/发黑 ②墙体/房顶整块消失 ③无玻璃/砖/金属材质 ④看不到法线。本轮用游戏渲染器源码（tmp/shaders/src building4 全家族）逐行对照 + 双探针（`shader_verify_probe`/`shader_sweep_probe`）实证根因后修复：
+
+### 27.1 已实证根因（探针数据见验证记录）
+
+1. **GLB 把 facade UV 清零（症状②④主源）**：gltf.rs 对 Float4>8 的 TEXCOORD 写 (0,0)，而 mesh_uv_kind 用同一条件把这些 mesh 路由进 tint 着色器 → 前端 `frac(0)*xform.xy+xform.zw = xform.zw` **每材质只采样 tint 图一个纹素**，其 alpha 决定整 mesh discard（EP1 sweep 预测 5.4% 整块消失）。修复：**TEXCOORD_2/3 = Float4.xy / .zw（Base/Top 层世界投影 UV，原值直出不取反）**；GLTFLoader r185 支持 uv2/uv3 映射。
+2. **发绿主源 = resolve_palette 把 slot0 参数表 f32 当 RGB**：row0=(palU,palU2,0.125,0) → "颜色"B 恒 32 → 绿/黄/红垃圾色喂给顶点色 + LUT。修复：**删除 resolve_palette/mesh_vertex_colors/LUT 上色**；slot0 = 参数表（paletteF32）；无参数表材质 slot1 走 simple diffuse 原图。
+3. **raster pixFmt21 = BGRA 存储（翻案）**：pixFmt21=D3DFMT_A8R8G8B8=D3D9 内存 B,G,R,A。§17 时代"RGBA 直读"的依据（与 SCP A 通道视图对拍）不成立——alpha 两序同在 byte3，无法区分 R/B。旧解法把法线图读成全图粉色（数学上非法线图）。修复：**decode_top_mip_rgba 恢复 BGRA→RGBA 重排**；**删除 unswizzle_simcity_normal**（原为补偿错误直读，双重变换抵消）；LotMask 改为重排后直映射（R→color1/G→color2/B→color3/A→color4，优先级 A>R>G>B，与旧交叉映射逐字节等价，5 个单测不变全过）。
+4. **tint 亮度通道错位**：源码 tint.b=byte0（BGRA），旧实现用 byte2——byte2<64 占有效区 71.3%（整楼近黑），byte0 仅 3.5%。随 27.3 自动修复。
+5. **前端三分歧**：subsample `×0.125`（U 宽 64 倍）→ `×(1/512,1/16)+(1/1024,1/32)`；palOrigin 采 row2 → **row0**（v=0.125）；palV=row0.y → **buildingVariation 行（固定 0）**。tint/palette/normal 贴图 `flipY=false`（与后端 bake 同坐标系，原始 UV 不翻转）。
+
+### 27.2 源码确认语义（决定性）
+
+- `texcoord0 = float4(uv, uv2)`：xy=Base 层、zw=Top 层双 UV（§19.5 "w/h/x/y" 推测作废）
+- `materialIndex = floor(In.color.r*255+0.1)`；D3DColor 内存 B,G,R,A → **我们解析的 g 字段 = 游戏 r = materialIndex（旧实现正确）**；a = 游戏 B = interiorTexData（4bit size+4bit index，解开"B 1~80"之谜）
+- row0=(palU,palU2,interiorScale,interiorOffset)、row1/2=regionXform(2)、**palV=buildingVariation（实例数据 ×1/8，不在任何表内）**、surface 恒取末行 kSurfacePalV、specE=tint.a
+- slot3 shader map 绿色主导（G≈255）、slot5 = 256×256 DXT5 relief（kFlatLevel=23/255 呼应）——Top 层/玻璃阶段输入
+- slot4 调色板**非灰阶**（RGB 通道差最大 255，旧记录作废）
+
+### 27.3 容器 v5 + info 诊断浮层
+
+- **LOTM v5**：v4 布局 + 末尾 `u32 diag_len + UTF-8` 诊断文本（mesh↔material 绑定行 + 每 material slot0-4 的 instance/来源包/格式/尺寸）。后端 `find_resource_across_packages_named` 携带来源包名，`resolve_slot_texture` 统一解析+诊断。
+- **PE 视口 info 浮层**：右上角 Info 按钮（仿光源调节）→ 诊断卡片，显示诊断文本 + **复制按钮**（Clipboard API + execCommand 兜底），供任意建筑复盘，不再依赖金样本。
+
+性能：金样本 payload 965KB / **17.0ms**（v4 22.3ms，删 LUT 上色后更快）。验证：Rust 全部套件 + 前端 vue-tsc/vitest 74 全绿（容器测试升 v5 + 诊断解析用例）；eslint/prettier 16 项为存量欠账（HEAD 前后一致，本轮净修 1 项）。待用户目检：建筑颜色/完整度/法线凹凸。

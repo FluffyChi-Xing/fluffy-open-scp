@@ -1852,19 +1852,25 @@ const RW4_MODEL_TYPE: u32 = 0x2F4E_681B;
 const RASTER_IMAGE_TYPE: u32 = 0x2F4E_681C;
 
 /// 跨包定位资源（当前包 → 所有已打开包，对齐 SCP"全部已加载索引"语义）。
-fn find_resource_across_packages(
+/// 跨包查找资源，附来源包文件名（诊断信息用）。
+fn find_resource_across_packages_named(
     current: &Package,
     manager: &PackageManager,
     instance: u32,
     type_ids: &[u32],
-) -> Option<(Vec<u8>, u32)> {
-    let lookup = |pkg: &Package| -> Option<(Vec<u8>, u32)> {
+) -> Option<(Vec<u8>, u32, String)> {
+    let lookup = |pkg: &Package| -> Option<(Vec<u8>, u32, String)> {
         let entry = pkg
             .entries()
             .iter()
             .find(|e| type_ids.contains(&e.id.type_id) && e.id.instance == instance)?
             .clone();
-        Some((pkg.read(&entry).ok()?, entry.id.type_id))
+        let name = pkg
+            .path()
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Some((pkg.read(&entry).ok()?, entry.id.type_id, name))
     };
     lookup(current).or_else(|| {
         manager
@@ -1876,69 +1882,56 @@ fn find_resource_across_packages(
 }
 
 /// 从 raster 或 RW4 包裹资源解出顶层 RGBA（不可解返回 None）。
-fn texture_rgba_from_resource(bytes: &[u8], type_id: u32) -> Option<(Vec<u8>, u32, u32)> {
-    match type_id {
-        RASTER_IMAGE_TYPE => {
-            let raster = rw4::RasterImage::parse(bytes).ok()?;
-            if !raster.is_raw_rgba() {
-                return None;
-            }
-            let rgba = raster.decode_top_mip_rgba().ok()?;
-            Some((rgba, u32::from(raster.width), u32::from(raster.height)))
-        }
-        RW4_MODEL_TYPE => {
-            let file = rw4::Rw4File::parse(bytes).ok()?;
-            let number = file
-                .sections_of_type(rw4::SectionType::TEXTURE)
-                .next()?
-                .number;
-            let texture = file.decode_texture(bytes, number).ok()?;
-            let rgba = texture.decode_top_mip_rgba().ok()?;
-            Some((rgba, u32::from(texture.width), u32::from(texture.height)))
-        }
-        _ => None,
-    }
-}
 
-/// slot0 调色板（RW4 包裹 textureType 116）→ 每元素 RGB。
+/// 槽位贴图跨包解析：解出顶层 RGBA + 诊断串（instance/来源包/格式/尺寸）。
 ///
-/// 官方语义（migration.md §21.4）：材质元素分配调色板**列**，引擎分配**行**
-/// （行 = 色调变体）。资产调色板为 W×4：row0=ColorBottom（基层）、
-/// row1=ColorTop（顶层）、row2/3=Interior 1/2。顶点色烘焙取 **row0**——
-/// 此前取 row0/row1 均值，但 EP1 实测 96% 的列两行显著不同，均值在洗色；
-/// 顶层/内景行待阶段 2/4 的按 mesh 材质与合成着色器接入。
-fn resolve_palette(
-    current: &Package,
-    manager: &PackageManager,
+/// slot0 的 f32 参数表（paletteF32）不是颜色——2026-09-08 源码实证
+/// row0=(palU,palU2,interiorScale,interiorOffset)，旧"资产调色板"解读作废。
+fn resolve_slot_texture(
+    bytes: &[u8],
+    type_id: u32,
     instance: u32,
-) -> Option<Vec<[f32; 3]>> {
-    let (bytes, type_id) =
-        find_resource_across_packages(current, manager, instance, &[RW4_MODEL_TYPE])?;
-    if type_id != RW4_MODEL_TYPE {
-        return None;
+    pkg_name: &str,
+) -> Option<(Vec<u8>, u32, u32, String)> {
+    if type_id == RASTER_IMAGE_TYPE {
+        let raster = rw4::RasterImage::parse(bytes).ok()?;
+        let rgba = raster.decode_top_mip_rgba().ok()?;
+        return Some((
+            rgba,
+            raster.width,
+            raster.height,
+            format!(
+                "0x{instance:08X} [{pkg_name} raster pixFmt{} {}x{}]",
+                raster.pixel_format, raster.width, raster.height
+            ),
+        ));
     }
-    let file = rw4::Rw4File::parse(&bytes).ok()?;
+    let file = rw4::Rw4File::parse(bytes).ok()?;
     let number = file
         .sections_of_type(rw4::SectionType::TEXTURE)
         .next()?
         .number;
-    let texture = file.decode_texture(&bytes, number).ok()?;
-    let pixels = texture.decode_palette_f32().ok()?;
-    let columns = u32::from(texture.width) as usize;
-    if columns == 0 {
-        return None;
-    }
-    Some(
-        (0..columns)
-            .map(|x| {
-                let bottom = pixels.get(x).copied().unwrap_or([1.0; 4]);
-                [bottom[0].clamp(0.0, 1.0), bottom[1].clamp(0.0, 1.0), bottom[2].clamp(0.0, 1.0)]
-            })
-            .collect(),
-    )
+    let texture = file.decode_texture(bytes, number).ok()?;
+    let kind = match texture.texture_type {
+        rw4::TEXTURE_TYPE_DXT1 => "DXT1",
+        rw4::TEXTURE_TYPE_DXT5 => "DXT5",
+        rw4::TEXTURE_TYPE_RAW_BGRA => "rawBGRA",
+        rw4::TEXTURE_TYPE_PALETTE_F32 => "paletteF32",
+        _ => "other",
+    };
+    let rgba = texture.decode_top_mip_rgba().ok()?;
+    Some((
+        rgba,
+        u32::from(texture.width),
+        u32::from(texture.height),
+        format!(
+            "0x{instance:08X} [{pkg_name} rw4 {kind} {}x{}]",
+            texture.width, texture.height
+        ),
+    ))
 }
 
-/// 材质烘焙上下文（§24.w 公式）：slot0 参数表 + slot1 tint + slot4 palette 原始像素。
+/// 材质烘焙上下文（§27 公式）：slot0 参数表 + slot1 tint + slot4 palette 原始像素。
 struct MaterialBake {
     params: Vec<[f32; 4]>,
     param_cols: usize,
@@ -1952,7 +1945,6 @@ struct MaterialBake {
 
 /// 单个材质的跨包解析产物（调色板 + 四张通道 PNG，均可为 None）。
 struct MaterialResources {
-    palette: Option<Vec<[f32; 3]>>,
     bake: Option<MaterialBake>,
     base_color_png: Option<Vec<u8>>,
     normal_png: Option<Vec<u8>>,
@@ -1965,6 +1957,8 @@ struct MaterialResources {
     /// slot0 参数表 f32 字节（row-major cols×4）
     params_f32: Option<Vec<u8>>,
     param_cols: usize,
+    /// 槽位解析诊断（instance/来源包/格式/尺寸，逐行）
+    diag: String,
 }
 
 /// 从 RGBA 取单通道转灰度 PNG（`invert` 时按 255-v 反转）。
@@ -1984,9 +1978,12 @@ fn channel_gray_png(
     encode_rgba_png_bytes(width, height, gray).ok()
 }
 
-/// 解析指定 MATERIAL section 的槽位资源（官方 Material Set 语义，§21.4）：
-/// slot0 调色板 / slot1 color-control（R=元素区域索引 → 灰度 baseColor）/
-/// slot2 normal（RGB 法线 + A=AO）/ slot3 shader（B=spec → 反转成 roughness）。
+/// 解析指定 MATERIAL section 的槽位资源（源码实证语义，migration.md §27）：
+/// slot0 = 参数表（f32：row0=(palU,palU2,interiorScale,interiorOffset)、
+/// row1=regionXform、row2=regionXform2）/ slot1 = color control map（有参数表
+/// 时为 tint 查表键；无参数表时即 simple diffuse 漫反射色）/ slot2 = normal
+/// （标准切线空间 RGB，B=沿法线轴；A=spec→AO 代理）/ slot3 = shader map
+/// （B=spec → 反转成 roughness）/ slot4 = 256×8 tint palette。
 fn resolve_material_resources(
     file: &rw4::Rw4File,
     data: &[u8],
@@ -2004,23 +2001,26 @@ fn resolve_material_resources(
             rw4::MaterialSection::Raw(_) => None,
         })
         .unwrap_or_default();
+    let slot_diag: std::cell::RefCell<std::collections::BTreeMap<u32, String>> =
+        Default::default();
     let slot_rgba = |slot: u32| -> Option<(Vec<u8>, u32, u32)> {
         let instance = slots
             .iter()
             .find(|r| r.slot_byte() as u32 == slot)
             .map(|r| r.texture_instance)
             .filter(|i| *i != 0)?;
-        let (bytes, type_id) = find_resource_across_packages(
+        let (bytes, type_id, pkg_name) = find_resource_across_packages_named(
             package,
             manager,
             instance,
             &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE],
         )?;
-        texture_rgba_from_resource(&bytes, type_id)
+        let (rgba, w, h, diag) = resolve_slot_texture(&bytes, type_id, instance, &pkg_name)?;
+        slot_diag.borrow_mut().insert(slot, diag);
+        Some((rgba, w, h))
     };
 
     let mut resources = MaterialResources {
-        palette: None,
         bake: None,
         base_color_png: None,
         normal_png: None,
@@ -2030,16 +2030,10 @@ fn resolve_material_resources(
         palette_png: None,
         params_f32: None,
         param_cols: 0,
+        diag: String::new(),
     };
-    if let Some(instance) = slots
-        .iter()
-        .find(|r| r.slot_byte() == 0)
-        .map(|r| r.texture_instance)
-        .filter(|i| *i != 0)
-    {
-        resources.palette = resolve_palette(package, manager, instance);
-    }
-    // slot0 f32 参数表（每材质 4 行 float4：row1=regionXform、row2=palette 原点，oracle 实测）
+    // slot0 f32 参数表（源码 building5UnpackDataViewPS：palU/palU2/interior/
+    // regionXform/regionXform2 逐行对应 row0-3）
     let mut params: Option<(Vec<[f32; 4]>, usize)> = None;
     if let Some(instance) = slots
         .iter()
@@ -2047,8 +2041,8 @@ fn resolve_material_resources(
         .map(|r| r.texture_instance)
         .filter(|i| *i != 0)
     {
-        if let Some((bytes, _)) =
-            find_resource_across_packages(package, manager, instance, &[RW4_MODEL_TYPE])
+        if let Some((bytes, _, pkg_name)) =
+            find_resource_across_packages_named(package, manager, instance, &[RW4_MODEL_TYPE])
         {
             if let Ok(tex_file) = rw4::Rw4File::parse(&bytes) {
                 if let Some(sec) = tex_file
@@ -2058,6 +2052,13 @@ fn resolve_material_resources(
                 {
                     if let Ok(tex) = tex_file.decode_texture(&bytes, sec) {
                         if let Ok(pixels) = tex.decode_palette_f32() {
+                            slot_diag.borrow_mut().insert(
+                                0,
+                                format!(
+                                    "0x{instance:08X} [{pkg_name} rw4 paletteF32 {}x{}（参数表：row0=palU/palU2/interior、row1=regionXform、row2=top、row3=padding/room）]",
+                                    tex.width, tex.height
+                                ),
+                            );
                             params = Some((pixels, usize::from(tex.width)));
                         }
                     }
@@ -2065,33 +2066,13 @@ fn resolve_material_resources(
             }
         }
     }
-    // slot1：区域遮罩红通道 = 调色板查表索引（GlassBox 语义）→ 调色板 LUT 上色；
-    // 无调色板时退回灰度（保留元素分割信息）。原始 RGBA 留给烘焙链。
-    let mut tint_raw: Option<(Vec<u8>, u32, u32)> = None;
-    if let Some((rgba, width, height)) = slot_rgba(1) {
-        let mut colored = Vec::with_capacity(rgba.len());
-        for px in rgba.as_chunks::<4>().0 {
-            let tint = resources
-                .palette
-                .as_ref()
-                .and_then(|palette| palette.get(px[0] as usize).copied())
-                .unwrap_or([1.0, 1.0, 1.0]);
-            let to_byte = |c: f32| (c * 255.0).round().clamp(0.0, 255.0) as u8;
-            colored.extend_from_slice(&[
-                to_byte(tint[0]),
-                to_byte(tint[1]),
-                to_byte(tint[2]),
-                255,
-            ]);
-        }
-        resources.base_color_png = encode_rgba_png_bytes(width, height, colored).ok();
-        tint_raw = Some((rgba, width, height));
-    }
+    let slot1 = slot_rgba(1);
     // slot4 = 256×8 tint palette（512×16，2×2 像素块）——烘焙链最终查色表
     let palette_raw = slot_rgba(4);
-    // 组装烘焙上下文
+    // 组装烘焙上下文（building4 链：有 slot0 参数表时 slot1 = tint 查表键）
+    let mut baked = false;
     if let (Some((params_table, param_cols)), Some((tint_rgba, tint_w, tint_h)), Some((pal_rgba, pal_w, pal_h))) =
-        (params, tint_raw.take(), palette_raw)
+        (params, slot1.clone(), palette_raw)
     {
         if param_cols > 0 {
             resources.tint_png =
@@ -2115,17 +2096,29 @@ fn resolve_material_resources(
                 pal_w: usize::try_from(pal_w).unwrap_or(0),
                 pal_h: usize::try_from(pal_h).unwrap_or(0),
             });
+            baked = true;
         }
     }
-    // slot2：RGB=法线（解 Swizzle）+ A=AO
+    if !baked {
+        // 无 building4 参数表 = simple diffuse 链：slot1 即漫反射贴图。
+        // 旧"R→调色板 LUT"产物为 (palU,palU2,0.125) 垃圾色，已废弃。
+        if let Some((rgba, width, height)) = slot1 {
+            resources.base_color_png = encode_rgba_png_bytes(width, height, rgba).ok();
+        }
+    }
+    // slot2：标准切线空间法线（B=沿法线轴，平坦≈128,128,255）+ A=spec（AO 代理）
     if let Some((rgba, width, height)) = slot_rgba(2) {
-        resources.normal_png =
-            encode_rgba_png_bytes(width, height, rw4::unswizzle_simcity_normal(&rgba)).ok();
         resources.ao_png = channel_gray_png(&rgba, width, height, 3, false);
+        resources.normal_png = encode_rgba_png_bytes(width, height, rgba).ok();
     }
     // slot3：B=specularity → 反转为 roughness 灰度
     if let Some((rgba, width, height)) = slot_rgba(3) {
         resources.roughness_png = channel_gray_png(&rgba, width, height, 2, true);
+    }
+    for slot in 0..=5u32 {
+        if let Some(line) = slot_diag.borrow().get(&slot) {
+            resources.diag.push_str(&format!("  slot{slot} {line}\n"));
+        }
     }
     resources
 }
@@ -2155,38 +2148,20 @@ fn mesh_uv_kind(mesh: &rw4::DecodedMesh) -> u8 {
     kind
 }
 
-/// 单 mesh 可贴图判定：有 FLOAT2 真 UV；或仅 FLOAT4（facade 世界投影）
-/// 但全部 xy 范围 ≤8（C# GltfConverter 同规则）。
-fn mesh_has_uv(mesh: &rw4::DecodedMesh) -> bool {
-    let mut has_float2 = false;
-    let mut has_float4 = false;
-    let mut float4_max_xy = 0f32;
-    for vertex in &mesh.vertices {
-        for (element, value) in &vertex.components {
-            if element.usage != rw4::DeclarationUsage::TexCoord {
-                continue;
-            }
-            match value {
-                rw4::ComponentValue::Float2(_) => has_float2 = true,
-                rw4::ComponentValue::Float4(f) => {
-                    has_float4 = true;
-                    float4_max_xy = float4_max_xy.max(f[0].abs()).max(f[1].abs());
-                }
-                _ => {}
-            }
-        }
-    }
-    has_float2 || (has_float4 && float4_max_xy <= 8.0)
-}
-
-/// facade/常规顶点色烘焙（§24.w 着色器公式 + kSubsampleScale 实测常量）：
+/// facade 顶点色烘焙（building4 源码逐字，migration.md §27）：
 /// `baseUv = frac(uv) * regionXform.xy + regionXform.zw` → tint 查表（slot1）
-/// → palette 查色（slot4 256×8：palUV + tint.rg×半纹素，双线性混 2×2 四色，
-/// tint.b 为亮度 ×2）。
-/// slot0 行序（oracle 实测）：row0 = palette cell 原点 (palU,palV)、
-/// row1 = regionXform（96% alpha 率）、row3 = 整数格参数。
-/// 顶点 D3DCOLOR.G = materialIndex。无 D3DCOLOR 的网格返回 None。
+/// → palette 查色（slot4，`BuildingPaletteSample`：subsample = tint.rg ×
+/// kPaletteInvSize×0.5 + kPaletteInvSize×0.25；tint.b 为亮度 ×2）。
+/// 源码行绑定：row0=(palU,palU2,interiorScale,interiorOffset)、row1=regionXform、
+/// row2=regionXform2；**palette V = buildingVariation（实例数据 × 1/8，
+/// 0..7 行）不在参数表内**——查看器无实例数据，固定取 variation 行 0
+/// （kPaletteSize = int2(256,8)，512×16 物理 = 2×2 块/采样点）。
+/// 顶点 materialIndex = D3DCOLOR.G（= 游戏 In.color.r，D3DCOLOR 内存为
+/// B,G,R,A 字节序）。无 D3DCOLOR 或参数表的网格返回 None。
 fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Vec<[f32; 3]>> {
+    // BuildingPaletteVariationVS(buildingType) = buildingType / 8；无实例数据取行 0
+    const BUILDING_VARIATION: f32 = 0.0;
+    const K_PALETTE_INV_SIZE: [f32; 2] = [1.0 / 256.0, 1.0 / 8.0];
     let any = mesh
         .vertices
         .iter()
@@ -2226,13 +2201,14 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
                 let Some(t) = bake.tint_rgba.get((ty * bake.tint_w + tx) * 4..) else {
                     return FALLBACK;
                 };
-                // kSubsampleScale = kPaletteInvSize*0.5、offset = *0.25（半物理纹素内插值）
+                // uvsBase = (palU, buildingVariation, palU, kSurfacePalV)；
+                // row0.y 是 palU2（Top 层列号），不是 V。
                 let pu = pal_origin[0]
-                    + f32::from(t[0]) / 255.0 * (0.5 / bake.pal_w as f32)
-                    + 0.25 / bake.pal_w as f32;
-                let pv = pal_origin[1]
-                    + f32::from(t[1]) / 255.0 * (0.5 / bake.pal_h as f32)
-                    + 0.25 / bake.pal_h as f32;
+                    + f32::from(t[0]) / 255.0 * (K_PALETTE_INV_SIZE[0] * 0.5)
+                    + K_PALETTE_INV_SIZE[0] * 0.25;
+                let pv = BUILDING_VARIATION
+                    + f32::from(t[1]) / 255.0 * (K_PALETTE_INV_SIZE[1] * 0.5)
+                    + K_PALETTE_INV_SIZE[1] * 0.25;
                 let px = ((pu - pu.floor()).clamp(0.0, 0.999) * bake.pal_w as f32) as usize;
                 let py = ((pv - pv.floor()).clamp(0.0, 0.999) * bake.pal_h as f32) as usize;
                 let Some(p) = bake.palette_rgba.get((py * bake.pal_w + px) * 4..) else {
@@ -2249,28 +2225,9 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
     )
 }
 
-/// 逐顶点颜色：调色板列 = D3DCOLOR.G（越界钳到末列）；无 D3DCOLOR 的网格返回 None。
-fn mesh_vertex_colors(mesh: &rw4::DecodedMesh, palette: &[[f32; 3]]) -> Option<Vec<[f32; 3]>> {
-    let any = mesh.vertices.iter().any(|v| v.d3d_color_g().is_some());
-    if !any {
-        return None;
-    }
-    Some(
-        mesh.vertices
-            .iter()
-            .map(|v| {
-                v.d3d_color_g()
-                    .map(|g| palette.get(g as usize).or(palette.last()).copied())
-                    .flatten()
-                    .unwrap_or([1.0, 1.0, 1.0])
-            })
-            .collect(),
-    )
-}
-
-/// PE 精细渲染：一次返回模型全部网格 GLB（COLOR_0 按**每 mesh 材质**的
-/// 调色板烘焙）+ 逐材质贴图 PNG（0x2001A 绑定表），经原始字节通道传输
-/// （`LOT_MODEL_PAYLOAD_MAGIC` v2 容器），取代前端 1+N 次 section 请求。
+/// PE 精细渲染：一次返回模型全部网格 GLB（COLOR_0 按**每 mesh 材质**烘焙）
+/// + 逐材质贴图 PNG（0x2001A 绑定表）+ 槽位诊断文本，经原始字节通道传输
+/// （`LOT_MODEL_PAYLOAD_MAGIC` v5 容器），取代前端 1+N 次 section 请求。
 #[tauri::command]
 pub async fn read_lot_model_meshes(
     state: State<'_, AppState>,
@@ -2290,25 +2247,34 @@ pub async fn read_lot_model_meshes(
                 ));
             }
             let file = rw4::Rw4File::parse(data)?;
-            Ok(build_lot_model_payload(&file, data, package, manager))
+            Ok(build_lot_model_payload(
+                &file,
+                data,
+                package,
+                manager,
+                request.tgi.instance,
+            ))
         },
     )
     .await?;
     Ok(tauri::ipc::Response::new(payload))
 }
 
-/// 组装 LOTM v2 容器：按 MeshMaterialAssignment（0x2001A）逐 mesh 配材质。
+/// 组装 LOTM v5 容器：按 MeshMaterialAssignment（0x2001A）逐 mesh 配材质。
 ///
-/// 布局（小端）：`magic | version=2 | mesh_count`，每 mesh `u32 len + GLB`
-/// （COLOR_0 已按**该 mesh 材质**的调色板烘焙）；随后 `material_count`，
-/// 每材质 `u32 base_len + PNG | u32 normal_len + PNG`（0 = 无）；末尾每
-/// mesh `u32 material_index + u8 has_uv`。绑定缺失/材质不可解时回退
-/// 第一个可解码材质（v1 行为）；完全无材质则指向占位空材质。
+/// 布局（小端）：`magic | version=5 | mesh_count`，每 mesh `u32 len + GLB`
+/// （COLOR_0 烘焙 + TEXCOORD_1.x=materialIndex/255 + TEXCOORD_2/3=facade
+/// 世界投影 UV）；`material_count`，每材质 6 张 PNG（base/normal/rough/ao/
+/// tintRaw/palette）+ 参数表 f32 + paramCols；每 mesh `u32 material_index +
+/// u8 uv_kind`；末尾 `u32 diag_len + UTF-8 诊断文本`（mesh↔material↔slot
+/// 贴图及其来源包，供 info 面板复制复盘）。绑定缺失/材质不可解时回退
+/// 第一个可解码材质；完全无材质则指向占位空材质。
 fn build_lot_model_payload(
     file: &rw4::Rw4File,
     data: &[u8],
     package: &Package,
     manager: &PackageManager,
+    model_instance: u32,
 ) -> Vec<u8> {
     let bindings = file.decode_mesh_material_bindings(data);
     let fallback_material = file
@@ -2317,12 +2283,21 @@ fn build_lot_model_payload(
             let decoded = file.decode_material(data, s.number).ok()?;
             matches!(decoded, rw4::MaterialSection::Decoded(_)).then_some(s.number)
         });
+    let pkg_name = package
+        .path()
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
 
     let mut glbs: Vec<Vec<u8>> = Vec::new();
     let mut mesh_material: Vec<u32> = Vec::new();
     let mut mesh_uv_kinds: Vec<u8> = Vec::new();
     let mut material_sections: Vec<u32> = Vec::new();
     let mut material_resources: Vec<MaterialResources> = Vec::new();
+    // 诊断：mesh 行 + 材质块（slot0-5 instance/来源包/格式/尺寸）
+    let mut mesh_diag: Vec<String> = Vec::new();
+    const MESH_DIAG_CAP: usize = 400;
+    let mut mesh_diag_truncated = 0usize;
 
     for section in file.sections_of_type(rw4::SectionType::MESH) {
         let mesh = match file.decode_mesh(data, section.number) {
@@ -2355,18 +2330,20 @@ fn build_lot_model_payload(
                 (material_resources.len() - 1) as u32
             }
         };
-        let colors = match &material_resources[material_index as usize].bake {
-            Some(bake) => bake_vertex_colors(&mesh, bake).or_else(|| {
-                material_resources[material_index as usize]
-                    .palette
-                    .as_ref()
-                    .and_then(|palette| mesh_vertex_colors(&mesh, palette))
-            }),
-            None => material_resources[material_index as usize]
-                .palette
-                .as_ref()
-                .and_then(|palette| mesh_vertex_colors(&mesh, palette)),
-        };
+        let colors = material_resources[material_index as usize]
+            .bake
+            .as_ref()
+            .and_then(|bake| bake_vertex_colors(&mesh, bake));
+        let uv_kind = mesh_uv_kind(&mesh);
+        let mut diag_line = format!(
+            "mesh #{:<4} verts={:<6} tris={:<6} uvKind={} → material #{} (idx {})",
+            section.number,
+            mesh.vertices.len(),
+            mesh.triangles.len(),
+            uv_kind,
+            bound_section,
+            material_index,
+        );
         let mat_indices: Vec<f32> = mesh
             .vertices
             .iter()
@@ -2381,16 +2358,48 @@ fn build_lot_model_payload(
             Some(&mat_indices),
         );
         if glb.bytes.len() > MESH_GLB_MAX_BYTES {
-            continue;
+            diag_line.push_str("  [GLB 超限跳过]");
+            mesh_diag_truncated += 1;
+        } else {
+            glbs.push(glb.bytes);
+            mesh_material.push(material_index);
+            mesh_uv_kinds.push(uv_kind);
         }
-        glbs.push(glb.bytes);
-        mesh_material.push(material_index);
-        mesh_uv_kinds.push(mesh_uv_kind(&mesh));
+        if mesh_diag.len() < MESH_DIAG_CAP {
+            mesh_diag.push(diag_line);
+        } else {
+            mesh_diag_truncated += 1;
+        }
+    }
+
+    // 诊断文本
+    let mut diag = format!(
+        "LOTM v5 | model: {pkg_name} instance=0x{model_instance:08X} | meshes={} materials={} | bindings={}\n",
+        glbs.len(),
+        material_resources.len(),
+        bindings.len(),
+    );
+    diag.push_str(&mesh_diag.join("\n"));
+    diag.push('\n');
+    if mesh_diag_truncated > 0 {
+        diag.push_str(&format!("…（另有 {mesh_diag_truncated} 条 mesh 略）\n"));
+    }
+    for (index, (section, resources)) in
+        material_sections.iter().zip(&material_resources).enumerate()
+    {
+        diag.push_str(&format!(
+            "material #{} (idx {}) paramCols={} bake={}\n{}",
+            section,
+            index,
+            resources.param_cols,
+            if resources.bake.is_some() { "有" } else { "无（slot1 走 diffuse）" },
+            resources.diag,
+        ));
     }
 
     let mut out = Vec::new();
     out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
-    out.extend_from_slice(&4u32.to_le_bytes());
+    out.extend_from_slice(&5u32.to_le_bytes());
     out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
     for glb in &glbs {
         out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
@@ -2427,6 +2436,8 @@ fn build_lot_model_payload(
         out.extend_from_slice(&index.to_le_bytes());
         out.push(*uv_kind);
     }
+    out.extend_from_slice(&(diag.len() as u32).to_le_bytes());
+    out.extend_from_slice(diag.as_bytes());
     out
 }
 
@@ -3455,14 +3466,14 @@ mod lot_payload_tests {
         let file = rw4::Rw4File::parse(&data).unwrap();
 
         let started = std::time::Instant::now();
-        let payload = build_lot_model_payload(&file, &data, &package, &manager);
+        let payload = build_lot_model_payload(&file, &data, &package, &manager, MODEL);
         let elapsed = started.elapsed();
 
         let read_u32 = |offset: usize| {
             u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap())
         };
         assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
-        assert_eq!(read_u32(4), 4, "container version 4");
+        assert_eq!(read_u32(4), 5, "container version 5");
         let mesh_count = read_u32(8) as usize;
         assert_eq!(mesh_count, 1, "1 exportable mesh");
 
@@ -3484,12 +3495,20 @@ mod lot_payload_tests {
             offset += 4;
         }
         let mesh0_material = read_u32(offset) as usize;
-        let mesh0_has_uv = payload[offset + 4] != 0;
+        let mesh0_uv_kind = payload[offset + 4];
+        offset += 5;
+        // 诊断文本
+        let diag_len = read_u32(offset) as usize;
+        offset += 4;
+        let diag = std::str::from_utf8(&payload[offset..offset + diag_len]).unwrap();
         eprintln!(
-            "lot payload v2: {mesh_count} mesh, {material_count} material, mesh material = [{mesh0_material}], has_uv = [{mesh0_has_uv}], {} bytes in {elapsed:?}",
+            "lot payload v5: {mesh_count} mesh, {material_count} material, mesh material = [{mesh0_material}], uv_kind = [{mesh0_uv_kind}], diag {diag_len} bytes, {} bytes in {elapsed:?}",
             payload.len()
         );
+        eprintln!("{diag}");
         assert_eq!(mesh0_material, 0, "single mesh binds material 0");
+        assert!(diag.contains("mesh #"), "diagnostics list meshes");
+        assert!(diag.contains("slot0"), "diagnostics list slot0 params");
     }
 }
 

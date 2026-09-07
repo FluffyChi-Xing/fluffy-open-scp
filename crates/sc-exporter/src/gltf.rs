@@ -4,6 +4,9 @@
 //! 1. BIN：POSITION（原始 Z-up，min/max 记录）→ NORMAL → TEXCOORD_0
 //!    （FLOAT2 恒可；FLOAT4 仅当 max|uv| ≤ 8，否则 0,0；V 取负）→
 //!    UINT32 索引（跳过任两点相等的退化三角形）
+//!    另：FLOAT4 TexCoord 存在时导出 TEXCOORD_2/3 = facade 世界投影 UV
+//!    （xy=Base 层、zw=Top 层，原值直出不取反——tint 着色器 frac(uv) 与
+//!    后端 bake 同坐标系）
 //! 2. 皮肤：IBM = 存储 bind 矩阵修正第 4 列（[3]=[7]=[11]=0,[15]=1）；
 //!    bind-local TRS = `parent<0 ? IBM⁻¹ : IBM[parent]·IBM⁻¹` 再分解；
 //!    JOINTS_0 = BLENDINDICES ÷3 + 关节数钳位；WEIGHTS_0 归一（缺失 → [1,0,0,0]）
@@ -479,6 +482,46 @@ pub fn export_glb_with_colors(
     });
     let texcoord1_len = v_count * 8;
 
+    // TEXCOORD_2/3 = facade 世界投影 UV（FLOAT4 TexCoord：xy=Base 层、
+    // zw=Top 层）。原值直出不取反：tint 着色器按游戏公式 frac(uv)*regionXform
+    // 采样，与后端 bake 同坐标系。此前被 0,0 占位（2026-09-08 修复）。
+    let has_facade_uv = v_count > 0
+        && mesh.vertices.iter().any(|v| {
+            v.components.iter().any(|(e, val)| {
+                e.usage == rw4::DeclarationUsage::TexCoord
+                    && matches!(val, rw4::ComponentValue::Float4(_))
+            })
+        });
+    let (facade_base_offset, facade_top_offset) = if has_facade_uv {
+        let mut facade = |component: usize| -> usize {
+            pad4(&mut bin);
+            let offset = bin.len();
+            for v in &mesh.vertices {
+                let f = v
+                    .components
+                    .iter()
+                    .find_map(|(e, val)| {
+                        (e.usage == rw4::DeclarationUsage::TexCoord)
+                            .then_some(())
+                            .and_then(|_| match val {
+                                rw4::ComponentValue::Float4(f) => Some(*f),
+                                _ => None,
+                            })
+                    })
+                    .unwrap_or([0.0; 4]);
+                put_f32s(&mut bin, &[f[component], f[component + 1]]);
+            }
+            offset
+        };
+        let base = facade(0);
+        let top = facade(2);
+        (Some(base), Some(top))
+    } else {
+        (None, None)
+    };
+    let facade_base_len = facade_base_offset.map(|_| v_count * 8).unwrap_or(0);
+    let facade_top_len = facade_top_offset.map(|_| v_count * 8).unwrap_or(0);
+
     let idx_offset = bin.len();
     let mut idx_count = 0usize;
     for t in &mesh.triangles {
@@ -575,6 +618,10 @@ pub fn export_glb_with_colors(
         color_len,
         texcoord1_offset,
         texcoord1_len,
+        facade_base_offset,
+        facade_base_len,
+        facade_top_offset,
+        facade_top_len,
         idx_offset,
         idx_len,
         bin_len,
@@ -621,6 +668,10 @@ fn build_json(
     color_len: usize,
     texcoord1_offset: Option<usize>,
     texcoord1_len: usize,
+    facade_base_offset: Option<usize>,
+    facade_base_len: usize,
+    facade_top_offset: Option<usize>,
+    facade_top_len: usize,
     idx_offset: usize,
     idx_len: usize,
     buffer_length: usize,
@@ -657,6 +708,21 @@ fn build_json(
         accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC2"}));
         primitive_attrs["TEXCOORD_1"] = json!(acc);
         texcoord1_acc = Some(acc);
+    }
+
+    if let Some(offset) = facade_base_offset {
+        let bv = buffer_views.len();
+        buffer_views.push(json!({"buffer": 0, "byteOffset": offset, "byteLength": facade_base_len, "target": TARGET_ARRAY}));
+        let acc = accessors.len();
+        accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC2"}));
+        primitive_attrs["TEXCOORD_2"] = json!(acc);
+    }
+    if let Some(offset) = facade_top_offset {
+        let bv = buffer_views.len();
+        buffer_views.push(json!({"buffer": 0, "byteOffset": offset, "byteLength": facade_top_len, "target": TARGET_ARRAY}));
+        let acc = accessors.len();
+        accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC2"}));
+        primitive_attrs["TEXCOORD_3"] = json!(acc);
     }
 
     if let Some(offset) = color_offset {

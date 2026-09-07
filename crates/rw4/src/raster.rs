@@ -4,10 +4,10 @@
 //! - 头部 6 × u32（大端）：rasterType、width、height、mipCount、pixelSize、
 //!   pixelFormat；
 //! - 随后逐 mip：`[u32 blockSize][载荷]`，宽高逐级减半；
-//! - `pixelFormat == 21` = D3DFMT_A8R8G8B8：未压缩 32bit 纹理，像素按顺序
-//!   R,G,B,A 存储（对齐 C# 读取器与用户对拍；注意 RW4 内嵌 raw 纹理为
-//!   B,G,R,A，两者不同）；DXT 压缩变体（pixFmt != 21）C# CLI 同样未
-//!   实现，仅保留元数据。
+//! - `pixelFormat == 21` = D3DFMT_A8R8G8B8：未压缩 32bit 纹理，D3D9 内存
+//!   布局为 B,G,R,A，解码时重排为 R,G,B,A（2026-09-08 修正，与 RW4 内嵌
+//!   raw 纹理一致；游戏渲染器源码证实 raster 经 D3D 管线按 BGRA 采样）；
+//!   DXT 压缩变体（pixFmt != 21）C# CLI 同样未实现，仅保留元数据。
 
 use crate::error::{Error, Result};
 use crate::reader::Reader;
@@ -81,54 +81,51 @@ impl RasterImage {
 
     /// 顶层 mip 解码为 RGBA8。
     ///
-    /// 字节序为顺序 R,G,B,A（对齐 C# `RasterImage` 读取器，用户对拍确认；
-    /// 注意与 [`crate::texture`] RW4 内嵌 raw 纹理的 B,G,R,A 不同）。
+    /// pixFmt 21 = D3DFMT_A8R8G8B8：D3D9 内存布局为 B,G,R,A（与 RW4 内嵌
+    /// raw 纹理一致），这里重排为 R,G,B,A。2026-09-08 修正：此前按顺序
+    /// R,G,B,A 直读，导致全仓 raster 颜色 R/B 反（法线图平坦区呈粉色、
+    /// tint 亮度/U 权重通道互换）。旧对拍只验证了 alpha（两种解读同在
+    /// byte3），不能区分 R/B。
     pub fn decode_top_mip_rgba(&self) -> Result<Vec<u8>> {
         if !self.is_raw_rgba() {
             return Err(Error::UnsupportedRasterPixelFormat(self.pixel_format));
         }
         let mip = self.top_mip_bytes()?;
-        Ok(mip.to_vec())
+        let mut out = mip.to_vec();
+        for px in out.as_chunks_mut::<4>().0 {
+            px.swap(0, 2);
+        }
+        Ok(out)
     }
 
     /// LotMask 四层量化（复刻 SCP `ViewLotEditor` 的 `RasterChannel.Preview`）：
-    /// 每像素 4 字节各对应一层，阈值 ≥128 选中该层颜色并输出不透明像素，
-    /// 全部未选中输出全透明。字节→颜色映射按 C# 调用序
-    ///（`color4, color3, color2, color1` 传入形参 `color1..4`）：
-    /// byte3→colors[3]、byte0→colors[2]、byte1→colors[1]、byte2→colors[0]，
-    /// 入参 `colors` 顺序为 `[LotColor1, LotColor2, LotColor3, LotColor4]`。
+    /// 每像素 RGBA 各对应一层，阈值 ≥128 选中该层颜色并输出不透明像素，
+    /// 全部未选中输出全透明。通道→颜色：R→LotColor1、G→LotColor2、
+    /// B→LotColor3、A→LotColor4（优先级 A > R > G > B，与旧交叉映射逐字节
+    /// 等价——旧版在 BGRA 原始字节上交叉，等价于重排后直读）。
     pub fn decode_lot_mask_rgba(&self, colors: &[[u8; 3]; 4]) -> Result<Vec<u8>> {
-        if !self.is_raw_rgba() {
-            return Err(Error::UnsupportedRasterPixelFormat(self.pixel_format));
-        }
-        let mip = self.top_mip_bytes()?;
-        const BYTE_TO_COLOR: [(usize, usize); 4] = [(3, 3), (0, 2), (1, 1), (2, 0)];
-        let mut rgba = Vec::with_capacity(mip.len());
-        for px in mip.as_chunks::<4>().0 {
-            let chosen = BYTE_TO_COLOR
+        let rgba = self.decode_top_mip_rgba()?;
+        const CHANNEL_TO_COLOR: [(usize, usize); 4] = [(3, 3), (0, 0), (1, 1), (2, 2)];
+        let mut out = Vec::with_capacity(rgba.len());
+        for px in rgba.as_chunks::<4>().0 {
+            let chosen = CHANNEL_TO_COLOR
                 .iter()
-                .find(|(byte_index, _)| px[*byte_index] >= 128)
+                .find(|(channel, _)| px[*channel] >= 128)
                 .map(|(_, color_index)| colors[*color_index]);
             match chosen {
-                Some([r, g, b]) => rgba.extend_from_slice(&[r, g, b, 255]),
-                None => rgba.extend_from_slice(&[0, 0, 0, 0]),
+                Some([r, g, b]) => out.extend_from_slice(&[r, g, b, 255]),
+                None => out.extend_from_slice(&[0, 0, 0, 0]),
             }
         }
-        Ok(rgba)
+        Ok(out)
     }
 }
 
-/// SimCity 法线图解 Swizzle（C# `UnswizzleNormal`，GltfConverter 同款）：
-/// 法线存为"粉色"（平坦 ~255,128,128 = +Y 分量在 RED），对调 R↔B 得到
-/// three.js 切线空间约定（+Z 在 B），alpha 保持原样（内含 specular）。
-pub fn unswizzle_simcity_normal(rgba: &[u8]) -> Vec<u8> {
-    let mut out = rgba.to_vec();
-    for px in out.as_chunks_mut::<4>().0 {
-        px.swap(0, 2);
-    }
-    out
-}
-
+// SimCity 法线图编码说明（2026-09-08 源码实证）：slot2 法线为标准切线
+// 空间 RGB（B = 沿顶点法线轴，平坦 ≈ 128,128,255），游戏侧用法为
+// `rgb * 2 - 0.9985`（building4DefaultPS `ApplyNormalMap`），alpha 含
+// specular。此前存在 `unswizzle_simcity_normal`（R↔B 对调）以补偿 raster
+// 的错误直读——decode_top_mip_rgba 恢复 BGRA 重排后不再需要，已删除。
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,8 +141,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_header_and_keeps_sequential_rgba() {
-        // 顺序 R,G,B,A 直读（不重排）。
+    fn parses_header_and_reorders_bgra() {
+        // pixFmt21 = D3DFMT_A8R8G8B8：内存 B,G,R,A → 重排为 R,G,B,A。
         let data = raster(
             21,
             2,
@@ -160,17 +157,17 @@ mod tests {
         assert!(image.is_raw_rgba());
         assert_eq!(
             image.decode_top_mip_rgba().unwrap(),
-            vec![10, 20, 30, 40, 50, 60, 70, 80]
+            vec![30, 20, 10, 40, 70, 60, 50, 80]
         );
     }
 
     #[test]
-    fn unswizzle_swaps_red_and_blue() {
-        // 粉色法线 (255,128,128) → three 切线空间 (128,128,255)
-        assert_eq!(
-            unswizzle_simcity_normal(&[255, 128, 128, 90]),
-            vec![128, 128, 255, 90]
-        );
+    fn normal_map_flat_region_decodes_blue_up() {
+        // 法线图平坦区原始字节呈粉色（内存 BGRA：B=255 在前）→ 解码后为
+        // 标准蓝 up (128,128,255)，与游戏 ApplyNormalMap 的 B=沿法线轴一致。
+        let data = raster(21, 1, 1, &[255, 128, 128, 249]);
+        let image = RasterImage::parse(&data).unwrap();
+        assert_eq!(image.decode_top_mip_rgba().unwrap(), vec![128, 128, 255, 249]);
     }
 
     #[test]
