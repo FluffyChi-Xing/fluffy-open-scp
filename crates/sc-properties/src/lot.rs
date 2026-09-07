@@ -4,16 +4,29 @@ use crate::{Key, Kind, PropertyFile, Transform, Value};
 
 pub const PROPERTY_RESOURCE_TYPE: u32 = 0x00B1_B104;
 pub const LOD1_MODEL_HASH: u32 = 0x00F9_EFBB;
+pub const LOD2_MODEL_HASH: u32 = 0x00F9_EFBC;
+pub const LOD3_MODEL_HASH: u32 = 0x00F9_EFBD;
+pub const LOD4_MODEL_HASH: u32 = 0x00F9_EFBE;
 pub const LOT_MASK_HASH: u32 = 0x0CCB_7FD5;
 pub const LOT_SIZE_HASH: u32 = 0x0CCB_7FC8;
 /// C# `LotUnitOffset`/`LotOverlayBoxOffset`（Vector2，地面矩形相对模型的偏移）。
 pub const LOT_OVERLAY_OFFSET_HASH: u32 = 0x0CCB_7FC9;
 pub const LOT_PLACEMENT_HASH: u32 = 0x0DB7_FB17;
 
+/// LOD1~LOD4 的 property hash（C# `PropertyConstants.UnitLOD1..4`）。
+pub const LOD_MODEL_HASHES: [u32; 4] = [
+    LOD1_MODEL_HASH,
+    LOD2_MODEL_HASH,
+    LOD3_MODEL_HASH,
+    LOD4_MODEL_HASH,
+];
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LotEditorDocument {
     pub properties: PropertyFile,
     pub model: Option<Key>,
+    /// LOD1~LOD4 模型引用（各一条 Key 属性，可缺失）。
+    pub model_lods: [Option<Key>; 4],
     pub lot_size: Option<[f32; 2]>,
     pub lot_offset: Option<[f32; 2]>,
     pub placement: Option<Transform>,
@@ -23,13 +36,17 @@ pub struct LotEditorDocument {
 
 impl LotEditorDocument {
     pub fn from_property_file(properties: PropertyFile) -> Self {
-        let model = scalar_key(&properties, LOD1_MODEL_HASH);
+        let model_lods = LOD_MODEL_HASHES.map(|hash| scalar_key(&properties, hash));
+        let model = model_lods[0].clone();
         let lot_mask = scalar_key(&properties, LOT_MASK_HASH);
         let lot_size = value_vec2(&properties, LOT_SIZE_HASH);
         let lot_offset = value_vec2(&properties, LOT_OVERLAY_OFFSET_HASH);
         let placement = value_transform(&properties, LOT_PLACEMENT_HASH);
         let known = [
             LOD1_MODEL_HASH,
+            LOD2_MODEL_HASH,
+            LOD3_MODEL_HASH,
+            LOD4_MODEL_HASH,
             LOT_MASK_HASH,
             LOT_SIZE_HASH,
             LOT_OVERLAY_OFFSET_HASH,
@@ -43,6 +60,7 @@ impl LotEditorDocument {
         Self {
             properties,
             model,
+            model_lods,
             lot_size,
             lot_offset,
             placement,

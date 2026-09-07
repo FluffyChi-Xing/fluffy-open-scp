@@ -625,3 +625,37 @@ Material(0x2000B) payload = `Size` u32 → 28B 头 →（模型有 VF section �
 - `TextPreview.vue` 重写：行级虚拟滚动（只渲染可视窗口 ±24 行，rAF 节流）+ shiki 仅高亮可视片段（token 守卫）+ 行数/编码徽标 + 全文复制按钮；预览上限从 4KB → 8MB（1.2MB shader 容器全量可读）
 
 验证：vue-tsc、vitest 73（新增 text-decode 11 项，含 NUL-合法-UTF-8 回归）、cargo workspace 全绿。
+
+## 21. RW4 texture/material 绑定机制研究（2026-09-7 第十五轮，LOD 切换附带产出）
+
+### 21.1 重大发现：MeshMaterialAssignment（0x2001A）= mesh→material 绑定表
+
+EP1 多 mesh 模型 0x41B1BAC0 的 section 布局：`#10 Mesh, #11 Mesh, #12 Material, #13 MeshMaterialAssignment, #14 Material, #15 MeshMaterialAssignment`。assignment 原始字节：
+
+```
+#13: 0B 00 00 00 | 01 00 00 00 | 0C 00 00 00   → mesh #11 ↔ material #12
+#15: 0A 00 00 00 | 01 00 00 00 | 0E 00 00 00   → mesh #10 ↔ material #14
+```
+
+**格式 = 12B：mesh section 号 u32 + u32（恒 1，语义待定）+ material section 号 u32**。C# `RW4Model.cs` 的 RWMeshMaterialAssignment 被注释禁用（误判为 Spore 专用），实际 SimCity 文件普遍存在。EP1 全量统计（`material_bind_probe`）：
+
+- meshes=4703 = materials 可解 4654 + Raw 49 —— **每 MESH 恰好一个 MATERIAL**
+- 2819 带材质模型中 1835 个含多 MATERIAL；双 UV 通道（≥2 组 TexCoord）模型 376 个
+- 六槽贴图跨包解析率：slot0 4649/4654…全部命中主包（slot0 调色板全本地）
+- 由此：`resolve_model_material` 的"取第一个材质"应改为 **assignment 表逐 mesh 绑定**（下一轮实现，含 facade UV）
+
+### 21.2 modding.pdf（docs/overview/modding.pdf）佐证
+
+- **材质命名协议**（p240）：`SCP-(colorBottom)-(intOffset)-BottomLayer-(intTex)-(colTop)-TopLayer-(paddingX)-(paddingY)-(index)`，其中 **BottomLayer/TopLayer = clip range W,H,U,V**（两裁剪窗）——与 §19.5 SHORT4N TEXCOORD `X=w/Y=h/Z=x/W=y` 推测互证；尾部 index 0~255 且 **256 起回绕**（p244 TIP）= D3DCOLOR.G 调色板列
+- **双 UV Map Channel**（p241）：Channel 1 = 底层贴图，**Channel 2 = 第二层贴图（如砖墙上的门窗）**；Opiie RW4 文档（p279）顶点格式含 "Interior UV texture coordinates" —— 第二 UV = 假内景投影
+- **按材质分面片**（p252）：建模时把共用同一贴图的面 detach 成独立 object 并赋对应材质——解释了"每 mesh 一材质"的来源
+- **导入链**：3ds Max(OpenCOLLADA) → SimCityPak 工具导入 LOD 层（p247）；**SimCityPak 只认 3ds Max 导出的 DAE 材质**（p257）——贴图不内嵌，经材质槽引用
+- **Opiie: RW4 Model File**（p279-280）：Mesh 头字段序与我们的解析一致（40,4/tri_section/tri_count/1,0/tri*3/0/vert_count/vert_section）；Texture 头 = type/恒 8/unknown/W,H/mip info/0,0/data_section
+- **Opiie: RASTER File**（p281）：File Type/Width/Height/Mipmap Count/Unknown/Pixel Format + 每 mip [block size + ARGB]；"**大多数用途把 ARGB 通道当调色板而非直接显示**"——建筑贴图/地面/贴花均语义化用通道，与遮罩红通道=调色板索引的结论一致
+
+### 21.3 结论与下一步
+
+1. mesh→material 绑定已实锤：**解析 0x2001A 表** → 每 mesh 拿到自己的 slot0-5 → 精细渲染器按 mesh 绑定材质（取代现"全局第一个材质"）
+2. 材质双裁剪窗（W,H,U,V ×2）+ 调色板列 index 已在命名协议中闭环，SHORT4N TEXCOORD 裁剪窗可直接用该语义实现 facade/多层贴图
+3. 双 UV 通道 = 第二层（interior/门窗）→ GLB 导出需加 TEXCOORD_1
+4. shader-def（0x2D 指向的全局包资源）内容仍未知，可后置

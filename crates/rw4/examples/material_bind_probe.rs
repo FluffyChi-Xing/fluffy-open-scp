@@ -42,10 +42,14 @@ fn main() {
     let mut with_material = 0usize;
     let mut material_count = 0usize;
     let mut material_raw = 0usize;
+    let mut mesh_count = 0usize;
+    let mut models_multi_material = 0usize;
+    let mut models_dual_uv = 0usize;
     let mut with_float2_uv = 0usize;
     let mut float4_uv_small = 0usize;
     let mut float4_uv_huge = 0usize;
     let mut slot_hist = [[0usize; 2]; 6]; // [slot][解析成功数, 本包命中数]
+    let mut multi_layout: Option<(u32, Vec<(u32, String)>)> = None;
     let mut printed = 0usize;
 
     for entry in package.entries() {
@@ -58,29 +62,37 @@ fn main() {
 
         let mut line = format!("0x{:08X}", entry.id.instance);
         let mut has_mat = false;
+        let mut mat_sections = 0usize;
         let mut has_uv = false;
         let mut has_float4 = false;
+        let mut has_dual_uv = false;
         let mut f4_max_xy = 0f32;
         for mesh_sec in file.sections_of_type(rw4::SectionType::MESH) {
+            mesh_count += 1;
             if let Ok(m) = file.decode_mesh(&data, mesh_sec.number) {
                 for v in &m.vertices {
                     if v.has_float2_uv() { has_uv = true; }
+                    let mut tex_channels = 0usize;
                     for (el, val) in &v.components {
                         if el.usage == rw4::DeclarationUsage::TexCoord {
+                            tex_channels += 1;
                             if let rw4::ComponentValue::Float4(f) = val {
                                 has_float4 = true;
                                 f4_max_xy = f4_max_xy.max(f[0].abs()).max(f[1].abs());
                             }
                         }
                     }
+                    if tex_channels >= 2 { has_dual_uv = true; }
                 }
             }
         }
+        if has_dual_uv { models_dual_uv += 1; }
         if has_uv { with_float2_uv += 1; }
         else if has_float4 {
             if f4_max_xy <= 8.0 { float4_uv_small += 1; } else { float4_uv_huge += 1; }
         }
         for mat_sec in file.sections_of_type(rw4::SectionType::MATERIAL) {
+            mat_sections += 1;
             let mat = match file.decode_material(&data, mat_sec.number) {
                 Ok(rw4::MaterialSection::Decoded(m)) => m,
                 Ok(rw4::MaterialSection::Raw(_)) => { material_raw += 1; continue; }
@@ -106,14 +118,60 @@ fn main() {
                 line.push_str(&format!("  mat#{} [{}]", mat_sec.number, parts.join(" ")));
             }
         }
-        if has_mat { with_material += 1; }
+        if has_mat {
+            with_material += 1;
+            if mat_sections > 1 { models_multi_material += 1; }
+        }
+        if multi_layout.is_none() && mesh_count_sections(&file) > 1 && mat_sections > 1 {
+            let layout = file
+                .sections()
+                .iter()
+                .map(|sec| {
+                    (
+                        sec.number,
+                        sec.type_name().unwrap_or("??").to_string(),
+                    )
+                })
+                .collect();
+            multi_layout = Some((entry.id.instance, layout));
+        }
         if has_mat && printed < max_print {
             println!("{line}");
             printed += 1;
         }
     }
 
-    println!("--- models={models} with_material={with_material} with_float2_uv={with_float2_uv} float4_uv_small(<=8)={float4_uv_small} float4_uv_huge={float4_uv_huge} materials={material_count} raw={material_raw}");
+    println!("--- models={models} with_material={with_material} materials={material_count} raw={material_raw} meshes={mesh_count} models_multi_material={models_multi_material} models_dual_uv={models_dual_uv} with_float2_uv={with_float2_uv} float4_uv_small(<=8)={float4_uv_small} float4_uv_huge={float4_uv_huge}");
+    if let Some((instance, layout)) = multi_layout {
+        println!("--- multi-mesh section layout of 0x{instance:08X}:");
+        for (number, ty) in layout {
+            println!("    #{number:<3} {ty}");
+        }
+        if let Some(entry) = package
+            .entries()
+            .iter()
+            .find(|e| e.id.instance == instance && e.id.type_id == RW4_IMAGE)
+            .cloned()
+        {
+            if let Ok(data) = package.read(&entry) {
+                if let Ok(file) = rw4::Rw4File::parse(&data) {
+                    for sec in file.sections() {
+                        if sec.type_name() == Some("MeshMaterialAssignment") {
+                            let start = sec.pos as usize;
+                            let end = (start + sec.size as usize).min(data.len());
+                            println!(
+                                "    assignment #{}: type=0x{:08X} size={} bytes={:02x?}",
+                                sec.number,
+                                sec.type_code,
+                                sec.size,
+                                &data[start..end],
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
     for (s, [ok, local]) in slot_hist.iter().enumerate() {
         println!("    slot{s}: resolved={ok} (in_main={local})");
     }
@@ -121,6 +179,10 @@ fn main() {
     if let Some(inst) = detail {
         dump_detail(&package, inst);
     }
+}
+
+fn mesh_count_sections(file: &rw4::Rw4File) -> usize {
+    file.sections_of_type(rw4::SectionType::MESH).count()
 }
 
 fn dump_detail(package: &dbpf::Package, instance: u32) {

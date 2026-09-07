@@ -113,6 +113,17 @@ impl PackageManager {
             .collect())
     }
 
+    /// 所有已打开包的 (id, package) 快照（需要回报资源所在包 id 时使用）。
+    fn all_packages_with_ids(&self) -> Result<Vec<(u64, Arc<Package>)>, PackageError> {
+        Ok(self
+            .packages
+            .lock()
+            .map_err(|_| PackageError::StatePoisoned)?
+            .iter()
+            .map(|(id, package)| (*id, Arc::clone(package)))
+            .collect())
+    }
+
     fn next_job_id(&self) -> Result<u64, PackageError> {
         let id = self.next_job_id.fetch_add(1, Ordering::Relaxed);
         if id == 0 {
@@ -414,6 +425,8 @@ pub struct LotEditorSession {
     pub model_available: bool,
     /// LOD1 模型 TGI（camelCase 拷贝，前端无需触碰 document 内部结构）。
     pub model_key: Option<TgiDto>,
+    /// LOD1~LOD4 模型资源位置（跨包解析；None = 该级缺失）。
+    pub model_lods: Vec<Option<LodModelRef>>,
     /// Lot 地面尺寸（LotSize 0x0CCB7FC8，camelize 拷贝）。
     pub lot_size: Option<[f32; 2]>,
     /// LotPlacementTransform（0x0DB7FB17）行主序 12 floats；地面矩形需取其逆。
@@ -425,6 +438,14 @@ pub struct LotEditorSession {
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
     pub path_pairs: Vec<i32>,
     pub diagnostics: Vec<String>,
+}
+
+/// 单级 LOD 模型的资源位置（跨包解析结果）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LodModelRef {
+    pub package_id: u64,
+    pub tgi: TgiDto,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1594,21 +1615,17 @@ pub async fn read_lot_editor_session(
             let document = sc_properties::LotEditorDocument::from_property_file(properties);
             let lot_units = document.assemble_units();
             let mut diagnostics = lot_units.diagnostics;
-            let model_available = document
-                .model
-                .map(|key| {
-                    package
-                        .entry(ResourceId {
-                            type_id: key.type_id,
-                            group: key.group,
-                            instance: key.instance,
-                        })
-                        .is_some()
-                })
-                .unwrap_or(false);
-            if document.model.is_some() && !model_available {
-                diagnostics.push("LOD1 model resource is missing".into());
-            }
+            let (model_lods, lod_diagnostics) = resolve_lod_model_refs(
+                package,
+                request.package_id,
+                manager,
+                document.model_lods.clone(),
+            );
+            diagnostics.extend(lod_diagnostics);
+            let model_available = model_lods.iter().any(|lod| lod.is_some());
+            let model_key = model_lods
+                .iter()
+                .find_map(|lod| lod.as_ref().map(|reference| reference.tgi.clone()));
             let registry = package_registry(store, manager, package, bundled_registry.as_deref());
             let asset_name = semantic_instance_name(registry.as_deref(), tgi.instance);
             if registry.is_none() {
@@ -1627,11 +1644,8 @@ pub async fn read_lot_editor_session(
             Ok(LotEditorSession {
                 tgi,
                 asset_name,
-                model_key: document.model.map(|key| TgiDto {
-                    type_id: key.type_id,
-                    group: key.group,
-                    instance: key.instance,
-                }),
+                model_key,
+                model_lods,
                 lot_size: document.lot_size,
                 // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
                 lot_placement: document
@@ -1674,6 +1688,71 @@ fn decode_lot_mask_png(
         "LotMask raster resource is missing (it may live in a package that is not open)"
             .to_string(),
     )
+}
+
+/// LOD1~4 模型跨包定位：精确 TGI（须为模型类型）→ 当前包按 instance 扫描
+/// （忽略 group）→ 其它已打开包。返回各级位置与缺失诊断；LOD2-4 常与
+/// property 不同包（EP1/graphics），故必须回报 package_id。
+fn resolve_lod_model_refs(
+    current: &Package,
+    current_package_id: u64,
+    manager: &PackageManager,
+    keys: [Option<sc_properties::Key>; 4],
+) -> (Vec<Option<LodModelRef>>, Vec<String>) {
+    let mut refs = Vec::with_capacity(4);
+    let mut diagnostics = Vec::new();
+    for (index, key) in keys.into_iter().enumerate() {
+        let Some(key) = key else {
+            refs.push(None);
+            continue;
+        };
+        let exact = ResourceId {
+            type_id: key.type_id,
+            group: key.group,
+            instance: key.instance,
+        };
+        let locate = |package: &Package| -> Option<ResourceId> {
+            if let Some(entry) = package.entry(exact) {
+                if entry.id.type_id == RW4_MODEL_TYPE {
+                    return Some(entry.id);
+                }
+            }
+            package
+                .entries()
+                .iter()
+                .find(|entry| {
+                    entry.id.type_id == RW4_MODEL_TYPE && entry.id.instance == key.instance
+                })
+                .map(|entry| entry.id)
+        };
+        let mut found: Option<(u64, ResourceId)> =
+            locate(current).map(|tgi| (current_package_id, tgi));
+        if found.is_none() {
+            found = manager.all_packages_with_ids().ok().and_then(|packages| {
+                packages
+                    .iter()
+                    .find_map(|(id, package)| locate(package).map(|tgi| (*id, tgi)))
+            });
+        }
+        match found {
+            Some((package_id, tgi)) => refs.push(Some(LodModelRef {
+                package_id,
+                tgi: TgiDto {
+                    type_id: tgi.type_id,
+                    group: tgi.group,
+                    instance: tgi.instance,
+                },
+            })),
+            None => {
+                diagnostics.push(format!(
+                    "LOD{} model resource is missing (it may live in a package that is not open)",
+                    index + 1
+                ));
+                refs.push(None);
+            }
+        }
+    }
+    (refs, diagnostics)
 }
 
 /// SCP 定位语义：先精确 TGI（须为 raster 类型），再按 instance + raster
