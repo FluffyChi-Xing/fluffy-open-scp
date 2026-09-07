@@ -843,3 +843,11 @@ clip(baseTintValues.a - 0.5f);                                // A 通道 = 元�
 性能：金样本 payload 858KB→1.2MB（+tint/palette PNG），22.3ms。覆盖率：**全部带 Float4 材质资产（含 2532 栋 facade）逐像素上色** —— 50% 目标达成且超额。
 
 验证：workspace 31 + 前端 73 全绿（容器测试更新至 v4 六贴图 + uvKind）。
+
+### 25.1 常量修正 + 行绑定最终版（2026-09-08，oracle 双指标定案）
+
+- **kSubsampleScale 修正**：着色器源码实为 `kPaletteInvSize × 0.5`（半物理纹素）+ `kSubsampleOffset × 0.25`——此前误用 0.125 导致采样飞出 cell 64 纹素（绿/红色块根因）。palette 2×2 物理块 = 4 个颜色角点，tint.rg 为**双线性混合位置**、tint.b 为亮度 ×2
+- **行绑定定案**（oracle：row1 alpha 率 96% + 逐 G 色打印目检）：regionXform = **row1**、palette cell 原点 = **row0**（(palU,palV) 语义 + 0.125=cell 纵向范围）。烘焙色目检：G=2→浅灰 (227) 大墙面、G=13/15/31→深灰细节、G=6/19/29→黑（窗）——与游戏内截图（灰白消防站）完全吻合
+- slot0 四行 = [palette 原点, regionXform(base), regionXform2(top), 整数格参数]
+
+验证：workspace 31 全绿。烘焙色待用户目检。

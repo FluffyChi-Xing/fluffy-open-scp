@@ -275,8 +275,9 @@ fn main() {
                 let Some(t) = tint_texel(bu, bv) else {
                     continue;
                 };
-                let pu = pal_origin[0] + f32::from(t[0]) / 255.0 * 0.125 + 1.0 / 1024.0;
-                let pv = pal_origin[1] + f32::from(t[1]) / 255.0 * 0.125 + 1.0 / 32.0;
+                // kSubsampleScale = kPaletteInvSize*0.5（半物理纹素）、offset=×0.25
+                let pu = pal_origin[0] + f32::from(t[0]) / 255.0 * (0.5 / pal_w as f32) + (0.25 / pal_w as f32);
+                let pv = pal_origin[1] + f32::from(t[1]) / 255.0 * (0.5 / pal_h as f32) + (0.25 / pal_h as f32);
                 let x = ((pu - pu.floor()).clamp(0.0, 0.999) * pal_w as f32) as usize;
                 let y = ((pv - pv.floor()).clamp(0.0, 0.999) * pal_h as f32) as usize;
                 let Some(px) = pal_rgba.get((y * pal_w + x) * 4..) else {
@@ -318,6 +319,23 @@ fn main() {
                 println!(
                     "    xform=row{xform_row} pal=row{pal_row}: groups={groups} spread={spread:.1}"
                 );
+            }
+            // 打印 xform=row1 各 pal 行的 per-G 平均色（目检建筑色合理性）
+            if xform_row == 1 {
+                for (g, colors) in by_g.iter().take(10) {
+                    let mean = [
+                        colors.iter().map(|c| c[0]).sum::<f32>() / colors.len() as f32,
+                        colors.iter().map(|c| c[1]).sum::<f32>() / colors.len() as f32,
+                        colors.iter().map(|c| c[2]).sum::<f32>() / colors.len() as f32,
+                    ];
+                    println!(
+                        "      pal{pal_row} G={g:<3} n={:<4} color=({:.0},{:.0},{:.0})",
+                        colors.len(),
+                        mean[0],
+                        mean[1],
+                        mean[2]
+                    );
+                }
             }
         }
     }

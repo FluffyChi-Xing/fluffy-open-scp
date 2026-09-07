@@ -626,6 +626,7 @@ fn glb_colors_emit_color0_accessor() {
         &[],
         EmbeddedTextures::default(),
         Some(&colors),
+        None,
     );
     let json_len = u32::from_le_bytes(with.bytes[12..16].try_into().unwrap()) as usize;
     let json: serde_json::Value = serde_json::from_slice(&with.bytes[20..20 + json_len]).unwrap();
@@ -675,6 +676,7 @@ fn real_model_ec3eade0_glb_with_colors_and_container() {
         &[],
         EmbeddedTextures::default(),
         Some(&colors),
+        None,
     );
     let secs = t0.elapsed().as_secs_f64();
     eprintln!(

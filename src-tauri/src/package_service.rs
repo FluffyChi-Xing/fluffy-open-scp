@@ -2179,10 +2179,12 @@ fn mesh_has_uv(mesh: &rw4::DecodedMesh) -> bool {
     has_float2 || (has_float4 && float4_max_xy <= 8.0)
 }
 
-/// facade/常规顶点色烘焙（§24.w 着色器公式）：
+/// facade/常规顶点色烘焙（§24.w 着色器公式 + kSubsampleScale 实测常量）：
 /// `baseUv = frac(uv) * regionXform.xy + regionXform.zw` → tint 查表（slot1）
-/// → palette 查色（slot4 256×8，tint.rg 为 cell 内偏移、b 为亮度 ×2）。
-/// regionXform = slot0 row1，palette cell 原点 = slot0 row2（tint.a>0.5 oracle 实测）。
+/// → palette 查色（slot4 256×8：palUV + tint.rg×半纹素，双线性混 2×2 四色，
+/// tint.b 为亮度 ×2）。
+/// slot0 行序（oracle 实测）：row0 = palette cell 原点 (palU,palV)、
+/// row1 = regionXform（96% alpha 率）、row3 = 整数格参数。
 /// 顶点 D3DCOLOR.G = materialIndex。无 D3DCOLOR 的网格返回 None。
 fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Vec<[f32; 3]>> {
     let any = mesh
@@ -2203,7 +2205,7 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
                 let Some(xform) = bake.params.get(bake.param_cols + m).copied() else {
                     return FALLBACK;
                 };
-                let Some(pal_origin) = bake.params.get(2 * bake.param_cols + m).copied() else {
+                let Some(pal_origin) = bake.params.get(m).copied() else {
                     return FALLBACK;
                 };
                 let Some(f) = v
@@ -2224,8 +2226,13 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
                 let Some(t) = bake.tint_rgba.get((ty * bake.tint_w + tx) * 4..) else {
                     return FALLBACK;
                 };
-                let pu = pal_origin[0] + f32::from(t[0]) / 255.0 * 0.125 + 1.0 / 1024.0;
-                let pv = pal_origin[1] + f32::from(t[1]) / 255.0 * 0.125 + 1.0 / 32.0;
+                // kSubsampleScale = kPaletteInvSize*0.5、offset = *0.25（半物理纹素内插值）
+                let pu = pal_origin[0]
+                    + f32::from(t[0]) / 255.0 * (0.5 / bake.pal_w as f32)
+                    + 0.25 / bake.pal_w as f32;
+                let pv = pal_origin[1]
+                    + f32::from(t[1]) / 255.0 * (0.5 / bake.pal_h as f32)
+                    + 0.25 / bake.pal_h as f32;
                 let px = ((pu - pu.floor()).clamp(0.0, 0.999) * bake.pal_w as f32) as usize;
                 let py = ((pv - pv.floor()).clamp(0.0, 0.999) * bake.pal_h as f32) as usize;
                 let Some(p) = bake.palette_rgba.get((py * bake.pal_w + px) * 4..) else {
