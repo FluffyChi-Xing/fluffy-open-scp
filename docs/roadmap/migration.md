@@ -773,3 +773,11 @@ EP1 模型结构分布（shape histogram）：894 个 0/0、**1025 个 1 mesh/1 
 - shader-def（EP1 全部材质仅引用 **2 个**：0x259E950F/0x38869BDA）**不在任何游戏包内**（Game/Graphics/App/Locale/RegionTerrain 全查无）——疑似内嵌 SimCity.exe；工具 `shader_def_scan`
 - 求解器修复 true modulo（Rust fract 保号 bug）后 facade 尺度搜索仍为噪声；oracle（遮罩红==顶点G）在 facade 上未验证成立，需要一个「已知 UV + D3DCOLOR + 同包遮罩」的阳性对照
 - f2/f3 与 f0/f1 存在近常数倍率关系（~2.0-2.2，双通道=同投影不同世界尺度），支持"双 UV 通道 = 两层材质各自投影"模型
+
+### 24.z 阶段 4 深挖（2026-09-08 续二）：VertexFormat 确认 + oracle 证伪
+
+- **VertexFormat ground truth**（金样本 facade，`decode_vertex_format` 新公开方法）：`Position Float3(0) + Normal UByte4(12) + Tangent UByte4(16) + Color D3DCOLOR(20) + TexCoord Float4(24)`——**单个 TexCoord Float4 通道**（stride 40B），f0..f3 同属一层；双 UV 模型才有第二个 TexCoord 元素
+- **Float4 = 双层世界投影 (u1,v1,u2,v2)**：斜率反推 cell 尺寸 f0/f1≈5.7×8.4m、f2/f3≈2.6×4.3m（两层 ~2× 关系）
+- **oracle 证伪**：fract(f0),fract(f1) 以米为单位 mod 512 后，建筑只覆盖 color-control map 一个 ~60×60px 角落，逐 G 聚类采样点全部落在图的暗色/边界区（RGB 暗橄榄色，非亮色块区域）——**任意尺度的直接采样都不是映射**；映射必须经材质的 cell 矩形（shader-def）
+- 目视 slot1 PNG（`slot_dump` 新工具）：确认为 color control map——饱和色块区域（绿/品红/青/红）+ 箭头/圆圈符号，与 modding 教程 256 平面网格完全对应
+- **给 exe 逆向的请求**：在 SimCity.exe（ImHex/GHIDRA）中搜索 u32 小端 `0F 95 9E 25`（0x259E950F）与 `DA 9B 86 38`（0x38869BDA）——命中处即内嵌 shader 包/表，是打破 facade UV 瓶颈的钥匙

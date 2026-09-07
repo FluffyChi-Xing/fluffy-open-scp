@@ -23,6 +23,19 @@ fn main() {
     let data = package.read(&entry).expect("read model");
     let file = rw4::Rw4File::parse(&data).expect("parse rw4");
 
+    // VertexFormat 真实声明（用户逆向确认的 ground truth）
+    for section in file.sections_of_type(rw4::SectionType::VERTEX_FORMAT) {
+        if let Ok(format) = file.decode_vertex_format(data.as_slice(), section.number) {
+            println!("VertexFormat #{}: elements:", section.number);
+            for element in &format.elements {
+                println!(
+                    "    usage={:?} type={:?} index={} offset={}",
+                    element.usage, element.decl_type, element.index, element.offset
+                );
+            }
+        }
+    }
+
     for section in file.sections_of_type(rw4::SectionType::MESH) {
         let mesh = match file.decode_mesh(&data, section.number) {
             Ok(m) => m,
@@ -132,16 +145,18 @@ fn main() {
                 Some((rgba, width, height))
             });
         if let (Some(mesh), Some((mask, mask_w, mask_h))) = (mesh_section, mask_rgba) {
-            let sample = |u: f32, v: f32| -> Option<u8> {
+            let sample = |u: f32, v: f32, flip_v: bool| -> Option<[u8; 3]> {
                 if !u.is_finite() || !v.is_finite() {
                     return None;
                 }
                 // true modulo（Rust fract 保号，负 UV 会 clamp 到 0 列污染结果）
                 let fu = u - u.floor();
                 let fv = v - v.floor();
+                let fv = if flip_v { 1.0 - fv } else { fv };
                 let x = ((fu * mask_w as f32) as usize).min(mask_w as usize - 1);
                 let y = ((fv * mask_h as f32) as usize).min(mask_h as usize - 1);
-                mask.get((y * mask_w as usize + x) * 4).copied()
+                let px = mask.get((y * mask_w as usize + x) * 4..)?;
+                Some([px[0], px[1], px[2]])
             };
             println!("--- UV hypothesis solver (mask_red == D3DCOLOR.G match rate) ---");
             // 固定样本集（顶点 f4 + 期望列）
@@ -163,34 +178,72 @@ fn main() {
                     Some((f, g))
                 })
                 .collect();
-            let rate = |sx: f32, sy: f32| -> f64 {
+            let rate = |sx: f32, sy: f32, flip_v: bool| -> f64 {
                 let mut tested = 0usize;
                 let mut matched = 0usize;
                 for (f, g) in &samples {
                     let (u, v_coord) = (f[0] / sx, f[1] / sy);
-                    if let Some(red) = sample(u, v_coord) {
+                    if sample(u, v_coord, flip_v).is_some() {
                         tested += 1;
-                        if red == *g {
-                            matched += 1;
-                        }
                     }
                 }
                 if tested > 0 { matched as f64 / tested as f64 } else { 0.0 }
             };
+            // 聚类验证：同 G 顶点的 (f0 mod 512, f1 mod 512) 是否聚集，且聚类处 mask_red 是否 == G
+            let mut by_g: std::collections::BTreeMap<u8, Vec<[f32; 2]>> =
+                std::collections::BTreeMap::new();
+            for (f, g) in &samples {
+                by_g.entry(*g).or_default().push([f[0], f[1]]);
+            }
+            println!("    --- per-G cluster (mod 512, n>=4): uv mean/R + mask_red(normal|flip) vs G ---");
+            let circ = |vals: &[f32]| -> (f32, f64) {
+                let (mut sx, mut sy) = (0f64, 0f64);
+                for v in vals {
+                    let a = f64::from(*v) * std::f64::consts::TAU;
+                    sx += a.cos();
+                    sy += a.sin();
+                }
+                let r = (sx * sx + sy * sy).sqrt() / vals.len() as f64;
+                let m = sy.atan2(sx) / std::f64::consts::TAU / std::f64::consts::TAU;
+                ((m + 1.0).fract() as f32, r)
+            };
+            for (g, uvs) in by_g.iter().filter(|(_, uvs)| uvs.len() >= 4).take(14) {
+                let us: Vec<f32> = uvs.iter().map(|uv| uv[0]).collect();
+                let vs: Vec<f32> = uvs.iter().map(|uv| uv[1]).collect();
+                let (mu_c, ru) = circ(&us);
+                let (mv_c, rv) = circ(&vs);
+                let (mu, mv) = (mu_c * 512.0, mv_c * 512.0);
+                let c0 = sample(mu / 512.0, mv / 512.0, false)
+                    .map(|c| format!("({},{},{})", c[0], c[1], c[2]))
+                    .unwrap_or("?".into());
+                let c1 = sample(mu / 512.0, mv / 512.0, true)
+                    .map(|c| format!("({},{},{})", c[0], c[1], c[2]))
+                    .unwrap_or("?".into());
+                println!(
+                    "    G={g:<3} n={n:<5} u={mu:>6.1}px (R={ru:.2}) v={mv:>6.1}px (R={rv:.2})  mask(normal)={c0} mask(flip)={c1}",
+                    n = uvs.len()
+                );
+            }
             // 粗扫：方格尺度 1..1200
             let mut best = (0f64, 0f32);
             for s in 1..=1200 {
-                let r = rate(s as f32, s as f32);
+                let r = rate(s as f32, s as f32, false);
                 if r > best.0 {
                     best = (r, s as f32);
                 }
             }
             println!("    square-scale best: s={} rate={:.1}%", best.1, best.0 * 100.0);
+            for flip in [false, true] {
+                println!(
+                    "    s=1 flip_v={flip}: match rate={:.1}%",
+                    rate(1.0, 1.0, flip) * 100.0
+                );
+            }
             // 独立细扫 sx/sy（在最优附近 ±40）
             let mut best2 = (0f64, 0f32, 0f32);
             for sx in (best.1 as i32 - 40).max(1)..=(best.1 as i32 + 40) {
                 for sy in (best.1 as i32 - 40).max(1)..=(best.1 as i32 + 40) {
-                    let r = rate(sx as f32, sy as f32);
+                    let r = rate(sx as f32, sy as f32, false);
                     if r > best2.0 {
                         best2 = (r, sx as f32, sy as f32);
                     }

@@ -342,6 +342,12 @@ impl Rw4File {
         Ok(vertices)
     }
 
+    /// 解码一个 VertexFormat section（顶点布局声明，诊断/工具用）。
+    pub fn decode_vertex_format(&self, data: &[u8], number: u32) -> Result<VertexFormat> {
+        let section = self.section_for(number, "VA101", SectionType::VERTEX_FORMAT)?;
+        VertexFormat::parse(self.payload(data, section.number)?)
+    }
+
     fn blob_payload<'a>(
         &self,
         data: &'a [u8],
