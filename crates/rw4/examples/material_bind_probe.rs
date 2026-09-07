@@ -48,10 +48,10 @@ fn main() {
     let mut with_float2_uv = 0usize;
     let mut float4_uv_small = 0usize;
     let mut float4_uv_huge = 0usize;
-    let let_unused = 0;
     let mut shape_hist: std::collections::BTreeMap<(usize, usize), usize> = std::collections::BTreeMap::new();
     let mut slot_hist = [[0usize; 2]; 6]; // [slot][解析成功数, 本包命中数]
     let mut multi_layout: Option<(u32, Vec<(u32, String)>)> = None;
+    let mut float2_models: Vec<u32> = Vec::new();
     let mut printed = 0usize;
 
     for entry in package.entries() {
@@ -89,6 +89,12 @@ fn main() {
             }
         }
         if has_dual_uv { models_dual_uv += 1; }
+        if has_uv {
+            line.push_str(" uv=float2");
+            if float2_models.len() < 12 {
+                float2_models.push(entry.id.instance);
+            }
+        }
         if has_uv { with_float2_uv += 1; }
         else if has_float4 {
             if f4_max_xy <= 8.0 { float4_uv_small += 1; } else { float4_uv_huge += 1; }
@@ -149,6 +155,10 @@ fn main() {
         }
     }
 
+    println!("--- float2-UV models (up to 12):");
+    for instance in &float2_models {
+        println!("    0x{instance:08X}");
+    }
     println!("--- (mesh,material) shape histogram:");
     for ((m, s), count) in &shape_hist {
         println!("    {m} mesh / {s} material: {count} models");
