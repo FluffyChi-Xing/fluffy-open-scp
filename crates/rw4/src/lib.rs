@@ -49,7 +49,9 @@ pub use anim::{
     Key,
 };
 pub use error::{Error, Result};
-pub use material::{DecodedMaterial, MaterialSection, SHADER_DEF_MARKER, TextureSlotRef};
+pub use material::{
+    DecodedMaterial, MaterialSection, MeshMaterialBinding, SHADER_DEF_MARKER, TextureSlotRef,
+};
 pub use math::{Mat4, mat4_decompose_trs, mat4_inverse, mat4_mul};
 pub use mesh::{
     DecodedMesh, DecodedVertex, MeshHeader, NO_VERTEX_SECTION, TriangleArrayHeader,

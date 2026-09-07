@@ -110,6 +110,45 @@ impl Rw4File {
             .map(|f| 24 + 12 * f.elements.len());
         Ok(parse_material(payload, vertex_format_size))
     }
+
+    /// 解码全部 MeshMaterialAssignment（0x2001A）——mesh→material 绑定表。
+    ///
+    /// 12 字节 = `mesh_section 号 u32 + u32（恒 1，语义待定）+
+    /// material_section 号 u32`（migration.md §21.1，EP1 0x41B1BAC0 实测：
+    /// `#13: [0B,01,0C]` 绑定 mesh#11↔material#12）。C# `RW4Model.cs`
+    /// 误判为 Spore 遗产而注释禁用，实际 SimCity 文件普遍存在，且
+    /// mesh 数 == material 数（可解 + Raw）。损坏条目跳过。
+    pub fn decode_mesh_material_bindings(&self, data: &[u8]) -> Vec<MeshMaterialBinding> {
+        self.sections_of_type(SectionType::MESH_MATERIAL_ASSIGNMENT)
+            .filter_map(|section| {
+                let payload = self.payload(data, section.number).ok()?;
+                if payload.len() < 12 {
+                    return None;
+                }
+                let word = |offset: usize| -> Option<u32> {
+                    Some(u32::from_le_bytes(
+                        payload.get(offset..offset + 4)?.try_into().ok()?,
+                    ))
+                };
+                Some(MeshMaterialBinding {
+                    mesh_section: word(0)?,
+                    unknown2: word(4)?,
+                    material_section: word(8)?,
+                })
+            })
+            .collect()
+    }
+}
+
+/// 一条 mesh→material 绑定（MeshMaterialAssignment 0x2001A）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeshMaterialBinding {
+    /// 绑定的 MESH section 号。
+    pub mesh_section: u32,
+    /// 恒 1（语义待定，原样保留）。
+    pub unknown2: u32,
+    /// 绑定的 MATERIAL section 号。
+    pub material_section: u32,
 }
 
 pub(crate) fn parse_material(payload: &[u8], vertex_format_size: Option<usize>) -> MaterialSection {

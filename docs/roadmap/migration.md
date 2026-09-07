@@ -683,3 +683,21 @@ EP1 多 mesh 模型 0x41B1BAC0 的 section 布局：`#10 Mesh, #11 Mesh, #12 Mat
 **新开放线索**：模型 0x63D180B9 实测 D3DCOLOR 的 **B 通道逐元素变化（1~80）且远超行数**——不是行号；假设：顶层列号（基层列=G、顶层列=B）或其它编码，待与遮罩绿通道/原版截图对拍（阶段 4 线索）。
 
 性能：烘焙成本不变（同等查表量）。
+
+## 22. 阶段 2：0x2001A 逐 mesh 材质绑定 + LOTM v2 容器（2026-09-7 第十六轮）
+
+### 22.1 实现
+
+- `rw4::material::decode_mesh_material_bindings`：解析 0x2001A（12B = mesh_section + u32(1) + material_section），损坏条目跳过；真实包金样本测试（EP1 0x41B1BAC0 双 assignment 字节断言）
+- `read_lot_model_meshes` 重构为 `build_lot_model_payload`（可测试）：按绑定把每 mesh 配到自己的 MATERIAL（绑定缺失/材质 Raw 回退第一个可解码材质，v1 行为）；**逐 mesh** 用其材质的 slot0 调色板烘 COLOR_0、slot1/2 解出 PNG；可贴图判定改为逐 mesh（`mesh_has_uv`）
+- 容器 **LOTM v2**：`magic|version=2|mesh_count|每 mesh GLB|material_count|每材质 base/normal PNG|每 mesh material_index+has_uv u8`（材质按 section 号去重共享 PNG）；前端 `parseLotModelContainer` v2 + 视口按 materialIndex 分组应用贴图（hasUv 逐 mesh 闸门）；mock 同步 v2
+
+### 22.2 重大既有缺口：蒙皮双变体建筑整体未渲染
+
+EP1 模型结构分布（shape histogram）：894 个 0/0、**1025 个 1 mesh/1 材质、1839 个 2 mesh/2 材质**。全部 2-mesh 模型（EP1/DLC0 均如此）的 mesh **decode_mesh 失败**（ME100 expected 0x1CE found 0x216 / ME004 expected 0 found 0x56A——蒙皮顶点声明变体），即 **65% 的带材质建筑当前完全没有几何**。这解释了此前"每模型 1.67 材质"的错觉：静态建筑都是 1 mesh/1 材质。修复蒙皮解码（解锁 1839 栋建筑 + 多材质分组实战验证）列为阶段 2.5 最高优先。
+
+### 22.3 性能
+
+金样本 0x63D180B9（2409 tri/4682 verts，含 slot1/2 跨包解码与 PNG 编码）：**release 全链 11.36ms**（v1 8.65ms，+31% 来自逐材质槽位解析；单材质模型差异极小）。多材质开销 = 材质数 × 槽位解析，静态建筑均单材质，无感知。
+
+验证：rw4 金样本绑定测试、src-tauri v2 容器测试（结构/分组/计时）、cargo workspace、vue-tsc、vitest 73（容器 v2 3 项重写）通过。

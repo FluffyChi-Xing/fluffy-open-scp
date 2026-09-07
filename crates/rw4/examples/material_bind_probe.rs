@@ -48,6 +48,8 @@ fn main() {
     let mut with_float2_uv = 0usize;
     let mut float4_uv_small = 0usize;
     let mut float4_uv_huge = 0usize;
+    let let_unused = 0;
+    let mut shape_hist: std::collections::BTreeMap<(usize, usize), usize> = std::collections::BTreeMap::new();
     let mut slot_hist = [[0usize; 2]; 6]; // [slot][解析成功数, 本包命中数]
     let mut multi_layout: Option<(u32, Vec<(u32, String)>)> = None;
     let mut printed = 0usize;
@@ -122,18 +124,24 @@ fn main() {
             with_material += 1;
             if mat_sections > 1 { models_multi_material += 1; }
         }
+        let mesh_sections_n = mesh_count_sections(&file);
+        *shape_hist.entry((mesh_sections_n, mat_sections)).or_insert(0) += 1;
         if multi_layout.is_none() && mesh_count_sections(&file) > 1 && mat_sections > 1 {
-            let layout = file
-                .sections()
-                .iter()
-                .map(|sec| {
-                    (
-                        sec.number,
-                        sec.type_name().unwrap_or("??").to_string(),
-                    )
-                })
-                .collect();
-            multi_layout = Some((entry.id.instance, layout));
+            // 仅选全部 mesh 可解码的静态模型（0x41B1BAC0 为蒙皮变体，解码失败）
+            let decoded_ok = file.sections_of_type(rw4::SectionType::MESH).filter_map(|s| file.decode_mesh(&data, s.number).ok()).count() == mesh_count_sections(&file);
+            if decoded_ok {
+                let layout = file
+                    .sections()
+                    .iter()
+                    .map(|sec| {
+                        (
+                            sec.number,
+                            sec.type_name().unwrap_or("??").to_string(),
+                        )
+                    })
+                    .collect();
+                multi_layout = Some((entry.id.instance, layout));
+            }
         }
         if has_mat && printed < max_print {
             println!("{line}");
@@ -141,6 +149,10 @@ fn main() {
         }
     }
 
+    println!("--- (mesh,material) shape histogram:");
+    for ((m, s), count) in &shape_hist {
+        println!("    {m} mesh / {s} material: {count} models");
+    }
     println!("--- models={models} with_material={with_material} materials={material_count} raw={material_raw} meshes={mesh_count} models_multi_material={models_multi_material} models_dual_uv={models_dual_uv} with_float2_uv={with_float2_uv} float4_uv_small(<=8)={float4_uv_small} float4_uv_huge={float4_uv_huge}");
     if let Some((instance, layout)) = multi_layout {
         println!("--- multi-mesh section layout of 0x{instance:08X}:");

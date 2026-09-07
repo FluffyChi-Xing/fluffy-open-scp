@@ -473,6 +473,11 @@ pub struct ResolveNamesRequest {
 }
 
 /// PE 精细渲染二进制容器魔数："LOTM"（小端字节序）。
+///
+/// v2 布局：`magic | version | mesh_count`，每 mesh `u32 len + GLB`
+/// （COLOR_0 按**该 mesh 材质**调色板烘焙）；`material_count`，每材质
+/// `u32 base_len + PNG | u32 normal_len + PNG`；每 mesh
+/// `u32 material_index + u8 has_uv`。解析见前端 `three-gltf.ts`。
 pub const LOT_MODEL_PAYLOAD_MAGIC: u32 = 0x4D54_4F4C;
 
 /// 单个网格 GLB 的体积上限（异常模型防御，对齐原 OBJ 8MB 量级）。
@@ -1932,23 +1937,24 @@ fn resolve_palette(
     )
 }
 
-/// 模型材质包：调色板 + 遮罩/法线 PNG 字节（都可为 None）。
-struct ModelMaterialBundle {
+/// 单个材质的跨包解析产物（调色板 + 遮罩/法线 PNG 字节，均可为 None）。
+struct MaterialResources {
     palette: Option<Vec<[f32; 3]>>,
     base_color_png: Option<Vec<u8>>,
     normal_png: Option<Vec<u8>>,
-    has_uv: bool,
 }
 
-fn resolve_model_material(
+/// 解析指定 MATERIAL section 的槽位资源（slot0 调色板 / slot1 遮罩 / slot2 法线）。
+fn resolve_material_resources(
     file: &rw4::Rw4File,
     data: &[u8],
     package: &Package,
     manager: &PackageManager,
-) -> ModelMaterialBundle {
+    material_section: u32,
+) -> MaterialResources {
     let slots: Vec<rw4::TextureSlotRef> = file
-        .sections_of_type(rw4::SectionType::MATERIAL)
-        .find_map(|s| file.decode_material(data, s.number).ok())
+        .decode_material(data, material_section)
+        .ok()
         .and_then(|m| match m {
             rw4::MaterialSection::Decoded(decoded) => {
                 Some(decoded.texture_slots().copied().collect::<Vec<_>>())
@@ -1964,44 +1970,13 @@ fn resolve_model_material(
             .filter(|i| *i != 0)
     };
 
-    // 可贴图判定：有 FLOAT2 真 UV；或仅 FLOAT4（facade 世界投影）但全部 xy 范围 ≤8
-    //（C# GltfConverter 同规则；OBJ 的 vt 即 FLOAT4.xy，与判定一致）
-    let mut has_float2 = false;
-    let mut has_float4 = false;
-    let mut float4_max_xy = 0f32;
-    for mesh in file
-        .sections_of_type(rw4::SectionType::MESH)
-        .filter_map(|s| file.decode_mesh(data, s.number).ok())
-    {
-        for vertex in &mesh.vertices {
-            for (element, value) in &vertex.components {
-                if element.usage != rw4::DeclarationUsage::TexCoord {
-                    continue;
-                }
-                match value {
-                    rw4::ComponentValue::Float2(_) => has_float2 = true,
-                    rw4::ComponentValue::Float4(f) => {
-                        has_float4 = true;
-                        float4_max_xy = float4_max_xy.max(f[0].abs()).max(f[1].abs());
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    let has_uv = has_float2 || (has_float4 && float4_max_xy <= 8.0);
-
-    let mut bundle = ModelMaterialBundle {
+    let mut resources = MaterialResources {
         palette: None,
         base_color_png: None,
         normal_png: None,
-        has_uv,
     };
     if let Some(instance) = slot_instance(0) {
-        bundle.palette = resolve_palette(package, manager, instance);
-    }
-    if !has_uv {
-        return bundle;
+        resources.palette = resolve_palette(package, manager, instance);
     }
     if let Some(instance) = slot_instance(1) {
         if let Some((bytes, type_id)) =
@@ -2013,7 +1988,7 @@ fn resolve_model_material(
                 for px in rgba.as_chunks::<4>().0 {
                     gray.extend_from_slice(&[px[0], px[0], px[0], 255]);
                 }
-                bundle.base_color_png = encode_rgba_png_bytes(width, height, gray).ok();
+                resources.base_color_png = encode_rgba_png_bytes(width, height, gray).ok();
             }
         }
     }
@@ -2022,13 +1997,37 @@ fn resolve_model_material(
             find_resource_across_packages(package, manager, instance, &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE])
         {
             if let Some((rgba, width, height)) = texture_rgba_from_resource(&bytes, type_id) {
-                bundle.normal_png =
+                resources.normal_png =
                     encode_rgba_png_bytes(width, height, rw4::unswizzle_simcity_normal(&rgba))
                         .ok();
             }
         }
     }
-    bundle
+    resources
+}
+
+/// 单 mesh 可贴图判定：有 FLOAT2 真 UV；或仅 FLOAT4（facade 世界投影）
+/// 但全部 xy 范围 ≤8（C# GltfConverter 同规则）。
+fn mesh_has_uv(mesh: &rw4::DecodedMesh) -> bool {
+    let mut has_float2 = false;
+    let mut has_float4 = false;
+    let mut float4_max_xy = 0f32;
+    for vertex in &mesh.vertices {
+        for (element, value) in &vertex.components {
+            if element.usage != rw4::DeclarationUsage::TexCoord {
+                continue;
+            }
+            match value {
+                rw4::ComponentValue::Float2(_) => has_float2 = true,
+                rw4::ComponentValue::Float4(f) => {
+                    has_float4 = true;
+                    float4_max_xy = float4_max_xy.max(f[0].abs()).max(f[1].abs());
+                }
+                _ => {}
+            }
+        }
+    }
+    has_float2 || (has_float4 && float4_max_xy <= 8.0)
 }
 
 /// 逐顶点颜色：调色板列 = D3DCOLOR.G（越界钳到末列）；无 D3DCOLOR 的网格返回 None。
@@ -2050,9 +2049,9 @@ fn mesh_vertex_colors(mesh: &rw4::DecodedMesh, palette: &[[f32; 3]]) -> Option<V
     )
 }
 
-/// PE 精细渲染：一次返回模型全部网格 GLB（COLOR_0 顶点色已按调色板烘焙）+
-/// 共享贴图 PNG，经原始字节通道传输（`LOT_MODEL_PAYLOAD_MAGIC` 容器），
-/// 取代前端 1+N 次 section 请求与 base64+JSON 双重膨胀。
+/// PE 精细渲染：一次返回模型全部网格 GLB（COLOR_0 按**每 mesh 材质**的
+/// 调色板烘焙）+ 逐材质贴图 PNG（0x2001A 绑定表），经原始字节通道传输
+/// （`LOT_MODEL_PAYLOAD_MAGIC` v2 容器），取代前端 1+N 次 section 请求。
 #[tauri::command]
 pub async fn read_lot_model_meshes(
     state: State<'_, AppState>,
@@ -2072,52 +2071,115 @@ pub async fn read_lot_model_meshes(
                 ));
             }
             let file = rw4::Rw4File::parse(data)?;
-            let bundle = resolve_model_material(&file, data, package, manager);
-            let mut glbs: Vec<Vec<u8>> = Vec::new();
-            for section in file.sections_of_type(rw4::SectionType::MESH) {
-                let mesh = file.decode_mesh(data, section.number)?;
-                if !mesh.is_exportable() {
-                    continue;
-                }
-                let colors = bundle
-                    .palette
-                    .as_ref()
-                    .and_then(|palette| mesh_vertex_colors(&mesh, palette));
-                let glb = sc_exporter::export_glb_with_colors(
-                    &mesh,
-                    None,
-                    &[],
-                    sc_exporter::EmbeddedTextures::default(),
-                    colors.as_deref(),
-                );
-                if glb.bytes.len() <= MESH_GLB_MAX_BYTES {
-                    glbs.push(glb.bytes);
-                }
-            }
-
-            let mut out = Vec::new();
-            out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
-            out.extend_from_slice(&1u32.to_le_bytes());
-            out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
-            for glb in &glbs {
-                out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
-                out.extend_from_slice(glb);
-            }
-            for png in [&bundle.base_color_png, &bundle.normal_png] {
-                match png {
-                    Some(bytes) => {
-                        out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-                        out.extend_from_slice(bytes);
-                    }
-                    None => out.extend_from_slice(&0u32.to_le_bytes()),
-                }
-            }
-            out.push(u8::from(bundle.has_uv));
-            Ok(out)
+            Ok(build_lot_model_payload(&file, data, package, manager))
         },
     )
     .await?;
     Ok(tauri::ipc::Response::new(payload))
+}
+
+/// 组装 LOTM v2 容器：按 MeshMaterialAssignment（0x2001A）逐 mesh 配材质。
+///
+/// 布局（小端）：`magic | version=2 | mesh_count`，每 mesh `u32 len + GLB`
+/// （COLOR_0 已按**该 mesh 材质**的调色板烘焙）；随后 `material_count`，
+/// 每材质 `u32 base_len + PNG | u32 normal_len + PNG`（0 = 无）；末尾每
+/// mesh `u32 material_index + u8 has_uv`。绑定缺失/材质不可解时回退
+/// 第一个可解码材质（v1 行为）；完全无材质则指向占位空材质。
+fn build_lot_model_payload(
+    file: &rw4::Rw4File,
+    data: &[u8],
+    package: &Package,
+    manager: &PackageManager,
+) -> Vec<u8> {
+    let bindings = file.decode_mesh_material_bindings(data);
+    let fallback_material = file
+        .sections_of_type(rw4::SectionType::MATERIAL)
+        .find_map(|s| {
+            let decoded = file.decode_material(data, s.number).ok()?;
+            matches!(decoded, rw4::MaterialSection::Decoded(_)).then_some(s.number)
+        });
+
+    let mut glbs: Vec<Vec<u8>> = Vec::new();
+    let mut mesh_material: Vec<u32> = Vec::new();
+    let mut mesh_uv_flags: Vec<bool> = Vec::new();
+    let mut material_sections: Vec<u32> = Vec::new();
+    let mut material_resources: Vec<MaterialResources> = Vec::new();
+
+    for section in file.sections_of_type(rw4::SectionType::MESH) {
+        let mesh = match file.decode_mesh(data, section.number) {
+            Ok(mesh) => mesh,
+            Err(_) => continue,
+        };
+        if !mesh.is_exportable() {
+            continue;
+        }
+        let bound_section = bindings
+            .iter()
+            .find(|b| b.mesh_section == section.number)
+            .map(|b| b.material_section)
+            .or(fallback_material)
+            .unwrap_or(u32::MAX);
+        let material_index = match material_sections
+            .iter()
+            .position(|number| *number == bound_section)
+        {
+            Some(index) => index as u32,
+            None => {
+                material_resources.push(resolve_material_resources(
+                    file,
+                    data,
+                    package,
+                    manager,
+                    bound_section,
+                ));
+                material_sections.push(bound_section);
+                (material_resources.len() - 1) as u32
+            }
+        };
+        let colors = material_resources[material_index as usize]
+            .palette
+            .as_ref()
+            .and_then(|palette| mesh_vertex_colors(&mesh, palette));
+        let glb = sc_exporter::export_glb_with_colors(
+            &mesh,
+            None,
+            &[],
+            sc_exporter::EmbeddedTextures::default(),
+            colors.as_deref(),
+        );
+        if glb.bytes.len() > MESH_GLB_MAX_BYTES {
+            continue;
+        }
+        glbs.push(glb.bytes);
+        mesh_material.push(material_index);
+        mesh_uv_flags.push(mesh_has_uv(&mesh));
+    }
+
+    let mut out = Vec::new();
+    out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
+    for glb in &glbs {
+        out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
+        out.extend_from_slice(glb);
+    }
+    out.extend_from_slice(&(material_resources.len() as u32).to_le_bytes());
+    for material in &material_resources {
+        for png in [&material.base_color_png, &material.normal_png] {
+            match png {
+                Some(bytes) => {
+                    out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                    out.extend_from_slice(bytes);
+                }
+                None => out.extend_from_slice(&0u32.to_le_bytes()),
+            }
+        }
+    }
+    for (index, has_uv) in mesh_material.iter().zip(&mesh_uv_flags) {
+        out.extend_from_slice(&index.to_le_bytes());
+        out.push(u8::from(*has_uv));
+    }
+    out
 }
 
 #[tauri::command]
@@ -3107,6 +3169,74 @@ fn emit_progress(
     }) {
         let _ = app.emit(EXPORT_PROGRESS_EVENT, &progress);
         let _ = app.emit(ACTIVITY_EVENT, &event);
+    }
+}
+
+
+#[cfg(test)]
+mod lot_payload_tests {
+    use super::*;
+
+    /// LOTM v2 金样本：EP1 静态模型 0x63D180B9（1 mesh / 1 material /
+    /// 1 assignment）。多材质分组路径无法集成测试——EP1/DLC0/app 全部
+    /// 2-mesh 模型均为蒙皮变体、decode_mesh 不支持（见 §21.5 开放问题），
+    /// 绑定正确性由 rw4 real_package 金样本（0x41B1BAC0 双 assignment
+    /// 字节）保证。
+    #[test]
+    fn lot_model_payload_v2_groups_meshes_by_assignment() {
+        const EP1: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../docs/packages/m3/SimCityDataEP1.package"
+        );
+        const MODEL: u32 = 0x63D1_80B9;
+        let package = match dbpf::Package::open(EP1) {
+            Ok(package) => package,
+            Err(error) => {
+                eprintln!("skipping: {EP1}: {error}");
+                return;
+            }
+        };
+        let manager = PackageManager::new();
+        let entry = package
+            .entries()
+            .iter()
+            .find(|e| e.id.type_id == RW4_MODEL_TYPE && e.id.instance == MODEL)
+            .cloned()
+            .expect("golden model in EP1");
+        let data = package.read(&entry).unwrap();
+        let file = rw4::Rw4File::parse(&data).unwrap();
+
+        let started = std::time::Instant::now();
+        let payload = build_lot_model_payload(&file, &data, &package, &manager);
+        let elapsed = started.elapsed();
+
+        let read_u32 = |offset: usize| {
+            u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap())
+        };
+        assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
+        assert_eq!(read_u32(4), 2, "container version 2");
+        let mesh_count = read_u32(8) as usize;
+        assert_eq!(mesh_count, 1, "1 exportable mesh");
+
+        // 跳过 mesh GLB 段
+        let mut offset = 12usize;
+        for _ in 0..mesh_count {
+            offset += 4 + read_u32(offset) as usize;
+        }
+        let material_count = read_u32(offset) as usize;
+        offset += 4;
+        assert_eq!(material_count, 1, "1 material via assignment");
+        for _ in 0..material_count {
+            offset += 4 + read_u32(offset) as usize; // baseColor
+            offset += 4 + read_u32(offset) as usize; // normal
+        }
+        let mesh0_material = read_u32(offset) as usize;
+        let mesh0_has_uv = payload[offset + 4] != 0;
+        eprintln!(
+            "lot payload v2: {mesh_count} mesh, {material_count} material, mesh material = [{mesh0_material}], has_uv = [{mesh0_has_uv}], {} bytes in {elapsed:?}",
+            payload.len()
+        );
+        assert_eq!(mesh0_material, 0, "single mesh binds material 0");
     }
 }
 

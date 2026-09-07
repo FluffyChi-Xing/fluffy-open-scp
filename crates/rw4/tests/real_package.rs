@@ -127,3 +127,46 @@ fn real_package_parses_all_rw4_containers() {
     assert!(meshes > 0, "expected mesh sections across resources");
     assert!(textures > 0, "expected texture sections across resources");
 }
+
+/// MeshMaterialAssignment（0x2001A）绑定表：EP1 多 mesh 模型金样本
+/// 0x41B1BAC0——2 mesh + 2 material + 2 assignment，字节实测
+/// `{mesh:11, unk:1, material:12}` / `{mesh:10, unk:1, material:14}`。
+#[test]
+fn mesh_material_bindings_match_golden_sample() {
+    const EP1: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/packages/m3/SimCityDataEP1.package"
+    );
+    const MODEL: u32 = 0x41B1_BAC0;
+    let Ok(package) = Package::open(EP1) else {
+        eprintln!("skipping: {EP1} not present");
+        return;
+    };
+    let Some(entry) = package
+        .entries()
+        .iter()
+        .find(|e| e.id.type_id == RW4_WRAPPED && e.id.instance == MODEL)
+        .cloned()
+    else {
+        panic!("golden model {MODEL:08X} missing from EP1");
+    };
+    let data = package.read(&entry).unwrap();
+    let file = Rw4File::parse(&data).unwrap();
+    assert_eq!(file.sections_of_type(SectionType::MESH).count(), 2);
+    assert_eq!(file.sections_of_type(SectionType::MATERIAL).count(), 2);
+
+    let bindings = file.decode_mesh_material_bindings(&data);
+    assert_eq!(bindings.len(), 2, "2 assignments, one per material");
+    assert!(
+        bindings
+            .iter()
+            .any(|b| (b.mesh_section, b.unknown2, b.material_section) == (11, 1, 12)),
+        "expected mesh#11 <-> material#12, got {bindings:?}"
+    );
+    assert!(
+        bindings
+            .iter()
+            .any(|b| (b.mesh_section, b.unknown2, b.material_section) == (10, 1, 14)),
+        "expected mesh#10 <-> material#14, got {bindings:?}"
+    );
+}
