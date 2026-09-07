@@ -659,3 +659,17 @@ EP1 多 mesh 模型 0x41B1BAC0 的 section 布局：`#10 Mesh, #11 Mesh, #12 Mat
 2. 材质双裁剪窗（W,H,U,V ×2）+ 调色板列 index 已在命名协议中闭环，SHORT4N TEXCOORD 裁剪窗可直接用该语义实现 facade/多层贴图
 3. 双 UV 通道 = 第二层（interior/门窗）→ GLB 导出需加 TEXCOORD_1
 4. shader-def（0x2D 指向的全局包资源）内容仍未知，可后置
+
+### 21.4 simcity_material.pdf（SUGC Materials 章，Berl Newell/Ocean Quigley）官方语义
+
+新文档 docs/overview/simcity_material.pdf（39 页，全图无文本层，已逐页精读）——不含命名协议/RW4 结构，但给出命名协议背后每个实体的**官方定义**：
+
+- **Material Set = 3 张图 × RGBA = 6 张纹理**（p13 原文 "stores a total of 6 textures in the RGBA channels of the 3 images"）——**与 slot0-5 数量精确吻合**：
+  - Color control map：RGB = tinting + 元素区域分割；A 双职责（Base Layer 定形状镂空 / Top Layer 控透明）（p15）
+  - Normal map：RGB = 法线，A = ambient occlusion（p16）
+  - Shader map：**B = Specularity**（p18 原文），A = 窗户位置/透明（黑 = No Interior，50% 可半透，p19）
+- **调色板 = 512×16 纹理：256 列 × 7 行，1 采样点 = 2×2 像素**（p23-24 原文）；材质元素被分配到一列、**"Simcity assigns it a row"**（p26），同列各行提供该材质的色调变体，"255 blocks 整列重复"（p26）——slot0 取 row0/row1 均值的现有实现应按"列=材质、行=变体"语义校准
+- **图层系统**：每个模型 section 分配 Base Layer + Top Layer（各配 material+color），窗户 section 另配 **Interior Map**（预渲染房间网格图，假内景，p03/p07-08/p32）——对应命名协议双 clip range 与双 UV 的 Interior UV
+- **Material Info Texture = 数据文件而非图片**（p09），由 OpalePlus/SimCityPak 写出，把"section→层→材质→调色板列"翻译给引擎——即 RW4 Material/0x2001A 绑定链的内容侧
+- Color control map 由引擎预处理加黑边分割元素（p28）；官方管线四步（p09）：section 定层 → 层取材质集 → 材质配调色板色 → 窗户配 interior map
+- 渲染侧：同风格建筑复用同一套 facade 纹理集合批；**Palletizing = 同纹理不同建筑/部位不同色**（p31），Base/Top 各自独立 palletize（p32）；高频细节走 normal map（p35）+ relief mapping（p36-39）
