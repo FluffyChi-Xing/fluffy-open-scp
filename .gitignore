@@ -27,3 +27,7 @@ dist/
 
 # agent
 .claude/
+
+
+# temp folder
+tmp/
