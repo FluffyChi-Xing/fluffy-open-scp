@@ -252,6 +252,9 @@ fn dump_detail(package: &dbpf::Package, instance: u32) {
             println!("  ref slot=0x{:08X} instance=0x{:08X} unk=0x{:08X}/0x{:08X}/0x{:08X}/0x{:08X}",
                 r.slot, r.texture_instance, r.unknown2, r.unknown3, r.unknown4, r.unknown5);
             dump_texture_resource(package, r.texture_instance);
+            if let Some(stats) = texture_channel_stats(package, r.texture_instance) {
+                println!("       channel mean R={:.1} G={:.1} B={:.1} A={:.1}", stats[0], stats[1], stats[2], stats[3]);
+            }
         }
     }
 
@@ -311,6 +314,35 @@ fn dump_detail(package: &dbpf::Package, instance: u32) {
     }
 }
 
+
+fn texture_channel_stats(package: &dbpf::Package, instance: u32) -> Option<[f32; 4]> {
+    let entry = package
+        .entries()
+        .iter()
+        .find(|e| e.id.instance == instance && (e.id.type_id == RW4_IMAGE || e.id.type_id == RASTER_IMAGE))
+        .cloned()?;
+    let data = package.read(&entry).ok()?;
+    let rgba = if entry.id.type_id == RASTER_IMAGE {
+        rw4::RasterImage::parse(&data).ok()?.decode_top_mip_rgba().ok()?
+    } else {
+        let file = rw4::Rw4File::parse(&data).ok()?;
+        let sec = file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+        file.decode_texture(&data, sec).ok()?.decode_top_mip_rgba().ok()?
+    };
+    let n = (rgba.len() / 4).max(1);
+    let mut sum = [0f64; 4];
+    for px in rgba.as_chunks::<4>().0 {
+        for c in 0..4 {
+            sum[c] += f64::from(px[c]);
+        }
+    }
+    Some([
+        (sum[0] / n as f64) as f32,
+        (sum[1] / n as f64) as f32,
+        (sum[2] / n as f64) as f32,
+        (sum[3] / n as f64) as f32,
+    ])
+}
 fn dump_texture_resource(package: &dbpf::Package, instance: u32) {
     let Some(entry) = package.entries().iter()
         .find(|e| e.id.instance == instance

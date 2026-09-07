@@ -734,3 +734,28 @@ EP1 模型结构分布（shape histogram）：894 个 0/0、**1025 个 1 mesh/1 
 - 导出 sweep：EP1 7.12s/4703 mesh（661 mesh/s，release）；金样本单 mesh 全链 16.67ms（debug；纯几何链路开销与 v1 同量级）
 
 验证：rw4 40 单测（含重写的 ME100 越界断言）+ 3 包 sweep、sc-exporter 9、后端 42、前端 73 全绿。C# 的 ME004/ME100/ME200 在变体网格上同样失败——本修复超越 C# 参照。
+
+## 24. 阶段 3：shader map / AO 通道接入（LOTM v3，2026-09-08 第十八轮）
+
+### 24.1 槽位语义取证（金样本 0x63D180B9 逐槽通道统计）
+
+| 槽位 | 实测 | 官方语义对照（§21.4） |
+|---|---|---|
+| slot0 | RW4 包裹 type 116 f32 119×4 | 建筑自定义调色板（列=材质元素） |
+| slot1 | raster 512×512 RGBA，RGB 多彩/高 A | color control map（RGB=元素区域、A=镂空）✓ |
+| slot2 | raster 512×512，R≈247/G≈B≈128，**A≈249** | normal map（RGB=法线、**A=AO**）✓ |
+| slot3 | raster 512×512，**B≈29、A≈244** | **shader map（B=spec、A=窗户/Interior 位置）**✓（哑光墙面 spec 低、非窗区占比高） |
+| slot4 | RW4 type 21（raw BGRA）**512×16** | **官方标准调色板**（256 列×2px 采样块）✓ |
+| slot5 | DXT5 256×256（A≈10） | 细节图（未用，阶段 5 候选） |
+
+### 24.2 实现（LOTM **v3**）
+
+- `resolve_material_resources`：slot2 新增 **AO 灰度 PNG**（取原始 alpha）；slot3 新增 **roughness 灰度 PNG**（B 通道反转——spec 高=粗糙低）；槽位 rgba 一次取用（省跨包查找）
+- 容器 v3 = v2 + 每材质 4 张 PNG（base/normal/roughness/ao）；前端 `parseLotModelContainer` v3，材质应用 `roughnessMap`（存在时 roughness=1）与 `aoMap`（three 0.185 默认走 uv0，无需 uv2）
+- 窗户透明（shader map A）留阶段 5——需 Interior Map 才有意义
+
+### 24.3 性能
+
+金样本 0x63D180B9：payload 627KB→**880KB**（+roughness/AO 两张 512² 灰度 PNG），全链 16.8ms（debug，v2 16.7ms——PNG 编码增量可忽略）。
+
+验证：workspace 31 个测试二进制全绿；vue-tsc + vitest 73（容器测试更新至 v3 四贴图断言）。

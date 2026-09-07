@@ -474,9 +474,9 @@ pub struct ResolveNamesRequest {
 
 /// PE 精细渲染二进制容器魔数："LOTM"（小端字节序）。
 ///
-/// v2 布局：`magic | version | mesh_count`，每 mesh `u32 len + GLB`
+/// v3 布局：`magic | version | mesh_count`，每 mesh `u32 len + GLB`
 /// （COLOR_0 按**该 mesh 材质**调色板烘焙）；`material_count`，每材质
-/// `u32 base_len + PNG | u32 normal_len + PNG`；每 mesh
+/// 4 张 `u32 len + PNG`（baseColor/normal/roughness/ao）；每 mesh
 /// `u32 material_index + u8 has_uv`。解析见前端 `three-gltf.ts`。
 pub const LOT_MODEL_PAYLOAD_MAGIC: u32 = 0x4D54_4F4C;
 
@@ -1937,14 +1937,35 @@ fn resolve_palette(
     )
 }
 
-/// 单个材质的跨包解析产物（调色板 + 遮罩/法线 PNG 字节，均可为 None）。
+/// 单个材质的跨包解析产物（调色板 + 四张通道 PNG，均可为 None）。
 struct MaterialResources {
     palette: Option<Vec<[f32; 3]>>,
     base_color_png: Option<Vec<u8>>,
     normal_png: Option<Vec<u8>>,
+    roughness_png: Option<Vec<u8>>,
+    ao_png: Option<Vec<u8>>,
 }
 
-/// 解析指定 MATERIAL section 的槽位资源（slot0 调色板 / slot1 遮罩 / slot2 法线）。
+/// 从 RGBA 取单通道转灰度 PNG（`invert` 时按 255-v 反转）。
+fn channel_gray_png(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    channel: usize,
+    invert: bool,
+) -> Option<Vec<u8>> {
+    let mut gray = Vec::with_capacity(rgba.len());
+    for px in rgba.as_chunks::<4>().0 {
+        let v = px[channel];
+        let v = if invert { 255 - v } else { v };
+        gray.extend_from_slice(&[v, v, v, 255]);
+    }
+    encode_rgba_png_bytes(width, height, gray).ok()
+}
+
+/// 解析指定 MATERIAL section 的槽位资源（官方 Material Set 语义，§21.4）：
+/// slot0 调色板 / slot1 color-control（R=元素区域索引 → 灰度 baseColor）/
+/// slot2 normal（RGB 法线 + A=AO）/ slot3 shader（B=spec → 反转成 roughness）。
 fn resolve_material_resources(
     file: &rw4::Rw4File,
     data: &[u8],
@@ -1962,46 +1983,53 @@ fn resolve_material_resources(
             rw4::MaterialSection::Raw(_) => None,
         })
         .unwrap_or_default();
-    let slot_instance = |slot: u32| {
-        slots
+    let slot_rgba = |slot: u32| -> Option<(Vec<u8>, u32, u32)> {
+        let instance = slots
             .iter()
             .find(|r| r.slot_byte() as u32 == slot)
             .map(|r| r.texture_instance)
-            .filter(|i| *i != 0)
+            .filter(|i| *i != 0)?;
+        let (bytes, type_id) = find_resource_across_packages(
+            package,
+            manager,
+            instance,
+            &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE],
+        )?;
+        texture_rgba_from_resource(&bytes, type_id)
     };
 
     let mut resources = MaterialResources {
         palette: None,
         base_color_png: None,
         normal_png: None,
+        roughness_png: None,
+        ao_png: None,
     };
-    if let Some(instance) = slot_instance(0) {
+    if let Some(instance) = slots
+        .iter()
+        .find(|r| r.slot_byte() == 0)
+        .map(|r| r.texture_instance)
+        .filter(|i| *i != 0)
+    {
         resources.palette = resolve_palette(package, manager, instance);
     }
-    if let Some(instance) = slot_instance(1) {
-        if let Some((bytes, type_id)) =
-            find_resource_across_packages(package, manager, instance, &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE])
-        {
-            if let Some((rgba, width, height)) = texture_rgba_from_resource(&bytes, type_id) {
-                // 区域遮罩红通道 = 调色板查表索引（GlassBox 语义）→ 灰度 baseColor
-                let mut gray = Vec::with_capacity(rgba.len());
-                for px in rgba.as_chunks::<4>().0 {
-                    gray.extend_from_slice(&[px[0], px[0], px[0], 255]);
-                }
-                resources.base_color_png = encode_rgba_png_bytes(width, height, gray).ok();
-            }
+    // slot1：区域遮罩红通道 = 调色板查表索引（GlassBox 语义）→ 灰度 baseColor
+    if let Some((rgba, width, height)) = slot_rgba(1) {
+        let mut gray = Vec::with_capacity(rgba.len());
+        for px in rgba.as_chunks::<4>().0 {
+            gray.extend_from_slice(&[px[0], px[0], px[0], 255]);
         }
+        resources.base_color_png = encode_rgba_png_bytes(width, height, gray).ok();
     }
-    if let Some(instance) = slot_instance(2) {
-        if let Some((bytes, type_id)) =
-            find_resource_across_packages(package, manager, instance, &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE])
-        {
-            if let Some((rgba, width, height)) = texture_rgba_from_resource(&bytes, type_id) {
-                resources.normal_png =
-                    encode_rgba_png_bytes(width, height, rw4::unswizzle_simcity_normal(&rgba))
-                        .ok();
-            }
-        }
+    // slot2：RGB=法线（解 Swizzle）+ A=AO
+    if let Some((rgba, width, height)) = slot_rgba(2) {
+        resources.normal_png =
+            encode_rgba_png_bytes(width, height, rw4::unswizzle_simcity_normal(&rgba)).ok();
+        resources.ao_png = channel_gray_png(&rgba, width, height, 3, false);
+    }
+    // slot3：B=specularity → 反转为 roughness 灰度
+    if let Some((rgba, width, height)) = slot_rgba(3) {
+        resources.roughness_png = channel_gray_png(&rgba, width, height, 2, true);
     }
     resources
 }
@@ -2157,7 +2185,7 @@ fn build_lot_model_payload(
 
     let mut out = Vec::new();
     out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
-    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
     for glb in &glbs {
         out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
@@ -2165,7 +2193,12 @@ fn build_lot_model_payload(
     }
     out.extend_from_slice(&(material_resources.len() as u32).to_le_bytes());
     for material in &material_resources {
-        for png in [&material.base_color_png, &material.normal_png] {
+        for png in [
+            &material.base_color_png,
+            &material.normal_png,
+            &material.roughness_png,
+            &material.ao_png,
+        ] {
             match png {
                 Some(bytes) => {
                     out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
@@ -3214,7 +3247,7 @@ mod lot_payload_tests {
             u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap())
         };
         assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
-        assert_eq!(read_u32(4), 2, "container version 2");
+        assert_eq!(read_u32(4), 3, "container version 3");
         let mesh_count = read_u32(8) as usize;
         assert_eq!(mesh_count, 1, "1 exportable mesh");
 
@@ -3227,8 +3260,10 @@ mod lot_payload_tests {
         offset += 4;
         assert_eq!(material_count, 1, "1 material via assignment");
         for _ in 0..material_count {
-            offset += 4 + read_u32(offset) as usize; // baseColor
-            offset += 4 + read_u32(offset) as usize; // normal
+            for _ in 0..4 {
+                // baseColor / normal / roughness / ao
+                offset += 4 + read_u32(offset) as usize;
+            }
         }
         let mesh0_material = read_u32(offset) as usize;
         let mesh0_has_uv = payload[offset + 4] != 0;
