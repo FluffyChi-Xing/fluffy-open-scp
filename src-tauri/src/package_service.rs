@@ -1689,10 +1689,10 @@ fn decode_lot_mask_png(
             }
         }
     }
-    Err(
-        "LotMask raster resource is missing (it may live in a package that is not open)"
-            .to_string(),
-    )
+    Err(format!(
+        "LotMask raster 0x{:08X} is missing (it may live in a package that is not open)",
+        key.instance
+    ))
 }
 
 /// LOD1~4 模型跨包定位：精确 TGI（须为模型类型）→ 当前包按 instance 扫描
@@ -2013,13 +2013,25 @@ fn resolve_material_resources(
     {
         resources.palette = resolve_palette(package, manager, instance);
     }
-    // slot1：区域遮罩红通道 = 调色板查表索引（GlassBox 语义）→ 灰度 baseColor
+    // slot1：区域遮罩红通道 = 调色板查表索引（GlassBox 语义）→ 调色板 LUT 上色；
+    // 无调色板时退回灰度（保留元素分割信息）
     if let Some((rgba, width, height)) = slot_rgba(1) {
-        let mut gray = Vec::with_capacity(rgba.len());
+        let mut colored = Vec::with_capacity(rgba.len());
         for px in rgba.as_chunks::<4>().0 {
-            gray.extend_from_slice(&[px[0], px[0], px[0], 255]);
+            let tint = resources
+                .palette
+                .as_ref()
+                .and_then(|palette| palette.get(px[0] as usize).copied())
+                .unwrap_or([1.0, 1.0, 1.0]);
+            let to_byte = |c: f32| (c * 255.0).round().clamp(0.0, 255.0) as u8;
+            colored.extend_from_slice(&[
+                to_byte(tint[0]),
+                to_byte(tint[1]),
+                to_byte(tint[2]),
+                255,
+            ]);
         }
-        resources.base_color_png = encode_rgba_png_bytes(width, height, gray).ok();
+        resources.base_color_png = encode_rgba_png_bytes(width, height, colored).ok();
     }
     // slot2：RGB=法线（解 Swizzle）+ A=AO
     if let Some((rgba, width, height)) = slot_rgba(2) {
