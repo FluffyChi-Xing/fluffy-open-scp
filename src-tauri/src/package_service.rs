@@ -451,26 +451,11 @@ pub struct ResolveNamesRequest {
     pub tgis: Vec<TgiDto>,
 }
 
-/// PE 精细渲染：模型材质资源（跨包解析后的服务端解码结果）。
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LotModelMaterial {
-    /// slot1 区域遮罩红通道灰度 PNG（base64）；无 FLOAT2 UV 或不可解为 None。
-    pub base_color_png: Option<String>,
-    /// slot2 法线（解 Swizzle R↔B）PNG（base64）。
-    pub normal_png: Option<String>,
-    /// 模型含 FLOAT2 真 UV（可贴图）。
-    pub has_uv: bool,
-}
+/// PE 精细渲染二进制容器魔数："LOTM"（小端字节序）。
+pub const LOT_MODEL_PAYLOAD_MAGIC: u32 = 0x4D54_4F4C;
 
-/// PE 精细渲染：全部网格 OBJ（顶点色已按调色板烘焙）+ 材质资源。
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LotModelMeshesData {
-    /// base64 OBJ 文本（`v x y z r g b` 顶点色扩展，three OBJLoader 原生支持）。
-    pub meshes: Vec<String>,
-    pub material: LotModelMaterial,
-}
+/// 单个网格 GLB 的体积上限（异常模型防御，对齐原 OBJ 8MB 量级）。
+const MESH_GLB_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1734,15 +1719,19 @@ fn lot_colors(document: &sc_properties::LotEditorDocument) -> [[u8; 3]; 4] {
     colors
 }
 
-fn encode_rgba_png(width: u32, height: u32, rgba: Vec<u8>) -> Result<String, String> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+fn encode_rgba_png_bytes(width: u32, height: u32, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
     let image = image::RgbaImage::from_raw(width, height, rgba)
         .ok_or_else(|| "raster pixel buffer size mismatch".to_string())?;
     let mut png = Vec::new();
     image
         .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
         .map_err(|error| format!("raster PNG encode failed: {error}"))?;
-    Ok(STANDARD.encode(png))
+    Ok(png)
+}
+
+fn encode_rgba_png(width: u32, height: u32, rgba: Vec<u8>) -> Result<String, String> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    encode_rgba_png_bytes(width, height, rgba).map(|png| STANDARD.encode(png))
 }
 
 // ---- PE 精细渲染：模型材质解析（migration.md §18.4） ----
@@ -1833,11 +1822,11 @@ fn resolve_palette(
     )
 }
 
-/// 模型材质包：调色板 + 遮罩/法线 PNG（都可为 None）。
+/// 模型材质包：调色板 + 遮罩/法线 PNG 字节（都可为 None）。
 struct ModelMaterialBundle {
     palette: Option<Vec<[f32; 3]>>,
-    base_color_png: Option<String>,
-    normal_png: Option<String>,
+    base_color_png: Option<Vec<u8>>,
+    normal_png: Option<Vec<u8>>,
     has_uv: bool,
 }
 
@@ -1914,7 +1903,7 @@ fn resolve_model_material(
                 for px in rgba.as_chunks::<4>().0 {
                     gray.extend_from_slice(&[px[0], px[0], px[0], 255]);
                 }
-                bundle.base_color_png = encode_rgba_png(width, height, gray).ok();
+                bundle.base_color_png = encode_rgba_png_bytes(width, height, gray).ok();
             }
         }
     }
@@ -1924,7 +1913,8 @@ fn resolve_model_material(
         {
             if let Some((rgba, width, height)) = texture_rgba_from_resource(&bytes, type_id) {
                 bundle.normal_png =
-                    encode_rgba_png(width, height, rw4::unswizzle_simcity_normal(&rgba)).ok();
+                    encode_rgba_png_bytes(width, height, rw4::unswizzle_simcity_normal(&rgba))
+                        .ok();
             }
         }
     }
@@ -1950,16 +1940,17 @@ fn mesh_vertex_colors(mesh: &rw4::DecodedMesh, palette: &[[f32; 3]]) -> Option<V
     )
 }
 
-/// PE 精细渲染：一次返回模型全部网格 OBJ（顶点色已烘焙）+ 材质资源，
-/// 取代前端 1+N 次 section 请求。
+/// PE 精细渲染：一次返回模型全部网格 GLB（COLOR_0 顶点色已按调色板烘焙）+
+/// 共享贴图 PNG，经原始字节通道传输（`LOT_MODEL_PAYLOAD_MAGIC` 容器），
+/// 取代前端 1+N 次 section 请求与 base64+JSON 双重膨胀。
 #[tauri::command]
 pub async fn read_lot_model_meshes(
     state: State<'_, AppState>,
     request: LotModelMeshesRequest,
-) -> Result<LotModelMeshesData, CommandError> {
+) -> Result<tauri::ipc::Response, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
-    read_resource_with(
+    let payload = read_resource_with(
         manager,
         store,
         request.package_id,
@@ -1972,7 +1963,7 @@ pub async fn read_lot_model_meshes(
             }
             let file = rw4::Rw4File::parse(data)?;
             let bundle = resolve_model_material(&file, data, package, manager);
-            let mut meshes = Vec::new();
+            let mut glbs: Vec<Vec<u8>> = Vec::new();
             for section in file.sections_of_type(rw4::SectionType::MESH) {
                 let mesh = file.decode_mesh(data, section.number)?;
                 if !mesh.is_exportable() {
@@ -1982,23 +1973,41 @@ pub async fn read_lot_model_meshes(
                     .palette
                     .as_ref()
                     .and_then(|palette| mesh_vertex_colors(&mesh, palette));
-                let obj_text = sc_exporter::export_obj_with_colors(&mesh, colors.as_deref());
-                if obj_text.len() <= MESH_OBJ_MAX_BYTES {
-                    use base64::{Engine as _, engine::general_purpose::STANDARD};
-                    meshes.push(STANDARD.encode(obj_text.as_bytes()));
+                let glb = sc_exporter::export_glb_with_colors(
+                    &mesh,
+                    None,
+                    &[],
+                    sc_exporter::EmbeddedTextures::default(),
+                    colors.as_deref(),
+                );
+                if glb.bytes.len() <= MESH_GLB_MAX_BYTES {
+                    glbs.push(glb.bytes);
                 }
             }
-            Ok(LotModelMeshesData {
-                meshes,
-                material: LotModelMaterial {
-                    base_color_png: bundle.base_color_png,
-                    normal_png: bundle.normal_png,
-                    has_uv: bundle.has_uv,
-                },
-            })
+
+            let mut out = Vec::new();
+            out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
+            out.extend_from_slice(&1u32.to_le_bytes());
+            out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
+            for glb in &glbs {
+                out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
+                out.extend_from_slice(glb);
+            }
+            for png in [&bundle.base_color_png, &bundle.normal_png] {
+                match png {
+                    Some(bytes) => {
+                        out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                        out.extend_from_slice(bytes);
+                    }
+                    None => out.extend_from_slice(&0u32.to_le_bytes()),
+                }
+            }
+            out.push(u8::from(bundle.has_uv));
+            Ok(out)
         },
     )
-    .await
+    .await?;
+    Ok(tauri::ipc::Response::new(payload))
 }
 
 #[tauri::command]

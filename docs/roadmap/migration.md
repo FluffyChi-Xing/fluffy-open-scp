@@ -572,3 +572,30 @@ Material(0x2000B) payload = `Size` u32 → 28B 头 →（模型有 VF section �
 - **下一阶段（用户明确）**：大部分建筑仍只有基础顶点色、无纹理/材质——需实现 **facade 世界投影 UV + 每元素 UV 裁剪窗**（SHORT4N TEXCOORD 分量携带 X=width/Y=height/Z=x/W=y 归一化裁剪域，见 §8.10 / HANDOFF），让 696 个大坐标 facade 也能正确采样区域遮罩与法线
 
 验证：后端 41 + vue-tsc + vitest 59 通过。
+
+### 19.6 第三轮（2026-09-07）：二进制 GLB 通道重做 + 灯光三项修正（用户反馈）
+
+**问题**：精细模式加载 3~15s 且 UI 冻结。根因不在 GPU 渲染而在数据通道：后端导出冗长 OBJ 文本（约 96B/顶点）→ base64 ×1.33 → 塞 JSON 字符串；前端**主线程**逐字符 `charCodeAt` 解码（`three-obj.ts`）+ 同步 `OBJLoader.parse` 文本解析。
+
+**方案（用户确认：Rust 出二进制 GLB，渲染仍 three.js 保留全部交互）**：
+
+- `sc-exporter/gltf.rs`：新增 `export_glb_with_colors`（COLOR_0 VEC3 f32 顶点色，three GLTFLoader 原生映射 `color` 属性）；`export_glb`/`export_glb_with_textures` 改为委托。`export_obj_with_colors` 随 OBJ 通道退役删除（`export_obj` 恢复纯色）
+- `read_lot_model_meshes` 改原始字节通道（`tauri::ipc::Response`，跳过 JSON/base64），负载为 "LOTM" 容器（小端）：`magic|version|mesh_count|每 mesh u32 len+GLB|u32 len+baseColor PNG|u32 len+normal PNG|has_uv u8`；贴图全地块共享一份不逐 mesh 复制；`ModelMaterialBundle` 存 PNG 字节（`encode_rgba_png_bytes`），base64 版仅留其他调用方
+- 前端 `src/lib/three-gltf.ts`：容器解析（DataView 零拷贝切片）+ `GLTFLoader.parseAsync` + PNG 字节→blob URL（免 data:URL 再解码）；**GLTF 根节点 -90°X 旋转需剥离**（视口 world 组已做同款旋转，模型须与 Unit gizmo 共享 Z-up 世界）；`parseLotModelContainer` 有 3 项 vitest
+- session 链路：`modelMeshes: string[]` → `modelPayload: LotModelPayload`（session 内即解析校验）；MeshPreview 的 OBJ 通道不动
+
+**灯光三项**：
+
+- 光源本体全隐藏：Point/Spot 发光球删除，三种光源统一透明拾取代理（Point=球 r=outerRadius、Spot=圆柱 r×0.5、Line=沿用盒），outliner 选择不受影响
+- 强度 diffuse×8 → ×16；每个真实光源记录 `userData.baseIntensity`
+- 新增「环境亮度（昼/夜）」滑条 0~2（默认 1）：`ThreeViewer.setEnvironmentBrightness` 缩放环境四灯（key 2.2/fill 0.5/rim 0.65/ambient 0.38 基准），viewport 遍历 lights 组按 baseIntensity 缩放真实光源
+
+**性能数据（debug 构建）**：金样本 ec3eade0 彩色 GLB 196 verts → 11.9KB / 0.2ms；全量 GLB 导出 DLC0 565 mesh/1.22M verts 4.02s、EP1 1025 mesh/2.10M verts 10.62s（后端 release 全链此前实测 8.65ms 不变）。逐顶点负载 ~60B vs 旧 OBJ+base64 ~128B（约 2× 缩），且消除 JSON 转义与主线程文本解析——前端预期 <1s 不冻结，待手测确认。
+
+验证：sc-exporter 15（新增 COLOR_0 断言 + 真实模型彩色 GLB + 容器字节搜索）、后端 41、vue-tsc、vitest 62（新增容器解析 3 项）通过。
+
+#### 19.6.1 用户对拍补充（2026-09-07）
+
+- **亮度滑条语义修正**：滑条此前把地块真实光源一起缩放（调 0 连灯都黑了）——改为仅缩放环境四灯，地块光源恒定常亮（夜间路灯依然亮，真昼夜模拟）；`baseIntensity` 机制随之删除
+- **推近复杂建筑掉帧**：WebGL 前向渲染每片元评估全部光源，多灯地块片元数×光源数爆炸。修复：真实光源总预算 24（超限从强度最弱单元起摘除光源本体、保留拾取代理）、线光分段上限 6→4、`pixelRatio` 钳制 min(DPR,1.5)、WebGL `powerPreference: high-performance`
+- **devUrl 错位修复**：tauri.conf.json devUrl 5174 → 5173 对齐 vite strictPort（此前 dev 模式无法启动）；注意 Windows 下停 pnpm 外层进程会残留 vite 子进程占端口

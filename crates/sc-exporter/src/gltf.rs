@@ -358,7 +358,7 @@ pub fn export_glb(
     skeleton: Option<&DecodedSkeleton>,
     anims: &[DecodedAnim],
 ) -> GlbOutput {
-    export_glb_with_textures(mesh, skeleton, anims, EmbeddedTextures::default())
+    export_glb_with_colors(mesh, skeleton, anims, EmbeddedTextures::default(), None)
 }
 
 /// Optional PNG images embedded in the GLB BIN chunk.
@@ -374,6 +374,18 @@ pub fn export_glb_with_textures(
     skeleton: Option<&DecodedSkeleton>,
     anims: &[DecodedAnim],
     textures: EmbeddedTextures<'_>,
+) -> GlbOutput {
+    export_glb_with_colors(mesh, skeleton, anims, textures, None)
+}
+
+/// Export a mesh as GLB with embedded textures and/or per-vertex linear RGB
+///（COLOR_0，three.js GLTFLoader 映射为 `color` 顶点属性）。
+pub fn export_glb_with_colors(
+    mesh: &DecodedMesh,
+    skeleton: Option<&DecodedSkeleton>,
+    anims: &[DecodedAnim],
+    textures: EmbeddedTextures<'_>,
+    colors: Option<&[[f32; 3]]>,
 ) -> GlbOutput {
     let v_count = mesh.vertices.len();
 
@@ -439,6 +451,17 @@ pub fn export_glb_with_textures(
         put_f32s(&mut bin, &[uv[0], -uv[1]]);
     }
     let uv_len = v_count * 8;
+
+    let color_offset = colors.map(|colors| {
+        pad4(&mut bin);
+        let offset = bin.len();
+        for v in 0..v_count {
+            let rgb = colors.get(v).copied().unwrap_or([1.0, 1.0, 1.0]);
+            put_f32s(&mut bin, &rgb);
+        }
+        offset
+    });
+    let color_len = v_count * 12;
 
     let idx_offset = bin.len();
     let mut idx_count = 0usize;
@@ -532,6 +555,8 @@ pub fn export_glb_with_textures(
         norm_len,
         uv_offset,
         uv_len,
+        color_offset,
+        color_len,
         idx_offset,
         idx_len,
         bin_len,
@@ -574,6 +599,8 @@ fn build_json(
     norm_len: usize,
     uv_offset: usize,
     uv_len: usize,
+    color_offset: Option<usize>,
+    color_len: usize,
     idx_offset: usize,
     idx_len: usize,
     buffer_length: usize,
@@ -601,6 +628,14 @@ fn build_json(
     ];
 
     let mut primitive_attrs = json!({"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2});
+
+    if let Some(offset) = color_offset {
+        let bv = buffer_views.len();
+        buffer_views.push(json!({"buffer": 0, "byteOffset": offset, "byteLength": color_len, "target": TARGET_ARRAY}));
+        let acc = accessors.len();
+        accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC3"}));
+        primitive_attrs["COLOR_0"] = json!(acc);
+    }
 
     let has_skin = skin.is_some();
     let mut gltf_skin = None;

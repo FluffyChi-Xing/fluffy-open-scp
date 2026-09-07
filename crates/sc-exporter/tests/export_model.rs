@@ -5,8 +5,8 @@
 
 use rw4::{DecodedAnim, DecodedMesh, DecodedSkeleton, DecodedVertex, FileType, Rw4File};
 use sc_exporter::{
-    EmbeddedTextures, TextureOutputFormat, export_glb, export_glb_with_textures, export_obj,
-    export_texture,
+    EmbeddedTextures, TextureOutputFormat, export_glb, export_glb_with_colors,
+    export_glb_with_textures, export_obj, export_texture,
 };
 const DLC0: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -602,4 +602,91 @@ fn perf_export_all_models_to_glb() {
         assert!(meshes > 0, "[{label}] expected exported meshes");
     }
     assert!(any_ran);
+}
+
+// ---- COLOR_0 顶点色（PE 精细渲染 GLB 通道） ----
+
+#[test]
+fn glb_colors_emit_color0_accessor() {
+    let mesh = synth_mesh();
+    let colors = vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+    let with = export_glb_with_colors(
+        &mesh,
+        None,
+        &[],
+        EmbeddedTextures::default(),
+        Some(&colors),
+    );
+    let json_len = u32::from_le_bytes(with.bytes[12..16].try_into().unwrap()) as usize;
+    let json: serde_json::Value = serde_json::from_slice(&with.bytes[20..20 + json_len]).unwrap();
+    let attrs = &json["meshes"][0]["primitives"][0]["attributes"];
+    let color_acc = attrs["COLOR_0"].as_u64().expect("COLOR_0 accessor") as usize;
+    let accessor = &json["accessors"][color_acc];
+    assert_eq!(accessor["type"], "VEC3");
+    assert_eq!(accessor["componentType"], 5126, "FLOAT");
+    assert_eq!(accessor["count"], 3, "逐顶点颜色");
+
+    let without = export_glb(&mesh, None, &[]);
+    let json_len = u32::from_le_bytes(without.bytes[12..16].try_into().unwrap()) as usize;
+    let json: serde_json::Value =
+        serde_json::from_slice(&without.bytes[20..20 + json_len]).unwrap();
+    let attrs = &json["meshes"][0]["primitives"][0]["attributes"];
+    assert!(attrs.get("COLOR_0").is_none(), "无颜色时不得输出 COLOR_0");
+}
+
+#[test]
+fn real_model_ec3eade0_glb_with_colors_and_container() {
+    let Ok(package) = dbpf::Package::open(DLC0) else {
+        eprintln!("skipping: {DLC0} not present");
+        return;
+    };
+    let entry = package
+        .entries()
+        .iter()
+        .find(|e| e.id.type_id == 0x2F4E_681B && e.id.instance == MODEL_INSTANCE)
+        .expect("ec3eade0 应存在于 DLC0");
+    let data = package.read(entry).unwrap();
+    let file = Rw4File::parse(&data).unwrap();
+    let mesh = file
+        .sections_of_type(rw4::SectionType::MESH)
+        .find_map(|s| file.decode_mesh(&data, s.number).ok())
+        .expect("至少一个可解 mesh");
+
+    // 模拟调色板烘焙的逐顶点颜色（渐变即可验证 accessor 与字节布局）
+    let n = mesh.vertices.len();
+    let colors: Vec<[f32; 3]> = (0..n)
+        .map(|i| [i as f32 / n as f32, 0.5, 1.0 - i as f32 / n as f32])
+        .collect();
+
+    let t0 = std::time::Instant::now();
+    let glb = export_glb_with_colors(
+        &mesh,
+        None,
+        &[],
+        EmbeddedTextures::default(),
+        Some(&colors),
+    );
+    let secs = t0.elapsed().as_secs_f64();
+    eprintln!(
+        "ec3eade0 colored GLB: {} verts / {} tris -> {} bytes in {secs:.4}s",
+        n,
+        mesh.triangles.len(),
+        glb.bytes.len()
+    );
+
+    let bytes = &glb.bytes;
+    assert_eq!(&bytes[..4], b"glTF");
+    let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let json: serde_json::Value = serde_json::from_slice(&bytes[20..20 + json_len]).unwrap();
+    let attrs = &json["meshes"][0]["primitives"][0]["attributes"];
+    let color_acc = attrs["COLOR_0"].as_u64().expect("COLOR_0 accessor") as usize;
+    assert_eq!(json["accessors"][color_acc]["count"], n);
+
+    // 顶点色字节确实写入 BIN（取首个颜色做 windows 搜索）
+    let first: Vec<u8> = colors[0]
+        .iter()
+        .flat_map(|channel| channel.to_le_bytes())
+        .collect();
+    assert!(bytes.windows(12).any(|w| w == first.as_slice()));
 }
