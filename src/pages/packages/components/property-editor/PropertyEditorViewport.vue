@@ -191,9 +191,13 @@ uniform sampler2D paramsMap;
         "#include <normal_fragment_maps>",
         `#include <normal_fragment_maps>
         #ifdef USE_NORMALMAP
-        vec2 nUv = fract(vTintUv) * xform.xy + xform.zw;
-        vec3 nmapRaw = texture2D(normalMap, nUv).rgb * 2.0 - 1.0;
-        normal = perturbNormal2Arb(-vViewPosition, normal, nmapRaw, faceDirection);
+        {
+          vec2 nUv = fract(vTintUv) * xform.xy + xform.zw;
+          mat3 tbn = getTangentFrame( - vViewPosition, nonPerturbedNormal, nUv );
+          vec3 mapN = texture2D( normalMap, nUv ).xyz * 2.0 - 1.0;
+          mapN.xy *= normalScale;
+          normal = normalize( tbn * mapN );
+        }
         #endif`,
       );
   };
