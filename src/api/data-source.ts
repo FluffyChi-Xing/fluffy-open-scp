@@ -442,15 +442,13 @@ function mockDataSource(): OpenScpDataSource {
       return { fileType: "Model", sections: mockRw4Sections };
     },
     async readLotModelMeshes(_packageId, _tgi) {
-      // 浏览器 demo 模式：合法空容器（0 网格、无贴图）；GLB 构建在 Rust 导出器侧
-      const out = new ArrayBuffer(21);
+      // 浏览器 demo 模式：合法空容器 v2（0 网格、0 材质）；GLB 构建在 Rust 导出器侧
+      const out = new ArrayBuffer(16);
       const view = new DataView(out);
       view.setUint32(0, 0x4d544f4c, true); // "LOTM"
-      view.setUint32(4, 1, true);
-      view.setUint32(8, 0, true);
-      view.setUint32(12, 0, true);
-      view.setUint32(16, 0, true);
-      view.setUint8(20, 0);
+      view.setUint32(4, 2, true);
+      view.setUint32(8, 0, true); // mesh_count
+      view.setUint32(12, 0, true); // material_count
       return out;
     },
     async readResourceText(_packageId, _tgi) {

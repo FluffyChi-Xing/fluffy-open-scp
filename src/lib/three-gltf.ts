@@ -6,11 +6,12 @@ const PAYLOAD_MAGIC = 0x4d54_4f4c;
 
 /**
  * 解析 `read_lot_model_meshes` 返回的原始字节容器（零拷贝切片，
- * 取代旧 base64+JSON 通道；见 `LotModelPayload` 注释里的容器布局）。
+ * 见 `LotModelPayload` 注释里的 v2 布局：逐 mesh GLB + 逐材质贴图 +
+ * 每 mesh 材质下标/可贴图标志）。
  */
 export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
   const view = new DataView(buffer);
-  if (buffer.byteLength < 21) {
+  if (buffer.byteLength < 16) {
     throw new Error("lot model payload truncated");
   }
   let offset = 0;
@@ -23,7 +24,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     throw new Error("lot model payload magic mismatch");
   }
   const version = readU32();
-  if (version !== 1) {
+  if (version !== 2) {
     throw new Error(`unsupported lot model payload version ${version}`);
   }
   const meshCount = readU32();
@@ -36,20 +37,32 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     glbs.push(buffer.slice(offset, offset + length));
     offset += length;
   }
-  const readPng = (): Uint8Array<ArrayBuffer> | null => {
-    const length = readU32();
-    if (length === 0) return null;
-    if (offset + length > buffer.byteLength) {
-      throw new Error("lot model payload texture out of bounds");
+  const materialCount = readU32();
+  const materials: LotModelPayload["materials"] = [];
+  for (let index = 0; index < materialCount; index += 1) {
+    const readPng = (): Uint8Array<ArrayBuffer> | null => {
+      const length = readU32();
+      if (length === 0) return null;
+      if (offset + length > buffer.byteLength) {
+        throw new Error("lot model payload texture out of bounds");
+      }
+      const bytes = buffer.slice(offset, offset + length);
+      offset += length;
+      return new Uint8Array(bytes);
+    };
+    materials.push({ baseColorPng: readPng(), normalPng: readPng() });
+  }
+  const meshMaterialIndices: number[] = [];
+  const meshHasUv: boolean[] = [];
+  for (let index = 0; index < meshCount; index += 1) {
+    if (offset + 5 > buffer.byteLength) {
+      throw new Error("lot model payload mesh attributes truncated");
     }
-    const bytes = buffer.slice(offset, offset + length);
-    offset += length;
-    return new Uint8Array(bytes);
-  };
-  const baseColorPng = readPng();
-  const normalPng = readPng();
-  const hasUv = view.getUint8(offset) !== 0;
-  return { glbs, baseColorPng, normalPng, hasUv };
+    meshMaterialIndices.push(readU32());
+    meshHasUv.push(view.getUint8(offset) !== 0);
+    offset += 1;
+  }
+  return { glbs, materials, meshMaterialIndices, meshHasUv };
 }
 
 /** PNG 字节 → blob URL（TextureLoader 可直接加载，免去 data:URL base64 再解码）。 */

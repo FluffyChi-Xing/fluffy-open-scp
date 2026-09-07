@@ -351,21 +351,27 @@ export interface LotEditorSession {
   pathPairs: number[];
   diagnostics: string[];
 }
+/** 单个材质的贴图（slot1 区域遮罩灰度 / slot2 解 Swizzle 法线）。 */
+export interface LotMaterialTextures {
+  baseColorPng: Uint8Array<ArrayBuffer> | null;
+  normalPng: Uint8Array<ArrayBuffer> | null;
+}
 /**
- * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果。
- * 容器（小端）：`magic("LOTM") | version=1 | mesh_count`，每 mesh
- * `u32 len + GLB`（COLOR_0 顶点色已按调色板烘焙），随后
- * `u32 len + baseColor PNG`、`u32 len + normal PNG`（0 = 无）、`has_uv u8`。
+ * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v2）。
+ * 容器（小端）：`magic("LOTM") | version=2 | mesh_count`，每 mesh
+ * `u32 len + GLB`（COLOR_0 顶点色按**该 mesh 材质**调色板烘焙）；
+ * `material_count`，每材质 `u32 base_len + PNG | u32 normal_len + PNG`；
+ * 每 mesh `u32 material_index + u8 has_uv`（0x2001A 绑定，见 §21.1）。
  */
 export interface LotModelPayload {
   /** 每个网格一个 GLB ArrayBuffer。 */
   glbs: ArrayBuffer[];
-  /** slot1 区域遮罩红通道灰度 PNG；无 FLOAT2 UV 或不可解为 null。 */
-  baseColorPng: Uint8Array<ArrayBuffer> | null;
-  /** slot2 法线（解 Swizzle R↔B）PNG。 */
-  normalPng: Uint8Array<ArrayBuffer> | null;
-  /** 模型含 FLOAT2 真 UV（可贴图）。 */
-  hasUv: boolean;
+  /** 逐材质贴图集（去重后）。 */
+  materials: LotMaterialTextures[];
+  /** 每 mesh 的材质下标（与 glbs 同序）。 */
+  meshMaterialIndices: number[];
+  /** 每 mesh 可贴图判定（FLOAT2 或 FLOAT4≤8）。 */
+  meshHasUv: boolean[];
 }
 export interface RasterPreviewData {
   rasterType: number;

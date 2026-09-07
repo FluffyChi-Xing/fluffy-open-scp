@@ -126,8 +126,12 @@ async function rebuild() {
     metalness: 0.12,
     side: THREE.DoubleSide,
   });
-  const refinedMaterials: ThreeNamespace.MeshStandardMaterial[] = [];
-  for (const object of modelObjects) {
+  // 逐 mesh 材质下标（与 glbs 同序）；材质分组的下标 → 该组 mesh 的材质列表
+  const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
+    payload?.materials ?? []
+  ).map(() => []);
+  for (const [index, object] of modelObjects.entries()) {
+    const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
     object.traverse((child) => {
       const mesh = child as ThreeNamespace.Mesh;
       if (!mesh.isMesh) return;
@@ -135,7 +139,7 @@ async function rebuild() {
         mesh.material = whiteMaterial;
         return;
       }
-      // GLB 的 COLOR_0（调色板顶点色）→ GLTFLoader 的 color 顶点属性
+      // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
       const refined = new THREE.MeshStandardMaterial({
         vertexColors: Boolean(mesh.geometry.attributes.color),
         roughness: 0.82,
@@ -143,12 +147,13 @@ async function rebuild() {
         side: THREE.DoubleSide,
       });
       mesh.material = refined;
-      refinedMaterials.push(refined);
+      materialGroups[materialIndex]?.push(refined);
     });
     instance.group("model").add(object);
   }
-  // 精细贴图：区域遮罩红通道 baseColor + 解 Swizzle 法线（仅 FLOAT2 UV 模型，服务端判定）
-  if (props.renderMode === "refined" && payload?.hasUv) {
+  // 精细贴图：按 0x2001A 绑定的**每 mesh 材质**应用（遮罩红通道 baseColor +
+  // 解 Swizzle 法线；可贴图判定服务端逐 mesh 给出）
+  if (props.renderMode === "refined" && payload) {
     const generation = token;
     const loader = new THREE.TextureLoader();
     const loadTexture = (
@@ -165,29 +170,36 @@ async function rebuild() {
             return;
           }
           setup(texture);
-          for (const material of refinedMaterials) {
-            material.needsUpdate = true;
-          }
         },
         undefined,
         () => {},
       );
     };
-    if (payload.baseColorPng) {
-      loadTexture(payload.baseColorPng, (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        for (const material of refinedMaterials) {
-          material.map = texture;
-        }
-      });
-    }
-    if (payload.normalPng) {
-      loadTexture(payload.normalPng, (texture) => {
-        for (const material of refinedMaterials) {
-          material.normalMap = texture;
-        }
-      });
-    }
+    payload.materials.forEach((material, materialIndex) => {
+      const group = materialGroups[materialIndex] ?? [];
+      const meshIndex = modelObjects
+        .map((_, index) => index)
+        .filter((index) => (payload.meshMaterialIndices[index] ?? 0) === materialIndex);
+      const uvOk = meshIndex.some((index) => payload.meshHasUv[index]);
+      if (!group.length || !uvOk) return;
+      if (material.baseColorPng) {
+        loadTexture(material.baseColorPng, (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          for (const refined of group) {
+            refined.map = texture;
+            refined.needsUpdate = true;
+          }
+        });
+      }
+      if (material.normalPng) {
+        loadTexture(material.normalPng, (texture) => {
+          for (const refined of group) {
+            refined.normalMap = texture;
+            refined.needsUpdate = true;
+          }
+        });
+      }
+    });
   }
 
   // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
