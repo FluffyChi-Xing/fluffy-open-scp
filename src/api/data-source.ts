@@ -376,6 +376,12 @@ function mockDataSource(): OpenScpDataSource {
         assetName: "Mock Residential Tower",
         modelAvailable: true,
         modelKey: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 },
+        modelLods: [
+          { packageId: 1, tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 } },
+          { packageId: 1, tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000002 } },
+          { packageId: 1, tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000003 } },
+          null,
+        ],
         lotSize: [136, 136],
         lotPlacement: null,
         lotMaskPng: null,

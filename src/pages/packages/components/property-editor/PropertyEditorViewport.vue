@@ -6,7 +6,7 @@ import FSpinner from "@/components/ui/FSpinner.vue";
 import { ThreeViewer, disposeObject } from "@/lib/three-viewer";
 import { parseLotModelObjects, pngBlobUrl } from "@/lib/three-gltf";
 import type * as ThreeNamespace from "three";
-import type { LotModelPayload, LotUnitDto } from "@/api/tauri";
+import type { LotModelLodRef, LotModelPayload, LotUnitDto } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
 import {
   buildPathLine,
@@ -17,6 +17,9 @@ import {
 
 const props = defineProps<{
   modelPayload: LotModelPayload | null;
+  /** LOD1~LOD4 资源位置（index 0 = LOD1）；缺失级为 null。 */
+  modelLods: (LotModelLodRef | null)[];
+  activeLod: number;
   renderMode: "default" | "refined";
   grouping: UnitGrouping;
   lotSize: [number, number] | null;
@@ -31,12 +34,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [id: string | null];
   "toggle-layer": [name: string];
+  "switch-lod": [index: number];
 }>();
 useI18n();
 const container = shallowRef<HTMLElement | null>(null);
 const viewer = shallowRef<ThreeViewer | null>(null);
 const sceneReady = ref(false);
 const lightPanelOpen = ref(false);
+const lodPanelOpen = ref(false);
 const lightAzimuth = ref(45);
 const lightElevation = ref(55);
 /** 日/夜模拟：全局环境亮度倍率（1 = 当前观感，0 ≈ 夜，2 ≈ 正午）。 */
@@ -386,6 +391,16 @@ watch(() => props.selectedId, applySelection);
     <div class="viewport-overlay viewport-tools">
       <button
         type="button"
+        :aria-label="$t('package.lodSwitch')"
+        :title="$t('package.lodSwitch')"
+        :aria-pressed="lodPanelOpen"
+        :class="{ active: lodPanelOpen }"
+        @click="lodPanelOpen = !lodPanelOpen"
+      >
+        <FIcon name="Layers" :size="13" aria-label="" />
+      </button>
+      <button
+        type="button"
         :aria-label="$t('package.lightControls')"
         :title="$t('package.lightControls')"
         :aria-pressed="lightPanelOpen"
@@ -402,6 +417,44 @@ watch(() => props.selectedId, applySelection);
       >
         <FIcon name="RotateCcw" :size="13" aria-label="" />
       </button>
+    </div>
+    <div
+      v-if="lodPanelOpen"
+      class="viewport-overlay lod-mask"
+      @click.self="lodPanelOpen = false"
+    >
+      <div class="lod-card" role="dialog" :aria-label="$t('package.lodSwitch')">
+        <header class="lod-card-header">
+          <span>{{ $t("package.lodSwitch") }}</span>
+          <button
+            type="button"
+            class="lod-close"
+            :aria-label="$t('common.close')"
+            @click="lodPanelOpen = false"
+          >
+            <FIcon name="X" :size="13" aria-label="" />
+          </button>
+        </header>
+        <div class="lod-tiles">
+          <button
+            v-for="(lod, index) in modelLods"
+            :key="index"
+            type="button"
+            class="lod-tile"
+            :class="{
+              active: index === activeLod,
+              missing: lod === null,
+            }"
+            :disabled="lod === null"
+            @click="emit('switch-lod', index); lodPanelOpen = false"
+          >
+            <span class="lod-tile-level">LOD{{ index + 1 }}</span>
+            <span v-if="lod === null" class="lod-tile-missing">{{
+              $t("package.lodMissing")
+            }}</span>
+          </button>
+        </div>
+      </div>
     </div>
     <div v-if="lightPanelOpen" class="viewport-overlay viewport-light-panel">
       <label>
@@ -519,6 +572,89 @@ watch(() => props.selectedId, applySelection);
 .viewport-light-panel input[type="range"] {
   accent-color: var(--primary);
   width: 140px;
+}
+.lod-mask {
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  display: grid;
+  inset: 0;
+  place-items: center;
+  z-index: 2;
+}
+.lod-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg, 0 8px 28px rgb(0 0 0 / 0.35));
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  width: min(340px, calc(100% - 32px));
+}
+.lod-card-header {
+  align-items: center;
+  color: var(--foreground);
+  display: flex;
+  font-size: 13px;
+  font-weight: 650;
+  justify-content: space-between;
+}
+.lod-close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  min-height: 24px;
+  min-width: 24px;
+  justify-content: center;
+}
+.lod-close:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.lod-tiles {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+}
+.lod-tile {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, var(--radius-sm));
+  color: var(--foreground);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 2px;
+  justify-items: center;
+  min-height: 52px;
+  padding: 8px 4px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.lod-tile:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.lod-tile.active {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.lod-tile:disabled {
+  color: var(--subtle-foreground);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.lod-tile-level {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.lod-tile-missing {
+  color: var(--subtle-foreground);
+  font-size: 10.5px;
 }
 .viewport-visibility {
   display: grid;

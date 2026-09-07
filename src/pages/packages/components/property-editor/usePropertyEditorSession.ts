@@ -7,6 +7,7 @@ import type {
   EffectUnit,
   LightUnit,
   LotEditorSession,
+  LotModelLodRef,
   LotModelPayload,
   LotUnitDto,
   PathPointUnit,
@@ -55,6 +56,10 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const loading = ref(true);
   const loadError = ref("");
   const modelPayload = shallowRef<LotModelPayload | null>(null);
+  /** LOD1~LOD4 资源位置；index 0 = LOD1，缺失级为 null。 */
+  const modelLods = shallowRef<(LotModelLodRef | null)[]>([]);
+  /** 当前加载的 LOD（index）；默认取第一个可用级。 */
+  const activeLod = ref(0);
   const modelState = ref<ModelState>("pending");
   const selectedId = ref<string | null>(null);
   const hiddenUnits = ref(new Set<string>());
@@ -76,14 +81,19 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     loadError.value = "";
     session.value = null;
     modelPayload.value = null;
+    modelLods.value = [];
+    activeLod.value = 0;
     modelState.value = "pending";
     selectedId.value = null;
     try {
       const result = await source.readLotEditorSession(packageId, tgi);
       if (token !== requestToken) return;
       session.value = result;
-      if (result.modelAvailable && result.modelKey) {
-        void loadModel(token, result.modelKey);
+      modelLods.value = result.modelLods ?? [];
+      const firstAvailable = modelLods.value.findIndex((lod) => lod !== null);
+      if (firstAvailable >= 0) {
+        activeLod.value = firstAvailable;
+        void loadLod(token, firstAvailable);
       } else {
         modelState.value = "missing";
       }
@@ -95,11 +105,13 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     }
   }
 
-  /** LOD1 模型几何链：单次命令取全部网格 GLB（含顶点色）+ 材质资源。失败降级不阻塞。 */
-  async function loadModel(token: number, modelKey: Tgi) {
+  /** 加载指定 LOD 的模型几何链：单命令取全部网格 GLB + 材质。失败降级不阻塞。 */
+  async function loadLod(token: number, index: number) {
+    const lod = modelLods.value[index];
+    if (!lod) return;
     modelState.value = "loading";
     try {
-      const buffer = await source.readLotModelMeshes(packageId, modelKey);
+      const buffer = await source.readLotModelMeshes(lod.packageId, lod.tgi);
       if (token !== requestToken) return;
       const payload = parseLotModelContainer(buffer);
       if (!payload.glbs.length) {
@@ -112,6 +124,13 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       if (token !== requestToken) return;
       modelState.value = "error";
     }
+  }
+
+  /** 切换 LOD：同级别幂等；请求中忽略新切换（requestToken 已防竞态）。 */
+  function switchLod(index: number) {
+    if (index === activeLod.value || !modelLods.value[index]) return;
+    activeLod.value = index;
+    void loadLod(++requestToken, index);
   }
 
   const grouping = computed<UnitGrouping>(() => {
@@ -194,6 +213,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     loading,
     loadError,
     modelPayload,
+    modelLods,
+    activeLod,
+    switchLod,
     modelState,
     selectedId,
     grouping,

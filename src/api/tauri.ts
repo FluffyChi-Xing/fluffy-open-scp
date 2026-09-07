@@ -330,11 +330,18 @@ export type LotUnitDto =
   | PropUnit
   | PathPointUnit
   | SpawnerUnit;
+/** 单级 LOD 模型的资源位置（跨包解析；该级缺失为 null）。 */
+export interface LotModelLodRef {
+  packageId: number;
+  tgi: Tgi;
+}
 export interface LotEditorSession {
   tgi: Tgi;
   assetName: string | null;
   modelAvailable: boolean;
   modelKey: Tgi | null;
+  /** LOD1~LOD4 模型位置（index 0 = LOD1）；缺失级为 null。 */
+  modelLods: (LotModelLodRef | null)[];
   lotSize: [number, number] | null;
   /** LotPlacementTransform（0x0DB7FB17）行主序 12 floats；地面矩形取其逆对齐。 */
   lotPlacement: number[] | null;

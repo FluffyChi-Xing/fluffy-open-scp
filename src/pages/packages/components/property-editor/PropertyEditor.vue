@@ -17,6 +17,9 @@ const {
   loading,
   loadError,
   modelPayload,
+  modelLods,
+  activeLod,
+  switchLod,
   modelState,
   selectedId,
   grouping,
@@ -105,6 +108,8 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         />
         <PropertyEditorViewport
           :model-payload="modelPayload"
+          :model-lods="modelLods"
+          :active-lod="activeLod"
           :render-mode="renderMode"
           :grouping="grouping"
           :lot-size="lotSize"
@@ -116,6 +121,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :model-state="modelState"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
+          @switch-lod="switchLod"
         />
         <PropertyEditorProperties :unit="selectedUnit" />
       </div>
