@@ -135,9 +135,12 @@ function attachTintShader(
     tintMap: { value: ThreeNamespace.Texture };
     paletteMap: { value: ThreeNamespace.Texture };
     paramsMap: { value: ThreeNamespace.Texture | null };
+    uParamCols: { value: number };
   },
   paramsReady: boolean,
 ) {
+  // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
+  // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -145,21 +148,22 @@ function attachTintShader(
         "#include <common>",
         `#include <common>
 attribute vec2 uv1;
+uniform float uParamCols;
 varying vec2 vTintUv;
-varying float vMatIndex;`,
+varying float vMatU;`,
       )
       .replace(
         "#include <uv_vertex>",
         `#include <uv_vertex>
 vTintUv = uv;
-vMatIndex = uv1.x * 255.0;`,
+vMatU = (uv1.x * 255.0 + 0.5) / uParamCols;`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
         `#include <common>
 varying vec2 vTintUv;
-varying float vMatIndex;
+varying float vMatU;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
 #ifdef TINT_PARAMS
@@ -170,8 +174,8 @@ uniform sampler2D paramsMap;
         "#include <map_fragment>",
         `#include <map_fragment>
 #ifdef TINT_PARAMS
-        vec4 xform = texelFetch(paramsMap, ivec2(int(vMatIndex + 0.5), 1), 0);
-        vec4 palOrigin = texelFetch(paramsMap, ivec2(int(vMatIndex + 0.5), 2), 0);
+        vec4 xform = texture2D(paramsMap, vec2(vMatU, 0.375));
+        vec4 palOrigin = texture2D(paramsMap, vec2(vMatU, 0.625));
 #else
         vec4 xform = vec4(1.0, 1.0, 0.0, 0.0);
         vec4 palOrigin = vec4(0.0);
@@ -246,6 +250,7 @@ async function rebuild() {
       paletteTex: material.palettePng ? await loadTex(material.palettePng) : null,
       normalTex: material.normalPng ? await loadTex(material.normalPng) : null,
       paramsTex: buildParamsTexture(THREE, material),
+      paramCols: material.paramCols,
     })),
   );
   if (token !== rebuildToken) return;
@@ -276,6 +281,7 @@ async function rebuild() {
             tintMap: { value: tint.tintTex },
             paletteMap: { value: tint.paletteTex },
             paramsMap: { value: tint.paramsTex },
+            uParamCols: { value: tint.paramCols },
           },
           Boolean(tint.paramsTex),
         );
