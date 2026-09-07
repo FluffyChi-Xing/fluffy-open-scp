@@ -31,6 +31,47 @@ fn main() {
         };
         for r in mat.texture_slots() {
             let slot = r.slot_byte();
+            // slot0 = Material Info f32 贴图（regionXform 参数表）
+            if slot == 0 && r.texture_instance != 0 {
+                if let Some(tex_entry) = package
+                    .entries()
+                    .iter()
+                    .find(|e| e.id.instance == r.texture_instance && e.id.type_id == RW4_MODEL_TYPE)
+                    .cloned()
+                {
+                    let tex_data = package.read(&tex_entry).expect("read");
+                    let tex_file = Rw4File::parse(&tex_data).expect("rw4");
+                    let sec = tex_file
+                        .sections_of_type(SectionType::TEXTURE)
+                        .next()
+                        .expect("sec")
+                        .number;
+                    let tex = tex_file.decode_texture(&tex_data, sec).expect("decode");
+                    let cols = u32::from(tex.width) as usize;
+                    println!(
+                        "  --- slot0 f32: type=0x{:08X} {cols}x{} ---",
+                        tex.texture_type,
+                        tex.height
+                    );
+                    if let Ok(pixels) = tex.decode_palette_f32() {
+                        for m in (30..cols).step_by(8) {
+                            for row in 0..u32::from(tex.height) as usize {
+                                let mut cells = String::new();
+                                for c in m..(m + 3).min(cols) {
+                                    let px =
+                                        pixels.get(row * cols + c).copied().unwrap_or([0.0; 4]);
+                                    cells.push_str(&format!(
+                                        "({:.3},{:.3},{:.3},{:.3})",
+                                        px[0], px[1], px[2], px[3]
+                                    ));
+                                }
+                                println!("    m{m:<3} row{row} {cells}");
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             if !(1..=5).contains(&slot) {
                 continue;
             }
@@ -63,10 +104,53 @@ fn main() {
                 (tex.decode_top_mip_rgba().expect("decode"), size)
             };
             let (rgba, (width, height)) = decoded;
-            let img = image::RgbaImage::from_raw(width, height, rgba).expect("rgba size");
+            let img = image::RgbaImage::from_raw(width, height, rgba.clone()).expect("rgba size");
             let out_path = format!("{out_dir}/mat{}_slot{}.png", section.number, slot);
             img.save(&out_path).expect("save png");
             println!("slot{slot} -> {out_path} ({width}x{height})");
+            // Material Info 贴图取证：slot0 按 f32 dump（每材质 4 行 float4 = regionXform×2 + 参数）
+            if slot == 0 && tex_entry.id.type_id == RW4_MODEL_TYPE {
+                let tex_file = Rw4File::parse(&tex_data).expect("rw4");
+                let sec = tex_file
+                    .sections_of_type(SectionType::TEXTURE)
+                    .next()
+                    .expect("sec")
+                    .number;
+                let tex = tex_file.decode_texture(&tex_data, sec).expect("decode");
+                if let Ok(pixels) = tex.decode_palette_f32() {
+                    let cols = u32::from(tex.width) as usize;
+                    println!("  --- slot0 f32 dump: {cols} cols x {} rows (4 float4 per material) ---", tex.height);
+                    for m in (30..cols).step_by(6) {
+                        for row in 0..u32::from(tex.height) as usize {
+                            let mut cells = String::new();
+                            for c in m..(m + 4).min(cols) {
+                                let px = pixels.get(row * cols + c).copied().unwrap_or([0.0; 4]);
+                                cells.push_str(&format!("({:.3},{:.3},{:.3},{:.3})", px[0], px[1], px[2], px[3]));
+                            }
+                            println!("    m{m:<3} row{row} {cells}");
+                        }
+                    }
+                }
+            }
+            // Material Info 贴图取证：slot4 逐 texel dump（字节 + /255 浮点）
+            if slot == 4 {
+                let w = width as usize;
+                let h = height as usize;
+                println!("  --- slot4 raw dump (columns with vertex G 37..111, all rows) ---");
+                for col in (30..120).step_by(6) {
+                    for row in 0..h {
+                        let mut cells = String::new();
+                        for c in col..(col + 6).min(w) {
+                            let px = &rgba[(row * w + c) * 4..(row * w + c) * 4 + 4];
+                            cells.push_str(&format!(
+                                "({:3},{:3},{:3},{:3})",
+                                px[0], px[1], px[2], px[3]
+                            ));
+                        }
+                        println!("    col{col:<3} row{row:<2} {cells}");
+                    }
+                }
+            }
         }
     }
 }

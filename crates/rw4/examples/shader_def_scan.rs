@@ -13,6 +13,9 @@ fn main() {
     let package = dbpf::Package::open(material_pkg).expect("open material package");
 
     let mut shader_defs: BTreeSet<u32> = BTreeSet::new();
+    // shader 变体 vs 模型结构关联（静态 1-mesh / 双变体 2-mesh）
+    let mut variant_by_shape: std::collections::BTreeMap<(usize, usize, u32), usize> =
+        std::collections::BTreeMap::new();
     for entry in package.entries() {
         if entry.id.type_id != RW4_IMAGE {
             continue;
@@ -20,25 +23,35 @@ fn main() {
         let entry = entry.clone();
         let Ok(data) = package.read(&entry) else { continue };
         let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+        let mesh_sections = file.sections_of_type(rw4::SectionType::MESH).count();
+        let mut material_sections = 0usize;
         for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
             let Ok(rw4::MaterialSection::Decoded(mat)) =
                 file.decode_material(&data, section.number)
             else {
                 continue;
             };
+            material_sections += 1;
             for r in &mat.texture_refs {
                 if r.slot == rw4::SHADER_DEF_MARKER && r.texture_instance != 0 {
                     shader_defs.insert(r.texture_instance);
+                    *variant_by_shape
+                        .entry((mesh_sections, material_sections, r.texture_instance))
+                        .or_insert(0) += 1;
                 }
             }
         }
+    }
+    println!("shader-def variant vs (mesh, material) shape:");
+    for ((meshes, mats, variant), count) in &variant_by_shape {
+        println!("    {meshes} mesh / {mats} material -> 0x{variant:08X}: {count}");
     }
     println!("unique shader-def instances referenced: {}", shader_defs.len());
     for id in &shader_defs {
         println!("    0x{id:08X}");
     }
 
-    for candidate in candidates {
+    for candidate in std::iter::once(material_pkg).chain(candidates.iter()) {
         let Ok(pkg) = dbpf::Package::open(candidate) else {
             println!("[{candidate}] open failed");
             continue;

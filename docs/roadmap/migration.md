@@ -781,3 +781,26 @@ EP1 模型结构分布（shape histogram）：894 个 0/0、**1025 个 1 mesh/1 
 - **oracle 证伪**：fract(f0),fract(f1) 以米为单位 mod 512 后，建筑只覆盖 color-control map 一个 ~60×60px 角落，逐 G 聚类采样点全部落在图的暗色/边界区（RGB 暗橄榄色，非亮色块区域）——**任意尺度的直接采样都不是映射**；映射必须经材质的 cell 矩形（shader-def）
 - 目视 slot1 PNG（`slot_dump` 新工具）：确认为 color control map——饱和色块区域（绿/品红/青/红）+ 箭头/圆圈符号，与 modding 教程 256 平面网格完全对应
 - **给 exe 逆向的请求**：在 SimCity.exe（ImHex/GHIDRA）中搜索 u32 小端 `0F 95 9E 25`（0x259E950F）与 `DA 9B 86 38`（0x38869BDA）——命中处即内嵌 shader 包/表，是打破 facade UV 瓶颈的钥匙
+
+### 24.w ★★ facade UV 公式破解（2026-09-08，cpp 容器 = 建筑着色器源码库）
+
+**决定性发现**：app 包的 32 个 cpp(0x0469a3f7) 资源 = **游戏 HLSL 着色器源码库**（含 `building4*` 全家族：SetupVS/DefaultVS/DefaultPS/ClipAndReliefMapPS/InteriorMapPS...，以「shader 名 + 源码」成对存储）。用户逆向确认 exe 只是 bootstrap、渲染全在数据包——与 cpp 容器发现互相印证。
+
+**facade 渲染公式**（从 building4DefaultPS/SetupVS 源码逐字提取）：
+
+```hlsl
+// VS：uv = In.texcoord0.xy; uv2 = In.texcoord0.zw;（FLOAT4 原样两层 UV）
+//     materialIndex = floor(In.color.r * 255)；materialInfoUV 索引 Material Info 贴图
+float2 baseUv = frac(uv) * regionXform.xy + regionXform.zw;   // regionXform = 材质裁剪窗(scale.xy+offset.zw)
+float4 baseTintValues = tex2D(tintMapSampler, baseUv);        // slot1 color control map
+clip(baseTintValues.a - 0.5f);                                // A 通道 = 元素有效区判定（新 oracle！）
+// 第二层：relief_tc = frac(uv2)*regionXform2.xy + regionXform2.zw（Top 层 + relief mapping）
+```
+
+- 采样器族 6 个 = `materialDataSampler, tintMapSampler(slot1), normalMapSampler(slot2), shaderMapSampler(slot3), tintPaletteSampler, interiorMapSampler`——与 slot0-5 对应关系待最终锁定
+- `kPaletteSize = int2(256,8)` + `BuildingPaletteVS`（palU×255/256 移到 2×2 块角）+ `BuildingPaletteVariationVS(buildingType)`（行=建筑变体）——**slot4 (512×16) = 256×8 调色板**（2×2 块），目视 byte 值为灰阶 tint 色
+- slot0 (119×4 f32) = **每材质参数表**（每列=材质，4 行 float4）：row0 含调色板 UV（0.352,0.344,0.125,0）、row3 含整数格坐标（(2,1,1,1)/(3,3,1,1)）——regionXform 的来源，行→Xform 映射用 tint.a>0.5 oracle 逐行验证
+- EP1 材质仅 2 个 shader 变体值：0x259E950F（facade 大坐标，696+1832 栋）/ 0x38869BDA（小坐标，288 栋）——与 FLOAT4 语义精确相关
+- D3DCOLOR 字节序注意：shader 读 `In.color.r`；我们的 {a,r,g,b} 解析与 HLSL 分量的对应需按 materialIndex∈[0,119) 校准
+
+**下一步（实现路径已完全清晰）**：① slot0 各行按 tint.a>0.5 oracle 定位 regionXform/regionXform2 ② 后端烘焙：frac(f0)*X.xy+X.zw → slot1 采样（RGB→palette U、A=镂空）→ 256×8 palette 查色 ③ 双层（uv2）接 Top 层。覆盖率将直达 ~100% 带材质资产。
