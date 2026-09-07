@@ -135,6 +135,10 @@ export const tauriApi = {
       command<ResourceData>("read_resource_data", {
         request: { packageId, tgi },
       }),
+    readResourceText: (packageId: number, tgi: Tgi) =>
+      command<ArrayBuffer>("read_resource_text", {
+        request: { packageId, tgi },
+      }),
     readPropertyPreview: (packageId: number, tgi: Tgi) =>
       command<PropertyResourceData>("read_property_preview", {
         request: { packageId, tgi },

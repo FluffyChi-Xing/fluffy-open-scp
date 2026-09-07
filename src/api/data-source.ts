@@ -24,6 +24,7 @@ import type {
   TypeCountInfo,
 } from "./tauri";
 import { mockOverview } from "./mock-data";
+import { decodeTextBytes, looksLikeText, stripLocaleJsonPrefix } from "@/lib/text-decode";
 import {
   imageMimeForType,
   AUDIO_TYPE_ID,
@@ -69,6 +70,8 @@ export interface OpenScpDataSource {
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
   /** 返回 `read_lot_model_meshes` 原始字节容器（LotModelPayload，见 tauri.ts）。 */
   readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
+  /** 文本预览全量原始字节（服务端 8MB 上限，见 read_resource_text）。 */
+  readResourceText(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
   readRasterPreview(packageId: number, tgi: Tgi): Promise<RasterPreviewData>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
   readRw4Section(
@@ -127,6 +130,7 @@ function tauriDataSource(): OpenScpDataSource {
     readPropertyPreview: tauriApi.packages.readPropertyPreview,
     readLotEditorSession: tauriApi.packages.readLotEditorSession,
     readLotModelMeshes: tauriApi.packages.readLotModelMeshes,
+    readResourceText: tauriApi.packages.readResourceText,
     readRasterPreview: tauriApi.packages.readRasterPreview,
     readRw4Preview: tauriApi.packages.readRw4Preview,
     readRw4Section: tauriApi.packages.readRw4Section,
@@ -443,6 +447,10 @@ function mockDataSource(): OpenScpDataSource {
       view.setUint8(20, 0);
       return out;
     },
+    async readResourceText(_packageId, _tgi) {
+      // demo 模式文本内容直接内联在 previewResource，无全量通道
+      return new ArrayBuffer(0);
+    },
     async readRasterPreview(_packageId, _tgi) {
       return {
         rasterType: 2,
@@ -677,30 +685,26 @@ async function tauriPreview(
     };
   }
   const language = textPreviewLanguage(resource.tgi.typeId);
-  if (language || isTextBytes(bytes.bytes)) {
-    const content = new TextDecoder("utf-8", { fatal: false }).decode(
-      Uint8Array.from(bytes.bytes),
+  if (language || looksLikeText(Uint8Array.from(bytes.bytes))) {
+    // 全量字节经 ipc::Response 原始通道（4KB 仅用于嗅探，见 read_resource_text）
+    const full = await tauriApi.packages.readResourceText(
+      packageId,
+      resource.tgi,
     );
+    let payload = new Uint8Array(full);
+    const truncated = payload.byteLength < resource.decompressedSize;
+    if (language === "json") payload = stripLocaleJsonPrefix(payload);
+    const { content, encoding } = decodeTextBytes(payload);
     return {
       kind: "text",
       ...base,
       content,
-      encoding: "utf-8",
+      encoding,
       language: language ?? "text",
-      truncated: bytes.totalLength > bytes.bytes.length,
+      truncated,
     };
   }
   return { kind: "hex", ...base };
-}
-
-function isTextBytes(bytes: number[]) {
-  return (
-    bytes.length > 0 &&
-    bytes.every(
-      (byte) =>
-        byte === 9 || byte === 10 || byte === 13 || (byte >= 32 && byte <= 126),
-    )
-  );
 }
 
 function svgPreviewUrl(instance: number) {
