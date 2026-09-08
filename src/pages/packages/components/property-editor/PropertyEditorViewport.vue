@@ -156,6 +156,9 @@ function buildParamsTexture(
  * fragment：baseUv = frac(vTintUv)*regionXform.xy + regionXform.zw → tint 查表
  * → palette 查色（palU=row0.x + tint.r×sub；palV=variation 行 0 + tint.g×sub）
  * ×(tint.b*2)，A<0.5 镂空 discard；法线图同 UV 重采样。
+ * 唯一偏离源码处：object 法线 Z<-0.3（下向面）豁免镂空——游戏镂空模板被
+ * 地板/底面继承（共用 facade UV），仰视穿透是原版瑕疵、相机不可达故未处理
+ * （docs/rendering.md §3、tint_underface_probe 取证：窗口内 36% 镂空）。
  */
 function attachTintShader(
   material: ThreeNamespace.MeshStandardMaterial,
@@ -179,13 +182,19 @@ attribute vec2 uv1;
 attribute vec2 uv2;
 uniform float uParamCols;
 varying vec2 vTintUv;
-varying float vMatU;`,
+varying float vMatU;
+varying float vObjUp;`,
       )
       .replace(
         "#include <uv_vertex>",
         `#include <uv_vertex>
 vTintUv = uv2;
 vMatU = (uv1.x * 255.0 + 0.5) / uParamCols;`,
+      )
+      .replace(
+        "#include <beginnormal_vertex>",
+        `#include <beginnormal_vertex>
+vObjUp = normalize(objectNormal).z;`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -193,6 +202,7 @@ vMatU = (uv1.x * 255.0 + 0.5) / uParamCols;`,
         `#include <common>
 varying vec2 vTintUv;
 varying float vMatU;
+varying float vObjUp;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
 #ifdef TINT_PARAMS
@@ -211,10 +221,16 @@ uniform sampler2D paramsMap;
 #endif
         vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
         vec4 tintValues = texture2D(tintMap, tUv);
-        if (tintValues.a < 0.5) discard;
-        vec2 sub = tintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
-        vec4 palColor = texture2D(paletteMap, vec2(palOrigin.x + sub.x, sub.y));
-        diffuseColor.rgb *= palColor.rgb * (tintValues.b * 2.0);`,
+        if (tintValues.a < 0.5) {
+          if (vObjUp >= -0.3) discard;
+          // 下向面豁免（观察器缓解）：游戏 building4Clip 的镂空模板被地板/
+          // 底面继承（底面与立面共用 facade UV），从下仰视出现穿透洞——
+          // 游戏相机不可达此视角故原版未处理。豁免片段跳过调色保持白模观感。
+        } else {
+          vec2 sub = tintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
+          vec4 palColor = texture2D(paletteMap, vec2(palOrigin.x + sub.x, sub.y));
+          diffuseColor.rgb *= palColor.rgb * (tintValues.b * 2.0);
+        }`,
       )
       .replace(
         "#include <normal_fragment_maps>",
