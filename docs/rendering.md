@@ -119,10 +119,23 @@ InteriorMapPS 里则是整体灰度化（`dot(rgb,(.3,.59,.11))`）。
 
 ### 1.5 我们 app 缺什么
 
-当前 LOTM v5 只有 Base 层 tint+法线。窗户链需要：
+（2026-09-08 更新：5b 已实现本节全部要素，见 migration.md §29——**interiorMap =
+slot5**（"relief 高度图"旧解读作废，六采样器↔六槽位闭合），roomInvSize/padding =
+参数表 row3，interiorScale/Offset = row0.zw，种子 = D3DCOLOR.B；LOTM v7 起随材质
+下发 interiorPng。实现为 Viewport tint shader 的 TINT_INTERIOR 块。）
+
+（2026-09-09 补充，migration.md §30：**公寓楼窗户在 Top 层采样域**——
+`shaderMapSampled = lerp(shaderMapBase@baseUv, shaderMapTop@relief_tc,
+facadeTintValues.a)`，relief_tc 来自第二套 UV（uv2 = texcoord0.zw）× 逐材质
+row2 矩形。探针实证 0xF8FFC5F8：Base 矩形无窗，Top 矩形内是窗户 motif
+（slot3 A<128 占 36–53%），靠 uv2 逐格平铺成整面窗阵。另纠错：slot0 参数表
+为 80 列×4 行**列布局**（材质 m row k = flat[k*80+m]），此前探针按行块解读
+有误。）
+
+历史缺口清单（存档）：
 1. slot3 shader map 的 **A 通道**（窗洞遮罩）——已入库但未消费；
-2. interiorMap 纹理（slot 之外的独立贴图，随材质/资产而来）+ interiorRoomInvSize（顶点数据 texcoord3.zw）；
-3. uv 格栅化（regionXform × roomInvSize）+ FastNoise 逐格选房 + 盒体投影；
+2. interiorMap 纹理 + interiorRoomInvSize；
+3. uv 格栅化 + FastNoise 逐格选房 + 盒体投影；
 4. 供电状态 uniform（interiorThresholds.z）。
 
 ---

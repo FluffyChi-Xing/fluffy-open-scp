@@ -6,7 +6,7 @@ const PAYLOAD_MAGIC = 0x4d54_4f4c;
 
 /**
  * 解析 `read_lot_model_meshes` 返回的原始字节容器（零拷贝切片，
- * 见 `LotModelPayload` 注释里的 v6 布局：逐 mesh GLB + 逐材质贴图 +
+ * 见 `LotModelPayload` 注释里的 v7 布局：逐 mesh GLB + 逐材质贴图 +
  * 每 mesh 材质下标/uv 类型 + 诊断文本）。
  */
 export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
@@ -24,7 +24,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     throw new Error("lot model payload magic mismatch");
   }
   const version = readU32();
-  if (version !== 6) {
+  if (version !== 7) {
     throw new Error(`unsupported lot model payload version ${version}`);
   }
   const meshCount = readU32();
@@ -57,6 +57,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     const tintPng = readPng();
     const palettePng = readPng();
     const shaderPng = readPng();
+    const interiorPng = readPng();
     const paramsLength = readU32();
     let paramsF32: Float32Array | null = null;
     if (paramsLength > 0) {
@@ -75,6 +76,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
       tintPng,
       palettePng,
       shaderPng,
+      interiorPng,
       paramsF32,
       paramCols,
     });

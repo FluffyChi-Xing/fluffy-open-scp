@@ -38,7 +38,8 @@ const {
 const renderMode = ref<"default" | "refined">("default");
 /** 通道实验：仅精细模式显示；开启后可切 shader map specularity 通道观察。 */
 const specExperiment = ref(false);
-const specChannelG = ref(true);
+/** 0=自动逐像素（墙面 G/窗玻璃 B）/ 1=强制 G / 2=强制 B。 */
+const specMode = ref(0);
 
 watch(open, (value) => {
   if (value) void load();
@@ -96,17 +97,24 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         >
           <button
             type="button"
-            :class="{ active: specChannelG }"
-            @click="specChannelG = true"
+            :class="{ active: specMode === 0 }"
+            @click="specMode = 0"
           >
-            {{ $t("package.specChannelG") }}
+            {{ $t("package.specModeAuto") }}
           </button>
           <button
             type="button"
-            :class="{ active: !specChannelG }"
-            @click="specChannelG = false"
+            :class="{ active: specMode === 1 }"
+            @click="specMode = 1"
           >
-            {{ $t("package.specChannelB") }}
+            {{ $t("package.specModeG") }}
+          </button>
+          <button
+            type="button"
+            :class="{ active: specMode === 2 }"
+            @click="specMode = 2"
+          >
+            {{ $t("package.specModeB") }}
           </button>
         </div>
         <span class="editor-readonly">{{ $t("package.propertyEditorReadonly") }}</span>
@@ -153,7 +161,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :group-visibility="groupVisibility"
           :model-state="modelState"
           :spec-experiment="specExperiment"
-          :spec-channel-g="specChannelG"
+          :spec-mode="specMode"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
           @switch-lod="switchLod"

@@ -1957,6 +1957,10 @@ struct MaterialResources {
     /// slot3 原始 shader map（源码语义：B=specularity、A=窗洞/Interior 位置
     /// 预留 5b；kind1 simple 路径的 roughness 反转灰度独立导出，互不影响）
     shader_png: Option<Vec<u8>>,
+    /// slot5 原始 interior map（预渲染房间图集；alpha=逐窗灯亮通道，5b。
+    /// 旧"relief 高度图"解读作废——图内容即房间/亮灯，与 building4 六采样器
+    /// 一一对应：slot0=参数表/1=tint/2=法线/3=shaderMap/4=调色板/5=interiorMap）
+    interior_png: Option<Vec<u8>>,
     /// slot0 参数表 f32 字节（row-major cols×4）
     params_f32: Option<Vec<u8>>,
     param_cols: usize,
@@ -2032,6 +2036,7 @@ fn resolve_material_resources(
         tint_png: None,
         palette_png: None,
         shader_png: None,
+        interior_png: None,
         params_f32: None,
         param_cols: 0,
         diag: String::new(),
@@ -2121,6 +2126,11 @@ fn resolve_material_resources(
     if let Some((rgba, width, height)) = slot_rgba(3) {
         resources.roughness_png = channel_gray_png(&rgba, width, height, 2, true);
         resources.shader_png = encode_rgba_png_bytes(width, height, rgba).ok();
+    }
+    // slot5：interior map 图集（5b 假内景；用户目视 mat6_slot5.png 证实为
+    // 预渲染房间图+亮灯，旧 relief 高度图解读作废）
+    if let Some((rgba, width, height)) = slot_rgba(5) {
+        resources.interior_png = encode_rgba_png_bytes(width, height, rgba).ok();
     }
     for slot in 0..=5u32 {
         if let Some(line) = slot_diag.borrow().get(&slot) {
@@ -2267,16 +2277,17 @@ pub async fn read_lot_model_meshes(
     Ok(tauri::ipc::Response::new(payload))
 }
 
-/// 组装 LOTM v6 容器：按 MeshMaterialAssignment（0x2001A）逐 mesh 配材质。
+/// 组装 LOTM v7 容器：按 MeshMaterialAssignment（0x2001A）逐 mesh 配材质。
 ///
-/// 布局（小端）：`magic | version=6 | mesh_count`，每 mesh `u32 len + GLB`
-/// （COLOR_0 烘焙 + TEXCOORD_1.x=materialIndex/255 + TEXCOORD_2/3=facade
-/// 世界投影 UV）；`material_count`，每材质 7 张 PNG（base/normal/rough/ao/
-/// tintRaw/palette/shaderMap）+ 参数表 f32 + paramCols；每 mesh `u32
-/// material_index + u8 uv_kind`；末尾 `u32 diag_len + UTF-8 诊断文本`
+/// 布局（小端）：`magic | version=7 | mesh_count`，每 mesh `u32 len + GLB`
+/// （COLOR_0 烘焙 + TEXCOORD_1.xy=materialIndex/255+内景种子 + TEXCOORD_2/3=
+/// facade 世界投影 UV）；`material_count`，每材质 8 张 PNG（base/normal/rough/
+/// ao/tintRaw/palette/shaderMap/interiorMap）+ 参数表 f32 + paramCols；每 mesh
+/// `u32 material_index + u8 uv_kind`；末尾 `u32 diag_len + UTF-8 诊断文本`
 /// （mesh↔material↔slot 贴图及其来源包，供 info 面板复制复盘）。绑定缺失/
 /// 材质不可解时回退第一个可解码材质；完全无材质则指向占位空材质。
-/// v6 = v5 + 每材质第 7 张 PNG（slot3 shader map 原始 RGBA，5a 材质质感）。
+/// v7 = v6 + 每材质第 8 张 PNG（slot5 interior map，5b 假内景）+
+/// TEXCOORD_1 升 VEC4（.y = 内景随机种子）。
 fn build_lot_model_payload(
     file: &rw4::Rw4File,
     data: &[u8],
@@ -2382,7 +2393,7 @@ fn build_lot_model_payload(
 
     // 诊断文本
     let mut diag = format!(
-        "LOTM v5 | model: {pkg_name} instance=0x{model_instance:08X} | meshes={} materials={} | bindings={}\n",
+        "LOTM v7 | model: {pkg_name} instance=0x{model_instance:08X} | meshes={} materials={} | bindings={}\n",
         glbs.len(),
         material_resources.len(),
         bindings.len(),
@@ -2407,7 +2418,7 @@ fn build_lot_model_payload(
 
     let mut out = Vec::new();
     out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
-    out.extend_from_slice(&6u32.to_le_bytes());
+    out.extend_from_slice(&7u32.to_le_bytes());
     out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
     for glb in &glbs {
         out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
@@ -2423,6 +2434,7 @@ fn build_lot_model_payload(
             &material.tint_png,
             &material.palette_png,
             &material.shader_png,
+            &material.interior_png,
         ] {
             match png {
                 Some(bytes) => {
@@ -3482,7 +3494,7 @@ mod lot_payload_tests {
             u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap())
         };
         assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
-        assert_eq!(read_u32(4), 6, "container version 6");
+        assert_eq!(read_u32(4), 7, "container version 7");
         let mesh_count = read_u32(8) as usize;
         assert_eq!(mesh_count, 1, "1 exportable mesh");
 
@@ -3495,8 +3507,8 @@ mod lot_payload_tests {
         offset += 4;
         assert_eq!(material_count, 1, "1 material via assignment");
         for _ in 0..material_count {
-            for _ in 0..7 {
-                // baseColor / normal / roughness / ao / tint / palette / shaderMap
+            for _ in 0..8 {
+                // baseColor / normal / roughness / ao / tint / palette / shaderMap / interiorMap
                 offset += 4 + read_u32(offset) as usize;
             }
             // params f32 + paramCols
@@ -3511,7 +3523,7 @@ mod lot_payload_tests {
         offset += 4;
         let diag = std::str::from_utf8(&payload[offset..offset + diag_len]).unwrap();
         eprintln!(
-            "lot payload v6: {mesh_count} mesh, {material_count} material, mesh material = [{mesh0_material}], uv_kind = [{mesh0_uv_kind}], diag {diag_len} bytes, {} bytes in {elapsed:?}",
+            "lot payload v7: {mesh_count} mesh, {material_count} material, mesh material = [{mesh0_material}], uv_kind = [{mesh0_uv_kind}], diag {diag_len} bytes, {} bytes in {elapsed:?}",
             payload.len()
         );
         eprintln!("{diag}");

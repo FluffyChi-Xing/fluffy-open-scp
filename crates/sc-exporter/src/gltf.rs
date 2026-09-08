@@ -385,7 +385,8 @@ pub fn export_glb_with_textures(
 ///（COLOR_0，three.js GLTFLoader 映射为 `color` 顶点属性）。
 ///
 /// `mat_indices`：逐顶点材质索引（D3DCOLOR.G），写入 TEXCOORD_1.x（/255 归一），
-/// 供前端 tint 着色器按顶点选 regionXform。
+/// 供前端 tint 着色器按顶点选 regionXform；TEXCOORD_1.y = 假内景随机种子
+/// （D3DCOLOR.B = 游戏 A，/255 归一，5b）。
 pub fn export_glb_with_colors(
     mesh: &DecodedMesh,
     skeleton: Option<&DecodedSkeleton>,
@@ -470,17 +471,26 @@ pub fn export_glb_with_colors(
     });
     let color_len = v_count * 12;
 
-    // TEXCOORD_1 = (materialIndex/255, 0)：前端 tint 着色器的逐顶点材质索引
+    // TEXCOORD_1 = (materialIndex/255, interiorSeed/255, 0, 0)：前端 tint
+    // 着色器的逐顶点材质索引 + 假内景随机种子（D3DCOLOR.B = 游戏 A，5b）
     let texcoord1_offset = mat_indices.map(|indices| {
         pad4(&mut bin);
         let offset = bin.len();
         for v in 0..v_count {
             let m = indices.get(v).copied().unwrap_or(0.0) / 255.0;
-            put_f32s(&mut bin, &[m, 0.0]);
+            let seed = mesh.vertices[v]
+                .components
+                .iter()
+                .find_map(|(_, val)| match val {
+                    rw4::ComponentValue::D3DColor { b, .. } => Some(f32::from(*b) / 255.0),
+                    _ => None,
+                })
+                .unwrap_or(0.0);
+            put_f32s(&mut bin, &[m, seed, 0.0, 0.0]);
         }
         offset
     });
-    let texcoord1_len = v_count * 8;
+    let texcoord1_len = v_count * 16;
 
     // TEXCOORD_2/3 = facade 世界投影 UV（FLOAT4 TexCoord：xy=Base 层、
     // zw=Top 层）。原值直出不取反：tint 着色器按游戏公式 frac(uv)*regionXform
@@ -705,7 +715,7 @@ fn build_json(
         let bv = buffer_views.len();
         buffer_views.push(json!({"buffer": 0, "byteOffset": offset, "byteLength": texcoord1_len, "target": TARGET_ARRAY}));
         let acc = accessors.len();
-        accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC2"}));
+        accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC4"}));
         primitive_attrs["TEXCOORD_1"] = json!(acc);
         texcoord1_acc = Some(acc);
     }

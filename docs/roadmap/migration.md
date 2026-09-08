@@ -956,3 +956,173 @@ uniform，免重建；rebuild 时清空引用表。
 **目检反馈（同日）**：G 通道玻璃反光生效，但部分建筑 G 显得画面偏白（gloss→env 项
 偏强），部分建筑 B 更自然；样本量不足定论——**通道实验开关保留**，默认仍 G，
 后续样本积累后再定默认通道与 env 强度。本轮按用户指示提交并重新打包。
+
+## 29. 阶段 5b：窗洞 + 假内景（LOTM v7，2026-09-08 第二十五轮）
+
+### 29.1 slot5 = interiorMap 定性（关键翻案）
+
+用户目视 `tmp/slots/mat6_slot5.png` 发现"亮着灯的房子"→ **slot5 是 interiorMap
+（预渲染房间图集），旧"relief 高度图"解读作废**。图内容 = 暗色房间网格 + 暖黄/冷青
+亮灯房间，alpha = 逐窗灯亮通道。building4 六采样器与 slot0-5 一一对应闭合：
+materialData(参数表)/tintMap/normalMap/shaderMap/tintPalette/interiorMap。
+数据源确认：interiorScale/Offset = 参数表 **row0.zw**、tilePadding/roomInvSize =
+**row3**（顶点无 TEXCOORD1-3 流，参数表为准——金样本/玻璃楼顶点盘点实证）；
+interiorRandomSeed = D3DCOLOR.B（游戏 A，玻璃楼 81/金样本 1）。
+
+### 29.2 实现
+
+- **LOTM v7** = v6 + 每材质第 8 张 PNG（slot5 interior map 原始 RGBA）+
+  **TEXCOORD_1 升 VEC4**（.x=materialIndex/255、.y=内景种子/255）。
+- **前端内景链**（ClipAndReliefMapPS + InteriorMapPS 逐字）：
+  `artistOpacity = shaderMap.a`（1=外观/0=透内景）→ `interiorUv = vTintUv ×
+  roomInvSize`（源码 uv*regionXform.xy*roomInvSize 前两项相消形式）→
+  `floor/fract` 逐窗格栅格 → `FastNoise(elem, seed)` 选房（seed<0.5 按模型位置
+  munge）→ 4 变体×象限单元格（interiorThresholds v1 用四分位常数）→
+  `interiorMap()` 盒体投影（0.5/0.5/0.9）→ `×interiorScale + (0,interiorOffset)`
+  采 slot5 图集 → `finalColor = mix(interior, exterior, artistOpacity)`。
+  夜灯：`roomTex.rgb × (1 + roomTex.a × uInteriorGlow)`。
+- **偏离清单**（累计五处，均文档化）：①下向面豁免镂空；②specularity 取 G 通道；
+  ③夜灯 16→uInteriorGlow=6（无 HDR tonemap）；④interiorThresholds 四分位常数
+  （引擎值未知）；⑤eyeDir 对象空间近似切线空间。
+- eyeDir：顶点阶段 normalMatrix 转置（GLSL1 手工转置）得对象空间视线。
+
+性能：金样本 v7 payload 1.44MB / **19.6ms** release（v6 1.32MB/19.7ms，+117KB 为
+interior PNG）。验证：src-tauri 42 全绿（v7 断言）+ vue-tsc/vitest 76 全绿。
+**待用户目检**：金样本窗洞（shaderMap.a<128 像素约 4.7%）应透出房间图、部分窗格
+亮灯；玻璃楼 0xCFEC0F84 的 shaderMap.a≈1 全关（数据如此，与游戏一致）；
+无内景图材质不受影响。打包未重做（小迭代）。
+
+### 29.3 目检修正一：specularity 逐像素双通道（窗玻璃=B/墙面=G）
+
+首版目检：内景可见（晾衣架、空调外机 ✓）但**窗户无玻璃感**——统一取 G 后窗洞
+哑光。数据复核：shaderMap 的 G/B 与窗洞掩码 a **互补分布**——金样本墙面 G=168/
+窗洞 B=101.5，玻璃楼整体 a≈1 → G=186。语义修正：**B=窗玻璃高光、G=墙面高光**，
+specularity 按掩码逐像素选取 `mix(b, g, step(0.5, a))`（此即 SUGC "B=Specularity"
+的正确语境——B 只在窗像素上生效）。通道实验开关升级三态：自动（逐像素，默认）/
+G·墙/B·窗，uSpecMode uniform 热切换。
+
+### 29.4 目检修正二：内景平涂色块（REPEAT 包装）
+
+用户报"部分楼正确、部分楼窗位出现平涂绿/紫矩形"（0x6DC32BF1 玻璃楼、
+0xC4805FD7 砖楼）。根因：这类楼的房间选择偏移超出 [0,1]（如 0xC4805FD7
+row0.z=**scale 1.0**、roomInvSize=(1,1) 整图模式，格偏移为整数；0x6DC32BF1 格
+偏移至 1.875），游戏 interiorMapSampler 为 **REPEAT 包装**（整数偏移回绕到正确
+单元格），而我们统一用 ClampToEdge → 越界采样钳到边缘纯色。修复：interiorTex
+单独设 RepeatWrapping。顺带修掉诊断文本过期标签 "LOTM v5"→v7。
+
+## 30. 公寓楼窗户全墙化根因：Top 层未实现 + slot0 列布局纠错（2026-09-09 第二十七轮）
+
+用户四问（公寓楼无窗 / 内景房间变形 / 无立体感 / 材质趋同）重读 26 个 HLSL 后
+逐项探针实证（`shader_map_stats` 扩展：参数表只解码一次 + 逐材质块 Base/Top
+矩形 A/B 统计 + uv2 范围 + 顶点 materialIndex 分布 + Top 矩形 PNG dump）。
+
+### 30.1 slot0 参数表列布局纠错（影响此前所有探针读数）
+
+slot0 参数表纹理为 **80(材质列)×4(行)**。材质 m 的 row k = `flat[k*80+m]`，
+**不是** `flat[m*4+k]`。此前探针的 "regionXform=row1" 实取的是别的材质列的
+palU 值（恰好也在 0..1 内，目视难辨）。交叉验证：后端 bake `params[param_cols+m]`
+与前端 `DataTexture(cols,4)` 列布局一致且调色链工作正常 → 列布局成立。
+新探针 `block_rows()` 已改列布局。
+
+### 30.2 窗户遮罩实证：在 Top 层（row2 矩形）的窗户 motif 里
+
+0xF8FFC5F8 公寓楼（SimCity_Graphics.package，材质节 #11，80 材质块，
+mesh#10 5006 顶点，TexCoord FLOAT4 = uv+uv2 均存在，uv2 范围 x -98..86 /
+y -168..167 世界投影）：
+
+- **Base 矩形（row1）几乎无窗**：主要材质 slot1/slot3 A<128 占比 ≈0%；
+- **Top 矩形（row2）含窗户 motif**：多材质 slot3 A<128 占 36–53%（B≈133
+  玻璃标记），slot1 A<128 占 17–34%（镂空/窗框裁剪）；
+- motif 结构（暗带检测）：每 Top 矩形 1–2 个大暗矩形（单窗/双扇），
+  **不是多窗网格** —— 立面 = Base 砖墙平铺 + Top 窗户 motif 按 uv2 逐格
+  重复（`relief_tc = frac(uv2)·regionXform2`），与游戏截图"标准方格窗"吻合。
+
+即源码 `shaderMapSampled = lerp(shaderMapBase@baseUv, shaderMapTop@relief_tc,
+facadeTintValues.a)` 的双采样链：**公寓楼窗户只存在于 Top 采样域**，open-scp
+从未消费 TEXCOORD_3/row2 → 整面墙。玻璃幕墙楼正常是因为其窗户在 Base 域
+即 A<1（row1 矩形）。
+
+### 30.3 修复路线（待实施）
+
+1. 前端消费 TEXCOORD_3（uv2）+ 逐材质 row2 矩形（paramsMap V=0.625）；
+   tint/normMap/shaderMap 按 `frac(uv2)·regionXform2` 双采样，
+   `facadeTintValues.a`（tint@relief_tc）驱动 lerp；
+2. clip 镂空判定补 Top 域（tint.a@relief_tc，源码 outsideTile 逻辑）；
+3. 内景格栅 `interiorUv = uv·regionXform.xy·roomInvSize` 中 uv 与 uv2 的
+   对齐关系需在实现时目检（窗户 motif 周期 = uv2 格，房间格应与之一致）。
+
+### 30.4 其余三问定性（源码已证，无资产疑点）
+
+- **房间变形/无立体感**：源码 eyeDir 为切线空间（`-mul(tangentSpace,viewPos)`，
+  t1 插值器），盒体投影+前 0.9/后 0.5 缩放透视只有切线空间视线才成立；
+  open-scp 用对象空间近似 → 投影盒被剪切。修法：顶点按 t3/t4(normal/tangent)
+  建切线架变换视线。
+- **材质趋同**：无材质分支，四标量参数化（见 rendering.md §2）；open-scp 缺
+  Top 层法线（窗框/线脚凹凸在 uv2 域）与 EnvLighting 天空 LUT 的
+  diffuse/spec 能量劈分；relief 视差在本编译版为恒等函数。
+- **参数表 row0 语义复核**：列布局下 row0=(palU, palU2, interiorScale,
+  interiorOffset) 与既有实现一致，未推翻 5b。
+
+### 30.5 普查：Top 层窗户的普遍性（SimCity_Graphics.package 全包扫描）
+
+新探针 `facade_survey`（逐模型：顶点实际使用的材质块 × Base/Top 矩形 A<128
+占比 ≥2% 判窗；明细存 `tmp/facade_survey_graphics.txt`）：
+
+- 解析 3496 个 RW4 模型，**1900 个含 facade 链**（slot0+slot1+slot3 齐备）；
+- **1900/1900 全部含 uv2（FLOAT4 TexCoord）**，"Top 有窗但无 uv2" 异常 = 0；
+- 按材质块计：仅 Top 有窗 623、Base+Top 双域有窗 1024、仅 Base 有窗 58、
+  两域无窗 195（屋顶/构件等）；
+- 按顶点加权（更抗 2% 阈值误判）：Top 窗顶点占比 >0% 的 1540 栋、≥20% 的
+  328 栋；Base 窗 ≥20% 仅 49 栋（真·大面积 Base 窗 ≈ 玻璃幕墙 ≈ 25 栋）。
+
+结论：**带窗建筑约 86%（1647/1900）窗标记出现在 Top 域**，纯 Base 域窗户
+（玻璃幕墙式）只占 ~3%——Top 层双采样链不是边角案例而是立面渲染主体，
+5b 只实现 Base 采样导致绝大多数建筑"窗户全墙化"与用户观察（玻璃幕墙楼正常、
+公寓楼无窗）完全一致。
+
+### 30.6 Top 层双采样实施（待目检，2026-09-09）
+
+PropertyEditorViewport.vue tint 着色器补全源码双采样链（仅窗口渲染，内景
+投影修复留待下一轮）：vertex 新增 `uv3`（TEXCOORD_3 = Float4.zw）→
+`vTopUv`；fragment 取 paramsMap row2（V=0.625，regionXform2），
+`topUv = fract(vTopUv)·xform2.xy + xform2.zw`，`scFacade =
+tint.a@topUv`（motif 覆盖率），shaderMap / normalMap（AO+法线）/ palette
+色行（Top 用 palU2=row0.y 列 + subsampleTop）/ surface 行 / 亮度 tintMul
+全部按 scFacade lerp。xform2.xy≤0 的材质（无 Top 层）自动退化为原 Base
+采样。vue-tsc + vitest 76 全绿。**预期**：公寓楼立面出现窗阵（玻璃 spec +
+内景混合）；内景投影仍有已知变形（eyeDir 对象空间近似），属下一阶段。
+
+### 30.7 内景修复：格栅分量纠错 + eyeDir 切线空间（待目检）
+
+用户目检 30.6：窗户已出，但（a）单层建筑一窗多房（b）玻璃门出现虚拟房间。
+(a) 根因 = 5b 格栅误用 row3.zw（tilePadding+w），源码 t3 =
+float4(interiorRoomInvSize, tilePadding) → roomInvSize 在 **row3.xy**；已改
+`interiorUv = vTintUv·xform.xy·scRoom.xy`（旧"前两项相消"注释作废）。
+(b) 属源码行为（凡 shaderMap.a<1 均透内景，店面玻璃门本就显示内景），
+格栅修正后观感应改善，保留。
+同时把内景 eyeDir 从对象空间近似改为切线空间：用 vTintUv 屏幕导数重建
+与立面 UV 轴对齐的切线架（t=du 方向、b=dv 方向、n=几何法线，view space），
+视线向量点积进 (u,v,n) 基——等价源码 `eyeDir = -mul(tangentSpace, viewPos)`
+（t1 插值器），盒体裁剪+前 0.9/后 0.5 透视自此成立。vue-tsc + vitest 76 绿。
+
+### 30.8 row3 语义定谳：tilePadding.xy + roomInvSize.zw + outsideTile（待目检）
+
+用户目检 30.7：玻璃幕墙楼（0xBA637D54，60 材质块）丢虚拟房间。探针见其
+row3.xy=(79311,76926)（超 half 范围的"垃圾"值）、zw=(1.27,1.70) 合理——与
+公寓楼 row3=(0.34,0.27,0.125,0) 恰好互补。回查 cpp_ frac 完整源码定谳：
+
+```hlsl
+float2 tilePadding         = In.texcoord3.xy;
+float2 interiorRoomInvSize = In.texcoord3.zw;
+```
+
+（InteriorAndVariationSetupVS 的 `t3=float4(interiorRoomInvSize, tilePadding)`
+注释顺序相反，系变体差异/笔误；资产数据支持 frac 变体。）据此：
+- **玻璃楼 padding≈8e4 → `reliefSrc=frac(uv2)·(1+pad)−pad/2` 恒越界 →
+  outsideTile>0 → Top 层整体禁用**（数值即语义），窗户+房间全在 Base 域；
+- 公寓楼 padding=(0.125,0) → motif 居中 88% 生效。
+
+实现修正（PropertyEditorViewport.vue）：①格栅 `vTintUv·xform.xy·row3.zw`
+（30.7 的 .xy 是垃圾值，5b 原 zw 才对，但须乘 xform.xy——旧版缺此因子导致
+一窗多房）；②eyeDir 缩放 `scRoom.zwz`；③Top 层补 tilePadding 边界收缩 +
+outsideTile→scFacade=0（修复玻璃楼回归）。vue-tsc + vitest 76 绿。
