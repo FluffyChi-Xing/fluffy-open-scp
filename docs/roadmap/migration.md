@@ -1126,3 +1126,43 @@ float2 interiorRoomInvSize = In.texcoord3.zw;
 （30.7 的 .xy 是垃圾值，5b 原 zw 才对，但须乘 xform.xy——旧版缺此因子导致
 一窗多房）；②eyeDir 缩放 `scRoom.zwz`；③Top 层补 tilePadding 边界收缩 +
 outsideTile→scFacade=0（修复玻璃楼回归）。vue-tsc + vitest 76 绿。
+
+## 31. 阶段演进排期 + 5d 日/夜与供电（2026-09-09 第二十八轮）
+
+### 31.1 后续排期（本轮决策）
+
+| 序 | 项 | 说明 |
+|---|---|---|
+| 1 | **5d 日/夜 + 供电**（本轮） | 时段滑杆驱动太阳方向/颜色/天空/内景夜灯；供电开关（断电=内景自发光全灭，源码 interiorThresholds.z hack 的观察器版） |
+| 2 | Props 真模型渲染（替换红锥） | prop unit → 属性表解析 RW4 实例 → 复用 GLB 管线 + uvKind=1 diffuse 链（generic_static 家族，无参数表） |
+| 3 | Decal 地面贴花 + raster flipY 修复 | decal=按 transform 铺 alpha quad（decalProject 家族平面投影近似）；raster=地面 quad+LotMask（定位在 LotPlacementTransform，非几何数据） |
+| 4 | relief 视差自研 | 本编译版 reliefMap 恒等，无源码可抄；先探针高度图实际存放（slot2? normalMap 通道?）再投入 |
+| 5 | EnvLighting 天空 LUT 能量劈分 / 玻璃 cubemap / impostor | 材质细化与远景（夜景亮窗真源），长期 |
+
+### 31.2 5d 实现（观察器近似，全部前端）
+
+- UI：PropertyEditor 头部（精细模式）时段滑杆 0–24h（默认 12）+ 供电开关；
+- 太阳模型：`alt = sin((t−6)/12·π)`，方位角随时刻旋转；太阳色按地平线带
+  橙→白、夜间月蓝；天空色 day(0.30,0.42,0.55)→dusk→night(0.015,0.02,0.045)；
+- uniform 共享实例热切换（同 specUniformRefs 模式）：uSunDir/uSunColor/uSkyColor
+  + 新 uDayLight（0..1）+ uPowered（0/1）；
+- 着色：夜间接入 `reflectedLight.*×mix(0.2,1,day)`；内景
+  `room.rgb×(mix(0.12,1,day) + a×glow×powered)`，glow=day 时 2.5 / 夜 16
+  （源码 HDR 16 的 tonemap 近似）；断电 glow=0、房间仅剩微弱环境；
+- key light 同步：setKeyLight(方位角, max(8°, alt·70°)) 与时段联动。
+
+### 31.3 5d 实现记录（待目检）
+
+- PropertyEditor 头部（精细模式）：时段滑杆 0–24h（步 0.5，HH:MM 显示）+
+  供电复选；透传 viewport props timeOfDay/powered；
+- Viewport `applySun()`：alt=sin((t−6)/12π)、方位角=时刻线速；太阳色
+  地平线橙(1,.55,.28)→正午白(1,.97,.9)、夜间月光蓝(.14,.17,.26)；天空
+  三段插值 day(.30,.42,.55)/dusk(.24,.18,.20)/night(.016,.022,.05)；
+  dayLight=clamp((alt+.08)/.5)；glow=2.5+13.5·(1−day)；
+- 共享 uniform 实例（envRefs，一次 rebuild 一组全材质引用）：uSunDir/
+  uSunColor/uSkyColor/uDayLight/uPowered/uInteriorGlow 热切换；
+- 着色：夜间漫反射 ×mix(.22,1,dayLight)（太阳高光/天空镜面由颜色变暗）；
+  内景 `room.rgb×(mix(.12,1,dayLight) + a×glow×powered)`——断电灯全灭、
+  夜间房间仅微光、亮灯窗 ×16 近似；环境四灯 ×(.22+.78·day)（亮度滑杆
+  叠乘）。key light 方位未随时段联动（手动面板保留主导，偏离记录）。
+- vue-tsc + vitest 76 绿；lint 无新增（仓库基线预存 15 条）。

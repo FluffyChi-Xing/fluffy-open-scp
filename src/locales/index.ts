@@ -335,6 +335,11 @@ const messages = {
       specModeAuto: "自动",
       specModeG: "G·墙",
       specModeB: "B·窗",
+      timeOfDay: "时段",
+      timeOfDayHint:
+        "日/夜时段：驱动太阳方向/颜色与天空；夜间窗户亮灯（内景自发光）",
+      powered: "供电",
+      poweredHint: "断电 = 窗内灯全灭（源码 interiorThresholds.z 行为）",
       toolbarTools: "工具",
       toolbarImport: "导入",
       toolbarExport: "导出",
@@ -959,6 +964,12 @@ const messages = {
       specModeAuto: "Auto",
       specModeG: "G · wall",
       specModeB: "B · glass",
+      timeOfDay: "Time",
+      timeOfDayHint:
+        "Time of day: drives sun direction/color and sky; windows light up at night (interior self-light)",
+      powered: "Power",
+      poweredHint:
+        "Power off = all interior lights out (source interiorThresholds.z behaviour)",
       toolbarTools: "Tools",
       toolbarImport: "Import",
       toolbarExport: "Export",

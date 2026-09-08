@@ -40,6 +40,10 @@ const renderMode = ref<"default" | "refined">("default");
 const specExperiment = ref(false);
 /** 0=自动逐像素（墙面 G/窗玻璃 B）/ 1=强制 G / 2=强制 B。 */
 const specMode = ref(0);
+/** 5d 日/夜时段 0–24（默认 12 正午）。 */
+const timeOfDay = ref(12);
+/** 5d 供电（断电 = 内景自发光全灭）。 */
+const powered = ref(true);
 
 watch(open, (value) => {
   if (value) void load();
@@ -117,6 +121,34 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
             {{ $t("package.specModeB") }}
           </button>
         </div>
+        <div
+          v-if="renderMode === 'refined'"
+          class="daynight"
+          :title="$t('package.timeOfDayHint')"
+        >
+          <span class="daynight-label">{{ $t("package.timeOfDay") }}</span>
+          <input
+            v-model.number="timeOfDay"
+            type="range"
+            min="0"
+            max="24"
+            step="0.5"
+            :aria-label="$t('package.timeOfDay')"
+          />
+          <span class="daynight-value">
+            {{ String(Math.floor(timeOfDay)).padStart(2, "0") }}:{{
+              timeOfDay % 1 >= 0.5 ? "30" : "00"
+            }}
+          </span>
+        </div>
+        <label
+          v-if="renderMode === 'refined'"
+          class="spec-experiment"
+          :title="$t('package.poweredHint')"
+        >
+          <FCheckbox v-model="powered" />
+          <span>{{ $t("package.powered") }}</span>
+        </label>
         <span class="editor-readonly">{{ $t("package.propertyEditorReadonly") }}</span>
         <button
           class="editor-close"
@@ -162,6 +194,8 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :model-state="modelState"
           :spec-experiment="specExperiment"
           :spec-mode="specMode"
+          :time-of-day="timeOfDay"
+          :powered="powered"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
           @switch-lod="switchLod"
@@ -257,6 +291,22 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   font-size: 11px;
   gap: 6px;
   white-space: nowrap;
+}
+.daynight {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: inline-flex;
+  font-size: 11px;
+  gap: 6px;
+  white-space: nowrap;
+}
+.daynight input[type="range"] {
+  width: 110px;
+}
+.daynight-value {
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
 }
 .editor-close {
   align-items: center;

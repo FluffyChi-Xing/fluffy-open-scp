@@ -34,6 +34,10 @@ const props = defineProps<{
   specExperiment?: boolean;
   /** 0=自动逐像素（默认）/ 1=强制 G·墙 / 2=强制 B·窗（源码字面）。 */
   specMode?: number;
+  /** 日/夜时段 0–24（默认 12 正午）；驱动太阳方向/颜色/天空/内景夜灯。 */
+  timeOfDay?: number;
+  /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
+  powered?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -66,6 +70,64 @@ const effectiveSpecMode = () => (props.specExperiment ? (props.specMode ?? 0) : 
 watch([() => props.specExperiment, () => props.specMode], () => {
   const value = effectiveSpecMode();
   for (const uniform of specUniformRefs) uniform.value = value;
+});
+
+/**
+ * 5d 日/夜环境 uniform 共享实例（一次 rebuild 一组，全部 tint 材质引用同一
+ * 对象，时段/供电变化直接改写免重建）。着色器侧 uSunDir 为世界空间。
+ */
+type SunEnvRefs = {
+  sunDir: { value: ThreeNamespace.Vector3 };
+  sunColor: { value: ThreeNamespace.Color };
+  skyColor: { value: ThreeNamespace.Color };
+  dayLight: { value: number };
+  powered: { value: number };
+  glow: { value: number };
+};
+let envRefs: SunEnvRefs | null = null;
+/** 太阳地平线高度 −1..1（t=6/18 日出日落、12 正午、0/24 子夜）。 */
+const sunAltitude = (t: number) => Math.sin(((t - 6) / 12) * Math.PI);
+/** 白昼因子 0..1（含晨昏过渡带）。 */
+const dayFactor = () => {
+  const alt = sunAltitude(props.timeOfDay ?? 12);
+  return Math.min(1, Math.max(0, (alt + 0.08) / 0.5));
+};
+function applySun() {
+  if (!envRefs) return;
+  const t = props.timeOfDay ?? 12;
+  const alt = sunAltitude(t);
+  const day = dayFactor();
+  const azRad = ((t / 24) * 360 + 180) * (Math.PI / 180);
+  const el = Math.max(alt, -0.45);
+  envRefs.sunDir.value
+    .set(Math.cos(el) * Math.sin(azRad), Math.sin(el), Math.cos(el) * Math.cos(azRad))
+    .normalize();
+  // 太阳色：地平线橙 → 正午白 / 夜间月光蓝；天空：day→dusk→night 三段
+  const warm = Math.min(1, Math.max(0, alt / 0.32));
+  if (alt >= 0) {
+    envRefs.sunColor.value.setRGB(
+      1,
+      0.55 + 0.42 * warm,
+      0.28 + 0.62 * warm,
+    );
+  } else {
+    envRefs.sunColor.value.setRGB(0.14, 0.17, 0.26); // 月光
+  }
+  const skyDay = { r: 0.3, g: 0.42, b: 0.55 };
+  const skyDusk = { r: 0.24, g: 0.18, b: 0.2 };
+  const skyNight = { r: 0.016, g: 0.022, b: 0.05 };
+  const r = skyNight.r + (skyDusk.r + (skyDay.r - skyDusk.r) * warm - skyNight.r) * day;
+  const g = skyNight.g + (skyDusk.g + (skyDay.g - skyDusk.g) * warm - skyNight.g) * day;
+  const b = skyNight.b + (skyDusk.b + (skyDay.b - skyDusk.b) * warm - skyNight.b) * day;
+  envRefs.skyColor.value.setRGB(r, g, b);
+  envRefs.dayLight.value = day;
+  envRefs.powered.value = props.powered === false ? 0 : 1;
+  // 源码 interiorMap.a×16 为 HDR；观察器无 tonemap，白天压 2.5 / 夜间放开 16
+  envRefs.glow.value = 2.5 + (16 - 2.5) * (1 - day);
+}
+watch([() => props.timeOfDay, () => props.powered], () => {
+  applySun();
+  applyBrightness();
 });
 
 /** 复制模型槽位诊断（mesh/material/texture 及来源包关系），供复盘。 */
@@ -200,6 +262,10 @@ function attachTintShader(
     uSkyColor: { value: ThreeNamespace.Color };
     uSpecMode: { value: number };
     uInteriorGlow: { value: number };
+    /** 5d 日/夜：白昼因子 0..1（夜间环境/漫反射压暗、内景环境光） */
+    uDayLight: { value: number };
+    /** 5d 供电：0 = 内景自发光全灭（源码 interiorThresholds.z） */
+    uPowered: { value: number };
   },
   paramsReady: boolean,
   shaderMapReady: boolean,
@@ -265,6 +331,8 @@ uniform vec3 uSunColor;
 uniform vec3 uSkyColor;
 uniform float uSpecMode;
 uniform float uInteriorGlow;
+uniform float uDayLight;
+uniform float uPowered;
 #ifdef TINT_PARAMS
 uniform sampler2D paramsMap;
 #endif
@@ -432,9 +500,10 @@ float scFastNoise(vec3 seed) {
           vec4 scEdge = vec4(step(vec3(0.25, 0.5, 0.75), vec3(scRoomId)), scRoomVariation * 4.0);
           scInteriorTc.x += dot(scEdge, vec4(1.0)) * palOrigin.z;
           vec4 scRoomTex = texture2D(interiorMapMap, scInteriorTc);
-          // 内景照明：roomTex.rgb × (环境 1 + 灯亮 a×glow)；夜灯项源码 ×16（HDR），
-          // 观察器无 tonemap 故 uInteriorGlow 可调（默认 6）
-          scInterior = scRoomTex.rgb * (1.0 + scRoomTex.a * uInteriorGlow);
+          // 内景照明：房间环境光随昼夜（夜间仅微光）+ 灯亮 a×glow（HDR×16
+          // 的 tonemap 近似，白天压 2.5）×供电（断电全灭，源码 .z hack）
+          float scSelfLight = scRoomTex.a * uInteriorGlow * uPowered;
+          scInterior = scRoomTex.rgb * (mix(0.12, 1.0, uDayLight) + scSelfLight);
         }
         #endif
         diffuseColor.rgb = mix(scInterior, diffuseColor.rgb, scOpacity);`,
@@ -472,6 +541,11 @@ float scFastNoise(vec3 seed) {
           float scSunMod = clamp(dot(scSunV, normal), 0.0, 1.0);
           reflectedLight.directSpecular += scSpec * scSchlick * scSpecStrength * scSunMod * uSunColor;
           reflectedLight.indirectSpecular += uSkyColor * (scGloss * 0.75) * diffuseColor.rgb * (1.0 - scExempt);
+          // 5d 夜间：three 侧灯光的漫反射分量随白昼因子压暗（太阳高光/
+          // 天空镜面已由 uSunColor/uSkyColor 变暗）
+          float scNightDim = mix(0.22, 1.0, uDayLight);
+          reflectedLight.directDiffuse *= scNightDim;
+          reflectedLight.indirectDiffuse *= scNightDim;
         }`,
       );
   };
@@ -545,6 +619,16 @@ async function rebuild() {
     })),
   );
   if (token !== rebuildToken) return;
+  // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）
+  const env: SunEnvRefs = {
+    sunDir: { value: new THREE.Vector3(0.35, 0.8, 0.45).normalize() },
+    sunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
+    skyColor: { value: new THREE.Color(0.3, 0.42, 0.55) },
+    dayLight: { value: 1 },
+    powered: { value: 1 },
+    glow: { value: 6.0 },
+  };
+  envRefs = env;
   for (const [index, object] of modelObjects.entries()) {
     const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
     const uvKind = payload?.meshUvKinds[index] ?? 0;
@@ -580,15 +664,14 @@ async function rebuild() {
             interiorMapMap: { value: tint.interiorTex },
             paramsMap: { value: tint.paramsTex },
             uParamCols: { value: tint.paramCols },
-            // 5a：太阳/天空占位参数（游戏为日循环 cSunSkyInfo，观察器取固定
-            // 晴天正午近似；three-world Y-up）
-            uSunDir: { value: new THREE.Vector3(0.35, 0.8, 0.45).normalize() },
-            uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
-            uSkyColor: { value: new THREE.Color(0.3, 0.42, 0.55) },
+            // 5a/5d：太阳/天空/昼夜/供电为共享 uniform 实例（applySun 热切换）
+            uSunDir: env.sunDir,
+            uSunColor: env.sunColor,
+            uSkyColor: env.skyColor,
             uSpecMode: uSpecGUniform,
-            // 5b：内景夜灯自发光倍率（源码 interiorMap.a×16 为 HDR 值，观察器
-            // 无 tonemap 故取低值；可后续接亮度滑杆/日夜模式）
-            uInteriorGlow: { value: 6.0 },
+            uInteriorGlow: env.glow,
+            uDayLight: env.dayLight,
+            uPowered: env.powered,
           },
           Boolean(tint.paramsTex),
           Boolean(tint.shaderTex),
@@ -749,6 +832,7 @@ async function rebuild() {
 
   instance.frameContent();
   instance.setKeyLight(45, 55);
+  applySun();
   applyBrightness();
   applyGroupVisibility();
   applyUnitVisibility();
@@ -758,7 +842,8 @@ async function rebuild() {
 
 /** 日/夜亮度：仅缩放环境四灯；地块真实光源保持常亮（夜间灯依然亮）。 */
 function applyBrightness() {
-  viewer.value?.setEnvironmentBrightness(brightness.value);
+  // 5d：夜间环境光随白昼因子压暗（亮度滑杆仍是用户侧总倍率）
+  viewer.value?.setEnvironmentBrightness(brightness.value * (0.22 + 0.78 * dayFactor()));
 }
 
 /** 真实光源总数超限时，从强度最弱的单元开始摘除光源本体。 */
