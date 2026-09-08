@@ -878,3 +878,32 @@ clip(baseTintValues.a - 0.5f);                                // A 通道 = 元�
 - **PE 视口 info 浮层**：右上角 Info 按钮（仿光源调节）→ 诊断卡片，显示诊断文本 + **复制按钮**（Clipboard API + execCommand 兜底），供任意建筑复盘，不再依赖金样本。
 
 性能：金样本 payload 965KB / **17.0ms**（v4 22.3ms，删 LUT 上色后更快）。验证：Rust 全部套件 + 前端 vue-tsc/vitest 74 全绿（容器测试升 v5 + 诊断解析用例）；eslint/prettier 16 项为存量欠账（HEAD 前后一致，本轮净修 1 项）。待用户目检：建筑颜色/完整度/法线凹凸。
+
+## 28. 渲染器全源码调研五问 + 仰视穿透缓解 + 阶段 5 路线（2026-09-08 第二十二轮）
+
+以 tmp/shaders 8 个 cpp 转储（4×8MB 字节码+CTAB 常量表、4×1.2MB HLSL 源码段）+ 26 个复原 building4 HLSL 为据，用户五问全部拿到源码级答案，结论沉淀 **`docs/rendering.md`**（管线总览/窗户内景/材质质感/raster 对位/天空/光源/家族清单/寄存器表）。要点：
+
+- **窗户** = shaderMap.A 窗洞遮罩 + interiorMap 盒体视差投影 + 逐窗格 FastNoise 选房（interiorScale/Offset = D3DCOLOR.B 4bit size+4bit index，与 slot0 row0.zw 同源）；夜间亮窗 interiorMap.a×16，供电 interiorThresholds.z 一票关
+- **质感无分支** = 4 标量：specE=tint.a³×2048+1、specStrength=shaderMap.b×2、reflectance=palette surface 行 A、gloss=saturate(a×specStrength)；EnvLighting=天空 LUT 解析合成（非 cubemap）
+- **raster↔建筑对位不在着色器侧**（8 转储 footprint/lotRaster 零命中），由 lot 数据 + 引擎决定；偏移=原版行为（§19.3），勿再排查
+- **天空** = cSunSkyInfo 11×float4（Perez A–E + mSkyColorTuning + mDynamicWeather 雾双层 + mZenith.w 黑阶）+ s11 压缩 LUT；**光源** = 太阳 + parallel[4]（各带填充光）+ shCoeffs[16] SH + deferredLight 点/聚/线（半角 cos、gel texCUBE、体积雾 ray-march、云影最低 0.45）
+- **疑点**：源码 `uv = texcoord0.xy / abs(tileSize)` 后才 frac·regionXform（app 直取 frac）——阶段 5c 用 info 浮层实测 tileSize 定夺
+
+### 28.1 仰视地板穿透：原版瑕疵定性 + 观察器缓解
+
+- 症状：白模仰视正常；渲染后部分楼板消失透视内部（游戏同现，用户确认）
+- 根因（新只读探针 `tint_underface_probe`）：building4Clip 的 tint.a<0.5 镂空模板按**外立面 UV** 创作，地板/底面共用 facade UV → 继承窗洞镂空。金样本：tint 窗口矩形内不透明率仅 64.0%，下向面顶点 37.1% 落镂空区（上向 50.0%/侧向 46.3% 同采样一张带洞模板）。游戏相机永在地面/屋顶之上，Maxis 从未处理——数据/管线固有瑕疵。用户补充：部分位置在**白模（几何）阶段亦被预剔除**，同一"玩家不可见"假设贯穿几何与贴图
+- 缓解（对源码唯一偏离）：前端 tint shader object 法线 Z<-0.3 豁免镂空 + 跳过调色（白模观感）；墙面窗洞（法线水平）零影响
+
+### 28.2 阶段 5 演进路线（5a → 5d，本轮决策）
+
+| 阶段 | 内容 | 源码依据 | 验收 |
+|---|---|---|---|
+| **5a 材质质感** | slot3 shaderMap PNG 传前端（后端已解码）；specStrength=b×2、specE=tint.a³×2048+1、reflectance=surface 行 A、gloss=saturate(a×b)；Blinn-Phong-Schlick 太阳高光 + EnvLighting 常数天空近似 | rendering.md §2 | 玻璃锐利高光/砖石摊平；金样本计时 |
+| **5b 窗洞+假内景** | 前置：interiorMap 纹理包内定位；shaderMap.A 窗洞混合；逐窗格 FastNoise 选房 + 盒体投影（0.5/0.5/0.9）；interiorScale/Offset；夜间亮灯 × 供电 uniform | rendering.md §1 | 窗内房间图 + 随机亮灯；楼板完整 |
+| **5c Top 层 + relief** | Base/Top 双层 lerp（tint/normal/shaderMap，facadeTintValues.a 因子）+ outsideTile 裁剪；slot5 DXT5 relief（kFlatLevel=23/255；本编译版 reliefMap=恒等，按标准 cone/binary-step 补写）；tileSize 疑点实测 | rendering.md §2.4 | 檐口/屋顶几何感 |
+| **5d 环境/模式** | parallel[4] → Directional/Hemisphere 近似、夜景亮窗；DataView 纯色渲染模式（可选） | rendering.md §3.2/§4/§5 | 日/夜氛围对比 |
+
+顺序理由：5a 最小成本收尾症状③（质感）；5b 视觉收益最大（窗户是当前最显缺口）；5c 依赖 5a/5b 的双层采样框架；5d 锦上添花。每阶段收尾跑金样本性能报告（惯例）。
+
+验证：vue-tsc + vitest 74 全绿；探针 cargo 编译运行通过。变更：PropertyEditorViewport.vue（缓解）、docs/rendering.md（新）、tint_underface_probe.rs（新）。**打包未重做**（用户指示，待阶段 5a 后一并出包）。
