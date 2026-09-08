@@ -2786,6 +2786,7 @@ name = "rw4"
 version = "0.1.0"
 dependencies = [
  "dbpf",
+ "image",
  "thiserror 2.0.20",
 ]
 
