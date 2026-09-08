@@ -30,6 +30,10 @@ const props = defineProps<{
   hiddenUnits: Set<string>;
   groupVisibility: Record<string, boolean>;
   modelState: ModelState;
+  /** 通道实验开关（仅精细模式显示）；关闭时恒用 G（数据实测）。 */
+  specExperiment?: boolean;
+  /** true = G 通道（数据实测 specularity）；false = B 通道（源码字面）。 */
+  specChannelG?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -54,6 +58,15 @@ watch([lightAzimuth, lightElevation], () => {
   viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
 watch(brightness, () => applyBrightness());
+
+/** 存活 tint 材质的 uSpecG uniform 引用（通道实验热切换，免重建）。 */
+const specUniformRefs: { value: number }[] = [];
+/** 实验关闭恒用 G（数据实测）；开启后按 G/B 切换观察。 */
+const effectiveSpecG = () => (props.specExperiment && props.specChannelG === false ? 0 : 1);
+watch([() => props.specExperiment, () => props.specChannelG], () => {
+  const value = effectiveSpecG();
+  for (const uniform of specUniformRefs) uniform.value = value;
+});
 
 /** 复制模型槽位诊断（mesh/material/texture 及来源包关系），供复盘。 */
 async function copyDiagnostics() {
@@ -151,11 +164,16 @@ function buildParamsTexture(
 }
 
 /**
- * tint 着色器注入：逐像素复刻 building4 链（§27 源码逐字）。
+ * tint 着色器注入：逐像素复刻 building4 链（§27/§28 源码逐字）。
  * TEXCOORD_2 = facade 世界投影 UV（Float4.xy），TEXCOORD_1.x = materialIndex。
  * fragment：baseUv = frac(vTintUv)*regionXform.xy + regionXform.zw → tint 查表
  * → palette 查色（palU=row0.x + tint.r×sub；palV=variation 行 0 + tint.g×sub）
  * ×(tint.b*2)，A<0.5 镂空 discard；法线图同 UV 重采样。
+ * 5a 材质质感（源码 building4DeferredPS）：shaderMap.b×2=specStrength、
+ * palette 色 a×(tint.b*2) 立方×2048+1=specE、palette surface 行（末行
+ * kSurfacePalV）a×(tint.b*2)=reflectance、gloss=saturate(色a×specStrength)、
+ * AO=normalMap.a；SimCityLighting 太阳 Blinn-Phong-Schlick 高光 +
+ * EnvLighting 常数天空近似（gloss×0.75 能量劈分，经 tint 乘）。
  * 唯一偏离源码处：object 法线 Z<-0.3（下向面）豁免镂空——游戏镂空模板被
  * 地板/底面继承（共用 facade UV），仰视穿透是原版瑕疵、相机不可达故未处理
  * （docs/rendering.md §3、tint_underface_probe 取证：窗口内 36% 镂空）。
@@ -165,10 +183,16 @@ function attachTintShader(
   uniforms: {
     tintMap: { value: ThreeNamespace.Texture };
     paletteMap: { value: ThreeNamespace.Texture };
+    shaderMapMap: { value: ThreeNamespace.Texture | null };
     paramsMap: { value: ThreeNamespace.Texture | null };
     uParamCols: { value: number };
+    uSunDir: { value: ThreeNamespace.Vector3 };
+    uSunColor: { value: ThreeNamespace.Color };
+    uSkyColor: { value: ThreeNamespace.Color };
+    uSpecG: { value: number };
   },
   paramsReady: boolean,
+  shaderMapReady: boolean,
 ) {
   // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
   // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
@@ -205,8 +229,15 @@ varying float vMatU;
 varying float vObjUp;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uSkyColor;
+uniform float uSpecG;
 #ifdef TINT_PARAMS
 uniform sampler2D paramsMap;
+#endif
+#ifdef TINT_SHADERMAP
+uniform sampler2D shaderMapMap;
 #endif`,
       )
       .replace(
@@ -221,16 +252,40 @@ uniform sampler2D paramsMap;
 #endif
         vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
         vec4 tintValues = texture2D(tintMap, tUv);
+        vec2 scSub = tintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
+        vec4 scPalColor = vec4(1.0);
+        float scTintMul = tintValues.b * 2.0;
+        float scExempt = 0.0;
         if (tintValues.a < 0.5) {
           if (vObjUp >= -0.3) discard;
           // 下向面豁免（观察器缓解）：游戏 building4Clip 的镂空模板被地板/
           // 底面继承（底面与立面共用 facade UV），从下仰视出现穿透洞——
           // 游戏相机不可达此视角故原版未处理。豁免片段跳过调色保持白模观感。
+          scExempt = 1.0;
         } else {
-          vec2 sub = tintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
-          vec4 palColor = texture2D(paletteMap, vec2(palOrigin.x + sub.x, sub.y));
-          diffuseColor.rgb *= palColor.rgb * (tintValues.b * 2.0);
-        }`,
+          scPalColor = texture2D(paletteMap, vec2(palOrigin.x + scSub.x, scSub.y));
+          diffuseColor.rgb *= scPalColor.rgb * scTintMul;
+          #ifdef USE_NORMALMAP
+          diffuseColor.rgb *= texture2D(normalMap, tUv).a; // artistAO
+          #endif
+        }
+        // 5a spec 四标量（building4DeferredPS；色/表面行均 ×tintMul）。
+        // specStrength 通道：源码读 .b，但资产实证 specularity 画在 .g
+        // （玻璃楼 G=159-186 带对角高光笔触、B≈0-8；金样本窗洞 G=11；
+        // SUGC PDF 的"B=Specularity"与数据不符）——uSpecG=1 走 G（默认），
+        // 0 回溯源码 B。
+        float scSpecStrength = 0.0;
+        #ifdef TINT_SHADERMAP
+        if (scExempt < 0.5) {
+          vec4 scShader = texture2D(shaderMapMap, tUv);
+          scSpecStrength = mix(scShader.b, scShader.g, uSpecG) * 2.0;
+        }
+        #endif
+        float scSpecA = scPalColor.a * scTintMul;
+        float scSpecE = scSpecA * scSpecA * scSpecA * 2048.0 + 1.0;
+        float scGloss = clamp(scSpecA * scSpecStrength, 0.0, 1.0);
+        vec4 scSurface = texture2D(paletteMap, vec2(palOrigin.x + scSub.x, 0.875 + scSub.y)); // kSurfacePalV
+        float scReflectance = scSurface.a * scTintMul;`,
       )
       .replace(
         "#include <normal_fragment_maps>",
@@ -244,9 +299,27 @@ uniform sampler2D paramsMap;
           normal = normalize( tbn * mapN );
         }
         #endif`,
+      )
+      .replace(
+        "#include <lights_fragment_end>",
+        `#include <lights_fragment_end>
+        // 游戏 SimCityLighting（5a）：太阳 Blinn-Phong-Schlick 高光 + EnvLighting
+        // 常数天空近似。源码半向量 = normalize(lightDir - viewDir)、能量归一
+        // (specE+2)/8、Schlick exp2(-8.656170·cosLH)、specHighlight 额外叠加不经 tint。
+        {
+          vec3 scSunV = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+          vec3 scHalf = normalize(scSunV - normalize(vViewPosition));
+          float scNDotH = clamp(dot(normal, scHalf), 0.0, 1.0);
+          float scSpec = pow(scNDotH, max(scSpecE, 0.001)) * ((scSpecE + 2.0) / 8.0);
+          float scSchlick = scReflectance + (1.0 - scReflectance) * exp2(-8.656170 * clamp(dot(scSunV, scHalf), 0.0, 1.0));
+          float scSunMod = clamp(dot(scSunV, normal), 0.0, 1.0);
+          reflectedLight.directSpecular += scSpec * scSchlick * scSpecStrength * scSunMod * uSunColor;
+          reflectedLight.indirectSpecular += uSkyColor * (scGloss * 0.75) * diffuseColor.rgb * (1.0 - scExempt);
+        }`,
       );
   };
-  material.customProgramCacheKey = () => "building4-tint";
+  material.customProgramCacheKey = () =>
+    `building4-tint${shaderMapReady ? "+sm" : ""}${paramsReady ? "+pm" : ""}`;
 }
 
 async function rebuild() {
@@ -254,6 +327,7 @@ async function rebuild() {
   if (!instance) return;
   const token = ++rebuildToken;
   const THREE = instance.THREE;
+  specUniformRefs.length = 0;
   for (const name of GROUP_KEYS) instance.clearGroup(name);
   unitObjects.clear();
   for (const url of textureUrls) URL.revokeObjectURL(url);
@@ -301,6 +375,7 @@ async function rebuild() {
       tintTex: material.tintPng ? await loadTex(material.tintPng) : null,
       paletteTex: material.palettePng ? await loadTex(material.palettePng) : null,
       normalTex: material.normalPng ? await loadTex(material.normalPng) : null,
+      shaderTex: material.shaderPng ? await loadTex(material.shaderPng) : null,
       paramsTex: buildParamsTexture(THREE, material),
       paramCols: material.paramCols,
     })),
@@ -327,15 +402,26 @@ async function rebuild() {
         });
         tinted.defines = { USE_UV: "" };
         if (tint.paramsTex) tinted.defines.TINT_PARAMS = "";
+        if (tint.shaderTex) tinted.defines.TINT_SHADERMAP = "";
+        const uSpecGUniform = { value: effectiveSpecG() };
+        specUniformRefs.push(uSpecGUniform);
         attachTintShader(
           tinted,
           {
             tintMap: { value: tint.tintTex },
             paletteMap: { value: tint.paletteTex },
+            shaderMapMap: { value: tint.shaderTex },
             paramsMap: { value: tint.paramsTex },
             uParamCols: { value: tint.paramCols },
+            // 5a：太阳/天空占位参数（游戏为日循环 cSunSkyInfo，观察器取固定
+            // 晴天正午近似；three-world Y-up）
+            uSunDir: { value: new THREE.Vector3(0.35, 0.8, 0.45).normalize() },
+            uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
+            uSkyColor: { value: new THREE.Color(0.3, 0.42, 0.55) },
+            uSpecG: uSpecGUniform,
           },
           Boolean(tint.paramsTex),
+          Boolean(tint.shaderTex),
         );
         mesh.material = tinted;
         return;

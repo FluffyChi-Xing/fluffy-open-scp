@@ -329,6 +329,11 @@ const messages = {
       renderModeDefault: "默认",
       renderModeRefined: "精细",
       renderModeHint: "LOD 切换与贴图材质绑定将在后续版本提供",
+      specExperiment: "通道实验",
+      specExperimentHint:
+        "对比 shader map 的 G 通道（资产实测 specularity）与 B 通道（源码字面）作为高光来源的渲染效果",
+      specChannelG: "G·数据",
+      specChannelB: "B·源码",
       toolbarTools: "工具",
       toolbarImport: "导入",
       toolbarExport: "导出",
@@ -947,6 +952,11 @@ const messages = {
       renderModeRefined: "Refined",
       renderModeHint:
         "LOD switching and texture binding arrive in a later release",
+      specExperiment: "Spec channel lab",
+      specExperimentHint:
+        "Compare shader-map G channel (specularity per asset data) vs B channel (literal source) as the highlight source",
+      specChannelG: "G · data",
+      specChannelB: "B · source",
       toolbarTools: "Tools",
       toolbarImport: "Import",
       toolbarExport: "Export",

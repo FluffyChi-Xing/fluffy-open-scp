@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import type { Tgi } from "@/api/tauri";
@@ -35,6 +36,9 @@ const {
 } = usePropertyEditorSession(props.packageId, props.tgi);
 
 const renderMode = ref<"default" | "refined">("default");
+/** 通道实验：仅精细模式显示；开启后可切 shader map specularity 通道观察。 */
+const specExperiment = ref(false);
+const specChannelG = ref(true);
 
 watch(open, (value) => {
   if (value) void load();
@@ -74,6 +78,35 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
             @click="renderMode = 'refined'"
           >
             {{ $t("package.renderModeRefined") }}
+          </button>
+        </div>
+        <label
+          v-if="renderMode === 'refined'"
+          class="spec-experiment"
+          :title="$t('package.specExperimentHint')"
+        >
+          <FCheckbox v-model="specExperiment" />
+          <span>{{ $t("package.specExperiment") }}</span>
+        </label>
+        <div
+          v-if="renderMode === 'refined' && specExperiment"
+          class="render-mode spec-channel"
+          role="group"
+          :aria-label="$t('package.specExperiment')"
+        >
+          <button
+            type="button"
+            :class="{ active: specChannelG }"
+            @click="specChannelG = true"
+          >
+            {{ $t("package.specChannelG") }}
+          </button>
+          <button
+            type="button"
+            :class="{ active: !specChannelG }"
+            @click="specChannelG = false"
+          >
+            {{ $t("package.specChannelB") }}
           </button>
         </div>
         <span class="editor-readonly">{{ $t("package.propertyEditorReadonly") }}</span>
@@ -119,6 +152,8 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :hidden-units="hiddenUnits"
           :group-visibility="groupVisibility"
           :model-state="modelState"
+          :spec-experiment="specExperiment"
+          :spec-channel-g="specChannelG"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
           @switch-lod="switchLod"
@@ -171,16 +206,14 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   border-radius: 999px;
   color: var(--subtle-foreground);
   font-size: 11px;
-  margin-inline-start: auto;
   padding: 3px 10px;
   white-space: nowrap;
 }
+/* 右侧聚拢由首个 .render-mode 的 auto margin 独立承担：
+ * 中间插入的通道实验开关（label/div）不应断开推挤关系 */
 .render-mode {
   display: inline-flex;
   margin-inline-start: auto;
-}
-.render-mode + .editor-readonly {
-  margin-inline-start: 0;
 }
 .render-mode button {
   background: var(--surface-elevated);
@@ -204,6 +237,18 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
 .render-mode button.active {
   color: var(--foreground);
   opacity: 0.85;
+}
+.render-mode.spec-channel {
+  margin-inline-start: 0;
+}
+.spec-experiment {
+  align-items: center;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11px;
+  gap: 6px;
+  white-space: nowrap;
 }
 .editor-close {
   align-items: center;
