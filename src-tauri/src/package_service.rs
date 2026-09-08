@@ -1638,21 +1638,39 @@ pub async fn read_lot_editor_session(
                 diagnostics.push("property registry is unavailable; using hash identifiers".into());
             }
             let colors = lot_colors(&document);
-            let lot_mask_png = document
-                .lot_mask
-                .and_then(|key| match decode_lot_mask_png(package, manager, key, colors) {
-                    Ok(png) => Some(png),
+            let mut mask_dims: Option<(u32, u32)> = None;
+            let lot_mask_png = document.lot_mask.and_then(|key| {
+                match decode_lot_mask_png(package, manager, key, colors) {
+                    Ok((png, dims)) => {
+                        mask_dims = Some(dims);
+                        Some(png)
+                    }
                     Err(message) => {
                         diagnostics.push(message);
                         None
                     }
-                });
+                }
+            });
+            // EP1 等部分 lot 无 LotSize（0x0CCB7FC8）属性但带 LotMask：地面
+            // 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
+            // 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
+            // 与 128px→96×96 相容）。
+            let lot_size = document.lot_size.or_else(|| {
+                mask_dims.map(|(w, h)| {
+                    let size = [w as f32 * 0.75, h as f32 * 0.75];
+                    diagnostics.push(format!(
+                        "LotSize property missing; ground rect derived from LotMask raster {}x{}px -> {:.0}x{:.0}m",
+                        w, h, size[0], size[1]
+                    ));
+                    size
+                })
+            });
             Ok(LotEditorSession {
                 tgi,
                 asset_name,
                 model_key,
                 model_lods,
-                lot_size: document.lot_size,
+                lot_size,
                 // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
                 lot_placement: document
                     .placement
@@ -1679,7 +1697,7 @@ fn decode_lot_mask_png(
     manager: &PackageManager,
     key: sc_properties::Key,
     colors: [[u8; 3]; 4],
-) -> Result<String, String> {
+) -> Result<(String, (u32, u32)), String> {
     if let Some(entry_id) = find_raster_entry(current, key) {
         return decode_lot_mask_entry(current, &entry_id, colors);
     }
@@ -1786,7 +1804,7 @@ fn decode_lot_mask_entry(
     package: &Package,
     entry_id: &ResourceId,
     colors: [[u8; 3]; 4],
-) -> Result<String, String> {
+) -> Result<(String, (u32, u32)), String> {
     let entry = package
         .entry(*entry_id)
         .ok_or_else(|| "LotMask raster resource is missing".to_string())?;
@@ -1807,7 +1825,8 @@ fn decode_lot_mask_entry(
     let rgba = raster
         .decode_lot_mask_rgba(&colors)
         .map_err(|error| error.to_string())?;
-    encode_rgba_png(raster.width, raster.height, rgba)
+    let dims = (raster.width, raster.height);
+    encode_rgba_png(raster.width, raster.height, rgba).map(|png| (png, dims))
 }
 
 /// LotColor1-4（0x0D02D586..89）RGB；缺失用 SCP 的默认黑/红/绿/蓝。

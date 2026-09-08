@@ -1184,3 +1184,18 @@ reverse_key_search + sc-registry lookup）：
   可行的后续：社区数据集映射表或运行时抓取。
 - **顺手修复**：LotMask 地面贴图补 `flipY=false`（与模型贴图同坐标系，
   消除遮罩南北镜像；rendering.md §3.1 遗留项）。
+
+### 31.5 无 LotSize lot 的地面回退（EP1 0x5A6EC675 案例）
+
+用户报该楼无 raster 地面。取证：该 lot 属性**缺 `0x0CCB7FC8 LotSize`**（前端
+地面矩形以 lotSize 为前置 → 整个地面跳过），但 LotMask（0x11257BCB，
+128×128 raw RGBA，Graphics 包）与父描述子 `0x0CCB7FD4 "Lot Textures"`
+（0x5A59766F = 纯纹理容器，单张 1024² DXT5 地面纹理）均在。mask 尺寸↔LotSize
+换算普查（lot_size_fallback_probe）：主流 0.75 m/px（64↔48、128↔96、
+256↔192），少数 0.625/1.5（同尺寸多映射）→ 无法精确推导，回退取 0.75
+（该楼 bbox 71×57 与 128px→96×96 相容）。
+
+实现：decode_lot_mask_png/entry 返回 (png, dims)；session 组装时
+`lot_size = document.lot_size.or(mask_dims × 0.75)`，回退时推诊断消息。
+新探针：model_peek / raster_peek / lot_size_fallback_probe / prop_chain_probe /
+find_instance / reverse_key_search、sc-registry lookup。
