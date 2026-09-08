@@ -907,3 +907,52 @@ clip(baseTintValues.a - 0.5f);                                // A 通道 = 元�
 顺序理由：5a 最小成本收尾症状③（质感）；5b 视觉收益最大（窗户是当前最显缺口）；5c 依赖 5a/5b 的双层采样框架；5d 锦上添花。每阶段收尾跑金样本性能报告（惯例）。
 
 验证：vue-tsc + vitest 74 全绿；探针 cargo 编译运行通过。变更：PropertyEditorViewport.vue（缓解）、docs/rendering.md（新）、tint_underface_probe.rs（新）。**打包未重做**（用户指示，待阶段 5a 后一并出包）。
+
+### 28.3 阶段 5a 完成：材质质感 spec 链（LOTM v6，2026-09-08 第二十三轮）
+
+- **LOTM v6** = v5 + 每材质第 7 张 PNG：slot3 shader map **原始 RGBA**（源码语义
+  B=specularity、A=窗洞/Interior 留 5b；kind1 simple 路径的 roughness 反转灰度保留不变）。
+- **前端 spec 链**（building4DeferredPS 逐字）：`shaderMap.b×2 = specStrength`、
+  `palette 色 a ×(tint.b*2) 立方 ×2048+1 = specE`、`palette surface 行（kSurfacePalV=0.875，
+  末行）a ×tintMul = reflectance`、`gloss = saturate(色a × specStrength)`、`AO = normalMap.a`
+  乘入 diffuse（源码 artistAO）。
+- **SimCityLighting 注入**（lights_fragment_end）：太阳 Blinn-Phong-Schlick——半向量
+  `normalize(L−V)`、能量归一 `(specE+2)/8`、Schlick 快速式 `exp2(−8.656170·cosLH)`、
+  specHighlight 不经 tint 直加（directSpecular）；EnvLighting 常数天空近似
+  `uSkyColor × gloss×0.75 × diffuseColor`（indirectSpecular）。豁免的下向面
+  specStrength/env 归零（保持白模观感）。
+- **占位光照参数**：`uSunDir=(0.35,0.8,0.45)`（Y-up，晴天正午近似）、暖白 uSunColor、
+  蓝灰 uSkyColor——游戏为 cSunSkyInfo 日循环，观察器固定值，5d 再议。
+- **缓存键**：customProgramCacheKey 区分 TINT_SHADERMAP/TINT_PARAMS define 组合。
+- 性能：金样本 v6 payload 1.32MB / **19.7ms** release（v5 965KB/17.0ms，+2.7ms 为
+  shader PNG 编码）。验证：src-tauri 42 全绿（v6 容器断言）+ vue-tsc/vitest 74 全绿；
+  eslint 存量欠账不变。**待用户本地目检：玻璃/金属锐利高光 vs 砖石摊平、AO 深浅、
+  仰视楼板完整**。打包仍未重做（小迭代，用户本地启动验证）。
+
+### 28.4 5a 调试：specularity 实际在 G 通道 + 通道实验开关（第二十四轮）
+
+**症状**：用户目检 5a"质感没有显著变化"。**根因（探针+目视实证）**：源码字面
+`shaderMap.b`（SUGC PDF "B=Specularity"）在资产数据里接近全零——玻璃楼 0xCFEC0F84
+双材质窗口区 B 均值仅 6.8/20.2，金样本墙面 14.5，specStrength≈0.05~0.16 → 全链无感。
+`shader_map_stats --dump` 目视：**G 通道才是作者绘制的 specularity**——玻璃材质窗口
+有对角高光笔触（G=159~186 结构化），通用材质有楼层带结构（G=168），金样本窗洞区
+G=11（洞内无材质）；palette surface 行（row7）亦 G 主导（玻璃材质 G=157 vs R=1/B=0）。
+
+**修正**：`uSpecG` uniform——`specStrength = mix(shaderMap.b, shaderMap.g, uSpecG)×2`，
+默认 1（G=资产实测），0 回溯源码字面 B。这是继下向面豁免后**第二处有意偏离源码**，
+依据=资产实证（源码可见段未读 .g，可能在截断部分）。
+
+**UI**：精细模式下渲染开关右侧新增"通道实验"checkbox（specExperiment），开启后显示
+`G·数据 / B·源码` 切换组（specChannelG）——watch 热切换全部存活 tint 材质的 uSpecG
+uniform，免重建；rebuild 时清空引用表。
+
+**工具链**：`shader_map_stats` 探针（全材质遍历 + clip 窗口逐通道统计 + `--dump`
+逐通道窗口 PNG 导出）；新增 `shader-injection.test.ts`——锁定 three r185 注入点存在
+（r167+ meshphysical 已改名 physical，`.replace()` 目标缺失是静默失效）。
+
+验证：vue-tsc + vitest 76 全绿（含新注入点测试）。**待用户目检**：通道实验开启后
+玻璃楼 0xCFEC0F84 在 G·数据 下应有明显天空反射与高光；B·源码 应接近无高光（对照组）。
+
+**目检反馈（同日）**：G 通道玻璃反光生效，但部分建筑 G 显得画面偏白（gloss→env 项
+偏强），部分建筑 B 更自然；样本量不足定论——**通道实验开关保留**，默认仍 G，
+后续样本积累后再定默认通道与 env 强度。本轮按用户指示提交并重新打包。

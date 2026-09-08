@@ -142,6 +142,13 @@ InteriorMapPS 里则是整体灰度化（`dot(rgb,(.3,.59,.11))`）。
 
 `specE` 编码统一走**立方曲线**（低值区分辨率高），上限 kSpecExponentMaxValue=60…1024（视路径）。
 
+> **⚠ 资产实证修正（2026-09-08，migration.md §28.4）**：源码字面 `shaderMap.b` 在资产数据里
+> 接近全零（玻璃楼 0xCFEC0F84 窗口区 B 均值 6.8/20.2，金样本墙面 14.5）——SUGC PDF
+> "B=Specularity" 与实际数据不符。`shader_map_stats --dump` 目视确认**作者把 specularity
+> 画在 G 通道**（玻璃材质窗口 G=159~186 且带对角高光笔触；通用材质 G=168 楼层带结构；
+> 金样本窗洞 G=11）。open-scp 用 `uSpecG` uniform 取 G（默认），0 可回源 B 对照——
+> 对源码的第二处有意偏离。
+
 ### 2.2 光照主链（建筑 DeferredPS → SimCityLighting）
 
 ```hlsl
