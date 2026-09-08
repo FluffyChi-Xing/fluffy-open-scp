@@ -784,6 +784,9 @@ async function rebuild() {
           return;
         }
         texture.colorSpace = THREE.SRGBColorSpace;
+        // LotMask 为原始栅格行序（行 0 = 首行）：与模型贴图一致不翻 V，
+        // 否则遮罩南北镜像（rendering.md §3.1 遗留项）
+        texture.flipY = false;
         const fill = ground.children.find((child) => (child as ThreeNamespace.Mesh).isMesh) as
           | ThreeNamespace.Mesh
           | undefined;

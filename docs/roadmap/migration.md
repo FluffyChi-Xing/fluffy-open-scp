@@ -1166,3 +1166,21 @@ outsideTile→scFacade=0（修复玻璃楼回归）。vue-tsc + vitest 76 绿。
   夜间房间仅微光、亮灯窗 ×16 近似；环境四灯 ×(.22+.78·day)（亮度滑杆
   叠乘）。key light 方位未随时段联动（手动面板保留主导，偏离记录）。
 - vue-tsc + vitest 76 绿；lint 无新增（仓库基线预存 15 条）。
+
+### 31.4 props/decal 链路考证（结论：离线不可达，记录死路）
+
+排期第 2/3 项的资产链取证（新探针 prop_chain_probe / find_instance /
+reverse_key_search + sc-registry lookup）：
+
+- **词汇定谳**（s3db）：`0x0C12EF2X = ecoUnitBinDrawBinIDs[1-13]`（每 bin
+  一个 Key = prop 原型引用）、`0x0C12EF3X = Transforms`、`0x0C12EF4X =
+  Slots`；decal = `0x0D109050 scUnitDecalIDs` / `0x0D109060 Transforms`。
+- **死路实证**：BinID key（t=0,g=0，如 0x14984C68/69/6A、0x21F3A153）与
+  decalID key（0x3DF339B4 等）在全套已装包（Game/Graphics/DLC0/App/
+  DataEP1/RT0/RT1/Cache/Patches/UserData 全部 .package）中**均不存在任何
+  类型资源**；s3db instances/properties 表亦无。反向搜索确认唯一引用者就是
+  lot 属性文件自身。结论：prop/decal 原型描述子在游戏内部编译的 eco 数据
+  表（非 DBPF），离线包浏览无法解析 slot→模型，红锥/绿矩形占位维持。
+  可行的后续：社区数据集映射表或运行时抓取。
+- **顺手修复**：LotMask 地面贴图补 `flipY=false`（与模型贴图同坐标系，
+  消除遮罩南北镜像；rendering.md §3.1 遗留项）。
