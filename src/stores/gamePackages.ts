@@ -1,6 +1,7 @@
 import { computed, shallowRef } from "vue";
 import { defineStore } from "pinia";
 import { createDataSource, localDemoConfig } from "@/api/data-source";
+import { isTauri, tauriApi } from "@/api";
 import type {
   GameFolder,
   OpenPackageResponse,
@@ -71,6 +72,21 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
       toast.error("无法读取游戏目录");
     } finally {
       loadingFolders.value = false;
+    }
+  }
+  /** 首次进入资源页时按持久化设置初始化目录树（已加载过则跳过）。 */
+  async function initFromSettings() {
+    if (folders.value.length || loadingFolders.value) return;
+    try {
+      if (!isTauri()) return;
+      const settings = await tauriApi.settings.get();
+      const path = settings.gameDataPath;
+      if (path) {
+        root.value = path;
+        await loadFolders(path);
+      }
+    } catch {
+      // 设置读取失败时保持硬编码默认，用户仍可手动导入
     }
   }
   async function selectFolder(path: string) {
@@ -271,6 +287,7 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
     selectedFolder,
     demo,
     loadFolders,
+    initFromSettings,
     selectFolder,
     openFile,
     loadPage,

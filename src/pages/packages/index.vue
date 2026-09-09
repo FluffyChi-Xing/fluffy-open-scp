@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowRef } from "vue";
+import { computed, onMounted, shallowRef } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -40,6 +40,11 @@ const {
   demo,
 } = storeToRefs(explorer);
 const importMode = shallowRef("folder");
+
+// 进入页面即按持久化的游戏目录设置初始化目录树（store 内部有幂等保护）
+onMounted(() => {
+  void explorer.initFromSettings();
+});
 const detailMode = shallowRef<"hex" | "preview">("hex");
 const copied = shallowRef(false);
 let copiedTimer: number | undefined;

@@ -1,97 +1,43 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef } from "vue";
+import { computed, onMounted } from "vue";
+import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
-import { isTauri, tauriApi } from "@/api";
-import type { OverrideConflict, OverrideScanResponse } from "@/api/tauri";
+import { isTauri } from "@/api";
+import { useOverrideScanStore } from "@/stores/overrideScan";
 
 const { t } = useI18n();
+const scanStore = useOverrideScanStore();
+const {
+  gameDir,
+  extraRoots,
+  scanning,
+  error,
+  result,
+  filter,
+  expanded,
+  roots,
+  conflicts,
+} = storeToRefs(scanStore);
 
-const gameDir = shallowRef("");
-const extraRoots = shallowRef("");
-const scanning = shallowRef(false);
-const error = shallowRef("");
-const result = shallowRef<OverrideScanResponse | null>(null);
-const expanded = shallowRef<Set<number>>(new Set());
-const filter = shallowRef("");
-
-const roots = computed(() => {
-  const extras = extraRoots.value
-    .split(";")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return [gameDir.value, ...extras].filter(Boolean);
-});
-
-const statItems = computed(() => {
-  const stats = result.value?.stats;
-  return [
-    { key: "packages", value: stats?.packages ?? 0 },
-    { key: "entries", value: stats?.entries ?? 0 },
-    { key: "duplicatedTgis", value: stats?.duplicatedTgis ?? 0 },
-    { key: "overriddenEntries", value: stats?.overriddenEntries ?? 0 },
-  ];
-});
-
-const conflicts = computed(() => {
-  const all = result.value?.conflicts ?? [];
-  const needle = filter.value.trim().toLowerCase();
-  if (!needle) return all;
-  return all.filter(
-    (conflict) =>
-      conflict.ext.toLowerCase().includes(needle) ||
-      tgiText(conflict).toLowerCase().includes(needle) ||
-      conflict.chain.some((item) => item.name.toLowerCase().includes(needle)),
-  );
-});
-
-function tgiText(conflict: OverrideConflict) {
-  return `${hex(conflict.typeId)}:${hex(conflict.groupId)}:${hex(conflict.instanceId)}`;
-}
-function hex(value: number) {
-  return (value >>> 0).toString(16).toUpperCase().padStart(8, "0");
-}
+const statItems = computed(() => [
+  { key: "packages", value: result.value?.stats.packages ?? 0 },
+  { key: "entries", value: result.value?.stats.entries ?? 0 },
+  { key: "duplicatedTgis", value: result.value?.stats.duplicatedTgis ?? 0 },
+  { key: "overriddenEntries", value: result.value?.stats.overriddenEntries ?? 0 },
+]);
 function formatBytes(value: number) {
   if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
   if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${value} B`;
 }
-function toggle(index: number) {
-  const next = new Set(expanded.value);
-  if (next.has(index)) next.delete(index);
-  else next.add(index);
-  expanded.value = next;
-}
 
-onMounted(async () => {
-  if (!isTauri()) return;
-  try {
-    const settings = await tauriApi.settings.get();
-    gameDir.value = settings.gameDataPath ?? "";
-  } catch {
-    // 保持为空，由用户手动输入
-  }
+onMounted(() => {
+  void scanStore.initFromSettings();
 });
-
-async function runScan() {
-  if (!roots.value.length || scanning.value) return;
-  scanning.value = true;
-  error.value = "";
-  try {
-    result.value = await tauriApi.packages.overrideScan(roots.value);
-    expanded.value = new Set();
-  } catch (cause) {
-    error.value =
-      cause && typeof cause === "object" && "message" in cause
-        ? String(cause.message)
-        : String(cause);
-  } finally {
-    scanning.value = false;
-  }
-}
 </script>
 
 <template>
@@ -138,7 +84,7 @@ async function runScan() {
         type="button"
         class="run-button"
         :disabled="scanning || !roots.length"
-        @click="runScan"
+        @click="scanStore.runScan()"
       >
         <FIcon :name="scanning ? 'LoaderCircle' : 'Shield'" :size="15" />
         {{ scanning ? t("studio.diagnostics.scanning") : t("studio.diagnostics.run") }}
@@ -189,14 +135,14 @@ async function runScan() {
               type="button"
               class="conflict-row"
               :aria-expanded="expanded.has(index)"
-              @click="toggle(index)"
+              @click="scanStore.toggleExpanded(index)"
             >
               <FIcon
                 :name="expanded.has(index) ? 'ChevronDown' : 'ChevronRight'"
                 :size="14"
               />
               <span class="conflict-ext">{{ conflict.ext }}</span>
-              <span class="conflict-tgi mono">{{ tgiText(conflict) }}</span>
+              <span class="conflict-tgi mono">{{ scanStore.tgiText(conflict) }}</span>
               <span class="conflict-chain-count">
                 {{ t("studio.diagnostics.chainCount", conflict.chain.length) }}
               </span>
