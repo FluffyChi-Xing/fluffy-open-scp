@@ -6,6 +6,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import FSheet from "@/components/ui/FSheet.vue";
+import GameUiStage from "../components/GameUiStage.vue";
 import {
   Carousel,
   CarouselContent,
@@ -129,20 +130,10 @@ function openEditor() {
               <h3 class="slide-title mono">{{ slide.id }}</h3>
             </div>
             <div class="slide-stage">
-              <div class="stage-frame">
-                <img
-                  v-for="(image, index) in slide.images"
-                  :key="index"
-                  :src="image"
-                  :alt="`${slide.id} asset ${index + 1}`"
-                  loading="lazy"
-                  class="stage-image"
-                  :style="{ zIndex: slide.images.length - index }"
-                />
-                <span class="stage-watermark">{{
-                  t("studio.ui.rebuildNotice")
-                }}</span>
-              </div>
+              <GameUiStage :spec="slide" class="stage" />
+              <span class="stage-watermark">{{
+                t("studio.ui.rebuildNotice")
+              }}</span>
             </div>
             <p class="slide-caption">{{ t("studio.ui.caption") }}</p>
           </article>
@@ -305,49 +296,18 @@ function openEditor() {
   font-weight: 600;
 }
 .slide-stage {
-  display: flex;
-  justify-content: center;
-}
-.stage-frame {
   position: relative;
-  width: 100%;
-  max-width: 720px;
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background:
-    repeating-conic-gradient(
-      color-mix(in oklab, var(--border) 30%, transparent) 0% 25%,
-      transparent 0% 50%
-    )
-    0 0 / 24px 24px;
   display: flex;
-  align-items: center;
   justify-content: center;
-  overflow: hidden;
 }
-.stage-image {
-  position: absolute;
-  height: 82%;
-  max-width: 90%;
-  object-fit: contain;
-  border: 1px solid color-mix(in oklab, var(--foreground) 15%, transparent);
-  border-radius: var(--radius-sm);
-  background: var(--background);
-  box-shadow: var(--shadow-sm);
-}
-.stage-image:nth-child(2) {
-  translate: -12% -8%;
-  rotate: -4deg;
-}
-.stage-image:nth-child(3) {
-  translate: 12% 8%;
-  rotate: 3deg;
+.stage {
+  width: 100%;
+  max-width: 900px;
 }
 .stage-watermark {
   position: absolute;
   bottom: 0.6rem;
-  right: 0.75rem;
+  right: calc(max(0px, (100% - 900px) / 2) + 0.75rem);
   font-size: 0.625rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -355,6 +315,7 @@ function openEditor() {
   background: color-mix(in oklab, var(--surface) 80%, transparent);
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
+  pointer-events: none;
 }
 .slide-caption {
   margin: 0;

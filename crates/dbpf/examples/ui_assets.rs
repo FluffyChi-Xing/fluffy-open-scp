@@ -40,16 +40,29 @@ fn main() -> dbpf::Result<()> {
         .expect("usage: ui_assets <simcity-data-dir> [--extract <out>]");
     let extract = extract.unwrap_or_else(|| PathBuf::from("tmp/game-ui"));
 
-    let mut packages: Vec<PathBuf> = std::fs::read_dir(root)
-        .expect("read data dir")
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.extension()
+    // 递归收集全部 .package（覆盖 SimCityData/Locale/<lang>/*.package）
+    fn collect_packages(dir: &std::path::Path, out: &mut Vec<PathBuf>, depth: usize) {
+        if depth > 3 {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths: Vec<_> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        paths.sort();
+        for path in paths {
+            if path.is_dir() {
+                collect_packages(&path, out, depth + 1);
+            } else if path
+                .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("package"))
-        })
-        .collect();
-    packages.push(PathBuf::from(root).join("Locale"));
+            {
+                out.push(path);
+            }
+        }
+    }
+    let mut packages: Vec<PathBuf> = Vec::new();
+    collect_packages(std::path::Path::new(root), &mut packages, 0);
     packages.sort();
 
     // (kind, package) -> Bucket
@@ -58,20 +71,6 @@ fn main() -> dbpf::Result<()> {
     let mut extracted = 0usize;
 
     for path in &packages {
-        if path.is_dir() {
-            // Locale 目录再下钻一层
-            if let Ok(sub) = std::fs::read_dir(path) {
-                for entry in sub.filter_map(|e| e.ok()).map(|e| e.path()) {
-                    if entry
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("package"))
-                    {
-                        scan_package(&entry, &mut buckets, &mut layouts_with_names, &extract, &mut extracted, false)?;
-                    }
-                }
-            }
-            continue;
-        }
         scan_package(path, &mut buckets, &mut layouts_with_names, &extract, &mut extracted, true)?;
     }
 
@@ -109,7 +108,7 @@ fn scan_package(
         Err(_) => return Ok(()),
     };
     for entry in package.entries() {
-        // UI 清单 JSON：{"files": [...]}，locale 屏幕清单与 JS 模块清单
+        // locale 字符串表 / UI 清单 JSON（同为 0x0A98EAF0，靠内容区分）
         if entry.id.type_id == TYPE_JSON {
             let data = package.read(entry).unwrap_or_default();
             let text = String::from_utf8_lossy(&data);
@@ -117,6 +116,12 @@ fn scan_package(
                 let out = extract.join(format!("manifest/{:08X}.json", entry.id.instance));
                 std::fs::create_dir_all(out.parent().unwrap()).ok();
                 std::fs::write(&out, &*data).ok();
+            } else {
+                // 去掉 UTF-8 BOM 后存为 locale/<instance>.json
+                let payload = data.strip_prefix(&[0xEF, 0xBB, 0xBF][..]).unwrap_or(&data);
+                let out = extract.join(format!("locale/{:08X}.json", entry.id.instance));
+                std::fs::create_dir_all(out.parent().unwrap()).ok();
+                std::fs::write(&out, payload).ok();
             }
             continue;
         }
