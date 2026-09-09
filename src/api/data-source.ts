@@ -8,6 +8,7 @@ import type {
   OpenPackageResponse,
   PackageFile,
   PackageHistory,
+  PackageStatistics,
   PropertyResourceData,
   LotEditorSession,
   RasterPreviewData,
@@ -81,6 +82,7 @@ export interface OpenScpDataSource {
   ): Promise<Rw4SectionDetail>;
   closePackage(packageId: number): Promise<void>;
   activityPackages(): Promise<PackageHistory[]>;
+  packageStats(paths: string[]): Promise<PackageStatistics>;
   workspaceStatus(): Promise<WorkspaceStatus>;
   workspaceEntries(): Promise<WorkspaceEntry[]>;
 }
@@ -137,6 +139,7 @@ function tauriDataSource(): OpenScpDataSource {
     previewResource: tauriPreview,
     closePackage: tauriApi.packages.close,
     activityPackages: tauriApi.activity.packages,
+    packageStats: tauriApi.packages.statistics,
     workspaceStatus: tauriApi.workspace.get,
     workspaceEntries: tauriApi.workspace.list,
   };
@@ -517,6 +520,68 @@ function mockDataSource(): OpenScpDataSource {
     async closePackage() {},
     async activityPackages() {
       return mockOverview.recentPackages;
+    },
+    async packageStats(paths) {
+      // demo 模式：对每个请求路径生成确定性的伪统计，方便浏览器预览图表。
+      const byExt = new Map<string, { count: number; size: number; known: boolean }>();
+      let knownSize = 0;
+      let unknownSize = 0;
+      for (const item of entries) {
+        const name = mockTypeNames[item.tgi.typeId];
+        const known = name !== undefined;
+        const ext = known ? name.replace(/\s+file$/i, "") : "UNKNOWN_TYPE";
+        const size = item.decompressedSize;
+        const slot = byExt.get(ext) ?? { count: 0, size: 0, known };
+        slot.count += 1;
+        slot.size += size;
+        byExt.set(ext, slot);
+        if (known) knownSize += size;
+        else unknownSize += size;
+      }
+      const extensions = [...byExt.entries()]
+        .map(([ext, slot]) => ({
+          ext,
+          typeId: 0,
+          known: slot.known,
+          count: slot.count,
+          storedSize: slot.size,
+          decompressedSize: slot.size,
+        }))
+        .sort((a, b) => b.decompressedSize - a.decompressedSize);
+      const perPackage = (path: string, index: number) => {
+        const scale = 0.6 + ((index * 7) % 5) * 0.2;
+        return {
+          path,
+          name: path.split(/[\\/]/).pop() ?? path,
+          fileSize: Math.round(391_000_000 * scale),
+          entryCount: entries.length,
+          extensions: extensions.map((item) => ({
+            ...item,
+            count: Math.max(1, Math.round(item.count * scale)),
+            storedSize: Math.round(item.storedSize * scale),
+            decompressedSize: Math.round(item.decompressedSize * scale),
+          })),
+          knownDecompressed: Math.round(knownSize * scale),
+          unknownDecompressed: Math.round(unknownSize * scale),
+        };
+      };
+      return {
+        packages: (paths.length ? paths : ["SimCity_App.package", "SimCity_Game.package"]).map(
+          perPackage,
+        ),
+        extensions,
+        totals: {
+          fileSize: 782_000_000,
+          storedSize: knownSize + unknownSize,
+          decompressedSize: knownSize + unknownSize,
+          knownDecompressed: knownSize,
+          unknownDecompressed: unknownSize,
+          knownCount: entries.length - 40,
+          unknownCount: 40,
+          entryCount: entries.length,
+        },
+        failed: [],
+      } satisfies PackageStatistics;
     },
     async workspaceStatus() {
       return {

@@ -16,6 +16,7 @@ import {
   type Operation,
   type PackageFile,
   type PackageHistory,
+  type PackageStatistics,
   type ResourceBytes,
   type ResourceData,
   type LotEditorSession,
@@ -111,6 +112,10 @@ export const tauriApi = {
       }),
   },
   packages: {
+    statistics: (paths: string[]) =>
+      command<PackageStatistics>("package_statistics", {
+        request: { paths },
+      }),
     listGameTree: (root: string) =>
       command<GameFolder[]>("list_game_tree", { request: { root } }),
     listPackageFiles: (root: string) =>

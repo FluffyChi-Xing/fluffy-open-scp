@@ -2735,7 +2735,7 @@ fn registry_candidate(main: PathBuf) -> (PathBuf, Option<String>) {
     (main, user)
 }
 
-fn bundled_registry_path(app: &AppHandle) -> Option<PathBuf> {
+pub(crate) fn bundled_registry_path(app: &AppHandle) -> Option<PathBuf> {
     app.path()
         .resolve(
             "resources/database_main.s3db",

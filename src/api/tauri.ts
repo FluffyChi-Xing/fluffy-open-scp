@@ -472,6 +472,39 @@ export interface SettingsStatus {
 export interface GameDirectoryDetection {
   candidates: GameDirectoryStatus[];
 }
+export interface ExtensionStat {
+  ext: string;
+  typeId: number;
+  known: boolean;
+  count: number;
+  storedSize: number;
+  decompressedSize: number;
+}
+export interface PackageStat {
+  path: string;
+  name: string;
+  fileSize: number;
+  entryCount: number;
+  extensions: ExtensionStat[];
+  knownDecompressed: number;
+  unknownDecompressed: number;
+}
+export interface TotalsStat {
+  fileSize: number;
+  storedSize: number;
+  decompressedSize: number;
+  knownDecompressed: number;
+  unknownDecompressed: number;
+  knownCount: number;
+  unknownCount: number;
+  entryCount: number;
+}
+export interface PackageStatistics {
+  packages: PackageStat[];
+  extensions: ExtensionStat[];
+  totals: TotalsStat;
+  failed: string[];
+}
 
 export const activityEventName = "activity:event";
 export const exportProgressEventName = "export:progress";

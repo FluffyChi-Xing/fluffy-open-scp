@@ -1,10 +1,19 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import { useOpenScpOverview } from "@/composables/useOpenScpOverview";
+import { usePackageStats } from "@/composables/usePackageStats";
+import ExtensionStatsCards from "./components/ExtensionStatsCards.vue";
 
 const overview = useOpenScpOverview();
 const { snapshot, loading, error, demo } = overview;
+const historyPaths = computed(() =>
+  Array.from(
+    new Set((snapshot.value?.recentPackages ?? []).map((item) => item.path)),
+  ),
+);
+const packageStats = usePackageStats(() => historyPaths.value);
 function fileName(path: string) {
   return path.split(/[\\/]/).pop() ?? path;
 }
@@ -73,6 +82,11 @@ function age(timestamp: number) {
           ><strong>{{ snapshot.failedOperations }}</strong>
         </article>
       </section>
+      <ExtensionStatsCards
+        :stats="packageStats.stats.value"
+        :loading="packageStats.loading.value"
+        :error="packageStats.error.value"
+      />
       <section class="content-grid">
         <article class="panel">
           <header class="panel-header">
