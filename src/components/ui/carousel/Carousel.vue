@@ -35,14 +35,12 @@ interface CarouselContext {
 const props = withDefaults(
   defineProps<{
     options?: Record<string, unknown>;
-    plugins?: unknown[];
   }>(),
-  { options: () => ({}), plugins: () => [] },
+  { options: () => ({}) },
 );
 
 const [emblaRef, emblaApi] = emblaCarouselVue(
   computed(() => ({ ...toValue(props.options) })),
-  toValue(props.plugins),
 );
 const canScrollPrev = ref(false);
 const canScrollNext = ref(false);

@@ -14,6 +14,13 @@ export type IconName =
   | 'result'
   | 'tokens'
   | 'external'
+  | 'rocket'
+  | 'shield'
+  | 'globe'
+  | 'filePen'
+  | 'image'
+  | 'panelTop'
+  | 'boxes'
 
 export type RouteMeta = RouteRecordRaw['meta'] & {
   titleKey: string

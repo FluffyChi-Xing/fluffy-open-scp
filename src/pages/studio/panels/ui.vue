@@ -17,6 +17,7 @@ interface PreviewSlide {
   id: string;
   screen: string;
   group: string;
+  localePath: string | null;
   images: string[];
 }
 

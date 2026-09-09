@@ -83,7 +83,7 @@ function hex(value: number) {
               :key="opened.package.packageId"
               :value="opened.package.packageId"
             >
-              {{ opened.package.name || opened.package.path }}
+              {{ opened.package.path.split(/[\/]/).pop() }}
             </option>
           </select>
         </label>

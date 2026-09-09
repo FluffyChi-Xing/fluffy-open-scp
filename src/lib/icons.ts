@@ -116,6 +116,13 @@ export const iconAliases = {
   result: 'CheckCircle2',
   tokens: 'Layers',
   external: 'ExternalLink',
+  rocket: 'Rocket',
+  shield: 'Shield',
+  globe: 'Globe',
+  filePen: 'FilePen',
+  image: 'Image',
+  panelTop: 'PanelTop',
+  boxes: 'Boxes',
 } as const
 
 export type FluffyIconAlias = keyof typeof iconAliases
