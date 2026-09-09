@@ -17,6 +17,7 @@ node_modules/
 /docs/todos
 /docs/roadmap
 /docs/packages
+/docs/source-code
 
 # rust / tauri
 target/

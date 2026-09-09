@@ -4,28 +4,42 @@
 
 # OpenSCP
 
-> A modern Rust + Tauri explorer for SimCity (2013) `.package` files — browse resources, export models (glTF/OBJ), textures, properties, audio and video.
->
-> 基于 Rust + Tauri 的 SimCity (2013) `.package` 资源浏览器 —— 查看资源结构，导出模型（glTF/OBJ）、贴图、属性表、音频与视频。
+> 基于 Rust + Tauri 2 + Vue 3 的 SimCity (2013) `.package` 资源浏览器与模组工具链 —— 浏览资源结构、预览模型与贴图、编辑属性表、导出 glTF/OBJ/音视频，并逐步构建声明式 Modding Suite。
 
-## 简介 / About
+## 这个项目是什么 / 目标
 
-**English**
+OpenSCP 是经典 C#/WPF 工具 [SimCityPak](https://github.com/altinctrl/SimCityPak) 的现代化重写，但不止于"重写一个浏览器"。目标分三层：
 
-OpenSCP is a modern desktop tool for browsing and extracting **SimCity (2013)** game resources. It is a Rust + Tauri 2 + Vue 3 rewrite of the classic C#/WPF SimCityPak, redesigned around the pain points of the original: a clean, responsive UI (shadcn-vue + Tailwind CSS), syntax-highlighted viewing of embedded text resources (JSON/HTML/JS/C++ via Shiki), safe handling of huge resources (virtualized, paged views instead of loading everything into memory), and a clear tree view of each package's internal structure. Native Rust parsers for the DBPF container and RenderWare4 assets export models to glTF/OBJ (with materials, skeletons and animations), textures to PNG/DDS, property lists to readable JSON/TXT, and decode Wwise audio and VP6 video into standard formats.
+1. **可靠的格式底座（P0）**：DBPF 容器、RefPack 解压、RenderWare4（RW4）模型/贴图/骨骼/动画、属性表（property list）的精确解析与可保真写回。所有解析器为纯 Rust crate（`crates/`），不依赖 Tauri，可独立测试复用。
+2. **可用的资源工作台（进行中）**：包结构树（TGI 浏览）、语法高亮文本查看（Shiki）、RW4 模型 3D 预览（含材质通道）、贴图/属性表/音视频预览、Lot 编辑器会话（灯光/贴花/Prop/路径单位）、首页统计仪表盘（扩展名数量/容量占比、可识别覆盖率）。
+3. **模组工作流编排（P1）**：`openscp.mod.toml` 声明式项目、OBJ 导入与 LOD 管理、依赖解析、自动校验、确定性 overlay package 构建。详见 [docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md)。
 
-**中文**
+## 使用方法 / Usage
 
-OpenSCP 是一款现代化的桌面工具，用于浏览与提取 **SimCity (2013)** 的游戏资源。它是对经典 C#/WPF 工具 SimCityPak 的 Rust + Tauri 2 + Vue 3 重写版，针对原工具的痛点重新设计：清爽流畅的界面（shadcn-vue + Tailwind CSS）、内嵌文本资源的语法高亮查看（基于 Shiki，支持 JSON/HTML/JS/C++ 等）、大资源的安全浏览（虚拟化分页渲染，不再整块载入内存导致卡死），以及清晰的包内资源树视图。底层由纯 Rust 实现的 DBPF 容器与 RenderWare4 资源解析驱动，可将模型导出为 glTF/OBJ（含材质、骨骼与动画）、贴图导出为 PNG/DDS、属性表导出为可读的 JSON/TXT，并能把 Wwise 音频与 VP6 视频转码为通用格式。
+### 安装与启动
 
-## 功能特性 / Features
+1. 从发布页下载安装包（MSI / NSIS），或从源码构建（见下节开发说明）；
+2. 首次启动后，在 **设置 → 游戏目录** 中指定 SimCity 安装目录（通常为含 `SimCityData\` 的那一层，如 `D:\ea-games\SimCity`）。OpenSCP 会自动扫描并呈现所有 `.package`；
+3. 也可以在包列表中直接双击任意 `.package` 打开，无需配置。
 
-- **现代应用壳**：基于 [fluffy-design-pro](https://github.com/FluffyChi-Xing/fluffy-design-pro)（shadcn-vue + Tailwind CSS 4），内置暗色模式、命令面板、多页签与多语言
-- **包结构树视图**：DBPF 索引按 TGI（Type / Group / Instance）组织浏览，直观呈现 `.package` 内部结构
-- **语法高亮查看**：内嵌文本资源以 Shiki 渲染，覆盖 JSON / HTML / JS / C++ 等语言
-- **大文件安全**：分页 + 虚拟化渲染，避免原版「打开大资源 → 内存溢出 → 卡死」的问题
-- **资源导出**：模型 → glTF 2.0（`.glb`，含材质 / 骨骼 / 动画）/ Wavefront `.obj`；贴图 → PNG / JPG / TGA / DDS；属性表 → JSON / TXT
-- **音视频支持**：Wwise Vorbis 音频 → WAV（vgmstream）、VP6 视频 → MP4（ffmpeg）
+### 日常操作
+
+- **浏览**：左侧资源树按目录列出 package；打开后在资源页中按 TGI（Type/Group/Instance）筛选、搜索、分页浏览（大包也流畅，虚拟化渲染）；
+- **预览**：点击资源自动识别类型 —— 模型（RW4 3D 视口，含材质/LOD）、贴图（PNG/JPG/TGA/DDS/Raster）、属性表（可读键值 + 编辑）、文本（JSON/HTML/JS 语法高亮）、音频（Wwise → WAV 试听）、视频（VP6 → MP4 播放）、二进制（hex 视图）；
+- **Lot 编辑器**：打开 Lot 资源可查看地面图（LotMask 四色量化）、模型 LOD 链、灯光/贴花/Prop 等单位列表与变换矩阵；
+- **导出**：模型 → glTF 2.0（`.glb`，含材质/骨骼/动画）或 Wavefront `.obj`；贴图 → PNG/JPG/TGA/DDS；属性表 → JSON/TXT；音频 → WAV；视频 → MP4；
+- **首页仪表盘**：统计历史打开 package 的扩展名数量占比（环形图）、容量占比（条形图）、可识别类型覆盖率，可展开查看单包明细。
+
+### ⚠️ 音视频转码需要手动安装外部工具
+
+音频（Wwise → WAV）和视频（VP6 → MP4）预览/导出**依赖两个外部工具，安装包不会自动附带**：
+
+| 工具 | 用途 | 安装方式（任选其一） |
+|---|---|---|
+| **vgmstream** | Wwise Vorbis 音频 → WAV | `winget install --id vgmstream.vgmstream -e --source winget`；或从 [GitHub Releases](https://github.com/vgmstream/vgmstream) 下载解压；也可放入应用目录 `Tools\vgmstream\` |
+| **ffmpeg** | VP6 视频 → MP4 | `winget install --id Gyan.FFmpeg -e --source winget`；或从 [ffmpeg.org](https://ffmpeg.org) 下载；也可放入应用目录 `Tools\ffmpeg\` |
+
+未安装时音频/视频预览会显示工具名与安装命令提示，其余功能不受影响。查找顺序：应用目录 `Tools\` → 系统 `PATH`。
 
 ## 项目结构 / Project Layout
 
@@ -37,11 +51,23 @@ fluffy-open-scp/
 │   ├── dbpf/               # DBPF (.package) 容器格式 + RefPack 解压
 │   ├── rw4/                # RenderWare4 模型 / 贴图 / 骨骼 / 动画解析
 │   ├── sc-properties/      # 属性列表资源 (0x00b1b104) 解析
+│   ├── sc-registry/        # database_main.s3db 描述符库只读访问
+│   ├── sc-store/           # 应用活动/历史持久化 (SQLite)
 │   └── sc-exporter/        # OBJ / glTF / 贴图 / 属性表导出器
 └── docs/
+    ├── overview/           # 领域知识：渲染管线、文件格式
+    ├── rendering.md        # 渲染器源码调研（shader 逆向）
+    └── roadmap/            # 迁移与 Modding Suite 规划
 ```
 
-解析库（`crates/`）不依赖 Tauri，可独立测试与复用；`src-tauri` 仅负责将它们以 command 形式暴露给前端。
+## 路线图 / Roadmap
+
+- **P0 底座**（大部分已完成）：DBPF/RefPack、RW4、属性表的可靠解析与写回，OBJ 导入、overlay package、精细错误和 roundtrip 测试
+- **当前进行**：预览体验完善（模型视口材质通道、日夜循环/供电状态渲染、relief 高度图）、格式覆盖率扩展（EP1 二进制表、GlassBox 数据层反查）
+- **P1 Modding Suite**：`openscp.mod.toml` 声明式项目、一键构建、LOD/依赖管理、自动校验、可行动诊断、预览与文件监听
+- **P2/P3**：高级材质/LOD/骨骼编辑，游戏联动、依赖生态和插件能力
+
+详细规划：[docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md)；底层迁移进度：[docs/roadmap/migration.md](docs/roadmap/migration.md)；领域知识入口：[docs/overview/rendering-pipeline.md](docs/overview/rendering-pipeline.md)、[docs/overview/file-formats.md](docs/overview/file-formats.md)、[docs/overview/ui-rendering-and-development.md](docs/overview/ui-rendering-and-development.md)、[docs/overview/glassbox-engine.md](docs/overview/glassbox-engine.md)。
 
 ## 开发 / Development
 
@@ -55,15 +81,8 @@ pnpm test             # 前端测试（vitest）
 cargo test            # Rust 测试（workspace）
 ```
 
-## Roadmap
-
-当前路线分为两层：
-
-- **P0 底座**：DBPF/RefPack、RW4、属性表的可靠解析与写回，OBJ 导入、overlay package、精细错误和 roundtrip 测试
-- **P1 Modding Suite**：`openscp.mod.toml` 声明式项目、一键构建、LOD/依赖管理、自动校验、可行动诊断、预览与文件监听
-- **P2/P3**：高级材质/LOD/骨骼编辑，以及游戏联动、依赖生态和插件能力
-
-详细规划：[`docs/roadmap/modding-suite.md`](docs/roadmap/modding-suite.md)；底层迁移进度：[`docs/roadmap/migration.md`](docs/roadmap/migration.md)。
+浏览器 demo 模式：非 Tauri 环境下访问 vite dev server，在控制台执行
+`localStorage.setItem("openscp:local-key", '{"version":1,"mode":"mock"}')` 后刷新，可用合成数据预览全部 UI。
 
 ## 致谢 / Credits
 
