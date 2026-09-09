@@ -1,0 +1,566 @@
+.autogenWindowNineSliceStyles {}
+
+/* bluebanner window */
+.bluebanner.customData	{ border-width:16px;}
+.bluebanner.pinBottom	{ left:16px; right:16px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/blueBanner-b.png"); }
+.bluebanner.pinBottomLeft	{ left:0px; width:16px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/blueBanner-bl.png"); }
+.bluebanner.pinBottomRight	{ width:16px; right:0px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/blueBanner-br.png"); }
+.bluebanner.pinCenter	{ left:16px; right:16px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/blueBanner-m.png"); }
+.bluebanner.pinLeft	{ left:0px; width:16px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/blueBanner-l.png"); }
+.bluebanner.pinRight	{ width:16px; right:0px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/blueBanner-r.png"); }
+.bluebanner.pinTop	{ left:16px; right:16px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/blueBanner-t.png"); }
+.bluebanner.pinTopLeft	{ left:0px; width:16px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/blueBanner-tl.png"); }
+.bluebanner.pinTopRight	{ width:16px; right:0px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/blueBanner-tr.png"); }
+
+/* bluestroke window */
+.bluestroke.customData	{ border-width:16px;}
+.bluestroke.pinBottom	{ left:16px; right:16px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/blueStroke-b.png"); }
+.bluestroke.pinBottomLeft	{ left:0px; width:16px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/blueStroke-bl.png"); }
+.bluestroke.pinBottomRight	{ width:16px; right:0px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/blueStroke-br.png"); }
+.bluestroke.pinCenter	{ left:16px; right:16px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/blueStroke-m.png"); }
+.bluestroke.pinLeft	{ left:0px; width:16px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/blueStroke-l.png"); }
+.bluestroke.pinRight	{ width:16px; right:0px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/blueStroke-r.png"); }
+.bluestroke.pinTop	{ left:16px; right:16px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/blueStroke-t.png"); }
+.bluestroke.pinTopLeft	{ left:0px; width:16px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/blueStroke-tl.png"); }
+.bluestroke.pinTopRight	{ width:16px; right:0px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/blueStroke-tr.png"); }
+
+/* button_clear_style2 window */
+.button_clear_style2.customData	{ border-width:10px;}
+.button_clear_style2.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style2-b.png"); }
+.button_clear_style2.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style2-bl.png"); }
+.button_clear_style2.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style2-br.png"); }
+.button_clear_style2.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style2-m.png"); }
+.button_clear_style2.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style2-l.png"); }
+.button_clear_style2.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style2-r.png"); }
+.button_clear_style2.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style2-t.png"); }
+.button_clear_style2.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style2-tl.png"); }
+.button_clear_style2.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style2-tr.png"); }
+
+/* button_clear_style7 window */
+.button_clear_style7.customData	{ border-width:10px;}
+.button_clear_style7.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style7-b.png"); }
+.button_clear_style7.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style7-bl.png"); }
+.button_clear_style7.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style7-br.png"); }
+.button_clear_style7.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style7-m.png"); }
+.button_clear_style7.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style7-l.png"); }
+.button_clear_style7.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style7-r.png"); }
+.button_clear_style7.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style7-t.png"); }
+.button_clear_style7.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style7-tl.png"); }
+.button_clear_style7.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style7-tr.png"); }
+
+/* cat-palette-bkgrnd window */
+.cat-palette-bkgrnd.customData	{ border-width:6px;}
+.cat-palette-bkgrnd.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-b.png"); }
+.cat-palette-bkgrnd.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-bl.png"); }
+.cat-palette-bkgrnd.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-br.png"); }
+.cat-palette-bkgrnd.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-m.png"); }
+.cat-palette-bkgrnd.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-l.png"); }
+.cat-palette-bkgrnd.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-r.png"); }
+.cat-palette-bkgrnd.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-t.png"); }
+.cat-palette-bkgrnd.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-tl.png"); }
+.cat-palette-bkgrnd.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-tr.png"); }
+
+/* cat-palette-bkgrnd-light window */
+.cat-palette-bkgrnd-light.customData	{ border-width:6px;}
+.cat-palette-bkgrnd-light.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-b.png"); }
+.cat-palette-bkgrnd-light.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-bl.png"); }
+.cat-palette-bkgrnd-light.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-br.png"); }
+.cat-palette-bkgrnd-light.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-m.png"); }
+.cat-palette-bkgrnd-light.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-l.png"); }
+.cat-palette-bkgrnd-light.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-r.png"); }
+.cat-palette-bkgrnd-light.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-t.png"); }
+.cat-palette-bkgrnd-light.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-tl.png"); }
+.cat-palette-bkgrnd-light.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/cat-palette-bkgrnd-light-tr.png"); }
+
+/* challengebkgrnd window */
+.challengebkgrnd.customData	{ border-width:42px;}
+.challengebkgrnd.pinBottom	{ left:42px; right:42px; height:42px; bottom:0px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-b.png"); }
+.challengebkgrnd.pinBottomLeft	{ left:0px; width:42px; height:42px; bottom:0px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-bl.png"); }
+.challengebkgrnd.pinBottomRight	{ width:42px; right:0px; height:42px; bottom:0px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-br.png"); }
+.challengebkgrnd.pinCenter	{ left:42px; right:42px; top:42px; bottom:42px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-m.png"); }
+.challengebkgrnd.pinLeft	{ left:0px; width:42px; top:42px; bottom:42px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-l.png"); }
+.challengebkgrnd.pinRight	{ width:42px; right:0px; top:42px; bottom:42px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-r.png"); }
+.challengebkgrnd.pinTop	{ left:42px; right:42px; top:0px; height:42px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-t.png"); }
+.challengebkgrnd.pinTopLeft	{ left:0px; width:42px; top:0px; height:42px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-tl.png"); }
+.challengebkgrnd.pinTopRight	{ width:42px; right:0px; top:0px; height:42px; background-image:url("../Graphics/AutoGen/challengeBkgrnd-tr.png"); }
+
+/* fillblue window */
+.fillblue.customData	{ border-width:6px;}
+.fillblue.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/FillBlue-b.png"); }
+.fillblue.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/FillBlue-bl.png"); }
+.fillblue.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/FillBlue-br.png"); }
+.fillblue.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/FillBlue-m.png"); }
+.fillblue.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/FillBlue-l.png"); }
+.fillblue.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/FillBlue-r.png"); }
+.fillblue.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/FillBlue-t.png"); }
+.fillblue.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/FillBlue-tl.png"); }
+.fillblue.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/FillBlue-tr.png"); }
+
+/* frame_style_green window */
+.frame_style_green.customData	{ border-width:18px;}
+.frame_style_green.pinBottom	{ left:18px; right:18px; height:18px; bottom:0px; background-image:url("../Graphics/AutoGen/frame_style_green-b.png"); }
+.frame_style_green.pinBottomLeft	{ left:0px; width:18px; height:18px; bottom:0px; background-image:url("../Graphics/AutoGen/frame_style_green-bl.png"); }
+.frame_style_green.pinBottomRight	{ width:18px; right:0px; height:18px; bottom:0px; background-image:url("../Graphics/AutoGen/frame_style_green-br.png"); }
+.frame_style_green.pinCenter	{ left:18px; right:18px; top:18px; bottom:18px; background-image:url("../Graphics/AutoGen/frame_style_green-m.png"); }
+.frame_style_green.pinLeft	{ left:0px; width:18px; top:18px; bottom:18px; background-image:url("../Graphics/AutoGen/frame_style_green-l.png"); }
+.frame_style_green.pinRight	{ width:18px; right:0px; top:18px; bottom:18px; background-image:url("../Graphics/AutoGen/frame_style_green-r.png"); }
+.frame_style_green.pinTop	{ left:18px; right:18px; top:0px; height:18px; background-image:url("../Graphics/AutoGen/frame_style_green-t.png"); }
+.frame_style_green.pinTopLeft	{ left:0px; width:18px; top:0px; height:18px; background-image:url("../Graphics/AutoGen/frame_style_green-tl.png"); }
+.frame_style_green.pinTopRight	{ width:18px; right:0px; top:0px; height:18px; background-image:url("../Graphics/AutoGen/frame_style_green-tr.png"); }
+
+/* gameinfoframe window */
+.gameinfoframe.customData	{ border-width:63px;}
+.gameinfoframe.pinBottom	{ left:63px; right:63px; height:63px; bottom:0px; background-image:url("../Graphics/AutoGen/GameInfoFrame-b.png"); }
+.gameinfoframe.pinBottomLeft	{ left:0px; width:63px; height:63px; bottom:0px; background-image:url("../Graphics/AutoGen/GameInfoFrame-bl.png"); }
+.gameinfoframe.pinBottomRight	{ width:63px; right:0px; height:63px; bottom:0px; background-image:url("../Graphics/AutoGen/GameInfoFrame-br.png"); }
+.gameinfoframe.pinCenter	{ left:63px; right:63px; top:63px; bottom:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame-m.png"); }
+.gameinfoframe.pinLeft	{ left:0px; width:63px; top:63px; bottom:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame-l.png"); }
+.gameinfoframe.pinRight	{ width:63px; right:0px; top:63px; bottom:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame-r.png"); }
+.gameinfoframe.pinTop	{ left:63px; right:63px; top:0px; height:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame-t.png"); }
+.gameinfoframe.pinTopLeft	{ left:0px; width:63px; top:0px; height:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame-tl.png"); }
+.gameinfoframe.pinTopRight	{ width:63px; right:0px; top:0px; height:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame-tr.png"); }
+
+/* gameinfoframe2 window */
+.gameinfoframe2.customData	{ border-width:63px;}
+.gameinfoframe2.pinBottom	{ left:63px; right:63px; height:63px; bottom:0px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-b.png"); }
+.gameinfoframe2.pinBottomLeft	{ left:0px; width:63px; height:63px; bottom:0px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-bl.png"); }
+.gameinfoframe2.pinBottomRight	{ width:63px; right:0px; height:63px; bottom:0px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-br.png"); }
+.gameinfoframe2.pinCenter	{ left:63px; right:63px; top:63px; bottom:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-m.png"); }
+.gameinfoframe2.pinLeft	{ left:0px; width:63px; top:63px; bottom:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-l.png"); }
+.gameinfoframe2.pinRight	{ width:63px; right:0px; top:63px; bottom:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-r.png"); }
+.gameinfoframe2.pinTop	{ left:63px; right:63px; top:0px; height:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-t.png"); }
+.gameinfoframe2.pinTopLeft	{ left:0px; width:63px; top:0px; height:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-tl.png"); }
+.gameinfoframe2.pinTopRight	{ width:63px; right:0px; top:0px; height:63px; background-image:url("../Graphics/AutoGen/GameInfoFrame2-tr.png"); }
+
+/* gamethumbframe window */
+.gamethumbframe.customData	{ border-width:18px;}
+.gamethumbframe.pinBottom	{ left:18px; right:18px; height:18px; bottom:0px; background-image:url("../Graphics/AutoGen/GameThumbFrame-b.png"); }
+.gamethumbframe.pinBottomLeft	{ left:0px; width:18px; height:18px; bottom:0px; background-image:url("../Graphics/AutoGen/GameThumbFrame-bl.png"); }
+.gamethumbframe.pinBottomRight	{ width:18px; right:0px; height:18px; bottom:0px; background-image:url("../Graphics/AutoGen/GameThumbFrame-br.png"); }
+.gamethumbframe.pinCenter	{ left:18px; right:18px; top:18px; bottom:18px; background-image:url("../Graphics/AutoGen/GameThumbFrame-m.png"); }
+.gamethumbframe.pinLeft	{ left:0px; width:18px; top:18px; bottom:18px; background-image:url("../Graphics/AutoGen/GameThumbFrame-l.png"); }
+.gamethumbframe.pinRight	{ width:18px; right:0px; top:18px; bottom:18px; background-image:url("../Graphics/AutoGen/GameThumbFrame-r.png"); }
+.gamethumbframe.pinTop	{ left:18px; right:18px; top:0px; height:18px; background-image:url("../Graphics/AutoGen/GameThumbFrame-t.png"); }
+.gamethumbframe.pinTopLeft	{ left:0px; width:18px; top:0px; height:18px; background-image:url("../Graphics/AutoGen/GameThumbFrame-tl.png"); }
+.gamethumbframe.pinTopRight	{ width:18px; right:0px; top:0px; height:18px; background-image:url("../Graphics/AutoGen/GameThumbFrame-tr.png"); }
+
+/* glass_style01 window */
+.glass_style01.customData	{ border-width:9px;}
+.glass_style01.pinBottom	{ left:9px; right:9px; height:9px; bottom:0px; background-image:url("../Graphics/AutoGen/glass_style01-b.png"); }
+.glass_style01.pinBottomLeft	{ left:0px; width:9px; height:9px; bottom:0px; background-image:url("../Graphics/AutoGen/glass_style01-bl.png"); }
+.glass_style01.pinBottomRight	{ width:9px; right:0px; height:9px; bottom:0px; background-image:url("../Graphics/AutoGen/glass_style01-br.png"); }
+.glass_style01.pinCenter	{ left:9px; right:9px; top:9px; bottom:9px; background-image:url("../Graphics/AutoGen/glass_style01-m.png"); }
+.glass_style01.pinLeft	{ left:0px; width:9px; top:9px; bottom:9px; background-image:url("../Graphics/AutoGen/glass_style01-l.png"); }
+.glass_style01.pinRight	{ width:9px; right:0px; top:9px; bottom:9px; background-image:url("../Graphics/AutoGen/glass_style01-r.png"); }
+.glass_style01.pinTop	{ left:9px; right:9px; top:0px; height:9px; background-image:url("../Graphics/AutoGen/glass_style01-t.png"); }
+.glass_style01.pinTopLeft	{ left:0px; width:9px; top:0px; height:9px; background-image:url("../Graphics/AutoGen/glass_style01-tl.png"); }
+.glass_style01.pinTopRight	{ width:9px; right:0px; top:0px; height:9px; background-image:url("../Graphics/AutoGen/glass_style01-tr.png"); }
+
+/* hud_bkgrnd_darkblue window */
+.hud_bkgrnd_darkblue.customData	{ border-width:6px;}
+.hud_bkgrnd_darkblue.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-b.png"); }
+.hud_bkgrnd_darkblue.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-bl.png"); }
+.hud_bkgrnd_darkblue.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-br.png"); }
+.hud_bkgrnd_darkblue.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-m.png"); }
+.hud_bkgrnd_darkblue.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-l.png"); }
+.hud_bkgrnd_darkblue.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-r.png"); }
+.hud_bkgrnd_darkblue.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-t.png"); }
+.hud_bkgrnd_darkblue.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-tl.png"); }
+.hud_bkgrnd_darkblue.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkBlue-tr.png"); }
+
+/* hud_bkgrnd_darkgrayblue window */
+.hud_bkgrnd_darkgrayblue.customData	{ border-width:6px;}
+.hud_bkgrnd_darkgrayblue.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-b.png"); }
+.hud_bkgrnd_darkgrayblue.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-bl.png"); }
+.hud_bkgrnd_darkgrayblue.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-br.png"); }
+.hud_bkgrnd_darkgrayblue.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-m.png"); }
+.hud_bkgrnd_darkgrayblue.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-l.png"); }
+.hud_bkgrnd_darkgrayblue.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-r.png"); }
+.hud_bkgrnd_darkgrayblue.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-t.png"); }
+.hud_bkgrnd_darkgrayblue.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-tl.png"); }
+.hud_bkgrnd_darkgrayblue.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/hud_bkgrnd_darkGrayBlue-tr.png"); }
+
+/* missionpnlglow window */
+.missionpnlglow.customData	{ border-width:24px;}
+.missionpnlglow.pinBottom	{ left:24px; right:24px; height:24px; bottom:0px; background-image:url("../Graphics/AutoGen/missionPnlGlow-b.png"); }
+.missionpnlglow.pinBottomLeft	{ left:0px; width:24px; height:24px; bottom:0px; background-image:url("../Graphics/AutoGen/missionPnlGlow-bl.png"); }
+.missionpnlglow.pinBottomRight	{ width:24px; right:0px; height:24px; bottom:0px; background-image:url("../Graphics/AutoGen/missionPnlGlow-br.png"); }
+.missionpnlglow.pinCenter	{ left:24px; right:24px; top:24px; bottom:24px; background-image:url("../Graphics/AutoGen/missionPnlGlow-m.png"); }
+.missionpnlglow.pinLeft	{ left:0px; width:24px; top:24px; bottom:24px; background-image:url("../Graphics/AutoGen/missionPnlGlow-l.png"); }
+.missionpnlglow.pinRight	{ width:24px; right:0px; top:24px; bottom:24px; background-image:url("../Graphics/AutoGen/missionPnlGlow-r.png"); }
+.missionpnlglow.pinTop	{ left:24px; right:24px; top:0px; height:24px; background-image:url("../Graphics/AutoGen/missionPnlGlow-t.png"); }
+.missionpnlglow.pinTopLeft	{ left:0px; width:24px; top:0px; height:24px; background-image:url("../Graphics/AutoGen/missionPnlGlow-tl.png"); }
+.missionpnlglow.pinTopRight	{ width:24px; right:0px; top:0px; height:24px; background-image:url("../Graphics/AutoGen/missionPnlGlow-tr.png"); }
+
+/* outline_style_001 window */
+.outline_style_001.customData	{ border-width:10px;}
+.outline_style_001.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/outline_style_001-b.png"); }
+.outline_style_001.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/outline_style_001-bl.png"); }
+.outline_style_001.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/outline_style_001-br.png"); }
+.outline_style_001.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/outline_style_001-m.png"); }
+.outline_style_001.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/outline_style_001-l.png"); }
+.outline_style_001.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/outline_style_001-r.png"); }
+.outline_style_001.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/outline_style_001-t.png"); }
+.outline_style_001.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/outline_style_001-tl.png"); }
+.outline_style_001.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/outline_style_001-tr.png"); }
+
+/* popup_blue_glass_style window */
+.popup_blue_glass_style.customData	{ border-width:30px;}
+.popup_blue_glass_style.pinBottom	{ left:30px; right:30px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-b.png"); }
+.popup_blue_glass_style.pinBottomLeft	{ left:0px; width:30px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-bl.png"); }
+.popup_blue_glass_style.pinBottomRight	{ width:30px; right:0px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-br.png"); }
+.popup_blue_glass_style.pinCenter	{ left:30px; right:30px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-m.png"); }
+.popup_blue_glass_style.pinLeft	{ left:0px; width:30px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-l.png"); }
+.popup_blue_glass_style.pinRight	{ width:30px; right:0px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-r.png"); }
+.popup_blue_glass_style.pinTop	{ left:30px; right:30px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-t.png"); }
+.popup_blue_glass_style.pinTopLeft	{ left:0px; width:30px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-tl.png"); }
+.popup_blue_glass_style.pinTopRight	{ width:30px; right:0px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_blue_glass_style-tr.png"); }
+
+/* popup_glass_item window */
+.popup_glass_item.customData	{ border-width:7px;}
+.popup_glass_item.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_glass_item-b.png"); }
+.popup_glass_item.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_glass_item-bl.png"); }
+.popup_glass_item.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_glass_item-br.png"); }
+.popup_glass_item.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/popup_glass_item-m.png"); }
+.popup_glass_item.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/popup_glass_item-l.png"); }
+.popup_glass_item.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/popup_glass_item-r.png"); }
+.popup_glass_item.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/popup_glass_item-t.png"); }
+.popup_glass_item.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/popup_glass_item-tl.png"); }
+.popup_glass_item.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/popup_glass_item-tr.png"); }
+
+/* popup_green_glass_style window */
+.popup_green_glass_style.customData	{ border-width:30px;}
+.popup_green_glass_style.pinBottom	{ left:30px; right:30px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-b.png"); }
+.popup_green_glass_style.pinBottomLeft	{ left:0px; width:30px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-bl.png"); }
+.popup_green_glass_style.pinBottomRight	{ width:30px; right:0px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-br.png"); }
+.popup_green_glass_style.pinCenter	{ left:30px; right:30px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-m.png"); }
+.popup_green_glass_style.pinLeft	{ left:0px; width:30px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-l.png"); }
+.popup_green_glass_style.pinRight	{ width:30px; right:0px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-r.png"); }
+.popup_green_glass_style.pinTop	{ left:30px; right:30px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-t.png"); }
+.popup_green_glass_style.pinTopLeft	{ left:0px; width:30px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-tl.png"); }
+.popup_green_glass_style.pinTopRight	{ width:30px; right:0px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_green_glass_style-tr.png"); }
+
+/* popup_green_glass_style2 window */
+.popup_green_glass_style2.customData	{ border-width:20px;}
+.popup_green_glass_style2.pinBottom	{ left:20px; right:20px; height:20px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-b.png"); }
+.popup_green_glass_style2.pinBottomLeft	{ left:0px; width:20px; height:20px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-bl.png"); }
+.popup_green_glass_style2.pinBottomRight	{ width:20px; right:0px; height:20px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-br.png"); }
+.popup_green_glass_style2.pinCenter	{ left:20px; right:20px; top:20px; bottom:20px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-m.png"); }
+.popup_green_glass_style2.pinLeft	{ left:0px; width:20px; top:20px; bottom:20px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-l.png"); }
+.popup_green_glass_style2.pinRight	{ width:20px; right:0px; top:20px; bottom:20px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-r.png"); }
+.popup_green_glass_style2.pinTop	{ left:20px; right:20px; top:0px; height:20px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-t.png"); }
+.popup_green_glass_style2.pinTopLeft	{ left:0px; width:20px; top:0px; height:20px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-tl.png"); }
+.popup_green_glass_style2.pinTopRight	{ width:20px; right:0px; top:0px; height:20px; background-image:url("../Graphics/AutoGen/popup_green_glass_style2-tr.png"); }
+
+/* popup_white_glass_style window */
+.popup_white_glass_style.customData	{ border-width:30px;}
+.popup_white_glass_style.pinBottom	{ left:30px; right:30px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-b.png"); }
+.popup_white_glass_style.pinBottomLeft	{ left:0px; width:30px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-bl.png"); }
+.popup_white_glass_style.pinBottomRight	{ width:30px; right:0px; height:30px; bottom:0px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-br.png"); }
+.popup_white_glass_style.pinCenter	{ left:30px; right:30px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-m.png"); }
+.popup_white_glass_style.pinLeft	{ left:0px; width:30px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-l.png"); }
+.popup_white_glass_style.pinRight	{ width:30px; right:0px; top:30px; bottom:30px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-r.png"); }
+.popup_white_glass_style.pinTop	{ left:30px; right:30px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-t.png"); }
+.popup_white_glass_style.pinTopLeft	{ left:0px; width:30px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-tl.png"); }
+.popup_white_glass_style.pinTopRight	{ width:30px; right:0px; top:0px; height:30px; background-image:url("../Graphics/AutoGen/popup_white_glass_style-tr.png"); }
+
+/* promptbar01 window */
+.promptbar01.customData	{ border-width:12px;}
+.promptbar01.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/PromptBar01-b.png"); }
+.promptbar01.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/PromptBar01-bl.png"); }
+.promptbar01.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/PromptBar01-br.png"); }
+.promptbar01.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/PromptBar01-m.png"); }
+.promptbar01.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/PromptBar01-l.png"); }
+.promptbar01.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/PromptBar01-r.png"); }
+.promptbar01.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/PromptBar01-t.png"); }
+.promptbar01.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/PromptBar01-tl.png"); }
+.promptbar01.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/PromptBar01-tr.png"); }
+
+/* rlvr-window window */
+.rlvr-window.customData	{ border-width:6px;}
+.rlvr-window.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rlvr-window-b.png"); }
+.rlvr-window.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rlvr-window-bl.png"); }
+.rlvr-window.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rlvr-window-br.png"); }
+.rlvr-window.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rlvr-window-m.png"); }
+.rlvr-window.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rlvr-window-l.png"); }
+.rlvr-window.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rlvr-window-r.png"); }
+.rlvr-window.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rlvr-window-t.png"); }
+.rlvr-window.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rlvr-window-tl.png"); }
+.rlvr-window.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rlvr-window-tr.png"); }
+
+/* rlvr-window-blue window */
+.rlvr-window-blue.customData	{ border-width:6px;}
+.rlvr-window-blue.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-b.png"); }
+.rlvr-window-blue.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-bl.png"); }
+.rlvr-window-blue.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-br.png"); }
+.rlvr-window-blue.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-m.png"); }
+.rlvr-window-blue.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-l.png"); }
+.rlvr-window-blue.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-r.png"); }
+.rlvr-window-blue.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-t.png"); }
+.rlvr-window-blue.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-tl.png"); }
+.rlvr-window-blue.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rlvr-window-blue-tr.png"); }
+
+/* rolloverbkgrnd window */
+.rolloverbkgrnd.customData	{ border-width:6px;}
+.rolloverbkgrnd.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-b.png"); }
+.rolloverbkgrnd.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-bl.png"); }
+.rolloverbkgrnd.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-br.png"); }
+.rolloverbkgrnd.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-m.png"); }
+.rolloverbkgrnd.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-l.png"); }
+.rolloverbkgrnd.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-r.png"); }
+.rolloverbkgrnd.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-t.png"); }
+.rolloverbkgrnd.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-tl.png"); }
+.rolloverbkgrnd.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/rolloverBkgrnd-tr.png"); }
+
+/* rolloverheaderoff window */
+.rolloverheaderoff.customData	{ border-width:8px;}
+.rolloverheaderoff.pinBottom	{ left:8px; right:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-b.png"); }
+.rolloverheaderoff.pinBottomLeft	{ left:0px; width:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-bl.png"); }
+.rolloverheaderoff.pinBottomRight	{ width:8px; right:0px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-br.png"); }
+.rolloverheaderoff.pinCenter	{ left:8px; right:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-m.png"); }
+.rolloverheaderoff.pinLeft	{ left:0px; width:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-l.png"); }
+.rolloverheaderoff.pinRight	{ width:8px; right:0px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-r.png"); }
+.rolloverheaderoff.pinTop	{ left:8px; right:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-t.png"); }
+.rolloverheaderoff.pinTopLeft	{ left:0px; width:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-tl.png"); }
+.rolloverheaderoff.pinTopRight	{ width:8px; right:0px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOff-tr.png"); }
+
+/* rolloverheaderon window */
+.rolloverheaderon.customData	{ border-width:8px;}
+.rolloverheaderon.pinBottom	{ left:8px; right:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-b.png"); }
+.rolloverheaderon.pinBottomLeft	{ left:0px; width:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-bl.png"); }
+.rolloverheaderon.pinBottomRight	{ width:8px; right:0px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-br.png"); }
+.rolloverheaderon.pinCenter	{ left:8px; right:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-m.png"); }
+.rolloverheaderon.pinLeft	{ left:0px; width:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-l.png"); }
+.rolloverheaderon.pinRight	{ width:8px; right:0px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-r.png"); }
+.rolloverheaderon.pinTop	{ left:8px; right:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-t.png"); }
+.rolloverheaderon.pinTopLeft	{ left:0px; width:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-tl.png"); }
+.rolloverheaderon.pinTopRight	{ width:8px; right:0px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverHeaderOn-tr.png"); }
+
+/* rollovermeterframe window */
+.rollovermeterframe.customData	{ border-width:8px;}
+.rollovermeterframe.pinBottom	{ left:8px; right:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-b.png"); }
+.rollovermeterframe.pinBottomLeft	{ left:0px; width:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-bl.png"); }
+.rollovermeterframe.pinBottomRight	{ width:8px; right:0px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-br.png"); }
+.rollovermeterframe.pinCenter	{ left:8px; right:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-m.png"); }
+.rollovermeterframe.pinLeft	{ left:0px; width:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-l.png"); }
+.rollovermeterframe.pinRight	{ width:8px; right:0px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-r.png"); }
+.rollovermeterframe.pinTop	{ left:8px; right:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-t.png"); }
+.rollovermeterframe.pinTopLeft	{ left:0px; width:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-tl.png"); }
+.rollovermeterframe.pinTopRight	{ width:8px; right:0px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverMeterFrame-tr.png"); }
+
+/* rollovertextframefull window */
+.rollovertextframefull.customData	{ border-width:8px;}
+.rollovertextframefull.pinBottom	{ left:8px; right:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-b.png"); }
+.rollovertextframefull.pinBottomLeft	{ left:0px; width:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-bl.png"); }
+.rollovertextframefull.pinBottomRight	{ width:8px; right:0px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-br.png"); }
+.rollovertextframefull.pinCenter	{ left:8px; right:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-m.png"); }
+.rollovertextframefull.pinLeft	{ left:0px; width:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-l.png"); }
+.rollovertextframefull.pinRight	{ width:8px; right:0px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-r.png"); }
+.rollovertextframefull.pinTop	{ left:8px; right:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-t.png"); }
+.rollovertextframefull.pinTopLeft	{ left:0px; width:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-tl.png"); }
+.rollovertextframefull.pinTopRight	{ width:8px; right:0px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/rolloverTextFrameFull-tr.png"); }
+
+/* rollovertextframelft window */
+.rollovertextframelft.customData	{ border-width:4px;}
+.rollovertextframelft.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-b.png"); }
+.rollovertextframelft.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-bl.png"); }
+.rollovertextframelft.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-br.png"); }
+.rollovertextframelft.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-m.png"); }
+.rollovertextframelft.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-l.png"); }
+.rollovertextframelft.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-r.png"); }
+.rollovertextframelft.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-t.png"); }
+.rollovertextframelft.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-tl.png"); }
+.rollovertextframelft.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameLft-tr.png"); }
+
+/* rollovertextframergt window */
+.rollovertextframergt.customData	{ border-width:4px;}
+.rollovertextframergt.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-b.png"); }
+.rollovertextframergt.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-bl.png"); }
+.rollovertextframergt.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-br.png"); }
+.rollovertextframergt.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-m.png"); }
+.rollovertextframergt.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-l.png"); }
+.rollovertextframergt.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-r.png"); }
+.rollovertextframergt.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-t.png"); }
+.rollovertextframergt.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-tl.png"); }
+.rollovertextframergt.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/rolloverTextFrameRgt-tr.png"); }
+
+/* text_input_style002 window */
+.text_input_style002.customData	{ border-width:8px;}
+.text_input_style002.pinBottom	{ left:8px; right:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/text_input_style002-b.png"); }
+.text_input_style002.pinBottomLeft	{ left:0px; width:8px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/text_input_style002-bl.png"); }
+.text_input_style002.pinBottomRight	{ width:8px; right:0px; height:8px; bottom:0px; background-image:url("../Graphics/AutoGen/text_input_style002-br.png"); }
+.text_input_style002.pinCenter	{ left:8px; right:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/text_input_style002-m.png"); }
+.text_input_style002.pinLeft	{ left:0px; width:8px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/text_input_style002-l.png"); }
+.text_input_style002.pinRight	{ width:8px; right:0px; top:8px; bottom:8px; background-image:url("../Graphics/AutoGen/text_input_style002-r.png"); }
+.text_input_style002.pinTop	{ left:8px; right:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/text_input_style002-t.png"); }
+.text_input_style002.pinTopLeft	{ left:0px; width:8px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/text_input_style002-tl.png"); }
+.text_input_style002.pinTopRight	{ width:8px; right:0px; top:0px; height:8px; background-image:url("../Graphics/AutoGen/text_input_style002-tr.png"); }
+
+/* topnavuncut04 window */
+.topnavuncut04.customData	{ border-width:14px;}
+.topnavuncut04.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/TopNavUncut04-b.png"); }
+.topnavuncut04.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/TopNavUncut04-bl.png"); }
+.topnavuncut04.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/TopNavUncut04-br.png"); }
+.topnavuncut04.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/TopNavUncut04-m.png"); }
+.topnavuncut04.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/TopNavUncut04-l.png"); }
+.topnavuncut04.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/TopNavUncut04-r.png"); }
+.topnavuncut04.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/TopNavUncut04-t.png"); }
+.topnavuncut04.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/TopNavUncut04-tl.png"); }
+.topnavuncut04.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/TopNavUncut04-tr.png"); }
+
+/* ui_tutorial_talkbubble_stretch window */
+.ui_tutorial_talkbubble_stretch.customData	{ border-width:17px;}
+.ui_tutorial_talkbubble_stretch.pinBottom	{ left:17px; right:17px; height:17px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-b.png"); }
+.ui_tutorial_talkbubble_stretch.pinBottomLeft	{ left:0px; width:17px; height:17px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-bl.png"); }
+.ui_tutorial_talkbubble_stretch.pinBottomRight	{ width:17px; right:0px; height:17px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-br.png"); }
+.ui_tutorial_talkbubble_stretch.pinCenter	{ left:17px; right:17px; top:17px; bottom:17px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-m.png"); }
+.ui_tutorial_talkbubble_stretch.pinLeft	{ left:0px; width:17px; top:17px; bottom:17px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-l.png"); }
+.ui_tutorial_talkbubble_stretch.pinRight	{ width:17px; right:0px; top:17px; bottom:17px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-r.png"); }
+.ui_tutorial_talkbubble_stretch.pinTop	{ left:17px; right:17px; top:0px; height:17px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-t.png"); }
+.ui_tutorial_talkbubble_stretch.pinTopLeft	{ left:0px; width:17px; top:0px; height:17px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-tl.png"); }
+.ui_tutorial_talkbubble_stretch.pinTopRight	{ width:17px; right:0px; top:0px; height:17px; background-image:url("../Graphics/AutoGen/UI_tutorial_talkBubble_stretch-tr.png"); }
+
+/* ui_tutorial_thoughtbubble_green_stretch window */
+.ui_tutorial_thoughtbubble_green_stretch.customData	{ border-width:32px;}
+.ui_tutorial_thoughtbubble_green_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-b.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-bl.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-br.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-m.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-l.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-r.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-t.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-tl.png"); }
+.ui_tutorial_thoughtbubble_green_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_green_stretch-tr.png"); }
+
+/* ui_tutorial_thoughtbubble_red_stretch window */
+.ui_tutorial_thoughtbubble_red_stretch.customData	{ border-width:32px;}
+.ui_tutorial_thoughtbubble_red_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-b.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-bl.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-br.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-m.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-l.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-r.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-t.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-tl.png"); }
+.ui_tutorial_thoughtbubble_red_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_tutorial_thoughtBubble_red_stretch-tr.png"); }
+
+/* ui_wantsfears_tb_happy1_stretch window */
+.ui_wantsfears_tb_happy1_stretch.customData	{ border-width:32px;}
+.ui_wantsfears_tb_happy1_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-b.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-bl.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-br.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-m.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-l.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-r.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-t.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-tl.png"); }
+.ui_wantsfears_tb_happy1_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy1_stretch-tr.png"); }
+
+/* ui_wantsfears_tb_happy2_stretch window */
+.ui_wantsfears_tb_happy2_stretch.customData	{ border-width:32px;}
+.ui_wantsfears_tb_happy2_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-b.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-bl.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-br.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-m.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-l.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-r.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-t.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-tl.png"); }
+.ui_wantsfears_tb_happy2_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy2_stretch-tr.png"); }
+
+/* ui_wantsfears_tb_happy3_stretch window */
+.ui_wantsfears_tb_happy3_stretch.customData	{ border-width:32px;}
+.ui_wantsfears_tb_happy3_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-b.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-bl.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-br.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-m.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-l.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-r.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-t.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-tl.png"); }
+.ui_wantsfears_tb_happy3_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy3_stretch-tr.png"); }
+
+/* ui_wantsfears_tb_happy4_stretch window */
+.ui_wantsfears_tb_happy4_stretch.customData	{ border-width:32px;}
+.ui_wantsfears_tb_happy4_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-b.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-bl.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-br.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-m.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-l.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-r.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-t.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-tl.png"); }
+.ui_wantsfears_tb_happy4_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy4_stretch-tr.png"); }
+
+/* ui_wantsfears_tb_happy5_stretch window */
+.ui_wantsfears_tb_happy5_stretch.customData	{ border-width:32px;}
+.ui_wantsfears_tb_happy5_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-b.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-bl.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-br.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-m.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-l.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-r.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-t.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-tl.png"); }
+.ui_wantsfears_tb_happy5_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_wantsFears_TB_happy5_stretch-tr.png"); }
+
+/* ui_Disasters_stretch window */
+.ui_Disasters_stretch.customData	{ border-width:32px;}
+.ui_Disasters_stretch.pinBottom	{ left:32px; right:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-b.png"); }
+.ui_Disasters_stretch.pinBottomLeft	{ left:0px; width:32px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-bl.png"); }
+.ui_Disasters_stretch.pinBottomRight	{ width:32px; right:0px; height:32px; bottom:0px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-br.png"); }
+.ui_Disasters_stretch.pinCenter	{ left:32px; right:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-m.png"); }
+.ui_Disasters_stretch.pinLeft	{ left:0px; width:32px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-l.png"); }
+.ui_Disasters_stretch.pinRight	{ width:32px; right:0px; top:32px; bottom:32px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-r.png"); }
+.ui_Disasters_stretch.pinTop	{ left:32px; right:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-t.png"); }
+.ui_Disasters_stretch.pinTopLeft	{ left:0px; width:32px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-tl.png"); }
+.ui_Disasters_stretch.pinTopRight	{ width:32px; right:0px; top:0px; height:32px; background-image:url("../Graphics/AutoGen/UI_Disasters_stretch-tr.png"); }
+
+/* widgetframe window */
+.widgetframe.customData	{ border-width:24px;}
+.widgetframe.pinBottom	{ left:24px; right:24px; height:24px; bottom:0px; background-image:url("../Graphics/AutoGen/widgetFrame-b.png"); }
+.widgetframe.pinBottomLeft	{ left:0px; width:24px; height:24px; bottom:0px; background-image:url("../Graphics/AutoGen/widgetFrame-bl.png"); }
+.widgetframe.pinBottomRight	{ width:24px; right:0px; height:24px; bottom:0px; background-image:url("../Graphics/AutoGen/widgetFrame-br.png"); }
+.widgetframe.pinCenter	{ left:24px; right:24px; top:24px; bottom:24px; background-image:url("../Graphics/AutoGen/widgetFrame-m.png"); }
+.widgetframe.pinLeft	{ left:0px; width:24px; top:24px; bottom:24px; background-image:url("../Graphics/AutoGen/widgetFrame-l.png"); }
+.widgetframe.pinRight	{ width:24px; right:0px; top:24px; bottom:24px; background-image:url("../Graphics/AutoGen/widgetFrame-r.png"); }
+.widgetframe.pinTop	{ left:24px; right:24px; top:0px; height:24px; background-image:url("../Graphics/AutoGen/widgetFrame-t.png"); }
+.widgetframe.pinTopLeft	{ left:0px; width:24px; top:0px; height:24px; background-image:url("../Graphics/AutoGen/widgetFrame-tl.png"); }
+.widgetframe.pinTopRight	{ width:24px; right:0px; top:0px; height:24px; background-image:url("../Graphics/AutoGen/widgetFrame-tr.png"); }
+
+/* widgetframe2 window */
+.widgetframe2.customData	{ border-width:16px;}
+.widgetframe2.pinBottom	{ left:16px; right:16px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/widgetFrame2-b.png"); }
+.widgetframe2.pinBottomLeft	{ left:0px; width:16px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/widgetFrame2-bl.png"); }
+.widgetframe2.pinBottomRight	{ width:16px; right:0px; height:16px; bottom:0px; background-image:url("../Graphics/AutoGen/widgetFrame2-br.png"); }
+.widgetframe2.pinCenter	{ left:16px; right:16px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/widgetFrame2-m.png"); }
+.widgetframe2.pinLeft	{ left:0px; width:16px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/widgetFrame2-l.png"); }
+.widgetframe2.pinRight	{ width:16px; right:0px; top:16px; bottom:16px; background-image:url("../Graphics/AutoGen/widgetFrame2-r.png"); }
+.widgetframe2.pinTop	{ left:16px; right:16px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/widgetFrame2-t.png"); }
+.widgetframe2.pinTopLeft	{ left:0px; width:16px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/widgetFrame2-tl.png"); }
+.widgetframe2.pinTopRight	{ width:16px; right:0px; top:0px; height:16px; background-image:url("../Graphics/AutoGen/widgetFrame2-tr.png"); }
+
+/* window window */
+.window.customData	{ border-width:12px;}
+.window.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/window-b.png"); }
+.window.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/window-bl.png"); }
+.window.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/window-br.png"); }
+.window.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/window-m.png"); }
+.window.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/window-l.png"); }
+.window.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/window-r.png"); }
+.window.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/window-t.png"); }
+.window.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/window-tl.png"); }
+.window.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/window-tr.png"); }
+
+/* windowtilewhite window */
+.windowtilewhite.customData	{ border-width:5px;}
+.windowtilewhite.pinBottom	{ left:5px; right:5px; height:5px; bottom:0px; background-image:url("../Graphics/AutoGen/WindowTileWhite-b.png"); }
+.windowtilewhite.pinBottomLeft	{ left:0px; width:5px; height:5px; bottom:0px; background-image:url("../Graphics/AutoGen/WindowTileWhite-bl.png"); }
+.windowtilewhite.pinBottomRight	{ width:5px; right:0px; height:5px; bottom:0px; background-image:url("../Graphics/AutoGen/WindowTileWhite-br.png"); }
+.windowtilewhite.pinCenter	{ left:5px; right:5px; top:5px; bottom:5px; background-image:url("../Graphics/AutoGen/WindowTileWhite-m.png"); }
+.windowtilewhite.pinLeft	{ left:0px; width:5px; top:5px; bottom:5px; background-image:url("../Graphics/AutoGen/WindowTileWhite-l.png"); }
+.windowtilewhite.pinRight	{ width:5px; right:0px; top:5px; bottom:5px; background-image:url("../Graphics/AutoGen/WindowTileWhite-r.png"); }
+.windowtilewhite.pinTop	{ left:5px; right:5px; top:0px; height:5px; background-image:url("../Graphics/AutoGen/WindowTileWhite-t.png"); }
+.windowtilewhite.pinTopLeft	{ left:0px; width:5px; top:0px; height:5px; background-image:url("../Graphics/AutoGen/WindowTileWhite-tl.png"); }
+.windowtilewhite.pinTopRight	{ width:5px; right:0px; top:0px; height:5px; background-image:url("../Graphics/AutoGen/WindowTileWhite-tr.png"); }
+

@@ -1,0 +1,3172 @@
+/*---------------------------------------------------------------------------*/
+/* WindowStyles.css
+/*        This file contains all styles recognized by the editor. It also
+/*        contains one dummy element at the top that helps the program to
+/*        correctly identify this file
+/*---------------------------------------------------------------------------*/
+
+/* This style marks this file. Do not change it. Do not insert anything above it. Do not move it. */
+.windowStyles {}
+
+/* NEW STYLES - USE THESE ONLY (Chi) */
+
+
+.VideoRecFrame {
+    border: solid 3px rgba(255,255,255,1);
+    border-radius: 10px 10px 10px 10px;
+}
+
+.VideoRecFrame2 {
+    border: solid 11px rgba(255,255,255,.3);
+    border-radius: 10px 10px 10px 10px;
+}
+
+.BulldozeYellowBackground {
+    background: -moz-linear-gradient(top,  rgba(255,213,99,1) 0%, rgba(255,213,99,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,213,99,1)), color-stop(100%,rgba(255,213,99,1)));
+    overflow: hidden;
+    border-radius: 100px 0px 0px 0px;
+}
+
+
+.LeftRightBrightBlueTranspGrad {
+    background: -moz-linear-gradient(left,  rgba(67,179,227,1) 0%, rgba(67,179,227,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(67,179,227,1)), color-stop(100%,rgba(67,179,227,0)));
+}
+
+.GreenGradientHighlight {
+    background: -moz-linear-gradient(left,  rgba(43,204,16,0) 0%, rgba(43,204,16,1) 50%, rgba(43,204,16,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(43,204,16,0)), color-stop(50%,rgba(43,204,16,1)), color-stop(100%,rgba(43,204,16,0)));
+}
+
+.GageButton_Green {
+    border-radius: 16px 16px 16px 16px;
+    background: -moz-linear-gradient(top, rgba(30,200,30,1) 0%, rgba(0,150,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(30,180,30,1)), color-stop(100%,rgba(0,140,0,1))); /* Chrome,Safari4+ */
+}
+
+.GageButton_Red {
+	border-radius: 16px 16px 16px 16px;
+    background: -moz-linear-gradient(top, rgba(235,70,70,1) 0%, rgba(180,30,30,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(235,70,70,1)), color-stop(100%,rgba(180,30,30,1))); /* Chrome,Safari4+ */
+}
+
+.GageButton_Yellow {
+	border-radius: 16px 16px 16px 16px;
+    background: -moz-linear-gradient(top, rgba(235,235,70,1) 0%, rgba(180,180,30,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(235,235,70,1)), color-stop(100%,rgba(180,180,30,1))); /* Chrome,Safari4+ */
+}
+
+.GageButton_cyan {
+	border-radius: 16px 16px 16px 16px;
+    background: -moz-linear-gradient(top, rgba(0,255,255,1) 0%, rgba(0,180,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,255,255,1)), color-stop(100%,rgba(0,180,255,1))); /* Chrome,Safari4+ */
+}
+
+.Tab_Btm_Blue_Rounded {
+	border-radius:  12px 12px 12px 12px;
+	background:-moz-linear-gradient(49.9996% 100% 90deg,
+	rgba(92, 180, 240, 1) 0%,
+	rgba(100, 182, 242, 1) 29.8153%,
+	rgba(40, 167, 229, 1) 61.2977%,
+	rgba(17, 161, 224, 1) 76.3636%,
+	rgba(17, 191, 235, 1) 100%);
+	background:-webkit-gradient(linear,49.9996% 100%,49.9996% -0%,
+	color-stop(0, rgba(92,180,240,1)),
+	color-stop(0.298153, rgba(100, 182, 242, 1)),
+	color-stop(0.612977, rgba(40, 167, 229, 1)),
+	color-stop(0.763636, rgba(17, 161, 224, 1)),
+	color-stop(1, rgba(17, 191, 235, 1)));
+}
+
+.Blue_Background {
+	border-radius:  12px 12px 12px 12px;
+	background:rgba(92, 180, 240, 1);
+}
+
+.SystemInfo_SubWindow{
+    border: solid 1px #C6D4F4;
+    border-radius: 6px 6px 6px 6px;
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(198,212,244,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(198,212,244,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#E0E8FB', endColorstr='#C6D4F4',GradientType=0 ); /* IE6-9 */
+}
+
+.SystemInfo_SubWindow_btm_sqr_lft{
+    border: solid 1px #C6D4F4;
+    border-radius: 8px 0px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(198,212,244,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(198,212,244,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#E0E8FB', endColorstr='#C6D4F4',GradientType=0 ); /* IE6-9 */
+}
+
+.SystemInfo_SubWindow_btm_sqr_rgt{
+    border: solid 1px #C6D4F4;
+    border-radius: 0px 8px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(198,212,244,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(198,212,244,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#E0E8FB', endColorstr='#C6D4F4',GradientType=0 ); /* IE6-9 */
+}
+
+
+.SystemInfo_SubWindow_Ep1{
+    border-radius: 10px 10px 10px 10px;
+    background: -moz-linear-gradient(top, rgba(64,97,150,1) 0%, rgba(45,70,111,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(64,97,150,1)), color-stop(100%,rgba(45,70,111,1))); /* Chrome,Safari4+ */
+}
+
+.Tab_Leaderboards_Bluesquare{
+	background:rgb(30, 188, 255);
+}
+.Tab_Leaderboards_WhiteSquare{
+	background:rgb(255, 255, 255);
+}
+.Map_Thumbnail_Rollover{
+	-moz-box-shadow: inset 0px 0px 15px rgba(255,255,255,255);
+    -webkit-box-shadow: inset 0px 0px 15px rgba(255,255,255,255);
+	box-shadow: inset 0px 0px 15px rgb(255,255,255,255);
+}
+.Map_Thumbnail_Stroke {
+	border: solid 8px rgba(255,255,255,1);
+}
+.Map_Thumbnail_Stroke_Selected {
+	border: solid 8px rgba(0,174,255,1);
+}
+.Critical_Red {
+	#box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    #-webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(255,153,125,1) 0%, rgba(236,87,47,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,153,125,1)), color-stop(100%,rgba(236,87,47,1)));
+	border-radius: 12px;
+}
+
+.Progress_Red {
+	#box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    #-webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(255,153,125,1) 0%, rgba(236,87,47,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,153,125,1)), color-stop(100%,rgba(236,87,47,1)));
+	border-radius: 6px;
+}
+
+.Progress_Orange {
+	#box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    #-webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(255,214,125,1) 0%, rgba(236,141,19,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,214,125,1)), color-stop(100%,rgba(236,141,19,1)));
+	border-radius: 6px;
+}
+
+.Progress_Yellow {
+	#box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    #-webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(255,251,144,1) 0%, rgba(226,220,55,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,251,144,1)), color-stop(100%,rgba(226,220,55,1)));
+	border-radius: 6px;
+}
+
+.Progress_lightGreen {
+	#box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    #-webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(215,255,145,1) 0%, rgba(165,230,52,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(215,255,145,1)), color-stop(100%,rgba(165,230,52,1)));
+	border-radius: 6px;
+}
+
+.Progress_Green {
+	#box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    #-webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(153,254,139,1) 0%, rgba(67,227,45,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(153,254,139,1)), color-stop(100%,rgba(67,227,45,1)));
+	border-radius: 6px;
+}
+
+.Progress_Recessed_Background {
+    border-radius: 7px 7px 7px 7px;
+	-moz-box-shadow: inset  0px 2px 10px rgba(100,100,100,0.7);
+    -webkit-box-shadow: inset  0px 2px 10px rgba(100,100,100,0.7);
+	box-shadow: inset 0px 2px 10px rgb(100,100,100,0.7);
+    background: -moz-linear-gradient(top, rgba(220,220,220,1) 0%, rgba(200,200,200,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,1)), color-stop(100%,rgba(200,200,200,1))); /* Chrome,Safari4+ */
+}
+
+.Highlight_Orange_rounded {
+	border: solid 2px rgba(255,143,52,1);
+    border-radius: 12px 12px 12px 12px;
+	-moz-box-shadow: inset 0px 0px 10px rgba(255,143,52,.8);
+    -webkit-box-shadow: inset 0px 0px 12px rgba(255,143,52,.8);
+	box-shadow: inset 0px 0px 12px rgb(255,143,52,.8);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-grad ient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.Highlight_Orange_squared {
+	border: solid 2px rgba(255,143,52,1);
+    border-radius: 6px 6px 6px 6px;
+	-moz-box-shadow: inset 0px 0px 10px rgba(255,143,52,.8);
+    -webkit-box-shadow: inset 0px 0px 12px rgba(255,143,52,.8);
+	box-shadow: inset 0px 0px 12px rgb(255,143,52,.8);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-grad ient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+
+.Progress_Selection_rounded_Left {
+	border: solid 2px rgba(67,179,227,1);
+    border-radius: 5px 0px 0px 5px;
+	-moz-box-shadow: inset 0px 0px 10px rgba(0,0,0,0.7);
+    -webkit-box-shadow: inset 0px 0px 10px rgba(0,0,0,0.7);
+	box-shadow: inset 0px 0px 10px rgb(0,0,0,0.7);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-grad ient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.Progress_Selection_rounded_middle {
+	border: solid 2px rgba(67,179,227,1);
+    border-radius: 0px 0px 0px 0px;
+	-moz-box-shadow: inset 0px 0px 5px rgba(0,0,0,0.7);
+    -webkit-box-shadow: inset 0px 0px 5px rgba(0,0,0,0.7);
+	box-shadow: inset 0px 0px 5px rgb(0,0,0,0.7);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-grad ient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+.Progress_Selection_rounded_right {
+	border: solid 2px rgba(67,179,227,1);
+    border-radius: 5px 5px 5px 5px;
+	-moz-box-shadow: inset 0px 0px 5px rgba(0,0,0,0.7);
+    -webkit-box-shadow: inset 0px 0px 5px rgba(0,0,0,0.7);
+	box-shadow: inset 0px 0px 5px rgb(0,0,0,0.7);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-grad ient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+.Progress_Selection_MiddleRound {
+	border: solid 2px rgba(67,179,227,1);
+    border-radius: 0px 5px 5px 0px;
+	-moz-box-shadow: inset 0px 0px 5px rgba(0,0,0,0.7);
+    -webkit-box-shadow: inset 0px 0px 5px rgba(0,0,0,0.7);
+	box-shadow: inset 0px 0px 5px rgb(0,0,0,0.7);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-grad ient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.Progress_Selection_AllRounded {
+	border: solid 2px rgba(67,179,227,1);
+    border-radius: 7px 7px 7px 7px;
+	-moz-box-shadow: inset 0px 0px 5px rgba(67,179,227,1);
+    -webkit-box-shadow: inset 0px 0px 5px rgba(67,179,227,1);
+	box-shadow: inset 0px 0px 5px rgb(67,179,227,1);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.Progress_Selection_left {
+	border: solid 2px rgba(67,179,227,1);
+    border-radius: 7px 0px 0px 7px;
+	-moz-box-shadow: inset 0px 0px 5px rgba(67,179,227,1);
+    -webkit-box-shadow: inset 0px 0px 5px rgba(67,179,227,1);
+	box-shadow: inset 0px 0px 5px rgb(67,179,227,1);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+.Progress_Selection_right {
+	border: solid 2px rgba(67,179,227,1);
+    border-radius: 0px 7px 7px 0px;
+	-moz-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+    -webkit-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+	box-shadow: inset 0px 0px 10px rgb(67,179,227,1);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.Progress_Selection_Center {
+	border: solid 2px rgba(67,179,227,1);
+	-moz-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+    -webkit-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+	box-shadow: inset 0px 0px 10px rgb(67,179,227,1);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.Progress_Selection_RoundBtmLft {
+        border-radius: 10px 0px 0px 10px;
+	border: solid 2px rgba(67,179,227,1);
+	-moz-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+    -webkit-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+	box-shadow: inset 0px 0px 10px rgb(67,179,227,1);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.Progress_Selection_RoundBtmRgt {
+        border-radius: 0px 0px 10px 0px;
+	border: solid 2px rgba(67,179,227,1);
+	-moz-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+    -webkit-box-shadow: inset 0px 0px 10px rgba(67,179,227,1);
+	box-shadow: inset 0px 0px 10px rgb(67,179,227,1);
+    background: -moz-linear-gradient(top, rgba(220,220,220,0) 0%, rgba(200,200,200,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,0)), color-stop(100%,rgba(200,200,200,0))); /* Chrome,Safari4+ */
+}
+
+.RoundPaletteRolloverContainer {
+    background: -moz-linear-gradient(top,  rgba(220,111,23,.8) 0%, rgba(220,111,23,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,111,23,.8)), color-stop(100%,rgba(220,111,23,1)));
+}
+
+.Tab_Over{
+	border-radius: 12px 12px 0px 0px;
+	background:-moz-linear-gradient(49.9999% 100% 90deg,
+	rgba(230, 230, 230, 1) 0%,
+	rgba(231, 231, 231, 1) 0.790912%,
+	rgba(244, 244, 244, 1) 23.1539%,
+	rgba(253, 253, 253, 1) 50.872%,
+	rgba(255, 255, 255, 1) 100%);
+	background:-webkit-gradient(linear,49.9999% 100%,49.9999% -0%,
+	color-stop(0, rgba(230, 230, 230, 1)),
+	color-stop(0.00790912, rgba(231, 231, 231, 1)),
+	color-stop(0.231539, rgba(244, 244, 244, 1)),
+	color-stop(0.50872, rgba(253, 253, 253, 1)),
+	color-stop(1, rgba(255, 255, 255, 1)));
+}
+
+
+.Tab_Gradient_Backing{
+	border-radius: 12px 12px 0px 0px;
+	background:-moz-linear-gradient(49.9999% 100% 90deg,
+	rgba(133, 135, 138, 1) 16.3636%,
+	rgba(153, 155, 157, 1) 29.0386%,
+	rgba(226, 227, 227, 1) 77.516%,
+	rgba(255, 255, 255, 1) 100%);
+	background:-webkit-gradient(linear,49.9999% 100%,49.9999% -0%,
+	color-stop(0.163636, rgba(133, 135, 138, 1)),
+	color-stop(0.290386, rgba(153, 155, 157, 1)),
+	color-stop(0.77516, rgba(226, 227, 227, 1)),
+	color-stop(1, rgba(255, 255, 255, 1)));
+	-moz-box-shadow:0px 1px 2px rgba(0, 0, 0, 0.5);
+	-webkit-box-shadow:0px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.Tab_Gradient_Backing_Reversed{
+	border-radius: 14px 14px 0px 0px;
+	background:-moz-linear-gradient(49.9999% 100% 90deg,
+	rgba(255, 255, 255, 1) 16.3636%,
+	rgba(240, 240, 240, 1) 29.0386%,
+	rgba(190, 190, 190, 1) 77.516%,
+	rgba(180, 180, 180, 1) 100%);
+	background:-webkit-gradient(linear,49.9999% 100%,49.9999% -0%,
+	color-stop(0.163636, rgba(255, 255, 255, 1)),
+	color-stop(0.290386, rgba(240, 240, 240, 1)),
+	color-stop(0.77516, rgba(190, 190, 190, 1)),
+	color-stop(1, rgba(180, 180, 180, 1)));
+}
+
+.Tab_Normal{
+	border-radius: 12px 12px 0px 0px;
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(217, 217, 217, 1) 0%,
+	rgba(221, 221, 221, 1) 10.2339%,
+	rgba(230, 230, 230, 1) 42.6148%,
+	rgba(232, 232, 232, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(217, 217, 217, 1)),
+	color-stop(0.102339, rgba(221, 221, 221, 1)),
+	color-stop(0.426148, rgba(230, 230, 230, 1)),
+	color-stop(1, rgba(232, 232, 232, 1)));
+}
+
+
+.Tab_Blue_Backing{
+	border-radius: 12px 12px 0px 0px;
+	background:rgb(147, 216, 255);
+}
+
+
+.Tab_On2{
+	border-radius: 10px 10px 0px 0px;
+	background:-moz-linear-gradient(49.9996% 100% 90deg,
+	rgba(92, 180, 240, 1) 0%,
+	rgba(100, 182, 242, 1) 29.8153%,
+	rgba(40, 167, 229, 1) 61.2977%,
+	rgba(17, 161, 224, 1) 76.3636%,
+	rgba(17, 191, 235, 1) 100%);
+	background:-webkit-gradient(linear,49.9996% 100%,49.9996% -0%,
+	color-stop(0, rgba(92, 180, 240, 1)),
+	color-stop(0.298153, rgba(100, 182, 242, 1)),
+	color-stop(0.612977, rgba(40, 167, 229, 1)),
+	color-stop(0.763636, rgba(17, 161, 224, 1)),
+	color-stop(1, rgba(17, 191, 235, 1)));
+	}
+
+
+.Layer_Palette{
+    	border-radius: 0px 12px 12px 0px;
+	background:-moz-linear-gradient(50% -0% -90deg,
+	rgba(173, 173, 173, 1) 0%,
+	rgba(209, 209, 209, 1) 100%);
+	background:-webkit-gradient(linear,50% -0%,50% 100%,
+	color-stop(0, rgba(173, 173, 173, 1)),
+	color-stop(1, rgba(209, 209, 209, 1)));
+	}
+
+.Speech_Bubble{
+	border-radius: 10px 10px 10px 10px;
+	border:solid 1px rgb(255, 255, 255);
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(204, 217, 235, 1) 0%,
+	rgba(199, 214, 224, 1) 27.8788%,
+	rgba(206, 218, 227, 1) 34.0163%,
+	rgba(222, 228, 232, 1) 52.254%,
+	rgba(232, 233, 236, 1) 72.7515%,
+	rgba(235, 235, 237, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(204, 217, 235, 1)),
+	color-stop(0.278788, rgba(199, 214, 224, 1)),
+	color-stop(0.340163, rgba(206, 218, 227, 1)),
+	color-stop(0.52254, rgba(222, 228, 232, 1)),
+	color-stop(0.727515, rgba(232, 233, 236, 1)),
+	color-stop(1, rgba(235, 235, 237, 1)));
+}
+.Speech_Bubble_Wall {
+	border-radius: 0px 10px 10px 10px;
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(255, 255, 255, 1) 0%,
+	rgba(245, 245, 245, 1) 52.254%,
+	rgba(240, 240, 240, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(255, 255, 255, 0.6)),
+	color-stop(0.4, rgba(255, 255, 255, 0.8)),
+	color-stop(1, rgba(255, 255, 255, 1)));
+}
+
+.Speech_Bubble_Tab{
+	border-radius: 8px 8px 0px 0px;
+	background: rgba(235, 235, 237, 1);
+}
+
+.Palette_Item_Separator{
+	background:-moz-linear-gradient(50% -0% -90deg,
+	rgba(173, 173, 173, 1) 0%,
+	rgba(209, 209, 209, 1) 100%);
+	background:-webkit-gradient(linear,50% -0%,50% 100%,
+	color-stop(0, rgba(173, 173, 173, 1)),
+	color-stop(1, rgba(209, 209, 209, 1)));
+}
+
+.Palette_tab{
+	background:-moz-linear-gradient(0% 50% 0deg,
+	rgba(235, 235, 235, 1) 0%,
+	rgba(231, 231, 232, 1) 100%);
+	background:-webkit-gradient(linear,-49.6081% 50%,149.611% 50%,
+	color-stop(0, rgba(255, 255, 255, 1)),
+	color-stop(0.00769357, rgba(253, 253, 253, 1)),
+	color-stop(0.0104612, rgba(246, 246, 246, 1)),
+	color-stop(0.0121212, rgba(237, 237, 237, 1)),
+	color-stop(1, rgba(229, 229, 230, 1)));
+}
+
+.Palette_tab_LeftEnd_Rounded{
+        border-radius: 120px 0px 0px 0px;
+	background:-moz-linear-gradient(0% 50% 0deg,
+	rgba(235, 235, 235, 1) 0%,
+	rgba(231, 231, 232, 1) 100%);
+	background:-webkit-gradient(linear,-49.6081% 50%,149.611% 50%,
+	color-stop(0, rgba(255, 255, 255, 1)),
+	color-stop(0.00769357, rgba(253, 253, 253, 1)),
+	color-stop(0.0104612, rgba(246, 246, 246, 1)),
+	color-stop(0.0121212, rgba(237, 237, 237, 1)),
+	color-stop(1, rgba(229, 229, 230, 1)));
+}
+
+.HUD_Palette_Base {
+background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(242, 242, 242, 1) 0%,
+	rgba(236, 236, 236, 1) 25.5383%,
+	rgba(221, 221, 221, 1) 58.1046%,
+	rgba(199, 199, 199, 1) 88.9571%,
+	rgba(189, 189, 189, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(242, 242, 242, 1)),
+	color-stop(0.255383, rgba(236, 236, 236, 1)),
+	color-stop(0.581046, rgba(221, 221, 221, 1)),
+	color-stop(0.889571, rgba(199, 199, 199, 1)),
+	color-stop(1, rgba(189, 189, 189, 1)));
+}
+.HUD_Palette_Divider {
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(163, 163, 163, 1) 0%,
+	rgba(186, 186, 186, 1) 10.9091%,
+	rgba(153, 153, 153, 1) 86.0606%,
+	rgba(131, 131, 131, 1) 92.9485%,
+	rgba(105, 105, 105, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(163, 163, 163, 1)),
+	color-stop(0.109091, rgba(186, 186, 186, 1)),
+	color-stop(0.860606, rgba(153, 153, 153, 1)),
+	color-stop(0.929485, rgba(131, 131, 131, 1)),
+	color-stop(1, rgba(105, 105, 105, 1)));
+}
+.HUD_Palette_Tab {
+	background:-moz-linear-gradient(50% -0% -90deg,
+	rgba(255, 255, 255, 1) 0%,
+	rgba(253, 253, 253, 1) 0.769357%,
+	rgba(246, 246, 246, 1) 1.04612%,
+	rgba(237, 237, 237, 1) 1.21212%,
+	rgba(214, 214, 214, 1) 100%);
+	background:-webkit-gradient(linear,50% -0%,50% 100%,
+	color-stop(0, rgba(255, 255, 255, 1)),
+	color-stop(0.00769357, rgba(253, 253, 253, 1)),
+	color-stop(0.0104612, rgba(246, 246, 246, 1)),
+	color-stop(0.0121212, rgba(237, 237, 237, 1)),
+	color-stop(1, rgba(214, 214, 214, 1)));
+	-moz-box-shadow:0px 2px 2px rgba(0, 0, 0, 0.3);
+	-webkit-box-shadow:0px 2px 2px rgba(0, 0, 0, 0.3);
+}
+.HUD_Palette_Background {
+	background:-moz-linear-gradient(50% -0% -90deg,
+	rgba(173, 173, 173, 1) 0%,
+	rgba(184, 184, 184, 1) 7.35121%,
+	rgba(211, 211, 211, 1) 30.2906%,
+	rgba(231, 231, 231, 1) 53.4046%,
+	rgba(243, 243, 243, 1) 76.5982%,
+	rgba(247, 247, 247, 1) 100%);
+	background:-webkit-gradient(linear,50% -0%,50% 100%,
+	color-stop(0, rgba(173, 173, 173, 1)),
+	color-stop(0.0735121, rgba(184, 184, 184, 1)),
+	color-stop(0.302906, rgba(211, 211, 211, 1)),
+	color-stop(0.534046, rgba(231, 231, 231, 1)),
+	color-stop(0.765982, rgba(243, 243, 243, 1)),
+	color-stop(1, rgba(247, 247, 247, 1)));
+	-moz-box-shadow:0px 1px 3px rgba(0, 0, 0, 0.3);
+	-webkit-box-shadow:0px 1px 3px rgba(0, 0, 0, 0.3);
+}
+.HUD_Sim_Background {
+        border-radius: 10px 10px 10px 10px;
+        border:solid 1px rgb(0, 0, 0);
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(199, 207, 219, 1) 5.45455%,
+	rgba(227, 228, 229, 1) 52.7273%,
+	rgba(230, 230, 230, 1) 96.9697%,
+	rgba(255, 255, 255, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0.0545455, rgba(199, 207, 219, 1)),
+	color-stop(0.527273, rgba(227, 228, 229, 1)),
+	color-stop(0.969697, rgba(230, 230, 230, 1)),
+	color-stop(1, rgba(255, 255, 255, 1)));
+	-moz-box-shadow:0px 2px 3px rgba(0, 0, 0, 0.3);
+	-webkit-box-shadow:0px 2px 3px rgba(0, 0, 0, 0.3);
+}
+.Sim_Name_Background {
+        border-radius: 0px 0px 10px 10px;
+	border:solid 1px rgb(0, 0, 0);
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(38, 71, 112, 1) 0%,
+	rgba(83, 124, 162, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(38, 71, 112, 1)),
+	color-stop(1, rgba(83, 124, 162, 1)));
+	-moz-box-shadow:0px 2px 3px rgba(0, 0, 0, 0.3);
+	-webkit-box-shadow:0px 2px 3px rgba(0, 0, 0, 0.3);
+}
+.Panel_Header_Reward {
+	border: none;
+	border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,255,194,1) 0%, rgba(252,252,111,1) 10%, rgba(237,181,46,1) 70%,rgba(217,161,26,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,194,1)), color-stop(10%,rgba(252,252,111,1)), color-stop(70%,rgba(237,181,46,1)), color-stop(100%,rgba(217,161,26,1))); /* Chrome,Safari4+ */
+}
+.Panel_Header {
+	border: none;
+	border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(240,240,240,1) 10%, rgba(240,240,240,1) 70%,rgba(225,225,250,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(10%,rgba(240,240,240,1)), color-stop(70%,rgba(240,240,240,1)), color-stop(100%,rgba(225,225,225,1))); /* Chrome,Safari4+ */
+}
+.Panel_Footer {
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(240,240,240,1) 0%, rgba(210,210,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(240,240,240,1)), color-stop(100%,rgba(210,210,210,1))); /* Chrome,Safari4+ */
+}
+
+.Panel_Background {
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(235,235,235,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(235,235,235,1))); /* Chrome,Safari4+ */
+	}
+
+.Panel_Background_AllRounded {
+    border-radius: 12px 12px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(245,245,245,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(245,245,245,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 2px 5px #000000;
+    -webkit-box-shadow: 0px 2px 5px #000000;
+	box-shadow: 0px 2px 5px rgb(0,0,0);
+}
+
+.Panel_Background_AllSharp {
+    background: -moz-linear-gradient(top, rgba(245,245,245,1) 0%, rgba(215,215,215,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(245,245,245,1)), color-stop(100%,rgba(215,215,215,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px #000000;
+    -webkit-box-shadow: 0px 1px 5px #000000;v
+	box-shadow: 0px 1px 5px rgb(0,0,0);
+}
+
+.Panel_Recessed_Background {
+    border-radius: 10px 10px 10px 10px;
+	-moz-box-shadow: inset  0 2px 10px rgba(100,100,100,0.7);
+    -webkit-box-shadow: inset  0 2px 10px rgba(100,100,100,0.7);
+	box-shadow: inset 0px 2px 10px rgb(100,100,100, 0.7);
+    background: -moz-linear-gradient(top, rgba(220,220,220,1) 0%, rgba(200,200,200,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(220,220,220,1)), color-stop(100%,rgba(200,200,200,1))); /* Chrome,Safari4+ */
+}
+
+.Panel_Recessed_Empty_Background {
+    border-radius: 6px 6px 6px 6px;
+	-moz-box-shadow: inset  0 2px 10px rgba(100,100,100,0.7);
+    -webkit-box-shadow: inset  0 2px 10px rgba(100,100,100,0.7);
+	box-shadow: inset 0px 2px 10px rgba(100,100,100, 0.7);
+    background: -moz-linear-gradient(top, rgba(80,80,80,1) 0%, rgba(65,65,65,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(80,80,80,1)), color-stop(100%,rgba(65,65,65,1))); /* Chrome,Safari4+ */
+}
+
+.Panel_Recessed_Empty_Background_Square {
+	-moz-box-shadow: inset  0 2px 10px rgba(100,100,100,0.7);
+    -webkit-box-shadow: inset  0 2px 10px rgba(100,100,100,0.7);
+	box-shadow: inset 0px 2px 10px rgba(100,100,100, 0.7);
+    background: -moz-linear-gradient(top, rgba(80,80,80,1) 0%, rgba(65,65,65,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(80,80,80,1)), color-stop(100%,rgba(65,65,65,1))); /* Chrome,Safari4+ */
+}
+
+/* the following three styles are meant to stack vertically with eachother and mid section must tile. so no gradients please!*/
+.Panel_flatFill_Top {
+    border-radius: 12px 12px 0px 0px;
+	-moz-box-shadow: 0px 2px 5px #000000;
+    -webkit-box-shadow: 0px 2px 5px #000000;
+	box-shadow: 0px 2px 5px rgb(0,0,0);
+    background-color: rgba(235,235,235,1);
+}
+
+.Panel_flatFill_full {
+    border-radius: 12px 12px 12px 12px;
+	-moz-box-shadow: 0px 2px 5px #000000;
+    -webkit-box-shadow: 0px 2px 5px #000000;
+	box-shadow: 0px 2px 5px rgb(0,0,0);
+    background-color: rgba(235,235,235,1);
+}
+
+.Panel_flatFill_Bottom {
+    border-radius: 0px 0px 12px 12px;
+	-moz-box-shadow: 0px 2px 5px #000000;
+    -webkit-box-shadow: 0px 2px 5px #000000;
+	box-shadow: 0px 2px 5px rgb(0,0,0);
+    background-color: rgba(235,235,235,1);
+}
+
+.Panel_flatFill_middle {
+    border-radius: 0px 0px 0px 0px;
+	-moz-box-shadow: 0px 2px 5px #000000;
+    -webkit-box-shadow: 0px 2px 5px #000000;
+	box-shadow: 0px 2px 5px rgb(0,0,0);
+    background-color: rgba(235,235,235,1);
+}
+
+
+
+.Display_Background {
+    border-radius: 10px 10px 10px 10px;
+	-moz-box-shadow: inset 0px 2px 6px rgba(80,80,80, 0.6);
+	-webkit-box-shadow: inset 0px 2px 6px rgba(80,80,80, 0.6);
+    background: -moz-linear-gradient(top, rgba(250,250,250,1) 0%, rgba(240,240,240,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(250,250,250,1)), color-stop(100%,rgba(240,240,240,1))); /* Chrome,Safari4+ */
+}
+
+.Display_Background2 {
+    border-radius: 10px 10px 0px 0px;
+	-moz-box-shadow: inset 0px 2px 6px rgba(80,80,80, 0.6);
+	-webkit-box-shadow: inset 0px 2px 6px rgba(80,80,80, 0.6);
+    background: -moz-linear-gradient(top, rgba(250,250,250,1) 0%, rgba(240,240,240,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(250,250,250,1)), color-stop(100%,rgba(240,240,240,1))); /* Chrome,Safari4+ */
+}
+
+.Display_Framing{
+	border-radius: 12px 12px 12px 12px;
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(143, 143, 143, 1) 0%,
+	rgba(151, 151, 151, 1) 0.170033%,
+	rgba(180, 180, 180, 1) 0.899768%,
+	rgba(200, 200, 200, 1) 1.62589%,
+	rgba(213, 213, 213, 1) 2.34048%,
+	rgba(217, 217, 217, 1) 3.0303%,
+	rgba(236, 237, 237, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(143, 143, 143, 1)),
+	color-stop(0.00170033, rgba(151, 151, 151, 1)),
+	color-stop(0.00899768, rgba(180, 180, 180, 1)),
+	color-stop(0.0162589, rgba(200, 200, 200, 1)),
+	color-stop(0.0234048, rgba(213, 213, 213, 1)),
+	color-stop(0.030303, rgba(217, 217, 217, 1)),
+	color-stop(1, rgba(236, 237, 237, 1)));
+	}
+
+.Panel_Image_Title_Background {
+    background: -moz-linear-gradient(top, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.85) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,0.8)), color-stop(100%,rgba(255,255,255,0.65))); /* Chrome,Safari4+ */
+}
+.Panel_Image_Title_Background02 {
+    background: -moz-linear-gradient(top, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.65) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,0.9)), color-stop(100%,rgba(255,255,255,0.85))); /* Chrome,Safari4+ */
+   	-moz-box-shadow: 0px 0px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 0px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 0px 5px rgba(0,0,0,0.6);
+}
+
+.Browse_Tile_Recessed_Square {
+-moz-box-shadow:    inset 0 0 10px #626262;
+-webkit-box-shadow: inset 0 0 10px #626262;
+box-shadow:         inset 0 0 10px #626262;
+}
+
+.Browse_Tile_Recessed_Round {
+border-radius: 0px 0px 12px 12px;
+-moz-box-shadow:    inset 0 0 10px #626262;
+-webkit-box-shadow: inset 0 0 10px #626262;
+box-shadow:         inset 0 0 10px #626262;
+}
+
+.Browse_Tile_Highlight {
+border-radius: 0px 0px 12px 12px;
+-moz-box-shadow:    inset 0 0 24px #FFFFFF;
+-webkit-box-shadow: inset 0 0 24px #FFFFFF;
+box-shadow:         inset 0 0 24px #FFFFFF;
+}
+.Browse_Tile_Bar {
+    background: -moz-linear-gradient(top,  rgba(226,190,141,1) 0%, rgba(229,120,19,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(226,190,141,1)), color-stop(100%,rgba(229,120,19,1)));
+    background-color: rgba(255,255,255,1);
+}
+
+.Panel_Breadcrumb_Background {
+	border-radius: 24px 24px 24px 24px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.45) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,0.85)), color-stop(100%,rgba(255,255,255,0.45))); /* Chrome,Safari4+ */
+}
+
+.Progress_Fill {
+	border-radius: 12px 12px 12px 12px;
+	background: -moz-linear-gradient(bottom,  rgba(253,170,43,1) 0%, rgba(255,223,135,1) 90%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(253,170,43,1)), color-stop(90%,rgba(255,223,135,1)));
+}
+
+.Tab_Button_Horizonal_Gradient {
+	border-top: solid 2px rgba(147,216,255,1);
+	background: -moz-linear-gradient(bottom,  rgba(184,210,255,1) 0%, rgba(92,180,240,1) 90%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(184,210,255,1)), color-stop(90%,rgba(92,180,240,1)));
+}
+
+.Tab_Button_Horizonal_Gradient_Orange {
+	border-top: solid 2px rgba(255,214,133,1);
+	background: -moz-linear-gradient(bottom,  rgba(255,204,115,1) 0%, rgba(255,153,42,1) 90%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,204,115,1)), color-stop(90%,rgba(255,153,42,1)));
+}
+.Tab_Button_Horizonal_Gradient_Green {
+	border-top: solid 2px rgba(159,225,113,1);
+	background: -moz-linear-gradient(bottom,  rgba(124,232,125,1) 0%, rgba(80,190,81,1) 90%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(124,232,125,1)), color-stop(90%,rgba(80,190,81,1)));
+}
+
+.Panel_Background_Transparent {
+    border-radius: 12px 12px 12px 12px;
+	\\border: solid 1px rgb(255,255,255);
+    background: -moz-linear-gradient(top, rgba(250,250,250,0.7) 0%, rgba(233,233,233,0.9) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(250,250,250,0.7)), color-stop(100%,rgba(233,233,233,0.9))); /* Chrome,Safari4+ */
+}
+
+.Panel_Background_Updater {
+    border-radius: 8px 8px 8px 8px;
+	\\border: solid 1px rgb(255,255,255);
+    background: -moz-linear-gradient(top, rgba(250,250,250,0.9) 0%, rgba(243,243,243,0.9) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(250,250,250,0.9)), color-stop(100%,rgba(243,243,243,0.9))); /* Chrome,Safari4+ */
+}
+
+.Panel_Background_Transparent_Smallerradius {
+	border-radius: 8px 8px 8px 8px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.45) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,0.85)), color-stop(100%,rgba(255,255,255,0.45))); /* Chrome,Safari4+ */
+}
+
+.Panel_Background_FlatColour {
+	border-radius: 8px 8px 8px 8px;
+    background: -moz-linear-gradient(top, rgba(233,241,244,1) 0%, rgba(217,223,226,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(233,241,244,1)), color-stop(100%,rgba(217,223,226,1))); /* Chrome,Safari4+ */
+}
+
+.BuildingRollover_Recessed_Background {
+    border-radius: 6px 6px 6px 6px;
+	-moz-box-shadow: inset  0 1px 9px rgba(100,100,100,0.65);
+    -webkit-box-shadow: inset  0 1px 9px rgba(100,100,100,0.65);
+	box-shadow: inset 0px 1px 9px rgb(100,100,100, 0.65);
+    background: -moz-linear-gradient(top, rgba(230,230,230,1) 0%, rgba(240,240,240,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(230,230,230,1)), color-stop(100%,rgba(240,240,240,1))); /* Chrome,Safari4+ */
+}
+
+.BuildingRollover_Recessed_Border {
+    border-radius: 9px 9px 9px 9px;
+    -moz-box-shadow: inset  0 1px 6px rgba(100,100,100,0.4);
+    -webkit-box-shadow: inset  0 1px 6px rgba(100,100,100,0.4);
+    box-shadow: inset 0px 1px 6px rgb(100,100,100, 0.4);
+    background: -moz-linear-gradient(top, rgba(250,250,250,1) 0%, rgba(210,210,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(250,250,250,1)), color-stop(100%,rgba(210,210,210,1))); /* Chrome,Safari4+ */
+}
+
+.BuildingRollover_Background {
+    border-radius: 12px 12px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(245,245,245,1) 0%, rgba(215,215,215,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(245,245,245,1)), color-stop(100%,rgba(215,215,215,1))); /* Chrome,Safari4+ */
+	/*-moz-box-shadow: 0px 3px 16px #000000;*/
+    /*-webkit-box-shadow: 0px 3px 16px #000000;*/
+	/*box-shadow: 0px 3px 16px rgb(0,0,0);*/
+}
+
+.BuildingRollover_Background_White {
+    border-radius: 12px 12px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(245,245,245,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(245,245,245,1))); /* Chrome,Safari4+ */
+	/*-moz-box-shadow: 0px 3px 16px #000000;*/
+    /*-webkit-box-shadow: 0px 3px 16px #000000;*/
+	/*box-shadow: 0px 3px 16px rgb(0,0,0);*/
+}
+
+.Achievement_Background_Transparent {
+    border-radius: 15px 15px 15px 15px;
+	border: solid 1px rgb(255,255,255);
+    background: -moz-linear-gradient(top, rgba(250,250,250,0.8) 0%, rgba(190,190,190,0.9) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(240,240,240,0.9)), color-stop(100%,rgba(203,203,203,0.9))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 0px 50px #FFFFFF;
+    -webkit-box-shadow: 0px 0px 50px #FFFFFF;
+	box-shadow: 0px 0px 50px rgb(255,255,255);
+}
+
+.RegionWall_Background_Transparent {
+    border-radius: 8px 8px 8px 8px;
+    background-color: rgba(100,100,100,1);
+}
+
+.RegionWall_Notification_Background_Transparent {
+    border-radius: 8px 8px 8px 8px;
+    background-color: rgba(150,150,150,1);
+}
+.RegionWall_Background_FE {
+    border-radius: 8px 8px 8px 8px;
+    background: -moz-linear-gradient(top, rgba(250,250,250,0.8) 0%, rgba(190,190,190,0.9) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(130,130,130,1)), color-stop(100%,rgba(5,5,5,1))); /* Chrome,Safari4+ */
+}
+
+.RegionPanel_Background_Transparent {
+    border-radius: 8px 8px 8px 8px;
+    background-color: rgba(100,100,100,1);
+}
+
+.GreatWorks_RecessedPanel {
+    border-radius: 8px 8px 8px 8px;
+	-moz-box-shadow: inset  0 1px 5px rgba(100,100,100,0.7);
+    -webkit-box-shadow: inset  0 1px 5px rgba(100,100,100,0.7);
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,250,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+}
+
+.GreatWorks_ProgressBarBackdrop {
+    -moz-box-shadow: inset  0 2px 9px rgba(115,115,115,1);
+    -webkit-box-shadow: inset  0 2px 9px rgba(115,115,115,1);
+    box-shadow: inset 0px 2px 10px rgba(115,115,115,1);
+    background: -moz-linear-gradient(top, rgba(197,197,197,1) 0%, rgba(164,164,164,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(197,197,197,1)), color-stop(100%,rgba(164,164,164,1))); /* Chrome,Safari4+ */
+}
+
+.GreatWorks_ProgressBarGreen {
+    background: -moz-linear-gradient(top,  rgba(76,216,58,1) 0%, rgba(51,129,43,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(76,216,58,1)), color-stop(100%,rgba(51,129,43,1)));
+}
+
+.GreatWorks_ProgressBarRed {
+    background: -moz-linear-gradient(top,  rgba(142,29,28,1) 0%, rgba(235,88,50,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(235,88,50,1)), color-stop(100%,rgba(142,29,28,1)));
+}
+
+.GreatWorks_Complete_IconBG {
+    border-radius: 30px;
+    background-color: rgba(0,0,0,1);
+}
+
+.RegionGreatWorks_BlackGradient {
+    background: -moz-linear-gradient(bottom,  rgba(0,0,0,.8) 0%, rgba(0,0,0,0) 90%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(0,0,0,.8)), color-stop(90%,rgba(0,0,0,0)));
+}
+
+.Panel_Background_DataLayer {
+    border-radius: 9px 9px 9px 9px;
+    background: -moz-linear-gradient(top, rgba(245,245,245,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(245,245,245,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+    -moz-box-shadow: 0px 4px 5px 0px #FFFFFF;
+    box-shadow: 0px 4px 5px 0px rgba(0, 0, 0, .3);
+    -webkit-box-shadow: 0px 4px 5px 0px rgba(0, 0, 0, .3);
+}
+
+.Achievement_Flash {
+    border-radius: 30px;
+    background-color: rgba(255,255,255,0);
+    -moz-box-shadow: 0px 0px 50px #FFFFFF;
+    -webkit-box-shadow: 0px 0px 50px #FFFFFF;
+	box-shadow: 0px 0px 50px rgb(255,255,255);
+}
+.Tooltip_Background {
+    border-radius: 16px;
+	border-color:#969696;
+	border-style:solid;
+	border-width:1px;
+	background-color:#f0f0f0;
+	width:auto;
+	-moz-box-shadow: 0px 2px 7px 0px rgba(0, 0, 0, .5);
+	-webkit-box-shadow: 0px 2px 7px 0px rgba(0, 0, 0, .5);
+	box-shadow: 0px 2px 7px 0px rgba(0, 0, 0, .5);
+}
+
+.Panel_ScrollerBlend {
+    background: -moz-linear-gradient(top, rgba(203,203,203,1) 0%, rgba(203,203,203,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(203,203,203,1)), color-stop(100%,rgba(203,203,203,0))); /* Chrome,Safari4+ */
+}
+.Panel_Shadow {
+    background: -moz-linear-gradient(top, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,0,0,0.4)), color-stop(100%,rgba(0,0,0,0))); /* Chrome,Safari4+ */
+}
+
+.Panel_LipShadow {
+    background: -moz-linear-gradient(top, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,0,0,0.3)), color-stop(100%,rgba(0,0,0,0))); /* Chrome,Safari4+ */
+}
+
+.Panel_Shadow_Background {
+    border-radius: 12px;
+    background-color: rgba(255,255,255,0);
+    -moz-box-shadow: 0px 1px 13px #000000;
+    -webkit-box-shadow: 0px 1px 13px #000000;
+	box-shadow: 0px 1px 13px rgb(0,0,0);
+}
+
+.Panel_Shadow_Background_Squared {
+    background-color: rgba(255,255,255,0);
+    -moz-box-shadow: 0px 1px 13px #000000;
+    -webkit-box-shadow: 0px 1px 13px #000000;
+	box-shadow: 0px 1px 13px rgb(0,0,0);
+}
+
+.Join_Filters_Background {
+    border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(100,100,100,1) 0%, rgba(26,26,26,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(100,100,100,1)), color-stop(100%,rgba(26,26,26,1))); /* Chrome,Safari4+ */
+}
+
+.Join_Filters_Background_Stroke {
+    border-radius: 13px 13px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(26,26,26,1) 0%, rgba(100,100,100,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(26,26,26,1)), color-stop(100%,rgba(100,100,100,1))); /* Chrome,Safari4+ */
+}
+
+.Join_Footer_Background {
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(26,26,26,1) 0%, rgba(100,100,100,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(26,26,26,1)), color-stop(100%,rgba(100,100,100,1))); /* Chrome,Safari4+ */
+}
+
+.Join_Footer_Background_blue {
+    border-radius: 0px 0px 10px 0px;
+    background: -moz-linear-gradient(top, rgba(92,180,240,1) 0%, rgba(92,180,240,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(92,180,240,1)), color-stop(100%,rgba(92,180,240,1))); /* Chrome,Safari4+ */
+}
+
+.Join_Footer_Background_Stroke {
+    border-radius: 0px 0px 13px 13px;
+	background: -moz-linear-gradient(top, rgba(100,100,100,1) 0%, rgba(26,26,26,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(100,100,100,1)), color-stop(100%,rgba(26,26,26,1))); /* Chrome,Safari4+ */
+}
+
+.FE_Inset_Frame_Rounded {
+    border-radius: 12px 12px 12px 12px;
+    background-color: rgba(255,255,255,0);
+	background: -moz-linear-gradient(top, rgba(240,240,240,1) 0%, rgba(200,200,200,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(240,240,240,1)), color-stop(100%,rgba(200,200,200,1))); /* Chrome,Safari4+ */
+   -moz-box-shadow:    inset 0 0 8px rgba(0,0,0,0.6);
+   -webkit-box-shadow: inset 0 0 8px rgba(0,0,0,0.6);
+   box-shadow:         inset 0 0 8px rgba(0,0,0,0.6);
+}
+
+.FE_Inset_Frame {
+    border-radius: 0px 0px 12px 12px;
+    background-color: rgba(255,255,255,0);
+	background: -moz-linear-gradient(top, rgba(230,230,230,1) 0%, rgba(200,200,200,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(230,230,230,1)), color-stop(100%,rgba(200,200,200,1))); /* Chrome,Safari4+ */
+   -moz-box-shadow:    inset 0 0 8px rgba(0,0,0,0.5);
+   -webkit-box-shadow: inset 0 0 8px rgba(0,0,0,0.5);
+   box-shadow:         inset 0 0 8px rgba(0,0,0,0.5);
+}
+
+.Leaderboards_Header_Background {
+    border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+}
+
+.Leaderboards_Header_Background_Stroke {
+    border-radius: 13px 13px 0px 0px;
+	background: -moz-linear-gradient(top, rgba(230,230,230,1) 0%, rgba(255,255,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(230,230,230,1)), color-stop(100%,rgba(255,255,255,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+}
+
+.Leaderboards_Subhead_Background {
+    border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,176,110,1) 0%, rgba(255,110,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,176,110,1)), color-stop(100%,rgba(255,110,0,1))); /* Chrome,Safari4+ */
+	#-moz-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+    #-webkit-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+	#box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+}
+
+.Leaderboards_Footer_Background {
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+}
+
+.Leaderboards_Footer_Background_Stroke {
+    border-radius: 0px 0px 13px 13px;
+	background: -moz-linear-gradient(top, rgba(230,230,230,1) 0%, rgba(255,255,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(230,230,230,1)), color-stop(100%,rgba(255,255,255,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+}
+
+.Leaderboards_Sidebar_Background {
+    border-radius: 12px 0px 0px 12px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+}
+
+.Leaderboards_Sidebar_Background_Stroke {
+    border-radius: 13px 0px 0px 13px;
+	background: -moz-linear-gradient(top, rgba(230,230,230,1) 0%, rgba(255,255,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(230,230,230,1)), color-stop(100%,rgba(255,255,255,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 8px rgba(0,0,0,0.7);
+}
+
+.LeaderboardSelectedEntry {
+	border: solid 1px rgb(220,195,0);
+    background: -moz-linear-gradient(top, rgba(255,240,168,0.9) 0%, rgba(255,214,97,0.9) 60%, rgba(255,240,168,0.8) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,244,207,1)), color-stop(60%,rgba(245,196,50,1)), color-stop(100%,rgba(223,163,40,1))); /* Chrome,Safari4+ */
+}
+
+.LeaderboardExpandedEntry {
+	border: solid 1px rgba(150,150,150,0.6);
+    background: -moz-linear-gradient(top, rgba(50,50,50,0.6) 0%, rgba(30,30,30,0.6) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(50,50,50,0.6)), color-stop(100%,rgba(30,30,30,0.6))); /* Chrome,Safari4+ */
+}
+
+.LeaderboardEntryGray {
+	border: solid 1px rgb(204,204,204);
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 75%, rgba(210,210,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(250,250,250,1)), color-stop(75%,rgba(205,205,205,1)), color-stop(100%,rgba(210,210,210,1))); /* Chrome,Safari4+ */
+}
+
+.LeaderboardEntryWhite {
+	border: solid 1px rgb(204,204,204);
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 75%, rgba(255,255,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(255,255,255,1))); /* Chrome,Safari4+ */
+}
+
+.Leaderboards_BG{
+	-moz-box-shadow:  inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+	-webkit-box-shadow: inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+	box-shadow: inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+    background: -moz-linear-gradient(top, rgba(215,220,225,1) 0%, rgba(165,170,175,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(215,220,225,1)), color-stop(100%,rgba(165,170,175,1))); /* Chrome,Safari4+ */
+}
+
+.FE_Challenges_Image_Border {
+	border: solid 4px rgba(255,255,255,1);
+	-moz-box-shadow:  inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+	-webkit-box-shadow: inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+	box-shadow: inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+}
+
+.FE_Challenges_Image_Border_Hover {
+	border: solid 4px rgba(0,175,255,1);
+	-moz-box-shadow:  inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+	-webkit-box-shadow: inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+	box-shadow: inset 0px 4px 6px -1px rgba(0,0,0,0.7);
+}
+
+.FE_Challenges_Description_BG {
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(130,200,255,1) 0%, rgba(100,180,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(130,200,255,1)), color-stop(100%,rgba(100,180,255,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+}
+
+.FE_Map_CityPopup_Header {
+    border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 0px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 0px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 0px 5px rgba(0,0,0,0.6);
+}
+
+.FE_Citylog_Header {
+    border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(90,90,90,1) 0%, rgba(50,50,50,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(90,90,90,1)), color-stop(100%,rgba(50,50,50,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+}
+
+.FE_Citylog_Footer {
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(90,90,90,1) 0%, rgba(50,50,50,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(90,90,90,1)), color-stop(100%,rgba(50,50,50,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+}
+
+.FE_CityLog_EntryBG {
+	border: solid 1px rgb(255,255,255);
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */;
+}
+
+.FE_CityLog_EntryBG_Reverse {
+	border: solid 1px rgb(255,255,255);
+    background: -moz-linear-gradient(top, rgba(230,230,230,1) 0%, rgba(255,255,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(230,230,230,1)), color-stop(100%,rgba(255,255,255,1))); /* Chrome,Safari4+ */
+}
+
+.FE_CityLog_PopupBG {
+	border: solid 1px rgb(255,255,255);
+	border-radius: 12px 12px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+}
+
+.FE_CityLog_PopupBG_Reverse {
+	border: solid 1px rgb(255,255,255);
+	border-radius: 12px 0px 0px 12px;
+    background: -moz-linear-gradient(top, rgba(230,230,230,1) 0%, rgba(255,255,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(230,230,230,1)), color-stop(100%,rgba(255,255,255,1))); /* Chrome,Safari4+ */
+}
+
+.FE_Inset_Frame_Transparent {
+    border-radius: 0px 0px 0px 0px;
+   -moz-box-shadow:    inset 0 0 12px rgba(0,0,0,0.9);
+   -webkit-box-shadow: inset 0 0 12px rgba(0,0,0,0.9);
+   box-shadow:         inset 0 0 12px rgba(0,0,0,0.9);
+}
+
+.FE_Inset_Frame_White_Transparent {
+    border-radius: 0px 0px 0px 0px;
+   -moz-box-shadow:    inset 0 0 10px #FFFFFF;
+   -webkit-box-shadow: inset 0 0 10px #FFFFFF;
+   box-shadow:         inset 0 0 10px #FFFFFF;
+}
+
+.RegionWall_Header_BG {
+    border-radius: 0px 12px 0px 0px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 5%,  rgba(230,230,230,1) 75%, rgba(200,205,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(200,205,210,1))); /* Chrome,Safari4+ */
+}
+
+.RegionWall_ChatMessage_BG {
+    border-radius: 8px 8px 8px 8px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+}
+
+.RegionWall_EventMessage_BG {
+    border-radius: 8px 8px 8px 8px;
+	background: -moz-linear-gradient(top, rgba(200,230,255,1) 0%, rgba(140,210,255,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(200,230,255,1)), color-stop(100%,rgba(140,210,255,1))); /* Chrome,Safari4+ */
+}
+
+.FE_Header_BG {
+    border-radius: 12px 12px 0px 0px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 5%,  rgba(230,230,230,1) 75%, rgba(200,205,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(200,205,210,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.FE_Footer_BG {
+    border-radius: 0px 0px 12px 12px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 5%,  rgba(230,230,230,1) 75%, rgba(200,205,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(200,205,210,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.FE_Squared_BG {
+    border-radius: 0px 0px 0px 0px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 5%,  rgba(230,230,230,1) 75%, rgba(200,205,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(200,205,210,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.FE_Sidebar_Left_BG {
+    border-radius: 12px 0px 0px 12px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 5%,  rgba(230,230,230,1) 75%, rgba(200,205,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(200,205,210,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.FE_Sidebar_Right_BG {
+    border-radius: 0px 12px 12px 0px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 5%,  rgba(230,230,230,1) 75%, rgba(200,205,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(200,205,210,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.FE_Sidebar_All_BG {
+    border-radius: 12px 12px 12px 12px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 5%,  rgba(230,230,230,1) 75%, rgba(200,205,210,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(75%,rgba(230,230,230,1)), color-stop(100%,rgba(200,205,210,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.FE_RegionMap_Challenge_BG {
+    border-radius: 12px 12px 12px 12px;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(240,240,240,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(240,240,240,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.FE_Create_RegionThumbnail_Selected {
+	box-shadow: 		inset 0px 0px 5px rgba(0, 0, 0, 0.6);
+    webkit-box-shadow: 	inset 0px 0px 5px rgba(0, 0, 0, 0.6);
+	box-shadow:         inset 0px 0px 5px rgba(0, 0, 0, 0.6);
+    background: -moz-linear-gradient(top,  rgba(100,220,255,1) 0%, rgba(40,170,240,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(100,220,255,1)), color-stop(100%,rgba(40,170,240,1)));
+}
+
+.Carousel_BG{
+	-moz-box-shadow:    inset 0 0 10px rgba(0,0,0,0.5);
+	-webkit-box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+	box-shadow:         inset 0 0 10px rgba(0,0,0,0.5);
+    background: -moz-linear-gradient(top, rgba(215,220,225,1) 0%, rgba(165,170,175,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(215,220,225,1)), color-stop(100%,rgba(165,170,175,1))); /* Chrome,Safari4+ */
+}
+
+.Rollover_Recessed {
+    border-radius: 8px 8px 8px 8px;
+	-moz-box-shadow: inset  0 1px 5px rgba(100,100,100,0.7);
+    -webkit-box-shadow: inset  0 1px 5px rgba(100,100,100,0.7);
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,250,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+}
+
+.Rollover_Recessed_Squared {
+	-moz-box-shadow: inset  0 1px 5px rgba(100,100,100,0.7);
+    -webkit-box-shadow: inset  0 1px 5px rgba(100,100,100,0.7);
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(230,230,230,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,250,1)), color-stop(100%,rgba(230,230,230,1))); /* Chrome,Safari4+ */
+}
+
+.Rollover_Background {
+    border-radius: 12px 12px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(220,220,220,1) 3%, rgba(245,245,245,1) 50%, rgba(215,215,215,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(3%,rgba(220,220,220,1)), color-stop(50%,rgba(245,245,245,1)), color-stop(100%,rgba(225,225,225,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 7px #000000;
+    -webkit-box-shadow: 0px 1px 7px #000000;
+	box-shadow: 0px 1px 7px rgb(0,0,0);
+}
+
+.Rollover_TextBackground {
+    border-radius: 6px 6px 6px 6px;
+    background-color: rgba(240, 240, 240,1);
+}
+.Rollover_BarChart_Backing {
+    background: -moz-linear-gradient(top, rgba(180,180,180,1) 0%, rgba(200,200,200,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(180,180,140,1)), color-stop(100%,rgba(200,200,200,1))); /* Chrome,Safari4+ */
+}
+
+
+.Rollover_BarChart_BarGreen {
+    background: -moz-linear-gradient(top, rgba(70,235,70,1) 0%, rgba(30,180,30,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(70,235,70,1)), color-stop(100%,rgba(30,180,30,1))); /* Chrome,Safari4+ */
+}
+
+.Rollover_BarChart_BarRed {
+    background: -moz-linear-gradient(top, rgba(235,70,70,1) 0%, rgba(180,30,30,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(235,70,70,1)), color-stop(100%,rgba(180,30,30,1))); /* Chrome,Safari4+ */
+}
+
+.Rollover_BarChart_BarYellow {
+    background: -moz-linear-gradient(top, rgba(235,235,70,1) 0%, rgba(180,180,30,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(235,235,70,1)), color-stop(100%,rgba(180,180,30,1))); /* Chrome,Safari4+ */
+}
+.Updater_Progress_Bar_Back {
+    border-radius: 12px 12px 12px 12px;
+    background-color: rgba(255,255,255,0);
+	background: -moz-linear-gradient(top, rgba(130,130,130,1) 0%, rgba(160,160,160,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(130,130,130,1)), color-stop(100%,rgba(160,160,160,1))); /* Chrome,Safari4+ */
+   -moz-box-shadow:    inset 0 0 8px rgba(0,0,0,0.5);
+   -webkit-box-shadow: inset 0 0 8px rgba(0,0,0,0.5);
+   box-shadow:         inset 0 0 8px rgba(0,0,0,0.5);
+}
+.Updater_Progress_Bar_Green {
+    border-radius: 12px 12px 12px 12px;
+    background-color: rgba(255,255,255,0);
+	background: -moz-linear-gradient(top, rgba(0,210,30,1) 0%, rgba(0,180,10,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,210,30,1)), color-stop(100%,rgba(0,180,10,1))); /* Chrome,Safari4+ */
+   -moz-box-shadow:    inset 0 0 8px rgba(0,0,0,0.5);
+   -webkit-box-shadow: inset 0 0 8px rgba(0,0,0,0.5);
+   box-shadow:         inset 0 0 8px rgba(0,0,0,0.5);
+}
+
+
+/* CHARTS */
+
+.BarChart_Backing {
+	border-radius: 5px 5px 5px 5px;
+    background: -moz-linear-gradient(top, rgba(130,130,130,1) 0%, rgba(180,180,180,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(130,130,130,1)), color-stop(100%,rgba(180,180,180,1))); /* Chrome,Safari4+ */
+    -moz-box-shadow:    inset 0 0 3px rgba(0,0,0,0.3);
+    -webkit-box-shadow: inset 0 0 3px rgba(0,0,0,0.3);
+    box-shadow:         inset 0 0 3px rgba(0,0,0,0.3);
+}
+.BarChart_Backing_Left {
+	border-radius: 5px 0px 0px 5px;
+    background: -moz-linear-gradient(top, rgba(130,130,130,1) 0%, rgba(180,180,180,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(130,130,130,1)), color-stop(100%,rgba(180,180,180,1))); /* Chrome,Safari4+ */
+    -moz-box-shadow:    inset 0 0 3px rgba(0,0,0,0.3);
+    -webkit-box-shadow: inset 0 0 3px rgba(0,0,0,0.3);
+    box-shadow:         inset 0 0 3px rgba(0,0,0,0.3);
+}
+.BarChart_Backing_middle {
+	border-radius: 0px 0px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(130,130,130,1) 0%, rgba(180,180,180,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(130,130,130,1)), color-stop(100%,rgba(180,180,180,1))); /* Chrome,Safari4+ */
+    -moz-box-shadow:    inset 0 0 3px rgba(0,0,0,0.3);
+    -webkit-box-shadow: inset 0 0 3px rgba(0,0,0,0.3);
+    box-shadow:         inset 0 0 3px rgba(0,0,0,0.3);
+}
+.BarChart_Backing_right {
+	border-radius: 0px 5px 5px 0px;
+    background: -moz-linear-gradient(top, rgba(100,100,100,1) 0%, rgba(150,150,150,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(130,130,130,1)), color-stop(100%,rgba(180,180,180,1))); /* Chrome,Safari4+ */
+    -moz-box-shadow:    inset 0 0 3px rgba(0,0,0,0.3);
+    -webkit-box-shadow: inset 0 0 3px rgba(0,0,0,0.3);
+    box-shadow:         inset 0 0 3px rgba(0,0,0,0.3);
+}
+
+.BarChart_BarBlue {
+    border-radius: 5px 5px 5px 5px;
+    background: -moz-linear-gradient(top,  rgba(66,200,253,1) 0%, rgba(40,118,150,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(66,200,253,1)), color-stop(100%,rgba(40,118,150,1)));
+}
+
+.BarChart_BarGreen {
+	border-radius: 5px 5px 5px 5px;
+    background: -moz-linear-gradient(top, rgba(30,200,30,1) 0%, rgba(0,150,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(30,180,30,1)), color-stop(100%,rgba(0,140,0,1))); /* Chrome,Safari4+ */
+}
+.BarChart_BarGreen_Squared {
+    background: -moz-linear-gradient(top, rgba(30,200,30,1) 0%, rgba(0,150,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(30,180,30,1)), color-stop(100%,rgba(0,140,0,1))); /* Chrome,Safari4+ */
+}
+.BarChart_BarLightGreen {
+	border-radius: 5px 5px 5px 5px;
+    background: -moz-linear-gradient(top, rgba(70,255,70,1) 0%, rgba(20,200,20,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(70,235,70,1)), color-stop(100%,rgba(50,200,50,1))); /* Chrome,Safari4+ */
+}
+.BarChart_BarRed {
+	border-radius: 5px 5px 5px 5px;
+    background: -moz-linear-gradient(top, rgba(235,70,70,1) 0%, rgba(180,30,30,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(235,70,70,1)), color-stop(100%,rgba(180,30,30,1))); /* Chrome,Safari4+ */
+}
+.BarChart_BarOrange {
+	border-radius: 5px 5px 5px 5px;
+    background: -moz-linear-gradient(top, rgba(255,204,0,1) 0%, rgba(255,110,2,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,204,70,1)), color-stop(100%,rgba(255,110,2,1))); /* Chrome,Safari4+ */
+}
+
+.BarChart_BarOrange_Squared {
+    background: -moz-linear-gradient(top, rgba(255,204,0,1) 0%, rgba(255,110,2,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,204,70,1)), color-stop(100%,rgba(255,110,2,1))); /* Chrome,Safari4+ */
+}
+
+.BarChart_BarYellow {
+	border-radius: 5px 5px 5px 5px;
+    background: -moz-linear-gradient(top, rgba(235,235,70,1) 0%, rgba(180,180,30,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(235,235,70,1)), color-stop(100%,rgba(180,180,30,1))); /* Chrome,Safari4+ */
+}
+
+.PaletteLabel-Blue {
+	border-radius: 3px 3px 3px 3px;
+	background-color: rgba(0,150,255,1);
+}
+
+.PaletteLabel-Orange {
+	border-radius: 3px 3px 3px 3px;
+	background-color: rgba(255,80,0,1);
+}
+
+.Palette-BlueBar {
+	background-color: rgba(0,150,255,1);
+}
+
+.OrangeGradient {
+    background: -moz-linear-gradient(top, rgba(255,150,0,1) 0%, rgba(255,110,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,150,0,1)), color-stop(100%,rgba(255,110,0,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+    -webkit-box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+	box-shadow: 0px 1px 5px rgba(0,0,0,0.6);
+}
+
+.Black-HorizontalFade {
+    background: -moz-linear-gradient(left, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 90%, rgba(0,0,0,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(0,0,0,1)), color-stop(90%,rgba(0,0,0,1)), color-stop(100%,rgba(0,0,0,0))); /* Chrome,Safari4+ */
+}
+
+.Black-DiagonalFade {
+background: -moz-linear-gradient(45deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 86%, rgba(0,0,0,0) 88%, rgba(0,0,0,0) 100%); /* FF3.6+ */
+background: -webkit-gradient(linear, left bottom, right top, color-stop(0%,rgba(0,0,0,1)), color-stop(86%,rgba(0,0,0,1)), color-stop(88%,rgba(0,0,0,0)), color-stop(100%,rgba(0,0,0,0))); /* Chrome,Safari4+ */
+}
+
+.OpaqueBlack {
+    background: rgba(0,0,0,1);
+}
+
+.Ticker_Image_Background {
+    border-radius: 0px 0px 0px 12px;
+    background-color: rgba(255,255,255,.9);
+}
+
+.Ticker_Image_Background_Right {
+    border-radius: 0px 0px 12px 0px;
+    background-color: rgba(255,255,255,.9);
+}
+
+.GreyGradient {
+    background: -moz-linear-gradworksient(left,  rgba(202,202,202,.8) 0%, rgba(202,202,202,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(202,202,202,.8)), color-stop(100%,rgba(202,202,202,0)));
+}
+
+.FreeTrial_FEUnlockBG {
+	border: solid 1px rgb(255,255,255);
+	border-radius: 60px 60px 60px 60px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(215,215,215,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(215,215,215,1))); /* Chrome,Safari4+ */
+	-moz-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+	box-shadow: 0px 1px 10px rgba(0,0,0,0.7);
+}
+
+.TransparentWindowWithStroke  {
+    border: solid 2px rgba(240,240,240,1);
+    border-radius: 10px 10px 10px 10px;
+    -moz-box-shadow: 0px 0px 10px rgba(0,0,0,0.7), inset 0 0 10px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 0px 10px rgba(0,0,0,0.7), inset 0 0 10px rgba(0,0,0,0.7);
+    box-shadow: 0px 0px 10px rgba(0,0,0,0.7), inner 0 0 10px rgba(0,0,0,0.7);
+}
+
+.FE-MainPanelNavContainer  {
+    border-radius: 10px 10px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(170,170,170,1) 0%, rgba(240,240,240,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(170,170,170,1)), color-stop(100%,rgba(240,240,240,1))); /* Chrome,Safari4+ */
+}
+
+
+
+
+
+
+/* Start of old styles */
+
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+.DO_NOT_USE_BELOW_HERE {
+    background-color: rgba(255,0,0,1);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+.whiteFadeGradient {
+    border-radius: 0px 0px 6px 6px;
+    background: -moz-linear-gradient(top,  rgba(255,255,255,.1) 0%, rgba(255,255,255,.25) 25%, rgba(255,255,255,.4) 50%, rgba(255,255,255,.62) 75%, rgba(255,255,255,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,.1)), color-stop(25%,rgba(255,255,255,.25)), color-stop(50%,rgba(255,255,255,.4)), color-stop(75%,rgba(255,255,255,.62)), color-stop(100%,rgba(255,255,255,1)));
+
+}
+.PopupBackBase1 {
+    border-radius: 10px;
+    background: -moz-linear-gradient(bottom,  rgba(255,255,255,.1) 0%, rgba(255,255,255,.25) 25%, rgba(255,255,255,.4) 50%, rgba(255,255,255,.62) 75%, rgba(255,255,255,1) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,.1)), color-stop(25%,rgba(255,255,255,.25)), color-stop(50%,rgba(255,255,255,.4)), color-stop(75%,rgba(255,255,255,.62)), color-stop(100%,rgba(255,255,255,1)));
+
+}
+.PopupBackBase2shadow {
+    border-radius: 10px;
+    background-color: rgba(255,255,255,0);
+    -moz-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1);
+    -webkit-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1)
+    -moz-box-shadow: 0px 0px 9px #000000;
+    -webkit-box-shadow: 0px 0px 9px #000000;
+
+}
+.PopupBackBase3 {
+    border-radius: 10px;
+    -moz-box-shadow: inset 0 0 3px 3px rgba(255,255,255,.1);
+    -webkit-box-shadow: inset 0 0 3px 3px rgba(255,255,255,.1)
+
+}
+.PopupBackSpeakBubble {
+    border-radius: 14px;
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1);
+    -webkit-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1)
+    -moz-box-shadow: 0px 3px 6px rgba(0,0,0,.5);
+    -webkit-box-shadow: 0px 3px 6px rgba(0,0,0,.5);
+}
+.PopupBackBaseReward {
+    border-radius: 8px;
+    width: 100%; height: 100%; background-color: rgba(74,178,96,1);
+}
+
+}
+.TopBottomTranspWhiteGrad {
+    background: -moz-linear-gradient(bottom,  rgba(255,255,255,.8) 0%, rgba(255,255,255,.82) 35%, rgba(255,255,255,0) 90%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,.8)), color-stop(35%,rgba(255,255,255,.82)), color-stop(90%,rgba(255,255,255,0)));
+}
+
+.TopBottomTranspBlueGrad {
+    background: -moz-linear-gradient(bottom,  rgba(30,188,255,1) 0%, rgba(30,188,255.82) 35%, rgba(30,188,255,0) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(30,188,255,1)), color-stop(35%,rgba(30,188,255,.8)), color-stop(90%,rgba(30,188,255,0)));
+}
+
+.TopBottomTranspWhiteSoftGrad {
+    background: -moz-linear-gradient(bottom,  rgba(255,255,255,1) 0%, rgba(255,255,255,.62) 25%, rgba(255,255,255,.4) 50%, rgba(255,255,255,.1) 75%, rgba(255,255,255,0) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,1)), color-stop(25%,rgba(255,255,255,.62)), color-stop(50%,rgba(255,255,255,.4)), color-stop(75%,rgba(255,255,255,.1)), color-stop(100%,rgba(255,255,255,0)));
+}
+
+.TopBottomTranspBlueSoftGrad {
+    background: -moz-linear-gradient(bottom,  rgba(63,100,126,1) 0%, rgba(63,100,126,.62) 25%, rgba(63,100,126,.4) 50%, rgba(63,100,126,.1) 75%, rgba(63,100,126,0) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(63,100,126,1)), color-stop(25%,rgba(63,100,126,.62)), color-stop(50%,rgba(63,100,126,.4)), color-stop(75%,rgba(63,100,126,.1)), color-stop(100%,rgba(63,100,126,0)));
+}
+
+.TopBottomHudDashGradient {
+    background: -moz-linear-gradient(bottom,  rgba(255,255,255,1) 0%, rgba(255,255,255,1) 55%, rgba(255,255,255,.8) 65%, rgba(255,255,255,.4) 75%, rgba(255,255,255,.2) 85%,rgba(255,255,255,0) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,1)), color-stop(55%,rgba(255,255,255,1)), color-stop(65%,rgba(255,255,255,.8)), color-stop(75%,rgba(255,255,255,.4)), color-stop(85%,rgba(255,255,255,.2)),color-stop(100%,rgba(255,255,255,0)));
+}
+
+.TopBottomWhiteBlueGrad {
+    background: -moz-linear-gradient(bottom,  rgba(91,132,157,.8) 0%, rgba(255,255,255,.8) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(91,132,157,.8)), color-stop(100%,rgba(255,255,255,.8)));
+    border-bottom: solid 2px rgba(255,255,255,1);
+    border-top: solid 1px rgba(255,255,255,.3);
+}
+
+.LeftRightWhiteTranspGrad {
+    background: -moz-linear-gradient(left,  rgba(255,255,255,.8) 0%, rgba(255,255,255,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,.8)), color-stop(100%,rgba(255,255,255,0)));
+}
+
+.LeftRightRedTranspGrad {
+    background: -moz-linear-gradient(left,  rgba(255,0,0,.8) 0%, rgba(255,0,0,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,0,0,.8)), color-stop(100%,rgba(255,0,0,0)));
+}
+
+.LeftRightGreenTranspGrad {
+    background: -moz-linear-gradient(left,  rgba(0,255,0,.8) 0%, rgba(0,255,0,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(0,255,0,.8)), color-stop(100%,rgba(0,255,0,0)));
+}
+
+.LeftRightBlueTranspGrad {
+    background: -moz-linear-gradient(left,  rgba(0,0,255,.8) 0%, rgba(0,0,255,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(0,0,255,.8)), color-stop(100%,rgba(0,0,255)));
+}
+
+.LeftRightDrkBlueTranspGrad {
+    background: -moz-linear-gradient(left,  rgba(20,30,50,.8) 0%, rgba(20, 30, 50,.3) 70%, rgba(20,30,50,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(20,30,50,.8)), color-stop(70%,rgba(20,30,50,.3)), color-stop(100%,rgba(20,30,50,0)));
+}
+
+.LeftRightDrkBlueTranspGradRnd {
+	border-radius: 6px 0px 0px 0px;
+    background: -moz-linear-gradient(left,  rgba(20,30,50,.8) 0%, rgba(20, 30, 50,.3) 70%, rgba(20,30,50,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(20,30,50,.8)), color-stop(70%,rgba(20,30,50,.3)), color-stop(100%,rgba(20,30,50,0)));
+}
+
+.LeftRightYellowTranspGrad {
+    background: -moz-linear-gradient(left,  rgba(255,255,0,.8) 0%, rgba(255,255,0,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,0,.8)), color-stop(100%,rgba(255,255,0)));
+}
+
+.MissionGrayGradient {
+    background: -moz-linear-gradient(left,  rgba(97,97,97,.8) 0%, rgba(97,97,97,.8) 40%), rgba(97,97,97,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(97,97,97,.8)),color-stop(40%,rgba(97,97,97,.8)), color-stop(100%,rgba(97,97,97,0)));
+}
+
+.NewsWireTickerGrayGRadienmt {
+    background: -moz-linear-gradient(left,  rgba(97,97,97,.8) 0%, rgba(97,97,97,.8) 20%), rgba(97,97,97,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(97,97,97,.8)),color-stop(40%,rgba(97,97,97,.8)), color-stop(100%,rgba(97,97,97,0)));
+
+}
+
+.NewsWireWhiteOutline {
+    border-radius: 4px;
+    border: solid 2px #ffffff;
+    background-color: rgba(255,255,255,0);
+
+}
+.NewsWirePocket {
+    border-radius: 4px;
+    background-color: rgba(255,255,255,.7);
+    border-radius: 0px 0px 4px 4px;
+}
+
+.NewsWireCardBack {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,250,1)));
+    border-radius: 4px;
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: 0px 0px 15px #000000;
+    -webkit-box-shadow: 0px 0px 15px #000000;
+}
+
+.NewsWireCardLRGBackground{
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,250,1)));
+    border-radius: 8px;
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: 0px 0px 15px #000000;
+    -webkit-box-shadow: 0px 0px 15px #000000;
+    border-radius: 18px 4px 4px 4px;
+
+}
+.HUDMenuButtonSelectedRing {
+    border-radius: 5000px; /* makes sure the div will always be round when scaled up */
+    border: solid 2px white;
+    padding: 1px;
+}
+
+.HUDWhiteOutline {
+    border-radius: 9px;
+    border: solid 2px white;
+}
+
+.DialogTextOutline {
+    border-radius: 9px;
+    border: solid 2px rgb(73,161,200);
+}
+
+.DialogBody {
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(160,200,244,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(160,200,244,1)));
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(160,200,244,1))); /* Chrome,Safari4+ */
+   	background: -o-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(160,200,244,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(160,200,244,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(160,200,244,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#e0e8fb', endColorstr='#a0c8f4',GradientType=0 ); /* IE6-9 */
+    border-radius: 10px 10px 10px 10px;
+}
+
+.ProgressBarContainer {
+    border-radius: 3px;
+    border: solid 1px rgb(110,112,118);
+}
+
+.BudgetBlackCircle {
+    border-radius: 900px;
+    background: rgb(255,255,255);
+    border: solid 2px rgb(97,97,97);
+    box-shadow: 0px 0px 9px rgb(0,0,0);
+    -webkit-box-shadow: 0px 0px 9px rgb(0,0,0);
+}
+
+.BudgetRedBox {
+    border-radius: 8px;
+    border: solid 1px rgb(194,93,62);
+	background: -moz-linear-gradient(top,  rgba(194,93,62,1) 0%, rgba(227,136,103,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(194,93,62,1)), color-stop(100%,rgba(227,136,103,1)));
+}
+
+.BudgetGreenBox {
+    border-radius: 8px;
+    border: solid 1px rgb(78,159,70);
+	background: -moz-linear-gradient(top,  rgba(78,159,70,1) 0%, rgba(125,206,117,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(78,159,70,1)), color-stop(100%,rgba(125,206,117,1)));
+}
+
+
+.BudgetRedBar {
+    border-radius: 4px;
+	background: -moz-linear-gradient(top,  rgba(227,136,103,1) 0%, rgba(194,93,62,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(227,136,103,1)), color-stop(100%,rgba(194,93,62,1)));
+	box-shadow: 0px 0px 4px rgba(0,0,0,.5);
+    -webkit-box-shadow: 0px 0px 9px rgba(0,0,0,.5);
+}
+
+.BudgetGreenBar {
+    border-radius: 4px;
+	background: -moz-linear-gradient(top,  rgba(125,206,117,1) 0%, rgba(78,159,70,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(125,206,117,1)), color-stop(100%,rgba(78,159,70,1)));
+	box-shadow: 0px 0px 4px rgba(0,0,0,.5);
+    -webkit-box-shadow: 0px 0px 9px rgba(0,0,0,.5);
+}
+
+
+
+.RoundWhiteBox {
+    border-radius: 8px;
+    border: solid 1px #3f4449;
+    background-color: rgba(255,255,255,.64);
+}
+
+.RoundWhiteBox2{
+    border-radius: 8px;
+    border: solid 1px #96999c;
+	background-color: rgba(255,255,255,.64);
+}
+
+.RoundWhiteBox_Solid {
+    border-radius: 8px;
+    background: -moz-linear-gradient(top,  rgba(239,239,239,1) 0%, rgba(220,230,250,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,239,239,1)), color-stop(100%,rgba(220,230,250,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#efefef', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+
+}
+.RoundWhiteBoxInnerShadow {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,250,1)));
+    border-radius: 8px;
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: 0px 0px 15px #000000;
+    -webkit-box-shadow: 0px 0px 15px #000000;
+}
+.RoundWhiteChatBox {
+    border-radius: 8px;
+    border: solid 1px #e1e1e1;
+    background-color: rgba(255,255,255,.6);
+
+}
+
+.RoundGreyFlatTopBox {
+    border-radius: 8px;
+    border: solid 1px #3f4449;
+    background-color: rgba(130,130,130,.7);
+    border-radius: 0px 0px 8px 8px;
+}
+
+.RoundGreyBox {
+    border-radius: 8px;
+    border: solid 1px #3f4449;
+	background-color: rgba(130,130,130,.7);
+}
+
+.InfoBox {
+    border-radius: 6px;
+	background: -moz-linear-gradient(top,  rgba(91,101,113,1) 0%, rgba(80,83,94,.5) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(91,101,113,1)), color-stop(100%,rgba(80,83,94,.5)));
+}
+
+.LotFill {
+    background-color: rgba(241,203,50,1);
+    border-radius: 6px;
+    -moz-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1);
+    -webkit-box-shadow: inset 0 0 5px 5px rgba(255,255,255,.5);
+}
+
+.line-separator{
+    background-color: rgba(194,199,208,1);
+}
+
+.line-separatorGradient{
+	background: -moz-linear-gradient(left,  rgba(100,100,100,0) 0%, rgba(100,100,100,.6) 40%,  rgba(100,100,100,.6) 60%,  rgba(100,100,100,0) 100%);
+	background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(100,100,100,0)), color-stop(40%,rgba(100,100,100,.6)), color-stop(60%,rgba(100,100,100,.6)), color-stop(100%,rgba(100,100,100,0)));
+}
+
+.MyGamesPanelTop {
+    background: -moz-linear-gradient(top,  rgba(38,247,214,.8) 0%, rgba(0,207,191,.8) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(38,247,214,.8)), color-stop(100%,rgba(0,207,191,.8)));
+    overflow: hidden;
+    border-radius: 8px 8px 0px 0px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.MainPanelTop {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(220,230,250,1)));
+    overflow: hidden;
+    border-radius: 8px 8px 0px 0px;
+    -moz-box-shadow: 0px 3px 5px rgba(0,0,0,0.46);
+    -webkit-box-shadow: 0px 3px 5px rgba(0,0,0,0.46);
+}
+
+.MainPanelBody {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(220,230,250,1)));
+    overflow: hidden;
+    border-radius: 0px 0px 0px 0px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.MainPanelFooter {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,250,1)));
+    overflow: hidden;
+    border-radius: 0px 0px 8px 8px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.MainPanelFooterSeparator {
+    background: -moz-linear-gradient(left,  rgba(0,0,0,0) 0%, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(0,0,0,0)), color-stop(50%,rgba(0,0,0,1)), color-stop(100%,rgba(0,0,0,0)));
+    overflow: hidden;
+    border-radius: 0px 0px 8px 8px;
+}
+
+.MainPanelSubHeadBG {
+    background: -moz-linear-gradient(left,  rgba(230,237,248,0) 0%, rgba(230,237,248,1) 25%, rgba(230,237,248,1) 75%, rgba(230,237,248,0) 100%);
+	background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,0)), color-stop(20%,rgba(255,255,255,.7)), color-stop(80%,rgba(255,255,255,.7)), color-stop(100%,rgba(255,255,255,0)));
+    overflow: hidden;
+    border-radius: 0px 0px 0px 0px;
+}
+
+.MainPanelSubHeadFrame {
+    border: solid 1px rgba(125,125,125,1);
+    border-radius: 36px 36px 36px 36px;
+}
+
+.GameSlotBG {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,250,1)));
+    background: -moz-linear-gradient(left,  rgba(0,0,0,0) 0%, rgba(,,,1) 25%, rgba(,,,1) 75%, rgba(,,,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(125,125,125,0)), color-stop(50%,rgba(125,125,125,0)), color-stop(100%,rgba(125,125,125,0)));
+    overflow: hidden;
+    border-radius: 0px 0px 0px 0px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.GameSlotActiveBG {
+    background: -moz-linear-gradient(top,  rgba(0,220,255,1) 0%, rgba(0,170,255,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(220,230,250,1)));
+    overflow: hidden;
+    border-radius: 0px 0px 0px 0px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.SubNavButtonBG {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(220,230,250,1)));
+    overflow: hidden;
+    border-radius: 18px 18px 18px 18px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 4px #000000;
+}
+
+.HUDElementsBG {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(220,230,250,1)));
+    overflow: hidden;
+    border-radius: 16px 16px 16px 16px;
+}
+
+.HUDElementsshadow {
+    background-color: rgba(0,0,0,1);
+    border-radius: 18px 18px 18px 18px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.SubNavButtonActiveBG {
+    background: -moz-linear-gradient(top,  rgba(0,220,255,1) 0%, rgba(0,170,255,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,220,255,1)), color-stop(100%,rgba(0,170,255,1)));
+    overflow: hidden;
+    border-radius: 18px 18px 18px 18px;
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.NotificationBG {
+    background: -moz-linear-gradient(top,  rgba(255,0,0,1) 0%, rgba(184,0,0,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,0,0,1)), color-stop(100%,rgba(184,0,0,1)));
+    overflow: hidden;
+
+    /* These values had to be tuned so that the shadows wouldn't break at different resolutions. Edit with Caution */
+    border-radius: 7px 7px 7px 7px;
+    -moz-box-shadow: 0px 1px 1px 1px rgba(0,0,0,0.7);
+    -webkit-box-shadow: 0px 1px 1px 1px rgba(0,0,0,0.7);
+    /* end special tuning */
+}
+
+.RegionDataBox{
+	border-radius: 12px;
+	background-color: rgba(255,255,255,.64);
+	border: none;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(227,228,229,1) 95%, rgba(208,222,233,1) 100%); /* FF3.6+ */
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(95%,rgba(227,228,229,1)), color-stop(100%,rgba(208,222,233,1))); /* Chrome,Safari4+ */
+	box-shadow: 0px 4px 5px 0px rgba(0, 0, 0, .3);
+	-webkit-box-shadow: 0px 4px 5px 0px rgba(0, 0, 0, .3);
+}
+
+.RegionDataBoxHeader{
+	border: none;
+	border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(240,240,240,1) 10%, rgba(240,240,240,1) 70%,rgba(225,225,250,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(10%,rgba(240,240,240,1)), color-stop(70%,rgba(240,240,240,1)), color-stop(100%,rgba(225,225,225,1))); /* Chrome,Safari4+ */
+}
+
+.RegionDataBoxInnerBox{
+	border-radius: 6px;
+	background-color: rgba(255,255,255,.64);
+	border: solid 1px #dadbdc;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(227,228,229,1) 100%); /* FF3.6+ */
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(227,228,229,1))); /* Chrome,Safari4+ */
+}
+
+.RegionDataBox_PowerTrade{
+	border-radius: 8px;
+	background-color: rgba(255,255,255,.64);
+	border: solid 1px #dadbdc;
+	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(210,210,210,1) 100%); /* FF3.6+ */
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(210,210,210,1))); /* Chrome,Safari4+ */
+	box-shadow: 0px 2px 2px 0px rgba(0, 0, 0, .3);
+	-webkit-box-shadow: 0px 2px 2px 0px rgba(0, 0, 0, .3);
+}
+
+.RegionDataBoxFooter{
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(240,240,240,1) 0%, rgba(220,220,220,1) 5%, rgba(200,200,200,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(240,240,240,1)), color-stop(5%,rgba(220,220,220,1)), color-stop(100%,rgba(200,200,200,1))); /* Chrome,Safari4+ */
+}
+
+.RegionDataBoxAlert{
+	border-radius: 0px 0px 12px 0px;
+	background: -moz-linear-gradient(top,  rgba(255,143,52,1) 0%, rgba(255,143,52,1) 100%);
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,143,52,1)), color-stop(100%,rgba(255,143,52,1)));
+}
+
+.RegionDataBoxAlert_Half{
+	border-radius: 0px 0px 12px 12px;
+	background: -moz-linear-gradient(top,  rgba(255,143,52,1) 0%, rgba(255,143,52,1) 100%);
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,143,52,1)), color-stop(100%,rgba(255,143,52,1)));
+}
+
+.RegionDataBoxAlert_rounded{
+	border-radius: 8px;
+	background: -moz-linear-gradient(top,  rgba(255,143,52,1) 0%, rgba(255,143,52,1) 100%);
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,143,52,1)), color-stop(100%,rgba(255,143,52,1)));
+}
+
+.RegionRoundButtonOuline {
+    border-radius: 5000px; /* makes sure the div will always be round when scaled up */
+    border: none;
+    background: -moz-linear-gradient(top,  rgba(223,223,223,1) 0%, rgba(234,234,234,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(223,223,223,1)), color-stop(100%,rgba(234,234,234,1)));
+
+}
+
+.RegionHorzTranspWhiteTranspGrad {
+	background: -moz-linear-gradient(left,  rgba(255,255,255,0) 0%, rgba(255,255,255,.7) 20%,  rgba(255,255,255,.7) 80%,  rgba(255,255,255,0) 100%);
+	background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,0)), color-stop(20%,rgba(255,255,255,.7)), color-stop(80%,rgba(255,255,255,.7)), color-stop(100%,rgba(255,255,255,0)));
+    border-top: solid 1px rgba(0,0,0,.46);
+    border-bottom: solid 1px rgba(0,0,0,.46);
+}
+
+.RoundWhiteRegionProfileOutline {
+    border-radius: 2px;
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: 2px 2px 5px #ababab;
+    -webkit-box-shadow: 2px 2px 5px #ababab;
+}
+
+.RegionBackgroundPanel {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(180,217,235,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(180,217,235,1)));
+    border-radius: 8px;
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: inset 0 0 5px 5px rgba(255,255,255,0.7);
+    -webkit-box-shadow: inset 0 0 5px 5px rgba(255,255,255,0.7)
+}
+
+.RegionGreatWorks_WhitePanel {
+    border-radius: 12px;
+    background-color: rgba(255,255,255,1);
+}
+
+
+.RegionGreatWorks_WhiteFooter {
+    background: -moz-linear-gradient(top,  rgba(255,255,255,1) 0%, rgba(255,255,255,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(255,255,255,1)));
+    overflow: hidden;
+    border-radius: 0px 0px 8px 8px;
+}
+
+.RegionGreatWorks_WhiteGradient {
+    background: -moz-linear-gradworksient(left,  rgba(255,255,255,.8) 0%, rgba(255,255,255,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,.8)), color-stop(100%,rgba(255,255,255,0)));
+}
+
+.RightWhiteGradient {
+    background: -moz-linear-gradient(right,  rgba(255,255,255,.8) 0%, rgba(255,255,255,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,0)), color-stop(100%,rgba(255,255,255,.8)));
+    border-radius: 0px 8px 8px 0px;
+}
+
+.LeftWhiteGradient {
+    background: -moz-linear-gradient(left,  rgba(255,255,255,.8) 0%, rgba(255,255,255,0) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,.8)), color-stop(100%,rgba(255,255,255,0)));
+    border-radius: 8px 0px 0px 8px;
+}
+
+.RegionGreatWorks_YellowGradient {
+    background: -moz-linear-gradient(left,  rgba(255,213,99,.8) 0%, rgba(255,213,99,0) 50%, rgba(255,213,99,.8) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,213,99,.8)), color-stop(50%,rgba(255,213,99,0)), color-stop(100%,rgba(255,213,99,.8)));
+}
+
+.RegionGreatWorks_YellowGradientInverse {
+    background: -moz-linear-gradient(left,  rgba(255,213,99,0.2) 0%, rgba(255,213,99,1) 50%, rgba(255,213,99,0.2) 100%);
+    background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,213,99,0.2)), color-stop(50%,rgba(255,213,99,1)), color-stop(100%,rgba(255,213,99,0.2)));
+}
+
+
+.RegionGreatWorks_YellowPanelCutoffFooter {
+    background: -moz-linear-gradient(top,  rgba(255,213,99,1) 0%, rgba(255,213,99,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,213,99,1)), color-stop(100%,rgba(255,213,99,1)));
+    overflow: hidden;
+    border-radius: 0px 0px 8px 8px;
+}
+
+.RegionGreatWorks_YellowPanelCutoffTop {
+    background: -moz-linear-gradient(top,  rgba(255,213,99,1) 0%, rgba(255,213,99,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,213,99,1)), color-stop(100%,rgba(255,213,99,1)));
+    overflow: hidden;
+    border-radius: 8px 8px 0px 0px;
+}
+
+.RegionGreatWorks_YellowPanelCutoffTopfade {
+    background: -moz-linear-gradient(top,  rgba(255,213,99,1) 0%, rgba(255,255,255,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,213,99,1)), color-stop(100%,rgba(255,255,255,1)));
+    overflow: hidden;
+    border-radius: 12px 12px 0px 0px;
+}
+
+.RegionGreatWorks_YellowPanelCutoffBottomfade {
+    background: -moz-linear-gradient(top,  rgba(255,255,255,1) 0%, rgba(255,213,99,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(255,213,99,1)));
+    overflow: hidden;
+    border-radius: 0px 0px 12px 12px;
+}
+
+.RegionGreatWorks_ProgressBarAmber {
+    background: -moz-linear-gradient(top,  rgba(255,195,146,1) 0%, rgba(255,110,20,1) 50%, rgba(255,195,146,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,195,146,1)), color-stop(50%,rgba(255,110,20,1)), color-stop(100%,rgba(255,195,146,1)));
+}
+
+.RegionGreatWorks_ProgressBarBackdrop  {
+    background: -moz-linear-gradient(top,  rgba(246,246,246,1) 0%, rgba(208,208,208,1) 50%, rgba(246,246,246,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(246,246,246,1)), color-stop(50%,rgba(208,208,208,1)), color-stop(100%,rgba(246,246,246,1)));
+    border: solid 1px rgba(172,172,172,1);
+}
+
+.RegionGreatWorks_ProgressBarBackdropRed  {
+    background: -moz-linear-gradient(top,  rgba(246,246,246,1) 0%, rgba(208,208,208,1) 50%, rgba(246,246,246,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(246,246,246,1)), color-stop(50%,rgba(208,208,208,1)), color-stop(100%,rgba(246,246,246,1)));
+    border: solid 1px rgba(235,57,57,1);
+}
+
+.RegionGreatWorksResourceBarBackdrop {
+    border-radius: 5000px; /* makes sure the div will always be round when scaled up */
+    border: solid 1px #acacac;
+    background: -moz-linear-gradient(top,  rgba(246,246,246,1) 0%, rgba(208,208,208,1) 50%, rgba(246,246,246,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(246,246,246,1)), color-stop(50%,rgba(208,208,208,1)), color-stop(100%,rgba(246,246,246,1)));
+
+}
+
+.RegionGreatWorksResourceBarBackdropRed {
+    border-radius: 5000px; /* makes sure the div will always be round when scaled up */
+    border: solid 1px rgba(235,57,57,1);
+    background: -moz-linear-gradient(top,  rgba(246,246,246,1) 0%, rgba(208,208,208,1) 50%, rgba(246,246,246,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(246,246,246,1)), color-stop(50%,rgba(208,208,208,1)), color-stop(100%,rgba(246,246,246,1)));
+
+}
+
+.RegionButtonBar {
+    background: -moz-linear-gradient(bottom,  rgba(255,255,255,1) 0%, rgba(255,255,255,.62) 60%, rgba(255,255,255,.4) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,1)), color-stop(60%,rgba(255,255,255,.62)), color-stop(100%,rgba(255,255,255,.4)));
+    overflow: hidden;
+    border-radius: 0px 0px 0px 0px;
+    border: solid 2px rgba(255,255,255,1);
+    -moz-box-shadow: 0px 2px 8px #000000;
+    -webkit-box-shadow: 0px 2px 8px #000000;
+}
+
+.RegionGreatWorksTitleBar {
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(100%,rgba(220,230,250,1)));
+    overflow: hidden;
+    border-radius: 8px 8px 0px 0px;
+}
+
+.RegionGreatWorks_BlueStatusBar {
+    background: -moz-linear-gradient(top,  rgba(85,177,213,1) 0%, rgba(39,116,148,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(85,177,213,1)), color-stop(100%,rgba(39,116,148,1)));
+}
+
+.RegionGreatWorks_BlueShelfTop {
+    background: -moz-linear-gradient(top,  rgba(179,233,255,1) 0%, rgba(152,214,239,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(179,233,255,1)), color-stop(100%,rgba(152,214,239,1)));
+}
+
+.RegionGreatWorks_BlueShelfBottom {
+    background: -moz-linear-gradient(top,  rgba(85,177,213,1) 0%, rgba(39,116,148,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(85,177,213,1)), color-stop(100%,rgba(39,116,148,1)));
+}
+
+.RegionGreatWorksGoldBar {
+    background: -moz-linear-gradient(top,  rgba(226,208,161,1) 0%, rgba(209,137,19,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(226,208,161,1)), color-stop(100%,rgba(209,137,19,1)));
+    background-color: rgba(255,255,255,1);
+}
+
+.RegionGreatWorksSilverBar {
+    background: -moz-linear-gradient(top,  rgba(224,224,224,1) 0%, rgba(140,140,140,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,224,224,1)), color-stop(100%,rgba(140,140,140,1)));
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: inset 0 0 3px 3px rgba(255,255,255,0.4);
+    -webkit-box-shadow: inset 0 0 3px 3px rgba(255,255,255,0.4)
+}
+
+.RegionGreatWorksBronzeBar {
+    background: -moz-linear-gradient(top,  rgba(224,145,106,1) 0%, rgba(152,84,23,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,145,106,1)), color-stop(100%,rgba(152,84,23,1)));
+    background-color: rgba(255,255,255,1);
+    -moz-box-shadow: inset 0 0 3px 3px rgba(255,255,255,0.4);
+    -webkit-box-shadow: inset 0 0 3px 3px rgba(255,255,255,0.4)
+}
+
+.RegionGreatWorksCinematicBarBottom {
+    background: -moz-linear-gradient(top,  rgba(241,241,241,1) 0%, rgba(190,220,236,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(241,241,241,1)), color-stop(100%,rgba(190,220,236,1)));
+    background-color: rgba(255,255,255,1);
+}
+
+.RegionGreatWorksCinematicBarTop {
+    background: -moz-linear-gradient(top,  rgba(190,220,236,1) 0%, rgba(241,241,241,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(190,220,236,1)), color-stop(100%,rgba(241,241,241,1)));
+    background-color: rgba(255,255,255,1);
+}
+
+.RegionMapTooltip {
+	border-radius: 10px 10px 10px 10px;
+	border:solid 1px rgb(255, 255, 255);
+	background:-moz-linear-gradient(50% 100% 90deg,
+	rgba(200, 200, 200, 1) 0%,
+	rgba(214, 214, 214, 1) 27%,
+	rgba(235, 235, 235, 1) 100%);
+	background:-webkit-gradient(linear,50% 100%,50% -0%,
+	color-stop(0, rgba(200, 200, 200, 1)),
+	color-stop(0.27, rgba(214, 214, 214, 1)),
+	color-stop(1, rgba(235, 235, 235, 1)));
+}
+
+
+.PAlletteContainerRollunder {
+    background: -moz-linear-gradient(bottom,  rgba(255,255,255,.3) 0%, rgba(255,255,255,.3) 25%, rgba(255,255,255,.3) 50%, rgba(255,255,255,.3) 75%, rgba(255,255,255,0) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,.3)), color-stop(25%,rgba(255,255,255,.3)), color-stop(50%,rgba(255,255,255,.3)), color-stop(75%,rgba(255,255,255,.3)), color-stop(100%,rgba(255,255,255,0)));
+    border-radius: 0px 0px 3px 3px;
+}
+
+.PalleteContainer1 {
+    width: 100%; height: 100%; background-color: rgba(97,97,97,1);
+}
+
+.PalleteContainer1Rnd {
+	border-radius: 0px 0px 0px 6px;
+    width: 100%; height: 100%; background-color: rgba(97,97,97,1);
+}
+
+.PalleteContainer2 {
+    width: 100%; height: 100%; background-color: rgba(232,77,53,1);
+}
+
+.PalleteContainer2Rnd {
+	border-radius: 0px 0px 6px 0px;
+    width: 100%; height: 100%; background-color: rgba(232,77,53,1);
+}
+
+.PalleteContainer2GreyRnd {
+	border-radius: 0px 0px 6px 0px;
+    width: 100%; height: 100%; background-color: rgba(97,97,97,1);
+}
+
+.PalleteContainer3 {
+    width: 100%; height: 100%; background-color: rgba(137,137,137,1);
+}
+
+.PalleteContainerRounded1 {
+    width: 100%; height: 100%; background-color: rgba(137,137,137,1);
+    border-radius: 10px 10px 10px 10px;
+
+}
+.PalleteContainerRounded2 {
+    border-radius: 8px;
+    background-color: rgba(201,201,201,1);
+    border-radius: 4px 4px 4px 4px;
+}
+
+.PalleteContainerRounded3 {
+    border-radius: 8px;
+    background-color: rgba(0, 180, 255,1);
+    border-radius: 4px 4px 4px 4px;
+}
+.PalleteContainer3_Blue {
+    background-color: rgba(0, 180, 255,1);
+}
+
+.PalleteContainerRounded4  {
+    border-radius: 600px;
+    background-color: rgba(75,178,96,.9);
+    border-radius: 600px;
+}
+.PalleteContainerRounded5  {
+    border-radius: 7px;
+    background-color: rgba(150, 150, 150,1);
+
+}
+
+.RoundPalleteRolloverbBack {
+    border-radius: 10px;
+    border: solid 1px #3f4449;
+    background-color: rgba(255,255,255,0);
+    -moz-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1);
+    -webkit-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1)
+    -moz-box-shadow: 0px 0px 9px #000000;
+    -webkit-box-shadow: 0px 0px 9px #000000;
+
+}
+.RoundPalleteRolloverbBack2 {
+    border-radius: 10px;
+    border: solid 1px #3f4449;
+    background-color: rgba(255,255,255,.8);
+    -moz-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1);
+    -webkit-box-shadow: inset 0 0 5px 5px rgba(255,255,255,1)
+
+}
+
+.RoundPalleteRolloverContainer {
+    border-radius: 8px;
+    background: -moz-linear-gradient(top,  rgba(255,143,52,.8) 0%, rgba(255,143,52,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,143,52,.8)), color-stop(100%,rgba(255,143,52,1)));
+}
+
+.HorzTranspGray {
+	background: -moz-linear-gradient(left,  rgba(97,97,97,0) 0%, rgba(97,97,97,.7) 20%,  rgba(97,97,97,.7) 80%,  rgba(97,97,97,0) 100%);
+	background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(97,97,97,0)), color-stop(20%,rgba(97,97,97,.7)), color-stop(80%,rgba(97,97,97,.7)), color-stop(100%,rgba(97,97,97,0)));
+}
+
+.VertTranspWhiteTranspGrad {
+	background: -moz-linear-gradient(top,  rgba(255,255,255,0) 0%, rgba(255,255,255,.7) 20%,  rgba(255,255,255,.7) 80%,  rgba(255,255,255,0) 100%);
+	background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,0)), color-stop(20%,rgba(255,255,255,.7)), color-stop(80%,rgba(255,255,255,.7)), color-stop(100%,rgba(255,255,255,0)));
+}
+
+.VertTranspWhiteTranspSoftGrad {
+	background: -moz-linear-gradient(top,  rgba(255,255,255,0) 0%, rgba(255,255,255,.1) 15%, rgba(255,255,255,.2) 30%, rgba(255,255,255,.3) 40%, rgba(255,255,255,.3) 50%, rgba(255,255,255,.3) 60%, rgba(255,255,255,.2) 70%, rgba(255,255,255,.1) 85%,  rgba(255,255,255,0) 100%);
+	background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,0)), color-stop(15%,rgba(255,255,255,.1)), color-stop(30%,rgba(255,255,255,.2)), color-stop(40%,rgba(255,255,255,.3)),color-stop(50%,rgba(255,255,255,.3)),color-stop(60%,rgba(255,255,255,.2)),color-stop(85%,rgba(255,255,255,.1)), color-stop(100%,rgba(255,255,255,0)));
+}
+
+.HorzTranspWhiteTranspGrad {
+	background: -moz-linear-gradient(left,  rgba(255,255,255,0) 0%, rgba(255,255,255,.7) 20%,  rgba(255,255,255,.7) 80%,  rgba(255,255,255,0) 100%);
+	background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,0)), color-stop(20%,rgba(255,255,255,.7)), color-stop(80%,rgba(255,255,255,.7)), color-stop(100%,rgba(255,255,255,0)));
+    border-top: solid 1px rgba(63,68,73,.46);
+    border-bottom: solid 1px rgba(63,68,73,.46);
+}
+
+.HorzTranspWhiteTranspGradnostroke {
+	background: -moz-linear-gradient(left,  rgba(255,255,255,0) 0%, rgba(255,255,255,.7) 20%,  rgba(255,255,255,.7) 80%,  rgba(255,255,255,0) 100%);
+	background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(255,255,255,0)), color-stop(20%,rgba(255,255,255,.7)), color-stop(80%,rgba(255,255,255,.7)), color-stop(100%,rgba(255,255,255,0)));
+}
+
+.HorzTranspdarkTranspGrad {
+	background: -moz-linear-gradient(left,  rgba(45,32,88,0) 0%, rgba(0,106,175,.7) 40%,  rgba(0,106,175,.7) 60%,  rgba(45,32,88,0) 100%);
+	background: -webkit-gradient(linear, left top, right top, color-stop(0%,rgba(45,32,88,0)), color-stop(40%,rgba(0,106,175,.77)), color-stop(60%,rgba(0,106,175,.7)), color-stop(100%,rgba(45,32,88,0)));
+    #-border-top: solid 1px rgba(63,68,73,.46);
+    #-border-bottom: solid 1px rgba(63,68,73,.46);
+}
+
+.DkBlueRoundBox  {
+    border-radius: 600px;
+    border: solid 1px #3f4449;
+	background: -moz-linear-gradient(top,  rgba(24,176,241,.8) 0%, rgba(47,194,255,.8) 100%);
+	background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(24,176,241,.8)), color-stop(100%,rgba(47,194,255,.8)));
+    box-shadow: 0px 0px 9px rgba(0,0,0,.6);
+}
+
+.DkOrangeRoundBox  {
+    border-radius: 600px;
+    border: solid 2px #ffffff;
+	background: -moz-linear-gradient(top,  rgba(255,143,52,.8) 0%, rgba(255,143,52,1) 100%);
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,143,52,.8)), color-stop(100%,rgba(255,143,52,1)));
+}
+
+.DkBlueBox  {
+    background: rgba(24,176,241,.9);
+}
+
+.HUDMenuButtonBlueSelectedRing {
+    border-radius: 5000px; /* makes sure the div will always be round when scaled up */
+    border: solid 2px #2fc2ff;
+    padding: 1px;
+}
+
+.HUDMenuButtonRedSelectedRing {
+    border-radius: 5000px; /* makes sure the div will always be round when scaled up */
+    border: solid 2px rgba(255,0,0,.8);
+    padding: 1px;
+}
+
+.LgtBlueRoundBox  {
+    border-radius: 600px;
+	background-color: #bae8fc;
+}
+
+.BlueBlackRoundBox  {
+    border-radius: 600px;
+	background-color: rgba(40,53,72,.9);
+}
+
+.BlueBlackRoundTextBox  {
+    border-radius: 5px;
+	background-color: rgba(40,53,72,.6);
+}
+
+.BlueGradBox {
+	border: solid 1px #3f4449;
+	border-radius: 9px;
+    background: -moz-linear-gradient(top,  rgba(176,229,252,.7) 0%, rgba(112,213,255,.7) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(176,229,252,1)), color-stop(100%,rgba(112,213,255,1)));
+    box-shadow: 0px 0px 9px rgba(0,0,0,.6);
+}
+
+.modalBackgroundRed {
+    background: -moz-linear-gradient(top,  rgba(233,74,75,.8) 0%, rgba(162,20,21,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(233,74,75,.8)), color-stop(100%,rgba(162,20,21,1)));
+    box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    overflow: hidden;
+    border-radius: 0px 0px 8px 8px;
+}
+
+.RolloverBoxBackgroundBlueSquare {
+    background: -moz-linear-gradient(top,  rgba(171,228,252,1) 0%, rgba(48,194,255,.8) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(48,194,255,.8)), color-stop(100%,rgba(171,228,252,1)));
+    box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    overflow: hidden;
+    border-radius: 0px 0px 8px 8px;
+}
+
+.TabBlue {
+    border: solid 1px #ffffff;
+    background: -moz-linear-gradient(top,  rgba(24,176,241,1) 0%, rgba(94,204,251,1) 100%);
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(24,176,241,1)), color-stop(100%,rgba(94,204,251,1)));
+    border-radius: 8px 8px 0px 0px;
+}
+
+.TabBlueWindow {
+    border: solid 1px #5c5c5c;
+    background: -moz-linear-gradient(top,  rgba(94,204,251,1) 0%, rgba(219,234,243,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(94,204,251,1)), color-stop(100%,rgba(219,234,243,1)));
+    border-radius: 0px 0px 8px 8px;
+}
+
+.TabBlueSeparator {
+    border-radius: 0px;
+    background: #27AAE1;
+}
+
+
+.GameEntryWindowRounded {
+    border-radius: 8px;
+    ##box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    ##-webkit-box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    background: -moz-linear-gradient(top,  rgba(239,239,239,1) 0%, rgba(220,230,250,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,239,239,1)), color-stop(100%,rgba(220,230,250,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#efefef', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+}
+
+.GameEntryWindowSquare {
+    border-radius: 0px;
+    box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    -webkit-box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,250,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#eff4f6', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+}
+.GameEntryFriends_Background {
+	background-color: rgba(230,230,230,0.95);
+}
+.GameEntryGreenBar {
+    box-shadow: 0px 0px 8px rgba(0, 0, 0, .4);
+    -webkit-box-shadow: 0px 0px 8px rgba(0, 0, 0, .4);
+    background: -moz-linear-gradient(top,  rgba(171,255,189,1) 0%, rgba(0,197,33,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(171,255,189,1)), color-stop(100%,rgba(0,197,33,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(171,255,189,1) 0%,rgba(0,197,33,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(171,255,189,1) 0%,rgba(0,197,33,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(171,255,189,1) 0%,rgba(0,197,33,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(171,255,189,1) 0%,rgba(0,197,33,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#abffbd', endColorstr='#00c521',GradientType=0 ); /* IE6-9 */
+}
+
+.GameEntryBottomBar {
+    border-top: solid 1px rgba(0,0,0,.3);
+    border-radius: 0px 0px 8px 8px;
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,250,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,250,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,250,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#eff4f6', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+}
+
+.SimCityWorldHeaderBar {
+    border-bottom: solid 1px rgba(255,255,255,1);
+    border-radius: 8px 8px 0px 0px;
+    box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    -webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(239,244,246,1) 0%, rgba(220,230,240,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,244,246,1)), color-stop(100%,rgba(220,230,240,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,240,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,240,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,240,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(239,244,246,1) 0%,rgba(220,230,240,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#eff4f6', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+}
+
+.BlueWhiteRoundedWhiteStroke {
+    border-radius: 23px;
+    border: solid 1px #ffffff;
+	background: -moz-linear-gradient(bottom,  rgba(155,205,224,.8) 0%, rgba(255,255,255,.8) 50%);
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(155,205,224,.8)), color-stop(50%,rgba(255,255,255,.8)));
+
+}
+
+.HUDPauseRing {
+    border-radius: 22px 22px 16px 22px;
+    border: solid 2px rgba(255,0,0,.7);
+    padding: 1px;
+}
+
+.HUDPauseRingHeavy {
+    border-radius: 36px 36px 28px 36px;
+    border: solid 16px rgba(255,0,0,.7);
+    padding: 1px;
+}
+
+.StylesPastThisAreOLD {};
+
+
+/* Add all user styles here. please start all style names with 'window' */
+.windowLauncher3DInfoTitle { border-radius: 5px; box-shadow: 3px 3px 3px #000000; -webkit-box-shadow: 3px 3px 3px #000000; border: solid 1px rgba(0,0,0,.2); background-color: rgba(255,255,0,1); }
+
+.modalBackground {
+    border-radius: 5px;
+    box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    -webkit-box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+    border: solid 1px rgba(180, 226, 240,.5);
+    background: -moz-linear-gradient(top,  rgba(133,210,234,1) 0%, rgba(125,185,232,.5) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(133,210,234,1)), color-stop(100%,rgba(125,185,232,.5))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(133,210,234,1) 0%,rgba(125,185,232,.5) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(133,210,234,1) 0%,rgba(125,185,232,.5) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(133,210,234,1) 0%,rgba(125,185,232,.5) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(133,210,234,1) 0%,rgba(125,185,232,.5) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#85d2ea', endColorstr='#007db9e8',GradientType=0 ); /* IE6-9 */
+}
+
+
+//.LightBackgroundText {
+    border-radius: 5px 0px 0px 5px;
+    border: solid 1px #3f4449;
+	background: none;
+    background-color: white;
+    opacity: 1;
+}
+
+.roundedBoxOutside {
+    background-color: rgba(174, 196, 212, 0.3);
+    border: 1px solid rgba(101, 119, 133, 0.7);
+	border-radius: 15px 15px 15px 15px;
+}
+
+.Rolloverbox {
+    background-color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(63, 68, 73, 0.7);
+	border-radius: 0px 10px 0px 0px;
+        box-shadow: 0px 0px 8px rgba(0, 0, 0, .8);
+}
+
+.RolloverboxInside {
+    background-color: rgba(255, 255, 255, 0.25);
+    border: 1px solid rgba(63, 68, 73, 0.25);
+	border-radius: 8px 8px 8px 8px;
+}
+
+.roundedBoxInside {
+    background-color: rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(222, 249, 255, 0.2);
+	border-radius: 8px 8px 8px 8px;
+}
+.RoundedBoxGrayStroke {
+    background-color: rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+	border-radius: 8px 8px 8px 8px;
+}
+
+.modalContentOverlay {
+    width: 100%; height: 100%; background-color: rgba(255, 255, 255, .7);
+}
+
+.RadiatingRedCircle {
+    border-radius: 5000px; /* makes sure the div will always be round when scaled up */
+    border: solid 4px rgba(255,0,0,.8);
+    padding: 1px;
+}
+
+.tutorialDialogYellow {
+    border-radius: 0px 0px 10px 10px;
+	#-moz-box-shadow: inset 0 0 20px 20px rgba(0,255,255,1);
+    #-webkit-box-shadow: inset 0 0 20px 20px rgba(0,255,255,1);
+	border: solid 2px rgba(92,92,92,1);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,247,189,1)), color-stop(100%,rgba(252,228,59,1)));
+	background: -moz-linear-gradient(top,  rgba(255,173,0,1) 0%, rgba(255,105,0,1) 100%);
+}
+
+.TutorialBody {
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(160,200,244,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(160,200,244,1)));
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(160,200,244,1))); /* Chrome,Safari4+ */
+   	background: -o-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(160,200,244,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(160,200,244,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(160,200,244,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#e0e8fb', endColorstr='#a0c8f4',GradientType=0 ); /* IE6-9 */
+    border-radius: 0px 0px 15px 15px;
+}
+
+.tutorialDialogStroke{
+    border: solid 3px rgba(255,173,0,1);
+    border-radius: 14px 14px 14px 14px;
+    background: -moz-linear-gradient(top,  rgba(255,173,0,1) 0%, rgba(255,105,0,1) 100%);
+	-moz-box-shadow: 0px 0px 12px #000000;
+    -webkit-box-shadow: 0px 0px 12px #000000;
+}
+
+.tutorialDialogHeader {
+    border-radius:  10px 10px 0px 0px;
+	#-moz-box-shadow: inset 0 0 20px 20px rgba(0,255,255,1);
+    #-webkit-box-shadow: inset 0 0 20px 20px rgba(0,255,255,1);
+	border: solid 2px rgba(92,92,92,1);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(92,92,92,1)), color-stop(100%,rgba(92,92,92,1)));
+}
+
+.Tutorial_Frame{
+    border: none;
+    border-radius: 15px 15px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(255,173,0,1) 0%, rgba(255,105,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,173,0,1)), color-stop(100%,rgba(255,105,0,1))); /* Chrome,Safari4+ */
+}
+
+.Achievement_HeaderBar {
+    border-radius: 8px 8px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(226,208,161,1) 0%, rgba(209,137,19,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(226,208,161,1)), color-stop(100%,rgba(209,137,19,1)));
+}
+
+.Achievement_BottomBar {
+    border-radius: 0px 0px 8px 8px;
+    background: -moz-linear-gradient(top,  rgba(226,208,161,1) 0%, rgba(209,137,19,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(226,208,161,1)), color-stop(100%,rgba(209,137,19,1)));
+}
+
+.Achievement_GoldBar {
+	#box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    #-webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    background: -moz-linear-gradient(top,  rgba(255,247,113,1) 0%, rgba(223,120,29,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,247,113,1)), color-stop(100%,rgba(223,120,29,1)));
+	border-radius: 12px;
+}
+
+.Achievement_RoundBlueBox {
+    border-radius: 8px;
+    border: solid 1px #3f4449;
+	background: -moz-linear-gradient(top,  rgba(240,240,255,.85) 0%, rgba(180,180,235,.85) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(240,240,255,.85)), color-stop(100%,rgba(180,180,235,.85)));
+	box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    -webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+}
+
+/* Start -- New SimCityWorld styles */
+.SimCityWorld_Header{
+    border: none;
+    border-radius: 15px 15px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(255,223,0,1) 0%, rgba(220,55,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,223,0,1)), color-stop(100%,rgba(220,55,0,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(255,223,0,1) 0%,rgba(220,55,0,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(255,223,0,1) 0%,rgba(220,55,0,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(255,223,0,1) 0%,rgba(220,55,0,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(255,223,0,1) 0%,rgba(220,55,0,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+}
+
+.Green_Header{
+    border: none;
+    border-radius: 15px 15px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(54,227,99,1) 0%, rgba(0,134,63,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(134,237,90,1)), color-stop(100%,rgba(0,134,53,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(54,227,99,1) 0%,rgba(0,144,43,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(54,227,99,1) 0%,rgba(0,144,43,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(54,227,99,1) 0%,rgba(0,144,43,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(54,227,99,1) 0%,rgba(0,144,43,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#36ED63', endColorstr='#00B82B',GradientType=0 ); /* IE6-9 */
+}
+
+.Panel_SubHeader{
+    border: solid 1px #A8BCC5;
+    border-radius: 8px 8px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(196,222,237,1) 0%, rgba(138,176,217,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(196,222,237,1)), color-stop(100%,rgba(138,176,217,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(196,222,237,1) 0%,rgba(138,176,217,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(196,222,237,1) 0%,rgba(138,176,217,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(196,222,237,1) 0%,rgba(138,176,217,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(196,222,237,1) 0%,rgba(138,176,217,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#8AB0D9', endColorstr='#C4DEED',GradientType=0 ); /* IE6-9 */
+}
+
+.Panel_SubWindow{
+    border: solid 1px #C6D4F4;
+    border-radius: 8px 8px 8px 8px;
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(198,212,244,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(198,212,244,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#E0E8FB', endColorstr='#C6D4F4',GradientType=0 ); /* IE6-9 */
+}
+
+.Panel_TextWindow{
+    border: none;
+    background-color: #E6E7E8;
+}
+
+.Progress{
+    border-radius: 10px;
+    border: solid 2px white;
+}
+
+.Progress_Orange{
+    background: -moz-linear-gradient(top,  rgba(224,200,0,1) 0%, rgba(198,80,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,200,0,1)), color-stop(100%,rgba(198,80,0,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(224,200,0,1) 0%,rgba(198,80,0,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(224,200,0,1) 0%,rgba(198,80,0,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,200,0,1) 0%,rgba(198,80,0,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,200,0,1) 0%,rgba(198,80,0,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#E0E8FB', endColorstr='#C6D4F4',GradientType=0 ); /* IE6-9 */
+    border-radius: 8px;
+}
+.Progress_Back{
+    background-color: rgba(30,30,30,0.7);
+}
+.SimCityWorld_Blue{
+    border: none;
+    border-radius: 15px 15px 0px 0px;
+    background: #A2C7D6;
+}
+.HubCityLog_Background{
+	background-color: rgba(20,20,20,.50);
+    overflow: hidden;
+    border-radius: 15px 15px 15px 15px;
+}
+.HubCityLog_Background_ForText{
+	border: 1px solid rgba(232, 145, 13, 0.5);
+	background-color: rgba(30,30,40,1);
+    overflow: hidden;
+    border-radius: 10px 10px 10px 10px;
+}
+.HubCityLogEntry_Background{
+	border: 1px solid rgba(232, 145, 13, 0.5);
+	background-color: rgba(20,20,20,.85);
+    overflow: hidden;
+    border-radius: 10px 10px 10px 10px
+}
+
+.HubCityLogEntry_Background:hover{
+	background-color: rgba(30,30,30,.65);
+	border: 1px solid rgba(255, 150, 0, 1);
+	border-radius: 10px 10px 10px 10px;
+}
+.triangle_Normal {
+		width: 20;
+		height: 20;
+		border-left: 20px solid transparent;
+		border-right: 20px solid transparent;
+		border-top: 10px
+		solid rgba(167,188,233,1);
+}
+.triangle_Stroke {
+		width: 22;
+		height: 22;
+		border-left: 22px solid transparent;
+		border-right: 22px solid transparent;
+		border-top: 12px
+		solid rgba(255,255,255,1);
+}
+.triangle_Highlight {
+		width: 20;
+		height: 20;
+		border-left: 20px solid transparent;
+		border-right: 20px solid transparent;
+		border-top: 10px
+		solid rgba(220,220,255,1);
+}
+.triangle_Down {
+		width: 20;
+		height: 20;
+		border-left: 20px solid transparent;
+		border-right: 20px solid transparent;
+		border-top: 10px
+		solid #27AAE1;
+}
+.triangle_PopUpSelector_Highlight {
+		width: 0;
+		height: 30;
+		border-left: 30px solid transparent;
+		border-right: 30px solid transparent;
+		border-top: 15px
+		solid rgba(224,232,251,1);
+}
+.triangle_PopUpSelector_Stroke {
+		width: 0;
+		height: 36;
+		border-left: 36px solid transparent;
+		border-right: 36px solid transparent;
+		border-top: 18px
+		solid #27AAE1;
+}
+.Leaderboard_triangle_Normal {
+		width: 20;
+		height: 20;
+		border-left: 20px solid transparent;
+		border-right: 20px solid transparent;
+		border-top: 10px
+		solid rgba(30,90,225,1);
+}
+.Leaderboard_triangle_Highlight {
+		width: 26;
+		height: 16;
+		border-left: 26px solid transparent;
+		border-right: 26px solid transparent;
+		border-top: 14px
+		solid #779ded;
+}
+.Leaderboard_triangle_Down {
+		width: 20;
+		height: 20;
+		border-left: 20px solid transparent;
+		border-right: 20px solid transparent;
+		border-top: 10px
+		solid #27AAE1;
+}
+.Inverted_Round_Corner {
+		background-color: red;height: 12px; width: 12px;">
+		margin-top: 40px; height: 12px; width: 12px; moz-border-radius-topright: 12px;
+        -webkit-border-top-right-radius: 12px; border-top-right-radius: 12px; background-color:#fff
+}
+.CityLogTicker_Bar{
+    border: none;
+    border-radius: 15px 15px 15px 15px;
+    background: -moz-linear-gradient(top,  rgba(255,173,0,1) 0%, rgba(255,105,0,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,173,0,1)), color-stop(100%,rgba(255,105,0,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+}
+
+.Leaderboard_BackgroundShadow {
+    border-radius: 10px 10px 10px 10px;
+    box-shadow: 0px 4px 12px 0px rgba(0, 0, 0, .45);
+    -webkit-box-shadow: 0px 4px 12px 0px rgba(0, 0, 0, .45);
+    background-color: rgba(239,239,240,0);
+}
+.LeaderboardHeaderBar {
+    border-radius: 10px 10px 0px 0px;
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(198,212,244,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(198,212,244,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(224,232,251,1) 0%,rgba(198,212,244,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#eff4f6', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+   	box-shadow: 0px 3px 3px 0px rgba(0, 2, 0, .45);
+    -webkit-box-shadow: 0px 3px 3px 0px rgba(0, 2, 0, .45);
+}
+.LeaderboardFooter {
+    background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(198,212,244,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(198,212,244,1)));
+    overflow: hidden;
+    border-radius: 0px 0px 10px 10px;
+    box-shadow: 0px -3px 3px 0px rgba(0, 2, 0, .30);
+    -webkit-box-shadow: 0px -3px 3px 0px rgba(0, 2, 0, .30);
+}
+.LeaderboardBody {
+    border-radius: 0px 0px 8px 8px;
+    background: -moz-linear-gradient(top, rgba(236,237,237,1) 0%, rgba(199,204,209,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(236,237,237,1)), color-stop(100%,rgba(199,204,209,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+}
+.Leaderboard_WhiteBackground {
+    background-color: rgba(239,239,240,1);
+}
+.Leaderboard_PopUpSelector {
+	border: 3px solid #27AAE1;
+    border-radius: 0px 0px 8px 8px;
+    background: -moz-linear-gradient(top, rgba(236,237,237,1) 0%, rgba(199,204,209,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(236,237,237,1)), color-stop(100%,rgba(199,204,209,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+   	box-shadow: 0px 4px 14px 0px rgba(0, 0, 0, .70);
+    -webkit-box-shadow: 0px 4px 14px 0px rgba(0, 0, 0, .70);
+}
+.Leaderboard_Icon_Backing {
+    border-radius: 35px;
+    background-color: white;
+    opacity: 1;
+}
+.SimcityWorldSubHeaderBar {
+    border-radius: 10px 10px 0px 0px;
+    box-shadow: 0px 2px 6px 0px rgba(0, 2, 0, .75);
+    -webkit-box-shadow: 0px 2px 6px 0px rgba(0, 2, 0, .75);
+    background: -moz-linear-gradient(top,  rgba(226,232,255,1) 10%, rgba(108,156,197,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(10%,rgba(226,232,255,1)), color-stop(100%,rgba(108,156,197,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(226,232,255,1) 10%,rgba(108,156,197,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(226,232,255,1) 10%,rgba(108,156,197,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(226,232,255,1) 10%,rgba(108,156,197,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(226,232,255,1) 10%,rgba(108,156,197,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#C4DEED', endColorstr='#8AB0D9',GradientType=0 ); /* IE6-9 */
+}
+
+.FEPopOutBody {
+    border: 2px solid #ffffff;
+    border-radius: 10px 10px 10px 10px;
+    box-shadow: 0px 3px 14px 0px rgba(0, 0, 0, .75);
+    -webkit-box-shadow: 0px 3px 14px 0px rgba(0, 0, 0, .75);
+    background: -moz-linear-gradient(top,  rgba(239,239,239,1) 0%, rgba(220,230,250,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(239,239,239,1)), color-stop(100%,rgba(220,230,250,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(239,239,239,1) 0%,rgba(220,230,250,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#efefef', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+}
+
+
+.Banner_background {
+    border-radius: 8px;
+    border: solid 1px #3f4449;
+	background: -moz-linear-gradient(top,  rgba(127,231,137,1) 0%, rgba(85,139,76,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(85,139,76,1)), color-stop(100%,rgba(127,231,137,1)));
+	box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    -webkit-box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+}
+.Banner_background_Highlight {
+    border-radius: 8px;
+    border: solid 1px #3f4449;
+	background: -moz-linear-gradient(top,  rgba(127,231,137,1) 0%, rgba(85,139,76,1) 100%);
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(85,139,76,1)), color-stop(100%,rgba(127,231,137,1)));
+	box-shadow: 0px 5px 8px 0px rgba(0, 0, 0, .5);
+    -moz-box-shadow: inset 0 0 20px rgba(255,255,255, 1);
+	-webkit-box-shadow: inset 0 0 20px rgba(255,255,255, 1);
+	box-shadow: inset 0px 0px 20px 0px rgba(255, 255, 255, 1);
+}
+.WhiteRoundGrayBorderBox  {
+    border-radius: 600px;
+    background: #ffffff;
+    border: solid 2px #A8BCC5;
+}
+
+.PopupWindow {
+    overflow: hidden;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.PopupWindowHeader {
+	border-top-left-radius: 10px;
+	border-top-right-radius: 10px;
+	background: -moz-linear-gradient(bottom,  rgba(113,140,209,1) 0%, rgba(156,179,225,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(113,140,209,1)), color-stop(100%,rgba(156,179,225,1))); /* Chrome,Safari4+ */
+}
+
+.PopupWindowMain {
+	border-bottom-left-radius: 10px;
+	border-bottom-right-radius: 10px;
+	border: 1px solid #ffffff;
+	background: -moz-linear-gradient(top,  rgba(224,232,251,1) 0%, rgba(198,212,244,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(224,232,251,1)), color-stop(100%,rgba(198,212,244,1))); /* Chrome,Safari4+ */
+}
+
+.ContentWindowMain {
+	border-radius: 10px;
+	background: -moz-linear-gradient(bottom,  rgba(198,212,244,1) 0%, rgba(224,232,251,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(198,212,244,1)), color-stop(100%,rgba(224,232,251,1))); /* Chrome,Safari4+ */
+    -moz-box-shadow:    inset 0 0 15px #000000;
+    -webkit-box-shadow: inset 0 0 15px #000000;
+    box-shadow:         inset 0 0 15px #000000;
+}
+
+.PopupWindowsLineSeparator{
+    background-color: rgba(181,208,239,1);
+}
+
+
+.PointedTip{
+
+	width: 0;
+	height: 0;
+	border-left: 14px solid transparent;
+	border-right: 14px solid transparent;
+	border-top: 20px solid #ffffff;
+}
+
+.PointedTip:after{
+	content:'';
+	display: block;
+	position: absolute;
+	top: -20px;
+	left: -10px;
+	width: 0;
+	height: 0;
+	border-left: 10px solid transparent;
+	border-right: 10px solid transparent;
+	border-top: 14px solid rgba(220,230,249,1);
+}
+
+.Profile_Header {
+	border: none;
+	border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(240,240,240,1) 10%, rgba(199,207,209,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(10%,rgba(240,240,240,1)), color-stop(100%,rgba(199,207,209,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(255,173,0,1) 0%,rgba(255,105,0,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+	##box-shadow: 0px 7px 35px 0px rgba(0, 0, 0, .85);
+    ##-webkit-box-shadow: 0px 7px 35px 0px rgba(0, 0, 0, .95);
+}
+.Profile_Header_NoShadow {
+	border: none;
+	border-radius: 12px 12px 0px 0px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(240,240,240,1) 10%, rgba(199,207,209,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(10%,rgba(240,240,240,1)), color-stop(100%,rgba(199,207,209,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(255,255,255,1) 0%,rgba(199,207,209,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(255,255,255,1) 0%,rgba(199,207,209,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(255,255,255,1) 0%,rgba(199,207,209,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(255,255,255,1) 0%, rgba(240,240,240,1) 10%, rgba(199,207,209,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+}
+.Profile_Body {
+	border: none;
+	border-radius: 12px 12px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(240,240,240,1) 10%, rgba(199,207,209,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,1)), color-stop(10%,rgba(240,240,240,1)), color-stop(100%,rgba(199,207,209,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(255,255,255,1) 0%,rgba(199,207,209,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(255,255,255,1) 0%,rgba(199,207,209,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(255,255,255,1) 0%,rgba(199,207,209,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(255,255,255,1) 0%, rgba(240,240,240,1) 10%, rgba(199,207,209,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+	##box-shadow: 0px 7px 35px 0px rgba(0, 0, 0, .85);
+    ##-webkit-box-shadow: 0px 7px 35px 0px rgba(0, 0, 0, .95);
+}
+.Profile_TabBar {
+	border: none;
+    background: -moz-linear-gradient(top, rgba(245,245,245,1) 0%, rgba(189,194,199,1) 90%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(245,245,245,1)), color-stop(90%,rgba(189,194,199,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(245,245,245,1) 0%,rgba(189,194,199,1) 90%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(245,245,245,1) 0%,rgba(189,194,199,1) 90%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(245,245,245,1) 0%,rgba(189,194,199,1) 90%); /* IE10+ */
+    background: linear-gradient(top,  rgba(245,245,245,1) 0%,rgba(189,194,199,1) 90%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+}
+.Profile_Background {
+    border-radius: 0px 0px 12px 12px;
+    background: -moz-linear-gradient(top, rgba(236,237,237,1) 0%, rgba(199,204,209,1) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(236,237,237,1)), color-stop(100%,rgba(199,204,209,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(236,237,237,1) 0%,rgba(199,204,209,1) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+}
+.Profile_UnderShadow {
+    background: -moz-linear-gradient(top, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(0,0,0,0.4)), color-stop(100%,rgba(0,0,0,0))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(0,0,0,0.4) 0%,rgba(0,0,0,0) 100%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(0,0,0,0.4) 0%,rgba(0,0,0,0) 100%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(0,0,0,0.4) 0%,rgba(0,0,0,0) 100%); /* IE10+ */
+    background: linear-gradient(top,  rgba(0,0,0,0.4) 0%,rgba(0,0,0,0) 100%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#FFAD00', endColorstr='#FF6900',GradientType=0 ); /* IE6-9 */
+}
+
+.Challenges_TextBackground{
+	background-color: rgba(20,20,20,.50);
+    overflow: hidden;
+}
+.Challenges_Selector{
+	border-radius: 10px;
+	border: 5px solid rgba(39, 170, 225, 1);
+    -moz-box-shadow:    inset 0 0 10px #ffffff;
+    -webkit-box-shadow: inset 0 0 10px #ffffff;
+    box-shadow:         inset 0 0 10px #ffffff;
+}
+.Challenges_Highlight{
+-moz-box-shadow:    inset 0 0 17px #ffffff;
+-webkit-box-shadow: inset 0 0 17px #ffffff;
+box-shadow:         inset 0 0 17px #ffffff;
+}
+.Challenges_SubPanel {
+    border-radius: 10px 10px 10px 10px;
+    background: -moz-linear-gradient(top,  rgba(210,222,254,1) 0%, rgba(198,212,244,1) 90%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(210,222,254,1)), color-stop(90%,rgba(198,212,244,1))); /* Chrome,Safari4+ */
+    background: -webkit-linear-gradient(top,  rgba(210,222,254,1) 0%,rgba(198,212,244,1) 90%); /* Chrome10+,Safari5.1+ */
+    background: -o-linear-gradient(top,  rgba(210,222,254,1) 0%,rgba(198,212,244,1) 90%); /* Opera 11.10+ */
+    background: -ms-linear-gradient(top,  rgba(210,222,254,1) 0%,rgba(198,212,244,1) 90%); /* IE10+ */
+    background: linear-gradient(top,  rgba(210,222,254,1) 0%,rgba(198,212,244,1) 90%); /* W3C */
+    filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#eff4f6', endColorstr='#dce6fa',GradientType=0 ); /* IE6-9 */
+	box-shadow: 0px 3px 14px 0px rgba(0, 0, 0, .55);
+    -webkit-box-shadow: 0px 3px 14px 0px rgba(0, 0, 0, .55);
+}
+.Global_Market_Border_Window {
+    border-radius: 5px 5px 5px 5px;
+	background-color: rgba(255,255,255,0.3);
+}
+.Global_Market_Border_background {
+   	background: -moz-linear-gradient(bottom,  rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 100%); /* FF3.6+ */
+    background: -webkit-gradient(linear, left bottom, left top, color-stop(0%,rgba(255,255,255,0)), color-stop(100%,rgba(255,255,255,0.4))); /* Chrome,Safari4+ */
+}
+/* End   -- New SimCityWorld styles */
+
+/* Start   -- New play styles */
+.MapTile_Normal {
+    border-radius: 8px 8px 0px 0px;
+    background: -moz-linear-gradient(bottom,  #d3e4f0 0%, #d3e4f0 87%, rgba(138,176,217,1) 87% ,rgba(186,202,207,1) 100%);
+    background: -webkit-gradient(linear, left bottom, left top, from(#d3e4f0), color-stop(87%, #d3e4f0), color-stop(87%,rgba(138,176,217,1)) ,to(rgba(196,222,237,1)));
+  	##box-shadow: 0px 3px 11px 0px rgba(0, 0, 0, .80);
+    ##-webkit-box-shadow: 0px 3px 11px 0px rgba(0, 0, 0, .80);
+}
+.MapTile_Highlight {
+    border-radius: 8px 8px 0px 0px;
+	box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 1);
+    -webkit-box-shadow: 0px 0px 20px 0px rgba(0, 0, 0, 1);
+}
+.GameSlotEmpty {
+    border-radius: 3px;
+    border: solid 1px #83A9C6;
+    background-color: rgba(255,255,255,0);
+
+}
+
+/* these need to go away soon */
+.windowTestStyle { border-radius: 5px; box-shadow: 3px 3px 3px #ccc; -webkit-box-shadow: 3px 3px 3px #ccc; border: solid 1px rgba(0,0,0,.5); background-color: rgba(0,0,255,.5); }
+.windowTestStyle2 { border-radius: 5px; box-shadow: 3px 3px 3px #ccc; -webkit-box-shadow: 3px 3px 3px #ccc; border: solid 1px rgba(0,0,0,.5); background-color: rgba(255,0,255,.5); }
+

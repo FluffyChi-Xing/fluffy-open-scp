@@ -1,0 +1,692 @@
+/*---------------------------------------------------------------------------*/
+/* TextStyles.css
+/*        This file contains all styles recognized by the editor. It also
+/*        contains one dummy element at the top that helps the program to
+/*        correctly identify this file
+/*---------------------------------------------------------------------------*/
+
+/* ## This style marks this file. Do not change it. Do not insert anything above it. Do not move it. */
+.textStyles {}
+
+/* ## GLOBAL STYLE -- set per locale */
+
+* {
+   font-family:"EAAGSimCityStdBk", sans-serif;
+   }
+
+/* ## Add all user styles here */
+
+
+/* ## NEW STYLES - USE THESE ONLY (Chi) */
+
+.Head_76_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:76px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_76_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:76px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_76_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:76px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_76_LT_Vmid                       { font-weight:bold;     color:white;      font-size:76px; vertical-align:middle; text-align:left;     }
+.Head_76_RT_Vmid                       { font-weight:bold;     color:white;      font-size:76px; vertical-align:middle; text-align:right;    }
+.Head_76_CR_Vmid                       { font-weight:bold;     color:white;      font-size:76px; vertical-align:middle; text-align:center;   }
+
+.Header_48_Left_Upper                  { font-weight:bold;     color:white;      font-size:48px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_48_Right_Upper                 { font-weight:bold;     color:white;      font-size:48px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_48_Center_Upper                { font-weight:bold;     color:white;      font-size:48px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_48_Left                        { font-weight:bold;     color:white;      font-size:48px; vertical-align:top;    text-align:left;     }
+.Header_48_Right                       { font-weight:bold;     color:white;      font-size:48px; vertical-align:top;    text-align:right;    }
+.Header_48_Center                      { font-weight:bold;     color:white;      font-size:48px; vertical-align:top;    text-align:center;   }
+
+.Head_48_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:48px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_48_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:48px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_48_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:48px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_48_LT_Vmid                       { font-weight:bold;     color:white;      font-size:48px; vertical-align:middle; text-align:left;     }
+.Head_48_RT_Vmid                       { font-weight:bold;     color:white;      font-size:48px; vertical-align:middle; text-align:right;    }
+.Head_48_CR_Vmid                       { font-weight:bold;     color:white;      font-size:48px; vertical-align:middle; text-align:center;   }
+
+.Head_40_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:40px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_40_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:40px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_40_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:40px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_40_LT_Vmid                       { font-weight:bold;     color:white;      font-size:40px; vertical-align:middle; text-align:left;     }
+.Head_40_RT_Vmid                       { font-weight:bold;     color:white;      font-size:40px; vertical-align:middle; text-align:right;    }
+.Head_40_CR_Vmid                       { font-weight:bold;     color:white;      font-size:40px; vertical-align:middle; text-align:center;   }
+
+.Header_36_Left_Upper                  { font-weight:bold;     color:white;      font-size:36px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_36_Right_Upper                 { font-weight:bold;     color:white;      font-size:36px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_36_Center_Upper                { font-weight:bold;     color:white;      font-size:36px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_36_Left                        { font-weight:bold;     color:white;      font-size:36px; vertical-align:top;    text-align:left;     }
+.Header_36_Right                       { font-weight:bold;     color:white;      font-size:36px; vertical-align:top;    text-align:right;    }
+.Header_36_Center                      { font-weight:bold;     color:white;      font-size:36px; vertical-align:top;    text-align:center;   }
+
+
+.Head_36_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:36px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_36_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:36px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_36_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:36px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_36_LT_Vmid                       { font-weight:bold;     color:white;      font-size:36px; vertical-align:middle; text-align:left;     }
+.Head_36_RT_Vmid                       { font-weight:bold;     color:white;      font-size:36px; vertical-align:middle; text-align:right;    }
+.Head_36_CR_Vmid                       { font-weight:bold;     color:white;      font-size:36px; vertical-align:middle; text-align:center;   }
+
+.Header_28_Left_Upper                  { font-weight:bold;     color:white;      font-size:28px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_28_Right_Upper                 { font-weight:bold;     color:white;      font-size:28px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_28_Center_Upper                { font-weight:bold;     color:white;      font-size:28px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_28_Left_Lower                  { font-weight:bold;     color:white;      font-size:28px; vertical-align:top;    text-align:left;     }
+.Header_28_Right_Lower                 { font-weight:bold;     color:white;      font-size:28px; vertical-align:top;    text-align:right;    }
+.Header_28_Center_Lower                { font-weight:bold;     color:white;      font-size:28px; vertical-align:top;    text-align:center;   }
+
+.Head_28_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:28px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_28_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:28px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_28_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:28px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_28_LT_Vmid                       { font-weight:bold;     color:white;      font-size:28px; vertical-align:middle; text-align:left;     }
+.Head_28_RT_Vmid                       { font-weight:bold;     color:white;      font-size:28px; vertical-align:middle; text-align:right;    }
+.Head_28_CR_Vmid                       { font-weight:bold;     color:white;      font-size:28px; vertical-align:middle; text-align:center;   }
+
+.Header_26_Left_Upper                  { font-weight:bold;     color:white;      font-size:26px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_26_Right_Upper                 { font-weight:bold;     color:white;      font-size:26px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_26_Center_Upper                { font-weight:bold;     color:white;      font-size:26px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_26_Left_Lower                  { font-weight:bold;     color:white;      font-size:26px; vertical-align:top;    text-align:left;     }
+.Header_26_Right_Lower                 { font-weight:bold;     color:white;      font-size:26px; vertical-align:top;    text-align:right;    }
+.Header_26_Center_Lower                { font-weight:bold;     color:white;      font-size:26px; vertical-align:top;    text-align:center;   }
+
+.Head_26_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:26px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_26_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:26px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_26_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:26px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_26_LT_Vmid                       { font-weight:bold;     color:white;      font-size:26px; vertical-align:middle; text-align:left;     }
+.Head_26_RT_Vmid                       { font-weight:bold;     color:white;      font-size:26px; vertical-align:middle; text-align:right;    }
+.Head_26_CR_Vmid                       { font-weight:bold;     color:white;      font-size:26px; vertical-align:middle; text-align:center;   }
+
+.Header_24_Left_Upper                  { font-weight:bold;     color:white;      font-size:24px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_24_Right_Upper                 { font-weight:bold;     color:white;      font-size:24px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_24_Center_Upper                { font-weight:bold;     color:white;      font-size:24px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_24_Left_Lower                  { font-weight:bold;     color:white;      font-size:24px; vertical-align:top;    text-align:left;     }
+.Header_24_Right_Lower                 { font-weight:bold;     color:white;      font-size:24px; vertical-align:top;    text-align:right;    }
+.Header_24_Center_Lower                { font-weight:bold;     color:white;      font-size:24px; vertical-align:top;    text-align:center;   }
+
+.Head_24_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:24px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_24_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:24px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_24_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:24px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_24_LT_Vmid                       { font-weight:bold;     color:white;      font-size:24px; vertical-align:middle; text-align:left;     }
+.Head_24_RT_Vmid                       { font-weight:bold;     color:white;      font-size:24px; vertical-align:middle; text-align:right;    }
+.Head_24_CR_Vmid                       { font-weight:bold;     color:white;      font-size:24px; vertical-align:middle; text-align:center;   }
+
+.Header_22_Left_Upper                  { font-weight:bold;     color:white;      font-size:22px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_22_Right_Upper                 { font-weight:bold;     color:white;      font-size:22px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_22_Center_Upper                { font-weight:bold;     color:white;      font-size:22px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_22_Left_Lower                  { font-weight:bold;     color:white;      font-size:22px; vertical-align:top;    text-align:left;     }
+.Header_22_Right_Lower                 { font-weight:bold;     color:white;      font-size:22px; vertical-align:top;    text-align:right;    }
+.Header_22_Center_Lower                { font-weight:bold;     color:white;      font-size:22px; vertical-align:top;    text-align:center;   }
+
+.Head_22_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:22px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_22_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:22px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_22_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:22px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_22_LT_Vmid                       { font-weight:bold;     color:white;      font-size:22px; vertical-align:middle; text-align:left;     }
+.Head_22_RT_Vmid                       { font-weight:bold;     color:white;      font-size:22px; vertical-align:middle; text-align:right;    }
+.Head_22_CR_Vmid                       { font-weight:bold;     color:white;      font-size:22px; vertical-align:middle; text-align:center;   }
+
+.Header_20_Left_Upper                  { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_20_Right_Upper                 { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_20_Center_Upper                { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_20_Left                        { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:left;     }
+.Header_20_Right                       { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:right;    }
+.Header_20_Center                      { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:center;   }
+.Header_20_Left_Lower_Underline        { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:left;     text-decoration:underline; }
+.Header_20_Right_Lower_Underline       { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:right;    text-decoration:underline; }
+.Header_20_Center_Lower_Underline      { font-weight:bold;     color:white;      font-size:20px; vertical-align:top;    text-align:center;   text-decoration:underline; }
+
+.Head_20_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_20_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_20_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_20_LT_Vmid                       { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:left;     }
+.Head_20_RT_Vmid                       { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:right;    }
+.Head_20_CR_Vmid                       { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:center;   }
+.Head_20_LT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:left;     text-decoration:underline; }
+.Head_20_RT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:right;    text-decoration:underline; }
+.Head_20_CR_Vmid_UL                    { font-weight:bold;     color:white;      font-size:20px; vertical-align:middle; text-align:center;   text-decoration:underline; }
+
+.Header_18_Left_Upper                  { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_18_Right_Upper                 { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_18_Center_Upper                { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_18_Left                        { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:left;     }
+.Header_18_Right                       { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:right;    }
+.Header_18_Center                      { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:center;   }
+
+.Header_18_Left_Lower_Underline        { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:left; }
+.Header_18_Right_Lower_Underline       { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:right; }
+.Header_18_Center_Lower_Underline      { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:center; }
+.Header_18_Left_UC_Underline        	{ font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:left;  text-decoration:underline; text-transform:uppercase; }
+.Header_18_Right_UC_Underline      	 { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:right;  text-decoration:underline; text-transform:uppercase; }
+.Header_18_Center_UC_Underline	      { font-weight:bold;     color:white;      font-size:18px; vertical-align:top;    text-align:center;  text-decoration:underline; text-transform:uppercase; }
+
+.Head_18_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_18_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_18_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_18_LT_Vmid                       { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:left;     }
+.Head_18_RT_Vmid                       { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:right;    }
+.Head_18_CR_Vmid                       { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:center;   }
+.Head_18_LT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:left;     text-decoration:underline; }
+.Head_18_RT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:right;    text-decoration:underline; }
+.Head_18_CR_Vmid_UL                    { font-weight:bold;     color:white;      font-size:18px; vertical-align:middle; text-align:center;   text-decoration:underline; }
+
+.Header_16_Left_Upper                  { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_16_Right_Upper                 { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_16_Center_Upper                { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_16_Left_Lower                  { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:left;     }
+.Header_16_Right_lower                 { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:right;    }
+.Header_16_Center_Lower                { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:center;   }
+.Header_16_Left_Lower_Underline        { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:left;     text-decoration:underline; }
+.Header_16_Right_Lower_Underline       { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:right;    text-decoration:underline; }
+.Header_16_Center_Lower_Underline      { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:center;   text-decoration:underline; }
+
+.Head_16_Lt_Vmid_UC                    { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_16_Rt_Vmid_UC                    { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_16_Cr_Vmid_UC                    { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_16_Lt_Vmid                       { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:left;     }
+.Head_16_Rt_Vmid                       { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:right;    }
+.Head_16_Cr_Vmid                       { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:center;   }
+.Head_16_Lt_Vmid_UL                    { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:left;     text-decoration:underline; }
+.Head_16_Rt_Vmid_UL                    { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:right;    text-decoration:underline; }
+.Head_16_Cr_Vmid_UL                    { font-weight:bold;     color:white;      font-size:16px; vertical-align:middle; text-align:center;   text-decoration:underline; }
+
+
+.Header_14_Left_Upper_Regular                  { font-weight:regular;     color:white;      font-size:14px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_14_Right_Upper_Regular                 { font-weight:regular;     color:white;      font-size:14px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_14_Center_Upper_Regular                { font-weight:regular;     color:white;      font-size:14px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_14_Left_Upper                  { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_14_Right_Upper                 { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_14_Center_Upper                { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_14_Left_Lower                  { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:left;     }
+.Header_14_Right_Lower                 { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:right;    }
+.Header_14_Center_Lower                { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:center;   }
+.Header_14_Left_Lower_Underline        { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:left;     text-decoration:underline; }
+.Header_14_Right_Lower_Underline       { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:right;    text-decoration:underline; }
+.Header_14_Center_Lower_Underline      { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:center;   text-decoration:underline; }
+.Header_14_Left_UC_Underline        	{ font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:left;  text-decoration:underline; text-transform:uppercase; }
+.Header_14_Right_UC_Underline      	 { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:right;  text-decoration:underline; text-transform:uppercase; }
+.Header_14_Center_UC_Underline	      { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:center;  text-decoration:underline; text-transform:uppercase; }
+
+
+
+.Head_14_Lt_Vmid_UC                    { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_14_Rt_Vmid_UC                    { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_14_Cr_Vmid_UC                    { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_14_Lt_Vmid                       { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:left;     }
+.Head_14_Rt_Vmid                       { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:right;    }
+.Head_14_Cr_Vmid                       { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:center;   }
+.Head_14_Lt_Vmid_UL                    { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:left;     text-decoration:underline; }
+.Head_14_Rt_Vmid_UL                    { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:right;    text-decoration:underline; }
+.Head_14_Cr_Vmid_UL                    { font-weight:bold;     color:white;      font-size:14px; vertical-align:middle; text-align:center;   text-decoration:underline; }
+
+.Header_12_Left_Upper                  { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_12_Right_Upper                 { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_12_Center_Upper                { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_12_Left_Lower                  { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:left;     }
+.Header_12_Right_Lower                 { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:right;    }
+.Header_12_Center_Lower                { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:center;   }
+.Header_12_Left_Lower_Underline        { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:left;     text-decoration:underline; }
+.Header_12_Right_Lower_Underline       { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:right;    text-decoration:underline; }
+.Header_12_Center_Lower_Underline      { font-weight:bold;     color:white;      font-size:12px; vertical-align:top;    text-align:center;   text-decoration:underline; }
+
+.Head_12_Lt_Vmid_UC                    { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_12_Rt_Vmid_UC                    { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_12_Cr_Vmid_UC                    { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_12_Lt_Vmid                       { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:left;     }
+.Head_12_Rt_Vmid                       { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:right;    }
+.Head_12_Cr_Vmid                       { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:center;   }
+.Head_12_Lt_Vmid_UL                    { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:left;     text-decoration:underline; }
+.Head_12_Rt_Vmid_UL                    { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:right;    text-decoration:underline; }
+.Head_12_Cr_Vmid_UL                    { font-weight:bold;     color:white;      font-size:12px; vertical-align:middle; text-align:center;   text-decoration:underline; }
+
+.Header_11_Left_Upper                  { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_11_Right_Upper                 { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_11_Center_Upper                { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_11_Left_Lower                  { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:left;     }
+.Header_11_Right_Lower                 { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:right;    }
+.Header_11_Center_Lower                { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:center;   }
+.Header_11_Left_Lower_Underline        { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:left;     text-decoration:underline; }
+.Header_11_Right_Lower_Underline       { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:right;    text-decoration:underline; }
+.Header_11_Center_Lower_Underline      { font-weight:bold;     color:white;      font-size:11px; vertical-align:top;    text-align:center;   text-decoration:underline; }
+
+.Head_11_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_11_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_11_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_11_LT_Vmid                       { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:left;     }
+.Head_11_RT_Vmid                       { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:right;    }
+.Head_11_CR_Vmid                       { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:center;   }
+.Head_11_LT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:left;     text-decoration:underline; }
+.Head_11_RT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:right;    text-decoration:underline; }
+.Head_11_CR_Vmid_UL                    { font-weight:bold;     color:white;      font-size:11px; vertical-align:middle; text-align:center;   text-decoration:underline; }
+
+.Header_10_Left_Upper_Normal                  { font-weight:normal;     color:white;      font-size:10px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_10_Right_Upper_Normal                 { font-weight:normal;     color:white;      font-size:10px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_10_Center_Upper_Normal                { font-weight:normal;     color:white;      font-size:10px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+
+.Header_10_Left_Upper                  { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:left;     text-transform:uppercase; }
+.Header_10_Right_Upper                 { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:right;    text-transform:uppercase; }
+.Header_10_Center_Upper                { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:center;   text-transform:uppercase; }
+.Header_10_Left_Lower                  { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:left;     }
+.Header_10_Right_Lower                 { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:right;    }
+.Header_10_Center_Lower                { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:center;   }
+.Header_10_Left_Lower_Underline        { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:left;     text-decoration:underline; }
+.Header_10_Right_Lower_Underline       { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:right;    text-decoration:underline; }
+.Header_10_Center_Lower_Underline      { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:center;   text-decoration:underline; }
+.Head_10_Left_Bttm                       { font-weight:bold;     color:white;      font-size:10px; vertical-align:bottom; text-align:left;    }
+.Head_10_Center_Bttm                       { font-weight:bold;     color:white;      font-size:10px; vertical-align:bottom; text-align:center;    }
+.Head_10_RT_Bttm                       { font-weight:bold;     color:white;      font-size:10px; vertical-align:bottom; text-align:right;    }
+
+.Head_10_LT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:left;     text-transform:uppercase; }
+.Head_10_RT_Vmid_UC                    { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:right;    text-transform:uppercase; }
+.Head_10_CR_Vmid_UC                    { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:center;   text-transform:uppercase; }
+.Head_10_LT_Vmid                       { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:left;     }
+.Head_10_RT_Vmid                       { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:right;    }
+.Head_10_CR_Vmid                       { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:center;   }
+.Head_10_LT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:left;     text-decoration:underline; }
+.Head_10_RT_Vmid_UL                    { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:right;    text-decoration:underline; }
+.Head_10_CR_Vmid_UL                    { font-weight:bold;     color:white;      font-size:10px; vertical-align:middle; text-align:center;   text-decoration:underline; }
+
+.Body_24_Left_Lower                  { font-weight:regular;     color:white;      font-size:24px; vertical-align:top;    text-align:left;     }
+.Body_24_Right_Lower                 { font-weight:regular;     color:white;      font-size:24px; vertical-align:top;    text-align:right;    }
+.Body_24_Center_Lower                { font-weight:regular;     color:white;      font-size:24px; vertical-align:top;    text-align:center;   }
+
+.Body_20_Left_vmid                     { font-weight:regular;  color:white;      font-size:20px; vertical-align:middle;    text-align:left;     }
+
+.Body_18_Left                          { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:left;     }
+.Body_18_Right                         { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:right;    }
+.Body_18_Center                        { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:center;   }
+
+.Body_18_LT_Vmid                       { font-weight:regular;  color:white;      font-size:18px; vertical-align:middle; text-align:left;     }
+.Body_18_RT_Vmid                       { font-weight:regular;  color:white;      font-size:18px; vertical-align:middle; text-align:right;    }
+.Body_18_CR_Vmid                       { font-weight:regular;  color:white;      font-size:18px; vertical-align:middle; text-align:center;   }
+
+.Body_16_Left                          { font-weight:regular;  color:white;      font-size:16px; vertical-align:top;    text-align:left;     }
+.Body_16_Right                         { font-weight:regular;  color:white;      font-size:16px; vertical-align:top;    text-align:right;    }
+.Body_16_Center                        { font-weight:regular;  color:white;      font-size:16px; vertical-align:top;    text-align:center;   }
+
+.Body_16_LT_Vmid                       { font-weight:regular;  color:white;      font-size:16px; vertical-align:middle; text-align:left;     }
+.Body_16_RT_Vmid                       { font-weight:regular;  color:white;      font-size:16px; vertical-align:middle; text-align:right;    }
+.Body_16_CR_Vmid                       { font-weight:regular;  color:white;      font-size:16px; vertical-align:middle; text-align:center;   }
+
+.Body_14_Left                          { font-weight:regular;  color:white;      font-size:14px; vertical-align:top;    text-align:left;     }
+.Body_14_Right                         { font-weight:regular;  color:white;      font-size:14px; vertical-align:top;    text-align:right;    }
+.Body_14_Center                        { font-weight:regular;  color:white;      font-size:14px; vertical-align:top;    text-align:center;   }
+
+.Body_14_LT_Vmid                       { font-weight:regular;  color:white;      font-size:14px; vertical-align:middle; text-align:left;     }
+.Body_14_RT_Vmid                       { font-weight:regular;  color:white;      font-size:14px; vertical-align:middle; text-align:right;    }
+.Body_14_CR_Vmid                       { font-weight:regular;  color:white;      font-size:14px; vertical-align:middle; text-align:center;   }
+
+.Body_12_Left                          { font-weight:regular;  color:white;      font-size:12px; vertical-align:top;    text-align:left;     }
+.Body_12_Right                         { font-weight:regular;  color:white;      font-size:12px; vertical-align:top;    text-align:right;    }
+.Body_12_Center                        { font-weight:regular;  color:white;      font-size:12px; vertical-align:top;    text-align:center;   }
+
+.Body_12_LT_Vmid                       { font-weight:regular;  color:white;      font-size:12px; vertical-align:middle; text-align:left;     }
+.Body_12_RT_Vmid                       { font-weight:regular;  color:white;      font-size:12px; vertical-align:middle; text-align:right;    }
+.Body_12_CR_Vmid                       { font-weight:regular;  color:white;      font-size:12px; vertical-align:middle; text-align:center;   }
+
+.Body_12_LT_Bttm                        { font-weight:regular;  color:white;      font-size:12px; vertical-align:bottom; text-align:left;     }
+.Body_12_RT_Bttm                       { font-weight:regular;  color:white;      font-size:12px; vertical-align:bottom; text-align:right;    }
+.Body_12_CR_Bttm                     { font-weight:regular;  color:white;      font-size:12px; vertical-align:bottom; text-align:center;   }
+
+
+/* ## link style for friend list region links */
+.Body_12_Left a                        { font-weight:bold;     color:#646464;    font-size:12px; vertical-align:top;    text-align:left; }
+.Body_12_Left:hover a                  { font-weight:bold; text-decoration:underline;  color:#333333;   font-size:12px; vertical-align:top;    text-align:left; }
+
+.Body_11_Left                          { font-weight:regular;  color:white;      font-size:11px; vertical-align:top;    text-align:left;     }
+.Body_11_Right                         { font-weight:regular;  color:white;      font-size:11px; vertical-align:top;    text-align:right;    }
+.Body_11_Center                        { font-weight:regular;  color:white;      font-size:11px; vertical-align:top;    text-align:center;   }
+
+.Body_11_LT_Vmid                       { font-weight:regular;  color:white;      font-size:11px; vertical-align:middle; text-align:left;     }
+.Body_11_RT_Vmid                       { font-weight:regular;  color:white;      font-size:11px; vertical-align:middle; text-align:right;    }
+.Body_11_CR_Vmid                       { font-weight:regular;  color:white;      font-size:11px; vertical-align:middle; text-align:center;   }
+
+.Body_10_Left                          { font-weight:regular;  color:white;      font-size:10px; vertical-align:top;    text-align:left;     }
+.Body_10_Right                         { font-weight:regular;  color:white;      font-size:10px; vertical-align:top;    text-align:right;    }
+.Body_10_Center                        { font-weight:regular;  color:white;      font-size:10px; vertical-align:top;    text-align:center;   }
+
+.Body_10_LT_Vmid                       { font-weight:regular;  color:white;      font-size:10px; vertical-align:middle; text-align:left;     }
+.Body_10_RT_Vmid                       { font-weight:regular;  color:white;      font-size:10px; vertical-align:middle; text-align:right;    }
+.Body_10_CR_Vmid                       { font-weight:regular;  color:white;      font-size:10px; vertical-align:middle; text-align:center;   }
+
+.Body_9_Left                           { font-weight:regular;  color:white;      font-size:9px; vertical-align:top;    text-align:left;      }
+.Body_9_Right                          { font-weight:regular;  color:white;      font-size:9px; vertical-align:top;    text-align:right;     }
+.Body_9_Center                         { font-weight:regular;  color:white;      font-size:9px; vertical-align:top;    text-align:center;    }
+
+.Body_9_LT_Vmid                        { font-weight:regular;  color:white;      font-size:9px; vertical-align:middle; text-align:left;      }
+.Body_9_RT_Vmid                        { font-weight:regular;  color:white;      font-size:9px; vertical-align:middle; text-align:right;     }
+.Body_9_CR_Vmid                        { font-weight:regular;  color:white;      font-size:9px; vertical-align:middle; text-align:center;    }
+
+.Body_8_Left                           { font-weight:regular;  color:white;      font-size:8px; vertical-align:top;    text-align:left;      }
+.Body_8_Right                          { font-weight:regular;  color:white;      font-size:8px; vertical-align:top;    text-align:right;     }
+.Body_8_Center                         { font-weight:regular;  color:white;      font-size:8px; vertical-align:top;    text-align:center;    }
+
+.Body_8_LT_Vmid                        { font-weight:regular;  color:white;      font-size:8px; vertical-align:middle; text-align:left;      }
+.Body_8_RT_Vmid                        { font-weight:regular;  color:white;      font-size:8px; vertical-align:middle; text-align:right;     }
+.Body_8_CR_Vmid                        { font-weight:regular;  color:white;      font-size:8px; vertical-align:middle; text-align:center;    }
+
+.SearchField_12_Left                   { font-weight:regular;  color:#537ca2;    font-size:12px; vertical-align:top;    text-align:left; }
+.Body_15_CR_Vmid_Blue                        { font-weight:regular;  color:#00AFFF;      font-size:14px;    vertical-align:middle;    text-align:center; }
+.Body_10_LT_Vmid_Grey                        { font-weight:regular;  color:#323232;      font-size:10px;    vertical-align:middle;    text-align:left; }
+
+.DO_NOT_USE_BELOW_HERE                 { font-weight:bold;     color:red;        font-size:30px; vertical-align:top;    text-align:left; }
+.DO_NOT_USE_BELOW_HERE                 { font-weight:bold;     color:red;        font-size:30px; vertical-align:top;    text-align:left; }
+.DO_NOT_USE_BELOW_HERE                 { font-weight:bold;     color:red;        font-size:30px; vertical-align:top;    text-align:left; }
+.DO_NOT_USE_BELOW_HERE                 { font-weight:bold;     color:red;        font-size:30px; vertical-align:top;    text-align:left; }
+.DO_NOT_USE_BELOW_HERE                 { font-weight:bold;     color:red;        font-size:30px; vertical-align:top;    text-align:left; }
+
+/* ## OLD - DO NOT USE */
+
+.OLD DO NOT USE BELOW HERE             { font-weight:regular;  color:#F7941E;    font-size:22px; vertical-align:top;    text-align:center; }
+
+/* ## REMOVE REDUNDANT STYLES (non-bold headers and bold bodies)*/
+
+.Header_22_Left_Lower_Regular          { font-weight:regular;  color:white;      font-size:22px; vertical-align:top;    text-align:left; }
+.Header_22_Right_Lower_Regular         { font-weight:regular;  color:white;      font-size:22px; vertical-align:top;    text-align:right; }
+.Header_22_Center_Lower_Regular        { font-weight:regular;  color:white;      font-size:22px; vertical-align:top;    text-align:center; }
+.Header_20_Left_Lower_Regular          { font-weight:regular;  color:white;      font-size:20px; vertical-align:top;    text-align:left; }
+.Header_20_Right_Lower_Regular         { font-weight:regular;  color:white;      font-size:20px; vertical-align:top;    text-align:right; }
+.Header_20_Center_Lower_Regular        { font-weight:regular;  color:white;      font-size:20px; vertical-align:top;    text-align:center; }
+.Header_18_Left_Regular_Upper          { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:left; text-transform:uppercase; }
+.Header_18_Right_Regular_Upper         { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:right; text-transform:uppercase; }
+.Header_18_Center_Regular_Upper        { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:center; text-transform:uppercase; }
+.Header_18_Left_Regular                { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:left; }
+.Header_18_Right_Regular               { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:right; }
+.Header_18_Center_Regular              { font-weight:regular;  color:white;      font-size:18px; vertical-align:top;    text-align:center; }
+.Header_11_Left_Upper_Regular          { font-weight:regular;  color:white;      font-size:11px; vertical-align:top;    text-align:left; text-transform:uppercase; }
+.Header_11_Right_Upper_Regular         { font-weight:regular;  color:white;      font-size:11px; vertical-align:top;    text-align:right; text-transform:uppercase; }
+.Header_11_Center_Upper_Regular        { font-weight:regular;  color:white;      font-size:11px; vertical-align:top;    text-align:center; text-transform:uppercase; }
+.Body_Bold_16_Left                     { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:left; }
+.Body_Bold_16_Right                    { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:right; }
+.Body_Bold_16_Center                   { font-weight:bold;     color:white;      font-size:16px; vertical-align:top;    text-align:center; }
+.Body_Bold_14_Left                     { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:left; }
+.Body_Bold_14_Right                    { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:right; }
+.Body_Bold_14_Center                   { font-weight:bold;     color:white;      font-size:14px; vertical-align:top;    text-align:center; }
+.Body_Bold_10_Left                     { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:left; }
+.Body_Bold_10_Right                    { font-weight:bold;     color:white;      font-size:10px; vertical-align:top;    text-align:right; }
+
+
+/* ## OLD STYLES */
+
+.achievementModuleHeaders              { font-weight:bold;     color:#2b587b;    font-size:17px; background-color:transparent; vertical-align:top;    text-align:left; padding-left:13px; }
+
+.achievementModuleTitle                { font-weight:bold;     color:#2b587b;    font-size:12px; background-color:transparent; vertical-align:top;    text-align:left; padding-left:5px; padding-top:5px;  }
+.achievementModuleDescription          { font-weight:regular;  color:#2b587b;    font-size:12px; background-color:transparent; vertical-align:top;    text-align:left; padding-left:5px; padding-top:5px;  }
+
+.progressGenRankNumber                 { font-weight:regular;  color:#d1ae4a;    font-size:75px; background-color:transparent; vertical-align:top;    text-align:center; }
+.progressModuleStatsTinyCenter         { font-weight:regular;  color:#2b587b;    font-size:9px;  background-color:transparent; vertical-align:top;    text-align:center; }
+.progressModuleStatsRatioRight         { font-weight:regular;  color:white;      font-size:15px; background-color:transparent; vertical-align:top;    text-align:right; padding-right:13px;}
+.progressModuleStatsTinyRight          { font-weight:regular;  color:#2b587b;    font-size:9px;  background-color:transparent; vertical-align:top;    text-align:right; padding-right:13px;}
+.progressModuleStatsTiny               { font-weight:regular;  color:#2b587b;    font-size:9px;  background-color:transparent; vertical-align:top;    text-align:left; }
+.progressModuleStatsBoldCenter         { font-weight:bold;     color:#2b587b;    font-size:15px; background-color:transparent; vertical-align:top;    text-align:center; }
+.progressModuleStats                   { font-weight:regular;  color:#2b587b;    font-size:16px; background-color:transparent; vertical-align:top;    text-align:left; }
+.progressModuleSubHeaders              { font-weight:bold;     color:#2b587b;    font-size:14px; background-color:transparent; vertical-align:top;    text-align:left; padding-left:13px; }
+.progressModuleHeaders                 { font-weight:bold;     color:#2b587b;    font-size:17px; background-color:transparent; vertical-align:top;    text-align:left; padding-left:13px; }
+
+.textPalettePanelHeader                { font-weight:bold;     color:#dbf1ff;    font-size:26px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textPalettePanelHeader24              { font-weight:bold;     color:#dbf1ff;    font-size:24px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textPalettePanelHeader22              { font-weight:bold;     color:#dbf1ff;    font-size:22px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textPalettePanelSubHeader             { font-weight:bold;     color:#dbf1ff;    font-size:20px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textPalettePanelinfoText              { font-weight:regular;  color:#dbf1ff;    font-size:12px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textPalettePanelinfoTextDark          { font-weight:regular;  color:#354e64;    font-size:12px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textPalettePanelinfoAlignRightText    { font-weight:regular;  color:#dbf1ff;    font-size:12px; background-color:transparent; vertical-align:middle; text-align:right;}
+
+.textPalleteContainer                  { font-weight:regular;  color:white;      font-size:14px; vertical-align:top;    text-align:left; }
+.textPalleteCentered                   { font-weight:regular;  color:white;      font-size:12px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textPalleteSubHead                    { font-weight:bold;     color:white;      font-size:18px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textPalleteHeader                     { font-weight:bold;     color:#d4efff;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:left;}
+
+.textRegionHeader                      { font-weight:bold;     color:#354e64;    font-size:17px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textBoldPageTextBlue                  { font-weight:bold;     color:#96c9f5;    font-size:13px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textDetail                            { font-weight:regular;  color:white;      font-size:11px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textNormalPageText                    { font-weight:regular;  color:black;      font-size:13px; background-color:transparent; text-align:left; }
+.textTextFieldInput                    { font-weight:regular;  color:black;      font-size:13px; background-color:transparent; text-align:left; }
+.textRegionDetailBoldLarger            { font-weight:bold;     color:#354e64;    font-size:20px; background-color:transparent; text-align:left; vertical-align:top}
+.textRegionDetailBold                  { font-weight:bold;     color:#354e64;    font-size:9px;  background-color:transparent; text-align:left; vertical-align:top}
+.textRegionDetailLarger                { font-weight:regular;  color:#354e64;    font-size:15px; background-color:transparent; vertical-align:top;    text-align:left; }
+.textRegionDetail                      { font-weight:regular;  color:#354e64;    font-size:9px;  background-color:transparent; vertical-align:top;    text-align:left; }
+.textRegionName                        { font-weight:regular;  color:#354e64;    font-size:13px; background-color:transparent; vertical-align:top;    text-align:left; }
+.textRegionNameBlue                    { font-weight:regular;  color:#354e64;    font-size:13px; background-color:transparent; vertical-align:top;    text-align:left; }
+.textPromptBarHeader                   { font-weight:bold;     color:white;      font-size:16px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textNavBarHeaderBold                  { font-weight:bold;     color:#354e64;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textNavBarHeader                      { font-weight:bold;     color:#354e64;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textButtonBoxBulletTop                { font-weight:regular;  color:#6cb1e9;    font-size:14px; background-color:transparent; vertical-align:top;    text-align:left; }
+.textButtonBoxBulletTopRight           { font-weight:regular;  color:#6cb1e9;    font-size:14px; background-color:transparent; vertical-align:top;    text-align:right; }
+.textButtonBoxBulletCentered           { font-weight:regular;  color:#012f48;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textRegionNameField                   { font-weight:regular;  color:#012f48;    font-size:16px; background-color:transparent; vertical-align:text-top; text-align:center; }
+.textButtonBoxBullet                   { font-weight:regular;  color:#012f48;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textPalleteCentered                   { font-weight:regular;  color:#012f48;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textTickerTape                        { font-weight:regular;  color:#012f48;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:left; padding-top:3px; }
+.textToolName                          { font-weight:regular;  color:black;      font-size:14px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textToolCost                          { font-weight:regular;  color:black;      font-size:12px; background-color:transparent; vertical-align:middle; text-align:right; }
+.textWhiteCaptionCenter                { font-weight:regular;  color:white;      font-size:22px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textWhiteCaptionLeft                  { font-weight:regular;  color:white;      font-size:22px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textButtonLabel                       { font-weight:regular;  color:#d4efff;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textButtonLabelShadow                 { font-weight:regular;  color:#012f48;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textButtonFilterLabel                 { font-weight:regular;  color:#012f48;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textGraphLabel                        { font-weight:regular;  color:white;      font-size:10px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textGraphLabelRight                   { font-weight:regular;  color:white;      font-size:10px; background-color:transparent; vertical-align:middle; text-align:right; }
+.textIncome                            { font-weight:regular;  color:#d4efff;    font-size:20px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textButtonLabelLeft                   { font-weight:regular;  color:#d4efff;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textButtonLabelLeftShadow             { font-weight:regular;  color:#012f48;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:left;}
+.textRolloverBoxTop                    { font-weight:regular;  color:#6cb1e9;    font-size:12px; background-color:transparent; vertical-align:top;    text-align:left;}
+.textMissingUserName                   { font-weight:regular;  color:black;      font-size:10px; background-color:transparent; vertical-align:middle; text-align:left; }
+.textBillboardTitle                    { font-weight:bold;     color:black;      font-size:70px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textBillboardSubtitle                 { font-weight:bold;     color:black;      font-size:40px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textEditorHeaderTitle                 { font-weight:bold;     color:black;      font-size:40px; background-color:transparent; vertical-align:middle; text-align:center; }
+.textHeadlineMediumTitle               { font-weight:bold;     color:black;      font-size:36px; background-color:transparent; vertical-align:top;    text-align:center; }
+.HeadlineMediumTitle                   { font-weight:bold;     color:black;      font-size:36px; background-color:transparent; vertical-align:top;    text-align:center; }
+.textHeadlineSmallTitle                { font-weight:bold;     color:black;      font-size:28px; background-color:transparent; vertical-align:top;    text-align:left; }
+.HeadlineSmallTitle                    { font-weight:bold;     color:black;      font-size:20px; background-color:transparent; vertical-align:top;    text-align:left; }
+.HeadlineSmallTitleRight               { font-weight:bold;     color:black;      font-size:20px; background-color:transparent; vertical-align:top;    text-align:right; }
+.textHeadlineBodyText                  { font-weight:bold;     color:black;      font-size:16px; background-color:transparent; vertical-align:top;    text-align:left; }
+.RolloverTextSmall                     { font-weight:regular;  color:black;      font-size:12px; background-color:transparent; vertical-align:top;    text-align:left; }
+.HeadlineBodyText                      { font-weight:bold;     color:black;      font-size:16px; background-color:transparent; vertical-align:top;    text-align:left; }
+.BudgetText                            { font-weight:regular;  color:#dbf1ff;    font-size:20px; background-color:transparent; vertical-align:middle; text-align:left;}
+.BudgetTextSmall                       { font-weight:regular;  color:#dbf1ff;    font-size:14px; background-color:transparent; vertical-align:top;    text-align:left; padding-left:5px; padding-top:5px;  }
+.BudgetTextAnim                        { font-weight:regular;  color:#dbf1ff;    font-size:48px; background-color:transparent; vertical-align:middle; text-align:left;}
+.HeaderDate30pt                        { font-weight:bold;     color:black;      font-size:31px; background-color:transparent; vertical-align:top;    text-align:left; }
+.textDateAndTime                       { font-weight:regular;  color:#354e64;    font-size:14px; background-color:transparent; vertical-align:middle; text-align:left; }
+
+.taskItemName                          { font-weight:regular;  color:white;      font-size:14px; background-color:transparent; vertical-align:top;    text-align:center; }
+.taskItemDescription                   { font-weight:regular;  color:white;      font-size:14px; background-color:transparent; vertical-align:top;    text-align:left; }
+
+.toolRolloverName                      { font-weight:bold;     color:white;      font-size:20px; background-color:transparent; vertical-align:top;    text-align:left;}
+.toolRolloverDescription               { font-weight:regular;  color:white;      font-size:14px; background-color:transparent; vertical-align:top;    text-align:left;}
+.toolRolloverUnlockExplanation         { font-weight:regular;  color:red;        font-size:14px; background-color:transparent; vertical-align:top;    text-align:center;}
+.toolRolloverUnlockProgress            { font-weight:regular;  color:white;      font-size:26px; background-color:transparent; vertical-align:top;    text-align:left;}
+
+.toolCounterText                       { font-weight:regular;  color:black;      font-size:26px; background-color:transparent; vertical-align:top;    text-align:center;}
+
+.unlockNotification                    { font-weight:regular;  color:white;      font-size:46px; background-color:transparent; vertical-align:top;    text-align:center;}
+
+.missionObjective                      { font-weight:regular;  color:white;      font-size:16px; background-color:transparent; vertical-align:top;    text-align:left; }
+.missionHeading                        { font-weight:bold;     color:white;      font-size:16px; background-color:transparent; vertical-align:top;    text-align:left; }
+
+.alertCount                            { font-weight:regular;  color:white;      font-size:16px; background-color:transparent; vertical-align:top;    text-align:left;}
+
+.tutorialDialogText                    { font-weight:regular;  color:white;      font-size:16px; background-color:transparent; vertical-align:middle; text-align:left;}
+.tutorialDialogButtonText              { font-weight:regular;  color:#354e64;    font-size:16px; background-color:transparent; vertical-align:middle; text-align:left;}
+
+.speechBubbleText                      { font-weight:regular;  color:white;      font-size:16px; background-color:transparent; vertical-align:middle; text-align:center;}
+.speechBubbleButtonText                { font-weight:regular;  color:#354e64;    font-size:16px; background-color:transparent; vertical-align:middle; text-align:center;}
+
+.globalPanelHeadlineNormalLeft         { font-weight:bold;     color:#c0e9f5;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:left;}
+.globalPanelHeadlineNormalRight        { font-weight:bold;     color:#c0e9f5;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:right;}
+.globalPanelHeadlineNormalCenter       { font-weight:bold;     color:#c0e9f5;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:center;}
+.globalPanelSubheadNormalLeft          { font-weight:bold;     color:#c0e9f5;    font-size:15px; background-color:transparent; vertical-align:middle; text-align:left;}
+.globalPanelSubheadNormalCenter        { font-weight:bold;     color:#c0e9f5;    font-size:15px; background-color:transparent; vertical-align:middle; text-align:center;}
+.globalPanelDescriptionNormalLeft      { font-weight:regular;  color:#c0e9f5;    font-size:12px; background-color:transparent; vertical-align:middle; text-align:left;}
+.globalPanelDescriptionNormalCenter    { font-weight:regular;  color:#c0e9f5;    font-size:12px; background-color:transparent; vertical-align:middle; text-align:center;}
+.globalPanelDescriptionNormalRight     { font-weight:regular;  color:#c0e9f5;    font-size:12px; background-color:transparent; vertical-align:middle; text-align:right;}
+.globalPanelDescriptionSmallLeft       { font-weight:regular;  color:#c0e9f5;    font-size:10px; background-color:transparent; vertical-align:middle; text-align:left;}
+.globalPanelDescriptionSmallCenter     { font-weight:regular;  color:#c0e9f5;    font-size:10px; background-color:transparent; vertical-align:middle; text-align:center;}
+.globalPanelDescriptionSmallRight      { font-weight:regular;  color:#c0e9f5;    font-size:10px; background-color:transparent; vertical-align:middle; text-align:right;}
+.globalPanelNumberValueLeft            { font-weight:regular;  color:#c0e9f5;    font-size:15px; background-color:transparent; vertical-align:middle; text-align:left;}
+.globalPanelNumberValueCenter          { font-weight:regular;  color:#c0e9f5;    font-size:15px; background-color:transparent; vertical-align:middle; text-align:center;}
+
+.tradeWallHeaderTxtCyan                { font-weight:bold;     color:#bce7f3;    font-size:32px; background-color:transparent; vertical-align:middle; text-align:center;}
+.tradeWallHeaderTxtYellow              { font-weight:bold;     color:#f3db0f;    font-size:24px; background-color:transparent; vertical-align:middle; text-align:center;}
+.tradeWallNumberTxtCyan                { font-weight:regular;  color:#bce7f3;    font-size:28px; background-color:transparent; vertical-align:middle; text-align:center;}
+.tradeWallUnitMeasurementTxtCyan       { font-weight:regular;  color:#bce7f3;    font-size:18px; background-color:transparent; vertical-align:middle; text-align:center;}
+.tradeWallCityName14pt                 { font-weight:regular;  color:white;       font-size:16px; background-color:transparent; vertical-align:middle; text-align:center;}
+.tradeWallPlayerName12pt               { font-weight:regular;  color:white;       font-size:14px; background-color:transparent; vertical-align:middle; text-align:center;}
+.tradeWallRight16pt                    { font-weight:regular;  color:white;       font-size:16px; background-color:transparent; vertical-align:middle; text-align:right;}
+.tradeWallLeft16pt                     { font-weight:regular;  color:white;      font-size:16px; background-color:transparent; vertical-align:middle; text-align:left;}
+
+.regionMessageHeaderTxt                { font-weight:bold;     color:#1d2e37;    font-size:16px; background-color:transparent; vertical-align:middle; text-align:left;}
+.regionMessageTxt10PntCentered         { font-weight:regular;  color:#1d2e37;    font-size:10px; background-color:transparent; vertical-align:top;    text-align:center;}
+.regionMessageTxt10PntLeft             { font-weight:regular;  color:#1d2e37;    font-size:10px; background-color:transparent; vertical-align:top;    text-align:left;}
+.regionMessageTxt12Pnt                 { font-weight:regular;  color:#0085b6;    font-size:12px; background-color:transparent; vertical-align:top;    text-align:left;}
+.regionMessageTxt12PntCentered         { font-weight:regular;  color:#0085b6;    font-size:12px; background-color:transparent; vertical-align:top;    text-align:center;}
+.regionMessageTxtPnt9PntCenteredBlue   { font-weight:regular;  color:#1d2e37;    font-size:9px;  background-color:transparent; vertical-align:top;    text-align:center;}
+.regionMessageTxtPnt9PntRightBlue      { font-weight:regular;  color:#1d2e37;    font-size:9px;  background-color:transparent; vertical-align:top;    text-align:right;}
+.regionMessageTxtPnt9PntLeftGreen      { font-weight:regular;  color:#5abf01;    font-size:9px;  background-color:transparent; vertical-align:middle; text-align:center;}
+.regionMessageTxt14PntLeft             { font-weight:regular;  color:#1d2e37;    font-size:14px; background-color:transparent; vertical-align:top;    text-align:left;}
+.regionMessageTxt16PntLeft             { font-weight:regular;  color:#1d2e37;    font-size:16px; background-color:transparent; vertical-align:top;    text-align:left;}
+.regionMessageTxt30PntCentered         { font-weight:bold;     color:white;      font-size:30px; background-color:transparent; vertical-align:top;    text-align:center;}
+.regionMessageTxtChatUsername          { font-weight:bold;     color:#00C8FF;}
+.regionMessageTxtEventUsername         { font-weight:bold;}
+.regionMessageTxtChatTimestamp         { font-weight:bold;     color:#FFB400;}
+
+.Size10Boldleft                        { font-weight:bold;     color:white;     font-size:10px; background-color:transparent; vertical-align:top;    text-align:left;}
+.Size10BoldCenter                      { font-weight:bold;     color:white;     font-size:10px; background-color:transparent; vertical-align:top;    text-align:center;}
+.Size12Center                          { font-weight:regular;  color:white;     font-size:12px; background-color:transparent; vertical-align:top;    text-align:center;}
+.Size12BoldCenter                      { font-weight:bold;     color:white;     font-size:12px; background-color:transparent; vertical-align:top;    text-align:center;}
+.Size12Left                            { font-weight:regular;  color:white;     font-size:12px; background-color:transparent; vertical-align:top;    text-align:left;}
+.Size12BoldLeft                        { font-weight:bold;     color:white;     font-size:12px; background-color:transparent; vertical-align:top;    text-align:left;}
+.Size14Center                          { font-weight:regular;  color:white;     font-size:14px; background-color:transparent; vertical-align:top;    text-align:center;}
+.Size14Left                            { font-weight:regular;  color:white;     font-size:14px; background-color:transparent; vertical-align:top;    text-align:left;}
+.Size14Right                           { font-weight:regular;  color:white;     font-size:14px; background-color:transparent; vertical-align:top;    text-align:right;}
+.Size14BoldCenter                      { font-weight:bold;     color:white;     font-size:14px; background-color:transparent; vertical-align:top;    text-align:center;}
+
+.regionCityNameTxt12PntLeft            { font-weight:regular;  color:#048ac8;   font-size:12px; background-color:transparent; vertical-align:top;    text-align:left;}
+.regionMayorNameTxt10PntLeft           { font-weight:regular;  color:#444444;   font-size:10px; background-color:transparent; vertical-align:top;    text-align:left;}
+
+.launcher3DMenuButtonLabel             { font-weight:regular;  color:white;     font-size:20px; vertical-align:middle; text-align:center; text-shadow: black 0px 0px 3px; }
+.launcher3DFeedItemTitle               { font-weight:bold;     color:white;     font-size:18px; vertical-align:top;    text-align:left; }
+.launcher3DFeedItemContent             { font-weight:regular;  color:white;     font-size:14px; vertical-align:top;    text-align:left; }
+
+.FEHeader                              { font-weight:bold;     color:white;     font-size:28px; vertical-align:top;    text-align:center; }
+.FESubHead                             { font-weight:bold;     color:#374370;   font-size:20px; vertical-align:top;    text-align:center; }
+
+.FEBody10LeftWhite                     { font-weight:regular;  color:white;     font-size:10px; vertical-align:top;    text-align:left; }
+.FEBody10LeftLight                     { font-weight:regular;  color:#8A9CBD;   font-size:10px; vertical-align:top;    text-align:left; }
+.FEBody10LeftDark                      { font-weight:regular;  color:#374370;   font-size:10px; vertical-align:top;    text-align:left; }
+
+.FEBody10CenterWhite                   { font-weight:regular;  color:white;     font-size:10px; vertical-align:top;    text-align:center; }
+.FEBody10CenterLight                   { font-weight:regular;  color:#8A9CBD;   font-size:10px; vertical-align:top;    text-align:center; }
+.FEBody10CenterDark                    { font-weight:regular;  color:#374370;   font-size:10px; vertical-align:top;    text-align:center; }
+
+.FEBody10RightWhite                    { font-weight:regular;  color:white;     font-size:10px; vertical-align:top;    text-align:right; }
+.FEBody10RightLight                    { font-weight:regular;  color:#8A9CBD;   font-size:10px; vertical-align:top;    text-align:right; }
+.FEBody10RightDark                     { font-weight:regular;  color:#374370;   font-size:10px; vertical-align:top;    text-align:right; }
+
+.FEBody10LeftWhiteBold                 { font-weight:bold;     color:white;     font-size:10px; vertical-align:middle; text-align:left; }
+.FEBody10LeftLightBold                 { font-weight:bold;     color:#8A9CBD;   font-size:10px; vertical-align:middle; text-align:left; }
+.FEBody10LefttDarkBold                 { font-weight:bold;     color:#374370;   font-size:10px; vertical-align:middle; text-align:left; }
+
+.FEBody12LeftWhite                     { font-weight:regular;  color:white;     font-size:12px; vertical-align:top;    text-align:left; }
+.FEBody12LeftLight                     { font-weight:regular;  color:#8A9CBD;   font-size:12px; vertical-align:top;    text-align:left; }
+.FEBody12LeftDark                      { font-weight:regular;  color:#374370;   font-size:12px; vertical-align:top;    text-align:left; }
+
+.FEBody12CenterWhite                   { font-weight:regular;  color:white;     font-size:12px; vertical-align:top;    text-align:center; }
+.FEBody12CenterLight                   { font-weight:regular;  color:#8A9CBD;   font-size:12px; vertical-align:top;    text-align:center; }
+.FEBody12CenterDark                    { font-weight:regular;  color:#374370;   font-size:12px; vertical-align:top;    text-align:center; }
+
+.FEBody12RightWhite                    { font-weight:regular;  color:white;     font-size:12px; vertical-align:top;    text-align:right; }
+.FEBody12RightLight                    { font-weight:regular;  color:#8A9CBD;   font-size:12px; vertical-align:top;    text-align:right; }
+.FEBody12RightDark                     { font-weight:regular;  color:#374370;   font-size:12px; vertical-align:top;    text-align:right; }
+
+.FEBody14LeftWhite                     { font-weight:regular;  color:white;     font-size:14px; vertical-align:top;    text-align:left; }
+.FEBody14LeftLight                     { font-weight:regular;  color:#8A9CBD;   font-size:14px; vertical-align:top;    text-align:left; }
+.FEBody14LeftDark                      { font-weight:regular;  color:#374370;   font-size:14px; vertical-align:top;    text-align:left; }
+
+.FEBody14CenterWhite                   { font-weight:regular;  color:white;     font-size:14px; vertical-align:top;    text-align:center; }
+.FEBody14CenterLight                   { font-weight:regular;  color:#8A9CBD;   font-size:14px; vertical-align:top;    text-align:center; }
+.FEBody14CenterDark                    { font-weight:regular;  color:#374370;   font-size:14px; vertical-align:top;    text-align:center; }
+
+.FEBody14RightWhite                    { font-weight:regular;  color:white;     font-size:14px; vertical-align:top;    text-align:right; }
+.FEBody14RightLight                    { font-weight:regular;  color:#8A9CBD;   font-size:14px; vertical-align:top;    text-align:right; }
+.FEBody14RightDark                     { font-weight:regular;  color:#374370;   font-size:14px; vertical-align:top;    text-align:right; }
+
+.FEBody16LeftWhite                     { font-weight:regular;  color:white;     font-size:16px; vertical-align:top;    text-align:left; }
+.FEBody16LeftLight                     { font-weight:regular;  color:#8A9CBD;   font-size:16px; vertical-align:top;    text-align:left; }
+.FEBody16LeftDark                      { font-weight:regular;  color:#374370;   font-size:16px; vertical-align:top;    text-align:left; }
+
+.FEBody16RightWhite                    { font-weight:regular;  color:white;     font-size:16px; vertical-align:top;    text-align:right; }
+.FEBody16RightLight                    { font-weight:regular;  color:#8A9CBD;   font-size:16px; vertical-align:top;    text-align:right; }
+.FEBody16RightDark                     { font-weight:regular;  color:#374370;   font-size:16px; vertical-align:top;    text-align:right; }
+
+.FEBody16CenterWhite                   { font-weight:regular;  color:white;     font-size:16px; vertical-align:top;    text-align:center; }
+.FEBody16CenterLight                   { font-weight:regular;  color:#8A9CBD;   font-size:16px; vertical-align:top;    text-align:center; }
+.FEBody16CenterDark                    { font-weight:regular;  color:#374370;   font-size:16px; vertical-align:top;    text-align:center; }
+
+.FEBody16LeftWhite                     { font-weight:regular;  color:white;     font-size:16px; vertical-align:top;    text-align:left; }
+
+.FEBody16LeftWhite                     { font-weight:bold;     color:white;     font-size:16px; vertical-align:top;    text-align:left; }
+.FEBody16RightWhite                    { font-weight:bold;     color:white;     font-size:16px; vertical-align:top;    text-align:right; }
+.FEBody16CenterWhite                   { font-weight:bold;     color:white;     font-size:16px; vertical-align:top;    text-align:center; }
+
+.FEBody16RightWhite                    { font-weight:regular;  color:white;     font-size:16px; vertical-align:top;    text-align:right; }
+.FEBody16RightLight                    { font-weight:regular;  color:#8A9CBD;   font-size:16px; vertical-align:top;    text-align:right; }
+.FEBody16RightDark                     { font-weight:regular;  color:#374370;   font-size:16px; vertical-align:top;    text-align:right; }
+
+.FEBody16CenterWhite                   { font-weight:regular;  color:white;     font-size:16px; vertical-align:top;    text-align:center; }
+.FEBody16CenterLight                   { font-weight:regular;  color:#8A9CBD;   font-size:16px; vertical-align:top;    text-align:center; }
+.FEBody16CenterDark                    { font-weight:regular;  color:#374370;   font-size:16px; vertical-align:top;    text-align:center; }
+
+.FEBody18LeftWhite                     { font-weight:regular;  color:white;     font-size:18px; vertical-align:top;    text-align:left; }
+.FEBody18LeftLight                     { font-weight:regular;  color:#8A9CBD;   font-size:18px; vertical-align:top;    text-align:left; }
+.FEBody18LeftDark                      { font-weight:regular;  color:#374370;   font-size:18px; vertical-align:top;    text-align:left; }
+
+.FEBody18RightWhiteBold                { font-weight:bold;     color:white;     font-size:18px; vertical-align:top;    text-align:right; }
+.FEBody18RightLightBold                { font-weight:bold;     color:#8A9CBD;   font-size:18px; vertical-align:top;    text-align:right; }
+.FEBody18RightDarkBold                 { font-weight:bold;     color:#374370;   font-size:18px; vertical-align:top;    text-align:right; }
+
+.FEBody18LeftWhiteBold                 { font-weight:bold;     color:white;     font-size:18px; vertical-align:middle; text-align:left; }
+.FEBody18LeftLightBold                 { font-weight:bold;     color:#8A9CBD;   font-size:18px; vertical-align:middle; text-align:left; }
+.FEBody18LefttDarkBold                 { font-weight:bold;     color:#374370;   font-size:18px; vertical-align:middle; text-align:left; }
+
+.FEBody18CenterWhiteBold               { font-weight:bold;     color:white;     font-size:18px; vertical-align:middle; text-align:center; }
+.FEBody18CenterLightBold               { font-weight:bold;     color:#8A9CBD;   font-size:18px; vertical-align:middle; text-align:center; }
+.FEBody18CentertDarkBold               { font-weight:bold;     color:#374370;   font-size:18px; vertical-align:middle; text-align:center; }
+
+.FEBody14RightWhiteBold                { font-weight:bold;     color:white;     font-size:14px; vertical-align:top;    text-align:right; }
+.FEBody14RightLightBold                { font-weight:bold;     color:#8A9CBD;   font-size:14px; vertical-align:top;    text-align:right; }
+.FEBody14RightDarkBold                 { font-weight:bold;     color:#374370;   font-size:14px; vertical-align:top;    text-align:right; }
+
+.FEBody14LeftWhiteBold                 { font-weight:bold;     color:white;     font-size:14px; vertical-align:middle; text-align:left; }
+.FEBody14LeftLightBold                 { font-weight:bold;     color:#8A9CBD;   font-size:14px; vertical-align:middle; text-align:left; }
+.FEBody14LefttDarkBold                 { font-weight:bold;     color:#374370;   font-size:14px; vertical-align:middle; text-align:left; }
+
+.FEBody14CenterWhiteBold               { font-weight:bold;     color:white;     font-size:18px; vertical-align:middle; text-align:center; }
+.FEBody14CenterLightBold               { font-weight:bold;     color:#8A9CBD;   font-size:18px; vertical-align:middle; text-align:center; }
+.FEBody14CentertDarkBold               { font-weight:bold;     color:#374370;   font-size:18px; vertical-align:middle; text-align:center; }
+
+.FEBody18CenterWhite                   { font-weight:regular;  color:white;     font-size:18px; vertical-align:top;    text-align:center; }
+.FEBody18CenterLight                   { font-weight:regular;  color:#8A9CBD;   font-size:18px; vertical-align:top;    text-align:center; }
+.FEBody18CenterDark                    { font-weight:regular;  color:#374370;   font-size:18px; vertical-align:top;    text-align:center; }
+
+.PanelTitle                            { font-weight:bold;     color:white;     font-size:21px; vertical-align:middle; text-align:left; text-transform:uppercase;}
+.PanelTitleCentered                    { font-weight:bold;     color:white;     font-size:21px; vertical-align:middle; text-align:center; text-transform:uppercase;}
+.PanelBarTitle                         { font-weight:bold;     color:#262E42;   font-size:16px; vertical-align:middle; text-align:center; text-transform:uppercase;}
+.PanelText                             { font-weight:regular;  color:#262E42;   font-size:14px;}
+.PanelText_Centered                    { font-weight:regular;  color:#262E42;   font-size:14px; text-align:center;}
+.PanelText_Blue                        { font-weight:regular;  color:#1C75BC;   font-size:20px; text-align:center; text-transform:uppercase;}
+.ProgressText                          { font-weight:regular;  color:#FFE811;   font-size:14px; vertical-align:middle; text-align:center;}
+.SimCityWorldButton                    { font-weight:regular;  color:white;     font-size:12px; vertical-align:middle; text-align:center;}
+.SimCityWorldButton_UC                 { font-weight:regular;  color:white;     font-size:12px; vertical-align:middle; text-align:center; text-transform:uppercase;}
+.CityLogTickerTitle                    { font-weight:bold;     color:white;     font-size:12px; vertical-align:middle; text-align:left; text-transform:uppercase;}
+.LeaderboardButton_Left                { font-weight:regular;                   font-size:12px; vertical-align:middle; text-align:left;}
+.LeaderboardButton_Bold                { font-weight:bold;                      font-size:12px; vertical-align:middle; text-align:left;}
+.LeaderboardButton_UC                  { font-weight:regular;                   font-size:12px; vertical-align:middle; text-align:center; text-transform:uppercase;}
+.LeaderboardButton                     { font-weight:regular;                   font-size:12px; vertical-align:middle; text-align:center;}
+.LeaderboardButton                     { font-weight:regular;                   font-size:12px; vertical-align:middle; text-align:center;}
+
+.PlayerCity16WhiteBold                 { font-weight:bold;     color:white;     font-size:16px; vertical-align:top;    text-align:center; }
+.PlayerInfo12DarkBold                  { font-weight:bold;     color:#262E42;   font-size:12px; vertical-align:top;    text-align:left; }
+.PlayerInfo12DarkNormal                { font-weight:regular;  color:#262E42;   font-size:12px; vertical-align:top;    text-align:left; }
+.PlayerInfo10LightBold                 { font-weight:bold;     color:#8A9CBD;   font-size:10px; vertical-align:top;    text-align:left; }
+.PlayerInfo10LightNormal               { font-weight:regular;  color:#8A9CBD;   font-size:10px; vertical-align:top;    text-align:left; }
+.PlayerInfo12LightBold                 { font-weight:bold;     color:#8A9CBD;   font-size:12px; vertical-align:top;    text-align:left; }
+.PlayerInfo12LightNormal               { font-weight:regular;  color:#8A9CBD;   font-size:12px; vertical-align:top;    text-align:left; }
+
+.PlayWindowTitle24WhiteBold            { font-weight:bold;     color:#262E42;   font-size:24px; vertical-align:top;    text-align:center; }
+
+/* ## These defaults are required by the editor. Do not remove them. */
+.textDefaultStyle                      { font-weight:regular;   color:#004444; font-size:16px; background-color:transparent; vertical-align:middle; text-align:left; }
+/* ## This is required for the cheat console. Do not remove it. */
+.textCheatConsole                      { font-family:"Lucida Console","Lucida Typewriter Std",monospace; color:black;   font-size:12px; background-color:transparent; vertical-align:middle; text-align:left; }

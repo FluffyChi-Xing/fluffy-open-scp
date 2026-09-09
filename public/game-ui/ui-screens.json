@@ -1,0 +1,126 @@
+{
+  "source": "SimCityData/*.package",
+  "generator": "cargo run -p dbpf --example ui_assets -- <SimCityData> --extract public/game-ui",
+  "css": [
+    ".css",
+    "Animate.css",
+    "ButtonStyles.css",
+    "TextInputStyles.css",
+    "TextStyles.css",
+    "WindowStyles.css",
+    "autogenButtonNineSliceStyles.css",
+    "autogenWindowNineSliceStyles.css",
+    "editorBody.css",
+    "resizeBox.css"
+  ],
+  "imageCounts": {
+    "png": 6835,
+    "jpg": 689,
+    "gif": 12
+  },
+  "jsModules": [
+    "Achievements.js",
+    "Avatar.js",
+    "AvatarFriend.js",
+    "BuildingItemUI2.js",
+    "ContributeNumber.js",
+    "GenericPlop2.js",
+    "GlobalUI.js",
+    "GlobalUI2.js",
+    "GraphSign.js",
+    "HACK_ChallengeDialog.js",
+    "HACK_ChallengeInfo.js",
+    "HACK_ChallengeMission.js",
+    "HACK_EventLog.js",
+    "HACK_GlobalCoalInfo.js",
+    "HACK_ProgressPage1.js",
+    "HACK_ProgressPage2.js",
+    "HACK_ProgressPage3.js",
+    "Leaderboard.js",
+    "LeaderboardSign.js",
+    "LoadingModal.js",
+    "MapToggleButtonUI.js",
+    "Modal.js",
+    "NewStyle.js",
+    "PauseRing.js",
+    "RolloverItemIconMeter2.js",
+    "SpeedPanel.js",
+    "SpeedPanel2.js",
+    "Tickertape.js",
+    "XSign.js",
+    "legendPanel.js",
+    "newStyleButton.js",
+    "test-toggle-button.js"
+  ],
+  "layoutFolder": "Layouts",
+  "screenGroups": {
+    "startup": [
+      "GameEntry.json",
+      "Launcher.json",
+      "LoadingScreen.json",
+      "Legal.json",
+      "UpdateManagerErrorCodes.json",
+      "Settings.json"
+    ],
+    "hud": [
+      "GlobalUI.json",
+      "Ticker.json",
+      "Alerts.json",
+      "Tooltips.json",
+      "DialogMessages.json",
+      "CommonButtons.json",
+      "Units.json",
+      "ErrorMessages.json"
+    ],
+    "cityPanels": [
+      "Budget.json",
+      "Resources.json",
+      "MayorRating.json",
+      "CitySpecializationGuide.json",
+      "DataLayerLegend.json",
+      "LayerNames.json",
+      "PaletteInfoPanel.json",
+      "PaletteWarnings.json",
+      "PaletteToolRollovers.json",
+      "ToolCategories.json",
+      "CategoryInfo.json",
+      "BuildingRollover.json",
+      "AgentQuery.json",
+      "Missions.json",
+      "Tutorials.json",
+      "ImportExportPanel.json",
+      "Gifting.json",
+      "TradeWall.json",
+      "SpeechBalloons.json",
+      "ToyTaskPanel.json",
+      "TextFeedbackToyRollover.json",
+      "CursorAttachments.json",
+      "OptionsMenu.json"
+    ],
+    "region": [
+      "RegionView.json",
+      "RegionWall.json",
+      "RegionSystemInfo.json",
+      "RegionPaletteInfoPanel.json"
+    ],
+    "meta": [
+      "AutomatedAchievements.json",
+      "Leaderboard.json",
+      "News.json"
+    ],
+    "asp": [
+      "ASPResources.json",
+      "ASPLayerNames.json"
+    ],
+    "ep1": [
+      "EP1Alerts.json",
+      "EP1BuildingRollover.json",
+      "EP1DataLayerLegend.json",
+      "EP1GameEntry.json",
+      "EP1PaletteInfoPanel.json",
+      "EP1PaletteToolRollovers.json",
+      "EP1ResearchPanel.json",
+      "EP1Resources.json"
+    ]
+  }
+}

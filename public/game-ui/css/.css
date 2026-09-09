@@ -1,0 +1,66 @@
+/*-----------------------------------------------------------------------------------*
+ * General Themes for SimCity UI
+ *-----------------------------------------------------------------------------------*/
+
+::-webkit-scrollbar {
+    width: 15px;
+    height: 15px;
+}
+
+/* Buttons */
+::-webkit-scrollbar-button:horizontal:start {
+    background-image:url("../Graphics/Common/Scrollbars/scroll_button_left.png");
+    width:15px;
+}
+::-webkit-scrollbar-button:horizontal:end {
+    background-image:url("../Graphics/Common/Scrollbars/scroll_button_right.png");
+    width:15px;
+}
+::-webkit-scrollbar-button:vertical:start {
+    background-image:url("../Graphics/Common/Scrollbars/scroll_button_top.png");
+    height:15px;
+}
+::-webkit-scrollbar-button:vertical:end {
+    background-image:url("../Graphics/Common/Scrollbars/scroll_button_bottom.png");
+    height:15px;
+}
+
+/* Track */
+/* Unused
+::-webkit-scrollbar-track {
+}
+*/
+::-webkit-scrollbar-track-piece:horizontal {
+    -webkit-border-image:url("../Graphics/Common/Scrollbars/scroll_track_horizontal.png") 0 6 0 6;
+    border-color: transparent;
+    border-style:solid;
+    border-width: 0px 6px 0px 6px;
+}
+
+::-webkit-scrollbar-track-piece:vertical {
+    -webkit-border-image:url("../Graphics/Common/Scrollbars/scroll_track_vertical.png") 6 0 6 0;
+    border-color: transparent;
+    border-style:solid;
+    border-width: 6px 0px 6px 0px;
+}
+
+::-webkit-scrollbar-thumb:horizontal {
+    -webkit-border-image:url("../Graphics/Common/Scrollbars/scroll_thumb_horizontal.png") 0 7 0 7;
+    border-color: transparent;
+    border-style:solid;
+    border-width: 0px 7px 0px 7px;
+    min-width: 20px;
+}
+
+::-webkit-scrollbar-thumb:vertical {
+    -webkit-border-image:url("../Graphics/Common/Scrollbars/scroll_thumb_vertical.png") 7 0 7 0;
+    border-color: transparent;
+    border-style:solid;
+    border-width: 7px 0px 7px 0px;
+    min-height: 20px;
+}
+
+/* Corner */
+::-webkit-scrollbar-corner {
+    background-color: rgb(86, 143, 215);
+}

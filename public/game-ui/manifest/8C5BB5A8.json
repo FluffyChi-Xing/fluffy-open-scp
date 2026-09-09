@@ -1,0 +1,469 @@
+﻿{
+  "files" : [
+    "Achievements.js",
+    "Avatar.js",
+    "AvatarFriend.js",
+    "BuildingItemUI2.js",
+    "ContributeNumber.js",
+    "DDFMap.txt",
+    "GenericPlop2.js",
+    "GlobalUI.js",
+    "GlobalUI2.js",
+    "GraphSign.js",
+    "HACK_ChallengeDialog.js",
+    "HACK_ChallengeInfo.js",
+    "HACK_ChallengeMission.js",
+    "HACK_EventLog.js",
+    "HACK_GlobalCoalInfo.js",
+    "HACK_ProgressPage1.js",
+    "HACK_ProgressPage2.js",
+    "HACK_ProgressPage3.js",
+    "Leaderboard.js",
+    "LeaderboardSign.js",
+    "legendPanel.js",
+    "LoadingModal.js",
+    "MapToggleButtonUI.js",
+    "Modal.js",
+    "NewStyle.js",
+    "newStyleButton.js",
+    "PauseRing.js",
+    "RolloverItemIconMeter2.js",
+    "SpeedPanel.js",
+    "SpeedPanel2.js",
+    "test-toggle-button.js",
+    "Tickertape.js",
+    "XSign.js"
+  ],
+  "foldername" : "Layouts",
+  "folders" : [
+    {
+      "files" : [ "Achievement.js", "Home.js" ],
+      "foldername" : "Achievements",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "AlertTemplate.js",
+        "AlertTemplateCircleBar.js",
+        "AlertTemplateNoCount.js",
+        "AlertTemplateNoCountCircleBar.js",
+        "AlertTemplateSpeech.js",
+        "CoalAlert.js",
+        "CrimeAlert.js",
+        "EducationAlert.js",
+        "FireAlert.js",
+        "FullResourcesAlert.js",
+        "GarbageAlert.js",
+        "HealthAlert.js",
+        "InjuryAlert.js",
+        "NeedResourcesAlert.js",
+        "PowerAlert.js",
+        "SpeechBubbleAlert.js",
+        "WaterAlert.js",
+        "WorkerAlert.js"
+      ],
+      "foldername" : "Alerts",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "Billboard_DansDonuts.js",
+        "Billboard_KipsCoal.js",
+        "Billboard_LucyRecycling.js",
+        "Billboard_NuclearOcean.js",
+        "Billboard_StoneMotors.js"
+      ],
+      "foldername" : "Billboards",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "ChallengeEntry.js",
+        "CityLogChallengesPanel.js",
+        "CityLogExpandedContainer.js",
+        "CityLogIdle.js",
+        "DemoLayout.js",
+        "ExpandedGlobalEvent.js",
+        "ExpandedView.js",
+        "SimCityWorldPanel.js"
+      ],
+      "foldername" : "CityLog",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "Coal.js",
+        "CursorAttachmentRoot.js",
+        "Demolish.js",
+        "GenericCost.js",
+        "GenericPlop.js",
+        "Oil.js",
+        "Water.js",
+        "WindPower.js"
+      ],
+      "foldername" : "CursorAttachments",
+      "folders" : []
+    },
+    {
+      "files" : [ "DropDownItem.js", "DropDownPanel.js" ],
+      "foldername" : "Dropdowns",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "BasicPageBG.js",
+        "ButtonAvatar.js",
+        "cityLogLgHomeButton.js",
+        "CityLogRow.js",
+        "ConfirmDialog.js",
+        "ContainerFriends.js",
+        "ContainerGame.js",
+        "ContainerHome.js",
+        "ContainerHome2.js",
+        "ContainerHome3.js",
+        "ContainerProgress.js",
+        "contentMessage.js",
+        "EventInviteItem.js",
+        "EventTextItem.js",
+        "FriendProfile.js",
+        "friendRowDark.js",
+        "friendRowEmpty.js",
+        "friendRowLight.js",
+        "FriendSearchResultRow.js",
+        "FriendSmallInfo.js",
+        "friendsRowLight.js",
+        "GameBrowserSmall.js",
+        "GameEntryLastGame.js",
+        "GameEntryTopNav.js",
+        "GameEntryTopNavLogin.js",
+        "GameInfo.js",
+        "GameInfoNav.js",
+        "GameThumbnail.js",
+        "GenericLabel.js",
+        "LBFilterButton.js",
+        "LBHeader.js",
+        "LBHeader2.js",
+        "LBInfoPanel.js",
+        "LBRow.js",
+        "LBRow2.js",
+        "LBRowHighlighted.js",
+        "LBRowHighlighted2.js",
+        "LoadingOverlay.js",
+        "LoginRegPage.js",
+        "Modal2.js",
+        "ModalBase.js",
+        "MyGamesBrowseRegion.js",
+        "MyGamesCityDetails.js",
+        "MyGamesClaimCity.js",
+        "MyGamesCreate.js",
+        "MyGamesForeignThumbnail.js",
+        "MyGamesGridView.js",
+        "MyGamesItem.js",
+        "MyGamesOverview.js",
+        "MyGamesPanel.js",
+        "MyGamesQuickPlay.js",
+        "MyGamesRegionMap.js",
+        "MyGamesRegionRow.js",
+        "MyGamesRegionTemplatePicker.js",
+        "MyGamesRegionTemplatePickerRow.js",
+        "MyGamesThumbnail.js",
+        "OptionsPanel.js",
+        "PaginationDot.js",
+        "PaginationStar.js",
+        "ProductThumbnail.js",
+        "regionMessage.js",
+        "RegionMessageForm.js",
+        "RegionTile.js",
+        "RegionWallContainer.js",
+        "RegionWallContainerNarrow.js",
+        "smAchievementRowHighlight.js",
+        "smAchivementRow.js",
+        "SmAvatar.js",
+        "StoreCategoryRow.js",
+        "TextListItemBkgrnd.js",
+        "TinyFriendThumbnail.js",
+        "WideStoreLayout.js",
+        "WidgetEvents.js",
+        "WidgetFriends.js",
+        "WidgetGameTopNav.js",
+        "WidgetInvite.js",
+        "WidgetInviteEntry.js",
+        "WidgetJoinGame.js",
+        "WidgetLastGame.js",
+        "WidgetMessage.js",
+        "WidgetNewGame.js",
+        "WidgetServiceAnnouncement.js",
+        "widgetWindow1.js"
+      ],
+      "foldername" : "GameEntry",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "BudgetItemTemplate.js",
+        "BudgetUI.js",
+        "Compass.js",
+        "DemandUI.js",
+        "ExportCostsUI.js",
+        "FriendContainer.js",
+        "FriendSelectionPanel.js",
+        "ImportedPopulationUI.js",
+        "PackageMessageUI.js",
+        "PopulationUI.js",
+        "SettingsPanel.js",
+        "SimToggleUI.js",
+        "TaxesBasic.js",
+        "TaxesComplex.js",
+        "TaxesIntermediate.js",
+        "TaxSpinner.js"
+      ],
+      "foldername" : "GlobalUI",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "Launcher3DFeedItem.js",
+        "Launcher3DInfoPanel.js",
+        "Launcher3DMenu.js",
+        "Launcher3DMenuButton.js",
+        "LoginPanel.js",
+        "RegionDetails.js",
+        "RegionSelect.js",
+        "SillyLogo.js",
+        "StickyMenu.js"
+      ],
+      "foldername" : "Launcher3D",
+      "folders" : []
+    },
+    {
+      "files" : [ "TemplateLegend.js" ],
+      "foldername" : "LayerLegends",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "MissionObjective.js",
+        "MissionObjectiveProgress.js",
+        "MissionObjectiveRollover.js",
+        "MissionTemplate.js",
+        "Reward.js"
+      ],
+      "foldername" : "Missions",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "BreakingNewsEarthquake.js",
+        "BreakingNewsMeteor.js",
+        "BreakingNewsPlague.js",
+        "newsarticle.js",
+        "newsInterupt.js",
+        "Newspaper.js",
+        "newsUnlock.js"
+      ],
+      "foldername" : "News",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "BuildingItemUI.js",
+        "BuildingUpgrade.js",
+        "CategoryButtonWithIcon.js",
+        "PaletteBuildingButton.js",
+        "PaletteInfoGovernment.js",
+        "PaletteLayerToggle.js",
+        "PalettePanel.js",
+        "PalettePanelEditor.js",
+        "PalettePanelRCIZone.js",
+        "PalettePanelRoads.js",
+        "PaletteRollover.js",
+        "PaletteRolloverPreview.js",
+        "PaletteRolloverNeighbor.js",
+        "PaletteSubcategoryButton.js"
+      ],
+      "foldername" : "Palette",
+      "folders" : [
+        {
+          "files" : [
+            "PaletteBuildingInfoBigBusiness.js",
+            "PaletteBuildingInfoFire.js",
+            "PaletteBuildingInfoPower.js"
+          ],
+          "foldername" : "BuildingInfo",
+          "folders" : []
+        },
+        {
+          "files" : [
+            "PaletteInfoBus.js",
+            "PaletteInfoCivic.js",
+            "PaletteInfoCoal.js",
+            "PaletteInfoEducation.js",
+            "PaletteInfoFire.js",
+            "PaletteInfoGarbage.js",
+            "PaletteInfoHealth.js",
+            "PaletteInfoItemFillBar.js",
+            "PaletteInfoOil.js",
+            "PaletteInfoImEx.js",
+            "PaletteInfoOre.js",
+            "PaletteInfoParks.js",
+            "PaletteInfoPolice.js",
+            "PaletteInfoPower.js",
+            "PaletteInfoRoads.js",
+            "PaletteInfoSewage.js",
+            "PaletteInfoSmelting.js",
+            "PaletteInfoWater.js",
+            "PaletteInfoZones.js",
+            "PaletteInfoElectronics.js"
+          ],
+          "foldername" : "CategoryInfo",
+          "folders" : []
+        },
+        {
+          "files" : [
+            "PaletteContextualInfoAutomotiveAlert.js",
+            "PaletteContextualInfoFireAlert.js",
+            "PaletteContextualInfoParksAlert.js",
+            "PaletteContextualInfoRoadsAlert.js"
+          ],
+          "foldername" : "ContextualInfo",
+          "folders" : []
+        }
+      ]
+    },
+    {
+      "files" : [
+        "PopupMenuItem.js",
+        "PopupMenuItemToggle-deliveries.js",
+        "PopupMenuItemToggle-GlobalDeliveries.js",
+        "PopupMenuItemToggle-GlobalTrade.js",
+        "PopupMenuItemToggle-IO.js",
+        "PopupMenuItemToggle-onOff.js",
+        "PopupMenuItemToggle.js"
+      ],
+      "foldername" : "PopupMenu",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "AwardEntry.js",
+        "FriendsSmallInfo.js",
+        "InviteEntry.js",
+        "InviteTabs.js",
+        "PackEntry.js",
+        "profile.json",
+        "ProfileMain.js",
+        "RegionEntry.js",
+        "TabContentAchievements.js",
+        "TabContentBoard.js",
+        "TabContentFriends.js",
+        "TabContentInvitations.js",
+        "TabContentPacks.js",
+        "TabContentRegions.js"
+      ],
+      "foldername" : "Profile",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "Expand_Down_Button01.js",
+        "General_ActiveCity_Container.js",
+        "General_Feeds_Container.js",
+        "General_FriendsOnline_Container.js",
+        "General_Profile_Container.js",
+        "General_Progress_Container.js",
+        "General_RecentCity_Container.js",
+        "General_Stats_Container.js",
+        "Industry_Card.js",
+        "LeaderRow.js",
+        "Leader_Box.js",
+        "MaximizeButton01.js",
+        "Meter01.js",
+        "Nav_Button01.js",
+        "Nav_Container.js",
+        "Tabs.js",
+        "Webpage_Progress_Home.js"
+      ],
+      "foldername" : "Progress",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "GreatWorksOption.js",
+        "GreatWorksResource.js",
+        "RegionUI.js",
+        "RegionViewItem.js",
+        "RegionViewResourceItem.js"
+      ],
+      "foldername" : "Region",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "RolloverBase.js",
+        "RolloverHappiness.js",
+        "RolloverHappinessText.js",
+        "RolloverIconHappiness.js",
+        "RolloverItemCoalGPMM.js",
+        "RolloverItemIconMeter.js",
+        "RolloverItemIconMeterAndText.js",
+        "RolloverItemIconValue.js",
+        "RolloverItemLongText.js",
+        "RolloverItemUpgrade.js"
+      ],
+      "foldername" : "Rollovers",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "LobbyistProposalDialog.js",
+        "NegativeThoughtBalloonAcceptOnlyTemplate.js",
+        "NegativeThoughtBalloonButtonTemplate.js",
+        "PositiveThoughtBalloonAcceptOnlyTemplate.js",
+        "PositiveThoughtBalloonButtonTemplate.js",
+        "SpeechBalloonAcceptDismissArrow.js",
+        "SpeechBalloonAcceptDismissTemplate.js",
+        "SpeechBalloonAcceptOnlyTemplate.js",
+        "SpeechBalloonButtonTemplate.js",
+        "SpeechBalloonEditor.js",
+        "SpeechBalloonLobbyistProposal.js",
+        "SpeechBalloonMultiPageAcceptDismiss.js",
+        "SpeechBalloonMultiPageAcceptOnly.js",
+        "ThoughtBalloon_Happiness1_AcceptOnlyTemplate.js",
+        "ThoughtBalloon_Happiness1_ButtonTemplate.js",
+        "ThoughtBalloon_Happiness2_AcceptOnlyTemplate.js",
+        "ThoughtBalloon_Happiness2_ButtonTemplate.js",
+        "ThoughtBalloon_Happiness3_AcceptOnlyTemplate.js",
+        "ThoughtBalloon_Happiness3_ButtonTemplate.js",
+        "ThoughtBalloon_Happiness4_AcceptOnlyTemplate.js",
+        "ThoughtBalloon_Happiness4_ButtonTemplate.js",
+        "ThoughtBalloon_Happiness5_AcceptOnlyTemplate.js",
+        "ThoughtBalloon_Happiness5_ButtonTemplate.js",
+        "TransmissionBalloonButtonTemplate.js"
+      ],
+      "foldername" : "SpeechBalloons",
+      "folders" : []
+    },
+    {
+      "files" : [ "TradeWall.js", "TradeWall_BasicData.js", "TradeWall_Data.js" ],
+      "foldername" : "Trade",
+      "folders" : []
+    },
+    {
+      "files" : [
+        "NewlyRevealedUI.js",
+        "PointerContainer.js",
+        "TutorialDialogOkayButton.js",
+        "TutorialDialogOkayCancel.js",
+        "TutorialDialogTextOnly.js"
+      ],
+      "foldername" : "Tutorial",
+      "folders" : []
+    },
+    {
+      "files" : [ "Test1.js", "Test2.js", "Test3.js" ],
+      "foldername" : "UnitTests",
+      "folders" : []
+    }
+  ]
+}
+
