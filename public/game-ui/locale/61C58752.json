@@ -1,0 +1,15 @@
+{
+	"0x0f581b47" : "神的介入",
+	"0x31afd0ad" : "設置一個宗教場所",
+	"0x31afd0ae" : "讓~objective_capacity~位低收入的模擬市民前往宗教場所",
+	"0x31afd0af" : "在一天內讓~objective_capacity~位低收入的模擬市民前往宗教場所",
+	"0xcd54cb82" : "心存信念",
+	"0x5f894951" : "讓~objective_capacity~位中收入的模擬市民前往宗教場所",
+	"0x5f894950" : "在一天內讓~objective_capacity~位中收入的模擬市民前往宗教場所",
+	"0x804f3441" : "天降神蹟",
+	"0x0df1814c" : "讓~objective_capacity~位高收入的模擬市民前往宗教場所",
+	"0x0df1814d" : "在一天內讓~objective_capacity~位高收入的模擬市民前往宗教場所",
+	"0xdaba0501" : "DLC Worship",
+	"0xce5d768f" : "Thank you for purchasing the Houses of Worship set. Your content is ready to use.<br><br>You can find it under the Worship submenu, in the Culture menu in City Specialization view.",
+	"0xffffffff" : "0xffffffff"
+}

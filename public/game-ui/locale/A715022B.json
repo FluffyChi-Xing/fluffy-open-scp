@@ -1,0 +1,15 @@
+{
+	"0x00000001" : "Test Pipeline 5",
+	"0x00000021" : "Test Pipeline 77",
+	"0x00000003" : "Test Pipeline",
+	"0x00000023" : "test submits",
+	"0x00000024" : "next text string 2",
+	"0x00000025" : "test submitted",
+	"0x00000004" : "uncommon  typography 23",
+	"0x00000005" : "simolean using escape code  § and pasting directly §..",
+	"0x00000006" : "quotes escape code  \" and  directly “curved quotes”  and with “unicode” escape codes ",
+	"0x00000007" : "Ellipsis as 3 full stops ... and directly … and with unicode escape codes …",
+	"0x00000009" : "Strawberry… strawberry!!!… STRAWBERRY!!! OH MY GOD I WON!",
+	"0x0000000A" : "《模擬城市》復原",
+	"0xffffffff" : "0xffffffff"
+}

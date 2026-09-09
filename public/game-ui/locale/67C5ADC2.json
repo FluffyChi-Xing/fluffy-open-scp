@@ -1,0 +1,17 @@
+{
+	"0x100f9236" : "研究中心 資訊<br><br>沒有明日之城的市長仍可使用一些研究中心的建築或者組件，但他們會需要自行向您購買 。<br><br>如果您的城市不能沒有ControlNet，您可以向鄰近城市購買。只要選取公布有超量ControlNet的城市然後按一下「購買」 。<br><br>您可以與區域中的任何人分享您的研究專案，而不只是鄰近城市而已。<br><br>即使另一位市長擁有研究中心，您可以針對他們沒有意願的專案進行研究。<br/>",
+	"0x100f9237" : "OmegaCo資訊<br><br>從您的好友身上賺大錢！自願駕駛Omega卡車到鄰近城市，它們會將您鄰居的建築納入旗下。您可以從鄰居身上賺取加盟金！<br><br>一旦您的鄰居受到吸引，他們就需要您穩定供給Omega，所以您會需要增加產量。<br><br>您的OmegaCo購物無人機會在鄰近城市為模擬市民購物，並滿載而歸，讓您的居民更快樂！<br/>",
+	"0x100f9095" : "研究中心顧問",
+	"0x100f9096" : "OmegaCo顧問",
+	"0x1018c5ba" : "~local_city_name~沒有ControlNet了！ 從~neighbor_city_name~購買ControlNet來啟用研究中心技術吧。",
+	"0x1018c5bc" : "~local_city_name~需要更多ControlNet！使用區域牆來請求鄰近城鎮建造更多ControlNet設備站。",
+	"0x1018c5be" : "~neighbor_city_name~需要更多ControlNet。讓 Let ~neighbor_city_name~的市長知道您有ControlNet，他們可以向你購買！",
+	"0x1018c1ba" : "~neighbor_city_name~的購物無人機進入我們的城市購物。歡迎新一波的機器人進入。更正：助理，絕對要更多助理。",
+	"0x1018c1bb" : "今天我們的購物無人機在~neighbor_city_name~購物。您並不在乎提供購物機會的問題，但至少區域內有其他人在乎。",
+	"0x1018c1bc" : "Omega卡車正離開區域。增加「自願」卡車來進佔 ~neighbor_city_name~。",
+	"0x1018c1bd" : "Omega卡車抵達了~neighbor_city_name~。不要擔心，大富翁。加盟的利潤會流入我們的財庫，就算您未擁有OmegaCo總部。",
+	"0x1018c1be" : "派omega卡車到~neighbor_city_name~以增加他們對omega的倚賴。運送的夠多就可賺取加盟費，實現您的消費主義夢想。",
+	"0x1018c1bf" : "~neighbor_city_name~沒有工業，無法向我們購買omega，所以卡車閒置中。或許該說服…~neighbor_city_name~的市長規劃工業區？",
+	"0x1018c1cf" : "Omega卡車需要有個目的地。無法將omega運送到無人的地點...",
+	"0xffffffff" : "0xffffffff"
+}

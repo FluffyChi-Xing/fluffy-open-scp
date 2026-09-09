@@ -1,0 +1,114 @@
+    {
+      "boxes" : [
+        {
+          "isClaimed" : "false",
+          "isFriend" : "false",
+          "isTutorial" : "false",
+          "x" : 4096,
+          "y" : -4288
+        },
+        {
+          "isClaimed" : "false",
+          "isFriend" : "false",
+          "isTutorial" : "false",
+          "x" : -3968,
+          "y" : -2816
+        },
+        {
+          "isClaimed" : "false",
+          "isFriend" : "false",
+          "isTutorial" : "false",
+          "x" : -2976,
+          "y" : 3584
+        },
+        {
+          "isClaimed" : "false",
+          "isFriend" : "false",
+          "isTutorial" : "false",
+          "x" : 6144,
+          "y" : 4176
+        },
+        {
+          "isClaimed" : "false",
+          "isFriend" : "false",
+          "isTutorial" : "false",
+          "x" : 4608,
+          "y" : 1024
+        },
+        {
+          "isClaimed" : "false",
+          "isFriend" : "false",
+          "isTutorial" : "false",
+          "x" : 960,
+          "y" : 832
+        },
+        {
+          "isClaimed" : "false",
+          "isFriend" : "false",
+          "isTutorial" : "false",
+          "x" : -2688,
+          "y" : 64
+        }
+      ],
+      "height" : 4,
+      "key" : "275",
+      "localizedName" : "SC_Desolation",
+      "map" : {
+        "cities" : [
+          {
+            "uid" : "1026",
+            "x" : 4096,
+            "y" : -4288,
+            "z" : -601.50
+          },
+          {
+            "uid" : "1027",
+            "x" : -3968,
+            "y" : -2816,
+            "z" : -674.50
+          },
+          {
+            "uid" : "1028",
+            "x" : -2976,
+            "y" : 3584,
+            "z" : -704.50
+          },
+          {
+            "uid" : "1029",
+            "x" : 6144,
+            "y" : 4176,
+            "z" : -704.50
+          },
+          {
+            "uid" : "1030",
+            "x" : 4608,
+            "y" : 1024,
+            "z" : -301.200012207031250
+          },
+          {
+            "uid" : "1031",
+            "x" : 960,
+            "y" : 832,
+            "z" : -135.100006103515620
+          },
+          {
+            "uid" : "1032",
+            "x" : -2688,
+            "y" : 64,
+            "z" : -261.50
+          }
+        ],
+        "greatWorks" : [
+          {
+            "name" : "Region_GreatWorks_Empty",
+            "x" : -1940,
+            "y" : -3366
+          }
+        ]
+      },
+      "name" : "SC_Desolation",
+      "postcard" : "http://s3.amazonaws.com/sc-euwest1-prod-global/images/region_templates/missing_region_template.png",
+      "priority_order" : 7,
+      "status" : "ACTIVE",
+      "width" : 4
+    }

@@ -1,0 +1,25 @@
+{
+	"backgroundColor" : "grey",
+	"propertyWindowPinRight" : false,
+	"propertyWindowPinBottom" : false,
+	"propertyWindowX" : 10000,
+	"propertyWindowY" : 65,
+	"propertyWindowHeight" : 300,
+	"propertyWindowWidth" : 300,
+
+	"sceneGraphWindowPinRight" : false,
+	"sceneGraphWindowPinBottom" : false,
+	"sceneGraphWindowX" : 10000,
+	"sceneGraphWindowY" : 365,
+	"sceneGraphWindowHeight" : 300,
+	"sceneGraphWindowWidth" : 300,
+
+	"widgetBoxWindowPinRight" : false,
+	"widgetBoxWindowPinBottom" : false,
+	"widgetBoxWindowX" : 10000,
+	"widgetBoxWindowY" : 665,
+	"widgetBoxWindowHeight" : 100,
+	"widgetBoxWindowWidth" : 320,
+	"widgetBoxColumnCount" : 2,
+	"widgetBoxItemWidth" : 150
+}

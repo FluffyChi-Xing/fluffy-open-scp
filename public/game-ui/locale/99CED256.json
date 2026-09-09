@@ -1,0 +1,20 @@
+{
+	"0x0df2da59" : "~Resource Name~的全球市場：",
+	"0x0df2da60" : "在地段內的~Resource Name~：",
+	"0x0df2da61" : "使用的 ~Resource Name~：",
+	"0x0df2da62" : "全球",
+	"0x0df2da63" : "本地",
+	"0x0df2da64" : "出口至：",
+	"0x0df2da65" : "從下列地方進口：",
+	"0x0df2da66" : "進口：",
+	"0x0df2da67" : "出口：",
+	"0x0df2da68" : "在當地使用",
+	"0x0df2da69" : "進口/出口",
+	"0x0e0009dc" : "§~price:number~",
+	"0x0e65677f" : "每 ~amount:number~ 個",
+	"0x0e1d0eb1" : "你必須增加儲存地段，在全球市場或與你的鄰近城市交易資源。",
+	"0x0ef2a4d3" : "選擇的資源會留給自己用。",
+	"0x0ef2a4d4" : "選擇的資源進口中。",
+	"0x0ef2a4d5" : "選擇的資源出口中。",
+	"0xffffffff" : "0xffffffff"
+}

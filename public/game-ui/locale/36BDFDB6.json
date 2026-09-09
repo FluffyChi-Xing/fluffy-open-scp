@@ -1,0 +1,2964 @@
+[
+  {
+    "Enabled": 1,
+    "ID": "ACBudgetHighExpenses",
+    "resourceRuleID": "ACBudgetHighExpensesRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-SandThroughMyFingers.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xa6dcec29",
+    "Desc": "AutomatedAchievements.json!0x3a3c4ec3|amount1:15000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Expenses",
+        "ResourceHex": "0xed995a56",
+        "Operator": ">=",
+        "Value": 15000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBudgetHighIncome",
+    "resourceRuleID": "ACBudgetHighIncomeRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-MoneyCube.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x868d6d57",
+    "Desc": "AutomatedAchievements.json!0x0b1aa88d|amount1:15000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Income",
+        "ResourceHex": "0x107fcdcc",
+        "Operator": ">=",
+        "Value": 15000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBudgetLoans",
+    "resourceRuleID": "ACBudgetLoansRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-GoodCredit.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xf4b09513",
+    "Desc": "AutomatedAchievements.json!0x51511991|amount1:1000000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TotalBondsPaid",
+        "ResourceHex": "0x27b1b92f",
+        "Operator": ">=",
+        "Value": 1000000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBudgetSimoleons",
+    "resourceRuleID": "ACBudgetSimoleonsRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-MultiMillionaireCity.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xb45884b7",
+    "Desc": "AutomatedAchievements.json!0x38e753ed|amount1:10000000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Simoleons",
+        "ResourceHex": "0x37964372",
+        "Operator": ">=",
+        "Value": 10000000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessAllHQ",
+    "resourceRuleID": "ACBusinessAllHQRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-JackOfAllSpecialties.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x3ddd07c1",
+    "Desc": "AutomatedAchievements.json!0x1192b93b",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_Casino_Built",
+        "ResourceHex": "0xed11aeb3",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_Electronics_Built",
+        "ResourceHex": "0x2e2e5911",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_Oil_Built",
+        "ResourceHex": "0x5a9ee008",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_Trade_Built",
+        "ResourceHex": "0x4cb4093a",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_Mining_Built",
+        "ResourceHex": "0x3028c472",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessCoalHarvested",
+    "resourceRuleID": "ACBusinessCoalHarvestedRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-KingCoal.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x8e05028e",
+    "Desc": "AutomatedAchievements.json!0x69bac154",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CoalHarvested",
+        "ResourceHex": "0x4ed78f74",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessElectronicsAssembled",
+    "resourceRuleID": "ACBusinessElectronicsAssembledRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-ElectricalMagic.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x264941fc",
+    "Desc": "AutomatedAchievements.json!0xa24c27d6",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "ElectronicsProducedDisplay",
+        "ResourceHex": "0x8b07b38c",
+        "Operator": ">=",
+        "Value": 1667
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessGamblingCasinoExpanded",
+    "resourceRuleID": "ACBusinessGamblingCasinoExpandedRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-SinCity.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x36df67f0",
+    "Desc": "AutomatedAchievements.json!0x689bd1a2",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfSciFiCasinos",
+        "ResourceHex": "0x6aa13091",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfStripCasinoAs",
+        "ResourceHex": "0x841f09dc",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfElegantCasinos",
+        "ResourceHex": "0x82d1211b",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfGamblingHouses",
+        "ResourceHex": "0x210739eb",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessGamblingSmallRevenue",
+    "resourceRuleID": "ACBusinessGamblingSmallRevenueRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-PennySlots.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x709e7139",
+    "Desc": "AutomatedAchievements.json!0xe2210973|amount1:200000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "IncomeFromCasinosTotal",
+        "ResourceHex": "0x77c12e8e",
+        "Operator": ">=",
+        "Value": 200000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessMetalsSmeltMetal",
+    "resourceRuleID": "ACBusinessMetalsSmeltMetalRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-BlastFurnace.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x092b71c5",
+    "Desc": "AutomatedAchievements.json!0xe6cfbc87",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TotalMetalAssembled",
+        "ResourceHex": "0x12304c2a",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessOilPumped",
+    "resourceRuleID": "ACBusinessOilPumpedRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-AllOiledUp.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x48a41404",
+    "Desc": "AutomatedAchievements.json!0x84ee7bbe",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "OilCrudePumpedDisplay",
+        "ResourceHex": "0x2264d95d",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessOilRefinery",
+    "resourceRuleID": "ACBusinessOilRefineryRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-RefinedTastes.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x803c362d",
+    "Desc": "AutomatedAchievements.json!0xfbaefaef",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FuelProducedDisplay",
+        "ResourceHex": "0x9ec5b509",
+        "Operator": ">=",
+        "Value": 400
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PlasticProducedDisplay",
+        "ResourceHex": "0x933afe07",
+        "Operator": ">=",
+        "Value": 400
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessOreHarvested",
+    "resourceRuleID": "ACBusinessOreHarvestedRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-ToBeOreNotToBe.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x02374e3b",
+    "Desc": "AutomatedAchievements.json!0x5e805559",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "OreHarvested",
+        "ResourceHex": "0x4ef67cdd",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessTradeBuildT2",
+    "resourceRuleID": "ACBusinessTradeBuildT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-ALotOfLots.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x6c6b9c2b",
+    "Desc": "AutomatedAchievements.json!0xa8b603a9|amount2:6",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumImEx",
+        "ResourceHex": "0x9ecd5aca",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumImExUniqueLots",
+        "ResourceHex": "0x4c32485f",
+        "Operator": ">=",
+        "Value": 6
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessTradeSell",
+    "resourceRuleID": "ACBusinessTradeSellRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-TradingEmpire.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x01f0899b",
+    "Desc": "AutomatedAchievements.json!0x5e3b23b9|amount1:250000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TotalGlobalMarketExports",
+        "ResourceHex": "0x2b829169",
+        "Operator": ">=",
+        "Value": 250000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACBusinessTVAssembled",
+    "resourceRuleID": "ACBusinessTVAssembledRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-MovingPictures.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x2ba80f63",
+    "Desc": "AutomatedAchievements.json!0xa7aaf541",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TelevisionProducedDisplay",
+        "ResourceHex": "0x211247e1",
+        "Operator": ">=",
+        "Value": 1000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivic10YearAnniversery",
+    "resourceRuleID": "ACCivic10YearAnniverseryRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-BronzeAnniversary.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x0c810de5",
+    "Desc": "AutomatedAchievements.json!0xe7ac82a7|amount1:10",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Year",
+        "ResourceHex": "0x9b8bc62e",
+        "Operator": ">=",
+        "Value": 10
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivic25YearAnniversery",
+    "resourceRuleID": "ACCivic25YearAnniverseryRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-SilverAnniversary.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xc55444d5",
+    "Desc": "AutomatedAchievements.json!0xe7ac82a7|amount1:25",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Year",
+        "ResourceHex": "0x9b8bc62e",
+        "Operator": ">=",
+        "Value": 25
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivic50YearAnniversery",
+    "resourceRuleID": "ACCivic50YearAnniverseryRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-GoldenAnniversary.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x927633b9",
+    "Desc": "AutomatedAchievements.json!0x03f8cbf3|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Year",
+        "ResourceHex": "0x9b8bc62e",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicCBuildings100",
+    "resourceRuleID": "ACCivicCBuildings100Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-BusyDowntown.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x10068c9c",
+    "Desc": "AutomatedAchievements.json!0x8c097376|amount1:100",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfCommercial",
+        "ResourceHex": "0x2887e727",
+        "Operator": ">=",
+        "Value": 100
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicExpandedCityHall",
+    "resourceRuleID": "ACCivicExpandedCityHallRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-BigGovernment.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x9ecab89e",
+    "Desc": "AutomatedAchievements.json!0x5cfaad84",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_CityHall_Safety_Module_Built",
+        "ResourceHex": "0xb52be00a",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_CityHall_Tourism_Module_Built",
+        "ResourceHex": "0x83d9d545",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_CityHall_Transportation_Module_Built",
+        "ResourceHex": "0x940af8a6",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_CityHall_Utilities_Module_Built",
+        "ResourceHex": "0xd081d2e0",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_CityHall_Finance_Module_Built",
+        "ResourceHex": "0x70f5cd86",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_CityHall_Education_Module_Built",
+        "ResourceHex": "0xf432b4ea",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicExpandedMayorMansion",
+    "resourceRuleID": "ACCivicExpandedMayorMansionRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-QuidProQuo.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xba446849",
+    "Desc": "AutomatedAchievements.json!0x4da237e3",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "MayorLevel",
+        "ResourceHex": "0x73f406eb",
+        "Operator": ">=",
+        "Value": 4
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "MayorXP",
+        "ResourceHex": "0x9be01883",
+        "Operator": ">=",
+        "Value": 4
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicIBuildings100",
+    "resourceRuleID": "ACCivicIBuildings100Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-IndustrialRevolution.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x81ce8d2a",
+    "Desc": "AutomatedAchievements.json!0x0364c588|amount1:100",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfIndustrial",
+        "ResourceHex": "0x292d6e28",
+        "Operator": ">=",
+        "Value": 100
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicPopulation2",
+    "resourceRuleID": "ACCivicPopulation2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-SuburbCity.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x744319e6",
+    "Desc": "AutomatedAchievements.json!0xefa0c36c|amount1:10000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FudgedPopulation",
+        "ResourceHex": "0x4c57b52b",
+        "Operator": ">=",
+        "Value": 10000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicPopulation4",
+    "resourceRuleID": "ACCivicPopulation4Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-PopulationBoom.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x5f5381bc",
+    "Desc": "AutomatedAchievements.json!0xefa0c36c|amount1:50000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FudgedPopulation",
+        "ResourceHex": "0x4c57b52b",
+        "Operator": ">=",
+        "Value": 50000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicPopulation5",
+    "resourceRuleID": "ACCivicPopulation5Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-Metropolis.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xdd4b2455",
+    "Desc": "AutomatedAchievements.json!0xefa0c36c|amount1:100000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FudgedPopulation",
+        "ResourceHex": "0x4c57b52b",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicPopulation6",
+    "resourceRuleID": "ACCivicPopulation6Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-JumboRegion.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x7637cd92",
+    "Desc": "AutomatedAchievements.json!0x3c7cea50",
+    "Type": "Region",
+    "Tests": [
+      {
+        "Type": "SumInRegion",
+        "Delta": 0,
+        "Resource": "TotalResidential",
+        "ResourceHex": "0x28a1b5ad",
+        "Operator": ">=",
+        "Value": 121212
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicPopulation8",
+    "resourceRuleID": "ACCivicPopulation8Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-MegaRegion.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x80268ca8",
+    "Desc": "AutomatedAchievements.json!0xd4b50f9a",
+    "Type": "Region",
+    "Tests": [
+      {
+        "Type": "SumInRegion",
+        "Delta": 0,
+        "Resource": "TotalResidential",
+        "ResourceHex": "0x28a1b5ad",
+        "Operator": ">=",
+        "Value": 242424
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRBuildings100",
+    "resourceRuleID": "ACCivicRBuildings100Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-Suburbtopia.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xd7bd3e99",
+    "Desc": "AutomatedAchievements.json!0x4bba3fd3|amount1:500",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfResidential",
+        "ResourceHex": "0x066672a5",
+        "Operator": ">=",
+        "Value": 500
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRCIHighDensityCommercial",
+    "resourceRuleID": "ACCivicRCIHighDensityCommercialRule",
+    "Icon": "Graphics/Achievements/Achievements-RCI-TheBigInsertFruitHere.png",
+    "Category": "RCI",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x637bd709",
+    "Desc": "AutomatedAchievements.json!0xf6d9a6a3|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CW1D3",
+        "ResourceHex": "0x7f2ea047",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRCIHighTechIndustrial",
+    "resourceRuleID": "ACCivicRCIHighTechIndustrialRule",
+    "Icon": "Graphics/Achievements/Achievements-RCI-Technophile.png",
+    "Category": "RCI",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xbbcdbcfc",
+    "Desc": "AutomatedAchievements.json!0x37d0a2d6|amount1:40",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "IW3D3",
+        "ResourceHex": "0x2933d5a3",
+        "Operator": ">=",
+        "Value": 40
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRCIHighWealthAndDensityCommercial",
+    "resourceRuleID": "ACCivicRCIHighWealthAndDensityCommercialRule",
+    "Icon": "Graphics/Achievements/Achievements-RCI-SkyscraperMagnet.png",
+    "Category": "RCI",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x2185cfb9",
+    "Desc": "AutomatedAchievements.json!0x930867f3|amount1:10",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CW3D3",
+        "ResourceHex": "0x833323dd",
+        "Operator": ">=",
+        "Value": 10
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRCIHighWealthAndDensityResidential",
+    "resourceRuleID": "ACCivicRCIHighWealthAndDensityResidentialRule",
+    "Icon": "Graphics/Achievements/Achievements-RCI-BillionairesPlayground.png",
+    "Category": "RCI",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xd2c02e53",
+    "Desc": "AutomatedAchievements.json!0x2f6245d1|amount1:10",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "RW3D3",
+        "ResourceHex": "0x25345f44",
+        "Operator": ">=",
+        "Value": 10
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRCIHighWealthResidential",
+    "resourceRuleID": "ACCivicRCIHighWealthResidentialRule",
+    "Icon": "Graphics/Achievements/Achievements-RCI-EliteEstates.png",
+    "Category": "RCI",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x4233e5e8",
+    "Desc": "AutomatedAchievements.json!0x96c0d5da|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "RW3D1",
+        "ResourceHex": "0x25345f46",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRCIMediumDensityCommercial",
+    "resourceRuleID": "ACCivicRCIMediumDensityCommercialRule",
+    "Icon": "Graphics/Achievements/Achievements-RCI-OfficeParks.png",
+    "Category": "RCI",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xd71c6232",
+    "Desc": "AutomatedAchievements.json!0x9ae582f0|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CW3D1",
+        "ResourceHex": "0x833323df",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCivicRCIMediumDensityResidential",
+    "resourceRuleID": "ACCivicRCIMediumDensityResidentialRule",
+    "Icon": "Graphics/Achievements/Achievements-RCI-ApartmentRows.png",
+    "Category": "RCI",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xbfad9a4e",
+    "Desc": "AutomatedAchievements.json!0x9dddc114|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "RW1D3",
+        "ResourceHex": "0x192fcf56",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCrimeBuildT2",
+    "resourceRuleID": "ACCrimeBuildT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-RevolvingDoors.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xb8c0494d",
+    "Desc": "AutomatedAchievements.json!0x34330d0f|amount1:25",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CriminalsReleasedOvercrowdingToday",
+        "ResourceHex": "0xdc47edd6",
+        "Operator": ">=",
+        "Value": 25
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCrimeCriminalCaptured",
+    "resourceRuleID": "ACCrimeCriminalCapturedRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-BadMoveCreeps.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xd35a14e4",
+    "Desc": "AutomatedAchievements.json!0x0d2a129e|amount1:1",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CriminalsArrested",
+        "ResourceHex": "0xec92aded",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCrimePoliceFrance",
+    "resourceRuleID": "ACCrimePoliceFranceRule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-FrenchAuthority.png",
+    "Category": "FrenchCitySet",
+    "IsSecret": false,
+    "Name": "PARAutomatedAchievements.json!0xb2d28fa6",
+    "Desc": "PARAutomatedAchievements.json!0x2e31cc2c|amount1:10",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CriminalsIncarcerated_French",
+        "ResourceHex": "0xcd1780a3",
+        "Operator": ">=",
+        "Value": 10
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DLC_Paris",
+        "ResourceHex": "0x7b9d5ba4",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACCrimeRehab",
+    "resourceRuleID": "ACCrimeRehabRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-RedemptionOfTheSims.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xea4f6483",
+    "Desc": "AutomatedAchievements.json!0x66524b61|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CriminalsRehabilitated",
+        "ResourceHex": "0xb071b8a7",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACDisasterCoalOreOilUnlocksEarthquake",
+    "resourceRuleID": "ACDisasterCoalOreOilUnlocksEarthquakeRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-DugTooGreedilyAndTooDeep.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x8590f12b",
+    "Desc": "AutomatedAchievements.json!0xc1db58a9",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "StuffMined",
+        "ResourceHex": "0x1aa00828",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACDisasterEP1UnlocksSpaceRobot",
+    "resourceRuleID": "ACDisasterEP1UnlocksSpaceRobotRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-DroneControltoCosmotron.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xca94ed95",
+    "Desc": "AutomatedAchievements.json!0x865e01f7",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DisasterEP1UnlocksSpaceRobot",
+        "ResourceHex": "0x615865fd",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACDisasterFirstPlaneUnlocksMeteor",
+    "resourceRuleID": "ACDisasterFirstPlaneUnlocksMeteorRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-WhatGoesUpMustComeDown.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x46def913",
+    "Desc": "AutomatedAchievements.json!0xa37f7d91|amount1:200",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfAirTouristsToday",
+        "ResourceHex": "0x28e24d69",
+        "Operator": ">=",
+        "Value": 200
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACDisasterHealthDeathUnlocksZombies",
+    "resourceRuleID": "ACDisasterHealthDeathUnlocksZombiesRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-LaboratoryOutbreak.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x31a94b14",
+    "Desc": "AutomatedAchievements.json!0x8df2522e|amount2:15",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DiagnosticLabBuilt",
+        "ResourceHex": "0x018b911b",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DeathFromInjury",
+        "ResourceHex": "0x82231b94",
+        "Operator": ">=",
+        "Value": 15
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACDisasterIncineratorUnlocksBigLizard",
+    "resourceRuleID": "ACDisasterIncineratorUnlocksBigLizardRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-WhatsCooking.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x6fb81e0b",
+    "Desc": "AutomatedAchievements.json!0xac028589",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TotalGarbageBurned",
+        "ResourceHex": "0xbabd8b4e",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACDisasterSpaceCenterUnlocksUFO",
+    "resourceRuleID": "ACDisasterSpaceCenterUnlocksUFORule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-WeAreNotAlone.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x5c1667d0",
+    "Desc": "AutomatedAchievements.json!0x8dd2d182",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SpaceCenterReceivedResources",
+        "ResourceHex": "0x0b3ebfae",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACDisasterWindTurbineUnlocksTornado",
+    "resourceRuleID": "ACDisasterWindTurbineUnlocksTornadoRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-BlowinInTheWind.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x4fcf1c2d",
+    "Desc": "AutomatedAchievements.json!0xcb41e0ef|amount1:24",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Power_NumberOfWindTurbines",
+        "ResourceHex": "0xb201d501",
+        "Operator": ">=",
+        "Value": 24
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACEducationBuildUniversity",
+    "resourceRuleID": "ACEducationBuildUniversityRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-SimCityUniversity.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x4fe753e7",
+    "Desc": "AutomatedAchievements.json!0xb650f57d",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfUniversities",
+        "ResourceHex": "0x4094df91",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_University_Business_Module_Built",
+        "ResourceHex": "0x608120f6",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_University_Engineering_Module_Built",
+        "ResourceHex": "0x3ef1d13f",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_University_Law_Module_Built",
+        "ResourceHex": "0xa01e5af8",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_University_Medicine_Module_Built",
+        "ResourceHex": "0xd23d6488",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HQ_University_Science_Module_Built",
+        "ResourceHex": "0x338baaae",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACEducationBusStops",
+    "resourceRuleID": "ACEducationBusStopsRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-NoChildLeftBehind.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x1843554c",
+    "Desc": "AutomatedAchievements.json!0x74e56cc6|amount1:20",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfGradeSchoolBusStops",
+        "ResourceHex": "0x3c03612b",
+        "Operator": ">=",
+        "Value": 20
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACEducationFieldTrip",
+    "resourceRuleID": "ACEducationFieldTripRule",
+    "Icon": "Graphics/Achievements/Achievements-Region-FieldTrip.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xd67ded0e",
+    "Desc": "AutomatedAchievements.json!0xb233abd4|amount1:4000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "ExamsPassedE2AtNeighborSoFar",
+        "ResourceHex": "0x86d94ee8",
+        "Operator": ">=",
+        "Value": 4000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACFireBuildT2",
+    "resourceRuleID": "ACFireBuildT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-HighTechFireFightin.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x9c5db3fd",
+    "Desc": "AutomatedAchievements.json!0x386e7a9f",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HazMatFireTrucksAvailable",
+        "ResourceHex": "0x0efb07dd",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FireHelicoptersAvailable",
+        "ResourceHex": "0xdd943bde",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TradeExcessFireInspectorR2",
+        "ResourceHex": "0x5e59b0ab",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACFireHazMat",
+    "resourceRuleID": "ACFireHazMatRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-YoureOnFire.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xb2f3ab34",
+    "Desc": "AutomatedAchievements.json!0x0cc3dc4e|amount1:1",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfHazMatFiresExtinguishedDisplay",
+        "ResourceHex": "0xfbcd84be",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACFireNoFires",
+    "resourceRuleID": "ACFireNoFiresRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-OnlyYouCanPreventCityFires.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xc453f89b",
+    "Desc": "AutomatedAchievements.json!0x209e92b9|amount1:10",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfFiresExtinguishedDisplay",
+        "ResourceHex": "0xe7c893ab",
+        "Operator": ">=",
+        "Value": 10
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGarbageBuildT2",
+    "resourceRuleID": "ACGarbageBuildT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-GreenPlumbobs.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x1fa37968",
+    "Desc": "AutomatedAchievements.json!0x7430695a",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "RecyclablesPickedUpToday",
+        "ResourceHex": "0x113e0fe0",
+        "Operator": ">=",
+        "Value": 10000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGarbageLotsOfGarbage",
+    "resourceRuleID": "ACGarbageLotsOfGarbageRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-DumpCity.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xaddb3afa",
+    "Desc": "AutomatedAchievements.json!0x514caab8",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "GarbageInDump",
+        "ResourceHex": "0x7751db6d",
+        "Operator": ">=",
+        "Value": 560000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGarbagePickedUp",
+    "resourceRuleID": "ACGarbagePickedUpRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-GarbageMan.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xb7bc297d",
+    "Desc": "AutomatedAchievements.json!0x53ccf01f",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "GarbagePickedUpToday",
+        "ResourceHex": "0x35b2d890",
+        "Operator": ">=",
+        "Value": 10000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralCitySpecializationTracker",
+    "resourceRuleID": "ACGeneralCitySpecializationTrackerRule",
+    "Icon": "Graphics/Achievements/Achievements-CitySpecialization-SpecialistFirstClass.png",
+    "Category": "CitySpecialization",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x7ed924e7",
+    "Desc": "AutomatedAchievements.json!0xe542c67d",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SpecializationNumber",
+        "ResourceHex": "0xe494b0d1",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1AcademyAllResearch",
+    "resourceRuleID": "ACGeneralEP1AcademyAllResearchRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-TomorrowToday.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xe79291a9",
+    "Desc": "AutomatedAchievements.json!0x7af1f443",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfResearchProjectsCompleted",
+        "ResourceHex": "0x7bcb2657",
+        "Operator": ">=",
+        "Value": 18
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1AcademyControlNetBandwidth",
+    "resourceRuleID": "ACGeneralEP1AcademyControlNetBandwidthRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-CaptainControlNet.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x63c403ec",
+    "Desc": "AutomatedAchievements.json!0xc0648866|amount1:5000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TotalAcademySkillGeneratedPerHour",
+        "ResourceHex": "0x965ef2ee",
+        "Operator": ">=",
+        "Value": 5000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1AcademyControlNetIncome",
+    "resourceRuleID": "ACGeneralEP1AcademyControlNetIncomeRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-SignalGain.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x31f24404",
+    "Desc": "AutomatedAchievements.json!0x6e3cabbe",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TradeAcademySkillUsedProfit",
+        "ResourceHex": "0x605e59f5",
+        "Operator": ">=",
+        "Value": 5000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1AcademyFirstResearch",
+    "resourceRuleID": "ACGeneralEP1AcademyFirstResearchRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-JuniorResearcher.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x3a93ebae",
+    "Desc": "AutomatedAchievements.json!0x1649aa74",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "AcademyFirstResearchComplete",
+        "ResourceHex": "0x4bce234b",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1AcademyHighWealthWorkers",
+    "resourceRuleID": "ACGeneralEP1AcademyHighWealthWorkersRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-HighlyPaidResearchers.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x0d49fa07",
+    "Desc": "AutomatedAchievements.json!0x7139329d|amount1:200",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "AcademyWorkerW3",
+        "ResourceHex": "0x97235aa5",
+        "Operator": ">=",
+        "Value": 200
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1AcademyMaglevRiders",
+    "resourceRuleID": "ACGeneralEP1AcademyMaglevRidersRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-MagneticRide.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x3443f6b8",
+    "Desc": "AutomatedAchievements.json!0xaaadb1ca|amount1:200",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PickedUpByMaglevYesterday",
+        "ResourceHex": "0xcd18413d",
+        "Operator": ">=",
+        "Value": 200
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1AcademyWaterSanitizer",
+    "resourceRuleID": "ACGeneralEP1AcademyWaterSanitizerRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-PotentlyPotable.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xbd4fee03",
+    "Desc": "AutomatedAchievements.json!0x3952d4e1",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "WaterGlobals_WaterSanitizerTransmittedPerHour",
+        "ResourceHex": "0x175c722d",
+        "Operator": ">=",
+        "Value": 200000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1FusionPower",
+    "resourceRuleID": "ACGeneralEP1FusionPowerRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-ReactorKickstarter.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x32adb4bc",
+    "Desc": "AutomatedAchievements.json!0xaeb09a96",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PowerGlobals_TotalFusionPowerPerHour",
+        "ResourceHex": "0x4a516ff9",
+        "Operator": ">=",
+        "Value": 500000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1FuturizationCity",
+    "resourceRuleID": "ACGeneralEP1FuturizationCityRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-CityOfTomorrow.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xdc2de8e0",
+    "Desc": "AutomatedAchievements.json!0x3064ee72|amount1:200",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Futurized",
+        "ResourceHex": "0x1cbf8231",
+        "Operator": ">=",
+        "Value": 200
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1FuturizationW1W2",
+    "resourceRuleID": "ACGeneralEP1FuturizationW1W2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-ForwardUntoTomorrow.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x85db9d02",
+    "Desc": "AutomatedAchievements.json!0x2c1ef420|amount1:100",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FuturizedW1W2",
+        "ResourceHex": "0x52e0d132",
+        "Operator": ">=",
+        "Value": 100
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1FuturizationW3",
+    "resourceRuleID": "ACGeneralEP1FuturizationW3Rule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-WealthAndTech.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xfa4de287",
+    "Desc": "AutomatedAchievements.json!0x5e3d1b1d|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FuturizedW3",
+        "ResourceHex": "0x89fa0d0f",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1MegaTowersApartments",
+    "resourceRuleID": "ACGeneralEP1MegaTowersApartmentsRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-DeluxeApartmentInTheSky.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x99a216a8",
+    "Desc": "AutomatedAchievements.json!0xee30999a|amount2:8",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "ProfitFromSkyTowerResidents",
+        "ResourceHex": "0xd2309050",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "MaxNumberOfApartmentLevelsPerTower",
+        "ResourceHex": "0x09ed3438",
+        "Operator": ">=",
+        "Value": 8
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1MegaTowersBothTowers",
+    "resourceRuleID": "ACGeneralEP1MegaTowersBothTowersRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-HavesAndHaveNots.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xbd6641ca",
+    "Desc": "AutomatedAchievements.json!0x4176e328",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfSkyTowerBasesCheap",
+        "ResourceHex": "0x9f886438",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfSkyTowerBasesExpensive",
+        "ResourceHex": "0xd1e14fc2",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1MegaTowersCrownBonusMax",
+    "resourceRuleID": "ACGeneralEP1MegaTowersCrownBonusMaxRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-CrownJewels.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x6a492193",
+    "Desc": "AutomatedAchievements.json!0xc6e9a611",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SkyTowerCrownBonusActive_Any",
+        "ResourceHex": "0xa2195e28",
+        "Operator": ">=",
+        "Value": 5
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1MegaTowersFirstCrown",
+    "resourceRuleID": "ACGeneralEP1MegaTowersFirstCrownRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-TowerTopper.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xa26d7892",
+    "Desc": "AutomatedAchievements.json!0x68b29550",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfActiveSkyTowerCrowns",
+        "ResourceHex": "0x95c248b9",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1MegaTowersMalls",
+    "resourceRuleID": "ACGeneralEP1MegaTowersMallsRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-ShopTilTheyDrop.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xca283766",
+    "Desc": "AutomatedAchievements.json!0x4585e0ec|amount2:8",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "ProfitFromSkyTowerMalls",
+        "ResourceHex": "0xbbddcc6a",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "MaxNumberOfMallLevelsPerTower",
+        "ResourceHex": "0xc64f6092",
+        "Operator": ">=",
+        "Value": 8
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1MegaTowersMaxTowers",
+    "resourceRuleID": "ACGeneralEP1MegaTowersMaxTowersRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-TowerTown.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x1931c2bf",
+    "Desc": "AutomatedAchievements.json!0x3e064df5|amount1:8",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfSkyTowerBases",
+        "ResourceHex": "0xd645f81f",
+        "Operator": ">=",
+        "Value": 8
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "NumberOfFullLevelTowers",
+        "ResourceHex": "0x8a63a7b6",
+        "Operator": ">=",
+        "Value": 8
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1MegaTowersOffices",
+    "resourceRuleID": "ACGeneralEP1MegaTowersOfficesRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-TheOfficeTower.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xc45775ec",
+    "Desc": "AutomatedAchievements.json!0x20f7fa66|amount2:8",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "ProfitFromSkyTowerOfficesW3",
+        "ResourceHex": "0xbe93911a",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "MaxNumberOfW3OfficeLevelsPerTower",
+        "ResourceHex": "0xd9eaeb8a",
+        "Operator": ">=",
+        "Value": 8
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1OmegaCityOwnership",
+    "resourceRuleID": "ACGeneralEP1OmegaCityOwnershipRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-CityOwnership.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x7651e0c6",
+    "Desc": "AutomatedAchievements.json!0xf1b11d4c|amount1:25000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "IncomeFromOmegaCities",
+        "ResourceHex": "0x22cc85bc",
+        "Operator": ">=",
+        "Value": 25000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1OmegaConsumed",
+    "resourceRuleID": "ACGeneralEP1OmegaConsumedRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-Consumed.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x1cd43ef0",
+    "Desc": "AutomatedAchievements.json!0x4e90a8a2|amount1:10000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "IncomeFromOmega_RW3",
+        "ResourceHex": "0x07d30fd0",
+        "Operator": ">=",
+        "Value": 10000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1OmegaDroneManufacturing",
+    "resourceRuleID": "ACGeneralEP1OmegaDroneManufacturingRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-IDrone.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x18d78756",
+    "Desc": "AutomatedAchievements.json!0xb4d333bc|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DronesProducedToday",
+        "ResourceHex": "0x00a51343",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1OmegaFactoryFranchisees",
+    "resourceRuleID": "ACGeneralEP1OmegaFactoryFranchiseesRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-FactoryFranchisees.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x90e329ad",
+    "Desc": "AutomatedAchievements.json!0x0c55ee6f|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "OmegaOwnedIndustrialBuildings",
+        "ResourceHex": "0x303008d3",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1OmegaFranchiseFun",
+    "resourceRuleID": "ACGeneralEP1OmegaFranchiseFunRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-FranchiseFun!.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xe4280c1e",
+    "Desc": "AutomatedAchievements.json!0xa2580104|amount1:30000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "IncomeFromOmegaBuildings",
+        "ResourceHex": "0x45996748",
+        "Operator": ">=",
+        "Value": 30000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1OmegaOwned",
+    "resourceRuleID": "ACGeneralEP1OmegaOwnedRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-OmegaCoOwned.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x74c39d69",
+    "Desc": "AutomatedAchievements.json!0x08216c03|amount1:100",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "OmegaOwnedBuildings",
+        "ResourceHex": "0x8bf488d8",
+        "Operator": ">=",
+        "Value": 100
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1OmegaShopomatic",
+    "resourceRuleID": "ACGeneralEP1OmegaShopomaticRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-Shopomatic.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x7b83e971",
+    "Desc": "AutomatedAchievements.json!0x2f3afb0b|amount1:100",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DroneShoppedInRegionToday",
+        "ResourceHex": "0x4b69d7b4",
+        "Operator": ">=",
+        "Value": 100
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1SafetyDrones",
+    "resourceRuleID": "ACGeneralEP1SafetyDronesRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-AutomatedDefenses.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x8ca86e8e",
+    "Desc": "AutomatedAchievements.json!0x685e2d54",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DroneNumberOfFiresExtinguishedDisplay",
+        "ResourceHex": "0x0ed6e68f",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DroneRehabilitatedDisplay",
+        "ResourceHex": "0x1ff2bdd3",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DroneInjuryHealedDisplay",
+        "ResourceHex": "0x1cfc79a9",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACGeneralEP1SkyTowerCrownsMax",
+    "resourceRuleID": "ACGeneralEP1SkyTowerCrownsMaxRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-UltraMegaTowers.png",
+    "Category": "CitiesofTomorrow",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0xf1beee83",
+    "Desc": "AutomatedAchievements.json!0x6dc1d561|amount1:5",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SkyTowerCrownBonusActive_Advertising",
+        "ResourceHex": "0xe7aa22c0",
+        "Operator": ">=",
+        "Value": 5
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SkyTowerCrownBonusActive_Entertainment",
+        "ResourceHex": "0xc24346e0",
+        "Operator": ">=",
+        "Value": 5
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SkyTowerCrownBonusActive_Park",
+        "ResourceHex": "0xc4431d5a",
+        "Operator": ">=",
+        "Value": 5
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SkyTowerCrownBonusActive_PollutionScrubber",
+        "ResourceHex": "0x08044fe8",
+        "Operator": ">=",
+        "Value": 5
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SkyTowerCrownBonusActive_Power",
+        "ResourceHex": "0x6bd1166d",
+        "Operator": ">=",
+        "Value": 5
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACHealthBuildT2",
+    "resourceRuleID": "ACHealthBuildT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-MedicalMiracle.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x40f05837",
+    "Desc": "AutomatedAchievements.json!0xc57f276d|amount2:200",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "T2HospitalsBuilt",
+        "ResourceHex": "0xcfacf09c",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SickHealedDisplay",
+        "ResourceHex": "0x9448f8d0",
+        "Operator": ">=",
+        "Value": 200
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACHealthInjury",
+    "resourceRuleID": "ACHealthInjuryRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-EMTASAP.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xfd8677ea",
+    "Desc": "AutomatedAchievements.json!0x81971948|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "InjuryHealedDisplay",
+        "ResourceHex": "0x6fb55bb5",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACLaunchArcologyFriendlyEncounter",
+    "resourceRuleID": "ACLaunchArcologyFriendlyEncounterRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-FirstContact.png",
+    "Category": "LaunchArcology",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xae73885c",
+    "Desc": "AutomatedAchievements.json!0x2cf26a36",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FriendlyEncounter",
+        "ResourceHex": "0xf8846e6b",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACLaunchArcologyHostileEncounter",
+    "resourceRuleID": "ACLaunchArcologyHostileEncounterRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-CloseEncountersOfTheEekKind.png",
+    "Category": "LaunchArcology",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xe85a7899",
+    "Desc": "AutomatedAchievements.json!0x5c5779d3",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HostileEncounter",
+        "ResourceHex": "0xb2e8f8a8",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACLaunchArcologyLaunches",
+    "resourceRuleID": "ACLaunchArcologyLaunchesRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-OneSmallStep.png",
+    "Category": "LaunchArcology",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xebb42cf1",
+    "Desc": "AutomatedAchievements.json!0x9f6b3e8b|amount1:10000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TotalSpaceTravelers",
+        "ResourceHex": "0xc51ee90f",
+        "Operator": ">=",
+        "Value": 10000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACLaunchArcologySafeLanding",
+    "resourceRuleID": "ACLaunchArcologySafeLandingRule",
+    "Icon": "Graphics/Achievements/Achievements-CoT-WhereNoOneHasGoneBefore.png",
+    "Category": "LaunchArcology",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x5e4fdd84",
+    "Desc": "AutomatedAchievements.json!0x9a9a453e",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SafeLanding",
+        "ResourceHex": "0xd3d32ad7",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMayor24Months",
+    "resourceRuleID": "ACMayor24MonthsRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-MyFavoriteMayor.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xe661bde8",
+    "Desc": "AutomatedAchievements.json!0x3aeeadda|amount1:24",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "OverDriveTimer",
+        "ResourceHex": "0x917e8534",
+        "Operator": ">=",
+        "Value": 24
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMayorBadRating",
+    "resourceRuleID": "ACMayorBadRatingRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-AwfulestMayorEver.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x0df3c14f",
+    "Desc": "AutomatedAchievements.json!0x4faeb1e5|amount1:24",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HappinessGlobals_HoursOfBadMayorRating",
+        "ResourceHex": "0xc0ab217b",
+        "Operator": ">=",
+        "Value": 24
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMayorPerfectRating",
+    "resourceRuleID": "ACMayorPerfectRatingRule",
+    "Icon": "Graphics/Achievements/Achievements-CityManagement-BestMayorEver.png",
+    "Category": "CityManagement",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xede8c971",
+    "Desc": "AutomatedAchievements.json!0xa19fdb0b|amount1:95",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HappinessGlobals_MayorRating",
+        "ResourceHex": "0x8ad43f72",
+        "Operator": ">=",
+        "Value": 95
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxBusT2",
+    "resourceRuleID": "ACMultiboxBusT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-Region-Llamahound.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x6a78be19",
+    "Desc": "AutomatedAchievements.json!0xde75bf53|amount1:100",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "BusR2Trips",
+        "ResourceHex": "0xc1f0e353",
+        "Operator": ">=",
+        "Value": 100
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxCrime",
+    "resourceRuleID": "ACMultiboxCrimeRule",
+    "Icon": "Graphics/Achievements/Achievements-Region-Godfather.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xa7aa01cf",
+    "Desc": "AutomatedAchievements.json!0xe964f265|amount1:5000|amount2:50",
+    "Type": "Region",
+    "Tests": [
+      {
+        "Type": "SumInRegion",
+        "Delta": 0,
+        "Resource": "FudgedPopulation",
+        "ResourceHex": "0x4c57b52b",
+        "Operator": ">=",
+        "Value": 5000
+      },
+      {
+        "Type": "SumInRegion",
+        "Delta": 0,
+        "Resource": "CrimesCommitted_PerDay",
+        "ResourceHex": "0x2f9b5524",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxCrime2",
+    "resourceRuleID": "ACMultiboxCrime2Rule",
+    "Icon": "Graphics/Achievements/Achievements-Region-Extraditions.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x833d471f",
+    "Desc": "AutomatedAchievements.json!0xa5976955|amount1:50",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "RegionalCriminalsIncarcerated",
+        "ResourceHex": "0xc5dc32a9",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxFire",
+    "resourceRuleID": "ACMultiboxFireRule",
+    "Icon": "Graphics/Achievements/Achievements-Region-ABurningRegionOfFire.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x5ae802eb",
+    "Desc": "AutomatedAchievements.json!0x94b66e69|amount1:50",
+    "Type": "Region",
+    "Tests": [
+      {
+        "Type": "SumInRegion",
+        "Delta": 0,
+        "Resource": "NumberOfFiresExtinguishedDisplay",
+        "ResourceHex": "0xe7c893ab",
+        "Operator": ">=",
+        "Value": 50
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxGarbage",
+    "resourceRuleID": "ACMultiboxGarbageRule",
+    "Icon": "Graphics/Achievements/Achievements-Region-TimeToRelocate.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xd49bb800",
+    "Desc": "AutomatedAchievements.json!0x26585492|amount1:200",
+    "Type": "Region",
+    "Tests": [
+      {
+        "Type": "SumInRegion",
+        "Delta": 0,
+        "Resource": "GarbagePickUpNeeded",
+        "ResourceHex": "0xf66950a5",
+        "Operator": ">=",
+        "Value": 200
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxGovernment",
+    "resourceRuleID": "ACMultiboxGovernmentRule",
+    "Icon": "Graphics/Achievements/Achievements-Region-TeamMayor.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xe3e692b2",
+    "Desc": "AutomatedAchievements.json!0xa7afb370|amount1:10",
+    "Type": "Region",
+    "Tests": [
+      {
+        "Type": "SumInRegion",
+        "Delta": 0,
+        "Resource": "RegionUnlocksSent",
+        "ResourceHex": "0xe2b13cde",
+        "Operator": ">=",
+        "Value": 10
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxPlayerGift",
+    "resourceRuleID": "ACMultiboxPlayerGiftRule",
+    "Icon": "Graphics/Achievements/Achievements-Region-ThePhilanthropist.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x541ce252",
+    "Desc": "AutomatedAchievements.json!0x17e60210",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TradeGiftSimoleonsPassedAchievementLimit",
+        "ResourceHex": "0x54befaf2",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACMultiboxPowerWaterProvider",
+    "resourceRuleID": "ACMultiboxPowerWaterProviderRule",
+    "Icon": "Graphics/Achievements/Achievements-Region-MakeSureYoureGrounded.png",
+    "Category": "Region",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x966375b4",
+    "Desc": "AutomatedAchievements.json!0xf033a6ce",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TradeWaterBeenShared",
+        "ResourceHex": "0x9a7f9fff",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TradePowerBeenShared",
+        "ResourceHex": "0x60419c75",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACPowerAllPowerful",
+    "resourceRuleID": "ACPowerAllPowerfulRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-AllPowerfulRegion.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xb2bd6975",
+    "Desc": "AutomatedAchievements.json!0x6e880fd7",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PowerGlobals_TotalSolarPowerProduced",
+        "ResourceHex": "0x6e44a7e9",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PowerGlobals_TotalWindPowerProduced",
+        "ResourceHex": "0xd2286a1c",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PowerGlobals_TotalOilCrudePowerProduced",
+        "ResourceHex": "0x25d2a331",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PowerGlobals_TotalNuclearPowerProduced",
+        "ResourceHex": "0xbc79dcd6",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PowerGlobals_TotalCoalPowerProduced",
+        "ResourceHex": "0x1a0eeb45",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACPowerMeltdown",
+    "resourceRuleID": "ACPowerMeltdownRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-2KilometerIsland.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x1ef67846",
+    "Desc": "AutomatedAchievements.json!0x9a55b4cc",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DisasterMeltdown_Recent",
+        "ResourceHex": "0x381d569c",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACPowerPoweredUp",
+    "resourceRuleID": "ACPowerPoweredUpRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-SuperPowered.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x8592af83",
+    "Desc": "AutomatedAchievements.json!0x01959661",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "PowerNeeded",
+        "ResourceHex": "0x88398207",
+        "Operator": ">=",
+        "Value": 7200000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACSewageBuildT2",
+    "resourceRuleID": "ACSewageBuildT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-IckOrTreat.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x0dd921b1",
+    "Desc": "AutomatedAchievements.json!0xc4090a4b",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SewageTreatedDisplay",
+        "ResourceHex": "0x9ea08db2",
+        "Operator": ">=",
+        "Value": 200000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACSewageDumping",
+    "resourceRuleID": "ACSewageDumpingRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-SewageStuffing.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xee934b95",
+    "Desc": "AutomatedAchievements.json!0xaa5c5ff7|amount1:10000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "FudgedPopulation",
+        "ResourceHex": "0x4c57b52b",
+        "Operator": ">=",
+        "Value": 10000
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SewageDumped_ThisHour",
+        "ResourceHex": "0x04feaa51",
+        "Operator": "<=",
+        "Value": 0
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SewagePlants_T2",
+        "ResourceHex": "0x8f254efc",
+        "Operator": "<=",
+        "Value": 0
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "SewageDumped_PerHour",
+        "ResourceHex": "0xc33c63b6",
+        "Operator": "<=",
+        "Value": 0
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismAirship1",
+    "resourceRuleID": "ACTourismAirship1Rule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-Airship.png",
+    "Category": "Airships",
+    "IsSecret": false,
+    "Name": "ASPAutomatedAchievements.json!0x91263483",
+    "Desc": "ASPAutomatedAchievements.json!0x0d291b61",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "AirShipTripsToday",
+        "ResourceHex": "0xa23dd8ba",
+        "Operator": ">=",
+        "Value": 1
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DLC_AirShips",
+        "ResourceHex": "0xc90ab2fa",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismAirship2",
+    "resourceRuleID": "ACTourismAirship2Rule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-SkyCaptain.png",
+    "Category": "Airships",
+    "IsSecret": false,
+    "Name": "ASPAutomatedAchievements.json!0xd77d7044",
+    "Desc": "ASPAutomatedAchievements.json!0x114bdbfe|amount1:1200",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "AirShipTripsToday",
+        "ResourceHex": "0xa23dd8ba",
+        "Operator": ">=",
+        "Value": 1200
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DLC_AirShips",
+        "ResourceHex": "0xc90ab2fa",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismAmusementParkProfit",
+    "resourceRuleID": "ACTourismAmusementParkProfitRule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-amusement-RegionOfFun.png",
+    "Category": "AmusementParks",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x5bebf7b9",
+    "Desc": "AutomatedAchievements.json!0xcd6e8ff3|amount1:100000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "AmusementParkProfit_Yesterday",
+        "ResourceHex": "0xa6b9774f",
+        "Operator": ">=",
+        "Value": 100000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismAmusementParkVisitors",
+    "resourceRuleID": "ACTourismAmusementParkVisitorsRule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-amusement-WhereDidWePark.png",
+    "Category": "AmusementParks",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0xab827eda",
+    "Desc": "AutomatedAchievements.json!0x4ef58198|amount1:1000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "AmusementParkGuests",
+        "ResourceHex": "0x2b24a5e3",
+        "Operator": ">=",
+        "Value": 1000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismAttractW1TouristsOneDay",
+    "resourceRuleID": "ACTourismAttractW1TouristsOneDayRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-MainAttraction.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x99adeda8",
+    "Desc": "AutomatedAchievements.json!0xee3c709a|amount1:300",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TouristW1SatisfiedToday",
+        "ResourceHex": "0xd910eada",
+        "Operator": ">=",
+        "Value": 300
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismFirstStadiumEvent",
+    "resourceRuleID": "ACTourismFirstStadiumEventRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-SundaySundaySunday.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x26cf6379",
+    "Desc": "AutomatedAchievements.json!0x9acc63b3",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "Stadium_EventTotal",
+        "ResourceHex": "0xcc3332d7",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismHigherPower",
+    "resourceRuleID": "ACTourismHigherPowerRule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-worship-higherPower.png",
+    "Category": "HousesofWorship",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x7e4cef2c",
+    "Desc": "AutomatedAchievements.json!0xdaef06a6|amount1:100",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HouseOfWorshipVisitorsToday",
+        "ResourceHex": "0x0efcf3c6",
+        "Operator": ">=",
+        "Value": 100
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTourismQuiteCongregation",
+    "resourceRuleID": "ACTourismQuiteCongregationRule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-worship-congregation.png",
+    "Category": "HousesofWorship",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x43c69c80",
+    "Desc": "AutomatedAchievements.json!0x95833912|amount1:1000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "HouseOfWorshipVisitors",
+        "ResourceHex": "0x9d7c4c43",
+        "Operator": ">=",
+        "Value": 1000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTransportationBusFirstStopCruiseShipT2",
+    "resourceRuleID": "ACTransportationBusFirstStopCruiseShipT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-CruisinAlong.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x0f7bcda6",
+    "Desc": "AutomatedAchievements.json!0x8adb0a2c|amount1:2000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "CruiseShipTripsToday",
+        "ResourceHex": "0xf5293705",
+        "Operator": ">=",
+        "Value": 2000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTransportationBusFirstStopLightTrainT1",
+    "resourceRuleID": "ACTransportationBusFirstStopLightTrainT1Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-AStreetcarNamedSimCity.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x831fa2d4",
+    "Desc": "AutomatedAchievements.json!0xdcefd3ee|amount1:1000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "LeftLightTrainStopToday",
+        "ResourceHex": "0x71680c9b",
+        "Operator": ">=",
+        "Value": 1000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTransportationBusFirstStopTrainT2",
+    "resourceRuleID": "ACTransportationBusFirstStopTrainT2Rule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-AllAboard.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x42b2d879",
+    "Desc": "AutomatedAchievements.json!0xb6afd8b3|amount1:1000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "TrainTripsToday",
+        "ResourceHex": "0xe076d4fe",
+        "Operator": ">=",
+        "Value": 1000
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTransportationBusUK",
+    "resourceRuleID": "ACTransportationBusUKRule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-UKCharacter.png",
+    "Category": "BritishCitySet",
+    "IsSecret": false,
+    "Name": "LONAutomatedAchievements.json!0xf8026c6f",
+    "Desc": "LONAutomatedAchievements.json!0x39beef05|amount1:10000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "LondonBusTripsYesterday",
+        "ResourceHex": "0x6f89d333",
+        "Operator": ">=",
+        "Value": 10000
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DLC_London",
+        "ResourceHex": "0x29b63bd1",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACTransportationTrainGermany",
+    "resourceRuleID": "ACTransportationTrainGermanyRule",
+    "Icon": "Graphics/Achievements/Achievements-DLC-GermanEfficiency.png",
+    "Category": "GermanCitySet",
+    "IsSecret": false,
+    "Name": "BERAutomatedAchievements.json!0x9b004df6",
+    "Desc": "BERAutomatedAchievements.json!0x3483245c|amount1:50000",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "GermanTrainTripsYesterday",
+        "ResourceHex": "0xa9a38253",
+        "Operator": ">=",
+        "Value": 50000
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "DLC_Berlin",
+        "ResourceHex": "0x5b8a5e5f",
+        "Operator": ">=",
+        "Value": 1
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACWaterCleanWater",
+    "resourceRuleID": "ACWaterCleanWaterRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-SludgeFreeH2O.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x05453ff2",
+    "Desc": "AutomatedAchievements.json!0xcb88c8b0",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "WaterProductionPerHour",
+        "ResourceHex": "0x58a5ae06",
+        "Operator": ">=",
+        "Value": 500000
+      },
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "WaterGlobals_TotalGermsTransmittedPerHour",
+        "ResourceHex": "0x85545787",
+        "Operator": "<=",
+        "Value": 0
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACWaterDirtyWater",
+    "resourceRuleID": "ACWaterDirtyWaterRule",
+    "Icon": "Graphics/Achievements/Achievements-Secret-MayorYuck.png",
+    "Category": "Secret",
+    "IsSecret": true,
+    "Name": "AutomatedAchievements.json!0x36698d07",
+    "Desc": "AutomatedAchievements.json!0x9a58c59d|amount1:500",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "WaterGermAlertsPerDay",
+        "ResourceHex": "0xfb67ebf1",
+        "Operator": ">=",
+        "Value": 500
+      }
+    ]
+  },
+  {
+    "Enabled": 1,
+    "ID": "ACWaterWateredUp",
+    "resourceRuleID": "ACWaterWateredUpRule",
+    "Icon": "Graphics/Achievements/Achievements-CityServices-AquaMax.png",
+    "Category": "CityServices",
+    "IsSecret": false,
+    "Name": "AutomatedAchievements.json!0x3b46c9f3",
+    "Desc": "AutomatedAchievements.json!0x97e8e171",
+    "Type": "Local",
+    "Tests": [
+      {
+        "Type": "Local",
+        "Delta": 0,
+        "Resource": "WaterNeeded",
+        "ResourceHex": "0xce461a05",
+        "Operator": ">=",
+        "Value": 2400000
+      }
+    ]
+  }
+]

@@ -1,0 +1,14 @@
+{
+	"0xf56931f9" : "升空",
+	"0x1b87d447" : "設置一個飛船機棚",
+	"0x1b87d444" : "再讓~objective_remaining:number~位遊客搭乘飛船抵達",
+	"0x33a3ba43" : "飄去上班",
+	"0x1db51a99" : "為飛船機棚增加一個通勤飛船停靠處",
+	"0x1db51a9a" : "再讓~objective_remaining:number~名通勤者搭乘飛船抵達",
+	"0xf26aa7ae" : "俯瞰大地",
+	"0xeb3d2eee" : "放置一個熱氣球公園",
+	"0xeb3d2eed" : "有~objective_capacity:number~個模擬市民造訪公園",
+	"0xcd35bce6" : "DLC Airships",
+	"0x69c27b46" : "Thank you for purchasing Airships DLC",
+	"0xffffffff" : "0xffffffff"
+}

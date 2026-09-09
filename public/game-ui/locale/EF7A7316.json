@@ -1,0 +1,208 @@
+[
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0f7e41df",
+        "id" : "AmusementParks",
+        "achievements" : [
+            "ACTourismAmusementParkProfit",
+            "ACTourismAmusementParkVisitors"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x10652efc",
+        "id" : "CitiesofTomorrow",
+        "achievements" : [
+            "ACGeneralEP1AcademyAllResearch",
+            "ACGeneralEP1AcademyControlNetBandwidth",
+            "ACGeneralEP1AcademyControlNetIncome",
+            "ACGeneralEP1AcademyFirstResearch",
+            "ACGeneralEP1AcademyHighWealthWorkers",
+            "ACGeneralEP1AcademyMaglevRiders",
+            "ACGeneralEP1AcademyWaterSanitizer",
+            "ACGeneralEP1FusionPower",
+            "ACGeneralEP1FuturizationCity",
+            "ACGeneralEP1FuturizationW1W2",
+            "ACGeneralEP1FuturizationW3",
+            "ACGeneralEP1MegaTowersApartments",
+            "ACGeneralEP1MegaTowersBothTowers",
+            "ACGeneralEP1MegaTowersCrownBonusMax",
+            "ACGeneralEP1MegaTowersFirstCrown",
+            "ACGeneralEP1MegaTowersMalls",
+            "ACGeneralEP1MegaTowersMaxTowers",
+            "ACGeneralEP1MegaTowersOffices",
+            "ACGeneralEP1OmegaCityOwnership",
+            "ACGeneralEP1OmegaConsumed",
+            "ACGeneralEP1OmegaDroneManufacturing",
+            "ACGeneralEP1OmegaFactoryFranchisees",
+            "ACGeneralEP1OmegaFranchiseFun",
+            "ACGeneralEP1OmegaOwned",
+            "ACGeneralEP1OmegaShopomatic",
+            "ACGeneralEP1SafetyDrones",
+            "ACGeneralEP1SkyTowerCrownsMax"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0ee9b0da",
+        "id" : "CityManagement",
+        "achievements" : [
+            "ACBudgetHighExpenses",
+            "ACBudgetHighIncome",
+            "ACBudgetLoans",
+            "ACBudgetSimoleons",
+            "ACCivicCBuildings100",
+            "ACCivicExpandedCityHall",
+            "ACCivicExpandedMayorMansion",
+            "ACCivicIBuildings100",
+            "ACCivicPopulation2",
+            "ACCivicPopulation4",
+            "ACCivicPopulation5",
+            "ACCivicPopulation6",
+            "ACCivicPopulation8",
+            "ACCivicRBuildings100",
+            "ACMayor24Months",
+            "ACMayorBadRating",
+            "ACMayorPerfectRating"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0ee9b0d6",
+        "id" : "CityServices",
+        "achievements" : [
+            "ACCrimeBuildT2",
+            "ACCrimeCriminalCaptured",
+            "ACCrimeRehab",
+            "ACEducationBuildUniversity",
+            "ACEducationBusStops",
+            "ACFireBuildT2",
+            "ACFireHazMat",
+            "ACFireNoFires",
+            "ACGarbageBuildT2",
+            "ACGarbageLotsOfGarbage",
+            "ACGarbagePickedUp",
+            "ACHealthBuildT2",
+            "ACHealthInjury",
+            "ACPowerAllPowerful",
+            "ACPowerPoweredUp",
+            "ACSewageBuildT2",
+            "ACSewageDumping",
+            "ACTourismAttractW1TouristsOneDay",
+            "ACTourismFirstStadiumEvent",
+            "ACTransportationBusFirstStopCruiseShipT2",
+            "ACTransportationBusFirstStopLightTrainT1",
+            "ACTransportationBusFirstStopTrainT2",
+            "ACWaterCleanWater",
+            "ACWaterWateredUp"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0ee9b0e9",
+        "id" : "CitySpecialization",
+        "achievements" : [
+            "ACBusinessAllHQ",
+            "ACBusinessCoalHarvested",
+            "ACBusinessElectronicsAssembled",
+            "ACBusinessGamblingCasinoExpanded",
+            "ACBusinessGamblingSmallRevenue",
+            "ACBusinessMetalsSmeltMetal",
+            "ACBusinessOilPumped",
+            "ACBusinessOilRefinery",
+            "ACBusinessOreHarvested",
+            "ACBusinessTradeBuildT2",
+            "ACBusinessTradeSell",
+            "ACBusinessTVAssembled",
+            "ACGeneralCitySpecializationTracker"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0f482da8",
+        "id" : "HousesofWorship",
+        "achievements" : [
+            "ACTourismHigherPower",
+            "ACTourismQuiteCongregation"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x10652a79",
+        "id" : "LaunchArcology",
+        "achievements" : [
+            "ACLaunchArcologyFriendlyEncounter",
+            "ACLaunchArcologyHostileEncounter",
+            "ACLaunchArcologyLaunches",
+            "ACLaunchArcologySafeLanding"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0ee9b0e6",
+        "id" : "RCI",
+        "achievements" : [
+            "ACCivicRCIHighDensityCommercial",
+            "ACCivicRCIHighTechIndustrial",
+            "ACCivicRCIHighWealthAndDensityCommercial",
+            "ACCivicRCIHighWealthAndDensityResidential",
+            "ACCivicRCIHighWealthResidential",
+            "ACCivicRCIMediumDensityCommercial",
+            "ACCivicRCIMediumDensityResidential"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0ee9b0f3",
+        "id" : "Region",
+        "achievements" : [
+            "ACEducationFieldTrip",
+            "ACMultiboxBusT2",
+            "ACMultiboxCrime",
+            "ACMultiboxCrime2",
+            "ACMultiboxFire",
+            "ACMultiboxGarbage",
+            "ACMultiboxGovernment",
+            "ACMultiboxPlayerGift",
+            "ACMultiboxPowerWaterProvider"
+        ]
+    },
+    {
+        "label" : "AutomatedAchievementCategories.json!0x0ee9b0f6",
+        "id" : "Secret",
+        "achievements" : [
+            "ACCivic10YearAnniversery",
+            "ACCivic25YearAnniversery",
+            "ACCivic50YearAnniversery",
+            "ACDisasterCoalOreOilUnlocksEarthquake",
+            "ACDisasterEP1UnlocksSpaceRobot",
+            "ACDisasterFirstPlaneUnlocksMeteor",
+            "ACDisasterHealthDeathUnlocksZombies",
+            "ACDisasterIncineratorUnlocksBigLizard",
+            "ACDisasterSpaceCenterUnlocksUFO",
+            "ACDisasterWindTurbineUnlocksTornado",
+            "ACPowerMeltdown",
+            "ACWaterDirtyWater"
+        ]
+    },
+    {
+        "label" : "ASPAutomatedAchievementCategories.json!0x0f31f41c",
+        "id" : "Airships",
+        "achievements" : [
+            "ACTourismAirship1",
+            "ACTourismAirship2"
+        ]
+    },
+    {
+        "label" : "LONAutomatedAchievementCategories.json!0x0f17d33a",
+        "id" : "BritishCitySet",
+        "achievements" : [
+            "ACTransportationBusUK"
+        ]
+    },
+    {
+        "label" : "PARAutomatedAchievementCategories.json!0x0f17ae3d",
+        "id" : "FrenchCitySet",
+        "achievements" : [
+            "ACCrimePoliceFrance"
+        ]
+    },
+    {
+        "label" : "BERAutomatedAchievementCategories.json!0x0f17ae1b",
+        "id" : "GermanCitySet",
+        "achievements" : [
+            "ACTransportationTrainGermany"
+        ]
+    }
+]

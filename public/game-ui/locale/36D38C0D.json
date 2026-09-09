@@ -1,0 +1,37 @@
+{
+	"propertyWindowPinRight" : true,
+	"propertyWindowPinBottom" : false,
+	"propertyWindowX" : 0,
+	"propertyWindowY" : 65,
+	"propertyWindowHeight" : 300,
+	"propertyWindowWidth" : 300,
+
+	"sceneGraphWindowPinRight" : true,
+	"sceneGraphWindowPinBottom" : false,
+	"sceneGraphWindowX" : 0,
+	"sceneGraphWindowY" : 365,
+	"sceneGraphWindowHeight" : 300,
+	"sceneGraphWindowWidth" : 300,
+
+	"widgetBoxWindowPinRight" : true,
+	"widgetBoxWindowPinBottom" : false,
+	"widgetBoxWindowX" : 0,
+	"widgetBoxWindowY" : 665,
+	"widgetBoxWindowHeight" : 300,
+	"widgetBoxWindowWidth" : 300,
+	"widgetBoxColumnCount" : 2,
+	"widgetBoxItemWidth" : 130,
+
+	"fileBrowserX" : 50,
+	"fileBrowserY" : 50,
+	"fileBrowserWidth" : 400,
+	"fileBrowserHeight" : 500,
+
+	"customWidgets" : [],
+	"profilingEnabled" : false,
+    "logUncachedLayoutLoads" : false,
+    "restPath": "http://api.simcitydev.ea.com/simcity/rest/",
+    
+    "errorLevel": 3,
+    "errorFormatting": 2
+}

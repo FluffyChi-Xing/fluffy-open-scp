@@ -1,0 +1,16 @@
+{
+	"0x0fd111d1" : "將鄰近城市的建築變成加盟商，雙方都能獲利！<br>為OmegaCo總部增建商業部門。",
+	"0x0ea138c0" : "主動提供額外的OmegaCo卡車",
+	"0x0ee1b57f" : "主動提供額外的OmegaCo卡車給~cityname~",
+	"0x10050416" : "向鄰近城市購買ControlNet",
+	"0x1004f873" : "沒有鄰近的ControlNet供應者",
+	"0x1005043f" : "~city~沒有任何ControlNet可以賣",
+	"0x1005045d" : "主事者不明的城市不提供ControlNet",
+	"0x1005048e" : "這座城市沒有線路。選擇另外一座城市來購買ControlNet！",
+	"0x100685e9" : "使用~amount1:number~ControlNet中的~amount:number~ControlNet，費用~amount2:simoleons~",
+	"0x100685eb" : "有~amount1:number~ControlNet可供使用，每~amount2:number~ControlNet收費§1 ",
+	"0x100685ee" : "使用~amount1:number~ControlNet中的~amount:number~ControlNet，費用~amount2:simoleons~",
+	"0x1019ce43" : "需要ControlNet",
+	"0x1019ce44" : "這座城市由OmegaCo所有！",
+	"0xffffffff" : "0xffffffff"
+}

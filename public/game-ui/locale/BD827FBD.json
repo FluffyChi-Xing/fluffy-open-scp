@@ -1,0 +1,8 @@
+{
+	"0x0b14a49b" : "~global_power_production~ / ~global_power_consumption~ MW",
+	"0x0b14a4c6" : "~global_power_pollution~ Tons/Day",
+	"0x0b14a505" : "~global_power_workers~ / ~global_power_jobs~",
+	"0x0b14a52c" : "~global_power_cost~ / Day",
+	"0x0de46fd4" : "~amount~",
+	"0xffffffff" : "0xffffffff"
+}
