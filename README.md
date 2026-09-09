@@ -24,11 +24,24 @@ OpenSCP 是经典 C#/WPF 工具 [SimCityPak](https://github.com/altinctrl/SimCit
 
 ### 日常操作
 
-- **浏览**：左侧资源树按目录列出 package；打开后在资源页中按 TGI（Type/Group/Instance）筛选、搜索、分页浏览（大包也流畅，虚拟化渲染）；
+- **浏览**：左侧资源树按目录列出 package；打开后在资源页中按 TGI（Type/Group/Instance）筛选、搜索、分页浏览（大包也流畅，虚拟化渲染）；目录自动来自设置页持久化的游戏目录，切换页面后打开的 package、页码、筛选全部保留；
 - **预览**：点击资源自动识别类型 —— 模型（RW4 3D 视口，含材质/LOD）、贴图（PNG/JPG/TGA/DDS/Raster）、属性表（可读键值 + 编辑）、文本（JSON/HTML/JS 语法高亮）、音频（Wwise → WAV 试听）、视频（VP6 → MP4 播放）、二进制（hex 视图）；
 - **Lot 编辑器**：打开 Lot 资源可查看地面图（LotMask 四色量化）、模型 LOD 链、灯光/贴花/Prop 等单位列表与变换矩阵；
 - **导出**：模型 → glTF 2.0（`.glb`，含材质/骨骼/动画）或 Wavefront `.obj`；贴图 → PNG/JPG/TGA/DDS；属性表 → JSON/TXT；音频 → WAV；视频 → MP4；
 - **首页仪表盘**：统计历史打开 package 的扩展名数量占比（环形图）、容量占比（条形图）、可识别类型覆盖率，可展开查看单包明细。
+
+### 模组开发工作台（Mod Studio）
+
+主导航「模组/资产制作」分组，入口 `/studio` —— 按 **解析 → 编辑 → 构建 → 校验** 管线组织的面板编排：
+
+| 面板 | 状态 | 能力 |
+|---|---|---|
+| **TGI 复写检测** | 可用 | 扫描游戏目录 + mod 目录全部 package 索引，按 TGI 分组标记被覆盖资源，展示覆盖链（原版 → mod1 → mod2）与内容差异；默认目录自动来自设置，支持自动扫描与手动选目录 |
+| **Locale 文本编辑** | 可用 | stringID → 译文双栏表格，脏标记 / 按行还原 / 筛选；导出**确定性 overlay package**（同 TGI、明文、排序稳定），放入游戏 mod 目录即覆盖原版文本 —— 这是所有编辑面板共用的写回链路试金石 |
+| **UI 预览** | 预览版 | 54 个游戏屏幕全局轮播；`assembleGameUiHtml` 装配方法用真实 locale 文案（FNV-1 屏名映射）+ 游戏 CSS + 采样图在 iframe 沙箱中重建游戏 UI 窗口；编辑 Sheet 占位待 WP3 |
+| Property 编辑 / Raster 绘制 / 资产面板 | 排期中 | 见 `docs/roadmap/workspace-panels.md` |
+
+游戏 UI 静态资产（CSS/locale 表/清单）已解包至 `public/game-ui/`（图片体积原因 gitignore，`cargo run -p dbpf --example ui_assets -- <SimCityData> --extract public/game-ui` 可再生）。
 
 ### ⚠️ 音视频转码需要手动安装外部工具
 
@@ -63,7 +76,8 @@ fluffy-open-scp/
 ## 路线图 / Roadmap
 
 - **P0 底座**（大部分已完成）：DBPF/RefPack、RW4、属性表的可靠解析与写回，OBJ 导入、overlay package、精细错误和 roundtrip 测试
-- **当前进行**：预览体验完善（模型视口材质通道、日夜循环/供电状态渲染、relief 高度图）、格式覆盖率扩展（EP1 二进制表、GlassBox 数据层反查）
+- **Mod Studio 已交付**：TGI 复写检测（WP0）、Locale 编辑 + overlay 写回链路（WP2）、游戏 UI 重建预览（WP3 预览版）；面板状态全部在 `/studio` hub 上如实标注
+- **当前进行**：Property 编辑器（WP1）、UI 编辑实装（布局 JSON → 装配管线）、预览体验完善（模型视口材质通道、日夜循环/供电状态渲染）
 - **P1 Modding Suite**：`openscp.mod.toml` 声明式项目、一键构建、LOD/依赖管理、自动校验、可行动诊断、预览与文件监听
 - **P2/P3**：高级材质/LOD/骨骼编辑，游戏联动、依赖生态和插件能力
 
