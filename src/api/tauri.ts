@@ -506,5 +506,37 @@ export interface PackageStatistics {
   failed: string[];
 }
 
+export interface OverrideChainItem {
+  path: string;
+  name: string;
+  decompressedSize: number;
+  wins: boolean;
+}
+export interface OverrideConflict {
+  typeId: number;
+  groupId: number;
+  instanceId: number;
+  ext: string;
+  chain: OverrideChainItem[];
+}
+export interface OverridePackageStat {
+  path: string;
+  name: string;
+  entryCount: number;
+  overrides: number;
+}
+export interface OverrideScanStats {
+  packages: number;
+  entries: number;
+  duplicatedTgis: number;
+  overriddenEntries: number;
+}
+export interface OverrideScanResponse {
+  conflicts: OverrideConflict[];
+  packages: OverridePackageStat[];
+  stats: OverrideScanStats;
+  failed: string[];
+}
+
 export const activityEventName = "activity:event";
 export const exportProgressEventName = "export:progress";

@@ -17,6 +17,7 @@ import {
   type PackageFile,
   type PackageHistory,
   type PackageStatistics,
+  OverrideScanResponse,
   type ResourceBytes,
   type ResourceData,
   type LotEditorSession,
@@ -115,6 +116,10 @@ export const tauriApi = {
     statistics: (paths: string[]) =>
       command<PackageStatistics>("package_statistics", {
         request: { paths },
+      }),
+    overrideScan: (roots: string[]) =>
+      command<OverrideScanResponse>("override_scan", {
+        request: { roots },
       }),
     listGameTree: (root: string) =>
       command<GameFolder[]>("list_game_tree", { request: { root } }),

@@ -17,7 +17,7 @@ use crate::activity::CommandError;
 
 /// SimCityPak 官方 FileTypes 表（database_main.s3db，25 条）的后缀映射。
 /// key = typeId，value =（后缀，展示名）。
-const KNOWN_EXTENSIONS: &[(u32, &str, &str)] = &[
+pub(crate) const KNOWN_EXTENSIONS: &[(u32, &str, &str)] = &[
     (0xDD62_33D6, "html", "HTML File"),
     (0xEA51_18B0, "effectdir", "Effects Directory File"),
     (0x00B1_B104, "property", "Property File"),

@@ -12,6 +12,7 @@ mod activity;
 mod media_tools;
 mod package_browser;
 mod package_service;
+mod overrides;
 mod settings;
 mod stats;
 mod workspace;
@@ -31,6 +32,7 @@ use package_service::{
     resolve_names,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
+use overrides::override_scan;
 use stats::package_statistics;
 use tauri::{Manager, PhysicalPosition};
 use workspace::{
@@ -76,6 +78,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             package_statistics,
+            override_scan,
             activity_list_operations,
             activity_list_events,
             activity_list_packages,

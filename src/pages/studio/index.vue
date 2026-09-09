@@ -88,8 +88,6 @@ const stagePanels = (stage: (typeof stages)[number]) =>
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  max-width: 1080px;
-  margin: 0 auto;
   padding: 2.5rem 1.5rem 3rem;
 }
 .studio-header {
@@ -146,6 +144,7 @@ const stagePanels = (stage: (typeof stages)[number]) =>
   align-items: center;
   gap: 0.6rem;
   white-space: nowrap;
+  flex: 1 1 0;
 }
 .node-index {
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -157,9 +156,10 @@ const stagePanels = (stage: (typeof stages)[number]) =>
   font-weight: 500;
 }
 .node-connector {
-  width: clamp(2rem, 6vw, 5rem);
+  flex: 1 1 0;
   height: 1px;
   margin: 0 1rem;
+  min-width: 1.5rem;
   background: linear-gradient(
     to right,
     var(--border),

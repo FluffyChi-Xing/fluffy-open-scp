@@ -57,8 +57,6 @@ const featureCount = 4;
 
 <style scoped>
 .panel-stub {
-  max-width: 760px;
-  margin: 0 auto;
   padding: 2.25rem 1.5rem 3rem;
   display: flex;
   flex-direction: column;
