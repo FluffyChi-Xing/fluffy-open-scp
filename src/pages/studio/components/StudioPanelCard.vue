@@ -11,7 +11,7 @@ const props = withDefaults(
     panel: string;
     icon: string;
     stage: PanelStage;
-    status: "next" | "planned";
+    status: "next" | "planned" | "preview";
     to: string;
     wide?: boolean;
   }>(),

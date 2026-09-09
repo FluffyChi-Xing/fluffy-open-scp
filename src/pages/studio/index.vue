@@ -12,6 +12,7 @@ const stages = ["resolve", "edit", "build", "verify"] as const;
 const panels = computed(() => [
   { key: "diagnostics", icon: "Shield", stage: "verify", status: "next", to: "/studio/diagnostics" },
   { key: "i18n", icon: "Globe", stage: "edit", status: "next", to: "/studio/i18n" },
+  { key: "ui", icon: "PanelTop", stage: "edit", status: "preview", to: "/studio/ui" },
   { key: "property", icon: "FilePen", stage: "edit", status: "planned", to: "/studio/property" },
   { key: "raster", icon: "Image", stage: "edit", status: "planned", to: "/studio/raster" },
   { key: "asset", icon: "Boxes", stage: "build", status: "planned", to: "/studio/asset" },

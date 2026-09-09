@@ -1,0 +1,545 @@
+{
+ "note": "game ui preview slides; images sampled from SimCity_App package shell assets",
+ "slides": [
+  {
+   "id": "GameEntry",
+   "screen": "GameEntry.json",
+   "group": "startup",
+   "images": [
+    "/game-ui/png/00000000_ECDD9CFA.png",
+    "/game-ui/png/00000000_C5852EC0.png",
+    "/game-ui/png/00000000_1FA6CE9B.png"
+   ]
+  },
+  {
+   "id": "Launcher",
+   "screen": "Launcher.json",
+   "group": "startup",
+   "images": [
+    "/game-ui/png/00000000_81EAF997.png",
+    "/game-ui/png/00000000_EE973B26.png",
+    "/game-ui/png/00000000_FECBC16E.png"
+   ]
+  },
+  {
+   "id": "LoadingScreen",
+   "screen": "LoadingScreen.json",
+   "group": "startup",
+   "images": [
+    "/game-ui/png/00000000_27070291.png",
+    "/game-ui/png/00000000_F9FE3BCA.png",
+    "/game-ui/png/00000000_B6D3781E.png"
+   ]
+  },
+  {
+   "id": "Legal",
+   "screen": "Legal.json",
+   "group": "startup",
+   "images": [
+    "/game-ui/png/00000000_8AD4619C.png",
+    "/game-ui/png/00000000_67A57764.png",
+    "/game-ui/png/00000000_D0321C3E.png"
+   ]
+  },
+  {
+   "id": "UpdateManagerErrorCodes",
+   "screen": "UpdateManagerErrorCodes.json",
+   "group": "startup",
+   "images": [
+    "/game-ui/png/00000000_C2685181.png",
+    "/game-ui/png/00000000_6750C6D9.png",
+    "/game-ui/png/00000000_E7867419.png"
+   ]
+  },
+  {
+   "id": "Settings",
+   "screen": "Settings.json",
+   "group": "startup",
+   "images": [
+    "/game-ui/png/00000000_813E6D36.png",
+    "/game-ui/png/00000000_39B3140B.png",
+    "/game-ui/png/00000000_2CBA23B3.png"
+   ]
+  },
+  {
+   "id": "GlobalUI",
+   "screen": "GlobalUI.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_3AB5F1AE.png",
+    "/game-ui/png/00000000_0F464B03.png",
+    "/game-ui/png/00000000_815F1B8F.png"
+   ]
+  },
+  {
+   "id": "Ticker",
+   "screen": "Ticker.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_F63C3001.png",
+    "/game-ui/png/00000000_306AC7EA.png",
+    "/game-ui/png/00000000_09876B3F.png"
+   ]
+  },
+  {
+   "id": "Alerts",
+   "screen": "Alerts.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_1EFDFF56.png",
+    "/game-ui/png/00000000_CB123B5D.png",
+    "/game-ui/png/00000000_474F16DE.png"
+   ]
+  },
+  {
+   "id": "Tooltips",
+   "screen": "Tooltips.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_0CC5F44F.png",
+    "/game-ui/png/00000000_3BA469CC.png",
+    "/game-ui/png/00000000_17A37AC5.png"
+   ]
+  },
+  {
+   "id": "DialogMessages",
+   "screen": "DialogMessages.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_06BCA352.png",
+    "/game-ui/png/00000000_76563071.png",
+    "/game-ui/png/00000000_D6D873BF.png"
+   ]
+  },
+  {
+   "id": "CommonButtons",
+   "screen": "CommonButtons.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_EE0A7A6F.png",
+    "/game-ui/png/00000000_5E7F49B9.png",
+    "/game-ui/png/00000000_F981DB21.png"
+   ]
+  },
+  {
+   "id": "Units",
+   "screen": "Units.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_AD91EA85.png",
+    "/game-ui/png/00000000_66ED1FB5.png",
+    "/game-ui/png/00000000_1FD9F93F.png"
+   ]
+  },
+  {
+   "id": "ErrorMessages",
+   "screen": "ErrorMessages.json",
+   "group": "hud",
+   "images": [
+    "/game-ui/png/00000000_62AF9E63.png",
+    "/game-ui/png/00000000_3E07AFC4.png",
+    "/game-ui/png/00000000_480D45FF.png"
+   ]
+  },
+  {
+   "id": "Budget",
+   "screen": "Budget.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_8AF79DA6.png",
+    "/game-ui/png/00000000_EAF4D7D7.png",
+    "/game-ui/png/00000000_DDBE138C.png"
+   ]
+  },
+  {
+   "id": "Resources",
+   "screen": "Resources.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_2E95138E.png",
+    "/game-ui/png/00000000_553380AC.png",
+    "/game-ui/png/00000000_C93840A2.png"
+   ]
+  },
+  {
+   "id": "MayorRating",
+   "screen": "MayorRating.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_E89C4022.png",
+    "/game-ui/png/00000000_F8855131.png",
+    "/game-ui/png/00000000_60A22FBD.png"
+   ]
+  },
+  {
+   "id": "CitySpecializationGuide",
+   "screen": "CitySpecializationGuide.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_16894368.png",
+    "/game-ui/png/00000000_4F7BD05A.png",
+    "/game-ui/png/00000000_1B758C5A.png"
+   ]
+  },
+  {
+   "id": "DataLayerLegend",
+   "screen": "DataLayerLegend.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_15C24988.png",
+    "/game-ui/png/00000000_30F921D3.png",
+    "/game-ui/png/00000000_11FADFD7.png"
+   ]
+  },
+  {
+   "id": "LayerNames",
+   "screen": "LayerNames.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_7E611AE1.png",
+    "/game-ui/png/00000000_DA66FD32.png",
+    "/game-ui/png/00000000_F0CF40E1.png"
+   ]
+  },
+  {
+   "id": "PaletteInfoPanel",
+   "screen": "PaletteInfoPanel.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_27D772E3.png",
+    "/game-ui/png/00000000_469A1DAB.png",
+    "/game-ui/png/00000000_9EF66373.png"
+   ]
+  },
+  {
+   "id": "PaletteWarnings",
+   "screen": "PaletteWarnings.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_00A65734.png",
+    "/game-ui/png/00000000_A7C25182.png",
+    "/game-ui/png/00000000_A59D3141.png"
+   ]
+  },
+  {
+   "id": "PaletteToolRollovers",
+   "screen": "PaletteToolRollovers.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_FA536514.png",
+    "/game-ui/png/00000000_FC672DBE.png",
+    "/game-ui/png/00000000_8A62852C.png"
+   ]
+  },
+  {
+   "id": "ToolCategories",
+   "screen": "ToolCategories.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_120A3733.png",
+    "/game-ui/png/00000000_A0D4DB32.png",
+    "/game-ui/png/00000000_06EF9832.png"
+   ]
+  },
+  {
+   "id": "CategoryInfo",
+   "screen": "CategoryInfo.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_ED8D6C32.png",
+    "/game-ui/png/00000000_8759F210.png",
+    "/game-ui/png/00000000_07599A38.png"
+   ]
+  },
+  {
+   "id": "BuildingRollover",
+   "screen": "BuildingRollover.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_358EB241.png",
+    "/game-ui/png/00000000_F71ACD4D.png",
+    "/game-ui/png/00000000_029F6AE0.png"
+   ]
+  },
+  {
+   "id": "AgentQuery",
+   "screen": "AgentQuery.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_78B2843A.png",
+    "/game-ui/png/00000000_E2C9E170.png",
+    "/game-ui/png/00000000_540BE686.png"
+   ]
+  },
+  {
+   "id": "Missions",
+   "screen": "Missions.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_A1851BB0.png",
+    "/game-ui/png/00000000_6E7EB994.png",
+    "/game-ui/png/00000000_EF25764F.png"
+   ]
+  },
+  {
+   "id": "Tutorials",
+   "screen": "Tutorials.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_1B453C19.png",
+    "/game-ui/png/00000000_AF23A513.png",
+    "/game-ui/png/00000000_8D6FB240.png"
+   ]
+  },
+  {
+   "id": "ImportExportPanel",
+   "screen": "ImportExportPanel.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_97F6A898.png",
+    "/game-ui/png/00000000_D3C62764.png",
+    "/game-ui/png/00000000_D0AAD930.png"
+   ]
+  },
+  {
+   "id": "Gifting",
+   "screen": "Gifting.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_AEF164E5.png",
+    "/game-ui/png/00000000_760BF292.png",
+    "/game-ui/png/00000000_B4587BD9.png"
+   ]
+  },
+  {
+   "id": "TradeWall",
+   "screen": "TradeWall.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_3CEE1E14.png",
+    "/game-ui/png/00000000_DAB06849.png",
+    "/game-ui/png/00000000_9CD4A2E9.png"
+   ]
+  },
+  {
+   "id": "SpeechBalloons",
+   "screen": "SpeechBalloons.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_CB6E71A7.png",
+    "/game-ui/png/00000000_96EA302D.png",
+    "/game-ui/png/00000000_40817110.png"
+   ]
+  },
+  {
+   "id": "ToyTaskPanel",
+   "screen": "ToyTaskPanel.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_886B8C14.png",
+    "/game-ui/png/00000000_B9053717.png",
+    "/game-ui/png/00000000_2BCC4095.png"
+   ]
+  },
+  {
+   "id": "TextFeedbackToyRollover",
+   "screen": "TextFeedbackToyRollover.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_A4ECE967.png",
+    "/game-ui/png/00000000_56527392.png",
+    "/game-ui/png/00000000_8278FE75.png"
+   ]
+  },
+  {
+   "id": "CursorAttachments",
+   "screen": "CursorAttachments.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_828DDA70.png",
+    "/game-ui/png/00000000_73B53F4D.png",
+    "/game-ui/png/00000000_C5CCAC1F.png"
+   ]
+  },
+  {
+   "id": "OptionsMenu",
+   "screen": "OptionsMenu.json",
+   "group": "cityPanels",
+   "images": [
+    "/game-ui/png/00000000_47893AA5.png",
+    "/game-ui/png/00000000_0844B3E2.png",
+    "/game-ui/png/00000000_4D19A60A.png"
+   ]
+  },
+  {
+   "id": "RegionView",
+   "screen": "RegionView.json",
+   "group": "region",
+   "images": [
+    "/game-ui/png/00000000_CD8B8CB3.png",
+    "/game-ui/png/00000000_78972581.png",
+    "/game-ui/png/00000000_1CD7D053.png"
+   ]
+  },
+  {
+   "id": "RegionWall",
+   "screen": "RegionWall.json",
+   "group": "region",
+   "images": [
+    "/game-ui/png/00000000_0560A926.png",
+    "/game-ui/png/00000000_786DF0BB.png",
+    "/game-ui/png/00000000_33B2AEFF.png"
+   ]
+  },
+  {
+   "id": "RegionSystemInfo",
+   "screen": "RegionSystemInfo.json",
+   "group": "region",
+   "images": [
+    "/game-ui/png/00000000_E212698A.png",
+    "/game-ui/png/00000000_F3D3808E.png",
+    "/game-ui/png/00000000_2CF1F808.png"
+   ]
+  },
+  {
+   "id": "RegionPaletteInfoPanel",
+   "screen": "RegionPaletteInfoPanel.json",
+   "group": "region",
+   "images": [
+    "/game-ui/png/00000000_5266D708.png",
+    "/game-ui/png/00000000_9E3B7531.png",
+    "/game-ui/png/00000000_675ECF10.png"
+   ]
+  },
+  {
+   "id": "AutomatedAchievements",
+   "screen": "AutomatedAchievements.json",
+   "group": "meta",
+   "images": [
+    "/game-ui/png/00000000_A9D0877E.png",
+    "/game-ui/png/00000000_40D27462.png",
+    "/game-ui/png/00000000_79CBDEDD.png"
+   ]
+  },
+  {
+   "id": "Leaderboard",
+   "screen": "Leaderboard.json",
+   "group": "meta",
+   "images": [
+    "/game-ui/png/00000000_883D7072.png",
+    "/game-ui/png/00000000_9E97FB90.png",
+    "/game-ui/png/00000000_4165A2EC.png"
+   ]
+  },
+  {
+   "id": "News",
+   "screen": "News.json",
+   "group": "meta",
+   "images": [
+    "/game-ui/png/00000000_2A9B2FEB.png",
+    "/game-ui/png/00000000_651ED9D4.png",
+    "/game-ui/png/00000000_29EF7FCE.png"
+   ]
+  },
+  {
+   "id": "ASPResources",
+   "screen": "ASPResources.json",
+   "group": "asp",
+   "images": [
+    "/game-ui/png/00000000_641C37A9.png",
+    "/game-ui/png/00000000_9AC37838.png",
+    "/game-ui/png/00000000_68D1768F.png"
+   ]
+  },
+  {
+   "id": "ASPLayerNames",
+   "screen": "ASPLayerNames.json",
+   "group": "asp",
+   "images": [
+    "/game-ui/png/00000000_938543F5.png",
+    "/game-ui/png/00000000_465A0646.png",
+    "/game-ui/png/00000000_09DD111C.png"
+   ]
+  },
+  {
+   "id": "EP1Alerts",
+   "screen": "EP1Alerts.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_FCFEA6CB.png",
+    "/game-ui/png/00000000_7E0A7230.png",
+    "/game-ui/png/00000000_5631768A.png"
+   ]
+  },
+  {
+   "id": "EP1BuildingRollover",
+   "screen": "EP1BuildingRollover.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_B611E23A.png",
+    "/game-ui/png/00000000_75A608B1.png",
+    "/game-ui/png/00000000_5EFD4792.png"
+   ]
+  },
+  {
+   "id": "EP1DataLayerLegend",
+   "screen": "EP1DataLayerLegend.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_ECCD11F5.png",
+    "/game-ui/png/00000000_1C675BCC.png",
+    "/game-ui/png/00000000_620EA7A7.png"
+   ]
+  },
+  {
+   "id": "EP1GameEntry",
+   "screen": "EP1GameEntry.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_BE901618.png",
+    "/game-ui/png/00000000_64EF11EF.png",
+    "/game-ui/png/00000000_500DC08D.png"
+   ]
+  },
+  {
+   "id": "EP1PaletteInfoPanel",
+   "screen": "EP1PaletteInfoPanel.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_F7B6BF53.png",
+    "/game-ui/png/00000000_628931C1.png",
+    "/game-ui/png/00000000_F8E51659.png"
+   ]
+  },
+  {
+   "id": "EP1PaletteToolRollovers",
+   "screen": "EP1PaletteToolRollovers.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_AD241886.png",
+    "/game-ui/png/00000000_87A32354.png",
+    "/game-ui/png/00000000_90F379AA.png"
+   ]
+  },
+  {
+   "id": "EP1ResearchPanel",
+   "screen": "EP1ResearchPanel.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_7A20835C.png",
+    "/game-ui/png/00000000_BAC7118D.png",
+    "/game-ui/png/00000000_DA8F1E51.png"
+   ]
+  },
+  {
+   "id": "EP1Resources",
+   "screen": "EP1Resources.json",
+   "group": "ep1",
+   "images": [
+    "/game-ui/png/00000000_C3B35638.png",
+    "/game-ui/png/00000000_42C3EA94.png",
+    "/game-ui/png/00000000_7BAB75C3.png"
+   ]
+  }
+ ]
+}
