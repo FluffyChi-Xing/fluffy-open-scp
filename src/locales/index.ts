@@ -29,6 +29,110 @@ const messages = {
       vueDocs: "Vue 文档",
       exampleFrame: "嵌入示例",
       external: "外部页面",
+      studio: "开发工作台",
+      studioDiagnostics: "复写检测",
+      studioI18n: "文本编辑",
+      studioProperty: "属性编辑",
+      studioRaster: "Raster 绘制",
+      studioAsset: "资产面板",
+    },
+    studio: {
+      eyebrow: "OpenSCP mod studio",
+      title: "开发工作台",
+      description:
+        "模组开发的面板编排：从解析底座到属性/文本/贴图编辑，最终收敛为可分发的 overlay package。",
+      baseline: "解析底座已就绪 · 写回链路待验证",
+      pipelineLabel: "开发管线",
+      stages: {
+        resolve: "解析",
+        edit: "编辑",
+        build: "构建",
+        verify: "校验",
+      },
+      stageEmpty: {
+        resolve: "解析底座（DBPF / RW4 / property）已在核心 crate 中就绪，无独立面板。",
+        edit: "规划中的编辑面板将陆续加入。",
+        build: "构建管线等待编辑面板产出后接入。",
+        verify: "暂无校验面板。",
+      },
+      backToStudio: "返回开发工作台",
+      footer: "设计文档：docs/roadmap/workspace-panels.md",
+      stub: {
+        scopeTitle: "规划范围",
+        prereqTitle: "前置条件",
+      },
+      panels: {
+        diagnostics: {
+          title: "TGI 复写检测",
+          status: "下一步",
+          description:
+            "扫描 SimCityData 与用户 mod 目录的全部包索引，按 TGI 分组，标记被后加载包覆盖的资源，显示覆盖链与内容差异。",
+          meta: "WP0 · 纯索引操作 · 复用 package_statistics 扫描",
+          prereq: "无新增前置：mmap 包扫描已在 stats.rs 中实现。",
+          features: [
+            "全目录包索引与 TGI 分组",
+            "覆盖链展示（原版 → mod1 → mod2）",
+            "被复写资源的内容 diff",
+            "编辑面板保存前的复写警告",
+          ],
+        },
+        i18n: {
+          title: "Locale 文本编辑",
+          status: "下一步",
+          description:
+            "stringID → 译文的键值编辑：双栏表格改写 locale 字符串，是最短的写回链路试金石——脏标记、条目重建、确定性输出全部在此验证。",
+          meta: "WP2 · 明文写回 · 不需要 RefPack 重压缩",
+          prereq: "DBPF 明文写回（条目不带压缩标记），RefPack 重压缩后置。",
+          features: [
+            "locale 表双栏（原文/译文）编辑",
+            "stringID 悬停预览与引用跳转",
+            "写回链路：脏标记 → 重建条目 → 输出 package",
+            "保存前 TGI 复写警告",
+          ],
+        },
+        property: {
+          title: "Property 编辑器",
+          status: "排期中",
+          description:
+            "0x00B1B104 属性表的完整读写：类型化键值树、哈希（大端 FNV-1）反查、菜单注册 property 的向导式新建。",
+          meta: "WP1 · sc-properties crate 扩展写回",
+          prereq: "sc-properties 增加序列化（写回）能力；哈希反查依赖 sc-registry。",
+          features: [
+            "类型化属性树编辑（数值/字符串/列表）",
+            "哈希 ↔ 名称双向解析",
+            "菜单/子菜单注册向导（property + 布局 + locale 一次串起）",
+            "导出可读 JSON/TXT 与回导",
+          ],
+        },
+        raster: {
+          title: "Raster 绘制",
+          status: "排期中",
+          description:
+            "RW4 Raster 本质是 RGBA 位图——在工作区直接绘制、擦除、取色，保存回同槽位格式。",
+          meta: "WP4 · RW4 贴图写回 · 槽位格式校验",
+          prereq: "RW4 贴图编码器（当前仅解码）；材质槽位格式校验规则。",
+          features: [
+            "RGBA 画笔/橡皮/取色器/填充",
+            "通道视图（R/G/B/A 分离预览）",
+            "槽位格式校验与同槽替换",
+            "undo/redo 与无损保存",
+          ],
+        },
+        asset: {
+          title: "资产面板",
+          status: "排期中",
+          description:
+            "以建筑/道具为单位的资产聚合：LOD1-4 模型链、8 槽位材质、引用 property 与 impostor；导入 mesh 即可复用已有材质图。",
+          meta: "WP5 · OBJ 导入 · 材质复用管线",
+          prereq: "sc-exporter 反向导入管线（P1 OBJ Import）；property 编辑器先行。",
+          features: [
+            "资产依赖小依赖图（模型→贴图→调色板→locale）",
+            "OBJ 导入对照视图（顶点数/UV 域差异提示）",
+            "材质 8 槽位复用选择器",
+            "openscp.mod.toml 声明式项目集成",
+          ],
+        },
+      },
     },
     shell: {
       controls: "全局控制",
@@ -662,6 +766,110 @@ const messages = {
       vueDocs: "Vue documentation",
       exampleFrame: "Embedded example",
       external: "External page",
+      studio: "Mod studio",
+      studioDiagnostics: "Override scan",
+      studioI18n: "Locale editor",
+      studioProperty: "Property editor",
+      studioRaster: "Raster paint",
+      studioAsset: "Asset panel",
+    },
+    studio: {
+      eyebrow: "OpenSCP mod studio",
+      title: "Mod studio",
+      description:
+        "The panel orchestration for mod development: from the parsing foundation through property, text and texture editing, converging into a distributable overlay package.",
+      baseline: "Parsing foundation ready · write-back pending",
+      pipelineLabel: "Development pipeline",
+      stages: {
+        resolve: "Resolve",
+        edit: "Edit",
+        build: "Build",
+        verify: "Verify",
+      },
+      stageEmpty: {
+        resolve: "The parsing foundation (DBPF / RW4 / property) already lives in the core crates — no separate panel.",
+        edit: "Planned editing panels will land here.",
+        build: "The build pipeline connects once editing panels produce output.",
+        verify: "No verification panel yet.",
+      },
+      backToStudio: "Back to mod studio",
+      footer: "Design doc: docs/roadmap/workspace-panels.md",
+      stub: {
+        scopeTitle: "Planned scope",
+        prereqTitle: "Prerequisites",
+      },
+      panels: {
+        diagnostics: {
+          title: "TGI override scan",
+          status: "Next up",
+          description:
+            "Index every package across SimCityData and user mod directories, group by TGI, flag resources overridden by later-loaded packages, and show the override chain with content diffs.",
+          meta: "WP0 · pure index scan · reuses package_statistics",
+          prereq: "No new prerequisites: the mmap package scan already exists in stats.rs.",
+          features: [
+            "Full-directory package indexing with TGI grouping",
+            "Override chains (vanilla → mod1 → mod2)",
+            "Content diff for overridden resources",
+            "Override warnings before any panel saves",
+          ],
+        },
+        i18n: {
+          title: "Locale editor",
+          status: "Next up",
+          description:
+            "Edit locale strings as a stringID → text table: a two-column editor that doubles as the shortest write-back proving ground — dirty tracking, entry rebuild and deterministic output are all validated here first.",
+          meta: "WP2 · plain-text write-back · no RefPack recompression",
+          prereq: "Plain DBPF write-back (uncompressed entries); RefPack recompression deferred.",
+          features: [
+            "Two-column locale table (source / translation)",
+            "stringID hover preview and reference jumps",
+            "Write-back chain: dirty tracking → entry rebuild → package output",
+            "TGI override warning on save",
+          ],
+        },
+        property: {
+          title: "Property editor",
+          status: "Scheduled",
+          description:
+            "Full read/write for 0x00B1B104 property lists: a typed key-value tree, big-endian FNV-1 hash resolution, and a wizard for menu-registration properties.",
+          meta: "WP1 · sc-properties write-back",
+          prereq: "Serialization (write-back) in sc-properties; hash reverse lookup via sc-registry.",
+          features: [
+            "Typed property tree editing (numbers / strings / lists)",
+            "Two-way hash ↔ name resolution",
+            "Menu/submenu registration wizard (property + layout + locale in one pass)",
+            "Readable JSON/TXT export and re-import",
+          ],
+        },
+        raster: {
+          title: "Raster paint",
+          status: "Scheduled",
+          description:
+            "An RW4 raster is at heart an RGBA bitmap — paint, erase, pick colors and save back into the same slot format, right in the workspace.",
+          meta: "WP4 · RW4 texture write-back · slot format validation",
+          prereq: "An RW4 texture encoder (decode-only today); material slot format validation rules.",
+          features: [
+            "RGBA brush / eraser / eyedropper / fill",
+            "Channel views (separate R/G/B/A previews)",
+            "Slot format validation and same-slot replacement",
+            "Undo/redo and lossless saving",
+          ],
+        },
+        asset: {
+          title: "Asset panel",
+          status: "Scheduled",
+          description:
+            "Asset aggregation per building or prop: the LOD1-4 model chain, 8-slot materials, referenced properties and impostors — import a mesh and reuse existing material maps.",
+          meta: "WP5 · OBJ import · material reuse pipeline",
+          prereq: "The sc-exporter reverse import pipeline (P1 OBJ import); the property editor first.",
+          features: [
+            "Small dependency graphs per asset (model → texture → palette → locale)",
+            "OBJ import comparison view (vertex count / UV domain diffs)",
+            "8-slot material reuse picker",
+            "openscp.mod.toml declarative project integration",
+          ],
+        },
+      },
     },
     shell: {
       controls: "Global controls",
