@@ -6,7 +6,7 @@ import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
-import { isTauri } from "@/api";
+import { isTauri, tauriApi } from "@/api";
 import { useOverrideScanStore } from "@/stores/overrideScan";
 
 const { t } = useI18n();
@@ -35,9 +35,31 @@ function formatBytes(value: number) {
   return `${value} B`;
 }
 
-onMounted(() => {
-  void scanStore.initFromSettings();
+onMounted(async () => {
+  await scanStore.initFromSettings();
+  // 设置里的默认目录可用且尚未扫描过时，直接自动扫描
+  if (isTauri() && gameDir.value && !result.value && !error.value) {
+    void scanStore.runScan();
+  }
 });
+
+async function pickGameDir() {
+  if (!isTauri()) return;
+  const path = await tauriApi.workspace.pickDirectory(
+    t("studio.diagnostics.pickGameDir"),
+  );
+  if (path) gameDir.value = path;
+}
+async function pickExtraRoot() {
+  if (!isTauri()) return;
+  const path = await tauriApi.workspace.pickDirectory(
+    t("studio.diagnostics.pickExtraRoot"),
+  );
+  if (!path) return;
+  extraRoots.value = extraRoots.value
+    ? `${extraRoots.value.replace(/;\s*$/, "")};${path}`
+    : path;
+}
 </script>
 
 <template>
@@ -64,21 +86,41 @@ onMounted(() => {
     <section class="scan-config" :aria-label="t('studio.diagnostics.configLabel')">
       <label class="field">
         <span class="field-label">{{ t("studio.diagnostics.gameDir") }}</span>
-        <input
-          v-model="gameDir"
-          type="text"
-          class="field-input mono"
-          :placeholder="t('studio.diagnostics.gameDirPlaceholder')"
-        />
+        <span class="field-row">
+          <input
+            v-model="gameDir"
+            type="text"
+            class="field-input mono"
+            :placeholder="t('studio.diagnostics.gameDirPlaceholder')"
+          />
+          <button
+            type="button"
+            class="pick-button"
+            :title="t('studio.diagnostics.pickGameDir')"
+            @click="pickGameDir"
+          >
+            <FIcon name="FolderOpen" :size="15" />
+          </button>
+        </span>
       </label>
       <label class="field">
         <span class="field-label">{{ t("studio.diagnostics.extraRoots") }}</span>
-        <input
-          v-model="extraRoots"
-          type="text"
-          class="field-input mono"
-          :placeholder="t('studio.diagnostics.extraRootsPlaceholder')"
-        />
+        <span class="field-row">
+          <input
+            v-model="extraRoots"
+            type="text"
+            class="field-input mono"
+            :placeholder="t('studio.diagnostics.extraRootsPlaceholder')"
+          />
+          <button
+            type="button"
+            class="pick-button"
+            :title="t('studio.diagnostics.pickExtraRoot')"
+            @click="pickExtraRoot"
+          >
+            <FIcon name="FolderPlus" :size="15" />
+          </button>
+        </span>
       </label>
       <button
         type="button"
@@ -174,7 +216,7 @@ onMounted(() => {
 
 <style scoped>
 .diagnostics-page {
-  padding: 2.25rem 1.5rem 3rem;
+  padding-bottom: 3rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -248,6 +290,30 @@ onMounted(() => {
   flex-direction: column;
   gap: 0.35rem;
   flex: 1 1 240px;
+}
+.field-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+.field-row .field-input {
+  flex: 1;
+  min-width: 0;
+}
+.pick-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.pick-button:hover {
+  color: var(--foreground);
+  border-color: var(--accent);
 }
 .field-label {
   font-size: 0.75rem;

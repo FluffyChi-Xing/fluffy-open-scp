@@ -57,7 +57,7 @@ const featureCount = 4;
 
 <style scoped>
 .panel-stub {
-  padding: 2.25rem 1.5rem 3rem;
+  padding-bottom: 3rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;

@@ -88,7 +88,7 @@ const stagePanels = (stage: (typeof stages)[number]) =>
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  padding: 2.5rem 1.5rem 3rem;
+  padding-bottom: 3rem;
 }
 .studio-header {
   display: flex;
@@ -215,7 +215,7 @@ const stagePanels = (stage: (typeof stages)[number]) =>
 }
 @media (max-width: 640px) {
   .studio-page {
-    padding: 1.75rem 1rem 2rem;
+    padding-bottom: 2rem;
   }
 }
 </style>
