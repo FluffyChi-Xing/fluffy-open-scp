@@ -17,7 +17,7 @@ import {
   type PackageFile,
   type PackageHistory,
   type PackageStatistics,
-  OverrideScanResponse,
+  type OverrideScanResponse,
   type ResourceBytes,
   type ResourceData,
   type LotEditorSession,
