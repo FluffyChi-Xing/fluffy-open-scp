@@ -11,6 +11,7 @@
 mod activity;
 mod media_tools;
 mod package_browser;
+mod locale_service;
 mod package_service;
 mod overrides;
 mod settings;
@@ -32,6 +33,7 @@ use package_service::{
     resolve_names,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
+use locale_service::{locale_items, locale_tables, write_locale_overlay};
 use overrides::override_scan;
 use stats::package_statistics;
 use tauri::{Manager, PhysicalPosition};
@@ -79,6 +81,9 @@ pub fn run() {
             greet,
             package_statistics,
             override_scan,
+            locale_tables,
+            locale_items,
+            write_locale_overlay,
             activity_list_operations,
             activity_list_events,
             activity_list_packages,

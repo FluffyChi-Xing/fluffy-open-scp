@@ -61,6 +61,22 @@ const messages = {
         scopeTitle: "规划范围",
         prereqTitle: "前置条件",
       },
+      i18n: {
+        mockNotice: "Locale 编辑需要 Tauri 运行时读取本地 package，浏览器预览模式下不可用。",
+        needPackage: "请先在资源浏览页打开包含 locale 字符串表的 package。",
+        selectPackage: "选择已打开的 package",
+        tablesLabel: "Locale 字符串表",
+        noTables: "此 package 中没有 locale 字符串表（类型 0x0A98EAF0）。",
+        pickTable: "在左侧选择一个字符串表开始编辑。",
+        filterPlaceholder: "筛选：键或文本",
+        colKey: "键",
+        colText: "文本",
+        revert: "还原此条",
+        revertAll: "全部还原",
+        exportOverlay: "导出 overlay package",
+        saving: "导出中…",
+        dirtyCount: "{n} 条已修改",
+      },
       diagnostics: {
         mockNotice: "复写检测需要 Tauri 运行时读取本地 package 索引，浏览器预览模式下不可用。",
         configLabel: "扫描配置",
@@ -104,7 +120,7 @@ const messages = {
         },
         i18n: {
           title: "Locale 文本编辑",
-          status: "下一步",
+          status: "可用",
           description:
             "stringID → 译文的键值编辑：双栏表格改写 locale 字符串，是最短的写回链路试金石——脏标记、条目重建、确定性输出全部在此验证。",
           meta: "WP2 · 明文写回 · 不需要 RefPack 重压缩",
@@ -824,6 +840,22 @@ const messages = {
         scopeTitle: "Planned scope",
         prereqTitle: "Prerequisites",
       },
+      i18n: {
+        mockNotice: "Locale editing needs the Tauri runtime to read local packages and is unavailable in browser preview.",
+        needPackage: "Open a package containing locale string tables in the resources page first.",
+        selectPackage: "Opened package",
+        tablesLabel: "Locale string tables",
+        noTables: "No locale string tables (type 0x0A98EAF0) in this package.",
+        pickTable: "Pick a string table on the left to start editing.",
+        filterPlaceholder: "Filter: key or text",
+        colKey: "Key",
+        colText: "Text",
+        revert: "Revert this row",
+        revertAll: "Revert all",
+        exportOverlay: "Export overlay package",
+        saving: "Exporting…",
+        dirtyCount: "{n} rows modified",
+      },
       diagnostics: {
         mockNotice: "The override scan needs the Tauri runtime to read local package indexes and is unavailable in browser preview.",
         configLabel: "Scan configuration",
@@ -867,7 +899,7 @@ const messages = {
         },
         i18n: {
           title: "Locale editor",
-          status: "Next up",
+          status: "Available",
           description:
             "Edit locale strings as a stringID → text table: a two-column editor that doubles as the shortest write-back proving ground — dirty tracking, entry rebuild and deterministic output are all validated here first.",
           meta: "WP2 · plain-text write-back · no RefPack recompression",

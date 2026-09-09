@@ -63,6 +63,27 @@ impl Locale {
 
 /// Parse one locale JSON string table (3-byte prefix + JSON object).
 pub fn parse_string_table(data: &[u8]) -> Result<HashMap<u32, String>, String> {
+    Ok(parse_locale_items(data)?
+        .into_iter()
+        .filter_map(|item| item.id.map(|id| (id, item.text)))
+        .collect())
+}
+
+/// One editable line of a locale string table. `id == None` 表示注释行
+/// （原键 `"//"`），序列化时原样保留，编辑界面只读展示。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocaleItem {
+    pub key: String,
+    pub id: Option<u32>,
+    pub text: String,
+}
+
+/// UTF-8 BOM：SimCity locale JSON 资源的 3 字节前缀。
+const LOCALE_PREFIX: [u8; 3] = [0xEF, 0xBB, 0xBF];
+
+/// 按原文件顺序解析全部条目（含注释行），供编辑器做无损往返。
+pub fn parse_locale_items(data: &[u8]) -> Result<Vec<LocaleItem>, String> {
     if data.len() < 3 {
         return Err("resource shorter than 3-byte prefix".into());
     }
@@ -70,20 +91,50 @@ pub fn parse_string_table(data: &[u8]) -> Result<HashMap<u32, String>, String> {
     let object = json
         .as_object()
         .ok_or("locale resource is not a JSON object")?;
-
-    let mut table = HashMap::new();
+    let mut items = Vec::with_capacity(object.len());
     for (key, value) in object {
-        if key == "//" {
-            continue; // comment entry
-        }
-        let id = u32::from_str_radix(key.trim_start_matches("0x"), 16)
-            .map_err(|e| format!("bad locale key {key:?}: {e}"))?;
-        let translation = value
+        let text = value
             .as_str()
-            .ok_or_else(|| format!("non-string value for {key:?}"))?;
-        table.insert(id, translation.to_string());
+            .ok_or_else(|| format!("non-string value for {key:?}"))?
+            .to_string();
+        let id = if key == "//" {
+            None
+        } else {
+            Some(
+                u32::from_str_radix(key.trim_start_matches("0x"), 16)
+                    .map_err(|e| format!("bad locale key {key:?}: {e}"))?,
+            )
+        };
+        items.push(LocaleItem {
+            key: key.clone(),
+            id,
+            text,
+        });
     }
-    Ok(table)
+    Ok(items)
+}
+
+/// 序列化回 locale JSON 资源（BOM + 紧凑 JSON 对象）。
+/// 条目以 `0x%08X` 规范键输出；注释行保留原键。
+pub fn serialize_locale_items(items: &[LocaleItem]) -> Result<Vec<u8>, String> {
+    let mut object = serde_json::Map::new();
+    for item in items {
+        let key = match item.id {
+            Some(id) => format!("0x{id:08X}"),
+            None if item.key == "//" => "//".to_string(),
+            None => return Err(format!("comment row lost its key: {:?}", item.key)),
+        };
+        if object
+            .insert(key, serde_json::Value::String(item.text.clone()))
+            .is_some()
+        {
+            return Err("duplicate locale key while serializing".into());
+        }
+    }
+    let mut out = LOCALE_PREFIX.to_vec();
+    serde_json::to_writer(&mut out, &serde_json::Value::Object(object))
+        .map_err(|e| e.to_string())?;
+    Ok(out)
 }
 
 /// Build instance → localized name map from prop entries (C#

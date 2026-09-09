@@ -18,6 +18,13 @@ import {
   type PackageHistory,
   type PackageStatistics,
   type OverrideScanResponse,
+  type LocaleTablesResponse,
+  type LocaleTableSummary,
+  type LocaleItem,
+  type LocaleItemsResponse,
+  type LocaleTableEdit,
+  type LocaleTgi,
+  type WriteLocaleOverlayResponse,
   type ResourceBytes,
   type ResourceData,
   type LotEditorSession,
@@ -121,6 +128,19 @@ export const tauriApi = {
       command<OverrideScanResponse>("override_scan", {
         request: { roots },
       }),
+    locale: {
+      tables: async (packageId: number) =>
+        (await command<LocaleTablesResponse>("locale_tables", { packageId }))
+          .tables,
+      items: (packageId: number, tgi: LocaleTgi) =>
+        command<LocaleItemsResponse>("locale_items", {
+          request: { packageId, tgi },
+        }),
+      writeOverlay: (edits: LocaleTableEdit[], outputPath: string) =>
+        command<WriteLocaleOverlayResponse>("write_locale_overlay", {
+          request: { edits, outputPath },
+        }),
+    },
     listGameTree: (root: string) =>
       command<GameFolder[]>("list_game_tree", { request: { root } }),
     listPackageFiles: (root: string) =>

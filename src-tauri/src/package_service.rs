@@ -93,7 +93,7 @@ impl PackageManager {
             .ok_or(PackageError::PackageNotFound(id))
     }
 
-    fn get(&self, id: u64) -> Result<Arc<Package>, PackageError> {
+    pub(crate) fn get(&self, id: u64) -> Result<Arc<Package>, PackageError> {
         self.packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?
@@ -582,7 +582,7 @@ pub struct ExportProgress {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum PackageError {
+pub(crate) enum PackageError {
     #[error("package {0} was not found")]
     PackageNotFound(u64),
     #[error("resource {0} was not found in package")]

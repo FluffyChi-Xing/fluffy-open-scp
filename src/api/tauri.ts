@@ -538,5 +538,38 @@ export interface OverrideScanResponse {
   failed: string[];
 }
 
+export interface LocaleTgi {
+  typeId: number;
+  group: number;
+  instance: number;
+}
+export interface LocaleTableSummary {
+  tgi: LocaleTgi;
+  tableId: number;
+  stringCount: number;
+  sample: string[];
+}
+export interface LocaleTablesResponse {
+  tables: LocaleTableSummary[];
+}
+export interface LocaleItem {
+  key: string;
+  id: number | null;
+  text: string;
+}
+export interface LocaleItemsResponse {
+  tgi: LocaleTgi;
+  items: LocaleItem[];
+}
+export interface LocaleTableEdit {
+  tgi: LocaleTgi;
+  items: LocaleItem[];
+}
+export interface WriteLocaleOverlayResponse {
+  outputPath: string;
+  entryCount: number;
+  bytesWritten: number;
+}
+
 export const activityEventName = "activity:event";
 export const exportProgressEventName = "export:progress";

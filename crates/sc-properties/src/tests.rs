@@ -604,3 +604,33 @@ mod locale_tests {
         );
     }
 }
+
+#[test]
+fn locale_items_round_trip_preserves_comments_and_keys() {
+    use crate::locale::{parse_locale_items, serialize_locale_items};
+    let original = [
+        0xEF, 0xBB, 0xBF, b'{', b'"', b'/', b'/', b'"', b':', b'"', b'h', b'i', b'"', b',',
+        b'"', b'0', b'x', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'1', b'"', b':',
+        b'"', 0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD, b'"', b'}',
+    ];
+    let items = parse_locale_items(&original).unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].id, None);
+    assert_eq!(items[1].id, Some(1));
+    assert_eq!(items[1].text, "你好");
+    let bytes = serialize_locale_items(&items).unwrap();
+    // 前缀保留、注释保留、规范键保留
+    assert_eq!(&bytes[..3], &[0xEF, 0xBB, 0xBF]);
+    let reparsed = parse_locale_items(&bytes).unwrap();
+    assert_eq!(reparsed, items);
+}
+
+#[test]
+fn serialize_locale_items_rejects_duplicates() {
+    use crate::locale::{serialize_locale_items, LocaleItem};
+    let items = vec![
+        LocaleItem { key: "0x00000001".into(), id: Some(1), text: "a".into() },
+        LocaleItem { key: "0x1".into(), id: Some(1), text: "b".into() },
+    ];
+    assert!(serialize_locale_items(&items).is_err());
+}
