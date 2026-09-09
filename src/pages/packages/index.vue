@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
+import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
@@ -37,7 +38,7 @@ const {
   previewError,
   loadingFolders,
   demo,
-} = explorer;
+} = storeToRefs(explorer);
 const importMode = shallowRef("folder");
 const detailMode = shallowRef<"hex" | "preview">("hex");
 const copied = shallowRef(false);
