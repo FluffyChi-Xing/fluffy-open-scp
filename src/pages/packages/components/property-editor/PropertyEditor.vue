@@ -12,6 +12,8 @@ import PropertyEditorProperties from "./PropertyEditorProperties.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { exportLotModel } from "@/composables/useModelExport";
+import { command } from "@/api/tauri";
+import { tauriApi } from "@/api";
 
 const props = defineProps<{ packageId: number; tgi: Tgi }>();
 const open = defineModel<boolean>("open", { default: false });
@@ -47,6 +49,29 @@ const specMode = ref(2);
 /** 5d 日/夜时段 0–24（默认 12 正午）。 */
 const timeOfDay = ref(12);
 // 浮雕开关已撤销（见模板注释），reliefEnabled 状态一并移除。
+const viewportRef = ref<{ captureRender: () => string | null } | null>(null);
+
+/** 视口渲染图导出：剔除 gizmo 组后的视口截图（两种渲染模式均可用）。 */
+const renderShotBusy = ref(false);
+async function exportRenderImage() {
+  if (renderShotBusy.value) return;
+  renderShotBusy.value = true;
+  try {
+    const dataUrl = viewportRef.value?.captureRender();
+    if (!dataUrl) return;
+    const path = await tauriApi.packages.saveFile(
+      `${session.value?.assetName ?? "lot"}-render.png`,
+      "png",
+    );
+    if (!path) return;
+    await command("write_export_file", {
+      request: { path, dataBase64: dataUrl.slice("data:image/png;base64,".length) },
+    });
+  } finally {
+    renderShotBusy.value = false;
+  }
+}
+
 /** 模型导出（GLB）：默认模式仅白模；精细模式可选带贴图。 */
 const meshExportBusy = ref(false);
 async function exportModel(mode: "white" | "textured") {
@@ -191,6 +216,16 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FCheckbox v-model="powered" />
           <span>{{ $t("package.powered") }}</span>
         </label>
+        <button
+          class="editor-close"
+          type="button"
+          :disabled="renderShotBusy"
+          :aria-label="$t('package.exportRender')"
+          :title="$t('package.exportRender')"
+          @click="exportRenderImage"
+        >
+          <FIcon :name="renderShotBusy ? 'Loader2' : 'Camera'" :size="15" aria-label="" />
+        </button>
         <FDropdown :width="200">
           <template #trigger>
             <button class="editor-close" type="button" :disabled="meshExportBusy"
@@ -242,6 +277,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           @toggle-group="toggleGroup"
         />
         <PropertyEditorViewport
+          ref="viewportRef"
           :model-payload="modelPayload"
           :model-lods="modelLods"
           :active-lod="activeLod"

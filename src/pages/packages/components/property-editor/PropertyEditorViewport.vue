@@ -950,6 +950,17 @@ function buildLotRect(
   return group;
 }
 
+/** 渲染图导出：默认剔除 props/decals/spawners/effects/paths 等 gizmo 组
+ *（保留模型与灯光），返回 PNG dataURL；null = 截图失败。 */
+function captureRender(): string | null {
+  const instance = viewer.value;
+  if (!instance) return null;
+  const exclude = ["props", "decals", "effects", "spawners", "paths"];
+  return instance.captureScreenshot(exclude);
+}
+
+defineExpose({ captureRender });
+
 function applyGroupVisibility() {
   const instance = viewer.value;
   if (!instance) return;

@@ -363,6 +363,29 @@ export class ThreeViewer {
     this.renderer.render(this.scene, this.camera);
   };
 
+  /**
+   * 视口截图：隐藏指定图层组 → 立即渲染 → canvas.toDataURL（PNG）→
+   * 恢复可见性。需在渲染后同一同步段读取（未开 preserveDrawingBuffer）。
+   */
+  captureScreenshot(excludeGroups: string[] = []): string | null {
+    const hidden: ThreeNamespace.Group[] = [];
+    for (const name of excludeGroups) {
+      const group = this.groups.get(name);
+      if (group?.visible) {
+        group.visible = false;
+        hidden.push(group);
+      }
+    }
+    try {
+      this.renderer.render(this.scene, this.camera);
+      return this.renderer.domElement.toDataURL("image/png");
+    } catch {
+      return null;
+    } finally {
+      for (const group of hidden) group.visible = true;
+    }
+  }
+
   dispose() {
     cancelAnimationFrame(this.frame);
     this.observer?.disconnect();
