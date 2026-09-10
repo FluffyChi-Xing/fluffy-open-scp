@@ -24,6 +24,8 @@ import {
 } from "@/lib/resource-types";
 import { exportLotModel } from "@/composables/useModelExport";
 import FDropdown from "@/components/ui/FDropdown.vue";
+import NotesSheet from "./components/notes/NotesSheet.vue";
+import type { ResourceAnnotation, Tgi } from "@/api/tauri";
 
 const { t } = useI18n();
 const explorer = useGamePackages();
@@ -47,6 +49,66 @@ const {
   demo,
 } = storeToRefs(explorer);
 const importMode = shallowRef("folder");
+// ── 资源批注 ──
+const notesOpen = shallowRef(false);
+const notesTgi = shallowRef<Tgi | null>(null);
+const notesLabel = shallowRef("");
+/** 当前页各 TGI 的批注计数（右键/列徽标共用）。 */
+const notesCountByTgi = shallowRef<Map<string, number>>(new Map());
+function tgiNoteKey(tgi: Tgi): string {
+  return `${tgi.typeId}:${tgi.group}:${tgi.instance}`;
+}
+async function refreshNotesCounts() {
+  if (!isTauri()) {
+    notesCountByTgi.value = new Map();
+    return;
+  }
+  try {
+    const all = await tauriApi.annotations.list();
+    const counts = new Map<string, number>();
+    for (const item of all as ResourceAnnotation[]) {
+      const key = tgiNoteKey({ typeId: item.typeId, group: item.groupId, instance: item.instance });
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    notesCountByTgi.value = counts;
+  } catch {
+    notesCountByTgi.value = new Map();
+  }
+}
+function openNotes(tgi: Tgi, label: string) {
+  notesTgi.value = tgi;
+  notesLabel.value = label;
+  notesOpen.value = true;
+}
+// 右键菜单
+const contextMenu = shallowRef<{ x: number; y: number; tgi: Tgi; label: string } | null>(null);
+function onRowContextMenu(event: MouseEvent, resource: (typeof visibleResources.value)[number]) {
+  event.preventDefault();
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    tgi: resource.tgi,
+    label: explorer.resourceLabel(resource),
+  };
+}
+function closeContextMenu() {
+  contextMenu.value = null;
+}
+function contextMenuCreateNote() {
+  if (!contextMenu.value) return;
+  openNotes(contextMenu.value.tgi, contextMenu.value.label);
+  closeContextMenu();
+}
+function contextMenuCopyTgi() {
+  if (!contextMenu.value) return;
+  const tgi = contextMenu.value.tgi;
+  void navigator.clipboard.writeText(
+    `${tgi.typeId.toString(16).padStart(8, "0")}:${tgi.group
+      .toString(16)
+      .padStart(8, "0")}:${tgi.instance.toString(16).padStart(8, "0")}`,
+  );
+  closeContextMenu();
+}
 // TGI 搜索（0x 前缀 / t:g:i 分段 / 十进制均可，服务端匹配）
 const searchText = shallowRef("");
 let searchTimer: number | undefined;
@@ -62,7 +124,9 @@ function onSearchInput(event: Event) {
 // 进入页面即按持久化的游戏目录设置初始化目录树（store 内部有幂等保护）
 onMounted(() => {
   void explorer.initFromSettings();
+  void refreshNotesCounts();
 });
+watch(activePage, () => void refreshNotesCounts());
 const detailMode = shallowRef<"hex" | "preview">("hex");
 const copied = shallowRef(false);
 let copiedTimer: number | undefined;
@@ -429,6 +493,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                     <th>{{ $t("package.type") }}</th>
                     <th>{{ $t("package.storage") }}</th>
                     <th>{{ $t("package.compression") }}</th>
+                    <th>{{ $t("notes.column") }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -437,6 +502,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                     :key="tgiLabel(resource.tgi)"
                     :class="{ selected: selected === resource }"
                     @click="explorer.selectResource(resource)"
+                    @contextmenu="onRowContextMenu($event, resource)"
                   >
                     <td>
                       <img
@@ -464,6 +530,22 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                           ? $t("package.compressed")
                           : $t("package.stored")
                       }}</span>
+                    </td>
+                    <td>
+                      <button
+                        class="notes-badge"
+                        :class="{ noted: notesCountByTgi.get(tgiNoteKey(resource.tgi)) }"
+                        type="button"
+                        :title="$t('notes.column')"
+                        @click.stop="
+                          openNotes(resource.tgi, explorer.resourceLabel(resource))
+                        "
+                      >
+                        <FIcon name="StickyNote" :size="13" aria-label="" />
+                        <span v-if="notesCountByTgi.get(tgiNoteKey(resource.tgi))">{{
+                          notesCountByTgi.get(tgiNoteKey(resource.tgi))
+                        }}</span>
+                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -622,6 +704,36 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
       </ResizablePanel>
     </Resizable>
   </section>
+  <Teleport to="body">
+    <div
+      v-if="contextMenu"
+      class="context-backdrop"
+      @click="closeContextMenu"
+      @contextmenu.prevent="closeContextMenu"
+    />
+    <div
+      v-if="contextMenu"
+      class="context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      role="menu"
+    >
+      <button type="button" role="menuitem" @click="contextMenuCreateNote">
+        <FIcon name="StickyNote" :size="13" aria-label="" />
+        {{ $t("notes.create") }}
+      </button>
+      <button type="button" role="menuitem" @click="contextMenuCopyTgi">
+        <FIcon name="Copy" :size="13" aria-label="" />
+        {{ $t("package.copyTgi") }}
+      </button>
+    </div>
+  </Teleport>
+  <NotesSheet
+    :open="notesOpen"
+    :package-path="activePackage?.package.path ?? ''"
+    :tgi="notesTgi"
+    :resource-label="notesLabel"
+    @close="notesOpen = false; refreshNotesCounts()"
+  />
 </template>
 
 <style scoped>
@@ -1163,5 +1275,55 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   .page-heading {
     gap: 12px;
   }
+}
+.notes-badge {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11px;
+  gap: 4px;
+  min-height: 22px;
+  padding: 0 7px;
+}
+.notes-badge.noted {
+  background: var(--accent);
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+.context-backdrop {
+  inset: 0;
+  position: fixed;
+  z-index: 94;
+}
+.context-menu {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  min-width: 160px;
+  padding: 5px;
+  position: fixed;
+  z-index: 95;
+}
+.context-menu button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  padding: 8px 9px;
+  text-align: start;
+}
+.context-menu button:hover {
+  background: var(--surface-hover);
 }
 </style>

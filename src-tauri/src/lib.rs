@@ -9,6 +9,7 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod annotations;
 mod locale_service;
 mod media_tools;
 mod overrides;
@@ -22,6 +23,10 @@ mod wwise;
 use activity::{
     AppState, activity_clear, activity_list_events, activity_list_operations,
     activity_list_packages,
+};
+use annotations::{
+    annotation_create, annotation_delete, annotation_topic_stats, annotation_update,
+    annotations_for_tgi, annotations_list,
 };
 use locale_service::{locale_items, locale_tables, write_locale_overlay};
 use media_tools::{MediaTools, application_dir, resolve_tools};
@@ -79,6 +84,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            annotation_create,
+            annotation_update,
+            annotation_delete,
+            annotations_for_tgi,
+            annotations_list,
+            annotation_topic_stats,
             package_statistics,
             override_scan,
             locale_tables,

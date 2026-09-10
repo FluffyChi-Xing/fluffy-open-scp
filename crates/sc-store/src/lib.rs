@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 3;
+pub const CURRENT_SCHEMA_VERSION: i32 = 4;
 pub const DEFAULT_LIST_LIMIT: usize = 100;
 pub const MAX_LIST_LIMIT: usize = 1_000;
 
@@ -457,7 +457,218 @@ fn migrate(connection: &Connection) -> Result<()> {
              COMMIT;",
         )?;
     }
+    if version <= 3 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE resource_annotations (
+                 id INTEGER PRIMARY KEY,
+                 package_path TEXT NOT NULL,
+                 type_id INTEGER NOT NULL,
+                 group_id INTEGER NOT NULL,
+                 instance INTEGER NOT NULL,
+                 topic TEXT NOT NULL,
+                 title TEXT NOT NULL,
+                 content TEXT NOT NULL DEFAULT '',
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX resource_annotations_tgi_idx
+                 ON resource_annotations(type_id, group_id, instance);
+             CREATE INDEX resource_annotations_topic_idx
+                 ON resource_annotations(topic);
+             PRAGMA user_version = 4;
+             COMMIT;",
+        )?;
+    }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceAnnotation {
+    pub id: i64,
+    pub package_path: String,
+    pub type_id: u32,
+    pub group_id: u32,
+    pub instance: u32,
+    pub topic: String,
+    pub title: String,
+    pub content: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceAnnotationInput {
+    pub package_path: String,
+    pub type_id: u32,
+    pub group_id: u32,
+    pub instance: u32,
+    pub topic: String,
+    pub title: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationTopicStat {
+    pub topic: String,
+    pub annotation_count: i64,
+    pub resource_count: i64,
+}
+
+fn row_to_annotation(row: &rusqlite::Row<'_>) -> rusqlite::Result<ResourceAnnotation> {
+    Ok(ResourceAnnotation {
+        id: row.get(0)?,
+        package_path: row.get(1)?,
+        type_id: row.get::<_, i64>(2)? as u32,
+        group_id: row.get::<_, i64>(3)? as u32,
+        instance: row.get::<_, i64>(4)? as u32,
+        topic: row.get(5)?,
+        title: row.get(6)?,
+        content: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+impl Store {
+    pub fn create_annotation(&self, input: &ResourceAnnotationInput) -> Result<ResourceAnnotation> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection.execute(
+            "INSERT INTO resource_annotations
+                 (package_path, type_id, group_id, instance, topic, title, content,
+                  created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            params![
+                input.package_path,
+                input.type_id as i64,
+                input.group_id as i64,
+                input.instance as i64,
+                input.topic.trim(),
+                input.title.trim(),
+                input.content,
+                now
+            ],
+        )?;
+        let id = connection.last_insert_rowid();
+        Ok(ResourceAnnotation {
+            id,
+            package_path: input.package_path.clone(),
+            type_id: input.type_id,
+            group_id: input.group_id,
+            instance: input.instance,
+            topic: input.topic.trim().to_string(),
+            title: input.title.trim().to_string(),
+            content: input.content.clone(),
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    pub fn update_annotation(
+        &self,
+        id: i64,
+        topic: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<ResourceAnnotation> {
+        let now = now_millis();
+        let mut connection = self.connection.lock().expect("store mutex poisoned");
+        let changed = connection.execute(
+            "UPDATE resource_annotations
+             SET topic = ?2, title = ?3, content = ?4, updated_at = ?5
+             WHERE id = ?1",
+            params![id, topic.trim(), title.trim(), content, now],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::OperationNotFound(id));
+        }
+        drop(changed);
+        Ok(Self::annotation_by_id(&connection, id)?)
+    }
+
+    pub fn delete_annotation(&self, id: i64) -> Result<()> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let changed = connection.execute(
+            "DELETE FROM resource_annotations WHERE id = ?1",
+            params![id],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::OperationNotFound(id));
+        }
+        Ok(())
+    }
+
+    fn annotation_by_id(connection: &Connection, id: i64) -> Result<ResourceAnnotation> {
+        connection
+            .query_row(
+                "SELECT id, package_path, type_id, group_id, instance, topic, title,
+                        content, created_at, updated_at
+                 FROM resource_annotations WHERE id = ?1",
+                params![id],
+                row_to_annotation,
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn list_annotations_for_tgi(
+        &self,
+        type_id: u32,
+        group_id: u32,
+        instance: u32,
+    ) -> Result<Vec<ResourceAnnotation>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, package_path, type_id, group_id, instance, topic, title,
+                    content, created_at, updated_at
+             FROM resource_annotations
+             WHERE type_id = ?1 AND group_id = ?2 AND instance = ?3
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = statement
+            .query_map(
+                params![type_id as i64, group_id as i64, instance as i64],
+                row_to_annotation,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn list_annotations(&self, limit: usize) -> Result<Vec<ResourceAnnotation>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, package_path, type_id, group_id, instance, topic, title,
+                    content, created_at, updated_at
+             FROM resource_annotations ORDER BY updated_at DESC LIMIT ?1",
+        )?;
+        let rows = statement
+            .query_map(params![bounded_limit(limit) as i64], row_to_annotation)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn annotation_topic_stats(&self) -> Result<Vec<AnnotationTopicStat>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT topic,
+                    COUNT(*) AS annotation_count,
+                    COUNT(DISTINCT type_id || ':' || group_id || ':' || instance) AS resource_count
+             FROM resource_annotations GROUP BY topic ORDER BY annotation_count DESC",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(AnnotationTopicStat {
+                    topic: row.get(0)?,
+                    annotation_count: row.get(1)?,
+                    resource_count: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
 }
 
 fn bounded_limit(limit: usize) -> usize {

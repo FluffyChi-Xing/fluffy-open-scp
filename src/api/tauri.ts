@@ -441,6 +441,32 @@ export type ResourcePreview =
   | PropertyPreview
   | Rw4Preview
   | FontPreview;
+export interface ResourceAnnotation {
+  id: number;
+  packagePath: string;
+  typeId: number;
+  groupId: number;
+  instance: number;
+  topic: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface ResourceAnnotationInput {
+  packagePath: string;
+  typeId: number;
+  groupId: number;
+  instance: number;
+  topic: string;
+  title: string;
+  content: string;
+}
+export interface AnnotationTopicStat {
+  topic: string;
+  annotationCount: number;
+  resourceCount: number;
+}
 export interface MediaTool {
   available: boolean;
   path?: string;

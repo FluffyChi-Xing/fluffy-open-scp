@@ -30,6 +30,9 @@ import {
   type LotEditorSession,
   type RasterPreviewData,
   type GenericImagePreviewData,
+  type ResourceAnnotation,
+  type ResourceAnnotationInput,
+  type AnnotationTopicStat,
   type PropertyResourceData,
   type Rw4ResourceData,
   type Rw4SectionDetail,
@@ -221,6 +224,22 @@ export const tauriApi = {
         filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
       }),
     mediaTools: () => command<MediaTools>("detect_media_tools"),
+  },
+  annotations: {
+    create: (input: ResourceAnnotationInput) =>
+      command<ResourceAnnotation>("annotation_create", { input }),
+    update: (id: number, topic: string, title: string, content: string) =>
+      command<ResourceAnnotation>("annotation_update", {
+        request: { id, topic, title, content },
+      }),
+    remove: (id: number) => command<void>("annotation_delete", { id }),
+    forTgi: (tgi: Tgi) =>
+      command<ResourceAnnotation[]>("annotations_for_tgi", {
+        request: { typeId: tgi.typeId, groupId: tgi.group, instance: tgi.instance },
+      }),
+    list: (limit = 1000) =>
+      command<ResourceAnnotation[]>("annotations_list", { limit }),
+    topicStats: () => command<AnnotationTopicStat[]>("annotation_topic_stats"),
   },
   activity: {
     operations: (limit = 100) =>

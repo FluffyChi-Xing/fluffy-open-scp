@@ -106,6 +106,7 @@ import {
   ListTree,
   Loader2,
   SquarePen,
+  StickyNote,
   type LucideIcon,
 } from 'lucide-vue-next'
 
@@ -130,6 +131,7 @@ export const iconAliases = {
   image: 'Image',
   panelTop: 'PanelTop',
   boxes: 'Boxes',
+  sticky: 'StickyNote',
 } as const
 
 export type FluffyIconAlias = keyof typeof iconAliases
@@ -242,6 +244,7 @@ const iconRegistry: Record<string, LucideIcon> = {
   ListTree,
   Loader2,
   SquarePen,
+  StickyNote,
 }
 
 export const builtinIconNames: readonly string[] = Object.keys(iconRegistry)
