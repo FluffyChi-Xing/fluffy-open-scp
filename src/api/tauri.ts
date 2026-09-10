@@ -349,6 +349,8 @@ export interface LotEditorSession {
   lotMaskPng: string | null;
   /** LotColor1-4 的 RGBA（A = 地面贴图索引 0-15）。 */
   lotColors: [number, number, number, number][];
+  /** LotColor1-4 是否实际存在（false = 黑/红/绿/蓝回退，不应着色）。 */
+  lotColorsAuthored: boolean[];
   units: LotUnitDto[];
   pathPairs: number[];
   diagnostics: string[];

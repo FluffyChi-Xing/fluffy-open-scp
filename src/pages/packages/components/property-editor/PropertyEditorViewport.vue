@@ -5,7 +5,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { ThreeViewer, disposeObject } from "@/lib/three-viewer";
 import { parseLotModelObjects, pngBlobUrl } from "@/lib/three-gltf";
-import { composeRefinedGround } from "./refinedGround";
+import { composeRefinedGround, maskAnchorOffset } from "./refinedGround";
 import type * as ThreeNamespace from "three";
 import type { LotModelLodRef, LotModelPayload, LotUnitDto } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
@@ -28,6 +28,8 @@ const props = defineProps<{
   lotPlacement: number[] | null;
   /** LotColor1-4 RGBA（A = 地面贴图索引 0-15）。 */
   lotColors: [number, number, number, number][];
+  /** LotColor1-4 是否实际存在（false = 回退色，不参与着色）。 */
+  lotColorsAuthored: boolean[];
   lotMaskPng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
@@ -762,6 +764,10 @@ async function rebuild() {
 
   // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
   if (props.lotSize) {
+    // 建筑骨架 bbox（此刻 model 组只有建筑网格，地面/units 尚未加入）
+    const modelBounds = new THREE.Box3().setFromObject(instance.group("model"));
+    const modelCenterX = (modelBounds.min.x + modelBounds.max.x) / 2;
+    const modelCenterY = (modelBounds.min.y + modelBounds.max.y) / 2;
     const ground = buildLotRect(THREE, props.lotSize);
     // C# CreateLotModel：地面按 LotPlacementTransform 的逆矩阵摆放——
     // 建筑在地块内不居中时，逆变换把遮罩图案对回建筑原点。
@@ -799,11 +805,26 @@ async function rebuild() {
           | ThreeNamespace.Mesh
           | undefined;
         if (!fill) return;
+        // 自动锚定：mask 主足迹色区质心 → 建筑 bbox 中心。数据实证
+        // placement 存在多种约定（且原版 SCP 同样偏移），直接按 mask
+        // 内容对齐可覆盖"色区在角落、建筑居中"的全部情形。
+        const anchor = props.lotSize
+          ? maskAnchorOffset(texture.image, props.lotColors, props.lotSize)
+          : null;
+        if (anchor) {
+          const current = new THREE.Vector3(anchor.x, anchor.y, 0).applyMatrix4(ground.matrix);
+          const delta = new THREE.Matrix4().makeTranslation(
+            modelCenterX - current.x,
+            modelCenterY - current.y,
+            0,
+          );
+          ground.matrix.premultiply(delta);
+        }
         if (props.renderMode === "refined") {
           // 精细模式：引擎语义 = 每通道 LotColor.RGB 着色 × LotColor.A 索引的
           // 16 格地面贴图（shader baseTileUVMinMax 4×4 图集；C# lot editor 的
           // GroundTextures 下拉即此 Alpha）。此处按 8 tile/边近似平铺。
-          composeRefinedGround(props.lotColors, texture.image, THREE)
+          composeRefinedGround(props.lotColors, props.lotColorsAuthored, texture.image, THREE)
             .then((map) => {
               if (generation !== rebuildToken || !map) {
                 map?.dispose();

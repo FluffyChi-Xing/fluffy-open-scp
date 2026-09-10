@@ -27,6 +27,7 @@ const {
   lotSize,
   lotPlacement,
   lotColors,
+  lotColorsAuthored,
   lotMaskPng,
   selectedUnit,
   hiddenUnits,
@@ -189,6 +190,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-size="lotSize"
           :lot-placement="lotPlacement"
           :lot-colors="lotColors"
+          :lot-colors-authored="lotColorsAuthored"
           :lot-mask-png="lotMaskPng"
           :selected-id="selectedId"
           :hidden-units="hiddenUnits"

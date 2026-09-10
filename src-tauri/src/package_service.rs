@@ -435,6 +435,9 @@ pub struct LotEditorSession {
     pub lot_mask_png: Option<String>,
     /// LotColor1-4 的 RGBA（A = 地面贴图索引 0-15，SCP GroundTextures 图集）。
     pub lot_colors: [[u8; 4]; 4],
+    /// LotColor1-4 是否实际存在于 property（false = 黑/红/绿/蓝回退，
+    /// 精细渲染不应使用回退色着色）。
+    pub lot_colors_authored: [bool; 4],
     /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
     pub units: Vec<sc_properties::LotUnit>,
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
@@ -723,10 +726,15 @@ fn resource_matches(entry: &IndexEntry, filter: &str) -> bool {
     let parts: Vec<&str> = stripped.split(':').collect();
     let parse_part = |part: &str| u32::from_str_radix(part.trim_start_matches("0x"), 16).ok();
     match parts.as_slice() {
-        [type_part] => parse_part(type_part).is_some_and(|v| v == id.type_id),
+        [single] => {
+            // 单值匹配任意分量（type / group / instance）
+            parse_part(single).is_some_and(|v| v == id.type_id || v == id.group || v == id.instance)
+        }
         [type_part, group_part] => {
-            parse_part(type_part).is_some_and(|v| v == id.type_id)
-                && parse_part(group_part).is_some_and(|v| v == id.group)
+            let (t, g) = (parse_part(type_part), parse_part(group_part));
+            // 两段可解读为 (type,group) 或 (group,instance)
+            (t.is_some_and(|v| v == id.type_id) && g.is_some_and(|v| v == id.group))
+                || (t.is_some_and(|v| v == id.group) && g.is_some_and(|v| v == id.instance))
         }
         [type_part, group_part, instance_part] => {
             parse_part(type_part).is_some_and(|v| v == id.type_id)
@@ -1663,7 +1671,7 @@ pub async fn read_lot_editor_session(
             if registry.is_none() {
                 diagnostics.push("property registry is unavailable; using hash identifiers".into());
             }
-            let colors = lot_colors(&document);
+            let (colors, lot_colors_authored) = lot_colors(&document);
             let mut mask_dims: Option<(u32, u32)> = None;
             let lot_mask_png = document.lot_mask.and_then(|key| {
                 match decode_lot_mask_png(package, manager, key, colors) {
@@ -1705,6 +1713,7 @@ pub async fn read_lot_editor_session(
                     .map(|t| t.matrix.try_into().unwrap()),
                 lot_mask_png,
                 lot_colors: colors,
+                lot_colors_authored,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,
                 document,
@@ -1858,16 +1867,18 @@ fn decode_lot_mask_entry(
 
 /// LotColor1-4（0x0D02D586..89）RGBA；A = 地面贴图索引（引擎 16 格图集，
 /// C# GroundTextureConverter 即此语义）。缺失用 SCP 的默认黑/红/绿/蓝。
-fn lot_colors(document: &sc_properties::LotEditorDocument) -> [[u8; 4]; 4] {
+fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bool; 4]) {
     const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
     const FALLBACKS: [[u8; 4]; 4] = [[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]];
     let mut colors = FALLBACKS;
+    let mut authored = [false; 4];
     for (index, hash) in LOT_COLOR_HASHES.iter().enumerate() {
         if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = document
             .properties
             .get(*hash)
             .and_then(|property| property.scalar())
         {
+            authored[index] = true;
             colors[index] = [
                 (r * 255.0).clamp(0.0, 255.0) as u8,
                 (g * 255.0).clamp(0.0, 255.0) as u8,
@@ -1877,7 +1888,7 @@ fn lot_colors(document: &sc_properties::LotEditorDocument) -> [[u8; 4]; 4] {
             ];
         }
     }
-    colors
+    (colors, authored)
 }
 
 fn encode_rgba_png_bytes(width: u32, height: u32, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
@@ -3865,6 +3876,22 @@ mod tests {
         assert!(resource_matches(&entry, "793667611")); // type 十进制
         assert!(!resource_matches(&entry, "0x2f4e681c"));
         assert!(!resource_matches(&entry, "0x2f4e681b:0:1a2c"));
+        // 单值匹配任意分量：00b1b104:098a44f2:0bbb7cef 应命中 instance
+        let b1b104 = dbpf::IndexEntry {
+            id: dbpf::ResourceId {
+                type_id: 0x00B1_B104,
+                group: 0x098A_44F2,
+                instance: 0x0BBB_7CEF,
+            },
+            unknown: 0,
+            offset: 0,
+            compressed_size: 0,
+            decompressed_size: 0,
+            flags: 0,
+            compressed: false,
+        };
+        assert!(resource_matches(&b1b104, "0x0bbb7cef"));
+        assert!(resource_matches(&b1b104, "0x098a44f2"));
     }
 
     #[test]

@@ -5,7 +5,11 @@ import type * as ThreeNamespace from "three";
  * mask 四通道选区 → LotColor1-4；每通道 = LotColor.RGB 着色 ×
  * LotColor.A 索引的地面贴图（16 格图集，对应 shader 的
  * baseTileUVMinMax 4×4；C# lot editor 的 GroundTexture 下拉读的
- * 就是这个 Alpha）。未选中像素保持透明。
+ * 就是这个 Alpha）。
+ *
+ * 着色规则：LotColor 属性缺失（authored=false）时回退色（黑/红/绿/蓝）
+ * 只是编辑器可视化，不参与着色——直接铺贴图原色，避免黑块/纯红块
+ * （用户实测 2026-09-10）。未选中区域铺暗化底图避免局部透明不可见。
  */
 
 const groundTextureUrls = import.meta.glob<{ default: string }>(
@@ -73,6 +77,7 @@ const TILES_PER_EDGE = 8;
 
 export async function composeRefinedGround(
   lotColors: [number, number, number, number][],
+  lotColorsAuthored: boolean[],
   maskImage: TexImageSource,
   THREE: typeof ThreeNamespace,
 ): Promise<ThreeNamespace.CanvasTexture | null> {
@@ -91,31 +96,40 @@ export async function composeRefinedGround(
   context.drawImage(maskImage as CanvasImageSource, 0, 0);
   const mask = context.getImageData(0, 0, width, height);
   const composed = context.createImageData(width, height);
+  // 未选中区域铺默认底图（tile 0 × 0.55 暗化），避免地面局部透明不可见。
+  const baseTile = await tile(0);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const at = (y * width + x) * 4;
       const alpha = mask.data[at + 3];
-      if (alpha < 16) continue;
-      const channel = nearestChannel(
-        mask.data[at],
-        mask.data[at + 1],
-        mask.data[at + 2],
-        lotColors,
-      );
-      const source = tiles[channel];
-      const [tr, tg, tb] = lotColors[channel];
+      let source: ImageData | null = baseTile;
+      let tint: [number, number, number] | null = null;
+      let shade = 0.55;
+      if (alpha >= 16) {
+        const channel = nearestChannel(
+          mask.data[at],
+          mask.data[at + 1],
+          mask.data[at + 2],
+          lotColors,
+        );
+        source = tiles[channel];
+        shade = 1;
+        if (lotColorsAuthored[channel]) {
+          tint = [lotColors[channel][0], lotColors[channel][1], lotColors[channel][2]];
+        }
+      }
       if (source) {
         const tileX = Math.floor((x / width) * TILES_PER_EDGE * source.width) % source.width;
         const tileY = Math.floor((y / height) * TILES_PER_EDGE * source.height) % source.height;
         const offset = (tileY * source.width + tileX) * 4;
-        composed.data[at] = (source.data[offset] * tr) / 255;
-        composed.data[at + 1] = (source.data[offset + 1] * tg) / 255;
-        composed.data[at + 2] = (source.data[offset + 2] * tb) / 255;
+        composed.data[at] = ((source.data[offset] * (tint ? tint[0] : 255)) / 255) * shade;
+        composed.data[at + 1] = ((source.data[offset + 1] * (tint ? tint[1] : 255)) / 255) * shade;
+        composed.data[at + 2] = ((source.data[offset + 2] * (tint ? tint[2] : 255)) / 255) * shade;
         composed.data[at + 3] = 255;
       } else {
-        composed.data[at] = tr;
-        composed.data[at + 1] = tg;
-        composed.data[at + 2] = tb;
+        composed.data[at] = 58 * shade;
+        composed.data[at + 1] = 62 * shade;
+        composed.data[at + 2] = 54 * shade;
         composed.data[at + 3] = 255;
       }
     }
@@ -127,4 +141,83 @@ export async function composeRefinedGround(
   texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearFilter;
   return texture;
+}
+
+/**
+ * 自动锚定：在量化 mask 图上找"主足迹色区"（最大非满铺色区，退化时
+ * 取全部着色像素质心），返回以地面矩形中心为原点的局部坐标偏移。
+ * 用于把足迹色区对齐到建筑 bbox 中心——绕开 placement 正/逆约定，
+ * 直接解决"色区在 raster 角落时建筑居中导致的偏移"（用户实测）。
+ */
+export function maskAnchorOffset(
+  maskImage: TexImageSource,
+  lotColors: [number, number, number, number][],
+  lotSize: [number, number],
+): { x: number; y: number } | null {
+  const image = maskImage as { width?: number; height?: number };
+  const width = image.width ?? 0;
+  const height = image.height ?? 0;
+  if (!width || !height) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.drawImage(maskImage as CanvasImageSource, 0, 0);
+  const data = context.getImageData(0, 0, width, height).data;
+  const bounds = Array.from({ length: 4 }, () => ({
+    x0: Number.POSITIVE_INFINITY,
+    y0: Number.POSITIVE_INFINITY,
+    x1: Number.NEGATIVE_INFINITY,
+    y1: Number.NEGATIVE_INFINITY,
+    count: 0,
+  }));
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const at = (y * width + x) * 4;
+      if (data[at + 3] < 16) continue;
+      const channel = nearestChannel(data[at], data[at + 1], data[at + 2], lotColors);
+      const slot = bounds[channel];
+      slot.count += 1;
+      slot.x0 = Math.min(slot.x0, x);
+      slot.y0 = Math.min(slot.y0, y);
+      slot.x1 = Math.max(slot.x1, x);
+      slot.y1 = Math.max(slot.y1, y);
+    }
+  }
+  const candidates = bounds
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => slot.count > 0);
+  const nonFullBleed = candidates.filter(
+    ({ slot }) =>
+      (slot.x1 - slot.x0 + 1) / width <= 0.95 ||
+      (slot.y1 - slot.y0 + 1) / height <= 0.95,
+  );
+  let cx: number;
+  let cy: number;
+  if (nonFullBleed.length) {
+    const dominant = nonFullBleed.reduce((a, b) => (b.slot.count > a.slot.count ? b : a));
+    cx = (dominant.slot.x0 + dominant.slot.x1) / 2;
+    cy = (dominant.slot.y0 + dominant.slot.y1) / 2;
+  } else {
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const at = (y * width + x) * 4;
+        if (data[at + 3] < 16) continue;
+        sumX += x;
+        sumY += y;
+        count += 1;
+      }
+    }
+    if (!count) return null;
+    cx = sumX / count;
+    cy = sumY / count;
+  }
+  return {
+    x: (cx / width - 0.5) * lotSize[0],
+    y: (cy / height - 0.5) * lotSize[1],
+  };
 }

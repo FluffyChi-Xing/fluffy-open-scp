@@ -179,6 +179,10 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return matrix && matrix.length === 12 ? matrix : null;
   });
 
+  const lotColorsAuthored = computed<boolean[]>(() => {
+    return session.value?.lotColorsAuthored ?? [false, false, false, false];
+  });
+
   const lotColors = computed<[number, number, number, number][]>(() => {
     return session.value?.lotColors ?? [
       [0, 0, 0, 0],
@@ -232,6 +236,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotSize,
     lotPlacement,
     lotColors,
+    lotColorsAuthored,
     lotMaskPng,
     selectedUnit,
     hiddenUnits,
