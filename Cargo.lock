@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "dbpf"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "lru",
  "memmap2",
@@ -851,7 +851,7 @@ dependencies = [
 
 [[package]]
 name = "fluffy-open-scp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "dbpf",
@@ -2783,7 +2783,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rw4"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dbpf",
  "image",
@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "sc-exporter"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dbpf",
  "image",
@@ -2816,11 +2816,11 @@ dependencies = [
 
 [[package]]
 name = "sc-format"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "sc-properties"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dbpf",
  "rw4",
@@ -2831,7 +2831,7 @@ dependencies = [
 
 [[package]]
 name = "sc-registry"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "thiserror 2.0.20",
@@ -2839,7 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "sc-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "serde",
