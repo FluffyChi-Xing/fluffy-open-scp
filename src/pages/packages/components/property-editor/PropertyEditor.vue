@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import type { Tgi } from "@/api/tauri";
@@ -10,6 +11,7 @@ import PropertyEditorViewport from "./PropertyEditorViewport.vue";
 import PropertyEditorProperties from "./PropertyEditorProperties.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
+import { exportLotModel } from "@/composables/useModelExport";
 
 const props = defineProps<{ packageId: number; tgi: Tgi }>();
 const open = defineModel<boolean>("open", { default: false });
@@ -46,6 +48,26 @@ const specMode = ref(2);
 const timeOfDay = ref(12);
 /** 浮雕开关（已撤销，见模板注释）。 */
 const reliefEnabled = ref(false);
+/** 模型导出（GLB）：默认模式仅白模；精细模式可选带贴图。 */
+const meshExportBusy = ref(false);
+async function exportModel(mode: "white" | "textured") {
+  if (meshExportBusy.value) return;
+  const lod = modelLods.value[activeLod.value];
+  if (!lod) return;
+  meshExportBusy.value = true;
+  try {
+    await exportLotModel({
+      packageId: lod.packageId,
+      modelTgi: lod.tgi,
+      mode,
+      defaultName:
+        session.value?.assetName ??
+        `0x${lod.tgi.instance.toString(16).padStart(8, "0")}`,
+    });
+  } finally {
+    meshExportBusy.value = false;
+  }
+}
 /** 5d 供电（断电 = 内景自发光全灭）。 */
 const powered = ref(true);
 
@@ -170,6 +192,26 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FCheckbox v-model="powered" />
           <span>{{ $t("package.powered") }}</span>
         </label>
+        <FDropdown :width="200">
+          <template #trigger>
+            <button class="editor-close" type="button" :disabled="meshExportBusy"
+              :aria-label="$t('package.exportMesh')">
+              <FIcon :name="meshExportBusy ? 'Loader2' : 'Download'" :size="15" aria-label="" />
+            </button>
+          </template>
+          <button type="button" @click="exportModel('white')">
+            <FIcon name="Box" :size="14" aria-label="" />
+            {{ $t("package.exportMeshWhite") }}
+          </button>
+          <button
+            v-if="renderMode === 'refined'"
+            type="button"
+            @click="exportModel('textured')"
+          >
+            <FIcon name="Image" :size="14" aria-label="" />
+            {{ $t("package.exportMeshTextured") }}
+          </button>
+        </FDropdown>
         <span class="editor-readonly">{{ $t("package.propertyEditorReadonly") }}</span>
         <button
           class="editor-close"

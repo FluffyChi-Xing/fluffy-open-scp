@@ -2571,6 +2571,30 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
 /// PE 精细渲染：一次返回模型全部网格 GLB（COLOR_0 按**每 mesh 材质**烘焙）
 /// + 逐材质贴图 PNG（0x2001A 绑定表）+ 槽位诊断文本，经原始字节通道传输
 /// （`LOT_MODEL_PAYLOAD_MAGIC` v5 容器），取代前端 1+N 次 section 请求。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteExportRequest {
+    pub path: String,
+    pub data_base64: String,
+}
+
+/// 前端 GLTFExporter 产物落盘（路径来自保存对话框；工具本地写自己的导出）。
+#[tauri::command]
+pub async fn write_export_file(request: WriteExportRequest) -> Result<(), CommandError> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let bytes = STANDARD
+        .decode(request.data_base64)
+        .map_err(|error| PackageError::InvalidArgument(format!("bad base64: {error}")))?;
+    if bytes.len() > 512 * 1024 * 1024 {
+        return Err(CommandError::from(PackageError::InvalidArgument(
+            "export payload exceeds 512MB".into(),
+        )));
+    }
+    std::fs::write(&request.path, bytes)
+        .map_err(|error| PackageError::InvalidArgument(format!("write failed: {error}")))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn read_lot_model_meshes(
     state: State<'_, AppState>,

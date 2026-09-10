@@ -16,7 +16,13 @@ import {
   ResizableHandle,
   ResizablePanel,
 } from "@/components/ui/resizable";
-import { resourceIconUrl, resourceKind } from "@/lib/resource-types";
+import {
+  resourceIconUrl,
+  resourceKind,
+  PROPERTY_TYPE_ID,
+  RW4_TYPE_ID,
+} from "@/lib/resource-types";
+import { exportLotModel } from "@/composables/useModelExport";
 
 const { t } = useI18n();
 const explorer = useGamePackages();
@@ -98,6 +104,42 @@ function formatSize(bytes: number) {
   if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
   return `${(mb / 1024).toFixed(1)} GB`;
 }
+/** 预览面板快捷导出 mesh：property → lot 会话解析模型；RW4 → 自身。 */
+const meshExportBusy = shallowRef(false);
+async function exportSelectedMesh() {
+  const resource = selected.value;
+  if (!resource || meshExportBusy.value) return;
+  meshExportBusy.value = true;
+  try {
+    let modelTgi = resource.tgi;
+    let packageId = activePackageId.value ?? 0;
+    if (resource.tgi.typeId === PROPERTY_TYPE_ID) {
+      const session = await tauriApi.packages.readLotEditorSession(
+        packageId,
+        resource.tgi,
+      );
+      const lod = session?.modelLods?.[0];
+      if (!lod) return;
+      modelTgi = lod.tgi;
+      packageId = lod.packageId;
+    }
+    if (modelTgi.typeId !== RW4_TYPE_ID) return;
+    await exportLotModel({
+      packageId,
+      modelTgi,
+      mode: "white",
+      defaultName: `0x${modelTgi.instance.toString(16).padStart(8, "0")}`,
+    });
+  } finally {
+    meshExportBusy.value = false;
+  }
+}
+const canExportMesh = computed(
+  () =>
+    selected.value?.tgi.typeId === PROPERTY_TYPE_ID ||
+    selected.value?.tgi.typeId === RW4_TYPE_ID,
+);
+
 async function copyTgi() {
   if (!selected.value) return;
   try {
@@ -458,6 +500,19 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 }}</FTypography
                 ><div class="detail-tgi">
                   <code>{{ tgiLabel(selected.tgi) }}</code>
+                  <button
+                    v-if="canExportMesh"
+                    class="copy-button"
+                    type="button"
+                    :disabled="meshExportBusy"
+                    @click="exportSelectedMesh"
+                  >
+                    <FIcon
+                      :name="meshExportBusy ? 'Loader2' : 'Box'"
+                      :size="13"
+                      aria-label=""
+                    />{{ $t("package.exportMesh") }}
+                  </button>
                   <button class="copy-button" type="button" @click="copyTgi">
                     <FIcon
                       :name="copied ? 'Check' : 'Copy'"
