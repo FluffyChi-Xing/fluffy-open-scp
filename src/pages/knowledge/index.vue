@@ -21,9 +21,11 @@ const documents = import.meta.glob<string>("../../assets/knowledge/*.md", {
 const route = useRoute();
 const { locale } = useI18n();
 
+// 三条路由共用本组件且无动态参数：topic 从路由路径尾段解析
+//（route.params.topic 恒为 undefined，会导致三个菜单显示同一篇）。
 const topic = computed<KnowledgeTopic>(() => {
-  const value = route.params.topic as string | undefined;
-  return (KNOWLEDGE_TOPICS as readonly string[]).includes(value ?? "")
+  const value = route.path.split("/").filter(Boolean).pop() ?? "";
+  return (KNOWLEDGE_TOPICS as readonly string[]).includes(value)
     ? (value as KnowledgeTopic)
     : "file-types";
 });

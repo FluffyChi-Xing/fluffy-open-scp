@@ -99,12 +99,13 @@ import {
   X,
   Zap,
   Lightbulb,
+  Volume2,
+  VolumeX,
   Camera,
   FileMusic,
   ListTree,
   Loader2,
   SquarePen,
-  Wrench,
   type LucideIcon,
 } from 'lucide-vue-next'
 
@@ -234,12 +235,13 @@ const iconRegistry: Record<string, LucideIcon> = {
   X,
   Zap,
   Lightbulb,
+  Volume2,
+  VolumeX,
   Camera,
   FileMusic,
   ListTree,
   Loader2,
   SquarePen,
-  Wrench,
 }
 
 export const builtinIconNames: readonly string[] = Object.keys(iconRegistry)
