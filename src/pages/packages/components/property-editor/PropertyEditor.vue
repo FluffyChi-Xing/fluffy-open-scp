@@ -46,8 +46,7 @@ const specExperiment = ref(false);
 const specMode = ref(2);
 /** 5d 日/夜时段 0–24（默认 12 正午）。 */
 const timeOfDay = ref(12);
-/** 浮雕开关（已撤销，见模板注释）。 */
-const reliefEnabled = ref(false);
+// 浮雕开关已撤销（见模板注释），reliefEnabled 状态一并移除。
 /** 模型导出（GLB）：默认模式仅白模；精细模式可选带贴图。 */
 const meshExportBusy = ref(false);
 async function exportModel(mode: "white" | "textured") {
