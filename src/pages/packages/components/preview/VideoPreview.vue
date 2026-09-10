@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from "vue";
+import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import type { VideoPreview as VideoPreviewData } from "@/api/tauri";
@@ -19,6 +19,43 @@ watch(
   },
   { immediate: true },
 );
+
+const videoEl = ref<HTMLVideoElement | null>(null);
+const playing = ref(false);
+const currentTime = ref(0);
+const duration = ref(0);
+const muted = ref(false);
+const seeking = ref(false);
+function togglePlay() {
+  const el = videoEl.value;
+  if (!el) return;
+  if (el.paused) void el.play();
+  else el.pause();
+}
+function onTimeUpdate() {
+  const el = videoEl.value;
+  if (!el || seeking.value) return;
+  currentTime.value = el.currentTime;
+}
+function seekTo(event: Event) {
+  const el = videoEl.value;
+  if (!el) return;
+  const value = Number((event.target as HTMLInputElement).value);
+  el.currentTime = value;
+  currentTime.value = value;
+}
+function toggleMute() {
+  const el = videoEl.value;
+  if (!el) return;
+  el.muted = !el.muted;
+  muted.value = el.muted;
+}
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const sec = Math.floor(seconds % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
 
 async function copyInstallCommand() {
   try {
@@ -40,15 +77,53 @@ async function copyInstallCommand() {
         {{ preview.toolAvailable ? preview.toolName : $t("package.toolMissing") }}
       </span>
     </div>
-    <div v-if="preview.src" class="media-viewport video-viewport">
-      <video
-        class="video-player"
-        :src="preview.src"
-        controls
-        playsinline
-        preload="metadata"
-        :aria-label="$t('package.videoPreview')"
-      />
+    <div v-if="preview.src" class="video-frame">
+      <div class="media-viewport video-viewport">
+        <video
+          ref="videoEl"
+          class="video-player"
+          :src="preview.src"
+          playsinline
+          preload="metadata"
+          :aria-label="$t('package.videoPreview')"
+          @click="togglePlay"
+          @play="playing = true"
+          @pause="playing = false"
+          @ended="playing = false"
+          @timeupdate="onTimeUpdate"
+          @loadedmetadata="duration = videoEl?.duration ?? 0"
+        />
+      </div>
+      <div class="video-controls" role="group" :aria-label="$t('package.videoToolbar')">
+        <button
+          class="video-button"
+          type="button"
+          :aria-label="playing ? $t('package.audioPause') : $t('package.audioPlay')"
+          @click="togglePlay"
+        >
+          <FIcon :name="playing ? 'Pause' : 'Play'" :size="15" aria-label="" />
+        </button>
+        <span class="video-time">{{ formatTime(currentTime) }}</span>
+        <input
+          class="video-seek"
+          type="range"
+          min="0"
+          :max="duration || 0"
+          step="0.1"
+          :value="currentTime"
+          :aria-label="$t('package.audioSeek')"
+          @input="seekTo"
+        />
+        <span class="video-time">{{ formatTime(duration) }}</span>
+        <button
+          class="video-button"
+          type="button"
+          :aria-label="$t('package.videoMute')"
+          @click="toggleMute"
+        >
+          <FIcon :name="muted ? 'VolumeX' : 'Volume2'" :size="15" aria-label="" />
+        </button>
+      </div>
     </div>
     <div v-else class="media-viewport media-unavailable" role="alert">
       <FIcon name="Film" :size="28" aria-label="" />
@@ -162,6 +237,51 @@ async function copyInstallCommand() {
 .install-copy:hover,
 .install-copy:focus-visible {
   background: var(--accent);
+}
+.video-frame {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.video-controls {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.video-button {
+  align-items: center;
+  background: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+  flex: none;
+}
+.video-button:hover,
+.video-button:focus-visible {
+  background: var(--primary);
+  color: var(--primary-foreground, white);
+  outline: none;
+}
+.video-time {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.video-seek {
+  accent-color: var(--primary);
+  flex: 1;
+  min-width: 80px;
 }
 .media-meta {
   color: var(--muted-foreground);

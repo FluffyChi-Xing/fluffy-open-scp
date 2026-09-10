@@ -8,7 +8,7 @@ export const appRoutes = moduleList.flatMap((module) => module.routes ?? [])
 export const externalRoutes = moduleList.flatMap((module) => module.externalRoutes ?? [])
 export const externalRouteByKey = new Map(externalRoutes.map((entry) => [entry.key, entry]))
 
-const groupOrder = ['navigation.workspace', 'navigation.resources', 'navigation.modding', 'navigation.export', 'navigation.manage']
+const groupOrder = ['navigation.workspace', 'navigation.resources', 'navigation.modding', 'navigation.export', 'navigation.manage', 'navigation.knowledge']
 
 function navigationItem(route: TemplateRoute): NavigationItem {
   return { key: route.name, titleKey: route.meta.titleKey, icon: route.meta.icon, routeName: route.name, path: `/${route.path}`.replace(/^\/$/, '/') }
