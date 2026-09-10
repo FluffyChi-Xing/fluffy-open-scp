@@ -9,7 +9,7 @@ import type * as ThreeNamespace from "three";
  */
 
 const groundTextureUrls = import.meta.glob<{ default: string }>(
-  "../../../assets/ground/*.png",
+  "../../../../assets/ground/*.png",
   { eager: true, import: "default", query: "?url" },
 ) as unknown as Record<string, string>;
 

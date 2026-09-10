@@ -765,10 +765,11 @@ async function rebuild() {
     const ground = buildLotRect(THREE, props.lotSize);
     // C# CreateLotModel：地面按 LotPlacementTransform 的逆矩阵摆放——
     // 建筑在地块内不居中时，逆变换把遮罩图案对回建筑原点。
-    // C# CreateLotModel（ViewLotEditor.xaml.cs:188-195）：地面先绕 Z 旋转
-    // −90°（mask 行列轴与模型轴的固定约定），再左乘 LotPlacementTransform
-    // 的逆。此前缺失该旋转导致 mask 相对建筑整体转置 + 镜像。
-    const rotation = new THREE.Matrix4().makeRotationZ(-Math.PI / 2);
+    // 地面 = LotPlacementTransform 的逆（mask 行列轴与模型 XY 轴直接对应）。
+    // 注意：C# CreateLotModel 在此还叠加了 R(−90°Z)，但那是 WPF/Helix 视口
+    // 约定的补偿——真实数据检验（lot_anchor_probe 轴长统计：无 placement
+    // lot 741:48 支持 0°；0x4EF6F6CD 视觉实证）表明引擎约定不旋转，
+    // 旋转会导致 mask 相对建筑转置（用户实测 2026-09-10）。
     if (props.lotPlacement) {
       const m = props.lotPlacement;
       const inverse = new THREE.Matrix4()
@@ -780,10 +781,7 @@ async function rebuild() {
         )
         .invert();
       ground.matrixAutoUpdate = false;
-      ground.matrix.copy(inverse).multiply(rotation);
-    } else {
-      ground.matrixAutoUpdate = false;
-      ground.matrix.copy(rotation);
+      ground.matrix.copy(inverse);
     }
     instance.group("model").add(ground);
     if (props.lotMaskPng) {

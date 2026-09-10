@@ -597,6 +597,8 @@ const messages = {
       noBytes: "没有读取到字节",
       selectResource: "选择资源查看详情",
       noPreview: "暂无可用预览",
+      searchTgi: "搜索 TGI（如 0x2f4e681b 或 type:group:instance）",
+      clearSearch: "清除搜索",
       previewUnavailableType: "{type} 类型文件暂不支持预览",
       copy: "复制",
       previewTruncated: "内容已截断",
@@ -1430,6 +1432,8 @@ const messages = {
       noBytes: "No bytes read",
       selectResource: "Select a resource to inspect it",
       noPreview: "No preview available",
+      searchTgi: "Search TGI (e.g. 0x2f4e681b or type:group:instance)",
+      clearSearch: "Clear search",
       previewUnavailableType:
         "Preview is not available for {type} files yet",
       copy: "Copy",

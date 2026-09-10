@@ -708,10 +708,33 @@ fn package_summary(package_id: u64, package: &Package) -> Result<PackageSummary,
 fn resource_matches(entry: &IndexEntry, filter: &str) -> bool {
     let id = entry.id;
     let text = format!("{:08x}:{:08x}:{:08x}", id.type_id, id.group, id.instance);
-    text.contains(filter)
-        || id.type_id.to_string() == filter
+    if text.contains(filter) {
+        return true;
+    }
+    if id.type_id.to_string() == filter
         || id.group.to_string() == filter
         || id.instance.to_string() == filter
+    {
+        return true;
+    }
+    // TGI 搜索：接受 0x 前缀与任意分段（"0x2f4e681b"、"2f4e681b"、
+    // "0x2f4e681b:0:1a2b"、十进制）；分段 hex 需匹配对应组件。
+    let stripped = filter.trim_start_matches("0x");
+    let parts: Vec<&str> = stripped.split(':').collect();
+    let parse_part = |part: &str| u32::from_str_radix(part.trim_start_matches("0x"), 16).ok();
+    match parts.as_slice() {
+        [type_part] => parse_part(type_part).is_some_and(|v| v == id.type_id),
+        [type_part, group_part] => {
+            parse_part(type_part).is_some_and(|v| v == id.type_id)
+                && parse_part(group_part).is_some_and(|v| v == id.group)
+        }
+        [type_part, group_part, instance_part] => {
+            parse_part(type_part).is_some_and(|v| v == id.type_id)
+                && parse_part(group_part).is_some_and(|v| v == id.group)
+                && parse_part(instance_part).is_some_and(|v| v == id.instance)
+        }
+        _ => false,
+    }
 }
 
 fn normalized_filter(filter: Option<&str>) -> Result<Option<String>, PackageError> {
@@ -3819,6 +3842,30 @@ mod lot_payload_tests {
 mod tests {
     use super::*;
     use dbpf::{OverlayEntry, write_uncompressed_overlay};
+
+    #[test]
+    fn tgi_filter_matches_hex_prefix_and_segments() {
+        let entry = dbpf::IndexEntry {
+            id: dbpf::ResourceId {
+                type_id: 0x2F4E_681B,
+                group: 0,
+                instance: 0x1A2B,
+            },
+            unknown: 0,
+            offset: 0,
+            compressed_size: 0,
+            decompressed_size: 0,
+            flags: 0,
+            compressed: false,
+        };
+        assert!(resource_matches(&entry, "0x2f4e681b"));
+        assert!(resource_matches(&entry, "2f4e681b"));
+        assert!(resource_matches(&entry, "0x2f4e681b:0:1a2b"));
+        assert!(resource_matches(&entry, "2f4e681b:0:0x1a2b"));
+        assert!(resource_matches(&entry, "793667611")); // type 十进制
+        assert!(!resource_matches(&entry, "0x2f4e681c"));
+        assert!(!resource_matches(&entry, "0x2f4e681b:0:1a2c"));
+    }
 
     #[test]
     fn greyscale_header_matches_real_samples() {

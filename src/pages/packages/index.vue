@@ -40,6 +40,17 @@ const {
   demo,
 } = storeToRefs(explorer);
 const importMode = shallowRef("folder");
+// TGI 搜索（0x 前缀 / t:g:i 分段 / 十进制均可，服务端匹配）
+const searchText = shallowRef("");
+let searchTimer: number | undefined;
+function onSearchInput(event: Event) {
+  const value = (event.target as HTMLInputElement).value;
+  searchText.value = value;
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    void explorer.applyFilter(value.trim());
+  }, 250);
+}
 
 // 进入页面即按持久化的游戏目录设置初始化目录树（store 内部有幂等保护）
 onMounted(() => {
@@ -316,6 +327,29 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 <FIcon name="ChevronRight" :size="14" aria-label="" />
               </button>
             </nav>
+            <div class="resource-search" role="search">
+              <FIcon name="Search" :size="14" aria-label="" />
+              <input
+                class="resource-search-input"
+                type="search"
+                :value="searchText"
+                :placeholder="$t('package.searchTgi')"
+                :aria-label="$t('package.searchTgi')"
+                @input="onSearchInput"
+              />
+              <button
+                v-if="searchText"
+                class="resource-search-clear"
+                type="button"
+                :aria-label="$t('package.clearSearch')"
+                @click="
+                  searchText = '';
+                  explorer.applyFilter('');
+                "
+              >
+                <FIcon name="X" :size="13" aria-label="" />
+              </button>
+            </div>
             <div class="resource-table-wrap">
               <table class="resource-table">
                 <thead>
@@ -766,6 +800,45 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .category-tab.active span:last-child {
   background: var(--primary);
   color: var(--primary-foreground);
+}
+.resource-search {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 7px;
+  margin-bottom: 10px;
+  padding: 0 9px;
+  color: var(--muted-foreground);
+}
+.resource-search-input {
+  background: transparent;
+  border: none;
+  color: var(--foreground);
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  min-height: 32px;
+  outline: none;
+}
+.resource-search-input::placeholder {
+  color: var(--muted-foreground);
+}
+.resource-search-clear {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  min-height: 26px;
+  padding: 0 4px;
+}
+.resource-search-clear:hover {
+  color: var(--foreground);
+  background: var(--accent);
 }
 .resource-table-wrap {
   flex: 1 1 0;

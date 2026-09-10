@@ -92,7 +92,7 @@ fn main() {
             if trace { eprintln!("skip: raster parse failed"); }
             continue;
         };
-        let Ok(_rgba) = raster.decode_lot_mask_rgba(&[[0; 3]; 4]) else {
+        let Ok(_rgba) = raster.decode_lot_mask_rgba(&[[0; 4]; 4]) else {
             if trace { eprintln!("skip: mask decode failed (w={} h={} pixFmt={})", raster.width, raster.height, raster.pixel_format); }
             continue;
         };
@@ -126,7 +126,7 @@ fn main() {
         if verts == 0 { continue; }
 
         // mask 四色区域（黑白红绿蓝量化 → 统计每通道像素 bbox）
-        let Some(rgba) = raster.decode_lot_mask_rgba(&[[0, 0, 0], [255, 0, 0], [0, 255, 0], [0, 0, 255]]).ok() else { continue };
+        let Some(rgba) = raster.decode_lot_mask_rgba(&[[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]]).ok() else { continue };
         let (w, h) = (raster.width as usize, raster.height as usize);
         let mut regions = [[usize::MAX; 2], [usize::MAX; 2], [usize::MAX; 2], [usize::MAX; 2]];
         let mut regions_max = [[0usize; 2]; 4];
@@ -172,8 +172,8 @@ fn main() {
             let cy = ((regions[c][1] + regions_max[c][1]) as f32 / 2.0 - (h as f32 - 1.0) / 2.0) * sy;
             println!("    color{c}: px_count={:<6} bbox={:.1}x{:.1} units, center_offset=({cx:+.1},{cy:+.1}) from mask center", counts[c], bw, bh);
         }
-        // 对齐评分 v3：选「非满铺」的最大色区（近似建筑足迹），比较两种
-        // 变换假设下建筑脚印矩形对该色区的覆盖率。
+        // 对齐评分 v4：4 假设（旋转 ±90° × 平移 ±t）下，把建筑 bbox 映射进
+        // mask 像素空间，与主足迹色区 bbox 求 IoU，多数票定约定。
         let full_bleed = |c: usize| -> bool {
             if counts[c] == 0 { return true; }
             (regions_max[c][0] - regions[c][0] + 1) as f64 / w as f64 > 0.95
@@ -182,32 +182,67 @@ fn main() {
         let footprint_color = (1..4)
             .filter(|&c| counts[c] > 0 && !full_bleed(c))
             .max_by_key(|&c| counts[c]);
+        // 无 placement 的 lot：轴长检验（0° vs 90°）。建筑 X×Y 与主足迹色
+        // bbox 列×行的匹配度，取对数比。
+        if let Some(foot_c) = footprint_color {
+            if placement_t.is_none() {
+                let fw = (regions_max[foot_c][0] - regions[foot_c][0] + 1) as f32 * sx;
+                let fh = (regions_max[foot_c][1] - regions[foot_c][1] + 1) as f32 * sy;
+                let (bw, bh) = (maxx - minx, maxy - miny);
+                let direct = ((bw - fw).abs() + (bh - fh).abs()) / (bw + bh);
+                let swapped = ((bw - fh).abs() + (bh - fw).abs()) / (bw + bh);
+                let winner = if direct < swapped { "0deg" } else { "90deg" };
+                println!("    axes: bbox={bw:.1}x{bh:.1} color={fw:.1}x{fh:.1} direct={direct:.2} swapped={swapped:.2} → {winner}");
+            }
+        }
         if let (Some(foot_c), Some((tx, ty))) = (footprint_color,
                 placement_t.filter(|(x, y)| x.abs() + y.abs() >= 0.01)) {
-            let painted: Vec<bool> = rgba.chunks_exact(4).map(|px| {
-                let c = match (px[0], px[1], px[2]) {
-                    (255, 0, 0) => 1, (0, 255, 0) => 2, (0, 0, 255) => 3, _ => 0,
+            // 主足迹色区 bbox（像素）
+            let (fx0, fy0) = (regions[foot_c][0] as f32, regions[foot_c][1] as f32);
+            let (fx1, fy1) = (regions_max[foot_c][0] as f32, regions_max[foot_c][1] as f32);
+            // 假设 (eps, sigma)：mask 内像素 q 对应模型点
+            //   p = R(eps*90°)·q + sigma*t（ground = 平移 sigma*t 后旋转 eps*90°）
+            // 反解：建筑 bbox 角点 p → q = R(-eps*90°)·(p − sigma·t)
+            // q 坐标以 mask 中心为原点（像素），u=列、v=行。
+            let iou = |eps: f32, sigma: f32| -> f32 {
+                let corners = [
+                    (minx, miny), (maxx, miny), (minx, maxy), (maxx, maxy),
+                ];
+                let (sin, cos) = (eps * 90f32.to_radians().sin(), eps * 90f32.to_radians().cos());
+                // 模型坐标（米）→ 像素：先减 sigma*t，旋转 −eps·90°，再换算像素
+                let to_px = |x: f32, y: f32| -> (f32, f32) {
+                    let dx = x - sigma * tx;
+                    let dy = y - sigma * ty;
+                    let (u, v) = (cos * dx + sin * dy, -sin * dx + cos * dy);
+                    (u / sx + w as f32 / 2.0, v / sy + h as f32 / 2.0)
                 };
-                c == foot_c
-            }).collect();
-            let coverage = |ox: f32, oy: f32| -> f32 {
-                let x0 = ((minx + ox + lot_size[0] / 2.0) / sx).floor().max(0.0) as usize;
-                let x1 = ((maxx + ox + lot_size[0] / 2.0) / sx).ceil().min(w as f32) as usize;
-                let y0 = ((miny + oy + lot_size[1] / 2.0) / sy).floor().max(0.0) as usize;
-                let y1 = ((maxy + oy + lot_size[1] / 2.0) / sy).ceil().min(h as f32) as usize;
-                if x1 <= x0 || y1 <= y0 { return 0.0; }
-                let mut hit = 0usize;
-                for row in y0..y1 {
-                    for col in x0..x1 {
-                        if painted[row * w + col] { hit += 1; }
-                    }
-                }
-                hit as f32 / ((x1 - x0) * (y1 - y0)) as f32
+                let pts: Vec<(f32, f32)> = corners.iter().map(|&(x, y)| to_px(x, y)).collect();
+                let (qx0, qx1) = (pts.iter().map(|p| p.0).fold(f32::MAX, f32::min), pts.iter().map(|p| p.0).fold(f32::MIN, f32::max));
+                let (qy0, qy1) = (pts.iter().map(|p| p.1).fold(f32::MAX, f32::min), pts.iter().map(|p| p.1).fold(f32::MIN, f32::max));
+                let ix = qx0.max(fx0).min(qx1).min(fx1);
+                let iy = qy0.max(fy0).min(qy1).min(fy1);
+                if ix <= 0.0 && iy <= 0.0 { return 0.0; }
+                let iw = (qx1.min(fx1) - qx0.max(fx0)).max(0.0);
+                let ih = (qy1.min(fy1) - qy0.max(fy0)).max(0.0);
+                let inter = iw * ih;
+                let union = (qx1 - qx0) * (qy1 - qy0) + (fx1 - fx0) * (fy1 - fy0) - inter;
+                if union <= 0.0 { 0.0 } else { inter / union }
             };
-            let fwd = coverage(tx, ty);
-            let inv = coverage(-tx, -ty);
-            let winner = if fwd > inv { "FORWARD" } else { "INVERSE" };
-            println!("    cover(color{foot_c}): forward={:.2} inverse={:.2} → {}", fwd, inv, winner);
+            let hypotheses = [
+                (0.0, 1.0, "rot0,inv"),
+                (0.0, -1.0, "rot0,fwd"),
+                (-1.0, 1.0, "rot-90,inv"),
+                (1.0, 1.0, "rot+90,inv"),
+                (-1.0, -1.0, "rot-90,fwd"),
+                (1.0, -1.0, "rot+90,fwd"),
+            ];
+            let mut best = (0.0f32, "");
+            for &(eps, sigma, label) in &hypotheses {
+                let score = iou(eps, sigma);
+                if score > best.0 { best = (score, label); }
+                print!(" {label}={score:.2}");
+            }
+            println!("    iou(color{foot_c}):{best_label}", best_label = format!(" → {}", best.1));
         }
         shown += 1;
         if shown >= max { break; }

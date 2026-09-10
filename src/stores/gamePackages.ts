@@ -125,6 +125,13 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
       loadingPackage.value = false;
     }
   }
+  /** TGI 搜索：更新过滤词并回到第一页（空串清除）。 */
+  async function applyFilter(value: string) {
+    if (filter.value === value) return;
+    filter.value = value;
+    if (activePackage.value) await loadPage(0);
+  }
+
   async function loadPage(offset = 0) {
     if (!activePackage.value) return;
     loadingPackage.value = true;
@@ -284,6 +291,7 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
     loadingFiles,
     loadingPackage,
     filter,
+    applyFilter,
     selectedFolder,
     demo,
     loadFolders,
