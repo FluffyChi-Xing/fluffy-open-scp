@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FMarkdown from "@/components/markdown/FMarkdown.vue";
+import FEmpty from "@/components/extensions/FEmpty.vue";
 import { tauriApi } from "@/api";
 import type { ResourceAnnotation, Tgi } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
@@ -152,9 +153,12 @@ const editing = computed(() =>
       </header>
 
       <p v-if="loading" class="notes-hint">{{ $t("common.loading") }}</p>
-      <p v-else-if="!annotations.length && editingId === null" class="notes-hint">
-        {{ $t("notes.empty") }}
-      </p>
+      <FEmpty
+        v-else-if="!annotations.length && editingId === null"
+        icon-name="StickyNote"
+        :title="$t('notes.emptyTitle')"
+        :desc="$t('notes.empty')"
+      />
 
       <div
         v-if="editingId !== null"
@@ -242,6 +246,7 @@ const editing = computed(() =>
 .notes-sheet {
   display: grid;
   gap: 14px;
+  padding: 16px 16px 24px;
 }
 .notes-header {
   align-items: center;
