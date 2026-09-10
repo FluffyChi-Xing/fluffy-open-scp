@@ -744,7 +744,9 @@ fn material_payload(slot_instances: [(u32, u32); 6]) -> Vec<u8> {
     p.extend([0x11u8; 28]); // header
     p.extend_from_slice(&vf_copy); // 顶点格式副本
     p.extend([0xAAu8; 8]); // additional data（引用表前）
-    for (slot, instance) in [(SHADER_DEF_MARKER, 0xDDDD_0001)].iter().copied()
+    for (slot, instance) in [(SHADER_DEF_MARKER, 0xDDDD_0001)]
+        .iter()
+        .copied()
         .chain(slot_instances)
     {
         p.extend(slot.to_le_bytes());

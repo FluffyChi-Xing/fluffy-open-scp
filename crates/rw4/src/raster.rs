@@ -103,7 +103,7 @@ impl RasterImage {
     /// 全部未选中输出全透明。通道→颜色：R→LotColor1、G→LotColor2、
     /// B→LotColor3、A→LotColor4（优先级 A > R > G > B，与旧交叉映射逐字节
     /// 等价——旧版在 BGRA 原始字节上交叉，等价于重排后直读）。
-    pub fn decode_lot_mask_rgba(&self, colors: &[[u8; 3]; 4]) -> Result<Vec<u8>> {
+    pub fn decode_lot_mask_rgba(&self, colors: &[[u8; 4]; 4]) -> Result<Vec<u8>> {
         let rgba = self.decode_top_mip_rgba()?;
         const CHANNEL_TO_COLOR: [(usize, usize); 4] = [(3, 3), (0, 0), (1, 1), (2, 2)];
         let mut out = Vec::with_capacity(rgba.len());
@@ -113,7 +113,7 @@ impl RasterImage {
                 .find(|(channel, _)| px[*channel] >= 128)
                 .map(|(_, color_index)| colors[*color_index]);
             match chosen {
-                Some([r, g, b]) => out.extend_from_slice(&[r, g, b, 255]),
+                Some([r, g, b, _]) => out.extend_from_slice(&[r, g, b, 255]),
                 None => out.extend_from_slice(&[0, 0, 0, 0]),
             }
         }
@@ -143,12 +143,7 @@ mod tests {
     #[test]
     fn parses_header_and_reorders_bgra() {
         // pixFmt21 = D3DFMT_A8R8G8B8：内存 B,G,R,A → 重排为 R,G,B,A。
-        let data = raster(
-            21,
-            2,
-            1,
-            &[10, 20, 30, 40, 50, 60, 70, 80],
-        );
+        let data = raster(21, 2, 1, &[10, 20, 30, 40, 50, 60, 70, 80]);
         let image = RasterImage::parse(&data).unwrap();
         assert_eq!(image.width, 2);
         assert_eq!(image.height, 1);
@@ -167,7 +162,10 @@ mod tests {
         // 标准蓝 up (128,128,255)，与游戏 ApplyNormalMap 的 B=沿法线轴一致。
         let data = raster(21, 1, 1, &[255, 128, 128, 249]);
         let image = RasterImage::parse(&data).unwrap();
-        assert_eq!(image.decode_top_mip_rgba().unwrap(), vec![128, 128, 255, 249]);
+        assert_eq!(
+            image.decode_top_mip_rgba().unwrap(),
+            vec![128, 128, 255, 249]
+        );
     }
 
     #[test]
@@ -189,7 +187,7 @@ mod tests {
     fn lot_mask_threshold_picks_cross_wired_colors() {
         // 字节序 B,G,R,A；映射 byte3→LotColor4、byte0→LotColor3、
         // byte1→LotColor2、byte2→LotColor1；阈值 ≥128。
-        let colors = [[1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]];
+        let colors = [[1, 1, 1, 0], [2, 2, 2, 0], [3, 3, 3, 0], [4, 4, 4, 0]];
         let data = raster(
             21,
             4,
@@ -222,7 +220,7 @@ mod tests {
             image.decode_top_mip_rgba(),
             Err(Error::UnsupportedRasterPixelFormat(71))
         ));
-        assert!(image.decode_lot_mask_rgba(&[[0; 3]; 4]).is_err());
+        assert!(image.decode_lot_mask_rgba(&[[0; 4]; 4]).is_err());
     }
 
     #[test]

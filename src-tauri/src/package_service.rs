@@ -433,6 +433,8 @@ pub struct LotEditorSession {
     pub lot_placement: Option<[f32; 12]>,
     /// LotMask 四色量化地面图 PNG（LotColor1-4 着色，服务端解码）。
     pub lot_mask_png: Option<String>,
+    /// LotColor1-4 的 RGBA（A = 地面贴图索引 0-15，SCP GroundTextures 图集）。
+    pub lot_colors: [[u8; 4]; 4],
     /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
     pub units: Vec<sc_properties::LotUnit>,
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
@@ -1679,6 +1681,7 @@ pub async fn read_lot_editor_session(
                     .filter(|t| t.matrix.len() == 12)
                     .map(|t| t.matrix.try_into().unwrap()),
                 lot_mask_png,
+                lot_colors: colors,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,
                 document,
@@ -1697,7 +1700,7 @@ fn decode_lot_mask_png(
     current: &Package,
     manager: &PackageManager,
     key: sc_properties::Key,
-    colors: [[u8; 3]; 4],
+    colors: [[u8; 4]; 4],
 ) -> Result<(String, (u32, u32)), String> {
     if let Some(entry_id) = find_raster_entry(current, key) {
         return decode_lot_mask_entry(current, &entry_id, colors);
@@ -1804,7 +1807,7 @@ fn find_raster_entry(package: &Package, key: sc_properties::Key) -> Option<Resou
 fn decode_lot_mask_entry(
     package: &Package,
     entry_id: &ResourceId,
-    colors: [[u8; 3]; 4],
+    colors: [[u8; 4]; 4],
 ) -> Result<(String, (u32, u32)), String> {
     let entry = package
         .entry(*entry_id)
@@ -1830,13 +1833,14 @@ fn decode_lot_mask_entry(
     encode_rgba_png(raster.width, raster.height, rgba).map(|png| (png, dims))
 }
 
-/// LotColor1-4（0x0D02D586..89）RGB；缺失用 SCP 的默认黑/红/绿/蓝。
-fn lot_colors(document: &sc_properties::LotEditorDocument) -> [[u8; 3]; 4] {
+/// LotColor1-4（0x0D02D586..89）RGBA；A = 地面贴图索引（引擎 16 格图集，
+/// C# GroundTextureConverter 即此语义）。缺失用 SCP 的默认黑/红/绿/蓝。
+fn lot_colors(document: &sc_properties::LotEditorDocument) -> [[u8; 4]; 4] {
     const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
-    const FALLBACKS: [[u8; 3]; 4] = [[0, 0, 0], [255, 0, 0], [0, 255, 0], [0, 0, 255]];
+    const FALLBACKS: [[u8; 4]; 4] = [[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]];
     let mut colors = FALLBACKS;
     for (index, hash) in LOT_COLOR_HASHES.iter().enumerate() {
-        if let Some(sc_properties::Value::ColorRgba { r, g, b, .. }) = document
+        if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = document
             .properties
             .get(*hash)
             .and_then(|property| property.scalar())
@@ -1845,6 +1849,8 @@ fn lot_colors(document: &sc_properties::LotEditorDocument) -> [[u8; 3]; 4] {
                 (r * 255.0).clamp(0.0, 255.0) as u8,
                 (g * 255.0).clamp(0.0, 255.0) as u8,
                 (b * 255.0).clamp(0.0, 255.0) as u8,
+                // ColorRgba 的 a 为 0-1 标量；贴图索引存整数格
+                (a * 16.0).clamp(0.0, 15.0).round() as u8,
             ];
         }
     }

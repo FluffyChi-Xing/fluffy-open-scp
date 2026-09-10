@@ -179,6 +179,15 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return matrix && matrix.length === 12 ? matrix : null;
   });
 
+  const lotColors = computed<[number, number, number, number][]>(() => {
+    return session.value?.lotColors ?? [
+      [0, 0, 0, 0],
+      [255, 0, 0, 0],
+      [0, 255, 0, 0],
+      [0, 0, 255, 0],
+    ];
+  });
+
   const lotMaskPng = computed<string | null>(() => {
     const png = session.value?.lotMaskPng;
     // 后端返回裸 base64,TextureLoader 需要 data URL。
@@ -222,6 +231,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     flatUnits,
     lotSize,
     lotPlacement,
+    lotColors,
     lotMaskPng,
     selectedUnit,
     hiddenUnits,

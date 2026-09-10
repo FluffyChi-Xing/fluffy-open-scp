@@ -389,6 +389,12 @@ function mockDataSource(): OpenScpDataSource {
         ],
         lotSize: [136, 136],
         lotPlacement: null,
+        lotColors: [
+          [0, 0, 0, 0],
+          [255, 0, 0, 1],
+          [0, 255, 0, 2],
+          [0, 0, 255, 3],
+        ],
         lotMaskPng: null,
         units: [
           {

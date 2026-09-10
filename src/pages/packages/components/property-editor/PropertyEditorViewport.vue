@@ -5,6 +5,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { ThreeViewer, disposeObject } from "@/lib/three-viewer";
 import { parseLotModelObjects, pngBlobUrl } from "@/lib/three-gltf";
+import { composeRefinedGround } from "./refinedGround";
 import type * as ThreeNamespace from "three";
 import type { LotModelLodRef, LotModelPayload, LotUnitDto } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
@@ -25,6 +26,8 @@ const props = defineProps<{
   lotSize: [number, number] | null;
   /** LotPlacementTransform 行主序 12 floats；地面矩形取其逆对齐建筑。 */
   lotPlacement: number[] | null;
+  /** LotColor1-4 RGBA（A = 地面贴图索引 0-15）。 */
+  lotColors: [number, number, number, number][];
   lotMaskPng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
@@ -762,6 +765,10 @@ async function rebuild() {
     const ground = buildLotRect(THREE, props.lotSize);
     // C# CreateLotModel：地面按 LotPlacementTransform 的逆矩阵摆放——
     // 建筑在地块内不居中时，逆变换把遮罩图案对回建筑原点。
+    // C# CreateLotModel（ViewLotEditor.xaml.cs:188-195）：地面先绕 Z 旋转
+    // −90°（mask 行列轴与模型轴的固定约定），再左乘 LotPlacementTransform
+    // 的逆。此前缺失该旋转导致 mask 相对建筑整体转置 + 镜像。
+    const rotation = new THREE.Matrix4().makeRotationZ(-Math.PI / 2);
     if (props.lotPlacement) {
       const m = props.lotPlacement;
       const inverse = new THREE.Matrix4()
@@ -773,7 +780,10 @@ async function rebuild() {
         )
         .invert();
       ground.matrixAutoUpdate = false;
-      ground.matrix.copy(inverse);
+      ground.matrix.copy(inverse).multiply(rotation);
+    } else {
+      ground.matrixAutoUpdate = false;
+      ground.matrix.copy(rotation);
     }
     instance.group("model").add(ground);
     if (props.lotMaskPng) {
@@ -790,7 +800,26 @@ async function rebuild() {
         const fill = ground.children.find((child) => (child as ThreeNamespace.Mesh).isMesh) as
           | ThreeNamespace.Mesh
           | undefined;
-        if (fill) {
+        if (!fill) return;
+        if (props.renderMode === "refined") {
+          // 精细模式：引擎语义 = 每通道 LotColor.RGB 着色 × LotColor.A 索引的
+          // 16 格地面贴图（shader baseTileUVMinMax 4×4 图集；C# lot editor 的
+          // GroundTextures 下拉即此 Alpha）。此处按 8 tile/边近似平铺。
+          composeRefinedGround(props.lotColors, texture.image, THREE)
+            .then((map) => {
+              if (generation !== rebuildToken || !map) {
+                map?.dispose();
+                return;
+              }
+              const material = fill.material as ThreeNamespace.MeshBasicMaterial;
+              material.map = map;
+              material.transparent = true;
+              material.opacity = 1;
+              material.color.set(0xffffff);
+              material.needsUpdate = true;
+            })
+            .catch(() => {});
+        } else {
           const material = fill.material as ThreeNamespace.MeshBasicMaterial;
           material.map = texture;
           material.transparent = false;

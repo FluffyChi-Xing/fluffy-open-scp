@@ -347,6 +347,8 @@ export interface LotEditorSession {
   lotPlacement: number[] | null;
   /** LotMask 四色量化地面图 PNG（LotColor1-4 着色），无或不可解为 null。 */
   lotMaskPng: string | null;
+  /** LotColor1-4 的 RGBA（A = 地面贴图索引 0-15）。 */
+  lotColors: [number, number, number, number][];
   units: LotUnitDto[];
   pathPairs: number[];
   diagnostics: string[];
