@@ -7,6 +7,7 @@ import FSheet from "@/components/ui/FSheet.vue";
 import { createDataSource } from "@/api/data-source";
 import type { ImagePreview, Rw4Preview, Rw4SectionDetail, Rw4Section } from "@/api/tauri";
 import MeshPreviewView from "./MeshPreview.vue";
+import { exportLotModel } from "@/composables/useModelExport";
 import ImagePreviewView from "./ImagePreview.vue";
 
 const props = defineProps<{ preview: Rw4Preview }>();
@@ -16,6 +17,21 @@ const open = ref(false);
 const loading = ref(false);
 const error = ref("");
 const detail = shallowRef<Rw4SectionDetail | null>(null);
+const meshExportBusy = ref(false);
+async function exportMesh() {
+  if (meshExportBusy.value) return;
+  meshExportBusy.value = true;
+  try {
+    await exportLotModel({
+      packageId: props.preview.packageId,
+      modelTgi: props.preview.tgi,
+      mode: "white",
+      defaultName: `0x${props.preview.tgi.instance.toString(16).padStart(8, "0")}`,
+    });
+  } finally {
+    meshExportBusy.value = false;
+  }
+}
 
 function typeLabel(section: Rw4Section) {
   return section.typeName ?? `0x${section.typeCode.toString(16).toUpperCase()}`;
@@ -137,8 +153,12 @@ const textureAsImage = computed<ImagePreview | null>(() => {
                 $t("package.toolbarImport")
               }}
             </button>
-            <button type="button" disabled>
-              <FIcon name="Upload" :size="13" aria-label="" />{{
+            <button
+              type="button"
+              :disabled="meshExportBusy"
+              @click="exportMesh"
+            >
+              <FIcon :name="meshExportBusy ? 'Loader2' : 'Upload'" :size="13" aria-label="" />{{
                 $t("package.toolbarExport")
               }}
             </button>

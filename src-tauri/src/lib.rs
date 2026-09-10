@@ -32,6 +32,7 @@ use package_service::{
     read_image_preview, read_lot_editor_session, read_lot_model_meshes, read_property_preview,
     read_raster_preview, read_resource_bytes, read_resource_data, read_resource_text,
     read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name, resolve_names,
+    write_export_file,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
 use stats::package_statistics;
@@ -99,6 +100,7 @@ pub fn run() {
             read_lot_model_meshes,
             read_raster_preview,
             read_image_preview,
+            write_export_file,
             patch_property_overlay,
             read_property_preview,
             read_rw4_preview,

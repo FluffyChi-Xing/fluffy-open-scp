@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef } from "vue";
+import { computed, onMounted, shallowRef, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -23,6 +23,7 @@ import {
   RW4_TYPE_ID,
 } from "@/lib/resource-types";
 import { exportLotModel } from "@/composables/useModelExport";
+import FDropdown from "@/components/ui/FDropdown.vue";
 
 const { t } = useI18n();
 const explorer = useGamePackages();
@@ -104,31 +105,56 @@ function formatSize(bytes: number) {
   if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
   return `${(mb / 1024).toFixed(1)} GB`;
 }
-/** 预览面板快捷导出 mesh：property → lot 会话解析模型；RW4 → 自身。 */
+/** 预览面板快捷导出 mesh：RW4 直接导自身；property 打开 LOD 选择菜单。 */
 const meshExportBusy = shallowRef(false);
-async function exportSelectedMesh() {
+const meshMenuOpen = shallowRef(false);
+/** 可导出 LOD 列表（property 打开菜单时懒加载；RW4 单项=自身）。 */
+interface MeshExportTarget {
+  label: string;
+  packageId: number;
+  tgi: { typeId: number; group: number; instance: number };
+}
+const meshExportTargets = shallowRef<MeshExportTarget[]>([]);
+const meshTargetsLoading = shallowRef(false);
+async function loadMeshTargets(): Promise<void> {
   const resource = selected.value;
-  if (!resource || meshExportBusy.value) return;
-  meshExportBusy.value = true;
+  if (!resource) return;
+  if (resource.tgi.typeId === RW4_TYPE_ID) {
+    meshExportTargets.value = [
+      {
+        label: "RW4",
+        packageId: activePackageId.value ?? 0,
+        tgi: resource.tgi,
+      },
+    ];
+    return;
+  }
+  meshTargetsLoading.value = true;
   try {
-    let modelTgi = resource.tgi;
-    let packageId = activePackageId.value ?? 0;
-    if (resource.tgi.typeId === PROPERTY_TYPE_ID) {
-      const session = await tauriApi.packages.readLotEditorSession(
-        packageId,
-        resource.tgi,
-      );
-      const lod = session?.modelLods?.[0];
-      if (!lod) return;
-      modelTgi = lod.tgi;
-      packageId = lod.packageId;
-    }
-    if (modelTgi.typeId !== RW4_TYPE_ID) return;
+    const session = await tauriApi.packages.readLotEditorSession(
+      activePackageId.value ?? 0,
+      resource.tgi,
+    );
+    const lods = session?.modelLods ?? [];
+    const targets: MeshExportTarget[] = [];
+    lods.forEach((lod, index) => {
+      if (lod) targets.push({ label: `LOD${index + 1}`, packageId: lod.packageId, tgi: lod.tgi });
+    });
+    meshExportTargets.value = targets;
+  } finally {
+    meshTargetsLoading.value = false;
+  }
+}
+async function exportMeshTarget(target: MeshExportTarget) {
+  if (meshExportBusy.value) return;
+  meshExportBusy.value = true;
+  meshMenuOpen.value = false;
+  try {
     await exportLotModel({
-      packageId,
-      modelTgi,
+      packageId: target.packageId,
+      modelTgi: target.tgi,
       mode: "white",
-      defaultName: `0x${modelTgi.instance.toString(16).padStart(8, "0")}`,
+      defaultName: `0x${target.tgi.instance.toString(16).padStart(8, "0")}`,
     });
   } finally {
     meshExportBusy.value = false;
@@ -139,6 +165,9 @@ const canExportMesh = computed(
     selected.value?.tgi.typeId === PROPERTY_TYPE_ID ||
     selected.value?.tgi.typeId === RW4_TYPE_ID,
 );
+watch(meshMenuOpen, (open: boolean) => {
+  if (open) void loadMeshTargets();
+});
 
 async function copyTgi() {
   if (!selected.value) return;
@@ -500,19 +529,38 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 }}</FTypography
                 ><div class="detail-tgi">
                   <code>{{ tgiLabel(selected.tgi) }}</code>
-                  <button
-                    v-if="canExportMesh"
-                    class="copy-button"
-                    type="button"
-                    :disabled="meshExportBusy"
-                    @click="exportSelectedMesh"
-                  >
-                    <FIcon
-                      :name="meshExportBusy ? 'Loader2' : 'Box'"
-                      :size="13"
-                      aria-label=""
-                    />{{ $t("package.exportMesh") }}
-                  </button>
+                  <FDropdown v-if="canExportMesh" v-model:open="meshMenuOpen" :width="160">
+                    <template #trigger>
+                      <button
+                        class="copy-button"
+                        type="button"
+                        :disabled="meshExportBusy"
+                      >
+                        <FIcon
+                          :name="meshExportBusy ? 'Loader2' : 'Box'"
+                          :size="13"
+                          aria-label=""
+                        />{{ $t("package.exportMesh") }}
+                        <FIcon name="ChevronDown" :size="11" aria-label="" />
+                      </button>
+                    </template>
+                    <button
+                      v-if="meshTargetsLoading"
+                      type="button"
+                      disabled
+                    >
+                      {{ $t("common.loading") }}
+                    </button>
+                    <button
+                      v-for="target in meshExportTargets"
+                      :key="target.label"
+                      type="button"
+                      @click="exportMeshTarget(target)"
+                    >
+                      <FIcon name="Box" :size="13" aria-label="" />
+                      {{ target.label }}
+                    </button>
+                  </FDropdown>
                   <button class="copy-button" type="button" @click="copyTgi">
                     <FIcon
                       :name="copied ? 'Check' : 'Copy'"
