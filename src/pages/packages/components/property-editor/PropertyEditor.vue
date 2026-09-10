@@ -38,10 +38,10 @@ const {
 } = usePropertyEditorSession(props.packageId, props.tgi);
 
 const renderMode = ref<"default" | "refined">("default");
-/** 通道实验：仅精细模式显示；开启后可切 shader map specularity 通道观察。 */
+/** 通道实验（已停用，见模板注释）：保留状态供复验时恢复。 */
 const specExperiment = ref(false);
-/** 0=自动逐像素（墙面 G/窗玻璃 B）/ 1=强制 G / 2=强制 B。 */
-const specMode = ref(0);
+/** 0=自动逐像素 / 1=强制 G / 2=强制 B（精细渲染现固定 2）。 */
+const specMode = ref(2);
 /** 5d 日/夜时段 0–24（默认 12 正午）。 */
 const timeOfDay = ref(12);
 /** 5d 供电（断电 = 内景自发光全灭）。 */
@@ -87,6 +87,9 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
             {{ $t("package.renderModeRefined") }}
           </button>
         </div>
+        <!-- 通道实验（2026-09-10 停用）：经多 package 比对，B-窗通道综合
+             效果最佳，精细渲染已在 Viewport 固定 specMode=2。复验时恢复
+             此块与 specExperiment/specMode 的 prop 传递即可。
         <label
           v-if="renderMode === 'refined'"
           class="spec-experiment"
@@ -123,6 +126,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
             {{ $t("package.specModeB") }}
           </button>
         </div>
+        -->
         <div
           v-if="renderMode === 'refined'"
           class="daynight"

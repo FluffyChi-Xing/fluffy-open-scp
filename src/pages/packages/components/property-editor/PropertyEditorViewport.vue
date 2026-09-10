@@ -5,7 +5,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { ThreeViewer, disposeObject } from "@/lib/three-viewer";
 import { parseLotModelObjects, pngBlobUrl } from "@/lib/three-gltf";
-import { composeRefinedGround, maskAnchorOffset } from "./refinedGround";
+import { composeRefinedGround } from "./refinedGround";
 import type * as ThreeNamespace from "three";
 import type { LotModelLodRef, LotModelPayload, LotUnitDto } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
@@ -70,8 +70,12 @@ watch(brightness, () => applyBrightness());
 
 /** 存活 tint 材质的 uSpecMode uniform 引用（通道实验热切换，免重建）。 */
 const specUniformRefs: { value: number }[] = [];
-/** 实验关闭恒用自动逐像素；开启后按 自动/G/B 切换观察。 */
-const effectiveSpecMode = () => (props.specExperiment ? (props.specMode ?? 0) : 0);
+/**
+ * specularity 通道：经多 package 比对（用户结论 2026-09-10），强制 B 通道
+ * （窗）综合效果最佳，精细渲染固定使用；通道实验 UI 已停用（见
+ * PropertyEditor.vue 注释），specMode=2 保留为将来复验的常量。
+ */
+const effectiveSpecMode = () => 2;
 watch([() => props.specExperiment, () => props.specMode], () => {
   const value = effectiveSpecMode();
   for (const uniform of specUniformRefs) uniform.value = value;
@@ -764,10 +768,6 @@ async function rebuild() {
 
   // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
   if (props.lotSize) {
-    // 建筑骨架 bbox（此刻 model 组只有建筑网格，地面/units 尚未加入）
-    const modelBounds = new THREE.Box3().setFromObject(instance.group("model"));
-    const modelCenterX = (modelBounds.min.x + modelBounds.max.x) / 2;
-    const modelCenterY = (modelBounds.min.y + modelBounds.max.y) / 2;
     const ground = buildLotRect(THREE, props.lotSize);
     // C# CreateLotModel：地面按 LotPlacementTransform 的逆矩阵摆放——
     // 建筑在地块内不居中时，逆变换把遮罩图案对回建筑原点。
@@ -788,8 +788,7 @@ async function rebuild() {
         .invert();
       ground.matrix.copy(inverse);
     }
-    // 必须在异步锚定修正 premultiply 之前关闭自动更新，否则渲染循环会用
-    // position/quaternion 重算 matrix 覆盖锚定偏移（无 placement lot 回归）。
+    // 关闭自动更新：矩阵完全由 placement 逆决定，防止渲染循环覆盖。
     ground.matrixAutoUpdate = false;
     instance.group("model").add(ground);
     if (props.lotMaskPng) {
@@ -807,21 +806,6 @@ async function rebuild() {
           | ThreeNamespace.Mesh
           | undefined;
         if (!fill) return;
-        // 自动锚定：mask 主足迹色区质心 → 建筑 bbox 中心。数据实证
-        // placement 存在多种约定（且原版 SCP 同样偏移），直接按 mask
-        // 内容对齐可覆盖"色区在角落、建筑居中"的全部情形。
-        const anchor = props.lotSize
-          ? maskAnchorOffset(texture.image, props.lotColors, props.lotSize)
-          : null;
-        if (anchor) {
-          const current = new THREE.Vector3(anchor.x, anchor.y, 0).applyMatrix4(ground.matrix);
-          const delta = new THREE.Matrix4().makeTranslation(
-            modelCenterX - current.x,
-            modelCenterY - current.y,
-            0,
-          );
-          ground.matrix.premultiply(delta);
-        }
         if (props.renderMode === "refined") {
           // 精细模式：引擎语义 = 每通道 LotColor.RGB 着色 × LotColor.A 索引的
           // 16 格地面贴图（shader baseTileUVMinMax 4×4 图集；C# lot editor 的
