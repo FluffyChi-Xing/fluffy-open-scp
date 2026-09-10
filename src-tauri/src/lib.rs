@@ -9,11 +9,11 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
-mod media_tools;
-mod package_browser;
 mod locale_service;
-mod package_service;
+mod media_tools;
 mod overrides;
+mod package_browser;
+mod package_service;
 mod settings;
 mod stats;
 mod workspace;
@@ -23,18 +23,17 @@ use activity::{
     AppState, activity_clear, activity_list_events, activity_list_operations,
     activity_list_packages,
 };
+use locale_service::{locale_items, locale_tables, write_locale_overlay};
 use media_tools::{MediaTools, application_dir, resolve_tools};
+use overrides::override_scan;
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
-    read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
-    read_resource_bytes,
-    read_resource_data, read_resource_text, read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name,
-    resolve_names,
+    read_image_preview, read_lot_editor_session, read_lot_model_meshes, read_property_preview,
+    read_raster_preview, read_resource_bytes, read_resource_data, read_resource_text,
+    read_rw4_preview, read_rw4_section_detail, read_wwise_bank, resolve_name, resolve_names,
 };
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
-use locale_service::{locale_items, locale_tables, write_locale_overlay};
-use overrides::override_scan;
 use stats::package_statistics;
 use tauri::{Manager, PhysicalPosition};
 use workspace::{
@@ -99,6 +98,7 @@ pub fn run() {
             read_lot_editor_session,
             read_lot_model_meshes,
             read_raster_preview,
+            read_image_preview,
             patch_property_overlay,
             read_property_preview,
             read_rw4_preview,

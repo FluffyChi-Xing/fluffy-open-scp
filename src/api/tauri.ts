@@ -411,6 +411,20 @@ export interface RasterPreviewData {
   decodable: boolean;
   pngBase64: string | null;
 }
+/** TGA / CUR(ICO) / Greyscale Map 通用解码结果（read_image_preview）。 */
+export interface GenericImagePreviewData {
+  imageKind: string;
+  width: number;
+  height: number;
+  pngBase64: string;
+}
+export interface FontPreview extends PreviewData {
+  kind: "font";
+  packageId?: number;
+  tgi?: Tgi;
+  src: string;
+  totalBytes: number;
+}
 export type ResourcePreview =
   | TextPreview
   | HexPreview
@@ -419,7 +433,8 @@ export type ResourcePreview =
   | AudioPreview
   | VideoPreview
   | PropertyPreview
-  | Rw4Preview;
+  | Rw4Preview
+  | FontPreview;
 export interface MediaTool {
   available: boolean;
   path?: string;

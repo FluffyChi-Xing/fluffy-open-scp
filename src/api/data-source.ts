@@ -34,6 +34,8 @@ import {
   RW4_TYPE_ID,
   VIDEO_TYPE_ID,
   WWISE_BANK_TYPE_ID,
+  GENERIC_IMAGE_TYPE_IDS,
+  TTF_TYPE_ID,
   textPreviewLanguage,
 } from "@/lib/resource-types";
 
@@ -723,6 +725,52 @@ async function tauriPreview(
       offset: 0,
       totalLength: resource.decompressedSize,
       bytes: [],
+    };
+  }
+  if ((GENERIC_IMAGE_TYPE_IDS as readonly number[]).includes(resource.tgi.typeId)) {
+    // TGA / Cursor / Greyscale Map：Rust 侧解码为 PNG；失败回退 hex。
+    try {
+      const data = await tauriApi.packages.readImagePreview(
+        packageId,
+        resource.tgi,
+      );
+      return {
+        kind: "image",
+        packageId,
+        tgi: resource.tgi,
+        offset: 0,
+        totalLength: resource.decompressedSize,
+        bytes: [],
+        src: `data:image/png;base64,${data.pngBase64}`,
+        mime: "image/png",
+        width: data.width,
+        height: data.height,
+        pixelated: true,
+      };
+    } catch {
+      const fallback = await tauriApi.packages.readBytes(
+        packageId,
+        resource.tgi,
+        0,
+        Math.min(4096, resource.decompressedSize),
+      );
+      return { kind: "hex", ...fallback };
+    }
+  }
+  if (resource.tgi.typeId === TTF_TYPE_ID) {
+    const data = await tauriApi.packages.readData(packageId, resource.tgi);
+    const blob = new Blob([base64ToBytes(data.dataBase64)], {
+      type: "font/ttf",
+    });
+    return {
+      kind: "font",
+      packageId,
+      tgi: resource.tgi,
+      offset: 0,
+      totalLength: data.totalLength,
+      bytes: [],
+      src: URL.createObjectURL(blob),
+      totalBytes: data.totalLength,
     };
   }
   const bytes = await tauriApi.packages.readBytes(

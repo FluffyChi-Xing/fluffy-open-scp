@@ -7,6 +7,15 @@ export const PROPERTY_TYPE_ID = 0x00b1b104;
 export const AUDIO_TYPE_ID = 0x0d9e5710;
 export const WWISE_BANK_TYPE_ID = 0x0a4d8d09;
 export const VIDEO_TYPE_ID = 0x376840d7;
+export const TTF_TYPE_ID = 0x276ca4b9;
+/** TGA / Cursor / Greyscale Map（8/32/16-bit）：需 Rust 解码为 PNG。 */
+export const GENERIC_IMAGE_TYPE_IDS = [
+  0x2f7d0006, // TGA
+  0x02393756, // Cursor (ICO/CUR)
+  0x03e421ec, // Greyscale 8-bit
+  0x03e421ed, // Greyscale 32-bit
+  0x03e421f0, // Greyscale 16-bit
+] as const;
 
 const extensionUrls = import.meta.glob("../assets/file-extensions/*.svg", {
   eager: true,
@@ -36,6 +45,8 @@ export const resourceKindMeta: Record<
 export function resourceKind(typeId: number): ResourceKind {
   if (typeId === RW4_TYPE_ID) return "rw4";
   if (typeId === RASTER_TYPE_ID) return "raster";
+  if ((GENERIC_IMAGE_TYPE_IDS as readonly number[]).includes(typeId))
+    return "raster";
   if (typeId === PROPERTY_TYPE_ID) return "property";
   if (typeId === AUDIO_TYPE_ID || typeId === WWISE_BANK_TYPE_ID || typeId === VIDEO_TYPE_ID)
     return "media";
@@ -49,6 +60,7 @@ const textPreviewLanguages: Record<number, string> = {
   0xdd6233d6: "html",
   0x0469a3f7: "cpp",
   0x0a98eaf0: "json",
+  0x024a0e52: "ini",
 };
 
 export function textPreviewLanguage(typeId: number): string | null {

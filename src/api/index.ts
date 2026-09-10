@@ -29,6 +29,7 @@ import {
   type ResourceData,
   type LotEditorSession,
   type RasterPreviewData,
+  type GenericImagePreviewData,
   type PropertyResourceData,
   type Rw4ResourceData,
   type Rw4SectionDetail,
@@ -183,6 +184,10 @@ export const tauriApi = {
       }),
     readRasterPreview: (packageId: number, tgi: Tgi) =>
       command<RasterPreviewData>("read_raster_preview", {
+        request: { packageId, tgi },
+      }),
+    readImagePreview: (packageId: number, tgi: Tgi) =>
+      command<GenericImagePreviewData>("read_image_preview", {
         request: { packageId, tgi },
       }),
     readRw4Preview: (packageId: number, tgi: Tgi) =>

@@ -450,7 +450,8 @@ pub struct LodModelRef {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ResourceBytes {    pub package_id: u64,
+pub struct ResourceBytes {
+    pub package_id: u64,
     pub tgi: TgiDto,
     pub offset: u64,
     pub total_length: u64,
@@ -1865,6 +1866,260 @@ fn encode_rgba_png(width: u32, height: u32, rgba: Vec<u8>) -> Result<String, Str
     encode_rgba_png_bytes(width, height, rgba).map(|png| STANDARD.encode(png))
 }
 
+// ---- 通用图像预览：TGA / CUR(ICO) / Greyscale Map ----
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenericImagePreviewData {
+    pub image_kind: String,
+    pub width: u32,
+    pub height: u32,
+    pub png_base64: String,
+}
+
+/// TGA（type 2/10，24/32bpp；10 为 RLE）。header 18B：
+/// `[id_len, cmap_type, image_type, cmap_spec(5), x(2), y(2), w(2), h(2), bpp, desc]`。
+fn decode_tga(data: &[u8]) -> Result<GenericImagePreviewData, String> {
+    if data.len() < 18 {
+        return Err("tga: truncated header".into());
+    }
+    let id_len = data[0] as usize;
+    let cmap_type = data[1];
+    let image_type = data[2];
+    let width = u16::from_le_bytes([data[12], data[13]]) as u32;
+    let height = u16::from_le_bytes([data[14], data[15]]) as u32;
+    let bpp = data[16] as usize;
+    let top_down = data[17] & 0x20 != 0;
+    let rle = image_type == 10;
+    if width == 0 || height == 0 || width > 8192 || height > 8192 {
+        return Err(format!("tga: implausible dims {width}x{height}"));
+    }
+    if cmap_type != 0 || (image_type != 2 && image_type != 10) || (bpp != 24 && bpp != 32) {
+        return Err(format!(
+            "tga: unsupported type {image_type}/{cmap_type}/{bpp}bpp"
+        ));
+    }
+    let bytes_pp = bpp / 8;
+    let px_count = width as usize * height as usize;
+    let mut bgr = vec![0u8; px_count * bytes_pp];
+    let src = &data[18 + id_len..];
+    if rle {
+        let mut read = 0usize;
+        let mut written = 0usize;
+        while written < px_count {
+            if read >= src.len() {
+                return Err("tga: rle packet stream truncated".into());
+            }
+            let packet = src[read];
+            read += 1;
+            let count = (packet & 0x7f) as usize + 1;
+            if written + count > px_count {
+                return Err("tga: rle overflow".into());
+            }
+            if packet & 0x80 != 0 {
+                if read + bytes_pp > src.len() {
+                    return Err("tga: rle packet pixel truncated".into());
+                }
+                for i in 0..count {
+                    bgr[(written + i) * bytes_pp..(written + i + 1) * bytes_pp]
+                        .copy_from_slice(&src[read..read + bytes_pp]);
+                }
+                read += bytes_pp;
+            } else {
+                let take = count * bytes_pp;
+                if read + take > src.len() {
+                    return Err("tga: raw packet truncated".into());
+                }
+                bgr[written * bytes_pp..(written + count) * bytes_pp]
+                    .copy_from_slice(&src[read..read + take]);
+                read += take;
+            }
+            written += count;
+        }
+    } else {
+        let take = px_count * bytes_pp;
+        if src.len() < take {
+            return Err("tga: pixel data truncated".into());
+        }
+        bgr.copy_from_slice(&src[..take]);
+    }
+    let mut rgba = Vec::with_capacity(px_count * 4);
+    for row in 0..height as usize {
+        // TGA 默认自底向上存储；top_down 位置位时才按原序。
+        let src_row = if top_down {
+            row
+        } else {
+            height as usize - 1 - row
+        };
+        for col in 0..width as usize {
+            let at = (src_row * width as usize + col) * bytes_pp;
+            rgba.extend_from_slice(&[
+                bgr[at + 2],
+                bgr[at + 1],
+                bgr[at],
+                bgr.get(at + 3).copied().unwrap_or(255),
+            ]);
+        }
+    }
+    Ok(GenericImagePreviewData {
+        image_kind: "tga".into(),
+        width,
+        height,
+        png_base64: encode_rgba_png(width, height, rgba)?,
+    })
+}
+
+/// CUR/ICO 容器。取第一个目录项；32bpp 位为 BGRA（bottom-up），16bpp 为
+/// RGB555，另带 1bpp AND mask（直接忽略，预览透明度用 alpha 通道）。
+fn decode_cursor(data: &[u8]) -> Result<GenericImagePreviewData, String> {
+    if data.len() < 6 || data[0] != 0 || data[1] != 0 {
+        return Err("cursor: bad magic".into());
+    }
+    let count = u16::from_le_bytes([data[4], data[5]]) as usize;
+    if count == 0 || data.len() < 6 + count * 16 {
+        return Err("cursor: empty directory".into());
+    }
+    let entry = &data[6..22];
+    let width = if entry[0] == 0 { 256 } else { entry[0] as u32 };
+    let height = if entry[1] == 0 { 256 } else { entry[1] as u32 };
+    let size = u32::from_le_bytes([entry[8], entry[9], entry[10], entry[11]]) as usize;
+    let offset = u32::from_le_bytes([entry[12], entry[13], entry[14], entry[15]]) as usize;
+    if offset + size > data.len() || width == 0 || height == 0 {
+        return Err("cursor: entry out of range".into());
+    }
+    let bmp = &data[offset..offset + size];
+    // PNG 内嵌变体（Vista+）
+    if bmp.len() >= 8 && bmp[0] == 0x89 && &bmp[1..4] == b"PNG" {
+        let png = encode_rgba_png(
+            width,
+            height,
+            image::load_from_memory(bmp)
+                .map_err(|e| format!("cursor: embedded png decode failed: {e}"))?
+                .to_rgba8()
+                .into_raw(),
+        )?;
+        return Ok(GenericImagePreviewData {
+            image_kind: "cursor".into(),
+            width,
+            height,
+            png_base64: png,
+        });
+    }
+    if bmp.len() < 40 {
+        return Err("cursor: missing bitmap header".into());
+    }
+    let bpp = u16::from_le_bytes([bmp[14], bmp[15]]) as usize;
+    let stride = ((width as usize * bpp + 31) / 32) * 4;
+    let xor_len = stride * height as usize;
+    if bpp != 32 && bpp != 24 && bpp != 16 {
+        return Err(format!("cursor: unsupported {bpp}bpp"));
+    }
+    if bmp.len() < 40 + xor_len {
+        return Err("cursor: pixel data truncated".into());
+    }
+    let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+    for row in 0..height as usize {
+        let src_row = height as usize - 1 - row;
+        let line = &bmp[40 + src_row * stride..40 + (src_row + 1) * stride];
+        for col in 0..width as usize {
+            let at = col * (bpp / 8);
+            let (r, g, b, a) = match bpp {
+                32 => (line[at + 2], line[at + 1], line[at], line[at + 3]),
+                24 => (line[at + 2], line[at + 1], line[at], 255),
+                _ => {
+                    let v = u16::from_le_bytes([line[at], line[at + 1]]);
+                    (
+                        (((v >> 10) & 0x1f) as u8) << 3,
+                        (((v >> 5) & 0x1f) as u8) << 3,
+                        ((v & 0x1f) as u8) << 3,
+                        255,
+                    )
+                }
+            };
+            rgba.extend_from_slice(&[r, g, b, a]);
+        }
+    }
+    Ok(GenericImagePreviewData {
+        image_kind: "cursor".into(),
+        width,
+        height,
+        png_base64: encode_rgba_png(width, height, rgba)?,
+    })
+}
+
+/// Greyscale Map：20 字节大端头 `[0, width, height, channel_code, byte_count]`，
+/// code 1 = 单通道灰度、2 = RGBA；像素紧随（实测 64²/128²/256² 均吻合）。
+fn decode_greyscale(data: &[u8]) -> Result<GenericImagePreviewData, String> {
+    if data.len() < 20 {
+        return Err("greyscale: truncated header".into());
+    }
+    let width = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+    let height = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+    let channel_code = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
+    let declared = u32::from_be_bytes([data[16], data[17], data[18], data[19]]) as usize;
+    if width == 0 || height == 0 || width > 8192 || height > 8192 {
+        return Err(format!("greyscale: implausible dims {width}x{height}"));
+    }
+    let px_count = width as usize * height as usize;
+    let body = &data[20..];
+    let mut rgba = Vec::with_capacity(px_count * 4);
+    match channel_code {
+        1 => {
+            if body.len() < px_count {
+                return Err("greyscale: 8-bit data truncated".into());
+            }
+            for &g in &body[..px_count] {
+                rgba.extend_from_slice(&[g, g, g, 255]);
+            }
+        }
+        2 => {
+            if body.len() < px_count * 4 {
+                return Err("greyscale: rgba data truncated".into());
+            }
+            for px in body[..px_count * 4].chunks_exact(4) {
+                rgba.extend_from_slice(&[px[0], px[1], px[2], px[3]]);
+            }
+        }
+        code => return Err(format!("greyscale: unknown channel code {code}")),
+    }
+    let _ = declared;
+    Ok(GenericImagePreviewData {
+        image_kind: "greyscale".into(),
+        width,
+        height,
+        png_base64: encode_rgba_png(width, height, rgba)?,
+    })
+}
+
+#[tauri::command]
+pub async fn read_image_preview(
+    state: State<'_, AppState>,
+    request: RasterPreviewRequest,
+) -> Result<GenericImagePreviewData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, _package, _manager, _store| {
+            if data.len() >= 18 && data[0] == 0 && data[1] == 0 {
+                if let Ok(cursor) = decode_cursor(data) {
+                    return Ok(cursor);
+                }
+            }
+            if data.len() >= 18 && data[1] == 0 && (data[2] == 2 || data[2] == 10) {
+                if let Ok(tga) = decode_tga(data) {
+                    return Ok(tga);
+                }
+            }
+            decode_greyscale(data).map_err(PackageError::InvalidArgument)
+        },
+    )
+    .await
+}
+
 // ---- PE 精细渲染：模型材质解析（migration.md §18.4） ----
 
 const RW4_MODEL_TYPE: u32 = 0x2F4E_681B;
@@ -2027,8 +2282,7 @@ fn resolve_material_resources(
             rw4::MaterialSection::Raw(_) => None,
         })
         .unwrap_or_default();
-    let slot_diag: std::cell::RefCell<std::collections::BTreeMap<u32, String>> =
-        Default::default();
+    let slot_diag: std::cell::RefCell<std::collections::BTreeMap<u32, String>> = Default::default();
     let slot_rgba = |slot: u32| -> Option<(Vec<u8>, u32, u32)> {
         let instance = slots
             .iter()
@@ -2099,12 +2353,14 @@ fn resolve_material_resources(
     let palette_raw = slot_rgba(4);
     // 组装烘焙上下文（building4 链：有 slot0 参数表时 slot1 = tint 查表键）
     let mut baked = false;
-    if let (Some((params_table, param_cols)), Some((tint_rgba, tint_w, tint_h)), Some((pal_rgba, pal_w, pal_h))) =
-        (params, slot1.clone(), palette_raw)
+    if let (
+        Some((params_table, param_cols)),
+        Some((tint_rgba, tint_w, tint_h)),
+        Some((pal_rgba, pal_w, pal_h)),
+    ) = (params, slot1.clone(), palette_raw)
     {
         if param_cols > 0 {
-            resources.tint_png =
-                encode_rgba_png_bytes(tint_w, tint_h, tint_rgba.clone()).ok();
+            resources.tint_png = encode_rgba_png_bytes(tint_w, tint_h, tint_rgba.clone()).ok();
             resources.palette_png = encode_rgba_png_bytes(pal_w, pal_h, pal_rgba.clone()).ok();
             let mut f32_bytes = Vec::with_capacity(params_table.len() * 16);
             for texel in &params_table {
@@ -2198,10 +2454,7 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
     // BuildingPaletteVariationVS(buildingType) = buildingType / 8；无实例数据取行 0
     const BUILDING_VARIATION: f32 = 0.0;
     const K_PALETTE_INV_SIZE: [f32; 2] = [1.0 / 256.0, 1.0 / 8.0];
-    let any = mesh
-        .vertices
-        .iter()
-        .any(|v| v.d3d_color_g().is_some());
+    let any = mesh.vertices.iter().any(|v| v.d3d_color_g().is_some());
     if !any || bake.param_cols == 0 || bake.tint_w == 0 || bake.pal_w == 0 {
         return None;
     }
@@ -2422,15 +2675,21 @@ fn build_lot_model_payload(
     if mesh_diag_truncated > 0 {
         diag.push_str(&format!("…（另有 {mesh_diag_truncated} 条 mesh 略）\n"));
     }
-    for (index, (section, resources)) in
-        material_sections.iter().zip(&material_resources).enumerate()
+    for (index, (section, resources)) in material_sections
+        .iter()
+        .zip(&material_resources)
+        .enumerate()
     {
         diag.push_str(&format!(
             "material #{} (idx {}) paramCols={} bake={}\n{}",
             section,
             index,
             resources.param_cols,
-            if resources.bake.is_some() { "有" } else { "无（slot1 走 diffuse）" },
+            if resources.bake.is_some() {
+                "有"
+            } else {
+                "无（slot1 走 diffuse）"
+            },
             resources.diag,
         ));
     }
@@ -3471,7 +3730,6 @@ fn emit_progress(
     }
 }
 
-
 #[cfg(test)]
 mod lot_payload_tests {
     use super::*;
@@ -3509,9 +3767,8 @@ mod lot_payload_tests {
         let payload = build_lot_model_payload(&file, &data, &package, &manager, MODEL);
         let elapsed = started.elapsed();
 
-        let read_u32 = |offset: usize| {
-            u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap())
-        };
+        let read_u32 =
+            |offset: usize| u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap());
         assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
         assert_eq!(read_u32(4), 7, "container version 7");
         let mesh_count = read_u32(8) as usize;
@@ -3556,6 +3813,107 @@ mod lot_payload_tests {
 mod tests {
     use super::*;
     use dbpf::{OverlayEntry, write_uncompressed_overlay};
+
+    #[test]
+    fn greyscale_header_matches_real_samples() {
+        // app.package 0x03e421ec 实测：20B 大端头 [0, w, h, 1, byte_count] + 像素。
+        let mut data = Vec::new();
+        data.extend_from_slice(&0u32.to_be_bytes());
+        data.extend_from_slice(&4u32.to_be_bytes());
+        data.extend_from_slice(&2u32.to_be_bytes());
+        data.extend_from_slice(&1u32.to_be_bytes());
+        data.extend_from_slice(&8u32.to_be_bytes());
+        data.extend_from_slice(&[10, 40, 90, 200, 0, 30, 80, 160]);
+        let decoded = decode_greyscale(&data).unwrap();
+        assert_eq!((decoded.width, decoded.height), (4, 2));
+        assert_eq!(decoded.image_kind, "greyscale");
+        assert!(!decoded.png_base64.is_empty());
+    }
+
+    #[test]
+    fn greyscale_rgba_variant_decodes() {
+        // 0x03e421ed（"32-bit"）channel_code=2，实为 RGBA。
+        let mut data = Vec::new();
+        data.extend_from_slice(&0u32.to_be_bytes());
+        data.extend_from_slice(&1u32.to_be_bytes());
+        data.extend_from_slice(&1u32.to_be_bytes());
+        data.extend_from_slice(&2u32.to_be_bytes());
+        data.extend_from_slice(&4u32.to_be_bytes());
+        data.extend_from_slice(&[0xf9, 0x8a, 0x7e, 0xff]);
+        let decoded = decode_greyscale(&data).unwrap();
+        assert_eq!((decoded.width, decoded.height), (1, 1));
+    }
+
+    #[test]
+    fn cursor_sample_decodes() {
+        // app.package 0x02393756 实测头：ICO 目录 type=2、BITMAPINFOHEADER 32bpp。
+        // 2×2 32bpp：stride = ((2*32+31)/32)*4 = 8，xor_len = 16。
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0, 0, 2, 0, 1, 0]); // ICONDIR: cursor, 1 entry
+        data.extend_from_slice(&[2, 2, 1, 0, 1, 0, 32, 0]); // entry: 2x2, 32bpp
+        data.extend_from_slice(&57u32.to_le_bytes()); // size（含 AND mask）
+        data.extend_from_slice(&22u32.to_le_bytes()); // offset = 6+16
+        data.extend_from_slice(&40u32.to_le_bytes()); // BITMAPINFOHEADER
+        data.extend_from_slice(&2i32.to_le_bytes());
+        data.extend_from_slice(&(-2i32).to_le_bytes());
+        data.extend_from_slice(&[1, 0]); // planes
+        data.extend_from_slice(&32u16.to_le_bytes()); // bpp
+        data.extend_from_slice(&[0; 24]);
+        // 2 行 × 8 字节 BGRA（bottom-up，行尾补齐）
+        data.extend_from_slice(&[0x10, 0x20, 0x30, 0xff, 0x40, 0x50, 0x60, 0xff]);
+        data.extend_from_slice(&[0x7e, 0x8a, 0xf9, 0xff, 0, 0, 0, 0]);
+        data.push(0); // AND mask 1 字节
+        let decoded = decode_cursor(&data).unwrap();
+        assert_eq!((decoded.width, decoded.height), (2, 2));
+        assert_eq!(decoded.image_kind, "cursor");
+    }
+
+    /// 真实样本验证：样本目录由 dbpf examples/scan_preview_gaps 生成，
+    /// 经 OPENSCP_PREVIEW_SAMPLES 指定（无则跳过）。
+    #[test]
+    #[ignore = "需要 OPENSCP_PREVIEW_SAMPLES 指向 dump 目录"]
+    fn real_dump_samples_decode() {
+        let Ok(dir) = std::env::var("OPENSCP_PREVIEW_SAMPLES") else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        assert!(dir.is_dir(), "sample dir not found: {dir:?}");
+        let mut decoded = 0;
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let data = std::fs::read(&path).unwrap();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            let result = if name.starts_with("cursor_") {
+                decode_cursor(&data).map(|d| (d.width, d.height))
+            } else if name.starts_with("grey8_") || name.starts_with("grey32_") {
+                decode_greyscale(&data).map(|d| (d.width, d.height))
+            } else {
+                continue;
+            };
+            match result {
+                Ok(dims) => {
+                    println!("{name}: {dims:?}");
+                    decoded += 1;
+                }
+                Err(error) => panic!("{name}: {error}"),
+            }
+        }
+        assert!(decoded >= 7, "expected real samples, decoded {decoded}");
+    }
+
+    #[test]
+    fn tga_uncompressed_24bpp_decodes() {
+        let mut data = vec![0, 0, 2]; // no id, no cmap, uncompressed truecolor
+        data.extend_from_slice(&[0; 9]); // cmap spec + origin
+        data.extend_from_slice(&1u16.to_le_bytes()); // w
+        data.extend_from_slice(&1u16.to_le_bytes()); // h
+        data.push(24); // bpp
+        data.push(0); // desc: bottom-up
+        data.extend_from_slice(&[0x7e, 0x8a, 0xf9]); // BGR
+        let decoded = decode_tga(&data).unwrap();
+        assert_eq!((decoded.width, decoded.height), (1, 1));
+        assert_eq!(decoded.image_kind, "tga");
+    }
 
     fn test_package_path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!("openscp-m5-{label}-{}.package", std::process::id()))
