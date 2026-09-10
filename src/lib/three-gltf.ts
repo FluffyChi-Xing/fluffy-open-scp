@@ -24,7 +24,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     throw new Error("lot model payload magic mismatch");
   }
   const version = readU32();
-  if (version !== 7) {
+  if (version !== 8) {
     throw new Error(`unsupported lot model payload version ${version}`);
   }
   const meshCount = readU32();
@@ -58,6 +58,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     const palettePng = readPng();
     const shaderPng = readPng();
     const interiorPng = readPng();
+    const reliefPng = readPng();
     const paramsLength = readU32();
     let paramsF32: Float32Array | null = null;
     if (paramsLength > 0) {
@@ -77,6 +78,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
       palettePng,
       shaderPng,
       interiorPng,
+      reliefPng,
       paramsF32,
       paramCols,
     });

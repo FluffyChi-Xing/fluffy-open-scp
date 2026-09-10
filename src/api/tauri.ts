@@ -373,6 +373,8 @@ export interface LotMaterialTextures {
   shaderPng: Uint8Array<ArrayBuffer> | null;
   /** slot5 原始 interior map（预渲染房间图集，alpha=逐窗灯亮通道）。 */
   interiorPng: Uint8Array<ArrayBuffer> | null;
+  /** slot5 alpha = relief 高度灰度（kFlatLevel=23 平面钳制）。 */
+  reliefPng: Uint8Array<ArrayBuffer> | null;
   /**
    * slot0 参数表 f32（cols×4 float4，源码行绑定）：row0=(palU,palU2,
    * interiorScale,interiorOffset)、row1=regionXform(base)、row2=regionXform2(top)、
@@ -384,13 +386,13 @@ export interface LotMaterialTextures {
 }
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。
- * 容器（小端）：`magic("LOTM") | version=7 | mesh_count`，每 mesh
+ * 容器（小端）：`magic("LOTM") | version=8 | mesh_count`，每 mesh
  * `u32 len + GLB`（COLOR_0 烘焙 + TEXCOORD_1.xy=materialIndex/255+内景种子 +
  * TEXCOORD_2/3=facade 世界投影 UV）；
- * `material_count`，每材质 8 张 PNG（base/normal/rough/ao/tintRaw/palette/
- * shaderMap/interiorMap）+ 参数表 f32 + paramCols；每 mesh `u32 material_index
- * + u8 uv_kind`（0 无 / 1 常规贴图 / 2 tint 着色器）；末尾 `u32 diag_len + UTF-8`
- * 槽位诊断文本（mesh↔material↔slot 贴图及来源包）。
+ * `material_count`，每材质 9 张 PNG（base/normal/rough/ao/tintRaw/palette/
+ * shaderMap/interiorMap/reliefMap）+ 参数表 f32 + paramCols；每 mesh
+ * `u32 material_index + u8 uv_kind`（0 无 / 1 常规贴图 / 2 tint 着色器）；
+ * 末尾 `u32 diag_len + UTF-8` 槽位诊断文本（mesh↔material↔slot 贴图及来源包）。
  */
 export interface LotModelPayload {
   /** 每个网格一个 GLB ArrayBuffer。 */

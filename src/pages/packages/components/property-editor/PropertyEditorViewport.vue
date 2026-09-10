@@ -43,6 +43,8 @@ const props = defineProps<{
   timeOfDay?: number;
   /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
   powered?: boolean;
+  /** Top 层浮雕：slot5 alpha 高度作 bumpMap（building4Clip reliefMap 近似）。 */
+  reliefEnabled?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -70,6 +72,19 @@ watch(brightness, () => applyBrightness());
 
 /** 存活 tint 材质的 uSpecMode uniform 引用（通道实验热切换，免重建）。 */
 const specUniformRefs: { value: number }[] = [];
+/** 精细材质引用（浮雕开关热切换 bumpScale，免重建）。 */
+const refinedMaterialRefs: ThreeNamespace.MeshStandardMaterial[] = [];
+/** 浮雕强度（约 kReliefDepth=0.1 的观感等效，经目视校准）。 */
+const RELIEF_BUMP_SCALE = 0.35;
+watch(
+  () => props.reliefEnabled,
+  (enabled) => {
+    for (const material of refinedMaterialRefs) {
+      material.bumpScale = enabled ? RELIEF_BUMP_SCALE : 0;
+    }
+  },
+);
+
 /**
  * specularity 通道：经多 package 比对（用户结论 2026-09-10），强制 B 通道
  * （窗）综合效果最佳，精细渲染固定使用；通道实验 UI 已停用（见
@@ -760,6 +775,17 @@ async function rebuild() {
           for (const refined of group) {
             refined.aoMap = texture;
             refined.needsUpdate = true;
+          }
+        });
+      }
+      // slot5 alpha 高度 → bumpMap 浮雕（开关只调 bumpScale，纹理常驻）
+      if (material.reliefPng) {
+        loadTexture(material.reliefPng, (texture) => {
+          for (const refined of group) {
+            refined.bumpMap = texture;
+            refined.bumpScale = props.reliefEnabled ? RELIEF_BUMP_SCALE : 0;
+            refined.needsUpdate = true;
+            refinedMaterialRefs.push(refined);
           }
         });
       }

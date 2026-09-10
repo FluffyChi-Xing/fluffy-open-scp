@@ -44,6 +44,8 @@ const specExperiment = ref(false);
 const specMode = ref(2);
 /** 5d 日/夜时段 0–24（默认 12 正午）。 */
 const timeOfDay = ref(12);
+/** Top 层浮雕（slot5 alpha 高度 bumpMap，building4Clip reliefMap 近似）。 */
+const reliefEnabled = ref(false);
 /** 5d 供电（断电 = 内景自发光全灭）。 */
 const powered = ref(true);
 
@@ -150,6 +152,14 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         <label
           v-if="renderMode === 'refined'"
           class="spec-experiment"
+          :title="$t('package.reliefHint')"
+        >
+          <FCheckbox v-model="reliefEnabled" />
+          <span>{{ $t("package.relief") }}</span>
+        </label>
+        <label
+          v-if="renderMode === 'refined'"
+          class="spec-experiment"
           :title="$t('package.poweredHint')"
         >
           <FCheckbox v-model="powered" />
@@ -204,6 +214,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :relief-enabled="reliefEnabled"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
           @switch-lod="switchLod"

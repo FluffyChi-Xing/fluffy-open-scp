@@ -598,6 +598,8 @@ const messages = {
       selectResource: "选择资源查看详情",
       noPreview: "暂无可用预览",
       searchTgi: "搜索 TGI（如 0x2f4e681b 或 type:group:instance）",
+      relief: "浮雕",
+      reliefHint: "Top 层浮雕：slot5 alpha 高度图作凹凸贴图（引擎 reliefMap 视差的近似）",
       clearSearch: "清除搜索",
       previewUnavailableType: "{type} 类型文件暂不支持预览",
       copy: "复制",
@@ -1433,6 +1435,8 @@ const messages = {
       selectResource: "Select a resource to inspect it",
       noPreview: "No preview available",
       searchTgi: "Search TGI (e.g. 0x2f4e681b or type:group:instance)",
+      relief: "Relief",
+      reliefHint: "Top-layer relief: slot5 alpha height as bump map (approximation of the engine reliefMap parallax)",
       clearSearch: "Clear search",
       previewUnavailableType:
         "Preview is not available for {type} files yet",
