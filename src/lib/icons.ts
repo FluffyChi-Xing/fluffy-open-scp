@@ -106,6 +106,7 @@ import {
   ListTree,
   Loader2,
   SquarePen,
+  RotateCw,
   StickyNote,
   type LucideIcon,
 } from 'lucide-vue-next'
@@ -244,6 +245,7 @@ const iconRegistry: Record<string, LucideIcon> = {
   ListTree,
   Loader2,
   SquarePen,
+  RotateCw,
   StickyNote,
 }
 

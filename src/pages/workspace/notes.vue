@@ -170,9 +170,7 @@ function packageName(path: string): string {
 .notes-page {
   display: grid;
   gap: 18px;
-  margin: 0 auto;
-  max-width: 960px;
-  padding: 18px 20px 40px;
+  padding: 18px 24px 40px;
 }
 .notes-page-head {
   align-items: center;

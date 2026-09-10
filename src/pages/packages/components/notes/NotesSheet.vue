@@ -156,6 +156,7 @@ const editing = computed(() =>
       <FEmpty
         v-else-if="!annotations.length && editingId === null"
         icon-name="StickyNote"
+        variant="compact"
         :title="$t('notes.emptyTitle')"
         :desc="$t('notes.empty')"
       />
