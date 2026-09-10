@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseLotModelContainer } from "./three-gltf";
 
-/** 按 Rust 侧 v7 容器布局构建字节（小端）——先压入数组再一次性分配。 */
+/** 按 Rust 侧 v8 容器布局构建字节（小端）——先压入数组再一次性分配。 */
 interface MaterialSpec {
   baseColorSize: number;
   normalSize: number;
@@ -11,6 +11,7 @@ interface MaterialSpec {
   paletteSize: number;
   shaderSize: number;
   interiorSize: number;
+  reliefSize: number;
   paramsFloats: number;
 }
 
@@ -40,7 +41,7 @@ function buildPayload(
   };
 
   u32(0x4d544f4c); // "LOTM"
-  u32(7);
+  u32(8);
   u32(glbSizes.length);
   glbSizes.forEach((length, index) => {
     u32(length);
@@ -56,6 +57,7 @@ function buildPayload(
     png(material.paletteSize, 6);
     png(material.shaderSize, 7);
     png(material.interiorSize, 8);
+    png(material.reliefSize, 9);
     const params = Array.from(
       { length: material.paramsFloats },
       (_, i) => i + 1,
@@ -79,8 +81,8 @@ describe("parseLotModelContainer", () => {
       buildPayload(
         [8, 16],
         [
-          { baseColorSize: 32, normalSize: 64, roughnessSize: 16, aoSize: 16, tintSize: 48, paletteSize: 128, shaderSize: 96, interiorSize: 112, paramsFloats: 8 },
-          { baseColorSize: 0, normalSize: 12, roughnessSize: 0, aoSize: 8, tintSize: 0, paletteSize: 0, shaderSize: 0, interiorSize: 0, paramsFloats: 0 },
+          { baseColorSize: 32, normalSize: 64, roughnessSize: 16, aoSize: 16, tintSize: 48, paletteSize: 128, shaderSize: 96, interiorSize: 112, reliefSize: 64, paramsFloats: 8 },
+          { baseColorSize: 0, normalSize: 12, roughnessSize: 0, aoSize: 8, tintSize: 0, paletteSize: 0, shaderSize: 0, interiorSize: 0, reliefSize: 0, paramsFloats: 0 },
         ],
         [1, 0],
         [2, 1],
@@ -100,6 +102,8 @@ describe("parseLotModelContainer", () => {
     expect(payload.materials[0].interiorPng?.byteLength).toBe(112);
     expect(payload.materials[1].shaderPng).toBeNull();
     expect(payload.materials[1].interiorPng).toBeNull();
+    expect(payload.materials[0].reliefPng?.byteLength).toBe(64);
+    expect(payload.materials[1].reliefPng).toBeNull();
     expect(payload.materials[0].paramsF32?.length).toBe(8);
     expect(payload.materials[0].paramCols).toBe(2);
     expect(payload.materials[0].paramsF32?.[3]).toBe(4);
