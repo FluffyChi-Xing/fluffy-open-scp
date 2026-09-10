@@ -786,9 +786,11 @@ async function rebuild() {
           0, 0, 0, 1,
         )
         .invert();
-      ground.matrixAutoUpdate = false;
       ground.matrix.copy(inverse);
     }
+    // 必须在异步锚定修正 premultiply 之前关闭自动更新，否则渲染循环会用
+    // position/quaternion 重算 matrix 覆盖锚定偏移（无 placement lot 回归）。
+    ground.matrixAutoUpdate = false;
     instance.group("model").add(ground);
     if (props.lotMaskPng) {
       const generation = token;
