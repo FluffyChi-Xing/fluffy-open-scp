@@ -33,6 +33,31 @@ async function loadTexture(bytes: Uint8Array<ArrayBuffer>): Promise<THREE.Textur
   }
 }
 
+/**
+ * 导出前几何清洗：LOTM GLB 携带 VEC4 的 TEXCOORD_1/2/3（材质索引/种子/
+ * facade 世界投影 UV），glTF 规范要求 UV 访问器为 VEC2——Blender 5.1
+ * 导入器合并 UV 数组时维度不匹配直接崩溃（用户实测）。只保留
+ * position/normal/uv/color；uv 若为 4 分量截取 xy。
+ */
+function sanitizeGeometry(geometry: THREE.BufferGeometry): void {
+  const keep = new Set(["position", "normal", "uv", "color"]);
+  for (const name of Object.keys(geometry.attributes)) {
+    if (keep.has(name)) continue;
+    geometry.deleteAttribute(name);
+  }
+  const uv = geometry.getAttribute("uv");
+  if (uv && uv.itemSize === 4) {
+    const compact = new THREE.Float32BufferAttribute(
+      Array.from({ length: uv.count * 2 }, (_, index) =>
+        index % 2 === 0 ? uv.getX(index >> 1) : uv.getY(index >> 1),
+      ),
+      2,
+    );
+    geometry.setAttribute("uv", compact);
+  }
+  geometry.computeBoundingSphere();
+}
+
 /** 深拷贝场景并统一替换/装配材质（不触碰编辑器视口对象）。 */
 async function buildExportScene(
   payload: LotModelPayload,
@@ -53,7 +78,10 @@ async function buildExportScene(
       const clone = object.clone(true);
       clone.traverse((child) => {
         const mesh = child as THREE.Mesh;
-        if (mesh.isMesh) mesh.material = white;
+        if (mesh.isMesh) {
+          sanitizeGeometry(mesh.geometry);
+          mesh.material = white;
+        }
       });
       root.add(clone);
     }
@@ -102,6 +130,7 @@ async function buildExportScene(
     clone.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (mesh.isMesh) {
+        sanitizeGeometry(mesh.geometry);
         mesh.material =
           materialCache.get(materialIndex) ??
           materialCache.get(0) ??
