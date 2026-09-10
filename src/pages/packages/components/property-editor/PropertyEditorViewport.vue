@@ -43,8 +43,6 @@ const props = defineProps<{
   timeOfDay?: number;
   /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
   powered?: boolean;
-  /** Top 层浮雕：slot5 alpha 高度作 bumpMap（building4Clip reliefMap 近似）。 */
-  reliefEnabled?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -72,24 +70,6 @@ watch(brightness, () => applyBrightness());
 
 /** 存活 tint 材质的 uSpecMode uniform 引用（通道实验热切换，免重建）。 */
 const specUniformRefs: { value: number }[] = [];
-/** 精细材质引用（浮雕开关热切换 bumpScale，免重建）。 */
-const refinedMaterialRefs: ThreeNamespace.MeshStandardMaterial[] = [];
-/** tint 材质的 uRelief uniform 引用（浮雕开关热切换，免重建）。 */
-const reliefUniformRefs: { value: number }[] = [];
-/** 浮雕强度（约 kReliefDepth=0.1 的观感等效，经目视校准）。 */
-const RELIEF_BUMP_SCALE = 0.35;
-/** tint 材质浮雕强度（高度梯度 → 法线扰动系数）。 */
-const RELIEF_STRENGTH = 1.0;
-watch(
-  () => props.reliefEnabled,
-  (enabled) => {
-    const strength = enabled ? RELIEF_STRENGTH : 0;
-    for (const material of refinedMaterialRefs) {
-      material.bumpScale = enabled ? RELIEF_BUMP_SCALE : 0;
-    }
-    for (const uniform of reliefUniformRefs) uniform.value = strength;
-  },
-);
 
 /**
  * specularity 通道：经多 package 比对（用户结论 2026-09-10），强制 B 通道
@@ -285,8 +265,6 @@ function attachTintShader(
     paletteMap: { value: ThreeNamespace.Texture };
     shaderMapMap: { value: ThreeNamespace.Texture | null };
     interiorMapMap: { value: ThreeNamespace.Texture | null };
-    reliefMapMap: { value: ThreeNamespace.Texture | null };
-    uRelief: { value: number };
     paramsMap: { value: ThreeNamespace.Texture | null };
     uParamCols: { value: number };
     uSunDir: { value: ThreeNamespace.Vector3 };
@@ -302,7 +280,6 @@ function attachTintShader(
   paramsReady: boolean,
   shaderMapReady: boolean,
   interiorReady: boolean,
-  reliefReady = false,
 ) {
   // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
   // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
@@ -371,10 +348,6 @@ uniform sampler2D paramsMap;
 #endif
 #ifdef TINT_SHADERMAP
 uniform sampler2D shaderMapMap;
-#endif
-#ifdef TINT_RELIEF
-uniform sampler2D reliefMapMap;
-uniform float uRelief;
 #endif
 #ifdef TINT_INTERIOR
 uniform sampler2D interiorMapMap;
@@ -558,20 +531,6 @@ float scFastNoise(vec3 seed) {
             vec3 nTop = texture2D( normalMap, topUv ).xyz * 2.0 - 1.0;
             mapN = mix(mapN, nTop, scFacade);
           }
-          // 浮雕（reliefMap 近似）：slot5 alpha 高度梯度直接扰动切线法线。
-          // 不做 UV 视差——单采样视差会在窗框/玻璃间产生逐像素差分偏移，
-          // 把 Top 层花纹拉糊（用户实测）；梯度 bump 颜色采样不动、观感锐利。
-          #ifdef TINT_RELIEF
-          if (uRelief > 0.0 && xform2.x > 0.0 && xform2.y > 0.0) {
-            // relief 采样域 = Top 层 tile（引擎 reliefSrc = frac(uv2)，512² 纹理）
-            vec2 scRUv = clamp(fract(vTopUv), 0.0, 1.0);
-            float scRH = texture2D(reliefMapMap, scRUv).r;
-            float scRHx = texture2D(reliefMapMap, scRUv + vec2(1.0 / 512.0, 0.0)).r;
-            float scRHy = texture2D(reliefMapMap, scRUv + vec2(0.0, 1.0 / 512.0)).r;
-            vec2 scRGrad = vec2(scRHx - scRH, scRHy - scRH) * (uRelief * 24.0);
-            mapN.xy += scRGrad * scFacade;
-          }
-          #endif
           mapN.xy *= normalScale;
           normal = normalize( tbn * mapN );
         }
@@ -658,7 +617,6 @@ async function rebuild() {
       paletteTex: material.palettePng ? await loadTex(material.palettePng) : null,
       normalTex: material.normalPng ? await loadTex(material.normalPng) : null,
       shaderTex: material.shaderPng ? await loadTex(material.shaderPng) : null,
-      reliefTex: material.reliefPng ? await loadTex(material.reliefPng) : null,
       interiorTex: material.interiorPng ? await loadTex(material.interiorPng).then((t) => {
         // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
         // scale）依赖回绕取样；ClampToEdge 会把越界采样钳成边缘纯色（绿/紫块）
@@ -705,11 +663,8 @@ async function rebuild() {
         if (tint.shaderTex) tinted.defines.TINT_SHADERMAP = "";
         const interiorReady = Boolean(tint.paramsTex && tint.shaderTex && tint.interiorTex);
         if (interiorReady) tinted.defines.TINT_INTERIOR = "";
-        if (tint.reliefTex) tinted.defines.TINT_RELIEF = "";
         const uSpecGUniform = { value: effectiveSpecMode() };
         specUniformRefs.push(uSpecGUniform);
-        const uReliefUniform = { value: props.reliefEnabled ? RELIEF_STRENGTH : 0 };
-        reliefUniformRefs.push(uReliefUniform);
         attachTintShader(
           tinted,
           {
@@ -717,8 +672,6 @@ async function rebuild() {
             paletteMap: { value: tint.paletteTex },
             shaderMapMap: { value: tint.shaderTex },
             interiorMapMap: { value: tint.interiorTex },
-            reliefMapMap: { value: tint.reliefTex },
-            uRelief: uReliefUniform,
             paramsMap: { value: tint.paramsTex },
             uParamCols: { value: tint.paramCols },
             // 5a/5d：太阳/天空/昼夜/供电为共享 uniform 实例（applySun 热切换）
@@ -733,7 +686,6 @@ async function rebuild() {
           Boolean(tint.paramsTex),
           Boolean(tint.shaderTex),
           interiorReady,
-          Boolean(tint.reliefTex),
         );
         mesh.material = tinted;
         return;
@@ -809,17 +761,6 @@ async function rebuild() {
           for (const refined of group) {
             refined.aoMap = texture;
             refined.needsUpdate = true;
-          }
-        });
-      }
-      // slot5 alpha 高度 → bumpMap 浮雕（开关只调 bumpScale，纹理常驻）
-      if (material.reliefPng) {
-        loadTexture(material.reliefPng, (texture) => {
-          for (const refined of group) {
-            refined.bumpMap = texture;
-            refined.bumpScale = props.reliefEnabled ? RELIEF_BUMP_SCALE : 0;
-            refined.needsUpdate = true;
-            refinedMaterialRefs.push(refined);
           }
         });
       }

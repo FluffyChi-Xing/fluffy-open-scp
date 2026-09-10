@@ -44,7 +44,7 @@ const specExperiment = ref(false);
 const specMode = ref(2);
 /** 5d 日/夜时段 0–24（默认 12 正午）。 */
 const timeOfDay = ref(12);
-/** Top 层浮雕（slot5 alpha 高度 bumpMap，building4Clip reliefMap 近似）。 */
+/** 浮雕开关（已撤销，见模板注释）。 */
 const reliefEnabled = ref(false);
 /** 5d 供电（断电 = 内景自发光全灭）。 */
 const powered = ref(true);
@@ -149,6 +149,10 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
             }}
           </span>
         </div>
+        <!-- 浮雕开关（2026-09-10 撤销）：实证 slot5 alpha = 逐窗灯亮掩码而非
+             几何高度（用户实测玻璃出现规律块纹），且该发行版 shader 的
+             reliefMap() 已被编译为恒等——游戏本体无浮雕，数据无高度源。
+             LOTM v8 的 reliefPng 字段保留（若未来找到真实高度图可恢复）。
         <label
           v-if="renderMode === 'refined'"
           class="spec-experiment"
@@ -157,6 +161,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FCheckbox v-model="reliefEnabled" />
           <span>{{ $t("package.relief") }}</span>
         </label>
+        -->
         <label
           v-if="renderMode === 'refined'"
           class="spec-experiment"
@@ -214,7 +219,6 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
-          :relief-enabled="reliefEnabled"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
           @switch-lod="switchLod"
