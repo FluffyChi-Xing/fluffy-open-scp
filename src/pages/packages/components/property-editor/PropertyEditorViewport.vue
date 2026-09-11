@@ -55,6 +55,10 @@ const props = defineProps<{
   /** LotColor1-4 是否实际存在（false = 回退色，不参与着色）。 */
   lotColorsAuthored: boolean[];
   lotMaskPng: string | null;
+  /** LotMask 原始通道权重图（v4 软混合输入）。 */
+  lotMaskRawPng: string | null;
+  /** "Lot Textures" 地表共享纹理（data URL；精细模式地面 v2 用）。 */
+  lotSurfacePng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
   groupVisibility: Record<string, boolean>;
@@ -250,6 +254,52 @@ function rebuildScene() {
   return viewport.rebuild(assembleScene, { reframe });
 }
 
+/** LotMask 原始通道权重图 → 像素（compose v4 软混合输入）。 */
+async function loadRawMaskPixels(): Promise<ImageData | null> {
+  const url = props.lotMaskRawPng;
+  if (!url) return null;
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("lot mask raw failed"));
+      element.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, image.width, image.height);
+  } catch {
+    return null;
+  }
+}
+
+/** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入）。 */
+async function loadSurfacePixels(): Promise<ImageData | null> {
+  const url = props.lotSurfacePng;
+  if (!url) return null;
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("lot surface failed"));
+      element.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, image.width, image.height);
+  } catch {
+    return null;
+  }
+}
+
 onMounted(async () => {
   await viewport.ready;
   await rebuildScene();
@@ -292,6 +342,10 @@ async function assembleScene(ctx: Parameters<
   // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）
   const env = createSunEnv(THREE);
   envRefs = env;
+  // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
+  // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
+  // 居中（bbox≈0 实证），mask 空腔与其错位另有机制（0x0CCB7FD2/D3
+  // UV 字段为头号嫌疑，待取证）。
   for (const [index, object] of modelObjects.entries()) {
     const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
     const uvKind = payload?.meshUvKinds[index] ?? 0;
@@ -342,7 +396,14 @@ async function assembleScene(ctx: Parameters<
     ground.matrixAutoUpdate = false;
     instance.group("model").add(ground);
     if (props.lotMaskPng) {
+      // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1
+      const [surface, rawMask] = await Promise.all([
+        loadSurfacePixels(),
+        loadRawMaskPixels(),
+      ]);
       applyGroundMask({
+        rawMask,
+        surface,
         THREE,
         ground,
         maskPng: props.lotMaskPng,

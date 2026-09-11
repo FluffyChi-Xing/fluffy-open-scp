@@ -12,6 +12,9 @@ pub const LOT_SIZE_HASH: u32 = 0x0CCB_7FC8;
 /// C# `LotUnitOffset`/`LotOverlayBoxOffset`（Vector2，地面矩形相对模型的偏移）。
 pub const LOT_OVERLAY_OFFSET_HASH: u32 = 0x0CCB_7FC9;
 pub const LOT_PLACEMENT_HASH: u32 = 0x0DB7_FB17;
+/// "Lot Textures"（0x0CCB7FD4）：地表共享纹理容器（纯纹理 RW4，如
+/// 1024² DXT5 = 4×4 tile 图集），shader lotTextureSampler 的绑定源。
+pub const LOT_TEXTURES_HASH: u32 = 0x0CCB_7FD4;
 
 /// LOD1~LOD4 的 property hash（C# `PropertyConstants.UnitLOD1..4`）。
 pub const LOD_MODEL_HASHES: [u32; 4] = [
@@ -31,6 +34,8 @@ pub struct LotEditorDocument {
     pub lot_offset: Option<[f32; 2]>,
     pub placement: Option<Transform>,
     pub lot_mask: Option<Key>,
+    /// "Lot Textures" 地表共享纹理容器引用（0x0CCB7FD4）。
+    pub lot_textures: Option<Key>,
     pub unknown_property_count: usize,
 }
 
@@ -39,6 +44,7 @@ impl LotEditorDocument {
         let model_lods = LOD_MODEL_HASHES.map(|hash| scalar_key(&properties, hash));
         let model = model_lods[0].clone();
         let lot_mask = scalar_key(&properties, LOT_MASK_HASH);
+        let lot_textures = scalar_key(&properties, LOT_TEXTURES_HASH);
         let lot_size = value_vec2(&properties, LOT_SIZE_HASH);
         let lot_offset = value_vec2(&properties, LOT_OVERLAY_OFFSET_HASH);
         let placement = value_transform(&properties, LOT_PLACEMENT_HASH);
@@ -51,6 +57,7 @@ impl LotEditorDocument {
             LOT_SIZE_HASH,
             LOT_OVERLAY_OFFSET_HASH,
             LOT_PLACEMENT_HASH,
+            LOT_TEXTURES_HASH,
         ];
         let unknown_property_count = properties
             .values
@@ -65,6 +72,7 @@ impl LotEditorDocument {
             lot_offset,
             placement,
             lot_mask,
+            lot_textures,
             unknown_property_count,
         }
     }

@@ -347,6 +347,10 @@ export interface LotEditorSession {
   lotPlacement: number[] | null;
   /** LotMask 四色量化地面图 PNG（LotColor1-4 着色），无或不可解为 null。 */
   lotMaskPng: string | null;
+  /** LotMask 原始通道权重图（未阈值化；软混合用）。 */
+  lotMaskRawPng: string | null;
+  /** "Lot Textures" 地表共享纹理（DXT5 解码 PNG 裸 base64）。 */
+  lotSurfacePng: string | null;
   /** LotColor1-4 的 RGBA（A = 地面贴图索引 0-15）。 */
   lotColors: [number, number, number, number][];
   /** LotColor1-4 是否实际存在（false = 黑/红/绿/蓝回退，不应着色）。 */

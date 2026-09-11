@@ -397,6 +397,8 @@ function mockDataSource(): OpenScpDataSource {
         ],
         lotColorsAuthored: [true, true, true, true],
         lotMaskPng: null,
+        lotMaskRawPng: null,
+        lotSurfacePng: null,
         units: [
           {
             kind: "light",

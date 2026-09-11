@@ -1304,3 +1304,38 @@ unitGizmos 5 测试、vite build 全通过。preview 形态（PropertyPreview）
   s3db 注册表），stats.rs KNOWN_EXTENSIONS 同步；knowledge 文档更新。
 
 验证：cargo check/test（greyscale 3 测试）、vue-tsc、17 前端测试、build 全过。
+
+### 34.1 存档结构实证 + EcoGame 误判修正（2026-09-12）
+
+用户离线开局产出真实存档，`Games\<GUID>\1\` 结构取证：
+
+- `misc/MetaData`：**纯 JSON 区域清单**——boxes[]（uid 1026-1030 城市/
+  大工程槽位、type=CITY、isClaimed、regionTemplateName "Confluence"、
+  resources 含 simoleons/mayor_Rating）。
+- `<uid>\state_file_<n>_<ts>.egb`：**gzip(3.4MB) EcoGame 城市状态快照**，
+  解压头 `00 00 00 14 62 2b 9c d7 …` 与 EP1 0x08068AED 载荷同魔数
+  ——**修正 §34 的 ER2 误判**：AED/AEE 更名 EcoGame State Data/Table
+  （package_service/stats/knowledge 同步）。`0\` 目录为区域级状态。
+- `1029\0x<hex>`：JSON 键值表（u32 hash → 计数）。
+- `SLDelta{2,3,4,6}_1.mfs`：二进制增量（头部 `04 00 00 00 ff 02 03 00`，
+  语义待定，疑地形/流式增量）。
+
+结论：存档 = JSON 元数据 + gzip 二进制状态，无 DBPF 层（与
+SimCityUserData 用户数据不同）；扫描器只需 JSON 解析 + gzip 展开。
+
+### 34.2 地面渲染 v2：真实 Lot Textures 图集（2026-09-12）
+
+按 shader 实证（34.1 节 + raster-lot-decal-analysis.md §2）落地：
+
+- 后端：`LotEditorDocument` 新增 `lot_textures`（0x0CCB7FD4 "Lot
+  Textures"）；session 新增 `lotSurfacePng`——跨包定位纯纹理 RW4
+  （图书馆实例 0xA0DA9E6C，SimCity_Game 692KB）→ DXT5 解码 → PNG。
+- 前端 `composeRefinedGround` v2：真实图集（4×4 tile）按 LotColor.A
+  索引取样，mask 四通道软权重混合 Σ w_i·(tile_{A_i} × LotColor_i.RGB)；
+  surface 缺失回退 v1 本地占位 tile。DTO 链（tauri/session/Editor/
+  Viewport/editorGround）全通。
+- 地面 fill 改 FrontSide + alphaTest 1/255（对拍"正反面"+ 引擎 clip
+  语义）。
+- 180° 翻转修复与 v2 同批待用户对拍。
+
+验证：cargo check/test（54）、vue-tsc、17 前端测试、build 全过。

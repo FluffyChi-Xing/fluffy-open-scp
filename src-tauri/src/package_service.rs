@@ -433,6 +433,10 @@ pub struct LotEditorSession {
     pub lot_placement: Option<[f32; 12]>,
     /// LotMask 四色量化地面图 PNG（LotColor1-4 着色，服务端解码）。
     pub lot_mask_png: Option<String>,
+    /// LotMask 原始通道权重图 PNG（未阈值化；精细渲染软混合用）。
+    pub lot_mask_raw_png: Option<String>,
+    /// "Lot Textures" 地表共享纹理（DXT5 解码 PNG）；None = 缺失或解码失败。
+    pub lot_surface_png: Option<String>,
     /// LotColor1-4 的 RGBA（A = 地面贴图索引 0-15，SCP GroundTextures 图集）。
     pub lot_colors: [[u8; 4]; 4],
     /// LotColor1-4 是否实际存在于 property（false = 黑/红/绿/蓝回退，
@@ -1697,12 +1701,22 @@ pub async fn read_lot_editor_session(
                 diagnostics.push("property registry is unavailable; using hash identifiers".into());
             }
             let (colors, lot_colors_authored) = lot_colors(&document);
+            // 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）
+            let lot_surface_png = document.lot_textures.and_then(|key| {
+                match decode_lot_surface_png(package, manager, key) {
+                    Ok(png) => Some(png),
+                    Err(message) => {
+                        diagnostics.push(message);
+                        None
+                    }
+                }
+            });
             let mut mask_dims: Option<(u32, u32)> = None;
-            let lot_mask_png = document.lot_mask.and_then(|key| {
+            let lot_mask_images = document.lot_mask.and_then(|key| {
                 match decode_lot_mask_png(package, manager, key, colors) {
-                    Ok((png, dims)) => {
+                    Ok((png, raw_png, dims)) => {
                         mask_dims = Some(dims);
-                        Some(png)
+                        Some((png, raw_png))
                     }
                     Err(message) => {
                         diagnostics.push(message);
@@ -1710,6 +1724,9 @@ pub async fn read_lot_editor_session(
                     }
                 }
             });
+            let lot_mask_png = lot_mask_images.as_ref().map(|(png, _)| png.clone());
+            let lot_mask_raw_png =
+                lot_mask_images.as_ref().map(|(_, raw)| raw.clone());
             // EP1 等部分 lot 无 LotSize（0x0CCB7FC8）属性但带 LotMask：地面
             // 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
             // 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
@@ -1737,6 +1754,8 @@ pub async fn read_lot_editor_session(
                     .filter(|t| t.matrix.len() == 12)
                     .map(|t| t.matrix.try_into().unwrap()),
                 lot_mask_png,
+                lot_mask_raw_png,
+                lot_surface_png,
                 lot_colors: colors,
                 lot_colors_authored,
                 units: lot_units.units,
@@ -1750,6 +1769,41 @@ pub async fn read_lot_editor_session(
     .await
 }
 
+/// "Lot Textures"（0x0CCB7FD4）地表共享纹理：跨包定位纯纹理 RW4 →
+/// DXT5 解码 → PNG（shader lotTextureSampler 的绑定源；4×4 tile 图集）。
+fn decode_lot_surface_png(
+    current: &Package,
+    manager: &PackageManager,
+    key: sc_properties::Key,
+) -> Result<String, String> {
+    let (bytes, _, _) = find_resource_across_packages_named(
+        current,
+        manager,
+        key.instance,
+        &[RW4_MODEL_TYPE],
+    )
+    .ok_or_else(|| {
+        format!(
+            "Lot Textures 0x{:08X} not found in open packages",
+            key.instance
+        )
+    })?;
+    let file = rw4::Rw4File::parse(&bytes)
+        .map_err(|error| format!("Lot Textures parse failed: {error}"))?;
+    let section = file
+        .sections_of_type(rw4::SectionType::TEXTURE)
+        .next()
+        .map(|s| s.number)
+        .ok_or_else(|| "Lot Textures has no texture section".to_string())?;
+    let texture = file
+        .decode_texture(&bytes, section)
+        .map_err(|error| format!("Lot Textures decode failed: {error}"))?;
+    let rgba = texture
+        .decode_top_mip_rgba()
+        .map_err(|error| format!("Lot Textures pixel decode failed: {error}"))?;
+    encode_rgba_png(u32::from(texture.width), u32::from(texture.height), rgba)
+}
+
 /// LotMask 地面图：定位 raster 资源 → 四层量化 → PNG（任何失败转为诊断消息）。
 /// 查找顺序：当前包 → 所有已打开包（SCP 在全部已加载索引中查找，
 /// LotMask 引用常指向 graphics 包，Key 的 type/group 多为 0）。
@@ -1758,7 +1812,7 @@ fn decode_lot_mask_png(
     manager: &PackageManager,
     key: sc_properties::Key,
     colors: [[u8; 4]; 4],
-) -> Result<(String, (u32, u32)), String> {
+) -> Result<(String, String, (u32, u32)), String> {
     if let Some(entry_id) = find_raster_entry(current, key) {
         return decode_lot_mask_entry(current, &entry_id, colors);
     }
@@ -1865,7 +1919,7 @@ fn decode_lot_mask_entry(
     package: &Package,
     entry_id: &ResourceId,
     colors: [[u8; 4]; 4],
-) -> Result<(String, (u32, u32)), String> {
+) -> Result<(String, String, (u32, u32)), String> {
     let entry = package
         .entry(*entry_id)
         .ok_or_else(|| "LotMask raster resource is missing".to_string())?;
@@ -1883,11 +1937,34 @@ fn decode_lot_mask_entry(
             raster.pixel_format
         ));
     }
-    let rgba = raster
+    let mut rgba = raster
         .decode_lot_mask_rgba(&colors)
         .map_err(|error| error.to_string())?;
+    // 原始通道权重图（未阈值化）：RGBA 字节 = LotColor1-4 覆盖权重
+    // （CHANNEL_TO_COLOR: A,R,G,B → 通道 1-4）。引擎 shader 对 mask 做
+    // dot(colors, masks) 线性软混合，通道值 0-255 为渐变权重（边界
+    // 过渡带），二值化会丢失绿地等弱覆盖区（用户对拍 2026-09-12）。
+    let mut raw = raster
+        .decode_top_mip_rgba()
+        .map_err(|error| error.to_string())?;
     let dims = (raster.width, raster.height);
-    encode_rgba_png(raster.width, raster.height, rgba).map(|png| (png, dims))
+    // 行序翻转（2026-09-12 用户对拍定论）：引擎 mask 行 0 = 北（+Y），
+    // 而 three flipY=false 下 PNG 行 0 显示在 -Y——不翻转则地面上下
+    // 颠倒（图书馆停车场出现在建筑上方，游戏在下方）。§31.4 当初的
+    // flipY=false 决定方向相反，在此统一翻转，所有消费方（默认贴图/
+    // 精细合成/足迹锚定）自动一致。
+    let (w, h) = (raster.width as usize, raster.height as usize);
+    for row in 0..h / 2 {
+        let top = row * w * 4;
+        let bottom = (h - 1 - row) * w * 4;
+        for i in 0..w * 4 {
+            rgba.swap(top + i, bottom + i);
+            raw.swap(top + i, bottom + i);
+        }
+    }
+    let quantized_png = encode_rgba_png(raster.width, raster.height, rgba)?;
+    let raw_png = encode_rgba_png(raster.width, raster.height, raw)?;
+    Ok((quantized_png, raw_png, dims))
 }
 
 /// LotColor1-4（0x0D02D586..89）RGBA；A = 地面贴图索引（引擎 16 格图集，
@@ -1898,18 +1975,21 @@ fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bo
     let mut colors = FALLBACKS;
     let mut authored = [false; 4];
     for (index, hash) in LOT_COLOR_HASHES.iter().enumerate() {
-        if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = document
-            .properties
-            .get(*hash)
-            .and_then(|property| property.scalar())
-        {
+        // LotColor 常以单元素数组编码（图书馆 0xA6B49A4B 实证 scalar() 取
+        // 不到），需回退 array 首元素。
+        let property = document.properties.get(*hash);
+        let value = property.and_then(|p| p.scalar()).or_else(|| {
+            property.and_then(|p| p.array()).and_then(|v| v.first())
+        });
+        if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = value {
             authored[index] = true;
             colors[index] = [
                 (r * 255.0).clamp(0.0, 255.0) as u8,
                 (g * 255.0).clamp(0.0, 255.0) as u8,
                 (b * 255.0).clamp(0.0, 255.0) as u8,
-                // ColorRgba 的 a 为 0-1 标量；贴图索引存整数格
-                (a * 16.0).clamp(0.0, 15.0).round() as u8,
+                // A = 图集 tile 索引本体（0-15 整数存为 float：图书馆实证
+                // a=3/1/8/3；旧 ×16 换算会全部 clamp 成 15 → 单材质 bug）
+                a.clamp(0.0, 15.0).round() as u8,
             ];
         }
     }

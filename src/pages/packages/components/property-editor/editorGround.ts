@@ -31,9 +31,16 @@ export function buildLotRect(
       color: 0x6b7689,
       transparent: true,
       opacity: 0.08,
-      side: THREE.DoubleSide,
+      // 单面：消除从下方观察时的"正反面"镜像观感（对拍结论 2026-09-12）
+      side: THREE.FrontSide,
+      // 引擎 preview PS 有 clip(alpha - 1/255)：近零覆盖像素镂空
+      alphaTest: 1 / 255,
     }),
   );
+  // 方向定论（2026-09-12 mask 可视化 + 用户对拍）：identity 即正确——
+  // "默认渲染道路正常"直接证明 mask UV 无需任何翻转；此前的"镜像感"
+  // 实为 placement=None 时建筑居中 vs mask 足迹凹口偏置的错位
+  // （maskAnchorOffset 自动锚定解决），不是镜像。
   fill.position.z = 0.02;
   group.add(border, fill);
   return group;
@@ -84,9 +91,13 @@ export function applyGroundMask(options: {
   refined: boolean;
   lotColors: [number, number, number, number][];
   lotColorsAuthored: boolean[];
+  /** "Lot Textures" 地表共享纹理像素（真实图集；null = 本地占位 tile）。 */
+  surface?: ImageData | null;
+  /** LotMask 原始通道权重图（v4 软混合输入；null = v1 量化图硬分配）。 */
+  rawMask?: ImageData | null;
   isStale: () => boolean;
 }) {
-  const { THREE, ground, maskPng, refined, lotColors, lotColorsAuthored, isStale } =
+  const { THREE, ground, maskPng, refined, lotColors, lotColorsAuthored, surface, rawMask, isStale } =
     options;
   new THREE.TextureLoader().load(maskPng, (texture) => {
     if (isStale()) {
@@ -103,7 +114,14 @@ export function applyGroundMask(options: {
       // 精细模式：引擎语义 = 每通道 LotColor.RGB 着色 × LotColor.A 索引的
       // 16 格地面贴图（shader baseTileUVMinMax 4×4 图集；C# lot editor 的
       // GroundTextures 下拉即此 Alpha）。此处按 8 tile/边近似平铺。
-      composeRefinedGround(lotColors, lotColorsAuthored, texture.image, THREE)
+      composeRefinedGround(
+        lotColors,
+        lotColorsAuthored,
+        texture.image,
+        THREE,
+        surface,
+        rawMask,
+      )
         .then((map) => {
           if (isStale() || !map) {
             map?.dispose();
@@ -126,4 +144,45 @@ export function applyGroundMask(options: {
       material.needsUpdate = true;
     }
   });
+}
+
+/**
+ * 【已废弃于渲染，保留作取证工具】mask 空腔质心偏移。统计检验
+ * （lot_cavity_stats 400 样本，t=-5.15）否定"建筑锚定空腔质心"假设
+ * ——bbox 中心到空腔质心反而比到 lot 中心更远。建筑居中（bbox≈0）。
+ */
+export function maskCavityOffset(
+  maskImage: TexImageSource,
+  lotSize: [number, number],
+): { x: number; y: number } | null {
+  const image = maskImage as { width?: number; height?: number };
+  const width = image.width ?? 0;
+  const height = image.height ?? 0;
+  if (!width || !height) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.drawImage(maskImage as CanvasImageSource, 0, 0);
+  const data = context.getImageData(0, 0, width, height).data;
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  const total = width * height;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] < 16) {
+        sumX += x;
+        sumY += y;
+        count += 1;
+      }
+    }
+  }
+  const ratio = count / total;
+  if (count < 16 || ratio < 0.01 || ratio > 0.6) return null;
+  return {
+    x: (sumX / count / width - 0.5) * lotSize[0],
+    y: (sumY / count / height - 0.5) * lotSize[1],
+  };
 }
