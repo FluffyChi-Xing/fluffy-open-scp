@@ -33,8 +33,8 @@ together with its binary signature; chaptered details follow below.
 | `0xEA5118B0` | Effects Directory | Binary effect directory table | Structure detection |
 | `0x08068AEB` | ER2 Binary Rule | ER2 rule binary | Structure detection (unparsed) |
 | `0x08068AAC` | ER2 Rule | ER2 rule text variant | Structure detection (unparsed) |
-| `0x08068AED` | EP1 ER2 Rule Data | `1F 8B` gzip (expands to a 2.2 MB sparse hash table) | Hex preview (unparsed) |
-| `0x08068AEE` | EP1 ER2 Rule Table | 12-byte record table (sequence ids + bit-pattern fields) | Hex preview (unparsed) |
+| `0x08068AED` | EcoGame State Data | `1F 8B` gzip; payload shares the offline-save .egb magic (`62 2b 9c d7` @+4) — EcoGame state snapshot | Hex preview (unparsed) |
+| `0x08068AEE` | EcoGame State Table | 12-byte record table (sequence ids + bit-pattern fields) | Hex preview (unparsed) |
 | — | DDS (embedded in RW4) | `44 44 53 20` ("DDS ") | DXT1/5 decode & export |
 | — | SQLite registry | `53 51 4C 69 74 65` (database_main.s3db) | FileTypes/Instances queries |
 

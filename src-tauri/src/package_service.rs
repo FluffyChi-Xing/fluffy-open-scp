@@ -805,12 +805,11 @@ fn verified_type_name(type_id: u32) -> Option<&'static str> {
         0x03E4_21ED => "Terrain Field Map (32-bit)",
         // 16-bit 大端 u16 单通道（channel_code=7，256² 高度图实证）
         0x03E4_21F0 => "Terrain Heightmap (16-bit)",
-        // EP1：gzip 包裹的 2.2MB 稀疏数据表；类型号紧邻官方 ER2 Rule File
-        // （0x08068AEB/AC），判定为 ER2 规则数据的 EP1 二进制变体
-        0x0806_8AED => "EP1 ER2 Rule Data (gzip)",
-        // EP1：12 字节记录表（0x410/0x411 序号 + 位模式字段），同上按
-        // ER2 系列变体归类
-        0x0806_8AEE => "EP1 ER2 Rule Table",
+        // 与离线存档 .egb 解压载荷同魔数（62 2b 9c d7 @+4）＝EcoGame 状态
+        // 快照（2026-09-12 存档取样实证，修正先前 ER2 误判）
+        0x0806_8AED => "EcoGame State Data (gzip)",
+        // EcoGame 状态伴随表（12 字节记录：序号 + 位模式字段）
+        0x0806_8AEE => "EcoGame State Table",
         _ => return None,
     })
 }

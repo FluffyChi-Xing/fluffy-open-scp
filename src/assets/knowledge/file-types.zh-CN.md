@@ -30,8 +30,8 @@ SimCity (2013) 的所有游戏数据都打包在 `.package` 文件（DBPF 容器
 | `0xEA5118B0` | Effects Directory | 效果目录二进制表 | 结构识别 |
 | `0x08068AEB` | ER2 Binary Rule | ER2 规则二进制 | 结构识别（未解析） |
 | `0x08068AAC` | ER2 Rule | ER2 规则文本变体 | 结构识别（未解析） |
-| `0x08068AED` | EP1 ER2 Rule Data | `1F 8B` gzip（展开后 2.2MB 稀疏哈希表） | hex 预览（未解析） |
-| `0x08068AEE` | EP1 ER2 Rule Table | 12 字节记录表（序号 + 位模式字段） | hex 预览（未解析） |
+| `0x08068AED` | EcoGame State Data | `1F 8B` gzip；展开后与离线存档 .egb 同魔数（`62 2b 9c d7` @+4），EcoGame 状态快照 | hex 预览（未解析） |
+| `0x08068AEE` | EcoGame State Table | 12 字节记录表（序号 + 位模式字段） | hex 预览（未解析） |
 | — | DDS（RW4 内嵌） | `44 44 53 20`（"DDS "） | DXT1/5 解码导出 |
 | — | SQLite 注册表 | `53 51 4C 69 74 65`（database_main.s3db） | FileTypes/Instances 查询 |
 
