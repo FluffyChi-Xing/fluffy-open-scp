@@ -50,7 +50,8 @@ export function resourceKind(typeId: number): ResourceKind {
   if (typeId === PROPERTY_TYPE_ID) return "property";
   if (typeId === AUDIO_TYPE_ID || typeId === WWISE_BANK_TYPE_ID || typeId === VIDEO_TYPE_ID)
     return "media";
-  if (typeId === 0x0a98eaf0) return "text";
+  // 语言表 + 状态脚本（0x024A0E52，内容实证纯文本）走文本预览
+  if (textPreviewLanguages[typeId] != null) return "text";
   return "other";
 }
 

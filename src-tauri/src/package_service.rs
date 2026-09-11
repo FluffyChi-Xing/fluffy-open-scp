@@ -793,6 +793,28 @@ fn resource_page(
     })
 }
 
+/// 已实证的类型语义名（二进制取证，2026-09-12）：优先于 s3db 注册表。
+/// s3db 的官方名存在拼写错误（"Uken File (Property/Spore?)"）或无语义
+/// （"Greyscale Map (16-bit)"），且不含 EP1 类型。
+fn verified_type_name(type_id: u32) -> Option<&'static str> {
+    Some(match type_id {
+        // 内容实证：游戏状态机脚本纯文本（官方 viewer=viewText）
+        0x024A_0E52 => "State Script",
+        // 官方注释：grey/color field maps (terrain)
+        0x03E4_21EC => "Terrain Field Map (8-bit)",
+        0x03E4_21ED => "Terrain Field Map (32-bit)",
+        // 16-bit 大端 u16 单通道（channel_code=7，256² 高度图实证）
+        0x03E4_21F0 => "Terrain Heightmap (16-bit)",
+        // EP1：gzip 包裹的 2.2MB 稀疏数据表；类型号紧邻官方 ER2 Rule File
+        // （0x08068AEB/AC），判定为 ER2 规则数据的 EP1 二进制变体
+        0x0806_8AED => "EP1 ER2 Rule Data (gzip)",
+        // EP1：12 字节记录表（0x410/0x411 序号 + 位模式字段），同上按
+        // ER2 系列变体归类
+        0x0806_8AEE => "EP1 ER2 Rule Table",
+        _ => return None,
+    })
+}
+
 fn type_counts(package: &Package, registry: Option<&sc_registry::Registry>) -> Vec<TypeCount> {
     let mut counts = HashMap::new();
     for entry in package.entries() {
@@ -804,9 +826,13 @@ fn type_counts(package: &Package, registry: Option<&sc_registry::Registry>) -> V
         .into_iter()
         .map(|(type_id, count)| TypeCount {
             type_id,
-            name: registry
-                .map(|registry| registry.type_name(type_id))
-                .unwrap_or_else(|| format!("{type_id:08X}")),
+            name: verified_type_name(type_id)
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    registry
+                        .map(|registry| registry.type_name(type_id))
+                        .unwrap_or_else(|| format!("{type_id:08X}"))
+                }),
             count,
         })
         .collect()
@@ -2088,7 +2114,8 @@ fn decode_cursor(data: &[u8]) -> Result<GenericImagePreviewData, String> {
 }
 
 /// Greyscale Map：20 字节大端头 `[0, width, height, channel_code, byte_count]`，
-/// code 1 = 单通道灰度、2 = RGBA；像素紧随（实测 64²/128²/256² 均吻合）。
+/// code 1 = 单通道灰度、2 = RGBA、7 = 16-bit 大端单通道（Game 包 256²
+/// 高度图实证：131092 = 20 + 256×256×2）；像素紧随。
 fn decode_greyscale(data: &[u8]) -> Result<GenericImagePreviewData, String> {
     if data.len() < 20 {
         return Err("greyscale: truncated header".into());
@@ -2118,6 +2145,16 @@ fn decode_greyscale(data: &[u8]) -> Result<GenericImagePreviewData, String> {
             }
             for px in body[..px_count * 4].chunks_exact(4) {
                 rgba.extend_from_slice(&[px[0], px[1], px[2], px[3]]);
+            }
+        }
+        7 => {
+            if body.len() < px_count * 2 {
+                return Err("greyscale: 16-bit data truncated".into());
+            }
+            // 高 8 位即灰度（u16 全幅归一化的快速近似，地形高度图观感足够）
+            for px in body[..px_count * 2].chunks_exact(2) {
+                let g = px[0];
+                rgba.extend_from_slice(&[g, g, g, 255]);
             }
         }
         code => return Err(format!("greyscale: unknown channel code {code}")),
@@ -3962,6 +3999,22 @@ mod tests {
         data.extend_from_slice(&[0xf9, 0x8a, 0x7e, 0xff]);
         let decoded = decode_greyscale(&data).unwrap();
         assert_eq!((decoded.width, decoded.height), (1, 1));
+    }
+
+    #[test]
+    fn greyscale_16bit_variant_decodes() {
+        // Game 包 0x03e421f0 实测（instance 0x2096ae79）：256²、channel_code=7、
+        // 大端 u16 单通道，总长 20 + 256×256×2 = 131092。
+        let mut data = Vec::new();
+        data.extend_from_slice(&0u32.to_be_bytes());
+        data.extend_from_slice(&2u32.to_be_bytes());
+        data.extend_from_slice(&1u32.to_be_bytes());
+        data.extend_from_slice(&7u32.to_be_bytes());
+        data.extend_from_slice(&4u32.to_be_bytes());
+        data.extend_from_slice(&[0x1a, 0x73, 0x8a, 0x72]); // 首个真实样本像素
+        let decoded = decode_greyscale(&data).unwrap();
+        assert_eq!((decoded.width, decoded.height), (2, 1));
+        assert_eq!(decoded.image_kind, "greyscale");
     }
 
     #[test]
