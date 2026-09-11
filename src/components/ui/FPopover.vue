@@ -13,5 +13,5 @@ const { panelStyle } = useFloatingMenu(open, anchor, panel, props.width)
 <template><span ref="anchor" class="f-popover-anchor" @click="open = !open"><slot name="trigger" /></span><Teleport to="body"><div v-if="open" ref="panel" class="f-popover-panel" :style="[panelStyle, { width: `${props.width}px` }]"><slot /></div></Teleport></template>
 
 <style scoped>
-.f-popover-anchor{display:inline-flex}.f-popover-panel{background:var(--surface-elevated);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:6px;position:fixed;z-index:60}
+.f-popover-anchor{display:inline-flex}.f-popover-panel{background:var(--surface-elevated);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:6px;position:fixed;z-index:95}
 </style>

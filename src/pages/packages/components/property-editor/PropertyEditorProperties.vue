@@ -175,6 +175,13 @@ const empty = computed(() => !props.unit);
   gap: 7px;
   margin: 0;
 }
+/* 键值两列布局：键列按内容自适应并给足下限，值列占剩余宽度 */
+.summary-list > div {
+  align-items: baseline;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+}
 .summary-list dt {
   color: var(--subtle-foreground);
   font-size: 10px;

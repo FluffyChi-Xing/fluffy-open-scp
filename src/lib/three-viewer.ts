@@ -42,6 +42,18 @@ export class ThreeViewer {
   readonly camera: ThreeNamespace.PerspectiveCamera;
   /** -90°X 旋转根组：RW4 的 Z-up 模型与 Unit gizmo 以游戏坐标原样加入。 */
   readonly world: ThreeNamespace.Group;
+  /** 渲染画布（编辑器手柄等需要自挂 pointer 事件的组件用）。 */
+  get domElement(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
+  /** 轨道/拾取输入开关：编辑器手柄拖拽期间挂起，避免相机联动。 */
+  private orbitEnabled = true;
+
+  /** 挂起/恢复轨道相机与轻点拾取（TransformControls dragging-changed 用）。 */
+  setOrbitEnabled(enabled: boolean) {
+    this.orbitEnabled = enabled;
+  }
 
   private readonly renderer: ThreeNamespace.WebGLRenderer;
   private readonly container: HTMLElement;
@@ -294,6 +306,7 @@ export class ThreeViewer {
 
   private onPointerDown = (event: PointerEvent) => {
     if (this.pointerActive) return;
+    if (!this.orbitEnabled) return;
     this.pointerActive = true;
     this.pointerButton = event.button;
     this.pointerShift = event.shiftKey;
@@ -346,7 +359,7 @@ export class ThreeViewer {
 
   private onWheel = (event: WheelEvent) => {
     event.preventDefault();
-    this.zoom(event.deltaY);
+    if (this.orbitEnabled) this.zoom(event.deltaY);
   };
 
   private resize() {

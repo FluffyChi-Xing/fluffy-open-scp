@@ -7,10 +7,11 @@ import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import type { Tgi } from "@/api/tauri";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
-import PropertyEditorViewport from "./PropertyEditorViewport.vue";
-import PropertyEditorProperties from "./PropertyEditorProperties.vue";
+import PropertyEditorViewport, { type EditorTool } from "./PropertyEditorViewport.vue";
+import PropertyEditorInspector from "./PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
+import { useEditorHotkeys } from "./useEditorHotkeys";
 import { exportLotModel } from "@/composables/useModelExport";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
@@ -34,12 +35,91 @@ const {
   lotColorsAuthored,
   lotMaskPng,
   selectedUnit,
+  edit,
   hiddenUnits,
   groupVisibility,
   load,
   toggleGroup,
   toggleUnit,
 } = usePropertyEditorSession(props.packageId, props.tgi);
+
+/** 编辑工具（PE-重构-3）：select = 仅拾取；translate/rotate/scale 挂手柄。 */
+const tool = ref<EditorTool>("select");
+function setTool(next: EditorTool) {
+  tool.value = next;
+}
+
+/** 手柄拖拽中的实时变换（坐标面板即时显示；id 为 null = 拖拽结束）。 */
+const liveTransform = ref<{ id: string; position: [number, number, number] } | null>(
+  null,
+);
+function onLiveTransform(
+  id: string | null,
+  value: { position: [number, number, number] } | null,
+) {
+  liveTransform.value = id && value ? { id, position: value.position } : null;
+}
+
+/** 手柄/坐标面板提交变换 → 本地可撤销命令。 */
+function commitTransform(id: string, matrix: number[]) {
+  edit.setUnitTransform(id, matrix);
+}
+/** 元数据面板提交字段 patch → 本地可撤销命令。 */
+function commitFields(id: string, patch: Record<string, unknown>) {
+  edit.setUnitFields(id, patch);
+}
+
+/**
+ * 显式保存：本地编辑导出为 JSON 补丁文件。当前编辑仅存在于内存，
+ * 不触碰任何游戏 package；真正的 DBPF overlay 写回在资产-1（RW4
+ * 写回器）落地后接入，届时同样以此按钮为唯一入口。
+ */
+const saveEditsBusy = ref(false);
+async function saveLocalEdits() {
+  if (saveEditsBusy.value || !edit.editCount.value) return;
+  saveEditsBusy.value = true;
+  try {
+    const payload = {
+      packageId: props.packageId,
+      tgi: props.tgi,
+      assetName: session.value?.assetName ?? null,
+      transforms: [...edit.overrides.entries()],
+      fields: [...edit.fieldOverrides.entries()],
+    };
+    const json = JSON.stringify(payload, null, 2);
+    let binary = "";
+    for (const byte of new TextEncoder().encode(json)) binary += String.fromCharCode(byte);
+    const path = await tauriApi.packages.saveFile(
+      `${session.value?.assetName ?? "lot"}-edits.json`,
+      "json",
+    );
+    if (!path) return;
+    await command("write_export_file", {
+      request: { path, dataBase64: btoa(binary) },
+    });
+  } finally {
+    saveEditsBusy.value = false;
+  }
+}
+
+// scoped 热键：sheet 打开且会话就绪时生效（输入框内不触发，Esc 除外）
+useEditorHotkeys(
+  computed(() => open.value && Boolean(session.value)),
+  () => [
+    { combo: "g", handler: () => setTool("translate") },
+    { combo: "r", handler: () => setTool("rotate") },
+    { combo: "s", handler: () => setTool("scale") },
+    {
+      combo: "escape",
+      handler: () => {
+        if (tool.value !== "select") setTool("select");
+        else selectedId.value = null;
+      },
+    },
+    { combo: "ctrl+z", handler: () => edit.undo() },
+    { combo: "ctrl+shift+z", handler: () => edit.redo() },
+  ],
+);
 
 const renderMode = ref<"default" | "refined">("default");
 /** 通道实验（已停用，见模板注释）：保留状态供复验时恢复。 */
@@ -219,6 +299,20 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         <button
           class="editor-close"
           type="button"
+          :disabled="saveEditsBusy || !edit.editCount.value"
+          :aria-label="$t('package.saveEdits')"
+          :title="$t('package.saveEditsHint')"
+          @click="saveLocalEdits"
+        >
+          <FIcon
+            :name="saveEditsBusy ? 'Loader2' : 'Save'"
+            :size="15"
+            aria-label=""
+          />
+        </button>
+        <button
+          class="editor-close"
+          type="button"
           :disabled="renderShotBusy"
           :aria-label="$t('package.exportRender')"
           :title="$t('package.exportRender')"
@@ -246,7 +340,10 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
             {{ $t("package.exportMeshTextured") }}
           </button>
         </FDropdown>
-        <span class="editor-readonly">{{ $t("package.propertyEditorReadonly") }}</span>
+        <span v-if="edit.editCount.value" class="editor-readonly editor-edits">
+          {{ $t("package.localEdits", { n: edit.editCount.value }) }}
+        </span>
+        <span v-else class="editor-readonly">{{ $t("package.propertyEditorReadonly") }}</span>
         <button
           class="editor-close"
           type="button"
@@ -296,11 +393,20 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :tool="tool"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
           @switch-lod="switchLod"
+          @select-tool="setTool"
+          @commit-transform="commitTransform"
+          @live-transform="onLiveTransform"
         />
-        <PropertyEditorProperties :unit="selectedUnit" />
+        <PropertyEditorInspector
+          :unit="selectedUnit"
+          :live-transform="liveTransform"
+          @update-transform="commitTransform"
+          @update-fields="commitFields"
+        />
       </div>
       <PropertyEditorStatusBar
         v-if="session"
@@ -350,6 +456,10 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   font-size: 11px;
   padding: 3px 10px;
   white-space: nowrap;
+}
+.editor-edits {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
 }
 /* 右侧聚拢由首个 .render-mode 的 auto margin 独立承担：
  * 中间插入的通道实验开关（label/div）不应断开推挤关系 */

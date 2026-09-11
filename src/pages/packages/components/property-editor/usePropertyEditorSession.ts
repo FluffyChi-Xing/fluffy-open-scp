@@ -2,6 +2,7 @@ import { computed, reactive, ref, shallowRef } from "vue";
 import { createDataSource } from "@/api/data-source";
 import { parseLotModelContainer } from "@/lib/three-gltf";
 import { unitId } from "./unitGizmos";
+import { createUnitEditLayer, mergeUnitOverrides } from "./unitEditLayer";
 import type {
   DecalUnit,
   EffectUnit,
@@ -62,6 +63,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const activeLod = ref(0);
   const modelState = ref<ModelState>("pending");
   const selectedId = ref<string | null>(null);
+  /** 本地编辑层（PE-重构-2）：transform override + undo/redo，不写回后端。 */
+  const edit = createUnitEditLayer();
   const hiddenUnits = ref(new Set<string>());
   const groupVisibility = reactive<Record<string, boolean>>({
     model: true,
@@ -85,6 +88,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     activeLod.value = 0;
     modelState.value = "pending";
     selectedId.value = null;
+    edit.reset();
     try {
       const result = await source.readLotEditorSession(packageId, tgi);
       if (token !== requestToken) return;
@@ -134,7 +138,11 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   }
 
   const grouping = computed<UnitGrouping>(() => {
-    const units = session.value?.units ?? [];
+    const units = mergeUnitOverrides(
+      (session.value?.units ?? []) as LotUnitDto[],
+      edit.overrides,
+      edit.fieldOverrides,
+    );
     const result: UnitGrouping = {
       lights: [],
       decals: [],
@@ -168,7 +176,13 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return result;
   });
 
-  const flatUnits = computed<LotUnitDto[]>(() => session.value?.units ?? []);
+  const flatUnits = computed<LotUnitDto[]>(() =>
+    mergeUnitOverrides(
+      (session.value?.units ?? []) as LotUnitDto[],
+      edit.overrides,
+      edit.fieldOverrides,
+    ),
+  );
 
   const lotSize = computed<[number, number] | null>(
     () => session.value?.lotSize ?? null,
@@ -239,6 +253,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotColorsAuthored,
     lotMaskPng,
     selectedUnit,
+    edit,
     hiddenUnits,
     groupVisibility,
     load,
