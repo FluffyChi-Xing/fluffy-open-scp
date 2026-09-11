@@ -1199,3 +1199,108 @@ reverse_key_search + sc-registry lookup）：
 `lot_size = document.lot_size.or(mask_dims × 0.75)`，回退时推诊断消息。
 新探针：model_peek / raster_peek / lot_size_fallback_probe / prop_chain_probe /
 find_instance / reverse_key_search、sc-registry lookup。
+
+## 32. 资产开发长期路线立项（2026-09-11）
+
+资产开发三方案（插槽式白模/蓝图/标定资产包）评估结论、公共底层能力清单、
+Property Editor 模块化改造（注册机制 + 热键 + TransformControls + 复制粘贴）
+MVP 计划与执行顺序，已沉淀为独立文档：
+
+→ **`docs/roadmap/asset-development.md`**（长期目标，PE-重构 1-4 与资产 1-6 双主线）
+
+关键结论：三方案为递进关系而非并列；单一最大缺口是 RW4 写回器（纯只读）；
+Property Editor 六类 Unit 选中已实现，改造起点是 Viewport 底座/业务分离。
+
+## 33. PE-重构-1：Viewport 底座/业务分离（2026-09-11）
+
+按 `docs/roadmap/asset-development.md` §二 MVP 第 1 步执行，行为零变化
+（props/emits/expose 与浮层 UI 均未动）：
+
+- 新增 `useEditorViewport.ts`：视口底座组合式函数——viewer 生命周期、
+  拾取→select、rebuild 骨架（清组/防竞态 token/贴图 URL 回收/光源裁剪/
+  收尾构图）、可见性与选中应用、captureRender。业务场景装配通过
+  `rebuild(assembly)` 回调（scene contributor 的最小形态）注入。
+- 新增 `refinedRender.ts`：SCP 精细渲染模块（~600 行 tint shader 注入、
+  5d 日/夜环境 uniform、tint 贴图预载、tint/顶点色材质装配、逐 mesh
+  材质贴图绑定），纯 TS 无 Vue。
+- 新增 `editorGround.ts`：LotSize 地面矩形、placement 逆矩阵、LotMask
+  四色量化贴图。
+- 新增 `sceneProfile.ts`：模块注册机制骨架——`PropertyEditorModule`/
+  热键表/功能开关 + 三形态静态清单（preview / property-edit / rw4-edit），
+  编译期组合不做运行时注册；热键与 command 执行器待 PE-重构-2/3 接入。
+- `PropertyEditorViewport.vue` 1369 → ~880 行，重写为组合层（装配
+  refinedRender + editorGround + unitGizmos + 浮层 UI）。
+
+验证：vue-tsc、eslint（仅 PropertyEditor.vue 预存 warning）、
+unitGizmos 5 测试、vite build 全通过。preview 形态（PropertyPreview）
+与编辑形态共用同一 Viewport，行为不变。
+
+### 33.1 PE-重构-2：session 本地编辑层（2026-09-11）
+
+- 新增 `unitEditLayer.ts`：`createUnitEditLayer()` = transform override
+  （unitId → WPF 行主序 12 floats，reactive Map）+ undo/redo command 栈
+  （version ref 驱动 canUndo/canRedo/editCount）。`setUnitTransform` 在
+  push 时立即生效；`mergeUnitOverrides` 生成「后端数据 + 本地 override」
+  合并视图（无 override 的 unit 保持引用相等；pathPoint 无 transform 跳过）。
+- 纯函数矩阵转换：`threeToRowMajor`（three 列主序 elements → 行主序 12
+  floats，unitMatrix 的逆映射）与 `translateRowMajor`（世界空间平移，
+  行向量约定平移在索引 9-11）。
+- `usePropertyEditorSession` 接入：grouping/flatUnits 走合并视图，
+  load() 时 `edit.reset()`，返回值新增 `edit`。UI 暂未消费（PE-重构-3
+  手柄拖拽结束与 PE-重构-4 粘贴接入 command）。
+- 新增 `unitEditLayer.test.ts` 8 测试：T·R·S roundtrip（写回命门）、
+  decompose 等价、平移与 three 世界平移一致、命令栈 undo/redo/reset、
+  合并视图引用保持。MVP 不写回 DBPF。
+
+验证：vue-tsc、eslint、13 测试全过。
+
+### 33.2 PE-重构-3：热键 + 工具栏 + TransformControls + 检查器三 tab（2026-09-11）
+
+- **竖向 tab 检查器**：`PropertyEditorInspector.vue` 取代原只读属性面板——
+  属性（原 PropertyEditorProperties）/ 坐标（TransformPanel：位置 XYZ 可
+  编辑、旋转/缩放只读展示，编辑走手柄）/ 元数据（MetadataPanel：MVP 支持
+  light 类型/RGB/内外半径/漫射/长度编辑；其余类型只读提示，decal 暂缓）。
+- **编辑层扩展**：unitEditLayer 新增字段 override（`setUnitFields` patch
+  命令，自动剔除 transform 字段防越权），mergeUnitOverrides 合并两层。
+- **热键**：`useEditorHotkeys` scoped keydown（capture），输入框内不触发
+  （Esc 除外）；G/R/S 切工具、Esc 降级（先退工具再清选中）、Ctrl+Z /
+  Ctrl+Shift+Z 撤销重做。sheet 打开且会话就绪才挂载。
+- **左侧工具栏**：视口左缘垂直工具条（选择/移动/旋转/缩放，Blender 形态）。
+- **TransformControls**（three r185 examples，动态 import）：
+  - `three-viewer.ts` 新增 `domElement` getter 与 `setOrbitEnabled` 输入门控；
+    手柄 dragging-changed 挂起/恢复轨道相机，解决输入抢占。
+  - helper 加 scene 根（相机空间朝向，attached 对象在 Z-up world 组内由
+    TransformControls 负责父空间换算）。
+  - 拖拽结束 compose(pos/quat/scale) → threeToRowMajor → emit
+    commit-transform → 壳落 edit.setUnitTransform（一次拖拽一条命令）；
+    起止矩阵相同不产生冗余命令。
+  - `useEditorViewport` 暴露 unitObjects 与 rebuild revision（选中对象被
+    重建后手柄按 [tool, selectedId, revision] 重挂）。
+- **编辑状态徽标**：header 显示"本地编辑 N"（editCount>0）替代只读徽标。
+- i18n zh/en 新增 17 键（tab/工具/坐标/元数据/本地编辑）。
+
+验证：vue-tsc、eslint（仅存量 warning）、13 测试、vite build 全过。
+手柄拖拽与轨道相机的实测对拍待用户验收（WebView2 输入协调为本步最大风险）。
+
+## 34. 未知类型取证：State Script / Terrain 16-bit / EP1 ER2（2026-09-12）
+
+新增 `sc-exporter/examples/tgi_peek`（TGI 通配抽头 + gzip 展开 + 字符串
+扫描 + 类型清单）对真实安装包取证，结论与落地：
+
+- **0x024A0E52**（官方误拼 "Uken File (Property/Spore?)"）：内容实证为
+  游戏状态机脚本纯文本（app.package 3 条，官方 viewer=viewText）。
+  → 命名 "State Script"；resourceKind 归入 text（高亮 ini）。
+- **0x03E421F0 Greyscale 16-bit**：Game 包实例 0x2096ae79 头部破解为
+  20B 大端头 + channel_code=**7** 的大端 u16 单通道（256²、
+  131092=20+256×256×2 吻合）→ decode_greyscale 新增 code 7 解码
+  （高 8 位灰度近似），16 位地形高度图可预览。EC/ED/F0 更名为
+  Terrain Field/Height Map。新增解码测试。
+- **0x08068AED / 0x08068AEE**（EP1 独有，s3db 无名）：AED = gzip 包裹
+  2.2MB 稀疏数据表（哈希数组+计数字段）；AEE = 12 字节记录表（0x410/411
+  序号 + 位模式字段）。类型号紧邻官方 ER2 Rule File（0x08068AEB/AC），
+  按 ER2 系列 EP1 变体命名 "EP1 ER2 Rule Data (gzip)" / "EP1 ER2 Rule
+  Table"；保持 hex 预览。
+- 命名机制：package_service 新增 `verified_type_name`（实证名优先于
+  s3db 注册表），stats.rs KNOWN_EXTENSIONS 同步；knowledge 文档更新。
+
+验证：cargo check/test（greyscale 3 测试）、vue-tsc、17 前端测试、build 全过。

@@ -48,8 +48,7 @@ const source = computed(() => {
 
 <style scoped>
 .knowledge-page {
-  margin: 0 auto;
-  max-width: 860px;
+  /* 全宽：内容（含宽表格）由工作区框架自身的内边距约束 */
   padding: 18px 20px 40px;
 }
 </style>
