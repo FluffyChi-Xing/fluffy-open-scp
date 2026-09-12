@@ -7,7 +7,10 @@ import {
   type ResourceExportFormat,
 } from "@/composables/useResourceExport";
 
-const props = defineProps<{ preview: ImagePreviewData }>();
+const props = withDefaults(
+  defineProps<{ preview: ImagePreviewData; showExport?: boolean }>(),
+  { showExport: true },
+);
 const scale = ref(1);
 const rotation = ref(0);
 const imageFormat = ref<ResourceExportFormat>(defaultImageFormat(props.preview.mime));
@@ -71,23 +74,25 @@ function onKeydown(event: KeyboardEvent) {
       >
         ↻
       </button>
-      <button
-        type="button"
-        :aria-label="$t('package.exportResource')"
-        :disabled="exporting"
-        @click="exportResource(imageFormat)"
-      >
-        {{ exporting ? $t("package.exporting") : $t("package.export") }}
-      </button>
-      <select
-        v-model="imageFormat"
-        :aria-label="$t('package.exportFormat')"
-        :disabled="exporting"
-      >
-        <option value="png">PNG</option>
-        <option value="jpg">JPG</option>
-        <option value="gif">GIF</option>
-      </select>
+      <template v-if="props.showExport">
+        <button
+          type="button"
+          :aria-label="$t('package.exportResource')"
+          :disabled="exporting"
+          @click="exportResource(imageFormat)"
+        >
+          {{ exporting ? $t("package.exporting") : $t("package.export") }}
+        </button>
+        <select
+          v-model="imageFormat"
+          :aria-label="$t('package.exportFormat')"
+          :disabled="exporting"
+        >
+          <option value="png">PNG</option>
+          <option value="jpg">JPG</option>
+          <option value="gif">GIF</option>
+        </select>
+      </template>
       <button
         type="button"
         :aria-label="$t('package.resetImage')"

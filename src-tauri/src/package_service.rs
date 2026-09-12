@@ -3097,6 +3097,340 @@ pub async fn read_property_preview(
     .await
 }
 
+// ---- Decal Dictionary：贴花图鉴（对齐原 SCP 的 DecalDictionary 编辑器） ----
+//
+// 「decal atlas」是普通 Property 资源，靠 GroupContainer 低 16 位区分
+// （0xB185 / 0x1651 / 0x1652）。载荷是列式并行数组：条目 *i* 由 7 个数组的
+// 下标 *i* 组成，每个条目的 RasterFileID 指向一个 0x2F4E681C Raster，用条目
+// 自带的四色把量化/SDF 图还原为可视图像（解析见 `sc_properties::decal`）。
+//
+// 目录级命令只解析 header（不解像素），缩略图按需批量解码。
+
+/// 单次批量解码的条目数上限。
+const DECAL_IMAGE_BATCH_MAX: usize = 256;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalKeyDto {
+    pub instance: u32,
+    pub type_id: u32,
+    pub group: u32,
+}
+
+impl From<sc_properties::Key> for DecalKeyDto {
+    fn from(key: sc_properties::Key) -> Self {
+        Self {
+            instance: key.instance,
+            type_id: key.type_id,
+            group: key.group,
+        }
+    }
+}
+
+/// 条目引用的 Raster 的可用性（不解像素）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalRasterStatus {
+    pub found: bool,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub pixel_format: Option<u32>,
+    /// pixFmt 21 且四色齐全时可解码为 PNG。
+    pub decodable: bool,
+    pub source_package: Option<String>,
+    /// 不可解码时的原因，供 UI 显示占位文案。
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalEntryMeta {
+    pub index: usize,
+    pub id: Option<DecalKeyDto>,
+    pub raster: Option<DecalKeyDto>,
+    pub aspect_ratio: Option<f32>,
+    /// Color1..4 原始 Vector4（线性分量是 XYZ 的一半）。
+    pub colors: [Option<[f32; 4]>; 4],
+    /// Color1..4 的预览 RGBA8（线性 → sRGB）。
+    pub colors_rgba8: Option<[[u8; 4]; 4]>,
+    pub raster_status: DecalRasterStatus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalArrayLength {
+    pub hash: u32,
+    pub length: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalDictionaryData {
+    pub material: Option<DecalKeyDto>,
+    pub texture_size: Option<[f32; 2]>,
+    pub atlas_size: Option<[f32; 2]>,
+    pub entries: Vec<DecalEntryMeta>,
+    pub array_lengths: Vec<DecalArrayLength>,
+    /// 所有存在的条目数组长度是否一致（原 SCP 装配的前提）。
+    pub uniform_arrays: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalImageData {
+    pub index: usize,
+    pub error: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub png_base64: Option<String>,
+}
+
+impl DecalImageData {
+    /// 失败条目；已知尺寸时保留，便于 UI 显示占位。
+    fn failed(index: usize, error: impl Into<String>, size: Option<(u32, u32)>) -> Self {
+        Self {
+            index,
+            error: Some(error.into()),
+            width: size.map(|(width, _)| width),
+            height: size.map(|(_, height)| height),
+            png_base64: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalImagesRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    pub indices: Vec<usize>,
+}
+
+/// 跨包定位条目引用的 Raster：对齐原 SCP 的「全局索引按 instance + 类型查找」，
+/// 忽略 Key 自带的 group（原 SCP 同样只比较 instance 与 Raster 类型）。
+fn find_decal_raster(
+    package: &Package,
+    manager: &PackageManager,
+    key: Option<sc_properties::Key>,
+) -> Option<(Vec<u8>, u32, String)> {
+    let key = key?;
+    find_resource_across_packages_named(package, manager, key.instance, &[RASTER_IMAGE_TYPE])
+}
+
+fn decal_raster_status(
+    package: &Package,
+    manager: &PackageManager,
+    key: Option<sc_properties::Key>,
+    colors_available: bool,
+) -> DecalRasterStatus {
+    let missing = |reason: String| DecalRasterStatus {
+        found: false,
+        width: None,
+        height: None,
+        pixel_format: None,
+        decodable: false,
+        source_package: None,
+        reason: Some(reason),
+    };
+
+    let Some((bytes, type_id, source)) = find_decal_raster(package, manager, key) else {
+        return missing("raster resource not found".into());
+    };
+    let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
+        return DecalRasterStatus {
+            found: true,
+            width: None,
+            height: None,
+            pixel_format: None,
+            decodable: false,
+            source_package: Some(source),
+            reason: Some("raster header could not be parsed".into()),
+        };
+    };
+
+    let reason = if type_id != RASTER_IMAGE_TYPE {
+        Some("decal entry resolved to a non-raster resource".into())
+    } else if !raster.is_raw_rgba() {
+        Some(format!("unsupported raster pixel format {}", raster.pixel_format))
+    } else if !colors_available {
+        Some("decal entry is missing its four colors".into())
+    } else {
+        None
+    };
+
+    DecalRasterStatus {
+        found: true,
+        width: Some(raster.width),
+        height: Some(raster.height),
+        pixel_format: Some(raster.pixel_format),
+        decodable: reason.is_none(),
+        source_package: Some(source),
+        reason,
+    }
+}
+
+fn decal_dictionary_data(
+    dictionary: sc_properties::DecalDictionary,
+    package: &Package,
+    manager: &PackageManager,
+) -> DecalDictionaryData {
+    let entries = dictionary
+        .entries
+        .iter()
+        .map(|entry| {
+            let colors_rgba8 = entry.colors_rgba8();
+            DecalEntryMeta {
+                index: entry.index,
+                id: entry.id.map(DecalKeyDto::from),
+                raster: entry.raster.map(DecalKeyDto::from),
+                aspect_ratio: entry.aspect_ratio,
+                colors: entry.colors,
+                colors_rgba8,
+                raster_status: decal_raster_status(
+                    package,
+                    manager,
+                    entry.raster,
+                    colors_rgba8.is_some(),
+                ),
+            }
+        })
+        .collect();
+
+    DecalDictionaryData {
+        material: dictionary.material.map(DecalKeyDto::from),
+        texture_size: dictionary.texture_size,
+        atlas_size: dictionary.atlas_size,
+        entries,
+        array_lengths: dictionary
+            .array_lengths
+            .into_iter()
+            .map(|(hash, length)| DecalArrayLength { hash, length })
+            .collect(),
+        uniform_arrays: dictionary.uniform_arrays,
+    }
+}
+
+/// 单条目解码：四色映射量化图 → PNG。
+fn decode_decal_entry(
+    entry: &sc_properties::DecalEntry,
+    package: &Package,
+    manager: &PackageManager,
+) -> DecalImageData {
+    let index = entry.index;
+    let Some(colors) = entry.colors_rgba8() else {
+        return DecalImageData::failed(index, "decal entry is missing its four colors", None);
+    };
+    let Some((bytes, type_id, _source)) = find_decal_raster(package, manager, entry.raster) else {
+        return DecalImageData::failed(index, "raster resource not found", None);
+    };
+    if type_id != RASTER_IMAGE_TYPE {
+        return DecalImageData::failed(
+            index,
+            "decal entry did not resolve to a raster resource",
+            None,
+        );
+    }
+    let raster = match rw4::RasterImage::parse(&bytes) {
+        Ok(raster) => raster,
+        Err(error) => {
+            return DecalImageData::failed(index, format!("raster parse failed: {error}"), None);
+        }
+    };
+    let size = Some((raster.width, raster.height));
+    if !raster.is_raw_rgba() {
+        return DecalImageData::failed(
+            index,
+            format!("unsupported raster pixel format {}", raster.pixel_format),
+            size,
+        );
+    }
+    let rgba = match raster.decode_lot_mask_rgba(&colors) {
+        Ok(rgba) => rgba,
+        Err(error) => return DecalImageData::failed(index, error.to_string(), size),
+    };
+    match encode_rgba_png(raster.width, raster.height, rgba) {
+        Ok(png_base64) => DecalImageData {
+            index,
+            error: None,
+            width: Some(raster.width),
+            height: Some(raster.height),
+            png_base64: Some(png_base64),
+        },
+        Err(error) => DecalImageData::failed(index, error, size),
+    }
+}
+
+#[tauri::command]
+pub async fn read_decal_dictionary(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<DecalDictionaryData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let tgi = request.tgi.clone();
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, package, manager, _store| {
+            if tgi.type_id != PROPERTY_RESOURCE_TYPE {
+                return Err(PackageError::InvalidArgument(
+                    "decal dictionary requires a property resource".into(),
+                ));
+            }
+            if !sc_properties::is_decal_dictionary_group(tgi.group) {
+                return Err(PackageError::InvalidArgument(format!(
+                    "group {:08X} is not a decal atlas instance type",
+                    tgi.group
+                )));
+            }
+            let dictionary = sc_properties::DecalDictionary::parse(data)?;
+            Ok(decal_dictionary_data(dictionary, package, manager))
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn read_decal_images(
+    state: State<'_, AppState>,
+    request: DecalImagesRequest,
+) -> Result<Vec<DecalImageData>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let DecalImagesRequest {
+        package_id,
+        tgi,
+        mut indices,
+    } = request;
+    indices.truncate(DECAL_IMAGE_BATCH_MAX);
+    let guard = tgi.clone();
+    read_resource_with(
+        manager,
+        store,
+        package_id,
+        tgi,
+        move |data, package, manager, _store| {
+            if guard.type_id != PROPERTY_RESOURCE_TYPE {
+                return Err(PackageError::InvalidArgument(
+                    "decal dictionary requires a property resource".into(),
+                ));
+            }
+            let dictionary = sc_properties::DecalDictionary::parse(data)?;
+            let total = dictionary.entries.len();
+            let mut seen = std::collections::HashSet::new();
+            let images = indices
+                .into_iter()
+                .filter(|index| *index < total && seen.insert(*index))
+                .map(|index| decode_decal_entry(&dictionary.entries[index], package, manager))
+                .collect();
+            Ok(images)
+        },
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn read_rw4_preview(
     state: State<'_, AppState>,

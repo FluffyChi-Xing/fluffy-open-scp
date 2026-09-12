@@ -1,11 +1,27 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import type { PropertyPreview } from "@/api/tauri";
+import { isDecalAtlasGroup } from "@/lib/resource-types";
 import PropertyEditor from "../property-editor/PropertyEditor.vue";
+import DecalDictionaryGallery from "./DecalDictionaryGallery.vue";
 
-defineProps<{ preview: PropertyPreview }>();
+const props = defineProps<{ preview: PropertyPreview }>();
 const editorOpen = ref(false);
+
+/** Decal Dictionary（贴花图鉴）用相册取代属性表。 */
+const isDecalDictionary = computed(() =>
+  isDecalAtlasGroup(props.preview.tgi.group),
+);
+const view = ref<"gallery" | "table">("gallery");
+watch(
+  isDecalDictionary,
+  (value) => {
+    view.value = value ? "gallery" : "table";
+  },
+  { immediate: true },
+);
+
 function hashLabel(hash: number) {
   return `0x${hash.toString(16).padStart(8, "0").toUpperCase()}`;
 }
@@ -44,13 +60,28 @@ function hashLabel(hash: number) {
         }}
         <FIcon name="ChevronDown" :size="11" aria-label="" />
       </button>
+      <button
+        v-if="isDecalDictionary"
+        type="button"
+        :aria-pressed="view === 'gallery'"
+        @click="view = view === 'gallery' ? 'table' : 'gallery'"
+      >
+        <FIcon :name="view === 'gallery' ? 'ListTree' : 'Image'" :size="13" aria-label="" />{{
+          view === "gallery" ? $t("decal.switchTable") : $t("decal.switchGallery")
+        }}
+      </button>
     </div>
     <PropertyEditor
       v-model:open="editorOpen"
       :package-id="preview.packageId"
       :tgi="preview.tgi"
     />
-    <div class="structured-table-wrap">
+    <DecalDictionaryGallery
+      v-if="isDecalDictionary && view === 'gallery'"
+      :package-id="preview.packageId"
+      :tgi="preview.tgi"
+    />
+    <div v-else class="structured-table-wrap">
       <table class="structured-table">
         <thead>
           <tr>

@@ -8,6 +8,18 @@ export const AUDIO_TYPE_ID = 0x0d9e5710;
 export const WWISE_BANK_TYPE_ID = 0x0a4d8d09;
 export const VIDEO_TYPE_ID = 0x376840d7;
 export const TTF_TYPE_ID = 0x276ca4b9;
+/**
+ * Decal Atlas（贴花图鉴）的标识：Property 资源 GroupContainer 的低 16 位。
+ * 对应原 SCP 的 `PropertyFileTypeIds.DecalAtlas{1,2,3}`，以及
+ * `crates/sc-properties/src/decal.rs` 中的同一组常量。
+ */
+export const DECAL_ATLAS_GROUP_TYPES: readonly number[] = [
+  0xb185, 0x1651, 0x1652,
+];
+
+export function isDecalAtlasGroup(group: number): boolean {
+  return DECAL_ATLAS_GROUP_TYPES.includes(group & 0xffff);
+}
 /** TGA / Cursor / Greyscale Map（8/32/16-bit）：需 Rust 解码为 PNG。 */
 export const GENERIC_IMAGE_TYPE_IDS = [
   0x2f7d0006, // TGA

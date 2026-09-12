@@ -25,6 +25,7 @@
 //! ```
 
 mod combine;
+pub mod decal;
 mod error;
 pub mod locale;
 mod lot;
@@ -34,6 +35,7 @@ mod model;
 use std::fmt;
 
 pub use combine::{AssetGroup, MODEL_DETAILS_HASH, combine_assets, has_model_details};
+pub use decal::{DecalDictionary, DecalEntry, is_decal_dictionary_group};
 pub use error::{Error, Result};
 pub use locale::{
     LOCALE_RESOURCE_TYPE, Locale, MODEL_RESOURCE_TYPE, NAME_PROPERTY_HASHES, collect_name_map,

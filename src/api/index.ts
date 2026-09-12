@@ -34,6 +34,8 @@ import {
   type ResourceAnnotationInput,
   type AnnotationTopicStat,
   type PropertyResourceData,
+  type DecalDictionaryData,
+  type DecalImageData,
   type Rw4ResourceData,
   type Rw4SectionDetail,
   type ResourcePage,
@@ -176,6 +178,14 @@ export const tauriApi = {
     readPropertyPreview: (packageId: number, tgi: Tgi) =>
       command<PropertyResourceData>("read_property_preview", {
         request: { packageId, tgi },
+      }),
+    readDecalDictionary: (packageId: number, tgi: Tgi) =>
+      command<DecalDictionaryData>("read_decal_dictionary", {
+        request: { packageId, tgi },
+      }),
+    readDecalImages: (packageId: number, tgi: Tgi, indices: number[]) =>
+      command<DecalImageData[]>("read_decal_images", {
+        request: { packageId, tgi, indices },
       }),
     readLotEditorSession: (packageId: number, tgi: Tgi) =>
       command<LotEditorSession>("read_lot_editor_session", {

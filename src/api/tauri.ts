@@ -213,6 +213,57 @@ export interface PropertyPreview extends PreviewData {
   claimedCount: number;
   entries: PropertyEntry[];
 }
+/**
+ * Decal Dictionary（贴花图鉴）：GroupContainer 低 16 位为 0xB185 / 0x1651 /
+ * 0x1652 的 Property 资源。条目由 7 个并行数组按下标组装，每个条目的
+ * RasterFileID 指向一个 Raster 资源，用条目自带的四色还原量化图。
+ */
+export interface DecalKey {
+  instance: number;
+  typeId: number;
+  group: number;
+}
+export interface DecalRasterStatus {
+  found: boolean;
+  width: number | null;
+  height: number | null;
+  pixelFormat: number | null;
+  /** pixFmt 21 且四色齐全时可解码为 PNG。 */
+  decodable: boolean;
+  sourcePackage: string | null;
+  /** 不可解码原因，用于单元格占位文案。 */
+  reason: string | null;
+}
+export interface DecalEntryMeta {
+  index: number;
+  id: DecalKey | null;
+  raster: DecalKey | null;
+  aspectRatio: number | null;
+  /** Color1..4 原始 Vector4（线性分量是 XYZ 的一半）。 */
+  colors: ([number, number, number, number] | null)[];
+  /** Color1..4 的预览 RGBA8（线性 → sRGB）。 */
+  colorsRgba8: [number, number, number, number][] | null;
+  rasterStatus: DecalRasterStatus;
+}
+export interface DecalArrayLength {
+  hash: number;
+  length: number | null;
+}
+export interface DecalDictionaryData {
+  material: DecalKey | null;
+  textureSize: [number, number] | null;
+  atlasSize: [number, number] | null;
+  entries: DecalEntryMeta[];
+  arrayLengths: DecalArrayLength[];
+  uniformArrays: boolean;
+}
+export interface DecalImageData {
+  index: number;
+  error: string | null;
+  width: number | null;
+  height: number | null;
+  pngBase64: string | null;
+}
 export interface Rw4Section {
   number: number;
   typeCode: number;

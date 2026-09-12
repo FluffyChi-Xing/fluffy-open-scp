@@ -10,6 +10,8 @@ import type {
   PackageHistory,
   PackageStatistics,
   PropertyResourceData,
+  DecalDictionaryData,
+  DecalImageData,
   LotEditorSession,
   RasterPreviewData,
   ResourceBytes,
@@ -70,6 +72,17 @@ export interface OpenScpDataSource {
     packageId: number,
     tgi: Tgi,
   ): Promise<PropertyResourceData>;
+  /** Decal Dictionary 元数据与条目（不解码像素）。 */
+  readDecalDictionary(
+    packageId: number,
+    tgi: Tgi,
+  ): Promise<DecalDictionaryData>;
+  /** 按条目下标批量解码缩略图（单次上限 256）。 */
+  readDecalImages(
+    packageId: number,
+    tgi: Tgi,
+    indices: number[],
+  ): Promise<DecalImageData[]>;
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
   /** 返回 `read_lot_model_meshes` 原始字节容器（LotModelPayload，见 tauri.ts）。 */
   readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
@@ -132,6 +145,8 @@ function tauriDataSource(): OpenScpDataSource {
     readResourceBytes: tauriApi.packages.readBytes,
     resolveNames: tauriApi.packages.resolveNames,
     readPropertyPreview: tauriApi.packages.readPropertyPreview,
+    readDecalDictionary: tauriApi.packages.readDecalDictionary,
+    readDecalImages: tauriApi.packages.readDecalImages,
     readLotEditorSession: tauriApi.packages.readLotEditorSession,
     readLotModelMeshes: tauriApi.packages.readLotModelMeshes,
     readResourceText: tauriApi.packages.readResourceText,
@@ -373,6 +388,20 @@ function mockDataSource(): OpenScpDataSource {
         claimedCount: mockPropertyEntries.length,
         entries: mockPropertyEntries,
       };
+    },
+    // 演示模式没有 decal 字典数据；相册对空结果展示空态即可。
+    async readDecalDictionary(_packageId, _tgi) {
+      return {
+        material: null,
+        textureSize: null,
+        atlasSize: null,
+        entries: [],
+        arrayLengths: [],
+        uniformArrays: true,
+      };
+    },
+    async readDecalImages(_packageId, _tgi, _indices) {
+      return [];
     },
     async readLotEditorSession(_packageId, tgi) {
       const matrix = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];

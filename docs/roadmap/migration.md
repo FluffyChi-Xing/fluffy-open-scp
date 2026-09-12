@@ -1360,3 +1360,92 @@ SimCityUserData 用户数据不同）；扫描器只需 JSON 解析 + gzip 展�
   血量；触发面收敛于 FUN_00702770 单函数。
 - **横切**：32 位属性 hash 全库通用（FNV/CRC32 不匹配，私有 hash 待破）；
   COM 双 vtable+侵入式引用计数；fourCC 子系统注册表连续区段。
+
+## 36. Decal Dictionary（贴花图鉴）相册浏览（2026-09-12 第三十六轮）
+
+原 SCP 能对 decal atlas 显示网格相册，OpenSCP 此前只有属性表。核对原 SCP v2
+源码（`D:\source-map\Simcitypak-v2`）后确认机制并实现。
+
+**机制（源码实证）**
+
+- 「decal atlas」不是图片，而是普通 Property 资源（`0x00B1B104`），由
+  **GroupContainer 低 16 位**区分：`0xB185` / `0x1651` / `0x1652`
+  （`InstanceTypeIconConverter.cs` 的 `DecalAtlas{1,2,3}`；`ViewSelector.cs`
+  据此选择 `viewDecalDictionary`）。
+- 载荷为 **列式并行数组**（无条目计数字段）：字典级 `MaterialId 0x0CE5EF4E`、
+  `TextureSize 0x0CE5EF4F`、`AtlasSize 0x0CE5EF60`；条目级 7 个数组
+  `ID 0x0CE5EF50`、`AspectRatio 0x0CE5EF53`、`RasterFileID 0x0CE5EF58`、
+  `Color1..4 0x0CE5EF5C..5F`，条目 *i* = 各数组下标 *i* 的元组。
+- 每个条目的 `RasterFileID.InstanceId` 指向一个 `0x2F4E681C` Raster；预览用条目
+  自带四色还原量化/SDF 图。通道映射与 LotMask 同源，可直接复用已验证的
+  `RasterImage::decode_lot_mask_rgba`（`crates/rw4/src/raster.rs:106-121`）：
+  传 `[Color1..Color4]` 即得原 SCP 结果。
+- 颜色存的是**线性值的一半**（C# 侧 `X = color.ScR/2`、显示 `FromScRgb(1, X*2)`），
+  故还原需 `linear_to_srgb(X*2)`；直接 `X*2*255` 会偏暗。
+
+**真实数据验证（SimCity_Game.package）**
+
+- 7 个 decal 字典：group 低 16 位覆盖 `0x1651` / `0x1652` / `0xb185`（后者完整
+  group = `0xc67fb185`，与 C# `DecalDictionaryGroup` 常量一致）。条目数
+  29 / 149 / 190 / 247 / 254 / 385 / 440，7 个数组全部等长。
+- 其中 `0xfb661652-0xeefd390c`（material `0xe5390a98`、textureSize 32×32、
+  atlasSize 512×512）与原始 SCP 截图完全对应：条目 0..4 依次为
+  `0xb05945fb` / `0x224a5eba` / `0x23585701` / `0xc3921bf9` / `0x1b015691`，
+  **ID 与显示顺序逐项一致**。
+- 图片尺寸确实不一致：32×32 / 64×64 / 32×64 / 64×32 / 128×32 / 256×32 /
+  64×128 / 128×128，aspect ratio 0.5–8，印证「原 SCP 无法保证每张一样大」。
+- Raster 跨包分布：主要来自 `SimCity_Graphics.package`，其余在
+  `SimCityDataEP1.package` / `SimCity_DLC0.package`。只开 Game+Graphics 时
+  命中率仅 6–68%，把 SimCityData 主要包都打开后升至 99%+。
+- 导出 PNG 目视比对：`0xb05945fb` → 金色 MODERN + 蓝色 INDUSTRY；
+  `0x23585701` → 青色网纹 + 金色圆点；`0xc016bd89` → 深色工业塔 + 青色 MECH。
+  与原 SCP 截图逐张一致，确认四色映射与 sRGB 转换正确。
+
+**修正此前死路结论**
+
+§27 与 `docs/overview/raster-lot-decal-analysis.md` 记录「decalID key 如
+`0x3DF339B4` 在全部 .package 中无对应资源，原型不可达」。实测修正：该 ID 是
+字典 `0xc67fb185-0x1813da18`（29 条目、仅含 Color1、material `0x4491de3a`、
+atlasSize 1024×512）的**第 9 号条目**，条目本身可达可解析；不在基础安装中的是
+它引用的 **Raster**（`0x657856f5`），该字典 29 条的 Raster 全部缺失。故「字典
+可离线解析」成立，仅个别字典的纹理资源需 DLC 或运行时补全。
+
+**实现**
+
+- 新增 `crates/sc-properties/src/decal.rs`：`DecalDictionary` / `DecalEntry` /
+  `is_decal_dictionary_group` / `looks_like_dictionary`。并行数组长度不一致时
+  以最长数组为条目数、越界字段记 `None`（原 SCP 会直接抛异常；只读浏览选择
+  更宽容，并上报 `uniform_arrays` 与各数组长度）。
+- 新增两个 Tauri 命令（`src-tauri/src/package_service.rs`）：
+  `read_decal_dictionary`（只解析 header，不解像素）与 `read_decal_images`
+  （按下标批量解码，单次上限 256，逐条独立失败）。
+- 前端：`DecalDictionaryGallery.vue`（元数据头 + 内部检索 + 自适应 4~5 列 +
+  IntersectionObserver 懒加载 + 批量 8）、`DecalImageViewerSheet.vue`（外侧
+  Sheet 复用 `ImagePreview.vue` 的缩放/旋转，隐藏资源导出）。
+  `PropertyPreview.vue` 按 group 低 16 位自动切换相册/属性表，可手动切回。
+- 探针 `crates/sc-exporter/examples/decal_probe.rs`：分布统计 + 逐条状态 +
+  `--only=<group:instance>` 定位 + `--out=<dir>` 导出 PNG 供目视比对。
+
+**测试与性能报告（Windows 11，release）**
+
+- 单元测试：`cargo test -p sc-properties --lib` 37 通过（新增 6 项：group 判定、
+  并行数组装配、长度不一致容错、空数组、线性→sRGB、坏载荷拒绝）。
+- 前端：`pnpm check`（vue-tsc）通过；改动文件 `pnpm lint` 无错误。
+- 计时环境：release 构建、探针镜像两个命令、4 个包已打开
+  （Game / Graphics / EP1 / DLC0）。探针含逐条控制台输出，实际命令略快。
+
+| 项目 | 耗时 | 说明 |
+|---|---|---|
+| 基线（仅开包 + 索引解析） | 150 ms | 应用内包常驻，不计入单次命令 |
+| 元数据 440 条目 | 219–233 ms | 扣基线 ≈ 70–85 ms |
+| 元数据 29 条目（Raster 全缺） | 123–189 ms | 无跨包查找，≈基线 |
+| 缩略图 40 张（32×32–256×32） | 35–78 ms | ≈ 0.9–2.0 ms/张（含 PNG 编码） |
+| 单批 8 张（前端 BATCH_SIZE） | 8–16 ms | 首屏 ~24 格 ≈ 3 批 |
+| PNG 体积 | 均值 1223 B | 40 张约 49 KB |
+
+- **热点**：跨包查找 `find_resource_across_packages_named` 为线性扫描包内索引，
+  440 条目 ≈ 0.19 ms/条。字典更大或包内索引更大时线性增长；后续可用
+  instance→entry 索引表（同 `sc-exporter/src/texture_index.rs` 思路）优化。
+- 既有问题（非本轮引入）：`crates/sc-properties/examples/lot_mask_probe.rs:64`
+  向 `decode_lot_mask_rgba` 传 3 元素数组，导致 `cargo test -p sc-properties`
+  在编译 example 阶段失败；`--lib` 不受影响。已单独记录，未在本轮改动。
