@@ -1339,3 +1339,24 @@ SimCityUserData 用户数据不同）；扫描器只需 JSON 解析 + gzip 展�
 - 180° 翻转修复与 v2 同批待用户对拍。
 
 验证：cargo check/test（54）、vue-tsc、17 前端测试、build 全过。
+
+## 35. GlassBox 引擎五大子系统深扫（2026-09-12）
+
+基于 docs/source-code（348 文件）五路并行深扫，产物 docs/overview/glass-box/
+（README 概述 + eco-swarm / transport / zoning-lot / terrain / disaster 五文档）。
+核心结论：
+
+- **Agent 两形态**：交通侧显式实体（薄基类+池槽位承载状态，逐段续约无全程
+  寻路）；经济侧无 agent（场 SwarmMap + beat 规则表承担，"agent 是数据"）。
+- **交通算法**：三层管道池 + 容量-队列拥堵传播（min 沿邻接边扩散）+ LCG
+  择向 + 信号组 mod-4 相位；11 模式 GUID 数据驱动注册。
+- **驱动脚本**：行为参数 100% property 化（type tag 校验+默认值回退）；
+  调参文件零代码；GCT 脚本在数据包（OpenSCP property 编辑器=模拟调参器）。
+- **Terrain**：256×256=65536 实证、13 张 typed map、Eco/G 双副本共享持有。
+- **Zoning/Lot**：lot=corner 对之间的带（非网格）；parcel 0x4C、lot 表 0x108
+  步长（**修正**：所谓"0x5c lot 数组"实为 transport 站点数组）；成长=每帧
+  带时间预算的随机抽取+废弃兜底。
+- **Disaster**：switch case 1..13 实证；破坏=状态标记+计时+属性随机，无
+  血量；触发面收敛于 FUN_00702770 单函数。
+- **横切**：32 位属性 hash 全库通用（FNV/CRC32 不匹配，私有 hash 待破）；
+  COM 双 vtable+侵入式引用计数；fourCC 子系统注册表连续区段。
