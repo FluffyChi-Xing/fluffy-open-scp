@@ -450,6 +450,9 @@ pub struct LotEditorSession {
     pub lot_albedo_png: Option<String>,
     /// "Lot Textures" 地表共享纹理（DXT5 解码 PNG）；None = 缺失或解码失败。
     pub lot_surface_png: Option<String>,
+    /// 精细渲染贴花纹理（decal 单元按 ID 解析 atlas 条目并四色解码），
+    /// 与 units 中 category+index 对应。
+    pub decal_textures: Vec<DecalUnitTextureDto>,
     /// LotColor1-4 的 RGBA（A = 地面贴图索引 0-15，SCP GroundTextures 图集）。
     pub lot_colors: [[u8; 4]; 4],
     /// LotColor1-4 是否实际存在于 property（false = 黑/红/绿/蓝回退，
@@ -1694,6 +1697,8 @@ pub async fn read_lot_editor_session(
                 data,
                 sc_properties::ParseLimits::default(),
             )?;
+            // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG。
+            let decal_textures = resolve_decal_textures(&properties, package, manager);
             let document = sc_properties::LotEditorDocument::from_property_file(properties);
             let lot_units = document.assemble_units();
             let mut diagnostics = lot_units.diagnostics;
@@ -1797,6 +1802,7 @@ pub async fn read_lot_editor_session(
                 lot_surface_png,
                 lot_colors: colors,
                 lot_colors_authored,
+                decal_textures,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,
                 document,
@@ -3339,6 +3345,129 @@ pub async fn read_property_preview(
 
 /// 单次批量解码的条目数上限。
 const DECAL_IMAGE_BATCH_MAX: usize = 256;
+
+/// 精细渲染的贴花纹理：lot decal 单元按 ID 在 Decal Atlas 字典中解析出
+/// 的条目，四色解码为 PNG（透明/配色已还原）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalUnitTextureDto {
+    /// Decal 类别（0-2，对应 property 的 0x0D109050 + category 列）。
+    pub category: u32,
+    /// 类别内下标（与前端 DecalUnit 的 index 对应）。
+    pub index: u32,
+    /// Decal ID 的 instance（lot property 里引用的原值）。
+    pub id_instance: u32,
+    /// 命中的 Decal Atlas 字典 instance。
+    pub atlas_instance: Option<u32>,
+    /// 条目宽高比（w/h），贴花 quad 由 scale 与它推导尺寸。
+    pub aspect_ratio: Option<f32>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// 四色解码后的 PNG（base64）。
+    pub png: Option<String>,
+    pub error: Option<String>,
+}
+
+/// 收集全部 Decal Atlas 字典（跨包去重，高细节 textureSize 优先）。
+fn collect_decal_atlases(packages: &[&Package]) -> Vec<sc_properties::DecalDictionary> {
+    let mut out: Vec<sc_properties::DecalDictionary> = Vec::new();
+    let mut seen: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
+    for package in packages {
+        for e in package.entries() {
+            if e.id.type_id != 0x00B1_B104 {
+                continue;
+            }
+            if !sc_properties::decal::DECAL_ATLAS_INSTANCE_TYPES
+                .contains(&(e.id.group as u16))
+            {
+                continue;
+            }
+            if !seen.insert((e.id.group, e.id.instance)) {
+                continue;
+            }
+            if let Ok(bytes) = package.read(e) {
+                if let Ok(dict) = sc_properties::DecalDictionary::parse(&bytes) {
+                    out.push(dict);
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| {
+        let a_size = a.texture_size.map(|s| s[0] * s[1]).unwrap_or(0.0);
+        let b_size = b.texture_size.map(|s| s[0] * s[1]).unwrap_or(0.0);
+        b_size.total_cmp(&a_size)
+    });
+    out
+}
+
+/// 解析 lot decal 单元的贴花纹理。查链路：ID（仅 instance）→ Decal Atlas
+fn resolve_decal_textures(
+    properties: &sc_properties::PropertyFile,
+    package: &Package,
+    manager: &PackageManager,
+) -> Vec<DecalUnitTextureDto> {
+    let mut all: Vec<&Package> = vec![package];
+    let manager_packages = manager.all_packages().unwrap_or_default();
+    all.extend(manager_packages.iter().map(|p| p.as_ref()));
+    let atlases = collect_decal_atlases(&all);
+    // 高细节优先（textureSize 大者条目分辨率更高）。
+    let mut atlases = atlases;
+    atlases.sort_by(|a, b| {
+        let a_size = a.texture_size.map(|s| s[0] * s[1]).unwrap_or(0.0);
+        let b_size = b.texture_size.map(|s| s[0] * s[1]).unwrap_or(0.0);
+        b_size.total_cmp(&a_size)
+    });
+
+    let mut out = Vec::new();
+    for category in 0..3u32 {
+        let Some(id_property) = properties.get(0x0D10_9050 + category) else {
+            continue;
+        };
+        let sc_properties::Kind::Array(ids) = &id_property.kind else {
+            continue;
+        };
+        for (index, value) in ids.iter().enumerate() {
+            let sc_properties::Value::Key(key) = value else { continue };
+            let entry = atlases
+                .iter()
+                .find_map(|dict| {
+                    dict.entries
+                        .iter()
+                        .find(|entry| entry.id.map(|k| k.instance) == Some(key.instance))
+                });
+            let mut dto = DecalUnitTextureDto {
+                category,
+                index: index as u32,
+                id_instance: key.instance,
+                atlas_instance: None,
+                aspect_ratio: entry.and_then(|e| e.aspect_ratio),
+                width: None,
+                height: None,
+                png: None,
+                error: None,
+            };
+            match entry {
+                Some(entry) => {
+                    if out.len() >= DECAL_IMAGE_BATCH_MAX {
+                        dto.error = Some("decal texture batch limit reached".into());
+                    } else {
+                        let decoded =
+                            decode_decal_entry(entry, package, manager);
+                        dto.width = decoded.width;
+                        dto.height = decoded.height;
+                        dto.png = decoded.png_base64.clone();
+                        dto.error = decoded.error.clone();
+                    }
+                }
+                None => {
+                    dto.error = Some("decal id not found in any decal atlas".into());
+                }
+            }
+            out.push(dto);
+        }
+    }
+    out
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

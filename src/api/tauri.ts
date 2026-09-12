@@ -351,6 +351,19 @@ export interface DecalUnit {
   materialData: [number, number, number] | null;
   fields: UnitFieldDto[];
 }
+/** 精细渲染贴花纹理：decal 单元按 ID 解析 atlas 条目并四色解码（category+index 对应）。 */
+export interface DecalUnitTexture {
+  category: number;
+  index: number;
+  idInstance: number;
+  atlasInstance: number | null;
+  aspectRatio: number | null;
+  width: number | null;
+  height: number | null;
+  /** 四色解码后的 PNG（裸 base64）；解析失败为 null。 */
+  png: string | null;
+  error: string | null;
+}
 export interface PropUnit {
   kind: "prop";
   index: number;
@@ -410,6 +423,8 @@ export interface LotEditorSession {
   /** LotColor1-4 是否实际存在（false = 黑/红/绿/蓝回退，不应着色）。 */
   lotColorsAuthored: boolean[];
   units: LotUnitDto[];
+  /** 精细渲染贴花纹理（与 units 中 decal 的 category+index 对应）。 */
+  decalTextures: DecalUnitTexture[];
   pathPairs: number[];
   diagnostics: string[];
 }

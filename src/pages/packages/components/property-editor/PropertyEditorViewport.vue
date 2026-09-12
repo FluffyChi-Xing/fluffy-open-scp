@@ -6,13 +6,20 @@ import FSpinner from "@/components/ui/FSpinner.vue";
 import { disposeObject } from "@/lib/three-viewer";
 import { parseLotModelObjects } from "@/lib/three-gltf";
 import type * as ThreeNamespace from "three";
-import type { LotModelLodRef, LotModelPayload, LotUnitDto } from "@/api/tauri";
+import type {
+  DecalUnit,
+  DecalUnitTexture,
+  LotModelLodRef,
+  LotModelPayload,
+  LotUnitDto,
+} from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
 import {
   buildPathLine,
   buildRealLightUnit,
   buildUnitObject,
   unitId,
+  unitMatrix,
 } from "./unitGizmos";
 import { useEditorViewport } from "./useEditorViewport";
 import {
@@ -60,6 +67,8 @@ const props = defineProps<{
   lotMaskRawRgba: string | null;
   /** 默认模式地表反照率（通道平色+底图格；缺失时回退量化图）。 */
   lotAlbedoPng: string | null;
+  /** 精细模式贴花纹理（按 decal 的 category+index 对应）。 */
+  decalTextures: DecalUnitTexture[];
   /** "Lot Textures" 地表共享纹理（data URL；精细模式地面 v2 用）。 */
   lotSurfacePng: string | null;
   selectedId: string | null;
@@ -443,6 +452,36 @@ async function assembleScene(ctx: Parameters<
     }
   }
 
+/** 精细模式贴花 quad：四色解码贴图，尺寸 = scale × scale/aspect，
+ *  沿贴花局部 Z 挑出 depth（离墙偏移）。无纹理返回 null（回退标记锥）。 */
+function buildDecalQuad(
+  THREE: typeof ThreeNamespace,
+  unit: DecalUnit,
+  texture: DecalUnitTexture,
+): ThreeNamespace.Mesh | null {
+  if (!texture.png) return null;
+  const aspect =
+    texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
+  const width = Math.max(unit.scale ?? 4, 0.05);
+  const height = Math.max(width / aspect, 0.05);
+  const map = new THREE.TextureLoader().load(
+    `data:image/png;base64,${texture.png}`,
+  );
+  map.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide }),
+  );
+  if (unit.transform) {
+    const matrix = unitMatrix(THREE, unit.transform);
+    matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+  }
+  mesh.translateZ(unit.depth ?? 0);
+  mesh.userData.unitId = unitId(unit);
+  mesh.userData.unitKind = unit.kind;
+  return mesh;
+}
+
   const units: LotUnitDto[] = [
     ...props.grouping.lights,
     ...props.grouping.decals,
@@ -451,12 +490,22 @@ async function assembleScene(ctx: Parameters<
     ...props.grouping.spawners,
     ...props.grouping.pathPoints,
   ];
+  // 精细模式贴花：category+index → 解码纹理（后端已按 ID 查 atlas 条目）。
+  const decalTextureByKey = new Map(
+    props.decalTextures.map((texture) => [`${texture.category}:${texture.index}`, texture]),
+  );
   for (const unit of units) {
-    // 精细模式：光源用真实 three.js 光源；其余组件保持标记锥
+    // 精细模式：光源用真实 three.js 光源、贴花用 atlas 纹理 quad；其余组件保持标记锥
+    const decalTexture =
+      props.renderMode === "refined" && unit.kind === "decal"
+        ? decalTextureByKey.get(`${unit.category}:${unit.index}`)
+        : undefined;
     const object =
       props.renderMode === "refined" && unit.kind === "light"
         ? buildRealLightUnit(THREE, unit)
-        : buildUnitObject(THREE, unit);
+        : unit.kind === "decal" && decalTexture
+          ? buildDecalQuad(THREE, unit, decalTexture)
+          : buildUnitObject(THREE, unit);
     if (!object) continue;
     instance.group(kindGroup(unit.kind)).add(object);
     ctx.unitObjects.set(unitId(unit), object);

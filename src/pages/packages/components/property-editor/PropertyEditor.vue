@@ -391,6 +391,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-mask-raw-rgba="lotMaskRawRgba"
           :lot-albedo-png="lotAlbedoPng"
           :lot-surface-png="lotSurfacePng"
+          :decal-textures="session?.decalTextures ?? []"
           :selected-id="selectedId"
           :hidden-units="hiddenUnits"
           :group-visibility="groupVisibility"
