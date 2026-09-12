@@ -1449,3 +1449,49 @@ atlasSize 1024×512）的**第 9 号条目**，条目本身可达可解析；不
 - 既有问题（非本轮引入）：`crates/sc-properties/examples/lot_mask_probe.rs:64`
   向 `decode_lot_mask_rgba` 传 3 元素数组，导致 `cargo test -p sc-properties`
   在编译 example 阶段失败；`--lib` 不受影响。已单独记录，未在本轮改动。
+
+## 37. Raster 通道预览组件重做（2026-09-12 第三十七轮）
+
+**问题**：OpenSCP 此前对 Raster 一律按原始 RGBA 直出（`decode_top_mip_rgba`）。
+四层量化/SDF 类 Raster（decal、LotMask）的四个通道是**数据**而非颜色，直出后
+α 常为 0 导致整图近乎透明，R/G/B 的 SDF 渐变又呈平滑彩虹——观感即「只剩一个
+通道 + 整体模糊」。对照 0xb05945fb（MODERN INDUSTRY 贴花）实测确认：模糊不是
+缩放造成（`image-rendering: pixelated` 一直生效），而是数据本身。
+
+**原 SCP 机制**（`Views/ViewRaster.xaml` + `viewHelpers/RasterImage.cs`）：
+底部 Display Channel 单选组提供 **Preview / All / A / R / G / B / Facade Color**
+七种模式，且 `Stretch="None"` 按原始像素 1:1 显示。`Preview` 是默认项，即四层
+量化：按 `A > R > G > B` 阈值 ≥128 命中 color1..color4，未命中处透明。
+
+**重做设计**（6 视图，默认对齐 SCP 的 Preview）：
+
+| 视图 | 语义 |
+|---|---|
+| 四层量化 `quantized` | 默认。黑/红/绿/蓝四色，硬边，decal/LotMask 可读 |
+| 合成 `composite` | RGB 直出但 **alpha 强制不透明**（alpha 多为数据通道） |
+| `r` / `g` / `b` / `a` | 单通道**灰度**（比原版的红/绿/蓝着色更易读） |
+
+省略 `Facade Color`（原工具的建筑作者辅助分色，非通用预览需要）。
+
+**颜色下标坑位**（沿用 §36 结论）：`decode_lot_mask_rgba(colors)` 的下标 0..3
+依次是 SCP 的 color4 / color3 / color2 / color1，故默认配色常量
+`DEFAULT_QUANTIZED_COLORS` 按 **[蓝, 绿, 红, 黑]** 存放，对应 SCP 的
+color1..4 = 黑 / 红 / 绿 / 蓝。
+
+**实现**：`crates/rw4/src/raster.rs` 新增 `RasterView` / `render_view` /
+`DEFAULT_QUANTIZED_COLORS`；`read_raster_preview` 增加 `channel` 参数
+（缺省 quantized，非法值报 InvalidArgument）并在响应中回显 `channel` 供前端
+按视图缓存；前端新增 `RasterPreview.vue`（nav bar + 逐视图缓存 + 切换期间保留
+旧图避免闪烁），`previewResource` 对 Raster 改返回 `kind: "raster"`，由
+`ResourcePreview.vue` 路由。视图缩放仍复用 `ImagePreview.vue`（`pixelated`）。
+
+**验证**：`cargo test -p rw4 --lib` 44 项通过（新增 4 项：合成强制不透明、
+四通道灰度、四层量化交叉配色、视图名往返与非法名拒绝）。真实数据
+（`SimCity_Graphics.package` 的 0xb05945fb，64×128 pixFmt21）六视图导出目视：
+quantized 为硬边四色 MODERN INDUSTRY；composite 不透明且可见真实 RGB 数据；
+R / A 各自呈灰度 SDF 层。探针：`cargo run -p sc-exporter --release --example
+raster_views -- <package> <instance_hex> <out_dir>`。
+
+**计时**（release）：6 视图合计 160–227 ms，其中绝大部分是开包（≈150 ms）与
+6 次文件写；应用内包常驻，切换成本为单次 PNG 编码 + 一次 IPC，且已切换过的
+视图在前端缓存，回切无请求。

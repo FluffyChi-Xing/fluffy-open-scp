@@ -58,7 +58,9 @@ pub use mesh::{
     VertexArrayHeader,
 };
 pub use model::{FileType, Rw4File};
-pub use raster::{RASTER_PIXEL_FORMAT_A8R8G8B8, RasterImage};
+pub use raster::{
+    DEFAULT_QUANTIZED_COLORS, RASTER_PIXEL_FORMAT_A8R8G8B8, RasterImage, RasterView,
+};
 pub use section::{Section, SectionType};
 pub use skeleton::{DecodedSkeleton, Hierarchy, Joint};
 pub use texture::{

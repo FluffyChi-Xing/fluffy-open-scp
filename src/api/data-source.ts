@@ -13,6 +13,7 @@ import type {
   DecalDictionaryData,
   DecalImageData,
   LotEditorSession,
+  RasterChannel,
   RasterPreviewData,
   ResourceBytes,
   ResourcePage,
@@ -88,7 +89,11 @@ export interface OpenScpDataSource {
   readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
   /** 文本预览全量原始字节（服务端 8MB 上限，见 read_resource_text）。 */
   readResourceText(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
-  readRasterPreview(packageId: number, tgi: Tgi): Promise<RasterPreviewData>;
+  readRasterPreview(
+    packageId: number,
+    tgi: Tgi,
+    channel?: RasterChannel,
+  ): Promise<RasterPreviewData>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
   readRw4Section(
     packageId: number,
@@ -498,7 +503,7 @@ function mockDataSource(): OpenScpDataSource {
       // demo 模式文本内容直接内联在 previewResource，无全量通道
       return new ArrayBuffer(0);
     },
-    async readRasterPreview(_packageId, _tgi) {
+    async readRasterPreview(_packageId, _tgi, channel) {
       return {
         rasterType: 2,
         width: 0,
@@ -506,6 +511,7 @@ function mockDataSource(): OpenScpDataSource {
         mipCount: 0,
         pixelSize: 8,
         pixelFormat: 21,
+        channel: channel ?? "quantized",
         decodable: false,
         pngBase64: null,
       } satisfies RasterPreviewData;
@@ -738,24 +744,28 @@ async function tauriPreview(
     };
   }
   if (resource.tgi.typeId === RASTER_TYPE_ID) {
-    // Raster（0x2f4e681c）：pixFmt 21 未压缩可解为 PNG；压缩变体回退通用"暂不支持"。
+    // Raster（0x2f4e681c）：pixFmt 21 未压缩可按视图渲染；压缩变体回退 hex。
+    // 首屏默认视图 = 四层量化，对齐原 SCP Display Channel 的默认项。
     const data = await tauriApi.packages.readRasterPreview(
       packageId,
       resource.tgi,
     );
     if (data.decodable && data.pngBase64) {
       return {
-        kind: "image",
+        kind: "raster",
         packageId,
         tgi: resource.tgi,
         offset: 0,
         totalLength: resource.decompressedSize,
         bytes: [],
-        src: `data:image/png;base64,${data.pngBase64}`,
-        mime: "image/png",
+        rasterType: data.rasterType,
         width: data.width,
         height: data.height,
-        pixelated: true,
+        mipCount: data.mipCount,
+        pixelFormat: data.pixelFormat,
+        decodable: data.decodable,
+        channel: data.channel as RasterChannel,
+        pngBase64: data.pngBase64,
       };
     }
     return {

@@ -502,6 +502,22 @@ const messages = {
     aspectRatio: "宽高比",
     colorsLabel: "四色",
   },
+  raster: {
+    channel: "显示通道",
+    quantized: "四层量化",
+    composite: "合成",
+    red: "R",
+    green: "G",
+    blue: "B",
+    alpha: "A",
+    quantizedHint:
+      "四层量化（原 SCP 默认 Preview）：按 A > R > G > B 优先级命中四色 黑/红/绿/蓝，未命中处透明",
+    compositeHint: "RGB 合成，alpha 强制不透明——便于观察 alpha 为数据通道的贴图",
+    singleChannelHint: "{channel} 通道灰度",
+    mipCount: "{count} mip",
+    loadFailed: "无法渲染该 Raster",
+    unsupportedFormat: "不支持的 Raster 像素格式 {format}",
+  },
   package: {
       eyebrow: "资源浏览",
       title: "源文件解析",
@@ -1424,6 +1440,23 @@ const messages = {
       rasterId: "Raster",
       aspectRatio: "Aspect ratio",
       colorsLabel: "Colors",
+    },
+    raster: {
+      channel: "Display channel",
+      quantized: "Quantized",
+      composite: "Composite",
+      red: "R",
+      green: "G",
+      blue: "B",
+      alpha: "A",
+      quantizedHint:
+        "Four-layer quantization (SimCityPak's default Preview): first layer ≥128 of A > R > G > B picks black / red / green / blue, otherwise transparent",
+      compositeHint:
+        "RGB composite with alpha forced opaque — for textures that store data in alpha",
+      singleChannelHint: "{channel} channel, greyscale",
+      mipCount: "{count} mip",
+      loadFailed: "This raster could not be rendered",
+      unsupportedFormat: "Unsupported raster pixel format {format}",
     },
     package: {
       eyebrow: "Resource browser",

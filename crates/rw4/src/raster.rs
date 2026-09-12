@@ -103,6 +103,8 @@ impl RasterImage {
     /// 全部未选中输出全透明。通道→颜色：R→LotColor1、G→LotColor2、
     /// B→LotColor3、A→LotColor4（优先级 A > R > G > B，与旧交叉映射逐字节
     /// 等价——旧版在 BGRA 原始字节上交叉，等价于重排后直读）。
+    ///
+    /// `colors` 的下标 0..3 依次对应 SCP 的 color4 / color3 / color2 / color1。
     pub fn decode_lot_mask_rgba(&self, colors: &[[u8; 4]; 4]) -> Result<Vec<u8>> {
         let rgba = self.decode_top_mip_rgba()?;
         const CHANNEL_TO_COLOR: [(usize, usize); 4] = [(3, 3), (0, 0), (1, 1), (2, 2)];
@@ -118,6 +120,107 @@ impl RasterImage {
             }
         }
         Ok(out)
+    }
+
+    /// 按预览视图渲染为 RGBA8（对齐原 SCP `ViewRaster` 的 Display Channel）。
+    ///
+    /// `quantized_colors` 仅 `Quantized` 使用，下标语义同 `decode_lot_mask_rgba`。
+    pub fn render_view(
+        &self,
+        view: RasterView,
+        quantized_colors: &[[u8; 4]; 4],
+    ) -> Result<Vec<u8>> {
+        if view == RasterView::Quantized {
+            return self.decode_lot_mask_rgba(quantized_colors);
+        }
+        let mut out = self.decode_top_mip_rgba()?;
+        match view.channel_index() {
+            // 合成：保留 RGB，alpha 强制不透明——raster 的 alpha 常被当作数据
+            // 通道（SDF/遮罩），直接透出会让整图看起来是空的。
+            None => {
+                for px in out.as_chunks_mut::<4>().0 {
+                    px[3] = 255;
+                }
+            }
+            Some(channel) => {
+                for px in out.as_chunks_mut::<4>().0 {
+                    let value = px[channel];
+                    px.copy_from_slice(&[value, value, value, 255]);
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Raster 预览视图（原 SCP `RasterChannel` 的可读子集，省去编辑器专用的
+/// FacadeColor 分色模式）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RasterView {
+    /// 四层量化，原 SCP 的默认 Preview 模式。
+    Quantized,
+    /// RGBA 合成，alpha 强制不透明。
+    Composite,
+    /// 单通道灰度。
+    Red,
+    Green,
+    Blue,
+    Alpha,
+}
+
+/// 四层量化的默认配色：对应 SCP `CreateFromStream` 的 color1..color4 =
+/// 黑 / 红 / 绿 / 蓝，按 `decode_lot_mask_rgba` 的下标序存放，即
+/// [color4, color3, color2, color1]。
+pub const DEFAULT_QUANTIZED_COLORS: [[u8; 4]; 4] = [
+    [0, 0, 255, 255],
+    [0, 255, 0, 255],
+    [255, 0, 0, 255],
+    [0, 0, 0, 255],
+];
+
+impl RasterView {
+    /// 全部视图，顺序即 UI 中的标签顺序。
+    pub const ALL: [RasterView; 6] = [
+        RasterView::Quantized,
+        RasterView::Composite,
+        RasterView::Red,
+        RasterView::Green,
+        RasterView::Blue,
+        RasterView::Alpha,
+    ];
+
+    pub fn from_name(name: &str) -> Option<RasterView> {
+        Some(match name {
+            "quantized" => RasterView::Quantized,
+            "composite" | "all" => RasterView::Composite,
+            "r" => RasterView::Red,
+            "g" => RasterView::Green,
+            "b" => RasterView::Blue,
+            "a" => RasterView::Alpha,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            RasterView::Quantized => "quantized",
+            RasterView::Composite => "composite",
+            RasterView::Red => "r",
+            RasterView::Green => "g",
+            RasterView::Blue => "b",
+            RasterView::Alpha => "a",
+        }
+    }
+
+    /// RGBA 重排后的通道下标；合成视图无单通道。
+    fn channel_index(self) -> Option<usize> {
+        match self {
+            RasterView::Red => Some(0),
+            RasterView::Green => Some(1),
+            RasterView::Blue => Some(2),
+            RasterView::Alpha => Some(3),
+            RasterView::Quantized | RasterView::Composite => None,
+        }
     }
 }
 
@@ -209,6 +312,79 @@ mod tests {
                 0, 0, 0, 0,
             ]
         );
+    }
+
+    #[test]
+    fn composite_forces_opaque_and_keeps_rgb() {
+        // 内存 BGRA：[B=10, G=20, R=30, A=0] → RGBA (30, 20, 10)；alpha 被强制 255。
+        let data = raster(21, 1, 1, &[10, 20, 30, 0]);
+        let image = RasterImage::parse(&data).unwrap();
+        assert_eq!(
+            image
+                .render_view(RasterView::Composite, &DEFAULT_QUANTIZED_COLORS)
+                .unwrap(),
+            vec![30, 20, 10, 255]
+        );
+    }
+
+    #[test]
+    fn channel_views_render_grayscale() {
+        let data = raster(21, 1, 1, &[10, 20, 30, 40]);
+        let image = RasterImage::parse(&data).unwrap();
+        // 重排后 RGBA = (30, 20, 10, 40)。
+        for (view, expected) in [
+            (RasterView::Red, 30u8),
+            (RasterView::Green, 20),
+            (RasterView::Blue, 10),
+            (RasterView::Alpha, 40),
+        ] {
+            assert_eq!(
+                image
+                    .render_view(view, &DEFAULT_QUANTIZED_COLORS)
+                    .unwrap(),
+                vec![expected, expected, expected, 255],
+                "view {view:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn quantized_view_uses_cross_wired_default_colors() {
+        // 内存 BGRA；byte3=A→color1(黑)、byte2=R→color4(蓝)、
+        // byte1=G→color3(绿)、byte0=B→color2(红)，阈值 ≥128。
+        let data = raster(
+            21,
+            4,
+            1,
+            &[
+                0, 0, 200, 0, // R=200 → color4 = 蓝
+                0, 150, 0, 0, // G=150 → color3 = 绿
+                0, 0, 0, 255, // A=255 → color1 = 黑
+                10, 10, 10, 10, // 全部低于阈值 → 透明
+            ],
+        );
+        let image = RasterImage::parse(&data).unwrap();
+        assert_eq!(
+            image
+                .render_view(RasterView::Quantized, &DEFAULT_QUANTIZED_COLORS)
+                .unwrap(),
+            vec![
+                0, 0, 255, 255, // 蓝
+                0, 255, 0, 255, // 绿
+                0, 0, 0, 255, // 黑
+                0, 0, 0, 0, // 透明
+            ]
+        );
+    }
+
+    #[test]
+    fn view_names_round_trip_and_reject_unknown() {
+        for view in RasterView::ALL {
+            assert_eq!(RasterView::from_name(view.name()), Some(view));
+        }
+        assert_eq!(RasterView::from_name("all"), Some(RasterView::Composite));
+        assert_eq!(RasterView::from_name("facade"), None);
+        assert_eq!(RasterView::from_name(""), None);
     }
 
     #[test]

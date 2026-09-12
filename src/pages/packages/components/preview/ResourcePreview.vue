@@ -8,6 +8,7 @@ import type {
   ResourcePreview,
   TextPreview,
   ImagePreview,
+  RasterPreview,
   PropertyPreview,
   Rw4Preview,
   AudioPreview,
@@ -16,6 +17,7 @@ import type {
 } from "@/api/tauri";
 import TextPreviewView from "./TextPreview.vue";
 import ImagePreviewView from "./ImagePreview.vue";
+import RasterPreviewView from "./RasterPreview.vue";
 import PropertyPreviewView from "./PropertyPreview.vue";
 import Rw4PreviewView from "./Rw4Preview.vue";
 import AudioPreviewView from "./AudioPreview.vue";
@@ -39,8 +41,13 @@ const textPreview = computed(() =>
 const imagePreview = computed(() =>
   props.preview?.kind === "image" ? (props.preview as ImagePreview) : null,
 );
+const rasterPreview = computed(() =>
+  props.preview?.kind === "raster" ? (props.preview as RasterPreview) : null,
+);
 const propertyPreview = computed(() =>
-  props.preview?.kind === "property" ? (props.preview as PropertyPreview) : null,
+  props.preview?.kind === "property"
+    ? (props.preview as PropertyPreview)
+    : null,
 );
 const rw4Preview = computed(() =>
   props.preview?.kind === "rw4" ? (props.preview as Rw4Preview) : null,
@@ -59,6 +66,7 @@ const unsupported = computed(
     props.preview !== null &&
     !textPreview.value &&
     !imagePreview.value &&
+    !rasterPreview.value &&
     !propertyPreview.value &&
     !rw4Preview.value &&
     !audioPreview.value &&
@@ -80,6 +88,7 @@ const unsupported = computed(
     </p>
     <TextPreviewView v-else-if="textPreview" :preview="textPreview" />
     <ImagePreviewView v-else-if="imagePreview" :preview="imagePreview" />
+    <RasterPreviewView v-else-if="rasterPreview" :preview="rasterPreview" />
     <PropertyPreviewView
       v-else-if="propertyPreview"
       :preview="propertyPreview"

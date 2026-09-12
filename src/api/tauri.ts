@@ -468,8 +468,46 @@ export interface RasterPreviewData {
   mipCount: number;
   pixelSize: number;
   pixelFormat: number;
+  /** 实际渲染所用视图，供按通道缓存。 */
+  channel: string;
   /** pixFmt 21（D3DFMT_A8R8G8B8，未压缩）可解码为 PNG；压缩变体仅元数据。 */
   decodable: boolean;
+  pngBase64: string | null;
+}
+/**
+ * Raster 预览视图（对齐原 SCP `ViewRaster` 的 Display Channel）：
+ * - `quantized` 四层量化（默认，原 SCP 的 Preview）
+ * - `composite` RGBA 合成，alpha 强制不透明
+ * - `r` / `g` / `b` / `a` 单通道灰度
+ */
+export type RasterChannel =
+  | "quantized"
+  | "composite"
+  | "r"
+  | "g"
+  | "b"
+  | "a";
+
+export const RASTER_CHANNELS: readonly RasterChannel[] = [
+  "quantized",
+  "composite",
+  "r",
+  "g",
+  "b",
+  "a",
+];
+export interface RasterPreview extends PreviewData {
+  kind: "raster";
+  packageId: number;
+  tgi: Tgi;
+  rasterType: number;
+  width: number;
+  height: number;
+  mipCount: number;
+  pixelFormat: number;
+  decodable: boolean;
+  /** 首屏已加载的视图。 */
+  channel: RasterChannel;
   pngBase64: string | null;
 }
 /** TGA / CUR(ICO) / Greyscale Map 通用解码结果（read_image_preview）。 */
@@ -490,6 +528,7 @@ export type ResourcePreview =
   | TextPreview
   | HexPreview
   | ImagePreview
+  | RasterPreview
   | UnsupportedPreview
   | AudioPreview
   | VideoPreview

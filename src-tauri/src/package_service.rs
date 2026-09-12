@@ -400,6 +400,10 @@ pub struct LotEditorSessionRequest {
 pub struct RasterPreviewRequest {
     pub package_id: u64,
     pub tgi: TgiDto,
+    /// 预览视图（对齐原 SCP 的 Display Channel）：quantized（默认）/ composite /
+    /// r / g / b / a。
+    #[serde(default)]
+    pub channel: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -411,6 +415,8 @@ pub struct RasterPreviewData {
     pub mip_count: u32,
     pub pixel_size: u32,
     pub pixel_format: u32,
+    /// 实际渲染所用的视图，供前端按通道缓存。
+    pub channel: String,
     /// pixFmt 21（D3DFMT_A8R8G8B8，未压缩）可解码为 PNG；压缩变体仅元数据。
     pub decodable: bool,
     pub png_base64: Option<String>,
@@ -2943,6 +2949,15 @@ pub async fn read_raster_preview(
 ) -> Result<RasterPreviewData, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
+    // 默认视图对齐原 SCP：四层量化（RasterChannel.Preview）。
+    let view = match request.channel.as_deref() {
+        None => rw4::RasterView::Quantized,
+        Some(name) => rw4::RasterView::from_name(name).ok_or_else(|| {
+            CommandError::from(PackageError::InvalidArgument(format!(
+                "unknown raster channel {name}"
+            )))
+        })?,
+    };
     read_resource_with(
         manager,
         store,
@@ -2953,7 +2968,7 @@ pub async fn read_raster_preview(
             let mut decodable = false;
             let mut png_base64 = None;
             if raster.is_raw_rgba() {
-                if let Ok(rgba) = raster.decode_top_mip_rgba() {
+                if let Ok(rgba) = raster.render_view(view, &rw4::DEFAULT_QUANTIZED_COLORS) {
                     if let Ok(png) = encode_rgba_png(raster.width, raster.height, rgba) {
                         png_base64 = Some(png);
                         decodable = true;
@@ -2967,6 +2982,7 @@ pub async fn read_raster_preview(
                 mip_count: raster.mip_count,
                 pixel_size: raster.pixel_size,
                 pixel_format: raster.pixel_format,
+                channel: view.name().to_string(),
                 decodable,
                 png_base64,
             })

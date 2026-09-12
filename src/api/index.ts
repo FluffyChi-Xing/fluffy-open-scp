@@ -29,6 +29,7 @@ import {
   type ResourceData,
   type LotEditorSession,
   type RasterPreviewData,
+  type RasterChannel,
   type GenericImagePreviewData,
   type ResourceAnnotation,
   type ResourceAnnotationInput,
@@ -195,9 +196,13 @@ export const tauriApi = {
       command<ArrayBuffer>("read_lot_model_meshes", {
         request: { packageId, tgi },
       }),
-    readRasterPreview: (packageId: number, tgi: Tgi) =>
+    readRasterPreview: (
+      packageId: number,
+      tgi: Tgi,
+      channel?: RasterChannel,
+    ) =>
       command<RasterPreviewData>("read_raster_preview", {
-        request: { packageId, tgi },
+        request: { packageId, tgi, channel },
       }),
     readImagePreview: (packageId: number, tgi: Tgi) =>
       command<GenericImagePreviewData>("read_image_preview", {
