@@ -80,26 +80,44 @@ export function groundFillMesh(
 }
 
 /**
- * LotMask 贴图：加载后按渲染模式应用到地面 fill——精细模式走四色量化
- * 合成（composeRefinedGround），默认模式直接贴 mask。异步完成按 isStale
- * 守卫丢弃过期代。
+ * LotMask 贴图：加载后按渲染模式应用到地面 fill——默认模式贴服务端合成的
+ * 反照率图（通道平色+底图格，缺失时回退量化图），精细模式走引擎语义合成
+ * （composeRefinedGround）。异步完成按 isStale 守卫丢弃过期代。
  */
 export function applyGroundMask(options: {
   THREE: typeof ThreeNamespace;
   ground: ThreeNamespace.Object3D;
-  maskPng: string;
+  maskPng: string | null;
+  /** 默认模式反照率图（服务端 compose_albedo 口径）；null = 回退量化图。 */
+  albedoPng?: string | null;
+  /** LotSize（米），精细模式的逐轴平铺次数来源。 */
+  lotSize?: [number, number] | null;
   refined: boolean;
   lotColors: [number, number, number, number][];
   lotColorsAuthored: boolean[];
   /** "Lot Textures" 地表共享纹理像素（真实图集；null = 本地占位 tile）。 */
   surface?: ImageData | null;
-  /** LotMask 原始通道权重图（v4 软混合输入；null = v1 量化图硬分配）。 */
+  /** LotMask 原始通道权重图（阈值选区输入；null = 量化图最近色硬分配）。 */
   rawMask?: ImageData | null;
   isStale: () => boolean;
 }) {
-  const { THREE, ground, maskPng, refined, lotColors, lotColorsAuthored, surface, rawMask, isStale } =
-    options;
-  new THREE.TextureLoader().load(maskPng, (texture) => {
+  const {
+    THREE,
+    ground,
+    maskPng,
+    albedoPng,
+    lotSize,
+    refined,
+    lotColors,
+    lotColorsAuthored,
+    surface,
+    rawMask,
+    isStale,
+  } = options;
+  // 默认模式优先用反照率图；精细模式的合成输入仍是量化 mask。
+  const flatPng = refined ? maskPng : albedoPng ?? maskPng;
+  if (!flatPng) return;
+  new THREE.TextureLoader().load(flatPng, (texture) => {
     if (isStale()) {
       texture.dispose();
       return;
@@ -110,15 +128,15 @@ export function applyGroundMask(options: {
     texture.flipY = false;
     const fill = groundFillMesh(ground);
     if (!fill) return;
-    if (refined) {
-      // 精细模式：引擎语义 = 每通道 LotColor.RGB 着色 × LotColor.A 索引的
-      // 16 格地面贴图（shader baseTileUVMinMax 4×4 图集；C# lot editor 的
-      // GroundTextures 下拉即此 Alpha）。此处按 8 tile/边近似平铺。
+    if (refined && maskPng) {
+      // 精细模式：引擎语义 = 通道 >0.5 阈值 + A>B>G>R 优先级选区 →
+      // tile_{LotColor.A}（frac 平铺）× LotColor.RGB 着色；未覆盖区铺底图格。
       composeRefinedGround(
         lotColors,
         lotColorsAuthored,
         texture.image,
         THREE,
+        lotSize ?? null,
         surface,
         rawMask,
       )
@@ -127,12 +145,12 @@ export function applyGroundMask(options: {
             map?.dispose();
             return;
           }
-          const material = fill.material as ThreeNamespace.MeshBasicMaterial;
-          material.map = map;
-          material.transparent = true;
-          material.opacity = 1;
-          material.color.set(0xffffff);
-          material.needsUpdate = true;
+          const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
+          // 精细地面改受光材质：游戏地表被阳光/环境光照亮，无光照的
+          // MeshBasic 会比游戏截图整体偏暗一档（2026-09-13 对拍）。
+          const lit = new THREE.MeshLambertMaterial({ map });
+          fillMaterial.dispose();
+          fill.material = lit;
         })
         .catch(() => {});
     } else {

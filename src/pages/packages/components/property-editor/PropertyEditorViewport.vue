@@ -56,7 +56,10 @@ const props = defineProps<{
   lotColorsAuthored: boolean[];
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
-  lotMaskRawPng: string | null;
+  /** LotMask 原始通道权重（未压缩 RGBA base64；A = LC4 权重）。 */
+  lotMaskRawRgba: string | null;
+  /** 默认模式地表反照率（通道平色+底图格；缺失时回退量化图）。 */
+  lotAlbedoPng: string | null;
   /** "Lot Textures" 地表共享纹理（data URL；精细模式地面 v2 用）。 */
   lotSurfacePng: string | null;
   selectedId: string | null;
@@ -254,27 +257,38 @@ function rebuildScene() {
   return viewport.rebuild(assembleScene, { reframe });
 }
 
-/** LotMask 原始通道权重图 → 像素（compose v4 软混合输入）。 */
-async function loadRawMaskPixels(): Promise<ImageData | null> {
-  const url = props.lotMaskRawPng;
+/** 量化 mask 图的尺寸（raw RGBA 字节流构造 ImageData 时需要宽高）。 */
+async function loadMaskImageDims(): Promise<{ width: number; height: number } | null> {
+  const url = props.lotMaskPng ?? props.lotAlbedoPng;
   if (!url) return null;
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
       const element = new Image();
       element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("lot mask raw failed"));
+      element.onerror = () => reject(new Error("lot mask failed"));
       element.src = url;
     });
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, image.width, image.height);
+    return { width: image.width, height: image.height };
   } catch {
     return null;
   }
+}
+
+/** LotMask 原始通道权重图 → ImageData（compose 输入）。
+ *  后端是未压缩 RGBA 字节流 base64（A = LC4 权重），**必须用 atob 直接构造
+ *  ImageData**——若经 canvas 解码，预乘 alpha 会按 LC4 权重等比压缩/清零
+ *  LC1-3 权重，精细合成随即满地判为草皮（2026-09-13 消防局对拍根因）。 */
+function loadRawMaskPixels(width: number, height: number): ImageData | null {
+  const base64 = props.lotMaskRawRgba;
+  if (!base64) return null;
+  const binary = atob(base64);
+  const expected = width * height * 4;
+  if (binary.length < expected) return null;
+  const pixels = new Uint8ClampedArray(expected);
+  for (let index = 0; index < expected; index += 1) {
+    pixels[index] = binary.charCodeAt(index);
+  }
+  return new ImageData(pixels, width, height);
 }
 
 /** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入）。 */
@@ -394,19 +408,33 @@ async function assembleScene(ctx: Parameters<
       ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
     }
     ground.matrixAutoUpdate = false;
-    instance.group("model").add(ground);
-    if (props.lotMaskPng) {
+    // 独立 lot 组：与建筑模型分开控制可见性（关模型不连地面一起隐藏，
+    // 2026-09-13 用户对拍需求）。
+    instance.group("lot").add(ground);
+    if (props.lotMaskPng || props.lotAlbedoPng) {
       // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1
-      const [surface, rawMask] = await Promise.all([
+      const [surface, maskDims] = await Promise.all([
         loadSurfacePixels(),
-        loadRawMaskPixels(),
+        loadMaskImageDims(),
       ]);
+      if (!surface) {
+        // 精细渲染的材质替换依赖真实图集；静默回退占位 tile 会把沥青画成
+        // 亮灰（2026-09-13 对拍教训），必须让用户看到原因。
+        console.warn(
+          "[lot-ground] 'Lot Textures' surface unavailable — refined ground will use placeholder tiles. Open SimCity_Graphics.package (and the lot's own package) for the real atlas.",
+        );
+      }
+      const rawMask = maskDims
+        ? loadRawMaskPixels(maskDims.width, maskDims.height)
+        : null;
       applyGroundMask({
         rawMask,
         surface,
         THREE,
         ground,
         maskPng: props.lotMaskPng,
+        albedoPng: props.lotAlbedoPng,
+        lotSize: props.lotSize,
         refined: props.renderMode === "refined",
         lotColors: props.lotColors,
         lotColorsAuthored: props.lotColorsAuthored,
@@ -650,7 +678,7 @@ watch(
     </div>
     <div class="viewport-overlay viewport-visibility" role="group" :aria-label="$t('package.visibilityToggles')">
       <button
-        v-for="name in ['model', 'lights', 'props', 'decals', 'effects', 'spawners', 'paths']"
+        v-for="name in ['model', 'lot', 'lights', 'props', 'decals', 'effects', 'spawners', 'paths']"
         :key="name"
         type="button"
         :class="{ off: groupVisibility[name] === false }"

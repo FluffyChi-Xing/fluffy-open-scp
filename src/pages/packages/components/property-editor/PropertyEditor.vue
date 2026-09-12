@@ -34,7 +34,8 @@ const {
   lotColors,
   lotColorsAuthored,
   lotMaskPng,
-  lotMaskRawPng,
+  lotMaskRawRgba,
+  lotAlbedoPng,
   lotSurfacePng,
   selectedUnit,
   edit,
@@ -387,7 +388,8 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-colors="lotColors"
           :lot-colors-authored="lotColorsAuthored"
           :lot-mask-png="lotMaskPng"
-          :lot-mask-raw-png="lotMaskRawPng"
+          :lot-mask-raw-rgba="lotMaskRawRgba"
+          :lot-albedo-png="lotAlbedoPng"
           :lot-surface-png="lotSurfacePng"
           :selected-id="selectedId"
           :hidden-units="hiddenUnits"

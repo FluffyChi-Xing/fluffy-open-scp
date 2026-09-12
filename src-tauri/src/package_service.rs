@@ -439,8 +439,15 @@ pub struct LotEditorSession {
     pub lot_placement: Option<[f32; 12]>,
     /// LotMask 四色量化地面图 PNG（LotColor1-4 着色，服务端解码）。
     pub lot_mask_png: Option<String>,
-    /// LotMask 原始通道权重图 PNG（未阈值化；精细渲染软混合用）。
-    pub lot_mask_raw_png: Option<String>,
+    /// LotMask 原始通道权重图。**未压缩 RGBA 字节流的 base64**（宽高同
+    /// lot_mask_png；A 字节 = LC4 权重本体）。不走 PNG+canvas：canvas 预乘
+    /// alpha 会按 A 等比压缩/清零 RGB（A=LC4 权重 → LC4 低处 LC1-3 全毁，
+    /// 2026-09-13 消防局精细满地变绿的根因），前端用 atob 直接构造 ImageData。
+    pub lot_mask_raw_rgba: Option<String>,
+    /// 默认渲染的地表反照率 PNG：mask 通道 >0.5 + 优先级 A>B>G>R 选区着
+    /// LotColor 平色，未覆盖区铺共享图集底图格（= lot_compose 探针的
+    /// compose_albedo 口径；2026-09-13 用户选定默认模式目标效果）。
+    pub lot_albedo_png: Option<String>,
     /// "Lot Textures" 地表共享纹理（DXT5 解码 PNG）；None = 缺失或解码失败。
     pub lot_surface_png: Option<String>,
     /// LotColor1-4 的 RGBA（A = 地面贴图索引 0-15，SCP GroundTextures 图集）。
@@ -1707,22 +1714,25 @@ pub async fn read_lot_editor_session(
                 diagnostics.push("property registry is unavailable; using hash identifiers".into());
             }
             let (colors, lot_colors_authored) = lot_colors(&document);
-            // 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）
-            let lot_surface_png = document.lot_textures.and_then(|key| {
+            // 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）。
+            // 像素保留在内存供默认反照率合成取底图格，PNG 供前端精细渲染。
+            let lot_surface = document.lot_textures.map(|key| {
                 match decode_lot_surface_png(package, manager, key) {
-                    Ok(png) => Some(png),
+                    Ok(decoded) => Some(decoded),
                     Err(message) => {
                         diagnostics.push(message);
                         None
                     }
                 }
             });
+            let lot_surface_png =
+                lot_surface.as_ref().and_then(|surface| surface.as_ref().map(|s| s.0.clone()));
             let mut mask_dims: Option<(u32, u32)> = None;
             let lot_mask_images = document.lot_mask.and_then(|key| {
                 match decode_lot_mask_png(package, manager, key, colors) {
-                    Ok((png, raw_png, dims)) => {
+                    Ok((png, raw_rgba_base64, dims, raw_rgba)) => {
                         mask_dims = Some(dims);
-                        Some((png, raw_png))
+                        Some((png, raw_rgba_base64, raw_rgba))
                     }
                     Err(message) => {
                         diagnostics.push(message);
@@ -1730,9 +1740,31 @@ pub async fn read_lot_editor_session(
                     }
                 }
             });
-            let lot_mask_png = lot_mask_images.as_ref().map(|(png, _)| png.clone());
-            let lot_mask_raw_png =
-                lot_mask_images.as_ref().map(|(_, raw)| raw.clone());
+            let lot_mask_png = lot_mask_images.as_ref().map(|(png, _, _)| png.clone());
+            let lot_mask_raw_rgba =
+                lot_mask_images.as_ref().map(|(_, raw, _)| raw.clone());
+            // 默认模式反照率：通道选区平色（tint×tile 均色）+ 未覆盖区底图格
+            // （compose_albedo 口径）。
+            let lot_albedo_png = lot_mask_images.as_ref().and_then(|(_, _, raw_rgba)| {
+                let (w, h) = mask_dims.expect("mask dims set when mask decoded");
+                let surface = lot_surface
+                    .as_ref()
+                    .and_then(Option::as_ref)
+                    .map(|(_, pixels)| pixels);
+                match compose_lot_albedo_rgba(raw_rgba, w as usize, h as usize, colors, surface) {
+                    Ok(rgba) => match encode_rgba_png(w, h, rgba) {
+                        Ok(png) => Some(png),
+                        Err(message) => {
+                            diagnostics.push(message);
+                            None
+                        }
+                    },
+                    Err(message) => {
+                        diagnostics.push(message);
+                        None
+                    }
+                }
+            });
             // EP1 等部分 lot 无 LotSize（0x0CCB7FC8）属性但带 LotMask：地面
             // 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
             // 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
@@ -1760,7 +1792,8 @@ pub async fn read_lot_editor_session(
                     .filter(|t| t.matrix.len() == 12)
                     .map(|t| t.matrix.try_into().unwrap()),
                 lot_mask_png,
-                lot_mask_raw_png,
+                lot_mask_raw_rgba,
+                lot_albedo_png,
                 lot_surface_png,
                 lot_colors: colors,
                 lot_colors_authored,
@@ -1777,11 +1810,153 @@ pub async fn read_lot_editor_session(
 
 /// "Lot Textures"（0x0CCB7FD4）地表共享纹理：跨包定位纯纹理 RW4 →
 /// DXT5 解码 → PNG（shader lotTextureSampler 的绑定源；4×4 tile 图集）。
+/// "Lot Textures" 共享图集的内存像素（4×4 tile；默认反照率的底图格来源）。
+struct SurfacePixels {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+/// 从图集像素裁出第 `index` 格（4×4，行主序）；尺寸不足时返回 None。
+fn extract_atlas_cell(
+    surface: &SurfacePixels,
+    index: usize,
+) -> Option<(usize, usize, Vec<u8>)> {
+    const COLS: usize = 4;
+    let cw = surface.width as usize / COLS;
+    let ch = surface.height as usize / COLS;
+    if cw == 0 || ch == 0 {
+        return None;
+    }
+    let ox = (index % COLS) * cw;
+    let oy = (index / COLS) * ch;
+    let mut out = vec![0u8; cw * ch * 4];
+    for y in 0..ch {
+        for x in 0..cw {
+            let src = ((oy + y) * surface.width as usize + ox + x) * 4;
+            let dst = (y * cw + x) * 4;
+            out[dst..dst + 4].copy_from_slice(&surface.rgba[src..src + 4]);
+        }
+    }
+    Some((cw, ch, out))
+}
+
+/// 默认渲染的底图格索引。引擎真值 `baseTileUVMinMax.x` 不在 property 内
+/// （lot-rendering.md §6），消防局/红十字会/图书馆三楼对拍均为草地格 8。
+const ATLAS_BASE_TILE: usize = 8;
+
+/// 默认模式反照率合成（= lot_compose 探针 compose_albedo 同口径）：
+/// 每像素四通道取 `>0.5` 硬阈值并按引擎优先级链 A>B>G>R（w→z→y→x）选出一个
+/// 通道，输出 `LotColor.RGB × 该通道 tile_{A} 的均色`——引擎观感 =
+/// tint × tile 纹理，此处用均色保持平色块风格的同时让区域色调与游戏一致
+/// （消防局背景 LC1=灰绿 tint × 草地均色 = 深绿，而非灰）。无通道过阈值的
+/// 像素铺底图格（草地 8）。入参 raw 为已做行序翻转的原始通道权重图。
+fn compose_lot_albedo_rgba(
+    raw: &[u8],
+    width: usize,
+    height: usize,
+    colors: [[u8; 4]; 4],
+    surface: Option<&SurfacePixels>,
+) -> Result<Vec<u8>, String> {
+    let expected = width * height * 4;
+    if raw.len() < expected {
+        return Err(format!(
+            "lot mask buffer {} < {} px",
+            raw.len() / 4,
+            expected / 4
+        ));
+    }
+    // 每格均色（4×4）：无图集时回退白色（tint 原样输出，便于与探针对拍）。
+    let mut cell_means = [[255u8; 3]; 16];
+    let base_tile = surface.and_then(|pixels| extract_atlas_cell(pixels, ATLAS_BASE_TILE));
+    if let Some(pixels) = surface {
+        let cw = (pixels.width / 4) as usize;
+        let ch = (pixels.height / 4) as usize;
+        if cw > 0 && ch > 0 {
+            for index in 0..16 {
+                let (ox, oy) = ((index % 4) * cw, (index / 4) * ch);
+                let mut sum = [0u64; 3];
+                for y in 0..ch {
+                    for x in 0..cw {
+                        let at = ((oy + y) * pixels.width as usize + ox + x) * 4;
+                        for c in 0..3 {
+                            sum[c] += u64::from(pixels.rgba[at + c]);
+                        }
+                    }
+                }
+                let count = (cw * ch) as u64;
+                for c in 0..3 {
+                    cell_means[index][c] = (sum[c] / count) as u8;
+                }
+            }
+        }
+    }
+    // 优先级链顺序（引擎 shader w→z→y→x）。
+    const PRIORITY: [usize; 4] = [3, 2, 1, 0];
+    let mut out = vec![0u8; expected];
+    for y in 0..height {
+        for x in 0..width {
+            let index = y * width + x;
+            let px = &raw[index * 4..index * 4 + 4];
+            // 引擎 greaterThan(mask, 0.5)：先全体过阈，再按优先级占位。
+            let mut masks = [false; 4];
+            for channel in 0..4 {
+                masks[channel] = px[channel] as f32 / 255.0 > 0.5;
+            }
+            let mut taken = false;
+            let mut winner: Option<usize> = None;
+            for channel in PRIORITY {
+                if masks[channel] {
+                    if taken {
+                        masks[channel] = false;
+                    } else {
+                        taken = true;
+                        winner = Some(channel);
+                    }
+                }
+            }
+            let offset = index * 4;
+            match winner {
+                Some(channel) => {
+                    let tint = &colors[channel][0..3];
+                    let mean = cell_means[colors[channel][3] as usize % 16];
+                    for c in 0..3 {
+                        out[offset + c] = (u16::from(tint[c]) * u16::from(mean[c]) / 255) as u8;
+                    }
+                }
+                None => {
+                    // 未覆盖区 = saturate(1-overlayMask) × 底图；底图格缺失时
+                    // 用白色兜底（与探针 unwrap_or(255) 一致，便于对拍）。
+                    match base_tile.as_ref() {
+                        Some((cw, ch, pixels)) => {
+                            // 画布即引擎空间：U 直取（无镜像），整格单次映射。
+                            let u = x as f32 / width as f32;
+                            let v = y as f32 / height as f32;
+                            let sx = ((u * *cw as f32) as usize).min(*cw - 1);
+                            let sy = ((v * *ch as f32) as usize).min(*ch - 1);
+                            let src = (sy * *cw + sx) * 4;
+                            out[offset..offset + 3]
+                                .copy_from_slice(&pixels[src..src + 3]);
+                        }
+                        None => {
+                            out[offset] = 255;
+                            out[offset + 1] = 255;
+                            out[offset + 2] = 255;
+                        }
+                    }
+                }
+            }
+            out[offset + 3] = 255;
+        }
+    }
+    Ok(out)
+}
+
 fn decode_lot_surface_png(
     current: &Package,
     manager: &PackageManager,
     key: sc_properties::Key,
-) -> Result<String, String> {
+) -> Result<(String, SurfacePixels), String> {
     let (bytes, _, _) = find_resource_across_packages_named(
         current,
         manager,
@@ -1807,7 +1982,15 @@ fn decode_lot_surface_png(
     let rgba = texture
         .decode_top_mip_rgba()
         .map_err(|error| format!("Lot Textures pixel decode failed: {error}"))?;
-    encode_rgba_png(u32::from(texture.width), u32::from(texture.height), rgba)
+    let pixels = SurfacePixels {
+        width: u32::from(texture.width),
+        height: u32::from(texture.height),
+        rgba: rgba.clone(),
+    };
+    Ok((
+        encode_rgba_png(u32::from(texture.width), u32::from(texture.height), rgba)?,
+        pixels,
+    ))
 }
 
 /// LotMask 地面图：定位 raster 资源 → 四层量化 → PNG（任何失败转为诊断消息）。
@@ -1818,7 +2001,8 @@ fn decode_lot_mask_png(
     manager: &PackageManager,
     key: sc_properties::Key,
     colors: [[u8; 4]; 4],
-) -> Result<(String, String, (u32, u32)), String> {
+) -> Result<(String, String, (u32, u32), Vec<u8>), String> {
+    // 返回：(量化图 PNG, 原始权重 RGBA 字节流 base64, 尺寸, 原始字节)。
     if let Some(entry_id) = find_raster_entry(current, key) {
         return decode_lot_mask_entry(current, &entry_id, colors);
     }
@@ -1925,7 +2109,7 @@ fn decode_lot_mask_entry(
     package: &Package,
     entry_id: &ResourceId,
     colors: [[u8; 4]; 4],
-) -> Result<(String, String, (u32, u32)), String> {
+) -> Result<(String, String, (u32, u32), Vec<u8>), String> {
     let entry = package
         .entry(*entry_id)
         .ok_or_else(|| "LotMask raster resource is missing".to_string())?;
@@ -1969,12 +2153,19 @@ fn decode_lot_mask_entry(
         }
     }
     let quantized_png = encode_rgba_png(raster.width, raster.height, rgba)?;
-    let raw_png = encode_rgba_png(raster.width, raster.height, raw)?;
-    Ok((quantized_png, raw_png, dims))
+    // 原始权重图以未压缩 RGBA 字节流的 base64 下发（A = LC4 权重）。
+    // 若编码为 PNG 走前端 canvas，预乘 alpha 会按 LC4 权重压缩 LC1-3
+    // （见 DTO 字段注释），故此处不做 PNG。
+    use base64::Engine as _;
+    let raw_base64 = base64::engine::general_purpose::STANDARD.encode(&raw);
+    Ok((quantized_png, raw_base64, dims, raw))
 }
 
 /// LotColor1-4（0x0D02D586..89）RGBA；A = 地面贴图索引（引擎 16 格图集，
 /// C# GroundTextureConverter 即此语义）。缺失用 SCP 的默认黑/红/绿/蓝。
+/// RGB 分量是**线性**色值：引擎在 sRGB 输出端做伽马编码，此处出字节时
+/// 同步编码（2026-09-13 消防局对拍：线性直出 21,24,21 近黑，编码后
+/// 82,87,81 与游戏一致），消费方（量化图/精细着色/锚定）直接使用。
 fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bool; 4]) {
     const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
     const FALLBACKS: [[u8; 4]; 4] = [[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]];
@@ -1990,9 +2181,9 @@ fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bo
         if let Some(sc_properties::Value::ColorRgba { r, g, b, a }) = value {
             authored[index] = true;
             colors[index] = [
-                (r * 255.0).clamp(0.0, 255.0) as u8,
-                (g * 255.0).clamp(0.0, 255.0) as u8,
-                (b * 255.0).clamp(0.0, 255.0) as u8,
+                linear_to_srgb_byte(*r),
+                linear_to_srgb_byte(*g),
+                linear_to_srgb_byte(*b),
                 // A = 图集 tile 索引本体（0-15 整数存为 float：图书馆实证
                 // a=3/1/8/3；旧 ×16 换算会全部 clamp 成 15 → 单材质 bug）
                 a.clamp(0.0, 15.0).round() as u8,
@@ -2001,6 +2192,30 @@ fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bo
     }
     (colors, authored)
 }
+
+/// 线性 0..1 → sRGB 字节（与 lot_compose 探针 to_rgba8 同公式）。
+fn linear_to_srgb_byte(linear: f32) -> u8 {
+    let linear = if linear.is_finite() {
+        linear.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let srgb = if linear <= 0.003_130_8 {
+        12.92 * linear
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (srgb * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// 测试用 LotColor 表（LC1=黑, LC2=红, LC3=绿, LC4=蓝回退色，A=tile 索引）。
+#[cfg(test)]
+const FALLBACK_LOT_COLORS_TEST: [[u8; 4]; 4] = [
+    [0, 0, 0, 0],
+    [255, 0, 0, 1],
+    [0, 255, 0, 2],
+    [0, 0, 255, 3],
+];
 
 fn encode_rgba_png_bytes(width: u32, height: u32, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
     let image = image::RgbaImage::from_raw(width, height, rgba)
@@ -4359,6 +4574,71 @@ mod lot_payload_tests {
 mod tests {
     use super::*;
     use dbpf::{OverlayEntry, write_uncompressed_overlay};
+
+    #[test]
+    fn lot_albedo_threshold_priority_and_base_tile() {
+        // 消防局 LC1 的线性值经 sRGB 编码后应为 (82,87,81)（2026-09-13 对拍）。
+        assert_eq!(linear_to_srgb_byte(0.0836), 82);
+        assert_eq!(linear_to_srgb_byte(0.0958), 87);
+        assert_eq!(linear_to_srgb_byte(0.0815), 81);
+        // 2×1 mask：像素 0 = R+G 同时 >0.5（优先级 A>B>G>R → G 胜出）；
+        // 像素 1 = 全通道 <0.5 → 底图格。
+        let raw = vec![255, 255, 0, 0, 0, 0, 0, 0];
+        let mut colors = FALLBACK_LOT_COLORS_TEST;
+        colors[1] = [10, 20, 30, 1];
+        // LC2 tile 均色 (40,60,80)：区域平色 = tint × 均色。
+        // 底图格 = cell 8（8×8 图集的 row2/col0），填 (200,210,220)。
+        let mut surface = test_surface_pixels();
+        for y in 0..2 {
+            for x in 0..2 {
+                let lc2 = (y * 8 + 2 + x) * 4;
+                surface[lc2] = 40;
+                surface[lc2 + 1] = 60;
+                surface[lc2 + 2] = 80;
+                let base8 = ((4 + y) * 8 + x) * 4;
+                surface[base8] = 200;
+                surface[base8 + 1] = 210;
+                surface[base8 + 2] = 220;
+            }
+        }
+        let out = compose_lot_albedo_rgba(
+            &raw,
+            2,
+            1,
+            colors,
+            Some(&SurfacePixels { width: 8, height: 8, rgba: surface }),
+        )
+        .expect("compose albedo");
+        assert_eq!(&out[0..3], &[1, 4, 9], "G 胜出且乘 tile 均色（整数截断）");
+        assert_eq!(&out[4..8], &[200, 210, 220, 255], "未覆盖区铺底图格");
+        // 图集缺失 → 均色白色兜底（tint 原样输出）+ 白色底图。
+        let out = compose_lot_albedo_rgba(&raw, 2, 1, colors, None).expect("compose albedo");
+        assert_eq!(&out[0..3], &[10, 20, 30]);
+        assert_eq!(&out[4..8], &[255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn lot_albedo_threshold_is_strictly_greater_than_half() {
+        // 权重恰好 128/255≈0.502 > 0.5 过阈；127/255≈0.498 不过（引擎
+        // greaterThan(mask, 0.5) 严格大于）。
+        let raw = vec![128, 0, 0, 0, 127, 0, 0, 0];
+        let out = compose_lot_albedo_rgba(
+            &raw,
+            2,
+            1,
+            FALLBACK_LOT_COLORS_TEST,
+            None,
+        )
+        .expect("compose albedo");
+        // LC1 tile 均色白色兜底 → 输出 = tint 原样。
+        assert_eq!(out[0], FALLBACK_LOT_COLORS_TEST[0][0]);
+        assert_eq!(&out[4..7], &[255, 255, 255]);
+    }
+
+    /// 8×8 测试图集：4×4 格，每格 2×2 像素。
+    fn test_surface_pixels() -> Vec<u8> {
+        vec![255; 8 * 8 * 4]
+    }
 
     #[test]
     fn tgi_filter_matches_hex_prefix_and_segments() {

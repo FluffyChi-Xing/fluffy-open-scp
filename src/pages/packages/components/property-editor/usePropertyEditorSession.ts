@@ -68,6 +68,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const hiddenUnits = ref(new Set<string>());
   const groupVisibility = reactive<Record<string, boolean>>({
     model: true,
+    lot: true,
     lights: true,
     props: true,
     decals: true,
@@ -211,14 +212,18 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return png ? `data:image/png;base64,${png}` : null;
   });
 
-  const lotMaskRawPng = computed<string | null>(() => {
-    const png = session.value?.lotMaskRawPng;
-    return png ? `data:image/png;base64,${png}` : null;
+  const lotMaskRawRgba = computed<string | null>(() => {
+    return session.value?.lotMaskRawRgba ?? null;
   });
 
   const lotMaskPng = computed<string | null>(() => {
     const png = session.value?.lotMaskPng;
     // 后端返回裸 base64,TextureLoader 需要 data URL。
+    return png ? `data:image/png;base64,${png}` : null;
+  });
+
+  const lotAlbedoPng = computed<string | null>(() => {
+    const png = session.value?.lotAlbedoPng;
     return png ? `data:image/png;base64,${png}` : null;
   });
 
@@ -262,7 +267,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotColors,
     lotColorsAuthored,
     lotMaskPng,
-    lotMaskRawPng,
+    lotMaskRawRgba,
+    lotAlbedoPng,
     lotSurfacePng,
     selectedUnit,
     edit,

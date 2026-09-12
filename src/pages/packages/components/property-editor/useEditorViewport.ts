@@ -5,6 +5,7 @@ import type * as ThreeNamespace from "three";
 /** 场景图层组注册表：底座只认组名，组的业务语义由装配层定义。 */
 export const VIEWPORT_GROUPS = [
   "model",
+  "lot",
   "lights",
   "props",
   "decals",

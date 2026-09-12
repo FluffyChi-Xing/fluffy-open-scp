@@ -1495,3 +1495,89 @@ raster_views -- <package> <instance_hex> <out_dir>`。
 **计时**（release）：6 视图合计 160–227 ms，其中绝大部分是开包（≈150 ms）与
 6 次文件写；应用内包常驻，切换成本为单次 PNG 编码 + 一次 IPC，且已切换过的
 视图在前端缓存，回切无请求。
+
+## 38. Lot 地面渲染链路定论与旧推论修正（2026-09-12 第三十八轮）
+
+在 `app.package` 的 shader 容器 group `40212002` 找到 `genericLot*` 全部 12 个变体的
+HLSL 源码，配合真实包探针（`crates/sc-exporter/examples/lot_compose.rs`）与
+`modding.pdf` 第 79 页，把 lot 地表链路钉死。**完整文档见
+`docs/overview/lot-rendering.md`**（含 RTL 流程图与证据分级）。
+
+**链路要点**
+
+- LotMask（`0x0CCB7FD5`）= **4 通道连续控制图**；Lot Textures（`0x0CCB7FD4`）=
+  容器内**单张 1024² 纹理 = 4×4 = 16 格漫反射图集**（实测 RW4 仅 1 个 texture
+  section），**只用于底图**，且**每 lot 只取一格** `baseTileUVMinMax.x`。
+- 像素链：`masks = greaterThan(mask, 0.5 - borderWidth)` → **优先级链 w→z→y→x**
+  → 每通道用 `colorNormalsIdx`（= **`LotColor.A`**）索引 `lotNormalSampler`
+  **图案/法线平行图集** → 颜色 `dot(colorsR,masks) + dot(bordersR,borderMask)`；
+  未覆盖区 `saturate(1-overlayMask) × 底图`。
+- `colorsR/G/B/colorNormalsIdx` = **4 个 RGBA 颜色**的 R/G/B/A 分量
+  （`[推断]` = `LotColor1-4`；边框组 = `LotBorderColor1-4`）。
+
+**修正的旧推论**
+
+1. **优先级顺序被混用**：`decode_lot_mask_rgba`（mask 预览/decal 路径）是
+   `A > R > G > B`，而 `generic_lot addOverlay` 是 **`A > B > G > R`**，两者不同。
+2. **`LotColor.A` 不是漫反射格索引**，而是 `colorNormalsIdx`（图案/法线图集索引）；
+   实测它指向的漫反射格与该颜色色相一致，是因为两套图集**平行**。
+3. **「空腔 = tile 8 草地」是伪结论（撤回）**：真实图集里 cell 8 恰是草地
+   `(64,100,44)`，而 `0x457EA9DB` 空腔占 60%、G 通道的 `LotColor3.A` 也等于 8
+   → ≈90% 地块落到同一张草地贴图，这才是「全地面变深绿草地」的直接成因。
+   引擎里未覆盖区保留底图，底图格 `baseTileUVMinMax.x` **不在 property 内**。
+4. **「调色板顺序反转」判否**：该假设最初是拿 OpenSCP 自身输出当参考对拍（循环论证）。
+   后用**图书馆（`0x0BFE06AB`）游戏内截图**独立判定，确认配对为**正常顺序**：
+   `mask.R→LotColor1`（沥青）、`mask.G→LotColor2`（广场铺装）、`mask.B→LotColor3`
+   （草坪）、`mask.A→LotColor4`（黄色细标线）。判据：游戏内黄色像素占 1.31%/0.83%
+   与 **A 通道覆盖 2.6%** 同量级，而 `LC4` 是四色中唯一偏黄的（sRGB 237,225,105）；
+   若反转则黄色须来自 R 通道（覆盖 49.9%）→ 半个地块应为黄，与实测矛盾。
+5. **p79 实验适用范围被高估**：它只证明「4 通道各驱动一片区域」，探不出同通道的
+   内圈/边框带（`borderColors*` + `borderWidthXYZW`）、图案（`colorNormalsIdx`）、
+   高度（`colorHeights`）与未覆盖区底图 —— 可见材质种类远多于 4 种。
+6. **新增**：LotMask 的通道语义不止地表材质分区（`0xAD71E946` 的 B 通道画的是
+   **路网**，路口菱形即边框带）；且存在**空壳 lot property**（只有 LotMask + LOD
+   key，无 Lot Textures / LotColors / LotSize，如 `0xBA637D48` 等 4 个）。
+7. **新增**：`Lot Textures`（`0xA0DA9E6C`）是**全局共享**的地面材质图集——多个不同
+   资产（`0x457EA9DB` / `0x0BFE06AB` / 红十字会 / 消防局 / 线性公园）指向同一 instance。
+8. **新增（朝向约定，实测）**：LotMask 栅格 → 地块需 **行序翻转（V）+ 列序镜像（U）**
+   （= 栅格旋转 180°），且 **Lot Textures 图集格的 U 轴与 mask 列序相反**。修正后探针
+   输出与用户验证过的游戏截图**逐像素差为 0**。
+   **⚠️ 已更正（见第 12 条）：这条「+ 列序镜像（U）」只对 `lot_compose` 的出图坐标系
+   成立，不能推给渲染器——按它给渲染路径加 U 镜像会造成地表相对建筑/prop 单轴颠倒。**
+9. **新增（归属）**：`w→z→y→x` 优先级链会让高优先级通道抢走低优先级像素，**不能用各通道
+   `>127` 占比当材质面积**。消防局实测：R 原始 76.1% → 解析后仅 22.9%（被 B/G 抢走）。
+10. **新增（修正）**：「R 通道 = 主硬质铺装面」**不成立**——消防局的 R 通道是**草坪**。
+    通道语义**每 lot 各自授权**（图书馆 R=停车场沥青、红十字会 R=广场铺装、消防局 R=草坪），
+    不存在跨资产惯例；唯一不变的是机制（`R→LC1`、`G→LC2`、`B→LC3`、`A→LC4`）。
+11. **新增（底图）**：底图格性质每 lot 不同（图书馆=灰铺装、红十字会=绿草地），
+    所以「空腔 = 草地」不是规则，`baseTileUVMinMax.x` 才是。
+12. **更正第 8 条的列序镜像（2026-09-12，U 镜像引发渲染回退后重判）**：渲染路径
+    **不得**做列序（U）镜像，只有后端 `decode_lot_mask_entry` 的行序（V）翻转是必需的。
+    两处独立证据：
+    - `lot_mask_alignment`（prop→mask 采样，判据只用 property 里的 prop 位置 + 原始
+      raster，不依赖任何渲染/出图约定）：0x457EA9DB（casino，模型 0x01532F56，
+      mask 0xEE9E76D3 256×128，LotSize 192×96）上 `flipY` spread=115 且 15 个 prop
+      **全部**落 B 通道（LotColor3，A=8 草地格）；`identity`=347 / `flipX`=356 /
+      `flipXY`=316 均离散 → **V 需要、U 不需要**。
+    - 用户两版视口截图（同一相机，缩放比 1.105）绿色内容四向变换 IoU：V 镜像 0.300
+      vs identity 0.081 / 180° 0.142 / H 镜像 0.039。该 lot 2:1 而取景竖幅（长轴即
+      屏幕纵轴），故 U 轴镜像在屏幕上表现为"上下颠倒"。
+    `lot_compose` 的 compose 采样用 `u = 1-(x+0.5)/width`（自带列镜像），是其出图坐标系
+    的内部约定；第 8 条"与游戏截图逐像素差为 0"的对照基准仍是自家产物，不构成渲染依据。
+    教训与 `project_shader_verification` 的纪律一致：**别拿自家输出当基准，优先用
+    prop/raster 这类不依赖渲染约定的客观判据。**
+
+**前端状态（2026-09-12 收尾：已回退）**：`refinedGround.ts` / `editorGround.ts` 及 PE 的
+两个 lot 导出按钮全部回退到 `fb4c98e`（HEAD）口径；v6/v7 的"平色合成 + 居中缩放 +
+gamma + 统一两模式"方案以 stash 暂存（`stash@{0}`），**未采用**。回退原因：该方案在
+casino 上把地面显示退化成一小块绿方块（几乎全空）。
+- 退化机制（最可能，**待确认**）：一旦 `rawMask` 缺失，合成落到 v1 硬阈值回退（量化图
+  `alpha ≥ 16` + 最近色），只有"某通道 ≥128"的区域着色，其余按未覆盖镂空 → 40% 覆盖率的
+  lot 只剩 ~10% 可见（截图里只剩 B 通道 = LotColor3 那一小块绿方块，且颜色 ≈
+  gamma(LC3)）。**重建该路径前必须先确认 `lotMaskRawPng` 在会话 DTO 里非空**
+  （后端 `decode_lot_mask_entry` 同时产出量化图与原始权重图；前端
+  `usePropertyEditorSession.ts:214` 直传，`data-source.ts` 的浏览器桩为 null）。
+- 仍需保留的结论：**朝向只由后端的行序（V）翻转负责，渲染侧不加任何轴镜像**（第 12 条）；
+  未覆盖区按用户口径应 **alpha 镂空**（引擎为 `saturate(1-overlayMask)×底图`，底图格
+  `baseTileUVMinMax.x` 不在 property 内 → 不臆造填充）；LotColor 为线性值，着色时需
+  sRGB 编码（0..255 字节先 /255）。
