@@ -2047,3 +2047,173 @@ decal 第 7 字段（`0x0D1090B0`）。
 **代码侧缺口（未做）**：`sc-registry` 只把 s3db `InstanceTypes` 当名称表用，
 除 `is_decal_dictionary_group` 外**没有任何地方按 InstanceType 分类** —— 资源树目前
 分不出 Unit / Agent / Path / Descriptor。
+
+---
+
+## 44. 探针欠账清理 + prop/spawner 资产链终审 + decal 尺寸/深度修正（2026-09-14 第四十四轮）
+
+### 44.1 §42.9 探针欠账（本轮清完）
+
+- `lot_mask_probe.rs`：`decode_lot_mask_rgba` 3 色改 4 色后签名未同步 → 编译错误，
+  实为 `[[0u8; 3]; 4]` 应为 `[[0u8; 4]; 4]`。已修。
+- `lot_anchor_probe.rs`：补 **Parent 展平**（新增按 instance 预建的解析索引，避免逐级
+  全表扫描；跨包同 `lot_mask_alignment`）。修前对用户样例 lot `0xEE27D643` 误报
+  `skip: no lot_size`，修后正确输出
+  `size=96x96 / offset=(0,0) / fd3=(1,1) / mask 0x3D0F6EC7 128x128`。
+- `cargo check --workspace --all-targets` 全绿。
+
+### 44.2 prop / spawner 资产链终审：**离线不可解，证据升级** `[实测]`
+
+§31.4 的「死路」结论本轮以更强手段复核（因 §31.4 对 decal 的同类结论后来被推翻）：
+
+| 手段 | 结果 |
+|---|---|
+| 原 SCP C# 源码 | `UnitBinDraw.cs` 里 `0x0c12ef20`–`0x0c12ef2e` 的 `ID` 属性**整段被注释掉**；`CreateGeometry()` 只画 `TruncatedConeVisual3D`（h2.5/底半径0/顶半径1）+ 序号 `BillboardTextVisual3D`。**原版根本没有 prop 真模型渲染。** |
+| 新探针 `dbpf raw_id_scan`（全包**全资源类型**原始字节搜 LE/BE u32） | prop id（`0x14984C69` 等）与 spawner id（`0x125D19FA` 等）**只命中 property 自身**（Game 5357 / Graphics 5639 / EP1 7017 个命中资源，type 全为 `0x00B1B104`；group 全为 `?E1C000` 单元或 `?E1E800`）。无任何「目录/表」类资源承载。 |
+| 新探针 `instancetype_probe` | 枚举了全部 InstanceType（含 Agent `0xC600` 288 个、Descriptor `0x2043` 179 个、DecalAtlas `0xB185/0x1651/0x1652`）——**Agent 资源确实带真实模型引用**（`0x0D897169` → `T 2F4E681B`），但 prop/spawner 的 id 与任何 Agent/Descriptor instance 都不相交。 |
+| 新探针 `spawner_probe` | SimCity_Game 472 个 spawner lot 中 `0x0E715928/9`（数量/随机化）与 `0x0F0E2BF1`（agent 引用）**全部 0 命中**——这三列在发行数据里根本不出现。 |
+| 脱壳 exe 反编译（`tmp/unit_out/0x00387CB3_FUN_00787870.c`） | prop id 走**运行时哈希表**：`vcall(id)` → `FUN_0058ec70` → 记录表 `*(obj+0x210) + index*0xC + 8`。数据源不在包内。 |
+
+**结论**：decal 之所以能解（id 匹配 Decal Dictionary **条目**），是因为字典资源存在；
+prop/spawner 没有对应字典，且 id 不是哈希（连号 `…68/69/6A/6B`，且 FNV-1/1a 对常见
+名字零命中）→ **判定为编译进引擎的 eco 数据表，离线不可达**。用户已据此拍板：
+**维持锥体占位 + 做原版增强**。
+
+### 44.3 本轮实现
+
+**后端（`sc-properties`）**
+- `LotUnit::Prop` 新增 `scale`（同 decal：`flags == 15` 时 `Transform.Unknown`），
+  抽出共用助手 `unit_transform_scale`（decal 同步改用）。
+- prop 列族补全：`0x0C12EF20+bin`（原型引用）、`0x0C12EF50+bin`（RandomizeSlot）、
+  `0x0C12EF60+bin`（PercentFill）纳入字段列表 → 属性面板可见（原型 id 无法解析但可展示）。
+- `LotUnit::Spawner` 新增 `count` / `count_random` / `agent`（§42 的 C4 成果**落地**），
+  三列同入字段列表。新增常量 `SPAWNER_COUNT/SPAWNER_COUNT_RANDOM/SPAWNER_AGENT`。
+- 新增单测 2 例（prop scale + 原型 id 字段；spawner 三字段），`sc-properties` 43 例绿。
+
+**前端**
+- `unitGizmos.ts`：`buildMarkerCone` 支持序号 **billboard**（原版同款：canvas 纹理 +
+  `Sprite`，模块级纹理缓存，无 canvas 环境静默跳过），prop/spawner 挂 `unitLabel()`；
+  effect 无序号语义仍为纯锥。
+- `PropertyEditorProperties.vue`：prop 增「缩放」、spawner 增「数量/数量随机上限/小人引用」
+  行；i18n 中英各 +4 键。
+- **decal 尺寸语义修正**：`Scale` 是**半宽**（原 SCP `UnitDecal.CreateGeometry`：
+  `rectangle.Length = 2 * Scale`）→ 精细 quad 由 `width = scale` 改为 `width = 2 * scale`
+  （高度仍由 atlas 条目宽高比推出）。此前精细 quad 只有原版拾取盒的一半。
+- **decal 深度方向修正**：引擎 `decalMaterialInfoWithObjectData` VS 取 **-z**
+  （`float4(-z/-x/-y, 0)`）→ `translateZ(-depth)`（旧版 `+depth` 会把贴花推到墙面外侧）。
+
+**检查**：`pnpm check` 绿、`pnpm test 96/96` 绿（+1 unitLabel 用例）、
+`cargo test --workspace` 全绿、`cargo check --workspace --all-targets` 无错误。
+**decal 两处修正与序号 billboard 均需用户目检**（我无法目视 WebGL 视口）。
+
+---
+
+## 45. Decal 投影到建筑几何（2026-09-14 第四十五轮）
+
+用户反馈：decal 尺寸已基本正确，但**普遍仍离建筑物有距离、像飘在半空**。
+
+### 45.1 引擎机制：`decalProject` 是盒体积投影，不是平面 quad `[源码]`
+
+`tmp/lot_shader_clean.txt:4322`（VS）+ `22458`（PS）：
+
+```hlsl
+Current.texcoord<t0> = mul(modelToTexture, float4(modelPos,1));   // 模型空间 → 归一化盒
+clip(1 - abs(texturePosition));                                   // 盒体积 [-1,1]^3 裁剪
+float2 uvOrig = texturePosition.xy * -0.5 + 0.5;                  // 盒内坐标即 UV
+float2 uv = uvOrig * texXform.xy + texXform.zw;
+Current.color = tex2D(Sampler<s0>, uv);
+```
+
+即贴花是**打在被投影盒裁到的建筑几何上**的，UV 直接来自盒内归一化坐标 —— 这才是
+「decal 贴住墙面」的机制。PS **没有法线/背面判定**，盒内几何一律着色；`decalProject`
+也**不跑光照**（`decalNeonBrighten` 才是受光变体）。
+
+### 45.2 探针钉盒语义：结论是「不能用静态盒」 `[实测]`
+
+新探针 `crates/sc-exporter/examples/decal_projection_probe.rs`（只读）：
+
+```
+cargo run -p sc-exporter --release --example decal_projection_probe -- \
+    SimCity_Game.package 0x457EA9DB SimCity_Graphics.package SimCity_App.package SimCityDataEP1.package
+```
+
+casino lot `0x457EA9DB`（7 个 decal）实测：
+
+| 观测 | 结果 |
+|---|---|
+| 12 float 矩阵布局 | 确认 WPF 行主序行向量（前 3 行正交基 `\|g\|=1.000`、末行平移）；**旧解读无误** |
+| 原点 → 最近**面**距离 | 0.86 / 1.16 / 1.97 / 4.60 / 4.67 / 5.53 / 8.36 m |
+| 足迹内 3×3 射线（±局部Z） | **9/9 全部命中 +Z**；`\|t\|` 离散度 0.000–2.05（6 个），仅一个 16.2（该处几何不规则） |
+| `depth` 与命中距离的相关性 | **无**（[1:2]/[1:3] 的 depth 同为 2.140，命中距离却 4.60 / 8.47） |
+
+**判读**：投影轴是 **+局部Z**（不是旧实现的 −Z），目标是**一块平面**（命中距离高度一致）；
+但 `depth` **不能**当盒的 Z 半厚或平面偏移用（0.10–3.45，与距离无关）。
+
+⚠️ 一并否证一个**陷阱**：若只用「XY 窗口内顶点」的 z 分位数判断，会得到散在
+−5.4~101 的假象——该模型只有 1402 个三角形（lot 内的 LOD1–LOD4 都很粗），
+**顶点统计不可用，必须用射线打面**。
+
+### 45.3 实现：自适应锚定盒 `[实测]`
+
+按 §44 计划里预置的「探针结论模糊 → 自适应盒」分支落地：
+
+- **XY** 由 `2×scale` 与 `2×scale/aspect` 给出（与已验收的尺寸口径一致）；
+- **Z** 由**运行时实测**决定：足迹内 3×3 采样点沿 ±局部Z 各打一条射线（代理 Mesh，
+  lot 局部空间），命中距离取**中位数**作为锚定量 `d`；盒中心 = 原点 + 轴×`d`；
+  盒 Z 半厚 = `clamp(max(depth, 0.5), 0.5, 2)` —— 薄盒只贴最近一层表面，
+  这是「不剔背面」唯一可用的防穿透手段；
+- 射线范围为**几何本身**，因此不再依赖 `depth` 的未解语义。
+
+新增 `src/lib/decalProject.ts`（纯函数，THREE 注入）：
+
+| 函数 | 职责 |
+|---|---|
+| `decalFrame` | 12 float → 原点/单位基/lot 局部矩阵/XY 全尺寸；缺 scale 或 transform 返回 null |
+| `measureAnchorDistance` | 足迹 3×3 射线，返回命中中位数；无命中 null |
+| `decalProjector` | 生成盒的中心/朝向/全尺寸（`DecalGeometry` 入参约定） |
+| `projectDecal` | 逐 mesh 投影 + AABB 粗筛 + `mergeGeometries` 合并；返回 lot 局部几何 |
+
+三个实现要点：
+1. **恒等代理 Mesh**：`DecalGeometry` 在 `pushDecalVertex` 里 `vertex.applyMatrix4(mesh.matrixWorld)`
+   之后又用投影矩阵乘回（`DecalGeometry.js:193,173`），直接传真实 mesh 会把结果抛到
+   renderer 世界空间（`viewer.world` 带 −90°X）。传 `new Mesh(mesh.geometry)`（matrixWorld 恒等）
+   ⇒ 顶点空间 = lot 局部 ⇒ 输出即 lot 局部，可直接挂在 `world` 的子组下。
+2. **UV 沿用「只镜像 U」**：`DecalGeometry` 输出 `0.5 + x/size.x`，与 `PlaneGeometry`
+   逐轴同向 ⇒ 与上一轮已验证的 quad 口径完全一致，无需重新推导。
+3. **`polygonOffset`（−4/−4）**：投影面与墙面共面，不加会 z-fighting。
+
+前端接法（`PropertyEditorViewport.vue`）：装配循环顺带收集 `buildingMeshes`；
+`buildDecalQuad` → `buildDecalObject`（async）。返回的顶层对象是**位于贴花原点的
+`Group`**（投影几何子节点用 `matrix = inverse(decalFrame.matrix)` 抵消父变换），
+使 TransformControls 仍挂原点、`unitObjects` 选中与 `unitId` 注册照旧。
+**投影未命中则回退浮空 quad**（`buildDecalQuadFallback`，旧口径 + 一次 `console.info`），
+保证建筑未加载时 decal 仍可见可选。
+
+**关于「不剔背面」**：这是**照抄引擎**（PS 无法线判定），**不是**我们的省略——
+与 spec 通道实验那类有意偏离性质不同，不记入偏离清单。
+
+### 45.4 顺带修复的两处既有缺口
+
+- `ThreeViewer.applyHighlight` 只设 `MeshStandardMaterial.emissive`；贴花用的是
+  `MeshBasicMaterial` → **选中贴花完全无反馈**。已扩展：无 `emissive` 时改乘浅蓝
+  `0x9db4e0`，原色存 `material.userData.__highlightBase` 以还原。
+- 精细模式的**光源/贴花**对象此前在装配循环里不被登记 `userData`（只有走
+  `buildUnitObject` 的组件才有）→ **精细模式下点不中光源**。现统一在循环内登记。
+
+### 45.5 导出
+
+`captureRender` 原本无条件剔除 `decals` 组（它当时是调试 gizmo）。现在精细模式的
+decal 是真实内容 → 新增 `captureRender({ includeDecals })`，`PropertyEditor` 按
+`renderMode === "refined"` 传入；默认模式仍剔除（那里还是绿色占位矩形）。
+
+### 45.6 检查与待验
+
+`pnpm check` 绿 · `pnpm test 105/105` 绿（新增 `decalProject.test.ts` 9 例：
+盒投影落位、锚定距离、盒厚度 clamp、无命中返回 null）· lint 无新增
+（既有 33 错 1 警不变）· `cargo check --workspace --all-targets` 无错误。
+
+**待用户目检**（我无法目视 WebGL 视口）：
+1. 贴花是否贴住墙面（casino `Michael's CASINO` 是最佳样本）；
+2. 文字方向（沿用「只镜像 U」口径，若镜像错则翻转点唯一）；
+3. 有无穿透到对面内墙（薄盒已降到 0.5–2 m 半厚，若仍有可再收）；
+4. 少量 decal 若走回退（控制台会打印 `[decal] … 投影未命中`），把该 lot 报我。

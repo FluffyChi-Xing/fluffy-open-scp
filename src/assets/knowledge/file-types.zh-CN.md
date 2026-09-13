@@ -117,10 +117,12 @@ Group 的**高 16 位是同一子类型的分卷/容器编号**（实测同一 l
 | 标识符 | 名称 | 类型 | 说明 |
 |---|---|---|---|
 | `0x02A907B5`–`0x02A907BC` | Effect IDs/Transforms/AlwaysZero/RefIDs/Enabled | Key/Transform/Int32/Key/Bool 列 | 效果单元五元组 |
-| `0x0D109050`/`60`/`70`/`80`（+ 类别 0–2） | Decal ID/Transform/Depth/Material | Key/Transform/Float/二进制 | 3 类别 × 基址偏移。脱壳 exe 的属性注册（`FUN_0081d680`）另有第 7 字段 `0x0D109090`（RenderGroup，Key）/`0x0D1090A0`（MachineSpec，Int32）/`0x0D1090B0`（Float，实测罕见） |
-| `0x0C12EF2X` | ecoUnitBinDrawBinIDs | Key 列 | prop 原型引用；**离线包内不可解析**（游戏内部编译表） |
-| `0x0C12EF30` + bin | Prop Transforms | Transform 列 | 14 分箱（bin 0–13） |
+| `0x0D109050`/`60`/`70`/`80`（+ 类别 0–2） | Decal ID/Transform/Depth/Material | Key/Transform/Float/二进制 | 3 类别 × 基址偏移。贴花沿**自身局部 +Z 投影**到建筑几何（引擎 `decalProject` 的 `clip(1-abs(tex))` 盒体积裁剪）。**Depth（`0x…70`）与「原点到投影面的距离」无相关**（casino 7 例实测 depth 0.10–3.45，射线命中距离 0.86–8.36），不可当作平面偏移或盒厚度——投影面靠运行时射线现场锚定（见 migration.md §45）。脱壳 exe 的属性注册（`FUN_0081d680`）另有第 7 字段 `0x0D109090`（RenderGroup，Key）/`0x0D1090A0`（MachineSpec，Int32）/`0x0D1090B0`（Float，实测罕见） |
+| `0x0C12EF2X` | ecoUnitBinDrawBinIDs | Key 列 | prop 原型引用（type/group 恒 0，如 `0x14984C68`–`6B`）；**离线不可解析**——全包全类型原始字节扫描只命中 lot 自身，s3db 亦无，原 SCP 源码里该列被注释掉，引擎由运行时哈希表解析（`FUN_00787870` → `FUN_0058ec70`） |
+| `0x0C12EF30` + bin | Prop Transforms | Transform 列 | 14 分箱（bin 0–13）；flags == 15 时 `Unknown` = Scale |
 | `0x0C12EF40` + bin | Prop Slots | 槽位值列 | 同上 |
+| `0x0C12EF50` + bin | RandomizeSlot | Bool 列 | 槽位随机化（原 SCP `UnitBinDrawSlot.RandomizeSlot`） |
+| `0x0C12EF60` + bin | PercentFill | Bool 列 | 百分比填充（原 SCP `UnitBinDrawSlot.PercentFill`） |
 | `0x0CAA680D` / `0x0CB00ED8` / `0x0CAA6832` | Path Points/Tangents/Indices | Float3/Float3/Int32 列 | 路径点 |
 | `0x0CAA6841` | PathPairs | Int32 对 | 路径区间（语义待定） |
 | `0x0E1BAC61` / `0x0E1BAC62` | Spawner IDs / Transforms | Key 列（**元素步长 0xC**）/ Transform 列（**步长 0x38**） | 生成器本体，指向 agent |

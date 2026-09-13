@@ -123,10 +123,12 @@ Verified: in `SimCity_Game.package`, lot `0xEE27D643` has group `0x42E1C000` →
 | Identifier | Name | Type | Notes |
 |---|---|---|---|
 | `0x02A907B5`–`0x02A907BC` | Effect IDs/Transforms/AlwaysZero/RefIDs/Enabled | Key/Transform/Int32/Key/Bool arrays | Effect unit quintet |
-| `0x0D109050`/`60`/`70`/`80` (+ category 0–2) | Decal ID/Transform/Depth/Material | Key/Transform/Float/binary | 3 categories × base offset. The unpacked exe's property registration (`FUN_0081d680`) declares three more: `0x0D109090` (RenderGroup, Key) / `0x0D1090A0` (MachineSpec, Int32) / `0x0D1090B0` (Float, rarely present) |
-| `0x0C12EF2X` | ecoUnitBinDrawBinIDs | Key array | Prop prototype refs; **not resolvable offline** (compiled into internal game tables) |
-| `0x0C12EF30` + bin | Prop Transforms | Transform array | 14 bins (0–13) |
+| `0x0D109050`/`60`/`70`/`80` (+ category 0–2) | Decal ID/Transform/Depth/Material | Key/Transform/Float/binary | 3 categories × base offset. A decal is **projected along its own local +Z** onto building geometry (the engine's `decalProject` clips to a `[-1,1]^3` box via `clip(1-abs(tex))`). **Depth (`0x…70`) does NOT correlate with the origin→surface distance** (casino: 7 decals with depth 0.10–3.45 vs ray-hit distances 0.86–8.36), so it is neither a plane offset nor a box thickness — the projection plane is anchored at runtime by raycasting (see migration.md §45). The unpacked exe's property registration (`FUN_0081d680`) declares three more: `0x0D109090` (RenderGroup, Key) / `0x0D1090A0` (MachineSpec, Int32) / `0x0D1090B0` (Float, rarely present) |
+| `0x0C12EF2X` | ecoUnitBinDrawBinIDs | Key array | Prop prototype refs (type/group always 0, e.g. `0x14984C68`–`6B`); **not resolvable offline** — a raw byte scan over every resource type in every package only hits the lot itself, s3db has nothing, the original SCP source has this column commented out, and the engine resolves it through a runtime hash map (`FUN_00787870` → `FUN_0058ec70`) |
+| `0x0C12EF30` + bin | Prop Transforms | Transform array | 14 bins (0–13); when flags == 15, `Unknown` is Scale |
 | `0x0C12EF40` + bin | Prop Slots | Slot value array | Same |
+| `0x0C12EF50` + bin | RandomizeSlot | Bool array | Slot randomization (SCP `UnitBinDrawSlot.RandomizeSlot`) |
+| `0x0C12EF60` + bin | PercentFill | Bool array | Percent fill (SCP `UnitBinDrawSlot.PercentFill`) |
 | `0x0CAA680D` / `0x0CB00ED8` / `0x0CAA6832` | Path Points/Tangents/Indices | Float3/Float3/Int32 arrays | Path points |
 | `0x0CAA6841` | PathPairs | Int32 pairs | Path ranges (semantics TBD) |
 | `0x0E1BAC61` / `0x0E1BAC62` | Spawner IDs / Transforms | Key array (**element stride 0xC**) / Transform array (**stride 0x38**) | Spawner bodies, referencing an agent |
