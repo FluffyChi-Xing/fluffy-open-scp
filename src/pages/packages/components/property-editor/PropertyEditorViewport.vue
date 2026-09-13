@@ -21,6 +21,7 @@ import {
   unitId,
   unitMatrix,
 } from "./unitGizmos";
+import { decalFrame, projectDecal } from "@/lib/decalProject";
 import { useEditorViewport } from "./useEditorViewport";
 import {
   applyDeferredMaterialMaps,
@@ -383,6 +384,8 @@ async function assembleScene(ctx: Parameters<
   const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
     payload?.materials ?? []
   ).map(() => []);
+  /** 贴花投影目标：全部建筑网格（在 lot 局部空间为单位变换）。 */
+  const buildingMeshes: ThreeNamespace.Mesh[] = [];
   const tintResolved =
     props.renderMode === "refined" && payload
       ? await loadTintTextures(
@@ -409,6 +412,8 @@ async function assembleScene(ctx: Parameters<
     object.traverse((child) => {
       const mesh = child as ThreeNamespace.Mesh;
       if (!mesh.isMesh) return;
+      // 贴花投影的候选面（精细模式才用；建筑网格在 lot 局部空间为单位变换）
+      buildingMeshes.push(mesh);
       if (props.renderMode !== "refined") {
         mesh.material = whiteMaterial;
         return;
@@ -492,52 +497,109 @@ async function assembleScene(ctx: Parameters<
     }
   }
 
-/** 精细模式贴花 quad：四色解码贴图，尺寸 = scale × scale/aspect，
- *  沿贴花局部 Z 挑出 depth（离墙偏移）。无纹理返回 null（回退标记锥）。 */
-function buildDecalQuad(
+/** 贴花材质：四色解码贴图 + 二值 alpha。投影片与浮空回退共用。 */
+function buildDecalMaterial(
   THREE: typeof ThreeNamespace,
-  unit: DecalUnit,
   texture: DecalUnitTexture,
-): ThreeNamespace.Mesh | null {
-  if (!texture.png) return null;
-  const aspect =
-    texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
-  const width = Math.max(unit.scale ?? 4, 0.05);
-  const height = Math.max(width / aspect, 0.05);
+): ThreeNamespace.MeshBasicMaterial {
   const map = new THREE.TextureLoader().load(
     `data:image/png;base64,${texture.png}`,
   );
   map.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshBasicMaterial({
+    map,
+    side: THREE.DoubleSide,
+    // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
+    // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
+    // 的 RGB=(0,0,0) 直接画成黑底。alpha 是二值的，alphaTest 即足够
+    //（同地面 fill 口径），无需 transparent 的排序开销。
+    alphaTest: 1 / 255,
+    transparent: false,
+    // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+  });
+}
+
+/** 取贴花在 lot 局部的变换矩阵（无变换时为 None）。 */
+function applyDecalTransform(
+  THREE: typeof ThreeNamespace,
+  unit: DecalUnit,
+  object: ThreeNamespace.Object3D,
+) {
+  if (!unit.transform) return;
+  const matrix = unitMatrix(THREE, unit.transform);
+  matrix.decompose(object.position, object.quaternion, object.scale);
+}
+
+/**
+ * 浮空 quad 回退：投影落空（建筑未加载 / 贴花不属于任何建筑面）时仍让
+ * 用户看得到、点得到该 decal。尺寸 = 2×scale × (2×scale)/aspect。
+ */
+function buildDecalQuadFallback(
+  THREE: typeof ThreeNamespace,
+  unit: DecalUnit,
+  texture: DecalUnitTexture,
+): ThreeNamespace.Mesh {
+  const aspect =
+    texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
+  // Scale 是半宽（原 SCP `UnitDecal.CreateGeometry`：`rectangle.Length = 2 * Scale`）。
+  const width = Math.max((unit.scale ?? 4) * 2, 0.05);
+  const height = Math.max(width / aspect, 0.05);
   const geometry = new THREE.PlaneGeometry(width, height);
   // U 轴镜像：引擎 decal PS 的 UV 是 `textureFloatPosition.xy * -0.5 + 0.5`
-  // （U 取负，被 texXform 的 2 倍缩放补回量程），即贴图列序相对 quad 局部 +X
-  // 反向；`decalMaterialInfoWithObjectData` 的 VS 同样把 x 取负。不翻会得到
-  // 镜像文字（用户实测 "Michael's CASINO" 左右反）。V 不翻（D3D v=0 在顶 +
+  // （U 取负，被 texXform 的 2 倍缩放补回量程），不翻会得到镜像文字
+  //（用户实测 "Michael's CASINO" 左右反）。V 不翻（D3D v=0 在顶 +
   // 我们的 flipY=true 已抵消）。
   const uv = geometry.attributes.uv;
   for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
   uv.needsUpdate = true;
-  const mesh = new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({
-      map,
-      side: THREE.DoubleSide,
-      // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
-      // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
-      // 的 RGB=(0,0,0) 直接画成黑底。alpha 是二值的，alphaTest 即足够
-      //（同地面 fill 口径），无需 transparent 的排序开销。
-      alphaTest: 1 / 255,
-      transparent: false,
-    }),
-  );
-  if (unit.transform) {
-    const matrix = unitMatrix(THREE, unit.transform);
-    matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
-  }
-  mesh.translateZ(unit.depth ?? 0);
-  mesh.userData.unitId = unitId(unit);
-  mesh.userData.unitKind = unit.kind;
+  const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture));
+  // 回退仍按旧口径沿局部 -Z 让开 depth：引擎 `decalMaterialInfoWithObjectData`
+  // 的 VS 取 -z（`float4(-z/-x/-y, 0)`）。
+  mesh.translateZ(-(unit.depth ?? 0));
   return mesh;
+}
+
+/**
+ * 精细模式贴花：优先按引擎 `decalProject` 的方式**投影到建筑几何**
+ * （盒体积裁剪 + 盒内归一化 UV），失败则回退浮空 quad。
+ *
+ * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
+ * `unitObjects` 选中与 `userData.unitId` 注册照旧；投影几何子节点用
+ * 逆矩阵抵消父变换，因此几何本身保持 lot 局部坐标。
+ */
+async function buildDecalObject(
+  THREE: typeof ThreeNamespace,
+  unit: DecalUnit,
+  texture: DecalUnitTexture,
+  meshes: ThreeNamespace.Mesh[],
+): Promise<ThreeNamespace.Object3D | null> {
+  if (!texture.png) return null;
+  const aspect =
+    texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
+  const frame = decalFrame(THREE, unit, aspect);
+  const group = new THREE.Group();
+  applyDecalTransform(THREE, unit, group);
+
+  if (frame) {
+    const geometry = await projectDecal(THREE, frame, meshes, unit.depth);
+    if (geometry) {
+      const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture));
+      const inverse = frame.matrix.clone().invert();
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(inverse);
+      group.add(mesh);
+      return group;
+    }
+  }
+  // 回退：投影无命中（或缺少 scale/transform）时保留浮空 quad
+  console.info(
+    `[decal] ${unitId(unit)} 投影未命中建筑面，回退浮空 quad（可能在游戏的高细节 LOD 上）`,
+  );
+  group.add(buildDecalQuadFallback(THREE, unit, texture));
+  return group;
 }
 
   const units: LotUnitDto[] = [
@@ -553,20 +615,30 @@ function buildDecalQuad(
     props.decalTextures.map((texture) => [`${texture.category}:${texture.index}`, texture]),
   );
   for (const unit of units) {
-    // 精细模式：光源用真实 three.js 光源、贴花用 atlas 纹理 quad；其余组件保持标记锥
+    // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
     const decalTexture =
       props.renderMode === "refined" && unit.kind === "decal"
         ? decalTextureByKey.get(`${unit.category}:${unit.index}`)
         : undefined;
-    const object =
-      props.renderMode === "refined" && unit.kind === "light"
-        ? buildRealLightUnit(THREE, unit)
-        : unit.kind === "decal" && decalTexture
-          ? buildDecalQuad(THREE, unit, decalTexture)
-          : buildUnitObject(THREE, unit);
+    let object: ThreeNamespace.Object3D | null;
+    if (props.renderMode === "refined" && unit.kind === "light") {
+      object = buildRealLightUnit(THREE, unit);
+    } else if (props.renderMode === "refined" && unit.kind === "decal" && decalTexture) {
+      // 贴图解码失败（无 png）→ 退回 gizmo，保证仍可见可选
+      object =
+        (await buildDecalObject(THREE, unit, decalTexture, buildingMeshes)) ??
+        buildUnitObject(THREE, unit);
+    } else {
+      object = buildUnitObject(THREE, unit);
+    }
     if (!object) continue;
+    // 统一在此登记：精细模式的光源/贴花不再走 buildUnitObject，其 userData
+    // 由此补齐（此前精细模式光源因此点不中）。
+    object.userData.unitId = unitId(unit);
+    object.userData.unitKind = unit.kind;
     instance.group(kindGroup(unit.kind)).add(object);
     ctx.unitObjects.set(unitId(unit), object);
+    if (ctx.isStale()) return;
   }
 
   // 路径折线：按 point_index 排序连接（pathPairs 语义未定，先 best-effort）。
@@ -598,7 +670,10 @@ function applyBrightness() {
   );
 }
 
-defineExpose({ captureRender: viewport.captureRender });
+defineExpose({
+  captureRender: (options?: { includeDecals?: boolean }) =>
+    viewport.captureRender(options),
+});
 
 watch(
   () => [props.modelPayload, props.renderMode, props.grouping],

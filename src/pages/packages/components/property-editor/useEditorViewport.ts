@@ -180,12 +180,16 @@ export function useEditorViewport(options: {
     viewer.value?.setSelected(selected);
   }
 
-  /** 渲染图导出：默认剔除 props/decals/spawners/effects/paths 等 gizmo 组
-   *（保留模型与灯光），返回 PNG dataURL；null = 截图失败。 */
-  function captureRender(): string | null {
+  /** 渲染图导出：剔除 props/effects/spawners/paths 等 gizmo 组（保留模型与灯光），
+   * 返回 PNG dataURL；null = 截图失败。
+   *
+   * `includeDecals`：精细模式下 decal 已是投影到建筑面的真实内容（不再是调试
+   * gizmo），故保留；默认模式下它仍是绿色占位矩形，继续剔除。 */
+  function captureRender(options?: { includeDecals?: boolean }): string | null {
     const instance = viewer.value;
     if (!instance) return null;
-    const exclude = ["props", "decals", "effects", "spawners", "paths"];
+    const exclude = ["props", "effects", "spawners", "paths"];
+    if (!options?.includeDecals) exclude.push("decals");
     return instance.captureScreenshot(exclude);
   }
 

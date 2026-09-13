@@ -15,6 +15,9 @@ type Three = typeof ThreeNamespace;
 
 // 三灯 + 环境光的基准强度；setEnvironmentBrightness 按倍率缩放这些基准值。
 const KEY_LIGHT_INTENSITY = 2.2;
+/** 选中高亮：标准材质加自发光，无光照材质（贴花）改乘这一浅蓝。 */
+const HIGHLIGHT_EMISSIVE = 0x2f5fb0;
+const HIGHLIGHT_BASIC_TINT = 0x9db4e0;
 const FILL_LIGHT_INTENSITY = 0.5;
 const RIM_LIGHT_INTENSITY = 0.65;
 const AMBIENT_LIGHT_INTENSITY = 0.38;
@@ -268,7 +271,24 @@ export class ThreeViewer {
         : [mesh.material];
       for (const material of materials) {
         const standard = material as ThreeNamespace.MeshStandardMaterial;
-        standard.emissive?.setHex(on ? 0x2f5fb0 : 0x000000);
+        if (standard.emissive) {
+          standard.emissive.setHex(on ? HIGHLIGHT_EMISSIVE : 0x000000);
+          continue;
+        }
+        // 无光照材质（贴花投影用的 MeshBasicMaterial）没有 emissive，
+        // 改用 color 乘一个浅蓝——不处理则选中贴花完全无反馈。
+        const basic = material as ThreeNamespace.MeshBasicMaterial;
+        if (!basic.color) continue;
+        const saved = basic.userData.__highlightBase as number | undefined;
+        if (on) {
+          if (saved === undefined) {
+            basic.userData.__highlightBase = basic.color.getHex();
+          }
+          basic.color.setHex(HIGHLIGHT_BASIC_TINT);
+        } else if (saved !== undefined) {
+          basic.color.setHex(saved);
+          delete basic.userData.__highlightBase;
+        }
       }
     });
   }

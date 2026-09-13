@@ -135,7 +135,9 @@ const specMode = ref(2);
 /** 5d 日/夜时段 0–24（默认 12 正午）。 */
 const timeOfDay = ref(12);
 // 浮雕开关已撤销（见模板注释），reliefEnabled 状态一并移除。
-const viewportRef = ref<{ captureRender: () => string | null } | null>(null);
+const viewportRef = ref<{
+  captureRender: (options?: { includeDecals?: boolean }) => string | null;
+} | null>(null);
 
 /** 视口渲染图导出：剔除 gizmo 组后的视口截图（两种渲染模式均可用）。 */
 const renderShotBusy = ref(false);
@@ -143,7 +145,10 @@ async function exportRenderImage() {
   if (renderShotBusy.value) return;
   renderShotBusy.value = true;
   try {
-    const dataUrl = viewportRef.value?.captureRender();
+    // 精细模式下 decal 是投影到墙面的真实内容，导出保留（供像素核验与出图）
+    const dataUrl = viewportRef.value?.captureRender({
+      includeDecals: renderMode.value === "refined",
+    });
     if (!dataUrl) return;
     const path = await tauriApi.packages.saveFile(
       `${session.value?.assetName ?? "lot"}-render.png`,
