@@ -129,6 +129,28 @@ Group 的**高 16 位是同一子类型的分卷/容器编号**（实测同一 l
 | `0x0E715928` / `0x0E715929` | Spawner 数量 / 随机化范围 | Int32 列 | 生成数量；后者非零时 `数量 += 随机 % 后者`（脱壳 exe `FUN_00786000` 实证） |
 | `0x0F0E2BF1` | Spawner Agent 引用 | Key | 经引擎管理器解析为 agent/小人（同上实证） |
 
+### Menu / Menu2（0x8A01 / 0xC900）—— UI 工具栏与菜单条目
+
+顶层工具/菜单条目。`0x8A01` = Menu（基类，Game 457 条 + Graphics 19 条地标）；
+`0xC900` = Menu2（EP1 100 / DLC0 73，`Parent` 指回 `0x09878A01` 基类）。
+显示名来自 locale 表 `0x6C969DEE`（**只有英文，无其他语言译名**）。
+
+| 标识符 | 名称 | 说明 |
+|---|---|---|
+| `0x00B2CCCB` | Parent | → 一个 `0xEB00`**工具本体**。可见条目挂在**有 33 个属性的本体**上（如 `0xAF042E9A`，310 条挂在它下面，自带真实 action id）；被隐藏的 debug 条目挂在**0 属性空壳**（`0xBE5744E0`，14 条） |
+| `0x08F672C7` | ecoGameToolAction | 工具实现 id；可见条目从父本体继承，debug 条目指向自身（无实现） |
+| `0x0975695E` | （SCP 显示为 ecoGameToolCategory） | 菜单分类 Key（`kCategoryIDBuilding`/`kCategoryIDPower`/`General`/`debug`…）——**引擎不读它**：该哈希在整个 exe 里 0 命中，属 SCP 侧只读字段 |
+| `0x0DB9FC63` | uiToolCategory | UI 子栏 Key **数组**（`pipelinetools`/`kCategoryIDSewage`/`kCategoryIDFire`/`kCategoryIDGarbage`/`Air`/`Hospital Units Menu`/`UIToolCategory_EducationE2/E3`…） |
+| `0x0DC1E3E0` | uiToolPosition | 栏内位置（Int32，与子栏一一对应） |
+| `0x0A09F5FA` / `0x0A09F5FB` | 标题 / 描述 | Text（表 `0x6C969DEE` / `0x50AA0BEA`） |
+| `0x0977AA8F` / `0x09756950`–`55` | 图标 / 六态图标集 | Key → `0x2F7D0004`（Normal/Over/Selected/Locked/Unlock/Shadow） |
+| `0x0975695F` | （s3db 名为 Model Details） | 加载器 `FUN_008a6a00` 读它，**解析失败即该条目作废（`return 0`）** |
+
+引擎侧装配链（脱壳 exe）：加载器 `FUN_008a6a00`（9 调用者）→ UI 数据分发 `FUN_00670a20`
+→ 逐工具推送 `FUN_0066def0`（iconKey/isLocked/shouldDisplay/isRoadTool/isUnlockedFromRegion/toolID…）。
+工具框架 `cITool`/`cTool`* 与作弊/调试面（`cGameCheat`、JS 桥 `ClientHooks.ToggleDebugConsole`）
+在发行版中仍在。详见 migration.md §46。
+
 ### RW4（0x2F4E681B）
 
 RenderWare4 容器：header、section index、Blob、Mesh/VertexFormat/Triangle/Texture/BBox。材质最多挂 6 个槽位——slot0 参数表（f32）、slot1 颜色控制图、slot2 法线、slot3 shader map、slot4 调色板、slot5 内景图。贴图为 DDS（DXT1/5）内嵌。目前只读解码，写回器为资产开发主线的第一优先事项。

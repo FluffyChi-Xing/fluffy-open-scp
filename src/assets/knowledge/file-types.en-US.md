@@ -135,6 +135,30 @@ Verified: in `SimCity_Game.package`, lot `0xEE27D643` has group `0x42E1C000` →
 | `0x0E715928` / `0x0E715929` | Spawner count / randomization range | Int32 arrays | Spawn count; when the latter is non-zero, `count += random % latter` (proved in unpacked exe `FUN_00786000`) |
 | `0x0F0E2BF1` | Spawner agent reference | Key | Resolved to an agent/sim through an engine manager (same proof) |
 
+### Menu / Menu2 (0x8A01 / 0xC900) — UI toolbar & menu entries
+
+Top-level tool/menu entries. `0x8A01` = Menu (base type; 457 in Game + 19 landmark plops in
+Graphics); `0xC900` = Menu2 (100 in EP1 / 73 in DLC0, `Parent` pointing back to the
+`0x09878A01` base). Display names come from locale table `0x6C969DEE`
+(**English only — no translations in any other table**).
+
+| Hash | Name | Notes |
+|---|---|---|
+| `0x00B2CCCB` | Parent | → a `0xEB00` **tool body**. Visible entries hang off a **33-property body** (e.g. `0xAF042E9A`, with 310 entries under it and a real action id); hidden debug entries hang off an **empty 0-property shell** (`0xBE5744E0`, 14 entries) |
+| `0x08F672C7` | ecoGameToolAction | Tool implementation id; visible entries inherit it from the parent body, debug entries point at themselves (no implementation) |
+| `0x0975695E` | (shown by SCP as ecoGameToolCategory) | Menu category Key (`kCategoryIDBuilding`/`kCategoryIDPower`/`General`/`debug`…) — **the engine never reads it**: this hash has 0 hits in the whole exe; it is a SCP-side read-only field |
+| `0x0DB9FC63` | uiToolCategory | UI sub-panel Key **array** (`pipelinetools`/`kCategoryIDSewage`/`kCategoryIDFire`/`kCategoryIDGarbage`/`Air`/`Hospital Units Menu`/`UIToolCategory_EducationE2/E3`…) |
+| `0x0DC1E3E0` | uiToolPosition | Position within the panel (Int32, paired with the sub-panel) |
+| `0x0A09F5FA` / `0x0A09F5FB` | Title / description | Text (tables `0x6C969DEE` / `0x50AA0BEA`) |
+| `0x0977AA8F` / `0x09756950`–`55` | Icon / six-state icon set | Key → `0x2F7D0004` (Normal/Over/Selected/Locked/Unlock/Shadow) |
+| `0x0975695F` | (s3db: Model Details) | Read by loader `FUN_008a6a00`; **if it fails to resolve the entry is dropped (`return 0`)** |
+
+Runtime assembly chain (unpacked exe): loader `FUN_008a6a00` (9 callers) → UI data dispatcher
+`FUN_00670a20` → per-tool push `FUN_0066def0` (iconKey/isLocked/shouldDisplay/isRoadTool/
+isUnlockedFromRegion/toolID…). The tool framework (`cITool`/`cTool`*) and the cheat/debug
+surfaces (`cGameCheat`, the `ClientHooks.ToggleDebugConsole` JS bridge) are still in the
+shipped build. See migration.md §46.
+
 ### RW4 (0x2F4E681B)
 
 RenderWare4 container: header, section index, blobs, mesh/vertex

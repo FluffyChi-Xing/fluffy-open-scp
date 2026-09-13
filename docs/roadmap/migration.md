@@ -2217,3 +2217,114 @@ decal 是真实内容 → 新增 `captureRender({ includeDecals })`，`PropertyE
 2. 文字方向（沿用「只镜像 U」口径，若镜像错则翻转点唯一）；
 3. 有无穿透到对面内墙（薄盒已降到 0.5–2 m 半厚，若仍有可再收）；
 4. 少量 decal 若走回退（控制台会打印 `[decal] … 投影未命中`），把该 lot 报我。
+
+---
+
+## 46. 引擎侧 debug 工具链取证 + mod 覆盖实验（2026-09-14 第四十六轮）
+
+起因：用户发现 `Menu / Menu2`（InstanceType `0xC900` / `0x8A01`）里存在一批被隐藏的
+debug 工具（`Edit Unit Prop Tool`、`CoalDeposits Painter` 等），问**是否已被移除、
+还是只是关闭、能否重新打开**。
+
+### 46.1 数据侧普查（新探针 `sc-properties menu_survey`）
+
+| 项 | 结果 |
+|---|---|
+| Menu/Menu2 条目 | Game **457**（`0x8A01`）+ EP1 **100** / DLC0 **73**（`0xC900`，Parent 指回 `0x09878A01` 基类）；Graphics 另有 19 条地标 |
+| 显示名来源 | locale 表 `0x6C969DEE`（= 仓库 `public/game-ui/locale/6C969DEE.json`，本项目 `dbpf ui_assets` 抽出）。**只有英文、无任何其他语言译名** → 中文版里也会显示英文名 |
+| 顶层菜单分类 `0x0975695E` | `kCategoryIDBuilding` 67 / `F2FF41C8` 25 / `kCategoryIDPower` 12 / `General` 10 / `road` 3 / **`debug` 3** / `path` 2 / `zone` 1 / `Terrain` 1 |
+| UI 子栏 `0x0DB9FC63` | `pipelinetools`、`kCategoryIDSewage`、`kCategoryIDFire`、`kCategoryIDGarbage`、`Air`、`Hospital Units Menu`、`UIToolCategory_EducationE2/E3`… |
+| **属于 debug 分类的条目** | **恰好 3 条**：`0x53B77423` Edit Unit Prop Tool、`0xA2AA4268` Edit Snap Points Tool、`0xB65E1F2E` Unit Connecter Tool |
+| 用户清单里的 Painter 名 | CoalDeposits / Forest / Ground Pollution / Garbage / Soil / Oil Reservoir / Ore Deposit / Density / SoilLayer / Extractive RCI / Land Value —— **在全部 11 个包里零引用**（`raw_id_scan` 全包扫描）→ 只剩本地化字符串，**没有对应的工具/菜单定义** |
+
+方法自证：同样手法反查已知存在的标题 id `0x5B14202F` 能精确命中 `0x09878A01/0x53B77423`
+（正是截图那条），故上表的「零引用」是有效否定。
+
+### 46.2 引擎侧装配链（Ghidra，`OscpDump.java` 批量）`[源码]`
+
+| 函数 | 作用 |
+|---|---|
+| `FUN_008a6a00`（9 个调用者） | **工具定义加载器**：按固定哈希列表读字段 |
+| `FUN_00670a20` | **UI 数据请求分发器**（大 switch），引用 `toolPaletteCategories` / `toolPaletteParentCategories` |
+| `FUN_0066def0` | **逐工具把数据推给 JS**：iconKey / lockedIconKey / isLocked / shouldDisplay / isRoadTool / isUnlockedFromRegion / toolID / achievementLock |
+
+加载器实读字段（立即数实证）：标题 `0x0A09F5FA`、描述 `0x0A09F5FB`、
+**`0x0975695F`（解析失败即 `return 0`，硬门）**、`ecoGameToolAction 0x08F672C7`、
+图标 `0x0977AA8F`、`0x09756953`、`0x0C7F4336`、**`uiToolCategory 0x0DB9FC63` → 向量**、
+**`uiToolPosition 0x0DC1E3E0` → 向量**，以及标志位 `0x0B32B599/5A0`、`0x0EA78F33`、`0x0F1907F2`。
+
+**关键否定结果：`0x0975695E` 在整个 exe 里 0 命中 —— 引擎根本不读它。**
+（用户截图里 SCP 标注为 `ecoGameToolCategory` 的字段，对引擎是**死字段**。）
+
+工具框架与调试面仍在：RTTI 有 `cITool`/`cTool` + 13 个子类；`cGameCheat`、
+`cGigapixelCaptureCheat`、"Show full help for all cheats"；JS 桥
+`window.ClientHooks.ToggleDebugConsole / ShowDebugConsole / OutputDebugConsole`；
+涂绘机制 `BeginPaint`/`PaintType`、森林密度图层 `cTerrainForest2::DrawLayer::kLayerIDTerrainForest*`。
+**无任何 Painter 类** —— 但 painter 从来不是 C++ 类（是跑在通用涂绘/地块系统上的**数据条目**），
+故此缺失**不构成**「被删除」的证据。
+
+### 46.3 关键结构差异：可见条目 vs debug 条目 `[实测]`
+
+| | 可见条目（如 `0x64088034` 商務學院） | debug 条目（如 `0x53B77423`） |
+|---|---|---|
+| 属性数 | 21 | 8 |
+| `Parent 0x00B2CCCB` | → `0xAF042E9A`：**33 个属性的 `0xEB00`「工具本体」**，自带真实 action id `0x1943CB96`；**310 条**菜单条目挂在它下面 | → `0xBE5744E0`：**0 个属性的空壳 `0xEB00`**；14 条挂在它下面 |
+| 六态图标 `0x09756950–55` | 有 | **无** |
+| `0x0975695F` / `0x0D2E72D9` | 有 | **无** |
+| `ecoGameToolAction` | （从父本体继承） | 指向**自身** instance |
+
+推断：菜单条目的分类与参数主要**从 Parent 工具本体取得**；debug 条目挂在空壳父对象下，
+无可继承参数，action 只能回落到自身 id。
+
+### 46.4 mod 覆盖实验：**阳性对照失败 → 结论作废** `[实测]`
+
+在本机离线整合版（`D:\ea-games\simcity_offline\SimCity：Cites to Tomorrow`）做了三轮：
+
+| 轮 | 改动（写入 `SimCityUserData/Packages/zz_openscp_debugtools_test.package`） | 游戏内结果 |
+|---|---|---|
+| 1 | `uiToolCategory` → `0x9D2EF585`；`0x0975695E` → `0xC710B6E9` | 无变化 |
+| 2 | 再加 `Parent` → `0xAF042E9A`（可见工具本体） | 无变化 |
+| 3 | **阳性对照**：把教育栏可见的「宿舍」（`0x75A90B66`）标题串 `0x7C9A0071` 改指「商務學院」的 `0x64EC016B` | **仍然无变化** |
+
+**结论：该路径下覆盖包未被加载** —— 因此第 1、2 轮的「无变化」**不能**用于判定门控，
+属**假阴性**。加载路径/包格式仍是未决项。
+
+**教训（重要）**：对「改某字段后游戏无反应」下结论之前，**必须先有一个正向对照证明
+改动真的生效**。本轮正是因为缺它，白测两轮、并据此误判过「门控不是分类字段」。
+
+未决候选（下一步按此顺序）：
+1. 改放 `SimCityData/`（与基础包同目录，后加载覆盖）；
+2. 与一个**已知可用**的社区 mod 逐字节比对包格式（用户 `SimCityUserData/Packages/`
+   里只有未解压的 rar/zip，没有可比样本）；
+3. 核实是否还需 manifest / version 标记（`SimCityData/version_data.txt`、
+   `SimCityUserData/Patches/versionLog.txt`）。
+
+包格式侧已就地修正一处真 bug（见 46.6）：`dbpf::write_uncompressed_overlay` 的头部
+版本号原写 `1`，而 11 个零售包实测全为 `3`。
+
+### 46.5 当前判定（诚实版）
+
+- **两侧都"在"**：菜单条目在数据里、locale 名在、引擎侧加载器（`FUN_008a6a00`）与
+  面板 schema、作弊/调试面都在；
+- **未定**：3 个 debug 工具究竟是被**数据门控**（可重开）还是**实现缺失**
+  （引擎按 action id 找不到工具就不生成按钮 → 不可重开）。因为覆盖实验尚未生效，
+  **目前没有有效证据**支持任一结论；
+- 用户清单里的 Painter 一批可以确定：**数据侧的定义已经不在了**，只剩字符串。
+
+### 46.6 副产品
+
+- **`dbpf` writer 真 bug 修复**：`write_uncompressed_overlay` 头部版本号硬编码 `1`
+  → 零售包实测（11 个 `SimCity_*.package`）全为 `3`，已改；新增
+  `header_matches_retail_conventions` 测试逐字段锁定（magic / major=3 / reserved@0x3C=3 /
+  索引前导 `values=4`+`0` / 28 字节记录序 `type/group/instance/offset/size/mem/flags`）。
+- 新探针：`dbpf payload_grep`（解压后搜 ASCII，用于定位 UI 资源，三次点击即可从
+  867 KB 的 JS 包里定位 `kDataSortedToolPaletteCategories`）、
+  `sc-properties menu_survey`（Menu/Menu2 分类 / Parent / 属性数普查）、
+  `sc-exporter enable_debug_tools`（生成覆盖包；**逐值字节补丁**而非整包重编码 ——
+  `encode_canonical` 对本文件含 Text 数组的属性会报 `InvalidArrayItemSize`；补丁带强自检：
+  旧值唯一性 + 补丁后重解析 + 其余属性逐项一致）。
+- `tmp/locate_ui_strings.py`（只读：解析 PE 段表做 file-offset → VA，供 Ghidra
+  `--refs` 定位 UTF-16 字符串；注意 **file offset ≠ RVA**，`.text` 起点差 0x400，
+  本轮曾因此把 `--rva` 传错 0x400）。
+- 本机离线整合版的 mod 覆盖包仍在 `SimCityUserData\Packages\zz_openscp_debugtools_test.package`
+  （未生效、无副作用；删除即完全还原）。
