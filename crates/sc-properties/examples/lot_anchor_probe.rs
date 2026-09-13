@@ -4,7 +4,6 @@
 //! 用法：cargo run -p sc-properties --example lot_anchor_probe -- <package> [max] [lot_instance]
 //! 指定 lot_instance 时进入定向模式：跳过所有过滤，仅输出该 lot。
 
-use dbpf::ResourceId;
 use std::collections::HashMap;
 
 fn main() {
@@ -53,11 +52,47 @@ fn main() {
         None
     };
 
+    // Parent(0x00B2CCCB) 解析索引：78% 的 lot 变体把 LotSize / placement /
+    // Lot Textures 挂在父级，只读本级会得到「空壳」→ 误报 skip: no lot_size。
+    // 按 instance 预建索引，避免每个属性逐级全表扫描。
+    let mut parent_index: HashMap<u32, dbpf::IndexEntry> = HashMap::new();
+    for entry in package.entries() {
+        if entry.id.type_id == 0x00B1_B104 {
+            parent_index.entry(entry.id.instance).or_insert_with(|| entry.clone());
+        }
+    }
+    let mut extra_parent_indexes: Vec<HashMap<u32, dbpf::IndexEntry>> = Vec::new();
+    for (pkg, _) in &extra_raster_pkgs {
+        let mut index = HashMap::new();
+        for entry in pkg.entries() {
+            if entry.id.type_id == 0x00B1_B104 {
+                index.entry(entry.id.instance).or_insert_with(|| entry.clone());
+            }
+        }
+        extra_parent_indexes.push(index);
+    }
+    let mut resolve_parent = |key: &sc_properties::Key| -> Option<sc_properties::PropertyFile> {
+        if let Some(hit) = parent_index.get(&key.instance)
+            && let Ok(bytes) = package.read(hit)
+        {
+            return sc_properties::PropertyFile::parse(&bytes).ok();
+        }
+        for (i, (pkg, _)) in extra_raster_pkgs.iter().enumerate() {
+            if let Some(hit) = extra_parent_indexes.get(i).and_then(|idx| idx.get(&key.instance))
+                && let Ok(bytes) = pkg.read(hit)
+            {
+                return sc_properties::PropertyFile::parse(&bytes).ok();
+            }
+        }
+        None
+    };
+
     let mut shown = 0usize;
     for entry in package.entries() {
         if entry.id.type_id != 0x00B1_B104 { continue; }
         let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = sc_properties::PropertyFile::parse_with_limits(&data, sc_properties::ParseLimits::default()) else { continue };
+        let Ok(raw_file) = sc_properties::PropertyFile::parse_with_limits(&data, sc_properties::ParseLimits::default()) else { continue };
+        let file = sc_properties::inherit::flatten_parent_inheritance(raw_file, &mut resolve_parent);
         let document = sc_properties::LotEditorDocument::from_property_file(file);
         let placement_t = document.placement.as_ref().filter(|t| t.matrix.len() == 12)
             .map(|t| (t.matrix[9], t.matrix[10]));

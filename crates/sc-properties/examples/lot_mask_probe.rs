@@ -60,7 +60,7 @@ fn main() {
             Some(id) => match package.read(&package.entry(id).unwrap()) {
                 Ok(bytes) => match RasterImage::parse(&bytes) {
                     Ok(raster) => {
-                        let colors = [[0u8; 3]; 4];
+                        let colors = [[0u8; 4]; 4];
                         match raster.decode_lot_mask_rgba(&colors) {
                             Ok(rgba) => { ok += 1; format!("OK {}x{} pixFmt={} {}px", raster.width, raster.height, raster.pixel_format, rgba.len() / 4) }
                             Err(e) => format!("DECODE_ERR {e}"),
