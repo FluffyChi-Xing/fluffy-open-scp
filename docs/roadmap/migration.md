@@ -1856,8 +1856,150 @@ UB4 = `(b - 127.5) / 127.5` 压缩，第 4 字节恒 1（填充；引擎的 `App
 
 | 项 | 状态 |
 |---|---|
-| 尺寸 | 我们用 `width = unit.scale`；原 SCP 编辑器占位框是 `2*Scale × 2*Scale`。未定 |
-| 离墙距离 | `translateZ(depth)` 方向疑为反向（引擎用 −z） |
+| 尺寸 | **已定（§42.3）**：decal 几何来自引擎自带的 3404 字节记录里的顶点缓冲，不是由 `scale` 算出 → 保留 quad 近似并标注，不再投入 |
+| 离墙距离 | 降级为可调参数：`translateZ(depth)` 方向依赖局部 Z（§42.3） |
 | decal 光照 | 引擎 `decalNeonBrighten` 跑 `SimCityLighting`；我们是纯自发光 |
-| 投影路径 | `decalProject` 未实现 —— 若招牌本应投影到建筑面板，quad 路径方向本身可能就错 |
-| `regionDecalInfo[16]` | 区域级 decal（含 billboard），未评估 |
+| 投影路径 | `decalProject` 未实现（§42.3 表明实例几何是预烘焙的，投影可能只用于特定资产） |
+| `regionDecalInfo[16]` | **已定位（§42.4）**：`cRegionDecals::Render` = `FUN_0083DEB0`，步长 0x24，哈希 `0xF73B8180` |
+
+---
+
+## 42. 脱壳 exe 批量反编译：工具链、类符号地图与 decal 渲染真相（2026-09-14 第四十二轮）
+
+承接 §41.4 的未决项。用户要求「**减少启动 Ghidra 的次数**」——改为**一次启动回答多个问题**。
+
+### 42.1 批量反编译工具链
+
+新增 `tmp/ghidra_scripts/OscpDump.java`（多模式，每模式异常隔离）：
+
+```bash
+GH="/c/Users/<user>/Desktop/ghidra_12.1.3_PUBLIC_20260817/ghidra_12.1.3_PUBLIC/support/analyzeHeadless.bat"
+"$GH" "D:\rust\packages\fluffy-open-scp\tmp\ghidra_proj" openscp_lot \
+  -process SimCity_dump_SCY.exe \
+  -scriptPath "D:\rust\packages\fluffy-open-scp\tmp\ghidra_scripts" \
+  -postScript OscpDump.java "<outDir>" \
+  [--allsymbols] [--symbols=Substr]... [--offset=0xNNN]... \
+  [--vtable=<name|0xVA>]... [--refs=0xVA]... [--rva=0xNNN]...
+```
+
+配套的哈希→RVA 定位脚本：`tmp/unit_locate.py`（lot unit / prop / spawner / effect / placement）、
+`tmp/decal_locate.py`（decal / decal 字典）。工程 `tmp/ghidra_proj/openscp_lot`，
+**imageBase `0x00400000`**（`--rva` 传 RVA，`--vtable`/`--refs` 传绝对 VA）。一轮约 4–6 分钟
+（分析占大部分），因此批量远比多次单点更划算。
+
+**三个踩到的坑**（都已修，写下来避免重犯）：
+1. Ghidra 会把 `--symbols=Decal` 拆成两个 token 传给脚本 → 解析器要同时接受 `--k=v` 与 `--k v`，
+   并宽容被剥掉前导横线的写法。
+2. **`Symbol.getName()` 只返回短名**（`vftable`），类限定名只在 **`getName(true)`** 里
+   —— 用短名过滤时 0 命中，改用全名后一次拿到 **26340 个类限定符号**。
+3. 脱壳 exe 的 `.data` 只 dump 到 `0x00C44000`，`_DAT_00cf7da8` / `DAT_00da307c` 等全局
+   **落在所有 PE 段之外，离线读不到**（§40 已记录过 0.5 / ±0.1 则可沿用）。
+
+### 42.2 ★ exe 带完整 RTTI 类名 —— 已建 vftable 地图
+
+`--allsymbols` 导出 26340 个类限定符号。已确认的 vftable（绝对 VA）：
+
+| VA | 类 | 方法数 |
+|---|---|---|
+| `0x00D250F0` | `SC::cGraphicsUnitDecals` | 3 |
+| `0x00D2491C` | `SC::cDecalManager` | 2 |
+| `0x00D25798` | `SC::cMetaLot` | 5 |
+| `0x00D205AC` | `cMetaLotProcessor` | 2 |
+| `0x00D20650` | `SP::cMIDataT<SC::cShaderDataLotInstanceInfo>` | 1 |
+
+**否证**：这些类的 vftable 方法数都极少（`cGraphicsUnitDecals` 只有 3 个：一析构两 getter，
+引用者只有两个构造器）→ **decal 的尺寸/深度/光照不在该类的 vtable 里**，渲染在别的模块。
+`SC::cRegionDecals::Render` = `FUN_0083DEB0`（`0x83xxxx`–`0x85xxxx` 是图形/渲染模块）。
+
+### 42.3 ★★ decal 渲染真相：**批绘真实网格，不是运行时算出的 quad**
+
+`FUN_007EBE70`（引用字符串 `DecalDrawBatch`）＝ decal 绘制循环：
+
+```c
+bucket 步长 100
+  local_2c = (bucket[0x48] - bucket[0x44]) / 0xD4C;      // ★ 每条 decal 记录 0xD4C = 3404 字节
+  for each decal piVar8:
+    if (piVar8[2] == param_2 && 可见性门控 *(ptr+1+viewIdx*2)) {
+      FUN_00423050(s_DecalDrawBatch_00d24924);           // scope 标记
+      ctx[0x5e4] = piVar8 + 0x13;                        // +0x4C
+      FUN_00424e00(4,   ctx + 0x5d4, 1);                 // 绑流
+      FUN_00424e00(0x206, piVar8 + 0x313, 1);            // ★ +0xC4C = 顶点缓冲
+      FUN_00437610(ptr, 0, bucket[0x20], local_1c);      // 绘制
+      FUN_00437820(..., piVar8 + 5, param_5);            // 状态
+    }
+```
+
+**结论（回答 §41.4 的「尺寸」一项）**：decal 的**形状与尺寸来自记录内自带的顶点缓冲**
+（`rec+0xC4C`），**不是**由 `scale`（或 `2*scale`）算出来的。
+
+因此：
+- 我们「`width = unit.scale`、`height = width/aspect`」的 quad 重建，**本质上只能是近似**；
+- 用户报的「decal 与建筑 billboard 尺寸不同」，真因是**真实 quad 几何在 3404 字节的私有记录里**；
+- 要做到逐像素一致，只能解析该记录的顶点缓冲布局。
+
+**投入判断**：还原一个私有记录布局的收益/成本比很差。**决定：保留 quad 近似，
+并在代码/文档中明确标注为近似** —— 不再往这个方向投入。`Depth` 的符号问题同理降级
+（`translateZ` 方向依赖局部 Z，属可调参数）。
+
+### 42.4 regionDecals（`regionDecalInfo[16]` 那套）
+
+`FUN_0083DEB0` = `cRegionDecals::Render`：scope 标记 → `FUN_0043a160()` 可见性 →
+按哈希 **`0xF73B8180`**（新，未识别）查表 → `FUN_004376f0(..., *(param_1+0x71c) * 0x24)`，
+**元素步长 0x24**。与 lot unit decal（0xD4C 记录）**不是同一套**。
+
+### 42.5 lot 填充：A/B 两簇是平行副本；A1 收窄
+
+- **集群 B `FUN_007ba030`（RVA `0x3BA177`）是 A 簇 `FUN_006ea950` 的平行副本**：读同一套键
+  （LotMask/Lot Textures/LotSize/UnitOffset/LotColor/BorderColor/门控 `0x0BBD5875`/FD6/FD2/FD3/
+  overlay tile UV），但写进**不同目标结构**（LotSize→`param_2+0x2da`、unitOffset→`pfVar1`、
+  overlay UV→`param_2+0x28/0x2a`）。C 簇应为第三种。
+- `FUN_007df840`（RVA `0x3DF8FA` 所在）是 **Transform 属性读取/归一化助手**
+  （填默认值 → `FUN_004321d0(param_2, 0xdb7fb17, ...)`），**不是**渲染语义；
+  其 caller `FUN_007e2260` 是 property 序列化，非渲染。
+- `FUN_006f3e60` = 图形/lot 管理器的**每帧 tick**（按 `+0x82c`~`+0x833` 一排脏标志分派，
+  其中含 `FUN_006ee140()` → `FUN_006ea950` 重填）；它访问子对象 **`*(param_1 + 0x818)`**。
+  **A1 收窄**：拥有空间分区 `+0x8bc/0x8c0` 与 box 数组 `+0x908` 的对象极可能就是该
+  `+0x818` 子对象 → 下一步应针对它的构造找 **0x88 步长表**的分配点。
+- `FUN_007EBE70`（DecalDrawBatch）调用点只有 1 处：VA `0x0067C768`（Ghidra 未识别为函数），
+  **需按 RVA `0x27C768`** 取。
+
+### 42.6 两处自我修正（前几轮结论作废）
+
+1. **「prop 是 0x38 步长记录」错误**：`FUN_00785090` 实为 **EASTL vector 的 push_back**
+   （元素 **0x40 字节**；字符串自证 `SC_App_EASTL__BF_CM_SimCity_PL_` /
+   `c__BF_CM_SimCity_PL_Core_UTFKern_`）。0x38 只是局部拷贝步长。**prop→实体解析仍未找到。**
+2. **「扫 `0x908` 位移可定位 overlay box 写入者」错误**：`0x908` 是**跨类通用偏移**
+   （扫描命中的 dword 写入者 `0x6F4BA9` 属于 `SC::cZoningGame` 构造器，与 lot 无关）。
+
+### 42.7 仍未解决（精确入口）
+
+| # | 问题 | 入口 |
+|---|---|---|
+| A1 | overlay box（0x88 步长表）分配点 | `+0x818` 子对象的初始化 |
+| A2 | mask ↔ LotSize 轴序/尺度规则 | `0x83xxxx` 渲染模块的 lot overlay 构建 |
+| A3 | placement 与 unit 的 frame 关系 | 同上 |
+| B1′ | DecalDrawBatch 的驱动者 | **RVA `0x27C768`** |
+| C1/C2 | `0x0C12EF20+bin` 实体 Key 语义、`EF50/EF60/EF70` 列族 | `FUN_00787870` 调用面上游 |
+| C4 | spawner → agent | `FUN_00786000` + callers `FUN_0067fd40`/`FUN_0068e170`（已 dump 未读） |
+| D1/D2 | `cSunSkyInfo` / `shCoeffs[9]` 来源 | 待筛 |
+| E2 | 未识别哈希 `0xc934e426`、`0xF73B8180` | — |
+
+### 42.8 定位漂移的现状（承接 §41 之后的 §39 系列探针工作）
+
+- 引擎 mask UV 公式已确认 `uv = (pos − unitOffset) / LotSize + 0.5`；
+  `unitOffset` 仅 **5.7%（59/1035）** lot 非零，用户样例 lot 是 `(0,0)`。
+- **H3（模型足迹中心）被证伪**（该模型足迹 center 也是 `(0,0)`）；
+  **H4（地面尺度 = mask 原生 1 m/px）是混合结果**（5/7 改善、2/7 显著变差）→ 不采用。
+- 判据本身修了两处缺陷：① 探针此前**不做 Parent 展平**，误报 `lot_size=None`；
+  ② `sample_with` 曾把 uv **clamp 到 [0,1]**，使越界 prop 被挤到边界像素、伪造「全部有覆盖」。
+  修正后用户样例：**出界 15/24，界内 9 个中 7 个落 LC2（78% 一致）**。
+- 副产品：mask 与 LotSize **可能轴互换**（`0xE0301934` LotSize 40×160 vs mask 256×64，
+  按互换轴两边同为 0.625 m/px）。
+- 仍需 A1 的 overlay box 才能定案。
+
+### 42.9 待还的探针欠账
+
+- `lot_anchor_probe.rs` 有与 `lot_mask_alignment` 相同的 **Parent 展平缺口**
+  （对无本体 LotSize 的 lot 报 `skip: no lot_size`）。
+- `lot_mask_probe.rs` **编译不过**（`decode_lot_mask_rgba` 从 3 色改 4 色签名后未同步）
+  —— `cargo test --examples` 会失败，属既有欠账。
