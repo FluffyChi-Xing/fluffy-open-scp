@@ -27,6 +27,7 @@
 mod combine;
 pub mod decal;
 mod error;
+pub mod inherit;
 pub mod locale;
 mod lot;
 mod lot_unit;
@@ -37,6 +38,7 @@ use std::fmt;
 pub use combine::{AssetGroup, MODEL_DETAILS_HASH, combine_assets, has_model_details};
 pub use decal::{DecalDictionary, DecalEntry, is_decal_dictionary_group};
 pub use error::{Error, Result};
+pub use inherit::{PARENT_HASH, flatten_parent_inheritance, flatten_parent_inheritance_traced};
 pub use locale::{
     LOCALE_RESOURCE_TYPE, Locale, MODEL_RESOURCE_TYPE, NAME_PROPERTY_HASHES, collect_name_map,
     parse_string_table,

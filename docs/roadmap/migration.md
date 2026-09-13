@@ -1581,3 +1581,130 @@ casino 上把地面显示退化成一小块绿方块（几乎全空）。
   未覆盖区按用户口径应 **alpha 镂空**（引擎为 `saturate(1-overlayMask)×底图`，底图格
   `baseTileUVMinMax.x` 不在 property 内 → 不臆造填充）；LotColor 为线性值，着色时需
   sRGB 编码（0..255 字节先 /255）。
+
+---
+
+## 39. Lot 地面材质链破译并接入 App（2026-09-13 第三十九轮）
+
+承接 §38：`baseTileUVMinMax.x`「不在 property 内」的判断**错了一半**，`LotColor.A` 的
+语义也被**推翻**。本轮用脱壳 exe 定点反编译 + 真实包探针把整条材质链钉死，并接入 App。
+
+### 39.1 根因：Parent 继承未解析 `[实测]`
+
+`0x00B2CCCB` = **`Parent`**（property 继承引用）：本级已有的键优先，父级只补本级缺失的键，
+逐级递归（C# `SimCityPak\PackageReader\Properties\PropertyFile.cs`
+`GetParentProperties` / `FlattenParentInheritance`；C# 只在「手动展平」与 mod 导出调用，
+**不在 LotEditor 调用**——原 SCP 工具本身也看不到继承来的地表授权）。
+
+全库统计（Game + DataEP1 + App + DLC0）：`0x00B1B104` 共 10625 个，**8317（78%）带 Parent**；
+8958 个自身无 Lot Textures（6651 带 Parent）、8564 个自身无 LotColor1-4（6257 带 Parent）。
+典型链：`0x10DAF7BF`（模型 `0x6F9B316C`）自身仅 26 键、无 LotSize/Lot Textures/LotColors，
+沿 Parent 走 6 级后拿到 `LotSize (96,96)`、`Lot Textures 0xA0DA9E6C`、`LotColor1-4 A=12/1/12/12`。
+
+**后果**：不展平时只读到「空壳」，`lot_colors()` 回退表 A 全 0 → **四通道塌成同一格贴图**
+（`src/assets/ground/0.png` 红棕砖），用户看到「道路/停车场被渲染成另一区域的材质」。
+**真因是继承没解析，不是数据缺失。**
+
+实现：`sc-properties/src/inherit.rs`（`PARENT_HASH` / `flatten_parent_inheritance` /
+`flatten_parent_inheritance_traced`，4 单测）+ 后端 `flatten_lot_parents()` 在
+`read_lot_editor_session` 内展平（库函数不依赖 dbpf，跨包 resolver 以闭包注入）。
+
+### 39.2 脱壳 exe 定点反编译：材质链的权威来源 `[源码]`
+
+对象 `D:\ea-games\simcity_offline\SimCity_dump_SCY.exe`（导入表仅有 `D3DXCompileShader`
+等 4 个 D3DX 导入 → **运行时编译 HLSL**，无 effect 框架）。lot property 哈希以**立即数**
+硬编码在 `.text`（`0x00B1B104`×59、`Parent 0x00B2CCCB`×6）——§「哈希 0 命中」只对 rule 哈希成立。
+
+**三簇 lot 实例填充点**（每簇都在 ~3.8KB 窗口内按序读全部 lot 键）：
+
+| 簇 | RVA 起 | 覆盖到 |
+|---|---|---|
+| A | `0x002EAAD4`（另 `0x2EAB26`=FC8） | `0x002EB9E5`（FD3） |
+| B | `0x003BA047`（Lot Mask） | `0x003BA5F0`（FD3） |
+| C | `0x004BA270`（FD0） | `0x004BAD77`（FD3） |
+
+**材质创建 `FUN_006d5540`** 内逐条 `FUN_004aa9f0(reg, tex)`（= 引擎绑采样器助手，78 个调用方），
+寄存器依次 **5 / 6 / 0xf / 10** → **s5=LotMask、s6=Lot Textures、s15=法线图集、s10=染色图集**。
+顶点格式 `"V3F_N3F_G3F_C4B_T4F_I4B"`。**门控键 `0x0BBD5875` = shader 变体名（FNV-1 小写哈希）**，
+8/8 命中（住宅楼 `genericLotDirt4ChanOverlay`、图书馆 `genericLotAlphaBase4ChanOverlay`、
+工业厂房 `genericLotLawnBase4ChanOverlay`）。
+
+**全局共享图集**（两个 1024²×16 格，逐 lot 相同）：
+
+| 采样器 | 资源 instance | 类型 | 用途 |
+|---|---|---|---|
+| s15 `lotNormalSampler` | `0x60E7805D` | `0x2F4E681B` | 切线空间法线；**其 alpha = `baseGetAlpha` 地形遮罩** |
+| s10 `overlayTintSampler` | `0x9590D255` | `0x2F4E681B` | overlay 染色图集；**alpha 做亮度调制** |
+
+### 39.3 引擎语义更正（推翻 §38 的两条） `[源码]`
+
+1. **`LotColor.A` ≠ 漫反射格号**。覆盖区是**纯平色**（`LotColor_i.rgb`）；漫反射只有
+   「**整块 lot 一格**」，格号只来自 `baseTileUVMinMax.x`。`colorNormalsIdx`（= `LotColor.A`）
+   索引的是 **overlay 法线图集 s15 + 染色图集 s10**。
+   - 旧实现拿 `A=12` 去采**漫反射图集**第 12 格（恰是橄榄绿 `(109,119,80)`）→ 把 LC1 的
+     棕褐乘成橄榄绿。图书馆「看着对」只是巧合（A=3/1/8/3 恰好落在色相相容的格）。
+2. **`baseTileUVMinMax.x` = `0x0CCB7FD6`（Int32，0..15）**；缺失时由 `0x0CCB7FD2` 与
+   `0x0CCB7FD3` 的逐分量 **min** 推出：`round(min.y*4)*4 + round(min.x*4)`（写入时存
+   `tile + 1/64`）。交叉验证：图书馆无 FD6 → 由 FD2(0.5,0.5)/FD3(0.75,0.25) 得格 6
+   = (66,63,55) 深灰 ✔。
+
+**权威映射表（`SC::cShaderDataLotInstanceInfo`，每 lot 0xD0 字节）**：
+
+| shader uniform | 引擎来源（property 哈希） |
+|---|---|
+| `colorsR/G/B[i]` | `LotColor1-4`(`0xD02D586-89`) 的 .r/.g/.b |
+| `colorNormalsIdx[i]` | `LotColor1-4` 的 **.a** |
+| `borderWidthXYZW` | `0xD7AF046-049`（float） |
+| `borderColorsR/G/B[i]` | `LotBorderColor1-4`(`0xD7AF042-45`) |
+| `borderNormalsIdx[i]` | `LotBorderColor1-4` 的 **.a** |
+| `baseTileUVMinMax.x` | `0x0CCB7FD6`（Int32 0..15；缺失由 FD2/FD3 推） |
+| `overlayTileUVMinMax` | `0x0BF76A29`(.xy) + `0x0BF76A2A`(.zw) |
+| `colorHeights` / `borderHeights` | `0xD02D58A` / `0xD02D58B` |
+| **`baseUV`（平铺）** | 世界坐标 ÷ **`0x0CCB7FD0`**（地面贴图周期，米；默认 8.0） |
+| lot 空间 UV | `(pos − center) ÷ LotSize + 0.5` |
+
+常量实证：`×4→4.0`、`+1/64→0.015625`、`+0.5→0.5`、默认 `8.0`、除数保护（(|v|<0.1)→0.1）。
+`0x0CCB7FD0` 全库分布 **(10,10)×1024** / (15,15)×339 / (1,1)×95 / (16,16)×70 / (8,8)×22 ——
+x 恒等于 y，**是"每 N 米铺一次"的周期，不是图集格号**。旧前端硬编码 `GROUND_TILE_METERS = 9.6`
+应改读该属性。
+
+**未覆盖区必须镂空（游戏截图定案）**：工业厂房 `0xFA50346D`（模型 `0xB4399D59`，
+mask `0x402CF8F1`）无 FD6/FD2/FD3（默认格 0 = 砖纹），v2 把 55.9% 未覆盖区铺成砖 →
+与截图（厂房周围是草地）矛盾。真机制：`lotTexMask.a = baseGetAlpha(baseNormalMap,
+lotTexCoord, 4.0, 0.47)` —— **alpha 来自法线图集 s15**，为 0 时 `clip` 掉 → **露出城市地形**
+（草地是地形，不是 lot 贴图）。改成镂空后结构逐项吻合。
+
+### 39.4 接入 App 的实现（工作区，本提交）
+
+- **后端** `read_lot_editor_session`：`flatten_lot_parents()`（继承展平）+ DTO 新增
+  `lot_tile_period`(`0x0CCB7FD0`)、`lot_tint_atlas_png`(`0x9590D255`)、
+  `lot_normal_atlas_png`(`0x60E7805D`)。
+- **默认模式**：`compose_lot_albedo_rgba` = mask 通道 >0.5 + 优先级 A>B>G>R 选区着
+  `LotColor` 平色，未覆盖区铺底图格（= 用户选定的目标效果）。
+- **精细模式** `refinedGround.ts`：平铺次数 = `LotSize / tilePeriod`（**非整数**，替掉 9.6 拟合）；
+  覆盖区 = 逐区域 `LotColor.A` 选格 × `LotColor.rgb`；**染色图集 alpha 调制**
+  （`mul = min(2, a*2)`）；**法线图集烘焙成 ground `normalMap`**（与反照率同画布尺寸、
+  同格同平铺 → 逐像素对齐；纹理保持 `NoColorSpace`）。
+- **贴图采样**：`refinedRender.ts` 统一 `anisotropy = viewer.maxAnisotropy`、`paletteMap`
+  改点采样（`NearestFilter`）。
+
+**实测佐证（真实包 `SimCity_Graphics.package`，非显示图判读）**：`0x60E7805D` 的 type
+恰为 `0x2F4E681B`、1024²、16×(256²)；`tile_00` 全平坦 `(132,130,255)`；`tile_11`
+方向有真实变化 `(156,121,255)/(90,130,255)/(137,139,255)` **且 alpha 逐像素变**
+（200/107/166）——与「法线图集 alpha = `baseGetAlpha` 地形遮罩」一致。
+
+### 39.5 检查与性能
+
+`cargo check -p fluffy-open-scp` / `pnpm check` / `pnpm test 86/86` 全绿。
+法线烘焙走 CPU，与反照率同一循环（每像素多一次图集采样）；探针出图与目视记录见
+`tmp/lot_ground_v2/`（图书馆/消防局/红十字会/工厂/工业厂房五例）。**App 内效果待用户目检。**
+
+### 39.6 待办与风险
+
+- **App 内目检**法线图集：绿通道约定（OpenGL +Y up vs DirectX −Y down）无法离线判定，
+  若起伏看起来"凹"则翻转 G（`255 - g`）；强度/分辨率需调。
+- **未覆盖区镂空**：法线图集 alpha 已实证逐像素变，是 `baseGetAlpha` 的实现通道。
+- **变体名 → 底图层类型**（`Lawn`/`Dirt`/`Alpha`）与 `*TerrainMask`（地面↔地形混合遮罩）语义。
+- **工业厂房 `0xFA50346D`**：变体声明 `LawnBase` 却算得格 0（砖），与截图的草坪矛盾——未解。
+- 「每阶段测试附性能报告」：本轮为**视觉语义**修正，未产生新的解析热点；法线烘焙成本
+  随 mask 分辨率线性（≤4× 超采样），未单独计时。

@@ -435,6 +435,9 @@ pub struct LotEditorSession {
     pub model_lods: Vec<Option<LodModelRef>>,
     /// Lot 地面尺寸（LotSize 0x0CCB7FC8，camelize 拷贝）。
     pub lot_size: Option<[f32; 2]>,
+    /// 地面贴图周期 `0x0CCB7FD0`（米/格）：引擎用世界坐标除以它得到平铺 UV
+    /// （`frac(pos/period)`），平铺次数 = `LotSize / period`（非整数）。缺省 8.0。
+    pub lot_tile_period: Option<[f32; 2]>,
     /// LotPlacementTransform（0x0DB7FB17）行主序 12 floats；地面矩形需取其逆。
     pub lot_placement: Option<[f32; 12]>,
     /// LotMask 四色量化地面图 PNG（LotColor1-4 着色，服务端解码）。
@@ -450,6 +453,13 @@ pub struct LotEditorSession {
     pub lot_albedo_png: Option<String>,
     /// "Lot Textures" 地表共享纹理（DXT5 解码 PNG）；None = 缺失或解码失败。
     pub lot_surface_png: Option<String>,
+    /// 全局共享染色图集（s10 `overlayTintSampler`，RW4 `0x9590D255` 解码 PNG）：
+    /// `LotColor.A` 选 4×4 格、与底图同平铺，**alpha** 做亮度调制（车辙/铺装纹理）。
+    pub lot_tint_atlas_png: Option<String>,
+    /// 全局共享法线图集（s15 `lotNormalSampler`，RW4 `0x60E7805D` 解码 PNG）：
+    /// 逐 lot 相同，标准切线空间（平坦 = RGB(128,128,255)）。`LotColor.A` 选
+    /// 4×4 格、与底图同平铺，是方格/砂砾起伏的可见性来源。
+    pub lot_normal_atlas_png: Option<String>,
     /// 精细渲染贴花纹理（decal 单元按 ID 解析 atlas 条目并四色解码），
     /// 与 units 中 category+index 对应。
     pub decal_textures: Vec<DecalUnitTextureDto>,
@@ -1697,6 +1707,10 @@ pub async fn read_lot_editor_session(
                 data,
                 sc_properties::ParseLimits::default(),
             )?;
+            // Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
+            // LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
+            // 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
+            let properties = flatten_lot_parents(properties, package, manager);
             // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG。
             let decal_textures = resolve_decal_textures(&properties, package, manager);
             let document = sc_properties::LotEditorDocument::from_property_file(properties);
@@ -1732,6 +1746,35 @@ pub async fn read_lot_editor_session(
             });
             let lot_surface_png =
                 lot_surface.as_ref().and_then(|surface| surface.as_ref().map(|s| s.0.clone()));
+            // 全局共享染色图集（s10 `overlayTintSampler`；键 0x0D0082F3 的目标实例
+            // 0x9590D255）——逐 lot 相同。用 `LotColor.A` 选 4×4 格、与底图同平铺，
+            // 其 **alpha** 做亮度调制 `color *= lerp(1, a*2, 覆盖)`：车辙/铺装纹理在此。
+            let lot_tint_atlas_png = decode_lot_surface_png(
+                package,
+                manager,
+                sc_properties::Key {
+                    instance: 0x9590_D255,
+                    type_id: 0,
+                    group: 0,
+                },
+            )
+            .ok()
+            .map(|(png, _)| png);
+            // 全局共享法线图集（s15 `lotNormalSampler`；键 0x0D0082F1 的目标实例
+            // 0x60E7805D）——逐 lot 相同，标准切线空间。同格号（`LotColor.A`）、
+            // 同平铺（世界坐标 ÷ 周期）作为地面 normalMap：引擎在漫反射之上叠
+            // bump，方格勾缝/砂砾颗粒的可见度主要来自这一层。
+            let lot_normal_atlas_png = decode_lot_surface_png(
+                package,
+                manager,
+                sc_properties::Key {
+                    instance: 0x60E7_805D,
+                    type_id: 0,
+                    group: 0,
+                },
+            )
+            .ok()
+            .map(|(png, _)| png);
             let mut mask_dims: Option<(u32, u32)> = None;
             let lot_mask_images = document.lot_mask.and_then(|key| {
                 match decode_lot_mask_png(package, manager, key, colors) {
@@ -1784,13 +1827,29 @@ pub async fn read_lot_editor_session(
                     size
                 })
             });
+            // 地面贴图周期 0x0CCB7FD0（米/格）；缺失走引擎默认 8.0，并做引擎的
+            // 除数保护（落在 (-0.1, 0.1) 的值一律置 0.1，避免除以近零）。
+            let lot_tile_period = document
+                .properties
+                .get(0x0CCB_7FD0)
+                .and_then(|property| property.scalar())
+                .and_then(|value| match value {
+                    sc_properties::Value::Vector2(values) => Some(*values),
+                    _ => None,
+                })
+                .map(|values| {
+                    values.map(|value| {
+                        if value.abs() < 0.1 { 0.1 } else { value }
+                    })
+                })
+                .or(Some([8.0, 8.0]));
             Ok(LotEditorSession {
                 tgi,
                 asset_name,
                 model_key,
                 model_lods,
                 lot_size,
-                // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
+                lot_tile_period,                // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
                 lot_placement: document
                     .placement
                     .clone()
@@ -1799,6 +1858,8 @@ pub async fn read_lot_editor_session(
                 lot_mask_png,
                 lot_mask_raw_rgba,
                 lot_albedo_png,
+                lot_tint_atlas_png,
+                lot_normal_atlas_png,
                 lot_surface_png,
                 lot_colors: colors,
                 lot_colors_authored,
@@ -2172,6 +2233,37 @@ fn decode_lot_mask_entry(
 /// RGB 分量是**线性**色值：引擎在 sRGB 输出端做伽马编码，此处出字节时
 /// 同步编码（2026-09-13 消防局对拍：线性直出 21,24,21 近黑，编码后
 /// 82,87,81 与游戏一致），消费方（量化图/精细着色/锚定）直接使用。
+/// 沿 `Parent`(`0x00B2CCCB`) 链展平属性（引擎口径：本级优先，父级补缺，逐级递归）。
+///
+/// 实现留在 `sc_properties::flatten_parent_inheritance`（不依赖 dbpf），此处只提供
+/// "按 instance 跨包解析父级" 的 resolver：先当前包精确 TGI，再退化为同类型同
+/// instance，最后扫其它已打开包。
+fn flatten_lot_parents(
+    root: sc_properties::PropertyFile,
+    current: &Package,
+    manager: &PackageManager,
+) -> sc_properties::PropertyFile {
+    let lookup = |package: &Package, key: &sc_properties::Key| {
+        let entry = package
+            .entries()
+            .iter()
+            .find(|entry| {
+                entry.id.type_id == PROPERTY_RESOURCE_TYPE && entry.id.instance == key.instance
+            })
+            .cloned()?;
+        sc_properties::PropertyFile::parse(&package.read(&entry).ok()?).ok()
+    };
+    sc_properties::flatten_parent_inheritance(root, |key| {
+        lookup(current, key).or_else(|| {
+            manager
+                .all_packages()
+                .ok()?
+                .iter()
+                .find_map(|package| lookup(package, key))
+        })
+    })
+}
+
 fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bool; 4]) {
     const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
     const FALLBACKS: [[u8; 4]; 4] = [[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]];
