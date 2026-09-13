@@ -508,9 +508,27 @@ function buildDecalQuad(
     `data:image/png;base64,${texture.png}`,
   );
   map.colorSpace = THREE.SRGBColorSpace;
+  const geometry = new THREE.PlaneGeometry(width, height);
+  // U 轴镜像：引擎 decal PS 的 UV 是 `textureFloatPosition.xy * -0.5 + 0.5`
+  // （U 取负，被 texXform 的 2 倍缩放补回量程），即贴图列序相对 quad 局部 +X
+  // 反向；`decalMaterialInfoWithObjectData` 的 VS 同样把 x 取负。不翻会得到
+  // 镜像文字（用户实测 "Michael's CASINO" 左右反）。V 不翻（D3D v=0 在顶 +
+  // 我们的 flipY=true 已抵消）。
+  const uv = geometry.attributes.uv;
+  for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
+  uv.needsUpdate = true;
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(width, height),
-    new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide }),
+    geometry,
+    new THREE.MeshBasicMaterial({
+      map,
+      side: THREE.DoubleSide,
+      // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
+      // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
+      // 的 RGB=(0,0,0) 直接画成黑底。alpha 是二值的，alphaTest 即足够
+      //（同地面 fill 口径），无需 transparent 的排序开销。
+      alphaTest: 1 / 255,
+      transparent: false,
+    }),
   );
   if (unit.transform) {
     const matrix = unitMatrix(THREE, unit.transform);

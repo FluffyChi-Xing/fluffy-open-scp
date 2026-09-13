@@ -1802,3 +1802,62 @@ UB4 = `(b - 127.5) / 127.5` 压缩，第 4 字节恒 1（填充；引擎的 `App
 
 屋顶无独立着色器变体（dump 内 `roof` 零命中），与外墙同用 `building4` 家族，故上述
 结论对屋顶同样成立。**天空三段色、`scDirFactor` 的 0.6 强度旋钮均为可调近似，待目检。**
+
+---
+
+## 41. Decal 渲染：引擎侧取证与两项修复（2026-09-13 第四十一轮）
+
+起因：用户指出精细渲染的贴花「贴得随便、与建筑 billboard 尺寸不符、文字镜像、有黑底、
+离墙有距离」。用户已目检确认**黑底消失、文字摆正**。
+
+### 41.1 引擎里有此前未提取的 decal 渲染器 `[源码]`
+
+`decal*` 家族一直躺在 cpp shader 容器里（当初只导了 `building4*`/`building5*` 26 个文件）。
+只读抽取脚本 `tmp/extract_decal.py` → `tmp/decal_shaders.txt`：
+
+| 变体 | 字面语义 |
+|---|---|
+| `decalProject` | `texcoord<t0> = mul(modelToTexture, modelPos)`；PS `clip(1-abs(texturePosition))` → **投影到体积内的建筑几何** |
+| `decalClip` / `decalFloatQuad` | 浮空 quad；`clip(-z)` / 无 clip；`uvOrig = textureFloatPosition.xy * -0.5 + 0.5` |
+| `decalFloatQuadNoClip` | `Current.color.rgb *= 2` |
+| `decalNeonBrighten` | `bumpNormal = normalize(decalWorldDirection)` + `SimCityLighting(..., gloss, gloss, ...)` → **decal 受光** |
+| `decalMaterialInfoWithObjectData` | 由 `modelToTexture` 反解方向并**取负**（`mul(modelToWorld, float4(-z/-x/-y, 0))`） |
+| `regionDecalProject` | `regionDecalInfo[16]`（transform/projMat[3]/texTransform），带**面向相机**的 skinning hack → 区域级 billboard decal |
+
+### 41.2 脱壳 exe 取证 `[源码]` `[实测]`
+
+- decal 单元哈希**只有 category 0 是硬编码立即数**，簇在 RVA `0x0041D4BA`–`0x0041D6DE`
+  （绝对 VA `0x81D4xx`；imageBase `0x400000`）。工具：`tmp/decal_locate.py` +
+  `tmp/ghidra_scripts/LotFillDump.java`（headless，`-process` 复用已分析工程）。
+- `FUN_0081d680` = **属性注册**：7 字段 + 类型码
+  `0x0D109050/060/070/080/090/0A0/0B0` = `Key / Transform(56) / Float(13) / Vector3(49) /
+  Key / Int32(9) / Float(13)` —— **与我们 `DECAL_*_BASE` 逐项一致（解析无 bug）**，
+  仅多出第 7 个字段 `0x0D1090B0`（Float，解析未覆盖）。
+- `FUN_0081d4f0` 构造 **`SC::cGraphicsUnitDecals`**（200B / 0xC8）；`FUN_0081d4b0`
+  （cat1）/`FUN_0081d5e0`（cat0）是「有该键则 new」的工厂。**渲染方法在其 vftable 内，未走。**
+- 普查（新探针 `crates/sc-properties/examples/decal_field_survey.rs`，SimCity_Game 中
+  1423 个含 decal 的 lot）：ID/Transform/Depth/MaterialData **全部 1423 都有**；
+  `RenderGroup` 2、`MachineSpec` 0、`0x0B0` 1 → 后三者非问题所在。
+  **Depth(`0x0D109070`) 实测 0.100~18.980，均值 1.559** → 是「沿局部 Z 从变换原点到
+  贴花平面的距离」，不是小偏移；`translateZ(depth)` 结构对，**符号**依赖局部 Z
+  （引擎 `decalMaterialInfoWithObjectData` 用 **−z**，我们用 +z，疑为反向）。
+
+### 41.3 本轮两项修复（`PropertyEditorViewport.vue::buildDecalQuad`）
+
+1. **黑底**：材质加 `alphaTest: 1/255`。四色解码对「四通道全 <128」输出 alpha=0
+   （原 SCP `RasterImage.CreateFromStream` 同口径），忽略 alpha 后 RGB=(0,0,0) 成黑块。
+2. **文字镜像**：UV 的 **U 轴翻 180°**（`u = 1-u`）。两条独立证据：引擎 PS
+   `uvOrig = xy * -0.5 + 0.5`（U 取负）+ VS 取负 x；用户截图 #1 的
+   「Michael's CASINO」是**水平**镜像（V 已被 D3D v=0 在顶 + 我们 `flipY=true` 抵消）。
+
+`pnpm check` / `pnpm test 91/91` 绿。**用户已目检通过。**
+
+### 41.4 未解决
+
+| 项 | 状态 |
+|---|---|
+| 尺寸 | 我们用 `width = unit.scale`；原 SCP 编辑器占位框是 `2*Scale × 2*Scale`。未定 |
+| 离墙距离 | `translateZ(depth)` 方向疑为反向（引擎用 −z） |
+| decal 光照 | 引擎 `decalNeonBrighten` 跑 `SimCityLighting`；我们是纯自发光 |
+| 投影路径 | `decalProject` 未实现 —— 若招牌本应投影到建筑面板，quad 路径方向本身可能就错 |
+| `regionDecalInfo[16]` | 区域级 decal（含 billboard），未评估 |
