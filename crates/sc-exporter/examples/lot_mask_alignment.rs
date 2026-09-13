@@ -45,7 +45,7 @@ fn main() {
             }
         }
     }
-    let Some((entry, doc)) = found.or(fallback) else {
+    let Some((entry, _raw_doc)) = found.or(fallback) else {
         eprintln!("no property references model 0x{model_instance:08x}");
         std::process::exit(1);
     };
@@ -53,6 +53,38 @@ fn main() {
         "lot property type={:08x} group={:08x} instance={:08x}",
         entry.id.type_id, entry.id.group, entry.id.instance
     );
+
+    // Parent(0x00B2CCCB) 展平：78% 的 lot 变体把 LotSize / placement / Lot Textures
+    // 挂在父级，只读本级会得到「空壳」——本探针此前正是如此，会误报 lot_size=None
+    // 并退回 mask×0.75 的猜测尺寸，使 H0/H1/H2 判据建立在错的地块尺寸上。
+    let extra_pkgs: Vec<Package> = extras
+        .iter()
+        .filter_map(|path| Package::open(path).ok())
+        .collect();
+    let raw_file = PropertyFile::parse(&package.read(&entry).expect("read property"))
+        .expect("parse property");
+    let resolve = |key: &sc_properties::Key| -> Option<PropertyFile> {
+        for source in std::iter::once(&package).chain(extra_pkgs.iter()) {
+            let mut hit = None;
+            for candidate in source.entries() {
+                if candidate.id.instance == key.instance
+                    && (key.type_id == 0 || candidate.id.type_id == key.type_id)
+                {
+                    hit = Some(candidate.clone());
+                    break;
+                }
+            }
+            let Some(hit) = hit else { continue };
+            let Ok(bytes) = source.read(&hit) else { continue };
+            if let Ok(file) = PropertyFile::parse(&bytes) {
+                return Some(file);
+            }
+        }
+        None
+    };
+    let flattened = sc_properties::inherit::flatten_parent_inheritance(raw_file, resolve);
+    let units = assemble_units(&flattened);
+    let doc = LotEditorDocument::from_property_file(flattened);
 
     let mut size = doc.lot_size;
     println!(
@@ -112,7 +144,6 @@ fn main() {
     let size = size.unwrap();
 
     // 树 prop 的 lot 空间坐标（行主序平移 = 索引 9/10/11）
-    let units = assemble_units(&PropertyFile::parse(&package.read(&entry).unwrap()).unwrap());
     let props: Vec<(f32, f32)> = units
         .units
         .iter()
@@ -140,6 +171,178 @@ fn main() {
         let px = (u as usize + v as usize * mask_w) * 4;
         [mask[px], mask[px + 1], mask[px + 2], mask[px + 3]]
     };
+
+    // ---- 客观判据：unitOffset(0x0CCB7FC9) 是否参与 mask 采样 ----
+    // 引擎 FUN_006ea950（RVA 0x2EAAD4 簇，migration.md §42）：
+    //   uv = (pos - unitOffset) / LotSize + 0.5
+    // unitOffset 优先取 property 0x0CCB7FC9，缺失时回落该 lot 的 overlay box
+    // 中心（运行时数据，离线不可得）。
+    // 判据（沿用本探针既有思路）：正确的一侧应让所有 prop 落在**同一通道**，
+    // 最大占比越高越对。
+    let sample_with = |x: f32, y: f32, ox: f32, oy: f32, sx: f32, sy: f32| -> Option<[u8; 4]> {
+        let fu = ((x - ox) + sx / 2.0) / sx;
+        let fv = ((y - oy) + sy / 2.0) / sy;
+        // 落在 mask 之外的不参与统计（此前 clamp 到边界会伪造出"全都有覆盖"
+        // 的假象，把外溢的 prop 掺进直方图）。
+        if !(0.0..1.0).contains(&fu) || !(0.0..1.0).contains(&fv) {
+            return None;
+        }
+        let u = fu * mask_w as f32;
+        let v = fv * mask_h as f32;
+        let px = (u as usize + v as usize * mask_w) * 4;
+        Some([mask[px], mask[px + 1], mask[px + 2], mask[px + 3]])
+    };
+    // 引擎优先级 w→z→y→x（A>B>G>R）→ 颜色下标 3>2>1>0
+    let dominant = |px: [u8; 4]| -> Option<u8> {
+        for (byte, color) in [(3usize, 3u8), (2, 2), (1, 1), (0, 0)] {
+            if px[byte] > 127 {
+                return Some(color);
+            }
+        }
+        None
+    };
+    let report = |label: &str, ox: f32, oy: f32, sx: f32, sy: f32| {
+        let mut hist = [0usize; 4];
+        let mut outside = 0usize;
+        let mut uncovered = 0usize;
+        for &(x, y) in &props {
+            match sample_with(x, y, ox, oy, sx, sy) {
+                None => outside += 1,
+                Some(px) => match dominant(px) {
+                    Some(c) => hist[c as usize] += 1,
+                    None => uncovered += 1,
+                },
+            }
+        }
+        let total = props.len().max(1);
+        let inside = total - outside;
+        let top = hist.iter().copied().max().unwrap_or(0);
+        println!(
+            "  [{label}] 出界={outside}/{total} 界内={inside} | LC1={} LC2={} LC3={} LC4={} 界内未覆盖={uncovered} → 界内最大占比 {:.0}%",
+            hist[0],
+            hist[1],
+            hist[2],
+            hist[3],
+            top as f32 / inside.max(1) as f32 * 100.0
+        );
+    };
+    println!("== unitOffset 客观判据（lot_offset = {:?}）", doc.lot_offset);
+    report("H0 居中（现状）", 0.0, 0.0, size[0], size[1]);
+    if let Some(off) = doc.lot_offset {
+        report("H1 引擎 (pos - off)", off[0], off[1], size[0], size[1]);
+        report("H2 反向 (pos + off)", -off[0], -off[1], size[0], size[1]);
+    }
+    // H4：地面尺度改用 mask 原生分辨率（1 m/px）而非 LotSize。若 LotSize 只是
+    // UV 缩放遗产而真实地面取自更大的 overlay box，1 m/px 是它的常见近似。
+    report(
+        "H4 尺度=1 m/px",
+        0.0,
+        0.0,
+        mask_w as f32,
+        mask_h as f32,
+    );
+
+    // ---- 决定性数据：mask 覆盖区映射回模型空间 vs prop 实际范围 ----
+    // 两者质心之差 = 要让 prop 落进覆盖区所需的平移量，同时直接给出「地面矩形该
+    // 以什么为中心」。此前只统计 prop 侧，缺了 mask 侧的参照。
+    {
+        let (mw, mh) = (mask_w, mask_h);
+        let (mut u0, mut u1, mut v0, mut v1) = (mw, 0usize, mh, 0usize);
+        let (mut su, mut sv, mut n) = (0f64, 0f64, 0usize);
+        for py in 0..mh {
+            for px in 0..mw {
+                let at = (py * mw + px) * 4;
+                let covered = mask[at] > 127
+                    || mask[at + 1] > 127
+                    || mask[at + 2] > 127
+                    || mask[at + 3] > 127;
+                if !covered {
+                    continue;
+                }
+                u0 = u0.min(px);
+                u1 = u1.max(px);
+                v0 = v0.min(py);
+                v1 = v1.max(py);
+                su += px as f64;
+                sv += py as f64;
+                n += 1;
+            }
+        }
+        if n > 0 {
+            // 像素 → 模型空间（H0 映射的逆）：x = (u/mw − 0.5) · LotSize.x
+            let to_x = |px: f64| (px / mw as f64 - 0.5) * size[0] as f64;
+            let to_y = |py: f64| (py / mh as f64 - 0.5) * size[1] as f64;
+            let (mcx, mcy) = (to_x(su / n as f64), to_y(sv / n as f64));
+            println!(
+                "  mask 覆盖区 {n} px，像素 x[{u0},{u1}] y[{v0},{v1}] → 模型空间 x[{:.1},{:.1}] y[{:.1},{:.1}] 质心({mcx:.1},{mcy:.1})",
+                to_x(u0 as f64),
+                to_x(u1 as f64),
+                to_y(v0 as f64),
+                to_y(v1 as f64)
+            );
+            let cnt = props.len().max(1) as f64;
+            let pcx = props.iter().map(|p| f64::from(p.0)).sum::<f64>() / cnt;
+            let pcy = props.iter().map(|p| f64::from(p.1)).sum::<f64>() / cnt;
+            println!(
+                "  prop 质心({pcx:.1},{pcy:.1}) → 使 prop 对齐覆盖区所需 unitOffset ≈ ({:.1},{:.1})",
+                pcx - mcx,
+                pcy - mcy
+            );
+        } else {
+            println!("  mask 无覆盖像素");
+        }
+    }
+
+    // H3：把地面矩形改以「模型足迹中心」为中心 —— 引擎 unitOffset 缺失时回落
+    // overlay box 中心的离线近似。若 prop 落回同一通道，说明修复方向是
+    // 「地面矩形对齐模型足迹，而非以模型原点为中心」。
+    {
+        let model_key = doc.model_lods.iter().flatten().next().copied();
+        let mut center: Option<(f32, f32)> = None;
+        if let Some(key) = model_key {
+            for source in std::iter::once(&package).chain(extra_pkgs.iter()) {
+                let mut hit = None;
+                for cand in source.entries() {
+                    if cand.id.type_id == 0x2F4E_681B && cand.id.instance == key.instance {
+                        hit = Some(cand.clone());
+                        break;
+                    }
+                }
+                let Some(hit) = hit else { continue };
+                let Ok(bytes) = source.read(&hit) else { continue };
+                let Ok(rw) = rw4::Rw4File::parse(&bytes) else { continue };
+                let (mut minx, mut maxx, mut miny, mut maxy) =
+                    (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+                let mut verts = 0usize;
+                for sec in rw.sections_of_type(rw4::SectionType::MESH) {
+                    let Ok(mesh) = rw.decode_mesh(&bytes, sec.number) else {
+                        continue;
+                    };
+                    for v in &mesh.vertices {
+                        let Some(p) = v.position() else { continue };
+                        verts += 1;
+                        minx = minx.min(p[0]);
+                        maxx = maxx.max(p[0]);
+                        miny = miny.min(p[1]);
+                        maxy = maxy.max(p[1]);
+                    }
+                }
+                if verts > 0 {
+                    let c = ((minx + maxx) * 0.5, (miny + maxy) * 0.5);
+                    println!(
+                        "  model 0x{:08X}: verts={verts} footprint x[{minx:.1},{maxx:.1}] y[{miny:.1},{maxy:.1}] center=({:.1},{:.1})",
+                        key.instance, c.0, c.1
+                    );
+                    center = Some(c);
+                }
+                break;
+            }
+        }
+        match center {
+            Some((cx, cy)) => report("H3 模型足迹中心", cx, cy, size[0], size[1]),
+            None => println!("  [H3] 模型未在已开包中找到，跳过"),
+        }
+    }
 
     // 导出 mask 量化 PNG + prop 点标注（目视裁决方向用）
     {
