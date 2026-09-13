@@ -54,8 +54,17 @@ pub const DECAL_CATEGORIES: usize = 3;
 
 // ---- Prop / BinDrawSlot（14 分箱，各一列；C# 数组属性表实际有 15 个
 // hash，`PropertyFileObjectCollectionArray(14)` 只用前 14 个） ----
+/// prop 原型引用 Key（type/group 恒 0）。**离线不可解析**：该 id 不是任何
+/// DBPF 资源（全包全类型原始字节扫描仅命中 lot 自身），也不在 s3db 中；
+/// 原 SCP 源码里这一列是注释掉的，引擎侧由运行时哈希表解析
+/// （脱壳 exe `FUN_00787870` → `FUN_0058ec70`），故只能作为标识信息展示。
+pub const PROP_ID_BASE: u32 = 0x0C12_EF20;
 pub const PROP_TRANSFORM_BASE: u32 = 0x0C12_EF30;
 pub const PROP_SLOT_BASE: u32 = 0x0C12_EF40;
+/// Bool：槽位随机化（C# `UnitBinDrawSlot.RandomizeSlot`）。
+pub const PROP_RANDOMIZE_SLOT_BASE: u32 = 0x0C12_EF50;
+/// Bool：百分比填充（C# `UnitBinDrawSlot.PercentFill`）。
+pub const PROP_PERCENT_FILL_BASE: u32 = 0x0C12_EF60;
 pub const PROP_BINS: usize = 14;
 
 // ---- PathPoint / Path ----
@@ -68,6 +77,13 @@ pub const PATH_PAIRS: u32 = 0x0CAA_6841;
 // ---- SimsSpawner ----
 pub const SPAWNER_IDS: u32 = 0x0E1B_AC61;
 pub const SPAWNER_TRANSFORMS: u32 = 0x0E1B_AC62;
+/// 生成数量（Int32）；随机化上限（Int32），`count += rand % v`。
+/// 三列在发行包中不出现（SimCity_Game 472 个 spawner lot 全 0 命中），
+/// 语义取自脱壳 exe `FUN_00786000`（migration.md §42）。
+pub const SPAWNER_COUNT: u32 = 0x0E71_5928;
+pub const SPAWNER_COUNT_RANDOM: u32 = 0x0E71_5929;
+/// 小人（Agent）引用 Key。同上一组，发行数据中未出现。
+pub const SPAWNER_AGENT: u32 = 0x0F0E_2BF1;
 
 /// WPF Matrix3D 行主序 12 floats：行 1-3 为基向量，行 4 为平移。
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -138,6 +154,8 @@ pub enum LotUnit {
         bin: usize,
         transform: Option<UnitTransform>,
         slot: Option<i32>,
+        /// 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。
+        scale: Option<f32>,
         fields: Vec<UnitField>,
     },
     #[serde(rename_all = "camelCase")]
@@ -153,6 +171,12 @@ pub enum LotUnit {
         index: usize,
         transform: Option<UnitTransform>,
         id: Option<UnitKey>,
+        /// 生成数量（0x0E715928）。
+        count: Option<i32>,
+        /// 数量随机化上限（0x0E715929）：实际数量 = count + rand % v。
+        count_random: Option<i32>,
+        /// 小人（Agent）引用（0x0F0E2BF1）。
+        agent: Option<UnitKey>,
         fields: Vec<UnitField>,
     },
 }
@@ -269,6 +293,21 @@ fn unit_float(file: &PropertyFile, hash: u32, index: usize) -> Option<f32> {
 fn unit_bool(file: &PropertyFile, hash: u32, index: usize) -> Option<bool> {
     match value_at(column(file, hash), index)? {
         Value::Bool(v) => Some(*v),
+        _ => None,
+    }
+}
+
+fn unit_i32(file: &PropertyFile, hash: u32, index: usize) -> Option<i32> {
+    match value_at(column(file, hash), index)? {
+        Value::Int32(v) => Some(*v),
+        _ => None,
+    }
+}
+
+/// flags == 15 时 Transform.Unknown 承载 Scale（decal/prop 共用的 hack）。
+fn unit_transform_scale(file: &PropertyFile, hash: u32, index: usize) -> Option<f32> {
+    match value_at(column(file, hash), index)? {
+        Value::Transform(transform) => transform.unknown,
         _ => None,
     }
 }
@@ -403,7 +442,13 @@ fn assemble_effects(file: &PropertyFile, out: &mut LotUnits) {
 }
 
 fn assemble_spawners(file: &PropertyFile, out: &mut LotUnits) {
-    let hashes = [SPAWNER_IDS, SPAWNER_TRANSFORMS];
+    let hashes = [
+        SPAWNER_IDS,
+        SPAWNER_TRANSFORMS,
+        SPAWNER_COUNT,
+        SPAWNER_COUNT_RANDOM,
+        SPAWNER_AGENT,
+    ];
     for index in 0..parallel_count(file, &hashes) {
         let present = hashes
             .iter()
@@ -415,6 +460,9 @@ fn assemble_spawners(file: &PropertyFile, out: &mut LotUnits) {
             index,
             transform: unit_transform(file, SPAWNER_TRANSFORMS, index, &mut out.diagnostics),
             id: unit_key(file, SPAWNER_IDS, index),
+            count: unit_i32(file, SPAWNER_COUNT, index),
+            count_random: unit_i32(file, SPAWNER_COUNT_RANDOM, index),
+            agent: unit_key(file, SPAWNER_AGENT, index),
             fields: collect_fields(file, &hashes, index),
         });
     }
@@ -448,9 +496,18 @@ fn assemble_path_points(file: &PropertyFile, out: &mut LotUnits) {
 
 fn assemble_props(file: &PropertyFile, out: &mut LotUnits) {
     for bin in 0..PROP_BINS {
+        let id_hash = PROP_ID_BASE + bin as u32;
         let transform_hash = PROP_TRANSFORM_BASE + bin as u32;
         let slot_hash = PROP_SLOT_BASE + bin as u32;
-        let hashes = [transform_hash, slot_hash];
+        let randomize_hash = PROP_RANDOMIZE_SLOT_BASE + bin as u32;
+        let percent_hash = PROP_PERCENT_FILL_BASE + bin as u32;
+        let hashes = [
+            id_hash,
+            transform_hash,
+            slot_hash,
+            randomize_hash,
+            percent_hash,
+        ];
         for index in 0..parallel_count(file, &hashes) {
             let present = hashes
                 .iter()
@@ -458,15 +515,12 @@ fn assemble_props(file: &PropertyFile, out: &mut LotUnits) {
             if !present {
                 continue;
             }
-            let slot = match value_at(column(file, slot_hash), index) {
-                Some(Value::Int32(v)) => Some(*v),
-                _ => None,
-            };
             out.units.push(LotUnit::Prop {
                 index,
                 bin,
                 transform: unit_transform(file, transform_hash, index, &mut out.diagnostics),
-                slot,
+                slot: unit_i32(file, slot_hash, index),
+                scale: unit_transform_scale(file, transform_hash, index),
                 fields: collect_fields(file, &hashes, index),
             });
         }
@@ -488,15 +542,7 @@ fn assemble_decals(file: &PropertyFile, out: &mut LotUnits) {
                 continue;
             }
             let transform = unit_transform(file, transform_hash, index, &mut out.diagnostics);
-            // Scale hack：flags == 15 时 Transform.Unknown 即贴花 Scale。
-            let scale = file
-                .get(transform_hash)
-                .and_then(|property| property.array())
-                .and_then(|values| values.get(index))
-                .and_then(|value| match value {
-                    Value::Transform(transform) => transform.unknown,
-                    _ => None,
-                });
+            let scale = unit_transform_scale(file, transform_hash, index);
             out.units.push(LotUnit::Decal {
                 index,
                 category,
@@ -782,6 +828,67 @@ mod tests {
             panic!("expected prop");
         };
         assert_eq!((*index, *bin, *slot), (1, 13, Some(1)));
+    }
+
+    #[test]
+    fn prop_carries_scale_and_prototype_id() {
+        let file = file_of(vec![
+            prop(
+                PROP_TRANSFORM_BASE, // bin 0
+                PropType::Transform,
+                Kind::Array(vec![transform_value(Some(0.75), &matrix_translation(0.0, 0.0, 1.0))]),
+            ),
+            key_array(PROP_ID_BASE, &[0x14984C69]), // bin 0 原型引用
+        ]);
+        let units = assemble_units(&file);
+        assert_eq!(units.units.len(), 1);
+        let LotUnit::Prop { scale, fields, .. } = &units.units[0] else {
+            panic!("expected prop");
+        };
+        assert_eq!(*scale, Some(0.75), "Scale 来自 Transform.Unknown（flags 15）");
+        // 原型 id 无法解析成资源，但必须作为字段透出（属性面板可见）
+        assert!(fields.iter().any(|f| f.hash == PROP_ID_BASE));
+    }
+
+    #[test]
+    fn spawner_carries_count_random_and_agent() {
+        let file = file_of(vec![
+            key_array(SPAWNER_IDS, &[0x125D19FA]),
+            prop(
+                SPAWNER_TRANSFORMS,
+                PropType::Transform,
+                Kind::Array(vec![transform_value(None, &matrix_translation(0.0, 0.0, 0.0))]),
+            ),
+            prop(
+                SPAWNER_COUNT,
+                PropType::Int32,
+                Kind::Array(vec![Value::Int32(6)]),
+            ),
+            prop(
+                SPAWNER_COUNT_RANDOM,
+                PropType::Int32,
+                Kind::Array(vec![Value::Int32(3)]),
+            ),
+            key_array(SPAWNER_AGENT, &[0x0F0E2BF1]),
+        ]);
+        let units = assemble_units(&file);
+        assert_eq!(units.units.len(), 1);
+        let LotUnit::Spawner {
+            id,
+            count,
+            count_random,
+            agent,
+            fields,
+            ..
+        } = &units.units[0]
+        else {
+            panic!("expected spawner");
+        };
+        assert_eq!(id.as_ref().map(|k| k.instance), Some(0x125D19FA));
+        assert_eq!(*count, Some(6));
+        assert_eq!(*count_random, Some(3));
+        assert_eq!(agent.as_ref().map(|k| k.instance), Some(0x0F0E2BF1));
+        assert_eq!(fields.len(), 5, "新增三列同样进入字段列表");
     }
 
     #[test]
