@@ -2003,3 +2003,47 @@ bucket 步长 100
   （对无本体 LotSize 的 lot 报 `skip: no lot_size`）。
 - `lot_mask_probe.rs` **编译不过**（`decode_lot_mask_rgba` 从 3 色改 4 色签名后未同步）
   —— `cargo test --examples` 会失败，属既有欠账。
+
+---
+
+## 43. Property 子类型的定性唯一标识（2026-09-14 第四十三轮）
+
+用户指出「property 是一个大父集合，有很多泛化的子类型（decal / 一般资产 / props / spawners 等）」，
+要求把**子类型的定性唯一标识**写进文档。结论（以原 SCP 源码为准）：
+
+**判据 = `InstanceType`，即 `GroupContainer & 0xFFFF`。** 原 SCP
+`SimCityPak/PackageReader/DataBaseIndex.cs`：
+
+```csharp
+public uint InstanceType { get { return (_groupContainer & 0xffff); } } // mask 0000XXXX
+```
+
+property 的 **TGI type 恒为 `0x00B1B104`**；Group 的**高 16 位是同一子类型的分卷编号**
+（实测同一 lot 有 `0x40E1C000` / `0x42E1C000` 多条），不参与判别。
+
+子类型表（`Views/valueConverters/InstanceTypeIconConverter.cs` 的 `PropertyFileTypeIds` 枚举）：
+
+| InstanceType | 子类型 |
+|---|---|
+| `0xC000` | **Unit**（lot/建筑单元；灯光/效果/贴花/道具/路径/生成器**同住一个 property**） |
+| `0xC600` | Agent（小人定义） |
+| `0x8B7E` | Path |
+| `0xC400` | Network |
+| `0xC900` / `0x8A01` | Menu / Menu2 |
+| `0xE000` | Map |
+| `0x2043` | Descriptor |
+| `0xB185` / `0x1651` / `0x1652` | DecalAtlas 1 / 2 / 3（贴花字典三册）——**唯一被本应用按子类型特判的值** |
+
+**重要澄清**：decal / prop / spawner **不是 property 子类型**，而是 **Unit 内部的单元种类**，
+靠「特征列是否出现」判别（Light `0x0CAA8F10` / Effect `0x02A907B5` / Decal `0x0D109050` /
+Prop `0x0C12EF40+bin` / PathPoint `0x0CAA680D` / Spawner `0x0E1BAC61`）。同一 Unit 里多类并存
+（实测 `0xEE27D643` 同时带 prop + decal + LOD 列）。
+
+**落点**：`src/assets/knowledge/file-types.zh-CN.md` 与 `.en-US.md` 新增
+「子类型判别：InstanceType / Unit kinds」两节，并补入本轮新解出的 spawner 字段
+（`0x0E715928`/`0x0E715929` 数量与随机化范围、`0x0F0E2BF1` agent 引用）与
+decal 第 7 字段（`0x0D1090B0`）。
+
+**代码侧缺口（未做）**：`sc-registry` 只把 s3db `InstanceTypes` 当名称表用，
+除 `is_decal_dictionary_group` 外**没有任何地方按 InstanceType 分类** —— 资源树目前
+分不出 Unit / Agent / Path / Descriptor。

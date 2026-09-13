@@ -9,7 +9,7 @@ together with its binary signature; chaptered details follow below.
 
 | Type ID | Name | Binary signature | Parsing capability |
 |---|---|---|---|
-| `0x00B1B104` | Property | Binary property table (hash + type + value rows, no file magic) | Full parse (incl. canonical write-back), lot/unit assembly |
+| `0x00B1B104` | Property | Binary property table (hash + type + value rows, no file magic); **sub-type = low 16 bits of GroupContainer (InstanceType)** | Full parse (incl. canonical write-back), lot/unit assembly |
 | `0x2F4E681B` | RW4 | RenderWare4 container: header + section index + blobs | Mesh/material/texture/skeleton/anim decode, GLB/OBJ export |
 | `0x2F4E681C` | Raster | Headerless raw pixels (LotMask = raw RGBA) | Decode + PNG preview |
 | `0x2F7D0004` | PNG | `89 50 4E 47` | Direct preview |
@@ -47,6 +47,48 @@ semantics live entirely on the data side. Each property is a **hash
 identifier + data type + value**; cross-resource references are stored as
 **Key** (TGI triple) values and resolve across packages.
 
+#### Sub-type discriminator: InstanceType = low 16 bits of GroupContainer
+
+The property resource's **TGI type is always `0x00B1B104`**; the actual sub-type comes from
+the **low 16 bits of the GroupContainer** — original SCP `PackageReader/DataBaseIndex.cs`:
+
+```csharp
+public uint InstanceType { get { return (_groupContainer & 0xffff); } } // mask 0000XXXX
+```
+
+The **high 16 bits are a volume/container index within the same sub-type** (a single lot can
+appear as `0x40E1C000` and `0x42E1C000`, etc.) and play **no part** in sub-type discrimination.
+
+| InstanceType | Sub-type | Notes |
+|---|---|---|
+| `0xC000` | **Unit** | Lot/building unit container: lights / effects / decals / props / paths / spawners **all live side-by-side as parallel columns inside one property** |
+| `0xC600` | Agent | Sim (agent) definition |
+| `0x8B7E` | Path | Path definition |
+| `0xC400` | Network | Road network |
+| `0xC900` / `0x8A01` | Menu / Menu2 | Menus |
+| `0xE000` | Map | Map |
+| `0x2043` | Descriptor | Descriptor |
+| `0xB185` / `0x1651` / `0x1652` | DecalAtlas / DecalAtlas2 / DecalAtlas3 | Decal dictionary (gallery), **three volumes**; the only value this app special-cases (`is_decal_dictionary_group`) |
+
+Verified: in `SimCity_Game.package`, lot `0xEE27D643` has group `0x42E1C000` → low 16 bits
+`0xC000` = Unit ✓; its parent `0x40E1C000` likewise.
+
+> ⚠️ **decal / prop / spawner are NOT property sub-types** — they are **unit kinds inside a
+> Unit**, discriminated by which signature columns are present (below). Several kinds coexist
+> in one Unit property: `0xEE27D643` carries prop columns (`0x0C12EF29`–`0x0C12EF2B`), decal
+> columns (`0x0D109050`) and LOD references (`0x00F9EFBA`) at the same time.
+
+#### Unit kinds: discriminated by their signature column
+
+| Unit kind | Signature column (present ⇒ kind present) | Parallel columns |
+|---|---|---|
+| Light | `0x0CAA8F10` (LightIDs) | 14 |
+| Effect | `0x02A907B5` (EffectIDs) | 5 |
+| Decal | `0x0D109050` (Decal ID; categories 1/2 use `0x0D109051/52`) | 3 categories × 7 fields |
+| Prop | `0x0C12EF40 + bin` (Prop Slots, bin 0–13) | 14 bins |
+| PathPoint | `0x0CAA680D` (Path Points) | 4 |
+| Spawner | `0x0E1BAC61` (Spawner IDs) | 5 |
+
 #### The lot quartet and model references
 
 | Identifier | Name | Type | Notes |
@@ -81,13 +123,15 @@ identifier + data type + value**; cross-resource references are stored as
 | Identifier | Name | Type | Notes |
 |---|---|---|---|
 | `0x02A907B5`–`0x02A907BC` | Effect IDs/Transforms/AlwaysZero/RefIDs/Enabled | Key/Transform/Int32/Key/Bool arrays | Effect unit quintet |
-| `0x0D109050`/`60`/`70`/`80` (+ category 0–2) | Decal ID/Transform/Depth/Material | Key/Transform/Float/binary | 3 categories × base offset |
+| `0x0D109050`/`60`/`70`/`80` (+ category 0–2) | Decal ID/Transform/Depth/Material | Key/Transform/Float/binary | 3 categories × base offset. The unpacked exe's property registration (`FUN_0081d680`) declares three more: `0x0D109090` (RenderGroup, Key) / `0x0D1090A0` (MachineSpec, Int32) / `0x0D1090B0` (Float, rarely present) |
 | `0x0C12EF2X` | ecoUnitBinDrawBinIDs | Key array | Prop prototype refs; **not resolvable offline** (compiled into internal game tables) |
 | `0x0C12EF30` + bin | Prop Transforms | Transform array | 14 bins (0–13) |
 | `0x0C12EF40` + bin | Prop Slots | Slot value array | Same |
 | `0x0CAA680D` / `0x0CB00ED8` / `0x0CAA6832` | Path Points/Tangents/Indices | Float3/Float3/Int32 arrays | Path points |
 | `0x0CAA6841` | PathPairs | Int32 pairs | Path ranges (semantics TBD) |
-| `0x0E1BAC61` / `0x0E1BAC62` | Spawner IDs/Transforms | Key/Transform arrays | Spawners |
+| `0x0E1BAC61` / `0x0E1BAC62` | Spawner IDs / Transforms | Key array (**element stride 0xC**) / Transform array (**stride 0x38**) | Spawner bodies, referencing an agent |
+| `0x0E715928` / `0x0E715929` | Spawner count / randomization range | Int32 arrays | Spawn count; when the latter is non-zero, `count += random % latter` (proved in unpacked exe `FUN_00786000`) |
+| `0x0F0E2BF1` | Spawner agent reference | Key | Resolved to an agent/sim through an engine manager (same proof) |
 
 ### RW4 (0x2F4E681B)
 
