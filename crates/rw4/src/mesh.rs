@@ -71,6 +71,12 @@ pub struct DecodedVertex {
     pub components: Vec<(VertexElement, ComponentValue)>,
 }
 
+/// UBYTE4 压缩的三分量向量 → `(b - 127.5) / 127.5`（第 4 字节为填充，恒 1）。
+fn unpack_snorm3(b: [u8; 4]) -> [f32; 3] {
+    let n = |x: u8| (f32::from(x) - 127.5) / 127.5;
+    [n(b[0]), n(b[1]), n(b[2])]
+}
+
 impl DecodedVertex {
     /// POSITION FLOAT3。
     pub fn position(&self) -> Option<[f32; 3]> {
@@ -80,13 +86,28 @@ impl DecodedVertex {
         }
     }
 
-    /// NORMAL：UBYTE4 按 C# 语义解包 `(b - 127.5) / 127.5`。
+    /// NORMAL：FLOAT3 直读；UBYTE4 按 C# 语义解包 `(b - 127.5) / 127.5`。
+    ///
+    /// 真实包普查（SimCity_Graphics 2267 个模型）：NORMAL 有 **Float3（231）与
+    /// UByte4（2037）两种声明**——此前只处理 UByte4，Float3 模型解码为 None →
+    /// GLB 写出 `(0,0,0)` 法线 → **整栋建筑无光照方向（发平）**。
     pub fn normal(&self) -> Option<[f32; 3]> {
         match self.find_usage(DeclarationUsage::Normal)? {
-            ComponentValue::UByte4(b) => {
-                let n = |x: u8| (f32::from(x) - 127.5) / 127.5;
-                Some([n(b[0]), n(b[1]), n(b[2])])
-            }
+            ComponentValue::Float3(n) => Some(*n),
+            ComponentValue::UByte4(b) => Some(unpack_snorm3(*b)),
+            _ => None,
+        }
+    }
+
+    /// TANGENT（glTF 语义 = U 方向）：FLOAT3 直读；UBYTE4 同 NORMAL 解包。
+    ///
+    /// 引擎 `building4DefaultPS` 的 `ApplyNormalMap(vn, tangent, nmap)` 用顶点切线
+    /// 建 TBN（`dt = cross(vn, tangent)`、`ds = cross(dt, vn)`），普查中 **2267/2267
+    /// 个模型都带 TANGENT0**，此前从未导出。
+    pub fn tangent(&self) -> Option<[f32; 3]> {
+        match self.find_usage(DeclarationUsage::Tangent)? {
+            ComponentValue::Float3(t) => Some(*t),
+            ComponentValue::UByte4(b) => Some(unpack_snorm3(*b)),
             _ => None,
         }
     }
@@ -447,4 +468,76 @@ pub(crate) fn parse_vertex_array_header(payload: &[u8]) -> Result<VertexArrayHea
         vertex_size,
         data_section,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vertex::DeclarationType;
+
+    fn vertex(usage: DeclarationUsage, decl_type: DeclarationType, value: ComponentValue) -> DecodedVertex {
+        DecodedVertex {
+            components: vec![(
+                VertexElement {
+                    unknown1: 0,
+                    offset: 0,
+                    decl_type,
+                    usage,
+                    index: 0,
+                    unknown2: 0,
+                    unknown3: 0,
+                    unknown4: 0,
+                },
+                value,
+            )],
+        }
+    }
+
+    /// 真实包普查里 NORMAL 有 Float3 与 UByte4 两种声明，两者都必须可解——
+    /// 只认 UByte4 时 Float3 模型会导出 `(0,0,0)` 法线（整栋发平）。
+    #[test]
+    fn normal_accepts_float3_and_ubyte4() {
+        let f = vertex(
+            DeclarationUsage::Normal,
+            DeclarationType::Float3,
+            ComponentValue::Float3([0.0, 0.5, 1.0]),
+        );
+        assert_eq!(f.normal(), Some([0.0, 0.5, 1.0]));
+
+        let b = vertex(
+            DeclarationUsage::Normal,
+            DeclarationType::UByte4,
+            ComponentValue::UByte4([255, 127, 128, 1]),
+        );
+        let n = b.normal().expect("ubyte4 normal");
+        assert!((n[0] - 1.0).abs() < 1e-3);
+        assert!(n[1].abs() < 1e-2);
+        assert!(n[2].abs() < 1e-2);
+    }
+
+    #[test]
+    fn tangent_accepts_float3_and_ubyte4() {
+        let f = vertex(
+            DeclarationUsage::Tangent,
+            DeclarationType::Float3,
+            ComponentValue::Float3([-1.0, 0.0, 0.0]),
+        );
+        assert_eq!(f.tangent(), Some([-1.0, 0.0, 0.0]));
+
+        let b = vertex(
+            DeclarationUsage::Tangent,
+            DeclarationType::UByte4,
+            ComponentValue::UByte4([0, 127, 127, 1]),
+        );
+        let t = b.tangent().expect("ubyte4 tangent");
+        assert!((t[0] + 1.0).abs() < 1e-3);
+
+        // 缺 TANGENT 声明 → None（前端退回导数拟合切线架）
+        let none = vertex(
+            DeclarationUsage::Normal,
+            DeclarationType::Float3,
+            ComponentValue::Float3([0.0, 0.0, 1.0]),
+        );
+        assert_eq!(none.tangent(), None);
+    }
 }

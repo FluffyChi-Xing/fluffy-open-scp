@@ -1708,3 +1708,97 @@ lotTexCoord, 4.0, 0.47)` —— **alpha 来自法线图集 s15**，为 0 时 `cl
 - **工业厂房 `0xFA50346D`**：变体声明 `LawnBase` 却算得格 0（砖），与截图的草坪矛盾——未解。
 - 「每阶段测试附性能报告」：本轮为**视觉语义**修正，未产生新的解析热点；法线烘焙成本
   随 mask 分辨率线性（≤4× 超采样），未单独计时。
+
+---
+
+## 40. 建筑法线链：顶点 TANGENT 与 Float3 法线（2026-09-13 第四十轮）
+
+用户反馈「外墙/屋顶法线与质感很平且糊」。回到 `tmp/shaders/clean/` 的 `building4` 家族
+逐字比对，定位到两个**顶点侧**缺陷（质感问题另见 §40.3 待办）。
+
+### 40.1 引擎的 TBN 用顶点自带切线 `[源码]` `[实测]`
+
+`building4DefaultVS.hlsl:90` 把 `worldTangent` 直传 PS；`building4DefaultPS.hlsl:18-25`：
+
+```hlsl
+float3 ApplyNormalMap(float3 vertNormal, float3 tangent, float3 nmapNormal) {
+  float3 vn = normalize(vertNormal);
+  float3 dt = normalize(cross(vn, tangent));   // binormal（引擎由叉积导出）
+  float3 ds = cross(dt, vn);                    // tangent 对 N 正交化
+  return nmapNormal.r * ds + nmapNormal.g * dt + nmapNormal.b * vn;
+}
+float3 nmapNormal = normalMapSampled.rgb * 2 - 0.9985;
+```
+
+法线双层采样 `lerp(normalMap@baseUv, normalMap@relief_tc, facadeTint.a)`（我们已实现）。
+
+**普查（新探针 `crates/rw4/examples/tangent_scan.rs`，SimCity_Graphics 2267 个模型）**：
+
+| 项 | 结果 |
+|---|---|
+| 带 `TANGENT0` 顶点流 | **2267 / 2267（100%）** |
+| NORMAL 声明类型 | `Float3` **231** / `UByte4` **2037** |
+| TANGENT 声明类型 | `Float3` **236** / `UByte4` **2158** |
+
+UB4 = `(b - 127.5) / 127.5` 压缩，第 4 字节恒 1（填充；引擎的 `ApplyNormalMap` 用
+`cross(N, T)` 导 binormal，**不消费 handedness**）。
+
+### 40.2 两个缺陷与修复（工作区，本提交）
+
+1. **`normal()` 只认 `UByte4`** → 231 个 vertex-format 段的 `Float3` 法线解码为 `None`
+   → GLB 写出 `(0,0,0)` → **整栋建筑没有光照方向（发平的直接来源）**。
+   修复：`Float3` 直读 + `UByte4` 解包。
+2. **TANGENT 从未导出** → three 只能走 `getTangentFrame`（屏幕空间导数拟合）；且
+   `refinedRender.ts` 的 tint 注入**自建了一个局部 `mat3 tbn` 遮蔽** three
+   `<normal_fragment_begin>` 的 tbn，等于永远走导数路径。
+   修复：`rw4::DecodedVertex::tangent()`（Float3/UByte4）+ `gltf.rs` 导出
+   `TANGENT`（VEC4 f32，`w = +1`）。`w = +1` 的依据：three 侧
+   `vBitangent = cross(vNormal, vTangent) * tangent.w`，取 +1 才等于引擎的
+   `dt = cross(vn, tangent)`。前端改为复用外层 `tbn`（有切线即 `USE_TANGENT`
+   路径，缺切线自动退回导数拟合）。
+
+**验证**（`crates/sc-exporter/examples/glb_attr_check.rs`）：导出 GLB 结构自检
+（bufferView 全部落在 BIN 内、`maxEnd == bin`）；切线健全性 —— `|t|-1 ≤ 0.019`、
+`|n·t| ≤ 0.023`（上限即 8bit 量化误差），证明解包正确且资产本就是正交 TBN。
+
+`cargo check` / `clippy` / `pnpm check` / `pnpm test 86/86` / `cargo test -p rw4` 全绿。
+**App 内观感待用户目检。**
+
+### 40.3 环境光照模型：常数 → 方向性天空（工作区，本提交）
+
+上一步修完顶点侧后，"平"的大头仍在间接光：引擎 `EnvLighting` 用
+`sampleDir = mix(normal, reflect(view, normal), s)`（`s = gloss*0.75`）去查**天空**
+（`SkyColorConv` → perez 表 × `thetaGammaMinMax`），间接漫反射 = SH 9 系数逐顶点；
+我们此前只有常数 `AmbientLight` + 常数 `uSkyColor` → **各朝向的间接光完全相同**。
+
+**实现（`refinedRender.ts`，观察器近似）**：
+
+- `skyRadiance(dir)` = **天顶↔地平三段渐变 + 太阳邻近辉光 + 地平线以下地面反照**，
+  取代常数 `uSkyColor`；三段色由 `applySunEnv` 按时段给出（新增 `skyHorizon` /
+  `skyGround`）。GLSL `scSkyRadiance` 与 TS `skyRadiance` **逐式一致**。
+- **间接漫反射改为方向性**：`indirectDiffuse *= mix(1, lum(sky(normal))/uSkyLumRef, 0.6)`。
+  `uSkyLumRef` 用同一式子在 96 点 Fibonacci 球面上求均值，故因子**球面均值恒为 1**
+  ——只重分配各朝向的环境光，**不改整体曝光**（用户已调好的亮度不会漂）。
+- **间接高光**改为 `sky(sampleDir) * s * albedo`，采样方向按源 `DefaultPS` 的
+  `bentViewDirection`（`z += 2·saturate(-z)·(1-saturate(n.z))`）弯折后取反射向。
+
+**与引擎的差异（明确记录）**：① 用解析三段式近似 perez 天空 LUT（引擎常量
+`cSunSkyInfo` 依赖运行时天气/时相，离线不可得）；② 未实现 SH 9 系数（引擎 SH 由
+`shCoeffs[9]` 全局提供，非资产数据）；③ `bentViewDirection` 的符号约定未逐字验证。
+
+**可验证的断言**（`refinedRender.test.ts`，5 例）：方向性存在（地平/天顶/朝下
+亮度分离且峰值比 > 2；朝向太阳 > 背离）；**因子球面均值 ≈ 1（±3%，用独立的
+257 点球面采样核验）**；`skyLumRef` 随时段重算。`pnpm test 91/91`。
+
+### 40.4 仍缺
+
+| # | 引擎 | OpenSCP |
+|---|---|---|
+| 1 | 太阳 `mSunDir/mSunColor` 由 `cSunSkyInfo` 驱动（真实时相/天气） | 仍是三灯假布光 + 注入的太阳高光（方向由 timeOfDay 近似） |
+| 2 | perez 天空 LUT（s11 表 + `thetaGammaMinMax`） | 解析三段式近似 |
+| 3 | SH 9 系数间接漫反射 | 未实现 |
+| — | 法线解码 `*2-0.9985` | `*2-1.0`（差 0.075%，可忽略） |
+| — | `reliefMap` 视差 | 本编译版是**恒等返回**（死代码），无需实现 |
+
+屋顶无独立着色器变体（dump 内 `roof` 零命中），与外墙同用 `building4` 家族，故上述
+结论对屋顶同样成立。**天空三段色、`scDirFactor` 的 0.6 强度旋钮均为可调近似，待目检。**

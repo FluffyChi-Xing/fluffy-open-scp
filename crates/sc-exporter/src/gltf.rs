@@ -417,6 +417,9 @@ pub fn export_glb_with_colors(
         }
     }
 
+    // 全顶点齐备才导出 TANGENT（缺一个就整块退回导数拟合的切线架）。
+    let has_tangent = v_count > 0 && mesh.vertices.iter().all(|v| v.tangent().is_some());
+
     let mut skin = skeleton.and_then(|s| extract_skin(mesh, s, anims));
 
     // ---- BIN chunk ----
@@ -447,6 +450,28 @@ pub fn export_glb_with_colors(
         put_f32s(&mut bin, &n);
     }
     let norm_len = v_count * 12;
+
+    // TANGENT（glTF VEC4：xyz = U 方向，w = handedness）。引擎
+    // `ApplyNormalMap` 由 `cross(N, tangent)` 导出 binormal、忽略 handedness，
+    // three 侧 `vBitangent = cross(vNormal, vTangent) * tangent.w` → **w 恒 +1**
+    // 才与引擎同帧（普查 2267/2267 模型带 TANGENT0，此前完全未导出）。
+    let tangent_offset = if has_tangent {
+        let offset = bin.len();
+        for v in &mesh.vertices {
+            let t = v.tangent().unwrap_or([1.0, 0.0, 0.0]);
+            let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
+            let t = if len > 1e-6 {
+                [t[0] / len, t[1] / len, t[2] / len]
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            put_f32s(&mut bin, &[t[0], t[1], t[2], 1.0]);
+        }
+        Some(offset)
+    } else {
+        None
+    };
+    let tangent_len = v_count * 16;
 
     let uv_offset = bin.len();
     for v in &mesh.vertices {
@@ -622,6 +647,8 @@ pub fn export_glb_with_colors(
         pos_len,
         norm_offset,
         norm_len,
+        tangent_offset,
+        tangent_len,
         uv_offset,
         uv_len,
         color_offset,
@@ -672,6 +699,8 @@ fn build_json(
     pos_len: usize,
     norm_offset: usize,
     norm_len: usize,
+    tangent_offset: Option<usize>,
+    tangent_len: usize,
     uv_offset: usize,
     uv_len: usize,
     color_offset: Option<usize>,
@@ -709,6 +738,14 @@ fn build_json(
     ];
 
     let mut primitive_attrs = json!({"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2});
+
+    if let Some(offset) = tangent_offset {
+        let bv = buffer_views.len();
+        buffer_views.push(json!({"buffer": 0, "byteOffset": offset, "byteLength": tangent_len, "target": TARGET_ARRAY}));
+        let acc = accessors.len();
+        accessors.push(json!({"bufferView": bv, "componentType": COMP_FLOAT, "count": v_count, "type": "VEC4"}));
+        primitive_attrs["TANGENT"] = json!(acc);
+    }
 
     let mut texcoord1_acc = None;
     if let Some(offset) = texcoord1_offset {
