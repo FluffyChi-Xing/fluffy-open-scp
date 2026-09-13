@@ -102,21 +102,75 @@ function buildLight(THREE: Three, unit: LightUnit): ThreeNamespace.Object3D {
 }
 
 /**
+ * 标记锥上的序号标签文本（原 SCP `UnitBinDrawSlot.CreateGeometry` 的
+ * `BillboardTextVisual3D`）。effect 无序号语义 → null。
+ */
+export function unitLabel(unit: LotUnitDto): string | null {
+  if (unit.kind === "prop" || unit.kind === "spawner") return String(unit.index);
+  return null;
+}
+
+/** 同一文本共用一张 canvas 纹理（一个地块里序号重复率高）。 */
+const labelTextureCache = new Map<string, ThreeNamespace.Texture>();
+
+function labelTexture(
+  THREE: Three,
+  text: string,
+): ThreeNamespace.Texture | null {
+  const cached = labelTextureCache.get(text);
+  if (cached) return cached;
+  // happy-dom / 无 canvas 环境：返回 null，标签静默跳过（不影响图元本身）
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  canvas.width = 96;
+  canvas.height = 48;
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#141414";
+  ctx.font = "bold 32px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  labelTextureCache.set(text, texture);
+  return texture;
+}
+
+/**
  * Effect/Prop/Spawner 共用的标记锥（h2.5、开口半径 1）。
  * 预旋转 +90°X 使宽端沿 +M 第 3 行：恒等变换下宽端朝上、尖锥向下（▼，
  * 对齐原 SCP 截图；上一轮 -90°X 曾导致上下颠倒）。
+ * `label` 非空时在锥体上方挂序号 billboard（原版同款）。
  */
 function buildMarkerCone(
   THREE: Three,
   color: number,
   transform: UnitTransformDto | null,
-): ThreeNamespace.Mesh {
+  label?: string | null,
+): ThreeNamespace.Object3D {
   const geometry = new THREE.CylinderGeometry(1, 0.001, 2.5, 24, 1, false);
   geometry.translate(0, 1.25, 0);
   geometry.rotateX(Math.PI / 2);
   const mesh = new THREE.Mesh(geometry, standardMaterial(THREE, color));
-  applyTransform(THREE, mesh, transform);
-  return mesh;
+  if (!label) {
+    applyTransform(THREE, mesh, transform);
+    return mesh;
+  }
+  const texture = labelTexture(THREE, label);
+  const group = new THREE.Group();
+  group.add(mesh);
+  if (texture) {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true }),
+    );
+    sprite.scale.set(2, 1, 1);
+    sprite.position.set(0, 3, 0);
+    group.add(sprite);
+  }
+  applyTransform(THREE, group, transform);
+  return group;
 }
 
 /** 贴花矩形：正面近透明、背面绿色（同 SCP RectangleVisual3D），尺寸 2×Scale。 */
@@ -245,10 +299,10 @@ export function buildUnitObject(
       object = buildMarkerCone(THREE, EFFECT_COLOR, unit.transform);
       break;
     case "prop":
-      object = buildMarkerCone(THREE, PROP_COLOR, unit.transform);
+      object = buildMarkerCone(THREE, PROP_COLOR, unit.transform, unitLabel(unit));
       break;
     case "spawner":
-      object = buildMarkerCone(THREE, SPAWNER_COLOR, unit.transform);
+      object = buildMarkerCone(THREE, SPAWNER_COLOR, unit.transform, unitLabel(unit));
       break;
     case "decal":
       object = buildDecal(THREE, unit);

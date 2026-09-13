@@ -77,6 +77,8 @@ const summary = computed<SummaryRow[]>(() => {
       rows.push({ label: t("package.propBin"), value: String(unit.bin) });
       if (unit.slot !== null)
         rows.push({ label: t("package.propSlot"), value: String(unit.slot) });
+      if (unit.scale !== null)
+        rows.push({ label: t("package.propScale"), value: String(unit.scale) });
       break;
     }
     case "pathPoint": {
@@ -90,6 +92,12 @@ const summary = computed<SummaryRow[]>(() => {
     }
     case "spawner": {
       if (unit.id) rows.push({ label: t("package.spawnerId"), value: formatKey(unit.id) });
+      if (unit.count !== null)
+        rows.push({ label: t("package.spawnerCount"), value: String(unit.count) });
+      if (unit.countRandom !== null)
+        rows.push({ label: t("package.spawnerCountRandom"), value: String(unit.countRandom) });
+      if (unit.agent)
+        rows.push({ label: t("package.spawnerAgent"), value: formatKey(unit.agent) });
       break;
     }
   }

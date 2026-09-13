@@ -125,6 +125,7 @@ describe("mergeUnitOverrides", () => {
       bin: 0,
       transform: null,
       slot: null,
+      scale: null,
       fields: [],
     } as PropUnit;
     const edited = {
@@ -133,6 +134,7 @@ describe("mergeUnitOverrides", () => {
       bin: 0,
       transform: { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0] },
       slot: null,
+      scale: null,
       fields: [],
     } as PropUnit;
     const overrides = new Map([

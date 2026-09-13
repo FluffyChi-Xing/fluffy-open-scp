@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type * as ThreeNamespace from "three";
-import { unitId, unitMatrix } from "./unitGizmos";
-import type { DecalUnit, PropUnit, SpawnerUnit } from "@/api/tauri";
+import { unitId, unitLabel, unitMatrix } from "./unitGizmos";
+import type { DecalUnit, EffectUnit, PropUnit, SpawnerUnit } from "@/api/tauri";
 
 const THREE = (await import("three")) as typeof ThreeNamespace;
 
@@ -57,6 +57,7 @@ describe("unitId", () => {
       bin: 13,
       transform: null,
       slot: null,
+      scale: null,
       fields: [],
     } as PropUnit;
     const decal = {
@@ -74,10 +75,24 @@ describe("unitId", () => {
       index: 0,
       transform: null,
       id: null,
+      count: null,
+      countRandom: null,
+      agent: null,
       fields: [],
     } as SpawnerUnit;
     expect(unitId(prop)).toBe("prop:13:2");
     expect(unitId(decal)).toBe("decal:2:1");
     expect(unitId(spawner)).toBe("spawner:0");
+  });
+});
+
+describe("unitLabel", () => {
+  it("gives prop/spawner a numeric billboard and leaves effect unlabeled", () => {
+    const prop = { kind: "prop", index: 7 } as PropUnit;
+    const spawner = { kind: "spawner", index: 3 } as SpawnerUnit;
+    const effect = { kind: "effect", index: 1 } as EffectUnit;
+    expect(unitLabel(prop)).toBe("7");
+    expect(unitLabel(spawner)).toBe("3");
+    expect(unitLabel(effect)).toBeNull();
   });
 });

@@ -370,6 +370,8 @@ export interface PropUnit {
   bin: number;
   transform: UnitTransformDto | null;
   slot: number | null;
+  /** 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。 */
+  scale: number | null;
   fields: UnitFieldDto[];
 }
 export interface PathPointUnit {
@@ -385,6 +387,12 @@ export interface SpawnerUnit {
   index: number;
   transform: UnitTransformDto | null;
   id: UnitKeyDto | null;
+  /** 生成数量 0x0E715928（发行数据中罕见）。 */
+  count: number | null;
+  /** 数量随机化上限 0x0E715929。 */
+  countRandom: number | null;
+  /** 小人 Agent 引用 0x0F0E2BF1。 */
+  agent: UnitKeyDto | null;
   fields: UnitFieldDto[];
 }
 export type LotUnitDto =
