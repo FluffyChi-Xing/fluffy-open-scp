@@ -30,6 +30,7 @@ const {
   selectedId,
   grouping,
   lotSize,
+  lotTilePeriod,
   lotPlacement,
   lotColors,
   lotColorsAuthored,
@@ -37,6 +38,8 @@ const {
   lotMaskRawRgba,
   lotAlbedoPng,
   lotSurfacePng,
+  lotTintAtlasPng,
+  lotNormalAtlasPng,
   selectedUnit,
   edit,
   hiddenUnits,
@@ -384,6 +387,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :render-mode="renderMode"
           :grouping="grouping"
           :lot-size="lotSize"
+          :lot-tile-period="lotTilePeriod"
           :lot-placement="lotPlacement"
           :lot-colors="lotColors"
           :lot-colors-authored="lotColorsAuthored"
@@ -391,6 +395,8 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-mask-raw-rgba="lotMaskRawRgba"
           :lot-albedo-png="lotAlbedoPng"
           :lot-surface-png="lotSurfacePng"
+          :lot-tint-atlas-png="lotTintAtlasPng"
+          :lot-normal-atlas-png="lotNormalAtlasPng"
           :decal-textures="session?.decalTextures ?? []"
           :selected-id="selectedId"
           :hidden-units="hiddenUnits"

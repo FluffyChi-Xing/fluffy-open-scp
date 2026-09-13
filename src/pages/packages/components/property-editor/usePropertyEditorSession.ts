@@ -185,6 +185,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     ),
   );
 
+  const lotTilePeriod = computed<[number, number] | null>(
+    () => session.value?.lotTilePeriod ?? null,
+  );
   const lotSize = computed<[number, number] | null>(
     () => session.value?.lotSize ?? null,
   );
@@ -209,6 +212,16 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
 
   const lotSurfacePng = computed<string | null>(() => {
     const png = session.value?.lotSurfacePng;
+    return png ? `data:image/png;base64,${png}` : null;
+  });
+
+  const lotTintAtlasPng = computed<string | null>(() => {
+    const png = session.value?.lotTintAtlasPng;
+    return png ? `data:image/png;base64,${png}` : null;
+  });
+
+  const lotNormalAtlasPng = computed<string | null>(() => {
+    const png = session.value?.lotNormalAtlasPng;
     return png ? `data:image/png;base64,${png}` : null;
   });
 
@@ -263,6 +276,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     grouping,
     flatUnits,
     lotSize,
+    lotTilePeriod,
     lotPlacement,
     lotColors,
     lotColorsAuthored,
@@ -270,6 +284,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotMaskRawRgba,
     lotAlbedoPng,
     lotSurfacePng,
+    lotTintAtlasPng,
+    lotNormalAtlasPng,
     selectedUnit,
     edit,
     hiddenUnits,

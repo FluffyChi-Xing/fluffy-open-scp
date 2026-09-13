@@ -47,6 +47,15 @@ export class ThreeViewer {
     return this.renderer.domElement;
   }
 
+  /**
+   * 硬件支持的最大各向异性过滤级别。建筑立面几乎总是掠射角观察，
+   * three.js 默认 aniso=1 会按最大导数选 mip → 贴图发糊；引擎侧用的是
+   * `tex2Dgrad` + 各向异性采样，故贴图统一按此上限设置。
+   */
+  get maxAnisotropy(): number {
+    return this.renderer.capabilities.getMaxAnisotropy();
+  }
+
   /** 轨道/拾取输入开关：编辑器手柄拖拽期间挂起，避免相机联动。 */
   private orbitEnabled = true;
 

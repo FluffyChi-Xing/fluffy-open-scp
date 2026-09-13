@@ -27,6 +27,8 @@ export interface EditorViewportRebuildCtx {
   isStale(): boolean;
   /** 登记本轮创建的贴图 blob URL，rebuild 时统一回收。 */
   registerTextureUrl(url: string): void;
+  /** 硬件最大各向异性过滤级别（贴图加载时透传）。 */
+  maxAnisotropy: number;
   /** unitId → Object3D 拾取/可见性/选中注册表（装配层写入）。 */
   unitObjects: Map<string, ThreeNamespace.Object3D>;
 }
@@ -145,6 +147,7 @@ export function useEditorViewport(options: {
       token,
       isStale: () => token !== rebuildToken,
       registerTextureUrl: (url) => textureUrls.push(url),
+      maxAnisotropy: instance.maxAnisotropy,
       unitObjects,
     };
     await assembly(ctx);

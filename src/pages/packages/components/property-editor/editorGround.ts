@@ -92,11 +92,17 @@ export function applyGroundMask(options: {
   albedoPng?: string | null;
   /** LotSize（米），精细模式的逐轴平铺次数来源。 */
   lotSize?: [number, number] | null;
+  /** 地面贴图周期 0x0CCB7FD0（米/格）。 */
+  tilePeriod?: [number, number] | null;
   refined: boolean;
   lotColors: [number, number, number, number][];
   lotColorsAuthored: boolean[];
   /** "Lot Textures" 地表共享纹理像素（真实图集；null = 本地占位 tile）。 */
   surface?: ImageData | null;
+  /** 全局共享染色图集像素（s10；alpha 做亮度调制 → 车辙/铺装纹理）。 */
+  tintAtlas?: ImageData | null;
+  /** 全局共享法线图集像素（s15；地面 normalMap 起伏来源）。 */
+  normalAtlas?: ImageData | null;
   /** LotMask 原始通道权重图（阈值选区输入；null = 量化图最近色硬分配）。 */
   rawMask?: ImageData | null;
   isStale: () => boolean;
@@ -107,10 +113,13 @@ export function applyGroundMask(options: {
     maskPng,
     albedoPng,
     lotSize,
+    tilePeriod,
     refined,
     lotColors,
     lotColorsAuthored,
     surface,
+    tintAtlas,
+    normalAtlas,
     rawMask,
     isStale,
   } = options;
@@ -137,18 +146,24 @@ export function applyGroundMask(options: {
         texture.image,
         THREE,
         lotSize ?? null,
+        tilePeriod ?? null,
         surface,
+        tintAtlas ?? null,
         rawMask,
+        normalAtlas ?? null,
       )
-        .then((map) => {
-          if (isStale() || !map) {
-            map?.dispose();
+        .then((result) => {
+          if (isStale() || !result) {
+            result?.map.dispose();
+            result?.normalMap?.dispose();
             return;
           }
           const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
           // 精细地面改受光材质：游戏地表被阳光/环境光照亮，无光照的
           // MeshBasic 会比游戏截图整体偏暗一档（2026-09-13 对拍）。
-          const lit = new THREE.MeshLambertMaterial({ map });
+          const lit = new THREE.MeshLambertMaterial({ map: result.map });
+          // s15 法线图集：方格勾缝/砂砾颗粒的起伏（与反照率像素对齐）。
+          if (result.normalMap) lit.normalMap = result.normalMap;
           fillMaterial.dispose();
           fill.material = lit;
         })

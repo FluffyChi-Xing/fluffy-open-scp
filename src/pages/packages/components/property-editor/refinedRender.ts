@@ -131,6 +131,8 @@ export async function loadTintTextures(
   THREE: typeof ThreeNamespace,
   materials: LotMaterial[],
   registerTextureUrl: (url: string) => void,
+  /** 硬件最大各向异性过滤级别（掠射角墙面靠它保清晰度）。 */
+  maxAnisotropy = 1,
 ): Promise<TintTextureSet[]> {
   const loader = new THREE.TextureLoader();
   const loadTex = (bytes: Uint8Array<ArrayBuffer>) =>
@@ -145,6 +147,8 @@ export async function loadTintTextures(
           // tint/palette/normal 按后端 bake 同坐标系采样（原始 UV，行 0 =
           // PNG 首行），不做 three 默认的 flipY 翻转。
           texture.flipY = false;
+          // 引擎 `tex2Dgrad` + 各向异性采样；默认 aniso=1 时掠射角墙面会明显发糊。
+          texture.anisotropy = maxAnisotropy;
           resolve(texture);
         },
         undefined,
@@ -154,7 +158,17 @@ export async function loadTintTextures(
   return Promise.all(
     materials.map(async (material) => ({
       tintTex: material.tintPng ? await loadTex(material.tintPng) : null,
-      paletteTex: material.palettePng ? await loadTex(material.palettePng) : null,
+      // 调色板 512×16 = 256 列 × 7 行、**每采样点 2×2 像素**，着色器还会加
+      // (1/1024,1/32) 把它居中——正是为点采样设计的；线性滤波会把相邻
+      // 调色板条目互相抹开。
+      paletteTex: material.palettePng
+        ? await loadTex(material.palettePng).then((t) => {
+            t.minFilter = THREE.NearestFilter;
+            t.magFilter = THREE.NearestFilter;
+            t.generateMipmaps = false;
+            return t;
+          })
+        : null,
       normalTex: material.normalPng ? await loadTex(material.normalPng) : null,
       shaderTex: material.shaderPng ? await loadTex(material.shaderPng) : null,
       interiorTex: material.interiorPng ? await loadTex(material.interiorPng).then((t) => {
@@ -555,6 +569,8 @@ export function applyDeferredMaterialMaps(
   materialGroups: ThreeNamespace.MeshStandardMaterial[][],
   registerTextureUrl: (url: string) => void,
   isStale: () => boolean,
+  /** 硬件最大各向异性过滤级别（同 loadTintTextures）。 */
+  maxAnisotropy = 1,
 ) {
   const loader = new THREE.TextureLoader();
   const loadTexture = (
@@ -570,6 +586,7 @@ export function applyDeferredMaterialMaps(
           texture.dispose();
           return;
         }
+        texture.anisotropy = maxAnisotropy;
         setup(texture);
       },
       undefined,

@@ -55,6 +55,7 @@ const props = defineProps<{
   renderMode: "default" | "refined";
   grouping: UnitGrouping;
   lotSize: [number, number] | null;
+  lotTilePeriod: [number, number] | null;
   /** LotPlacementTransform 行主序 12 floats；地面矩形取其逆对齐建筑。 */
   lotPlacement: number[] | null;
   /** LotColor1-4 RGBA（A = 地面贴图索引 0-15）。 */
@@ -71,6 +72,10 @@ const props = defineProps<{
   decalTextures: DecalUnitTexture[];
   /** "Lot Textures" 地表共享纹理（data URL；精细模式地面 v2 用）。 */
   lotSurfacePng: string | null;
+  /** 全局共享染色图集（s10）data URL。 */
+  lotTintAtlasPng: string | null;
+  /** 全局共享法线图集（s15）data URL：地面 normalMap。 */
+  lotNormalAtlasPng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
   groupVisibility: Record<string, boolean>;
@@ -301,6 +306,27 @@ function loadRawMaskPixels(width: number, height: number): ImageData | null {
 }
 
 /** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入）。 */
+async function loadImageDataFromUrl(url: string | null): Promise<ImageData | null> {
+  if (!url) return null;
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("image failed"));
+      element.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, image.width, image.height);
+  } catch {
+    return null;
+  }
+}
+
 async function loadSurfacePixels(): Promise<ImageData | null> {
   const url = props.lotSurfacePng;
   if (!url) return null;
@@ -359,7 +385,12 @@ async function assembleScene(ctx: Parameters<
   ).map(() => []);
   const tintResolved =
     props.renderMode === "refined" && payload
-      ? await loadTintTextures(THREE, payload.materials ?? [], ctx.registerTextureUrl)
+      ? await loadTintTextures(
+          THREE,
+          payload.materials ?? [],
+          ctx.registerTextureUrl,
+          ctx.maxAnisotropy,
+        )
       : [];
   if (ctx.isStale()) return;
   // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）
@@ -406,6 +437,7 @@ async function assembleScene(ctx: Parameters<
       materialGroups,
       ctx.registerTextureUrl,
       ctx.isStale,
+      ctx.maxAnisotropy,
     );
   }
 
@@ -422,9 +454,11 @@ async function assembleScene(ctx: Parameters<
     instance.group("lot").add(ground);
     if (props.lotMaskPng || props.lotAlbedoPng) {
       // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1
-      const [surface, maskDims] = await Promise.all([
+      const [surface, maskDims, tintAtlas, normalAtlas] = await Promise.all([
         loadSurfacePixels(),
         loadMaskImageDims(),
+        loadImageDataFromUrl(props.lotTintAtlasPng),
+        loadImageDataFromUrl(props.lotNormalAtlasPng),
       ]);
       if (!surface) {
         // 精细渲染的材质替换依赖真实图集；静默回退占位 tile 会把沥青画成
@@ -439,11 +473,14 @@ async function assembleScene(ctx: Parameters<
       applyGroundMask({
         rawMask,
         surface,
+        tintAtlas,
+        normalAtlas,
         THREE,
         ground,
         maskPng: props.lotMaskPng,
         albedoPng: props.lotAlbedoPng,
         lotSize: props.lotSize,
+        tilePeriod: props.lotTilePeriod,
         refined: props.renderMode === "refined",
         lotColors: props.lotColors,
         lotColorsAuthored: props.lotColorsAuthored,

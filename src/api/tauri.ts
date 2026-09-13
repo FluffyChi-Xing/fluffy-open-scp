@@ -407,6 +407,8 @@ export interface LotEditorSession {
   /** LOD1~LOD4 模型位置（index 0 = LOD1）；缺失级为 null。 */
   modelLods: (LotModelLodRef | null)[];
   lotSize: [number, number] | null;
+  /** 地面贴图周期 0x0CCB7FD0（米/格）：平铺次数 = lotSize / period（非整数）。 */
+  lotTilePeriod: [number, number] | null;
   /** LotPlacementTransform（0x0DB7FB17）行主序 12 floats；地面矩形取其逆对齐。 */
   lotPlacement: number[] | null;
   /** LotMask 四色量化地面图 PNG（LotColor1-4 着色），无或不可解为 null。 */
@@ -418,6 +420,10 @@ export interface LotEditorSession {
   lotAlbedoPng: string | null;
   /** "Lot Textures" 地表共享纹理（DXT5 解码 PNG 裸 base64）。 */
   lotSurfacePng: string | null;
+  /** 全局共享染色图集（s10）：LotColor.A 选格，alpha 做亮度调制（车辙/铺装纹理）。 */
+  lotTintAtlasPng: string | null;
+  /** 全局共享法线图集（s15）：LotColor.A 选格、与底图同平铺，地面起伏来源。 */
+  lotNormalAtlasPng: string | null;
   /** LotColor1-4 的 RGBA（A = 地面贴图索引 0-15）。 */
   lotColors: [number, number, number, number][];
   /** LotColor1-4 是否实际存在（false = 黑/红/绿/蓝回退，不应着色）。 */

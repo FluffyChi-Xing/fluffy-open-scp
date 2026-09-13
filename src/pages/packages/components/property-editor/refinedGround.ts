@@ -10,6 +10,10 @@ import type * as ThreeNamespace from "three";
  *  3. 着色：胜出通道 LotColor.RGB（后端已 sRGB 字节）乘 tile 原色；
  *  4. 未覆盖区：铺底图格（图集 cell 8 草地；三楼对拍口径），不透明。
  *
+ * 同时烘焙同口径的 **法线贴图**（s15 共享图集）：格号、平铺与反照率逐像素一致
+ * （仅未覆盖区改用底图格），故两者像素对齐、不存在相位错位。法线图集是标准
+ * 切线空间（平坦 = RGB(128,128,255)），线性空间（不得标 sRGB）。
+ *
  * 画布即引擎空间：mask 列序与模型 X 同向（lot_mask_alignment 裁定 identity）、
  * 行序翻转由后端统一完成，故 tile 采样 u/v 均直取（无镜像）。探针出图里的
  * `u = 1-x` 是其 PNG 坐标系专属，勿搬回画布。
@@ -17,6 +21,12 @@ import type * as ThreeNamespace from "three";
  * 着色规则：LotColor 属性缺失（authored=false）时回退色（黑/红/绿/蓝）
  * 只是编辑器可视化，不参与着色——直接铺贴图原色（用户实测 2026-09-10）。
  */
+
+/** 反照率 + 地面法线贴图（normalMap 缺失时为 null）。 */
+export interface RefinedGroundTextures {
+  map: ThreeNamespace.CanvasTexture;
+  normalMap: ThreeNamespace.CanvasTexture | null;
+}
 
 const groundTextureUrls = import.meta.glob<{ default: string }>(
   "../../../../assets/ground/*.png",
@@ -93,10 +103,16 @@ export async function composeRefinedGround(
   maskImage: TexImageSource,
   THREE: typeof ThreeNamespace,
   lotSize: [number, number] | null,
+  /** 地面贴图周期 `0x0CCB7FD0`（米/格）；null 回退实测拟合常量。 */
+  tilePeriod?: [number, number] | null,
   surface?: ImageData | null,
+  /** 全局共享染色图集（s10）：`LotColor.A` 选格、与底图同平铺，alpha 做亮度调制。 */
+  tintAtlas?: ImageData | null,
   /** 原始通道权重图；缺失时回退量化图最近色硬分配。 */
   rawMask?: ImageData | null,
-): Promise<ThreeNamespace.CanvasTexture | null> {
+  /** 全局共享法线图集（s15）：同格号、同平铺烘焙成地面 normalMap。 */
+  normalAtlas?: ImageData | null,
+): Promise<RefinedGroundTextures | null> {
   const image = maskImage as { width?: number; height?: number };
   const width = image.width ?? 0;
   const height = image.height ?? 0;
@@ -114,6 +130,18 @@ export async function composeRefinedGround(
   context.drawImage(maskImage as CanvasImageSource, 0, 0);
   const mask = context.getImageData(0, 0, width, height);
   const composed = context.createImageData(outW, outH);
+  // 法线图集（s15）：4×4 格、每格 >0 才有意义。
+  const normalCellW = normalAtlas ? Math.floor(normalAtlas.width / 4) : 0;
+  const normalCellH = normalAtlas ? Math.floor(normalAtlas.height / 4) : 0;
+  const useNormal = normalCellW >= 1 && normalCellH >= 1;
+  // 法线图另开一张同尺寸画布：与反照率共用 (u,v)→像素映射，天然像素对齐。
+  const normalCanvas = document.createElement("canvas");
+  normalCanvas.width = outW;
+  normalCanvas.height = outH;
+  const normalContext = useNormal ? normalCanvas.getContext("2d") : null;
+  const normalComposed = normalContext
+    ? normalContext.createImageData(outW, outH)
+    : null;
   const useSurface = Boolean(surface && surface.width >= 4 && surface.height >= 4);
   const tileW = useSurface ? Math.floor(surface!.width / 4) : 0;
   const tileH = useSurface ? Math.floor(surface!.height / 4) : 0;
@@ -146,6 +174,62 @@ export async function composeRefinedGround(
       out.data.set(surface.data.subarray(srcRow, srcRow + tileW * 4), y * tileW * 4);
     }
     return out;
+  }
+
+  /** 染色图集（s10）按格复制（4×4）；格号同 LotColor.A，与底图同平铺。 */
+  const tintCellW = tintAtlas ? Math.floor(tintAtlas.width / 4) : 0;
+  const tintCellH = tintAtlas ? Math.floor(tintAtlas.height / 4) : 0;
+  function copyRegionFromTint(index: number): ImageData | null {
+    if (!tintAtlas || tintCellW < 1 || tintCellH < 1) return null;
+    const out = new ImageData(tintCellW, tintCellH);
+    const originX = (index % 4) * tintCellW;
+    const originY = Math.floor(index / 4) * tintCellH;
+    for (let y = 0; y < tintCellH; y += 1) {
+      const srcRow = ((originY + y) * tintAtlas.width + originX) * 4;
+      out.data.set(
+        tintAtlas.data.subarray(srcRow, srcRow + tintCellW * 4),
+        y * tintCellW * 4,
+      );
+    }
+    return out;
+  }
+  const tintCells = tintAtlas
+    ? lotColors.map((color) => copyRegionFromTint(color[3] % 16))
+    : null;
+
+  /** 法线图集（s15）按格复制（4×4）；格号同 `LotColor.A`，与底图同平铺。 */
+  function copyRegionFromNormal(index: number): ImageData | null {
+    if (!normalAtlas || !useNormal) return null;
+    const out = new ImageData(normalCellW, normalCellH);
+    const originX = (index % 4) * normalCellW;
+    const originY = Math.floor(index / 4) * normalCellH;
+    for (let y = 0; y < normalCellH; y += 1) {
+      const srcRow = ((originY + y) * normalAtlas.width + originX) * 4;
+      out.data.set(
+        normalAtlas.data.subarray(srcRow, srcRow + normalCellW * 4),
+        y * normalCellW * 4,
+      );
+    }
+    return out;
+  }
+  const normalCells = useNormal
+    ? lotColors.map((color) => copyRegionFromNormal(color[3] % 16))
+    : null;
+  const normalDefault = useNormal ? copyRegionFromNormal(8) : null;
+
+  /** 染色图集 alpha（0..1），平铺口径同底图。 */
+  function sampleTiledAlpha(
+    source: ImageData,
+    u: number,
+    v: number,
+    tx: number,
+    ty: number,
+  ): number {
+    const fu = u * tx;
+    const fv = v * ty;
+    const px = Math.min(source.width - 1, Math.floor((fu - Math.floor(fu)) * source.width));
+    const py = Math.min(source.height - 1, Math.floor((fv - Math.floor(fv)) * source.height));
+    return source.data[(py * source.width + px) * 4 + 3] / 255;
   }
 
   // 每通道材质源：surface 图集 tile（按 LotColor.A）优先，本地占位回退
@@ -185,9 +269,13 @@ export async function composeRefinedGround(
     return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
   }
 
+  // 引擎：世界坐标除以 0x0CCB7FD0（米/格）得平铺 UV → 次数 = LotSize / 周期，
+  // **非整数**（图书馆 64/10 = 6.4）。缺失时才回退旧的 9.6m 拟合常量。
   const [lotW, lotH] = lotSize ?? [0, 0];
-  const tilesX = lotW > 0 ? Math.max(1, Math.round(lotW / GROUND_TILE_METERS)) : 1;
-  const tilesY = lotH > 0 ? Math.max(1, Math.round(lotH / GROUND_TILE_METERS)) : 1;
+  const periodX = tilePeriod?.[0] && tilePeriod[0] > 0 ? tilePeriod[0] : GROUND_TILE_METERS;
+  const periodY = tilePeriod?.[1] && tilePeriod[1] > 0 ? tilePeriod[1] : GROUND_TILE_METERS;
+  const tilesX = lotW > 0 ? Math.max(0.1, lotW / periodX) : 1;
+  const tilesY = lotH > 0 ? Math.max(0.1, lotH / periodY) : 1;
 
   for (let y = 0; y < outH; y += 1) {
     for (let x = 0; x < outW; x += 1) {
@@ -225,13 +313,40 @@ export async function composeRefinedGround(
           channel >= 0 && lotColorsAuthored[channel]
             ? [lotColors[channel][0], lotColors[channel][1], lotColors[channel][2]]
             : [255, 255, 255];
-        composed.data[at] = (tr * tint[0]) / 255;
-        composed.data[at + 1] = (tg * tint[1]) / 255;
-        composed.data[at + 2] = (tb * tint[2]) / 255;
+        let r8 = (tr * tint[0]) / 255;
+        let g8 = (tg * tint[1]) / 255;
+        let b8 = (tb * tint[2]) / 255;
+        // s10 染色图集调制：车辙/铺装的明暗细节在此（覆盖区 overlayMask=1）。
+        if (channel >= 0 && tintCells?.[channel]) {
+          const mul = Math.min(2, sampleTiledAlpha(tintCells[channel]!, u, v, tilesX, tilesY) * 2);
+          r8 = Math.min(255, r8 * mul);
+          g8 = Math.min(255, g8 * mul);
+          b8 = Math.min(255, b8 * mul);
+        }
+        composed.data[at] = r8;
+        composed.data[at + 1] = g8;
+        composed.data[at + 2] = b8;
       } else {
         composed.data[at] = 58;
         composed.data[at + 1] = 62;
         composed.data[at + 2] = 54;
+      }
+      // 法线：同格（覆盖区 = 胜出通道 LotColor.A，未覆盖区 = 底图格）、同平铺
+      // 频率——与反照率逐像素对齐。无格可采时退化为平坦法线 (128,128,255)。
+      if (normalComposed) {
+        const normalSource =
+          channel >= 0 ? normalCells?.[channel] ?? null : normalDefault;
+        if (normalSource) {
+          const [nr, ng, nb] = sampleTiled(normalSource, u, v, tilesX, tilesY);
+          normalComposed.data[at] = nr;
+          normalComposed.data[at + 1] = ng;
+          normalComposed.data[at + 2] = nb;
+        } else {
+          normalComposed.data[at] = 128;
+          normalComposed.data[at + 1] = 128;
+          normalComposed.data[at + 2] = 255;
+        }
+        normalComposed.data[at + 3] = 255;
       }
       composed.data[at + 3] = 255;
     }
@@ -244,7 +359,19 @@ export async function composeRefinedGround(
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
   texture.anisotropy = 8;
-  return texture;
+  let normalMap: ThreeNamespace.CanvasTexture | null = null;
+  if (normalContext && normalComposed) {
+    normalContext.putImageData(normalComposed, 0, 0);
+    normalMap = new THREE.CanvasTexture(normalCanvas);
+    // 法线为线性数据：保持 NoColorSpace（不标 sRGB），否则 three 会做
+    // sRGB→线性解码把方向压偏。
+    normalMap.flipY = false;
+    normalMap.magFilter = THREE.LinearFilter;
+    normalMap.minFilter = THREE.LinearMipmapLinearFilter;
+    normalMap.generateMipmaps = true;
+    normalMap.anisotropy = 8;
+  }
+  return { map: texture, normalMap };
 }
 
 /**

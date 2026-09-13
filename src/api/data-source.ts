@@ -421,6 +421,7 @@ function mockDataSource(): OpenScpDataSource {
           { packageId: 1, tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000003 } },
           null,
         ],
+        lotTilePeriod: null,
         lotSize: [136, 136],
         lotPlacement: null,
         lotColors: [
@@ -434,6 +435,8 @@ function mockDataSource(): OpenScpDataSource {
         lotMaskRawRgba: null,
         lotAlbedoPng: null,
         lotSurfacePng: null,
+        lotTintAtlasPng: null,
+        lotNormalAtlasPng: null,
         decalTextures: [],
         units: [
           {
