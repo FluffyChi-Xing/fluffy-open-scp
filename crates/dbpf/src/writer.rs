@@ -46,6 +46,11 @@ pub type WriterResult<T> = std::result::Result<T, WriterError>;
 
 /// Write a deterministic DBPF overlay containing stored (uncompressed) resources.
 /// Entries are sorted by (type, group, instance), and all index fields are fixed.
+///
+/// Header fields mirror retail SimCity packages byte-for-byte: magic `DBPF`,
+/// major version **3**, `reserved@0x3C = 3`, index preamble `values = 4`
+/// (shared unknown only) + `next4 = 0`, 28-byte records in
+/// `type/group/instance/offset/size/mem/flags` order.
 pub fn write_uncompressed_overlay(entries: &[OverlayEntry]) -> WriterResult<Vec<u8>> {
     let mut sorted = entries.to_vec();
     sorted.sort_by_key(|e| (e.id.type_id, e.id.group, e.id.instance));
@@ -79,7 +84,9 @@ pub fn write_uncompressed_overlay(entries: &[OverlayEntry]) -> WriterResult<Vec<
         u32::try_from(index_len).map_err(|_| WriterError::SizeOverflow("index size"))?;
     let mut out = Vec::with_capacity(total);
     out.extend_from_slice(b"DBPF");
-    out.extend_from_slice(&1i32.to_le_bytes());
+    // 零售包全部为 major=3（11 个 SimCity_*.package 实测一致）；此前写 1
+    // 会让游戏可能因版本不符而忽略该包。
+    out.extend_from_slice(&3i32.to_le_bytes());
     out.extend_from_slice(&0i32.to_le_bytes());
     out.extend_from_slice(&[0; 24]);
     out.extend_from_slice(&count.to_le_bytes());
