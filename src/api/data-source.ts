@@ -883,6 +883,18 @@ function svgPreviewUrl(instance: number) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+/** Property（0x00B1B104）的 InstanceType = group 低 16 位；mock 需要真实值，否则
+ *  「Property 子类型」标签在浏览器桩模式下永远不显示。取值见
+ *  `src/lib/resource-types.ts` 的 PROPERTY_INSTANCE_TYPES。 */
+const MOCK_PROPERTY_GROUPS = [
+  0x40e1c000, // Unit（实测 lot 0xEE27D643 的父级）
+  0x42e1c000, // Unit（同一 lot 的另一分卷）
+  0x0000c600, // Agent
+  0x00008b7e, // Path
+  0x00002043, // Descriptor
+  0x0000b185, // DecalAtlas
+];
+
 function mockResources() {
   return Array.from({ length: 2489 }, (_, index) => {
     const typeId = [
@@ -894,8 +906,12 @@ function mockResources() {
       0x376840d7,
       0x0a4d8d09,
     ][index % 7];
+    const group =
+      typeId === 0x00b1b104
+        ? MOCK_PROPERTY_GROUPS[Math.floor(index / 7) % MOCK_PROPERTY_GROUPS.length]
+        : index % 16;
     return {
-      tgi: { typeId, group: index % 16, instance: 0x10000000 + index },
+      tgi: { typeId, group, instance: 0x10000000 + index },
       offset: 1024 + index * 64,
       storedSize: 64,
       decompressedSize: typeId === 0x0a98eaf0 ? 128 : 4096,

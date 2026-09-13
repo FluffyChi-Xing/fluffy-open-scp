@@ -19,6 +19,7 @@ import {
 import {
   resourceIconUrl,
   resourceKind,
+  propertyInstanceKey,
   PROPERTY_TYPE_ID,
   RW4_TYPE_ID,
 } from "@/lib/resource-types";
@@ -29,6 +30,16 @@ import type { ResourceAnnotation, Tgi } from "@/api/tauri";
 
 const { t } = useI18n();
 const explorer = useGamePackages();
+
+/**
+ * Property 资源的子类型标签（i18n 已翻译）。子类型 = GroupContainer 低 16 位
+ * （InstanceType）——Unit / Agent / Path / Network / Menu / Map / Descriptor /
+ * DecalAtlas1-3。非 Property 或未知值返回 null（不渲染标签）。
+ */
+function subtypeLabelOf(tgi: Tgi): string | null {
+  const key = propertyInstanceKey(tgi.typeId, tgi.group);
+  return key ? t(key) : null;
+}
 const {
   root,
   folders,
@@ -522,6 +533,13 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                     </td>
                     <td class="resource-type">
                       {{ explorer.typeNameOf(resource) }}
+                      <!-- Property 子类型：GroupContainer 低 16 位（InstanceType），
+                           区分 Unit / Agent / Path / Descriptor 等；否则一律只显示
+                           「Property」，资源树分辨不出。 -->
+                      <span
+                        v-if="subtypeLabelOf(resource.tgi)"
+                        class="resource-subtype"
+                      >{{ subtypeLabelOf(resource.tgi) }}</span>
                     </td>
                     <td>{{ formatSize(resource.decompressedSize) }}</td>
                     <td>
@@ -1130,6 +1148,15 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 .resource-type {
   color: var(--muted-foreground);
   white-space: nowrap;
+}
+/* Property 子类型（InstanceType）：弱化的次级标签，避免与主类型抢焦点 */
+.resource-subtype {
+  background: var(--surface-hover);
+  border-radius: 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  margin-left: 6px;
+  padding: 1px 5px;
 }
 .pagination-bar {
   align-items: center;

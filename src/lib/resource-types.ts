@@ -9,16 +9,49 @@ export const WWISE_BANK_TYPE_ID = 0x0a4d8d09;
 export const VIDEO_TYPE_ID = 0x376840d7;
 export const TTF_TYPE_ID = 0x276ca4b9;
 /**
- * Decal Atlas（贴花图鉴）的标识：Property 资源 GroupContainer 的低 16 位。
- * 对应原 SCP 的 `PropertyFileTypeIds.DecalAtlas{1,2,3}`，以及
- * `crates/sc-properties/src/decal.rs` 中的同一组常量。
+ * Property 子类型判别位：`InstanceType = GroupContainer & 0xFFFF`。
+ * 原 SCP `PackageReader/DataBaseIndex.cs`：
+ *   `public uint InstanceType { get { return (_groupContainer & 0xffff); } } // mask 0000XXXX`
+ * Group 的高 16 位是同一子类型的分卷编号（同一 lot 可见 0x40E1C000 / 0x42E1C000 多条），
+ * **不参与判别**。取值表来自 `Views/valueConverters/InstanceTypeIconConverter.cs` 的
+ * `PropertyFileTypeIds` 枚举。
+ *
+ * 注意：decal / prop / spawner **不是** property 子类型，而是 **Unit（0xC000）内部的
+ * 单元种类**，靠特征列哈希区分（见 file-types.zh-CN.md「Unit 内部单元种类」）。
  */
+export const PROPERTY_INSTANCE_TYPES: Readonly<Record<number, string>> = {
+  0xc000: "package.instanceType.unit",
+  0xc600: "package.instanceType.agent",
+  0xc400: "package.instanceType.network",
+  0x8b7e: "package.instanceType.path",
+  0xc900: "package.instanceType.menu",
+  0x8a01: "package.instanceType.menu2",
+  0xe000: "package.instanceType.map",
+  0x2043: "package.instanceType.descriptor",
+  0xb185: "package.instanceType.decalAtlas",
+  0x1651: "package.instanceType.decalAtlas2",
+  0x1652: "package.instanceType.decalAtlas3",
+};
+
+/** Decal Atlas（贴花图鉴）三册的 InstanceType。 */
 export const DECAL_ATLAS_GROUP_TYPES: readonly number[] = [
   0xb185, 0x1651, 0x1652,
 ];
 
 export function isDecalAtlasGroup(group: number): boolean {
   return DECAL_ATLAS_GROUP_TYPES.includes(group & 0xffff);
+}
+
+/**
+ * Property 资源的子类型 i18n key；非 Property 或未知 InstanceType 返回 null。
+ * 调用方需自行用 `t()` 翻译。
+ */
+export function propertyInstanceKey(
+  typeId: number,
+  group: number,
+): string | null {
+  if (typeId !== PROPERTY_TYPE_ID) return null;
+  return PROPERTY_INSTANCE_TYPES[group & 0xffff] ?? null;
 }
 /** TGA / Cursor / Greyscale Map（8/32/16-bit）：需 Rust 解码为 PNG。 */
 export const GENERIC_IMAGE_TYPE_IDS = [
