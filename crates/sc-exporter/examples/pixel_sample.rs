@@ -18,6 +18,6 @@ fn main() {
         let (x, y) = xy.split_once(',').expect("x,y");
         let (x, y): (u32, u32) = (x.parse().unwrap(), y.parse().unwrap());
         let px = image.get_pixel(x, y);
-        println!("  ({x},{y}) {label} = RGB({},{},{})", px[0], px[1], px[2]);
+        println!("  ({x},{y}) {label} = RGBA({},{},{},{})", px[0], px[1], px[2], px[3]);
     }
 }

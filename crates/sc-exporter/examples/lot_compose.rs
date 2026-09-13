@@ -49,6 +49,11 @@ struct Args {
     /// 图集格在地块上重复的次数（= 地块地面 mesh UV 的跨度 N）。
     tiles: f32,
     border_width: f32,
+    /// 缺失 Lot Textures 时用本地占位图（`<dir>/0.png..15.png`）拼 4×4 图集，
+    /// 复刻前端 `refinedGround.ts` 的回退路径。
+    placeholder: Option<String>,
+    /// 展平 `Parent`(0x00B2CCCB) 继承链（引擎口径；lot 变体常在父级挂地表授权）。
+    inherit: bool,
     lookups: Vec<String>,
 }
 
@@ -73,6 +78,26 @@ fn main() {
     );
     let data = packages[owner].read(&entry).unwrap();
     let file = PropertyFile::parse(&data).expect("parse lot property");
+    let file = if args.inherit {
+        let (merged, chain) = sc_properties::flatten_parent_inheritance_traced(file, |key| {
+            let (owner, parent_entry) = find_entry(&packages, LOT_TYPE, key.instance, Some(key.group))
+                .or_else(|| find_entry(&packages, LOT_TYPE, key.instance, None))?;
+            let data = packages[owner].read(&parent_entry).ok()?;
+            PropertyFile::parse(&data).ok()
+        });
+        println!(
+            "Parent 继承链展平：{} 级（{}）",
+            chain.len(),
+            chain
+                .iter()
+                .map(|key| format!("0x{:08X}", key.instance))
+                .collect::<Vec<_>>()
+                .join(" → ")
+        );
+        merged
+    } else {
+        file
+    };
 
     let mask_key = key_at(&file, H_LOT_MASK);
     let textures_key = key_at(&file, H_LOT_TEXTURES);
@@ -164,6 +189,23 @@ fn main() {
         }
         _ => println!("Lot Textures: 缺失（空壳 lot property；App 侧回退本地占位 tile）"),
     }
+    // 缺失图集时用 --placeholder 目录拼 4×4 占位图集（复刻前端回退路径）。
+    if atlases.is_empty()
+        && let Some(dir) = &args.placeholder
+    {
+        match load_placeholder_atlas(dir) {
+            Some(atlas) => {
+                println!(
+                    "占位图集: {}x{}（{} 格，来自 {dir}）",
+                    atlas.width,
+                    atlas.height,
+                    atlas.cells.len()
+                );
+                atlases.push(atlas);
+            }
+            None => println!("占位图集加载失败: {dir}"),
+        }
+    }
     for (index, atlas) in atlases.iter().enumerate() {
         save_png(
             &args.out_dir,
@@ -206,6 +248,27 @@ fn main() {
         None => Some(0),
     };
     println!("  diffuse atlas = {diffuse_idx:?}   normal atlas = {normal_idx:?}");
+    // 图集每格均色（原始数据，便于核对「格号 → 观感」是否与预期一致）。
+    if let Some(atlas) = diffuse_idx.and_then(|index| atlases.get(index)) {
+        for (cell_index, (cw, ch, pixels)) in atlas.cells.iter().enumerate() {
+            if *cw == 0 {
+                continue;
+            }
+            let mut sum = [0u64; 3];
+            let count = (cw * ch) as u64;
+            for px in pixels.as_chunks::<4>().0 {
+                for ch in 0..3 {
+                    sum[ch] += u64::from(px[ch]);
+                }
+            }
+            println!(
+                "    格 {cell_index:2}: mean RGB = ({:3}, {:3}, {:3})",
+                sum[0] / count,
+                sum[1] / count,
+                sum[2] / count
+            );
+        }
+    }
 
     // ---- 4. 通道语义 ----
     // LotColor 缺失时按 App 的回退色（黑/红/绿/蓝），A=0 使材质索引落到图集第 0 格。
@@ -240,6 +303,7 @@ fn main() {
         colors.iter().map(|c| c.map(|c| c[3])).collect::<Vec<_>>()
     );
     println!("colorNormalsIdx (= floor(LotColor.A)) = {normal_index:?}");
+    println!("精细模式每通道贴图格 = {normal_index:?}（缺失 LotColor 时全为 0 → 全塌成同一格）");
     println!("base tile index (--base-tile)  = {}", args.base_tile % ATLAS_CELLS);
     println!("borderWidth (--border-width)   = {}", args.border_width);
 
@@ -299,11 +363,36 @@ fn main() {
     // (a2) 用 Lot Textures 图集做替换（= 当前渲染器语义 tile_{LotColor.A} × LotColor.RGB，
     //      但叠加已定案的朝向/配对/优先级链），用于与平色版本目视对照。
     println!("图集格重复次数 (--tiles) = {}", args.tiles);
+    // 胜出通道像素占比（选区口径 = 精细模式：阈值 >0.5 + 优先级 A>B>G>R）。
+    {
+        let mut counts = [0usize; 5];
+        for (index, (mask, _)) in masks.iter().enumerate() {
+            match PRIORITY.iter().copied().find(|ch| mask[*ch] > 0.0) {
+                Some(ch) if coverage[index] > 0.0 => counts[ch] += 1,
+                _ => counts[4] += 1,
+            }
+        }
+        let total = (mask_w * mask_h) as f64;
+        println!(
+            "胜出通道像素占比: R(LotColor1)={:.1}%  G(LotColor2)={:.1}%  B(LotColor3)={:.1}%  A(LotColor4)={:.1}%  未覆盖={:.1}%",
+            counts[0] as f64 / total * 100.0,
+            counts[1] as f64 / total * 100.0,
+            counts[2] as f64 / total * 100.0,
+            counts[3] as f64 / total * 100.0,
+            counts[4] as f64 / total * 100.0,
+        );
+        println!("各通道采用的图集格: {normal_index:?}（未覆盖用底图格 {base_tile}）");
+    }
     let tiled = compose_tiles(
         mask_w, mask_h, diffuse, base_tile, &normal_index, &colors8, &masks, &coverage,
         args.tiles,
     );
-    save_png(&args.out_dir, "compose_tiles.png", mask_w, mask_h, &tiled, 4);
+    save_png(&args.out_dir, "compose_tiles.png", mask_w, mask_h, &tiled.0, 4);
+    // 原始数据诊断图（不引入任何替换色）：
+    //   diag_selector  灰阶 = 胜出通道（0 未覆盖 / 64 R / 128 G / 192 B / 255 A）
+    //   diag_tileindex 灰阶 = 采用的图集格号 × 17
+    save_png(&args.out_dir, "diag_selector.png", mask_w, mask_h, &tiled.1, 4);
+    save_png(&args.out_dir, "diag_tileindex.png", mask_w, mask_h, &tiled.2, 4);
 
     let mut colors8_rev = colors8.clone();
     colors8_rev.reverse();
@@ -423,6 +512,39 @@ impl Atlas {
             pixels[offset + 3],
         ])
     }
+}
+
+/// 用 `<dir>/0.png..15.png`（各 128×128 RGB）拼 4×4 占位图集，尺寸取首张。
+fn load_placeholder_atlas(dir: &str) -> Option<Atlas> {
+    let mut cells: Vec<(usize, usize, Vec<u8>)> = Vec::with_capacity(ATLAS_CELLS);
+    for index in 0..ATLAS_CELLS {
+        let path = format!("{dir}/{index}.png");
+        let image = image::open(&path).ok()?.to_rgba8();
+        let (w, h) = (image.width() as usize, image.height() as usize);
+        cells.push((w, h, image.into_raw()));
+    }
+    let (cw, ch) = (cells[0].0, cells[0].1);
+    let width = cw * ATLAS_COLS;
+    let height = ch * ATLAS_COLS;
+    let mut rgba = vec![0u8; width * height * 4];
+    for (index, (cell_w, cell_h, pixels)) in cells.iter().enumerate() {
+        if *cell_w != cw || *cell_h != ch {
+            return None;
+        }
+        let ox = (index % ATLAS_COLS) * cw;
+        let oy = (index / ATLAS_COLS) * ch;
+        for y in 0..ch {
+            let src = y * cw * 4;
+            let dst = ((oy + y) * width + ox) * 4;
+            rgba[dst..dst + cw * 4].copy_from_slice(&pixels[src..src + cw * 4]);
+        }
+    }
+    Some(Atlas {
+        width,
+        height,
+        rgba,
+        cells,
+    })
 }
 
 fn extract_cell(rgba: &[u8], width: usize, height: usize, index: usize) -> (usize, usize, Vec<u8>) {
@@ -553,6 +675,8 @@ fn compose(
 /// 用 Lot Textures 图集做表面替换：每个像素按优先级链取胜出通道，
 /// 取 `图集[LotColor.A]` 该格（整格拉伸铺满地块）再乘该通道 LotColor.RGB；
 /// 未覆盖区用底图格。等价于当前渲染器的材质选择，但朝向/配对/优先级已按实测修正。
+///
+/// 返回 (合成图, 通道选择诊断图, 图集格号诊断图)。
 #[allow(clippy::too_many_arguments)]
 fn compose_tiles(
     width: usize,
@@ -564,10 +688,12 @@ fn compose_tiles(
     masks: &[([f32; 4], [f32; 4])],
     coverage: &[f32],
     tiles: f32,
-) -> Vec<u8> {
+) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let mut out = vec![0u8; width * height * 4];
+    let mut selector = vec![0u8; width * height * 4];
+    let mut tile_index_map = vec![0u8; width * height * 4];
     let Some(atlas) = diffuse else {
-        return out;
+        return (out, selector, tile_index_map);
     };
     for y in 0..height {
         for x in 0..width {
@@ -581,16 +707,23 @@ fn compose_tiles(
             let tu = (u * tiles).fract();
             let tv = (v * tiles).fract();
             let winner = PRIORITY.iter().copied().find(|ch| mask[*ch] > 0.0);
-            let (tile, tint) = match winner {
+            let (tile, tint, cell, gray) = match winner {
                 Some(ch) if coverage[index] > 0.0 => (
                     atlas.sample(cell_of[ch], tu, tv),
                     [colors[ch][0], colors[ch][1], colors[ch][2]],
+                    cell_of[ch],
+                    [64, 128, 192, 255][ch],
                 ),
                 _ => {
                     let base = atlas.sample(base_tile, tu, tv);
-                    (base, [255u8, 255, 255])
+                    (base, [255u8, 255, 255], base_tile, 0u8)
                 }
             };
+            let cell8 = (cell.min(15) as u8) * 17;
+            for ch in 0..4 {
+                selector[offset + ch] = gray;
+                tile_index_map[offset + ch] = cell8;
+            }
             let Some(tile) = tile else { continue };
             for ch in 0..3 {
                 out[offset + ch] =
@@ -599,7 +732,7 @@ fn compose_tiles(
             out[offset + 3] = 255;
         }
     }
-    out
+    (out, selector, tile_index_map)
 }
 
 /// 复刻前端 v5 逻辑：只有 mask 有内容的像素才替换材质，其余不填。
@@ -706,6 +839,8 @@ fn parse_args() -> Args {
                     .unwrap_or_else(|error| panic!("bad --border-width: {error}"))
             })
             .unwrap_or(0.0),
+        placeholder: flag("placeholder"),
+        inherit: raw.iter().any(|arg| arg == "--inherit"),
         lookups: positional[2..].iter().map(|value| (*value).clone()).collect(),
     }
 }
