@@ -26,7 +26,14 @@ export function effectiveSpecMode(): number {
 export type SunEnvRefs = {
   sunDir: { value: ThreeNamespace.Vector3 };
   sunColor: { value: ThreeNamespace.Color };
+  /** 天顶色（引擎 SkyColorConv 的近似三段之一）。 */
   skyColor: { value: ThreeNamespace.Color };
+  /** 地平线色（低仰角偏亮偏暖）。 */
+  skyHorizon: { value: ThreeNamespace.Color };
+  /** 地面反照（朝下的法线采到的环境色）。 */
+  skyGround: { value: ThreeNamespace.Color };
+  /** 方向性环境因子（scSkyRadiance 亮度 / 球面均值）的归一化基准。 */
+  skyLumRef: { value: number };
   dayLight: { value: number };
   powered: { value: number };
   glow: { value: number };
@@ -41,6 +48,70 @@ export const dayFactor = (timeOfDay: number) => {
   return Math.min(1, Math.max(0, (alt + 0.08) / 0.5));
 };
 
+const SAT = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = SAT((x - e0) / (e1 - e0));
+  return t * t * (3 - 2 * t);
+};
+const LUM = (c: [number, number, number]) =>
+  0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+type SkyEnv = Pick<
+  SunEnvRefs,
+  "sunDir" | "sunColor" | "skyColor" | "skyHorizon" | "skyGround"
+>;
+
+/**
+ * 解析天空辐照（引擎 `SkyColorConv` 的近似）：天顶→地平三段渐变 + 太阳邻近辉光
+ * + 地平线以下的地面反照。**与着色器 `scSkyRadiance` 必须逐式一致**。
+ */
+export function skyRadiance(
+  dir: [number, number, number],
+  env: SkyEnv,
+): [number, number, number] {
+  const up = Math.max(-1, Math.min(1, dir[2]));
+  const zenith = env.skyColor.value.toArray() as [number, number, number];
+  const horizon = env.skyHorizon.value.toArray() as [number, number, number];
+  const ground = env.skyGround.value.toArray() as [number, number, number];
+  const sun = env.sunColor.value.toArray() as [number, number, number];
+  const sunDot = Math.max(
+    0,
+    dir[0] * env.sunDir.value.x +
+      dir[1] * env.sunDir.value.y +
+      dir[2] * env.sunDir.value.z,
+  );
+  const glow = Math.pow(sunDot, 8) * 0.30;
+  const t = Math.pow(SAT(up), 0.45);
+  const blend = smoothstep(-0.15, 0.05, up);
+  const out: [number, number, number] = [0, 0, 0];
+  for (let i = 0; i < 3; i += 1) {
+    const sky = horizon[i] + (zenith[i] - horizon[i]) * t + sun[i] * glow;
+    out[i] = ground[i] + (sky - ground[i]) * blend;
+  }
+  return out;
+}
+
+/** 固定 Fibonacci 球面采样（确定性：同一 env 恒得同一基准亮度）。 */
+const SKY_SAMPLES: [number, number, number][] = Array.from(
+  { length: 96 },
+  (_, i) => {
+    const z = 1 - (2 * (i + 0.5)) / 96;
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+    return [r * Math.cos(theta), r * Math.sin(theta), z];
+  },
+);
+
+/**
+ * 球面平均天空亮度。着色器用 `scSkyRadiance(法线) / uSkyLumRef` 调制间接漫反射，
+ * 归一化到**均值 1** —— 只重新分配各朝向的环境光，不改变整体曝光。
+ */
+export function averageSkyLuminance(env: SkyEnv): number {
+  let sum = 0;
+  for (const dir of SKY_SAMPLES) sum += LUM(skyRadiance(dir, env));
+  return sum / SKY_SAMPLES.length;
+}
+
 export function createSunEnv(
   THREE: typeof ThreeNamespace,
 ): SunEnvRefs {
@@ -48,6 +119,9 @@ export function createSunEnv(
     sunDir: { value: new THREE.Vector3(0.35, 0.8, 0.45).normalize() },
     sunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
     skyColor: { value: new THREE.Color(0.3, 0.42, 0.55) },
+    skyHorizon: { value: new THREE.Color(0.62, 0.66, 0.72) },
+    skyGround: { value: new THREE.Color(0.13, 0.12, 0.11) },
+    skyLumRef: { value: 1 },
     dayLight: { value: 1 },
     powered: { value: 1 },
     glow: { value: 6.0 },
@@ -78,13 +152,29 @@ export function applySunEnv(
   } else {
     env.sunColor.value.setRGB(0.14, 0.17, 0.26); // 月光
   }
-  const skyDay = { r: 0.3, g: 0.42, b: 0.55 };
-  const skyDusk = { r: 0.24, g: 0.18, b: 0.2 };
-  const skyNight = { r: 0.016, g: 0.022, b: 0.05 };
-  const r = skyNight.r + (skyDusk.r + (skyDay.r - skyDusk.r) * warm - skyNight.r) * day;
-  const g = skyNight.g + (skyDusk.g + (skyDay.g - skyDusk.g) * warm - skyNight.g) * day;
-  const b = skyNight.b + (skyDusk.b + (skyDay.b - skyDusk.b) * warm - skyNight.b) * day;
-  env.skyColor.value.setRGB(r, g, b);
+  const mix3 = (
+    night: [number, number, number],
+    dusk: [number, number, number],
+    dayv: [number, number, number],
+  ): [number, number, number] => [
+    night[0] + (dusk[0] + (dayv[0] - dusk[0]) * warm - night[0]) * day,
+    night[1] + (dusk[1] + (dayv[1] - dusk[1]) * warm - night[1]) * day,
+    night[2] + (dusk[2] + (dayv[2] - dusk[2]) * warm - night[2]) * day,
+  ];
+  // 天顶：day→dusk→night 三段（原口径）
+  env.skyColor.value.setRGB(
+    ...mix3([0.016, 0.022, 0.05], [0.24, 0.18, 0.2], [0.3, 0.42, 0.55]),
+  );
+  // 地平线：低仰角散射更强，白天偏亮、晨昏偏橙红
+  env.skyHorizon.value.setRGB(
+    ...mix3([0.02, 0.028, 0.06], [0.62, 0.34, 0.22], [0.72, 0.78, 0.84]),
+  );
+  // 地面反照：粗糙地面的向上散射，白天暖灰、夜间近黑
+  env.skyGround.value.setRGB(
+    ...mix3([0.008, 0.008, 0.012], [0.10, 0.085, 0.07], [0.17, 0.16, 0.14]),
+  );
+  // 归一化基准（均值 1 因子）——env 变了必须同步重算，否则间接光整体漂移
+  env.skyLumRef.value = Math.max(1e-3, averageSkyLuminance(env));
   env.dayLight.value = day;
   env.powered.value = powered === false ? 0 : 1;
   // 源码 interiorMap.a×16 为 HDR；观察器无 tonemap，白天压 2.5 / 夜间放开 16
@@ -189,7 +279,9 @@ export async function loadTintTextures(
  * TEXCOORD_2 = facade 世界投影 UV（Float4.xy），TEXCOORD_1.xy = materialIndex
  * /255 + 内景随机种子。fragment：baseUv = frac(vTintUv)*regionXform.xy +
  * regionXform.zw → tint 查表 → palette 查色（色行+末行 surface 行）×(tint.b*2)，
- * A<0.5 镂空 discard；法线图同 UV 重采样。
+ * A<0.5 镂空 discard；法线图同 UV 重采样。TBN 直接用 GLB 导出的 TANGENT
+ * （<normal_fragment_begin> 的 tbn；= 引擎 ApplyNormalMap(vn, tangent, nmap)
+ * 的 ds/dt 轴），仅缺切线时才退回导数拟合。
  * 5a 材质质感：shaderMap 通道×2=specStrength（uSpecG 切 G 数据/B 源码）、
  * palette 色 a³×2048+1=specE、surface 行 a=reflectance、gloss、AO=normalMap.a；
  * SimCityLighting 太阳 Blinn-Phong-Schlick 高光 + EnvLighting 常数天空近似。
@@ -219,6 +311,10 @@ export function attachTintShader(
     uSunDir: { value: ThreeNamespace.Vector3 };
     uSunColor: { value: ThreeNamespace.Color };
     uSkyColor: { value: ThreeNamespace.Color };
+    /** 解析天空三段（天顶/地平/地面）+ 球面均值亮度基准（见 skyRadiance）。 */
+    uSkyHorizon: { value: ThreeNamespace.Color };
+    uSkyGround: { value: ThreeNamespace.Color };
+    uSkyLumRef: { value: number };
     uSpecMode: { value: number };
     uInteriorGlow: { value: number };
     /** 5d 日/夜：白昼因子 0..1（夜间环境/漫反射压暗、内景环境光） */
@@ -288,6 +384,22 @@ uniform sampler2D paletteMap;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uSkyColor;
+uniform vec3 uSkyHorizon;
+uniform vec3 uSkyGround;
+uniform float uSkyLumRef;
+// 世界方向（view→world；viewMatrix 是正交旋转，转置即逆）
+vec3 scToWorldDir(vec3 v) {
+  return vec3(dot(v, viewMatrix[0].xyz), dot(v, viewMatrix[1].xyz), dot(v, viewMatrix[2].xyz));
+}
+// 解析天空辐照（引擎 SkyColorConv 的近似）：天顶↔地平三段 + 太阳邻近辉光
+// + 地平线以下的地面反照。**必须与 refinedRender.ts 的 skyRadiance() 逐式一致**
+// ——后者用同一式子在球面采样求均值，标定 uSkyLumRef。
+vec3 scSkyRadiance(vec3 d) {
+  float up = clamp(d.z, -1.0, 1.0);
+  vec3 sky = mix(uSkyHorizon, uSkyColor, pow(saturate(up), 0.45));
+  sky += uSunColor * pow(saturate(dot(d, uSunDir)), 8.0) * 0.30;
+  return mix(uSkyGround, sky, smoothstep(-0.15, 0.05, up));
+}
 uniform float uSpecMode;
 uniform float uInteriorGlow;
 uniform float uDayLight;
@@ -470,12 +582,15 @@ float scFastNoise(vec3 seed) {
       .replace(
         "#include <normal_fragment_maps>",
         `#include <normal_fragment_maps>
-        #ifdef USE_NORMALMAP
+        #ifdef USE_NORMALMAP_TANGENTSPACE
         {
+          // 用 three 建好的 tbn（<normal_fragment_begin> 里）：GLB 带 TANGENT
+          // 时 = (vTangent, vBitangent, normal)，与引擎 building4DefaultPS 的
+          // ApplyNormalMap(vn, tangent, nmap) 同帧；缺切线时才退化为导数拟合。
+          // 此前这里自建了一个 tbn 局部遮蔽它，等于永远走导数路径。
           vec2 nUv = fract(vTintUv) * xform.xy + xform.zw;
-          mat3 tbn = getTangentFrame( - vViewPosition, nonPerturbedNormal, nUv );
           vec3 mapN = texture2D( normalMap, nUv ).xyz * 2.0 - 1.0;
-          // Top 层法线（窗框/线脚凹凸）按 facadeTint.a lerp
+          // Top 层法线（窗框/线脚凹凸）按 facadeTint.a lerp（引擎同用一个 TBN）
           if (scFacade > 0.001) {
             vec3 nTop = texture2D( normalMap, topUv ).xyz * 2.0 - 1.0;
             mapN = mix(mapN, nTop, scFacade);
@@ -488,9 +603,9 @@ float scFastNoise(vec3 seed) {
       .replace(
         "#include <lights_fragment_end>",
         `#include <lights_fragment_end>
-        // 游戏 SimCityLighting（5a）：太阳 Blinn-Phong-Schlick 高光 + EnvLighting
-        // 常数天空近似。源码半向量 = normalize(lightDir - viewDir)、能量归一
-        // (specE+2)/8、Schlick exp2(-8.656170·cosLH)、specHighlight 额外叠加不经 tint。
+        // 游戏 SimCityLighting（building4DeferredPS）：太阳 Blinn-Phong-Schlick 高光
+        // + EnvLighting 解析天空。源码半向量 = normalize(lightDir - viewDir)、能量
+        // 归一 (specE+2)/8、Schlick exp2(-8.656170·cosLH)。
         {
           vec3 scSunV = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
           vec3 scHalf = normalize(scSunV - normalize(vViewPosition));
@@ -499,9 +614,26 @@ float scFastNoise(vec3 seed) {
           float scSchlick = scReflectance + (1.0 - scReflectance) * exp2(-8.656170 * clamp(dot(scSunV, scHalf), 0.0, 1.0));
           float scSunMod = clamp(dot(scSunV, normal), 0.0, 1.0);
           reflectedLight.directSpecular += scSpec * scSchlick * scSpecStrength * scSunMod * uSunColor;
-          reflectedLight.indirectSpecular += uSkyColor * (scGloss * 0.75) * diffuseColor.rgb * (1.0 - scExempt);
+          // EnvLighting（源码字面结构）：s = gloss*0.75，采样方向在天线与反射向之间
+          // 插值；反射向按源 DefaultPS 的 bentViewDirection 弯折（掠射时加强）。
+          vec3 scNormW = scToWorldDir(normalize(normal));
+          vec3 scBent = scToWorldDir(normalize(vViewPosition)); // eye→frag（世界）
+          scBent.z += 2.0 * saturate(-scBent.z) * (1.0 - saturate(scNormW.z));
+          scBent = normalize(scBent);
+          float scEnvS = scGloss * 0.75;
+          vec3 scEnvDir = normalize(mix(scNormW, reflect(scBent, scNormW), scEnvS));
+          vec3 scEnv = scSkyRadiance(scEnvDir);
+          reflectedLight.indirectSpecular +=
+            scEnv * scEnvS * diffuseColor.rgb * (1.0 - scExempt);
+          // 间接漫反射按天空方向重分配（= 源码 EnvLighting 的 SkyColor(sampleDir)）：
+          // 用亮度比 scLum/uSkyLumRef 作乘性因子，**球面均值为 1**——只改变各朝向的
+          // 环境光分布，不抬整体曝光。此前是常数 AmbientLight，各朝向完全相同（发平）。
+          float scLum = dot(scSkyRadiance(scNormW), vec3(0.2126, 0.7152, 0.0722));
+          // 0.6 = 强度旋钮（0 退回常数环境光，1 全量）。因子均值恒为 1。
+          float scDirFactor = mix(1.0, clamp(scLum / max(uSkyLumRef, 1e-3), 0.25, 2.5), 0.6);
+          reflectedLight.indirectDiffuse *= mix(1.0, scDirFactor, 1.0 - scExempt);
           // 5d 夜间：three 侧灯光的漫反射分量随白昼因子压暗（太阳高光/
-          // 天空镜面已由 uSunColor/uSkyColor 变暗）
+          // 天空镜面已由 uSunColor/天空三段变暗）
           float scNightDim = mix(0.22, 1.0, uDayLight);
           reflectedLight.directDiffuse *= scNightDim;
           reflectedLight.indirectDiffuse *= scNightDim;
@@ -546,6 +678,9 @@ export function makeTintMaterial(
       uSunDir: env.sunDir,
       uSunColor: env.sunColor,
       uSkyColor: env.skyColor,
+      uSkyHorizon: env.skyHorizon,
+      uSkyGround: env.skyGround,
+      uSkyLumRef: env.skyLumRef,
       uSpecMode: uSpecGUniform,
       uInteriorGlow: env.glow,
       uDayLight: env.dayLight,

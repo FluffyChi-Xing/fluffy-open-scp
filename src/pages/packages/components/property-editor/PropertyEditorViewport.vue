@@ -393,8 +393,11 @@ async function assembleScene(ctx: Parameters<
         )
       : [];
   if (ctx.isStale()) return;
-  // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）
+  // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）。
+  // 必须立刻按当前时段求值：天空三段色与 uSkyLumRef（球面均值）都依赖它，
+  // 否则首帧用的是 createSunEnv 的占位值（间接光会整体偏暗）。
   const env = createSunEnv(THREE);
+  applySunEnv(env, timeOfDay(), props.powered);
   envRefs = env;
   // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
   // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
