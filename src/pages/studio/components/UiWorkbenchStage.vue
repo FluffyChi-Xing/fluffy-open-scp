@@ -21,7 +21,7 @@ import { CATEGORY_ICONS, toolIconName } from "@/lib/game-ui/workbench";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
-const { screen, data, activeMenu, categories, selectedMenuId, entered, hudImages } =
+const { dimension, data, activeMenu, categories, selectedMenuId, entered, hudImages } =
   storeToRefs(store);
 
 /* ── 舞台缩放：容器内等比放下 1600×900（舞台高度固定，不随面板高度变化） ── */
@@ -45,7 +45,7 @@ const props = defineProps<{
 }>();
 
 const overlaySrc = computed(
-  () => `/game-ui/reference/${screen.value === "city" ? "city" : "university"}.png`,
+  () => `/game-ui/reference/${entered.value ? "university" : "city"}.png`,
 );
 
 /* ── 布局矩形锚点（instanceID 来自 globalui2.json） ── */
@@ -72,12 +72,6 @@ const placeholders = {
 /** 大学槽位的占位计数（对齐参考截图：第 3/4 槽位）。 */
 function slotCounter(index: number): string {
   return index === 2 ? "0 / 3" : index === 3 ? "0 / 0" : "";
-}
-
-/** 二级条目点击：开单条编辑 Sheet。 */
-function editEntryAt(index: number): void {
-  const entry = activeMenu.value?.entries[index];
-  if (entry) store.editingEntry = entry;
 }
 
 /** 满意度笑脸：锚定 Mayor Rating 精灵图节点（1888），裁最右绿脸。 */
@@ -129,16 +123,12 @@ function removeCategoryAt(id: string): void {
           @error="($event.target as HTMLImageElement).style.visibility = 'hidden'"
         />
 
-        <!-- 顶部：城市 = 通知条；大学 = 屏幕标题 -->
-        <template v-if="screen === 'city'">
-          <div class="ticker" :style="rectStyle('569')">
-            <span class="ticker-icon" aria-hidden="true" />
-            <span>模擬城市伺服器連線中，正在嘗試重連。</span>
-          </div>
-        </template>
-        <template v-else>
-          <div class="screen-title">{{ data?.university.label ?? "大學" }}</div>
-        </template>
+        <!-- 顶部：城市通知条 / 二级菜单标题 -->
+        <div v-if="!entered" class="ticker" :style="rectStyle('569')">
+          <span class="ticker-icon" aria-hidden="true" />
+          <span>模擬城市伺服器連線中，正在嘗試重連。</span>
+        </div>
+        <div v-else class="screen-title">{{ activeMenu?.label }}</div>
 
         <!-- 右上角：社交/系统按钮（原生图标缺失 → FIcon 占位） -->
         <button
@@ -155,32 +145,42 @@ function removeCategoryAt(id: string): void {
           ···
         </button>
 
-        <!-- 左侧：维度切换簇（城市/区域/大商业） -->
-        <div class="mode-cluster" :style="rectStyle('1018')">
-          <button type="button" class="city-puck" title="城市视图">
-            <span class="puck-glyph" aria-hidden="true">
-              <i /><i /><i />
-            </span>
-            <span class="puck-tab">城市</span>
-          </button>
-          <button type="button" class="mbtn shield" title="市长评级">
-            <FIcon name="Shield" :size="20" aria-label="" />
-          </button>
-        </div>
+        <!-- 左侧维度切换：点击目标覆盖在美术层簇上，选中显示品牌色环 -->
+        <button
+          type="button"
+          class="dim-tab"
+          :class="{ active: dimension === 'city' }"
+          :style="rectStyle('772')"
+          :title="t('studio.workbench.dimCity')"
+          @click="store.selectDimension('city')"
+        />
+        <button
+          type="button"
+          class="dim-tab"
+          :class="{ active: dimension === 'bigbiz' }"
+          :style="rectStyle('1459')"
+          :title="t('studio.workbench.dimBigbiz')"
+          @click="store.selectDimension('bigbiz')"
+        />
+        <button
+          type="button"
+          class="dim-tab"
+          :class="{ active: dimension === 'region' }"
+          :style="rectStyle('119')"
+          :title="t('studio.workbench.dimRegion')"
+          @click="store.selectDimension('region')"
+        />
 
-        <!-- 城市主菜单：一级分类（悬浮圆钮）⇄ 二级工具行，滑动过渡 -->
-        <div v-if="screen === 'city'" class="tool-viewport" :style="rectStyle('766')">
-          <div class="tool-track" :class="{ entered }">
-            <!-- 一级：分类圆钮 -->
+        <!-- 城市主菜单：一级分类（悬浮圆钮）⇄ 二级槽位面板，滑动过渡 -->
+        <Transition name="lv" mode="out-in">
+          <div v-if="!entered" key="l1" class="tool-viewport" :style="rectStyle('766')">
             <div class="tool-row">
               <button
                 v-for="category in categories"
                 :key="category.id"
                 type="button"
                 class="tool-button"
-                :class="{ selected: selectedMenuId === category.id && !entered }"
                 :title="`${category.label}（${category.items.length}）`"
-                :aria-pressed="selectedMenuId === category.id"
                 @click="store.enterMenu(category.id)"
               >
                 <FIcon
@@ -208,30 +208,29 @@ function removeCategoryAt(id: string): void {
                 <span aria-hidden="true">＋</span>
               </button>
             </div>
-            <!-- 二级：所选分类的工具行 -->
-            <div class="tool-row level2">
-              <button
-                type="button"
-                class="tool-button back"
-                title="返回一级菜单"
-                @click="store.leaveMenu()"
-              >
-                <FIcon name="ArrowLeft" :size="20" aria-label="" />
-              </button>
+          </div>
+          <div v-else key="l2" class="palette-strip">
+            <div class="palette-slots">
               <button
                 v-for="(entry, index) in activeMenu?.entries ?? []"
                 :key="entry.tool.id"
                 type="button"
-                class="tool-button"
-                :title="`${entry.tool.label}（${entry.tool.pos}）`"
-                @click="editEntryAt(index)"
+                class="slot"
+                :class="{ selected: index === 1 }"
+                :title="entry.tool.label"
+                @click="store.openEditor(activeMenu!.id, entry.tool.id)"
               >
+                <span class="slot-frame" aria-hidden="true" />
                 <FIcon
-                  class="tool-icon"
+                  class="slot-icon"
                   :name="toolIconName(entry.tool)"
-                  :size="22"
+                  :size="30"
                   aria-label=""
                 />
+                <span class="slot-label">{{ entry.tool.label }}</span>
+                <span v-if="slotCounter(index)" class="slot-counter tabnum">{{
+                  slotCounter(index)
+                }}</span>
                 <span
                   v-if="entry.isNew"
                   class="del-x"
@@ -244,74 +243,18 @@ function removeCategoryAt(id: string): void {
               <!-- 二级菜单末位：新增条目占位 -->
               <button
                 type="button"
-                class="tool-button add"
-                title="新增菜单条目"
+                class="slot add"
+                title="新增二级菜单条目"
                 @click="activeMenu && store.addItem(activeMenu.id, '新条目', null)"
               >
                 <span aria-hidden="true">＋</span>
               </button>
             </div>
           </div>
-        </div>
+        </Transition>
 
-        <!-- 大学菜单：建筑槽位条（游戏内此层带浅色衬带） -->
-        <div v-else class="palette-strip">
-          <div class="palette-slots">
-            <button
-              v-for="(entry, index) in activeMenu?.entries ?? []"
-              :key="entry.tool.id"
-              type="button"
-              class="slot"
-              :class="{ selected: index === 1 }"
-              :title="entry.tool.label"
-              @click="store.selectMenu('university')"
-            >
-              <span class="slot-frame" aria-hidden="true" />
-              <FIcon
-                class="slot-icon"
-                :name="toolIconName(entry.tool)"
-                :size="30"
-                aria-label=""
-              />
-              <span class="slot-label">{{ entry.tool.label }}</span>
-              <span v-if="slotCounter(index)" class="slot-counter tabnum">{{
-                slotCounter(index)
-              }}</span>
-              <span
-                v-if="entry.isNew"
-                class="del-x"
-                role="button"
-                :title="t('studio.workbench.removeEntry')"
-                @click.stop="store.removeItem('university', entry.tool.id)"
-                >×</span
-              >
-            </button>
-            <!-- 一级菜单末位：新增条目占位 -->
-            <button
-              type="button"
-              class="slot add"
-              title="新增一级菜单条目"
-              @click="store.addItem('university', '新条目', null)"
-            >
-              <span aria-hidden="true">＋</span>
-            </button>
-          </div>
-          <div class="decline-row" aria-hidden="true">
-            <span
-              v-for="(entry, index) in (activeMenu?.entries ?? []).slice(0, 8)"
-              :key="`decline-${entry.tool.id}`"
-              class="decline-cell"
-            >
-              <template v-if="index >= 2 && index <= 6">
-                <img v-if="data?.assets.longBtn" class="decline-btn" :src="data.assets.longBtn" alt="" />
-                <span class="decline-text">不批准!</span>
-              </template>
-            </span>
-          </div>
-        </div>
-
-        <!-- 大学：左侧道路形状工具 + 指南开关 -->
-        <div v-if="screen === 'university'" class="road-tools">
+        <!-- 二级：分类专属侧件（道路=形状工具；教育=学位面板） -->
+        <div v-if="entered && selectedMenuId === 'road'" class="road-tools">
           <div class="road-shapes" aria-hidden="true">
             <span class="shape" /><span class="shape" /><span class="shape" /><span
               class="shape"
@@ -323,8 +266,7 @@ function removeCategoryAt(id: string): void {
           </label>
         </div>
 
-        <!-- 大学：右侧教育面板（真实结构 + 占位读数） -->
-        <div v-if="screen === 'university'" class="edu-panel">
+        <div v-if="entered && selectedMenuId === 'education'" class="edu-panel">
           <header class="edu-head">
             <span>教育</span>
             <button type="button" class="edu-close" aria-label="关闭">×</button>
@@ -474,74 +416,29 @@ function removeCategoryAt(id: string): void {
   gap: 8px;
   position: absolute;
 }
-.mbtn {
-  align-items: center;
-  background: radial-gradient(circle at 50% 34%, rgb(250 252 254 / 96%), rgb(210 222 234 / 90%));
-  border: 2px solid rgb(245 248 251 / 95%);
+.dim-tab {
+  background: transparent;
+  border: 2.5px solid transparent;
   border-radius: 50%;
-  box-shadow: 0 2px 6px rgb(9 20 34 / 40%);
-  color: #2c4a6e;
   cursor: pointer;
-  display: flex;
-  justify-content: center;
-  padding: 0;
-}
-.mbtn.shield {
-  color: #eab308;
-  height: 46px;
-  width: 46px;
-}
-.city-puck {
-  background: radial-gradient(circle at 50% 30%, #6cb8f2 0%, #2f86d6 55%, #1c5fa8 100%);
-  border: 3px solid rgb(248 251 254 / 96%);
-  border-radius: 50%;
-  box-shadow: 0 3px 10px rgb(9 20 34 / 45%);
-  cursor: pointer;
-  height: 68px;
-  position: relative;
-  width: 68px;
-}
-.puck-glyph {
-  align-items: flex-end;
-  display: flex;
-  gap: 3px;
-  height: 26px;
-  justify-content: center;
-  left: 50%;
   position: absolute;
-  top: 46%;
-  transform: translate(-50%, -50%);
-  width: 30px;
+  transition: box-shadow 140ms ease;
 }
-.puck-glyph i {
-  background: rgb(255 255 255 / 94%);
-  border-radius: 1.5px 1.5px 0 0;
-  display: block;
+.dim-tab.active {
+  border-color: rgb(8 120 254 / 90%);
+  box-shadow: 0 0 14px rgb(8 120 254 / 55%);
 }
-.puck-glyph i:nth-child(1) {
-  height: 12px;
-  width: 7px;
+.lv-enter-active,
+.lv-leave-active {
+  transition: opacity 240ms cubic-bezier(0.2, 0, 0, 1), translate 240ms cubic-bezier(0.2, 0, 0, 1);
 }
-.puck-glyph i:nth-child(2) {
-  height: 22px;
-  width: 8px;
+.lv-enter-from {
+  opacity: 0;
+  translate: 0 26px;
 }
-.puck-glyph i:nth-child(3) {
-  height: 16px;
-  width: 7px;
-}
-.puck-tab {
-  background: linear-gradient(180deg, #fbfcfe, #dde7f0);
-  border-radius: 6px 6px 0 0;
-  bottom: -20px;
-  color: #223c5c;
-  font-size: 12px;
-  font-weight: 700;
-  left: 50%;
-  padding: 2px 12px;
-  position: absolute;
-  transform: translateX(-50%);
-  white-space: nowrap;
+.lv-leave-to {
+  opacity: 0;
+  translate: 0 -18px;
 }
 
 /* ── 城市分类：悬浮圆钮（无底层衬卡）+ 一二级滑动过渡 ── */

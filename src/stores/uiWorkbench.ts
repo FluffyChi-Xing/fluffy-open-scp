@@ -16,13 +16,33 @@ import {
 } from "@/lib/game-ui/scrui";
 
 /**
- * UI 工作台状态：屏幕切换 + 当前选中菜单 + 菜单项编辑覆盖。
+ * UI 工作台状态：左侧维度切换 + 一级菜单钻入二级 + 菜单项编辑覆盖。
  *
- * 编辑是**纯前端覆盖**（`edits` / `added`），实时反映到左侧重建的 UI 上；
+ * 维度（对应游戏左下切换簇）：city = 城市、bigbiz = 大商业、region = 区域。
+ * 切换维度自动更新一级菜单内容；点一级分类滑入二级（工具条目）；
+ * 编辑是**纯前端覆盖**（`edits` / `added`），实时反映到重建 UI 上；
  * 「落库」当前以 overlay JSON 导出，后端写回（patch_property_overlay +
  * 版本记录通道）是下一轮接入点。
  */
-export type WorkbenchScreen = "city" | "university";
+export type WorkbenchDimension = "city" | "bigbiz" | "region";
+
+/** 维度 → 一级分类 id 列表（与 workbench.json 的分类 id 对应）。 */
+export const DIMENSION_CATEGORIES: Record<WorkbenchDimension, string[]> = {
+  city: [
+    "road",
+    "power",
+    "water",
+    "sewage",
+    "garbage",
+    "fire",
+    "health",
+    "safety",
+    "park",
+    "education",
+  ],
+  bigbiz: ["trade", "landmark", "mayor"],
+  region: [],
+};
 
 /** 面板里一条菜单项的最终视图（基础数据 + 编辑覆盖 + 新增标记）。 */
 export interface MenuEntry {
@@ -35,19 +55,19 @@ export interface MenuEntry {
 export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const data = shallowRef<WorkbenchData | null>(null);
   const loading = shallowRef(false);
-  const screen = ref<WorkbenchScreen>("city");
-  /** 当前选中菜单：city 下是分类 id，university 下固定 "university"。 */
+  const dimension = ref<WorkbenchDimension>("city");
+  /** 当前选中一级分类 id。 */
   const selectedMenuId = ref<string | null>(null);
-  /** 城市工具条是否已钻入二级菜单（显示所选分类的工具行）。 */
+  /** 是否已钻入二级菜单（一级行 → 二级行的滑动过渡）。 */
   const entered = ref(false);
   /** itemId → 编辑覆盖（含新增项的 id）。 */
   const edits = ref<Record<string, ToolEdit>>({});
   /** menuId → 新增项（保持插入顺序）。 */
   const added = ref<Record<string, WorkbenchTool[]>>({});
-  /** 工作台里新建的分类（工具条末位「＋」产生）。 */
-  const customCategories = ref<WorkbenchCategory[]>([]);
   /** 正在编辑的条目（打开 Sheet）。 */
   const editingEntry = shallowRef<MenuEntry | null>(null);
+  /** 工作台里新建的分类（一级菜单末位「＋」产生）。 */
+  const customCategories = ref<WorkbenchCategory[]>([]);
   /** 游戏 HUD 布局树（scrui JSON）+ 两段式解析结果。 */
   const hudTree = shallowRef<LayoutNode | null>(null);
   const hudRects = shallowRef<Map<string, PlacedRect>>(new Map());
@@ -88,52 +108,37 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return data.value?.city.categories[0]?.id ?? null;
   }
 
-  function selectScreen(next: WorkbenchScreen): void {
-    screen.value = next;
+  /** 切换左侧维度：一级菜单内容自动更新，二级状态重置。 */
+  function selectDimension(next: WorkbenchDimension): void {
+    dimension.value = next;
     entered.value = false;
-    selectedMenuId.value =
-      next === "university" ? "university" : firstMenuId();
+    selectedMenuId.value = firstMenuId();
   }
 
-  /** 一级菜单点击：选中该菜单（面板同步）并钻入二级（工具行滑动过渡）。 */
+  /** 一级菜单点击：选中该菜单（面板同步）并滑入二级。 */
   function enterMenu(menuId: string): void {
     selectedMenuId.value = menuId;
     entered.value = true;
   }
 
-  /** 二级行返回一级。 */
+  /** 二级返回一级。 */
   function leaveMenu(): void {
     entered.value = false;
   }
 
+  /** 当前维度可见的分类（含工作台新建的）。 */
   const categories = computed<WorkbenchCategory[]>(() => {
-    if (screen.value !== "city") return [];
-    return [...(data.value?.city.categories ?? []), ...customCategories.value];
+    const dimensionIds = DIMENSION_CATEGORIES[dimension.value];
+    const all = [...(data.value?.city.categories ?? []), ...customCategories.value];
+    if (dimension.value === "city") {
+      return all;
+    }
+    return all.filter((category) => dimensionIds.includes(category.id));
   });
-
-  const universityTools = computed<WorkbenchTool[]>(() => {
-    if (!data.value) return [];
-    return sortTools(
-      data.value.university.tools.map((tool) => applyEdit(tool, edits.value[tool.id])),
-    ).concat((added.value.university ?? []).map((tool) => applyEdit(tool, edits.value[tool.id])));
-  });
-
-  /** 左侧 UI 点击菜单 → 面板切换到该菜单级。 */
-  function selectMenu(menuId: string): void {
-    selectedMenuId.value = menuId;
-  }
 
   /** 面板当前展示的菜单（含编辑覆盖与新增项）。 */
   const activeMenu = computed<{ id: string; label: string; entries: MenuEntry[] } | null>(() => {
     if (!data.value) return null;
-    if (screen.value === "university") {
-      const entries: MenuEntry[] = universityTools.value.map((tool) => ({
-        menuId: "university",
-        tool,
-        isNew: (added.value.university ?? []).some((addedTool) => addedTool.id === tool.id),
-      }));
-      return { id: "university", label: data.value.university.label, entries };
-    }
     const category = categories.value.find(
       (candidate) => candidate.id === selectedMenuId.value,
     );
@@ -150,6 +155,15 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     }));
     return { id: category.id, label: category.label, entries };
   });
+
+  /** 面板点击条目 → 打开编辑 Sheet。 */
+  function openEditor(menuId: string, itemId: string): void {
+    const entry = activeMenu.value?.entries.find(
+      (candidate) => candidate.tool.id === itemId,
+    );
+    if (entry) editingEntry.value = entry;
+    void menuId;
+  }
 
   function updateItem(menuId: string, itemId: string, patch: ToolEdit): void {
     edits.value = { ...edits.value, [itemId]: { ...edits.value[itemId], ...patch } };
@@ -215,7 +229,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return JSON.stringify(
       {
         format: "openscp-ui-workbench-overlay/1",
-        screen: screen.value,
+        dimension: dimension.value,
         edits: edits.value,
         added: added.value,
         customCategories: customCategories.value,
@@ -231,31 +245,32 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     editingEntry.value = null;
   }
 
-  /** 布局树某节点的运行期绝对矩形（instanceID 十六进制大写）。 */
+  /** 布局树某节点的运行期绝对矩形（instanceID 十进制字符串）。 */
   function rect(id: string): PlacedRect | undefined {
-    return hudRects.value.get(id.toUpperCase());
+    return hudRects.value.get(id);
   }
 
   return {
     data,
     loading,
-    screen,
+    dimension,
     selectedMenuId,
     entered,
     edits,
     added,
     editingEntry,
     customCategories,
-    categories,
-    universityTools,
-    activeMenu,
+    hudTree,
+    hudRects,
     hudImages,
+    categories,
+    activeMenu,
     rect,
     load,
-    selectScreen,
-    selectMenu,
+    selectDimension,
     enterMenu,
     leaveMenu,
+    openEditor,
     addCategory,
     removeCategory,
     updateItem,

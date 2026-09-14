@@ -1064,6 +1064,20 @@
       "source": "locale"
      },
      {
+      "id": "9A38E382",
+      "label": "人行道",
+      "pos": 10,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "DE770DBE",
+      "label": "大學標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
       "id": "48137100",
       "label": "校車停車位",
       "pos": 100,
@@ -1080,6 +1094,13 @@
      {
       "id": "ECCE28CE",
       "label": "校車停車位",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "75A90B66",
+      "label": "宿舍",
       "pos": 100,
       "icon": null,
       "source": "locale"
@@ -1102,6 +1123,41 @@
       "id": "E2832F99",
       "label": "公共圖書館",
       "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "64088034",
+      "label": "商務學院",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2491343B",
+      "label": "工程學院",
+      "pos": 600,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "16FC99FA",
+      "label": "法學院",
+      "pos": 700,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "36E3E922",
+      "label": "醫學院",
+      "pos": 800,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1F1799B4",
+      "label": "理工學院",
+      "pos": 900,
       "icon": null,
       "source": "locale"
      }

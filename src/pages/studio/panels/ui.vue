@@ -8,7 +8,7 @@
  * 机制说明。落库当前导出 overlay JSON，后端写回走下一轮的
  * patch_property_overlay + 版本记录通道。
  */
-import { computed, onMounted, ref, watch } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
@@ -23,7 +23,7 @@ import type { ToolEdit } from "@/lib/game-ui/workbench";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
-const { screen, loading, editingEntry, data } = storeToRefs(store);
+const { loading, editingEntry, data } = storeToRefs(store);
 
 onMounted(() => {
   void store.load();
@@ -70,10 +70,6 @@ function removeDraft(): void {
   editingEntry.value = null;
 }
 
-const screens = computed(() => [
-  { id: "city" as const, label: t("studio.workbench.screenCity") },
-  { id: "university" as const, label: t("studio.workbench.screenUniversity") },
-]);
 </script>
 
 <template>
@@ -96,21 +92,6 @@ const screens = computed(() => [
     <p v-if="loading" class="notice" role="status">{{ t("studio.workbench.loading") }}</p>
 
     <div class="toolbar">
-      <div class="screen-switch" role="tablist">
-        <button
-          v-for="item in screens"
-          :key="item.id"
-          type="button"
-          class="screen-tab"
-          :class="{ active: screen === item.id }"
-          role="tab"
-          :aria-selected="screen === item.id"
-          @click="store.selectScreen(item.id)"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-
       <label class="overlay-row">
         <span>{{ t("studio.workbench.overlay") }}</span>
         <input
@@ -249,27 +230,6 @@ const screens = computed(() => [
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-}
-.screen-switch {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  display: inline-flex;
-  overflow: hidden;
-}
-.screen-tab {
-  background: transparent;
-  border: 0;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 7px 16px;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-.screen-tab.active {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-weight: 700;
 }
 .overlay-row {
   align-items: center;

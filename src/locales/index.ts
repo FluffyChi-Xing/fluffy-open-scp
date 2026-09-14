@@ -49,8 +49,9 @@ const messages = {
         description:
           "用游戏原生资产重建菜单 UI：点击菜单在右侧预览条目，单条编辑实时生效，末位「＋」新增条目。",
         loading: "正在载入菜单数据与资产…",
-        screenCity: "城市主菜单",
-        screenUniversity: "大学建筑菜单",
+        dimCity: "城市",
+        dimBigbiz: "大商业",
+        dimRegion: "区域",
         overlay: "参考截图",
         mechanism: "机制说明",
         mechanismBody:
