@@ -61,6 +61,11 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       const response = await fetch("/game-ui/workbench.json");
       data.value = (await response.json()) as WorkbenchData;
       if (!selectedMenuId.value) selectedMenuId.value = firstMenuId();
+    } finally {
+      loading.value = false;
+    }
+    // 布局树独立装载：失败只损失美术层，不拖垮菜单数据/编辑
+    try {
       const layoutResponse = await fetch("/game-ui/layout/globalui2.json");
       hudTree.value = (await layoutResponse.json()) as LayoutNode;
       const resolved = resolveLayout(hudTree.value, 1600, 900);
@@ -70,8 +75,8 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           !HUD_IMAGE_EXCLUDE.has(image.id) &&
           !/tutorial/i.test(image.comment),
       );
-    } finally {
-      loading.value = false;
+    } catch (cause) {
+      console.warn("[uiWorkbench] 布局树解析失败，美术层停用", cause);
     }
   }
 

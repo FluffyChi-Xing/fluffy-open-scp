@@ -218,6 +218,7 @@ export function resolveLayout(
     const nodeImages = node.drawable?.images;
     if (nodeImages && nodeImages.length > 0) {
       const resolved = nodeImages
+        .filter((ref): ref is string => typeof ref === "string")
         .map((ref) => assetPathForRef(ref))
         .filter((src): src is string => src !== null);
       if (resolved.length > 0) {
@@ -242,7 +243,8 @@ export function resolveLayout(
 }
 
 /** FNV-1（小写）：与游戏 UI 资源命名一致（instance = FNV-1(去扩展名)）。 */
-export function assetPathForRef(ref: string): string | null {
+export function assetPathForRef(ref: string | null | undefined): string | null {
+  if (!ref) return null;
   const base = ref.split(/[\\/]/).pop() ?? "";
   const dot = base.lastIndexOf(".");
   if (dot <= 0) return null;
