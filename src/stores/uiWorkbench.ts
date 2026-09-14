@@ -104,8 +104,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     }
   }
 
+  /** 当前维度下的第一个一级分类。 */
   function firstMenuId(): string | null {
-    return data.value?.city.categories[0]?.id ?? null;
+    return categories.value[0]?.id ?? null;
   }
 
   /** 切换左侧维度：一级菜单内容自动更新，二级状态重置。 */
