@@ -1,0 +1,912 @@
+<script setup lang="ts">
+/**
+ * UI 工作台舞台：用游戏原生资产 + 真实菜单数据等比例重建 1600×900 的游戏 HUD。
+ *
+ * 交互模型（各菜单一致）：点击一级菜单 → 过渡动画滑入二级（工具行），
+ * 同时右侧面板切到该菜单级的条目预览；二级里点条目直接开编辑 Sheet；
+ * 末尾虚线加号块 = 新增条目。切换左侧维度时一级内容自动重置。
+ *
+ * 重建口径（对齐参考截图 public/game-ui/reference/*.png）：
+ * - 菜单图标统一用 FIcon（图标库没有的语义取最接近的替代，找不到的条目
+ *   用占位图标 Box）；
+ * - 城市分类按钮是**悬浮圆钮**，没有底层衬卡（对照游戏截图）；
+ * - 左侧维度切换 = 白描边圆钮簇（区域/大商业/城市大钮 + 城市标签页）+ 黄盾；
+ * - 底栏（时间/城市名/满意度/金钱/人口）用空白原件与占位读数；满意度取
+ *   mayorRating 精灵图最右侧的绿脸（帧宽 27px、帧距 39px，28px 窗口缩放后
+ *   偏移 -117.7px，取错会同时露出两张半脸）；
+ * - icon=null 的条目（游戏运行时渲染的资源）一律以占位图标显示。
+ */
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { storeToRefs } from "pinia";
+import FIcon from "@/components/extensions/FIcon.vue";
+import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
+import {
+  CATEGORY_ICONS,
+  toolIconName,
+} from "@/lib/game-ui/workbench";
+
+const store = useUiWorkbenchStore();
+const { screen, data, activeMenu, categories, selectedMenuId, entered } = storeToRefs(store);
+
+/* ── 舞台缩放：容器内等比放下 1600×900（舞台高度固定，不随面板高度变化） ── */
+const host = ref<HTMLElement>();
+const scale = ref(1);
+let observer: ResizeObserver | undefined;
+onMounted(() => {
+  observer = new ResizeObserver((entries) => {
+    const rect = entries[0]?.contentRect;
+    if (rect?.width) {
+      scale.value = Math.min(rect.width / 1600, rect.height / 900);
+    }
+  });
+  if (host.value) observer.observe(host.value);
+});
+onBeforeUnmount(() => observer?.disconnect());
+
+const props = defineProps<{
+  /** 参考截图叠加透明度（0 = 关闭）。 */
+  overlayOpacity: number;
+}>();
+
+const overlaySrc = computed(
+  () => `/game-ui/reference/${screen.value === "city" ? "city" : "university"}.png`,
+);
+
+/* ── 底栏占位读数（空白原件 + 静态数值） ── */
+const placeholders = {
+  time: "8:41 PM",
+  cityName: "御木林",
+  money: "§422,668",
+  income: "+5,632 / 小時",
+  population: "54,666",
+};
+
+/** 大学槽位的占位计数（对齐参考截图：第 3/4 槽位）。 */
+function slotCounter(index: number): string {
+  return index === 2 ? "0 / 3" : index === 3 ? "0 / 0" : "";
+}
+
+/** 二级条目点击：开单条编辑 Sheet。 */
+function editEntryAt(index: number): void {
+  const entry = activeMenu.value?.entries[index];
+  if (entry) store.editingEntry = entry;
+}
+</script>
+
+<template>
+  <div ref="host" class="stage-host">
+    <div class="stage" :style="{ width: `${1600 * scale}px`, height: `${900 * scale}px` }">
+      <div class="stage-inner" :style="{ transform: `scale(${scale})` }">
+        <!-- 世界底色（工作台不加载 3D 场景，用中性地平线示意） -->
+        <div class="backdrop" aria-hidden="true">
+          <span class="backdrop-label">3D 城市视口（示意）</span>
+        </div>
+
+        <!-- 顶部：城市 = 通知条；大学 = 屏幕标题 -->
+        <template v-if="screen === 'city'">
+          <div class="ticker">
+            <span class="ticker-icon" aria-hidden="true" />
+            <span>模擬城市伺服器連線中，正在嘗試重連。</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="screen-title">{{ data?.university.label ?? "大學" }}</div>
+        </template>
+
+        <!-- 右上角主菜单按钮 -->
+        <button type="button" class="main-menu" aria-label="主菜单">···</button>
+
+        <!-- 左侧：维度切换簇（悬浮圆钮，无衬卡） -->
+        <div class="mode-cluster">
+          <button type="button" class="mbtn tiny" title="大区域视图">
+            <FIcon name="Globe" :size="14" aria-label="" />
+          </button>
+          <button type="button" class="mbtn small" title="大商业视图">
+            <FIcon name="UsersRound" :size="18" aria-label="" />
+          </button>
+          <button type="button" class="city-puck" title="城市视图">
+            <span class="puck-glyph" aria-hidden="true">
+              <i /><i /><i />
+            </span>
+            <span class="puck-tab">城市</span>
+          </button>
+          <button type="button" class="mbtn shield" title="市长评级">
+            <FIcon name="Shield" :size="20" aria-label="" />
+          </button>
+        </div>
+
+        <!-- 城市主菜单：一级分类（悬浮圆钮）⇄ 二级工具行，滑动过渡 -->
+        <div v-if="screen === 'city'" class="tool-viewport">
+          <div class="tool-track" :class="{ entered }">
+            <!-- 一级：分类圆钮 -->
+            <div class="tool-row">
+              <button
+                v-for="category in categories"
+                :key="category.id"
+                type="button"
+                class="tool-button"
+                :class="{ selected: selectedMenuId === category.id && !entered }"
+                :title="`${category.label}（${category.items.length}）`"
+                :aria-pressed="selectedMenuId === category.id"
+                @click="store.enterMenu(category.id)"
+              >
+                <FIcon
+                  class="tool-icon"
+                  :name="CATEGORY_ICONS[category.id] ?? 'Box'"
+                  :size="22"
+                  aria-label=""
+                />
+              </button>
+              <!-- 一级菜单末位：新增分类占位 -->
+              <button
+                type="button"
+                class="tool-button add"
+                title="新增一级菜单分类"
+                @click="store.addCategory('新分类')"
+              >
+                <span aria-hidden="true">＋</span>
+              </button>
+            </div>
+            <!-- 二级：所选分类的工具行 -->
+            <div class="tool-row level2">
+              <button
+                type="button"
+                class="tool-button back"
+                title="返回一级菜单"
+                @click="store.leaveMenu()"
+              >
+                <FIcon name="ArrowLeft" :size="20" aria-label="" />
+              </button>
+              <button
+                v-for="(entry, index) in activeMenu?.entries ?? []"
+                :key="entry.tool.id"
+                type="button"
+                class="tool-button"
+                :title="`${entry.tool.label}（${entry.tool.pos}）`"
+                @click="editEntryAt(index)"
+              >
+                <FIcon
+                  class="tool-icon"
+                  :name="toolIconName(entry.tool)"
+                  :size="22"
+                  aria-label=""
+                />
+              </button>
+              <!-- 二级菜单末位：新增条目占位 -->
+              <button
+                type="button"
+                class="tool-button add"
+                title="新增菜单条目"
+                @click="activeMenu && store.addItem(activeMenu.id, '新条目', null)"
+              >
+                <span aria-hidden="true">＋</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 大学菜单：建筑槽位条（游戏内此层带浅色衬带） -->
+        <div v-else class="palette-strip">
+          <div class="palette-slots">
+            <button
+              v-for="(entry, index) in activeMenu?.entries ?? []"
+              :key="entry.tool.id"
+              type="button"
+              class="slot"
+              :class="{ selected: index === 1 }"
+              :title="entry.tool.label"
+              @click="store.selectMenu('university')"
+            >
+              <span class="slot-frame" aria-hidden="true" />
+              <FIcon
+                class="slot-icon"
+                :name="toolIconName(entry.tool)"
+                :size="30"
+                aria-label=""
+              />
+              <span class="slot-label">{{ entry.tool.label }}</span>
+              <span v-if="slotCounter(index)" class="slot-counter tabnum">{{
+                slotCounter(index)
+              }}</span>
+            </button>
+            <!-- 一级菜单末位：新增条目占位 -->
+            <button
+              type="button"
+              class="slot add"
+              title="新增一级菜单条目"
+              @click="store.addItem('university', '新条目', null)"
+            >
+              <span aria-hidden="true">＋</span>
+            </button>
+          </div>
+          <div class="decline-row" aria-hidden="true">
+            <span
+              v-for="(entry, index) in (activeMenu?.entries ?? []).slice(0, 8)"
+              :key="`decline-${entry.tool.id}`"
+              class="decline-cell"
+            >
+              <template v-if="index >= 2 && index <= 6">
+                <img v-if="data?.assets.longBtn" class="decline-btn" :src="data.assets.longBtn" alt="" />
+                <span class="decline-text">不批准!</span>
+              </template>
+            </span>
+          </div>
+        </div>
+
+        <!-- 大学：左侧道路形状工具 + 指南开关 -->
+        <div v-if="screen === 'university'" class="road-tools">
+          <div class="road-shapes" aria-hidden="true">
+            <span class="shape" /><span class="shape" /><span class="shape" /><span
+              class="shape"
+            /><span class="shape" />
+          </div>
+          <label class="guide-row">
+            <input type="checkbox" checked disabled />
+            <span>指南</span>
+          </label>
+        </div>
+
+        <!-- 大学：右侧教育面板（真实结构 + 占位读数） -->
+        <div v-if="screen === 'university'" class="edu-panel">
+          <header class="edu-head">
+            <span>教育</span>
+            <button type="button" class="edu-close" aria-label="关闭">×</button>
+          </header>
+          <div class="edu-body">
+            <div class="edu-number tabnum">2,032<span class="edu-sub">/ 2,342</span></div>
+            <div class="edu-caption">入学人数</div>
+            <div class="edu-row"><span>教育程度：</span><span class="edu-chips" /></div>
+            <div class="edu-row"><span>科技等级</span><span class="edu-chips" /></div>
+            <div class="edu-row"><span>去：</span><span class="edu-bar" /></div>
+          </div>
+        </div>
+
+        <!-- 底栏：时间 / 城市名 / 满意度 / 金钱 / 人口（空白原件占位） -->
+        <div class="stats-bar">
+          <button type="button" class="play" aria-label="暂停 / 继续">
+            <span aria-hidden="true">▶</span>
+          </button>
+          <span class="clock tabnum">{{ placeholders.time }}</span>
+          <span class="speed tabnum" aria-hidden="true">▶▶|</span>
+          <span class="stats-sep" aria-hidden="true" />
+          <div class="name-field">
+            <span class="name-text">{{ placeholders.cityName }}</span>
+          </div>
+          <span class="stats-sep" aria-hidden="true" />
+          <div class="stats-group">
+            <span class="smiley" aria-hidden="true">
+              <img
+                v-if="data?.assets.mayorRating"
+                :src="data.assets.mayorRating"
+                alt="满意度"
+              />
+            </span>
+            <span class="money tabnum">{{ placeholders.money }}</span>
+            <span class="income tabnum">{{ placeholders.income }}</span>
+            <span class="pop tabnum">
+              <FIcon name="Users" :size="15" aria-label="" />
+              {{ placeholders.population }}
+            </span>
+          </div>
+          <div class="rci" aria-hidden="true">
+            <span class="rci-bar r" /><span class="rci-bar c" /><span class="rci-bar i" />
+          </div>
+          <button type="button" class="layers" title="数据图层">
+            <img v-if="data?.assets.layerIcon" :src="data.assets.layerIcon" alt="" />
+            <span class="layers-tag" aria-hidden="true" />
+          </button>
+        </div>
+
+        <!-- 参考截图叠加（校准模式） -->
+        <img
+          v-if="props.overlayOpacity > 0"
+          class="reference-overlay"
+          :src="overlaySrc"
+          :style="{ opacity: props.overlayOpacity }"
+          alt="游戏内参考截图"
+        />
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.stage-host {
+  align-items: center;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+}
+.stage {
+  flex: none;
+  position: relative;
+}
+.stage-inner {
+  height: 900px;
+  overflow: hidden;
+  position: relative;
+  transform-origin: top left;
+  width: 1600px;
+}
+.backdrop {
+  background:
+    linear-gradient(180deg, #243a52 0%, #35506b 46%, #4c6b52 70%, #3c5643 100%);
+  inset: 0;
+  position: absolute;
+}
+.backdrop-label {
+  color: rgb(255 255 255 / 30%);
+  font-size: 14px;
+  left: 50%;
+  letter-spacing: 0.12em;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.tabnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 顶部 ── */
+.ticker {
+  align-items: center;
+  background: linear-gradient(180deg, rgb(250 251 253 / 92%), rgb(226 233 240 / 92%));
+  border: 1px solid rgb(210 40 40 / 65%);
+  border-radius: 4px;
+  color: #b3261e;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  left: 46px;
+  padding: 6px 14px;
+  position: absolute;
+  top: 10px;
+}
+.ticker-icon {
+  background: #d2202a;
+  border-radius: 3px;
+  flex: none;
+  height: 22px;
+  width: 22px;
+}
+.screen-title {
+  background: linear-gradient(180deg, rgb(252 253 255 / 94%), rgb(228 235 242 / 94%));
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgb(9 20 34 / 35%);
+  color: #223c5c;
+  font-size: 17px;
+  font-weight: 700;
+  left: 50%;
+  letter-spacing: 0.35em;
+  padding: 5px 26px 5px 32px;
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+}
+.main-menu {
+  background: linear-gradient(180deg, rgb(252 253 255 / 94%), rgb(228 235 242 / 94%));
+  border: 0;
+  border-radius: 6px;
+  color: #223c5c;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  height: 30px;
+  letter-spacing: 0.1em;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 58px;
+}
+
+/* ── 左侧维度切换簇：白描边悬浮圆钮，无衬卡 ── */
+.mode-cluster {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 14px;
+  position: absolute;
+  top: 640px;
+}
+.mbtn {
+  align-items: center;
+  background: radial-gradient(circle at 50% 34%, rgb(250 252 254 / 96%), rgb(210 222 234 / 90%));
+  border: 2px solid rgb(245 248 251 / 95%);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgb(9 20 34 / 40%);
+  color: #2c4a6e;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  padding: 0;
+}
+.mbtn.tiny {
+  height: 30px;
+  width: 30px;
+}
+.mbtn.small {
+  height: 44px;
+  width: 44px;
+}
+.mbtn.shield {
+  color: #eab308;
+  height: 46px;
+  width: 46px;
+}
+.city-puck {
+  background: radial-gradient(circle at 50% 30%, #6cb8f2 0%, #2f86d6 55%, #1c5fa8 100%);
+  border: 3px solid rgb(248 251 254 / 96%);
+  border-radius: 50%;
+  box-shadow: 0 3px 10px rgb(9 20 34 / 45%);
+  cursor: pointer;
+  height: 68px;
+  position: relative;
+  width: 68px;
+}
+.puck-glyph {
+  align-items: flex-end;
+  display: flex;
+  gap: 3px;
+  height: 26px;
+  justify-content: center;
+  left: 50%;
+  position: absolute;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  width: 30px;
+}
+.puck-glyph i {
+  background: rgb(255 255 255 / 94%);
+  border-radius: 1.5px 1.5px 0 0;
+  display: block;
+}
+.puck-glyph i:nth-child(1) {
+  height: 12px;
+  width: 7px;
+}
+.puck-glyph i:nth-child(2) {
+  height: 22px;
+  width: 8px;
+}
+.puck-glyph i:nth-child(3) {
+  height: 16px;
+  width: 7px;
+}
+.puck-tab {
+  background: linear-gradient(180deg, #fbfcfe, #dde7f0);
+  border-radius: 6px 6px 0 0;
+  bottom: -20px;
+  color: #223c5c;
+  font-size: 12px;
+  font-weight: 700;
+  left: 50%;
+  padding: 2px 12px;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* ── 城市分类：悬浮圆钮（无底层衬卡）+ 一二级滑动过渡 ── */
+.tool-viewport {
+  height: 64px;
+  left: 50%;
+  overflow: hidden;
+  position: absolute;
+  top: 764px;
+  transform: translateX(-50%);
+  width: 1240px;
+}
+.tool-track {
+  display: flex;
+  height: 100%;
+  transition: translate 320ms cubic-bezier(0.2, 0, 0, 1);
+  width: 200%;
+}
+.tool-track.entered {
+  translate: -50% 0;
+}
+.tool-row {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 7px;
+  justify-content: center;
+  width: 50%;
+}
+.tool-row.level2 {
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 4px 2px;
+  scrollbar-width: thin;
+}
+.tool-button {
+  align-items: center;
+  background: radial-gradient(circle at 50% 32%, rgb(252 253 255 / 97%), rgb(214 226 238 / 92%));
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 3px 6px rgb(9 20 34 / 45%), inset 0 -2px 4px rgb(120 145 170 / 35%);
+  color: #2c4a6e;
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  height: 52px;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  transition: box-shadow 140ms ease, color 140ms ease;
+  width: 52px;
+}
+.tool-button:hover {
+  color: #0878fe;
+}
+.tool-button.selected {
+  box-shadow: 0 0 0 2.5px rgb(8 120 254 / 90%), 0 0 16px rgb(8 120 254 / 55%),
+    inset 0 -2px 4px rgb(120 145 170 / 35%);
+  color: #0878fe;
+}
+.tool-button.back {
+  margin-inline-end: 10px;
+}
+.tool-button.add {
+  border: 1.5px dashed rgb(240 246 252 / 75%);
+  box-shadow: none;
+  color: rgb(240 246 252 / 92%);
+  font-size: 20px;
+}
+.tool-button.add:hover {
+  color: #fff;
+}
+
+/* ── 大学建筑槽位条（此层在游戏内带浅色衬带） ── */
+.palette-strip {
+  height: 130px;
+  left: 170px;
+  position: absolute;
+  top: 722px;
+  width: 1090px;
+}
+.palette-slots {
+  display: flex;
+  gap: 6px;
+}
+.slot {
+  background: rgb(20 30 46 / 18%);
+  border: 0;
+  cursor: pointer;
+  height: 82px;
+  padding: 4px 4px 0;
+  position: relative;
+  width: 116px;
+}
+.slot.selected {
+  outline: 2px solid rgb(8 120 254 / 90%);
+  outline-offset: -2px;
+}
+.slot-frame {
+  background: linear-gradient(180deg, rgb(250 252 254 / 24%), rgb(210 224 238 / 30%));
+  border-radius: 6px;
+  inset: 0;
+  position: absolute;
+}
+.slot-icon {
+  color: #eaf2fa;
+  left: 50%;
+  position: absolute;
+  text-shadow: 0 1px 3px rgb(9 20 34 / 45%);
+  top: 22px;
+  transform: translateX(-50%);
+}
+.slot-label {
+  bottom: 2px;
+  color: #fff;
+  font-size: 11px;
+  left: 50%;
+  position: absolute;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 65%);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.slot-counter {
+  background: #0878fe;
+  border-radius: 9px;
+  bottom: -9px;
+  color: #fff;
+  font-size: 10px;
+  left: 50%;
+  padding: 1px 7px;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.slot.add {
+  align-items: center;
+  border: 1.5px dashed rgb(240 246 252 / 70%);
+  border-radius: 8px;
+  color: rgb(240 246 252 / 85%);
+  display: flex;
+  font-size: 22px;
+  justify-content: center;
+}
+.decline-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-inline-start: 8px;
+}
+.decline-cell {
+  height: 30px;
+  position: relative;
+  width: 116px;
+}
+.decline-btn {
+  height: 28px;
+  left: 8px;
+  position: absolute;
+  width: 100px;
+}
+.decline-text {
+  color: #8a2b20;
+  font-size: 12px;
+  font-weight: 700;
+  left: 50%;
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+}
+
+/* ── 大学左侧道路工具 ── */
+.road-tools {
+  left: 10px;
+  position: absolute;
+  top: 762px;
+  width: 148px;
+}
+.road-shapes {
+  background: linear-gradient(180deg, rgb(250 251 253 / 92%), rgb(228 235 242 / 92%));
+  border-radius: 8px;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+}
+.shape {
+  border: 1.5px solid #35506b;
+  border-radius: 3px;
+  flex: 1;
+  height: 22px;
+}
+.guide-row {
+  align-items: center;
+  color: #f2f6fa;
+  display: flex;
+  font-size: 12px;
+  gap: 6px;
+  margin-top: 6px;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 60%);
+}
+
+/* ── 大学右侧教育面板 ── */
+.edu-panel {
+  background: linear-gradient(180deg, rgb(252 253 255 / 96%), rgb(236 241 246 / 96%));
+  border: 1px solid rgb(160 178 196 / 90%);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(9 20 34 / 30%);
+  color: #223c5c;
+  height: 148px;
+  position: absolute;
+  right: 10px;
+  top: 646px;
+  width: 264px;
+}
+.edu-head {
+  align-items: center;
+  border-bottom: 1px solid rgb(160 178 196 / 60%);
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  justify-content: space-between;
+  padding: 5px 10px;
+}
+.edu-close {
+  background: transparent;
+  border: 0;
+  color: #b3261e;
+  cursor: pointer;
+  font-size: 14px;
+}
+.edu-body {
+  font-size: 11.5px;
+  padding: 6px 10px;
+}
+.edu-number {
+  font-size: 21px;
+  font-weight: 700;
+}
+.edu-sub {
+  color: #64788e;
+  font-size: 11px;
+  font-weight: 400;
+  margin-inline-start: 4px;
+}
+.edu-caption {
+  color: #b8860b;
+  font-size: 10.5px;
+  margin-bottom: 4px;
+}
+.edu-row {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+}
+.edu-chips::before {
+  content: "❀ ❀ ❀ ✿ ✿";
+  color: #4c9a52;
+  letter-spacing: 2px;
+}
+.edu-bar {
+  background: rgb(120 140 160 / 30%);
+  border-radius: 3px;
+  flex: 1;
+  height: 8px;
+}
+
+/* ── 底栏（对齐游戏截图：浅色横条 + 分组细分隔线） ── */
+.stats-bar {
+  align-items: center;
+  background: linear-gradient(180deg, rgb(240 245 250 / 96%), rgb(214 226 238 / 98%));
+  border-top: 1px solid rgb(255 255 255 / 70%);
+  bottom: 0;
+  box-shadow: 0 -2px 8px rgb(9 20 34 / 28%);
+  box-sizing: border-box;
+  display: flex;
+  gap: 10px;
+  height: 52px;
+  inset-inline: 0;
+  padding: 0 10px;
+  position: absolute;
+}
+.play {
+  background: linear-gradient(180deg, #d3242a, #a91018);
+  border: 1px solid #7e0c12;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  flex: none;
+  font-size: 13px;
+  height: 36px;
+  width: 36px;
+}
+.clock {
+  color: #1d2f4a;
+  flex: none;
+  font-size: 15px;
+  font-weight: 700;
+}
+.speed {
+  color: #2c3e54;
+  flex: none;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+.stats-sep {
+  align-self: center;
+  background: rgb(154 173 192 / 55%);
+  flex: none;
+  height: 28px;
+  width: 1px;
+}
+.name-field {
+  background: linear-gradient(180deg, #e6edf4, #f4f8fb);
+  border: 1px solid #a9b9c9;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 3px rgb(30 50 70 / 18%);
+  display: flex;
+  flex: none;
+  height: 36px;
+  width: 252px;
+}
+.name-text {
+  align-self: center;
+  color: #1d2f4a;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding-inline-start: 14px;
+}
+.stats-group {
+  align-items: center;
+  color: #1d2f4a;
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  justify-content: center;
+}
+.smiley {
+  border-radius: 50%;
+  display: inline-block;
+  height: 28px;
+  overflow: hidden;
+  width: 28px;
+}
+/* mayorRating 精灵图 195×39，5 帧各 ~27px、帧距 39px；
+   28px 窗口按 39/28 缩放后，最右绿脸起点 = 164 × (28/39) ≈ 117.7px */
+.smiley img {
+  height: 28px;
+  margin-inline-start: -117.7px;
+  max-width: none;
+}
+.money {
+  font-size: 16px;
+  font-weight: 700;
+}
+.income {
+  color: #2f9e44;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pop {
+  align-items: center;
+  color: #2f6fd0;
+  display: flex;
+  font-size: 16px;
+  font-weight: 700;
+  gap: 6px;
+}
+.rci {
+  align-items: flex-end;
+  display: flex;
+  flex: none;
+  gap: 3px;
+}
+.rci-bar {
+  border-radius: 2px;
+  height: 26px;
+  width: 9px;
+}
+.rci-bar.r {
+  background: #2fa14e;
+}
+.rci-bar.c {
+  background: rgb(120 140 160 / 45%);
+}
+.rci-bar.i {
+  background: #e3c424;
+  height: 12px;
+}
+.layers {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  flex: none;
+  height: 44px;
+  padding: 0;
+  position: relative;
+  width: 46px;
+}
+.layers img {
+  height: 100%;
+  width: 100%;
+}
+.layers-tag {
+  background: #e3c424;
+  border-radius: 2px;
+  height: 10px;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 14px;
+}
+
+/* ── 参考图叠加 ── */
+.reference-overlay {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+</style>

@@ -2659,3 +2659,112 @@ dev 下 Vite **按需逐模块转换**，首屏要发上百个 `.vue` 请求（�
 - 遥测是滚动窗口均值，不是历史总均值（要总均值需另加日聚合表）；
 - p95 用每 stage 有界 500 行样本在 Rust 内算（SQLite 无原生分位数）；
 - 版本管理只覆盖本工具产出的 overlay；游戏安装目录/基础包不在范围内（§47.5）。
+
+---
+
+## 49. 游戏 UI 机制全面解析 + UI 工作台（2026-09-15 第四十九轮）
+
+起因：用户给出两张游戏内截图（城市一级菜单 / 大学建筑一级菜单），要求从 modding.pdf
+p87 起梳理「资产入菜单」流程，全面解析菜单 UI 渲染机制、静态资产与注册方式，
+并把 studio 的「UI 预览」（截图轮播）重做成 **UI 工作台**——左侧等比例重建游戏
+UI，右侧面板预览/编辑菜单条目，实时预览，最终服务于资产落库。
+
+### 49.1 modding.pdf p87 起：资产入菜单的流程（书页 272–275）
+
+教程（新建消防站 mod）在菜单侧只做三件事：
+1. **菜单图标**：128×128 透明底 PNG（`MENU-Icon.png`，Photoshop 抠建筑截图）；
+2. **Marquee 大图**：454×263 JPG（`MENU-Marquee.jpg`，带环境的展示截图）；
+3. 打包发布：ZIP（package + 截图 + readme）。
+注册方式 = **同 TGI 覆盖**：mod 包放对目录后被引擎按加载顺序覆盖基础包同名资源
+（§46.4 已证：放错目录则整包不生效，且改字段前必须先做阳性对照）。
+
+### 49.2 机制解析：UI 是 WebKit 上的数据驱动 JSON 树 `[实测]`
+
+- UI 布局不是 Closure 模板而是 **JSON 窗口树**：`instanceID/left/top/width/height/
+  horizontalPinType/verticalPinType/drawable.images/children/animations`（带关键帧
+  动画轨道），文件扩展名 `.js` 但内容是 JSON（`GlobalUI2.js` 254 KB = 整个 HUD）。
+- 布局模块资源 **type 0x67771F5C**；HUD 布局在 **group 0x0B074E5A**（GlobalUI2/
+  SpeedPanel/NewStyle 等 12 个），应用主 JS 在 **group 0x40464200**（0xA9A16769
+  255 KB 等，内含 `simcity.kData*` 数据键映射表）。全库普查共 **918 个布局模块**。
+- **资源命名规律（本轮最大发现）**：UI 资源的 instance = **FNV-1(小写去扩展名)**
+  —— locale 表 `gameentry` → `0xB844F811`、`puck-base` → `0x7AF20E3C`，
+  布局树 74 处 Graphics 引用在既有提取物（6835 PNG + 689 JPG）里 **100% 命中**。
+  JS 数值精度陷阱：32 位 FNV 乘法必须 `Math.imul`（2^53 以上普通乘法丢低位）。
+- 菜单注册（§46 结论整合）：Menu/Menu2 property（0x00B1B104, InstanceType
+  0x8A01/0xC900），标题 Text → locale 0x6C969DEE，六态图标 0x09756950–55
+  （Key 携带**完整 TGI**，图标 PNG 在 group 0x40E02400），uiToolCategory
+  0x0DB9FC63 / uiToolPosition 0x0DC1E3E0，Parent 0x00B2CCCB 继承工具本体；
+  引擎 `FUN_008a6a00` 加载后经 JS 桥逐工具推 iconKey/toolID 给 WebKit 层。
+- **建筑槽位缩略图是运行时渲染**：EP1 大学类工具的图标 TGI 在全部 11 个包 +
+  两套安装的 Locale 包中零命中（`find_instance`），证图标不入静态包；
+  基础游戏仅 778 个 40E02400 组图标随包发布。
+
+### 49.3 数据管线（三支新探针）`[实测]`
+
+| 探针 | 产出 |
+|---|---|
+| `dbpf ui_js_dump` / `ui_layout_census` | 布局模块按 FNV 名/全量普查导出（918 模块 → `probe_fire/ui_layouts/`） |
+| `dbpf ui_dump_tgi` | 按完整 TGI 导出单条目（App 主 JS 255 KB） |
+| `sc-properties ui_tool_dump` | **649 个工具定义** → `public/game-ui/tools/tools.json`（标题 textId/uiCategory/uiPosition/六态图标 TGI/Parent/硬门 0x0975695F） |
+
+派生数据：`public/game-ui/workbench.json`（大学菜单 = uiCategory 0x9D2EF585 的
+真实工具链：大學標誌/宿舍/商務學院/工程學院/法學院/醫學院/理工學院，按
+uiPosition 排序；城市 13 个分类按关键字归组 649 个真实工具，分类图标按 FNV
+名称反解 15 枚 `icn_sci_*`）；`public/game-ui/layout/globalui2.json`（HUD 布局树）；
+`public/game-ui/reference/{city,university}.png`（用户提供的 1600×900 校准截图）。
+
+### 49.4 UI 工作台（替换原截图轮播）
+
+- **`UiWorkbenchStage.vue`**：1600×900 舞台按容器等比缩放；用空白原件
+  （main_button_tab 三拼、puck/mode 圆钮、mayorRating 五档笑脸、RCI 条、
+  HeavyLayer 图层钮、Button_Palette_Rounded / Button_Standard_Long）等比例
+  重建底栏与两套菜单；时间/城市名/满意度/金钱/人口为占位读数；icon=null 的
+  条目以空白原件占位（对应运行时渲染资源）。参考截图可 0–100% 叠加校准。
+- **`MenuEditorPanel.vue` + FSheet**：点击左侧任一菜单 → 面板列出该级条目
+  （图标/名称/pos/来源），点击条目开 Sheet 编辑（名称/图标路径/排序，实时
+  生效），每级末位虚线「＋」新增条目；城市工具条「＋」= 新建分类。
+- **`uiWorkbench.ts` store**：编辑为纯前端覆盖（edits/added/customCategories），
+  `exportOverlay()` 产出 `openscp-ui-workbench-overlay/1` JSON（复制到剪贴板）；
+  **真实落库下一轮接 `patch_property_overlay` + 版本记录通道**（工具属性写回
+  与 locale 写回同链路，编辑 menu entry property 即可持久化到包）。
+- 旧「UI 预览」轮播（GameUiStage/assemble.ts/ui-preview.json）删除；
+  导航更名「UI 工作台」。新增测试 11 项（FNV 实测向量/编辑覆盖/新增/
+  导出），全套 **144/144** 绿；`pnpm check`/`build`/lint 干净。
+
+### 49.5 已知边界
+
+- 布局树的 pin 锚定（pinType 1–5 语义）未完全逆向，舞台几何以参考截图手工
+  校准为准（叠加模式可核）；完全数据驱动渲染留待后续。
+- 城市分类 → uiCategory 哈希的精确映射未逐个验证（当前按繁中标题关键字归组）。
+- 教育面板/道路形状组为结构重建 + 占位读数；工具条分类图标 15/29 命中。
+
+### 49.6 尚未做
+
+- 工具 property 写回（patch_property_overlay + 版本记录）——下一轮；
+- 布局树 pinType 语义逆向（Ghidra EAWebKit 层）后可做纯数据驱动渲染；
+- 918 个布局模块的面板化浏览（工作台第二阶段）。
+
+### 49.7 验收返工两轮（同日）
+
+1. **底栏重做**：城市名弃用 tab 三拼（1600×900 舞台上与游戏不符）改 CSS 凹槽字段；
+   分组细分隔线、满意度裁 `mayorRating` 精灵图最右绿脸（195×39、5 帧各 ~27px、
+   帧距 39px → 28px 窗口偏移 **-117.7px**，首版 -100px 正好卡出两张半脸）、
+   人口 Users 图标、RCI 灰柱、图层钮黄角标。
+2. **舞台固定高度**：工作区固定 660px，面板内滚动，舞台不随面板伸缩。
+3. **左侧维度簇**：CSS 白描边圆钮（Globe/UsersRound）+ 品牌蓝城市大钮
+   （白色建筑 glyph +「城市」标签页）+ 黄盾；弃用被拉伸的 mode_* 图。
+4. **3D 提示居中；城市分类钮去衬卡**（游戏为悬浮圆钮；大学槽位条保留衬带）。
+5. **菜单图标全部换 FIcon**：13 个城市分类映射（GitBranch/Zap/Cloud/RefreshCw/
+   Trash2/Bell/Heart/Shield/Sparkles/BookOpen/Boxes/MapPin/House），条目无专属
+   图标时用占位 `Box`（EP1 大学类图标是运行时渲染，静态包不存在）。
+6. **两级菜单导航**：城市工具条点分类 → 滑动过渡钻入二级工具行（返回钮 +
+   条目行 + 末位加号），二级点条目直接开编辑 Sheet；切维度自动重置回一级。
+7. 机制说明改 **FCode** 多行代码块；工具 Sheet 补回 padding（24px）。
+
+**为什么提取了 CSS 也复刻不出一样的底栏**：解包出的 9 个 CSS 是**组件基类**
+（按钮/窗口/文本/九宫格），没有逐屏样式；HUD 的外观由三部分在运行时合成——
+①布局 JSON 里的 drawable（每态单独的 PNG，含九宫格切片），②引擎推送的运行时
+数据（数值/状态着色），③EAWebKit 按 pin 系统动态排版。也就是说「底栏样式」
+大部分不是 CSS 规则而是**切图 + 排版数据**，CSS 只是字体/圆角等基类。等比例
+复刻的正确路径是布局树 + 切图 + pin 语义（pinType 1–5 待逆向），纯 CSS 近似
+只能覆盖静态观感。

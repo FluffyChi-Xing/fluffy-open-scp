@@ -1,177 +1,210 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef } from "vue";
+/**
+ * UI 工作台：一站式完成资产在菜单中的落库与实时预览。
+ *
+ * 版面 = 左主区（重建的游戏 HUD，1600×900 等比缩放）+ 右面板（当前菜单的
+ * 条目预览 → 点击进 Sheet 编辑 → 实时反映回左区）。顶部工具条提供
+ * 屏幕切换（城市主菜单 / 大学建筑菜单）、参考截图叠加（校准）与
+ * 机制说明。落库当前导出 overlay JSON，后端写回走下一轮的
+ * patch_property_overlay + 版本记录通道。
+ */
+import { computed, onMounted, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import FEmpty from "@/components/extensions/FEmpty.vue";
+import FCode from "@/components/ui/FCode.vue";
 import FSheet from "@/components/ui/FSheet.vue";
-import GameUiStage from "../components/GameUiStage.vue";
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-} from "@/components/ui/carousel";
-
-interface PreviewSlide {
-  id: string;
-  screen: string;
-  group: string;
-  localePath: string | null;
-  images: string[];
-}
+import UiWorkbenchStage from "../components/UiWorkbenchStage.vue";
+import MenuEditorPanel from "../components/MenuEditorPanel.vue";
+import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
+import type { ToolEdit } from "@/lib/game-ui/workbench";
 
 const { t } = useI18n();
-const carousel = ref<InstanceType<typeof Carousel> | null>(null);
-const slides = shallowRef<PreviewSlide[]>([]);
-const editOpen = shallowRef(false);
-const activeIndex = shallowRef(0);
+const store = useUiWorkbenchStore();
+const { screen, loading, editingEntry, data } = storeToRefs(store);
 
-const groupLabels = computed(() => {
-  const keys = [
-    "startup",
-    "hud",
-    "cityPanels",
-    "region",
-    "meta",
-    "asp",
-    "ep1",
-  ];
-  return Object.fromEntries(
-    keys.map((key) => [key, t(`studio.ui.groups.${key}`)]),
-  );
+onMounted(() => {
+  void store.load();
 });
 
-onMounted(async () => {
-  try {
-    const response = await fetch("/game-ui/ui-preview.json");
-    const data = (await response.json()) as { slides: PreviewSlide[] };
-    slides.value = data.slides;
-  } catch {
-    slides.value = [];
+/** 参考截图叠加透明度（0 = 关闭）。 */
+const overlayOpacity = ref(0);
+const showMechanism = ref(false);
+
+/** Sheet 的临时编辑态（打开时从条目拷贝，确认才写回 store）。 */
+const draft = ref<{ label: string; icon: string; pos: number }>({
+  label: "",
+  icon: "",
+  pos: 0,
+});
+
+/** Sheet 打开时从条目拷贝到临时编辑态。 */
+watch(editingEntry, (entry) => {
+  if (entry) {
+    draft.value = {
+      label: entry.tool.label,
+      icon: entry.tool.icon ?? "",
+      pos: entry.tool.pos,
+    };
   }
 });
 
-function prev() {
-  carousel.value?.scrollPrev();
+function applyDraft(): void {
+  const entry = editingEntry.value;
+  if (!entry) return;
+  const patch: ToolEdit = {
+    label: draft.value.label,
+    icon: draft.value.icon === "" ? null : draft.value.icon,
+    pos: Number(draft.value.pos) || 0,
+  };
+  store.updateItem(entry.menuId, entry.tool.id, patch);
+  editingEntry.value = null;
 }
-function next() {
-  carousel.value?.scrollNext();
+
+function removeDraft(): void {
+  const entry = editingEntry.value;
+  if (!entry) return;
+  store.removeItem(entry.menuId, entry.tool.id);
+  editingEntry.value = null;
 }
-function onSlideChange(index: number) {
-  activeIndex.value = index;
-}
-function openEditor() {
-  editOpen.value = true;
-}
+
+const screens = computed(() => [
+  { id: "city" as const, label: t("studio.workbench.screenCity") },
+  { id: "university" as const, label: t("studio.workbench.screenUniversity") },
+]);
 </script>
 
 <template>
-  <section class="ui-page">
-    <RouterLink class="back-link" to="/studio">
-      <FIcon name="ArrowLeft" :size="14" />
-      {{ t("studio.backToStudio") }}
-    </RouterLink>
+  <section class="workbench-page">
+    <div class="page-head-row">
+      <RouterLink class="back-link" to="/studio">
+        <FIcon name="ArrowLeft" :size="14" aria-label="" />
+        {{ t("version.backToStudio") }}
+      </RouterLink>
 
-    <header class="page-header">
-      <span class="page-icon"><FIcon name="PanelTop" :size="20" /></span>
-      <div>
-        <FTypography :header="2" spacing="none">{{
-          t("studio.panels.ui.title")
-        }}</FTypography>
-        <p class="page-meta">{{ t("studio.panels.ui.meta") }}</p>
-      </div>
-      <div class="toolbar" role="toolbar" :aria-label="t('studio.ui.toolbar')">
+      <header class="page-header">
+        <span class="page-icon"><FIcon name="PanelTop" :size="20" aria-label="" /></span>
+        <div>
+          <FTypography :header="2" spacing="none">{{ t("studio.workbench.title") }}</FTypography>
+          <p class="page-meta">{{ t("studio.workbench.description") }}</p>
+        </div>
+      </header>
+    </div>
+
+    <p v-if="loading" class="notice" role="status">{{ t("studio.workbench.loading") }}</p>
+
+    <div class="toolbar">
+      <div class="screen-switch" role="tablist">
         <button
+          v-for="item in screens"
+          :key="item.id"
           type="button"
-          class="tool-button"
-          :title="t('studio.ui.prev')"
-          :aria-label="t('studio.ui.prev')"
-          @click="prev()"
+          class="screen-tab"
+          :class="{ active: screen === item.id }"
+          role="tab"
+          :aria-selected="screen === item.id"
+          @click="store.selectScreen(item.id)"
         >
-          <FIcon name="ChevronLeft" :size="16" />
-        </button>
-        <button
-          type="button"
-          class="tool-button"
-          :title="t('studio.ui.next')"
-          :aria-label="t('studio.ui.next')"
-          @click="next()"
-        >
-          <FIcon name="ChevronRight" :size="16" />
-        </button>
-        <span class="slide-counter mono">
-          {{ activeIndex + 1 }} / {{ slides.length }}
-        </span>
-        <button type="button" class="edit-button" @click="openEditor">
-          <FIcon name="Pencil" :size="14" />
-          {{ t("studio.ui.edit") }}
+          {{ item.label }}
         </button>
       </div>
-    </header>
 
-    <p v-if="!slides.length" class="notice" role="status">
-      {{ t("studio.ui.noSlides") }}
-    </p>
-
-    <Carousel
-      v-else
-      ref="carousel"
-      :options="{ loop: true }"
-      class="preview-carousel"
-      @select="onSlideChange"
-    >
-      <CarouselContent>
-        <CarouselItem v-for="slide in slides" :key="slide.id">
-          <article class="slide">
-            <div class="slide-head">
-              <span class="group-chip">{{
-                groupLabels[slide.group] ?? slide.group
-              }}</span>
-              <h3 class="slide-title mono">{{ slide.id }}</h3>
-            </div>
-            <div class="slide-stage">
-              <GameUiStage :spec="slide" class="stage" />
-              <span class="stage-watermark">{{
-                t("studio.ui.rebuildNotice")
-              }}</span>
-            </div>
-            <p class="slide-caption">{{ t("studio.ui.caption") }}</p>
-          </article>
-        </CarouselItem>
-      </CarouselContent>
-    </Carousel>
-
-    <FSheet v-model:open="editOpen" :label="t('studio.ui.editSheetLabel')" width="min(480px,92vw)">
-      <div class="sheet-inner">
-        <header class="sheet-header">
-          <FTypography :header="4" spacing="none">{{
-            t("studio.ui.editSheetTitle", slides[activeIndex]?.id ?? "")
-          }}</FTypography>
-          <p class="sheet-meta mono">{{ slides[activeIndex]?.screen }}</p>
-        </header>
-        <FEmpty
-          :description="t('studio.ui.editPlaceholder')"
-          icon-name="PanelTop"
+      <label class="overlay-row">
+        <span>{{ t("studio.workbench.overlay") }}</span>
+        <input
+          v-model.number="overlayOpacity"
+          type="range"
+          min="0"
+          max="100"
+          :disabled="!data"
         />
+        <span class="tabnum">{{ overlayOpacity }}%</span>
+      </label>
+
+      <button type="button" class="ghost-btn" @click="showMechanism = !showMechanism">
+        <FIcon :name="showMechanism ? 'ChevronUp' : 'ChevronDown'" :size="13" aria-label="" />
+        {{ t("studio.workbench.mechanism") }}
+      </button>
+    </div>
+
+    <div v-if="showMechanism" class="mechanism">
+      <FCode
+        :code="t('studio.workbench.mechanismBody')"
+        :copy-label="t('code.copy')"
+        :copied-label="t('code.copied')"
+        :collapse-label="t('code.collapse')"
+        :expand-label="t('code.expand')"
+      />
+    </div>
+
+    <div class="workspace">
+      <UiWorkbenchStage :overlay-opacity="overlayOpacity / 100" />
+      <MenuEditorPanel />
+    </div>
+
+    <!-- 单条菜单项编辑 -->
+    <FSheet
+      :open="!!editingEntry"
+      :label="t('studio.workbench.sheetTitle')"
+      @update:open="!$event && (editingEntry = null)"
+    >
+      <div v-if="editingEntry" class="sheet-body">
+        <p class="sheet-id">
+          {{ t("studio.workbench.sheetId") }}:
+          <code>{{ editingEntry.tool.id }}</code>
+        </p>
+        <label class="field">
+          <span>{{ t("studio.workbench.fieldLabel") }}</span>
+          <input v-model="draft.label" type="text" />
+        </label>
+        <label class="field">
+          <span>{{ t("studio.workbench.fieldIcon") }}</span>
+          <input v-model="draft.icon" type="text" placeholder="Box" />
+        </label>
+        <p class="field-hint">{{ t("studio.workbench.iconHint") }}</p>
+        <label class="field">
+          <span>{{ t("studio.workbench.fieldPos") }}</span>
+          <input v-model.number="draft.pos" type="number" />
+        </label>
+        <div class="sheet-preview">
+          <span class="preview-thumb">
+            <FIcon :name="draft.icon.trim() === '' ? 'Box' : draft.icon" :size="22" aria-label="" />
+          </span>
+          <span class="preview-label">{{ draft.label }}</span>
+        </div>
+        <div class="sheet-actions">
+          <button type="button" class="act danger" @click="removeDraft">
+            {{ editingEntry.isNew ? t("studio.workbench.discard") : t("studio.workbench.removeEdit") }}
+          </button>
+          <button type="button" class="act primary" @click="applyDraft">
+            {{ t("studio.workbench.apply") }}
+          </button>
+        </div>
       </div>
     </FSheet>
   </section>
 </template>
 
 <style scoped>
-.ui-page {
-  padding-bottom: 3rem;
+.workbench-page {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 14px;
+  padding-bottom: 2rem;
+}
+.page-head-row {
+  align-items: center;
+  display: flex;
+  gap: 18px;
 }
 .back-link {
-  display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
   color: var(--muted-foreground);
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
   text-decoration: none;
   width: fit-content;
 }
@@ -179,164 +212,202 @@ function openEditor() {
   color: var(--foreground);
 }
 .page-header {
+  align-items: center;
   display: flex;
-  align-items: center;
   gap: 1rem;
-  flex-wrap: wrap;
-}
-.page-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--accent);
-  flex-shrink: 0;
 }
 .page-header :deep(h2) {
   margin: 0;
 }
-.page-meta {
-  margin: 0.2rem 0 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.6875rem;
-  color: var(--subtle-foreground);
-}
-.toolbar {
-  margin-left: auto;
-  display: inline-flex;
+.page-icon {
   align-items: center;
-  gap: 0.4rem;
-}
-.tool-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: var(--surface);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: color 140ms ease, border-color 140ms ease;
-}
-.tool-button:hover:not(:disabled) {
-  color: var(--foreground);
-  border-color: var(--accent);
-}
-.tool-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.slide-counter {
-  font-size: 0.6875rem;
-  color: var(--subtle-foreground);
-  min-width: 3.5rem;
-  text-align: center;
-}
-.edit-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-.edit-button:hover {
-  filter: brightness(1.08);
-}
-.mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
-.notice {
-  margin: 0;
-  padding: 0.7rem 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
+  color: var(--brand);
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
 }
-.preview-carousel {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+.page-meta {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin: 3px 0 0;
+}
+.notice {
+  background: var(--surface-hover);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 10px;
+}
+.toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.screen-switch {
   background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: inline-flex;
   overflow: hidden;
 }
-.slide {
-  padding: 1.5rem 1.75rem;
+.screen-tab {
+  background: transparent;
+  border: 0;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 7px 16px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.screen-tab.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+}
+.overlay-row {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+}
+.overlay-row input[type="range"] {
+  accent-color: var(--primary);
+  width: 140px;
+}
+.ghost-btn {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11.5px;
+  gap: 5px;
+  padding: 6px 10px;
+}
+.ghost-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--foreground);
+}
+.mechanism {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.workspace {
+  /* 固定高度：重建舞台与面板互不影响（面板内自行滚动） */
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  height: 660px;
+}
+.tabnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sheet 编辑表单 */
+.sheet-body {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 12px;
+  padding: 24px;
 }
-.slide-head {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.group-chip {
-  font-size: 0.6875rem;
-  padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
-  color: var(--accent);
-  white-space: nowrap;
-}
-.slide-title {
+.sheet-id {
+  color: var(--muted-foreground);
+  font-size: 11px;
   margin: 0;
-  font-size: 1rem;
+}
+.sheet-id code {
+  background: var(--surface-hover);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 5px;
+}
+.field span {
+  color: var(--muted-foreground);
+}
+.field input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-size: 13px;
+  padding: 7px 9px;
+}
+.field-hint {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  margin: -6px 0 0;
+}
+.sheet-preview {
+  align-items: center;
+  background: var(--surface-hover);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+}
+.preview-thumb {
+  align-items: center;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  display: inline-flex;
+  height: 48px;
+  justify-content: center;
+  overflow: hidden;
+  width: 48px;
+}
+.preview-thumb img {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+.preview-label {
+  font-size: 13px;
   font-weight: 600;
 }
-.slide-stage {
-  position: relative;
+.sheet-actions {
   display: flex;
-  justify-content: center;
+  gap: 10px;
+  justify-content: flex-end;
 }
-.stage {
-  width: 100%;
-  max-width: 900px;
+.act {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 7px 14px;
 }
-.stage-watermark {
-  position: absolute;
-  bottom: 0.6rem;
-  right: calc(max(0px, (100% - 900px) / 2) + 0.75rem);
-  font-size: 0.625rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--subtle-foreground);
-  background: color-mix(in oklab, var(--surface) 80%, transparent);
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  pointer-events: none;
+.act.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
 }
-.slide-caption {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--subtle-foreground);
-  text-align: center;
+.act.primary:hover {
+  background: var(--primary-hover);
 }
-.sheet-inner {
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  min-height: 60vh;
+.act.danger {
+  background: var(--surface);
+  color: var(--danger);
 }
-.sheet-header :deep(h4) {
-  margin: 0;
-}
-.sheet-meta {
-  margin: 0.25rem 0 0;
-  font-size: 0.6875rem;
-  color: var(--subtle-foreground);
+.act.danger:hover {
+  border-color: var(--danger);
 }
 </style>

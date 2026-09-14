@@ -1,0 +1,218 @@
+import { computed, ref, shallowRef } from "vue";
+import { defineStore } from "pinia";
+import {
+  applyEdit,
+  sortTools,
+  type ToolEdit,
+  type WorkbenchCategory,
+  type WorkbenchData,
+  type WorkbenchTool,
+} from "@/lib/game-ui/workbench";
+
+/**
+ * UI 工作台状态：屏幕切换 + 当前选中菜单 + 菜单项编辑覆盖。
+ *
+ * 编辑是**纯前端覆盖**（`edits` / `added`），实时反映到左侧重建的 UI 上；
+ * 「落库」当前以 overlay JSON 导出，后端写回（patch_property_overlay +
+ * 版本记录通道）是下一轮接入点。
+ */
+export type WorkbenchScreen = "city" | "university";
+
+/** 面板里一条菜单项的最终视图（基础数据 + 编辑覆盖 + 新增标记）。 */
+export interface MenuEntry {
+  menuId: string;
+  tool: WorkbenchTool;
+  /** 本条是工作台里新加的（尚未有对应的游戏 property）。 */
+  isNew?: boolean;
+}
+
+export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
+  const data = shallowRef<WorkbenchData | null>(null);
+  const loading = shallowRef(false);
+  const screen = ref<WorkbenchScreen>("city");
+  /** 当前选中菜单：city 下是分类 id，university 下固定 "university"。 */
+  const selectedMenuId = ref<string | null>(null);
+  /** 城市工具条是否已钻入二级菜单（显示所选分类的工具行）。 */
+  const entered = ref(false);
+  /** itemId → 编辑覆盖（含新增项的 id）。 */
+  const edits = ref<Record<string, ToolEdit>>({});
+  /** menuId → 新增项（保持插入顺序）。 */
+  const added = ref<Record<string, WorkbenchTool[]>>({});
+  /** 正在编辑的条目（打开 Sheet）。 */
+  const editingEntry = shallowRef<MenuEntry | null>(null);
+  /** 工作台里新建的分类（工具条末位「＋」产生）。 */
+  const customCategories = ref<WorkbenchCategory[]>([]);
+
+  async function load(): Promise<void> {
+    loading.value = true;
+    try {
+      const response = await fetch("/game-ui/workbench.json");
+      data.value = (await response.json()) as WorkbenchData;
+      if (!selectedMenuId.value) selectedMenuId.value = firstMenuId();
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  function firstMenuId(): string | null {
+    return data.value?.city.categories[0]?.id ?? null;
+  }
+
+  function selectScreen(next: WorkbenchScreen): void {
+    screen.value = next;
+    entered.value = false;
+    selectedMenuId.value =
+      next === "university" ? "university" : firstMenuId();
+  }
+
+  /** 一级菜单点击：选中该菜单（面板同步）并钻入二级（工具行滑动过渡）。 */
+  function enterMenu(menuId: string): void {
+    selectedMenuId.value = menuId;
+    entered.value = true;
+  }
+
+  /** 二级行返回一级。 */
+  function leaveMenu(): void {
+    entered.value = false;
+  }
+
+  const categories = computed<WorkbenchCategory[]>(() => {
+    if (screen.value !== "city") return [];
+    return [...(data.value?.city.categories ?? []), ...customCategories.value];
+  });
+
+  const universityTools = computed<WorkbenchTool[]>(() => {
+    if (!data.value) return [];
+    return sortTools(
+      data.value.university.tools.map((tool) => applyEdit(tool, edits.value[tool.id])),
+    ).concat((added.value.university ?? []).map((tool) => applyEdit(tool, edits.value[tool.id])));
+  });
+
+  /** 左侧 UI 点击菜单 → 面板切换到该菜单级。 */
+  function selectMenu(menuId: string): void {
+    selectedMenuId.value = menuId;
+  }
+
+  /** 面板当前展示的菜单（含编辑覆盖与新增项）。 */
+  const activeMenu = computed<{ id: string; label: string; entries: MenuEntry[] } | null>(() => {
+    if (!data.value) return null;
+    if (screen.value === "university") {
+      const entries: MenuEntry[] = universityTools.value.map((tool) => ({
+        menuId: "university",
+        tool,
+        isNew: (added.value.university ?? []).some((addedTool) => addedTool.id === tool.id),
+      }));
+      return { id: "university", label: data.value.university.label, entries };
+    }
+    const category = categories.value.find(
+      (candidate) => candidate.id === selectedMenuId.value,
+    );
+    if (!category) return null;
+    const menuAdditions = added.value[category.id] ?? [];
+    const entries: MenuEntry[] = sortTools(
+      category.items
+        .map((tool) => applyEdit(tool, edits.value[tool.id]))
+        .concat(menuAdditions.map((tool) => applyEdit(tool, edits.value[tool.id]))),
+    ).map((tool) => ({
+      menuId: category.id,
+      tool,
+      isNew: menuAdditions.some((addedTool) => addedTool.id === tool.id),
+    }));
+    return { id: category.id, label: category.label, entries };
+  });
+
+  function updateItem(menuId: string, itemId: string, patch: ToolEdit): void {
+    edits.value = { ...edits.value, [itemId]: { ...edits.value[itemId], ...patch } };
+    void menuId;
+  }
+
+  /** 工具条末位「＋」：新建一个空分类并选中。 */
+  function addCategory(label: string): void {
+    const id = `NEW-CAT-${customCategories.value.length + 1}`;
+    customCategories.value = [
+      ...customCategories.value,
+      { id, label, icon: null, items: [] },
+    ];
+    selectedMenuId.value = id;
+  }
+
+  /** 菜单末位追加一项：id 取 next-<n>，排序键排在当前最大值之后。 */
+  function addItem(menuId: string, label: string, icon: string | null): void {
+    const baseItems =
+      menuId === "university"
+        ? (data.value?.university.tools ?? [])
+        : (categories.value.find((category) => category.id === menuId)?.items ?? []);
+    const existing = [...baseItems, ...(added.value[menuId] ?? [])];
+    const maxPos = existing.reduce((max, tool) => Math.max(max, tool.pos), 0);
+    const id = `NEW-${menuId}-${(added.value[menuId]?.length ?? 0) + 1}`;
+    const tool: WorkbenchTool = {
+      id,
+      label,
+      pos: maxPos + 10,
+      icon,
+      source: "unresolved",
+    };
+    added.value = { ...added.value, [menuId]: [...(added.value[menuId] ?? []), tool] };
+    edits.value = { ...edits.value, [id]: { ...edits.value[id] } };
+  }
+
+  function removeItem(menuId: string, itemId: string): void {
+    if (added.value[menuId]?.some((tool) => tool.id === itemId)) {
+      added.value = {
+        ...added.value,
+        [menuId]: added.value[menuId].filter((tool) => tool.id !== itemId),
+      };
+    }
+    const next = { ...edits.value };
+    delete next[itemId];
+    edits.value = next;
+    if (editingEntry.value?.tool.id === itemId) editingEntry.value = null;
+  }
+
+  /** 落库前的当前覆盖（导出 JSON；真实写回走下一轮的 overlay 通道）。 */
+  function exportOverlay(): string {
+    return JSON.stringify(
+      {
+        format: "openscp-ui-workbench-overlay/1",
+        screen: screen.value,
+        edits: edits.value,
+        added: added.value,
+        customCategories: customCategories.value,
+      },
+      null,
+      2,
+    );
+  }
+
+  function resetAll(): void {
+    edits.value = {};
+    added.value = {};
+    editingEntry.value = null;
+  }
+
+  return {
+    data,
+    loading,
+    screen,
+    selectedMenuId,
+    entered,
+    edits,
+    added,
+    editingEntry,
+    customCategories,
+    categories,
+    universityTools,
+    activeMenu,
+    load,
+    selectScreen,
+    selectMenu,
+    enterMenu,
+    leaveMenu,
+    addCategory,
+    updateItem,
+    addItem,
+    removeItem,
+    exportOverlay,
+    resetAll,
+  };
+});

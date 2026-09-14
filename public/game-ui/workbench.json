@@ -1,0 +1,1455 @@
+{
+ "meta": {
+  "source": "SimCityData Menu/Menu2 (0x00B1B104) + locale 6C969DEE + layout globalui2",
+  "toolCount": 649,
+  "designResolution": [
+   1024,
+   793
+  ],
+  "note": "icon=null 表示游戏为运行时渲染/资源未随包发布，UI 以空白原件占位"
+ },
+ "assets": {
+  "paletteBtn": "/game-ui/png/00000000_2EF08DEB.png",
+  "paletteBtnSel": "/game-ui/png/00000000_D842C689.png",
+  "paletteBtnHot": "/game-ui/png/00000000_511F2525.png",
+  "longBtn": "/game-ui/png/00000000_47FCD3C6.png",
+  "medBtn": "/game-ui/png/00000000_2920A2DF.png",
+  "puckBase": "/game-ui/png/00000000_7AF20E3C.png",
+  "puckLayer": "/game-ui/png/00000000_69EA2586.png",
+  "modeCity": "/game-ui/png/00000000_743410B0.png",
+  "modeBigBiz": "/game-ui/png/00000000_0A9DF0C2.png",
+  "modeRegion": "/game-ui/png/00000000_A71D118F.png",
+  "tabLft": "/game-ui/png/00000000_171083E6.png",
+  "tabMid": "/game-ui/png/00000000_3E12FFEA.png",
+  "tabRgt": "/game-ui/png/00000000_485A7213.png",
+  "mayorRating": "/game-ui/png/00000000_EFF9B8E4.png",
+  "glowWhite": "/game-ui/png/00000000_8455B002.png",
+  "layerIcon": "/game-ui/png/00000000_3BB53D60.png",
+  "layerIconWhite": "/game-ui/png/00000000_078BC7CA.png",
+  "toolSpec": "/game-ui/png/00000000_C467D872.png",
+  "selectAct": "/game-ui/png/00000000_BA7229F1.png"
+ },
+ "university": {
+  "label": "大學",
+  "tools": [
+   {
+    "id": "9A38E382",
+    "label": "人行道",
+    "pos": 10,
+    "icon": null,
+    "source": "locale"
+   },
+   {
+    "id": "DE770DBE",
+    "label": "大學標誌",
+    "pos": 50,
+    "icon": null,
+    "source": "locale"
+   },
+   {
+    "id": "75A90B66",
+    "label": "宿舍",
+    "pos": 100,
+    "icon": null,
+    "source": "locale"
+   },
+   {
+    "id": "64088034",
+    "label": "商務學院",
+    "pos": 300,
+    "icon": null,
+    "source": "locale"
+   },
+   {
+    "id": "2491343B",
+    "label": "工程學院",
+    "pos": 600,
+    "icon": null,
+    "source": "locale"
+   },
+   {
+    "id": "16FC99FA",
+    "label": "法學院",
+    "pos": 700,
+    "icon": null,
+    "source": "locale"
+   },
+   {
+    "id": "36E3E922",
+    "label": "醫學院",
+    "pos": 800,
+    "icon": null,
+    "source": "locale"
+   },
+   {
+    "id": "1F1799B4",
+    "label": "理工學院",
+    "pos": 900,
+    "icon": null,
+    "source": "locale"
+   }
+  ]
+ },
+ "city": {
+  "categories": [
+   {
+    "id": "road",
+    "label": "道路",
+    "icon": "/game-ui/png/00000000_7DD0624F.png",
+    "items": [
+     {
+      "id": "B9053717",
+      "label": "路旁宜人樹",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C741981F",
+      "label": "道路選擇器",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7DD8A627",
+      "label": "低密度泥路",
+      "pos": 5,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B7D3F194",
+      "label": "低密道街道",
+      "pos": 10,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "41158FE5",
+      "label": "高密度街道",
+      "pos": 20,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "795F7036",
+      "label": "中等密度街道",
+      "pos": 20,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2CD130D3",
+      "label": "高密度大道",
+      "pos": 30,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "676804D7",
+      "label": "中等密度大道",
+      "pos": 30,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1055F94B",
+      "label": "高密度電車大道",
+      "pos": 40,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7A90E787",
+      "label": "柏油路公園(§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "93909568",
+      "label": "柏油路公園(§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2AF606C8",
+      "label": "直路公園(§§)",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B2D783E1",
+      "label": "直路公園(§§)",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "25A24807",
+      "label": "低密度泥路",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "EDF237F1",
+      "label": "大路公園(§§)",
+      "pos": 1000,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9133454C",
+      "label": "路旁窸窣樹",
+      "pos": 1800,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "505B4074",
+      "label": "路旁綠蔭樹",
+      "pos": 1810,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "A1BA832F",
+      "label": "路旁搖曳樹",
+      "pos": 1820,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "power",
+    "label": "电力",
+    "icon": "/game-ui/png/00000000_8E8B4E10.png",
+    "items": [
+     {
+      "id": "21498DB9",
+      "label": "風力儲存電池",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "D7721AB0",
+      "label": "太陽能儲存電池",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "3A58420C",
+      "label": "核能發電廠標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7A4DE6E5",
+      "label": "煤礦發電廠標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "972DEB14",
+      "label": "石油發電廠標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "BC843E9B",
+      "label": "風力發電廠",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "0CFAED5B",
+      "label": "太陽能發電標誌",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1287636B",
+      "label": "髒煤發電機",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1A90129D",
+      "label": "煤礦發電廠",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1BDD6C53",
+      "label": "傳統石油發電機",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "AB296DF0",
+      "label": "風力發電標誌",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "0B11437E",
+      "label": "燃煤發電機",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "A4C72E02",
+      "label": "燃汽發電機",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B7CBFC10",
+      "label": "石油發電廠",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1ED2296D",
+      "label": "小型橫向發電機",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "4CFE7D5E",
+      "label": "固定太陽能面板",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9A1E4B51",
+      "label": "淨潔煤發電機",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B8534D1B",
+      "label": "化石燃料發電機",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "98AFF7FE",
+      "label": "集中型太陽能面板",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "F430CCDD",
+      "label": "大型橫向發電機",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "164C80E7",
+      "label": "太陽能發電廠",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C44A2655",
+      "label": "垂直風力發電機",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "water",
+    "label": "供水",
+    "icon": "/game-ui/png/00000000_9E3C3DFA.png",
+    "items": [
+     {
+      "id": "03CDAE98",
+      "label": "基本抽水泵浦",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7384728B",
+      "label": "水塔",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "8C4A3CD5",
+      "label": "抽水泵浦站",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "sewage",
+    "label": "污水",
+    "icon": null,
+    "items": [
+     {
+      "id": "85FAC60F",
+      "label": "污水處理槽",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "BE957F21",
+      "label": "污水排放管道",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "47190AD4",
+      "label": "污水處理廠",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "garbage",
+    "label": "垃圾",
+    "icon": null,
+    "items": [
+     {
+      "id": "33FAE703",
+      "label": "垃圾處理廠",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7A5C0C43",
+      "label": "資源回收車庫",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "81F72783",
+      "label": "垃圾車車庫",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "A0EED2D1",
+      "label": "回收中心",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C474AE3E",
+      "label": "垃圾處理廠",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2758EC58",
+      "label": "垃圾焚化爐",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "fire",
+    "label": "消防",
+    "icon": null,
+    "items": [
+     {
+      "id": "AECB3517",
+      "label": "消防局旗杆",
+      "pos": 25,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "89B8DBB0",
+      "label": "大型消防局標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2B533BB6",
+      "label": "消防局旗杆",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "6D0235EE",
+      "label": "消防局",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7D8C6244",
+      "label": "消防車車庫",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C1D94D96",
+      "label": "消防局標誌",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "5A6C4EF7",
+      "label": "消防隊長辦公室",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9EFAE1F4",
+      "label": "大型消防局",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "6895E78E",
+      "label": "核生化應變消防車庫",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B6CE0AA6",
+      "label": "消防車庫",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "DBFF85A3",
+      "label": "消防直升機坪",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "health",
+    "label": "医疗",
+    "icon": null,
+    "items": [
+     {
+      "id": "082F1CCF",
+      "label": "診所標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "BA6DC1C1",
+      "label": "醫院標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "05456823",
+      "label": "診所",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "5D2A0BE7",
+      "label": "健康中心",
+      "pos": 150,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "20FD2E32",
+      "label": "醫院",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "safety",
+    "label": "治安",
+    "icon": null,
+    "items": [
+     {
+      "id": "4E510EA2",
+      "label": "警察局旗杆",
+      "pos": 25,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1C445642",
+      "label": "警察轄區標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "E0CDB03F",
+      "label": "警察局標誌",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "8E67B653",
+      "label": "警察局",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "park",
+    "label": "公园",
+    "icon": null,
+    "items": [
+     {
+      "id": "152D57D0",
+      "label": "宜人樹",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "4A81FBCD",
+      "label": "綠蔭樹",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "62E6FE38",
+      "label": "搖曳樹",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B9053717",
+      "label": "路旁宜人樹",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C77D92F5",
+      "label": "窸窣樹",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "EEE9D42A",
+      "label": "小滑板公園(§§)",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "46173A50",
+      "label": "花朵廣場(§§§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "646AAA32",
+      "label": "大噴泉公園(§§§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7A90E787",
+      "label": "柏油路公園(§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "8C673576",
+      "label": "小噴泉公園(§§§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "93909568",
+      "label": "柏油路公園(§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "CD62B110",
+      "label": "池塘(§§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "DC02CAED",
+      "label": "池塘(§§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "DD009DE5",
+      "label": "反射池公園(§§§)",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "28E3DACC",
+      "label": "波浪形小徑公園(§§)",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "49CC1D7B",
+      "label": "波浪形小徑公園(§§)",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "18E967A0",
+      "label": "爆米花攤",
+      "pos": 201,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2AF606C8",
+      "label": "直路公園(§§)",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "46173A53",
+      "label": "小型雕塑花園(§§§)",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "70724BF4",
+      "label": "小型雕塑花園(§§§)",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B2D783E1",
+      "label": "直路公園(§§)",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "D44673F9",
+      "label": "小噴泉公園(§§§)",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "05CAC7B5",
+      "label": "五顏六色的小徑公園(§§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "22404DF3",
+      "label": "中滑板公園(§§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "6DE007F7",
+      "label": "反射池公園(§§§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "70724BF7",
+      "label": "花朵廣場(§§§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "83382FD4",
+      "label": "中滑板公園(§§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C0A75B3A",
+      "label": "五顏六色的小徑公園(§§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1230E4D8",
+      "label": "一排高樹(§§)",
+      "pos": 425,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1230E4D9",
+      "label": "一排矮樹(§§)",
+      "pos": 475,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "3D965136",
+      "label": "中型雕塑花園(§§§)",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7F2BE24E",
+      "label": "大型滑板公園(§§)",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "908629EA",
+      "label": "大噴泉公園(§§§)",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9D122A62",
+      "label": "中型小徑森林 (§§)",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "A317C2FB",
+      "label": "中型雕塑花園(§§§)",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B5C6DD6A",
+      "label": "小徑公園(§§)",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "E7FE22E3",
+      "label": "大型滑板公園(§§)",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "4FF4E214",
+      "label": "水公園遊樂場(§)",
+      "pos": 600,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9EC2E438",
+      "label": "大型雕塑花園(§§§)",
+      "pos": 600,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "A94AAF37",
+      "label": "大型雕塑花園(§§§)",
+      "pos": 600,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "BBF5F301",
+      "label": "水公園遊樂場(§)",
+      "pos": 600,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "193BC89C",
+      "label": "大型都會雕塑花園 (§§§)",
+      "pos": 700,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "83ABE66B",
+      "label": "大型都會雕塑花園 (§§§)",
+      "pos": 700,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "175AF694",
+      "label": "一排矮樹(§§)",
+      "pos": 800,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "175AF695",
+      "label": "一排高樹(§§)",
+      "pos": 800,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "EDF237F1",
+      "label": "大路公園(§§)",
+      "pos": 1000,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "41CD00BB",
+      "label": "大型小徑公園 (§§)",
+      "pos": 1050,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "17108AFD",
+      "label": "城市公園(§§)",
+      "pos": 1100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "8F5E7184",
+      "label": "城市公園(§§)",
+      "pos": 1100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "BD973244",
+      "label": "社區公園(§§)",
+      "pos": 1200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "E8D7CA3D",
+      "label": "社區公園(§§)",
+      "pos": 1200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C0EC9BBC",
+      "label": "種植森林",
+      "pos": 1400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "D0818C91",
+      "label": "清除森林",
+      "pos": 1500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9133454C",
+      "label": "路旁窸窣樹",
+      "pos": 1800,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "505B4074",
+      "label": "路旁綠蔭樹",
+      "pos": 1810,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "A1BA832F",
+      "label": "路旁搖曳樹",
+      "pos": 1820,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "education",
+    "label": "教育",
+    "icon": null,
+    "items": [
+     {
+      "id": "EBB2F890",
+      "label": "教育學院",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "48137100",
+      "label": "校車停車位",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "6DFA7D4A",
+      "label": "教育部",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "ECCE28CE",
+      "label": "校車停車位",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9B0D5AAF",
+      "label": "校車站牌",
+      "pos": 150,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B01CEDE4",
+      "label": "社區大學",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "E2832F99",
+      "label": "公共圖書館",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "trade",
+    "label": "贸易",
+    "icon": null,
+    "items": [
+     {
+      "id": "3241E773",
+      "label": "貿易倉儲標誌",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "EFDAE3C4",
+      "label": "貿易總部標誌",
+      "pos": 0,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "95826468",
+      "label": "貿易港標誌",
+      "pos": 20,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "CD6FF703",
+      "label": "貨運卡車車庫",
+      "pos": 25,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "923ED6DF",
+      "label": "貨運火車總站",
+      "pos": 50,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "1BE77B24",
+      "label": "貿易倉庫",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "3B0C812D",
+      "label": "煤礦集貨地",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "5BFD2818",
+      "label": "貨運倉庫",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7A8FEC18",
+      "label": "煤礦集貨地",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "CD5CD571",
+      "label": "貨運倉庫",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "6F5EA7DD",
+      "label": "原油集貨地",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "BE81DC1C",
+      "label": "貨運站",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "FE680F2C",
+      "label": "原油集貨地",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "103A2DDC",
+      "label": "貿易總部",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B40D9BC1",
+      "label": "原礦集貨地",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "D0E3F2CC",
+      "label": "原礦集貨地",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "47D1D44E",
+      "label": "金屬集貨地",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "83A46D49",
+      "label": "金屬集貨地",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "A11A3819",
+      "label": "貿易港",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "3EBA7015",
+      "label": "合金集貨地",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "8C23AF6A",
+      "label": "合金集貨地",
+      "pos": 500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "B68140FE",
+      "label": "燃料集貨地",
+      "pos": 600,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "D09EBBCF",
+      "label": "燃料集貨地",
+      "pos": 600,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "11E6CA11",
+      "label": "塑膠集貨地",
+      "pos": 700,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "5B1BD182",
+      "label": "塑膠集貨地",
+      "pos": 700,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "E1060681",
+      "label": "處理器集貨地",
+      "pos": 800,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "F772043E",
+      "label": "處理器集貨地",
+      "pos": 800,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "421BCDC3",
+      "label": "電腦集貨地",
+      "pos": 900,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "763E7762",
+      "label": "電腦集貨地",
+      "pos": 900,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "3AD87D73",
+      "label": "電視集貨地",
+      "pos": 1000,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "985C3912",
+      "label": "電視集貨地",
+      "pos": 1000,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "landmark",
+    "label": "地标",
+    "icon": null,
+    "items": [
+     {
+      "id": "60861B5E",
+      "label": "荷蘭風車",
+      "pos": 3500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "C0E5BE77",
+      "label": "帝國大廈",
+      "pos": 4500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "D6093278",
+      "label": "環球劇院",
+      "pos": 5500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2F2D5FFB",
+      "label": "比薩斜塔",
+      "pos": 6500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7A9A921E",
+      "label": "奧斯陸歌劇院",
+      "pos": 7000,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "7929649F",
+      "label": "雪梨歌劇院",
+      "pos": 9500,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "74168A83",
+      "label": "威利斯大廈",
+      "pos": 11500,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   },
+   {
+    "id": "mayor",
+    "label": "市政",
+    "icon": null,
+    "items": [
+     {
+      "id": "6291C3D3",
+      "label": "市長豪宅",
+      "pos": 20,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9814FC64",
+      "label": "城市旗幟",
+      "pos": 25,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "376D6FFB",
+      "label": "市長官邸",
+      "pos": 30,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "389D5C89",
+      "label": "市長的烤肉露台",
+      "pos": 100,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9C389EB2",
+      "label": "噴水池",
+      "pos": 200,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "63576A86",
+      "label": "市長雕像",
+      "pos": 300,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "2DD09D3F",
+      "label": "烤肉區(§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     },
+     {
+      "id": "9FF1CAB9",
+      "label": "烤肉區(§)",
+      "pos": 400,
+      "icon": null,
+      "source": "locale"
+     }
+    ]
+   }
+  ]
+ }
+}

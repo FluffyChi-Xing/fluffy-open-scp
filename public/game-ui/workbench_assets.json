@@ -1,0 +1,43 @@
+{
+ "icons": {
+  "road": "/game-ui/png/00000000_7DD0624F.png",
+  "avenue": "/game-ui/png/00000000_1C387573.png",
+  "power": "/game-ui/png/00000000_262A422D.png",
+  "water": "/game-ui/png/00000000_53C6457B.png",
+  "sewage": "/game-ui/png/00000000_B17951BE.png",
+  "police": "/game-ui/png/00000000_C4E0F544.png",
+  "health": "/game-ui/png/00000000_9E23621C.png",
+  "education": "/game-ui/png/00000000_8AAB621C.png",
+  "trade": "/game-ui/png/00000000_D2E5F42C.png",
+  "drilling": "/game-ui/png/00000000_F5F8FB75.png",
+  "gambling": "/game-ui/png/00000000_4ADE5A53.png",
+  "population": "/game-ui/png/00000000_9E9C909B.png",
+  "electronics": "/game-ui/png/00000000_1D7BC467.png",
+  "manufacturing": "/game-ui/png/00000000_9A240A8E.png",
+  "happiness": "/game-ui/png/00000000_949D19AF.png"
+ },
+ "blanks": {
+  "paletteBtn": "/game-ui/png/00000000_2EF08DEB.png",
+  "paletteBtnSel": "/game-ui/png/00000000_D842C689.png",
+  "paletteBtnHot": "/game-ui/png/00000000_511F2525.png",
+  "paletteBtnDis": "/game-ui/png/00000000_2F20E53E.png",
+  "longBtn": "/game-ui/png/00000000_47FCD3C6.png",
+  "medBtn": "/game-ui/png/00000000_2920A2DF.png",
+  "puckBase": "/game-ui/png/00000000_7AF20E3C.png",
+  "puckLayer": "/game-ui/png/00000000_69EA2586.png",
+  "modeCity": "/game-ui/png/00000000_743410B0.png",
+  "modeBigBiz": "/game-ui/png/00000000_0A9DF0C2.png",
+  "modeRegion": "/game-ui/png/00000000_A71D118F.png",
+  "tabLft": "/game-ui/png/00000000_171083E6.png",
+  "tabMid": "/game-ui/png/00000000_3E12FFEA.png",
+  "tabRgt": "/game-ui/png/00000000_485A7213.png",
+  "mayorRating": "/game-ui/png/00000000_EFF9B8E4.png",
+  "glowWhite": "/game-ui/png/00000000_8455B002.png",
+  "layerIcon": "/game-ui/png/00000000_3BB53D60.png",
+  "layerIconWhite": "/game-ui/png/00000000_078BC7CA.png",
+  "toolSpec": "/game-ui/png/00000000_C467D872.png",
+  "paletteSelectAct": "/game-ui/png/00000000_BA7229F1.png",
+  "constructionStripes": "/game-ui/png/00000000_C88FD0F9.png",
+  "avatarFrame": "/game-ui/png/00000000_8B78693E.png"
+ }
+}
