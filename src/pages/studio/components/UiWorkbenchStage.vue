@@ -21,8 +21,20 @@ import { CATEGORY_ICONS, toolIconName } from "@/lib/game-ui/workbench";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
-const { dimension, data, activeMenu, categories, selectedMenuId, entered, hudImages } =
-  storeToRefs(store);
+const {
+  dimension,
+  data,
+  activeMenu,
+  categories,
+  selectedMenuId,
+  entered,
+  hudImages,
+  page,
+  pageCount,
+  pagedEntries,
+} = storeToRefs(store);
+// 函数不走 storeToRefs（其只转状态/getter）
+const setPage = store.setPage;
 
 /* ── 舞台缩放：容器内等比放下 1600×900（舞台高度固定，不随面板高度变化） ── */
 const host = ref<HTMLElement>();
@@ -153,7 +165,9 @@ function removeCategoryAt(id: string): void {
           :style="rectStyle('772')"
           :title="t('studio.workbench.dimCity')"
           @click="store.selectDimension('city')"
-        />
+        >
+          <span class="dim-circle big"><FIcon name="House" :size="24" aria-label="" /></span>
+        </button>
         <button
           type="button"
           class="dim-tab"
@@ -161,7 +175,9 @@ function removeCategoryAt(id: string): void {
           :style="rectStyle('1459')"
           :title="t('studio.workbench.dimBigbiz')"
           @click="store.selectDimension('bigbiz')"
-        />
+        >
+          <span class="dim-circle"><FIcon name="UsersRound" :size="18" aria-label="" /></span>
+        </button>
         <button
           type="button"
           class="dim-tab"
@@ -169,7 +185,9 @@ function removeCategoryAt(id: string): void {
           :style="rectStyle('119')"
           :title="t('studio.workbench.dimRegion')"
           @click="store.selectDimension('region')"
-        />
+        >
+          <span class="dim-circle"><FIcon name="Globe" :size="16" aria-label="" /></span>
+        </button>
 
         <!-- 城市主菜单：一级分类（悬浮圆钮）⇄ 二级槽位面板，滑动过渡 -->
         <Transition name="lv" mode="out-in">
@@ -210,9 +228,30 @@ function removeCategoryAt(id: string): void {
             </div>
           </div>
           <div v-else key="l2" class="palette-strip">
+            <div v-if="pageCount > 1" class="page-ctrl">
+              <button
+                type="button"
+                class="page-btn"
+                :disabled="page <= 1"
+                aria-label="上一页"
+                @click="setPage(page - 1)"
+              >
+                ‹
+              </button>
+              <span class="tabnum">{{ page }} / {{ pageCount }}</span>
+              <button
+                type="button"
+                class="page-btn"
+                :disabled="page >= pageCount"
+                aria-label="下一页"
+                @click="setPage(page + 1)"
+              >
+                ›
+              </button>
+            </div>
             <div class="palette-slots">
               <button
-                v-for="(entry, index) in activeMenu?.entries ?? []"
+                v-for="(entry, index) in pagedEntries"
                 :key="entry.tool.id"
                 type="button"
                 class="slot"
@@ -418,15 +457,61 @@ function removeCategoryAt(id: string): void {
 }
 .dim-tab {
   background: transparent;
-  border: 2.5px solid transparent;
-  border-radius: 50%;
+  border: 0;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   position: absolute;
-  transition: box-shadow 140ms ease;
 }
-.dim-tab.active {
-  border-color: rgb(8 120 254 / 90%);
+.dim-circle {
+  align-items: center;
+  background: radial-gradient(circle at 50% 34%, #fbfdff 96%, #d2deea);
+  border: 2px solid rgb(245 248 251 / 95%);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgb(9 20 34 / 40%);
+  color: #2c4a6e;
+  display: flex;
+  height: 44px;
+  justify-content: center;
+  transition: box-shadow 140ms ease;
+  width: 44px;
+}
+.dim-circle.big {
+  height: 60px;
+  width: 60px;
+}
+.dim-tab.active .dim-circle {
+  background: radial-gradient(circle at 50% 30%, #6cb8f2 0%, #2f86d6 55%, #1c5fa8 100%);
+  border-color: rgb(255 255 255 / 96%);
+  color: #fff;
   box-shadow: 0 0 14px rgb(8 120 254 / 55%);
+}
+.page-ctrl {
+  align-items: center;
+  color: #eaf2fa;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  position: absolute;
+  right: 6px;
+  top: -22px;
+}
+.page-btn {
+  background: rgb(250 252 254 / 92%);
+  border: 1px solid rgb(160 178 196 / 80%);
+  border-radius: 4px;
+  color: #223c5c;
+  cursor: pointer;
+  font-size: 14px;
+  height: 22px;
+  line-height: 1;
+  width: 22px;
+}
+.page-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 .lv-enter-active,
 .lv-leave-active {
@@ -537,6 +622,7 @@ function removeCategoryAt(id: string): void {
 .palette-slots {
   display: flex;
   gap: 6px;
+  justify-content: center;
 }
 .slot {
   background: rgb(20 30 46 / 18%);

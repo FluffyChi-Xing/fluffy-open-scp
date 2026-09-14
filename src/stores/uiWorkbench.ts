@@ -113,6 +113,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   function selectDimension(next: WorkbenchDimension): void {
     dimension.value = next;
     entered.value = false;
+    page.value = 1;
     selectedMenuId.value = firstMenuId();
   }
 
@@ -120,6 +121,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   function enterMenu(menuId: string): void {
     selectedMenuId.value = menuId;
     entered.value = true;
+    page.value = 1;
   }
 
   /** 二级返回一级。 */
@@ -136,6 +138,10 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     }
     return all.filter((category) => dimensionIds.includes(category.id));
   });
+
+  /** 二级分页：游戏行为为一页最多 8 个槽位，多余分页。 */
+  const PAGE_SIZE = 8;
+  const page = ref(1);
 
   /** 面板当前展示的菜单（含编辑覆盖与新增项）。 */
   const activeMenu = computed<{ id: string; label: string; entries: MenuEntry[] } | null>(() => {
@@ -156,6 +162,20 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     }));
     return { id: category.id, label: category.label, entries };
   });
+
+  const pageCount = computed(() =>
+    Math.max(1, Math.ceil((activeMenu.value?.entries.length ?? 0) / PAGE_SIZE)),
+  );
+
+  const pagedEntries = computed<MenuEntry[]>(() => {
+    const entries = activeMenu.value?.entries ?? [];
+    const start = (Math.min(page.value, pageCount.value) - 1) * PAGE_SIZE;
+    return entries.slice(start, start + PAGE_SIZE);
+  });
+
+  function setPage(next: number): void {
+    page.value = Math.min(Math.max(1, next), pageCount.value);
+  }
 
   /** 面板点击条目 → 打开编辑 Sheet。 */
   function openEditor(menuId: string, itemId: string): void {
@@ -266,6 +286,10 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     hudImages,
     categories,
     activeMenu,
+    page,
+    pageCount,
+    pagedEntries,
+    setPage,
     rect,
     load,
     selectDimension,

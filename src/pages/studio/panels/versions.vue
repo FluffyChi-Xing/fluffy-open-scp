@@ -541,7 +541,7 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
   column-gap: 12px;
   display: grid;
   grid-template-columns:
-    18px 56px minmax(0, 1fr) 72px 148px 108px minmax(0, auto);
+    18px 56px minmax(96px, 1fr) 72px 148px 108px 236px;
   padding: 0 4px;
 }
 .diff-row {
@@ -571,7 +571,8 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
 /* 每个节点自绘一段竖线：从本节点标记底部，接到下一节点标记顶部。
    高度用 min-height：窄容器下动作按钮换行时行随之长高，脊线按 % 自适应。 */
 .node {
-  min-height: 44px;
+  height: 44px;
+  overflow: hidden;
   position: relative;
 }
 .node:not(:last-child)::after {
@@ -647,7 +648,7 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
 }
 .node-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
   justify-content: flex-end;
   opacity: 0;
@@ -753,7 +754,7 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
    视口还宽时表可能已经很窄。先收时间列，再收字节列。 */
 @container (max-width: 1000px) {
   .rev-row {
-    grid-template-columns: 18px 56px minmax(0, 1fr) 72px 148px minmax(0, auto);
+    grid-template-columns: 18px 56px minmax(96px, 1fr) 72px 148px 236px;
   }
   .rev-row > .cell-time {
     display: none;
@@ -761,7 +762,7 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
 }
 @container (max-width: 800px) {
   .rev-row {
-    grid-template-columns: 18px 56px minmax(0, 1fr) 72px minmax(0, auto);
+    grid-template-columns: 18px 56px minmax(96px, 1fr) 72px 236px;
   }
   .rev-row > .cell-bytes {
     display: none;
