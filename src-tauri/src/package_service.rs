@@ -3367,8 +3367,7 @@ pub async fn patch_property_overlay(
                 PROPERTY_OVERLAY_MAX,
             )));
         }
-        let job_id = manager.next_job_id().map_err(CommandError::from)?;
-        write_export(&output_path, &overlay, job_id).map_err(CommandError::from)?;
+        write_export(&output_path, &overlay).map_err(CommandError::from)?;
         Ok(PropertyPatchResult {
             output_path: request.output_path,
             tgi: tgi.into(),
@@ -4518,30 +4517,9 @@ fn export_media(
     result
 }
 
-fn write_export(path: &Path, bytes: &[u8], job_id: u64) -> Result<(), PackageError> {
+fn write_export(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
     validate_output_path(path)?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| PackageError::InvalidArgument("output path has no parent".into()))?;
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| PackageError::InvalidArgument("output path has no file name".into()))?
-        .to_string_lossy();
-    let temporary = parent.join(format!(".{file_name}.openscp-{job_id}.tmp"));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)?;
-    let write_result = file.write_all(bytes).and_then(|()| file.sync_all());
-    if let Err(error) = write_result {
-        let _ = fs::remove_file(&temporary);
-        return Err(error.into());
-    }
-    if let Err(error) = fs::rename(&temporary, path) {
-        let _ = fs::remove_file(&temporary);
-        return Err(error.into());
-    }
-    Ok(())
+    crate::atomic_fs::write_atomic(path, bytes, true).map_err(PackageError::from)
 }
 
 #[tauri::command]
@@ -4630,7 +4608,7 @@ pub async fn export(
                     if bytes.len() as u64 > RESOURCE_DECOMPRESSED_MAX {
                         return Err(PackageError::OutputLimitExceeded(RESOURCE_DECOMPRESSED_MAX));
                     }
-                    write_export(&output_path, &bytes, job_id).map(|()| bytes.len())
+                    write_export(&output_path, &bytes).map(|()| bytes.len())
                 },
             ),
         };
@@ -5372,7 +5350,7 @@ mod tests {
             ExportFormat::Raw,
         )
         .unwrap();
-        write_export(&target, &bytes, 7).unwrap();
+        write_export(&target, &bytes).unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"abcd");
         let _ = fs::remove_file(package_path);
         let _ = fs::remove_file(target);

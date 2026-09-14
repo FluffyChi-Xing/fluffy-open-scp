@@ -1,10 +1,7 @@
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs::{self, File};
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::{Arc, Mutex};
 
 use sc_store::{FolderCacheEntry, Store, StoreError, WorkspaceConfig};
 use serde::{Deserialize, Serialize};
@@ -20,27 +17,17 @@ const MAX_RELATIVE_PATH_BYTES: usize = 512;
 #[derive(Debug)]
 pub struct WorkspaceManager {
     lock: Mutex<()>,
-    next_temp_id: AtomicU64,
 }
 
 impl WorkspaceManager {
     pub fn new() -> Self {
         Self {
             lock: Mutex::new(()),
-            next_temp_id: AtomicU64::new(1),
         }
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, WorkspaceError> {
         self.lock.lock().map_err(|_| WorkspaceError::StatePoisoned)
-    }
-
-    fn next_temp_id(&self) -> Result<u64, WorkspaceError> {
-        let id = self.next_temp_id.fetch_add(1, Ordering::Relaxed);
-        if id == 0 {
-            return Err(WorkspaceError::StatePoisoned);
-        }
-        Ok(id)
     }
 }
 
@@ -375,77 +362,8 @@ fn refresh_cache(store: &Store, root: &Path) -> Result<Vec<WorkspaceEntry>, Work
     Ok(entries)
 }
 
-fn write_atomic(
-    manager: &WorkspaceManager,
-    target: &Path,
-    bytes: &[u8],
-    replace: bool,
-) -> Result<(), WorkspaceError> {
-    let parent = target
-        .parent()
-        .ok_or_else(|| WorkspaceError::InvalidPath("file has no parent".into()))?;
-    let name = target
-        .file_name()
-        .ok_or_else(|| WorkspaceError::InvalidPath("file has no name".into()))?
-        .to_string_lossy();
-    let temporary = parent.join(format!(".{name}.openscp-{}.tmp", manager.next_temp_id()?));
-    let result = (|| -> Result<(), WorkspaceError> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        atomic_install(&temporary, target, replace)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-#[cfg(windows)]
-fn atomic_install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
-    const ERROR_SHARING_VIOLATION: i32 = 32;
-    // 索引器/杀软/同步盘常以不含 FILE_SHARE_DELETE 的句柄短暂持有目标文件，
-    // ReplaceFileW 会直接失败；MoveFileExW + 短退避重试可跨过这类瞬时锁。
-    const RETRY_DELAYS_MS: [u64; 4] = [25, 50, 100, 200];
-    let source: Vec<u16> = source
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    let target: Vec<u16> = target
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    unsafe extern "system" {
-        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-    }
-    let flags = if replace { MOVEFILE_REPLACE_EXISTING } else { 0 };
-    for attempt in 0..=RETRY_DELAYS_MS.len() {
-        let ok = unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), flags) };
-        if ok != 0 {
-            return Ok(());
-        }
-        let error = io::Error::last_os_error();
-        if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION)
-            || attempt == RETRY_DELAYS_MS.len()
-        {
-            return Err(error);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAYS_MS[attempt]));
-    }
-    unreachable!("retry loop always returns")
-}
-
-#[cfg(not(windows))]
-fn atomic_install(source: &Path, target: &Path, _replace: bool) -> io::Result<()> {
-    fs::rename(source, target)
+fn write_atomic(target: &Path, bytes: &[u8], replace: bool) -> Result<(), WorkspaceError> {
+    crate::atomic_fs::write_atomic(target, bytes, replace).map_err(WorkspaceError::from)
 }
 
 #[command]
@@ -631,7 +549,7 @@ pub async fn workspace_write_markdown(
                 MAX_MARKDOWN_BYTES,
             )));
         }
-        write_atomic(&manager, &target, bytes, existing.is_some()).map_err(CommandError::from)?;
+        write_atomic(&target, bytes, existing.is_some()).map_err(CommandError::from)?;
         Ok(MarkdownDocument {
             relative_path: request.relative_path,
             content: request.content.clone(),
@@ -669,7 +587,7 @@ pub async fn workspace_create_markdown(
                 MAX_MARKDOWN_BYTES,
             )));
         }
-        write_atomic(&manager, &target, bytes, false).map_err(CommandError::from)?;
+        write_atomic(&target, bytes, false).map_err(CommandError::from)?;
         Ok(MarkdownDocument {
             relative_path: request.relative_path,
             content: request.content.clone(),

@@ -74,6 +74,32 @@ export interface PackageHistory {
   openCount: number;
   lastOpenedAt: number;
 }
+export interface RenderTelemetryEntry {
+  sessionKey: string;
+  stage: string;
+  trigger: string;
+  durationMs: number;
+  metadata?: Record<string, unknown>;
+}
+export interface RenderStageStat {
+  stage: string;
+  count: number;
+  avgMs: number;
+  minMs: number;
+  maxMs: number;
+  p50Ms: number;
+  p95Ms: number;
+  lastMs: number;
+}
+export interface RenderTelemetrySummary {
+  windowDays: number;
+  since: number;
+  totalCount: number;
+  stages: RenderStageStat[];
+}
+export interface TelemetryClearResult {
+  rows: number;
+}
 export interface Tgi {
   typeId: number;
   group: number;
@@ -742,6 +768,63 @@ export interface WriteLocaleOverlayResponse {
   outputPath: string;
   entryCount: number;
   bytesWritten: number;
+  /** 目标里来自既有文件、本次未被编辑因而原样保留的条目数。 */
+  mergedKept: number;
+  /** 版本记录（best-effort；失败时为空，原因见 diagnostic）。 */
+  changesetId?: number;
+  revision?: number;
+  diagnostic?: string;
+}
+export interface ChangesetSummary {
+  id: number;
+  targetPath: string;
+  writer: string;
+  label?: string;
+  note?: string;
+  revision: number;
+  resourceCount: number;
+  bytesBefore: number;
+  bytesAfter: number;
+  fileDigest?: string;
+  restoredFrom?: number;
+  detail?: unknown;
+  createdAt: number;
+}
+export interface ChangeItemView {
+  typeId: number;
+  groupId: number;
+  instance: number;
+  /** "added" | "modified" | "removed" */
+  status: string;
+  beforeSize: number;
+  afterSize: number;
+}
+export interface ChangesetDetailResponse {
+  changeset: ChangesetSummary;
+  items: ChangeItemView[];
+}
+export interface VersionTargetSummary {
+  targetPath: string;
+  latestRevision: number;
+  changesetCount: number;
+  lastWrittenAt: number;
+}
+export interface CaptureBaselineResponse {
+  /** false = 该 target 已有版本线，幂等跳过。 */
+  created: boolean;
+  changeset: ChangesetSummary;
+}
+export interface RollbackResult {
+  outputPath: string;
+  targetRevision: number;
+  newChangeset: ChangesetSummary;
+  resourceCount: number;
+  bytesWritten: number;
+}
+export interface VersionDeleteResult {
+  changesets: number;
+  items: number;
+  blobsReclaimed: number;
 }
 
 export const activityEventName = "activity:event";

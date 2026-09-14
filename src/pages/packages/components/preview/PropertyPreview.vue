@@ -92,7 +92,9 @@ function hashLabel(hash: number) {
         <tbody>
           <tr v-for="entry in preview.entries" :key="entry.hash">
             <td class="prop-name">
-              <span>{{ entry.name ?? hashLabel(entry.hash) }}</span>
+              <span :title="entry.name ?? hashLabel(entry.hash)">{{
+                entry.name ?? hashLabel(entry.hash)
+              }}</span>
               <small
                 >{{ entry.typeName
                 }}<template v-if="entry.arrayLen !== null"
@@ -179,13 +181,16 @@ function hashLabel(hash: number) {
   vertical-align: top;
 }
 .prop-name {
+  max-width: 320px;
   min-width: 180px;
 }
 .prop-name span {
   color: var(--foreground);
   display: block;
   font-weight: 600;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .prop-name small {
   color: var(--subtle-foreground);

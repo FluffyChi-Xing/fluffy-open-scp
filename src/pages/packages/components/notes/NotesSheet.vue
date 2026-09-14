@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FMarkdown from "@/components/markdown/FMarkdown.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
@@ -33,6 +34,13 @@ const formContent = ref("");
 const previewMode = ref(true);
 const saving = ref(false);
 const knownTopics = ref<string[]>([]);
+const topicOpen = ref(false);
+
+/** 从已有分类里选一个（也可在上方输入框里直接敲新分类）。 */
+function pickTopic(topic: string) {
+  formTopic.value = topic;
+  topicOpen.value = false;
+}
 
 async function load() {
   if (!props.tgi) return;
@@ -166,17 +174,46 @@ const editing = computed(() =>
         class="notes-form"
         :aria-label="$t('notes.formLabel')"
       >
-        <label class="notes-field">
+        <div class="notes-field">
           <span>{{ $t("notes.topic") }}</span>
-          <input
-            v-model="formTopic"
-            list="notes-topics"
-            :placeholder="$t('notes.topicPlaceholder')"
-          />
-          <datalist id="notes-topics">
-            <option v-for="topic in knownTopics" :key="topic" :value="topic" />
-          </datalist>
-        </label>
+          <FDropdown v-model:open="topicOpen" :width="240">
+            <template #trigger>
+              <button
+                type="button"
+                class="topic-trigger"
+                :class="{ placeholder: !formTopic }"
+              >
+                <span class="topic-trigger-text">{{
+                  formTopic || $t("notes.topicPlaceholder")
+                }}</span>
+                <FIcon name="ChevronDown" :size="14" aria-label="" />
+              </button>
+            </template>
+            <input
+              v-model="formTopic"
+              class="topic-input"
+              :placeholder="$t('notes.topicInput')"
+              @keydown.enter="topicOpen = false"
+            />
+            <p v-if="!knownTopics.length" class="topic-empty">
+              {{ $t("notes.topicEmpty") }}
+            </p>
+            <button
+              v-for="topic in knownTopics"
+              :key="topic"
+              type="button"
+              :class="{ selected: topic === formTopic }"
+              @click="pickTopic(topic)"
+            >
+              <FIcon
+                :name="topic === formTopic ? 'Check' : 'CircleDot'"
+                :size="14"
+                aria-label=""
+              />
+              {{ topic }}
+            </button>
+          </FDropdown>
+        </div>
         <label class="notes-field">
           <span>{{ $t("notes.title") }}</span>
           <input v-model="formTitle" :placeholder="$t('notes.titlePlaceholder')" />
@@ -224,20 +261,28 @@ const editing = computed(() =>
         :key="item.id"
         class="notes-item"
       >
-        <div class="notes-item-head">
+        <header class="notes-item-head">
           <span class="notes-topic-chip">{{ item.topic }}</span>
-          <strong>{{ item.title }}</strong>
+          <strong class="notes-item-title">{{ item.title }}</strong>
+        </header>
+        <FMarkdown :source="item.content || '*—*'" class="notes-md" />
+        <!-- 页脚：时间与操作放在卡片底部，不再挤在标题行里 -->
+        <footer class="notes-item-foot">
           <span class="notes-meta">{{ new Date(item.updatedAt).toLocaleString() }}</span>
           <span class="notes-actions-inline">
             <button type="button" :aria-label="$t('notes.edit')" @click="startEdit(item)">
               <FIcon name="SquarePen" :size="13" aria-label="" />
             </button>
-            <button type="button" :aria-label="$t('common.delete')" @click="remove(item.id)">
+            <button
+              type="button"
+              class="danger"
+              :aria-label="$t('common.delete')"
+              @click="remove(item.id)"
+            >
               <FIcon name="Trash2" :size="13" aria-label="" />
             </button>
           </span>
-        </div>
-        <FMarkdown :source="item.content || '*—*'" class="notes-md" />
+        </footer>
       </article>
     </div>
   </FSheet>
@@ -329,6 +374,48 @@ const editing = computed(() =>
   font-size: 12px;
   padding: 7px 9px;
 }
+/* 分类标签：用 FDropdown 组合框（原生 datalist 弹层在夜间模式下是白底） */
+.topic-trigger {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 7px 9px;
+  text-align: start;
+  width: 100%;
+}
+.topic-trigger.placeholder .topic-trigger-text {
+  color: var(--muted-foreground);
+}
+.topic-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topic-input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  margin-bottom: 4px;
+  padding: 7px 9px;
+  width: 100%;
+}
+.topic-empty {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  margin: 4px 0;
+  padding: 0 9px;
+}
 .notes-field textarea {
   font-family: ui-monospace, Consolas, monospace;
   resize: vertical;
@@ -367,10 +454,21 @@ const editing = computed(() =>
   padding: 12px;
 }
 .notes-item-head {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+}
+.notes-item-title {
+  min-width: 0;
+}
+.notes-item-foot {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding-top: 8px;
 }
 .notes-topic-chip {
   background: var(--accent);
@@ -382,7 +480,7 @@ const editing = computed(() =>
 .notes-meta {
   color: var(--muted-foreground);
   font-size: 11px;
-  margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 .notes-actions-inline {
   display: inline-flex;
@@ -391,6 +489,9 @@ const editing = computed(() =>
 .notes-actions-inline button {
   min-height: 24px;
   padding: 0 6px;
+}
+.notes-actions-inline button.danger:hover {
+  color: var(--danger, #d9534f);
 }
 .notes-md {
   font-size: 12px;

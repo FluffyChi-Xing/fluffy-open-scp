@@ -1,6 +1,7 @@
 import { computed, reactive, ref, shallowRef } from "vue";
 import { createDataSource } from "@/api/data-source";
 import { parseLotModelContainer } from "@/lib/three-gltf";
+import { renderTelemetry } from "@/lib/renderTelemetry";
 import { unitId } from "./unitGizmos";
 import { createUnitEditLayer, mergeUnitOverrides } from "./unitEditLayer";
 import type {
@@ -16,6 +17,9 @@ import type {
   SpawnerUnit,
   Tgi,
 } from "@/api/tauri";
+
+/** 每次打开会话递增，用于把同一 lot 的多次打开区分为不同遥测会话。 */
+let sessionEpoch = 0;
 
 /** Outliner/状态栏共用的 Unit 显示名（灯光优先 DebugName）。 */
 export function unitLabel(unit: LotUnitDto, t: (key: string) => string): string {
@@ -78,6 +82,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   });
 
   let requestToken = 0;
+  /** 每次 open 递增，用于把同一 lot 的多次打开区分为不同遥测会话。 */
+  const openEpoch = ++sessionEpoch;
 
   async function load() {
     const token = ++requestToken;
@@ -90,6 +96,14 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelState.value = "pending";
     selectedId.value = null;
     edit.reset();
+    renderTelemetry.setContext({
+      sessionKey: `${packageId}:${tgi.typeId}:${tgi.instance}:${openEpoch}`,
+      trigger: "first_load",
+    });
+    const span = renderTelemetry.begin("texture_compose", {
+      packageId,
+      instance: tgi.instance,
+    });
     try {
       const result = await source.readLotEditorSession(packageId, tgi);
       if (token !== requestToken) return;
@@ -98,7 +112,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       const firstAvailable = modelLods.value.findIndex((lod) => lod !== null);
       if (firstAvailable >= 0) {
         activeLod.value = firstAvailable;
-        void loadLod(token, firstAvailable);
+        void loadLod(token, firstAvailable, "first_load");
       } else {
         modelState.value = "missing";
       }
@@ -106,19 +120,32 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       if (token !== requestToken) return;
       loadError.value = "propertyEditorLoadFailed";
     } finally {
+      span.end();
       if (token === requestToken) loading.value = false;
     }
   }
 
   /** 加载指定 LOD 的模型几何链：单命令取全部网格 GLB + 材质。失败降级不阻塞。 */
-  async function loadLod(token: number, index: number) {
+  async function loadLod(
+    token: number,
+    index: number,
+    reason: "first_load" | "lod_switch" = "lod_switch",
+  ) {
     const lod = modelLods.value[index];
     if (!lod) return;
     modelState.value = "loading";
+    renderTelemetry.setContext({
+      sessionKey: `${packageId}:${tgi.typeId}:${tgi.instance}:${openEpoch}`,
+      trigger: reason,
+    });
+    const span = renderTelemetry.begin("model_load", { lod: index });
+    let meta: Record<string, unknown> = {};
     try {
       const buffer = await source.readLotModelMeshes(lod.packageId, lod.tgi);
       if (token !== requestToken) return;
+      meta.bytes = buffer.byteLength;
       const payload = parseLotModelContainer(buffer);
+      meta.glbs = payload.glbs.length;
       if (!payload.glbs.length) {
         modelState.value = "missing";
         return;
@@ -128,6 +155,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     } catch {
       if (token !== requestToken) return;
       modelState.value = "error";
+      meta = { failed: true };
+    } finally {
+      span.end(meta);
     }
   }
 
@@ -135,7 +165,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   function switchLod(index: number) {
     if (index === activeLod.value || !modelLods.value[index]) return;
     activeLod.value = index;
-    void loadLod(++requestToken, index);
+    void loadLod(++requestToken, index, "lod_switch");
   }
 
   const grouping = computed<UnitGrouping>(() => {

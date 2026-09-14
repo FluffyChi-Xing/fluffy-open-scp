@@ -5,6 +5,8 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { disposeObject } from "@/lib/three-viewer";
 import { parseLotModelObjects } from "@/lib/three-gltf";
+import { renderTelemetry } from "@/lib/renderTelemetry";
+import type { RenderTelemetryTrigger } from "@/lib/renderTelemetry";
 import type * as ThreeNamespace from "three";
 import type {
   DecalUnit,
@@ -265,10 +267,18 @@ function updateGizmo() {
   controls.attach(object);
 }
 
+/** 本次重建的触发来源，供渲染遥测标注（在 watcher 里按变化项判定）。 */
+let pendingTrigger: RenderTelemetryTrigger = "first_load";
+
+/** 贴花投影命中/回退计数（每次装配前重置），供 decal_render 遥测。 */
+const decalStats = { projected: 0, fallback: 0 };
+
 /** rebuild 包装：模型载荷身份变化时重新构图（编辑操作保持镜头）。 */
 function rebuildScene() {
   const reframe = props.modelPayload !== lastPayload;
   lastPayload = props.modelPayload;
+  // 只改 trigger：sessionKey 已由 usePropertyEditorSession 设好。
+  renderTelemetry.setTrigger(pendingTrigger);
   return viewport.rebuild(assembleScene, { reframe });
 }
 
@@ -386,6 +396,10 @@ async function assembleScene(ctx: Parameters<
   ).map(() => []);
   /** 贴花投影目标：全部建筑网格（在 lot 局部空间为单位变换）。 */
   const buildingMeshes: ThreeNamespace.Mesh[] = [];
+  const tintSpan = renderTelemetry.begin("texture_compose", {
+    phase: "tint",
+    refined: props.renderMode === "refined",
+  });
   const tintResolved =
     props.renderMode === "refined" && payload
       ? await loadTintTextures(
@@ -395,6 +409,10 @@ async function assembleScene(ctx: Parameters<
           ctx.maxAnisotropy,
         )
       : [];
+  tintSpan.end({
+    materials: payload?.materials?.length ?? 0,
+    tinted: tintResolved.filter((entry) => entry?.tintTex).length,
+  });
   if (ctx.isStale()) return;
   // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）。
   // 必须立刻按当前时段求值：天空三段色与 uSkyLumRef（球面均值）都依赖它，
@@ -439,6 +457,7 @@ async function assembleScene(ctx: Parameters<
     instance.group("model").add(object);
   }
   if (props.renderMode === "refined" && payload) {
+    const deferredSpan = renderTelemetry.begin("texture_compose", { phase: "deferred" });
     applyDeferredMaterialMaps(
       THREE,
       payload,
@@ -447,10 +466,14 @@ async function assembleScene(ctx: Parameters<
       ctx.isStale,
       ctx.maxAnisotropy,
     );
+    deferredSpan.end({ groups: materialGroups.length });
   }
 
   // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
   if (props.lotSize) {
+    const groundSpan = renderTelemetry.begin("lot_render", {
+      refined: props.renderMode === "refined",
+    });
     const ground = buildLotRect(THREE, props.lotSize);
     // 关闭自动更新：矩阵完全由 placement 逆决定，防止渲染循环覆盖。
     if (props.lotPlacement) {
@@ -495,6 +518,7 @@ async function assembleScene(ctx: Parameters<
         isStale: ctx.isStale,
       });
     }
+    groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
   }
 
 /** 贴花材质：四色解码贴图 + 二值 alpha。投影片与浮空回退共用。 */
@@ -591,10 +615,12 @@ async function buildDecalObject(
       mesh.matrixAutoUpdate = false;
       mesh.matrix.copy(inverse);
       group.add(mesh);
+      decalStats.projected += 1;
       return group;
     }
   }
   // 回退：投影无命中（或缺少 scale/transform）时保留浮空 quad
+  decalStats.fallback += 1;
   console.info(
     `[decal] ${unitId(unit)} 投影未命中建筑面，回退浮空 quad（可能在游戏的高细节 LOD 上）`,
   );
@@ -614,6 +640,11 @@ async function buildDecalObject(
   const decalTextureByKey = new Map(
     props.decalTextures.map((texture) => [`${texture.category}:${texture.index}`, texture]),
   );
+  const decalSpan = renderTelemetry.begin("decal_render", {
+    decals: props.grouping.decals.length,
+  });
+  decalStats.projected = 0;
+  decalStats.fallback = 0;
   for (const unit of units) {
     // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
     const decalTexture =
@@ -640,6 +671,11 @@ async function buildDecalObject(
     ctx.unitObjects.set(unitId(unit), object);
     if (ctx.isStale()) return;
   }
+  decalSpan.end({
+    projected: decalStats.projected,
+    fallback: decalStats.fallback,
+    units: units.length,
+  });
 
   // 路径折线：按 point_index 排序连接（pathPairs 语义未定，先 best-effort）。
   const points = [...props.grouping.pathPoints]
@@ -676,8 +712,20 @@ defineExpose({
 });
 
 watch(
-  () => [props.modelPayload, props.renderMode, props.grouping],
-  () => void rebuildScene(),
+  () => [props.modelPayload, props.renderMode, props.grouping] as const,
+  ([payload, mode, grouping], previous) => {
+    // 按变化项判定触发来源（首次拿到 payload 记 first_load，换级记 lod_switch）。
+    if (payload !== previous?.[0]) {
+      pendingTrigger = previous?.[0] == null ? "first_load" : "lod_switch";
+    } else if (mode !== previous?.[1]) {
+      pendingTrigger = "render_mode";
+    } else if (grouping !== previous?.[2]) {
+      pendingTrigger = "grouping";
+    } else {
+      pendingTrigger = "scene_rebuild";
+    }
+    void rebuildScene();
+  },
 );
 watch(
   () => props.groupVisibility,

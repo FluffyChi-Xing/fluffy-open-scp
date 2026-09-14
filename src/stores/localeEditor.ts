@@ -121,9 +121,15 @@ export const useLocaleEditorStore = defineStore("localeEditor", () => {
       );
       // 导出成功后把当前文本作为新基线（内容已落盘）
       baseline.value = new Map(items.value.map((item) => [item.key, item.text]));
+      const kept = result.mergedKept > 0 ? `，合并保留 ${result.mergedKept} 个` : "";
+      const version = result.revision != null ? `，版本 v${result.revision}` : "";
       toast.success(
-        `Overlay 已导出：${result.entryCount} 个资源，${result.bytesWritten} 字节`,
+        `Overlay 已导出：${result.entryCount} 个资源，${result.bytesWritten} 字节${kept}${version}`,
       );
+      // 版本记录是 best-effort：失败不影响写入，但要让用户知道（可在版本控制台排查）
+      if (result.diagnostic) {
+        toast.error(`版本记录未成功：${result.diagnostic}`);
+      }
     } catch (cause) {
       toast.error("Overlay 导出失败");
       console.error(cause);

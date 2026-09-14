@@ -2328,3 +2328,334 @@ debug 工具（`Edit Unit Prop Tool`、`CoalDeposits Painter` 等），问**是�
   本轮曾因此把 `--rva` 传错 0x400）。
 - 本机离线整合版的 mod 覆盖包仍在 `SimCityUserData\Packages\zz_openscp_debugtools_test.package`
   （未生效、无副作用；删除即完全还原）。
+
+---
+
+## 47. 文件投放 mod 的加载路径实测：**覆盖既有 TGI 无效**（2026-09-14 第四十七轮）
+
+起因：用户提供《SimCity Modder's Guide》第 30–34 页（SUGC Team 5 Documentation），
+要求据此继续 §46「debug 工具能否重开」的悬置问题。
+
+### 47.1 指南与社区实证给出的目录规则 `[文档]` `[实测]`
+
+指南第 30–31 页：
+- `SimCityData`：主包所在，**mod 也应装这里**；且包名必须**按字母序排在 "Simcity" 之前**
+- `SimCityUserData\Packages`：**部分** mod 放这里；且必须把游戏最新的脚本包
+  `SimcityDLC1EP1-Scripts_*.package`、`Simcity-Scripts_*.package` 从 `Ecogame` 拷进来，mod 才生效
+- `SimCityUserData\Ecogame`：DLC 与脚本包
+- 顶层：`_Installer / SimCity / SimCityData / SimCityRecovery / SimCityUserData / Support`
+
+**社区安装脚本（更硬）**：用户 `SimCityUserData\Packages` 里的 28 个压缩包此前全是**未解压**的
+rar/zip（正是 §46 缺的"已知可用样本"）。已解压到 `tmp/community_mods/`。BoC「外围区建造」的
+`Setup.bat` 逐行给出目标：
+
+| 内容 | 目标目录 |
+|---|---|
+| 数据类 `.package`（`AmusementparkOutside`/`DebugRepositioning`/`JetPlanes`/`1_PloppableTree`…） | `%simsdir%\SimCityData\` |
+| `1_Universal_Street_Script.package`（**脚本**） | `%simsdir%\SimCityUserData\Packages\` |
+| 脚本包（`SimCity-Scripts_*` / `SimCityDLC*-Scripts_*`） | `%simsdir%\SimCityUserData\EcoGame\` |
+
+另两条独立 readme 同指 `SimCityData`：Oppie 的 `Readme.txt`
+（`Install by copying the .package file into your ...\Origin\SimCity\SimCityData\ folder.`）、
+中文 `安装说明.txt`（`解压文件复制到 ...\Origin\SimCity\SimCityData\ 里`）。
+
+### 47.2 包格式比对：与社区已知可用包**头部逐字节一致** `[实测]`
+
+| | magic | ver | idxver@0x3C | count@0x24 | isize@0x2C | ioff@0x40 |
+|---|---|---|---|---|---|---|
+| 社区 `PedestrianPath.package` | DBPF | 3.0 | 3 | 1 | 36 | 0x148 |
+| 我们的覆盖包 | DBPF | 3.0 | 3 | 4 | 120 | 0x60 |
+
+索引块 = 8 字节前导（`values=4` + shared unknown=0）+ N×**28** 字节记录
+（`type/group/instance/offset/csize/dsize/i16 cflags/u16 flags`）。
+`28×1+8=36` ✓ / `28×4+8=120` ✓ —— 结构同构，**格式不存在问题**。
+
+`PedestrianPath` 的唯一条目是 `00B1B104:09878A01:06613001` —— 与我们的**同 type 同 group**、
+**同样未压缩**，是最贴近的类比（但它是**新增**，见 47.5）。
+
+### 47.3 阳性对照的语义离线验证 `[实测]`
+
+新探针 `crates/sc-properties/examples/tool_info.rs`（dump 单个 property 的全部字段）：
+
+| instance | ui 分类 | pos | 标题串 | 描述串 |
+|---|---|---|---|---|
+| `0x75A90B66`（宿舍） | `0x9D2EF585` | 100 | `6C969DEE:7C9A0071` | `50AA0BEA:D8A39C91` |
+| `0x64088034`（真·商務學院） | `0x9D2EF585` | 300 | `6C969DEE:64EC016B` | `50AA0BEA:7D034877` |
+
+宿舍的描述串 `D8A39C91` **与**真商務學院的 `7D034877` **不同**。
+用户截图里 tooltip 显示「商務學院 + 讓學生學習做生意」= `7D034877` → **那是真商務學院**，
+对照**确实没触发**（此前的歧义在此排除）。
+
+### 47.4 实测：三种位置/命名全部无效 `[实测]`
+
+同一次启动内同时投放三份（内容相同，无冲突）：
+
+| 文件 | 位置 | 命名 |
+|---|---|---|
+| `1_openscp_debugtools.package` | `SimCityData\` | 排在 "SimCity" **之前** |
+| `zz_openscp_debugtools.package` | `SimCityData\` | 排在 "SimCity" **之后** |
+| `1_openscp_debugtools.package` | `SimCityUserData\Packages\` | 脚本目录 |
+
+用户**完全退出并重启**（`GraphicsCache.package`/`UpdaterData.package` mtime 由 20:24 → 20:42，
+晚于部署的 20:33）→ 教育栏第一项**仍是「宿舍」**，无任何新条目。
+
+### 47.5 结论：SimCity 的文件投放**只支持新增、不支持覆盖** `[综合]`
+
+- 引擎侧：`FUN_00403FB0` 是**路径初始化函数**，`SimCityData`/`SimCityUserData`/`devDirs`/`dataDir`/
+  `SimCity_App.package`/`SimCity_Updater.package`/`SimCity_DDFList.txt`/`LocalSettings` 八个串同属它。
+  `0x404D56: push 0x00CF222C "SimCityData"; call [vtbl+0x10]` → **确实把 SimCityData 注册为扫描目录**
+  （字符串是 UTF-16，位于 `.rdata` `0xCF2194`/`0xCF222C`）。
+- 但基础包先占据资源索引，后投放的包**无法覆盖既有 TGI**。三条旁证：
+  1. 我们三次投放全部无效（47.4）；
+  2. 社区为此专门发布 **`SCTweak.R4/R5.exe`**（`道路包5.0 Mod.rar` 内）这种**直接改基础包**的工具；
+  3. 检查过的社区 `.package`（`PedestrianPath` 0x06613001 / `JetPlanes` / `1_PloppableTree`…）
+     **全是新增 TGI**（实例不在基础包索引里），没有一个是覆盖。
+
+### 47.6 debug 门控结论**仍然悬置**；唯一可行路径是改基础包 `[结论]`
+
+用户本轮选择**暂不动游戏文件** → §46.5 的悬置状态不变。
+方法已备好但未执行（对象 `SimCityData\SimCity_Game.package`，297,989,039 B）：
+
+1. 备份 → `SimCity_Game.package.bak`；
+2. 4 个目标属性在包里是 **RefPack 压缩**（`0x53B77423` 149/180、`0x75A90B66` 269/384、
+   `0xA2AA4268` 145/180、`0xB65E1F2E` 157/196）→ **不能原地改字节**；
+3. 索引布局已算准：`index_offset@0x40 = 0xDFA48A`、`count@0x24 = 0x4466 (17510)`、
+   `isize@0x2C = 0x77B30 (490288 = 17510×28 + 8)`、`idxver@0x3C = 3`
+   → 记录 `i` 的位置 = `0xDFA48A + 8 + i×28`；
+4. 方案：**文件末尾追加 4 条未压缩补丁负载**，就地改写这 4 条记录的 `offset / csize / dsize /
+   cflags(=0)`；其余 17509 条记录与全部原始数据一字不动。
+
+### 47.7 副产品
+
+- 社区样本落盘：`tmp/community_mods/`（28 个包解压结果，含 `SCTweak.R4/R5.exe`、
+  `AllAchievementUnlock.package` 等），后续可作"已知可用"对照。
+- 新探针 `tool_info`（dump 单 property 全字段 + `compressed`/`offset`）——本轮定位压缩状态用。
+- 游戏目录已完全还原：三份测试包已删除，`SimCity_Game.package` 未改动。
+
+---
+
+## 48. 编辑版本控制台 + 渲染可观测面板 + 仪表盘统计卡（2026-09-14 第四十八轮）
+
+三件事一起落地。出发点是：**property editor 的保存之所以没接**，是因为写回不可逆——
+先把版本管理做出来，写回才有安全网（property 真实写回仍排下一轮）。
+
+### 48.1 数据模型：`sc-store` schema v4 → v5 `[实测]`
+
+四张新表（SQLite，内容寻址去重 BLOB）：
+
+| 表 | 作用 |
+|---|---|
+| `changesets` | 一条版本记录：`target_path` + `revision`（同一文件内单调递增 = 「版本 N」）+ writer + 字节前后合计 + `file_digest`（外部漂移检测）+ `restored_from` |
+| `resource_blobs` | `digest`(sha256) 主键 + 字节。相同负载只存一份 |
+| `change_items` | 单资源 前后 digest（`NULL` 分别表示新增/删除）+ 两侧字节数 |
+| `render_telemetry` | 渲染各阶段耗时：session/stage/trigger/duration/metadata |
+
+**BLOB 放 SQLite 而非散落文件**：一条 changeset = 1 行 + N 行 + M 个 blob，放库内是**一个事务**；
+放文件则崩溃留孤儿字节、回滚需两阶段提交。`resource_blobs.digest` 本身就是内容地址，
+日后换文件后端只需改 `put_blob`/`load_blob`。
+
+保留策略：blob 单条 ≤ 32 MiB、总 ≤ 512 MiB；遥测**滚动窗口** 30 天 / 最多 10 000 行，每 256 次写入修剪一次。
+
+**顺带修掉一个真实缺陷**：`migrate()` 的 `version == 0` 分支设完 `user_version = 3` 就 `return Ok(())`，
+导致 v4（注解表）只在**第二次** `Store::open` 才建。加了 v5 之后这会让全新安装首次启动就撞空表，
+已改为可变 `version` + 顺序级联（`fresh_database_reaches_current_version_on_first_open` 守它）。
+
+### 48.2 重建语义：目标文件在版本 N 的资源集 `[实测]`
+
+每个 TGI 取 `revision <= N` 中最大的那条的 `after`；`after` 为 NULL 的不返回。SQL 走关联子查询，
+另有**纯 Rust fold** 作为可读对照，测试里两者互校。
+
+- **回滚到版本 N** = 重建该资源集 → `write_uncompressed_overlay` → 原子替换 → **追加一条新版本**
+  （`restored_from = N`）。版本线只增，所以回滚本身也可再回滚。
+- **删除版本 N** = 只删元数据 + 回收无引用 blob，**绝不动磁盘文件**。
+- **外部漂移**：磁盘内容与最近一次记录的 `file_digest` 不一致时返回 `external_drift`，需显式 `force`。
+- **文件被删/移走**：版本线是全量的，回滚可重建；写回被占用时报 `target_locked`
+  （Windows `ERROR_SHARING_VIOLATION`，提示"关闭正在运行的 SimCity 后重试"）。
+
+### 48.3 顺带修掉的两个真实缺陷 `[实测]`
+
+1. **locale overlay 覆盖写会丢数据**：原来只写本次编辑的条目，指向一个已有其它资源的 overlay 时会
+   把它们整体抹掉。现改为**合并保留**（先读目标，未被编辑的条目原样写回），响应里回 `mergedKept`。
+2. **overlay 写出非原子**：`dbpf::write_uncompressed_overlay_to_path` 用的是裸 `std::fs::write`，
+   崩溃/中断会留下半截包。抽出 `src-tauri/src/atomic_fs.rs`（temp + `MoveFileExW` + 短退避重试，
+   原在 `workspace.rs`），`workspace` / `write_export` / locale 写回全部委托到它。
+
+### 48.4 版本控制台（前端）
+
+- 新路由 `studio/versions`（`navigation.modding`，order 55，图标 `history`），页
+  `src/pages/studio/panels/versions.vue`：左=已跟踪文件、中=版本时间线（含回滚/删除）、右=单版本资源明细。
+- 状态在 `src/stores/versionConsole.ts`；命令门面 `tauriApi.versions.*`。
+- locale 导出成功后 toast 会带上「合并保留 N 个 / 版本 vN」；版本记录失败只提示、**不影响写入**。
+
+### 48.5 渲染可观测面板（属性编辑器第四个页签）
+
+- 记录器 `src/lib/renderTelemetry.ts`：被动单例，有界环形缓冲 200 条，250 ms 去抖批量上报，
+  非 Tauri 整体 no-op，上报异常一律吞掉。
+- **「不干扰渲染引擎」的四条保证**：① `three-viewer.ts` 的 `renderLoop` 完全不埋点（有结构回归测试断言
+  其源码不含记录器、`500` 字符窗口内无 `performance.now`）；② 每个 span 只做一次 `performance.now()`，
+  不碰任何 Three.js 对象；③ I/O 全在 `setTimeout` 里；④ 缓冲区是模块级普通数组（非 Vue ref），
+  切页签不会触发 `rebuildScene()`（`PropertyEditorInspector` 的 `v-else` 已改成 `v-else-if`，有测试守）。
+- 埋点：模型加载（IPC + LOTM 解析）、贴图合成（tint 预载 + 延迟贴图）、Lot 渲染（地面块）、
+  贴花渲染（投影命中/回退计数）、场景重建；trigger 由 watcher 按变化项判为
+  `first_load` / `lod_switch` / `render_mode` / `grouping` / `scene_rebuild`。
+
+### 48.6 仪表盘统计卡
+
+`src/pages/overview/components/RenderStatsCard.vue` + `useRenderTelemetry()`：按 stage 的
+平均耗时条 / p95 / 样本数，窗口 chip 显示「近 N 天 · M 样本」，可清空。**数据落库因此跨会话保留**。
+
+### 48.7 性能报告（项目约定：每阶段测试附耗时）
+
+| 阶段 | 指标 | 结果 |
+|---|---|---|
+| S1 `sc-store` | `migrate()` 首次 / `record_changeset`(100×8KB) / `summary`(1 万行) | **36.20 ms / 5.31 ms / 8.48 ms** |
+| S2 `atomic_fs` | 1 MB × 200 次覆盖写 | 均值 **5.15 ms**，最差 14.38 ms，**无 temp 残留** |
+| S3 记录器 | 10 000 次 `begin/end` | 合计 < 0.05 ms（低于计时精度，可忽略） |
+| S6 回滚 | 500 资源 / 2 MB 重建 + 原子写 | **33.25 ms**，不新增 blob |
+
+### 48.8 检查与待验
+
+`cargo check --workspace --all-targets` 无错误 · `cargo test -p sc-store -p fluffy-open-scp` **90 项全绿** ·
+`pnpm check` 绿 · `pnpm test` **131/131** · `pnpm build` 成功 · lint **既有 33 错 1 警不变**（无新增）。
+
+**待用户验收**（我无法目视 App 界面）：
+1. 概览页新增的「渲染耗时」卡片是否显示正常，打开几个 lot 后是否有数据；
+2. 属性编辑器第四个页签「渲染遥测」在切页签时**不应**引起视口重建（这是本轮最关键的约束）；
+3. 版本控制台：文本编辑导出 overlay 后，`studio/versions` 是否列出该文件、版本线是否随每次保存增长。
+
+### 48.10 用户验收后的界面返工（同日）
+
+1. **批注分类标签改用 `FDropdown`**：`NotesSheet.vue` 原来用 `<input list>` + `<datalist>`，
+   原生弹层在夜间模式下是**白底**，与项目风格割裂。改为 FDropdown 组合框——触发按钮显示当前分类，
+   面板顶部是自由输入框（可用 Enter 关闭），下方列出已有分类（当前项打勾）。自由新建分类的能力保留。
+2. **渲染耗时卡改用 Lieflat Charts F12（Dumbbell Queue）**：原设计是「阶段名 + 进度条 + p95」的行式条，
+   观感平庸。新设计：每行一个阶段，横向**空心点 = 平均、实心点 = p95**，两点连成哑铃；
+   行按平均降序（最慢的在最上）；数值与长度严格成正比且横轴从 0 起（不断轴）；
+   配底部毫秒刻度与发丝轨道做环境结构层；滚入视野才播入场动画并尊重 `prefers-reduced-motion`。
+   **不采用模板的「串珠」单位分解**——这里的差值不是可数单位，按技能「只摊诚实单位」的规则不发明珠子。
+   配色全部映射到项目 CSS 变量，暗色自动适配。
+3. **版本控制台重排**：去掉自身 `padding`（应用壳 `content-frame` 已提供 `padding: 36px clamp(20px,4vw,56px) 0`，
+   兄弟页面统一只加 `padding-bottom: 3rem`）；版面改为
+   **左 = 安静的文件轨（当前文件用左侧色条）/ 中 = 版本脊线 / 右 = 资源级 diff 账本**。
+   签名元素是**脊线**：一条连续发丝线串起各版本节点，**空心 = 旧版本、实心 = 最新版**，
+   与耗时卡的哑铃图共用同一套「空心=较早 / 实心=当前」语汇；`restored_from` 在节点上标 ↩ 回指。
+   v 号 / 字节 / TGI 走等宽 + `tabular-nums`；`--primary` 只留给「当前查看的版本」。
+   按钮文案按「说清会发生什么」改为「**删除记录**」（它确实只删历史、不动文件）。
+
+### 48.11 批注卡页脚 + dev 首屏白屏排查（同日）
+
+**批注卡**：时间与编辑/删除工具栏原本挤在标题行（`margin-left:auto` 顶到右侧），观感杂乱。
+改为 `<header>`（分类 chip + 标题）+ 正文 + `<footer>`（时间 ↔ 工具栏，带上分隔线），
+工具栏删除键在 hover 时转危险色。
+
+**dev 白屏根因**：`src/router/routes/modules/*.ts` **全部静态 import 页面组件**，
+而 `registry.ts` 用 `import.meta.glob(..., { eager: true })` eager 拉取所有路由模块 ——
+于是整个应用（**含 three / echarts / shiki**）都落在启动时的模块图里。生产构建会打成一个包所以无感；
+dev 下 Vite **按需逐模块转换**，首屏要发上百个 `.vue` 请求（每个都要过 SFC 编译），这就是白屏期。
+
+修法（两层）：
+1. **21 个页面组件全部改为 `() => import('@/pages/...')` 动态导入**（`workspace.ts` 的 `notes` 原本就是这写法）。
+   路由只依赖 `meta`，所以导航栏不受影响。
+2. `vite.config.ts` 增加 `optimizeDeps.include`（`three`、`three/examples/jsm/controls/TransformControls.js`、
+   `echarts/{core,charts,components,renderers}`、`shiki`）与 `server.warmup.clientFiles`：
+   前者避免「点到属性编辑/图表页才被发现新依赖 → 重新预打包 → **整页刷新**」的二次卡顿，
+   后者启动时就把入口链路预转换好。
+
+**实测对照**（同一爬虫按静态导入遍历 dev server 的模块图）：
+
+| | 改前（等价） | 改后 |
+|---|---|---|
+| dev 首屏静态模块请求数 | **169**（其中 **63 个页面组件**） | **55**（其中 **2 个页面组件**） |
+| 生产入口 chunk | **2,454 kB** | **357 kB** |
+
+页面模块数 63 → 2 是关键：dev 下每个 `.vue` 都要过一次 SFC 编译，这是白屏的主要成本。
+`index.html` 现在只引用 357 kB 的入口，其余页面各自成 1–922 kB 的块按需加载。
+
+### 48.12 图表尺寸与版本控制台再返工（同日，二次验收）
+
+**渲染耗时卡：把 SVG 换成 HTML/CSS 行。**
+根因是**实现方式**而非数值：我用 `viewBox` 画 SVG，`preserveAspectRatio="xMidYMid meet"` 会把它
+**等比放大**到卡片宽度——概览页整卡约 1900px 宽，图就被撑到 780px 高，与页面严重不协调；
+字号也随比例放大到 20px+。同时浮动数值标签在两点接近时必然重叠（实测 `381 ms` 与 `1031 ms` 糊在一起）。
+
+两处改动：
+1. **改 HTML/CSS 行**：固定行高（30px×5 + 刻度 26px ≈ 176px），**不随卡片宽度缩放**；
+   字号是真实 px；轨道用百分比定位自然撑满宽度。视觉语汇（发丝轨道、空心/实心点、从 0 起不断轴）
+   保持 F12 原样——只是不再用会被拉伸的 SVG 画布。
+2. **数值移到右侧定宽列**：`平均 → p95`（平均弱、p95 强），与左侧阶段名、右侧样本数构成
+   定宽网格。浮动标签必然重叠的问题就此根治，读数也更像工具。
+
+**版本控制台：按 better-layout 重排。**
+诊断出的违反项：无分组容器（三栏裸露、看不出结构）、`margin-left:auto` 把时间甩到宽栏最右端
+（裂出近 900px 空档）、明细栏标题与空态文案重复。改法：
+- **两栏主栅格**（左 288px 文件轨 + 右主区，`width: 100%`），右主区自上而下
+  「文件头 → 版本表 → 变更明细」，每块都是独立 pane（surface + border + radius）→ 有分组、有层级。
+- **版本行改定宽列网格**：`脊线标记 | 版本 | 写入方 | 资源数 | 字节 | 时间 | 动作`，
+  所有数据落在同一组列上（git log / Vercel 部署列表的做法），时间不再被甩出去；
+  配一行列头，信息密度上去、扫读性变好。
+- 明细同样带列头（状态 / 资源 TGI / 大小）；`restored_from` 从独立一行收进写入方单元格，
+  保持单行 40px 高度。
+- **按内容降级**：1400px 以下先收时间列，1100px 以下并成单栏——断点来自内容而不是设备预设。
+
+### 48.13 界面返工③：版本控制台视觉升级 + FMarkdown 表格渲染缺陷（同日，三次验收）
+
+**FMarkdown 表格无边框的根因是 scoped CSS 不命中 `v-html` 内容。**
+`FMarkdown.vue` 把正文元素全部经 `v-html` 注入，而 `<style scoped>` 会把每条规则编译成
+`.f-markdown xxx[data-v-xxx]` —— `v-html` 生成的子元素**没有** data 属性，于是除根节点外
+**所有规则都没生效**（标题/列表靠浏览器默认样式撑着，表格没有 UA 边框所以最先露馅）。
+修法：除根节点外一律改走 `:deep()`（`.f-markdown :deep(h2)` → `.f-markdown[data-v] h2`）。
+
+顺手把表格升级成完整设计（`border-collapse: separate` + `border-spacing: 0` 才能让圆角生效）：
+圆角外框 + 单元格网格线（末列/末行收掉单侧边框避免与外框叠线）、表头 `surface-hover` 底色、
+`display:block + width:max-content` 让宽表横向滚动、单元格 `vertical-align: top`。
+**文字与块级元素（表格/代码块）的间距**：fence 代码块的 `.f-md-code` 会被挂载逻辑替换成空宿主 div，
+旧的下边距规则在水合后匹配不到任何元素——给宿主加 `f-md-code-host` 类并承担边距
+（`.f-md-code` 同边距规则只盖挂载前一帧防跳动），表格/缩进码块补上 1.25em 上边距；
+与相邻段落（1em）/标题（0.6em）的 margin 折叠后，任何组合至少拉开 1.25em，
+「末元素贴住容器」规则挪到样式块末尾保证仍能覆盖。
+该组件被 knowledge / NotesSheet / showcase / workspace 共用，此修复同时生效于四处。
+
+**版本控制台视觉升级**（保留 §48.12 的两栏栅格与脊线结构，执行层打磨）：
+- 头部图标瓦片 32px 灰 → **44px 品牌色**，对齐 diagnostics/i18n/ui 兄弟面板的家族风格；
+- **最新版节点**：实心点从黑色改 `--primary`，版本号旁加「最新」徽章（`--accent` 底）——
+  脊线的锚，一眼定位当前版本；选中行底色 `--surface-2`（未定义变量，实为透明）→ `--accent`；
+- 状态章按 **git 语义配色**：新增=绿 / 修改=橙 / 删除=红（`color-mix` 14–16% 底 + 同色文字，去掉描边）；
+- 行高 40→44px；操作按钮 hover 时 4px 滑入（`translate`），按压 `scale(0.96)`（与 FButton 同语汇）；
+  回滚 hover 转品牌色、删除 hover 转危险色——按动作后果分色；
+- 字节/明细大小走 `toLocaleString()` 千分位；时间列收窄为 `MM-DD HH:mm`，完整时间放 `title`；
+- 明细列表限高 360px 滚动、列头 `position: sticky` 吸附（长 changeset 不再把页面顶出去）；
+- 主区空态改 `FEmpty` 紧凑变体（History / ListTree 图标）；「强制」复选框补 `accent-color`。
+
+**顺手修掉两个既有缺陷**：
+1. `--surface-2` 在令牌表里**不存在**（真名 `--surface-hover`），notice / 徽章 / 文件行 hover 的
+   背景一直在静默失效——全部改回真实令牌；
+2. 窄屏降级选择器 `.row > .end:nth-of-type(3)` 按元素类型计数，**从未命中过**（第 3 个 span 是
+   写入方且无 `.end` 类），字节列在 ≤1100px 从没被收掉——改为显式 `.cell-time` / `.cell-bytes` 类。
+
+验证：`pnpm check` 绿 · `pnpm test` **133/133** · `pnpm build` 成功 · 改动文件 eslint 干净
+（既有 33 错均在未触碰文件）。
+
+**版本行竖向堆叠的根因：数据行从未套上网格类。** 截图取证：`v1 / locale_overlay / 10 → 889 / 时间`
+各自独占一行、标记点叠在文字上——`<li>` 只有 `class="node"`，而定宽列网格定义在 `.rev-row`（原 `.row`）上，
+**行网格从页面创建起就没作用到数据行**（列头 div 带 `row` 类所以正常）。修法：版本行显式
+`class="rev-row node"`，注释里写明「缺一个类就散架」；明细行同步拆出独立的 `.diff-row` 三列网格
+（顺带修复明细列头原来错用版本表 7 列网格导致的列头错位）。
+
+**列降级从视口媒体查询改为容器查询。** 版本表在双栏布局里被 288px 左栏挤压——视口 1155px 时表
+可能只剩 ~680px，视口查询会误判。`.pane` 设 `container-type: inline-size`：
+≤1000px 收时间列、≤800px 收字节列并常显动作按钮；「双栏并单栏」保留视口查询（那是布局级决策）；
+触屏设备（`hover: none`）动作按钮常显，不再依赖窄屏代理。节点高度 44px→`min-height`，
+窄容器下动作按钮换行时行随内容长高，脊线按百分比自适应。
+
+**源文件解析字段表：名称列限宽。** `PropertyPreview.vue` 的 `.prop-name` 原本只有
+`min-width:180px`（无上限），超长属性名/哈希把值列挤扁。改 `max-width:320px` +
+名称 `nowrap + ellipsis + title` 悬停看全名，值列拿回剩余宽度。
+
+验证：`pnpm check` 绿 · `pnpm test` **133/133** · `pnpm build` 成功 · 改动文件 eslint 干净。
+
+### 48.9 尚未做（记录在案）
+
+- property editor 的真实写回（接 `patch_property_overlay`）——下一轮；
+- 遥测是滚动窗口均值，不是历史总均值（要总均值需另加日聚合表）；
+- p95 用每 stage 有界 500 行样本在 Rust 内算（SQLite 无原生分位数）；
+- 版本管理只覆盖本工具产出的 overlay；游戏安装目录/基础包不在范围内（§47.5）。

@@ -10,13 +10,16 @@
 
 mod activity;
 mod annotations;
+mod atomic_fs;
 mod locale_service;
 mod media_tools;
 mod overrides;
 mod package_browser;
 mod package_service;
+mod render_telemetry;
 mod settings;
 mod stats;
+mod version_service;
 mod workspace;
 mod wwise;
 
@@ -39,7 +42,14 @@ use package_service::{
     read_resource_data, read_resource_text, read_rw4_preview, read_rw4_section_detail,
     read_wwise_bank, resolve_name, resolve_names, write_export_file,
 };
+use render_telemetry::{
+    render_telemetry_clear, render_telemetry_record, render_telemetry_summary,
+};
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
+use version_service::{
+    version_capture_baseline, version_changeset_detail, version_delete_changeset,
+    version_list_changesets, version_list_targets, version_record_changeset, version_rollback,
+};
 use stats::package_statistics;
 use tauri::{Manager, PhysicalPosition};
 use workspace::{
@@ -99,6 +109,16 @@ pub fn run() {
             activity_list_events,
             activity_list_packages,
             activity_clear,
+            render_telemetry_record,
+            render_telemetry_summary,
+            render_telemetry_clear,
+            version_list_targets,
+            version_list_changesets,
+            version_changeset_detail,
+            version_record_changeset,
+            version_capture_baseline,
+            version_rollback,
+            version_delete_changeset,
             list_game_tree,
             list_package_files,
             open_package,

@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { ThreeViewer } from "@/lib/three-viewer";
+import { renderTelemetry } from "@/lib/renderTelemetry";
 import type * as ThreeNamespace from "three";
 
 /** 场景图层组注册表：底座只认组名，组的业务语义由装配层定义。 */
@@ -150,15 +151,23 @@ export function useEditorViewport(options: {
       maxAnisotropy: instance.maxAnisotropy,
       unitObjects,
     };
-    await assembly(ctx);
-    if (token !== rebuildToken) return;
-    pruneExcessLights();
-    if (options.reframe || !framed) {
-      instance.frameContent();
-      framed = true;
+    const span = renderTelemetry.begin("scene_rebuild", {
+      reframe: options.reframe === true,
+      first: !framed,
+    });
+    try {
+      await assembly(ctx);
+      if (token !== rebuildToken) return;
+      pruneExcessLights();
+      if (options.reframe || !framed) {
+        instance.frameContent();
+        framed = true;
+      }
+      sceneReady.value = true;
+      revision.value += 1;
+    } finally {
+      span.end();
     }
-    sceneReady.value = true;
-    revision.value += 1;
   }
 
   function applyGroupVisibility(map: Record<string, boolean>) {

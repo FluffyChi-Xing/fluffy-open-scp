@@ -103,6 +103,7 @@ import {
   VolumeX,
   Camera,
   FileMusic,
+  History,
   List,
   ListTree,
   Crosshair,
@@ -139,6 +140,7 @@ export const iconAliases = {
   panelTop: 'PanelTop',
   boxes: 'Boxes',
   sticky: 'StickyNote',
+  history: 'History',
 } as const
 
 export type FluffyIconAlias = keyof typeof iconAliases
@@ -148,6 +150,7 @@ const iconRegistry: Record<string, LucideIcon> = {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
+  History,
   ArrowUp,
   Ban,
   Bell,

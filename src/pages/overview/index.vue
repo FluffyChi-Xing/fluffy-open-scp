@@ -4,7 +4,9 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import { useOpenScpOverview } from "@/composables/useOpenScpOverview";
 import { usePackageStats } from "@/composables/usePackageStats";
+import { useRenderTelemetry } from "@/composables/useRenderTelemetry";
 import ExtensionStatsCards from "./components/ExtensionStatsCards.vue";
+import RenderStatsCard from "./components/RenderStatsCard.vue";
 
 const overview = useOpenScpOverview();
 const { snapshot, loading, error, demo } = overview;
@@ -14,6 +16,7 @@ const historyPaths = computed(() =>
   ),
 );
 const packageStats = usePackageStats(() => historyPaths.value);
+const renderTelemetry = useRenderTelemetry();
 function fileName(path: string) {
   return path.split(/[\\/]/).pop() ?? path;
 }
@@ -86,6 +89,12 @@ function age(timestamp: number) {
         :stats="packageStats.stats.value"
         :loading="packageStats.loading.value"
         :error="packageStats.error.value"
+      />
+      <RenderStatsCard
+        :summary="renderTelemetry.summary.value"
+        :loading="renderTelemetry.loading.value"
+        :error="renderTelemetry.error.value"
+        @clear="renderTelemetry.clear"
       />
       <section class="content-grid">
         <article class="panel">

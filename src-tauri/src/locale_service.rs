@@ -8,12 +8,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dbpf::{OverlayEntry, ResourceId, write_uncompressed_overlay_to_path};
+use dbpf::{OverlayEntry, ResourceId, write_uncompressed_overlay};
 use sc_properties::locale::{
     LocaleItem, parse_locale_items, serialize_locale_items,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
+
+use sc_store::ChangeItemInput;
 
 use crate::activity::{AppState, CommandError};
 
@@ -86,8 +88,15 @@ pub struct WriteLocaleOverlayRequest {
 #[serde(rename_all = "camelCase")]
 pub struct WriteLocaleOverlayResponse {
     pub output_path: String,
+    /// 写出的条目总数（= 本次编辑 + 从目标里合并保留的）。
     pub entry_count: usize,
     pub bytes_written: u64,
+    /// 来自目标文件、本次未被编辑因而原样保留的条目数。
+    pub merged_kept: usize,
+    /// 版本记录（best-effort：失败时为 None，原因见 `diagnostic`）。
+    pub changeset_id: Option<i64>,
+    pub revision: Option<i64>,
+    pub diagnostic: Option<String>,
 }
 
 /// `spawn_blocking` 需要 'static：把 PackageManager（Arc）复制出去即可。
@@ -180,6 +189,75 @@ pub async fn locale_items(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+/// 写入核心（脱离 Tauri State，便于测试）。
+fn write_locale_overlay_inner(
+    store: &sc_store::Store,
+    request: &WriteLocaleOverlayRequest,
+) -> Result<WriteLocaleOverlayResponse, CommandError> {
+    let output_path = PathBuf::from(&request.output_path);
+    // 1) 读目标已有条目 —— **合并保留**：本次没编辑到的资源必须原样写回，
+    //    否则会把用户 overlay 里的其它资源整体抹掉（真实数据丢失隐患）。
+    let mut merged: std::collections::BTreeMap<(u32, u32, u32), Vec<u8>> =
+        crate::version_service::read_target_entries(&output_path)
+            .into_iter()
+            .map(|(id, data)| ((id.type_id, id.group, id.instance), data))
+            .collect();
+    let mut change_items = Vec::with_capacity(request.edits.len());
+    for edit in &request.edits {
+        let id = edit.tgi.resource_id();
+        let key = (id.type_id, id.group, id.instance);
+        let before = merged.get(&key).cloned();
+        let data = serialize_locale_items(&edit.items)
+            .map_err(|error| CommandError::new("serialize_failed", error))?;
+        change_items.push(ChangeItemInput {
+            type_id: key.0,
+            group_id: key.1,
+            instance: key.2,
+            before,
+            after: Some(data.clone()),
+        });
+        merged.insert(key, data);
+    }
+    let merged_kept = merged.len().saturating_sub(request.edits.len());
+    let entries: Vec<OverlayEntry> = merged
+        .into_iter()
+        .map(|((type_id, group, instance), data)| {
+            OverlayEntry::new(ResourceId { type_id, group, instance }, data)
+        })
+        .collect();
+    let overlay = write_uncompressed_overlay(&entries)
+        .map_err(|error| CommandError::new("write_failed", error.to_string()))?;
+    let bytes_written = overlay.len() as u64;
+    let file_digest = crate::version_service::sha256_hex(&overlay);
+    // 原子替换：崩溃/中断不会留下半截 overlay。
+    crate::atomic_fs::write_atomic(&output_path, &overlay, true)
+        .map_err(|error| CommandError::new("write_failed", error.to_string()))?;
+    // 2) 记录版本。**记录失败不能让写入失败** —— 把原因放进 diagnostic 回给前端。
+    let target_path = output_path.to_string_lossy().into_owned();
+    let (changeset_id, revision, diagnostic) = match crate::version_service::record_written(
+        store,
+        &target_path,
+        "locale_overlay",
+        None,
+        None,
+        None,
+        Some(file_digest),
+        change_items,
+    ) {
+        Ok(summary) => (Some(summary.id), Some(summary.revision), None),
+        Err(error) => (None, None, Some(error.to_string())),
+    };
+    Ok(WriteLocaleOverlayResponse {
+        output_path: target_path,
+        entry_count: entries.len(),
+        bytes_written,
+        merged_kept,
+        changeset_id,
+        revision,
+        diagnostic,
+    })
+}
+
 #[tauri::command]
 pub async fn write_locale_overlay(
     state: State<'_, AppState>,
@@ -188,30 +266,10 @@ pub async fn write_locale_overlay(
     if request.edits.is_empty() {
         return Err(CommandError::new("invalid_argument", "no edits to write"));
     }
-    // 写 overlay 不需要已打开的 package 句柄（数据全部来自前端编辑状态），
-    // 但保留对 state 的依赖以便未来追加活动记录。
-    let _ = &state;
-    let output_path = PathBuf::from(&request.output_path);
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut entries = Vec::with_capacity(request.edits.len());
-        for edit in &request.edits {
-            let data = serialize_locale_items(&edit.items)
-                .map_err(|error| CommandError::new("serialize_failed", error))?;
-            entries.push(OverlayEntry::new(edit.tgi.resource_id(), data));
-        }
-        write_uncompressed_overlay_to_path(&output_path, &entries)
-            .map_err(|error| CommandError::new("write_failed", error.to_string()))?;
-        let bytes_written = std::fs::metadata(&output_path)
-            .map(|meta| meta.len())
-            .map_err(|error| CommandError::new("write_failed", error.to_string()))?;
-        Ok(WriteLocaleOverlayResponse {
-            output_path: output_path.to_string_lossy().into_owned(),
-            entry_count: entries.len(),
-            bytes_written,
-        })
-    })
-    .await
-    .map_err(|error| CommandError::internal(error.to_string()))?
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || write_locale_overlay_inner(&store, &request))
+        .await
+        .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
 #[cfg(test)]
@@ -233,13 +291,139 @@ mod tests {
             ResourceId { type_id: LOCALE_RESOURCE_TYPE, group: 0x9E14D920, instance: 0x00000001 },
             data,
         )];
-        write_uncompressed_overlay_to_path(&out, &entries).unwrap();
+        std::fs::write(&out, write_uncompressed_overlay(&entries).unwrap()).unwrap();
         let package = dbpf::Package::open(&out).unwrap();
         let entry = package
             .entry(ResourceId { type_id: LOCALE_RESOURCE_TYPE, group: 0x9E14D920, instance: 0x00000001 })
             .unwrap();
         let read_back = package.read(entry).unwrap();
         assert_eq!(parse_locale_items(&read_back).unwrap(), items);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn edit(instance: u32, text: &str) -> LocaleTableEdit {
+        LocaleTableEdit {
+            tgi: LocaleTgi {
+                type_id: LOCALE_RESOURCE_TYPE,
+                group: 0x9E14_D920,
+                instance,
+            },
+            items: vec![LocaleItem {
+                key: "0x00000001".into(),
+                id: Some(1),
+                text: text.into(),
+            }],
+        }
+    }
+
+    fn request(path: &std::path::Path, edits: Vec<LocaleTableEdit>) -> WriteLocaleOverlayRequest {
+        WriteLocaleOverlayRequest {
+            edits,
+            output_path: path.to_string_lossy().into_owned(),
+        }
+    }
+
+    #[test]
+    fn merge_keeps_untouched_entries_and_records_versions() {
+        let dir = std::env::temp_dir().join(format!("openscp-locale-merge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = sc_store::Store::open(dir.join("openscp.db")).unwrap();
+        let out = dir.join("overlay.package");
+        let untouched = ResourceId {
+            type_id: LOCALE_RESOURCE_TYPE,
+            group: 0x9E14_D920,
+            instance: 0x99,
+        };
+        // 目标里预先存在一条与本次编辑无关的资源。
+        std::fs::write(
+            &out,
+            write_uncompressed_overlay(&[OverlayEntry::new(untouched, b"keep-me".to_vec())]).unwrap(),
+        )
+        .unwrap();
+
+        let first =
+            write_locale_overlay_inner(&store, &request(&out, vec![edit(0x01, "第一次")])).unwrap();
+        assert_eq!(first.revision, Some(1));
+        assert_eq!(first.entry_count, 2, "合并保留 = 目标既有条目 + 本次编辑");
+        assert_eq!(first.merged_kept, 1);
+        assert!(first.diagnostic.is_none());
+
+        let second =
+            write_locale_overlay_inner(&store, &request(&out, vec![edit(0x01, "第二次")])).unwrap();
+        assert_eq!(second.revision, Some(2));
+        assert_eq!(second.merged_kept, 1);
+
+        // 目标文件里那条未被编辑的资源必须原样还在。
+        let package = dbpf::Package::open(&out).unwrap();
+        let entry = package.entry(untouched).expect("未被编辑的资源必须仍在");
+        assert_eq!(package.read(entry).unwrap(), b"keep-me");
+
+        // 第二条版本记录里，0x01 的 before 应等于第一次保存的字节。
+        let (_, items) = store.changeset_detail(second.changeset_id.unwrap()).unwrap();
+        assert_eq!(items.len(), 1);
+        let before = store
+            .load_blob(items[0].before_digest.as_ref().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(parse_locale_items(&before).unwrap()[0].text, "第一次");
+        let after = store
+            .load_blob(items[0].after_digest.as_ref().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(parse_locale_items(&after).unwrap()[0].text, "第二次");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn capture_baseline_then_save_keeps_version_line_total() {
+        let dir = std::env::temp_dir().join(format!("openscp-locale-base-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = sc_store::Store::open(dir.join("openscp.db")).unwrap();
+        let out = dir.join("overlay.package");
+        let tgi = ResourceId {
+            type_id: LOCALE_RESOURCE_TYPE,
+            group: 0x9E14_D920,
+            instance: 0x99,
+        };
+        std::fs::write(
+            &out,
+            write_uncompressed_overlay(&[OverlayEntry::new(tgi, b"legacy".to_vec())]).unwrap(),
+        )
+        .unwrap();
+
+        // 基线捕获把既有条目登记成版本 1（before = None）。
+        let entries = crate::version_service::read_target_entries(&out);
+        assert_eq!(entries.len(), 1);
+        let summary = crate::version_service::record_written(
+            &store,
+            &out.to_string_lossy(),
+            "baseline",
+            None,
+            None,
+            None,
+            None,
+            entries
+                .into_iter()
+                .map(|(id, data)| ChangeItemInput {
+                    type_id: id.type_id,
+                    group_id: id.group,
+                    instance: id.instance,
+                    before: None,
+                    after: Some(data),
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(summary.revision, 1);
+
+        // 之后的保存接在同一条版本线上。
+        let saved =
+            write_locale_overlay_inner(&store, &request(&out, vec![edit(0x01, "新增")])).unwrap();
+        assert_eq!(saved.revision, Some(2));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -6,6 +6,7 @@ import type { LotUnitDto } from "@/api/tauri";
 import PropertyEditorProperties from "./PropertyEditorProperties.vue";
 import PropertyEditorTransformPanel from "./PropertyEditorTransformPanel.vue";
 import PropertyEditorMetadataPanel from "./PropertyEditorMetadataPanel.vue";
+import PropertyEditorRenderTelemetry from "./PropertyEditorRenderTelemetry.vue";
 import { unitId } from "./unitGizmos";
 
 /**
@@ -32,12 +33,13 @@ const unitLive = computed(
       : null,
 );
 
-type TabId = "properties" | "transform" | "metadata";
+type TabId = "properties" | "transform" | "metadata" | "render";
 const activeTab = ref<TabId>("properties");
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "properties", icon: "List", label: "package.tabProperties" },
   { id: "transform", icon: "Crosshair", label: "package.tabTransform" },
   { id: "metadata", icon: "Settings2", label: "package.tabMetadata" },
+  { id: "render", icon: "Activity", label: "package.tabRenderTelemetry" },
 ];
 </script>
 
@@ -71,10 +73,12 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
         @update-transform="(id, matrix) => emit('update-transform', id, matrix)"
       />
       <PropertyEditorMetadataPanel
-        v-else
+        v-else-if="activeTab === 'metadata'"
         :unit="unit"
         @update-fields="(id, patch) => emit('update-fields', id, patch)"
       />
+      <!-- 只读渲染遥测：不接任何视口 prop，切页签不会触发 rebuildScene()。 -->
+      <PropertyEditorRenderTelemetry v-else />
     </div>
   </aside>
 </template>

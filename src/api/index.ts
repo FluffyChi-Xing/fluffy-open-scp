@@ -39,9 +39,18 @@ import {
   type DecalImageData,
   type Rw4ResourceData,
   type Rw4SectionDetail,
+  type CaptureBaselineResponse,
+  type ChangesetDetailResponse,
+  type ChangesetSummary,
   type ResourcePage,
   type ResolvedResourceName,
+  type RenderTelemetryEntry,
+  type RenderTelemetrySummary,
+  type RollbackResult,
   type SettingsStatus,
+  type TelemetryClearResult,
+  type VersionDeleteResult,
+  type VersionTargetSummary,
   type Tgi,
   type WorkspaceEntry,
   type WorkspaceStatus,
@@ -263,6 +272,36 @@ export const tauriApi = {
       command<ActivityEvent[]>("activity_list_events", { limit }),
     packages: (limit = 100) =>
       command<PackageHistory[]>("activity_list_packages", { limit }),
+  },
+  renderTelemetry: {
+    record: (entries: RenderTelemetryEntry[]) =>
+      command<number>("render_telemetry_record", { request: { entries } }),
+    summary: (days = 7) =>
+      command<RenderTelemetrySummary>("render_telemetry_summary", { days }),
+    clear: () => command<TelemetryClearResult>("render_telemetry_clear"),
+  },
+  versions: {
+    targets: () => command<VersionTargetSummary[]>("version_list_targets"),
+    changesets: (targetPath?: string, limit = 100) =>
+      command<ChangesetSummary[]>("version_list_changesets", {
+        request: { targetPath, limit },
+      }),
+    detail: (changesetId: number) =>
+      command<ChangesetDetailResponse>("version_changeset_detail", {
+        request: { changesetId },
+      }),
+    captureBaseline: (targetPath: string) =>
+      command<CaptureBaselineResponse>("version_capture_baseline", {
+        request: { targetPath },
+      }),
+    rollback: (changesetId: number, force: boolean, outputPath?: string) =>
+      command<RollbackResult>("version_rollback", {
+        request: { changesetId, force, outputPath },
+      }),
+    remove: (changesetId: number) =>
+      command<VersionDeleteResult>("version_delete_changeset", {
+        request: { changesetId },
+      }),
   },
 };
 
