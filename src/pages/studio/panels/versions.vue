@@ -541,9 +541,18 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
   column-gap: 12px;
   display: grid;
   grid-template-columns:
-    18px 56px minmax(96px, 1fr) 72px 148px 108px 236px;
+    18px 56px minmax(120px, 1fr) 72px 148px 108px 236px;
   padding: 0 4px;
 }
+/* 显式列定位：表头/数据逐列锁定，子元素增减不会引起错位 */
+.rev-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+.rev-row > :nth-child(2) { grid-column: 2; grid-row: 1; }
+.rev-row > :nth-child(3) { grid-column: 3; grid-row: 1; }
+.rev-row > :nth-child(4) { grid-column: 4; grid-row: 1; }
+.rev-row > :nth-child(5) { grid-column: 5; grid-row: 1; }
+.rev-row > :nth-child(6) { grid-column: 6; grid-row: 1; }
+.rev-row > :nth-child(7) { grid-column: 7; grid-row: 1; }
+.rev-row > :nth-child(n + 8) { grid-column: 7; grid-row: 1; }
 .diff-row {
   align-items: center;
   column-gap: 12px;

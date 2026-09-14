@@ -162,36 +162,32 @@ function removeCategoryAt(id: string): void {
           type="button"
           class="dim-tab"
           :class="{ active: dimension === 'city' }"
-          :style="rectStyle('772')"
+          :style="{ left: '14px', top: '748px' }"
           :title="t('studio.workbench.dimCity')"
           @click="store.selectDimension('city')"
         >
-          <span class="dim-circle big"><FIcon name="House" :size="24" aria-label="" /></span>
         </button>
         <button
           type="button"
           class="dim-tab"
           :class="{ active: dimension === 'bigbiz' }"
-          :style="rectStyle('1459')"
+          :style="{ left: '34px', top: '698px' }"
           :title="t('studio.workbench.dimBigbiz')"
           @click="store.selectDimension('bigbiz')"
         >
-          <span class="dim-circle"><FIcon name="UsersRound" :size="18" aria-label="" /></span>
         </button>
         <button
           type="button"
           class="dim-tab"
           :class="{ active: dimension === 'region' }"
-          :style="rectStyle('119')"
+          :style="{ left: '36px', top: '650px' }"
           :title="t('studio.workbench.dimRegion')"
           @click="store.selectDimension('region')"
         >
-          <span class="dim-circle"><FIcon name="Globe" :size="16" aria-label="" /></span>
         </button>
 
-        <!-- 城市主菜单：一级分类（悬浮圆钮）⇄ 二级槽位面板，滑动过渡 -->
-        <Transition name="lv" mode="out-in">
-          <div v-if="!entered" key="l1" class="tool-viewport" :style="rectStyle('766')">
+        <!-- 城市主菜单：一级分类圆钮（进入二级后由槽位面板替换） -->
+        <div class="tool-viewport">
             <div class="tool-row">
               <button
                 v-for="category in categories"
@@ -226,8 +222,11 @@ function removeCategoryAt(id: string): void {
                 <span aria-hidden="true">＋</span>
               </button>
             </div>
-          </div>
-          <div v-else key="l2" class="palette-strip">
+        </div>
+
+        <!-- 二级槽位面板：一级圆钮行上方，滑入过渡 -->
+        <Transition name="lv">
+          <div v-if="entered" key="l2" class="palette-strip">
             <div v-if="pageCount > 1" class="page-ctrl">
               <button
                 type="button"
@@ -291,19 +290,6 @@ function removeCategoryAt(id: string): void {
             </div>
           </div>
         </Transition>
-
-        <!-- 二级：分类专属侧件（道路=形状工具；教育=学位面板） -->
-        <div v-if="entered && selectedMenuId === 'road'" class="road-tools">
-          <div class="road-shapes" aria-hidden="true">
-            <span class="shape" /><span class="shape" /><span class="shape" /><span
-              class="shape"
-            /><span class="shape" />
-          </div>
-          <label class="guide-row">
-            <input type="checkbox" checked disabled />
-            <span>指南</span>
-          </label>
-        </div>
 
         <div v-if="entered && selectedMenuId === 'education'" class="edu-panel">
           <header class="edu-head">
@@ -458,45 +444,24 @@ function removeCategoryAt(id: string): void {
 .dim-tab {
   background: transparent;
   border: 0;
+  border-radius: 50%;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 0;
   position: absolute;
 }
-.dim-circle {
-  align-items: center;
-  background: radial-gradient(circle at 50% 34%, #fbfdff 96%, #d2deea);
-  border: 2px solid rgb(245 248 251 / 95%);
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgb(9 20 34 / 40%);
-  color: #2c4a6e;
-  display: flex;
-  height: 44px;
-  justify-content: center;
-  transition: box-shadow 140ms ease;
-  width: 44px;
-}
-.dim-circle.big {
-  height: 60px;
-  width: 60px;
-}
-.dim-tab.active .dim-circle {
-  background: radial-gradient(circle at 50% 30%, #6cb8f2 0%, #2f86d6 55%, #1c5fa8 100%);
-  border-color: rgb(255 255 255 / 96%);
-  color: #fff;
-  box-shadow: 0 0 14px rgb(8 120 254 / 55%);
+.dim-tab.active {
+  box-shadow: 0 0 0 2.5px rgb(8 120 254 / 90%), 0 0 14px rgb(8 120 254 / 55%);
 }
 .page-ctrl {
   align-items: center;
-  color: #eaf2fa;
+  color: #1d2f4a;
   display: flex;
+  font-size: 11px;
   gap: 8px;
   justify-content: flex-end;
   position: absolute;
-  right: 6px;
-  top: -22px;
+  right: 10px;
+  top: 8px;
 }
 .page-btn {
   background: rgb(250 252 254 / 92%);
@@ -528,32 +493,19 @@ function removeCategoryAt(id: string): void {
 
 /* ── 城市分类：悬浮圆钮（无底层衬卡）+ 一二级滑动过渡 ── */
 .tool-viewport {
+  height: 75px;
+  left: 240px;
   overflow: hidden;
   position: absolute;
-}
-.tool-track {
-  display: flex;
-  height: 100%;
-  justify-content: center;
-  transition: translate 320ms cubic-bezier(0.2, 0, 0, 1);
-  width: 200%;
-}
-.tool-track.entered {
-  translate: -50% 0;
+  top: 782px;
+  width: 1320px;
 }
 .tool-row {
   align-items: center;
   display: flex;
-  flex: none;
   gap: 7px;
+  height: 100%;
   justify-content: center;
-  width: 50%;
-}
-.tool-row.level2 {
-  justify-content: flex-start;
-  overflow-x: auto;
-  padding: 4px 2px;
-  scrollbar-width: thin;
 }
 .tool-button {
   align-items: center;
@@ -613,11 +565,36 @@ function removeCategoryAt(id: string): void {
 
 /* ── 大学建筑槽位条（游戏内此层带浅色衬带） ── */
 .palette-strip {
-  height: 130px;
-  left: 170px;
+  background: linear-gradient(180deg, rgb(252 253 255 / 94%), rgb(226 235 243 / 90%));
+  border: 1px solid rgb(255 255 255 / 65%);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  box-shadow: 0 -3px 12px rgb(9 20 34 / 22%);
+  box-sizing: border-box;
+  height: 104px;
+  left: 180px;
+  padding: 6px 8px 0;
   position: absolute;
-  top: 722px;
-  width: 1090px;
+  top: 676px;
+  width: 1380px;
+}
+.page-ctrl {
+  top: 8px;
+}
+.back-chip {
+  align-items: center;
+  background: rgb(250 252 254 / 92%);
+  border: 1px solid rgb(160 178 196 / 80%);
+  border-radius: var(--radius-sm);
+  color: #223c5c;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11.5px;
+  gap: 4px;
+  left: 0;
+  padding: 4px 10px;
+  position: absolute;
+  top: -24px;
 }
 .palette-slots {
   display: flex;
@@ -625,13 +602,19 @@ function removeCategoryAt(id: string): void {
   justify-content: center;
 }
 .slot {
-  background: rgb(20 30 46 / 18%);
-  border: 0;
+  background: rgb(255 255 255 / 42%);
+  border: 1px solid rgb(214 226 238 / 80%);
+  border-radius: 6px;
   cursor: pointer;
-  height: 82px;
+  height: 88px;
   padding: 4px 4px 0;
   position: relative;
   width: 116px;
+}
+.slot.selected {
+  background: rgb(255 255 255 / 70%);
+  border-color: rgb(8 120 254 / 80%);
+  outline: 0;
 }
 .slot.selected {
   outline: 2px solid rgb(8 120 254 / 90%);
@@ -644,20 +627,19 @@ function removeCategoryAt(id: string): void {
   position: absolute;
 }
 .slot-icon {
-  color: #eaf2fa;
+  color: #2c4a6e;
   left: 50%;
   position: absolute;
-  text-shadow: 0 1px 3px rgb(9 20 34 / 45%);
-  top: 22px;
+  top: 8px;
   transform: translateX(-50%);
 }
 .slot-label {
-  bottom: 2px;
-  color: #fff;
+  bottom: 4px;
+  color: #1d2f4a;
   font-size: 11px;
+  font-weight: 600;
   left: 50%;
   position: absolute;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 65%);
   transform: translateX(-50%);
   white-space: nowrap;
 }
@@ -675,9 +657,10 @@ function removeCategoryAt(id: string): void {
 }
 .slot.add {
   align-items: center;
-  border: 1.5px dashed rgb(240 246 252 / 70%);
+  background: rgb(255 255 255 / 30%);
+  border: 1.5px dashed rgb(70 100 130 / 60%);
   border-radius: 8px;
-  color: rgb(240 246 252 / 85%);
+  color: #2c4a6e;
   display: flex;
   font-size: 22px;
   justify-content: center;
@@ -710,35 +693,12 @@ function removeCategoryAt(id: string): void {
 }
 
 /* ── 大学左侧道路工具 ── */
-.road-tools {
-  left: 10px;
-  position: absolute;
-  top: 762px;
-  width: 148px;
-}
-.road-shapes {
-  background: linear-gradient(180deg, rgb(250 251 253 / 92%), rgb(228 235 242 / 92%));
-  border-radius: 8px;
-  display: flex;
-  gap: 4px;
-  padding: 6px;
-}
 .shape {
   border: 1.5px solid #35506b;
   border-radius: 3px;
   flex: 1;
   height: 22px;
 }
-.guide-row {
-  align-items: center;
-  color: #f2f6fa;
-  display: flex;
-  font-size: 12px;
-  gap: 6px;
-  margin-top: 6px;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 60%);
-}
-
 /* ── 大学右侧教育面板 ── */
 .edu-panel {
   background: linear-gradient(180deg, rgb(252 253 255 / 96%), rgb(236 241 246 / 96%));

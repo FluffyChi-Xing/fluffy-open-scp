@@ -119,6 +119,10 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
 
   /** 一级菜单点击：选中该菜单（面板同步）并滑入二级。 */
   function enterMenu(menuId: string): void {
+    if (entered.value && selectedMenuId.value === menuId) {
+      entered.value = false; // 再点同一个分类 = 收起二级
+      return;
+    }
     selectedMenuId.value = menuId;
     entered.value = true;
     page.value = 1;
