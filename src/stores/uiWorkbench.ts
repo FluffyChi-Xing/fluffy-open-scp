@@ -8,6 +8,12 @@ import {
   type WorkbenchData,
   type WorkbenchTool,
 } from "@/lib/game-ui/workbench";
+import {
+  resolveLayout,
+  type LayoutNode,
+  type PlacedImage,
+  type PlacedRect,
+} from "@/lib/game-ui/scrui";
 
 /**
  * UI 工作台状态：屏幕切换 + 当前选中菜单 + 菜单项编辑覆盖。
@@ -38,10 +44,16 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const edits = ref<Record<string, ToolEdit>>({});
   /** menuId → 新增项（保持插入顺序）。 */
   const added = ref<Record<string, WorkbenchTool[]>>({});
-  /** 正在编辑的条目（打开 Sheet）。 */
-  const editingEntry = shallowRef<MenuEntry | null>(null);
   /** 工作台里新建的分类（工具条末位「＋」产生）。 */
   const customCategories = ref<WorkbenchCategory[]>([]);
+  /** 正在编辑的条目（打开 Sheet）。 */
+  const editingEntry = shallowRef<MenuEntry | null>(null);
+  /** 游戏 HUD 布局树（scrui JSON）+ 两段式解析结果。 */
+  const hudTree = shallowRef<LayoutNode | null>(null);
+  const hudRects = shallowRef<Map<string, PlacedRect>>(new Map());
+  const hudImages = shallowRef<PlacedImage[]>([]);
+  /** 自定义覆盖层排除的装饰件（笑脸精灵由单帧裁切替代）。 */
+  const HUD_IMAGE_EXCLUDE = new Set(["1888"]);
 
   async function load(): Promise<void> {
     loading.value = true;
@@ -49,6 +61,15 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       const response = await fetch("/game-ui/workbench.json");
       data.value = (await response.json()) as WorkbenchData;
       if (!selectedMenuId.value) selectedMenuId.value = firstMenuId();
+      const layoutResponse = await fetch("/game-ui/layout/globalui2.json");
+      hudTree.value = (await layoutResponse.json()) as LayoutNode;
+      const resolved = resolveLayout(hudTree.value, 1600, 900);
+      hudRects.value = resolved.rects;
+      hudImages.value = resolved.images.filter(
+        (image) =>
+          !HUD_IMAGE_EXCLUDE.has(image.id) &&
+          !/tutorial/i.test(image.comment),
+      );
     } finally {
       loading.value = false;
     }
@@ -190,6 +211,11 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     editingEntry.value = null;
   }
 
+  /** 布局树某节点的运行期绝对矩形（instanceID 十六进制大写）。 */
+  function rect(id: string): PlacedRect | undefined {
+    return hudRects.value.get(id.toUpperCase());
+  }
+
   return {
     data,
     loading,
@@ -203,6 +229,8 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     categories,
     universityTools,
     activeMenu,
+    hudImages,
+    rect,
     load,
     selectScreen,
     selectMenu,

@@ -2768,3 +2768,37 @@ uiPosition 排序；城市 13 个分类按关键字归组 649 个真实工具，
 大部分不是 CSS 规则而是**切图 + 排版数据**，CSS 只是字体/圆角等基类。等比例
 复刻的正确路径是布局树 + 切图 + pin 语义（pinType 1–5 待逆向），纯 CSS 近似
 只能覆盖静态观感。
+
+### 49.8 pin 语义破解：布局引擎是 JS，不是机器码（Ghidra headless 自动化轮）
+
+**Ghidra headless 自动化**：`analyzeHeadless` + 新工程导入 `SimCity_dump_SCY.exe`
+（10.9MB，x86 32 位）全量分析约 5.5 分钟 ✓；但 **Java 脚本提供器（OSGi/Felix）
+在 headless 下静默失败**（同一脚本 GUI 可跑；清 felixcache/换 cmd 原生环境无效）。
+解法 = 官方 **pyghidra**（pip，JPype 直连 JVM），探针见
+`D:\ghidra_projects\scy_pin_probe\`。
+
+**关键转折**：pinType 键名字符串在全部二进制中零命中（ASCII/UTF-16/FNV 哈希均无，
+主 exe/EAWebkit.dll/ packs 全查）→ 布局解释器不在机器码里。最终定位：
+**App 包 group 0x40464200 的 JS 模块就是窗口系统本体**（`scrui` 框架，
+`7D14BE70.js` 682KB；普查该 group 共 4 模块 1.9MB）。
+
+**scrui 布局语义（源码级，非猜测）**：
+- pin 枚举：`0=Left 1=Right 2=Stretch 3=Center 4=Fill 5=Proportional`；
+- 两段式布局：`Private_InitializeOffsets`（设计尺寸 1024×793 下算四向偏移，一次）
+  → `Private_UpdatePosition`（窗口 resize 后按父容器**实际尺寸** + 偏移重算，
+  自上而下级联；由 `kMsgTypeRootWindowResized` → `SetDimensionsFromElement` 触发）；
+- 根窗口 = 浏览器视口实际像素（`GetClientWidth/Height`）；
+- `IDFromName` = FNV-1(小写) —— 与资源命名规律互证；
+- 关键代码已存 `D:\ghidra_projects\scy_pin_probe\scrui_layout_semantics.js.txt`。
+
+**数据驱动渲染落地**：`src/lib/game-ui/scrui.ts`（两段式引擎 TS 实现 +
+`resolveLayout` + FNV 资源解析），舞台美术层改为按公式摆放全部原生 drawable
+（条带/端盖/tab 板/puck/EP1 图形/施工条纹/图层钮等），交互层锚定到计算矩形；
+新增 scrui pin 公式单测（含 main stats 实测锚点 822+(900-793)=929、
+847+(1600-1024)=1423）。全套 **151/151** 绿。
+
+**未决**：`Private_UpdatePosition` 的两段模型与截图实测仍有局部出入
+（如 TOOL PANEL BOTTOM V=Right：757+(900-793)=864 vs 截图目测 ~860 ✓、
+但个别容器存疑）——说明 deserialize 顺序/根尺寸初始化还有细节未定，
+需要再读 scrui 的 UI Manager 载入路径；当前工作台以两段模型为主、
+局部手工校准兜底，参考图叠加可随时核验。

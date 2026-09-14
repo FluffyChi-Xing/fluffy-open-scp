@@ -1,32 +1,26 @@
 <script setup lang="ts">
 /**
- * UI 工作台舞台：用游戏原生资产 + 真实菜单数据等比例重建 1600×900 的游戏 HUD。
+ * UI 工作台舞台：用游戏原生资产 + scrui 布局公式等比例重建 1600×900 的游戏 HUD。
  *
- * 交互模型（各菜单一致）：点击一级菜单 → 过渡动画滑入二级（工具行），
- * 同时右侧面板切到该菜单级的条目预览；二级里点条目直接开编辑 Sheet；
- * 末尾虚线加号块 = 新增条目。切换左侧维度时一级内容自动重置。
+ * 两个层次：
+ * 1. **美术层**（数据驱动）：globalui2 布局树经 scrui 两段式布局（设计尺寸
+ *    Init 偏移 → 视口尺寸 Update 级联）解析出每个 drawable 的绝对矩形，
+ *    全部按引擎自己的数学摆放；
+ * 2. **交互层**（本工作台）：菜单按钮/建筑槽位/新增占位块锚定到布局矩形上，
+ *    点击 → 右侧面板预览该菜单级 → Sheet 单条编辑 → 实时生效。
  *
- * 重建口径（对齐参考截图 public/game-ui/reference/*.png）：
- * - 菜单图标统一用 FIcon（图标库没有的语义取最接近的替代，找不到的条目
- *   用占位图标 Box）；
- * - 城市分类按钮是**悬浮圆钮**，没有底层衬卡（对照游戏截图）；
- * - 左侧维度切换 = 白描边圆钮簇（区域/大商业/城市大钮 + 城市标签页）+ 黄盾；
- * - 底栏（时间/城市名/满意度/金钱/人口）用空白原件与占位读数；满意度取
- *   mayorRating 精灵图最右侧的绿脸（帧宽 27px、帧距 39px，28px 窗口缩放后
- *   偏移 -117.7px，取错会同时露出两张半脸）；
- * - icon=null 的条目（游戏运行时渲染的资源）一律以占位图标显示。
+ * 图标统一 FIcon（找不到的语义用占位 Box）；底栏读数为占位值；
+ * 参考截图可 0–100% 叠加校准（public/game-ui/reference/*.png）。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
-import {
-  CATEGORY_ICONS,
-  toolIconName,
-} from "@/lib/game-ui/workbench";
+import { CATEGORY_ICONS, toolIconName } from "@/lib/game-ui/workbench";
 
 const store = useUiWorkbenchStore();
-const { screen, data, activeMenu, categories, selectedMenuId, entered } = storeToRefs(store);
+const { screen, data, activeMenu, categories, selectedMenuId, entered, hudImages } =
+  storeToRefs(store);
 
 /* ── 舞台缩放：容器内等比放下 1600×900（舞台高度固定，不随面板高度变化） ── */
 const host = ref<HTMLElement>();
@@ -52,6 +46,18 @@ const overlaySrc = computed(
   () => `/game-ui/reference/${screen.value === "city" ? "city" : "university"}.png`,
 );
 
+/* ── 布局矩形锚点（instanceID 来自 globalui2.json） ── */
+function rectStyle(id: string): Record<string, string> {
+  const r = store.rect(id);
+  if (!r) return { visibility: "hidden" as const };
+  return {
+    left: `${r.x}px`,
+    top: `${r.y}px`,
+    width: `${r.w}px`,
+    height: `${r.h}px`,
+  };
+}
+
 /* ── 底栏占位读数（空白原件 + 静态数值） ── */
 const placeholders = {
   time: "8:41 PM",
@@ -71,6 +77,13 @@ function editEntryAt(index: number): void {
   const entry = activeMenu.value?.entries[index];
   if (entry) store.editingEntry = entry;
 }
+
+/** 满意度笑脸：锚定 Mayor Rating 精灵图节点（1888），裁最右绿脸。 */
+const smileyStyle = computed(() => {
+  const r = store.rect("1888");
+  if (!r) return { visibility: "hidden" as const };
+  return { left: `${r.x + 105}px`, top: `${r.y + 1}px` };
+});
 </script>
 
 <template>
@@ -82,9 +95,24 @@ function editEntryAt(index: number): void {
           <span class="backdrop-label">3D 城市视口（示意）</span>
         </div>
 
+        <!-- 美术层：scrui 布局公式定位的游戏原生资产 -->
+        <img
+          v-for="(img, index) in hudImages"
+          :key="`art-${index}`"
+          class="art"
+          :src="img.src"
+          :style="{
+            left: `${img.x}px`,
+            top: `${img.y}px`,
+            width: `${img.w}px`,
+            height: `${img.h}px`,
+          }"
+          alt=""
+        />
+
         <!-- 顶部：城市 = 通知条；大学 = 屏幕标题 -->
         <template v-if="screen === 'city'">
-          <div class="ticker">
+          <div class="ticker" :style="rectStyle('569')">
             <span class="ticker-icon" aria-hidden="true" />
             <span>模擬城市伺服器連線中，正在嘗試重連。</span>
           </div>
@@ -94,10 +122,12 @@ function editEntryAt(index: number): void {
         </template>
 
         <!-- 右上角主菜单按钮 -->
-        <button type="button" class="main-menu" aria-label="主菜单">···</button>
+        <button type="button" class="main-menu" :style="rectStyle('46')" aria-label="主菜单">
+          ···
+        </button>
 
-        <!-- 左侧：维度切换簇（悬浮圆钮，无衬卡） -->
-        <div class="mode-cluster">
+        <!-- 左侧：维度切换簇（城市/区域/大商业） -->
+        <div class="mode-cluster" :style="rectStyle('1018')">
           <button type="button" class="mbtn tiny" title="大区域视图">
             <FIcon name="Globe" :size="14" aria-label="" />
           </button>
@@ -116,7 +146,7 @@ function editEntryAt(index: number): void {
         </div>
 
         <!-- 城市主菜单：一级分类（悬浮圆钮）⇄ 二级工具行，滑动过渡 -->
-        <div v-if="screen === 'city'" class="tool-viewport">
+        <div v-if="screen === 'city'" class="tool-viewport" :style="rectStyle('766')">
           <div class="tool-track" :class="{ entered }">
             <!-- 一级：分类圆钮 -->
             <div class="tool-row">
@@ -261,40 +291,23 @@ function editEntryAt(index: number): void {
           </div>
         </div>
 
-        <!-- 底栏：时间 / 城市名 / 满意度 / 金钱 / 人口（空白原件占位） -->
-        <div class="stats-bar">
+        <!-- 底栏（美术层提供衬带/tab 板/RCI/图层钮），这里只叠加读数与交互 -->
+        <div class="stats-overlay">
           <button type="button" class="play" aria-label="暂停 / 继续">
             <span aria-hidden="true">▶</span>
           </button>
           <span class="clock tabnum">{{ placeholders.time }}</span>
           <span class="speed tabnum" aria-hidden="true">▶▶|</span>
-          <span class="stats-sep" aria-hidden="true" />
-          <div class="name-field">
-            <span class="name-text">{{ placeholders.cityName }}</span>
-          </div>
-          <span class="stats-sep" aria-hidden="true" />
-          <div class="stats-group">
-            <span class="smiley" aria-hidden="true">
-              <img
-                v-if="data?.assets.mayorRating"
-                :src="data.assets.mayorRating"
-                alt="满意度"
-              />
-            </span>
-            <span class="money tabnum">{{ placeholders.money }}</span>
-            <span class="income tabnum">{{ placeholders.income }}</span>
-            <span class="pop tabnum">
-              <FIcon name="Users" :size="15" aria-label="" />
-              {{ placeholders.population }}
-            </span>
-          </div>
-          <div class="rci" aria-hidden="true">
-            <span class="rci-bar r" /><span class="rci-bar c" /><span class="rci-bar i" />
-          </div>
-          <button type="button" class="layers" title="数据图层">
-            <img v-if="data?.assets.layerIcon" :src="data.assets.layerIcon" alt="" />
-            <span class="layers-tag" aria-hidden="true" />
-          </button>
+          <span class="name-text">{{ placeholders.cityName }}</span>
+          <span class="smiley" :style="smileyStyle" aria-hidden="true">
+            <img v-if="data?.assets.mayorRating" :src="data.assets.mayorRating" alt="" />
+          </span>
+          <span class="money tabnum">{{ placeholders.money }}</span>
+          <span class="income tabnum">{{ placeholders.income }}</span>
+          <span class="pop tabnum">
+            <FIcon name="Users" :size="15" aria-label="" />
+            {{ placeholders.population }}
+          </span>
         </div>
 
         <!-- 参考截图叠加（校准模式） -->
@@ -349,31 +362,36 @@ function editEntryAt(index: number): void {
   top: 50%;
   transform: translate(-50%, -50%);
 }
+.art {
+  position: absolute;
+}
 .tabnum {
   font-variant-numeric: tabular-nums;
 }
 
 /* ── 顶部 ── */
 .ticker {
-  align-items: center;
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  position: absolute;
+}
+.ticker-icon {
+  background: #d2202a;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgb(9 20 34 / 40%);
+  flex: none;
+  height: 26px;
+  width: 26px;
+}
+.ticker > span:last-child {
   background: linear-gradient(180deg, rgb(250 251 253 / 92%), rgb(226 233 240 / 92%));
   border: 1px solid rgb(210 40 40 / 65%);
   border-radius: 4px;
   color: #b3261e;
-  display: flex;
   font-size: 13px;
-  gap: 8px;
-  left: 46px;
   padding: 6px 14px;
-  position: absolute;
-  top: 10px;
-}
-.ticker-icon {
-  background: #d2202a;
-  border-radius: 3px;
-  flex: none;
-  height: 22px;
-  width: 22px;
 }
 .screen-title {
   background: linear-gradient(180deg, rgb(252 253 255 / 94%), rgb(228 235 242 / 94%));
@@ -397,23 +415,17 @@ function editEntryAt(index: number): void {
   cursor: pointer;
   font-size: 14px;
   font-weight: 700;
-  height: 30px;
   letter-spacing: 0.1em;
   position: absolute;
-  right: 8px;
-  top: 8px;
-  width: 58px;
 }
 
-/* ── 左侧维度切换簇：白描边悬浮圆钮，无衬卡 ── */
+/* ── 左侧维度切换簇 ── */
 .mode-cluster {
   align-items: center;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  left: 14px;
   position: absolute;
-  top: 640px;
 }
 .mbtn {
   align-items: center;
@@ -495,17 +507,13 @@ function editEntryAt(index: number): void {
 
 /* ── 城市分类：悬浮圆钮（无底层衬卡）+ 一二级滑动过渡 ── */
 .tool-viewport {
-  height: 64px;
-  left: 50%;
   overflow: hidden;
   position: absolute;
-  top: 764px;
-  transform: translateX(-50%);
-  width: 1240px;
 }
 .tool-track {
   display: flex;
   height: 100%;
+  justify-content: center;
   transition: translate 320ms cubic-bezier(0.2, 0, 0, 1);
   width: 200%;
 }
@@ -564,7 +572,7 @@ function editEntryAt(index: number): void {
   color: #fff;
 }
 
-/* ── 大学建筑槽位条（此层在游戏内带浅色衬带） ── */
+/* ── 大学建筑槽位条（游戏内此层带浅色衬带） ── */
 .palette-strip {
   height: 130px;
   left: 170px;
@@ -757,19 +765,21 @@ function editEntryAt(index: number): void {
   height: 8px;
 }
 
-/* ── 底栏（对齐游戏截图：浅色横条 + 分组细分隔线） ── */
-.stats-bar {
-  align-items: center;
-  background: linear-gradient(180deg, rgb(240 245 250 / 96%), rgb(214 226 238 / 98%));
-  border-top: 1px solid rgb(255 255 255 / 70%);
-  bottom: 0;
-  box-shadow: 0 -2px 8px rgb(9 20 34 / 28%);
-  box-sizing: border-box;
-  display: flex;
-  gap: 10px;
+/* ── 底栏读数叠加（衬带/tab 板/RCI/图层钮由美术层 scrui 布局提供） ── */
+.stats-overlay {
   height: 52px;
   inset-inline: 0;
-  padding: 0 10px;
+  bottom: 0;
+  position: absolute;
+}
+.stats-overlay::before {
+  content: "";
+  background: linear-gradient(180deg, rgb(240 245 250 / 88%), rgb(214 226 238 / 94%));
+  border-top: 1px solid rgb(255 255 255 / 70%);
+  box-shadow: 0 -2px 8px rgb(9 20 34 / 25%);
+  height: 52px;
+  inset-inline: 0;
+  bottom: 0;
   position: absolute;
 }
 .play {
@@ -778,77 +788,52 @@ function editEntryAt(index: number): void {
   border-radius: 6px;
   color: #fff;
   cursor: pointer;
-  flex: none;
   font-size: 13px;
   height: 36px;
+  left: 10px;
+  position: absolute;
+  top: 8px;
   width: 36px;
 }
 .clock {
   color: #1d2f4a;
-  flex: none;
   font-size: 15px;
   font-weight: 700;
+  left: 58px;
+  position: absolute;
+  top: 17px;
 }
 .speed {
   color: #2c3e54;
-  flex: none;
   font-size: 12px;
+  left: 142px;
   letter-spacing: 1px;
-}
-.stats-sep {
-  align-self: center;
-  background: rgb(154 173 192 / 55%);
-  flex: none;
-  height: 28px;
-  width: 1px;
-}
-.name-field {
-  background: linear-gradient(180deg, #e6edf4, #f4f8fb);
-  border: 1px solid #a9b9c9;
-  border-radius: 8px;
-  box-shadow: inset 0 1px 3px rgb(30 50 70 / 18%);
-  display: flex;
-  flex: none;
-  height: 36px;
-  width: 252px;
+  position: absolute;
+  top: 20px;
 }
 .name-text {
-  align-self: center;
   color: #1d2f4a;
   font-size: 13.5px;
   font-weight: 600;
-  padding-inline-start: 14px;
-}
-.stats-group {
-  align-items: center;
-  color: #1d2f4a;
-  display: flex;
-  flex: 1;
-  gap: 16px;
-  justify-content: center;
-}
-.smiley {
-  border-radius: 50%;
-  display: inline-block;
-  height: 28px;
-  overflow: hidden;
-  width: 28px;
-}
-/* mayorRating 精灵图 195×39，5 帧各 ~27px、帧距 39px；
-   28px 窗口按 39/28 缩放后，最右绿脸起点 = 164 × (28/39) ≈ 117.7px */
-.smiley img {
-  height: 28px;
-  margin-inline-start: -117.7px;
-  max-width: none;
+  left: 163px;
+  position: absolute;
+  top: 19px;
 }
 .money {
+  color: #1d2f4a;
   font-size: 16px;
   font-weight: 700;
+  left: 490px;
+  position: absolute;
+  top: 16px;
 }
 .income {
   color: #2f9e44;
   font-size: 12px;
   font-weight: 600;
+  left: 600px;
+  position: absolute;
+  top: 20px;
 }
 .pop {
   align-items: center;
@@ -857,50 +842,22 @@ function editEntryAt(index: number): void {
   font-size: 16px;
   font-weight: 700;
   gap: 6px;
-}
-.rci {
-  align-items: flex-end;
-  display: flex;
-  flex: none;
-  gap: 3px;
-}
-.rci-bar {
-  border-radius: 2px;
-  height: 26px;
-  width: 9px;
-}
-.rci-bar.r {
-  background: #2fa14e;
-}
-.rci-bar.c {
-  background: rgb(120 140 160 / 45%);
-}
-.rci-bar.i {
-  background: #e3c424;
-  height: 12px;
-}
-.layers {
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  flex: none;
-  height: 44px;
-  padding: 0;
-  position: relative;
-  width: 46px;
-}
-.layers img {
-  height: 100%;
-  width: 100%;
-}
-.layers-tag {
-  background: #e3c424;
-  border-radius: 2px;
-  height: 10px;
+  left: 712px;
   position: absolute;
-  right: -2px;
-  top: 0;
-  width: 14px;
+  top: 16px;
+}
+.smiley {
+  border-radius: 50%;
+  display: inline-block;
+  height: 26px;
+  overflow: hidden;
+  width: 26px;
+}
+/* mayorRating 精灵图 195×39 共 5 帧；26px 窗口缩放后绿脸偏移 -109.3px */
+.smiley img {
+  height: 26px;
+  margin-inline-start: -109.3px;
+  max-width: none;
 }
 
 /* ── 参考图叠加 ── */
