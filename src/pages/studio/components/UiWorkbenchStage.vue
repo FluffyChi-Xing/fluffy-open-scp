@@ -14,10 +14,12 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { CATEGORY_ICONS, toolIconName } from "@/lib/game-ui/workbench";
 
+const { t } = useI18n();
 const store = useUiWorkbenchStore();
 const { screen, data, activeMenu, categories, selectedMenuId, entered, hudImages } =
   storeToRefs(store);
@@ -84,6 +86,22 @@ const smileyStyle = computed(() => {
   if (!r) return { visibility: "hidden" as const };
   return { left: `${r.x + 105}px`, top: `${r.y + 1}px` };
 });
+
+/** 右上角系统按钮（原生图标缺失，FIcon 占位）。 */
+const topButtons = computed(() => [
+  { id: "1079", icon: "Mail", title: t("studio.workbench.topInvites") },
+  { id: "1364", icon: "Star", title: t("studio.workbench.topAchievements") },
+  { id: "1367", icon: "Crosshair", title: t("studio.workbench.topChallenges") },
+  { id: "1273", icon: "ChartBar", title: t("studio.workbench.topLeaderboards") },
+]);
+
+function isCustomCategory(id: string): boolean {
+  return id.startsWith("NEW-CAT-");
+}
+
+function removeCategoryAt(id: string): void {
+  store.removeCategory(id);
+}
 </script>
 
 <template>
@@ -95,7 +113,7 @@ const smileyStyle = computed(() => {
           <span class="backdrop-label">3D 城市视口（示意）</span>
         </div>
 
-        <!-- 美术层：scrui 布局公式定位的游戏原生资产 -->
+        <!-- 美术层：scrui 布局公式定位的游戏原生资产（加载失败自动隐藏） -->
         <img
           v-for="(img, index) in hudImages"
           :key="`art-${index}`"
@@ -108,6 +126,7 @@ const smileyStyle = computed(() => {
             height: `${img.h}px`,
           }"
           alt=""
+          @error="($event.target as HTMLImageElement).style.visibility = 'hidden'"
         />
 
         <!-- 顶部：城市 = 通知条；大学 = 屏幕标题 -->
@@ -121,19 +140,23 @@ const smileyStyle = computed(() => {
           <div class="screen-title">{{ data?.university.label ?? "大學" }}</div>
         </template>
 
-        <!-- 右上角主菜单按钮 -->
+        <!-- 右上角：社交/系统按钮（原生图标缺失 → FIcon 占位） -->
+        <button
+          v-for="btn in topButtons"
+          :key="btn.id"
+          type="button"
+          class="top-btn"
+          :style="rectStyle(btn.id)"
+          :title="btn.title"
+        >
+          <FIcon :name="btn.icon" :size="15" aria-label="" />
+        </button>
         <button type="button" class="main-menu" :style="rectStyle('46')" aria-label="主菜单">
           ···
         </button>
 
         <!-- 左侧：维度切换簇（城市/区域/大商业） -->
         <div class="mode-cluster" :style="rectStyle('1018')">
-          <button type="button" class="mbtn tiny" title="大区域视图">
-            <FIcon name="Globe" :size="14" aria-label="" />
-          </button>
-          <button type="button" class="mbtn small" title="大商业视图">
-            <FIcon name="UsersRound" :size="18" aria-label="" />
-          </button>
           <button type="button" class="city-puck" title="城市视图">
             <span class="puck-glyph" aria-hidden="true">
               <i /><i /><i />
@@ -166,6 +189,14 @@ const smileyStyle = computed(() => {
                   :size="22"
                   aria-label=""
                 />
+                <span
+                  v-if="isCustomCategory(category.id)"
+                  class="del-x"
+                  role="button"
+                  :title="t('studio.workbench.removeCategory')"
+                  @click.stop="removeCategoryAt(category.id)"
+                  >×</span
+                >
               </button>
               <!-- 一级菜单末位：新增分类占位 -->
               <button
@@ -201,6 +232,14 @@ const smileyStyle = computed(() => {
                   :size="22"
                   aria-label=""
                 />
+                <span
+                  v-if="entry.isNew"
+                  class="del-x"
+                  role="button"
+                  :title="t('studio.workbench.removeEntry')"
+                  @click.stop="store.removeItem(activeMenu!.id, entry.tool.id)"
+                  >×</span
+                >
               </button>
               <!-- 二级菜单末位：新增条目占位 -->
               <button
@@ -238,6 +277,14 @@ const smileyStyle = computed(() => {
               <span v-if="slotCounter(index)" class="slot-counter tabnum">{{
                 slotCounter(index)
               }}</span>
+              <span
+                v-if="entry.isNew"
+                class="del-x"
+                role="button"
+                :title="t('studio.workbench.removeEntry')"
+                @click.stop="store.removeItem('university', entry.tool.id)"
+                >×</span
+              >
             </button>
             <!-- 一级菜单末位：新增条目占位 -->
             <button
@@ -439,14 +486,6 @@ const smileyStyle = computed(() => {
   justify-content: center;
   padding: 0;
 }
-.mbtn.tiny {
-  height: 30px;
-  width: 30px;
-}
-.mbtn.small {
-  height: 44px;
-  width: 44px;
-}
 .mbtn.shield {
   color: #eab308;
   height: 46px;
@@ -563,13 +602,31 @@ const smileyStyle = computed(() => {
   margin-inline-end: 10px;
 }
 .tool-button.add {
-  border: 1.5px dashed rgb(240 246 252 / 75%);
+  border: 1.5px dashed rgb(44 74 110 / 65%);
   box-shadow: none;
-  color: rgb(240 246 252 / 92%);
+  color: #2c4a6e;
   font-size: 20px;
 }
 .tool-button.add:hover {
+  color: #0878fe;
+  border-color: #0878fe;
+}
+.del-x {
+  align-items: center;
+  background: #d3242a;
+  border: 1px solid #fff;
+  border-radius: 50%;
   color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  height: 15px;
+  justify-content: center;
+  line-height: 1;
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  width: 15px;
 }
 
 /* ── 大学建筑槽位条（游戏内此层带浅色衬带） ── */

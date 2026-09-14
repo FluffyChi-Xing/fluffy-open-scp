@@ -174,14 +174,17 @@ export interface PlacedImage {
 /**
  * 两段式解析：先设计尺寸自上而下 Init 偏移，再以实际根尺寸 Update 级联。
  * 返回 instanceID → 绝对矩形 + 可渲染图片清单（树序 = 绘制序）。
+ * `excludeSubtreeIds`：整棵跳过的子树根（运行时由 JS 填充/无需静态还原的容器）。
  */
 export function resolveLayout(
   root: LayoutNode,
   stageWidth: number,
   stageHeight: number,
+  options?: { excludeSubtreeIds?: Set<string> },
 ): { rects: Map<string, PlacedRect>; images: PlacedImage[] } {
   const rects = new Map<string, PlacedRect>();
   const images: PlacedImage[] = [];
+  const exclude = options?.excludeSubtreeIds;
 
   const design = (node: LayoutNode, pw: number, ph: number): void => {
     initOffsets(node, pw, ph);
@@ -197,6 +200,7 @@ export function resolveLayout(
     py: number,
     pw: number,
     ph: number,
+    excluded: boolean,
   ): void => {
     const { x, y, w, h } = updatePosition(node, pw, ph);
     const ax = px + x;
@@ -212,11 +216,12 @@ export function resolveLayout(
         h,
       });
     }
+    const skip = excluded || (exclude?.has(id) ?? false);
     if (node.visibility === false) {
       return; // 隐藏子树整体跳过（与引擎 visibility 语义一致）
     }
     const nodeImages = node.drawable?.images;
-    if (nodeImages && nodeImages.length > 0) {
+    if (!skip && nodeImages && nodeImages.length > 0) {
       const resolved = nodeImages
         .filter((ref): ref is string => typeof ref === "string")
         .map((ref) => assetPathForRef(ref))
@@ -234,10 +239,10 @@ export function resolveLayout(
       }
     }
     for (const child of node.children ?? []) {
-      runtime(child, ax, ay, w, h);
+      runtime(child, ax, ay, w, h, skip);
     }
   };
-  runtime(root, 0, 0, stageWidth, stageHeight);
+  runtime(root, 0, 0, stageWidth, stageHeight, false);
 
   return { rects, images };
 }

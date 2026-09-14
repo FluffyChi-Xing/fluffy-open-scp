@@ -54,6 +54,8 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const hudImages = shallowRef<PlacedImage[]>([]);
   /** 自定义覆盖层排除的装饰件（笑脸精灵由单帧裁切替代）。 */
   const HUD_IMAGE_EXCLUDE = new Set(["1888"]);
+  /** 运行时由 JS 填充/无需静态还原的子树（右上社交钮条等）→ 美术层排除。 */
+  const HUD_EXCLUDE_SUBTREES = new Set(["1079", "1273", "1364", "1367", "2161"]);
 
   async function load(): Promise<void> {
     loading.value = true;
@@ -68,7 +70,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     try {
       const layoutResponse = await fetch("/game-ui/layout/globalui2.json");
       hudTree.value = (await layoutResponse.json()) as LayoutNode;
-      const resolved = resolveLayout(hudTree.value, 1600, 900);
+      const resolved = resolveLayout(hudTree.value, 1600, 900, {
+        excludeSubtreeIds: HUD_EXCLUDE_SUBTREES,
+      });
       hudRects.value = resolved.rects;
       hudImages.value = resolved.images.filter(
         (image) =>
@@ -162,6 +166,17 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     selectedMenuId.value = id;
   }
 
+  /** 删除工作台新建的分类。 */
+  function removeCategory(id: string): void {
+    customCategories.value = customCategories.value.filter((c) => c.id !== id);
+    const next = { ...added.value };
+    delete next[id];
+    added.value = next;
+    if (selectedMenuId.value === id) {
+      selectedMenuId.value = firstMenuId();
+    }
+  }
+
   /** 菜单末位追加一项：id 取 next-<n>，排序键排在当前最大值之后。 */
   function addItem(menuId: string, label: string, icon: string | null): void {
     const baseItems =
@@ -242,6 +257,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     enterMenu,
     leaveMenu,
     addCategory,
+    removeCategory,
     updateItem,
     addItem,
     removeItem,
