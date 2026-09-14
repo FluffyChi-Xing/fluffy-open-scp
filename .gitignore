@@ -32,6 +32,8 @@ dist/
 
 # temp folder
 tmp/
+# 探针/取证临时产物（PDF 渲染、ghidra/pyghidra 导出、布局模拟、资产尺寸扫描等）
+/probe_fire/
 # 游戏 UI 解包图片（可由 ui_assets 示例重新生成，体积 230MB+）
 /public/game-ui/png/
 /public/game-ui/jpg/
