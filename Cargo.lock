@@ -2825,6 +2825,7 @@ version = "0.7.0"
 dependencies = [
  "dbpf",
  "rw4",
+ "sc-registry",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

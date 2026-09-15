@@ -32,6 +32,7 @@ pub mod locale;
 mod lot;
 mod lot_unit;
 mod model;
+pub mod semantic;
 
 use std::fmt;
 
@@ -51,6 +52,10 @@ pub use lot_unit::{
     LotUnit, LotUnits, UnitField, UnitKey, UnitTransform, assemble_units,
 };
 pub use model::{Key, Kind, PropType, Property, PropertyEncoding, Text, Transform, Value};
+pub use semantic::{
+    BRUSH_HEIGHTMAP_NAME, BRUSH_RESOLUTION, PropertySemantic, property_semantic,
+    property_semantic_by_group,
+};
 
 /// A parsed `0x00B1B104` property list. Entries keep file order (hashes are
 /// sorted in files written by the game, but this is not relied on).

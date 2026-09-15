@@ -13,3 +13,4 @@ dbpf = { path = "../dbpf" }
 
 [dev-dependencies]
 rw4 = { path = "../rw4" }
+sc-registry = { path = "../sc-registry" }
