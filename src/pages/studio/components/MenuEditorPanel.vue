@@ -57,6 +57,7 @@ function onAdd(): void {
 
     <FEmpty
       v-if="!activeMenu"
+      class="empty-body"
       variant="compact"
       icon-name="MousePointerClick"
       :title="t('studio.workbench.panelHint')"
@@ -153,12 +154,26 @@ function onAdd(): void {
 }
 .item-list {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 6px;
   list-style: none;
   margin: 0;
+  min-height: 0;
   overflow: auto;
   padding: 10px;
+}
+.empty-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  /* 撑高后 grid 行不再 stretch：图标+文字整组垂直居中，行距统一 1rem */
+  align-content: center;
+  gap: 1rem;
+  padding: 24px 16px;
+}
+.empty-body :deep(.f-empty-title) {
+  margin-top: 0;
 }
 .item-card {
   align-items: center;
