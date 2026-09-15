@@ -5,44 +5,21 @@ import {
   sortTools,
   type ToolEdit,
   type WorkbenchCategory,
-  type WorkbenchData,
   type WorkbenchTool,
 } from "@/lib/game-ui/workbench";
-import {
-  resolveLayout,
-  type LayoutNode,
-  type PlacedImage,
-  type PlacedRect,
-} from "@/lib/game-ui/scrui";
+import { loadReplicaData } from "@/lib/game-ui/replica/loader";
+import type { ReplicaData, ReplicaTool } from "@/lib/game-ui/replica/types";
 
 /**
- * UI 工作台状态：左侧维度切换 + 一级菜单钻入二级 + 菜单项编辑覆盖。
+ * UI 工作台状态：一级菜单 → 二级面板钻入 + 菜单项编辑覆盖。
  *
- * 维度（对应游戏左下切换簇）：city = 城市、bigbiz = 大商业、region = 区域。
- * 切换维度自动更新一级菜单内容；点一级分类滑入二级（工具条目）；
- * 编辑是**纯前端覆盖**（`edits` / `added`），实时反映到重建 UI 上；
- * 「落库」当前以 overlay JSON 导出，后端写回（patch_property_overlay +
- * 版本记录通道）是下一轮接入点。
+ * 数据源 = ui_replica 复刻数据（public/game-ui/replica/data/*.js，逆向产物生成）：
+ * 一级 14 个分类来自 CATEGORY_MODEL（Menu/Menu2 推导），二级槽位来自 HUD_TOOLS，
+ * 面板布局来自 HUD_PALETTE；舞台渲染（Shadow DOM）在 UiWorkbenchStage 里完成，
+ * store 只维护菜单模型与**纯前端编辑覆盖**（`edits` / `added`），实时反映到
+ * 复刻 UI 与右侧面板上；「落库」当前以 overlay JSON 导出，后端写回
+ * （patch_property_overlay + 版本记录通道）是下一轮接入点。
  */
-export type WorkbenchDimension = "city" | "bigbiz" | "region";
-
-/** 维度 → 一级分类 id 列表（与 workbench.json 的分类 id 对应）。 */
-export const DIMENSION_CATEGORIES: Record<WorkbenchDimension, string[]> = {
-  city: [
-    "road",
-    "power",
-    "water",
-    "sewage",
-    "garbage",
-    "fire",
-    "health",
-    "safety",
-    "park",
-    "education",
-  ],
-  bigbiz: ["trade", "landmark", "mayor"],
-  region: [],
-};
 
 /** 面板里一条菜单项的最终视图（基础数据 + 编辑覆盖 + 新增标记）。 */
 export interface MenuEntry {
@@ -52,13 +29,27 @@ export interface MenuEntry {
   isNew?: boolean;
 }
 
+/** 复刻数据里的一个工具 → 工作台的条目视图。
+ * 顺序即 uiPosition（构建期已排序），映射为 10/20/30… 的排序键；
+ * 名字缺失时回退 instance 占位（source=unresolved）。 */
+export function replicaToolToWorkbench(tool: ReplicaTool, index: number): WorkbenchTool {
+  return {
+    id: tool.instance,
+    label: tool.label || tool.instance,
+    pos: (index + 1) * 10,
+    icon: null,
+    source: tool.label ? "locale" : "unresolved",
+  };
+}
+
 export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
-  const data = shallowRef<WorkbenchData | null>(null);
+  /** ui_replica 复刻数据（菜单模型 + 面板布局 + 舞台渲染的输入）。 */
+  const replica = shallowRef<ReplicaData | null>(null);
   const loading = shallowRef(false);
-  const dimension = ref<WorkbenchDimension>("city");
+  const loadError = shallowRef<string | null>(null);
   /** 当前选中一级分类 id。 */
   const selectedMenuId = ref<string | null>(null);
-  /** 是否已钻入二级菜单（一级行 → 二级行的滑动过渡）。 */
+  /** 是否已进入二级（面板打开）。 */
   const entered = ref(false);
   /** itemId → 编辑覆盖（含新增项的 id）。 */
   const edits = ref<Record<string, ToolEdit>>({});
@@ -68,64 +59,65 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const editingEntry = shallowRef<MenuEntry | null>(null);
   /** 工作台里新建的分类（一级菜单末位「＋」产生）。 */
   const customCategories = ref<WorkbenchCategory[]>([]);
-  /** 游戏 HUD 布局树（scrui JSON）+ 两段式解析结果。 */
-  const hudTree = shallowRef<LayoutNode | null>(null);
-  const hudRects = shallowRef<Map<string, PlacedRect>>(new Map());
-  const hudImages = shallowRef<PlacedImage[]>([]);
-  /** 自定义覆盖层排除的装饰件（笑脸精灵由单帧裁切替代）。 */
-  const HUD_IMAGE_EXCLUDE = new Set(["1888"]);
-  /** 运行时由 JS 填充/无需静态还原的子树（右上社交钮条等）→ 美术层排除。 */
-  const HUD_EXCLUDE_SUBTREES = new Set(["1079", "1273", "1364", "1367", "2161"]);
 
+  /** 从复刻数据脚本装载（幂等；数据进程内缓存）。 */
   async function load(): Promise<void> {
     loading.value = true;
+    loadError.value = null;
     try {
-      const response = await fetch("/game-ui/workbench.json");
-      data.value = (await response.json()) as WorkbenchData;
-      if (!selectedMenuId.value) selectedMenuId.value = firstMenuId();
+      const data = await loadReplicaData();
+      await backfillParkTools(data);
+      hydrate(data);
+    } catch (cause) {
+      loadError.value = String(cause);
+      console.warn("[uiWorkbench] 复刻数据装载失败", cause);
     } finally {
       loading.value = false;
     }
-    // 布局树独立装载：失败只损失美术层，不拖垮菜单数据/编辑
+  }
+
+  /** 公园分类的工具条目在逆向产物里缺失（Game/App/EP1/DLC0 四包都无对应
+   * Menu 条目），从旧工作台数据链 workbench.json 回填——重构前公园可以
+   * 解析出菜单项，行为保持一致。预览资源旧链同样没有 → 槽位走占位图。 */
+  async function backfillParkTools(data: ReplicaData): Promise<void> {
+    const parkCategory =
+      data.model.categories.find((c) => c.label === "公園") ??
+      data.model.categories.find((c) => c.id === "899BEA70");
+    if (!parkCategory || (data.tools[parkCategory.id]?.length ?? 0) > 0) return;
     try {
-      const layoutResponse = await fetch("/game-ui/layout/globalui2.json");
-      hudTree.value = (await layoutResponse.json()) as LayoutNode;
-      const resolved = resolveLayout(hudTree.value, 1600, 900, {
-        excludeSubtreeIds: HUD_EXCLUDE_SUBTREES,
-      });
-      hudRects.value = resolved.rects;
-      hudImages.value = resolved.images.filter(
-        (image) =>
-          !HUD_IMAGE_EXCLUDE.has(image.id) &&
-          !/tutorial/i.test(image.comment),
-      );
+      const response = await fetch("/game-ui/workbench.json");
+      const legacy = (await response.json()) as {
+        city?: { categories?: { id: string; items?: { id: string; label: string }[] }[] };
+      };
+      const park = legacy.city?.categories?.find((category) => category.id === "park");
+      if (!park?.items?.length) return;
+      data.tools[parkCategory.id] = park.items.map((item) => ({
+        instance: item.id,
+        label: item.label,
+        preview: null,
+        marquee: null,
+        locked: false,
+      }));
     } catch (cause) {
-      console.warn("[uiWorkbench] 布局树解析失败，美术层停用", cause);
+      console.warn("[uiWorkbench] 公园菜单项回填失败", cause);
     }
   }
 
-  /** 当前维度下的第一个一级分类。 */
-  function firstMenuId(): string | null {
-    return categories.value[0]?.id ?? null;
+  /** 注入复刻数据（load 的实质步骤；测试直接调用以绕开脚本注入）。
+   * 不默认选中任何菜单——未选中时右侧面板显示 FEmpty 占位。 */
+  function hydrate(data: ReplicaData): void {
+    replica.value = data;
+    if (selectedMenuId.value && !categories.value.some((c) => c.id === selectedMenuId.value)) {
+      selectedMenuId.value = null;
+      entered.value = false;
+    }
   }
 
-  /** 切换左侧维度：一级菜单内容自动更新，二级状态重置。 */
-  function selectDimension(next: WorkbenchDimension): void {
-    dimension.value = next;
-    entered.value = false;
-    page.value = 1;
-    selectedMenuId.value = firstMenuId();
-  }
-
-  /** 一级菜单点击：选中该菜单（面板同步）并滑入二级。 */
+  /** 一级菜单点击：选中该分类并进入二级（面板由舞台打开；再点同一个 =
+   * 收起，由舞台根据面板开关状态调用 enterMenu/leaveMenu）。 */
   function enterMenu(menuId: string): void {
-    if (entered.value && selectedMenuId.value === menuId) {
-      entered.value = false; // 再点同一个分类 = 收起二级
-      return;
-    }
     selectedMenuId.value = menuId;
     entered.value = true;
-    page.value = 1;
   }
 
   /** 二级返回一级。 */
@@ -133,26 +125,22 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     entered.value = false;
   }
 
-  /** 当前维度可见的分类（含工作台新建的）。 */
+  /** 全部一级分类（复刻数据 14 分类 + 工作台新建的）。 */
   const categories = computed<WorkbenchCategory[]>(() => {
-    const dimensionIds = DIMENSION_CATEGORIES[dimension.value];
-    const all = [...(data.value?.city.categories ?? []), ...customCategories.value];
-    if (dimension.value === "city") {
-      return all;
-    }
-    return all.filter((category) => dimensionIds.includes(category.id));
+    const data = replica.value;
+    const base = (data?.model.categories ?? []).map((cat) => ({
+      id: cat.id,
+      label: cat.label,
+      icon: cat.icon,
+      items: (data?.tools[cat.id] ?? []).map(replicaToolToWorkbench),
+    }));
+    return [...base, ...customCategories.value];
   });
-
-  /** 二级分页：游戏行为为一页最多 8 个槽位，多余分页。 */
-  const PAGE_SIZE = 8;
-  const page = ref(1);
 
   /** 面板当前展示的菜单（含编辑覆盖与新增项）。 */
   const activeMenu = computed<{ id: string; label: string; entries: MenuEntry[] } | null>(() => {
-    if (!data.value) return null;
-    const category = categories.value.find(
-      (candidate) => candidate.id === selectedMenuId.value,
-    );
+    if (!replica.value) return null;
+    const category = categories.value.find((candidate) => candidate.id === selectedMenuId.value);
     if (!category) return null;
     const menuAdditions = added.value[category.id] ?? [];
     const entries: MenuEntry[] = sortTools(
@@ -167,25 +155,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return { id: category.id, label: category.label, entries };
   });
 
-  const pageCount = computed(() =>
-    Math.max(1, Math.ceil((activeMenu.value?.entries.length ?? 0) / PAGE_SIZE)),
-  );
-
-  const pagedEntries = computed<MenuEntry[]>(() => {
-    const entries = activeMenu.value?.entries ?? [];
-    const start = (Math.min(page.value, pageCount.value) - 1) * PAGE_SIZE;
-    return entries.slice(start, start + PAGE_SIZE);
-  });
-
-  function setPage(next: number): void {
-    page.value = Math.min(Math.max(1, next), pageCount.value);
-  }
-
   /** 面板点击条目 → 打开编辑 Sheet。 */
   function openEditor(menuId: string, itemId: string): void {
-    const entry = activeMenu.value?.entries.find(
-      (candidate) => candidate.tool.id === itemId,
-    );
+    const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
     if (entry) editingEntry.value = entry;
     void menuId;
   }
@@ -212,16 +184,14 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     delete next[id];
     added.value = next;
     if (selectedMenuId.value === id) {
-      selectedMenuId.value = firstMenuId();
+      selectedMenuId.value = null;
+      entered.value = false;
     }
   }
 
   /** 菜单末位追加一项：id 取 next-<n>，排序键排在当前最大值之后。 */
   function addItem(menuId: string, label: string, icon: string | null): void {
-    const baseItems =
-      menuId === "university"
-        ? (data.value?.university.tools ?? [])
-        : (categories.value.find((category) => category.id === menuId)?.items ?? []);
+    const baseItems = categories.value.find((category) => category.id === menuId)?.items ?? [];
     const existing = [...baseItems, ...(added.value[menuId] ?? [])];
     const maxPos = existing.reduce((max, tool) => Math.max(max, tool.pos), 0);
     const id = `NEW-${menuId}-${(added.value[menuId]?.length ?? 0) + 1}`;
@@ -254,7 +224,6 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return JSON.stringify(
       {
         format: "openscp-ui-workbench-overlay/1",
-        dimension: dimension.value,
         edits: edits.value,
         added: added.value,
         customCategories: customCategories.value,
@@ -270,33 +239,20 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     editingEntry.value = null;
   }
 
-  /** 布局树某节点的运行期绝对矩形（instanceID 十进制字符串）。 */
-  function rect(id: string): PlacedRect | undefined {
-    return hudRects.value.get(id);
-  }
-
   return {
-    data,
+    replica,
     loading,
-    dimension,
+    loadError,
     selectedMenuId,
     entered,
     edits,
     added,
     editingEntry,
     customCategories,
-    hudTree,
-    hudRects,
-    hudImages,
     categories,
     activeMenu,
-    page,
-    pageCount,
-    pagedEntries,
-    setPage,
-    rect,
+    hydrate,
     load,
-    selectDimension,
     enterMenu,
     leaveMenu,
     openEditor,

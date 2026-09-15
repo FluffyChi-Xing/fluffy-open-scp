@@ -14,7 +14,8 @@
  */
 
 export interface LayoutNode {
-  instanceID?: number;
+  /** 主树为数字；build.py 内联子模块后带 `宿主iid::` 前缀变字符串。 */
+  instanceID?: number | string;
   comment?: string;
   left?: number;
   top?: number;

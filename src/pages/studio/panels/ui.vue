@@ -2,10 +2,9 @@
 /**
  * UI 工作台：一站式完成资产在菜单中的落库与实时预览。
  *
- * 版面 = 左主区（重建的游戏 HUD，1600×900 等比缩放）+ 右面板（当前菜单的
- * 条目预览 → 点击进 Sheet 编辑 → 实时反映回左区）。顶部工具条提供
- * 屏幕切换（城市主菜单 / 大学建筑菜单）、参考截图叠加（校准）与
- * 机制说明。落库当前导出 overlay JSON，后端写回走下一轮的
+ * 版面 = 左主区（复刻站渲染的游戏 HUD，1600×900 等比缩放）+ 右面板（当前菜单的
+ * 条目预览 → 点击进 Sheet 编辑 → 实时反映回左区）。顶部工具条提供机制说明。
+ * 落库当前导出 overlay JSON，后端写回走下一轮的
  * patch_property_overlay + 版本记录通道。
  */
 import { onMounted, ref, watch } from "vue";
@@ -23,14 +22,12 @@ import type { ToolEdit } from "@/lib/game-ui/workbench";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
-const { loading, editingEntry, data } = storeToRefs(store);
+const { loading, editingEntry } = storeToRefs(store);
 
 onMounted(() => {
   void store.load();
 });
 
-/** 参考截图叠加透明度（0 = 关闭）。 */
-const overlayOpacity = ref(0);
 const showMechanism = ref(false);
 
 /** Sheet 的临时编辑态（打开时从条目拷贝，确认才写回 store）。 */
@@ -92,18 +89,6 @@ function removeDraft(): void {
     <p v-if="loading" class="notice" role="status">{{ t("studio.workbench.loading") }}</p>
 
     <div class="toolbar">
-      <label class="overlay-row">
-        <span>{{ t("studio.workbench.overlay") }}</span>
-        <input
-          v-model.number="overlayOpacity"
-          type="range"
-          min="0"
-          max="100"
-          :disabled="!data"
-        />
-        <span class="tabnum">{{ overlayOpacity }}%</span>
-      </label>
-
       <button type="button" class="ghost-btn" @click="showMechanism = !showMechanism">
         <FIcon :name="showMechanism ? 'ChevronUp' : 'ChevronDown'" :size="13" aria-label="" />
         {{ t("studio.workbench.mechanism") }}
@@ -121,7 +106,7 @@ function removeDraft(): void {
     </div>
 
     <div class="workspace">
-      <UiWorkbenchStage :overlay-opacity="overlayOpacity / 100" />
+      <UiWorkbenchStage />
       <MenuEditorPanel />
     </div>
 
@@ -231,17 +216,6 @@ function removeDraft(): void {
   flex-wrap: wrap;
   gap: 14px;
 }
-.overlay-row {
-  align-items: center;
-  color: var(--muted-foreground);
-  display: flex;
-  font-size: 12px;
-  gap: 8px;
-}
-.overlay-row input[type="range"] {
-  accent-color: var(--primary);
-  width: 140px;
-}
 .ghost-btn {
   align-items: center;
   background: var(--surface);
@@ -270,9 +244,6 @@ function removeDraft(): void {
   gap: 14px;
   grid-template-columns: minmax(0, 1fr) 320px;
   height: 660px;
-}
-.tabnum {
-  font-variant-numeric: tabular-nums;
 }
 
 /* Sheet 编辑表单 */

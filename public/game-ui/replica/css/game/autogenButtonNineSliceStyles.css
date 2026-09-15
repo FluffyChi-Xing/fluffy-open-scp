@@ -1,0 +1,1490 @@
+.autogenButtonNineSliceStyles {}
+
+/* avatarbutton 8 state button */
+.avatarbuttonNormal.customData	{ border-width:4px;}
+.avatarbuttonNormal.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-br.png"); }
+.avatarbuttonNormal.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-tr.png"); }
+.avatarbuttonNormal.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-r.png"); }
+.avatarbuttonNormal.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-t.png"); }
+.avatarbuttonNormal.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-tl.png"); }
+.avatarbuttonNormal.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-b.png"); }
+.avatarbuttonNormal.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-bl.png"); }
+.avatarbuttonNormal.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-m.png"); }
+.avatarbuttonNormal.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-normal-l.png"); }
+
+/* avatarbutton 8 state button */
+.avatarbuttonRollover.customData	{ border-width:4px;}
+.avatarbuttonRollover.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-br.png"); }
+.avatarbuttonRollover.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-r.png"); }
+.avatarbuttonRollover.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-t.png"); }
+.avatarbuttonRollover.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-tl.png"); }
+.avatarbuttonRollover.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-l.png"); }
+.avatarbuttonRollover.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-bl.png"); }
+.avatarbuttonRollover.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-b.png"); }
+.avatarbuttonRollover.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-tr.png"); }
+.avatarbuttonRollover.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-rollover-m.png"); }
+
+/* avatarbutton 8 state button */
+.avatarbuttonDown.customData	{ border-width:4px;}
+.avatarbuttonDown.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-down-bl.png"); }
+.avatarbuttonDown.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-down-b.png"); }
+.avatarbuttonDown.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-down-t.png"); }
+.avatarbuttonDown.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-down-tl.png"); }
+.avatarbuttonDown.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-down-m.png"); }
+.avatarbuttonDown.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-down-l.png"); }
+.avatarbuttonDown.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-down-tr.png"); }
+.avatarbuttonDown.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-down-r.png"); }
+.avatarbuttonDown.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-down-br.png"); }
+
+/* avatarbutton 8 state button */
+.avatarbuttonDisabled.customData	{ border-width:4px;}
+.avatarbuttonDisabled.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-br.png"); }
+.avatarbuttonDisabled.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-m.png"); }
+.avatarbuttonDisabled.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-tl.png"); }
+.avatarbuttonDisabled.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-l.png"); }
+.avatarbuttonDisabled.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-r.png"); }
+.avatarbuttonDisabled.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-b.png"); }
+.avatarbuttonDisabled.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-tr.png"); }
+.avatarbuttonDisabled.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-bl.png"); }
+.avatarbuttonDisabled.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-disabled-t.png"); }
+
+/* avatarbutton 8 state button */
+.avatarbuttonSelectedNormal.customData	{ border-width:4px;}
+.avatarbuttonSelectedNormal.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-br.png"); }
+.avatarbuttonSelectedNormal.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-l.png"); }
+.avatarbuttonSelectedNormal.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-tr.png"); }
+.avatarbuttonSelectedNormal.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-tl.png"); }
+.avatarbuttonSelectedNormal.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-r.png"); }
+.avatarbuttonSelectedNormal.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-b.png"); }
+.avatarbuttonSelectedNormal.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-m.png"); }
+.avatarbuttonSelectedNormal.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-bl.png"); }
+.avatarbuttonSelectedNormal.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectednormal-t.png"); }
+
+/* avatarbutton 8 state button */
+.avatarbuttonSelectedRollover.customData	{ border-width:4px;}
+.avatarbuttonSelectedRollover.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-m.png"); }
+.avatarbuttonSelectedRollover.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-l.png"); }
+.avatarbuttonSelectedRollover.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-t.png"); }
+.avatarbuttonSelectedRollover.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-b.png"); }
+.avatarbuttonSelectedRollover.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-bl.png"); }
+.avatarbuttonSelectedRollover.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-r.png"); }
+.avatarbuttonSelectedRollover.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-tl.png"); }
+.avatarbuttonSelectedRollover.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-tr.png"); }
+.avatarbuttonSelectedRollover.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selectedrollover-br.png"); }
+
+/* avatarbutton 8 state button */
+.avatarbuttonSelectedDown.customData	{ border-width:4px;}
+.avatarbuttonSelectedDown.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-tl.png"); }
+.avatarbuttonSelectedDown.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-r.png"); }
+.avatarbuttonSelectedDown.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-bl.png"); }
+.avatarbuttonSelectedDown.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-l.png"); }
+.avatarbuttonSelectedDown.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-tr.png"); }
+.avatarbuttonSelectedDown.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-m.png"); }
+.avatarbuttonSelectedDown.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-br.png"); }
+.avatarbuttonSelectedDown.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-b.png"); }
+.avatarbuttonSelectedDown.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddown-t.png"); }
+
+/* avatarbutton 8 state button */
+.avatarbuttonSelectedDisabled.customData	{ border-width:4px;}
+.avatarbuttonSelectedDisabled.pinRight	{ width:4px; right:0px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-r.png"); }
+.avatarbuttonSelectedDisabled.pinBottom	{ left:4px; right:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-b.png"); }
+.avatarbuttonSelectedDisabled.pinTop	{ left:4px; right:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-t.png"); }
+.avatarbuttonSelectedDisabled.pinCenter	{ left:4px; right:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-m.png"); }
+.avatarbuttonSelectedDisabled.pinTopRight	{ width:4px; right:0px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-tr.png"); }
+.avatarbuttonSelectedDisabled.pinLeft	{ left:0px; width:4px; top:4px; bottom:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-l.png"); }
+.avatarbuttonSelectedDisabled.pinBottomRight	{ width:4px; right:0px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-br.png"); }
+.avatarbuttonSelectedDisabled.pinBottomLeft	{ left:0px; width:4px; height:4px; bottom:0px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-bl.png"); }
+.avatarbuttonSelectedDisabled.pinTopLeft	{ left:0px; width:4px; top:0px; height:4px; background-image:url("../Graphics/AutoGen/avatarbutton-selecteddisabled-tl.png"); }
+
+/* btn-generic 4 state button */
+.btn-genericNormal.customData	{ border-width:14px;}
+.btn-genericNormal.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-normal-br.png"); }
+.btn-genericNormal.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-normal-m.png"); }
+.btn-genericNormal.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-normal-tr.png"); }
+.btn-genericNormal.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-normal-l.png"); }
+.btn-genericNormal.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-normal-r.png"); }
+.btn-genericNormal.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-normal-t.png"); }
+.btn-genericNormal.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-normal-tl.png"); }
+.btn-genericNormal.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-normal-b.png"); }
+.btn-genericNormal.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-normal-bl.png"); }
+
+/* btn-generic 4 state button */
+.btn-genericRollover.customData	{ border-width:14px;}
+.btn-genericRollover.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-bl.png"); }
+.btn-genericRollover.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-br.png"); }
+.btn-genericRollover.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-b.png"); }
+.btn-genericRollover.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-r.png"); }
+.btn-genericRollover.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-tr.png"); }
+.btn-genericRollover.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-t.png"); }
+.btn-genericRollover.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-tl.png"); }
+.btn-genericRollover.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-l.png"); }
+.btn-genericRollover.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-rollover-m.png"); }
+
+/* btn-generic 4 state button */
+.btn-genericDown.customData	{ border-width:14px;}
+.btn-genericDown.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-down-bl.png"); }
+.btn-genericDown.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-down-b.png"); }
+.btn-genericDown.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-down-tr.png"); }
+.btn-genericDown.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-down-t.png"); }
+.btn-genericDown.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-down-tl.png"); }
+.btn-genericDown.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-down-r.png"); }
+.btn-genericDown.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-down-m.png"); }
+.btn-genericDown.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-down-br.png"); }
+.btn-genericDown.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-down-l.png"); }
+
+/* btn-generic 4 state button */
+.btn-genericDisabled.customData	{ border-width:14px;}
+.btn-genericDisabled.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-br.png"); }
+.btn-genericDisabled.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-m.png"); }
+.btn-genericDisabled.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-tl.png"); }
+.btn-genericDisabled.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-l.png"); }
+.btn-genericDisabled.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-r.png"); }
+.btn-genericDisabled.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-b.png"); }
+.btn-genericDisabled.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-tr.png"); }
+.btn-genericDisabled.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-bl.png"); }
+.btn-genericDisabled.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-disabled-t.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleNormal.customData	{ border-width:14px;}
+.btn-generic-toggleNormal.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-br.png"); }
+.btn-generic-toggleNormal.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-tr.png"); }
+.btn-generic-toggleNormal.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-r.png"); }
+.btn-generic-toggleNormal.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-t.png"); }
+.btn-generic-toggleNormal.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-tl.png"); }
+.btn-generic-toggleNormal.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-b.png"); }
+.btn-generic-toggleNormal.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-bl.png"); }
+.btn-generic-toggleNormal.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-m.png"); }
+.btn-generic-toggleNormal.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-normal-l.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleRollover.customData	{ border-width:14px;}
+.btn-generic-toggleRollover.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-br.png"); }
+.btn-generic-toggleRollover.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-r.png"); }
+.btn-generic-toggleRollover.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-t.png"); }
+.btn-generic-toggleRollover.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-tl.png"); }
+.btn-generic-toggleRollover.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-l.png"); }
+.btn-generic-toggleRollover.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-bl.png"); }
+.btn-generic-toggleRollover.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-b.png"); }
+.btn-generic-toggleRollover.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-tr.png"); }
+.btn-generic-toggleRollover.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-rollover-m.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleDown.customData	{ border-width:14px;}
+.btn-generic-toggleDown.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-bl.png"); }
+.btn-generic-toggleDown.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-b.png"); }
+.btn-generic-toggleDown.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-t.png"); }
+.btn-generic-toggleDown.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-tl.png"); }
+.btn-generic-toggleDown.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-m.png"); }
+.btn-generic-toggleDown.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-l.png"); }
+.btn-generic-toggleDown.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-tr.png"); }
+.btn-generic-toggleDown.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-r.png"); }
+.btn-generic-toggleDown.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-down-br.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleDisabled.customData	{ border-width:14px;}
+.btn-generic-toggleDisabled.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-br.png"); }
+.btn-generic-toggleDisabled.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-m.png"); }
+.btn-generic-toggleDisabled.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-tl.png"); }
+.btn-generic-toggleDisabled.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-l.png"); }
+.btn-generic-toggleDisabled.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-r.png"); }
+.btn-generic-toggleDisabled.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-b.png"); }
+.btn-generic-toggleDisabled.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-tr.png"); }
+.btn-generic-toggleDisabled.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-bl.png"); }
+.btn-generic-toggleDisabled.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-disabled-t.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleSelectedNormal.customData	{ border-width:14px;}
+.btn-generic-toggleSelectedNormal.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-br.png"); }
+.btn-generic-toggleSelectedNormal.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-l.png"); }
+.btn-generic-toggleSelectedNormal.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-tr.png"); }
+.btn-generic-toggleSelectedNormal.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-tl.png"); }
+.btn-generic-toggleSelectedNormal.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-r.png"); }
+.btn-generic-toggleSelectedNormal.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-b.png"); }
+.btn-generic-toggleSelectedNormal.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-m.png"); }
+.btn-generic-toggleSelectedNormal.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-bl.png"); }
+.btn-generic-toggleSelectedNormal.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectednormal-t.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleSelectedRollover.customData	{ border-width:14px;}
+.btn-generic-toggleSelectedRollover.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-m.png"); }
+.btn-generic-toggleSelectedRollover.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-l.png"); }
+.btn-generic-toggleSelectedRollover.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-t.png"); }
+.btn-generic-toggleSelectedRollover.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-b.png"); }
+.btn-generic-toggleSelectedRollover.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-bl.png"); }
+.btn-generic-toggleSelectedRollover.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-r.png"); }
+.btn-generic-toggleSelectedRollover.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-tl.png"); }
+.btn-generic-toggleSelectedRollover.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-tr.png"); }
+.btn-generic-toggleSelectedRollover.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selectedrollover-br.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleSelectedDown.customData	{ border-width:14px;}
+.btn-generic-toggleSelectedDown.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-tl.png"); }
+.btn-generic-toggleSelectedDown.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-r.png"); }
+.btn-generic-toggleSelectedDown.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-bl.png"); }
+.btn-generic-toggleSelectedDown.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-l.png"); }
+.btn-generic-toggleSelectedDown.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-tr.png"); }
+.btn-generic-toggleSelectedDown.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-m.png"); }
+.btn-generic-toggleSelectedDown.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-br.png"); }
+.btn-generic-toggleSelectedDown.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-b.png"); }
+.btn-generic-toggleSelectedDown.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddown-t.png"); }
+
+/* btn-generic-toggle 8 state button */
+.btn-generic-toggleSelectedDisabled.customData	{ border-width:14px;}
+.btn-generic-toggleSelectedDisabled.pinRight	{ width:14px; right:0px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-r.png"); }
+.btn-generic-toggleSelectedDisabled.pinBottom	{ left:14px; right:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-b.png"); }
+.btn-generic-toggleSelectedDisabled.pinTop	{ left:14px; right:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-t.png"); }
+.btn-generic-toggleSelectedDisabled.pinCenter	{ left:14px; right:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-m.png"); }
+.btn-generic-toggleSelectedDisabled.pinTopRight	{ width:14px; right:0px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-tr.png"); }
+.btn-generic-toggleSelectedDisabled.pinLeft	{ left:0px; width:14px; top:14px; bottom:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-l.png"); }
+.btn-generic-toggleSelectedDisabled.pinBottomRight	{ width:14px; right:0px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-br.png"); }
+.btn-generic-toggleSelectedDisabled.pinBottomLeft	{ left:0px; width:14px; height:14px; bottom:0px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-bl.png"); }
+.btn-generic-toggleSelectedDisabled.pinTopLeft	{ left:0px; width:14px; top:0px; height:14px; background-image:url("../Graphics/AutoGen/btn-generic-toggle-selecteddisabled-tl.png"); }
+
+/* btncitylog 4 state button */
+.btncitylogNormal.customData	{ border-width:11px;}
+.btncitylogNormal.pinBottomRight	{ width:11px; right:0px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-br.png"); }
+.btncitylogNormal.pinCenter	{ left:11px; right:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-m.png"); }
+.btncitylogNormal.pinTopRight	{ width:11px; right:0px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-tr.png"); }
+.btncitylogNormal.pinLeft	{ left:0px; width:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-l.png"); }
+.btncitylogNormal.pinRight	{ width:11px; right:0px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-r.png"); }
+.btncitylogNormal.pinTop	{ left:11px; right:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-t.png"); }
+.btncitylogNormal.pinTopLeft	{ left:0px; width:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-tl.png"); }
+.btncitylogNormal.pinBottom	{ left:11px; right:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-b.png"); }
+.btncitylogNormal.pinBottomLeft	{ left:0px; width:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-normal-bl.png"); }
+
+/* btncitylog 4 state button */
+.btncitylogRollover.customData	{ border-width:11px;}
+.btncitylogRollover.pinBottomLeft	{ left:0px; width:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-bl.png"); }
+.btncitylogRollover.pinBottomRight	{ width:11px; right:0px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-br.png"); }
+.btncitylogRollover.pinBottom	{ left:11px; right:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-b.png"); }
+.btncitylogRollover.pinRight	{ width:11px; right:0px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-r.png"); }
+.btncitylogRollover.pinTopRight	{ width:11px; right:0px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-tr.png"); }
+.btncitylogRollover.pinTop	{ left:11px; right:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-t.png"); }
+.btncitylogRollover.pinTopLeft	{ left:0px; width:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-tl.png"); }
+.btncitylogRollover.pinLeft	{ left:0px; width:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-l.png"); }
+.btncitylogRollover.pinCenter	{ left:11px; right:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-rollover-m.png"); }
+
+/* btncitylog 4 state button */
+.btncitylogDown.customData	{ border-width:11px;}
+.btncitylogDown.pinBottomLeft	{ left:0px; width:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-down-bl.png"); }
+.btncitylogDown.pinBottom	{ left:11px; right:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-down-b.png"); }
+.btncitylogDown.pinTopRight	{ width:11px; right:0px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-down-tr.png"); }
+.btncitylogDown.pinTop	{ left:11px; right:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-down-t.png"); }
+.btncitylogDown.pinTopLeft	{ left:0px; width:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-down-tl.png"); }
+.btncitylogDown.pinRight	{ width:11px; right:0px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-down-r.png"); }
+.btncitylogDown.pinCenter	{ left:11px; right:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-down-m.png"); }
+.btncitylogDown.pinBottomRight	{ width:11px; right:0px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-down-br.png"); }
+.btncitylogDown.pinLeft	{ left:0px; width:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-down-l.png"); }
+
+/* btncitylog 4 state button */
+.btncitylogDisabled.customData	{ border-width:11px;}
+.btncitylogDisabled.pinBottomRight	{ width:11px; right:0px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-br.png"); }
+.btncitylogDisabled.pinCenter	{ left:11px; right:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-m.png"); }
+.btncitylogDisabled.pinTopLeft	{ left:0px; width:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-tl.png"); }
+.btncitylogDisabled.pinLeft	{ left:0px; width:11px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-l.png"); }
+.btncitylogDisabled.pinRight	{ width:11px; right:0px; top:11px; bottom:11px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-r.png"); }
+.btncitylogDisabled.pinBottom	{ left:11px; right:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-b.png"); }
+.btncitylogDisabled.pinTopRight	{ width:11px; right:0px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-tr.png"); }
+.btncitylogDisabled.pinBottomLeft	{ left:0px; width:11px; height:11px; bottom:0px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-bl.png"); }
+.btncitylogDisabled.pinTop	{ left:11px; right:11px; top:0px; height:11px; background-image:url("../Graphics/AutoGen/btnCityLog-disabled-t.png"); }
+
+/* btnnav 4 state button */
+.btnnavNormal.customData	{ border-width:6px;}
+.btnnavNormal.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-normal-br.png"); }
+.btnnavNormal.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-normal-m.png"); }
+.btnnavNormal.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-normal-tr.png"); }
+.btnnavNormal.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-normal-l.png"); }
+.btnnavNormal.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-normal-r.png"); }
+.btnnavNormal.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-normal-t.png"); }
+.btnnavNormal.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-normal-tl.png"); }
+.btnnavNormal.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-normal-b.png"); }
+.btnnavNormal.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-normal-bl.png"); }
+
+/* btnnav 4 state button */
+.btnnavRollover.customData	{ border-width:6px;}
+.btnnavRollover.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-rollover-bl.png"); }
+.btnnavRollover.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-rollover-br.png"); }
+.btnnavRollover.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-rollover-b.png"); }
+.btnnavRollover.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-rollover-r.png"); }
+.btnnavRollover.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-rollover-tr.png"); }
+.btnnavRollover.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-rollover-t.png"); }
+.btnnavRollover.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-rollover-tl.png"); }
+.btnnavRollover.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-rollover-l.png"); }
+.btnnavRollover.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-rollover-m.png"); }
+
+/* btnnav 4 state button */
+.btnnavDown.customData	{ border-width:6px;}
+.btnnavDown.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-down-bl.png"); }
+.btnnavDown.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-down-b.png"); }
+.btnnavDown.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-down-tr.png"); }
+.btnnavDown.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-down-t.png"); }
+.btnnavDown.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-down-tl.png"); }
+.btnnavDown.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-down-r.png"); }
+.btnnavDown.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-down-m.png"); }
+.btnnavDown.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-down-br.png"); }
+.btnnavDown.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-down-l.png"); }
+
+/* btnnav 4 state button */
+.btnnavDisabled.customData	{ border-width:6px;}
+.btnnavDisabled.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-disabled-br.png"); }
+.btnnavDisabled.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-disabled-m.png"); }
+.btnnavDisabled.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-disabled-tl.png"); }
+.btnnavDisabled.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-disabled-l.png"); }
+.btnnavDisabled.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNav-disabled-r.png"); }
+.btnnavDisabled.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-disabled-b.png"); }
+.btnnavDisabled.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-disabled-tr.png"); }
+.btnnavDisabled.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNav-disabled-bl.png"); }
+.btnnavDisabled.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNav-disabled-t.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioNormal.customData	{ border-width:6px;}
+.btnnavradioNormal.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-br.png"); }
+.btnnavradioNormal.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-tr.png"); }
+.btnnavradioNormal.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-r.png"); }
+.btnnavradioNormal.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-t.png"); }
+.btnnavradioNormal.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-tl.png"); }
+.btnnavradioNormal.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-b.png"); }
+.btnnavradioNormal.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-bl.png"); }
+.btnnavradioNormal.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-m.png"); }
+.btnnavradioNormal.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-normal-l.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioRollover.customData	{ border-width:6px;}
+.btnnavradioRollover.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-br.png"); }
+.btnnavradioRollover.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-r.png"); }
+.btnnavradioRollover.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-t.png"); }
+.btnnavradioRollover.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-tl.png"); }
+.btnnavradioRollover.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-l.png"); }
+.btnnavradioRollover.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-bl.png"); }
+.btnnavradioRollover.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-b.png"); }
+.btnnavradioRollover.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-tr.png"); }
+.btnnavradioRollover.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-rollover-m.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioDown.customData	{ border-width:6px;}
+.btnnavradioDown.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-bl.png"); }
+.btnnavradioDown.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-b.png"); }
+.btnnavradioDown.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-t.png"); }
+.btnnavradioDown.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-tl.png"); }
+.btnnavradioDown.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-m.png"); }
+.btnnavradioDown.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-l.png"); }
+.btnnavradioDown.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-tr.png"); }
+.btnnavradioDown.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-r.png"); }
+.btnnavradioDown.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-down-br.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioDisabled.customData	{ border-width:6px;}
+.btnnavradioDisabled.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-br.png"); }
+.btnnavradioDisabled.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-m.png"); }
+.btnnavradioDisabled.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-tl.png"); }
+.btnnavradioDisabled.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-l.png"); }
+.btnnavradioDisabled.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-r.png"); }
+.btnnavradioDisabled.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-b.png"); }
+.btnnavradioDisabled.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-tr.png"); }
+.btnnavradioDisabled.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-bl.png"); }
+.btnnavradioDisabled.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-disabled-t.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioSelectedNormal.customData	{ border-width:6px;}
+.btnnavradioSelectedNormal.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-br.png"); }
+.btnnavradioSelectedNormal.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-l.png"); }
+.btnnavradioSelectedNormal.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-tr.png"); }
+.btnnavradioSelectedNormal.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-tl.png"); }
+.btnnavradioSelectedNormal.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-r.png"); }
+.btnnavradioSelectedNormal.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-b.png"); }
+.btnnavradioSelectedNormal.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-m.png"); }
+.btnnavradioSelectedNormal.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-bl.png"); }
+.btnnavradioSelectedNormal.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectednormal-t.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioSelectedRollover.customData	{ border-width:6px;}
+.btnnavradioSelectedRollover.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-m.png"); }
+.btnnavradioSelectedRollover.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-l.png"); }
+.btnnavradioSelectedRollover.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-t.png"); }
+.btnnavradioSelectedRollover.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-b.png"); }
+.btnnavradioSelectedRollover.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-bl.png"); }
+.btnnavradioSelectedRollover.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-r.png"); }
+.btnnavradioSelectedRollover.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-tl.png"); }
+.btnnavradioSelectedRollover.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-tr.png"); }
+.btnnavradioSelectedRollover.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selectedrollover-br.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioSelectedDown.customData	{ border-width:6px;}
+.btnnavradioSelectedDown.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-tl.png"); }
+.btnnavradioSelectedDown.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-r.png"); }
+.btnnavradioSelectedDown.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-bl.png"); }
+.btnnavradioSelectedDown.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-l.png"); }
+.btnnavradioSelectedDown.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-tr.png"); }
+.btnnavradioSelectedDown.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-m.png"); }
+.btnnavradioSelectedDown.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-br.png"); }
+.btnnavradioSelectedDown.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-b.png"); }
+.btnnavradioSelectedDown.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddown-t.png"); }
+
+/* btnnavradio 8 state button */
+.btnnavradioSelectedDisabled.customData	{ border-width:6px;}
+.btnnavradioSelectedDisabled.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-r.png"); }
+.btnnavradioSelectedDisabled.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-b.png"); }
+.btnnavradioSelectedDisabled.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-t.png"); }
+.btnnavradioSelectedDisabled.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-m.png"); }
+.btnnavradioSelectedDisabled.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-tr.png"); }
+.btnnavradioSelectedDisabled.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-l.png"); }
+.btnnavradioSelectedDisabled.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-br.png"); }
+.btnnavradioSelectedDisabled.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-bl.png"); }
+.btnnavradioSelectedDisabled.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/btnNavRadio-selecteddisabled-tl.png"); }
+
+/* btnplay 4 state button */
+.btnplayNormal.customData	{ border-width:23px;}
+.btnplayNormal.pinBottomRight	{ width:23px; right:0px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-br.png"); }
+.btnplayNormal.pinCenter	{ left:23px; right:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-m.png"); }
+.btnplayNormal.pinTopRight	{ width:23px; right:0px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-tr.png"); }
+.btnplayNormal.pinLeft	{ left:0px; width:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-l.png"); }
+.btnplayNormal.pinRight	{ width:23px; right:0px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-r.png"); }
+.btnplayNormal.pinTop	{ left:23px; right:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-t.png"); }
+.btnplayNormal.pinTopLeft	{ left:0px; width:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-tl.png"); }
+.btnplayNormal.pinBottom	{ left:23px; right:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-b.png"); }
+.btnplayNormal.pinBottomLeft	{ left:0px; width:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-normal-bl.png"); }
+
+/* btnplay 4 state button */
+.btnplayRollover.customData	{ border-width:23px;}
+.btnplayRollover.pinBottomLeft	{ left:0px; width:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-bl.png"); }
+.btnplayRollover.pinBottomRight	{ width:23px; right:0px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-br.png"); }
+.btnplayRollover.pinBottom	{ left:23px; right:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-b.png"); }
+.btnplayRollover.pinRight	{ width:23px; right:0px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-r.png"); }
+.btnplayRollover.pinTopRight	{ width:23px; right:0px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-tr.png"); }
+.btnplayRollover.pinTop	{ left:23px; right:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-t.png"); }
+.btnplayRollover.pinTopLeft	{ left:0px; width:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-tl.png"); }
+.btnplayRollover.pinLeft	{ left:0px; width:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-l.png"); }
+.btnplayRollover.pinCenter	{ left:23px; right:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-rollover-m.png"); }
+
+/* btnplay 4 state button */
+.btnplayDown.customData	{ border-width:23px;}
+.btnplayDown.pinBottomLeft	{ left:0px; width:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-down-bl.png"); }
+.btnplayDown.pinBottom	{ left:23px; right:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-down-b.png"); }
+.btnplayDown.pinTopRight	{ width:23px; right:0px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-down-tr.png"); }
+.btnplayDown.pinTop	{ left:23px; right:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-down-t.png"); }
+.btnplayDown.pinTopLeft	{ left:0px; width:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-down-tl.png"); }
+.btnplayDown.pinRight	{ width:23px; right:0px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-down-r.png"); }
+.btnplayDown.pinCenter	{ left:23px; right:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-down-m.png"); }
+.btnplayDown.pinBottomRight	{ width:23px; right:0px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-down-br.png"); }
+.btnplayDown.pinLeft	{ left:0px; width:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-down-l.png"); }
+
+/* btnplay 4 state button */
+.btnplayDisabled.customData	{ border-width:23px;}
+.btnplayDisabled.pinBottomRight	{ width:23px; right:0px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-br.png"); }
+.btnplayDisabled.pinCenter	{ left:23px; right:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-m.png"); }
+.btnplayDisabled.pinTopLeft	{ left:0px; width:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-tl.png"); }
+.btnplayDisabled.pinLeft	{ left:0px; width:23px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-l.png"); }
+.btnplayDisabled.pinRight	{ width:23px; right:0px; top:23px; bottom:23px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-r.png"); }
+.btnplayDisabled.pinBottom	{ left:23px; right:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-b.png"); }
+.btnplayDisabled.pinTopRight	{ width:23px; right:0px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-tr.png"); }
+.btnplayDisabled.pinBottomLeft	{ left:0px; width:23px; height:23px; bottom:0px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-bl.png"); }
+.btnplayDisabled.pinTop	{ left:23px; right:23px; top:0px; height:23px; background-image:url("../Graphics/AutoGen/BtnPlay-disabled-t.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3Normal.customData	{ border-width:10px;}
+.button_clear_style3Normal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-br.png"); }
+.button_clear_style3Normal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-tr.png"); }
+.button_clear_style3Normal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-r.png"); }
+.button_clear_style3Normal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-t.png"); }
+.button_clear_style3Normal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-tl.png"); }
+.button_clear_style3Normal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-b.png"); }
+.button_clear_style3Normal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-bl.png"); }
+.button_clear_style3Normal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-m.png"); }
+.button_clear_style3Normal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-normal-l.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3Rollover.customData	{ border-width:10px;}
+.button_clear_style3Rollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-br.png"); }
+.button_clear_style3Rollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-r.png"); }
+.button_clear_style3Rollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-t.png"); }
+.button_clear_style3Rollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-tl.png"); }
+.button_clear_style3Rollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-l.png"); }
+.button_clear_style3Rollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-bl.png"); }
+.button_clear_style3Rollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-b.png"); }
+.button_clear_style3Rollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-tr.png"); }
+.button_clear_style3Rollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-rollover-m.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3Down.customData	{ border-width:10px;}
+.button_clear_style3Down.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-bl.png"); }
+.button_clear_style3Down.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-b.png"); }
+.button_clear_style3Down.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-t.png"); }
+.button_clear_style3Down.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-tl.png"); }
+.button_clear_style3Down.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-m.png"); }
+.button_clear_style3Down.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-l.png"); }
+.button_clear_style3Down.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-tr.png"); }
+.button_clear_style3Down.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-r.png"); }
+.button_clear_style3Down.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-down-br.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3Disabled.customData	{ border-width:10px;}
+.button_clear_style3Disabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-br.png"); }
+.button_clear_style3Disabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-m.png"); }
+.button_clear_style3Disabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-tl.png"); }
+.button_clear_style3Disabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-l.png"); }
+.button_clear_style3Disabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-r.png"); }
+.button_clear_style3Disabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-b.png"); }
+.button_clear_style3Disabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-tr.png"); }
+.button_clear_style3Disabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-bl.png"); }
+.button_clear_style3Disabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-disabled-t.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3SelectedNormal.customData	{ border-width:10px;}
+.button_clear_style3SelectedNormal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-br.png"); }
+.button_clear_style3SelectedNormal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-l.png"); }
+.button_clear_style3SelectedNormal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-tr.png"); }
+.button_clear_style3SelectedNormal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-tl.png"); }
+.button_clear_style3SelectedNormal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-r.png"); }
+.button_clear_style3SelectedNormal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-b.png"); }
+.button_clear_style3SelectedNormal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-m.png"); }
+.button_clear_style3SelectedNormal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-bl.png"); }
+.button_clear_style3SelectedNormal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectednormal-t.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3SelectedRollover.customData	{ border-width:10px;}
+.button_clear_style3SelectedRollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-m.png"); }
+.button_clear_style3SelectedRollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-l.png"); }
+.button_clear_style3SelectedRollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-t.png"); }
+.button_clear_style3SelectedRollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-b.png"); }
+.button_clear_style3SelectedRollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-bl.png"); }
+.button_clear_style3SelectedRollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-r.png"); }
+.button_clear_style3SelectedRollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-tl.png"); }
+.button_clear_style3SelectedRollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-tr.png"); }
+.button_clear_style3SelectedRollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selectedrollover-br.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3SelectedDown.customData	{ border-width:10px;}
+.button_clear_style3SelectedDown.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-tl.png"); }
+.button_clear_style3SelectedDown.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-r.png"); }
+.button_clear_style3SelectedDown.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-bl.png"); }
+.button_clear_style3SelectedDown.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-l.png"); }
+.button_clear_style3SelectedDown.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-tr.png"); }
+.button_clear_style3SelectedDown.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-m.png"); }
+.button_clear_style3SelectedDown.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-br.png"); }
+.button_clear_style3SelectedDown.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-b.png"); }
+.button_clear_style3SelectedDown.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddown-t.png"); }
+
+/* button_clear_style3 8 state button */
+.button_clear_style3SelectedDisabled.customData	{ border-width:10px;}
+.button_clear_style3SelectedDisabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-r.png"); }
+.button_clear_style3SelectedDisabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-b.png"); }
+.button_clear_style3SelectedDisabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-t.png"); }
+.button_clear_style3SelectedDisabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-m.png"); }
+.button_clear_style3SelectedDisabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-tr.png"); }
+.button_clear_style3SelectedDisabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-l.png"); }
+.button_clear_style3SelectedDisabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-br.png"); }
+.button_clear_style3SelectedDisabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-bl.png"); }
+.button_clear_style3SelectedDisabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style3-selecteddisabled-tl.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4Normal.customData	{ border-width:10px;}
+.button_clear_style4Normal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-br.png"); }
+.button_clear_style4Normal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-tr.png"); }
+.button_clear_style4Normal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-r.png"); }
+.button_clear_style4Normal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-t.png"); }
+.button_clear_style4Normal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-tl.png"); }
+.button_clear_style4Normal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-b.png"); }
+.button_clear_style4Normal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-bl.png"); }
+.button_clear_style4Normal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-m.png"); }
+.button_clear_style4Normal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-normal-l.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4Rollover.customData	{ border-width:10px;}
+.button_clear_style4Rollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-br.png"); }
+.button_clear_style4Rollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-r.png"); }
+.button_clear_style4Rollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-t.png"); }
+.button_clear_style4Rollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-tl.png"); }
+.button_clear_style4Rollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-l.png"); }
+.button_clear_style4Rollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-bl.png"); }
+.button_clear_style4Rollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-b.png"); }
+.button_clear_style4Rollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-tr.png"); }
+.button_clear_style4Rollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-rollover-m.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4Down.customData	{ border-width:10px;}
+.button_clear_style4Down.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-bl.png"); }
+.button_clear_style4Down.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-b.png"); }
+.button_clear_style4Down.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-t.png"); }
+.button_clear_style4Down.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-tl.png"); }
+.button_clear_style4Down.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-m.png"); }
+.button_clear_style4Down.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-l.png"); }
+.button_clear_style4Down.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-tr.png"); }
+.button_clear_style4Down.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-r.png"); }
+.button_clear_style4Down.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-down-br.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4Disabled.customData	{ border-width:10px;}
+.button_clear_style4Disabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-br.png"); }
+.button_clear_style4Disabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-m.png"); }
+.button_clear_style4Disabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-tl.png"); }
+.button_clear_style4Disabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-l.png"); }
+.button_clear_style4Disabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-r.png"); }
+.button_clear_style4Disabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-b.png"); }
+.button_clear_style4Disabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-tr.png"); }
+.button_clear_style4Disabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-bl.png"); }
+.button_clear_style4Disabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-disabled-t.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4SelectedNormal.customData	{ border-width:10px;}
+.button_clear_style4SelectedNormal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-br.png"); }
+.button_clear_style4SelectedNormal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-l.png"); }
+.button_clear_style4SelectedNormal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-tr.png"); }
+.button_clear_style4SelectedNormal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-tl.png"); }
+.button_clear_style4SelectedNormal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-r.png"); }
+.button_clear_style4SelectedNormal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-b.png"); }
+.button_clear_style4SelectedNormal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-m.png"); }
+.button_clear_style4SelectedNormal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-bl.png"); }
+.button_clear_style4SelectedNormal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectednormal-t.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4SelectedRollover.customData	{ border-width:10px;}
+.button_clear_style4SelectedRollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-m.png"); }
+.button_clear_style4SelectedRollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-l.png"); }
+.button_clear_style4SelectedRollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-t.png"); }
+.button_clear_style4SelectedRollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-b.png"); }
+.button_clear_style4SelectedRollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-bl.png"); }
+.button_clear_style4SelectedRollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-r.png"); }
+.button_clear_style4SelectedRollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-tl.png"); }
+.button_clear_style4SelectedRollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-tr.png"); }
+.button_clear_style4SelectedRollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selectedrollover-br.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4SelectedDown.customData	{ border-width:10px;}
+.button_clear_style4SelectedDown.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-tl.png"); }
+.button_clear_style4SelectedDown.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-r.png"); }
+.button_clear_style4SelectedDown.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-bl.png"); }
+.button_clear_style4SelectedDown.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-l.png"); }
+.button_clear_style4SelectedDown.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-tr.png"); }
+.button_clear_style4SelectedDown.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-m.png"); }
+.button_clear_style4SelectedDown.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-br.png"); }
+.button_clear_style4SelectedDown.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-b.png"); }
+.button_clear_style4SelectedDown.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddown-t.png"); }
+
+/* button_clear_style4 8 state button */
+.button_clear_style4SelectedDisabled.customData	{ border-width:10px;}
+.button_clear_style4SelectedDisabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-r.png"); }
+.button_clear_style4SelectedDisabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-b.png"); }
+.button_clear_style4SelectedDisabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-t.png"); }
+.button_clear_style4SelectedDisabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-m.png"); }
+.button_clear_style4SelectedDisabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-tr.png"); }
+.button_clear_style4SelectedDisabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-l.png"); }
+.button_clear_style4SelectedDisabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-br.png"); }
+.button_clear_style4SelectedDisabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-bl.png"); }
+.button_clear_style4SelectedDisabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style4-selecteddisabled-tl.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5Normal.customData	{ border-width:10px;}
+.button_clear_style5Normal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-br.png"); }
+.button_clear_style5Normal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-tr.png"); }
+.button_clear_style5Normal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-r.png"); }
+.button_clear_style5Normal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-t.png"); }
+.button_clear_style5Normal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-tl.png"); }
+.button_clear_style5Normal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-b.png"); }
+.button_clear_style5Normal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-bl.png"); }
+.button_clear_style5Normal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-m.png"); }
+.button_clear_style5Normal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-normal-l.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5Rollover.customData	{ border-width:10px;}
+.button_clear_style5Rollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-br.png"); }
+.button_clear_style5Rollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-r.png"); }
+.button_clear_style5Rollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-t.png"); }
+.button_clear_style5Rollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-tl.png"); }
+.button_clear_style5Rollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-l.png"); }
+.button_clear_style5Rollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-bl.png"); }
+.button_clear_style5Rollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-b.png"); }
+.button_clear_style5Rollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-tr.png"); }
+.button_clear_style5Rollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-rollover-m.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5Down.customData	{ border-width:10px;}
+.button_clear_style5Down.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-bl.png"); }
+.button_clear_style5Down.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-b.png"); }
+.button_clear_style5Down.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-t.png"); }
+.button_clear_style5Down.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-tl.png"); }
+.button_clear_style5Down.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-m.png"); }
+.button_clear_style5Down.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-l.png"); }
+.button_clear_style5Down.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-tr.png"); }
+.button_clear_style5Down.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-r.png"); }
+.button_clear_style5Down.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-down-br.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5Disabled.customData	{ border-width:10px;}
+.button_clear_style5Disabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-br.png"); }
+.button_clear_style5Disabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-m.png"); }
+.button_clear_style5Disabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-tl.png"); }
+.button_clear_style5Disabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-l.png"); }
+.button_clear_style5Disabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-r.png"); }
+.button_clear_style5Disabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-b.png"); }
+.button_clear_style5Disabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-tr.png"); }
+.button_clear_style5Disabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-bl.png"); }
+.button_clear_style5Disabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-disabled-t.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5SelectedNormal.customData	{ border-width:10px;}
+.button_clear_style5SelectedNormal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-br.png"); }
+.button_clear_style5SelectedNormal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-l.png"); }
+.button_clear_style5SelectedNormal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-tr.png"); }
+.button_clear_style5SelectedNormal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-tl.png"); }
+.button_clear_style5SelectedNormal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-r.png"); }
+.button_clear_style5SelectedNormal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-b.png"); }
+.button_clear_style5SelectedNormal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-m.png"); }
+.button_clear_style5SelectedNormal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-bl.png"); }
+.button_clear_style5SelectedNormal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectednormal-t.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5SelectedRollover.customData	{ border-width:10px;}
+.button_clear_style5SelectedRollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-m.png"); }
+.button_clear_style5SelectedRollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-l.png"); }
+.button_clear_style5SelectedRollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-t.png"); }
+.button_clear_style5SelectedRollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-b.png"); }
+.button_clear_style5SelectedRollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-bl.png"); }
+.button_clear_style5SelectedRollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-r.png"); }
+.button_clear_style5SelectedRollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-tl.png"); }
+.button_clear_style5SelectedRollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-tr.png"); }
+.button_clear_style5SelectedRollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selectedrollover-br.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5SelectedDown.customData	{ border-width:10px;}
+.button_clear_style5SelectedDown.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-tl.png"); }
+.button_clear_style5SelectedDown.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-r.png"); }
+.button_clear_style5SelectedDown.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-bl.png"); }
+.button_clear_style5SelectedDown.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-l.png"); }
+.button_clear_style5SelectedDown.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-tr.png"); }
+.button_clear_style5SelectedDown.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-m.png"); }
+.button_clear_style5SelectedDown.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-br.png"); }
+.button_clear_style5SelectedDown.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-b.png"); }
+.button_clear_style5SelectedDown.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddown-t.png"); }
+
+/* button_clear_style5 8 state button */
+.button_clear_style5SelectedDisabled.customData	{ border-width:10px;}
+.button_clear_style5SelectedDisabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-r.png"); }
+.button_clear_style5SelectedDisabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-b.png"); }
+.button_clear_style5SelectedDisabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-t.png"); }
+.button_clear_style5SelectedDisabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-m.png"); }
+.button_clear_style5SelectedDisabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-tr.png"); }
+.button_clear_style5SelectedDisabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-l.png"); }
+.button_clear_style5SelectedDisabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-br.png"); }
+.button_clear_style5SelectedDisabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-bl.png"); }
+.button_clear_style5SelectedDisabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style5-selecteddisabled-tl.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6Normal.customData	{ border-width:10px;}
+.button_clear_style6Normal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-br.png"); }
+.button_clear_style6Normal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-tr.png"); }
+.button_clear_style6Normal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-r.png"); }
+.button_clear_style6Normal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-t.png"); }
+.button_clear_style6Normal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-tl.png"); }
+.button_clear_style6Normal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-b.png"); }
+.button_clear_style6Normal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-bl.png"); }
+.button_clear_style6Normal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-m.png"); }
+.button_clear_style6Normal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-normal-l.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6Rollover.customData	{ border-width:10px;}
+.button_clear_style6Rollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-br.png"); }
+.button_clear_style6Rollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-r.png"); }
+.button_clear_style6Rollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-t.png"); }
+.button_clear_style6Rollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-tl.png"); }
+.button_clear_style6Rollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-l.png"); }
+.button_clear_style6Rollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-bl.png"); }
+.button_clear_style6Rollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-b.png"); }
+.button_clear_style6Rollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-tr.png"); }
+.button_clear_style6Rollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-rollover-m.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6Down.customData	{ border-width:10px;}
+.button_clear_style6Down.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-bl.png"); }
+.button_clear_style6Down.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-b.png"); }
+.button_clear_style6Down.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-t.png"); }
+.button_clear_style6Down.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-tl.png"); }
+.button_clear_style6Down.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-m.png"); }
+.button_clear_style6Down.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-l.png"); }
+.button_clear_style6Down.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-tr.png"); }
+.button_clear_style6Down.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-r.png"); }
+.button_clear_style6Down.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-down-br.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6Disabled.customData	{ border-width:10px;}
+.button_clear_style6Disabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-br.png"); }
+.button_clear_style6Disabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-m.png"); }
+.button_clear_style6Disabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-tl.png"); }
+.button_clear_style6Disabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-l.png"); }
+.button_clear_style6Disabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-r.png"); }
+.button_clear_style6Disabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-b.png"); }
+.button_clear_style6Disabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-tr.png"); }
+.button_clear_style6Disabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-bl.png"); }
+.button_clear_style6Disabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-disabled-t.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6SelectedNormal.customData	{ border-width:10px;}
+.button_clear_style6SelectedNormal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-br.png"); }
+.button_clear_style6SelectedNormal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-l.png"); }
+.button_clear_style6SelectedNormal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-tr.png"); }
+.button_clear_style6SelectedNormal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-tl.png"); }
+.button_clear_style6SelectedNormal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-r.png"); }
+.button_clear_style6SelectedNormal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-b.png"); }
+.button_clear_style6SelectedNormal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-m.png"); }
+.button_clear_style6SelectedNormal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-bl.png"); }
+.button_clear_style6SelectedNormal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectednormal-t.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6SelectedRollover.customData	{ border-width:10px;}
+.button_clear_style6SelectedRollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-m.png"); }
+.button_clear_style6SelectedRollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-l.png"); }
+.button_clear_style6SelectedRollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-t.png"); }
+.button_clear_style6SelectedRollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-b.png"); }
+.button_clear_style6SelectedRollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-bl.png"); }
+.button_clear_style6SelectedRollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-r.png"); }
+.button_clear_style6SelectedRollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-tl.png"); }
+.button_clear_style6SelectedRollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-tr.png"); }
+.button_clear_style6SelectedRollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selectedrollover-br.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6SelectedDown.customData	{ border-width:10px;}
+.button_clear_style6SelectedDown.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-tl.png"); }
+.button_clear_style6SelectedDown.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-r.png"); }
+.button_clear_style6SelectedDown.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-bl.png"); }
+.button_clear_style6SelectedDown.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-l.png"); }
+.button_clear_style6SelectedDown.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-tr.png"); }
+.button_clear_style6SelectedDown.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-m.png"); }
+.button_clear_style6SelectedDown.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-br.png"); }
+.button_clear_style6SelectedDown.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-b.png"); }
+.button_clear_style6SelectedDown.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddown-t.png"); }
+
+/* button_clear_style6 8 state button */
+.button_clear_style6SelectedDisabled.customData	{ border-width:10px;}
+.button_clear_style6SelectedDisabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-r.png"); }
+.button_clear_style6SelectedDisabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-b.png"); }
+.button_clear_style6SelectedDisabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-t.png"); }
+.button_clear_style6SelectedDisabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-m.png"); }
+.button_clear_style6SelectedDisabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-tr.png"); }
+.button_clear_style6SelectedDisabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-l.png"); }
+.button_clear_style6SelectedDisabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-br.png"); }
+.button_clear_style6SelectedDisabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-bl.png"); }
+.button_clear_style6SelectedDisabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/button_clear_style6-selecteddisabled-tl.png"); }
+
+/* buttontab 4 state button */
+.buttontabNormal.customData	{ border-width:19px;}
+.buttontabNormal.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-br.png"); }
+.buttontabNormal.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-m.png"); }
+.buttontabNormal.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-tr.png"); }
+.buttontabNormal.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-l.png"); }
+.buttontabNormal.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-r.png"); }
+.buttontabNormal.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-t.png"); }
+.buttontabNormal.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-tl.png"); }
+.buttontabNormal.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-b.png"); }
+.buttontabNormal.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-normal-bl.png"); }
+
+/* buttontab 4 state button */
+.buttontabRollover.customData	{ border-width:19px;}
+.buttontabRollover.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-bl.png"); }
+.buttontabRollover.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-br.png"); }
+.buttontabRollover.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-b.png"); }
+.buttontabRollover.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-r.png"); }
+.buttontabRollover.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-tr.png"); }
+.buttontabRollover.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-t.png"); }
+.buttontabRollover.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-tl.png"); }
+.buttontabRollover.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-l.png"); }
+.buttontabRollover.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-rollover-m.png"); }
+
+/* buttontab 4 state button */
+.buttontabDown.customData	{ border-width:19px;}
+.buttontabDown.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-down-bl.png"); }
+.buttontabDown.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-down-b.png"); }
+.buttontabDown.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-down-tr.png"); }
+.buttontabDown.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-down-t.png"); }
+.buttontabDown.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-down-tl.png"); }
+.buttontabDown.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-down-r.png"); }
+.buttontabDown.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-down-m.png"); }
+.buttontabDown.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-down-br.png"); }
+.buttontabDown.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-down-l.png"); }
+
+/* buttontab 4 state button */
+.buttontabDisabled.customData	{ border-width:19px;}
+.buttontabDisabled.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-br.png"); }
+.buttontabDisabled.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-m.png"); }
+.buttontabDisabled.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-tl.png"); }
+.buttontabDisabled.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-l.png"); }
+.buttontabDisabled.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-r.png"); }
+.buttontabDisabled.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-b.png"); }
+.buttontabDisabled.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-tr.png"); }
+.buttontabDisabled.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-bl.png"); }
+.buttontabDisabled.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ButtonTab-disabled-t.png"); }
+
+/* contentbutton 4 state button */
+.contentbuttonNormal.customData	{ border-width:7px;}
+.contentbuttonNormal.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-normal-br.png"); }
+.contentbuttonNormal.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-normal-m.png"); }
+.contentbuttonNormal.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-normal-tr.png"); }
+.contentbuttonNormal.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-normal-l.png"); }
+.contentbuttonNormal.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-normal-r.png"); }
+.contentbuttonNormal.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-normal-t.png"); }
+.contentbuttonNormal.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-normal-tl.png"); }
+.contentbuttonNormal.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-normal-b.png"); }
+.contentbuttonNormal.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-normal-bl.png"); }
+
+/* contentbutton 4 state button */
+.contentbuttonRollover.customData	{ border-width:7px;}
+.contentbuttonRollover.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-bl.png"); }
+.contentbuttonRollover.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-br.png"); }
+.contentbuttonRollover.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-b.png"); }
+.contentbuttonRollover.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-r.png"); }
+.contentbuttonRollover.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-tr.png"); }
+.contentbuttonRollover.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-t.png"); }
+.contentbuttonRollover.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-tl.png"); }
+.contentbuttonRollover.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-l.png"); }
+.contentbuttonRollover.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-rollover-m.png"); }
+
+/* contentbutton 4 state button */
+.contentbuttonDown.customData	{ border-width:7px;}
+.contentbuttonDown.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-down-bl.png"); }
+.contentbuttonDown.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-down-b.png"); }
+.contentbuttonDown.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-down-tr.png"); }
+.contentbuttonDown.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-down-t.png"); }
+.contentbuttonDown.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-down-tl.png"); }
+.contentbuttonDown.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-down-r.png"); }
+.contentbuttonDown.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-down-m.png"); }
+.contentbuttonDown.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-down-br.png"); }
+.contentbuttonDown.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-down-l.png"); }
+
+/* contentbutton 4 state button */
+.contentbuttonDisabled.customData	{ border-width:7px;}
+.contentbuttonDisabled.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-br.png"); }
+.contentbuttonDisabled.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-m.png"); }
+.contentbuttonDisabled.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-tl.png"); }
+.contentbuttonDisabled.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-l.png"); }
+.contentbuttonDisabled.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-r.png"); }
+.contentbuttonDisabled.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-b.png"); }
+.contentbuttonDisabled.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-tr.png"); }
+.contentbuttonDisabled.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-bl.png"); }
+.contentbuttonDisabled.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/ContentButton-disabled-t.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3Normal.customData	{ border-width:7px;}
+.glass_button_style3Normal.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-br.png"); }
+.glass_button_style3Normal.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-tr.png"); }
+.glass_button_style3Normal.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-r.png"); }
+.glass_button_style3Normal.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-t.png"); }
+.glass_button_style3Normal.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-tl.png"); }
+.glass_button_style3Normal.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-b.png"); }
+.glass_button_style3Normal.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-bl.png"); }
+.glass_button_style3Normal.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-m.png"); }
+.glass_button_style3Normal.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-normal-l.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3Rollover.customData	{ border-width:7px;}
+.glass_button_style3Rollover.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-br.png"); }
+.glass_button_style3Rollover.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-r.png"); }
+.glass_button_style3Rollover.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-t.png"); }
+.glass_button_style3Rollover.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-tl.png"); }
+.glass_button_style3Rollover.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-l.png"); }
+.glass_button_style3Rollover.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-bl.png"); }
+.glass_button_style3Rollover.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-b.png"); }
+.glass_button_style3Rollover.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-tr.png"); }
+.glass_button_style3Rollover.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-rollover-m.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3Down.customData	{ border-width:7px;}
+.glass_button_style3Down.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-bl.png"); }
+.glass_button_style3Down.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-b.png"); }
+.glass_button_style3Down.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-t.png"); }
+.glass_button_style3Down.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-tl.png"); }
+.glass_button_style3Down.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-m.png"); }
+.glass_button_style3Down.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-l.png"); }
+.glass_button_style3Down.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-tr.png"); }
+.glass_button_style3Down.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-r.png"); }
+.glass_button_style3Down.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-down-br.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3Disabled.customData	{ border-width:7px;}
+.glass_button_style3Disabled.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-br.png"); }
+.glass_button_style3Disabled.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-m.png"); }
+.glass_button_style3Disabled.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-tl.png"); }
+.glass_button_style3Disabled.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-l.png"); }
+.glass_button_style3Disabled.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-r.png"); }
+.glass_button_style3Disabled.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-b.png"); }
+.glass_button_style3Disabled.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-tr.png"); }
+.glass_button_style3Disabled.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-bl.png"); }
+.glass_button_style3Disabled.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-disabled-t.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3SelectedNormal.customData	{ border-width:7px;}
+.glass_button_style3SelectedNormal.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-br.png"); }
+.glass_button_style3SelectedNormal.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-l.png"); }
+.glass_button_style3SelectedNormal.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-tr.png"); }
+.glass_button_style3SelectedNormal.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-tl.png"); }
+.glass_button_style3SelectedNormal.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-r.png"); }
+.glass_button_style3SelectedNormal.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-b.png"); }
+.glass_button_style3SelectedNormal.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-m.png"); }
+.glass_button_style3SelectedNormal.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-bl.png"); }
+.glass_button_style3SelectedNormal.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectednormal-t.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3SelectedRollover.customData	{ border-width:7px;}
+.glass_button_style3SelectedRollover.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-m.png"); }
+.glass_button_style3SelectedRollover.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-l.png"); }
+.glass_button_style3SelectedRollover.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-t.png"); }
+.glass_button_style3SelectedRollover.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-b.png"); }
+.glass_button_style3SelectedRollover.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-bl.png"); }
+.glass_button_style3SelectedRollover.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-r.png"); }
+.glass_button_style3SelectedRollover.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-tl.png"); }
+.glass_button_style3SelectedRollover.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-tr.png"); }
+.glass_button_style3SelectedRollover.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selectedrollover-br.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3SelectedDown.customData	{ border-width:7px;}
+.glass_button_style3SelectedDown.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-tl.png"); }
+.glass_button_style3SelectedDown.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-r.png"); }
+.glass_button_style3SelectedDown.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-bl.png"); }
+.glass_button_style3SelectedDown.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-l.png"); }
+.glass_button_style3SelectedDown.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-tr.png"); }
+.glass_button_style3SelectedDown.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-m.png"); }
+.glass_button_style3SelectedDown.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-br.png"); }
+.glass_button_style3SelectedDown.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-b.png"); }
+.glass_button_style3SelectedDown.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddown-t.png"); }
+
+/* glass_button_style3 8 state button */
+.glass_button_style3SelectedDisabled.customData	{ border-width:7px;}
+.glass_button_style3SelectedDisabled.pinRight	{ width:7px; right:0px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-r.png"); }
+.glass_button_style3SelectedDisabled.pinBottom	{ left:7px; right:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-b.png"); }
+.glass_button_style3SelectedDisabled.pinTop	{ left:7px; right:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-t.png"); }
+.glass_button_style3SelectedDisabled.pinCenter	{ left:7px; right:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-m.png"); }
+.glass_button_style3SelectedDisabled.pinTopRight	{ width:7px; right:0px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-tr.png"); }
+.glass_button_style3SelectedDisabled.pinLeft	{ left:0px; width:7px; top:7px; bottom:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-l.png"); }
+.glass_button_style3SelectedDisabled.pinBottomRight	{ width:7px; right:0px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-br.png"); }
+.glass_button_style3SelectedDisabled.pinBottomLeft	{ left:0px; width:7px; height:7px; bottom:0px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-bl.png"); }
+.glass_button_style3SelectedDisabled.pinTopLeft	{ left:0px; width:7px; top:0px; height:7px; background-image:url("../Graphics/AutoGen/Glass_Button_Style3-selecteddisabled-tl.png"); }
+
+/* navbutton07 4 state button */
+.navbutton07Normal.customData	{ border-width:10px;}
+.navbutton07Normal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-normal-br.png"); }
+.navbutton07Normal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-normal-m.png"); }
+.navbutton07Normal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-normal-tr.png"); }
+.navbutton07Normal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-normal-l.png"); }
+.navbutton07Normal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-normal-r.png"); }
+.navbutton07Normal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-normal-t.png"); }
+.navbutton07Normal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-normal-tl.png"); }
+.navbutton07Normal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-normal-b.png"); }
+.navbutton07Normal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-normal-bl.png"); }
+
+/* navbutton07 4 state button */
+.navbutton07Rollover.customData	{ border-width:10px;}
+.navbutton07Rollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-bl.png"); }
+.navbutton07Rollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-br.png"); }
+.navbutton07Rollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-b.png"); }
+.navbutton07Rollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-r.png"); }
+.navbutton07Rollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-tr.png"); }
+.navbutton07Rollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-t.png"); }
+.navbutton07Rollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-tl.png"); }
+.navbutton07Rollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-l.png"); }
+.navbutton07Rollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-rollover-m.png"); }
+
+/* navbutton07 4 state button */
+.navbutton07Down.customData	{ border-width:10px;}
+.navbutton07Down.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-down-bl.png"); }
+.navbutton07Down.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-down-b.png"); }
+.navbutton07Down.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-down-tr.png"); }
+.navbutton07Down.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-down-t.png"); }
+.navbutton07Down.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-down-tl.png"); }
+.navbutton07Down.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-down-r.png"); }
+.navbutton07Down.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-down-m.png"); }
+.navbutton07Down.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-down-br.png"); }
+.navbutton07Down.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-down-l.png"); }
+
+/* navbutton07 4 state button */
+.navbutton07Disabled.customData	{ border-width:10px;}
+.navbutton07Disabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-br.png"); }
+.navbutton07Disabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-m.png"); }
+.navbutton07Disabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-tl.png"); }
+.navbutton07Disabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-l.png"); }
+.navbutton07Disabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-r.png"); }
+.navbutton07Disabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-b.png"); }
+.navbutton07Disabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-tr.png"); }
+.navbutton07Disabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-bl.png"); }
+.navbutton07Disabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton07-disabled-t.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08Normal.customData	{ border-width:10px;}
+.navbutton08Normal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-normal-br.png"); }
+.navbutton08Normal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-normal-tr.png"); }
+.navbutton08Normal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-normal-r.png"); }
+.navbutton08Normal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-normal-t.png"); }
+.navbutton08Normal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-normal-tl.png"); }
+.navbutton08Normal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-normal-b.png"); }
+.navbutton08Normal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-normal-bl.png"); }
+.navbutton08Normal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-normal-m.png"); }
+.navbutton08Normal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-normal-l.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08Rollover.customData	{ border-width:10px;}
+.navbutton08Rollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-br.png"); }
+.navbutton08Rollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-r.png"); }
+.navbutton08Rollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-t.png"); }
+.navbutton08Rollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-tl.png"); }
+.navbutton08Rollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-l.png"); }
+.navbutton08Rollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-bl.png"); }
+.navbutton08Rollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-b.png"); }
+.navbutton08Rollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-tr.png"); }
+.navbutton08Rollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-rollover-m.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08Down.customData	{ border-width:10px;}
+.navbutton08Down.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-down-bl.png"); }
+.navbutton08Down.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-down-b.png"); }
+.navbutton08Down.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-down-t.png"); }
+.navbutton08Down.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-down-tl.png"); }
+.navbutton08Down.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-down-m.png"); }
+.navbutton08Down.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-down-l.png"); }
+.navbutton08Down.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-down-tr.png"); }
+.navbutton08Down.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-down-r.png"); }
+.navbutton08Down.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-down-br.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08Disabled.customData	{ border-width:10px;}
+.navbutton08Disabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-br.png"); }
+.navbutton08Disabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-m.png"); }
+.navbutton08Disabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-tl.png"); }
+.navbutton08Disabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-l.png"); }
+.navbutton08Disabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-r.png"); }
+.navbutton08Disabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-b.png"); }
+.navbutton08Disabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-tr.png"); }
+.navbutton08Disabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-bl.png"); }
+.navbutton08Disabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-disabled-t.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08SelectedNormal.customData	{ border-width:10px;}
+.navbutton08SelectedNormal.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-br.png"); }
+.navbutton08SelectedNormal.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-l.png"); }
+.navbutton08SelectedNormal.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-tr.png"); }
+.navbutton08SelectedNormal.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-tl.png"); }
+.navbutton08SelectedNormal.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-r.png"); }
+.navbutton08SelectedNormal.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-b.png"); }
+.navbutton08SelectedNormal.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-m.png"); }
+.navbutton08SelectedNormal.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-bl.png"); }
+.navbutton08SelectedNormal.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectednormal-t.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08SelectedRollover.customData	{ border-width:10px;}
+.navbutton08SelectedRollover.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-m.png"); }
+.navbutton08SelectedRollover.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-l.png"); }
+.navbutton08SelectedRollover.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-t.png"); }
+.navbutton08SelectedRollover.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-b.png"); }
+.navbutton08SelectedRollover.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-bl.png"); }
+.navbutton08SelectedRollover.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-r.png"); }
+.navbutton08SelectedRollover.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-tl.png"); }
+.navbutton08SelectedRollover.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-tr.png"); }
+.navbutton08SelectedRollover.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selectedrollover-br.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08SelectedDown.customData	{ border-width:10px;}
+.navbutton08SelectedDown.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-tl.png"); }
+.navbutton08SelectedDown.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-r.png"); }
+.navbutton08SelectedDown.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-bl.png"); }
+.navbutton08SelectedDown.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-l.png"); }
+.navbutton08SelectedDown.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-tr.png"); }
+.navbutton08SelectedDown.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-m.png"); }
+.navbutton08SelectedDown.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-br.png"); }
+.navbutton08SelectedDown.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-b.png"); }
+.navbutton08SelectedDown.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddown-t.png"); }
+
+/* navbutton08 8 state button */
+.navbutton08SelectedDisabled.customData	{ border-width:10px;}
+.navbutton08SelectedDisabled.pinRight	{ width:10px; right:0px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-r.png"); }
+.navbutton08SelectedDisabled.pinBottom	{ left:10px; right:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-b.png"); }
+.navbutton08SelectedDisabled.pinTop	{ left:10px; right:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-t.png"); }
+.navbutton08SelectedDisabled.pinCenter	{ left:10px; right:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-m.png"); }
+.navbutton08SelectedDisabled.pinTopRight	{ width:10px; right:0px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-tr.png"); }
+.navbutton08SelectedDisabled.pinLeft	{ left:0px; width:10px; top:10px; bottom:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-l.png"); }
+.navbutton08SelectedDisabled.pinBottomRight	{ width:10px; right:0px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-br.png"); }
+.navbutton08SelectedDisabled.pinBottomLeft	{ left:0px; width:10px; height:10px; bottom:0px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-bl.png"); }
+.navbutton08SelectedDisabled.pinTopLeft	{ left:0px; width:10px; top:0px; height:10px; background-image:url("../Graphics/AutoGen/NavButton08-selecteddisabled-tl.png"); }
+
+/* sample-4-state-button 4 state button */
+.sample-4-state-buttonNormal.customData	{ border-width:12px;}
+.sample-4-state-buttonNormal.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-br.png"); }
+.sample-4-state-buttonNormal.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-m.png"); }
+.sample-4-state-buttonNormal.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-tr.png"); }
+.sample-4-state-buttonNormal.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-l.png"); }
+.sample-4-state-buttonNormal.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-r.png"); }
+.sample-4-state-buttonNormal.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-t.png"); }
+.sample-4-state-buttonNormal.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-tl.png"); }
+.sample-4-state-buttonNormal.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-b.png"); }
+.sample-4-state-buttonNormal.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-normal-bl.png"); }
+
+/* sample-4-state-button 4 state button */
+.sample-4-state-buttonRollover.customData	{ border-width:12px;}
+.sample-4-state-buttonRollover.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-bl.png"); }
+.sample-4-state-buttonRollover.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-br.png"); }
+.sample-4-state-buttonRollover.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-b.png"); }
+.sample-4-state-buttonRollover.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-r.png"); }
+.sample-4-state-buttonRollover.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-tr.png"); }
+.sample-4-state-buttonRollover.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-t.png"); }
+.sample-4-state-buttonRollover.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-tl.png"); }
+.sample-4-state-buttonRollover.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-l.png"); }
+.sample-4-state-buttonRollover.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-rollover-m.png"); }
+
+/* sample-4-state-button 4 state button */
+.sample-4-state-buttonDown.customData	{ border-width:12px;}
+.sample-4-state-buttonDown.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-bl.png"); }
+.sample-4-state-buttonDown.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-b.png"); }
+.sample-4-state-buttonDown.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-tr.png"); }
+.sample-4-state-buttonDown.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-t.png"); }
+.sample-4-state-buttonDown.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-tl.png"); }
+.sample-4-state-buttonDown.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-r.png"); }
+.sample-4-state-buttonDown.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-m.png"); }
+.sample-4-state-buttonDown.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-br.png"); }
+.sample-4-state-buttonDown.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-down-l.png"); }
+
+/* sample-4-state-button 4 state button */
+.sample-4-state-buttonDisabled.customData	{ border-width:12px;}
+.sample-4-state-buttonDisabled.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-br.png"); }
+.sample-4-state-buttonDisabled.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-m.png"); }
+.sample-4-state-buttonDisabled.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-tl.png"); }
+.sample-4-state-buttonDisabled.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-l.png"); }
+.sample-4-state-buttonDisabled.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-r.png"); }
+.sample-4-state-buttonDisabled.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-b.png"); }
+.sample-4-state-buttonDisabled.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-tr.png"); }
+.sample-4-state-buttonDisabled.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-bl.png"); }
+.sample-4-state-buttonDisabled.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-4-state-button-disabled-t.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonNormal.customData	{ border-width:12px;}
+.sample-8-state-buttonNormal.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-br.png"); }
+.sample-8-state-buttonNormal.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-tr.png"); }
+.sample-8-state-buttonNormal.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-r.png"); }
+.sample-8-state-buttonNormal.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-t.png"); }
+.sample-8-state-buttonNormal.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-tl.png"); }
+.sample-8-state-buttonNormal.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-b.png"); }
+.sample-8-state-buttonNormal.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-bl.png"); }
+.sample-8-state-buttonNormal.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-m.png"); }
+.sample-8-state-buttonNormal.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-normal-l.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonRollover.customData	{ border-width:12px;}
+.sample-8-state-buttonRollover.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-br.png"); }
+.sample-8-state-buttonRollover.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-r.png"); }
+.sample-8-state-buttonRollover.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-t.png"); }
+.sample-8-state-buttonRollover.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-tl.png"); }
+.sample-8-state-buttonRollover.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-l.png"); }
+.sample-8-state-buttonRollover.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-bl.png"); }
+.sample-8-state-buttonRollover.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-b.png"); }
+.sample-8-state-buttonRollover.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-tr.png"); }
+.sample-8-state-buttonRollover.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-rollover-m.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonDown.customData	{ border-width:12px;}
+.sample-8-state-buttonDown.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-bl.png"); }
+.sample-8-state-buttonDown.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-b.png"); }
+.sample-8-state-buttonDown.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-t.png"); }
+.sample-8-state-buttonDown.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-tl.png"); }
+.sample-8-state-buttonDown.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-m.png"); }
+.sample-8-state-buttonDown.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-l.png"); }
+.sample-8-state-buttonDown.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-tr.png"); }
+.sample-8-state-buttonDown.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-r.png"); }
+.sample-8-state-buttonDown.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-down-br.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonDisabled.customData	{ border-width:12px;}
+.sample-8-state-buttonDisabled.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-br.png"); }
+.sample-8-state-buttonDisabled.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-m.png"); }
+.sample-8-state-buttonDisabled.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-tl.png"); }
+.sample-8-state-buttonDisabled.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-l.png"); }
+.sample-8-state-buttonDisabled.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-r.png"); }
+.sample-8-state-buttonDisabled.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-b.png"); }
+.sample-8-state-buttonDisabled.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-tr.png"); }
+.sample-8-state-buttonDisabled.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-bl.png"); }
+.sample-8-state-buttonDisabled.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-disabled-t.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonSelectedNormal.customData	{ border-width:12px;}
+.sample-8-state-buttonSelectedNormal.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-br.png"); }
+.sample-8-state-buttonSelectedNormal.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-l.png"); }
+.sample-8-state-buttonSelectedNormal.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-tr.png"); }
+.sample-8-state-buttonSelectedNormal.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-tl.png"); }
+.sample-8-state-buttonSelectedNormal.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-r.png"); }
+.sample-8-state-buttonSelectedNormal.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-b.png"); }
+.sample-8-state-buttonSelectedNormal.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-m.png"); }
+.sample-8-state-buttonSelectedNormal.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-bl.png"); }
+.sample-8-state-buttonSelectedNormal.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectednormal-t.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonSelectedRollover.customData	{ border-width:12px;}
+.sample-8-state-buttonSelectedRollover.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-m.png"); }
+.sample-8-state-buttonSelectedRollover.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-l.png"); }
+.sample-8-state-buttonSelectedRollover.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-t.png"); }
+.sample-8-state-buttonSelectedRollover.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-b.png"); }
+.sample-8-state-buttonSelectedRollover.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-bl.png"); }
+.sample-8-state-buttonSelectedRollover.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-r.png"); }
+.sample-8-state-buttonSelectedRollover.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-tl.png"); }
+.sample-8-state-buttonSelectedRollover.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-tr.png"); }
+.sample-8-state-buttonSelectedRollover.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selectedrollover-br.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonSelectedDown.customData	{ border-width:12px;}
+.sample-8-state-buttonSelectedDown.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-tl.png"); }
+.sample-8-state-buttonSelectedDown.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-r.png"); }
+.sample-8-state-buttonSelectedDown.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-bl.png"); }
+.sample-8-state-buttonSelectedDown.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-l.png"); }
+.sample-8-state-buttonSelectedDown.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-tr.png"); }
+.sample-8-state-buttonSelectedDown.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-m.png"); }
+.sample-8-state-buttonSelectedDown.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-br.png"); }
+.sample-8-state-buttonSelectedDown.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-b.png"); }
+.sample-8-state-buttonSelectedDown.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddown-t.png"); }
+
+/* sample-8-state-button 8 state button */
+.sample-8-state-buttonSelectedDisabled.customData	{ border-width:12px;}
+.sample-8-state-buttonSelectedDisabled.pinRight	{ width:12px; right:0px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-r.png"); }
+.sample-8-state-buttonSelectedDisabled.pinBottom	{ left:12px; right:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-b.png"); }
+.sample-8-state-buttonSelectedDisabled.pinTop	{ left:12px; right:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-t.png"); }
+.sample-8-state-buttonSelectedDisabled.pinCenter	{ left:12px; right:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-m.png"); }
+.sample-8-state-buttonSelectedDisabled.pinTopRight	{ width:12px; right:0px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-tr.png"); }
+.sample-8-state-buttonSelectedDisabled.pinLeft	{ left:0px; width:12px; top:12px; bottom:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-l.png"); }
+.sample-8-state-buttonSelectedDisabled.pinBottomRight	{ width:12px; right:0px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-br.png"); }
+.sample-8-state-buttonSelectedDisabled.pinBottomLeft	{ left:0px; width:12px; height:12px; bottom:0px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-bl.png"); }
+.sample-8-state-buttonSelectedDisabled.pinTopLeft	{ left:0px; width:12px; top:0px; height:12px; background-image:url("../Graphics/AutoGen/sample-8-state-button-selecteddisabled-tl.png"); }
+
+/* toggletab 8 state button */
+.toggletabNormal.customData	{ border-width:19px;}
+.toggletabNormal.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-br.png"); }
+.toggletabNormal.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-tr.png"); }
+.toggletabNormal.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-r.png"); }
+.toggletabNormal.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-t.png"); }
+.toggletabNormal.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-tl.png"); }
+.toggletabNormal.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-b.png"); }
+.toggletabNormal.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-bl.png"); }
+.toggletabNormal.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-m.png"); }
+.toggletabNormal.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-normal-l.png"); }
+
+/* toggletab 8 state button */
+.toggletabRollover.customData	{ border-width:19px;}
+.toggletabRollover.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-br.png"); }
+.toggletabRollover.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-r.png"); }
+.toggletabRollover.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-t.png"); }
+.toggletabRollover.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-tl.png"); }
+.toggletabRollover.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-l.png"); }
+.toggletabRollover.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-bl.png"); }
+.toggletabRollover.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-b.png"); }
+.toggletabRollover.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-tr.png"); }
+.toggletabRollover.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-rollover-m.png"); }
+
+/* toggletab 8 state button */
+.toggletabDown.customData	{ border-width:19px;}
+.toggletabDown.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-down-bl.png"); }
+.toggletabDown.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-down-b.png"); }
+.toggletabDown.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-down-t.png"); }
+.toggletabDown.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-down-tl.png"); }
+.toggletabDown.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-down-m.png"); }
+.toggletabDown.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-down-l.png"); }
+.toggletabDown.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-down-tr.png"); }
+.toggletabDown.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-down-r.png"); }
+.toggletabDown.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-down-br.png"); }
+
+/* toggletab 8 state button */
+.toggletabDisabled.customData	{ border-width:19px;}
+.toggletabDisabled.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-br.png"); }
+.toggletabDisabled.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-m.png"); }
+.toggletabDisabled.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-tl.png"); }
+.toggletabDisabled.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-l.png"); }
+.toggletabDisabled.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-r.png"); }
+.toggletabDisabled.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-b.png"); }
+.toggletabDisabled.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-tr.png"); }
+.toggletabDisabled.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-bl.png"); }
+.toggletabDisabled.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-disabled-t.png"); }
+
+/* toggletab 8 state button */
+.toggletabSelectedNormal.customData	{ border-width:19px;}
+.toggletabSelectedNormal.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-br.png"); }
+.toggletabSelectedNormal.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-l.png"); }
+.toggletabSelectedNormal.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-tr.png"); }
+.toggletabSelectedNormal.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-tl.png"); }
+.toggletabSelectedNormal.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-r.png"); }
+.toggletabSelectedNormal.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-b.png"); }
+.toggletabSelectedNormal.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-m.png"); }
+.toggletabSelectedNormal.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-bl.png"); }
+.toggletabSelectedNormal.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectednormal-t.png"); }
+
+/* toggletab 8 state button */
+.toggletabSelectedRollover.customData	{ border-width:19px;}
+.toggletabSelectedRollover.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-m.png"); }
+.toggletabSelectedRollover.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-l.png"); }
+.toggletabSelectedRollover.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-t.png"); }
+.toggletabSelectedRollover.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-b.png"); }
+.toggletabSelectedRollover.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-bl.png"); }
+.toggletabSelectedRollover.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-r.png"); }
+.toggletabSelectedRollover.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-tl.png"); }
+.toggletabSelectedRollover.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-tr.png"); }
+.toggletabSelectedRollover.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selectedrollover-br.png"); }
+
+/* toggletab 8 state button */
+.toggletabSelectedDown.customData	{ border-width:19px;}
+.toggletabSelectedDown.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-tl.png"); }
+.toggletabSelectedDown.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-r.png"); }
+.toggletabSelectedDown.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-bl.png"); }
+.toggletabSelectedDown.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-l.png"); }
+.toggletabSelectedDown.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-tr.png"); }
+.toggletabSelectedDown.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-m.png"); }
+.toggletabSelectedDown.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-br.png"); }
+.toggletabSelectedDown.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-b.png"); }
+.toggletabSelectedDown.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddown-t.png"); }
+
+/* toggletab 8 state button */
+.toggletabSelectedDisabled.customData	{ border-width:19px;}
+.toggletabSelectedDisabled.pinRight	{ width:19px; right:0px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-r.png"); }
+.toggletabSelectedDisabled.pinBottom	{ left:19px; right:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-b.png"); }
+.toggletabSelectedDisabled.pinTop	{ left:19px; right:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-t.png"); }
+.toggletabSelectedDisabled.pinCenter	{ left:19px; right:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-m.png"); }
+.toggletabSelectedDisabled.pinTopRight	{ width:19px; right:0px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-tr.png"); }
+.toggletabSelectedDisabled.pinLeft	{ left:0px; width:19px; top:19px; bottom:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-l.png"); }
+.toggletabSelectedDisabled.pinBottomRight	{ width:19px; right:0px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-br.png"); }
+.toggletabSelectedDisabled.pinBottomLeft	{ left:0px; width:19px; height:19px; bottom:0px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-bl.png"); }
+.toggletabSelectedDisabled.pinTopLeft	{ left:0px; width:19px; top:0px; height:19px; background-image:url("../Graphics/AutoGen/ToggleTab-selecteddisabled-tl.png"); }
+
+/* toymenu-4-state-button 4 state button */
+.toymenu-4-state-buttonNormal.customData	{ border-width:6px;}
+.toymenu-4-state-buttonNormal.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-br.png"); }
+.toymenu-4-state-buttonNormal.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-m.png"); }
+.toymenu-4-state-buttonNormal.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-tr.png"); }
+.toymenu-4-state-buttonNormal.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-l.png"); }
+.toymenu-4-state-buttonNormal.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-r.png"); }
+.toymenu-4-state-buttonNormal.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-t.png"); }
+.toymenu-4-state-buttonNormal.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-tl.png"); }
+.toymenu-4-state-buttonNormal.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-b.png"); }
+.toymenu-4-state-buttonNormal.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-normal-bl.png"); }
+
+/* toymenu-4-state-button 4 state button */
+.toymenu-4-state-buttonRollover.customData	{ border-width:6px;}
+.toymenu-4-state-buttonRollover.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-bl.png"); }
+.toymenu-4-state-buttonRollover.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-br.png"); }
+.toymenu-4-state-buttonRollover.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-b.png"); }
+.toymenu-4-state-buttonRollover.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-r.png"); }
+.toymenu-4-state-buttonRollover.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-tr.png"); }
+.toymenu-4-state-buttonRollover.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-t.png"); }
+.toymenu-4-state-buttonRollover.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-tl.png"); }
+.toymenu-4-state-buttonRollover.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-l.png"); }
+.toymenu-4-state-buttonRollover.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-rollover-m.png"); }
+
+/* toymenu-4-state-button 4 state button */
+.toymenu-4-state-buttonDown.customData	{ border-width:6px;}
+.toymenu-4-state-buttonDown.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-bl.png"); }
+.toymenu-4-state-buttonDown.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-b.png"); }
+.toymenu-4-state-buttonDown.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-tr.png"); }
+.toymenu-4-state-buttonDown.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-t.png"); }
+.toymenu-4-state-buttonDown.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-tl.png"); }
+.toymenu-4-state-buttonDown.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-r.png"); }
+.toymenu-4-state-buttonDown.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-m.png"); }
+.toymenu-4-state-buttonDown.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-br.png"); }
+.toymenu-4-state-buttonDown.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-down-l.png"); }
+
+/* toymenu-4-state-button 4 state button */
+.toymenu-4-state-buttonDisabled.customData	{ border-width:6px;}
+.toymenu-4-state-buttonDisabled.pinBottomRight	{ width:6px; right:0px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-br.png"); }
+.toymenu-4-state-buttonDisabled.pinCenter	{ left:6px; right:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-m.png"); }
+.toymenu-4-state-buttonDisabled.pinTopLeft	{ left:0px; width:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-tl.png"); }
+.toymenu-4-state-buttonDisabled.pinLeft	{ left:0px; width:6px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-l.png"); }
+.toymenu-4-state-buttonDisabled.pinRight	{ width:6px; right:0px; top:6px; bottom:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-r.png"); }
+.toymenu-4-state-buttonDisabled.pinBottom	{ left:6px; right:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-b.png"); }
+.toymenu-4-state-buttonDisabled.pinTopRight	{ width:6px; right:0px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-tr.png"); }
+.toymenu-4-state-buttonDisabled.pinBottomLeft	{ left:0px; width:6px; height:6px; bottom:0px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-bl.png"); }
+.toymenu-4-state-buttonDisabled.pinTop	{ left:6px; right:6px; top:0px; height:6px; background-image:url("../Graphics/AutoGen/toyMenu-4-state-button-disabled-t.png"); }
+

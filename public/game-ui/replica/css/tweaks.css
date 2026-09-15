@@ -1,0 +1,91 @@
+/* 逐元素标定：布局数据表达不了、由游戏运行时决定的取值，按 reference/city.png 实测写在这里。
+ * 每条的来源见注释；新增/修改只动本文件，不碰逆向数据。
+ */
+
+/* 未展开态隐藏的元素：点开面板后才出现的底衬/选中态图标（清单见 render.js HIDDEN_DEFAULT） */
+.hud-hidden {
+    display: none !important;
+}
+
+/* RCI 需求条：彩色条高度 = 需求值，由游戏运行时设置；每个彩色条还叠一层 0.5 透明度的
+ * 区域/贸易指示条同宽同位。参考图读数：住宅高（绿 24px）/ 商业零（只剩 2px 蓝色贸易条）/
+ * 工业低（黄 8px）。彩色条都贴轨道底，轨道 30px 高、位于 #855 内 y=2，
+ * 故 高 h 的条 top = 2 + (30 - h)。 */
+.hud-el[data-iid="848"],
+.hud-el[data-iid="841"],
+.hud-el[data-iid="852"] {
+    display: none !important;
+}
+.hud-el[data-iid="853"] {   /* 住宅绿：24px 贴底 */
+    top: 8px !important;
+    height: 24px !important;
+}
+.hud-el[data-iid="847"] {   /* 商业贸易蓝：仅 2px 贴底 */
+    top: 30px !important;
+    height: 2px !important;
+}
+.hud-el[data-iid="842"] {   /* 工业黄：8px 贴底 */
+    top: 24px !important;
+    height: 8px !important;
+}
+
+/* 金币钮：BudgetButton 是通用「资源钮」模板，美术资源默认是矿石/煤（icn-trade-*），
+ * 游戏运行时把图标换成 §（西米利安）。这里直接改图标资源，并去掉那个自带阴影的小方托
+ * （#15 Button_Tab_Horizontal_Short）——参考图里 § 直接落在金币胶囊里，没有独立底盒。 */
+.hud-el[data-iid="2177::3"],
+.hud-el[data-iid="2177::4"] {
+    background-image: url("../assets/icn_sci_budget.png") !important;
+    background-color: transparent !important;
+    /* 模板给的是 26×26，底部拖到数字基线以下。注意这两个图标的父元素是 #15（不是 #2177），
+     * 所以 left/top 是相对 (459.5, 863.2) 算的。参考图实测 § 在 x486..503 / y865..886。 */
+    left: 26.5px !important;
+    top: 1.8px !important;
+    width: 18px !important;
+    height: 21px !important;
+}
+.hud-el[data-iid="2177::15"] {
+    background-image: none !important;
+    -webkit-box-shadow: none !important;
+    box-shadow: none !important;
+}
+
+/* 经济栏胶囊：布局用 main_button_tab_* 三张图拼出「tab」（只圆上角、带下沿阴影），
+ * 读起来像展开后的面板；参考图未展开态是独立胶囊。隐藏三张 tab 图，
+ * 容器按参考图量到的 (474,860) 251×35 重画成胶囊。坐标相对 #42 main stats。 */
+.hud-el[data-iid="1058"],
+.hud-el[data-iid="1062"],
+.hud-el[data-iid="1060"] {
+    display: none !important;
+}
+.hud-el[data-iid="1063"] {
+    left: 361.5px !important;
+    top: -69px !important;
+    width: 245px !important;
+    height: 35px !important;
+    border-radius: 16px !important;
+    background: linear-gradient(180deg, #fafafa 0%, #e6e6e6 100%) !important;
+    -webkit-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* 速度面板的播放/暂停钮：#14 是盖在胶囊左端盖上的红色填充层（真机里是暂停态的红底白▶），
+ * 红色块的左端曲率与端盖对不齐，会从胶囊里冒出来，索性不画这一层，
+ * 直接露出游戏自己的中性态按钮 —— #2 白色半圆端盖 + #10 深色 ❙❙ 图标。 */
+.hud-el[data-iid="132::14"] {
+    display: none !important;
+}
+
+/* 预算收支文字：布局写死 textColor="red"，游戏按盈亏着色，参考图为盈余（绿）。 */
+.hud-el[data-iid="744"] {
+    color: rgb(88, 166, 80) !important;
+}
+
+/* 满意度是 5 帧精灵图（mayorRating.png 195×39，帧距 39px），装在 39×39 的裁剪容器里：
+ * #1337 是白色剪影帧、#1336 是彩色帧（在上层）。默认露出第 0 帧（最差的红脸），
+ * 参考图是高满意度，露出最右（第 5 帧，绿脸）：位移 -(5-1)*39 = -156px。 */
+.hud-el[data-iid="1337"] {
+    display: none !important;
+}
+.hud-el[data-iid="1336"] {
+    background-position: -156px center;
+}

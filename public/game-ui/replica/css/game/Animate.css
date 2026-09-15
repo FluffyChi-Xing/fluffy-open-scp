@@ -1,0 +1,62 @@
+/*
+Animate.css - 
+*/
+
+.animatedFast 
+{
+    -webkit-animation: 2s ease;
+    animation: 2s ease;
+}
+
+.animatedSlow {
+	 -webkit-animation: 30s;
+	animation: 30s;
+}
+
+/* 
+ *
+ *
+    FAST
+ *
+ *
+*/
+@-webkit-keyframes translateLeftFast {
+	0% {
+		opacity: 1;
+		-webkit-transform: translateX(0);
+	}
+	
+	100% {
+		-webkit-transform: translateX(-3000px);
+	}
+}
+
+
+.translateLeftFast {
+	-webkit-animation-name: translateLeftFast;
+	animation-name: translateLeftFast;
+}
+
+/* 
+ *
+ *
+    S L O W
+ *
+ *
+*/
+@-webkit-keyframes translateLeftSlow {
+	0% {
+		opacity: 1;
+		-webkit-transform: translateX(0);
+	}
+	
+	100% {
+		-webkit-transform: translateX(-2000px);
+	}
+}
+
+
+.translateLeftSlow {
+	-webkit-animation-name: translateLeftSlow;
+	animation-name: translateLeftSlow;
+}

@@ -1,43 +1,30 @@
 <script setup lang="ts">
 /**
- * UI 工作台舞台：用游戏原生资产 + scrui 布局公式等比例重建 1600×900 的游戏 HUD。
+ * UI 工作台舞台：在 Shadow DOM 里按 ui_replica 复刻站（probe_fire/ui_replica）
+ * 逐像素重建 1600×900 的游戏 HUD——布局树经 scrui 两段式布局解析成嵌套绝对定位
+ * DOM，样式/数据/几何全部来自复刻站的逆向产物（css/*.css + data/*.js），
+ * 默认观感与复刻站完全一致。
  *
- * 两个层次：
- * 1. **美术层**（数据驱动）：globalui2 布局树经 scrui 两段式布局（设计尺寸
- *    Init 偏移 → 视口尺寸 Update 级联）解析出每个 drawable 的绝对矩形，
- *    全部按引擎自己的数学摆放；
- * 2. **交互层**（本工作台）：菜单按钮/建筑槽位/新增占位块锚定到布局矩形上，
- *    点击 → 右侧面板预览该菜单级 → Sheet 单条编辑 → 实时生效。
- *
- * 图标统一 FIcon（找不到的语义用占位 Box）；底栏读数为占位值；
- * 参考截图可 0–100% 叠加校准（public/game-ui/reference/*.png）。
+ * 舞台之上只叠工作台自身的元素：一级菜单末位的「＋」与自定义分类删除角标
+ * （编辑功能入口）。菜单交互（点圆钮开合二级面板、点槽位进编辑）桥接到
+ * uiWorkbench store。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
-import FIcon from "@/components/extensions/FIcon.vue";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
-import { CATEGORY_ICONS, toolIconName } from "@/lib/game-ui/workbench";
+import { injectReplicaStyles } from "@/lib/game-ui/replica/styles";
+import { createHudRender } from "@/lib/game-ui/replica/render";
+import { createHudPalette, type HudPalette, type SlotTool } from "@/lib/game-ui/replica/palette";
+import type { ReplicaData } from "@/lib/game-ui/replica/types";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
-const {
-  dimension,
-  data,
-  activeMenu,
-  categories,
-  selectedMenuId,
-  entered,
-  hudImages,
-  page,
-  pageCount,
-  pagedEntries,
-} = storeToRefs(store);
-// 函数不走 storeToRefs（其只转状态/getter）
-const setPage = store.setPage;
+const { customCategories } = storeToRefs(store);
 
 /* ── 舞台缩放：容器内等比放下 1600×900（舞台高度固定，不随面板高度变化） ── */
 const host = ref<HTMLElement>();
+const stageInner = ref<HTMLElement>();
 const scale = ref(1);
 let observer: ResizeObserver | undefined;
 onMounted(() => {
@@ -51,288 +38,217 @@ onMounted(() => {
 });
 onBeforeUnmount(() => observer?.disconnect());
 
-const props = defineProps<{
-  /** 参考截图叠加透明度（0 = 关闭）。 */
-  overlayOpacity: number;
-}>();
+/* ── 复刻渲染装配（Shadow DOM，样式隔离，游戏 CSS 不泄漏到应用） ── */
+const booting = ref(false);
+const bootFailed = ref(false);
+let shadow: ShadowRoot | null = null;
+let palette: HudPalette | null = null;
+/** 分类圆钮行锚点（拊件定位用）。 */
+const rowGeom = ref<{ absY: number; count: number } | null>(null);
 
-const overlaySrc = computed(
-  () => `/game-ui/reference/${entered.value ? "university" : "city"}.png`,
+const builtinCount = computed(() => store.replica?.model.categories.length ?? 0);
+
+watch(
+  () => store.replica,
+  async (data) => {
+    if (data) await boot(data);
+  },
 );
 
-/* ── 布局矩形锚点（instanceID 来自 globalui2.json） ── */
-function rectStyle(id: string): Record<string, string> {
-  const r = store.rect(id);
-  if (!r) return { visibility: "hidden" as const };
+/** 一级菜单里的新增分类/条目变化需要重建行或重绘槽位。 */
+watch(
+  () => customCategories.value.length,
+  async () => {
+    if (store.replica) await boot(store.replica);
+  },
+);
+watch(
+  () => store.activeMenu?.entries.map((entry) => `${entry.tool.id}:${entry.tool.label}`).join("|"),
+  () => palette?.repaint(),
+);
+
+async function boot(data: ReplicaData): Promise<void> {
+  if (!stageInner.value || booting.value) return;
+  booting.value = true;
+  bootFailed.value = false;
+  try {
+    shadow ??= stageInner.value.attachShadow({ mode: "open" });
+    await injectReplicaStyles(shadow);
+    injectWorkbenchStyles(shadow);
+
+    // 重建视口（复刻站 index.html 的 #viewport > #stage 结构；缩放由外层 Vue 负责，
+    // 这里按复刻站 hud.js fit() 的 k=1 摆放 #viewport）。
+    shadow.querySelectorAll("#viewport").forEach((el) => el.remove());
+    const viewport = document.createElement("div");
+    viewport.id = "viewport";
+    viewport.style.transform = "translate(-50%, -50%) scale(1)";
+    const stageEl = document.createElement("div");
+    stageEl.id = "stage";
+    viewport.appendChild(stageEl);
+    shadow.appendChild(viewport);
+
+    const hud = createHudRender(data, {
+      extraCategories: customCategories.value.map((c) => ({
+        id: c.id,
+        label: c.label,
+        icon: c.icon,
+        iconHash: null,
+      })),
+    });
+    const { categoryRow } = hud.render(stageEl);
+    rowGeom.value = categoryRow;
+
+    palette = createHudPalette(data, hud.createNodeElement, {
+      getTools: (categoryId) => effectiveTools(data, categoryId),
+      onSlotClick: (categoryId, tool) => store.openEditor(categoryId, tool.instance),
+      onRemoveItem: (categoryId, tool) => store.removeItem(categoryId, tool.instance),
+      onClose: () => {
+        clearSelection();
+        store.leaveMenu();
+      },
+    });
+    palette.init(stageEl);
+    wireCategoryButtons();
+  } catch (cause) {
+    bootFailed.value = true;
+    console.warn("[uiWorkbench] 复刻舞台装配失败", cause);
+  } finally {
+    booting.value = false;
+  }
+}
+
+/** 面板打开时若该分类正在编辑，槽位行展示「基础 + 新增」的最终视图；
+ * 新增条目没有游戏预览资源 → palette 层回退 tool_placeholder.png。 */
+function effectiveTools(data: ReplicaData, categoryId: string): SlotTool[] | undefined {
+  const activeMenu = store.activeMenu;
+  if (!activeMenu || activeMenu.id !== categoryId) return undefined;
+  const base = data.tools[categoryId] ?? [];
+  return activeMenu.entries.map((entry) => {
+    const source = base.find((tool) => tool.instance === entry.tool.id);
+    return {
+      instance: entry.tool.id,
+      label: entry.tool.label,
+      preview: source?.preview ?? null,
+      marquee: source?.marquee ?? null,
+      locked: source?.locked ?? false,
+      isNew: entry.isNew,
+    };
+  });
+}
+
+/** 复刻站 hud.js wireCategoryButtons 的移植 + store 同步：
+ * 选中外观由 CategoryButtonWithIcon2 自带的 ButtonSelected 动画决定
+ * （即 #6 "toggle button2" 与 #8 "ring on"，对应 layer-selected）。 */
+function wireCategoryButtons(): void {
+  if (!shadow) return;
+  shadow.querySelectorAll<HTMLElement>(".cat-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.category;
+      if (!id || !palette) return;
+      const wasOpen = palette.isOpen(id);
+      clearSelection();
+      if (wasOpen) {
+        palette.close();
+        store.leaveMenu();
+      } else {
+        btn.classList.add("layer-selected");
+        palette.open(id, btn.title);
+        store.enterMenu(id);
+      }
+    });
+  });
+}
+
+function clearSelection(): void {
+  shadow?.querySelectorAll(".cat-btn.layer-selected").forEach((b) => b.classList.remove("layer-selected"));
+}
+
+/** 工作台拊件的补充样式（注入 ShadowRoot；只作用于拊件，不碰游戏 UI）。 */
+function injectWorkbenchStyles(root: ShadowRoot): void {
+  const style = document.createElement("style");
+  style.textContent = `
+.wb-del-x {
+  align-items: center;
+  background: #d3242a;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  box-sizing: border-box;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  height: 15px;
+  justify-content: center;
+  line-height: 1;
+  position: absolute;
+  width: 15px;
+  z-index: 10;
+}
+`;
+  root.appendChild(style);
+}
+
+/* ── 一级菜单拊件几何：圆钮行 left(i) = centerX - count*pitch/2 + i*pitch ── */
+function rowAnchorStyle(index: number): Record<string, string> {
+  const geom = rowGeom.value;
+  const row = store.replica?.model.row;
+  if (!geom || !row) return { visibility: "hidden" };
   return {
-    left: `${r.x}px`,
-    top: `${r.y}px`,
-    width: `${r.w}px`,
-    height: `${r.h}px`,
+    left: `${(row.centerX - (geom.count * row.pitch) / 2 + index * row.pitch).toFixed(2)}px`,
+    top: `${(geom.absY + (row.offsetY || 0)).toFixed(2)}px`,
   };
 }
 
-/* ── 底栏占位读数（空白原件 + 静态数值） ── */
-const placeholders = {
-  time: "8:41 PM",
-  cityName: "御木林",
-  money: "§422,668",
-  income: "+5,632 / 小時",
-  population: "54,666",
-};
-
-/** 大学槽位的占位计数（对齐参考截图：第 3/4 槽位）。 */
-function slotCounter(index: number): string {
-  return index === 2 ? "0 / 3" : index === 3 ? "0 / 0" : "";
+/** 自定义分类删除角标：锚在对应圆钮（43×62）右上角。 */
+function catDelStyle(index: number): Record<string, string> {
+  const anchor = rowAnchorStyle(index);
+  return {
+    left: `calc(${anchor.left} + 30px)`,
+    top: `calc(${anchor.top} - 4px)`,
+  };
 }
 
-/** 满意度笑脸：锚定 Mayor Rating 精灵图节点（1888），裁最右绿脸。 */
-const smileyStyle = computed(() => {
-  const r = store.rect("1888");
-  if (!r) return { visibility: "hidden" as const };
-  return { left: `${r.x + 105}px`, top: `${r.y + 1}px` };
-});
-
-/** 右上角系统按钮（原生图标缺失，FIcon 占位）。 */
-const topButtons = computed(() => [
-  { id: "1079", icon: "Mail", title: t("studio.workbench.topInvites") },
-  { id: "1364", icon: "Star", title: t("studio.workbench.topAchievements") },
-  { id: "1367", icon: "Crosshair", title: t("studio.workbench.topChallenges") },
-  { id: "1273", icon: "ChartBar", title: t("studio.workbench.topLeaderboards") },
-]);
-
-function isCustomCategory(id: string): boolean {
-  return id.startsWith("NEW-CAT-");
-}
-
-function removeCategoryAt(id: string): void {
-  store.removeCategory(id);
+/** 新增分类「＋」：43×43 圆，在 62px 行单元里垂直居中。 */
+function addCatStyle(): Record<string, string> {
+  const anchor = rowAnchorStyle(rowGeom.value?.count ?? 0);
+  return {
+    left: anchor.left,
+    top: `calc(${anchor.top} + 9px)`,
+  };
 }
 </script>
 
 <template>
   <div ref="host" class="stage-host">
     <div class="stage" :style="{ width: `${1600 * scale}px`, height: `${900 * scale}px` }">
-      <div class="stage-inner" :style="{ transform: `scale(${scale})` }">
-        <!-- 世界底色（工作台不加载 3D 场景，用中性地平线示意） -->
-        <div class="backdrop" aria-hidden="true">
-          <span class="backdrop-label">3D 城市视口（示意）</span>
-        </div>
+      <div ref="stageInner" class="stage-inner" :style="{ transform: `scale(${scale})` }" />
 
-        <!-- 美术层：scrui 布局公式定位的游戏原生资产（加载失败自动隐藏） -->
-        <img
-          v-for="(img, index) in hudImages"
-          :key="`art-${index}`"
-          class="art"
-          :src="img.src"
-          :style="{
-            left: `${img.x}px`,
-            top: `${img.y}px`,
-            width: `${img.w}px`,
-            height: `${img.h}px`,
-          }"
-          alt=""
-          @error="($event.target as HTMLImageElement).style.visibility = 'hidden'"
-        />
-
-        <!-- 顶部：城市通知条 / 二级菜单标题 -->
-        <div v-if="!entered" class="ticker" :style="rectStyle('569')">
-          <span class="ticker-icon" aria-hidden="true" />
-          <span>模擬城市伺服器連線中，正在嘗試重連。</span>
-        </div>
-        <div v-else class="screen-title">{{ activeMenu?.label }}</div>
-
-        <!-- 右上角：社交/系统按钮（原生图标缺失 → FIcon 占位） -->
-        <button
-          v-for="btn in topButtons"
-          :key="btn.id"
-          type="button"
-          class="top-btn"
-          :style="rectStyle(btn.id)"
-          :title="btn.title"
+      <!-- 一级菜单拊件：自定义分类删除角标 + 末位新增分类 -->
+      <template v-if="rowGeom">
+        <span
+          v-for="(cat, index) in customCategories"
+          :key="cat.id"
+          class="wb-del-x"
+          role="button"
+          :title="t('studio.workbench.removeCategory')"
+          :style="catDelStyle(builtinCount + index)"
+          @click.stop="store.removeCategory(cat.id)"
+          >×</span
         >
-          <FIcon :name="btn.icon" :size="15" aria-label="" />
-        </button>
-        <button type="button" class="main-menu" :style="rectStyle('46')" aria-label="主菜单">
-          ···
-        </button>
-
-        <!-- 左侧维度切换：点击目标覆盖在美术层簇上，选中显示品牌色环 -->
         <button
           type="button"
-          class="dim-tab"
-          :class="{ active: dimension === 'city' }"
-          :style="{ left: '14px', top: '748px' }"
-          :title="t('studio.workbench.dimCity')"
-          @click="store.selectDimension('city')"
+          class="wb-add-cat"
+          title="新增一级菜单分类"
+          :style="addCatStyle()"
+          @click="store.addCategory('新分类')"
         >
+          <span aria-hidden="true">＋</span>
         </button>
-        <button
-          type="button"
-          class="dim-tab"
-          :class="{ active: dimension === 'bigbiz' }"
-          :style="{ left: '34px', top: '698px' }"
-          :title="t('studio.workbench.dimBigbiz')"
-          @click="store.selectDimension('bigbiz')"
-        >
-        </button>
-        <button
-          type="button"
-          class="dim-tab"
-          :class="{ active: dimension === 'region' }"
-          :style="{ left: '36px', top: '650px' }"
-          :title="t('studio.workbench.dimRegion')"
-          @click="store.selectDimension('region')"
-        >
-        </button>
+      </template>
 
-        <!-- 城市主菜单：一级分类圆钮（进入二级后由槽位面板替换） -->
-        <div class="tool-viewport">
-            <div class="tool-row">
-              <button
-                v-for="category in categories"
-                :key="category.id"
-                type="button"
-                class="tool-button"
-                :title="`${category.label}（${category.items.length}）`"
-                @click="store.enterMenu(category.id)"
-              >
-                <FIcon
-                  class="tool-icon"
-                  :name="CATEGORY_ICONS[category.id] ?? 'Box'"
-                  :size="22"
-                  aria-label=""
-                />
-                <span
-                  v-if="isCustomCategory(category.id)"
-                  class="del-x"
-                  role="button"
-                  :title="t('studio.workbench.removeCategory')"
-                  @click.stop="removeCategoryAt(category.id)"
-                  >×</span
-                >
-              </button>
-              <!-- 一级菜单末位：新增分类占位 -->
-              <button
-                type="button"
-                class="tool-button add"
-                title="新增一级菜单分类"
-                @click="store.addCategory('新分类')"
-              >
-                <span aria-hidden="true">＋</span>
-              </button>
-            </div>
-        </div>
-
-        <!-- 二级槽位面板：一级圆钮行上方，滑入过渡 -->
-        <Transition name="lv">
-          <div v-if="entered" key="l2" class="palette-strip">
-            <div v-if="pageCount > 1" class="page-ctrl">
-              <button
-                type="button"
-                class="page-btn"
-                :disabled="page <= 1"
-                aria-label="上一页"
-                @click="setPage(page - 1)"
-              >
-                ‹
-              </button>
-              <span class="tabnum">{{ page }} / {{ pageCount }}</span>
-              <button
-                type="button"
-                class="page-btn"
-                :disabled="page >= pageCount"
-                aria-label="下一页"
-                @click="setPage(page + 1)"
-              >
-                ›
-              </button>
-            </div>
-            <div class="palette-slots">
-              <button
-                v-for="(entry, index) in pagedEntries"
-                :key="entry.tool.id"
-                type="button"
-                class="slot"
-                :class="{ selected: index === 1 }"
-                :title="entry.tool.label"
-                @click="store.openEditor(activeMenu!.id, entry.tool.id)"
-              >
-                <span class="slot-frame" aria-hidden="true" />
-                <FIcon
-                  class="slot-icon"
-                  :name="toolIconName(entry.tool)"
-                  :size="30"
-                  aria-label=""
-                />
-                <span class="slot-label">{{ entry.tool.label }}</span>
-                <span v-if="slotCounter(index)" class="slot-counter tabnum">{{
-                  slotCounter(index)
-                }}</span>
-                <span
-                  v-if="entry.isNew"
-                  class="del-x"
-                  role="button"
-                  :title="t('studio.workbench.removeEntry')"
-                  @click.stop="store.removeItem(activeMenu!.id, entry.tool.id)"
-                  >×</span
-                >
-              </button>
-              <!-- 二级菜单末位：新增条目占位 -->
-              <button
-                type="button"
-                class="slot add"
-                title="新增二级菜单条目"
-                @click="activeMenu && store.addItem(activeMenu.id, '新条目', null)"
-              >
-                <span aria-hidden="true">＋</span>
-              </button>
-            </div>
-          </div>
-        </Transition>
-
-        <div v-if="entered && selectedMenuId === 'education'" class="edu-panel">
-          <header class="edu-head">
-            <span>教育</span>
-            <button type="button" class="edu-close" aria-label="关闭">×</button>
-          </header>
-          <div class="edu-body">
-            <div class="edu-number tabnum">2,032<span class="edu-sub">/ 2,342</span></div>
-            <div class="edu-caption">入学人数</div>
-            <div class="edu-row"><span>教育程度：</span><span class="edu-chips" /></div>
-            <div class="edu-row"><span>科技等级</span><span class="edu-chips" /></div>
-            <div class="edu-row"><span>去：</span><span class="edu-bar" /></div>
-          </div>
-        </div>
-
-        <!-- 底栏（美术层提供衬带/tab 板/RCI/图层钮），这里只叠加读数与交互 -->
-        <div class="stats-overlay">
-          <button type="button" class="play" aria-label="暂停 / 继续">
-            <span aria-hidden="true">▶</span>
-          </button>
-          <span class="clock tabnum">{{ placeholders.time }}</span>
-          <span class="speed tabnum" aria-hidden="true">▶▶|</span>
-          <span class="name-text">{{ placeholders.cityName }}</span>
-          <span class="smiley" :style="smileyStyle" aria-hidden="true">
-            <img v-if="data?.assets.mayorRating" :src="data.assets.mayorRating" alt="" />
-          </span>
-          <span class="money tabnum">{{ placeholders.money }}</span>
-          <span class="income tabnum">{{ placeholders.income }}</span>
-          <span class="pop tabnum">
-            <FIcon name="Users" :size="15" aria-label="" />
-            {{ placeholders.population }}
-          </span>
-        </div>
-
-        <!-- 参考截图叠加（校准模式） -->
-        <img
-          v-if="props.overlayOpacity > 0"
-          class="reference-overlay"
-          :src="overlaySrc"
-          :style="{ opacity: props.overlayOpacity }"
-          alt="游戏内参考截图"
-        />
-      </div>
+      <p v-if="store.loadError" class="stage-error" role="alert">
+        复刻数据装载失败：{{ store.loadError }}
+      </p>
     </div>
   </div>
 </template>
@@ -354,198 +270,29 @@ function removeCategoryAt(id: string): void {
   flex: none;
   position: relative;
 }
+/* Shadow 宿主：继承起点钉在浏览器默认值上，保证舞台内文字与复刻站一致
+ * （应用主题的字体/前景色/行高经 Tailwind Preflight 设置在 html 上，
+ * 会穿过 shadow 边界继承进来，必须在宿主拦下）。 */
 .stage-inner {
+  color: #000;
+  font-family: sans-serif;
+  font-size: 16px;
+  font-style: normal;
+  font-variant: normal;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: normal;
+  text-rendering: auto;
+  text-transform: none;
   height: 900px;
   overflow: hidden;
   position: relative;
   transform-origin: top left;
   width: 1600px;
 }
-.backdrop {
-  background:
-    linear-gradient(180deg, #243a52 0%, #35506b 46%, #4c6b52 70%, #3c5643 100%);
-  inset: 0;
-  position: absolute;
-}
-.backdrop-label {
-  color: rgb(255 255 255 / 30%);
-  font-size: 14px;
-  left: 50%;
-  letter-spacing: 0.12em;
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-.art {
-  position: absolute;
-}
-.tabnum {
-  font-variant-numeric: tabular-nums;
-}
 
-/* ── 顶部 ── */
-.ticker {
-  align-items: flex-start;
-  display: flex;
-  gap: 8px;
-  position: absolute;
-}
-.ticker-icon {
-  background: #d2202a;
-  border: 2px solid #fff;
-  border-radius: 3px;
-  box-shadow: 0 1px 4px rgb(9 20 34 / 40%);
-  flex: none;
-  height: 26px;
-  width: 26px;
-}
-.ticker > span:last-child {
-  background: linear-gradient(180deg, rgb(250 251 253 / 92%), rgb(226 233 240 / 92%));
-  border: 1px solid rgb(210 40 40 / 65%);
-  border-radius: 4px;
-  color: #b3261e;
-  font-size: 13px;
-  padding: 6px 14px;
-}
-.screen-title {
-  background: linear-gradient(180deg, rgb(252 253 255 / 94%), rgb(228 235 242 / 94%));
-  border-radius: 4px;
-  box-shadow: 0 1px 4px rgb(9 20 34 / 35%);
-  color: #223c5c;
-  font-size: 17px;
-  font-weight: 700;
-  left: 50%;
-  letter-spacing: 0.35em;
-  padding: 5px 26px 5px 32px;
-  position: absolute;
-  top: 6px;
-  transform: translateX(-50%);
-}
-.main-menu {
-  background: linear-gradient(180deg, rgb(252 253 255 / 94%), rgb(228 235 242 / 94%));
-  border: 0;
-  border-radius: 6px;
-  color: #223c5c;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  position: absolute;
-}
-
-/* ── 左侧维度切换簇 ── */
-.mode-cluster {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  position: absolute;
-}
-.dim-tab {
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
-  cursor: pointer;
-  padding: 0;
-  position: absolute;
-}
-.dim-tab.active {
-  box-shadow: 0 0 0 2.5px rgb(8 120 254 / 90%), 0 0 14px rgb(8 120 254 / 55%);
-}
-.page-ctrl {
-  align-items: center;
-  color: #1d2f4a;
-  display: flex;
-  font-size: 11px;
-  gap: 8px;
-  justify-content: flex-end;
-  position: absolute;
-  right: 10px;
-  top: 8px;
-}
-.page-btn {
-  background: rgb(250 252 254 / 92%);
-  border: 1px solid rgb(160 178 196 / 80%);
-  border-radius: 4px;
-  color: #223c5c;
-  cursor: pointer;
-  font-size: 14px;
-  height: 22px;
-  line-height: 1;
-  width: 22px;
-}
-.page-btn:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
-.lv-enter-active,
-.lv-leave-active {
-  transition: opacity 240ms cubic-bezier(0.2, 0, 0, 1), translate 240ms cubic-bezier(0.2, 0, 0, 1);
-}
-.lv-enter-from {
-  opacity: 0;
-  translate: 0 26px;
-}
-.lv-leave-to {
-  opacity: 0;
-  translate: 0 -18px;
-}
-
-/* ── 城市分类：悬浮圆钮（无底层衬卡）+ 一二级滑动过渡 ── */
-.tool-viewport {
-  height: 75px;
-  left: 240px;
-  overflow: hidden;
-  position: absolute;
-  top: 782px;
-  width: 1320px;
-}
-.tool-row {
-  align-items: center;
-  display: flex;
-  gap: 7px;
-  height: 100%;
-  justify-content: center;
-}
-.tool-button {
-  align-items: center;
-  background: radial-gradient(circle at 50% 32%, rgb(252 253 255 / 97%), rgb(214 226 238 / 92%));
-  border: 0;
-  border-radius: 50%;
-  box-shadow: 0 3px 6px rgb(9 20 34 / 45%), inset 0 -2px 4px rgb(120 145 170 / 35%);
-  color: #2c4a6e;
-  cursor: pointer;
-  display: flex;
-  flex: none;
-  height: 52px;
-  justify-content: center;
-  padding: 0;
-  position: relative;
-  transition: box-shadow 140ms ease, color 140ms ease;
-  width: 52px;
-}
-.tool-button:hover {
-  color: #0878fe;
-}
-.tool-button.selected {
-  box-shadow: 0 0 0 2.5px rgb(8 120 254 / 90%), 0 0 16px rgb(8 120 254 / 55%),
-    inset 0 -2px 4px rgb(120 145 170 / 35%);
-  color: #0878fe;
-}
-.tool-button.back {
-  margin-inline-end: 10px;
-}
-.tool-button.add {
-  border: 1.5px dashed rgb(44 74 110 / 65%);
-  box-shadow: none;
-  color: #2c4a6e;
-  font-size: 20px;
-}
-.tool-button.add:hover {
-  color: #0878fe;
-  border-color: #0878fe;
-}
-.del-x {
+/* ── 工作台拊件（一级菜单末位「＋」/ 自定义分类角标） ── */
+.wb-del-x {
   align-items: center;
   background: #d3242a;
   border: 1px solid #fff;
@@ -558,312 +305,39 @@ function removeCategoryAt(id: string): void {
   justify-content: center;
   line-height: 1;
   position: absolute;
-  right: -3px;
-  top: -3px;
   width: 15px;
+  z-index: 3;
 }
-
-/* ── 大学建筑槽位条（游戏内此层带浅色衬带） ── */
-.palette-strip {
-  background: linear-gradient(180deg, rgb(252 253 255 / 94%), rgb(226 235 243 / 90%));
-  border: 1px solid rgb(255 255 255 / 65%);
-  border-bottom: 0;
-  border-radius: 10px 10px 0 0;
-  box-shadow: 0 -3px 12px rgb(9 20 34 / 22%);
-  box-sizing: border-box;
-  height: 104px;
-  left: 180px;
-  padding: 6px 8px 0;
-  position: absolute;
-  top: 676px;
-  width: 1380px;
-}
-.page-ctrl {
-  top: 8px;
-}
-.back-chip {
+.wb-add-cat {
   align-items: center;
-  background: rgb(250 252 254 / 92%);
-  border: 1px solid rgb(160 178 196 / 80%);
-  border-radius: var(--radius-sm);
-  color: #223c5c;
-  cursor: pointer;
-  display: inline-flex;
-  font-size: 11.5px;
-  gap: 4px;
-  left: 0;
-  padding: 4px 10px;
-  position: absolute;
-  top: -24px;
-}
-.palette-slots {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-}
-.slot {
-  background: rgb(255 255 255 / 42%);
-  border: 1px solid rgb(214 226 238 / 80%);
-  border-radius: 6px;
-  cursor: pointer;
-  height: 88px;
-  padding: 4px 4px 0;
-  position: relative;
-  width: 116px;
-}
-.slot.selected {
-  background: rgb(255 255 255 / 70%);
-  border-color: rgb(8 120 254 / 80%);
-  outline: 0;
-}
-.slot.selected {
-  outline: 2px solid rgb(8 120 254 / 90%);
-  outline-offset: -2px;
-}
-.slot-frame {
-  background: linear-gradient(180deg, rgb(250 252 254 / 24%), rgb(210 224 238 / 30%));
-  border-radius: 6px;
-  inset: 0;
-  position: absolute;
-}
-.slot-icon {
-  color: #2c4a6e;
-  left: 50%;
-  position: absolute;
-  top: 8px;
-  transform: translateX(-50%);
-}
-.slot-label {
-  bottom: 4px;
-  color: #1d2f4a;
-  font-size: 11px;
-  font-weight: 600;
-  left: 50%;
-  position: absolute;
-  transform: translateX(-50%);
-  white-space: nowrap;
-}
-.slot-counter {
-  background: #0878fe;
-  border-radius: 9px;
-  bottom: -9px;
-  color: #fff;
-  font-size: 10px;
-  left: 50%;
-  padding: 1px 7px;
-  position: absolute;
-  transform: translateX(-50%);
-  white-space: nowrap;
-}
-.slot.add {
-  align-items: center;
-  background: rgb(255 255 255 / 30%);
-  border: 1.5px dashed rgb(70 100 130 / 60%);
-  border-radius: 8px;
-  color: #2c4a6e;
-  display: flex;
-  font-size: 22px;
-  justify-content: center;
-}
-.decline-row {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  padding-inline-start: 8px;
-}
-.decline-cell {
-  height: 30px;
-  position: relative;
-  width: 116px;
-}
-.decline-btn {
-  height: 28px;
-  left: 8px;
-  position: absolute;
-  width: 100px;
-}
-.decline-text {
-  color: #8a2b20;
-  font-size: 12px;
-  font-weight: 700;
-  left: 50%;
-  position: absolute;
-  top: 6px;
-  transform: translateX(-50%);
-}
-
-/* ── 大学左侧道路工具 ── */
-.shape {
-  border: 1.5px solid #35506b;
-  border-radius: 3px;
-  flex: 1;
-  height: 22px;
-}
-/* ── 大学右侧教育面板 ── */
-.edu-panel {
-  background: linear-gradient(180deg, rgb(252 253 255 / 96%), rgb(236 241 246 / 96%));
-  border: 1px solid rgb(160 178 196 / 90%);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(9 20 34 / 30%);
-  color: #223c5c;
-  height: 148px;
-  position: absolute;
-  right: 10px;
-  top: 646px;
-  width: 264px;
-}
-.edu-head {
-  align-items: center;
-  border-bottom: 1px solid rgb(160 178 196 / 60%);
-  display: flex;
-  font-size: 13px;
-  font-weight: 700;
-  justify-content: space-between;
-  padding: 5px 10px;
-}
-.edu-close {
   background: transparent;
-  border: 0;
-  color: #b3261e;
-  cursor: pointer;
-  font-size: 14px;
-}
-.edu-body {
-  font-size: 11.5px;
-  padding: 6px 10px;
-}
-.edu-number {
-  font-size: 21px;
-  font-weight: 700;
-}
-.edu-sub {
-  color: #64788e;
-  font-size: 11px;
-  font-weight: 400;
-  margin-inline-start: 4px;
-}
-.edu-caption {
-  color: #b8860b;
-  font-size: 10.5px;
-  margin-bottom: 4px;
-}
-.edu-row {
-  align-items: center;
-  display: flex;
-  gap: 6px;
-  margin-top: 3px;
-}
-.edu-chips::before {
-  content: "❀ ❀ ❀ ✿ ✿";
-  color: #4c9a52;
-  letter-spacing: 2px;
-}
-.edu-bar {
-  background: rgb(120 140 160 / 30%);
-  border-radius: 3px;
-  flex: 1;
-  height: 8px;
-}
-
-/* ── 底栏读数叠加（衬带/tab 板/RCI/图层钮由美术层 scrui 布局提供） ── */
-.stats-overlay {
-  height: 52px;
-  inset-inline: 0;
-  bottom: 0;
-  position: absolute;
-}
-.stats-overlay::before {
-  content: "";
-  background: linear-gradient(180deg, rgb(240 245 250 / 88%), rgb(214 226 238 / 94%));
-  border-top: 1px solid rgb(255 255 255 / 70%);
-  box-shadow: 0 -2px 8px rgb(9 20 34 / 25%);
-  height: 52px;
-  inset-inline: 0;
-  bottom: 0;
-  position: absolute;
-}
-.play {
-  background: linear-gradient(180deg, #d3242a, #a91018);
-  border: 1px solid #7e0c12;
-  border-radius: 6px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  height: 36px;
-  left: 10px;
-  position: absolute;
-  top: 8px;
-  width: 36px;
-}
-.clock {
-  color: #1d2f4a;
-  font-size: 15px;
-  font-weight: 700;
-  left: 58px;
-  position: absolute;
-  top: 17px;
-}
-.speed {
-  color: #2c3e54;
-  font-size: 12px;
-  left: 142px;
-  letter-spacing: 1px;
-  position: absolute;
-  top: 20px;
-}
-.name-text {
-  color: #1d2f4a;
-  font-size: 13.5px;
-  font-weight: 600;
-  left: 163px;
-  position: absolute;
-  top: 19px;
-}
-.money {
-  color: #1d2f4a;
-  font-size: 16px;
-  font-weight: 700;
-  left: 490px;
-  position: absolute;
-  top: 16px;
-}
-.income {
-  color: #2f9e44;
-  font-size: 12px;
-  font-weight: 600;
-  left: 600px;
-  position: absolute;
-  top: 20px;
-}
-.pop {
-  align-items: center;
-  color: #2f6fd0;
-  display: flex;
-  font-size: 16px;
-  font-weight: 700;
-  gap: 6px;
-  left: 712px;
-  position: absolute;
-  top: 16px;
-}
-.smiley {
+  border: 1.5px dashed rgb(200 214 228 / 85%);
   border-radius: 50%;
-  display: inline-block;
-  height: 26px;
-  overflow: hidden;
-  width: 26px;
+  box-sizing: border-box;
+  color: rgb(235 242 248 / 90%);
+  cursor: pointer;
+  display: flex;
+  height: 43px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  width: 43px;
 }
-/* mayorRating 精灵图 195×39 共 5 帧；26px 窗口缩放后绿脸偏移 -109.3px */
-.smiley img {
-  height: 26px;
-  margin-inline-start: -109.3px;
-  max-width: none;
+.wb-add-cat:hover {
+  border-color: rgb(8 120 254 / 90%);
+  color: #fff;
 }
 
-/* ── 参考图叠加 ── */
-.reference-overlay {
-  inset: 0;
-  pointer-events: none;
+.stage-error {
+  background: rgb(70 20 20 / 85%);
+  border-radius: 6px;
+  color: #ffd9d9;
+  font-size: 12px;
+  left: 50%;
+  padding: 6px 12px;
   position: absolute;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 5;
 }
 </style>

@@ -1,0 +1,101 @@
+/*---------------------------------------------------------------------------*/
+/* ButtonStyles.css
+/*		This file contains all button styles recognized by the editor. It also
+/*		contains one dummy element at the top that helps the program to
+/*		correctly identify this file
+/*---------------------------------------------------------------------------*/
+
+/* This style marks this file. Do not change it. Do not insert anything above it. Do not move it. */
+.buttonNineSliceStyles {}
+
+/* Add all user styles here */
+
+
+/* These defaults are required by the editor. Do not remove them. */
+.buttonTilingDefaultNormal.customData       { border-width:12px; }
+.buttonTilingDefaultNormal.pinTopLeft       { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px 0px; }
+.buttonTilingDefaultNormal.pinTopRight      { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px 0px; }
+.buttonTilingDefaultNormal.pinBottomLeft    { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px 0px; }
+.buttonTilingDefaultNormal.pinBottomRight   { width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px 0px; }
+.buttonTilingDefaultNormal.pinTop           { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px 0px; }
+.buttonTilingDefaultNormal.pinBottom        { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -12px; }
+.buttonTilingDefaultNormal.pinLeft          { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: 0px 0px; }
+.buttonTilingDefaultNormal.pinRight         { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -12px 0px; }
+.buttonTilingDefaultNormal.pinCenter        { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-normal.png"); background-position: 0px 0px; }
+
+.buttonTilingDefaultRollover.customData      { border-width:12px; }
+.buttonTilingDefaultRollover.pinTopLeft     { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px -12px; }
+.buttonTilingDefaultRollover.pinTopRight    { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px -12px; }
+.buttonTilingDefaultRollover.pinBottomLeft  { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px -12px; }
+.buttonTilingDefaultRollover.pinBottomRight { width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px -12px; }
+.buttonTilingDefaultRollover.pinTop         { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -24px; }
+.buttonTilingDefaultRollover.pinBottom      { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -36px; }
+.buttonTilingDefaultRollover.pinLeft        { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -24px 0px; }
+.buttonTilingDefaultRollover.pinRight       { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -36px 0px; }
+.buttonTilingDefaultRollover.pinCenter      { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-rollover.png"); background-position: 0px 0px; }
+
+.buttonTilingDefaultDown.customData      { border-width:12px; }
+.buttonTilingDefaultDown.pinTopLeft      { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px -24px; }
+.buttonTilingDefaultDown.pinTopRight     { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px -24px; }
+.buttonTilingDefaultDown.pinBottomLeft   { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px -24px; }
+.buttonTilingDefaultDown.pinBottomRight  { width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px -24px; }
+.buttonTilingDefaultDown.pinTop          { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -48px; }
+.buttonTilingDefaultDown.pinBottom       { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -60px; }
+.buttonTilingDefaultDown.pinLeft         { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -48px 0px; }
+.buttonTilingDefaultDown.pinRight        { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -60px 0px; }
+.buttonTilingDefaultDown.pinCenter       { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-down.png"); background-position: 0px 0px; }
+
+.buttonTilingDefaultDisabled.customData         { border-width:12px; }
+.buttonTilingDefaultDisabled.pinTopLeft         { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px -36px; }
+.buttonTilingDefaultDisabled.pinTopRight        { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px -36px; }
+.buttonTilingDefaultDisabled.pinBottomLeft      { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px -36px; }
+.buttonTilingDefaultDisabled.pinBottomRight     { width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px -36px; }
+.buttonTilingDefaultDisabled.pinTop             { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -72px; }
+.buttonTilingDefaultDisabled.pinBottom          { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -84px; }
+.buttonTilingDefaultDisabled.pinLeft            { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -72px 0px; }
+.buttonTilingDefaultDisabled.pinRight           { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -84px 0px; }
+.buttonTilingDefaultDisabled.pinCenter          { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-disabled.png"); background-position: 0px 0px; }
+
+.buttonTilingDefaultSelectedNormal.customData      { border-width:12px; }
+.buttonTilingDefaultSelectedNormal.pinTopLeft    { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px 0px; }
+.buttonTilingDefaultSelectedNormal.pinTopRight   { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px 0px; }
+.buttonTilingDefaultSelectedNormal.pinBottomLeft { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px 0px; }
+.buttonTilingDefaultSelectedNormal.pinBottomRight{ width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px 0px; }
+.buttonTilingDefaultSelectedNormal.pinTop        { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px 0px; }
+.buttonTilingDefaultSelectedNormal.pinBottom     { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -12px; }
+.buttonTilingDefaultSelectedNormal.pinLeft       { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: 0px 0px; }
+.buttonTilingDefaultSelectedNormal.pinRight      { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -12px 0px; }
+.buttonTilingDefaultSelectedNormal.pinCenter     { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-selected.png"); background-position: 0px 0px; }
+
+.buttonTilingDefaultSelectedRollover.customData     { border-width:12px; }
+.buttonTilingDefaultSelectedRollover.pinTopLeft     { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px -12px; }
+.buttonTilingDefaultSelectedRollover.pinTopRight    { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px -12px; }
+.buttonTilingDefaultSelectedRollover.pinBottomLeft  { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px -12px; }
+.buttonTilingDefaultSelectedRollover.pinBottomRight { width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px -12px; }
+.buttonTilingDefaultSelectedRollover.pinTop         { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -24px; }
+.buttonTilingDefaultSelectedRollover.pinBottom      { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -36px; }
+.buttonTilingDefaultSelectedRollover.pinLeft        { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -24px 0px; }
+.buttonTilingDefaultSelectedRollover.pinRight       { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -36px 0px; }
+.buttonTilingDefaultSelectedRollover.pinCenter      { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-selected.png"); background-position: 0px 0px; }
+
+.buttonTilingDefaultSelectedDown.customData      { border-width:12px; }
+.buttonTilingDefaultSelectedDown.pinTopLeft      { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px -24px; }
+.buttonTilingDefaultSelectedDown.pinTopRight     { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px -24px; }
+.buttonTilingDefaultSelectedDown.pinBottomLeft   { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px -24px; }
+.buttonTilingDefaultSelectedDown.pinBottomRight  { width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px -24px; }
+.buttonTilingDefaultSelectedDown.pinTop          { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -48px; }
+.buttonTilingDefaultSelectedDown.pinBottom       { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -60px; }
+.buttonTilingDefaultSelectedDown.pinLeft         { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -48px 0px; }
+.buttonTilingDefaultSelectedDown.pinRight        { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -60px 0px; }
+.buttonTilingDefaultSelectedDown.pinCenter       { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-selected.png"); background-position: 0px 0px; }
+
+.buttonTilingDefaultSelectedDisabled.customData     { border-width:12px; }
+.buttonTilingDefaultSelectedDisabled.pinTopLeft     { left:0px;   width:12px; top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: 0px -36px; }
+.buttonTilingDefaultSelectedDisabled.pinTopRight    { width:12px; right:0px;  top:0px;    height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -12px -36px; }
+.buttonTilingDefaultSelectedDisabled.pinBottomLeft  { left:0px;   width:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -24px -36px; }
+.buttonTilingDefaultSelectedDisabled.pinBottomRight { width:12px; right:0px;  bottom:0px; height:12px; background-image:url("../Graphics/button-corners.png"); background-position: -36px -36px; }
+.buttonTilingDefaultSelectedDisabled.pinTop         { left:12px;  right:12px; top:0px;    height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -72px; }
+.buttonTilingDefaultSelectedDisabled.pinBottom      { left:12px;  right:12px; bottom:0px; height:12px; background-image:url("../Graphics/button-horizontal-stretch.png"); background-position: 0px -84px; }
+.buttonTilingDefaultSelectedDisabled.pinLeft        { left:0px;   width:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -72px 0px; }
+.buttonTilingDefaultSelectedDisabled.pinRight       { width:12px; right:0px;  top:12px;   bottom:12px; background-image:url("../Graphics/button-vertical-stretch.png"); background-position: -84px 0px; }
+.buttonTilingDefaultSelectedDisabled.pinCenter      { left:12px;  right:12px; top:12px;   bottom:12px; background-image:url("../Graphics/button-middle-selected.png"); background-position: 0px 0px; }
