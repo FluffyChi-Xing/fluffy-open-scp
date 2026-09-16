@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
 import { isTauri, tauriApi } from "@/api";
 import type { SemanticCard } from "@/api/tauri";
 import {
@@ -131,6 +132,7 @@ const cardTitle = computed(() => {
 const RW4_MESH_TYPE_CODE = 0x20_009;
 const show3d = ref(false);
 const activeModelIndex = ref(0);
+const modelMenuOpen = ref(false);
 const meshObjs = ref<string[]>([]);
 const meshState = ref<"idle" | "loading" | "ready" | "error">("idle");
 
@@ -283,16 +285,37 @@ function selectModel(index: number) {
           :obj-base64s="meshObjs"
           class="vehicle-mesh"
         />
-        <select
-        v-if="card.models.length > 1"
-        class="model-select"
-        :value="activeModelIndex"
-        @change="selectModel(Number(($event.target as HTMLSelectElement).value))"
-      >
-        <option v-for="(m, i) in card.models" :key="i" :value="i">
-          {{ $t("package.card.modelN", { n: i + 1 }) }} · {{ keyText(m) }}
-        </option>
-      </select>
+        <FDropdown
+          v-if="card.models.length > 1"
+          v-model:open="modelMenuOpen"
+          :width="260"
+          class="model-select"
+        >
+          <template #trigger>
+            <button class="model-trigger" type="button">
+              {{
+                $t("package.card.modelN", { n: activeModelIndex + 1 })
+              }} · {{ keyText(card.models[activeModelIndex]) }}
+              <FIcon name="ChevronDown" :size="11" aria-label="" />
+            </button>
+          </template>
+          <button
+            v-for="(m, i) in card.models"
+            :key="i"
+            type="button"
+            @click="
+              selectModel(i);
+              modelMenuOpen = false;
+            "
+          >
+            <FIcon
+              :name="i === activeModelIndex ? 'Check' : 'Box'"
+              :size="13"
+              aria-label=""
+            />
+            {{ $t("package.card.modelN", { n: i + 1 }) }} · {{ keyText(m) }}
+          </button>
+        </FDropdown>
       </div>
 
       <div v-else class="card-section">
@@ -567,7 +590,7 @@ function selectModel(index: number) {
 .vehicle-3d {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
   min-width: 0;
 }
 .vehicle-mesh {
@@ -576,13 +599,22 @@ function selectModel(index: number) {
 }
 .model-select {
   align-self: flex-start;
+}
+.model-trigger {
+  align-items: center;
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
   font-size: 12px;
+  gap: 8px;
   max-width: 100%;
-  padding: 3px 6px;
+  padding: 4px 10px;
+}
+.model-trigger :deep(svg) {
+  flex-shrink: 0;
 }
 .meta-line {
   color: var(--muted-foreground);

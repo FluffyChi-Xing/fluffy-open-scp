@@ -209,8 +209,48 @@ fn locale_dir_name(lang: &str) -> String {
     }
 }
 
-/// 读取（带缓存）游戏 Locale 包的字符串表集合。
-/// game_data_path 未配置或包缺失时返回 None（调用方优雅降级为未解析）。
+/// 缓存条目：解析好的字符串表 + 该包内容语言的 CJK 占比判定。
+#[derive(Debug)]
+pub(crate) struct CachedLocale {
+    pub locale: Arc<sc_properties::Locale>,
+    /// 抽样判定包内容是否为中文（离线整合包存在目录名与内容错位：
+    /// zh-tw 目录装英文、en-us 目录装中文，2026-09-17 locale_lang_probe 实证）。
+    pub cjk: bool,
+}
+
+/// 抽样判定 Locale 包内容是否为中文（CJK 字符占比 ≥10%）。
+fn package_is_cjk(package: &dbpf::Package) -> bool {
+    let mut cjk = 0usize;
+    let mut total = 0usize;
+    'outer: for entry in package.entries() {
+        if entry.id.type_id != LOCALE_RESOURCE_TYPE {
+            continue;
+        }
+        let Ok(data) = package.read(entry) else { continue };
+        if let Ok(items) = parse_locale_items(&data) {
+            for item in items {
+                if item.id.is_none() {
+                    continue;
+                }
+                for ch in item.text.chars() {
+                    total += 1;
+                    if matches!(ch, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}') {
+                        cjk += 1;
+                    }
+                }
+                if total >= 4000 {
+                    break 'outer;
+                }
+            }
+        }
+    }
+    total > 0 && cjk * 10 >= total
+}
+
+/// 读取（带缓存 + 内容语言探测）游戏 Locale 包的字符串表集合。
+/// 目录名可能不可信（整合包错位），故按内容 CJK 占比自动回退：
+/// 中文 UI 优先 zh-tw、内容非中文则回退 en-us；英文 UI 反之。
+/// game_data_path 未配置或两包均缺失时返回 None（优雅降级为未解析）。
 pub(crate) fn game_locale(
     manager: &crate::package_service::PackageManager,
     store: &sc_store::Store,
@@ -218,25 +258,51 @@ pub(crate) fn game_locale(
 ) -> Option<Arc<sc_properties::Locale>> {
     let settings = store.app_settings().ok()??;
     let game_data = PathBuf::from(settings.game_data_path?);
-    let path = game_data.join("Locale").join(locale_dir_name(lang)).join("Data.package");
-    if let Some(hit) = manager.locale_cache.lock().ok()?.get(&path) {
-        return Some(Arc::clone(hit));
+    let requested = locale_dir_name(lang);
+    let wants_cjk = requested.starts_with("zh");
+    let other = if wants_cjk { "en-us" } else { "zh-tw" };
+
+    let mut candidates = vec![requested];
+    if !candidates.iter().any(|d| d == other) {
+        candidates.push(other.to_string());
     }
-    let package = dbpf::Package::open(&path).ok()?;
-    let resources = package.entries().iter().filter_map(|entry| {
-        if entry.id.type_id != LOCALE_RESOURCE_TYPE {
-            return None;
+
+    let mut fallback: Option<Arc<sc_properties::Locale>> = None;
+    for dir in candidates {
+        let path = game_data.join("Locale").join(dir).join("Data.package");
+        let cached = {
+            let mut cache = manager.locale_cache.lock().ok()?;
+            match cache.get(&path) {
+                Some(hit) => Some((Arc::clone(&hit.locale), hit.cjk)),
+                None => {
+                    let package = dbpf::Package::open(&path).ok()?;
+                    let resources = package.entries().iter().filter_map(|entry| {
+                        if entry.id.type_id != LOCALE_RESOURCE_TYPE {
+                            return None;
+                        }
+                        let data = package.read(entry).ok()?;
+                        Some((entry.id.instance, data))
+                    });
+                    let locale = Arc::new(sc_properties::Locale::from_resources(resources).ok()?);
+                    let cjk = package_is_cjk(&package);
+                    cache.insert(path.clone(), CachedLocale {
+                        locale: Arc::clone(&locale),
+                        cjk,
+                    });
+                    Some((locale, cjk))
+                }
+            }
+        };
+        if let Some((locale, cjk)) = cached {
+            if cjk == wants_cjk {
+                return Some(locale);
+            }
+            if fallback.is_none() {
+                fallback = Some(locale);
+            }
         }
-        let data = package.read(entry).ok()?;
-        Some((entry.id.instance, data))
-    });
-    let locale = Arc::new(sc_properties::Locale::from_resources(resources).ok()?);
-    manager
-        .locale_cache
-        .lock()
-        .ok()?
-        .insert(path, Arc::clone(&locale));
-    Some(locale)
+    }
+    fallback
 }
 
 #[derive(Debug, Clone, Serialize)]

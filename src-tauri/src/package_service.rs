@@ -45,6 +45,8 @@ pub struct ExportStatus {
     pub error: Option<String>,
 }
 
+use crate::locale_service::CachedLocale;
+
 #[derive(Debug)]
 pub struct PackageManager {
     next_package_id: AtomicU64,
@@ -54,8 +56,7 @@ pub struct PackageManager {
     jobs: Mutex<HashMap<u64, ExportStatus>>,
     /// 游戏 Locale/<lang>/Data.package 的字符串表缓存（语义预览卡 text 解析），
     /// 键 = 包路径。Locale 包 16MB/362 表，避免每次预览重建。
-    pub(crate) locale_cache:
-        Mutex<HashMap<PathBuf, Arc<sc_properties::Locale>>>,
+    pub(crate) locale_cache: Mutex<HashMap<PathBuf, CachedLocale>>,
 }
 
 impl PackageManager {
