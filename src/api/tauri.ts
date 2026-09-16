@@ -105,12 +105,23 @@ export interface Tgi {
   group: number;
   instance: number;
 }
+/**
+ * property 语义子类型（后端 sc-properties::semantic 判定，单一真源）。
+ * id 为 kebab-case 稳定标识，标签由后端按语言下发，前端按 locale 选用。
+ */
+export interface SemanticTagInfo {
+  id: string;
+  labelZh: string;
+  labelEn: string;
+}
 export interface ResourceSummary {
   tgi: Tgi;
   offset: number;
   storedSize: number;
   decompressedSize: number;
   compressed: boolean;
+  /** 仅 property 资源携带；非 property 或解析失败为 null。 */
+  semantic?: SemanticTagInfo | null;
 }
 export interface TypeCountInfo {
   typeId: number;
@@ -238,6 +249,8 @@ export interface PropertyPreview extends PreviewData {
   tgi: Tgi;
   claimedCount: number;
   entries: PropertyEntry[];
+  /** 资源整体语义子类型（结构判据 + group 低 16 位 + Parent 继承）。 */
+  semantic?: SemanticTagInfo | null;
 }
 /**
  * Decal Dictionary（贴花图鉴）：GroupContainer 低 16 位为 0xB185 / 0x1651 /

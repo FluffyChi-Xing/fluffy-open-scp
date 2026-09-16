@@ -243,6 +243,10 @@ pub struct ResourceSummary {
     pub stored_size: u64,
     pub decompressed_size: u64,
     pub compressed: bool,
+    /// property 资源的语义子类型（sc-properties::semantic 判定，单一真源）。
+    /// 非 property 或解析失败时为 None。
+    #[serde(default)]
+    pub semantic: Option<SemanticTagDto>,
 }
 
 impl From<&IndexEntry> for ResourceSummary {
@@ -253,8 +257,48 @@ impl From<&IndexEntry> for ResourceSummary {
             stored_size: entry.stored_len(),
             decompressed_size: u64::from(entry.decompressed_size),
             compressed: entry.compressed,
+            semantic: None,
         }
     }
+}
+
+/// property 语义子类型的对外 DTO：id 与 `PropertySemantic` 的 serde
+/// kebab-case 一致，标签由后端下发（前端按 locale 选用，避免两份映射表漂移）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticTagDto {
+    pub id: String,
+    pub label_zh: String,
+    pub label_en: String,
+}
+
+impl From<sc_properties::PropertySemantic> for SemanticTagDto {
+    fn from(semantic: sc_properties::PropertySemantic) -> Self {
+        let id = serde_json::to_value(&semantic)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        Self {
+            id,
+            label_zh: semantic.label_zh().to_owned(),
+            label_en: semantic.label_en().to_owned(),
+        }
+    }
+}
+
+/// 列表行的语义 tag 计算：group 低 16 位已归属的家族直接查表（不读文件）；
+/// 无归属（Other 桶，含随机 group 副本/画笔模板）才解析内容做结构判定。
+fn resource_semantic(package: &Package, entry: &IndexEntry) -> Option<SemanticTagDto> {
+    if entry.id.type_id != sc_properties::PROPERTY_RESOURCE_TYPE {
+        return None;
+    }
+    let by_group = sc_properties::property_semantic_by_group(entry.id.group);
+    if by_group != sc_properties::PropertySemantic::Other {
+        return Some(by_group.into());
+    }
+    let data = package.read(entry).ok()?;
+    let file = sc_properties::PropertyFile::parse(&data).ok()?;
+    Some(sc_properties::property_semantic(&file, entry.id.group).into())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -808,7 +852,9 @@ fn resource_page(
             continue;
         }
         if total >= offset && items.len() < limit {
-            items.push(ResourceSummary::from(entry));
+            let mut item = ResourceSummary::from(entry);
+            item.semantic = resource_semantic(package, entry);
+            items.push(item);
         }
         total = total
             .checked_add(1)
@@ -1288,6 +1334,9 @@ pub struct PropertyPreviewEntry {
 pub struct PropertyPreviewData {
     pub claimed_count: u32,
     pub entries: Vec<PropertyPreviewEntry>,
+    /// 资源整体语义子类型（结构判据 + group 低 16 位 + Parent 继承）。
+    #[serde(default)]
+    pub semantic: Option<SemanticTagDto>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1367,9 +1416,11 @@ fn property_value_text(kind: &sc_properties::Kind) -> (String, Option<usize>) {
 
 fn property_preview(
     data: &[u8],
+    group: u32,
     registry: Option<&Arc<sc_registry::Registry>>,
 ) -> Result<PropertyPreviewData, PackageError> {
     let file = sc_properties::PropertyFile::parse(data)?;
+    let semantic = sc_properties::property_semantic(&file, group);
     let entries = file
         .values
         .iter()
@@ -1391,6 +1442,7 @@ fn property_preview(
     Ok(PropertyPreviewData {
         claimed_count: file.claimed_count,
         entries,
+        semantic: Some(semantic.into()),
     })
 }
 
@@ -3416,10 +3468,11 @@ pub async fn read_property_preview(
         manager,
         store,
         request.package_id,
-        request.tgi,
+        request.tgi.clone(),
         move |data, package, manager, store| {
             let registry = package_registry(store, manager, package, bundled_registry.as_deref());
-            property_preview(data, registry.as_ref())
+            let group = request.tgi.group;
+            property_preview(data, group, registry.as_ref())
         },
     )
     .await
@@ -5283,6 +5336,58 @@ mod tests {
     }
 
     #[test]
+    fn resource_page_tags_property_semantic() {
+        // 随机 group 的 Unit 副本（实证 40B7A83D:E8D0CAFA 族）：低 16 位无归属，
+        // 靠 Parent 指向 0xC000 家族继承为 Unit；查表快路径则无需解析。
+        let file = sc_properties::PropertyFile {
+            claimed_count: 0,
+            values: vec![sc_properties::Property {
+                hash: sc_properties::PARENT_HASH,
+                prop_type: sc_properties::PropType::Key,
+                kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(
+                    sc_properties::Key {
+                        type_id: 0x00B1_B104,
+                        group: 0x40E1_C000,
+                        instance: 0x2092_116E,
+                    },
+                )),
+                encoding: sc_properties::PropertyEncoding::default(),
+            }],
+        };
+        let payload = file.encode_canonical().unwrap();
+        let path = test_package_path("semantic");
+        let entries = [
+            OverlayEntry::new(
+                ResourceId {
+                    type_id: 0x00B1_B104,
+                    group: 0x40B7_A83D,
+                    instance: 0xE8D0_CAFA,
+                },
+                payload.clone(),
+            ),
+            // group 低 16 位已归属 Agent：即使内容不是合法 property 也按表打标。
+            OverlayEntry::new(
+                ResourceId {
+                    type_id: 0x00B1_B104,
+                    group: 0x48E1_C600,
+                    instance: 0x0B27_42C0,
+                },
+                b"not-a-property",
+            ),
+        ];
+        fs::write(&path, write_uncompressed_overlay(&entries).unwrap()).unwrap();
+        let package = Package::open(&path).unwrap();
+        let page = resource_page(&package, 0, 10, None, None, Vec::new()).unwrap();
+        let unit = page.items[0].semantic.as_ref().expect("unit replica tag");
+        assert_eq!(unit.id, "unit");
+        assert_eq!(unit.label_zh, "资产单元");
+        assert_eq!(unit.label_en, "Unit");
+        let agent = page.items[1].semantic.as_ref().expect("agent group tag");
+        assert_eq!(agent.id, "agent");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
     fn type_counts_aggregate_and_type_filter_paginates() {
         let (path, package) = test_package("types");
         let counts = type_counts(&package, None);
@@ -5461,8 +5566,9 @@ mod tests {
             .find(|entry| entry.id.type_id == 0x00B1_B104)
             .expect("property entry");
         let data = package.read(property).unwrap();
-        let preview = property_preview(&data, None).unwrap();
+        let preview = property_preview(&data, property.id.group, None).unwrap();
         assert!(!preview.entries.is_empty());
+        assert!(preview.semantic.is_some());
         assert!(preview.entries.iter().any(|entry| !entry.value.is_empty()));
 
         let model = package

@@ -19,18 +19,35 @@ export const TTF_TYPE_ID = 0x276ca4b9;
  * 注意：decal / prop / spawner **不是** property 子类型，而是 **Unit（0xC000）内部的
  * 单元种类**，靠特征列哈希区分（见 file-types.zh-CN.md「Unit 内部单元种类」）。
  */
+/**
+ * Property 资源的子类型 i18n key 表（回退用：demo 模式/后端未下发 semantic 时
+ * 按 group 低 16 位直接查表；正常运行以后端 sc-properties::semantic 判定为
+ * 单一真源，含结构判据与 Parent 继承，覆盖面更大）。
+ * 原 11 项来自 `Views/valueConverters/InstanceTypeIconConverter.cs`；
+ * 其余为普查实证家族（见 docs/overview/analyze/05-property-semantic-survey.md）。
+ */
 export const PROPERTY_INSTANCE_TYPES: Readonly<Record<number, string>> = {
   0xc000: "package.instanceType.unit",
   0xc600: "package.instanceType.agent",
   0xc400: "package.instanceType.network",
   0x8b7e: "package.instanceType.path",
-  0xc900: "package.instanceType.menu",
-  0x8a01: "package.instanceType.menu2",
-  0xe000: "package.instanceType.map",
+  0xc900: "package.instanceType.menu2",
+  0x8a01: "package.instanceType.menu",
+  0xe000: "package.instanceType.mapLayer",
   0x2043: "package.instanceType.descriptor",
   0xb185: "package.instanceType.decalAtlas",
   0x1651: "package.instanceType.decalAtlas2",
   0x1652: "package.instanceType.decalAtlas3",
+  0x2d00: "package.instanceType.agentVehicleModel",
+  0xc100: "package.instanceType.resourceDef",
+  0xe800: "package.instanceType.resourceEntry",
+  0xc500: "package.instanceType.simAction",
+  0x44f2: "package.instanceType.alert",
+  0xc300: "package.instanceType.zoneColor",
+  0xba03: "package.instanceType.menuCategory",
+  0xeb00: "package.instanceType.toolBody",
+  0xe900: "package.instanceType.utilityLine",
+  0x0000: "package.instanceType.modelWrapper",
 };
 
 /** Decal Atlas（贴花图鉴）三册的 InstanceType。 */

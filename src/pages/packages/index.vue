@@ -26,18 +26,22 @@ import {
 import { exportLotModel } from "@/composables/useModelExport";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import NotesSheet from "./components/notes/NotesSheet.vue";
-import type { ResourceAnnotation, Tgi } from "@/api/tauri";
+import type { ResourceAnnotation, ResourceSummary, Tgi } from "@/api/tauri";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const explorer = useGamePackages();
 
 /**
- * Property 资源的子类型标签（i18n 已翻译）。子类型 = GroupContainer 低 16 位
- * （InstanceType）——Unit / Agent / Path / Network / Menu / Map / Descriptor /
- * DecalAtlas1-3。非 Property 或未知值返回 null（不渲染标签）。
+ * Property 资源的子类型标签。真源是后端 sc-properties::semantic 判定
+ * （结构特征 → Parent 继承 → group 低 16 位），随资源列表下发 semantic；
+ * 后端缺失时（demo 模式/旧数据）回退按 group 低 16 位的前端表。
  */
-function subtypeLabelOf(tgi: Tgi): string | null {
-  const key = propertyInstanceKey(tgi.typeId, tgi.group);
+function subtypeLabelOf(resource: ResourceSummary): string | null {
+  const tag = resource.semantic;
+  if (tag) {
+    return locale.value.startsWith("zh") ? tag.labelZh : tag.labelEn;
+  }
+  const key = propertyInstanceKey(resource.tgi.typeId, resource.tgi.group);
   return key ? t(key) : null;
 }
 const {
@@ -537,9 +541,9 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                            区分 Unit / Agent / Path / Descriptor 等；否则一律只显示
                            「Property」，资源树分辨不出。 -->
                       <span
-                        v-if="subtypeLabelOf(resource.tgi)"
+                        v-if="subtypeLabelOf(resource)"
                         class="resource-subtype"
-                      >{{ subtypeLabelOf(resource.tgi) }}</span>
+                      >{{ subtypeLabelOf(resource) }}</span>
                     </td>
                     <td>{{ formatSize(resource.decompressedSize) }}</td>
                     <td>
