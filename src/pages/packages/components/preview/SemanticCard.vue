@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { isTauri, tauriApi } from "@/api";
-import type { SemanticCard, SemanticKeyRef } from "@/api/tauri";
+import type { SemanticCard } from "@/api/tauri";
 import {
   barGradientCss,
   cardParent,
@@ -75,6 +75,39 @@ watch(
   { immediate: true },
 );
 
+// ---- 装载槽资源名批量解析（kResourceID* 实例多在注册表有名字） ----
+const slotNames = ref<Map<number, string>>(new Map());
+watch(
+  () =>
+    props.card.kind === "resource-entry"
+      ? ([props.packageId, props.card.slots] as const)
+      : null,
+  async (payload) => {
+    slotNames.value = new Map();
+    if (!payload) return;
+    const [packageId, slots] = payload;
+    if (!slots.length || !isTauri()) return;
+    try {
+      const rows = await tauriApi.packages.resolveNames(
+        packageId,
+        slots.map((slot) => ({
+          typeId: slot.resource.typeId,
+          group: slot.resource.groupId,
+          instance: slot.resource.instanceId,
+        })),
+      );
+      const map = new Map<number, string>();
+      rows.forEach((row, i) => {
+        if (row.displayName) map.set(i, row.displayName);
+      });
+      slotNames.value = map;
+    } catch {
+      /* 无 tauri / 解析失败：显示哈希 */
+    }
+  },
+  { immediate: true },
+);
+
 // ---- MapLayer 数据条色带 → CSS 渐变 ----
 const barGradient = computed(() =>
   props.card.kind === "map-layer"
@@ -98,7 +131,7 @@ const cardTitle = computed(() => {
 const RW4_MESH_TYPE_CODE = 0x20_009;
 const show3d = ref(false);
 const activeModelIndex = ref(0);
-const meshObj = ref<string | null>(null);
+const meshObjs = ref<string[]>([]);
 const meshState = ref<"idle" | "loading" | "ready" | "error">("idle");
 
 watch([show3d, activeModelIndex], async ([on, index]) => {
@@ -111,30 +144,33 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
     return;
   }
   meshState.value = "loading";
-  meshObj.value = null;
+  meshObjs.value = [];
   try {
-    const preview = await tauriApi.packages.readRw4Preview(props.packageId, {
+    const tgi = {
       typeId: model.typeId,
       group: model.groupId,
       instance: model.instanceId,
-    });
-    const meshSection = preview.sections.find(
+    };
+    const preview = await tauriApi.packages.readRw4Preview(
+      props.packageId,
+      tgi,
+    );
+    // 模型的全部 MESH 节（车身/部件分材质存储）合并渲染
+    const meshSections = preview.sections.filter(
       (s) => s.typeCode === RW4_MESH_TYPE_CODE,
     );
-    if (!meshSection) throw new Error("mesh section not found");
-    const detail = await tauriApi.packages.readRw4Section(
-      props.packageId,
-      {
-        typeId: model.typeId,
-        group: model.groupId,
-        instance: model.instanceId,
-      },
-      meshSection.number,
+    if (!meshSections.length) throw new Error("mesh section not found");
+    const details = await Promise.all(
+      meshSections.map((s) =>
+        tauriApi.packages.readRw4Section(props.packageId, tgi, s.number),
+      ),
     );
-    meshObj.value = detail.mesh?.objBase64 ?? null;
-    meshState.value = meshObj.value ? "ready" : "error";
+    meshObjs.value = details
+      .map((d) => d.mesh?.objBase64)
+      .filter((obj): obj is string => !!obj);
+    meshState.value = meshObjs.value.length ? "ready" : "error";
   } catch {
-    meshObj.value = null;
+    meshObjs.value = [];
     meshState.value = "error";
   }
 });
@@ -239,10 +275,14 @@ function selectModel(index: number) {
 
       <div v-if="show3d" class="vehicle-3d">
         <FSpinner v-if="meshState === 'loading'" size="sm" :label="$t('common.loading')" />
-        <p v-else-if="meshState === 'error' || !meshObj" class="card-empty">
+        <p v-else-if="meshState === 'error' || !meshObjs.length" class="card-empty">
           {{ $t("package.card.meshUnavailable") }}
         </p>
-        <MeshPreviewView v-else-if="meshObj" :obj-base64="meshObj" class="vehicle-mesh" />
+        <MeshPreviewView
+          v-else-if="meshObjs.length"
+          :obj-base64s="meshObjs"
+          class="vehicle-mesh"
+        />
         <select
         v-if="card.models.length > 1"
         class="model-select"
@@ -331,6 +371,52 @@ function selectModel(index: number) {
           {{ card.description.map(textOf).join(" ") }}
         </p>
       </section>
+    </template>
+
+    <!-- 模拟资源定义卡 -->
+    <template v-else-if="card.kind === 'resource-def'">
+      <p class="alert-text">
+        {{ card.resourceName.map(textOf).join(" ") || $t("package.card.noText") }}
+      </p>
+    </template>
+
+    <!-- 站点装载条目卡 -->
+    <template v-else-if="card.kind === 'resource-entry'">
+      <section class="card-section">
+        <h4>{{ $t("package.card.slots") }}</h4>
+        <table v-if="card.slots.length" class="slot-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>{{ $t("package.card.resource") }}</th>
+              <th v-for="p in 4" :key="p">{{ $t("package.card.paramN", { n: p }) }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(slot, i) in card.slots" :key="i">
+              <td>{{ i + 1 }}</td>
+              <td :title="keyText(slot.resource)">
+                {{ slotNames.get(i) ?? keyText(slot.resource) }}
+              </td>
+              <td v-for="(v, j) in slot.values" :key="j">
+                {{ v ?? "—" }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="card-empty">{{ $t("package.card.noText") }}</p>
+      </section>
+      <div class="meta-row">
+        <span v-if="card.enabled != null" class="duration-badge">
+          {{ $t(card.enabled ? "package.card.enabled" : "package.card.disabled") }}
+        </span>
+        <span v-if="card.floatA != null" class="duration-badge">
+          <code class="ref-code">0x0D560650</code> = {{ card.floatA }}
+        </span>
+        <span v-if="card.floatB != null" class="duration-badge">
+          <code class="ref-code">0x0D6F3BE1</code> = {{ card.floatB }}
+        </span>
+      </div>
     </template>
 
     <!-- Parent 面包屑（共用） -->
@@ -502,6 +588,21 @@ function selectModel(index: number) {
   color: var(--muted-foreground);
   font-size: 12px;
   margin: 0;
+}
+.slot-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+.slot-table th,
+.slot-table td {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  text-align: left;
+}
+.slot-table th {
+  color: var(--muted-foreground);
+  font-weight: 600;
 }
 .menu-description {
   font-size: 13px;

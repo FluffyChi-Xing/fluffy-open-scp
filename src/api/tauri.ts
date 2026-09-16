@@ -313,7 +313,25 @@ export type SemanticCard =
       icon: SemanticKeyRef | null;
       parentMenu: SemanticKeyRef | null;
       order: number | null;
+    }
+  | {
+      kind: "resource-def";
+      parent: SemanticKeyRef | null;
+      resourceName: SemanticTextRef[];
+    }
+  | {
+      kind: "resource-entry";
+      parent: SemanticKeyRef | null;
+      slots: ResourceSlotInfo[];
+      floatA: number | null;
+      floatB: number | null;
+      enabled: boolean | null;
     };
+/** 装载槽：资源引用 + 4 列 int 参数（null = 源数据 -1 哨兵）。 */
+export interface ResourceSlotInfo {
+  resource: SemanticKeyRef;
+  values: (number | null)[];
+}
 /**
  * Decal Dictionary（贴花图鉴）：GroupContainer 低 16 位为 0xB185 / 0x1651 /
  * 0x1652 的 Property 资源。条目由 7 个并行数组按下标组装，每个条目的

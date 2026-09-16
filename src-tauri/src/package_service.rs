@@ -1434,6 +1434,30 @@ pub enum SemanticCardData {
         parent_menu: Option<SemanticKeyRef>,
         order: Option<i32>,
     },
+    /// 模拟资源定义（kResourceID*）：Resource Name（locale 解析）。
+    #[serde(rename_all = "camelCase")]
+    ResourceDef {
+        parent: Option<SemanticKeyRef>,
+        resource_name: Vec<SemanticTextRef>,
+    },
+    /// 站点/载具资源装载条目：装载槽（资源引用 + 4 列 int 参数）+ 标量参数。
+    /// values 里的 None = 源数据的 -1 哨兵（未装载）。
+    #[serde(rename_all = "camelCase")]
+    ResourceEntry {
+        parent: Option<SemanticKeyRef>,
+        slots: Vec<ResourceSlot>,
+        float_a: Option<f32>,
+        float_b: Option<f32>,
+        enabled: Option<bool>,
+    },
+}
+
+/// 装载槽：资源引用 + 4 列平行 int32 参数（-1 哨兵 → None）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSlot {
+    pub resource: SemanticKeyRef,
+    pub values: Vec<Option<i32>>,
 }
 
 // 卡片抽取用的特征键（普查实证，见 docs/overview/analyze/05 §2.1）。
@@ -1461,6 +1485,17 @@ const MENU_DESCRIPTION: u32 = 0x0A09_F5FB; // "Menu Item Description"
 const MENU_ICON_KEY: u32 = 0x0977_AA8F; // kPropToolIconKey → PNG
 const MENU_PARENT: u32 = 0x0DB9_FC63; // "Parent Menu"
 const MENU_ORDER: u32 = 0x0DC1_E3E0; // "Menu Item Order" i32
+const RESDEF_NAME: u32 = 0x0E9C_F564; // "Resource Name" text
+const RESENTRY_SLOTS: u32 = 0x0D9B_DA82; // 资源引用 Key[5]
+const RESENTRY_INT_COLS: [u32; 4] = [
+    0x0D9B_DA83,
+    0x0D9B_DA84,
+    0x0D9B_DA87,
+    0x0D9B_DA88,
+]; // 平行 int32[5] 装载参数（-1 哨兵）
+const RESENTRY_FLOAT_A: u32 = 0x0D56_0650;
+const RESENTRY_FLOAT_B: u32 = 0x0D6F_3BE1;
+const RESENTRY_FLAG: u32 = 0x0D6D_BF4A; // bool
 
 fn first_key_ref(file: &sc_properties::PropertyFile, hash: u32) -> Option<SemanticKeyRef> {
     let property = file.get(hash)?;
@@ -1548,6 +1583,38 @@ fn scalar_of<T>(
         sc_properties::Kind::Array(vals) => vals.first().and_then(pick),
         sc_properties::Kind::Empty => None,
     }
+}
+
+fn pick_float(v: &sc_properties::Value) -> Option<f32> {
+    match v {
+        sc_properties::Value::Float(f) => Some(*f),
+        _ => None,
+    }
+}
+
+/// int32 列（标量或数组），-1 哨兵 → None。
+fn int_column(file: &sc_properties::PropertyFile, hash: u32) -> Vec<Option<i32>> {
+    let Some(property) = file.get(hash) else {
+        return Vec::new();
+    };
+    let mut column = Vec::new();
+    let mut scan = |v: &sc_properties::Value| {
+        column.push(match v {
+            sc_properties::Value::Int32(n) if *n != -1 => Some(*n),
+            sc_properties::Value::Int32(_) => None,
+            _ => None,
+        });
+    };
+    match &property.kind {
+        sc_properties::Kind::Scalar(v) => scan(v),
+        sc_properties::Kind::Array(vals) => {
+            for v in vals {
+                scan(v);
+            }
+        }
+        sc_properties::Kind::Empty => {}
+    }
+    column
 }
 
 fn string8_list(file: &sc_properties::PropertyFile, hash: u32) -> Vec<String> {
@@ -1676,6 +1743,37 @@ fn extract_semantic_card(
                 parent_menu: first_key_ref(file, MENU_PARENT),
                 order: scalar_of(file, MENU_ORDER, |v| match v {
                     sc_properties::Value::Int32(n) => Some(*n),
+                    _ => None,
+                }),
+            }
+        }
+        sc_properties::PropertySemantic::ResourceDef => SemanticCardData::ResourceDef {
+            parent: first_key_ref(file, KEY_PARENT),
+            resource_name: resolved_texts(file, RESDEF_NAME, locale),
+        },
+        sc_properties::PropertySemantic::ResourceEntry => {
+            let resources = key_refs(file, RESENTRY_SLOTS);
+            let columns: Vec<Vec<Option<i32>>> = RESENTRY_INT_COLS
+                .map(|hash| int_column(file, hash))
+                .to_vec();
+            let slots = resources
+                .into_iter()
+                .enumerate()
+                .map(|(i, resource)| ResourceSlot {
+                    values: columns
+                        .iter()
+                        .map(|col| col.get(i).copied().flatten())
+                        .collect(),
+                    resource,
+                })
+                .collect();
+            SemanticCardData::ResourceEntry {
+                parent: first_key_ref(file, KEY_PARENT),
+                slots,
+                float_a: scalar_of(file, RESENTRY_FLOAT_A, pick_float),
+                float_b: scalar_of(file, RESENTRY_FLOAT_B, pick_float),
+                enabled: scalar_of(file, RESENTRY_FLAG, |v| match v {
+                    sc_properties::Value::Bool(b) => Some(*b),
                     _ => None,
                 }),
             }
@@ -5736,6 +5834,72 @@ mod tests {
             prop_type: sc_properties::PropType::Key,
             kind: sc_properties::Kind::Scalar(value),
             encoding: sc_properties::PropertyEncoding::default(),
+        }
+    }
+
+    #[test]
+    fn extract_semantic_card_resource_entry() {
+        // 键面取自 0xE800 簇普查实证：装载槽 = Key[5] + 4 列平行 int32（-1 哨兵）。
+        let file = sc_properties::PropertyFile {
+            claimed_count: 0,
+            values: vec![
+                prop_of(0x0D9B_DA82, sc_properties::Value::Key(sc_properties::Key {
+                    type_id: 0,
+                    group: 0,
+                    instance: 0xCAC2_A973,
+                })),
+                prop_of(0x0D9B_DA83, sc_properties::Value::Int32(-1)),
+                prop_of(0x0D9B_DA84, sc_properties::Value::Int32(42)),
+                prop_of(0x0D9B_DA87, sc_properties::Value::Int32(-1)),
+                prop_of(0x0D9B_DA88, sc_properties::Value::Int32(7)),
+                prop_of(0x0D6D_BF4A, sc_properties::Value::Bool(true)),
+            ],
+        };
+        let card = extract_semantic_card(
+            &file,
+            sc_properties::PropertySemantic::ResourceEntry,
+            None,
+        )
+        .expect("resource entry card");
+        match card {
+            SemanticCardData::ResourceEntry {
+                slots,
+                enabled,
+                ..
+            } => {
+                assert_eq!(slots.len(), 1);
+                assert_eq!(slots[0].resource.instance_id, 0xCAC2_A973);
+                // -1 哨兵 → None；实际值保留
+                assert_eq!(slots[0].values, vec![None, Some(42), None, Some(7)]);
+                assert_eq!(enabled, Some(true));
+            }
+            _ => panic!("expected resource entry card"),
+        }
+    }
+
+    #[test]
+    fn extract_semantic_card_resource_def() {
+        let file = sc_properties::PropertyFile {
+            claimed_count: 0,
+            values: vec![prop_of(
+                0x0E9C_F564,
+                sc_properties::Value::Text(sc_properties::Text {
+                    table_id: 0x0E40_B71D,
+                    instance_id: 9,
+                }),
+            )],
+        };
+        let card = extract_semantic_card(
+            &file,
+            sc_properties::PropertySemantic::ResourceDef,
+            None,
+        )
+        .expect("resource def card");
+        match card {
+            SemanticCardData::ResourceDef { resource_name, .. } => {
+                assert_eq!(resource_name.len(), 1);
+            }
+            _ => panic!("expected resource def card"),
         }
     }
 

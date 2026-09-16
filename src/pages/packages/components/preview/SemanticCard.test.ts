@@ -113,6 +113,38 @@ describe("SemanticCard 语义预览卡", () => {
     expect(wrapper.text()).toContain("100");
   });
 
+  it("资源定义卡：Resource Name 直出", () => {
+    const wrapper = mountCard({
+      kind: "resource-def",
+      parent: null,
+      resourceName: [{ tableId: 12, instanceId: 13, text: "kResourceIDOreRaw" }],
+    });
+    expect(wrapper.text()).toContain("kResourceIDOreRaw");
+  });
+
+  it("装载条目卡：槽位表格化，-1 哨兵显示为 —", () => {
+    const wrapper = mountCard({
+      kind: "resource-entry",
+      parent: null,
+      slots: [
+        {
+          resource: { typeId: 0, groupId: 0, instanceId: 0xcac2a973 },
+          values: [null, 42, null, 7],
+        },
+      ],
+      floatA: 0,
+      floatB: 1,
+      enabled: true,
+    });
+    const table = wrapper.find(".slot-table");
+    expect(table.exists()).toBe(true);
+    expect(table.text()).toContain("0x00000000:0x00000000:0xCAC2A973");
+    expect(table.text()).toContain("42");
+    expect(table.text()).toContain("7");
+    expect(table.text()).toContain("—");
+    expect(wrapper.text()).toContain("0x0D560650");
+  });
+
   it("图层卡：色带按 RGBA 序列渲染为 CSS 渐变", () => {
     const wrapper = mountCard({
       kind: "map-layer",

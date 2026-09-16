@@ -200,7 +200,7 @@ const textureAsImage = computed<ImagePreview | null>(() => {
           </dl>
           <MeshPreviewView
             v-if="detail.mesh.objBase64"
-            :obj-base64="detail.mesh.objBase64"
+            :obj-base64s="[detail.mesh.objBase64]"
           />
         </template>
         <template v-else-if="textureAsImage">

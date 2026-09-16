@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { ThreeViewer } from "@/lib/three-viewer";
 import { parseObjModel } from "@/lib/three-obj";
 
-const props = defineProps<{ objBase64: string }>();
+const props = defineProps<{ objBase64s: string[] }>();
 const { t } = useI18n();
 const container = shallowRef<HTMLElement | null>(null);
 const error = ref("");
@@ -15,12 +15,13 @@ const viewer = shallowRef<ThreeViewer | null>(null);
 
 async function rebuild() {
   const instance = viewer.value;
-  if (!instance || !props.objBase64) return;
+  if (!instance || !props.objBase64s.length) return;
   ready.value = false;
   error.value = "";
   try {
-    const object = await parseObjModel(props.objBase64);
-    instance.setModel([object]);
+    // 多网格（同一模型的多个 MESH 节）并行解析后合并进同一场景
+    const objects = await Promise.all(props.objBase64s.map(parseObjModel));
+    instance.setModel(objects);
     instance.setKeyLight(lightAzimuth.value, lightElevation.value);
     ready.value = true;
   } catch {
@@ -46,8 +47,9 @@ watch([lightAzimuth, lightElevation], () => {
   viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
 watch(
-  () => props.objBase64,
+  () => props.objBase64s,
   () => void rebuild(),
+  { deep: true },
 );
 </script>
 
