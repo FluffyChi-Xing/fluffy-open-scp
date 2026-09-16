@@ -101,6 +101,7 @@ import {
   Lightbulb,
   Volume2,
   VolumeX,
+  Wrench,
   Camera,
   FileMusic,
   History,
@@ -262,6 +263,7 @@ const iconRegistry: Record<string, LucideIcon> = {
   SquarePen,
   RotateCw,
   StickyNote,
+  Wrench,
 }
 
 export const builtinIconNames: readonly string[] = Object.keys(iconRegistry)

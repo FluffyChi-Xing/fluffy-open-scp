@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import type { PropertyPreview } from "@/api/tauri";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
@@ -10,14 +9,6 @@ import SemanticCardView from "./SemanticCard.vue";
 
 const props = defineProps<{ preview: PropertyPreview }>();
 const editorOpen = ref(false);
-const { locale } = useI18n();
-
-/** 后端 semantic 判定的资源子类型徽章（按 locale 选用后端下发的标签）。 */
-const semanticLabel = computed(() => {
-  const tag = props.preview.semantic;
-  if (!tag) return null;
-  return locale.value.startsWith("zh") ? tag.labelZh : tag.labelEn;
-});
 
 /** Decal Dictionary（贴花图鉴）用相册取代属性表。 */
 const isDecalDictionary = computed(() =>
@@ -107,7 +98,6 @@ function hashLabel(hash: number) {
             : $t("package.card.viewCard")
         }}
       </button>
-      <span v-if="semanticLabel" class="semantic-badge">{{ semanticLabel }}</span>
     </div>
     <PropertyEditor
       v-model:open="editorOpen"
@@ -169,16 +159,6 @@ function hashLabel(hash: number) {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-.semantic-badge {
-  align-self: center;
-  background: var(--surface-hover);
-  border-radius: 4px;
-  color: var(--muted-foreground);
-  font-size: 11px;
-  margin-left: auto;
-  padding: 1px 6px;
-  white-space: nowrap;
 }
 .preview-toolbar button {
   align-items: center;
