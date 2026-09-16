@@ -1,20 +1,29 @@
 //! property（0x00B1B104）的语义子类型 tag。
 //!
-//! 判据（两级，见 docs/overview/analyze/05 的普查证据）：
-//! 1. **group 低 16 位**（原 SCP InstanceType，`Views/.../InstanceTypeIconConverter.cs`）——
-//!    适用于游戏 UI/装配侧家族（Unit/Agent/Menu…，group 形如 0x48E1C500）；
-//! 2. **结构特征**（兜底）——GCT 模板资源（地形/生态画笔、水、地图模板）以
-//!    **全随机 32 位 group** 复制多份入索引（同一实例可出现 30+ 个不同 group），
-//!    低 16 位对它们无意义，必须按特征键判定
-//!    （heightmap 名 string8 `0x0DBA3A9C` + 分辨率 u32 `0x0DC097E3` 同时在场）。
+//! 判据（三级，见 docs/overview/analyze/05 的普查证据）：
+//! 1. **结构特征**——GCT 模板资源（地形/生态画笔、地图模板）与跨城市卷绑定
+//!    资源以**全随机 32 位 group** 复制多份入索引（同一实例可出现 30+ 个不同
+//!    group），低 16 位对它们无意义，必须先按特征键判定
+//!    （画笔 = heightmap 名 `0x0DBA3A9C` + 分辨率 `0x0DC097E3` 同在场；
+//!    环境链接 = `0x0E276F5D` bool + `0xC1949C4D` REGION 引用同在场）；
+//! 2. **Parent 继承**——随机 group 复制的 Unit/DecalAtlas/AgentVehicleModel
+//!    副本（如 40B7A83D:E8D0CAFA 等同族 672 个）group 低 16 位无意义，但其
+//!    `0x00B2CCCB` Parent 指向正身所在的真实家族 group，可据此继承；
+//! 3. **group 低 16 位**（原 SCP InstanceType，`Views/.../InstanceTypeIconConverter.cs`）
+//!    ——适用于游戏 UI/装配侧家族（Unit/Agent/Menu…，group 形如 0x48E1C500）。
 use serde::Serialize;
 
+use crate::inherit::PARENT_HASH;
 use crate::PropertyFile;
 
 /// 特征键：画笔/地图模板的 heightmap 名称（string8，如 "heightmap"/"forestheightmap"）。
 pub const BRUSH_HEIGHTMAP_NAME: u32 = 0x0DBA_3A9C;
 /// 特征键：画笔/地图模板的高度图分辨率（u32，128/256）。
 pub const BRUSH_RESOLUTION: u32 = 0x0DC0_97E3;
+/// 特征键：城市环境开关（bool，"environment" 实例，随城市卷复制 181 份）。
+pub const ENVIRONMENT_ENABLE_HASH: u32 = 0x0E27_6F5D;
+/// 特征键：城市环境所属 REGION 引用（Key，指向该卷的 0x51E7A18D "REGION"）。
+pub const ENVIRONMENT_REGION_HASH: u32 = 0xC194_9C4D;
 
 /// property 资源的语义子类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
@@ -54,6 +63,9 @@ pub enum PropertySemantic {
     UtilityLine,
     /// GCT 地形/生态画笔与地图模板（结构判定；同一实例以 30+ 随机 group 复制入索引）。
     TerrainBrushTemplate,
+    /// 每城市卷一份的环境绑定（"environment"：开关 bool + REGION 引用，
+    /// 同实例 0x494F8678 以 181 个随机 group 复制）。
+    EnvironmentLink,
     /// 0x2043 — 描述符（纹理/模型/载具杂项描述）。
     Descriptor,
     /// 0xB185 / 0x1651 / 0x1652 — 贴花字典三册。
@@ -68,7 +80,7 @@ impl PropertySemantic {
     /// 中文短标签（资源树/预览徽章用）。
     pub fn label_zh(&self) -> &'static str {
         match self {
-            PropertySemantic::Unit => "单元",
+            PropertySemantic::Unit => "资产单元",
             PropertySemantic::Agent => "载具/小人",
             PropertySemantic::AgentVehicleModel => "载具模型",
             PropertySemantic::ResourceDef => "模拟资源",
@@ -85,6 +97,7 @@ impl PropertySemantic {
             PropertySemantic::ToolBody => "工具本体",
             PropertySemantic::UtilityLine => "管线样式",
             PropertySemantic::TerrainBrushTemplate => "地形画笔模板",
+            PropertySemantic::EnvironmentLink => "环境绑定",
             PropertySemantic::Descriptor => "描述符",
             PropertySemantic::DecalAtlas => "贴花字典",
             PropertySemantic::ModelWrapper => "模型包装",
@@ -111,6 +124,7 @@ impl PropertySemantic {
             PropertySemantic::ToolBody => "Tool Body",
             PropertySemantic::UtilityLine => "Utility Line",
             PropertySemantic::TerrainBrushTemplate => "Terrain Brush Template",
+            PropertySemantic::EnvironmentLink => "Environment Link",
             PropertySemantic::Descriptor => "Descriptor",
             PropertySemantic::DecalAtlas => "Decal Atlas",
             PropertySemantic::ModelWrapper => "Model Wrapper",
@@ -162,11 +176,69 @@ fn is_terrain_brush_template(file: &PropertyFile) -> bool {
     false
 }
 
-/// 完整判定：结构判据优先（GCT 模板资源的 group 低 16 位不稳定），
-/// 否则回退 group 低 16 位表。
+/// 结构判据：环境开关 bool + REGION 引用两个特征键同时在场 → 城市环境绑定。
+fn is_environment_link(file: &PropertyFile) -> bool {
+    let mut has_enable = false;
+    let mut has_region = false;
+    for p in &file.values {
+        has_enable |= p.hash == ENVIRONMENT_ENABLE_HASH;
+        has_region |= p.hash == ENVIRONMENT_REGION_HASH;
+        if has_enable && has_region {
+            return true;
+        }
+    }
+    false
+}
+
+/// Parent 键值里指向的第一个 ResourceKey 的 group（无 Parent 键或无 Key 值则 None）。
+fn parent_group(file: &PropertyFile) -> Option<u32> {
+    let property = file.values.iter().find(|p| p.hash == PARENT_HASH)?;
+    let mut found = None;
+    let mut scan = |v: &crate::Value| {
+        if let crate::Value::Key(k) = v {
+            if found.is_none() {
+                found = Some(k.group);
+            }
+        }
+    };
+    match &property.kind {
+        crate::Kind::Scalar(v) => scan(v),
+        crate::Kind::Array(vals) => {
+            for v in vals {
+                scan(v);
+            }
+        }
+        crate::Kind::Empty => {}
+    }
+    found
+}
+
+/// Parent 继承白名单：随机 group 副本可从 Parent 目标家族继承的 tag
+/// （普查实证：Parent→0xC000 共 672 个，且与 bbox/LOD1/模型引用 100% 相关；
+/// 0x0000/0xEC00 等其余目标家族语义未定，不继承）。
+fn inherited_semantic(parent_group: u32) -> Option<PropertySemantic> {
+    match parent_group & 0xFFFF {
+        0xC000 => Some(PropertySemantic::Unit),
+        0x1651 | 0x1652 => Some(PropertySemantic::DecalAtlas),
+        0x2D00 => Some(PropertySemantic::AgentVehicleModel),
+        _ => None,
+    }
+}
+
+/// 完整判定：结构判据优先（GCT 模板/环境绑定的 group 低 16 位不稳定），
+/// 未命中且 group 低 16 位无归属时按 Parent 目标家族继承，
+/// 最后回退 group 低 16 位表。
 pub fn property_semantic(file: &PropertyFile, group: u32) -> PropertySemantic {
     if is_terrain_brush_template(file) {
         return PropertySemantic::TerrainBrushTemplate;
+    }
+    if is_environment_link(file) {
+        return PropertySemantic::EnvironmentLink;
+    }
+    if property_semantic_by_group(group) == PropertySemantic::Other {
+        if let Some(semantic) = parent_group(file).and_then(inherited_semantic) {
+            return semantic;
+        }
     }
     property_semantic_by_group(group)
 }
@@ -234,5 +306,81 @@ mod tests {
         let file = PropertyFile { claimed_count: 0, values: vec![] };
         assert_eq!(property_semantic(&file, 0x42E1_C000), PropertySemantic::Unit);
         assert_eq!(property_semantic(&file, 0x0000_0000), PropertySemantic::ModelWrapper);
+    }
+
+    #[test]
+    fn random_group_unit_replica_inherits_from_parent() {
+        // 实证 40B7A83D:E8D0CAFA（35 props 的完整 Unit，Parent→40E1C000 unit 层）：
+        // 随机 group 低 16 位 0xA83D 无归属，按 Parent 继承为 Unit。
+        let file = PropertyFile {
+            claimed_count: 0,
+            values: vec![
+                prop(PARENT_HASH, PropType::Key, Kind::Scalar(Value::Key(crate::Key {
+                    type_id: 0x00B1_B104,
+                    group: 0x40E1_C000,
+                    instance: 0x2092_116E,
+                }))),
+                prop(0x00F9_EFBA, PropType::Key, Kind::Empty),
+                prop(0x00F9_EFBB, PropType::Key, Kind::Empty),
+            ],
+        };
+        assert_eq!(property_semantic(&file, 0x40B7_A83D), PropertySemantic::Unit);
+    }
+
+    #[test]
+    fn decal_replica_inherits_decal_atlas() {
+        let file = PropertyFile {
+            claimed_count: 0,
+            values: vec![prop(
+                PARENT_HASH,
+                PropType::Key,
+                Kind::Scalar(Value::Key(crate::Key {
+                    type_id: 0x00B1_B104,
+                    group: 0xFB66_1651,
+                    instance: 0xEEFD_390C,
+                })),
+            )],
+        };
+        assert_eq!(property_semantic(&file, 0x97B9_9ADA), PropertySemantic::DecalAtlas);
+    }
+
+    #[test]
+    fn unmapped_parent_family_stays_other() {
+        // Parent→0xEC00（语义未定）不继承，保持 Other。
+        let file = PropertyFile {
+            claimed_count: 0,
+            values: vec![prop(
+                PARENT_HASH,
+                PropType::Key,
+                Kind::Scalar(Value::Key(crate::Key {
+                    type_id: 0x00B1_B104,
+                    group: 0x40E0_EC00,
+                    instance: 0xADD7_0701,
+                })),
+            )],
+        };
+        assert_eq!(property_semantic(&file, 0x61F0_EC00), PropertySemantic::Other);
+    }
+
+    #[test]
+    fn environment_link_detected_by_structure() {
+        // 实证 "environment" 0x494F8678：开关 bool + REGION 引用，181 个随机 group。
+        let file = PropertyFile {
+            claimed_count: 0,
+            values: vec![
+                prop(ENVIRONMENT_ENABLE_HASH, PropType::Bool, Kind::Scalar(Value::Bool(true))),
+                prop(ENVIRONMENT_REGION_HASH, PropType::Key, Kind::Scalar(Value::Key(crate::Key {
+                    type_id: 0,
+                    group: 0xD3B5_2DEF,
+                    instance: 0x51E7_A18D,
+                }))),
+            ],
+        };
+        assert_eq!(
+            property_semantic(&file, 0xD3B5_2DEF),
+            PropertySemantic::EnvironmentLink
+        );
+        assert_eq!(PropertySemantic::EnvironmentLink.label_zh(), "环境绑定");
+        assert_eq!(PropertySemantic::EnvironmentLink.label_en(), "Environment Link");
     }
 }
