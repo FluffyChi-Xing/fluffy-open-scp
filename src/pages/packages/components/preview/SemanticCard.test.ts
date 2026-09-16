@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import { i18n } from "@/locales";
 import SemanticCardView from "./SemanticCard.vue";
@@ -58,6 +58,59 @@ describe("SemanticCard 语义预览卡", () => {
     expect(lists[0].findAll("li")[0].text()).toBe("尋找昂貴的商店。");
     expect(lists[1].classes()).toContain("failed");
     expect(lists[1].text()).toContain("未能找到富豪商店。");
+  });
+
+  it("载具卡：列表模式展示车灯与模型引用，切 3D 无 tauri 时显示错误态", async () => {
+    const wrapper = mountCard({
+      kind: "vehicle",
+      parent: null,
+      name: [{ tableId: 4, instanceId: 5, text: "Empty Coal Truck" }],
+      models: [{ typeId: 0x2f4e681b, groupId: 0, instanceId: 0x79a56b0d }],
+      lightCount: 2,
+      lightNames: ["headlightCar", "brakelightCar"],
+    });
+    expect(wrapper.text()).toContain("Empty Coal Truck");
+    expect(wrapper.text()).toContain("headlightCar");
+    expect(wrapper.text()).toContain("2");
+    const buttons = wrapper.findAll(".view-toggle button");
+    await buttons[1].trigger("click");
+    await flushPromises();
+    // 无 tauri 运行时：网格不可用 → 错误态文案
+    expect(wrapper.text()).toContain(
+      i18n.global.t("package.card.meshUnavailable"),
+    );
+  });
+
+  it("道路卡：路宽/压平徽章与外观引用", () => {
+    const wrapper = mountCard({
+      kind: "road",
+      pathTitle: [{ tableId: 6, instanceId: 7, text: "Dirt Road (CB)" }],
+      appearance: {
+        typeId: 0x00b1b104,
+        groupId: 0x09558b7e,
+        instanceId: 0x565bcf6c,
+      },
+      ghostAppearance: null,
+      flattenTerrain: true,
+      pathWidth: 48,
+    });
+    expect(wrapper.text()).toContain("Dirt Road (CB)");
+    expect(wrapper.text()).toContain("48");
+    expect(wrapper.text()).toContain("0x00B1B104:0x09558B7E:0x565BCF6C");
+  });
+
+  it("菜单卡：标题/描述直出 + 排序徽章", () => {
+    const wrapper = mountCard({
+      kind: "menu",
+      title: [{ tableId: 8, instanceId: 9, text: "Public Library" }],
+      description: [{ tableId: 10, instanceId: 11, text: "A city institution." }],
+      icon: { typeId: 0x2f7d0004, groupId: 0x40e02400, instanceId: 0x9f61a524 },
+      parentMenu: null,
+      order: 100,
+    });
+    expect(wrapper.text()).toContain("Public Library");
+    expect(wrapper.text()).toContain("A city institution.");
+    expect(wrapper.text()).toContain("100");
   });
 
   it("图层卡：色带按 RGBA 序列渲染为 CSS 渐变", () => {

@@ -1406,6 +1406,34 @@ pub enum SemanticCardData {
         bar_colors: Vec<[f32; 4]>,
         legend: Option<SemanticKeyRef>,
     },
+    /// 载具/小人（Agent/AgentVehicleModel）：名称 + 模型引用列表 +
+    /// 车灯数量与调试名。模型交给前端走 RW4 mesh → three.js 预览。
+    #[serde(rename_all = "camelCase")]
+    Vehicle {
+        parent: Option<SemanticKeyRef>,
+        name: Vec<SemanticTextRef>,
+        models: Vec<SemanticKeyRef>,
+        light_count: Option<usize>,
+        light_names: Vec<String>,
+    },
+    /// 道路/网络：标题 + 路宽 + 是否压平地形 + 外观/幽灵外观（Path 引用）。
+    #[serde(rename_all = "camelCase")]
+    Road {
+        path_title: Vec<SemanticTextRef>,
+        appearance: Option<SemanticKeyRef>,
+        ghost_appearance: Option<SemanticKeyRef>,
+        flatten_terrain: Option<bool>,
+        path_width: Option<f32>,
+    },
+    /// 菜单条目：标题/描述（locale 解析）+ 图标 PNG + 排序与所属菜单。
+    #[serde(rename_all = "camelCase")]
+    Menu {
+        title: Vec<SemanticTextRef>,
+        description: Vec<SemanticTextRef>,
+        icon: Option<SemanticKeyRef>,
+        parent_menu: Option<SemanticKeyRef>,
+        order: Option<i32>,
+    },
 }
 
 // 卡片抽取用的特征键（普查实证，见 docs/overview/analyze/05 §2.1）。
@@ -1419,6 +1447,20 @@ const LAYER_NAME: u32 = 0x09B7_11C3; // kPropertyLayerName
 const LAYER_ICON_KEY: u32 = 0x09B7_11C5; // kPropertyLayerIconKey → PNG
 const LAYER_BAR_COLORS: u32 = 0x0AEB_A422; // "Data Map Bar colors" RGBA×N
 const LAYER_LEGEND: u32 = 0x0E01_5219; // kPropertyLayerLegend → 布局脚本
+const AGENT_NAME: u32 = 0x0E28_B5D5; // "Agent Name"
+const AGENT_VEHICLE_MODELS: u32 = 0x0D8_97169; // Vehicle Models → RW4 模型
+const AGENT_LIGHT_NAMES: u32 = 0x0CAA_8F17; // scLightDebugNames（string8，如 headlightCar）
+const AGENT_LIGHT_IDS: u32 = 0x0CAA_8F10; // scLightIDs
+const ROAD_APPEARANCE: u32 = 0x0953_2375; // Appearance → Path property
+const ROAD_GHOST_APPEARANCE: u32 = 0x0953_2377; // Ghost Appearance
+const ROAD_FLATTEN: u32 = 0x0E25_0843; // "Flatten terrain" bool
+const ROAD_PATH_WIDTH: u32 = 0x0B7E_3A3A; // "Path width" f32
+const ROAD_PATH_TITLE: u32 = 0x0EC4_AB13; // "Path Title" text
+const MENU_TITLE: u32 = 0x0A09_F5FA; // "Menu Item Title"
+const MENU_DESCRIPTION: u32 = 0x0A09_F5FB; // "Menu Item Description"
+const MENU_ICON_KEY: u32 = 0x0977_AA8F; // kPropToolIconKey → PNG
+const MENU_PARENT: u32 = 0x0DB9_FC63; // "Parent Menu"
+const MENU_ORDER: u32 = 0x0DC1_E3E0; // "Menu Item Order" i32
 
 fn first_key_ref(file: &sc_properties::PropertyFile, hash: u32) -> Option<SemanticKeyRef> {
     let property = file.get(hash)?;
@@ -1466,6 +1508,68 @@ fn text_refs(file: &sc_properties::PropertyFile, hash: u32) -> Vec<(u32, u32)> {
         sc_properties::Kind::Empty => {}
     }
     refs
+}
+
+/// 键引用列表（Vehicle Models 等多模型键）。
+fn key_refs(file: &sc_properties::PropertyFile, hash: u32) -> Vec<SemanticKeyRef> {
+    let Some(property) = file.get(hash) else {
+        return Vec::new();
+    };
+    let mut refs = Vec::new();
+    let mut scan = |v: &sc_properties::Value| {
+        if let sc_properties::Value::Key(k) = v {
+            refs.push(SemanticKeyRef {
+                type_id: k.type_id,
+                group_id: k.group,
+                instance_id: k.instance,
+            });
+        }
+    };
+    match &property.kind {
+        sc_properties::Kind::Scalar(v) => scan(v),
+        sc_properties::Kind::Array(vals) => {
+            for v in vals {
+                scan(v);
+            }
+        }
+        sc_properties::Kind::Empty => {}
+    }
+    refs
+}
+
+fn scalar_of<T>(
+    file: &sc_properties::PropertyFile,
+    hash: u32,
+    pick: fn(&sc_properties::Value) -> Option<T>,
+) -> Option<T> {
+    let property = file.get(hash)?;
+    match &property.kind {
+        sc_properties::Kind::Scalar(v) => pick(v),
+        sc_properties::Kind::Array(vals) => vals.first().and_then(pick),
+        sc_properties::Kind::Empty => None,
+    }
+}
+
+fn string8_list(file: &sc_properties::PropertyFile, hash: u32) -> Vec<String> {
+    let Some(property) = file.get(hash) else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    let mut scan = |v: &sc_properties::Value| {
+        if let sc_properties::Value::String8(s) = v {
+            names.push(s.clone());
+        }
+    };
+    match &property.kind {
+        sc_properties::Kind::Scalar(v) => scan(v),
+        sc_properties::Kind::Array(vals) => {
+            for v in vals {
+                scan(v);
+            }
+        }
+        sc_properties::Kind::Empty => {}
+    }
+    names
 }
 
 fn resolved_texts(
@@ -1536,6 +1640,46 @@ fn extract_semantic_card(
                 .unwrap_or_default(),
             legend: first_key_ref(file, LAYER_LEGEND),
         },
+        sc_properties::PropertySemantic::Agent | sc_properties::PropertySemantic::AgentVehicleModel => {
+            SemanticCardData::Vehicle {
+                parent: first_key_ref(file, KEY_PARENT),
+                name: resolved_texts(file, AGENT_NAME, locale),
+                models: key_refs(file, AGENT_VEHICLE_MODELS),
+                light_count: file
+                    .get(AGENT_LIGHT_IDS)
+                    .map(|p| match &p.kind {
+                        sc_properties::Kind::Array(vals) => vals.len(),
+                        sc_properties::Kind::Scalar(_) => 1,
+                        sc_properties::Kind::Empty => 0,
+                    }),
+                light_names: string8_list(file, AGENT_LIGHT_NAMES),
+            }
+        }
+        sc_properties::PropertySemantic::Network => SemanticCardData::Road {
+            path_title: resolved_texts(file, ROAD_PATH_TITLE, locale),
+            appearance: first_key_ref(file, ROAD_APPEARANCE),
+            ghost_appearance: first_key_ref(file, ROAD_GHOST_APPEARANCE),
+            flatten_terrain: scalar_of(file, ROAD_FLATTEN, |v| match v {
+                sc_properties::Value::Bool(b) => Some(*b),
+                _ => None,
+            }),
+            path_width: scalar_of(file, ROAD_PATH_WIDTH, |v| match v {
+                sc_properties::Value::Float(f) => Some(*f),
+                _ => None,
+            }),
+        },
+        sc_properties::PropertySemantic::Menu | sc_properties::PropertySemantic::Menu2 => {
+            SemanticCardData::Menu {
+                title: resolved_texts(file, MENU_TITLE, locale),
+                description: resolved_texts(file, MENU_DESCRIPTION, locale),
+                icon: first_key_ref(file, MENU_ICON_KEY),
+                parent_menu: first_key_ref(file, MENU_PARENT),
+                order: scalar_of(file, MENU_ORDER, |v| match v {
+                    sc_properties::Value::Int32(n) => Some(*n),
+                    _ => None,
+                }),
+            }
+        }
         _ => return None,
     })
 }
@@ -5545,6 +5689,54 @@ mod tests {
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].tgi.instance, 3);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn extract_semantic_card_vehicle() {
+        // 键面取自 Agent 簇普查实证（Agent Name / Vehicle Models / scLight 列族）。
+        let file = sc_properties::PropertyFile {
+            claimed_count: 0,
+            values: vec![
+                prop_of(0x0E28_B5D5, sc_properties::Value::Text(sc_properties::Text {
+                    table_id: 0x0ED9_C82B,
+                    instance_id: 7,
+                })),
+                prop_of(0x0D8_97169, sc_properties::Value::Key(sc_properties::Key {
+                    type_id: 0x2F4E_681B,
+                    group: 0,
+                    instance: 0x79A5_6B0D,
+                })),
+                prop_of(0x0CAA_8F10, sc_properties::Value::Bool(true)),
+                prop_of(0x0CAA_8F17, sc_properties::Value::String8("headlightCar".into())),
+            ],
+        };
+        let card = extract_semantic_card(&file, sc_properties::PropertySemantic::Agent, None)
+            .expect("vehicle card");
+        match card {
+            SemanticCardData::Vehicle {
+                name,
+                models,
+                light_count,
+                light_names,
+                ..
+            } => {
+                assert_eq!(name.len(), 1);
+                assert_eq!(models.len(), 1);
+                assert_eq!(models[0].type_id, 0x2F4E_681B);
+                assert_eq!(light_count, Some(1));
+                assert_eq!(light_names, vec!["headlightCar".to_string()]);
+            }
+            _ => panic!("expected vehicle card"),
+        }
+    }
+
+    fn prop_of(hash: u32, value: sc_properties::Value) -> sc_properties::Property {
+        sc_properties::Property {
+            hash,
+            prop_type: sc_properties::PropType::Key,
+            kind: sc_properties::Kind::Scalar(value),
+            encoding: sc_properties::PropertyEncoding::default(),
+        }
     }
 
     #[test]

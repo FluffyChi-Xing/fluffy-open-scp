@@ -289,6 +289,30 @@ export type SemanticCard =
       icon: SemanticKeyRef | null;
       barColors: number[][];
       legend: SemanticKeyRef | null;
+    }
+  | {
+      kind: "vehicle";
+      parent: SemanticKeyRef | null;
+      name: SemanticTextRef[];
+      models: SemanticKeyRef[];
+      lightCount: number | null;
+      lightNames: string[];
+    }
+  | {
+      kind: "road";
+      pathTitle: SemanticTextRef[];
+      appearance: SemanticKeyRef | null;
+      ghostAppearance: SemanticKeyRef | null;
+      flattenTerrain: boolean | null;
+      pathWidth: number | null;
+    }
+  | {
+      kind: "menu";
+      title: SemanticTextRef[];
+      description: SemanticTextRef[];
+      icon: SemanticKeyRef | null;
+      parentMenu: SemanticKeyRef | null;
+      order: number | null;
     };
 /**
  * Decal Dictionary（贴花图鉴）：GroupContainer 低 16 位为 0xB185 / 0x1651 /

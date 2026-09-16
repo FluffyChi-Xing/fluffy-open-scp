@@ -1,25 +1,28 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FSpinner from "@/components/ui/FSpinner.vue";
 import { isTauri, tauriApi } from "@/api";
-import type { SemanticCard } from "@/api/tauri";
+import type { SemanticCard, SemanticKeyRef } from "@/api/tauri";
 import {
   barGradientCss,
   cardParent,
   keyText,
   textOf,
 } from "./semanticCard";
+import MeshPreviewView from "./MeshPreview.vue";
 
 /**
- * 语义预览卡（Alert / SimAction / MapLayer 第一档）：
+ * 语义预览卡（Alert / SimAction / MapLayer / Vehicle / Road / Menu）：
  * 后端 extract_semantic_card 已按 semantic tag 抽好结构化载荷并解析了
- * text 文案（游戏 Locale 包），本组件只做渲染与图标/Parent 的按需加载。
+ * text 文案（游戏 Locale 包），本组件只做渲染与图标/Parent/模型的按需加载。
+ * 载具卡的 3D 模式：Vehicle Models → RW4 网格节（0x20009）→ OBJ → three.js。
  */
 const props = defineProps<{ card: SemanticCard; packageId: number }>();
 
 /** 三卡共有的 Parent 引用。 */
 const parent = computed(() => cardParent(props.card));
-/** alert / map-layer 的图标引用。 */
+/** alert / map-layer / menu 的图标引用。 */
 const icon = computed(() =>
   "icon" in props.card ? props.card.icon : null,
 );
@@ -90,6 +93,55 @@ const cardTitle = computed(() => {
   }
   return null;
 });
+
+// ---- 载具卡：列表 / 3D 切换，模型 → RW4 网格节（0x20009）→ OBJ ----
+const RW4_MESH_TYPE_CODE = 0x20_009;
+const show3d = ref(false);
+const activeModelIndex = ref(0);
+const meshObj = ref<string | null>(null);
+const meshState = ref<"idle" | "loading" | "ready" | "error">("idle");
+
+watch([show3d, activeModelIndex], async ([on, index]) => {
+  if (props.card.kind !== "vehicle" || !on) {
+    return;
+  }
+  const model = props.card.models[index];
+  if (!model || !isTauri()) {
+    meshState.value = "error";
+    return;
+  }
+  meshState.value = "loading";
+  meshObj.value = null;
+  try {
+    const preview = await tauriApi.packages.readRw4Preview(props.packageId, {
+      typeId: model.typeId,
+      group: model.groupId,
+      instance: model.instanceId,
+    });
+    const meshSection = preview.sections.find(
+      (s) => s.typeCode === RW4_MESH_TYPE_CODE,
+    );
+    if (!meshSection) throw new Error("mesh section not found");
+    const detail = await tauriApi.packages.readRw4Section(
+      props.packageId,
+      {
+        typeId: model.typeId,
+        group: model.groupId,
+        instance: model.instanceId,
+      },
+      meshSection.number,
+    );
+    meshObj.value = detail.mesh?.objBase64 ?? null;
+    meshState.value = meshObj.value ? "ready" : "error";
+  } catch {
+    meshObj.value = null;
+    meshState.value = "error";
+  }
+});
+
+function selectModel(index: number) {
+  activeModelIndex.value = index;
+}
 </script>
 
 <template>
@@ -169,7 +221,119 @@ const cardTitle = computed(() => {
       </section>
     </template>
 
-    <!-- Parent 面包屑（三卡共用） -->
+    <!-- 载具/小人卡：列表 / 3D 切换 -->
+    <template v-else-if="card.kind === 'vehicle'">
+      <div class="view-toggle">
+        <button
+          type="button"
+          :aria-pressed="!show3d"
+          @click="show3d = false"
+        >{{ $t("package.card.viewList") }}</button>
+        <button
+          type="button"
+          :aria-pressed="show3d"
+          :disabled="!card.models.length"
+          @click="show3d = true"
+        >{{ $t("package.card.view3d") }}</button>
+      </div>
+
+      <div v-if="show3d" class="vehicle-3d">
+        <FSpinner v-if="meshState === 'loading'" size="sm" :label="$t('common.loading')" />
+        <p v-else-if="meshState === 'error' || !meshObj" class="card-empty">
+          {{ $t("package.card.meshUnavailable") }}
+        </p>
+        <MeshPreviewView v-else-if="meshObj" :obj-base64="meshObj" class="vehicle-mesh" />
+        <select
+        v-if="card.models.length > 1"
+        class="model-select"
+        :value="activeModelIndex"
+        @change="selectModel(Number(($event.target as HTMLSelectElement).value))"
+      >
+        <option v-for="(m, i) in card.models" :key="i" :value="i">
+          {{ $t("package.card.modelN", { n: i + 1 }) }} · {{ keyText(m) }}
+        </option>
+      </select>
+      </div>
+
+      <div v-else class="card-section">
+        <h4 v-if="card.name.length">{{ card.name.map(textOf).join(" ") }}</h4>
+        <p v-if="card.lightCount" class="meta-line">
+          {{ $t("package.card.lightCount", { n: card.lightCount }) }}
+        </p>
+        <ul v-if="card.lightNames.length" class="text-list">
+          <li v-for="(n, i) in card.lightNames" :key="`l${i}`">{{ n }}</li>
+        </ul>
+        <section v-if="card.models.length" class="card-section">
+          <h4>{{ $t("package.card.models") }}</h4>
+          <ul class="text-list">
+            <li
+              v-for="(m, i) in card.models"
+              :key="`m${i}`"
+              :title="keyText(m)"
+            >
+              {{ $t("package.card.modelN", { n: i + 1 }) }} · {{ keyText(m) }}
+            </li>
+          </ul>
+        </section>
+      </div>
+    </template>
+
+    <!-- 道路卡 -->
+    <template v-else-if="card.kind === 'road'">
+      <p v-if="card.pathTitle.length" class="alert-text">
+        {{ card.pathTitle.map(textOf).join(" ") }}
+      </p>
+      <div class="meta-row">
+        <span v-if="card.pathWidth != null" class="duration-badge">
+          {{ $t("package.card.widthMeters", { n: card.pathWidth }) }}
+        </span>
+        <span v-if="card.flattenTerrain != null" class="duration-badge">
+          {{ $t(card.flattenTerrain ? "package.card.flattenOn" : "package.card.flattenOff") }}
+        </span>
+      </div>
+      <section class="card-section">
+        <h4>{{ $t("package.card.appearance") }}</h4>
+        <ul class="text-list">
+          <li v-if="card.appearance" :title="keyText(card.appearance)">
+            {{ $t("package.card.appearanceNormal") }} · {{ keyText(card.appearance) }}
+          </li>
+          <li v-if="card.ghostAppearance" :title="keyText(card.ghostAppearance)">
+            {{ $t("package.card.appearanceGhost") }} · {{ keyText(card.ghostAppearance) }}
+          </li>
+          <li v-if="!card.appearance && !card.ghostAppearance" class="card-empty">
+            {{ $t("package.card.noText") }}
+          </li>
+        </ul>
+      </section>
+    </template>
+
+    <!-- 菜单条目卡 -->
+    <template v-else-if="card.kind === 'menu'">
+      <div class="alert-row">
+        <div class="alert-icon">
+          <img v-if="iconUrl" :src="iconUrl" :alt="$t('package.card.icon')" />
+          <FIcon v-else name="ListTree" :size="28" aria-label="" />
+        </div>
+        <div class="alert-body">
+          <p class="alert-text">
+            {{ card.title.map(textOf).join(" ") || $t("package.card.noText") }}
+          </p>
+          <div class="meta-row">
+            <span v-if="card.order != null" class="duration-badge">
+              {{ $t("package.card.menuOrder", { n: card.order }) }}
+            </span>
+          </div>
+        </div>
+      </div>
+      <section v-if="card.description.length" class="card-section">
+        <h4>{{ $t("package.card.menuDescription") }}</h4>
+        <p class="menu-description">
+          {{ card.description.map(textOf).join(" ") }}
+        </p>
+      </section>
+    </template>
+
+    <!-- Parent 面包屑（共用） -->
     <footer v-if="parent" class="parent-row">
       <span class="parent-label">{{ $t("package.card.parent") }}</span>
       <code class="ref-code" :title="keyText(parent)">{{
@@ -249,19 +413,19 @@ const cardTitle = computed(() => {
   text-transform: uppercase;
 }
 .text-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   margin: 0;
-  max-height: 220px;
+  max-height: 240px;
   overflow: auto;
   padding: 0;
 }
 .text-list li {
+  display: block;
   font-size: 13px;
-  line-height: 1.5;
+  /* 固定 px 行高：避免被全局样式按比例压缩导致相邻行字形重叠 */
+  line-height: 20px;
   list-style: none;
   overflow: hidden;
+  padding: 2px 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -292,6 +456,58 @@ const cardTitle = computed(() => {
   color: var(--muted-foreground);
   flex-shrink: 0;
   font-size: 11px;
+}
+.view-toggle {
+  display: flex;
+  gap: 4px;
+}
+.view-toggle button {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.view-toggle button[aria-pressed="true"] {
+  color: var(--foreground);
+  border-color: var(--muted-foreground);
+}
+.view-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.vehicle-3d {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.vehicle-mesh {
+  height: 300px;
+  width: 100%;
+}
+.model-select {
+  align-self: flex-start;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-size: 12px;
+  max-width: 100%;
+  padding: 3px 6px;
+}
+.meta-line {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin: 0;
+}
+.menu-description {
+  font-size: 13px;
+  line-height: 20px;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .ref-code {
   font-size: 11px;
