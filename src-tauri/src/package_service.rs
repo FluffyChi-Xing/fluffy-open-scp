@@ -1379,10 +1379,12 @@ pub struct SemanticTextRef {
 }
 
 /// 按 semantic tag 预抽取的预览卡数据。键哈希均为普查实证（05 文档 §2）。
+/// 注意：字段级 camelCase 需逐变体标注（enum 级 rename_all 只作用于变体名）。
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SemanticCardData {
     /// 城市警报：图标 PNG + 文本 + 显示时长（秒）。
+    #[serde(rename_all = "camelCase")]
     Alert {
         parent: Option<SemanticKeyRef>,
         icon: Option<SemanticKeyRef>,
@@ -1390,12 +1392,14 @@ pub enum SemanticCardData {
         duration_seconds: Option<f32>,
     },
     /// 市民/城市行动：行动标题 + 失败标题（多文案包）。
+    #[serde(rename_all = "camelCase")]
     SimAction {
         parent: Option<SemanticKeyRef>,
         titles: Vec<SemanticTextRef>,
         failed_titles: Vec<SemanticTextRef>,
     },
     /// 数据图层：名称 + 图标 + 数据条色带（RGBA 序列）+ Legend 脚本引用。
+    #[serde(rename_all = "camelCase")]
     MapLayer {
         name: Vec<SemanticTextRef>,
         icon: Option<SemanticKeyRef>,
@@ -5541,6 +5545,31 @@ mod tests {
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].tgi.instance, 3);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn semantic_card_serializes_camel_case_fields() {
+        // 前端 SemanticCard 按 camelCase 读字段（failedTitles/durationSeconds…），
+        // enum 级 rename_all 只改变体名，字段必须逐变体标注——本测试钉死线上格式。
+        let card = SemanticCardData::SimAction {
+            parent: None,
+            titles: vec![],
+            failed_titles: vec![],
+        };
+        let json = serde_json::to_value(&card).unwrap();
+        assert_eq!(json["kind"], "sim-action");
+        assert!(json.get("failedTitles").is_some(), "{json}");
+        assert!(json.get("failed_titles").is_none(), "{json}");
+
+        let card = SemanticCardData::Alert {
+            parent: None,
+            icon: None,
+            texts: vec![],
+            duration_seconds: Some(5.0),
+        };
+        let json = serde_json::to_value(&card).unwrap();
+        assert_eq!(json["kind"], "alert");
+        assert!(json.get("durationSeconds").is_some(), "{json}");
     }
 
     #[test]

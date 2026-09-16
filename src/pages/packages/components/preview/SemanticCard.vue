@@ -121,18 +121,22 @@ const cardTitle = computed(() => {
     <template v-else-if="card.kind === 'sim-action'">
       <section class="card-section">
         <h4>{{ $t("package.card.actionTitles") }}</h4>
-        <ul v-if="card.titles.length" class="text-list">
-          <li v-for="(t, i) in card.titles" :key="`t${i}`" :title="textOf(t)">
+        <ul v-if="card.titles?.length" class="text-list">
+          <li
+            v-for="(t, i) in card.titles ?? []"
+            :key="`t${i}`"
+            :title="textOf(t)"
+          >
             {{ textOf(t) }}
           </li>
         </ul>
         <p v-else class="card-empty">{{ $t("package.card.noText") }}</p>
       </section>
-      <section v-if="card.failedTitles.length" class="card-section">
+      <section v-if="card.failedTitles?.length" class="card-section">
         <h4>{{ $t("package.card.failedTitles") }}</h4>
         <ul class="text-list failed">
           <li
-            v-for="(t, i) in card.failedTitles"
+            v-for="(t, i) in card.failedTitles ?? []"
             :key="`f${i}`"
             :title="textOf(t)"
           >
