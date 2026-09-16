@@ -174,6 +174,8 @@ export interface ResourceData {
 export interface PropertyResourceData {
   claimedCount: number;
   entries: PropertyEntry[];
+  semantic?: SemanticTagInfo | null;
+  card?: SemanticCard | null;
 }
 export interface Rw4ResourceData {
   fileType: string;
@@ -251,7 +253,43 @@ export interface PropertyPreview extends PreviewData {
   entries: PropertyEntry[];
   /** 资源整体语义子类型（结构判据 + group 低 16 位 + Parent 继承）。 */
   semantic?: SemanticTagInfo | null;
+  /** 命中专属预览卡家族时，后端预抽取的结构化载荷（text 已按语言解析）。 */
+  card?: SemanticCard | null;
 }
+/** 预览卡里的 ResourceKey 引用。 */
+export interface SemanticKeyRef {
+  typeId: number;
+  groupId: number;
+  instanceId: number;
+}
+/** 预览卡里的 text 引用；text 为 null = 游戏目录未配置或语言包缺失。 */
+export interface SemanticTextRef {
+  tableId: number;
+  instanceId: number;
+  text: string | null;
+}
+/** 按 semantic tag 预抽取的预览卡载荷（后端 extract_semantic_card）。 */
+export type SemanticCard =
+  | {
+      kind: "alert";
+      parent: SemanticKeyRef | null;
+      icon: SemanticKeyRef | null;
+      texts: SemanticTextRef[];
+      durationSeconds: number | null;
+    }
+  | {
+      kind: "sim-action";
+      parent: SemanticKeyRef | null;
+      titles: SemanticTextRef[];
+      failedTitles: SemanticTextRef[];
+    }
+  | {
+      kind: "map-layer";
+      name: SemanticTextRef[];
+      icon: SemanticKeyRef | null;
+      barColors: number[][];
+      legend: SemanticKeyRef | null;
+    };
 /**
  * Decal Dictionary（贴花图鉴）：GroupContainer 低 16 位为 0xB185 / 0x1651 /
  * 0x1652 的 Property 资源。条目由 7 个并行数组按下标组装，每个条目的

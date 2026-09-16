@@ -1,6 +1,13 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { join, tempDir } from "@tauri-apps/api/path";
 import { isTauri, tauriApi } from "./index";
+import { i18n } from "../locales";
+
+/** UI 语言 → 游戏 Locale 目录名（zh 系一律 zh-tw，游戏无 zh-cn 包）。 */
+function gameLocaleDir(): string {
+  const locale = String(i18n.global.locale.value);
+  return locale.toLowerCase().startsWith("zh") ? "zh-tw" : "en-us";
+}
 import type {
   AudioPreview,
   GameFolder,
@@ -72,6 +79,7 @@ export interface OpenScpDataSource {
   readPropertyPreview(
     packageId: number,
     tgi: Tgi,
+    lang?: string,
   ): Promise<PropertyResourceData>;
   /** Decal Dictionary 元数据与条目（不解码像素）。 */
   readDecalDictionary(
@@ -844,6 +852,7 @@ async function tauriPreview(
     const data = await tauriApi.packages.readPropertyPreview(
       packageId,
       resource.tgi,
+      gameLocaleDir(),
     );
     return { kind: "property", packageId, tgi: resource.tgi, ...data, ...base };
   }

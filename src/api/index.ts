@@ -185,9 +185,9 @@ export const tauriApi = {
       command<ArrayBuffer>("read_resource_text", {
         request: { packageId, tgi },
       }),
-    readPropertyPreview: (packageId: number, tgi: Tgi) =>
+    readPropertyPreview: (packageId: number, tgi: Tgi, lang?: string) =>
       command<PropertyResourceData>("read_property_preview", {
-        request: { packageId, tgi },
+        request: { packageId, tgi, lang },
       }),
     readDecalDictionary: (packageId: number, tgi: Tgi) =>
       command<DecalDictionaryData>("read_decal_dictionary", {

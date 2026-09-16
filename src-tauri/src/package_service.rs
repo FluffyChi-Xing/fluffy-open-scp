@@ -52,6 +52,10 @@ pub struct PackageManager {
     packages: Mutex<HashMap<u64, Arc<Package>>>,
     registries: Mutex<HashMap<RegistryKey, Arc<sc_registry::Registry>>>,
     jobs: Mutex<HashMap<u64, ExportStatus>>,
+    /// 游戏 Locale/<lang>/Data.package 的字符串表缓存（语义预览卡 text 解析），
+    /// 键 = 包路径。Locale 包 16MB/362 表，避免每次预览重建。
+    pub(crate) locale_cache:
+        Mutex<HashMap<PathBuf, Arc<sc_properties::Locale>>>,
 }
 
 impl PackageManager {
@@ -62,6 +66,7 @@ impl PackageManager {
             packages: Mutex::new(HashMap::new()),
             registries: Mutex::new(HashMap::new()),
             jobs: Mutex::new(HashMap::new()),
+            locale_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -356,6 +361,17 @@ pub struct ReadResourceBytesRequest {
 pub struct ReadResourceDataRequest {
     pub package_id: u64,
     pub tgi: TgiDto,
+}
+
+/// property 预览请求：额外携带 UI 语言（映射游戏 Locale 目录，解析卡片文案）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadPropertyPreviewRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    /// BCP-47 风格语言标签（如 "zh-CN"/"en-US"）；缺省按英文。
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1337,6 +1353,187 @@ pub struct PropertyPreviewData {
     /// 资源整体语义子类型（结构判据 + group 低 16 位 + Parent 继承）。
     #[serde(default)]
     pub semantic: Option<SemanticTagDto>,
+    /// 命中专属预览卡家族时，后端预抽取的结构化载荷（text 已按语言解析）。
+    #[serde(default)]
+    pub card: Option<SemanticCardData>,
+}
+
+// ---- 语义预览卡载荷（Alert / SimAction / MapLayer 第一档） ----
+
+/// 键引用（图标/Parent/Legend 等 ResourceKey 值）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticKeyRef {
+    pub type_id: u32,
+    pub group_id: u32,
+    pub instance_id: u32,
+}
+
+/// 已解析的 text 引用（text 为 None = locale 缺失/未配置游戏目录）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticTextRef {
+    pub table_id: u32,
+    pub instance_id: u32,
+    pub text: Option<String>,
+}
+
+/// 按 semantic tag 预抽取的预览卡数据。键哈希均为普查实证（05 文档 §2）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SemanticCardData {
+    /// 城市警报：图标 PNG + 文本 + 显示时长（秒）。
+    Alert {
+        parent: Option<SemanticKeyRef>,
+        icon: Option<SemanticKeyRef>,
+        texts: Vec<SemanticTextRef>,
+        duration_seconds: Option<f32>,
+    },
+    /// 市民/城市行动：行动标题 + 失败标题（多文案包）。
+    SimAction {
+        parent: Option<SemanticKeyRef>,
+        titles: Vec<SemanticTextRef>,
+        failed_titles: Vec<SemanticTextRef>,
+    },
+    /// 数据图层：名称 + 图标 + 数据条色带（RGBA 序列）+ Legend 脚本引用。
+    MapLayer {
+        name: Vec<SemanticTextRef>,
+        icon: Option<SemanticKeyRef>,
+        bar_colors: Vec<[f32; 4]>,
+        legend: Option<SemanticKeyRef>,
+    },
+}
+
+// 卡片抽取用的特征键（普查实证，见 docs/overview/analyze/05 §2.1）。
+const KEY_PARENT: u32 = 0x00B2_CCCB;
+const ALERT_ICON_KEY: u32 = 0x0A17_61F9; // kPropEcoAlertIcon → PNG
+const ALERT_TEXT: u32 = 0x0F22_1111;
+const ALERT_DURATION: u32 = 0x098B_D066; // f32 秒（样例 5.0）
+const ACTION_TITLES: u32 = 0x0E28_B5BC; // "Action Title"
+const ACTION_FAILED_TITLES: u32 = 0x0E3C_A673; // "Action Failed Title"
+const LAYER_NAME: u32 = 0x09B7_11C3; // kPropertyLayerName
+const LAYER_ICON_KEY: u32 = 0x09B7_11C5; // kPropertyLayerIconKey → PNG
+const LAYER_BAR_COLORS: u32 = 0x0AEB_A422; // "Data Map Bar colors" RGBA×N
+const LAYER_LEGEND: u32 = 0x0E01_5219; // kPropertyLayerLegend → 布局脚本
+
+fn first_key_ref(file: &sc_properties::PropertyFile, hash: u32) -> Option<SemanticKeyRef> {
+    let property = file.get(hash)?;
+    let mut found = None;
+    let mut scan = |v: &sc_properties::Value| {
+        if let sc_properties::Value::Key(k) = v {
+            if found.is_none() {
+                found = Some(SemanticKeyRef {
+                    type_id: k.type_id,
+                    group_id: k.group,
+                    instance_id: k.instance,
+                });
+            }
+        }
+    };
+    match &property.kind {
+        sc_properties::Kind::Scalar(v) => scan(v),
+        sc_properties::Kind::Array(vals) => {
+            for v in vals {
+                scan(v);
+            }
+        }
+        sc_properties::Kind::Empty => {}
+    }
+    found
+}
+
+fn text_refs(file: &sc_properties::PropertyFile, hash: u32) -> Vec<(u32, u32)> {
+    let Some(property) = file.get(hash) else {
+        return Vec::new();
+    };
+    let mut refs = Vec::new();
+    let mut scan = |v: &sc_properties::Value| {
+        if let sc_properties::Value::Text(t) = v {
+            refs.push((t.table_id, t.instance_id));
+        }
+    };
+    match &property.kind {
+        sc_properties::Kind::Scalar(v) => scan(v),
+        sc_properties::Kind::Array(vals) => {
+            for v in vals {
+                scan(v);
+            }
+        }
+        sc_properties::Kind::Empty => {}
+    }
+    refs
+}
+
+fn resolved_texts(
+    file: &sc_properties::PropertyFile,
+    hash: u32,
+    locale: Option<&sc_properties::Locale>,
+) -> Vec<SemanticTextRef> {
+    text_refs(file, hash)
+        .into_iter()
+        .map(|(table_id, instance_id)| SemanticTextRef {
+            table_id,
+            instance_id,
+            text: locale
+                .and_then(|l| l.get(table_id, instance_id))
+                .map(str::to_owned),
+        })
+        .collect()
+}
+
+/// 从已解析的 property 抽取预览卡载荷；tag 不属于卡片家族时返回 None。
+/// `locale` 来自游戏 Locale 包（见 locale_service::game_locale），缺失时
+/// text 引用原样带出（前端显示引用哈希）。
+fn extract_semantic_card(
+    file: &sc_properties::PropertyFile,
+    semantic: sc_properties::PropertySemantic,
+    locale: Option<&sc_properties::Locale>,
+) -> Option<SemanticCardData> {
+    Some(match semantic {
+        sc_properties::PropertySemantic::Alert => SemanticCardData::Alert {
+            parent: first_key_ref(file, KEY_PARENT),
+            icon: first_key_ref(file, ALERT_ICON_KEY),
+            texts: resolved_texts(file, ALERT_TEXT, locale),
+            duration_seconds: file
+                .get(ALERT_DURATION)
+                .and_then(|p| match &p.kind {
+                    sc_properties::Kind::Scalar(sc_properties::Value::Float(f)) => Some(*f),
+                    _ => None,
+                }),
+        },
+        sc_properties::PropertySemantic::SimAction => SemanticCardData::SimAction {
+            parent: first_key_ref(file, KEY_PARENT),
+            titles: resolved_texts(file, ACTION_TITLES, locale),
+            failed_titles: resolved_texts(file, ACTION_FAILED_TITLES, locale),
+        },
+        sc_properties::PropertySemantic::MapLayer => SemanticCardData::MapLayer {
+            name: resolved_texts(file, LAYER_NAME, locale),
+            icon: first_key_ref(file, LAYER_ICON_KEY),
+            bar_colors: file
+                .get(LAYER_BAR_COLORS)
+                .map(|p| match &p.kind {
+                    sc_properties::Kind::Scalar(v) => match v {
+                        sc_properties::Value::ColorRgba { r, g, b, a } => vec![[*r, *g, *b, *a]],
+                        sc_properties::Value::ColorRgb { r, g, b } => vec![[*r, *g, *b, 1.0]],
+                        _ => Vec::new(),
+                    },
+                    sc_properties::Kind::Array(vals) => vals
+                        .iter()
+                        .filter_map(|v| match v {
+                            sc_properties::Value::ColorRgba { r, g, b, a } => {
+                                Some([*r, *g, *b, *a])
+                            }
+                            sc_properties::Value::ColorRgb { r, g, b } => Some([*r, *g, *b, 1.0]),
+                            _ => None,
+                        })
+                        .collect(),
+                    sc_properties::Kind::Empty => Vec::new(),
+                })
+                .unwrap_or_default(),
+            legend: first_key_ref(file, LAYER_LEGEND),
+        },
+        _ => return None,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1418,9 +1615,11 @@ fn property_preview(
     data: &[u8],
     group: u32,
     registry: Option<&Arc<sc_registry::Registry>>,
+    locale: Option<&sc_properties::Locale>,
 ) -> Result<PropertyPreviewData, PackageError> {
     let file = sc_properties::PropertyFile::parse(data)?;
     let semantic = sc_properties::property_semantic(&file, group);
+    let card = extract_semantic_card(&file, semantic, locale);
     let entries = file
         .values
         .iter()
@@ -1443,6 +1642,7 @@ fn property_preview(
         claimed_count: file.claimed_count,
         entries,
         semantic: Some(semantic.into()),
+        card,
     })
 }
 
@@ -3459,7 +3659,7 @@ pub async fn read_wwise_bank(
 #[tauri::command]
 pub async fn read_property_preview(
     state: State<'_, AppState>,
-    request: ReadResourceDataRequest,
+    request: ReadPropertyPreviewRequest,
 ) -> Result<PropertyPreviewData, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
@@ -3472,7 +3672,15 @@ pub async fn read_property_preview(
         move |data, package, manager, store| {
             let registry = package_registry(store, manager, package, bundled_registry.as_deref());
             let group = request.tgi.group;
-            property_preview(data, group, registry.as_ref())
+            // 语言：前端 UI locale 映射到游戏 Locale 目录名（zh 系 → zh-tw）。
+            let lang = match request.lang.as_deref() {
+                Some(lang) if lang.to_ascii_lowercase().starts_with("zh") => "zh-tw",
+                _ => "en-us",
+            };
+            let locale = crate::locale_service::game_locale(manager, store, lang)
+                .map(|arc| Arc::clone(&arc));
+            let locale = locale.as_deref();
+            property_preview(data, group, registry.as_ref(), locale)
         },
     )
     .await
@@ -5336,6 +5544,91 @@ mod tests {
     }
 
     #[test]
+    fn extract_semantic_card_alert() {
+        // 实证 098A44F2:7FA499AA AlertPowerCriticalOilCrude 的键面。
+        let file = sc_properties::PropertyFile {
+            claimed_count: 0,
+            values: vec![
+                sc_properties::Property {
+                    hash: 0x00B2_CCCB,
+                    prop_type: sc_properties::PropType::Key,
+                    kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(
+                        sc_properties::Key {
+                            type_id: 0,
+                            group: 0x0FC6_CC94,
+                            instance: 0xC50B_96EB,
+                        },
+                    )),
+                    encoding: sc_properties::PropertyEncoding::default(),
+                },
+                sc_properties::Property {
+                    hash: 0x0A17_61F9,
+                    prop_type: sc_properties::PropType::Key,
+                    kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(
+                        sc_properties::Key {
+                            type_id: 0x2F7D_0004,
+                            group: 0,
+                            instance: 0xB5D3_77C5,
+                        },
+                    )),
+                    encoding: sc_properties::PropertyEncoding::default(),
+                },
+                sc_properties::Property {
+                    hash: 0x0F22_1111,
+                    prop_type: sc_properties::PropType::Text,
+                    kind: sc_properties::Kind::Array(vec![sc_properties::Value::Text(
+                        sc_properties::Text {
+                            table_id: 0x0D91_75F2,
+                            instance_id: 1,
+                        },
+                    )]),
+                    encoding: sc_properties::PropertyEncoding::default(),
+                },
+                sc_properties::Property {
+                    hash: 0x098B_D066,
+                    prop_type: sc_properties::PropType::Float,
+                    kind: sc_properties::Kind::Scalar(sc_properties::Value::Float(5.0)),
+                    encoding: sc_properties::PropertyEncoding::default(),
+                },
+            ],
+        };
+        let card = extract_semantic_card(&file, sc_properties::PropertySemantic::Alert, None)
+            .expect("alert card");
+        match card {
+            SemanticCardData::Alert {
+                parent,
+                icon,
+                texts,
+                duration_seconds,
+            } => {
+                let parent = parent.expect("parent ref");
+                assert_eq!(parent.group_id, 0x0FC6_CC94);
+                let icon = icon.expect("icon ref");
+                assert_eq!(icon.type_id, 0x2F7D_0004);
+                assert_eq!(icon.instance_id, 0xB5D3_77C5);
+                assert_eq!(texts.len(), 1);
+                assert_eq!(texts[0].table_id, 0x0D91_75F2);
+                // locale 未提供时引用保留、文案为空
+                assert_eq!(texts[0].text, None);
+                assert_eq!(duration_seconds, Some(5.0));
+            }
+            _ => panic!("expected alert card"),
+        }
+    }
+
+    #[test]
+    fn extract_semantic_card_skips_other_tags() {
+        let file = sc_properties::PropertyFile {
+            claimed_count: 0,
+            values: vec![],
+        };
+        assert!(extract_semantic_card(&file, sc_properties::PropertySemantic::Unit, None).is_none());
+        assert!(
+            extract_semantic_card(&file, sc_properties::PropertySemantic::Other, None).is_none()
+        );
+    }
+
+    #[test]
     fn resource_page_tags_property_semantic() {
         // 随机 group 的 Unit 副本（实证 40B7A83D:E8D0CAFA 族）：低 16 位无归属，
         // 靠 Parent 指向 0xC000 家族继承为 Unit；查表快路径则无需解析。
@@ -5566,7 +5859,7 @@ mod tests {
             .find(|entry| entry.id.type_id == 0x00B1_B104)
             .expect("property entry");
         let data = package.read(property).unwrap();
-        let preview = property_preview(&data, property.id.group, None).unwrap();
+        let preview = property_preview(&data, property.id.group, None, None).unwrap();
         assert!(!preview.entries.is_empty());
         assert!(preview.semantic.is_some());
         assert!(preview.entries.iter().any(|entry| !entry.value.is_empty()));

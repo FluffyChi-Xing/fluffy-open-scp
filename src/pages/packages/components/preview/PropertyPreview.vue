@@ -6,6 +6,7 @@ import type { PropertyPreview } from "@/api/tauri";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
 import PropertyEditor from "../property-editor/PropertyEditor.vue";
 import DecalDictionaryGallery from "./DecalDictionaryGallery.vue";
+import SemanticCardView from "./SemanticCard.vue";
 
 const props = defineProps<{ preview: PropertyPreview }>();
 const editorOpen = ref(false);
@@ -22,6 +23,17 @@ const semanticLabel = computed(() => {
 const isDecalDictionary = computed(() =>
   isDecalAtlasGroup(props.preview.tgi.group),
 );
+/** 命中专属预览卡家族（后端 extract_semantic_card）。 */
+const semanticCard = computed(() => props.preview.card ?? null);
+const showCard = ref(true);
+watch(
+  () => [props.preview.packageId, props.preview.tgi] as const,
+  () => {
+    showCard.value = true;
+  },
+  { deep: true },
+);
+/** 贴花相册的 视图：gallery | table。 */
 const view = ref<"gallery" | "table">("gallery");
 watch(
   isDecalDictionary,
@@ -79,6 +91,22 @@ function hashLabel(hash: number) {
           view === "gallery" ? $t("decal.switchTable") : $t("decal.switchGallery")
         }}
       </button>
+      <button
+        v-else-if="semanticCard"
+        type="button"
+        :aria-pressed="showCard"
+        @click="showCard = !showCard"
+      >
+        <FIcon
+          :name="showCard ? 'ListTree' : 'LayoutDashboard'"
+          :size="13"
+          aria-label=""
+        />{{
+          showCard
+            ? $t("package.card.viewTable")
+            : $t("package.card.viewCard")
+        }}
+      </button>
       <span v-if="semanticLabel" class="semantic-badge">{{ semanticLabel }}</span>
     </div>
     <PropertyEditor
@@ -90,6 +118,11 @@ function hashLabel(hash: number) {
       v-if="isDecalDictionary && view === 'gallery'"
       :package-id="preview.packageId"
       :tgi="preview.tgi"
+    />
+    <SemanticCardView
+      v-else-if="semanticCard && showCard && !isDecalDictionary"
+      :card="semanticCard"
+      :package-id="preview.packageId"
     />
     <div v-else class="structured-table-wrap">
       <table class="structured-table">

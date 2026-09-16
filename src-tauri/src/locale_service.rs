@@ -189,6 +189,80 @@ pub async fn locale_items(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+// ---- 游戏 Locale 包 text 引用解析（语义预览卡用） ----
+//
+// 实证（2026-09-16 locale_probe）：SimAction/Alert/MapLayer 的 text 引用指向的
+// 字符串表不在主包（Game 仅 3 张/App 6 张杂表），而在
+// `<game_data_path>/Locale/<lang>/Data.package`（en-us 362 张 / zh-tw 356 张）。
+
+/// 归一化语言目录名：仅允许小写字母数字与连字符（路径安全）。
+fn locale_dir_name(lang: &str) -> String {
+    let lowered = lang.to_ascii_lowercase();
+    let sanitized: String = lowered
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
+        .collect();
+    if sanitized.is_empty() {
+        "en-us".into()
+    } else {
+        sanitized
+    }
+}
+
+/// 读取（带缓存）游戏 Locale 包的字符串表集合。
+/// game_data_path 未配置或包缺失时返回 None（调用方优雅降级为未解析）。
+pub(crate) fn game_locale(
+    manager: &crate::package_service::PackageManager,
+    store: &sc_store::Store,
+    lang: &str,
+) -> Option<Arc<sc_properties::Locale>> {
+    let settings = store.app_settings().ok()??;
+    let game_data = PathBuf::from(settings.game_data_path?);
+    let path = game_data.join("Locale").join(locale_dir_name(lang)).join("Data.package");
+    if let Some(hit) = manager.locale_cache.lock().ok()?.get(&path) {
+        return Some(Arc::clone(hit));
+    }
+    let package = dbpf::Package::open(&path).ok()?;
+    let resources = package.entries().iter().filter_map(|entry| {
+        if entry.id.type_id != LOCALE_RESOURCE_TYPE {
+            return None;
+        }
+        let data = package.read(entry).ok()?;
+        Some((entry.id.instance, data))
+    });
+    let locale = Arc::new(sc_properties::Locale::from_resources(resources).ok()?);
+    manager
+        .locale_cache
+        .lock()
+        .ok()?
+        .insert(path, Arc::clone(&locale));
+    Some(locale)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedTextRef {
+    pub table_id: u32,
+    pub instance_id: u32,
+    pub text: Option<String>,
+}
+
+/// 在给定 Locale 里解析一批 text 引用（顺序与输入一致）。
+pub(crate) fn resolve_texts(
+    locale: Option<&sc_properties::Locale>,
+    refs: impl IntoIterator<Item = (u32, u32)>,
+) -> Vec<ResolvedTextRef> {
+    refs.into_iter()
+        .map(|(table_id, instance_id)| ResolvedTextRef {
+            table_id,
+            instance_id,
+            text: locale
+                .and_then(|l| l.get(table_id, instance_id))
+                .map(str::to_owned),
+        })
+        .collect()
+}
+
 /// 写入核心（脱离 Tauri State，便于测试）。
 fn write_locale_overlay_inner(
     store: &sc_store::Store,
