@@ -29,6 +29,113 @@ pub struct RasterImage {
 }
 
 impl RasterImage {
+    /// 从 RGBA8 像素构建未压缩（pixFmt 21）raster——绘制器"创建副本"的编码器。
+    ///
+    /// 顶层 mip = RGBA 重排为内存 BGRA（`decode_top_mip_rgba` 的逆操作）；
+    /// `generate_mips` 时以 box-filter（2×2 均值，奇数尺寸按越界裁剪）逐级
+    /// 重建 mip 链直至 1×1。raster_type/pixel_size 取实测样本惯例值（2/8）。
+    pub fn build_raw_bgra(
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+        generate_mips: bool,
+    ) -> Result<RasterImage> {
+        if width == 0 || height == 0 {
+            return Err(Error::UnsupportedRasterPixelFormat(0));
+        }
+        let needed = width as usize * height as usize * 4;
+        if rgba.len() < needed {
+            return Err(Error::InsufficientPayload {
+                check: "RA-enc",
+                needed,
+                actual: rgba.len(),
+            });
+        }
+        let downscale = |src: &[u8], sw: u32, sh: u32, dw: u32, dh: u32| -> Vec<u8> {
+            let mut out = vec![0u8; (dw * dh * 4) as usize];
+            for dy in 0..dh {
+                for dx in 0..dw {
+                    let x0 = (dx * 2) as usize;
+                    let y0 = (dy * 2) as usize;
+                    let x1 = ((dx * 2 + 2) as usize).min(sw as usize);
+                    let y1 = ((dy * 2 + 2) as usize).min(sh as usize);
+                    let mut acc = [0u32; 4];
+                    let mut count = 0u32;
+                    for y in y0..y1 {
+                        for x in x0..x1 {
+                            let px = &src[(y * sw as usize + x) * 4..(y * sw as usize + x) * 4 + 4];
+                            for (channel, value) in acc.iter_mut().enumerate() {
+                                *value += px[channel] as u32;
+                            }
+                            count += 1;
+                        }
+                    }
+                    let base = (dy as usize * dw as usize + dx as usize) * 4;
+                    for (channel, value) in acc.iter_mut().enumerate() {
+                        out[base + channel] = (*value / count) as u8;
+                    }
+                }
+            }
+            out
+        };
+
+        let mut mip_w = width;
+        let mut mip_h = height;
+        let mut current = rgba[..needed].to_vec();
+        let mut mips = Vec::new();
+        loop {
+            let mut bgra = current.clone();
+            for px in bgra.as_chunks_mut::<4>().0 {
+                px.swap(0, 2);
+            }
+            mips.push(bgra);
+            if !generate_mips || (mip_w <= 1 && mip_h <= 1) {
+                break;
+            }
+            let next_w = (mip_w / 2).max(1);
+            let next_h = (mip_h / 2).max(1);
+            current = downscale(&current, mip_w, mip_h, next_w, next_h);
+            mip_w = next_w;
+            mip_h = next_h;
+        }
+
+        Ok(RasterImage {
+            raster_type: 2,
+            width,
+            height,
+            mip_count: mips.len() as u32,
+            pixel_size: 8,
+            pixel_format: RASTER_PIXEL_FORMAT_A8R8G8B8,
+            mips,
+        })
+    }
+
+    /// 序列化回 raster 字节（头部 6×u32 BE + 逐 mip block 头与载荷）。
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(
+            24 + self
+                .mips
+                .iter()
+                .map(|mip| mip.len() + 4)
+                .sum::<usize>(),
+        );
+        for value in [
+            self.raster_type,
+            self.width,
+            self.height,
+            self.mip_count,
+            self.pixel_size,
+            self.pixel_format,
+        ] {
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+        for mip in &self.mips {
+            out.extend_from_slice(&(mip.len() as u32).to_be_bytes());
+            out.extend_from_slice(mip);
+        }
+        out
+    }
+
     pub fn parse(data: &[u8]) -> Result<RasterImage> {
         let mut r = Reader::new(data);
         let raster_type = r.u32be("RA_type")?;
@@ -407,5 +514,41 @@ mod tests {
             image.decode_top_mip_rgba(),
             Err(Error::InsufficientPayload { .. })
         ));
+    }
+
+    #[test]
+    fn build_round_trips_pixels_and_mips() {
+        // 4×4 红蓝棋盘 → 编码（含 mip）→ 重解析：顶层 BGRA 重排回到原 RGBA，
+        // mip 链 4→2→1，最末 mip 为四像素均值（RGBA 灰 127）。
+        let mut rgba = Vec::new();
+        for y in 0..4u32 {
+            for x in 0..4u32 {
+                if (x + y) % 2 == 0 {
+                    rgba.extend_from_slice(&[255, 0, 0, 255]);
+                } else {
+                    rgba.extend_from_slice(&[0, 0, 255, 255]);
+                }
+            }
+        }
+        let image = RasterImage::build_raw_bgra(4, 4, &rgba, true).unwrap();
+        assert_eq!(image.mip_count, 3);
+        assert_eq!(image.mips[0].len(), 64);
+        assert_eq!(image.mips[2].len(), 4);
+        let reparsed = RasterImage::parse(&image.to_bytes()).unwrap();
+        assert_eq!(reparsed, image);
+        assert_eq!(reparsed.decode_top_mip_rgba().unwrap(), rgba);
+        // 末级 mip：棋盘逐级均值收敛为 (127, 0, 127)（255/2 整除）。
+        let last = reparsed.mips.last().unwrap();
+        assert_eq!(last, &[127, 0, 127, 255]);
+    }
+
+    #[test]
+    fn build_without_mips_and_odd_size_downsamples() {
+        let rgba = vec![1, 2, 3, 255, 5, 6, 7, 255, 9, 10, 11, 255, 13, 14, 15, 255];
+        let image = RasterImage::build_raw_bgra(2, 2, &rgba, false).unwrap();
+        assert_eq!(image.mip_count, 1);
+        let odd = RasterImage::build_raw_bgra(3, 3, &vec![10u8; 36], true).unwrap();
+        assert_eq!(odd.mips.last().unwrap().len(), 4);
+        assert!(RasterImage::build_raw_bgra(2, 2, &[0; 4], false).is_err());
     }
 }
