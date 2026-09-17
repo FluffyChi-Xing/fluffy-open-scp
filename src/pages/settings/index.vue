@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, shallowRef } from "vue";
+import { computed, onMounted, shallowRef } from "vue";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import {
@@ -9,6 +10,64 @@ import {
   type SettingsStatus,
   type WorkspaceStatus,
 } from "@/api";
+import { useModProjectsStore } from "@/stores/modProjects";
+
+const modStore = useModProjectsStore();
+const { t } = useI18n();
+
+type AddressKey = "workspace" | "game" | "modRoot";
+const addressBusy = shallowRef<AddressKey | null>(null);
+const addressError = shallowRef("");
+const addressSaved = shallowRef(false);
+
+const addresses = computed(() => {
+  const status = modStore.setupStatus;
+  return [
+    {
+      key: "workspace" as AddressKey,
+      label: t("settings.addressWorkspace"),
+      hint: t("settings.addressWorkspaceHint"),
+      path: status?.workspace.path ?? "",
+      ok: Boolean(status?.workspace.path && status?.workspace.isDirectory),
+    },
+    {
+      key: "game" as AddressKey,
+      label: t("settings.addressGame"),
+      hint: t("settings.addressGameHint"),
+      path: status?.game.path ?? "",
+      ok: Boolean(status?.game.path && status?.game.isDirectory),
+    },
+    {
+      key: "modRoot" as AddressKey,
+      label: t("settings.addressModRoot"),
+      hint: t("settings.addressModRootHint"),
+      path: status?.modRoot.path ?? "",
+      ok: Boolean(status?.modRoot.path && status?.modRoot.isDirectory),
+    },
+  ];
+});
+
+async function pickAddress(key: AddressKey) {
+  addressBusy.value = key;
+  addressError.value = "";
+  addressSaved.value = false;
+  try {
+    const path = await tauriApi.workspace.pickDirectory(
+      t("settings.addressPickTitle"),
+    );
+    if (!path) return;
+    if (key === "workspace") await tauriApi.workspace.setRoot(path);
+    else if (key === "game") await tauriApi.settings.setGameDirectory(path);
+    else await modStore.setDevRoot(path);
+    await modStore.loadSetupStatus();
+    if (key === "game") await load();
+    addressSaved.value = true;
+  } catch (cause) {
+    addressError.value = messageOf(cause);
+  } finally {
+    addressBusy.value = null;
+  }
+}
 
 const gamePath = shallowRef("");
 const status = shallowRef<SettingsStatus | null>(null);
@@ -19,7 +78,10 @@ const saved = shallowRef(false);
 const error = shallowRef("");
 
 onMounted(() => {
-  if (isTauri()) load();
+  if (isTauri()) {
+    load();
+    void modStore.loadSetupStatus();
+  }
 });
 async function load() {
   loading.value = true;
@@ -79,6 +141,53 @@ function messageOf(cause: unknown) {
         $t("runtime.browserNotice")
       }}
     </p>
+    <article class="settings-card">
+      <div class="section-heading">
+        <FIcon name="MapPin" :size="18" aria-label="" />
+        <div>
+          <FTypography :header="3" spacing="none">{{
+            $t("settings.addressTitle")
+          }}</FTypography
+          ><FTypography paragraphy type="secondary">{{
+            $t("settings.addressDescription")
+          }}</FTypography>
+        </div>
+      </div>
+      <ul class="address-list">
+        <li v-for="entry in addresses" :key="entry.key" class="address-row">
+          <span
+            class="status-dot"
+            :class="{ ok: entry.ok }"
+            aria-hidden="true"
+          ></span>
+          <div class="address-text">
+            <strong>{{ entry.label }}</strong>
+            <code :class="{ missing: !entry.ok }">{{
+              entry.path || $t("settings.addressUnset")
+            }}</code>
+            <small>{{ entry.hint }}</small>
+          </div>
+          <button
+            class="secondary-button"
+            type="button"
+            :disabled="addressBusy !== null"
+            @click="pickAddress(entry.key)"
+          >
+            <FIcon
+              :name="addressBusy === entry.key ? 'Loader2' : 'FolderOpen'"
+              :size="15"
+              aria-label=""
+            />{{ $t("settings.addressPick") }}
+          </button>
+        </li>
+      </ul>
+      <p v-if="addressSaved" class="success-message" role="status">
+        {{ $t("settings.saved") }}
+      </p>
+      <p v-if="addressError" class="error-message" role="alert">
+        {{ addressError }}
+      </p>
+    </article>
     <article class="settings-card">
       <div class="section-heading">
         <FIcon name="FolderOpen" :size="18" aria-label="" />
@@ -344,5 +453,54 @@ function messageOf(cause: unknown) {
   .form-row button {
     width: 100%;
   }
+}
+.address-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.address-row {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  padding: 10px 12px;
+}
+.status-dot {
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  height: 9px;
+  width: 9px;
+}
+.status-dot.ok {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
+}
+.address-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.address-text strong {
+  font-size: 12.5px;
+}
+.address-text code {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.address-text code.missing {
+  color: var(--warning);
+}
+.address-text small {
+  color: var(--subtle-foreground);
+  font-size: 11px;
 }
 </style>
