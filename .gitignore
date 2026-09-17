@@ -38,3 +38,4 @@ tmp/
 /public/game-ui/png/
 /public/game-ui/jpg/
 /public/game-ui/gif/
+.zcode/
