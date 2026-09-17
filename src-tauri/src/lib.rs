@@ -17,6 +17,7 @@ mod mod_project;
 mod overrides;
 mod package_browser;
 mod package_service;
+mod raster_edit;
 mod render_telemetry;
 mod settings;
 mod stats;
@@ -40,6 +41,7 @@ use mod_project::{
     studio_complete_onboarding, studio_set_mod_root,
 };
 use overrides::override_scan;
+use raster_edit::{read_image_rgba, read_raster_rgba, save_raster_overlay};
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
@@ -138,6 +140,9 @@ pub fn run() {
             write_export_file,
             patch_property_overlay,
             read_property_preview,
+            read_image_rgba,
+            read_raster_rgba,
+            save_raster_overlay,
             read_decal_dictionary,
             read_decal_images,
             read_rw4_preview,

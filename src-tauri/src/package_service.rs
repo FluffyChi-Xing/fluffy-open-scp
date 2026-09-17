@@ -5025,7 +5025,7 @@ fn export_media(
     result
 }
 
-fn write_export(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
+pub(crate) fn write_export(path: &Path, bytes: &[u8]) -> Result<(), PackageError> {
     validate_output_path(path)?;
     crate::atomic_fs::write_atomic(path, bytes, true).map_err(PackageError::from)
 }
