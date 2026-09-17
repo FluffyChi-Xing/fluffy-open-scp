@@ -12,6 +12,9 @@ import {
   type GameFolder,
   type MarkdownDocument,
   type MediaTools,
+  type ModProjectGroup,
+  type ModProjectStats,
+  type ModProjectView,
   type OpenPackageResponse,
   type Operation,
   type PackageFile,
@@ -48,6 +51,8 @@ import {
   type RenderTelemetrySummary,
   type RollbackResult,
   type SettingsStatus,
+  type SetupStatusResponse,
+  type StudioConfigStatus,
   type TelemetryClearResult,
   type VersionDeleteResult,
   type VersionTargetSummary,
@@ -66,6 +71,13 @@ export type {
   GameFolder,
   MarkdownDocument,
   MediaTools,
+  ModDailyCount,
+  ModGroupCount,
+  ModProject,
+  ModProjectGroup,
+  ModProjectStats,
+  ModProjectView,
+  ModStatusCount,
   OpenPackageResponse,
   Operation,
   PackageFile,
@@ -80,6 +92,8 @@ export type {
   ResourceSummary,
   ResolvedResourceName,
   SettingsStatus,
+  SetupStatusResponse,
+  StudioConfigStatus,
   Tgi,
   WorkspaceEntry,
   WorkspaceStatus,
@@ -96,6 +110,46 @@ export const tauriApi = {
       }),
     detectGameDirectory: () =>
       command<GameDirectoryDetection>("game_directory_detect"),
+  },
+  studio: {
+    setupStatus: () => command<SetupStatusResponse>("setup_status"),
+    setModRoot: (path: string) =>
+      command<StudioConfigStatus>("studio_set_mod_root", {
+        request: { path },
+      }),
+    completeOnboarding: () =>
+      command<StudioConfigStatus>("studio_complete_onboarding"),
+    projects: {
+      list: () => command<ModProjectView[]>("mod_project_list"),
+      create: (name: string, groupId?: number, description?: string) =>
+        command<ModProjectView>("mod_project_create", {
+          request: { name, groupId, description },
+        }),
+      update: (
+        id: number,
+        fields: {
+          name: string;
+          groupId?: number;
+          description?: string;
+          status: string;
+        },
+      ) =>
+        command<ModProjectView>("mod_project_update", {
+          request: { id, ...fields },
+        }),
+      remove: (id: number) =>
+        command<void>("mod_project_delete", { request: { id } }),
+    },
+    groups: {
+      list: () => command<ModProjectGroup[]>("mod_group_list"),
+      create: (name: string) =>
+        command<ModProjectGroup>("mod_group_create", { request: { name } }),
+      rename: (id: number, name: string) =>
+        command<ModProjectGroup>("mod_group_rename", { request: { id, name } }),
+      remove: (id: number) =>
+        command<void>("mod_group_delete", { request: { id } }),
+    },
+    stats: () => command<ModProjectStats>("mod_project_stats"),
   },
   workspace: {
     get: () => command<WorkspaceStatus>("workspace_get"),
@@ -205,11 +259,7 @@ export const tauriApi = {
       command<ArrayBuffer>("read_lot_model_meshes", {
         request: { packageId, tgi },
       }),
-    readRasterPreview: (
-      packageId: number,
-      tgi: Tgi,
-      channel?: RasterChannel,
-    ) =>
+    readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },
       }),
@@ -259,7 +309,11 @@ export const tauriApi = {
     remove: (id: number) => command<void>("annotation_delete", { id }),
     forTgi: (tgi: Tgi) =>
       command<ResourceAnnotation[]>("annotations_for_tgi", {
-        request: { typeId: tgi.typeId, groupId: tgi.group, instance: tgi.instance },
+        request: {
+          typeId: tgi.typeId,
+          groupId: tgi.group,
+          instance: tgi.instance,
+        },
       }),
     list: (limit = 1000) =>
       command<ResourceAnnotation[]>("annotations_list", { limit }),

@@ -515,12 +515,7 @@ export interface SpawnerUnit {
   fields: UnitFieldDto[];
 }
 export type LotUnitDto =
-  | LightUnit
-  | EffectUnit
-  | DecalUnit
-  | PropUnit
-  | PathPointUnit
-  | SpawnerUnit;
+  LightUnit | EffectUnit | DecalUnit | PropUnit | PathPointUnit | SpawnerUnit;
 /** 单级 LOD 模型的资源位置（跨包解析；该级缺失为 null）。 */
 export interface LotModelLodRef {
   packageId: number;
@@ -631,13 +626,7 @@ export interface RasterPreviewData {
  * - `composite` RGBA 合成，alpha 强制不透明
  * - `r` / `g` / `b` / `a` 单通道灰度
  */
-export type RasterChannel =
-  | "quantized"
-  | "composite"
-  | "r"
-  | "g"
-  | "b"
-  | "a";
+export type RasterChannel = "quantized" | "composite" | "r" | "g" | "b" | "a";
 
 export const RASTER_CHANNELS: readonly RasterChannel[] = [
   "quantized",
@@ -763,6 +752,66 @@ export interface SettingsStatus {
 }
 export interface GameDirectoryDetection {
   candidates: GameDirectoryStatus[];
+}
+/** setup_status：三处关键路径的配置状态（引导/缺失检测/设置页共用）。 */
+export interface SetupPathStatus {
+  path?: string;
+  exists: boolean;
+  isDirectory: boolean;
+}
+export interface SetupStatusResponse {
+  workspace: SetupPathStatus;
+  game: SetupPathStatus;
+  modRoot: SetupPathStatus;
+  onboardingCompleted: boolean;
+}
+export interface StudioConfigStatus {
+  modRoot?: string;
+  onboardingCompleted: boolean;
+}
+/** 模组项目：磁盘上是项目管理根下的子文件夹。 */
+export interface ModProject {
+  id: number;
+  name: string;
+  relPath: string;
+  groupId?: number;
+  description?: string;
+  status: "active" | "released" | "archived";
+  createdAt: number;
+  updatedAt: number;
+}
+export interface ModProjectView extends ModProject {
+  folderPath?: string;
+  folderExists: boolean;
+}
+export interface ModProjectGroup {
+  id: number;
+  name: string;
+  sort: number;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface ModGroupCount {
+  groupId?: number;
+  name?: string;
+  count: number;
+}
+export interface ModStatusCount {
+  status: string;
+  count: number;
+}
+export interface ModDailyCount {
+  /** 当日零点（UTC）的 epoch 毫秒。 */
+  dayStartMs: number;
+  created: number;
+  updated: number;
+}
+export interface ModProjectStats {
+  total: number;
+  diskBytes: number;
+  groupCounts: ModGroupCount[];
+  statusCounts: ModStatusCount[];
+  recentActivity: ModDailyCount[];
 }
 export interface ExtensionStat {
   ext: string;
