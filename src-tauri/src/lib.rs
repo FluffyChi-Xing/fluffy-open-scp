@@ -13,6 +13,7 @@ mod annotations;
 mod atomic_fs;
 mod locale_service;
 mod media_tools;
+mod mod_project;
 mod overrides;
 mod package_browser;
 mod package_service;
@@ -33,6 +34,11 @@ use annotations::{
 };
 use locale_service::{locale_items, locale_tables, write_locale_overlay};
 use media_tools::{MediaTools, application_dir, resolve_tools};
+use mod_project::{
+    mod_group_create, mod_group_delete, mod_group_list, mod_group_rename, mod_project_create,
+    mod_project_delete, mod_project_list, mod_project_stats, mod_project_update, setup_status,
+    studio_complete_onboarding, studio_set_mod_root,
+};
 use overrides::override_scan;
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
@@ -42,16 +48,14 @@ use package_service::{
     read_resource_data, read_resource_text, read_rw4_preview, read_rw4_section_detail,
     read_wwise_bank, resolve_name, resolve_names, write_export_file,
 };
-use render_telemetry::{
-    render_telemetry_clear, render_telemetry_record, render_telemetry_summary,
-};
+use render_telemetry::{render_telemetry_clear, render_telemetry_record, render_telemetry_summary};
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
+use stats::package_statistics;
+use tauri::{Manager, PhysicalPosition};
 use version_service::{
     version_capture_baseline, version_changeset_detail, version_delete_changeset,
     version_list_changesets, version_list_targets, version_record_changeset, version_rollback,
 };
-use stats::package_statistics;
-use tauri::{Manager, PhysicalPosition};
 use workspace::{
     workspace_create_folder, workspace_create_markdown, workspace_get, workspace_list,
     workspace_move, workspace_read_markdown, workspace_rename, workspace_set_root,
@@ -156,6 +160,18 @@ pub fn run() {
             workspace_create_markdown,
             workspace_rename,
             workspace_move,
+            setup_status,
+            studio_set_mod_root,
+            studio_complete_onboarding,
+            mod_project_list,
+            mod_project_create,
+            mod_project_update,
+            mod_project_delete,
+            mod_group_list,
+            mod_group_create,
+            mod_group_rename,
+            mod_group_delete,
+            mod_project_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
