@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 5;
+pub const CURRENT_SCHEMA_VERSION: i32 = 6;
 pub const DEFAULT_LIST_LIMIT: usize = 100;
 pub const MAX_LIST_LIMIT: usize = 1_000;
 
@@ -39,6 +39,10 @@ pub enum StoreError {
     OperationNotFound(i64),
     #[error("changeset {0} was not found")]
     ChangesetNotFound(i64),
+    #[error("mod project {0} was not found")]
+    ModProjectNotFound(i64),
+    #[error("mod project group {0} was not found")]
+    ModGroupNotFound(i64),
     #[error("resource payload is {0} bytes, over the {BLOB_MAX_BYTES} byte limit")]
     BlobTooLarge(usize),
     #[error("version blob store is full ({0} bytes referenced)")]
@@ -123,6 +127,67 @@ pub struct WorkspaceConfig {
     pub root_path: String,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// 工作台全局配置（单行）：模组开发根目录 + 引导完成标志。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StudioConfig {
+    pub mod_root: Option<String>,
+    pub onboarding_completed: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// 项目分组（模组开发）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModProjectGroup {
+    pub id: i64,
+    pub name: String,
+    pub sort: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// 模组项目：磁盘上是项目管理根下的一个子文件夹，
+/// 记录删除时保留磁盘文件夹（防误删由前端确认兜底）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModProject {
+    pub id: i64,
+    pub name: String,
+    pub rel_path: String,
+    pub group_id: Option<i64>,
+    pub description: Option<String>,
+    /// active | released | archived
+    pub status: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModProjectInput {
+    pub name: String,
+    pub rel_path: String,
+    pub group_id: Option<i64>,
+    pub description: Option<String>,
+    pub status: String,
+}
+
+/// 项目统计聚合：分组计数 / 状态计数 / 创建与更新时间戳（前端做 30 天直方）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModProjectAggregates {
+    /// (group_id, count)；group_id = None 表示未分组。
+    pub group_counts: Vec<(Option<i64>, i64)>,
+    /// (status, count)
+    pub status_counts: Vec<(String, i64)>,
+    /// (created_at, updated_at)
+    pub timestamps: Vec<(i64, i64)>,
+    /// 项目总数。
+    pub total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -382,6 +447,299 @@ impl Store {
         transaction.commit()?;
         Ok(ActivityClearResult { operations, events })
     }
+
+    /// 读工作台全局配置；行不存在时返回默认值（未配置/未完成引导）。
+    pub fn studio_config(&self) -> Result<StudioConfig> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let config = connection
+            .query_row(
+                "SELECT mod_root, onboarding_completed, created_at, updated_at FROM studio_config WHERE id = 1",
+                [],
+                |row| {
+                    Ok(StudioConfig {
+                        mod_root: row.get(0)?,
+                        onboarding_completed: row.get::<_, i64>(1)? != 0,
+                        created_at: row.get(2)?,
+                        updated_at: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::from)?
+            .unwrap_or(StudioConfig {
+                mod_root: None,
+                onboarding_completed: false,
+                created_at: 0,
+                updated_at: 0,
+            });
+        Ok(config)
+    }
+
+    pub fn set_studio_config(
+        &self,
+        mod_root: Option<&str>,
+        onboarding_completed: bool,
+    ) -> Result<StudioConfig> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let existing: Option<(Option<String>, i64, i64)> = connection
+            .query_row(
+                "SELECT mod_root, onboarding_completed, created_at FROM studio_config WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        // 未传字段沿用现值：set_mod_root 不应顺手清掉引导标志，反之亦然。
+        let (current_root, current_onboarding, created_at) = match existing {
+            Some((root, flag, created_at)) => (root, flag != 0, created_at),
+            None => (None, false, now),
+        };
+        let mod_root = mod_root.map_or(current_root.as_deref(), Some).map(str::to_owned);
+        let onboarding = if onboarding_completed { true } else { current_onboarding };
+        connection.execute(
+            "INSERT INTO studio_config (id, mod_root, onboarding_completed, created_at, updated_at) VALUES (1, ?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET mod_root = excluded.mod_root, onboarding_completed = excluded.onboarding_completed, updated_at = excluded.updated_at",
+            params![mod_root, onboarding as i64, created_at, now],
+        )?;
+        Ok(StudioConfig {
+            mod_root,
+            onboarding_completed: onboarding,
+            created_at,
+            updated_at: now,
+        })
+    }
+
+    pub fn mod_group_list(&self) -> Result<Vec<ModProjectGroup>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, name, sort, created_at, updated_at FROM mod_project_groups ORDER BY sort, id",
+        )?;
+        let rows = statement.query_map([], mod_group_from_row)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    pub fn mod_group_create(&self, name: &str, sort: i64) -> Result<ModProjectGroup> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection.execute(
+            "INSERT INTO mod_project_groups (name, sort, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
+            params![name, sort, now],
+        )?;
+        Ok(ModProjectGroup {
+            id: connection.last_insert_rowid(),
+            name: name.to_owned(),
+            sort,
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    pub fn mod_group_rename(&self, id: i64, name: &str) -> Result<ModProjectGroup> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let changed = connection.execute(
+            "UPDATE mod_project_groups SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            params![name, now_millis(), id],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::ModGroupNotFound(id));
+        }
+        connection
+            .query_row(
+                "SELECT id, name, sort, created_at, updated_at FROM mod_project_groups WHERE id = ?1",
+                params![id],
+                mod_group_from_row,
+            )
+            .map_err(StoreError::from)
+    }
+
+    pub fn mod_group_delete(&self, id: i64) -> Result<()> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        // 组下项目经外键 ON DELETE SET NULL 自动回到未分组。
+        let changed = connection.execute("DELETE FROM mod_project_groups WHERE id = ?1", [id])?;
+        if changed == 0 {
+            return Err(StoreError::ModGroupNotFound(id));
+        }
+        Ok(())
+    }
+
+    pub fn mod_project_list(&self) -> Result<Vec<ModProject>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, name, rel_path, group_id, description, status, created_at, updated_at
+             FROM mod_projects ORDER BY updated_at DESC, id DESC",
+        )?;
+        let rows = statement.query_map([], mod_project_from_row)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
+    pub fn mod_project_create(&self, input: &ModProjectInput) -> Result<ModProject> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection.execute(
+            "INSERT INTO mod_projects (name, rel_path, group_id, description, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![
+                input.name,
+                input.rel_path,
+                input.group_id,
+                input.description,
+                input.status,
+                now
+            ],
+        )?;
+        Ok(ModProject {
+            id: connection.last_insert_rowid(),
+            name: input.name.clone(),
+            rel_path: input.rel_path.clone(),
+            group_id: input.group_id,
+            description: input.description.clone(),
+            status: input.status.clone(),
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    /// 项目改名：name 与 rel_path（磁盘文件夹名）同步更新。
+    pub fn mod_project_rename(&self, id: i64, name: &str, rel_path: &str) -> Result<ModProject> {
+        Self::mod_project_update(&self.connection, id, |project| {
+            project.name = name.to_owned();
+            project.rel_path = rel_path.to_owned();
+        })?;
+        self.mod_project_get(id)
+    }
+
+    pub fn mod_project_set_group(&self, id: i64, group_id: Option<i64>) -> Result<ModProject> {
+        Self::mod_project_update(&self.connection, id, |project| {
+            project.group_id = group_id;
+        })?;
+        self.mod_project_get(id)
+    }
+
+    pub fn mod_project_set_status(&self, id: i64, status: &str) -> Result<ModProject> {
+        Self::mod_project_update(&self.connection, id, |project| {
+            project.status = status.to_owned();
+        })?;
+        self.mod_project_get(id)
+    }
+
+    pub fn mod_project_set_description(
+        &self,
+        id: i64,
+        description: Option<&str>,
+    ) -> Result<ModProject> {
+        Self::mod_project_update(&self.connection, id, |project| {
+            project.description = description.map(str::to_owned);
+        })?;
+        self.mod_project_get(id)
+    }
+
+    pub fn mod_project_delete(&self, id: i64) -> Result<()> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let changed = connection.execute("DELETE FROM mod_projects WHERE id = ?1", [id])?;
+        if changed == 0 {
+            return Err(StoreError::ModProjectNotFound(id));
+        }
+        Ok(())
+    }
+
+    pub fn mod_project_get(&self, id: i64) -> Result<ModProject> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection
+            .query_row(
+                "SELECT id, name, rel_path, group_id, description, status, created_at, updated_at
+                 FROM mod_projects WHERE id = ?1",
+                params![id],
+                mod_project_from_row,
+            )
+            .optional()
+            .map_err(StoreError::from)?
+            .ok_or(StoreError::ModProjectNotFound(id))
+    }
+
+    pub fn mod_project_aggregates(&self) -> Result<ModProjectAggregates> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut group_counts = {
+            let mut statement = connection.prepare(
+                "SELECT group_id, COUNT(*) FROM mod_projects GROUP BY group_id",
+            )?;
+            let rows = statement.query_map([], |row| {
+                Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, i64>(1)?))
+            })?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        // 未分组固定在列（可能为 0），前端图表不用特判空序列。
+        let total: i64 = group_counts.iter().map(|(_, count)| *count).sum();
+        let ungrouped: i64 = group_counts
+            .iter()
+            .filter(|(id, _)| id.is_none())
+            .map(|(_, count)| *count)
+            .sum();
+        if ungrouped == 0 {
+            group_counts.push((None, 0));
+        }
+        let mut status_counts = {
+            let mut statement = connection
+                .prepare("SELECT status, COUNT(*) FROM mod_projects GROUP BY status ORDER BY status")?;
+            let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if status_counts.is_empty() {
+            status_counts.push(("active".into(), 0));
+        }
+        let timestamps = {
+            let mut statement = connection
+                .prepare("SELECT created_at, updated_at FROM mod_projects")?;
+            let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        Ok(ModProjectAggregates {
+            group_counts,
+            status_counts,
+            timestamps,
+            total: total as u64,
+        })
+    }
+
+    /// 单字段更新助手：改字段 + 刷 updated_at；目标不存在报 NotFound。
+    fn mod_project_update(
+        connection: &Mutex<Connection>,
+        id: i64,
+        apply: impl FnOnce(&mut ModProject),
+    ) -> Result<()> {
+        let mut project = {
+            let connection = connection.lock().expect("store mutex poisoned");
+            connection
+                .query_row(
+                    "SELECT id, name, rel_path, group_id, description, status, created_at, updated_at
+                     FROM mod_projects WHERE id = ?1",
+                    params![id],
+                    mod_project_from_row,
+                )
+                .optional()
+                .map_err(StoreError::from)?
+                .ok_or(StoreError::ModProjectNotFound(id))?
+        };
+        apply(&mut project);
+        let connection = connection.lock().expect("store mutex poisoned");
+        let changed = connection.execute(
+            "UPDATE mod_projects SET name = ?1, rel_path = ?2, group_id = ?3, description = ?4, status = ?5, updated_at = ?6 WHERE id = ?7",
+            params![
+                project.name,
+                project.rel_path,
+                project.group_id,
+                project.description,
+                project.status,
+                now_millis(),
+                id
+            ],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::ModProjectNotFound(id));
+        }
+        Ok(())
+    }
 }
 
 fn migrate(connection: &Connection) -> Result<()> {
@@ -567,6 +925,39 @@ fn migrate(connection: &Connection) -> Result<()> {
                  ON render_telemetry(created_at DESC);
              CREATE INDEX render_telemetry_session_idx ON render_telemetry(session_key);
              PRAGMA user_version = 5;
+             COMMIT;",
+        )?;
+    }
+    if version <= 5 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE mod_project_groups (
+                 id INTEGER PRIMARY KEY,
+                 name TEXT NOT NULL UNIQUE,
+                 sort INTEGER NOT NULL DEFAULT 0,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE mod_projects (
+                 id INTEGER PRIMARY KEY,
+                 name TEXT NOT NULL,
+                 rel_path TEXT NOT NULL UNIQUE,
+                 group_id INTEGER REFERENCES mod_project_groups(id) ON DELETE SET NULL,
+                 description TEXT,
+                 status TEXT NOT NULL DEFAULT 'active',
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX mod_projects_group_idx ON mod_projects(group_id);
+             CREATE INDEX mod_projects_updated_at_idx ON mod_projects(updated_at DESC);
+             CREATE TABLE studio_config (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 mod_root TEXT,
+                 onboarding_completed INTEGER NOT NULL DEFAULT 0,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             PRAGMA user_version = 6;
              COMMIT;",
         )?;
     }
@@ -1354,6 +1745,29 @@ fn bounded_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIST_LIMIT)
 }
 
+fn mod_group_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModProjectGroup> {
+    Ok(ModProjectGroup {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        sort: row.get(2)?,
+        created_at: row.get(3)?,
+        updated_at: row.get(4)?,
+    })
+}
+
+fn mod_project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModProject> {
+    Ok(ModProject {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        rel_path: row.get(2)?,
+        group_id: row.get(3)?,
+        description: row.get(4)?,
+        status: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
+}
+
 fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1672,12 +2086,15 @@ mod tests {
                     content: "c".into(),
                 })
                 .unwrap();
-            // 人为降级到 v4：删掉 v5 的表并回写 user_version
+            // 人为降级到 v4：删掉 v5/v6 的表并回写 user_version
             {
                 let connection = store.connection.lock().unwrap();
                 connection
                     .execute_batch(
                         "BEGIN;
+                         DROP TABLE studio_config;
+                         DROP TABLE mod_projects;
+                         DROP TABLE mod_project_groups;
                          DROP TABLE render_telemetry;
                          DROP TABLE change_items;
                          DROP TABLE resource_blobs;
@@ -1701,6 +2118,119 @@ mod tests {
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].id, annotation_id);
         assert_eq!(store.list_version_targets().unwrap(), Vec::new());
+        drop(store);
+        clean(&path);
+    }
+
+    #[test]
+    fn v5_database_migrates_to_v6_keeping_changesets() {
+        let path = temp_path("v5-to-v6");
+        clean(&path);
+        let target = {
+            let store = Store::open(&path).unwrap();
+            let recorded = store
+                .record_changeset(&changeset_input(
+                    "C:/a.package",
+                    vec![change_item(1, None, Some(b"one"))],
+                ))
+                .unwrap();
+            // 人为降级到 v5：删掉 v6 的表并回写 user_version
+            {
+                let connection = store.connection.lock().unwrap();
+                connection
+                    .execute_batch(
+                        "BEGIN;
+                         DROP TABLE studio_config;
+                         DROP TABLE mod_projects;
+                         DROP TABLE mod_project_groups;
+                         PRAGMA user_version = 5;
+                         COMMIT;",
+                    )
+                    .unwrap();
+            }
+            recorded.target_path.clone()
+        };
+        let store = Store::open(&path).unwrap();
+        assert_eq!(target, "C:/a.package");
+        assert_eq!(store.list_version_targets().unwrap().len(), 1);
+        // v6 表当场可用
+        let config = store.studio_config().unwrap();
+        assert!(!config.onboarding_completed);
+        assert_eq!(config.mod_root, None);
+        drop(store);
+        clean(&path);
+    }
+
+    #[test]
+    fn studio_config_and_mod_projects_crud() {
+        let path = temp_path("studio-crud");
+        clean(&path);
+        let store = Store::open(&path).unwrap();
+
+        // 配置：字段独立更新且互不清除
+        let root = store.set_studio_config(Some("D:/mods"), false).unwrap();
+        assert_eq!(root.mod_root.as_deref(), Some("D:/mods"));
+        assert!(!root.onboarding_completed);
+        let done = store.set_studio_config(None, true).unwrap();
+        assert_eq!(done.mod_root.as_deref(), Some("D:/mods"));
+        assert!(done.onboarding_completed);
+
+        // 分组
+        let group = store.mod_group_create("交通", 0).unwrap();
+        let group2 = store.mod_group_create("公共", 1).unwrap();
+        assert_eq!(
+            store
+                .mod_group_list()
+                .unwrap()
+                .into_iter()
+                .map(|g| g.name)
+                .collect::<Vec<_>>(),
+            vec!["交通".to_owned(), "公共".to_owned()]
+        );
+
+        // 项目 CRUD
+        let created = store
+            .mod_project_create(&ModProjectInput {
+                name: "地铁Mod".into(),
+                rel_path: "metro-mod".into(),
+                group_id: Some(group.id),
+                description: Some("磁悬浮当地铁".into()),
+                status: "active".into(),
+            })
+            .unwrap();
+        assert_eq!(created.status, "active");
+        let renamed = store
+            .mod_project_rename(created.id, "地铁Mod2", "metro-mod-2")
+            .unwrap();
+        assert_eq!(renamed.name, "地铁Mod2");
+        assert_eq!(renamed.rel_path, "metro-mod-2");
+        let moved = store.mod_project_set_group(created.id, Some(group2.id)).unwrap();
+        assert_eq!(moved.group_id, Some(group2.id));
+        store
+            .mod_project_set_status(created.id, "released")
+            .unwrap();
+        let described = store
+            .mod_project_set_description(created.id, None)
+            .unwrap();
+        assert_eq!(described.description, None);
+        assert_eq!(store.mod_project_list().unwrap().len(), 1);
+
+        // 删除分组 → 组下项目经外键回落；项目已改挂 group2 不受影响
+        store.mod_group_delete(group.id).unwrap();
+        assert!(matches!(
+            store.mod_group_delete(group.id),
+            Err(StoreError::ModGroupNotFound(_))
+        ));
+        assert_eq!(
+            store.mod_project_get(created.id).unwrap().group_id,
+            Some(group2.id)
+        );
+
+        store.mod_project_delete(created.id).unwrap();
+        assert!(matches!(
+            store.mod_project_delete(created.id),
+            Err(StoreError::ModProjectNotFound(_))
+        ));
         drop(store);
         clean(&path);
     }
