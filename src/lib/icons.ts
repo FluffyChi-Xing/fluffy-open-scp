@@ -102,6 +102,16 @@ import {
   Volume2,
   VolumeX,
   Wrench,
+  Brush,
+  Eraser,
+  PaintBucket,
+  Pipette,
+  Slash,
+  Square,
+  Undo2,
+  Redo2,
+  Maximize,
+  Ruler,
   Camera,
   FileMusic,
   History,
@@ -117,34 +127,34 @@ import {
   RotateCw,
   StickyNote,
   type LucideIcon,
-} from 'lucide-vue-next'
+} from "lucide-vue-next";
 
 export const iconAliases = {
-  dashboard: 'LayoutDashboard',
-  project: 'Layers',
-  deployment: 'Package',
-  setting: 'Settings',
-  components: 'PanelTop',
-  chart: 'ChartNoAxesCombined',
-  icons: 'CircleHelp',
-  table: 'Table2',
-  form: 'FileText',
-  feedback: 'Bell',
-  result: 'CheckCircle2',
-  tokens: 'Layers',
-  external: 'ExternalLink',
-  rocket: 'Rocket',
-  shield: 'Shield',
-  globe: 'Globe',
-  filePen: 'FilePen',
-  image: 'Image',
-  panelTop: 'PanelTop',
-  boxes: 'Boxes',
-  sticky: 'StickyNote',
-  history: 'History',
-} as const
+  dashboard: "LayoutDashboard",
+  project: "Layers",
+  deployment: "Package",
+  setting: "Settings",
+  components: "PanelTop",
+  chart: "ChartNoAxesCombined",
+  icons: "CircleHelp",
+  table: "Table2",
+  form: "FileText",
+  feedback: "Bell",
+  result: "CheckCircle2",
+  tokens: "Layers",
+  external: "ExternalLink",
+  rocket: "Rocket",
+  shield: "Shield",
+  globe: "Globe",
+  filePen: "FilePen",
+  image: "Image",
+  panelTop: "PanelTop",
+  boxes: "Boxes",
+  sticky: "StickyNote",
+  history: "History",
+} as const;
 
-export type FluffyIconAlias = keyof typeof iconAliases
+export type FluffyIconAlias = keyof typeof iconAliases;
 
 const iconRegistry: Record<string, LucideIcon> = {
   Activity,
@@ -264,21 +274,36 @@ const iconRegistry: Record<string, LucideIcon> = {
   RotateCw,
   StickyNote,
   Wrench,
-}
+  Brush,
+  Eraser,
+  PaintBucket,
+  Pipette,
+  Slash,
+  Square,
+  Undo2,
+  Redo2,
+  Maximize,
+  Ruler,
+};
 
-export const builtinIconNames: readonly string[] = Object.keys(iconRegistry)
+export const builtinIconNames: readonly string[] = Object.keys(iconRegistry);
 
 function toPascalCase(name: string) {
-  return name.replace(/(^|[-_\s])([a-z\d])/g, (_, __, character: string) => character.toUpperCase())
+  return name.replace(/(^|[-_\s])([a-z\d])/g, (_, __, character: string) =>
+    character.toUpperCase(),
+  );
 }
 
 export function registerIcons(icons: Record<string, LucideIcon>) {
   for (const [name, component] of Object.entries(icons)) {
-    iconRegistry[toPascalCase(name)] = component
+    iconRegistry[toPascalCase(name)] = component;
   }
 }
 
 export function resolveIcon(name: string): LucideIcon | undefined {
-  const resolvedName = name in iconAliases ? iconAliases[name as FluffyIconAlias] : toPascalCase(name)
-  return iconRegistry[resolvedName]
+  const resolvedName =
+    name in iconAliases
+      ? iconAliases[name as FluffyIconAlias]
+      : toPascalCase(name);
+  return iconRegistry[resolvedName];
 }

@@ -44,7 +44,7 @@ const panels = computed(
         key: "raster",
         icon: "Image",
         stage: "edit",
-        status: "planned",
+        status: "next",
         to: "/studio/raster",
       },
       {

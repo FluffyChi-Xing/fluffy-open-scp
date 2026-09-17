@@ -753,6 +753,28 @@ export interface SettingsStatus {
 export interface GameDirectoryDetection {
   candidates: GameDirectoryStatus[];
 }
+/** read_image_rgba：外部图片解码结果。 */
+export interface ImageRgbaResponse {
+  width: number;
+  height: number;
+  rgbaBase64: string;
+}
+/** read_raster_rgba：包内 raster 解码（pixFmt 21 才 decodable）。 */
+export interface RasterRgbaResponse {
+  width: number;
+  height: number;
+  mipCount: number;
+  pixelFormat: number;
+  decodable: boolean;
+  rgbaBase64?: string;
+}
+/** save_raster_overlay：副本保存结果。 */
+export interface SaveRasterOverlayResult {
+  outputPath: string;
+  tgi: Tgi;
+  rasterBytes: number;
+  mipCount: number;
+}
 /** setup_status：三处关键路径的配置状态（引导/缺失检测/设置页共用）。 */
 export interface SetupPathStatus {
   path?: string;

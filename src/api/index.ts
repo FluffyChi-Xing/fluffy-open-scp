@@ -12,6 +12,9 @@ import {
   type GameFolder,
   type MarkdownDocument,
   type MediaTools,
+  type ImageRgbaResponse,
+  type RasterRgbaResponse,
+  type SaveRasterOverlayResult,
   type ModProjectGroup,
   type ModProjectStats,
   type ModProjectView,
@@ -79,6 +82,9 @@ export type {
   ModProjectView,
   ModStatusCount,
   OpenPackageResponse,
+  ImageRgbaResponse,
+  RasterRgbaResponse,
+  SaveRasterOverlayResult,
   Operation,
   PackageFile,
   PackageHistory,
@@ -153,6 +159,15 @@ export const tauriApi = {
   },
   workspace: {
     get: () => command<WorkspaceStatus>("workspace_get"),
+    pickImageFile: (title = "选择图片") =>
+      open({
+        multiple: false,
+        title,
+        filters: [
+          { name: "图片", extensions: ["png", "jpg", "jpeg"] },
+          { name: "All", extensions: ["*"] },
+        ],
+      }).then((path) => (typeof path === "string" ? path : null)),
     pickDirectory: (title = "选择 OpenSCP 文档工作区") =>
       open({ directory: true, multiple: false, title }).then((path) =>
         typeof path === "string" ? path : null,
@@ -188,6 +203,23 @@ export const tauriApi = {
       command<WorkspaceEntry[]>("workspace_move", {
         request: { relativePath, targetDirectory },
       }),
+  },
+  raster: {
+    readImageRgba: (path: string) =>
+      command<ImageRgbaResponse>("read_image_rgba", { request: { path } }),
+    readRgba: (packageId: number, tgi: Tgi) =>
+      command<RasterRgbaResponse>("read_raster_rgba", {
+        request: { packageId, tgi },
+      }),
+    saveOverlay: (request: {
+      width: number;
+      height: number;
+      rgbaBase64: string;
+      tgi: Tgi;
+      outputPath: string;
+      generateMips: boolean;
+    }) =>
+      command<SaveRasterOverlayResult>("save_raster_overlay", { request }),
   },
   packages: {
     statistics: (paths: string[]) =>
