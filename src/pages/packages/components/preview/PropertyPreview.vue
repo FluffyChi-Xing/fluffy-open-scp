@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FEmpty from "@/components/extensions/FEmpty.vue";
+import FSheet from "@/components/ui/FSheet.vue";
 import type { PropertyPreview } from "@/api/tauri";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
 import PropertyEditor from "../property-editor/PropertyEditor.vue";
@@ -9,6 +11,18 @@ import SemanticCardView from "./SemanticCard.vue";
 
 const props = defineProps<{ preview: PropertyPreview }>();
 const editorOpen = ref(false);
+/** 通用编辑占位 sheet（非 3D 资源用）。 */
+const editOpen = ref(false);
+
+/**
+ * 带三维模型的 property 家族（semantic id，后端 sc-properties::semantic）：
+ * Unit = lot/建筑的 LOD1~4 引用；Agent / AgentVehicleModel = 载具模型引用。
+ * 属性编辑器（3D 视口）只对这些家族开放，其余走通用编辑入口。
+ */
+const MESH_SEMANTIC_IDS = new Set(["unit", "agent", "agent-vehicle-model"]);
+const hasMesh = computed(() =>
+  MESH_SEMANTIC_IDS.has(props.preview.semantic?.id ?? ""),
+);
 
 /** Decal Dictionary（贴花图鉴）用相册取代属性表。 */
 const isDecalDictionary = computed(() =>
@@ -47,7 +61,7 @@ function hashLabel(hash: number) {
           $t("package.toolbarAddProperty")
         }}
       </button>
-      <button type="button" disabled>
+      <button type="button" :disabled="hasMesh" @click="editOpen = true">
         <FIcon name="Pencil" :size="13" aria-label="" />{{
           $t("package.toolbarEdit")
         }}
@@ -60,6 +74,7 @@ function hashLabel(hash: number) {
       <button
         type="button"
         :aria-label="$t('package.propertyEditor')"
+        :disabled="!hasMesh"
         @click="editorOpen = true"
       >
         <FIcon name="SquarePen" :size="13" aria-label="" />{{
@@ -78,8 +93,14 @@ function hashLabel(hash: number) {
         :aria-pressed="view === 'gallery'"
         @click="view = view === 'gallery' ? 'table' : 'gallery'"
       >
-        <FIcon :name="view === 'gallery' ? 'ListTree' : 'Image'" :size="13" aria-label="" />{{
-          view === "gallery" ? $t("decal.switchTable") : $t("decal.switchGallery")
+        <FIcon
+          :name="view === 'gallery' ? 'ListTree' : 'Image'"
+          :size="13"
+          aria-label=""
+        />{{
+          view === "gallery"
+            ? $t("decal.switchTable")
+            : $t("decal.switchGallery")
         }}
       </button>
       <button
@@ -93,9 +114,7 @@ function hashLabel(hash: number) {
           :size="13"
           aria-label=""
         />{{
-          showCard
-            ? $t("package.card.viewTable")
-            : $t("package.card.viewCard")
+          showCard ? $t("package.card.viewTable") : $t("package.card.viewCard")
         }}
       </button>
     </div>
@@ -104,6 +123,16 @@ function hashLabel(hash: number) {
       :package-id="preview.packageId"
       :tgi="preview.tgi"
     />
+    <FSheet v-model:open="editOpen" :label="$t('package.resourceEdit')">
+      <div class="edit-sheet-body">
+        <FEmpty
+          icon-name="Pencil"
+          variant="compact"
+          :title="$t('package.editSheetPlaceholderTitle')"
+          :desc="$t('package.editSheetPlaceholderDesc')"
+        />
+      </div>
+    </FSheet>
     <DecalDictionaryGallery
       v-if="isDecalDictionary && view === 'gallery'"
       :package-id="preview.packageId"
@@ -181,6 +210,23 @@ function hashLabel(hash: number) {
 .preview-toolbar button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+.edit-sheet-body {
+  align-content: center;
+  display: grid;
+  flex: 1;
+  justify-items: center;
+  padding: 16px;
+}
+/* compact 变体上图标再缩一圈（52px 圆 → 40px）；FEmpty 内部以
+   内联 style 固定 svg 尺寸，需 !important 才能覆盖 */
+.edit-sheet-body :deep(.f-empty-icon) {
+  height: 40px;
+  width: 40px;
+}
+.edit-sheet-body :deep(.f-empty-icon svg) {
+  height: 20px !important;
+  width: 20px !important;
 }
 .structured-table-wrap {
   background: var(--surface-elevated);

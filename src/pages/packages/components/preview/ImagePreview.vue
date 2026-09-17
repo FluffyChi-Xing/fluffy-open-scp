@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, toRef, watch } from "vue";
+import FIcon from "@/components/extensions/FIcon.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
 import type { ImagePreview as ImagePreviewData } from "@/api/tauri";
 import {
   defaultImageFormat,
@@ -13,8 +15,19 @@ const props = withDefaults(
 );
 const scale = ref(1);
 const rotation = ref(0);
-const imageFormat = ref<ResourceExportFormat>(defaultImageFormat(props.preview.mime));
-const { exporting, exportResource } = useResourceExport(toRef(props, "preview"));
+const imageFormat = ref<ResourceExportFormat>(
+  defaultImageFormat(props.preview.mime),
+);
+const formatMenuOpen = ref(false);
+const exportFormats: ResourceExportFormat[] = ["png", "jpg", "gif"];
+
+function chooseFormat(format: ResourceExportFormat) {
+  imageFormat.value = format;
+  formatMenuOpen.value = false;
+}
+const { exporting, exportResource } = useResourceExport(
+  toRef(props, "preview"),
+);
 watch(
   () => props.preview.mime,
   (mime) => {
@@ -83,15 +96,32 @@ function onKeydown(event: KeyboardEvent) {
         >
           {{ exporting ? $t("package.exporting") : $t("package.export") }}
         </button>
-        <select
-          v-model="imageFormat"
-          :aria-label="$t('package.exportFormat')"
-          :disabled="exporting"
-        >
-          <option value="png">PNG</option>
-          <option value="jpg">JPG</option>
-          <option value="gif">GIF</option>
-        </select>
+        <FDropdown v-model:open="formatMenuOpen" :width="140">
+          <template #trigger>
+            <button
+              type="button"
+              class="format-trigger"
+              :aria-label="$t('package.exportFormat')"
+              :disabled="exporting"
+            >
+              {{ imageFormat.toUpperCase() }}
+              <FIcon name="ChevronDown" :size="12" aria-label="" />
+            </button>
+          </template>
+          <button
+            v-for="format in exportFormats"
+            :key="format"
+            type="button"
+            @click="chooseFormat(format)"
+          >
+            <FIcon
+              :name="imageFormat === format ? 'Check' : 'Minus'"
+              :size="14"
+              aria-label=""
+            />
+            {{ format.toUpperCase() }}
+          </button>
+        </FDropdown>
       </template>
       <button
         type="button"
@@ -164,22 +194,26 @@ function onKeydown(event: KeyboardEvent) {
   min-width: 42px;
   text-align: center;
 }
-.image-toolbar select {
+.format-trigger {
+  align-items: center;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
   font: inherit;
   font-size: 11px;
+  gap: 5px;
   min-height: 28px;
-  padding: 0 6px;
+  padding: 0 8px;
 }
-.image-toolbar select:focus-visible {
+.format-trigger:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 .image-toolbar button:active,
-.image-toolbar select:active {
+.format-trigger:active {
   transform: scale(0.96);
 }
 

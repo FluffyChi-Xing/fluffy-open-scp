@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
 import { isTauri } from "@/api";
@@ -13,6 +14,7 @@ import { useLocaleEditorStore } from "@/stores/localeEditor";
 const { t } = useI18n();
 const editor = useLocaleEditorStore();
 const gamePackages = useGamePackagesStore();
+const packageMenuOpen = ref(false);
 const {
   packageId,
   tables,
@@ -27,6 +29,19 @@ const {
   dirtyCount,
   hasEdits,
 } = storeToRefs(editor);
+
+const selectedPackageLabel = computed(() => {
+  const current = gamePackages.opened.find(
+    (opened) => opened.package.packageId === packageId.value,
+  );
+  return current
+    ? (current.package.path.split("/").pop() ?? current.package.path)
+    : t("studio.i18n.selectPackage");
+});
+
+function choosePackage(id: number) {
+  void editor.loadTables(id);
+}
 
 onMounted(() => {
   // 已打开过 package 且未选过时自动选第一个（通常是刚在资源页打开的）
@@ -69,24 +84,35 @@ function hex(value: number) {
 
     <template v-if="isTauri() && gamePackages.opened.length">
       <section class="config-row">
-        <label class="field">
+        <div class="field">
           <span class="field-label">{{ t("studio.i18n.selectPackage") }}</span>
-          <select
-            class="field-input mono"
-            :value="packageId ?? ''"
-            @change="
-              editor.loadTables(Number(($event.target as HTMLSelectElement).value))
-            "
-          >
-            <option
+          <FDropdown v-model:open="packageMenuOpen" :width="260">
+            <template #trigger>
+              <button type="button" class="field-input mono package-trigger">
+                {{ selectedPackageLabel }}
+                <FIcon name="ChevronDown" :size="12" aria-label="" />
+              </button>
+            </template>
+            <button
               v-for="opened in gamePackages.opened"
               :key="opened.package.packageId"
-              :value="opened.package.packageId"
+              type="button"
+              @click="
+                choosePackage(opened.package.packageId);
+                packageMenuOpen = false;
+              "
             >
-              {{ opened.package.path.split(/[\/]/).pop() }}
-            </option>
-          </select>
-        </label>
+              <FIcon
+                :name="
+                  packageId === opened.package.packageId ? 'Check' : 'Package'
+                "
+                :size="14"
+                aria-label=""
+              />
+              {{ opened.package.path.split("/").pop() }}
+            </button>
+          </FDropdown>
+        </div>
         <span v-if="hasEdits" class="dirty-badge">
           {{ t("studio.i18n.dirtyCount", dirtyCount) }}
         </span>
@@ -178,7 +204,10 @@ function hex(value: number) {
                   <tr
                     v-for="item in filteredItems"
                     :key="item.key"
-                    :class="{ comment: item.id === null, dirty: editor.isDirty(item) }"
+                    :class="{
+                      comment: item.id === null,
+                      dirty: editor.isDirty(item),
+                    }"
                   >
                     <td class="col-key mono">{{ item.key }}</td>
                     <td class="col-text">

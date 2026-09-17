@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
+import FDropdown from "@/components/ui/FDropdown.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import { isTauri, tauriApi } from "@/api";
@@ -16,6 +17,11 @@ const rootInput = shallowRef("");
 const pending = shallowRef<TreeAction | null>(null);
 const nameInput = shallowRef("");
 const moveTarget = shallowRef("");
+const moveMenuOpen = shallowRef(false);
+function chooseMoveTarget(target: string) {
+  moveTarget.value = target;
+  moveMenuOpen.value = false;
+}
 const actionError = shallowRef("");
 const moveTargets = computed(() => {
   if (!pending.value) return [] as string[];
@@ -220,19 +226,42 @@ async function confirmAction() {
             @keydown.enter.prevent="confirmAction"
           />
           <template v-else>
-            <label for="tree-action-target">{{
-              $t("workspace.targetLabel")
-            }}</label>
-            <select id="tree-action-target" v-model="moveTarget">
-              <option value="">{{ $t("workspace.targetRoot") }}</option>
-              <option
+            <span class="select-label">{{ $t("workspace.targetLabel") }}</span>
+            <FDropdown v-model:open="moveMenuOpen" :width="280">
+              <template #trigger>
+                <button
+                  id="tree-action-target"
+                  type="button"
+                  class="target-trigger"
+                >
+                  <span class="target-text">{{
+                    moveTarget || $t("workspace.targetRoot")
+                  }}</span>
+                  <FIcon name="ChevronDown" :size="12" aria-label="" />
+                </button>
+              </template>
+              <button type="button" @click="chooseMoveTarget('')">
+                <FIcon
+                  :name="!moveTarget ? 'Check' : 'Folder'"
+                  :size="14"
+                  aria-label=""
+                />
+                {{ $t("workspace.targetRoot") }}
+              </button>
+              <button
                 v-for="target in moveTargets.filter(Boolean)"
                 :key="target"
-                :value="target"
+                type="button"
+                @click="chooseMoveTarget(target)"
               >
+                <FIcon
+                  :name="moveTarget === target ? 'Check' : 'FolderOpen'"
+                  :size="14"
+                  aria-label=""
+                />
                 {{ target }}
-              </option>
-            </select>
+              </button>
+            </FDropdown>
           </template>
           <p v-if="actionError" class="error-message" role="alert">
             {{ actionError }}
@@ -454,5 +483,31 @@ async function confirmAction() {
   .form-row button {
     width: 100%;
   }
+}
+
+.target-trigger {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12.5px;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 4px 10px;
+  width: 100%;
+}
+.target-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-label {
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 </style>

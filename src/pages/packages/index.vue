@@ -63,7 +63,14 @@ const {
   loadingFolders,
   demo,
 } = storeToRefs(explorer);
-const importMode = shallowRef("folder");
+const importMode = shallowRef<"folder" | "default">("folder");
+/** 导入方式下拉（FDropdown）展开状态。 */
+const importMenuOpen = shallowRef(false);
+const importModeLabel = computed(() =>
+  importMode.value === "folder"
+    ? t("package.chooseFolder")
+    : t("package.useDefaultFolder"),
+);
 // ── 资源批注 ──
 const notesOpen = shallowRef(false);
 const notesTgi = shallowRef<Tgi | null>(null);
@@ -82,7 +89,11 @@ async function refreshNotesCounts() {
     const all = await tauriApi.annotations.list();
     const counts = new Map<string, number>();
     for (const item of all as ResourceAnnotation[]) {
-      const key = tgiNoteKey({ typeId: item.typeId, group: item.groupId, instance: item.instance });
+      const key = tgiNoteKey({
+        typeId: item.typeId,
+        group: item.groupId,
+        instance: item.instance,
+      });
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     notesCountByTgi.value = counts;
@@ -96,8 +107,16 @@ function openNotes(tgi: Tgi, label: string) {
   notesOpen.value = true;
 }
 // 右键菜单
-const contextMenu = shallowRef<{ x: number; y: number; tgi: Tgi; label: string } | null>(null);
-function onRowContextMenu(event: MouseEvent, resource: (typeof visibleResources.value)[number]) {
+const contextMenu = shallowRef<{
+  x: number;
+  y: number;
+  tgi: Tgi;
+  label: string;
+} | null>(null);
+function onRowContextMenu(
+  event: MouseEvent,
+  resource: (typeof visibleResources.value)[number],
+) {
   event.preventDefault();
   contextMenu.value = {
     x: event.clientX,
@@ -217,7 +236,12 @@ async function loadMeshTargets(): Promise<void> {
     const lods = session?.modelLods ?? [];
     const targets: MeshExportTarget[] = [];
     lods.forEach((lod, index) => {
-      if (lod) targets.push({ label: `LOD${index + 1}`, packageId: lod.packageId, tgi: lod.tgi });
+      if (lod)
+        targets.push({
+          label: `LOD${index + 1}`,
+          packageId: lod.packageId,
+          tgi: lod.tgi,
+        });
     });
     meshExportTargets.value = targets;
   } finally {
@@ -259,8 +283,9 @@ async function copyTgi() {
     // 剪贴板不可用时静默失败
   }
 }
-function selectImportMode(event: Event) {
-  importMode.value = (event.target as HTMLSelectElement).value;
+function chooseImportMode(mode: "folder" | "default") {
+  importMode.value = mode;
+  importMenuOpen.value = false;
 }
 async function importFromSelection() {
   if (importMode.value === "folder") {
@@ -312,18 +337,33 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
         </div>
       </div>
       <div class="toolbar-actions">
-        <label for="import-mode" class="sr-only">{{
-          $t("package.importMode")
-        }}</label
-        ><select
-          id="import-mode"
-          :value="importMode"
-          @change="selectImportMode"
-        >
-          <option value="folder">{{ $t("package.chooseFolder") }}</option>
-          <option value="default">
+        <FDropdown v-model:open="importMenuOpen" :width="180">
+          <template #trigger>
+            <button
+              class="toolbar-button"
+              type="button"
+              :aria-label="`${$t('package.importMode')}: ${importModeLabel}`"
+            >
+              {{ importModeLabel }}
+              <FIcon name="ChevronDown" :size="12" aria-label="" />
+            </button>
+          </template>
+          <button type="button" @click="chooseImportMode('folder')">
+            <FIcon
+              :name="importMode === 'folder' ? 'Check' : 'FolderOpen'"
+              :size="14"
+              aria-label=""
+            />
+            {{ $t("package.chooseFolder") }}
+          </button>
+          <button type="button" @click="chooseImportMode('default')">
+            <FIcon
+              :name="importMode === 'default' ? 'Check' : 'House'"
+              :size="14"
+              aria-label=""
+            />
             {{ $t("package.useDefaultFolder") }}
-          </option></select
+          </button> </FDropdown
         ><button
           class="toolbar-button"
           type="button"
@@ -543,7 +583,8 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                       <span
                         v-if="subtypeLabelOf(resource)"
                         class="resource-subtype"
-                      >{{ subtypeLabelOf(resource) }}</span>
+                        >{{ subtypeLabelOf(resource) }}</span
+                      >
                     </td>
                     <td>{{ formatSize(resource.decompressedSize) }}</td>
                     <td>
@@ -556,17 +597,25 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                     <td>
                       <button
                         class="notes-badge"
-                        :class="{ noted: notesCountByTgi.get(tgiNoteKey(resource.tgi)) }"
+                        :class="{
+                          noted: notesCountByTgi.get(tgiNoteKey(resource.tgi)),
+                        }"
                         type="button"
                         :title="$t('notes.column')"
                         @click.stop="
-                          openNotes(resource.tgi, explorer.resourceLabel(resource))
+                          openNotes(
+                            resource.tgi,
+                            explorer.resourceLabel(resource),
+                          )
                         "
                       >
                         <FIcon name="StickyNote" :size="13" aria-label="" />
-                        <span v-if="notesCountByTgi.get(tgiNoteKey(resource.tgi))">{{
-                          notesCountByTgi.get(tgiNoteKey(resource.tgi))
-                        }}</span>
+                        <span
+                          v-if="notesCountByTgi.get(tgiNoteKey(resource.tgi))"
+                          >{{
+                            notesCountByTgi.get(tgiNoteKey(resource.tgi))
+                          }}</span
+                        >
                       </button>
                     </td>
                   </tr>
@@ -630,10 +679,14 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
               <div>
                 <FTypography :header="4" spacing="none">{{
                   explorer.resourceLabel(selected)
-                }}</FTypography
-                ><div class="detail-tgi">
+                }}</FTypography>
+                <div class="detail-tgi">
                   <code>{{ tgiLabel(selected.tgi) }}</code>
-                  <FDropdown v-if="canExportMesh" v-model:open="meshMenuOpen" :width="160">
+                  <FDropdown
+                    v-if="canExportMesh"
+                    v-model:open="meshMenuOpen"
+                    :width="160"
+                  >
                     <template #trigger>
                       <button
                         class="copy-button"
@@ -648,11 +701,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                         <FIcon name="ChevronDown" :size="11" aria-label="" />
                       </button>
                     </template>
-                    <button
-                      v-if="meshTargetsLoading"
-                      type="button"
-                      disabled
-                    >
+                    <button v-if="meshTargetsLoading" type="button" disabled>
                       {{ $t("common.loading") }}
                     </button>
                     <button
@@ -754,7 +803,10 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
     :package-path="activePackage?.package.path ?? ''"
     :tgi="notesTgi"
     :resource-label="notesLabel"
-    @close="notesOpen = false; refreshNotesCounts()"
+    @close="
+      notesOpen = false;
+      refreshNotesCounts();
+    "
   />
 </template>
 
@@ -821,7 +873,6 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   display: flex;
   gap: 7px;
 }
-.toolbar-actions select,
 .toolbar-button {
   background: var(--surface-elevated);
   border: 1px solid var(--border);
@@ -1284,13 +1335,6 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   justify-content: center;
   padding: 20px;
   text-align: center;
-}
-.sr-only {
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  position: absolute;
-  width: 1px;
 }
 @media (max-width: 700px) {
   .explorer-toolbar {
