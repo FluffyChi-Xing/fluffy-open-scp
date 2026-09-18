@@ -265,6 +265,10 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return session.value?.lotOverlayBoxOffset ?? null;
   });
 
+  const lotModelBBoxCenter = computed<[number, number] | null>(() => {
+    return session.value?.lotModelBBoxCenter ?? null;
+  });
+
   const lotSurfacePng = computed<string | null>(() => {
     const png = session.value?.lotSurfacePng;
     return png ? `data:image/png;base64,${png}` : null;
@@ -338,6 +342,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotBorderColors,
     lotBorderWidths,
     lotOverlayBoxOffset,
+    lotModelBBoxCenter,
     lotMaskPng,
     lotMaskRawRgba,
     lotAlbedoPng,

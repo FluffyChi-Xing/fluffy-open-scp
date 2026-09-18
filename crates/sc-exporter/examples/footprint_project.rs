@@ -92,12 +92,20 @@ fn main() {
         placement.iter().map(|v| (*v * 1000.0).round() / 1000.0).collect::<Vec<_>>()
     );
 
-    // 0xF9EFBA Model Bounding Box（属性授权的建筑包围盒）
+    // 0xF9EFBA Model Bounding Box（属性授权的建筑包围盒）+ xy 中心
+    let mut bbox_center: [f32; 2] = [0.0, 0.0];
     if let Some(prop) = doc.properties.get(H_MODEL_BBOX) {
-        let value = prop.scalar().or_else(|| {
-            prop.array().and_then(|values| values.first())
-        });
+        let value = prop
+            .scalar()
+            .or_else(|| prop.array().and_then(|values| values.first()));
         println!("ModelBoundingBox (0xF9EFBA) = {value:?}");
+        if let Some(sc_properties::Value::BoundingBox { min, max }) = value {
+            bbox_center = [(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0];
+            println!(
+                "  bbox center (model space) = ({:.3}, {:.3})",
+                bbox_center[0], bbox_center[1]
+            );
+        }
     } else {
         println!("ModelBoundingBox (0xF9EFBA) = (absent)");
     }
@@ -254,6 +262,54 @@ fn main() {
             unit_pts.len(),
             (ux0 + ux1) / 2.0,
             (uy0 + uy1) / 2.0,
+        );
+    }
+
+    // ---- 地面中心三方案对照（米，lot 空间）----
+    // R = I 时：引擎 = bboxC + t；app 旧 = −t；app d313e11 = units 中心。
+    let t = [placement[9], placement[10]];
+    let engine_ground = [bbox_center[0] + t[0], bbox_center[1] + t[1]];
+    let app_legacy = [-t[0], -t[1]];
+    let units_center: Option<[f32; 2]> = if unit_pts.is_empty() {
+        None
+    } else {
+        let (ux0, ux1) = unit_pts.iter().fold((f32::MAX, f32::MIN), |acc, p| {
+            (acc.0.min(p[0]), acc.1.max(p[0]))
+        });
+        let (uy0, uy1) = unit_pts.iter().fold((f32::MAX, f32::MIN), |acc, p| {
+            (acc.0.min(p[1]), acc.1.max(p[1]))
+        });
+        Some([(ux0 + ux1) / 2.0, (uy0 + uy1) / 2.0])
+    };
+    println!("== 地面中心对照 ==");
+    println!(
+        "  引擎   = ({:.2}, {:.2})   [M(bboxC), bboxC=({:.2},{:.2}) t=({:.2},{:.2})]",
+        engine_ground[0], engine_ground[1], bbox_center[0], bbox_center[1], t[0], t[1]
+    );
+    println!(
+        "  app 旧 = ({:.2}, {:.2})   [M^-1(0) = -t]",
+        app_legacy[0], app_legacy[1]
+    );
+    match units_center {
+        Some(c) => println!(
+            "  app 新 = ({:.2}, {:.2})   [units 中心, d313e11]",
+            c[0], c[1]
+        ),
+        None => println!("  app 新 = (无单元, 回退原点)"),
+    }
+    let err = [
+        engine_ground[0] - app_legacy[0],
+        engine_ground[1] - app_legacy[1],
+    ];
+    println!(
+        "  app 旧误差 = ({:.2}, {:.2}) m",
+        err[0], err[1]
+    );
+    if let Some(c) = units_center {
+        println!(
+            "  app 新误差 = ({:.2}, {:.2}) m",
+            engine_ground[0] - c[0],
+            engine_ground[1] - c[1]
         );
     }
 

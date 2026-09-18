@@ -92,49 +92,6 @@ export function groundFillMesh(
 }
 
 /**
- * Unit 锚点包围盒中心（引擎 FUN_007e2260 累计语义，2026-09-19 反编译）：
- * 地面 quad 中心 = 该中心（LotOverlayBoxOffset 缺省时）。建筑模型原点
- * 不参与——单元（灯/贴花/道具/生成器/路径点）围绕实际建成区分布，
- * 塔楼类建筑因此相对地面偏侧（0xCCF54D02 实测单元中心 (-7.44,8.03)，
- * 与游戏内建筑贴地面右下一致）。
- */
-export function unitAnchorCenter(grouping: {
-  lights: { transform?: { matrix: number[] } | null }[];
-  decals: { transform?: { matrix: number[] } | null }[];
-  props: { transform?: { matrix: number[] } | null }[];
-  effects: { transform?: { matrix: number[] } | null }[];
-  spawners: { transform?: { matrix: number[] } | null }[];
-  pathPoints: { point?: [number, number, number] | null }[];
-}): [number, number] | null {
-  const points: [number, number][] = [];
-  for (const unit of [
-    ...grouping.lights,
-    ...grouping.decals,
-    ...grouping.props,
-    ...grouping.effects,
-    ...grouping.spawners,
-  ]) {
-    const m = unit.transform?.matrix;
-    if (m && m.length === 12) points.push([m[9], m[10]]);
-  }
-  for (const point of grouping.pathPoints) {
-    if (point.point) points.push([point.point[0], point.point[1]]);
-  }
-  if (!points.length) return null;
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  for (const [x, y] of points) {
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
-  }
-  return [(minX + maxX) / 2, (minY + maxY) / 2];
-}
-
-/**
  * LotMask 贴图：加载后按渲染模式应用到地面 fill——默认模式贴服务端合成的
  * 反照率图（通道平色+底图格，缺失时回退量化图），精细模式走引擎语义合成
  * （composeRefinedGround）。异步完成按 isStale 守卫丢弃过期代。

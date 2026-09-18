@@ -538,6 +538,10 @@ pub struct LotEditorSession {
     /// LotOverlayBoxOffset（0x0CCB7FC9）：地面 quad 中心覆盖值；
     /// None = 引擎回退到 lot 单元锚点包围盒中心。
     pub lot_overlay_box_offset: Option<[f32; 2]>,
+    /// Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）——地面 quad
+    /// 中心 = placement 变换后的该点（引擎 FUN_008ba1c0/FUN_007e2260）；
+    /// None = 无属性，回退原点。
+    pub lot_model_bbox_center: Option<[f32; 2]>,
     /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
     pub units: Vec<sc_properties::LotUnit>,
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
@@ -2375,6 +2379,16 @@ pub async fn read_lot_editor_session(
                 lot_border_colors,
                 lot_border_widths,
                 lot_overlay_box_offset: document.lot_offset,
+                lot_model_bbox_center: document
+                    .properties
+                    .get(0x00F9_EFBA)
+                    .and_then(|p| p.scalar().or_else(|| p.array().and_then(|v| v.first())))
+                    .and_then(|value| match value {
+                        sc_properties::Value::BoundingBox { min, max } => {
+                            Some([(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0])
+                        }
+                        _ => None,
+                    }),
                 decal_textures,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,

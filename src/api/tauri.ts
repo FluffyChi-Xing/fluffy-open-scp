@@ -554,6 +554,8 @@ export interface LotEditorSession {
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（float，边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）；null = 无属性。 */
+  lotModelBBoxCenter: [number, number] | null;
   /** LotOverlayBoxOffset（0x0CCB7FC9）：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
   lotOverlayBoxOffset: [number, number] | null;
   units: LotUnitDto[];

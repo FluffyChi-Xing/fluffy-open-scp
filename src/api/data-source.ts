@@ -463,6 +463,7 @@ function mockDataSource(): OpenScpDataSource {
         ],
         lotBorderWidths: [0, 0, 0, 0],
         lotOverlayBoxOffset: null,
+        lotModelBBoxCenter: null,
         lotMaskPng: null,
         lotMaskRawRgba: null,
         lotAlbedoPng: null,

@@ -40,7 +40,6 @@ import {
   applyGroundMask,
   buildLotRect,
   placementInverse,
-  unitAnchorCenter,
 } from "./editorGround";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
@@ -72,6 +71,9 @@ const props = defineProps<{
   lotBorderWidths: number[];
   /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
   lotOverlayBoxOffset: [number, number] | null;
+  /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）；null = 无属性。 */
+  lotModelBBoxCenter: [number, number] | null;
+
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
   /** LotMask 原始通道权重（未压缩 RGBA base64；A = LC4 权重）。 */
@@ -496,23 +498,25 @@ async function assembleScene(
     if (props.lotPlacement) {
       ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
     }
-    // 引擎定位（FUN_007e2260/FUN_008ba1c0 反编译，2026-09-19）：地面 quad
-    // 中心 = lot 单元锚点包围盒中心，LotOverlayBoxOffset（0x0CCB7FC9）存在
-    // 时覆盖之；建筑模型原点不动。塔楼 0xCCF54D02 实证：单元中心
-    // (-7.44, 8.03)，地面随之偏移后建筑落在地面右下（与游戏一致）；
-    // 中心对中心时建筑会侵入北侧道路（用户截图反馈）。
-    const groundCenter =
-      props.lotOverlayBoxOffset ?? unitAnchorCenter(props.grouping);
-    if (
-      groundCenter &&
-      (Math.abs(groundCenter[0]) > 1e-4 || Math.abs(groundCenter[1]) > 1e-4)
-    ) {
+    // 引擎定位定案（FUN_008ba1c0/FUN_007e2260 逐字 + 五样本对照，2026-09-19）：
+    // 地面 quad（LotSize 尺寸）中心 = placement 变换后的 Model Bounding Box
+    // 中心（0x00F9EFBA）；LotOverlayBoxOffset（0x0CCB7FC9）存在时覆盖之。
+    // 建筑在编辑器中以模型原点摆放，故地面相对建筑 = R·center（placement
+    // 平移 t 属整组装位，不进入相对关系）。五样本对照：塔楼 ≈0、图书馆
+    // −0.41、EP1 房 +2.89、消防局 0（相对）——旧实现误差 = bboxC + 2·t
+    // （消防局 8m = 2×4m 平移，用户目视的大偏移）。
+    const pm = props.lotPlacement;
+    const r00 = pm ? pm[0] : 1;
+    const r01 = pm ? pm[3] : 0;
+    const r10 = pm ? pm[1] : 0;
+    const r11 = pm ? pm[4] : 1;
+    const centerLocal =
+      props.lotOverlayBoxOffset ?? props.lotModelBBoxCenter ?? [0, 0];
+    const tx = r00 * centerLocal[0] + r01 * centerLocal[1];
+    const ty = r10 * centerLocal[0] + r11 * centerLocal[1];
+    if (Math.abs(tx) > 1e-4 || Math.abs(ty) > 1e-4) {
       ground.matrix.premultiply(
-        new THREE.Matrix4().makeTranslation(
-          groundCenter[0],
-          groundCenter[1],
-          0,
-        ),
+        new THREE.Matrix4().makeTranslation(tx, ty, 0),
       );
     }
     ground.matrixAutoUpdate = false;

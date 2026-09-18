@@ -39,6 +39,7 @@ const {
   lotBorderColors,
   lotBorderWidths,
   lotOverlayBoxOffset,
+  lotModelBBoxCenter,
   lotMaskPng,
   lotMaskRawRgba,
   lotAlbedoPng,
@@ -427,6 +428,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-border-colors="lotBorderColors"
           :lot-border-widths="lotBorderWidths"
           :lot-overlay-box-offset="lotOverlayBoxOffset"
+          :lot-model-bbox-center="lotModelBBoxCenter"
           :lot-mask-png="lotMaskPng"
           :lot-mask-raw-rgba="lotMaskRawRgba"
           :lot-albedo-png="lotAlbedoPng"
