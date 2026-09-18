@@ -360,9 +360,15 @@ attribute vec4 uv1;
 attribute vec2 uv2;
 attribute vec2 uv3;
 uniform float uParamCols;
+#ifdef TINT_PARAMS
+uniform sampler2D paramsMap;
+#endif
 varying vec2 vTintUv;
 varying vec2 vTopUv;
-varying float vMatU;
+varying vec4 vXform;
+varying vec4 vXform2;
+varying vec4 vPalOrigin;
+varying vec4 vRoom;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
@@ -373,7 +379,24 @@ varying vec3 vModelPos;`,
         `#include <uv_vertex>
 vTintUv = uv2;
 vTopUv = uv3;
-vMatU = (uv1.x * 255.0 + 0.5) / uParamCols;`,
+// 参数表按顶点取行（引擎 building4DefaultVS 同款数据流：VS 查表 →
+// regionXform 作为 varying 插值）。此前在片元里用插值列号 vMatU 查表：
+// 跨列三角形的列号在边界间连续扫过一连串无关列，窗扇半边被换成素墙
+// 区域（消防局中窗右半变砖墙，2026-09-19 实测）。列号取整后 +0.5 对齐
+// texel 中心，Nearest 采样行 V 与片元版一致。
+#ifdef TINT_PARAMS
+float scMatCol = floor(uv1.x * 255.0 + 0.5);
+vec2 scMatC = vec2((scMatCol + 0.5) / uParamCols, 0.0);
+vPalOrigin = texture2D(paramsMap, scMatC + vec2(0.0, 0.125));
+vXform = texture2D(paramsMap, scMatC + vec2(0.0, 0.375));
+vXform2 = texture2D(paramsMap, scMatC + vec2(0.0, 0.625));
+vRoom = texture2D(paramsMap, scMatC + vec2(0.0, 0.875));
+#else
+vPalOrigin = vec4(0.0);
+vXform = vec4(1.0, 1.0, 0.0, 0.0);
+vXform2 = vec4(0.0);
+vRoom = vec4(0.0);
+#endif`,
       )
       .replace(
         "#include <beginnormal_vertex>",
@@ -396,7 +419,10 @@ vModelPos = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         `#include <common>
 varying vec2 vTintUv;
 varying vec2 vTopUv;
-varying float vMatU;
+varying vec4 vXform;
+varying vec4 vXform2;
+varying vec4 vPalOrigin;
+varying vec4 vRoom;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
@@ -427,9 +453,6 @@ uniform float uInteriorGlow;
 uniform float uDayLight;
 uniform float uPowered;
 uniform vec2 uTintTexel;
-#ifdef TINT_PARAMS
-uniform sampler2D paramsMap;
-#endif
 #ifdef TINT_SHADERMAP
 uniform sampler2D shaderMapMap;
 #endif
@@ -458,17 +481,12 @@ float scFastNoise(vec3 seed) {
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
-        #ifdef TINT_PARAMS
-        vec4 xform = texture2D(paramsMap, vec2(vMatU, 0.375));
-        vec4 xform2 = texture2D(paramsMap, vec2(vMatU, 0.625)); // row2=regionXform2(Top 层)
-        vec4 palOrigin = texture2D(paramsMap, vec2(vMatU, 0.125));
-        vec4 scRoom = texture2D(paramsMap, vec2(vMatU, 0.875)); // row3=(tilePadding.xy, roomInvSize.zw)
-        #else
-        vec4 xform = vec4(1.0, 1.0, 0.0, 0.0);
-        vec4 xform2 = vec4(0.0);
-        vec4 palOrigin = vec4(0.0);
-        vec4 scRoom = vec4(0.0);
-        #endif
+        // 参数表行 = VS 按顶点查表后的 varying（引擎同款数据流），
+        // 跨列三角形平滑插值区域变换而非扫过无关列。
+        vec4 xform = vXform;
+        vec4 xform2 = vXform2; // row2=regionXform2(Top 层)
+        vec4 palOrigin = vPalOrigin;
+        vec4 scRoom = vRoom; // row3=(tilePadding.xy, roomInvSize.zw)
         // 半 texel 内缩：tint 是图集，fract=0/1 处的线性滤波核会读到相邻
         // 区域内容（Base 层此前没有 padding 保护——接缝的第二个成因）。
         vec2 tUv = fract(vTintUv) * max(xform.xy - uTintTexel, vec2(0.0)) + xform.zw + uTintTexel * 0.5;

@@ -1,7 +1,7 @@
 //! 只读取证：facade mesh 的 TEXCOORD 结构直方图。
 //! 输出每 mesh 的 TC 元素格式、TC0/TC1 值域、列索引（TC1.x×255）分布——
 //! 用于比对"顶点选了哪些参数表列 → 哪些 tint 区域应该渲染"。
-//! 用法：cargo run -p sc-exporter --release --example facade_uv_probe -- <package> <model_instance>
+//! 用法：cargo run -p sc-exporter --release --example facade_uv_probe -- <package> <model_instance> [--dump-verts <csv>]
 use dbpf::Package;
 use rw4::{ComponentValue, DeclarationUsage};
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,6 +20,10 @@ fn main() {
         .expect("model not found");
     let data = package.read(&entry).expect("read");
     let file = rw4::Rw4File::parse(&data).expect("parse");
+    let dump_path = args
+        .iter()
+        .position(|a| a == "--dump-verts")
+        .and_then(|i| args.get(i + 1));
 
     for section in file.sections_of_type(rw4::SectionType::MESH) {
         let Ok(mesh) = file.decode_mesh(&data, section.number) else {
@@ -110,5 +114,36 @@ fn main() {
         println!("  TC1 UBYTE4 .b1 histogram: {tc1_ub1:?}");
         println!("  D3DCOLOR.G histogram: {d3d_g:?}");
         println!("  D3DCOLOR.B max: {d3d_b_max}");
+
+        // 逐顶点 CSV（x,y,z,matcol,tc0.xy,tc0.zw）：空间定位窗扇顶点用。
+        if let Some(path) = dump_path {
+            use std::io::Write;
+            let mut out = std::io::BufWriter::new(std::fs::File::create(path).expect("create"));
+            writeln!(out, "x,y,z,col,tc0x,tc0y,tc0z,tc0w").unwrap();
+            for vertex in &mesh.vertices {
+                let (mut px, mut py, mut pz) = (f32::NAN, f32::NAN, f32::NAN);
+                let mut tc0 = [0f32; 4];
+                let mut col = -1i32;
+                for (element, value) in &vertex.components {
+                    match (element.usage, value) {
+                        (DeclarationUsage::Position, ComponentValue::Float3(p)) => {
+                            (px, py, pz) = (p[0], p[1], p[2]);
+                        }
+                        (DeclarationUsage::TexCoord, ComponentValue::Float4(f)) => {
+                            tc0 = *f;
+                        }
+                        (DeclarationUsage::Color, ComponentValue::D3DColor { g, .. }) => {
+                            col = i32::from(*g);
+                        }
+                        (DeclarationUsage::Color, ComponentValue::UByte4(bytes)) => {
+                            col = i32::from(bytes[1]);
+                        }
+                        _ => {}
+                    }
+                }
+                writeln!(out, "{px},{py},{pz},{col},{},{},{},{}", tc0[0], tc0[1], tc0[2], tc0[3]).unwrap();
+            }
+            println!("  vertex dump -> {path}");
+        }
     }
 }
