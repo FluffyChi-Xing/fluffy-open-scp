@@ -32,6 +32,10 @@ const H_LOT_TEXTURES: u32 = 0x0CCB_7FD4;
 const H_LOT_SIZE: u32 = 0x0CCB_7FC8;
 const H_LOT_COLORS: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
 const H_LOT_BORDER_COLORS: [u32; 4] = [0x0D7A_F042, 0x0D7A_F043, 0x0D7A_F044, 0x0D7A_F045];
+const H_BORDER_WIDTHS: [u32; 4] = [0x0D7A_F046, 0x0D7A_F047, 0x0D7A_F048, 0x0D7A_F049];
+
+/// 抗级超采样倍率（对齐前端 refinedGround 的 4× 曲线平滑渲染）。
+const SUPERSAMPLE: usize = 4;
 
 /// 图集列数：shader 里 `*.25` 即 1/4 → 4×4 = 16 格。
 const ATLAS_COLS: usize = 4;
@@ -307,6 +311,25 @@ fn main() {
     println!("base tile index (--base-tile)  = {}", args.base_tile % ATLAS_CELLS);
     println!("borderWidth (--border-width)   = {}", args.border_width);
 
+    // 逐通道 borderWidth（属性 0xD7AF046-49；缺失回退 --border-width）。
+    let mut border_widths = [args.border_width; 4];
+    let mut border_widths_authored = false;
+    for (channel, hash) in H_BORDER_WIDTHS.iter().enumerate() {
+        if let Some(Value::Float(value)) = scalar(&file, *hash) {
+            border_widths[channel] = *value;
+            border_widths_authored = true;
+        }
+    }
+    println!(
+        "borderWidth1-4 ({}): {:?}",
+        if border_widths_authored {
+            "property"
+        } else {
+            "fallback"
+        },
+        border_widths
+    );
+
     // 原始 mask RGB（**不做任何调色板替换**）与纯覆盖率掩码，避免把探针的
     // 回退色误读成资产数据。
     {
@@ -388,6 +411,33 @@ fn main() {
         args.tiles,
     );
     save_png(&args.out_dir, "compose_tiles.png", mask_w, mask_h, &tiled.0, 4);
+
+    // 抗级完整合成（4× 超采样 + 双线性 mask + 边框带）：对齐前端 refinedGround
+    // 的曲线平滑渲染，并叠加 LotBorderColor/borderWidth 边框带。
+    let (out_w, out_h) = (mask_w * SUPERSAMPLE, mask_h * SUPERSAMPLE);
+    let border_tiled = compose_tiles_aa(
+        out_w,
+        out_h,
+        &raw_mask,
+        mask_w,
+        mask_h,
+        diffuse,
+        base_tile,
+        &normal_index,
+        &colors8,
+        &borders8,
+        &border_widths,
+        args.tiles,
+    );
+    save_png(
+        &args.out_dir,
+        "compose_border_tiles.png",
+        out_w,
+        out_h,
+        &border_tiled,
+        2,
+    );
+
     // 原始数据诊断图（不引入任何替换色）：
     //   diag_selector  灰阶 = 胜出通道（0 未覆盖 / 64 R / 128 G / 192 B / 255 A）
     //   diag_tileindex 灰阶 = 采用的图集格号 × 17
@@ -570,8 +620,159 @@ fn extract_cell(rgba: &[u8], width: usize, height: usize, index: usize) -> (usiz
 
 /// `greaterThan(mask, 0.5 - borderWidth)`，并按 shader 的优先级链消除重叠：
 /// 返回 (masks, borderMask)，两者各自至多一个通道为 1。
-fn mask_one_hot(rgba: &[u8], border_width: f32) -> Vec<([f32; 4], [f32; 4])> {
-    let mut out = Vec::with_capacity(rgba.len() / 4);
+/// mask 双线性采样（半 texel 中心 + clamp-to-edge，= 前端/引擎 GPU 口径）。
+fn sample_mask_bilinear(
+    raw: &[u8],
+    w: usize,
+    h: usize,
+    u: f32,
+    v: f32,
+) -> [f32; 4] {
+    let fx = (u * w as f32 - 0.5).clamp(0.0, (w - 1) as f32);
+    let fy = (v * h as f32 - 0.5).clamp(0.0, (h - 1) as f32);
+    let x0 = fx.floor() as usize;
+    let y0 = fy.floor() as usize;
+    let x1 = (x0 + 1).min(w - 1);
+    let y1 = (y0 + 1).min(h - 1);
+    let tx = fx - x0 as f32;
+    let ty = fy - y0 as f32;
+    let at = |x: usize, y: usize, c: usize| {
+        raw[((y * w + x) * 4 + c) as usize] as f32 / 255.0
+    };
+    let mut out = [0.0f32; 4];
+    for c in 0..4 {
+        let top = at(x0, y0, c) * (1.0 - tx) + at(x1, y0, c) * tx;
+        let bottom = at(x0, y1, c) * (1.0 - tx) + at(x1, y1, c) * tx;
+        out[c] = top * (1.0 - ty) + bottom * ty;
+    }
+    out
+}
+
+/// addOverlay 精确语义（tmp/shaders cpp 转储逐字）：
+/// 8 级优先瀑布 A边框 > A主色 > B边框 > B主色 > G边框 > G主色 > R边框 > R主色，
+/// overlayMask = 瀑布前各通道 masks 之和（任一通道 > 0.5−bw 即覆盖）。
+fn overlay_waterfall(
+    value: [f32; 4],
+    border_widths: [f32; 4],
+) -> ([f32; 4], [f32; 4], f32) {
+    let mut masks = [0.0f32; 4];
+    let mut borders = [0.0f32; 4];
+    for c in 0..4 {
+        if value[c] > 0.5 - border_widths[c] {
+            masks[c] = 1.0;
+        }
+    }
+    let overlay = masks.iter().sum::<f32>().min(1.0);
+    for c in 0..4 {
+        let border_chk = value[c] > 0.5 + border_widths[c];
+        borders[c] = if border_chk { 0.0 } else { masks[c] };
+    }
+    // 8 级瀑布：lastMax 依次扣除每级占用，限制后续级别。
+    let mut last_max = 1.0f32;
+    let run = |level: &mut f32, last_max: &mut f32| {
+        *level = level.min(*last_max);
+        *last_max = (*last_max - *level).clamp(0.0, 1.0);
+    };
+    // A_border
+    run(&mut borders[3], &mut last_max);
+    // A_main
+    run(&mut masks[3], &mut last_max);
+    // B_border
+    run(&mut borders[2], &mut last_max);
+    // B_main
+    run(&mut masks[2], &mut last_max);
+    // G_border
+    run(&mut borders[1], &mut last_max);
+    // G_main
+    run(&mut masks[1], &mut last_max);
+    // R_border
+    run(&mut borders[0], &mut last_max);
+    // R_main
+    run(&mut masks[0], &mut last_max);
+    (masks, borders, overlay)
+}
+
+/// 抗级 tile 合成（对齐前端 refinedGround 的 4× 超采样 + 双线性 mask）：
+/// 每个输出像素双线性采样 mask 权重 → addOverlay 8 级瀑布（含边框带）→
+/// 胜出通道 tile × LotColor / 边框带 = LotBorderColor 平色 / 未覆盖 = 底图格。
+#[allow(clippy::too_many_arguments)]
+fn compose_tiles_aa(
+    out_w: usize,
+    out_h: usize,
+    raw_mask: &[u8],
+    mask_w: usize,
+    mask_h: usize,
+    diffuse: Option<&Atlas>,
+    base_tile: usize,
+    cell_of: &[usize],
+    colors: &[[u8; 4]],
+    border_colors: &[[u8; 4]],
+    border_widths: &[f32; 4],
+    tiles: f32,
+) -> Vec<u8> {
+    let mut out = vec![0u8; out_w * out_h * 4];
+    let Some(atlas) = diffuse else {
+        return out;
+    };
+    for py in 0..out_h {
+        for px in 0..out_w {
+            let offset = (py * out_w + px) * 4;
+            // mask 空间直接采样（掩码行列 = 输出行列）；图集 U 镜像同旧路径。
+            let mu = (px as f32 + 0.5) / out_w as f32;
+            let mv = (py as f32 + 0.5) / out_h as f32;
+            let value = sample_mask_bilinear(raw_mask, mask_w, mask_h, mu, mv);
+            let (masks, borders, _overlay) = overlay_waterfall(value, *border_widths);
+
+            let au = 1.0 - mu;
+            let av = mv;
+            let tu = (au * tiles).fract();
+            let tv = (av * tiles).fract();
+
+            // 瀑布后每通道至多一个占用；边框优先于主色（同通道互斥）。
+            let winner = [
+                (3usize, true),
+                (3, false),
+                (2, true),
+                (2, false),
+                (1, true),
+                (1, false),
+                (0, true),
+                (0, false),
+            ]
+            .into_iter()
+            .find(|(ch, is_border)| {
+                (if *is_border { borders[*ch] } else { masks[*ch] }) > 0.0
+            });
+
+            let rgb = match winner {
+                // 边框带 = LotBorderColor 平色（引擎里图案进法线不进反照率）。
+                Some((ch, true)) => border_colors[ch],
+                // 主材质 = tile_{LotColor.A} × LotColor.RGB。
+                Some((ch, false)) => match atlas.sample(cell_of[ch], tu, tv) {
+                    Some(tile) => [
+                        ((u16::from(tile[0]) * u16::from(colors[ch][0])) / 255) as u8,
+                        ((u16::from(tile[1]) * u16::from(colors[ch][1])) / 255) as u8,
+                        ((u16::from(tile[2]) * u16::from(colors[ch][2])) / 255) as u8,
+                        255,
+                    ],
+                    None => colors[ch],
+                },
+                // 未覆盖 = 底图格。
+                None => match atlas.sample(base_tile, tu, tv) {
+                    Some(base) => [base[0], base[1], base[2], 255],
+                    None => [255, 255, 255, 255],
+                },
+            };
+            out[offset] = rgb[0];
+            out[offset + 1] = rgb[1];
+            out[offset + 2] = rgb[2];
+            out[offset + 3] = 255;
+        }
+    }
+    out
+}
+
+fn mask_one_hot(rgba: &[u8], border_width: f32) -> Vec<([f32; 4], [f32; 4])> {    let mut out = Vec::with_capacity(rgba.len() / 4);
     for px in rgba.as_chunks::<4>().0 {
         let value = [
             px[0] as f32 / 255.0,

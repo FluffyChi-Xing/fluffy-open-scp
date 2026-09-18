@@ -2802,3 +2802,65 @@ uiPosition 排序；城市 13 个分类按关键字归组 649 个真实工具，
 但个别容器存疑）——说明 deserialize 顺序/根尺寸初始化还有细节未定，
 需要再读 scrui 的 UI Manager 载入路径；当前工作台以两段模型为主、
 局部手工校准兜底，参考图叠加可随时核验。
+
+## 50. Lot 地面两特征定案 + reliefMap 视差窗追查（2026-09-19 第五十轮）
+
+用户给出游戏截图两特征：① 道路/绿地边缘的白色描边；② 建筑常不在 lot 中心
+（贴角）。经 Ghidra headless + 数据探针双线定案，均为**数据驱动**：
+
+### 50.1 白描边 = 边框带（LotBorderColor + borderWidth）`[源码]` `[实测]`
+
+shader（generic_lot addOverlay）：`maskCenters = 0.5 − borderWidth`、
+`borderChk = 0.5 + borderWidth`、`borderMask = min(1−borderChk, masks)`——
+LotMask 通道软渐变穿过 `[0.5−bw, 0.5+bw]` 的 texel 用**边框色**而非主材质色，
+即每材质边缘自动一圈描边。数据（消防局 0x5197EDF0 实测）：
+`LotBorderColor1-4 (0xD7AF042-45)` = 浅灰系 (0.31/0.39/0.29/0.47)，
+`borderWidth1-4 (0xD7AF046-49)` = 0.01/0.01/0.01/0.002。
+CPU 填充：FUN_008ba1c0 将 borderColors/borderWidth 逐字段写入
+cLotInstanceInfo（§39.3 互证）。探针：`lot_render_props`（crates/sc-properties/examples）。
+
+### 50.2 建筑贴角 = Model Bounding Box 属性（0x00F9EFBA）`[源码]` `[实测]`
+
+链路（Ghidra）：`FUN_008bb990`（lot 地面重建总入口）
+→ `FUN_007e2260` 逐 placement 累计 AABB（FLT_MAX 初值 min/max；AABB 读自
+**0x00F9EFBA "Model Bounding Box" 属性**（s3db 官方名；BoundingBox{min,max}），
+FUN_007bacf0 为累加器；F9EFBB-BE = LOD1-4）
+→ unit-id→AABB 注册表（FUN_007e1fc0 哈希桶 FUN_007e0cc0）
+→ `FUN_008ba1c0` 地面 quad 中心 = 注册 AABB 中心，
+**LotOverlayBoxOffset (0x0CCB7FC9) 可覆盖**。
+消防局实测 bbox = min(-11.80,-13.36,0) max(12.25,13.47,25.86)（与网格顶点包围盒
+一致），FC9=(0,0)。**建筑在 lot 内的位置由该属性授权**——地面跟随建筑而非
+lot 原点。此前 §19.3 的"地面纹理偏移"与 refinedGround 的定位问题根因即此。
+
+### 50.3 中窗缺半扇终极诊断：Top 层视差浮雕窗（reliefMap 未实现）
+
+排除法闭环：网格 661 三角形 0 混列 / mat_indices 正确 / bake=slot1 原样 /
+导出器 1:1——Base 层数据无窗；软渲染器（tmp/soft_render.py，shader 同款数学）
+复现无窗。**决定性证据**：中窗墙面 quad 的 Top UV（TEXCOORD_3）frac 实测
+= 0.4998/0.5004，精确落在 reliefSrc 刀带中心——quad 被 authored 在 frac≈0.5，
+等待引擎 reliefMap（cone/binary-step 视差，高度场=slot5.a，常量
+kReliefDepth=0.1/kMaxConeRatio=0.5/kConeSteps=8/kBinarySteps=2/
+kCullDistanceSq=160000/kFlatLevel=23/255）展开窗图案。本编译版 dump 中
+reliefMap=恒等桩 → 我们只有刀带扫过处漏出图案=半扇窗。DLC0 0x3F31B27E 门
+显示不全为同一机制。取证工具：facade_uv_probe（--dump-verts 逐顶点
+CSV + 退化三角形诊断 + 参数表导出）。
+
+### 50.4 reliefMap 真体追查结果（2026-09-19 续）
+
+- shader 家族存在**双变体**：`regionCityBuildingsClipAndNoReliefMapPS`（恒等）
+  与带真 reliefMap 的变体。已复原的 `clean/building4Clip.hlsl`（reliefMap=恒等桩）
+  即 NoReliefMap 系——**我们此前拿它当引擎全貌是误判**。
+- 编译字节码转储 `tmp/shaders/cpp_0x00000002/3_worldToClip-facade.txt`（8MB 级，
+  DX9 bytecode + CTAB）中实测 16 处 reliefMap 引用；relief-enabled 变体的
+  符号表含 `h / step / ds / dt / dsRat / dtRat / cRat / dFinal / distFromPixel`
+  ——标准 cone-stepping/linear-search POM 的局部变量集，恒等实现不可能保留
+  这些符号 → **出货版确有真实视差步进**。
+- 复原路径二选一：
+  ① 反汇编 cpp_0x2/0x3 的 DX9 pixel shader token 流（无加密，标准 token），
+  逐指令复原 reliefMap 循环——精确但工作量大；
+  ② 按已文档常量（kReliefDepth=0.1/kMaxConeRatio=0.5/kConeSteps=8/
+  kBinarySteps=2/kFlatLevel=23/255，高度场=slot5.a）实现标准 POM，
+  严格门控 `padding.x|y > 1` 材质（恒等变体/普通 padding 走原路径零影响）
+  ——近似但即插即用。
+  符号表变量名与标准 POM 一一对应（ds/dt=切线空间步进分量、dsRat/dtRat=
+  步进比率、h=采样高度、step=深度步长），②的算法骨架由此可信。
