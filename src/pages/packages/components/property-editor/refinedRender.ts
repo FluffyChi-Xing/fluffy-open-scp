@@ -254,7 +254,18 @@ export async function loadTintTextures(
     });
   return Promise.all(
     materials.map(async (material) => ({
-      tintTex: material.tintPng ? await loadTex(material.tintPng) : null,
+      // tint 的 rg 是调色板坐标（索引数据，非颜色）、a 是 0/1 镜像覆盖：
+      // 线性插值会把相邻条目混合成无意义的中间索引——图案边界上的
+      // 门窗被"平均"成平墙条目（2026-09-19 消防局 0x4DE9912B 与
+      // 0xF8F776BF 两例：padding 均为"禁用 Top"量级，门窗全在 Base 层，
+      // 缺失形态与此完全吻合）。与 palette 同理必须点采样。
+      tintTex: material.tintPng
+        ? await loadTex(material.tintPng).then((t) => {
+            t.minFilter = THREE.NearestFilter;
+            t.magFilter = THREE.NearestFilter;
+            return t;
+          })
+        : null,
       // 调色板 512×16 = 256 列 × 7 行、**每采样点 2×2 像素**，着色器还会加
       // (1/1024,1/32) 把它居中——正是为点采样设计的；线性滤波会把相邻
       // 调色板条目互相抹开。
