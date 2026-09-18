@@ -161,7 +161,15 @@ export function applyGroundMask(options: {
           const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
           // 精细地面改受光材质：游戏地表被阳光/环境光照亮，无光照的
           // MeshBasic 会比游戏截图整体偏暗一档（2026-09-13 对拍）。
-          const lit = new THREE.MeshLambertMaterial({ map: result.map });
+          // 注意必须是 Phong/Standard 系——MeshLambertMaterial 不支持
+          // normalMap（赋值被着色器静默忽略，2026-09-18 排查：法线
+          // 烘焙链一直在产出但从未生效）。specular 黑 + shininess 0
+          // 使漫反射响应与 Lambert 一致，观感校准不回退。
+          const lit = new THREE.MeshPhongMaterial({
+            map: result.map,
+            specular: 0x000000,
+            shininess: 0,
+          });
           // s15 法线图集：方格勾缝/砂砾颗粒的起伏（与反照率像素对齐）。
           if (result.normalMap) lit.normalMap = result.normalMap;
           fillMaterial.dispose();
