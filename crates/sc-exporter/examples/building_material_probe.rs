@@ -272,6 +272,18 @@ fn main() {
         row(2),
         row(3)
     );
+    // 全列 row1：每顶点经 uv1.x 选列（col 只是预览列），门窗分布要看全部区域
+    println!("\n全列 row1(regionXform)：");
+    for c in 0..param_w {
+        let r1 = param_values
+            .get(param_w + c)
+            .copied()
+            .unwrap_or([0.0; 4]);
+        println!(
+            "  col{c:>3}: scale=({:.5},{:.5}) off=({:.5},{:.5})",
+            r1[0], r1[1], r1[2], r1[3]
+        );
+    }
     let pal_origin = row(0);
     let xform = row(1);
     let xform2 = row(2);

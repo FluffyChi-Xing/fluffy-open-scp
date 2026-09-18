@@ -257,20 +257,10 @@ export function buildRealLightUnit(
     group.add(new THREE.PointLight(rgb.getHex(), intensity, radius * 2, 1));
   }
 
-  // 可见发光灯体：真实光源本身不可见，白天环境光下其照明贡献也不明显
-  // （用户 2026-09-19 反馈：精细模式下圈射灯"一闪而过只剩顶部"——闪是
-  // 模式切换时旧场景残帧，之后灯位无任何可见物）。引擎在灯位渲染发光
-  // 体，这里用不受光的全亮 MeshBasic 复现灯具观感（近白提亮避免白天发灰）。
-  const bulbSize = Math.max(radius * 0.12, 0.22);
-  const bulbColor = rgb.clone().lerp(new THREE.Color(1, 1, 1), 0.35);
-  const bulbGeometry =
-    unit.lightType === "Line"
-      ? new THREE.CylinderGeometry(bulbSize * 0.6, bulbSize * 0.6, length, 6, 1)
-      : new THREE.SphereGeometry(bulbSize, 10, 8);
-  if (unit.lightType === "Line") bulbGeometry.translate(0, length / 2, 0);
-  group.add(new THREE.Mesh(bulbGeometry, new THREE.MeshBasicMaterial({ color: bulbColor })));
-
-  // 不可见拾取代理（透明不写深度；Raycaster 不过滤透明对象）
+  // 不可见拾取代理（透明不写深度；Raycaster 不过滤透明对象）。
+  // 注意：光源 unit 在精细模式下只贡献照明，灯位不渲染任何可见几何
+  // （用户 2026-09-19 澄清：打光光源本身不应被看见；此前加的发光
+  // 灯球/灯管属方向性错误，已撤）。
   let proxyGeometry: ThreeNamespace.BufferGeometry;
   if (unit.lightType === "Line") {
     proxyGeometry = new THREE.BoxGeometry(2, length, 2);
