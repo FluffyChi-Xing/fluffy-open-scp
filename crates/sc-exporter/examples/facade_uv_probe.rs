@@ -43,6 +43,19 @@ fn main() {
         let mut float2_max = [f32::MIN; 2];
         for vertex in &mesh.vertices {
             for (element, value) in &vertex.components {
+                // Color 通道（D3DCOLOR.G = 逐顶点材质索引，导出器写进
+                // TEXCOORD_1.x）——上一版探针只扫 TexCoord 漏掉这里，
+                // 得出「mesh 无材质索引」的错误结论，教训记录。
+                if element.usage == DeclarationUsage::Color {
+                    if let rw4::ComponentValue::D3DColor { g, b, .. } = value {
+                        *d3d_g.entry(u32::from(*g)).or_insert(0) += 1;
+                        d3d_b_max = d3d_b_max.max(u32::from(*b));
+                    } else if let rw4::ComponentValue::UByte4(bytes) = value {
+                        *d3d_g.entry(u32::from(bytes[1])).or_insert(0) += 1;
+                        d3d_b_max = d3d_b_max.max(u32::from(bytes[2]));
+                    }
+                    continue;
+                }
                 if element.usage != DeclarationUsage::TexCoord {
                     continue;
                 }

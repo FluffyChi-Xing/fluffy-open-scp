@@ -489,19 +489,6 @@ async function assembleScene(
     if (props.lotPlacement) {
       ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
     }
-    // 引擎语义（lot-rendering.md §3b-②）：地面 quad 中心 = 模型包围盒中心
-    // （LotOverlayBoxOffset 缺省时的默认），不是 lot 原点——模型不居中时
-    // 地面须跟随，否则 lot 与建筑错位（2026-09-19 消防局实测）。
-    if (modelObjects.length) {
-      const bounds = new THREE.Box3();
-      for (const object of modelObjects) bounds.expandByObject(object);
-      const center = bounds.getCenter(new THREE.Vector3());
-      if (Math.abs(center.x) > 1e-3 || Math.abs(center.y) > 1e-3) {
-        ground.matrix.premultiply(
-          new THREE.Matrix4().makeTranslation(center.x, center.y, 0),
-        );
-      }
-    }
     ground.matrixAutoUpdate = false;
     // 独立 lot 组：与建筑模型分开控制可见性（关模型不连地面一起隐藏，
     // 2026-09-13 用户对拍需求）。

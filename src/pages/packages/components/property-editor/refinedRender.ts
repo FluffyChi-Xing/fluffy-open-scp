@@ -473,20 +473,22 @@ float scFastNoise(vec3 seed) {
         // 区域内容（Base 层此前没有 padding 保护——接缝的第二个成因）。
         vec2 tUv = fract(vTintUv) * max(xform.xy - uTintTexel, vec2(0.0)) + xform.zw + uTintTexel * 0.5;
         vec4 tintValues = texture2D(tintMap, tUv);
-        // 30.2 Top 层（relief_tc 域，uv2×regionXform2）：窗户/门 motif 所在。
-        // 源源码（building4Clip.hlsl 字面）：reliefSrc = frac(uv2)·(1+padding)
-        // − padding/2，越出 [0,1] → outsideTile>0 → facadeTint.a 强制 0。
-        // 2026-09-19 修正：padding 是 UV 分数，>1 无意义；消防局 15999 /
-        // 0xF8F776BF 104505 两例实证 Top 区域承载全部门窗图案、Base 全平墙
-        // ——大数值必须按 0 处理（Top 照常启用，开关交还数据侧
-        // facadeTint.a）。旧解读「大数值=整体禁用 Top」导致门窗整片缺失。
+        // 30.2 Top 层（relief_tc 域，uv2×regionXform2）：窗户 motif 所在。
+        // 源码（cpp frac 变体定谳）：tilePadding=row3.xy，且
+        // reliefSrc = frac(uv2)·(1+padding) − padding/2，越出 [0,1] →
+        // outsideTile>0 → facadeTint.a 强制 0（退回 Base 层）。玻璃幕墙楼
+        // padding 高达 ~8e4（数值即语义：整体禁用 Top），公寓楼 ~(0.125,0)。
+        // 【2026-09-19 回滚记录】曾尝试把 >1 的 padding 分量按 0 处理
+        // （理由：消防局 Top 区域看起来承载门窗图案），结果整个立面的
+        // facadeTint.a 全程生效、窗户图案漫延全墙——渲染彻底错乱，已回滚。
+        // 大数值 padding 的刀带效应（reliefSrc 几乎处处越界）= 引擎语义的
+        // 「Top 关闭」，原判读正确。消防局窗户实际来自 Base 层的逐顶点
+        // 选列（Color 通道 D3DCOLOR.G），col 0 只是素墙区域之一。
         vec2 topUv = vec2(0.0);
         float scFacade = 0.0;
         vec4 facadeTintValues = vec4(0.0);
         if (xform2.x > 0.0 && xform2.y > 0.0) {
           vec2 scPad = scRoom.xy;
-          scPad.x = scPad.x > 1.0 ? 0.0 : scPad.x;
-          scPad.y = scPad.y > 1.0 ? 0.0 : scPad.y;
           vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
