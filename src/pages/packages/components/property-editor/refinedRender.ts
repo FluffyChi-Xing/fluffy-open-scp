@@ -80,7 +80,7 @@ export function skyRadiance(
       dir[1] * env.sunDir.value.y +
       dir[2] * env.sunDir.value.z,
   );
-  const glow = Math.pow(sunDot, 8) * 0.30;
+  const glow = Math.pow(sunDot, 8) * 0.3;
   const t = Math.pow(SAT(up), 0.45);
   const blend = smoothstep(-0.15, 0.05, up);
   const out: [number, number, number] = [0, 0, 0];
@@ -112,9 +112,7 @@ export function averageSkyLuminance(env: SkyEnv): number {
   return sum / SKY_SAMPLES.length;
 }
 
-export function createSunEnv(
-  THREE: typeof ThreeNamespace,
-): SunEnvRefs {
+export function createSunEnv(THREE: typeof ThreeNamespace): SunEnvRefs {
   return {
     sunDir: { value: new THREE.Vector3(0.35, 0.8, 0.45).normalize() },
     sunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
@@ -139,16 +137,16 @@ export function applySunEnv(
   const azRad = ((t / 24) * 360 + 180) * (Math.PI / 180);
   const el = Math.max(alt, -0.45);
   env.sunDir.value
-    .set(Math.cos(el) * Math.sin(azRad), Math.sin(el), Math.cos(el) * Math.cos(azRad))
+    .set(
+      Math.cos(el) * Math.sin(azRad),
+      Math.sin(el),
+      Math.cos(el) * Math.cos(azRad),
+    )
     .normalize();
   // 太阳色：地平线橙 → 正午白 / 夜间月光蓝；天空：day→dusk→night 三段
   const warm = Math.min(1, Math.max(0, alt / 0.32));
   if (alt >= 0) {
-    env.sunColor.value.setRGB(
-      1,
-      0.55 + 0.42 * warm,
-      0.28 + 0.62 * warm,
-    );
+    env.sunColor.value.setRGB(1, 0.55 + 0.42 * warm, 0.28 + 0.62 * warm);
   } else {
     env.sunColor.value.setRGB(0.14, 0.17, 0.26); // 月光
   }
@@ -171,7 +169,7 @@ export function applySunEnv(
   );
   // 地面反照：粗糙地面的向上散射，白天暖灰、夜间近黑
   env.skyGround.value.setRGB(
-    ...mix3([0.008, 0.008, 0.012], [0.10, 0.085, 0.07], [0.17, 0.16, 0.14]),
+    ...mix3([0.008, 0.008, 0.012], [0.1, 0.085, 0.07], [0.17, 0.16, 0.14]),
   );
   // 归一化基准（均值 1 因子）——env 变了必须同步重算，否则间接光整体漂移
   env.skyLumRef.value = Math.max(1e-3, averageSkyLuminance(env));
@@ -225,7 +223,12 @@ export async function loadTintTextures(
   maxAnisotropy = 1,
 ): Promise<TintTextureSet[]> {
   const loader = new THREE.TextureLoader();
-  const loadTex = (bytes: Uint8Array<ArrayBuffer>) =>
+  // seamless（默认 true）：tint/normal/shader 都是「fract → 图集区域」平铺采样。
+  // 禁 mips 是接缝修复的关键——fract 在平铺边界的 UV 跳变会让硬件在 2×2
+  // quad 上算出爆炸级导数 → mip 级别错乱 → 每条平铺边界一道 1px 亮线
+  // （各向异性还会放大）。引擎用 tex2Dgrad 显式给梯度故无此问题；我们
+  // 以近距离检视为主，牺牲远景 shimmer 换无接缝。
+  const loadTex = (bytes: Uint8Array<ArrayBuffer>, seamless = true) =>
     new Promise<ThreeNamespace.Texture>((resolve, reject) => {
       const url = pngBlobUrl(bytes);
       registerTextureUrl(url);
@@ -237,7 +240,11 @@ export async function loadTintTextures(
           // tint/palette/normal 按后端 bake 同坐标系采样（原始 UV，行 0 =
           // PNG 首行），不做 three 默认的 flipY 翻转。
           texture.flipY = false;
-          // 引擎 `tex2Dgrad` + 各向异性采样；默认 aniso=1 时掠射角墙面会明显发糊。
+          if (seamless) {
+            texture.generateMipmaps = false;
+            texture.minFilter = THREE.LinearFilter;
+          }
+          // 引擎 `tex2Dgrad` + 各向异性采样；仅对保留 mip 的贴图（interior）有意义。
           texture.anisotropy = maxAnisotropy;
           resolve(texture);
         },
@@ -261,13 +268,15 @@ export async function loadTintTextures(
         : null,
       normalTex: material.normalPng ? await loadTex(material.normalPng) : null,
       shaderTex: material.shaderPng ? await loadTex(material.shaderPng) : null,
-      interiorTex: material.interiorPng ? await loadTex(material.interiorPng).then((t) => {
-        // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
-        // scale）依赖回绕取样；ClampToEdge 会把越界采样钳成边缘纯色（绿/紫块）
-        t.wrapS = THREE.RepeatWrapping;
-        t.wrapT = THREE.RepeatWrapping;
-        return t;
-      }) : null,
+      interiorTex: material.interiorPng
+        ? await loadTex(material.interiorPng, false).then((t) => {
+            // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
+            // scale）依赖回绕取样；ClampToEdge 会把越界采样钳成边缘纯色（绿/紫块）
+            t.wrapS = THREE.RepeatWrapping;
+            t.wrapT = THREE.RepeatWrapping;
+            return t;
+          })
+        : null,
       paramsTex: buildParamsTexture(THREE, material),
       paramCols: material.paramCols,
     })),
@@ -321,6 +330,8 @@ export function attachTintShader(
     uDayLight: { value: number };
     /** 5d 供电：0 = 内景自发光全灭（源码 interiorThresholds.z） */
     uPowered: { value: number };
+    /** tint 图集半 texel（1/宽, 1/高）：平铺区域边缘的线性滤波内缩量。 */
+    uTintTexel: { value: ThreeNamespace.Vector2 };
   },
   paramsReady: boolean,
   shaderMapReady: boolean,
@@ -404,6 +415,7 @@ uniform float uSpecMode;
 uniform float uInteriorGlow;
 uniform float uDayLight;
 uniform float uPowered;
+uniform vec2 uTintTexel;
 #ifdef TINT_PARAMS
 uniform sampler2D paramsMap;
 #endif
@@ -446,7 +458,9 @@ float scFastNoise(vec3 seed) {
         vec4 palOrigin = vec4(0.0);
         vec4 scRoom = vec4(0.0);
         #endif
-        vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
+        // 半 texel 内缩：tint 是图集，fract=0/1 处的线性滤波核会读到相邻
+        // 区域内容（Base 层此前没有 padding 保护——接缝的第二个成因）。
+        vec2 tUv = fract(vTintUv) * max(xform.xy - uTintTexel, vec2(0.0)) + xform.zw + uTintTexel * 0.5;
         vec4 tintValues = texture2D(tintMap, tUv);
         // 30.2 Top 层（relief_tc 域，uv2×regionXform2）：窗户 motif 所在。
         // 源码（cpp frac 变体定谳）：tilePadding=row3.xy，且
@@ -462,7 +476,7 @@ float scFastNoise(vec3 seed) {
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
-          topUv = clamp(reliefSrc, 0.0, 1.0) * xform2.xy + xform2.zw;
+          topUv = clamp(reliefSrc, 0.0, 1.0) * max(xform2.xy - uTintTexel, vec2(0.0)) + xform2.zw + uTintTexel * 0.5;
           facadeTintValues = texture2D(tintMap, topUv);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
@@ -588,8 +602,8 @@ float scFastNoise(vec3 seed) {
           // 时 = (vTangent, vBitangent, normal)，与引擎 building4DefaultPS 的
           // ApplyNormalMap(vn, tangent, nmap) 同帧；缺切线时才退化为导数拟合。
           // 此前这里自建了一个 tbn 局部遮蔽它，等于永远走导数路径。
-          vec2 nUv = fract(vTintUv) * xform.xy + xform.zw;
-          vec3 mapN = texture2D( normalMap, nUv ).xyz * 2.0 - 1.0;
+          // 法线与反照率共用 tUv/topUv（同区域、同内缩，像素对齐）。
+          vec3 mapN = texture2D( normalMap, tUv ).xyz * 2.0 - 1.0;
           // Top 层法线（窗框/线脚凹凸）按 facadeTint.a lerp（引擎同用一个 TBN）
           if (scFacade > 0.001) {
             vec3 nTop = texture2D( normalMap, topUv ).xyz * 2.0 - 1.0;
@@ -659,12 +673,25 @@ export function makeTintMaterial(
     side: THREE.DoubleSide,
     normalMap: tint.normalTex,
   });
+  // 法线观感强度：引擎 ApplyNormalMap 的倍率未知，资产本身是细腻浮雕
+  // （窗框/线脚）；1.0 时几乎不可辨（2026-09-18 用户反馈），1.5 为
+  // 可见但不夸张的折中。normalTex 缺失时该值无副作用。
+  tinted.normalScale = new THREE.Vector2(1.5, 1.5);
   tinted.defines = { USE_UV: "" };
   if (tint.paramsTex) tinted.defines.TINT_PARAMS = "";
   if (tint.shaderTex) tinted.defines.TINT_SHADERMAP = "";
-  const interiorReady = Boolean(tint.paramsTex && tint.shaderTex && tint.interiorTex);
+  const interiorReady = Boolean(
+    tint.paramsTex && tint.shaderTex && tint.interiorTex,
+  );
   if (interiorReady) tinted.defines.TINT_INTERIOR = "";
   const uSpecGUniform = { value: effectiveSpecMode() };
+  // tint 图集半 texel：shader 里的平铺区域边缘内缩量（接缝修复）。
+  const tintImage = tint.tintTex?.image as
+    { width?: number; height?: number } | undefined;
+  const uTintTexel =
+    tintImage?.width && tintImage?.height
+      ? new THREE.Vector2(0.5 / tintImage.width, 0.5 / tintImage.height)
+      : new THREE.Vector2(0, 0);
   attachTintShader(
     tinted,
     {
@@ -685,6 +712,7 @@ export function makeTintMaterial(
       uInteriorGlow: env.glow,
       uDayLight: env.dayLight,
       uPowered: env.powered,
+      uTintTexel: { value: uTintTexel },
     },
     Boolean(tint.paramsTex),
     Boolean(tint.shaderTex),
