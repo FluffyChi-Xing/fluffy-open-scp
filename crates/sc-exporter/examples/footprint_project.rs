@@ -258,7 +258,7 @@ fn main() {
     }
 
     // ---- 5. 渲染：lot 平色合成 + 脚印叠加 ----
-    let (rw, rh) = (mw * 2, mh * 2);
+    let (rw, rh) = (mw * 4, mh * 4);
     let mut img = vec![255u8; rw * rh * 3];
     // lot 平色底：按 0.5 阈值的四色平涂（R/G/B/A = LotColor1-4 sRGB 近似）
     let palette: [[u8; 3]; 4] = [
