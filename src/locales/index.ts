@@ -106,7 +106,7 @@ const messages = {
         curveHint:
           "曲线：按下拖出弦长，松开后移动鼠标弯出弧度，单击落笔（Esc 取消）",
         parkingHint:
-          "停车线：沿拖拽方向每隔「间距」向右侧画一条「线长」垂直短线；默认参数取自原生标线 0x7BE85E77 实测（线宽 2 / 长 13 / 间距 6 px @ 0.75m）",
+          "停车线：沿拖拽方向每隔「间距」向右侧画一条「线长」垂直短线；默认参数取自原生标线 0x7BE85E77 实测（线宽 2 / 长 13 / 间距 6 px，0.75 m/px）",
         paletteLot: "四色通道",
         paletteFree: "自由颜色",
         paletteHint:
@@ -1442,7 +1442,7 @@ const messages = {
         curveHint:
           "Curve: drag out the chord, release, then move the mouse to bend it and click to commit (Esc cancels)",
         parkingHint:
-          "Parking lines: draws a perpendicular tick of «Line length» every «Spacing» along the drag direction (right side); defaults measured from native marking 0x7BE85E77 (width 2 / length 13 / spacing 6 px @ 0.75m)",
+          "Parking lines: draws a perpendicular tick of «Line length» every «Spacing» along the drag direction (right side); defaults measured from native marking 0x7BE85E77 (width 2 / length 13 / spacing 6 px, 0.75 m/px)",
         paletteLot: "4-channel",
         paletteFree: "Free color",
         paletteHint:
