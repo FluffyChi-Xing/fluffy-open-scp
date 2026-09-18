@@ -24,12 +24,12 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 
 const CHANNEL_LABELS: Record<RasterChannel, string> = {
-  quantized: "raster.quantized",
-  composite: "raster.composite",
-  r: "raster.red",
-  g: "raster.green",
-  b: "raster.blue",
-  a: "raster.alpha",
+  quantized: "studio.raster.quantized",
+  composite: "studio.raster.composite",
+  r: "studio.raster.red",
+  g: "studio.raster.green",
+  b: "studio.raster.blue",
+  a: "studio.raster.alpha",
 };
 
 const resourceKey = computed(
@@ -38,9 +38,9 @@ const resourceKey = computed(
 );
 
 const hintText = computed(() => {
-  if (channel.value === "quantized") return t("raster.quantizedHint");
-  if (channel.value === "composite") return t("raster.compositeHint");
-  return t("raster.singleChannelHint", {
+  if (channel.value === "quantized") return t("studio.raster.quantizedHint");
+  if (channel.value === "composite") return t("studio.raster.compositeHint");
+  return t("studio.raster.singleChannelHint", {
     channel: t(CHANNEL_LABELS[channel.value]),
   });
 });
@@ -98,7 +98,7 @@ async function select(next: RasterChannel) {
       rendered.value = { ...rendered.value, [next]: src };
       displayed.value = src;
     } else {
-      error.value = t("raster.unsupportedFormat", {
+      error.value = t("studio.raster.unsupportedFormat", {
         format: data.pixelFormat,
       });
     }
@@ -117,7 +117,7 @@ watch(resourceKey, seed, { immediate: true });
     <div
       class="raster-channels"
       role="tablist"
-      :aria-label="$t('raster.channel')"
+      :aria-label="$t('studio.raster.channel')"
     >
       <button
         v-for="item in RASTER_CHANNELS"
@@ -146,12 +146,14 @@ watch(resourceKey, seed, { immediate: true });
     <p class="raster-meta">
       <span>{{ preview.width }} × {{ preview.height }}</span>
       <span>pixFmt {{ preview.pixelFormat }}</span>
-      <span>{{ $t("raster.mipCount", { count: preview.mipCount }) }}</span>
+      <span>{{
+        $t("studio.raster.mipCount", { count: preview.mipCount })
+      }}</span>
     </p>
 
     <ImagePreviewView v-if="activePreview" :preview="activePreview" />
     <p v-else-if="error" class="raster-error" role="alert">{{ error }}</p>
-    <p v-else class="raster-error">{{ $t("raster.loadFailed") }}</p>
+    <p v-else class="raster-error">{{ $t("studio.raster.loadFailed") }}</p>
   </div>
 </template>
 
