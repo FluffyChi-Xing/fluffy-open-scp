@@ -146,21 +146,35 @@ export async function composeRefinedGround(
   const tileW = useSurface ? Math.floor(surface!.width / 4) : 0;
   const tileH = useSurface ? Math.floor(surface!.height / 4) : 0;
 
-    /** 画布 UV → raw mask 通道权重（最近邻）。必须与默认反照率同口径：
-     *  双线性会在过渡带里让高优先级通道压过邻区（图书馆绿带外扩吃掉
-     *  米色地坪，2026-09-13 对拍），区域划分以 mask 像素为准。 */
+    /** 画布 UV → raw mask 通道权重（双线性，= 引擎 GPU 采样口径）。
+     *  边缘的亚 texel 平滑来自 mask 自带的软渐变坡；此前最近邻是 2026-09-13
+     *  为抑制「高优通道外扩」改的，但外扩本就是引擎同款行为（GPU 双线性 +
+     *  阈值 + 优先级链），最近邻的代价是斜边/曲线出现 4× mask texel 的
+     *  阶梯锯齿（2026-09-18 用户反馈），故回归引擎口径。 */
     function sampleWeights(u: number, v: number): [number, number, number, number] {
       const raw = rawMask;
       if (!raw) return [0, 0, 0, 0];
-      const mx = Math.min(raw.width - 1, Math.floor(u * raw.width));
-      const my = Math.min(raw.height - 1, Math.floor(v * raw.height));
-      const at = (my * raw.width + mx) * 4;
-      return [
-        raw.data[at] / 255,
-        raw.data[at + 1] / 255,
-        raw.data[at + 2] / 255,
-        raw.data[at + 3] / 255,
-      ];
+      const fx = Math.min(Math.max(u * raw.width - 0.5, 0), raw.width - 1);
+      const fy = Math.min(Math.max(v * raw.height - 0.5, 0), raw.height - 1);
+      const x0 = Math.floor(fx);
+      const y0 = Math.floor(fy);
+      const x1 = Math.min(x0 + 1, raw.width - 1);
+      const y1 = Math.min(y0 + 1, raw.height - 1);
+      const tx = fx - x0;
+      const ty = fy - y0;
+      const rowA = y0 * raw.width;
+      const rowB = y1 * raw.width;
+      const out: [number, number, number, number] = [0, 0, 0, 0];
+      for (let c = 0; c < 4; c += 1) {
+        const a = raw.data[(rowA + x0) * 4 + c];
+        const b = raw.data[(rowA + x1) * 4 + c];
+        const top = a + (b - a) * tx;
+        const cc = raw.data[(rowB + x0) * 4 + c];
+        const d = raw.data[(rowB + x1) * 4 + c];
+        const bottom = cc + (d - cc) * tx;
+        out[c] = (top + (bottom - top) * ty) / 255;
+      }
+      return out;
     }
 
   /** 从图集 ImageData 复制第 index 格（4×4）。 */
