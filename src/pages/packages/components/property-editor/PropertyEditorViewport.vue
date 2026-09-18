@@ -208,9 +208,8 @@ function emitLiveTransform(object: ThreeNamespace.Object3D | null) {
 async function ensureGizmo() {
   const instance = viewport.viewer.value;
   if (!instance || gizmo) return;
-  const { TransformControls: Controls } = await import(
-    "three/examples/jsm/controls/TransformControls.js"
-  );
+  const { TransformControls: Controls } =
+    await import("three/examples/jsm/controls/TransformControls.js");
   if (viewport.viewer.value !== instance) return;
   const controls = new Controls(instance.camera, instance.domElement);
   controls.size = 0.85;
@@ -252,7 +251,11 @@ function commitGizmo(controls: TransformControls) {
   );
   // 未产生位移的点击（拖拽起止矩阵相同）不产生冗余命令
   if (dragStartMatrix && matrix.equals(dragStartMatrix)) return;
-  emit("commit-transform", object.userData.unitId as string, threeToRowMajor(matrix));
+  emit(
+    "commit-transform",
+    object.userData.unitId as string,
+    threeToRowMajor(matrix),
+  );
 }
 
 function updateGizmo() {
@@ -283,7 +286,10 @@ function rebuildScene() {
 }
 
 /** 量化 mask 图的尺寸（raw RGBA 字节流构造 ImageData 时需要宽高）。 */
-async function loadMaskImageDims(): Promise<{ width: number; height: number } | null> {
+async function loadMaskImageDims(): Promise<{
+  width: number;
+  height: number;
+} | null> {
   const url = props.lotMaskPng ?? props.lotAlbedoPng;
   if (!url) return null;
   try {
@@ -317,7 +323,9 @@ function loadRawMaskPixels(width: number, height: number): ImageData | null {
 }
 
 /** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入）。 */
-async function loadImageDataFromUrl(url: string | null): Promise<ImageData | null> {
+async function loadImageDataFromUrl(
+  url: string | null,
+): Promise<ImageData | null> {
   if (!url) return null;
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -372,9 +380,9 @@ onBeforeUnmount(() => {
 });
 
 /** 业务场景装配：模型材质 → 地面 → 六类 Unit → 路径折线。 */
-async function assembleScene(ctx: Parameters<
-  Parameters<typeof viewport.rebuild>[0]
->[0]) {
+async function assembleScene(
+  ctx: Parameters<Parameters<typeof viewport.rebuild>[0]>[0],
+) {
   const { viewer: instance, THREE } = ctx;
   specUniformRefs.length = 0;
 
@@ -457,7 +465,9 @@ async function assembleScene(ctx: Parameters<
     instance.group("model").add(object);
   }
   if (props.renderMode === "refined" && payload) {
-    const deferredSpan = renderTelemetry.begin("texture_compose", { phase: "deferred" });
+    const deferredSpan = renderTelemetry.begin("texture_compose", {
+      phase: "deferred",
+    });
     applyDeferredMaterialMaps(
       THREE,
       payload,
@@ -534,112 +544,115 @@ async function assembleScene(ctx: Parameters<
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
   }
 
-/** 贴花材质：四色解码贴图 + 二值 alpha。投影片与浮空回退共用。 */
-function buildDecalMaterial(
-  THREE: typeof ThreeNamespace,
-  texture: DecalUnitTexture,
-): ThreeNamespace.MeshBasicMaterial {
-  const map = new THREE.TextureLoader().load(
-    `data:image/png;base64,${texture.png}`,
-  );
-  map.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshBasicMaterial({
-    map,
-    side: THREE.DoubleSide,
-    // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
-    // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
-    // 的 RGB=(0,0,0) 直接画成黑底。alpha 是二值的，alphaTest 即足够
-    //（同地面 fill 口径），无需 transparent 的排序开销。
-    alphaTest: 1 / 255,
-    transparent: false,
-    // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
-    polygonOffset: true,
-    polygonOffsetFactor: -4,
-    polygonOffsetUnits: -4,
-  });
-}
-
-/** 取贴花在 lot 局部的变换矩阵（无变换时为 None）。 */
-function applyDecalTransform(
-  THREE: typeof ThreeNamespace,
-  unit: DecalUnit,
-  object: ThreeNamespace.Object3D,
-) {
-  if (!unit.transform) return;
-  const matrix = unitMatrix(THREE, unit.transform);
-  matrix.decompose(object.position, object.quaternion, object.scale);
-}
-
-/**
- * 浮空 quad 回退：投影落空（建筑未加载 / 贴花不属于任何建筑面）时仍让
- * 用户看得到、点得到该 decal。尺寸 = 2×scale × (2×scale)/aspect。
- */
-function buildDecalQuadFallback(
-  THREE: typeof ThreeNamespace,
-  unit: DecalUnit,
-  texture: DecalUnitTexture,
-): ThreeNamespace.Mesh {
-  const aspect =
-    texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
-  // Scale 是半宽（原 SCP `UnitDecal.CreateGeometry`：`rectangle.Length = 2 * Scale`）。
-  const width = Math.max((unit.scale ?? 4) * 2, 0.05);
-  const height = Math.max(width / aspect, 0.05);
-  const geometry = new THREE.PlaneGeometry(width, height);
-  // U 轴镜像：引擎 decal PS 的 UV 是 `textureFloatPosition.xy * -0.5 + 0.5`
-  // （U 取负，被 texXform 的 2 倍缩放补回量程），不翻会得到镜像文字
-  //（用户实测 "Michael's CASINO" 左右反）。V 不翻（D3D v=0 在顶 +
-  // 我们的 flipY=true 已抵消）。
-  const uv = geometry.attributes.uv;
-  for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
-  uv.needsUpdate = true;
-  const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture));
-  // 回退仍按旧口径沿局部 -Z 让开 depth：引擎 `decalMaterialInfoWithObjectData`
-  // 的 VS 取 -z（`float4(-z/-x/-y, 0)`）。
-  mesh.translateZ(-(unit.depth ?? 0));
-  return mesh;
-}
-
-/**
- * 精细模式贴花：优先按引擎 `decalProject` 的方式**投影到建筑几何**
- * （盒体积裁剪 + 盒内归一化 UV），失败则回退浮空 quad。
- *
- * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
- * `unitObjects` 选中与 `userData.unitId` 注册照旧；投影几何子节点用
- * 逆矩阵抵消父变换，因此几何本身保持 lot 局部坐标。
- */
-async function buildDecalObject(
-  THREE: typeof ThreeNamespace,
-  unit: DecalUnit,
-  texture: DecalUnitTexture,
-  meshes: ThreeNamespace.Mesh[],
-): Promise<ThreeNamespace.Object3D | null> {
-  if (!texture.png) return null;
-  const aspect =
-    texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
-  const frame = decalFrame(THREE, unit, aspect);
-  const group = new THREE.Group();
-  applyDecalTransform(THREE, unit, group);
-
-  if (frame) {
-    const geometry = await projectDecal(THREE, frame, meshes, unit.depth);
-    if (geometry) {
-      const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture));
-      const inverse = frame.matrix.clone().invert();
-      mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(inverse);
-      group.add(mesh);
-      decalStats.projected += 1;
-      return group;
-    }
+  /** 贴花材质：四色解码贴图 + 二值 alpha。投影片与浮空回退共用。 */
+  function buildDecalMaterial(
+    THREE: typeof ThreeNamespace,
+    texture: DecalUnitTexture,
+  ): ThreeNamespace.MeshBasicMaterial {
+    const map = new THREE.TextureLoader().load(
+      `data:image/png;base64,${texture.png}`,
+    );
+    map.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({
+      map,
+      side: THREE.DoubleSide,
+      // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
+      // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
+      // 的 RGB=(0,0,0) 直接画成黑底。alpha 是二值的，alphaTest 即足够
+      //（同地面 fill 口径），无需 transparent 的排序开销。
+      alphaTest: 1 / 255,
+      transparent: false,
+      // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+    });
   }
-  // 回退：投影无命中（或缺少 scale/transform）时保留浮空 quad
-  decalStats.fallback += 1;
-  console.info(
-    `[decal] ${unitId(unit)} 投影未命中建筑面，回退浮空 quad（可能在游戏的高细节 LOD 上）`,
-  );
-  group.add(buildDecalQuadFallback(THREE, unit, texture));
-  return group;
-}
+
+  /** 取贴花在 lot 局部的变换矩阵（无变换时为 None）。 */
+  function applyDecalTransform(
+    THREE: typeof ThreeNamespace,
+    unit: DecalUnit,
+    object: ThreeNamespace.Object3D,
+  ) {
+    if (!unit.transform) return;
+    const matrix = unitMatrix(THREE, unit.transform);
+    matrix.decompose(object.position, object.quaternion, object.scale);
+  }
+
+  /**
+   * 浮空 quad 回退：投影落空（建筑未加载 / 贴花不属于任何建筑面）时仍让
+   * 用户看得到、点得到该 decal。尺寸 = 2×scale × (2×scale)/aspect。
+   */
+  function buildDecalQuadFallback(
+    THREE: typeof ThreeNamespace,
+    unit: DecalUnit,
+    texture: DecalUnitTexture,
+  ): ThreeNamespace.Mesh {
+    const aspect =
+      texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
+    // Scale 是半宽（原 SCP `UnitDecal.CreateGeometry`：`rectangle.Length = 2 * Scale`）。
+    const width = Math.max((unit.scale ?? 4) * 2, 0.05);
+    const height = Math.max(width / aspect, 0.05);
+    const geometry = new THREE.PlaneGeometry(width, height);
+    // U 轴镜像：引擎 decal PS 的 UV 是 `textureFloatPosition.xy * -0.5 + 0.5`
+    // （U 取负，被 texXform 的 2 倍缩放补回量程），不翻会得到镜像文字
+    //（用户实测 "Michael's CASINO" 左右反）。V 不翻（D3D v=0 在顶 +
+    // 我们的 flipY=true 已抵消）。
+    const uv = geometry.attributes.uv;
+    for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
+    uv.needsUpdate = true;
+    const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture));
+    // 回退仍按旧口径沿局部 -Z 让开 depth：引擎 `decalMaterialInfoWithObjectData`
+    // 的 VS 取 -z（`float4(-z/-x/-y, 0)`）。
+    mesh.translateZ(-(unit.depth ?? 0));
+    return mesh;
+  }
+
+  /**
+   * 精细模式贴花：优先按引擎 `decalProject` 的方式**投影到建筑几何**
+   * （盒体积裁剪 + 盒内归一化 UV），失败则回退浮空 quad。
+   *
+   * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
+   * `unitObjects` 选中与 `userData.unitId` 注册照旧；投影几何子节点用
+   * 逆矩阵抵消父变换，因此几何本身保持 lot 局部坐标。
+   */
+  async function buildDecalObject(
+    THREE: typeof ThreeNamespace,
+    unit: DecalUnit,
+    texture: DecalUnitTexture,
+    meshes: ThreeNamespace.Mesh[],
+  ): Promise<ThreeNamespace.Object3D | null> {
+    if (!texture.png) return null;
+    const aspect =
+      texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
+    const frame = decalFrame(THREE, unit, aspect);
+    const group = new THREE.Group();
+    applyDecalTransform(THREE, unit, group);
+
+    if (frame) {
+      const geometry = await projectDecal(THREE, frame, meshes, unit.depth);
+      if (geometry) {
+        const mesh = new THREE.Mesh(
+          geometry,
+          buildDecalMaterial(THREE, texture),
+        );
+        const inverse = frame.matrix.clone().invert();
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.copy(inverse);
+        group.add(mesh);
+        decalStats.projected += 1;
+        return group;
+      }
+    }
+    // 回退：投影无命中（或缺少 scale/transform）时保留浮空 quad
+    decalStats.fallback += 1;
+    console.info(
+      `[decal] ${unitId(unit)} 投影未命中建筑面，回退浮空 quad（可能在游戏的高细节 LOD 上）`,
+    );
+    group.add(buildDecalQuadFallback(THREE, unit, texture));
+    return group;
+  }
 
   const units: LotUnitDto[] = [
     ...props.grouping.lights,
@@ -651,7 +664,10 @@ async function buildDecalObject(
   ];
   // 精细模式贴花：category+index → 解码纹理（后端已按 ID 查 atlas 条目）。
   const decalTextureByKey = new Map(
-    props.decalTextures.map((texture) => [`${texture.category}:${texture.index}`, texture]),
+    props.decalTextures.map((texture) => [
+      `${texture.category}:${texture.index}`,
+      texture,
+    ]),
   );
   const decalSpan = renderTelemetry.begin("decal_render", {
     decals: props.grouping.decals.length,
@@ -667,7 +683,11 @@ async function buildDecalObject(
     let object: ThreeNamespace.Object3D | null;
     if (props.renderMode === "refined" && unit.kind === "light") {
       object = buildRealLightUnit(THREE, unit);
-    } else if (props.renderMode === "refined" && unit.kind === "decal" && decalTexture) {
+    } else if (
+      props.renderMode === "refined" &&
+      unit.kind === "decal" &&
+      decalTexture
+    ) {
       // 贴图解码失败（无 png）→ 退回 gizmo，保证仍可见可选
       object =
         (await buildDecalObject(THREE, unit, decalTexture, buildingMeshes)) ??
@@ -693,9 +713,7 @@ async function buildDecalObject(
   // 路径折线：按 point_index 排序连接（pathPairs 语义未定，先 best-effort）。
   const points = [...props.grouping.pathPoints]
     .filter((point) => point.point)
-    .sort(
-      (a, b) => (a.pointIndex ?? a.index) - (b.pointIndex ?? b.index),
-    )
+    .sort((a, b) => (a.pointIndex ?? a.index) - (b.pointIndex ?? b.index))
     .map((point) => new THREE.Vector3(...point.point!));
   const line = buildPathLine(THREE, points);
   if (line) instance.group("paths").add(line);
@@ -754,16 +772,21 @@ watch(
   () => viewport.applySelection(props.selectedId),
 );
 // 工具/选中/rebuild 代数变化 → 重挂或摘除手柄（选中对象会被重建）
-watch(
-  [() => props.tool, () => props.selectedId, viewport.revision],
-  () => updateGizmo(),
+watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
+  updateGizmo(),
 );
 </script>
 
 <template>
   <div class="viewport-pane">
-    <div :ref="(el) => (viewport.container.value = el as HTMLElement | null)" class="viewport-3d" />
-    <div v-if="modelState === 'loading'" class="viewport-overlay viewport-status">
+    <div
+      :ref="(el) => (viewport.container.value = el as HTMLElement | null)"
+      class="viewport-3d"
+    />
+    <div
+      v-if="modelState === 'loading'"
+      class="viewport-overlay viewport-status"
+    >
       <FSpinner size="sm" :label="$t('common.loading')" />
     </div>
     <p
@@ -845,7 +868,10 @@ watch(
               missing: lod === null,
             }"
             :disabled="lod === null"
-            @click="emit('switch-lod', index); lodPanelOpen = false"
+            @click="
+              emit('switch-lod', index);
+              lodPanelOpen = false;
+            "
           >
             <span class="lod-tile-level">LOD{{ index + 1 }}</span>
             <span v-if="lod === null" class="lod-tile-missing">{{
@@ -866,11 +892,21 @@ watch(
       </label>
       <label>
         <span>{{ $t("package.lightBrightness") }}</span>
-        <input v-model.number="brightness" type="range" min="0" max="2" step="0.05" />
+        <input
+          v-model.number="brightness"
+          type="range"
+          min="0"
+          max="2"
+          step="0.05"
+        />
       </label>
     </div>
     <div v-if="infoPanelOpen" class="viewport-overlay info-panel">
-      <div class="info-card" role="dialog" :aria-label="$t('package.modelInfo')">
+      <div
+        class="info-card"
+        role="dialog"
+        :aria-label="$t('package.modelInfo')"
+      >
         <header class="lod-card-header">
           <span>{{ $t("package.modelInfo") }}</span>
           <div class="info-header-actions">
@@ -882,7 +918,11 @@ watch(
               :disabled="!modelPayload?.diagnostics"
               @click="copyDiagnostics"
             >
-              <FIcon :name="infoCopied ? 'Check' : 'Copy'" :size="13" aria-label="" />
+              <FIcon
+                :name="infoCopied ? 'Check' : 'Copy'"
+                :size="13"
+                aria-label=""
+              />
             </button>
             <button
               type="button"
@@ -894,7 +934,9 @@ watch(
             </button>
           </div>
         </header>
-        <pre class="info-pre">{{ modelPayload?.diagnostics || $t("package.modelInfoEmpty") }}</pre>
+        <pre class="info-pre">{{
+          modelPayload?.diagnostics || $t("package.modelInfoEmpty")
+        }}</pre>
       </div>
     </div>
     <div
@@ -919,9 +961,22 @@ watch(
         <FIcon :name="entry.icon" :size="14" aria-label="" />
       </button>
     </div>
-    <div class="viewport-overlay viewport-visibility" role="group" :aria-label="$t('package.visibilityToggles')">
+    <div
+      class="viewport-overlay viewport-visibility"
+      role="group"
+      :aria-label="$t('package.visibilityToggles')"
+    >
       <button
-        v-for="name in ['model', 'lot', 'lights', 'props', 'decals', 'effects', 'spawners', 'paths']"
+        v-for="name in [
+          'model',
+          'lot',
+          'lights',
+          'props',
+          'decals',
+          'effects',
+          'spawners',
+          'paths',
+        ]"
         :key="name"
         type="button"
         :class="{ off: groupVisibility[name] === false }"
@@ -929,8 +984,14 @@ watch(
         :title="$t(`package.group${name[0].toUpperCase()}${name.slice(1)}`)"
         @click="$emit('toggle-layer', name)"
       >
-        <FIcon :name="groupVisibility[name] === false ? 'EyeOff' : 'Eye'" :size="13" aria-label="" />
-        <span>{{ $t(`package.group${name[0].toUpperCase()}${name.slice(1)}`) }}</span>
+        <FIcon
+          :name="groupVisibility[name] === false ? 'EyeOff' : 'Eye'"
+          :size="13"
+          aria-label=""
+        />
+        <span>{{
+          $t(`package.group${name[0].toUpperCase()}${name.slice(1)}`)
+        }}</span>
       </button>
     </div>
   </div>
@@ -1081,7 +1142,9 @@ watch(
   justify-items: center;
   min-height: 52px;
   padding: 8px 4px;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 .lod-tile:hover:not(:disabled) {
   border-color: var(--accent);
