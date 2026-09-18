@@ -330,6 +330,50 @@ fn main() {
         border_widths
     );
 
+    // 地面贴图平铺周期（0x0CCB7FD0 Vector2 = 每轴重复次数；缺失回退 --tiles）。
+    // 消防局实测 = (15,15)：铺装区占 lot 宽 62.5% → 目视 ~10 列，整长 15 行，
+    // 与游戏内 10×15 格网一致。
+    let tiles_property = vector2_at(&file, 0x0CCB_7FD0);
+    let tiles = match tiles_property {
+        Some([tx, ty]) if tx > 0.0 && ty > 0.0 => (tx, ty),
+        _ => (args.tiles, args.tiles),
+    };
+    println!(
+        "tiles (0x0CCB7FD0 {}): {:?}  → 格子 = LotSize/tiles = {:?} m",
+        if tiles_property.is_some() {
+            "property"
+        } else {
+            "fallback"
+        },
+        tiles,
+        [
+            vector2_at(&file, H_LOT_SIZE).map_or(0.0, |s| s[0] / tiles.0),
+            vector2_at(&file, H_LOT_SIZE).map_or(0.0, |s| s[1] / tiles.1),
+        ]
+    );
+
+    // 底图格数据驱动推导（FUN_008ba1c0 逐字）：FD6(Int32) 优先，
+    // 否则 min(FD2, FD3) 逐分量 → round((min+1/64)*4) + round(...)*4。
+    let base_tile_derived: Option<usize> = {
+        let fd2 = vector2_at(&file, 0x0CCB_7FD2);
+        let fd3 = vector2_at(&file, 0x0CCB_7FD3);
+        fd2.zip(fd3).map(|(a, b)| {
+            let mx = a[0].min(b[0]);
+            let my = a[1].min(b[1]);
+            let round = |v: f32| (v + 0.5).floor() as i32;
+            let rx = round((mx + 1.0 / 64.0) * 4.0);
+            let ry = round((my + 1.0 / 64.0) * 4.0);
+            ((rx + ry * 4).max(0) as usize) % ATLAS_CELLS
+        })
+    };
+    if let Some(tile) = base_tile_derived {
+        println!(
+            "baseTile (FD2/FD3 推导) = {}（--base-tile={} 被数据覆盖）",
+            tile, args.base_tile
+        );
+    }
+    let base_tile = base_tile_derived.unwrap_or(args.base_tile % ATLAS_CELLS);
+
     // 原始 mask RGB（**不做任何调色板替换**）与纯覆盖率掩码，避免把探针的
     // 回退色误读成资产数据。
     {
@@ -366,7 +410,7 @@ fn main() {
 
     let diffuse = diffuse_idx.and_then(|index| atlases.get(index));
     let normal = normal_idx.and_then(|index| atlases.get(index));
-    let base_tile = args.base_tile % ATLAS_CELLS;
+    // base_tile 已由上方 FD2/FD3 数据驱动推导（缺失时回退 --base-tile）。
 
     // (a) 引擎反照率：通道颜色相加 + 未覆盖处保留底图（不含图案，因为图案走法线/高度）。
     //     两种调色板顺序对照：slot = 通道序号（正常）vs 反向（LC4..LC1）。
@@ -427,7 +471,7 @@ fn main() {
         &colors8,
         &borders8,
         &border_widths,
-        args.tiles,
+        tiles,
     );
     save_png(
         &args.out_dir,
@@ -708,7 +752,7 @@ fn compose_tiles_aa(
     colors: &[[u8; 4]],
     border_colors: &[[u8; 4]],
     border_widths: &[f32; 4],
-    tiles: f32,
+    tiles: (f32, f32),
 ) -> Vec<u8> {
     let mut out = vec![0u8; out_w * out_h * 4];
     let Some(atlas) = diffuse else {
@@ -725,8 +769,8 @@ fn compose_tiles_aa(
 
             let au = 1.0 - mu;
             let av = mv;
-            let tu = (au * tiles).fract();
-            let tv = (av * tiles).fract();
+            let tu = (au * tiles.0).fract();
+            let tv = (av * tiles.1).fract();
 
             // 瀑布后每通道至多一个占用；边框优先于主色（同通道互斥）。
             let winner = [
