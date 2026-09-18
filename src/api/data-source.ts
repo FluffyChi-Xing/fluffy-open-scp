@@ -439,6 +439,13 @@ function mockDataSource(): OpenScpDataSource {
           [0, 0, 255, 3],
         ],
         lotColorsAuthored: [true, true, true, true],
+        lotBorderColors: [
+          [156, 156, 156],
+          [156, 156, 156],
+          [156, 156, 156],
+          [156, 156, 156],
+        ],
+        lotBorderWidths: [0, 0, 0, 0],
         lotMaskPng: null,
         lotMaskRawRgba: null,
         lotAlbedoPng: null,

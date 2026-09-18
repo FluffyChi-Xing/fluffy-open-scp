@@ -529,6 +529,12 @@ pub struct LotEditorSession {
     /// LotColor1-4 是否实际存在于 property（false = 黑/红/绿/蓝回退，
     /// 精细渲染不应使用回退色着色）。
     pub lot_colors_authored: [bool; 4],
+    /// LotBorderColor1-4（0xD7AF042-45）的 sRGB RGB——mask 渐变带
+    /// （0.5±borderWidth）的描边色。缺失通道回退浅灰。
+    pub lot_border_colors: [[u8; 3]; 4],
+    /// borderWidth1-4（0xD7AF046-49，float）——逐通道边框带半宽；
+    /// 全 0 = 无边框（与旧渲染等价）。
+    pub lot_border_widths: [f32; 4],
     /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
     pub units: Vec<sc_properties::LotUnit>,
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
@@ -2232,6 +2238,7 @@ pub async fn read_lot_editor_session(
                 diagnostics.push("property registry is unavailable; using hash identifiers".into());
             }
             let (colors, lot_colors_authored) = lot_colors(&document);
+            let (lot_border_colors, lot_border_widths) = lot_borders(&document);
             // 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）。
             // 像素保留在内存供默认反照率合成取底图格，PNG 供前端精细渲染。
             let lot_surface = document.lot_textures.map(|key| {
@@ -2362,6 +2369,8 @@ pub async fn read_lot_editor_session(
                 lot_surface_png,
                 lot_colors: colors,
                 lot_colors_authored,
+                lot_border_colors,
+                lot_border_widths,
                 decal_textures,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,
@@ -2788,6 +2797,42 @@ fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bo
         }
     }
     (colors, authored)
+}
+
+/// LotBorderColor1-4（0xD7AF042-45，线性 ColorRgba → sRGB RGB）与
+/// borderWidth1-4（0xD7AF046-49，Float）——地面 mask 渐变带的描边色/半宽
+///（addOverlay：maskCenters = 0.5 − borderWidth，borderChk = 0.5 + borderWidth）。
+/// 颜色缺失回退浅灰（156,156,156）；宽度缺失 = 0（无边框，渲染等价旧路径）。
+fn lot_borders(document: &sc_properties::LotEditorDocument) -> ([[u8; 3]; 4], [f32; 4]) {
+    const BORDER_COLOR_HASHES: [u32; 4] =
+        [0x0D7A_F042, 0x0D7A_F043, 0x0D7A_F044, 0x0D7A_F045];
+    const BORDER_WIDTH_HASHES: [u32; 4] =
+        [0x0D7A_F046, 0x0D7A_F047, 0x0D7A_F048, 0x0D7A_F049];
+    let mut colors = [[156u8; 3]; 4];
+    let mut widths = [0.0f32; 4];
+    for (index, hash) in BORDER_COLOR_HASHES.iter().enumerate() {
+        let property = document.properties.get(*hash);
+        let value = property.and_then(|p| p.scalar()).or_else(|| {
+            property.and_then(|p| p.array()).and_then(|v| v.first())
+        });
+        if let Some(sc_properties::Value::ColorRgba { r, g, b, .. }) = value {
+            colors[index] = [
+                linear_to_srgb_byte(*r),
+                linear_to_srgb_byte(*g),
+                linear_to_srgb_byte(*b),
+            ];
+        }
+    }
+    for (index, hash) in BORDER_WIDTH_HASHES.iter().enumerate() {
+        let property = document.properties.get(*hash);
+        let value = property.and_then(|p| p.scalar()).or_else(|| {
+            property.and_then(|p| p.array()).and_then(|v| v.first())
+        });
+        if let Some(sc_properties::Value::Float(f)) = value {
+            widths[index] = *f;
+        }
+    }
+    (colors, widths)
 }
 
 /// 线性 0..1 → sRGB 字节（与 lot_compose 探针 to_rgba8 同公式）。

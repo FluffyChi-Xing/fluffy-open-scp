@@ -65,6 +65,10 @@ const props = defineProps<{
   lotColors: [number, number, number, number][];
   /** LotColor1-4 是否实际存在（false = 回退色，不参与着色）。 */
   lotColorsAuthored: boolean[];
+  /** LotBorderColor1-4 的 sRGB RGB（mask 渐变带描边色）。 */
+  lotBorderColors: [number, number, number][];
+  /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
+  lotBorderWidths: number[];
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
   /** LotMask 原始通道权重（未压缩 RGBA base64；A = LC4 权重）。 */
@@ -525,6 +529,8 @@ async function assembleScene(
         refined: props.renderMode === "refined",
         lotColors: props.lotColors,
         lotColorsAuthored: props.lotColorsAuthored,
+        lotBorderColors: props.lotBorderColors,
+        lotBorderWidths: props.lotBorderWidths,
         isStale: ctx.isStale,
       });
     }

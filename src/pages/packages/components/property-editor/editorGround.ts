@@ -105,6 +105,10 @@ export function applyGroundMask(options: {
   normalAtlas?: ImageData | null;
   /** LotMask 原始通道权重图（阈值选区输入；null = 量化图最近色硬分配）。 */
   rawMask?: ImageData | null;
+  /** LotBorderColor1-4 的 sRGB RGB（边框带描边色）。 */
+  lotBorderColors?: [number, number, number][];
+  /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
+  lotBorderWidths?: number[];
   isStale: () => boolean;
 }) {
   const {
@@ -121,6 +125,8 @@ export function applyGroundMask(options: {
     tintAtlas,
     normalAtlas,
     rawMask,
+    lotBorderColors,
+    lotBorderWidths,
     isStale,
   } = options;
   // 默认模式优先用反照率图；精细模式的合成输入仍是量化 mask。
@@ -151,6 +157,8 @@ export function applyGroundMask(options: {
         tintAtlas ?? null,
         rawMask,
         normalAtlas ?? null,
+        lotBorderColors ?? null,
+        lotBorderWidths ?? null,
       )
         .then((result) => {
           if (isStale() || !result) {

@@ -112,6 +112,10 @@ export async function composeRefinedGround(
   rawMask?: ImageData | null,
   /** 全局共享法线图集（s15）：同格号、同平铺烘焙成地面 normalMap。 */
   normalAtlas?: ImageData | null,
+  /** LotBorderColor1-4 的 sRGB RGB（边框带描边色；缺失 = 浅灰回退）。 */
+  lotBorderColors?: [number, number, number][] | null,
+  /** borderWidth1-4（边框带半宽，0..0.5）；undefined/全 0 = 无边框。 */
+  lotBorderWidths?: number[] | null,
 ): Promise<RefinedGroundTextures | null> {
   const image = maskImage as { width?: number; height?: number };
   const width = image.width ?? 0;
@@ -296,13 +300,21 @@ export async function composeRefinedGround(
       const at = (y * outW + x) * 4;
       const u = x / outW;
       const v = y / outH;
-      // 引擎优先级链：w→z→y→x = A > B > G > R；>0.5 硬阈值选区。
+      // 引擎优先级链：w→z→y→x = A > B > G > R；8 级瀑布
+      // A边框>A主色>B边框>B主色>…（addOverlay 逐字），边框带 =
+      // 权重 ∈ (0.5−bw, 0.5+bw]，着 LotBorderColor 平色（描边）。
       let channel = -1;
+      let channelIsBorder = false;
+      const borderWidths =
+        lotBorderWidths && lotBorderWidths.length === 4
+          ? lotBorderWidths
+          : [0, 0, 0, 0];
       if (rawMask) {
         const weights = sampleWeights(u, v);
         for (const c of [3, 2, 1, 0]) {
-          if (weights[c] > 0.5) {
+          if (weights[c] > 0.5 - borderWidths[c]) {
             channel = c;
+            channelIsBorder = weights[c] <= 0.5 + borderWidths[c];
             break;
           }
         }
@@ -321,7 +333,13 @@ export async function composeRefinedGround(
         }
       }
       const source = channel >= 0 ? channelTiles[channel] : defaultTile;
-      if (source) {
+      if (channel >= 0 && channelIsBorder && lotBorderColors?.[channel]) {
+        // 边框带 = LotBorderColor 平色（引擎里图案进法线，不进反照率）。
+        const border = lotBorderColors[channel]!;
+        composed.data[at] = border[0];
+        composed.data[at + 1] = border[1];
+        composed.data[at + 2] = border[2];
+      } else if (source) {
         const [tr, tg, tb] = sampleTiled(source, u, v, tilesX, tilesY);
         const tint =
           channel >= 0 && lotColorsAuthored[channel]

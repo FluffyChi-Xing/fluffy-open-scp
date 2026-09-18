@@ -34,6 +34,8 @@ const {
   lotPlacement,
   lotColors,
   lotColorsAuthored,
+  lotBorderColors,
+  lotBorderWidths,
   lotMaskPng,
   lotMaskRawRgba,
   lotAlbedoPng,
@@ -396,6 +398,8 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-placement="lotPlacement"
           :lot-colors="lotColors"
           :lot-colors-authored="lotColorsAuthored"
+          :lot-border-colors="lotBorderColors"
+          :lot-border-widths="lotBorderWidths"
           :lot-mask-png="lotMaskPng"
           :lot-mask-raw-rgba="lotMaskRawRgba"
           :lot-albedo-png="lotAlbedoPng"

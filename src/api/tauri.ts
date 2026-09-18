@@ -550,6 +550,10 @@ export interface LotEditorSession {
   lotColors: [number, number, number, number][];
   /** LotColor1-4 是否实际存在（false = 黑/红/绿/蓝回退，不应着色）。 */
   lotColorsAuthored: boolean[];
+  /** LotBorderColor1-4 的 sRGB RGB——mask 渐变带描边色（缺失通道 = 浅灰）。 */
+  lotBorderColors: [number, number, number][];
+  /** borderWidth1-4（float，边框带半宽）；全 0 = 无边框。 */
+  lotBorderWidths: number[];
   units: LotUnitDto[];
   /** 精细渲染贴花纹理（与 units 中 decal 的 category+index 对应）。 */
   decalTextures: DecalUnitTexture[];

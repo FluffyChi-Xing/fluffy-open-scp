@@ -240,6 +240,20 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     ];
   });
 
+  const lotBorderColors = computed<[number, number, number][]>(() => {
+    return session.value?.lotBorderColors ?? [
+      [156, 156, 156],
+      [156, 156, 156],
+      [156, 156, 156],
+      [156, 156, 156],
+    ];
+  });
+
+  const lotBorderWidths = computed<number[]>(() => {
+    const widths = session.value?.lotBorderWidths;
+    return widths && widths.length === 4 ? widths : [0, 0, 0, 0];
+  });
+
   const lotSurfacePng = computed<string | null>(() => {
     const png = session.value?.lotSurfacePng;
     return png ? `data:image/png;base64,${png}` : null;
@@ -310,6 +324,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotPlacement,
     lotColors,
     lotColorsAuthored,
+    lotBorderColors,
+    lotBorderWidths,
     lotMaskPng,
     lotMaskRawRgba,
     lotAlbedoPng,
