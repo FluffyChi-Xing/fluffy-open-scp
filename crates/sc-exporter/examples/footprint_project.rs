@@ -250,6 +250,27 @@ fn main() {
             ]);
         }
     }
+    // 逐 unit CSV（kind + 坐标）供对照分析
+    {
+        let csv_path = format!("{out_dir}/units.csv");
+        use std::io::Write as _;
+        let mut uout = std::io::BufWriter::new(std::fs::File::create(&csv_path).expect("create"));
+        writeln!(uout, "kind,x,y").unwrap();
+        for unit in &lot_units.units {
+            let (kind, m) = match unit {
+                sc_properties::LotUnit::Light { transform, .. } => ("light", transform.as_ref().map(|t| t.matrix)),
+                sc_properties::LotUnit::Effect { transform, .. } => ("effect", transform.as_ref().map(|t| t.matrix)),
+                sc_properties::LotUnit::Decal { transform, .. } => ("decal", transform.as_ref().map(|t| t.matrix)),
+                sc_properties::LotUnit::Prop { transform, .. } => ("prop", transform.as_ref().map(|t| t.matrix)),
+                sc_properties::LotUnit::Spawner { transform, .. } => ("spawner", transform.as_ref().map(|t| t.matrix)),
+                sc_properties::LotUnit::PathPoint { .. } => ("path", None),
+            };
+            if let Some(m) = m {
+                writeln!(uout, "{kind},{},{},{}", m[9], m[10], m[11]).unwrap();
+            }
+        }
+        println!("units csv -> {csv_path}");
+    }
     if !unit_pts.is_empty() {
         let (ux0, ux1) = unit_pts.iter().fold((f32::MAX, f32::MIN), |acc, p| {
             (acc.0.min(p[0]), acc.1.max(p[0]))

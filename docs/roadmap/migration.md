@@ -2864,3 +2864,42 @@ CSV + 退化三角形诊断 + 参数表导出）。
   ——近似但即插即用。
   符号表变量名与标准 POM 一一对应（ds/dt=切线空间步进分量、dsRat/dtRat=
   步进比率、h=采样高度、step=深度步长），②的算法骨架由此可信。
+
+### 50.5 节点关系定案：lot / mask / model / units / 地面 quad（2026-09-19 续）
+
+反编译闭环（FUN_008bb990 → FUN_007e2260 → FUN_005cacc0/FUN_007bacf0/
+FUN_007e1fc0 → FUN_008ba1c0），节点关系全部确定：
+
+**0xF9EFBA "Model Bounding Box"**（BoundingBox{min,max}，模型空间）是
+建筑包围盒的**授权数据源**——FUN_007bacf0 按锚点累加（消防局实测与网格
+包围盒一致；塔楼/EP1 房为 authored 偏心值）。锚点清单构建器
+FUN_005cacc0 = 0xB1B104 的 KeyFilter 枚举（所有 lot property），不是
+unit 枚举。
+
+**地面 quad 定位定案**：LotSize 尺寸，中心 = **LotPlacementTransform
+变换后的 0xF9EFBA 包围盒中心**；0x0CCB7FC9 存在时覆盖中心 x/y。
+建筑本体放在 M(0)（placement 平移 t）。相对关系（游戏与 app 一致性
+的判据）：地面中心 − 建筑 = **R·bboxC**（R = placement 旋转块）——
+平移 t 在相对关系中抵消。旧实现（C# 查看器约定 placementInverse）
+误差 = bboxC + 2·t：消防局 t=(+4,0) → 8m（用户目视）；恒等 placement
+的 lot 误差 ≈ bboxC（塔楼/图书馆 ≈0、EP1 房 +2.89）。app 已改
+`R·T(R·(FC9 ?? bboxC))`（3a19860）。
+
+**units（prop/effect/decal/light/spawner）**：模型空间坐标，与建筑
+同参考系（placement 恒等时即 lot 空间）；其相对 mask 特征的位置为
+authored（0xFFDD46E8 的 props 分布到 lot 外 15m 的街道带 = 行道树
+本意）。若游戏内 units 与 mask 特征有系统性错位，剩余嫌疑 =
+unit transform 的参考原点（FUN_007e2260 锚点数组用途），当前证据
+不支持。
+
+**验证矩阵**（footprint_project 地面中心对照，米）：
+
+| 样本 | t | bboxC | 引擎 | app 旧误差 | app 新误差 |
+|---|---|---|---|---|---|
+| 塔楼 0xCCF54D02 | 0 | (0.04,−0.08) | (0.04,−0.08) | ≈0 | (7.48,−8.11)¹ |
+| 消防局 0x4DE9912B | (+4,0) | (0,0) | (4,0) | (8,0) | (2.63,−0.60) |
+| 图书馆 0x0BFE06AB | 0 | (0,−0.41) | (0,−0.41) | ≈0 | (−0.58,−0.60) |
+| EP1 房 0x4EF6F6CD | 0 | (0,+2.89) | (0,+2.89) | (0,+2.89) | (−4.86,−2.37) |
+| 空壳 0x896AF151 | (+1,−1.5) | (0,0) | (1,−1.5) | (2,−3) | (−2.33,−41.4)¹ |
+
+¹ d313e11 的 units 中心方案误差巨大 → 已于 3a19860 撤销，改 M(bboxC)。
