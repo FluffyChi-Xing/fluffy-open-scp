@@ -22,7 +22,10 @@ import type {
 let sessionEpoch = 0;
 
 /** Outliner/状态栏共用的 Unit 显示名（灯光优先 DebugName）。 */
-export function unitLabel(unit: LotUnitDto, t: (key: string) => string): string {
+export function unitLabel(
+  unit: LotUnitDto,
+  t: (key: string) => string,
+): string {
   switch (unit.kind) {
     case "light":
       return unit.debugName ?? `${t("package.groupLights")} #${unit.index + 1}`;
@@ -232,26 +235,34 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   });
 
   const lotColors = computed<[number, number, number, number][]>(() => {
-    return session.value?.lotColors ?? [
-      [0, 0, 0, 0],
-      [255, 0, 0, 0],
-      [0, 255, 0, 0],
-      [0, 0, 255, 0],
-    ];
+    return (
+      session.value?.lotColors ?? [
+        [0, 0, 0, 0],
+        [255, 0, 0, 0],
+        [0, 255, 0, 0],
+        [0, 0, 255, 0],
+      ]
+    );
   });
 
   const lotBorderColors = computed<[number, number, number][]>(() => {
-    return session.value?.lotBorderColors ?? [
-      [156, 156, 156],
-      [156, 156, 156],
-      [156, 156, 156],
-      [156, 156, 156],
-    ];
+    return (
+      session.value?.lotBorderColors ?? [
+        [156, 156, 156],
+        [156, 156, 156],
+        [156, 156, 156],
+        [156, 156, 156],
+      ]
+    );
   });
 
   const lotBorderWidths = computed<number[]>(() => {
     const widths = session.value?.lotBorderWidths;
     return widths && widths.length === 4 ? widths : [0, 0, 0, 0];
+  });
+
+  const lotOverlayBoxOffset = computed<[number, number] | null>(() => {
+    return session.value?.lotOverlayBoxOffset ?? null;
   });
 
   const lotSurfacePng = computed<string | null>(() => {
@@ -326,6 +337,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotColorsAuthored,
     lotBorderColors,
     lotBorderWidths,
+    lotOverlayBoxOffset,
     lotMaskPng,
     lotMaskRawRgba,
     lotAlbedoPng,

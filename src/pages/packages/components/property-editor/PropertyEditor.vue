@@ -7,7 +7,9 @@ import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import type { Tgi } from "@/api/tauri";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
-import PropertyEditorViewport, { type EditorTool } from "./PropertyEditorViewport.vue";
+import PropertyEditorViewport, {
+  type EditorTool,
+} from "./PropertyEditorViewport.vue";
 import PropertyEditorInspector from "./PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
@@ -36,6 +38,7 @@ const {
   lotColorsAuthored,
   lotBorderColors,
   lotBorderWidths,
+  lotOverlayBoxOffset,
   lotMaskPng,
   lotMaskRawRgba,
   lotAlbedoPng,
@@ -58,9 +61,10 @@ function setTool(next: EditorTool) {
 }
 
 /** 手柄拖拽中的实时变换（坐标面板即时显示；id 为 null = 拖拽结束）。 */
-const liveTransform = ref<{ id: string; position: [number, number, number] } | null>(
-  null,
-);
+const liveTransform = ref<{
+  id: string;
+  position: [number, number, number];
+} | null>(null);
 function onLiveTransform(
   id: string | null,
   value: { position: [number, number, number] } | null,
@@ -96,7 +100,8 @@ async function saveLocalEdits() {
     };
     const json = JSON.stringify(payload, null, 2);
     let binary = "";
-    for (const byte of new TextEncoder().encode(json)) binary += String.fromCharCode(byte);
+    for (const byte of new TextEncoder().encode(json))
+      binary += String.fromCharCode(byte);
     const path = await tauriApi.packages.saveFile(
       `${session.value?.assetName ?? "lot"}-edits.json`,
       "json",
@@ -158,7 +163,10 @@ async function exportRenderImage() {
     );
     if (!path) return;
     await command("write_export_file", {
-      request: { path, dataBase64: dataUrl.slice("data:image/png;base64,".length) },
+      request: {
+        path,
+        dataBase64: dataUrl.slice("data:image/png;base64,".length),
+      },
     });
   } finally {
     renderShotBusy.value = false;
@@ -200,7 +208,11 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
 </script>
 
 <template>
-  <FSheet v-model:open="open" :label="$t('package.propertyEditor')" width="100vw">
+  <FSheet
+    v-model:open="open"
+    :label="$t('package.propertyEditor')"
+    width="100vw"
+  >
     <div v-if="open" class="editor-root">
       <header class="editor-header">
         <div class="editor-title">
@@ -331,13 +343,25 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :title="$t('package.exportRender')"
           @click="exportRenderImage"
         >
-          <FIcon :name="renderShotBusy ? 'Loader2' : 'Camera'" :size="15" aria-label="" />
+          <FIcon
+            :name="renderShotBusy ? 'Loader2' : 'Camera'"
+            :size="15"
+            aria-label=""
+          />
         </button>
         <FDropdown :width="200">
           <template #trigger>
-            <button class="editor-close" type="button" :disabled="meshExportBusy"
-              :aria-label="$t('package.exportMesh')">
-              <FIcon :name="meshExportBusy ? 'Loader2' : 'Download'" :size="15" aria-label="" />
+            <button
+              class="editor-close"
+              type="button"
+              :disabled="meshExportBusy"
+              :aria-label="$t('package.exportMesh')"
+            >
+              <FIcon
+                :name="meshExportBusy ? 'Loader2' : 'Download'"
+                :size="15"
+                aria-label=""
+              />
             </button>
           </template>
           <button type="button" @click="exportModel('white')">
@@ -356,7 +380,9 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         <span v-if="edit.editCount.value" class="editor-readonly editor-edits">
           {{ $t("package.localEdits", { n: edit.editCount.value }) }}
         </span>
-        <span v-else class="editor-readonly">{{ $t("package.propertyEditorReadonly") }}</span>
+        <span v-else class="editor-readonly">{{
+          $t("package.propertyEditorReadonly")
+        }}</span>
         <button
           class="editor-close"
           type="button"
@@ -400,6 +426,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-colors-authored="lotColorsAuthored"
           :lot-border-colors="lotBorderColors"
           :lot-border-widths="lotBorderWidths"
+          :lot-overlay-box-offset="lotOverlayBoxOffset"
           :lot-mask-png="lotMaskPng"
           :lot-mask-raw-rgba="lotMaskRawRgba"
           :lot-albedo-png="lotAlbedoPng"

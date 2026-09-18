@@ -62,10 +62,22 @@ export function placementInverse(
   const m = lotPlacement;
   return new THREE.Matrix4()
     .set(
-      m[0], m[3], m[6], m[9],
-      m[1], m[4], m[7], m[10],
-      m[2], m[5], m[8], m[11],
-      0, 0, 0, 1,
+      m[0],
+      m[3],
+      m[6],
+      m[9],
+      m[1],
+      m[4],
+      m[7],
+      m[10],
+      m[2],
+      m[5],
+      m[8],
+      m[11],
+      0,
+      0,
+      0,
+      1,
     )
     .invert();
 }
@@ -77,6 +89,49 @@ export function groundFillMesh(
   return ground.children.find(
     (child) => (child as ThreeNamespace.Mesh).isMesh,
   ) as ThreeNamespace.Mesh | undefined;
+}
+
+/**
+ * Unit 锚点包围盒中心（引擎 FUN_007e2260 累计语义，2026-09-19 反编译）：
+ * 地面 quad 中心 = 该中心（LotOverlayBoxOffset 缺省时）。建筑模型原点
+ * 不参与——单元（灯/贴花/道具/生成器/路径点）围绕实际建成区分布，
+ * 塔楼类建筑因此相对地面偏侧（0xCCF54D02 实测单元中心 (-7.44,8.03)，
+ * 与游戏内建筑贴地面右下一致）。
+ */
+export function unitAnchorCenter(grouping: {
+  lights: { transform?: { matrix: number[] } | null }[];
+  decals: { transform?: { matrix: number[] } | null }[];
+  props: { transform?: { matrix: number[] } | null }[];
+  effects: { transform?: { matrix: number[] } | null }[];
+  spawners: { transform?: { matrix: number[] } | null }[];
+  pathPoints: { point?: [number, number, number] | null }[];
+}): [number, number] | null {
+  const points: [number, number][] = [];
+  for (const unit of [
+    ...grouping.lights,
+    ...grouping.decals,
+    ...grouping.props,
+    ...grouping.effects,
+    ...grouping.spawners,
+  ]) {
+    const m = unit.transform?.matrix;
+    if (m && m.length === 12) points.push([m[9], m[10]]);
+  }
+  for (const point of grouping.pathPoints) {
+    if (point.point) points.push([point.point[0], point.point[1]]);
+  }
+  if (!points.length) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const [x, y] of points) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  return [(minX + maxX) / 2, (minY + maxY) / 2];
 }
 
 /**
@@ -109,6 +164,8 @@ export function applyGroundMask(options: {
   lotBorderColors?: [number, number, number][];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths?: number[];
+  /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
+  lotOverlayBoxOffset?: [number, number] | null;
   isStale: () => boolean;
 }) {
   const {
@@ -130,7 +187,7 @@ export function applyGroundMask(options: {
     isStale,
   } = options;
   // 默认模式优先用反照率图；精细模式的合成输入仍是量化 mask。
-  const flatPng = refined ? maskPng : albedoPng ?? maskPng;
+  const flatPng = refined ? maskPng : (albedoPng ?? maskPng);
   if (!flatPng) return;
   new THREE.TextureLoader().load(flatPng, (texture) => {
     if (isStale()) {
@@ -166,7 +223,8 @@ export function applyGroundMask(options: {
             result?.normalMap?.dispose();
             return;
           }
-          const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
+          const fillMaterial =
+            fill.material as ThreeNamespace.MeshBasicMaterial;
           // 精细地面改受光材质：游戏地表被阳光/环境光照亮，无光照的
           // MeshBasic 会比游戏截图整体偏暗一档（2026-09-13 对拍）。
           // 注意必须是 Phong/Standard 系——MeshLambertMaterial 不支持

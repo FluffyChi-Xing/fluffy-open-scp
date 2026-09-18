@@ -35,7 +35,11 @@ import type {
   TypeCountInfo,
 } from "./tauri";
 import { mockOverview } from "./mock-data";
-import { decodeTextBytes, looksLikeText, stripLocaleJsonPrefix } from "@/lib/text-decode";
+import {
+  decodeTextBytes,
+  looksLikeText,
+  stripLocaleJsonPrefix,
+} from "@/lib/text-decode";
 import {
   imageMimeForType,
   AUDIO_TYPE_ID,
@@ -353,7 +357,10 @@ function mockDataSource(): OpenScpDataSource {
           sections: mockRw4Sections,
           ...base,
         };
-      if (imageMimeForType(resource.tgi.typeId) || resource.tgi.typeId === 0x2f4e681c)
+      if (
+        imageMimeForType(resource.tgi.typeId) ||
+        resource.tgi.typeId === 0x2f4e681c
+      )
         return {
           kind: "image",
           packageId: _packageId,
@@ -424,9 +431,18 @@ function mockDataSource(): OpenScpDataSource {
         modelAvailable: true,
         modelKey: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 },
         modelLods: [
-          { packageId: 1, tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 } },
-          { packageId: 1, tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000002 } },
-          { packageId: 1, tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000003 } },
+          {
+            packageId: 1,
+            tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000001 },
+          },
+          {
+            packageId: 1,
+            tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000002 },
+          },
+          {
+            packageId: 1,
+            tgi: { typeId: 0x2f4e681b, group: 0, instance: 0x10000003 },
+          },
           null,
         ],
         lotTilePeriod: null,
@@ -446,6 +462,7 @@ function mockDataSource(): OpenScpDataSource {
           [156, 156, 156],
         ],
         lotBorderWidths: [0, 0, 0, 0],
+        lotOverlayBoxOffset: null,
         lotMaskPng: null,
         lotMaskRawRgba: null,
         lotAlbedoPng: null,
@@ -540,7 +557,9 @@ function mockDataSource(): OpenScpDataSource {
       } satisfies RasterPreviewData;
     },
     async readRw4Section(_packageId, _tgi, number) {
-      const section = mockRw4Sections.find((item) => item.number === number) ?? mockRw4Sections[0];
+      const section =
+        mockRw4Sections.find((item) => item.number === number) ??
+        mockRw4Sections[0];
       return {
         number: section.number,
         typeCode: section.typeCode,
@@ -592,7 +611,10 @@ function mockDataSource(): OpenScpDataSource {
     },
     async packageStats(paths) {
       // demo 模式：对每个请求路径生成确定性的伪统计，方便浏览器预览图表。
-      const byExt = new Map<string, { count: number; size: number; known: boolean }>();
+      const byExt = new Map<
+        string,
+        { count: number; size: number; known: boolean }
+      >();
       let knownSize = 0;
       let unknownSize = 0;
       for (const item of entries) {
@@ -635,9 +657,10 @@ function mockDataSource(): OpenScpDataSource {
         };
       };
       return {
-        packages: (paths.length ? paths : ["SimCity_App.package", "SimCity_Game.package"]).map(
-          perPackage,
-        ),
+        packages: (paths.length
+          ? paths
+          : ["SimCity_App.package", "SimCity_Game.package"]
+        ).map(perPackage),
         extensions,
         totals: {
           fileSize: 782_000_000,
@@ -723,7 +746,10 @@ async function tauriMediaPreview(
   }
   const directory = await tempDir();
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const outputPath = await join(directory, `openscp-preview-${suffix}.${isVideo ? "mp4" : "wav"}`);
+  const outputPath = await join(
+    directory,
+    `openscp-preview-${suffix}.${isVideo ? "mp4" : "wav"}`,
+  );
   const accepted = await tauriApi.packages.export(
     packageId,
     resource.tgi,
@@ -798,7 +824,9 @@ async function tauriPreview(
       bytes: [],
     };
   }
-  if ((GENERIC_IMAGE_TYPE_IDS as readonly number[]).includes(resource.tgi.typeId)) {
+  if (
+    (GENERIC_IMAGE_TYPE_IDS as readonly number[]).includes(resource.tgi.typeId)
+  ) {
     // TGA / Cursor / Greyscale Map：Rust 侧解码为 PNG；失败回退 hex。
     try {
       const data = await tauriApi.packages.readImagePreview(
@@ -864,7 +892,10 @@ async function tauriPreview(
     return { kind: "property", packageId, tgi: resource.tgi, ...data, ...base };
   }
   if (resource.tgi.typeId === RW4_TYPE_ID) {
-    const data = await tauriApi.packages.readRw4Preview(packageId, resource.tgi);
+    const data = await tauriApi.packages.readRw4Preview(
+      packageId,
+      resource.tgi,
+    );
     return {
       kind: "rw4",
       packageId,
@@ -917,17 +948,14 @@ const MOCK_PROPERTY_GROUPS = [
 function mockResources() {
   return Array.from({ length: 2489 }, (_, index) => {
     const typeId = [
-      0x2f4e681b,
-      0x2f4e681c,
-      0x00b1b104,
-      0x0a98eaf0,
-      0x0d9e5710,
-      0x376840d7,
+      0x2f4e681b, 0x2f4e681c, 0x00b1b104, 0x0a98eaf0, 0x0d9e5710, 0x376840d7,
       0x0a4d8d09,
     ][index % 7];
     const group =
       typeId === 0x00b1b104
-        ? MOCK_PROPERTY_GROUPS[Math.floor(index / 7) % MOCK_PROPERTY_GROUPS.length]
+        ? MOCK_PROPERTY_GROUPS[
+            Math.floor(index / 7) % MOCK_PROPERTY_GROUPS.length
+          ]
         : index % 16;
     return {
       tgi: { typeId, group, instance: 0x10000000 + index },

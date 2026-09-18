@@ -40,6 +40,7 @@ import {
   applyGroundMask,
   buildLotRect,
   placementInverse,
+  unitAnchorCenter,
 } from "./editorGround";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
@@ -69,6 +70,8 @@ const props = defineProps<{
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
+  lotOverlayBoxOffset: [number, number] | null;
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
   /** LotMask 原始通道权重（未压缩 RGBA base64；A = LC4 权重）。 */
@@ -493,6 +496,25 @@ async function assembleScene(
     if (props.lotPlacement) {
       ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
     }
+    // 引擎定位（FUN_007e2260/FUN_008ba1c0 反编译，2026-09-19）：地面 quad
+    // 中心 = lot 单元锚点包围盒中心，LotOverlayBoxOffset（0x0CCB7FC9）存在
+    // 时覆盖之；建筑模型原点不动。塔楼 0xCCF54D02 实证：单元中心
+    // (-7.44, 8.03)，地面随之偏移后建筑落在地面右下（与游戏一致）；
+    // 中心对中心时建筑会侵入北侧道路（用户截图反馈）。
+    const groundCenter =
+      props.lotOverlayBoxOffset ?? unitAnchorCenter(props.grouping);
+    if (
+      groundCenter &&
+      (Math.abs(groundCenter[0]) > 1e-4 || Math.abs(groundCenter[1]) > 1e-4)
+    ) {
+      ground.matrix.premultiply(
+        new THREE.Matrix4().makeTranslation(
+          groundCenter[0],
+          groundCenter[1],
+          0,
+        ),
+      );
+    }
     ground.matrixAutoUpdate = false;
     // 独立 lot 组：与建筑模型分开控制可见性（关模型不连地面一起隐藏，
     // 2026-09-13 用户对拍需求）。
@@ -531,6 +553,7 @@ async function assembleScene(
         lotColorsAuthored: props.lotColorsAuthored,
         lotBorderColors: props.lotBorderColors,
         lotBorderWidths: props.lotBorderWidths,
+        lotOverlayBoxOffset: props.lotOverlayBoxOffset,
         isStale: ctx.isStale,
       });
     }

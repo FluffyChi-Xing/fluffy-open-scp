@@ -535,6 +535,9 @@ pub struct LotEditorSession {
     /// borderWidth1-4（0xD7AF046-49，float）——逐通道边框带半宽；
     /// 全 0 = 无边框（与旧渲染等价）。
     pub lot_border_widths: [f32; 4],
+    /// LotOverlayBoxOffset（0x0CCB7FC9）：地面 quad 中心覆盖值；
+    /// None = 引擎回退到 lot 单元锚点包围盒中心。
+    pub lot_overlay_box_offset: Option<[f32; 2]>,
     /// 由属性字典装配的 Unit 列表（灯光/效果/贴花/道具槽/路径点/生成器）。
     pub units: Vec<sc_properties::LotUnit>,
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
@@ -2371,6 +2374,7 @@ pub async fn read_lot_editor_session(
                 lot_colors_authored,
                 lot_border_colors,
                 lot_border_widths,
+                lot_overlay_box_offset: document.lot_offset,
                 decal_textures,
                 units: lot_units.units,
                 path_pairs: lot_units.path_pairs,
