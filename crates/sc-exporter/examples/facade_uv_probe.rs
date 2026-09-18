@@ -144,6 +144,92 @@ fn main() {
                 writeln!(out, "{px},{py},{pz},{col},{},{},{},{}", tc0[0], tc0[1], tc0[2], tc0[3]).unwrap();
             }
             println!("  vertex dump -> {path}");
+            // 退化三角形诊断：真填充应为 (a,a,a)；若大量 (x,x,y) 形态
+            // 出现则索引解码有问题
+            let mut tri_aaa = 0usize;
+            let mut tri_two_eq = 0usize;
+            let mut tri_samples: Vec<[u16; 3]> = Vec::new();
+            for t in &mesh.triangles {
+                let deg = t[0] == t[1] || t[1] == t[2] || t[0] == t[2];
+                if !deg {
+                    continue;
+                }
+                if t[0] == t[1] && t[1] == t[2] {
+                    tri_aaa += 1;
+                } else {
+                    tri_two_eq += 1;
+                    if tri_samples.len() < 12 {
+                        tri_samples.push(*t);
+                    }
+                }
+            }
+            println!(
+                "  degenerate: total={} (a,a,a)={} two-equal={} samples={:?}",
+                mesh.triangles.len() - (mesh.triangles.len() - tri_aaa - tri_two_eq),
+                tri_aaa,
+                tri_two_eq,
+                tri_samples
+            );
+            // 三角形 CSV（含三顶点列号）：跨列三角形 = 列插值伪影来源
+            let tris_path = path.replace(".csv", "_tris.csv");
+            let mut tout =
+                std::io::BufWriter::new(std::fs::File::create(&tris_path).expect("create"));
+            writeln!(tout, "a,b,c,col_a,col_b,col_c").unwrap();
+            let mut mixed = 0usize;
+            let mut total = 0usize;
+            for t in &mesh.triangles {
+                if t[0] == t[1] || t[1] == t[2] || t[0] == t[2] {
+                    continue;
+                }
+                total += 1;
+                let col_of = |vi: u16| -> i32 {
+                    let vertex = &mesh.vertices[vi as usize];
+                    for (element, value) in &vertex.components {
+                        if element.usage == DeclarationUsage::Color {
+                            match value {
+                                rw4::ComponentValue::D3DColor { g, .. } => {
+                                    return i32::from(*g);
+                                }
+                                rw4::ComponentValue::UByte4(bytes) => {
+                                    return i32::from(bytes[1]);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    -1
+                };
+                let (ca, cb, cc) = (col_of(t[0]), col_of(t[1]), col_of(t[2]));
+                if ca != cb || cb != cc {
+                    mixed += 1;
+                }
+                writeln!(tout, "{},{},{},{},{},{}", t[0], t[1], t[2], ca, cb, cc).unwrap();
+            }
+            println!(
+                "  triangles: {total} ({mixed} mixed-column) -> {tris_path}"
+            );
+            // 参数表全量 CSV（col,row0..row3）：软渲染复现用
+            let params_path = path.replace(".csv", "_params.csv");
+            let params = file
+                .sections_of_type(rw4::SectionType::TEXTURE)
+                .next()
+                .and_then(|s| file.decode_texture(&data, s.number).ok())
+                .filter(|t| t.texture_type == rw4::TEXTURE_TYPE_PALETTE_F32)
+                .and_then(|t| t.decode_palette_f32().ok());
+            if let Some(values) = params {
+                let pw = values.len() / 4;
+                let mut pout = std::io::BufWriter::new(
+                    std::fs::File::create(&params_path).expect("create"),
+                );
+                writeln!(pout, "col,row,row0,row1,row2,row3").unwrap();
+                for c in 0..pw {
+                    for r in 0..4 {
+                        let v = values[r * pw + c];
+                        writeln!(pout, "{c},{r},{},{},{},{}", v[0], v[1], v[2], v[3]).unwrap();
+                    }
+                }
+                println!("  params dump -> {params_path}");
+            }
         }
     }
 }
