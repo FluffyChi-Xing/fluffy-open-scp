@@ -78,6 +78,40 @@ export function quantizeToImageData(doc: RasterDocument): ImageData {
 }
 
 /**
+ * Lot/Decal 四层"通道画笔"：lot mask 的每个通道是 LotColor1-4 的材质层
+ * 权重（R→C1 路面 / G→C2 铺装 / B→C3 草坪 / A→C4 标线，颜色相加合成），
+ * 画"任意 RGB"会同时激活多层，因此语义图只允许整层整笔地画。
+ * paint = 该层满权重的原始像素值；display = 量化视图里该层的显示色
+ * （与 QUANTIZED_PALETTE 的 A > R > G > B 优先级口径一致）。
+ */
+export interface LotLayer {
+  /** 写入文档的原始像素（仅目标通道满权重）。 */
+  paint: readonly [number, number, number, number];
+  /** 量化视图显示色（CSS hex）。 */
+  display: string;
+  /** 通道名（LotColor 下标语义）。 */
+  channel: "A" | "R" | "G" | "B";
+}
+
+export const LOT_LAYERS: readonly LotLayer[] = [
+  { paint: [0, 0, 0, 255], display: "#0000ff", channel: "A" },
+  { paint: [255, 0, 0, 0], display: "#00ff00", channel: "R" },
+  { paint: [0, 255, 0, 0], display: "#ff0000", channel: "G" },
+  { paint: [0, 0, 255, 0], display: "#000000", channel: "B" },
+];
+
+/** 按 A > R > G > B 优先级把原始像素吸附到层下标（取色器用）；全未命中返回 null。 */
+export function layerOfPixel(
+  rgba: readonly [number, number, number, number],
+): number | null {
+  const channels = [rgba[3], rgba[0], rgba[1], rgba[2]];
+  for (let layer = 0; layer < 4; layer += 1) {
+    if (channels[layer] >= 128) return layer;
+  }
+  return null;
+}
+
+/**
  * Lot 地表渲染模拟（示意）：量化胜出色 × 白底铺装 + 未覆盖区草地格。
  * 不含 LotColor 染色与 Lot Textures 图集材质——仅表达通道结构语义。
  */

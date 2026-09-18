@@ -21,6 +21,8 @@ import {
   rgbaToBase64,
   simulateDecalDataUrl,
   simulateLotDataUrl,
+  layerOfPixel,
+  LOT_LAYERS,
 } from "@/lib/raster-editor/encoders";
 import type { Rgba } from "@/lib/raster-editor/tools";
 import type { RasterRgbaResponse, Tgi } from "@/api/tauri";
@@ -36,7 +38,15 @@ const toast = useToast();
 const gamePackages = useGamePackagesStore();
 
 const RASTER_TYPE_ID = 0x2f4e681c;
-type Tool = "brush" | "eraser" | "line" | "rect" | "fill" | "picker";
+type Tool =
+  | "brush"
+  | "eraser"
+  | "line"
+  | "rect"
+  | "fill"
+  | "picker"
+  | "parking"
+  | "curve";
 const canvasRef = ref<InstanceType<typeof RasterCanvas> | null>(null);
 const doc = shallowRef<RasterDocument | null>(null);
 const history = shallowRef<RasterHistory | null>(null);
@@ -53,8 +63,22 @@ const colorHex = ref("#4f46e5");
 const quantized = ref(true);
 /** Lot 比例尺：1 px = 0.75 m（开启后显示米标尺与米坐标）。 */
 const lotScale = ref(false);
+/** 油漆桶容差：外部图片的抗锯齿渐变需要非零容差才能整片填充。 */
+const fillTolerance = ref(32);
+/** 停车位笔刷参数：默认取自游戏原生标线 0x7BE85E77 实测（0.75 m/px）。 */
+const parkingLength = ref(13);
+const parkingSpacing = ref(6);
+/**
+ * 四色通道模式（默认）：lot/decal mask 的通道即 LotColor1-4 材质层，
+ * 只允许整层落笔；关闭后为自由 RGB（普通 overlay 贴图用）。
+ */
+const paletteMode = ref(true);
+const layerIndex = ref(0);
 
 const brushColor = computed<Rgba>(() => {
+  if (paletteMode.value) {
+    return [...LOT_LAYERS[layerIndex.value].paint] as Rgba;
+  }
   const hex = colorHex.value.replace("#", "");
   return [
     parseInt(hex.slice(0, 2), 16),
@@ -64,13 +88,27 @@ const brushColor = computed<Rgba>(() => {
   ];
 });
 
+const layerLabels = computed(() =>
+  LOT_LAYERS.map((layer, index) => ({
+    index,
+    display: layer.display,
+    label: t(`studio.raster.layer${layer.channel}`),
+  })),
+);
+
 const tools = computed(
   () =>
     [
       { key: "brush", icon: "Brush", label: t("studio.raster.toolBrush") },
       { key: "eraser", icon: "Eraser", label: t("studio.raster.toolEraser") },
       { key: "line", icon: "Slash", label: t("studio.raster.toolLine") },
+      { key: "curve", icon: "Spline", label: t("studio.raster.toolCurve") },
       { key: "rect", icon: "Square", label: t("studio.raster.toolRect") },
+      {
+        key: "parking",
+        icon: "SquareParking",
+        label: t("studio.raster.toolParking"),
+      },
       { key: "fill", icon: "PaintBucket", label: t("studio.raster.toolFill") },
       { key: "picker", icon: "Pipette", label: t("studio.raster.toolPicker") },
     ] as const,
@@ -341,6 +379,24 @@ function messageOf(cause: unknown): string {
     ? String(cause.message)
     : String(cause);
 }
+
+/** 取色：四色通道模式下吸附到层下标，自由模式下写 hex。 */
+function onPickColor(rgba: Rgba) {
+  if (paletteMode.value) {
+    const layer = layerOfPixel(rgba);
+    if (layer !== null) layerIndex.value = layer;
+    return;
+  }
+  colorHex.value = `#${rgba[0]
+    .toString(16)
+    .padStart(2, "0")}${rgba[1].toString(16).padStart(2, "0")}${rgba[2]
+    .toString(16)
+    .padStart(2, "0")}`;
+}
+
+function metersOf(px: number): string {
+  return `${(px * 0.75).toFixed(2)} m`;
+}
 </script>
 
 <template>
@@ -407,13 +463,76 @@ function messageOf(cause: unknown): string {
                   class="size-input"
                 />
               </label>
+              <label v-if="tool === 'fill'" class="size-group">
+                <span>{{ $t("studio.raster.tolerance") }}</span>
+                <input
+                  v-model.number="fillTolerance"
+                  type="number"
+                  min="0"
+                  max="255"
+                  class="size-input"
+                  :title="$t('studio.raster.toleranceHint')"
+                />
+              </label>
+              <template v-if="tool === 'parking'">
+                <label class="size-group">
+                  <span>{{ $t("studio.raster.parkingLength") }}</span>
+                  <input
+                    v-model.number="parkingLength"
+                    type="number"
+                    min="1"
+                    max="512"
+                    class="size-input"
+                    :title="metersOf(parkingLength)"
+                  />
+                </label>
+                <label class="size-group">
+                  <span>{{ $t("studio.raster.parkingSpacing") }}</span>
+                  <input
+                    v-model.number="parkingSpacing"
+                    type="number"
+                    min="1"
+                    max="512"
+                    class="size-input"
+                    :title="metersOf(parkingSpacing)"
+                  />
+                </label>
+              </template>
               <div class="tool-group color-group">
+                <template v-if="paletteMode">
+                  <button
+                    v-for="entry in layerLabels"
+                    :key="entry.index"
+                    type="button"
+                    class="layer-swatch"
+                    :class="{ active: layerIndex === entry.index }"
+                    :style="{ background: entry.display }"
+                    :title="entry.label"
+                    :aria-label="entry.label"
+                    @click="layerIndex = entry.index"
+                  ></button>
+                </template>
                 <FColorPicker
+                  v-else
                   v-model="colorHex"
                   :size="16"
                   :title="$t('studio.raster.color')"
                 />
               </div>
+              <button
+                class="view-toggle"
+                type="button"
+                :class="{ active: paletteMode }"
+                :title="$t('studio.raster.paletteHint')"
+                @click="paletteMode = !paletteMode"
+              >
+                <FIcon name="Layers" :size="13" aria-label="" />
+                {{
+                  paletteMode
+                    ? $t("studio.raster.paletteLot")
+                    : $t("studio.raster.paletteFree")
+                }}
+              </button>
               <button
                 class="view-toggle"
                 type="button"
@@ -475,18 +594,32 @@ function messageOf(cause: unknown): string {
               :tool="tool"
               :color="brushColor"
               :brush-size="brushSize"
+              :fill-tolerance="fillTolerance"
+              :parking-length="parkingLength"
+              :parking-spacing="parkingSpacing"
               :quantized="quantized"
               :meters-per-pixel="lotScale ? 0.75 : null"
               @change="onChange"
-              @pick-color="
-                colorHex = `#${$event[0].toString(16).padStart(2, '0')}${$event[1]
-                  .toString(16)
-                  .padStart(2, '0')}${$event[2].toString(16).padStart(2, '0')}`
-              "
+              @pick-color="onPickColor"
             />
             <p v-if="docName" class="doc-name">
               <FIcon name="Copy" :size="12" aria-label="" />
               {{ docName }}
+            </p>
+            <p
+              v-if="tool === 'curve' || tool === 'parking'"
+              class="doc-name tool-usage"
+            >
+              <FIcon
+                :name="tool === 'curve' ? 'Spline' : 'SquareParking'"
+                :size="12"
+                aria-label=""
+              />
+              {{
+                tool === "curve"
+                  ? $t("studio.raster.curveHint")
+                  : $t("studio.raster.parkingHint")
+              }}
             </p>
           </template>
           <div v-else class="workbench-empty">
@@ -816,6 +949,21 @@ function messageOf(cause: unknown): string {
 }
 .color-group :deep(.color-swatch) {
   width: 100%;
+}
+.layer-swatch {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  height: 20px;
+  min-height: 20px;
+  width: 20px;
+}
+.layer-swatch.active {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.tool-usage {
+  color: var(--subtle-foreground);
 }
 .flex-spacer {
   flex: 1;

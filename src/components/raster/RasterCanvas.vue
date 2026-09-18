@@ -2,14 +2,20 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
-import { RasterDocument, type Rect } from "@/lib/raster-editor/document";
+import {
+  RasterDocument,
+  clampRect,
+  unionRect,
+  type Rect,
+} from "@/lib/raster-editor/document";
 import { quantizeToImageData, toImageData } from "@/lib/raster-editor/encoders";
 import type { RasterHistory } from "@/lib/raster-editor/history";
 import {
   drawRect,
   floodFill,
-  stampBrush,
+  strokeParkingRow,
   strokePath,
+  strokeQuadCurve,
   type Rgba,
 } from "@/lib/raster-editor/tools";
 
@@ -21,9 +27,23 @@ import {
 const props = defineProps<{
   doc: RasterDocument;
   history: RasterHistory;
-  tool: "brush" | "eraser" | "line" | "rect" | "fill" | "picker";
+  tool:
+    | "brush"
+    | "eraser"
+    | "line"
+    | "rect"
+    | "fill"
+    | "picker"
+    | "parking"
+    | "curve";
   color: Rgba;
   brushSize: number;
+  /** 油漆桶容差（RGBA 欧氏距离，0 = 精确匹配；抗锯齿图片建议 16-48）。 */
+  fillTolerance?: number;
+  /** 停车位笔刷：单条停车线长度（px，垂直于拖拽方向）。 */
+  parkingLength?: number;
+  /** 停车位笔刷：相邻停车线间距（px，沿拖拽方向）。 */
+  parkingSpacing?: number;
   /** 量化视图（默认）：阈值化四色清晰结构；关闭则显示原始权重数据。 */
   quantized?: boolean;
   /** 米/像素比例（Lot raster 惯例 0.75）；为 null 时不显示米标尺。 */
@@ -106,20 +126,6 @@ function render() {
   ctx.putImageData(image, 0, 0);
 }
 
-/** 拖拽预览：以 base 快照重绘并叠加形状（不写入文档）。 */
-function renderPreview(
-  base: ImageData,
-  shape: { x: number; y: number; rgba: Rgba }[],
-) {
-  if (!ctx) return;
-  ctx.putImageData(base, 0, 0);
-  for (const pixel of shape) {
-    if (!props.doc.inside(pixel.x, pixel.y)) continue;
-    ctx.fillStyle = `rgba(${pixel.rgba[0]},${pixel.rgba[1]},${pixel.rgba[2]},${pixel.rgba[3] / 255})`;
-    ctx.fillRect(pixel.x, pixel.y, 1, 1);
-  }
-}
-
 defineExpose({
   render,
   fit: fit,
@@ -153,10 +159,18 @@ function fit() {
 
 type DragMode = "none" | "paint" | "shape" | "pan";
 let dragMode: DragMode = "none";
-let beforeImage: ImageData | null = null;
+/** 拖拽起点的整幅像素快照：历史 before 与形状预览回滚的共同数据源。 */
+let dragBefore: Uint8ClampedArray | null = null;
+let dragDirty: Rect | null = null;
 let points: { x: number; y: number }[] = [];
 let dragStart: { x: number; y: number } | null = null;
 let panStart = { x: 0, y: 0, px: 0, py: 0 };
+/** 曲线第二阶段：弦长已定，移动鼠标弯曲，单击落笔（Esc 取消）。 */
+let curve: {
+  p0: { x: number; y: number };
+  p2: { x: number; y: number };
+  base: Uint8ClampedArray;
+} | null = null;
 
 function toPixel(event: PointerEvent): { x: number; y: number } {
   const element = canvas.value!;
@@ -182,6 +196,78 @@ function activeColor(): Rgba {
   return props.tool === "eraser" ? eraserColor : props.color;
 }
 
+function parkingOptions() {
+  return {
+    length: Math.max(1, props.parkingLength ?? 13),
+    spacing: Math.max(1, props.parkingSpacing ?? 6),
+  };
+}
+
+/** 形状拖拽的当前帧：先回滚到拖拽前快照再画，文档里永远只有最终形状。 */
+function drawShapeDraft(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+) {
+  if (!dragBefore) return;
+  props.doc.pixels.set(dragBefore);
+  if (props.tool === "line") {
+    dragDirty = strokePath(
+      props.doc,
+      [from, to],
+      props.brushSize,
+      activeColor(),
+      () => {},
+    );
+  } else if (props.tool === "parking") {
+    dragDirty = strokeParkingRow(
+      props.doc,
+      from,
+      to,
+      props.brushSize,
+      activeColor(),
+      parkingOptions(),
+      () => {},
+    );
+  } else if (props.tool === "curve") {
+    dragDirty = strokeQuadCurve(
+      props.doc,
+      from,
+      { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
+      to,
+      props.brushSize,
+      activeColor(),
+      () => {},
+    );
+  } else {
+    dragDirty = drawRect(
+      props.doc,
+      from,
+      to,
+      1,
+      activeColor(),
+      false,
+      () => {},
+    );
+  }
+  render();
+}
+
+function previewCurveBend(control: { x: number; y: number }) {
+  const state = curve;
+  if (!state) return;
+  props.doc.pixels.set(state.base);
+  strokeQuadCurve(
+    props.doc,
+    state.p0,
+    control,
+    state.p2,
+    props.brushSize,
+    activeColor(),
+    () => {},
+  );
+  render();
+}
+
 function onPointerDown(event: PointerEvent) {
   if (event.button === 1 || spaceDown) {
     dragMode = "pan";
@@ -204,33 +290,40 @@ function onPointerDown(event: PointerEvent) {
     return;
   }
   if (props.tool === "fill") {
+    const before = props.doc.pixels.slice();
     const dirty = floodFill(
       props.doc,
       pixel.x,
       pixel.y,
       activeColor(),
       () => {},
+      props.fillTolerance ?? 0,
     );
-    if (dirty) {
-      historyInstance.value.push(makeEdit(dirty));
-      render();
-      emit("change");
-    }
+    pushEdit(dirty, before);
+    return;
+  }
+  if (props.tool === "curve" && curve) {
+    commitCurve(pixel);
     return;
   }
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-  beforeImage = toImageData(props.doc);
-  if (props.tool === "line" || props.tool === "rect") {
+  dragBefore = props.doc.pixels.slice();
+  dragDirty = null;
+  if (
+    props.tool === "line" ||
+    props.tool === "rect" ||
+    props.tool === "parking" ||
+    props.tool === "curve"
+  ) {
     dragMode = "shape";
     dragStart = pixel;
     return;
   }
   dragMode = "paint";
   points = [pixel];
-  stampBrush(
+  dragDirty = strokePath(
     props.doc,
-    pixel.x,
-    pixel.y,
+    [pixel],
     props.brushSize,
     activeColor(),
     () => {},
@@ -248,6 +341,10 @@ function onPointerMove(event: PointerEvent) {
     };
     return;
   }
+  if (dragMode === "none" && props.tool === "curve" && curve) {
+    previewCurveBend(pixel);
+    return;
+  }
   if (dragMode === "paint") {
     const last = points[points.length - 1];
     if (last && last.x === pixel.x && last.y === pixel.y) return;
@@ -259,56 +356,118 @@ function onPointerMove(event: PointerEvent) {
       activeColor(),
       () => {},
     );
-    if (dirty) renderRegion(dirty);
+    if (dirty) {
+      dragDirty = unionRect(dragDirty, dirty);
+      renderRegion(dirty);
+    }
     return;
   }
-  if (dragMode === "shape" && beforeImage && dragStart) {
-    const collected: { x: number; y: number; rgba: Rgba }[] = [];
-    const plot = (x: number, y: number) =>
-      collected.push({ x, y, rgba: activeColor() });
-    if (props.tool === "line") {
-      strokePath(
-        props.doc,
-        [dragStart, pixel],
-        props.brushSize,
-        activeColor(),
-        plot,
-      );
-    } else {
-      drawRect(props.doc, dragStart, pixel, 1, activeColor(), false, plot);
-    }
-    renderPreview(beforeImage, collected);
+  if (dragMode === "shape" && dragStart) {
+    drawShapeDraft(dragStart, pixel);
   }
 }
 
-function onPointerUp() {
+function onPointerUp(event: PointerEvent) {
   if (dragMode === "pan") {
     dragMode = "none";
     panning.value = false;
     return;
   }
-  if (dragMode === "paint" || dragMode === "shape") {
+  if (
+    dragMode === "shape" &&
+    props.tool === "curve" &&
+    dragStart &&
+    dragBefore
+  ) {
+    // 弦长确定：不落笔，转入弯曲阶段
+    curve = {
+      p0: dragStart,
+      p2: toPixel(event),
+      base: dragBefore,
+    };
     dragMode = "none";
-    beforeImage = null;
-    points = [];
+    dragStart = null;
+    dragBefore = null;
+    dragDirty = null;
+    props.doc.pixels.set(curve.base);
     render();
-    emit("change");
+    return;
+  }
+  if (dragMode === "paint" || dragMode === "shape") {
+    commitDrag();
   }
 }
 
-/** 把整幅文档转为 ImageData，截取 dirty 区域前/后字节生成历史条目。 */
-function makeEdit(dirty: Rect) {
-  const after = props.doc.copyRegion(dirty);
-  const full = toImageData(props.doc);
-  const before = new Uint8ClampedArray(dirty.w * dirty.h * 4);
-  for (let row = 0; row < dirty.h; row += 1) {
-    const srcBase = ((dirty.y + row) * props.doc.width + dirty.x) * 4;
+function onPointerCancel() {
+  cancelDraft();
+}
+
+function commitDrag() {
+  const before = dragBefore;
+  pushEdit(dragDirty, before);
+  dragMode = "none";
+  dragBefore = null;
+  dragDirty = null;
+  dragStart = null;
+  points = [];
+}
+
+function commitCurve(control: { x: number; y: number }) {
+  const state = curve;
+  curve = null;
+  if (!state) return;
+  props.doc.pixels.set(state.base);
+  const dirty = strokeQuadCurve(
+    props.doc,
+    state.p0,
+    control,
+    state.p2,
+    props.brushSize,
+    activeColor(),
+    () => {},
+  );
+  pushEdit(dirty, state.base);
+}
+
+/** 统一提交：clamp 脏区 → 从拖拽前快照取 before 入历史栈。 */
+function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
+  const rect = dirty ? clampRect(dirty, props.doc) : null;
+  if (rect && before) {
+    historyInstance.value.push(makeEdit(rect, before));
+  }
+  render();
+  if (rect) emit("change");
+}
+
+/** 取消当前草稿（Esc / pointercancel / 切换工具）：回滚文档并清状态。 */
+function cancelDraft() {
+  if (curve) {
+    props.doc.pixels.set(curve.base);
+    curve = null;
+    render();
+    return;
+  }
+  if (dragBefore) props.doc.pixels.set(dragBefore);
+  dragMode = "none";
+  dragBefore = null;
+  dragDirty = null;
+  dragStart = null;
+  points = [];
+  render();
+}
+
+/** 从拖拽前整幅快照截取 before，与当前文档区域 after 组成历史条目。 */
+function makeEdit(rect: Rect, beforeFull: Uint8ClampedArray) {
+  const after = props.doc.copyRegion(rect);
+  const before = new Uint8ClampedArray(rect.w * rect.h * 4);
+  for (let row = 0; row < rect.h; row += 1) {
+    const srcBase = ((rect.y + row) * props.doc.width + rect.x) * 4;
     before.set(
-      full.data.subarray(srcBase, srcBase + dirty.w * 4),
-      row * dirty.w * 4,
+      beforeFull.subarray(srcBase, srcBase + rect.w * 4),
+      row * rect.w * 4,
     );
   }
-  return { rect: dirty, before, after };
+  return { rect, before, after };
 }
 
 function renderRegion(region: Rect) {
@@ -358,6 +517,7 @@ function onWheel(event: WheelEvent) {
 
 function onKeydown(event: KeyboardEvent) {
   if (event.code === "Space") spaceDown = true;
+  if (event.code === "Escape") cancelDraft();
 }
 
 function onKeyup(event: KeyboardEvent) {
@@ -379,6 +539,10 @@ watch(
   () => render(),
 );
 watch(
+  () => props.tool,
+  () => cancelDraft(),
+);
+watch(
   () => [props.doc.width, props.doc.height],
   () => {
     syncCanvasSize();
@@ -396,7 +560,7 @@ watch(
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
+    @pointercancel="onPointerCancel"
   >
     <div
       class="canvas-plane"
@@ -543,7 +707,9 @@ watch(
   padding: 2px 8px;
   position: absolute;
   right: 12px;
-  top: 8px;
+  /* 避让顶部 18px 高的 x 轴标尺带并压在其上 */
+  top: 24px;
+  z-index: 3;
 }
 .hud-item,
 .hud-button {

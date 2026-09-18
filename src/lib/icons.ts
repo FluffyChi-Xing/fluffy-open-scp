@@ -126,6 +126,8 @@ import {
   SquarePen,
   RotateCw,
   StickyNote,
+  Spline,
+  SquareParking,
   type LucideIcon,
 } from "lucide-vue-next";
 
@@ -280,6 +282,8 @@ const iconRegistry: Record<string, LucideIcon> = {
   Pipette,
   Slash,
   Square,
+  Spline,
+  SquareParking,
   Undo2,
   Redo2,
   Maximize,

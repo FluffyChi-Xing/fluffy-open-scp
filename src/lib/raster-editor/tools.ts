@@ -130,13 +130,18 @@ export function drawRect(
   return dirty;
 }
 
-/** 扫描线油漆桶：RGBA 精确匹配的连通区域填充。 */
+/**
+ * 扫描线油漆桶：RGBA 欧氏距离容差的连通区域填充。
+ * tolerance = 0 时为精确匹配；>0 时种子颜色 4 通道距离 ≤ tolerance 的像素
+ * 视为同一区域（外部图片的抗锯齿渐变区域需要非零容差才能整片填充）。
+ */
 export function floodFill(
   doc: RasterDocument,
   x: number,
   y: number,
   rgba: Rgba,
   plot: PlotFn,
+  tolerance = 0,
 ): Rect | null {
   if (!doc.inside(x, y)) return null;
   const target = doc.getPixel(x, y);
@@ -148,11 +153,22 @@ export function floodFill(
   ) {
     return null;
   }
-  const match = (px: readonly [number, number, number, number]) =>
-    px[0] === target[0] &&
-    px[1] === target[1] &&
-    px[2] === target[2] &&
-    px[3] === target[3];
+  const limit = tolerance * tolerance;
+  const match = (px: readonly [number, number, number, number]) => {
+    if (limit === 0) {
+      return (
+        px[0] === target[0] &&
+        px[1] === target[1] &&
+        px[2] === target[2] &&
+        px[3] === target[3]
+      );
+    }
+    const dr = px[0] - target[0];
+    const dg = px[1] - target[1];
+    const db = px[2] - target[2];
+    const da = px[3] - target[3];
+    return dr * dr + dg * dg + db * db + da * da <= limit;
+  };
   let dirty: Rect | null = null;
   const stack: [number, number][] = [[x, y]];
   const visited = new Set<number>();
@@ -188,4 +204,85 @@ export function floodFill(
     }
   }
   return dirty ?? { x: 0, y: 0, w: 0, h: 0 };
+}
+
+export interface ParkingRowOptions {
+  /** 每条停车线的长度（垂直于拖拽方向，px）。 */
+  length: number;
+  /** 相邻停车线沿拖拽方向的间距（px）。 */
+  spacing: number;
+}
+
+/**
+ * 停车位笔刷：沿 from→to 连线每隔 spacing 画一条垂直短线（朝拖拽方向
+ * 右侧延伸），模拟一排等距停车格隔线。参数默认值取自游戏原生标线
+ * 0x7BE85E77 的实测（线宽 2px / 线长 13px / 间距 6px，0.75 m/px）。
+ */
+export function strokeParkingRow(
+  doc: RasterDocument,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  size: number,
+  rgba: Rgba,
+  options: ParkingRowOptions,
+  plot: PlotFn,
+): Rect | null {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const span = Math.hypot(dx, dy);
+  if (span < 1 || options.spacing < 1 || options.length < 1) return null;
+  // 拖拽方向单位向量与右侧法线（屏幕 y 向下）
+  const ux = dx / span;
+  const uy = dy / span;
+  const nx = -uy;
+  const ny = ux;
+  let dirty: Rect | null = null;
+  for (let t = 0; t <= span; t += options.spacing) {
+    const cx = from.x + ux * t;
+    const cy = from.y + uy * t;
+    const tick = strokePath(
+      doc,
+      [
+        { x: Math.round(cx), y: Math.round(cy) },
+        {
+          x: Math.round(cx + nx * (options.length - 1)),
+          y: Math.round(cy + ny * (options.length - 1)),
+        },
+      ],
+      size,
+      rgba,
+      plot,
+    );
+    if (tick) dirty = unionRect(dirty, tick);
+  }
+  return dirty;
+}
+
+/**
+ * 二次贝塞尔曲线：p0/p2 为端点、p1 为控制点。按控制多边形长度
+ * 自适应采样后以笔刷盖章，保证曲线平滑且不断线。
+ */
+export function strokeQuadCurve(
+  doc: RasterDocument,
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  size: number,
+  rgba: Rgba,
+  plot: PlotFn,
+): Rect | null {
+  const samples = Math.min(
+    1024,
+    Math.max(16, Math.ceil(Math.hypot(p1.x - p0.x, p1.y - p0.y) + Math.hypot(p2.x - p1.x, p2.y - p1.y))),
+  );
+  const points: { x: number; y: number }[] = [];
+  for (let index = 0; index <= samples; index += 1) {
+    const t = index / samples;
+    const inv = 1 - t;
+    points.push({
+      x: Math.round(inv * inv * p0.x + 2 * inv * t * p1.x + t * t * p2.x),
+      y: Math.round(inv * inv * p0.y + 2 * inv * t * p1.y + t * t * p2.y),
+    });
+  }
+  return strokePath(doc, points, size, rgba, plot);
 }

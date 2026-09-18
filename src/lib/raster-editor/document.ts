@@ -111,3 +111,13 @@ export function rectOfPoints(points: { x: number; y: number }[]): Rect | null {
   const y = Math.min(...ys);
   return { x, y, w: Math.max(...xs) - x + 1, h: Math.max(...ys) - y + 1 };
 }
+
+/** 脏矩形与文档求交（工具返回的包围盒可能越界，历史快照前必须夹取）。 */
+export function clampRect(rect: Rect, doc: RasterDocument): Rect | null {
+  const x0 = Math.max(0, rect.x);
+  const y0 = Math.max(0, rect.y);
+  const x1 = Math.min(doc.width, rect.x + rect.w);
+  const y1 = Math.min(doc.height, rect.y + rect.h);
+  if (x0 >= x1 || y0 >= y1) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
