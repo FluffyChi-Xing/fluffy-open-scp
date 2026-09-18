@@ -22,8 +22,8 @@ fn main() {
     let file = rw4::Rw4File::parse(&data).expect("parse");
     let dump_path = args
         .iter()
-        .position(|a| a == "--dump-verts")
-        .and_then(|i| args.get(i + 1));
+        .position(|a| a.starts_with("--dump-verts="))
+        .map(|i| args[i]["--dump-verts=".len()..].to_owned());
 
     for section in file.sections_of_type(rw4::SectionType::MESH) {
         let Ok(mesh) = file.decode_mesh(&data, section.number) else {
@@ -116,7 +116,7 @@ fn main() {
         println!("  D3DCOLOR.B max: {d3d_b_max}");
 
         // 逐顶点 CSV（x,y,z,matcol,tc0.xy,tc0.zw）：空间定位窗扇顶点用。
-        if let Some(path) = dump_path {
+        if let Some(ref path) = dump_path {
             use std::io::Write;
             let mut out = std::io::BufWriter::new(std::fs::File::create(path).expect("create"));
             writeln!(out, "x,y,z,col,tc0x,tc0y,tc0z,tc0w").unwrap();
