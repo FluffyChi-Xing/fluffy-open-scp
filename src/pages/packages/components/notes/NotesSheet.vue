@@ -311,6 +311,13 @@ const editing = computed(() =>
   color: var(--muted-foreground);
   font: 11px ui-monospace, Consolas, monospace;
 }
+/* 资源名单行截断：超长名（下划线长串）不得把「创建批注」按钮挤出抽屉 */
+.notes-header-text strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .notes-create,
 .notes-primary,
 .notes-actions button,
@@ -322,11 +329,13 @@ const editing = computed(() =>
   color: var(--foreground);
   cursor: pointer;
   display: inline-flex;
+  flex: none;
   font: inherit;
   font-size: 12px;
   gap: 6px;
   min-height: 28px;
   padding: 0 10px;
+  white-space: nowrap;
 }
 .notes-create:hover,
 .notes-primary:hover,
