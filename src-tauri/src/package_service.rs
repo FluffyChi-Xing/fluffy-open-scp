@@ -849,6 +849,22 @@ fn resource_matches(entry: &IndexEntry, filter: &str) -> bool {
     }
 }
 
+/// 语义名称搜索：registry Instances 官方名（如 GreatWorks_Arcology_01_01_N）。
+/// filter 已由 normalized_filter 统一转小写，名称同样小写后做包含匹配。
+fn resource_name_matches(
+    registry: Option<&sc_registry::Registry>,
+    instance: u32,
+    filter: &str,
+) -> bool {
+    let Some(registry) = registry else {
+        return false;
+    };
+    registry
+        .instances()
+        .get(&instance)
+        .is_some_and(|record| record.name.to_ascii_lowercase().contains(filter))
+}
+
 fn normalized_filter(filter: Option<&str>) -> Result<Option<String>, PackageError> {
     let Some(filter) = filter else {
         return Ok(None);
@@ -867,6 +883,7 @@ fn resource_page(
     filter: Option<&str>,
     type_filter: Option<u32>,
     type_counts: Vec<TypeCount>,
+    registry: Option<&sc_registry::Registry>,
 ) -> Result<ResourcePage, PackageError> {
     let filter = normalized_filter(filter)?;
     let mut total = 0usize;
@@ -875,10 +892,10 @@ fn resource_page(
         if type_filter.is_some_and(|type_id| entry.id.type_id != type_id) {
             continue;
         }
-        if filter
-            .as_deref()
-            .is_some_and(|filter| !resource_matches(entry, filter))
-        {
+        if filter.as_deref().is_some_and(|filter| {
+            !resource_matches(entry, filter)
+                && !resource_name_matches(registry, entry.id.instance, filter)
+        }) {
             continue;
         }
         if total >= offset && items.len() < limit {
@@ -1049,7 +1066,15 @@ pub async fn open_package(
                 package_registry(&store, &manager, &package, bundled_registry.as_deref())
                     .as_deref(),
             );
-            let page = resource_page(&package, 0, RESOURCE_PAGE_DEFAULT_LIMIT, None, None, counts)?;
+            let page = resource_page(
+                &package,
+                0,
+                RESOURCE_PAGE_DEFAULT_LIMIT,
+                None,
+                None,
+                counts,
+                None,
+            )?;
             let (package_id, _) = manager.insert(package)?;
             summary.package_id = package_id;
             let _ = store.record_package_open(&PackageInput {
@@ -1177,11 +1202,9 @@ pub async fn list_resources(
         let result = (|| -> Result<ResourcePage, PackageError> {
             let limit = page_limit(request.limit)?;
             let package = manager.get(request.package_id)?;
-            let counts = type_counts(
-                &package,
-                package_registry(&store, &manager, &package, bundled_registry.as_deref())
-                    .as_deref(),
-            );
+            let registry =
+                package_registry(&store, &manager, &package, bundled_registry.as_deref());
+            let counts = type_counts(&package, registry.as_deref());
             resource_page(
                 &package,
                 request.offset.unwrap_or(0),
@@ -1189,6 +1212,7 @@ pub async fn list_resources(
                 request.filter.as_deref(),
                 request.type_id,
                 counts,
+                registry.as_deref(),
             )
         })();
         match result {
@@ -5846,7 +5870,7 @@ mod tests {
     #[test]
     fn resource_pages_filter_and_slice_entries() {
         let (path, package) = test_package("page");
-        let page = resource_page(&package, 0, 1, Some("00000001"), None, Vec::new()).unwrap();
+        let page = resource_page(&package, 0, 1, Some("00000001"), None, Vec::new(), None).unwrap();
         assert_eq!(page.total, 1);
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].tgi.instance, 3);
@@ -6119,7 +6143,7 @@ mod tests {
         ];
         fs::write(&path, write_uncompressed_overlay(&entries).unwrap()).unwrap();
         let package = Package::open(&path).unwrap();
-        let page = resource_page(&package, 0, 10, None, None, Vec::new()).unwrap();
+        let page = resource_page(&package, 0, 10, None, None, Vec::new(), None).unwrap();
         let unit = page.items[0].semantic.as_ref().expect("unit replica tag");
         assert_eq!(unit.id, "unit");
         assert_eq!(unit.label_zh, "资产单元");
@@ -6139,10 +6163,10 @@ mod tests {
                 entry.count == 1 && entry.name == format!("{:08X}", entry.type_id)
             })
         );
-        let page = resource_page(&package, 0, 10, None, Some(4), counts).unwrap();
+        let page = resource_page(&package, 0, 10, None, Some(4), counts, None).unwrap();
         assert_eq!(page.total, 1);
         assert_eq!(page.items[0].tgi.type_id, 4);
-        let empty = resource_page(&package, 0, 10, None, Some(99), Vec::new()).unwrap();
+        let empty = resource_page(&package, 0, 10, None, Some(99), Vec::new(), None).unwrap();
         assert_eq!(empty.total, 0);
         let _ = fs::remove_file(path);
     }
@@ -6252,7 +6276,7 @@ mod tests {
         let counts = type_counts(&package, registry.as_ref());
         let counts_elapsed = started.elapsed();
         let started = Instant::now();
-        let page = resource_page(&package, 0, 100, None, None, counts).unwrap();
+        let page = resource_page(&package, 0, 100, None, None, counts, None).unwrap();
         let page_elapsed = started.elapsed();
         for entry in &page.type_counts {
             println!(

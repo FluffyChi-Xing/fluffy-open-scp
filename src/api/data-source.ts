@@ -291,9 +291,16 @@ function mockDataSource(): OpenScpDataSource {
       };
     },
     async listResources(_packageId, offset, limit, filter, typeId) {
-      let filtered = filter
-        ? entries.filter((item) =>
-            tgiText(item.tgi).includes(filter.toLowerCase()),
+      const needle = filter?.toLowerCase();
+      const mockName = (tgi: Tgi) =>
+        tgi.instance % 3 === 0
+          ? `Sample asset ${tgi.instance.toString(16).slice(-4)}`.toLowerCase()
+          : "";
+      let filtered = needle
+        ? entries.filter(
+            (item) =>
+              tgiText(item.tgi).includes(needle) ||
+              mockName(item.tgi).includes(needle),
           )
         : entries;
       if (typeId !== undefined)
