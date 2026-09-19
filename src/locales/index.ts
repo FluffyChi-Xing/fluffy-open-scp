@@ -248,9 +248,9 @@ const messages = {
         dimBigbiz: "大商业",
         dimRegion: "区域",
         overlay: "参考截图",
-        mechanism: "机制说明",
+        mechanism: "使用说明",
         mechanismBody:
-          "菜单条目 = Menu/Menu2 property (0x00B1B104)\n  标题    Text → locale 表 0x6C969DEE（繁中工具名）\n  图标    六态图标键 0x09756950–55（Key 携带完整 TGI；EP1 大学类为运行时渲染 → 占位图标）\n  分类/排序 = uiToolCategory 0x0DB9FC63 / uiToolPosition 0x0DC1E3E0\n  继承    Parent 0x00B2CCCB → 工具本体 → JS 桥 iconKey/toolID → WebKit UI\n落库    当前导出 overlay JSON；写回走 patch_property_overlay + 版本记录通道",
+          "① 点击左侧游戏画布底部的一级分类圆钮，打开对应二级菜单；\n② 点击任意菜单条目（或「＋ 新增菜单条目」）开始编辑：填写显示名称与排序，上传图片会自动裁切成 128×128 槽位图标；\n③ 切到「菜单提示」步骤：填写 hover 弹窗的描述文案、造价/预算、解锁提示，并裁切 454×263 大图；\n④ 左侧舞台实时预览修改效果；确认后「导出 .property」（单条）或「导出 .package」（全部编辑），把覆盖包放入 Mods 目录即可在游戏中生效。",
         panelTitle: "菜单条目预览",
         panelHint: "点击左侧重建 UI 中的任一菜单，这里会列出该级的条目",
         newItem: "新条目",
@@ -1594,9 +1594,9 @@ const messages = {
         screenCity: "City main menu",
         screenUniversity: "University building menu",
         overlay: "Reference",
-        mechanism: "How it works",
+        mechanism: "How to use",
         mechanismBody:
-          "Menu entry = Menu/Menu2 property (0x00B1B104)\n  title   Text -> locale table 0x6C969DEE\n  icons   six-state keys 0x09756950-55 (full TGI; EP1 university icons are runtime-rendered -> placeholder)\n  group   uiToolCategory 0x0DB9FC63 / uiToolPosition 0x0DC1E3E0\n  inherit Parent 0x00B2CCCB -> tool body -> JS bridge iconKey/toolID -> WebKit UI\npersist  exports overlay JSON today; write-back lands via patch_property_overlay + version channel",
+          "1) Click a category button on the rebuilt HUD to open its palette;\n2) Click any entry (or add a new one) to edit: fill the name and order, upload an image and it is cropped to a 128×128 slot icon;\n3) Switch to the Menu-tip step: fill the hover description, cost/budget and unlock hint, then crop the 454×263 image;\n4) The stage previews your edits live. When done, export .property (single entry) or .package (all edits) and drop the override into your Mods folder.",
         panelTitle: "Menu entries",
         panelHint: "Click any menu in the rebuilt UI to list its entries here",
         newItem: "New entry",

@@ -13,6 +13,8 @@ import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FImageCropper from "@/components/extensions/FImageCropper.vue";
+import MenuFormBasics from "../components/menu-form/MenuFormBasics.vue";
+import MenuFormTip from "../components/menu-form/MenuFormTip.vue";
 import { downloadBytes } from "@/lib/game-ui/menu-export";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
@@ -95,6 +97,8 @@ function applyDraft(): void {
   editingEntry.value = null;
 }
 
+/* 编辑流程：① 菜单条目（基础信息 + 槽位图标）→ ② 菜单提示（hover 弹窗内容） */
+const step = ref<0 | 1>(0);
 /* 裁切器：icon 128×128 PNG、hover 大图 454×263 JPEG（游戏资源实测尺寸） */
 const cropperTarget = ref<"preview" | "marquee" | null>(null);
 const cropperPresets = {
@@ -180,71 +184,37 @@ function removeDraft(): void {
           {{ t("studio.workbench.sheetId") }}:
           <code>{{ editingEntry.tool.id }}</code>
         </p>
-        <section class="sheet-section">
-          <p class="section-title">基础</p>
-          <div class="field-grid">
-            <label class="field span-2">
-              <span>显示名称</span>
-              <input v-model="draft.label" type="text" />
-            </label>
-            <label class="field">
-              <span>排序（uiPosition）</span>
-              <input v-model.number="draft.pos" type="number" />
-            </label>
-            <label class="field">
-              <span>图标（FIcon 名，可选）</span>
-              <input v-model="draft.icon" type="text" placeholder="Box" />
-            </label>
-          </div>
-          <p class="field-hint">{{ t("studio.workbench.iconHint") }}</p>
-        </section>
+        <div class="sheet-steps">
+          <button
+            type="button"
+            class="step"
+            :class="{ active: step === 0 }"
+            @click="step = 0"
+          >
+            <span class="step-num">1</span>
+            <span class="step-name">菜单条目</span>
+          </button>
+          <span class="step-arrow" aria-hidden="true">→</span>
+          <button
+            type="button"
+            class="step"
+            :class="{ active: step === 1 }"
+            @click="step = 1"
+          >
+            <span class="step-num">2</span>
+            <span class="step-name">菜单提示</span>
+          </button>
+        </div>
 
-        <section class="sheet-section">
-          <p class="section-title">文案与经济</p>
-          <div class="field-grid">
-            <label class="field span-2">
-              <span>Hover 文案（描述）</span>
-              <textarea v-model="draft.desc" rows="3" />
-            </label>
-            <label class="field">
-              <span>造价 §</span>
-              <input v-model="draft.cost" type="text" placeholder="27,500" />
-            </label>
-            <label class="field">
-              <span>预算/小时 §</span>
-              <input v-model="draft.upkeep" type="text" placeholder="-856" />
-            </label>
-            <label class="field span-2">
-              <span>解锁提示</span>
-              <input v-model="draft.unlock" type="text" />
-            </label>
-            <label class="field-check span-2">
-              <input v-model="draft.locked" type="checkbox" />
-              <span>锁定（hardGate，未批准/達到上限）</span>
-            </label>
-          </div>
-        </section>
+        <MenuFormBasics v-show="step === 0" v-model="draft" @crop="cropperTarget = 'preview'" />
+        <MenuFormTip v-show="step === 1" v-model="draft" @crop="cropperTarget = 'marquee'" />
 
-        <section class="sheet-section">
-          <p class="section-title">图像（上传后裁切到游戏尺寸）</p>
-          <div class="field-grid">
-            <div class="field">
-              <span>槽位图标 128×128</span>
-              <button type="button" class="img-btn square" @click="cropperTarget = 'preview'">
-                <img v-if="draft.preview" :src="draft.preview" alt="" />
-                <span v-else class="img-btn-hint">上传/裁切</span>
-              </button>
-            </div>
-            <div class="field">
-              <span>Hover 大图 454×263</span>
-              <button type="button" class="img-btn wide" @click="cropperTarget = 'marquee'">
-                <img v-if="draft.marquee" :src="draft.marquee" alt="" />
-                <span v-else class="img-btn-hint">上传/裁切</span>
-              </button>
-            </div>
-          </div>
-        </section>
-
+        <div class="step-flow">
+          <button v-if="step === 1" type="button" class="act" @click="step = 0">上一步</button>
+          <button v-if="step === 0" type="button" class="act primary" @click="step = 1">
+            下一步：菜单提示
+          </button>
+        </div>
         <div class="sheet-preview">
           <span class="preview-thumb">
             <img
@@ -364,6 +334,54 @@ function removeDraft(): void {
 }
 
 /* Sheet 编辑表单 */
+.sheet-steps {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto 1fr;
+}
+.step {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  height: 34px;
+  justify-content: center;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.step.active {
+  border-color: var(--primary, #0b78fe);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.step-num {
+  align-items: center;
+  background: var(--surface-hover);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  height: 16px;
+  justify-content: center;
+  width: 16px;
+}
+.step.active .step-num {
+  background: var(--primary, #0b78fe);
+  color: var(--primary-foreground, #fff);
+}
+.step-arrow {
+  color: var(--subtle-foreground);
+  font-size: 12px;
+}
+.step-flow {
+  display: flex;
+  justify-content: flex-end;
+}
 .sheet-body {
   display: flex;
   flex-direction: column;
@@ -380,35 +398,12 @@ function removeDraft(): void {
   border-radius: var(--radius-sm);
   padding: 1px 6px;
 }
-.sheet-section {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-.sheet-section:first-of-type {
-  border-top: none;
-  padding-top: 0;
-}
-.section-title {
-  color: var(--muted-foreground);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  margin: 0 0 8px;
-}
-.field-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 12px;
-}
 .field {
   display: flex;
   flex-direction: column;
   font-size: 12px;
   gap: 4px;
   min-width: 0;
-}
-.span-2 {
-  grid-column: 1 / -1;
 }
 .field > span {
   color: var(--muted-foreground);
