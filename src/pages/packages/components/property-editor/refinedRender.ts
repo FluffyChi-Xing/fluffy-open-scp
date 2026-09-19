@@ -206,8 +206,6 @@ export interface TintTextureSet {
   normalTex: ThreeNamespace.Texture | null;
   shaderTex: ThreeNamespace.Texture | null;
   interiorTex: ThreeNamespace.Texture | null;
-  /** slot5 alpha = relief 高度灰度（Top 层窗框视差用）。 */
-  reliefTex: ThreeNamespace.Texture | null;
   paramsTex: ThreeNamespace.DataTexture | null;
   paramCols: number;
 }
@@ -290,8 +288,8 @@ export async function loadTintTextures(
             return t;
           })
         : null,
-      // slot5 alpha = relief 高度灰度（kFlatLevel=23 平面钳制）；此前从未消费
-      reliefTex: material.reliefPng ? await loadTex(material.reliefPng) : null,
+      // reliefPng（slot5 alpha）高度通道语义未确证（疑为灯亮同源），视差
+      // 已回滚——不加载、不上传 GPU。见 Top 层块内回滚记录。
       paramsTex: buildParamsTexture(THREE, material),
       paramCols: material.paramCols,
     })),
@@ -330,7 +328,6 @@ export function attachTintShader(
     paletteMap: { value: ThreeNamespace.Texture };
     shaderMapMap: { value: ThreeNamespace.Texture | null };
     interiorMapMap: { value: ThreeNamespace.Texture | null };
-    reliefMapMap: { value: ThreeNamespace.Texture | null };
     paramsMap: { value: ThreeNamespace.Texture | null };
     uParamCols: { value: number };
     uSunDir: { value: ThreeNamespace.Vector3 };
@@ -352,7 +349,6 @@ export function attachTintShader(
   paramsReady: boolean,
   shaderMapReady: boolean,
   interiorReady: boolean,
-  reliefReady: boolean,
 ) {
   // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
   // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
@@ -483,45 +479,6 @@ float scFastNoise(vec3 seed) {
   return fract(seed.z * fract(seed.x * fract(seed.y)));
 }
 #endif
-#ifdef TINT_RELIEF
-uniform sampler2D reliefMapMap;
-// kFlatLevel=23/255：高度低于此值视为平面（源码留痕常量）
-float scReliefH(vec2 uv) {
-  vec4 t = texture2D(reliefMapMap, uv);
-  float h = max(t.a, t.r);
-  return max(h - 0.0902, 0.0);
-}
-// building4Clip relief 视差。本编译版 reliefMap() 为恒等（被裁剪），按
-// docs/rendering.md §6.4 以标准 relief mapping 补写：kConeSteps=8 线性步进
-// + kBinarySteps=2 二分细化，kReliefDepth=0.1，eyeUv 已除 |regionXform2|.
-vec2 scReliefMap(vec2 tc, vec2 eyeUv) {
-  const float kDepth = 0.1;
-  const float kStep = kDepth / 8.0;
-  vec2 slope = eyeUv * kDepth;
-  float rayDepth = 1.0;
-  vec2 p = tc;
-  float h = scReliefH(p) * kDepth;
-  for (int i = 0; i < 8; ++i) {
-    if (h >= rayDepth) break;
-    rayDepth -= kStep;
-    p -= slope / 8.0;
-    h = scReliefH(p) * kDepth;
-  }
-  vec2 prevP = p + slope / 8.0;
-  float prevRay = rayDepth + kStep;
-  for (int i = 0; i < 2; ++i) {
-    float midRay = (rayDepth + prevRay) * 0.5;
-    vec2 midP = (p + prevP) * 0.5;
-    if (scReliefH(midP) * kDepth < midRay) {
-      p = midP;
-      rayDepth = midRay;
-    } else {
-      prevP = midP;
-      prevRay = midRay;
-    }
-  }
-  return p;
-}
 #endif`,
       )
       .replace(
@@ -554,27 +511,21 @@ vec2 scReliefMap(vec2 tc, vec2 eyeUv) {
         if (xform2.x > 0.0 && xform2.y > 0.0) {
           vec2 scPad = scRoom.xy;
           vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
-          vec2 reliefTc = reliefSrc;
           #ifdef TINT_RELIEF
-          // building4Clip：reliefEyeDir.xy /= |regionXform2|，视线沿 Top 层
-          // 局部 uv 域位移采样点（窗框/线脚立体感）；400m 外关闭（源码
-          // kCullDistanceSq=160000）。TBN 由 vTopUv 屏幕导数重建（同内景块）。
-          if (dot(vViewPosition, vViewPosition) < 160000.0) {
-            vec3 scRPos = -vViewPosition;
-            vec3 scRdx = dFdx(scRPos);
-            vec3 scRdy = dFdy(scRPos);
-            vec2 scRux = dFdx(vTopUv);
-            vec2 scRuy = dFdy(vTopUv);
-            float scRdet = scRux.x * scRuy.y - scRuy.x * scRux.y;
-            if (abs(scRdet) > 1e-10) {
-              vec3 scTU = normalize((scRdx * scRuy.y - scRdy * scRux.y) / scRdet);
-              vec3 scTV = normalize((scRdy * scRux.x - scRdx * scRux.x) / scRdet);
-              vec2 scEyeUv = vec2(
-                dot(normalize(vViewPosition), scTU),
-                dot(normalize(vViewPosition), scTV)
-              ) / max(abs(xform2.x), 1e-4);
-              reliefTc = scReliefMap(reliefSrc, scEyeUv);
-            }
+          // 【2026-09-20 回滚】曾按标准 relief mapping 补写视差（用 reliefPng
+          // alpha 作高度），实证高度通道语义不可靠：reliefPng 是 slot5 alpha
+          // 的另一份导出——与「逐窗灯亮通道」同源，拿灯亮当深度会把窗户
+          // motif 拖到全墙/屋顶任意位置并随视角闪烁（多楼实证）。游戏本编译
+          // 版 reliefMap() 本就是恒等（被裁剪），回滚后与游戏行为一致。
+          // 重启前提：先从 Wwise/DXT5 原始数据确证真实高度通道。
+          #endif
+          float outsideTile =
+            max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
+            max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
+          topUv = clamp(reliefSrc, 0.0, 1.0) * max(xform2.xy - uTintTexel, vec2(0.0)) + xform2.zw + uTintTexel * 0.5;
+          facadeTintValues = texture2D(tintMap, topUv);
+          scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
+        }
           }
           #endif
           float outsideTile =
@@ -796,8 +747,6 @@ export function makeTintMaterial(
     tint.paramsTex && tint.shaderTex && tint.interiorTex,
   );
   if (interiorReady) tinted.defines.TINT_INTERIOR = "";
-  const reliefReady = Boolean(tint.reliefTex);
-  if (reliefReady) tinted.defines.TINT_RELIEF = "";
   const uSpecGUniform = { value: effectiveSpecMode() };
   // tint 图集半 texel：shader 里的平铺区域边缘内缩量（接缝修复）。
   const tintImage = tint.tintTex?.image as
@@ -813,7 +762,6 @@ export function makeTintMaterial(
       paletteMap: { value: tint.paletteTex! },
       shaderMapMap: { value: tint.shaderTex },
       interiorMapMap: { value: tint.interiorTex },
-      reliefMapMap: { value: tint.reliefTex },
       paramsMap: { value: tint.paramsTex },
       uParamCols: { value: tint.paramCols },
       // 5a/5d：太阳/天空/昼夜/供电为共享 uniform 实例（applySunEnv 热切换）
@@ -832,7 +780,6 @@ export function makeTintMaterial(
     Boolean(tint.paramsTex),
     Boolean(tint.shaderTex),
     interiorReady,
-    reliefReady,
   );
   return [tinted, uSpecGUniform];
 }
