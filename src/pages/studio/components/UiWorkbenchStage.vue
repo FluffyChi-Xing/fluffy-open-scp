@@ -125,17 +125,20 @@ function effectiveTools(data: ReplicaData, categoryId: string): SlotTool[] | und
   const base = data.tools[categoryId] ?? [];
   return activeMenu.entries.map((entry) => {
     const source = base.find((tool) => tool.instance === entry.tool.id);
+    // 编辑覆盖（activeMenu 的 tool 已应用 edits）优先于基础数据：
+    // 舞台槽位与弹窗实时反映名称/描述/造价/图片的修改。
+    const edited = entry.tool;
     return {
       instance: entry.tool.id,
-      label: entry.tool.label,
-      preview: source?.preview ?? null,
-      marquee: source?.marquee ?? null,
-      desc: source?.desc,
-      unlock: source?.unlock,
+      label: edited.label || source?.label || "",
+      preview: edited.preview ?? source?.preview ?? null,
+      marquee: edited.marquee ?? source?.marquee ?? null,
+      desc: edited.desc ?? source?.desc,
+      unlock: edited.unlock ?? source?.unlock,
       stats: source?.stats,
-      cost: source?.cost ?? null,
-      upkeep: source?.upkeep ?? null,
-      locked: source?.locked ?? false,
+      cost: edited.cost ?? source?.cost ?? null,
+      upkeep: edited.upkeep ?? source?.upkeep ?? null,
+      locked: edited.locked ?? source?.locked ?? false,
       isNew: entry.isNew,
     };
   });

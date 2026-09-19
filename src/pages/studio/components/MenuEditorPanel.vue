@@ -12,6 +12,7 @@ import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
+import { downloadBytes } from "@/lib/game-ui/menu-export";
 import { toolIconName, toolPreview } from "@/lib/game-ui/workbench";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
@@ -35,6 +36,20 @@ function onExport(): void {
   void navigator.clipboard?.writeText(json).then(
     () => window.alert(t("studio.workbench.exportCopied")),
     () => window.alert(json),
+  );
+}
+
+/** 内存编辑 → 游戏覆盖包（菜单 property + locale diff + 裁切图片）。 */
+function onExportPackage(): void {
+  const result = store.buildGameExport();
+  if (result.entryCount === 0) {
+    window.alert(t("studio.workbench.exportEmpty"));
+    return;
+  }
+  const note = result.warnings.length ? `\n\n${result.warnings.join("\n")}` : "";
+  downloadBytes(result.bytes, `menu-override-${result.entryCount}.package`);
+  window.alert(
+    `${t("studio.workbench.exportDone")}：${result.entryCount} entries / ${result.localeCount} strings${note}`,
   );
 }
 
@@ -115,6 +130,9 @@ function onAdd(): void {
     <footer class="panel-foot">
       <button type="button" class="foot-btn" :disabled="!editedCount" @click="onExport">
         {{ t("studio.workbench.export") }}
+      </button>
+      <button type="button" class="foot-btn primary" :disabled="!editedCount" @click="onExportPackage">
+        导出 .package
       </button>
       <button type="button" class="foot-btn danger" :disabled="!editedCount" @click="store.resetAll()">
         {{ t("studio.workbench.reset") }}
@@ -313,6 +331,15 @@ function onAdd(): void {
 .foot-btn:hover:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
+}
+.foot-btn.primary {
+  background: var(--primary, #0b78fe);
+  border-color: var(--primary, #0b78fe);
+  color: var(--primary-foreground, #fff);
+  font-weight: 600;
+}
+.foot-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 .foot-btn.danger:hover:not(:disabled) {
   border-color: var(--danger);

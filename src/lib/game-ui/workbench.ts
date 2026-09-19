@@ -33,9 +33,9 @@ export interface WorkbenchTool {
   unlock?: string;
   /** rollover 统计行（Unit Effect Title 0x0EB1FC05 解析）。 */
   stats?: { label: string; value: string | null }[];
-  /** 建造成本（§）；GlassBox 模拟侧数据，离线包无值 → null。 */
+  /** 建造成本（§，用户可编辑；游戏侧在 GlassBox 模拟规则）。 */
   cost?: string | null;
-  /** 维护费/小时（§，负值）；来源同 cost。 */
+  /** 维护费/小时（§，负值；来源同 cost）。 */
   upkeep?: string | null;
   /** hardGate（0x0975695F）标记的锁定项。 */
   locked?: boolean;
@@ -131,11 +131,20 @@ export function assetPathForRef(ref: string): string | null {
   return `/game-ui/${ext}/00000000_${fnv1Lower(stem).toString(16).toUpperCase().padStart(8, "0")}.${ext}`;
 }
 
-/** 单条菜单项的编辑覆盖（落库前暂存在工作台内）。 */
+/** 单条菜单项的编辑覆盖（保存在工作台内存；导出时装配成覆盖资源）。
+ * `icon` 是 FIcon 名覆盖；`preview`/`marquee` 是裁切组件产出的 dataURL
+ * （或资产路径），未提供时回落基础数据。 */
 export interface ToolEdit {
   label?: string;
   icon?: string | null;
   pos?: number;
+  desc?: string;
+  unlock?: string;
+  cost?: string | null;
+  upkeep?: string | null;
+  locked?: boolean;
+  preview?: string | null;
+  marquee?: string | null;
 }
 
 /** 应用编辑后的展示视图。 */
@@ -149,6 +158,13 @@ export function applyEdit(
     label: edit.label ?? tool.label,
     icon: edit.icon !== undefined ? edit.icon : tool.icon,
     pos: edit.pos ?? tool.pos,
+    desc: edit.desc ?? tool.desc,
+    unlock: edit.unlock ?? tool.unlock,
+    cost: edit.cost ?? tool.cost,
+    upkeep: edit.upkeep ?? tool.upkeep,
+    locked: edit.locked ?? tool.locked,
+    preview: edit.preview !== undefined ? edit.preview : tool.preview,
+    marquee: edit.marquee ?? tool.marquee,
   };
 }
 

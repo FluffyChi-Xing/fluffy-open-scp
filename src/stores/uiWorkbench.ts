@@ -2,11 +2,20 @@ import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
 import {
   applyEdit,
+  fnv1Lower,
   sortTools,
   type ToolEdit,
   type WorkbenchCategory,
   type WorkbenchTool,
 } from "@/lib/game-ui/workbench";
+import {
+  buildMenuExport,
+  buildMenuPropertyResource,
+  dataUrlToBytes,
+  LOCALE_TABLES,
+  type LocaleString,
+  type MenuExportEntry,
+} from "@/lib/game-ui/menu-export";
 import { loadReplicaData } from "@/lib/game-ui/replica/loader";
 import type { ReplicaData, ReplicaTool } from "@/lib/game-ui/replica/types";
 
@@ -243,6 +252,96 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     );
   }
 
+  /** 装配游戏覆盖包（.package）：内存编辑 → diff 级覆盖资源
+   * （菜单条目 property + locale 表 diff + 裁切图标/大图）。
+   * 造价/预算编辑不在包内（GlassBox 模拟侧，属性覆盖不可达）→ warnings。 */
+  function buildGameExport(): {
+    bytes: Uint8Array;
+    entryCount: number;
+    localeCount: number;
+    warnings: string[];
+  } {
+    const data = replica.value;
+    const entries: MenuExportEntry[] = [];
+    const locale: LocaleString[] = [];
+    const warnings: string[] = [];
+    const seen = new Set<string>();
+    for (const category of categories.value) {
+      for (const tool of category.items) {
+        if (seen.has(tool.id)) continue;
+        seen.add(tool.id);
+        const edit = edits.value[tool.id];
+        const isNew = (added.value[category.id] ?? []).some((t) => t.id === tool.id);
+        if (!edit && !isNew) continue;
+        const knownInstance = /^[0-9A-F]{8}$/.test(tool.id);
+        const instance = knownInstance
+          ? Number.parseInt(tool.id, 16)
+          : fnv1Lower(`menu-item:${category.id}:${tool.id}:${tool.label}`);
+        const uiCategories = knownInstance
+          ? Object.keys(data?.tools ?? {})
+              .filter((catId) =>
+                (data?.tools[catId] ?? []).some((t) => t.instance === tool.id),
+              )
+              .map((catId) => Number.parseInt(catId, 16))
+          : [Number.parseInt(category.id, 16)];
+        const titleStringId = fnv1Lower(`str:title:${tool.id}:${tool.label}`);
+        locale.push({ table: LOCALE_TABLES.toolName, id: titleStringId, text: tool.label });
+        let descStringId: number | undefined;
+        let unlockStringId: number | undefined;
+        if (tool.desc) {
+          descStringId = fnv1Lower(`str:desc:${tool.id}:${tool.desc}`);
+          locale.push({ table: LOCALE_TABLES.toolDesc, id: descStringId, text: tool.desc });
+        }
+        if (tool.unlock) {
+          unlockStringId = fnv1Lower(`str:unlock:${tool.id}:${tool.unlock}`);
+          locale.push({ table: LOCALE_TABLES.toolUnlock, id: unlockStringId, text: tool.unlock });
+        }
+        const croppedIcon =
+          typeof tool.preview === "string" && tool.preview.startsWith("data:") ? tool.preview : undefined;
+        const croppedMarquee =
+          typeof tool.marquee === "string" && tool.marquee.startsWith("data:") ? tool.marquee : undefined;
+        if (edit?.cost != null || edit?.upkeep != null) {
+          warnings.push(`${tool.label || tool.id}：造价/预算编辑在 GlassBox 模拟侧，属性覆盖不含`);
+        }
+        entries.push({
+          instance,
+          uiCategories,
+          uiPosition: tool.pos,
+          titleStringId,
+          descStringId,
+          unlockStringId,
+          iconInstance: croppedIcon ? fnv1Lower(`icon:${tool.id}`) : undefined,
+          iconPng: croppedIcon ? dataUrlToBytes(croppedIcon) : undefined,
+          marqueeJpg: croppedMarquee ? dataUrlToBytes(croppedMarquee) : undefined,
+          locked: tool.locked ?? false,
+        });
+      }
+    }
+    const result = buildMenuExport({ entries, locale });
+    return { bytes: result.package, entryCount: entries.length, localeCount: locale.length, warnings };
+  }
+
+  /** 单条菜单条目 → .property 资源字节（Sheet 内按条目导出）。 */
+  function buildEntryProperty(itemId: string): Uint8Array | null {
+    const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
+    const data = replica.value;
+    if (!entry || !data) return null;
+    if (!/^[0-9A-F]{8}$/.test(entry.tool.id)) return null;
+    const instance = Number.parseInt(entry.tool.id, 16);
+    const exported: MenuExportEntry = {
+      instance,
+      uiCategories: [Number.parseInt(entry.menuId, 16)],
+      uiPosition: entry.tool.pos,
+      titleStringId: fnv1Lower(`str:title:${entry.tool.id}:${entry.tool.label}`),
+      descStringId: entry.tool.desc ? fnv1Lower(`str:desc:${entry.tool.id}:${entry.tool.desc}`) : undefined,
+      unlockStringId: entry.tool.unlock ? fnv1Lower(`str:unlock:${entry.tool.id}:${entry.tool.unlock}`) : undefined,
+      iconInstance: undefined,
+      locked: entry.tool.locked ?? false,
+    };
+    void data;
+    return buildMenuPropertyResource(exported);
+  }
+
   function resetAll(): void {
     edits.value = {};
     added.value = {};
@@ -272,6 +371,8 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     addItem,
     removeItem,
     exportOverlay,
+    buildGameExport,
+    buildEntryProperty,
     resetAll,
   };
 });

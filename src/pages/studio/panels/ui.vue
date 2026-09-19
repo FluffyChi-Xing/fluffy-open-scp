@@ -12,6 +12,8 @@ import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FImageCropper from "@/components/extensions/FImageCropper.vue";
+import { downloadBytes } from "@/lib/game-ui/menu-export";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
 import FSheet from "@/components/ui/FSheet.vue";
@@ -31,10 +33,28 @@ onMounted(() => {
 const showMechanism = ref(false);
 
 /** Sheet 的临时编辑态（打开时从条目拷贝，确认才写回 store）。 */
-const draft = ref<{ label: string; icon: string; pos: number }>({
+const draft = ref<{
+  label: string;
+  icon: string;
+  pos: number;
+  desc: string;
+  cost: string;
+  upkeep: string;
+  unlock: string;
+  locked: boolean;
+  preview: string | null;
+  marquee: string | null;
+}>({
   label: "",
   icon: "",
   pos: 0,
+  desc: "",
+  cost: "",
+  upkeep: "",
+  unlock: "",
+  locked: false,
+  preview: null,
+  marquee: null,
 });
 
 /** Sheet 打开时从条目拷贝到临时编辑态。 */
@@ -44,6 +64,13 @@ watch(editingEntry, (entry) => {
       label: entry.tool.label,
       icon: entry.tool.icon ?? "",
       pos: entry.tool.pos,
+      desc: entry.tool.desc ?? "",
+      cost: entry.tool.cost ?? "",
+      upkeep: entry.tool.upkeep ?? "",
+      unlock: entry.tool.unlock ?? "",
+      locked: entry.tool.locked ?? false,
+      preview: typeof entry.tool.preview === "string" && entry.tool.preview.startsWith("data:") ? entry.tool.preview : null,
+      marquee: typeof entry.tool.marquee === "string" && entry.tool.marquee.startsWith("data:") ? entry.tool.marquee : null,
     };
   }
 });
@@ -55,9 +82,40 @@ function applyDraft(): void {
     label: draft.value.label,
     icon: draft.value.icon === "" ? null : draft.value.icon,
     pos: Number(draft.value.pos) || 0,
+    desc: draft.value.desc,
+    cost: draft.value.cost === "" ? null : draft.value.cost,
+    upkeep: draft.value.upkeep === "" ? null : draft.value.upkeep,
+    unlock: draft.value.unlock,
+    locked: draft.value.locked,
+    // 未裁切时传 undefined（不产生覆盖），避免把基础资产路径抹掉
+    preview: draft.value.preview ?? undefined,
+    marquee: draft.value.marquee ?? undefined,
   };
   store.updateItem(entry.menuId, entry.tool.id, patch);
   editingEntry.value = null;
+}
+
+/* 裁切器：icon 128×128 PNG、hover 大图 454×263 JPEG（游戏资源实测尺寸） */
+const cropperTarget = ref<"preview" | "marquee" | null>(null);
+const cropperPresets = {
+  preview: { width: 128, height: 128, format: "image/png" as const, title: "槽位图标（128×128 PNG）" },
+  marquee: { width: 454, height: 263, format: "image/jpeg" as const, title: "Hover 大图（454×263 JPEG）" },
+};
+function onCropped(dataUrl: string): void {
+  if (cropperTarget.value === "preview") draft.value.preview = dataUrl;
+  if (cropperTarget.value === "marquee") draft.value.marquee = dataUrl;
+}
+
+/** 单条菜单条目 → .property 资源下载（仅既有游戏条目可导）。 */
+function exportProperty(): void {
+  const entry = editingEntry.value;
+  if (!entry) return;
+  const bytes = store.buildEntryProperty(entry.tool.id);
+  if (!bytes) {
+    window.alert("新增条目还没有游戏 instance，请使用「导出 .package」");
+    return;
+  }
+  downloadBytes(bytes, `${entry.tool.id}.property`);
 }
 
 function removeDraft(): void {
@@ -134,6 +192,53 @@ function removeDraft(): void {
           <span>{{ t("studio.workbench.fieldPos") }}</span>
           <input v-model.number="draft.pos" type="number" />
         </label>
+        <label class="field">
+          <span>Hover 文案（描述）</span>
+          <textarea v-model="draft.desc" rows="3" />
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>造价 §</span>
+            <input v-model="draft.cost" type="text" placeholder="27,500" />
+          </label>
+          <label class="field">
+            <span>预算/小时 §</span>
+            <input v-model="draft.upkeep" type="text" placeholder="-856" />
+          </label>
+        </div>
+        <label class="field">
+          <span>解锁提示</span>
+          <input v-model="draft.unlock" type="text" />
+        </label>
+        <label class="field field-check">
+          <input v-model="draft.locked" type="checkbox" />
+          <span>锁定（hardGate）</span>
+        </label>
+        <div class="field-row">
+          <div class="field">
+            <span>槽位图标（128×128）</span>
+            <button type="button" class="img-btn" @click="cropperTarget = 'preview'">
+              <img v-if="draft.preview" :src="draft.preview" alt="" />
+              <span v-else>上传/裁切</span>
+            </button>
+          </div>
+          <div class="field">
+            <span>Hover 大图（454×263）</span>
+            <button type="button" class="img-btn wide" @click="cropperTarget = 'marquee'">
+              <img v-if="draft.marquee" :src="draft.marquee" alt="" />
+              <span v-else>上传/裁切</span>
+            </button>
+          </div>
+        </div>
+        <FImageCropper
+          :open="cropperTarget !== null"
+          :width="cropperTarget === 'marquee' ? 454 : 128"
+          :height="cropperTarget === 'marquee' ? 263 : 128"
+          :format="cropperTarget === 'marquee' ? 'image/jpeg' : 'image/png'"
+          :title="cropperTarget === 'marquee' ? cropperPresets.marquee.title : cropperPresets.preview.title"
+          @update:open="cropperTarget = null"
+          @cropped="onCropped"
+        />
         <div class="sheet-preview">
           <span class="preview-thumb">
             <img
@@ -148,6 +253,7 @@ function removeDraft(): void {
           <span class="preview-label">{{ draft.label }}</span>
         </div>
         <div class="sheet-actions">
+          <button type="button" class="act" @click="exportProperty">导出 .property</button>
           <button type="button" class="act danger" @click="removeDraft">
             {{ editingEntry.isNew ? t("studio.workbench.discard") : t("studio.workbench.removeEdit") }}
           </button>
@@ -318,6 +424,49 @@ function removeDraft(): void {
 }
 .preview-img.locked {
   filter: grayscale(0.4) brightness(0.95);
+}
+.field-row {
+  display: flex;
+  gap: 10px;
+}
+.field-row .field {
+  flex: 1;
+}
+.field-check {
+  align-items: center;
+  flex-direction: row;
+  gap: 6px;
+}
+.field textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+  resize: vertical;
+}
+.img-btn {
+  align-items: center;
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  height: 64px;
+  justify-content: center;
+  overflow: hidden;
+  width: 64px;
+}
+.img-btn.wide {
+  width: 110px;
+}
+.img-btn img {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
 }
 .preview-label {
   font-size: 13px;
