@@ -76,7 +76,8 @@ html, body {
     opacity: 1;
 }
 
-.hud-catbtn.layer-selected .layer-select {
+.hud-catbtn.layer-selected .layer-select,
+.cat-btn.layer-selected .layer-select {
     opacity: 1;
 }
 
@@ -147,10 +148,14 @@ html, body {
 
 .hud-slot {
     position: absolute;
-    background-repeat: no-repeat;
-    background-position: center bottom;
-    background-size: contain;
     pointer-events: auto;
+    /* 双层背景（JS 按序写入 backgroundImage）：
+     * 1) 工具等轴图标 —— 撑满槽位盒（槽位盒比菜单条高，模型上沿超出条顶，同游戏）；
+     * 2) palette-tool-select-hl 椭圆光垫 —— 游戏在 BA64B338 布局里以 150×29
+     *    宽扁拉伸放在槽位底部，是图标脚下的椭圆阴影。 */
+    background-repeat: no-repeat, no-repeat;
+    background-position: center bottom 10px, center bottom 2px;
+    background-size: auto 100%, 104px 26px;
 }
 
 /* 槽位之间那条淡淡的分隔线（真机预览带里能看到） */
@@ -179,13 +184,24 @@ body.debug .hud-el {
 .hud-rollover {
     position: absolute;
     z-index: 30;
-    width: 360px;
+    width: 400px;
     pointer-events: none;
     box-shadow: 0 1px 7px rgba(0, 0, 0, 0.5);
     font-family: "EAAGSimCityStdBk", sans-serif;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.12s linear;
+}
+
+/* 指向槽位的小三角（游戏弹窗底部左端的白色箭头） */
+.hud-rollover::after {
+    content: "";
+    position: absolute;
+    left: 38px;
+    bottom: -14px;
+    border: 14px solid transparent;
+    border-top-color: #ededed;
+    border-bottom-width: 0;
 }
 
 .hud-rollover.show {
@@ -203,7 +219,7 @@ body.debug .hud-el {
 
 .hud-rollover-media {
     position: relative;
-    height: 208px;
+    height: 232px;
     background: #dfe6ea;
     border-top: 1px solid #c6d2da;
     border-bottom: 1px solid #c6d2da;
@@ -233,15 +249,79 @@ body.debug .hud-el {
     right: 0;
     bottom: 0;
     padding: 7px 10px;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(0, 0, 0, 0.78);
     line-height: 1.35;
     text-align: left;
+}
+
+/* 统计行：Unit Effect Title 标签 + 数值，文字与标题同用钢蓝（游戏原样），
+ * 行间以白色细线分隔；数值含运行时占位符的行只出标签
+ * （GlassBox 模拟引擎填充，静态包里没有）。 */
+.hud-rollover-stats {
+    padding: 1px 0;
+}
+
+.hud-rollover-stat {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 14px;
+    font-size: 14px;
+    line-height: 1.3;
+    color: #33607d;
+}
+
+.hud-rollover-stat + .hud-rollover-stat {
+    border-top: 2px solid #fff;
+}
+
+.hud-rollover-stat .label,
+.hud-rollover-stat .value {
+    color: #33607d;
+}
+
+.hud-rollover-stat .value {
+    text-align: right;
+}
+
+/* 造价/预算行：游戏为窗口底部的深一度横条，左造价右预算，中缝白色分隔。
+ * 数值（§27,500 / -856/小時）在 GlassBox 模拟规则侧，静态包无值 —— 接模拟
+ * 通道前以「—」占位。 */
+.hud-rollover-cost {
+    display: flex;
+    align-items: center;
+    background: #e3e3e3;
+    border-top: 2px solid #fff;
+    border-radius: 0 0 12px 12px;
+}
+
+.hud-rollover-cost .cell {
+    align-items: center;
+    color: #33607d;
+    display: flex;
+    flex: 1;
+    font-size: 15px;
+    font-weight: bold;
+    gap: 6px;
+    justify-content: center;
+    padding: 8px 10px;
+}
+
+.hud-rollover-cost .cell + .cell {
+    border-left: 2px solid #fff;
+}
+
+.hud-rollover-cost .simoleon {
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    height: 16px;
+    width: 16px;
 }
 
 .hud-rollover-unlock {
     padding: 7px 10px;
     background: #f2f5f7;
-    border-radius: 0 0 12px 12px;
 }
 
 /* 槽位 hover 高亮；锁定项整体降饱和（真机槽位下方还有彩色状态条，这里先不画） */

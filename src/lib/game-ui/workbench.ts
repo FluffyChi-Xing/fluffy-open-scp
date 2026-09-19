@@ -31,6 +31,12 @@ export interface WorkbenchTool {
   desc?: string;
   /** 解锁条件文案（0x0DE84DDC）；仅锁定项常有值。 */
   unlock?: string;
+  /** rollover 统计行（Unit Effect Title 0x0EB1FC05 解析）。 */
+  stats?: { label: string; value: string | null }[];
+  /** 建造成本（§）；GlassBox 模拟侧数据，离线包无值 → null。 */
+  cost?: string | null;
+  /** 维护费/小时（§，负值）；来源同 cost。 */
+  upkeep?: string | null;
   /** hardGate（0x0975695F）标记的锁定项。 */
   locked?: boolean;
   /** 名称来源：locale = 游戏字符串表；unresolved = 尚无译名。 */

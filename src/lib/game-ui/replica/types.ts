@@ -81,6 +81,13 @@ export interface ReplicaSlotRow {
   topInBar: number;
 }
 
+/** 弹窗统计行（Unit Effect Title 标签模板解析产物）。 */
+export interface ReplicaStatRow {
+  label: string;
+  /** 数值文本；null = 模板含 ~amount~ 运行时占位符（模拟引擎填充，包内无静态值）。 */
+  value: string | null;
+}
+
 /** 二级槽位的一个工具条目。 */
 export interface ReplicaTool {
   /** 工具 property 的 instance（0x%08X 大写十六进制）。 */
@@ -91,6 +98,12 @@ export interface ReplicaTool {
   desc?: string;
   /** 解锁条件文案（0x0DE84DDC → 表 0x4B54417A）；仅锁定项常有值。 */
   unlock?: string;
+  /** rollover 统计行（Unit Effect Title 0x0EB1FC05 解析）。 */
+  stats?: ReplicaStatRow[];
+  /** 建造成本（§）；GlassBox 模拟规则侧数据，静态包无值 → null（UI 以「—」占位）。 */
+  cost?: string | null;
+  /** 维护费/小时（§，负值）；来源同 cost。 */
+  upkeep?: string | null;
   /** 槽位预览图；缺失时渲染层回退到 tool_placeholder.png。 */
   preview: string | null;
   marquee: string | null;

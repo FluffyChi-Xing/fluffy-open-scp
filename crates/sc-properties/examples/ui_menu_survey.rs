@@ -37,6 +37,10 @@ const EXTRA_FIELDS: &[(&str, u32)] = &[
     // 解锁条件（弹窗里的「達到上限/不批准」说明）
     ("toolUnlockString", 0x0DE8_4DDC),
     ("toolUnlockTargetAmount", 0x0DE8_4DD3),
+    // rollover 统计行：Title = 标签模板（locale 文本，含 ~amount:number~ 运行时占位），
+    // Parameter = SCUnit 统计 id（数值由模拟引擎运行时填充，包内无静态值）
+    ("unitEffectTitle", 0x0EB1_FC05),
+    ("unitEffectParameter", 0x0EB1_FC22),
 ];
 
 const TYPE_PNG: u32 = 0x2F7D_0004;
@@ -203,6 +207,7 @@ fn main() {
                                 .map(|v| match v {
                                     Value::Key(k) => format!("{:08X}", k.instance),
                                     Value::Int32(n) => n.to_string(),
+                                    Value::UInt32(n) => n.to_string(),
                                     Value::Float(f) => f.to_string(),
                                     Value::Text(t) => format!("text:{:08X}", t.instance_id),
                                     Value::Bool(b) => b.to_string(),

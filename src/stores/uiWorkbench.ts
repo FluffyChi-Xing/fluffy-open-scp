@@ -44,6 +44,9 @@ export function replicaToolToWorkbench(tool: ReplicaTool, index: number): Workbe
     marquee: tool.marquee,
     desc: tool.desc,
     unlock: tool.unlock,
+    stats: tool.stats,
+    cost: tool.cost,
+    upkeep: tool.upkeep,
     locked: tool.locked,
     source: tool.label ? "locale" : "unresolved",
   };

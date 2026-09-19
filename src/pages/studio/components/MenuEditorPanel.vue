@@ -5,14 +5,14 @@
  * 末位虚线加号块 → 追加新条目。底部为落库/还原动作。
  *
  * 条目缩略图优先用真实槽位图（kPropToolIconKey 提取物，toolPreview），
- * 无图时回退 FIcon 占位；hover 弹出游戏 BuildingRollover 样式的提示框
- * （标题 + rollover 大图 + 描述 + 锁定项的红色解锁提示）。
+ * 无图时回退 FIcon 占位。游戏式 hover 提示框只属于左侧的游戏 UI 重建
+ * （shadow DOM 舞台），这里是应用面板，不做游戏弹窗。
  */
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { storeToRefs } from "pinia";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
-import { toolIconName, toolPreview, type WorkbenchTool } from "@/lib/game-ui/workbench";
+import { toolIconName, toolPreview } from "@/lib/game-ui/workbench";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
 
@@ -21,27 +21,6 @@ const store = useUiWorkbenchStore();
 const { activeMenu, edits } = storeToRefs(store);
 
 const editedCount = computed(() => Object.keys(edits.value).length);
-
-/** hover 提示框状态：锚定卡片中心 x + 卡片顶 y（fixed 定位，视口坐标）；
- * 上方放不下（提示框高约 320px）时翻到卡片下方。 */
-const hovered = ref<{ tool: WorkbenchTool; x: number; y: number; below: boolean } | null>(null);
-let hoverTimer = 0;
-
-function onHoverStart(tool: WorkbenchTool, event: MouseEvent): void {
-  const card = event.currentTarget as HTMLElement;
-  window.clearTimeout(hoverTimer);
-  hoverTimer = window.setTimeout(() => {
-    const rect = card.getBoundingClientRect();
-    const x = Math.max(160, Math.min(rect.left + rect.width / 2, window.innerWidth - 160));
-    const below = rect.top < 340;
-    hovered.value = { tool, x, y: below ? rect.bottom + 6 : rect.top - 6, below };
-  }, 120);
-}
-
-function onHoverEnd(): void {
-  window.clearTimeout(hoverTimer);
-  hovered.value = null;
-}
 
 function emitEdit(id: string): void {
   const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === id);
@@ -88,15 +67,13 @@ function onAdd(): void {
       :title="t('studio.workbench.panelHint')"
     />
 
-    <div v-else class="item-list" @mouseleave="onHoverEnd">
+    <div v-else class="item-list">
       <button
         v-for="entry in activeMenu.entries"
         :key="entry.tool.id"
         type="button"
         class="item-card"
         @click="emitEdit(entry.tool.id)"
-        @mouseenter="onHoverStart(entry.tool, $event)"
-        @mouseleave="onHoverEnd"
       >
         <span class="item-thumb">
           <img
@@ -130,33 +107,6 @@ function onAdd(): void {
       </button>
     </div>
 
-    <!-- hover 提示框：按游戏 BuildingRollover 复刻（面板在 shadow DOM 外，
-     * 游戏类不可用，样式本地复刻：白→浅灰渐变窗 + 钢蓝标题 + 大图 +
-     * 图底半透明黑条描述 + 红色解锁提示）。 -->
-    <Teleport to="body">
-      <div
-        v-if="hovered"
-        class="game-rollover"
-        :class="{ below: hovered.below }"
-        :style="{ left: `${hovered.x}px`, top: `${hovered.y}px` }"
-      >
-        <div class="game-rollover-title">{{ hovered.tool.label }}</div>
-        <div class="game-rollover-media">
-          <img
-            v-if="hovered.tool.marquee || hovered.tool.preview"
-            :src="hovered.tool.marquee ?? hovered.tool.preview ?? undefined"
-            alt=""
-          />
-        </div>
-        <p v-if="hovered.tool.desc" class="game-rollover-desc">{{ hovered.tool.desc }}</p>
-        <p
-          v-if="hovered.tool.locked && hovered.tool.unlock"
-          class="game-rollover-unlock"
-        >
-          {{ hovered.tool.unlock }}
-        </p>
-      </div>
-    </Teleport>
 
     <footer class="panel-foot">
       <button type="button" class="foot-btn" :disabled="!editedCount" @click="onExport">
@@ -275,63 +225,7 @@ function onAdd(): void {
   filter: grayscale(0.4) brightness(0.95);
 }
 
-/* ── hover 提示框：按游戏 BuildingRollover 复刻（Teleport 到 body，fixed 定位） ── */
-.game-rollover {
-  background: linear-gradient(180deg, #fff 0%, #f5f5f5 100%);
-  border-radius: 12px;
-  box-shadow: 0 1px 7px rgb(0 0 0 / 50%);
-  box-sizing: border-box;
-  left: 0;
-  overflow: hidden;
-  padding: 0;
-  position: fixed;
-  top: 0;
-  transform: translate(-50%, -100%);
-  width: 300px;
-  z-index: 60;
-}
-.game-rollover.below {
-  transform: translate(-50%, 0);
-}
-.game-rollover-title {
-  color: #33607d;
-  font-size: 16px;
-  font-weight: 700;
-  padding: 10px 14px 8px;
-  text-align: left;
-}
-.game-rollover-media {
-  background: #dfe6ea;
-  border-bottom: 1px solid #c6d2da;
-  border-top: 1px solid #c6d2da;
-  height: 158px;
-  position: relative;
-}
-.game-rollover-media img {
-  height: 100%;
-  object-fit: cover;
-  width: 100%;
-}
-.game-rollover-desc {
-  background: rgb(0 0 0 / 78%);
-  bottom: 0;
-  color: #fff;
-  font-size: 12px;
-  left: 0;
-  line-height: 1.35;
-  margin: 0;
-  padding: 6px 10px;
-  position: absolute;
-  right: 0;
-  text-align: left;
-}
-.game-rollover-unlock {
-  color: #d3242a;
-  font-size: 12px;
-  margin: 0;
-  padding: 7px 10px;
-  text-align: center;
-}
+
 .item-body {
   display: flex;
   flex-direction: column;

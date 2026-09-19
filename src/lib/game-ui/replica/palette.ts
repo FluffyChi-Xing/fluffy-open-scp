@@ -218,13 +218,24 @@ export function createHudPalette(
         bodyEl.appendChild(rolloverEl);
       }
       const media = tool.marquee || tool.preview;
+      const stats = (tool.stats ?? [])
+        .map(
+          (row) =>
+            `<div class="hud-rollover-stat"><span class="label">${row.label}</span><span class="value">${row.value ?? ""}</span></div>`,
+        )
+        .join("");
+      const simoleon = data.assets["icn-simoleon.png"] ?? "/game-ui/replica/assets/icn-simoleon.png";
+      const costCell = (value: string | null | undefined): string =>
+        `<div class="cell"><span class="simoleon" style="background-image:url('${simoleon}')"></span>${value || "—"}</div>`;
       rolloverEl.innerHTML = `
         <div class="hud-rollover-title">${tool.label ?? ""}</div>
         <div class="hud-rollover-media${tool.marquee ? "" : " icon-only"}">
           <div class="hud-rollover-img" style="background-image:url('${media ?? ""}')"></div>
           ${tool.desc ? `<div class="hud-rollover-desc toolRolloverDescription">${tool.desc}</div>` : ""}
         </div>
+        ${stats ? `<div class="hud-rollover-stats">${stats}</div>` : ""}
         ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${tool.unlock}</div>` : ""}
+        <div class="hud-rollover-cost">${costCell(tool.cost)}${costCell(tool.upkeep)}</div>
       `;
       // 定位：槽位的 offsetParent 是槽位行（absolute），先换算到 body 坐标；
       // 水平跟槽位居中并夹在面板内，竖直贴在槽位行上方。
@@ -313,12 +324,15 @@ export function createHudPalette(
         const slot = document.createElement("div");
         slot.className = "hud-slot";
         if (tool.locked) slot.classList.add("locked");
+        // 槽位盒比菜单条高（-14px 上探）：等轴模型的上沿超出条顶，同游戏
         slot.style.left = `${(i * cfg.pitch).toFixed(2)}px`;
-        slot.style.top = "0px";
+        slot.style.top = "-14px";
         slot.style.width = `${(cfg.pitch - 4).toFixed(2)}px`;
-        slot.style.height = `${(cfg.slotH - 8).toFixed(2)}px`;
+        slot.style.height = "66px";
         const img = tool.preview || tool.marquee || "/game-ui/replica/assets/tool_placeholder.png";
-        slot.style.backgroundImage = `url('${img}')`;
+        // 双层背景：图标 + 椭圆光垫（palette-tool-select-hl，见 replica.css 注释）
+        const pad = data.assets["palette-tool-select-hl.png"] ?? "/game-ui/replica/assets/palette-tool-select-hl.png";
+        slot.style.backgroundImage = `url('${img}'), url('${pad}')`;
         slot.title = tool.label || tool.instance;
         slot.addEventListener("mouseenter", () => showRollover(tool, slot, parentEl));
         slot.addEventListener("mouseleave", hideRollover);
