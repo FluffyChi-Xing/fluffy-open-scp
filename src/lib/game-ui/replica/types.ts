@@ -87,6 +87,10 @@ export interface ReplicaTool {
   instance: string;
   /** locale 解析后的显示名；可能为空串。 */
   label: string;
+  /** locale 解析后的功能描述（0x0A09F5FB → 表 0x50AA0BEA）；可能为空串。 */
+  desc?: string;
+  /** 解锁条件文案（0x0DE84DDC → 表 0x4B54417A）；仅锁定项常有值。 */
+  unlock?: string;
   /** 槽位预览图；缺失时渲染层回退到 tool_placeholder.png。 */
   preview: string | null;
   marquee: string | null;

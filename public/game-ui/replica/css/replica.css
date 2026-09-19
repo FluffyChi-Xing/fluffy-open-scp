@@ -168,3 +168,96 @@ html, body {
 body.debug .hud-el {
     outline: 1px solid rgba(255, 0, 128, 0.55);
 }
+
+/* -------------------------------------------------- 槽位 hover 信息弹窗
+ * 游戏里的 BuildingRollover。窗体直接用游戏自带的
+ * .BuildingRollover_Background_White（12px 圆角、白→浅灰渐变，见 game/WindowStyles.css，
+ * 渐变旧语法由 hud.css 的转换层兜底），投影取 .Rollover_Background 的 0 1px 7px。
+ * 数据全部来自菜单条目 property（0x0A09F5FA 标题 / 0x0A09F5FB 描述 /
+ * kPropToolMarqueeImage 大图 / kPropToolUnlockString 解锁提示）；
+ * 描述/解锁文本直接挂游戏文本类 .toolRolloverDescription / .toolRolloverUnlockExplanation。 */
+.hud-rollover {
+    position: absolute;
+    z-index: 30;
+    width: 360px;
+    pointer-events: none;
+    box-shadow: 0 1px 7px rgba(0, 0, 0, 0.5);
+    font-family: "EAAGSimCityStdBk", sans-serif;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s linear;
+}
+
+.hud-rollover.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.hud-rollover-title {
+    padding: 10px 14px 8px;
+    font-size: 19px;
+    font-weight: bold;
+    color: #33607d;
+    text-align: left;
+}
+
+.hud-rollover-media {
+    position: relative;
+    height: 208px;
+    background: #dfe6ea;
+    border-top: 1px solid #c6d2da;
+    border-bottom: 1px solid #c6d2da;
+    overflow: hidden;
+}
+
+.hud-rollover-media.icon-only {
+    background: #eef2f5;
+}
+
+/* rollover 大图 454×263 → 360 宽等比铺满；无大图时退回槽位图标（等轴小模型） */
+.hud-rollover-img {
+    position: absolute;
+    inset: 0;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+}
+
+.icon-only .hud-rollover-img {
+    background-size: 128px 128px;
+}
+
+.hud-rollover-desc {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 7px 10px;
+    background: rgba(0, 0, 0, 0.55);
+    line-height: 1.35;
+    text-align: left;
+}
+
+.hud-rollover-unlock {
+    padding: 7px 10px;
+    background: #f2f5f7;
+    border-radius: 0 0 12px 12px;
+}
+
+/* 槽位 hover 高亮；锁定项整体降饱和（真机槽位下方还有彩色状态条，这里先不画） */
+.hud-slot {
+    cursor: pointer;
+    transition: filter 0.12s linear;
+}
+
+.hud-slot:hover {
+    filter: brightness(1.12) drop-shadow(0 0 5px rgba(130, 205, 255, 0.9));
+}
+
+.hud-slot.locked {
+    filter: grayscale(0.35) brightness(0.92);
+}
+
+.hud-slot.locked:hover {
+    filter: grayscale(0.2) brightness(1.05) drop-shadow(0 0 5px rgba(130, 205, 255, 0.9));
+}

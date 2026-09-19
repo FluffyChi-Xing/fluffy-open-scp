@@ -130,6 +130,8 @@ function effectiveTools(data: ReplicaData, categoryId: string): SlotTool[] | und
       label: entry.tool.label,
       preview: source?.preview ?? null,
       marquee: source?.marquee ?? null,
+      desc: source?.desc,
+      unlock: source?.unlock,
       locked: source?.locked ?? false,
       isNew: entry.isNew,
     };

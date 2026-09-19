@@ -3,14 +3,15 @@
  *
  * 数据链（全部离线取证得出，见 docs/roadmap §49）：
  * - 菜单/工具定义 = Menu/Menu2 property（0x00B1B104, InstanceType 0x8A01/0xC900），
- *   标题 Text → locale 表 0x6C969DEE（繁中），图标 = 六态图标键 0x09756950–55。
+ *   标题 Text → locale 表 0x6C969DEE（繁中），槽位图标 = kPropToolIconKey
+ *   （0x0977AA8F，组 0x40E02400 的等轴模型渲染 PNG；0x09756950–55 的六态图标键
+ *   按 TGI 在全部包中不落地，2026-09 复盘定案）。
  * - HUD 布局树 = `Layouts/GlobalUI2.js`（实为 JSON；type 0x67771F5C，
  *   group 0x0B074E5A），设计分辨率 1024×793。
  * - 图片资源按 **instance = FNV-1(小写去扩展名)** 命名存储，与提取目录
  *   `public/game-ui/<ext>/<group>_<instance>.<ext>` 一一对应。
  *
- * 图标为 null 的条目：游戏在运行时用 RW4 模型渲染缩略图（静态包里不存在），
- * 工作台按用户要求以「空白原件」占位。
+ * preview 为 null 的条目（如公园回填的旧数据）：槽位/缩略图回退 tool_placeholder.png。
  */
 
 export interface WorkbenchTool {
@@ -20,8 +21,18 @@ export interface WorkbenchTool {
   label: string;
   /** uiToolPosition（0x0DC1E3E0），菜单内排序键。 */
   pos: number;
-  /** 图标资源路径；null = 运行时渲染，用空白原件占位。 */
+  /** 图标覆盖（FIcon 名）；null = 未覆盖，展示层回退到真实槽位图 preview。 */
   icon: string | null;
+  /** 真实槽位图（kPropToolIconKey 提取物，/game-ui/replica/assets/…）；null = 无。 */
+  preview?: string | null;
+  /** rollover 大图（kPropToolMarqueeImage，454×263）；提示框媒体图。 */
+  marquee?: string | null;
+  /** locale 解析的功能描述（0x0A09F5FB）；提示框正文。 */
+  desc?: string;
+  /** 解锁条件文案（0x0DE84DDC）；仅锁定项常有值。 */
+  unlock?: string;
+  /** hardGate（0x0975695F）标记的锁定项。 */
+  locked?: boolean;
   /** 名称来源：locale = 游戏字符串表；unresolved = 尚无译名。 */
   source: "locale" | "unresolved";
 }
@@ -66,15 +77,21 @@ export const CATEGORY_ICONS: Record<string, string> = {
   mayor: "House",
 };
 
-/** 找不到专属图标的条目统一用占位图标。 */
+/** 条目展示图标：编辑里填了 FIcon 名用之（资源路径视为「非 FIcon」），
+ * 否则占位。 */
 export const PLACEHOLDER_ICON = "Box";
 
-/** 条目展示图标：编辑里填了 FIcon 名用之（旧数据里的资源路径视为无效），
- * 否则占位。 */
+/** thumb 走 FIcon 时的名字：仅认 FIcon 覆盖名，路径/空值都归占位。 */
 export function toolIconName(tool: { icon: string | null }): string {
   const icon = tool.icon?.trim();
   if (icon && !icon.startsWith("/")) return icon;
   return PLACEHOLDER_ICON;
+}
+
+/** 条目真实槽位图：有 FIcon 覆盖时不参与展示，否则回真实提取物路径。 */
+export function toolPreview(tool: { icon: string | null; preview?: string | null }): string | null {
+  if (tool.icon) return null;
+  return tool.preview ?? null;
 }
 
 /** FNV-1（乘后异或），与游戏资源命名一致；入参先转小写。

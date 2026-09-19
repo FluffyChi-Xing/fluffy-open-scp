@@ -31,13 +31,20 @@ export interface MenuEntry {
 
 /** 复刻数据里的一个工具 → 工作台的条目视图。
  * 顺序即 uiPosition（构建期已排序），映射为 10/20/30… 的排序键；
- * 名字缺失时回退 instance 占位（source=unresolved）。 */
+ * 名字缺失时回退 instance 占位（source=unresolved）。
+ * `icon` 只承载用户覆盖（FIcon 名）；真实槽位图走 `preview`（kPropToolIconKey
+ * 提取物），desc/unlock/locked 供 hover 提示框使用。 */
 export function replicaToolToWorkbench(tool: ReplicaTool, index: number): WorkbenchTool {
   return {
     id: tool.instance,
     label: tool.label || tool.instance,
     pos: (index + 1) * 10,
     icon: null,
+    preview: tool.preview,
+    marquee: tool.marquee,
+    desc: tool.desc,
+    unlock: tool.unlock,
+    locked: tool.locked,
     source: tool.label ? "locale" : "unresolved",
   };
 }

@@ -136,7 +136,14 @@ function removeDraft(): void {
         </label>
         <div class="sheet-preview">
           <span class="preview-thumb">
-            <FIcon :name="draft.icon.trim() === '' ? 'Box' : draft.icon" :size="22" aria-label="" />
+            <img
+              v-if="draft.icon.trim() === '' && editingEntry.tool.preview"
+              class="preview-img"
+              :class="{ locked: editingEntry.tool.locked }"
+              :src="editingEntry.tool.preview"
+              alt=""
+            />
+            <FIcon v-else :name="draft.icon.trim() === '' ? 'Box' : draft.icon" :size="22" aria-label="" />
           </span>
           <span class="preview-label">{{ draft.label }}</span>
         </div>
@@ -308,6 +315,9 @@ function removeDraft(): void {
   height: 100%;
   object-fit: contain;
   width: 100%;
+}
+.preview-img.locked {
+  filter: grayscale(0.4) brightness(0.95);
 }
 .preview-label {
   font-size: 13px;

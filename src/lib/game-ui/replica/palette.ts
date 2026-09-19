@@ -191,11 +191,61 @@ export function createHudPalette(
   /** 游戏行为：二级槽位一行最多 8 个，超出的用 ◀/▶ 翻页，不换行。 */
   const PAGE_SIZE = 8;
 
+  /* ── hover 信息提示框（游戏里的 BuildingRollover）──
+   * 白底圆角窗 + 钢蓝标题 + rollover 大图 + 图底半透明黑条描述 +
+   * 锁定项的红色解锁提示。数据全部来自菜单条目 property
+   * （0x0A09F5FA 标题 / 0x0A09F5FB 描述 / kPropToolMarqueeImage 大图 /
+   *   kPropToolUnlockString 解锁文案）；窗体样式用游戏自带的
+   * .BuildingRollover_Background_White，文本用 .toolRollover*。 */
+  let rolloverEl: HTMLElement | null = null;
+  let rolloverTimer = 0;
+
+  function hideRollover(): void {
+    window.clearTimeout(rolloverTimer);
+    rolloverEl?.classList.remove("show");
+  }
+
+  function showRollover(tool: SlotTool, slot: HTMLElement, bodyEl: HTMLElement): void {
+    if (!tool.label && !tool.marquee && !tool.desc) return;
+    window.clearTimeout(rolloverTimer);
+    rolloverTimer = window.setTimeout(() => {
+      if (!rolloverEl) {
+        rolloverEl = document.createElement("div");
+        rolloverEl.className = "hud-rollover BuildingRollover_Background_White";
+      }
+      if (rolloverEl.parentElement !== bodyEl) {
+        rolloverEl.remove();
+        bodyEl.appendChild(rolloverEl);
+      }
+      const media = tool.marquee || tool.preview;
+      rolloverEl.innerHTML = `
+        <div class="hud-rollover-title">${tool.label ?? ""}</div>
+        <div class="hud-rollover-media${tool.marquee ? "" : " icon-only"}">
+          <div class="hud-rollover-img" style="background-image:url('${media ?? ""}')"></div>
+          ${tool.desc ? `<div class="hud-rollover-desc toolRolloverDescription">${tool.desc}</div>` : ""}
+        </div>
+        ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${tool.unlock}</div>` : ""}
+      `;
+      // 定位：槽位的 offsetParent 是槽位行（absolute），先换算到 body 坐标；
+      // 水平跟槽位居中并夹在面板内，竖直贴在槽位行上方。
+      const row = slot.offsetParent as HTMLElement | null;
+      const cx = (row?.offsetLeft ?? 0) + slot.offsetLeft + slot.offsetWidth / 2;
+      const top = (row?.offsetTop ?? 0) + slot.offsetTop;
+      const width = rolloverEl.offsetWidth || 320;
+      const left = Math.max(8, Math.min(cx - width / 2, bodyEl.clientWidth - width - 8));
+      rolloverEl.style.left = `${left.toFixed(2)}px`;
+      rolloverEl.style.top = `${(top - 8).toFixed(2)}px`;
+      rolloverEl.style.transform = "translateY(-100%)";
+      rolloverEl.classList.add("show");
+    }, 80);
+  }
+
   /** 槽位行：把该分类的工具平铺出来做预览。一行最多 8 个，超出的部分由
    * 面板布局自带的翻页钮（data-comment "page left"/"page right"）翻页查看。
    *
-   * 说明：游戏槽位里是引擎实时渲染的 3D 等距模型，没有对应的 2D 资源；
-   * 每个工具的 preview 为空时回退 tool_placeholder.png（任务要求的默认占位）。 */
+   * 槽位图标 = 菜单条目 property 的 kPropToolIconKey（0x0977AA8F，组 40E02400
+   * 的等轴模型渲染 PNG，构建期已拷进 assets/）；preview 为空的条目（如公园
+   * 旧数据回填）回退 tool_placeholder.png。 */
   function attachSlotRow(parentEl: HTMLElement, categoryId: string, cfg: ReplicaSlotRow, barY: number): void {
     if (SKIP_SLOT_ROW.has(categoryId)) return; // 布局自带工具按钮的分类不再叠一行
     const tools = hooks.getTools?.(categoryId) ?? (data.tools[categoryId] as SlotTool[] | undefined) ?? [];
@@ -257,10 +307,12 @@ export function createHudPalette(
     }
 
     function paintPage(): void {
+      hideRollover();
       row.textContent = "";
       tools.slice(page * perRow, page * perRow + perRow).forEach((tool, i) => {
         const slot = document.createElement("div");
         slot.className = "hud-slot";
+        if (tool.locked) slot.classList.add("locked");
         slot.style.left = `${(i * cfg.pitch).toFixed(2)}px`;
         slot.style.top = "0px";
         slot.style.width = `${(cfg.pitch - 4).toFixed(2)}px`;
@@ -268,6 +320,8 @@ export function createHudPalette(
         const img = tool.preview || tool.marquee || "/game-ui/replica/assets/tool_placeholder.png";
         slot.style.backgroundImage = `url('${img}')`;
         slot.title = tool.label || tool.instance;
+        slot.addEventListener("mouseenter", () => showRollover(tool, slot, parentEl));
+        slot.addEventListener("mouseleave", hideRollover);
         slot.addEventListener("click", () => hooks.onSlotClick?.(categoryId, tool));
         row.appendChild(slot);
         if (tool.isNew) {
