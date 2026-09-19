@@ -324,9 +324,11 @@ function onAdd(): void {
   color: var(--foreground);
   cursor: pointer;
   flex: 1;
-  font-size: 11.5px;
-  padding: 6px 0;
+  font-size: 11px;
+  height: 32px;
+  padding: 0 6px;
   transition: border-color 120ms ease, color 120ms ease;
+  white-space: nowrap;
 }
 .foot-btn:hover:not(:disabled) {
   border-color: var(--primary);

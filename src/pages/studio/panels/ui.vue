@@ -171,6 +171,7 @@ function removeDraft(): void {
     <!-- 单条菜单项编辑 -->
     <FSheet
       :open="!!editingEntry"
+      width="420px"
       :label="t('studio.workbench.sheetTitle')"
       @update:open="!$event && (editingEntry = null)"
     >
@@ -179,66 +180,71 @@ function removeDraft(): void {
           {{ t("studio.workbench.sheetId") }}:
           <code>{{ editingEntry.tool.id }}</code>
         </p>
-        <label class="field">
-          <span>{{ t("studio.workbench.fieldLabel") }}</span>
-          <input v-model="draft.label" type="text" />
-        </label>
-        <label class="field">
-          <span>{{ t("studio.workbench.fieldIcon") }}</span>
-          <input v-model="draft.icon" type="text" placeholder="Box" />
-        </label>
-        <p class="field-hint">{{ t("studio.workbench.iconHint") }}</p>
-        <label class="field">
-          <span>{{ t("studio.workbench.fieldPos") }}</span>
-          <input v-model.number="draft.pos" type="number" />
-        </label>
-        <label class="field">
-          <span>Hover 文案（描述）</span>
-          <textarea v-model="draft.desc" rows="3" />
-        </label>
-        <div class="field-row">
-          <label class="field">
-            <span>造价 §</span>
-            <input v-model="draft.cost" type="text" placeholder="27,500" />
-          </label>
-          <label class="field">
-            <span>预算/小时 §</span>
-            <input v-model="draft.upkeep" type="text" placeholder="-856" />
-          </label>
-        </div>
-        <label class="field">
-          <span>解锁提示</span>
-          <input v-model="draft.unlock" type="text" />
-        </label>
-        <label class="field field-check">
-          <input v-model="draft.locked" type="checkbox" />
-          <span>锁定（hardGate）</span>
-        </label>
-        <div class="field-row">
-          <div class="field">
-            <span>槽位图标（128×128）</span>
-            <button type="button" class="img-btn" @click="cropperTarget = 'preview'">
-              <img v-if="draft.preview" :src="draft.preview" alt="" />
-              <span v-else>上传/裁切</span>
-            </button>
+        <section class="sheet-section">
+          <p class="section-title">基础</p>
+          <div class="field-grid">
+            <label class="field span-2">
+              <span>显示名称</span>
+              <input v-model="draft.label" type="text" />
+            </label>
+            <label class="field">
+              <span>排序（uiPosition）</span>
+              <input v-model.number="draft.pos" type="number" />
+            </label>
+            <label class="field">
+              <span>图标（FIcon 名，可选）</span>
+              <input v-model="draft.icon" type="text" placeholder="Box" />
+            </label>
           </div>
-          <div class="field">
-            <span>Hover 大图（454×263）</span>
-            <button type="button" class="img-btn wide" @click="cropperTarget = 'marquee'">
-              <img v-if="draft.marquee" :src="draft.marquee" alt="" />
-              <span v-else>上传/裁切</span>
-            </button>
+          <p class="field-hint">{{ t("studio.workbench.iconHint") }}</p>
+        </section>
+
+        <section class="sheet-section">
+          <p class="section-title">文案与经济</p>
+          <div class="field-grid">
+            <label class="field span-2">
+              <span>Hover 文案（描述）</span>
+              <textarea v-model="draft.desc" rows="3" />
+            </label>
+            <label class="field">
+              <span>造价 §</span>
+              <input v-model="draft.cost" type="text" placeholder="27,500" />
+            </label>
+            <label class="field">
+              <span>预算/小时 §</span>
+              <input v-model="draft.upkeep" type="text" placeholder="-856" />
+            </label>
+            <label class="field span-2">
+              <span>解锁提示</span>
+              <input v-model="draft.unlock" type="text" />
+            </label>
+            <label class="field-check span-2">
+              <input v-model="draft.locked" type="checkbox" />
+              <span>锁定（hardGate，未批准/達到上限）</span>
+            </label>
           </div>
-        </div>
-        <FImageCropper
-          :open="cropperTarget !== null"
-          :width="cropperTarget === 'marquee' ? 454 : 128"
-          :height="cropperTarget === 'marquee' ? 263 : 128"
-          :format="cropperTarget === 'marquee' ? 'image/jpeg' : 'image/png'"
-          :title="cropperTarget === 'marquee' ? cropperPresets.marquee.title : cropperPresets.preview.title"
-          @update:open="cropperTarget = null"
-          @cropped="onCropped"
-        />
+        </section>
+
+        <section class="sheet-section">
+          <p class="section-title">图像（上传后裁切到游戏尺寸）</p>
+          <div class="field-grid">
+            <div class="field">
+              <span>槽位图标 128×128</span>
+              <button type="button" class="img-btn square" @click="cropperTarget = 'preview'">
+                <img v-if="draft.preview" :src="draft.preview" alt="" />
+                <span v-else class="img-btn-hint">上传/裁切</span>
+              </button>
+            </div>
+            <div class="field">
+              <span>Hover 大图 454×263</span>
+              <button type="button" class="img-btn wide" @click="cropperTarget = 'marquee'">
+                <img v-if="draft.marquee" :src="draft.marquee" alt="" />
+                <span v-else class="img-btn-hint">上传/裁切</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
         <div class="sheet-preview">
           <span class="preview-thumb">
             <img
@@ -253,13 +259,11 @@ function removeDraft(): void {
           <span class="preview-label">{{ draft.label }}</span>
         </div>
         <div class="sheet-actions">
-          <button type="button" class="act" @click="exportProperty">导出 .property</button>
+          <button type="button" class="act" @click="exportProperty">导出 property</button>
           <button type="button" class="act danger" @click="removeDraft">
-            {{ editingEntry.isNew ? t("studio.workbench.discard") : t("studio.workbench.removeEdit") }}
+            {{ editingEntry.isNew ? t("studio.workbench.discard") : "还原" }}
           </button>
-          <button type="button" class="act primary" @click="applyDraft">
-            {{ t("studio.workbench.apply") }}
-          </button>
+          <button type="button" class="act primary" @click="applyDraft">应用</button>
         </div>
       </div>
     </FSheet>
@@ -363,8 +367,8 @@ function removeDraft(): void {
 .sheet-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 24px;
+  gap: 16px;
+  padding: 20px 20px 24px;
 }
 .sheet-id {
   color: var(--muted-foreground);
@@ -376,27 +380,99 @@ function removeDraft(): void {
   border-radius: var(--radius-sm);
   padding: 1px 6px;
 }
+.sheet-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.sheet-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+.section-title {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin: 0 0 8px;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
 .field {
   display: flex;
   flex-direction: column;
   font-size: 12px;
-  gap: 5px;
+  gap: 4px;
+  min-width: 0;
 }
-.field span {
+.span-2 {
+  grid-column: 1 / -1;
+}
+.field > span {
   color: var(--muted-foreground);
 }
-.field input {
+.field input:not([type="checkbox"]),
+.field textarea {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--foreground);
+  font: inherit;
   font-size: 13px;
-  padding: 7px 9px;
+  height: 32px;
+  min-width: 0;
+  padding: 5px 9px;
+  width: 100%;
+}
+.field textarea {
+  height: auto;
+  resize: vertical;
+}
+.field-check {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+}
+.field-check span {
+  color: var(--foreground);
+  font-size: 12px;
 }
 .field-hint {
   color: var(--subtle-foreground);
   font-size: 11px;
-  margin: -6px 0 0;
+  margin: 4px 0 0;
+}
+.img-btn {
+  align-items: center;
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  height: 74px;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+}
+.img-btn.square {
+  width: 74px;
+}
+.img-btn:hover {
+  border-color: var(--primary, #0b78fe);
+}
+.img-btn img {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+.img-btn-hint {
+  font-size: 11px;
+  padding: 0 4px;
+  text-align: center;
 }
 .sheet-preview {
   align-items: center;
@@ -425,12 +501,42 @@ function removeDraft(): void {
 .preview-img.locked {
   filter: grayscale(0.4) brightness(0.95);
 }
-.field-row {
-  display: flex;
-  gap: 10px;
+.preview-label {
+  font-size: 13px;
+  font-weight: 600;
 }
-.field-row .field {
-  flex: 1;
+.sheet-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.act {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  height: 34px;
+  justify-content: center;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.act.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+}
+.act.primary:hover {
+  background: var(--primary-hover);
+}
+.act.danger {
+  background: var(--surface);
+  color: var(--danger);
+}
+.act.danger:hover {
+  border-color: var(--danger);
 }
 .field-check {
   align-items: center;
@@ -471,33 +577,5 @@ function removeDraft(): void {
 .preview-label {
   font-size: 13px;
   font-weight: 600;
-}
-.sheet-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-}
-.act {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 7px 14px;
-}
-.act.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-foreground);
-  font-weight: 700;
-}
-.act.primary:hover {
-  background: var(--primary-hover);
-}
-.act.danger {
-  background: var(--surface);
-  color: var(--danger);
-}
-.act.danger:hover {
-  border-color: var(--danger);
 }
 </style>
