@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "node -e \"require('fs').rmSync('node_modules/.tmp',{recursive:true,force:true})\" && vue-tsc -b && vite build",
     "check": "vue-tsc -b --noEmit",
     "test": "vitest run",
     "lint": "eslint .",

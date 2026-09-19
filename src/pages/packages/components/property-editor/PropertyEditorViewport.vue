@@ -72,7 +72,7 @@ const props = defineProps<{
   /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
   lotOverlayBoxOffset: [number, number] | null;
   /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）；null = 无属性。 */
-  lotModelBBoxCenter: [number, number] | null;
+  lotModelBboxCenter: [number, number] | null;
 
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
@@ -511,7 +511,7 @@ async function assembleScene(
     const r10 = pm ? pm[1] : 0;
     const r11 = pm ? pm[4] : 1;
     const centerLocal =
-      props.lotOverlayBoxOffset ?? props.lotModelBBoxCenter ?? [0, 0];
+      props.lotOverlayBoxOffset ?? props.lotModelBboxCenter ?? [0, 0];
     const tx = r00 * centerLocal[0] + r01 * centerLocal[1];
     const ty = r10 * centerLocal[0] + r11 * centerLocal[1];
     if (Math.abs(tx) > 1e-4 || Math.abs(ty) > 1e-4) {
