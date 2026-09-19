@@ -234,6 +234,12 @@ export class ThreeViewer {
   }
 
   /** key 光方位（度）；对应 MeshPreview 的方位/仰角双滑杆。 */
+  /** 色调映射（精细渲染的 HDR 自发光需要；白模/示意页保持默认 NoToneMapping）。 */
+  setToneMapping(mode: ThreeNamespace.ToneMapping, exposure = 1): void {
+    this.renderer.toneMapping = mode;
+    this.renderer.toneMappingExposure = exposure;
+  }
+
   setKeyLight(azimuthDeg: number, elevationDeg: number) {
     const radius = this.frameRadius * 2.4;
     const azimuth = (azimuthDeg * Math.PI) / 180;

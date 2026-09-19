@@ -137,6 +137,15 @@ const brightness = ref(1);
 watch([lightAzimuth, lightElevation], () => {
   viewport.viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
+// 精细渲染为 HDR 管线（interiorMap.a×16 自发光、×256 艺术自发光）：
+// ACES 把高光压回显示范围，夜间亮窗/房间才与游戏（hejlToneMap）观感一致
+watch(
+  viewport.viewer,
+  (instance) => {
+    instance?.setToneMapping(instance.THREE.ACESFilmicToneMapping, 1.12);
+  },
+  { immediate: true },
+);
 watch(brightness, () => applyBrightness());
 
 /** 存活 tint 材质的 uSpecMode uniform 引用（通道实验热切换，免重建）。 */
