@@ -21,6 +21,12 @@ fn main() {
     let file = PropertyFile::parse(&raw).expect("parse property");
 
     let targets: &[(u32, &str)] = &[
+        (0x0CCB_7FD5, "LotMask"),
+        (0x0CCB_7FD4, "Lot Textures"),
+        (0x0D02_D586, "LotColor1"),
+        (0x0D02_D587, "LotColor2"),
+        (0x0D02_D588, "LotColor3"),
+        (0x0D02_D589, "LotColor4"),
         (0x00F9_EFBA, "Model Bounding Box"),
         (0x00F9_EFBB, "LOD1"),
         (0x0CCB_7FC9, "LotOverlayBoxOffset"),
