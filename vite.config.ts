@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
     clearScreen: false,
     envPrefix: ['VITE_', 'TAURI_'],
     server: {
+      host: '127.0.0.1',
       port: 5173,
       strictPort: true,
       // 预热首屏真正会用到的那几个入口，避免第一次请求时才现做转换。
@@ -34,7 +35,9 @@ export default defineConfig(({ mode }) => {
           './src/layouts/DefaultLayout.vue',
           './src/router/index.ts',
           './src/router/registry.ts',
-          './src/pages/overview/index.vue'
+          './src/pages/overview/index.vue',
+          './src/pages/studio/index.vue',
+          './src/pages/studio/panels/ui.vue'
         ]
       },
       ...(Object.keys(proxy).length > 0 ? { proxy } : {})
@@ -52,7 +55,8 @@ export default defineConfig(({ mode }) => {
         'echarts/charts',
         'echarts/components',
         'echarts/renderers',
-        'shiki'
+        'shiki',
+        'markdown-it'
       ]
     },
     build: {

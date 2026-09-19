@@ -25,6 +25,15 @@ base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rayon = "1.11"
 
+# tauri dev 用 debug 构建：依赖全量 -O0 时（rusqlite/image/tauri…）启动变慢。
+# 依赖开 O2、本地 crate 保留 O1 + 精简调试信息，增量编译与断点仍可用。
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 strip = true
 lto = true
