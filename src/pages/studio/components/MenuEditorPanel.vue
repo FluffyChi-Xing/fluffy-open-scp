@@ -8,7 +8,7 @@
  * 无图时回退 FIcon 占位。游戏式 hover 提示框只属于左侧的游戏 UI 重建
  * （shadow DOM 舞台），这里是应用面板，不做游戏弹窗。
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
@@ -21,6 +21,9 @@ const store = useUiWorkbenchStore();
 const { activeMenu, edits } = storeToRefs(store);
 
 const editedCount = computed(() => Object.keys(edits.value).length);
+
+/** 加载失败的槽位图（如运行时资产落后于数据）→ 回退 FIcon 占位。 */
+const brokenThumbs = ref<Record<string, boolean>>({});
 
 function emitEdit(id: string): void {
   const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === id);
@@ -77,11 +80,12 @@ function onAdd(): void {
       >
         <span class="item-thumb">
           <img
-            v-if="toolPreview(entry.tool)"
+            v-if="toolPreview(entry.tool) && !brokenThumbs[entry.tool.id]"
             class="item-img"
             :class="{ locked: entry.tool.locked }"
             :src="toolPreview(entry.tool) ?? undefined"
             alt=""
+            @error="brokenThumbs[entry.tool.id] = true"
           />
           <FIcon v-else :name="toolIconName(entry.tool)" :size="22" aria-label="" />
         </span>

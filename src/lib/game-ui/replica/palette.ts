@@ -243,7 +243,10 @@ export function createHudPalette(
       const cx = (row?.offsetLeft ?? 0) + slot.offsetLeft + slot.offsetWidth / 2;
       const top = (row?.offsetTop ?? 0) + slot.offsetTop;
       const width = rolloverEl.offsetWidth || 320;
-      const left = Math.max(8, Math.min(cx - width / 2, bodyEl.clientWidth - width - 8));
+      // 游戏弹窗锚定：指针三角（左缘 38px）正对槽位中心，窗体向右延伸；
+      // 右缘越界时整体夹回面板内。
+      const POINTER_X = 38;
+      const left = Math.max(8, Math.min(cx - POINTER_X, bodyEl.clientWidth - width - 8));
       rolloverEl.style.left = `${left.toFixed(2)}px`;
       rolloverEl.style.top = `${(top - 8).toFixed(2)}px`;
       rolloverEl.style.transform = "translateY(-100%)";
