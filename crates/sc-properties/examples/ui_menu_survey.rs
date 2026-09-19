@@ -30,6 +30,13 @@ const EXTRA_FIELDS: &[(&str, u32)] = &[
     ("toolPaletteCategoryOffsets", 0x0C85_D445),
     ("toolPaletteCategoryIsDebug", 0x0D11_5956),
     ("toolMarqueeImage", 0x0DDE_EE56),
+    // 菜单条目（8A01）的槽位图标：等轴小模型渲染图（PNG 组 40E02400）。
+    // 0x0975_6950..55 的六态图标键在包里按 TGI 找不到资源（见 2026-09 复盘），
+    // 真正被 UI 槽位用的是 kPropToolIconKey。
+    ("toolIconKey", 0x0977_AA8F),
+    // 解锁条件（弹窗里的「達到上限/不批准」说明）
+    ("toolUnlockString", 0x0DE8_4DDC),
+    ("toolUnlockTargetAmount", 0x0DE8_4DD3),
 ];
 
 const TYPE_PNG: u32 = 0x2F7D_0004;
@@ -235,10 +242,10 @@ fn main() {
 
     if let Some(dir) = extract_dir {
         std::fs::create_dir_all(&dir).expect("create extract dir");
-        // 收集条目里引用的图片 TGI
+        // 收集条目里引用的图片 TGI（iconNormal 六态键多数不落地，toolIconKey 才是槽位图）
         let mut wanted: std::collections::HashSet<(u32, u32, u32)> = std::collections::HashSet::new();
         for row in &rows {
-            for key in ["toolMarqueeImage", "iconNormal"] {
+            for key in ["toolMarqueeImage", "iconNormal", "toolIconKey"] {
                 let Some(v) = row.get(key) else { continue };
                 let parts: Vec<&str> = v.split('-').collect();
                 if parts.len() != 3 {
