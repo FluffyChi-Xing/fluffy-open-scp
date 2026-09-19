@@ -478,7 +478,6 @@ float scFastNoise(vec3 seed) {
   seed += vec3(0.819 * 78.233, 0.819 * 12.9898, 0.819 * 43758.5453);
   return fract(seed.z * fract(seed.x * fract(seed.y)));
 }
-#endif
 #endif`,
       )
       .replace(
@@ -523,15 +522,6 @@ float scFastNoise(vec3 seed) {
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
           topUv = clamp(reliefSrc, 0.0, 1.0) * max(xform2.xy - uTintTexel, vec2(0.0)) + xform2.zw + uTintTexel * 0.5;
-          facadeTintValues = texture2D(tintMap, topUv);
-          scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
-        }
-          }
-          #endif
-          float outsideTile =
-            max(-reliefTc.x, 0.0) + max(-reliefTc.y, 0.0) +
-            max(reliefTc.x - 1.0, 0.0) + max(reliefTc.y - 1.0, 0.0);
-          topUv = clamp(reliefTc, 0.0, 1.0) * max(xform2.xy - uTintTexel, vec2(0.0)) + xform2.zw + uTintTexel * 0.5;
           facadeTintValues = texture2D(tintMap, topUv);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
