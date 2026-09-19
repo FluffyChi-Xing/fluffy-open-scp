@@ -15,6 +15,14 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FImageCropper from "@/components/extensions/FImageCropper.vue";
 import MenuFormBasics from "../components/menu-form/MenuFormBasics.vue";
 import MenuFormTip from "../components/menu-form/MenuFormTip.vue";
+import {
+  Stepper,
+  StepperIndicator,
+  StepperItem,
+  StepperSeparator,
+  StepperTitle,
+  StepperTrigger,
+} from "@/components/ui/stepper";
 import { downloadBytes } from "@/lib/game-ui/menu-export";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
@@ -98,7 +106,7 @@ function applyDraft(): void {
 }
 
 /* 编辑流程：① 菜单条目（基础信息 + 槽位图标）→ ② 菜单提示（hover 弹窗内容） */
-const step = ref<0 | 1>(0);
+const step = ref<1 | 2>(1);
 /* 裁切器：icon 128×128 PNG、hover 大图 454×263 JPEG（游戏资源实测尺寸） */
 const cropperTarget = ref<"preview" | "marquee" | null>(null);
 const cropperPresets = {
@@ -184,50 +192,38 @@ function removeDraft(): void {
           {{ t("studio.workbench.sheetId") }}:
           <code>{{ editingEntry.tool.id }}</code>
         </p>
-        <div class="sheet-steps">
-          <button
-            type="button"
-            class="step"
-            :class="{ active: step === 0 }"
-            @click="step = 0"
-          >
-            <span class="step-num">1</span>
-            <span class="step-name">菜单条目</span>
-          </button>
-          <span class="step-arrow" aria-hidden="true">→</span>
-          <button
-            type="button"
-            class="step"
-            :class="{ active: step === 1 }"
-            @click="step = 1"
-          >
-            <span class="step-num">2</span>
-            <span class="step-name">菜单提示</span>
-          </button>
+        <Stepper v-model="step" :linear="false" class="items-center gap-0">
+          <StepperItem :step="1" class="flex-1 gap-0 pr-1">
+            <StepperTrigger class="shrink-0 flex-row gap-2">
+              <StepperIndicator />
+              <StepperTitle class="whitespace-nowrap">菜单条目</StepperTitle>
+            </StepperTrigger>
+            <StepperSeparator class="min-w-4 flex-1" />
+          </StepperItem>
+          <StepperItem :step="2" class="flex-1 gap-0 pl-1">
+            <StepperTrigger class="shrink-0 flex-row gap-2">
+              <StepperIndicator />
+              <StepperTitle class="whitespace-nowrap">菜单提示</StepperTitle>
+            </StepperTrigger>
+          </StepperItem>
+        </Stepper>
+
+        <div class="sheet-scroll">
+          <MenuFormBasics
+            v-show="step === 1"
+            v-model="draft"
+            @crop="cropperTarget = 'preview'"
+          />
+          <MenuFormTip v-show="step === 2" v-model="draft" @crop="cropperTarget = 'marquee'" />
+
+          <div class="step-flow">
+            <button v-if="step === 2" type="button" class="act" @click="step = 1">上一步</button>
+            <button v-if="step === 1" type="button" class="act primary" @click="step = 2">
+              下一步：菜单提示
+            </button>
+          </div>
         </div>
 
-        <MenuFormBasics v-show="step === 0" v-model="draft" @crop="cropperTarget = 'preview'" />
-        <MenuFormTip v-show="step === 1" v-model="draft" @crop="cropperTarget = 'marquee'" />
-
-        <div class="step-flow">
-          <button v-if="step === 1" type="button" class="act" @click="step = 0">上一步</button>
-          <button v-if="step === 0" type="button" class="act primary" @click="step = 1">
-            下一步：菜单提示
-          </button>
-        </div>
-        <div class="sheet-preview">
-          <span class="preview-thumb">
-            <img
-              v-if="draft.icon.trim() === '' && editingEntry.tool.preview"
-              class="preview-img"
-              :class="{ locked: editingEntry.tool.locked }"
-              :src="editingEntry.tool.preview"
-              alt=""
-            />
-            <FIcon v-else :name="draft.icon.trim() === '' ? 'Box' : draft.icon" :size="22" aria-label="" />
-          </span>
-          <span class="preview-label">{{ draft.label }}</span>
-        </div>
         <div class="sheet-actions">
           <button type="button" class="act" @click="exportProperty">导出 property</button>
           <button type="button" class="act danger" @click="removeDraft">
@@ -334,50 +330,6 @@ function removeDraft(): void {
 }
 
 /* Sheet 编辑表单 */
-.sheet-steps {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 1fr auto 1fr;
-}
-.step {
-  align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: inline-flex;
-  font-size: 12px;
-  gap: 6px;
-  height: 34px;
-  justify-content: center;
-  padding: 0 8px;
-  white-space: nowrap;
-}
-.step.active {
-  border-color: var(--primary, #0b78fe);
-  color: var(--foreground);
-  font-weight: 600;
-}
-.step-num {
-  align-items: center;
-  background: var(--surface-hover);
-  border-radius: 999px;
-  display: inline-flex;
-  font-size: 10px;
-  font-weight: 700;
-  height: 16px;
-  justify-content: center;
-  width: 16px;
-}
-.step.active .step-num {
-  background: var(--primary, #0b78fe);
-  color: var(--primary-foreground, #fff);
-}
-.step-arrow {
-  color: var(--subtle-foreground);
-  font-size: 12px;
-}
 .step-flow {
   display: flex;
   justify-content: flex-end;
@@ -385,9 +337,29 @@ function removeDraft(): void {
 .sheet-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px 20px 24px;
+  gap: 12px;
+  height: 100%;
+  overflow: hidden;
+  padding: 20px 20px 16px;
 }
+.sheet-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 12px;
+  margin: 0 -20px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px 12px;
+}
+.sheet-actions {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr 1fr;
+  padding-top: 12px;
+}
+
 .sheet-id {
   color: var(--muted-foreground);
   font-size: 11px;
@@ -499,11 +471,6 @@ function removeDraft(): void {
 .preview-label {
   font-size: 13px;
   font-weight: 600;
-}
-.sheet-actions {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 1fr 1fr 1fr;
 }
 .act {
   align-items: center;
