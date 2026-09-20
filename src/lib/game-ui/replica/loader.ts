@@ -25,7 +25,12 @@ export function loadReplicaData(): Promise<ReplicaData> {
     }
     return readGlobals();
   })();
-  return cached;
+  // 失败时清空缓存：否则被缓存的是 rejected promise，一次瞬态失败
+  // （dev server 抖动等）之后本次会话永远装载失败。
+  return cached.catch((cause) => {
+    cached = null;
+    throw cause;
+  });
 }
 
 function injectScript(src: string): Promise<void> {

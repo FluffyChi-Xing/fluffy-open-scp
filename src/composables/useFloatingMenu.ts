@@ -31,8 +31,16 @@ export function useFloatingMenu(
   function onKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') open.value = false
   }
-  function onViewportChange() {
-    if (open.value) open.value = false
+  function onViewportChange(event: Event) {
+    if (!open.value) return
+    // 面板/锚点内部的滚动（长菜单列表滚动条）不该关闭菜单——只响应外部
+    // 滚动（页面滚动、面板失位）。scroll 不冒泡，捕获监听会收到内部滚动，
+    // 必须按 target 排除。
+    const target = event.target as Node | null
+    if (target && (anchor.value?.contains(target) || panel.value?.contains(target))) {
+      return
+    }
+    open.value = false
   }
 
   watch(open, async (value) => {

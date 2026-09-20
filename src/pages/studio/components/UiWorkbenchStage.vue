@@ -48,6 +48,12 @@ const rowGeom = ref<{ absY: number; count: number } | null>(null);
 
 const builtinCount = computed(() => store.replica?.model.categories.length ?? 0);
 
+// 复刻数据是进程内缓存的同一对象引用：store 已 hydrate 过（二次进入本页/
+// HMR）时 watch 不会再触发，必须在挂载时补一次装配，否则舞台空白且无报错。
+onMounted(() => {
+  if (store.replica) void boot(store.replica);
+});
+
 watch(
   () => store.replica,
   async (data) => {
