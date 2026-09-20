@@ -120,7 +120,9 @@ impl PackageManager {
     }
 
     /// 所有已打开包的 (id, package) 快照（需要回报资源所在包 id 时使用）。
-    fn all_packages_with_ids(&self) -> Result<Vec<(u64, Arc<Package>)>, PackageError> {
+    pub(crate) fn all_packages_with_ids(
+        &self,
+    ) -> Result<Vec<(u64, Arc<Package>)>, PackageError> {
         Ok(self
             .packages
             .lock()
