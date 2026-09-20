@@ -25,7 +25,7 @@
 //!   0x0CE5EF5F  Color4        Vector4
 //! ```
 
-use crate::{Key, PropertyFile, Result, Value};
+use crate::{Error, Key, Kind, Property, PropertyFile, PropType, Result, Value, PropertyEncoding};
 
 /// 三种 Decal Atlas 的 GroupContainer 低 16 位值。
 pub const DECAL_ATLAS_INSTANCE_TYPES: [u16; 3] = [0xb185, 0x1651, 0x1652];
@@ -201,6 +201,132 @@ fn vector4_at(file: &PropertyFile, hash: u32, index: usize) -> Option<[f32; 4]> 
     match array(file, hash)?.get(index)? {
         Value::Vector4(values) => Some(*values),
         _ => None,
+    }
+}
+
+/// 追加/替换一条贴花条目所需的全部字段（写回输入）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecalEntryUpsert {
+    pub id: Key,
+    /// 指向 `0x2F4E681C` Raster 资源的引用。
+    pub raster: Key,
+    pub aspect_ratio: f32,
+    /// Color1..Color4，存储口径（引擎读取的原始值 = 线性分量的一半）。
+    pub colors: [[f32; 4]; 4],
+}
+
+/// 条目字段的 `(类型, 默认补位值)`，顺序与 [`DECAL_ENTRY_ARRAY_HASHES`] 一致。
+fn entry_field(hash: u32) -> (PropType, Value) {
+    if hash == DECAL_ENTRY_ASPECT_RATIO_HASH {
+        (PropType::Float, Value::Float(0.0))
+    } else if DECAL_ENTRY_COLOR_HASHES.contains(&hash) {
+        (PropType::Vector4, Value::Vector4([0.0; 4]))
+    } else {
+        // ID 与 RasterFileID 均为 Key。
+        (
+            PropType::Key,
+            Value::Key(Key {
+                instance: 0,
+                type_id: 0,
+                group: 0,
+            }),
+        )
+    }
+}
+
+/// 定长条目字段的数组 item_size（`encode_canonical` 的校验口径）。
+fn entry_array_item_size(prop_type: PropType) -> i32 {
+    match prop_type {
+        PropType::Float => 4,
+        PropType::Key => 12,
+        PropType::Vector4 => 16,
+        _ => 0,
+    }
+}
+
+/// 把一条贴花条目写回 property 文件的 7 个条目级数组（列式并行数组）。
+///
+/// - `replace_id_instance` 为 `Some(instance)` 时按 ID 数组中首个匹配下标整行
+///   替换（未命中返回 [`Error::DecalEntryNotFound`]）；`None` 时整行追加到
+///   各数组尾部（下标 = 现有最长数组长度）。
+/// - 数组属性缺失时按字段类型补建（canonical 数组形态 + 定长 item_size）；
+///   已存在的条目数组把 item_size 规整为定长值，保证
+///   [`PropertyFile::encode_canonical`] 可编码。
+/// - 并行数组长度不齐时，写入后以被写数组恢复矩形（短板补默认零值）——
+///   只发生在已损坏（非等长）的字典上，等长字典不受影响。
+///
+/// 返回写入的下标；编码统一走 `encode_canonical`。
+pub fn upsert_entry(
+    file: &mut PropertyFile,
+    entry: &DecalEntryUpsert,
+    replace_id_instance: Option<u32>,
+) -> Result<usize> {
+    let target = match replace_id_instance {
+        Some(instance) => {
+            let ids = array(file, DECAL_ENTRY_ID_HASH)
+                .ok_or(Error::DecalEntryNotFound(instance))?;
+            ids.iter()
+                .enumerate()
+                .find_map(|(index, value)| match value {
+                    Value::Key(key) if key.instance == instance => Some(index),
+                    _ => None,
+                })
+                .ok_or(Error::DecalEntryNotFound(instance))?
+        }
+        None => DECAL_ENTRY_ARRAY_HASHES
+            .iter()
+            .filter_map(|hash| array(file, *hash).map(<[Value]>::len))
+            .max()
+            .unwrap_or(0),
+    };
+
+    let values: [Value; 7] = [
+        Value::Key(entry.id.clone()),
+        Value::Float(entry.aspect_ratio),
+        Value::Key(entry.raster.clone()),
+        Value::Vector4(entry.colors[0]),
+        Value::Vector4(entry.colors[1]),
+        Value::Vector4(entry.colors[2]),
+        Value::Vector4(entry.colors[3]),
+    ];
+    for (slot, hash) in DECAL_ENTRY_ARRAY_HASHES.iter().enumerate() {
+        let (prop_type, default) = entry_field(*hash);
+        let values_slot = ensure_entry_array(file, *hash, prop_type);
+        while values_slot.len() <= target {
+            values_slot.push(default.clone());
+        }
+        values_slot[target] = values[slot].clone();
+    }
+    Ok(target)
+}
+
+/// 取出（或补建）条目数组属性的可写值列表。
+fn ensure_entry_array(file: &mut PropertyFile, hash: u32, prop_type: PropType) -> &mut Vec<Value> {
+    let index = match file.values.iter().position(|property| property.hash == hash) {
+        Some(index) => index,
+        None => {
+            file.values.push(Property {
+                hash,
+                prop_type,
+                kind: Kind::Array(Vec::new()),
+                encoding: PropertyEncoding {
+                    flags: 0,
+                    array_item_size: Some(entry_array_item_size(prop_type)),
+                },
+            });
+            file.values.len() - 1
+        }
+    };
+    let property = &mut file.values[index];
+    if !matches!(property.kind, Kind::Array(_)) {
+        property.kind = Kind::Array(Vec::new());
+    }
+    // 规整 item_size：真实文件存在 item_size 缺省/为 0 的条目数组，
+    // encode_canonical 只认可定长值。
+    property.encoding.array_item_size = Some(entry_array_item_size(property.prop_type));
+    match &mut property.kind {
+        Kind::Array(values) => values,
+        _ => unreachable!("kind normalized above"),
     }
 }
 
@@ -420,5 +546,128 @@ mod tests {
     #[test]
     fn malformed_property_payload_is_rejected() {
         assert!(DecalDictionary::parse(&[0xff, 0xff, 0xff, 0xff]).is_err());
+    }
+
+    fn upsert_new_entry() -> DecalEntryUpsert {
+        DecalEntryUpsert {
+            id: Key {
+                instance: 0xdead_beef,
+                type_id: 0,
+                group: 0,
+            },
+            raster: Key {
+                instance: 0x4444_4444,
+                type_id: 0x2f4e_681c,
+                group: 0,
+            },
+            aspect_ratio: 2.0,
+            colors: [
+                [0.5, 0.25, 0.0, 0.0],
+                [0.0, 0.5, 0.25, 0.0],
+                [0.25, 0.0, 0.5, 0.0],
+                [0.5, 0.5, 0.5, 0.0],
+            ],
+        }
+    }
+
+    /// 把测试构造的数组属性 item_size 规整为定长值（真实解析文件自带，
+    /// encode_canonical 的校验口径要求）。
+    fn canonical_item_sizes(file: &mut PropertyFile) {
+        for property in &mut file.values {
+            if matches!(property.kind, Kind::Array(_)) {
+                property.encoding.array_item_size = Some(match property.prop_type {
+                    PropType::Float => 4,
+                    PropType::Key => 12,
+                    PropType::Vector4 => 16,
+                    _ => 0,
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn upsert_appends_and_round_trips_through_canonical_bytes() {
+        // decode → edit → encode → decode 全链：编码产物必须原样解回。
+        let mut original = sample_file();
+        canonical_item_sizes(&mut original);
+        let encoded = original.encode_canonical().unwrap();
+        let mut file = PropertyFile::parse(&encoded).unwrap();
+        assert_eq!(DecalDictionary::from_file(&file).entries.len(), 3);
+
+        let index = upsert_entry(&mut file, &upsert_new_entry(), None).unwrap();
+        assert_eq!(index, 3);
+
+        let reencoded = file.encode_canonical().unwrap();
+        let dictionary = DecalDictionary::parse(&reencoded).unwrap();
+        assert_eq!(dictionary.entries.len(), 4);
+        assert!(dictionary.uniform_arrays);
+
+        // 旧条目原样保留。
+        assert_eq!(dictionary.entries[0].id.map(|key| key.instance), Some(0xb059_45fb));
+        assert_eq!(dictionary.entries[2].aspect_ratio, Some(1.5));
+        // 新条目完整落位。
+        let added = &dictionary.entries[3];
+        assert_eq!(added.id.map(|key| key.instance), Some(0xdead_beef));
+        assert_eq!(
+            added.raster.map(|key| key.instance),
+            Some(0x4444_4444)
+        );
+        assert_eq!(added.aspect_ratio, Some(2.0));
+        assert_eq!(added.colors[0], Some([0.5, 0.25, 0.0, 0.0]));
+        assert_eq!(added.colors[3], Some([0.5, 0.5, 0.5, 0.0]));
+    }
+
+    #[test]
+    fn upsert_replaces_entry_by_id_and_keeps_row_aligned() {
+        let mut file = sample_file();
+        let mut replacement = upsert_new_entry();
+        replacement.id.instance = 0x224a_5eba;
+
+        let index = upsert_entry(&mut file, &replacement, Some(0x224a_5eba)).unwrap();
+        assert_eq!(index, 1);
+
+        let dictionary = DecalDictionary::from_file(&file);
+        assert_eq!(dictionary.entries.len(), 3);
+        assert_eq!(dictionary.entries[1].aspect_ratio, Some(2.0));
+        assert_eq!(
+            dictionary.entries[1].raster.map(|key| key.instance),
+            Some(0x4444_4444)
+        );
+        // 邻行不受影响。
+        assert_eq!(dictionary.entries[0].aspect_ratio, Some(1.0));
+        assert_eq!(dictionary.entries[2].aspect_ratio, Some(1.5));
+    }
+
+    #[test]
+    fn upsert_replace_miss_reports_missing_id() {
+        let mut file = sample_file();
+        assert!(matches!(
+            upsert_entry(&mut file, &upsert_new_entry(), Some(0x1)),
+            Err(Error::DecalEntryNotFound(0x1))
+        ));
+    }
+
+    #[test]
+    fn upsert_bootstraps_missing_arrays_and_encodes() {
+        // 只有 ID 数组的残缺字典：补建其余 6 个数组并保持可编码。
+        let mut file = file_from(vec![array_property(
+            DECAL_ENTRY_ID_HASH,
+            PropType::Key,
+            vec![key(0x1)],
+        )]);
+        let index = upsert_entry(&mut file, &upsert_new_entry(), None).unwrap();
+        assert_eq!(index, 1);
+
+        let encoded = file.encode_canonical().unwrap();
+        let dictionary = DecalDictionary::parse(&encoded).unwrap();
+        assert!(dictionary.uniform_arrays);
+        assert_eq!(dictionary.entries.len(), 2);
+        // 补位槽为零值（等长矩形，C# 装配可读），新条目完整。
+        assert_eq!(dictionary.entries[0].aspect_ratio, Some(0.0));
+        assert_eq!(dictionary.entries[1].aspect_ratio, Some(2.0));
+        assert_eq!(
+            dictionary.entries[1].colors[0],
+            Some([0.5, 0.25, 0.0, 0.0])
+        );
     }
 }

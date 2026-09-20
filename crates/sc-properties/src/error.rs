@@ -46,4 +46,7 @@ pub enum Error {
 
     #[error("property parse limit exceeded: {0}")]
     LimitExceeded(&'static str),
+
+    #[error("decal entry id {0:#010x} was not found in the atlas")]
+    DecalEntryNotFound(u32),
 }

@@ -37,7 +37,9 @@ pub mod semantic;
 use std::fmt;
 
 pub use combine::{AssetGroup, MODEL_DETAILS_HASH, combine_assets, has_model_details};
-pub use decal::{DecalDictionary, DecalEntry, is_decal_dictionary_group};
+pub use decal::{
+    DecalDictionary, DecalEntry, DecalEntryUpsert, is_decal_dictionary_group, upsert_entry,
+};
 pub use error::{Error, Result};
 pub use inherit::{PARENT_HASH, flatten_parent_inheritance, flatten_parent_inheritance_traced};
 pub use locale::{
