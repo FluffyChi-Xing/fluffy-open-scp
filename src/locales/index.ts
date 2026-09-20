@@ -151,6 +151,52 @@ const messages = {
         previewDecalHint: "透明底上的四色印花效果",
         previewDisclaimer:
           "示意预览未叠加 LotColor 染色与 Lot Textures 图集材质；游戏内实际观感以属性授权为准。",
+        tabDecal: "Decal 注册",
+        pickTargetLot: "覆盖目标 Lot（跨所有已打开包）",
+        noLots: "已打开的 package 中没有带 LotMask 的 lot 文档。",
+        lotMenuCapped: "共 {total} 个 lot，仅列出前 {limit} 个",
+        rescan: "重新扫描",
+        scanAllHint: "来源：所有已打开的 package",
+        importSize: "目标尺寸（px，0.75m/px）",
+        lockAspect: "锁比例",
+        importSizeHint:
+          "Lot/Decal 单边上限 {max}px（≈{maxM}m，游戏最大建筑 footprint）；关闭四色通道可导入更大的自由贴图",
+        importTooLarge:
+          "四色通道（lot/decal）目标尺寸不能超过 {max}px——请先用预设缩小",
+        targetLotHint:
+          "已锁定覆盖目标：保存时同包写入源 Lot property，导出包可直接覆盖游戏地面（LotMask {size}）",
+        lotLoaded: "LotMask 已载入画布（{size}），请保持原尺寸绘制",
+        lotMaskNotEditable: "该 Lot 的 LotMask 是压缩格式，暂不支持编辑",
+        lotMaskMissing:
+          "LotMask 光栅在所有已打开的 package 中都不存在——请打开包含它的源包后重试",
+        dimMismatch:
+          "画布尺寸与 LotMask 原始尺寸（{w}×{h}）不一致，请重新从该 Lot 载入",
+        decalHint:
+          "画好印花（透明底 + 四色通道）后注册进 Decal Atlas：新 raster 与条目同包导出。",
+        pickAtlas: "选择目标 Decal Atlas（跨所有已打开包）",
+        noAtlases: "已打开的 package 中没有 Decal Atlas 文档。",
+        decalEntryId: "条目 ID（instance，hex，留空自动生成）",
+        decalAspectRatio: "宽高比（自动取画布宽高比）",
+        decalColors: "Color1-4",
+        decalColorN: "Color{n}",
+        decalReplace: "替换已有条目（按 ID 匹配）",
+        decalReplaceId: "被替换条目 ID（hex）",
+        decalReplaceIdRequired: "替换模式需要填写被替换条目 ID",
+        decalRegister: "注册条目并导出",
+        decalSuccess: "已写入条目 #{index}（字典共 {count} 条）：{path}",
+        decalVerifyHint:
+          "导出包入游戏前，可先用资源预览的 Decal Dictionary 打开同一 atlas 验证新条目。",
+        decalNeedDoc: "先在画布载入要注册的印花图案。",
+        newLot: "新建 Lot（从画布生成）",
+        newLotSizeLabel:
+          "LotSize = 画布 {w}×{h} px × 0.75 = {wm}×{hm} m",
+        newLotColorsLabel: "LotColor1-4（RGB 材质色，图集索引 = 地面贴图格）",
+        newLotColorN: "LC{n} · {channel} 通道",
+        newLotTile: "图集",
+        createLot: "生成 Lot 包",
+        createLotSuccess: "Lot 包已导出（{size}）：{path}",
+        newLotHint:
+          "实验功能：生成最小 Lot property（LotSize + LotMask + LotColor1-4），不含模型/placement；建议配合游戏内实测使用。",
         channel: "显示通道",
         quantized: "四层量化",
         composite: "合成",
@@ -1494,6 +1540,55 @@ const messages = {
         previewDecalHint: "Four-color print over transparency",
         previewDisclaimer:
           "The simulation omits LotColor tint and Lot Textures atlas materials; in-game look depends on property authorization.",
+        tabDecal: "Decal entry",
+        pickTargetLot: "Override target lot (all open packages)",
+        noLots: "No lot documents with a LotMask in the open packages.",
+        lotMenuCapped: "{total} lots total, showing the first {limit}",
+        rescan: "Rescan",
+        scanAllHint: "Source: all open packages",
+        importSize: "Target size (px, 0.75 m/px)",
+        lockAspect: "Lock ratio",
+        importSizeHint:
+          "Lot/Decal single side is capped at {max}px (≈{maxM} m, the game's largest building footprint); turn off four-channel mode to import larger free textures",
+        importTooLarge:
+          "Four-channel (lot/decal) target size cannot exceed {max}px — shrink it with a preset first",
+        targetLotHint:
+          "Override target locked: saving writes a copy of the source lot property into the same package, ready to override the game ground (LotMask {size})",
+        lotLoaded:
+          "LotMask loaded onto the canvas ({size}); keep the original size while painting",
+        lotMaskNotEditable:
+          "This lot's LotMask uses a compressed format and cannot be edited yet",
+        lotMaskMissing:
+          "The LotMask raster does not exist in any open package — open its source package and retry",
+        dimMismatch:
+          "Canvas size differs from the LotMask original ({w}×{h}); reload from the lot",
+        decalHint:
+          "Paint the print (transparent background + four channels) then register it into a Decal Atlas: the new raster and the entry export into one package.",
+        pickAtlas: "Pick a target Decal Atlas (all open packages)",
+        noAtlases: "No Decal Atlas documents in the open packages.",
+        decalEntryId: "Entry ID (instance, hex, blank = auto)",
+        decalAspectRatio: "Aspect ratio (auto from canvas)",
+        decalColors: "Colors 1-4",
+        decalColorN: "Color {n}",
+        decalReplace: "Replace an existing entry (by ID)",
+        decalReplaceId: "Replaced entry ID (hex)",
+        decalReplaceIdRequired: "Replace mode requires the replaced entry ID",
+        decalRegister: "Register entry and export",
+        decalSuccess:
+          "Entry #{index} written ({count} entries in the dictionary): {path}",
+        decalVerifyHint:
+          "Before installing in-game, open the same atlas in the resource preview's Decal Dictionary to verify the new entry.",
+        decalNeedDoc: "Load the print to register onto the canvas first.",
+        newLot: "New lot (from canvas)",
+        newLotSizeLabel: "LotSize = canvas {w}×{h} px × 0.75 = {wm}×{hm} m",
+        newLotColorsLabel:
+          "LotColors 1-4 (RGB material color, atlas index = ground tile)",
+        newLotColorN: "LC{n} · {channel} channel",
+        newLotTile: "Atlas",
+        createLot: "Export lot package",
+        createLotSuccess: "Lot package exported ({size}): {path}",
+        newLotHint:
+          "Experimental: generates a minimal lot property (LotSize + LotMask + LotColors 1-4) without models/placement; verify in-game.",
         channel: "Display channel",
         quantized: "Quantized",
         composite: "Composite",

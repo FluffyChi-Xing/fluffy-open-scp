@@ -33,6 +33,80 @@ export function base64ToRgba(base64: string): Uint8ClampedArray {
 }
 
 /**
+ * 原始 RGBA(base64) → PNG data URL（画布中转）。
+ * 后端 read_image_rgba 下发的是裸 RGBA 字节而非 PNG，直接拼
+ * `data:image/png` 会静默解码失败——外部导入预览必须走这里。
+ */
+export function rgbaBase64ToPngDataUrl(
+  base64: string,
+  width: number,
+  height: number,
+): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return "";
+  const image = context.createImageData(width, height);
+  image.data.set(base64ToRgba(base64));
+  context.putImageData(image, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+/** 等比缩放目标尺寸计算：长边贴到 max，短边按比例取整（≥1）。 */
+export function fitSizeWithin(
+  width: number,
+  height: number,
+  max: number,
+): { width: number; height: number } {
+  if (width <= max && height <= max) return { width, height };
+  const scale = max / Math.max(width, height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+/** RGBA 像素缩放到目标尺寸（画布双线性，高质量）。 */
+export function scaleRgba(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  targetWidth: number,
+  targetHeight: number,
+): Uint8ClampedArray {
+  if (width === targetWidth && height === targetHeight) return rgba;
+  const source = document.createElement("canvas");
+  source.width = width;
+  source.height = height;
+  const sourceContext = source.getContext("2d");
+  const target = document.createElement("canvas");
+  target.width = targetWidth;
+  target.height = targetHeight;
+  const targetContext = target.getContext("2d");
+  if (!sourceContext || !targetContext) return rgba;
+  sourceContext.putImageData(
+    new ImageData(new Uint8ClampedArray(rgba), width, height),
+    0,
+    0,
+  );
+  targetContext.imageSmoothingEnabled = true;
+  targetContext.imageSmoothingQuality = "high";
+  targetContext.drawImage(
+    source,
+    0,
+    0,
+    width,
+    height,
+    0,
+    0,
+    targetWidth,
+    targetHeight,
+  );
+  return targetContext.getImageData(0, 0, targetWidth, targetHeight).data;
+}
+
+/**
  * LotMask/Decal 量化调色板（SCP 惯例下标序 [color4, color3, color2, color1]
  * = 蓝 / 绿 / 红 / 黑）。
  */

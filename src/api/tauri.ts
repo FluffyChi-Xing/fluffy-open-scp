@@ -776,12 +776,50 @@ export interface RasterRgbaResponse {
   decodable: boolean;
   rgbaBase64?: string;
 }
+/** save_raster_overlay 的同包伴随 property 引用（覆盖现有 lot 时=源 lot property）。 */
+export interface CompanionPropertyRef {
+  packageId: number;
+  tgi: Tgi;
+}
 /** save_raster_overlay：副本保存结果。 */
 export interface SaveRasterOverlayResult {
   outputPath: string;
   tgi: Tgi;
   rasterBytes: number;
   mipCount: number;
+  /** overlay 包内全部资源（raster + 伴随 property）。 */
+  resources: Tgi[];
+}
+/** list_property_documents：包内 property 文档摘要（lot 覆盖目标 / decal 注册目标）。 */
+export interface PropertyDocumentSummary {
+  tgi: Tgi;
+  /** kind=lot：LotMask 引用的 raster TGI（覆盖目标）。 */
+  lotMask: Tgi | null;
+  /** kind=lot：LotMask 光栅实际所在的 package（跨包解析；null=所有打开包都没有）。 */
+  lotMaskPackageId: number | null;
+  /** kind=lot：LotSize（米）。 */
+  lotSize: [number, number] | null;
+  /** kind=decal：条目数。 */
+  entryCount: number | null;
+  /** kind=decal：MaterialId instance。 */
+  materialInstance: number | null;
+}
+/** register_decal_entry：decal 条目注册导出结果。 */
+export interface RegisterDecalEntryResult {
+  outputPath: string;
+  rasterTgi: Tgi;
+  atlasTgi: Tgi;
+  entryIndex: number;
+  entryCount: number;
+  rasterBytes: number;
+}
+/** create_lot_overlay：新建 Lot 导出结果。 */
+export interface CreateLotOverlayResult {
+  outputPath: string;
+  rasterTgi: Tgi;
+  lotTgi: Tgi;
+  lotSize: [number, number];
+  rasterBytes: number;
 }
 /** setup_status：三处关键路径的配置状态（引导/缺失检测/设置页共用）。 */
 export interface SetupPathStatus {

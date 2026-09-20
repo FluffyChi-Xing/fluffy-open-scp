@@ -34,6 +34,10 @@ import {
   type ResourceBytes,
   type ResourceData,
   type LotEditorSession,
+  type PropertyDocumentSummary,
+  type RegisterDecalEntryResult,
+  type CreateLotOverlayResult,
+  type CompanionPropertyRef,
   type RasterPreviewData,
   type RasterChannel,
   type GenericImagePreviewData,
@@ -218,8 +222,42 @@ export const tauriApi = {
       tgi: Tgi;
       outputPath: string;
       generateMips: boolean;
+      /** 覆盖现有 lot 时填源 lot property，同包写入整份副本。 */
+      companionProperty?: CompanionPropertyRef;
     }) =>
       command<SaveRasterOverlayResult>("save_raster_overlay", { request }),
+    listPropertyDocuments: (packageId: number, kind: "lot" | "decal") =>
+      // 后端是裸参数（package_id, kind），不是 request 结构体——参数必须平铺。
+      command<PropertyDocumentSummary[]>("list_property_documents", {
+        packageId,
+        kind,
+      }),
+    registerDecalEntry: (request: {
+      width: number;
+      height: number;
+      rgbaBase64: string;
+      generateMips: boolean;
+      atlas: CompanionPropertyRef;
+      rasterTgi: Tgi;
+      entryId: Tgi;
+      aspectRatio: number;
+      colors: [number, number, number, number][];
+      replaceInstance?: number;
+      outputPath: string;
+    }) =>
+      command<RegisterDecalEntryResult>("register_decal_entry", { request }),
+    createLotOverlay: (request: {
+      width: number;
+      height: number;
+      rgbaBase64: string;
+      generateMips: boolean;
+      rasterTgi: Tgi;
+      lotTgi: Tgi;
+      lotSize?: [number, number];
+      /** LotColor1-4：sRGB RGB + 图集 tile 索引 0-15。 */
+      colors: [number, number, number, number][];
+      outputPath: string;
+    }) => command<CreateLotOverlayResult>("create_lot_overlay", { request }),
   },
   packages: {
     statistics: (paths: string[]) =>

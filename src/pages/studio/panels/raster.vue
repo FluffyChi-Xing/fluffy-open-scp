@@ -22,10 +22,17 @@ import {
   simulateDecalDataUrl,
   simulateLotDataUrl,
   layerOfPixel,
+  rgbaBase64ToPngDataUrl,
+  scaleRgba,
+  fitSizeWithin,
   LOT_LAYERS,
 } from "@/lib/raster-editor/encoders";
 import type { Rgba } from "@/lib/raster-editor/tools";
-import type { RasterRgbaResponse, Tgi } from "@/api/tauri";
+import type {
+  PropertyDocumentSummary,
+  RasterRgbaResponse,
+  Tgi,
+} from "@/api/tauri";
 
 /**
  * Raster 绘制面板（开发工作台）：
@@ -148,15 +155,34 @@ function setEditor(document: RasterDocument, name: string, tgi: Tgi | null) {
 
 // ── 来源面板：Tab 与外部导入 ──
 
-const sourceTab = ref<"external" | "package" | "preview">("external");
+const sourceTab = ref<"external" | "package" | "preview" | "decal">(
+  "external",
+);
 const external = ref<{
   name: string;
   width: number;
   height: number;
   rgbaBase64: string;
+  /** PNG data URL 预览（后端下发的是裸 RGBA，不能直接当 img src）。 */
+  previewUrl: string;
 } | null>(null);
 const externalLoading = ref(false);
 const externalError = ref("");
+
+/**
+ * 游戏 lot/decal 的最大 footprint：1px = 0.75m，最大地块单边 ≈ 256px
+ * （192m）。四色通道（lot/decal 语义）导入强制缩放到该范围内。
+ */
+const MAX_LOT_PX = 256;
+const SIZE_PRESETS = [32, 64, 128, 192, 256] as const;
+const targetWidth = ref(0);
+const targetHeight = ref(0);
+const lockAspect = ref(true);
+
+function clampSize(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(4096, Math.max(1, Math.round(value)));
+}
 
 async function chooseExternalImage() {
   const path = await tauriApi.workspace.pickImageFile(
@@ -167,12 +193,20 @@ async function chooseExternalImage() {
   externalError.value = "";
   try {
     const image = await tauriApi.raster.readImageRgba(path);
+    const fitted = fitSizeWithin(image.width, image.height, MAX_LOT_PX);
     external.value = {
       name: path.split(/[\\/]/).pop() ?? path,
       width: image.width,
       height: image.height,
       rgbaBase64: image.rgbaBase64,
+      previewUrl: rgbaBase64ToPngDataUrl(
+        image.rgbaBase64,
+        image.width,
+        image.height,
+      ),
     };
+    targetWidth.value = fitted.width;
+    targetHeight.value = fitted.height;
   } catch (cause) {
     external.value = null;
     externalError.value = messageOf(cause);
@@ -181,16 +215,64 @@ async function chooseExternalImage() {
   }
 }
 
+/** 锁比例时只在改动方向上调另一边，避免双向联动抖动。 */
+function onTargetWidthInput() {
+  targetWidth.value = clampSize(targetWidth.value);
+  if (lockAspect.value && external.value) {
+    targetHeight.value = clampSize(
+      Math.round(
+        (targetWidth.value * external.value.height) / external.value.width,
+      ),
+    );
+  }
+}
+
+function onTargetHeightInput() {
+  targetHeight.value = clampSize(targetHeight.value);
+  if (lockAspect.value && external.value) {
+    targetWidth.value = clampSize(
+      Math.round(
+        (targetHeight.value * external.value.width) / external.value.height,
+      ),
+    );
+  }
+}
+
+function applySizePreset(max: number) {
+  if (!external.value) return;
+  const fitted = fitSizeWithin(
+    external.value.width,
+    external.value.height,
+    max,
+  );
+  targetWidth.value = fitted.width;
+  targetHeight.value = fitted.height;
+}
+
 function createFromExternal() {
   const image = external.value;
   if (!image) return;
+  const width = clampSize(targetWidth.value);
+  const height = clampSize(targetHeight.value);
+  // 四色通道 = lot/decal 语义，超出游戏最大 footprint 没有意义，强制缩放。
+  if (Math.max(width, height) > MAX_LOT_PX && paletteMode.value) {
+    toast.error(t("studio.raster.importTooLarge", { max: MAX_LOT_PX }));
+    return;
+  }
+  targetLot.value = null;
   setEditor(
     new RasterDocument(
-      image.width,
-      image.height,
-      base64ToRgba(image.rgbaBase64),
+      width,
+      height,
+      scaleRgba(
+        base64ToRgba(image.rgbaBase64),
+        image.width,
+        image.height,
+        width,
+        height,
+      ),
     ),
-    `${t("studio.raster.copyOf", { name: image.name })}`,
+    `${t("studio.raster.copyOf", { name: image.name })} · ${width}×${height}`,
     null,
   );
   toast.success(t("studio.raster.copyCreated"));
@@ -283,6 +365,7 @@ async function createFromPackage() {
   if (!item || !info || !info.decodable || !info.rgbaBase64) {
     return;
   }
+  targetLot.value = null;
   setEditor(
     new RasterDocument(info.width, info.height, base64ToRgba(info.rgbaBase64)),
     `${t("studio.raster.copyOf", { name: item.name })}`,
@@ -291,19 +374,372 @@ async function createFromPackage() {
   toast.success(t("studio.raster.copyCreated"));
 }
 
+// ── 覆盖目标 Lot（绘制 → 覆盖导出闭环） ──
+
+/** 跨包扫描的文档：携带来源 packageId（读 LotMask / 伴随 property / 注册都用它）。 */
+type PackageDocument = PropertyDocumentSummary & { packageId: number };
+
+interface TargetLot {
+  summary: PackageDocument;
+  maskWidth: number;
+  maskHeight: number;
+}
+const targetLot = shallowRef<TargetLot | null>(null);
+const lotMenuOpen = ref(false);
+const lotDocuments = shallowRef<PackageDocument[]>([]);
+const docsLoading = ref(false);
+/** 下拉一次渲染的条数上限（大包 lot 文档数千，超出部分提示用搜索缩小范围）。 */
+const LOT_MENU_LIMIT = 300;
+
+const targetAtlas = shallowRef<PackageDocument | null>(null);
+const atlasMenuOpen = ref(false);
+const decalAtlases = shallowRef<PackageDocument[]>([]);
+
+let scannedSignature = "";
+
+function openedSignature(): string {
+  return gamePackages.opened
+    .map((entry) => entry.package.packageId)
+    .sort((a, b) => a - b)
+    .join(",");
+}
+
+function sameDocument(document: PackageDocument, target: PackageDocument) {
+  return (
+    document.packageId === target.packageId &&
+    document.tgi.instance === target.tgi.instance &&
+    document.tgi.group === target.tgi.group
+  );
+}
+
+/** 扫描所有已打开 package 的 lot / decal atlas 文档（不再局限于单个包）。 */
+async function scanDocuments(force = false) {
+  const signature = openedSignature();
+  const packages = gamePackages.opened.map((entry) => entry.package);
+  if (!packages.length) {
+    scannedSignature = "";
+    lotDocuments.value = [];
+    decalAtlases.value = [];
+    targetLot.value = null;
+    targetAtlas.value = null;
+    return;
+  }
+  if (!force && signature === scannedSignature) return;
+  scannedSignature = signature;
+  docsLoading.value = true;
+  try {
+    const scanKind = async (kind: "lot" | "decal") =>
+      (
+        await Promise.all(
+          packages.map((pkg) =>
+            tauriApi.raster
+              .listPropertyDocuments(pkg.packageId, kind)
+              .catch((cause) => {
+                // 扫描失败不能再静默吞掉：上次参数不匹配就因此不可见。
+                console.error("[raster] 文档扫描失败", pkg.packageId, kind, cause);
+                return [] as PropertyDocumentSummary[];
+              })
+              .then((documents) =>
+                documents.map((document) => ({
+                  ...document,
+                  packageId: pkg.packageId,
+                })),
+              ),
+          ),
+        )
+      ).flat();
+    const [lots, atlases] = await Promise.all([
+      scanKind("lot"),
+      scanKind("decal"),
+    ]);
+    lotDocuments.value = lots;
+    decalAtlases.value = atlases;
+    // 目标若来自已关闭的 package，清空失效选择。
+    const selectedLot = targetLot.value;
+    if (selectedLot && !lots.some((d) => sameDocument(d, selectedLot.summary))) {
+      targetLot.value = null;
+    }
+    const selectedAtlas = targetAtlas.value;
+    if (selectedAtlas && !atlases.some((d) => sameDocument(d, selectedAtlas))) {
+      targetAtlas.value = null;
+    }
+  } finally {
+    docsLoading.value = false;
+  }
+}
+
+watch(
+  sourceTab,
+  (tab) => {
+    if (tab === "package" || tab === "decal") void scanDocuments();
+  },
+  { immediate: true },
+);
+
+function lotLabel(summary: PackageDocument): string {
+  const size = summary.lotSize
+    ? ` · ${summary.lotSize[0]}×${summary.lotSize[1]}m`
+    : "";
+  return `${packageName(summary.packageId)} · ${hexLabel(summary.tgi.instance)}${size}`;
+}
+
+/**
+ * 选择覆盖目标：载入该 Lot 的 LotMask 作为编辑副本（保持原宽高 / pixFmt21），
+ * 保存时同包写回源 lot property，导出包即可入游戏覆盖地面。
+ * LotMask 光栅经常不在 lot property 所在的包（如 Graphics 的 lot 引用 Game
+ * 包的 mask），找不到时跨所有已打开包解析。
+ */
+async function chooseTargetLot(summary: PackageDocument) {
+  lotMenuOpen.value = false;
+  const mask = summary.lotMask;
+  if (!mask) return;
+  // 服务端已解析 mask 实际所在包（Graphics 的 lot 常引用 Game 包的
+  // mask）；解析失败时仍按「来源包 → 其余包」顺序逐个尝试。
+  const candidates: number[] = [];
+  if (summary.lotMaskPackageId !== null) candidates.push(summary.lotMaskPackageId);
+  for (const packageId of [
+    summary.packageId,
+    ...gamePackages.opened.map((entry) => entry.package.packageId),
+  ]) {
+    if (!candidates.includes(packageId)) candidates.push(packageId);
+  }
+  let loaded: { width: number; height: number; rgba: string } | null = null;
+  for (const packageId of candidates) {
+    try {
+      const attempt = await tauriApi.raster.readRgba(packageId, mask);
+      if (attempt.decodable && attempt.rgbaBase64) {
+        loaded = {
+          width: attempt.width,
+          height: attempt.height,
+          rgba: attempt.rgbaBase64,
+        };
+        break;
+      }
+    } catch (cause) {
+      // 该包没有此 mask（或不可读），继续在其余包里找；全部失败时在
+      // console 留下诊断信息。
+      console.warn("[raster] LotMask 读取失败", packageId, cause);
+    }
+  }
+  if (!loaded) {
+    toast.error(t("studio.raster.lotMaskMissing"));
+    return;
+  }
+  targetLot.value = null;
+  setEditor(
+    new RasterDocument(
+      loaded.width,
+      loaded.height,
+      base64ToRgba(loaded.rgba),
+    ),
+    `${t("studio.raster.copyOf", { name: lotLabel(summary) })}`,
+    { ...mask },
+  );
+  targetLot.value = {
+    summary,
+    maskWidth: loaded.width,
+    maskHeight: loaded.height,
+  };
+  toast.success(
+    t("studio.raster.lotLoaded", {
+      size: `${loaded.width}×${loaded.height}`,
+    }),
+  );
+}
+
+// ── Decal 注册（绘制 → 注册 → 导出闭环） ──
+
+const registering = ref(false);
+const decalEntryId = ref("");
+const decalAspectRatio = ref(1);
+/** Color1-4（sRGB hex，落盘前换算为线性半值存储口径）。 */
+const decalColors = ref(["#ffffff", "#ffffff", "#ffffff", "#ffffff"]);
+const decalReplace = ref(false);
+const decalReplaceInstance = ref("");
+
+// ── 新建 Lot（画布 → raster + 最小 Lot property 同包导出） ──
+
+const PROPERTY_TYPE_ID = 0x00b1b104;
+const newLotOpen = ref(false);
+const creatingLot = ref(false);
+/** LotColor1-4 默认取 SCP 回退色（LC1 黑 / LC2 红 / LC3 绿 / LC4 蓝），索引 0。 */
+const newLotColors = ref([
+  { hex: "#000000", tile: 0 },
+  { hex: "#ff0000", tile: 0 },
+  { hex: "#00ff00", tile: 0 },
+  { hex: "#0000ff", tile: 0 },
+]);
+
+function hexToSrgbBytes(hex: string): [number, number, number] {
+  const value = hex.replace("#", "");
+  return [
+    Number.parseInt(value.slice(0, 2), 16) || 0,
+    Number.parseInt(value.slice(2, 4), 16) || 0,
+    Number.parseInt(value.slice(4, 6), 16) || 0,
+  ];
+}
+
+async function createLot() {
+  const document = doc.value;
+  if (!document || creatingLot.value) return;
+  creatingLot.value = true;
+  try {
+    const path = await tauriApi.packages.saveFile(
+      `lot-${docName.value.replace(/\s+/g, "-")}.package`,
+      "package",
+    );
+    if (!path) return;
+    const seed = `${docName.value}:${Date.now()}`;
+    const result = await tauriApi.raster.createLotOverlay({
+      width: document.width,
+      height: document.height,
+      rgbaBase64: rgbaToBase64(document.pixels),
+      generateMips: true,
+      rasterTgi: {
+        typeId: RASTER_TYPE_ID,
+        group: 0,
+        instance: fnv1a(`lot-raster:${seed}`),
+      },
+      lotTgi: {
+        typeId: PROPERTY_TYPE_ID,
+        group: 0,
+        instance: fnv1a(`lot-property:${seed}`),
+      },
+      colors: newLotColors.value.map(
+        (color) => [...hexToSrgbBytes(color.hex), color.tile] as [number, number, number, number],
+      ),
+      outputPath: path,
+    });
+    toast.success(
+      t("studio.raster.createLotSuccess", {
+        size: `${result.lotSize[0]}×${result.lotSize[1]}m`,
+        path: result.outputPath,
+      }),
+    );
+  } catch (cause) {
+    toast.error(messageOf(cause));
+  } finally {
+    creatingLot.value = false;
+  }
+}
+
+function atlasLabel(summary: PackageDocument): string {
+  return `${packageName(summary.packageId)} · ${hexLabel(summary.tgi.instance)} · ${t("decal.entryCount")} ${
+    summary.entryCount ?? 0
+  }`;
+}
+
+function syncDecalAspect() {
+  const document = doc.value;
+  if (document && document.height > 0) {
+    decalAspectRatio.value = Number(
+      (document.width / document.height).toFixed(4),
+    );
+  }
+}
+
+watch(doc, syncDecalAspect);
+
+/** sRGB 8bit → 线性分量 → 存储口径（线性值的一半，与既有字典一致）。 */
+function srgbToStorage(u8: number): number {
+  const srgb = u8 / 255;
+  const linear =
+    srgb <= 0.04045 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4);
+  return linear / 2;
+}
+
+function hexToStorage(hex: string): [number, number, number, number] {
+  const value = hex.replace("#", "");
+  return [
+    srgbToStorage(parseInt(value.slice(0, 2), 16) || 0),
+    srgbToStorage(parseInt(value.slice(2, 4), 16) || 0),
+    srgbToStorage(parseInt(value.slice(4, 6), 16) || 0),
+    0,
+  ];
+}
+
+function parseHexInstance(text: string): number | null {
+  const value = Number.parseInt(text.trim().replace(/^0x/i, ""), 16);
+  return Number.isFinite(value) && value > 0 ? value >>> 0 : null;
+}
+
+async function registerDecal() {
+  const document = doc.value;
+  const atlas = targetAtlas.value;
+  if (!document || !atlas || registering.value) return;
+  const entryInstance =
+    parseHexInstance(decalEntryId.value) ?? fnv1a(`${docName.value}:${Date.now()}`);
+  const replaceInstance = decalReplace.value
+    ? parseHexInstance(decalReplaceInstance.value)
+    : null;
+  if (decalReplace.value && replaceInstance === null) {
+    toast.error(t("studio.raster.decalReplaceIdRequired"));
+    return;
+  }
+  registering.value = true;
+  try {
+    const path = await tauriApi.packages.saveFile(
+      `decal-${entryInstance.toString(16)}.package`,
+      "package",
+    );
+    if (!path) return;
+    const result = await tauriApi.raster.registerDecalEntry({
+      width: document.width,
+      height: document.height,
+      rgbaBase64: rgbaToBase64(document.pixels),
+      generateMips: true,
+      atlas: { packageId: atlas.packageId, tgi: { ...atlas.tgi } },
+      rasterTgi: {
+        typeId: RASTER_TYPE_ID,
+        group: 0,
+        instance: fnv1a(`decal-raster:${entryInstance}:${Date.now()}`),
+      },
+      entryId: { typeId: 0, group: 0, instance: entryInstance },
+      aspectRatio: decalAspectRatio.value,
+      colors: decalColors.value.map(hexToStorage),
+      replaceInstance: replaceInstance ?? undefined,
+      outputPath: path,
+    });
+    toast.success(
+      t("studio.raster.decalSuccess", {
+        index: result.entryIndex + 1,
+        count: result.entryCount,
+        path: result.outputPath,
+      }),
+    );
+  } catch (cause) {
+    toast.error(messageOf(cause));
+  } finally {
+    registering.value = false;
+  }
+}
+
 // ── 保存 ──
 
 async function saveCopy() {
   const document = doc.value;
   if (!document || saving.value) return;
+  const lot = targetLot.value;
+  // 覆盖导出必须保持 LotMask 原宽高（游戏按 tile 对齐采样）。
+  if (lot && (document.width !== lot.maskWidth || document.height !== lot.maskHeight)) {
+    toast.error(
+      t("studio.raster.dimMismatch", {
+        w: lot.maskWidth,
+        h: lot.maskHeight,
+      }),
+    );
+    return;
+  }
   saving.value = true;
   try {
     const fallbackInstance = fnv1a(`${docName.value}:${Date.now()}`);
-    const tgi: Tgi = sourceTgi.value ?? {
-      typeId: RASTER_TYPE_ID,
-      group: 0,
-      instance: fallbackInstance,
-    };
+    const tgi: Tgi = lot?.summary.lotMask
+      ? { ...lot.summary.lotMask }
+      : (sourceTgi.value ?? {
+          typeId: RASTER_TYPE_ID,
+          group: 0,
+          instance: fallbackInstance,
+        });
     const path = await tauriApi.packages.saveFile(
       `${docName.value.replace(/\s+/g, "-")}.package`,
       "package",
@@ -316,6 +752,9 @@ async function saveCopy() {
       tgi,
       outputPath: path,
       generateMips: true,
+      companionProperty: lot
+        ? { packageId: lot.summary.packageId, tgi: { ...lot.summary.tgi } }
+        : undefined,
     });
     toast.success(
       t("studio.raster.saveSuccess", {
@@ -324,6 +763,8 @@ async function saveCopy() {
       }),
     );
     hasChanges.value = false;
+  } catch (cause) {
+    toast.error(messageOf(cause));
   } finally {
     saving.value = false;
   }
@@ -669,6 +1110,18 @@ function metersOf(px: number): string {
             >
               {{ $t("studio.raster.tabPreview") }}
             </button>
+            <button
+              class="source-tab"
+              role="tab"
+              :aria-selected="sourceTab === 'decal'"
+              :class="{ active: sourceTab === 'decal' }"
+              @click="
+                sourceTab = 'decal';
+                syncDecalAspect();
+              "
+            >
+              {{ $t("studio.raster.tabDecal") }}
+            </button>
           </div>
 
           <!-- 外部导入 -->
@@ -692,7 +1145,8 @@ function metersOf(px: number): string {
             <template v-if="external">
               <div class="source-preview checkerboard">
                 <img
-                  :src="`data:image/png;base64,${external.rgbaBase64}`"
+                  v-if="external.previewUrl"
+                  :src="external.previewUrl"
                   :style="{ width: `${Math.min(220, external.width)}px` }"
                   alt=""
                 />
@@ -700,6 +1154,54 @@ function metersOf(px: number): string {
               <p class="source-meta">
                 {{ external.name }} · {{ external.width }}×{{ external.height }}
               </p>
+              <div class="form-field">
+                <span>{{ $t("studio.raster.importSize") }}</span>
+                <div class="size-row">
+                  <input
+                    v-model.number="targetWidth"
+                    type="number"
+                    min="1"
+                    max="4096"
+                    class="form-input"
+                    @change="onTargetWidthInput"
+                  />
+                  <span class="size-x">×</span>
+                  <input
+                    v-model.number="targetHeight"
+                    type="number"
+                    min="1"
+                    max="4096"
+                    class="form-input"
+                    @change="onTargetHeightInput"
+                  />
+                  <label class="form-check lock-aspect">
+                    <input v-model="lockAspect" type="checkbox" />
+                    <span>{{ $t("studio.raster.lockAspect") }}</span>
+                  </label>
+                </div>
+                <div class="preset-row">
+                  <button
+                    v-for="preset in SIZE_PRESETS"
+                    :key="preset"
+                    type="button"
+                    class="preset-button"
+                    @click="applySizePreset(preset)"
+                  >
+                    ≤{{ preset }}px · {{ metersOf(preset) }}
+                  </button>
+                </div>
+                <p
+                  class="source-hint"
+                  :class="{ warning: Math.max(targetWidth, targetHeight) > MAX_LOT_PX }"
+                >
+                  {{
+                    $t("studio.raster.importSizeHint", {
+                      max: MAX_LOT_PX,
+                      maxM: MAX_LOT_PX * 0.75,
+                    })
+                  }}
+                </p>
+              </div>
               <button
                 class="primary-button wide"
                 type="button"
@@ -739,6 +1241,136 @@ function metersOf(px: number): string {
             <p v-else class="source-hint">{{ $t("studio.raster.empty") }}</p>
           </div>
 
+          <!-- Decal 注册 -->
+          <div v-else-if="sourceTab === 'decal'" class="source-body">
+            <p class="source-hint">{{ $t("studio.raster.decalHint") }}</p>
+
+            <FDropdown v-model:open="atlasMenuOpen" :width="360">
+              <template #trigger>
+                <button type="button" class="package-trigger">
+                  <span>
+                    {{
+                      targetAtlas
+                        ? atlasLabel(targetAtlas)
+                        : $t("studio.raster.pickAtlas")
+                    }}
+                  </span>
+                  <FIcon name="ChevronDown" :size="12" aria-label="" />
+                </button>
+              </template>
+              <div class="menu-scroll">
+                <button
+                  v-for="summary in decalAtlases"
+                  :key="`${summary.packageId}:${hexKey(summary.tgi)}`"
+                  type="button"
+                  @click="
+                    targetAtlas = summary;
+                    atlasMenuOpen = false;
+                  "
+                >
+                  <FIcon
+                    :name="
+                      targetAtlas && sameDocument(summary, targetAtlas)
+                        ? 'Check'
+                        : 'Image'
+                    "
+                    :size="14"
+                    aria-label=""
+                  />
+                  <span class="menu-label">{{ atlasLabel(summary) }}</span>
+                </button>
+                <div v-if="docsLoading" class="menu-empty">
+                  {{ $t("common.loading") }}
+                </div>
+                <div v-else-if="!decalAtlases.length" class="menu-empty">
+                  {{ $t("studio.raster.noAtlases") }}
+                </div>
+              </div>
+            </FDropdown>
+            <div class="scan-row">
+              <button
+                type="button"
+                class="scan-button"
+                :disabled="docsLoading"
+                @click="scanDocuments(true)"
+              >
+                <FIcon
+                  :name="docsLoading ? 'Loader2' : 'RefreshCw'"
+                  :size="12"
+                  aria-label=""
+                />
+                {{ $t("studio.raster.rescan") }}
+              </button>
+              <span class="scan-hint">{{ $t("studio.raster.scanAllHint") }}</span>
+            </div>
+
+            <template v-if="targetAtlas && doc">
+              <label class="form-field">
+                <span>{{ $t("studio.raster.decalEntryId") }}</span>
+                <input
+                  v-model="decalEntryId"
+                  type="text"
+                  class="form-input mono"
+                  placeholder="0x…"
+                />
+              </label>
+              <label class="form-field">
+                <span>{{ $t("studio.raster.decalAspectRatio") }}</span>
+                <input
+                  v-model.number="decalAspectRatio"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  class="form-input"
+                />
+              </label>
+              <div class="form-field">
+                <span>{{ $t("studio.raster.decalColors") }}</span>
+                <div class="color-row">
+                  <FColorPicker
+                    v-for="(color, slot) in decalColors"
+                    :key="slot"
+                    v-model="decalColors[slot]"
+                    :size="16"
+                    :title="$t('studio.raster.decalColorN', { n: slot + 1 })"
+                  />
+                </div>
+              </div>
+              <label class="form-check">
+                <input v-model="decalReplace" type="checkbox" />
+                <span>{{ $t("studio.raster.decalReplace") }}</span>
+              </label>
+              <label v-if="decalReplace" class="form-field">
+                <span>{{ $t("studio.raster.decalReplaceId") }}</span>
+                <input
+                  v-model="decalReplaceInstance"
+                  type="text"
+                  class="form-input mono"
+                  placeholder="0x…"
+                />
+              </label>
+              <button
+                class="primary-button wide"
+                type="button"
+                :disabled="registering"
+                @click="registerDecal"
+              >
+                <FIcon
+                  :name="registering ? 'Loader2' : 'Upload'"
+                  :size="14"
+                  aria-label=""
+                />
+                {{ $t("studio.raster.decalRegister") }}
+              </button>
+              <p class="source-hint">
+                {{ $t("studio.raster.decalVerifyHint") }}
+              </p>
+            </template>
+            <p v-else-if="!doc" class="source-hint">
+              {{ $t("studio.raster.decalNeedDoc") }}
+            </p>
+          </div>
+
           <!-- 包内 Raster -->
           <div v-else class="source-body">
             <p class="source-hint">{{ $t("studio.raster.packageHint") }}</p>
@@ -775,6 +1407,158 @@ function metersOf(px: number): string {
                 {{ $t("studio.raster.needPackage") }}
               </div>
             </FDropdown>
+
+            <FDropdown v-model:open="lotMenuOpen" :width="340">
+              <template #trigger>
+                <button type="button" class="package-trigger">
+                  <span>
+                    {{
+                      targetLot
+                        ? lotLabel(targetLot.summary)
+                        : $t("studio.raster.pickTargetLot")
+                    }}
+                  </span>
+                  <FIcon name="ChevronDown" :size="12" aria-label="" />
+                </button>
+              </template>
+              <div class="menu-scroll">
+                <button
+                  v-for="summary in lotDocuments.slice(0, LOT_MENU_LIMIT)"
+                  :key="`${summary.packageId}:${hexKey(summary.tgi)}`"
+                  type="button"
+                  @click="chooseTargetLot(summary)"
+                >
+                  <FIcon
+                    :name="
+                      targetLot && sameDocument(summary, targetLot.summary)
+                        ? 'Check'
+                        : 'Package'
+                    "
+                    :size="14"
+                    aria-label=""
+                  />
+                  <span class="menu-label">{{ lotLabel(summary) }}</span>
+                </button>
+                <div v-if="docsLoading" class="menu-empty">
+                  {{ $t("common.loading") }}
+                </div>
+                <div
+                  v-else-if="!lotDocuments.length"
+                  class="menu-empty"
+                >
+                  {{ $t("studio.raster.noLots") }}
+                </div>
+                <div
+                  v-else-if="lotDocuments.length > LOT_MENU_LIMIT"
+                  class="menu-empty"
+                >
+                  {{
+                    $t("studio.raster.lotMenuCapped", {
+                      total: lotDocuments.length,
+                      limit: LOT_MENU_LIMIT,
+                    })
+                  }}
+                </div>
+              </div>
+            </FDropdown>
+            <div class="scan-row">
+              <button
+                type="button"
+                class="scan-button"
+                :disabled="docsLoading"
+                @click="scanDocuments(true)"
+              >
+                <FIcon
+                  :name="docsLoading ? 'Loader2' : 'RefreshCw'"
+                  :size="12"
+                  aria-label=""
+                />
+                {{ $t("studio.raster.rescan") }}
+              </button>
+              <span class="scan-hint">{{ $t("studio.raster.scanAllHint") }}</span>
+            </div>
+
+            <!-- 新建 Lot：不需要覆盖目标，直接从画布生成最小 Lot 包 -->
+            <div class="new-lot">
+              <button
+                type="button"
+                class="scan-button"
+                @click="newLotOpen = !newLotOpen"
+              >
+                <FIcon
+                  :name="newLotOpen ? 'ChevronUp' : 'Plus'"
+                  :size="12"
+                  aria-label=""
+                />
+                {{ $t("studio.raster.newLot") }}
+              </button>
+              <template v-if="newLotOpen">
+                <p class="source-meta">
+                  {{
+                    $t("studio.raster.newLotSizeLabel", {
+                      w: doc?.width ?? 0,
+                      h: doc?.height ?? 0,
+                      wm: ((doc?.width ?? 0) * 0.75).toFixed(2),
+                      hm: ((doc?.height ?? 0) * 0.75).toFixed(2),
+                    })
+                  }}
+                </p>
+                <div class="form-field">
+                  <span>{{ $t("studio.raster.newLotColorsLabel") }}</span>
+                  <div
+                    v-for="(color, slot) in newLotColors"
+                    :key="slot"
+                    class="new-lot-row"
+                  >
+                    <FColorPicker
+                      v-model="color.hex"
+                      :size="16"
+                      :title="$t('studio.raster.newLotColorN', { n: slot + 1 })"
+                    />
+                    <span class="new-lot-channel">
+                      {{
+                        $t("studio.raster.newLotColorN", {
+                          n: slot + 1,
+                          channel: ["R", "G", "B", "A"][slot],
+                        })
+                      }}
+                    </span>
+                    <label class="new-lot-tile">
+                      <span>{{ $t("studio.raster.newLotTile") }}</span>
+                      <input
+                        v-model.number="color.tile"
+                        type="number"
+                        min="0"
+                        max="15"
+                        class="form-input tile-input"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <button
+                  class="primary-button wide"
+                  type="button"
+                  :disabled="creatingLot || !doc"
+                  @click="createLot"
+                >
+                  <FIcon
+                    :name="creatingLot ? 'Loader2' : 'Save'"
+                    :size="14"
+                    aria-label=""
+                  />
+                  {{ $t("studio.raster.createLot") }}
+                </button>
+                <p class="source-hint">{{ $t("studio.raster.newLotHint") }}</p>
+              </template>
+            </div>
+            <p v-if="targetLot" class="source-meta target-hint">
+              <FIcon name="MapPin" :size="12" aria-label="" />
+              {{
+                $t("studio.raster.targetLotHint", {
+                  size: `${targetLot.maskWidth}×${targetLot.maskHeight}`,
+                })
+              }}
+            </p>
 
             <div v-if="loadingRasters" class="source-loading">
               {{ $t("common.loading") }}
@@ -1135,6 +1919,168 @@ function metersOf(px: number): string {
   min-height: 32px;
   padding: 0 10px;
   width: 100%;
+}
+.menu-scroll {
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.menu-scroll .menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-empty {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  padding: 8px 10px;
+  text-align: center;
+}
+.target-hint {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+.form-field {
+  display: grid;
+  gap: 4px;
+}
+.form-field > span {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+.form-input {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  min-height: 28px;
+  padding: 0 8px;
+  width: 100%;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.color-row {
+  display: flex;
+  gap: 6px;
+}
+/* FColorPicker 的 trigger 是 width:100%，在 flex 行里会被压扁——给固定宽。 */
+.color-row :deep(.color-trigger) {
+  flex: none;
+  justify-content: center;
+  width: 26px;
+}
+.form-check {
+  align-items: center;
+  color: var(--foreground);
+  display: flex;
+  font-size: 12.5px;
+  gap: 6px;
+}
+.size-row {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+.size-row .form-input {
+  width: 72px;
+}
+.size-x {
+  color: var(--muted-foreground);
+}
+.lock-aspect {
+  font-size: 11.5px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.preset-button {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  min-height: 24px;
+  padding: 0 8px;
+}
+.preset-button:hover {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  color: var(--primary);
+}
+.source-hint.warning {
+  color: var(--warning);
+}
+.scan-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.scan-button {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11.5px;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 10px;
+}
+.scan-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  color: var(--primary);
+}
+.scan-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.scan-hint {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+}
+.new-lot {
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+.new-lot-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.new-lot-channel {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+.new-lot-tile {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: flex;
+  font-size: 11.5px;
+  gap: 4px;
+  margin-left: auto;
+}
+.tile-input {
+  width: 52px;
 }
 .raster-list {
   display: grid;
