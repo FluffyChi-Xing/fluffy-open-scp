@@ -43,6 +43,7 @@ import NotesSheet from "./NotesSheet.vue";
  * 打开时 package.json 缺失则自动扫描生成（manifest）。
  */
 const props = defineProps<{ project: ModProjectView }>();
+const emit = defineEmits<{ close: [] }>();
 
 const { t, locale } = useI18n();
 const toast = useToast();
@@ -63,7 +64,7 @@ const packageInfo = shallowRef<{
   entryCount: number;
   decompressedTotal: number;
   size: number;
-  types: { typeId: number; count: number }[];
+  types: { typeId: number; name: string; count: number }[];
 } | null>(null);
 const viewerError = ref("");
 /** package 双栏：资源列表与选中资源的只读预览。 */
@@ -391,6 +392,15 @@ watch(
           <FIcon :name="loading ? 'Loader2' : 'RefreshCw'" :size="13" aria-label="" />
           {{ $t("studio.code.refresh") }}
         </button>
+        <button
+          class="refresh-button close"
+          type="button"
+          :aria-label="$t('common.close')"
+          :title="$t('common.close')"
+          @click="emit('close')"
+        >
+          <FIcon name="X" :size="14" aria-label="" />
+        </button>
       </div>
     </header>
 
@@ -599,11 +609,12 @@ watch(
                         v-for="type in packageInfo.types"
                         :key="type.typeId"
                         type="button"
-                        class="tool-chip mono"
+                        class="tool-chip"
                         :class="{ active: entryTypeFilter === type.typeId }"
+                        :title="`0x${type.typeId.toString(16).toUpperCase().padStart(8, '0')}`"
                         @click="entryTypeFilter = type.typeId"
                       >
-                        0x{{ type.typeId.toString(16).toUpperCase().slice(-4) }}
+                        {{ type.name }}
                         <span class="chip-count">{{ type.count }}</span>
                       </button>
                     </div>
@@ -778,6 +789,13 @@ watch(
   cursor: default;
   opacity: 0.6;
 }
+.refresh-button.close {
+  padding: 0 7px;
+}
+.refresh-button.close:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
 .code-hint {
   color: var(--subtle-foreground);
   font-size: 11.5px;
@@ -849,8 +867,14 @@ watch(
   font-weight: 500;
 }
 .tree-row.selected {
+  /* 选中态两套主题都必须可读：前景色 + 加粗，背景仅作位置提示。 */
   background: var(--surface-hover);
-  color: var(--accent);
+  color: var(--foreground);
+  font-weight: 650;
+}
+.tree-row.selected .tree-size,
+.tree-row.selected .tree-name {
+  color: var(--foreground);
 }
 .tree-name {
   flex: 1;
@@ -1095,7 +1119,8 @@ watch(
 }
 .entry-row.selected {
   background: var(--surface-hover);
-  color: var(--accent);
+  color: var(--foreground);
+  font-weight: 650;
 }
 .entry-instance {
   flex: 1;

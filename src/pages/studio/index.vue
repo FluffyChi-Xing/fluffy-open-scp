@@ -312,7 +312,10 @@ function statusLabel(status: string): string {
         width="100vw"
         :label="$t('studio.code.sheetTitle')"
       >
-        <CodeWorkbench :project="developingProject" />
+        <CodeWorkbench
+          :project="developingProject"
+          @close="developOpen = false"
+        />
       </FSheet>
     </template>
     <p v-else class="web-hint">{{ $t("studio.projects.webHint") }}</p>

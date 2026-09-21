@@ -848,6 +848,8 @@ export interface CodeTextDocument {
 /** code_package_info：DBPF 容器只读统计。 */
 export interface CodePackageTypeInfo {
   typeId: number;
+  /** 语义名（verified 实证表 → s3db 注册表 → hex 回退）。 */
+  name: string;
   count: number;
 }
 export interface CodePackageInfo {

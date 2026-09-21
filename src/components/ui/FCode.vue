@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { codeToHtml } from 'shiki'
 
 interface Props {
@@ -25,6 +25,9 @@ const highlighted = ref('')
 const plain = computed(() => escapeHtml(props.code))
 let highlightToken = 0
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
+// data-theme 是非响应式 DOM 属性，Vue watch 追踪不到——用 MutationObserver
+// 监听切换（此前主题切换后高亮停留旧主题，日间模式呈现暗色 token 不可读）。
+let themeObserver: MutationObserver | undefined
 
 function themeName() { return document.documentElement.dataset.theme === 'dark' ? 'github-dark' : 'github-light' }
 
@@ -54,8 +57,14 @@ function escapeHtml(value: string) {
 }
 
 watch(() => props.code, highlight, { immediate: true })
-watch(() => document.documentElement.dataset.theme, () => { highlight() })
-onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer) })
+onMounted(() => {
+  themeObserver = new MutationObserver(() => highlight())
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+})
+onBeforeUnmount(() => {
+  themeObserver?.disconnect()
+  if (copiedTimer) clearTimeout(copiedTimer)
+})
 </script>
 
 <template>

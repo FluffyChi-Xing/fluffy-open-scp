@@ -100,12 +100,22 @@ function onScroll() {
     const element = scroller.value;
     if (element) scrollTop.value = element.scrollTop;
     // 虚拟滚动接近已加载尾部：续读下一段（动态加载设计）。
-    if (!eof.value && !loadingMore.value) {
-      if (endVisible.value >= lines.value.length - LOAD_MORE_LINES) {
-        void loadMore();
-      }
-    }
+    maybeLoadMore();
   });
+}
+
+function nearEnd(): boolean {
+  return eof.value
+    ? false
+    : endVisible.value >= lines.value.length - LOAD_MORE_LINES;
+}
+
+/** 续读完成后用户仍处尾部则继续链式加载，保证滚动到底总能看到后续内容。 */
+function maybeLoadMore() {
+  if (loadingMore.value) return;
+  if (nearEnd() || (lines.value.length === 0 && !eof.value)) {
+    void loadMore();
+  }
 }
 
 /** 续读下一段源字节并增量解码（utf-8 分界偶发裂字按二进制段折叠）。 */
@@ -121,7 +131,10 @@ async function loadMore() {
       CHUNK_BYTES,
     );
     const chunk = new Uint8Array(buffer);
-    if (!chunk.length) return;
+    if (!chunk.length) {
+      eof.value = true;
+      return;
+    }
     loadedBytes.value += chunk.byteLength;
     if (chunk.byteLength < CHUNK_BYTES) eof.value = true;
     let text: string;
@@ -131,7 +144,10 @@ async function loadMore() {
       text = new TextDecoder("utf-8").decode(chunk);
     }
     appendedText.value += foldBinaryRuns(text);
-  } catch {
+    // 追加后若视口仍在尾部附近，继续链式加载。
+    if (nearEnd()) void loadMore();
+  } catch (cause) {
+    console.warn("[text-preview] 续读失败", cause);
     eof.value = true;
   } finally {
     loadingMore.value = false;
@@ -151,15 +167,19 @@ async function copyAll() {
 }
 
 watch([visibleCode, () => props.preview.language], highlight, { immediate: true });
-watch(
-  () => document.documentElement.dataset.theme,
-  () => void highlight(),
-);
+// data-theme 非响应式：MutationObserver 监听主题切换（与 FCode 同口径）。
+let themeObserver: MutationObserver | undefined;
 onMounted(() => {
   const element = scroller.value;
   if (element) viewportHeight.value = element.clientHeight;
+  themeObserver = new MutationObserver(() => void highlight());
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
 });
 onBeforeUnmount(() => {
+  themeObserver?.disconnect();
   if (scrollFrame) cancelAnimationFrame(scrollFrame);
   if (copiedTimer) clearTimeout(copiedTimer);
 });

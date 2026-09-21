@@ -335,7 +335,8 @@ async function saveNote() {
   background: var(--surface-hover);
 }
 .note-row.active {
-  color: var(--accent);
+  color: var(--foreground);
+  font-weight: 650;
 }
 .note-toolbar {
   align-items: center;

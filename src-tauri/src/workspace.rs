@@ -789,6 +789,8 @@ pub struct CodeWriteTextRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CodePackageTypeInfo {
     pub type_id: u32,
+    /// 语义名（verified 实证表 → s3db 注册表 → hex 回退）。
+    pub name: String,
     pub count: u32,
 }
 
@@ -1018,8 +1020,10 @@ pub async fn code_write_text(
 }
 
 /// DBPF 容器独立打开统计（不进 PackageManager）：条目数、解压总量、类型直方图。
+/// registry 缺省时名称回退 verified 实证表 → hex。
 fn code_package_stats(
     path: &Path,
+    registry: Option<&sc_registry::Registry>,
 ) -> Result<(usize, u64, Vec<CodePackageTypeInfo>), WorkspaceError> {
     let package = dbpf::Package::open(path)
         .map_err(|error| WorkspaceError::InvalidPath(error.to_string()))?;
@@ -1031,7 +1035,20 @@ fn code_package_stats(
     }
     let mut types: Vec<CodePackageTypeInfo> = histogram
         .into_iter()
-        .map(|(type_id, count)| CodePackageTypeInfo { type_id, count })
+        .map(|(type_id, count)| {
+            let name = crate::package_service::verified_type_name(type_id)
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    registry
+                        .map(|registry| registry.type_name(type_id))
+                        .unwrap_or_else(|| format!("{type_id:08X}"))
+                });
+            CodePackageTypeInfo {
+                type_id,
+                name,
+                count,
+            }
+        })
         .collect();
     types.sort_by(|a, b| b.count.cmp(&a.count).then(a.type_id.cmp(&b.type_id)));
     types.truncate(12);
@@ -1044,6 +1061,8 @@ pub async fn code_package_info(
     request: CodePathRequest,
 ) -> Result<CodePackageInfo, CommandError> {
     let store = Arc::clone(&state.store);
+    let packages = Arc::clone(&state.packages);
+    let bundled = crate::package_service::bundled_registry_path(&state.app);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
         let relative = validate_relative_path(&request.relative_path, false)
@@ -1055,13 +1074,18 @@ pub async fn code_package_info(
         let size = fs::metadata(&path)
             .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?
             .len();
+        // 临时挂独立包取注册表语义名（不进 PackageManager 常驻）。
+        let standalone = dbpf::Package::open(&path)
+            .map_err(|error| CommandError::from(WorkspaceError::InvalidPath(error.to_string())))?;
+        let registry = crate::package_service::package_registry(
+            &store,
+            &packages,
+            &standalone,
+            bundled.as_deref(),
+        );
         let (entry_count, decompressed_total, types) =
-            code_package_stats(&path).map_err(|error| match error {
-                WorkspaceError::Io(error) => {
-                    CommandError::from(WorkspaceError::InvalidPath(error.to_string()))
-                }
-                other => CommandError::from(other),
-            })?;
+            code_package_stats(&path, registry.as_deref())
+                .map_err(CommandError::from)?;
         Ok(CodePackageInfo {
             relative_path: request.relative_path,
             size,
@@ -1386,7 +1410,7 @@ fn build_code_manifest(
             continue;
         }
         let path = root.join(&node.relative_path);
-        let Ok((entry_count, _, types)) = code_package_stats(&path) else {
+        let Ok((entry_count, _, types)) = code_package_stats(&path, None) else {
             continue;
         };
         // TGI 覆盖清单：完整条目直读。
@@ -1616,7 +1640,7 @@ mod tests {
             ),
         ];
         fs::write(&path, write_uncompressed_overlay(&entries).unwrap()).unwrap();
-        let (count, total, types) = code_package_stats(&path).unwrap();
+        let (count, total, types) = code_package_stats(&path, None).unwrap();
         assert_eq!(count, 3);
         assert_eq!(total, 12);
         assert_eq!(types[0].type_id, 0x00B1_B104);

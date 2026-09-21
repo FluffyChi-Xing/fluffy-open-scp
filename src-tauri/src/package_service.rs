@@ -949,7 +949,7 @@ fn resource_page(
 /// 已实证的类型语义名（二进制取证，2026-09-12）：优先于 s3db 注册表。
 /// s3db 的官方名存在拼写错误（"Uken File (Property/Spore?)"）或无语义
 /// （"Greyscale Map (16-bit)"），且不含 EP1 类型。
-fn verified_type_name(type_id: u32) -> Option<&'static str> {
+pub(crate) fn verified_type_name(type_id: u32) -> Option<&'static str> {
     Some(match type_id {
         // 内容实证：游戏状态机脚本纯文本（官方 viewer=viewText）
         0x024A_0E52 => "State Script",
@@ -4612,7 +4612,7 @@ pub(crate) fn bundled_registry_path(app: &AppHandle) -> Option<PathBuf> {
         .filter(|path| path.is_file())
 }
 
-fn package_registry(
+pub(crate) fn package_registry(
     store: &sc_store::Store,
     manager: &PackageManager,
     package: &Package,
