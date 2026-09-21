@@ -20,8 +20,252 @@ fn main() {
         "extract" => extract(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap(), &args[3]),
         // tilecheck <package> <instA> <instB> —— 检验两张 256×256 u16 高度图的边缘连续性
         "tilecheck" => tilecheck(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap(), u32::from_str_radix(&args[3].trim_start_matches("0x"), 16).unwrap()),
+        // full <package> <instance> —— 打印 property 的完整数组（不截断）
+        "full" => full(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap()),
+        // refs <package> <region-group-hex> —— 区域内全部画刷 property 记账
+        "refs" => refs(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap()),
+        // jigsaw <package> <region-group-hex> <out.bmp> —— 边缘匹配自动拼合区域大地图
+        "jigsaw" => jigsaw(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap(), &args[3]),
         other => panic!("unknown subcommand {other}"),
     }
+}
+
+fn jigsaw(path: &str, group: u32, out: &str) {
+    let package = open(path);
+    // 收集该区域 group 的全部 256×256 u16 tile
+    let mut tiles: Vec<(u32, Vec<u16>)> = Vec::new();
+    for entry in package.entries().iter().filter(|e| e.id.group == group && e.id.type_id == 0x03E4_21F0) {
+        if let Ok(data) = package.read(entry) {
+            if data.len() >= 20 && (data.len() - 20) % 2 == 0 {
+                tiles.push((
+                    entry.id.instance,
+                    data[20..]
+                        .chunks_exact(2)
+                        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                        .collect(),
+                ));
+            }
+        }
+    }
+    println!("tiles = {}", tiles.len());
+    if tiles.is_empty() { return; }
+    let n = (tiles[0].1.len() as f64).sqrt().floor() as usize; // 256
+    let edge = |cells: &[u16], side: u8| -> Vec<u16> {
+        (0..n)
+            .map(|i| match side {
+                0 => cells[i * n],              // left
+                1 => cells[i * n + n - 1],      // right
+                2 => cells[i],                  // top
+                _ => cells[(n - 1) * n + i],    // bottom
+            })
+            .collect()
+    };
+    let edges: Vec<[Vec<u16>; 4]> = tiles
+        .iter()
+        .map(|(_, c)| [edge(c, 0), edge(c, 1), edge(c, 2), edge(c, 3)])
+        .collect();
+    let diff = |x: &[u16], y: &[u16]| -> f64 {
+        x.iter()
+            .zip(y)
+            .map(|(p, q)| (*p as i64 - *q as i64).unsigned_abs() as f64)
+            .sum::<f64>()
+            / x.len() as f64
+    };
+    // 每块每侧找最佳邻居，再做互为最优（mutual best-match）过滤抑制噪声
+    let mut best_right: Vec<Option<(usize, f64)>> = vec![None; tiles.len()];
+    let mut best_bottom: Vec<Option<(usize, f64)>> = vec![None; tiles.len()];
+    // 反向索引：left[b] = 差值最小的 a（即 a.right 接 b.left）；top 同理
+    let mut best_left: Vec<Option<(usize, f64)>> = vec![None; tiles.len()];
+    let mut best_top: Vec<Option<(usize, f64)>> = vec![None; tiles.len()];
+    for a in 0..tiles.len() {
+        for b in 0..tiles.len() {
+            if a == b { continue; }
+            let dr = diff(&edges[a][1], &edges[b][0]);
+            let db = diff(&edges[a][3], &edges[b][2]);
+            if best_right[a].map_or(true, |(_, s)| dr < s) { best_right[a] = Some((b, dr)); }
+            if best_left[b].map_or(true, |(_, s)| dr < s) { best_left[b] = Some((a, dr)); }
+            if best_bottom[a].map_or(true, |(_, s)| db < s) { best_bottom[a] = Some((b, db)); }
+            if best_top[b].map_or(true, |(_, s)| db < s) { best_top[b] = Some((a, db)); }
+        }
+    }
+    let mutual = |a: usize, side: u8, b: usize| -> bool {
+        match side {
+            1 => best_right[a].map_or(false, |(x, _)| x == b) && best_left[b].map_or(false, |(x, _)| x == a),
+            _ => best_bottom[a].map_or(false, |(x, _)| x == b) && best_top[b].map_or(false, |(x, _)| x == a),
+        }
+    };
+    // 从「右邻居缺失」的块（最右列）反推：选被引用为 right 次数最少的种子
+    let mut pos: std::collections::HashMap<usize, (i64, i64)> = std::collections::HashMap::new();
+    let seed = (0..tiles.len())
+        .min_by_key(|&a| {
+            let mut cnt = 0i32;
+            for b in 0..tiles.len() {
+                if let Some((x, _)) = best_right[b] { if x == a { cnt += 1; } }
+            }
+            cnt
+        })
+        .unwrap();
+    pos.insert(seed, (0, 0));
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(seed);
+    while let Some(a) = queue.pop_front() {
+        let (ax, ay) = pos[&a];
+        for b in 0..tiles.len() {
+            if !pos.contains_key(&b) {
+                if mutual(a, 1, b) { pos.insert(b, (ax + 1, ay)); queue.push_back(b); }
+                else if mutual(a, 3, b) { pos.insert(b, (ax, ay + 1)); queue.push_back(b); }
+                else if mutual(b, 1, a) { pos.insert(b, (ax - 1, ay)); queue.push_back(b); }
+                else if mutual(b, 3, a) { pos.insert(b, (ax, ay - 1)); queue.push_back(b); }
+            }
+        }
+    }
+    let mut xs: Vec<i64> = pos.values().map(|p| p.0).collect();
+    let mut ys: Vec<i64> = pos.values().map(|p| p.1).collect();
+    xs.sort_unstable(); ys.sort_unstable();
+    println!(
+        "placed={} grid x[{},{}) y[{},{}])",
+        pos.len(), xs[0], xs[xs.len() - 1] + 1, ys[0], ys[ys.len() - 1] + 1
+    );
+    // 渲染 BMP（24bit BGR，灰度归一化）
+    let minx = *xs.first().unwrap(); let maxx = *xs.last().unwrap();
+    let miny = *ys.first().unwrap(); let maxy = *ys.last().unwrap();
+    let w = ((maxx - minx + 1) as usize) * n;
+    let h = ((maxy - miny + 1) as usize) * n;
+    let mut canvas = vec![0u16; w * h];
+    let mut placed_mask = vec![false; w * h];
+    for (idx, (gx, gy)) in &pos {
+        let (_, cells) = &tiles[*idx];
+        let ox = ((gx - minx) as usize) * n;
+        let oy = ((gy - miny) as usize) * n;
+        for y in 0..n {
+            for x in 0..n {
+                canvas[(oy + y) * w + ox + x] = cells[y * n + x];
+                placed_mask[(oy + y) * w + ox + x] = true;
+            }
+        }
+    }
+    let mut minv = u16::MAX; let mut maxv = 0u16;
+    for (v, m) in canvas.iter().zip(&placed_mask) { if *m { minv = minv.min(*v); maxv = maxv.max(*v); } }
+    let span = (maxv - minv).max(1) as f32;
+    let row_pad = (4 - (w * 3) % 4) % 4;
+    let data_size = (h * (w * 3 + row_pad)) as u32;
+    let mut bmp = Vec::new();
+    bmp.extend_from_slice(b"BM");
+    bmp.extend_from_slice(&(54 + data_size).to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&54u32.to_le_bytes());
+    bmp.extend_from_slice(&40u32.to_le_bytes());
+    bmp.extend_from_slice(&(w as i32).to_le_bytes());
+    bmp.extend_from_slice(&(h as i32).to_le_bytes());
+    bmp.extend_from_slice(&1u16.to_le_bytes());
+    bmp.extend_from_slice(&24u16.to_le_bytes());
+    bmp.extend_from_slice(&[0u8; 24]);
+    for y in (0..h).rev() {
+        for x in 0..w {
+            let i = y * w + x;
+            let v = if placed_mask[i] {
+                (((canvas[i] - minv) as f32 / span) * 255.0) as u8
+            } else { 40 };
+            bmp.extend_from_slice(&[v, v, v]);
+        }
+        for _ in 0..row_pad { bmp.push(0); }
+    }
+    std::fs::write(out, &bmp).unwrap();
+    println!("mosaic written -> {out} ({}x{}, range {minv}..{maxv})", w, h);
+}
+
+fn refs(path: &str, region_group: u32) {
+    let package = open(path);
+    for entry in package
+        .entries()
+        .iter()
+        .filter(|e| e.id.group == region_group && e.id.type_id == 0x00B1_B104)
+    {
+        let data = package.read(entry).unwrap_or_default();
+        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let mut target = String::new();
+        let mut res = 0u32;
+        let mut map_index: i64 = -1;
+        let mut stamps: Vec<(u32, f32, f32)> = Vec::new();
+        for property in &file.values {
+            match property.hash {
+                0x0DBA3A9C => {
+                    if let sc_properties::Kind::Scalar(Value::String8(s)) = &property.kind {
+                        target = s.clone();
+                    }
+                }
+                0x0DC097E3 => {
+                    if let sc_properties::Kind::Scalar(Value::UInt32(v)) = &property.kind {
+                        res = *v;
+                    }
+                }
+                0x0DE43899 => {
+                    if let sc_properties::Kind::Scalar(Value::UInt32(v)) = &property.kind {
+                        map_index = *v as i64;
+                    }
+                }
+                0x02A907B5 => {
+                    if let sc_properties::Kind::Array(values) = &property.kind {
+                        for (i, v) in values.iter().enumerate() {
+                            if let Value::Key(k) = v {
+                                if stamps.len() <= i { stamps.resize(i + 1, (0, 0.0, 0.0)); }
+                                stamps[i].0 = k.instance;
+                            }
+                        }
+                    }
+                }
+                0x02A907B6 => {
+                    if let sc_properties::Kind::Array(values) = &property.kind {
+                        for (i, v) in values.iter().enumerate() {
+                            if let Value::Transform(t) = v {
+                                if t.matrix.len() >= 11 {
+                                    if stamps.len() <= i { stamps.resize(i + 1, (0, 0.0, 0.0)); }
+                                    stamps[i].1 = t.matrix[9];
+                                    stamps[i].2 = t.matrix[10];
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !stamps.is_empty() {
+            println!(
+                "== prop {:08X} target={target} res={res} mapidx={map_index} stamps={}",
+                entry.id.instance, stamps.len()
+            );
+            for (instance, tx, ty) in &stamps {
+                println!("   stamp 0x{instance:08X} at ({tx:.2}, {ty:.2})");
+            }
+        }
+    }
+}
+
+fn full(path: &str, instance: u32) {
+    let package = open(path);
+    let mut found = 0usize;
+    for entry in package.entries().iter() {
+        if entry.id.instance != instance { continue; }
+        let Ok(data) = package.read(entry) else { continue };
+        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        found += 1;
+        println!("== {:08X}:{:08X}:{:08X} ==", entry.id.type_id, entry.id.group, entry.id.instance);
+        for property in &file.values {
+            println!("  0x{:08X} {}", property.hash, property.prop_type.name());
+            match &property.kind {
+                sc_properties::Kind::Scalar(v) => println!("    {} {}", property.prop_type.name(), value_summary(v)),
+                sc_properties::Kind::Array(values) => {
+                    println!("    [{}] {}", values.len(), property.prop_type.name());
+                    for (i, v) in values.iter().enumerate() {
+                        println!("      [{i}] {}", value_summary(v));
+                    }
+                }
+                sc_properties::Kind::Empty => println!("    <empty>"),
+            }
+        }
+    }
+    if found == 0 { println!("instance {instance:08X} not found"); }
 }
 
 fn height_grid(path: &str, instance: u32) -> Option<(dbpf::ResourceId, Vec<u16>)> {

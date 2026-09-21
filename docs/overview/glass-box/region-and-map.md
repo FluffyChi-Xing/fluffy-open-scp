@@ -42,6 +42,7 @@ LotMask 96 m = 12 格 × 8 m 互证 [中]）。
 ## 3. 区域组织：group ≈ 区域 [高]
 
 - RT0 的 F0 按统计落为 **11 个"大 group"（各 341 张高度图）+ 95 个"单条 group"**；
+  ED 恰为 11 个大 group × 341（无单条）——**每区域 341 对 (F0 高度图 + ED 地面场)**；
 - 每个大 group 恰有一条 **`…:51E7A18D` "region" 描述 property**（34 键）：
   常量（1024、-870、32768、40、60、2/5/6、种子 257368037、布尔）+ **~14 个 Key
   引用子资源**——正好对应 [terrain.md](./terrain.md) §1.2 的 **13–14 张 typed map** 槽位；
@@ -73,9 +74,16 @@ A.right vs B.left   avg|Δ| = 22.2   ← 与 A 自身 right/left 差 24.2 同级
 A.left  vs B.right  avg|Δ| = 6520.4 ← 反向/上下缘 514~3019 → 不连续
 ```
 
-结论：**区域大地形由 N 张 256×256 u16 块按世界 transform 拼接而成**（连续拼图，
-非独立城市），引擎渲染端按 `heightmap_x%02d_y%02d_mip%d` / `ecomap_x%02d_y%02d_mip%d`
-（exe 字符串，SCY dump 0x99dc58）分块 + mip 缓存。
+### 4.1 自动拼合（jigsaw）：区域大地图重建成功 [高]
+
+互为最优（mutual best-match）边缘匹配 + BFS 铺放，对区域 DB25018C 的
+341 张 F0 tile 自动拼合：**320 块进入 19×17 网格（仅 3 空槽），21 块为
+噪声/全零板未匹配**。拼合结果（![区域 DB25018C 拼图](region-db25018c-mosaic.png)）
+呈现连贯地形——河谷、山脊、海岸线跨 tile 连续延伸。
+
+结论：**区域大地形 = 19×17 tile 网格（≈341 块 256×256 u16 高度图 + 同数
+256×256 u8 地面场图）的马赛克**，引擎渲染端按 `heightmap_x%02d_y%02d_mip%d` /
+`ecomap_x%02d_y%02d_mip%d`（exe 字符串，SCY dump 0x99dc58）分块 + mip 缓存。
 
 ## 5. 资源分布（EcoMap 画刷）[高]
 
