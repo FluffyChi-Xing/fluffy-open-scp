@@ -35,6 +35,7 @@ import {
   type ResourceData,
   type LotEditorSession,
   type PropertyDocumentSummary,
+  type LotMaterialResponse,
   type RegisterDecalEntryResult,
   type CreateLotOverlayResult,
   type CompanionPropertyRef,
@@ -232,6 +233,9 @@ export const tauriApi = {
         packageId,
         kind,
       }),
+    readLotMaterial: (packageId: number, tgi: Tgi) =>
+      // 裸参数口径，同 list_property_documents。
+      command<LotMaterialResponse>("read_lot_material", { packageId, tgi }),
     registerDecalEntry: (request: {
       width: number;
       height: number;

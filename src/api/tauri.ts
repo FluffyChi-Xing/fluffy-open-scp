@@ -793,16 +793,29 @@ export interface SaveRasterOverlayResult {
 /** list_property_documents：包内 property 文档摘要（lot 覆盖目标 / decal 注册目标）。 */
 export interface PropertyDocumentSummary {
   tgi: Tgi;
-  /** kind=lot：LotMask 引用的 raster TGI（覆盖目标）。 */
+  /** kind=lot：LotMask 引用的 raster TGI（覆盖目标；SCP 惯例 type/group=0 的残缺 key）。 */
   lotMask: Tgi | null;
   /** kind=lot：LotMask 光栅实际所在的 package（跨包解析；null=所有打开包都没有）。 */
   lotMaskPackageId: number | null;
+  /** kind=lot：解析命中的 raster 完整 TGI。读取与覆盖导出必须用它（残缺 key 精确查找必失配）。 */
+  lotMaskResolved: Tgi | null;
   /** kind=lot：LotSize（米）。 */
   lotSize: [number, number] | null;
   /** kind=decal：条目数。 */
   entryCount: number | null;
   /** kind=decal：MaterialId instance。 */
   materialInstance: number | null;
+}
+/** read_lot_material：覆盖目标 lot 的地表材质授权（渲染预览染色用）。 */
+export interface LotMaterialResponse {
+  /** LotColor1-4（sRGB RGB + A = 图集 tile 索引 0-15）。 */
+  colors: [number, number, number, number][];
+  /** 各槽位是否真实存在于 property（false = SCP 黑/红/绿/蓝回退色）。 */
+  colorsAuthored: [boolean, boolean, boolean, boolean];
+  /** "Lot Textures" 地表图集 PNG base64（4×4 格）；null = 缺失/解码失败。 */
+  surfacePng: string | null;
+  /** 地面贴图周期 0x0CCB7FD0（米/格）；null = 回退拟合常量 9.6m。 */
+  tilePeriod: [number, number] | null;
 }
 /** register_decal_entry：decal 条目注册导出结果。 */
 export interface RegisterDecalEntryResult {

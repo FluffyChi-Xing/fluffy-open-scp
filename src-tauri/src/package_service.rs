@@ -2430,7 +2430,7 @@ pub async fn read_lot_editor_session(
 /// "Lot Textures"（0x0CCB7FD4）地表共享纹理：跨包定位纯纹理 RW4 →
 /// DXT5 解码 → PNG（shader lotTextureSampler 的绑定源；4×4 tile 图集）。
 /// "Lot Textures" 共享图集的内存像素（4×4 tile；默认反照率的底图格来源）。
-struct SurfacePixels {
+pub(crate) struct SurfacePixels {
     width: u32,
     height: u32,
     rgba: Vec<u8>,
@@ -2571,7 +2571,7 @@ fn compose_lot_albedo_rgba(
     Ok(out)
 }
 
-fn decode_lot_surface_png(
+pub(crate) fn decode_lot_surface_png(
     current: &Package,
     manager: &PackageManager,
     key: sc_properties::Key,
@@ -2705,7 +2705,7 @@ fn resolve_lod_model_refs(
 
 /// SCP 定位语义：先精确 TGI（须为 raster 类型），再按 instance + raster
 /// 类型扫描（忽略 group）。
-fn find_raster_entry(package: &Package, key: sc_properties::Key) -> Option<ResourceId> {
+pub(crate) fn find_raster_entry(package: &Package, key: sc_properties::Key) -> Option<ResourceId> {
     const RASTER_TYPE: u32 = 0x2F4E_681C;
     let exact = ResourceId {
         type_id: key.type_id,
@@ -2790,7 +2790,7 @@ fn decode_lot_mask_entry(
 /// 实现留在 `sc_properties::flatten_parent_inheritance`（不依赖 dbpf），此处只提供
 /// "按 instance 跨包解析父级" 的 resolver：先当前包精确 TGI，再退化为同类型同
 /// instance，最后扫其它已打开包。
-fn flatten_lot_parents(
+pub(crate) fn flatten_lot_parents(
     root: sc_properties::PropertyFile,
     current: &Package,
     manager: &PackageManager,
@@ -2816,7 +2816,8 @@ fn flatten_lot_parents(
     })
 }
 
-fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bool; 4]) {
+/// LotColor1-4 提取（raster 工作台 read_lot_material 共用）。
+pub(crate) fn lot_colors(document: &sc_properties::LotEditorDocument) -> ([[u8; 4]; 4], [bool; 4]) {
     const LOT_COLOR_HASHES: [u32; 4] = [0x0D02_D586, 0x0D02_D587, 0x0D02_D588, 0x0D02_D589];
     const FALLBACKS: [[u8; 4]; 4] = [[0, 0, 0, 0], [255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0]];
     let mut colors = FALLBACKS;

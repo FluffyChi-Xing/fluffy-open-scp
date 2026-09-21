@@ -185,13 +185,25 @@ export function layerOfPixel(
   return null;
 }
 
+/** SCP 缺省 LotColor1-4（黑/红/绿/蓝；仅 RGB 染色分量，A=tile 索引不参与）。 */
+export const FALLBACK_LOT_DYES: readonly (readonly [number, number, number])[] = [
+  [0, 0, 0],
+  [255, 0, 0],
+  [0, 255, 0],
+  [0, 0, 255],
+];
+
 /**
- * Lot 地表渲染模拟（示意）：量化胜出色 × 白底铺装 + 未覆盖区草地格。
- * 不含 LotColor 染色与 Lot Textures 图集材质——仅表达通道结构语义。
+ * Lot 地表渲染模拟（引擎口径）：四通道按游戏映射染色——R→LotColor1、
+ * G→LotColor2、B→LotColor3、A→LotColor4（优先级 A > R > G > B，阈值 128，
+ * 与 rw4 decode_lot_mask_rgba 同口径），未覆盖区铺草地格。染料色 = 覆盖
+ * 目标 lot 的 LotColor1-4 授权（sRGB 字节），未载入目标时用 SCP 缺省色。
+ * 不含 Lot Textures 图集材质与平铺周期——以属性授权为准。
  */
 export function simulateLotDataUrl(
   doc: RasterDocument,
   grassTileUrl: string | null,
+  dyeColors: readonly (readonly [number, number, number])[] = FALLBACK_LOT_DYES,
   tileSize = 32,
 ): string {
   const canvas = document.createElement("canvas");
@@ -199,9 +211,28 @@ export function simulateLotDataUrl(
   canvas.height = doc.height;
   const context = canvas.getContext("2d");
   if (!context) return "";
-  const quantized = quantizePixels(doc);
+  // 通道序 [A,R,G,B] → LotColor 下标 [3,0,1,2]。
+  const channelToDye = [3, 0, 1, 2];
   const image = context.createImageData(doc.width, doc.height);
-  image.data.set(quantized);
+  for (let index = 0; index < doc.width * doc.height; index += 1) {
+    const base = index * 4;
+    const channels = [
+      doc.pixels[base + 3],
+      doc.pixels[base],
+      doc.pixels[base + 1],
+      doc.pixels[base + 2],
+    ];
+    for (let layer = 0; layer < 4; layer += 1) {
+      if (channels[layer] >= 128) {
+        const [r, g, b] = dyeColors[channelToDye[layer]] ?? FALLBACK_LOT_DYES[channelToDye[layer]];
+        image.data[base] = r;
+        image.data[base + 1] = g;
+        image.data[base + 2] = b;
+        image.data[base + 3] = 255;
+        break;
+      }
+    }
+  }
   const temp = document.createElement("canvas");
   temp.width = doc.width;
   temp.height = doc.height;
@@ -268,4 +299,204 @@ export function makeCheckerboard(
   context.fillRect(0, 0, size, size);
   context.fillRect(size, size, size, size);
   return canvas.toDataURL();
+}
+
+// ── Lot 材质合成（引擎语义，property editor refinedGround 同口径的 2D 版） ──
+
+const groundTextureUrls = import.meta.glob<string>(
+  "../../assets/ground/*.png",
+  { eager: true, import: "default", query: "?url" },
+) as unknown as Record<string, string>;
+
+const groundTileUrls = new Map<number, string>();
+for (const [path, url] of Object.entries(groundTextureUrls)) {
+  const name = path.slice(path.lastIndexOf("/") + 1, -4);
+  const index = Number.parseInt(name, 10);
+  if (Number.isInteger(index)) groundTileUrls.set(index, url);
+}
+
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+}
+
+/** 本地占位 tile（src/assets/ground，格号 = 文件名；surface 图集缺失回退）。 */
+async function localTile(index: number): Promise<ImageData | null> {
+  const url = groundTileUrls.get(((index % 16) + 16) % 16);
+  if (!url) return null;
+  const image = await loadImage(url);
+  if (!image) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.drawImage(image, 0, 0);
+  return context.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+/**
+ * Lot 地表材质合成：
+ *  1. 选区：mask 通道权重 >0.5，引擎优先级链 A>B>G>R（w→z→y→x）；
+ *  2. 材质：胜出通道铺 tile_{LotColor.A}（surface 图集 4×4 格，缺失回退本地
+ *     占位图集），frac(uv × N) 平铺，N = LotSize / 周期（周期缺失回退 9.6m）；
+ *  3. 着色：LotColor.RGB（authored=true）乘 tile 原色，未 authored = 原色；
+ *  4. 未覆盖区：图集 cell 8 草地。
+ * 4× 超采样与 refinedGround 同参。 LotColor 属性缺失时回退色不参与着色
+ * （编辑器可视化色，铺贴图原色——refinedGround 同款裁定）。
+ */
+export async function composeLotMaterialDataUrl(options: {
+  doc: RasterDocument;
+  /** LC1-4（sRGB RGB + A = tile 索引 0-15）。 */
+  lotColors: [number, number, number, number][];
+  lotColorsAuthored: boolean[];
+  /** Lot Textures 图集 PNG data URL；null = 本地占位 tile。 */
+  surfaceUrl: string | null;
+  /** 地面贴图周期（米/格）；null 回退实测拟合常量。 */
+  tilePeriod?: [number, number] | null;
+  /** 地面尺寸（米）；缺省 = mask px × 0.75。 */
+  lotSize?: [number, number] | null;
+}): Promise<string> {
+  const { doc } = options;
+  let surface: ImageData | null = null;
+  if (options.surfaceUrl) {
+    const image = await loadImage(options.surfaceUrl);
+    if (image) {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.drawImage(image, 0, 0);
+        surface = context.getImageData(0, 0, canvas.width, canvas.height);
+      }
+    }
+  }
+  const useSurface = Boolean(surface && surface.width >= 4 && surface.height >= 4);
+  const atlas = useSurface ? surface : null;
+  const tileW = atlas ? Math.floor(atlas.width / 4) : 0;
+  const tileH = atlas ? Math.floor(atlas.height / 4) : 0;
+  const copyRegion = (index: number): ImageData | null => {
+    if (!atlas) return null;
+    const out = new ImageData(tileW, tileH);
+    const originX = (index % 4) * tileW;
+    const originY = Math.floor(index / 4) * tileH;
+    for (let y = 0; y < tileH; y += 1) {
+      const srcRow = ((originY + y) * atlas.width + originX) * 4;
+      out.data.set(atlas.data.subarray(srcRow, srcRow + tileW * 4), y * tileW * 4);
+    }
+    return out;
+  };
+  const channelTiles = await Promise.all(
+    options.lotColors.map((color) =>
+      useSurface
+        ? Promise.resolve(copyRegion(color[3] % 16))
+        : localTile(color[3] % 16),
+    ),
+  );
+  // 未覆盖区底图格 = 草地（图集 cell 8；与 refinedGround 同口径）。
+  const defaultTile = useSurface ? copyRegion(8) : await localTile(8);
+
+  const periodX =
+    options.tilePeriod?.[0] && options.tilePeriod[0] > 0
+      ? options.tilePeriod[0]
+      : 9.6;
+  const periodY =
+    options.tilePeriod?.[1] && options.tilePeriod[1] > 0
+      ? options.tilePeriod[1]
+      : 9.6;
+  const [lotW, lotH] = options.lotSize ?? [doc.width * 0.75, doc.height * 0.75];
+  const tilesX = lotW > 0 ? Math.max(0.1, lotW / periodX) : 1;
+  const tilesY = lotH > 0 ? Math.max(0.1, lotH / periodY) : 1;
+
+  // 4× 超采样：mask 权重双线性插值 + tile 原生分辨率采样（refinedGround 同参）。
+  const scale = Math.min(4, Math.max(1, Math.floor(1024 / Math.max(doc.width, doc.height))));
+  const outW = doc.width * scale;
+  const outH = doc.height * scale;
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const context = canvas.getContext("2d");
+  if (!context) return "";
+
+  /** 画布 UV → doc 原始通道权重（双线性，= 引擎 GPU 采样口径）。 */
+  const sampleWeights = (u: number, v: number): [number, number, number, number] => {
+    const fx = Math.min(Math.max(u * doc.width - 0.5, 0), doc.width - 1);
+    const fy = Math.min(Math.max(v * doc.height - 0.5, 0), doc.height - 1);
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const x1 = Math.min(x0 + 1, doc.width - 1);
+    const y1 = Math.min(y0 + 1, doc.height - 1);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const rowA = y0 * doc.width;
+    const rowB = y1 * doc.width;
+    const out: [number, number, number, number] = [0, 0, 0, 0];
+    for (let c = 0; c < 4; c += 1) {
+      const a = doc.pixels[(rowA + x0) * 4 + c];
+      const b = doc.pixels[(rowA + x1) * 4 + c];
+      const top = a + (b - a) * tx;
+      const cc = doc.pixels[(rowB + x0) * 4 + c];
+      const d = doc.pixels[(rowB + x1) * 4 + c];
+      const bottom = cc + (d - cc) * tx;
+      out[c] = (top + (bottom - top) * ty) / 255;
+    }
+    return out;
+  };
+  const sampleTiled = (
+    source: ImageData,
+    u: number,
+    v: number,
+  ): [number, number, number] => {
+    const fu = u * tilesX;
+    const fv = v * tilesY;
+    const px = Math.min(
+      source.width - 1,
+      Math.floor((fu - Math.floor(fu)) * source.width),
+    );
+    const py = Math.min(
+      source.height - 1,
+      Math.floor((fv - Math.floor(fv)) * source.height),
+    );
+    const offset = (py * source.width + px) * 4;
+    return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
+  };
+
+  const composed = context.createImageData(outW, outH);
+  for (let y = 0; y < outH; y += 1) {
+    for (let x = 0; x < outW; x += 1) {
+      const at = (y * outW + x) * 4;
+      const u = x / outW;
+      const v = y / outH;
+      // 引擎优先级链 w→z→y→x = A > B > G > R（addOverlay 逐字）。
+      const weights = sampleWeights(u, v);
+      let channel = -1;
+      for (const c of [3, 2, 1, 0]) {
+        if (weights[c] > 0.5) {
+          channel = c;
+          break;
+        }
+      }
+      const source = channel >= 0 ? channelTiles[channel] : defaultTile;
+      if (source) {
+        const [tr, tg, tb] = sampleTiled(source, u, v);
+        const authored = channel >= 0 && options.lotColorsAuthored[channel];
+        const color = authored ? options.lotColors[channel] : null;
+        composed.data[at] = color ? (tr * color[0]) / 255 : tr;
+        composed.data[at + 1] = color ? (tg * color[1]) / 255 : tg;
+        composed.data[at + 2] = color ? (tb * color[2]) / 255 : tb;
+      } else {
+        composed.data[at] = 58;
+        composed.data[at + 1] = 62;
+        composed.data[at + 2] = 54;
+      }
+      composed.data[at + 3] = 255;
+    }
+  }
+  context.putImageData(composed, 0, 0);
+  return canvas.toDataURL("image/png");
 }

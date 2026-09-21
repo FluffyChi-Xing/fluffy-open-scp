@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::activity::{AppState, CommandError};
-use crate::package_service::{write_export, TgiDto};
+use crate::package_service::{find_raster_entry, write_export, TgiDto};
 
 const RASTER_TYPE_ID: u32 = 0x2F4E_681C;
 const PROPERTY_TYPE_ID: u32 = 0x00B1_B104;
@@ -161,12 +161,21 @@ pub async fn read_raster_rgba(
 ) -> Result<RasterRgbaResponse, CommandError> {
     let manager = Arc::clone(&state.packages);
     tauri::async_runtime::spawn_blocking(move || {
-        let package = manager.get(request.package_id)?;
-        let tgi: ResourceId = request.tgi.into();
-        let entry = package
-            .entry(tgi)
-            .ok_or(RasterEditError::NotFound)?;
-        let data = package.read(entry)?;
+    let package = manager.get(request.package_id)?;
+    let tgi: ResourceId = request.tgi.into();
+    // SCP 定位语义（= find_raster_entry）：精确 TGI 须 raster 类型，失败时按
+    // instance+RASTER_TYPE 扫描——LotMask key 的 type/group 惯例为 0，
+    // 拿 key 原样精确查找必失配（Graphics lot 覆盖目标载入失败的根因）。
+    let mask_key = sc_properties::Key {
+        instance: tgi.instance,
+        type_id: tgi.type_id,
+        group: tgi.group,
+    };
+    let entry_id = find_raster_entry(&package, mask_key).ok_or(RasterEditError::NotFound)?;
+    let entry = package
+        .entry(entry_id)
+        .ok_or(RasterEditError::NotFound)?;
+    let data = package.read(entry)?;
         let image = RasterImage::parse(&data)?;
         let decodable = image.is_raw_rgba();
         let rgba_base64 = if decodable {
@@ -341,6 +350,11 @@ pub struct PropertyDocumentSummary {
     /// None = 所有已打开包中都找不到）。
     #[serde(default)]
     pub lot_mask_package_id: Option<u64>,
+    /// kind=lot：解析命中的 raster 完整 TGI。SCP 的 LotMask key 惯例为
+    /// 残缺 TGI（type/group=0），读取与覆盖导出都必须用解析后的完整 TGI，
+    /// 否则精确查找必失配（Graphics 包 1640/1640 实证）。
+    #[serde(default)]
+    pub lot_mask_resolved: Option<TgiDto>,
     /// kind=lot：LotSize（米）。
     pub lot_size: Option<[f32; 2]>,
     /// kind=decal：条目数。
@@ -361,15 +375,16 @@ fn summarize_property_document(
             let document = sc_properties::LotEditorDocument::from_property_file(file);
             // 无 LotMask 的 property 没有 raster 可覆盖，不作为目标列出。
             let lot_mask = document.lot_mask.clone()?;
-            Some(PropertyDocumentSummary {
-                tgi,
-                lot_mask: Some(key_to_tgi(&lot_mask)),
-                // 跨包解析在命令层做（此处拿不到 manager）。
-                lot_mask_package_id: None,
-                lot_size: document.lot_size,
-                entry_count: None,
-                material_instance: None,
-            })
+                Some(PropertyDocumentSummary {
+                    tgi,
+                    lot_mask: Some(key_to_tgi(&lot_mask)),
+                    // 跨包解析在命令层做（此处拿不到 manager）。
+                    lot_mask_package_id: None,
+                    lot_mask_resolved: None,
+                    lot_size: document.lot_size,
+                    entry_count: None,
+                    material_instance: None,
+                })
         }
         DocumentKind::Decal => {
             if !sc_properties::is_decal_dictionary_group(tgi.group) {
@@ -385,39 +400,37 @@ fn summarize_property_document(
                 tgi,
                 lot_mask: None,
                 lot_mask_package_id: None,
+                lot_mask_resolved: None,
                 lot_size: None,
             })
         }
     }
 }
 
-/// 解析 LotMask 光栅实际所在的 package：先全包精确 TGI，再退化按
-/// type+instance 匹配（group 在属性与光栅包之间可能不一致）。
-fn resolve_mask_package(
-    manager: &crate::package_service::PackageManager,
+/// 跨包 SCP 定位 LotMask 光栅：源包优先，其余已打开包按打开顺序兜底。
+/// 返回 (package_id, 实际命中的 raster TGI)。查找语义与 property editor
+/// 的 `find_raster_entry` 一致（精确 TGI 须 raster 类型 → instance +
+/// RASTER_TYPE 扫描）：LotMask key 惯例为残缺 TGI（type/group=0），拿
+/// key 原样精确查找必失配——这正是「LotMask 光栅在所有已打开的 package
+/// 中都不存在」误报的根因（Graphics 包 1640 个 mask 全部可由此定位）。
+fn locate_raster_for_mask<P: std::borrow::Borrow<dbpf::Package>>(
+    packages: &[(u64, P)],
+    source_package_id: u64,
     mask: &sc_properties::Key,
-) -> Option<u64> {
-    let exact = ResourceId {
-        type_id: mask.type_id,
-        group: mask.group,
-        instance: mask.instance,
+) -> Option<(u64, ResourceId)> {
+    let locate = |(id, package): &(u64, P)| {
+        find_raster_entry(package.borrow(), *mask).map(|entry| (*id, entry))
     };
-    let packages = manager.all_packages_with_ids().ok()?;
-    for (id, package) in &packages {
-        if package.entry(exact).is_some() {
-            return Some(*id);
-        }
-    }
-    for (id, package) in &packages {
-        if package
-            .entries()
-            .iter()
-            .any(|entry| entry.id.type_id == mask.type_id && entry.id.instance == mask.instance)
-        {
-            return Some(*id);
-        }
-    }
-    None
+    packages
+        .iter()
+        .find(|(id, _)| *id == source_package_id)
+        .and_then(locate)
+        .or_else(|| {
+            packages
+                .iter()
+                .filter(|(id, _)| *id != source_package_id)
+                .find_map(locate)
+        })
 }
 
 #[tauri::command]
@@ -449,24 +462,115 @@ pub async fn list_property_documents(
                 Some(summary) => summary,
                 None => continue,
             };
-            // lot 目标：解析 mask 光栅实际所在包（Graphics 的 lot 常引用
-            // Game 包的 mask，EP1 同模式），前端据此直接读对的包。
+            // lot 目标：SCP 语义解析 mask 光栅位置（Graphics 的 lot 引用
+            // 本包/Game 包 raster，key 惯例残缺 TGI），前端据解析结果直读。
             if kind == DocumentKind::Lot {
                 if let Some(mask) = summary.lot_mask.as_ref() {
-                    summary.lot_mask_package_id = resolve_mask_package(
-                        &manager,
-                        &sc_properties::Key {
-                            instance: mask.instance,
-                            type_id: mask.type_id,
-                            group: mask.group,
-                        },
-                    );
+                    let key = sc_properties::Key {
+                        instance: mask.instance,
+                        type_id: mask.type_id,
+                        group: mask.group,
+                    };
+                    if let Ok(packages) = manager.all_packages_with_ids() {
+                        if let Some((package_id, resolved)) =
+                            locate_raster_for_mask(&packages, package_id, &key)
+                        {
+                            summary.lot_mask_package_id = Some(package_id);
+                            summary.lot_mask_resolved = Some(TgiDto {
+                                type_id: resolved.type_id,
+                                group: resolved.group,
+                                instance: resolved.instance,
+                            });
+                        }
+                    }
                 }
             }
             summaries.push(summary);
         }
         summaries.sort_by_key(|summary| summary.tgi.instance);
         Ok::<Vec<PropertyDocumentSummary>, RasterEditError>(summaries)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
+}
+
+// ── Lot 材质授权：覆盖目标的 LotColor1-4（渲染预览同步用） ──
+
+/// 覆盖目标 lot 的地表材质授权。渲染预览据其给四通道染色：
+/// 通道→颜色 R→LC1、G→LC2、B→LC3、A→LC4（rw4 decode_lot_mask_rgba 同口径）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotMaterialResponse {
+    /// LotColor1-4（sRGB RGB + A = 图集 tile 索引 0-15）。
+    pub colors: [[u8; 4]; 4],
+    /// 各槽位是否真实存在于 property（false = SCP 黑/红/绿/蓝回退色）。
+    pub colors_authored: [bool; 4],
+    /// "Lot Textures" 地表共享纹理图集（4×4 格，DXT5 解码 PNG base64）；
+    /// None = 引用缺失或解码失败（预览回退本地占位 tile）。
+    pub surface_png: Option<String>,
+    /// 地面贴图周期 0x0CCB7FD0（米/格）；None = 引擎回退实测拟合常量 9.6m。
+    pub tile_period: Option<[f32; 2]>,
+}
+
+#[tauri::command]
+pub async fn read_lot_material(
+    state: State<'_, AppState>,
+    package_id: u64,
+    tgi: TgiDto,
+) -> Result<LotMaterialResponse, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    tauri::async_runtime::spawn_blocking(move || {
+        let package = manager.get(package_id)?;
+        let id: ResourceId = tgi.into();
+        if id.type_id != PROPERTY_TYPE_ID {
+            return Err(RasterEditError::InvalidArgument(
+                "lot material requires a property (0x00B1B104) resource".into(),
+            ));
+        }
+        let entry = package.entry(id).ok_or(RasterEditError::NotFound)?;
+        if u64::from(entry.decompressed_size)
+            > crate::package_service::RESOURCE_DATA_MAX
+        {
+            return Err(RasterEditError::CompanionTooLarge);
+        }
+        let data = package.read(entry)?;
+        let properties = sc_properties::PropertyFile::parse_with_limits(
+            &data,
+            sc_properties::ParseLimits::default(),
+        )
+        .map_err(|error| RasterEditError::Properties(error.to_string()))?;
+        // Parent(0x00B2CCCB) 继承展平：lot 变体常把 LotColors 挂在父级
+        //（本级只有 LotMask/LOD），不展平会全部落到回退色。
+        let properties =
+            crate::package_service::flatten_lot_parents(properties, &package, &manager);
+        let document = sc_properties::LotEditorDocument::from_property_file(properties);
+        let (colors, colors_authored) = crate::package_service::lot_colors(&document);
+        // "Lot Textures" 图集（4×4 共享纹理）：开启材质的预览合成源；
+        // 缺失/解码失败降级为 None（前端回退本地占位 tile）。
+        let surface_png = document.lot_textures.and_then(|key| {
+            crate::package_service::decode_lot_surface_png(&package, &manager, key)
+                .ok()
+                .map(|(png, _)| png)
+        });
+        // 地面贴图周期（米/格）：引擎除数保护同 session 口径（近零置 0.1）。
+        let tile_period = document
+            .properties
+            .get(0x0CCB_7FD0)
+            .and_then(|property| property.scalar())
+            .and_then(|value| match value {
+                sc_properties::Value::Vector2(values) => Some(*values),
+                _ => None,
+            })
+            .map(|values| {
+                values.map(|value| if value.abs() < 0.1 { 0.1 } else { value })
+            });
+        Ok::<LotMaterialResponse, RasterEditError>(LotMaterialResponse {
+            colors,
+            colors_authored,
+            surface_png,
+            tile_period,
+        })
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
@@ -991,5 +1095,81 @@ mod tests {
             assert_eq!(*stored_b, srgb_byte_to_linear(b));
             assert_eq!(*stored_a, f32::from(tile));
         }
+    }
+
+    #[test]
+    fn mask_raster_resolves_through_scp_lookup_semantics() {
+        use sc_properties::LOT_MASK_HASH;
+
+        // 真实数据形态（Graphics 包 1640/1640 实证）：LotMask key 残缺
+        // （type/group=0），raster 条目是完整 raster 类型 TGI——拿 key 原样
+        // 精确查找必失配，须 instance+RASTER_TYPE 兜底并回报完整 TGI。
+        let image = RasterImage::build_raw_bgra(4, 4, &[0u8; 4 * 4 * 4], false).unwrap();
+        let raster_id = ResourceId {
+            type_id: RASTER_TYPE_ID,
+            group: 0x1a2b_0000,
+            instance: 0x00c9_a566,
+        };
+        let property_bytes = property_file_bytes(vec![scalar(
+            LOT_MASK_HASH,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                instance: 0x00c9_a566,
+                type_id: 0,
+                group: 0,
+            }),
+        )]);
+        let raster_path = std::env::temp_dir()
+            .join(format!("openscp-mask-raster-{}.package", std::process::id()));
+        let property_path = std::env::temp_dir()
+            .join(format!("openscp-mask-property-{}.package", std::process::id()));
+        fs::write(
+            &raster_path,
+            dbpf::write_uncompressed_overlay(&[OverlayEntry::new(raster_id, image.to_bytes())])
+                .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            &property_path,
+            dbpf::write_uncompressed_overlay(&[OverlayEntry::new(
+                ResourceId {
+                    type_id: PROPERTY_TYPE_ID,
+                    group: 0,
+                    instance: 0x00c9_a566,
+                },
+                property_bytes,
+            )])
+            .unwrap(),
+        )
+        .unwrap();
+        let mask = sc_properties::Key {
+            instance: 0x00c9_a566,
+            type_id: 0,
+            group: 0,
+        };
+
+        // mask 与 lot 同包：源包优先命中，并回报解析后的完整 raster TGI。
+        let source_raster = dbpf::Package::open(&raster_path).unwrap();
+        let property_package = dbpf::Package::open(&property_path).unwrap();
+        let packages = vec![(7u64, source_raster), (3u64, property_package)];
+        let (package_id, resolved) =
+            locate_raster_for_mask(&packages, 7, &mask).expect("resolved in source package");
+        assert_eq!(package_id, 7);
+        assert_eq!(resolved.type_id, RASTER_TYPE_ID);
+        assert_eq!(resolved.group, 0x1a2b_0000);
+        assert_eq!(resolved.instance, 0x00c9_a566);
+
+        // mask 在其他包：跨包兜底命中。
+        let cross_raster = dbpf::Package::open(&raster_path).unwrap();
+        let property_package = dbpf::Package::open(&property_path).unwrap();
+        let packages = vec![(3u64, property_package), (7u64, cross_raster)];
+        let (package_id, _) =
+            locate_raster_for_mask(&packages, 3, &mask).expect("resolved across packages");
+        assert_eq!(package_id, 7);
+
+        // 所有包都没有 raster：None（真实缺失，而非匹配语义误报）。
+        let property_package = dbpf::Package::open(&property_path).unwrap();
+        let packages = vec![(3u64, property_package)];
+        assert!(locate_raster_for_mask(&packages, 3, &mask).is_none());
     }
 }

@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FColorPicker from "@/components/ui/FColorPicker.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FSheet from "@/components/ui/FSheet.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import RasterCanvas from "@/components/raster/RasterCanvas.vue";
 import {
@@ -19,9 +20,11 @@ import { RasterHistory } from "@/lib/raster-editor/history";
 import {
   base64ToRgba,
   rgbaToBase64,
+  composeLotMaterialDataUrl,
   simulateDecalDataUrl,
   simulateLotDataUrl,
   layerOfPixel,
+  makeCheckerboard,
   rgbaBase64ToPngDataUrl,
   scaleRgba,
   fitSizeWithin,
@@ -29,6 +32,7 @@ import {
 } from "@/lib/raster-editor/encoders";
 import type { Rgba } from "@/lib/raster-editor/tools";
 import type {
+  LotMaterialResponse,
   PropertyDocumentSummary,
   RasterRgbaResponse,
   Tgi,
@@ -383,6 +387,10 @@ interface TargetLot {
   summary: PackageDocument;
   maskWidth: number;
   maskHeight: number;
+  /** 载入时实际命中的解析 TGI（完整 raster TGI），覆盖导出沿用。 */
+  maskTgi: Tgi;
+  /** 覆盖目标的 LotColor1-4 授权（预览染色用）；null = 读取失败走缺省色。 */
+  material: LotMaterialResponse | null;
 }
 const targetLot = shallowRef<TargetLot | null>(null);
 const lotMenuOpen = ref(false);
@@ -486,15 +494,14 @@ function lotLabel(summary: PackageDocument): string {
 /**
  * 选择覆盖目标：载入该 Lot 的 LotMask 作为编辑副本（保持原宽高 / pixFmt21），
  * 保存时同包写回源 lot property，导出包即可入游戏覆盖地面。
- * LotMask 光栅经常不在 lot property 所在的包（如 Graphics 的 lot 引用 Game
- * 包的 mask），找不到时跨所有已打开包解析。
+ * SCP 的 LotMask key 惯例为残缺 TGI（type/group=0），读取与导出必须用
+ * 服务端解析出的完整 raster TGI（lotMaskResolved）；候选顺序 = 解析包 →
+ * 来源包 → 其余已打开包（后两者是解析缺失时的兜底）。
  */
 async function chooseTargetLot(summary: PackageDocument) {
   lotMenuOpen.value = false;
-  const mask = summary.lotMask;
+  const mask = summary.lotMaskResolved ?? summary.lotMask;
   if (!mask) return;
-  // 服务端已解析 mask 实际所在包（Graphics 的 lot 常引用 Game 包的
-  // mask）；解析失败时仍按「来源包 → 其余包」顺序逐个尝试。
   const candidates: number[] = [];
   if (summary.lotMaskPackageId !== null) candidates.push(summary.lotMaskPackageId);
   for (const packageId of [
@@ -525,6 +532,16 @@ async function chooseTargetLot(summary: PackageDocument) {
     toast.error(t("studio.raster.lotMaskMissing"));
     return;
   }
+  // 替换材质授权：读源 lot 的 LotColor1-4（挂在父级时服务端已展平）。
+  // 失败不阻断载入——渲染预览回退 SCP 缺省色。
+  let material: LotMaterialResponse | null = null;
+  try {
+    material = await tauriApi.raster.readLotMaterial(summary.packageId, {
+      ...summary.tgi,
+    });
+  } catch (cause) {
+    console.warn("[raster] LotColor 读取失败", summary.packageId, cause);
+  }
   targetLot.value = null;
   setEditor(
     new RasterDocument(
@@ -539,6 +556,8 @@ async function chooseTargetLot(summary: PackageDocument) {
     summary,
     maskWidth: loaded.width,
     maskHeight: loaded.height,
+    maskTgi: { ...mask },
+    material,
   };
   toast.success(
     t("studio.raster.lotLoaded", {
@@ -569,6 +588,11 @@ const newLotColors = ref([
   { hex: "#00ff00", tile: 0 },
   { hex: "#0000ff", tile: 0 },
 ]);
+
+/** 表单 LC1-4 → [sRGB RGB + A=tile]（预览染料与材质合成的无目标回退源）。 */
+const newLotColorRgba = computed<[number, number, number, number][]>(() =>
+  newLotColors.value.map((color) => [...hexToSrgbBytes(color.hex), color.tile]),
+);
 
 function hexToSrgbBytes(hex: string): [number, number, number] {
   const value = hex.replace("#", "");
@@ -733,8 +757,11 @@ async function saveCopy() {
   saving.value = true;
   try {
     const fallbackInstance = fnv1a(`${docName.value}:${Date.now()}`);
-    const tgi: Tgi = lot?.summary.lotMask
-      ? { ...lot.summary.lotMask }
+    // 覆盖目标必须用载入时解析出的完整 raster TGI：源 lot 的 LotMask key
+    // 惯例 type/group=0，服务端会拒绝非 raster 类型，游戏也按 raster 类型
+    // 定位覆盖资源。
+    const tgi: Tgi = lot
+      ? { ...lot.maskTgi }
       : (sourceTgi.value ?? {
           typeId: RASTER_TYPE_ID,
           group: 0,
@@ -804,16 +831,112 @@ const grassImage = new Image();
 grassImage.onload = () => (isGrassReady.value = true);
 grassImage.src = grassTileUrl() ?? "";
 
-watch([previewVersion, sourceTab, isGrassReady], renderPreviews);
+watch([previewVersion, sourceTab, isGrassReady, doc], renderPreviews);
 
 function renderPreviews() {
   if (sourceTab.value !== "preview" || !doc.value) return;
   previewLotUrl.value = simulateLotDataUrl(
     doc.value,
     isGrassReady.value ? grassImage.src : null,
+    lotDyeColors.value,
   );
   previewDecalUrl.value = simulateDecalDataUrl(doc.value);
 }
+
+/**
+ * 渲染预览染料：覆盖目标的 LotColor1-4（sRGB RGB）优先；未载入目标时用
+ * 新建 Lot 表单声明的 LC1-4（缺省值 = SCP 黑/红/绿/蓝，未改动前观感不变）。
+ */
+const lotDyeColors = computed<
+  readonly (readonly [number, number, number])[]
+>(() => {
+  const material = targetLot.value?.material;
+  if (material) return material.colors.map(([r, g, b]) => [r, g, b] as const);
+  return newLotColorRgba.value.map(([r, g, b]) => [r, g, b] as const);
+});
+
+// ── 渲染预览全屏 sheet ──
+
+const previewSheet = ref<null | "lot" | "decal">(null);
+type SheetZoom = "fit" | 1 | 2 | 4;
+const sheetZoom = ref<SheetZoom>("fit");
+/** Lot sheet 的材质合成开关：默认 = 染料平色；开启 = Lot Textures 图集铺贴。 */
+const sheetMaterial = ref(false);
+const sheetLotUrl = ref("");
+const sheetOpen = computed({
+  get: () => previewSheet.value !== null,
+  set: (value: boolean) => {
+    if (!value) previewSheet.value = null;
+  },
+});
+const ZOOM_OPTIONS: { value: SheetZoom; labelKey: string }[] = [
+  { value: "fit", labelKey: "studio.raster.zoomFit" },
+  { value: 1, labelKey: "studio.raster.zoom1to1" },
+  { value: 2, labelKey: "studio.raster.zoom2x" },
+  { value: 4, labelKey: "studio.raster.zoom4x" },
+];
+const sheetCheckerboard = makeCheckerboard();
+
+const sheetTitle = computed(() =>
+  previewSheet.value === "decal"
+    ? t("studio.raster.previewDecalTitle")
+    : t("studio.raster.previewLotTitle"),
+);
+const sheetHint = computed(() =>
+  previewSheet.value === "decal"
+    ? t("studio.raster.previewDecalHint")
+    : t("studio.raster.previewLotHint"),
+);
+
+function openPreviewSheet(kind: "lot" | "decal") {
+  previewSheet.value = kind;
+  sheetZoom.value = "fit";
+  // sheet 从预览卡片打开，URL 理应新鲜；重渲一次兜底文档替换未触发 watch 的路径。
+  renderPreviews();
+  void syncSheetPreview();
+}
+
+/** Lot sheet 内容随开关/画布切换：默认走染料平色，开启材质走图集合成。 */
+watch([sheetOpen, sheetMaterial, previewVersion], () => {
+  void syncSheetPreview();
+});
+
+async function syncSheetPreview() {
+  if (!sheetOpen.value || previewSheet.value !== "lot" || !doc.value) return;
+  if (!sheetMaterial.value) {
+    sheetLotUrl.value =
+      previewLotUrl.value ||
+      simulateLotDataUrl(
+        doc.value,
+        isGrassReady.value ? grassImage.src : null,
+        lotDyeColors.value,
+      );
+    return;
+  }
+  const material = targetLot.value?.material;
+  sheetLotUrl.value = await composeLotMaterialDataUrl({
+    doc: doc.value,
+    lotColors: material ? material.colors : newLotColorRgba.value,
+    lotColorsAuthored: material
+      ? [...material.colorsAuthored]
+      : [true, true, true, true],
+    surfaceUrl: material?.surfacePng
+      ? `data:image/png;base64,${material.surfacePng}`
+      : null,
+    tilePeriod: material?.tilePeriod ?? null,
+  });
+}
+
+const sheetImgStyle = computed(() => {
+  if (!doc.value || sheetZoom.value === "fit") {
+    return { maxWidth: "100%", maxHeight: "100%" };
+  }
+  return {
+    width: `${doc.value.width * sheetZoom.value}px`,
+    maxWidth: "none",
+    maxHeight: "none",
+  };
+});
 
 function messageOf(cause: unknown): string {
   return cause && typeof cause === "object" && "message" in cause
@@ -1217,7 +1340,18 @@ function metersOf(px: number): string {
           <div v-else-if="sourceTab === 'preview'" class="source-body">
             <template v-if="doc">
               <section class="preview-card">
-                <h3>{{ $t("studio.raster.previewLotTitle") }}</h3>
+                <div class="preview-card-head">
+                  <h3>{{ $t("studio.raster.previewLotTitle") }}</h3>
+                  <button
+                    class="sheet-open"
+                    type="button"
+                    :title="$t('studio.raster.previewExpand')"
+                    :aria-label="$t('studio.raster.previewExpand')"
+                    @click="openPreviewSheet('lot')"
+                  >
+                    <FIcon name="Maximize" :size="13" aria-label="" />
+                  </button>
+                </div>
                 <p class="preview-hint">
                   {{ $t("studio.raster.previewLotHint") }}
                 </p>
@@ -1226,7 +1360,18 @@ function metersOf(px: number): string {
                 </div>
               </section>
               <section class="preview-card">
-                <h3>{{ $t("studio.raster.previewDecalTitle") }}</h3>
+                <div class="preview-card-head">
+                  <h3>{{ $t("studio.raster.previewDecalTitle") }}</h3>
+                  <button
+                    class="sheet-open"
+                    type="button"
+                    :title="$t('studio.raster.previewExpand')"
+                    :aria-label="$t('studio.raster.previewExpand')"
+                    @click="openPreviewSheet('decal')"
+                  >
+                    <FIcon name="Maximize" :size="13" aria-label="" />
+                  </button>
+                </div>
                 <p class="preview-hint">
                   {{ $t("studio.raster.previewDecalHint") }}
                 </p>
@@ -1239,6 +1384,77 @@ function metersOf(px: number): string {
               </p>
             </template>
             <p v-else class="source-hint">{{ $t("studio.raster.empty") }}</p>
+
+            <!-- 全屏 sheet：大图浏览细节（棋盘透明底 + 缩放档位） -->
+            <FSheet v-model:open="sheetOpen" width="100vw" :label="sheetTitle">
+              <div class="preview-sheet">
+                <header class="preview-sheet-head">
+                  <div>
+                    <FTypography :header="2" spacing="none">{{
+                      sheetTitle
+                    }}</FTypography>
+                    <p class="preview-hint">{{ sheetHint }}</p>
+                  </div>
+                  <button
+                    class="sheet-open"
+                    type="button"
+                    :title="$t('studio.raster.previewCollapse')"
+                    :aria-label="$t('studio.raster.previewCollapse')"
+                    @click="sheetOpen = false"
+                  >
+                    <FIcon name="X" :size="16" aria-label="" />
+                  </button>
+                </header>
+                <div class="preview-sheet-toolbar">
+                  <!-- 材质切换：与 property editor 精细渲染同款分段组件 -->
+                  <div
+                    v-if="previewSheet === 'lot'"
+                    class="render-mode"
+                    role="group"
+                    :aria-label="$t('studio.raster.materialToggle')"
+                  >
+                    <button
+                      type="button"
+                      :class="{ active: !sheetMaterial }"
+                      @click="sheetMaterial = false"
+                    >
+                      {{ $t("studio.raster.materialDefault") }}
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ active: sheetMaterial }"
+                      @click="sheetMaterial = true"
+                    >
+                      {{ $t("studio.raster.materialOn") }}
+                    </button>
+                  </div>
+                  <button
+                    v-for="option in ZOOM_OPTIONS"
+                    :key="option.labelKey"
+                    class="zoom-option"
+                    type="button"
+                    :class="{ active: sheetZoom === option.value }"
+                    @click="sheetZoom = option.value"
+                  >
+                    {{ $t(option.labelKey) }}
+                  </button>
+                  <span v-if="doc" class="source-meta">
+                    {{ doc.width }}×{{ doc.height }} · 1px = 0.75m
+                  </span>
+                </div>
+                <div
+                  class="preview-sheet-stage"
+                  :style="{ backgroundImage: `url(${sheetCheckerboard})` }"
+                >
+                  <img
+                    v-if="previewSheet === 'decal' ? previewDecalUrl : sheetLotUrl"
+                    :src="previewSheet === 'decal' ? previewDecalUrl : sheetLotUrl"
+                    :style="sheetImgStyle"
+                    alt=""
+                  />
+                </div>
+              </div>
+            </FSheet>
           </div>
 
           <!-- Decal 注册 -->
@@ -1777,6 +1993,110 @@ function metersOf(px: number): string {
   display: grid;
   gap: 6px;
   padding: 12px;
+}
+.preview-card-head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+.preview-card-head h3 {
+  margin: 0;
+}
+.sheet-open {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 6px;
+}
+.sheet-open:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.preview-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  padding: 16px;
+}
+.preview-sheet-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.preview-sheet-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+/* property editor 精细渲染切换的同款分段按钮（默认/开启材质）。 */
+.render-mode {
+  display: inline-flex;
+}
+.render-mode button {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  min-height: 24px;
+  padding: 2px 10px;
+}
+.render-mode button:first-child {
+  border-end-end-radius: 0;
+  border-start-end-radius: 0;
+}
+.render-mode button:last-child {
+  border-end-start-radius: 0;
+  border-start-start-radius: 0;
+  margin-inline-start: -1px;
+}
+.render-mode button.active {
+  color: var(--foreground);
+  opacity: 0.85;
+}
+.zoom-option {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  min-height: 24px;
+  padding: 0 10px;
+}
+.zoom-option:hover {
+  color: var(--foreground);
+}
+.zoom-option.active {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.preview-sheet-stage {
+  align-items: center;
+  background-color: var(--surface-elevated);
+  background-size: 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+.preview-sheet-stage img {
+  image-rendering: pixelated;
 }
 .preview-card h3 {
   font-size: 12.5px;

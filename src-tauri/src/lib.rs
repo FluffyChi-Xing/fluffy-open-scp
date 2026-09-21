@@ -42,8 +42,8 @@ use mod_project::{
 };
 use overrides::override_scan;
 use raster_edit::{
-    create_lot_overlay, list_property_documents, read_image_rgba, read_raster_rgba,
-    register_decal_entry, save_raster_overlay,
+    create_lot_overlay, list_property_documents, read_image_rgba, read_lot_material,
+    read_raster_rgba, register_decal_entry, save_raster_overlay,
 };
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
@@ -147,6 +147,7 @@ pub fn run() {
             read_raster_rgba,
             save_raster_overlay,
             list_property_documents,
+            read_lot_material,
             register_decal_entry,
             create_lot_overlay,
             read_decal_dictionary,
