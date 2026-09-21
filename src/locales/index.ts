@@ -109,6 +109,8 @@ const messages = {
         imageZoomLabel: "缩放",
         entriesTitle: "资源列表",
         entriesEmpty: "此包内没有资源。",
+        entriesAll: "全部",
+        entriesSearch: "搜索 TGI…",
         resourceEmpty: "选择左侧资源查看内容",
         previewTruncated: "内容过大，仅显示前段。",
         notes: {
@@ -1549,6 +1551,8 @@ const messages = {
         imageZoomLabel: "Zoom",
         entriesTitle: "Resources",
         entriesEmpty: "No resources in this package.",
+        entriesAll: "All",
+        entriesSearch: "Search TGI…",
         resourceEmpty: "Pick a resource on the left to inspect it",
         previewTruncated: "Content too large — showing the leading part.",
         notes: {

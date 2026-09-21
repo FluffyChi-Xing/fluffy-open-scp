@@ -44,7 +44,7 @@ import NotesSheet from "./NotesSheet.vue";
  */
 const props = defineProps<{ project: ModProjectView }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
 
 const tree = shallowRef<CodeTreeResponse | null>(null);
@@ -72,6 +72,30 @@ const entriesLoading = ref(false);
 const selectedEntry = shallowRef<CodePackageEntry | null>(null);
 const resourcePreview = shallowRef<CodeResourcePreview | null>(null);
 const resourceLoading = ref(false);
+/** 资源列表筛选：类型分类标签 + TGI 搜索（instance/group hex 包含匹配）。 */
+const entryTypeFilter = ref<number | null>(null);
+const entrySearch = ref("");
+const filteredEntries = computed(() => {
+  const query = entrySearch.value.trim().toLowerCase();
+  return packageEntries.value.filter((entry) => {
+    if (
+      entryTypeFilter.value !== null &&
+      entry.typeId !== entryTypeFilter.value
+    ) {
+      return false;
+    }
+    if (!query) return true;
+    return entry.instanceId
+      .toString(16)
+      .includes(query.replace(/^0x/, ""));
+  });
+});
+const semanticLabel = (entry: CodePackageEntry): string => {
+  if (!entry.semantic) return "";
+  return locale.value.startsWith("zh")
+    ? entry.semantic.labelZh
+    : entry.semantic.labelEn;
+};
 /** 图片缩放档位。 */
 type ImageZoom = "fit" | 1 | 2 | 4;
 const imageZoom = ref<ImageZoom>("fit");
@@ -212,6 +236,8 @@ async function selectFile(node: CodeTreeNodeDto) {
   resourcePreview.value = null;
   viewerError.value = "";
   imageZoom.value = "fit";
+  entryTypeFilter.value = null;
+  entrySearch.value = "";
   viewerLoading.value = true;
   try {
     const kind = classifyCodeFile(node.name);
@@ -555,14 +581,47 @@ watch(
                     {{ $t("studio.code.entriesTitle") }}
                     <span class="pane-count">{{ packageEntries.length }}</span>
                   </div>
+                  <!-- 分类标签（类型直方图）+ TGI 搜索 -->
+                  <div
+                    v-if="packageInfo?.types.length"
+                    class="entry-filters"
+                  >
+                    <div class="type-chips" role="group">
+                      <button
+                        type="button"
+                        class="tool-chip"
+                        :class="{ active: entryTypeFilter === null }"
+                        @click="entryTypeFilter = null"
+                      >
+                        {{ $t("studio.code.entriesAll") }}
+                      </button>
+                      <button
+                        v-for="type in packageInfo.types"
+                        :key="type.typeId"
+                        type="button"
+                        class="tool-chip mono"
+                        :class="{ active: entryTypeFilter === type.typeId }"
+                        @click="entryTypeFilter = type.typeId"
+                      >
+                        0x{{ type.typeId.toString(16).toUpperCase().slice(-4) }}
+                        <span class="chip-count">{{ type.count }}</span>
+                      </button>
+                    </div>
+                    <input
+                      v-model="entrySearch"
+                      class="entry-search"
+                      type="text"
+                      :placeholder="$t('studio.code.entriesSearch')"
+                    />
+                  </div>
                   <p v-if="entriesLoading" class="pane-state">
                     {{ $t("common.loading") }}
                   </p>
-                  <p v-else-if="!packageEntries.length" class="pane-state">
+                  <p v-else-if="!filteredEntries.length" class="pane-state">
                     {{ $t("studio.code.entriesEmpty") }}
                   </p>
                   <button
-                    v-for="entry in packageEntries"
+                    v-for="entry in filteredEntries"
                     :key="`${entry.typeId}:${entry.groupId}:${entry.instanceId}`"
                     type="button"
                     class="entry-row"
@@ -575,6 +634,11 @@ watch(
                   >
                     <span class="mono">0x{{ entry.typeId.toString(16).toUpperCase().padStart(8, "0") }}</span>
                     <span class="mono entry-instance">0x{{ entry.instanceId.toString(16).toUpperCase().padStart(8, "0") }}</span>
+                    <span
+                      v-if="entry.semantic"
+                      class="semantic-tag"
+                      :title="entry.semantic.id"
+                    >{{ semanticLabel(entry) }}</span>
                     <span class="entry-size">{{ formatCodeSize(entry.decompressedSize) }}</span>
                   </button>
                 </div>
@@ -947,6 +1011,44 @@ watch(
   min-height: 0;
   overflow: auto;
   padding: 8px;
+}
+.entry-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+.type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip-count {
+  color: var(--subtle-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.entry-search {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 11.5px;
+  min-height: 26px;
+  padding: 0 8px;
+  width: 100%;
+}
+.entry-search:focus {
+  outline: 1px solid var(--primary);
+}
+.semantic-tag {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-radius: 999px;
+  color: var(--primary);
+  flex: none;
+  font-size: 10px;
+  padding: 0 7px;
+  white-space: nowrap;
 }
 .pane-title {
   align-items: center;

@@ -50,7 +50,8 @@ use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
     read_decal_dictionary, read_decal_images, read_image_preview, read_lot_editor_session,
     read_lot_model_meshes, read_property_preview, read_raster_preview, read_resource_bytes,
-    read_resource_data, read_resource_text, read_rw4_preview, read_rw4_section_detail,
+    read_resource_data, read_resource_text, read_resource_text_range, read_rw4_preview,
+    read_rw4_section_detail,
     read_wwise_bank, resolve_name, resolve_names, write_export_file,
 };
 use render_telemetry::{render_telemetry_clear, render_telemetry_record, render_telemetry_summary};
@@ -137,6 +138,7 @@ pub fn run() {
             read_resource_bytes,
             read_resource_data,
             read_resource_text,
+            read_resource_text_range,
             read_lot_editor_session,
             read_lot_model_meshes,
             read_raster_preview,

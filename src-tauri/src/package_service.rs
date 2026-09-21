@@ -623,6 +623,34 @@ pub async fn read_resource_text(
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+/// 文本预览单段字节上限（分段动态加载：首段由预览管线给出，后续段由
+/// read_resource_text_range 按需拉取）。
+pub(crate) const TEXT_PREVIEW_CHUNK_MAX: u32 = 2 * 1024 * 1024;
+
+#[tauri::command]
+pub async fn read_resource_text_range(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+    offset: u64,
+    length: u32,
+) -> Result<tauri::ipc::Response, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let bytes = read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        move |data, _package, _manager, _store| {
+            let start = (offset as usize).min(data.len());
+            let end = (start + length as usize).min(data.len());
+            Ok(data[start..end].to_vec())
+        },
+    )
+    .await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LotModelMeshesRequest {

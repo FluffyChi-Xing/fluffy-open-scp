@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { codeToHtml } from "shiki";
+import { isTauri, tauriApi } from "@/api";
+import { foldBinaryRuns } from "@/lib/text-decode";
 import type { TextPreview } from "@/api/tauri";
 
 /**
- * 长文本不截断预览：行级虚拟滚动（只渲染可视窗口）+ shiki 仅高亮可视片段。
+ * 长文本预览：行级虚拟滚动（只渲染可视窗口）+ shiki 仅高亮可视片段 +
+ * 分段动态加载——首段由预览管线给出（8MB 上限），滚动接近已加载尾部时
+ * 经 read_resource_text_range 续读 2MB 段直到取满 totalLength。
  * 之前整段内容喂给 shiki，资源一大（shader 容器 1MB+）就会卡死渲染。
  * 外观对齐 ui/FCode.vue 的卡片 chrome（三点 + 语言 + 复制）。
  */
@@ -12,6 +16,10 @@ const props = defineProps<{ preview: TextPreview }>();
 
 const LINE_HEIGHT = 20;
 const OVERSCAN = 24;
+/** 续读段大小（字节）。 */
+const CHUNK_BYTES = 2 * 1024 * 1024;
+/** 距已加载尾部多少行内触发续读。 */
+const LOAD_MORE_LINES = 120;
 
 const scroller = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
@@ -22,8 +30,25 @@ let highlightToken = 0;
 let scrollFrame = 0;
 let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** 分段加载状态：已续读文本与源字节偏移。 */
+const appendedText = ref("");
+const loadedBytes = ref(props.preview.loadedBytes ?? 0);
+const loadingMore = ref(false);
+/** utf-16le 需偶数对齐，暂不参与续读；无 packageId/tgi 亦无法续读。 */
+const eof = computed(
+  () =>
+    !props.preview.truncated ||
+    props.preview.loadedBytes == null ||
+    props.preview.encoding === "utf-16le" ||
+    !isTauri() ||
+    !props.preview.packageId ||
+    !props.preview.tgi,
+);
+
+const fullContent = computed(() => props.preview.content + appendedText.value);
+
 const lines = computed(() =>
-  props.preview.content.length ? props.preview.content.split("\n") : [],
+  fullContent.value.length ? fullContent.value.split("\n") : [],
 );
 const totalHeight = computed(() =>
   Math.max(lines.value.length * LINE_HEIGHT, LINE_HEIGHT),
@@ -74,12 +99,48 @@ function onScroll() {
     scrollFrame = 0;
     const element = scroller.value;
     if (element) scrollTop.value = element.scrollTop;
+    // 虚拟滚动接近已加载尾部：续读下一段（动态加载设计）。
+    if (!eof.value && !loadingMore.value) {
+      if (endVisible.value >= lines.value.length - LOAD_MORE_LINES) {
+        void loadMore();
+      }
+    }
   });
+}
+
+/** 续读下一段源字节并增量解码（utf-8 分界偶发裂字按二进制段折叠）。 */
+async function loadMore() {
+  if (eof.value || loadingMore.value) return;
+  if (!props.preview.packageId || !props.preview.tgi) return;
+  loadingMore.value = true;
+  try {
+    const buffer = await tauriApi.packages.readResourceTextRange(
+      props.preview.packageId!,
+      props.preview.tgi!,
+      loadedBytes.value,
+      CHUNK_BYTES,
+    );
+    const chunk = new Uint8Array(buffer);
+    if (!chunk.length) return;
+    loadedBytes.value += chunk.byteLength;
+    if (chunk.byteLength < CHUNK_BYTES) eof.value = true;
+    let text: string;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(chunk);
+    } catch {
+      text = new TextDecoder("utf-8").decode(chunk);
+    }
+    appendedText.value += foldBinaryRuns(text);
+  } catch {
+    eof.value = true;
+  } finally {
+    loadingMore.value = false;
+  }
 }
 
 async function copyAll() {
   try {
-    await navigator.clipboard.writeText(props.preview.content);
+    await navigator.clipboard.writeText(fullContent.value);
     copied.value = true;
     copiedTimer = setTimeout(() => {
       copied.value = false;
@@ -119,7 +180,9 @@ onBeforeUnmount(() => {
           class="f-code-lang"
         >{{ preview.language }}</span>
         <span class="preview-meta">{{ preview.encoding }} · {{ lines.length }} {{ $t("package.textLines") }}
-          <span v-if="preview.truncated"> · {{ $t("package.previewTruncated") }}</span>
+          <span v-if="!eof" :class="{ 'preview-warn': !loadingMore }">
+            {{ loadingMore ? $t("common.loading") : $t("package.previewTruncated") }}
+          </span>
         </span>
         <button type="button" class="preview-copy" @click="copyAll">
           <svg v-if="copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7" /></svg>

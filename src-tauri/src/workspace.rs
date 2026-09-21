@@ -1090,6 +1090,9 @@ pub struct CodePackageEntryDto {
     pub group_id: u32,
     pub instance_id: u32,
     pub decompressed_size: u64,
+    /// property 资源的语义子类型（与包浏览 ResourceSummary.semantic 同源）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic: Option<crate::package_service::SemanticTagDto>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1121,16 +1124,43 @@ fn open_mod_package(path: &Path) -> Result<dbpf::Package, WorkspaceError> {
     dbpf::Package::open(path).map_err(|error| WorkspaceError::InvalidPath(error.to_string()))
 }
 
+/// property 条目内容解析的语义判定上限（超出后仅 group 查表，不再读文件）。
+const CODE_SEMANTIC_PARSE_MAX: usize = 200;
+
 fn code_package_entry_list(path: &Path) -> Result<Vec<CodePackageEntryDto>, WorkspaceError> {
     let package = open_mod_package(path)?;
+    let mut parsed_for_semantic = 0usize;
     let mut entries: Vec<CodePackageEntryDto> = package
         .entries()
         .iter()
-        .map(|entry| CodePackageEntryDto {
-            type_id: entry.id.type_id,
-            group_id: entry.id.group,
-            instance_id: entry.id.instance,
-            decompressed_size: u64::from(entry.decompressed_size),
+        .map(|entry| {
+            // 语义标签与包浏览 ResourceSummary.semantic 同口径：
+            // group 低 16 位已归属家族直接查表；Other 桶才解析内容判定。
+            let semantic = if entry.id.type_id == sc_properties::PROPERTY_RESOURCE_TYPE {
+                let by_group = sc_properties::property_semantic_by_group(entry.id.group);
+                if by_group != sc_properties::PropertySemantic::Other {
+                    Some(crate::package_service::SemanticTagDto::from(by_group))
+                } else if parsed_for_semantic < CODE_SEMANTIC_PARSE_MAX {
+                    parsed_for_semantic += 1;
+                    package
+                        .read(entry)
+                        .ok()
+                        .and_then(|data| sc_properties::PropertyFile::parse(&data).ok())
+                        .map(|file| sc_properties::property_semantic(&file, entry.id.group))
+                        .map(crate::package_service::SemanticTagDto::from)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            CodePackageEntryDto {
+                type_id: entry.id.type_id,
+                group_id: entry.id.group,
+                instance_id: entry.id.instance,
+                decompressed_size: u64::from(entry.decompressed_size),
+                semantic,
+            }
         })
         .collect();
     entries.sort_by(|a, b| {

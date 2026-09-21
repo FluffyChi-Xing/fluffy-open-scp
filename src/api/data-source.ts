@@ -101,6 +101,13 @@ export interface OpenScpDataSource {
   readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
   /** 文本预览全量原始字节（服务端 8MB 上限，见 read_resource_text）。 */
   readResourceText(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
+  /** 文本分段动态加载：[offset, offset+length) 原始字节。 */
+  readResourceTextRange(
+    packageId: number,
+    tgi: Tgi,
+    offset: number,
+    length: number,
+  ): Promise<ArrayBuffer>;
   readRasterPreview(
     packageId: number,
     tgi: Tgi,
@@ -167,6 +174,7 @@ function tauriDataSource(): OpenScpDataSource {
     readLotEditorSession: tauriApi.packages.readLotEditorSession,
     readLotModelMeshes: tauriApi.packages.readLotModelMeshes,
     readResourceText: tauriApi.packages.readResourceText,
+    readResourceTextRange: tauriApi.packages.readResourceTextRange,
     readRasterPreview: tauriApi.packages.readRasterPreview,
     readRw4Preview: tauriApi.packages.readRw4Preview,
     readRw4Section: tauriApi.packages.readRw4Section,
@@ -551,6 +559,10 @@ function mockDataSource(): OpenScpDataSource {
       // demo 模式文本内容直接内联在 previewResource，无全量通道
       return new ArrayBuffer(0);
     },
+    async readResourceTextRange(_packageId, _tgi, _offset, _length) {
+      // demo 模式无分段通道（内容内联即全量）
+      return new ArrayBuffer(0);
+    },
     async readRasterPreview(_packageId, _tgi, channel) {
       return {
         rasterType: 2,
@@ -925,11 +937,14 @@ async function tauriPreview(
     const { content, encoding } = decodeTextBytes(payload);
     return {
       kind: "text",
+      packageId,
+      tgi: resource.tgi,
       ...base,
       content,
       encoding,
       language: language ?? "text",
       truncated,
+      loadedBytes: payload.byteLength,
     };
   }
   return { kind: "hex", ...base };

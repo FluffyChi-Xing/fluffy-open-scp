@@ -358,6 +358,17 @@ export const tauriApi = {
       command<ArrayBuffer>("read_resource_text", {
         request: { packageId, tgi },
       }),
+    readResourceTextRange: (
+      packageId: number,
+      tgi: Tgi,
+      offset: number,
+      length: number,
+    ) =>
+      command<ArrayBuffer>("read_resource_text_range", {
+        request: { packageId, tgi },
+        offset,
+        length,
+      }),
     readPropertyPreview: (packageId: number, tgi: Tgi, lang?: string) =>
       command<PropertyResourceData>("read_property_preview", {
         request: { packageId, tgi, lang },

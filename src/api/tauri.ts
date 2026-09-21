@@ -192,10 +192,14 @@ export interface PreviewData {
 }
 export interface TextPreview extends PreviewData {
   kind: "text";
+  packageId?: number;
+  tgi?: Tgi;
   content: string;
   encoding: string;
   language: string;
   truncated: boolean;
+  /** 本次已加载的源字节数（read_resource_text_range 续读偏移）。 */
+  loadedBytes?: number;
 }
 export interface HexPreview extends PreviewData {
   kind: "hex";

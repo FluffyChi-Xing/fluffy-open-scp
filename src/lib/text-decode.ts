@@ -31,12 +31,14 @@ export function decodeTextBytes(bytes: Uint8Array<ArrayBuffer>): DecodedText {
 
 function finish(content: string, encoding: string): DecodedText {
   if (BINARY_RUN_TEST.test(content)) {
-    return {
-      content: content.replace(BINARY_RUN, (run) => `⟦${run.length}B⟫`),
-      encoding: "utf-8+binary",
-    };
+    return { content: foldBinaryRuns(content), encoding: "utf-8+binary" };
   }
   return { content, encoding };
+}
+
+/** 把文本里的二进制控制字符连续段折叠为 ⟦N B⟫ 可见标记（分段解码共用）。 */
+export function foldBinaryRuns(content: string): string {
+  return content.replace(BINARY_RUN, (run) => `⟦${run.length}B⟫`);
 }
 
 const BINARY_RUN_TEST = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\uFFFD]+/;
