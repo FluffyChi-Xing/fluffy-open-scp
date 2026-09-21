@@ -3,6 +3,8 @@ import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
+import FCode from "@/components/ui/FCode.vue";
+import FPopover from "@/components/ui/FPopover.vue";
 import {
   Resizable,
   ResizableHandle,
@@ -16,26 +18,29 @@ import {
   flattenCodeTree,
   formatCodeSize,
   joinCodePath,
+  shikiLanguageOf,
   type CodeRow,
   type CodeTreeNodeDto,
 } from "./code-support";
 import type {
+  CodePackageEntry,
+  CodeResourcePreview,
   CodeTextDocument,
   CodeTreeResponse,
-  CodePackageInfo,
   ModProjectView,
 } from "@/api/tauri";
 import { rgbaBase64ToPngDataUrl, makeCheckerboard } from "@/lib/raster-editor/encoders";
+import NotesSheet from "./NotesSheet.vue";
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
  * 开发工作台模组列表「开发」按钮展开的全屏 sheet 内容，root = 该项目的
  * 文件夹（modRoot/<relPath>，后端同套越界/符号链接防护）。
- * 左侧 = 项目目录树（code_tree，目录优先、截断保护），
- * 右侧 = 按扩展名分流的工作台查看器——文本族走 code_read_text 行号视图
- * （JSON 美化）、图片走 read_image_rgba 棋盘预览、.package 走
- * code_package_info 只读统计（独立打开，不进全局包管理器）。
- * 编辑保存（code_write_text）与打包导出属 M-CM3，此处暂只读。
+ * 左侧 = 项目目录树；右侧 = 按扩展名分流的查看器 + 右上角 toolbar：
+ * 文本族 FCode 高亮（bat/lua/json/xml…shiki 映射），图片带缩放档位，
+ * .package 分裂为「资源列表 | 资源预览」双 Resizable 区，more 浮层收纳
+ * 文件元信息（含 DBPF 统计），笔记按钮打开文档工作区的模组笔记 sheet。
+ * 打开时 package.json 缺失则自动扫描生成（manifest）。
  */
 const props = defineProps<{ project: ModProjectView }>();
 
@@ -53,8 +58,27 @@ const selected = shallowRef<CodeTreeNodeDto | null>(null);
 const viewerLoading = ref(false);
 const textDoc = shallowRef<CodeTextDocument | null>(null);
 const imageSrc = ref("");
-const packageInfo = shallowRef<CodePackageInfo | null>(null);
+const imageDims = ref<{ width: number; height: number } | null>(null);
+const packageInfo = shallowRef<{
+  entryCount: number;
+  decompressedTotal: number;
+  size: number;
+  types: { typeId: number; count: number }[];
+} | null>(null);
 const viewerError = ref("");
+/** package 双栏：资源列表与选中资源的只读预览。 */
+const packageEntries = shallowRef<CodePackageEntry[]>([]);
+const entriesLoading = ref(false);
+const selectedEntry = shallowRef<CodePackageEntry | null>(null);
+const resourcePreview = shallowRef<CodeResourcePreview | null>(null);
+const resourceLoading = ref(false);
+/** 图片缩放档位。 */
+type ImageZoom = "fit" | 1 | 2 | 4;
+const imageZoom = ref<ImageZoom>("fit");
+/** manifest（package.json）机制：缺失自动生成。 */
+const manifestCreated = ref<boolean | null>(null);
+const moreOpen = ref(false);
+const notesOpen = ref(false);
 
 const fatalMessage = computed(() => {
   switch (fatalCode.value) {
@@ -106,6 +130,18 @@ async function loadTree(keepSelection = false) {
   } finally {
     loading.value = false;
   }
+  // package.json 机制：缺失即扫描自动生成（结果以文件形式出现在树里）。
+  try {
+    const manifest = await tauriApi.workspace.codeManifest(props.project.relPath);
+    if (manifest.created) {
+      manifestCreated.value = true;
+      toast.success(t("studio.code.manifestCreated"));
+      const response = await tauriApi.workspace.codeTree(props.project.relPath);
+      tree.value = response;
+    }
+  } catch {
+    /* 清单生成失败不阻断浏览 */
+  }
 }
 
 function findNode(
@@ -126,8 +162,13 @@ function clearViewer() {
   selected.value = null;
   textDoc.value = null;
   imageSrc.value = "";
+  imageDims.value = null;
   packageInfo.value = null;
+  packageEntries.value = [];
+  selectedEntry.value = null;
+  resourcePreview.value = null;
   viewerError.value = "";
+  imageZoom.value = "fit";
 }
 
 function rowIcon(row: CodeRow): string {
@@ -164,8 +205,13 @@ async function selectFile(node: CodeTreeNodeDto) {
   selected.value = node;
   textDoc.value = null;
   imageSrc.value = "";
+  imageDims.value = null;
   packageInfo.value = null;
+  packageEntries.value = [];
+  selectedEntry.value = null;
+  resourcePreview.value = null;
   viewerError.value = "";
+  imageZoom.value = "fit";
   viewerLoading.value = true;
   try {
     const kind = classifyCodeFile(node.name);
@@ -177,16 +223,24 @@ async function selectFile(node: CodeTreeNodeDto) {
     } else if (kind === "image") {
       const absolute = joinCodePath(tree.value.rootPath, node.relativePath);
       const image = await tauriApi.raster.readImageRgba(absolute);
+      imageDims.value = { width: image.width, height: image.height };
       imageSrc.value = rgbaBase64ToPngDataUrl(
         image.rgbaBase64,
         image.width,
         image.height,
       );
     } else if (kind === "package") {
-      packageInfo.value = await tauriApi.workspace.codePackageInfo(
-        props.project.relPath,
-        node.relativePath,
-      );
+      const [info, entries] = await Promise.all([
+        tauriApi.workspace.codePackageInfo(props.project.relPath, node.relativePath),
+        tauriApi.workspace.codePackageEntries(props.project.relPath, node.relativePath),
+      ]);
+      packageInfo.value = {
+        entryCount: info.entryCount,
+        decompressedTotal: info.decompressedTotal,
+        size: info.size,
+        types: info.types,
+      };
+      packageEntries.value = entries;
     }
   } catch (cause) {
     const code = (cause as { code?: string }).code ?? "";
@@ -199,6 +253,26 @@ async function selectFile(node: CodeTreeNodeDto) {
   }
 }
 
+async function selectEntry(entry: CodePackageEntry) {
+  if (!selected.value || resourceLoading.value) return;
+  selectedEntry.value = entry;
+  resourcePreview.value = null;
+  resourceLoading.value = true;
+  try {
+    resourcePreview.value = await tauriApi.workspace.codeResourcePreview(
+      props.project.relPath,
+      selected.value.relativePath,
+      entry.typeId,
+      entry.groupId,
+      entry.instanceId,
+    );
+  } catch {
+    toast.error(t("studio.code.loadFailed"));
+  } finally {
+    resourceLoading.value = false;
+  }
+}
+
 const viewerKind = computed(() =>
   selected.value ? classifyCodeFile(selected.value.name) : null,
 );
@@ -207,14 +281,6 @@ const checkerboardUrl = makeCheckerboard();
 
 const isJson = computed(
   () => extensionOf(selected.value?.name ?? "") === "json",
-);
-
-const textLines = computed(() =>
-  textDoc.value ? textDoc.value.content.split("\n").length : 0,
-);
-
-const gutterText = computed(() =>
-  Array.from({ length: textLines.value }, (_, index) => index + 1).join("\n"),
 );
 
 /** JSON 尝试美化（解析失败原样展示）。 */
@@ -229,12 +295,33 @@ const textContent = computed(() => {
   }
 });
 
+const textLanguage = computed(() => shikiLanguageOf(selected.value?.name ?? ""));
+
+const IMAGE_ZOOM_OPTIONS: { value: ImageZoom; labelKey: string }[] = [
+  { value: "fit", labelKey: "studio.raster.zoomFit" },
+  { value: 1, labelKey: "studio.raster.zoom1to1" },
+  { value: 2, labelKey: "studio.raster.zoom2x" },
+  { value: 4, labelKey: "studio.raster.zoom4x" },
+];
+
+const imageStyle = computed(() => {
+  if (imageZoom.value === "fit" || !imageDims.value) {
+    return { maxWidth: "100%", maxHeight: "100%" };
+  }
+  return {
+    width: `${imageDims.value.width * imageZoom.value}px`,
+    maxWidth: "none",
+    maxHeight: "none",
+  };
+});
+
 function resetWorkbench() {
   tree.value = null;
   loading.value = false;
   fatalCode.value = null;
   expanded.value = new Set();
   autoExpanded.value = false;
+  manifestCreated.value = null;
   clearViewer();
 }
 
@@ -258,7 +345,7 @@ watch(
       <div>
         <p class="eyebrow">{{ $t("studio.code.sheetTitle") }}</p>
         <FTypography :header="1" spacing="none">{{ project.name }}</FTypography>
-        <p v-if="tree" class="code-hint">{{ tree.rootPath }}</p>
+        <p v-if="tree" class="root-path">{{ tree.rootPath }}</p>
       </div>
       <div class="heading-actions">
         <span v-if="tree" class="tree-stats">
@@ -296,7 +383,7 @@ watch(
       auto-save-id="openscp:code-workbench:v1"
       class="code-shell"
     >
-      <!-- 左：modRoot 目录树 -->
+      <!-- 左：项目目录树 -->
       <ResizablePanel id="code-tree" :default-size="26" :min-size="16">
         <div class="tree-panel">
           <div v-if="tree?.truncated" class="tree-warning">
@@ -335,6 +422,7 @@ watch(
       <ResizablePanel id="code-viewer" :default-size="74" :min-size="40">
         <div class="viewer" :class="{ empty: !selected }">
           <template v-if="selected">
+            <!-- 右上角 toolbar：路径 + 缩放（图片）/ 笔记 / more 浮层 -->
             <header class="viewer-head">
               <FIcon
                 :name="rowIcon({ ...selected, depth: 0 })"
@@ -346,6 +434,84 @@ watch(
                 v-if="selected.size !== null"
                 class="viewer-size"
               >{{ formatCodeSize(selected.size) }}</span>
+
+              <!-- 图片缩放档位 -->
+              <div
+                v-if="viewerKind === 'image'"
+                class="viewer-toolbar"
+                role="group"
+                :aria-label="$t('studio.code.imageZoomLabel')"
+              >
+                <button
+                  v-for="option in IMAGE_ZOOM_OPTIONS"
+                  :key="option.labelKey"
+                  type="button"
+                  class="tool-chip"
+                  :class="{ active: imageZoom === option.value }"
+                  @click="imageZoom = option.value"
+                >
+                  {{ $t(option.labelKey) }}
+                </button>
+              </div>
+
+              <div class="viewer-toolbar">
+                <button
+                  class="tool-chip"
+                  type="button"
+                  @click="notesOpen = true"
+                >
+                  <FIcon name="StickyNote" :size="12" aria-label="" />
+                  {{ $t("studio.code.notesButton") }}
+                </button>
+                <FPopover v-model:open="moreOpen" :width="300">
+                  <template #trigger>
+                    <button
+                      class="tool-chip"
+                      type="button"
+                      :aria-label="$t('studio.code.more')"
+                    >
+                      <FIcon name="Ellipsis" :size="14" aria-label="" />
+                    </button>
+                  </template>
+                  <div class="more-panel">
+                    <h4>{{ $t("studio.code.more") }}</h4>
+                    <dl class="more-meta">
+                      <div>
+                        <dt>{{ $t("studio.code.morePath") }}</dt>
+                        <dd class="mono">{{ selected.relativePath }}</dd>
+                      </div>
+                      <div v-if="selected.size !== null">
+                        <dt>{{ $t("studio.code.packageSize") }}</dt>
+                        <dd>{{ formatCodeSize(selected.size) }}</dd>
+                      </div>
+                    </dl>
+                    <!-- DBPF 统计（package 专用） -->
+                    <template v-if="viewerKind === 'package' && packageInfo">
+                      <dl class="more-meta">
+                        <div>
+                          <dt>{{ $t("studio.code.packageEntries") }}</dt>
+                          <dd>{{ packageInfo.entryCount }}</dd>
+                        </div>
+                        <div>
+                          <dt>{{ $t("studio.code.packageDecompressed") }}</dt>
+                          <dd>{{ formatCodeSize(packageInfo.decompressedTotal) }}</dd>
+                        </div>
+                      </dl>
+                      <h4>{{ $t("studio.code.packageTypes") }}</h4>
+                      <ul class="package-types">
+                        <li
+                          v-for="entry in packageInfo.types"
+                          :key="entry.typeId"
+                        >
+                          <span class="mono">0x{{ entry.typeId.toString(16).toUpperCase().padStart(8, "0") }}</span>
+                          <span>{{ entry.count }}</span>
+                        </li>
+                      </ul>
+                      <p class="more-hint">{{ $t("studio.code.packageOpenHint") }}</p>
+                    </template>
+                  </div>
+                </FPopover>
+              </div>
             </header>
 
             <p v-if="viewerLoading" class="viewer-state">
@@ -355,56 +521,117 @@ watch(
               {{ viewerError }}
             </p>
 
-            <!-- 文本族：行号视图（JSON 美化） -->
+            <!-- 文本族：FCode 高亮（shiki 语法映射，txt 纯文本） -->
             <div
               v-else-if="viewerKind === 'text' && textDoc"
               class="text-viewer"
             >
-              <pre class="text-gutter" aria-hidden="true">{{ gutterText }}</pre>
-              <pre class="text-content">{{ textContent }}</pre>
+              <FCode :code="textContent" :lang="textLanguage" />
             </div>
 
-            <!-- 图片：棋盘底预览 -->
+            <!-- 图片：棋盘底 + 缩放 -->
             <div
               v-else-if="viewerKind === 'image' && imageSrc"
               class="image-viewer"
               :style="{ backgroundImage: `url(${checkerboardUrl})` }"
             >
-              <img :src="imageSrc" :alt="$t('studio.code.imageAlt')" />
+              <img
+                :src="imageSrc"
+                :alt="$t('studio.code.imageAlt')"
+                :style="imageStyle"
+              />
             </div>
 
-            <!-- DBPF 容器：只读统计 -->
-            <div
-              v-else-if="viewerKind === 'package' && packageInfo"
-              class="package-viewer"
+            <!-- DBPF 容器：资源列表 | 资源预览 双 Resizable 区 -->
+            <Resizable
+              v-else-if="viewerKind === 'package'"
+              direction="horizontal"
+              auto-save-id="openscp:code-package:v1"
+              class="package-split"
             >
-              <h3>{{ $t("studio.code.packageCard") }}</h3>
-              <dl class="package-meta">
-                <div>
-                  <dt>{{ $t("studio.code.packageEntries") }}</dt>
-                  <dd>{{ packageInfo.entryCount }}</dd>
+              <ResizablePanel id="code-package-entries" :default-size="42" :min-size="20">
+                <div class="entries-panel">
+                  <div class="pane-title">
+                    {{ $t("studio.code.entriesTitle") }}
+                    <span class="pane-count">{{ packageEntries.length }}</span>
+                  </div>
+                  <p v-if="entriesLoading" class="pane-state">
+                    {{ $t("common.loading") }}
+                  </p>
+                  <p v-else-if="!packageEntries.length" class="pane-state">
+                    {{ $t("studio.code.entriesEmpty") }}
+                  </p>
+                  <button
+                    v-for="entry in packageEntries"
+                    :key="`${entry.typeId}:${entry.groupId}:${entry.instanceId}`"
+                    type="button"
+                    class="entry-row"
+                    :class="{
+                      selected:
+                        selectedEntry?.typeId === entry.typeId &&
+                        selectedEntry?.instanceId === entry.instanceId,
+                    }"
+                    @click="selectEntry(entry)"
+                  >
+                    <span class="mono">0x{{ entry.typeId.toString(16).toUpperCase().padStart(8, "0") }}</span>
+                    <span class="mono entry-instance">0x{{ entry.instanceId.toString(16).toUpperCase().padStart(8, "0") }}</span>
+                    <span class="entry-size">{{ formatCodeSize(entry.decompressedSize) }}</span>
+                  </button>
                 </div>
-                <div>
-                  <dt>{{ $t("studio.code.packageDecompressed") }}</dt>
-                  <dd>{{ formatCodeSize(packageInfo.decompressedTotal) }}</dd>
+              </ResizablePanel>
+              <ResizableHandle
+                orientation="horizontal"
+                :label="$t('studio.code.resizeHint')"
+              />
+              <ResizablePanel id="code-package-resource" :default-size="58" :min-size="30">
+                <div class="resource-panel">
+                  <template v-if="selectedEntry">
+                    <div class="pane-title mono">
+                      0x{{ selectedEntry.typeId.toString(16).toUpperCase().padStart(8, "0") }}
+                      : 0x{{ selectedEntry.groupId.toString(16).toUpperCase().padStart(8, "0") }}
+                      : 0x{{ selectedEntry.instanceId.toString(16).toUpperCase().padStart(8, "0") }}
+                    </div>
+                    <p v-if="resourceLoading" class="pane-state">
+                      {{ $t("common.loading") }}
+                    </p>
+                    <template v-else-if="resourcePreview">
+                      <p v-if="resourcePreview.truncated" class="pane-state warn">
+                        {{ $t("studio.code.previewTruncated") }}
+                      </p>
+                      <!-- property：条目表 -->
+                      <div
+                        v-if="resourcePreview.kind === 'property' && resourcePreview.entries"
+                        class="property-table"
+                      >
+                        <div
+                          v-for="entry in resourcePreview.entries"
+                          :key="entry.hash"
+                          class="property-row"
+                        >
+                          <span class="mono">0x{{ entry.hash.toString(16).toUpperCase().padStart(8, "0") }}</span>
+                          <span class="property-type">{{ entry.typeName }}</span>
+                          <span class="property-value" :title="entry.value">{{ entry.value }}</span>
+                        </div>
+                      </div>
+                      <!-- 文本：FCode -->
+                      <FCode
+                        v-else-if="resourcePreview.kind === 'text' && resourcePreview.content !== null"
+                        :code="resourcePreview.content"
+                        lang="text"
+                      />
+                      <!-- hex dump -->
+                      <pre v-else-if="resourcePreview.hexDump" class="hex-view">{{ resourcePreview.hexDump }}</pre>
+                    </template>
+                    <p v-else class="pane-state">
+                      {{ $t("studio.code.resourceEmpty") }}
+                    </p>
+                  </template>
+                  <p v-else class="pane-state">
+                    {{ $t("studio.code.resourceEmpty") }}
+                  </p>
                 </div>
-                <div>
-                  <dt>{{ $t("studio.code.packageSize") }}</dt>
-                  <dd>{{ formatCodeSize(packageInfo.size) }}</dd>
-                </div>
-              </dl>
-              <h4>{{ $t("studio.code.packageTypes") }}</h4>
-              <ul class="package-types">
-                <li
-                  v-for="entry in packageInfo.types"
-                  :key="entry.typeId"
-                >
-                  <span class="mono">0x{{ entry.typeId.toString(16).toUpperCase().padStart(8, "0") }}</span>
-                  <span>{{ entry.count }}</span>
-                </li>
-              </ul>
-              <p class="package-hint">{{ $t("studio.code.packageOpenHint") }}</p>
-            </div>
+              </ResizablePanel>
+            </Resizable>
 
             <!-- 其余二进制：占位 -->
             <p v-else class="viewer-state">{{ $t("studio.code.binaryHint") }}</p>
@@ -417,6 +644,9 @@ watch(
         </div>
       </ResizablePanel>
     </Resizable>
+
+    <!-- 模组笔记（文档工作区 /mods/<模组名>/） -->
+    <NotesSheet v-model:open="notesOpen" :project="project" />
   </section>
 </template>
 
@@ -427,12 +657,31 @@ watch(
   flex-direction: column;
   gap: 10px;
   min-height: 0;
-  padding: 18px 22px 16px;
+  padding: 16px 18px;
 }
 .page-heading {
   align-items: flex-start;
   display: flex;
   justify-content: space-between;
+}
+.page-heading :deep(h1) {
+  margin: 0;
+}
+.eyebrow {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  margin: 0 0 8px;
+}
+.root-path {
+  color: var(--subtle-foreground);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  margin: 6px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .heading-actions {
   align-items: center;
@@ -593,6 +842,67 @@ watch(
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
 }
+.viewer-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+.tool-chip {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11px;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 8px;
+}
+.tool-chip:hover {
+  color: var(--foreground);
+}
+.tool-chip.active {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.more-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.more-panel h4 {
+  color: var(--subtle-foreground);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  margin: 0;
+  text-transform: uppercase;
+}
+.more-meta {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.more-meta dt {
+  color: var(--subtle-foreground);
+  font-size: 10.5px;
+}
+.more-meta dd {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin: 1px 0 0;
+  overflow-wrap: anywhere;
+}
+.more-hint {
+  color: var(--subtle-foreground);
+  font-size: 10.5px;
+  margin: 0;
+}
+.mono {
+  font-family: var(--font-mono, monospace);
+}
 .viewer-state {
   color: var(--muted-foreground);
   font-size: 12px;
@@ -601,31 +911,10 @@ watch(
   color: var(--warning);
 }
 .text-viewer {
-  display: flex;
   flex: 1;
-  gap: 0;
   margin-top: 10px;
   min-height: 0;
   overflow: auto;
-}
-.text-gutter {
-  color: var(--subtle-foreground);
-  font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
-  line-height: 1.55;
-  margin: 0;
-  padding: 8px 10px 8px 0;
-  text-align: end;
-  user-select: none;
-}
-.text-content {
-  color: var(--foreground);
-  font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
-  line-height: 1.55;
-  margin: 0;
-  padding: 8px;
-  white-space: pre;
 }
 .image-viewer {
   align-items: center;
@@ -641,66 +930,110 @@ watch(
 }
 .image-viewer img {
   image-rendering: pixelated;
-  max-height: 100%;
-  max-width: 100%;
-  object-fit: contain;
 }
-.package-viewer {
+.package-split {
+  flex: 1;
+  margin-top: 10px;
+  min-height: 0;
+}
+.entries-panel,
+.resource-panel {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+  height: 100%;
+  min-height: 0;
   overflow: auto;
+  padding: 8px;
 }
-.package-viewer h3 {
-  font-size: 13px;
-  margin: 0;
-}
-.package-viewer h4 {
-  color: var(--muted-foreground);
-  font-size: 11.5px;
-  margin: 6px 0 0;
-}
-.package-meta {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0;
-}
-.package-meta dt {
+.pane-title {
+  align-items: center;
   color: var(--subtle-foreground);
+  display: flex;
   font-size: 10.5px;
+  font-weight: 700;
+  gap: 6px;
+  letter-spacing: 0.06em;
+  padding: 2px 4px 8px;
+  text-transform: uppercase;
 }
-.package-meta dd {
-  font-size: 16px;
+.pane-count {
+  background: var(--surface);
+  border-radius: 999px;
   font-variant-numeric: tabular-nums;
-  margin: 2px 0 0;
+  padding: 0 7px;
 }
-.package-types {
+.pane-state {
+  color: var(--subtle-foreground);
+  font-size: 11.5px;
+  padding: 8px 4px;
+}
+.pane-state.warn {
+  color: var(--warning);
+}
+.entry-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  gap: 8px;
+  min-height: 25px;
+  padding: 0 6px;
+  text-align: start;
+  width: 100%;
+}
+.entry-row:hover {
+  background: var(--surface-hover);
+}
+.entry-row.selected {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+.entry-instance {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.entry-size {
+  color: var(--subtle-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.property-table {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
 }
-.package-types li {
-  align-items: center;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+.property-row {
+  align-items: baseline;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   display: flex;
-  font-variant-numeric: tabular-nums;
   font-size: 11.5px;
-  justify-content: space-between;
-  min-height: 24px;
-  padding: 0 8px;
+  gap: 10px;
+  padding: 3px 4px;
 }
-.package-types .mono {
-  font-family: var(--font-mono, monospace);
-}
-.package-hint {
+.property-type {
   color: var(--subtle-foreground);
+  flex: none;
+  font-size: 10.5px;
+  width: 72px;
+}
+.property-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hex-view {
+  font-family: var(--font-mono, monospace);
   font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre;
 }
 </style>

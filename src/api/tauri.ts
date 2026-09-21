@@ -853,6 +853,34 @@ export interface CodePackageInfo {
   decompressedTotal: number;
   types: CodePackageTypeInfo[];
 }
+/** code_package_entries：包内资源条目（按 type+instance 排序，上限 1000）。 */
+export interface CodePackageEntry {
+  typeId: number;
+  groupId: number;
+  instanceId: number;
+  decompressedSize: number;
+}
+/** code_resource_preview：单资源只读预览（property 条目表 / 文本 / hex）。 */
+export interface CodeResourcePreview {
+  kind: "property" | "text" | "hex";
+  size: number;
+  entries?: CodePropertyEntry[];
+  content?: string;
+  hexDump?: string;
+  truncated: boolean;
+}
+export interface CodePropertyEntry {
+  hash: number;
+  typeName: string;
+  value: string;
+  arrayLen: number | null;
+}
+/** code_manifest：模组清单（缺失自动扫描生成 package.json）。 */
+export interface CodeManifestResponse {
+  existed: boolean;
+  created: boolean;
+  manifest: Record<string, unknown>;
+}
 /** register_decal_entry：decal 条目注册导出结果。 */
 export interface RegisterDecalEntryResult {
   outputPath: string;

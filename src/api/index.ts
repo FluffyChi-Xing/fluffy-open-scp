@@ -39,6 +39,9 @@ import {
   type CodeTreeResponse,
   type CodeTextDocument,
   type CodePackageInfo,
+  type CodePackageEntry,
+  type CodeResourcePreview,
+  type CodeManifestResponse,
   type RegisterDecalEntryResult,
   type CreateLotOverlayResult,
   type CompanionPropertyRef,
@@ -231,6 +234,25 @@ export const tauriApi = {
       command<CodePackageInfo>("code_package_info", {
         request: { project, relativePath },
       }),
+    codePackageEntries: (project: string, relativePath: string) =>
+      command<CodePackageEntry[]>("code_package_entries", {
+        request: { project, relativePath },
+      }),
+    codeResourcePreview: (
+      project: string,
+      relativePath: string,
+      typeId: number,
+      groupId: number,
+      instanceId: number,
+    ) =>
+      command<CodeResourcePreview>("code_resource_preview", {
+        request: { project, relativePath },
+        typeId,
+        groupId,
+        instanceId,
+      }),
+    codeManifest: (project: string) =>
+      command<CodeManifestResponse>("code_manifest", { request: { project } }),
   },
   raster: {
     readImageRgba: (path: string) =>

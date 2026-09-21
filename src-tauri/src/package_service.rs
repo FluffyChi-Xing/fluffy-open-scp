@@ -1874,7 +1874,8 @@ pub struct Rw4SectionDetail {
     pub hex_dump: Option<String>,
 }
 
-fn property_value_text(kind: &sc_properties::Kind) -> (String, Option<usize>) {
+/// property 条目值文本化（code 工作台资源预览共用）。
+pub(crate) fn property_value_text(kind: &sc_properties::Kind) -> (String, Option<usize>) {
     match kind {
         sc_properties::Kind::Scalar(value) => (value.to_string(), None),
         sc_properties::Kind::Array(values) => {

@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useI18n } from "vue-i18n";
 import { codeToHtml } from "shiki";
 import type { TextPreview } from "@/api/tauri";
 
 /**
  * 长文本不截断预览：行级虚拟滚动（只渲染可视窗口）+ shiki 仅高亮可视片段。
  * 之前整段内容喂给 shiki，资源一大（shader 容器 1MB+）就会卡死渲染。
+ * 外观对齐 ui/FCode.vue 的卡片 chrome（三点 + 语言 + 复制）。
  */
 const props = defineProps<{ preview: TextPreview }>();
 
 const LINE_HEIGHT = 20;
 const OVERSCAN = 24;
 
-const { t } = useI18n();
 const scroller = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const viewportHeight = ref(420);
@@ -107,72 +106,120 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="text-preview">
-    <div class="preview-meta">
-      <span>{{ preview.encoding }}</span
-      ><span v-if="preview.language && preview.language !== 'text'">{{
-        preview.language
-      }}</span
-      ><span>{{ lines.length }} {{ $t("package.textLines") }}</span
-      ><span v-if="preview.truncated" class="preview-warn">{{
-        $t("package.previewTruncated")
-      }}</span
-      ><button type="button" class="preview-copy" @click="copyAll">
-        {{ copied ? $t("package.copied") : $t("package.copy") }}
-      </button>
-    </div>
-    <div ref="scroller" class="text-preview-code" @scroll.passive="onScroll">
-      <div class="text-preview-spacer" :style="{ height: `${totalHeight}px` }">
-        <div class="text-preview-offset" :style="offsetStyle">
-          <div
-            v-if="highlighted"
-            class="text-preview-shiki"
-            v-html="highlighted"
-          ></div>
-          <pre v-else class="text-preview-plain"><code>{{ visibleCode }}</code></pre>
+    <!-- FCode 同款 chrome：macOS 三点 + 语言/编码 + 复制 -->
+    <section class="f-code">
+      <header class="f-code-header">
+        <div class="f-code-dots">
+          <span class="f-code-dot f-code-dot-red" aria-hidden="true"></span>
+          <span class="f-code-dot f-code-dot-yellow" aria-hidden="true"></span>
+          <span class="f-code-dot f-code-dot-green" aria-hidden="true"></span>
+        </div>
+        <span
+          v-if="preview.language && preview.language !== 'text'"
+          class="f-code-lang"
+        >{{ preview.language }}</span>
+        <span class="preview-meta">{{ preview.encoding }} · {{ lines.length }} {{ $t("package.textLines") }}
+          <span v-if="preview.truncated"> · {{ $t("package.previewTruncated") }}</span>
+        </span>
+        <button type="button" class="preview-copy" @click="copyAll">
+          <svg v-if="copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7" /></svg>
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></svg>
+          <span>{{ copied ? $t("package.copied") : $t("package.copy") }}</span>
+        </button>
+      </header>
+      <div class="text-preview-code" @scroll.passive="onScroll">
+        <div class="text-preview-spacer" :style="{ height: `${totalHeight}px` }">
+          <div class="text-preview-offset" :style="offsetStyle">
+            <div
+              v-if="highlighted"
+              class="text-preview-shiki"
+              v-html="highlighted"
+            ></div>
+            <pre v-else class="text-preview-plain"><code>{{ visibleCode }}</code></pre>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .text-preview {
   display: grid;
-  gap: 10px;
   min-width: 0;
 }
-.preview-meta {
+/* FCode 同款卡片 chrome（与 ui/FCode.vue 一致）。 */
+.f-code {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.f-code-header {
   align-items: center;
-  color: var(--muted-foreground);
   display: flex;
-  flex-wrap: wrap;
-  font-size: 11px;
   gap: 10px;
+  padding: 8px 12px;
 }
-.preview-meta span {
+.f-code-dots {
+  display: flex;
+  gap: 7px;
+}
+.f-code-dot {
+  border: 0;
+  border-radius: 50%;
+  height: 11px;
+  width: 11px;
+}
+.f-code-dot-red {
+  background: #ff5f57;
+}
+.f-code-dot-yellow {
+  background: #febc2e;
+}
+.f-code-dot-green {
+  background: #28c840;
+}
+.f-code-lang {
   color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  margin-inline-start: auto;
 }
-.preview-warn {
-  color: var(--warning) !important;
+.preview-meta {
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 .preview-copy {
+  align-items: center;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-sm);
   color: var(--muted-foreground);
   cursor: pointer;
-  font: inherit;
-  margin-inline-start: auto;
-  padding: 2px 8px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 650;
+  gap: 5px;
+  padding: 4px 7px;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 .preview-copy:hover {
   background: var(--surface-hover);
   color: var(--foreground);
 }
+.preview-copy svg {
+  fill: none;
+  height: 13px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 13px;
+}
 .text-preview-code {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-top: 1px solid var(--border);
   max-height: 420px;
   min-height: 260px;
   overflow: auto;
@@ -186,7 +233,7 @@ onBeforeUnmount(() => {
 }
 .text-preview-plain {
   margin: 0;
-  padding: 0 16px;
+  padding: 14px 16px;
 }
 .text-preview-plain code,
 .text-preview-shiki :deep(code) {
@@ -198,6 +245,6 @@ onBeforeUnmount(() => {
 .text-preview-shiki :deep(pre) {
   background: transparent !important;
   margin: 0;
-  padding: 0 16px;
+  padding: 14px 16px;
 }
 </style>

@@ -1074,6 +1074,368 @@ pub async fn code_package_info(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+// ── Package 双栏：资源列表 + 资源预览 ──
+
+/// 单包资源列表上限（模组包通常几十条；超出截断并回报）。
+const CODE_PACKAGE_ENTRIES_MAX: usize = 1000;
+/// 资源预览读取上限。
+const CODE_RESOURCE_PREVIEW_MAX: usize = 512 * 1024;
+/// hex 预览截取字节数。
+const CODE_HEX_PREVIEW_BYTES: usize = 512;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodePackageEntryDto {
+    pub type_id: u32,
+    pub group_id: u32,
+    pub instance_id: u32,
+    pub decompressed_size: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodePropertyEntryDto {
+    pub hash: u32,
+    pub type_name: String,
+    pub value: String,
+    pub array_len: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeResourcePreview {
+    /// "property"（property 条目表）| "text"（UTF-8 文本）| "hex"（hex dump）。
+    pub kind: &'static str,
+    pub size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entries: Option<Vec<CodePropertyEntryDto>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hex_dump: Option<String>,
+    /// true = 内容超出预览上限，仅展示前段。
+    pub truncated: bool,
+}
+
+fn open_mod_package(path: &Path) -> Result<dbpf::Package, WorkspaceError> {
+    dbpf::Package::open(path).map_err(|error| WorkspaceError::InvalidPath(error.to_string()))
+}
+
+fn code_package_entry_list(path: &Path) -> Result<Vec<CodePackageEntryDto>, WorkspaceError> {
+    let package = open_mod_package(path)?;
+    let mut entries: Vec<CodePackageEntryDto> = package
+        .entries()
+        .iter()
+        .map(|entry| CodePackageEntryDto {
+            type_id: entry.id.type_id,
+            group_id: entry.id.group,
+            instance_id: entry.id.instance,
+            decompressed_size: u64::from(entry.decompressed_size),
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        a.type_id
+            .cmp(&b.type_id)
+            .then(a.instance_id.cmp(&b.instance_id))
+    });
+    entries.truncate(CODE_PACKAGE_ENTRIES_MAX);
+    Ok(entries)
+}
+
+#[command]
+pub async fn code_package_entries(
+    state: State<'_, AppState>,
+    request: CodePathRequest,
+) -> Result<Vec<CodePackageEntryDto>, CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        let relative = validate_relative_path(&request.relative_path, false)
+            .map_err(CommandError::from)?;
+        let path = existing_path(&root, &relative).map_err(CommandError::from)?;
+        code_package_entry_list(&path).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+fn code_resource_preview_data(
+    path: &Path,
+    target: dbpf::ResourceId,
+) -> Result<CodeResourcePreview, WorkspaceError> {
+    let package = open_mod_package(path)?;
+    // 精确 TGI 优先，退化按 type+instance（与 SCP 定位口径一致）。
+    let entry = package
+        .entries()
+        .iter()
+        .find(|entry| {
+            entry.id.type_id == target.type_id
+                && entry.id.group == target.group
+                && entry.id.instance == target.instance
+        })
+        .or_else(|| {
+            package.entries().iter().find(|entry| {
+                entry.id.type_id == target.type_id
+                    && entry.id.instance == target.instance
+            })
+        })
+        .ok_or(WorkspaceError::NotFound)?;
+    let size = u64::from(entry.decompressed_size);
+    let data = package
+        .read(entry)
+        .map_err(|error| WorkspaceError::InvalidPath(error.to_string()))?;
+    const PROPERTY_TYPE: u32 = 0x00B1_B104;
+    if entry.id.type_id == PROPERTY_TYPE {
+        let file = sc_properties::PropertyFile::parse(&data)
+            .map_err(|error| WorkspaceError::InvalidPath(error.to_string()))?;
+        let entries = file
+            .values
+            .iter()
+            .map(|property| {
+                let (value, array_len) =
+                    crate::package_service::property_value_text(&property.kind);
+                CodePropertyEntryDto {
+                    hash: property.hash,
+                    type_name: property.prop_type.name().to_string(),
+                    value,
+                    array_len,
+                }
+            })
+            .collect();
+        return Ok(CodeResourcePreview {
+            kind: "property",
+            size,
+            entries: Some(entries),
+            content: None,
+            hex_dump: None,
+            truncated: false,
+        });
+    }
+    // 文本启发：严格 UTF-8 且不含 NUL → 文本预览。
+    if data.len() <= CODE_RESOURCE_PREVIEW_MAX {
+        if let Ok(text) = std::str::from_utf8(&data) {
+            if !text.contains('\0') {
+                return Ok(CodeResourcePreview {
+                    kind: "text",
+                    size,
+                    entries: None,
+                    content: Some(text.to_owned()),
+                    hex_dump: None,
+                    truncated: false,
+                });
+            }
+        }
+    }
+    // hex dump（前 512 字节，16 字节/行：偏移 + hex + ASCII）。
+    let take = data.len().min(CODE_HEX_PREVIEW_BYTES);
+    let mut dump = String::new();
+    for row in (0..take).step_by(16) {
+        let end = (row + 16).min(take);
+        let chunk = &data[row..end];
+        let hex: String = chunk
+            .iter()
+            .map(|byte| format!("{byte:02x} "))
+            .collect::<String>()
+            .trim_end()
+            .to_string();
+        let ascii: String = chunk
+            .iter()
+            .map(|byte| {
+                if (0x20..0x7f).contains(byte) {
+                    *byte as char
+                } else {
+                    '.'
+                }
+            })
+            .collect();
+        dump.push_str(&format!("{row:08x}  {hex:<47}  {ascii}\n"));
+    }
+    Ok(CodeResourcePreview {
+        kind: "hex",
+        size,
+        entries: None,
+        content: None,
+        hex_dump: Some(dump),
+        truncated: data.len() > take,
+    })
+}
+
+#[command]
+pub async fn code_resource_preview(
+    state: State<'_, AppState>,
+    request: CodePathRequest,
+    type_id: u32,
+    group_id: u32,
+    instance_id: u32,
+) -> Result<CodeResourcePreview, CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        let relative = validate_relative_path(&request.relative_path, false)
+            .map_err(CommandError::from)?;
+        let path = existing_path(&root, &relative).map_err(CommandError::from)?;
+        code_resource_preview_data(
+            &path,
+            dbpf::ResourceId {
+                type_id,
+                group: group_id,
+                instance: instance_id,
+            },
+        )
+        .map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+// ── package.json 模组清单：打开模组时缺失即扫描自动生成 ──
+
+/// TGI 清单收录上限（超出截断并回报 tgiTruncated）。
+const CODE_MANIFEST_TGI_MAX: usize = 500;
+const CODE_MANIFEST_NAME: &str = "package.json";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeManifestResponse {
+    /// 打开前 package.json 是否已存在。
+    pub existed: bool,
+    /// 本次调用是否新生成了清单。
+    pub created: bool,
+    pub manifest: serde_json::Value,
+}
+
+fn manifest_tgi(type_id: u32, group_id: u32, instance_id: u32) -> String {
+    format!("{type_id:08x}:{group_id:08x}:{instance_id:08x}")
+}
+
+/// 扫描项目文件夹生成清单：基础信息 + 每包条目统计 + TGI 覆盖清单。
+fn build_code_manifest(
+    root: &Path,
+    project: &str,
+) -> Result<serde_json::Value, WorkspaceError> {
+    use serde_json::json;
+
+    let mut budget = CodeScanBudget {
+        remaining: MAX_CODE_TREE_ENTRIES,
+        truncated: false,
+    };
+    let entries = scan_code_dir(root, root, "", 0, &mut budget)?;
+    let (file_count, folder_count) = count_code_entries(&entries);
+
+    fn total_size(nodes: &[CodeTreeNode]) -> u64 {
+        nodes
+            .iter()
+            .map(|node| {
+                node.size.unwrap_or(0)
+                    + if node.children.is_empty() {
+                        0
+                    } else {
+                        total_size(&node.children)
+                    }
+            })
+            .sum()
+    }
+
+    fn collect_files(nodes: &[CodeTreeNode], out: &mut Vec<CodeTreeNode>) {
+        for node in nodes {
+            if node.kind == "file" {
+                out.push(node.clone());
+            }
+            collect_files(&node.children, out);
+        }
+    }
+    let mut files = Vec::new();
+    collect_files(&entries, &mut files);
+    files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+
+    let mut packages = Vec::new();
+    let mut tgis = std::collections::BTreeSet::new();
+    let mut tgi_truncated = false;
+    for node in &files {
+        if !node.name.to_ascii_lowercase().ends_with(".package") {
+            continue;
+        }
+        let path = root.join(&node.relative_path);
+        let Ok((entry_count, _, types)) = code_package_stats(&path) else {
+            continue;
+        };
+        // TGI 覆盖清单：完整条目直读。
+        if let Ok(package) = open_mod_package(&path) {
+            for entry in package.entries().iter() {
+                if tgis.len() >= CODE_MANIFEST_TGI_MAX {
+                    tgi_truncated = true;
+                    break;
+                }
+                tgis.insert(manifest_tgi(
+                    entry.id.type_id,
+                    entry.id.group,
+                    entry.id.instance,
+                ));
+            }
+        }
+        packages.push(json!({
+            "path": node.relative_path,
+            "size": node.size,
+            "entryCount": entry_count,
+            "types": types
+                .iter()
+                .map(|t| format!("{:08x}", t.type_id))
+                .collect::<Vec<_>>(),
+        }));
+    }
+
+    Ok(json!({
+        "name": project,
+        "version": "0.1.0",
+        "generator": "openscp",
+        "generatedAt": current_time_millis(),
+        "stats": {
+            "files": file_count,
+            "folders": folder_count,
+            "totalSize": total_size(&entries),
+        },
+        "packages": packages,
+        "tgiCount": tgis.len(),
+        "tgiTruncated": tgi_truncated,
+        "tgis": tgis.into_iter().collect::<Vec<_>>(),
+    }))
+}
+
+#[command]
+pub async fn code_manifest(
+    state: State<'_, AppState>,
+    request: CodeProjectRequest,
+) -> Result<CodeManifestResponse, CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        let manifest_path = root.join(CODE_MANIFEST_NAME);
+        let existed = manifest_path.is_file();
+        let manifest = if existed {
+            let bytes = fs::read(&manifest_path).map_err(WorkspaceError::from)?;
+            serde_json::from_slice(&bytes).map_err(|error| {
+                CommandError::from(WorkspaceError::InvalidPath(error.to_string()))
+            })?
+        } else {
+            let value =
+                build_code_manifest(&root, &request.project).map_err(CommandError::from)?;
+            let mut pretty = serde_json::to_vec_pretty(&value).map_err(|error| {
+                CommandError::from(WorkspaceError::InvalidPath(error.to_string()))
+            })?;
+            pretty.push(b'\n');
+            write_atomic(&manifest_path, &pretty, false).map_err(CommandError::from)?;
+            value
+        };
+        Ok(CodeManifestResponse {
+            existed,
+            created: !existed,
+            manifest,
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

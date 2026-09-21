@@ -54,6 +54,35 @@ export function classifyCodeFile(name: string): CodeViewerKind {
   return "binary";
 }
 
+/** shiki 语言映射（FCode 高亮用）。txt 等纯文本回退 "text" = 不高亮。 */
+const SHIKI_LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  bat: "bat",
+  cmd: "bat",
+  ps1: "powershell",
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  ts: "typescript",
+  json: "json",
+  xml: "xml",
+  html: "html",
+  htm: "html",
+  css: "css",
+  md: "markdown",
+  markdown: "markdown",
+  lua: "lua",
+  py: "python",
+  sh: "shellscript",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  ini: "ini",
+};
+
+export function shikiLanguageOf(name: string): string {
+  return SHIKI_LANGUAGE_BY_EXTENSION[extensionOf(name)] ?? "text";
+}
+
 export function formatCodeSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
