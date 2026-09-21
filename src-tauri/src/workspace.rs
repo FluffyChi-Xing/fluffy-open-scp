@@ -692,19 +692,20 @@ pub async fn workspace_move(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
-// ── Code 工作台（M-CM1）：modRoot 通用文件浏览/读写 ──
+// ── Code 工作台（M-CM1）：模组项目文件夹的通用文件浏览/读写 ──
 //
-// root = studio_config.mod_root（模组项目都在其下）。安全防护与 Markdown
-// 工作区同源：`validate_relative_path` 拒绝越界分量，`existing_path` 逐级
-// 校验符号链接并 canonicalize 归属，写入走 `write_atomic`。
+// root = studio_config.mod_root 下的项目文件夹（模组列表「开发」按钮进入）。
+// 安全防护与 Markdown 工作区同源：`validate_relative_path` 拒绝越界分量，
+// `existing_path` 逐级校验符号链接并 canonicalize 归属，写入走 `write_atomic`。
 
-/// modRoot 解析（存在、非符号链接、canonicalize）。
-fn code_root(store: &Store) -> Result<PathBuf, WorkspaceError> {
+/// 项目 root 解析：modRoot（存在、非符号链接、canonicalize）→ 项目相对路径
+/// （同一套逐级防护）且必须是目录。
+fn code_root(store: &Store, project: &str) -> Result<PathBuf, WorkspaceError> {
     let config = store.studio_config()?;
-    let Some(root) = config.mod_root else {
+    let Some(mod_root) = config.mod_root else {
         return Err(WorkspaceError::ModRootNotConfigured);
     };
-    let metadata = fs::symlink_metadata(&root).map_err(|error| {
+    let metadata = fs::symlink_metadata(&mod_root).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             WorkspaceError::RootUnavailable
         } else {
@@ -717,7 +718,27 @@ fn code_root(store: &Store) -> Result<PathBuf, WorkspaceError> {
     if !metadata.is_dir() {
         return Err(WorkspaceError::NotDirectory);
     }
-    fs::canonicalize(root).map_err(WorkspaceError::from)
+    let canonical_root = fs::canonicalize(mod_root)?;
+    let project_relative = validate_relative_path(project, false)?;
+    let project_dir = existing_path(&canonical_root, &project_relative)?;
+    if !project_dir.is_dir() {
+        return Err(WorkspaceError::NotFound);
+    }
+    Ok(project_dir)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeProjectRequest {
+    /// 项目文件夹相对 modRoot 的路径（mod_projects.rel_path）。
+    pub project: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodePathRequest {
+    pub project: String,
+    pub relative_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -756,6 +777,7 @@ pub struct CodeTextDocument {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodeWriteTextRequest {
+    pub project: String,
     pub relative_path: String,
     pub content: String,
     /// 乐观锁：与当前内容的 sha256 不一致即拒绝（None = 允许新建）。
@@ -866,10 +888,13 @@ fn count_code_entries(nodes: &[CodeTreeNode]) -> (usize, usize) {
 }
 
 #[command]
-pub async fn code_tree(state: State<'_, AppState>) -> Result<CodeTreeResponse, CommandError> {
+pub async fn code_tree(
+    state: State<'_, AppState>,
+    request: CodeProjectRequest,
+) -> Result<CodeTreeResponse, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
-        let root = code_root(&store).map_err(CommandError::from)?;
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
         let mut budget = CodeScanBudget {
             remaining: MAX_CODE_TREE_ENTRIES,
             truncated: false,
@@ -892,11 +917,11 @@ pub async fn code_tree(state: State<'_, AppState>) -> Result<CodeTreeResponse, C
 #[command]
 pub async fn code_read_text(
     state: State<'_, AppState>,
-    request: RelativePathRequest,
+    request: CodePathRequest,
 ) -> Result<CodeTextDocument, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
-        let root = code_root(&store).map_err(CommandError::from)?;
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
         let relative = validate_relative_path(&request.relative_path, false)
             .map_err(CommandError::from)?;
         let path = existing_path(&root, &relative).map_err(CommandError::from)?;
@@ -942,7 +967,7 @@ pub async fn code_write_text(
 ) -> Result<CodeTextDocument, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
-        let root = code_root(&store).map_err(CommandError::from)?;
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
         let relative = validate_relative_path(&request.relative_path, false)
             .map_err(CommandError::from)?;
         let parent = existing_parent(&root, &relative).map_err(CommandError::from)?;
@@ -1016,11 +1041,11 @@ fn code_package_stats(
 #[command]
 pub async fn code_package_info(
     state: State<'_, AppState>,
-    request: RelativePathRequest,
+    request: CodePathRequest,
 ) -> Result<CodePackageInfo, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
-        let root = code_root(&store).map_err(CommandError::from)?;
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
         let relative = validate_relative_path(&request.relative_path, false)
             .map_err(CommandError::from)?;
         let path = existing_path(&root, &relative).map_err(CommandError::from)?;

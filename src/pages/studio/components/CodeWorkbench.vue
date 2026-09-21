@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
@@ -23,23 +23,28 @@ import type {
   CodeTextDocument,
   CodeTreeResponse,
   CodePackageInfo,
+  ModProjectView,
 } from "@/api/tauri";
 import { rgbaBase64ToPngDataUrl, makeCheckerboard } from "@/lib/raster-editor/encoders";
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
- * 左侧 = modRoot 目录树（code_tree，目录优先、截断保护），
+ * 开发工作台模组列表「开发」按钮展开的全屏 sheet 内容，root = 该项目的
+ * 文件夹（modRoot/<relPath>，后端同套越界/符号链接防护）。
+ * 左侧 = 项目目录树（code_tree，目录优先、截断保护），
  * 右侧 = 按扩展名分流的工作台查看器——文本族走 code_read_text 行号视图
  * （JSON 美化）、图片走 read_image_rgba 棋盘预览、.package 走
  * code_package_info 只读统计（独立打开，不进全局包管理器）。
  * 编辑保存（code_write_text）与打包导出属 M-CM3，此处暂只读。
  */
+const props = defineProps<{ project: ModProjectView }>();
+
 const { t } = useI18n();
 const toast = useToast();
 
 const tree = shallowRef<CodeTreeResponse | null>(null);
 const loading = ref(false);
-/** 阻断性错误（未配置/不可访问 modRoot），其余错误走 toast。 */
+/** 阻断性错误（未配置/不可访问），其余错误走 toast。 */
 const fatalCode = ref<string | null>(null);
 const expanded = ref(new Set<string>());
 /** 首层目录只自动展开一次；此后尊重用户的折叠操作。 */
@@ -54,7 +59,6 @@ const viewerError = ref("");
 const fatalMessage = computed(() => {
   switch (fatalCode.value) {
     case "mod_root_not_configured":
-    case "workspace_not_configured":
       return t("studio.code.needModRoot");
     case "mod_root_unavailable":
       return t("studio.code.rootUnavailable");
@@ -72,9 +76,9 @@ async function loadTree(keepSelection = false) {
   loading.value = true;
   fatalCode.value = null;
   try {
-    const response = await tauriApi.workspace.codeTree();
+    const response = await tauriApi.workspace.codeTree(props.project.relPath);
     tree.value = response;
-    // 首层目录自动展开一次：模组项目（如全图模组）直接可见。
+    // 首层目录自动展开一次：模组内子文件夹（如 SimCityData）直接可见。
     if (!autoExpanded.value) {
       autoExpanded.value = true;
       expanded.value = new Set(
@@ -93,7 +97,6 @@ async function loadTree(keepSelection = false) {
     const code = (cause as { code?: string }).code ?? "command_failed";
     if (
       code === "mod_root_not_configured" ||
-      code === "workspace_not_configured" ||
       code === "mod_root_unavailable"
     ) {
       fatalCode.value = code;
@@ -167,7 +170,10 @@ async function selectFile(node: CodeTreeNodeDto) {
   try {
     const kind = classifyCodeFile(node.name);
     if (kind === "text") {
-      textDoc.value = await tauriApi.workspace.codeReadText(node.relativePath);
+      textDoc.value = await tauriApi.workspace.codeReadText(
+        props.project.relPath,
+        node.relativePath,
+      );
     } else if (kind === "image") {
       const absolute = joinCodePath(tree.value.rootPath, node.relativePath);
       const image = await tauriApi.raster.readImageRgba(absolute);
@@ -178,6 +184,7 @@ async function selectFile(node: CodeTreeNodeDto) {
       );
     } else if (kind === "package") {
       packageInfo.value = await tauriApi.workspace.codePackageInfo(
+        props.project.relPath,
         node.relativePath,
       );
     }
@@ -222,19 +229,36 @@ const textContent = computed(() => {
   }
 });
 
+function resetWorkbench() {
+  tree.value = null;
+  loading.value = false;
+  fatalCode.value = null;
+  expanded.value = new Set();
+  autoExpanded.value = false;
+  clearViewer();
+}
+
 onMounted(() => {
   void loadTree();
 });
+
+// sheet 复用：切换项目时整体重置并重新加载。
+watch(
+  () => props.project.relPath,
+  () => {
+    resetWorkbench();
+    void loadTree();
+  },
+);
 </script>
 
 <template>
   <section class="code-page">
     <header class="page-heading">
       <div>
-        <p class="eyebrow">{{ $t("studio.eyebrow") }}</p>
-        <FTypography :header="1" spacing="none">{{
-          $t("navigation.studioCode")
-        }}</FTypography>
+        <p class="eyebrow">{{ $t("studio.code.sheetTitle") }}</p>
+        <FTypography :header="1" spacing="none">{{ project.name }}</FTypography>
+        <p v-if="tree" class="code-hint">{{ tree.rootPath }}</p>
       </div>
       <div class="heading-actions">
         <span v-if="tree" class="tree-stats">

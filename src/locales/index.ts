@@ -40,7 +40,6 @@ const messages = {
       studioProperty: "属性编辑",
       studioRaster: "Raster 绘制",
       studioUI: "UI 工作台",
-      studioCode: "Code 工作台",
       studioAsset: "资产面板",
       studioVersions: "版本控制台",
       studioOverview: "面板总览",
@@ -82,9 +81,10 @@ const messages = {
     },
     studio: {
       code: {
-        hint: "浏览 modRoot 下的模组文件：左侧目录树，右侧按扩展名解析预览（文本 / 图片 / DBPF 容器）。",
+        sheetTitle: "Code 工作台",
+        hint: "浏览模组文件夹：左侧目录树，右侧按扩展名解析预览（文本 / 图片 / DBPF 容器）。",
         needModRoot:
-          "尚未配置项目管理根目录（modRoot）——请先在 Studio 概览完成引导设置。",
+          "尚未配置项目管理根目录（modRoot），或项目文件夹不存在——请先在开发工作台检查。",
         rootUnavailable: "modRoot 目录当前不可访问（被移动或删除）。",
         loadFailed: "目录树读取失败",
         refresh: "刷新",
@@ -266,7 +266,7 @@ const messages = {
         open: "开发",
         edit: "编辑",
         delete: "删除",
-        openHint: "VSCode 式工作台将在下期提供",
+        openHint: "打开 Code 工作台（文件树 + 按类型解析预览）",
         folderMissing: "文件夹缺失",
         deleteConfirm: "删除这个项目的记录？磁盘上的文件夹会保留。",
         empty: "还没有项目——点右上角「新建项目」创建第一个。",
@@ -1453,7 +1453,6 @@ const messages = {
       studioProperty: "Property editor",
       studioRaster: "Raster paint",
       studioUI: "UI workbench",
-      studioCode: "Code workbench",
       studioAsset: "Asset panel",
       studioVersions: "Version console",
       studioOverview: "Panel overview",
@@ -1498,9 +1497,10 @@ const messages = {
     },
     studio: {
       code: {
-        hint: "Browse mod files under modRoot: folder tree on the left, type-aware preview on the right (text / images / DBPF containers).",
+        sheetTitle: "Code workbench",
+        hint: "Browse the mod folder: folder tree on the left, type-aware preview on the right (text / images / DBPF containers).",
         needModRoot:
-          "The mod root (modRoot) has not been configured — finish the Studio onboarding first.",
+          "The mod root (modRoot) is not configured, or the project folder is missing — check the development workbench first.",
         rootUnavailable:
           "The mod root is currently inaccessible (moved or deleted).",
         loadFailed: "Failed to read the folder tree",
@@ -1693,7 +1693,8 @@ const messages = {
         open: "Develop",
         edit: "Edit",
         delete: "Delete",
-        openHint: "The VSCode-style workbench arrives in the next release",
+        openHint:
+          "Open the code workbench (file tree + type-aware preview)",
         folderMissing: "Folder missing",
         deleteConfirm:
           "Remove this project's record? The folder on disk is kept.",

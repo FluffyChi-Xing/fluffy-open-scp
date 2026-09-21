@@ -81,17 +81,6 @@ export default {
       },
     },
     {
-      name: "studio-code",
-      path: "studio/code",
-      component: () => import("@/pages/studio/panels/code.vue"),
-      meta: {
-        titleKey: "navigation.studioCode",
-        icon: "code",
-        groupKey: "navigation.modding",
-        order: 47,
-      },
-    },
-    {
       name: "studio-asset",
       path: "studio/asset",
       component: () => import("@/pages/studio/panels/asset.vue"),

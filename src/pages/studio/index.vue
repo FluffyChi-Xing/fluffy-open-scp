@@ -3,15 +3,18 @@ import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
+import FSheet from "@/components/ui/FSheet.vue";
 import { isTauri, tauriApi } from "@/api";
 import { useModProjectsStore } from "@/stores/modProjects";
 import ProjectDashboard from "./components/dashboard/ProjectDashboard.vue";
 import ProjectFormSheet from "./components/ProjectFormSheet.vue";
 import GroupManagerSheet from "./components/GroupManagerSheet.vue";
+import CodeWorkbench from "./components/CodeWorkbench.vue";
 import type { ModProjectView } from "@/api/tauri";
 
 /**
  * 开发工作台 = 项目管理面板：统计仪表盘 + 项目列表（分组过滤、CRUD）。
+ * 「开发」按钮展开全屏 Code 工作台 sheet（项目文件夹的文件树 + 解析预览）。
  * 原多工具卡片页在 /studio/overview（头部"面板总览"进入）。
  */
 const { t } = useI18n();
@@ -20,6 +23,8 @@ const store = useModProjectsStore();
 const formOpen = ref(false);
 const editingProject = ref<ModProjectView | null>(null);
 const groupsOpen = ref(false);
+const developOpen = ref(false);
+const developingProject = ref<ModProjectView | null>(null);
 
 onMounted(() => {
   if (isTauri()) void store.loadAll();
@@ -33,6 +38,11 @@ function openCreate() {
 function openEdit(project: ModProjectView) {
   editingProject.value = project;
   formOpen.value = true;
+}
+
+function openDevelop(project: ModProjectView) {
+  developingProject.value = project;
+  developOpen.value = true;
 }
 
 async function submitCreate(
@@ -249,12 +259,13 @@ function statusLabel(status: string): string {
             }}</span>
             <span class="actions-cell end" role="cell">
               <button
-                class="row-button"
+                class="row-button develop"
                 type="button"
-                disabled
+                :disabled="!project.folderExists"
                 :title="$t('studio.projects.openHint')"
+                @click="openDevelop(project)"
               >
-                <FIcon name="Rocket" :size="12" aria-label="" />
+                <FIcon name="CodeXml" :size="12" aria-label="" />
                 {{ $t("studio.projects.open") }}
               </button>
               <button
@@ -293,6 +304,16 @@ function statusLabel(status: string): string {
         @rename="store.renameGroup"
         @remove="store.deleteGroup"
       />
+
+      <!-- 开发：全屏 Code 工作台（项目文件夹的文件树 + 解析预览） -->
+      <FSheet
+        v-if="developingProject"
+        v-model:open="developOpen"
+        width="100vw"
+        :label="$t('studio.code.sheetTitle')"
+      >
+        <CodeWorkbench :project="developingProject" />
+      </FSheet>
     </template>
     <p v-else class="web-hint">{{ $t("studio.projects.webHint") }}</p>
   </section>
@@ -556,6 +577,14 @@ function statusLabel(status: string): string {
 .row-button:disabled {
   cursor: not-allowed;
   opacity: 0.25;
+}
+.row-button.develop {
+  color: var(--primary);
+  opacity: 1;
+}
+.row-button.develop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
 }
 .row-button.danger:hover {
   color: var(--danger);

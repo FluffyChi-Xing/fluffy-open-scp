@@ -211,23 +211,25 @@ export const tauriApi = {
       command<WorkspaceEntry[]>("workspace_move", {
         request: { relativePath, targetDirectory },
       }),
-    // ── Code 工作台（modRoot 通用文件） ──
-    codeTree: () => command<CodeTreeResponse>("code_tree"),
-    codeReadText: (relativePath: string) =>
+    // ── Code 工作台（模组项目文件夹的通用文件） ──
+    codeTree: (project: string) =>
+      command<CodeTreeResponse>("code_tree", { request: { project } }),
+    codeReadText: (project: string, relativePath: string) =>
       command<CodeTextDocument>("code_read_text", {
-        request: { relativePath },
+        request: { project, relativePath },
       }),
     codeWriteText: (
+      project: string,
       relativePath: string,
       content: string,
       expectedRevision?: string,
     ) =>
       command<CodeTextDocument>("code_write_text", {
-        request: { relativePath, content, expectedRevision },
+        request: { project, relativePath, content, expectedRevision },
       }),
-    codePackageInfo: (relativePath: string) =>
+    codePackageInfo: (project: string, relativePath: string) =>
       command<CodePackageInfo>("code_package_info", {
-        request: { relativePath },
+        request: { project, relativePath },
       }),
   },
   raster: {
