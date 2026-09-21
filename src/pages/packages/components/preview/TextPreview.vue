@@ -1,40 +1,30 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { codeToHtml } from "shiki";
+import { computed, onBeforeUnmount, ref } from "vue";
+import FCode from "@/components/ui/FCode.vue";
 import { isTauri, tauriApi } from "@/api";
 import { foldBinaryRuns } from "@/lib/text-decode";
 import type { TextPreview } from "@/api/tauri";
 
 /**
- * 长文本预览：行级虚拟滚动（只渲染可视窗口）+ shiki 仅高亮可视片段 +
- * 分段动态加载——首段由预览管线给出（8MB 上限），滚动接近已加载尾部时
- * 经 read_resource_text_range 续读 2MB 段直到取满 totalLength。
- * 之前整段内容喂给 shiki，资源一大（shader 容器 1MB+）就会卡死渲染。
- * 外观对齐 ui/FCode.vue 的卡片 chrome（三点 + 语言 + 复制）。
+ * 文本预览：全量渲染，杜绝虚拟滚动窗口数学带来的截断类问题。
+ * - ≤1MB：FCode 整篇 shiki 高亮；
+ * - >1MB：原生 <pre> 完整渲染（浏览器原生滚动），关闭高亮保渲染流畅；
+ * - 超 8MB 首段（read_resource_text 上限）：滚动接近尾部自动经
+ *   read_resource_text_range 续读 2MB（utf-16le 与无句柄场景除外），
+ *   追加分段按二进制段折叠口径处理。
  */
 const props = defineProps<{ preview: TextPreview }>();
 
-const LINE_HEIGHT = 20;
-const OVERSCAN = 24;
-/** 续读段大小（字节）。 */
 const CHUNK_BYTES = 2 * 1024 * 1024;
-/** 距已加载尾部多少行内触发续读。 */
-const LOAD_MORE_LINES = 120;
+/** 高亮渲染的字符数上限（超出转纯文本整篇渲染）。 */
+const FCODE_MAX_CHARS = 1_000_000;
+/** 距已加载尾部多少字符触发续读。 */
+const LOAD_MORE_CHARS = 40_000;
 
-const scroller = ref<HTMLElement | null>(null);
-const scrollTop = ref(0);
-const viewportHeight = ref(420);
-const highlighted = ref("");
-const copied = ref(false);
-let highlightToken = 0;
-let scrollFrame = 0;
-let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** 分段加载状态：已续读文本与源字节偏移。 */
 const appendedText = ref("");
 const loadedBytes = ref(props.preview.loadedBytes ?? 0);
 const loadingMore = ref(false);
-/** utf-16le 需偶数对齐，暂不参与续读；无 packageId/tgi 亦无法续读。 */
+/** utf-16le 需偶数对齐，暂不参与续读；无句柄/非 Tauri 亦无法续读。 */
 const eof = computed(
   () =>
     !props.preview.truncated ||
@@ -50,70 +40,34 @@ const fullContent = computed(() => props.preview.content + appendedText.value);
 const lines = computed(() =>
   fullContent.value.length ? fullContent.value.split("\n") : [],
 );
-const totalHeight = computed(() =>
-  Math.max(lines.value.length * LINE_HEIGHT, LINE_HEIGHT),
-);
-const firstVisible = computed(() =>
-  Math.max(0, Math.floor(scrollTop.value / LINE_HEIGHT) - OVERSCAN),
-);
-const endVisible = computed(() =>
-  Math.min(
-    lines.value.length,
-    Math.ceil((scrollTop.value + viewportHeight.value) / LINE_HEIGHT) + OVERSCAN,
-  ),
-);
-const visibleCode = computed(() =>
-  lines.value.slice(firstVisible.value, endVisible.value).join("\n"),
-);
-const offsetStyle = computed(() => ({
-  transform: `translateY(${firstVisible.value * LINE_HEIGHT}px)`,
-}));
 
-function themeName() {
-  return document.documentElement.dataset.theme === "dark"
-    ? "github-dark"
-    : "github-light";
-}
+const useHighlight = computed(
+  () => fullContent.value.length <= FCODE_MAX_CHARS,
+);
 
-async function highlight() {
-  const token = ++highlightToken;
-  const language = props.preview.language;
-  if (!visibleCode.value || !language || language === "text") {
-    highlighted.value = "";
-    return;
-  }
+onBeforeUnmount(() => {
+  if (copiedTimer) clearTimeout(copiedTimer);
+});
+
+const copied = ref(false);
+let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+async function copyAll() {
   try {
-    const html = await codeToHtml(visibleCode.value, {
-      lang: language,
-      theme: themeName(),
-    });
-    if (token === highlightToken) highlighted.value = html;
+    await navigator.clipboard.writeText(fullContent.value);
+    copied.value = true;
+    copiedTimer = setTimeout(() => {
+      copied.value = false;
+    }, 1500);
   } catch {
-    if (token === highlightToken) highlighted.value = "";
+    /* clipboard unavailable */
   }
 }
 
-function onScroll() {
-  if (scrollFrame) return;
-  scrollFrame = requestAnimationFrame(() => {
-    scrollFrame = 0;
-    const element = scroller.value;
-    if (element) scrollTop.value = element.scrollTop;
-    // 虚拟滚动接近已加载尾部：续读下一段（动态加载设计）。
-    maybeLoadMore();
-  });
-}
-
-function nearEnd(): boolean {
-  return eof.value
-    ? false
-    : endVisible.value >= lines.value.length - LOAD_MORE_LINES;
-}
-
-/** 续读完成后用户仍处尾部则继续链式加载，保证滚动到底总能看到后续内容。 */
-function maybeLoadMore() {
-  if (loadingMore.value) return;
-  if (nearEnd() || (lines.value.length === 0 && !eof.value)) {
+function onPlainScroll(event: Event) {
+  const element = event.target as HTMLElement;
+  const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+  if (!eof.value && !loadingMore.value && remaining < LOAD_MORE_CHARS) {
     void loadMore();
   }
 }
@@ -125,8 +79,8 @@ async function loadMore() {
   loadingMore.value = true;
   try {
     const buffer = await tauriApi.packages.readResourceTextRange(
-      props.preview.packageId!,
-      props.preview.tgi!,
+      props.preview.packageId,
+      props.preview.tgi,
       loadedBytes.value,
       CHUNK_BYTES,
     );
@@ -144,8 +98,6 @@ async function loadMore() {
       text = new TextDecoder("utf-8").decode(chunk);
     }
     appendedText.value += foldBinaryRuns(text);
-    // 追加后若视口仍在尾部附近，继续链式加载。
-    if (nearEnd()) void loadMore();
   } catch (cause) {
     console.warn("[text-preview] 续读失败", cause);
     eof.value = true;
@@ -153,181 +105,83 @@ async function loadMore() {
     loadingMore.value = false;
   }
 }
-
-async function copyAll() {
-  try {
-    await navigator.clipboard.writeText(fullContent.value);
-    copied.value = true;
-    copiedTimer = setTimeout(() => {
-      copied.value = false;
-    }, 1500);
-  } catch {
-    /* clipboard unavailable */
-  }
-}
-
-watch([visibleCode, () => props.preview.language], highlight, { immediate: true });
-// data-theme 非响应式：MutationObserver 监听主题切换（与 FCode 同口径）。
-let themeObserver: MutationObserver | undefined;
-onMounted(() => {
-  const element = scroller.value;
-  if (element) viewportHeight.value = element.clientHeight;
-  themeObserver = new MutationObserver(() => void highlight());
-  themeObserver.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["data-theme"],
-  });
-});
-onBeforeUnmount(() => {
-  themeObserver?.disconnect();
-  if (scrollFrame) cancelAnimationFrame(scrollFrame);
-  if (copiedTimer) clearTimeout(copiedTimer);
-});
 </script>
 
 <template>
   <div class="text-preview">
-    <!-- FCode 同款 chrome：macOS 三点 + 语言/编码 + 复制 -->
-    <section class="f-code">
-      <header class="f-code-header">
-        <div class="f-code-dots">
-          <span class="f-code-dot f-code-dot-red" aria-hidden="true"></span>
-          <span class="f-code-dot f-code-dot-yellow" aria-hidden="true"></span>
-          <span class="f-code-dot f-code-dot-green" aria-hidden="true"></span>
-        </div>
-        <span
-          v-if="preview.language && preview.language !== 'text'"
-          class="f-code-lang"
-        >{{ preview.language }}</span>
-        <span class="preview-meta">{{ preview.encoding }} · {{ lines.length }} {{ $t("package.textLines") }}
-          <span v-if="!eof" :class="{ 'preview-warn': !loadingMore }">
-            {{ loadingMore ? $t("common.loading") : $t("package.previewTruncated") }}
-          </span>
-        </span>
-        <button type="button" class="preview-copy" @click="copyAll">
-          <svg v-if="copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7" /></svg>
-          <svg v-else viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a1 1 0 0 1 1-1h9" /></svg>
-          <span>{{ copied ? $t("package.copied") : $t("package.copy") }}</span>
-        </button>
-      </header>
-      <div class="text-preview-code" @scroll.passive="onScroll">
-        <div class="text-preview-spacer" :style="{ height: `${totalHeight}px` }">
-          <div class="text-preview-offset" :style="offsetStyle">
-            <div
-              v-if="highlighted"
-              class="text-preview-shiki"
-              v-html="highlighted"
-            ></div>
-            <pre v-else class="text-preview-plain"><code>{{ visibleCode }}</code></pre>
-          </div>
-        </div>
-      </div>
-    </section>
+    <div class="preview-meta">
+      <span>{{ preview.encoding }}</span>
+      <span
+        v-if="preview.language && preview.language !== 'text'"
+        >{{ preview.language }}</span
+      >
+      <span>{{ lines.length }} {{ $t("package.textLines") }}</span>
+      <span v-if="!eof" :class="{ 'preview-warn': !loadingMore }">
+        {{ loadingMore ? $t("common.loading") : $t("package.previewTruncated") }}
+      </span>
+      <button type="button" class="preview-copy" @click="copyAll">
+        {{ copied ? $t("package.copied") : $t("package.copy") }}
+      </button>
+    </div>
+    <FCode
+      v-if="useHighlight"
+      :code="fullContent"
+      :lang="preview.language"
+    />
+    <div v-else class="text-plain-wrap" @scroll.passive="onPlainScroll">
+      <pre class="text-plain"><code>{{ fullContent }}</code></pre>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .text-preview {
   display: grid;
+  gap: 8px;
   min-width: 0;
 }
-/* FCode 同款卡片 chrome（与 ui/FCode.vue 一致）。 */
-.f-code {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-.f-code-header {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  padding: 8px 12px;
-}
-.f-code-dots {
-  display: flex;
-  gap: 7px;
-}
-.f-code-dot {
-  border: 0;
-  border-radius: 50%;
-  height: 11px;
-  width: 11px;
-}
-.f-code-dot-red {
-  background: #ff5f57;
-}
-.f-code-dot-yellow {
-  background: #febc2e;
-}
-.f-code-dot-green {
-  background: #28c840;
-}
-.f-code-lang {
-  color: var(--muted-foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  margin-inline-start: auto;
-}
 .preview-meta {
+  align-items: center;
   color: var(--muted-foreground);
+  display: flex;
+  flex-wrap: wrap;
   font-size: 11px;
+  gap: 10px;
+}
+.preview-warn {
+  color: var(--warning) !important;
 }
 .preview-copy {
   align-items: center;
   background: transparent;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--muted-foreground);
   cursor: pointer;
-  display: inline-flex;
-  font-size: 11px;
-  font-weight: 650;
-  gap: 5px;
-  padding: 4px 7px;
-  transition: background-color 120ms ease, color 120ms ease;
+  font: inherit;
+  margin-inline-start: auto;
+  padding: 2px 8px;
 }
 .preview-copy:hover {
   background: var(--surface-hover);
   color: var(--foreground);
 }
-.preview-copy svg {
-  fill: none;
-  height: 13px;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-  width: 13px;
-}
-.text-preview-code {
-  border-top: 1px solid var(--border);
-  max-height: 420px;
+.text-plain-wrap {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  max-height: 480px;
   min-height: 260px;
   overflow: auto;
 }
-.text-preview-spacer {
-  min-width: max-content;
-  position: relative;
-}
-.text-preview-offset {
-  will-change: transform;
-}
-.text-preview-plain {
+.text-plain {
   margin: 0;
   padding: 14px 16px;
 }
-.text-preview-plain code,
-.text-preview-shiki :deep(code) {
+.text-plain code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12.5px;
-  line-height: 20px;
+  line-height: 1.6;
   white-space: pre;
-}
-.text-preview-shiki :deep(pre) {
-  background: transparent !important;
-  margin: 0;
-  padding: 14px 16px;
 }
 </style>

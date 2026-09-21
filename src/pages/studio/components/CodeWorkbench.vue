@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
@@ -11,6 +11,7 @@ import {
   ResizablePanel,
 } from "@/components/ui/resizable";
 import { isTauri, tauriApi } from "@/api";
+import { useGamePackagesStore } from "@/stores/gamePackages";
 import { useToast } from "@/composables/useToast";
 import {
   classifyCodeFile,
@@ -23,30 +24,34 @@ import {
   type CodeTreeNodeDto,
 } from "./code-support";
 import type {
-  CodePackageEntry,
-  CodeResourcePreview,
   CodeTextDocument,
   CodeTreeResponse,
   ModProjectView,
 } from "@/api/tauri";
 import { rgbaBase64ToPngDataUrl, makeCheckerboard } from "@/lib/raster-editor/encoders";
+import { extensionIconUrl } from "@/lib/resource-types";
+import ResourcePreviewView from "@/pages/packages/components/preview/ResourcePreview.vue";
 import NotesSheet from "./NotesSheet.vue";
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
  * 开发工作台模组列表「开发」按钮展开的全屏 sheet 内容，root = 该项目的
  * 文件夹（modRoot/<relPath>，后端同套越界/符号链接防护）。
- * 左侧 = 项目目录树；右侧 = 按扩展名分流的查看器 + 右上角 toolbar：
- * 文本族 FCode 高亮（bat/lua/json/xml…shiki 映射），图片带缩放档位，
- * .package 分裂为「资源列表 | 资源预览」双 Resizable 区，more 浮层收纳
- * 文件元信息（含 DBPF 统计），笔记按钮打开文档工作区的模组笔记 sheet。
- * 打开时 package.json 缺失则自动扫描生成（manifest）。
+ * 左侧 = 项目目录树（彩色扩展名图标）；右侧 = 按扩展名分流 + 右上角
+ * toolbar：文本族 FCode 高亮（bat/lua/json/xml…shiki 映射），图片带缩放
+ * 档位，.package 走「集成底座」复用路径——open_package 挂入全局包管理
+ * 器，资源列表/类型分类（注册表名）/TGI 搜索/分页/语义标签/预览全部复用
+ * gamePackages store 与包浏览的 ResourcePreview 组件。more 浮层收纳文件
+ * 元信息（含 DBPF 统计），笔记按钮打开模组笔记 sheet；打开时
+ * package.json 缺失则自动扫描生成。
  */
 const props = defineProps<{ project: ModProjectView }>();
 const emit = defineEmits<{ close: [] }>();
 
 const { t, locale } = useI18n();
 const toast = useToast();
+/** 集成底座：.package 的资源浏览/预览直接复用包浏览的全局状态机。 */
+const explorer = useGamePackagesStore();
 
 const tree = shallowRef<CodeTreeResponse | null>(null);
 const loading = ref(false);
@@ -67,36 +72,21 @@ const packageInfo = shallowRef<{
   types: { typeId: number; name: string; count: number }[];
 } | null>(null);
 const viewerError = ref("");
-/** package 双栏：资源列表与选中资源的只读预览。 */
-const packageEntries = shallowRef<CodePackageEntry[]>([]);
+/**
+ * package 双栏（集成底座复用）：打开的模组包句柄由 gamePackages store
+ * 管理（opened 去重按路径，同路径复用已有句柄），资源列表/类型分类/
+ * TGI 搜索/分页/预览全部读该 store 的 activePage/preview。
+ */
+const workbenchPackageId = shallowRef<number | null>(null);
 const entriesLoading = ref(false);
-const selectedEntry = shallowRef<CodePackageEntry | null>(null);
-const resourcePreview = shallowRef<CodeResourcePreview | null>(null);
-const resourceLoading = ref(false);
-/** 资源列表筛选：类型分类标签 + TGI 搜索（instance/group hex 包含匹配）。 */
-const entryTypeFilter = ref<number | null>(null);
 const entrySearch = ref("");
-const filteredEntries = computed(() => {
-  const query = entrySearch.value.trim().toLowerCase();
-  return packageEntries.value.filter((entry) => {
-    if (
-      entryTypeFilter.value !== null &&
-      entry.typeId !== entryTypeFilter.value
-    ) {
-      return false;
-    }
-    if (!query) return true;
-    return entry.instanceId
-      .toString(16)
-      .includes(query.replace(/^0x/, ""));
-  });
-});
-const semanticLabel = (entry: CodePackageEntry): string => {
-  if (!entry.semantic) return "";
-  return locale.value.startsWith("zh")
-    ? entry.semantic.labelZh
-    : entry.semantic.labelEn;
-};
+/** 仅当 store 激活的是本工作台的包时才展示其资源页。 */
+const activeExplorerPage = computed(() =>
+  explorer.activePackageId !== null &&
+  explorer.activePackageId === workbenchPackageId.value
+    ? explorer.activePage
+    : null,
+);
 /** 图片缩放档位。 */
 type ImageZoom = "fit" | 1 | 2 | 4;
 const imageZoom = ref<ImageZoom>("fit");
@@ -189,25 +179,8 @@ function clearViewer() {
   imageSrc.value = "";
   imageDims.value = null;
   packageInfo.value = null;
-  packageEntries.value = [];
-  selectedEntry.value = null;
-  resourcePreview.value = null;
   viewerError.value = "";
   imageZoom.value = "fit";
-}
-
-function rowIcon(row: CodeRow): string {
-  if (row.kind === "folder") return expanded.value.has(row.relativePath) ? "FolderOpen" : "boxes";
-  switch (classifyCodeFile(row.name)) {
-    case "package":
-      return "Package";
-    case "image":
-      return "Image";
-    case "text":
-      return "FileText";
-    default:
-      return "Box";
-  }
 }
 
 function onRowClick(row: CodeRow) {
@@ -232,12 +205,9 @@ async function selectFile(node: CodeTreeNodeDto) {
   imageSrc.value = "";
   imageDims.value = null;
   packageInfo.value = null;
-  packageEntries.value = [];
-  selectedEntry.value = null;
-  resourcePreview.value = null;
+  workbenchPackageId.value = null;
   viewerError.value = "";
   imageZoom.value = "fit";
-  entryTypeFilter.value = null;
   entrySearch.value = "";
   viewerLoading.value = true;
   try {
@@ -257,17 +227,25 @@ async function selectFile(node: CodeTreeNodeDto) {
         image.height,
       );
     } else if (kind === "package") {
-      const [info, entries] = await Promise.all([
-        tauriApi.workspace.codePackageInfo(props.project.relPath, node.relativePath),
-        tauriApi.workspace.codePackageEntries(props.project.relPath, node.relativePath),
-      ]);
-      packageInfo.value = {
-        entryCount: info.entryCount,
-        decompressedTotal: info.decompressedTotal,
-        size: info.size,
-        types: info.types,
-      };
-      packageEntries.value = entries;
+      // 集成底座：包挂入全局包管理器（同路径幂等），资源列表/分类/搜索/
+      // 分页/预览全部由 gamePackages store 承载，此处只激活到本包。
+      packageInfo.value = await tauriApi.workspace.codePackageInfo(
+        props.project.relPath,
+        node.relativePath,
+      );
+      const absolute = joinCodePath(tree.value.rootPath, node.relativePath);
+      await explorer.openFile({
+        path: absolute,
+        name: node.name,
+        size: node.size ?? 0,
+      });
+      const opened = explorer.opened.find(
+        (item) => item.package.path === absolute,
+      );
+      workbenchPackageId.value = opened?.package.packageId ?? null;
+      if (workbenchPackageId.value !== null) {
+        explorer.choosePackage(workbenchPackageId.value);
+      }
     }
   } catch (cause) {
     const code = (cause as { code?: string }).code ?? "";
@@ -280,25 +258,28 @@ async function selectFile(node: CodeTreeNodeDto) {
   }
 }
 
-async function selectEntry(entry: CodePackageEntry) {
-  if (!selected.value || resourceLoading.value) return;
-  selectedEntry.value = entry;
-  resourcePreview.value = null;
-  resourceLoading.value = true;
-  try {
-    resourcePreview.value = await tauriApi.workspace.codeResourcePreview(
-      props.project.relPath,
-      selected.value.relativePath,
-      entry.typeId,
-      entry.groupId,
-      entry.instanceId,
-    );
-  } catch {
-    toast.error(t("studio.code.loadFailed"));
-  } finally {
-    resourceLoading.value = false;
-  }
+/** 类型分类标签：切到对应分类（store 负责回第一页拉取）。 */
+async function chooseCategory(key: string) {
+  explorer.typeFilter = key === "all" ? null : Number(key);
+  await explorer.loadPage(0);
 }
+
+/** TGI 搜索（服务端匹配：0x 前缀 / t:g:i 分段 / 十进制均可）。 */
+let searchTimer: number | undefined;
+function onEntrySearch(event: Event) {
+  const value = (event.target as HTMLInputElement).value;
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    void explorer.applyFilter(value.trim());
+  }, 250);
+}
+
+onBeforeUnmount(() => {
+  // 离开工作台时释放模组包句柄（保持全局包管理器干净）。
+  if (workbenchPackageId.value !== null) {
+    void explorer.closePackage(workbenchPackageId.value);
+  }
+});
 
 const viewerKind = computed(() =>
   selected.value ? classifyCodeFile(selected.value.name) : null,
@@ -440,7 +421,19 @@ watch(
             :style="{ paddingLeft: `${10 + row.depth * 14}px` }"
             @click="onRowClick(row)"
           >
-            <FIcon :name="rowIcon(row)" :size="13" aria-label="" />
+            <template v-if="row.kind === 'folder'">
+              <FIcon
+                :name="expanded.has(row.relativePath) ? 'FolderOpen' : 'boxes'"
+                :size="13"
+                aria-label=""
+              />
+            </template>
+            <img
+              v-else
+              class="tree-file-icon"
+              :src="extensionIconUrl(row.name)"
+              alt=""
+            />
             <span class="tree-name" :title="row.name">{{ row.name }}</span>
             <span v-if="row.kind === 'file' && row.size !== null" class="tree-size">
               {{ formatCodeSize(row.size) }}
@@ -460,10 +453,10 @@ watch(
           <template v-if="selected">
             <!-- 右上角 toolbar：路径 + 缩放（图片）/ 笔记 / more 浮层 -->
             <header class="viewer-head">
-              <FIcon
-                :name="rowIcon({ ...selected, depth: 0 })"
-                :size="14"
-                aria-label=""
+              <img
+                class="tree-file-icon"
+                :src="extensionIconUrl(selected.name)"
+                alt=""
               />
               <span class="viewer-path">{{ selected.relativePath }}</span>
               <span
@@ -589,69 +582,107 @@ watch(
                 <div class="entries-panel">
                   <div class="pane-title">
                     {{ $t("studio.code.entriesTitle") }}
-                    <span class="pane-count">{{ packageEntries.length }}</span>
+                    <span
+                      v-if="activeExplorerPage"
+                      class="pane-count"
+                    >{{ activeExplorerPage.total }}</span>
                   </div>
-                  <!-- 分类标签（类型直方图）+ TGI 搜索 -->
+                  <!-- 分类标签（注册表语义名）+ TGI 搜索（与包浏览同管线） -->
                   <div
-                    v-if="packageInfo?.types.length"
+                    v-if="activeExplorerPage?.typeCounts.length"
                     class="entry-filters"
                   >
                     <div class="type-chips" role="group">
                       <button
                         type="button"
                         class="tool-chip"
-                        :class="{ active: entryTypeFilter === null }"
-                        @click="entryTypeFilter = null"
+                        :class="{ active: explorer.typeFilter === null }"
+                        @click="chooseCategory('all')"
                       >
                         {{ $t("studio.code.entriesAll") }}
+                        <span class="chip-count">{{ activeExplorerPage.total }}</span>
                       </button>
                       <button
-                        v-for="type in packageInfo.types"
+                        v-for="type in activeExplorerPage.typeCounts"
                         :key="type.typeId"
                         type="button"
                         class="tool-chip"
-                        :class="{ active: entryTypeFilter === type.typeId }"
+                        :class="{ active: explorer.typeFilter === type.typeId }"
                         :title="`0x${type.typeId.toString(16).toUpperCase().padStart(8, '0')}`"
-                        @click="entryTypeFilter = type.typeId"
+                        @click="chooseCategory(String(type.typeId))"
                       >
                         {{ type.name }}
                         <span class="chip-count">{{ type.count }}</span>
                       </button>
                     </div>
                     <input
-                      v-model="entrySearch"
                       class="entry-search"
                       type="text"
+                      :value="entrySearch"
                       :placeholder="$t('studio.code.entriesSearch')"
+                      @input="onEntrySearch"
                     />
                   </div>
-                  <p v-if="entriesLoading" class="pane-state">
+                  <p
+                    v-if="entriesLoading || explorer.loadingPackage"
+                    class="pane-state"
+                  >
                     {{ $t("common.loading") }}
                   </p>
-                  <p v-else-if="!filteredEntries.length" class="pane-state">
+                  <p
+                    v-else-if="!activeExplorerPage?.items.length"
+                    class="pane-state"
+                  >
                     {{ $t("studio.code.entriesEmpty") }}
                   </p>
                   <button
-                    v-for="entry in filteredEntries"
-                    :key="`${entry.typeId}:${entry.groupId}:${entry.instanceId}`"
+                    v-for="resource in activeExplorerPage?.items ?? []"
+                    :key="`${resource.tgi.typeId}:${resource.tgi.group}:${resource.tgi.instance}`"
                     type="button"
                     class="entry-row"
                     :class="{
                       selected:
-                        selectedEntry?.typeId === entry.typeId &&
-                        selectedEntry?.instanceId === entry.instanceId,
+                        explorer.selected?.tgi.instance === resource.tgi.instance,
                     }"
-                    @click="selectEntry(entry)"
+                    @click="explorer.selectResource(resource)"
                   >
-                    <span class="mono">0x{{ entry.typeId.toString(16).toUpperCase().padStart(8, "0") }}</span>
-                    <span class="mono entry-instance">0x{{ entry.instanceId.toString(16).toUpperCase().padStart(8, "0") }}</span>
+                    <span class="entry-label">{{ explorer.resourceLabel(resource) }}</span>
                     <span
-                      v-if="entry.semantic"
+                      v-if="resource.semantic"
                       class="semantic-tag"
-                      :title="entry.semantic.id"
-                    >{{ semanticLabel(entry) }}</span>
-                    <span class="entry-size">{{ formatCodeSize(entry.decompressedSize) }}</span>
+                      :title="resource.semantic.id"
+                    >{{
+                      locale.startsWith("zh")
+                        ? resource.semantic.labelZh
+                        : resource.semantic.labelEn
+                    }}</span>
+                    <span class="entry-size">{{ formatCodeSize(resource.decompressedSize) }}</span>
                   </button>
+                  <!-- 分页（与包浏览同款口径） -->
+                  <div
+                    v-if="activeExplorerPage && explorer.totalPages > 1"
+                    class="entries-pager"
+                  >
+                    <button
+                      class="tool-chip"
+                      type="button"
+                      :disabled="!explorer.canPrev"
+                      @click="explorer.prevPage()"
+                    >
+                      {{ $t("package.prevPage") }}
+                    </button>
+                    <span class="pager-label">
+                      {{ explorer.currentPage }} / {{ explorer.totalPages }}
+                    </span>
+                    <button
+                      class="tool-chip"
+                      type="button"
+                      :disabled="!explorer.canNext"
+                      @click="explorer.nextPage()"
+                    >
+                      {{ $t("package.nextPage") }}
+                    </button>
+                  </div>
                 </div>
               </ResizablePanel>
               <ResizableHandle
@@ -660,46 +691,18 @@ watch(
               />
               <ResizablePanel id="code-package-resource" :default-size="58" :min-size="30">
                 <div class="resource-panel">
-                  <template v-if="selectedEntry">
+                  <template v-if="explorer.selected">
                     <div class="pane-title mono">
-                      0x{{ selectedEntry.typeId.toString(16).toUpperCase().padStart(8, "0") }}
-                      : 0x{{ selectedEntry.groupId.toString(16).toUpperCase().padStart(8, "0") }}
-                      : 0x{{ selectedEntry.instanceId.toString(16).toUpperCase().padStart(8, "0") }}
+                      0x{{ explorer.selected.tgi.typeId.toString(16).toUpperCase().padStart(8, "0") }}
+                      : 0x{{ explorer.selected.tgi.group.toString(16).toUpperCase().padStart(8, "0") }}
+                      : 0x{{ explorer.selected.tgi.instance.toString(16).toUpperCase().padStart(8, "0") }}
                     </div>
-                    <p v-if="resourceLoading" class="pane-state">
-                      {{ $t("common.loading") }}
-                    </p>
-                    <template v-else-if="resourcePreview">
-                      <p v-if="resourcePreview.truncated" class="pane-state warn">
-                        {{ $t("studio.code.previewTruncated") }}
-                      </p>
-                      <!-- property：条目表 -->
-                      <div
-                        v-if="resourcePreview.kind === 'property' && resourcePreview.entries"
-                        class="property-table"
-                      >
-                        <div
-                          v-for="entry in resourcePreview.entries"
-                          :key="entry.hash"
-                          class="property-row"
-                        >
-                          <span class="mono">0x{{ entry.hash.toString(16).toUpperCase().padStart(8, "0") }}</span>
-                          <span class="property-type">{{ entry.typeName }}</span>
-                          <span class="property-value" :title="entry.value">{{ entry.value }}</span>
-                        </div>
-                      </div>
-                      <!-- 文本：FCode -->
-                      <FCode
-                        v-else-if="resourcePreview.kind === 'text' && resourcePreview.content !== null"
-                        :code="resourcePreview.content"
-                        lang="text"
-                      />
-                      <!-- hex dump -->
-                      <pre v-else-if="resourcePreview.hexDump" class="hex-view">{{ resourcePreview.hexDump }}</pre>
-                    </template>
-                    <p v-else class="pane-state">
-                      {{ $t("studio.code.resourceEmpty") }}
-                    </p>
+                    <ResourcePreviewView
+                      :preview="explorer.preview"
+                      :type-name="explorer.typeNameOf(explorer.selected)"
+                      :loading="explorer.previewLoading"
+                      :error="explorer.previewError"
+                    />
                   </template>
                   <p v-else class="pane-state">
                     {{ $t("studio.code.resourceEmpty") }}
@@ -886,6 +889,12 @@ watch(
   color: var(--subtle-foreground);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
+}
+.tree-file-icon {
+  height: 14px;
+  object-fit: contain;
+  width: 14px;
+  flex: none;
 }
 .viewer {
   background: var(--surface);
@@ -1122,45 +1131,26 @@ watch(
   color: var(--foreground);
   font-weight: 650;
 }
-.entry-instance {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.entry-size {
-  color: var(--subtle-foreground);
-  font-variant-numeric: tabular-nums;
-}
-.property-table {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.property-row {
-  align-items: baseline;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-  display: flex;
-  font-size: 11.5px;
-  gap: 10px;
-  padding: 3px 4px;
-}
-.property-type {
-  color: var(--subtle-foreground);
-  flex: none;
-  font-size: 10.5px;
-  width: 72px;
-}
-.property-value {
+.entry-label {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hex-view {
-  font-family: var(--font-mono, monospace);
+.entry-size {
+  color: var(--subtle-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.entries-pager {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding-top: 8px;
+}
+.pager-label {
+  color: var(--muted-foreground);
   font-size: 11px;
-  line-height: 1.6;
-  margin: 0;
-  white-space: pre;
+  font-variant-numeric: tabular-nums;
 }
 </style>
