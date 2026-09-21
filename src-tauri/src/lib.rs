@@ -62,9 +62,9 @@ use version_service::{
     version_list_changesets, version_list_targets, version_record_changeset, version_rollback,
 };
 use workspace::{
-    workspace_create_folder, workspace_create_markdown, workspace_get, workspace_list,
-    workspace_move, workspace_read_markdown, workspace_rename, workspace_set_root,
-    workspace_write_markdown,
+    code_package_info, code_read_text, code_tree, code_write_text, workspace_create_folder,
+    workspace_create_markdown, workspace_get, workspace_list, workspace_move,
+    workspace_read_markdown, workspace_rename, workspace_set_root, workspace_write_markdown,
 };
 
 #[tauri::command]
@@ -169,6 +169,10 @@ pub fn run() {
             workspace_create_folder,
             workspace_read_markdown,
             workspace_write_markdown,
+            code_tree,
+            code_read_text,
+            code_write_text,
+            code_package_info,
             workspace_create_markdown,
             workspace_rename,
             workspace_move,

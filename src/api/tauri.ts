@@ -817,6 +817,42 @@ export interface LotMaterialResponse {
   /** 地面贴图周期 0x0CCB7FD0（米/格）；null = 回退拟合常量 9.6m。 */
   tilePeriod: [number, number] | null;
 }
+/** code_tree：modRoot 通用文件树节点。 */
+export interface CodeTreeNode {
+  name: string;
+  relativePath: string;
+  kind: "folder" | "file";
+  /** 文件字节大小；folder 为 null。 */
+  size: number | null;
+  children: CodeTreeNode[];
+}
+/** code_tree：modRoot 递归树（截断保护）。 */
+export interface CodeTreeResponse {
+  rootPath: string;
+  fileCount: number;
+  folderCount: number;
+  truncated: boolean;
+  entries: CodeTreeNode[];
+}
+/** code_read_text / code_write_text：modRoot 文本文档（sha256 乐观锁）。 */
+export interface CodeTextDocument {
+  relativePath: string;
+  content: string;
+  size: number;
+  revision: string;
+}
+/** code_package_info：DBPF 容器只读统计。 */
+export interface CodePackageTypeInfo {
+  typeId: number;
+  count: number;
+}
+export interface CodePackageInfo {
+  relativePath: string;
+  size: number;
+  entryCount: number;
+  decompressedTotal: number;
+  types: CodePackageTypeInfo[];
+}
 /** register_decal_entry：decal 条目注册导出结果。 */
 export interface RegisterDecalEntryResult {
   outputPath: string;

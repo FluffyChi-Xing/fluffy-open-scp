@@ -11,6 +11,11 @@ use tauri::{State, command};
 use crate::activity::{AppState, CommandError};
 
 pub const MAX_MARKDOWN_BYTES: usize = 4 * 1024 * 1024;
+/// Code 工作台文本读取上限（与 Markdown 同数量级的防失控闸）。
+pub const MAX_CODE_TEXT_BYTES: usize = 4 * 1024 * 1024;
+/// Code 树条目预算：模组目录可能数千文件，超出即截断并回报 truncated。
+const MAX_CODE_TREE_ENTRIES: usize = 5000;
+const MAX_CODE_TREE_DEPTH: usize = 16;
 const MAX_PATH_COMPONENT_BYTES: usize = 128;
 const MAX_RELATIVE_PATH_BYTES: usize = 512;
 
@@ -100,6 +105,8 @@ pub struct MoveRequest {
 enum WorkspaceError {
     #[error("workspace has not been configured")]
     NotConfigured,
+    #[error("studio mod root has not been configured")]
+    ModRootNotConfigured,
     #[error("workspace path is invalid: {0}")]
     InvalidPath(String),
     #[error("workspace root is unavailable")]
@@ -135,7 +142,9 @@ enum WorkspaceError {
 impl WorkspaceError {
     fn code(&self) -> &'static str {
         match self {
-            Self::NotConfigured | Self::RootUnavailable => "workspace_not_configured",
+            Self::NotConfigured => "workspace_not_configured",
+            Self::ModRootNotConfigured => "mod_root_not_configured",
+            Self::RootUnavailable => "mod_root_unavailable",
             Self::InvalidPath(_) | Self::NotMarkdown => "invalid_path",
             Self::OutsideRoot | Self::Symlink => "path_forbidden",
             Self::NotFound => "not_found",
@@ -683,6 +692,363 @@ pub async fn workspace_move(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+// ── Code 工作台（M-CM1）：modRoot 通用文件浏览/读写 ──
+//
+// root = studio_config.mod_root（模组项目都在其下）。安全防护与 Markdown
+// 工作区同源：`validate_relative_path` 拒绝越界分量，`existing_path` 逐级
+// 校验符号链接并 canonicalize 归属，写入走 `write_atomic`。
+
+/// modRoot 解析（存在、非符号链接、canonicalize）。
+fn code_root(store: &Store) -> Result<PathBuf, WorkspaceError> {
+    let config = store.studio_config()?;
+    let Some(root) = config.mod_root else {
+        return Err(WorkspaceError::ModRootNotConfigured);
+    };
+    let metadata = fs::symlink_metadata(&root).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            WorkspaceError::RootUnavailable
+        } else {
+            WorkspaceError::Io(error)
+        }
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(WorkspaceError::Symlink);
+    }
+    if !metadata.is_dir() {
+        return Err(WorkspaceError::NotDirectory);
+    }
+    fs::canonicalize(root).map_err(WorkspaceError::from)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeTreeNode {
+    pub name: String,
+    pub relative_path: String,
+    pub kind: &'static str,
+    /// 文件字节大小；folder 为 None。
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(default)]
+    pub children: Vec<CodeTreeNode>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeTreeResponse {
+    pub root_path: String,
+    pub file_count: usize,
+    pub folder_count: usize,
+    /// true = 条目超出预算或深度上限，树被截断。
+    pub truncated: bool,
+    pub entries: Vec<CodeTreeNode>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeTextDocument {
+    pub relative_path: String,
+    pub content: String,
+    pub size: usize,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeWriteTextRequest {
+    pub relative_path: String,
+    pub content: String,
+    /// 乐观锁：与当前内容的 sha256 不一致即拒绝（None = 允许新建）。
+    #[serde(default)]
+    pub expected_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodePackageTypeInfo {
+    pub type_id: u32,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodePackageInfo {
+    pub relative_path: String,
+    /// 磁盘文件大小。
+    pub size: u64,
+    pub entry_count: usize,
+    /// 条目解压尺寸合计（DBPF index 视角）。
+    pub decompressed_total: u64,
+    /// 类型直方图（按数量降序，取前 12）。
+    pub types: Vec<CodePackageTypeInfo>,
+}
+
+#[derive(Default)]
+struct CodeScanBudget {
+    remaining: usize,
+    truncated: bool,
+}
+
+fn scan_code_dir(
+    root: &Path,
+    current: &Path,
+    relative: &str,
+    depth: usize,
+    budget: &mut CodeScanBudget,
+) -> Result<Vec<CodeTreeNode>, WorkspaceError> {
+    let mut children = fs::read_dir(current)?.collect::<Result<Vec<_>, _>>()?;
+    children.sort_by_key(|entry| entry.file_name());
+    let mut nodes = Vec::new();
+    for child in children {
+        if budget.remaining == 0 {
+            budget.truncated = true;
+            break;
+        }
+        let path = child.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        let name = child.file_name().to_string_lossy().into_owned();
+        let child_relative = if relative.is_empty() {
+            name.clone()
+        } else {
+            format!("{relative}/{name}")
+        };
+        budget.remaining -= 1;
+        if metadata.is_dir() {
+            let canonical = fs::canonicalize(&path)?;
+            if !canonical.starts_with(root) {
+                continue;
+            }
+            let grandchildren = if depth >= MAX_CODE_TREE_DEPTH {
+                budget.truncated = true;
+                Vec::new()
+            } else {
+                scan_code_dir(root, &canonical, &child_relative, depth + 1, budget)?
+            };
+            nodes.push(CodeTreeNode {
+                name,
+                relative_path: child_relative,
+                kind: "folder",
+                size: None,
+                children: grandchildren,
+            });
+        } else if metadata.is_file() {
+            nodes.push(CodeTreeNode {
+                name,
+                relative_path: child_relative,
+                kind: "file",
+                size: Some(metadata.len()),
+                children: Vec::new(),
+            });
+        }
+    }
+    // 目录优先、组内按名排序（sort_by_key 稳定，保持既有名序）。
+    nodes.sort_by_key(|node| (node.kind != "folder", node.name.clone()));
+    Ok(nodes)
+}
+
+fn count_code_entries(nodes: &[CodeTreeNode]) -> (usize, usize) {
+    let mut files = 0;
+    let mut folders = 0;
+    for node in nodes {
+        if node.kind == "folder" {
+            folders += 1;
+            let (f, d) = count_code_entries(&node.children);
+            files += f;
+            folders += d;
+        } else {
+            files += 1;
+        }
+    }
+    (files, folders)
+}
+
+#[command]
+pub async fn code_tree(state: State<'_, AppState>) -> Result<CodeTreeResponse, CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store).map_err(CommandError::from)?;
+        let mut budget = CodeScanBudget {
+            remaining: MAX_CODE_TREE_ENTRIES,
+            truncated: false,
+        };
+        let entries =
+            scan_code_dir(&root, &root, "", 0, &mut budget).map_err(CommandError::from)?;
+        let (file_count, folder_count) = count_code_entries(&entries);
+        Ok(CodeTreeResponse {
+            root_path: root.to_string_lossy().into_owned(),
+            file_count,
+            folder_count,
+            truncated: budget.truncated,
+            entries,
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[command]
+pub async fn code_read_text(
+    state: State<'_, AppState>,
+    request: RelativePathRequest,
+) -> Result<CodeTextDocument, CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store).map_err(CommandError::from)?;
+        let relative = validate_relative_path(&request.relative_path, false)
+            .map_err(CommandError::from)?;
+        let path = existing_path(&root, &relative).map_err(CommandError::from)?;
+        if !path.is_file() {
+            return Err(CommandError::from(WorkspaceError::NotFile));
+        }
+        let metadata = fs::metadata(&path)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+        if metadata.len() > MAX_CODE_TEXT_BYTES as u64 {
+            return Err(CommandError::from(WorkspaceError::TooLarge(
+                MAX_CODE_TEXT_BYTES,
+            )));
+        }
+        let mut bytes = Vec::with_capacity(metadata.len() as usize + 1);
+        File::open(&path)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?
+            .take((MAX_CODE_TEXT_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+        if bytes.len() > MAX_CODE_TEXT_BYTES {
+            return Err(CommandError::from(WorkspaceError::TooLarge(
+                MAX_CODE_TEXT_BYTES,
+            )));
+        }
+        let content = String::from_utf8(bytes)
+            .map_err(|error| CommandError::from(WorkspaceError::InvalidUtf8(error)))?;
+        let document_revision = revision(content.as_bytes());
+        Ok(CodeTextDocument {
+            relative_path: request.relative_path,
+            content,
+            size: metadata.len() as usize,
+            revision: document_revision,
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[command]
+pub async fn code_write_text(
+    state: State<'_, AppState>,
+    request: CodeWriteTextRequest,
+) -> Result<CodeTextDocument, CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store).map_err(CommandError::from)?;
+        let relative = validate_relative_path(&request.relative_path, false)
+            .map_err(CommandError::from)?;
+        let parent = existing_parent(&root, &relative).map_err(CommandError::from)?;
+        let target = parent.join(
+            relative
+                .file_name()
+                .ok_or_else(|| CommandError::from(WorkspaceError::NotFound))?,
+        );
+        let existing = match fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(CommandError::from(WorkspaceError::Symlink));
+            }
+            Ok(metadata) if !metadata.is_file() => {
+                return Err(CommandError::from(WorkspaceError::NotFile));
+            }
+            Ok(_) => {
+                let mut bytes = Vec::new();
+                File::open(&target)
+                    .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+                Some(revision(&bytes))
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(CommandError::from(WorkspaceError::Io(error))),
+        };
+        if let Some(actual) = &existing {
+            if request.expected_revision.as_deref() != Some(actual.as_str()) {
+                return Err(CommandError::from(WorkspaceError::RevisionConflict));
+            }
+        }
+        let bytes = request.content.as_bytes();
+        if bytes.len() > MAX_CODE_TEXT_BYTES {
+            return Err(CommandError::from(WorkspaceError::TooLarge(
+                MAX_CODE_TEXT_BYTES,
+            )));
+        }
+        write_atomic(&target, bytes, existing.is_some()).map_err(CommandError::from)?;
+        Ok(CodeTextDocument {
+            relative_path: request.relative_path,
+            content: request.content.clone(),
+            size: bytes.len(),
+            revision: revision(bytes),
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+/// DBPF 容器独立打开统计（不进 PackageManager）：条目数、解压总量、类型直方图。
+fn code_package_stats(
+    path: &Path,
+) -> Result<(usize, u64, Vec<CodePackageTypeInfo>), WorkspaceError> {
+    let package = dbpf::Package::open(path)
+        .map_err(|error| WorkspaceError::InvalidPath(error.to_string()))?;
+    let mut histogram: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    let mut decompressed_total = 0u64;
+    for entry in package.entries() {
+        *histogram.entry(entry.id.type_id).or_insert(0) += 1;
+        decompressed_total += u64::from(entry.decompressed_size);
+    }
+    let mut types: Vec<CodePackageTypeInfo> = histogram
+        .into_iter()
+        .map(|(type_id, count)| CodePackageTypeInfo { type_id, count })
+        .collect();
+    types.sort_by(|a, b| b.count.cmp(&a.count).then(a.type_id.cmp(&b.type_id)));
+    types.truncate(12);
+    Ok((package.entries().len(), decompressed_total, types))
+}
+
+#[command]
+pub async fn code_package_info(
+    state: State<'_, AppState>,
+    request: RelativePathRequest,
+) -> Result<CodePackageInfo, CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store).map_err(CommandError::from)?;
+        let relative = validate_relative_path(&request.relative_path, false)
+            .map_err(CommandError::from)?;
+        let path = existing_path(&root, &relative).map_err(CommandError::from)?;
+        if !path.is_file() {
+            return Err(CommandError::from(WorkspaceError::NotFile));
+        }
+        let size = fs::metadata(&path)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?
+            .len();
+        let (entry_count, decompressed_total, types) =
+            code_package_stats(&path).map_err(|error| match error {
+                WorkspaceError::Io(error) => {
+                    CommandError::from(WorkspaceError::InvalidPath(error.to_string()))
+                }
+                other => CommandError::from(other),
+            })?;
+        Ok(CodePackageInfo {
+            relative_path: request.relative_path,
+            size,
+            entry_count,
+            decompressed_total,
+            types,
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -753,5 +1119,92 @@ mod tests {
         let root = fs::canonicalize(&raw).unwrap();
         assert_eq!(existing_parent(&root, Path::new("root.md")).unwrap(), root);
         let _ = fs::remove_dir_all(&raw);
+    }
+
+    #[test]
+    fn code_tree_lists_folders_first_with_sizes() {
+        let raw = std::env::temp_dir().join(format!("openscp-code-tree-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raw);
+        fs::create_dir_all(raw.join("Mod/SimCityData")).unwrap();
+        fs::write(raw.join("Mod/readme.txt"), b"hello").unwrap();
+        fs::write(raw.join("Mod/SimCityData/a.package"), vec![0u8; 10]).unwrap();
+        let root = fs::canonicalize(&raw).unwrap();
+        let mut budget = CodeScanBudget {
+            remaining: MAX_CODE_TREE_ENTRIES,
+            truncated: false,
+        };
+        let entries = scan_code_dir(&root, &root, "", 0, &mut budget).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].kind, "folder");
+        let children = &entries[0].children;
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0].kind, "folder");
+        assert_eq!(children[0].relative_path, "Mod/SimCityData");
+        assert_eq!(children[1].kind, "file");
+        assert_eq!(children[1].size, Some(5));
+        assert!(!budget.truncated);
+        let (files, folders) = count_code_entries(&entries);
+        assert_eq!((files, folders), (2, 2));
+        let _ = fs::remove_dir_all(&raw);
+    }
+
+    #[test]
+    fn code_tree_budget_truncates_and_reports() {
+        let raw = std::env::temp_dir().join(format!("openscp-code-cap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raw);
+        fs::create_dir_all(&raw).unwrap();
+        for index in 0..5 {
+            fs::write(raw.join(format!("f{index}.txt")), b"x").unwrap();
+        }
+        let root = fs::canonicalize(&raw).unwrap();
+        let mut budget = CodeScanBudget {
+            remaining: 3,
+            truncated: false,
+        };
+        let entries = scan_code_dir(&root, &root, "", 0, &mut budget).unwrap();
+        assert_eq!(entries.len(), 3);
+        assert!(budget.truncated);
+        let _ = fs::remove_dir_all(&raw);
+    }
+
+    #[test]
+    fn code_package_stats_counts_entries_by_type() {
+        use dbpf::{OverlayEntry, ResourceId, write_uncompressed_overlay};
+        let path =
+            std::env::temp_dir().join(format!("openscp-code-pkg-{}.package", std::process::id()));
+        let entries = [
+            OverlayEntry::new(
+                ResourceId {
+                    type_id: 0x00B1_B104,
+                    group: 0,
+                    instance: 1,
+                },
+                b"abcd",
+            ),
+            OverlayEntry::new(
+                ResourceId {
+                    type_id: 0x00B1_B104,
+                    group: 0,
+                    instance: 2,
+                },
+                b"efgh",
+            ),
+            OverlayEntry::new(
+                ResourceId {
+                    type_id: 0x2F4E_681C,
+                    group: 0,
+                    instance: 3,
+                },
+                b"ijkl",
+            ),
+        ];
+        fs::write(&path, write_uncompressed_overlay(&entries).unwrap()).unwrap();
+        let (count, total, types) = code_package_stats(&path).unwrap();
+        assert_eq!(count, 3);
+        assert_eq!(total, 12);
+        assert_eq!(types[0].type_id, 0x00B1_B104);
+        assert_eq!(types[0].count, 2);
+        assert_eq!(types[1].type_id, 0x2F4E_681C);
+        fs::remove_file(&path).unwrap();
     }
 }

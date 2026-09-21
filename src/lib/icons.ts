@@ -154,6 +154,7 @@ export const iconAliases = {
   boxes: "Boxes",
   sticky: "StickyNote",
   history: "History",
+  code: "CodeXml",
 } as const;
 
 export type FluffyIconAlias = keyof typeof iconAliases;

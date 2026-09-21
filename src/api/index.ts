@@ -36,6 +36,9 @@ import {
   type LotEditorSession,
   type PropertyDocumentSummary,
   type LotMaterialResponse,
+  type CodeTreeResponse,
+  type CodeTextDocument,
+  type CodePackageInfo,
   type RegisterDecalEntryResult,
   type CreateLotOverlayResult,
   type CompanionPropertyRef,
@@ -207,6 +210,24 @@ export const tauriApi = {
     move: (relativePath: string, targetDirectory: string) =>
       command<WorkspaceEntry[]>("workspace_move", {
         request: { relativePath, targetDirectory },
+      }),
+    // ── Code 工作台（modRoot 通用文件） ──
+    codeTree: () => command<CodeTreeResponse>("code_tree"),
+    codeReadText: (relativePath: string) =>
+      command<CodeTextDocument>("code_read_text", {
+        request: { relativePath },
+      }),
+    codeWriteText: (
+      relativePath: string,
+      content: string,
+      expectedRevision?: string,
+    ) =>
+      command<CodeTextDocument>("code_write_text", {
+        request: { relativePath, content, expectedRevision },
+      }),
+    codePackageInfo: (relativePath: string) =>
+      command<CodePackageInfo>("code_package_info", {
+        request: { relativePath },
       }),
   },
   raster: {

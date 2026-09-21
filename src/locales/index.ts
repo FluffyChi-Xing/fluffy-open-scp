@@ -40,6 +40,7 @@ const messages = {
       studioProperty: "属性编辑",
       studioRaster: "Raster 绘制",
       studioUI: "UI 工作台",
+      studioCode: "Code 工作台",
       studioAsset: "资产面板",
       studioVersions: "版本控制台",
       studioOverview: "面板总览",
@@ -80,6 +81,28 @@ const messages = {
       later: "稍后再说",
     },
     studio: {
+      code: {
+        hint: "浏览 modRoot 下的模组文件：左侧目录树，右侧按扩展名解析预览（文本 / 图片 / DBPF 容器）。",
+        needModRoot:
+          "尚未配置项目管理根目录（modRoot）——请先在 Studio 概览完成引导设置。",
+        rootUnavailable: "modRoot 目录当前不可访问（被移动或删除）。",
+        loadFailed: "目录树读取失败",
+        refresh: "刷新",
+        stats: "{files} 个文件 · {folders} 个文件夹",
+        truncated: "条目过多，目录树已截断。",
+        empty: "modRoot 下没有文件。",
+        resizeHint: "拖拽调整目录树与查看器的宽度",
+        pickHint: "选择左侧文件查看内容",
+        textTooLarge: "文本超过 4 MB，暂不支持预览。",
+        binaryHint: "二进制文件——预览与编辑将在后续版本支持。",
+        imageAlt: "图片预览",
+        packageCard: "DBPF 容器",
+        packageEntries: "资源条目",
+        packageDecompressed: "解压后总量",
+        packageSize: "磁盘大小",
+        packageTypes: "类型直方图（前 12）",
+        packageOpenHint: "完整资源解析可在「包浏览」中打开该文件。",
+      },
       raster: {
         title: "Raster 绘制",
         description:
@@ -1430,6 +1453,7 @@ const messages = {
       studioProperty: "Property editor",
       studioRaster: "Raster paint",
       studioUI: "UI workbench",
+      studioCode: "Code workbench",
       studioAsset: "Asset panel",
       studioVersions: "Version console",
       studioOverview: "Panel overview",
@@ -1473,6 +1497,30 @@ const messages = {
       later: "Later",
     },
     studio: {
+      code: {
+        hint: "Browse mod files under modRoot: folder tree on the left, type-aware preview on the right (text / images / DBPF containers).",
+        needModRoot:
+          "The mod root (modRoot) has not been configured — finish the Studio onboarding first.",
+        rootUnavailable:
+          "The mod root is currently inaccessible (moved or deleted).",
+        loadFailed: "Failed to read the folder tree",
+        refresh: "Refresh",
+        stats: "{files} files · {folders} folders",
+        truncated: "Too many entries — the tree was truncated.",
+        empty: "No files under modRoot.",
+        resizeHint: "Drag to resize the tree and viewer",
+        pickHint: "Pick a file on the left to inspect it",
+        textTooLarge: "Text exceeds 4 MB and cannot be previewed yet.",
+        binaryHint: "Binary file — preview and editing arrive in a later release.",
+        imageAlt: "Image preview",
+        packageCard: "DBPF container",
+        packageEntries: "Resources",
+        packageDecompressed: "Decompressed total",
+        packageSize: "On-disk size",
+        packageTypes: "Type histogram (top 12)",
+        packageOpenHint:
+          "Open the file in the package browser for full resource parsing.",
+      },
       raster: {
         title: "Raster paint",
         description:
