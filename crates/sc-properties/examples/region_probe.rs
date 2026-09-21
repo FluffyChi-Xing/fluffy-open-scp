@@ -24,6 +24,8 @@ fn main() {
         "full" => full(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap()),
         // refs <package> <region-group-hex> —— 区域内全部画刷 property 记账
         "refs" => refs(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap()),
+        // matchstate <package> <region-group-hex> <state.bin> —— 在城市状态中定位区域 tile 行
+        "matchstate" => matchstate(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap(), &args[3]),
         // jigsaw <package> <region-group-hex> <type-hex> <out.bmp> [tile-instance...] —— 边缘匹配自动拼合
         "jigsaw" => {
             let type_hex = u32::from_str_radix(args[3].trim_start_matches("0x"), 16).unwrap();
@@ -460,3 +462,54 @@ fn props(path: &str) {
         }
     }
 }
+
+fn matchstate(package_path: &str, group: u32, state_path: &str) {
+    let package = open(package_path);
+    // 收集该区域 group 的 F0 tile：instance → 行数据（512B/行）
+    let mut rows: std::collections::HashMap<[u8; 8], Vec<(u32, usize)>> = std::collections::HashMap::new();
+    let mut tile_rows: std::collections::HashMap<u32, Vec<Vec<u8>>> = std::collections::HashMap::new();
+    let mut order: Vec<u32> = Vec::new();
+    for entry in package.entries().iter().filter(|e| e.id.group == group && e.id.type_id == 0x03E4_21F0) {
+        let Ok(data) = package.read(entry) else { continue };
+        if data.len() < 20 { continue; }
+        let body = &data[20..];
+        let mut rowvecs = Vec::new();
+        for r in 0..(body.len() / 512) {
+            let row = &body[r * 512..(r + 1) * 512];
+            rows.entry(row[..8].try_into().unwrap()).or_default().push((entry.id.instance, r));
+            rowvecs.push(row.to_vec());
+        }
+        tile_rows.insert(entry.id.instance, rowvecs);
+        order.push(entry.id.instance);
+    }
+    let state = std::fs::read(state_path).unwrap();
+    println!("state {} bytes, tiles {} rows", state.len(), tile_rows.values().map(|v| v.len()).sum::<usize>());
+    let mut hits: std::collections::BTreeMap<u32, Vec<(usize, usize)>> = std::collections::BTreeMap::new();
+    let mut off = 0usize;
+    while off + 512 <= state.len() {
+        let key: [u8; 8] = state[off..off + 8].try_into().unwrap();
+        if let Some(list) = rows.get(&key) {
+            for (inst, r) in list {
+                let row = &tile_rows[inst][*r];
+                if &state[off..off + 512] == row.as_slice() {
+                    hits.entry(*inst).or_default().push((off, *r));
+                    handled_marker(off);
+                }
+            }
+        }
+        off += 2; // u16 步进扫描
+    }
+    let mut total = 0usize;
+    for (inst, list) in &hits {
+        let min_off = list.iter().map(|h| h.0).min().unwrap();
+        let max_off = list.iter().map(|h| h.0).max().unwrap();
+        println!("tile {:08X}: {} 行命中, state偏移 {}..{}, 行号 {}..{}",
+            inst, list.len(), min_off, max_off,
+            list.iter().map(|(_, r)| *r).min().unwrap(),
+            list.iter().map(|(_, r)| *r).max().unwrap());
+        total += list.len();
+    }
+    println!("总命中行数: {total}");
+}
+
+fn handled_marker(_off: usize) {}
