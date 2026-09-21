@@ -258,10 +258,9 @@ async function selectFile(node: CodeTreeNodeDto) {
   }
 }
 
-/** 类型分类标签：切到对应分类（store 负责回第一页拉取）。 */
+/** 类型分类标签：走 store 的 action（内部 typeFilter 未导出，直接赋值无效）。 */
 async function chooseCategory(key: string) {
-  explorer.typeFilter = key === "all" ? null : Number(key);
-  await explorer.loadPage(0);
+  await explorer.chooseCategory(key);
 }
 
 /** TGI 搜索（服务端匹配：0x 前缀 / t:g:i 分段 / 十进制均可）。 */
@@ -596,7 +595,7 @@ watch(
                       <button
                         type="button"
                         class="tool-chip"
-                        :class="{ active: explorer.typeFilter === null }"
+                        :class="{ active: explorer.category === 'all' }"
                         @click="chooseCategory('all')"
                       >
                         {{ $t("studio.code.entriesAll") }}
@@ -607,7 +606,7 @@ watch(
                         :key="type.typeId"
                         type="button"
                         class="tool-chip"
-                        :class="{ active: explorer.typeFilter === type.typeId }"
+                        :class="{ active: explorer.category === String(type.typeId) }"
                         :title="`0x${type.typeId.toString(16).toUpperCase().padStart(8, '0')}`"
                         @click="chooseCategory(String(type.typeId))"
                       >
