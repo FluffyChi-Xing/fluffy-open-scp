@@ -19,7 +19,7 @@
 
 类型语义（`verified_type_name`）：
 - `0x03E421F0` **Terrain Heightmap (16-bit)**：解压恒为 **131,092 B = 20 B 头 + 256×256 × u16 LE**；
-- `0x03E421ED` **Terrain Field Map**：≈65,558 B = 头 + 256×256 × u8；
+- `0x03E421ED` **Terrain Field Map**：65,556 B = 20 B 头 + 128×128 × u32（头部 BE u32 "128/128/2"）；
 - property（0x00B1B104）承载全部区域/画刷/地块描述。
 
 ## 2. 高度图解剖 [高]
