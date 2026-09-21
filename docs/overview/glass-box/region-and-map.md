@@ -11,6 +11,70 @@
 > 置信度标注沿用 [glass-box/terrain.md](./terrain.md)：**[高]**=字节级实证，
 > **[中]**=结构推断，**[低]**=推测。
 
+## 0. 机制总览图
+
+### 图 A：地图渲染机制（数据 → 引擎 → 屏幕）
+
+```mermaid
+flowchart TB
+    subgraph DATA["① 数据层 — RegionTerrain/Game.package（明文，可覆盖）"]
+        F0["F0 高度图 tile<br/>256×256 u16 ×341/区域"]
+        ED["ED 地面场 tile<br/>128×128 u32 ×341/区域"]
+        BRUSH["EcoMap 画刷清单<br/>位图 Key + transform + 强度<br/>map 索引 1-9"]
+        DESC["region 描述<br/>半幅/水参数/子资源引用"]
+        PLOTS["地块表<br/>名称/世界坐标/层栈模板"]
+    end
+
+    subgraph ENG["② 引擎运行时 — SCY dump 反编译实证"]
+        CALC["世界→tile 序号<br/>tile = (半幅+world) × (1/2048)"]
+        NAME["资源 key = FNV1a(小写化(名)) + type<br/>名 = heightmap_x%02d_y%02d_mip0"]
+        HM["cTerrainHeightMap<br/>高度场 + 法线/区域/info 重算"]
+        ECOMAPS["9 张资源 typed map<br/>soil=1 water=2 forest=3 oil=4<br/>coal=5 ore=6 desirability=8/9"]
+        WATER["cTessendorfWater<br/>Height/Choppy/Normals"]
+        DRAW["cTerrainLayer::DrawLayer<br/>bindCurrentHeightMap(AsTarget)"]
+    end
+
+    subgraph OUT["③ 屏幕"]
+        TERRAIN["地形网格（8 m/格）"]
+        SEA["水面"]
+    end
+
+    DESC -->|"引用"| F0
+    DESC -->|"引用"| ED
+    DESC --> BRUSH
+    PLOTS --> CALC
+    CALC --> NAME
+    NAME -->|"资源管理器查询"| F0
+    F0 --> HM
+    ED --> ECOMAPS
+    BRUSH -->|"盖章写入"| ECOMAPS
+    HM --> DRAW
+    ECOMAPS --> DRAW
+    WATER --> SEA
+    DRAW --> TERRAIN
+```
+
+### 图 B：可游玩区域机制（地块 / 边界 / 界外缺陷根源）
+
+```mermaid
+flowchart TB
+    RD["region 描述 + 地块表<br/>11 块 = 名称 1026..1036 + 位置 vec2 + 层栈模板"]
+    BG["背景地形 tile 马赛克<br/>341 块（排布数据待破解）"]
+    ECO["资源 eco map（画刷盖章）<br/>仅在地块范围内有数据"]
+    PB["可玩框 2048m × 2048m<br/>= 256×256 格 × 8 m/格"]
+
+    RD --> PB
+    BG --> PB
+
+    REQ["放置请求（世界坐标）"] --> CHECK{"citybox 边界检查<br/>GlassBox 脚本层（BoC 已证可替换）"}
+    CHECK -->|"界内"| IN["城市模拟：格网吸附定义域内<br/>资源查 eco map（有数据）→ 正常建造"]
+    CHECK -->|"界外（BoC 补丁放行）"| OUT["资源 eco map = 0 → 无矿无水<br/>城市格网未定义 → 摆放漂移<br/>高度采样 = 区域 tile 而非城市高度场 → 埋地穿模"]
+
+    IN --> PLAY["正常游玩"]
+    OUT --> PLAY
+```
+
+
 ## 1. 数据源盘点 [高]
 
 | 包 | 内容 |
