@@ -24,17 +24,20 @@ fn main() {
         "full" => full(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap()),
         // refs <package> <region-group-hex> —— 区域内全部画刷 property 记账
         "refs" => refs(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap()),
-        // jigsaw <package> <region-group-hex> <out.bmp> —— 边缘匹配自动拼合区域大地图
-        "jigsaw" => jigsaw(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap(), &args[3]),
+        // jigsaw <package> <region-group-hex> <type-hex> <out.bmp> [tile-instance...] —— 边缘匹配自动拼合
+        "jigsaw" => {
+            let type_hex = u32::from_str_radix(args[3].trim_start_matches("0x"), 16).unwrap();
+            jigsaw(&args[1], u32::from_str_radix(&args[2].trim_start_matches("0x"), 16).unwrap(), &args[4], type_hex)
+        }
         other => panic!("unknown subcommand {other}"),
     }
 }
 
-fn jigsaw(path: &str, group: u32, out: &str) {
+fn jigsaw(path: &str, group: u32, out: &str, type_hex: u32) {
     let package = open(path);
     // 收集该区域 group 的全部 256×256 u16 tile
     let mut tiles: Vec<(u32, Vec<u16>)> = Vec::new();
-    for entry in package.entries().iter().filter(|e| e.id.group == group && e.id.type_id == 0x03E4_21F0) {
+    for entry in package.entries().iter().filter(|e| e.id.group == group && e.id.type_id == type_hex) {
         if let Ok(data) = package.read(entry) {
             if data.len() >= 20 && (data.len() - 20) % 2 == 0 {
                 tiles.push((
@@ -146,6 +149,15 @@ fn jigsaw(path: &str, group: u32, out: &str) {
     }
     let mut minv = u16::MAX; let mut maxv = 0u16;
     for (v, m) in canvas.iter().zip(&placed_mask) { if *m { minv = minv.min(*v); maxv = maxv.max(*v); } }
+    // 打印指定 instance 的网格坐标（世界尺寸标定：std::env args[5..] 传入）
+    for arg in std::env::args().skip(5) {
+        let Ok(inst) = u32::from_str_radix(arg.trim_start_matches("0x"), 16) else { continue };
+        for (i, (gx, gy)) in &pos {
+            if tiles[*i].0 == inst {
+                println!("TILEPOS 0x{inst:08X} grid=({gx},{gy}) tile_idx={i}");
+            }
+        }
+    }
     let span = (maxv - minv).max(1) as f32;
     let row_pad = (4 - (w * 3) % 4) % 4;
     let data_size = (h * (w * 3 + row_pad)) as u32;
