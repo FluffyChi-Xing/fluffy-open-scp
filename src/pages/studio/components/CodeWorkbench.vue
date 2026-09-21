@@ -961,8 +961,10 @@ watch(
   color: var(--foreground);
 }
 .tool-chip.active {
-  background: var(--surface-hover);
-  color: var(--foreground);
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 650;
 }
 .more-panel {
   display: flex;
