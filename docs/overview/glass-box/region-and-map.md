@@ -1,11 +1,13 @@
 # 区域与地图机制 — RegionTerrain / 城市地块 / 可玩边界
 
-> 调查笔记（2026-09-22）。动机：BoC（区域外可建设模组）只移除了可玩边框，
-> 但界外建造存在「摆放漂移 / 无地下资源 / 建筑埋地穿模」三类缺陷——本文从
-> 数据与引擎两侧厘清地图机制，回答「大地图如何切成小地图」「地图尺寸是
-> 引擎写死还是数据驱动」，并给出 OpenSCP 的可行路线。
+> 调查笔记（2026-09-22，同日二次更新：世界→tile 换算实证 + 撤回边缘匹配拼图）。
+> 动机：BoC（区域外可建设模组）只移除了可玩边框，但界外建造存在「摆放漂移 /
+> 无地下资源 / 建筑埋地穿模」三类缺陷——本文从数据与引擎两侧厘清地图机制，
+> 回答「大地图如何切成小地图」「地图尺寸是引擎写死还是数据驱动」，并给出
+> OpenSCP 的可行路线。
 > 工具：新增探针 `crates/sc-properties/examples/region_probe.rs`
->（survey / dump / props / hstats / tilecheck / extract 六个子命令）。
+>（survey / dump / props / hstats / tilecheck / extract / full / refs /
+>  matchstate / jigsaw / grid 共 11 个子命令）与 `tile_grid.rs`（索引序网格渲染）。
 > 置信度标注沿用 [glass-box/terrain.md](./terrain.md)：**[高]**=字节级实证，
 > **[中]**=结构推断，**[低]**=推测。
 
@@ -36,8 +38,8 @@
 | BEAF0510:DB206CE6 | 0 | 0 | **全 0**（未使用/预留地块） |
 | BEAF0510:AB991ED8 | 0 | 25573 | 陡崖（nonzero 仅 2719 格） |
 
-垂直比例（u16 → 米）未定（见 §11）；水平方向：地形格边长 8 m（terrain.md §2.6，
-LotMask 96 m = 12 格 × 8 m 互证 [中]）。
+垂直比例（u16 → 米）未定（见 §12.1）；水平方向：地形格边长 8 m（terrain.md §2.6，
+LotMask 96 m = 12 格 × 8 m 互证 [中→高]；§4.2 的 1/2048 换算常数再证 [高]）。
 
 ## 3. 区域组织：group ≈ 区域 [高]
 
@@ -55,7 +57,10 @@ LotMask 96 m = 12 格 × 8 m 互证 [中]）。
 - 95 个单条 group = 各区域城市地块的独立资源 id（§6 的 uint32 表引用它们，
   95 ≈ 11 区域 × 8.6 块/区域，与地块表 11 块/区域量级吻合 [中]）。
 
-## 4. 区域大地形 = 画刷盖章拼图 [高]
+## 4. 区域地形：tile 分块存储 + 画刷盖章 [高]
+
+> 本节「画刷盖章」只覆盖已见到的画刷清单（每区域仅 2 笔地形画刷）；341 张
+> tile 与画刷的完整记账尚未对上（见 §12.1）。
 
 地形画刷清单（例 BC357A2B:3BABB8DB）：
 
@@ -77,7 +82,7 @@ A.left  vs B.right  avg|Δ| = 6520.4 ← 反向/上下缘 514~3019 → 不连续
 ### 4.1 tile 的空间排布：尚未破解（2026-09-22 修正）[诚实声明]
 
 此前一版曾用"贪心边缘匹配 + BFS"自动拼合并声称拼出连贯大地图——**该结论
-有误，已撤回**（下图与相关推断作废）。复盘发现：
+有误，已撤回**（相关拼图 PNG 已删除）。复盘发现：
 
 1. 单张 tile 是**低频平滑地形**（无强特征边），边缘匹配天然歧义：平坦边缘
    彼此差异都在几十个高度单位内，贪心链式匹配会大量误配，"连贯拼图"是
@@ -114,7 +119,8 @@ FUN_00beb470(buf, tileX, tileY, /*mip=*/0);      // "heightmap_x%02d_y%02d_mip0"
 - `.data` 实测：`DAT_00d9e8a4 = 0.00048828125 = 1/2048`、`DAT_00da307c = 0.5`
   —— **一个地形 tile = 2048 m × 2048 m**；
 - 城市格 256×256 → **格边长 = 2048/256 = 8 m**（terrain.md 假设转正 [高]）；
-- 城市地块表坐标（±6704 m）落在区域 mosaic（19×17 tile ≈ 38.9×34.8 km）中央；
+- 地块表坐标（±6704 m）落在区域背景 mosaic 范围内（背景 mosaic 的总覆盖
+  范围待 tile 排布破解后标定，见 §4.1）；
 - 地形查询按名字（含 tile 坐标）走资源管理器——tile 的存取是**数据驱动**；
 - 运行时高度公式（`fStack_28 = DAT_0103d444 * 0.5 + DAT_0103d448`）的常量在
   BSS/未转储区，垂直比例仍待动态脱壳定量。
@@ -160,8 +166,9 @@ FUN_00beb470(buf, tileX, tileY, /*mip=*/0);      // "heightmap_x%02d_y%02d_mip0"
 - 格边长 = 8 m：**引擎常量链实证**——tile 换算常数 1/2048（§4.2）× 256 格/城
   = 2048 m；LotMask 96 m = 12 格 × 8 m 互证 [高]
   → **单城可玩地面 = 2048 m × 2048 m（≈4.2 km²）**，与社区公称"2km×2km"一致；
-- 区域世界（画刷/地块坐标）跨度 ~13 km 见方，即区域 ≈ 40+ 个城市格的地理范围，
-  但其中**只有地块表登记的地块可玩**。
+- 区域世界（画刷/地块坐标）跨度 ~13 km 见方（≈ 43 个 2048m 城市格的面积），
+  但其中**只有地块表登记的地块可玩**；界外背景地形由 341 张背景 tile 承载
+  （排布待破解，§4.1）。
 
 ## 8. 可玩边界（citybox）在哪一层 [高]
 
@@ -179,7 +186,8 @@ FUN_00beb470(buf, tileX, tileY, /*mip=*/0);      // "heightmap_x%02d_y%02d_mip0"
 |---|---|---|---|
 | 引擎 | 地形图分辨率 256×256（0x10000 常量） | EXE（FUN_00bdd210） | 二进制级 |
 | 引擎 | typed map 槽位数 13–14、格网原语、渲染管线 | EXE | 二进制级 |
-| 引擎[中] | 格边长 8 m、垂直比例常量 | EXE float | 二进制级 |
+| 引擎[高] | 格边长 8 m（= 1/2048 换算常数 × 256 格/城，§4.2） | EXE float | 二进制级 |
+| 引擎 | 垂直比例常量（BSS，未转储） | EXE float | 二进制级（需动态脱壳） |
 | 数据 | **区域数量/名称/地块位置/地块表/资源分布/水参数** | RegionTerrain property | **纯数据，可覆盖可新增** |
 | 数据 | 界外格的资源/高度（当前 = 空白） | 同上（没画就是 0） | **纯数据，可补** |
 | 脚本 | 可玩边界检查、放置规则 | EcoGame JS bundle | 脚本层（BoC 已证可改） |
@@ -210,9 +218,17 @@ cargo run -p sc-properties --release --example region_probe -- \
   dump    <package> <type-hex>            # 条目 TGI/尺寸/头部
   props   <package>                       # 全量 property 键值
   hstats  <package> 03E421F0              # 高度图 min/max/avg
-  tilecheck <package> <instA> <instB>     # 边缘连续性（拼图判定）
-  extract <package> <instance> <out>      # 提取资源
+  tilecheck <package> <instA> <instB>     # 两 tile 边缘连续性
+  extract <package> <instance> <out>      # 按 instance 提取资源
+  full    <package> <instance>            # property 完整数组（不截断）
+  refs    <package> <region-group>        # 区域画刷记账（位图+transform）
+  matchstate <package> <group> <state>    # 城市 egb 状态中搜索 tile 行
+  jigsaw  <package> <group> <type> <out>  # 边缘匹配自动拼合（低频地形不可信！）
+  grid    <package> <group> <type> <w> <out>  # 索引序网格渲染（tile_grid.rs 亦可）
 ```
+
+另：`tile_grid.rs` 探针功能同 grid 子命令；EcoGame bundle 定位用
+`find_instance 622B9CD7 <package...>`。
 
 ## 12. 遗留与下一步（2026-09-22 更新）
 
@@ -221,8 +237,13 @@ cargo run -p sc-properties --release --example region_probe -- \
 - [ ] **垂直比例**（u16 高度 → 米）：需引擎常量。Ghidra 静态分析受限——
   `SimCity.exe` 加壳（.text 熵 8.00，见 file-formats.md §7），须先动态脱壳再
   反编译 `cTerrainHeightMap` / `cShaderDataTerrainRegionVS` 取比例常量；
-- [ ] **tile 世界尺寸**（256 格 tile 的米数，4 m/格 vs 8 m/格两说）：同上，或
-  通过存档（save）内城市高度图与区域 mosaic 的对比采样间接定标；
+- [x] ~~tile 世界尺寸~~ **已破解**（§4.2）：tile = 2048 m（换算常数 1/2048），
+  格边长 8 m；
+- [ ] **tile 空间排布**（341 块的网格位置 / instance ↔ 排布映射）：贪心边缘
+  匹配已证不可信（低频平坦地形边缘歧义），需存档对照（城市地形 vs 区域
+  tile 采样）或引擎分析（FUN_00beb730 的调用链/资源加载索引）；
+- [ ] **包内 tile instance ↔ name-hash 映射**（heightmap_x_y_mip 名穷举
+  0..63 未命中，坐标域/构造细节待续）；
 - [ ] **citybox 可玩边界逻辑定位**：在 EcoGame 脚本 bundle（§12.2）的 ER2 数据
   或其解包后的 JS 中，找界外放置检查的实现；
 - [ ] **ER2/JS bundle 容器格式**：见 §12.2，解开后可 diff BoC 的具体改动；
