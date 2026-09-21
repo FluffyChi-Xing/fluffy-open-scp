@@ -179,12 +179,41 @@ cargo run -p sc-properties --release --example region_probe -- \
   extract <package> <instance> <out>      # 提取资源
 ```
 
-## 12. 遗留与下一步
+## 12. 遗留与下一步（2026-09-22 更新）
 
-- [ ] 垂直比例（u16 高度 → 米）：Ghidra 对 `cTerrainHeightMap::UpdateHeightMap` /
-  `cShaderDataTerrainRegionVS` 的常量分析；
+### 12.1 待解问题
+
+- [ ] **垂直比例**（u16 高度 → 米）：需引擎常量。Ghidra 静态分析受限——
+  `SimCity.exe` 加壳（.text 熵 8.00，见 file-formats.md §7），须先动态脱壳再
+  反编译 `cTerrainHeightMap` / `cShaderDataTerrainRegionVS` 取比例常量；
+- [ ] **tile 世界尺寸**（256 格 tile 的米数，4 m/格 vs 8 m/格两说）：同上，或
+  通过存档（save）内城市高度图与区域 mosaic 的对比采样间接定标；
+- [ ] **citybox 可玩边界逻辑定位**：在 EcoGame 脚本 bundle（§12.2）的 ER2 数据
+  或其解包后的 JS 中，找界外放置检查的实现；
+- [ ] **ER2/JS bundle 容器格式**：见 §12.2，解开后可 diff BoC 的具体改动；
 - [ ] 341 块/区域的构成记账（地形 stamp vs 各 eco map stamp 的条数分布）；
-- [ ] 区域 tile 世界尺寸：画刷 transform ↔ tile 序号的映射；
-- [ ] EcoGame JS bundle（6.3 MB 高熵）容器格式破解 → 读 BoC 的 JS diff；
 - [ ] `2B9C480C` 的 uint32[11] 与单条 group id 的精确对应关系验证；
-- [ ] Ghidra headless 深挖（SCY dump 渲染侧为主，模拟侧 citybox 逻辑缺失）。
+- [ ] 资源预览缺失 TGI 时**引导用户打开游戏包**的 UI（note-mublqhrd）。
+
+### 12.2 EcoGame JS bundle 对应文件 [高]
+
+- **游戏原版**：`<游戏目录>/SimCityUserData/EcoGame/SimCity-Scripts_<补丁号>.package`
+  （EcoGame 目录现存 13 个补丁版本；当前离线 10.1 = `SimCity-Scripts_272391411.package`）；
+- **目标资源 TGI = `08068AEB:40800200:622B9CD7`**（type = ER2 Binary Rule File，
+  注册表名；解压 6.3 MB，压缩存储 ≈1.0 MB）；同包另有
+  `00B1B104:40800200:622B9CD7` property 伴随表；
+- **BoC 模组的替换物** = 同 TGI 的解压版（6,323,736 B，高熵）——即 BoC 的
+  「边界解除」是对这份编译后 GlassBox 规则/脚本数据的修改；
+- 容器静态无明文（无 ≥40 字符 ASCII 串），解码需按 GB 流处理器
+  （docs/source-code/GB_cIEcoStreamHandler.c）或动态脱壳还原；
+- 定位命令：`cargo run -p sc-properties --release --example find_instance --
+  622B9CD7 <package...>`。
+
+### 12.3 工程待办（OpenSCP 侧）
+
+- [ ] 资源预览缺失 TGI（LOD/ LotMask/Lot Textures）时提示并引导打开游戏包
+      （note-mublqhrd，相关诊断已在 lot/LOD 解析链路）；
+- [ ] M-CM3：code 工作台文本编辑保存（code_write_text 接 UI）+ mod 打包导出；
+- [ ] Raster 绘制 / property 编辑器作为底座能力嵌入模组工作台；
+- [ ] 大地图数据工程 PoC（§10 三件套）：界外 eco map 补画 + 高度源对齐 +
+      地块表扩展。
