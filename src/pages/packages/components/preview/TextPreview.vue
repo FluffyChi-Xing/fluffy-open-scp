@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import FCode from "@/components/ui/FCode.vue";
 import { isTauri, tauriApi } from "@/api";
 import { foldBinaryRuns } from "@/lib/text-decode";
@@ -21,18 +21,31 @@ const FCODE_MAX_CHARS = 1_000_000;
 /** 距已加载尾部多少字符触发续读。 */
 const LOAD_MORE_CHARS = 40_000;
 
-const appendedText = ref("");
-const loadedBytes = ref(props.preview.loadedBytes ?? 0);
-const loadingMore = ref(false);
-/** utf-16le 需偶数对齐，暂不参与续读；无句柄/非 Tauri 亦无法续读。 */
-const eof = computed(
+/** 续读能力门：可续读 = 有截断 + 有续读偏移 + 非 utf-16le + 有句柄。 */
+const canStream = computed(
   () =>
-    !props.preview.truncated ||
-    props.preview.loadedBytes == null ||
-    props.preview.encoding === "utf-16le" ||
-    !isTauri() ||
-    !props.preview.packageId ||
-    !props.preview.tgi,
+    !!props.preview.truncated &&
+    props.preview.loadedBytes != null &&
+    props.preview.encoding !== "utf-16le" &&
+    isTauri() &&
+    props.preview.packageId != null &&
+    props.preview.tgi != null,
+);
+
+/** 分段加载状态（随 preview 切换整体重置）。 */
+const appendedText = ref("");
+const loadedBytes = ref(0);
+const loadingMore = ref(false);
+const eof = ref(true);
+
+watch(
+  () => props.preview,
+  () => {
+    appendedText.value = "";
+    loadedBytes.value = props.preview.loadedBytes ?? 0;
+    eof.value = !canStream.value;
+  },
+  { immediate: true },
 );
 
 const fullContent = computed(() => props.preview.content + appendedText.value);
