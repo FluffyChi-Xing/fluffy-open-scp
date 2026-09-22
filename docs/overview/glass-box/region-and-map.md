@@ -533,7 +533,21 @@ cargo run -p sc-properties --release --example tile_diag / slot_compare / slot_c
 - 定位命令：`cargo run -p sc-properties --release --example find_instance --
   622B9CD7 <package...>`；整包对比：`pkg_diff`；property 语义对比：`prop_diff`。
 
-### 12.3 工程待办（OpenSCP 侧）
+### 12.3 工程进展与待办（OpenSCP 侧）
+
+**已落地（2026-09-23）：地图开发面板 v1（开发工作台 → 地图面板）**
+
+- 渲染管线库化：`sc-properties/src/region_map.rs`（共享网格常量、区域枚举、
+  显式地块表配对、资源画刷清单、彩色渲染 + 荒漠模式 + 全局水位 + 裁剪）；
+- Tauri 命令：`map_panel_list_regions` / `map_panel_render_region`
+  （ED 网格按区域缓存于 Tauri State）；
+- 前端 `studio/panels/map.vue`：左 = 预览（滚轮缩放/中键或空格拖动/
+  米制标尺/HUD/全屏检查 sheet，交互对齐 RasterCanvas），右 = 属性与图层区
+  （图层开关为占位，笔刷能力后续接入）；
+- 区域显示名：已确认映射内置（白水谷=BEAF0510、绵延不毛之地=9F735B20），
+  其余待 locale 哈希破解。
+
+**待办：**
 
 - [ ] 资源预览缺失 TGI（LOD/ LotMask/Lot Textures）时提示并引导打开游戏包
       （note-mublqhrd，相关诊断已在 lot/LOD 解析链路）；
