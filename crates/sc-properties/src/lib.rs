@@ -32,6 +32,7 @@ pub mod locale;
 mod lot;
 mod lot_unit;
 mod model;
+pub mod region_map;
 pub mod semantic;
 
 use std::fmt;

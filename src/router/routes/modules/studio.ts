@@ -37,6 +37,17 @@ export default {
       },
     },
     {
+      name: "studio-map",
+      path: "studio/map",
+      component: () => import("@/pages/studio/panels/map.vue"),
+      meta: {
+        titleKey: "navigation.studioMap",
+        icon: "map",
+        groupKey: "navigation.modding",
+        order: 15,
+      },
+    },
+    {
       name: "studio-i18n",
       path: "studio/i18n",
       component: () => import("@/pages/studio/panels/i18n.vue"),
