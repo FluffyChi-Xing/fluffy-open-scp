@@ -37,10 +37,18 @@ pub const WATER_LEVEL: i32 = 3336;
 const HALF: f32 = 16384.0;
 const CELL: f32 = 8.0;
 
+/// 已确认的区域显示名（组 id → 中文名；其余区域待 locale 哈希破解后补全）。
+const REGION_NAMES: &[(u32, &str)] = &[
+    (0xBEAF_0510, "白水谷"),
+    (0x9F73_5B20, "绵延不毛之地"),
+];
+
 /// 区域摘要。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RegionSummary {
     pub group: u32,
+    /// 玩家可辨识的显示名（未确认的为 None）。
+    pub display_name: Option<String>,
     /// 区域描述内的数字串（= 区域 UI id；组 id = FNV1(数字串)）。
     pub numeric_id: String,
     /// 城市地块数（不含伟大工程位）。
@@ -59,6 +67,7 @@ pub struct RegionRender {
     pub meters_per_pixel: f32,
     pub water_plane: i32,
     pub desert: bool,
+    pub display_name: Option<String>,
     pub plots: Vec<(f32, f32)>,
     /// 资源画刷：目标 map 名 + 各 stamp 世界坐标。
     pub brushes: Vec<(String, Vec<(f32, f32)>)>,
@@ -113,7 +122,16 @@ pub fn list_regions(package: &dbpf::Package) -> Vec<RegionSummary> {
         }
         let plot_count = region_cities.get(&g).map(|c| c.len()).unwrap_or(0);
         let nid = numeric.get(&g).cloned().unwrap_or_default();
-        out.push(RegionSummary { group: g, numeric_id: nid, plot_count });
+        let display_name = REGION_NAMES
+            .iter()
+            .find(|(id, _)| *id == g)
+            .map(|(_, n)| n.to_string());
+        out.push(RegionSummary {
+            group: g,
+            display_name,
+            numeric_id: nid,
+            plot_count,
+        });
     }
     out.sort_by_key(|r| r.numeric_id.clone());
     out
@@ -387,6 +405,10 @@ pub fn render_region_png(
         meters_per_pixel: 8.0,
         water_plane: sea,
         desert,
+        display_name: REGION_NAMES
+            .iter()
+            .find(|(id, _)| *id == group)
+            .map(|(_, n)| n.to_string()),
         plots,
         brushes,
     })

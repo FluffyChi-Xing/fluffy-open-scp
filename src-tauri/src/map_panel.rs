@@ -21,13 +21,16 @@ impl Default for MapPanelState {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegionSummaryDto {
     pub group: String,
+    pub display_name: Option<String>,
     pub numeric_id: String,
     pub plot_count: usize,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegionRenderDto {
     pub png_base64: String,
     pub width: u32,
@@ -36,6 +39,7 @@ pub struct RegionRenderDto {
     pub meters_per_pixel: f32,
     pub water_plane: i32,
     pub desert: bool,
+    pub display_name: Option<String>,
     pub plot_count: usize,
     pub brushes: Vec<(String, Vec<(f32, f32)>)>,
 }
@@ -47,6 +51,7 @@ pub fn map_panel_list_regions(package_path: String) -> Result<Vec<RegionSummaryD
         .into_iter()
         .map(|r| RegionSummaryDto {
             group: format!("{:08X}", r.group),
+            display_name: r.display_name,
             numeric_id: r.numeric_id,
             plot_count: r.plot_count,
         })
@@ -83,6 +88,7 @@ pub fn map_panel_render_region(
         meters_per_pixel: out.meters_per_pixel,
         water_plane: out.water_plane,
         desert: out.desert,
+        display_name: out.display_name,
         plot_count: out.plots.len(),
         brushes: out.brushes,
     })

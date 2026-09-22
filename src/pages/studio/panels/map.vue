@@ -18,6 +18,7 @@ const gamePackages = useGamePackagesStore();
 
 interface RegionSummary {
   group: string;
+  displayName: string | null;
   numericId: string;
   plotCount: number;
 }
@@ -26,10 +27,11 @@ interface RegionRender {
   pngBase64: string;
   width: number;
   height: number;
-  originWorld: [number, number];
+  originWorld?: [number, number];
   metersPerPixel: number;
   waterPlane: number;
   desert: boolean;
+  displayName: string | null;
   plotCount: number;
   brushes: [string, [number, number][]][];
 }
@@ -54,8 +56,7 @@ function packageName(packageId: number): string {
 function regionLabel(group: string): string {
   const r = regions.value.find((x) => x.group === group);
   if (!r) return group;
-  const id = r.numericId ? ` · ${r.numericId}` : "";
-  return `${group}${id} · ${r.plotCount}`;
+  return r.displayName ?? `${group} · ${r.plotCount}`;
 }
 
 function packagePathOf(packageId: number): string {
@@ -274,14 +275,16 @@ function onMouseUp() {
 
       <aside class="side-panel">
         <section class="side-section">
-          <h3>{{ t("studio.map.propertiesTitle") }}</h3>
+          <h3>
+            {{ render.displayName ?? t("studio.map.propertiesTitle") }}
+          </h3>
           <dl v-if="render" class="props">
             <dt>{{ t("studio.map.sizeLabel") }}</dt>
             <dd>{{ render.width }}×{{ render.height }}</dd>
             <dt>{{ t("studio.map.originWorld") }}</dt>
             <dd class="mono">
-              {{ render.originWorld[0].toFixed(0) }},
-              {{ render.originWorld[1].toFixed(0) }}
+              {{ render.originWorld?.[0]?.toFixed(0) ?? "?" }},
+              {{ render.originWorld?.[1]?.toFixed(0) ?? "?" }}
             </dd>
             <dt>{{ t("studio.map.waterPlane") }}</dt>
             <dd>{{ render.waterPlane }}</dd>
