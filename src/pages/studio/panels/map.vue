@@ -1,12 +1,20 @@
 <script setup lang="ts">
 /**
- * 地图开发面板（v1：区域预览）。
+ * 地图开发面板：区域地形合成预览。
  * 左侧 = 可交互地图预览（滚轮缩放 / 中键拖动 / 米制标尺），
- * 右侧 = 属性与图层区（未来叠加资源视图、地图笔刷等能力）。
- * 渲染管线后端：sc_properties::region_map（341-tile 金字塔 + 全局水位 3336）。
+ * 右侧 = 区域属性与图层区（未来叠加资源多层视图与地图笔刷）。
+ * 渲染管线：sc_properties::region_map（341-tile 金字塔 + 全局水位面 3336）。
  */
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
+import FIcon from "@/components/extensions/FIcon.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
+import FTypography from "@/components/extensions/FTypography.vue";
+import { useGamePackagesStore } from "@/stores/gamePackages";
+
+const { t } = useI18n();
+const gamePackages = useGamePackagesStore();
 
 interface RegionSummary {
   group: string;
@@ -26,14 +34,50 @@ interface RegionRender {
   brushes: [string, [number, number][]][];
 }
 
-const packagePath = ref("");
+const selectedPackageId = ref<number | null>(null);
 const regions = ref<RegionSummary[]>([]);
-const selectedGroup = ref<string>("");
+const selectedGroup = ref("");
 const render = ref<RegionRender | null>(null);
-const loading = ref(false);
+const loadingRegions = ref(false);
+const loadingRender = ref(false);
 const errorMsg = ref("");
 
-// 视图状态：缩放（CSS px / 地图像素）与平移
+const openedPackages = computed(() => gamePackages.opened.map((o) => o.package));
+
+function packageName(packageId: number): string {
+  const opened = gamePackages.opened.find(
+    (entry) => entry.package.packageId === packageId,
+  );
+  return opened?.package.path.split(/[\\/]/).pop() ?? String(packageId);
+}
+
+function packagePathOf(packageId: number): string {
+  return (
+    gamePackages.opened.find((entry) => entry.package.packageId === packageId)
+      ?.package.path ?? ""
+  );
+}
+
+async function selectPackage(packageId: number | null) {
+  selectedPackageId.value = packageId;
+  regions.value = [];
+  selectedGroup.value = "";
+  render.value = null;
+  errorMsg.value = "";
+  if (packageId === null) return;
+  loadingRegions.value = true;
+  try {
+    regions.value = await invoke<RegionSummary[]>("map_panel_list_regions", {
+      packagePath: packagePathOf(packageId),
+    });
+  } catch (e) {
+    errorMsg.value = String(e);
+  } finally {
+    loadingRegions.value = false;
+  }
+}
+
+// 视图状态
 const zoom = ref(1);
 const pan = ref({ x: 0, y: 0 });
 const panning = ref(false);
@@ -45,30 +89,14 @@ const imgUrl = computed(() =>
   render.value ? `data:image/png;base64,${render.value.pngBase64}` : "",
 );
 
-async function loadRegions() {
-  errorMsg.value = "";
-  regions.value = [];
-  selectedGroup.value = "";
-  render.value = null;
-  try {
-    loading.value = true;
-    regions.value = await invoke<RegionSummary[]>("map_panel_list_regions", {
-      packagePath: packagePath.value,
-    });
-  } catch (e) {
-    errorMsg.value = String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
 async function renderRegion() {
-  if (!selectedGroup.value) return;
+  const packageId = selectedPackageId.value;
+  if (packageId === null || !selectedGroup.value) return;
   errorMsg.value = "";
   try {
-    loading.value = true;
+    loadingRender.value = true;
     render.value = await invoke<RegionRender>("map_panel_render_region", {
-      packagePath: packagePath.value,
+      packagePath: packagePathOf(packageId),
       group: selectedGroup.value,
     });
     zoom.value = 1;
@@ -76,7 +104,7 @@ async function renderRegion() {
   } catch (e) {
     errorMsg.value = String(e);
   } finally {
-    loading.value = false;
+    loadingRender.value = false;
   }
 }
 
@@ -87,7 +115,6 @@ function onWheel(event: WheelEvent) {
   const my = event.clientY - rect.top;
   const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
   const next = Math.min(12, Math.max(0.1, zoom.value * factor));
-  // 以鼠标位置为中心缩放
   pan.value.x = mx - ((mx - pan.value.x) * next) / zoom.value;
   pan.value.y = my - ((my - pan.value.y) * next) / zoom.value;
   zoom.value = next;
@@ -111,47 +138,85 @@ function onMouseUp() {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 gap-2 p-2">
-    <!-- 左：地图预览 -->
-    <div class="flex min-w-0 flex-1 flex-col gap-2">
-      <div class="flex items-center gap-2">
-        <input
-          v-model="packagePath"
-          class="min-w-0 flex-1 rounded border px-2 py-1 text-xs"
-          placeholder="区域包路径（例如 …/SimCityData/SimCity_RegionTerrain0.package）"
-        />
-        <button class="rounded border px-3 py-1 text-xs" @click="loadRegions">
-          枚举区域
-        </button>
-        <select
-          v-model="selectedGroup"
-          class="rounded border px-2 py-1 text-xs"
-          :disabled="!regions.length"
-        >
-          <option value="" disabled>选择区域</option>
-          <option v-for="r in regions" :key="r.group" :value="r.group">
-            {{ r.group }} · {{ r.numericId || "?" }} · {{ r.plotCount }} 城
-          </option>
-        </select>
+  <section class="map-page">
+    <header class="page-header">
+      <span class="page-icon"><FIcon name="Map" :size="20" /></span>
+      <div>
+        <FTypography :header="2" spacing="none">{{
+          t("studio.map.title")
+        }}</FTypography>
+        <p class="page-meta">{{ t("studio.map.meta") }}</p>
+      </div>
+    </header>
+
+    <!-- 工具行：包选择 + 区域选择 + 渲染 -->
+    <section class="toolbar" :aria-label="t('studio.map.configLabel')">
+      <FDropdown :width="320">
+        <template #trigger>
+          <button
+            type="button"
+            class="package-trigger"
+            :disabled="!openedPackages.length"
+          >
+            <FIcon name="Package" :size="14" />
+            <span>{{
+              selectedPackageId === null
+                ? t("studio.map.selectPackage")
+                : packageName(selectedPackageId)
+            }}</span>
+            <FIcon name="ChevronDown" :size="12" />
+          </button>
+        </template>
         <button
-          class="rounded border px-3 py-1 text-xs disabled:opacity-40"
-          :disabled="!selectedGroup || loading"
-          @click="renderRegion"
+          v-for="pkg in openedPackages"
+          :key="pkg.packageId"
+          type="button"
+          @click="selectPackage(pkg.packageId)"
         >
-          {{ loading ? "渲染中（ED 首次较慢）…" : "渲染" }}
+          <FIcon
+            :name="selectedPackageId === pkg.packageId ? 'Check' : 'Package'"
+            :size="14"
+          />
+          {{ packageName(pkg.packageId) }}
         </button>
-      </div>
-      <div
-        v-if="errorMsg"
-        class="rounded border border-red-400 bg-red-50 px-2 py-1 text-xs text-red-600 dark:bg-red-900/20"
+        <div v-if="!openedPackages.length" class="menu-empty">
+          {{ t("studio.map.needPackage") }}
+        </div>
+      </FDropdown>
+
+      <select
+        v-model="selectedGroup"
+        class="region-select"
+        :disabled="!regions.length"
+        :aria-label="t('studio.map.regionLabel')"
       >
-        {{ errorMsg }}
-      </div>
-      <!-- 预览区：上/左标尺 + 可缩放画布 -->
-      <div class="relative min-h-0 flex-1 overflow-hidden rounded border bg-slate-800">
+        <option value="" disabled>{{ t("studio.map.regionPlaceholder") }}</option>
+        <option v-for="r in regions" :key="r.group" :value="r.group">
+          {{ r.group }} · {{ r.numericId || "?" }} · {{ r.plotCount }}
+        </option>
+      </select>
+
+      <button
+        type="button"
+        class="run-button"
+        :disabled="!selectedGroup || loadingRender"
+        @click="renderRegion"
+      >
+        <FIcon name="Play" :size="14" />
+        {{ loadingRender ? t("studio.map.rendering") : t("studio.map.render") }}
+      </button>
+    </section>
+
+    <p v-if="errorMsg" class="error-message" role="alert">{{ errorMsg }}</p>
+    <p v-if="!openedPackages.length" class="notice" role="status">
+      {{ t("studio.map.needPackage") }}
+    </p>
+
+    <!-- 主区：左预览 + 右面板 -->
+    <div class="workspace">
+      <div class="viewer" :class="{ panning }">
         <div
-          class="absolute inset-0"
-          :class="panning ? 'cursor-grabbing' : 'cursor-grab'"
+          class="viewport"
           @wheel="onWheel"
           @mousedown="onMouseDown"
           @mousemove="onMouseMove"
@@ -162,59 +227,281 @@ function onMouseUp() {
             v-if="imgUrl"
             :src="imgUrl"
             draggable="false"
-            class="absolute select-none"
+            class="map-img"
             :style="{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
               transformOrigin: '0 0',
-              imageRendering: zoom >= 3 ? 'pixelated' : 'auto',
+              imageRendering: zoom >= 3 ? ('pixelated' as const) : 'auto',
             }"
           />
-          <div
-            v-else
-            class="flex h-full items-center justify-center text-sm text-slate-400"
-          >
-            加载区域包并渲染后在此预览
+          <div v-else class="empty-hint">
+            <FIcon name="Map" :size="28" />
+            {{ t("studio.map.emptyPreview") }}
           </div>
         </div>
-        <!-- 米制比例尺（右上角）：8 m/像素 -->
-        <div
-          v-if="render"
-          class="absolute right-2 top-2 rounded bg-black/50 px-2 py-1 text-[11px] text-white"
-        >
-          8 m/px · 缩放 {{ (zoom * 100).toFixed(0) }}% · 视野
-          {{ Math.round((render.width * render.metersPerPixel) / zoom || 0) }}m
+        <div v-if="render" class="status-chip">
+          {{ t("studio.map.metersPerPx", { n: (render.metersPerPixel / zoom).toFixed(1) }) }}
+          · {{ t("studio.map.zoomPct", { n: Math.round(zoom * 100) }) }}
         </div>
       </div>
-    </div>
 
-    <!-- 右：面板区（未来地图笔刷 / 资源图层集成处） -->
-    <div class="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto rounded border p-3 text-xs">
-      <div class="text-sm font-semibold">区域属性</div>
-      <template v-if="render">
-        <div class="grid grid-cols-2 gap-x-2 gap-y-1">
-          <span class="text-neutral-500">尺寸</span><span>{{ render.width }}×{{ render.height }} px</span>
-          <span class="text-neutral-500">原点(世界)</span>
-          <span>{{ render.originWorld[0].toFixed(0) }}, {{ render.originWorld[1].toFixed(0) }}</span>
-          <span class="text-neutral-500">水位面</span><span>{{ render.waterPlane }}</span>
-          <span class="text-neutral-500">荒漠模式</span><span>{{ render.desert ? "是" : "否" }}</span>
-          <span class="text-neutral-500">城市地块</span><span>{{ render.plotCount }}</span>
-          <span class="text-neutral-500">资源画刷</span><span>{{ render.brushes.length }}</span>
-        </div>
-        <div class="mt-2 text-sm font-semibold">图层</div>
-        <label class="flex items-center gap-2">
-          <input v-model="showPlots" type="checkbox" /> 城市地块框
-        </label>
-        <label class="flex items-center gap-2">
-          <input v-model="showResources" type="checkbox" /> 资源画刷环
-        </label>
-        <div class="mt-2 text-neutral-400">
-          图层开关与笔刷绘制将在后续版本接入渲染管线（资源多层视图 / 资源绘制）。
-        </div>
-      </template>
-      <div v-else class="text-neutral-400">渲染后显示区域属性与图层。</div>
-      <div class="mt-auto text-[11px] text-neutral-400">
-        预览管线：341-tile 金字塔拼合 + 全局水位面（3336）+ 湿度×坡度着色。
-      </div>
+      <aside class="side-panel">
+        <section class="side-section">
+          <h3>{{ t("studio.map.propertiesTitle") }}</h3>
+          <dl v-if="render" class="props">
+            <dt>{{ t("studio.map.sizeLabel") }}</dt>
+            <dd>{{ render.width }}×{{ render.height }}</dd>
+            <dt>{{ t("studio.map.originWorld") }}</dt>
+            <dd class="mono">
+              {{ render.originWorld[0].toFixed(0) }},
+              {{ render.originWorld[1].toFixed(0) }}
+            </dd>
+            <dt>{{ t("studio.map.waterPlane") }}</dt>
+            <dd>{{ render.waterPlane }}</dd>
+            <dt>{{ t("studio.map.desertMode") }}</dt>
+            <dd>{{ render.desert ? t("studio.map.yes") : t("studio.map.no") }}</dd>
+            <dt>{{ t("studio.map.plotCount") }}</dt>
+            <dd>{{ render.plotCount }}</dd>
+            <dt>{{ t("studio.map.brushCount") }}</dt>
+            <dd>{{ render.brushes.length }}</dd>
+          </dl>
+          <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
+        </section>
+
+        <section class="side-section">
+          <h3>{{ t("studio.map.layersTitle") }}</h3>
+          <label class="layer-toggle">
+            <input v-model="showPlots" type="checkbox" />
+            {{ t("studio.map.layerPlots") }}
+          </label>
+          <label class="layer-toggle">
+            <input v-model="showResources" type="checkbox" />
+            {{ t("studio.map.layerResources") }}
+          </label>
+          <p class="side-note">{{ t("studio.map.layersNote") }}</p>
+        </section>
+
+        <p class="side-foot">{{ t("studio.map.pipelineNote") }}</p>
+      </aside>
     </div>
-  </div>
+  </section>
 </template>
+
+<style scoped>
+.map-page {
+  padding-bottom: 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.page-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--brand);
+  flex-shrink: 0;
+}
+.page-header :deep(h2) {
+  margin: 0;
+}
+.page-meta {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+  color: var(--subtle-foreground);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.package-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.package-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.region-select {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  min-width: 220px;
+}
+.region-select:disabled {
+  opacity: 0.5;
+}
+.run-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-md);
+  background: var(--brand);
+  color: var(--brand-foreground, #fff);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.run-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.error-message,
+.notice {
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+}
+.error-message {
+  border: 1px solid var(--destruct, #b91c1c);
+  color: var(--destruct, #b91c1c);
+  background: color-mix(in srgb, var(--destruct, #b91c1c) 8%, transparent);
+}
+.notice {
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  background: var(--surface);
+}
+.workspace {
+  display: flex;
+  gap: 0.75rem;
+  min-height: 0;
+  flex: 1;
+}
+.viewer {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 480px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+}
+.viewport.panning {
+  cursor: grabbing;
+}
+.map-img {
+  position: absolute;
+  user-select: none;
+  pointer-events: none;
+}
+.empty-hint {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  color: var(--subtle-foreground);
+  font-size: 0.8125rem;
+}
+.status-chip {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.side-panel {
+  width: 272px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.side-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 0.85rem 1rem;
+}
+.side-section h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.props {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.8rem;
+  font-size: 0.75rem;
+}
+.props dt {
+  color: var(--muted-foreground);
+}
+.props dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.side-empty {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--subtle-foreground);
+}
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  padding: 0.25rem 0;
+  cursor: pointer;
+}
+.side-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.6875rem;
+  color: var(--subtle-foreground);
+}
+.side-foot {
+  margin: auto 0 0;
+  font-size: 0.6875rem;
+  color: var(--subtle-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.menu-empty {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+</style>
