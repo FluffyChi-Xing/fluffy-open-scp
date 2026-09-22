@@ -157,6 +157,7 @@ const messages = {
         layerResources: "资源画刷环",
         layersNote: "图层开关与笔刷绘制将在后续版本接入渲染管线。",
         pipelineNote: "341-tile 金字塔 + 全局水位面 3336 + 湿度×坡度着色",
+        panHint: "中键 / 空格拖动平移 · 滚轮缩放",
       },
       raster: {
         title: "Raster 绘制",
@@ -1631,6 +1632,7 @@ const messages = {
         layerResources: "Resource brush rings",
         layersNote: "Layer toggles and brush painting hook into the pipeline in a later version.",
         pipelineNote: "341-tile pyramid + global water plane 3336 + moisture×slope shading",
+        panHint: "Middle-drag / Space to pan · wheel to zoom",
       },
       raster: {
         title: "Raster paint",
