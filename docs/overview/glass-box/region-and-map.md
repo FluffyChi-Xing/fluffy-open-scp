@@ -185,15 +185,32 @@ grid avg-height（×100）：外圈 ~5300 浅海，中央 2600 深水盆地 + 88
 海岸线跨 tile 边界完全连续——拼合即成图，无需任何边缘匹配。
 ```
 
-- **待定（仅剩方向约定）**：金字塔象限 → 世界坐标 (x 增/y 增) 的朝向
-  （行 0 = 世界 y 最小还是最大）。城市地块窗口比对失败证明**背景 mosaic 与
-  城市地形是分别绘制的**（城市不按 2048m 对齐、形状非背景拷贝），故不能用
-  城市锚定朝向；需一张区域视图截图或引擎加载层验证。
+- **待定（仅剩方向约定）**：金字塔象限 → 世界坐标 (x 增/y 增) 的朝向。
+  2026-09-23 进展：**F0 朝向已按地标对照初步定案 = identity（拼合图与游戏
+  区域视图同向，无翻转）**——用户提供的游戏内截图（EP1 区域 test_001，
+  5 个可玩位 + 分叉河流三角洲）与拼合渲染图三方吻合：山脉弧在左上、
+  河流分叉在右中、河口在右下。区域判定 test_001 ≈ **9F735B20**（RT1，
+  8 地块中 5 未认领 + 2 伟大工程 + 2 已建）；平坦度判据与 ED 道路落陆
+  判据均与 identity 相容（rot180 略差）。最终仍需截图-渲染叠合一次确认；
+  **ED 的相对帧待定**（identity 与 rot180 证据相抵）。
+- **ED 独立槽位命名空间**（2026-09-23）：ED（0x03E421ED）的 341 个 instance
+  与 F0 **交集为 0**——地面场是另一套槽位 id、自持独立金字塔
+  （lane0+lane2 联合降采样匹配同样单根复原，`ed_render` 探针）；
+  ED u32 = 3 个有效字节（b0=森林/道路密度场：有机噪声斑块 + 细线路网；
+  b2=地形材质/水场；b1 少量；b3 恒 0）。
+- **树木纵向条纹 = 渲染侧产物，非拼接痕**（2026-09-23 回答用户观察）：
+  ED 森林密度为连续噪声斑块，跨 tile 边界完全连续（金字塔匹配本身即证
+  无缝），数据侧无任何周期带状痕迹；游戏内所见成行树木是渲染器实例
+  排布网格（billboard 行/LOD 采样）所致。
 - **新开口（记账）**：region 描述引用的地形画刷 stamp 位图
   （C175ACEA / 282078BF 等）**不存在于任何 package**（全类型 instance 搜索
   为空）——stamp 资源的解析命名空间待查（不排除运行时生成/在线资源）。
 - 曾有假设"tile 头部 20 B 含位置字段"确认无误：头部仅 256×256 与格式 7，
   排布信息由金字塔结构自携带。
+- **共享网格已跨包实证**（2026-09-23）：RT0 与 RT1 的 341 槽位 instance
+  集合完全一致（slot_compare）——排布全游戏唯一，BC357A2B 完美树可直接
+  渲染全部 15 个区域（`region_preview` + `grid_shared.txt`）；EP1 四区域
+  逐区独立匹配会因平坦海域歧义产生环/多根，须用共享网格。
 
 ### 4.2 世界坐标 → tile 换算（Ghidra 反编译 FUN_00beb730）[高]
 
@@ -390,6 +407,22 @@ cargo run -p sc-registry --release --example type_lookup -- <s3db> 0xTYPE 0xGROU
   # 类型/组/实例/属性注册表查名（key 语义取证）
 ```
 
+2026-09-23 新增（俯视合成预览链路）：
+
+```bash
+cargo run -p sc-properties --release --example region_preview -- <package> <group> <outdir> [grid.txt]
+  # 区域俯视渲染：金字塔→4096² 拼合→hillshade+水染 PNG + 四色地块框 + tile 网格线
+  # 带共享网格文件参数时跳过匹配（全区域通用）；不带则本区域自匹配
+cargo run -p sc-properties --release --example tile_grid_vote -- <RT0> <RT1>...
+  # 跨区域投票定稿排布（多区域消歧；诊断用，实际排布已由完美树锁定）
+cargo run -p sc-properties --release --example ed_render -- <package> <group> <grid> <out-prefix>
+  # ED 地面场金字塔自匹配（lane0+lane2）+ 四字节通道渲染 + 网格导出
+cargo run -p sc-properties --release --example orient_check -- <package> <group> <f0-grid>
+  # 定向终判：ED 道路落陆率 × 道路-地块距离（四帧假设打分）
+cargo run -p sc-properties --release --example tile_diag / slot_compare / slot_compare2 / group_tiles / group_census
+  # 诊断族：误差分布 / 跨包-跨类型槽位集合对比 / 组 tile 统计
+```
+
 ## 12. 遗留与下一步（2026-09-22 三次更新）
 
 ### 12.1 待解问题
@@ -404,9 +437,10 @@ cargo run -p sc-registry --release --example type_lookup -- <s3db> 0xTYPE 0xGROU
   贪心边缘匹配路线正式废弃；
 - [x] ~~341 块/区域的构成记账~~ **已闭合**（§4.1）：F0 3846 = 11×341（金字塔）
   + 95（城市地块图）；ED 3751 = 11×341；
-- [ ] **金字塔朝向**（行 0 = 世界 y 最小还是最大）：背景与城市地形独立绘制，
-  无法用城市锚定；需一张区域视图截图对照（海岸城大陆偏西北特征明显）或
-  引擎加载层验证；
+- [x] ~~金字塔朝向~~ **初步定案**（§4.1）：F0 = identity（与游戏区域视图同向，
+  地标三方对照 + 道路落陆判据相容）；ED 相对帧待一次截图叠合最终确认；
+- [x] ~~树木纵向条纹~~ **已解释**（§4.1）：渲染侧树木实例排布产物，
+  ED 数据跨 tile 连续无缝、无周期条纹——不是拼接痕；
 - [ ] **地形画刷 stamp 位图命名空间**：region 描述引用的 C175ACEA/282078BF
   等 stamp 在全库 instance 搜索为空——解析方式待查；
 - [x] ~~包内 tile instance ↔ name-hash 映射~~ **已解释**（§4.1）：包内 instance
