@@ -57,11 +57,20 @@ fn main() {
     let f0_grid_file = args.next().unwrap();
     let ed_grid_file = args.next().unwrap();
     let out = args.next().unwrap();
-    let gw: Option<(f32, f32)> = args.next().map(|v| {
-        let wx: f32 = v.parse().unwrap();
-        let wy: f32 = args.next().unwrap().parse().unwrap();
-        (wx, wy)
-    });
+    // 解析剩余旗标：--water <L>  /  --gw <wx> <wy>
+    let mut water_override: Option<i32> = None;
+    let mut gw: Option<(f32, f32)> = None;
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--water" => water_override = args.next().and_then(|v| v.parse().ok()),
+            "--gw" => {
+                let wx = args.next().unwrap_or_default();
+                let wy = args.next().unwrap_or_default();
+                gw = Some((wx.trim().parse().unwrap_or(0.0), wy.trim().parse().unwrap_or(0.0)));
+            }
+            _ => {}
+        }
+    }
     let p = dbpf::Package::open(&path).unwrap();
 
     // ---- F0 高度马赛克 ----
@@ -126,24 +135,9 @@ fn main() {
         (ed0[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)], e, ed2[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)])
     };
 
-    // ---- 水位面：低高度直方图的大跳变（河床被刻平到水位下方）----
-    let mut hist = [0u64; 16];
-    for v in &hgt {
-        if *v >= 4096 { continue; }
-        hist[*v as usize / 256] += 1;
-    }
-    let mut sea = 0i32;
-    for i in 1..14usize {
-        let prev_min = (0..i).map(|k| hist[k]).filter(|n| *n > 0).min().unwrap_or(u64::MAX);
-        if hist[i] > 5000 && hist[i] > 4 * prev_min.max(1) {
-            // 吸收连续大桶（河床平底可能跨多桶）
-            let mut j = i;
-            while j + 1 < 16 && hist[j + 1] > 5000 && hist[j + 1] * 4 > hist[j] * 3 { j += 1; }
-            sea = (j * 256 + 264) as i32;
-            break;
-        }
-    }
-    println!("water plane L = {sea}");
+    // ---- 水位面：全游戏统一常量 ≈3336（三区域交叉实证，2026-09-23）----
+    let mut sea = 3336i32;
+    if let Some(w) = water_override { sea = w; }
 
     // ---- 地块（城市 id 交集选表）----
     let plots: Vec<(f32, f32)> = find_plot_positions(&p, group).unwrap_or_default();
@@ -173,6 +167,17 @@ fn main() {
 
     // ---- 上色渲染 ----
     let h_at = |x: usize, y: usize| -> i32 { hgt[y.min(w - 1) * w + x.min(w - 1)] as i32 };
+    // 64×64 块高度均值（邻域基准）
+    let mut blk = vec![0i32; 64 * 64];
+    {
+        let bs = w / 64;
+        let mut acc = vec![0u64; 64 * 64];
+        for y in 0..w { for x in 0..w {
+            acc[(y / bs) * 64 + (x / bs)] += u64::from(hgt[y * w + x]);
+        }}
+        let per = (bs * bs) as u64;
+        for k in 0..64 * 64 { blk[k] = (acc[k] / per) as i32; }
+    }
     let mut img = image::RgbImage::new(w as u32, w as u32);
     for y in 0..w {
         for x in 0..w {
