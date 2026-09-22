@@ -51,6 +51,13 @@ function packageName(packageId: number): string {
   return opened?.package.path.split(/[\\/]/).pop() ?? String(packageId);
 }
 
+function regionLabel(group: string): string {
+  const r = regions.value.find((x) => x.group === group);
+  if (!r) return group;
+  const id = r.numericId ? ` · ${r.numericId}` : "";
+  return `${group}${id} · ${r.plotCount}`;
+}
+
 function packagePathOf(packageId: number): string {
   return (
     gamePackages.opened.find((entry) => entry.package.packageId === packageId)
@@ -184,17 +191,37 @@ function onMouseUp() {
         </div>
       </FDropdown>
 
-      <select
-        v-model="selectedGroup"
-        class="region-select"
-        :disabled="!regions.length"
-        :aria-label="t('studio.map.regionLabel')"
-      >
-        <option value="" disabled>{{ t("studio.map.regionPlaceholder") }}</option>
-        <option v-for="r in regions" :key="r.group" :value="r.group">
-          {{ r.group }} · {{ r.numericId || "?" }} · {{ r.plotCount }}
-        </option>
-      </select>
+      <FDropdown :width="300">
+        <template #trigger>
+          <button
+            type="button"
+            class="package-trigger"
+            :disabled="!regions.length"
+          >
+            <span>{{
+              selectedGroup
+                ? regionLabel(selectedGroup)
+                : t("studio.map.regionPlaceholder")
+            }}</span>
+            <FIcon name="ChevronDown" :size="12" />
+          </button>
+        </template>
+        <button
+          v-for="r in regions"
+          :key="r.group"
+          type="button"
+          @click="selectedGroup = r.group"
+        >
+          <FIcon
+            :name="selectedGroup === r.group ? 'Check' : 'MapPin'"
+            :size="14"
+          />
+          {{ regionLabel(r.group) }}
+        </button>
+        <div v-if="!regions.length" class="menu-empty">
+          {{ t("studio.map.emptyRegions") }}
+        </div>
+      </FDropdown>
 
       <button
         type="button"
@@ -341,18 +368,6 @@ function onMouseUp() {
 .package-trigger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-.region-select {
-  padding: 0.45rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--foreground);
-  font-size: 0.75rem;
-  min-width: 220px;
-}
-.region-select:disabled {
-  opacity: 0.5;
 }
 .run-button {
   display: inline-flex;
