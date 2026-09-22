@@ -1,13 +1,16 @@
 # 区域与地图机制 — RegionTerrain / 城市地块 / 可玩边界
 
-> 调查笔记（2026-09-22，同日二次更新：世界→tile 换算实证 + 撤回边缘匹配拼图）。
+> 调查笔记（2026-09-22，同日三次更新：tile 排布破解（mip 金字塔）+ BoC 全量取证）。
 > 动机：BoC（区域外可建设模组）只移除了可玩边框，但界外建造存在「摆放漂移 /
 > 无地下资源 / 建筑埋地穿模」三类缺陷——本文从数据与引擎两侧厘清地图机制，
 > 回答「大地图如何切成小地图」「地图尺寸是引擎写死还是数据驱动」，并给出
 > OpenSCP 的可行路线。
 > 工具：新增探针 `crates/sc-properties/examples/region_probe.rs`
 >（survey / dump / props / hstats / tilecheck / extract / full / refs /
->  matchstate / jigsaw / grid 共 11 个子命令）与 `tile_grid.rs`（索引序网格渲染）。
+>  matchstate / jigsaw / grid 共 11 个子命令）、`tile_grid.rs`（索引序网格渲染）、
+> `pkg_diff.rs`（整包逐条目对比）、`prop_diff.rs`（property 语义级 diff）、
+> `tile_pyramid.rs` / `tile_arrange.rs` / `tile_orient.rs`（mip 金字塔匹配与
+> 16×16 排布还原）、`namehash_probe.rs`、`inst_reuse.rs`、`find_group.rs`。
 > 置信度标注沿用 [glass-box/terrain.md](./terrain.md)：**[高]**=字节级实证，
 > **[中]**=结构推断，**[低]**=推测。
 
@@ -59,16 +62,17 @@ flowchart TB
 ```mermaid
 flowchart TB
     RD["region 描述 + 地块表<br/>11 块 = 名称 1026..1036 + 位置 vec2 + 层栈模板"]
-    BG["背景地形 tile 马赛克<br/>341 块（排布数据待破解）"]
-    ECO["资源 eco map（画刷盖章）<br/>仅在地块范围内有数据"]
-    PB["可玩框 2048m × 2048m<br/>= 256×256 格 × 8 m/格"]
+    BG["背景区域地形 = 4096×4096 格 @8m<br/>= 32.768 km 见方，±16384 m<br/>341 tile = 16²+8²+4²+2²+1 mip 金字塔"]
+    CITY["城市地块（独立绘制）<br/>256×256 格 @8m 高度图<br/>cRegionCityLots::Render 叠加"]
+    PB["可玩框 2048m × 2048m<br/>= 城市格网隐式定义域（数据无独立边框）"]
 
     RD --> PB
     BG --> PB
+    CITY --> PB
 
-    REQ["放置请求（世界坐标）"] --> CHECK{"citybox 边界检查<br/>GlassBox 脚本层（BoC 已证可替换）"}
+    REQ["放置请求（世界坐标）"] --> CHECK{"citybox 边界检查<br/>（ER2/JS bundle 已证未被 BoC 改动，<br/>检查不在其中——激活机制待游戏内验证）"}
     CHECK -->|"界内"| IN["城市模拟：格网吸附定义域内<br/>资源查 eco map（有数据）→ 正常建造"]
-    CHECK -->|"界外（BoC 补丁放行）"| OUT["资源 eco map = 0 → 无矿无水<br/>城市格网未定义 → 摆放漂移<br/>高度采样 = 区域 tile 而非城市高度场 → 埋地穿模"]
+    CHECK -->|"界外（BoC 放行）"| OUT["资源 eco map = 0 → 无矿无水<br/>城市格网未定义 → 摆放漂移<br/>高度采样 = 区域 tile 而非城市高度场 → 埋地穿模"]
 
     IN --> PLAY["正常游玩"]
     OUT --> PLAY
@@ -118,13 +122,19 @@ LotMask 96 m = 12 格 × 8 m 互证 [中→高]；§4.2 的 1/2048 换算常数�
   `soilheightmap`+… · `forestheightmap`+… · `desirabilityheightmap`+`desirabilityEcoMapBrushes` ·
   `desirabilityTwo…` · `tessendorfWater`（水面参数）· `terrainEditor` · `grass` ·
   `environment` · **城市地块表**（§6）。
-- 95 个单条 group = 各区域城市地块的独立资源 id（§6 的 uint32 表引用它们，
-  95 ≈ 11 区域 × 8.6 块/区域，与地块表 11 块/区域量级吻合 [中]）。
+- 95 个单条 group = 各区域**城市地块组**（2026-09-22 实证）：每个城市地块是一个
+  独立 group，内含**该城自己的 256×256 高度图** + 一条 36 B property
+  （`0x1B53D525 int32` + `0xC1949C4D Key` 回指本区域 region 描述
+  `00B1B104:D01FA985:51E7A18D`）——**地块 group 里没有任何尺寸/边界数字，
+  城市范围 = 高度图域本身的隐式定义**；95 ≈ 11 区域 × 8.6 块/区域，
+  与地块表 11 块/区域量级吻合 [高]。
 
 ## 4. 区域地形：tile 分块存储 + 画刷盖章 [高]
 
-> 本节「画刷盖章」只覆盖已见到的画刷清单（每区域仅 2 笔地形画刷）；341 张
-> tile 与画刷的完整记账尚未对上（见 §12.1）。
+> 本节「画刷盖章」只覆盖已见到的画刷清单（每区域仅 2 笔地形画刷）；
+> 2026-09-22 记账已闭合：341 张 tile **不是**画刷产物，而是区域高度图的
+> mip 金字塔（§4.1）；画刷 stamp 只负责少量局部特征（stamp 位图资源本身
+> 尚未在包内定位，§12.1）。
 
 地形画刷清单（例 BC357A2B:3BABB8DB）：
 
@@ -143,33 +153,47 @@ A.right vs B.left   avg|Δ| = 22.2   ← 与 A 自身 right/left 差 24.2 同级
 A.left  vs B.right  avg|Δ| = 6520.4 ← 反向/上下缘 514~3019 → 不连续
 ```
 
-### 4.1 tile 的空间排布：尚未破解（2026-09-22 修正）[诚实声明]
+### 4.1 tile 的空间排布：**已破解 — 341 tile = mip 金字塔**（2026-09-22）[高]
 
-此前一版曾用"贪心边缘匹配 + BFS"自动拼合并声称拼出连贯大地图——**该结论
-有误，已撤回**（相关拼图 PNG 已删除）。复盘发现：
+> 历史：此前一版曾用"贪心边缘匹配 + BFS"自动拼合并声称拼出连贯大地图——**该结论
+> 有误，已撤回**（低频平坦地形边缘歧义导致假阳性）。真正解法与边缘无关。
 
-1. 单张 tile 是**低频平滑地形**（无强特征边），边缘匹配天然歧义：平坦边缘
-   彼此差异都在几十个高度单位内，贪心链式匹配会大量误配，"连贯拼图"是
-   假阳性；
-2. 连续实例（F9197D3C→3F）的边缘差 415~6048——**instance 顺序与空间排布
-   无关**（此前 EB0FF21A/B 的 Δ22.2 属平坦海岸巧合）；
-3. tile 头部 20 B 全部相同（仅 256×256 与格式 7），**不含位置字段**。
+**结构实证（tile_arrange 探针，像素级验证）：**
 
-⇒ tile 的空间排布（341 块如何铺成区域）需要：存档对照（城市地形 ↔ 区域
-tile 匹配）、引擎侧函数（`FUN_00beb470` 的调用方如何填 x/y）、或
-SimCity_Game 包中的布局属性。已列入 §12。
+1. **341 = 256 + 64 + 16 + 4 + 1 = 16² + 8² + 4² + 2² + 1²** ——每区域 341 张
+   tile 是一张 **4096×4096 格区域高度图的完整 mipmap 金字塔**：
+   mip0 = 16×16 张 256²（覆盖 32768 m，即 ±16384 m @8 m/格），
+   mip1 = 8×8，mip2 = 4×4，mip3 = 2×2，mip4 = 1×1；
+2. **父 tile 每个象限（128×128）= 某子 tile 的 2×2 box 降采样**，误差
+   0.06–3 个高度单位（次优候选差 10–2000 倍），金字塔逐级匹配在
+   BC357A2B（海岸城）与 A0B60DDE（山地）两区域均**完整复原：
+   节点计数 [1,4,16,64,256]、单根 0x7ADCBE88、零拒绝、零孤立**；
+3. **instance id 是区域无关的"槽位 id"**：RT0 的 3846 条 F0 只有 **342 个
+   唯一 instance**（341 金字塔槽 + 1 城市图），每槽被 11 个区域 group 复用
+   （各自携带本区域数据）；ED 3751 = 11×341 完全同构；
+4. 记账闭合：**F0 3846 = 11×341（金字塔）+ 95（城市地块图）**；
+5. 与 §4.2 引擎公式闭环：`tile = (regionExtent/2 + world) × (1/2048)`，半幅
+   16384 → tile 序号 ∈ 0..15 **正是这 16×16 网格**；`heightmap_x%02d_y%02d_mip%d`
+   名字哈希索引的 (x,y,mip) 即金字塔坐标（包内 instance 不是该哈希，
+   0..63 域穷举未命中由此解释——引擎按名字索引运行时缓存/加载层，包内用
+   原始槽位 id）。
 
-结论（保留）：区域地形**按 256×256 tile 分块存储**（F0 高度图 + ED 地面场），
-渲染端按 `heightmap_x%02d_y%02d_mip%d` / `ecomap_x%02d_y%02d_mip%d`
-（exe 字符串，SCY dump 0x99dc58）分块 + mip 缓存；**tile 的空间排布数据
-在别处**（待定位）。
+**16×16 mip0 排布（BC357A2B 海岸城区域，tile_arrange 还原；行=金字塔 y）：**
 
-**tile 查找机制 [高]**（Ghidra 反编译 FUN_00beb470/FUN_00beb520/FUN_00918300）：
-引擎以格式化名 `heightmap_x%02d_y%02d_mip%d` / `ecomap_x%02d_y%02d_mip%d`
-构造资源 key——**hash = FNV1a(小写化(名), 基 0x811C9DC5, 质 0x01000193)**，
-配 type `0x3E421F0`(高度图) / `0x3E421ED`(地面场)。小写化经 256B 翻译表
-（DAT_00e12968 = tolower）。包内 tile 的 instance 与该 name-hash 的关系
-（穷举 0..63×0..63 未命中）待续。
+```
+grid avg-height（×100）：外圈 ~5300 浅海，中央 2600 深水盆地 + 8800-14100 山体，
+海岸线跨 tile 边界完全连续——拼合即成图，无需任何边缘匹配。
+```
+
+- **待定（仅剩方向约定）**：金字塔象限 → 世界坐标 (x 增/y 增) 的朝向
+  （行 0 = 世界 y 最小还是最大）。城市地块窗口比对失败证明**背景 mosaic 与
+  城市地形是分别绘制的**（城市不按 2048m 对齐、形状非背景拷贝），故不能用
+  城市锚定朝向；需一张区域视图截图或引擎加载层验证。
+- **新开口（记账）**：region 描述引用的地形画刷 stamp 位图
+  （C175ACEA / 282078BF 等）**不存在于任何 package**（全类型 instance 搜索
+  为空）——stamp 资源的解析命名空间待查（不排除运行时生成/在线资源）。
+- 曾有假设"tile 头部 20 B 含位置字段"确认无误：头部仅 256×256 与格式 7，
+  排布信息由金字塔结构自携带。
 
 ### 4.2 世界坐标 → tile 换算（Ghidra 反编译 FUN_00beb730）[高]
 
@@ -183,8 +207,12 @@ FUN_00beb470(buf, tileX, tileY, /*mip=*/0);      // "heightmap_x%02d_y%02d_mip0"
 - `.data` 实测：`DAT_00d9e8a4 = 0.00048828125 = 1/2048`、`DAT_00da307c = 0.5`
   —— **一个地形 tile = 2048 m × 2048 m**；
 - 城市格 256×256 → **格边长 = 2048/256 = 8 m**（terrain.md 假设转正 [高]）；
-- 地块表坐标（±6704 m）落在区域背景 mosaic 范围内（背景 mosaic 的总覆盖
-  范围待 tile 排布破解后标定，见 §4.1）；
+- **该公式即 §4.1 的 16×16 金字塔索引**：区域半幅 16384 m →
+  `(16384 + world) / 2048 ∈ 0..15`；同一公式对城市（半幅 1024）恰好命中
+  其唯一 256² tile——城市与背景共用一套 tile 寻址 [高]；
+- 地块表坐标（±6704 m）落在区域背景 mosaic 中央 ~1/5 范围内；背景 mosaic
+  总覆盖 ±16384 m（§4.1 已标定）；区域描述中的常量 **16384 / 32768**
+  （0x5E3D16DF / 0xB0AAB5B1）= 区域半幅/全幅 [高]；
 - 地形查询按名字（含 tile 坐标）走资源管理器——tile 的存取是**数据驱动**；
 - 运行时高度公式（`fStack_28 = DAT_0103d444 * 0.5 + DAT_0103d448`）的常量在
   BSS/未转储区，垂直比例仍待动态脱壳定量。
@@ -230,19 +258,59 @@ FUN_00beb470(buf, tileX, tileY, /*mip=*/0);      // "heightmap_x%02d_y%02d_mip0"
 - 格边长 = 8 m：**引擎常量链实证**——tile 换算常数 1/2048（§4.2）× 256 格/城
   = 2048 m；LotMask 96 m = 12 格 × 8 m 互证 [高]
   → **单城可玩地面 = 2048 m × 2048 m（≈4.2 km²）**，与社区公称"2km×2km"一致；
-- 区域世界（画刷/地块坐标）跨度 ~13 km 见方（≈ 43 个 2048m 城市格的面积），
-  但其中**只有地块表登记的地块可玩**；界外背景地形由 341 张背景 tile 承载
-  （排布待破解，§4.1）。
+- **区域背景地形全幅 = 32768 m 见方（±16384 m，4096×4096 格 @8 m）**
+  （§4.1/§4.2，区域描述常量 16384/32768 互证 [高]）；地块表登记的
+  11 个城市地块仅占中央 ~±6704 m；**tessendorfWater 组中的 6704 / 7000**
+  常量对应地块跨度/交互边界，并非地形全幅 [中]。
 
-## 8. 可玩边界（citybox）在哪一层 [高]
+## 8. 可玩边界（citybox）在哪一层 [高——结论已修正]
 
-- BoC（Build Outside Citybox）的安装物 = **替换 EcoGame JS 脚本包**
-  （SimCity-Scripts_272391411.package，6.3 MB 高熵 bundle，非明文）+ 属性/资源覆盖包；
-- 替换脚本即可解除界外放置限制 ⇒ **边界检查位于可替换的 GlassBox 脚本/数据层，
-  不是引擎硬约束**；
-- 引擎只提供渲染与格网原语：`cRegionCityLots::Render`、`cRegionDecals::Render`、
+> **2026-09-22 BoC 全量取证后修正**（此前"边界检查位于可替换的 GlassBox
+> 脚本层"的推断证据链断裂，见 §8.1）。
+
+**取证结论：**
+
+- **ER2 编译规则 bundle 与边界无关**：BoC 替换的 4 个脚本包
+  （主包 + London/Paris/Airships DLC 包）中，全部 ER2 资源
+  （`08068AEB:40800200:622B9CD7` 等）与原版**逐字节相同**
+  （pkg_diff 全包对比，10155 条目逐一比对）；Overplop 版同样未动 ER2；
+- **citybox 在数据中无独立载体**：全部 BoC 安装物（脚本包 + SimCityData
+  覆盖包 = RW4 模型 / PNG 图标 / 建筑属性）都不含任何边界语义的改动；
+  城市地块 group = {城市高度图, 回指 region 的 36 B property}——
+  **可玩范围 = 城市格网的隐式定义域（cell 0..255），没有可关闭的开关**；
+- 引擎侧：`cToolPathPlacer` 等工具经属性袋读调参浮点（如 `DAT_00da307c`
+  为默认值、属性 hash 0xDCDC37A 等可覆盖），UI JS 注释自证
+  "we know the city box is limited to 2048x2048"（SimCity_App.package，
+  type 0x0469A3F7）；
+- 引擎提供格网与渲染原语：`cRegionCityLots::Render`、`cRegionDecals::Render`、
   `cTerrainLayer::DrawLayer`、`cTerrainHeightMap::UpdateHeightMap/UpdateNormalMap`、
   `bindCurrentHeightMap(AsTarget)`（SCY dump 字符串）。
+
+⇒ **当前最强假说**：界外放置的"解除"不是改一条数据/规则，而是
+BoC 全家桶（含 `DebugRepositioning` 调试菜单、`SimRoller` 物体搬移器）的
+**运行时行为组合**（把城市/物体挪出格网定义域），或 vanilla 工具对界外的
+拒绝点与预想不同。**激活机制需游戏内动态验证**（开 debug 菜单 +
+SimRoller 观察）——列入 §12。
+
+### 8.1 BoC 改动清单（194+196 条 property 微补丁的完整语义）[高]
+
+主脚本包 194 条、Overplop 版 196 条 property 改动（每条 1–7 字节，
+Overplop 部分数组扩容），**全部 key 语义已注册表查实**：
+
+| key | 注册表名 | 改动 | 条数 |
+|---|---|---|---|
+| `0x0A7917C8` | kPropWork_MinimumWorkersForProduction | 各种值 → **1** | 76 |
+| `0x0CC8BE51..55` | Module Limit 1..5 | → **翻倍** | 76 |
+| `0x0CC8BE20` | Max Total Module Count | 调大 | 1 |
+| `0x0CC8BE56` | kPropModule_UnlockTokenCost | 调整 | 1 |
+| `0x0D6498E8` | （道路）允许使用类型清单：车/行人/公交/水管线/电线/低中高密度档… | 追加 Buldoze(0x587D51B9) 及新补丁对象 | 106 |
+| `0xBD81A2D..31` | 道路几何（车道数/宽度/偏移） | 个别删改 | 2 |
+
+——全部是"放下去之后能否运转"的 QoL（无工人运转、模块扩容、新车道上旧路），
+**没有一条是边界/范围/尺寸**。SimCityData 侧：`1_bRangeRemovals`（服务范围
+改建筑属性）、`1_aaWHATHAVEIDONE`（RW4 模型 + 大属性）、
+`DebugRepositioning`（PNG 菜单图标 + 调试菜单 property，含 26 项
+位置类列表，疑似区域视图重定位工具入口）、`SimRoller` 系（物体搬移）。
 
 ## 9. 判定表：尺寸与限制，哪些写死、哪些数据驱动
 
@@ -254,19 +322,24 @@ FUN_00beb470(buf, tileX, tileY, /*mip=*/0);      // "heightmap_x%02d_y%02d_mip0"
 | 引擎 | 垂直比例常量（BSS，未转储） | EXE float | 二进制级（需动态脱壳） |
 | 数据 | **区域数量/名称/地块位置/地块表/资源分布/水参数** | RegionTerrain property | **纯数据，可覆盖可新增** |
 | 数据 | 界外格的资源/高度（当前 = 空白） | 同上（没画就是 0） | **纯数据，可补** |
-| 脚本 | 可玩边界检查、放置规则 | EcoGame JS bundle | 脚本层（BoC 已证可改） |
+| 数据[高] | 区域背景地形 4096×4096 @8m（341-tile mip 金字塔，§4.1） | RegionTerrain F0/ED | **纯数据，可覆盖可新增** |
+| 未定位 | 界外放置的"放行"开关（§8：ER2/数据层已排除） | 运行时行为组合？ | **待游戏内验证** |
 
-**结论**：单城的地形分辨率（256×256）与格边长是引擎侧常量；「有多少地、地在哪、
-地上有什么」全部是数据。做大地图的正确姿势不是改引擎常量，而是**造数据**。
+**结论**：单城的地形分辨率（256×256）、格边长与区域背景幅面是引擎侧常量/数据；
+「有多少地、地在哪、地上有什么」全部是数据。做大地图的正确姿势不是改引擎常量，
+而是**造数据**。
 
 ## 10. 用该机制解释 BoC 的三个缺陷
+
+（三个缺陷的现象与数据根源解释维持不变；§8 取证仅修正"放行开关"的位置。）
 
 1. **界外无地下资源**：coal/ore/oil/watertable 等 eco map 只在地块范围内被画刷涂过；
    界外格子在这些 map 上恒 0 → 模拟判定"无资源"。BoC 没有界外 eco map 数据。
 2. **摆放漂移**：道路/建筑的吸附格网以城市原点为基准定义；界外坐标不在城市格网
    定义域内，吸附/寻址行为未定义 → 漂移。
-3. **建筑埋地穿模**：城市内地形 = 城市 256×256 @8m 高度场；界外地形 = 区域级
-   拼图 tile（不同分辨率/基准）。建筑落地采样两种高度源不一致 → 视觉穿模。
+3. **建筑埋地穿模**：城市内地形 = 城市 256×256 @8m 高度场；界外地形 = 区域背景
+   mosaic 4096² @8m（同分辨率但独立绘制、基准不同，§4.1）。建筑落地采样两种
+   高度源不一致 → 视觉穿模。
 
 ⇒ **方向判定**：BoC 的路线（拆边框）只解决了"能不能放"，没解决"放上去之后
 世界数据是否自洽"。要做成完整的大地图，需要数据工程三件套：
@@ -294,7 +367,30 @@ cargo run -p sc-properties --release --example region_probe -- \
 另：`tile_grid.rs` 探针功能同 grid 子命令；EcoGame bundle 定位用
 `find_instance 622B9CD7 <package...>`。
 
-## 12. 遗留与下一步（2026-09-22 更新）
+2026-09-22 新增探针（本次取证/破解所用）：
+
+```bash
+cargo run -p sc-properties --release --example pkg_diff -- <vanilla> <modded>
+  # 整包逐条目对比（TGI 集合 + 解压内容字节比对）——BoC 取证主力
+cargo run -p sc-properties --release --example prop_diff -- <vanilla> <modded> <tgi列表文件>
+  # property 语义级 diff（key → 旧值 → 新值）
+cargo run -p sc-properties --release --example tile_pyramid -- <package> <region-group>
+  # 金字塔父子匹配验证（child×parent×quadrant 误差）
+cargo run -p sc-properties --release --example tile_arrange -- <package> <region-group>
+  # 完整金字塔还原 → 16×16 mip0 排布 + instance 网格
+cargo run -p sc-properties --release --example tile_orient -- <package> <region-group>
+  # 拼合 mosaic 后按地块世界坐标窗口比对（定向实验；已证背景≠城市拷贝）
+cargo run -p sc-properties --release --example namehash_probe -- <package> <group> [type]
+  # name-hash 变体穷举（已证包内 instance 非名字哈希）
+cargo run -p sc-properties --release --example inst_reuse -- <package> <type>
+  # instance 跨 group 复用统计（发现 342 槽位共享的关键探针）
+cargo run -p sc-properties --release --example find_group -- <group> <package...>
+  # 按 group 搜索（城市地块组定位）
+cargo run -p sc-registry --release --example type_lookup -- <s3db> 0xTYPE 0xGROUP...
+  # 类型/组/实例/属性注册表查名（key 语义取证）
+```
+
+## 12. 遗留与下一步（2026-09-22 三次更新）
 
 ### 12.1 待解问题
 
@@ -303,16 +399,26 @@ cargo run -p sc-properties --release --example region_probe -- \
   反编译 `cTerrainHeightMap` / `cShaderDataTerrainRegionVS` 取比例常量；
 - [x] ~~tile 世界尺寸~~ **已破解**（§4.2）：tile = 2048 m（换算常数 1/2048），
   格边长 8 m；
-- [ ] **tile 空间排布**（341 块的网格位置 / instance ↔ 排布映射）：贪心边缘
-  匹配已证不可信（低频平坦地形边缘歧义），需存档对照（城市地形 vs 区域
-  tile 采样）或引擎分析（FUN_00beb730 的调用链/资源加载索引）；
-- [ ] **包内 tile instance ↔ name-hash 映射**（heightmap_x_y_mip 名穷举
-  0..63 未命中，坐标域/构造细节待续）；
-- [ ] **citybox 可玩边界逻辑定位**：在 EcoGame 脚本 bundle（§12.2）的 ER2 数据
-  或其解包后的 JS 中，找界外放置检查的实现；
-- [ ] **ER2/JS bundle 容器格式**：见 §12.2，解开后可 diff BoC 的具体改动；
-- [ ] 341 块/区域的构成记账（地形 stamp vs 各 eco map stamp 的条数分布）；
-- [ ] `2B9C480C` 的 uint32[11] 与单条 group id 的精确对应关系验证；
+- [x] ~~tile 空间排布~~ **已破解**（§4.1）：341 tile = 4096² 区域高度图的
+  5 级 mip 金字塔（16²+8²+4²+2²+1），`tile_arrange` 探针像素级还原排布；
+  贪心边缘匹配路线正式废弃；
+- [x] ~~341 块/区域的构成记账~~ **已闭合**（§4.1）：F0 3846 = 11×341（金字塔）
+  + 95（城市地块图）；ED 3751 = 11×341；
+- [ ] **金字塔朝向**（行 0 = 世界 y 最小还是最大）：背景与城市地形独立绘制，
+  无法用城市锚定；需一张区域视图截图对照（海岸城大陆偏西北特征明显）或
+  引擎加载层验证；
+- [ ] **地形画刷 stamp 位图命名空间**：region 描述引用的 C175ACEA/282078BF
+  等 stamp 在全库 instance 搜索为空——解析方式待查；
+- [x] ~~包内 tile instance ↔ name-hash 映射~~ **已解释**（§4.1）：包内 instance
+  是区域无关槽位 id（342 个唯一值被 11 区域复用），name-hash 索引的是
+  运行时缓存命名空间，二者不同域，穷举命中不可能；
+- [ ] **citybox 界外放置"放行"机制定位**（§8 修正后）：ER2 与全部数据层已
+  排除；下一步游戏内动态验证——安装 BoC 后开 DebugRepositioning /
+  SimRoller 观察激活路径，或动态脱壳后查 cToolPathPlacer 的放置校验调用链；
+- [x] ~~ER2/JS bundle 容器格式~~ **降级**：取证证明 BoC 未改 ER2（§8.1），
+  解包 ER2 对 citybox 调查不再必要（对规则研究仍有价值，见 §12.2）；
+- [ ] `2B9C480C` 的 uint32[11] 与单条 group id 的精确对应关系验证
+      （§4.1 已证实单条 group = 城市地块组，对应关系本身待逐条核对）；
 - [ ] 资源预览缺失 TGI 时**引导用户打开游戏包**的 UI（note-mublqhrd）。
 
 ### 12.2 EcoGame JS bundle 对应文件 [高]
@@ -322,12 +428,14 @@ cargo run -p sc-properties --release --example region_probe -- \
 - **目标资源 TGI = `08068AEB:40800200:622B9CD7`**（type = ER2 Binary Rule File，
   注册表名；解压 6.3 MB，压缩存储 ≈1.0 MB）；同包另有
   `00B1B104:40800200:622B9CD7` property 伴随表；
-- **BoC 模组的替换物** = 同 TGI 的解压版（6,323,736 B，高熵）——即 BoC 的
-  「边界解除」是对这份编译后 GlassBox 规则/脚本数据的修改；
-- 容器静态无明文（无 ≥40 字符 ASCII 串），解码需按 GB 流处理器
-  （docs/source-code/GB_cIEcoStreamHandler.c）或动态脱壳还原；
+- **~~BoC 模组的替换物 = 同 TGI 的解压版~~ 已证伪**（2026-09-22）：BoC 替换的
+  脚本包内 ER2 与原版逐字节相同，改动全在 property 层（§8.1 清单）；
+- ER2 解压形态为**大端结构化二进制表**（头部 `00000004 00000002 0000000D …`
+  + hash 字段），非 gzip 非 JS 明文；同族 `08068AED`（EP1，gzip 流）与
+  `08068AEE`（原生表）见 file-formats.md §8；解码仍需 GB 流处理器或动态脱壳，
+  对规则系统研究有价值、对 citybox 调查不再必要；
 - 定位命令：`cargo run -p sc-properties --release --example find_instance --
-  622B9CD7 <package...>`。
+  622B9CD7 <package...>`；整包对比：`pkg_diff`；property 语义对比：`prop_diff`。
 
 ### 12.3 工程待办（OpenSCP 侧）
 
@@ -336,4 +444,5 @@ cargo run -p sc-properties --release --example region_probe -- \
 - [ ] M-CM3：code 工作台文本编辑保存（code_write_text 接 UI）+ mod 打包导出；
 - [ ] Raster 绘制 / property 编辑器作为底座能力嵌入模组工作台；
 - [ ] 大地图数据工程 PoC（§10 三件套）：界外 eco map 补画 + 高度源对齐 +
-      地块表扩展。
+      地块表扩展——**tile 排布破解后，"区域背景重生成/扩展"路径已通**：
+      `tile_arrange` 可逆（重排 mosaic → 重算金字塔 → 回写 341+N tile）。
