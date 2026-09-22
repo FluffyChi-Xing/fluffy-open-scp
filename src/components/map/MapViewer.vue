@@ -23,6 +23,10 @@ const zoom = ref(1);
 const pan = ref({ x: 0, y: 0 });
 const panning = ref(false);
 const cursorWorld = ref<{ x: number; y: number } | null>(null);
+const cursorText = computed(() => {
+  if (!cursorWorld.value) return "";
+  return `${cursorWorld.value.x}, ${cursorWorld.value.y} m`;
+});
 let spaceDown = false;
 let dragMode: "none" | "pan" = "none";
 let panStart = { x: 0, y: 0, px: 0, py: 0 };

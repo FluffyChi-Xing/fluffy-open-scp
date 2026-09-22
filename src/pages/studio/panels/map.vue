@@ -85,6 +85,8 @@ async function renderRegion() {
   }
 }
 
+const showPlots = ref(true);
+const showResources = ref(true);
 const brushes = computed(() => render.value?.brushes ?? []);
 </script>
 

@@ -19,6 +19,7 @@ export type IconName =
   | 'globe'
   | 'filePen'
   | 'image'
+  | 'map'
   | 'panelTop'
   | 'boxes'
   | 'sticky'
