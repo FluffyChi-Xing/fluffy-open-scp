@@ -14,6 +14,37 @@ use image::{Rgb, RgbImage};
 const HALF: f32 = 16384.0;
 const CELL: f32 = 8.0;
 
+
+// ---- 正确选表：城市单条组显式引用区域；表按城市 id 交集选择 ----
+fn find_plot_positions(p: &dbpf::Package, region: u32) -> Option<Vec<(f32, f32)>> {
+    let mut city_ids: Vec<u32> = Vec::new();
+    for e in p.entries() {
+        if e.id.type_id != 0x00B1_B104 || e.compressed_size > 60 { continue; }
+        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
+        if let Some(sc_properties::Property { kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(k)), .. }) = pf.get(0xC194_9C4D) {
+            if k.instance == 0x51E7_A18D && k.group == region { city_ids.push(e.id.group); }
+        }
+    }
+    let set: std::collections::HashSet<u32> = city_ids.iter().copied().collect();
+    let mut best: Option<(usize, Vec<(f32, f32)>)> = None;
+    for e in p.entries() {
+        if e.id.type_id != 0x00B1_B104 || e.id.instance != 0x2B9C_480C { continue; }
+        let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
+        let ids: Vec<u32> = match pt.get(0x16B7_B1EF) {
+            Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) => vs.iter().filter_map(|v| match v { sc_properties::Value::UInt32(x) => Some(*x), _ => None }).collect(),
+            _ => continue,
+        };
+        let ov = ids.iter().filter(|i| set.contains(i)).count();
+        if best.as_ref().map(|(b, _)| ov > *b).unwrap_or(true) {
+            if let Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) = pt.get(0xF01D_E4B1) {
+                let pos: Vec<(f32, f32)> = vs.iter().filter_map(|v| match v { sc_properties::Value::Vector2(v) => Some((v[0], v[1])), _ => None }).collect();
+                best = Some((ov, pos));
+            }
+        }
+    }
+    best.map(|(_, pos)| pos)
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("package");
@@ -133,24 +164,8 @@ fn main() {
         }
     }
 
-    // ---- 4. 地块表 ----
-    let mut plots: Vec<(f32, f32)> = Vec::new();
-    if let Some(pe) = package.entries().iter().find(|e| e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x51E7_A18D) {
-        if let Ok(region) = sc_properties::PropertyFile::parse(&package.read(pe).unwrap()) {
-            if let Some(pt_key) = region.get(0xFB7A_85A0).and_then(|p| match &p.kind {
-                sc_properties::Kind::Scalar(sc_properties::Value::Key(k)) => Some(k.instance), _ => None }) {
-                if let Some(pte) = package.entries().iter().find(|e| e.id.type_id == 0x00B1_B104 && e.id.instance == pt_key) {
-                    if let Ok(pt) = sc_properties::PropertyFile::parse(&package.read(pte).unwrap()) {
-                        if let Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) = pt.get(0xF01D_E4B1) {
-                            for v in vs {
-                                if let sc_properties::Value::Vector2(v) = v { plots.push((v[0], v[1])); }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // ---- 4. 地块表（城市 id 交集选表）----
+    let plots: Vec<(f32, f32)> = find_plot_positions(&package, group).unwrap_or_default();
     println!("group {group:08X}: plots = {}", plots.len());
 
     // ---- 5. 渲染 ----

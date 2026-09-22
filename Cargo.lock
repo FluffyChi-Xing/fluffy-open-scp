@@ -2824,6 +2824,7 @@ name = "sc-properties"
 version = "0.9.0"
 dependencies = [
  "dbpf",
+ "image",
  "rw4",
  "sc-registry",
  "serde",
