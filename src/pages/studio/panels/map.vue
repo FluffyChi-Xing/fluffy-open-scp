@@ -1,41 +1,23 @@
 <script setup lang="ts">
 /**
  * 地图开发面板：区域地形合成预览。
- * 左侧 = 可交互地图预览（滚轮缩放 / 中键或空格拖动 / 米制标尺 / HUD），
- * 右侧 = 区域属性与图层区（未来叠加资源多层视图与地图笔刷）。
- * 交互与标尺完全对齐 RasterCanvas 的实现模式。
+ * 左 = 地图预览卡片（工具栏：全屏检查），右 = 属性与图层区。
+ * 全屏 sheet 复用同一 MapViewer，便于更细致的地图检查。
  * 渲染管线：sc_properties::region_map（341-tile 金字塔 + 全局水位面 3336）。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
+import FSheet from "@/components/ui/FSheet.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
+import MapViewer from "@/components/map/MapViewer.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
+import type { RegionRender, RegionSummary } from "@/lib/region-map";
 
 const { t } = useI18n();
 const gamePackages = useGamePackagesStore();
-
-interface RegionSummary {
-  group: string;
-  displayName: string | null;
-  numericId: string;
-  plotCount: number;
-}
-
-interface RegionRender {
-  pngBase64: string;
-  width: number;
-  height: number;
-  originWorld?: [number, number];
-  metersPerPixel: number;
-  waterPlane: number;
-  desert: boolean;
-  displayName: string | null;
-  plotCount: number;
-  brushes: [string, [number, number][]][];
-}
 
 const selectedPackageId = ref<number | null>(null);
 const regions = ref<RegionSummary[]>([]);
@@ -44,8 +26,14 @@ const render = ref<RegionRender | null>(null);
 const loadingRegions = ref(false);
 const loadingRender = ref(false);
 const errorMsg = ref("");
+const sheetOpen = ref(false);
 
 const openedPackages = computed(() => gamePackages.opened.map((o) => o.package));
+const selectedRegionName = computed(
+  () =>
+    regions.value.find((r) => r.group === selectedGroup.value)?.displayName ??
+    selectedGroup.value,
+);
 
 function packageName(packageId: number): string {
   const opened = gamePackages.opened.find(
@@ -80,138 +68,6 @@ async function selectPackage(packageId: number | null) {
   }
 }
 
-// ── 视图状态（8 m/像素 @ zoom 1）──
-const MPP = 8;
-/** 32 km 级区域所需的米刻度步长族。 */
-const METER_STEPS = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
-const wrap = ref<HTMLDivElement | null>(null);
-const zoom = ref(1);
-const pan = ref({ x: 0, y: 0 });
-const panning = ref(false);
-const cursorWorld = ref<{ x: number; y: number } | null>(null);
-const showPlots = ref(true);
-const showResources = ref(true);
-let spaceDown = false;
-let dragMode: "none" | "pan" = "none";
-let panStart = { x: 0, y: 0, px: 0, py: 0 };
-
-const xTicks = computed(() => buildTicks(false));
-const yTicks = computed(() => buildTicks(true));
-
-function buildTicks(vertical: boolean): { pos: number; label: string }[] {
-  const total = (vertical ? render.value?.height : render.value?.width) ?? 0;
-  if (!total) return [];
-  const step =
-    METER_STEPS.find((candidate) => (candidate / MPP) * zoom.value >= 72) ??
-    METER_STEPS[METER_STEPS.length - 1];
-  const viewSize = vertical
-    ? (wrap.value?.clientHeight ?? 600)
-    : (wrap.value?.clientWidth ?? 800);
-  const ticks: { pos: number; label: string }[] = [];
-  for (let meters = 0; meters <= total * MPP + 0.001; meters += step) {
-    const pos = pan.value[vertical ? "y" : "x"] + (meters / MPP) * zoom.value;
-    if (pos < -48 || pos > viewSize + 48) continue;
-    ticks.push({ pos, label: `${Number(meters.toFixed(2))}m` });
-  }
-  return ticks;
-}
-
-function setZoom(value: number) {
-  zoom.value = Math.min(32, Math.max(0.05, value));
-}
-
-function fit() {
-  const element = wrap.value;
-  if (!element || !render.value) return;
-  const ratio = Math.min(
-    (element.clientWidth - 64) / render.value.width,
-    (element.clientHeight - 64) / render.value.height,
-  );
-  setZoom(Math.max(0.05, ratio));
-  pan.value = {
-    x: (element.clientWidth - render.value.width * zoom.value) / 2,
-    y: (element.clientHeight - render.value.height * zoom.value) / 2,
-  };
-}
-
-watch(render, () => fit());
-
-// ── 指针交互（对齐 RasterCanvas：Pointer 事件 + capture，中键/空格平移）──
-
-function onPointerDown(event: PointerEvent) {
-  if (event.button === 1 || spaceDown) {
-    dragMode = "pan";
-    panning.value = true;
-    panStart = {
-      x: event.clientX,
-      y: event.clientY,
-      px: pan.value.x,
-      py: pan.value.y,
-    };
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    event.preventDefault();
-  }
-}
-
-function onPointerMove(event: PointerEvent) {
-  const rect = wrap.value?.getBoundingClientRect();
-  if (rect) {
-    const px = (event.clientX - rect.left - pan.value.x) / zoom.value;
-    const py = (event.clientY - rect.top - pan.value.y) / zoom.value;
-    const size = render.value?.width ?? 0;
-    cursorWorld.value =
-      px >= 0 && py >= 0 && px <= size && py <= size
-        ? {
-            x: Math.round((render.value?.originWorld?.[0] ?? -16384) + px * MPP),
-            y: Math.round((render.value?.originWorld?.[1] ?? -16384) + py * MPP),
-          }
-        : null;
-  }
-  if (dragMode === "pan") {
-    pan.value = {
-      x: panStart.px + (event.clientX - panStart.x),
-      y: panStart.py + (event.clientY - panStart.y),
-    };
-  }
-}
-
-function onPointerUp() {
-  dragMode = "none";
-  panning.value = false;
-}
-
-function onWheel(event: WheelEvent) {
-  event.preventDefault();
-  setZoom(event.deltaY < 0 ? zoom.value * 1.15 : zoom.value / 1.15);
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.code === "Space") spaceDown = true;
-}
-function onKeyup(event: KeyboardEvent) {
-  if (event.code === "Space") spaceDown = false;
-}
-
-onMounted(() => {
-  window.addEventListener("keydown", onKeydown);
-  window.addEventListener("keyup", onKeyup);
-});
-onBeforeUnmount(() => {
-  window.removeEventListener("keydown", onKeydown);
-  window.removeEventListener("keyup", onKeyup);
-});
-
-// ── 数据加载 ──
-
-const imgUrl = computed(() =>
-  render.value ? `data:image/png;base64,${render.value.pngBase64}` : "",
-);
-
-const cursorText = computed(() => {
-  if (!cursorWorld.value) return "";
-  return `${cursorWorld.value.x}, ${cursorWorld.value.y} m`;
-});
-
 async function renderRegion() {
   const packageId = selectedPackageId.value;
   if (packageId === null || !selectedGroup.value) return;
@@ -222,13 +78,14 @@ async function renderRegion() {
       packagePath: packagePathOf(packageId),
       group: selectedGroup.value,
     });
-    fit();
   } catch (e) {
     errorMsg.value = String(e);
   } finally {
     loadingRender.value = false;
   }
 }
+
+const brushes = computed(() => render.value?.brushes ?? []);
 </script>
 
 <template>
@@ -327,77 +184,22 @@ async function renderRegion() {
       {{ t("studio.map.needPackage") }}
     </p>
 
-    <!-- 主区：左预览 + 右面板 -->
+    <!-- 主区：左预览卡片 + 右面板 -->
     <div class="workspace">
-      <div ref="wrap" class="viewer" :class="{ panning }">
-        <div
-          class="viewport"
-          @wheel="onWheel"
-          @pointerdown="onPointerDown"
-          @pointermove="onPointerMove"
-          @pointerup="onPointerUp"
-          @pointercancel="onPointerUp"
-        >
-          <div
-            class="map-plane"
-            :style="{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            }"
-          >
-            <img v-if="imgUrl" :src="imgUrl" draggable="false" class="map-img" />
-          </div>
-          <div v-if="!imgUrl" class="empty-hint">
-            <FIcon name="Map" :size="28" />
-            {{ t("studio.map.emptyPreview") }}
-          </div>
-        </div>
-        <!-- 米制标尺 -->
-        <div v-if="render" class="ruler ruler-x" aria-hidden="true">
-          <span
-            v-for="tick in xTicks"
-            :key="`x${tick.label}`"
-            class="ruler-tick"
-            :style="{ left: `${tick.pos}px` }"
-            >{{ tick.label }}</span
-          >
-        </div>
-        <div v-if="render" class="ruler ruler-y" aria-hidden="true">
-          <span
-            v-for="tick in yTicks"
-            :key="`y${tick.label}`"
-            class="ruler-tick"
-            :style="{ top: `${tick.pos}px` }"
-            >{{ tick.label }}</span
-          >
-        </div>
-        <span v-if="render" class="scale-badge">
-          1 px = {{ render.metersPerPixel }} m
-        </span>
-        <!-- HUD -->
-        <div v-if="render" class="hud">
-          <span v-if="cursorWorld" class="hud-item mono">{{ cursorText }}</span>
-          <span class="hud-item">{{ render.width }}×{{ render.height }}</span>
-          <span class="hud-item">{{ Math.round(zoom * 100) }}%</span>
+      <div class="viewer-card">
+        <!-- 右上角工具栏：全屏检查 -->
+        <div class="card-toolbar">
           <button
-            class="hud-button"
             type="button"
-            :title="t('studio.raster.fit')"
-            @click="fit"
-          >
-            <FIcon name="Maximize" :size="12" aria-label="" />
-          </button>
-          <button
             class="hud-button"
-            type="button"
-            :title="t('studio.raster.zoom100')"
-            @click="setZoom(1)"
+            :title="t('studio.map.fullscreen')"
+            :disabled="!render"
+            @click="sheetOpen = true"
           >
-            1:1
+            <FIcon name="Expand" :size="12" aria-label="" />
           </button>
         </div>
-        <span v-if="render" class="pan-hint">{{
-          t("studio.map.panHint")
-        }}</span>
+        <MapViewer :render="render" />
       </div>
 
       <aside class="side-panel">
@@ -426,6 +228,16 @@ async function renderRegion() {
         </section>
 
         <section class="side-section">
+          <h3>{{ t("studio.map.resourcesTitle") }}</h3>
+          <ul v-if="brushes.length" class="brush-list">
+            <li v-for="[name, stamps] in brushes" :key="name">
+              {{ name }} · {{ stamps.length }}
+            </li>
+          </ul>
+          <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
+        </section>
+
+        <section class="side-section">
           <h3>{{ t("studio.map.layersTitle") }}</h3>
           <label class="layer-toggle">
             <input v-model="showPlots" type="checkbox" />
@@ -441,6 +253,25 @@ async function renderRegion() {
         <p class="side-foot">{{ t("studio.map.pipelineNote") }}</p>
       </aside>
     </div>
+
+    <!-- 全屏检查 sheet：复用同一渲染与查看器 -->
+    <FSheet :open="sheetOpen" width="100vw" @update:open="sheetOpen = $event">
+      <div class="sheet-body">
+        <header class="sheet-header">
+          <span class="page-icon"><FIcon name="Map" :size="18" /></span>
+          <div class="sheet-title">
+            {{ render?.displayName ?? selectedRegionName }}
+            <span class="sheet-sub">{{ t("studio.map.fullscreen") }}</span>
+          </div>
+          <button type="button" class="hud-button" @click="sheetOpen = false">
+            <FIcon name="X" :size="14" aria-label="" />
+          </button>
+        </header>
+        <div class="sheet-viewer">
+          <MapViewer v-if="sheetOpen" :render="render" />
+        </div>
+      </div>
+    </FSheet>
   </section>
 </template>
 
@@ -540,142 +371,27 @@ async function renderRegion() {
   flex: 1;
   min-height: 480px;
 }
-/* 查看器（对齐 RasterCanvas：点阵底 + 标尺 + HUD） */
-.viewer {
-  background: var(--surface);
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    color-mix(in srgb, var(--border) 60%, transparent) 1px,
-    transparent 0
-  );
-  background-size: 16px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: crosshair;
+/* 预览卡片：内嵌查看器 + 右上角工具栏 */
+.viewer-card {
+  position: relative;
   flex: 1;
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-}
-.viewer.panning {
-  cursor: grab;
-}
-.viewport {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-.map-plane {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: 0 0;
-}
-.map-img {
-  display: block;
-  user-select: none;
-  pointer-events: none;
-}
-.empty-hint {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  color: var(--subtle-foreground);
-  font-size: 0.8125rem;
-}
-.ruler {
-  position: absolute;
-  pointer-events: none;
-  z-index: 2;
-}
-.ruler-x {
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
-  border-bottom: 1px solid var(--border);
-  height: 18px;
-  left: 0;
-  right: 0;
-  top: 0;
-}
-.ruler-y {
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
-  border-right: 1px solid var(--border);
-  bottom: 0;
-  left: 0;
-  top: 0;
-  width: 44px;
-}
-.ruler-tick {
-  color: var(--muted-foreground);
-  font-size: 9.5px;
-  font-variant-numeric: tabular-nums;
-  position: absolute;
-  white-space: nowrap;
-}
-.ruler-x .ruler-tick {
-  border-left: 1px solid
-    color-mix(in srgb, var(--border-strong, var(--border)) 70%, transparent);
-  height: 100%;
-  padding: 2px 0 0 3px;
-}
-.ruler-y .ruler-tick {
-  border-top: 1px solid
-    color-mix(in srgb, var(--border-strong, var(--border)) 70%, transparent);
-  height: 0;
-  padding: 0 2px;
-  transform: translateY(-7px);
-  width: max-content;
-}
-.scale-badge {
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  min-height: 480px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  font-size: 10px;
-  padding: 2px 8px;
-  position: absolute;
-  right: 12px;
-  top: 24px;
-  z-index: 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
 }
-.hud {
-  bottom: 8px;
-  display: flex;
-  gap: 6px;
+.card-toolbar {
   position: absolute;
   right: 8px;
-  z-index: 3;
+  top: 8px;
+  z-index: 4;
+  display: flex;
+  gap: 6px;
 }
-.hud-item,
-.hud-button {
-  align-items: center;
+.card-toolbar .hud-button {
   background: color-mix(in srgb, var(--surface) 85%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  display: inline-flex;
-  font-size: 10.5px;
-  padding: 3px 8px;
-}
-.hud-button {
-  cursor: pointer;
-}
-.hud-button:hover {
-  color: var(--foreground);
-}
-.mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
-.pan-hint {
-  bottom: 8px;
-  color: var(--subtle-foreground);
-  font-size: 10px;
-  left: 52px;
-  position: absolute;
-  z-index: 2;
 }
 .side-panel {
   width: 272px;
@@ -719,6 +435,17 @@ async function renderRegion() {
   font-size: 0.75rem;
   color: var(--subtle-foreground);
 }
+.brush-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--muted-foreground);
+}
 .layer-toggle {
   display: flex;
   align-items: center;
@@ -742,5 +469,34 @@ async function renderRegion() {
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+/* 全屏检查 sheet */
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem;
+}
+.sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.sheet-title {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.sheet-sub {
+  margin-left: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--subtle-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.sheet-viewer {
+  flex: 1;
+  min-height: 0;
 }
 </style>

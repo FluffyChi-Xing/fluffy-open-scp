@@ -1,0 +1,346 @@
+<script setup lang="ts">
+/**
+ * 地图查看器：缩放 / 平移 / 米制标尺 / HUD（对齐 RasterCanvas 交互模式）。
+ * 由地图面板卡片与全屏检查 sheet 共用。
+ */
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import FIcon from "@/components/extensions/FIcon.vue";
+import type { RegionRender } from "@/lib/region-map";
+
+const props = defineProps<{
+  render: RegionRender | null;
+}>();
+
+const { t } = useI18n();
+
+// ── 视图状态（8 m/像素 @ zoom 1）──
+const MPP = 8;
+/** 32 km 级区域所需的米刻度步长族。 */
+const METER_STEPS = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
+const wrap = ref<HTMLDivElement | null>(null);
+const zoom = ref(1);
+const pan = ref({ x: 0, y: 0 });
+const panning = ref(false);
+const cursorWorld = ref<{ x: number; y: number } | null>(null);
+let spaceDown = false;
+let dragMode: "none" | "pan" = "none";
+let panStart = { x: 0, y: 0, px: 0, py: 0 };
+
+const imgUrl = computed(() =>
+  props.render ? `data:image/png;base64,${props.render.pngBase64}` : "",
+);
+
+const xTicks = computed(() => buildTicks(false));
+const yTicks = computed(() => buildTicks(true));
+
+function buildTicks(vertical: boolean): { pos: number; label: string }[] {
+  const total = (vertical ? props.render?.height : props.render?.width) ?? 0;
+  if (!total) return [];
+  const step =
+    METER_STEPS.find((candidate) => (candidate / MPP) * zoom.value >= 72) ??
+    METER_STEPS[METER_STEPS.length - 1];
+  const viewSize = vertical
+    ? (wrap.value?.clientHeight ?? 600)
+    : (wrap.value?.clientWidth ?? 800);
+  const ticks: { pos: number; label: string }[] = [];
+  for (let meters = 0; meters <= total * MPP + 0.001; meters += step) {
+    const pos = pan.value[vertical ? "y" : "x"] + (meters / MPP) * zoom.value;
+    if (pos < -48 || pos > viewSize + 48) continue;
+    ticks.push({ pos, label: `${Number(meters.toFixed(2))}m` });
+  }
+  return ticks;
+}
+
+function setZoom(value: number) {
+  zoom.value = Math.min(32, Math.max(0.05, value));
+}
+
+function fit() {
+  const element = wrap.value;
+  if (!element || !props.render) return;
+  const ratio = Math.min(
+    (element.clientWidth - 64) / props.render.width,
+    (element.clientHeight - 64) / props.render.height,
+  );
+  setZoom(Math.max(0.05, ratio));
+  pan.value = {
+    x: (element.clientWidth - props.render.width * zoom.value) / 2,
+    y: (element.clientHeight - props.render.height * zoom.value) / 2,
+  };
+}
+
+// ── 指针交互（Pointer 事件 + capture：中键 / 空格平移）──
+
+function onPointerDown(event: PointerEvent) {
+  if (event.button === 1 || spaceDown) {
+    dragMode = "pan";
+    panning.value = true;
+    panStart = {
+      x: event.clientX,
+      y: event.clientY,
+      px: pan.value.x,
+      py: pan.value.y,
+    };
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+}
+
+function onPointerMove(event: PointerEvent) {
+  const rect = wrap.value?.getBoundingClientRect();
+  if (rect) {
+    const px = (event.clientX - rect.left - pan.value.x) / zoom.value;
+    const py = (event.clientY - rect.top - pan.value.y) / zoom.value;
+    const size = props.render?.width ?? 0;
+    cursorWorld.value =
+      px >= 0 && py >= 0 && px <= size && py <= size
+        ? {
+            x: Math.round((props.render?.originWorld?.[0] ?? -16384) + px * MPP),
+            y: Math.round((props.render?.originWorld?.[1] ?? -16384) + py * MPP),
+          }
+        : null;
+  }
+  if (dragMode === "pan") {
+    pan.value = {
+      x: panStart.px + (event.clientX - panStart.x),
+      y: panStart.py + (event.clientY - panStart.y),
+    };
+  }
+}
+
+function onPointerUp() {
+  dragMode = "none";
+  panning.value = false;
+}
+
+function onWheel(event: WheelEvent) {
+  event.preventDefault();
+  setZoom(event.deltaY < 0 ? zoom.value * 1.15 : zoom.value / 1.15);
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.code === "Space") spaceDown = true;
+}
+function onKeyup(event: KeyboardEvent) {
+  if (event.code === "Space") spaceDown = false;
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", onKeydown);
+  window.addEventListener("keyup", onKeyup);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("keyup", onKeyup);
+});
+
+watch(
+  () => props.render,
+  () => fit(),
+);
+
+defineExpose({ fit });
+</script>
+
+<template>
+  <div ref="wrap" class="viewer" :class="{ panning }">
+    <div
+      class="viewport"
+      @wheel="onWheel"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+    >
+      <div
+        class="map-plane"
+        :style="{
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+        }"
+      >
+        <img v-if="imgUrl" :src="imgUrl" draggable="false" class="map-img" />
+      </div>
+      <div v-if="!imgUrl" class="empty-hint">
+        <FIcon name="Map" :size="28" />
+        {{ t("studio.map.emptyPreview") }}
+      </div>
+    </div>
+    <!-- 米制标尺 -->
+    <div v-if="render" class="ruler ruler-x" aria-hidden="true">
+      <span
+        v-for="tick in xTicks"
+        :key="`x${tick.label}`"
+        class="ruler-tick"
+        :style="{ left: `${tick.pos}px` }"
+        >{{ tick.label }}</span
+      >
+    </div>
+    <div v-if="render" class="ruler ruler-y" aria-hidden="true">
+      <span
+        v-for="tick in yTicks"
+        :key="`y${tick.label}`"
+        class="ruler-tick"
+        :style="{ top: `${tick.pos}px` }"
+        >{{ tick.label }}</span
+      >
+    </div>
+    <span v-if="render" class="scale-badge">
+      1 px = {{ render.metersPerPixel }} m
+    </span>
+    <!-- HUD -->
+    <div v-if="render" class="hud">
+      <span v-if="cursorWorld" class="hud-item mono">{{ cursorText }}</span>
+      <span class="hud-item">{{ render.width }}×{{ render.height }}</span>
+      <span class="hud-item">{{ Math.round(zoom * 100) }}%</span>
+      <button
+        class="hud-button"
+        type="button"
+        :title="t('studio.raster.fit')"
+        @click="fit"
+      >
+        <FIcon name="Maximize" :size="12" aria-label="" />
+      </button>
+      <button
+        class="hud-button"
+        type="button"
+        :title="t('studio.raster.zoom100')"
+        @click="setZoom(1)"
+      >
+        1:1
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+/* 查看器（对齐 RasterCanvas：点阵底 + 标尺 + HUD） */
+.viewer {
+  background: var(--surface);
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, var(--border) 60%, transparent) 1px,
+    transparent 0
+  );
+  background-size: 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: crosshair;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+.viewer.panning {
+  cursor: grab;
+}
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.map-plane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.map-img {
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+.empty-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  color: var(--subtle-foreground);
+  font-size: 0.8125rem;
+}
+.ruler {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+}
+.ruler-x {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border-bottom: 1px solid var(--border);
+  height: 18px;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+.ruler-y {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border-right: 1px solid var(--border);
+  bottom: 0;
+  left: 0;
+  top: 0;
+  width: 44px;
+}
+.ruler-tick {
+  color: var(--muted-foreground);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  position: absolute;
+  white-space: nowrap;
+}
+.ruler-x .ruler-tick {
+  border-left: 1px solid
+    color-mix(in srgb, var(--border-strong, var(--border)) 70%, transparent);
+  height: 100%;
+  padding: 2px 0 0 3px;
+}
+.ruler-y .ruler-tick {
+  border-top: 1px solid
+    color-mix(in srgb, var(--border-strong, var(--border)) 70%, transparent);
+  height: 0;
+  padding: 0 2px;
+  transform: translateY(-7px);
+  width: max-content;
+}
+.scale-badge {
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  padding: 2px 8px;
+  position: absolute;
+  right: 12px;
+  top: 24px;
+  z-index: 3;
+}
+.hud {
+  bottom: 8px;
+  display: flex;
+  gap: 6px;
+  position: absolute;
+  right: 8px;
+  z-index: 3;
+}
+.hud-item,
+.hud-button {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  display: inline-flex;
+  font-size: 10.5px;
+  padding: 3px 8px;
+}
+.hud-button {
+  cursor: pointer;
+}
+.hud-button:hover {
+  color: var(--foreground);
+}
+.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+</style>
