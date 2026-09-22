@@ -57,6 +57,11 @@ fn main() {
     let f0_grid_file = args.next().unwrap();
     let ed_grid_file = args.next().unwrap();
     let out = args.next().unwrap();
+    let gw: Option<(f32, f32)> = args.next().map(|v| {
+        let wx: f32 = v.parse().unwrap();
+        let wy: f32 = args.next().unwrap().parse().unwrap();
+        (wx, wy)
+    });
     let p = dbpf::Package::open(&path).unwrap();
 
     // ---- F0 高度马赛克 ----
@@ -219,7 +224,94 @@ fn main() {
         }
     }
 
-    // ---- 资源画刷环 + 地块框 ----
+    // ---- 伟大工程位检测：山顶削平圆台（内部平坦 + 高于周围环带 + 近圆形）----
+    {
+        let step = 8usize;
+        let cw = w / step;
+        let mut havg = vec![0u32; cw * cw];
+        for cy in 0..cw { for cx in 0..cw {
+            let mut acc = 0u64;
+            for dy in 0..step { for dx in 0..step {
+                acc += u64::from(hgt[(cy * step + dy) * w + cx * step + dx]);
+            }}
+            havg[cy * cw + cx] = (acc / (step * step) as u64) as u32;
+        }}
+        // 圆盘模板匹配：中心粗网格步进 4，半径 40..100 粗格（=320..800m）
+        let mut cands: Vec<(f64, usize, usize, usize)> = Vec::new();
+        for cy in (30..cw - 30).step_by(4) {
+            for cx in (30..cw - 30).step_by(4) {
+                for &r in &[40usize, 56, 72, 96] {
+                    if cy + r * 2 >= cw || cx + r * 2 >= cw || cy < r || cx < r { continue; }
+                    // 内盘均值与方差
+                    let (mut sum, mut sq, mut n) = (0f64, 0f64, 0f64);
+                    for a in 0..360 {
+                        let (dx, dy) = ((a as f64).to_radians().cos(), (a as f64).to_radians().sin());
+                        for &(rr, w) in &[(0.0f64, 3.0f64), (0.5, 2.0), (0.85, 1.0)] {
+                            let px = (cx as f64 + dx * rr * r as f64) as usize;
+                            let py = (cy as f64 + dy * rr * r as f64) as usize;
+                            let v = havg[py * cw + px] as f64;
+                            sum += v * w as f64; sq += v * v * w as f64; n += w as f64;
+                        }
+                    }
+                    let mean = sum / n;
+                    let var = (sq / n - mean * mean).max(0.0);
+                    let std = var.sqrt();
+                    if std > 200.0 { continue; }
+                    // 外环均值（1.6r 处）
+                    let mut osum = 0f64; let mut on = 0f64;
+                    for a in 0..360 {
+                        let (dx, dy) = ((a as f64).to_radians().cos(), (a as f64).to_radians().sin());
+                        let px = (cx as f64 + dx * 1.6 * r as f64) as usize;
+                        let py = (cy as f64 + dy * 1.6 * r as f64) as usize;
+                        osum += havg[py * cw + px] as f64; on += 1.0;
+                    }
+                    let prom = mean - osum / on; // 高出周围的程度
+                    if prom < 250.0 { continue; }
+                    let score = prom - std * 2.0;
+                    if score > 200.0 {
+                        cands.push((score, cx, cy, r));
+                    }
+                }
+            }
+        }
+        cands.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        {
+            // 贪心去重：取分数最高且中心距离 >2r 的前 3 个
+            let mut picked: Vec<(f64, usize, usize, usize)> = Vec::new();
+            for c in &cands {
+                if picked.iter().all(|(_, px, py, pr)| {
+                    let d = ((c.1 as f64 - *px as f64).powi(2) + (c.2 as f64 - *py as f64).powi(2)).sqrt();
+                    d > 2.2 * (*pr as f64).max(c.3 as f64)
+                }) {
+                    picked.push(*c);
+                }
+                if picked.len() >= 3 { break; }
+            }
+            for (si, (score, cx, cy, r)) in picked.iter().enumerate() {
+                println!("GW cand#{si}: score={score:.0} px=({}, {}) r={}px ({}m) world=({:.0},{:.0})",
+                    cx * step, cy * step, r * step, r * step * 8, (cx * step) as f64 * 8.0 - 16384.0, (cy * step) as f64 * 8.0 - 16384.0);
+            }
+        }
+        if let Some((score, cx, cy, r)) = cands.first().copied() {
+            let pcx = cx * step; let pcy = cy * step;
+            let rad = r * step;
+            println!("GW candidate: score={score:.0} px=({pcx},{pcy}) radius={rad}px ({}m) flat_std ok", rad * 8);
+            println!("GW world = ({:.0},{:.0})", pcx as f64 * 8.0 - 16384.0, pcy as f64 * 8.0 - 16384.0);
+            let col = [255u8, 255, 255];
+            for rr in [rad.saturating_sub(4), rad] {
+                for a in 0..720 {
+                    let t = a as f64 * 0.5f64.to_radians();
+                    let px = (pcx as f64 + t.cos() * rr as f64) as isize;
+                    let py = (pcy as f64 + t.sin() * rr as f64) as isize;
+                    if px >= 0 && py >= 0 && (px as usize) < w && (py as usize) < w {
+                        img.put_pixel(px as u32, py as u32, image::Rgb(col));
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 资源画刷环 + 地块框 ----    // ---- 资源画刷环 + 地块框 ----
     let colors: [(&str, [u8; 3]); 8] = [
         ("coal", [40, 40, 40]), ("oil", [20, 20, 20]), ("ore", [200, 150, 0]),
         ("watertable", [0, 120, 255]), ("radiation", [0, 220, 60]),
@@ -247,6 +339,22 @@ fn main() {
                 }
             }
         }
+    }
+    // 伟大工程位（手动标注：数据侧坐标不存在，来自在线元数据）
+    if let Some((gwx, gwy)) = gw {
+        let (cx, cy) = world_to_px(gwx, gwy);
+        let r = 192usize; // ~768m 直径的伟工圆台
+        for a in 0..720 {
+            let t = a as f64 * 0.5f64.to_radians();
+            for rr in [r as f64 - 3.0, r as f64] {
+                let px = (cx as f64 + t.cos() * rr) as isize;
+                let py = (cy as f64 + t.sin() * rr) as isize;
+                if px >= 0 && py >= 0 && (px as usize) < w && (py as usize) < w {
+                    img.put_pixel(px as u32, py as u32, image::Rgb([255, 255, 255]));
+                }
+            }
+        }
+        println!("GW marker at world ({gwx:.0},{gwy:.0})");
     }
     for (wx, wy) in &plots {
         let (cx, cy) = world_to_px(*wx, *wy);
