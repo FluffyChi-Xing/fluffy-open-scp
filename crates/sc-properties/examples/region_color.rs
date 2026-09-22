@@ -187,20 +187,23 @@ fn main() {
                 g = (140.0 - 60.0 * d) * (0.6 + 0.4 * light);
                 b = (190.0 - 60.0 * d) * (0.6 + 0.4 * light);
             } else {
-                // 陆地：水位上方=沙岸带 → 草地（b1 草密度调制）→ 岩石
-                let grass_k = (grass as f32 / 130.0).clamp(0.0, 1.0);
+                // 陆地：草量 = 湿度(b1) × 平缓度（陡坡露岩石，山上平地也是草）
+                let grass_k = (grass as f32 / 120.0).clamp(0.0, 1.0);
+                let slope = ((dx * dx + dy * dy) as f32).sqrt() / 60.0;
+                let slope_k = (slope / 1.6).clamp(0.0, 1.0);
+                let g_amt = (grass_k * (1.0 - slope_k * 0.85)).clamp(0.0, 1.0);
                 if rel < 350 {
-                    r = 190.0; g = 175.0; b = 130.0; // 沙岸
-                } else if rel < 2500 {
-                    let k = rel as f32 / 2500.0;
-                    r = (185.0 - 55.0 * grass_k) * (1.0 - 0.2 * k) + 150.0 * 0.2 * k;
-                    g = (185.0 - 20.0 * grass_k) * (1.0 - 0.2 * k) + 140.0 * 0.2 * k;
-                    b = (110.0 - 30.0 * grass_k) * (1.0 - 0.2 * k) + 110.0 * 0.2 * k;
+                    // 沙岸
+                    r = 190.0; g = 175.0; b = 130.0;
                 } else {
-                    let t = ((rel - 2500) as f32 / 5000.0).clamp(0.0, 1.0);
-                    r = 150.0 + 60.0 * t;
-                    g = 135.0 + 30.0 * t;
-                    b = 100.0 + 40.0 * t;
+                    // 草绿 ↔ 岩棕 按草量混合
+                    let t = ((rel - 350) as f32 / 6000.0).clamp(0.0, 1.0);
+                    let rock_r = 150.0 + 50.0 * t;
+                    let rock_g = 135.0 + 25.0 * t;
+                    let rock_b = 100.0 + 35.0 * t;
+                    r = rock_r + (95.0 - rock_r) * g_amt;
+                    g = rock_g + (160.0 - rock_g) * g_amt;
+                    b = rock_b + (70.0 - rock_b) * g_amt;
                 }
                 // 森林斑点
                 if (100..=120).contains(&f) {
