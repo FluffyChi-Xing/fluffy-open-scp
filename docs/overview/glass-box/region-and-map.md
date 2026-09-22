@@ -202,9 +202,9 @@ grid avg-height（×100）：外圈 ~5300 浅海，中央 2600 深水盆地 + 88
   ED 森林密度为连续噪声斑块，跨 tile 边界完全连续（金字塔匹配本身即证
   无缝），数据侧无任何周期带状痕迹；游戏内所见成行树木是渲染器实例
   排布网格（billboard 行/LOD 采样）所致。
-- **新开口（记账）**：region 描述引用的地形画刷 stamp 位图
-  （C175ACEA / 282078BF 等）**不存在于任何 package**（全类型 instance 搜索
-  为空）——stamp 资源的解析命名空间待查（不排除运行时生成/在线资源）。
+- [x] ~~画刷 stamp 位图命名空间~~ **已定案**（§5）：全部 stamp 位图（地形+
+  资源）均不在任何 package 内（含资源类 stamp 的补充验证），Key 无
+  type/group——运行时按区域种子程序化生成；包内硬数据 = 位置/强度/目标 map。
 - 曾有假设"tile 头部 20 B 含位置字段"确认无误：头部仅 256×256 与格式 7，
   排布信息由金字塔结构自携带。
 - **共享网格已跨包实证**（2026-09-23）：RT0 与 RT1 的 341 槽位 instance
@@ -236,21 +236,57 @@ FUN_00beb470(buf, tileX, tileY, /*mip=*/0);      // "heightmap_x%02d_y%02d_mip0"
 
 ## 5. 资源分布（EcoMap 画刷）[高]
 
-每区域 9 类资源/覆盖图，全部走**同一套画刷机制**：
+> **2026-09-23 重大澄清：画刷位图不在包里，资源是运行时程序化生成。**
+> 全部画刷 stamp 位图（地形 C175ACEA 类 + 资源 AA7731CE/CE1B4BC1/917035EE…
+> 等全部实例）在 RT0/RT1/Game/EP1 的**全类型 instance 搜索均为空**；
+> Key 无 type/group 字段。结合区域描述中的种子字符串，判定 stamp 位图由
+> 引擎按种子程序化生成，包内只存**位置/强度/目标 map**这些硬数据。
+
+每区域 9+2 类资源/覆盖图，全部走同一套画刷机制：
 
 ```
-0x02A907B5 Key[N]    = 128×128 位图（ED/相关资源）
-0x02A907B6 transform[N] = 世界摆放（平移 + 旋转 + 强度）
-0x0DBA3A9C string8   = 目标 map 名（"coalheightmap" / "watertableheightmap" / …）
-0x0DC097E3 uint32    = 128（分辨率，地形为 256）
-0x0DE43899 uint32    = 目标 map 索引：watertable=2 · oil=4 · ore=6 ·
-                       desirability=8 · desirabilityTwo=9 …
+0x00B2CCCA string8   = 清单名（oilEcoMapBrushes / coalEcoMapBrushes / …）
+0x02A907B5 Key[N]    = 位图引用（程序化生成，不在包内）
+0x02A907B6 transform[N] = 世界摆放（平移 + 旋转；Count=12，尾浮点=强度/比例）
+0x0DBA3A9C string8   = 目标 map 名（"oilheightmap" / "watertableheightmap" / …）
+0x0DC097E3 uint32    = 128（分辨率）
+0x0DE43899 uint32    = 目标 map 索引：soil=1 watertable=2 forest=3 oil=4
+                       coal=5 ore=6 radiation=10 groundPollution=11 desirability=8/9
 ```
 
-- 索引直接对应 [terrain.md](./terrain.md) §1.2 的 typed map 槽位——**13–14 张
-  map 的写入路径是"画刷→索引→map 槽"**；
-- 水：`tessendorfWater` 参数组（500/20/0.1/5/…）+ watertable 高度图；
-- **资源是"画"上去的**：画刷没涂到的格子恒 0——这就是界外无矿/无水的数据根源（§9）。
+test_001（9F735B20）画刷清单实证：oil×2、coal×1（东北远郊 3712,2692）、
+ore×1、watertable×1、soil×1、forest×1、radiation×2、groundPollution×1、
+desirability×2、地形×2——**位置是硬数据，可精确标绘**（region_color 探针
+已画环叠图）；blob 形状/数值分布需运行时或存档对照标定。
+
+**对全地图可玩 mod 的推论 [高]：**
+
+1. 城市地块 group 内**没有任何资源数据**（仅高度图 + 回指 property）
+   ⇒ 认领城市时资源由区域层（画刷→typed map）注入；
+2. 补界外资源 = **往画刷清单 property 里加 stamp**（新地块位置 +
+   目标 map 名）——property 编码器（encode_canonical）已具备写出能力，
+   这就是"资源补齐"的数据工程入口，无需理解程序化位图的精确形状；
+3. 精度校准路径：解析已认领城市的**存档资源图**（城市 typed map 实际值）
+   与画刷参数对拍，反推 blob 生成函数。
+
+### 5.1 ED 地面场通道语义与地图上色机制 [中→高]
+
+ED（0x03E421ED，128² u32/tile，独立 341 槽位金字塔）u32 拆字节：
+
+| 字节 | 语义 | 证据 |
+|---|---|---|
+| b0 | 森林密度（值簇 109–113，值 15=路网线） | ch0 渲染：有机噪声斑块跨 tile 连续 + 细线路网 |
+| b1 | 水/流体场（93 个值，0 为主，河道/海岸高值） | ch1 渲染：河流与海湾发光 |
+| b2 | 地面材质权重（255 主导 + 渐变簇） | ch2 渲染：陆地轮廓与材质分带 |
+| b3 | 恒 0 | 直方图 |
+
+**游戏上色机制**（模型）：渲染层不做"资源着色"——按 ED 材质权重对
+层栈模板（ground/soil/water，贴图 + 色调 (0.48,0.39,0.27)，SimCity_Game
+包 D7EF2862 族）做 per-cell 纹理 splat（cMaterialGround /
+cGroundTextureSet / cMaterialGroundDataViewBlendColors），森林密度驱动
+树实例，b1 水场驱动水面；外加光照。`region_color` 探针按此模型实现
+彩色预览（高度分带 + ED 水场 + 森林斑 + 路网 + hillshade），已可产出
+接近游戏观感的合成图；精确材质→纹理/色调对照需游戏内截图标定。
 
 ## 6. 城市地块（city plot）[高]
 
