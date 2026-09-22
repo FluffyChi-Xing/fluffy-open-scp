@@ -276,7 +276,7 @@ function onMouseUp() {
       <aside class="side-panel">
         <section class="side-section">
           <h3>
-            {{ render.displayName ?? t("studio.map.propertiesTitle") }}
+            {{ render?.displayName ?? t("studio.map.propertiesTitle") }}
           </h3>
           <dl v-if="render" class="props">
             <dt>{{ t("studio.map.sizeLabel") }}</dt>
