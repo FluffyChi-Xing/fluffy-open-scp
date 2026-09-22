@@ -19,6 +19,37 @@ struct Brush {
     stamps: Vec<(f32, f32)>,
 }
 
+
+// ---- 正确选表：城市单条组显式引用区域；表按城市 id 交集选择 ----
+fn find_plot_positions(p: &dbpf::Package, region: u32) -> Option<Vec<(f32, f32)>> {
+    let mut city_ids: Vec<u32> = Vec::new();
+    for e in p.entries() {
+        if e.id.type_id != 0x00B1_B104 || e.compressed_size > 60 { continue; }
+        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
+        if let Some(sc_properties::Property { kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(k)), .. }) = pf.get(0xC194_9C4D) {
+            if k.instance == 0x51E7_A18D && k.group == region { city_ids.push(e.id.group); }
+        }
+    }
+    let set: std::collections::HashSet<u32> = city_ids.iter().copied().collect();
+    let mut best: Option<(usize, Vec<(f32, f32)>)> = None;
+    for e in p.entries() {
+        if e.id.type_id != 0x00B1_B104 || e.id.instance != 0x2B9C_480C { continue; }
+        let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
+        let ids: Vec<u32> = match pt.get(0x16B7_B1EF) {
+            Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) => vs.iter().filter_map(|v| match v { sc_properties::Value::UInt32(x) => Some(*x), _ => None }).collect(),
+            _ => continue,
+        };
+        let ov = ids.iter().filter(|i| set.contains(i)).count();
+        if best.as_ref().map(|(b, _)| ov > *b).unwrap_or(true) {
+            if let Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) = pt.get(0xF01D_E4B1) {
+                let pos: Vec<(f32, f32)> = vs.iter().filter_map(|v| match v { sc_properties::Value::Vector2(v) => Some((v[0], v[1])), _ => None }).collect();
+                best = Some((ov, pos));
+            }
+        }
+    }
+    best.map(|(_, pos)| pos)
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().unwrap();
@@ -90,28 +121,28 @@ fn main() {
         (ed0[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)], e, ed2[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)])
     };
 
-    // ---- 海面 ----
-    let mut ring: Vec<u32> = Vec::new();
-    for i in 0..w { for &j in &[0usize, 1, w - 2, w - 1] { ring.push(u32::from(hgt[i * w + j])); ring.push(u32::from(hgt[j * w + i])); } }
-    ring.sort_unstable();
-    let sea = ring[ring.len() / 2] as i32;
-
-    // ---- 地块 ----
-    let mut plots: Vec<(f32, f32)> = Vec::new();
-    if let Some(pe) = p.entries().iter().find(|e| e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x51E7_A18D) {
-        if let Ok(region) = sc_properties::PropertyFile::parse(&p.read(pe).unwrap()) {
-            if let Some(ptk) = region.get(0xFB7A_85A0).and_then(|pp| match &pp.kind {
-                sc_properties::Kind::Scalar(sc_properties::Value::Key(k)) => Some(k.instance), _ => None }) {
-                if let Some(pte) = p.entries().iter().find(|e| e.id.type_id == 0x00B1_B104 && e.id.instance == ptk) {
-                    if let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(pte).unwrap()) {
-                        if let Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) = pt.get(0xF01D_E4B1) {
-                            for v in vs { if let sc_properties::Value::Vector2(v) = v { plots.push((v[0], v[1])); } }
-                        }
-                    }
-                }
-            }
+    // ---- 水位面：低高度直方图的大跳变（河床被刻平到水位下方）----
+    let mut hist = [0u64; 16];
+    for v in &hgt {
+        if *v >= 4096 { continue; }
+        hist[*v as usize / 256] += 1;
+    }
+    let mut sea = 0i32;
+    for i in 1..14usize {
+        let prev_min = (0..i).map(|k| hist[k]).filter(|n| *n > 0).min().unwrap_or(u64::MAX);
+        if hist[i] > 5000 && hist[i] > 4 * prev_min.max(1) {
+            // 吸收连续大桶（河床平底可能跨多桶）
+            let mut j = i;
+            while j + 1 < 16 && hist[j + 1] > 5000 && hist[j + 1] * 4 > hist[j] * 3 { j += 1; }
+            sea = (j * 256 + 264) as i32;
+            break;
         }
     }
+    println!("water plane L = {sea}");
+
+    // ---- 地块（城市 id 交集选表）----
+    let plots: Vec<(f32, f32)> = find_plot_positions(&p, group).unwrap_or_default();
+    println!("plots = {}", plots.len());
 
     // ---- 画刷（本组内 00B2CCCA 名含 brushes/Brushes 的属性）----
     let mut brushes: Vec<Brush> = Vec::new();
@@ -147,39 +178,37 @@ fn main() {
             let nl = (nx * nx + ny * ny + nz * nz).sqrt();
             let light = ((nx * 0.5 + ny * 0.5 + nz * 0.7) / nl).max(0.0);
             let rel = h - sea;
-            let (f, wtr, _m) = ed_at(x, y);
+            let (f, grass, _m) = ed_at(x, y);
             let (mut r, mut g, mut b);
-            if rel <= 0 || h == 0 {
-                // 海/水体：深蓝→浅蓝
+            if rel < 0 || h == 0 {
+                // 水体（河/湖/海）：按深度加深
                 let d = (-rel as f32 / 600.0).clamp(0.0, 1.0);
                 r = (90.0 - 50.0 * d) * (0.6 + 0.4 * light);
                 g = (140.0 - 60.0 * d) * (0.6 + 0.4 * light);
                 b = (190.0 - 60.0 * d) * (0.6 + 0.4 * light);
             } else {
-                // 陆地：高度分带（草→黄绿→岩棕→浅岩）
-                let t = (rel as f32 / 4000.0).clamp(0.0, 1.0);
-                let (r0, g0, b0) = if t < 0.25 {
-                    let k = t / 0.25;
-                    (110.0 + 30.0 * k, 165.0 + 10.0 * k, 80.0 - 10.0 * k)
-                } else if t < 0.6 {
-                    let k = (t - 0.25) / 0.35;
-                    (140.0 + 40.0 * k, 175.0 - 30.0 * k, 70.0 + 30.0 * k)
+                // 陆地：水位上方=沙岸带 → 草地（b1 草密度调制）→ 岩石
+                let grass_k = (grass as f32 / 130.0).clamp(0.0, 1.0);
+                if rel < 350 {
+                    r = 190.0; g = 175.0; b = 130.0; // 沙岸
+                } else if rel < 2500 {
+                    let k = rel as f32 / 2500.0;
+                    r = (185.0 - 55.0 * grass_k) * (1.0 - 0.2 * k) + 150.0 * 0.2 * k;
+                    g = (185.0 - 20.0 * grass_k) * (1.0 - 0.2 * k) + 140.0 * 0.2 * k;
+                    b = (110.0 - 30.0 * grass_k) * (1.0 - 0.2 * k) + 110.0 * 0.2 * k;
                 } else {
-                    let k = (t - 0.6) / 0.4;
-                    (180.0 + 40.0 * k, 145.0 + 15.0 * k, 100.0 + 50.0 * k)
-                };
-                // ED 水域覆盖（河流湖）
-                let wet = wtr as f32 / 90.0;
-                r = r0 * (1.0 - 0.75 * wet) + 70.0 * 0.75 * wet;
-                g = g0 * (1.0 - 0.75 * wet) + 120.0 * 0.75 * wet;
-                b = b0 * (1.0 - 0.75 * wet) + 170.0 * 0.75 * wet;
-                // 森林斑点（仅陆地）
-                if rel > 100 && (100..=120).contains(&f) {
+                    let t = ((rel - 2500) as f32 / 5000.0).clamp(0.0, 1.0);
+                    r = 150.0 + 60.0 * t;
+                    g = 135.0 + 30.0 * t;
+                    b = 100.0 + 40.0 * t;
+                }
+                // 森林斑点
+                if (100..=120).contains(&f) {
                     let d = 1.0 - (f as f32 - 100.0) / 20.0;
-                    r *= 1.0 - 0.55 * d; g *= 1.0 - 0.15 * d; b *= 1.0 - 0.55 * d;
+                    r *= 1.0 - 0.5 * d; g *= 1.0 - 0.1 * d; b *= 1.0 - 0.5 * d;
                 }
                 // 道路
-                if f == 15 { r = 120.0; g = 115.0; b = 110.0; }
+                if f == 15 { r = 130.0; g = 122.0; b = 112.0; }
             }
             let shade = 0.45 + 0.55 * light;
             r *= shade; g *= shade; b *= shade;
