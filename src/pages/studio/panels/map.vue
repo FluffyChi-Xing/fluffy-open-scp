@@ -10,13 +10,15 @@ import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
+import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import MapViewer from "@/components/map/MapViewer.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
+import { brushResourceKind } from "@/lib/region-map";
 import type { RegionRender, RegionSummary } from "@/lib/region-map";
 
-const { t } = useI18n();
+const { t, te, locale } = useI18n();
 const gamePackages = useGamePackagesStore();
 
 const selectedPackageId = ref<number | null>(null);
@@ -28,10 +30,31 @@ const loadingRender = ref(false);
 const errorMsg = ref("");
 const sheetOpen = ref(false);
 
+/** 按当前 UI 语言取区域名（zh → 中文名，否则英文名），缺失回退另一语言/组 id。 */
+function regionDisplayName(r: {
+  displayName: string | null;
+  displayNameEn: string | null;
+  group: string;
+}): string {
+  const zh = locale.value.startsWith("zh");
+  const primary = zh ? r.displayName : r.displayNameEn;
+  const fallback = zh ? r.displayNameEn : r.displayName;
+  return primary ?? fallback ?? r.group;
+}
+
 const openedPackages = computed(() => gamePackages.opened.map((o) => o.package));
+/** 渲染结果的区域名（跟随 UI 语言）。 */
+const renderRegionName = computed(() => {
+  const r = render.value;
+  if (!r) return "";
+  const zh = locale.value.startsWith("zh");
+  return (zh ? r.displayName : r.displayNameEn) ?? r.displayName ?? r.displayNameEn ?? "";
+});
 const selectedRegionName = computed(
   () =>
-    regions.value.find((r) => r.group === selectedGroup.value)?.displayName ??
+    regions.value
+      .filter((r) => r.group === selectedGroup.value)
+      .map(regionDisplayName)[0] ??
     selectedGroup.value,
 );
 
@@ -85,9 +108,28 @@ async function renderRegion() {
   }
 }
 
+// ── 图层状态：地块框开关 + 资源分布图层单选（null = 关闭；对齐游戏数据视图）──
 const showPlots = ref(true);
-const showResources = ref(true);
 const brushes = computed(() => render.value?.brushes ?? []);
+const resourceKinds = computed(() => {
+  const kinds: string[] = [];
+  for (const [name] of brushes.value) {
+    const kind = brushResourceKind(name);
+    if (!kinds.some((k) => k.toLowerCase() === kind.toLowerCase())) kinds.push(kind);
+  }
+  return kinds;
+});
+const activeResource = ref<string | null>(null);
+const visibleResourceKinds = computed(() =>
+  activeResource.value ? [activeResource.value] : [],
+);
+function selectResource(kind: string) {
+  activeResource.value = activeResource.value === kind ? null : kind;
+}
+function resourceLabel(kind: string): string {
+  const key = `studio.map.res${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
+  return te(key) ? t(key) : kind;
+}
 </script>
 
 <template>
@@ -146,8 +188,9 @@ const brushes = computed(() => render.value?.brushes ?? []);
           >
             <span>{{
               selectedGroup
-                ? (regions.find((r) => r.group === selectedGroup)
-                    ?.displayName ?? selectedGroup)
+                ? (regions
+                    .filter((r) => r.group === selectedGroup)
+                    .map(regionDisplayName)[0] ?? selectedGroup)
                 : t("studio.map.regionPlaceholder")
             }}</span>
             <FIcon name="ChevronDown" :size="12" />
@@ -163,7 +206,7 @@ const brushes = computed(() => render.value?.brushes ?? []);
             :name="selectedGroup === r.group ? 'Check' : 'MapPin'"
             :size="14"
           />
-          {{ r.displayName ?? r.group }}（{{ r.plotCount }}）
+          {{ regionDisplayName(r) }}（{{ r.plotCount }}）
         </button>
         <div v-if="!regions.length" class="menu-empty">
           {{ t("studio.map.emptyRegions") }}
@@ -189,25 +232,51 @@ const brushes = computed(() => render.value?.brushes ?? []);
     <!-- 主区：左预览卡片 + 右面板 -->
     <div class="workspace">
       <div class="viewer-card">
-        <!-- 右上角工具栏：全屏检查 -->
+        <!-- 顶部工具条：横向 flex 右对齐（分段式图层切换 + outline 展开） -->
         <div class="card-toolbar">
+          <div class="layer-seg" role="group" :aria-label="t('studio.map.layersTitle')">
+            <button
+              type="button"
+              :class="{ active: activeResource === null }"
+              :title="t('studio.map.layerOff')"
+              @click="activeResource = null"
+            >
+              {{ t("studio.map.layerOff") }}
+            </button>
+            <button
+              v-for="kind in resourceKinds"
+              :key="kind"
+              type="button"
+              :class="{ active: activeResource === kind }"
+              :title="resourceLabel(kind)"
+              @click="selectResource(kind)"
+            >
+              {{ resourceLabel(kind) }}
+            </button>
+          </div>
           <button
             type="button"
-            class="hud-button"
+            class="outline-btn"
             :title="t('studio.map.fullscreen')"
             :disabled="!render"
             @click="sheetOpen = true"
           >
-            <FIcon name="Expand" :size="12" aria-label="" />
+            <FIcon name="Expand" :size="15" aria-label="" />
           </button>
         </div>
-        <MapViewer :render="render" />
+        <div class="card-viewer">
+          <MapViewer
+            :render="render"
+            :show-plots="showPlots"
+            :visible-resources="visibleResourceKinds"
+          />
+        </div>
       </div>
 
       <aside class="side-panel">
         <section class="side-section">
           <h3>
-            {{ render?.displayName ?? t("studio.map.propertiesTitle") }}
+            {{ renderRegionName || t("studio.map.propertiesTitle") }}
           </h3>
           <dl v-if="render" class="props">
             <dt>{{ t("studio.map.sizeLabel") }}</dt>
@@ -242,13 +311,24 @@ const brushes = computed(() => render.value?.brushes ?? []);
         <section class="side-section">
           <h3>{{ t("studio.map.layersTitle") }}</h3>
           <label class="layer-toggle">
-            <input v-model="showPlots" type="checkbox" />
+            <FCheckbox v-model="showPlots" />
             {{ t("studio.map.layerPlots") }}
           </label>
-          <label class="layer-toggle">
-            <input v-model="showResources" type="checkbox" />
-            {{ t("studio.map.layerResources") }}
-          </label>
+          <button
+            v-for="kind in resourceKinds"
+            :key="kind"
+            type="button"
+            class="layer-option"
+            :class="{ active: activeResource === kind }"
+            @click="selectResource(kind)"
+          >
+            <FIcon
+              :name="activeResource === kind ? 'Check' : 'Square'"
+              :size="13"
+              aria-label=""
+            />
+            {{ resourceLabel(kind) }}
+          </button>
           <p class="side-note">{{ t("studio.map.layersNote") }}</p>
         </section>
 
@@ -262,15 +342,45 @@ const brushes = computed(() => render.value?.brushes ?? []);
         <header class="sheet-header">
           <span class="page-icon"><FIcon name="Map" :size="18" /></span>
           <div class="sheet-title">
-            {{ render?.displayName ?? selectedRegionName }}
+            {{ renderRegionName || selectedRegionName }}
             <span class="sheet-sub">{{ t("studio.map.fullscreen") }}</span>
           </div>
-          <button type="button" class="hud-button" @click="sheetOpen = false">
-            <FIcon name="X" :size="14" aria-label="" />
+          <div class="layer-seg" role="group" :aria-label="t('studio.map.layersTitle')">
+            <button
+              type="button"
+              :class="{ active: activeResource === null }"
+              :title="t('studio.map.layerOff')"
+              @click="activeResource = null"
+            >
+              {{ t("studio.map.layerOff") }}
+            </button>
+            <button
+              v-for="kind in resourceKinds"
+              :key="kind"
+              type="button"
+              :class="{ active: activeResource === kind }"
+              :title="resourceLabel(kind)"
+              @click="selectResource(kind)"
+            >
+              {{ resourceLabel(kind) }}
+            </button>
+          </div>
+          <button
+            type="button"
+            class="outline-btn"
+            :aria-label="t('shell.close')"
+            @click="sheetOpen = false"
+          >
+            <FIcon name="X" :size="15" aria-label="" />
           </button>
         </header>
         <div class="sheet-viewer">
-          <MapViewer v-if="sheetOpen" :render="render" />
+          <MapViewer
+            v-if="sheetOpen"
+            :render="render"
+            :show-plots="showPlots"
+            :visible-resources="visibleResourceKinds"
+          />
         </div>
       </div>
     </FSheet>
@@ -373,9 +483,8 @@ const brushes = computed(() => render.value?.brushes ?? []);
   flex: 1;
   min-height: 480px;
 }
-/* 预览卡片：内嵌查看器 + 右上角工具栏 */
+/* 预览卡片：顶部横向工具条（分段式图层切换 + outline 按钮） */
 .viewer-card {
-  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 480px;
@@ -383,17 +492,80 @@ const brushes = computed(() => render.value?.brushes ?? []);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
+  display: flex;
+  flex-direction: column;
 }
 .card-toolbar {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  z-index: 4;
+  align-items: center;
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
-.card-toolbar .hud-button {
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
+/* 分段式切换（对齐 property editor 的默认/精细渲染切换） */
+.layer-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+}
+.layer-seg button {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11px;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 9px;
+}
+.layer-seg button:first-child {
+  border-end-end-radius: 0;
+  border-start-end-radius: 0;
+}
+.layer-seg button:last-child {
+  border-end-start-radius: 0;
+  border-start-start-radius: 0;
+  margin-inline-start: -1px;
+}
+.layer-seg button + button {
+  margin-inline-start: -1px;
+}
+.layer-seg button.active {
+  color: var(--foreground);
+  opacity: 0.95;
+}
+.layer-seg button:hover {
+  color: var(--foreground);
+}
+/* outline 图标按钮（展开/关闭，对齐 property editor） */
+.outline-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 28px;
+  min-width: 28px;
+}
+.outline-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.outline-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.card-viewer {
+  flex: 1;
+  min-height: 0;
 }
 .side-panel {
   width: 272px;
@@ -456,6 +628,34 @@ const brushes = computed(() => render.value?.brushes ?? []);
   padding: 0.25rem 0;
   cursor: pointer;
 }
+.res-dot {
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  height: 9px;
+  width: 9px;
+}
+.layer-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.75rem;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  text-align: start;
+  width: 100%;
+}
+.layer-option:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.layer-option.active {
+  color: var(--foreground);
+}
 .side-note {
   margin: 0.5rem 0 0;
   font-size: 0.6875rem;
@@ -483,6 +683,7 @@ const brushes = computed(() => render.value?.brushes ?? []);
 .sheet-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 .sheet-title {
@@ -497,6 +698,7 @@ const brushes = computed(() => render.value?.brushes ?? []);
   color: var(--subtle-foreground);
   font-family: var(--font-mono, ui-monospace, monospace);
 }
+/* 对齐 property editor 的 outline 图标按钮（见 .outline-btn） */
 .sheet-viewer {
   flex: 1;
   min-height: 0;

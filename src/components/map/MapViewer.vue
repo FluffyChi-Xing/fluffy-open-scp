@@ -2,6 +2,7 @@
 /**
  * 地图查看器：缩放 / 平移 / 米制标尺 / HUD（对齐 RasterCanvas 交互模式）。
  * 由地图面板卡片与全屏检查 sheet 共用。
+ * 覆盖层：地块框 + 资源画刷环（SVG，随缩放平移同步；图层开关由父级过滤）。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -10,6 +11,10 @@ import type { RegionRender } from "@/lib/region-map";
 
 const props = defineProps<{
   render: RegionRender | null;
+  /** 地块框层开关（默认开）。 */
+  showPlots?: boolean;
+  /** 可见的资源 kind 列表（undefined = 全部显示）。 */
+  visibleResources?: string[];
 }>();
 
 const { t } = useI18n();
@@ -34,6 +39,33 @@ let panStart = { x: 0, y: 0, px: 0, py: 0 };
 const imgUrl = computed(() =>
   props.render ? `data:image/png;base64,${props.render.pngBase64}` : "",
 );
+
+// ── 覆盖层（后端已换算为 PNG 像素坐标，前端零换算；显式尺寸防比例失调）──
+const planeSize = computed(() =>
+  props.render
+    ? { width: `${props.render.width}px`, height: `${props.render.height}px` }
+    : {},
+);
+
+/** 城市地块：2048m = 256px 方框。 */
+const plotRects = computed(() => {
+  if (!props.render || props.showPlots === false) return [];
+  return props.render.plots.map(([x, y]) => ({ x: x - 128, y: y - 128, size: 256 }));
+});
+
+/** 可见的资源分布图层。 */
+const resourceLayerImgs = computed(() => {
+  if (!props.render) return [];
+  return props.render.resourceLayers.map((layer) => ({
+    ...layer,
+    src: `data:image/png;base64,${layer.pngBase64}`,
+    visible:
+      !props.visibleResources ||
+      props.visibleResources.some(
+        (k) => k.toLowerCase() === layer.kind.toLowerCase(),
+      ),
+  }));
+});
 
 const xTicks = computed(() => buildTicks(false));
 const yTicks = computed(() => buildTicks(true));
@@ -120,7 +152,21 @@ function onPointerUp() {
 
 function onWheel(event: WheelEvent) {
   event.preventDefault();
-  setZoom(event.deltaY < 0 ? zoom.value * 1.15 : zoom.value / 1.15);
+  const next = event.deltaY < 0 ? zoom.value * 1.15 : zoom.value / 1.15;
+  const rect = wrap.value?.getBoundingClientRect();
+  if (!rect) {
+    setZoom(next);
+    return;
+  }
+  // 以指针为缩放锚点：保持指针下的世界坐标在缩放前后不动
+  const mx = event.clientX - rect.left;
+  const my = event.clientY - rect.top;
+  const clamped = Math.min(32, Math.max(0.05, next));
+  pan.value = {
+    x: mx - ((mx - pan.value.x) / zoom.value) * clamped,
+    y: my - ((my - pan.value.y) / zoom.value) * clamped,
+  };
+  zoom.value = clamped;
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -160,10 +206,47 @@ defineExpose({ fit });
       <div
         class="map-plane"
         :style="{
+          width: planeSize.width,
+          height: planeSize.height,
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }"
       >
-        <img v-if="imgUrl" :src="imgUrl" draggable="false" class="map-img" />
+        <img
+          v-if="imgUrl"
+          :src="imgUrl"
+          draggable="false"
+          class="map-img"
+          :style="planeSize"
+        />
+        <img
+          v-for="layer in resourceLayerImgs"
+          v-show="layer.visible"
+          :key="layer.kind"
+          :src="layer.src"
+          draggable="false"
+          class="map-img res-layer"
+          :style="planeSize"
+          :aria-label="layer.kind"
+        />
+        <svg
+          v-if="render && plotRects.length"
+          class="overlay"
+          :style="planeSize"
+          :viewBox="`0 0 ${render.width} ${render.height}`"
+          preserveAspectRatio="none"
+        >
+          <rect
+            v-for="(r, i) in plotRects"
+            :key="`p${i}`"
+            :x="r.x"
+            :y="r.y"
+            :width="r.size"
+            :height="r.size"
+            fill="none"
+            stroke="#ffd200"
+            stroke-width="3"
+          />
+        </svg>
       </div>
       <div v-if="!imgUrl" class="empty-hint">
         <FIcon name="Map" :size="28" />
@@ -254,6 +337,17 @@ defineExpose({ fit });
   display: block;
   user-select: none;
   pointer-events: none;
+}
+.res-layer {
+  left: 0;
+  position: absolute;
+  top: 0;
+}
+.overlay {
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
 }
 .empty-hint {
   position: absolute;
