@@ -90,7 +90,6 @@ pub fn run() {
             let database_path = app.path().app_data_dir()?.join("openscp.db");
             let store = sc_store::Store::open(database_path)?;
             app.manage(AppState::new(app.handle().clone(), store));
-            app.manage(map_panel::MapPanelState::default());
             if let Some(window) = app.get_webview_window("main")
                 && let Some(monitor) = window.primary_monitor()?
             {
