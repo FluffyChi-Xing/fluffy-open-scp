@@ -26,6 +26,7 @@
 //! ```
 
 mod error;
+mod erz;
 mod header;
 mod index;
 mod package;
@@ -34,6 +35,10 @@ mod refpack;
 mod writer;
 
 pub use error::{Error, Result};
+pub use erz::{
+    parse_summary as erz_parse_summary, ErzError, ErzSummary, ERZ_BINARY_RULE_TYPE,
+    ERZ_TEXT_RULE_TYPE,
+};
 pub use header::{Header, PackageKind};
 pub use index::{IndexEntry, ResourceId};
 pub use package::{CachedPackage, Package};
