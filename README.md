@@ -2,6 +2,8 @@
   <img src="docs/assets/scp-logo.png" width="180" alt="OpenSCP logo" />
 </p>
 
+**中文** | [English](README.en.md)
+
 # OpenSCP
 
 > 基于 Rust + Tauri 2 + Vue 3 的 SimCity (2013) `.package` 资源浏览器与模组工具链 —— 浏览资源结构、预览模型与贴图、编辑属性表、导出 glTF/OBJ/音视频，并逐步构建声明式 Modding Suite。
