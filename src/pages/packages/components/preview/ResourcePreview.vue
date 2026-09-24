@@ -11,6 +11,7 @@ import type {
   RasterPreview,
   PropertyPreview,
   Rw4Preview,
+  ErzPreview,
   AudioPreview,
   VideoPreview,
   FontPreview,
@@ -20,6 +21,7 @@ import ImagePreviewView from "./ImagePreview.vue";
 import RasterPreviewView from "./RasterPreview.vue";
 import PropertyPreviewView from "./PropertyPreview.vue";
 import Rw4PreviewView from "./Rw4Preview.vue";
+import ErzPreviewView from "./ErzPreview.vue";
 import AudioPreviewView from "./AudioPreview.vue";
 import VideoPreviewView from "./VideoPreview.vue";
 import FontPreviewView from "./FontPreview.vue";
@@ -52,6 +54,9 @@ const propertyPreview = computed(() =>
 const rw4Preview = computed(() =>
   props.preview?.kind === "rw4" ? (props.preview as Rw4Preview) : null,
 );
+const erzPreview = computed(() =>
+  props.preview?.kind === "erz" ? (props.preview as ErzPreview) : null,
+);
 const audioPreview = computed(() =>
   props.preview?.kind === "audio" ? (props.preview as AudioPreview) : null,
 );
@@ -69,6 +74,7 @@ const unsupported = computed(
     !rasterPreview.value &&
     !propertyPreview.value &&
     !rw4Preview.value &&
+    !erzPreview.value &&
     !audioPreview.value &&
     !videoPreview.value &&
     !fontPreview.value,
@@ -94,6 +100,7 @@ const unsupported = computed(
       :preview="propertyPreview"
     />
     <Rw4PreviewView v-else-if="rw4Preview" :preview="rw4Preview" />
+    <ErzPreviewView v-else-if="erzPreview" :preview="erzPreview" />
     <AudioPreviewView v-else-if="audioPreview" :preview="audioPreview" />
     <VideoPreviewView v-else-if="videoPreview" :preview="videoPreview" />
     <FontPreviewView v-else-if="fontPreview" :preview="fontPreview" />

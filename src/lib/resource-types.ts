@@ -118,6 +118,8 @@ export function resourceKind(typeId: number): ResourceKind {
 }
 
 const textPreviewLanguages: Record<number, string> = {
+  // ER2 规则源码（0x08068AEC，UTF-8 文本：unitRule/globalRule/define...）
+  0x08068aec: "er2",
   0x67771f5c: "javascript",
   0x2c978db6: "css",
   0xdd6233d6: "html",
@@ -129,6 +131,9 @@ const textPreviewLanguages: Record<number, string> = {
 export function textPreviewLanguage(typeId: number): string | null {
   return textPreviewLanguages[typeId] ?? null;
 }
+
+/** ER2 Binary Rule File（0x08068AEB，EcoGame 编译规则库容器）。 */
+export const ERZ_BINARY_RULE_TYPE_ID = 0x08068aeb;
 
 const imageMimes: Record<number, string> = {
   0x2f7d0004: "image/png",

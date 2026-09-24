@@ -28,6 +28,7 @@ import type {
   ResourceSummary,
   ResolvedResourceName,
   Rw4ResourceData,
+  ErzResourceData,
   Rw4SectionDetail,
   Tgi,
   WorkspaceEntry,
@@ -43,6 +44,7 @@ import {
 import {
   imageMimeForType,
   AUDIO_TYPE_ID,
+  ERZ_BINARY_RULE_TYPE_ID,
   PROPERTY_TYPE_ID,
   RASTER_TYPE_ID,
   RW4_TYPE_ID,
@@ -114,6 +116,8 @@ export interface OpenScpDataSource {
     channel?: RasterChannel,
   ): Promise<RasterPreviewData>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
+  /** ERZ（0x08068AEB 编译规则库）结构摘要。 */
+  readErzPreview(packageId: number, tgi: Tgi): Promise<ErzResourceData>;
   readRw4Section(
     packageId: number,
     tgi: Tgi,
@@ -177,6 +181,7 @@ function tauriDataSource(): OpenScpDataSource {
     readResourceTextRange: tauriApi.packages.readResourceTextRange,
     readRasterPreview: tauriApi.packages.readRasterPreview,
     readRw4Preview: tauriApi.packages.readRw4Preview,
+    readErzPreview: tauriApi.packages.readErzPreview,
     readRw4Section: tauriApi.packages.readRw4Section,
     previewResource: tauriPreview,
     closePackage: tauriApi.packages.close,
@@ -541,6 +546,9 @@ function mockDataSource(): OpenScpDataSource {
         pathPairs: [],
         diagnostics: [],
       } satisfies LotEditorSession;
+    },
+    async readErzPreview(_packageId, _tgi) {
+      throw new Error("demo 模式无 ERZ 预览");
     },
     async readRw4Preview(_packageId, _tgi) {
       return { fileType: "Model", sections: mockRw4Sections };
@@ -923,6 +931,18 @@ async function tauriPreview(
       ...data,
       ...base,
     };
+  }
+  if (resource.tgi.typeId === ERZ_BINARY_RULE_TYPE_ID) {
+    // ERZ 编译规则库：结构摘要（旧补丁布局解析失败时回退 hex）。
+    try {
+      const data = await tauriApi.packages.readErzPreview(
+        packageId,
+        resource.tgi,
+      );
+      return { kind: "erz", packageId, tgi: resource.tgi, ...base, data };
+    } catch {
+      return { kind: "hex", ...base };
+    }
   }
   const language = textPreviewLanguage(resource.tgi.typeId);
   if (language || looksLikeText(Uint8Array.from(bytes.bytes))) {

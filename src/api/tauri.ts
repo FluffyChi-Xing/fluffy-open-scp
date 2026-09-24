@@ -181,6 +181,30 @@ export interface Rw4ResourceData {
   fileType: string;
   sections: Rw4Section[];
 }
+/** ERZ（0x08068AEB 编译规则库）结构摘要（read_erz_preview）。 */
+export interface ErzResourceData {
+  totalLength: number;
+  layoutMajor: number;
+  layoutMinor: number;
+  layoutRecord: number;
+  flag: number;
+  ruleCount: number;
+  ruleNameHashes: number[];
+  recACount: number;
+  recBCount: number;
+  recCCount: number;
+  constantCount: number;
+  constants: { hash: number; value: number }[];
+  dObjects: number;
+  dEntries: number;
+  eObjects: number;
+  eEntries: number;
+  blobLength: number;
+  strings: string[];
+  exact: boolean;
+  /** 规则记录布局是否受支持（false = 旧补丁布局，仅文件头）。 */
+  layoutSupported: boolean;
+}
 export interface ResolvedResourceName {
   tgi: Tgi;
   displayName: string | null;
@@ -669,6 +693,12 @@ export interface GenericImagePreviewData {
   height: number;
   pngBase64: string;
 }
+export interface ErzPreview extends PreviewData {
+  kind: "erz";
+  packageId?: number;
+  tgi?: Tgi;
+  data: ErzResourceData;
+}
 export interface FontPreview extends PreviewData {
   kind: "font";
   packageId?: number;
@@ -686,6 +716,7 @@ export type ResourcePreview =
   | VideoPreview
   | PropertyPreview
   | Rw4Preview
+  | ErzPreview
   | FontPreview;
 export interface ResourceAnnotation {
   id: number;

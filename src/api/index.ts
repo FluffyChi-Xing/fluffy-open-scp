@@ -55,6 +55,7 @@ import {
   type DecalDictionaryData,
   type DecalImageData,
   type Rw4ResourceData,
+  type ErzResourceData,
   type Rw4SectionDetail,
   type CaptureBaselineResponse,
   type ChangesetDetailResponse,
@@ -103,6 +104,7 @@ export type {
   ResourceData,
   PropertyResourceData,
   Rw4ResourceData,
+  ErzResourceData,
   Rw4SectionDetail,
   ResourcePage,
   ResourcePreview,
@@ -399,6 +401,10 @@ export const tauriApi = {
       }),
     readRw4Preview: (packageId: number, tgi: Tgi) =>
       command<Rw4ResourceData>("read_rw4_preview", {
+        request: { packageId, tgi },
+      }),
+    readErzPreview: (packageId: number, tgi: Tgi) =>
+      command<ErzResourceData>("read_erz_preview", {
         request: { packageId, tgi },
       }),
     readRw4Section: (packageId: number, tgi: Tgi, number: number) =>
