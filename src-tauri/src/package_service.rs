@@ -1859,6 +1859,41 @@ pub struct Rw4SectionDto {
     pub size: u32,
 }
 
+/// ERZ（0x08068AEB，编译规则库）结构摘要 DTO。
+/// 布局证据与字段含义见 docs/overview/glass-box/er2-rules.md。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErzPreviewData {
+    pub total_length: usize,
+    pub layout_major: u32,
+    pub layout_minor: u32,
+    pub layout_record: u32,
+    pub flag: u8,
+    pub rule_count: u32,
+    pub rule_name_hashes: Vec<u32>,
+    pub rec_a_count: u32,
+    pub rec_b_count: u32,
+    pub rec_c_count: u32,
+    pub constant_count: usize,
+    pub constants: Vec<ErzConstantDto>,
+    pub d_objects: u32,
+    pub d_entries: u32,
+    pub e_objects: u32,
+    pub e_entries: u32,
+    pub blob_length: usize,
+    pub strings: Vec<String>,
+    pub exact: bool,
+    /// 规则记录布局是否受支持（false = 旧补丁布局，仅文件头）。
+    pub layout_supported: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErzConstantDto {
+    pub hash: u32,
+    pub value: u32,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Rw4PreviewData {
@@ -4522,6 +4557,54 @@ pub async fn read_rw4_preview(
         request.package_id,
         request.tgi,
         |data, _, _, _| rw4_sections(data),
+    )
+    .await
+}
+
+/// ERZ（0x08068AEB）结构预览：走完整布局校验（精确消耗到文件尾），
+/// 旧补丁布局（record != 14）返回 UnsupportedLayout 由前端回退 hex。
+#[tauri::command]
+pub async fn read_erz_preview(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<ErzPreviewData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        |data, _, _, _| {
+            let summary = dbpf::erz_parse_summary(data)
+                .map_err(|e| PackageError::InvalidArgument(format!("{e}")))?;
+            Ok(ErzPreviewData {
+                total_length: data.len(),
+                layout_major: summary.major,
+                layout_minor: summary.minor,
+                layout_record: summary.layout,
+                flag: summary.flag,
+                rule_count: summary.rule_count,
+                rule_name_hashes: summary.rule_name_hashes,
+                rec_a_count: summary.rec_a_count,
+                rec_b_count: summary.rec_b_count,
+                rec_c_count: summary.rec_c_count,
+                constant_count: summary.constant_count,
+                constants: summary
+                    .constants
+                    .into_iter()
+                    .map(|(hash, value)| ErzConstantDto { hash, value })
+                    .collect(),
+                d_objects: summary.d_objects,
+                d_entries: summary.d_entries,
+                e_objects: summary.e_objects,
+                e_entries: summary.e_entries,
+                blob_length: summary.blob_length,
+                strings: summary.strings,
+                exact: summary.exact,
+                layout_supported: summary.layout_supported,
+            })
+        },
     )
     .await
 }
