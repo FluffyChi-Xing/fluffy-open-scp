@@ -16,6 +16,28 @@ OpenSCP is a modern rewrite of the classic C#/WPF tool [SimCityPak](https://gith
 2. **A usable resource workbench (in progress)**: package structure tree (TGI browsing), syntax-highlighted text viewing (Shiki), RW4 3D model preview (with material channels), texture/property-list/audio/video previews, Lot editor sessions (lights/decals/props/path units), and a home dashboard (extension counts/capacity share, recognized-type coverage).
 3. **Mod workflow orchestration (P1)**: a declarative `openscp.mod.toml` project, OBJ import with LOD management, dependency resolution, automatic validation, and deterministic overlay package builds. See [docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md).
 
+## Screenshots
+
+**Source parsing** — browse game folders, packages and resources like an IDE: file tree + tabs, TGI filtering/search/pagination, type categories and semantic property previews.
+
+![Source parsing](docs/assets/publicity/source-parsing.png)
+
+**Property Editor · refined render** — real material channels with time-of-day and powered state; the unit tree covers lights/decals/props/effects/spawners/paths.
+
+![Property Editor refined render](docs/assets/publicity/rendering-1.png)
+
+**Property Editor · close-up** — multi-texture materials (tint palette, normals, interior atlas) with in-viewport unit markers.
+
+![Property Editor close-up](docs/assets/publicity/rendering-2.png)
+
+**Map panel** — region terrain composite preview: 341-tile pyramid + global water plane, city plot frames and 9 resource layers (oil/ore/watertable/soil/forest/coal, etc.).
+
+![Map panel](docs/assets/publicity/map-review.png)
+
+**Raster paint** — four-channel LotMask pixel canvas (brush/flood-fill/parking-line brushes), lot surface & decal previews, saved as an overlay package.
+
+![Raster paint](docs/assets/publicity/raster-paint.png)
+
 ## Usage
 
 ### Install & Launch

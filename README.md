@@ -16,6 +16,28 @@ OpenSCP 是经典 C#/WPF 工具 [SimCityPak](https://github.com/altinctrl/SimCit
 2. **可用的资源工作台（进行中）**：包结构树（TGI 浏览）、语法高亮文本查看（Shiki）、RW4 模型 3D 预览（含材质通道）、贴图/属性表/音视频预览、Lot 编辑器会话（灯光/贴花/Prop/路径单位）、首页统计仪表盘（扩展名数量/容量占比、可识别覆盖率）。
 3. **模组工作流编排（P1）**：`openscp.mod.toml` 声明式项目、OBJ 导入与 LOD 管理、依赖解析、自动校验、确定性 overlay package 构建。详见 [docs/roadmap/modding-suite.md](docs/roadmap/modding-suite.md)。
 
+## 界面预览
+
+**资源解析** —— IDE 式浏览游戏目录、package 与资源：文件树 + 多标签页，TGI 筛选/搜索/分页，类型分类与属性语义预览。
+
+![Source parsing](docs/assets/publicity/source-parsing.png)
+
+**Property 编辑器 · 精细渲染** —— 真实材质通道 + 日夜时间与供电状态，单位树覆盖灯光/贴花/Prop/效果/生成器/路径。
+
+![Property Editor refined render](docs/assets/publicity/rendering-1.png)
+
+**Property 编辑器 · 近景** —— tint 调色、法线与室内图集多贴图材质，视口内单位标记点标注。
+
+![Property Editor close-up](docs/assets/publicity/rendering-2.png)
+
+**地图面板** —— 区域地形合成预览：341-tile 金字塔 + 全局水位面，城市地块框与 9 类资源图层（油/矿/水表/土壤/森林/煤等）。
+
+![Map panel](docs/assets/publicity/map-review.png)
+
+**Raster 绘制** —— 四通道 LotMask 像素画布（笔刷/油漆桶/停车位标线笔刷），Lot 表面与贴花预览，保存为 overlay package。
+
+![Raster paint](docs/assets/publicity/raster-paint.png)
+
 ## 使用方法 / Usage
 
 ### 安装与启动
