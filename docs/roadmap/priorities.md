@@ -57,7 +57,10 @@
 | 2026-09-25 | P0-2 | `sc_properties::debug_tools`（`build_debug_tools_overlay` + `patch_property_refs` 字节级补丁与自校验）；探针改为薄封装、阳性对照实验保留；`debug_tools_write_overlay` 命令（原子落盘、分类/UI 分类可参数化）；缺工具场景整体报错并覆盖单测 | af3d97f |
 | 2026-09-25 | P0-1 | `sc_properties::region_write`：`read_region_field`（mip0 拼装 4096² 场）、`solve_f0_pyramid`（5 级实例排布求解，mip0 对齐全局常量 + 粗层级子采样 L1 最近匹配）、`build_heightmap_overlay`（341 tile 重建，复用源 tile 20B 头）；`map_panel_write_heightmap` 命令（16-bit 灰度 PNG → overlay，原子落盘）。合成区域整链路回归：求解排布与重建内容逐 tile 一致，44.7MB overlay 耗时 449ms（debug）；真包回归 env 门控（`OPENSCP_REGION_TERRAIN_PACKAGE`） | b5ee19e |
 | 2026-09-25 | P0-3 | `@vue-flow/core` 1.48.2 + `@vue-flow/background` 1.3.2 引入（optimizeDeps 已登记）；happy-dom 下挂载 / 节点 DOM / 响应式 store 断言全过（`flow-spike.test.ts`，仅需 ResizeObserver stub）——组件级测试无需降级方案，结论已回填 blueprint-panel.md §2.2 | 6b15ecf |
+| 2026-09-26 | P1-5 | `sc_properties::region_edit`：`patch_property_float`（区域 desc 水位 0x0E16BE1A，encode_canonical 重编码 + 回读校验）、`brush_lists` / `edit_brush_stamps`（stamp 增删，新增以现有 stamp 为模板克隆改坐标，保 flags/item_size）、`single_entry_overlay`；命令 `map_panel_list_brushes` / `map_panel_set_water_level` / `map_panel_edit_brush_stamps`；UI：地图面板侧栏编辑区（水位输入+保存、画刷清单选择、添加模式=点击地图落点、stamp 删除/撤销、overlay 保存对话框） | 73cc6db |
+| 2026-09-26 | P1-4 | `region_map::render_region_png_window`（世界窗口裁剪渲染，整图管线复用）；命令 `map_panel_render_region_window`（≤2048px 限幅）；MapViewer：底图 pixelated 锐利显示、`detail` 窗口覆盖层（zoom≥2.5 防抖取图+竞态保护）、L2 编辑网格（世界对齐、屏幕间距自适应 24–48px）、`map-click` / `viewport-change` 事件 | 73cc6db |
+| 2026-09-26 | P1-6 | 高度图导入 UI：地图面板"导入高度图"→ 16-bit PNG 选择 → `map_panel_write_heightmap`（P0-1 命令）→ overlay 保存，打通"外部灰度图 → 341-tile 金字塔 → overlay 包"全链路 | 73cc6db |
 
 **验证**：`cargo test --workspace` 31 套件全绿（0 失败）；`vue-tsc -b --noEmit` 干净；`pnpm test` 48 文件 / 193 用例全过（含 i18n-audit 与新 spike 测试）。
 
-**下一步**（待 review 后开始）：P1-5 水位写回 + 画刷清单编辑器 → P1-4 缩放分级 L1/L2 → P1-6 灰度 PNG 导入切割 UI。
+**下一步**（待 review 后开始）：P1-7 Linux 打包 CI（非地图域，建议在 master 线）→ P2-8 地块表编辑器 → P2-9 柏林噪声生成器 + 新区域骨架。地图域剩余：hover 高程读数（L2 收尾，依赖窗口渲染像素读取）。
