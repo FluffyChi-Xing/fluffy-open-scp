@@ -109,6 +109,7 @@ pub fn run() {
             greet,
             map_panel::map_panel_list_regions,
             map_panel::map_panel_render_region,
+            map_panel::map_panel_write_heightmap,
             debug_tools::debug_tools_write_overlay,
             annotation_create,
             annotation_update,

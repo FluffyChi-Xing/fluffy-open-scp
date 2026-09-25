@@ -34,6 +34,7 @@ mod lot;
 mod lot_unit;
 mod model;
 pub mod region_map;
+pub mod region_write;
 pub mod semantic;
 
 use std::fmt;

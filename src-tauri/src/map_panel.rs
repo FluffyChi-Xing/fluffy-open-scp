@@ -5,7 +5,7 @@
 use base64::Engine as _;
 use serde::Serialize;
 
-use sc_properties::region_map;
+use sc_properties::{region_map, region_write};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,5 +114,58 @@ pub fn map_panel_render_region(
         plots,
         brushes,
         resource_layers,
+    })
+}
+
+/// 高度图写回结果。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeightmapWriteDto {
+    pub entry_count: usize,
+    pub size_bytes: usize,
+    pub out_path: String,
+    /// 输入高度场边长（恒 4096）。
+    pub region_px: u32,
+}
+
+/// 高度图回写（map-workbench E1 / priorities P0-1）。
+///
+/// 输入 16-bit 灰度 PNG（4096²；像素值 = 高度 raw 值，raw = (z+1024)×32，
+/// 1 px = 8 m；8-bit PNG 会被升位，精度受限，导入 UI 应优先 16-bit），
+/// 经 341-tile 金字塔重排（复用源包各 tile 原始 20 B 头）生成未压缩
+/// overlay 包并原子落盘。同步命令，耗时约亚秒级（与 render_region 同量级）。
+#[tauri::command]
+pub fn map_panel_write_heightmap(
+    package_path: String,
+    group: String,
+    heights_png_path: String,
+    out_path: String,
+) -> Result<HeightmapWriteDto, String> {
+    let group =
+        u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
+    let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
+        .map_err(|e| e.to_string())?;
+    let img = image::open(&heights_png_path).map_err(|e| format!("读取高度图 PNG 失败：{e}"))?;
+    let (width, height) = (img.width(), img.height());
+    if width != region_write::REGION_FIELD_PX as u32
+        || height != region_write::REGION_FIELD_PX as u32
+    {
+        return Err(format!("高度图尺寸 {width}×{height} ≠ 4096×4096"));
+    }
+    let heights = img.into_luma16().into_raw();
+    let bytes = region_write::build_heightmap_overlay(&package, group, &heights)?;
+    let size_bytes = bytes.len();
+    if let Some(parent) = std::path::Path::new(&out_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    crate::atomic_fs::write_atomic(std::path::Path::new(&out_path), &bytes, true)
+        .map_err(|e| e.to_string())?;
+    Ok(HeightmapWriteDto {
+        entry_count: region_write::TILES_PER_REGION,
+        size_bytes,
+        out_path,
+        region_px: region_write::REGION_FIELD_PX as u32,
     })
 }
