@@ -5,9 +5,10 @@
  * 全屏 sheet 复用同一 MapViewer，便于更细致的地图检查。
  * 渲染管线：sc_properties::region_map（341-tile 金字塔 + 全局水位面 3336）。
  */
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
@@ -16,7 +17,12 @@ import FTypography from "@/components/extensions/FTypography.vue";
 import MapViewer from "@/components/map/MapViewer.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import { brushResourceKind } from "@/lib/region-map";
-import type { RegionRender, RegionSummary } from "@/lib/region-map";
+import type {
+  BrushList,
+  OverlayWriteResult,
+  RegionRender,
+  RegionSummary,
+} from "@/lib/region-map";
 
 const { t, te, locale } = useI18n();
 const gamePackages = useGamePackagesStore();
@@ -101,6 +107,8 @@ async function renderRegion() {
       packagePath: packagePathOf(packageId),
       group: selectedGroup.value,
     });
+    waterMetersInput.value = Math.round(render.value.waterPlane / 32 - 1024);
+    await loadBrushLists();
   } catch (e) {
     errorMsg.value = String(e);
   } finally {
@@ -130,6 +138,206 @@ function resourceLabel(kind: string): string {
   const key = `studio.map.res${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
   return te(key) ? t(key) : kind;
 }
+
+// ── 编辑（P1-5/P1-6）：全部走 overlay 副本，绝不触碰源包 ──
+const brushLists = ref<BrushList[]>([]);
+const selectedBrushInstance = ref("");
+const placementMode = ref(false);
+const pendingAdds = ref<[number, number][]>([]);
+const pendingRemoves = ref<number[]>([]);
+const editStatus = ref("");
+const editBusy = ref(false);
+const waterMetersInput = ref<number | null>(null);
+
+const selectedBrush = computed(
+  () => brushLists.value.find((b) => b.instance === selectedBrushInstance.value) ?? null,
+);
+
+async function loadBrushLists() {
+  const packageId = selectedPackageId.value;
+  if (packageId === null || !selectedGroup.value) return;
+  try {
+    brushLists.value = await invoke<BrushList[]>("map_panel_list_brushes", {
+      packagePath: packagePathOf(packageId),
+      group: selectedGroup.value,
+    });
+    selectedBrushInstance.value = "";
+    placementMode.value = false;
+    pendingAdds.value = [];
+    pendingRemoves.value = [];
+  } catch (e) {
+    editStatus.value = String(e);
+  }
+}
+
+function selectBrush(instance: string) {
+  selectedBrushInstance.value = instance;
+  pendingAdds.value = [];
+  pendingRemoves.value = [];
+  placementMode.value = false;
+}
+
+function toggleRemove(index: number) {
+  const at = pendingRemoves.value.indexOf(index);
+  if (at >= 0) pendingRemoves.value.splice(at, 1);
+  else pendingRemoves.value.push(index);
+}
+
+function onMapClick(world: { x: number; y: number }) {
+  if (!placementMode.value || !selectedBrushInstance.value) return;
+  pendingAdds.value.push([world.x, world.y]);
+}
+
+async function saveBrushes() {
+  const packageId = selectedPackageId.value;
+  const brush = selectedBrush.value;
+  if (!packageId || !brush) return;
+  if (!pendingAdds.value.length && !pendingRemoves.value.length) return;
+  const target = await saveFileDialog({
+    title: t("studio.map.brushSave"),
+    defaultPath: `${brush.name}.overlay.package`,
+    filters: [{ name: "DBPF", extensions: ["package"] }],
+  });
+  if (!target) return;
+  editBusy.value = true;
+  try {
+    const result = await invoke<OverlayWriteResult>("map_panel_edit_brush_stamps", {
+      packagePath: packagePathOf(packageId),
+      group: selectedGroup.value,
+      brushInstance: brush.instance,
+      add: pendingAdds.value,
+      remove: pendingRemoves.value,
+      strength: null,
+      outPath: target,
+    });
+    editStatus.value = t("studio.map.savedTo", {
+      count: result.entryCount,
+      path: result.outPath,
+    });
+    pendingAdds.value = [];
+    pendingRemoves.value = [];
+    placementMode.value = false;
+    await loadBrushLists();
+  } catch (e) {
+    editStatus.value = String(e);
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+async function saveWater() {
+  const packageId = selectedPackageId.value;
+  const meters = waterMetersInput.value;
+  if (!packageId || meters === null || Number.isNaN(meters)) return;
+  const target = await saveFileDialog({
+    title: t("studio.map.waterSave"),
+    defaultPath: "water-level.overlay.package",
+    filters: [{ name: "DBPF", extensions: ["package"] }],
+  });
+  if (!target) return;
+  editBusy.value = true;
+  try {
+    const result = await invoke<OverlayWriteResult>("map_panel_set_water_level", {
+      packagePath: packagePathOf(packageId),
+      group: selectedGroup.value,
+      meters,
+      outPath: target,
+    });
+    editStatus.value = t("studio.map.savedTo", {
+      count: result.entryCount,
+      path: result.outPath,
+    });
+  } catch (e) {
+    editStatus.value = String(e);
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+async function importHeightmap() {
+  const packageId = selectedPackageId.value;
+  if (!packageId || !selectedGroup.value) return;
+  const picked = await openFileDialog({
+    multiple: false,
+    filters: [{ name: "PNG", extensions: ["png"] }],
+  });
+  if (!picked || typeof picked !== "string") return;
+  const target = await saveFileDialog({
+    title: t("studio.map.importHeightmap"),
+    defaultPath: "heightmap.overlay.package",
+    filters: [{ name: "DBPF", extensions: ["package"] }],
+  });
+  if (!target) return;
+  editBusy.value = true;
+  editStatus.value = "";
+  try {
+    const result = await invoke<OverlayWriteResult>("map_panel_write_heightmap", {
+      packagePath: packagePathOf(packageId),
+      group: selectedGroup.value,
+      heightsPngPath: picked,
+      outPath: target,
+    });
+    editStatus.value = t("studio.map.savedTo", {
+      count: result.entryCount,
+      path: result.outPath,
+    });
+  } catch (e) {
+    editStatus.value = String(e);
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+// ── L1 窗口高保真渲染：放大后按视口取局部重渲染（防抖 + 竞态保护）──
+const detail = ref<RegionRender | null>(null);
+let detailToken = 0;
+let detailTimer: number | null = null;
+
+interface ViewportChange {
+  zoom: number;
+  worldRect: { x0: number; y0: number; x1: number; y1: number };
+}
+
+function onViewportChange(viewport: ViewportChange) {
+  if (selectedPackageId.value === null || !render.value) return;
+  if (viewport.zoom < 2.5) {
+    detail.value = null;
+    return;
+  }
+  if (detailTimer !== null) window.clearTimeout(detailTimer);
+  detailTimer = window.setTimeout(() => void fetchDetail(viewport.worldRect), 250);
+}
+
+async function fetchDetail(rect: ViewportChange["worldRect"]) {
+  const packageId = selectedPackageId.value;
+  if (packageId === null || !render.value) return;
+  // 裁剪到已渲染区域范围（米）
+  const origin = render.value.originWorld ?? [-16384, -16384];
+  const extent = render.value.width * render.value.metersPerPixel;
+  const x0 = Math.max(rect.x0, origin[0]);
+  const y0 = Math.max(rect.y0, origin[1]);
+  const x1 = Math.min(rect.x1, origin[0] + extent);
+  const y1 = Math.min(rect.y1, origin[1] + extent);
+  if (x1 <= x0 || y1 <= y0) return;
+  const token = ++detailToken;
+  try {
+    const result = await invoke<RegionRender>("map_panel_render_region_window", {
+      packagePath: packagePathOf(packageId),
+      group: selectedGroup.value,
+      x0,
+      y0,
+      x1,
+      y1,
+    });
+    if (token === detailToken) detail.value = result;
+  } catch {
+    if (token === detailToken) detail.value = null;
+  }
+}
+
+onBeforeUnmount(() => {
+  if (detailTimer !== null) window.clearTimeout(detailTimer);
+});
 </script>
 
 <template>
@@ -269,6 +477,10 @@ function resourceLabel(kind: string): string {
             :render="render"
             :show-plots="showPlots"
             :visible-resources="visibleResourceKinds"
+            :detail="detail"
+            :placing="placementMode"
+            @map-click="onMapClick"
+            @viewport-change="onViewportChange"
           />
         </div>
       </div>
@@ -305,6 +517,111 @@ function resourceLabel(kind: string): string {
               {{ name }} · {{ stamps.length }}
             </li>
           </ul>
+          <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
+        </section>
+
+        <!-- 编辑（P1-5/P1-6）：水位 / 画刷 stamp / 高度图导入，overlay 副本写回 -->
+        <section class="side-section">
+          <h3>{{ t("studio.map.editTitle") }}</h3>
+          <template v-if="render">
+            <div class="edit-row">
+              <label class="edit-label" for="water-input">
+                {{ t("studio.map.waterLabel") }}
+              </label>
+              <input
+                id="water-input"
+                v-model.number="waterMetersInput"
+                class="edit-input"
+                type="number"
+                step="1"
+              />
+              <button
+                type="button"
+                class="edit-button"
+                :disabled="editBusy || waterMetersInput === null"
+                @click="saveWater"
+              >
+                {{ t("studio.map.waterSave") }}
+              </button>
+            </div>
+            <div class="edit-row">
+              <button
+                type="button"
+                class="run-button"
+                :disabled="editBusy || !selectedGroup"
+                @click="importHeightmap"
+              >
+                <FIcon name="Download" :size="14" />
+                {{ t("studio.map.importHeightmap") }}
+              </button>
+            </div>
+            <h4 class="edit-sub">{{ t("studio.map.brushEditorTitle") }}</h4>
+            <p v-if="!brushLists.length" class="side-note">
+              {{ t("studio.map.emptySide") }}
+            </p>
+            <template v-else>
+              <button
+                v-for="b in brushLists"
+                :key="b.instance"
+                type="button"
+                class="layer-option"
+                :class="{ active: selectedBrushInstance === b.instance }"
+                @click="selectBrush(b.instance)"
+              >
+                <FIcon
+                  :name="selectedBrushInstance === b.instance ? 'Check' : 'Square'"
+                  :size="13"
+                  aria-label=""
+                />
+                {{ b.name }} · {{ b.stamps.length }}
+              </button>
+              <template v-if="selectedBrush">
+                <label class="layer-toggle add-mode">
+                  <FCheckbox v-model="placementMode" />
+                  {{ t("studio.map.brushAddMode") }}
+                </label>
+                <p v-if="placementMode" class="side-note">
+                  {{ t("studio.map.brushAddHint") }}
+                </p>
+                <ul class="stamp-list">
+                  <li
+                    v-for="(stamp, i) in selectedBrush.stamps"
+                    :key="`s${i}`"
+                    :class="{ removed: pendingRemoves.includes(i) }"
+                  >
+                    <span class="mono"
+                      >{{ stamp[0].toFixed(0) }}, {{ stamp[1].toFixed(0) }}</span
+                    >
+                    <button type="button" class="stamp-btn" @click="toggleRemove(i)">
+                      {{ t("studio.map.brushRemove") }}
+                    </button>
+                  </li>
+                  <li v-for="(stamp, i) in pendingAdds" :key="`a${i}`" class="pending">
+                    <span class="mono">{{ stamp[0] }}, {{ stamp[1] }}</span>
+                    <button
+                      type="button"
+                      class="stamp-btn"
+                      @click="pendingAdds.splice(i, 1)"
+                    >
+                      {{ t("studio.map.stampUndo") }}
+                    </button>
+                  </li>
+                </ul>
+                <button
+                  type="button"
+                  class="run-button edit-save"
+                  :disabled="
+                    editBusy || (!pendingAdds.length && !pendingRemoves.length)
+                  "
+                  @click="saveBrushes"
+                >
+                  {{ t("studio.map.brushSave") }}
+                </button>
+              </template>
+              <p v-else class="side-note">{{ t("studio.map.brushNone") }}</p>
+            </template>
+            <p v-if="editStatus" class="side-note mono">{{ editStatus }}</p>
+          </template>
           <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
         </section>
 
@@ -380,6 +697,10 @@ function resourceLabel(kind: string): string {
             :render="render"
             :show-plots="showPlots"
             :visible-resources="visibleResourceKinds"
+            :detail="detail"
+            :placing="placementMode"
+            @map-click="onMapClick"
+            @viewport-change="onViewportChange"
           />
         </div>
       </div>
@@ -396,6 +717,93 @@ function resourceLabel(kind: string): string {
   height: 100%;
   min-height: 0;
 }
+/* ── 编辑器（P1-5/P1-6）：水位 / 画刷 / 高度图导入 ── */
+.edit-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+.edit-label {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.edit-input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  width: 96px;
+}
+.edit-input:focus {
+  outline: 1px solid var(--border-strong, var(--border));
+}
+.edit-button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+}
+.edit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.edit-button:hover:not(:disabled) {
+  border-color: var(--border-strong, var(--border));
+}
+.edit-sub {
+  font-size: 0.8125rem;
+  margin: 0.75rem 0 0.25rem;
+}
+.add-mode {
+  margin-top: 0.5rem;
+}
+.stamp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0.5rem 0;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0;
+}
+.stamp-list li {
+  align-items: center;
+  display: flex;
+  font-size: 0.7rem;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+.stamp-list li.removed {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.stamp-list li.pending {
+  color: var(--primary, var(--foreground));
+}
+.stamp-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 2px 4px;
+}
+.stamp-btn:hover {
+  color: var(--foreground);
+}
+.edit-save {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
 .page-header {
   display: flex;
   align-items: center;

@@ -281,6 +281,18 @@ pub fn render_region_png(
     group: u32,
     water_override: Option<i32>,
 ) -> Result<RegionRender, Box<dyn std::error::Error>> {
+    render_region_png_window(package, group, water_override, None)
+}
+
+/// 窗口渲染（map-workbench L1）：`window` = 全场 4096² 像素坐标裁剪框
+/// `(x0, y0, x1, y1)`（左上/右下，行优先），None 时按地块包围盒自动裁剪。
+/// 输出以窗口左上角为原点（`origin_world`），其余管线与整图渲染一致。
+pub fn render_region_png_window(
+    package: &dbpf::Package,
+    group: u32,
+    water_override: Option<i32>,
+    window: Option<(usize, usize, usize, usize)>,
+) -> Result<RegionRender, Box<dyn std::error::Error>> {
     let mut tiles: HashMap<u32, Vec<u16>> = HashMap::new();
     for e in package.entries() {
         if e.id.type_id == 0x03E4_21F0 && e.id.group == group {
@@ -367,6 +379,17 @@ pub fn render_region_png(
         y1c = (y1c + 320).min(w);
     } else {
         x0c = 0; x1c = w; y0c = 0; y1c = w;
+    }
+    // 窗口覆盖自动裁剪（L1 局部重渲染）；空窗口/越界回退自动裁剪
+    if let Some((wx0, wy0, wx1, wy1)) = window {
+        let (wx0, wy0) = (wx0.min(w), wy0.min(w));
+        let (wx1, wy1) = (wx1.clamp(wx0 + 1, w), wy1.clamp(wy0 + 1, w));
+        if wx1 > wx0 && wy1 > wy0 {
+            x0c = wx0;
+            y0c = wy0;
+            x1c = wx1;
+            y1c = wy1;
+        }
     }
 
     let h_at = |x: usize, y: usize| -> i32 { hgt[y.min(w - 1) * w + x.min(w - 1)] as i32 };

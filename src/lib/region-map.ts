@@ -41,6 +41,22 @@ export function brushResourceKind(mapName: string): string {
   return mapName.replace(/EcoMapBrushes$/i, "");
 }
 
+/** 画刷清单（后端 `map_panel_list_brushes`；stamps 为世界坐标米）。 */
+export interface BrushList {
+  /** 清单 property 的 instance（hex 串），编辑命令的定位键。 */
+  instance: string;
+  name: string;
+  mapName: string | null;
+  stamps: [number, number][];
+}
+
+/** 单条目 overlay 写回结果（`map_panel_set_water_level` / `map_panel_edit_brush_stamps`）。 */
+export interface OverlayWriteResult {
+  entryCount: number;
+  sizeBytes: number;
+  outPath: string;
+}
+
 /** 资源 kind → 覆盖层颜色（与游戏内资源视图色带对应）。 */
 export const RESOURCE_COLORS: Record<string, string> = {
   coal: "#4a423c",

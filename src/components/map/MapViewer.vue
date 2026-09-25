@@ -3,6 +3,8 @@
  * 地图查看器：缩放 / 平移 / 米制标尺 / HUD（对齐 RasterCanvas 交互模式）。
  * 由地图面板卡片与全屏检查 sheet 共用。
  * 覆盖层：地块框 + 资源画刷环（SVG，随缩放平移同步；图层开关由父级过滤）。
+ * L1/L2（priorities P1-4）：pixelated 像素锐利显示、`detail` 窗口高保真
+ * 渲染覆盖层、编辑网格、`map-click` 落点与 `viewport-change` 视口事件。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -15,6 +17,20 @@ const props = defineProps<{
   showPlots?: boolean;
   /** 可见的资源 kind 列表（undefined = 全部显示）。 */
   visibleResources?: string[];
+  /** L1 窗口高保真渲染（origin 为窗口左上角世界坐标）。 */
+  detail?: RegionRender | null;
+  /** 画刷落点模式：十字光标 + map-click 持续上报。 */
+  placing?: boolean;
+}>();
+
+const emit = defineEmits<{
+  /** 左键点击（非拖拽）地图平面，world 为世界坐标米。 */
+  (e: "map-click", world: { x: number; y: number }): void;
+  /** 缩放/平移/适配后上报视口（worldRect = 可见世界范围，米）。 */
+  (
+    e: "viewport-change",
+    viewport: { zoom: number; worldRect: { x0: number; y0: number; x1: number; y1: number } },
+  ): void;
 }>();
 
 const { t } = useI18n();
@@ -90,7 +106,77 @@ function buildTicks(vertical: boolean): { pos: number; label: string }[] {
 
 function setZoom(value: number) {
   zoom.value = Math.min(32, Math.max(0.05, value));
+  emitViewport();
 }
+
+/** 可见世界范围（米）——由 viewport 尺寸 + pan/zoom 换算。 */
+function visibleWorldRect() {
+  const originX = props.render?.originWorld?.[0] ?? -16384;
+  const originY = props.render?.originWorld?.[1] ?? -16384;
+  const { width, height } = viewportSize.value;
+  return {
+    x0: originX + (-pan.value.x / zoom.value) * MPP,
+    y0: originY + (-pan.value.y / zoom.value) * MPP,
+    x1: originX + ((width - pan.value.x) / zoom.value) * MPP,
+    y1: originY + ((height - pan.value.y) / zoom.value) * MPP,
+  };
+}
+
+function emitViewport() {
+  if (!props.render) return;
+  emit("viewport-change", { zoom: zoom.value, worldRect: visibleWorldRect() });
+}
+
+/** L1 detail 覆盖层：以基准图像素坐标定位在 map-plane 内（CSS scale 随缩放生效）。 */
+const detailUrl = computed(() =>
+  props.detail ? `data:image/png;base64,${props.detail.pngBase64}` : "",
+);
+const detailStyle = computed(() => {
+  const base = props.render;
+  const detail = props.detail;
+  if (!base || !detail) return null;
+  const mpp = base.metersPerPixel || MPP;
+  const baseOrigin = base.originWorld ?? [-16384, -16384];
+  const detailOrigin = detail.originWorld ?? [-16384, -16384];
+  return {
+    left: `${(detailOrigin[0] - baseOrigin[0]) / mpp}px`,
+    top: `${(detailOrigin[1] - baseOrigin[1]) / mpp}px`,
+    width: `${detail.width}px`,
+    height: `${detail.height}px`,
+  };
+});
+
+// ── 编辑网格（L2）：放大后显示世界对齐的方格，屏幕间距自适应 ∈ [24, 48) px ──
+const viewportSize = ref({ width: 0, height: 0 });
+function updateViewportSize() {
+  viewportSize.value = {
+    width: wrap.value?.clientWidth ?? 0,
+    height: wrap.value?.clientHeight ?? 0,
+  };
+}
+const gridLines = computed(() => {
+  if (!props.render || zoom.value < 2) return null;
+  const spacingPx = (meters: number) => (meters / MPP) * zoom.value;
+  let meters = MPP;
+  while (spacingPx(meters) < 24) meters *= 2;
+  if (spacingPx(meters) >= 48) return null; // 不应发生（×2 步进），防御
+  const originX = props.render.originWorld?.[0] ?? -16384;
+  const originY = props.render.originWorld?.[1] ?? -16384;
+  const rect = visibleWorldRect();
+  const toScreenX = (worldX: number) =>
+    ((worldX - originX) / MPP) * zoom.value + pan.value.x;
+  const toScreenY = (worldY: number) =>
+    ((worldY - originY) / MPP) * zoom.value + pan.value.y;
+  const vertical: number[] = [];
+  const horizontal: number[] = [];
+  for (let x = Math.ceil(rect.x0 / meters) * meters; x <= rect.x1; x += meters) {
+    vertical.push(toScreenX(x));
+  }
+  for (let y = Math.ceil(rect.y0 / meters) * meters; y <= rect.y1; y += meters) {
+    horizontal.push(toScreenY(y));
+  }
+  return { vertical, horizontal, meters };
+});
 
 function fit() {
   const element = wrap.value;
@@ -104,11 +190,15 @@ function fit() {
     x: (element.clientWidth - props.render.width * zoom.value) / 2,
     y: (element.clientHeight - props.render.height * zoom.value) / 2,
   };
+  emitViewport();
 }
 
 // ── 指针交互（Pointer 事件 + capture：中键 / 空格平移）──
 
+let downScreen: { x: number; y: number } | null = null;
+
 function onPointerDown(event: PointerEvent) {
+  downScreen = { x: event.clientX, y: event.clientY };
   if (event.button === 1 || spaceDown) {
     dragMode = "pan";
     panning.value = true;
@@ -145,9 +235,35 @@ function onPointerMove(event: PointerEvent) {
   }
 }
 
-function onPointerUp() {
+function onPointerUp(event: PointerEvent) {
+  const wasPan = dragMode === "pan";
   dragMode = "none";
   panning.value = false;
+  if (wasPan) {
+    emitViewport();
+    downScreen = null;
+    return;
+  }
+  // 左键点击（移动 ≤4px 视为点击）→ 上报世界落点
+  if (downScreen && event.button === 0) {
+    const dx = event.clientX - downScreen.x;
+    const dy = event.clientY - downScreen.y;
+    if (dx * dx + dy * dy <= 16) {
+      const rect = wrap.value?.getBoundingClientRect();
+      if (rect) {
+        const px = (event.clientX - rect.left - pan.value.x) / zoom.value;
+        const py = (event.clientY - rect.top - pan.value.y) / zoom.value;
+        const size = props.render?.width ?? 0;
+        if (px >= 0 && py >= 0 && px <= size && py <= size) {
+          emit("map-click", {
+            x: Math.round((props.render?.originWorld?.[0] ?? -16384) + px * MPP),
+            y: Math.round((props.render?.originWorld?.[1] ?? -16384) + py * MPP),
+          });
+        }
+      }
+    }
+  }
+  downScreen = null;
 }
 
 function onWheel(event: WheelEvent) {
@@ -167,6 +283,7 @@ function onWheel(event: WheelEvent) {
     y: my - ((my - pan.value.y) / zoom.value) * clamped,
   };
   zoom.value = clamped;
+  emitViewport();
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -179,10 +296,14 @@ function onKeyup(event: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener("keydown", onKeydown);
   window.addEventListener("keyup", onKeyup);
+  window.addEventListener("resize", updateViewportSize);
+  updateViewportSize();
+  emitViewport();
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown);
   window.removeEventListener("keyup", onKeyup);
+  window.removeEventListener("resize", updateViewportSize);
 });
 
 watch(
@@ -194,7 +315,11 @@ defineExpose({ fit });
 </script>
 
 <template>
-  <div ref="wrap" class="viewer" :class="{ panning }">
+  <div
+    ref="wrap"
+    class="viewer"
+    :class="{ panning, placing: props.placing }"
+  >
     <div
       class="viewport"
       @wheel="onWheel"
@@ -215,8 +340,16 @@ defineExpose({ fit });
           v-if="imgUrl"
           :src="imgUrl"
           draggable="false"
-          class="map-img"
+          class="map-img pixelated"
           :style="planeSize"
+        />
+        <!-- L1 窗口高保真渲染：定位在基准图像素坐标系内，随缩放平移同步 -->
+        <img
+          v-if="detailUrl && detailStyle"
+          :src="detailUrl"
+          draggable="false"
+          class="map-img detail-img"
+          :style="detailStyle"
         />
         <img
           v-for="layer in resourceLayerImgs"
@@ -248,6 +381,25 @@ defineExpose({ fit });
           />
         </svg>
       </div>
+      <!-- 编辑网格（L2，视口坐标不随 plane 变换，保证 1px 线宽） -->
+      <svg v-if="gridLines" class="grid-overlay" aria-hidden="true">
+        <line
+          v-for="(x, i) in gridLines.vertical"
+          :key="`gx${i}`"
+          :x1="x"
+          y1="0"
+          :x2="x"
+          :y2="viewportSize.height"
+        />
+        <line
+          v-for="(y, i) in gridLines.horizontal"
+          :key="`gy${i}`"
+          x1="0"
+          :y1="y"
+          :x2="viewportSize.width"
+          :y2="y"
+        />
+      </svg>
       <div v-if="!imgUrl" class="empty-hint">
         <FIcon name="Map" :size="28" />
         {{ t("studio.map.emptyPreview") }}
@@ -322,6 +474,9 @@ defineExpose({ fit });
 .viewer.panning {
   cursor: grab;
 }
+.viewer.placing {
+  cursor: cell;
+}
 .viewport {
   position: absolute;
   inset: 0;
@@ -337,6 +492,25 @@ defineExpose({ fit });
   display: block;
   user-select: none;
   pointer-events: none;
+}
+.pixelated {
+  /* 8m/px 是数据上限：放大显示为锐利色块而非插值糊 */
+  image-rendering: pixelated;
+}
+.detail-img {
+  image-rendering: pixelated;
+  position: absolute;
+}
+.grid-overlay {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  shape-rendering: crispEdges;
+  z-index: 1;
+}
+.grid-overlay line {
+  stroke: color-mix(in srgb, var(--border-strong, var(--border)) 55%, transparent);
+  stroke-width: 1px;
 }
 .res-layer {
   left: 0;
