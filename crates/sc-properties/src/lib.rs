@@ -26,6 +26,7 @@
 
 mod combine;
 pub mod decal;
+pub mod debug_tools;
 mod error;
 pub mod inherit;
 pub mod locale;
