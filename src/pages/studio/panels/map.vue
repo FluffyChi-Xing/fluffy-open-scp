@@ -15,6 +15,7 @@ import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import MapViewer from "@/components/map/MapViewer.vue";
+import BrushPanel from "@/components/map/BrushPanel.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import { brushResourceKind } from "@/lib/region-map";
 import type {
@@ -140,6 +141,10 @@ function resourceLabel(kind: string): string {
 }
 
 // ── 编辑（P1-5/P1-6）：全部走 overlay 副本，绝不触碰源包 ──
+// 交互布局：水位/导入在编辑 sheet（编辑卡片右上角按钮开启）；
+// 画刷编辑为预览器右侧浮层（编辑卡片右上角 Brush 按钮开关）。
+const editSheetOpen = ref(false);
+const brushPanelOpen = ref(false);
 const brushLists = ref<BrushList[]>([]);
 const selectedBrushInstance = ref("");
 const placementMode = ref(false);
@@ -482,6 +487,23 @@ onBeforeUnmount(() => {
             @map-click="onMapClick"
             @viewport-change="onViewportChange"
           />
+          <!-- 画刷编辑浮层（预览器右侧） -->
+          <BrushPanel
+            v-if="brushPanelOpen"
+            class="viewer-float"
+            :brush-lists="brushLists"
+            :selected-instance="selectedBrushInstance"
+            :placement-mode="placementMode"
+            :pending-adds="pendingAdds"
+            :pending-removes="pendingRemoves"
+            :busy="editBusy"
+            @select="selectBrush"
+            @update:placement-mode="placementMode = $event"
+            @toggle-remove="toggleRemove"
+            @undo-add="pendingAdds.splice($event, 1)"
+            @save="saveBrushes"
+            @close="brushPanelOpen = false"
+          />
         </div>
       </div>
 
@@ -520,109 +542,32 @@ onBeforeUnmount(() => {
           <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
         </section>
 
-        <!-- 编辑（P1-5/P1-6）：水位 / 画刷 stamp / 高度图导入，overlay 副本写回 -->
-        <section class="side-section">
-          <h3>{{ t("studio.map.editTitle") }}</h3>
-          <template v-if="render">
-            <div class="edit-row">
-              <label class="edit-label" for="water-input">
-                {{ t("studio.map.waterLabel") }}
-              </label>
-              <input
-                id="water-input"
-                v-model.number="waterMetersInput"
-                class="edit-input"
-                type="number"
-                step="1"
-              />
+        <!-- 编辑：水位/导入在 sheet（右上角按钮开启）；画刷为预览器右侧浮层 -->
+        <section class="side-section edit-section">
+          <div class="edit-card-header">
+            <h3>{{ t("studio.map.editTitle") }}</h3>
+            <div class="edit-card-actions">
               <button
                 type="button"
-                class="edit-button"
-                :disabled="editBusy || waterMetersInput === null"
-                @click="saveWater"
+                class="outline-btn"
+                :disabled="!render"
+                :title="t('studio.map.brushEditorTitle')"
+                :aria-pressed="brushPanelOpen"
+                @click="brushPanelOpen = !brushPanelOpen"
               >
-                {{ t("studio.map.waterSave") }}
+                <FIcon name="Brush" :size="15" aria-label="" />
+              </button>
+              <button
+                type="button"
+                class="outline-btn"
+                :disabled="!render"
+                :title="t('studio.map.editTitle')"
+                @click="editSheetOpen = true"
+              >
+                <FIcon name="Pencil" :size="15" aria-label="" />
               </button>
             </div>
-            <div class="edit-row">
-              <button
-                type="button"
-                class="run-button"
-                :disabled="editBusy || !selectedGroup"
-                @click="importHeightmap"
-              >
-                <FIcon name="Download" :size="14" />
-                {{ t("studio.map.importHeightmap") }}
-              </button>
-            </div>
-            <h4 class="edit-sub">{{ t("studio.map.brushEditorTitle") }}</h4>
-            <p v-if="!brushLists.length" class="side-note">
-              {{ t("studio.map.emptySide") }}
-            </p>
-            <template v-else>
-              <button
-                v-for="b in brushLists"
-                :key="b.instance"
-                type="button"
-                class="layer-option"
-                :class="{ active: selectedBrushInstance === b.instance }"
-                @click="selectBrush(b.instance)"
-              >
-                <FIcon
-                  :name="selectedBrushInstance === b.instance ? 'Check' : 'Square'"
-                  :size="13"
-                  aria-label=""
-                />
-                {{ b.name }} · {{ b.stamps.length }}
-              </button>
-              <template v-if="selectedBrush">
-                <label class="layer-toggle add-mode">
-                  <FCheckbox v-model="placementMode" />
-                  {{ t("studio.map.brushAddMode") }}
-                </label>
-                <p v-if="placementMode" class="side-note">
-                  {{ t("studio.map.brushAddHint") }}
-                </p>
-                <ul class="stamp-list">
-                  <li
-                    v-for="(stamp, i) in selectedBrush.stamps"
-                    :key="`s${i}`"
-                    :class="{ removed: pendingRemoves.includes(i) }"
-                  >
-                    <span class="mono"
-                      >{{ stamp[0].toFixed(0) }}, {{ stamp[1].toFixed(0) }}</span
-                    >
-                    <button type="button" class="stamp-btn" @click="toggleRemove(i)">
-                      {{ t("studio.map.brushRemove") }}
-                    </button>
-                  </li>
-                  <li v-for="(stamp, i) in pendingAdds" :key="`a${i}`" class="pending">
-                    <span class="mono">{{ stamp[0] }}, {{ stamp[1] }}</span>
-                    <button
-                      type="button"
-                      class="stamp-btn"
-                      @click="pendingAdds.splice(i, 1)"
-                    >
-                      {{ t("studio.map.stampUndo") }}
-                    </button>
-                  </li>
-                </ul>
-                <button
-                  type="button"
-                  class="run-button edit-save"
-                  :disabled="
-                    editBusy || (!pendingAdds.length && !pendingRemoves.length)
-                  "
-                  @click="saveBrushes"
-                >
-                  {{ t("studio.map.brushSave") }}
-                </button>
-              </template>
-              <p v-else class="side-note">{{ t("studio.map.brushNone") }}</p>
-            </template>
-            <p v-if="editStatus" class="side-note mono">{{ editStatus }}</p>
-          </template>
-          <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
+          </div>
         </section>
 
         <section class="side-section">
@@ -685,6 +630,23 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="outline-btn"
+            :title="t('studio.map.brushEditorTitle')"
+            :aria-pressed="brushPanelOpen"
+            @click="brushPanelOpen = !brushPanelOpen"
+          >
+            <FIcon name="Brush" :size="15" aria-label="" />
+          </button>
+          <button
+            type="button"
+            class="outline-btn"
+            :title="t('studio.map.editTitle')"
+            @click="editSheetOpen = true"
+          >
+            <FIcon name="Pencil" :size="15" aria-label="" />
+          </button>
+          <button
+            type="button"
+            class="outline-btn"
             :aria-label="t('shell.close')"
             @click="sheetOpen = false"
           >
@@ -702,6 +664,72 @@ onBeforeUnmount(() => {
             @map-click="onMapClick"
             @viewport-change="onViewportChange"
           />
+          <BrushPanel
+            v-if="brushPanelOpen"
+            class="viewer-float"
+            :brush-lists="brushLists"
+            :selected-instance="selectedBrushInstance"
+            :placement-mode="placementMode"
+            :pending-adds="pendingAdds"
+            :pending-removes="pendingRemoves"
+            :busy="editBusy"
+            @select="selectBrush"
+            @update:placement-mode="placementMode = $event"
+            @toggle-remove="toggleRemove"
+            @undo-add="pendingAdds.splice($event, 1)"
+            @save="saveBrushes"
+            @close="brushPanelOpen = false"
+          />
+        </div>
+      </div>
+    </FSheet>
+
+    <!-- 编辑 sheet：水位写回 + 高度图导入（overlay 副本，不触碰源包） -->
+    <FSheet v-model:open="editSheetOpen" width="440px" :label="t('studio.map.editTitle')">
+      <div class="edit-sheet">
+        <header class="edit-sheet-header">
+          <span class="page-icon"><FIcon name="Pencil" :size="16" /></span>
+          <div class="edit-sheet-title">
+            <FTypography :header="3" spacing="none">{{ t("studio.map.editTitle") }}</FTypography>
+            <span class="sheet-sub">{{ renderRegionName || selectedRegionName }}</span>
+          </div>
+        </header>
+        <div class="edit-sheet-body">
+          <section class="edit-block">
+            <h4 class="edit-block-title">{{ t("studio.map.waterPlane") }}</h4>
+            <label class="edit-field">
+              <span class="edit-field-label">{{ t("studio.map.waterLabel") }}</span>
+              <input
+                v-model.number="waterMetersInput"
+                class="edit-input"
+                type="number"
+                step="1"
+              />
+            </label>
+            <p class="edit-hint">raw = (z + 1024) × 32</p>
+            <button
+              type="button"
+              class="run-button edit-block-btn"
+              :disabled="editBusy || waterMetersInput === null || !selectedGroup"
+              @click="saveWater"
+            >
+              {{ t("studio.map.waterSave") }}
+            </button>
+          </section>
+          <section class="edit-block">
+            <h4 class="edit-block-title">{{ t("studio.map.importHeightmap") }}</h4>
+            <p class="edit-hint">{{ t("studio.map.importHint") }}</p>
+            <button
+              type="button"
+              class="run-button edit-block-btn"
+              :disabled="editBusy || !selectedGroup"
+              @click="importHeightmap"
+            >
+              <FIcon name="Download" :size="14" />
+              {{ t("studio.map.importHeightmap") }}
+            </button>
+          </section>
+          <p v-if="editStatus" class="edit-status mono">{{ editStatus }}</p>
         </div>
       </div>
     </FSheet>
@@ -717,15 +745,85 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
 }
-/* ── 编辑器（P1-5/P1-6）：水位 / 画刷 / 高度图导入 ── */
-.edit-row {
+/* ── 编辑入口：编辑卡片右上角 outline 按钮（sheet + 画刷浮层开关）── */
+.edit-section {
+  padding-top: 0.25rem;
+}
+.edit-card-header {
   align-items: center;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.25rem 0;
+  justify-content: space-between;
 }
-.edit-label {
+.edit-card-header h3 {
+  margin: 0;
+}
+.edit-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── 画刷浮层：挂在预览器右侧垂直居中 ── */
+.card-viewer,
+.sheet-viewer {
+  position: relative;
+}
+.viewer-float {
+  max-height: calc(100% - 24px);
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+}
+
+/* ── 编辑 sheet：水位 / 高度图导入 ── */
+.edit-sheet {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.edit-sheet-header {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.edit-sheet-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.edit-sheet-title .sheet-sub {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.edit-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  padding: 18px 16px;
+}
+.edit-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+.edit-block-title {
+  font-size: 0.875rem;
+  margin: 0;
+}
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.edit-field-label {
   color: var(--muted-foreground);
   font-size: 0.75rem;
 }
@@ -734,74 +832,30 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--foreground);
-  font-size: 0.75rem;
-  padding: 4px 8px;
-  width: 96px;
+  font-size: 0.875rem;
+  padding: 6px 10px;
+  width: 100%;
 }
 .edit-input:focus {
   outline: 1px solid var(--border-strong, var(--border));
 }
-.edit-button {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
-  cursor: pointer;
-  font-size: 0.75rem;
-  padding: 4px 10px;
-}
-.edit-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-.edit-button:hover:not(:disabled) {
-  border-color: var(--border-strong, var(--border));
-}
-.edit-sub {
-  font-size: 0.8125rem;
-  margin: 0.75rem 0 0.25rem;
-}
-.add-mode {
-  margin-top: 0.5rem;
-}
-.stamp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  list-style: none;
-  margin: 0.5rem 0;
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 0;
-}
-.stamp-list li {
-  align-items: center;
-  display: flex;
-  font-size: 0.7rem;
-  gap: 0.5rem;
-  justify-content: space-between;
-}
-.stamp-list li.removed {
-  opacity: 0.45;
-  text-decoration: line-through;
-}
-.stamp-list li.pending {
-  color: var(--primary, var(--foreground));
-}
-.stamp-btn {
-  background: transparent;
-  border: none;
+.edit-hint {
   color: var(--muted-foreground);
-  cursor: pointer;
   font-size: 0.7rem;
-  padding: 2px 4px;
+  margin: 0;
 }
-.stamp-btn:hover {
-  color: var(--foreground);
-}
-.edit-save {
-  margin-top: 0.5rem;
+.edit-block-btn {
   width: 100%;
+}
+.edit-status {
+  background: color-mix(in srgb, var(--border) 25%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  padding: 8px 10px;
+  word-break: break-all;
+}
+.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
 }
 
 .page-header {

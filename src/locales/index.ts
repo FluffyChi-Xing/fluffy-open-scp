@@ -183,6 +183,8 @@ const messages = {
         brushNone: "选择一个画刷清单",
         importHeightmap: "导入高度图",
         savedTo: "已写出 {count} 条 → {path}",
+        importHint:
+          "导入 16-bit 灰度 PNG（4096×4096），像素值即高度 raw 值（1 px = 8 m），自动重建 341-tile 金字塔并打包为 overlay。",
       },
       raster: {
         title: "Raster 绘制",
@@ -1713,6 +1715,8 @@ const messages = {
         brushNone: "Pick a brush list",
         importHeightmap: "Import heightmap",
         savedTo: "Wrote {count} entries → {path}",
+        importHint:
+          "Import a 16-bit grayscale PNG (4096×4096); pixel values are raw heights (1 px = 8 m). The 341-tile pyramid is rebuilt and packaged as an overlay.",
       },
       raster: {
         title: "Raster paint",
