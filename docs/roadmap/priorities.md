@@ -12,9 +12,9 @@
 
 | 级 | 任务 | 估时 | 关键依赖 | 来源 |
 |---|---|---|---|---|
-| **P0-1** | 高度图回写链路库化（tile_arrange 逆过程 → 库 API + `map_panel_write_heightmap` + 真包回归单测） | 2–3 人日 | 无（可逆性已验证） | MW-E1 |
-| **P0-2** | debug 工具 overlay 一键化（enable_debug_tools 探针 → 产品命令） | 0.5–1 人日 | 无（路径已实证） | FM0 |
-| **P0-3** | 蓝图 BP0 spike：@vue-flow/core 引入 + happy-dom 兼容验证 | 0.5–1 人日 | 无 | BP0 |
+| **P0-1** | ✅ 高度图回写链路库化（tile_arrange 逆过程 → 库 API + `map_panel_write_heightmap` + 真包回归单测）——见 §4 执行记录 | 2–3 人日 | 无（可逆性已验证） | MW-E1 |
+| **P0-2** | ✅ debug 工具 overlay 一键化（enable_debug_tools 探针 → 产品命令）——见 §4 | 0.5–1 人日 | 无（路径已实证） | FM0 |
+| **P0-3** | ✅ 蓝图 BP0 spike：@vue-flow/core 引入 + happy-dom 兼容验证——见 §4 | 0.5–1 人日 | 无 | BP0 |
 | P1-4 | 地图缩放分级 L1（视口窗口渲染）+ L2（地块原生渲染+格网） | 2–3 人日 | P0-1（L2 读 F0） | MW §3 |
 | P1-5 | 水位写回 + 画刷清单编辑器 | ~2 人日 | patch_property_overlay（已有） | E2/E4 |
 | P1-6 | 灰度 PNG 导入切割（4096² → u16 场 → 金字塔） | 1–2 人日 | P0-1 | FM1/N2 |
@@ -49,3 +49,15 @@
   "读图、改图、写图、游戏内开 debug" 的最小闭环。
 - **冲刺 B（P1-4/6/7 + P2-8/9）**：缩放分级 + 灰度导入 + Linux CI + 地块表/
   噪声生成——完成后具备"新地图从零创建并打包"能力，全图模组进入组装期。
+
+## 4. 执行记录
+
+| 日期 | 任务 | 结果 | 提交 |
+|---|---|---|---|
+| 2026-09-25 | P0-2 | `sc_properties::debug_tools`（`build_debug_tools_overlay` + `patch_property_refs` 字节级补丁与自校验）；探针改为薄封装、阳性对照实验保留；`debug_tools_write_overlay` 命令（原子落盘、分类/UI 分类可参数化）；缺工具场景整体报错并覆盖单测 | af3d97f |
+| 2026-09-25 | P0-1 | `sc_properties::region_write`：`read_region_field`（mip0 拼装 4096² 场）、`solve_f0_pyramid`（5 级实例排布求解，mip0 对齐全局常量 + 粗层级子采样 L1 最近匹配）、`build_heightmap_overlay`（341 tile 重建，复用源 tile 20B 头）；`map_panel_write_heightmap` 命令（16-bit 灰度 PNG → overlay，原子落盘）。合成区域整链路回归：求解排布与重建内容逐 tile 一致，44.7MB overlay 耗时 449ms（debug）；真包回归 env 门控（`OPENSCP_REGION_TERRAIN_PACKAGE`） | b5ee19e |
+| 2026-09-25 | P0-3 | `@vue-flow/core` 1.48.2 + `@vue-flow/background` 1.3.2 引入（optimizeDeps 已登记）；happy-dom 下挂载 / 节点 DOM / 响应式 store 断言全过（`flow-spike.test.ts`，仅需 ResizeObserver stub）——组件级测试无需降级方案，结论已回填 blueprint-panel.md §2.2 | 6b15ecf |
+
+**验证**：`cargo test --workspace` 31 套件全绿（0 失败）；`vue-tsc -b --noEmit` 干净；`pnpm test` 48 文件 / 193 用例全过（含 i18n-audit 与新 spike 测试）。
+
+**下一步**（待 review 后开始）：P1-5 水位写回 + 画刷清单编辑器 → P1-4 缩放分级 L1/L2 → P1-6 灰度 PNG 导入切割 UI。
