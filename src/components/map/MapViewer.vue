@@ -182,14 +182,23 @@ const gridLines = computed(() => {
   return { vertical, horizontal, meters };
 });
 
-// ── 画刷 stamp 标记（世界坐标 → 屏幕坐标，随 pan/zoom 响应式更新）──
-const markerList = computed(() =>
-  (props.markers ?? []).map((m) => ({
-    sx: toScreenX(m.x),
-    sy: toScreenY(m.y),
+// ── 画刷 stamp 标记：plane 坐标系（与地块框同路径，随 transform 缩放）──
+// r/sw 按 zoom 反算，保持屏幕尺寸近似恒定。
+const markerList = computed(() => {
+  const base = props.render;
+  if (!base) return [];
+  const origin = base.originWorld ?? [-16384, -16384];
+  const mpp = base.metersPerPixel || MPP;
+  const r = Math.max(4, 7 / zoom.value);
+  const sw = Math.max(1, 1.5 / zoom.value);
+  return (props.markers ?? []).map((m) => ({
+    cx: (m.x - origin[0]) / mpp,
+    cy: (m.y - origin[1]) / mpp,
+    r,
+    sw,
     pending: m.pending,
-  })),
-);
+  }));
+});
 
 function fit() {
   const element = wrap.value;
@@ -463,14 +472,21 @@ defineExpose({ fit });
           :y2="y"
         />
       </svg>
-      <!-- 画刷 stamp 标记（黄圈=已存在，实心=未保存新增） -->
-      <svg v-if="markerList.length" class="marker-overlay" aria-hidden="true">
+      <!-- 画刷 stamp 标记（黄圈=已存在，实心=未保存新增；plane 坐标系） -->
+      <svg
+        v-if="markerList.length && render"
+        class="overlay"
+        :style="planeSize"
+        :viewBox="`0 0 ${render.width} ${render.height}`"
+        preserveAspectRatio="none"
+      >
         <circle
           v-for="(m, i) in markerList"
           :key="`mk${i}`"
-          :cx="m.sx"
-          :cy="m.sy"
-          :r="m.pending ? 5 : 6"
+          :cx="m.cx"
+          :cy="m.cy"
+          :r="m.r"
+          :stroke-width="m.sw"
           :class="m.pending ? 'pending' : 'existing'"
         />
       </svg>
@@ -586,22 +602,14 @@ defineExpose({ fit });
   stroke: color-mix(in srgb, var(--border-strong, var(--border)) 55%, transparent);
   stroke-width: 1px;
 }
-.marker-overlay {
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
-}
-.marker-overlay .existing {
+.overlay circle.existing {
   fill: none;
   stroke: #ffd200;
-  stroke-width: 1.5px;
 }
-.marker-overlay .pending {
+.overlay circle.pending {
   fill: var(--primary, #4cc2ff);
   fill-opacity: 0.85;
   stroke: #fff;
-  stroke-width: 1px;
 }
 .res-layer {
   left: 0;

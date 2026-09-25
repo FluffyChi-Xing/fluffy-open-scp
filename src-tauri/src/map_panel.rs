@@ -67,12 +67,21 @@ pub fn map_panel_list_regions(package_path: String) -> Result<Vec<RegionSummaryD
 pub fn map_panel_render_region(
     package_path: String,
     group: String,
+    water_override: Option<f64>,
 ) -> Result<RegionRenderDto, String> {
     let group = u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
     let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
         .map_err(|e| e.to_string())?;
 
-    let out = region_map::render_region_png(&package, group, None).map_err(|e| e.to_string())?;
+    // 水位实时预览：调用方可传世界米（编辑器输入），换算 raw 后覆盖区域 desc 值
+    let water_raw = match water_override {
+        Some(meters) if meters.is_finite() => Some(
+            (((meters + 1024.0) * 32.0).round() as f64)
+                .clamp(0.0, 65535.0) as i32,
+        ),
+        _ => None,
+    };
+    let out = region_map::render_region_png(&package, group, water_raw).map_err(|e| e.to_string())?;
     // 世界坐标 → PNG 像素：前端零换算直接绘制（避免 originWorld 断链导致整体偏移）。
     // metersPerPixel = 米/像素，故除。
     let to_px = |(wx, wy): (f32, f32)| -> (f32, f32) {

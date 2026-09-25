@@ -5,7 +5,7 @@
  * 全屏 sheet 复用同一 MapViewer，便于更细致的地图检查。
  * 渲染管线：sc_properties::region_map（341-tile 金字塔 + 全局水位面 3336）。
  */
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
@@ -107,6 +107,7 @@ async function renderRegion() {
     render.value = await invoke<RegionRender>("map_panel_render_region", {
       packagePath: packagePathOf(packageId),
       group: selectedGroup.value,
+      waterOverride: null,
     });
     waterMetersInput.value = Math.round(render.value.waterPlane / 32 - 1024);
     await loadBrushLists();
@@ -116,6 +117,7 @@ async function renderRegion() {
     loadingRender.value = false;
   }
 }
+
 
 // ── 图层状态：地块框开关 + 资源分布图层单选（null = 关闭；对齐游戏数据视图）──
 const showPlots = ref(true);
@@ -370,7 +372,46 @@ async function fetchDetail(rect: ViewportChange["worldRect"]) {
 
 onBeforeUnmount(() => {
   if (detailTimer !== null) window.clearTimeout(detailTimer);
+  if (waterTimer !== null) window.clearTimeout(waterTimer);
 });
+
+// ── 水位实时预览（P1-5 反馈）：输入防抖后带 waterOverride 重渲染 ──
+let waterTimer: number | null = null;
+watch(waterMetersInput, (meters) => {
+  if (
+    selectedPackageId.value === null ||
+    !render.value ||
+    !selectedGroup.value ||
+    meters === null ||
+    Number.isNaN(meters) ||
+    !Number.isFinite(meters)
+  ) {
+    return;
+  }
+  // 与当前渲染水位一致时不重渲染（避免 renderRegion 回填输入触发环路）
+  if (Math.abs(meters - (render.value.waterPlane / 32 - 1024)) < 0.5) return;
+  if (waterTimer !== null) window.clearTimeout(waterTimer);
+  waterTimer = window.setTimeout(() => void rerenderWater(meters), 500);
+});
+
+async function rerenderWater(meters: number) {
+  const packageId = selectedPackageId.value;
+  if (packageId === null || !selectedGroup.value) return;
+  loadingRender.value = true;
+  try {
+    render.value = await invoke<RegionRender>("map_panel_render_region", {
+      packagePath: packagePathOf(packageId),
+      group: selectedGroup.value,
+      waterOverride: meters,
+    });
+    detail.value = null; // 旧窗口渲染基于旧水位，作废待视口事件重取
+  } catch (e) {
+    editStatus.value = String(e);
+  } finally {
+    loadingRender.value = false;
+  }
+}
+
 </script>
 
 <template>
