@@ -19,8 +19,10 @@ const props = defineProps<{
   visibleResources?: string[];
   /** L1 窗口高保真渲染（origin 为窗口左上角世界坐标）。 */
   detail?: RegionRender | null;
-  /** 画刷落点模式：十字光标 + map-click 持续上报。 */
+  /** 画刷落点模式：十字光标 + 单击/拖动绘制 stamp（map-click 持续上报）。 */
   placing?: boolean;
+  /** 画刷 stamp 标记（世界坐标米；pending = 尚未保存的新增）。 */
+  markers?: { x: number; y: number; pending: boolean }[];
 }>();
 
 const emit = defineEmits<{
@@ -154,19 +156,21 @@ function updateViewportSize() {
     height: wrap.value?.clientHeight ?? 0,
   };
 }
+function toScreenX(worldX: number) {
+  const originX = props.render?.originWorld?.[0] ?? -16384;
+  return ((worldX - originX) / MPP) * zoom.value + pan.value.x;
+}
+function toScreenY(worldY: number) {
+  const originY = props.render?.originWorld?.[1] ?? -16384;
+  return ((worldY - originY) / MPP) * zoom.value + pan.value.y;
+}
 const gridLines = computed(() => {
   if (!props.render || zoom.value < 2) return null;
   const spacingPx = (meters: number) => (meters / MPP) * zoom.value;
   let meters = MPP;
   while (spacingPx(meters) < 24) meters *= 2;
   if (spacingPx(meters) >= 48) return null; // 不应发生（×2 步进），防御
-  const originX = props.render.originWorld?.[0] ?? -16384;
-  const originY = props.render.originWorld?.[1] ?? -16384;
   const rect = visibleWorldRect();
-  const toScreenX = (worldX: number) =>
-    ((worldX - originX) / MPP) * zoom.value + pan.value.x;
-  const toScreenY = (worldY: number) =>
-    ((worldY - originY) / MPP) * zoom.value + pan.value.y;
   const vertical: number[] = [];
   const horizontal: number[] = [];
   for (let x = Math.ceil(rect.x0 / meters) * meters; x <= rect.x1; x += meters) {
@@ -177,6 +181,15 @@ const gridLines = computed(() => {
   }
   return { vertical, horizontal, meters };
 });
+
+// ── 画刷 stamp 标记（世界坐标 → 屏幕坐标，随 pan/zoom 响应式更新）──
+const markerList = computed(() =>
+  (props.markers ?? []).map((m) => ({
+    sx: toScreenX(m.x),
+    sy: toScreenY(m.y),
+    pending: m.pending,
+  })),
+);
 
 function fit() {
   const element = wrap.value;
@@ -193,12 +206,42 @@ function fit() {
   emitViewport();
 }
 
-// ── 指针交互（Pointer 事件 + capture：中键 / 空格平移）──
+// ── 指针交互（Pointer 事件 + capture：中键 / 空格平移；落点模式左键绘制）──
 
 let downScreen: { x: number; y: number } | null = null;
+let painting = false;
+let lastPaintWorld: { x: number; y: number } | null = null;
+/** 拖动绘制的采样间距（米）。 */
+const PAINT_STEP_M = 64;
+
+/** 事件 → 世界坐标（米）；超出地图平面返回 null。 */
+function worldFromEvent(event: PointerEvent): { x: number; y: number } | null {
+  const rect = wrap.value?.getBoundingClientRect();
+  if (!rect) return null;
+  const px = (event.clientX - rect.left - pan.value.x) / zoom.value;
+  const py = (event.clientY - rect.top - pan.value.y) / zoom.value;
+  const size = props.render?.width ?? 0;
+  if (px < 0 || py < 0 || px > size || py > size) return null;
+  return {
+    x: Math.round((props.render?.originWorld?.[0] ?? -16384) + px * MPP),
+    y: Math.round((props.render?.originWorld?.[1] ?? -16384) + py * MPP),
+  };
+}
 
 function onPointerDown(event: PointerEvent) {
   downScreen = { x: event.clientX, y: event.clientY };
+  // 落点模式：左键开始绘制（立即放置一枚，拖动按步距续放）
+  if (props.placing && event.button === 0 && !spaceDown) {
+    const world = worldFromEvent(event);
+    if (world) {
+      painting = true;
+      lastPaintWorld = world;
+      emit("map-click", world);
+    }
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+    return;
+  }
   if (event.button === 1 || spaceDown) {
     dragMode = "pan";
     panning.value = true;
@@ -227,6 +270,19 @@ function onPointerMove(event: PointerEvent) {
           }
         : null;
   }
+  // 拖动绘制：距上一枚 ≥64m 时续放
+  if (painting) {
+    const world = worldFromEvent(event);
+    if (world && lastPaintWorld) {
+      const dx = world.x - lastPaintWorld.x;
+      const dy = world.y - lastPaintWorld.y;
+      if (dx * dx + dy * dy >= PAINT_STEP_M * PAINT_STEP_M) {
+        emit("map-click", world);
+        lastPaintWorld = world;
+      }
+    }
+    return;
+  }
   if (dragMode === "pan") {
     pan.value = {
       x: panStart.px + (event.clientX - panStart.x),
@@ -236,6 +292,12 @@ function onPointerMove(event: PointerEvent) {
 }
 
 function onPointerUp(event: PointerEvent) {
+  if (painting) {
+    painting = false;
+    lastPaintWorld = null;
+    downScreen = null;
+    return;
+  }
   const wasPan = dragMode === "pan";
   dragMode = "none";
   panning.value = false;
@@ -249,18 +311,8 @@ function onPointerUp(event: PointerEvent) {
     const dx = event.clientX - downScreen.x;
     const dy = event.clientY - downScreen.y;
     if (dx * dx + dy * dy <= 16) {
-      const rect = wrap.value?.getBoundingClientRect();
-      if (rect) {
-        const px = (event.clientX - rect.left - pan.value.x) / zoom.value;
-        const py = (event.clientY - rect.top - pan.value.y) / zoom.value;
-        const size = props.render?.width ?? 0;
-        if (px >= 0 && py >= 0 && px <= size && py <= size) {
-          emit("map-click", {
-            x: Math.round((props.render?.originWorld?.[0] ?? -16384) + px * MPP),
-            y: Math.round((props.render?.originWorld?.[1] ?? -16384) + py * MPP),
-          });
-        }
-      }
+      const world = worldFromEvent(event);
+      if (world) emit("map-click", world);
     }
   }
   downScreen = null;
@@ -293,17 +345,28 @@ function onKeyup(event: KeyboardEvent) {
   if (event.code === "Space") spaceDown = false;
 }
 
+let resizeObserver: ResizeObserver | null = null;
 onMounted(() => {
   window.addEventListener("keydown", onKeydown);
   window.addEventListener("keyup", onKeyup);
   window.addEventListener("resize", updateViewportSize);
   updateViewportSize();
   emitViewport();
+  // 容器尺寸变化（面板调整/全屏切换）不再依赖 window resize——修复网格
+  // 只出现在左上角的陈旧 viewportSize 问题
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(() => {
+      updateViewportSize();
+      emitViewport();
+    });
+    if (wrap.value) resizeObserver.observe(wrap.value);
+  }
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown);
   window.removeEventListener("keyup", onKeyup);
   window.removeEventListener("resize", updateViewportSize);
+  resizeObserver?.disconnect();
 });
 
 watch(
@@ -398,6 +461,17 @@ defineExpose({ fit });
           :y1="y"
           :x2="viewportSize.width"
           :y2="y"
+        />
+      </svg>
+      <!-- 画刷 stamp 标记（黄圈=已存在，实心=未保存新增） -->
+      <svg v-if="markerList.length" class="marker-overlay" aria-hidden="true">
+        <circle
+          v-for="(m, i) in markerList"
+          :key="`mk${i}`"
+          :cx="m.sx"
+          :cy="m.sy"
+          :r="m.pending ? 5 : 6"
+          :class="m.pending ? 'pending' : 'existing'"
         />
       </svg>
       <div v-if="!imgUrl" class="empty-hint">
@@ -510,6 +584,23 @@ defineExpose({ fit });
 }
 .grid-overlay line {
   stroke: color-mix(in srgb, var(--border-strong, var(--border)) 55%, transparent);
+  stroke-width: 1px;
+}
+.marker-overlay {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+.marker-overlay .existing {
+  fill: none;
+  stroke: #ffd200;
+  stroke-width: 1.5px;
+}
+.marker-overlay .pending {
+  fill: var(--primary, #4cc2ff);
+  fill-opacity: 0.85;
+  stroke: #fff;
   stroke-width: 1px;
 }
 .res-layer {

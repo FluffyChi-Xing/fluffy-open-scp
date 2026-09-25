@@ -8,6 +8,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import { brushResourceKind } from "@/lib/region-map";
 import type { BrushList } from "@/lib/region-map";
 
 const props = defineProps<{
@@ -28,11 +29,18 @@ const emit = defineEmits<{
   (e: "close"): void;
 }>();
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 
 const selected = computed(
   () => props.brushLists.find((b) => b.instance === props.selectedInstance) ?? null,
 );
+
+/** 画刷清单显示名：按资源 kind 走 i18n（如 煤矿/Coal），未收录回退原名。 */
+function brushDisplayName(name: string): string {
+  const kind = brushResourceKind(name);
+  const key = `studio.map.res${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
+  return te(key) ? t(key) : name;
+}
 </script>
 
 <template>
@@ -58,6 +66,7 @@ const selected = computed(
         type="button"
         class="brush-row"
         :class="{ active: selectedInstance === b.instance }"
+        :title="b.name"
         @click="emit('select', b.instance)"
       >
         <FIcon
@@ -65,7 +74,7 @@ const selected = computed(
           :size="13"
           aria-label=""
         />
-        {{ b.name }} · {{ b.stamps.length }}
+        {{ brushDisplayName(b.name) }} · {{ b.stamps.length }}
       </button>
       <p v-if="!brushLists.length" class="brush-float-hint">
         {{ t("studio.map.emptySide") }}

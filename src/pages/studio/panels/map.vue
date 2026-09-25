@@ -140,6 +140,12 @@ function resourceLabel(kind: string): string {
   return te(key) ? t(key) : kind;
 }
 
+/** 画刷清单显示名：按资源 kind 走 i18n，未收录回退内部名。 */
+function brushDisplayName(name: string): string {
+  const key = `studio.map.res${brushResourceKind(name).charAt(0).toUpperCase()}${brushResourceKind(name).slice(1)}`;
+  return te(key) ? t(key) : name;
+}
+
 // ── 编辑（P1-5/P1-6）：全部走 overlay 副本，绝不触碰源包 ──
 // 交互布局：水位/导入在编辑 sheet（编辑卡片右上角按钮开启）；
 // 画刷编辑为预览器右侧浮层（编辑卡片右上角 Brush 按钮开关）。
@@ -181,6 +187,28 @@ function selectBrush(instance: string) {
   pendingRemoves.value = [];
   placementMode.value = false;
 }
+
+const canUndoEdit = computed(
+  () =>
+    brushPanelOpen.value &&
+    (pendingAdds.value.length > 0 || pendingRemoves.value.length > 0),
+);
+
+/** 撤回最近一次未保存编辑：优先撤销新增，否则恢复删除。 */
+function undoLastEdit() {
+  if (pendingAdds.value.length) pendingAdds.value.pop();
+  else if (pendingRemoves.value.length) pendingRemoves.value.pop();
+}
+
+/** 地图上的 stamp 标记：选中清单的现有 stamp（黄圈）+ 未保存新增（实心）。 */
+const brushMarkers = computed(() => {
+  const brush = selectedBrush.value;
+  if (!brush) return [];
+  return [
+    ...brush.stamps.map(([x, y]) => ({ x, y, pending: false })),
+    ...pendingAdds.value.map(([x, y]) => ({ x, y, pending: true })),
+  ];
+});
 
 function toggleRemove(index: number) {
   const at = pendingRemoves.value.indexOf(index);
@@ -447,6 +475,16 @@ onBeforeUnmount(() => {
       <div class="viewer-card">
         <!-- 顶部工具条：横向 flex 右对齐（分段式图层切换 + outline 展开） -->
         <div class="card-toolbar">
+          <button
+            v-if="brushPanelOpen"
+            type="button"
+            class="outline-btn"
+            :disabled="!canUndoEdit"
+            :title="t('studio.map.stampUndo')"
+            @click="undoLastEdit"
+          >
+            <FIcon name="Undo2" :size="15" aria-label="" />
+          </button>
           <div class="layer-seg" role="group" :aria-label="t('studio.map.layersTitle')">
             <button
               type="button"
@@ -484,6 +522,7 @@ onBeforeUnmount(() => {
             :visible-resources="visibleResourceKinds"
             :detail="detail"
             :placing="placementMode"
+            :markers="brushMarkers"
             @map-click="onMapClick"
             @viewport-change="onViewportChange"
           />
@@ -535,8 +574,8 @@ onBeforeUnmount(() => {
         <section class="side-section">
           <h3>{{ t("studio.map.resourcesTitle") }}</h3>
           <ul v-if="brushes.length" class="brush-list">
-            <li v-for="[name, stamps] in brushes" :key="name">
-              {{ name }} · {{ stamps.length }}
+            <li v-for="[name, stamps] in brushes" :key="name" :title="name">
+              {{ brushDisplayName(name) }} · {{ stamps.length }}
             </li>
           </ul>
           <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
@@ -607,6 +646,16 @@ onBeforeUnmount(() => {
             {{ renderRegionName || selectedRegionName }}
             <span class="sheet-sub">{{ t("studio.map.fullscreen") }}</span>
           </div>
+          <button
+            v-if="brushPanelOpen"
+            type="button"
+            class="outline-btn"
+            :disabled="!canUndoEdit"
+            :title="t('studio.map.stampUndo')"
+            @click="undoLastEdit"
+          >
+            <FIcon name="Undo2" :size="15" aria-label="" />
+          </button>
           <div class="layer-seg" role="group" :aria-label="t('studio.map.layersTitle')">
             <button
               type="button"
@@ -661,6 +710,7 @@ onBeforeUnmount(() => {
             :visible-resources="visibleResourceKinds"
             :detail="detail"
             :placing="placementMode"
+            :markers="brushMarkers"
             @map-click="onMapClick"
             @viewport-change="onViewportChange"
           />
