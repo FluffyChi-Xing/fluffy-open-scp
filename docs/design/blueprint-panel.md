@@ -67,6 +67,11 @@
 - vitest 跑在 happy-dom（`vitest.config.ts:74-79`），vue-flow 依赖 DOM 尺寸
   测量，组件测试需 mock `ResizeObserver`/`getBoundingClientRect`——先做一次
   spike 验证，失败则节点逻辑纯函数化、组件测试降级为 E2E 手测清单。
+- **P0-3 spike 结论（2026-09-25，已完成）**：`@vue-flow/core` 1.48.2 +
+  `@vue-flow/background` 1.3.2 已引入，optimizeDeps 已登记；happy-dom 下
+  挂载、节点 DOM 渲染（`.vue-flow__node` ×2）、响应式 store 断言全部通过
+  （`src/components/blueprint/flow-spike.test.ts`，仅需 ResizeObserver stub，
+  容器尺寸 0 只有良性警告）——组件级测试可按原计划进行，无需降级方案。
 
 ## 3. 节点体系（三类模组模板）
 
