@@ -2903,3 +2903,33 @@ unit transform 的参考原点（FUN_007e2260 锚点数组用途），当前证�
 | 空壳 0x896AF151 | (+1,−1.5) | (0,0) | (1,−1.5) | (2,−3) | (−2.33,−41.4)¹ |
 
 ¹ d313e11 的 units 中心方案误差巨大 → 已于 3a19860 撤销，改 M(bboxC)。
+
+## §49 半边窗/全窗缺失定谳战役（2026-09-26，dev/rendering-optimisation）
+
+**已实证修复**：
+1. 掏空白面片 = 下向面豁免把真洞渲染成白模色 → 移除豁免，引擎无条件 clip（49829b5）。
+2. 参数表寻址 = 引擎 building4SetupVS/building4DefaultVS 逐字：VS 算地址
+   （floor(color.r*255+0.1)，texcoord1.w/texcoord3.w 输出 materialInfoUV）→
+   PS 插值地址 + Nearest 逐像素采样——跨列三角形原子切换整列参数，不混合值。
+   前端已改同款（vMatUV varying，9fbf127）。
+
+**取证工具（已固化测试）**：`fire_station_params_probe`（逐列参数表 + G 直方图 +
+四通道直方图）、`half_window_probe`（逐列采样矩形 + tint 图集/区域叠加 PNG：
+tmp/probe_fire_tint_regions.png）。游戏包路径 D:/ea-games/SimCity/SimCityData。
+
+**通道定谳**：D3DCOLOR 四字节 = [B=颜色数据, G=选列, R=0 恒, A=0 恒]——
+选列 = byte1（我们的 d3d_color_g ✓；引擎反编译源的 In.color.r 命名与
+文件字节序的对应以此为准）。消防局 R={0:1260}。
+
+**半边窗未决，两条候选根因（按证据强度）**：
+- **A. 逐实例 baseMatIndex（Current.indices.y）缺失**：DLC 建筑 0x3F31B27E
+  g=[0-76]×77 而参数表 paramCols=145——只用了前 77 列；若引擎实例数据
+  base=68，真实列 = 68..144（恰好 77 个铺满表尾）。消防局 40/40 铺满
+  （base=0）。无实例数据 → 前端恒 base=0。候选实验：shader 加 uMatBase
+  uniform 试 68。
+- **B. tile 相位/wrap**：窗列 uv2 跨 ~1-7 个 tile 重复周期（如消防局拱窗列
+  g=39 uv2 x∈[-19.04,-17.24] 跨 1.8 tile），frac 在窗中间回卷 → 图集区域
+  内图形被切断重排。引擎同式 frac 本应同样表现——除非窗图形占满整 tile
+  且引擎 UV 有亚 tile 偏移（未见源码证据）。
+- 已排除：逐顶点属性缺失（解析器保证同 mesh 声明一致）、选列通道读错
+  （四通道直方图定谳）、跨列参数值混合（PS 逐像素采样已修）。

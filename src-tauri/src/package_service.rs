@@ -5666,7 +5666,189 @@ mod lot_payload_tests {
                 mesh.vertices.len(),
                 histogram
             );
+            // 四通道直方图（引擎读 In.color.r —— D3DCOLOR 字节序疑点定谳用）
+            let mut rh: std::collections::BTreeMap<u8, usize> = Default::default();
+            let mut bh: std::collections::BTreeMap<u8, usize> = Default::default();
+            let mut ah: std::collections::BTreeMap<u8, usize> = Default::default();
+            for v in &mesh.vertices {
+                for (el, val) in &v.components {
+                    if let rw4::ComponentValue::D3DColor { b, g, r, a } = val {
+                        let _ = el;
+                        *rh.entry(*r).or_default() += 1;
+                        *bh.entry(*b).or_default() += 1;
+                        *ah.entry(*a).or_default() += 1;
+                        let _ = g;
+                    }
+                }
+            }
+            eprintln!("  R 直方图 = {rh:?}");
+            eprintln!("  B 直方图 = {bh:?}");
+            eprintln!("  A 直方图 = {ah:?}");
         }
+    }
+
+    /// 【半边窗定谳探针】逐列采样子矩形：对每个 G 列，取该列顶点的
+    /// facade UV（Float4.xy=uv2 / .zw=uv3）范围 × 该列 regionXform/top，
+    /// 算出实际采样落在 tint 图集的子矩形；并把 slot1 tint 图集 dump 成
+    /// PNG 供目视比对（窗/门图形画在图集哪里）。
+    /// `cargo test --release --lib half_window_probe -- --nocapture`
+    #[test]
+    fn half_window_probe() {
+        let Some((package, manager, file, data)) = open_game_package(0x4DE9_912B) else {
+            eprintln!("skipping");
+            return;
+        };
+        let bindings = file.decode_mesh_material_bindings(&data);
+        let Some(binding) = bindings.first() else {
+            return;
+        };
+        let resources =
+            resolve_material_resources(&file, &data, &package, &manager, binding.material_section);
+        let Some(params) = &resources.params_f32 else {
+            eprintln!("no params");
+            return;
+        };
+        let cols = resources.param_cols;
+        let floats: Vec<f32> = params
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect();
+        let at = |col: usize, row: usize, comp: usize| -> f32 {
+            floats.get((row * cols + col) * 4 + comp).copied().unwrap_or(f32::NAN)
+        };
+        // slot1 tint 图集 → PNG（目视用）
+        if let Some(tint_png) = &resources.tint_png {
+            let path = std::path::Path::new("D:/rust/packages/fluffy-open-scp/tmp/probe_fire_tint.png");
+            let _ = std::fs::write(path, tint_png);
+            eprintln!("tint atlas → {}", path.display());
+        }
+        // regionXform/top 矩形叠加图：红=row1 基础区域、绿=row2 Top 区域
+        if let Some(bake) = &resources.bake {
+            let (w, h) = (bake.tint_w as u32, bake.tint_h as u32);
+            let mut img = image::RgbaImage::from_fn(w, h, |x, y| {
+                let i = ((y as usize) * bake.tint_w + x as usize) * 4;
+                image::Rgba([bake.tint_rgba[i], bake.tint_rgba[i + 1], bake.tint_rgba[i + 2], 255])
+            });
+            for col in 0..cols {
+                let (sx, sy, ox, oy) = (at(col, 1, 0), at(col, 1, 1), at(col, 1, 2), at(col, 1, 3));
+                let (tx, ty, tox, toy) = (at(col, 2, 0), at(col, 2, 1), at(col, 2, 2), at(col, 2, 3));
+                let rect = |img: &mut image::RgbaImage, x0: f32, y0: f32, rw: f32, rh: f32, color: [u8; 3]| {
+                    let (bx, by) = ((x0 * w as f32) as i32, (y0 * h as f32) as i32);
+                    let (bw, bh) = ((rw * w as f32) as i32, (rh * h as f32) as i32);
+                    for t in 0..2i32 {
+                        for x in bx..(bx + bw).min(w as i32) {
+                            for y in [by + t, by + bh - 1 - t, by + bh / 2] {
+                                if x >= 0 && y >= 0 && (x as u32) < w && (y as u32) < h {
+                                    img.get_pixel_mut(x as u32, y as u32).0 = [color[0], color[1], color[2], 255];
+                                }
+                            }
+                        }
+                        for y in by..(by + bh).min(h as i32) {
+                            for x in [bx + t, bx + bw - 1 - t, bx + bw / 2] {
+                                if x >= 0 && y >= 0 && (x as u32) < w && (y as u32) < h {
+                                    img.get_pixel_mut(x as u32, y as u32).0 = [color[0], color[1], color[2], 255];
+                                }
+                            }
+                        }
+                    }
+                };
+                rect(&mut img, ox, oy, sx, sy, [255, 0, 0]);
+                rect(&mut img, tox, toy, tx, ty, [0, 255, 0]);
+            }
+            let path = std::path::Path::new("D:/rust/packages/fluffy-open-scp/tmp/probe_fire_tint_regions.png");
+            let _ = img.save(path);
+            eprintln!("region overlay → {}", path.display());
+        }
+        // 逐列：顶点 uv 范围 → 采样子矩形
+        for section in file.sections_of_type(rw4::SectionType::MESH) {
+            let Ok(mesh) = file.decode_mesh(&data, section.number) else {
+                continue;
+            };
+            if !mesh.is_exportable() {
+                continue;
+            }
+            struct ColRange {
+                count: u32,
+                uv2_min: [f32; 2],
+                uv2_max: [f32; 2],
+                uv3_min: [f32; 2],
+                uv3_max: [f32; 2],
+            }
+            let mut ranges: std::collections::BTreeMap<u8, ColRange> = Default::default();
+            for v in &mesh.vertices {
+                let g = v.d3d_color_g().unwrap_or(0);
+                let Some(f4) = v.components.iter().find_map(|(_, val)| match val {
+                    rw4::ComponentValue::Float4(f) => Some(*f),
+                    _ => None,
+                }) else {
+                    continue;
+                };
+                let entry = ranges.entry(g).or_insert(ColRange {
+                    count: 0,
+                    uv2_min: [f32::MAX; 2],
+                    uv2_max: [f32::MIN; 2],
+                    uv3_min: [f32::MAX; 2],
+                    uv3_max: [f32::MIN; 2],
+                });
+                entry.count += 1;
+                for k in 0..2 {
+                    entry.uv2_min[k] = entry.uv2_min[k].min(f4[k]);
+                    entry.uv2_max[k] = entry.uv2_max[k].max(f4[k]);
+                    entry.uv3_min[k] = entry.uv3_min[k].min(f4[2 + k]);
+                    entry.uv3_max[k] = entry.uv3_max[k].max(f4[2 + k]);
+                }
+            }
+            eprintln!("=== 逐列采样子矩形（fire station 0x4DE9912B）===");
+            eprintln!("g | n | uv2范围→frac×row1=采样子矩形 | uv3范围→frac×row2=Top子矩形 | pad");
+            for (g, r) in &ranges {
+                let col = *g as usize;
+                if col >= cols {
+                    continue;
+                }
+                let (sx, sy, ox, oy) = (at(col, 1, 0), at(col, 1, 1), at(col, 1, 2), at(col, 1, 3));
+                let (tx, ty, tox, toy) = (at(col, 2, 0), at(col, 2, 1), at(col, 2, 2), at(col, 2, 3));
+                let (px, py) = (at(col, 3, 0), at(col, 3, 1));
+                // 采样矩形 = [min(frac), max(frac)] × scale + offset（frac 逐顶点）
+                let f = |v: f32| v - v.floor();
+                let u0 = f(r.uv2_min[0]) * sx + ox;
+                let u1 = f(r.uv2_max[0]) * sx + ox;
+                let v0 = f(r.uv2_min[1]) * sy + oy;
+                let v1 = f(r.uv2_max[1]) * sy + oy;
+                let w0 = f(r.uv3_min[0]);
+                let w1 = f(r.uv3_max[0]);
+                eprintln!(
+                    "g={g:>2} n={:>4} | uv2[{:+.2},{:+.2}][{:+.2},{:+.2}] → base[({:+.3},{:+.3})..({:+.3},{:+.3})] | uv3[({:+.3},{:+.3})..({:+.3},{:+.3})] → top x[{:+.3}..{:+.3}] | pad=({:+.1},{:+.1})",
+                    r.count,
+                    r.uv2_min[0], r.uv2_max[0], r.uv2_min[1], r.uv2_max[1],
+                    u0.min(u1), v0.min(v1), u0.max(u1), v0.max(v1),
+                    w0, r.uv3_min[1], w1, r.uv3_max[1],
+                    f(w0) * tx + tox, f(w1) * tx + tox,
+                    px, py,
+                );
+            }
+        }
+    }
+
+    /// 打开游戏包并注册跨包依赖（探针共用）。
+    fn open_game_package(
+        model: u32,
+    ) -> Option<(std::sync::Arc<dbpf::Package>, PackageManager, rw4::Rw4File, Vec<u8>)> {
+        let game_dir = "D:/ea-games/SimCity/SimCityData";
+        let game = dbpf::Package::open(&format!("{game_dir}/SimCity_Game.package")).ok()?;
+        let graphics = dbpf::Package::open(&format!("{game_dir}/SimCity_Graphics.package")).ok();
+        let manager = PackageManager::new();
+        let (_game_id, package) = manager.insert(game).ok()?;
+        if let Some(graphics) = graphics {
+            let _ = manager.insert(graphics);
+        }
+        let entry = package
+            .entries()
+            .iter()
+            .find(|e| e.id.type_id == RW4_MODEL_TYPE && e.id.instance == model)
+            .cloned()?;
+        let data = package.read(&entry).ok()?;
+        let file = rw4::Rw4File::parse(&data).ok()?;
+        Some((package, manager, file, data))
     }
 }
 
