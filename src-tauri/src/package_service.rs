@@ -556,6 +556,10 @@ pub struct LotEditorSession {
     /// 总计——用于把前端 texture_compose span 拆成「后端 vs IPC/JSON」归属。
     #[serde(default)]
     pub backend_ms: Option<BackendTiming>,
+    /// 破洞贴花的假内景光参数（0x0DA76A05/06 scalar）：[光强因子, 半径因子]。
+    /// 引擎 decalInteriorMap：lightScale = x*16+1、invRadius = y*4；缺失 None。
+    #[serde(default)]
+    pub decal_light: Option<[f32; 2]>,
     pub diagnostics: Vec<String>,
 }
 
@@ -2336,6 +2340,21 @@ pub async fn read_lot_editor_session(
             // 诊断（P4-D1 证据链）。
             let (decal_textures, decal_diag) =
                 resolve_decal_textures(&properties, package, manager);
+            // 破洞贴花假内景光参数（S1）：两个 scalar 即引擎 decalInteriorMap
+            // 的光强/半径因子（实证 lot：0.5/2.0 → lightScale=9、invRadius=8）。
+            // 须在 properties 被 from_property_file 消耗前读取。
+            let decal_light = {
+                let get = |hash: u32| -> Option<f32> {
+                    properties.get(hash).and_then(|p| p.scalar()).and_then(|v| match v {
+                        sc_properties::Value::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                };
+                match (get(0x0DA7_6A05), get(0x0DA7_6A06)) {
+                    (Some(scale), Some(radius)) => Some([scale, radius]),
+                    _ => None,
+                }
+            };
             let document = sc_properties::LotEditorDocument::from_property_file(properties);
             let lot_units = document.assemble_units();
             let mut diagnostics = lot_units.diagnostics;
@@ -2519,6 +2538,7 @@ pub async fn read_lot_editor_session(
                 document,
                 model_available,
                 backend_ms: Some(timing),
+                decal_light,
                 diagnostics,
             })
         },
@@ -4171,6 +4191,9 @@ pub struct DecalUnitTextureDto {
     /// material 资源 shader-def 槽（slot 0x2D）引用的实例——同上，best-effort
     /// 解析失败为 None（诊断文本留痕）。
     pub shader_def_instance: Option<u32>,
+    /// 变体标签："hole" = 条目无 Color1-4（破洞/decalInteriorMap 家族，
+    /// raster 为 RW4 纹理资源走 surface 解码，alpha = 光衰减掩码）。
+    pub variant: Option<String>,
 }
 
 /// 收集全部 Decal Atlas 字典（跨包去重，高细节 textureSize 优先）。
@@ -4267,6 +4290,7 @@ fn resolve_decal_textures(
                 error: None,
                 material_instance,
                 shader_def_instance,
+                variant: None,
             };
             match entry {
                 Some(entry) => {
@@ -4279,6 +4303,22 @@ fn resolve_decal_textures(
                         dto.height = decoded.height;
                         dto.png = decoded.png_base64.clone();
                         dto.error = decoded.error.clone();
+                        if dto.png.is_none()
+                            && decoded
+                                .error
+                                .as_deref()
+                                .is_some_and(|e| e.contains("missing its four colors"))
+                        {
+                            // 破洞家族（decalInteriorMap）：条目无 Color1-4，
+                            // raster 是 RW4 纹理资源，走 surface 解码（alpha =
+                            // 光衰减掩码保留）。
+                            let raw = decode_decal_entry_raw(entry, package, manager);
+                            dto.variant = Some("hole".into());
+                            dto.width = raw.width;
+                            dto.height = raw.height;
+                            dto.png = raw.png_base64.clone();
+                            dto.error = raw.error.clone();
+                        }
                     }
                 }
                 None => {
@@ -4310,6 +4350,30 @@ fn resolve_decal_textures(
         }
     }
     (out, diag)
+}
+
+/// 破洞家族的 raster 解码：条目 raster 是 **RW4 纹理资源**（type
+/// 0x2F4E681B，非裸 raster），走 lot surface 的 RW4 纹理解码（alpha = 光
+/// 衰减掩码保留）。
+fn decode_decal_entry_raw(
+    entry: &sc_properties::DecalEntry,
+    package: &Package,
+    manager: &PackageManager,
+) -> DecalImageData {
+    let index = entry.index;
+    let Some(raster_key) = entry.raster.clone() else {
+        return DecalImageData::failed(index, "hole decal entry has no raster", None);
+    };
+    match decode_lot_surface_png(package, manager, raster_key) {
+        Ok((png_base64, _pixels)) => DecalImageData {
+            index,
+            error: None,
+            width: None,
+            height: None,
+            png_base64: Some(png_base64),
+        },
+        Err(message) => DecalImageData::failed(index, message, None),
+    }
 }
 
 /// material 资源（RW4）shader-def 槽（slot 0x2D）引用实例（best-effort）。
