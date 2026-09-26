@@ -196,14 +196,6 @@ async function exportModel(mode: "white" | "textured") {
 }
 /** 5d 供电（断电 = 内景自发光全灭）。 */
 const powered = ref(true);
-/** 【实验】逐实例选列基址（引擎 Current.indices.y）：DLC 建筑 0x3F31B27E
- *  顶点仅用前 77/145 列，base=68 恰好铺满表尾——编辑器无实例数据，此输入
- *  供人工校准。若实验无效应回滚移除（见 migration.md §49）。 */
-const matBase = ref(0);
-/** 【实验】UV÷tileSize（引擎 Unpack 管线 uv=raw/|tileSize|，库转储逐字）：
- *  现行公式 frac 周期 = 1.0 原始单位，引擎 = |tileSize|——骑跨整数边界的
- *  门/窗 quad 被 frac 切半的相位假设验证入口。 */
-const tileDiv = ref(false);
 
 watch(open, (value) => {
   if (value) void load();
@@ -330,30 +322,6 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FCheckbox v-model="powered" />
           <span>{{ $t("package.powered") }}</span>
         </label>
-        <label
-          v-if="renderMode === 'refined'"
-          class="spec-experiment"
-          :title="$t('package.matBaseHint')"
-        >
-          <span>{{ $t("package.matBase") }}</span>
-          <input
-            v-model.number="matBase"
-            type="number"
-            min="0"
-            max="200"
-            step="1"
-            class="matbase-input"
-            :aria-label="$t('package.matBase')"
-          />
-        </label>
-        <label
-          v-if="renderMode === 'refined'"
-          class="spec-experiment"
-          :title="$t('package.tileDivHint')"
-        >
-          <FCheckbox v-model="tileDiv" />
-          <span>UV÷tile</span>
-        </label>
         <button
           class="editor-close"
           type="button"
@@ -476,8 +444,6 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
-          :mat-base="matBase"
-          :tile-div="tileDiv"
           :tool="tool"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"

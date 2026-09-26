@@ -39,6 +39,7 @@ import {
   type SunEnvRefs,
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
+import { installHejlToneMapping } from "@/lib/hejlTonemapping";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   applyGroundMask,
@@ -106,10 +107,6 @@ const props = defineProps<{
   powered?: boolean;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
   tool?: EditorTool;
-  /** 【实验】逐实例选列基址（引擎 Current.indices.y）；默认 0。 */
-  matBase?: number;
-  /** 【实验】UV÷tileSize（引擎 Unpack 管线）；默认 false = 现行公式。 */
-  tileDiv?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -146,11 +143,15 @@ watch([lightAzimuth, lightElevation], () => {
   viewport.viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
 // 精细渲染为 HDR 管线（interiorMap.a×16 自发光、×256 艺术自发光）：
-// ACES 把高光压回显示范围，夜间亮窗/房间才与游戏（hejlToneMap）观感一致
+// 接入游戏 post 管线的 hejlToneMap 逐字公式（P3，hejlTonemapping.ts）——
+// 替换此前 ACES@1.12 折中；曝光 1.12 延续旧校准（引擎 sunSky.mSunColor.w
+// 未知，可调）
 watch(
   viewport.viewer,
   (instance) => {
-    instance?.setToneMapping(instance.THREE.ACESFilmicToneMapping, 1.12);
+    if (!instance) return;
+    installHejlToneMapping(instance.THREE);
+    instance.setToneMapping(instance.THREE.CustomToneMapping, 1.12);
   },
   { immediate: true },
 );
@@ -158,15 +159,6 @@ watch(brightness, () => applyBrightness());
 
 /** 存活 tint 材质的 uSpecMode uniform 引用（通道实验热切换，免重建）。 */
 const specUniformRefs: { value: number }[] = [];
-
-/** 逐实例选列基址（引擎 Current.indices.y）共享 uniform——baseMatIndex 实验
- *  热切换入口，默认 0 = 现状；DLC 建筑 0x3F31B27E 候选值 68。 */
-const matBaseUniform = { value: 0 };
-
-/** 【实验】UV÷tileSize（引擎 Unpack 管线 uv=raw/|tileSize|，库转储 3992/4054
- *  逐字）共享 uniform：0 = 现行公式（已对拍资产），1 = 引擎链。半边窗/半门
- *  相位假设的热验证入口。 */
-const tileDivUniform = { value: 0 };
 
 let envRefs: SunEnvRefs | null = null;
 
@@ -314,24 +306,6 @@ watch([() => props.timeOfDay, () => props.powered], () => {
   applySun();
   applyBrightness();
 });
-// baseMatIndex 实验热切换：共享 uniform 直改，免材质重建。
-watch(
-  () => props.matBase,
-  (value) => {
-    matBaseUniform.value = value ?? 0;
-    viewport.viewer.value?.invalidate();
-  },
-  { immediate: true },
-);
-// UV÷tile 实验热切换（引擎 Unpack 管线）。
-watch(
-  () => props.tileDiv,
-  (value) => {
-    tileDivUniform.value = value ? 1 : 0;
-    viewport.viewer.value?.invalidate();
-  },
-  { immediate: true },
-);
 
 /** 复制模型槽位诊断（mesh/material/texture 及来源包关系），供复盘。 */
 async function copyDiagnostics() {
@@ -658,7 +632,7 @@ async function assembleScene(
       const tint = tintResolved[materialIndex];
       if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
         // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env, matBaseUniform, tileDivUniform);
+        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env);
         specUniformRefs.push(specUniform);
         mesh.material = tinted;
         return;
