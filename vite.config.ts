@@ -27,6 +27,13 @@ export default defineConfig(({ mode }) => {
       host: '127.0.0.1',
       port: 5173,
       strictPort: true,
+      // chokidar 默认只忽略 .git/node_modules——本仓库 target/ 有 25 万+文件
+      // （cargo 构建产物，50GB 级），Windows 上启动后逐目录挂监视 + Defender
+      // 逐文件扫描会把全部模块变换拖到分钟级（dev 打开页面 10min 的根因）。
+      // 这些目录不被源码 import，监视无意义，显式排除。
+      watch: {
+        ignored: ['**/target/**', '**/tmp/**', '**/dist/**', '**/.context/**']
+      },
       // 预热首屏真正会用到的那几个入口，避免第一次请求时才现做转换。
       warmup: {
         clientFiles: [
