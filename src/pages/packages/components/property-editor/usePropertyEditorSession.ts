@@ -73,12 +73,15 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** 本地编辑层（PE-重构-2）：transform override + undo/redo，不写回后端。 */
   const edit = createUnitEditLayer();
   const hiddenUnits = ref(new Set<string>());
+  /** 图层可见性。decals 默认关闭：decal↔建筑作用机制尚有逆向缺口（Top 层
+   * 链路部分 mesh 未生效，见 ctx note 2026-09-26），占位/半渲染内容干扰
+   * 对拍；左侧 Outliner 图层开关可随时手动打开。 */
   const groupVisibility = reactive<Record<string, boolean>>({
     model: true,
     lot: true,
     lights: true,
     props: true,
-    decals: true,
+    decals: false,
     effects: true,
     spawners: true,
     paths: true,

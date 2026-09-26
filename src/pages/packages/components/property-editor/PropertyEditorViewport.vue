@@ -203,16 +203,10 @@ function decodeImageData(url: string): Promise<ImageData | null> {
 
 /** 贴花解码纹理缓存（key = DecalUnitTexture 对象身份；会话更换即失效回收）。 */
 let decalTextureCacheOwner: DecalUnitTexture[] | null = null;
-const decalTextureCache = new Map<
-  DecalUnitTexture,
-  { texture: ThreeNamespace.Texture; url: string }
->();
+const decalTextureCache = new Map<DecalUnitTexture, ThreeNamespace.Texture>();
 
 function releaseDecalTextureCache(): void {
-  for (const entry of decalTextureCache.values()) {
-    entry.texture.dispose();
-    URL.revokeObjectURL(entry.url);
-  }
+  for (const texture of decalTextureCache.values()) texture.dispose();
   decalTextureCache.clear();
   decalTextureCacheOwner = null;
 }
@@ -227,14 +221,16 @@ async function getDecalTexture(
     decalTextureCacheOwner = props.decalTextures;
   }
   const hit = decalTextureCache.get(texture);
-  if (hit) return hit.texture;
+  if (hit) return hit;
   try {
-    const url = URL.createObjectURL(
-      new Blob([texture.png], { type: "image/png" }),
+    // png 是**裸 base64 字符串**（四色解码 PNG），必须走 data URL——
+    // 不能 new Blob([png])：那会把 base64 文本当字节，解码必然失败
+    //（2026-09-26 回归：全部贴花回退绿色占位 gizmo 的根因）。
+    const decoded = await new THREE.TextureLoader().loadAsync(
+      `data:image/png;base64,${texture.png}`,
     );
-    const decoded = await new THREE.TextureLoader().loadAsync(url);
     decoded.colorSpace = THREE.SRGBColorSpace;
-    decalTextureCache.set(texture, { texture: decoded, url });
+    decalTextureCache.set(texture, decoded);
     return decoded;
   } catch {
     return null;
