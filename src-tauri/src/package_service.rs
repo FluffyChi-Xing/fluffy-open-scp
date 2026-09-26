@@ -3814,14 +3814,36 @@ fn build_lot_model_payload(
             .as_ref()
             .and_then(|bake| bake_vertex_colors(&mesh, bake));
         let uv_kind = mesh_uv_kind(&mesh);
+        // 逐 mesh 选列/投影诊断（「对称窗只渲染一半/墙面花纹半缺失」取证，
+        // 2026-09-26）：g 列 = 逐顶点 D3DCOLOR.G（tint 着色器参数表列号），
+        // distinct>1 的 mesh 存在跨列三角形 → regionXform 逐顶点插值可能
+        // 把部分三角形混到无关图集区域；facade = FLOAT4 TexCoord 有无
+        // （缺失 ⇒ TEXCOORD_2/3 不导出 ⇒ Top 层/掏空全失效）。
+        let g_values: Vec<u8> = mesh
+            .vertices
+            .iter()
+            .map(|v| v.d3d_color_g().unwrap_or(0))
+            .collect();
+        let g_min = g_values.iter().min().copied().unwrap_or(0);
+        let g_max = g_values.iter().max().copied().unwrap_or(0);
+        let g_distinct: std::collections::HashSet<u8> = g_values.iter().copied().collect();
+        let facade_any = mesh.vertices.iter().any(|v| {
+            v.components
+                .iter()
+                .any(|(e, val)| e.usage == rw4::DeclarationUsage::TexCoord && matches!(val, rw4::ComponentValue::Float4(_)))
+        });
         let mut diag_line = format!(
-            "mesh #{:<4} verts={:<6} tris={:<6} uvKind={} → material #{} (idx {})",
+            "mesh #{:<4} verts={:<6} tris={:<6} uvKind={} → material #{} (idx {}) facade={} g=[{}-{}]×{}",
             section.number,
             mesh.vertices.len(),
             mesh.triangles.len(),
             uv_kind,
             bound_section,
             material_index,
+            facade_any,
+            g_min,
+            g_max,
+            g_distinct.len(),
         );
         let mat_indices: Vec<f32> = mesh
             .vertices

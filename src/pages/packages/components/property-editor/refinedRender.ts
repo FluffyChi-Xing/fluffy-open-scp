@@ -483,10 +483,11 @@ export function applyDeferredMaterialMaps(
  * 覆盖率，shaderMap/normalMap/palette(palU2 列)/surface/亮度全部按其 lerp
  * ——公寓楼窗标记只在 Top 域（facade_survey 普查 86%），Base-only 采样
  * 会导致窗户全墙化。
- * 偏离源码处（均文档化）：①下向面豁免镂空（原版瑕疵）；②specularity 取 G
- * 通道（资产实证）；③内景自发光 16→uInteriorGlow 可调（无 HDR tonemap）；
- * ④interiorThresholds 用常数四分位（引擎值未知）；⑤eyeDir 用对象空间近似
- * 切线空间。
+ * 偏离源码处（均文档化）：①specularity 取 G 通道（资产实证）；②内景自发光
+ * 16→uInteriorGlow 可调（无 HDR tonemap）；③interiorThresholds 用常数四分位
+ * （引擎值未知）；④eyeDir 用对象空间近似切线空间。
+ * 【2026-09-26 移除】下向面豁免镂空（曾作观察器缓解）——它把桁架等真洞
+ * 渲染成白面片（用户实证），回归引擎无条件 clip 口径，见 map_fragment 块。
  */
 export function attachTintShader(
   material: ThreeNamespace.MeshStandardMaterial,
@@ -696,14 +697,14 @@ float scFastNoise(vec3 seed) {
         vec2 scSub = tintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
         vec4 scPalColor = vec4(1.0);
         float scTintMul = tintValues.b * 2.0;
-        float scExempt = 0.0;
         vec4 scShaderMap = vec4(1.0);
         if (tintValues.a < 0.5) {
-          if (vObjUp >= -0.3) discard;
-          // 下向面豁免（观察器缓解）：游戏 building4Clip 的镂空模板被地板/
-          // 底面继承（底面与立面共用 facade UV），从下仰视出现穿透洞——
-          // 游戏相机不可达此视角故原版未处理。豁免片段跳过调色保持白模观感。
-          scExempt = 1.0;
+          // 引擎 building4Clip 的镂空是**无条件 clip**（不按朝向豁免）。
+          // 此前的「下向面豁免」观察器缓解（地板底面继承镂空模板、从下仰视
+          // 见穿透洞）会把桁架等**真洞**渲染成白色面片——2026-09-26 用户
+          // 实证（铁梯桁架三角孔白色、同资产水平面洞正常），移除豁免回归
+          // 引擎口径；仰视穿透属引擎本征行为。
+          discard;
         } else {
           // 源码 lerp(tintBase@palU, tintTop@palU2, facadeTint.a)：Top 层查
           // 调色板第二列（row0.y = palU2），亮度/子采样坐标同样取 Top 值
@@ -720,7 +721,7 @@ float scFastNoise(vec3 seed) {
           #endif
         }
         #ifdef TINT_SHADERMAP
-        if (scExempt < 0.5) {
+        {
           vec4 smBase = texture2D(shaderMapMap, tUv);
           scShaderMap = smBase;
           if (scFacade > 0.001) {
