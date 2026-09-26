@@ -2933,3 +2933,111 @@ tmp/probe_fire_tint_regions.png）。游戏包路径 D:/ea-games/SimCity/SimCity
   且引擎 UV 有亚 tile 偏移（未见源码证据）。
 - 已排除：逐顶点属性缺失（解析器保证同 mesh 声明一致）、选列通道读错
   （四通道直方图定谳）、跨列参数值混合（PS 逐像素采样已修）。
+
+### §49.1 baseMatIndex 实验（2026-09-26 落地，待用户验证）
+
+**实验方法**：精细模式工具栏新增「选列基址」数字输入（PropertyEditor.vue，
+0-200 整数，热切换免重建）。uniform 链路：matBase ref → Viewport props →
+matBaseUniform 共享对象 → 各 tint 材质 uMatBase → VS 地址
+`floor(uv1.x*255+0.1) + uMatBase + 0.5)/uParamCols`。
+
+**操作**：打开 DLC 建筑 0x3F31B27E → 精细渲染 → 选列基址试 68（候选值；
+若无效可扫 60..80）→ 观察三扇门/窗户是否完整。消防局预期 0（40/40 铺满）。
+
+**回滚路径**：输入保持 0 即完全等价旧行为（+0 等于无偏移）；若实验证伪，
+移除三处接线（refinedRender uMatBase/Viewport matBaseUniform/Editor 输入框）
+与两个 i18n key。
+
+### §49.2 P3 事实基础修订（全 shader 库转储完成）
+
+`hlsl_dump` 已把 **app 包全部 cpp(0x0469A3F7) shader 源码库**转储到
+tmp/hlsl/（8 个大文件，含 terrainRegion/SHDiffSpec/EnvLighting/hejl 等）。
+关键新事实：
+
+1. **hejlToneMap 公式逐字到手**（40212002_*.txt）：
+   ```hlsl
+   texColor *= sunSky.mSunColor.w;              // 曝光因子
+   float3 x = max(0, texColor - 0.004);
+   outColor = (x*(6.2*x+.5))/(x*(6.2*x+1.7)+0.06);
+   outColor = pow(outColor, mGammaAndFogInfo[0].x);  // 用户 gamma
+   ```
+   **注意源码注释：「Results of Hejl tonemapping is in sRGB space」**——
+   输出已在 sRGB，接入 three 的 CustomToneMapping 会被 colorspace_fragment
+   再编码一次（双重编码洗白）。接入方案二选一：①toneMapping 输出后
+   pow(2.2) 回线性再让 three 编码（近似抵消）；②outputColorSpace=Linear +
+   全材质统一注入（游戏本征是 gamma 空间混合，反而更引擎同款）。**未实施，
+   待独立工程**。
+2. **PMREM IBL 计划作废**：引擎（D3D9）不用 IBL/PMREM——环境光 = 解析天空
+   （EnvLighting）+ SH 球谐（SHDiffSpec9/shCoeffs，来自实例数据 sunSky）。
+   我们的 scSkyRadiance 解析天空即引擎同构路线。shCoeffs 常量在实例数据里，
+   与 baseMatIndex 同属「实例数据链路」缺口。
+3. P3 可落地项更新：hejlToneMap 接入（上述方案设计后实施）；shCoeffs 随实例
+   数据链路；其余（SSAO/TAA 后处理）与引擎无对应物，属「编辑器增强」，
+   需用户显式决定是否引入视觉差异。
+
+### §49.3 baseMatIndex 实验证伪 + 引擎 Unpack 管线全链定谳（2026-09-27）
+
+**实验证伪原因（实现缺陷，非假设本身）**：首轮实验公式 = 逐顶点 G + base。
+引擎事实（4081-4082 逐字）：materialIndex = floor(In.color.r·255+0.1)，
+而 In.color.r 映射文件字节 byte2 = **R 通道 = 恒 0**（四通道直方图实证
+R={0:1260}）→ 参数列 = baseMatIndex（纯实例常量）。逐顶点 G 的相对列差
+恒存，扫描任何 base 都无法对齐——用户 0→68+ 全扫失败与此完全一致。
+已改为纯 uMatBase uniform（列 = 每 mesh 常量，引擎语义）。
+
+**顶点色真实语义（4028-4046 逐字，全部用错）**：
+- r = palU（Base 调色板列）、g = palU2（Top 调色板列）
+- b = 内景贴图 size(4bit)+index(4bit) → interiorScale/interiorOffset
+- a = 假内景随机种子（<0.5 时按模型位置 munge；直方图 A 恒 0 → 引擎
+  恒走 munge 分支）
+我们的 GLB 导出：TEXCOORD_1.x = G/255（误当列号）、.y = B/255（误当种子）；
+COLOR_0 = bake 后调色板色（原始 D3DCOLOR 丢失）。【待办】导出原始
+D3DCOLOR 为独立属性 + palU/palU2/interior/seed/interiorThresholds 全部
+改从顶点色取值（现 interiorThresholds 为常数四分位近似）。
+
+**Unpack 管线缺失级（3992/4054-4057/18297-18298/18765 逐字）**——本轮
+核心发现：
+```
+uv  = texcoord0.xy / abs(tileSize)     // Base：frac 周期 = |tileSize| 原始单位
+uv2 = texcoord0.zw / abs(tileSize2)    // Top
+uv2 = (uv2 + pad·½) / (1 + pad)        // VS 预处理（pad 包裹）
+PS: reliefSrc = fract(uv2')·(1+pad) − pad·½
+PS: interiorUv = uv(已除)·tileSize·roomInvSize = raw·sign(ts)（原始世界域）
+```
+我们现行公式 frac(raw)·scale+offset 的周期 = 1.0 原始单位——骑跨整数
+边界的门/窗 quad 被 frac 从中间切开 = 「三扇门一整两半」的直接解释
+（DLC 门 quad 相位 mod 1.0 各异：一扇对齐完整、两扇骑跨切半）。
+
+**双管线并存**：非 Unpack 的 DefaultPS（我们 33 行 clean dump，无除法——
+现行公式据此实现且多资产对拍通过）vs Unpack/materialInfo 管线（有除法）。
+消防局在现行公式下大部分正确、DLC 建筑半门——疑似逐材质管线不同。
+
+**落地**：uTileDiv 热切换实验（checkbox「UV÷tile」）：0 = 现行公式
+（已验证资产零回归），1 = 引擎 Unpack 链逐字（base/top/内景栅格三处）。
+判定规则：DLC 建筑开 tileDiv 门变完整且消防局等已验证资产不回归 →
+坐实 Unpack 管线，后续按材质区分（后端逐材质管线标志）；反之回滚
+（移除 uniform/prop/checkbox/i18n 四处接线）。
+
+### §49.4 白屏回归勘误与实验 v2（2026-09-27）
+
+**白屏根因**：v1 实验把「除以 tileSize」实现成了「除以 regionXform.xy」
+（操作数错误）——facade UV ÷ 0.0x 量级的图集比例 → 全立面坍缩进单个
+frac 格 → 单色平涂 + 窗花丢失 = 纯白楼。实验作废。
+
+**同步勘误**：§49.3 的「选列改纯常量」错误，已回滚。判断依据：消防局
+全部像素级对拍成果建立在逐顶点 byte1 选列上（2026-09-19 窗右半修复），
+若列真是常量则那些对拍不可能通过——引擎 HLSL 的 In.color.r 语义命名与
+RW4 文件字节序的映射与直觉相反，**有效列选择器 = byte1**（0..paramCols-1
+与表宽自洽）。uMatBase 恢复为「逐顶点列 + 实验偏移」（默认 0 = 原行为）。
+
+**新实证（决定性）**：row3.zw（我们命名为 roomInvSize）= 1/row1.xy
+逐列精确（消防局 col0：1/0.2766=3.615=row3.z；col3 同）——它不是独立
+数据。代入引擎 Unpack 链 uv'=raw/|ts| 若 ts=row3.zw ⇒ uv'=raw·xform.xy ⇒
+**引擎 Base 采样 = frac(uv·xform.xy)·xform.xy + off，平铺周期 = 1/xform.xy
+（消防局 ≈3.6 世界单位）；我们现行 = frac(uv)·xform.xy + off，周期 = 1.0**。
+frac 位置差异（先乘再取整 vs 先取整再乘）→ 骑跨 1.0 边界的门 quad 被切半
+（半门候选解释保留），且内景栅格域同理两分。
+
+**实验 v2（094ba88 后续提交）**：tileDiv=1 → scBaseSrc = uv·xform.xy
+（base frac 与内景域随之切换）；Top 层恢复现行公式（ts2 无参数表对应行，
+不乱除）。判定：DLC 三门完整 + 已验证资产不回归 → 坐实 frac(uv·s) 口径；
+任一回归 → 整体回滚 tileDiv（checkbox/uniform/prop/i18n）。

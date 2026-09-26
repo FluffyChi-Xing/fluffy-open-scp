@@ -553,16 +553,16 @@ varying vec3 vModelPos;`,
         `#include <uv_vertex>
 vTintUv = uv2;
 vTopUv = uv3;
-// 参数表选列 = 引擎 building4SetupVS：materialIndex = floor(In.color.r*255+0.1)
-// + Current.indices.y（逐实例基址）。**In.color 按标准 D3DCOLOR 映射后 .r =
-// byte2 = 恒 0（四通道直方图实证），顶点色实为内景阈值数据
-// （interiorThresholds = color1.xyz，主 PS 18807 行逐字）**——即每个 mesh
-// 的参数列恒定 = baseMatIndex（实例数据，查看器缺失，用 uMatBase 实验
-// 校准）。此前误用逐顶点 byte1（G）作列号 + base 叠加：门左右两半的相对
-// 列差恒存，扫描任何 base 都无法对齐（2026-09-26 用户实验证伪）。
-// 【待办】interiorThresholds 应从顶点色取值（现为常数四分位近似）。
+// 参数选列 = 逐顶点 byte1（D3DCOLOR.G，0..paramCols-1 与表宽自洽）+ 可选
+// 实验基址。地址 varying（vMatUV）+ PS Nearest 逐像素采样 = 引擎
+// building4SetupVS 的数据流结构（跨列三角形原子切换不混合值，2026-09-26
+// 定谳）。【2026-09-27 勘误】曾依据「In.color.r = byte2 = 恒 0」改列号为
+// 纯常量——但消防局全部像素级对拍都建立在逐顶点 byte1 选列上，说明引擎
+// 有效列选择器就是 byte1（HLSL 语义命名与文件字节序的映射与直觉相反），
+// 纯常量化会导致全建筑退化到列 0（素墙）。uMatBase 保留为实验偏移（默认 0
+// = 原行为）。
 #ifdef TINT_PARAMS
-vMatUV = vec2((uMatBase + 0.5) / uParamCols, 0.0);
+vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + uMatBase + 0.5) / uParamCols, 0.0);
 #else
 vMatUV = vec2(0.0);
 #endif`,
@@ -667,13 +667,13 @@ float scFastNoise(vec3 seed) {
 #endif
         // 半 texel 内缩：tint 是图集，fract=0/1 处的线性滤波核会读到相邻
         // 区域内容（Base 层此前没有 padding 保护——接缝的第二个成因）。
-        // uTileDiv（实验，2026-09-27）：引擎 Unpack 管线在 VS 先做
-        // uv = raw/|tileSize|（库转储 3992/4054 逐字）再 frac——平铺周期 =
-        // |tileSize| 原始单位，而非我们现行公式的 1.0。门/窗 quad 相位
-        // mod 1.0 的差异使骑跨整数边界的 quad 被 frac 切半（DLC 0x3F31B27E
-        // 「三扇门一整两半」）。混合实现：0 = 现行（已对拍资产不回归），
-        // 1 = 引擎 Unpack 链（base：frac(raw/|ts|)·ts+off）。
-        vec2 scBaseSrc = mix(vTintUv, vTintUv / max(abs(xform.xy), vec2(1e-4)), uTileDiv);
+        // uTileDiv（实验 v2，2026-09-27）：引擎 Unpack 管线先除 tileSize 再
+        // frac——tileSize 疑为 row3.zw（实证 = 1/row1.xy 逐列精确），代入得
+        // frac(raw·xform.xy)：平铺周期 = 1/scale（≈3.6 世界单位/消防局），
+        // 而现行公式周期 = 1.0。门/窗 quad 骑跨 1.0 整数边界即被切半（DLC
+        // 三门一整两半的候选解释）。v1（除以 xform）操作数方向错误致全楼
+        // 坍缩成单格纯色（白屏），已弃。0 = 现行公式，1 = frac(uv·s)。
+        vec2 scBaseSrc = mix(vTintUv, vTintUv * xform.xy, uTileDiv);
         vec2 tUv = fract(scBaseSrc) * max(xform.xy - uTintTexel, vec2(0.0)) + xform.zw + uTintTexel * 0.5;
         vec4 tintValues = texture2D(tintMap, tUv);
         // 30.2 Top 层（relief_tc 域，uv2×regionXform2）：窗户 motif 所在。
@@ -692,15 +692,8 @@ float scFastNoise(vec3 seed) {
         vec4 facadeTintValues = vec4(0.0);
         if (xform2.x > 0.0 && xform2.y > 0.0) {
           vec2 scPad = scRoom.xy;
-          // uTileDiv=1：引擎 Unpack 链逐字（4056-4057 + 18297-18298）——
-          // VS 预处理 uv2' = (raw/|ts2| + pad·½)/(1+pad)，PS 再
-          // fract(uv2')·(1+pad) − pad·½（pad 包裹在 fract 两侧）。
-          vec2 scTopPre = (vTopUv / max(abs(xform2.xy), vec2(1e-4)) + scPad * 0.5) / (1.0 + scPad);
-          vec2 reliefSrc = mix(
-            fract(vTopUv) * (1.0 + scPad) - scPad * 0.5,
-            fract(scTopPre) * (1.0 + scPad) - scPad * 0.5,
-            uTileDiv
-          );
+          // Top 层保持现行公式（ts2/其倒数在参数表无对应行，v1 乱除已弃）。
+          vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
           #ifdef TINT_RELIEF
           // 【2026-09-20 回滚】曾按标准 relief mapping 补写视差（用 reliefPng
           // alpha 作高度），实证高度通道语义不可靠：reliefPng 是 slot5 alpha
@@ -787,8 +780,9 @@ float scFastNoise(vec3 seed) {
           // 源码逐字：interiorUv = uv * regionXform.xy * interiorRoomInvSize。
           // roomInvSize = row3.zw、tilePadding = row3.xy（cpp frac 变体定谳；
           // 玻璃楼 padding~8e4 禁 Top / 公寓楼 (0.125,0) 两样本互证）。
-          // 引擎 18765：interiorUv = uv(已除 tileSize)·regionXform.xy·roomInvSize
-          // ——除法版本 (raw/|ts|)·ts = raw·sign(ts)，内景栅格在原始世界 UV 域。
+          // 引擎 18765：interiorUv = uv(已除 ts)·xform.xy·roomInvSize；而
+          // roomInvSize 实证 = 1/xform.xy（row3.zw 逐列精确）⇒ 两管线分别为
+          // raw（现行）/ raw·xform.xy（uTileDiv=1，scBaseSrc 已含该积）。
           vec2 scInteriorUv = scBaseSrc * xform.xy * scRoom.zw;
           vec2 scInteriorElem = floor(scInteriorUv);
           vec2 scInteriorSrcUv = fract(scInteriorUv);
