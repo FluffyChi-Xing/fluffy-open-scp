@@ -200,6 +200,10 @@ const powered = ref(true);
  *  顶点仅用前 77/145 列，base=68 恰好铺满表尾——编辑器无实例数据，此输入
  *  供人工校准。若实验无效应回滚移除（见 migration.md §49）。 */
 const matBase = ref(0);
+/** 【实验】UV÷tileSize（引擎 Unpack 管线 uv=raw/|tileSize|，库转储逐字）：
+ *  现行公式 frac 周期 = 1.0 原始单位，引擎 = |tileSize|——骑跨整数边界的
+ *  门/窗 quad 被 frac 切半的相位假设验证入口。 */
+const tileDiv = ref(false);
 
 watch(open, (value) => {
   if (value) void load();
@@ -342,6 +346,14 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
             :aria-label="$t('package.matBase')"
           />
         </label>
+        <label
+          v-if="renderMode === 'refined'"
+          class="spec-experiment"
+          :title="$t('package.tileDivHint')"
+        >
+          <FCheckbox v-model="tileDiv" />
+          <span>UV÷tile</span>
+        </label>
         <button
           class="editor-close"
           type="button"
@@ -465,6 +477,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :time-of-day="timeOfDay"
           :powered="powered"
           :mat-base="matBase"
+          :tile-div="tileDiv"
           :tool="tool"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"

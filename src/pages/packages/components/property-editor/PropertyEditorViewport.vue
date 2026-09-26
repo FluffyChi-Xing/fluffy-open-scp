@@ -108,6 +108,8 @@ const props = defineProps<{
   tool?: EditorTool;
   /** 【实验】逐实例选列基址（引擎 Current.indices.y）；默认 0。 */
   matBase?: number;
+  /** 【实验】UV÷tileSize（引擎 Unpack 管线）；默认 false = 现行公式。 */
+  tileDiv?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -160,6 +162,11 @@ const specUniformRefs: { value: number }[] = [];
 /** 逐实例选列基址（引擎 Current.indices.y）共享 uniform——baseMatIndex 实验
  *  热切换入口，默认 0 = 现状；DLC 建筑 0x3F31B27E 候选值 68。 */
 const matBaseUniform = { value: 0 };
+
+/** 【实验】UV÷tileSize（引擎 Unpack 管线 uv=raw/|tileSize|，库转储 3992/4054
+ *  逐字）共享 uniform：0 = 现行公式（已对拍资产），1 = 引擎链。半边窗/半门
+ *  相位假设的热验证入口。 */
+const tileDivUniform = { value: 0 };
 
 let envRefs: SunEnvRefs | null = null;
 
@@ -312,6 +319,15 @@ watch(
   () => props.matBase,
   (value) => {
     matBaseUniform.value = value ?? 0;
+    viewport.viewer.value?.invalidate();
+  },
+  { immediate: true },
+);
+// UV÷tile 实验热切换（引擎 Unpack 管线）。
+watch(
+  () => props.tileDiv,
+  (value) => {
+    tileDivUniform.value = value ? 1 : 0;
     viewport.viewer.value?.invalidate();
   },
   { immediate: true },
@@ -642,7 +658,7 @@ async function assembleScene(
       const tint = tintResolved[materialIndex];
       if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
         // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env, matBaseUniform);
+        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env, matBaseUniform, tileDivUniform);
         specUniformRefs.push(specUniform);
         mesh.material = tinted;
         return;

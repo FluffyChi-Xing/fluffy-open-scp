@@ -5694,71 +5694,71 @@ mod lot_payload_tests {
     /// `cargo test --release --lib half_window_probe -- --nocapture`
     #[test]
     fn half_window_probe() {
-        let Some((package, manager, file, data)) = open_game_package(0x4DE9_912B) else {
-            eprintln!("skipping");
-            return;
-        };
-        let bindings = file.decode_mesh_material_bindings(&data);
-        let Some(binding) = bindings.first() else {
-            return;
-        };
-        let resources =
-            resolve_material_resources(&file, &data, &package, &manager, binding.material_section);
-        let Some(params) = &resources.params_f32 else {
-            eprintln!("no params");
-            return;
-        };
-        let cols = resources.param_cols;
-        let floats: Vec<f32> = params
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-            .collect();
-        let at = |col: usize, row: usize, comp: usize| -> f32 {
-            floats.get((row * cols + col) * 4 + comp).copied().unwrap_or(f32::NAN)
-        };
-        // slot1 tint 图集 → PNG（目视用）
-        if let Some(tint_png) = &resources.tint_png {
-            let path = std::path::Path::new("D:/rust/packages/fluffy-open-scp/tmp/probe_fire_tint.png");
-            let _ = std::fs::write(path, tint_png);
-            eprintln!("tint atlas → {}", path.display());
-        }
-        // regionXform/top 矩形叠加图：红=row1 基础区域、绿=row2 Top 区域
-        if let Some(bake) = &resources.bake {
-            let (w, h) = (bake.tint_w as u32, bake.tint_h as u32);
-            let mut img = image::RgbaImage::from_fn(w, h, |x, y| {
-                let i = ((y as usize) * bake.tint_w + x as usize) * 4;
-                image::Rgba([bake.tint_rgba[i], bake.tint_rgba[i + 1], bake.tint_rgba[i + 2], 255])
-            });
-            for col in 0..cols {
-                let (sx, sy, ox, oy) = (at(col, 1, 0), at(col, 1, 1), at(col, 1, 2), at(col, 1, 3));
-                let (tx, ty, tox, toy) = (at(col, 2, 0), at(col, 2, 1), at(col, 2, 2), at(col, 2, 3));
-                let rect = |img: &mut image::RgbaImage, x0: f32, y0: f32, rw: f32, rh: f32, color: [u8; 3]| {
-                    let (bx, by) = ((x0 * w as f32) as i32, (y0 * h as f32) as i32);
-                    let (bw, bh) = ((rw * w as f32) as i32, (rh * h as f32) as i32);
-                    for t in 0..2i32 {
-                        for x in bx..(bx + bw).min(w as i32) {
-                            for y in [by + t, by + bh - 1 - t, by + bh / 2] {
-                                if x >= 0 && y >= 0 && (x as u32) < w && (y as u32) < h {
-                                    img.get_pixel_mut(x as u32, y as u32).0 = [color[0], color[1], color[2], 255];
-                                }
-                            }
-                        }
-                        for y in by..(by + bh).min(h as i32) {
-                            for x in [bx + t, bx + bw - 1 - t, bx + bw / 2] {
-                                if x >= 0 && y >= 0 && (x as u32) < w && (y as u32) < h {
-                                    img.get_pixel_mut(x as u32, y as u32).0 = [color[0], color[1], color[2], 255];
-                                }
-                            }
-                        }
-                    }
-                };
-                rect(&mut img, ox, oy, sx, sy, [255, 0, 0]);
-                rect(&mut img, tox, toy, tx, ty, [0, 255, 0]);
+        // 模型 1：消防局 0x4DE9912B（SimCity_Game）；模型 2：DLC 三门建筑
+        // 0x3F31B27E（SimCity_DLC0，三门一整两半）。
+        for (model, package_path) in [
+            (0x4DE9_912B, "D:/ea-games/SimCity/SimCityData/SimCity_Game.package"),
+            (0x3F31_B27E, "D:/ea-games/SimCity/SimCityData/SimCity_DLC0.package"),
+        ] {
+            eprintln!("############ 模型 0x{model:08X} ############");
+            let Some((package, manager, file, data)) = open_game_package(model, package_path)
+            else {
+                eprintln!("skipping {package_path}");
+                continue;
+            };
+            let bindings = file.decode_mesh_material_bindings(&data);
+            let Some(binding) = bindings.first() else {
+                continue;
+            };
+            let resources = resolve_material_resources(
+                &file,
+                &data,
+                &package,
+                &manager,
+                binding.material_section,
+            );
+            let Some(params) = &resources.params_f32 else {
+                eprintln!("no params");
+                continue;
+            };
+            let cols = resources.param_cols;
+            let floats: Vec<f32> = params
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            let at = |col: usize, row: usize, comp: usize| -> f32 {
+                floats.get((row * cols + col) * 4 + comp).copied().unwrap_or(f32::NAN)
+            };
+            if let Some(tint_png) = &resources.tint_png {
+                let tint_path =
+                    format!("D:/rust/packages/fluffy-open-scp/tmp/probe_{model:08X}_tint.png");
+                let _ = std::fs::write(&tint_path, tint_png);
+                eprintln!("tint atlas → {tint_path}");
             }
-            let path = std::path::Path::new("D:/rust/packages/fluffy-open-scp/tmp/probe_fire_tint_regions.png");
-            let _ = img.save(path);
-            eprintln!("region overlay → {}", path.display());
-        }
+            if let Some(bake) = &resources.bake {
+                let (w, h) = (bake.tint_w as u32, bake.tint_h as u32);
+                let mut img = image::RgbaImage::from_fn(w, h, |x, y| {
+                    let i = ((y as usize) * bake.tint_w + x as usize) * 4;
+                    image::Rgba([
+                        bake.tint_rgba[i],
+                        bake.tint_rgba[i + 1],
+                        bake.tint_rgba[i + 2],
+                        255,
+                    ])
+                });
+                for col in 0..cols {
+                    let (sx, sy, ox, oy) =
+                        (at(col, 1, 0), at(col, 1, 1), at(col, 1, 2), at(col, 1, 3));
+                    let (tx, ty, tox, toy) =
+                        (at(col, 2, 0), at(col, 2, 1), at(col, 2, 2), at(col, 2, 3));
+                    draw_region_rect(&mut img, w, h, ox, oy, sx, sy, [255, 0, 0]);
+                    draw_region_rect(&mut img, w, h, tox, toy, tx, ty, [0, 255, 0]);
+                }
+                let regions_path =
+                    format!("D:/rust/packages/fluffy-open-scp/tmp/probe_{model:08X}_regions.png");
+                let _ = img.save(&regions_path);
+                eprintln!("region overlay → {regions_path}");
+            }
         // 逐列：顶点 uv 范围 → 采样子矩形
         for section in file.sections_of_type(rw4::SectionType::MESH) {
             let Ok(mesh) = file.decode_mesh(&data, section.number) else {
@@ -5798,8 +5798,8 @@ mod lot_payload_tests {
                     entry.uv3_max[k] = entry.uv3_max[k].max(f4[2 + k]);
                 }
             }
-            eprintln!("=== 逐列采样子矩形（fire station 0x4DE9912B）===");
-            eprintln!("g | n | uv2范围→frac×row1=采样子矩形 | uv3范围→frac×row2=Top子矩形 | pad");
+            eprintln!("=== 逐列：uv 范围（span≥1 即 frac 回卷）===");
+            eprintln!("g | n | wrap | uv2 范围/span × row1 | uv3 范围 × row2 | pad");
             for (g, r) in &ranges {
                 let col = *g as usize;
                 if col >= cols {
@@ -5808,23 +5808,52 @@ mod lot_payload_tests {
                 let (sx, sy, ox, oy) = (at(col, 1, 0), at(col, 1, 1), at(col, 1, 2), at(col, 1, 3));
                 let (tx, ty, tox, toy) = (at(col, 2, 0), at(col, 2, 1), at(col, 2, 2), at(col, 2, 3));
                 let (px, py) = (at(col, 3, 0), at(col, 3, 1));
-                // 采样矩形 = [min(frac), max(frac)] × scale + offset（frac 逐顶点）
-                let f = |v: f32| v - v.floor();
-                let u0 = f(r.uv2_min[0]) * sx + ox;
-                let u1 = f(r.uv2_max[0]) * sx + ox;
-                let v0 = f(r.uv2_min[1]) * sy + oy;
-                let v1 = f(r.uv2_max[1]) * sy + oy;
-                let w0 = f(r.uv3_min[0]);
-                let w1 = f(r.uv3_max[0]);
+                let span_x = r.uv2_max[0] - r.uv2_min[0];
+                let span_y = r.uv2_max[1] - r.uv2_min[1];
+                let wraps = if span_x >= 1.0 || span_y >= 1.0 { "WRAP" } else { "    " };
                 eprintln!(
-                    "g={g:>2} n={:>4} | uv2[{:+.2},{:+.2}][{:+.2},{:+.2}] → base[({:+.3},{:+.3})..({:+.3},{:+.3})] | uv3[({:+.3},{:+.3})..({:+.3},{:+.3})] → top x[{:+.3}..{:+.3}] | pad=({:+.1},{:+.1})",
+                    "g={g:>2} n={:>4} {wraps} | uv2 x[{:+.3},{:+.3}] y[{:+.3},{:+.3}] span({:+.2},{:+.2}) × row1({:+.3},{:+.3})@({:+.3},{:+.3}) | uv3 x[{:+.3},{:+.3}] y[{:+.3},{:+.3}] × row2({:+.3},{:+.3})@({:+.3},{:+.3}) | pad=({:+.1},{:+.1})",
                     r.count,
-                    r.uv2_min[0], r.uv2_max[0], r.uv2_min[1], r.uv2_max[1],
-                    u0.min(u1), v0.min(v1), u0.max(u1), v0.max(v1),
-                    w0, r.uv3_min[1], w1, r.uv3_max[1],
-                    f(w0) * tx + tox, f(w1) * tx + tox,
+                    r.uv2_min[0], r.uv2_max[0], r.uv2_min[1], r.uv2_max[1], span_x, span_y,
+                    sx, sy, ox, oy,
+                    r.uv3_min[0], r.uv3_max[0], r.uv3_min[1], r.uv3_max[1],
+                    tx, ty, tox, toy,
                     px, py,
                 );
+            }
+            }
+        }
+    }
+
+    /// 在图集上画区域框（边框 + 十字中心线）。
+    fn draw_region_rect(
+        img: &mut image::RgbaImage,
+        w: u32,
+        h: u32,
+        x0: f32,
+        y0: f32,
+        rw: f32,
+        rh: f32,
+        color: [u8; 3],
+    ) {
+        let (bx, by) = ((x0 * w as f32) as i32, (y0 * h as f32) as i32);
+        let (bw, bh) = ((rw * w as f32) as i32, (rh * h as f32) as i32);
+        for t in 0..2i32 {
+            for x in bx..(bx + bw).min(w as i32) {
+                for y in [by + t, by + bh - 1 - t, by + bh / 2] {
+                    if x >= 0 && y >= 0 && (x as u32) < w && (y as u32) < h {
+                        img.get_pixel_mut(x as u32, y as u32).0 =
+                            [color[0], color[1], color[2], 255];
+                    }
+                }
+            }
+            for y in by..(by + bh).min(h as i32) {
+                for x in [bx + t, bx + bw - 1 - t, bx + bw / 2] {
+                    if x >= 0 && y >= 0 && (x as u32) < w && (y as u32) < h {
+                        img.get_pixel_mut(x as u32, y as u32).0 =
+                            [color[0], color[1], color[2], 255];
+                    }
+                }
             }
         }
     }
@@ -5832,12 +5861,13 @@ mod lot_payload_tests {
     /// 打开游戏包并注册跨包依赖（探针共用）。
     fn open_game_package(
         model: u32,
+        package_path: &str,
     ) -> Option<(std::sync::Arc<dbpf::Package>, PackageManager, rw4::Rw4File, Vec<u8>)> {
-        let game_dir = "D:/ea-games/SimCity/SimCityData";
-        let game = dbpf::Package::open(&format!("{game_dir}/SimCity_Game.package")).ok()?;
-        let graphics = dbpf::Package::open(&format!("{game_dir}/SimCity_Graphics.package")).ok();
+        let graphics =
+            dbpf::Package::open("D:/ea-games/SimCity/SimCityData/SimCity_Graphics.package").ok();
+        let source = dbpf::Package::open(package_path).ok()?;
         let manager = PackageManager::new();
-        let (_game_id, package) = manager.insert(game).ok()?;
+        let (_gid, package) = manager.insert(source).ok()?;
         if let Some(graphics) = graphics {
             let _ = manager.insert(graphics);
         }
