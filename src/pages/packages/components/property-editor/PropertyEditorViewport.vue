@@ -105,6 +105,8 @@ const props = defineProps<{
   timeOfDay?: number;
   /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
   powered?: boolean;
+  /** 破洞贴花假内景光参数 [光强因子, 半径因子]（0x0DA76A05/06）；缺失 = 无。 */
+  decalLight?: [number, number] | null;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
   tool?: EditorTool;
 }>();
@@ -442,6 +444,10 @@ let pendingTrigger: RenderTelemetryTrigger = "first_load";
 
 /** 贴花投影命中/回退计数（每次装配前重置），供 decal_render 遥测。 */
 const decalStats = { projected: 0, fallback: 0 };
+
+/** 破洞假内景光单次装配上限（防多破洞 lot 光源洪峰）。 */
+const HOLE_LIGHT_MAX = 8;
+let holeLightCount = 0;
 
 /** rebuild 包装：模型载荷身份变化时重新构图（编辑操作保持镜头）。 */
 function rebuildScene() {
@@ -860,6 +866,31 @@ async function assembleScene(
         mesh.matrix.copy(inverse);
         group.add(mesh);
         decalStats.projected += 1;
+        // 破洞家族（decalInteriorMap）：贴花本体 = 焦痕，另有假内景光沿投影
+        // 轴向墙面投射（引擎用贴花贴图作光 cookie、alpha 作衰减）。three 的
+        // SpotLight.map 即投影 cookie —— 等价近似。参数：光强因子 ×16+1、
+        // 距离 = 半径因子 ×4（引擎 invRadius 口径取倒数尺度，实测校准）。
+        // 上限 8 盏防多破洞 lot 光源洪峰。
+        if (
+          texture.variant === "hole" &&
+          props.decalLight &&
+          holeLightCount < HOLE_LIGHT_MAX
+        ) {
+          const [scaleFactor, radiusFactor] = props.decalLight;
+          const spot = new THREE.SpotLight(
+            0xffdca0,
+            (scaleFactor * 16 + 1) * 3,
+            radiusFactor * 8,
+            0.9,
+            0.6,
+            1,
+          );
+          spot.map = decoded;
+          spot.position.set(0, 0, -0.5);
+          spot.target.position.set(0, 0, 1);
+          group.add(spot, spot.target);
+          holeLightCount += 1;
+        }
         return group;
       }
     }
@@ -909,6 +940,7 @@ async function assembleScene(
   });
   decalStats.projected = 0;
   decalStats.fallback = 0;
+  holeLightCount = 0;
   for (const unit of units) {
     // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
     const decalTexture =

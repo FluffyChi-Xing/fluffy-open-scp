@@ -301,6 +301,11 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return session.value?.lotMaskRawRgba ?? null;
   });
 
+  /** 破洞贴花假内景光参数（0x0DA76A05/06；缺失 = lot 无此数据）。 */
+  const decalLight = computed<[number, number] | null>(
+    () => session.value?.decalLight ?? null,
+  );
+
   const lotMaskPng = computed<string | null>(() => {
     const png = session.value?.lotMaskPng;
     // 后端返回裸 base64,TextureLoader 需要 data URL。
@@ -362,6 +367,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotSurfacePng,
     lotTintAtlasPng,
     lotNormalAtlasPng,
+    decalLight,
     selectedUnit,
     edit,
     hiddenUnits,

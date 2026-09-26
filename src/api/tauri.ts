@@ -514,6 +514,8 @@ export interface DecalUnitTexture {
   materialInstance: number | null;
   /** material 资源 shader-def 槽引用实例（best-effort，失败为 null）。 */
   shaderDefInstance: number | null;
+  /** "hole" = 破洞家族（raster 原始解码，alpha = 光衰减掩码）。 */
+  variant: string | null;
 }
 export interface PropUnit {
   kind: "prop";
@@ -596,6 +598,8 @@ export interface LotEditorSession {
   pathPairs: number[];
   /** 后端阶段耗时（毫秒）：把 texture_compose span 拆成「后端 vs IPC/JSON」归属。 */
   backendMs?: { parseMs: number; bakeMs: number; totalMs: number };
+  /** 破洞贴花假内景光参数（0x0DA76A05/06）：[光强因子, 半径因子]。 */
+  decalLight?: [number, number] | null;
   diagnostics: string[];
 }
 /** 单个材质的贴图集（官方 Material Set 通道拆分，§27 源码实证语义）。 */

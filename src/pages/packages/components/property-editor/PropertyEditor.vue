@@ -46,6 +46,7 @@ const {
   lotSurfacePng,
   lotTintAtlasPng,
   lotNormalAtlasPng,
+  decalLight,
   selectedUnit,
   edit,
   hiddenUnits,
@@ -444,6 +445,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :decal-light="decalLight"
           :tool="tool"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
