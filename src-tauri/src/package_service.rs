@@ -490,6 +490,10 @@ pub struct RasterPreviewData {
 pub struct LotEditorSession {
     pub tgi: TgiDto,
     pub asset_name: Option<String>,
+    /// 完整属性字典（解析产物）。**不序列化**——前端 TS 类型与消费面均无此
+    /// 字段，逐响应白抬 JSON 体积（大 property 数十字节→数百 KB 的纯税）。
+    /// 保留在结构体中供 Rust 侧测试/未来命令拆分使用。
+    #[serde(skip_serializing)]
     pub document: sc_properties::LotEditorDocument,
     pub model_available: bool,
     /// LOD1 模型 TGI（camelCase 拷贝，前端无需触碰 document 内部结构）。
@@ -548,7 +552,20 @@ pub struct LotEditorSession {
     pub units: Vec<sc_properties::LotUnit>,
     /// `0x0CAA6841` 的 Int32 对（路径点区间）。
     pub path_pairs: Vec<i32>,
+    /// 后端耗时拆分（毫秒）：parse+units+LOD 解析 / PNG 解码与反照率合成 /
+    /// 总计——用于把前端 texture_compose span 拆成「后端 vs IPC/JSON」归属。
+    #[serde(default)]
+    pub backend_ms: Option<BackendTiming>,
     pub diagnostics: Vec<String>,
+}
+
+/// 后端阶段耗时（毫秒），见 `LotEditorSession::backend_ms`。
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackendTiming {
+    pub parse_ms: f64,
+    pub bake_ms: f64,
+    pub total_ms: f64,
 }
 
 /// 单级 LOD 模型的资源位置（跨包解析结果）。
@@ -2299,6 +2316,7 @@ pub async fn read_lot_editor_session(
         request.package_id,
         request.tgi.clone(),
         move |data, package, manager, store| {
+            let backend_started = std::time::Instant::now();
             let tgi = request.tgi;
             if tgi.type_id != PROPERTY_RESOURCE_TYPE {
                 return Err(PackageError::InvalidArgument(
@@ -2334,6 +2352,8 @@ pub async fn read_lot_editor_session(
             if registry.is_none() {
                 diagnostics.push("property registry is unavailable; using hash identifiers".into());
             }
+            let parse_ms = backend_started.elapsed().as_secs_f64() * 1000.0;
+            let bake_started = std::time::Instant::now();
             let (colors, lot_colors_authored) = lot_colors(&document);
             let (lot_border_colors, lot_border_widths) = lot_borders(&document);
             // 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）。
@@ -2446,6 +2466,16 @@ pub async fn read_lot_editor_session(
                     })
                 })
                 .or(Some([8.0, 8.0]));
+            let bake_ms = bake_started.elapsed().as_secs_f64() * 1000.0;
+            let timing = BackendTiming {
+                parse_ms,
+                bake_ms,
+                total_ms: backend_started.elapsed().as_secs_f64() * 1000.0,
+            };
+            diagnostics.push(format!(
+                "backend timing: parse+units+LOD {:.1}ms, bake(decode/compose/png) {:.1}ms, total {:.1}ms",
+                timing.parse_ms, timing.bake_ms, timing.total_ms
+            ));
             Ok(LotEditorSession {
                 tgi,
                 asset_name,
@@ -2484,6 +2514,7 @@ pub async fn read_lot_editor_session(
                 path_pairs: lot_units.path_pairs,
                 document,
                 model_available,
+                backend_ms: Some(timing),
                 diagnostics,
             })
         },

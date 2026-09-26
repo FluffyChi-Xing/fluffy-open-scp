@@ -107,8 +107,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       packageId,
       instance: tgi.instance,
     });
+    let result: LotEditorSession | null = null;
     try {
-      const result = await source.readLotEditorSession(packageId, tgi);
+      result = await source.readLotEditorSession(packageId, tgi);
       if (token !== requestToken) return;
       session.value = result;
       modelLods.value = result.modelLods ?? [];
@@ -123,7 +124,16 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       if (token !== requestToken) return;
       loadError.value = "propertyEditorLoadFailed";
     } finally {
-      span.end();
+      // 后端耗时随响应返回：把 span 拆成「后端 parse/bake vs IPC+JSON」归属。
+      span.end(
+        result?.backendMs
+          ? {
+              backendParseMs: Number(result.backendMs.parseMs.toFixed(1)),
+              backendBakeMs: Number(result.backendMs.bakeMs.toFixed(1)),
+              backendTotalMs: Number(result.backendMs.totalMs.toFixed(1)),
+            }
+          : undefined,
+      );
       if (token === requestToken) loading.value = false;
     }
   }

@@ -7,7 +7,6 @@ import { disposeObject } from "@/lib/three-viewer";
 import {
   getLotModelObjects,
   markGeometryShared,
-  releaseLotModelCache,
 } from "@/lib/three-gltf";
 import { renderTelemetry } from "@/lib/renderTelemetry";
 import type { RenderTelemetryTrigger } from "@/lib/renderTelemetry";
@@ -37,7 +36,6 @@ import {
   getDeferredMaps,
   getTintTextures,
   makeTintMaterial,
-  releaseRefinedMaterialCache,
   type SunEnvRefs,
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
@@ -46,7 +44,6 @@ import {
   applyGroundMask,
   buildLotRect,
   placementInverse,
-  releaseGroundComposeCache,
 } from "./editorGround";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
@@ -253,12 +250,6 @@ function ensureDecalProjectionCache(payload: LotModelPayload | null): void {
   for (const geometry of decalProjectionCache.values()) geometry.dispose();
   decalProjectionCache.clear();
   decalProjectionCachePayload = payload;
-}
-
-function releaseDecalProjectionCache(): void {
-  for (const geometry of decalProjectionCache.values()) geometry.dispose();
-  decalProjectionCache.clear();
-  decalProjectionCachePayload = undefined;
 }
 
 /**
@@ -568,12 +559,9 @@ onBeforeUnmount(() => {
   gizmo?.detach();
   gizmo?.dispose();
   gizmo = null;
-  // 释放本组件持有的跨 rebuild 缓存（GPU 贴图/几何/blob URL）。
-  releaseLotModelCache();
-  releaseRefinedMaterialCache();
-  releaseGroundComposeCache();
-  releaseDecalProjectionCache();
-  releaseDecalTextureCache();
+  // 跨 rebuild 缓存（模型克隆/材质贴图/地面合成/贴花纹理）**有意跨 unmount
+  // 保留**：全部按 payload/session 身份自失效、容量有界，保留 = 重开同一
+  // property 零解码秒开（GPU 缓冲随旧上下文销毁自动释放，仅剩 JS 侧数据）。
   imageDataCache.clear();
   imageDimsCache.clear();
   lastUnitsSnapshot.clear();
@@ -905,6 +893,16 @@ async function assembleScene(
     props.renderMode === "refined" && buildingMeshes.length
       ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
       : [];
+  // 贴花解码纹理并行预取（去重后一次解码全部；此前逐 decal 串行 await，
+  // 首载成本 = 贴花数 × 单张解码）。
+  if (props.renderMode === "refined" && decalTextureByKey.size) {
+    await Promise.all(
+      [...new Set(decalTextureByKey.values())].map((texture) =>
+        getDecalTexture(THREE, texture),
+      ),
+    );
+    if (ctx.isStale()) return;
+  }
   const decalSpan = renderTelemetry.begin("decal_render", {
     decals: props.grouping.decals.length,
   });

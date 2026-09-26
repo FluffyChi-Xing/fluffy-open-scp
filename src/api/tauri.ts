@@ -590,6 +590,8 @@ export interface LotEditorSession {
   /** 精细渲染贴花纹理（与 units 中 decal 的 category+index 对应）。 */
   decalTextures: DecalUnitTexture[];
   pathPairs: number[];
+  /** 后端阶段耗时（毫秒）：把 texture_compose span 拆成「后端 vs IPC/JSON」归属。 */
+  backendMs?: { parseMs: number; bakeMs: number; totalMs: number };
   diagnostics: string[];
 }
 /** 单个材质的贴图集（官方 Material Set 通道拆分，§27 源码实证语义）。 */
