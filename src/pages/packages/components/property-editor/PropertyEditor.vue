@@ -394,7 +394,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         </button>
       </header>
       <p v-if="diagnostics.length" class="editor-diagnostics">
-        <FIcon name="TriangleAlert" :size="13" aria-label="" />
+        <FIcon name="CircleAlert" :size="13" aria-label="" />
         <span>{{ diagnostics.join(" · ") }}</span>
       </p>
       <div v-if="loading" class="editor-loading">

@@ -858,15 +858,16 @@ float scFastNoise(vec3 seed) {
           float scEnvS = scGloss * 0.75;
           vec3 scEnvDir = normalize(mix(scNormW, reflect(scBent, scNormW), scEnvS));
           vec3 scEnv = scSkyRadiance(scEnvDir);
-          reflectedLight.indirectSpecular +=
-            scEnv * scEnvS * diffuseColor.rgb * (1.0 - scExempt);
+          reflectedLight.indirectSpecular += scEnv * scEnvS * diffuseColor.rgb;
           // 间接漫反射按天空方向重分配（= 源码 EnvLighting 的 SkyColor(sampleDir)）：
           // 用亮度比 scLum/uSkyLumRef 作乘性因子，**球面均值为 1**——只改变各朝向的
           // 环境光分布，不抬整体曝光。此前是常数 AmbientLight，各朝向完全相同（发平）。
           float scLum = dot(scSkyRadiance(scNormW), vec3(0.2126, 0.7152, 0.0722));
           // 0.6 = 强度旋钮（0 退回常数环境光，1 全量）。因子均值恒为 1。
           float scDirFactor = mix(1.0, clamp(scLum / max(uSkyLumRef, 1e-3), 0.25, 2.5), 0.6);
-          reflectedLight.indirectDiffuse *= mix(1.0, scDirFactor, 1.0 - scExempt);
+          // 【2026-09-26】下向面豁免已移除（豁免因子恒 0）——原 mix(1.0, scDirFactor,
+          // 1.0-豁免因子) 简化为直接应用 scDirFactor。
+          reflectedLight.indirectDiffuse *= scDirFactor;
           // 5d 夜间：three 侧灯光的漫反射分量随白昼因子压暗（太阳高光/
           // 天空镜面已由 uSunColor/天空三段变暗）
           float scNightDim = mix(0.22, 1.0, uDayLight);
