@@ -136,16 +136,26 @@ export function decalProjector(
  * 它在 `pushDecalVertex` 里做 `vertex.applyMatrix4(mesh.matrixWorld)`、最后再用
  * 投影矩阵乘回，直接传真实 mesh 会把结果抛到 renderer 世界空间（`viewer.world`
  * 带 -90°X）。代理的 matrixWorld 恒等 ⇒ 顶点空间 = lot 局部 ⇒ 输出即 lot 局部。
+ *
+ * `proxies` 可传入复用的代理数组（多枚贴花共享一次构建；代理必须由调用方
+ * 保证 geometry 与 meshes 一一对应且 matrixWorld 恒等）——此前每个 decal
+ * 都重建全部代理，大建筑群 × 多贴花时纯属重复功。
  */
 export async function projectDecal(
   THREE: Three,
   frame: DecalFrame,
   meshes: ThreeNamespace.Mesh[],
   depth: number | null,
+  proxies?: ThreeNamespace.Mesh[],
 ): Promise<ThreeNamespace.BufferGeometry | null> {
   if (meshes.length === 0) return null;
-  const proxies = meshes.map((mesh) => new THREE.Mesh(mesh.geometry));
-  const anchor = measureAnchorDistance(THREE, frame, proxies);
+  const useProxies =
+    proxies && proxies.length === meshes.length ? proxies : undefined;
+  const own = useProxies
+    ? null
+    : meshes.map((mesh) => new THREE.Mesh(mesh.geometry));
+  const proxyList = useProxies ?? own!;
+  const anchor = measureAnchorDistance(THREE, frame, proxyList);
   if (anchor === null) return null;
 
   const { position, orientation, size } = decalProjector(THREE, frame, anchor, depth);
@@ -154,7 +164,7 @@ export async function projectDecal(
   );
   const boxAabb = boxBounds(THREE, position, orientation, size);
   const pieces: ThreeNamespace.BufferGeometry[] = [];
-  for (const proxy of proxies) {
+  for (const proxy of proxyList) {
     const geometry = proxy.geometry as ThreeNamespace.BufferGeometry;
     geometry.computeBoundingBox();
     const bb = geometry.boundingBox;

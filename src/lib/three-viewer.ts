@@ -1,4 +1,5 @@
 import type * as ThreeNamespace from "three";
+import { isSharedGeometry } from "@/lib/three-gltf";
 
 export interface ViewerTapHit {
   object: ThreeNamespace.Object3D;
@@ -26,7 +27,9 @@ export function disposeObject(object: ThreeNamespace.Object3D) {
   object.traverse((child) => {
     const mesh = child as ThreeNamespace.Mesh;
     if (mesh.isMesh) {
-      mesh.geometry?.dispose();
+      // 共享缓存几何（payload 级模型缓存，见 three-gltf.getLotModelObjects）
+      // 归缓存所有，清场不销毁——缓存更换时统一释放。
+      if (!isSharedGeometry(mesh.geometry)) mesh.geometry?.dispose();
       const material = mesh.material;
       if (Array.isArray(material)) material.forEach((item) => item.dispose());
       else material?.dispose();
@@ -95,6 +98,14 @@ export class ThreeViewer {
   private lastX = 0;
   private lastY = 0;
   private moved = 0;
+  /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
+   * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
+  private needsRender = true;
+
+  /** 请求下一帧重绘（视觉变更后调用；相机/灯光等 viewer 内部方法已自带）。 */
+  invalidate() {
+    this.needsRender = true;
+  }
 
   static async create(
     container: HTMLElement,
@@ -218,6 +229,7 @@ export class ThreeViewer {
 
     this.frameRadius = radius;
     this.cameraDistance = radius * 3;
+    this.needsRender = true;
     this.camera.near = radius / 100;
     this.camera.far = radius * 40;
     this.camera.updateProjectionMatrix();
@@ -238,6 +250,7 @@ export class ThreeViewer {
   setToneMapping(mode: ThreeNamespace.ToneMapping, exposure = 1): void {
     this.renderer.toneMapping = mode;
     this.renderer.toneMappingExposure = exposure;
+    this.needsRender = true;
   }
 
   setKeyLight(azimuthDeg: number, elevationDeg: number) {
@@ -249,6 +262,7 @@ export class ThreeViewer {
       radius * Math.sin(elevation),
       radius * Math.cos(elevation) * Math.cos(azimuth),
     );
+    this.needsRender = true;
   }
 
   /** 环境亮度倍率（日/夜模拟）：0 ≈ 夜、1 = 默认观感、2 ≈ 正午。 */
@@ -258,6 +272,7 @@ export class ThreeViewer {
     this.fillLight.intensity = FILL_LIGHT_INTENSITY * scale;
     this.rimLight.intensity = RIM_LIGHT_INTENSITY * scale;
     this.ambientLight.intensity = AMBIENT_LIGHT_INTENSITY * scale;
+    this.needsRender = true;
   }
 
   /** 选中高亮（emissive），object 为 null 清除。 */
@@ -266,6 +281,7 @@ export class ThreeViewer {
     this.applyHighlight(this.selected, false);
     this.selected = object;
     this.applyHighlight(this.selected, true);
+    this.needsRender = true;
   }
 
   private applyHighlight(object: ThreeNamespace.Object3D | null, on: boolean) {
@@ -307,6 +323,7 @@ export class ThreeViewer {
     );
     this.camera.position.add(this.orbitTarget);
     this.camera.lookAt(this.orbitTarget);
+    this.needsRender = true;
   }
 
   private orbit(dx: number, dy: number) {
@@ -404,10 +421,13 @@ export class ThreeViewer {
     this.renderer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.needsRender = true;
   }
 
   private renderLoop = () => {
     this.frame = requestAnimationFrame(this.renderLoop);
+    if (!this.needsRender) return;
+    this.needsRender = false;
     this.renderer.render(this.scene, this.camera);
   };
 

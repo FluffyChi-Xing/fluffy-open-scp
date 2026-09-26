@@ -6,8 +6,11 @@ const PAYLOAD_MAGIC = 0x4d54_4f4c;
 
 /**
  * 解析 `read_lot_model_meshes` 返回的原始字节容器（零拷贝切片，
- * 见 `LotModelPayload` 注释里的 v7 布局：逐 mesh GLB + 逐材质贴图 +
+ * 见 `LotModelPayload` 注释里的布局：逐 mesh GLB + 逐材质贴图 +
  * 每 mesh 材质下标/uv 类型 + 诊断文本）。
+ *
+ * v8 = 9 PNG/材质（含已废弃的 relief）；v9 = 8 PNG/材质（relief 停发——
+ * 前端视差已回滚、该图从不加载，逐材质省一张 PNG 的 IPC）。两者都接受。
  */
 export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
   const view = new DataView(buffer);
@@ -24,9 +27,10 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     throw new Error("lot model payload magic mismatch");
   }
   const version = readU32();
-  if (version !== 8) {
+  if (version !== 8 && version !== 9) {
     throw new Error(`unsupported lot model payload version ${version}`);
   }
+  const pngsPerMaterial = version >= 9 ? 8 : 9;
   const meshCount = readU32();
   const glbs: ArrayBuffer[] = [];
   for (let index = 0; index < meshCount; index += 1) {
@@ -50,15 +54,11 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
       offset += length;
       return new Uint8Array(bytes);
     };
-    const baseColorPng = readPng();
-    const normalPng = readPng();
-    const roughnessPng = readPng();
-    const aoPng = readPng();
-    const tintPng = readPng();
-    const palettePng = readPng();
-    const shaderPng = readPng();
-    const interiorPng = readPng();
-    const reliefPng = readPng();
+    const pngs: (Uint8Array<ArrayBuffer> | null)[] = [];
+    for (let png = 0; png < pngsPerMaterial; png += 1) pngs.push(readPng());
+    const [baseColorPng, normalPng, roughnessPng, aoPng, tintPng, palettePng, shaderPng, interiorPng] =
+      pngs;
+    // v8 的第 9 张（relief）读取后即弃：字段仅为类型兼容保留，无消费方。
     const paramsLength = readU32();
     let paramsF32: Float32Array | null = null;
     if (paramsLength > 0) {
@@ -78,7 +78,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
       palettePng,
       shaderPng,
       interiorPng,
-      reliefPng,
+      reliefPng: null,
       paramsF32,
       paramCols,
     });
@@ -121,13 +121,87 @@ export async function parseLotModelObjects(
 ): Promise<ThreeNamespace.Object3D[]> {
   const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
   const loader = new GLTFLoader();
-  const objects: ThreeNamespace.Object3D[] = [];
-  for (const glb of glbs) {
-    const gltf = await loader.parseAsync(glb, "");
-    for (const child of gltf.scene.children) {
-      child.rotation.set(0, 0, 0);
-    }
-    objects.push(gltf.scene);
-  }
+  const objects = await Promise.all(
+    glbs.map(async (glb) => {
+      const gltf = await loader.parseAsync(glb, "");
+      for (const child of gltf.scene.children) {
+        child.rotation.set(0, 0, 0);
+      }
+      return gltf.scene;
+    }),
+  );
   return objects;
+}
+
+/**
+ * payload 级模型对象缓存：同一 payload（renderMode/grouping 变化引起的
+ * 重复 rebuild 是热路径）只 parse 一次，后续 rebuild 取 `clone()`——
+ * clone 共享 geometry/材质引用，成本是场景图节点数而非几何数据量。
+ *
+ * 缓存的 geometry 由 `markSharedGeometry` 打标，`disposeObject` 跳过
+ * （rebuild 清场不会销毁它们）；payload 更换时 `releaseLotModelCache`
+ * 显式解除标记并 dispose，避免 GPU 资源泄漏。
+ */
+const sharedGeometries = new WeakSet<ThreeNamespace.BufferGeometry>();
+/** 当前持有的缓存 payload（WeakMap 不负责 GPU 资源，需显式释放旧代）。 */
+let cachedPayload: LotModelPayload | null = null;
+let cachedRoots: ThreeNamespace.Object3D[] = [];
+
+/** clone 后入场的几何共享标记（disposeObject 跳过用）。 */
+export function isSharedGeometry(
+  geometry: ThreeNamespace.BufferGeometry | undefined,
+): boolean {
+  return geometry !== undefined && sharedGeometries.has(geometry);
+}
+
+/** 标记一块跨 rebuild 共享的几何（如 decal 投影缓存），清场时不 dispose。 */
+export function markGeometryShared(geometry: ThreeNamespace.BufferGeometry): void {
+  sharedGeometries.add(geometry);
+}
+
+/**
+ * 取 payload 的模型根对象（缓存命中时返回克隆，几何共享）。
+ * 首次访问并行 parse；payload 更换时释放旧缓存（dispose 全部共享几何）。
+ */
+export async function getLotModelObjects(
+  payload: LotModelPayload,
+): Promise<ThreeNamespace.Object3D[]> {
+  if (cachedPayload !== payload) {
+    releaseLotModelCache();
+    const roots = await parseLotModelObjects(payload.glbs);
+    for (const root of roots) {
+      root.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (mesh.isMesh && mesh.geometry) sharedGeometries.add(mesh.geometry);
+      });
+    }
+    cachedPayload = payload;
+    cachedRoots = roots;
+  }
+  return cachedRoots.map((root) => root.clone());
+}
+
+/** 释放模型缓存（payload 更换/视口销毁）：解除共享标记并 dispose。 */
+export function releaseLotModelCache(): void {
+  for (const root of cachedRoots) {
+    root.traverse((child) => {
+      const mesh = child as ThreeNamespace.Mesh;
+      if (mesh.isMesh && mesh.geometry) sharedGeometries.delete(mesh.geometry);
+    });
+  }
+  for (const root of cachedRoots) {
+    // 递归 dispose 几何/材质（材质在此前 rebuild 已被清场 dispose 过，
+    // 重复 dispose 是幂等的）。
+    root.traverse((child) => {
+      const mesh = child as ThreeNamespace.Mesh;
+      if (mesh.isMesh) {
+        mesh.geometry?.dispose();
+        const material = mesh.material;
+        if (Array.isArray(material)) material.forEach((item) => item.dispose());
+        else material?.dispose();
+      }
+    });
+  }
+  cachedRoots = [];
+  cachedPayload = null;
 }

@@ -32,6 +32,9 @@ export interface EditorViewportRebuildCtx {
   maxAnisotropy: number;
   /** unitId → Object3D 拾取/可见性/选中注册表（装配层写入）。 */
   unitObjects: Map<string, ThreeNamespace.Object3D>;
+  /** 装配层回填的规模统计（进 scene_rebuild 遥测 metadata，量化
+   *  「property 规模 ↔ 阶段耗时」相关性）。 */
+  stats: Record<string, unknown>;
 }
 
 /**
@@ -150,6 +153,7 @@ export function useEditorViewport(options: {
       registerTextureUrl: (url) => textureUrls.push(url),
       maxAnisotropy: instance.maxAnisotropy,
       unitObjects,
+      stats: {},
     };
     const span = renderTelemetry.begin("scene_rebuild", {
       reframe: options.reframe === true,
@@ -165,8 +169,9 @@ export function useEditorViewport(options: {
       }
       sceneReady.value = true;
       revision.value += 1;
+      instance.invalidate();
     } finally {
-      span.end();
+      span.end(ctx.stats);
     }
   }
 
@@ -176,12 +181,14 @@ export function useEditorViewport(options: {
     for (const name of VIEWPORT_GROUPS) {
       instance.group(name).visible = map[name] !== false;
     }
+    instance.invalidate();
   }
 
   function applyUnitVisibility(hidden: Set<string>) {
     for (const [id, object] of unitObjects) {
       object.visible = !hidden.has(id);
     }
+    viewer.value?.invalidate();
   }
 
   function applySelection(selectedId: string | null) {

@@ -1,4 +1,5 @@
 import { composeRefinedGround } from "./refinedGround";
+import { renderTelemetry } from "@/lib/renderTelemetry";
 import type * as ThreeNamespace from "three";
 
 /**
@@ -92,11 +93,94 @@ export function groundFillMesh(
 }
 
 /**
+ * 地面合成/贴图缓存（会话级）：compose 输入在编辑操作（transform/undo 引发的
+ * grouping 全量重建）中完全不变，命中缓存 = 零合成零解码。key 由全部输入的
+ * 身份（源字符串/数值）构成；容量 4 环形淘汰，淘汰时 dispose 贴图。
+ */
+const groundTextureCache = new Map<string, ThreeNamespace.Texture>();
+const groundComposeCache = new Map<
+  string,
+  { map: ThreeNamespace.Texture; normalMap: ThreeNamespace.Texture | null }
+>();
+const GROUND_CACHE_CAP = 4;
+
+function putGroundCache(
+  key: string,
+  value: { map: ThreeNamespace.Texture; normalMap: ThreeNamespace.Texture | null },
+) {
+  if (groundComposeCache.has(key)) return;
+  groundComposeCache.set(key, value);
+  if (groundComposeCache.size > GROUND_CACHE_CAP) {
+    const oldest = groundComposeCache.keys().next().value as string | undefined;
+    if (oldest !== undefined) {
+      const evicted = groundComposeCache.get(oldest);
+      evicted?.map.dispose();
+      evicted?.normalMap?.dispose();
+      groundComposeCache.delete(oldest);
+    }
+  }
+}
+
+/** 视口销毁/会话更换时清缓存（dispose 全部贴图）。 */
+export function releaseGroundComposeCache(): void {
+  for (const entry of groundComposeCache.values()) {
+    entry.map.dispose();
+    entry.normalMap?.dispose();
+  }
+  groundComposeCache.clear();
+  for (const texture of groundTextureCache.values()) texture.dispose();
+  groundTextureCache.clear();
+}
+
+function loadGroundTexture(THREE: typeof ThreeNamespace, url: string): Promise<ThreeNamespace.Texture> {
+  const cached = groundTextureCache.get(url);
+  if (cached) return Promise.resolve(cached);
+  return new THREE.TextureLoader().loadAsync(url).then((texture) => {
+    groundTextureCache.set(url, texture);
+    return texture;
+  });
+}
+
+/**
+ * 地面贴图 key：构成精细合成的全部输入身份（缓存正确性关键——任何一项
+ * 变化都必须 miss）。
+ */
+function groundComposeKey(options: {
+  maskPng: string | null;
+  rawMaskKey: string | null;
+  surfaceKey: string | null;
+  tintAtlasKey: string | null;
+  normalAtlasKey: string | null;
+  lotColors: [number, number, number, number][];
+  lotColorsAuthored: boolean[];
+  lotBorderColors?: [number, number, number][];
+  lotBorderWidths?: number[];
+  lotSize?: [number, number] | null;
+  tilePeriod?: [number, number] | null;
+}): string {
+  const o = options;
+  return JSON.stringify([
+    o.maskPng,
+    o.rawMaskKey,
+    o.surfaceKey,
+    o.tintAtlasKey,
+    o.normalAtlasKey,
+    o.lotColors,
+    o.lotColorsAuthored,
+    o.lotBorderColors ?? null,
+    o.lotBorderWidths ?? null,
+    o.lotSize,
+    o.tilePeriod,
+  ]);
+}
+
+/**
  * LotMask 贴图：加载后按渲染模式应用到地面 fill——默认模式贴服务端合成的
  * 反照率图（通道平色+底图格，缺失时回退量化图），精细模式走引擎语义合成
- * （composeRefinedGround）。异步完成按 isStale 守卫丢弃过期代。
+ * （composeRefinedGround，Worker 化 + 缓存）。异步完成按 isStale 守卫丢弃
+ * 过期代；返回 Promise 供装配层 await（合成成本纳入 scene_rebuild 遥测）。
  */
-export function applyGroundMask(options: {
+export async function applyGroundMask(options: {
   THREE: typeof ThreeNamespace;
   ground: ThreeNamespace.Object3D;
   maskPng: string | null;
@@ -123,6 +207,11 @@ export function applyGroundMask(options: {
   lotBorderWidths?: number[];
   /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
   lotOverlayBoxOffset?: [number, number] | null;
+  /** 缓存 key 源（源字符串身份；与 ImageData 参数一一对应）。 */
+  rawMaskKey?: string | null;
+  surfaceKey?: string | null;
+  tintAtlasKey?: string | null;
+  normalAtlasKey?: string | null;
   isStale: () => boolean;
 }) {
   const {
@@ -146,68 +235,86 @@ export function applyGroundMask(options: {
   // 默认模式优先用反照率图；精细模式的合成输入仍是量化 mask。
   const flatPng = refined ? maskPng : (albedoPng ?? maskPng);
   if (!flatPng) return;
-  new THREE.TextureLoader().load(flatPng, (texture) => {
-    if (isStale()) {
-      texture.dispose();
-      return;
-    }
-    texture.colorSpace = THREE.SRGBColorSpace;
-    // LotMask 为原始栅格行序（行 0 = 首行）：与模型贴图一致不翻 V，
-    // 否则遮罩南北镜像（rendering.md §3.1 遗留项）
-    texture.flipY = false;
-    const fill = groundFillMesh(ground);
-    if (!fill) return;
-    if (refined && maskPng) {
-      // 精细模式：引擎语义 = 通道 >0.5 阈值 + A>B>G>R 优先级选区 →
-      // tile_{LotColor.A}（frac 平铺）× LotColor.RGB 着色；未覆盖区铺底图格。
-      composeRefinedGround(
+  const texture = await loadGroundTexture(THREE, flatPng);
+  if (isStale()) return;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  // LotMask 为原始栅格行序（行 0 = 首行）：与模型贴图一致不翻 V，
+  // 否则遮罩南北镜像（rendering.md §3.1 遗留项）
+  texture.flipY = false;
+  const fill = groundFillMesh(ground);
+  if (!fill) return;
+  if (refined && maskPng) {
+    // 精细模式：引擎语义 = 通道 >0.5 阈值 + A>B>G>R 优先级选区 →
+    // tile_{LotColor.A}（frac 平铺）× LotColor.RGB 着色；未覆盖区铺底图格。
+    // compose 成本曾是游离在遥测外的主线程大头——单独纳管成 span。
+    const span = renderTelemetry.begin("texture_compose", {
+      phase: "ground",
+    });
+    try {
+      const key = groundComposeKey({
+        maskPng,
+        rawMaskKey: options.rawMaskKey ?? null,
+        surfaceKey: options.surfaceKey ?? null,
+        tintAtlasKey: options.tintAtlasKey ?? null,
+        normalAtlasKey: options.normalAtlasKey ?? null,
         lotColors,
         lotColorsAuthored,
-        texture.image,
-        THREE,
-        lotSize ?? null,
-        tilePeriod ?? null,
-        surface,
-        tintAtlas ?? null,
-        rawMask,
-        normalAtlas ?? null,
-        lotBorderColors ?? null,
-        lotBorderWidths ?? null,
-      )
-        .then((result) => {
-          if (isStale() || !result) {
-            result?.map.dispose();
-            result?.normalMap?.dispose();
-            return;
-          }
-          const fillMaterial =
-            fill.material as ThreeNamespace.MeshBasicMaterial;
-          // 精细地面改受光材质：游戏地表被阳光/环境光照亮，无光照的
-          // MeshBasic 会比游戏截图整体偏暗一档（2026-09-13 对拍）。
-          // 注意必须是 Phong/Standard 系——MeshLambertMaterial 不支持
-          // normalMap（赋值被着色器静默忽略，2026-09-18 排查：法线
-          // 烘焙链一直在产出但从未生效）。specular 黑 + shininess 0
-          // 使漫反射响应与 Lambert 一致，观感校准不回退。
-          const lit = new THREE.MeshPhongMaterial({
-            map: result.map,
-            specular: 0x000000,
-            shininess: 0,
-          });
-          // s15 法线图集：方格勾缝/砂砾颗粒的起伏（与反照率像素对齐）。
-          if (result.normalMap) lit.normalMap = result.normalMap;
-          fillMaterial.dispose();
-          fill.material = lit;
-        })
-        .catch(() => {});
-    } else {
-      const material = fill.material as ThreeNamespace.MeshBasicMaterial;
-      material.map = texture;
-      material.transparent = false;
-      material.opacity = 1;
-      material.color.set(0xffffff);
-      material.needsUpdate = true;
+        lotBorderColors,
+        lotBorderWidths,
+        lotSize,
+        tilePeriod,
+      });
+      let result = groundComposeCache.get(key);
+      const cacheHit = Boolean(result);
+      if (!result) {
+        const composed = await composeRefinedGround(
+          lotColors,
+          lotColorsAuthored,
+          texture.image as TexImageSource,
+          THREE,
+          lotSize ?? null,
+          tilePeriod ?? null,
+          surface,
+          tintAtlas ?? null,
+          rawMask,
+          normalAtlas ?? null,
+          lotBorderColors ?? null,
+          lotBorderWidths ?? null,
+        );
+        if (composed) {
+          putGroundCache(key, composed);
+          result = composed;
+        }
+      }
+      if (isStale() || !result) return;
+      const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
+      // 精细地面改受光材质：游戏地表被阳光/环境光照亮，无光照的
+      // MeshBasic 会比游戏截图整体偏暗一档（2026-09-13 对拍）。
+      // 注意必须是 Phong/Standard 系——MeshLambertMaterial 不支持
+      // normalMap（赋值被着色器静默忽略，2026-09-18 排查：法线
+      // 烘焙链一直在产出但从未生效）。specular 黑 + shininess 0
+      // 使漫反射响应与 Lambert 一致，观感校准不回退。
+      const lit = new THREE.MeshPhongMaterial({
+        map: result.map,
+        specular: 0x000000,
+        shininess: 0,
+      });
+      // s15 法线图集：方格勾缝/砂砾颗粒的起伏（与反照率像素对齐）。
+      if (result.normalMap) lit.normalMap = result.normalMap;
+      fillMaterial.dispose();
+      fill.material = lit;
+      span.end({ cacheHit });
+    } catch {
+      span.end({ failed: true });
     }
-  });
+  } else {
+    const material = fill.material as ThreeNamespace.MeshBasicMaterial;
+    material.map = texture;
+    material.transparent = false;
+    material.opacity = 1;
+    material.color.set(0xffffff);
+    material.needsUpdate = true;
+  }
 }
 
 /**

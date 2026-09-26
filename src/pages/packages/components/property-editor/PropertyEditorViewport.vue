@@ -4,7 +4,11 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { disposeObject } from "@/lib/three-viewer";
-import { parseLotModelObjects } from "@/lib/three-gltf";
+import {
+  getLotModelObjects,
+  markGeometryShared,
+  releaseLotModelCache,
+} from "@/lib/three-gltf";
 import { renderTelemetry } from "@/lib/renderTelemetry";
 import type { RenderTelemetryTrigger } from "@/lib/renderTelemetry";
 import type * as ThreeNamespace from "three";
@@ -30,8 +34,10 @@ import {
   applySunEnv,
   createSunEnv,
   dayFactor,
-  loadTintTextures,
+  getDeferredMaps,
+  getTintTextures,
   makeTintMaterial,
+  releaseRefinedMaterialCache,
   type SunEnvRefs,
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
@@ -40,6 +46,7 @@ import {
   applyGroundMask,
   buildLotRect,
   placementInverse,
+  releaseGroundComposeCache,
 } from "./editorGround";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
@@ -153,13 +160,155 @@ const specUniformRefs: { value: number }[] = [];
 
 let envRefs: SunEnvRefs | null = null;
 
+// ---------------------------------------------------------------------------
+// 会话级缓存：编辑操作（transform/undo → grouping 全量重建）的热路径上，
+// 解码与合成结果完全不变，按「输入源字符串身份」缓存跨 rebuild 复用。
+// ---------------------------------------------------------------------------
+
+/** 图像解码缓存（key = 源 data URL / base64 字符串身份；容量上限防跨会话累积）。 */
+const imageDataCache = new Map<string, Promise<ImageData | null>>();
+const IMAGE_DATA_CACHE_CAP = 16;
+/** 尺寸探测缓存（mask 图宽高，同键空间）。 */
+const imageDimsCache = new Map<string, Promise<{ width: number; height: number } | null>>();
+
+function cacheGetOrLoad<V>(
+  cache: Map<string, Promise<V>>,
+  key: string,
+  load: () => Promise<V>,
+): Promise<V> {
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const pending = load();
+  cache.set(key, pending);
+  if (cache.size > IMAGE_DATA_CACHE_CAP) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (oldest !== undefined && oldest !== key) cache.delete(oldest);
+  }
+  return pending;
+}
+
+function decodeImageData(url: string): Promise<ImageData | null> {
+  return new Promise((resolve) => {
+    const element = new Image();
+    element.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = element.width;
+      canvas.height = element.height;
+      const context = canvas.getContext("2d");
+      if (!context) return resolve(null);
+      context.drawImage(element, 0, 0);
+      resolve(context.getImageData(0, 0, element.width, element.height));
+    };
+    element.onerror = () => resolve(null);
+    element.src = url;
+  });
+}
+
+/** 贴花解码纹理缓存（key = DecalUnitTexture 对象身份；会话更换即失效回收）。 */
+let decalTextureCacheOwner: DecalUnitTexture[] | null = null;
+const decalTextureCache = new Map<
+  DecalUnitTexture,
+  { texture: ThreeNamespace.Texture; url: string }
+>();
+
+function releaseDecalTextureCache(): void {
+  for (const entry of decalTextureCache.values()) {
+    entry.texture.dispose();
+    URL.revokeObjectURL(entry.url);
+  }
+  decalTextureCache.clear();
+  decalTextureCacheOwner = null;
+}
+
+async function getDecalTexture(
+  THREE: typeof ThreeNamespace,
+  texture: DecalUnitTexture,
+): Promise<ThreeNamespace.Texture | null> {
+  if (!texture.png) return null;
+  if (decalTextureCacheOwner !== props.decalTextures) {
+    releaseDecalTextureCache();
+    decalTextureCacheOwner = props.decalTextures;
+  }
+  const hit = decalTextureCache.get(texture);
+  if (hit) return hit.texture;
+  try {
+    const url = URL.createObjectURL(
+      new Blob([texture.png], { type: "image/png" }),
+    );
+    const decoded = await new THREE.TextureLoader().loadAsync(url);
+    decoded.colorSpace = THREE.SRGBColorSpace;
+    decalTextureCache.set(texture, { texture: decoded, url });
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+/** decal 投影几何缓存（key = unit+变换+深度+宽高比；payload 更换即失效）。 */
+let decalProjectionCachePayload: LotModelPayload | null | undefined;
+const decalProjectionCache = new Map<string, ThreeNamespace.BufferGeometry>();
+
+function ensureDecalProjectionCache(payload: LotModelPayload | null): void {
+  if (decalProjectionCachePayload === payload) return;
+  for (const geometry of decalProjectionCache.values()) geometry.dispose();
+  decalProjectionCache.clear();
+  decalProjectionCachePayload = payload;
+}
+
+function releaseDecalProjectionCache(): void {
+  for (const geometry of decalProjectionCache.values()) geometry.dispose();
+  decalProjectionCache.clear();
+  decalProjectionCachePayload = undefined;
+}
+
+/**
+ * 上一次装配/增量应用的 unit DTO 快照（id → unit）：增量更新判定的对照物。
+ * 全量 rebuild 收尾与增量应用成功后都会刷新。
+ */
+let lastUnitsSnapshot = new Map<string, LotUnitDto>();
+
+function buildUnitsSnapshot(
+  grouping: UnitGrouping,
+): Map<string, LotUnitDto> {
+  const map = new Map<string, LotUnitDto>();
+  for (const unit of [
+    ...grouping.lights,
+    ...grouping.decals,
+    ...grouping.props,
+    ...grouping.effects,
+    ...grouping.spawners,
+    ...grouping.pathPoints,
+  ]) {
+    map.set(unitId(unit), unit);
+  }
+  return map;
+}
+
+/** 除 transform 外的 DTO 等价判定（非 transform 字段变化必须走全量重建）。 */
+function unitEqualsIgnoringTransform(
+  a: LotUnitDto,
+  b: LotUnitDto,
+): boolean {
+  if (a.kind !== b.kind) return false;
+  const restA: Record<string, unknown> = { ...a };
+  const restB: Record<string, unknown> = { ...b };
+  delete restA.transform;
+  delete restB.transform;
+  return JSON.stringify(restA) === JSON.stringify(restB);
+}
+
 const timeOfDay = () => props.timeOfDay ?? 12;
 
 function applySun() {
-  if (envRefs) applySunEnv(envRefs, timeOfDay(), props.powered);
+  if (envRefs) {
+    // 共享 uniform 热切换（不重建材质）——按需渲染下必须显式请求重绘。
+    applySunEnv(envRefs, timeOfDay(), props.powered);
+    viewport.viewer.value?.invalidate();
+  }
 }
 watch([() => props.specExperiment, () => props.specMode], () => {
   for (const uniform of specUniformRefs) uniform.value = 2;
+  viewport.viewer.value?.invalidate();
 });
 watch([() => props.timeOfDay, () => props.powered], () => {
   applySun();
@@ -232,7 +381,11 @@ async function ensureGizmo() {
   const controls = new Controls(instance.camera, instance.domElement);
   controls.size = 0.85;
   controls.addEventListener("objectChange", () => {
-    if (controls.dragging) emitLiveTransform(controls.object);
+    if (controls.dragging) {
+      emitLiveTransform(controls.object);
+      // 手柄拖拽直接改对象变换（不触发 grouping watcher），按需渲染下需显式重绘。
+      viewport.viewer.value?.invalidate();
+    }
   });
   controls.addEventListener("dragging-changed", (event) => {
     const dragging = (event as unknown as { value: boolean }).value;
@@ -281,11 +434,15 @@ function updateGizmo() {
   if (!controls) return;
   controls.detach();
   const tool = props.tool ?? "select";
-  if (tool === "select" || !props.selectedId) return;
+  if (tool === "select" || !props.selectedId) {
+    viewport.viewer.value?.invalidate();
+    return;
+  }
   const object = viewport.unitObjects.get(props.selectedId);
   if (!object) return;
   controls.setMode(tool);
   controls.attach(object);
+  viewport.viewer.value?.invalidate();
 }
 
 /** 本次重建的触发来源，供渲染遥测标注（在 watcher 里按变化项判定）。 */
@@ -303,6 +460,51 @@ function rebuildScene() {
   return viewport.rebuild(assembleScene, { reframe });
 }
 
+/**
+ * grouping 变化的**增量更新路径**：unit 集合不变、且只有非贴花 unit 的
+ * transform 变化时，原地把新矩阵 decompose 进既有 Object3D——不重建任何
+ * 几何/材质/贴花投影。此前拖拽手柄提交一次 transform、每次 undo/redo 都
+ * 触发全量重建（2046ms p95 的直接来源）；增量路径预期 <5ms。
+ *
+ * 返回 false = 需全量重建（unit 增删、非 transform 字段变化、贴花 transform
+ * ——投影几何随变换而变——或场景尚未装配）。
+ */
+function tryIncrementalGrouping(grouping: UnitGrouping): boolean {
+  const instance = viewport.viewer.value;
+  if (!instance) return false;
+  if (!viewport.sceneReady.value) return false;
+  const next = buildUnitsSnapshot(grouping);
+  const prev = lastUnitsSnapshot;
+  if (prev.size !== next.size) return false;
+  let transformChanged = false;
+  for (const [id, unit] of next) {
+    const old = prev.get(id);
+    if (!old) return false;
+    if (old === unit) continue;
+    if (!unitEqualsIgnoringTransform(old, unit)) return false;
+    // 贴花投影几何在 lot 局部空间随 transform 而变，必须重建；
+    // pathPoint 位置来自 point 字段（不消费 transform），无需应用。
+    if (unit.kind === "decal") return false;
+    transformChanged = true;
+  }
+  lastUnitsSnapshot = next;
+  if (!transformChanged) return true;
+  const THREE = instance.THREE;
+  for (const [id, unit] of next) {
+    // pathPoint 位置来自 point 字段（不消费 transform）。
+    if (unit.kind === "pathPoint" || !unit.transform) continue;
+    const object = viewport.unitObjects.get(id);
+    if (!object) continue;
+    unitMatrix(THREE, unit.transform).decompose(
+      object.position,
+      object.quaternion,
+      object.scale,
+    );
+  }
+  instance.invalidate();
+  return true;
+}
+
 /** 量化 mask 图的尺寸（raw RGBA 字节流构造 ImageData 时需要宽高）。 */
 async function loadMaskImageDims(): Promise<{
   width: number;
@@ -310,23 +512,26 @@ async function loadMaskImageDims(): Promise<{
 } | null> {
   const url = props.lotMaskPng ?? props.lotAlbedoPng;
   if (!url) return null;
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("lot mask failed"));
-      element.src = url;
-    });
-    return { width: image.width, height: image.height };
-  } catch {
-    return null;
-  }
+  return cacheGetOrLoad(imageDimsCache, url, async () => {
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("lot mask failed"));
+        element.src = url;
+      });
+      return { width: image.width, height: image.height };
+    } catch {
+      return null;
+    }
+  });
 }
 
 /** LotMask 原始通道权重图 → ImageData（compose 输入）。
  *  后端是未压缩 RGBA 字节流 base64（A = LC4 权重），**必须用 atob 直接构造
  *  ImageData**——若经 canvas 解码，预乘 alpha 会按 LC4 权重等比压缩/清零
- *  LC1-3 权重，精细合成随即满地判为草皮（2026-09-13 消防局对拍根因）。 */
+ *  LC1-3 权重，精细合成随即满地判为草皮（2026-09-13 消防局对拍根因）。
+ *  结果按源字符串缓存：编辑操作的全量重建不再重复 atob 逐字节拷贝。 */
 function loadRawMaskPixels(width: number, height: number): ImageData | null {
   const base64 = props.lotMaskRawRgba;
   if (!base64) return null;
@@ -340,50 +545,18 @@ function loadRawMaskPixels(width: number, height: number): ImageData | null {
   return new ImageData(pixels, width, height);
 }
 
-/** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入）。 */
-async function loadImageDataFromUrl(
+/** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入，按源 URL 缓存）。 */
+function loadImageDataFromUrl(
   url: string | null,
 ): Promise<ImageData | null> {
-  if (!url) return null;
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("image failed"));
-      element.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, image.width, image.height);
-  } catch {
-    return null;
-  }
+  if (!url) return Promise.resolve(null);
+  return cacheGetOrLoad(imageDataCache, url, () => decodeImageData(url));
 }
 
-async function loadSurfacePixels(): Promise<ImageData | null> {
+function loadSurfacePixels(): Promise<ImageData | null> {
   const url = props.lotSurfacePng;
-  if (!url) return null;
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("lot surface failed"));
-      element.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, image.width, image.height);
-  } catch {
-    return null;
-  }
+  if (!url) return Promise.resolve(null);
+  return cacheGetOrLoad(imageDataCache, url, () => decodeImageData(url));
 }
 
 onMounted(async () => {
@@ -395,6 +568,15 @@ onBeforeUnmount(() => {
   gizmo?.detach();
   gizmo?.dispose();
   gizmo = null;
+  // 释放本组件持有的跨 rebuild 缓存（GPU 贴图/几何/blob URL）。
+  releaseLotModelCache();
+  releaseRefinedMaterialCache();
+  releaseGroundComposeCache();
+  releaseDecalProjectionCache();
+  releaseDecalTextureCache();
+  imageDataCache.clear();
+  imageDimsCache.clear();
+  lastUnitsSnapshot.clear();
 });
 
 /** 业务场景装配：模型材质 → 地面 → 六类 Unit → 路径折线。 */
@@ -405,7 +587,8 @@ async function assembleScene(
   specUniformRefs.length = 0;
 
   const payload = props.modelPayload;
-  const modelObjects = payload ? await parseLotModelObjects(payload.glbs) : [];
+  // payload 级缓存：命中时返回 clone（共享几何），跳过 GLB parse。
+  const modelObjects = payload ? await getLotModelObjects(payload) : [];
   if (ctx.isStale()) {
     for (const object of modelObjects) disposeObject(object);
     return;
@@ -428,12 +611,7 @@ async function assembleScene(
   });
   const tintResolved =
     props.renderMode === "refined" && payload
-      ? await loadTintTextures(
-          THREE,
-          payload.materials ?? [],
-          ctx.registerTextureUrl,
-          ctx.maxAnisotropy,
-        )
+      ? await getTintTextures(THREE, payload, ctx.maxAnisotropy)
       : [];
   tintSpan.end({
     materials: payload?.materials?.length ?? 0,
@@ -486,14 +664,13 @@ async function assembleScene(
     const deferredSpan = renderTelemetry.begin("texture_compose", {
       phase: "deferred",
     });
-    applyDeferredMaterialMaps(
-      THREE,
-      payload,
-      materialGroups,
-      ctx.registerTextureUrl,
-      ctx.isStale,
-      ctx.maxAnisotropy,
-    );
+    // await 全部解码完成再应用：真实成本进 span（此前只覆盖同步签发）；
+    // 缓存命中时 await 即时返回。
+    const deferredMaps = await getDeferredMaps(THREE, payload, ctx.maxAnisotropy);
+    if (!ctx.isStale()) {
+      applyDeferredMaterialMaps(deferredMaps, materialGroups);
+      instance.invalidate();
+    }
     deferredSpan.end({ groups: materialGroups.length });
   }
 
@@ -533,7 +710,9 @@ async function assembleScene(
     // 2026-09-13 用户对拍需求）。
     instance.group("lot").add(ground);
     if (props.lotMaskPng || props.lotAlbedoPng) {
-      // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1
+      // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1。
+      // applyGroundMask 已 await（compose 成本进 scene_rebuild 遥测；
+      // 解码结果按源字符串缓存，编辑操作的全量重建零重复解码）。
       const [surface, maskDims, tintAtlas, normalAtlas] = await Promise.all([
         loadSurfacePixels(),
         loadMaskImageDims(),
@@ -550,7 +729,7 @@ async function assembleScene(
       const rawMask = maskDims
         ? loadRawMaskPixels(maskDims.width, maskDims.height)
         : null;
-      applyGroundMask({
+      await applyGroundMask({
         rawMask,
         surface,
         tintAtlas,
@@ -567,23 +746,23 @@ async function assembleScene(
         lotBorderColors: props.lotBorderColors,
         lotBorderWidths: props.lotBorderWidths,
         lotOverlayBoxOffset: props.lotOverlayBoxOffset,
+        rawMaskKey: props.lotMaskRawRgba,
+        surfaceKey: props.lotSurfacePng,
+        tintAtlasKey: props.lotTintAtlasPng,
+        normalAtlasKey: props.lotNormalAtlasPng,
         isStale: ctx.isStale,
       });
     }
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
   }
 
-  /** 贴花材质：四色解码贴图 + 二值 alpha。投影片与浮空回退共用。 */
+  /** 贴花材质：四色解码贴图（缓存）+ 二值 alpha。投影片与浮空回退共用。 */
   function buildDecalMaterial(
     THREE: typeof ThreeNamespace,
-    texture: DecalUnitTexture,
+    texture: ThreeNamespace.Texture,
   ): ThreeNamespace.MeshBasicMaterial {
-    const map = new THREE.TextureLoader().load(
-      `data:image/png;base64,${texture.png}`,
-    );
-    map.colorSpace = THREE.SRGBColorSpace;
     return new THREE.MeshBasicMaterial({
-      map,
+      map: texture,
       side: THREE.DoubleSide,
       // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
       // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
@@ -613,11 +792,11 @@ async function assembleScene(
    * 浮空 quad 回退：投影落空（建筑未加载 / 贴花不属于任何建筑面）时仍让
    * 用户看得到、点得到该 decal。尺寸 = 2×scale × (2×scale)/aspect。
    */
-  function buildDecalQuadFallback(
+  async function buildDecalQuadFallback(
     THREE: typeof ThreeNamespace,
     unit: DecalUnit,
     texture: DecalUnitTexture,
-  ): ThreeNamespace.Mesh {
+  ): Promise<ThreeNamespace.Mesh | null> {
     const aspect =
       texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
     // Scale 是半宽（原 SCP `UnitDecal.CreateGeometry`：`rectangle.Length = 2 * Scale`）。
@@ -631,7 +810,9 @@ async function assembleScene(
     const uv = geometry.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
     uv.needsUpdate = true;
-    const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture));
+    const decoded = await getDecalTexture(THREE, texture);
+    if (!decoded) return null;
+    const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, decoded));
     // 回退仍按旧口径沿局部 -Z 让开 depth：引擎 `decalMaterialInfoWithObjectData`
     // 的 VS 取 -z（`float4(-z/-x/-y, 0)`）。
     mesh.translateZ(-(unit.depth ?? 0));
@@ -645,27 +826,46 @@ async function assembleScene(
    * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
    * `unitObjects` 选中与 `userData.unitId` 注册照旧；投影几何子节点用
    * 逆矩阵抵消父变换，因此几何本身保持 lot 局部坐标。
+   *
+   * 投影结果按 (unit, transform, depth, aspect) 缓存（payload 级）：编辑
+   * 其他 unit 引发的全量重建不再重跑 DecalGeometry CPU 裁剪。
    */
   async function buildDecalObject(
     THREE: typeof ThreeNamespace,
     unit: DecalUnit,
     texture: DecalUnitTexture,
     meshes: ThreeNamespace.Mesh[],
+    proxies: ThreeNamespace.Mesh[],
   ): Promise<ThreeNamespace.Object3D | null> {
     if (!texture.png) return null;
     const aspect =
       texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
+    const decoded = await getDecalTexture(THREE, texture);
+    if (!decoded) return null;
     const frame = decalFrame(THREE, unit, aspect);
     const group = new THREE.Group();
     applyDecalTransform(THREE, unit, group);
 
     if (frame) {
-      const geometry = await projectDecal(THREE, frame, meshes, unit.depth);
-      if (geometry) {
-        const mesh = new THREE.Mesh(
-          geometry,
-          buildDecalMaterial(THREE, texture),
+      const projectionKey = `${unitId(unit)}|${JSON.stringify(unit.transform?.matrix ?? null)}|${unit.depth}|${aspect}`;
+      let geometry = decalProjectionCache.get(projectionKey);
+      if (!geometry) {
+        const projected = await projectDecal(
+          THREE,
+          frame,
+          meshes,
+          unit.depth,
+          proxies,
         );
+        if (projected) {
+          // 投影几何归缓存所有：清场不 dispose（payload 更换时统一释放）。
+          markGeometryShared(projected);
+          decalProjectionCache.set(projectionKey, projected);
+          geometry = projected;
+        }
+      }
+      if (geometry) {
+        const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, decoded));
         const inverse = frame.matrix.clone().invert();
         mesh.matrixAutoUpdate = false;
         mesh.matrix.copy(inverse);
@@ -679,7 +879,8 @@ async function assembleScene(
     console.info(
       `[decal] ${unitId(unit)} 投影未命中建筑面，回退浮空 quad（可能在游戏的高细节 LOD 上）`,
     );
-    group.add(buildDecalQuadFallback(THREE, unit, texture));
+    const fallback = await buildDecalQuadFallback(THREE, unit, texture);
+    if (fallback) group.add(fallback);
     return group;
   }
 
@@ -698,6 +899,12 @@ async function assembleScene(
       texture,
     ]),
   );
+  // 投影代理一次构建（多枚贴花共享）：包装共享缓存几何，无 GPU 成本。
+  ensureDecalProjectionCache(payload);
+  const decalProxies =
+    props.renderMode === "refined" && buildingMeshes.length
+      ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
+      : [];
   const decalSpan = renderTelemetry.begin("decal_render", {
     decals: props.grouping.decals.length,
   });
@@ -719,8 +926,13 @@ async function assembleScene(
     ) {
       // 贴图解码失败（无 png）→ 退回 gizmo，保证仍可见可选
       object =
-        (await buildDecalObject(THREE, unit, decalTexture, buildingMeshes)) ??
-        buildUnitObject(THREE, unit);
+        (await buildDecalObject(
+          THREE,
+          unit,
+          decalTexture,
+          buildingMeshes,
+          decalProxies,
+        )) ?? buildUnitObject(THREE, unit);
     } else {
       object = buildUnitObject(THREE, unit);
     }
@@ -756,6 +968,13 @@ async function assembleScene(
   viewport.applyGroupVisibility(props.groupVisibility);
   viewport.applyUnitVisibility(props.hiddenUnits);
   viewport.applySelection(props.selectedId);
+  // 规模统计 → scene_rebuild 遥测 metadata（量化「property 规模 ↔ 耗时」）。
+  ctx.stats.units = units.length;
+  ctx.stats.decals = props.grouping.decals.length;
+  ctx.stats.materials = payload?.materials?.length ?? 0;
+  ctx.stats.meshes = payload?.glbs.length ?? 0;
+  // 全量装配完成：刷新增量判定快照（与本次装配的 grouping 一致）。
+  lastUnitsSnapshot = buildUnitsSnapshot(props.grouping);
 }
 
 /** 日/夜亮度：仅缩放环境四灯；地块真实光源保持常亮（夜间灯依然亮）。 */
@@ -771,26 +990,39 @@ defineExpose({
     viewport.captureRender(options),
 });
 
+// 模型载荷 / 渲染模式变化 → 全量重建；grouping 变化 → 先试增量（热路径），
+// 失败（unit 增删/字段变化/贴花移动）才全量。同一 flush 内两者都变时
+// （如会话加载），rebuildToken 保证后到者胜出。
 watch(
-  () => [props.modelPayload, props.renderMode, props.grouping] as const,
-  ([payload, mode, grouping], previous) => {
+  () => [props.modelPayload, props.renderMode] as const,
+  ([payload], previous) => {
     // 按变化项判定触发来源（首次拿到 payload 记 first_load，换级记 lod_switch）。
-    if (payload !== previous?.[0]) {
-      pendingTrigger = previous?.[0] == null ? "first_load" : "lod_switch";
-    } else if (mode !== previous?.[1]) {
-      pendingTrigger = "render_mode";
-    } else if (grouping !== previous?.[2]) {
-      pendingTrigger = "grouping";
-    } else {
-      pendingTrigger = "scene_rebuild";
-    }
+    pendingTrigger =
+      previous?.[0] == null
+        ? "first_load"
+        : payload !== previous[0]
+          ? "lod_switch"
+          : "render_mode";
     void rebuildScene();
+  },
+);
+watch(
+  () => props.grouping,
+  (grouping) => {
+    pendingTrigger = "grouping";
+    if (!tryIncrementalGrouping(grouping)) void rebuildScene();
   },
 );
 watch(
   () => props.groupVisibility,
   () => viewport.applyGroupVisibility(props.groupVisibility),
   { deep: true },
+);
+// 单元隐藏此前只在装配期应用（无 watcher → 切换后无效果直到下次重建）；
+// 现在独立生效。
+watch(
+  () => props.hiddenUnits,
+  () => viewport.applyUnitVisibility(props.hiddenUnits),
 );
 watch(
   () => props.hiddenUnits,

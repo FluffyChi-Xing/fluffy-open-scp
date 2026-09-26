@@ -215,12 +215,13 @@ export interface TintTextureSet {
  * uvKind=2（facade tint 着色器）：贴图**预加载完成**后才建材质——
  * 否则首次编译时 uniform 为 null，采样 alpha=0 → 全部 discard（模型隐形）。
  */
-export async function loadTintTextures(
+async function loadTintTextures(
   THREE: typeof ThreeNamespace,
   materials: LotMaterial[],
-  registerTextureUrl: (url: string) => void,
   /** 硬件最大各向异性过滤级别（掠射角墙面靠它保清晰度）。 */
   maxAnisotropy = 1,
+  /** blob URL 收集（由资产缓存持有，跨 rebuild 存活，释放时统一回收）。 */
+  cacheUrls: string[],
 ): Promise<TintTextureSet[]> {
   const loader = new THREE.TextureLoader();
   // seamless（默认 true）：tint/normal/shader 都是「fract → 图集区域」平铺采样。
@@ -231,7 +232,9 @@ export async function loadTintTextures(
   const loadTex = (bytes: Uint8Array<ArrayBuffer>, seamless = true) =>
     new Promise<ThreeNamespace.Texture>((resolve, reject) => {
       const url = pngBlobUrl(bytes);
-      registerTextureUrl(url);
+      // blob URL 由材质资产缓存持有（见 getRefinedMaterialAssets），
+      // 不进逐 rebuild 的 textureUrls——缓存命中的贴图要跨 rebuild 存活。
+      cacheUrls.push(url);
       loader.load(
         url,
         (texture) => {
@@ -294,6 +297,159 @@ export async function loadTintTextures(
       paramCols: material.paramCols,
     })),
   );
+}
+
+/** 每 mesh 材质组的延迟绑定贴图集（base/normal/roughness/AO）。 */
+export interface MaterialMapSet {
+  map: ThreeNamespace.Texture | null;
+  normalMap: ThreeNamespace.Texture | null;
+  roughnessMap: ThreeNamespace.Texture | null;
+  aoMap: ThreeNamespace.Texture | null;
+}
+
+interface RefinedMaterialAssetCache {
+  payload: LotModelPayload;
+  tintSets: TintTextureSet[];
+  deferredMaps: MaterialMapSet[];
+  /** 缓存持有的 blob URL（释放时统一 revoke）。 */
+  urls: string[];
+}
+
+/**
+ * 材质资产缓存（payload 级）：tint 链 5-6 张/材质 + deferred 链 4 张/材质的
+ * PNG 解码与 GPU 上传是 rebuild 最贵的重复功——renderMode/grouping 变化的
+ * 全量重建里它们完全不变，命中缓存即零解码。blob URL 由缓存持有，不进
+ * 逐 rebuild 的 textureUrls 回收；payload 更换/视口销毁时显式释放。
+ */
+let materialAssetCache: RefinedMaterialAssetCache | null = null;
+
+/** 释放材质资产缓存（贴图 dispose + blob URL revoke）。 */
+export function releaseRefinedMaterialCache(): void {
+  const cache = materialAssetCache;
+  if (!cache) return;
+  materialAssetCache = null;
+  for (const url of cache.urls) URL.revokeObjectURL(url);
+  for (const set of cache.tintSets) {
+    set.tintTex?.dispose();
+    set.paletteTex?.dispose();
+    set.normalTex?.dispose();
+    set.shaderTex?.dispose();
+    set.interiorTex?.dispose();
+    set.paramsTex?.dispose();
+  }
+  for (const set of cache.deferredMaps) {
+    set.map?.dispose();
+    set.normalMap?.dispose();
+    set.roughnessMap?.dispose();
+    set.aoMap?.dispose();
+  }
+}
+
+/** 取（或构建）payload 的 tint 链贴图集。命中缓存 = 零解码零上传。 */
+export async function getTintTextures(
+  THREE: typeof ThreeNamespace,
+  payload: LotModelPayload,
+  maxAnisotropy: number,
+): Promise<TintTextureSet[]> {
+  if (!materialAssetCache || materialAssetCache.payload !== payload) {
+    releaseRefinedMaterialCache();
+    materialAssetCache = {
+      payload,
+      tintSets: [],
+      deferredMaps: [],
+      urls: [],
+    };
+  }
+  if (materialAssetCache.tintSets.length === 0) {
+    materialAssetCache.tintSets = await loadTintTextures(
+      THREE,
+      payload.materials ?? [],
+      maxAnisotropy,
+      materialAssetCache.urls,
+    );
+  }
+  return materialAssetCache.tintSets;
+}
+
+/** 取（或构建）payload 的 deferred 链贴图集（await 全部解码完成）。 */
+export async function getDeferredMaps(
+  THREE: typeof ThreeNamespace,
+  payload: LotModelPayload,
+  maxAnisotropy: number,
+): Promise<MaterialMapSet[]> {
+  if (!materialAssetCache || materialAssetCache.payload !== payload) {
+    releaseRefinedMaterialCache();
+    materialAssetCache = {
+      payload,
+      tintSets: [],
+      deferredMaps: [],
+      urls: [],
+    };
+  }
+  if (materialAssetCache.deferredMaps.length === 0) {
+    const cache = materialAssetCache;
+    const loader = new THREE.TextureLoader();
+    const load = async (
+      bytes: Uint8Array<ArrayBuffer> | null,
+      srgb: boolean,
+    ): Promise<ThreeNamespace.Texture | null> => {
+      if (!bytes) return null;
+      const url = pngBlobUrl(bytes);
+      cache.urls.push(url);
+      const texture = await loader.loadAsync(url);
+      texture.anisotropy = maxAnisotropy;
+      if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    };
+    cache.deferredMaps = await Promise.all(
+      (payload.materials ?? []).map(async (material) => {
+        const [map, normalMap, roughnessMap, aoMap] = await Promise.all([
+          load(material.baseColorPng, true),
+          load(material.normalPng, false),
+          load(material.roughnessPng, false),
+          load(material.aoPng, false),
+        ]);
+        return { map, normalMap, roughnessMap, aoMap };
+      }),
+    );
+  }
+  return materialAssetCache.deferredMaps;
+}
+
+/** 把 deferred 贴图绑定到逐 mesh 材质组（同步，贴图已就绪）。 */
+export function applyDeferredMaterialMaps(
+  maps: MaterialMapSet[],
+  materialGroups: ThreeNamespace.MeshStandardMaterial[][],
+) {
+  maps.forEach((set, materialIndex) => {
+    const group = materialGroups[materialIndex] ?? [];
+    if (!group.length) return;
+    if (set.map) {
+      for (const refined of group) {
+        refined.map = set.map;
+        refined.needsUpdate = true;
+      }
+    }
+    if (set.normalMap) {
+      for (const refined of group) {
+        refined.normalMap = set.normalMap;
+        refined.needsUpdate = true;
+      }
+    }
+    if (set.roughnessMap) {
+      for (const refined of group) {
+        refined.roughnessMap = set.roughnessMap;
+        refined.roughness = 1;
+        refined.needsUpdate = true;
+      }
+    }
+    if (set.aoMap) {
+      for (const refined of group) {
+        refined.aoMap = set.aoMap;
+        refined.needsUpdate = true;
+      }
+    }
+  });
 }
 
 /**
@@ -774,78 +930,3 @@ export function makeTintMaterial(
   return [tinted, uSpecGUniform];
 }
 
-/**
- * 精细贴图：按 0x2001A 绑定的**每 mesh 材质**应用（遮罩红通道 baseColor +
- * 解 Swizzle 法线；可贴图判定服务端逐 mesh 给出）。异步加载，完成后按
- * isStale 守卫丢弃过期代。
- */
-export function applyDeferredMaterialMaps(
-  THREE: typeof ThreeNamespace,
-  payload: LotModelPayload,
-  materialGroups: ThreeNamespace.MeshStandardMaterial[][],
-  registerTextureUrl: (url: string) => void,
-  isStale: () => boolean,
-  /** 硬件最大各向异性过滤级别（同 loadTintTextures）。 */
-  maxAnisotropy = 1,
-) {
-  const loader = new THREE.TextureLoader();
-  const loadTexture = (
-    bytes: Uint8Array<ArrayBuffer>,
-    setup: (texture: ThreeNamespace.Texture) => void,
-  ) => {
-    const url = pngBlobUrl(bytes);
-    registerTextureUrl(url);
-    loader.load(
-      url,
-      (texture) => {
-        if (isStale()) {
-          texture.dispose();
-          return;
-        }
-        texture.anisotropy = maxAnisotropy;
-        setup(texture);
-      },
-      undefined,
-      () => {},
-    );
-  };
-  payload.materials?.forEach((material, materialIndex) => {
-    const group = materialGroups[materialIndex] ?? [];
-    if (!group.length) return;
-    if (material.baseColorPng) {
-      loadTexture(material.baseColorPng, (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        for (const refined of group) {
-          refined.map = texture;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-    if (material.normalPng) {
-      loadTexture(material.normalPng, (texture) => {
-        for (const refined of group) {
-          refined.normalMap = texture;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-    // shader map B 反转 = 粗糙度；normal alpha = AO（three 的 aoMap 读 R 通道）
-    if (material.roughnessPng) {
-      loadTexture(material.roughnessPng, (texture) => {
-        for (const refined of group) {
-          refined.roughnessMap = texture;
-          refined.roughness = 1;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-    if (material.aoPng) {
-      loadTexture(material.aoPng, (texture) => {
-        for (const refined of group) {
-          refined.aoMap = texture;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-  });
-}
