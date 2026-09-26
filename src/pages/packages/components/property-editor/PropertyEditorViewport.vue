@@ -106,6 +106,8 @@ const props = defineProps<{
   powered?: boolean;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
   tool?: EditorTool;
+  /** 【实验】逐实例选列基址（引擎 Current.indices.y）；默认 0。 */
+  matBase?: number;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -154,6 +156,10 @@ watch(brightness, () => applyBrightness());
 
 /** 存活 tint 材质的 uSpecMode uniform 引用（通道实验热切换，免重建）。 */
 const specUniformRefs: { value: number }[] = [];
+
+/** 逐实例选列基址（引擎 Current.indices.y）共享 uniform——baseMatIndex 实验
+ *  热切换入口，默认 0 = 现状；DLC 建筑 0x3F31B27E 候选值 68。 */
+const matBaseUniform = { value: 0 };
 
 let envRefs: SunEnvRefs | null = null;
 
@@ -301,6 +307,15 @@ watch([() => props.timeOfDay, () => props.powered], () => {
   applySun();
   applyBrightness();
 });
+// baseMatIndex 实验热切换：共享 uniform 直改，免材质重建。
+watch(
+  () => props.matBase,
+  (value) => {
+    matBaseUniform.value = value ?? 0;
+    viewport.viewer.value?.invalidate();
+  },
+  { immediate: true },
+);
 
 /** 复制模型槽位诊断（mesh/material/texture 及来源包关系），供复盘。 */
 async function copyDiagnostics() {
@@ -627,7 +642,7 @@ async function assembleScene(
       const tint = tintResolved[materialIndex];
       if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
         // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env);
+        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env, matBaseUniform);
         specUniformRefs.push(specUniform);
         mesh.material = tinted;
         return;

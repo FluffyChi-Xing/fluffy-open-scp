@@ -196,6 +196,10 @@ async function exportModel(mode: "white" | "textured") {
 }
 /** 5d 供电（断电 = 内景自发光全灭）。 */
 const powered = ref(true);
+/** 【实验】逐实例选列基址（引擎 Current.indices.y）：DLC 建筑 0x3F31B27E
+ *  顶点仅用前 77/145 列，base=68 恰好铺满表尾——编辑器无实例数据，此输入
+ *  供人工校准。若实验无效应回滚移除（见 migration.md §49）。 */
+const matBase = ref(0);
 
 watch(open, (value) => {
   if (value) void load();
@@ -322,6 +326,22 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FCheckbox v-model="powered" />
           <span>{{ $t("package.powered") }}</span>
         </label>
+        <label
+          v-if="renderMode === 'refined'"
+          class="spec-experiment"
+          :title="$t('package.matBaseHint')"
+        >
+          <span>{{ $t("package.matBase") }}</span>
+          <input
+            v-model.number="matBase"
+            type="number"
+            min="0"
+            max="200"
+            step="1"
+            class="matbase-input"
+            :aria-label="$t('package.matBase')"
+          />
+        </label>
         <button
           class="editor-close"
           type="button"
@@ -444,6 +464,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :mat-base="matBase"
           :tool="tool"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
@@ -552,6 +573,17 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   font-size: 11px;
   gap: 6px;
   white-space: nowrap;
+}
+.matbase-input {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 11px;
+  min-height: 24px;
+  padding: 2px 6px;
+  width: 56px;
 }
 .daynight {
   align-items: center;

@@ -502,6 +502,7 @@ export function attachTintShader(
     interiorMapMap: { value: ThreeNamespace.Texture | null };
     paramsMap: { value: ThreeNamespace.Texture | null };
     uParamCols: { value: number };
+    uMatBase: { value: number };
     uSunDir: { value: ThreeNamespace.Vector3 };
     uSunColor: { value: ThreeNamespace.Color };
     uSkyColor: { value: ThreeNamespace.Color };
@@ -534,6 +535,7 @@ attribute vec4 uv1;
 attribute vec2 uv2;
 attribute vec2 uv3;
 uniform float uParamCols;
+uniform float uMatBase;
 #ifdef TINT_PARAMS
 uniform sampler2D paramsMap;
 #endif
@@ -557,8 +559,11 @@ vTopUv = uv3;
 // 采到无关区域 = 「对称窗只渲染一半」「全窗缺失」的根因（消防局
 // 0x4DE9912B 40 列 / 0xA624D9F9 59 列参数表 dump + building4SetupVS 的
 // materialInfoUV 作为 texcoord1 输出逐字证实）。舍入 +0.1 为引擎字面。
+// uMatBase = 引擎 Current.indices.y（逐实例选列基址）：DLC 建筑
+// 0x3F31B27E 顶点仅用前 77/145 列，base=68 恰好铺满表尾——编辑器无实例
+// 数据，此 uniform 供实验校准（默认 0 = 现状）。
 #ifdef TINT_PARAMS
-vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + 0.5) / uParamCols, 0.0);
+vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + uMatBase + 0.5) / uParamCols, 0.0);
 #else
 vMatUV = vec2(0.0);
 #endif`,
@@ -891,6 +896,8 @@ export function makeTintMaterial(
   THREE: typeof ThreeNamespace,
   tint: TintTextureSet,
   env: SunEnvRefs,
+  /** 逐实例选列基址（引擎 Current.indices.y）：共享 uniform，热切换免重建。 */
+  matBase: { value: number },
 ): [ThreeNamespace.MeshStandardMaterial, { value: number }] {
   const tinted = new THREE.MeshStandardMaterial({
     roughness: 0.9,
@@ -928,6 +935,7 @@ export function makeTintMaterial(
       uParamCols: { value: tint.paramCols },
       // 5a/5d：太阳/天空/昼夜/供电为共享 uniform 实例（applySunEnv 热切换）
       uSunDir: env.sunDir,
+      uMatBase: matBase,
       uSunColor: env.sunColor,
       uSkyColor: env.skyColor,
       uSkyHorizon: env.skyHorizon,

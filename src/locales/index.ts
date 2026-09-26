@@ -1142,6 +1142,9 @@ const messages = {
         "日/夜时段：驱动太阳方向/颜色与天空；夜间窗户亮灯（内景自发光）",
       powered: "供电",
       poweredHint: "断电 = 窗内灯全灭（源码 interiorThresholds.z 行为）",
+      matBase: "选列基址",
+      matBaseHint:
+        "【实验】逐实例选列基址（引擎 Current.indices.y）。DLC 建筑 0x3F31B27E 候选值 68；默认 0 = 现状。若无改善请保持 0 并反馈",
       toolbarTools: "工具",
       toolbarImport: "导入",
       toolbarExport: "导出",
@@ -2700,6 +2703,9 @@ const messages = {
       powered: "Power",
       poweredHint:
         "Power off = all interior lights out (source interiorThresholds.z behaviour)",
+      matBase: "Mat base",
+      matBaseHint:
+        "[Experiment] per-instance material base (engine Current.indices.y). DLC building 0x3F31B27E candidate 68; default 0 = current. Keep 0 and report if no effect",
       toolbarTools: "Tools",
       toolbarImport: "Import",
       toolbarExport: "Export",
