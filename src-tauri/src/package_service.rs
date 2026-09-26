@@ -2331,11 +2331,15 @@ pub async fn read_lot_editor_session(
             // LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
             // 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
             let properties = flatten_lot_parents(properties, package, manager);
-            // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG。
-            let decal_textures = resolve_decal_textures(&properties, package, manager);
+            // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
+            // 附带 materialData 三元组存在性与 material/shader-def 引用
+            // 诊断（P4-D1 证据链）。
+            let (decal_textures, decal_diag) =
+                resolve_decal_textures(&properties, package, manager);
             let document = sc_properties::LotEditorDocument::from_property_file(properties);
             let lot_units = document.assemble_units();
             let mut diagnostics = lot_units.diagnostics;
+            diagnostics.extend(decal_diag);
             let (model_lods, lod_diagnostics) = resolve_lod_model_refs(
                 package,
                 request.package_id,
@@ -4161,6 +4165,12 @@ pub struct DecalUnitTextureDto {
     /// 四色解码后的 PNG（base64）。
     pub png: Option<String>,
     pub error: Option<String>,
+    /// 命中字典的 material 引用（0xCAAD8C9，effect/材质资源）——decal 变体
+    /// （decalProject Front/Lit/SDF/Neon/InteriorMap）判定的数据源（P4-D1）。
+    pub material_instance: Option<u32>,
+    /// material 资源 shader-def 槽（slot 0x2D）引用的实例——同上，best-effort
+    /// 解析失败为 None（诊断文本留痕）。
+    pub shader_def_instance: Option<u32>,
 }
 
 /// 收集全部 Decal Atlas 字典（跨包去重，高细节 textureSize 优先）。
@@ -4200,7 +4210,7 @@ fn resolve_decal_textures(
     properties: &sc_properties::PropertyFile,
     package: &Package,
     manager: &PackageManager,
-) -> Vec<DecalUnitTextureDto> {
+) -> (Vec<DecalUnitTextureDto>, Vec<String>) {
     let mut all: Vec<&Package> = vec![package];
     let manager_packages = manager.all_packages().unwrap_or_default();
     all.extend(manager_packages.iter().map(|p| p.as_ref()));
@@ -4214,6 +4224,9 @@ fn resolve_decal_textures(
     });
 
     let mut out = Vec::new();
+    let mut diag = Vec::new();
+    // 字典 material → shader-def 实例缓存（同字典只解析一次）。
+    let mut shader_def_cache: std::collections::HashMap<u32, Option<u32>> = Default::default();
     for category in 0..3u32 {
         let Some(id_property) = properties.get(0x0D10_9050 + category) else {
             continue;
@@ -4223,13 +4236,25 @@ fn resolve_decal_textures(
         };
         for (index, value) in ids.iter().enumerate() {
             let sc_properties::Value::Key(key) = value else { continue };
-            let entry = atlases
-                .iter()
-                .find_map(|dict| {
-                    dict.entries
-                        .iter()
-                        .find(|entry| entry.id.map(|k| k.instance) == Some(key.instance))
-                });
+            let found = atlases.iter().find_map(|dict| {
+                dict.entries
+                    .iter()
+                    .find(|entry| entry.id.map(|k| k.instance) == Some(key.instance))
+                    .map(|entry| (dict, entry))
+            });
+            let (entry, dict) = match found {
+                Some((dict, entry)) => (Some(entry), Some(dict)),
+                None => (None, None),
+            };
+            let material_instance = dict.and_then(|d| d.material.as_ref().map(|k| k.instance));
+            let shader_def_instance = match material_instance {
+                Some(instance) => {
+                    *shader_def_cache
+                        .entry(instance)
+                        .or_insert_with(|| resolve_shader_def_instance(instance, package, manager))
+                }
+                None => None,
+            };
             let mut dto = DecalUnitTextureDto {
                 category,
                 index: index as u32,
@@ -4240,6 +4265,8 @@ fn resolve_decal_textures(
                 height: None,
                 png: None,
                 error: None,
+                material_instance,
+                shader_def_instance,
             };
             match entry {
                 Some(entry) => {
@@ -4261,7 +4288,63 @@ fn resolve_decal_textures(
             out.push(dto);
         }
     }
-    out
+    // materialData 三元组（0xDA76A05/06/07）存在性探针——S1（破洞假内景光）
+    // 与 S7（三纹理）的数据基础，证据先行（P4-D1）。
+    for (offset, hash) in [(0u32, 0x0DA7_6A05), (1, 0x0DA7_6A06), (2, 0x0DA7_6A07)] {
+        match properties.get(hash) {
+            Some(property) => {
+                let kind = match &property.kind {
+                    sc_properties::Kind::Array(values) => {
+                        format!("array[{}]", values.len())
+                    }
+                    sc_properties::Kind::Scalar(_) => "scalar".into(),
+                    sc_properties::Kind::Empty => "empty".into(),
+                };
+                diag.push(format!(
+                    "decal materialData slot{offset} 0x{hash:08X}: present ({kind})"
+                ));
+            }
+            None => diag.push(format!(
+                "decal materialData slot{offset} 0x{hash:08X}: absent"
+            )),
+        }
+    }
+    (out, diag)
+}
+
+/// material 资源（RW4）shader-def 槽（slot 0x2D）引用实例（best-effort）。
+fn resolve_shader_def_instance(
+    material_instance: u32,
+    package: &Package,
+    manager: &PackageManager,
+) -> Option<u32> {
+    let lookup = |pkg: &Package| -> Option<u32> {
+        let entry = pkg
+            .entries()
+            .iter()
+            .find(|e| e.id.type_id == RW4_MODEL_TYPE && e.id.instance == material_instance)?;
+        let data = pkg.read(entry).ok()?;
+        let file = rw4::Rw4File::parse(&data).ok()?;
+        let section = file
+            .sections_of_type(rw4::SectionType::MATERIAL)
+            .next()?
+            .number;
+        match file.decode_material(&data, section).ok()? {
+            rw4::MaterialSection::Decoded(material) => material
+                .texture_refs
+                .iter()
+                .find(|r| r.slot == rw4::SHADER_DEF_MARKER)
+                .map(|r| r.texture_instance),
+            rw4::MaterialSection::Raw(_) => None,
+        }
+    };
+    lookup(package).or_else(|| {
+        manager
+            .all_packages()
+            .ok()?
+            .iter()
+            .find_map(|p| lookup(p))
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]

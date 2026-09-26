@@ -510,6 +510,10 @@ export interface DecalUnitTexture {
   /** 四色解码后的 PNG（裸 base64）；解析失败为 null。 */
   png: string | null;
   error: string | null;
+  /** 命中字典的 material 引用（effect/变体判定数据源，P4-D1）。 */
+  materialInstance: number | null;
+  /** material 资源 shader-def 槽引用实例（best-effort，失败为 null）。 */
+  shaderDefInstance: number | null;
 }
 export interface PropUnit {
   kind: "prop";
