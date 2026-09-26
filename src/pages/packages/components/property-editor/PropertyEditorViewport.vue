@@ -815,6 +815,92 @@ async function assembleScene(
   }
 
   /**
+   * 破洞内视材质（decalInteriorMap 近似）：洞口内用建筑 slot5 房间图集做
+   * 盒体投影（与窗户 scInteriorMap 同款数学），随视线产生进深视差；焦痕
+   * 边环 = 贴花贴图低 alpha 区。房间象限按 decal 种子随机（引擎按 facade
+   * 域 FastNoise 选房，我们缺顶点色数据，取近似）。
+   */
+  function createHoleInteriorMaterial(
+    THREE: typeof ThreeNamespace,
+    holeTex: ThreeNamespace.Texture,
+    interiorTex: ThreeNamespace.Texture | null,
+    seed: number,
+  ): ThreeNamespace.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        holeMap: { value: holeTex },
+        interiorMap: { value: interiorTex ?? holeTex },
+        uHasInterior: { value: interiorTex ? 1 : 0 },
+        uSeed: { value: seed },
+        uInvModel: { value: new THREE.Matrix4() },
+      },
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vPos;
+        varying vec3 vEyeObj;
+        uniform mat4 uInvModel;
+        void main() {
+          vUv = uv;
+          vPos = position;
+          vec3 camObj = (uInvModel * vec4(cameraPosition, 1.0)).xyz;
+          vEyeObj = normalize(camObj - position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vPos;
+        varying vec3 vEyeObj;
+        uniform sampler2D holeMap;
+        uniform sampler2D interiorMap;
+        uniform float uHasInterior;
+        uniform float uSeed;
+        // 源码 FastNoise 逐字
+        float scFastNoise(vec3 s) {
+          s *= vec3(78.233, 12.9898, 43758.5453);
+          s += vec3(0.819 * 78.233, 0.819 * 12.9898, 0.819 * 43758.5453);
+          return fract(s.z * fract(s.x * fract(s.y)));
+        }
+        // ClipAndReliefMapPS 盒体投影（kInvDepth=0.5/kBackSize=0.5/kDilation=0.9）
+        vec2 scInteriorMap(vec3 eye, vec2 tc) {
+          vec3 e = eye;
+          e.z *= 0.5;
+          vec3 p = vec3(tc, 0.0) * -2.0 + 1.0;
+          p.z -= 1.0;
+          vec3 k = (sign(e) - p) / e;
+          float t = min(k.x, min(k.y, k.z));
+          vec3 target = p + t * e;
+          target.xy *= mix(0.9, 0.5, target.z);
+          return target.xy * -0.5 + 0.5;
+        }
+        void main() {
+          vec4 hole = texture2D(holeMap, vUv);
+          if (hole.a < 0.35) discard;
+          // 盒体投影进房间图集的一个象限（按种子选房）
+          float roomSel = scFastNoise(vec3(floor(vUv * 3.0), uSeed));
+          float quadrant = floor(roomSel * 4.0);
+          vec2 quad = vec2(mod(quadrant, 2.0), floor(quadrant / 2.0)) * 0.5;
+          vec2 tc = scInteriorMap(normalize(vEyeObj), fract(vUv));
+          vec3 room = texture2D(interiorMap, tc * 0.5 + quad).rgb;
+          // 越深越暗（无 interior 图时退化为近黑渐变）
+          float depth = clamp(length(vEyeObj) * 0.30, 0.0, 1.0);
+          vec3 interior = uHasInterior > 0.5
+            ? room * 0.5
+            : vec3(0.02, 0.02, 0.025);
+          interior = mix(interior, interior * 0.2, depth);
+          // 焦痕边环：低 alpha 区露贴图原色，高 alpha 区露内景
+          vec3 col = mix(hole.rgb, interior, smoothstep(0.45, 0.9, hole.a));
+          // ShaderMaterial 不走 three 的 colorspace 编码，手动回 sRGB
+          gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
+        }
+      `,
+    });
+  }
+
+  /**
    * 精细模式贴花：优先按引擎 `decalProject` 的方式**投影到建筑几何**
    * （盒体积裁剪 + 盒内归一化 UV），失败则回退浮空 quad。
    *
@@ -831,6 +917,7 @@ async function assembleScene(
     texture: DecalUnitTexture,
     meshes: ThreeNamespace.Mesh[],
     proxies: ThreeNamespace.Mesh[],
+    interiorTex: ThreeNamespace.Texture | null,
   ): Promise<ThreeNamespace.Object3D | null> {
     if (!texture.png) return null;
     const aspect =
@@ -840,6 +927,9 @@ async function assembleScene(
     const frame = decalFrame(THREE, unit, aspect);
     const group = new THREE.Group();
     applyDecalTransform(THREE, unit, group);
+    // 破洞种子（房间象限选择）；unitId 字符串散列
+    let seed = 0;
+    for (const ch of unitId(unit)) seed = (seed * 31 + ch.charCodeAt(0)) % 997;
 
     if (frame) {
       const projectionKey = `${unitId(unit)}|${JSON.stringify(unit.transform?.matrix ?? null)}|${unit.depth}|${aspect}`;
@@ -860,11 +950,22 @@ async function assembleScene(
         }
       }
       if (geometry) {
-        const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, decoded));
+        const isHole = texture.variant === "hole";
+        const material = isHole
+          ? createHoleInteriorMaterial(THREE, decoded, interiorTex, seed / 997)
+          : buildDecalMaterial(THREE, decoded);
+        const mesh = new THREE.Mesh(geometry, material);
         const inverse = frame.matrix.clone().invert();
         mesh.matrixAutoUpdate = false;
         mesh.matrix.copy(inverse);
         group.add(mesh);
+        if (isHole) {
+          // 内视盒体投影需要模型空间的相机位置（随镜头变化，逐帧刷新）
+          mesh.onBeforeRender = () => {
+            const material = mesh.material as ThreeNamespace.ShaderMaterial;
+            material.uniforms.uInvModel.value.copy(mesh.matrixWorld).invert();
+          };
+        }
         decalStats.projected += 1;
         // 破洞家族（decalInteriorMap）：贴花本体 = 焦痕，另有假内景光沿投影
         // 轴向墙面投射（引擎用贴花贴图作光 cookie、alpha 作衰减）。three 的
@@ -963,6 +1064,7 @@ async function assembleScene(
           decalTexture,
           buildingMeshes,
           decalProxies,
+          tintResolved[0]?.interiorTex ?? null,
         )) ?? buildUnitObject(THREE, unit);
     } else {
       object = buildUnitObject(THREE, unit);
