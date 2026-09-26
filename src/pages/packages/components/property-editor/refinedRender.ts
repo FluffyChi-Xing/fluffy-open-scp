@@ -465,8 +465,12 @@ export function applyDeferredMaterialMaps(
 
 /**
  * tint 着色器注入：逐像素复刻 building4 链（§27/§28 源码逐字）。
- * TEXCOORD_2 = facade 世界投影 UV（Float4.xy），TEXCOORD_1.xy = materialIndex
- * /255 + 内景随机种子。fragment：baseUv = frac(vTintUv)*regionXform.xy +
+ * TEXCOORD_2 = facade 世界投影 UV（Float4.xy），TEXCOORD_1.xy = 选列
+ * （逐顶点 D3DCOLOR.G）/255 + 内景随机种子。**参数表寻址 = 引擎
+ * building4SetupVS 同款：VS 算地址（列取整 +0.1、+0.5 对齐 texel 中心）
+ * 输出 vMatUV varying，PS 用插值地址逐像素 Nearest 采样**——跨列三角形
+ * 按像素原子切换整列参数，不混合两列的值（2026-09-26 定谳，见 uv_vertex
+ * 块注释）。fragment：baseUv = frac(vTintUv)*regionXform.xy +
  * regionXform.zw → tint 查表 → palette 查色（色行+末行 surface 行）×(tint.b*2)，
  * A<0.5 镂空 discard；法线图同 UV 重采样。TBN 直接用 GLB 导出的 TANGENT
  * （<normal_fragment_begin> 的 tbn；= 引擎 ApplyNormalMap(vn, tangent, nmap)
@@ -535,10 +539,7 @@ uniform sampler2D paramsMap;
 #endif
 varying vec2 vTintUv;
 varying vec2 vTopUv;
-varying vec4 vXform;
-varying vec4 vXform2;
-varying vec4 vPalOrigin;
-varying vec4 vRoom;
+varying vec2 vMatUV;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
@@ -549,23 +550,17 @@ varying vec3 vModelPos;`,
         `#include <uv_vertex>
 vTintUv = uv2;
 vTopUv = uv3;
-// 参数表按顶点取行（引擎 building4DefaultVS 同款数据流：VS 查表 →
-// regionXform 作为 varying 插值）。此前在片元里用插值列号 vMatU 查表：
-// 跨列三角形的列号在边界间连续扫过一连串无关列，窗扇半边被换成素墙
-// 区域（消防局中窗右半变砖墙，2026-09-19 实测）。列号取整后 +0.5 对齐
-// texel 中心，Nearest 采样行 V 与片元版一致。
+// 引擎 building4SetupVS 同款数据流（2026-09-26 定谳）：VS 只计算参数表
+// 【地址】并作为 varying 输出，PS 用插值地址 + Nearest 采样——跨列三角形
+// 在纹理空间插值，Nearest 逐像素原子切换整列参数，**永不混合两列的值**。
+// 此前在 VS 采样后插值【值】：跨列三角形把两个图集区域的变换几何混合，
+// 采到无关区域 = 「对称窗只渲染一半」「全窗缺失」的根因（消防局
+// 0x4DE9912B 40 列 / 0xA624D9F9 59 列参数表 dump + building4SetupVS 的
+// materialInfoUV 作为 texcoord1 输出逐字证实）。舍入 +0.1 为引擎字面。
 #ifdef TINT_PARAMS
-float scMatCol = floor(uv1.x * 255.0 + 0.5);
-vec2 scMatC = vec2((scMatCol + 0.5) / uParamCols, 0.0);
-vPalOrigin = texture2D(paramsMap, scMatC + vec2(0.0, 0.125));
-vXform = texture2D(paramsMap, scMatC + vec2(0.0, 0.375));
-vXform2 = texture2D(paramsMap, scMatC + vec2(0.0, 0.625));
-vRoom = texture2D(paramsMap, scMatC + vec2(0.0, 0.875));
+vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + 0.5) / uParamCols, 0.0);
 #else
-vPalOrigin = vec4(0.0);
-vXform = vec4(1.0, 1.0, 0.0, 0.0);
-vXform2 = vec4(0.0);
-vRoom = vec4(0.0);
+vMatUV = vec2(0.0);
 #endif`,
       )
       .replace(
@@ -589,16 +584,16 @@ vModelPos = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         `#include <common>
 varying vec2 vTintUv;
 varying vec2 vTopUv;
-varying vec4 vXform;
-varying vec4 vXform2;
-varying vec4 vPalOrigin;
-varying vec4 vRoom;
+varying vec2 vMatUV;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
+#ifdef TINT_PARAMS
+uniform sampler2D paramsMap;
+#endif
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uSkyColor;
@@ -651,12 +646,20 @@ float scFastNoise(vec3 seed) {
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
-        // 参数表行 = VS 按顶点查表后的 varying（引擎同款数据流），
-        // 跨列三角形平滑插值区域变换而非扫过无关列。
-        vec4 xform = vXform;
-        vec4 xform2 = vXform2; // row2=regionXform2(Top 层)
-        vec4 palOrigin = vPalOrigin;
-        vec4 scRoom = vRoom; // row3=(tilePadding.xy, roomInvSize.zw)
+        // 参数表逐像素采样（引擎同款）：地址在 VS 算好并插值过来
+        // （vMatUV），Nearest 采样按像素原子取列——跨列三角形在列边界
+        // 中线切换，不混合两列的变换。
+#ifdef TINT_PARAMS
+        vec4 palOrigin = texture2D(paramsMap, vMatUV + vec2(0.0, 0.125));
+        vec4 xform = texture2D(paramsMap, vMatUV + vec2(0.0, 0.375));
+        vec4 xform2 = texture2D(paramsMap, vMatUV + vec2(0.0, 0.625)); // row2=regionXform2(Top 层)
+        vec4 scRoom = texture2D(paramsMap, vMatUV + vec2(0.0, 0.875)); // row3=(tilePadding.xy, roomInvSize.zw)
+#else
+        vec4 palOrigin = vec4(0.0);
+        vec4 xform = vec4(1.0, 1.0, 0.0, 0.0);
+        vec4 xform2 = vec4(0.0);
+        vec4 scRoom = vec4(0.0);
+#endif
         // 半 texel 内缩：tint 是图集，fract=0/1 处的线性滤波核会读到相邻
         // 区域内容（Base 层此前没有 padding 保护——接缝的第二个成因）。
         vec2 tUv = fract(vTintUv) * max(xform.xy - uTintTexel, vec2(0.0)) + xform.zw + uTintTexel * 0.5;

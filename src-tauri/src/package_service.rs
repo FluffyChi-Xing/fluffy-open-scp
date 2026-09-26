@@ -5519,6 +5519,155 @@ mod lot_payload_tests {
         assert!(diag.contains("mesh #"), "diagnostics list meshes");
         assert!(diag.contains("slot0"), "diagnostics list slot0 params");
     }
+
+    /// 【取证探针】消防局（0x4DE9912B，「对称窗只渲染一半」）材质参数表
+    /// 逐列 dump + 顶点 G 列直方图。运行：
+    /// `cargo test --release --lib fire_station_params_probe -- --nocapture`
+    ///
+    /// 待答问题：
+    /// 1. 各列 regionXform（row1）是否互不相同（⇒ 窗/墙分属不同图集区域，
+    ///    跨列三角形会把 regionXform 插值到无关区域）还是全部相同（⇒ 窗画在
+    ///    同一 tile 内，问题在 UV/frac 边界）；
+    /// 2. 高频 G 列（墙体）与低频 G 列（窗/门）的 row0 palU / row2 top /
+    ///    row3 padding 分布。
+    #[test]
+    fn fire_station_params_probe() {
+        const GAME_DIR: &str = "D:/ea-games/SimCity/SimCityData";
+        const MODELS: [u32; 2] = [0x4DE9_912B, 0xA624_D9F9];
+        let game_pkg = dbpf::Package::open(&format!("{GAME_DIR}/SimCity_Game.package"));
+        let graphics_pkg = dbpf::Package::open(&format!("{GAME_DIR}/SimCity_Graphics.package"));
+        let Some(game) = game_pkg.ok() else {
+            eprintln!("skipping: SimCity_Game.package 不可用");
+            return;
+        };
+        let manager = PackageManager::new();
+        // 跨包解析（slot1-5 在 SimCity_Graphics.package）需要 manager 已注册
+        // 全部已加载包（对齐 app 运行态）。insert 返回 Arc，后续用它读包。
+        let (game_id, package) = manager.insert(game).unwrap();
+        let _ = game_id;
+        if let Ok(graphics) = graphics_pkg {
+            let _ = manager.insert(graphics);
+        }
+        for model in MODELS {
+            eprintln!("=== 模型 0x{model:08X} ===");
+            dump_model_params(&package, &manager, model);
+        }
+    }
+
+    /// 单模型参数表 + G 直方图 dump（fire_station_params_probe 的辅助）。
+    fn dump_model_params(package: &dbpf::Package, manager: &PackageManager, model: u32) {
+        let Some(entry) = package
+            .entries()
+            .iter()
+            .find(|e| e.id.type_id == RW4_MODEL_TYPE && e.id.instance == model)
+            .cloned()
+        else {
+            eprintln!("模型 {model:#010x} 不在该包");
+            return;
+        };
+        let data = package.read(&entry).unwrap();
+        let file = rw4::Rw4File::parse(&data).unwrap();
+
+        let bindings = file.decode_mesh_material_bindings(&data);
+        let mut printed_params = false;
+        for binding in &bindings {
+            eprintln!("binding: mesh_section={} material_section={}", binding.mesh_section, binding.material_section);
+            let slots: Vec<rw4::TextureSlotRef> = file
+                .decode_material(&data, binding.material_section)
+                .ok()
+                .and_then(|m| match m {
+                    rw4::MaterialSection::Decoded(decoded) => {
+                        Some(decoded.texture_slots().copied().collect::<Vec<_>>())
+                    }
+                    rw4::MaterialSection::Raw(_) => {
+                        eprintln!("material #{} 解码为 Raw（slot 列表不可用）", binding.material_section);
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            for r in &slots {
+                eprintln!("  slot {} → instance 0x{:08X}", r.slot_byte(), r.texture_instance);
+            }
+            // 调试：slot0 实例在当前包的实际条目类型
+            let slot0 = slots.iter().find(|r| r.slot_byte() == 0).map(|r| r.texture_instance);
+            if let Some(instance) = slot0 {
+                for e in package.entries().iter().filter(|e| e.id.instance == instance) {
+                    eprintln!("  条目 0x{instance:08X}: type=0x{:08X} (RW4_MODEL=0x{:08X})", e.id.type_id, RW4_MODEL_TYPE);
+                }
+                // 逐步解析：read → Rw4File::parse → TEXTURE → decode_texture → decode_palette_f32
+                if let Some(e) = package.entries().iter().find(|e| e.id.instance == instance && e.id.type_id == RW4_MODEL_TYPE) {
+                    match package.read(e) {
+                        Ok(bytes) => match rw4::Rw4File::parse(&bytes) {
+                            Ok(tex_file) => {
+                                let sec = tex_file.sections_of_type(rw4::SectionType::TEXTURE).next().map(|s| s.number);
+                                eprintln!("  Rw4File OK, TEXTURE section = {sec:?}");
+                                if let Some(sec) = sec {
+                                    match tex_file.decode_texture(&bytes, sec) {
+                                        Ok(tex) => match tex.decode_palette_f32() {
+                                            Ok(pixels) => eprintln!("  palette_f32 OK: {} cols × {} rows", tex.width, pixels.len() / usize::from(tex.width)),
+                                            Err(err) => eprintln!("  decode_palette_f32 失败: {err}"),
+                                        },
+                                        Err(err) => eprintln!("  decode_texture 失败: {err}"),
+                                    }
+                                }
+                            }
+                            Err(err) => eprintln!("  Rw4File::parse 失败: {err}"),
+                        },
+                        Err(err) => eprintln!("  package.read 失败: {err}"),
+                    }
+                }
+            }
+            let resources =
+                resolve_material_resources(&file, &data, &package, &manager, binding.material_section);
+            eprintln!(
+                "material #{} paramCols={} params_bytes={}",
+                binding.material_section,
+                resources.param_cols,
+                resources.params_f32.as_ref().map_or(0, |p| p.len())
+            );
+            if let Some(params) = &resources.params_f32 {
+                let cols = resources.param_cols;
+                let floats: Vec<f32> = params
+                    .chunks_exact(4)
+                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect();
+                // 布局 row-major：texel(x=col, y=row) → floats[(row*cols+col)*4+c]
+                eprintln!("col | row0 palU palU2 interior | row1 regionXform(sx,sy,ox,oy) | row2 top(sx,sy,ox,oy) | row3 padX padY invZX invZY");
+                for col in 0..cols {
+                    let at = |row: usize, comp: usize| -> f32 {
+                        floats.get((row * cols + col) * 4 + comp).copied().unwrap_or(f32::NAN)
+                    };
+                    eprintln!(
+                        "{col:>3} | {:+.4} {:+.4} {:+.4} | ({:+.4},{:+.4})@({:+.4},{:+.4}) | ({:+.4},{:+.4})@({:+.4},{:+.4}) | {:+.3} {:+.3} {:+.3} {:+.3}",
+                        at(0, 0), at(0, 1), at(0, 2),
+                        at(1, 0), at(1, 1), at(1, 2), at(1, 3),
+                        at(2, 0), at(2, 1), at(2, 2), at(2, 3),
+                        at(3, 0), at(3, 1), at(3, 2), at(3, 3),
+                    );
+                }
+                printed_params = true;
+            }
+        }
+        // 顶点 G 直方图（选列分布）
+        for section in file.sections_of_type(rw4::SectionType::MESH) {
+            let Ok(mesh) = file.decode_mesh(&data, section.number) else {
+                continue;
+            };
+            if !mesh.is_exportable() {
+                continue;
+            }
+            let mut histogram: std::collections::BTreeMap<u8, usize> = Default::default();
+            for v in &mesh.vertices {
+                *histogram.entry(v.d3d_color_g().unwrap_or(0)).or_default() += 1;
+            }
+            eprintln!(
+                "mesh #{}: {} verts, G 直方图（列: 顶点数）= {:?}",
+                section.number,
+                mesh.vertices.len(),
+                histogram
+            );
+        }
+    }
 }
 
 #[cfg(test)]
