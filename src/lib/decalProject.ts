@@ -175,6 +175,22 @@ export async function projectDecal(
   if (pieces.length === 0) return null;
 
   const merged = await mergePieces(pieces);
+  // NaN 守卫：DecalGeometry 在退化/共面三角形上可能产生 NaN 顶点（渲染时
+  // boundingSphere NaN 报错 + 巨大撕裂三角形，2026-09-27 用户实证）。
+  merged.computeBoundingBox();
+  const bb = merged.boundingBox;
+  if (
+    !bb ||
+    !Number.isFinite(bb.min.x) ||
+    !Number.isFinite(bb.min.y) ||
+    !Number.isFinite(bb.min.z) ||
+    !Number.isFinite(bb.max.x) ||
+    !Number.isFinite(bb.max.y) ||
+    !Number.isFinite(bb.max.z)
+  ) {
+    merged.dispose();
+    return null;
+  }
   // 引擎 UV 是 `texturePosition.xy * -0.5 + 0.5`（两轴取负）；DecalGeometry 输出
   // `0.5 + x/size.x`，与 PlaneGeometry 逐轴同向 ⇒ 沿用已验证的「只镜像 U」
   //（v 由 TextureLoader 的 flipY=true 抵消）。

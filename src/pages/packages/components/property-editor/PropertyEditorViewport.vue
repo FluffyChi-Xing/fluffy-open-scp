@@ -26,7 +26,12 @@ import {
   unitId,
   unitMatrix,
 } from "./unitGizmos";
-import { decalFrame, projectDecal } from "@/lib/decalProject";
+import {
+  decalFrame,
+  decalProjector,
+  measureAnchorDistance,
+  projectDecal,
+} from "@/lib/decalProject";
 import { useEditorViewport } from "./useEditorViewport";
 import {
   applyDeferredMaterialMaps,
@@ -241,6 +246,7 @@ async function getDecalTexture(
     // 三线性会在中远景明显糊于锐利的建筑贴图（2026-09-27 用户反馈）。
     decoded.generateMipmaps = false;
     decoded.minFilter = THREE.LinearFilter;
+    if (texture.variant === "hole") decoded.flipY = false;
     decoded.anisotropy = viewport.viewer.value?.maxAnisotropy ?? 1;
     decalTextureCache.set(texture, decoded);
     return decoded;
@@ -762,6 +768,79 @@ async function assembleScene(
    * 涂鸦/废墟 = 受光材质——MeshBasic 不受光导致贴花与墙面的光照/明暗完全
    * 脱节（"不在一个图层"观感的根因），MeshStandard 融入场景光照。
    */
+  /**
+   * 破洞盒体材质（decalInteriorMap 家族，decalLightInteriorMap 逐段复刻——
+   * 完整函数体证实：内景图 = **贴花自身纹理**（盒体透视采样自己的 atlas
+   * 格），alpha = 窗灯掩码（×kInteriorMapSelfLightMax=16 自发光），光照 =
+   * 场景漫反射/高光 × kLightAmount + 日光 × kSunContribution）。
+   * 几何 = 投影盒体体积（非平面剪影），盒坐标 tp∈[-1,1]³：
+   * - 轮廓掩码 maskUv = tp.xy·(-0.5)+0.5（alpha 高 = 洞内、低 = 轮廓外
+   *   discard、中间 = 焦痕边环）；
+   * - 内景透视 interiorUv = lerp(tp.xy, tp.xy·0.5, tp.z·0.5+0.5)·(-0.5)+0.5
+   *   （前面全尺寸、后面半尺寸 → 真实房间进深视差）。
+   */
+  function createHoleBoxMaterial(
+    THREE: typeof ThreeNamespace,
+    holeTex: ThreeNamespace.Texture,
+    env: SunEnvRefs,
+  ): ThreeNamespace.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        holeMap: { value: holeTex },
+        // 昼夜/供电/内景辉光与建筑材质共享同一 uniform 对象（热切换联动）
+        uDayLight: env.dayLight,
+        uPowered: env.powered,
+        uInteriorGlow: env.glow,
+      },
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+      vertexShader: /* glsl */ `
+        varying vec2 vMaskUv;
+        varying vec2 vInteriorUv;
+        varying vec3 vTp;
+        varying vec3 vWorldPos;
+        void main() {
+          vec3 tp = position * 2.0; // BoxGeometry(1,1,1)：±0.5 → ±1
+          vTp = tp;
+          // 前面（朝相机侧）全尺寸、后面半尺寸：房间进深透视（引擎逐字）
+          vInteriorUv = lerp(tp.xy, tp.xy * 0.5, tp.z * 0.5 + 0.5) * -0.5 + 0.5;
+          vMaskUv = tp.xy * -0.5 + 0.5;
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vWorldPos = world.xyz;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying vec2 vMaskUv;
+        varying vec2 vInteriorUv;
+        varying vec3 vTp;
+        varying vec3 vWorldPos;
+        uniform sampler2D holeMap;
+        uniform float uDayLight;
+        uniform float uPowered;
+        uniform float uInteriorGlow;
+        void main() {
+          vec4 mask = texture2D(holeMap, vMaskUv);
+          // 轮廓：alpha 低 = 洞外（discard 露出墙面）；中 = 焦痕边环；
+          // 高 = 洞内（前半盒镂空让出视野，背面/侧壁露内景）
+          if (mask.a < 0.12) discard;
+          vec3 nightAmb = vec3(0.10, 0.12, 0.18);
+          vec3 ambient = mix(nightAmb, vec3(1.0), uDayLight);
+          if (mask.a < 0.5 || vTp.z < 0.0) {
+            // 焦痕边环（前半盒 + 轮廓中带）：贴图原色
+            gl_FragColor = vec4(pow(max(mask.rgb, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
+            return;
+          }
+          vec4 room = texture2D(holeMap, vInteriorUv);
+          float selfLight = room.a * uInteriorGlow * uPowered;
+          vec3 interior = room.rgb * (ambient + selfLight);
+          gl_FragColor = vec4(pow(max(interior, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
+        }
+      `
+    });
+  }
   const DECAL_MATERIAL_VARIANTS: Record<number, "sign"> = {
     0x73684efc: "sign", // 招牌聚类（POWER ELECTRIC/太阳 burst 等）
   };
@@ -884,6 +963,47 @@ async function assembleScene(
       decalStats.projected += 1;
       return mesh;
     }
+      if (frame && texture.variant === "hole") {
+        // 破洞 = 投影盒体（decalInteriorMap 家族）：盒体各面按盒坐标采样
+        // 自身纹理的房间图（透视内景）+ alpha 轮廓；引擎即盒体体积渲染
+        //（decalProject clip(1-abs(tp)) + decalClip clip(-tp.z) 前后半）。
+        const anchor = measureAnchorDistance(THREE, frame, proxies) ?? 0;
+        const { position: boxPos, orientation, size } = decalProjector(
+          THREE,
+          frame,
+          anchor,
+          unit.depth,
+        );
+        const holeMaterial = createHoleBoxMaterial(THREE, decoded, envRefs ?? createSunEnv(THREE));
+        const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), holeMaterial);
+        box.scale.copy(size);
+        box.position.copy(boxPos);
+        box.quaternion.setFromEuler(orientation);
+        const holder = new THREE.Group();
+        holder.add(box);
+        decalStats.projected += 1;
+        // decalInteriorMap 光 pass 近似：lot 带光参数时投暖色 cookie 光
+        if (props.decalLight && holeLightCount < HOLE_LIGHT_MAX) {
+          const [scaleFactor, radiusFactor] = props.decalLight;
+          const spot = new THREE.SpotLight(
+            0xffdca0,
+            (scaleFactor * 16 + 1) * 3,
+            radiusFactor * 8,
+            0.9,
+            0.6,
+            1,
+          );
+          spot.map = decoded;
+          spot.position.copy(frame.origin);
+          const target = new THREE.Object3D();
+          target.position.copy(boxPos);
+          holder.add(spot, target);
+          spot.target = target;
+          holeLightCount += 1;
+        }
+        return holder;
+      }
+
     const group = new THREE.Group();
     applyDecalTransform(THREE, unit, group);
 
@@ -906,9 +1026,6 @@ async function assembleScene(
         }
       }
       if (geometry) {
-        // 废墟/裂纹贴花（colorless→raw 解码）与四色涂鸦统一走变体材质；
-        // 内景不在贴花侧（decalInteriorMap=纯光 pass，见 §52.3——洞内假内景
-        // 属建筑摧毁系统，待解析摧毁状态数据后实现）。
         const mesh = new THREE.Mesh(
           geometry,
           buildDecalMaterial(THREE, texture, decoded),
