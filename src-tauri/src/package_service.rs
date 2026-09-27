@@ -7087,3 +7087,154 @@ mod tests {
         let _ = fs::remove_file(&video_output);
     }
 }
+
+#[cfg(test)]
+mod hole_tex_probe {
+    use super::*;
+
+    /// 【破洞纹理内容验证】解码破洞 atlas 的 raster（RW4 纹理资源），
+    /// dump PNG 目视——确认内容是焦痕环还是房间图。
+    #[test]
+    fn dump_hole_texture() {
+        let game_dir = "D:/ea-games/SimCity/SimCityData";
+        let game = dbpf::Package::open(&format!("{game_dir}/SimCity_Game.package")).unwrap();
+        let graphics = dbpf::Package::open(&format!("{game_dir}/SimCity_Graphics.package")).unwrap();
+        let app = dbpf::Package::open(&format!("{game_dir}/SimCity_App.package")).unwrap();
+        let manager = PackageManager::new();
+        let (_gid, package) = manager.insert(game).unwrap();
+        let _ = manager.insert(graphics);
+        let _ = manager.insert(app);
+        // 破洞 atlas 条目的 raster 实例（half_window_probe 实测）
+        for instance in [0x6578_56F3u32, 1702385392, 1702385393, 1702385398] {
+            let key = sc_properties::Key { instance, type_id: 0, group: 0 };
+            match decode_lot_surface_png(&package, &manager, key) {
+                Ok((png, _)) => {
+                    let path = format!("D:/rust/packages/fluffy-open-scp/tmp/hole_{instance:08X}.png");
+                    std::fs::write(&path, png).unwrap();
+                    eprintln!("decoded → {path}");
+                }
+                Err(message) => eprintln!("0x{instance:08X}: {message}"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod hole_pkg_scan {
+    use super::*;
+
+    /// 扫描全部游戏包定位破洞 raster 资源归属。
+    #[test]
+    fn scan_hole_raster_location() {
+        let game_dir = "D:/ea-games/SimCity/SimCityData";
+        let targets = [0x6578_56F3u32, 0x6578_56F0, 0x2C61_FE2E];
+        for entry in std::fs::read_dir(game_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("package") {
+                continue;
+            }
+            let Ok(package) = dbpf::Package::open(&path) else { continue };
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            for target in targets {
+                for e in package.entries() {
+                    if e.id.instance == target {
+                        println!(
+                            "{name}: 0x{target:08X} → type=0x{:08X} group=0x{:08X}",
+                            e.id.type_id, e.id.group
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod decal_atlas_dump {
+    use super::*;
+
+    /// 【全量取证】三个 decal atlas 的全部条目批量转 PNG：
+    /// 四色解码版（pal_/）+ 原始 raster（raw_/，无调色板直出）。
+    /// `cargo test --release --lib decal_atlas_dump -- --nocapture`
+    #[test]
+    fn decal_atlas_dump() {
+        let game_dir = "D:/ea-games/SimCity/SimCityData";
+        let manager = PackageManager::new();
+        for name in [
+            "SimCity_Game",
+            "SimCity_Graphics",
+            "SimCity_App",
+            "SimCityDataEP1",
+            "SimCity_DLC0",
+        ] {
+            if let Ok(package) = dbpf::Package::open(&format!("{game_dir}/{name}.package")) {
+                let _ = manager.insert(package);
+            }
+        }
+        let packages = manager.all_packages().unwrap_or_default();
+        let refs: Vec<&Package> = packages.iter().map(|p| p.as_ref()).collect();
+        let atlases = collect_decal_atlases(&refs);
+        let out_root = "D:/rust/packages/fluffy-open-scp/tmp/decal_all";
+        let _ = std::fs::create_dir_all(out_root);
+        for atlas in &atlases {
+            let tag = atlas
+                .material
+                .as_ref()
+                .map(|k| format!("{:08X}", k.instance))
+                .unwrap_or_else(|| "unknown".into());
+            let dir = format!("{out_root}/{tag}");
+            let _ = std::fs::create_dir_all(&dir);
+            eprintln!("atlas material={tag} entries={}", atlas.entries.len());
+            for entry in &atlas.entries {
+                let Some(raster_key) = entry.raster.clone() else { continue };
+                let index = entry.index;
+                // 四色解码（有 Color1-4 的条目）
+                let decoded = decode_decal_entry(entry, &refs[0], &manager);
+                if let Some(png) = decoded.png_base64 {
+                    use base64::Engine as _;
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&png) {
+                        let _ = std::fs::write(format!("{dir}/pal_{index:03}.png"), bytes);
+                    }
+                } else {
+                    // 无四色条目：raster 原始解码（RW4 纹理走 surface 解码）
+                    if let Ok((png, _)) =
+                        decode_lot_surface_png(&refs[0], &manager, raster_key.clone())
+                    {
+                        use base64::Engine as _;
+                        if let Ok(bytes) =
+                            base64::engine::general_purpose::STANDARD.decode(&png)
+                        {
+                            let _ =
+                                std::fs::write(format!("{dir}/raw_{index:03}.png"), bytes);
+                        }
+                    }
+                    // 裸 raster（非 RW4）也试一次原始 RGBA
+                    if let Some((bytes, type_id, _)) =
+                        find_decal_raster(&refs[0], &manager, Some(raster_key.clone()))
+                    {
+                        if type_id == RASTER_IMAGE_TYPE {
+                            if let Ok(raster) = rw4::RasterImage::parse(&bytes) {
+                                if let Ok(rgba) = raster.decode_top_mip_rgba() {
+                                    if let Ok(png) = encode_rgba_png(
+                                        raster.width,
+                                        raster.height,
+                                        rgba,
+                                    ) {
+                                        use base64::Engine as _;
+                                        if let Ok(raw_bytes) = base64::engine::general_purpose::STANDARD.decode(&png) {
+                                            let _ = std::fs::write(
+                                                format!("{dir}/rawraster_{index:03}.png"),
+                                                raw_bytes,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            eprintln!("atlas {tag} dump complete");
+        }
+    }
+}
