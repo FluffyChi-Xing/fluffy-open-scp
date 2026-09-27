@@ -642,6 +642,8 @@ async function assembleScene(
       if (!mesh.isMesh) return;
       // 贴花投影的候选面（精细模式才用；建筑网格在 lot 局部空间为单位变换）
       buildingMeshes.push(mesh);
+      // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
+      mesh.userData.buildingMaterialIndex = materialIndex;
       if (props.renderMode !== "refined") {
         mesh.material = whiteMaterial;
         return;
@@ -782,11 +784,31 @@ async function assembleScene(
   function createHoleBoxMaterial(
     THREE: typeof ThreeNamespace,
     holeTex: ThreeNamespace.Texture,
+    interiorTex: ThreeNamespace.Texture | null,
     env: SunEnvRefs,
+    facadeUv: ThreeNamespace.Vector2,
+    params: {
+      regionXform: [number, number];
+      roomInvSize: [number, number];
+      interiorScale: number;
+      interiorOffset: number;
+    } | null,
   ): ThreeNamespace.ShaderMaterial {
+    const rx = params?.regionXform ?? [1, 1];
+    const ris = params?.roomInvSize ?? [1, 1];
+    const iScale = params?.interiorScale ?? 0.5;
+    const iOffset = params?.interiorOffset ?? 0;
     return new THREE.ShaderMaterial({
       uniforms: {
         holeMap: { value: holeTex },
+        interiorMap: { value: interiorTex ?? holeTex },
+        uHasInterior: { value: interiorTex ? 1 : 0 },
+        uFacadeUv: { value: facadeUv },
+        uRegionXform: { value: new THREE.Vector2(rx[0], rx[1]) },
+        uRoomInvSize: { value: new THREE.Vector2(ris[0], ris[1]) },
+        uInteriorScale: { value: iScale },
+        uInteriorOffset: { value: iOffset },
+        uInvModel: { value: new THREE.Matrix4() },
         // 昼夜/供电/内景辉光与建筑材质共享同一 uniform 对象（热切换联动）
         uDayLight: env.dayLight,
         uPowered: env.powered,
@@ -798,15 +820,16 @@ async function assembleScene(
       polygonOffsetUnits: -4,
       vertexShader: /* glsl */ `
         varying vec2 vMaskUv;
-        varying vec2 vInteriorUv;
         varying vec3 vTp;
+        varying vec3 vEyeObj;
         varying vec3 vWorldPos;
+        uniform mat4 uInvModel;
         void main() {
           vec3 tp = position * 2.0; // BoxGeometry(1,1,1)：±0.5 → ±1
           vTp = tp;
-          // 前面（朝相机侧）全尺寸、后面半尺寸：房间进深透视（引擎逐字）
-          vInteriorUv = lerp(tp.xy, tp.xy * 0.5, tp.z * 0.5 + 0.5) * -0.5 + 0.5;
           vMaskUv = tp.xy * -0.5 + 0.5;
+          vec3 camObj = (uInvModel * vec4(cameraPosition, 1.0)).xyz;
+          vEyeObj = normalize(camObj - position);
           vec4 world = modelMatrix * vec4(position, 1.0);
           vWorldPos = world.xyz;
           gl_Position = projectionMatrix * viewMatrix * world;
@@ -814,29 +837,69 @@ async function assembleScene(
       `,
       fragmentShader: /* glsl */ `
         varying vec2 vMaskUv;
-        varying vec2 vInteriorUv;
         varying vec3 vTp;
+        varying vec3 vEyeObj;
         varying vec3 vWorldPos;
         uniform sampler2D holeMap;
+        uniform sampler2D interiorMap;
+        uniform float uHasInterior;
+        uniform vec2 uFacadeUv;
+        uniform vec2 uRegionXform;
+        uniform vec2 uRoomInvSize;
+        uniform float uInteriorScale;
+        uniform float uInteriorOffset;
         uniform float uDayLight;
         uniform float uPowered;
         uniform float uInteriorGlow;
+        // 源码 FastNoise 逐字
+        float scFastNoise(vec3 s) {
+          s *= vec3(78.233, 12.9898, 43758.5453);
+          s += vec3(0.819 * 78.233, 0.819 * 12.9898, 0.819 * 43758.5453);
+          return fract(s.z * fract(s.x * fract(s.y)));
+        }
+        // ClipAndReliefMapPS 盒体投影（kInvDepth=0.5/kBackSize=0.5/kDilation=0.9）
+        vec2 scInteriorMap(vec3 eye, vec2 tc) {
+          vec3 e = eye;
+          e.z *= 0.5;
+          vec3 p = vec3(tc, 0.0) * -2.0 + 1.0;
+          p.z -= 1.0;
+          vec3 k = (sign(e) - p) / e;
+          float t = min(k.x, min(k.y, k.z));
+          vec3 target = p + t * e;
+          target.xy *= mix(0.9, 0.5, target.z);
+          return target.xy * -0.5 + 0.5;
+        }
         void main() {
           vec4 mask = texture2D(holeMap, vMaskUv);
-          // 轮廓：alpha 低 = 洞外（discard 露出墙面）；中 = 焦痕边环；
-          // 高 = 洞内（前半盒镂空让出视野，背面/侧壁露内景）
+          // 轮廓：alpha 低 = 洞外（discard 露出墙面）；中 = 焦痕边环
           if (mask.a < 0.12) discard;
+          // 建筑同源房间链（building4ClipAndReliefMapPS interiorUv 逐段）：
+          // interiorUv = facadeUv·regionXform·roomInvSize → elem/srcUv →
+          // 盒体投影（eye·roomInv）→ ×interiorScale + roomId 偏移选房
+          vec2 interiorUv = uFacadeUv * uRegionXform * uRoomInvSize;
+          vec2 interiorElem = floor(interiorUv);
+          vec2 interiorSrcUv = fract(interiorUv);
+          vec2 resultTc = scInteriorMap(
+            normalize(vEyeObj) * uRoomInvSize.xyx,
+            interiorSrcUv
+          );
+          vec2 interiorTc = resultTc * uInteriorScale + vec2(0.0, uInteriorOffset);
+          float roomId = scFastNoise(vec3(interiorElem, 0.213425435));
+          float roomVariation = floor(roomId * 4.0);
+          roomId = fract(roomId * 4.0);
+          // interiorThresholds 引擎值未知，与建筑同用四分位
+          vec4 edge = vec4(step(vec3(0.25, 0.5, 0.75), vec3(roomId)), roomVariation * 4.0);
+          interiorTc.x += dot(edge, vec4(1.0)) * uInteriorScale;
+          vec4 room = texture2D(interiorMap, interiorTc);
+          // 内景照明（同建筑：昼夜环境 + 灯亮 a×glow×供电）
           vec3 nightAmb = vec3(0.10, 0.12, 0.18);
           vec3 ambient = mix(nightAmb, vec3(1.0), uDayLight);
-          if (mask.a < 0.5 || vTp.z < 0.0) {
-            // 焦痕边环（前半盒 + 轮廓中带）：贴图原色
-            gl_FragColor = vec4(pow(max(mask.rgb, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
-            return;
-          }
-          // 深度渐暗：盒内后壁比前缘暗一档（伪进深；内景图源待摧毁系统
-          // 数据接入后再升级为真房间采样——当前纹理内容即破损墙块）
-          vec3 interior = mask.rgb * mix(1.0, 0.45, clamp(vTp.z * 0.5 + 0.5, 0.0, 1.0));
-          gl_FragColor = vec4(pow(max(interior, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
+          float selfLight = room.a * uInteriorGlow * uPowered;
+          vec3 interior = room.rgb * (ambient + selfLight);
+          // 焦痕边环：轮廓中带（0.12-0.5）露贴花焦痕原色，洞心（≥0.5）露内景
+          vec3 col = mix(hole.rgb, interior, smoothstep(0.25, 0.55, mask.a));
+          // ShaderMaterial 不走 three 的 colorspace 编码，手动回 sRGB
+          gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
         }
       `
     });
@@ -964,9 +1027,10 @@ async function assembleScene(
       return mesh;
     }
       if (frame && texture.variant === "hole") {
-        // 破洞 = 投影盒体（decalInteriorMap 家族）：盒体各面按盒坐标采样
-        // 自身纹理的房间图（透视内景）+ alpha 轮廓；引擎即盒体体积渲染
-        //（decalProject clip(1-abs(tp)) + decalClip clip(-tp.z) 前后半）。
+        // 破洞 = 投影盒体（decalInteriorMap 家族，decalLightInteriorMap 逐段）：
+        // 盒体各面按盒坐标采样**建筑 slot5 房间图集**（与窗户同源内景链，
+        // facadeUv = raycast 命中点 uv2 重心插值、参数取命中列）+ alpha 轮廓
+        // 三区（洞外 discard / 焦痕 / 洞内房间）。引擎即盒体体积渲染。
         const anchor = measureAnchorDistance(THREE, frame, proxies) ?? 0;
         const { position: boxPos, orientation, size } = decalProjector(
           THREE,
@@ -974,13 +1038,102 @@ async function assembleScene(
           anchor,
           unit.depth,
         );
-        const holeMaterial = createHoleBoxMaterial(THREE, decoded, envRefs ?? createSunEnv(THREE));
+        // raycast 命中点：facade UV（uv2）与选列（uv1.x×255）
+        const raycaster = new THREE.Raycaster();
+        raycaster.far = 60;
+        let facadeUv: ThreeNamespace.Vector2 | null = null;
+        let hitColumn: number | null = null;
+        let hitMaterialIndex: number | null = null;
+        for (const sign of [1, -1]) {
+          raycaster.set(frame.origin.clone(), frame.axisZ.clone().multiplyScalar(sign));
+          const hits = raycaster.intersectObjects(meshes, false);
+          let done = false;
+          for (const hit of hits) {
+            if (!hit.face || !hit.uv) continue;
+            const mesh = hit.object as ThreeNamespace.Mesh;
+            const uv2Attr = mesh.geometry.attributes
+              .uv2 as ThreeNamespace.BufferAttribute | undefined;
+            const uv0Attr = mesh.geometry.attributes
+              .uv as ThreeNamespace.BufferAttribute | undefined;
+            const uv1Attr = mesh.geometry.attributes
+              .uv1 as ThreeNamespace.BufferAttribute | undefined;
+            if (!uv2Attr || !uv0Attr) continue;
+            const a0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.a);
+            const b0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.b);
+            const c0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.c);
+            const det =
+              (b0.x - a0.x) * (c0.y - a0.y) - (c0.x - a0.x) * (b0.y - a0.y);
+            if (Math.abs(det) < 1e-12) continue;
+            const w1 =
+              ((hit.uv.x - a0.x) * (c0.y - a0.y) - (c0.x - a0.x) * (hit.uv.y - a0.y)) /
+              det;
+            const w2 =
+              ((b0.x - a0.x) * (hit.uv.y - a0.y) - (hit.uv.x - a0.x) * (b0.y - a0.y)) /
+              det;
+            const w0 = 1 - w1 - w2;
+            const lerp2 = (idx: number) =>
+              new THREE.Vector2(uv2Attr.getX(idx), uv2Attr.getY(idx));
+            facadeUv = lerp2(hit.face.a)
+              .multiplyScalar(w0)
+              .addScaledVector(lerp2(hit.face.b), w1)
+              .addScaledVector(lerp2(hit.face.c), w2);
+            if (uv1Attr) {
+              hitColumn = Math.min(
+                255,
+                Math.max(0, Math.round(uv1Attr.getX(hit.face.a) * 255)),
+              );
+            }
+            hitMaterialIndex =
+              typeof mesh.userData.buildingMaterialIndex === "number"
+                ? mesh.userData.buildingMaterialIndex
+                : null;
+            done = true;
+            break;
+          }
+          if (done) break;
+        }
+        const material0 = payload?.materials?.[hitMaterialIndex ?? 0] ?? null;
+        let holeParams: {
+          regionXform: [number, number];
+          roomInvSize: [number, number];
+          interiorScale: number;
+          interiorOffset: number;
+        } | null = null;
+        if (material0?.paramsF32 && material0.paramCols) {
+          const col = Math.min(hitColumn ?? 0, material0.paramCols - 1);
+          const at = (row: number, comp: number) =>
+            material0.paramsF32![(row * material0.paramCols + col) * 4 + comp] ?? 0;
+          holeParams = {
+            regionXform: [at(1, 0), at(1, 1)],
+            roomInvSize: [at(3, 2), at(3, 3)],
+            interiorScale: at(0, 2),
+            interiorOffset: at(0, 3),
+          };
+        }
+        const interiorTex =
+          hitMaterialIndex !== null
+            ? tintResolved[hitMaterialIndex]?.interiorTex ?? tintResolved[0]?.interiorTex ?? null
+            : tintResolved[0]?.interiorTex ?? null;
+        const holeMaterial = createHoleBoxMaterial(
+          THREE,
+          decoded,
+          interiorTex,
+          envRefs ?? createSunEnv(THREE),
+          facadeUv ?? new THREE.Vector2(0.5, 0.5),
+          holeParams,
+        );
         const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), holeMaterial);
         box.scale.copy(size);
         box.position.copy(boxPos);
         box.quaternion.setFromEuler(orientation);
         const holder = new THREE.Group();
         holder.add(box);
+        // uInvModel 逐帧刷新（盒体对象空间的相机方向供内景透视）
+        box.onBeforeRender = () => {
+          holeMaterial.uniforms.uInvModel.value
+            .copy(box.matrixWorld)
+            .invert();
+        };
         decalStats.projected += 1;
         // decalInteriorMap 光 pass 近似：lot 带光参数时投暖色 cookie 光
         if (props.decalLight && holeLightCount < HOLE_LIGHT_MAX) {
