@@ -833,9 +833,9 @@ async function assembleScene(
             gl_FragColor = vec4(pow(max(mask.rgb, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
             return;
           }
-          vec4 room = texture2D(holeMap, vInteriorUv);
-          float selfLight = room.a * uInteriorGlow * uPowered;
-          vec3 interior = room.rgb * (ambient + selfLight);
+          // 深度渐暗：盒内后壁比前缘暗一档（伪进深；内景图源待摧毁系统
+          // 数据接入后再升级为真房间采样——当前纹理内容即破损墙块）
+          vec3 interior = mask.rgb * mix(1.0, 0.45, clamp(vTp.z * 0.5 + 0.5, 0.0, 1.0));
           gl_FragColor = vec4(pow(max(interior, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
         }
       `
