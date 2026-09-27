@@ -756,13 +756,23 @@ async function assembleScene(
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
   }
 
-  /** 贴花材质：四色解码贴图（缓存）+ 二值 alpha。投影片与浮空回退共用。 */
+  /**
+   * 贴花材质变体（migration.md §52.5 聚类映射）：招牌 = 霓虹自发光
+   * （decalNeonBrighten 证据：Current.color.rgb ×2，无光照、夜间自亮）；
+   * 涂鸦/废墟 = 受光材质——MeshBasic 不受光导致贴花与墙面的光照/明暗完全
+   * 脱节（"不在一个图层"观感的根因），MeshStandard 融入场景光照。
+   */
+  const DECAL_MATERIAL_VARIANTS: Record<number, "sign"> = {
+    0x73684efc: "sign", // 招牌聚类（POWER ELECTRIC/太阳 burst 等）
+  };
+
   function buildDecalMaterial(
     THREE: typeof ThreeNamespace,
-    texture: ThreeNamespace.Texture,
-  ): ThreeNamespace.MeshBasicMaterial {
-    return new THREE.MeshBasicMaterial({
-      map: texture,
+    dto: DecalUnitTexture,
+    map: ThreeNamespace.Texture,
+  ): ThreeNamespace.Material {
+    const base = {
+      map,
       side: THREE.DoubleSide,
       // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
       // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
@@ -774,6 +784,20 @@ async function assembleScene(
       polygonOffset: true,
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
+    };
+    if (
+      DECAL_MATERIAL_VARIANTS[(dto.materialInstance ?? 0) >>> 0] === "sign"
+    ) {
+      // 霓虹 ×2 过 hejl tonemap 保持招牌亮度（引擎 decalNeonBrighten 同数）
+      return new THREE.MeshBasicMaterial({
+        ...base,
+        color: new THREE.Color(2, 2, 2),
+      });
+    }
+    return new THREE.MeshStandardMaterial({
+      ...base,
+      roughness: 1,
+      metalness: 0,
     });
   }
 
@@ -812,276 +836,13 @@ async function assembleScene(
     uv.needsUpdate = true;
     const decoded = await getDecalTexture(THREE, texture);
     if (!decoded) return null;
-    const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, decoded));
+    const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture, decoded));
     // 回退仍按旧口径沿局部 -Z 让开 depth：引擎 `decalMaterialInfoWithObjectData`
     // 的 VS 取 -z（`float4(-z/-x/-y, 0)`）。
     mesh.translateZ(-(unit.depth ?? 0));
     return mesh;
   }
 
-  /**
-   * 破洞内视材质（建筑内景链复刻，非猜测——证据链见 migration.md §52.3）：
-   * decalInteriorMap 完整函数体（cpp_0x00000000 转储）证明贴花侧只有光
-   * pass（alpha=0），洞内的假内景是**建筑侧内景透过被摧毁的墙露出**——
-   * 因此逐段复刻建筑窗户内景链。与建筑同构的关键：
-   * - facade UV 逐像素 = 命中点中心 + 世界位移在**命中三角形的 uv2 梯度**
-   *   上的投影（等价建筑的 dFdx/dFdy 切线框架）；
-   * - 盒体投影 eye 用同一 facade 切线框架（tanU/tanV/normal），与建筑的
-   *   scTanU/scTanV/scGeomN 同构；
-   * - 参数（regionXform/roomInvSize/interiorScale/Offset）取**命中点选列**
-   *   （uv1.x×255）——与窗户的逐顶点选列同源，房间尺度自然一致。
-   */
-  function createHoleInteriorMaterial(
-    THREE: typeof ThreeNamespace,
-    holeTex: ThreeNamespace.Texture,
-    interiorTex: ThreeNamespace.Texture | null,
-    env: SunEnvRefs,
-    frameData: {
-      uv2Center: ThreeNamespace.Vector2;
-      centerWorld: ThreeNamespace.Vector3;
-      gu: ThreeNamespace.Vector3;
-      gv: ThreeNamespace.Vector3;
-      column: number;
-    },
-    payload: LotModelPayload | null,
-  ): ThreeNamespace.ShaderMaterial {
-    // 命中列的参数（row0.zw=interiorScale/Offset、row1.xy=regionXform、
-    // row3.zw=roomInvSize）；列越界回退 0。
-    let regionXform: [number, number] = [1, 1];
-    let roomInvSize: [number, number] = [1, 1];
-    let interiorScale = 0.5;
-    let interiorOffset = 0;
-    const material0 = payload?.materials?.[0] ?? null;
-    if (material0?.paramsF32 && material0.paramCols) {
-      const col = Math.min(frameData.column, material0.paramCols - 1);
-      const at = (row: number, comp: number) =>
-        material0.paramsF32![(row * material0.paramCols + col) * 4 + comp] ?? 0;
-      regionXform = [at(1, 0), at(1, 1)];
-      roomInvSize = [at(3, 2), at(3, 3)];
-      interiorScale = at(0, 2);
-      interiorOffset = at(0, 3);
-    }
-    // 切线框架（世界系）：梯度归一 = facade UV u/v 的世界方向
-    const tanU = frameData.gu.clone().normalize();
-    const tanV = frameData.gv.clone().normalize();
-    const normal = new THREE.Vector3().crossVectors(tanU, tanV).normalize();
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        holeMap: { value: holeTex },
-        interiorMap: { value: interiorTex ?? holeTex },
-        uHasInterior: { value: interiorTex ? 1 : 0 },
-        uUvCenter: { value: frameData.uv2Center },
-        uCenterWorld: { value: frameData.centerWorld },
-        uGu: { value: frameData.gu },
-        uGv: { value: frameData.gv },
-        uTanU: { value: tanU },
-        uTanV: { value: tanV },
-        uNormal: { value: normal },
-        uRegionXform: { value: new THREE.Vector2(regionXform[0], regionXform[1]) },
-        uRoomInvSize: { value: new THREE.Vector2(roomInvSize[0], roomInvSize[1]) },
-        uInteriorScale: { value: interiorScale },
-        uInteriorOffset: { value: interiorOffset },
-        // 昼夜/供电/内景辉光与建筑材质共享同一 uniform 对象（热切换联动）
-        uDayLight: env.dayLight,
-        uPowered: env.powered,
-        uInteriorGlow: env.glow,
-      },
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-      polygonOffsetUnits: -4,
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vWorldPos;
-        void main() {
-          vUv = uv;
-          vec4 world = modelMatrix * vec4(position, 1.0);
-          vWorldPos = world.xyz;
-          gl_Position = projectionMatrix * viewMatrix * world;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vWorldPos;
-        uniform sampler2D holeMap;
-        uniform sampler2D interiorMap;
-        uniform float uHasInterior;
-        uniform vec2 uUvCenter;
-        uniform vec3 uCenterWorld;
-        uniform vec3 uGu;
-        uniform vec3 uGv;
-        uniform vec3 uTanU;
-        uniform vec3 uTanV;
-        uniform vec3 uNormal;
-        uniform vec2 uRegionXform;
-        uniform vec2 uRoomInvSize;
-        uniform float uInteriorScale;
-        uniform float uInteriorOffset;
-        uniform float uDayLight;
-        uniform float uPowered;
-        uniform float uInteriorGlow;
-        // 源码 FastNoise 逐字
-        float scFastNoise(vec3 s) {
-          s *= vec3(78.233, 12.9898, 43758.5453);
-          s += vec3(0.819 * 78.233, 0.819 * 12.9898, 0.819 * 43758.5453);
-          return fract(s.z * fract(s.x * fract(s.y)));
-        }
-        // ClipAndReliefMapPS 盒体投影（kInvDepth=0.5/kBackSize=0.5/kDilation=0.9）
-        vec2 scInteriorMap(vec3 eye, vec2 tc) {
-          vec3 e = eye;
-          e.z *= 0.5;
-          vec3 p = vec3(tc, 0.0) * -2.0 + 1.0;
-          p.z -= 1.0;
-          vec3 k = (sign(e) - p) / e;
-          float t = min(k.x, min(k.y, k.z));
-          vec3 target = p + t * e;
-          target.xy *= mix(0.9, 0.5, target.z);
-          return target.xy * -0.5 + 0.5;
-        }
-        void main() {
-          vec4 hole = texture2D(holeMap, vUv);
-          if (hole.a < 0.35) discard;
-          // === 建筑内景链（building4ClipAndReliefMapPS 逐段）===
-          // facade UV 逐像素：中心 + 世界位移在命中三角形 uv2 梯度上的投影
-          vec3 dWorld = vWorldPos - uCenterWorld;
-          vec2 facadeUv = uUvCenter + vec2(dot(dWorld, uGu), dot(dWorld, uGv));
-          vec2 interiorUv = facadeUv * uRegionXform * uRoomInvSize;
-          vec2 interiorElem = floor(interiorUv);
-          vec2 interiorSrcUv = fract(interiorUv);
-          // eye 取 facade 切线框架（与建筑 scTanU/scTanV/scGeomN 同构）
-          vec3 eyeWorld = normalize(vWorldPos - cameraPosition);
-          vec3 eyeTan = vec3(
-            dot(eyeWorld, uTanU),
-            dot(eyeWorld, uTanV),
-            dot(eyeWorld, uNormal)
-          );
-          vec2 resultTc = scInteriorMap(eyeTan * uRoomInvSize.xyx, interiorSrcUv);
-          vec2 interiorTc = resultTc * uInteriorScale + vec2(0.0, uInteriorOffset);
-          // 房间选择：种子 = 引擎 deferred PS 常数 0.213425435
-          float roomId = scFastNoise(vec3(interiorElem, 0.213425435));
-          float roomVariation = floor(roomId * 4.0);
-          roomId = fract(roomId * 4.0);
-          // interiorThresholds 引擎值未知，与建筑同用四分位
-          vec4 edge = vec4(step(vec3(0.25, 0.5, 0.75), vec3(roomId)), roomVariation * 4.0);
-          interiorTc.x += dot(edge, vec4(1.0)) * uInteriorScale;
-          vec4 roomTex = texture2D(interiorMap, interiorTc);
-          // 内景照明（同建筑：昼夜环境 + 灯亮 a×glow×供电）
-          vec3 nightAmb = vec3(0.10, 0.12, 0.18);
-          vec3 ambient = mix(nightAmb, vec3(1.0), uDayLight);
-          float selfLight = roomTex.a * uInteriorGlow * uPowered;
-          vec3 interior = roomTex.rgb * (ambient + selfLight);
-          // 焦痕边环：低 alpha 区露贴图原色，高 alpha 区露内景
-          vec3 col = mix(hole.rgb, interior, smoothstep(0.45, 0.9, hole.a));
-          // ShaderMaterial 不走 three 的 colorspace 编码，手动回 sRGB
-          gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
-        }
-      `,
-    });
-  }
-
-  /**
-   * raycast 命中破洞正后方建筑面，返回内景链所需的全部数据：
-   * uv2 重心插值（facade UV 中心）、命中三角形在世界系的 facade UV 梯度
-   * （gu/gv，世界位置 → uv2 的线性映射，与建筑 dFdx/dFdy 的切线框架同构）、
-   * 命中点的选列（uv1.x×255）。
-   */
-  function hitBuildingFacade(
-    THREE: typeof ThreeNamespace,
-    frame: { origin: ThreeNamespace.Vector3; axisZ: ThreeNamespace.Vector3 },
-    meshes: ThreeNamespace.Mesh[],
-  ): {
-    uv2Center: ThreeNamespace.Vector2;
-    centerWorld: ThreeNamespace.Vector3;
-    gu: ThreeNamespace.Vector3;
-    gv: ThreeNamespace.Vector3;
-    column: number;
-  } | null {
-    const raycaster = new THREE.Raycaster();
-    raycaster.far = 60;
-    for (const sign of [1, -1]) {
-      raycaster.set(frame.origin.clone(), frame.axisZ.clone().multiplyScalar(sign));
-      const hits = raycaster.intersectObjects(meshes, false);
-      for (const hit of hits) {
-        if (!hit.face || !hit.uv) continue;
-        const mesh = hit.object as ThreeNamespace.Mesh;
-        const uv2Attr = mesh.geometry.attributes
-          .uv2 as ThreeNamespace.BufferAttribute | undefined;
-        const uv0Attr = mesh.geometry.attributes
-          .uv as ThreeNamespace.BufferAttribute | undefined;
-        const uv1Attr = mesh.geometry.attributes
-          .uv1 as ThreeNamespace.BufferAttribute | undefined;
-        if (!uv2Attr || !uv0Attr) continue;
-        // uv0 三角形求重心权重（hit.uv 即 uv0 插值结果；仿射属性同权重）
-        const a0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.a);
-        const b0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.b);
-        const c0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.c);
-        const det =
-          (b0.x - a0.x) * (c0.y - a0.y) - (c0.x - a0.x) * (b0.y - a0.y);
-        if (Math.abs(det) < 1e-12) continue;
-        const w1 =
-          ((hit.uv.x - a0.x) * (c0.y - a0.y) - (c0.x - a0.x) * (hit.uv.y - a0.y)) /
-          det;
-        const w2 =
-          ((b0.x - a0.x) * (hit.uv.y - a0.y) - (hit.uv.x - a0.x) * (b0.y - a0.y)) /
-          det;
-        const w0 = 1 - w1 - w2;
-        const lerp2 = (index: number) =>
-          new THREE.Vector2(
-            uv2Attr.getX(index),
-            uv2Attr.getY(index),
-          );
-        const uv2Center = lerp2(hit.face.a)
-          .multiplyScalar(w0)
-          .addScaledVector(lerp2(hit.face.b), w1)
-          .addScaledVector(lerp2(hit.face.c), w2);
-        // 命中三角形的世界系 facade UV 梯度（面内最小二乘，精确过三点）
-        const pAttr = mesh.geometry.attributes
-          .position as ThreeNamespace.BufferAttribute;
-        const pa = new THREE.Vector3().fromBufferAttribute(pAttr, hit.face.a);
-        const pb = new THREE.Vector3().fromBufferAttribute(pAttr, hit.face.b);
-        const pc = new THREE.Vector3().fromBufferAttribute(pAttr, hit.face.c);
-        // 模型局部 → 世界（静态场景，matrixWorld 已由上一帧更新）
-        pa.applyMatrix4(mesh.matrixWorld);
-        pb.applyMatrix4(mesh.matrixWorld);
-        pc.applyMatrix4(mesh.matrixWorld);
-        const e1 = new THREE.Vector3().subVectors(pb, pa);
-        const e2 = new THREE.Vector3().subVectors(pc, pa);
-        const solveGradient = (du1: number, du2: number) => {
-          const e11 = e1.dot(e1);
-          const e12 = e1.dot(e2);
-          const e22 = e2.dot(e2);
-          const detG = e11 * e22 - e12 * e12;
-          if (Math.abs(detG) < 1e-12) return null;
-          const alpha = (du1 * e22 - du2 * e12) / detG;
-          const beta = (du2 * e11 - du1 * e12) / detG;
-          return e1.clone().multiplyScalar(alpha).addScaledVector(e2, beta);
-        };
-        const gu = solveGradient(
-          lerp2(hit.face.b).x - lerp2(hit.face.a).x,
-          lerp2(hit.face.c).x - lerp2(hit.face.a).x,
-        );
-        const gv = solveGradient(
-          lerp2(hit.face.b).y - lerp2(hit.face.a).y,
-          lerp2(hit.face.c).y - lerp2(hit.face.a).y,
-        );
-        if (!gu || !gv) continue;
-        // 选列（TEXCOORD_1.x × 255，引擎 materialIndex 口径）
-        const column = uv1Attr
-          ? Math.min(
-              255,
-              Math.max(0, Math.round(uv1Attr.getX(hit.face.a) * 255)),
-            )
-          : 0;
-        return {
-          uv2Center,
-          centerWorld: hit.point.clone(),
-          gu,
-          gv,
-          column,
-        };
-      }
-    }
-    return null;
-  }
 
   /**
    * 精细模式贴花：优先按引擎 `decalProject` 的方式**投影到建筑几何**
@@ -1100,7 +861,6 @@ async function assembleScene(
     texture: DecalUnitTexture,
     meshes: ThreeNamespace.Mesh[],
     proxies: ThreeNamespace.Mesh[],
-    interiorTex: ThreeNamespace.Texture | null,
   ): Promise<ThreeNamespace.Object3D | null> {
     if (!texture.png) return null;
     const aspect =
@@ -1118,7 +878,7 @@ async function assembleScene(
         uvAttr.setX(i, 1 - uvAttr.getX(i));
       }
       uvAttr.needsUpdate = true;
-      const mesh = new THREE.Mesh(groundGeo, buildDecalMaterial(THREE, decoded));
+      const mesh = new THREE.Mesh(groundGeo, buildDecalMaterial(THREE, texture, decoded));
       mesh.position.set(frame.origin.x, frame.origin.y, 0.035);
       mesh.rotation.z = Math.atan2(frame.axisX.y, frame.axisX.x);
       decalStats.projected += 1;
@@ -1146,40 +906,21 @@ async function assembleScene(
         }
       }
       if (geometry) {
-        const isHole = texture.variant === "hole";
-        let material: ThreeNamespace.Material;
-        if (isHole) {
-          // 破洞内景 = 建筑侧内景透过被摧毁的墙（decalInteriorMap 完整函数
-          // 体只有光 pass 无内景采样，见 §52.3）——复刻建筑内景链：命中点
-          // facade UV（uv2 重心插值）+ 命中列参数 + 命中三角形梯度切线框架。
-          const hit = hitBuildingFacade(THREE, frame, meshes);
-          if (!hit) {
-            // raycast 落空：退回普通焦痕贴花（不退 gizmo——保持洞形可见）
-            material = buildDecalMaterial(THREE, decoded);
-          } else {
-            material = createHoleInteriorMaterial(
-              THREE,
-              decoded,
-              interiorTex,
-              envRefs ?? createSunEnv(THREE),
-              hit,
-              payload,
-            );
-          }
-        } else {
-          material = buildDecalMaterial(THREE, decoded);
-        }
-        const mesh = new THREE.Mesh(geometry, material);
+        // 废墟/裂纹贴花（colorless→raw 解码）与四色涂鸦统一走变体材质；
+        // 内景不在贴花侧（decalInteriorMap=纯光 pass，见 §52.3——洞内假内景
+        // 属建筑摧毁系统，待解析摧毁状态数据后实现）。
+        const mesh = new THREE.Mesh(
+          geometry,
+          buildDecalMaterial(THREE, texture, decoded),
+        );
         const inverse = frame.matrix.clone().invert();
         mesh.matrixAutoUpdate = false;
         mesh.matrix.copy(inverse);
         group.add(mesh);
         decalStats.projected += 1;
-        // 破洞家族（decalInteriorMap）：贴花本体 = 焦痕，另有假内景光沿投影
-        // 轴向墙面投射（引擎用贴花贴图作光 cookie、alpha 作衰减）。three 的
-        // SpotLight.map 即投影 cookie —— 等价近似。参数：光强因子 ×16+1、
-        // 距离 = 半径因子 ×4（引擎 invRadius 口径取倒数尺度，实测校准）。
-        // 上限 8 盏防多破洞 lot 光源洪峰。
+        // decalInteriorMap 光 pass 近似：lot 带光参数时，沿投影轴向墙面投
+        // 暖色 cookie 光（引擎用贴花贴图作光 cookie、alpha 作衰减）。上限
+        // 8 盏防多破洞 lot 光源洪峰。
         if (
           texture.variant === "hole" &&
           props.decalLight &&
@@ -1272,7 +1013,6 @@ async function assembleScene(
           decalTexture,
           buildingMeshes,
           decalProxies,
-          tintResolved[0]?.interiorTex ?? null,
         )) ?? buildUnitObject(THREE, unit);
     } else {
       object = buildUnitObject(THREE, unit);
