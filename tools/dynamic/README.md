@@ -28,6 +28,16 @@ python tools/dynamic/dump_shaders.py --spawn "D:\ea-games\simcity_offline\SimCit
 
 产物：`tmp/dynamic/shaders/*.bin|*.asm` + `tmp/dynamic/shader_manifest.jsonl`。
 
+## 安全模式（破解版防崩规则）
+
+`safe_attach.py` = 轻量观察模板（≤10 钩子、只计数、不调 NativeFunction）。
+**防崩规则（实测教训）**：
+1. 钩子数 ≤10——万级 sweep 已证实会崩游戏（装到 ~1600 崩）；
+2. 禁止对未验证对象调 NativeFunction（GetFunction 访问违例会扰动游戏线程）；
+3. 回调只计数，重活批量回传；
+4. scanSync 只读安全，但放空闲期；
+5. 破解版自身不稳定（菜单卡 5min/随机退出），崩溃先归因再重试。
+
 ## 已知事实（勿重复踩坑）
 
 - 离线版 SimCity.exe 已脱壳、无 ASLR（基址 0x400000）→ Ghidra 地址 =
