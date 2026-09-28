@@ -4297,27 +4297,29 @@ fn resolve_decal_textures(
                     if out.len() >= DECAL_IMAGE_BATCH_MAX {
                         dto.error = Some("decal texture batch limit reached".into());
                     } else {
-                        let decoded =
-                            decode_decal_entry(entry, package, manager);
-                        dto.width = decoded.width;
-                        dto.height = decoded.height;
-                        dto.png = decoded.png_base64.clone();
-                        dto.error = decoded.error.clone();
-                        if dto.png.is_none()
-                            && decoded
-                                .error
-                                .as_deref()
-                                .is_some_and(|e| e.contains("missing its four colors"))
-                        {
-                            // 破洞家族（decalInteriorMap）：条目无 Color1-4，
-                            // raster 是 RW4 纹理资源，走 surface 解码（alpha =
-                            // 光衰减掩码保留）。
-                            let raw = decode_decal_entry_raw(entry, package, manager);
-                            dto.variant = Some("hole".into());
+                        // 引擎 decal PS 是直采 raster（`Current.color =
+                        // decalTexture`）+ alpha 混合——raw RGBA 才是渲染口径。
+                        // 四色量化只是旧编辑器预览：argmax 选色在背景 128 阈值
+                        // 附近逐像素抖动 → 点阵伪影 + alpha 二值化抹掉光晕
+                        //（2026-09-27 OMEGACO 真机对照定谳）。raw 失败退四色。
+                        let has_colors = entry.colors_rgba8().is_some();
+                        let raw = decode_decal_entry_rgba(entry, package, manager);
+                        if raw.png_base64.is_some() {
+                            if !has_colors {
+                                // 破洞家族（decalInteriorMap）：条目无 Color1-4，
+                                // raster 是 RW4 纹理资源，alpha = 光衰减掩码。
+                                dto.variant = Some("hole".into());
+                            }
                             dto.width = raw.width;
                             dto.height = raw.height;
-                            dto.png = raw.png_base64.clone();
-                            dto.error = raw.error.clone();
+                            dto.png = raw.png_base64;
+                            dto.error = raw.error;
+                        } else {
+                            let decoded = decode_decal_entry(entry, package, manager);
+                            dto.width = decoded.width;
+                            dto.height = decoded.height;
+                            dto.png = decoded.png_base64;
+                            dto.error = decoded.error;
                         }
                     }
                 }
@@ -4355,24 +4357,65 @@ fn resolve_decal_textures(
 /// 破洞家族的 raster 解码：条目 raster 是 **RW4 纹理资源**（type
 /// 0x2F4E681B，非裸 raster），走 lot surface 的 RW4 纹理解码（alpha = 光
 /// 衰减掩码保留）。
-fn decode_decal_entry_raw(
+/// 条目 raster 的原始 RGBA 解码（引擎 decal PS 渲染口径：直采 + alpha 混合）。
+///
+/// raster 有两种载体：裸 Raster（`0x2F4E681C`，pixFmt21 直解，招牌/涂鸦/
+/// 废墟家族）与 RW4 纹理资源（`0x2F4E681B`，DXT 解码，破洞家族）。alpha
+/// 通道保留——它是柔和衰减（霓虹光晕），不是二值掩码。
+fn decode_decal_entry_rgba(
     entry: &sc_properties::DecalEntry,
     package: &Package,
     manager: &PackageManager,
 ) -> DecalImageData {
     let index = entry.index;
     let Some(raster_key) = entry.raster.clone() else {
-        return DecalImageData::failed(index, "hole decal entry has no raster", None);
+        return DecalImageData::failed(index, "decal entry has no raster", None);
     };
-    match decode_lot_surface_png(package, manager, raster_key) {
-        Ok((png_base64, _pixels)) => DecalImageData {
+    // 裸 Raster（0x2F4E681C，招牌/涂鸦/废墟家族）：pixFmt21 直解。
+    let Some((bytes, type_id, _source)) =
+        find_decal_raster(package, manager, Some(raster_key.clone()))
+    else {
+        // RW4 纹理资源（0x2F4E681B，破洞家族）：DXT 解码，alpha 保留。
+        return match decode_lot_surface_png(package, manager, raster_key) {
+            Ok((png_base64, _pixels)) => DecalImageData {
+                index,
+                error: None,
+                width: None,
+                height: None,
+                png_base64: Some(png_base64),
+            },
+            Err(message) => DecalImageData::failed(index, message, None),
+        };
+    };
+    if type_id != RASTER_IMAGE_TYPE {
+        return DecalImageData::failed(
+            index,
+            "decal entry did not resolve to a raster resource",
+            None,
+        );
+    }
+    let raster = match rw4::RasterImage::parse(&bytes) {
+        Ok(raster) => raster,
+        Err(error) => {
+            return DecalImageData::failed(index, format!("raster parse failed: {error}"), None);
+        }
+    };
+    let size = Some((raster.width, raster.height));
+    let mut rgba = match raster.decode_top_mip_rgba() {
+        Ok(rgba) => rgba,
+        Err(error) => {
+            return DecalImageData::failed(index, error.to_string(), size);
+        }
+    };
+    match encode_rgba_png(raster.width, raster.height, rgba) {
+        Ok(png_base64) => DecalImageData {
             index,
             error: None,
-            width: None,
-            height: None,
+            width: Some(raster.width),
+            height: Some(raster.height),
             png_base64: Some(png_base64),
         },
-        Err(message) => DecalImageData::failed(index, message, None),
+        Err(error) => DecalImageData::failed(index, error, size),
     }
 }
 
@@ -5665,6 +5708,58 @@ mod lot_payload_tests {
         assert_eq!(mesh0_material, 0, "single mesh binds material 0");
         assert!(diag.contains("mesh #"), "diagnostics list meshes");
         assert!(diag.contains("slot0"), "diagnostics list slot0 params");
+    }
+
+    /// LOTM v9 落盘：市政厅族模型 0x01532F56（SimCity_Game；lot 0x457EA9DB /
+    /// 0x909BD1C8 / 0x909BD1DB 的 LOD1，6 slot 链：paletteF32 参数表 + 3×
+    /// raster + rawBGRA + DXT5）。产出容器 + 诊断文本到 `output/lot_hires/`，
+    /// 前端 parseLotModelContainer 可直接消费。运行：
+    /// `cargo test -p fluffy-open-scp --release --lib dump_lotm_v9_city_hall -- --nocapture`
+    #[test]
+    fn dump_lotm_v9_city_hall() {
+        const MODEL: u32 = 0x0153_2F56;
+        let Some((package, manager, file, data)) =
+            open_game_package(MODEL, "D:/ea-games/SimCity/SimCityData/SimCity_Game.package")
+        else {
+            eprintln!("skipping: SimCity_Game.package 不可用");
+            return;
+        };
+        let payload = build_lot_model_payload(&file, &data, &package, &manager, MODEL);
+        let read_u32 =
+            |offset: usize| u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap());
+        assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
+        assert_eq!(read_u32(4), 9, "container version 9");
+        // 布局（见 build_lot_model_payload 文档）：mesh GLB 段 → 材质 8 PNG +
+        // 参数表 → 每 mesh 5 字节绑定 → 诊断文本。
+        let mesh_count = read_u32(8) as usize;
+        let mut offset = 12usize;
+        for _ in 0..mesh_count {
+            offset += 4 + read_u32(offset) as usize;
+        }
+        let material_count = read_u32(offset) as usize;
+        offset += 4;
+        for _ in 0..material_count {
+            for _ in 0..8 {
+                offset += 4 + read_u32(offset) as usize;
+            }
+            offset += 4 + read_u32(offset) as usize;
+            offset += 4;
+        }
+        offset += 5 * mesh_count;
+        let diag_len = read_u32(offset) as usize;
+        offset += 4;
+        let diag = std::str::from_utf8(&payload[offset..offset + diag_len]).unwrap();
+        eprintln!("{diag}");
+
+        let out_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../output/lot_hires");
+        std::fs::create_dir_all(out_dir).unwrap();
+        let container = format!("{out_dir}/lotm_v9_{MODEL:08X}.lotm");
+        std::fs::write(&container, &payload).unwrap();
+        std::fs::write(format!("{out_dir}/lotm_v9_{MODEL:08X}_diag.txt"), diag).unwrap();
+        eprintln!(
+            "LOTM v9 容器 -> {container}（{} 字节，{mesh_count} mesh / {material_count} material）",
+            payload.len()
+        );
     }
 
     /// 【取证探针】消防局（0x4DE9912B，「对称窗只渲染一半」）材质参数表
@@ -7235,6 +7330,95 @@ mod decal_atlas_dump {
                 }
             }
             eprintln!("atlas {tag} dump complete");
+        }
+    }
+}
+
+#[cfg(test)]
+mod decal_resolve_diag {
+    use super::*;
+
+    /// 诊断：真实 lot（DLC0 0xD73EBBDB）的 decal DTO 产出（贴花退化 gizmo 排查）。
+    #[test]
+    fn decal_resolve_dto_outcomes() {
+        let game_path = std::env::var("DECAL_DIAG_GAME")
+            .unwrap_or_else(|_| "D:/ea-games/SimCity/SimCityData/SimCity_Game.package".into());
+        let dlc_path = std::env::var("DECAL_DIAG_PRIMARY")
+            .unwrap_or_else(|_| game_path.clone());
+        const GAME: &str = "";
+        const DLC0: &str = "";
+        let _ = (GAME, DLC0);
+        const GRAPHICS: &str = "D:/ea-games/SimCity/SimCityData/SimCity_Graphics.package";
+        const EP1: &str = "D:/ea-games/SimCity/SimCityData/SimCityDataEP1.package";
+        const APP: &str = "D:/ea-games/SimCity/SimCityData/SimCity_App.package";
+        let dlc0 = match dbpf::Package::open(&dlc_path) {
+            Ok(p) => p,
+            Err(e) => { eprintln!("skipping: {e}"); return; }
+        };
+        let manager = PackageManager::new();
+        let (_dlc_id, dlc0) = manager.insert(dlc0).expect("insert dlc0");
+        for path in [game_path.as_str(), GRAPHICS, EP1, APP] {
+            let p = dbpf::Package::open(path).expect(path);
+            manager.insert(p).expect("insert");
+        }
+        let game = dbpf::Package::open(&game_path).expect("game");
+        let lot_target: u32 = std::env::var("DECAL_DIAG_LOT")
+            .ok()
+            .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok())
+            .unwrap_or(0xD73E_BBDB);
+        let lot_entry = game
+            .entries()
+            .iter()
+            .find(|e| e.id.type_id == 0x00B1_B104 && e.id.instance == lot_target)
+            .cloned()
+            .expect("lot property");
+        let data = game.read(&lot_entry).unwrap();
+        let properties = sc_properties::PropertyFile::parse_with_limits(
+            &data,
+            sc_properties::ParseLimits::default(),
+        )
+        .unwrap();
+        let properties = flatten_lot_parents(properties, &game, &manager);
+        let (textures, diag) = resolve_decal_textures(&properties, &dlc0, &manager);
+        for line in &diag {
+            println!("diag: {line}");
+        }
+        // 并排打印 assemble_units 的单元键（前端配对口径）
+        let mut props2 = sc_properties::PropertyFile::parse_with_limits(
+            &game.read(&lot_entry).unwrap(),
+            sc_properties::ParseLimits::default(),
+        )
+        .unwrap();
+        props2 = flatten_lot_parents(props2, &game, &manager);
+        let document = sc_properties::LotEditorDocument::from_property_file(props2);
+        let units = document.assemble_units();
+        for u in &units.units {
+            if let sc_properties::LotUnit::Decal { index, category, scale, .. } = u {
+                println!("unit  cat{category} idx{index} scale={scale:?}");
+            }
+        }
+        for t in &textures {
+            if let Some(png) = &t.png {
+                let path = format!("../tmp/decal_omegaco/dto_cat{}_idx{}.png", t.category, t.index);
+                use base64::Engine as _;
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(png) {
+                    std::fs::write(&path, &bytes).expect("write png");
+                    println!("wrote {} ({}B)", path, bytes.len());
+                } else {
+                    println!("png base64 DECODE FAILED cat{} idx{}", t.category, t.index);
+                }
+            }
+            println!(
+                "cat{} idx{} id {:08X} atlas={:?} png={}B err={:?} variant={:?} material={:?}",
+                t.category,
+                t.index,
+                t.id_instance,
+                t.atlas_instance,
+                t.png.as_ref().map(|p| p.len()).unwrap_or(0),
+                t.error,
+                t.variant,
+                t.material_instance,
+            );
         }
     }
 }
