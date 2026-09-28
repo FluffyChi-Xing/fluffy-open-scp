@@ -213,18 +213,57 @@ def main():
             for extra in find_pids_by_name(args.name):
                 if extra not in pids:
                     pids.append(extra)
-        if not pids:
-            if not args.wait:
-                raise SystemExit(f"未找到进程 {args.name} —— 先启动游戏并进入城市视图")
-            log(f"等待 {args.name} 出现……（现在启动游戏即可）")
+        if args.wait and not pids:
+            # 持续 watcher：每个新出现的进程（含引导父进程+真身子进程）都在
+            # 出生瞬间挂载——随行观察需要早于子进程的设备创建
+            log(f"等待 {args.name} 出现……（现在启动游戏即可，逐进程自动挂载）")
+            attached = set()
+            agent_src = (HERE / "hook_d3d9.js").read_text(encoding="utf-8")
             while True:
-                # 每轮都重新枚举，避免早期快照过滤空后死循环
-                big = [p for p in find_pids_by_name(args.name)
-                       if working_set(p) > 50 * 1024 * 1024]
-                if big:
-                    pids = big
+                time.sleep(1)
+                for cand in find_pids_by_name(args.name):
+                    if cand in attached:
+                        continue
+                    ws = working_set(cand)
+                    if ws < 5 * 1024 * 1024:  # 跳过刚创建/僵尸
+                        continue
+                    attached.add(cand)
+                    try:
+                        sess = device.attach(cand)
+                        script = sess.create_script(agent_src)
+                        script.on("message", on_message)
+                        script.load()
+                        script.post({"type": "config", "spawn": bool(args.spawn)})
+                        log(f"已 attach PID {cand}（工作集 {ws // (1024*1024)}MB）")
+                    except Exception as e:
+                        log(f"attach PID {cand} 失败：{e}")
+                if attached:
                     break
-                time.sleep(2)
+            session = next(iter([sess]))
+            pid = pids[0] if pids else None
+            # 多会话模式：后续捕获都在 watcher 回调里，主循环只等待
+            log("watcher 就绪，Ctrl+C 退出")
+            try:
+                while True:
+                    time.sleep(1)
+                    for cand in find_pids_by_name(args.name):
+                        if cand in attached:
+                            continue
+                        ws = working_set(cand)
+                        if ws < 5 * 1024 * 1024:
+                            continue
+                        attached.add(cand)
+                        try:
+                            sess2 = device.attach(cand)
+                            sc2 = sess2.create_script(agent_src)
+                            sc2.on("message", on_message)
+                            sc2.load()
+                            sc2.post({"type": "config", "spawn": bool(args.spawn)})
+                            log(f"追加 attach PID {cand}（工作集 {ws // (1024*1024)}MB）")
+                        except Exception as e:
+                            log(f"attach PID {cand} 失败：{e}")
+            except KeyboardInterrupt:
+                raise SystemExit(0)
         # 多实例时优先真身（工作集最大），卡死僵尸排后面
         pids.sort(key=working_set, reverse=True)
         session = None
