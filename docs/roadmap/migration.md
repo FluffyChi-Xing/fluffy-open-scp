@@ -3041,3 +3041,1184 @@ frac 位置差异（先乘再取整 vs 先取整再乘）→ 骑跨 1.0 边界�
 （base frac 与内景域随之切换）；Top 层恢复现行公式（ts2 无参数表对应行，
 不乱除）。判定：DLC 三门完整 + 已验证资产不回归 → 坐实 frac(uv·s) 口径；
 任一回归 → 整体回滚 tileDiv（checkbox/uniform/prop/i18n）。
+
+### §49.5 v2 证伪 + 双实验回滚（2026-09-27）
+
+**v2 结果**（用户对照截图）：半门未修复；勾选后砖块放大（目测 ≈3.6×，与
+周期 1/scale 预测一致）且贴图变糊（重复次数减少 → 单 texel 放大倍数增加）。
+**frac(uv·s) 假设证伪**——Base 平铺周期 = 1.0 原始单位为定谳口径（多资产
+对拍 + 本反向验证双重确认）。「模糊」是低频重复的必然结果，非滤波问题。
+
+**已回滚**：tileDiv（uniform/混合链/checkbox/prop/i18n）与 matBase
+（uniform/varying 偏移/输入框/prop/i18n）全部移除，shader 恢复到
+5f9d328 验证过的公式口径；保留 vMatUV 地址 varying + PS 逐像素采样
+（引擎 building4SetupVS 数据流结构，非实验性）与探针测试、文档。
+
+**半门/半窗悬案现状**：两轮管线级假设（除 tile、实例基址）均证伪；
+未排除方向 = ①顶点色原始数据未导出（palU/palU2/interior/seed——引擎从
+顶点色取这些量，我们的 GLB 丢了原始字节，v10 导出格式候选）；②引擎 VS
+级联（Setup→Unpack→…）中段对 uv2 的其他改写未复刻。继续推进需原始游戏
+截图逐像素对拍或实例数据解析，暂挂。
+
+### §50 P3 渲染质量启动（2026-09-27）
+
+**hejlToneMap 已接入**（hejlTonemapping.ts）：替换 ACES@1.12 折中。
+- 公式逐字（§49.2）；曝光延续 1.12（引擎 sunSky.mSunColor.w 未知，待对拍
+  调参）；用户 gamma 未知取 1。
+- 防双重编码：引擎 hejl 输出在 sRGB 域，three tonemapping 之后还有
+  linear→sRGB——末尾 pow(2.2) 回线性交给 colorspace_fragment 再编码。
+- 安装：整体替换 ShaderChunk.tonemapping_pars_fragment 提供
+  CustomToneMapping（three 对 custom 模式生成的调用正是该函数名）；全局
+  chunk 替换对 NoToneMapping 页面（MeshPreview 等）无副作用（TONE_MAPPING
+  宏不定义则 chunk 不参与编译）。
+- **验收**：夜间亮窗应比 ACES 更接近游戏截图（hejl 高光肩部更亮）；
+  白天墙面中调应几乎不变（hejl 中调 ≈ 恒等）。若整体过亮/过暗 → 调
+  exposure。
+
+### §51 P4-D1 证据链落地（2026-09-27）
+
+DecalUnitTextureDto 扩展 materialInstance（字典 0xCAAD8C9 material 引用）
+与 shaderDefInstance（material 资源 slot 0x2D shader-def 引用，best-effort
+跨包解析）——**变体判定数据源**：decalProject Front/Lit/SDF/Neon/
+decalInteriorMap 家族按 material/shader-def 实例区分，实例→变体名的映射
+待真机诊断积累（打开含招牌/涂鸦/破洞的 lot，收集 shader_def_instance
+聚类 + 对应视觉形态即可建表）。
+
+同批增加 materialData 三元组（0x0DA76A05/06/07）存在性探针（进 session
+诊断文本）：S1（破洞假内景光的光强/半径参数）与 S7（三纹理）的数据基础。
+真机诊断会输出 `decal materialData slotN 0x...: present (array[N]) / absent`
+——present 即下一步透传三纹理与参数；absent 则 S1 的参数需从 material
+资源内部挖（decalMaterialData 表）。
+
+前端本批仅 TS 类型扩展；S2（招牌自发光 emissiveMap×2）与 S1 材质变体在
+effect 实例映射表建立后实施。
+
+### §52 P4 变体映射定谳 + S1 破洞假内景光落地（2026-09-27）
+
+**decal_material_probe 定谳**（7 个 atlas 字典 → 3 个 material 聚类，样本
+PNG 目视确认，tmp/decal_probe/contact_sheet.png）：
+
+| material 实例 | 条目数 | 内容 | 变体 |
+|---|---|---|---|
+| 0x73684EFC | 593 | "POWER ELECTRIC" 文字招牌、太阳 burst 标志 | **招牌**（S2 霓虹） |
+| 0xE5390A98 | 1072 | 白/红涂鸦、污渍条纹 | **涂鸦/污渍**（普通 decalProject） |
+| 0x44A3F5BA | 29 | 解码失败 → **条目无 Color1-4** | **破洞**（decalInteriorMap） |
+
+**materialData 定谳**：0x0DA76A05/06 是 **scalar Float**（非数组）：实证
+lot = 0.5 / 2.0 → 代入 shader（lightScale = x·16+1 = 9、invRadius = y·4 =
+8）正是 S1 破洞假内景光的强度/半径参数；slot2（0x0DA76A07）absent。
+
+**S1 落地**：
+- 后端：条目缺 Color1-4 时回退 raster 原始解码（decode_top_mip_rgba，
+  alpha = 光衰减掩码），DTO 标 `variant:"hole"`；session 新增
+  decalLight = [0.5, 2.0]（原始因子，缺失 null）。
+- 前端：hole 贴花除焦痕贴图外，附加 SpotLight（map = 贴花贴图作投影
+  cookie，朝投影轴照向墙面）——three SpotLight.map 即引擎光 cookie 的
+  等价设施。参数：intensity = (scale·16+1)×3、distance = radius·8、暖色
+  0xffdca0；上限 8 盏/装配（pruneExcessLights 只管 light:* 前缀，破洞灯
+  独立限量）。供电/昼夜门控未接（后续可挂 uPowered 同源开关）。
+- S2（招牌霓虹 rgb×2 + 受光）待做：招牌聚类已定位，需先把 material
+  instance→atlas 的映射传到前端变体分支（结构同 hole）。
+
+**material 资源不可独立解析**：三个 material 实例在全部 7 个包中均无
+同名 entry——effect 参数（decalMaterialData 表）内嵌于级联结构，不影响
+上表的聚类判定与 S1/S2 实现。
+
+### §52.1 破洞内视盒体投影（用户反馈：黑剪影无立体感）
+
+用户实证：破洞 = 平贴黑色剪影，无进深。根因：引擎破洞的视觉主体是
+decalInteriorMap 的**盒体投影内景**（透过洞口看到 slot5 房间图集的暗色
+房间），贴图本体只是焦痕；我们此前只有焦痕平面。另：该 lot materialData
+全 absent → 引擎口径 = 无假内景灯（仅洞内视），SpotLight 未加属正确行为。
+
+**落地**：hole 贴花改用 ShaderMaterial（createHoleInteriorMaterial）：
+- 盒体投影 = 窗户 scInteriorMap 同款数学（invDepth/backSize/dilation 常数
+  逐字），eyeObj = 相机在投影盒对象空间的坐标（uInvModel 逐帧刷新）；
+- 房间象限按 decal 种子 FastNoise 随机选（引擎按 facade 域选房，缺顶点色
+  数据取近似）；焦痕边环 = 贴花 alpha 0.45-0.9 smoothstep 混合；
+- interiorMap = 建筑 slot5（tintResolved[0].interiorTex 复用）；无图时退化
+  近黑渐变；ShaderMaterial 不走 three 编码链，末尾手动 pow(1/2.2)。
+
+### §52.2 破洞 raster 根因勘误（RW4 纹理资源，2026-09-27）
+
+用户反馈"彩色块 + 无内景"引出关键勘误：破洞 atlas（0x44A3F5BA，29 条目）
+的 raster **不是裸 raster 而是 RW4 纹理资源**（type 0x2F4E681B，App 包）——
+此前 decode_decal_entry_raw 用 RasterImage::parse 必然失败 → 破洞一直走
+绿色 gizmo 回退；用户看到的彩色块 = 涂鸦聚类（0xE5390A98）按 Color1-4
+正常解码的彩色涂鸦（涂鸦本就多彩，非 bug）。
+
+**修正**：decode_decal_entry_raw 改走 decode_lot_surface_png（RW4 纹理段
+解码器，lot surface/tint 图集同款，alpha 保留）。此前该函数因 dd70a51
+仅提交 src/ 而意外丢失，本批连同修正版一并重新落地（含 session decalLight
+与 DTO variant 字段）。
+
+### §52.3 破洞假内景求证定谳 + 建筑内景链复刻（2026-09-27）
+
+**求证（用户要求先实证再动手）**：
+1. app 包 shader 源码库（tmp/hlsl/ 8 文件全量）**零 decal shader**——decal
+   家族只在 cpp_0x00000000 转储（extract_decal.py 提取）。
+2. **decalInteriorMap 完整函数体**（此前 38KB 摘录不全，本次全文提取）：
+   仅有光 pass——`materialLightScale = x·16+1`、`invRadius = y·4`、
+   `circleDist = saturate(1-a·256/200)`、`circleZ = (z·0.5+0.5)·|dir|·invRadius`、
+   `sphereDist`、`Current.color = color·lightScale·lightAmount`、**输出
+   alpha = 0**——贴花侧**没有内景采样**，它是把光投到墙上的投影灯 pass。
+3. **结论：洞内的假内景来自建筑侧**——内景贴图渲染的房间透过被摧毁的墙体
+   露出（modding guide p32-33 架构：房间经 interior mapping 渲染）。故
+   正确实现 = 在破洞处复刻建筑内景链（非猜测，是确认后的架构）。
+
+**落地**（createHoleInteriorMaterial v2）：
+- raycast 命中破洞正后方建筑面 → `facadeUvAtHit` 用 uv0 三角形重心权重
+  插值 uv2（three r185 raycast 只回 uv/uv1）→ 得到破洞处的建筑 facade UV；
+- 内景链逐段复刻：`interiorUv = facadeUv·regionXform·roomInvSize` →
+  `elem=floor/srcUv=fract` → 盒体投影（eye 取贴花 frame 基，世界系经
+  worldQuat 变换）→ `interiorTc = result·interiorScale + (0,offset)` →
+  FastNoise 选房（种子 = 引擎 deferred PS 常数 0.213425435）→ 四分位阈值
+  x 偏移 → 采样 slot5 → 昼夜环境 + 灯亮 a×glow×供电（与建筑共享 env
+  uniform 对象，热切换联动）；
+- 建筑参数取 payload.materials[0] 参数表列 0（row0.zw=row1.xy=row3.zw）。
+
+**地面贴花（图 4 类道路裂缝/垃圾）**：垂直投影轴（|axisZ.z|>0.7）的
+decal 不再做建筑投影——平铺到地面平面（z=0.035、yaw 取 transform 首行、
+U 镜像口径同回退 quad），修复悬浮半空。
+
+**UI 后置项**（ctx note 已记）：Inspector 属性行键名挤压，方案 = 加宽或
+迁 F-Sheet（用户方案②优先），下批排期。
+
+### §52.4 破洞内景三问题修正（2026-09-27，用户对照截图）
+
+用户三反馈（对照游戏截图）：①贴花边缘糊于锐利建筑；②透视方向与窗户内景
+不同；③房间过大且露出整个房间网格。根因与修正：
+
+1. **边缘模糊**：贴花贴图走 three 默认（mip + 三线性），建筑贴图口径是
+   禁 mip + Linear + 最大各向异性（§52.3 的既定折中）。getDecalTexture
+   对齐建筑口径（全部贴花受益，不只破洞）。
+2. **透视/网格**：v2 用贴花 frame 轴作盒体投影基（可能与 facade UV 轴差
+   旋转）+ 列 0 参数（interiorScale 可能 =1.0 → 采样跨整个房间网格）。
+   v3：raycast 命中三角形建立 **facade UV 梯度**（gu/gv，世界→uv2 线性
+   映射，与建筑 dFdx/dFdy 切线框架同构）→ 逐像素 facadeUv（中心 + 梯度
+   投影）、eye 用 tanU/tanV/normal（梯度归一）框架——与建筑完全同构；
+   **选列改自命中点 uv1.x×255**（引擎 materialIndex 口径，与窗户逐顶点
+   选列同源），参数取命中列。raycast 落空回退普通焦痕（不退 gizmo）。
+
+### §52.5 贴花材质变体矩阵 + 光源上限放开（2026-09-27）
+
+**材质变体矩阵**（按命中聚类映射，materialInstance → 材质）：
+- 0x73684EFC 招牌 → **MeshBasic + color×2**（decalNeonBrighten 证据
+  `Current.color.rgb *= 2`；无光照自发光，过 hejl 保持夜间招牌亮度）
+- 0xE5390A98 涂鸦 / 0x44A3F5BA 废墟 → **MeshStandard（roughness 1）**：
+  MeshBasic 不受光是"贴花与墙面不在一个图层"的根因——受光后与墙面共享
+  太阳/天空/tonemap，明暗随昼夜联动
+- 未知 material 回退受光材质（安全默认）
+
+**清晰度**：getDecalTexture 对齐建筑贴图口径（禁 mip + Linear + 最大
+各向异性）——贴花默认三线性在中远景糊于建筑（用户反馈 ①②）。
+
+**光源上限 24 → 48**：24 是早期低配机「推近掉帧」时代定的。关于用户
+"动态渲染放开限制"的定性：**渐进/分帧 await 只摊薄装配耗时，不降低
+稳态帧成本**——前向渲染每帧每片元都要评估全部光源，与加载方式无关。
+真正的规模化路径 = WebGPU clustered/deferred lighting（P5+）。本批以
+48 + 强度剪枝先行，观察帧率后再议。
+
+**勘误记录**：buildDecalMaterial 签名重构时 map 参数错位（DTO 当贴图
+传入 → map.channel undefined → shader 宏 `uvundefined` 编译失败 → 贴花
+不渲染且渲染循环抛异常连带网格消失）。dev 模式不跑 tsc 故直接上线——
+修复并以后以 tsc+vitest 双卡点。
+
+### §52.5 破洞盒体渲染 + 材质变体矩阵 + 光源上限（2026-09-27 续）
+
+**decalLightInteriorMap 完整函数体提取成功**（决定性）——破洞内景的实现：
+```
+interiorUv = lerp(tp.xy, tp.xy·0.5, tp.z·0.5+0.5)·(-0.5)+0.5;  // 盒体透视
+interiorUv = interiorUv·texXform.xy + texXform.zw;              // 贴花自己的 atlas 格
+lit = interiorTexture.rgb·(shDiff·kLightAmount + sun·kSunContrib + a·16);
+Current.color.rgb = lerp(Current.color.rgb, lit, ...);
+```
+**内景图 = 贴花自身纹理**（RW4 纹理的房间图 + alpha 窗灯掩码），不是建筑
+slot5——此前两版内景方向错误（slot5 象限采样/建筑参数链）的真正原因。
+
+**落地**：hole 贴花 → 投影盒体体积（BoxGeometry 缩放到 decalProjector 的
+size/位置/朝向），ShaderMaterial 逐段复刻 decalLightInteriorMap：盒坐标
+tp∈[-1,1]、前面全尺寸/后面半尺寸透视、alpha 轮廓三区（<0.12 discard 露
+墙 / 中带焦痕原色 / >0.5 洞内房间图 × (环境 + a×glow×供电)）。独立于平面
+投影（projectDecal 只服务常规贴花）。
+
+**材质变体矩阵**（按聚类实例映射）：0x73684EFC 招牌 = MeshBasic +
+color×2（decalNeonBrighten）；涂鸦/废墟 = MeshStandard(roughness 1) 受光
+（修"与墙面不在一个图层"）；未知回退受光。
+
+**光源上限 24 → 48**：渐进 await 只摊薄装配不降稳态帧成本（前向渲染每帧
+每片元评估全部光源）——规模化路径 = WebGPU clustered/deferred（P5+）。
+
+**NaN 守卫**：projectDecal 产物 boundingBox 含 NaN 时丢弃（修"异常裁切
+正方形"与 boundingSphere NaN 报错）。
+
+### §53 decal 全量目视定谳（2026-09-27，decal_atlas_dump 探针）
+
+三聚类全部条目（~723 PNG）转储至 tmp/decal_all/（pal_ = 四色解码、raw_ =
+RW4 纹理、rawraster_ = 裸 raster），对比板 sheet_*.png。
+
+**聚类内容定谳**（对比板目视）：
+- **0x4491DE3A（29 条，128×128 raw）**：废墟/破坏墙块——碎裂墙面、砖块
+  塌陷、裂纹、黑洞边缘；含 2 张**水面**贴图（raw_025/026 蓝色波纹=水面
+  decal）。全部无 Color1-4（raw 解码口径正确）。
+- **0x73684EFC（444+ 条，32×32~256×128 四色）**：**商业招牌**——POWER
+  ELECTRIC、TECH、CASINO HQ、POLICE、HEALTH CLINIC、COAL、LOW END/
+  Mid-Range/GRAND/FORTUNAS CASINO、SMELTING FACTORY 等，扁平高饱和
+  商业美术。
+- **0xE5390A98（441+ 条，32×32~256×128 四色）**：**涂鸦/贴纸**——白/红/
+  蓝/紫/绿 tag、"CRIME/RiOt/WARRIOR" 字样、动漫人物、50% 促销牌、黄色
+  三角标。像素画风格为**美术设计本身**。
+
+**分辨率定谳**：招牌/涂鸦源纹理 = **32~128px**（多数 64×32/128×64），
+投影到数米宽墙面 = 6~18 px/m 的固有像素密度——"模糊+锯齿"主体是源分辨率
+× 放大倍率的物理结果，非滤波 bug（Linear+各向异性已对齐建筑口径）。
+游戏中同样像素化（SimCity 2013 涂鸦即像素风），近距离亦糊。
+
+**渲染口径现状**（本轮已落地）：招牌 MeshBasic+color×2（霓虹）；涂鸦/
+废墟 MeshStandard 受光（与墙共享光照/tonemap）。剩余可调项 = decal 物理
+尺寸标定（对照游戏实测同一 decal 的米宽）与 Nearest/Linear 取舍。
+
+**全息广告**：decalFloatQuad 家族（悬浮 quad、NoClip 变体 ×2 亮度）——
+未来建筑的半空广告走此家族，不投影；识别需要 material→shader 变体映射，
+排期后续。
+
+### §54 招牌尺寸定谳 + 渲染口径对齐引擎（2026-09-27，OMEGACO 对照）
+
+用户给出 OmegaCo 工厂（EP1 `G 61F0C000 I FA8C9AA7`，单 mesh 单材质 104 列）
+游戏 vs OpenSCP 对照：楼顶 logo 尺寸正常、墙面 OMEGACO 招牌小一半且糊、
+牌面出现「点阵」、游戏侧霓虹锐利。全链路取证：
+
+**取证链**（新探针 ×5，产物 `tmp/decal_omegaco/`）：
+`find_lot_by_model`（模型→lot 反查：3 条 lot property 同引 LOD1）→
+`decal_chain`（lot 12 贴花：cat0 = 4×OMEGACO E9C1CD1E + 1×楼顶 logo
+5AB6007A，cat1 = 7 涂鸦）→ `dump_model_glb` 导出建筑 GLB → **Node 里用
+项目同款 three.js 复现前端投影管线**（DecalGeometry + raycast anchor）→
+`dump_decal_channels` / `dump_decal_4color`。
+
+**尺寸定谳（★ scale = 半高，非半宽）**：招牌板几何实测 19.95×9.56m
+（z≈29 处仅 4 个三角形的薄板，x[19.3,20.2] 双面），scale=4.9、aspect=2
+→ 引擎 quad = **高 2×scale（9.8≈9.56 ✓）、宽 高×aspect（19.6≈19.95 ✓）**。
+旧口径「宽=2×scale、高=宽/aspect」使 aspect>1 的招牌整体小一半
+（游戏字占板 92% vs 我们 49%，与截图测量一致）；**aspect=1 的 logo 两种
+口径同值——这正是「logo 正常、招牌小一半」的成因**。§41.4/42.3 的
+「引擎烤入顶点缓冲，quad 只能近似」结论保留，但近似公式自此有实证锚点。
+
+**「点阵」定谳（四色量化伪影）**：牌面点阵不是任何纹理内容——四色
+argmax 解码在背景像素（通道值 40~90）上虽不至于跨阈值，但字缘过渡带的
+通道值在 128 阈值附近抖动，选色逐像素翻转 → navy/透明/字色交替 = 点阵 +
+硬边彩描。**引擎 decal PS 是直采 raster**（`decal_shaders.txt`：
+`uv = uvOrig·texXform.xy + texXform.zw; Current.color = tex2D(s0, uv)`，
+标准 alpha 混合），四色量化只是旧编辑器预览口径。raw RGBA 的 alpha 是
+柔和衰减（ch3=字面辉光、ch2=描边、ch1=底部光带、ch0=填充），游戏霓虹感
+= 直采 + ×2（decalFloatQuadNoClip）+ bloom；测量游戏字核 (221,182,154)、
+raw 字色 ×2 混合 ≈ (255,72,214) 热品红——量级吻合（差 bloom）。
+
+**修复（三处）**：
+1. `decalProject.decalFrame` + `buildDecalQuadFallback`：高 = 2×scale、
+   宽 = 高×aspect（测试同步改口径）。
+2. `resolve_decal_textures`：**raw RGBA 优先**（新 `decode_decal_entry_rgba`
+   统一裸 raster 0x2F4E681C 与 RW4 0x2F4E681B 双载体），四色退为 fallback；
+   hole 变体改按「条目无 Color1-4」判定（与原 fallback 触发条件等价）。
+3. `buildDecalMaterial`：alphaTest → **transparent 混合 + depthWrite false**
+   （halo 平滑、背景 alpha≈0 透出牌面、点阵消失），sRGB/禁 mip/各向异性
+   口径不变，招牌 ×2 不变。
+
+**锐利度结语**：修复后逐 decal 像素密度与游戏完全同口径（同一纹理、
+同一板尺寸）——OMEGACO 128px/19.6m = 6.5 px/m，游戏近景同样偏软（用户
+感知的「锐利无比」= 高对比霓虹 + bloom 对低分辨率的掩蔽；AVERAGE HOTEL
+等 256px 源在同等板宽下确实锐利）。剩余差距 = bloom 后处理（P3+ 待办）。
+
+**编译卡点**：tsc ✓、vitest 196/196 ✓、cargo check/test 93/93 ✓。
+真机验证待用户重启 dev server 对照同一机位。
+
+### §55 战略转向：decal 子类型必须引擎侧解析（2026-09-27，用户对照证据）
+
+用户三组新证据定性了「decal ≠ 贴 PNG」：①游戏涂鸦与墙色**融为一体**
+（同一贴花在不同色墙面上呈现不同色调、边缘锐利）——存在未知的颜色融合
+机制；②全息广告（decalFloatQuad 家族）**不贴合招牌、超出尺寸、不投影**
+——decal 不总投影；③破洞内部假立体 ≠ 窗户内景房——decal 内部有按子
+类型的专属处理。结论采纳：**材质→shader 变体→混合状态的映射不在静态
+数据里，必须引擎侧 RE**。
+
+**本轮引擎/数据双向取证**：
+
+1. **材质资源不在包里**：字典 material Key = T0/G0/I{73684EFC|E5390A98|
+   4491DE3A}，全包全类型搜索（Game/EP1/Graphics/App/DLC0）**零命中**
+   ——是运行时效果系统的裸引用，静态翻包拿不到 shader 映射。
+   （resolve_shader_def_instance 的 best-effort 注定失败，非 bug。）
+2. **绘制链已确认走 shader-def**：Ghidra 反编译 FUN_00437610（draw）——
+   `FUN_00422f90(0x201)`（shader 注册表）与 `FUN_00422f90(0x2d)`（**0x2D
+   = 材质 shader-def 槽 id**）取对象 → FUN_004ab390 校验 → 绘制实例。
+   状态设置 FUN_00437820 是通用命令录制（vftable +0x148 分发），混合
+   状态在 shader-def 对象内部——**下一 RE 目标：shader-def 对象的
+   apply/状态块**。cGraphicsUnitDecals::vftable 符号确认存在。
+3. **动画招牌机制完整提取**（decalLightBackground + decalAnimateSDF）：
+   `decalMaterialData[3]` = 动画参数（符号选 UV 轴、整数=分块数、小数=
+   偏移），`decalMaterialInfo.y` = 速度，`animTime = frac(gameTime·speed
+   +0.9999)`，`compares = floor((animTime·3 − off)·chunks)/chunks`，
+   `animResults = uv − compares` → 条带纹理**按帧选区**——CHEAP OFFICES
+   滚动箭头类动画招牌的数据源即 materialData 表。
+4. **PS 变体家族全清单**（16 标识符）：decalClip/ClipBack/FloatQuad/
+   FloatQuadNoClip/Project/NeonBrighten/InteriorMap/LightBackground/
+   LightInteriorMap/AnimateSDF/MaterialInfo(WithObjectData)/MaterialData/
+   Index/Texture/ColorPS/regionDecalProject(Clip)——**不存在任何
+   「直采贴墙」的单一家族**，用户「多子类型各有 shader 逻辑」的定性
+   与清单一致。
+5. **涂鸦融合候选机制**（待证）：D3D9 调制混合（SRCBLEND=DESTCOLOR/
+   DESTBLEND=ZERO，src×dst）可解释「涂鸦随墙色变化+白底消失」；
+   raw 底稿为乘法设计的浅色（CRIME tag raw 均值 227,159,59 无蓝）与
+   之一致。判定实验：同一贴花不同色墙的 A/B 游戏截图（用户提供），
+   或 shader-def 状态块 RE。
+
+**新探针**：decal_material_slots / find_instance_all / decal_material_key
+（+ §54 的 5 个）。反编译产物 tmp/decal_state_out.c。
+
+**后续 RE 队列**（引擎侧优先，逐项对拍数据）：①shader-def 对象布局与
+状态块（混合模式 per 变体）②cGraphicsUnitDecals::vftable 渲染方法
+（float quad 几何/悬空逻辑）③decalMaterialData 表资源定位（动画参数）
+④涂鸦融合机制定谳（实验或 RE）。
+
+### §56 引擎侧 RE 第二轮：decal 管线六问定谳（2026-09-27，纯反编译无实现）
+
+按「引擎侧先行」推进，新脚本 DecalVtable.java / FuncAt.java / FindDwordPtr.java，
+产物 tmp/decal_vtable_methods.c、tmp/decal_caller_out.c。
+
+**Q1 变体选择（未知变量）——已答（机制级）**：绘制函数 FUN_00437610 经全局
+注册表 `FUN_00422f90(id)`（= `DAT_00e705a8[id*4]` 数组）取对象：id 0x201=
+shader、**id 0x2D=采样器/材质描述**、id 600=实例表。字典 material Key
+（T0/G0）是运行时效果系统名哈希，五包全类型零命中 → 哈希→效果表在加载期
+组装，静态翻包不可得（resolve_shader_def_instance 的失败是原理性的）。
+
+**Q2 涂鸦融合——机制收窄至绘制期混合状态**：DecalDrawBatch 是每帧绘制
+（scope 字符串 + 批 100 × 0xD4C 记录 + SkinBones 逐实例变换）→ 「运行时
+烘焙进墙面贴图」假设排除；PS 家族无墙面采样（GetDeferredAlbedo 零命中）
+→ 融合只能在输出混合（blend）环节。候选=**调制混合（src×dst）**：同时
+解释随墙色变色、白底消失、边缘锐利三特征；raw 底稿浅色无蓝（乘法美术）
+佐证。未最终定谳：需 SetRenderState 链深挖（2-3 轮）或同贴花双墙色
+A/B 截图（秒级裁定）。
+
+**Q3 全息广告悬空/超尺寸——已答**：decalFloatQuad VS 的 UV 来自**逐顶点
+indices 字节**（`texcoord<t0>.xyz = indices.yzw/255`），顶点位置来自记录
+自带顶点缓冲 + 流 4 的 **SkinBones[(192)] 逐实例变换表**（每实例 3 行
+float4 = modelToWorld）。位置=记录烘焙值（原点+depth），**无任何投影/
+raycast**——悬空与超尺寸是烘焙几何的固有属性。
+
+**Q4 破洞内景≠窗户内景——已答（与用户观察互证）**：decalInteriorMap 采样
+**贴花自身纹理**（盒体视差 + texXform 子域），与建筑 interior mapping
+房间链完全独立；行 0 参数（decalMaterialData[0].x=日照贡献）驱动光。
+
+**Q5 decalMaterialData 表源——已答（高置信）**：**字典条目 Color1-4 =
+参数表 4 行 float4**，不是调色板：
+- 行 3 = 动画参数：`useV=符号选轴、animChunks=max(1,floor)、
+  animOffsets=frac`（decalLightBackground PS 逐字段吻合）；
+- 行 0 = 光照参数（kSunContributionAmount=row0.x 等）；
+- 经 VS `customParams[4]` 按实例索引（`xformIdx=indices.x`，
+  `realXformIdx=xformIdx/3`，`customParamIndex=/4、%4` 选标量）以
+  texcoord<t0>.w 下发；逐实例 Vector3（0x0D109080，招牌 0.1/涂鸦 0.5）
+  即 `decalMaterialInfo.x×16+1` 光强标度（0.5→9 与 §52 实证一致）。
+- 推论：Color1-4 的「四色预览调色板」语义作废——是参数行，渲染必须走
+  raw RGBA + 参数（§54 的 raw 切换方向正确）。
+
+**Q6 cGraphicsUnitDecals 渲染方法——已答（否定性）**：vftable（0xD250F0）
+仅引用计数三件套；类族名 cGraphicsUnit**Vandalism**（0xD25100）——引擎
+语义「涂鸦破坏系统」，无逐对象渲染虚方法，渲染全在 manager 批处理
+（DecalDrawBatch）。
+
+**遗留开口（下一轮）**：①混合模式最终定谳（SetRenderState 链：命令表
+walker FUN_00437820 → vftable+0x148 回调 → 设备包装 DAT_00e72908）；
+②字典 material 名哈希 → 运行时效果表的加载路径；③画刷图层 / raster-lot
+偏移悬案（同一方法论待启动）。**遵用户指令：以上问题全绿前不实现。**
+
+### §57 涂鸦融合定谳：墙面色调制（乘法），非贴图叠加（2026-09-27，纯测量）
+
+用户提供 A/B 截图困难（涂鸦随机拼贴）→ 改用**自洽定量测量**：在均匀日光
+截图（GO FOR HOME SHOP，无灯光干扰）上分区域测色。
+
+**测量**（RGB 均值 + G/R、B/R 通道比）：
+
+| 区域 | RGB | G/R | B/R |
+|---|---|---|---|
+| 裸墙（上方参照） | 109,103,63 | 0.949 | 0.578 |
+| SHOP 字母（区域内最亮 15%） | 135,121,63 | 0.900 | 0.466 |
+| GO FOR 字母 | 126,112,67 | 0.888 | 0.530 |
+| 购物车（最绿 10%） | 110,114,60 | **1.039** | 0.546 |
+| 板底（中位列） | 117,108,67 | 0.925 | 0.575 |
+
+**裁定逻辑**：
+1. **alpha 叠加出局**：raw 购物车 texel 是饱和绿（G/R≈3+），要压到实测
+   G/R=1.04（「一缕绿意」）需要 α≤5%，但那样购物车根本不可见——矛盾。
+   饱和黄字母同理（实测 G/R 只降 5%）。涂鸦的色偏是**逐通道小幅度的、
+   与墙色成比例的调制**，不是叠加色层。
+2. **乘法成立**：色偏方向与幅度 = 淡色 texel × 墙（购物车 texel ≈
+   (0.95,1.0,0.85) 淡绿 → G/R=1.05、B/R=0.51，与实测 1.04/0.546 吻合；
+   CHEAP 金字 texel ≈ (1,0.76,0.30) 与 CRIME raw (227,159,59)=(1,0.70,0.26)
+   同族）。板底≈墙（板 texel 近白 → ×墙≈不变）解释「板消失于墙」。
+3. **架构结论**：引擎是延迟渲染（regionDecalClip PS 读 GetDeferredNormal
+   + SimCityLighting 佐证）——涂鸦 = **写进 G-buffer albedo 的延迟贴花**
+   （albedo 调制），因此自动共享墙体光照/tonemap/bloom、砖缝透出、边缘
+   与 G-buffer 同分辨率锐利。等价实现口径（three.js 前向）= 涂鸦以
+   DstColor 调制混合贴墙（CustomBlending: Src=DstColor, Dst=Zero），
+   raw 淡色 texel 直用。
+
+**六问全部定谳**。遵指令继续冻结实现；§54 已落地的尺寸+raw 修复与
+调制混合口径不冲突（调制需要 raw texel——已就位）。
+
+### §58 decal 渲染实现重构：按引擎子类型分派（2026-09-27，解冻后落地）
+
+依据 §56-57 的 RE 结论重构 `buildDecalMaterial` / `getDecalTexture`
+（PropertyEditorViewport.vue）：
+
+1. **材质子类型映射**（`DECAL_MATERIAL_VARIANTS`，按字典 material 哈希）：
+   - `sign`（0x73684EFC）：MeshBasic ×2 + NormalBlending（霓虹自发光，
+     decalFloatQuadNoClip 证据）——不变；
+   - `graffiti`（0xE5390A98，Vandalism 族）：MeshBasic + **CustomBlending
+     （blendSrc=DstColor、blendDst=OneMinusSrcAlpha）+ toneMapped=false**
+     ——albedo 调制的前向等价：结果 = texel×墙（砖缝/光照/明暗全部透出，
+     只可能压暗），§57 测量口径一致；
+   - 其余（未知材质兜底）：受光 MeshStandard（§52.5 折中保留）。
+2. **纹理预乘**：涂鸦族 `texture.premultiplyAlpha = true` ——
+   blendSrc=DstColor 一次表达 `texel.rgb×a×墙`，blendDst=OneMinusSrcAlpha
+   保留墙；背景 a≈0 → 恒等于墙（零副作用），且预乘插值消除边缘晕圈。
+3. raw RGBA 直采、sRGB、禁 mip+Linear+各向异性、半高尺寸口径（§54）
+   均保持；hole 盒体路径不受影响。
+
+**未做（后续排期）**：动画招牌（decalAnimateSDF/LightBackground 需要把
+条目 Color1-4 参数行透传到 DTO + gameInfo 时间 uniform——数据源已明，
+属 S2 新特性非本轮口径修正）；bloom（P3+）。
+
+tsc ✓ vitest 196/196 ✓。真机验收点：涂鸦应「刷进」墙面（砖缝透出、
+只压暗不发白、色偏随墙色变化）；招牌亮度/尺寸对照 OMEGACO 机位。
+
+### §59 涂鸦混合第三次修正：alpha 裁切（cutout）（2026-09-27，真机迭代）
+
+**§58 乘法实现真机翻车**（用户截图：涂鸦「神秘消失」——raw 暗底 texel
+乘墙后整块墙变暗、字也被压没，视觉上等同消失）；回退为 raw+普通 alpha
+混合后**再次翻车**（用户截图：HEADQUARTERS 全都半透明+模糊不可辨认）。
+
+**根因（两轮迭代暴露的完整机制）**：raw 纹理的 alpha 是**抗锯齿掩码**，
+不是连续透明度——字母核 ≥0.5、边缘与背景渐变衰减到 0。按连续 alpha 混合
+会把整个渐变光晕显示出来 → 半透明糊团。游戏「锐利无比」= 掩码的 0.5
+等值线裁切（等值线平滑且锐利）；字母周围的光泽来自 bloom，不是混合。
+
+**修正**：graffiti 族 → `alphaTest: 0.5 + transparent: false +
+depthWrite: true`（不透明 pass，无排序开销）；sign 族保留连续混合
+（招牌 alpha 的柔和衰减=霓虹光晕的美术语义，OMEGACO 观感正确）。
+
+**§57 结论勘误**：「乘法（调制）」定谳有误。当时排除了 alpha 是因为按
+「饱和 texel + 高不透明度」预测；实测模糊截图证明真实机制 = **低 alpha
+直采叠加**（购物车 G/R=1.04 对应 α≈0.3 的淡绿 texel，当时误设 texel 为
+饱和绿）。乘法与低 alpha 混合在测量上不可区分，但实现上前者已被真机
+否定。§58 的 CustomBlending/premultiply 已全部回退。
+
+**遗留**：光晕型贴花（径向渐变 glow）在 cutout 下只保留高亮核，无 bloom
+时观感弱于游戏——待 P3 bloom。诊断日志（[decal] 前缀 console.warn）
+保留至口径稳定。tsc ✓ vitest 196/196 ✓。
+
+### §60 破洞盒体 shader 编译错误修复 + transform 诊断增强（2026-09-27）
+
+用户控制台暴露两个问题：
+
+1. **createHoleBoxMaterial 从未编译通过**：片元引用了未定义变量
+   `hole.rgb`（应为采样结果 `mask.rgb`）——该 ShaderMaterial 自 §52.5
+   落地起每次编译失败，破洞盒体从未真正渲染过。之前未暴露是因为四色
+   时代破洞条目 png 为空、根本走不到盒体材质；§54 raw 解码修好后首次
+   进入编译。已修（`hole.rgb` → `mask.rgb`）。
+   **教训：ShaderMaterial 无编译期检查，字符串内错误只有运行时才炸——
+   新增 shader 应在测试里做一次 WebGL 编译冒烟。**
+2. **`无有效 transform/scale` 警告（decal:0:0）**：某 lot 单贴花缺
+   transform/scale → decalFrame 返回 null → gizmo 兜底（合法路径）。
+   警告已增强为输出 matrixLen/transform-null/scale 值，便于下次定位。
+   （注意：这解释了此前部分会话 projected:0/fallback:0 的另一分支——
+   此前 buildDecalObject 的静默 return null 均无日志，已全部插桩。）
+
+### §61 破洞悬空修复 + 未识别材质统一 cutout（2026-09-27，真机第二轮）
+
+用户三反馈：甜甜圈店整栋模糊、MAXIS/水滴锐利、破洞盒体飘在玻璃幕墙外。
+
+1. **破洞悬空**：盒体此前用 raycast 锚定（median 命中面），曲线墙/玻璃幕
+   打空或打到背面时盒体飘在建筑外。修正 = **按引擎烘焙口径放置**：
+   `position = origin + depth×axisZ`（Depth 属性=「变换原点到贴花平面的
+   授权距离」§41.2），不再 raycast。raycast 保留给常规贴花投影（实际
+   效果良好：projected 计数与墙面贴合正确）。
+2. **模糊 vs 清锐**：锐利者走涂鸦族 cutout；模糊者材质哈希未识别
+   （甜甜圈店自有 material），落入兜底 alpha 混合 → soft-alpha 光晕全
+   显示。修正 = **兜底也改 cutout**（alphaTest 0.5 + 不透明）。至此
+   除招牌族（霓虹连续混合）外全部统一 alpha 掩码语义。
+3. **色彩遗留（下一轮）**：甜甜圈等 mask 族 art 的 raw RGB 直接显示会
+   偏彩虹渐变（多通道 mask 数据按 RGB 直读）——引擎可能在建纹理时做了
+   「通道 × Color1-4 调色板」的平滑合成。需游戏对照图确认后再动。
+
+### §62 破洞贴合/重叠修复 + 彩虹脸定性与回退（2026-09-27，真机第三轮）
+
+用户（EP1 工业楼 0x0A61112C，2 mesh/2 material，双安装 Game 材质槽）：
+①破洞盒体不贴墙且悬空于建筑外；②同款破洞成对重叠；③非彩色图案
+（人脸 tag）渲染成彩虹。
+
+1. **破洞贴合**：§61 的「授权深度直放」忽略了投影轴方向——axisZ 朝外
+   时盒体整体飘到墙外。修正 = **raycast 双向定墙（signed anchor）+ 盒体
+   从墙面向建筑内部延伸**（中心 = 命中面 + 内向×半厚）；打空不再以
+   origin 兜底（悬浮），改为跳过渲染并 `[decal]` 警告。角部成对破洞
+   属授权数据（两立面各一），贴合后即正常。
+2. **彩虹脸**：实验否决了「通道×调色板合成」——合成使 MAXIS 变黄洗
+   （真彩色 art 被破坏），而 raw 直读使 mask 族人脸呈彩虹。同族内两种
+   art 并存 ⇒ per-material 的运行时 shader 差异（shader-def），静态不可
+   分。**定性：raw 直读 + cutout 为最优通用近似**；mask 族彩虹列为
+   per-material 已知限制（待 shader-def RE 或真机逐条目映射表）。
+3. materialData slot0/1/2 absent（0x0A61112C）为信息性诊断（该 lot 无
+   破洞光参数，非错误）。
+
+tsc ✓ vitest 196/196 ✓。新增诊断测试 decal_resolve_dto_outcomes
+（DECAL_DIAG_LOT/PRIMARY/GAME 环境变量可指定 lot，写 DTO PNG 供目检）。
+
+### §63 Decal 分类-行为表定稿 + 破洞锚定/内景修正（2026-09-27，真机第四轮）
+
+用户批评成立：三族混合策略落地后仍逐资产打地鼠（破洞悬浮/内景不变黑/
+夜间自发光），无可定量验收口径。本轮把**分类-行为表**固化为验收标准
+（同步写入 buildDecalObject 代码头注释）：
+
+| 判定 | 放置 | 混合 | 光照 |
+|---|---|---|---|
+| 地面贴花（axisZ.z\|>0.7） | 平铺地面 z=0.035 | 随材质族 | 随材质族 |
+| 破洞（variant=hole，无 Color1-4 族） | raycast 最近面+盒体向内延伸 | ShaderMaterial 三区 | 内景渐黑 |
+| 招牌（0x73684EFC） | raycast 投影 | alpha 连续混合 ×2 | 自发光 |
+| 涂鸦（0xE5390A98） | raycast 投影 | cutout α=0.5 | 直采 |
+| 未知材质 | raycast 投影 | cutout+受光 | 受光 |
+| 全息（decalFloatQuad） | 悬浮不投影 | ×2 | 自发光 |
+
+（全息族的材质映射未建，暂与涂鸦同路——已知例外。）
+
+**破洞两项修正**：
+1. **锚定改「最近命中面」**：measureAnchorDistance 由命中**中位数**改为
+   **|距离|最小**——贴花属于投影轴上第一层表面；中位数在窗格/多层墙上会
+   落在层间半空（玻璃塔破洞悬浮根因）。
+2. **内景渐黑**：删除 selfLight（uInteriorGlow×powered——夜间蓝光自发光
+   的来源），改为 depthFade（盒体前→后 1.0→0.35 渐黑）× 昼夜环境
+   （日 0.55 / 夜 0.10-0.15）——与游戏「内景渐黑的暗房间」一致。
+
+**未决**：全息族材质映射（需 shader-def RE）；mask 族彩虹色 per-material
+限制（§62）。tsc ✓ vitest 196/196 ✓。
+
+### §64 稳定化回退：破洞回归统一投影 + 涂鸦改受光（2026-09-27，真机第四轮反馈）
+
+用户判定：盒体路线的悬浮/重叠不可接受，且涂鸦族 unlit 导致夜间自发光
+（枪械预览涂鸦、黑楼亮洞）。基线对照 = ecd7aeac（该版破洞走统一投影，
+无悬浮/重叠）。
+
+1. **破洞盒体特例整段移除**（147 行）：破洞回归统一投影路径
+   （projectDecal + buildDecalMaterial cutout+受光）——恢复 ecd7aeac 的
+   不悬浮/不重叠行为。createHoleBoxMaterial 保留在代码中（休眠），
+   待放置体系重建（烘焙顶点缓冲缺失下的鲁棒盒体放置）后再启用。
+2. **涂鸦改受光**：MeshBasic（unlit）→ **MeshStandard + cutout**——
+   夜间随场景变暗（修枪械预览涂鸦/墙面涂鸦夜间自发光）。锐利度不变
+   （alphaTest 0.5 口径保留）。
+3. 招牌保持 MeshBasic ×2 连续混合（霓虹夜间自发光是正确语义）。
+
+**分类-行为表更新**：破洞行 = 统一投影 + cutout + 受光（盒体暂缓）。
+
+tsc ✓ vitest 196/196 ✓。真机复验点：夜间全场景变暗时涂鸦/破洞同步变暗；
+破洞不再悬浮/重叠；涂鸦锐利度维持。
+
+### §65 动态抓取基建（Frida）+ 真机侦察首轮（2026-09-28，未完待续）
+
+静态翻包对 shader-def 是原理性死结（哈希→效果表加载期组装 + 资源内嵌
+exe + .data 断档，§55/§56），本轮起转向动态抓取。工具链已入库
+`tools/dynamic/`（hook_d3d9.js + dump_shaders.py，Frida 17.19.0），
+目标是 D3D9 层的 shader 字节码 / 常量 / 状态流。
+
+**环境事实（全部实测定谳）**：
+1. **离线破解版 exe = 已脱壳镜像**：`.text` 熵 6.59（正常代码），段表与
+   SimCity_dump_SCY.exe 一致（同构建 2014-04-22）。原版
+   `D:\ea-games\SimCity\SimCity\SimCity.exe`（EA 2024 重打包）实测
+   `.text`=8.00 **且 `.data`=8.00（也加密——修正此前文档只记录 .text）**
+   → 脱壳 dump 的 .data 断档根因。offline crack 本质 = OEP 脱壳+修复。
+2. **离线版 PE：无 ASLR（DYNAMICBASE=0）、无 DEP、ImageBase 0x400000**
+   → **Ghidra 地址 = 运行时 VA 直连**（FUN_00437610 等可直接
+   Interceptor.attach，无需重定基）。
+3. **运行中的进程里无法再初始化 D3D**：Direct3DCreate9 在游戏渲染循环
+   持锁时死锁（独立线程 CreateThread 也 15s 超时）→ 自建设备路线仅在
+   设备创建前可用（片头期 attach）。
+4. **d3d9.dll（SysWOW64）头部 0x1000..0x4600 是导入跳转表区**（全 VA
+   指针）——任意表内位置都能通过「110 连续 exec 指针」伪 vftable 校验
+   且流量巨大（实测 20s 100 万次命中）；**设备类无 RTTI**（全 dll 仅 5
+   个异常类 RTTI 名）→ RTTI 定位路线不可行，vftable 定位靠堆扫+流量模式。
+5. frida 17 坑位：模块级便捷 API（frida.attach 等）已删（用
+   `frida.get_local_device()`）；`enumerate_processes()` 会漏 SimCity.exe
+   （Toolhelp32 快照兜底）；同进程多轮 attach/detach 会留孤儿 agent 堵死
+   再注入（表现=attach 挂起/ProcessNotResponding，重启游戏解决）。
+6. 单实例互斥：旧实例不退，新实例只留后台进程不建窗口。
+
+**侦察实测（in-city 15s 窗口 ×2）**：
+- 堆中确认多个 d3d9 vftable 候选，全部集中在 d3d9 头部 0x8000 内的
+  rdata 混合区：0x6c2f13bc / 13dc / 141c / 1438 / 1490 / 1cd4 / 45cc 等
+  （每次启动基址不同，偏移稳定）。
+- `0x13dc@98`：**~8500/s 的 COM 对象参数流**；`0x1cd4@89`：~1400/s——
+  装 bind hook（GetFunction + 版本 token 校验）后**零产出** → 判定为
+  SetTexture 类流量（纹理对象通过但非 shader 字节码，被内容校验过滤，
+  符合设计）。
+- **`0x14ec@80`：一个 15s 窗口出现 132,242 次 shader blob 参数**
+  （通过长度+版本 token 校验）——episodic（下一窗口 0 次），疑似新区块
+  加载时的批量 shader 创建。v15 已改为「任何侦察槽 blob>0 即常驻装
+  create hook」，下次阵发自动落盘（本日窗口未再出现，明日验证）。
+- FUN_00437610 首参 this=0x0（非 thiscall 对象形态）——对象行走锚点
+  待换（候选：Ghidra 里 cGraphicsUnit 全局直接读）。
+
+**明日继续（按优先级）**：
+1. **spawn 为主**：`python tools/dynamic/dump_shaders.py --spawn <exe>`——
+   frida 创建挂起进程从第 0 字节观察，随行观察必然捕获游戏自己的
+   Direct3DCreate9/CreateDevice（用户观察：菜单背景是引擎实时渲染的
+   城市，设备创建发生在播片早期——早于任何 attach，spawn 是唯一无竞态
+   路径）。校准窗口覆盖菜单阶段：菜单若实时渲染，计数器当场见流量
+   （顺带实证菜单 diorama）。待验证：离线 exe 脱离加载器能否直接起；
+   不行则退 --wait（阈值 50MB→20MB 抢早期）。**注意菜单阶段建筑 shader
+   套装已绑定——捕获窗口从菜单就开始，无需进存档**。
+2. blob 槽常驻（v15 已实现），城里各处走动等 episodic 阵发自动落盘。
+3. 抓到 .bin 后 D3DDisassemble 反汇编 → 对照 §55.4 的 16 个 PS 变体
+   家族与 tmp/shaders/ 的 building4 HLSL 源码，回填 shader-def 语义。
+4. 后续 B 层：SetRenderState/SetPixelShaderConstantF 记录（涂鸦融合 +
+   裁剪窗/atlas cell 常量）、VB/IB 导出（decal 真实网格）、shader-def
+   对象图 dump（resolve_shader_def_instance hook，地址直连）。
+
+工具用法与产物见 `tools/dynamic/README.md`。
+
+### §65.1 Day-2：全槽 sweep + shader-def 哈希内存扫描命中（2026-09-28 深夜）
+
+**D3D9 层的最终排除**（v16-v22，全部实测）：
+1. spawn 从第 0 字节观察成功：游戏自己的 `Direct3DCreate9`（0x43f0060）被
+   随行捕获；E 路径抢先自建 IDirect3D9 消除了 CreateDevice 竞态——但
+   「实测 CreateDevice」仍未触发，且全槽 sweep（28 候选 × 0..110 = 3108
+   钩子）零 shader 产出 → **渲染不走我们扫到的这批 d3d9 COM 对象**。
+2. 侦察表铁证：`0x13dc@62` 计数恰等于帧数（=SetTexture）、`@89/90` 恒等
+   对（21642）、`@98` 1051/s COM 对象流——但内容校验（版本 token）全部
+   拒绝 → 这批候选是 d3d9 内部资源管理类，**非渲染设备**。
+3. QII GUID 鉴定（搜 IID_IDirect3DDevice9=963B22D0... 字节）：20 个候选
+   均无内嵌 IID（MSVC 间接引用），留作后续。
+4. FUN_00437610 实参 a0-a2=0、a3=栈指针、a4=代码地址——非对象形态。
+5. 「blob 阵发」修正：0x14ec@80 的 4650 次调用中仅 2 次通过 blob 校验
+   （顶点声明数组巧合），非 shader 创建流。所有 blob 槽的 create hook
+   落盘 247 次全部 access violation 失败（args[2] 非出参）。
+
+**范式修正**：GlassBox+RW4 的渲染调用走 **RW4 自己的设备抽象**（vftable
+在 SimCity.exe 内，被"d3d9 范围"过滤器排除）——D3D9 COM 层只是底层。
+**shader-def 本身是 RW4 层概念（材质槽 0x2D），在 RW4 层捕获才是正路。**
+
+**决定性命中——shader-def 哈希内存扫描**（v22 会话，城市场景）：
+- 全堆扫 `0x259E950F`/`0x38869BDA`（EP1 仅有的两个 shader-def 实例）：
+  **802 处命中**，798 份 ±256B 上下文落盘
+  `tmp/dynamic/shaderdef_hits/`（含 hits.json 清单）。
+- 聚类定谳：主流布局（122+ 文件完全一致）= 加载后的**材质属性块**：
+  `... 6, 0x2D, 4, HASH, 0x20D, 0xC4, 6, [P]...`——**0x2D 即 shader-def
+  槽位标记**，与 RW4 材质引用记录完全吻合；另一簇（12 文件）哈希后跟
+  真实堆指针 = **运行时已解析的效果对象**。
+- 意义：哈希→效果表不仅存在，其**条目结构已在手**。明日顺藤摸瓜：
+  dump 指针 P 指向的效果对象 → 递归展开 → 编译后 D3D9 shader + 状态块
+  + shader-def 二进制本体全部可达。**shader-def 死结正式破口。**
+
+**明日**：① 分析 shaderdef_hits 指针（P）目标对象（DumpBody 脚本化）；
+② 效果对象递归展开（字段含编译 shader/状态块/shader-def 数据）；
+③ 对照 §55.4 变体家族命名。工具：`tools/dynamic/`（v22，commit 见 git）。
+
+### §65.2 Day-3：SM3 token 全堆扫描零命中——字节码只能创建时捕获（2026-09-29）
+
+- **全堆 1532MB 分块扫描 `0xFFFF0300`/`0xFFFE0300`（ps/vs_3_0 版本
+  token）：零命中** → 编译后字节码不以 SM3 token 形态驻留堆中（D3D9
+  运行时上传驱动后改写/释放副本）。**堆里挖字节码路线证伪**。
+- 推论：字节码唯一可靠捕获点 = **Create*Shader 调用瞬间**（游戏启动
+  加载期一次性创建）。捕获前提 = 设备 vftable 定位，且必须早于加载期。
+- 路线收敛（明日执行序）：
+  1. **spawn + earlyLurk + 槽位首调诊断**（v17 已实现未跑）：随行观察
+     已证明能抓游戏自己的 Direct3DCreate9（0x43f0060）；lurk 槽位
+     「首调 args6」诊断将揭示 CreateDevice 的真实槽位/参数形态——
+     这是最后一块拼图，一次运行即可定谳。
+  2. 若 IDirect3D9 槽位 3..16 确无 CreateDevice（Ex 接口/其他形态）→
+     **代理 d3d9.dll（Rust cdylib）路线**：游戏目录放代理 dll，
+     转发 Direct3DCreate9 并在 vtable 层包装设备——从第一次调用就
+     全程可观测，无竞态无时序问题（工作量：半天）。
+  3. 字节码到手后：D3DDisassemble → 对照 §55.4 变体家族 → 常量语义
+     对照 shaderdef_hits 上下文（0x2D 槽位材质块）回填 shader-def。
+
+### §65.3 决定性修正 + 硬编码哈希分发链挖掘（2026-09-29 深夜）
+
+**重大修正**：「0x259E950F 哈希 0 命中」的旧结论是**搜加壳原版所致**。
+脱壳后的 exe（SCY-dump/破解版一致）.text 中该哈希以 `cmp eax, imm32`
+形式出现 **5 处**（0x652deb/0x814477/0x815209/0x816fc8/0x818ca1）——
+**招牌 shader-def 的分发是硬编码比较链，静态完全可分析！**
+
+- 新哈希发现：`0x2AC6FA8F`（3 处，与 259E950F 相邻成对）、
+  `0x9DBFFE5B`+`0xF5AAF85F`（相邻对，0x819785/0x819790）。
+- 全 .text `cmp reg, 大立即数` 提取：6445 处、去重后哈希表
+  `tmp/dynamic/cmp_hash_refs.json`（含算术魔数噪声，按位置过滤）。
+- 匹配分支调用链：0x815209 分支 call 0x856940/0x8559f0/0x857450 等处理
+  链；0x8169a8 分支 `push 0xd24f74 + call` 构造对象——0xd24f74 位于
+  `cMIDataT<cShaderData*>`/`cGraphicsUnitMeshBatcher` vftable 簇内
+  → **shader-def 命中后构造网格批量绘制对象，语义链闭合**。
+- 完整反汇编落盘：`tmp/dynamic/cmp_chain_disasm.txt`（15895 行，10 个
+  比较点所在函数）。
+- RTTI 离线重建：`tmp/rtti_vftables.json`（884 类/1243 vftable，含
+  `SC::cTessendorfWater` 0xd9f7bc、`cShaderDataWater*` 系列全部地址）
+  → 水位/water 研究与材质研究的活体实例扫描目标库已备齐。
+
+**§65.4 SimpleMeshRender 系统定谳（0x259E950F 特判的完整语义）**：
+
+比较点 0x814477 所在谓词（0x814423 起）：`push 0x20D; call 0x484c90`
+（shader-def 槽位查询）→ 对象虚表槽 18（[vft+0x48]）返回材质的
+shader-def 哈希 → `cmp eax, 0x259E950F` → `mov al,1`（谓词：
+"该材质引用招牌 shader-def？"）。
+
+**命中后的绘制路径 = SimpleMeshRender 独立管线**（与标准批处理管线并行）：
+- `0x814940`【SimpleMeshRenderDrawSet 分发器】：`push 0xd24ed0("SimpleMesh
+  RenderDrawSet"); call 0x423050`（类型标记）→ `call 0x437610`（§42 定谳
+  的 draw 函数！参数=[obj+8],[obj+0x30],0,0）→ `call 0x4378e0` 并注册
+  回调 `0x8148e0`（逐项剔除/LOD 测试：比较 [vft+0xc] 浮点 vs 常量
+  [0xcf1e4c]，全局开关 [0xe74a68]+[0xe74a6c]==1）。
+- `0x8149e0`【SimpleMeshRenderModel 分发器】：同构，`push 0xd24ee8
+  ("SimpleMeshRenderModel")` → `call 0x437610` + `call 0x437030`
+  （网格批处理，参数含 [eax+ecx*4+0xc/0x3c/0x60] 四路缓冲）。
+- 辅助：`0x814860/0x8148a0` = 64 位位图 set/clear（[obj+0x2c]+0x44 位图、
+  [obj+0x60] 计数——可见/脏标记）；`0x814730` = `push 0x2e33a81` + 虚查询
+  0xe02a745/0xe02a746（类型查询对）→ 浮点数据填充循环（源 [obj+0x6c]）。
+
+**研究意义**：招牌 shader-def（0x259E950F）引用的材质被引擎特判进
+**SimpleMeshRender 独立简单网格管线**（非批处理）——这正是 §63 分类-
+行为表中"招牌与涂鸦/常规表现不一致"的引擎层根因。涂鸦 shader-def
+（0x38869BDA）无 cmp 命中 → 涂鸦走标准管线（或不同特判），两者渲染
+差异的引擎机制已定位。
+
+**★渲染上下文全局定谳（0x437820 提交循环）**：`mov edi,[0xe72908];
+mov ebp,[edi]; call [ebp+0x148]`——**[0xe72908] = 渲染上下文对象的全局
+指针**（RW4 层！），`[edi]`=其 vftable，`call [ebp+0x148]`=虚表槽 82=
+draw 提交方法。这与 Day-3 随行观察「lurk 槽 16 首调 args6=0xe72908」
+完全吻合（观察钩子拍到的就是指向该全局的参数）！0x437820 提交循环：
+逐项 0x436940/0x436980/0x4369c0（状态查询）→ 0x436cf0（入队）→ 虚调用
+槽 82 提交。**下次活体会话：读 [0xe72908]→[+0] vftable → 查
+rtti_vftables.json 定类（RW4 渲染上下文类，SimCity.exe 范围）→ 其完整
+虚表 = 整个渲染上下文 API。**
+
+**0x437610 寄存器角色定谳**（1305 指令）：槽 0x2D(shader-def)=ebp 仅
+7 处引用、只做非空验证——**shader-def 不在 draw 函数内消费**；绘制工作
+由槽 0x201(edi,33 处)与 0x258(esi,78 处)承载。shader-def 的真正消费点
+= 谓词特判 + RW4 材质绑定层（另有位置）。
+
+**寄存器角色 ↔ §56 语义对齐（§65.4 补 2）**：本轮字段级分析确认三资源
+与 §56 命名完全对齐——edi=0x201(shader 注册表)、ebp=0x2D(采样器/材质
+描述=shader-def)、esi=0x258(=十进制 600, **实例表**)。**新增：实例表
+条目布局实测**——+0xc/+0xe/+0x10 类型字段、+0x14 计数、+0x18/+0x1c/
++0x20 指针、**+0x24..0x3c 六个 float 为 draw 函数逐实例写入的实例数据**
+（movss×6，实例变换/参数），+0x28c 标志、+0x2a4 指针。实例化机制：
+draw 函数往实例表条目写 6 float → 提交循环按条目提交。
+
+**交叉验证（§65.4 补）**：本轮独立分析重新推导出 `0x422f90`=材质属性
+注册表 getter、`0x2D`=shader-def 槽——与 §46.2 既有 Ghidra 结论
+（`FUN_00422f90(id)` = `DAT_00e705a8[id*4]`，0x201=shader 注册表）**双
+证据链互相印证**。本轮净新增 = SimpleMeshRender 系统（谓词+双分发器+
+剔除回调）、cmp 硬编码分发链、RTTI vftable 映射、shaderdef_hits 数据集。
+**注册表基址 DAT_00e705a8 已知 → 加载期组装的哈希→效果表应可从该结构
+的关联链上静态/动态双向挖掘。**
+
+**明日**：①0x437610/0x4378e0/0x437030 参数结构（draw 打包格式）→
+
+**明日**：①0x437610/0x4378e0/0x437030 参数结构（draw 打包格式）→
+招牌 mesh 的几何/材质来源；②回调 0x8148e0 的剔除常量 [0xcf1e4c] 与
+全局 [0xe74a68] 语义；③0x814730 的 0x2e33a81 查询链；④反查
+0x38869BDA/0x73684EFC/0xE5390A98 是否有同类特判（cmp 形式/其他编码）。
+
+**方法论定谳**：D3D9 COM 层是烟幕，**引擎对 shader-def/材质哈希的分发
+是 .text 硬编码 cmp 链**——shader-def 的运行时语义（混合状态、裁剪窗、
+变体选择）就在这些分支里，逐分支反汇编即可重建，无需运行时捕获。
+
+### §65.5 DecalDrawBatch 渲染函数定谳（0x7ebe70）——§56 两大悬问代码级闭合
+
+`0x7ebf8e` 的 `push 0xd24924`（DecalDrawBatch scope）所在函数 **0x7ebe70**
+= 涂鸦批绘制的完整实现：
+
+```
+外层循环步进 0x64（批=100）        ← §56「批 100」代码级闭合
+  内层循环步进 0xD4C（记录=3404）  ← §56「0xD4C 记录」代码级闭合
+    [esi+8]==[esp+0x4c] 上下文校验；[edi+edx*2+1] 可见标志；[edi+ecx*4+0x20] 有效位
+    push "DecalDrawBatch"; call 0x423050        ← scope begin
+    mov [批状态+0x5e4], 当前记录指针
+    call 0x424e00(4, [ecx+0x5d4], 1)            ← 状态/标记
+    call 0x424e00(0x206, [esi+0xc4c], 1)        ← 槽 0x206（新批处理槽，0x201 之外）
+    call 0x437610（edi=记录对象, 0, [ebp+0x20], 0）← ★ draw 函数（0x201/0x2D/0x258 三槽查询者）
+    call 0x437820（提交循环，§65.4 已定谳）
+    push "DecalDrawBatch"; call 0x424f50        ← scope end
+    记录对象标志清除：call 0x4af1d0 / 0x4af050
+```
+
+- 混合状态的设置点收窄至 **0x437610 内部**（槽 0x2D shader-def 驱动的
+  状态流）或 **0x424e00 调用族**（状态/标记录制器）。
+- 槽 0x206 = 新发现的批处理槽（0x201/0x2D/0x206/0x258 四槽体系）。
+- 记录对象字段：[rec+0x4c] 状态指针、[rec+0xc4c] 槽 0x206 数据、
+  [rec+0x10] 关联对象、[rec+0x48] 可见标志。
+- 批状态对象（[ebx+4]）：+0x4c4/+0x4c8 队列起止、+0x5d4/+0x5e4 当前
+  记录/状态指针。
+
+**§56 Q2（涂鸦融合）的 RE 路径已通**：0x437610 内部槽 0x2D 驱动的
+状态流 + 0x424e00 录制族 = 下一反汇编目标（预计 1-2 轮定谳调制混合）。
+
+**渲染 scope 名称表定谳（§65.4 补 3）**：.rdata 0xd24900..0xd25500 区间
+为**引擎渲染 pass 的 scope 名字符串表**：`DecalDrawBatch`(0xd24924)、
+`Decals`、`DecalAtlas`、`gameDecal`(0xd252b4)、`SimpleMeshRenderDrawSet/
+Model`、`BatchMaterialTexture`、`STRI2S`、`street_light`、`UnitZones`、
+`TradeArrows`、`TrafficOverlay`、`cGraphicsMotionBlur::DrawBlur` 等
+（`.eBT` 为结构分隔符）。代码引用已定位：DecalDrawBatch×4
+（0x7ecf8f/0x7ecff3/0x7ed048+）、Decals/DecalAtlas/scDecals/regionDecals/
+SimpleMeshRender* 各 1-2 处（引用经名字查找函数分发，非直接绘制）。
+同区还有 RW4 对象类型名（RWGOBJECTTYPE_PIXELSHADER/VERTEXSHADER/
+SHADERCODE/SHADER、OBJECTTYPE_SHADERSINK）与渲染状态名
+（decal/decalDepth/depthDecal/decalIgnoreDepth/decalInvertDepth）。
+**§65.3 的 RTTI 映射 + 本表 = 命名渲染 pass 的完整静态索引**，逐 pass
+反汇编的导航地图就绪（下一目标：DecalDrawBatch 引用点的名字查找函数
+→ 涂鸦批绘制的实际混合状态设置处，定谳 §56 Q2）。
+
+**回调 0x8148e0 语义定谳（§65.4 补 4）**：SimpleMeshRender 批处理注册的
+逐项可见性谓词——两段剔除：①条目数组（[ecx+0x48] 起、48B 步长）条目
++0xc 处 float 与常量 **[0xcf1e4c]=0.0** 比较（ucomiss），为零 → 剔除
+（缩放/透明度零=不可见）；②[esi+0x10] float 与全局帧值经 0x4abca0
+浮点比对（LOD/值匹配）。常量实测：[0xcf1e4c]=0.0、[0xcf1e50]=1.0
+（.rdata 可离线读）。
+
+**注册表结构完全解码（§65.4 补 5）+ 哈希编码反查定谳（清④）**：
+- `FUN_00422f90` = `movzx eax, word[esp+4]; mov eax,[eax*4+0xe705a8]; ret`
+  ——**16 位 id → 指针数组**（0xe705a8 起 256KB，id 0..0xFFFF；后半段
+  0xE4EA00+ 在离线盲区=运行时填充）。
+- `FUN_00422fa0` = 批量快照行走器：遍历材质子表，(id,资源指针对) 录制到
+  全局快照数组（键 0xe52080/值 0xe52084/计数 0xe53b80）。
+- **下次活体头号动作：dump 0xe705a8 起 256KB = 引擎全资源对象清单**
+  （配合 rtti_vftables.json 定类 → 水/材质/shader-def 一网打尽）。
+- **哈希编码反查定谳（清④）**：0x38869BDA/0x73684EFC/0xE5390A98/
+  0x4491DE3A 在**任何编码形式下全文件零出现**（对照组 0x259E950F/
+  0x2AC6FA8F 有干净 cmp 命中）→ **招牌特判=基础游戏硬编码；涂鸦
+  shader-def=EP1 数据驱动（代码无分支），其融合行为在 shader-def 资源
+  数据本体**——与「涂鸦走标准管线」假说自洽。
+
+**三项活体任务完成（§65.4 补 6，资产在 tmp/dynamic/live/）**：
+①注册表 0xe705a8 256KB 全表 dump（16919 非空条目）——**定性：混合
+id→值表**（多数为设置值/计数，非全是对象指针）；菜单阶段仅 5 个对象
+过两步校验（4×d3d9 封装对象 + 1×game 对象 vftable 0xcf8850，RTTI 映射
+缺该类——进存档后条目会增多，**活体复测应在进城后重跑 classify.py**）。
+②水位类实例扫描：cTessendorfWater/cShaderDataWater* 五 vftable 全零
+——vftable 地址需复核（RTTI 走查可能有偏移）或本城水面对象未生成。
+③.data 运行时尾区 2MB（0xE4EA00..0x1044000）dump 落盘
+data_tail_0xe4ea00.bin——离线盲区补齐，可与静态文件并读。
+
+**★水位实例 dump 成功（§65.4 补 7，water_objs/）**：进城后水位类实例
+出现（菜单期零）：cShaderDataWaterChoppyInfo(0x42ba310c)、
+cTessendorfWater(0x42ba3104，与 ChoppyInfo 相邻 8B——同前述孪生模式)、
+cShaderDataWaterHeightInfo×2(0x42c2f690/0x7280f58c)、
+cShaderDataWaterNormalsInfo(0x42c2f6f0)。各 dump 1024B 落盘
+`tmp/dynamic/live/water_objs/`。
+
+**初读（待精读）**：HeightInfo 实例字段 = `97.48×3, 64, 7000, 0.015, 0,
+6704, 1000, 500, 545`——97.48 疑网格坐标、7000=区域尺寸、1000/500/545=
+网格维度、0.015=时间步；NormalsInfo 多出 **1.25/10**（波幅/频率类参数）
+。与文档水位面 -870m 的关联待对拍（97.48 非水位高度，疑网格坐标）。
+这组结构就是引擎喂给水面 shader 的**运行时参数表**——waterable/水位
+研究的引擎侧数据源首次到手。
+
+### §65.6 地形/着色核心对象活体 dump 定谳（2026-09-29，terrain_objs3/ 37 份）
+
+**方法论修正（崩溃根因）**：Memory.scanSync 扫枚举时的堆段——扫描期间
+分配器释放/重提交页面 → 原生扫描读已释放页 → **原生级崩溃**（游戏闪崩
+的直接原因，两次复现）。安全姿势 = **分块 readByteArray + JS 内匹配**
+（v22 已验证安全）+ **扫到即 dump**（用户要求：发现实例立即读取落盘，
+防扫描中途崩溃竹篮打水）。16MB 块渐进处理，1447MB 全堆 ~90s 零崩溃。
+
+**实例表**（terrain_instances2.json，25 类 37 实例）+ 全部对象 dump
+（terrain_objs3/）。关键解读：
+
+1. **cTessendorfWater（0xd9f7c8）= 水位研究完整答案**：
+   `+0x0d0: 5.0, 7000.0 / +0x0d8: 0.015, 1.0 / +0x0e0: 20.0, 1.25, 10.0
+   / +0x0f0: 11.0, 0, 1.0, 6704`——区域 7000/时间步 0.015/波幅 20/
+   Choppy 1.25/频率 10/网格 11/6704，与 cShaderDataWaterHeightInfo
+   参数（7000/0.015/6704/1000/500/545）**交叉验证一致**；+0x018:
+   6.404×3（三轴缩放）。
+2. **cMaterialGroundType 内嵌 0x2F4E681C（LotMask raster 类型 ID）**
+   ——raster(LotMask)→地图着色的引擎侧关联活体实锤；混合权重
+   +0x038: 0.48/0.39/0.27、+0x048: 0.7/0.7。
+3. **cTerrainLayer 层名内嵌**："BathMateTileTexture"/"ground"，
+   层混合参数 +0x0a0: 0.65/1.4。
+4. cTerrainMapGPU：+0x080..0xf8 十二组 (-1024, 3.003) mip 变换常量。
+5. cTerrainMapSet 内含 0x00b1b104（property 表 TGI！）、0x2f4e681b
+   （raster 模型类型）、0x00cff250 等资源引用链。
+6. cMaterialGroundDataViewBlendOverlays：+0x050 起重复的
+   (1,1,0,-0,0,1,0,1) 8-float 混合参数块 ×N 个 overlay 项。
+
+**BlendColors 对象深读（§65.6 补 1，instant_dump 首战）**：
+0x42c285a8 的 0x800B dump 显示其主体是 **256 个 (16 位 id, 0) 对数组**
+（0x9c9/0x9bf/0x92f/0x235/0xd46…非颜色！）——即 **zone 资源 instance ID
+索引表**（对应 zoning-lot.md 的 ToolMetaLotZone 体系：0xdca011d/0xdca012d
+两套颜色属性的宿主资源）。注册表对照：这些 id 在 0xe705a8 表中的值混合
+（0x100/0x8/0x1=标志、0x2b38c720=堆对象、空=未加载）——**16 位 id 索引
+多用途表**定性。清单已存 blendcolors_ids.json。地图着色链完整闭合：
+**zone 资源(0xdca011d/12d 颜色属性) → cMaterialGroundDataViewBlend*
+（id 索引表）→ cMaterialGroundType（内嵌 LotMask 类型 0x2F4E681C +
+混合权重）→ TerrainMapGPU 渲染**。
+
+### §65.7 zone 资源离线反查 + LotMask 属性级实锤（2026-09-29）
+
+BlendColors 提取的 256 个 16 位 id 离线反查（新探针 zone_ids_probe/
+zone_color_dump2）：Game 包命中 9（type 2f7d0004/2f4e681b/00b1b104/
+dd6233d6）、EP1 命中 3 个 0x00b1b104（grp=42e1c000）。
+
+**EP1 inst=3d690930（798B 属性资源）= cTerrainMapSet 活体对象引用的
+同一资源**（TGI 与活体 dump +0x038 完全对应）。关键内容：
+- `+0xa0: float 500.0/1000.0/1500.0`（三档 LOD/半径参数）；
+- `+0x110..0x140`：变换矩阵组（含单位阵与 2.158/7.76 等缩放）；
+- **`+0x244: 0x0CCB7FD5`（LotMask 属性 key！）+0x0240 前后
+  0x0ccb7fc8/c9/d3 同族**，`+0x280: 值 0xeb79d9c1`（指向 raster 引用）
+  ——**raster(LotMask) 与 zone 着色体系在属性数据级实锤关联**
+  （raster-lot-decal-analysis §1 的 LotMask key 在 zone 资源中出现）；
+- 0x00b2cccb（头部 TGI type）=该资源自身类型。
+- inst=3d690937（714B）同族变体。
+
+**着色数据链全通**：zone 属性资源(EP1, 含 LotMask key+矩阵+LOD) →
+cTerrainMapSet(活体引用) → BlendColors id 索引表 → cMaterialGroundType
+(混合权重+0x2F4E681C) → TerrainMapGPU。**地图着色 + raster lot 两条
+研究线的引擎侧证据链闭合。**
+
+### §65.8 cGraphicsZone/ZoneBucket 活体定谳（2026-09-29，zone_objs/ 40 份）
+
+instant_dump 第二战（11 个 vftable → 40 对象零崩溃）：
+- **cGraphicsZoneBucket×6：0x1B4 步长等距数组**（4b213e78→402c→41e0→4394
+  →4548→46fc）——zoning-lot.md「0x1B4 元素数组」活体实锤。Bucket 结构：
+  +0x14 浮点 93.92、+0x34 句柄 4.3e4、+0x50..0x140 大片 0xFFFFFFFF（空槽
+  池标记）、+0x174/0x1b0 指向 0xd20658（vftable 簇内）、+0x140 自链、
+  +0x1c0: 17.75、+0x1e4: 计数 2。
+- **cGraphicsZone 主体（0x2b085930，四接口视图共置 0xd206b4/c0/d4/dc）**：
+  +0x38 指向 Bucket[0]（互链确认）；**+0x50 资源指针 0x077d3924（EP1
+  属性资源同段！）+ +0x58 浮点 500.0**（与 EP1 资源 LOD 500/1000/1500
+  呼应）；+0x2c/+0x30 zone 状态值 1.0/2.0；+0x80/+0xb0 颜色比例组
+  0.9962/0.9688；+0x100 GPU 缓冲指针组（5.58e5 段）；+0x120 尺寸三轴
+  151.6×3；+0x1a0..0x1f8 递增时间序列（102.1/109.9/111.6 + 0.1711/
+  0.2334，疑 LOD 渐进或历史）；+0x210 边界 787.7×2、+0x230 范围 1.41e4；
+  +0x158 id 0xb79（=2937，与注册表 id 段一致）。
+- cBatchedModel×6 / cGraphicsSimpleMesh×6 / cGraphicsMeshBatch×6 /
+  cGraphicsLights(Simple)×12 全部落盘（SimpleMeshRender 管线对象侧齐备）。
+
+**§65.7 着色数据链的对象级闭环完成**：zone 属性资源(EP1) ↔ cGraphicsZone
+(+0x50 引用) → ZoneBucket×6(0x1B4 数组) → 渲染。
+
+**0x077d3xxx 状态/效果节点池定性（§65.8 补 1）**：cGraphicsZone +0x50
+引用的 0x077d3924 所属段 = 48B/节点的**双向链表节点池**：
+`[0]=堆数据指针 [4]=0xffffff09 标志 [8]=类型 [0xc]=0xa [0x10]=每节点
+唯一效果哈希 [0x18]=float 2.518 [0x20/0x24]=前后链指针`。四段 dump
+（ZoneRes×4）互链成完整链（077d38bc→…→077d3e8c），节点哈希
+（0x1360fd2e/0x99d418ca/0x7eed4e85/0xd0566168…）即 EcoGame/SimpleMesh
+效果注册项——**效果哈希→节点的运行时链表形态首次可读**（与 DAT_00e705a8
+注册表互补：注册表=静态资源槽，此链=运行时效果节点）。
+
+**节点池布局定谳 + 走链成功（§65.8 补 2，effect_pool_nodes.json）**：
+节点基址偏移修正（prev/next 在头部）：
+`[+0x00]prev [+0x04]next [+0x08]数据A [+0x0c]=0xffffff09 [+0x10]type
+[+0x14]=0xa [+0x18]效果哈希 [+0x20]float2.518 [+0x24]数据B`，步长 0x30
+（48B 有序池）。BFS 走链 20 节点/19 唯一哈希/6 类型（type2×13 为主，
+235/238 特殊型各 1）；`0xe2e7aa58..5d` 连续分配同族效果=EcoGame 规则族
+特征。**运行时效果注册的链表形态完全可读**（与 §65.8 补 1 的偏移修正
+记录：prev/next 在头部而非尾部）。
+
+**②type 对比定谳（§65.8 补 3，effect_data/）**：六种 type 的数据目标
+同构：`[+0x18] 效果哈希(与节点头一致) / [+0x1c] 0x2F4E681C / [+0x20]
+float 2.518 / [+0x24] 0x00ddded4 / [+0x28] 自引用`。type 差异仅块 id
+与位标志组（type4/235 头 00800080/01000100）。★0x2F4E681C 再现于效果
+数据固定字段 = 效果→栅格资源关联实锤。意外收获：type6 数据含
+"SimCityLocaleENU SValidate_257517" 字符串——效果节点引用 locale 校验
+资源（效果系统与本地化校验挂钩）。19 哈希全部无 cmp 引用（①清完）=
+纯数据驱动效果 ID。
+
+**⑥cmp 链甄别定谳（§65.8 补 4，hash_like_candidates.json）**：6445
+立即数分桶 = 浮点/魔数 945 + 单次比较 2141（地址/常量）+ 多次比较 3359。
+多次比较中高频头部门（0x0103A46C×229/0x0FF300FE×6544/0x8B04C483×5520）
+字节模式证实为**指令字节错位误配**（mov/SSE 前缀被当立即数）——非哈希。
+剔除后**真哈希级候选仅 ~5 个**：0xEE3F516E(×34)/0xE9F7043B(×34)/
+0x03E9F78D(×25)/0x2A43BD44(×12)/0x2CA33BDB(×12)（文件出现 13-48 次，
+非错位量级）——待与效果名/规则名对号（记录不扩散）。
+
+**⑤水位换算定谳**：TessendorfWater=波形动力学参数（波幅 20raw≈3.5m/
+choppy 1.25/时间步 0.015），水位面标高（-870m/raw4928）不在其中——
+存于 region desc 0x51E7A18D（P1-5 已记录），波模型以水位面为基准叠加
+位移。分工明确。
+
+**④0x424e00 完全解码**：= 注册表写入器（脏标记版）——oldPtr≠newPtr
+时先写撤销日志 [0xe52080]（0x422fa0 行走器读的就是它），再写
+0xe705a8[id]，置位图 0xe704a8[id/32] 与全局脏标记 0xe72e3c|=8。
+DecalDrawBatch 三次调用（4/0x206/0x2c1）=换绑三槽资源指针，混合状态
+不在录制层——在 shader-def 对象 apply（后续对象 dump 目标）。
+
+### §65.9 主线：shader-def 变体对象捕获（2026-09-29 深夜，shaderdef_objs/ + variant_objs/）
+
+当前活体会话重扫两哈希（sign=10 graf=10 命中）+ 扫到即 dump 40 份。
+**两类上下文分清**：
+- Type A（材质属性块）：`HASH, 0x20D, 0xC4, 6, 0,0, VAL, 0,0,0, 1, 0,
+  HASH2(=1188b12e 等高频资源哈希), 0, 0x10, 0, 2`——VAL/HASH2 即
+  BlendColors/ptrs.json 里高频值的出处（资源引用非指针）。
+- **Type B（关键）：变体效果对象数组**——sign 哈希后跟 6 个堆指针
+  （0x172d92c0→cb0，步进 0x230）；graf 跟 5 个（0x172e63d0→c80）。
+  **招牌 6 变体/涂鸦 5 变体**（与 §55.4 PS 族数量吻合）。已全部 dump
+  （variant_objs/ 11 份，0x500B 各）。
+
+**变体对象格式定性**：非裸 D3D9 状态块，而是**序列化参数/命令流**——
+头部 `[id][4][8004][8004]`（首 id 各异：sign 0x231/0x221/0x229/0x115/
+0x54，graf 0x221/0x211/0x239），正文打包字节 + `ffffff00` 分节符 +
+循环操作码 `00047300`/`00000100..00000b00` 小值序列。解读需先 RE 其
+解释器（=0x437820 vftable+0x148 命令分发族，§65.4 已定位）。
+【冻结记录】解释器 RE 与状态语义解码列入待办；另发现 sign_v4 尾部
++0x120 处出现 `00000054` 开头的嵌入子块（与 sign_v5 首部相同=子块链）。
+
+**decal 五问的最终状态**：机制/路由层全部闭合（§65.4/65.5）；量化参数
+（混合状态、自发光倍率、clip 阈值）位于这批变体对象的命令流中——
+两条解码路径：①离线全量提取 0x0469A3F7 容器 ArgScript 源（可能直接含
+状态文本）；②RE 0x437820 解释器后反解命令流。
+
+### §65.10 ★★决定性突破：decal 五问的源码级量化答案（2026-09-29，路径 A 完成）
+
+全量提取 0x0469A3F7 容器解码转储（tmp/shaders/cpp_*.txt 8 个，~40MB）→
+**18 族全部命中**，关键族完整源码落盘 `tmp/dynamic/decal_all_families_source.txt`
++ `decal_vs_variants_source.txt`。五问逐条解答：
+
+1. **decal 贴不贴模型 → 不贴，运行时矩阵投影**：
+   `decalProject(VS): texcoord<t0> = mul(modelToTexture, float4(modelPos,1))`
+   ——decal 独立几何在 VS 经 modelToTexture 矩阵实时投影进墙体纹理空间；
+   FloatQuad 变体则从顶点数据取 UV（indices.yzw/255）。
+2. **招牌自发光 → 不是自发光，是场景灯响应**：
+   `decalNeonBrighten(PS): Current.color.rgb *= shColorDiff + shColorSpec + spec`
+   ——SimCityLighting(shScreenUV, bumpNormal=decalWorldDirection,...)
+   采样场景光照（含霓虹点灯），招牌颜色被场景灯乘亮；gloss/specE 来自
+   材质。
+3. **边缘清晰 → 投影立方体 clip**：
+   `decalProject(PS): clip(1 - abs(texturePosition))`（单位立方体裁剪）+
+   `decalClip: clip(-textureFloatPosition.z)`（墙面之后裁掉）+ UV =
+   (texpos.xy×-0.5+0.5)×texXform.xy+texXform.zw（atlas cell 变换）。
+4. **涂鸦混墙 → PS 输出原色，混合在输出合并**：
+   `decalClip(PS): Current.color = decalTexture`（注释掉 a=1）——PS 不读
+   墙；源码容器无状态文本（Blend 关键字仅 terrainDataView 系）→ 混合
+   状态在变体命令流（§65.9 的 11 份 dump，路径 B 解码）或直接实验测定
+   （调制混合假说仍唯一候选）。
+5. **破洞假内景 → 视差 UV + 球面假灯 + 16× 自亮**（量化参数全出）：
+   `decalLightInteriorMap`: interiorUv = lerp(uv, uv×0.5, z×0.5+0.5)
+   （**z 深度视差**——越深 UV 越向中心收缩=房间进深感）；光照 =
+   shColorDiff×kLightAmount + sun×kSunContributionAmount（来自
+   decalMaterialData[0].xy）；自亮 = interiorTexture.a ×
+   **kInteriorMapSelfLightMax=16.0**（夜间窗亮 16 倍）；最终
+   lerp(墙色, 内景色, saturate(alpha×2-1))。
+   `decalInteriorMap`（无光变体）：球面假灯——circleDist =
+   saturate(1-alpha×256/200)，circleZ = z×0.5+0.5 ×
+   invMaterialLightRadius(=MaterialInfo.y×4)，sphereDist → lightScale =
+   saturate(1-sphereDist)，lightAmount = dot(dir,normal) ×
+   materialLightScale(=MaterialInfo.x×16+1)。
+6. **动画招牌**（附带完整源码）：animTime = frac(gameInfo.x×speed+
+   0.9999)，compares = floor((animTime×3-offsets)×chunks)/chunks，
+   uv -= compares（§55 机制级的源码证实），参数源 decalMaterialData[3]
+   （符号选轴/整数=分块/小数=偏移）+ speed=decalMaterialInfo.y。
+
+**意义**：decal 实装从"目视+猜测"升级为**照抄引擎公式**——五问中四问
+半直接拿到引擎 HLSL 原文，唯一剩余=涂鸦输出合并状态（路径 B 或实验）。
+
+### §65.11 地面 raster lot 着色缺口：运行时一波 dump（2026-09-29，ground_objs/ 12 份）
+
+针对用户实现痛点（地面 raster lot 着色错误、缺反光效果），趁活体补齐
+着色链运行时数据（12 对象×0x1000B，零崩溃）：
+
+1. **cMaterialGroundDataViewBlendOverlays（0x7edaffe8）：51 个 RGBA
+   颜色四元组**——overlay 着色的实际颜色数据。结构 = 8-float 块/项
+   （两 RGBA），典型值 (1,1,0,0)/(0,1,0,0)/(0,0,1,1)/(0,0,0,1) 预乘
+   形态。
+2. **着色公式源码已在手**（building4DataViewBlendPS.hlsl）：
+   `colorOverlay: Current.color = float4(rgb*a, a)`（**预乘 alpha**）；
+   `colorOverlayOcclude: float4(rgb*a*occlusionOpacity, a*occlusionOpacity)`
+   （occlusionOpacity=customParams[1].y）——**着色错误的最可能缺口=
+   实装缺预乘 alpha 与 occlusionOpacity**；地面光照/反光走
+   SimCityLighting（spec/gloss 项，见 vehicleUnpack 的 specMap→
+   specE=(r³+1/1024)×1024、roughness=g、gloss=r 公式）。
+3. **cTerrainMapSet（0x42e93368）= 地面贴图资源绑定枢纽**：内含
+   0x00b2cccb:0x00b1b104 TGI（=§65.7 的 zone 属性资源引用）、27 处
+   raster-model TGI、VIStream 接口。
+4. cTerrainMapGPU：uv 缩放 4.48e-07（×3）、+0x60: 6.395、mip 变换
+   (-1024, 3.003)×12。
+5. BlendColors 新实例（0x7edbcd88）：+0x260 处实际颜色
+   rgba(103,33,106,0.14)（zone 色样）。
+
+**实现侧结论**：地面 raster lot 着色 = zone 色经 BlendOverlays 预乘
+alpha 叠加（含 occlusionOpacity）+ SimCityLighting 反光（spec/gloss）；
+用户缺口大概率=预乘 alpha 公式与光照 spec 项。全部原始 dump 在
+ground_objs/ 可复查。
+
+### §65.12 ★★LotMask 四通道语义定谳：controlMap 控制通道（2026-09-29，源码级）
+
+用户核心疑问（raster 四通道=什么；为何与游戏实际地面花纹/颜色对不上）
+**源码级解答**。新探针 find_terrain_ps（全包解压扫描）定位 terrain PS
+容器 = App 包 0x0469a3f7 grp=40212002 inst 0..3（各 ~1.23MB；注意此前
+提取文件名冲突 inst 同号互覆盖导致误读 35KB）→ terrain_ps_SimCity_App_*.bin。
+
+**地面渲染管线（terrain PS 源码，全部到手）**：
+1. **`getControlChannels(controlMap, noiseMap, controlMapUV, ...)`**：
+   `controlChannels = tex2D(controlMap, controlMapUV).rgba` ——
+   **LotMask raster = terrain 着色器的 controlMap**，四通道 = 四个独立
+   控制量。**A 通道特殊处理**：a×=useControlMap（UV 出界无效）→
+   saturate(GetBorderWidth()×a) → +crinkly 噪声 → **a⁴**（两次平方）=
+   边界宽度+皱褶过渡（=地表与地形衔接的羽化边）。
+2. **`getGrassAmount`**：`ecoMapsOut = tex2D(combinedEcoMaps, heightMapUV).rgba`；
+   `grassAmount = ecoMaps.r × ecoMaps.b` 再开方 + patchy 噪声碎化——
+   **草量来自生态图，不来自 raster**。
+3. **`computeBasicGroundColor(ecoMaps, dry, avgGrass, polluted, grassAmount)`**：
+   `lerp(dry, avgGrass, grassAmount)` → `lerp(…, polluted, ecoMaps.a)`
+   ——基础色 = 干土/草/污染三色按生态插值。
+4. `basicGroundColor *= basicGroundColor`（平方）；bladeColor = 地表纹理
+   pixelColor × mGrassBladeColorScale；finalBladeColor = lerp(basic,
+   blade, kBladeTextureBlend)；× shDiffuse（SimCityLighting）×
+   kLightingColorScale × treeShadow（forestColorMap）。
+
+**结论（修正既有认识）**：
+- 四通道**既不是颜色也不是四张纹理**——是 terrain 着色器的
+  **controlMap 控制通道**，各通道独立控制一种地表叠加材质的权重
+  （族名证据：genericLot4ChanOverlay/Dirt4ChanOverlay/Lawn4ChanOverlay/
+  LawnAlphaBase——草/泥土变体）；A 通道 = 边界/整平控制（×BorderWidth
+  +crinkly 噪声 +a⁴，停车场车道线在 A = 车道线区域恰是"整平/铺装"控制）。
+- 游戏地面花纹/颜色多样性 = **生态系统**：combinedEcoMaps（生态模拟
+  输出 r×b=草量、a=污染）+ groundColors{Dry/AverageGrass/Polluted/Snow}
+  生态色调 + 地表纹理 ×GrassBladeColorScale + 光照树影。同一 raster 在
+  不同生态/污染/季节下外观完全不同——modding.pdf"RGB=三种纹理"只看到
+  了选择器，没看到生态调制层。
+
+### §65.13 raster 清晰度之问 + TerrainLayer 定性（2026-09-29）
+
+**用户问：128×128 的 raster 怎么渲染成游戏精度？**
+答案（架构级，源码/活体双证）：**raster 从不被当作可见图渲染——它是
+controlMap**。双线性采样 + 8 mip，只存低频控制权重（哪块草/铺装/线），
+模糊是设计使然（a⁴ 羽化正需要平滑输入）。**清晰度来自 detail 纹理层**：
+可平铺高分辨率贴图（车道线画在铺装贴图上、方格砖=平铺贴图、草=草叶
+贴图），final = lerp(生态底色, detail纹素×GrassBladeColorScale,
+kBladeTextureBlend)×光照。游戏截图佐证：车道线柔（掩码放大）、方格砖
+锐（detail 平铺）。
+
+**新探针 lot_composite.rs**：117 个 LotMask raster 引擎式合成
+（A⁴ 羽化铺装 + R 步道 + G 草 + B 车道线白漆映射）→ contact sheet +
+逐个 PNG（tmp/dynamic/lot_composite/，id 对照表已打）。首格
+eb79d9c1 = §65.7 zone 属性资源引用的 raster（互证）。
+
+**cTerrainLayer（0x40ce0a8c/88）定性**：+0x14 "BatchMaterialTexture"、
++0x7c "ground"、+0x354/0x5a4 "ground"（层名），纹理对象指针
+0x40ce1aa0/0x40ce1ea0/0x40e53600/0x40e68460（layer_objs/ 已 dump）——
+**detail 纹理链入口**。下一步：走这些指针拿真实 detail 贴图 → 二阶
+合成（贴图级）。
+
+**实测教训（当日补充）**：全堆候选（98 个/本 boot）×全槽 sweep 的 10878
+钩子安装至 ~1600 时游戏崩溃重启（破解版脆弱 + 钩子负载），sweep 未完成。
+结论：**大 sweep 与破解版不兼容**。正确姿势 = 先用槽位首调诊断定位
+CreateDevice/关键槽位，再装最小钩集（个位数钩子，稳定）。
+
+**§65.2.1 三版 exe 对比定谳（修正旧结论）**：原版(加壳)/SCY-dump/破解版
+逐节对比——破解版 `.text` 与 SCY-dump **99.9998% 一致（仅 20 字节差）**，
+差异全部在入口点：破解桩 = `call [LoadLibraryA]("1911.dll")` + `jmp 真OEP`
+（Razor1911 组：1911.dll/razor1911.jpg/DLC.1911 就在游戏目录）。SCY-dump
+入口处为零（dump 时桩已执行完毕）。**结论：Ghidra 工程（SCY-dump 基）
+对新 exe 100% 有效，破解版无新增可分析代码。**
+
+**修正旧结论**：`_DAT_00cf7da8`（旧记录"落在所有 PE 段之外，离线读不到"）
+实测**在 .rdata 内（绝对 VA 0xCE8000..0xDDA000），两个文件同偏移可读**，
+内容 = 字符串 `"Vendor:0x%04x, card:0x%04x"`（GPU 信息格式串）。旧记录
+至少对该地址不成立——.rdata/.data 已初始化区（VA 0xDDA000..0xE4EA00）
+全部可离线读取；**真正的离线盲区只有 .data 运行时尾区
+（VA 0xE4EA00..0x1044000，约 2MB BSS，加载后才有值）**——需要运行时
+dump 的就是这 2MB，且 dump 与静态文件互补（dump=运行时值，文件=初始值）。
+- 注意：游戏进程 48660 若跨夜存活，d3d9 基址不变（同 boot），昨日
+  候选地址仍有效；重启则 d3d9 基址按 boot 重排（其余不变）。
