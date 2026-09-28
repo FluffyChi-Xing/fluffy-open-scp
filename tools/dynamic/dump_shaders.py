@@ -23,8 +23,9 @@ from pathlib import Path
 import frida
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "shaders"
-MANIFEST = HERE / "shader_manifest.jsonl"
+# 产物统一落 tmp/dynamic（tools/ 保持干净）
+OUT = HERE.parent.parent / "tmp" / "dynamic" / "shaders"
+MANIFEST = HERE.parent.parent / "tmp" / "dynamic" / "shader_manifest.jsonl"
 
 
 def log(*a):
@@ -164,6 +165,8 @@ def main():
     ap.add_argument("--pid", type=int, help="直接按 PID attach（优先于 --name）")
     ap.add_argument("--wait", action="store_true",
                     help="进程不在时等待其出现（重启游戏前先挂上，可随行抓设备创建）")
+    ap.add_argument("--ws-mb", type=int, default=50,
+                    help="--wait 模式下 attach 的工作集阈值 MB（800≈菜单渲染期）")
     ap.add_argument("--spawn", metavar="EXE", help="从进程创建抓（可抓加载期 CreateShader）")
     ap.add_argument("--no-disasm", action="store_true", help="不生成 .asm 反汇编")
     args = ap.parse_args()
@@ -177,7 +180,10 @@ def main():
             if kind == "shader":
                 saver.on_shader(p, data)
             elif kind == "log":
-                log("[agent]", p["text"])
+                if p.get("text", "").startswith("FHEX:") and data:
+                    log(f"[FHEX]{p['text'][5:]}", data.hex(" ", 8))
+                else:
+                    log("[agent]", p["text"])
             elif kind == "stats":
                 s = p["stats"]
                 log(f"[stats] create={s.get('create', 0)} bind={s.get('bind', 0)} "

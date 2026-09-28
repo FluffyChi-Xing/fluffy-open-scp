@@ -25,9 +25,11 @@ var execLo = null, execHi = null;
 var modLoN = 0, modHiN = 0; // d3d9 模块整体范围（数值比较；vftable 地址在模块数据段）
 var armed = false;
 var deviceFound = false;
+var calibrating = false;
 var seenBind = new Set();
 var hookedFns = new Set();
 var getFnFailLog = 0;
+var createFailLog = 0;
 var sizeP = Memory.alloc(4);
 var stats = { create: 0, bind: 0 };
 var cfg = { spawn: false };
@@ -124,28 +126,66 @@ function lurkDirect3DCreate() {
   });
 }
 
+// spawn 模式抢先自建 IDirect3D9（早于游戏、无渲染锁死锁风险），其 vftable
+// 与游戏同类——观察钩子提前布好，游戏的 CreateDevice 调用必然穿过，
+// 消除「游戏微秒级跟进 CreateDevice 慢于钩子安装」的竞态。
+function earlyLurk() {
+  try {
+    var k32 = Process.findModuleByName('kernel32.dll');
+    if (k32 === null) { log('E: kernel32 未加载'); return; }
+    var CreateThread = new NativeFunction(getExport(k32, 'CreateThread'),
+      'pointer', ['pointer', 'uint', 'pointer', 'pointer', 'uint32', 'pointer']);
+    var WaitForSingleObject = new NativeFunction(getExport(k32, 'WaitForSingleObject'),
+      'uint32', ['pointer', 'uint32']);
+    var GetExitCodeThread = new NativeFunction(getExport(k32, 'GetExitCodeThread'),
+      'uint32', ['pointer', 'pointer']);
+    var CloseHandle = new NativeFunction(getExport(k32, 'CloseHandle'),
+      'int32', ['pointer']);
+    var tid = Memory.alloc(4);
+    var hThread = CreateThread(ptr(0), 0, getExport(d3d9, 'Direct3DCreate9'),
+      ptr(32), 0, tid);
+    if (hThread.isNull()) { log('E: CreateThread 失败'); return; }
+    WaitForSingleObject(hThread, 15000);
+    var exitCode = Memory.alloc(4);
+    GetExitCodeThread(hThread, exitCode);
+    CloseHandle(hThread);
+    var pD3D = ptr(exitCode.readU32());
+    log('E: 抢先自建 IDirect3D9=' + pD3D + '，观察钩子已前置');
+    if (!pD3D.isNull()) lurkCreateDevice(pD3D);
+  } catch (e) { log('E: 异常 ' + e); }
+}
+
+var lurkHits = {}; // 诊断：IDirect3D9 各槽命中计数（观察钩子是否被穿过）
+var lurkFirst = {}; // 各槽首次调用的 args[6] 原始值
+
 function lurkCreateDevice(pD3D) {
   var vt = pD3D.readPointer();
   for (var s = 3; s <= 16; s++) {
     (function (slot) {
+      lurkHits[slot] = 0;
       safeAttach(fnAt(vt, slot), {
         onEnter: function (args) {
           // CreateDevice 含 7 参（this 下标 0..6），CreateDeviceEx 含 8 参
+          lurkHits[slot]++;
           this.p6 = args[6];
           this.p7 = args[7];
         },
         onLeave: function () {
-          if (deviceFound) return;
+          if (calibrating) return;
           var self = this;
           [self.p6, self.p7].forEach(function (pp) {
-            if (deviceFound || pp === undefined || pp.isNull()) return;
+            if (calibrating || pp === undefined || pp.isNull()) return;
             try {
+              if (!lurkFirst[slot]) {
+                lurkFirst[slot] = true;
+                log('lurk 槽 ' + slot + ' 首调 args6=' + pp + ' *args6=' +
+                  (function () { try { return pp.readPointer(); } catch (e) { return '不可读'; } })());
+              }
               var obj = pp.readPointer();
               if (obj.isNull() || !looksLikeComObj(obj)) return;
               var ovt = obj.readPointer();
               var rep = validateReport(ovt);
               if (!rep.ok) return;
-              deviceFound = true;
               log('实测 CreateDevice = IDirect3D9 槽 ' + slot + '，设备 vftable @ ' + ovt);
               installSlotCounters(ovt, 20);
             } catch (e) { /* 非 CreateDevice 槽位，忽略 */ }
@@ -371,11 +411,12 @@ function calibrateAll(candidates) {
     bindSlots.forEach(function (s4) { hookBind(vt, s4); });
     log('已装载 hooks（实测槽位）：create@' + JSON.stringify(createSlots) +
         ' bind@' + JSON.stringify(bindSlots));
-  }, 20000);
+  }, RECON_SECONDS * 1000);
 }
 
 // ---------- 侦察：多候选 × 代表性槽位的流量分布，人工定槽 ----------
-var RECON_SLOTS = [17, 18, 39, 40, 78, 79, 80, 81, 88, 89, 97, 98];
+var RECON_SLOTS = [17, 18, 39, 40, 62, 78, 79, 80, 81, 88, 89, 90, 97, 98, 99];
+var RECON_SECONDS = 60; // 菜单/城市加载耗时长，窗口拉满稳态流量
 
 function reconAll(candidates) {
   var reports = {};
@@ -400,7 +441,7 @@ function reconAll(candidates) {
       if (l) listeners.push(l);
     });
   });
-  log('侦察中（15s，' + candidates.length + ' 候选 × ' + RECON_SLOTS.length + ' 槽）——保持城市场景渲染……');
+  log('侦察中（' + RECON_SECONDS + 's，' + candidates.length + ' 候选 × ' + RECON_SLOTS.length + ' 槽）——保持城市场景渲染……');
   setTimeout(function () {
     listeners.forEach(function (l) { l.detach(); });
     var any = false;
@@ -429,7 +470,11 @@ function reconAll(candidates) {
         if (score > winnerScore) { winnerScore = score; winner = k; }
       }
     }
-    if (!any) { log('侦察：所有候选全零——回报此日志'); return; }
+    if (!any) {
+      log('侦察：所有候选全零（菜单可能尚未渲染）——30s 后重试…');
+      setTimeout(fallbackProbe, 30000);
+      return;
+    }
     // 数据驱动装载：侦察中所有"对象参数经过"的 (候选,槽) 全部装 bind hook，
     // "blob 经过"的装 create hook——hook 自带版本 token 校验，错误槽位自然零产出
     armed = true;
@@ -447,7 +492,7 @@ function reconAll(candidates) {
           installed++;
           log('装载 create@' + slot + '（vftable ' + vt2 + '，侦察期 blob=' + info.blob + '）');
         }
-        if (info.obj > 0 && (slot === 89 || slot === 98)) {
+        if (info.obj > 0) {
           hookBind(vt2, slot);
           installed++;
           log('装载 bind@' + slot + '（vftable ' + vt2 + '，侦察期 obj=' + info.obj + '）');
@@ -458,8 +503,89 @@ function reconAll(candidates) {
   }, 15000);
 }
 
+// ---------- G. .data 对象图行走：从游戏全局根挖设备对象 ----------
+// 设备指针必然从 SimCity.exe 的 .data（固定基址）出发 1-2 跳可达：遍历
+// .data 每个指针 → 读目标对象体 4KB → 扫描其中指向 d3d9 的 vftable。
+// 110+ 槽校验天然过滤纹理/顶点缓冲等短接口；vftable 取自对象指针本身，
+// 无移位歧义。
+function walkGameData() {
+  var game = Process.findModuleByName('SimCity.exe');
+  if (game === null) { log('G: 无 SimCity.exe 模块'); return []; }
+  var out = [], seenVt = {};
+  var ranges = Process.enumerateRanges('rw-').filter(function (r) {
+    return r.base.compare(game.base) >= 0 && r.base.compare(game.base.add(game.size)) < 0;
+  });
+  var totalMB = 0;
+  ranges.forEach(function (r) { totalMB += r.size / (1024 * 1024); });
+  log('G: 行走 SimCity.exe 数据段 ' + ranges.length + ' 段 / ' +
+      Math.round(totalMB) + 'MB…');
+  ranges.forEach(function (r) {
+    if (out.length >= 30) return;
+    var buf;
+    try { buf = r.base.readByteArray(r.size); } catch (e) { return; }
+    var u32 = new Uint32Array(buf);
+    var tried = {};
+    for (var i = 0; i < u32.length && out.length < 30; i++) {
+      var P = u32[i];
+      if (P < 0x10000 || (P & 3) !== 0) continue;
+      if (P >= modLoN && P < modHiN) continue;
+      var pk = P.toString(16);
+      if (tried[pk]) continue;
+      tried[pk] = true;
+      var body;
+      try { body = ptr(P).readByteArray(0x2000); } catch (e) { continue; }
+      var b32 = new Uint32Array(body);
+      for (var j = 0; j < b32.length; j++) {
+        var D = b32[j];
+        if (D < modLoN || D >= modHiN) continue;
+        var vt = ptr(D);
+        var k2 = vt.toString();
+        if (seenVt[k2]) continue;
+        if (!spotCheck(vt)) continue;
+        seenVt[k2] = true;
+        var rep = validateReport(vt);
+        log('G: .data[' + r.base.add(i * 4) + '] → 对象 ' + ptr(P) + '+' + (j * 4) +
+            ' → vftable ' + vt + '（exec ' + rep.exec + '/' + rep.n + '）');
+        if (rep.ok) out.push(vt);
+      }
+    }
+  });
+  return out;
+}
+
+// 重试型探测循环：游戏加载/菜单可能卡数分钟（破解版不稳定），30s 一轮直到
+// 扫到候选并完成侦察；侦察全零（菜单尚未渲染）也回炉重试
+var probeRounds = 0;
+function fallbackProbe() {
+  if (deviceFound || armed || calibrating) return;
+  probeRounds++;
+  if (probeRounds > 8) { log('探测 8 轮无果——回报此日志'); return; }
+  log('探测第 ' + probeRounds + ' 轮：.data 对象图行走…');
+  var vts = walkGameData();
+  if (vts.length > 0) {
+    // 全槽 bind sweep：SetPixelShader/SetVertexShader 藏在任何槽都逃不过
+    // token 校验（错误槽位零产出）；recon 仅用于 create 槽发现
+    vts.forEach(function (vt) {
+      for (var s = 0; s <= 110; s++) hookBind(vt, s);
+    });
+    log('已对 ' + vts.length + ' 个候选装全槽 bind sweep（0..110）');
+    reconAll(vts);
+    return;
+  }
+  log('第 ' + probeRounds + ' 轮未命中，转全堆扫描…');
+  var candidates = scanHeapV2();
+  if (candidates.length === 0) {
+    log('本轮无候选（可能仍在加载），30s 后重试…');
+    setTimeout(fallbackProbe, 30000);
+    return;
+  }
+  reconAll(candidates);
+}
+
 // ---------- 槽位校准 ----------
 function installSlotCounters(vt, seconds) {
+  if (calibrating || armed) return;
+  calibrating = true;
   var report = {};
   var listeners = [];
   for (var s = 83; s <= 105; s++) {
@@ -524,7 +650,9 @@ function hookCreate(vt, slot) {
           source: 'create', slot: slot,
           obj: obj, ver: '0x' + ver.toString(16), size: len
         }, this.blob.readByteArray(len));
-      } catch (e) { log('create 落盘失败: ' + e); }
+      } catch (e) {
+        if (createFailLog++ < 3) log('create 落盘失败: ' + e);
+      }
     }
   }, 'create@' + slot);
 }
@@ -550,6 +678,8 @@ function hookBind(vt, slot) {
         var size = sizeP.readU32();
         if (size < 16 || size > (4 << 20) || (size & 3) !== 0) return;
         var bufp = Memory.alloc(size);
+        bufp.writeU32(0);
+        bufp.add(4).writeU32(0);
         if (getFn(obj, bufp, sizeP) !== 0) return;
         var ver = bufp.add(4).readU32();
         var hi = ver >>> 16;
@@ -578,30 +708,23 @@ function hookGameDraw() {
   var walked = false;
   var l = safeAttach(target, {
     onEnter: function (args) {
-      if (deviceFound || walked) return;
+      if (walked) return;
       walked = true;
-      var thiz = args[0];
-      log('F: draw 函数首次触发，this=' + thiz);
-      if (thiz.isNull()) return;
-      try {
-        var body = thiz.readByteArray(0x2000);
-        var u32 = new Uint32Array(body);
-        for (var i = 0; i < u32.length; i++) {
-          var v = u32[i];
-          if (v < 0x10000) continue;
-          if (v < modLoN || v >= modHiN) continue;
-          var vt = ptr(v);
-          if (!spotCheck(vt)) continue;
-          var rep = validateReport(vt);
-          if (!rep.ok) continue;
-          deviceFound = true;
-          log('F: this+' + (i * 4) + ' 处发现设备对象 → vftable ' + vt +
-              '（exec ' + rep.exec + '/' + rep.n + '）');
-          installSlotCounters(vt, 20);
-          return;
-        }
-        log('F: this 体 0x2000 字节内未发现设备 vftable——可扩大范围或换锚点');
-      } catch (e) { log('F: 读取 this 失败 ' + e); }
+      var parts = [];
+      for (var i = 0; i < 6; i++) parts.push('a' + i + '=' + args[i]);
+      log('F: FUN_00437610 参数：' + parts.join(' '));
+      // 前两个非小值指针参数指向的内存预览（识别 this/材质/shader-def 形态）
+      var done = 0;
+      for (var j = 0; j < 6 && done < 2; j++) {
+        var p = args[j];
+        if (p.isNull() || p.compare(SMALL_MAX) < 0) continue;
+        try {
+          if (p.readU32() === 0 && p.add(4).readU32() === 0) continue;
+          log('F: args[' + j + ']=' + p + ' 头 64B 见下条 FHEX');
+          send({ kind: 'log', text: 'FHEX:' + p }, Memory.readByteArray(p, 64));
+          done++;
+        } catch (e) { }
+      }
     }
   }, 'gameDraw');
 }
@@ -615,19 +738,10 @@ function arm() {
   }
   log('exec 段: ' + execLo + ' - ' + execHi);
   lurkDirect3DCreate();
+  if (cfg.spawn) earlyLurk(); // 抢先自建 IDirect3D9 前置观察钩子（仅 spawn）
   hookGameDraw();
-  // 15s 内 F/A 都没定位到设备 → 全堆扫描 + 侦察定槽
-  setTimeout(function () {
-    if (deviceFound || armed) return;
-    log('15s 未定位设备，走全堆扫描+侦察…');
-    var candidates = scanHeapV2();
-    if (candidates.length === 0) {
-      log('堆扫描未命中——回报此日志');
-      return;
-    }
-    deviceFound = true;
-    reconAll(candidates);
-  }, 15000);
+  // 15s 内 F/A 都没定位到设备 → 重试型探测循环（游戏加载/菜单可能耗时数分钟）
+  setTimeout(fallbackProbe, 15000);
 }
 
 // d3d9.dll 可能尚未加载（spawn 模式）：轮询等待
@@ -649,6 +763,9 @@ var poller = setInterval(function () {
 
 setInterval(function () {
   send({ kind: 'stats', stats: stats });
+  var hk = [];
+  for (var s in lurkHits) if (lurkHits[s] > 0) hk.push(s + ':' + lurkHits[s]);
+  if (hk.length) send({ kind: 'stats', stats: stats, lurk: hk.join(' ') });
 }, 5000);
 
 recv('config', function onCfg(m) {
