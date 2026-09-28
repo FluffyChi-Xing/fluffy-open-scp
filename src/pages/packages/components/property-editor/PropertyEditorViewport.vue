@@ -240,7 +240,11 @@ async function getDecalTexture(
     //（2026-09-26 回归：全部贴花回退绿色占位 gizmo 的根因）。
     const decoded = await new THREE.TextureLoader().loadAsync(
       `data:image/png;base64,${texture.png}`,
-    );
+    ).catch((error: unknown) => {
+      console.warn("[decal] 纹理 data URL 解码失败", texture.idInstance, error);
+      return null;
+    });
+    if (!decoded) return null;
     decoded.colorSpace = THREE.SRGBColorSpace;
     // 清晰度对齐建筑贴图口径（禁 mip + Linear + 最大各向异性）：贴花默认
     // 三线性会在中远景明显糊于锐利的建筑贴图（2026-09-27 用户反馈）。
@@ -891,21 +895,34 @@ async function assembleScene(
           vec4 edge = vec4(step(vec3(0.25, 0.5, 0.75), vec3(roomId)), roomVariation * 4.0);
           interiorTc.x += dot(edge, vec4(1.0)) * uInteriorScale;
           vec4 room = texture2D(interiorMap, interiorTc);
-          // 内景照明（同建筑：昼夜环境 + 灯亮 a×glow×供电）
-          vec3 nightAmb = vec3(0.10, 0.12, 0.18);
-          vec3 ambient = mix(nightAmb, vec3(1.0), uDayLight);
-          float selfLight = room.a * uInteriorGlow * uPowered;
-          vec3 interior = room.rgb * (ambient + selfLight);
+          // 内景照明（游戏口径：破洞内景是**渐黑**的暗房间——白天弱光、
+          // 夜间近乎全黑，不随 uInteriorGlow 自发光（§62 用户实测：
+          // 夜间蓝光=自发光 bug）；深度越深越暗（假内景进深感）。
+          float depthFade = mix(1.0, 0.35, clamp(vTp.z * 0.5 + 0.5, 0.0, 1.0));
+          vec3 ambient = mix(vec3(0.10, 0.11, 0.15), vec3(0.55), uDayLight);
+          vec3 interior = room.rgb * depthFade * ambient;
           // 焦痕边环：轮廓中带（0.12-0.5）露贴花焦痕原色，洞心（≥0.5）露内景
-          vec3 col = mix(hole.rgb, interior, smoothstep(0.25, 0.55, mask.a));
+          vec3 col = mix(mask.rgb, interior, smoothstep(0.25, 0.55, mask.a));
           // ShaderMaterial 不走 three 的 colorspace 编码，手动回 sRGB
           gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
         }
       `
     });
   }
-  const DECAL_MATERIAL_VARIANTS: Record<number, "sign"> = {
-    0x73684efc: "sign", // 招牌聚类（POWER ELECTRIC/太阳 burst 等）
+  /**
+   * Decal 材质子类型（migration.md §56-59）：引擎 decal PS 全家族都是
+   * **直采 raster + 标准 alpha 混合**（`Current.color = tex2D(s0, uv)`），
+   * 子类型差异只在增亮/光照/动画分支。raw 纹理的 alpha 本身就是美术授权
+   * 的低不透明度（字母 0.7-0.86、底色 <0.2）——「涂鸦刷进墙里」的效果
+   * = 低 alpha 叠加 + 共享光照，不是屏幕域乘法（§58 的 DstColor 调制
+   * 让暗底 texel 把整块墙压暗、字也没了，已回退）。
+   * - sign（0x73684EFC）：霓虹自发光，×2 增亮（decalFloatQuadNoClip）；
+   * - graffiti（0xE5390A98，cGraphicsUnitVandalism）：×1 直采 alpha 混合；
+   * - 其余（未知材质兜底）：受光 MeshStandard。
+   */
+  const DECAL_MATERIAL_VARIANTS: Record<number, "sign" | "graffiti"> = {
+    0x73684efc: "sign", // 招牌聚类（POWER ELECTRIC/太阳 burst/OMEGACO 等）
+    0xe5390a98: "graffiti", // 涂鸦/贴纸聚类（CRIME/词组拼贴等）
   };
 
   function buildDecalMaterial(
@@ -916,31 +933,51 @@ async function assembleScene(
     const base = {
       map,
       side: THREE.DoubleSide,
-      // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
-      // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
-      // 的 RGB=(0,0,0) 直接画成黑底。alpha 是二值的，alphaTest 即足够
-      //（同地面 fill 口径），无需 transparent 的排序开销。
-      alphaTest: 1 / 255,
-      transparent: false,
+      // raw RGBA 直采（引擎 decal PS：`Current.color = tex2D(s0, uv)`）；
+      // 纹理 alpha 是柔和衰减/掩码：sign 连续混合（光晕）、graffiti 阈值
+      // 裁切（锐利边缘），见下方 switch。
+      transparent: true,
+      depthWrite: false,
       // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
       polygonOffset: true,
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
     };
-    if (
-      DECAL_MATERIAL_VARIANTS[(dto.materialInstance ?? 0) >>> 0] === "sign"
-    ) {
-      // 霓虹 ×2 过 hejl tonemap 保持招牌亮度（引擎 decalNeonBrighten 同数）
-      return new THREE.MeshBasicMaterial({
-        ...base,
-        color: new THREE.Color(2, 2, 2),
-      });
+    switch (DECAL_MATERIAL_VARIANTS[(dto.materialInstance ?? 0) >>> 0]) {
+      case "sign":
+        // 霓虹 ×2 过 hejl tonemap 保持招牌亮度（引擎 decalFloatQuadNoClip 同数）
+        return new THREE.MeshBasicMaterial({
+          ...base,
+          color: new THREE.Color(2, 2, 2),
+        });
+      case "graffiti":
+        // 涂鸦 = **alpha 裁切（cutout）+ 受光**：raw 纹理的 alpha 是抗锯齿
+        // 掩码（字母核 ≥0.5、边缘/背景渐变到 0），按连续透明度混合会把整个
+        // 光晕显示出来（=「半透明+模糊不可辨认」，2026-09-27 实测翻车）。
+        // 阈值裁切后 0.5 等值线即字母边缘——平滑且锐利，与游戏一致。
+        // 受光（MeshStandard）让涂鸦夜间随场景变暗——unlit MeshBasic 会在
+        // 黑夜里自发光（枪械预览涂鸦夜间发光的根因）。游戏中字母周围
+        // 的光泽来自 bloom，不是混合。不透明 pass 渲染，无排序开销。
+        return new THREE.MeshStandardMaterial({
+          ...base,
+          transparent: false,
+          depthWrite: true,
+          alphaTest: 0.5,
+          roughness: 1,
+          metalness: 0,
+        });
+      default:
+        // 未识别材质兜底同用 cutout：soft-alpha 艺术在连续混合下会显示
+        // 全部光晕（甜甜圈店「模糊」反馈）。受光语义保留（MeshStandard）。
+        return new THREE.MeshStandardMaterial({
+          ...base,
+          transparent: false,
+          depthWrite: true,
+          alphaTest: 0.5,
+          roughness: 1,
+          metalness: 0,
+        });
     }
-    return new THREE.MeshStandardMaterial({
-      ...base,
-      roughness: 1,
-      metalness: 0,
-    });
   }
 
   /** 取贴花在 lot 局部的变换矩阵（无变换时为 None）。 */
@@ -956,7 +993,7 @@ async function assembleScene(
 
   /**
    * 浮空 quad 回退：投影落空（建筑未加载 / 贴花不属于任何建筑面）时仍让
-   * 用户看得到、点得到该 decal。尺寸 = 2×scale × (2×scale)/aspect。
+   * 用户看得到、点得到该 decal。尺寸 = 高 2×scale × 宽 高×aspect（半高语义）。
    */
   async function buildDecalQuadFallback(
     THREE: typeof ThreeNamespace,
@@ -965,9 +1002,10 @@ async function assembleScene(
   ): Promise<ThreeNamespace.Mesh | null> {
     const aspect =
       texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
-    // Scale 是半宽（原 SCP `UnitDecal.CreateGeometry`：`rectangle.Length = 2 * Scale`）。
-    const width = Math.max((unit.scale ?? 4) * 2, 0.05);
-    const height = Math.max(width / aspect, 0.05);
+    // scale = 半高（2026-09-27 OMEGACO 对照定谳，见 decalProject.decalFrame）：
+    // 高 = 2×scale、宽 = 高×aspect。此前按半宽推导，aspect>1 的招牌小一半。
+    const height = Math.max((unit.scale ?? 4) * 2, 0.05);
+    const width = Math.max(height * aspect, 0.05);
     const geometry = new THREE.PlaneGeometry(width, height);
     // U 轴镜像：引擎 decal PS 的 UV 是 `textureFloatPosition.xy * -0.5 + 0.5`
     // （U 取负，被 texXform 的 2 倍缩放补回量程），不翻会得到镜像文字
@@ -1004,12 +1042,32 @@ async function assembleScene(
     meshes: ThreeNamespace.Mesh[],
     proxies: ThreeNamespace.Mesh[],
   ): Promise<ThreeNamespace.Object3D | null> {
-    if (!texture.png) return null;
+    if (!texture.png) {
+      console.warn(
+        "[decal] DTO 无 png：",
+        texture.idInstance,
+        texture.error ?? "unknown",
+      );
+      return null;
+    }
     const aspect =
       texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
     const decoded = await getDecalTexture(THREE, texture);
     if (!decoded) return null;
     const frame = decalFrame(THREE, unit, aspect);
+    if (!frame) {
+      console.warn(
+        "[decal] 无有效 transform/scale，无法构建投影帧：",
+        unitId(unit),
+        "transform=",
+        unit.transform
+          ? `matrixLen=${unit.transform.matrix?.length ?? 0}`
+          : "null",
+        "scale=",
+        unit.scale,
+      );
+      return null;
+    }
     // 垂直投影轴 = 地面贴花（道路裂缝/垃圾/油渍，图4 类）：引擎贴到 lot
     // 地表而非建筑——平铺在地面平面上（lot-local Z-up，地面 z≈0.02 之上），
     // 偏航取 transform 首行方向。
@@ -1026,137 +1084,9 @@ async function assembleScene(
       decalStats.projected += 1;
       return mesh;
     }
-      if (frame && texture.variant === "hole") {
-        // 破洞 = 投影盒体（decalInteriorMap 家族，decalLightInteriorMap 逐段）：
-        // 盒体各面按盒坐标采样**建筑 slot5 房间图集**（与窗户同源内景链，
-        // facadeUv = raycast 命中点 uv2 重心插值、参数取命中列）+ alpha 轮廓
-        // 三区（洞外 discard / 焦痕 / 洞内房间）。引擎即盒体体积渲染。
-        const anchor = measureAnchorDistance(THREE, frame, proxies) ?? 0;
-        const { position: boxPos, orientation, size } = decalProjector(
-          THREE,
-          frame,
-          anchor,
-          unit.depth,
-        );
-        // raycast 命中点：facade UV（uv2）与选列（uv1.x×255）
-        const raycaster = new THREE.Raycaster();
-        raycaster.far = 60;
-        let facadeUv: ThreeNamespace.Vector2 | null = null;
-        let hitColumn: number | null = null;
-        let hitMaterialIndex: number | null = null;
-        for (const sign of [1, -1]) {
-          raycaster.set(frame.origin.clone(), frame.axisZ.clone().multiplyScalar(sign));
-          const hits = raycaster.intersectObjects(meshes, false);
-          let done = false;
-          for (const hit of hits) {
-            if (!hit.face || !hit.uv) continue;
-            const mesh = hit.object as ThreeNamespace.Mesh;
-            const uv2Attr = mesh.geometry.attributes
-              .uv2 as ThreeNamespace.BufferAttribute | undefined;
-            const uv0Attr = mesh.geometry.attributes
-              .uv as ThreeNamespace.BufferAttribute | undefined;
-            const uv1Attr = mesh.geometry.attributes
-              .uv1 as ThreeNamespace.BufferAttribute | undefined;
-            if (!uv2Attr || !uv0Attr) continue;
-            const a0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.a);
-            const b0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.b);
-            const c0 = new THREE.Vector2().fromBufferAttribute(uv0Attr, hit.face.c);
-            const det =
-              (b0.x - a0.x) * (c0.y - a0.y) - (c0.x - a0.x) * (b0.y - a0.y);
-            if (Math.abs(det) < 1e-12) continue;
-            const w1 =
-              ((hit.uv.x - a0.x) * (c0.y - a0.y) - (c0.x - a0.x) * (hit.uv.y - a0.y)) /
-              det;
-            const w2 =
-              ((b0.x - a0.x) * (hit.uv.y - a0.y) - (hit.uv.x - a0.x) * (b0.y - a0.y)) /
-              det;
-            const w0 = 1 - w1 - w2;
-            const lerp2 = (idx: number) =>
-              new THREE.Vector2(uv2Attr.getX(idx), uv2Attr.getY(idx));
-            facadeUv = lerp2(hit.face.a)
-              .multiplyScalar(w0)
-              .addScaledVector(lerp2(hit.face.b), w1)
-              .addScaledVector(lerp2(hit.face.c), w2);
-            if (uv1Attr) {
-              hitColumn = Math.min(
-                255,
-                Math.max(0, Math.round(uv1Attr.getX(hit.face.a) * 255)),
-              );
-            }
-            hitMaterialIndex =
-              typeof mesh.userData.buildingMaterialIndex === "number"
-                ? mesh.userData.buildingMaterialIndex
-                : null;
-            done = true;
-            break;
-          }
-          if (done) break;
-        }
-        const material0 = payload?.materials?.[hitMaterialIndex ?? 0] ?? null;
-        let holeParams: {
-          regionXform: [number, number];
-          roomInvSize: [number, number];
-          interiorScale: number;
-          interiorOffset: number;
-        } | null = null;
-        if (material0?.paramsF32 && material0.paramCols) {
-          const col = Math.min(hitColumn ?? 0, material0.paramCols - 1);
-          const at = (row: number, comp: number) =>
-            material0.paramsF32![(row * material0.paramCols + col) * 4 + comp] ?? 0;
-          holeParams = {
-            regionXform: [at(1, 0), at(1, 1)],
-            roomInvSize: [at(3, 2), at(3, 3)],
-            interiorScale: at(0, 2),
-            interiorOffset: at(0, 3),
-          };
-        }
-        const interiorTex =
-          hitMaterialIndex !== null
-            ? tintResolved[hitMaterialIndex]?.interiorTex ?? tintResolved[0]?.interiorTex ?? null
-            : tintResolved[0]?.interiorTex ?? null;
-        const holeMaterial = createHoleBoxMaterial(
-          THREE,
-          decoded,
-          interiorTex,
-          envRefs ?? createSunEnv(THREE),
-          facadeUv ?? new THREE.Vector2(0.5, 0.5),
-          holeParams,
-        );
-        const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), holeMaterial);
-        box.scale.copy(size);
-        box.position.copy(boxPos);
-        box.quaternion.setFromEuler(orientation);
-        const holder = new THREE.Group();
-        holder.add(box);
-        // uInvModel 逐帧刷新（盒体对象空间的相机方向供内景透视）
-        box.onBeforeRender = () => {
-          holeMaterial.uniforms.uInvModel.value
-            .copy(box.matrixWorld)
-            .invert();
-        };
-        decalStats.projected += 1;
-        // decalInteriorMap 光 pass 近似：lot 带光参数时投暖色 cookie 光
-        if (props.decalLight && holeLightCount < HOLE_LIGHT_MAX) {
-          const [scaleFactor, radiusFactor] = props.decalLight;
-          const spot = new THREE.SpotLight(
-            0xffdca0,
-            (scaleFactor * 16 + 1) * 3,
-            radiusFactor * 8,
-            0.9,
-            0.6,
-            1,
-          );
-          spot.map = decoded;
-          spot.position.copy(frame.origin);
-          const target = new THREE.Object3D();
-          target.position.copy(boxPos);
-          holder.add(spot, target);
-          spot.target = target;
-          holeLightCount += 1;
-        }
-        return holder;
-      }
-
+      // 破洞（variant=hole）已并入统一投影路径（见 §62-63：独立盒体的
+      // 悬浮/重叠问题无法在烘焙顶点缓冲缺失的前提下鲁棒解决；内景盒体
+      // 待放置体系重建后恢复）。当前口径 = 与涂鸦同投影 + cutout。
     const group = new THREE.Group();
     applyDecalTransform(THREE, unit, group);
 
@@ -1267,6 +1197,12 @@ async function assembleScene(
       props.renderMode === "refined" && unit.kind === "decal"
         ? decalTextureByKey.get(`${unit.category}:${unit.index}`)
         : undefined;
+    if (props.renderMode === "refined" && unit.kind === "decal" && !decalTexture) {
+      console.warn(
+        `[decal] 配对失败 cat${unit.category}:idx${unit.index}，已注册键：`,
+        [...decalTextureByKey.keys()],
+      );
+    }
     let object: ThreeNamespace.Object3D | null;
     if (props.renderMode === "refined" && unit.kind === "light") {
       object = buildRealLightUnit(THREE, unit);

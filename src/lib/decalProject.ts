@@ -21,7 +21,7 @@ export interface DecalFrame {
   axisZ: ThreeNamespace.Vector3;
   /** lot 局部变换矩阵（位置 + 朝向，无缩放）。 */
   matrix: ThreeNamespace.Matrix4;
-  /** 投影盒 XY 全尺寸：`2×scale` 与 `2×scale/aspect`。 */
+  /** 投影盒 XY 全尺寸：`height = 2×scale`（scale = 半高），`width = height×aspect`。 */
   sizeX: number;
   sizeY: number;
 }
@@ -64,13 +64,19 @@ export function decalFrame(
     0, 0, 0, 1,
   );
 
-  const sizeX = Math.max(scale * 2, 0.05);
-  return { origin, axisX, axisY, axisZ, matrix, sizeX, sizeY: Math.max(sizeX / aspect, 0.05) };
+  // 尺寸语义（2026-09-27 OMEGACO 对照定谳）：scale 是**半高**——引擎烤入
+  // 记录的 quad 高 = 2×scale、宽 = 高×aspect。此前按半宽（宽=2×scale，
+  // 高=宽/aspect）推导，aspect>1 的招牌整体小一半（OmegaCo 工厂：板实测
+  // 19.95×9.56m vs scale 4.9 aspect 2 → 19.6×9.8 吻合；楼顶 logo aspect=1
+  // 两种口径同值，故当时未暴露）。
+  const sizeY = Math.max(scale * 2, 0.05);
+  return { origin, axisX, axisY, axisZ, matrix, sizeX: Math.max(sizeY * aspect, 0.05), sizeY };
 }
 
 /**
- * 沿投影轴在足迹内做 3×3 射线，返回「原点到目标面」的锚定距离（命中中位数）。
- * 无命中返回 null。射线在 **lot 局部空间**进行（代理 Mesh 的 matrixWorld 恒等）。
+ * 沿投影轴在足迹内做 3×3 射线，返回「原点到目标面」的锚定距离（**最近命中
+ * 面**，带符号）。无命中返回 null。射线在 **lot 局部空间**进行（代理 Mesh
+ * 的 matrixWorld 恒等）。
  */
 export function measureAnchorDistance(
   THREE: Three,
@@ -100,8 +106,10 @@ export function measureAnchorDistance(
     }
   }
   if (hits.length === 0) return null;
-  hits.sort((a, b) => a - b);
-  return hits[Math.floor(hits.length / 2)];
+  // 最近命中面（而非中位数）：贴花属于投影轴上**第一层**表面——窗格/多层
+  // 墙时中位数会落在层与层之间的半空（2026-09-27 玻璃塔破洞悬空根因）。
+  hits.sort((a, b) => Math.abs(a) - Math.abs(b));
+  return hits[0];
 }
 
 /**
