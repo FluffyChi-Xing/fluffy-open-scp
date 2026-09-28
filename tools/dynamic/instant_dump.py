@@ -17,6 +17,7 @@ instant_dump.py — 安全模式标准工具：扫到即 dump，即时落盘。
 import argparse, base64, ctypes, json, time, pathlib
 from ctypes import wintypes
 import frida
+from pathlib import Path
 
 LIVE = Path(r'D:\rust\packages\fluffy-open-scp\tmp\dynamic\live')
 RTTI = Path(r'D:\rust\packages\fluffy-open-scp\tmp\rtti_vftables.json')
@@ -148,6 +149,7 @@ def main():
         name, _, va = a.partition('=')
         direct.append({'name': name or ('addr' + va), 'addr': va})
 
+    d = frida.get_local_device()
     pid = args.pid or find_pid()
     if not pid:
         raise SystemExit('SimCity 不在运行')
