@@ -199,7 +199,7 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
     const at = 1 * 4; // 像素 (1,0)
     expect(out.albedo[at]).toBe(Math.round(255 * 0.25));
     expect(out.albedo[at + 1]).toBe(0);
-    expect(out.albedo[at + 2]).toBe(0);
+    expect(out.albedo[at + 2]).toBe(Math.round(255 * 0.75));
   });
 });
 
