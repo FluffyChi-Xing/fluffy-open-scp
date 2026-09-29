@@ -58,6 +58,11 @@ fn main() {
         .filter_map(|arg| arg.strip_prefix("--dict="))
         .map(str::to_owned)
         .collect();
+    let entries: Vec<usize> = args
+        .iter()
+        .filter_map(|arg| arg.strip_prefix("--entry="))
+        .filter_map(|v| v.parse::<usize>().ok())
+        .collect();
     let paths: Vec<&String> = args.iter().filter(|arg| !arg.starts_with("--")).collect();
     if paths.is_empty() {
         eprintln!("usage: decal_composite [--out=<dir>] [--dict=<instance>…] <package> [lookup…]");
@@ -95,7 +100,7 @@ fn main() {
         let package = &packages[*pkg_idx];
         let Ok(data) = package.read(entry) else { continue };
         let Ok(dictionary) = DecalDictionary::parse(&data) else { continue };
-        // 可解码条目均匀取样。
+        // 可解码条目；--entry= 指定时精确取该条目号，否则均匀取样。
         let decodable: Vec<_> = dictionary
             .entries
             .iter()
@@ -104,12 +109,19 @@ fn main() {
                     && resolve_raster(&packages, decal.raster.map(|k| k.instance))
                         .is_some_and(|(image, _)| image.is_raw_rgba())
             })
+            .filter(|decal| {
+                entries.is_empty() || entries.contains(&decal.index)
+            })
             .collect();
         if decodable.is_empty() {
             continue;
         }
-        let step = decodable.len().div_ceil(ENTRIES_PER_DICT).max(1);
-        let picked: Vec<_> = decodable.into_iter().step_by(step).take(ENTRIES_PER_DICT).collect();
+        let picked: Vec<_> = if entries.is_empty() {
+            let step = decodable.len().div_ceil(ENTRIES_PER_DICT).max(1);
+            decodable.into_iter().step_by(step).take(ENTRIES_PER_DICT).collect()
+        } else {
+            decodable
+        };
         println!(
             "字典 0x{:08x} (group {:08x}): {} 条可解，取 {} 条",
             entry.id.instance,
@@ -119,8 +131,9 @@ fn main() {
         );
         let sheet = compose_dictionary(&packages, &dictionary, &picked);
         let name = format!(
-            "{out_dir}/dict_{:08x}_sheet.png",
-            entry.id.instance
+            "{out_dir}/dict_{:08x}_g{:04x}_sheet.png",
+            entry.id.instance,
+            entry.id.group as u16
         );
         sheet.save(&name).unwrap_or_else(|e| panic!("save {name}: {e}"));
         println!("  -> {name}");
