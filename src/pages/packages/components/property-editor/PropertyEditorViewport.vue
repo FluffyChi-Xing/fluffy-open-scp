@@ -28,6 +28,7 @@ import {
 } from "./unitGizmos";
 import {
   decalFrame,
+  decalHalfThickness,
   decalProjector,
   measureAnchorDistance,
   projectDecal,
@@ -789,138 +790,106 @@ async function assembleScene(
    * 脱节（"不在一个图层"观感的根因），MeshStandard 融入场景光照。
    */
   /**
-   * 破洞盒体材质（decalInteriorMap 家族，decalLightInteriorMap 逐段复刻——
-   * 完整函数体证实：内景图 = **贴花自身纹理**（盒体透视采样自己的 atlas
-   * 格），alpha = 窗灯掩码（×kInteriorMapSelfLightMax=16 自发光），光照 =
-   * 场景漫反射/高光 × kLightAmount + 日光 × kSunContribution）。
-   * 几何 = 投影盒体体积（非平面剪影），盒坐标 tp∈[-1,1]³：
-   * - 轮廓掩码 maskUv = tp.xy·(-0.5)+0.5（alpha 高 = 洞内、低 = 轮廓外
-   *   discard、中间 = 焦痕边环）；
-   * - 内景透视 interiorUv = lerp(tp.xy, tp.xy·0.5, tp.z·0.5+0.5)·(-0.5)+0.5
-   *   （前面全尺寸、后面半尺寸 → 真实房间进深视差）。
+   * 破洞贴花材质 —— `decalLightInteriorMap` **逐字转写**（2026-09-30
+   * decal_all_families_source.txt 逐字源码，§65.15）：
+   *
+   * ```hlsl
+   * kSunContribution = decalMaterialData[0].x;   // 0x0DA76A05（PE decalLight[0]）
+   * kLightAmount     = decalMaterialData[0].y;   // 0x0DA76A06（PE decalLight[1]）
+   * interiorUv = lerp(tfp.xy, tfp.xy*0.5, tfp.z*0.5+0.5) * -0.5 + 0.5;
+   *              // ↑ z 深度视差：越深 UV 越向中心收缩 = 房间进深
+   * interiorUv  = interiorUv * texXform.xy + texXform.zw;   // → atlas 格
+   * sunColor = saturate(dot(sunDir, normal)) * sunColor.rgb;
+   * shColorDiff = (shColorDiff - sunColor) * kLightAmount
+   *             + sunColor * kSunContribution;
+   * interiorTextureLit = interior.rgb * (shColorDiff + shColorSpec + spec
+   *                    + interior.a · kInteriorMapSelfLightMax，常量 16.0);
+   * rgb = lerp(decal.rgb, interiorTextureLit, saturate(decal.a * 2 - 1));
+   * a   = saturate(decal.a * 2);
+   * ```
+   *
+   * PE 适配：纹理 = 解码条目栅格全图（texXform ≙ 全图 uv）；法线 = 切片
+   * 所在墙面（盒体 z 轴）；场景光 = env 太阳/天空近似（与建筑共享
+   * uSunDir/uSunColor/uDayLight uniform，热切换联动）；自亮恒 16（引擎
+   * 无供电门控）。旧"建筑 slot5 房间图集 + 盒体投影 + 渐黑环境光"口径
+   * （§62-63）废弃——引擎内景图 = **贴花自身纹理**的视差采样。
    */
-  function createHoleBoxMaterial(
+  function createHoleInteriorMaterial(
     THREE: typeof ThreeNamespace,
-    holeTex: ThreeNamespace.Texture,
-    interiorTex: ThreeNamespace.Texture | null,
+    map: ThreeNamespace.Texture,
     env: SunEnvRefs,
-    facadeUv: ThreeNamespace.Vector2,
-    params: {
-      regionXform: [number, number];
-      roomInvSize: [number, number];
-      interiorScale: number;
-      interiorOffset: number;
-    } | null,
+    decalData: [number, number] | null,
+    halfDepth: number,
   ): ThreeNamespace.ShaderMaterial {
-    const rx = params?.regionXform ?? [1, 1];
-    const ris = params?.roomInvSize ?? [1, 1];
-    const iScale = params?.interiorScale ?? 0.5;
-    const iOffset = params?.interiorOffset ?? 0;
     return new THREE.ShaderMaterial({
       uniforms: {
-        holeMap: { value: holeTex },
-        interiorMap: { value: interiorTex ?? holeTex },
-        uHasInterior: { value: interiorTex ? 1 : 0 },
-        uFacadeUv: { value: facadeUv },
-        uRegionXform: { value: new THREE.Vector2(rx[0], rx[1]) },
-        uRoomInvSize: { value: new THREE.Vector2(ris[0], ris[1]) },
-        uInteriorScale: { value: iScale },
-        uInteriorOffset: { value: iOffset },
-        uInvModel: { value: new THREE.Matrix4() },
-        // 昼夜/供电/内景辉光与建筑材质共享同一 uniform 对象（热切换联动）
+        uMap: { value: map },
+        uHalfDepth: { value: Math.max(halfDepth, 0.05) },
+        uBoxHalfXY: { value: new THREE.Vector2(1, 1) },
+        // 与建筑注入材质共享同一 env uniform 对象（昼夜热切换联动）
+        uSunDir: env.sunDir,
+        uSunColor: env.sunColor,
         uDayLight: env.dayLight,
-        uPowered: env.powered,
-        uInteriorGlow: env.glow,
+        // decalMaterialData[0] = (kSunContribution, kLightAmount)
+        uDecalData: {
+          value: new THREE.Vector2(
+            decalData?.[0] ?? 0,
+            decalData?.[1] ?? 0,
+          ),
+        },
       },
       side: THREE.DoubleSide,
+      transparent: true,
+      depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
       vertexShader: /* glsl */ `
-        varying vec2 vMaskUv;
+        varying vec2 vUv;
         varying vec3 vTp;
-        varying vec3 vEyeObj;
-        varying vec3 vWorldPos;
-        uniform mat4 uInvModel;
+        varying vec3 vWorldNormal;
+        uniform float uHalfDepth;
+        uniform vec2 uBoxHalfXY;
         void main() {
-          vec3 tp = position * 2.0; // BoxGeometry(1,1,1)：±0.5 → ±1
-          vTp = tp;
-          vMaskUv = tp.xy * -0.5 + 0.5;
-          vec3 camObj = (uInvModel * vec4(cameraPosition, 1.0)).xyz;
-          vEyeObj = normalize(camObj - position);
-          vec4 world = modelMatrix * vec4(position, 1.0);
-          vWorldPos = world.xyz;
-          gl_Position = projectionMatrix * viewMatrix * world;
+          vUv = uv;
+          // 盒体归一坐标：xy = ±1（贴花面内），z = ±1（进深，前 +1）
+          vTp = vec3(position.xy / max(uBoxHalfXY, vec2(0.001)), position.z / uHalfDepth);
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: /* glsl */ `
-        varying vec2 vMaskUv;
+        varying vec2 vUv;
         varying vec3 vTp;
-        varying vec3 vEyeObj;
-        varying vec3 vWorldPos;
-        uniform sampler2D holeMap;
-        uniform sampler2D interiorMap;
-        uniform float uHasInterior;
-        uniform vec2 uFacadeUv;
-        uniform vec2 uRegionXform;
-        uniform vec2 uRoomInvSize;
-        uniform float uInteriorScale;
-        uniform float uInteriorOffset;
+        varying vec3 vWorldNormal;
+        uniform sampler2D uMap;
+        uniform vec3 uSunDir;
+        uniform vec3 uSunColor;
         uniform float uDayLight;
-        uniform float uPowered;
-        uniform float uInteriorGlow;
-        // 源码 FastNoise 逐字
-        float scFastNoise(vec3 s) {
-          s *= vec3(78.233, 12.9898, 43758.5453);
-          s += vec3(0.819 * 78.233, 0.819 * 12.9898, 0.819 * 43758.5453);
-          return fract(s.z * fract(s.x * fract(s.y)));
-        }
-        // ClipAndReliefMapPS 盒体投影（kInvDepth=0.5/kBackSize=0.5/kDilation=0.9）
-        vec2 scInteriorMap(vec3 eye, vec2 tc) {
-          vec3 e = eye;
-          e.z *= 0.5;
-          vec3 p = vec3(tc, 0.0) * -2.0 + 1.0;
-          p.z -= 1.0;
-          vec3 k = (sign(e) - p) / e;
-          float t = min(k.x, min(k.y, k.z));
-          vec3 target = p + t * e;
-          target.xy *= mix(0.9, 0.5, target.z);
-          return target.xy * -0.5 + 0.5;
-        }
+        uniform vec2 uDecalData;
+        float saturate_(float v) { return clamp(v, 0.0, 1.0); }
         void main() {
-          vec4 mask = texture2D(holeMap, vMaskUv);
-          // 轮廓：alpha 低 = 洞外（discard 露出墙面）；中 = 焦痕边环
-          if (mask.a < 0.12) discard;
-          // 建筑同源房间链（building4ClipAndReliefMapPS interiorUv 逐段）：
-          // interiorUv = facadeUv·regionXform·roomInvSize → elem/srcUv →
-          // 盒体投影（eye·roomInv）→ ×interiorScale + roomId 偏移选房
-          vec2 interiorUv = uFacadeUv * uRegionXform * uRoomInvSize;
-          vec2 interiorElem = floor(interiorUv);
-          vec2 interiorSrcUv = fract(interiorUv);
-          vec2 resultTc = scInteriorMap(
-            normalize(vEyeObj) * uRoomInvSize.xyx,
-            interiorSrcUv
-          );
-          vec2 interiorTc = resultTc * uInteriorScale + vec2(0.0, uInteriorOffset);
-          float roomId = scFastNoise(vec3(interiorElem, 0.213425435));
-          float roomVariation = floor(roomId * 4.0);
-          roomId = fract(roomId * 4.0);
-          // interiorThresholds 引擎值未知，与建筑同用四分位
-          vec4 edge = vec4(step(vec3(0.25, 0.5, 0.75), vec3(roomId)), roomVariation * 4.0);
-          interiorTc.x += dot(edge, vec4(1.0)) * uInteriorScale;
-          vec4 room = texture2D(interiorMap, interiorTc);
-          // 内景照明（游戏口径：破洞内景是**渐黑**的暗房间——白天弱光、
-          // 夜间近乎全黑，不随 uInteriorGlow 自发光（§62 用户实测：
-          // 夜间蓝光=自发光 bug）；深度越深越暗（假内景进深感）。
-          float depthFade = mix(1.0, 0.35, clamp(vTp.z * 0.5 + 0.5, 0.0, 1.0));
-          vec3 ambient = mix(vec3(0.10, 0.11, 0.15), vec3(0.55), uDayLight);
-          vec3 interior = room.rgb * depthFade * ambient;
-          // 焦痕边环：轮廓中带（0.12-0.5）露贴花焦痕原色，洞心（≥0.5）露内景
-          vec3 col = mix(mask.rgb, interior, smoothstep(0.25, 0.55, mask.a));
+          vec4 decalTexture = texture2D(uMap, vUv);
+          // 视差内景 UV（逐字）：前面全尺寸、深度一半处缩向中心
+          vec2 interiorUv = mix(vTp.xy, vTp.xy * 0.5, vTp.z * 0.5 + 0.5) * -0.5 + 0.5;
+          vec4 interiorTexture = texture2D(uMap, interiorUv);
+          // 场景光（SimCityLighting 的 env 近似）：天空环境 + 太阳 N·L
+          float sunMod = saturate_(dot(normalize(uSunDir), normalize(vWorldNormal)));
+          vec3 sunColor = sunMod * uSunColor;
+          vec3 shColorDiff = mix(vec3(0.10, 0.11, 0.15), vec3(0.62), uDayLight);
+          shColorDiff -= sunColor;
+          shColorDiff *= uDecalData.y;                  // kLightAmount
+          shColorDiff += sunColor * uDecalData.x;       // kSunContribution
+          vec3 spec = sunColor * 0.12;                  // gloss 0.06 / specE 16 的小镜面
+          vec3 interiorTextureLit = interiorTexture.rgb *
+            (shColorDiff + spec + interiorTexture.a * 16.0);
+          vec3 col = mix(decalTexture.rgb, interiorTextureLit,
+            saturate_(decalTexture.a * 2.0 - 1.0));
+          float alpha = saturate_(decalTexture.a * 2.0);
           // ShaderMaterial 不走 three 的 colorspace 编码，手动回 sRGB
-          gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
+          gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), alpha);
         }
-      `
+      `,
     });
   }
   /**
@@ -943,6 +912,13 @@ async function assembleScene(
     THREE: typeof ThreeNamespace,
     dto: DecalUnitTexture,
     map: ThreeNamespace.Texture,
+    opts: {
+      halfDepth?: number;
+      boxHalfX?: number;
+      boxHalfY?: number;
+      decalData: [number, number] | null;
+      env: SunEnvRefs;
+    },
   ): ThreeNamespace.Material {
     const base = {
       map,
@@ -957,10 +933,27 @@ async function assembleScene(
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
     };
+    // 破洞（decalLightInteriorMap 族）：视差内景 + 场景光分解 + 自亮 ×16
+    //（createHoleInteriorMaterial 逐字转写）。
+    if (dto.variant === "hole") {
+      const material = createHoleInteriorMaterial(
+        THREE,
+        map,
+        opts.env,
+        opts.decalData ?? null,
+        opts?.halfDepth ?? 1,
+      );
+      const boxHalf = material.uniforms.uBoxHalfXY.value as ThreeNamespace.Vector2;
+      boxHalf.set(opts?.boxHalfX ?? 1, opts?.boxHalfY ?? 1);
+      return material;
+    }
     switch (DECAL_MATERIAL_VARIANTS[(dto.materialInstance ?? 0) >>> 0]) {
       case "sign":
-        // 霓虹 ×2 过 hejl tonemap 保持招牌亮度（引擎 decalFloatQuadNoClip 同数）
-        return new THREE.MeshBasicMaterial({
+        // decalNeonBrighten 逐字：`color.rgb *= shColorDiff + shColorSpec + spec`
+        // ——招牌**响应场景光**（太阳/天空/lot 霓虹点灯，Lambert 即该响应的
+        // PE 等价物：key 光随 env 昼夜驱动、夜间被 lot 真实点灯点亮）；
+        // ×2 = decalFloatQuadNoClip 的增亮，过 hejl tonemap 保持亮度。
+        return new THREE.MeshLambertMaterial({
           ...base,
           color: new THREE.Color(2, 2, 2),
         });
@@ -1030,7 +1023,16 @@ async function assembleScene(
     uv.needsUpdate = true;
     const decoded = await getDecalTexture(THREE, texture);
     if (!decoded) return null;
-    const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture, decoded));
+    const mesh = new THREE.Mesh(
+      geometry,
+      buildDecalMaterial(THREE, texture, decoded, {
+        env,
+        halfDepth: decalHalfThickness(unit.depth),
+        boxHalfX: width / 2,
+        boxHalfY: height / 2,
+        decalData: props.decalLight ?? null,
+      }),
+    );
     // 回退仍按旧口径沿局部 -Z 让开 depth：引擎 `decalMaterialInfoWithObjectData`
     // 的 VS 取 -z（`float4(-z/-x/-y, 0)`）。
     mesh.translateZ(-(unit.depth ?? 0));
@@ -1092,7 +1094,13 @@ async function assembleScene(
         uvAttr.setX(i, 1 - uvAttr.getX(i));
       }
       uvAttr.needsUpdate = true;
-      const mesh = new THREE.Mesh(groundGeo, buildDecalMaterial(THREE, texture, decoded));
+      const mesh = new THREE.Mesh(
+        groundGeo,
+        buildDecalMaterial(THREE, texture, decoded, {
+          env,
+          decalData: props.decalLight ?? null,
+        }),
+      );
       mesh.position.set(frame.origin.x, frame.origin.y, 0.035);
       mesh.rotation.z = Math.atan2(frame.axisX.y, frame.axisX.x);
       decalStats.projected += 1;
@@ -1125,7 +1133,13 @@ async function assembleScene(
       if (geometry) {
         const mesh = new THREE.Mesh(
           geometry,
-          buildDecalMaterial(THREE, texture, decoded),
+          buildDecalMaterial(THREE, texture, decoded, {
+            env,
+            halfDepth: decalHalfThickness(unit.depth),
+            boxHalfX: frame.sizeX / 2,
+            boxHalfY: frame.sizeY / 2,
+            decalData: props.decalLight ?? null,
+          }),
         );
         const inverse = frame.matrix.clone().invert();
         mesh.matrixAutoUpdate = false;

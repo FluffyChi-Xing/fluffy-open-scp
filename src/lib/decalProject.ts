@@ -29,6 +29,12 @@ export interface DecalFrame {
 /** 盒的 Z 半厚下限/上限（米）。贴花只贴最近的一层表面，故取薄盒。 */
 const HALF_THICKNESS_MIN = 0.5;
 const HALF_THICKNESS_MAX = 2;
+
+/** 投影盒半厚（米）= 钳制后的 depth。投影盒与破洞材质共用同一钳制。 */
+export function decalHalfThickness(depth: number | null): number {
+  return Math.min(Math.max(depth ?? 0, HALF_THICKNESS_MIN), HALF_THICKNESS_MAX);
+}
+
 /** 足迹采样网格边长（3×3）。 */
 const ANCHOR_GRID = 3;
 /** 采样点占足迹的比例（留边，避免边界处打到相邻构件）。 */
@@ -127,10 +133,7 @@ export function decalProjector(
   orientation: ThreeNamespace.Euler;
   size: ThreeNamespace.Vector3;
 } {
-  const thickness = Math.min(
-    Math.max(depth ?? 0, HALF_THICKNESS_MIN),
-    HALF_THICKNESS_MAX,
-  );
+  const thickness = decalHalfThickness(depth);
   const position = frame.origin.clone().addScaledVector(frame.axisZ, anchor);
   const orientation = new THREE.Euler().setFromRotationMatrix(frame.matrix);
   const size = new THREE.Vector3(frame.sizeX, frame.sizeY, thickness * 2);
