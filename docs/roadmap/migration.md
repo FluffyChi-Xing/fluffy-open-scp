@@ -4329,3 +4329,15 @@ dump 的就是这 2MB，且 dump 与静态文件互补（dump=运行时值，文
 `SetRenderState(ALPHABLENDENABLE)` 调用点按 shader 族反查固定表；
 (b) 实验：OpenSCP 渲染器对同一 decal 分别以 modulate/alpha 混合截图对拍
 游戏（§65.10 原判仍成立：实验更快）。
+
+**④ 合成探针落地（blend 问题的实验路线工具化）**：新增
+`crates/sc-exporter/examples/decal_composite.rs`（仿 lot_composite 模式）——
+从真实包读 DecalDictionary（Game 主包 + Graphics lookup；`--dict=` 选字典），
+逐条目四色解码 decal RGBA，在合成墙面（浅/深两块）上按 4 种混合假设
+（alpha / modulate / additive / premul）合成，输出「行=条目 × 列=假设×墙」
+对比 sheet 到 `tmp/dynamic/decal_composite/`。首批产出 6 张
+（字典 aa8b7058 涂鸦色系 / eefd390c 大集合，各 2-3 个 group 变体）。
+观察要点：modulate 列在深墙上整体压暗（涂鸦贴图 121212 深色 × 墙 → 近黑）、
+alpha 列平色直出、additive 列发光——与游戏截图按列对拍即可定谳各族混合。
+注意：四色解码 alpha 为二值（掩码 ≥128），alpha 与 premul 两列在此退化为
+相同观感；判别力集中在 modulate vs alpha vs additive 三列。
