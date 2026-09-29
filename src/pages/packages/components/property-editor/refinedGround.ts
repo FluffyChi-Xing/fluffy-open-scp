@@ -10,7 +10,8 @@ import type * as ThreeNamespace from "three";
 
 /**
  * 精细渲染的 LotMask 地面合成编排：像素提取（DOM）→ 纯核心计算（Worker
- * 优先、主线程回退，见 groundCompose.ts）→ CanvasTexture 包装。
+ * 优先、主线程回退，见 groundCompose.ts）→ CanvasTexture 包装。引擎口径
+ * （generic_lot）：覆盖区平色 + 法线图案光照，未覆盖区底图格。
  *
  * 主线程成本曾是 rebuild 隐藏大头（~1M 像素 ×2 张图的 JS 逐像素循环），
  * 且游离在全部遥测 span 之外——现移入 Worker，调用方用
@@ -29,11 +30,9 @@ const groundTextureUrls = import.meta.glob<{ default: string }>(
 ) as unknown as Record<string, string>;
 
 /**
- * 图集格在地面上的一次重复的边长（米）。由消防局 0x5197EDF0（LotSize 48×48）
- * 与游戏内截图逐格比对反推：48 ÷ 9.6 = 5 次重复。**属实测拟合，非引擎常量**——
- * 引擎侧平铺次数来自地面 mesh 的 UV 跨度（引擎生成几何），生成点尚未在反编译
- * 语料定位。用户在游戏截图上数出核心铺装区约 10×15 个方格（方格 ≈ 2.4m，
- * 9.6m = 4 格，整数倍关系自洽）；casino 192×96 → 20×10 待游戏复验。
+ * 图集格在地面上的一次重复的边长（米）。仅作 `0x0CCB7FD0` 与 LotSize 双缺
+ * 时的最后回退——引擎真值 = LotSize / 0x0CCB7FD0（平铺次数 = LotSize ÷ 周期，
+ * 非整数）。消防局 48 ÷ 9.6 = 5 为 2026-09 早期实测拟合，非引擎常量。
  */
 const GROUND_TILE_METERS = 9.6;
 
@@ -141,26 +140,43 @@ function composeOnMainThread(input: GroundComposeInput): GroundComposeResponse {
   return { id: -1, ...output };
 }
 
-export async function composeRefinedGround(
-  lotColors: [number, number, number, number][],
-  lotColorsAuthored: boolean[],
-  maskImage: TexImageSource,
-  THREE: typeof ThreeNamespace,
-  lotSize: [number, number] | null,
+export async function composeRefinedGround(options: {
+  lotColors: [number, number, number, number][];
+  maskImage: TexImageSource;
+  THREE: typeof ThreeNamespace;
+  /** LotSize（米）；null 回退 9.6m 拟合常量。 */
+  lotSize?: [number, number] | null;
   /** 地面贴图周期 `0x0CCB7FD0`（米/格）；null 回退实测拟合常量。 */
-  tilePeriod?: [number, number] | null,
-  surface?: ImageData | null,
-  /** 全局共享染色图集（s10）：`LotColor.A` 选格、与底图同平铺，alpha 做亮度调制。 */
-  tintAtlas?: ImageData | null,
+  tilePeriod?: [number, number] | null;
+  /** "Lot Textures" 地表共享纹理图集像素（底图格来源）。 */
+  surface?: ImageData | null;
+  /** 底图格索引（后端三级来源解析结果）。 */
+  baseTileIndex: number;
+  /** 全局共享法线图集像素（s15；图案质感 normalMap 来源）。 */
+  normalAtlas?: ImageData | null;
   /** 原始通道权重图；缺失时回退量化图最近色硬分配。 */
-  rawMask?: ImageData | null,
-  /** 全局共享法线图集（s15）：同格号、同平铺烘焙成地面 normalMap。 */
-  normalAtlas?: ImageData | null,
-  /** LotBorderColor1-4 的 sRGB RGB（边框带描边色；缺失 = 浅灰回退）。 */
-  lotBorderColors?: [number, number, number][] | null,
+  rawMask?: ImageData | null;
+  /** LotBorderColor1-4 的 sRGB RGB。 */
+  lotBorderColors?: [number, number, number][] | null;
+  /** 边框带图案索引（LotBorderColor.A）。 */
+  lotBorderPatternIndices?: number[] | null;
   /** borderWidth1-4（边框带半宽，0..0.5）；undefined/全 0 = 无边框。 */
-  lotBorderWidths?: number[] | null,
-): Promise<RefinedGroundTextures | null> {
+  lotBorderWidths?: number[] | null;
+}): Promise<RefinedGroundTextures | null> {
+  const {
+    THREE,
+    maskImage,
+    lotSize,
+    tilePeriod,
+    surface,
+    baseTileIndex,
+    normalAtlas,
+    rawMask,
+    lotBorderColors,
+    lotBorderPatternIndices,
+    lotBorderWidths,
+  } = options;
+  const lotColors = options.lotColors;
   const image = maskImage as { width?: number; height?: number };
   const width = image.width ?? 0;
   const height = image.height ?? 0;
@@ -176,21 +192,11 @@ export async function composeRefinedGround(
   const useSurface = Boolean(surface && surface.width >= 4 && surface.height >= 4);
   const tileW = useSurface ? Math.floor(surface!.width / 4) : 0;
   const tileH = useSurface ? Math.floor(surface!.height / 4) : 0;
-  // 每通道材质源：surface 图集 tile（按 LotColor.A）优先，本地占位回退
-  const channelTiles: (Pixels | null)[] = await Promise.all(
-    lotColors.map((color) => {
-      if (useSurface) {
-        return Promise.resolve(
-          copyAtlasRegion(imageDataPixels(surface!), color[3] % 16, tileW, tileH),
-        );
-      }
-      return tile(color[3] ?? 0);
-    }),
-  );
-  // 未覆盖区底图格 = 草地（图集 cell 8；消防局/红十字会/图书馆三楼对拍口径）
-  const defaultTile = useSurface
-    ? copyAtlasRegion(imageDataPixels(surface!), 8, tileW, tileH)
-    : await tile(8);
+  // 未覆盖区底图格：数据驱动索引（后端三级来源），surface 图集切格，
+  // 缺失回退本地占位 tile。
+  const baseTile = useSurface
+    ? copyAtlasRegion(imageDataPixels(surface!), baseTileIndex % 16, tileW, tileH)
+    : await tile(baseTileIndex % 16);
   // 引擎：世界坐标除以 0x0CCB7FD0（米/格）得平铺 UV → 次数 = LotSize / 周期，
   // **非整数**（图书馆 64/10 = 6.4）。缺失时才回退旧的 9.6m 拟合常量。
   const [lotW, lotH] = lotSize ?? [0, 0];
@@ -201,15 +207,12 @@ export async function composeRefinedGround(
   const input: GroundComposeInput = {
     mask: imageDataPixels(maskData),
     rawMask: rawMask ? imageDataPixels(rawMask) : null,
-    surface: surface ? imageDataPixels(surface) : null,
-    tintAtlas: tintAtlas ? imageDataPixels(tintAtlas) : null,
-    normalAtlas: normalAtlas ? imageDataPixels(normalAtlas) : null,
-    channelTiles,
-    defaultTile,
+    baseTile,
     lotColors,
-    lotColorsAuthored,
     lotBorderColors: lotBorderColors ?? null,
+    lotBorderPatternIndices: lotBorderPatternIndices ?? null,
     lotBorderWidths: lotBorderWidths ?? null,
+    normalAtlas: normalAtlas ? imageDataPixels(normalAtlas) : null,
     tilesX,
     tilesY,
   };

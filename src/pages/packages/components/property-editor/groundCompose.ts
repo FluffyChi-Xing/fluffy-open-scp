@@ -1,21 +1,24 @@
 /**
  * 精细地面合成的**纯像素核心**（无 DOM 依赖）——主线程与 Worker 共用。
  *
- * 引擎语义（= lot_compose 探针 compose_tiles 同口径）：
- *  1. 选区：raw mask 四通道权重 >0.5 硬阈值，按引擎优先级链 A>B>G>R（w→z→y→x）
- *     选出唯一通道；边框带 = 权重 ∈ (0.5−bw, 0.5+bw]，着 LotBorderColor 平色；
- *  2. 材质：胜出通道铺 tile_{LotColor.A}（16 格共享图集），tile 按
- *     frac(uv × N) 平铺（N = LotSize / 0x0CCB7FD0，逐轴）；
- *  3. 着色：胜出通道 LotColor.RGB（后端已 sRGB 字节）乘 tile 原色，
- *     s10 染色图集 alpha 做亮度调制；
- *  4. 未覆盖区：铺底图格（图集 cell 8 草地；三楼对拍口径），不透明。
+ * 引擎语义（`generic_lot` 像素着色器逐字直译，= lot_composite.rs 校准口径，
+ * 见 docs/blog/raster-lot-rendering.md §3/§5/§7）：
+ *  1. 选区：raw mask 四通道权重 > 0.5−borderWidth 硬阈值 one-hot，按引擎
+ *     优先级瀑布 A边框 > A主色 > B边框 > B主色 > G边框 > G主色 > R边框 >
+ *     R主色（w→z→y→x）选出唯一胜者；边框带 = 权重 ∈ (0.5−bw, 0.5+bw]；
+ *  2. 反照率：胜者输出**平色**（主区 LotColor.RGB / 边框带
+ *     LotBorderColor.RGB，后端已 linear→sRGB）——引擎覆盖区不采样漫反射
+ *     （tile×tint 双重变暗已证伪，博客 §7.3）；
+ *  3. 图案质感：胜者格号（主区 = LotColor.A / 边框带 = LotBorderColor.A）
+ *     选法线图集 0x60E7805D 的 4×4 格，按 (u−0.5)·tiles 相位平铺（单 lot
+ *     视图的引擎 uv1 世界锚定等价形式；跨 lot 相位锚定属后续任务），烘焙成
+ *     地面 normalMap 交给实时光照——引擎的 lotCalcLighting 同源；
+ *  4. 未覆盖区：底图格（Lot Textures 图集第 baseTile 格，数据驱动三级来源）
+ *     **整格拉伸**铺满地块，图集 U 轴与 mask 列序相反（§5b，采样 u = 1−u）；
+ *     法线平坦（引擎 overlayMask=0 处无图案光照）。
  *
- * 法线输出与反照率逐像素对齐（同格号、同平铺；仅未覆盖区改用底图格）。
- * 画布即引擎空间：mask 列序与模型 X 同向（lot_mask_alignment 裁定 identity）、
- * 行序翻转由后端统一完成，故 tile 采样 u/v 均直取（无镜像）。
- *
- * 着色规则：LotColor 属性缺失（authored=false）时回退色只是编辑器可视化，
- * 不参与着色——直接铺贴图原色（用户实测 2026-09-10）。
+ * 画布即引擎空间：后端已做行序翻转（row 0 = 北/+Y），mask 列 0 = 西（−X）
+ * 直采；4× 超采样 + 双线性权重 = GPU 口径（阈值在插值之后）。
  */
 
 export interface Pixels {
@@ -25,26 +28,22 @@ export interface Pixels {
 }
 
 export interface GroundComposeInput {
-  /** 量化 mask 图（RGB = 通道色字节，alpha = 覆盖）。 */
+  /** 量化 mask 图（RGB = 通道色字节，alpha = 覆盖）——rawMask 缺失时的回退源。 */
   mask: Pixels;
   /** 原始通道权重图；缺失时回退量化图最近色硬分配。 */
   rawMask: Pixels | null;
-  /** "Lot Textures" 地表共享纹理图集（4×4 格）。 */
-  surface: Pixels | null;
-  /** s10 染色图集（alpha 做亮度调制）。 */
-  tintAtlas: Pixels | null;
-  /** s15 法线图集（4×4 格）。 */
-  normalAtlas: Pixels | null;
-  /** 每通道材质源 tile（surface 切格或本地占位）；index 对应 LotColor[i]。 */
-  channelTiles: (Pixels | null)[];
-  /** 未覆盖区底图格（图集 cell 8）。 */
-  defaultTile: Pixels | null;
+  /** 底图格像素（Lot Textures 图集第 baseTile 格已切出）；null = 白。 */
+  baseTile: Pixels | null;
   lotColors: [number, number, number, number][];
-  lotColorsAuthored: boolean[];
   /** LotBorderColor1-4 的 sRGB RGB；null = 无边框带。 */
   lotBorderColors: [number, number, number][] | null;
+  /** 边框带图案索引（LotBorderColor.A，0-15）；null = 全 0。 */
+  lotBorderPatternIndices: number[] | null;
   /** borderWidth1-4（边框带半宽，0..0.5）；null/全 0 = 无边框。 */
   lotBorderWidths: number[] | null;
+  /** 全局共享法线图集（4×4 格，0x60E7805D）；null = 无图案光照。 */
+  normalAtlas: Pixels | null;
+  /** 图案平铺次数（逐轴）= LotSize / 0x0CCB7FD0（非整数）。 */
   tilesX: number;
   tilesY: number;
 }
@@ -62,7 +61,8 @@ export function nearestChannel(
   g: number,
   b: number,
   colors: [number, number, number, number][],
-): number {  let best = -1;
+): number {
+  let best = -1;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (let i = 0; i < colors.length; i += 1) {
     const [cr, cg, cb] = colors[i];
@@ -93,46 +93,50 @@ export function copyAtlasRegion(
   return { data: out, width: cellW, height: cellH };
 }
 
-/** 平铺采样：引擎 frac(baseUV)——UV 跨 0..N 该格重复 N 次。 */
-function sampleTiled(
+/** fract 到 [0,1)（JS % 对负数返回负值，不能直接用）。 */
+function frac(value: number): number {
+  return value - Math.floor(value);
+}
+
+/** 底图格整格拉伸采样：u 经 1−u 镜像（图集 U 轴与 mask 列序相反，§5b）。 */
+function sampleBaseCell(
+  source: Pixels,
+  u: number,
+  v: number,
+): [number, number, number] {
+  const px = Math.min(
+    source.width - 1,
+    Math.floor((1 - u) * source.width),
+  );
+  const py = Math.min(source.height - 1, Math.floor(v * source.height));
+  const offset = (py * source.width + px) * 4;
+  return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
+}
+
+/** 图案格平铺采样：引擎 uv1 相位 (u−0.5)·tiles（单 lot 等价形式）。 */
+function samplePatternCell(
   source: Pixels,
   u: number,
   v: number,
   tilesX: number,
   tilesY: number,
 ): [number, number, number] {
-  const fu = u * tilesX;
-  const fv = v * tilesY;
   const px = Math.min(
     source.width - 1,
-    Math.floor((fu - Math.floor(fu)) * source.width),
+    Math.floor(frac((u - 0.5) * tilesX) * source.width),
   );
   const py = Math.min(
     source.height - 1,
-    Math.floor((fv - Math.floor(fv)) * source.height),
+    Math.floor(frac((v - 0.5) * tilesY) * source.height),
   );
   const offset = (py * source.width + px) * 4;
   return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
 }
 
-/** 染色图集 alpha（0..1），平铺口径同底图。 */
-function sampleTiledAlpha(
-  source: Pixels,
-  u: number,
-  v: number,
-  tilesX: number,
-  tilesY: number,
-): number {
-  const fu = u * tilesX;
-  const fv = v * tilesY;
-  const px = Math.min(source.width - 1, Math.floor((fu - Math.floor(fu)) * source.width));
-  const py = Math.min(source.height - 1, Math.floor((fv - Math.floor(fv)) * source.height));
-  return source.data[(py * source.width + px) * 4 + 3] / 255;
-}
-
 /**
- * 合成主循环（纯函数）。4× 超采样输出：mask 权重双线性插值 + tile 原生
- * 分辨率采样，消除 128px 权重图直贴 64m 地面的模糊（对拍 2026-09-12）。
+ * 合成主循环（纯函数）。4× 超采样输出：mask 权重双线性插值（阈值在插值后
+ * 逐像素施加 = GPU 口径）+ 平色/底图直出，消除 128px 权重图直贴 64m 地面
+ * 的阶梯锯齿（对拍 2026-09-12）。
  */
 export function composeGroundPixels(input: GroundComposeInput): GroundComposeOutput {
   const { mask, rawMask } = input;
@@ -149,21 +153,27 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
   const normalCellW = useNormal ? Math.floor(input.normalAtlas!.width / 4) : 0;
   const normalCellH = useNormal ? Math.floor(input.normalAtlas!.height / 4) : 0;
   const normal = useNormal ? new Uint8ClampedArray(outW * outH * 4) : null;
-  const tintCellW = input.tintAtlas ? Math.floor(input.tintAtlas.width / 4) : 0;
-  const tintCellH = input.tintAtlas ? Math.floor(input.tintAtlas.height / 4) : 0;
-  const tintCells = input.tintAtlas
-    ? input.lotColors.map((color) =>
-        copyAtlasRegion(input.tintAtlas!, color[3] % 16, tintCellW, tintCellH),
-      )
-    : null;
-  const normalCells = useNormal
-    ? input.lotColors.map((color) =>
-        copyAtlasRegion(input.normalAtlas!, color[3] % 16, normalCellW, normalCellH),
-      )
-    : null;
-  const normalDefault = useNormal
-    ? copyAtlasRegion(input.normalAtlas!, 8, normalCellW, normalCellH)
-    : null;
+
+  const borderIndices =
+    input.lotBorderPatternIndices && input.lotBorderPatternIndices.length === 4
+      ? input.lotBorderPatternIndices
+      : [0, 0, 0, 0];
+  const borderWidths =
+    input.lotBorderWidths && input.lotBorderWidths.length === 4
+      ? input.lotBorderWidths
+      : [0, 0, 0, 0];
+  /** 胜者图案格（主区 = LotColor.A / 边框带 = LotBorderColor.A），惰性切片缓存。 */
+  const patternCellCache = new Map<number, Pixels | null>();
+  function patternCell(index: number): Pixels | null {
+    if (!useNormal) return null;
+    const cell = index % 16;
+    let cached = patternCellCache.get(cell);
+    if (cached === undefined) {
+      cached = copyAtlasRegion(input.normalAtlas!, cell, normalCellW, normalCellH);
+      patternCellCache.set(cell, cached);
+    }
+    return cached;
+  }
 
   /** 画布 UV → raw mask 通道权重（双线性，= 引擎 GPU 采样口径）。
    *  边缘的亚 texel 平滑来自 mask 自带的软渐变坡；此前最近邻是 2026-09-13
@@ -199,16 +209,12 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
   for (let y = 0; y < outH; y += 1) {
     for (let x = 0; x < outW; x += 1) {
       const at = (y * outW + x) * 4;
-      const u = x / outW;
-      const v = y / outH;
-      // 引擎优先级链：w→z→y→x = A > B > G > R；8 级瀑布
+      const u = (x + 0.5) / outW;
+      const v = (y + 0.5) / outH;
+      // 引擎优先级瀑布：w→z→y→x = A > B > G > R；8 级
       // A边框>A主色>B边框>B主色>…（addOverlay 逐字）。
       let channel = -1;
       let channelIsBorder = false;
-      const borderWidths =
-        input.lotBorderWidths && input.lotBorderWidths.length === 4
-          ? input.lotBorderWidths
-          : [0, 0, 0, 0];
       if (rawMask) {
         const weights = sampleWeights(u, v);
         for (const c of [3, 2, 1, 0]) {
@@ -232,54 +238,46 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
           );
         }
       }
-      const source = channel >= 0 ? input.channelTiles[channel] : input.defaultTile;
-      if (channel >= 0 && channelIsBorder && input.lotBorderColors?.[channel]) {
-        // 边框带 = LotBorderColor 平色（引擎里图案进法线，不进反照率）。
-        const border = input.lotBorderColors[channel]!;
-        composed[at] = border[0];
-        composed[at + 1] = border[1];
-        composed[at + 2] = border[2];
-      } else if (source) {
-        const [tr, tg, tb] = sampleTiled(source, u, v, input.tilesX, input.tilesY);
-        const tint =
-          channel >= 0 && input.lotColorsAuthored[channel]
-            ? [input.lotColors[channel][0], input.lotColors[channel][1], input.lotColors[channel][2]]
-            : [255, 255, 255];
-        let r8 = (tr * tint[0]) / 255;
-        let g8 = (tg * tint[1]) / 255;
-        let b8 = (tb * tint[2]) / 255;
-        // s10 染色图集调制：车辙/铺装的明暗细节在此（覆盖区 overlayMask=1）。
-        if (channel >= 0 && tintCells?.[channel]) {
-          const mul = Math.min(2, sampleTiledAlpha(tintCells[channel]!, u, v, input.tilesX, input.tilesY) * 2);
-          r8 = Math.min(255, r8 * mul);
-          g8 = Math.min(255, g8 * mul);
-          b8 = Math.min(255, b8 * mul);
+      if (channel >= 0) {
+        // 覆盖区 = 平色直出（引擎不采样漫反射；后端已 linear→sRGB）。
+        // 边框色缺失时回退浅灰 156（= 后端 LotBorderColor 回退值）。
+        const flat = channelIsBorder
+          ? input.lotBorderColors?.[channel] ?? [156, 156, 156]
+          : input.lotColors[channel];
+        if (flat) {
+          composed[at] = flat[0];
+          composed[at + 1] = flat[1];
+          composed[at + 2] = flat[2];
         }
-        composed[at] = r8;
-        composed[at + 1] = g8;
-        composed[at + 2] = b8;
-      } else {
-        composed[at] = 58;
-        composed[at + 1] = 62;
-        composed[at + 2] = 54;
-      }
-      // 法线：同格（覆盖区 = 胜出通道 LotColor.A，未覆盖区 = 底图格）、同平铺
-      // 频率——与反照率逐像素对齐。无格可采时退化为平坦法线 (128,128,255)。
-      if (normal) {
-        const normalSource =
-          channel >= 0 ? normalCells?.[channel] ?? null : normalDefault;
-        if (normalSource) {
-          const [nr, ng, nb] = sampleTiled(normalSource, u, v, input.tilesX, input.tilesY);
+        // 图案质感进法线：主区格号 = LotColor.A，边框带 = LotBorderColor.A。
+        const cell = patternCell(
+          channelIsBorder ? borderIndices[channel] : input.lotColors[channel][3],
+        );
+        if (normal && cell) {
+          const [nr, ng, nb] = samplePatternCell(cell, u, v, input.tilesX, input.tilesY);
           normal[at] = nr;
           normal[at + 1] = ng;
           normal[at + 2] = nb;
+        }
+      } else {
+        // 未覆盖区 = 底图格整格拉伸（U 镜像）；引擎 overlayMask=0 无图案光照。
+        if (input.baseTile) {
+          const [br, bg, bb] = sampleBaseCell(input.baseTile, u, v);
+          composed[at] = br;
+          composed[at + 1] = bg;
+          composed[at + 2] = bb;
         } else {
+          composed[at] = 255;
+          composed[at + 1] = 255;
+          composed[at + 2] = 255;
+        }
+        if (normal) {
           normal[at] = 128;
           normal[at + 1] = 128;
           normal[at + 2] = 255;
         }
-        normal[at + 3] = 255;
       }
+      if (normal) normal[at + 3] = 255;
       composed[at + 3] = 255;
     }
   }

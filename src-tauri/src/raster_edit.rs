@@ -497,19 +497,27 @@ pub async fn list_property_documents(
 
 // ── Lot 材质授权：覆盖目标的 LotColor1-4（渲染预览同步用） ──
 
-/// 覆盖目标 lot 的地表材质授权。渲染预览据其给四通道染色：
-/// 通道→颜色 R→LC1、G→LC2、B→LC3、A→LC4（rw4 decode_lot_mask_rgba 同口径）。
+/// 覆盖目标 lot 的地表材质授权（渲染预览引擎口径合成的全部输入）。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LotMaterialResponse {
-    /// LotColor1-4（sRGB RGB + A = 图集 tile 索引 0-15）。
+    /// LotColor1-4（sRGB RGB + A = **图案/法线图集格号** 0-15）。
     pub colors: [[u8; 4]; 4],
     /// 各槽位是否真实存在于 property（false = SCP 黑/红/绿/蓝回退色）。
     pub colors_authored: [bool; 4],
-    /// "Lot Textures" 地表共享纹理图集（4×4 格，DXT5 解码 PNG base64）；
-    /// None = 引用缺失或解码失败（预览回退本地占位 tile）。
+    /// LotBorderColor1-4 的 sRGB RGB——mask 渐变带描边平色。
+    pub border_colors: [[u8; 3]; 4],
+    /// borderWidth1-4——边框带半宽（0.5±bw），全 0 = 无边框带。
+    pub border_widths: [f32; 4],
+    /// 边框带图案索引（LotBorderColor.A，0-15）。
+    pub border_pattern_indices: [u8; 4],
+    /// 底图格索引（0x0CCB7FD6 → 0x0CCB7FD2/FD3 推导 → 默认 8）。
+    pub base_tile: u8,
+    /// "Lot Textures" 地表图集 PNG base64（4×4 格）；None = 缺失/解码失败。
     pub surface_png: Option<String>,
-    /// 地面贴图周期 0x0CCB7FD0（米/格）；None = 引擎回退实测拟合常量 9.6m。
+    /// 全局共享法线图集（0x60E7805D）PNG base64；None = 缺失/解码失败。
+    pub normal_atlas_png: Option<String>,
+    /// 地面贴图周期 0x0CCB7FD0（米/格）；None = 引擎默认 8.0。
     pub tile_period: Option<[f32; 2]>,
 }
 
@@ -546,14 +554,31 @@ pub async fn read_lot_material(
             crate::package_service::flatten_lot_parents(properties, &package, &manager);
         let document = sc_properties::LotEditorDocument::from_property_file(properties);
         let (colors, colors_authored) = crate::package_service::lot_colors(&document);
-        // "Lot Textures" 图集（4×4 共享纹理）：开启材质的预览合成源；
+        let (border_colors, border_widths, border_pattern_indices) =
+            crate::package_service::lot_borders(&document);
+        let (base_tile, _) = crate::package_service::lot_base_tile(&document);
+        // "Lot Textures" 图集（4×4 共享纹理）：底图格像素源；
         // 缺失/解码失败降级为 None（前端回退本地占位 tile）。
         let surface_png = document.lot_textures.and_then(|key| {
             crate::package_service::decode_lot_surface_png(&package, &manager, key)
                 .ok()
                 .map(|(png, _)| png)
         });
-        // 地面贴图周期（米/格）：引擎除数保护同 session 口径（近零置 0.1）。
+        // 全局共享法线图案图集（0x60E7805D）：覆盖区图案质感源
+        //（主区格号 = LotColor.A、边框带格号 = LotBorderColor.A）。
+        let normal_atlas_png = crate::package_service::decode_lot_surface_png(
+            &package,
+            &manager,
+            sc_properties::Key {
+                instance: 0x60E7_805D,
+                type_id: 0,
+                group: 0,
+            },
+        )
+        .ok()
+        .map(|(png, _)| png);
+        // 地面贴图周期（米/格）：引擎除数保护同 session 口径（近零置 0.1），
+        // 缺失走引擎默认 8.0。
         let tile_period = document
             .properties
             .get(0x0CCB_7FD0)
@@ -564,11 +589,17 @@ pub async fn read_lot_material(
             })
             .map(|values| {
                 values.map(|value| if value.abs() < 0.1 { 0.1 } else { value })
-            });
+            })
+            .or(Some([8.0, 8.0]));
         Ok::<LotMaterialResponse, RasterEditError>(LotMaterialResponse {
             colors,
             colors_authored,
+            border_colors,
+            border_widths,
+            border_pattern_indices,
+            base_tile: base_tile as u8,
             surface_png,
+            normal_atlas_png,
             tile_period,
         })
     })

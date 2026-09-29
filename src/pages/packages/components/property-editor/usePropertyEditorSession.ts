@@ -274,6 +274,15 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return widths && widths.length === 4 ? widths : [0, 0, 0, 0];
   });
 
+  /** 边框带图案索引（LotBorderColor.A，0-15）。 */
+  const lotBorderPatternIndices = computed<number[]>(() => {
+    const indices = session.value?.lotBorderPatternIndices;
+    return indices && indices.length === 4 ? indices : [0, 0, 0, 0];
+  });
+
+  /** 底图格索引（后端三级来源解析；缺省 8 = 顶点默认）。 */
+  const lotBaseTile = computed<number>(() => session.value?.lotBaseTile ?? 8);
+
   const lotOverlayBoxOffset = computed<[number, number] | null>(() => {
     return session.value?.lotOverlayBoxOffset ?? null;
   });
@@ -284,11 +293,6 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
 
   const lotSurfacePng = computed<string | null>(() => {
     const png = session.value?.lotSurfacePng;
-    return png ? `data:image/png;base64,${png}` : null;
-  });
-
-  const lotTintAtlasPng = computed<string | null>(() => {
-    const png = session.value?.lotTintAtlasPng;
     return png ? `data:image/png;base64,${png}` : null;
   });
 
@@ -359,13 +363,14 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotColorsAuthored,
     lotBorderColors,
     lotBorderWidths,
+    lotBorderPatternIndices,
+    lotBaseTile,
     lotOverlayBoxOffset,
     lotModelBBoxCenter,
     lotMaskPng,
     lotMaskRawRgba,
     lotAlbedoPng,
     lotSurfacePng,
-    lotTintAtlasPng,
     lotNormalAtlasPng,
     decalLight,
     selectedUnit,

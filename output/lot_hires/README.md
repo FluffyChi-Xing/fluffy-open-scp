@@ -41,9 +41,12 @@ cargo run -p sc-exporter --release --example lot_composite
 cargo test -p fluffy-open-scp --release --lib dump_lotm_v9_city_hall -- --nocapture
 ```
 
-## 对渲染器的两个已证结论
+## 对渲染器的两个已证结论（2026-09-29 渲染管线重构落地）
 
-1. **左右镜像**：本目录合成按引擎约定做了 mask 180° 旋转（§5b）；OpenSCP 现行
-   `refinedGround` 未做列镜像 → 与游戏/本目录输出整体左右镜像（用户截图对拍吻合）。
+1. **左右镜像**：本目录合成按引擎约定做了 mask 180° 旋转（§5b）。OpenSCP
+   渲染管线已按引擎口径重构——后端行翻转 + 前端合成在底图格/图案层镜像 U
+   （等价 180°），输出与游戏/本目录同向。
 2. **覆盖区语义**：引擎反照率 = 通道平色（质感来自法线图案光照），不是
-   "tile × tint"——后者见 `*_hires_tile.png` 的双重变暗。
+   "tile × tint"——后者见 `*_hires_tile.png` 的双重变暗。PE refinedGround、
+   默认模式 `compose_lot_albedo_rgba`、raster 工作台 `composeLotMaterialDataUrl`
+   三处均已切换为平色 + 法线图案口径。

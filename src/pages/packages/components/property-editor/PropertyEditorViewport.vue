@@ -71,14 +71,18 @@ const props = defineProps<{
   lotTilePeriod: [number, number] | null;
   /** LotPlacementTransform 行主序 12 floats；地面矩形取其逆对齐建筑。 */
   lotPlacement: number[] | null;
-  /** LotColor1-4 RGBA（A = 地面贴图索引 0-15）。 */
+  /** LotColor1-4 RGBA（A = 图案/法线图集格号 0-15）。 */
   lotColors: [number, number, number, number][];
-  /** LotColor1-4 是否实际存在（false = 回退色，不参与着色）。 */
+  /** LotColor1-4 是否实际存在（false = 引擎回退调色板，平色参与渲染）。 */
   lotColorsAuthored: boolean[];
-  /** LotBorderColor1-4 的 sRGB RGB（mask 渐变带描边色）。 */
+  /** LotBorderColor1-4 的 sRGB RGB（mask 渐变带描边平色）。 */
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  /** 边框带图案索引（LotBorderColor.A，0-15）。 */
+  lotBorderPatternIndices: number[];
+  /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
+  lotBaseTile: number;
   /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
   lotOverlayBoxOffset: [number, number] | null;
   /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）；null = 无属性。 */
@@ -94,9 +98,7 @@ const props = defineProps<{
   decalTextures: DecalUnitTexture[];
   /** "Lot Textures" 地表共享纹理（data URL；精细模式地面 v2 用）。 */
   lotSurfacePng: string | null;
-  /** 全局共享染色图集（s10）data URL。 */
-  lotTintAtlasPng: string | null;
-  /** 全局共享法线图集（s15）data URL：地面 normalMap。 */
+  /** 全局共享法线图集（s15）data URL：图案质感 normalMap。 */
   lotNormalAtlasPng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
@@ -725,14 +727,13 @@ async function assembleScene(
       // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1。
       // applyGroundMask 已 await（compose 成本进 scene_rebuild 遥测；
       // 解码结果按源字符串缓存，编辑操作的全量重建零重复解码）。
-      const [surface, maskDims, tintAtlas, normalAtlas] = await Promise.all([
+      const [surface, maskDims, normalAtlas] = await Promise.all([
         loadSurfacePixels(),
         loadMaskImageDims(),
-        loadImageDataFromUrl(props.lotTintAtlasPng),
         loadImageDataFromUrl(props.lotNormalAtlasPng),
       ]);
       if (!surface) {
-        // 精细渲染的材质替换依赖真实图集；静默回退占位 tile 会把沥青画成
+        // 精细渲染的底图格依赖真实图集；静默回退占位 tile 会把沥青画成
         // 亮灰（2026-09-13 对拍教训），必须让用户看到原因。
         console.warn(
           "[lot-ground] 'Lot Textures' surface unavailable — refined ground will use placeholder tiles. Open SimCity_Graphics.package (and the lot's own package) for the real atlas.",
@@ -744,7 +745,6 @@ async function assembleScene(
       await applyGroundMask({
         rawMask,
         surface,
-        tintAtlas,
         normalAtlas,
         THREE,
         ground,
@@ -754,13 +754,13 @@ async function assembleScene(
         tilePeriod: props.lotTilePeriod,
         refined: props.renderMode === "refined",
         lotColors: props.lotColors,
-        lotColorsAuthored: props.lotColorsAuthored,
         lotBorderColors: props.lotBorderColors,
+        lotBorderPatternIndices: props.lotBorderPatternIndices,
         lotBorderWidths: props.lotBorderWidths,
+        baseTileIndex: props.lotBaseTile,
         lotOverlayBoxOffset: props.lotOverlayBoxOffset,
         rawMaskKey: props.lotMaskRawRgba,
         surfaceKey: props.lotSurfacePng,
-        tintAtlasKey: props.lotTintAtlasPng,
         normalAtlasKey: props.lotNormalAtlasPng,
         isStale: ctx.isStale,
       });

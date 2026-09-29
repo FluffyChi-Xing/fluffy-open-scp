@@ -38,13 +38,14 @@ const {
   lotColorsAuthored,
   lotBorderColors,
   lotBorderWidths,
+  lotBorderPatternIndices,
+  lotBaseTile,
   lotOverlayBoxOffset,
   lotModelBBoxCenter,
   lotMaskPng,
   lotMaskRawRgba,
   lotAlbedoPng,
   lotSurfacePng,
-  lotTintAtlasPng,
   lotNormalAtlasPng,
   decalLight,
   selectedUnit,
@@ -428,13 +429,14 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-colors-authored="lotColorsAuthored"
           :lot-border-colors="lotBorderColors"
           :lot-border-widths="lotBorderWidths"
+          :lot-border-pattern-indices="lotBorderPatternIndices"
+          :lot-base-tile="lotBaseTile"
           :lot-overlay-box-offset="lotOverlayBoxOffset"
           :lot-model-bbox-center="lotModelBBoxCenter"
           :lot-mask-png="lotMaskPng"
           :lot-mask-raw-rgba="lotMaskRawRgba"
           :lot-albedo-png="lotAlbedoPng"
           :lot-surface-png="lotSurfacePng"
-          :lot-tint-atlas-png="lotTintAtlasPng"
           :lot-normal-atlas-png="lotNormalAtlasPng"
           :decal-textures="session?.decalTextures ?? []"
           :selected-id="selectedId"

@@ -149,36 +149,36 @@ function groundComposeKey(options: {
   maskPng: string | null;
   rawMaskKey: string | null;
   surfaceKey: string | null;
-  tintAtlasKey: string | null;
   normalAtlasKey: string | null;
   lotColors: [number, number, number, number][];
-  lotColorsAuthored: boolean[];
   lotBorderColors?: [number, number, number][];
+  lotBorderPatternIndices?: number[];
   lotBorderWidths?: number[];
   lotSize?: [number, number] | null;
   tilePeriod?: [number, number] | null;
+  baseTileIndex: number;
 }): string {
   const o = options;
   return JSON.stringify([
     o.maskPng,
     o.rawMaskKey,
     o.surfaceKey,
-    o.tintAtlasKey,
     o.normalAtlasKey,
     o.lotColors,
-    o.lotColorsAuthored,
     o.lotBorderColors ?? null,
+    o.lotBorderPatternIndices ?? null,
     o.lotBorderWidths ?? null,
     o.lotSize,
     o.tilePeriod,
+    o.baseTileIndex,
   ]);
 }
 
 /**
  * LotMask 贴图：加载后按渲染模式应用到地面 fill——默认模式贴服务端合成的
- * 反照率图（通道平色+底图格，缺失时回退量化图），精细模式走引擎语义合成
- * （composeRefinedGround，Worker 化 + 缓存）。异步完成按 isStale 守卫丢弃
- * 过期代；返回 Promise 供装配层 await（合成成本纳入 scene_rebuild 遥测）。
+ * 反照率图（引擎口径平色+底图格，缺失时回退量化图），精细模式走引擎语义
+ * 合成（composeRefinedGround，Worker 化 + 缓存）。异步完成按 isStale 守卫
+ * 丢弃过期代；返回 Promise 供装配层 await（合成成本纳入 scene_rebuild 遥测）。
  */
 export async function applyGroundMask(options: {
   THREE: typeof ThreeNamespace;
@@ -192,17 +192,18 @@ export async function applyGroundMask(options: {
   tilePeriod?: [number, number] | null;
   refined: boolean;
   lotColors: [number, number, number, number][];
-  lotColorsAuthored: boolean[];
   /** "Lot Textures" 地表共享纹理像素（真实图集；null = 本地占位 tile）。 */
   surface?: ImageData | null;
-  /** 全局共享染色图集像素（s10；alpha 做亮度调制 → 车辙/铺装纹理）。 */
-  tintAtlas?: ImageData | null;
+  /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
+  baseTileIndex: number;
   /** 全局共享法线图集像素（s15；地面 normalMap 起伏来源）。 */
   normalAtlas?: ImageData | null;
   /** LotMask 原始通道权重图（阈值选区输入；null = 量化图最近色硬分配）。 */
   rawMask?: ImageData | null;
   /** LotBorderColor1-4 的 sRGB RGB（边框带描边色）。 */
   lotBorderColors?: [number, number, number][];
+  /** 边框带图案索引（LotBorderColor.A）。 */
+  lotBorderPatternIndices?: number[];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths?: number[];
   /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
@@ -210,7 +211,6 @@ export async function applyGroundMask(options: {
   /** 缓存 key 源（源字符串身份；与 ImageData 参数一一对应）。 */
   rawMaskKey?: string | null;
   surfaceKey?: string | null;
-  tintAtlasKey?: string | null;
   normalAtlasKey?: string | null;
   isStale: () => boolean;
 }) {
@@ -223,12 +223,12 @@ export async function applyGroundMask(options: {
     tilePeriod,
     refined,
     lotColors,
-    lotColorsAuthored,
     surface,
-    tintAtlas,
+    baseTileIndex,
     normalAtlas,
     rawMask,
     lotBorderColors,
+    lotBorderPatternIndices,
     lotBorderWidths,
     isStale,
   } = options;
@@ -244,8 +244,9 @@ export async function applyGroundMask(options: {
   const fill = groundFillMesh(ground);
   if (!fill) return;
   if (refined && maskPng) {
-    // 精细模式：引擎语义 = 通道 >0.5 阈值 + A>B>G>R 优先级选区 →
-    // tile_{LotColor.A}（frac 平铺）× LotColor.RGB 着色；未覆盖区铺底图格。
+    // 精细模式：引擎语义 = 通道 >0.5−bw 阈值 + A>B>G>R 优先级瀑布 →
+    // 胜者平色直出；图案质感 = 法线图集（主区 LotColor.A / 边框带
+    // LotBorderColor.A）平铺 normalMap；未覆盖区底图格整格拉伸。
     // compose 成本曾是游离在遥测外的主线程大头——单独纳管成 span。
     const span = renderTelemetry.begin("texture_compose", {
       phase: "ground",
@@ -255,32 +256,32 @@ export async function applyGroundMask(options: {
         maskPng,
         rawMaskKey: options.rawMaskKey ?? null,
         surfaceKey: options.surfaceKey ?? null,
-        tintAtlasKey: options.tintAtlasKey ?? null,
         normalAtlasKey: options.normalAtlasKey ?? null,
         lotColors,
-        lotColorsAuthored,
         lotBorderColors,
+        lotBorderPatternIndices,
         lotBorderWidths,
         lotSize,
         tilePeriod,
+        baseTileIndex,
       });
       let result = groundComposeCache.get(key);
       const cacheHit = Boolean(result);
       if (!result) {
-        const composed = await composeRefinedGround(
-          lotColors,
-          lotColorsAuthored,
-          texture.image as TexImageSource,
+        const composed = await composeRefinedGround({
           THREE,
-          lotSize ?? null,
-          tilePeriod ?? null,
-          surface,
-          tintAtlas ?? null,
-          rawMask,
-          normalAtlas ?? null,
-          lotBorderColors ?? null,
-          lotBorderWidths ?? null,
-        );
+          maskImage: texture.image as TexImageSource,
+          lotColors,
+          lotSize: lotSize ?? null,
+          tilePeriod: tilePeriod ?? null,
+          surface: surface ?? null,
+          baseTileIndex,
+          normalAtlas: normalAtlas ?? null,
+          rawMask: rawMask ?? null,
+          lotBorderColors: lotBorderColors ?? null,
+          lotBorderPatternIndices: lotBorderPatternIndices ?? null,
+          lotBorderWidths: lotBorderWidths ?? null,
+        });
         if (composed) {
           putGroundCache(key, composed);
           result = composed;
