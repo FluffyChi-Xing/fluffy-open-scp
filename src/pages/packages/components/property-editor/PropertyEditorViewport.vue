@@ -1112,6 +1112,21 @@ async function assembleScene(
     const group = new THREE.Group();
     applyDecalTransform(THREE, unit, group);
 
+    // sign 族 = decalFloatQuadNoClip（引擎逐字：UV 从顶点数据取
+    // `indices.yzw/255`、**NoClip 无体积裁剪**）——招牌/全息贴花是独立
+    // 四边形，按自身 transform 悬挂（可悬浮于墙前/楼顶），**不投影建筑
+    // 几何**。投影路径只服务需要贴合墙面体积的族（涂鸦 decalClip /
+    // 破洞 decalLightInteriorMap——clip 到墙面盒体内）。
+    // 尺寸 = 半高语义：高 2×scale × 宽 高×aspect（与投影路径同源）。
+    if (DECAL_MATERIAL_VARIANTS[(texture.materialInstance ?? 0) >>> 0] === "sign") {
+      const quad = await buildDecalQuadFallback(THREE, unit, texture);
+      if (quad) {
+        group.add(quad);
+        decalStats.projected += 1;
+      }
+      return group;
+    }
+
     if (frame) {
       const projectionKey = `${unitId(unit)}|${JSON.stringify(unit.transform?.matrix ?? null)}|${unit.depth}|${aspect}`;
       let geometry = decalProjectionCache.get(projectionKey);
