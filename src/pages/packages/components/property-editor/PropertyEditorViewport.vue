@@ -249,10 +249,21 @@ async function getDecalTexture(
     });
     if (!decoded) return null;
     decoded.colorSpace = THREE.SRGBColorSpace;
-    // 清晰度对齐建筑贴图口径（禁 mip + Linear + 最大各向异性）：贴花默认
-    // 三线性会在中远景明显糊于锐利的建筑贴图（2026-09-27 用户反馈）。
-    decoded.generateMipmaps = false;
-    decoded.minFilter = THREE.LinearFilter;
+    // 采样器按引擎变体对象逐字口径（§65.15：sign pass0 = POINT/POINT/
+    // MIPNONE，graffiti pass0 = LINEAR/LINEAR/LINEAR）：
+    // - sign（0x73684EFC 招牌聚类）：POINT 点采样——64px 招牌贴图近看是
+    //   锐利色块像素画（游戏截图如此）；Linear 会糊成不可辨识的色团
+    //   （2026-09-30 用户对拍：招牌"完全看不清"的直接原因之一）。
+    // - 其余（涂鸦/破洞）：Linear + 禁 mip + 最大各向异性（2026-09-27
+    //   清晰度对齐口径不变）。
+    if ((texture.materialInstance ?? 0) >>> 0 === 0x73684efc) {
+      decoded.magFilter = THREE.NearestFilter;
+      decoded.minFilter = THREE.NearestFilter;
+      decoded.generateMipmaps = false;
+    } else {
+      decoded.generateMipmaps = false;
+      decoded.minFilter = THREE.LinearFilter;
+    }
     if (texture.variant === "hole") decoded.flipY = false;
     decoded.anisotropy = viewport.viewer.value?.maxAnisotropy ?? 1;
     decalTextureCache.set(texture, decoded);
@@ -852,8 +863,10 @@ async function assembleScene(
         uniform vec2 uBoxHalfXY;
         void main() {
           vUv = uv;
-          // 盒体归一坐标：xy = ±1（贴花面内），z = ±1（进深，前 +1）
-          vTp = vec3(position.xy / max(uBoxHalfXY, vec2(0.001)), position.z / uHalfDepth);
+          // 盒体归一坐标：xy = ±1（贴花面内），z = ±1（进深，前 +1）。
+          // 切片贴在墙面（z 可能略超出盒前缘，引擎几何被盒体裁到界内），
+          // 必须 clamp 否则视差采样越界。
+          vTp = clamp(position / vec3(max(uBoxHalfXY, vec2(0.001)), uHalfDepth), -1.0, 1.0);
           vWorldNormal = normalize(mat3(modelMatrix) * normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -958,29 +971,27 @@ async function assembleScene(
           color: new THREE.Color(2, 2, 2),
         });
       case "graffiti":
-        // 涂鸦 = **alpha 裁切（cutout）+ 受光**：raw 纹理的 alpha 是抗锯齿
-        // 掩码（字母核 ≥0.5、边缘/背景渐变到 0），按连续透明度混合会把整个
-        // 光晕显示出来（=「半透明+模糊不可辨认」，2026-09-27 实测翻车）。
-        // 阈值裁切后 0.5 等值线即字母边缘——平滑且锐利，与游戏一致。
-        // 受光（MeshStandard）让涂鸦夜间随场景变暗——unlit MeshBasic 会在
-        // 黑夜里自发光（枪械预览涂鸦夜间发光的根因）。游戏中字母周围
-        // 的光泽来自 bloom，不是混合。不透明 pass 渲染，无排序开销。
+        // 涂鸦 = **连续 alpha 混合 + 受光**（引擎 decal PS 逐字：直采
+        // raster + 标准 alpha 混合；raw alpha 字母 0.7-0.86 = 喷漆半透明、
+        // 软边 = 抗锯齿，正是游戏观感）。此前 alphaTest 裁切会把 soft-alpha
+        // 内容（涂鸦内部的房间/色块）整体裁掉——用户对拍"涂鸦不可辨认/
+        // 破洞无内景"的根因（2026-09-30）。受光（MeshStandard）= 引擎
+        // G-buffer 链的等价物（贴花写入 albedo 后统一光照）。不透明 pass
+        // 渲染语义由 alphaTest 改为混合后失去，排序开销可接受。
+        //
+        // 历史注记：09-27 的连续混合"翻车"（光晕模糊）发生在 raw 修复前
+        // ——当时混的是四色量化的抖动 alpha；raw 之后连续混合即引擎口径。
         return new THREE.MeshStandardMaterial({
           ...base,
-          transparent: false,
-          depthWrite: true,
-          alphaTest: 0.5,
+          transparent: true,
           roughness: 1,
           metalness: 0,
         });
       default:
-        // 未识别材质兜底同用 cutout：soft-alpha 艺术在连续混合下会显示
-        // 全部光晕（甜甜圈店「模糊」反馈）。受光语义保留（MeshStandard）。
+        // 未识别材质兜底同涂鸦口径（直采 + alpha 混合 + 受光）。
         return new THREE.MeshStandardMaterial({
           ...base,
-          transparent: false,
-          depthWrite: true,
-          alphaTest: 0.5,
+          transparent: true,
           roughness: 1,
           metalness: 0,
         });

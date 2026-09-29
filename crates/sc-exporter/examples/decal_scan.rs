@@ -13,6 +13,51 @@ use dbpf::Package;
 use sc_properties::{DecalDictionary, PROPERTY_RESOURCE_TYPE, is_decal_dictionary_group};
 
 const RASTER_IMAGE_TYPE: u32 = 0x2F4E_681C;
+/// RW4 纹理资源类型（破洞/interior 家族的 raster 载体，DXT 压缩）。
+const RW4_TEXTURE_TYPE: u32 = 0x2F4E_681B;
+
+/// 解码条目 raster：裸 Raster（pixFmt21，四色映射）或 RW4 纹理（DXT 直解，
+/// 自带颜色与光衰减 alpha——破洞/interior 家族）。
+fn decode_entry_raster(
+    packages: &[Package],
+    key: &sc_properties::Key,
+    colors: Option<[[u8; 4]; 4]>,
+) -> Option<(u32, u32, Vec<u8>)> {
+    for package in packages {
+        for type_id in [RASTER_IMAGE_TYPE, RW4_TEXTURE_TYPE] {
+            let Some(entry) = package.entries().iter().find(|entry| {
+                entry.id.type_id == type_id && entry.id.instance == key.instance
+            }) else {
+                continue;
+            };
+            let Ok(bytes) = package.read(entry) else { continue };
+            if type_id == RASTER_IMAGE_TYPE {
+                let Ok(raster) = rw4::RasterImage::parse(&bytes) else { continue };
+                if !raster.is_raw_rgba() {
+                    continue;
+                }
+                let rgba = match colors {
+                    Some(colors) => raster.decode_lot_mask_rgba(&colors).ok()?,
+                    None => raster.decode_top_mip_rgba().ok()?,
+                };
+                return Some((u32::from(raster.width), u32::from(raster.height), rgba));
+            }
+            let Ok(file) = rw4::Rw4File::parse(&bytes) else { continue };
+            for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
+                let Ok(texture) = file.decode_texture(&bytes, section.number) else {
+                    continue;
+                };
+                let Ok(rgba) = texture.decode_top_mip_rgba() else { continue };
+                return Some((
+                    u32::from(texture.width),
+                    u32::from(texture.height),
+                    rgba,
+                ));
+            }
+        }
+    }
+    None
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -46,27 +91,26 @@ fn main() {
             let Ok(data) = package.read(entry) else { continue };
             let Ok(dictionary) = DecalDictionary::parse(&data) else { continue };
             for decal in &dictionary.entries {
-                let Some(colors) = decal.colors_rgba8() else { continue };
-                let Some((image, _)) =
-                    resolve_raster(&packages, decal.raster.map(|k| k.instance))
+                let colors = decal.colors_rgba8();
+                // 有 colors → 四色映射（招牌/涂鸦）；无 colors → RW4 自彩
+                // 直解（破洞/interior 家族）。
+                let raster_key = match decal.raster.as_ref() {
+                    Some(key) => key,
+                    None => continue,
+                };
+                let Some((width, height, rgba)) =
+                    decode_entry_raster(&packages, raster_key, colors)
                 else {
                     continue;
                 };
-                if !image.is_raw_rgba() {
-                    skipped_compressed += 1;
+                if width < 16 || height < 16 {
                     continue;
                 }
-                if image.width < 16 || image.height < 16 {
-                    continue;
-                }
-                let Ok(rgba) = image.decode_lot_mask_rgba(&colors) else { continue };
-                let Some(bitmap) =
-                    image::RgbaImage::from_raw(image.width, image.height, rgba.clone())
-                else {
-                    continue;
-                };
+                let bitmap =
+                    image::RgbaImage::from_raw(width as u32, height as u32, rgba.clone())
+                        .expect("decal buf");
                 scanned += 1;
-                // 缩略图上板（棋盘底显透明）。
+                // 缩略图上板（棋盘底显透明）——全量条目。
                 let tx = (thumb_count % THUMB_COLS) * 56 + 4;
                 let ty = (thumb_count / THUMB_COLS) * 56 + 4;
                 for y in 0..48usize {
@@ -86,13 +130,6 @@ fn main() {
                     image::imageops::FilterType::Nearest,
                 );
                 image::imageops::overlay(&mut thumb_sheet, &thumb, tx as i64, ty as i64);
-                let label = format!(
-                    "{}{}e{:03}",
-                    ["G", "X", "E"][pkg_idx.min(2)],
-                    if entry.id.group as u16 == 0xb185 { "*" } else { "" },
-                    decal.index
-                );
-                let _ = label;
                 tsv.push_str(&format!(
                     "{}\t{}\t{:08x}\t{:08x}\t{}\t{:08x}\t{}\t{}\n",
                     thumb_count,
@@ -101,11 +138,11 @@ fn main() {
                     entry.id.group,
                     decal.index,
                     decal.id.map_or(0, |k| k.instance),
-                    image.width,
-                    image.height
+                    width,
+                    height
                 ));
                 thumb_count += 1;
-                if !matches_labs(&rgba, image.width as usize, image.height as usize) {
+                if !matches_labs(&rgba, width as usize, height as usize) {
                     continue;
                 }
                 hits += 1;
@@ -128,8 +165,8 @@ fn main() {
                     entry.id.group,
                     decal.index,
                     decal.id.map_or(0, |k| k.instance),
-                    image.width,
-                    image.height,
+                    width,
+                    height,
                 );
             }
         }
