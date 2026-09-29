@@ -516,6 +516,8 @@ export interface DecalUnitTexture {
   shaderDefInstance: number | null;
   /** "hole" = 破洞家族（raster 原始解码，alpha = 光衰减掩码）。 */
   variant: string | null;
+  /** true = raw RGBA 解码失败、退四色量化预览（糊/偏色；确认打开 raster 所在包）。 */
+  quantized: boolean;
 }
 export interface PropUnit {
   kind: "prop";

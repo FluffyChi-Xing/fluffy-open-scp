@@ -254,9 +254,12 @@ async function getDecalTexture(
     // - sign（0x73684EFC 招牌聚类）：POINT 点采样——64px 招牌贴图近看是
     //   锐利色块像素画（游戏截图如此）；Linear 会糊成不可辨识的色团
     //   （2026-09-30 用户对拍：招牌"完全看不清"的直接原因之一）。
-    // - 其余（涂鸦/破洞）：Linear + 禁 mip + 最大各向异性（2026-09-27
+    // - 四色量化回退（quantized）：调色板像素画 → POINT 采样可读（Linear
+    //   会把 32px 调色板色糊成不可辨识的色团——2026-09-30 涂鸦广告牌对拍）。
+    // - 其余（涂鸦 raw/破洞）：Linear + 禁 mip + 最大各向异性（2026-09-27
     //   清晰度对齐口径不变）。
-    if ((texture.materialInstance ?? 0) >>> 0 === 0x73684efc) {
+    const quantized = texture.quantized === true;
+    if ((texture.materialInstance ?? 0) >>> 0 === 0x73684efc || quantized) {
       decoded.magFilter = THREE.NearestFilter;
       decoded.minFilter = THREE.NearestFilter;
       decoded.generateMipmaps = false;
@@ -821,9 +824,11 @@ async function assembleScene(
    *
    * PE 适配：纹理 = 解码条目栅格全图（texXform ≙ 全图 uv）；法线 = 切片
    * 所在墙面（盒体 z 轴）；场景光 = env 太阳/天空近似（与建筑共享
-   * uSunDir/uSunColor/uDayLight uniform，热切换联动）；自亮恒 16（引擎
-   * 无供电门控）。旧"建筑 slot5 房间图集 + 盒体投影 + 渐黑环境光"口径
-   * （§62-63）废弃——引擎内景图 = **贴花自身纹理**的视差采样。
+   * uSunDir/uSunColor/uDayLight uniform，热切换联动）；自亮峰值 16 为
+   * 夜间值，白天按 uInteriorGlow 缩至 2.5（与建筑内景链同源，恒 16 会
+   * 白天过曝——2026-09-30 用户对拍"太亮"）。旧"建筑 slot5 房间图集 +
+   * 盒体投影 + 渐黑环境光"口径（§62-63）废弃——引擎内景图 = **贴花自身
+   * 纹理**的视差采样。
    */
   function createHoleInteriorMaterial(
     THREE: typeof ThreeNamespace,
@@ -848,6 +853,9 @@ async function assembleScene(
             decalData?.[1] ?? 0,
           ),
         },
+        // 自亮峰值与建筑内景链同源（kInteriorMapSelfLightMax=16 为夜间峰值，
+        // 白天 2.5——恒 16 会导致白天破洞内部过曝，2026-09-30 用户对拍"太亮"）
+        uInteriorGlow: env.glow,
       },
       side: THREE.DoubleSide,
       transparent: true,
@@ -880,6 +888,7 @@ async function assembleScene(
         uniform vec3 uSunColor;
         uniform float uDayLight;
         uniform vec2 uDecalData;
+        uniform float uInteriorGlow;
         float saturate_(float v) { return clamp(v, 0.0, 1.0); }
         void main() {
           vec4 decalTexture = texture2D(uMap, vUv);
@@ -894,8 +903,10 @@ async function assembleScene(
           shColorDiff *= uDecalData.y;                  // kLightAmount
           shColorDiff += sunColor * uDecalData.x;       // kSunContribution
           vec3 spec = sunColor * 0.12;                  // gloss 0.06 / specE 16 的小镜面
+          // 自亮：kInteriorMapSelfLightMax 的昼夜缩放（uInteriorGlow 2.5..16，
+          // 与建筑内景链同源）——白天 2.5 温和、夜间 16 窗亮
           vec3 interiorTextureLit = interiorTexture.rgb *
-            (shColorDiff + spec + interiorTexture.a * 16.0);
+            (shColorDiff + spec + interiorTexture.a * uInteriorGlow);
           vec3 col = mix(decalTexture.rgb, interiorTextureLit,
             saturate_(decalTexture.a * 2.0 - 1.0));
           float alpha = saturate_(decalTexture.a * 2.0);
@@ -1095,31 +1106,11 @@ async function assembleScene(
       );
       return null;
     }
-    // 垂直投影轴 = 地面贴花（道路裂缝/垃圾/油渍，图4 类）：引擎贴到 lot
-    // 地表而非建筑——平铺在地面平面上（lot-local Z-up，地面 z≈0.02 之上），
-    // 偏航取 transform 首行方向。
-    if (frame && Math.abs(frame.axisZ.z) > 0.7) {
-      const groundGeo = new THREE.PlaneGeometry(frame.sizeX, frame.sizeY);
-      const uvAttr = groundGeo.attributes.uv;
-      for (let i = 0; i < uvAttr.count; i += 1) {
-        uvAttr.setX(i, 1 - uvAttr.getX(i));
-      }
-      uvAttr.needsUpdate = true;
-      const mesh = new THREE.Mesh(
-        groundGeo,
-        buildDecalMaterial(THREE, texture, decoded, {
-          env,
-          decalData: props.decalLight ?? null,
-        }),
-      );
-      mesh.position.set(frame.origin.x, frame.origin.y, 0.035);
-      mesh.rotation.z = Math.atan2(frame.axisX.y, frame.axisX.x);
-      decalStats.projected += 1;
-      return mesh;
-    }
-      // 破洞（variant=hole）已并入统一投影路径（见 §62-63：独立盒体的
-      // 悬浮/重叠问题无法在烘焙顶点缓冲缺失的前提下鲁棒解决；内景盒体
-      // 待放置体系重建后恢复）。当前口径 = 与涂鸦同投影 + cutout。
+    // 地面贴花特例已删除（2026-09-30 用户裁定）：引擎 decal 18 族源码无任何
+    // 向地面/地形投影的设计（grep ground/terrain 仅命中同容器的地形着色器
+    // 常量）——decal = 变换矩阵摆位的四边形，朝向完全由 transform 决定。
+    // 地面平行贴花照常走下方统一投影路径（盒体可命中建筑檐口/基座等结构，
+    // 未命中则回退浮空 quad，姿态仍由 transform 给出）。
     const group = new THREE.Group();
     applyDecalTransform(THREE, unit, group);
 

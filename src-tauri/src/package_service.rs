@@ -4208,6 +4208,10 @@ pub struct DecalUnitTextureDto {
     /// 变体标签："hole" = 条目无 Color1-4（破洞/decalInteriorMap 家族，
     /// raster 为 RW4 纹理资源走 surface 解码，alpha = 光衰减掩码）。
     pub variant: Option<String>,
+    /// true = raw RGBA 解码失败、退回**四色量化**预览口径（低分辨率 +
+    /// 调色板色，观感糊/偏色）。前端据此切 POINT 采样并提示打开对应包。
+    #[serde(default)]
+    pub quantized: bool,
 }
 
 /// 收集全部 Decal Atlas 字典（跨包去重，高细节 textureSize 优先）。
@@ -4305,6 +4309,7 @@ fn resolve_decal_textures(
                 material_instance,
                 shader_def_instance,
                 variant: None,
+                quantized: false,
             };
             match entry {
                 Some(entry) => {
@@ -4329,7 +4334,19 @@ fn resolve_decal_textures(
                             dto.png = raw.png_base64;
                             dto.error = raw.error;
                         } else {
+                            // raw 失败（raster 缺失/压缩/载体未知）→ 四色量化
+                            // 预览口径：低分辨率 + 调色板色，观感糊/偏色。
+                            // 显式标记（quantized + 诊断），前端切 POINT 采样
+                            // 并提示打开 raster 所在包。
                             let decoded = decode_decal_entry(entry, package, manager);
+                            dto.quantized = decoded.png_base64.is_some();
+                            if dto.quantized {
+                                diag.push(format!(
+                                    "decal id 0x{:08X} cat{category}[{index}]: raw RGBA 不可解（{}），退四色量化预览——确认已打开 raster 所在包",
+                                    key.instance,
+                                    raw.error.as_deref().unwrap_or("raster not found"),
+                                ));
+                            }
                             dto.width = decoded.width;
                             dto.height = decoded.height;
                             dto.png = decoded.png_base64;
