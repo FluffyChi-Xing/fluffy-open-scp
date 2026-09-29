@@ -4316,41 +4316,53 @@ fn resolve_decal_textures(
                     if out.len() >= DECAL_IMAGE_BATCH_MAX {
                         dto.error = Some("decal texture batch limit reached".into());
                     } else {
-                        // 引擎 decal PS 是直采 raster（`Current.color =
-                        // decalTexture`）+ alpha 混合——raw RGBA 才是渲染口径。
-                        // 四色量化只是旧编辑器预览：argmax 选色在背景 128 阈值
-                        // 附近逐像素抖动 → 点阵伪影 + alpha 二值化抹掉光晕
-                        //（2026-09-27 OMEGACO 真机对照定谳）。raw 失败退四色。
+                        // 渲染口径按 raster 载体分派（2026-09-30 探针 vs PE
+                        // 对拍定谳）：
+                        // - 有 Color1-4（招牌/涂鸦族，raster = 四通道掩码）：
+                        //   **四色映射解码为主源**——raw RGBA 的 alpha 通道是
+                        //   LC4 权重（非不透明度），直采会几乎不可见（探针用
+                        //   四色解码清晰，PE 用 raw 看不见，即此根因）。
+                        // - 无 Color1-4（破洞/interior 族，raster = RW4 纹理，
+                        //   alpha = 光衰减掩码）：raw/RW4 直解，alpha 保留。
+                        // 各自失败互为回退。
                         let has_colors = entry.colors_rgba8().is_some();
-                        let raw = decode_decal_entry_rgba(entry, package, manager);
-                        if raw.png_base64.is_some() {
-                            if !has_colors {
-                                // 破洞家族（decalInteriorMap）：条目无 Color1-4，
-                                // raster 是 RW4 纹理资源，alpha = 光衰减掩码。
-                                dto.variant = Some("hole".into());
-                            }
-                            dto.width = raw.width;
-                            dto.height = raw.height;
-                            dto.png = raw.png_base64;
-                            dto.error = raw.error;
-                        } else {
-                            // raw 失败（raster 缺失/压缩/载体未知）→ 四色量化
-                            // 预览口径：低分辨率 + 调色板色，观感糊/偏色。
-                            // 显式标记（quantized + 诊断），前端切 POINT 采样
-                            // 并提示打开 raster 所在包。
+                        if has_colors {
                             let decoded = decode_decal_entry(entry, package, manager);
-                            dto.quantized = decoded.png_base64.is_some();
-                            if dto.quantized {
-                                diag.push(format!(
-                                    "decal id 0x{:08X} cat{category}[{index}]: raw RGBA 不可解（{}），退四色量化预览——确认已打开 raster 所在包",
-                                    key.instance,
-                                    raw.error.as_deref().unwrap_or("raster not found"),
-                                ));
-                            }
                             dto.width = decoded.width;
                             dto.height = decoded.height;
                             dto.png = decoded.png_base64;
                             dto.error = decoded.error;
+                            if dto.png.is_none() {
+                                // 四色失败（raster 缺失/压缩）→ raw 兜底。
+                                let raw = decode_decal_entry_rgba(entry, package, manager);
+                                dto.width = raw.width;
+                                dto.height = raw.height;
+                                dto.png = raw.png_base64;
+                                dto.error = raw.error;
+                            }
+                        } else {
+                            dto.variant = Some("hole".into());
+                            let raw = decode_decal_entry_rgba(entry, package, manager);
+                            if raw.png_base64.is_some() {
+                                dto.width = raw.width;
+                                dto.height = raw.height;
+                                dto.png = raw.png_base64;
+                                dto.error = raw.error;
+                            } else {
+                                let decoded = decode_decal_entry(entry, package, manager);
+                                dto.quantized = decoded.png_base64.is_some();
+                                if dto.quantized {
+                                    diag.push(format!(
+                                        "decal id 0x{:08X} cat{category}[{index}]: raw RGBA 不可解（{}），退四色量化预览——确认已打开 raster 所在包",
+                                        key.instance,
+                                        raw.error.as_deref().unwrap_or("raster not found"),
+                                    ));
+                                }
+                                dto.width = decoded.width;
+                                dto.height = decoded.height;
+                                dto.png = decoded.png_base64;
+                                dto.error = decoded.error;
+                            }
                         }
                     }
                 }
