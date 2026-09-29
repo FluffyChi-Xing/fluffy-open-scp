@@ -11,18 +11,12 @@ import type * as ThreeNamespace from "three";
 /**
  * 精细渲染的 LotMask 地面合成编排：像素提取（DOM）→ 纯核心计算（Worker
  * 优先、主线程回退，见 groundCompose.ts）→ CanvasTexture 包装。引擎口径
- * （generic_lot）：覆盖区平色 + 法线图案光照，未覆盖区底图格。
+ * （generic_lot）：覆盖区平色 × 图案坡度明暗（烘焙进反照率），未覆盖区底图格。
  *
  * 主线程成本曾是 rebuild 隐藏大头（~1M 像素 ×2 张图的 JS 逐像素循环），
  * 且游离在全部遥测 span 之外——现移入 Worker，调用方用
  * `renderTelemetry.begin("texture_compose", {phase:"ground"})` 纳管。
  */
-
-/** 反照率 + 地面法线贴图（normalMap 缺失时为 null）。 */
-export interface RefinedGroundTextures {
-  map: ThreeNamespace.CanvasTexture;
-  normalMap: ThreeNamespace.CanvasTexture | null;
-}
 
 const groundTextureUrls = import.meta.glob<{ default: string }>(
   "../../../../assets/ground/*.png",
@@ -152,7 +146,7 @@ export async function composeRefinedGround(options: {
   surface?: ImageData | null;
   /** 底图格索引（后端三级来源解析结果）。 */
   baseTileIndex: number;
-  /** 全局共享法线图集像素（s15；图案质感 normalMap 来源）。 */
+  /** 全局共享法线图集像素（s15；图案坡度明暗烘焙来源）。 */
   normalAtlas?: ImageData | null;
   /** 原始通道权重图；缺失时回退量化图最近色硬分配。 */
   rawMask?: ImageData | null;
@@ -162,7 +156,7 @@ export async function composeRefinedGround(options: {
   lotBorderPatternIndices?: number[] | null;
   /** borderWidth1-4（边框带半宽，0..0.5）；undefined/全 0 = 无边框。 */
   lotBorderWidths?: number[] | null;
-}): Promise<RefinedGroundTextures | null> {
+}): Promise<ThreeNamespace.CanvasTexture | null> {
   const {
     THREE,
     maskImage,
@@ -240,29 +234,7 @@ export async function composeRefinedGround(options: {
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
   texture.anisotropy = 8;
-  let normalMap: ThreeNamespace.CanvasTexture | null = null;
-  if (response.normal) {
-    const normalCanvas = document.createElement("canvas");
-    normalCanvas.width = response.width;
-    normalCanvas.height = response.height;
-    const normalContext = normalCanvas.getContext("2d");
-    if (normalContext) {
-      normalContext.putImageData(
-        new ImageData(response.normal, response.width, response.height),
-        0,
-        0,
-      );
-      normalMap = new THREE.CanvasTexture(normalCanvas);
-      // 法线为线性数据：保持 NoColorSpace（不标 sRGB），否则 three 会做
-      // sRGB→线性解码把方向压偏。
-      normalMap.flipY = false;
-      normalMap.magFilter = THREE.LinearFilter;
-      normalMap.minFilter = THREE.LinearMipmapLinearFilter;
-      normalMap.generateMipmaps = true;
-      normalMap.anisotropy = 8;
-    }
-  }
-  return { map: texture, normalMap };
+  return texture;
 }
 
 /**

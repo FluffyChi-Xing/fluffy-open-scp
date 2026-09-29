@@ -113,7 +113,7 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
     expect(right).toEqual([255, 0, 0]);
   });
 
-  it("图案质感走法线图集：主区格号 = LotColor.A", () => {
+  it("图案光照烘焙进反照率：平色 × 法线图集坡度明暗（主区格号 = LotColor.A）", () => {
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -121,15 +121,33 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
         normalAtlas: atlas16(),
       }),
     );
-    expect(out.normal).not.toBeNull();
-    // R 通道胜出，LotColor.A=0 → 格 0（图集 px (0,0) = [0,64,255]）。
-    const at = 0;
-    expect([out.normal![at], out.normal![at + 1], out.normal![at + 2]]).toEqual([
-      0, 64, 255,
-    ]);
+    // R 通道胜出，LotColor.A=0 → 格 0（图集 px [0,64,255]）：
+    // nx=−1、ny≈−0.498 → shade = 1+1.4·(0.5+0.249) = 2.049 → clamp 1.45（向光上限）。
+    expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual(
+      bake([10, 20, 30], 1.45),
+    );
+    // 输出不再含 normal 通道（图案光照不走实时光照）。
+    expect(out.albedo.length).toBe(out.width * out.height * 4);
   });
 
-  it("边框带图案格号 = LotBorderColor.A", () => {
+  it("图案光照双向：逆光面变暗（clamp 下限 0.55）", () => {
+    // 自建图集：格 0 px = [255,128,255] → nx=+1、ny≈+0.004 →
+    // shade = 1+1.4·(−0.5−0.002) ≈ 0.297 → clamp 0.55。
+    const out = composeGroundPixels(
+      input({
+        mask: pixels(1, 1),
+        rawMask: pixels(1, 1, () => [255, 0, 0, 0]),
+        normalAtlas: pixels(4, 4, (x, y) =>
+          x === 0 && y === 0 ? [255, 128, 255, 255] : [128, 128, 255, 255],
+        ),
+      }),
+    );
+    expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual(
+      bake([10, 20, 30], 0.55),
+    );
+  });
+
+  it("边框带图案格号 = LotBorderColor.A，同款烘焙", () => {
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -138,13 +156,25 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
         normalAtlas: atlas16(),
       }),
     );
-    // A 边框带 → 图案格 borderIndices[3]=7 → 图集 px (3,1) = [7,64,255]。
-    expect([out.normal![0], out.normal![1], out.normal![2]]).toEqual([7, 64, 255]);
-    // 反照率 = LotBorderColor4 平色。
-    expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual([101, 111, 121]);
+    // A 边框带 → 反照率 = LotBorderColor4 × 图案格 borderIndices[3]=7 明暗
+    //（格 7 px [7,64,255] → shade 同样触顶 1.45）。
+    expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual(
+      bake([101, 111, 121], 1.45),
+    );
   });
 
-  it("无胜者像素法线平坦（引擎 overlayMask=0 无图案光照）", () => {
+  it("无法线图集时覆盖区 = 纯平色（shade=1，无明暗）", () => {
+    const out = composeGroundPixels(
+      input({
+        mask: pixels(1, 1),
+        rawMask: pixels(1, 1, () => [255, 0, 0, 0]),
+        normalAtlas: null,
+      }),
+    );
+    expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual([10, 20, 30]);
+  });
+
+  it("未覆盖区无图案光照：底图格逐字节直出", () => {
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -152,6 +182,23 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
         normalAtlas: atlas16(),
       }),
     );
-    expect([out.normal![0], out.normal![1], out.normal![2]]).toEqual([128, 128, 255]);
+    expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual([200, 210, 220]);
   });
 });
+
+/**
+ * 烘焙公式（独立实现，= lot_composite tinted/shade_of 同款）：
+ * 线性空间相乘后回 sRGB。
+ */
+function bake(flat: [number, number, number], shade: number): [number, number, number] {
+  return [encode(decode(flat[0]) * shade), encode(decode(flat[1]) * shade), encode(decode(flat[2]) * shade)];
+}
+function decode(byte: number): number {
+  const srgb = byte / 255;
+  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+function encode(linear: number): number {
+  const srgb =
+    linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
+  return Math.round(srgb * 255);
+}

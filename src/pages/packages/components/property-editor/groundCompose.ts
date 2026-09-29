@@ -11,11 +11,15 @@
  *     （tile×tint 双重变暗已证伪，博客 §7.3）；
  *  3. 图案质感：胜者格号（主区 = LotColor.A / 边框带 = LotBorderColor.A）
  *     选法线图集 0x60E7805D 的 4×4 格，按 (u−0.5)·tiles 相位平铺（单 lot
- *     视图的引擎 uv1 世界锚定等价形式；跨 lot 相位锚定属后续任务），烘焙成
- *     地面 normalMap 交给实时光照——引擎的 lotCalcLighting 同源；
+ *     视图的引擎 uv1 世界锚定等价形式），**坡度明暗直接烘焙进反照率**
+ *     （线性空间相乘后回 sRGB）。烘焙而非 normalMap 实时光照的裁定：
+ *     引擎 lotCalcLighting 是强风格化项（切线空间线性项 ×1.4，明暗差可达
+ *     ±45%，lot_composite shade_of 同款对拍校准），而真实法线在平射阳光下
+ *     的 N·L 响应是二阶小量——PE 曾用 normalMap+Phong 结果图案不可见
+ *     （2026-09-29 用户对拍：精细与默认几乎无差异）；
  *  4. 未覆盖区：底图格（Lot Textures 图集第 baseTile 格，数据驱动三级来源）
- *     **整格拉伸**铺满地块，图集 U 轴与 mask 列序相反（§5b，采样 u = 1−u）；
- *     法线平坦（引擎 overlayMask=0 处无图案光照）。
+ *     **整格拉伸**铺满地块，图集 U 轴与 mask 列序相反（§5b，采样 u = 1−u），
+ *     无图案光照（引擎 overlayMask=0 处）。
  *
  * 画布即引擎空间：后端已做行序翻转（row 0 = 北/+Y），mask 列 0 = 西（−X）
  * 直采；4× 超采样 + 双线性权重 = GPU 口径（阈值在插值之后）。
@@ -41,7 +45,7 @@ export interface GroundComposeInput {
   lotBorderPatternIndices: number[] | null;
   /** borderWidth1-4（边框带半宽，0..0.5）；null/全 0 = 无边框。 */
   lotBorderWidths: number[] | null;
-  /** 全局共享法线图集（4×4 格，0x60E7805D）；null = 无图案光照。 */
+  /** 全局共享法线图集（4×4 格，0x60E7805D）；null = 无图案光照（纯平色）。 */
   normalAtlas: Pixels | null;
   /** 图案平铺次数（逐轴）= LotSize / 0x0CCB7FD0（非整数）。 */
   tilesX: number;
@@ -50,9 +54,22 @@ export interface GroundComposeInput {
 
 export interface GroundComposeOutput {
   albedo: Uint8ClampedArray<ArrayBuffer>;
-  normal: Uint8ClampedArray<ArrayBuffer> | null;
   width: number;
   height: number;
+}
+
+/** sRGB 字节 → 线性 0..1（lot_composite 同公式）。 */
+function srgbToLinear(byte: number): number {
+  const srgb = byte / 255;
+  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+/** 线性 0..1 → sRGB 字节。 */
+function linearToSrgbByte(linear: number): number {
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(linear) ? linear : 0));
+  const srgb =
+    clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055;
+  return Math.round(srgb * 255);
 }
 
 /** v1 回退路径的最近色硬分配（量化 mask RGB → 通道下标）。 */
@@ -113,30 +130,10 @@ function sampleBaseCell(
   return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
 }
 
-/** 图案格平铺采样：引擎 uv1 相位 (u−0.5)·tiles（单 lot 等价形式）。 */
-function samplePatternCell(
-  source: Pixels,
-  u: number,
-  v: number,
-  tilesX: number,
-  tilesY: number,
-): [number, number, number] {
-  const px = Math.min(
-    source.width - 1,
-    Math.floor(frac((u - 0.5) * tilesX) * source.width),
-  );
-  const py = Math.min(
-    source.height - 1,
-    Math.floor(frac((v - 0.5) * tilesY) * source.height),
-  );
-  const offset = (py * source.width + px) * 4;
-  return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
-}
-
 /**
  * 合成主循环（纯函数）。4× 超采样输出：mask 权重双线性插值（阈值在插值后
- * 逐像素施加 = GPU 口径）+ 平色/底图直出，消除 128px 权重图直贴 64m 地面
- * 的阶梯锯齿（对拍 2026-09-12）。
+ * 逐像素施加 = GPU 口径）+ 平色×图案明暗/底图直出，消除 128px 权重图直贴
+ * 64m 地面的阶梯锯齿（对拍 2026-09-12）。
  */
 export function composeGroundPixels(input: GroundComposeInput): GroundComposeOutput {
   const { mask, rawMask } = input;
@@ -152,7 +149,6 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
     Math.floor(input.normalAtlas.height / 4) >= 1;
   const normalCellW = useNormal ? Math.floor(input.normalAtlas!.width / 4) : 0;
   const normalCellH = useNormal ? Math.floor(input.normalAtlas!.height / 4) : 0;
-  const normal = useNormal ? new Uint8ClampedArray(outW * outH * 4) : null;
 
   const borderIndices =
     input.lotBorderPatternIndices && input.lotBorderPatternIndices.length === 4
@@ -173,6 +169,27 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
       patternCellCache.set(cell, cached);
     }
     return cached;
+  }
+  /**
+   * 图案格法线 → 坡度明暗（lot_composite `shade_of` 同款：平整 = 1.0，
+   * 逆光面暗、向光面亮，近似引擎 lotCalcLighting 的图案光照）。
+   */
+  function shadeAt(cell: Pixels, u: number, v: number): number {
+    const LIGHT_X = -0.5;
+    const LIGHT_Y = -0.5;
+    const STRENGTH = 1.4;
+    const px = Math.min(
+      cell.width - 1,
+      Math.floor(frac((u - 0.5) * input.tilesX) * cell.width),
+    );
+    const py = Math.min(
+      cell.height - 1,
+      Math.floor(frac((v - 0.5) * input.tilesY) * cell.height),
+    );
+    const offset = (py * cell.width + px) * 4;
+    const nx = cell.data[offset] / 127.5 - 1;
+    const ny = cell.data[offset + 1] / 127.5 - 1;
+    return Math.min(1.45, Math.max(0.55, 1 + STRENGTH * (nx * LIGHT_X + ny * LIGHT_Y)));
   }
 
   /** 画布 UV → raw mask 通道权重（双线性，= 引擎 GPU 采样口径）。
@@ -239,26 +256,19 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
         }
       }
       if (channel >= 0) {
-        // 覆盖区 = 平色直出（引擎不采样漫反射；后端已 linear→sRGB）。
-        // 边框色缺失时回退浅灰 156（= 后端 LotBorderColor 回退值）。
+        // 覆盖区 = 平色 × 图案坡度明暗（引擎不采样漫反射；明暗在线性空间
+        // 相乘后回 sRGB = 探针 tinted() 同款）。边框色缺失回退浅灰 156
+        //（= 后端 LotBorderColor 回退值）。
         const flat = channelIsBorder
           ? input.lotBorderColors?.[channel] ?? [156, 156, 156]
           : input.lotColors[channel];
-        if (flat) {
-          composed[at] = flat[0];
-          composed[at + 1] = flat[1];
-          composed[at + 2] = flat[2];
-        }
-        // 图案质感进法线：主区格号 = LotColor.A，边框带 = LotBorderColor.A。
         const cell = patternCell(
           channelIsBorder ? borderIndices[channel] : input.lotColors[channel][3],
         );
-        if (normal && cell) {
-          const [nr, ng, nb] = samplePatternCell(cell, u, v, input.tilesX, input.tilesY);
-          normal[at] = nr;
-          normal[at + 1] = ng;
-          normal[at + 2] = nb;
-        }
+        const shade = cell ? shadeAt(cell, u, v) : 1;
+        composed[at] = linearToSrgbByte(srgbToLinear(flat[0]) * shade);
+        composed[at + 1] = linearToSrgbByte(srgbToLinear(flat[1]) * shade);
+        composed[at + 2] = linearToSrgbByte(srgbToLinear(flat[2]) * shade);
       } else {
         // 未覆盖区 = 底图格整格拉伸（U 镜像）；引擎 overlayMask=0 无图案光照。
         if (input.baseTile) {
@@ -271,17 +281,11 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
           composed[at + 1] = 255;
           composed[at + 2] = 255;
         }
-        if (normal) {
-          normal[at] = 128;
-          normal[at + 1] = 128;
-          normal[at + 2] = 255;
-        }
       }
-      if (normal) normal[at + 3] = 255;
       composed[at + 3] = 255;
     }
   }
-  return { albedo: composed, normal, width: outW, height: outH };
+  return { albedo: composed, width: outW, height: outH };
 }
 
 /** worker 消息协议（结构化克隆）。 */
@@ -292,7 +296,6 @@ export interface GroundComposeRequest {
 export interface GroundComposeResponse {
   id: number;
   albedo: Uint8ClampedArray<ArrayBuffer>;
-  normal: Uint8ClampedArray<ArrayBuffer> | null;
   width: number;
   height: number;
 }

@@ -98,24 +98,16 @@ export function groundFillMesh(
  * 身份（源字符串/数值）构成；容量 4 环形淘汰，淘汰时 dispose 贴图。
  */
 const groundTextureCache = new Map<string, ThreeNamespace.Texture>();
-const groundComposeCache = new Map<
-  string,
-  { map: ThreeNamespace.Texture; normalMap: ThreeNamespace.Texture | null }
->();
+const groundComposeCache = new Map<string, ThreeNamespace.Texture>();
 const GROUND_CACHE_CAP = 4;
 
-function putGroundCache(
-  key: string,
-  value: { map: ThreeNamespace.Texture; normalMap: ThreeNamespace.Texture | null },
-) {
+function putGroundCache(key: string, texture: ThreeNamespace.Texture) {
   if (groundComposeCache.has(key)) return;
-  groundComposeCache.set(key, value);
+  groundComposeCache.set(key, texture);
   if (groundComposeCache.size > GROUND_CACHE_CAP) {
     const oldest = groundComposeCache.keys().next().value as string | undefined;
     if (oldest !== undefined) {
-      const evicted = groundComposeCache.get(oldest);
-      evicted?.map.dispose();
-      evicted?.normalMap?.dispose();
+      groundComposeCache.get(oldest)?.dispose();
       groundComposeCache.delete(oldest);
     }
   }
@@ -123,10 +115,7 @@ function putGroundCache(
 
 /** 视口销毁/会话更换时清缓存（dispose 全部贴图）。 */
 export function releaseGroundComposeCache(): void {
-  for (const entry of groundComposeCache.values()) {
-    entry.map.dispose();
-    entry.normalMap?.dispose();
-  }
+  for (const texture of groundComposeCache.values()) texture.dispose();
   groundComposeCache.clear();
   for (const texture of groundTextureCache.values()) texture.dispose();
   groundTextureCache.clear();
@@ -196,7 +185,7 @@ export async function applyGroundMask(options: {
   surface?: ImageData | null;
   /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
   baseTileIndex: number;
-  /** 全局共享法线图集像素（s15；地面 normalMap 起伏来源）。 */
+  /** 全局共享法线图集像素（s15；图案坡度明暗烘焙来源）。 */
   normalAtlas?: ImageData | null;
   /** LotMask 原始通道权重图（阈值选区输入；null = 量化图最近色硬分配）。 */
   rawMask?: ImageData | null;
@@ -245,8 +234,10 @@ export async function applyGroundMask(options: {
   if (!fill) return;
   if (refined && maskPng) {
     // 精细模式：引擎语义 = 通道 >0.5−bw 阈值 + A>B>G>R 优先级瀑布 →
-    // 胜者平色直出；图案质感 = 法线图集（主区 LotColor.A / 边框带
-    // LotBorderColor.A）平铺 normalMap；未覆盖区底图格整格拉伸。
+    // 胜者平色 × 图案坡度明暗（**烘焙进反照率**，lotCalcLighting 的探针
+    // 近似口径 = output/lot_hires pattern 同款；normalMap 实时光照在平射
+    // 阳光下响应是二阶小量，图案不可见——2026-09-29 用户对拍裁定）；
+    // 未覆盖区底图格整格拉伸。
     // compose 成本曾是游离在遥测外的主线程大头——单独纳管成 span。
     const span = renderTelemetry.begin("texture_compose", {
       phase: "ground",
@@ -289,19 +280,14 @@ export async function applyGroundMask(options: {
       }
       if (isStale() || !result) return;
       const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
-      // 精细地面改受光材质：游戏地表被阳光/环境光照亮，无光照的
-      // MeshBasic 会比游戏截图整体偏暗一档（2026-09-13 对拍）。
-      // 注意必须是 Phong/Standard 系——MeshLambertMaterial 不支持
-      // normalMap（赋值被着色器静默忽略，2026-09-18 排查：法线
-      // 烘焙链一直在产出但从未生效）。specular 黑 + shininess 0
-      // 使漫反射响应与 Lambert 一致，观感校准不回退。
+      // 受光材质：游戏地表被阳光/环境光照亮，无光照的 MeshBasic 会比游戏
+      // 截图整体偏暗一档（2026-09-13 对拍）。specular 黑 + shininess 0 使
+      // 漫反射响应与 Lambert 一致，观感校准不回退。
       const lit = new THREE.MeshPhongMaterial({
-        map: result.map,
+        map: result,
         specular: 0x000000,
         shininess: 0,
       });
-      // s15 法线图集：方格勾缝/砂砾颗粒的起伏（与反照率像素对齐）。
-      if (result.normalMap) lit.normalMap = result.normalMap;
       fillMaterial.dispose();
       fill.material = lit;
       span.end({ cacheHit });
