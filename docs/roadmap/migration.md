@@ -4261,3 +4261,71 @@ dump 的就是这 2MB，且 dump 与静态文件互补（dump=运行时值，文
 **连带**：raster-painter 设计文档修订至 v2（`docs/design/`，gitignore 内
 不入库）——过时技术点修正 + 新增 Part 3「按引擎公式的绘制面板重建方案」
 （瀑布 selector 裁决覆盖层 / 参数可视化 / lotCompose 共享核心双舞台）。
+
+### §65.15 decal 家族只读深挖：变体对象格式全解 + 四个新族源码（2026-09-29，基于当日运行时 dump）
+
+只读研究（打包测试并行期间）。材料：`tmp/dynamic/live/variant_objs/`
+（graf_v0-4 + sign_v0-5，11 份变体对象）、`shaderdef_objs/`（ctx_*/sd_*
+各 512/1024 B）、`tmp/dynamic/decal_all_families_source.txt`（18 族源码）。
+解析脚本 `tmp/dynamic/parse_variants.py`（v3）。
+
+**① 变体对象格式全解（路径 B 的对象层格式首次破解）**：
+
+- 文件 = **size 前缀链式记录**（`[u32 size][4][0x8004][0x8004][flags 0xa0040/0xa0000]
+  [0][ptr][cdcdcdcd][payload…]`；记录尾即下一条记录的 size；graf_v0 =
+  0x221/0x211/0x211 三条 = LOD/质量档）。记录**非 4 对齐**（size 为奇数），
+  解析必须按记录内相对偏移读 u32。
+- 记录内 = **0xffffffff 分隔的状态块**。两类：
+  - **家族 pre-block**（signature 状态对，D3D9 RS 语义）：
+    sign = `(15,1) SPECULARENABLE=TRUE` + `(24,0) STENCILZFAIL=KEEP` +
+    `(25,5) STENCILPASS` + `(27,0) STENCILREF`；**graf 仅 `(27,0)`**——
+    招牌有镜面反射 + 模板，涂鸦只有模板，与两族的视觉语义吻合。
+  - **pass 块**：`[pass_tag=(idx<<8)|0xff][0xffffff00][sampler_hdr][pairs…]`，
+    7 个 pass（0..6）；`sampler_hdr = 0x73 | slot<<8`（slot 0 与 4），
+    pairs = D3DSAMPLERSTATE：ADDRESSU/V（WRAP/CLAMP）、MAGF/MINF/MIPF
+    （POINT/LINEAR/ANISO）、ANISO=1——**per-LOD 过滤档**（近 LOD
+    LINEAR/ANISO，远 LOD POINT）。sign pass0 = POINT/POINT/MIPNONE
+    （招牌贴图逐纹素锐利）vs graf pass0 = LINEAR——家族级过滤差异。
+- **结论：变体对象只含 采样器/家族预置状态，无 blend 渲染状态对**
+  （无 (6,·)(7,·)(13,·)）。涂鸦输出合并状态仍不在变体层——剩余指向：
+  引擎按 shader 族固定（Ghidra 路线）或实验测定（§65.10 原判不变）。
+- ctx_*/sd_*（512/1024 B）= 资源指针/清单对象：h0 两族逐字节相同（共享
+  占位），h8/h9 指向变体对象（名字里的堆地址与 variant_objs 文件名互证）；
+  未见 blend 字段。
+
+**② 四个博客三未覆盖的族，源码要点**：
+
+- **decalAnimateSDF / decalLightSDF（SDF 霓虹管招牌，量化公式全出）**：
+  管灯因子 `materialTubeLightFactor = decalMaterialInfo.z·8 + 1`；
+  **断电** `powerFactor = lerp(float4(0.5), lightFactor, powered)` 乘
+  decalMaterialData[0..2]——断电=半亮，接电=管灯全亮；发光 =
+  `materialLightScale = decalMaterialInfo.x·16 + 0.25`（注意：§65.10 的
+  decalInteriorMap 是 `×16+1`，SDF 系是 `×16+0.25`，两族不同）；SDF 光斑
+  `circleDists = saturate(1−sdf/0.5)·hwRatio`、`sphereDist² = circle²+circleZ²`、
+  `lightScales = saturate(1−√sphereDist²)²`、`lightColor[i] = scale·dot(
+  decalMaterialData[i], lightScales)`，**输出 alpha=0**（纯加性发光，
+  落到 blend 层即无 alpha 贡献）；动画边缘 `animEdge²·animRatio·32` 叠进
+  sphereDist（跑马灯=光斑外扩）；decalLightSDF 再叠 `shColorSpec+spec`
+  （场景镜面）。
+- **decalClipBack（屏幕空间延迟 decal）**：VS 用 farPlane 四角 × depth
+  重构 camXYZ → `camToTexture`（texcoord t1/t2/t3 承载矩阵）→ ÷1024 →
+  单位立方体 clip；PS：`Current.color = decalTexture` 后
+  `finalColor = rgb·shColorDiff·kLightingColorScale(0.35) + shColorSpec+spec`
+  ——**延迟 decal 自带场景光照（0.35 漫反射标定 + 全量镜面）**，与几何
+  投影 decal 的合并路径不同。
+- **regionDecalInfo / regionDecalProject（区域级 decal，16 槽）**：
+  uniform 数组 `regionDecalInfo[16] { float4x3 transform; float4 projMat[3];
+  float4 texTransform }`——城市级投影贴花（区划/大地块标注类）走 16 槽
+  常量数组，VS 直接 worldToClip + cameraToTexture 双变换。
+- **decalColorPS + csg/blit 族（贴花贴图运行时生成管线）**：
+  `decalColorPS = (tex(P1).x, tex(P2).x, 0, 0)`（P1/P2 平面距离场）→
+  `csgThicknessPS = max(0, p1−p2)`（厚度）→ `blitPS/blitSingleChannelPS
+  (带 alphaMask)/blitCombinePS(4 tap min)/blitMinPS(4 tap max)`——
+  **贴花 atlas 贴图是运行时 CSG 投影+blit 合成出来的**（P1/P2 = 前后面
+  距离），即"涂鸦纹理"非静态资产而是几何投影产物；这解释了为何找不到
+  部分涂鸦的源 raster。
+
+**③ 下一步**：blend 状态二选一路线——(a) Ghidra 定位
+`SetRenderState(ALPHABLENDENABLE)` 调用点按 shader 族反查固定表；
+(b) 实验：OpenSCP 渲染器对同一 decal 分别以 modulate/alpha 混合截图对拍
+游戏（§65.10 原判仍成立：实验更快）。
