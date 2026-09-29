@@ -249,23 +249,21 @@ async function getDecalTexture(
     });
     if (!decoded) return null;
     decoded.colorSpace = THREE.SRGBColorSpace;
-    // 采样器按引擎变体对象逐字口径（§65.15：sign pass0 = POINT/POINT/
-    // MIPNONE，graffiti pass0 = LINEAR/LINEAR/LINEAR）：
-    // - sign（0x73684EFC 招牌聚类）：POINT 点采样——64px 招牌贴图近看是
-    //   锐利色块像素画（游戏截图如此）；Linear 会糊成不可辨识的色团
-    //   （2026-09-30 用户对拍：招牌"完全看不清"的直接原因之一）。
-    // - 四色量化回退（quantized）：调色板像素画 → POINT 采样可读（Linear
-    //   会把 32px 调色板色糊成不可辨识的色团——2026-09-30 涂鸦广告牌对拍）。
-    // - 其余（涂鸦 raw/破洞）：Linear + 禁 mip + 最大各向异性（2026-09-27
-    //   清晰度对齐口径不变）。
+    // 采样器口径（引擎变体对象：sign 族 base pass 之后全是 LINEAR×3 + mip；
+    // graffiti 同 LINEAR）：
+    // - 招牌/涂鸦 raw/四色解码源（76708d5 后源图已正确）：Linear + mip =
+    //   游戏观感"锐利而边缘平滑"——POINT 的锯齿是 09-30 误治（模糊的病根
+    //   是纹理源错误，已修）。
+    // - 四色量化回退（quantized，32px 调色板色）：POINT 保像素画可读。
+    // - 破洞：Linear + 禁 mip（视差采样口径）。
     const quantized = texture.quantized === true;
-    if ((texture.materialInstance ?? 0) >>> 0 === 0x73684efc || quantized) {
+    if (quantized) {
       decoded.magFilter = THREE.NearestFilter;
       decoded.minFilter = THREE.NearestFilter;
       decoded.generateMipmaps = false;
     } else {
-      decoded.generateMipmaps = false;
-      decoded.minFilter = THREE.LinearFilter;
+      decoded.generateMipmaps = true;
+      decoded.minFilter = THREE.LinearMipmapLinearFilter;
     }
     if (texture.variant === "hole") decoded.flipY = false;
     decoded.anisotropy = viewport.viewer.value?.maxAnisotropy ?? 1;
