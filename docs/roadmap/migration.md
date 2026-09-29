@@ -4222,3 +4222,42 @@ CreateDevice/关键槽位，再装最小钩集（个位数钩子，稳定）。
 dump 的就是这 2MB，且 dump 与静态文件互补（dump=运行时值，文件=初始值）。
 - 注意：游戏进程 48660 若跨夜存活，d3d9 基址不变（同 boot），昨日
   候选地址仍有效；重启则 d3d9 基址按 boot 重排（其余不变）。
+
+### §65.14 ★渲染管线落地：OpenSCP lot 地表三链按 generic_lot 引擎公式重构（2026-09-29，提交 98ef04e）
+
+**触发**：博客第四篇（b919c50）把 LotMask 引擎语义定案后，渲染器三处消费链
+仍是旧"tile×tint"口径，用户指示立即重构。
+
+**三链同口径切换**（基准 = `lot_composite.rs` 校准实现）：
+
+1. **PE 精细模式**（`groundCompose.ts` 纯核心 + `refinedGround.ts` Worker 编排）：
+   覆盖区 = 胜者通道**平色直出**（主区 LotColor / 边框带 LotBorderColor，
+   后端已 linear→sRGB）；图案质感 = 法线图集 0x60E7805D（主区格号 =
+   LotColor.A、边框带 = LotBorderColor.A）按 `(u−0.5)·tiles` 相位平铺
+   normalMap 交实时光照；未覆盖区 = 底图格**整格拉伸** + 图集 U 镜像（§5b，
+   等价 mask 180° 旋转——镜像实锤就此落地修复）。
+2. **默认模式**（服务端 `compose_lot_albedo_rgba` 重写）：同瀑布 + 平色 +
+   边框带 + 底图格，删除 cell 均色乘法。
+3. **raster 工作台 2D sheet**（`composeLotMaterialDataUrl`）：同语义 +
+   烘焙坡度明暗（`shade_of` 同款，LIGHT=(−0.5,−0.5)×1.4 clamp[0.55,1.45]），
+   与 `output/lot_hires/*_hires_pattern.png` 同口径可直接对拍。
+
+**数据侧新增**：`lot_border_pattern_indices`（LotBorderColor.A = 边框图案
+索引，此前被丢弃）、`lot_base_tile`（底图格三级来源：0x0CCB7FD6 →
+0x0CCB7FD2/FD3 推导 `round((min+1/64)×4)`、x+y×4 → 默认 8；真实资产两种
+来源都出现，硬编码草地格 8 废弃）；**s10 染色图集 0x9590D255 全链删除**
+（lot 管线从不消费它，系旧语义发明物）。
+
+**画布空间结论**（前端实现口径）：后端行翻转后的 raw 即画布空间——mask
+直采（列 0 = 西）、底图格采样 u=1−u、图案层相位 `(u−0.5)·tiles`；
+引擎 uv1 世界锚定的跨 lot 相位锚定仍属后续（pe 任务清单原有项）。
+
+**验证**：Rust 侧新增 `lot_albedo_border_band_and_waterfall` /
+`lot_base_tile_three_level_source` 等 3 测试（96 全绿）；前端新增
+`groundCompose.test.ts` 6 测试钉引擎语义（瀑布/边框带/平色/底图 U 镜像/
+图案格选择/未覆盖平坦法线，202 全绿）；`cargo check` + `vue-tsc` +
+`pnpm build` 全过。后续任何一条链跑偏，三实现互检 + lot_hires 基准必抓。
+
+**连带**：raster-painter 设计文档修订至 v2（`docs/design/`，gitignore 内
+不入库）——过时技术点修正 + 新增 Part 3「按引擎公式的绘制面板重建方案」
+（瀑布 selector 裁决覆盖层 / 参数可视化 / lotCompose 共享核心双舞台）。
