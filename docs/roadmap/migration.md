@@ -4341,3 +4341,11 @@ dump 的就是这 2MB，且 dump 与静态文件互补（dump=运行时值，文
 alpha 列平色直出、additive 列发光——与游戏截图按列对拍即可定谳各族混合。
 注意：四色解码 alpha 为二值（掩码 ≥128），alpha 与 premul 两列在此退化为
 相同观感；判别力集中在 modulate vs alpha vs additive 三列。
+
+**⑤ blend 定谳交叉印证（2026-09-30 补记）**：decal_composite 合成探针对
+两个族（decalAtlas 0xc67fb185 的 casino 条目9、aa8b7058/fb661652 的
+OmegaCo 条目59/60）以 4 混合假设 × 2 墙面对拍游戏截图——**alpha 混合
+逐像素吻合，modulate 在深墙上使白字消失（证伪）**。与 §54 从
+decal_shaders.txt 直采得出的「标准 alpha 混合」双线收敛，五问最后一问
+（输出合并状态）关闭。残留：游戏亮部 bloom 为后处理，OpenSCP 预览
+不模仿（P3+）。
