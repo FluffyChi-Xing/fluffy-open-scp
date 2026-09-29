@@ -1,6 +1,7 @@
 import {
   composeGroundPixels,
   copyAtlasRegion,
+  groundOutputSize,
   nearestChannel,
   type GroundComposeInput,
   type GroundComposeResponse,
@@ -198,6 +199,17 @@ export async function composeRefinedGround(options: {
   const periodY = tilePeriod?.[1] && tilePeriod[1] > 0 ? tilePeriod[1] : GROUND_TILE_METERS;
   const tilesX = lotW > 0 ? Math.max(0.1, lotW / periodX) : 1;
   const tilesY = lotH > 0 ? Math.max(0.1, lotH / periodY) : 1;
+  // 输出尺寸按图案格原生密度预算（= 探针 hires 的 32px/m 口径）：每个图案
+  // 重复恰好一格分辨率，烘焙 1:1 最清晰。仅 LotSize 已知时启用（否则 tiles
+  // 是回退值，密度无意义）；核心侧还有"不低于 mask×4"守卫与 2048 上限。
+  const patternCellPx =
+    normalAtlas && normalAtlas.width >= 4 && normalAtlas.height >= 4
+      ? Math.floor(normalAtlas.width / 4)
+      : 0;
+  const outSize =
+    lotSize && patternCellPx >= 4
+      ? groundOutputSize(width, height, tilesX, tilesY, patternCellPx)
+      : null;
   const input: GroundComposeInput = {
     mask: imageDataPixels(maskData),
     rawMask: rawMask ? imageDataPixels(rawMask) : null,
@@ -209,6 +221,7 @@ export async function composeRefinedGround(options: {
     normalAtlas: normalAtlas ? imageDataPixels(normalAtlas) : null,
     tilesX,
     tilesY,
+    outSize,
   };
   let response: GroundComposeResponse;
   try {

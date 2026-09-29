@@ -50,6 +50,11 @@ export interface GroundComposeInput {
   /** 图案平铺次数（逐轴）= LotSize / 0x0CCB7FD0（非整数）。 */
   tilesX: number;
   tilesY: number;
+  /**
+   * 输出尺寸覆盖（编排方按图案原生密度预算的结果，groundOutputSize 同款）；
+   * null = 核心内回退 mask×4。
+   */
+  outSize?: { width: number; height: number } | null;
 }
 
 export interface GroundComposeOutput {
@@ -115,40 +120,157 @@ function frac(value: number): number {
   return value - Math.floor(value);
 }
 
-/** 底图格整格拉伸采样：u 经 1−u 镜像（图集 U 轴与 mask 列序相反，§5b）。 */
+/**
+ * 底图格整格拉伸采样（双线性，clamp-to-edge）：u 经 1−u 镜像（图集 U 轴与
+ * mask 列序相反，§5b）。双线性的原因：底图一个格拉伸铺满地块，输出分辨率
+ * 高于格分辨率时是放大——最近邻会出块状（输出 2048 / 格 256 = 8×）。
+ */
 function sampleBaseCell(
   source: Pixels,
   u: number,
   v: number,
 ): [number, number, number] {
-  const px = Math.min(
-    source.width - 1,
-    Math.floor((1 - u) * source.width),
-  );
-  const py = Math.min(source.height - 1, Math.floor(v * source.height));
-  const offset = (py * source.width + px) * 4;
-  return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
+  const fx = Math.min(Math.max((1 - u) * source.width - 0.5, 0), source.width - 1);
+  const fy = Math.min(Math.max(v * source.height - 0.5, 0), source.height - 1);
+  return sampleBilinearClamped(source, fx, fy);
+}
+
+/** clamp-to-edge 双线性（底图格：整格拉伸、不跨边界重复）。 */
+function sampleBilinearClamped(
+  source: Pixels,
+  fx: number,
+  fy: number,
+): [number, number, number] {
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const x1 = Math.min(x0 + 1, source.width - 1);
+  const y1 = Math.min(y0 + 1, source.height - 1);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const at = (x: number, y: number): [number, number, number] => {
+    const offset = (y * source.width + x) * 4;
+    return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
+  };
+  const topLeft = at(x0, y0);
+  const topRight = at(x1, y0);
+  const bottomLeft = at(x0, y1);
+  const bottomRight = at(x1, y1);
+  const out: [number, number, number] = [0, 0, 0];
+  for (let c = 0; c < 3; c += 1) {
+    const top = topLeft[c] + (topRight[c] - topLeft[c]) * tx;
+    const bottom = bottomLeft[c] + (bottomRight[c] - bottomLeft[c]) * tx;
+    out[c] = top + (bottom - top) * ty;
+  }
+  return out;
 }
 
 /**
- * 合成主循环（纯函数）。4× 超采样输出：mask 权重双线性插值（阈值在插值后
- * 逐像素施加 = GPU 口径）+ 平色×图案明暗/底图直出，消除 128px 权重图直贴
- * 64m 地面的阶梯锯齿（对拍 2026-09-12）。
+ * 图案格平铺采样（双线性，wrap）：引擎 uv1 相位 (u−0.5)·tiles（单 lot 等价
+ * 形式）。平铺重复之间无缝 wrap；输出密度≈格原生密度（1:1）时退化为最近邻
+ * ——即探针口径；密度不足（上限裁剪）时双线性软化而非最近邻丢线。
+ */
+function samplePatternBilinear(
+  source: Pixels,
+  u: number,
+  v: number,
+  tilesX: number,
+  tilesY: number,
+): [number, number, number] {
+  const fx = frac((u - 0.5) * tilesX) * source.width - 0.5;
+  const fy = frac((v - 0.5) * tilesY) * source.height - 0.5;
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const wrap = (value: number): number =>
+    value < 0
+      ? value + source.width
+      : value >= source.width
+        ? value - source.width
+        : value;
+  const wrapY = (value: number): number =>
+    value < 0
+      ? value + source.height
+      : value >= source.height
+        ? value - source.height
+        : value;
+  const x1 = wrap(x0 + 1);
+  const y1 = wrapY(y0 + 1);
+  const at = (x: number, y: number): [number, number, number] => {
+    const offset = (y * source.width + x) * 4;
+    return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
+  };
+  const topLeft = at(wrap(x0), y0);
+  const topRight = at(x1, y0);
+  const bottomLeft = at(wrap(x0), y1);
+  const bottomRight = at(x1, y1);
+  const out: [number, number, number] = [0, 0, 0];
+  for (let c = 0; c < 3; c += 1) {
+    const top = topLeft[c] + (topRight[c] - topLeft[c]) * tx;
+    const bottom = bottomLeft[c] + (bottomRight[c] - bottomLeft[c]) * tx;
+    out[c] = top + (bottom - top) * ty;
+  }
+  return out;
+}
+
+/** 输出画布上限（等比缩，保长宽比）——探针 hires 同款上限思路，取交互档。 */
+const OUTPUT_MAX_SIDE = 2048;
+
+/**
+ * 输出尺寸：优先按**图案格原生密度**（cellPx/tilePeriod px 每米，典型
+ * 256/8 = 32px/m = 探针 hires 口径）——每个图案重复恰好一格分辨率，烘焙
+ * 1:1 采样最清晰；LotSize 未知或密度低于 mask×4 时回退 mask×4（上限 1024，
+ * 既有口径）。超上限等比缩。
+ */
+export function groundOutputSize(
+  maskWidth: number,
+  maskHeight: number,
+  tilesX: number,
+  tilesY: number,
+  patternCellPx: number,
+): { width: number; height: number } {
+  const fallbackScale = Math.min(
+    4,
+    Math.max(1, Math.floor(1024 / Math.max(maskWidth, maskHeight))),
+  );
+  let outW = maskWidth * fallbackScale;
+  let outH = maskHeight * fallbackScale;
+  if (patternCellPx >= 4 && tilesX > 0 && tilesY > 0) {
+    const idealW = Math.round(tilesX * patternCellPx);
+    const idealH = Math.round(tilesY * patternCellPx);
+    // 不低于 mask×4 的超采样水平才启用（否则反而降低 mask 边缘质量）。
+    if (Math.min(idealW, idealH) >= Math.max(maskWidth, maskHeight) * 2) {
+      outW = idealW;
+      outH = idealH;
+    }
+  }
+  const shrink = Math.min(1, OUTPUT_MAX_SIDE / Math.max(outW, outH));
+  return {
+    width: Math.max(1, Math.round(outW * shrink)),
+    height: Math.max(1, Math.round(outH * shrink)),
+  };
+}
+
+/**
+ * 合成主循环（纯函数）。输出密度 = 图案格原生（groundOutputSize）；mask
+ * 权重双线性插值（阈值在插值后逐像素施加 = GPU 口径）+ 平色×图案明暗/
+ * 底图直出。
  */
 export function composeGroundPixels(input: GroundComposeInput): GroundComposeOutput {
   const { mask, rawMask } = input;
   const width = mask.width;
   const height = mask.height;
-  // 4× 超采样输出上限 1024²（与既有口径一致）。
-  const scale = Math.min(4, Math.max(1, Math.floor(1024 / Math.max(width, height))));
-  const outW = width * scale;
-  const outH = height * scale;
-  const composed = new Uint8ClampedArray(outW * outH * 4);
   const useNormal = input.normalAtlas !== null &&
     Math.floor(input.normalAtlas.width / 4) >= 1 &&
     Math.floor(input.normalAtlas.height / 4) >= 1;
   const normalCellW = useNormal ? Math.floor(input.normalAtlas!.width / 4) : 0;
   const normalCellH = useNormal ? Math.floor(input.normalAtlas!.height / 4) : 0;
+  const size =
+    input.outSize ??
+    groundOutputSize(width, height, input.tilesX, input.tilesY, 0);
+  const outW = size.width;
+  const outH = size.height;
+  const composed = new Uint8ClampedArray(outW * outH * 4);
 
   const borderIndices =
     input.lotBorderPatternIndices && input.lotBorderPatternIndices.length === 4
@@ -178,17 +300,15 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
     const LIGHT_X = -0.5;
     const LIGHT_Y = -0.5;
     const STRENGTH = 1.4;
-    const px = Math.min(
-      cell.width - 1,
-      Math.floor(frac((u - 0.5) * input.tilesX) * cell.width),
+    const [nr, ng] = samplePatternBilinear(
+      cell,
+      u,
+      v,
+      input.tilesX,
+      input.tilesY,
     );
-    const py = Math.min(
-      cell.height - 1,
-      Math.floor(frac((v - 0.5) * input.tilesY) * cell.height),
-    );
-    const offset = (py * cell.width + px) * 4;
-    const nx = cell.data[offset] / 127.5 - 1;
-    const ny = cell.data[offset + 1] / 127.5 - 1;
+    const nx = nr / 127.5 - 1;
+    const ny = ng / 127.5 - 1;
     return Math.min(1.45, Math.max(0.55, 1 + STRENGTH * (nx * LIGHT_X + ny * LIGHT_Y)));
   }
 

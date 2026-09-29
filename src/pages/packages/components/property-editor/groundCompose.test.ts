@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composeGroundPixels,
+  groundOutputSize,
   type GroundComposeInput,
   type Pixels,
 } from "./groundCompose";
@@ -183,6 +184,43 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
       }),
     );
     expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual([200, 210, 220]);
+  });
+
+  it("底图格放大走双线性（消除整格拉伸的最近邻块状）", () => {
+    // 底图 2×1 [red, blue] 拉伸到 4×4 输出：x=1 列 u=0.375 → 1−u=0.625 →
+    // fx=0.75 → red:0.25 + blue:0.75 的双线性混合（最近邻会直接取 blue）。
+    const out = composeGroundPixels(
+      input({
+        mask: pixels(1, 1),
+        rawMask: pixels(1, 1, () => [0, 0, 0, 0]),
+        baseTile: pixels(2, 1, (x) => (x === 0 ? [255, 0, 0, 255] : [0, 0, 255, 255])),
+      }),
+    );
+    const at = 1 * 4; // 像素 (1,0)
+    expect(out.albedo[at]).toBe(Math.round(255 * 0.25));
+    expect(out.albedo[at + 1]).toBe(0);
+    expect(out.albedo[at + 2]).toBe(0);
+  });
+});
+
+describe("groundOutputSize（图案原生密度 = 探针 hires 口径）", () => {
+  it("72m lot × 周期 8 × 格 256 → 2304²（32px/m），超 2048 等比缩", () => {
+    expect(groundOutputSize(128, 128, 9, 9, 256)).toEqual({
+      width: 2048,
+      height: 2048,
+    });
+  });
+
+  it("192×96m → 6144×3072 → 2048×1024（等比缩保长宽比）", () => {
+    expect(groundOutputSize(256, 128, 24, 12, 256)).toEqual({
+      width: 2048,
+      height: 1024,
+    });
+  });
+
+  it("无图案格 / 密度低于 mask×2 → 回退 mask×4（上限 1024）", () => {
+    expect(groundOutputSize(128, 128, 1, 1, 0)).toEqual({ width: 512, height: 512 });
+    expect(groundOutputSize(128, 128, 9, 9, 1)).toEqual({ width: 512, height: 512 });
   });
 });
 
