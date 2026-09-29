@@ -99,7 +99,8 @@ export function groundFillMesh(
  */
 const groundTextureCache = new Map<string, ThreeNamespace.Texture>();
 const groundComposeCache = new Map<string, ThreeNamespace.Texture>();
-const GROUND_CACHE_CAP = 4;
+// 4096² 贴图 64MB/张——容量 2 防显存失控（典型会话 1-2 个 lot）。
+const GROUND_CACHE_CAP = 2;
 
 function putGroundCache(key: string, texture: ThreeNamespace.Texture) {
   if (groundComposeCache.has(key)) return;
@@ -119,6 +120,21 @@ export function releaseGroundComposeCache(): void {
   groundComposeCache.clear();
   for (const texture of groundTextureCache.values()) texture.dispose();
   groundTextureCache.clear();
+  groundEnvTintUniform = null;
+}
+
+/**
+ * 精细地面材质的环境色调 uniform（太阳直射 + 天空环境 × 用户亮度；由视口
+ * 按 env 热更新——模型注入光照的地面等价物）。null = 当前无精细地面材质。
+ */
+let groundEnvTintUniform: { value: ThreeNamespace.Color } | null = null;
+
+/**
+ * 视口按太阳/天空/环境亮度更新地面色调（timeOfDay/亮度滑杆的热路径）。
+ * 无精细地面时是 no-op。
+ */
+export function applyGroundEnvironment(tint: [number, number, number]): void {
+  groundEnvTintUniform?.value.setRGB(tint[0], tint[1], tint[2]);
 }
 
 function loadGroundTexture(THREE: typeof ThreeNamespace, url: string): Promise<ThreeNamespace.Texture> {
@@ -280,14 +296,29 @@ export async function applyGroundMask(options: {
       }
       if (isStale() || !result) return;
       const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
-      // 受光材质：游戏地表被阳光/环境光照亮，无光照的 MeshBasic 会比游戏
-      // 截图整体偏暗一档（2026-09-13 对拍）。specular 黑 + shininess 0 使
-      // 漫反射响应与 Lambert 一致，观感校准不回退。
-      const lit = new THREE.MeshPhongMaterial({
-        map: result,
-        specular: 0x000000,
-        shininess: 0,
-      });
+      // 地面光感 = 与模型注入光照同源的 env 因子（太阳直射 + 天空环境），
+      // 由视口 applyGroundEnvironment 按 timeOfDay/环境亮度热更新。MeshBasic
+      // 不受场景摄影灯影响（可预测、不与 env 双份打光）；此前 MeshPhong +
+      // 白色摄影灯：色温/强度不随昼夜变化——模型入夜整体变暗变蓝而地面
+      // 依旧"正午白灯"，即用户对拍的"不感光/暗淡"（2026-09-29）。
+      const lit = new THREE.MeshBasicMaterial({ map: result });
+      const envTint: { value: ThreeNamespace.Color } = {
+        value: new THREE.Color(1, 1, 1),
+      };
+      lit.userData.envTint = envTint;
+      lit.onBeforeCompile = (shader) => {
+        shader.uniforms.uGroundEnvTint = envTint;
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            "#include <common>\nuniform vec3 uGroundEnvTint;",
+          )
+          .replace(
+            "#include <color_fragment>",
+            "#include <color_fragment>\n\tdiffuseColor.rgb *= uGroundEnvTint;",
+          );
+      };
+      groundEnvTintUniform = envTint;
       fillMaterial.dispose();
       fill.material = lit;
       span.end({ cacheHit });

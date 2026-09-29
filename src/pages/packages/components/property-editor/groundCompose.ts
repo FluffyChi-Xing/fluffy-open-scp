@@ -121,47 +121,22 @@ function frac(value: number): number {
 }
 
 /**
- * 底图格整格拉伸采样（双线性，clamp-to-edge）：u 经 1−u 镜像（图集 U 轴与
- * mask 列序相反，§5b）。双线性的原因：底图一个格拉伸铺满地块，输出分辨率
- * 高于格分辨率时是放大——最近邻会出块状（输出 2048 / 格 256 = 8×）。
+ * 底图格整格拉伸采样（最近邻）：u 经 1−u 镜像（图集 U 轴与 mask 列序相反，
+ * §5b）。最近邻是探针 hires 同款（用户对拍裁定：颗粒感 > 双线性的模糊）——
+ * 底图整格拉伸的放大倍率很大（216m lot ≈ 16×），双线性会抹掉格内纹理。
  */
 function sampleBaseCell(
   source: Pixels,
   u: number,
   v: number,
 ): [number, number, number] {
-  const fx = Math.min(Math.max((1 - u) * source.width - 0.5, 0), source.width - 1);
-  const fy = Math.min(Math.max(v * source.height - 0.5, 0), source.height - 1);
-  return sampleBilinearClamped(source, fx, fy);
-}
-
-/** clamp-to-edge 双线性（底图格：整格拉伸、不跨边界重复）。 */
-function sampleBilinearClamped(
-  source: Pixels,
-  fx: number,
-  fy: number,
-): [number, number, number] {
-  const x0 = Math.floor(fx);
-  const y0 = Math.floor(fy);
-  const x1 = Math.min(x0 + 1, source.width - 1);
-  const y1 = Math.min(y0 + 1, source.height - 1);
-  const tx = fx - x0;
-  const ty = fy - y0;
-  const at = (x: number, y: number): [number, number, number] => {
-    const offset = (y * source.width + x) * 4;
-    return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
-  };
-  const topLeft = at(x0, y0);
-  const topRight = at(x1, y0);
-  const bottomLeft = at(x0, y1);
-  const bottomRight = at(x1, y1);
-  const out: [number, number, number] = [0, 0, 0];
-  for (let c = 0; c < 3; c += 1) {
-    const top = topLeft[c] + (topRight[c] - topLeft[c]) * tx;
-    const bottom = bottomLeft[c] + (bottomRight[c] - bottomLeft[c]) * tx;
-    out[c] = top + (bottom - top) * ty;
-  }
-  return out;
+  const px = Math.min(
+    source.width - 1,
+    Math.floor((1 - u) * source.width),
+  );
+  const py = Math.min(source.height - 1, Math.floor(v * source.height));
+  const offset = (py * source.width + px) * 4;
+  return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
 }
 
 /**
@@ -213,8 +188,8 @@ function samplePatternBilinear(
   return out;
 }
 
-/** 输出画布上限（等比缩，保长宽比）——探针 hires 同款上限思路，取交互档。 */
-const OUTPUT_MAX_SIDE = 2048;
+/** 输出画布上限（等比缩，保长宽比）= 探针 hires 同款上限（lot_composite MAX_SIDE）。 */
+const OUTPUT_MAX_SIDE = 4096;
 
 /**
  * 输出尺寸：优先按**图案格原生密度**（cellPx/tilePeriod px 每米，典型

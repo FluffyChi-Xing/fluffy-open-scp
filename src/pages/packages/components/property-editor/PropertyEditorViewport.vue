@@ -41,12 +41,14 @@ import {
   getDeferredMaps,
   getTintTextures,
   makeTintMaterial,
+  skyRadiance,
   type SunEnvRefs,
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
 import { installHejlToneMapping } from "@/lib/hejlTonemapping";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
+  applyGroundEnvironment,
   applyGroundMask,
   buildLotRect,
   placementInverse,
@@ -314,8 +316,27 @@ function applySun() {
   if (envRefs) {
     // 共享 uniform 热切换（不重建材质）——按需渲染下必须显式请求重绘。
     applySunEnv(envRefs, timeOfDay(), props.powered);
+    updateGroundEnvironment();
     viewport.viewer.value?.invalidate();
   }
+}
+
+/**
+ * 地面环境色调（精细地面 = MeshBasic + 该因子，模型注入光照的地面等价物）：
+ * 太阳直射（法线朝上的 N·L）+ 天空环境（天顶色）+ 夜间地板，× 用户亮度。
+ * 系数定标：正午 ≈ 1.0（与探针合成图的纯反照率观感一致）。
+ */
+function updateGroundEnvironment() {
+  if (!envRefs) return;
+  const sunUp = Math.max(envRefs.sunDir.value.y, 0);
+  const sky = skyRadiance([0, 0, 1], envRefs);
+  const sun = envRefs.sunColor.value;
+  const brightnessScale = brightness.value;
+  applyGroundEnvironment([
+    (0.78 * sunUp * sun.r + 0.45 * sky[0] + 0.06) * brightnessScale,
+    (0.78 * sunUp * sun.g + 0.45 * sky[1] + 0.06) * brightnessScale,
+    (0.78 * sunUp * sun.b + 0.45 * sky[2] + 0.06) * brightnessScale,
+  ]);
 }
 watch([() => props.specExperiment, () => props.specMode], () => {
   for (const uniform of specUniformRefs) uniform.value = 2;
@@ -1270,6 +1291,9 @@ function applyBrightness() {
   viewport.viewer.value?.setEnvironmentBrightness(
     brightness.value * (0.22 + 0.78 * dayFactor(timeOfDay())),
   );
+  // 精细地面（MeshBasic + env 因子）不经过四灯，单独同步亮度。
+  updateGroundEnvironment();
+  viewport.viewer.value?.invalidate();
 }
 
 defineExpose({
