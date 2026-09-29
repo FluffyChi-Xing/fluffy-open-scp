@@ -121,22 +121,40 @@ function frac(value: number): number {
 }
 
 /**
- * 底图格整格拉伸采样（最近邻）：u 经 1−u 镜像（图集 U 轴与 mask 列序相反，
- * §5b）。最近邻是探针 hires 同款（用户对拍裁定：颗粒感 > 双线性的模糊）——
- * 底图整格拉伸的放大倍率很大（216m lot ≈ 16×），双线性会抹掉格内纹理。
+ * 底图格整格拉伸采样（双线性，clamp-to-edge）：u 经 1−u 镜像（图集 U 轴与
+ * mask 列序相反，§5b）。**必须是双线性**：底图一个格拉伸铺满地块（放大倍率
+ * 可达 16×），格内自带的混凝土板缝/纹理线条在最近邻下会变成硬边黑带
+ * （用户对拍"切割痕"）与马赛克色块；游戏 GPU 双线性 + mip 让它们成为柔和
+ * 渐变（2026-09-29 第二次对拍定谳， nearest 口径废弃）。
  */
 function sampleBaseCell(
   source: Pixels,
   u: number,
   v: number,
 ): [number, number, number] {
-  const px = Math.min(
-    source.width - 1,
-    Math.floor((1 - u) * source.width),
-  );
-  const py = Math.min(source.height - 1, Math.floor(v * source.height));
-  const offset = (py * source.width + px) * 4;
-  return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
+  const fx = Math.min(Math.max((1 - u) * source.width - 0.5, 0), source.width - 1);
+  const fy = Math.min(Math.max(v * source.height - 0.5, 0), source.height - 1);
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const x1 = Math.min(x0 + 1, source.width - 1);
+  const y1 = Math.min(y0 + 1, source.height - 1);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const at = (x: number, y: number): [number, number, number] => {
+    const offset = (y * source.width + x) * 4;
+    return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
+  };
+  const topLeft = at(x0, y0);
+  const topRight = at(x1, y0);
+  const bottomLeft = at(x0, y1);
+  const bottomRight = at(x1, y1);
+  const out: [number, number, number] = [0, 0, 0];
+  for (let c = 0; c < 3; c += 1) {
+    const top = topLeft[c] + (topRight[c] - topLeft[c]) * tx;
+    const bottom = bottomLeft[c] + (bottomRight[c] - bottomLeft[c]) * tx;
+    out[c] = top + (bottom - top) * ty;
+  }
+  return out;
 }
 
 /**
@@ -171,13 +189,15 @@ function samplePatternBilinear(
         : value;
   const x1 = wrap(x0 + 1);
   const y1 = wrapY(y0 + 1);
+  const wx = wrap(x0);
+  const wy = wrapY(y0);
   const at = (x: number, y: number): [number, number, number] => {
     const offset = (y * source.width + x) * 4;
     return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
   };
-  const topLeft = at(wrap(x0), y0);
-  const topRight = at(x1, y0);
-  const bottomLeft = at(wrap(x0), y1);
+  const topLeft = at(wx, wy);
+  const topRight = at(x1, wy);
+  const bottomLeft = at(wx, y1);
   const bottomRight = at(x1, y1);
   const out: [number, number, number] = [0, 0, 0];
   for (let c = 0; c < 3; c += 1) {

@@ -186,9 +186,9 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
     expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual([200, 210, 220]);
   });
 
-  it("底图格最近邻放大：探针同款颗粒感（非双线性模糊）", () => {
+  it("底图格双线性放大：板缝/纹理柔和过渡（游戏 GPU 同款，消切割痕与马赛克）", () => {
     // 底图 2×1 [red, blue] 拉伸到 4×4 输出：x=1 列 u=0.375 → 1−u=0.625 →
-    // floor(1.25)=1 → 纯 blue（双线性会得到 25% red + 75% blue 的混合）。
+    // fx=0.75 → red:0.25 + blue:0.75 的双线性混合（最近邻会直接取 blue）。
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -197,9 +197,9 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
       }),
     );
     const at = 1 * 4; // 像素 (1,0)
-    expect([out.albedo[at], out.albedo[at + 1], out.albedo[at + 2]]).toEqual([
-      0, 0, 255,
-    ]);
+    expect(out.albedo[at]).toBe(Math.round(255 * 0.25));
+    expect(out.albedo[at + 1]).toBe(0);
+    expect(out.albedo[at + 2]).toBe(Math.round(255 * 0.75));
   });
 });
 

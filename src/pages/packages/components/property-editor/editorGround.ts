@@ -120,21 +120,6 @@ export function releaseGroundComposeCache(): void {
   groundComposeCache.clear();
   for (const texture of groundTextureCache.values()) texture.dispose();
   groundTextureCache.clear();
-  groundEnvTintUniform = null;
-}
-
-/**
- * 精细地面材质的环境色调 uniform（太阳直射 + 天空环境 × 用户亮度；由视口
- * 按 env 热更新——模型注入光照的地面等价物）。null = 当前无精细地面材质。
- */
-let groundEnvTintUniform: { value: ThreeNamespace.Color } | null = null;
-
-/**
- * 视口按太阳/天空/环境亮度更新地面色调（timeOfDay/亮度滑杆的热路径）。
- * 无精细地面时是 no-op。
- */
-export function applyGroundEnvironment(tint: [number, number, number]): void {
-  groundEnvTintUniform?.value.setRGB(tint[0], tint[1], tint[2]);
 }
 
 function loadGroundTexture(THREE: typeof ThreeNamespace, url: string): Promise<ThreeNamespace.Texture> {
@@ -296,29 +281,12 @@ export async function applyGroundMask(options: {
       }
       if (isStale() || !result) return;
       const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
-      // 地面光感 = 与模型注入光照同源的 env 因子（太阳直射 + 天空环境），
-      // 由视口 applyGroundEnvironment 按 timeOfDay/环境亮度热更新。MeshBasic
-      // 不受场景摄影灯影响（可预测、不与 env 双份打光）；此前 MeshPhong +
-      // 白色摄影灯：色温/强度不随昼夜变化——模型入夜整体变暗变蓝而地面
-      // 依旧"正午白灯"，即用户对拍的"不感光/暗淡"（2026-09-29）。
-      const lit = new THREE.MeshBasicMaterial({ map: result });
-      const envTint: { value: ThreeNamespace.Color } = {
-        value: new THREE.Color(1, 1, 1),
-      };
-      lit.userData.envTint = envTint;
-      lit.onBeforeCompile = (shader) => {
-        shader.uniforms.uGroundEnvTint = envTint;
-        shader.fragmentShader = shader.fragmentShader
-          .replace(
-            "#include <common>",
-            "#include <common>\nuniform vec3 uGroundEnvTint;",
-          )
-          .replace(
-            "#include <color_fragment>",
-            "#include <color_fragment>\n\tdiffuseColor.rgb *= uGroundEnvTint;",
-          );
-      };
-      groundEnvTintUniform = envTint;
+      // 精细地面 = Lambert 受光材质：颜色来自 env 太阳（视口 setSunFromEnv
+      // 把 key 光挂到共享 env 的太阳方向/色——与模型注入光照同源，昼夜/亮度
+      // 滑杆联动），并接收建筑投影（fill.receiveShadow + viewer 阴影链）。
+      // 此前 MeshBasic+env 因子无阴影；更早 MeshPhong+白灯不随昼夜色温变。
+      const lit = new THREE.MeshLambertMaterial({ map: result });
+      fill.receiveShadow = true;
       fillMaterial.dispose();
       fill.material = lit;
       span.end({ cacheHit });
