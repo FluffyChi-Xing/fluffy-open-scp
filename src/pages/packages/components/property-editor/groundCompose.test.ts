@@ -94,24 +94,46 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
     expect(right).toEqual([100, 110, 120]);
   });
 
-  it("未覆盖区 = 底图格整格拉伸 + U 轴镜像（§5b）", () => {
-    // 底图格 2×1 [red, blue]：左半列（u≈0.25）镜像后采 px1（blue），
-    // 右半列（u≈0.75）采 px0（red）——列序与 mask 相反。
+  it("未覆盖区底图格按周期平铺（与图案层同密度，消大 lot 马赛克）", () => {
+    // 纯色 1×1 底图格 + tiles 2×2：无 lotSize → outSize 回退 mask×4 = 8×8，
+    // 平铺周期 = 4 输出像素——任意相隔一个周期的列/行均亮必须一致。
     const out = composeGroundPixels(
       input({
-        mask: pixels(2, 1),
-        rawMask: pixels(2, 1, () => [0, 0, 0, 0]),
-        baseTile: pixels(2, 1, (x) => (x === 0 ? [255, 0, 0, 255] : [0, 0, 255, 255])),
+        mask: pixels(2, 2),
+        rawMask: pixels(2, 2, () => [0, 0, 0, 0]),
+        baseTile: pixels(1, 1, () => [34, 139, 34, 255]),
+        tilesX: 2,
+        tilesY: 2,
       }),
     );
-    const left = [out.albedo[0], out.albedo[1], out.albedo[2]];
-    const right = [
-      out.albedo[(out.width - 1) * 4],
-      out.albedo[(out.width - 1) * 4 + 1],
-      out.albedo[(out.width - 1) * 4 + 2],
-    ];
-    expect(left).toEqual([0, 0, 255]);
-    expect(right).toEqual([255, 0, 0]);
+    const colMean = (x: number): number => {
+      let sum = 0;
+      for (let y = 0; y < out.height; y += 1) sum += out.albedo[(y * out.width + x) * 4];
+      return sum / out.height;
+    };
+    for (let x = 0; x < out.width / 2; x += 1) {
+      expect(colMean(x)).toBe(colMean(x + out.width / 2));
+    }
+    // 纯色 1×1 格双线性无插值效应 → 逐字节直出。
+    expect(colMean(0)).toBe(34);
+  });
+
+  it("底图平铺双线性：纹素间平滑过渡（非最近邻硬边）", () => {
+    // base 2×1 [red, blue]，tilesX=2、outSize 8 → 每纹素 2 输出 px：
+    // x=1 → u=0.1875 → fx=0.25 → red:0.75 + blue:0.25 的双线性混合。
+    const out = composeGroundPixels(
+      input({
+        mask: pixels(2, 2),
+        rawMask: pixels(2, 2, () => [0, 0, 0, 0]),
+        baseTile: pixels(2, 1, (x) => (x === 0 ? [255, 0, 0, 255] : [0, 0, 255, 255])),
+        tilesX: 2,
+        tilesY: 1,
+      }),
+    );
+    const at = 1 * 4; // 像素 (1,0)
+    expect(out.albedo[at]).toBe(191);
+    expect(out.albedo[at + 1]).toBe(0);
+    expect(out.albedo[at + 2]).toBe(64);
   });
 
   it("图案光照烘焙进反照率：平色 × 法线图集坡度明暗（主区格号 = LotColor.A）", () => {
@@ -184,22 +206,6 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
       }),
     );
     expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual([200, 210, 220]);
-  });
-
-  it("底图格双线性放大：板缝/纹理柔和过渡（游戏 GPU 同款，消切割痕与马赛克）", () => {
-    // 底图 2×1 [red, blue] 拉伸到 4×4 输出：x=1 列 u=0.375 → 1−u=0.625 →
-    // fx=0.75 → red:0.25 + blue:0.75 的双线性混合（最近邻会直接取 blue）。
-    const out = composeGroundPixels(
-      input({
-        mask: pixels(1, 1),
-        rawMask: pixels(1, 1, () => [0, 0, 0, 0]),
-        baseTile: pixels(2, 1, (x) => (x === 0 ? [255, 0, 0, 255] : [0, 0, 255, 255])),
-      }),
-    );
-    const at = 1 * 4; // 像素 (1,0)
-    expect(out.albedo[at]).toBe(Math.round(255 * 0.25));
-    expect(out.albedo[at + 1]).toBe(0);
-    expect(out.albedo[at + 2]).toBe(Math.round(255 * 0.75));
   });
 });
 

@@ -18,8 +18,8 @@
  *     的 N·L 响应是二阶小量——PE 曾用 normalMap+Phong 结果图案不可见
  *     （2026-09-29 用户对拍：精细与默认几乎无差异）；
  *  4. 未覆盖区：底图格（Lot Textures 图集第 baseTile 格，数据驱动三级来源）
- *     **整格拉伸**铺满地块，图集 U 轴与 mask 列序相反（§5b，采样 u = 1−u），
- *     无图案光照（引擎 overlayMask=0 处）。
+ *     **按 0x0CCB7FD0 周期平铺**（与图案层同密度；引擎为 uv0 整格拉伸，
+ *     此处有意偏离换清晰度——见 sampleBaseCell 注记），无图案光照。
  *
  * 画布即引擎空间：后端已做行序翻转（row 0 = 北/+Y），mask 列 0 = 西（−X）
  * 直采；4× 超采样 + 双线性权重 = GPU 口径（阈值在插值之后）。
@@ -121,40 +121,23 @@ function frac(value: number): number {
 }
 
 /**
- * 底图格整格拉伸采样（双线性，clamp-to-edge）：u 经 1−u 镜像（图集 U 轴与
- * mask 列序相反，§5b）。**必须是双线性**：底图一个格拉伸铺满地块（放大倍率
- * 可达 16×），格内自带的混凝土板缝/纹理线条在最近邻下会变成硬边黑带
- * （用户对拍"切割痕"）与马赛克色块；游戏 GPU 双线性 + mip 让它们成为柔和
- * 渐变（2026-09-29 第二次对拍定谳， nearest 口径废弃）。
+ * 底图格采样（双线性 wrap，**按周期平铺**）。
+ *
+ * ⚠ **有意偏离引擎**：引擎 shader（docs/overview/lot-rendering.md §3-①）
+ * 用 uv0（lot 局部 0..1）把底图格**整格拉伸**铺满地块——大 lot 的底图纹素
+ * = LotSize/256（216m lot ≈ 0.84m/纹素），近看是低密度色块（用户对拍
+ * "马赛克"）。此处改为与图案层同相位/同周期（0x0CCB7FD0，默认 8m）平铺：
+ * 底图纹素密度 = 256/8 = 32px/m，与覆盖区一致。游戏对拍若证实引擎观感
+ * （拉伸）更符合预期，回滚本函数为 uv0 拉伸插值即可。
  */
 function sampleBaseCell(
   source: Pixels,
   u: number,
   v: number,
+  tilesX: number,
+  tilesY: number,
 ): [number, number, number] {
-  const fx = Math.min(Math.max((1 - u) * source.width - 0.5, 0), source.width - 1);
-  const fy = Math.min(Math.max(v * source.height - 0.5, 0), source.height - 1);
-  const x0 = Math.floor(fx);
-  const y0 = Math.floor(fy);
-  const x1 = Math.min(x0 + 1, source.width - 1);
-  const y1 = Math.min(y0 + 1, source.height - 1);
-  const tx = fx - x0;
-  const ty = fy - y0;
-  const at = (x: number, y: number): [number, number, number] => {
-    const offset = (y * source.width + x) * 4;
-    return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
-  };
-  const topLeft = at(x0, y0);
-  const topRight = at(x1, y0);
-  const bottomLeft = at(x0, y1);
-  const bottomRight = at(x1, y1);
-  const out: [number, number, number] = [0, 0, 0];
-  for (let c = 0; c < 3; c += 1) {
-    const top = topLeft[c] + (topRight[c] - topLeft[c]) * tx;
-    const bottom = bottomLeft[c] + (bottomRight[c] - bottomLeft[c]) * tx;
-    out[c] = top + (bottom - top) * ty;
-  }
-  return out;
+  return samplePatternBilinear(source, u, v, tilesX, tilesY);
 }
 
 /**
@@ -385,9 +368,16 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
         composed[at + 1] = linearToSrgbByte(srgbToLinear(flat[1]) * shade);
         composed[at + 2] = linearToSrgbByte(srgbToLinear(flat[2]) * shade);
       } else {
-        // 未覆盖区 = 底图格整格拉伸（U 镜像）；引擎 overlayMask=0 无图案光照。
+        // 未覆盖区 = 底图格按周期平铺（与图案层同密度，见 sampleBaseCell
+        // 的偏离注记）；引擎 overlayMask=0 无图案光照。
         if (input.baseTile) {
-          const [br, bg, bb] = sampleBaseCell(input.baseTile, u, v);
+          const [br, bg, bb] = sampleBaseCell(
+            input.baseTile,
+            u,
+            v,
+            input.tilesX,
+            input.tilesY,
+          );
           composed[at] = br;
           composed[at + 1] = bg;
           composed[at + 2] = bb;
