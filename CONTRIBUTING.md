@@ -55,6 +55,9 @@ npm run dev     # 开发运行
 
 - 对游戏数据的逆向/验证结论请写成 `crates/sc-properties/examples/*.rs` 探针，
   文件头注释注明「仅开发用」与结论摘要；输出一律写入 `tmp/`（已 gitignore）。
+- **`tmp/` 是动态提取资源与探针处理文件的约定存放区：git 不追踪，且任何清理操作
+  不得清理 `tmp/`。**逆向取证中间产物（shader dump、变体对象等）可能只存在于
+  `tmp/`，删除后只能重跑探针恢复（2026-09-30 曾因整目录清理丢失 §65.15 取证材料）。
 - 沉淀到正式管线的结论请同步更新 `docs/overview/glass-box/*.md`，
   并通过 fluffy-context（`ctx learn` / `ctx checkpoint`）记录。
 
@@ -123,6 +126,11 @@ Before committing: `vue-tsc`, `vitest`, `cargo check`, and `cargo test` must all
 - Reverse-engineering/verification findings for game data go into
   `crates/sc-properties/examples/*.rs` probes; mark the header with
   "dev-only" and a conclusion summary. Probe output goes to `tmp/` (gitignored).
+- **`tmp/` is the designated home for dynamically extracted resources and probe
+  artifacts: never tracked by git, and never deleted by any cleanup pass.**
+  RE forensics (shader dumps, variant objects) may exist only inside `tmp/`;
+  deleting them means re-running the probes (a 2026-09-30 cleanup wiped the
+  §65.15 forensics this way).
 - Promote conclusions into the official pipeline and update
   `docs/overview/glass-box/*.md`; record them via fluffy-context
   (`ctx learn` / `ctx checkpoint`).
