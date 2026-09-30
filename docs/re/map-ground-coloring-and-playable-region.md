@@ -86,6 +86,28 @@ groundColor = lerp(groundColor, pollutedGroundColor, ecoMaps.a);
 | `SimRollerCompletePack` | SimRoller 工具包 | 区域编辑相关 |
 | `OverplopSetup.bat` + OverplopModules | Overplop 附加（含 Rollback 恢复说明） | 处理脚本放行后的回滚问题 |
 
+## 二·补充：脚本包的引擎消费机制（09-30 RTTI 实锤）
+
+SimCity.exe 对 type `0x08068AEB` 有 3 处 dword 常量比较（.text @
+0x1c86e5/0x1c8732/0x1c93f2）= **引擎内置解析器的类型分发分支**。RTTI 泄漏
+给出完整类名与来源：
+
+- `EA::ArgScript` / `EA::Swarm::Parser`——**引擎内置 ArgScript 解析器**
+  （与 shader 容器同一文本命令格式家族）；
+- `GB::cEcoGameDescription` + `cAddEcoGameDescriptionCommand`——EcoGame
+  规则包经 ArgScript 命令注册进 GlassBox 的 EcoGame 规则库；
+- 源码路径泄漏：`GB_EcoGame/...UTFKernel/EASTL`（GlassBox EcoGame 模块）。
+
+**结论**：EcoGame 包 = ArgScript 格式的规则描述（"unit rule"），引擎在加载
+时用自己的解析器解释并注册——**不需要 JS/V8**（`EAWebkit.dll`=WebKit/
+JavaScriptCore，仅 UI 网页；`1911.dll` 全量加密无宿主痕迹；exe 无 V8 标记）。
+`SC_RULE_*`（1035 处）= ArgScript 注册的规则名表。
+
+**BOC 逻辑 diff 方法**：BOC 的 6.3MB blob = 修改后的 ArgScript 规则数据库
+全文。用 `tmp/parse_container_tokens.py` 的同族语法解析（长度前缀字符串流）
+可切出规则定义清单；与原版规则库 diff 即得逻辑差异。原版规则库需从
+清版安装/社区原版包获取（本机 5 主包无 type 0x08068AEB 条目）。
+
 ## 四、外围坐标系 / 地下资源 / 摄像机（引擎侧判定）
 
 | 主题 | 判定 | 依据 |
