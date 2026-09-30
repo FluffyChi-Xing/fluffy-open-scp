@@ -40,6 +40,10 @@ python tools/dynamic/dump_shaders.py --spawn "D:\ea-games\simcity_offline\SimCit
 
 ## 已知事实（勿重复踩坑）
 
+- **D3D9 COM 对象的 vftable 实际住在 rdata（只读数据段），方法指针才指向 exec**。
+  按「vftable 地址 ∈ exec」筛候选会把真设备拒掉、反而放进导入跳转表假候选
+  （2026-09-30 三连会话零捕获+烧 CPU 的根因，已修：inExec→inMod 放宽 +
+  lurk 确认设备即置 deviceFound 抑制 fallbackProbe + 校准槽位 83→78 补 create@80）。
 - 离线版 SimCity.exe 已脱壳、无 ASLR（基址 0x400000）→ Ghidra 地址 =
   运行时 VA 直连。
 - frida 17：模块级 API 已删（用 `frida.get_local_device()`）；
