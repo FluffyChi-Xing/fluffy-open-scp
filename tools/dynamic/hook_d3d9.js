@@ -696,13 +696,19 @@ function fallbackProbe() {
   if (probeRounds > 8) { log('探测 8 轮无果——回报此日志'); return; }
   log('探测第 ' + probeRounds + ' 轮：.data 对象图行走…');
   var vts = walkGameData();
+  // 并集策略（2026-09-30）：行走候选与全堆扫描候选合并——渲染设备可能只在
+  // 堆里（.data 根不可达）， walking 有货时全堆扫描同样要跑，二者不互斥。
+  var heapVts = scanHeapV2();
+  heapVts.forEach(function (vt) {
+    if (vts.indexOf(vt) < 0) vts.push(vt);
+  });
   if (vts.length > 0) {
     // 全槽 bind sweep：SetPixelShader/SetVertexShader 藏在任何槽都逃不过
     // token 校验（错误槽位零产出）；recon 仅用于 create 槽发现
     vts.forEach(function (vt) {
       for (var s = 0; s <= 110; s++) hookBind(vt, s);
     });
-    log('已对 ' + vts.length + ' 个候选装全槽 bind sweep（0..110）');
+    log('已对 ' + vts.length + ' 个候选装全槽 bind sweep（0..110，含全堆 ' + heapVts.length + '）');
     reconAll(vts);
     return;
   }
