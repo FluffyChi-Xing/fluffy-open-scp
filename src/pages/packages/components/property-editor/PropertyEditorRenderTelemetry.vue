@@ -39,6 +39,37 @@ function formatMs(value: number): string {
   return value >= 100 ? `${value.toFixed(0)} ms` : `${value.toFixed(2)} ms`;
 }
 
+/**
+ * 实时样本的 metadata 徽标：把「规模 ↔ 耗时」相关的关键字段（phase/规模
+ * 计数/缓存命中）拼进行内，供肉眼关联——例如 grouping 触发 + units=200
+ * + cacheHit=true 应当毫秒级，而 first_load + materials=8 则承载解码成本。
+ */
+function metadataBadge(entry: RenderTelemetryEntry): string {
+  const meta = entry.metadata;
+  if (!meta) return entry.trigger;
+  const parts: string[] = [entry.trigger];
+  for (const key of [
+    "phase",
+    "units",
+    "decals",
+    "materials",
+    "meshes",
+    "bytes",
+    "glbs",
+    "groups",
+    "tinted",
+    "projected",
+    "fallback",
+    "masked",
+    "cacheHit",
+    "lod",
+    "failed",
+  ]) {
+    if (meta[key] !== undefined) parts.push(`${key}=${String(meta[key])}`);
+  }
+  return parts.join(" · ");
+}
+
 async function loadSummary(): Promise<void> {
   if (!isTauri()) return;
   loading.value = true;
@@ -107,7 +138,7 @@ onBeforeUnmount(() => {
           <FIcon name="Activity" :size="12" aria-label="" />
           <span class="stage-name">{{ stageLabel(entry.stage) }}</span>
           <span class="stage-value">{{ formatMs(entry.durationMs) }}</span>
-          <span class="stage-meta">{{ entry.trigger }}</span>
+          <span class="stage-meta">{{ metadataBadge(entry) }}</span>
         </li>
       </ul>
     </section>

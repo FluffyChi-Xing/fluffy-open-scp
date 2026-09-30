@@ -215,12 +215,13 @@ export interface TintTextureSet {
  * uvKind=2（facade tint 着色器）：贴图**预加载完成**后才建材质——
  * 否则首次编译时 uniform 为 null，采样 alpha=0 → 全部 discard（模型隐形）。
  */
-export async function loadTintTextures(
+async function loadTintTextures(
   THREE: typeof ThreeNamespace,
   materials: LotMaterial[],
-  registerTextureUrl: (url: string) => void,
   /** 硬件最大各向异性过滤级别（掠射角墙面靠它保清晰度）。 */
   maxAnisotropy = 1,
+  /** blob URL 收集（由资产缓存持有，跨 rebuild 存活，释放时统一回收）。 */
+  cacheUrls: string[],
 ): Promise<TintTextureSet[]> {
   const loader = new THREE.TextureLoader();
   // seamless（默认 true）：tint/normal/shader 都是「fract → 图集区域」平铺采样。
@@ -231,7 +232,9 @@ export async function loadTintTextures(
   const loadTex = (bytes: Uint8Array<ArrayBuffer>, seamless = true) =>
     new Promise<ThreeNamespace.Texture>((resolve, reject) => {
       const url = pngBlobUrl(bytes);
-      registerTextureUrl(url);
+      // blob URL 由材质资产缓存持有（见 getRefinedMaterialAssets），
+      // 不进逐 rebuild 的 textureUrls——缓存命中的贴图要跨 rebuild 存活。
+      cacheUrls.push(url);
       loader.load(
         url,
         (texture) => {
@@ -253,53 +256,221 @@ export async function loadTintTextures(
       );
     });
   return Promise.all(
-    materials.map(async (material) => ({
-      // tint 的 rg 是调色板坐标（索引数据，非颜色）、a 是 0/1 镜像覆盖：
-      // 线性插值会把相邻条目混合成无意义的中间索引——图案边界上的
-      // 门窗被"平均"成平墙条目（2026-09-19 消防局 0x4DE9912B 与
-      // 0xF8F776BF 两例：padding 均为"禁用 Top"量级，门窗全在 Base 层，
-      // 缺失形态与此完全吻合）。与 palette 同理必须点采样。
-      tintTex: material.tintPng
-        ? await loadTex(material.tintPng).then((t) => {
-            t.minFilter = THREE.NearestFilter;
-            t.magFilter = THREE.NearestFilter;
-            return t;
-          })
-        : null,
-      // 调色板 512×16 = 256 列 × 7 行、**每采样点 2×2 像素**，着色器还会加
-      // (1/1024,1/32) 把它居中——正是为点采样设计的；线性滤波会把相邻
-      // 调色板条目互相抹开。
-      paletteTex: material.palettePng
-        ? await loadTex(material.palettePng).then((t) => {
-            t.minFilter = THREE.NearestFilter;
-            t.magFilter = THREE.NearestFilter;
-            t.generateMipmaps = false;
-            return t;
-          })
-        : null,
-      normalTex: material.normalPng ? await loadTex(material.normalPng) : null,
-      shaderTex: material.shaderPng ? await loadTex(material.shaderPng) : null,
-      interiorTex: material.interiorPng
-        ? await loadTex(material.interiorPng, false).then((t) => {
-            // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
-            // scale）依赖回绕取样；ClampToEdge 会把越界采样钳成边缘纯色（绿/紫块）
-            t.wrapS = THREE.RepeatWrapping;
-            t.wrapT = THREE.RepeatWrapping;
-            return t;
-          })
-        : null,
-      // reliefPng（slot5 alpha）高度通道语义未确证（疑为灯亮同源），视差
-      // 已回滚——不加载、不上传 GPU。见 Top 层块内回滚记录。
-      paramsTex: buildParamsTexture(THREE, material),
-      paramCols: material.paramCols,
-    })),
+    materials.map(async (material) => {
+      // 逐材质内 5 张 PNG 并行解码（此前串行 await，首载成本 = 各张之和）。
+      const [tintTex, paletteTex, normalTex, shaderTex, interiorTex] =
+        await Promise.all([
+          // tint 的 rg 是调色板坐标（索引数据，非颜色）、a 是 0/1 镜像覆盖：
+          // 线性插值会把相邻条目混合成无意义的中间索引——图案边界上的
+          // 门窗被"平均"成平墙条目（2026-09-19 消防局 0x4DE9912B 与
+          // 0xF8F776BF 两例：padding 均为"禁用 Top"量级，门窗全在 Base 层，
+          // 缺失形态与此完全吻合）。与 palette 同理必须点采样。
+          material.tintPng
+            ? loadTex(material.tintPng).then((t) => {
+                t.minFilter = THREE.NearestFilter;
+                t.magFilter = THREE.NearestFilter;
+                return t;
+              })
+            : Promise.resolve(null),
+          // 调色板 512×16 = 256 列 × 7 行、**每采样点 2×2 像素**，着色器还会加
+          // (1/1024,1/32) 把它居中——正是为点采样设计的；线性滤波会把相邻
+          // 调色板条目互相抹开。
+          material.palettePng
+            ? loadTex(material.palettePng).then((t) => {
+                t.minFilter = THREE.NearestFilter;
+                t.magFilter = THREE.NearestFilter;
+                t.generateMipmaps = false;
+                return t;
+              })
+            : Promise.resolve(null),
+          material.normalPng ? loadTex(material.normalPng) : Promise.resolve(null),
+          material.shaderPng ? loadTex(material.shaderPng) : Promise.resolve(null),
+          material.interiorPng
+            ? loadTex(material.interiorPng, false).then((t) => {
+                // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
+                // scale）依赖回绕取样；ClampToEdge 会把越界采样钳成边缘纯色（绿/紫块）
+                t.wrapS = THREE.RepeatWrapping;
+                t.wrapT = THREE.RepeatWrapping;
+                return t;
+              })
+            : Promise.resolve(null),
+        ]);
+      return {
+        tintTex,
+        paletteTex,
+        normalTex,
+        shaderTex,
+        interiorTex,
+        // reliefPng（slot5 alpha）高度通道语义未确证（疑为灯亮同源），视差
+        // 已回滚——不加载、不上传 GPU。见 Top 层块内回滚记录。
+        paramsTex: buildParamsTexture(THREE, material),
+        paramCols: material.paramCols,
+      };
+    }),
   );
+}
+
+/** 每 mesh 材质组的延迟绑定贴图集（base/normal/roughness/AO）。 */
+export interface MaterialMapSet {
+  map: ThreeNamespace.Texture | null;
+  normalMap: ThreeNamespace.Texture | null;
+  roughnessMap: ThreeNamespace.Texture | null;
+  aoMap: ThreeNamespace.Texture | null;
+}
+
+interface RefinedMaterialAssetCache {
+  payload: LotModelPayload;
+  tintSets: TintTextureSet[];
+  deferredMaps: MaterialMapSet[];
+  /** 缓存持有的 blob URL（释放时统一 revoke）。 */
+  urls: string[];
+}
+
+/**
+ * 材质资产缓存（payload 级）：tint 链 5-6 张/材质 + deferred 链 4 张/材质的
+ * PNG 解码与 GPU 上传是 rebuild 最贵的重复功——renderMode/grouping 变化的
+ * 全量重建里它们完全不变，命中缓存即零解码。blob URL 由缓存持有，不进
+ * 逐 rebuild 的 textureUrls 回收；payload 更换/视口销毁时显式释放。
+ */
+let materialAssetCache: RefinedMaterialAssetCache | null = null;
+
+/** 释放材质资产缓存（贴图 dispose + blob URL revoke）。 */
+export function releaseRefinedMaterialCache(): void {
+  const cache = materialAssetCache;
+  if (!cache) return;
+  materialAssetCache = null;
+  for (const url of cache.urls) URL.revokeObjectURL(url);
+  for (const set of cache.tintSets) {
+    set.tintTex?.dispose();
+    set.paletteTex?.dispose();
+    set.normalTex?.dispose();
+    set.shaderTex?.dispose();
+    set.interiorTex?.dispose();
+    set.paramsTex?.dispose();
+  }
+  for (const set of cache.deferredMaps) {
+    set.map?.dispose();
+    set.normalMap?.dispose();
+    set.roughnessMap?.dispose();
+    set.aoMap?.dispose();
+  }
+}
+
+/** 取（或构建）payload 的 tint 链贴图集。命中缓存 = 零解码零上传。 */
+export async function getTintTextures(
+  THREE: typeof ThreeNamespace,
+  payload: LotModelPayload,
+  maxAnisotropy: number,
+): Promise<TintTextureSet[]> {
+  if (!materialAssetCache || materialAssetCache.payload !== payload) {
+    releaseRefinedMaterialCache();
+    materialAssetCache = {
+      payload,
+      tintSets: [],
+      deferredMaps: [],
+      urls: [],
+    };
+  }
+  if (materialAssetCache.tintSets.length === 0) {
+    materialAssetCache.tintSets = await loadTintTextures(
+      THREE,
+      payload.materials ?? [],
+      maxAnisotropy,
+      materialAssetCache.urls,
+    );
+  }
+  return materialAssetCache.tintSets;
+}
+
+/** 取（或构建）payload 的 deferred 链贴图集（await 全部解码完成）。 */
+export async function getDeferredMaps(
+  THREE: typeof ThreeNamespace,
+  payload: LotModelPayload,
+  maxAnisotropy: number,
+): Promise<MaterialMapSet[]> {
+  if (!materialAssetCache || materialAssetCache.payload !== payload) {
+    releaseRefinedMaterialCache();
+    materialAssetCache = {
+      payload,
+      tintSets: [],
+      deferredMaps: [],
+      urls: [],
+    };
+  }
+  if (materialAssetCache.deferredMaps.length === 0) {
+    const cache = materialAssetCache;
+    const loader = new THREE.TextureLoader();
+    const load = async (
+      bytes: Uint8Array<ArrayBuffer> | null,
+      srgb: boolean,
+    ): Promise<ThreeNamespace.Texture | null> => {
+      if (!bytes) return null;
+      const url = pngBlobUrl(bytes);
+      cache.urls.push(url);
+      const texture = await loader.loadAsync(url);
+      texture.anisotropy = maxAnisotropy;
+      if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    };
+    cache.deferredMaps = await Promise.all(
+      (payload.materials ?? []).map(async (material) => {
+        const [map, normalMap, roughnessMap, aoMap] = await Promise.all([
+          load(material.baseColorPng, true),
+          load(material.normalPng, false),
+          load(material.roughnessPng, false),
+          load(material.aoPng, false),
+        ]);
+        return { map, normalMap, roughnessMap, aoMap };
+      }),
+    );
+  }
+  return materialAssetCache.deferredMaps;
+}
+
+/** 把 deferred 贴图绑定到逐 mesh 材质组（同步，贴图已就绪）。 */
+export function applyDeferredMaterialMaps(
+  maps: MaterialMapSet[],
+  materialGroups: ThreeNamespace.MeshStandardMaterial[][],
+) {
+  maps.forEach((set, materialIndex) => {
+    const group = materialGroups[materialIndex] ?? [];
+    if (!group.length) return;
+    if (set.map) {
+      for (const refined of group) {
+        refined.map = set.map;
+        refined.needsUpdate = true;
+      }
+    }
+    if (set.normalMap) {
+      for (const refined of group) {
+        refined.normalMap = set.normalMap;
+        refined.needsUpdate = true;
+      }
+    }
+    if (set.roughnessMap) {
+      for (const refined of group) {
+        refined.roughnessMap = set.roughnessMap;
+        refined.roughness = 1;
+        refined.needsUpdate = true;
+      }
+    }
+    if (set.aoMap) {
+      for (const refined of group) {
+        refined.aoMap = set.aoMap;
+        refined.needsUpdate = true;
+      }
+    }
+  });
 }
 
 /**
  * tint 着色器注入：逐像素复刻 building4 链（§27/§28 源码逐字）。
- * TEXCOORD_2 = facade 世界投影 UV（Float4.xy），TEXCOORD_1.xy = materialIndex
- * /255 + 内景随机种子。fragment：baseUv = frac(vTintUv)*regionXform.xy +
+ * TEXCOORD_2 = facade 世界投影 UV（Float4.xy），TEXCOORD_1.xy = 选列
+ * （逐顶点 D3DCOLOR.G）/255 + 内景随机种子。**参数表寻址 = 引擎
+ * building4SetupVS 同款：VS 算地址（列取整 +0.1、+0.5 对齐 texel 中心）
+ * 输出 vMatUV varying，PS 用插值地址逐像素 Nearest 采样**——跨列三角形
+ * 按像素原子切换整列参数，不混合两列的值（2026-09-26 定谳，见 uv_vertex
+ * 块注释）。fragment：baseUv = frac(vTintUv)*regionXform.xy +
  * regionXform.zw → tint 查表 → palette 查色（色行+末行 surface 行）×(tint.b*2)，
  * A<0.5 镂空 discard；法线图同 UV 重采样。TBN 直接用 GLB 导出的 TANGENT
  * （<normal_fragment_begin> 的 tbn；= 引擎 ApplyNormalMap(vn, tangent, nmap)
@@ -316,10 +487,11 @@ export async function loadTintTextures(
  * 覆盖率，shaderMap/normalMap/palette(palU2 列)/surface/亮度全部按其 lerp
  * ——公寓楼窗标记只在 Top 域（facade_survey 普查 86%），Base-only 采样
  * 会导致窗户全墙化。
- * 偏离源码处（均文档化）：①下向面豁免镂空（原版瑕疵）；②specularity 取 G
- * 通道（资产实证）；③内景自发光 16→uInteriorGlow 可调（无 HDR tonemap）；
- * ④interiorThresholds 用常数四分位（引擎值未知）；⑤eyeDir 用对象空间近似
- * 切线空间。
+ * 偏离源码处（均文档化）：①specularity 取 G 通道（资产实证）；②内景自发光
+ * 16→uInteriorGlow 可调（无 HDR tonemap）；③interiorThresholds 用常数四分位
+ * （引擎值未知）；④eyeDir 用对象空间近似切线空间。
+ * 【2026-09-26 移除】下向面豁免镂空（曾作观察器缓解）——它把桁架等真洞
+ * 渲染成白面片（用户实证），回归引擎无条件 clip 口径，见 map_fragment 块。
  */
 export function attachTintShader(
   material: ThreeNamespace.MeshStandardMaterial,
@@ -367,10 +539,7 @@ uniform sampler2D paramsMap;
 #endif
 varying vec2 vTintUv;
 varying vec2 vTopUv;
-varying vec4 vXform;
-varying vec4 vXform2;
-varying vec4 vPalOrigin;
-varying vec4 vRoom;
+varying vec2 vMatUV;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
@@ -381,23 +550,15 @@ varying vec3 vModelPos;`,
         `#include <uv_vertex>
 vTintUv = uv2;
 vTopUv = uv3;
-// 参数表按顶点取行（引擎 building4DefaultVS 同款数据流：VS 查表 →
-// regionXform 作为 varying 插值）。此前在片元里用插值列号 vMatU 查表：
-// 跨列三角形的列号在边界间连续扫过一连串无关列，窗扇半边被换成素墙
-// 区域（消防局中窗右半变砖墙，2026-09-19 实测）。列号取整后 +0.5 对齐
-// texel 中心，Nearest 采样行 V 与片元版一致。
+// 参数选列 = 逐顶点 byte1（D3DCOLOR.G，0..paramCols-1 与表宽自洽；消防局
+// 全部像素级对拍建立在其上）。地址 varying（vMatUV）+ PS Nearest 逐像素
+// 采样 = 引擎 building4SetupVS 的数据流结构（跨列三角形原子切换整列参数
+// 不混合值，2026-09-26 定谳；逐 tile 相位/半门问题另案，见 migration.md
+// §49.5——base 除法与逐实例基址两假设均已被实验证伪并回滚）。
 #ifdef TINT_PARAMS
-float scMatCol = floor(uv1.x * 255.0 + 0.5);
-vec2 scMatC = vec2((scMatCol + 0.5) / uParamCols, 0.0);
-vPalOrigin = texture2D(paramsMap, scMatC + vec2(0.0, 0.125));
-vXform = texture2D(paramsMap, scMatC + vec2(0.0, 0.375));
-vXform2 = texture2D(paramsMap, scMatC + vec2(0.0, 0.625));
-vRoom = texture2D(paramsMap, scMatC + vec2(0.0, 0.875));
+vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + 0.5) / uParamCols, 0.0);
 #else
-vPalOrigin = vec4(0.0);
-vXform = vec4(1.0, 1.0, 0.0, 0.0);
-vXform2 = vec4(0.0);
-vRoom = vec4(0.0);
+vMatUV = vec2(0.0);
 #endif`,
       )
       .replace(
@@ -421,16 +582,16 @@ vModelPos = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
         `#include <common>
 varying vec2 vTintUv;
 varying vec2 vTopUv;
-varying vec4 vXform;
-varying vec4 vXform2;
-varying vec4 vPalOrigin;
-varying vec4 vRoom;
+varying vec2 vMatUV;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
+#ifdef TINT_PARAMS
+uniform sampler2D paramsMap;
+#endif
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uSkyColor;
@@ -483,14 +644,26 @@ float scFastNoise(vec3 seed) {
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
-        // 参数表行 = VS 按顶点查表后的 varying（引擎同款数据流），
-        // 跨列三角形平滑插值区域变换而非扫过无关列。
-        vec4 xform = vXform;
-        vec4 xform2 = vXform2; // row2=regionXform2(Top 层)
-        vec4 palOrigin = vPalOrigin;
-        vec4 scRoom = vRoom; // row3=(tilePadding.xy, roomInvSize.zw)
+        // 参数表逐像素采样（引擎同款）：地址在 VS 算好并插值过来
+        // （vMatUV），Nearest 采样按像素原子取列——跨列三角形在列边界
+        // 中线切换，不混合两列的变换。
+#ifdef TINT_PARAMS
+        vec4 palOrigin = texture2D(paramsMap, vMatUV + vec2(0.0, 0.125));
+        vec4 xform = texture2D(paramsMap, vMatUV + vec2(0.0, 0.375));
+        vec4 xform2 = texture2D(paramsMap, vMatUV + vec2(0.0, 0.625)); // row2=regionXform2(Top 层)
+        vec4 scRoom = texture2D(paramsMap, vMatUV + vec2(0.0, 0.875)); // row3=(tilePadding.xy, roomInvSize.zw)
+#else
+        vec4 palOrigin = vec4(0.0);
+        vec4 xform = vec4(1.0, 1.0, 0.0, 0.0);
+        vec4 xform2 = vec4(0.0);
+        vec4 scRoom = vec4(0.0);
+#endif
         // 半 texel 内缩：tint 是图集，fract=0/1 处的线性滤波核会读到相邻
         // 区域内容（Base 层此前没有 padding 保护——接缝的第二个成因）。
+        // 【2026-09-27】平铺周期 = 1.0 原始单位为对拍定谳口径：引擎
+        // Unpack 管线的除 tile 一步（uv=raw/|ts|）的 ts 来源未定——v1（除
+        // xform）白屏、v2（乘 xform，周期 1/s）砖块放大 3.6×且变糊，双双
+        // 证伪回滚（migration.md §49.5）。
         vec2 tUv = fract(vTintUv) * max(xform.xy - uTintTexel, vec2(0.0)) + xform.zw + uTintTexel * 0.5;
         vec4 tintValues = texture2D(tintMap, tUv);
         // 30.2 Top 层（relief_tc 域，uv2×regionXform2）：窗户 motif 所在。
@@ -509,6 +682,7 @@ float scFastNoise(vec3 seed) {
         vec4 facadeTintValues = vec4(0.0);
         if (xform2.x > 0.0 && xform2.y > 0.0) {
           vec2 scPad = scRoom.xy;
+          // Top 层保持现行公式（ts2/其倒数在参数表无对应行，v1 乱除已弃）。
           vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
           #ifdef TINT_RELIEF
           // 【2026-09-20 回滚】曾按标准 relief mapping 补写视差（用 reliefPng
@@ -529,14 +703,14 @@ float scFastNoise(vec3 seed) {
         vec2 scSub = tintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
         vec4 scPalColor = vec4(1.0);
         float scTintMul = tintValues.b * 2.0;
-        float scExempt = 0.0;
         vec4 scShaderMap = vec4(1.0);
         if (tintValues.a < 0.5) {
-          if (vObjUp >= -0.3) discard;
-          // 下向面豁免（观察器缓解）：游戏 building4Clip 的镂空模板被地板/
-          // 底面继承（底面与立面共用 facade UV），从下仰视出现穿透洞——
-          // 游戏相机不可达此视角故原版未处理。豁免片段跳过调色保持白模观感。
-          scExempt = 1.0;
+          // 引擎 building4Clip 的镂空是**无条件 clip**（不按朝向豁免）。
+          // 此前的「下向面豁免」观察器缓解（地板底面继承镂空模板、从下仰视
+          // 见穿透洞）会把桁架等**真洞**渲染成白色面片——2026-09-26 用户
+          // 实证（铁梯桁架三角孔白色、同资产水平面洞正常），移除豁免回归
+          // 引擎口径；仰视穿透属引擎本征行为。
+          discard;
         } else {
           // 源码 lerp(tintBase@palU, tintTop@palU2, facadeTint.a)：Top 层查
           // 调色板第二列（row0.y = palU2），亮度/子采样坐标同样取 Top 值
@@ -553,7 +727,7 @@ float scFastNoise(vec3 seed) {
           #endif
         }
         #ifdef TINT_SHADERMAP
-        if (scExempt < 0.5) {
+        {
           vec4 smBase = texture2D(shaderMapMap, tUv);
           scShaderMap = smBase;
           if (scFacade > 0.001) {
@@ -596,6 +770,8 @@ float scFastNoise(vec3 seed) {
           // 源码逐字：interiorUv = uv * regionXform.xy * interiorRoomInvSize。
           // roomInvSize = row3.zw、tilePadding = row3.xy（cpp frac 变体定谳；
           // 玻璃楼 padding~8e4 禁 Top / 公寓楼 (0.125,0) 两样本互证）。
+          // 引擎 18765：interiorUv = uv·xform.xy·roomInvSize；roomInvSize
+          // 实证 = 1/xform.xy（row3.zw 逐列精确）⇒ 内景栅格域 = 原始 UV。
           vec2 scInteriorUv = vTintUv * xform.xy * scRoom.zw;
           vec2 scInteriorElem = floor(scInteriorUv);
           vec2 scInteriorSrcUv = fract(scInteriorUv);
@@ -690,15 +866,16 @@ float scFastNoise(vec3 seed) {
           float scEnvS = scGloss * 0.75;
           vec3 scEnvDir = normalize(mix(scNormW, reflect(scBent, scNormW), scEnvS));
           vec3 scEnv = scSkyRadiance(scEnvDir);
-          reflectedLight.indirectSpecular +=
-            scEnv * scEnvS * diffuseColor.rgb * (1.0 - scExempt);
+          reflectedLight.indirectSpecular += scEnv * scEnvS * diffuseColor.rgb;
           // 间接漫反射按天空方向重分配（= 源码 EnvLighting 的 SkyColor(sampleDir)）：
           // 用亮度比 scLum/uSkyLumRef 作乘性因子，**球面均值为 1**——只改变各朝向的
           // 环境光分布，不抬整体曝光。此前是常数 AmbientLight，各朝向完全相同（发平）。
           float scLum = dot(scSkyRadiance(scNormW), vec3(0.2126, 0.7152, 0.0722));
           // 0.6 = 强度旋钮（0 退回常数环境光，1 全量）。因子均值恒为 1。
           float scDirFactor = mix(1.0, clamp(scLum / max(uSkyLumRef, 1e-3), 0.25, 2.5), 0.6);
-          reflectedLight.indirectDiffuse *= mix(1.0, scDirFactor, 1.0 - scExempt);
+          // 【2026-09-26】下向面豁免已移除（豁免因子恒 0）——原 mix(1.0, scDirFactor,
+          // 1.0-豁免因子) 简化为直接应用 scDirFactor。
+          reflectedLight.indirectDiffuse *= scDirFactor;
           // 5d 夜间：three 侧灯光的漫反射分量随白昼因子压暗（太阳高光/
           // 天空镜面已由 uSunColor/天空三段变暗）
           float scNightDim = mix(0.22, 1.0, uDayLight);
@@ -774,78 +951,3 @@ export function makeTintMaterial(
   return [tinted, uSpecGUniform];
 }
 
-/**
- * 精细贴图：按 0x2001A 绑定的**每 mesh 材质**应用（遮罩红通道 baseColor +
- * 解 Swizzle 法线；可贴图判定服务端逐 mesh 给出）。异步加载，完成后按
- * isStale 守卫丢弃过期代。
- */
-export function applyDeferredMaterialMaps(
-  THREE: typeof ThreeNamespace,
-  payload: LotModelPayload,
-  materialGroups: ThreeNamespace.MeshStandardMaterial[][],
-  registerTextureUrl: (url: string) => void,
-  isStale: () => boolean,
-  /** 硬件最大各向异性过滤级别（同 loadTintTextures）。 */
-  maxAnisotropy = 1,
-) {
-  const loader = new THREE.TextureLoader();
-  const loadTexture = (
-    bytes: Uint8Array<ArrayBuffer>,
-    setup: (texture: ThreeNamespace.Texture) => void,
-  ) => {
-    const url = pngBlobUrl(bytes);
-    registerTextureUrl(url);
-    loader.load(
-      url,
-      (texture) => {
-        if (isStale()) {
-          texture.dispose();
-          return;
-        }
-        texture.anisotropy = maxAnisotropy;
-        setup(texture);
-      },
-      undefined,
-      () => {},
-    );
-  };
-  payload.materials?.forEach((material, materialIndex) => {
-    const group = materialGroups[materialIndex] ?? [];
-    if (!group.length) return;
-    if (material.baseColorPng) {
-      loadTexture(material.baseColorPng, (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        for (const refined of group) {
-          refined.map = texture;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-    if (material.normalPng) {
-      loadTexture(material.normalPng, (texture) => {
-        for (const refined of group) {
-          refined.normalMap = texture;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-    // shader map B 反转 = 粗糙度；normal alpha = AO（three 的 aoMap 读 R 通道）
-    if (material.roughnessPng) {
-      loadTexture(material.roughnessPng, (texture) => {
-        for (const refined of group) {
-          refined.roughnessMap = texture;
-          refined.roughness = 1;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-    if (material.aoPng) {
-      loadTexture(material.aoPng, (texture) => {
-        for (const refined of group) {
-          refined.aoMap = texture;
-          refined.needsUpdate = true;
-        }
-      });
-    }
-  });
-}

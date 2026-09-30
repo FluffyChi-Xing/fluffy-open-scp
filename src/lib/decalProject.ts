@@ -21,7 +21,7 @@ export interface DecalFrame {
   axisZ: ThreeNamespace.Vector3;
   /** lot 局部变换矩阵（位置 + 朝向，无缩放）。 */
   matrix: ThreeNamespace.Matrix4;
-  /** 投影盒 XY 全尺寸：`2×scale` 与 `2×scale/aspect`。 */
+  /** 投影盒 XY 全尺寸：`height = 2×scale`（scale = 半高），`width = height×aspect`。 */
   sizeX: number;
   sizeY: number;
 }
@@ -29,6 +29,12 @@ export interface DecalFrame {
 /** 盒的 Z 半厚下限/上限（米）。贴花只贴最近的一层表面，故取薄盒。 */
 const HALF_THICKNESS_MIN = 0.5;
 const HALF_THICKNESS_MAX = 2;
+
+/** 投影盒半厚（米）= 钳制后的 depth。投影盒与破洞材质共用同一钳制。 */
+export function decalHalfThickness(depth: number | null): number {
+  return Math.min(Math.max(depth ?? 0, HALF_THICKNESS_MIN), HALF_THICKNESS_MAX);
+}
+
 /** 足迹采样网格边长（3×3）。 */
 const ANCHOR_GRID = 3;
 /** 采样点占足迹的比例（留边，避免边界处打到相邻构件）。 */
@@ -64,13 +70,19 @@ export function decalFrame(
     0, 0, 0, 1,
   );
 
-  const sizeX = Math.max(scale * 2, 0.05);
-  return { origin, axisX, axisY, axisZ, matrix, sizeX, sizeY: Math.max(sizeX / aspect, 0.05) };
+  // 尺寸语义（2026-09-27 OMEGACO 对照定谳）：scale 是**半高**——引擎烤入
+  // 记录的 quad 高 = 2×scale、宽 = 高×aspect。此前按半宽（宽=2×scale，
+  // 高=宽/aspect）推导，aspect>1 的招牌整体小一半（OmegaCo 工厂：板实测
+  // 19.95×9.56m vs scale 4.9 aspect 2 → 19.6×9.8 吻合；楼顶 logo aspect=1
+  // 两种口径同值，故当时未暴露）。
+  const sizeY = Math.max(scale * 2, 0.05);
+  return { origin, axisX, axisY, axisZ, matrix, sizeX: Math.max(sizeY * aspect, 0.05), sizeY };
 }
 
 /**
- * 沿投影轴在足迹内做 3×3 射线，返回「原点到目标面」的锚定距离（命中中位数）。
- * 无命中返回 null。射线在 **lot 局部空间**进行（代理 Mesh 的 matrixWorld 恒等）。
+ * 沿投影轴在足迹内做 3×3 射线，返回「原点到目标面」的锚定距离（**最近命中
+ * 面**，带符号）。无命中返回 null。射线在 **lot 局部空间**进行（代理 Mesh
+ * 的 matrixWorld 恒等）。
  */
 export function measureAnchorDistance(
   THREE: Three,
@@ -100,8 +112,10 @@ export function measureAnchorDistance(
     }
   }
   if (hits.length === 0) return null;
-  hits.sort((a, b) => a - b);
-  return hits[Math.floor(hits.length / 2)];
+  // 最近命中面（而非中位数）：贴花属于投影轴上**第一层**表面——窗格/多层
+  // 墙时中位数会落在层与层之间的半空（2026-09-27 玻璃塔破洞悬空根因）。
+  hits.sort((a, b) => Math.abs(a) - Math.abs(b));
+  return hits[0];
 }
 
 /**
@@ -119,10 +133,7 @@ export function decalProjector(
   orientation: ThreeNamespace.Euler;
   size: ThreeNamespace.Vector3;
 } {
-  const thickness = Math.min(
-    Math.max(depth ?? 0, HALF_THICKNESS_MIN),
-    HALF_THICKNESS_MAX,
-  );
+  const thickness = decalHalfThickness(depth);
   const position = frame.origin.clone().addScaledVector(frame.axisZ, anchor);
   const orientation = new THREE.Euler().setFromRotationMatrix(frame.matrix);
   const size = new THREE.Vector3(frame.sizeX, frame.sizeY, thickness * 2);
@@ -136,16 +147,26 @@ export function decalProjector(
  * 它在 `pushDecalVertex` 里做 `vertex.applyMatrix4(mesh.matrixWorld)`、最后再用
  * 投影矩阵乘回，直接传真实 mesh 会把结果抛到 renderer 世界空间（`viewer.world`
  * 带 -90°X）。代理的 matrixWorld 恒等 ⇒ 顶点空间 = lot 局部 ⇒ 输出即 lot 局部。
+ *
+ * `proxies` 可传入复用的代理数组（多枚贴花共享一次构建；代理必须由调用方
+ * 保证 geometry 与 meshes 一一对应且 matrixWorld 恒等）——此前每个 decal
+ * 都重建全部代理，大建筑群 × 多贴花时纯属重复功。
  */
 export async function projectDecal(
   THREE: Three,
   frame: DecalFrame,
   meshes: ThreeNamespace.Mesh[],
   depth: number | null,
+  proxies?: ThreeNamespace.Mesh[],
 ): Promise<ThreeNamespace.BufferGeometry | null> {
   if (meshes.length === 0) return null;
-  const proxies = meshes.map((mesh) => new THREE.Mesh(mesh.geometry));
-  const anchor = measureAnchorDistance(THREE, frame, proxies);
+  const useProxies =
+    proxies && proxies.length === meshes.length ? proxies : undefined;
+  const own = useProxies
+    ? null
+    : meshes.map((mesh) => new THREE.Mesh(mesh.geometry));
+  const proxyList = useProxies ?? own!;
+  const anchor = measureAnchorDistance(THREE, frame, proxyList);
   if (anchor === null) return null;
 
   const { position, orientation, size } = decalProjector(THREE, frame, anchor, depth);
@@ -154,7 +175,7 @@ export async function projectDecal(
   );
   const boxAabb = boxBounds(THREE, position, orientation, size);
   const pieces: ThreeNamespace.BufferGeometry[] = [];
-  for (const proxy of proxies) {
+  for (const proxy of proxyList) {
     const geometry = proxy.geometry as ThreeNamespace.BufferGeometry;
     geometry.computeBoundingBox();
     const bb = geometry.boundingBox;
@@ -165,6 +186,22 @@ export async function projectDecal(
   if (pieces.length === 0) return null;
 
   const merged = await mergePieces(pieces);
+  // NaN 守卫：DecalGeometry 在退化/共面三角形上可能产生 NaN 顶点（渲染时
+  // boundingSphere NaN 报错 + 巨大撕裂三角形，2026-09-27 用户实证）。
+  merged.computeBoundingBox();
+  const bb = merged.boundingBox;
+  if (
+    !bb ||
+    !Number.isFinite(bb.min.x) ||
+    !Number.isFinite(bb.min.y) ||
+    !Number.isFinite(bb.min.z) ||
+    !Number.isFinite(bb.max.x) ||
+    !Number.isFinite(bb.max.y) ||
+    !Number.isFinite(bb.max.z)
+  ) {
+    merged.dispose();
+    return null;
+  }
   // 引擎 UV 是 `texturePosition.xy * -0.5 + 0.5`（两轴取负）；DecalGeometry 输出
   // `0.5 + x/size.x`，与 PlaneGeometry 逐轴同向 ⇒ 沿用已验证的「只镜像 U」
   //（v 由 TextureLoader 的 flipY=true 抵消）。

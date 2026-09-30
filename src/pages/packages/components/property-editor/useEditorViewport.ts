@@ -32,6 +32,9 @@ export interface EditorViewportRebuildCtx {
   maxAnisotropy: number;
   /** unitId → Object3D 拾取/可见性/选中注册表（装配层写入）。 */
   unitObjects: Map<string, ThreeNamespace.Object3D>;
+  /** 装配层回填的规模统计（进 scene_rebuild 遥测 metadata，量化
+   *  「property 规模 ↔ 阶段耗时」相关性）。 */
+  stats: Record<string, unknown>;
 }
 
 /**
@@ -87,11 +90,12 @@ export function useEditorViewport(options: {
   });
 
   /**
-   * 场景真实光源总数上限：WebGL 前向渲染每个片元都评估全部光源，
-   * 多灯地块（路灯密集的建筑群）推近镜头时片元数×光源数导致掉帧。
-   * 超限时从整体强度最弱的单元开始摘除真实光源（保留透明拾取代理）。
+   * 场景真实光源总数上限：three 前向渲染每片元评估全部光源（成本 =
+   * 光源数 × 片元数）。24 是早期低配机「推近掉帧」时代定的；hejl 管线 +
+   * 现代 GPU 下 48 可承受（2026-09-27 放开，多灯 lot 的招牌/路灯不再被
+   * 大面积剪掉）。剪枝策略按单元总强度从弱到强——后续可加距离权重。
    */
-  const MAX_REAL_LIGHTS = 24;
+  const MAX_REAL_LIGHTS = 48;
 
   /** 真实光源总数超限时，从强度最弱的单元开始摘除光源本体。 */
   function pruneExcessLights() {
@@ -150,6 +154,7 @@ export function useEditorViewport(options: {
       registerTextureUrl: (url) => textureUrls.push(url),
       maxAnisotropy: instance.maxAnisotropy,
       unitObjects,
+      stats: {},
     };
     const span = renderTelemetry.begin("scene_rebuild", {
       reframe: options.reframe === true,
@@ -165,8 +170,9 @@ export function useEditorViewport(options: {
       }
       sceneReady.value = true;
       revision.value += 1;
+      instance.invalidate();
     } finally {
-      span.end();
+      span.end(ctx.stats);
     }
   }
 
@@ -176,12 +182,14 @@ export function useEditorViewport(options: {
     for (const name of VIEWPORT_GROUPS) {
       instance.group(name).visible = map[name] !== false;
     }
+    instance.invalidate();
   }
 
   function applyUnitVisibility(hidden: Set<string>) {
     for (const [id, object] of unitObjects) {
       object.visible = !hidden.has(id);
     }
+    viewer.value?.invalidate();
   }
 
   function applySelection(selectedId: string | null) {

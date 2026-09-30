@@ -1,4 +1,5 @@
 import type * as ThreeNamespace from "three";
+import { isSharedGeometry } from "@/lib/three-gltf";
 
 export interface ViewerTapHit {
   object: ThreeNamespace.Object3D;
@@ -26,7 +27,9 @@ export function disposeObject(object: ThreeNamespace.Object3D) {
   object.traverse((child) => {
     const mesh = child as ThreeNamespace.Mesh;
     if (mesh.isMesh) {
-      mesh.geometry?.dispose();
+      // 共享缓存几何（payload 级模型缓存，见 three-gltf.getLotModelObjects）
+      // 归缓存所有，清场不销毁——缓存更换时统一释放。
+      if (!isSharedGeometry(mesh.geometry)) mesh.geometry?.dispose();
       const material = mesh.material;
       if (Array.isArray(material)) material.forEach((item) => item.dispose());
       else material?.dispose();
@@ -72,7 +75,7 @@ export class ThreeViewer {
   private readonly options: ThreeViewerOptions;
   /** Y-up 场景中的内容容器（world 的父级），整体平移实现取中。 */
   private readonly content: ThreeNamespace.Group;
-  private readonly keyLight: ThreeNamespace.PointLight;
+  private readonly keyLight: ThreeNamespace.DirectionalLight;
   private readonly fillLight: ThreeNamespace.DirectionalLight;
   private readonly rimLight: ThreeNamespace.DirectionalLight;
   private readonly ambientLight: ThreeNamespace.AmbientLight;
@@ -95,6 +98,14 @@ export class ThreeViewer {
   private lastX = 0;
   private lastY = 0;
   private moved = 0;
+  /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
+   * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
+  private needsRender = true;
+
+  /** 请求下一帧重绘（视觉变更后调用；相机/灯光等 viewer 内部方法已自带）。 */
+  invalidate() {
+    this.needsRender = true;
+  }
 
   static async create(
     container: HTMLElement,
@@ -125,8 +136,13 @@ export class ThreeViewer {
     container.appendChild(this.renderer.domElement);
 
     // 三灯白模布光：key 跟随滑杆，fill/rim 固定相对方向，保证无贴图也有立体感。
-    // 基准强度供 setEnvironmentBrightness 按倍率缩放。
-    this.keyLight = new THREE.PointLight(0xffffff, KEY_LIGHT_INTENSITY, 0, 0);
+    // 基准强度供 setEnvironmentBrightness 按倍率缩放。key 用方向光（平行光）
+    // ——精细模式的太阳/阴影链挂同一盏（setSunFromEnv + setShadowsEnabled）。
+    this.keyLight = new THREE.DirectionalLight(0xffffff, KEY_LIGHT_INTENSITY);
+    this.keyLight.castShadow = false;
+    this.keyLight.shadow.mapSize.set(2048, 2048);
+    this.keyLight.shadow.bias = -0.0003;
+    this.keyLight.shadow.normalBias = 0.5;
     this.fillLight = new THREE.DirectionalLight(0xdde6ff, FILL_LIGHT_INTENSITY);
     this.fillLight.position.set(-1, 0.4, -0.8);
     this.rimLight = new THREE.DirectionalLight(0xffffff, RIM_LIGHT_INTENSITY);
@@ -218,6 +234,7 @@ export class ThreeViewer {
 
     this.frameRadius = radius;
     this.cameraDistance = radius * 3;
+    this.needsRender = true;
     this.camera.near = radius / 100;
     this.camera.far = radius * 40;
     this.camera.updateProjectionMatrix();
@@ -238,6 +255,7 @@ export class ThreeViewer {
   setToneMapping(mode: ThreeNamespace.ToneMapping, exposure = 1): void {
     this.renderer.toneMapping = mode;
     this.renderer.toneMappingExposure = exposure;
+    this.needsRender = true;
   }
 
   setKeyLight(azimuthDeg: number, elevationDeg: number) {
@@ -249,6 +267,60 @@ export class ThreeViewer {
       radius * Math.sin(elevation),
       radius * Math.cos(elevation) * Math.cos(azimuth),
     );
+    this.needsRender = true;
+  }
+
+  /**
+   * 精细模式的 env 太阳：key 光改挂共享 env 的太阳方向/颜色（模型注入光照
+   * 的场景光等价物——地面 Lambert 由它着色并获得建筑投影），shadow 相机
+   * 随内容包围球取定。 null = 交回白模滑杆口径。
+   */
+  setSunFromEnv(
+    dir: { x: number; y: number; z: number },
+    color: { r: number; g: number; b: number },
+  ) {
+    const radius = Math.max(this.frameRadius, 1) * 2.4;
+    this.keyLight.position.set(dir.x * radius, dir.y * radius, dir.z * radius);
+    this.keyLight.color.setRGB(color.r, color.g, color.b);
+    const extent = Math.max(this.frameRadius, 1) * 1.6;
+    const camera = this.keyLight.shadow.camera;
+    camera.left = -extent;
+    camera.right = extent;
+    camera.top = extent;
+    camera.bottom = -extent;
+    camera.near = 0.5;
+    camera.far = radius * 3;
+    camera.updateProjectionMatrix();
+    this.keyLight.shadow.normalBias = Math.max(this.frameRadius, 1) * 0.01;
+    this.needsRender = true;
+  }
+
+  /**
+   * 阴影链开关（精细模式开）：key 光投影，内容网格全部 castShadow
+   * （受影面由各 mesh 自行标 receiveShadow，如 lot 地面）。幂等——场景
+   * 重建后重调只为给新网格补 castShadow 标；材质重编译仅在状态切换时。
+   */
+  setShadowsEnabled(enabled: boolean) {
+    const changed = this.renderer.shadowMap.enabled !== enabled;
+    this.renderer.shadowMap.enabled = enabled;
+    this.renderer.shadowMap.type = this.THREE.PCFSoftShadowMap;
+    this.keyLight.castShadow = enabled;
+    this.content.traverse((child) => {
+      const mesh = child as ThreeNamespace.Mesh;
+      if (mesh.isMesh) mesh.castShadow = enabled;
+    });
+    if (changed) {
+      this.content.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (mesh.isMesh) {
+          const materials = Array.isArray(mesh.material)
+            ? mesh.material
+            : [mesh.material];
+          for (const material of materials) material.needsUpdate = true;
+        }
+      });
+    }
+    this.needsRender = true;
   }
 
   /** 环境亮度倍率（日/夜模拟）：0 ≈ 夜、1 = 默认观感、2 ≈ 正午。 */
@@ -258,6 +330,7 @@ export class ThreeViewer {
     this.fillLight.intensity = FILL_LIGHT_INTENSITY * scale;
     this.rimLight.intensity = RIM_LIGHT_INTENSITY * scale;
     this.ambientLight.intensity = AMBIENT_LIGHT_INTENSITY * scale;
+    this.needsRender = true;
   }
 
   /** 选中高亮（emissive），object 为 null 清除。 */
@@ -266,6 +339,7 @@ export class ThreeViewer {
     this.applyHighlight(this.selected, false);
     this.selected = object;
     this.applyHighlight(this.selected, true);
+    this.needsRender = true;
   }
 
   private applyHighlight(object: ThreeNamespace.Object3D | null, on: boolean) {
@@ -307,6 +381,7 @@ export class ThreeViewer {
     );
     this.camera.position.add(this.orbitTarget);
     this.camera.lookAt(this.orbitTarget);
+    this.needsRender = true;
   }
 
   private orbit(dx: number, dy: number) {
@@ -404,10 +479,13 @@ export class ThreeViewer {
     this.renderer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.needsRender = true;
   }
 
   private renderLoop = () => {
     this.frame = requestAnimationFrame(this.renderLoop);
+    if (!this.needsRender) return;
+    this.needsRender = false;
     this.renderer.render(this.scene, this.camera);
   };
 
