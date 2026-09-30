@@ -14,7 +14,7 @@ OUT = pathlib.Path(r"D:\rust\packages\fluffy-open-scp\tmp\dynamic\shaders")
 OUT.mkdir(parents=True, exist_ok=True)
 
 JS = r"""
-var TARGET_VFT = '0x6c2b1490'; // 内层系统设备 vftable（rdata 静态）
+
 var devices = {};
 var armed = {};
 var sizeP = null;
@@ -56,7 +56,6 @@ function quickComObj(p) {
 function findInnerDevices() {
   var ranges = Process.enumerateRanges('rw-');
   let pending = ranges.slice(), found = 0;
-  const nb = TARGET_VFT.replace('0x', '').padStart(8, '0').match(/../g).reverse().join(' ');
   function step() {
     if (!pending.length) {
       send({ kind: 'log', text: '内层设备扫描完成：' + found + ' 台' });
@@ -69,21 +68,31 @@ function findInnerDevices() {
       if (off >= r.size) { setTimeout(step, 0); return; }
       const len = Math.min(CHUNK, r.size - off);
       let buf = null;
-      try { buf = Memory.readByteArray(r.base.add(off), len); } catch (e) { off = r.size; setTimeout(sub, 0); return; }
+      try { buf = r.base.add(off).readByteArray(len); } catch (e) { off = r.size; setTimeout(sub, 0); return; }
       if (buf) {
         const u8 = new Uint8Array(buf);
-        const n0 = parseInt(nb.split(' ')[0], 16), n1 = parseInt(nb.split(' ')[1], 16),
-              n2 = parseInt(nb.split(' ')[2], 16), n3 = parseInt(nb.split(' ')[3], 16);
         for (let i = 0; i + 4 <= u8.length; i += 4) {
-          if (u8[i] === n0 && u8[i+1] === n1 && u8[i+2] === n2 && u8[i+3] === n3) {
-            const obj = r.base.add(off + i);
-            const vt = obj.readPointer();
-            const rep = validateReport(vt);
-            if (rep.ok) {
-              found++;
-              send({ kind: 'log', text: '内层设备 @ ' + obj + ' vftable ' + vt + '（exec ' + rep.exec + '/' + rep.n + '）' });
-              watchDevice(obj, vt);
+          // vftable 可能堆构（包装层）——不用模块范围预检；廉价预检：vtable
+          // 可读且前 12 槽 ≥10 槽指向 exec（COM 级密度），再 validateReport 确认
+          const v = u8[i] | (u8[i+1] << 8) | (u8[i+2] << 16) | (u8[i+3] << 24);
+          if (v < 0x10000) continue;
+          const obj = r.base.add(off + i);
+          let vt = 0;
+          try { vt = obj.readPointer(); } catch (e) { continue; }
+          if (!vt) continue;
+          let e12 = 0, ok12 = true;
+          try {
+            for (let k = 0; k < 12; k++) {
+              const f = vt.add(k * 4).readPointer();
+              if (!f.isNull() && inExec(f)) e12++;
             }
+          } catch (e) { continue; }
+          if (!ok12 || e12 < 10) continue;
+          const rep = validateReport(vt);
+          if (rep.ok) {
+            found++;
+            send({ kind: 'log', text: '密度设备 @ ' + obj + ' vftable ' + vt + '（exec ' + rep.exec + '/' + rep.n + '）' });
+            watchDevice(obj, vt);
           }
         }
       }
