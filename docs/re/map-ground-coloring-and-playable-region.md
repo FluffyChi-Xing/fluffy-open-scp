@@ -86,6 +86,22 @@ groundColor = lerp(groundColor, pollutedGroundColor, ecoMaps.a);
 | `SimRollerCompletePack` | SimRoller 工具包 | 区域编辑相关 |
 | `OverplopSetup.bat` + OverplopModules | Overplop 附加（含 Rollback 恢复说明） | 处理脚本放行后的回滚问题 |
 
+### 属性包逐条 diff（prop_dump 对比原版 Game 包，09-30）
+
+- `1_bRangeRemovals` 的 29 条属性 = **29 个 Unit 资产定义**（G 40E1C000，
+  PropertySemantic::Unit），每条 49~104 属性；
+- **与原版同 TGI 逐属性比对：每个 Unit 恰好一处改动——`0x0C8EE92F`
+  （= HASH_COST，Unit 造价，unit_cost_scan.rs 实锤）改为 2³⁰（10.7 亿）
+  或 2²⁶（6711 万）**；
+- 判读：天价 Cost = 防正常经济误购的**盒外放置专用占位单元**（由 mod 的
+  工具/脚本放置），与"RangeRemovals"命名互证；
+- `1_aaWHATHAVEIDONE` 的 4 属性 + 4 RW4 模型同理（盒外建筑外观）。
+- **脚本包 diff（附加实锤）**：mod 的 `SimCity-Scripts_272391411` 与原版
+  EcoGame 同名包（2014-05-27，版本序列最新）**解压后 MD5 完全一致**——
+  该 mod 未修改核心脚本，"区域外可建设"全部由属性层完成（修正此前
+  "替换核心脚本"的初步推断）。原版 EcoGame 目录还有 6 个更早版本的
+  SimCity-Scripts（游戏更新历史累积，可做版本演进研究）。
+
 ## 二·补充：脚本包的引擎消费机制（09-30 RTTI 实锤）
 
 SimCity.exe 对 type `0x08068AEB` 有 3 处 dword 常量比较（.text @
