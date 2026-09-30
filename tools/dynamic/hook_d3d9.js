@@ -130,6 +130,66 @@ function quickComObj(p) {
   } catch (e) { return false; }
 }
 
+// ---------- C2. 多设备永久监视（2026-09-30） ----------
+// 每次 spawn 都有两个 Direct3DCreate9（片头播放器/渲染各一）——单设备赌注
+// 会押错。所有确认设备挂常驻计数器（槽 78-105），巡视器每 15s 检查：谁家
+// 出现 create 流量（blob）就武装谁；armed 后新亮的 bind 槽也补挂。
+var watchedDevices = {};
+function watchDevice(ovt, rep) {
+  var key = ovt.toString();
+  if (watchedDevices[key]) return;
+  var w = { counters: {}, listeners: [], armed: false, armedBind: [] };
+  watchedDevices[key] = w;
+  for (var s = 78; s <= 105; s++) {
+    (function (slot) {
+      var r = { blob: 0, obj: 0 };
+      w.counters[slot] = r;
+      var l = safeAttach(fnAt(ovt, slot), {
+        onEnter: function (args) {
+          try {
+            if (isShaderBlob(args[1])) { r.blob++; return; }
+            if (looksLikeComObj(args[1]) || quickComObj(args[1])) r.obj++;
+          } catch (e) {}
+        }
+      }, 'watch@' + key + '@' + slot);
+      if (l) w.listeners.push(l);
+    })(s);
+  }
+  log('实测设备 ' + key + '（exec ' + rep.exec + '/' + rep.n + '）进入永久监视——' +
+    '等 create 流量出现即自动武装（巡视器 15s/轮）');
+}
+
+setInterval(function () {
+  for (var key in watchedDevices) {
+    var w = watchedDevices[key];
+    var vt = ptr(key);
+    var createSlots = [], bindSlots = [], detail = [];
+    for (var s in w.counters) {
+      var r = w.counters[s];
+      if (r.blob > 0) createSlots.push(+s);
+      if (r.obj > 0) { bindSlots.push(+s); detail.push(s + ':' + r.obj); }
+    }
+    if (!w.armed) {
+      if (createSlots.length === 0) continue;
+      w.armed = true;
+      createSlots.forEach(function (s) { hookCreate(vt, s); });
+      w.armedBind = bindSlots.slice();
+      bindSlots.forEach(function (s) { hookBind(vt, s); });
+      log('武装：设备 ' + key + ' create@' + JSON.stringify(createSlots) +
+        ' bind@' + JSON.stringify(bindSlots) + '（obj 流量 ' + detail.join(',') + '）');
+    } else {
+      // armed 后新亮的 bind 槽补挂（hookBind 按函数地址去重）
+      bindSlots.forEach(function (s) {
+        if (w.armedBind.indexOf(+s) < 0) {
+          w.armedBind.push(+s);
+          hookBind(vt, +s);
+          log('补挂 bind@' + s + '（设备 ' + key + '）');
+        }
+      });
+    }
+  }
+}, 15000);
+
 function fnAt(vt, slot) { return vt.add(slot * 4).readPointer(); }
 
 function safeAttach(fn, cb, tag) {
@@ -229,10 +289,11 @@ function lurkCreateDevice(pD3D) {
               // 模块内）——地址类检查必然误杀，密度 130/130 不可能是假货。
               var rep = validateReport(ovt);
               if (!rep.ok) return;
-              deviceFound = true; // lurk 已确认设备：fallbackProbe 的 .data 走行/毒区 sweep 不再启动
-              log('实测 CreateDevice = IDirect3D9 槽 ' + slot + '，设备 vftable @ ' + ovt +
-                '（exec 槽 ' + rep.exec + '/' + rep.n + '）');
-              installSlotCounters(ovt, 20);
+              // 游戏会创建多个 IDirect3D9/设备（片头播放器一个、渲染一个，
+              // 2026-09-30 每次 spawn 都是两次 Direct3DCreate9）——全部纳入
+              // 永久监视，谁家出现 create 流量就武装谁，不赌第一个。
+              deviceFound = true;
+              watchDevice(ovt, rep);
             } catch (e) { /* 非 CreateDevice 槽位，忽略 */ }
           });
         }
