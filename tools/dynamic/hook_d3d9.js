@@ -140,13 +140,14 @@ function watchDevice(ovt, rep) {
   if (watchedDevices[key]) return;
   var w = { counters: {}, listeners: [], armed: false, armedBind: [] };
   watchedDevices[key] = w;
-  for (var s = 78; s <= 105; s++) {
+  for (var s = 3; s <= 129; s++) {
     (function (slot) {
-      var r = { blob: 0, obj: 0 };
+      var r = { blob: 0, obj: 0, n: 0 };
       w.counters[slot] = r;
       var l = safeAttach(fnAt(ovt, slot), {
         onEnter: function (args) {
           try {
+            r.n++;
             if (isShaderBlob(args[1])) { r.blob++; return; }
             if (looksLikeComObj(args[1]) || quickComObj(args[1])) r.obj++;
           } catch (e) {}
@@ -159,6 +160,7 @@ function watchDevice(ovt, rep) {
     '等 create 流量出现即自动武装（巡视器 15s/轮）');
 }
 
+var trafficTicks = 0;
 setInterval(function () {
   for (var key in watchedDevices) {
     var w = watchedDevices[key];
@@ -168,6 +170,19 @@ setInterval(function () {
       var r = w.counters[s];
       if (r.blob > 0) createSlots.push(+s);
       if (r.obj > 0) { bindSlots.push(+s); detail.push(s + ':' + r.obj); }
+    }
+    // 交通图：每 2 轮（30s）打印总流量前 10 的槽位
+    trafficTicks++;
+    if (trafficTicks % 2 === 0) {
+      var hot = [];
+      for (var s2 in w.counters) {
+        if (w.counters[s2].n > 0) hot.push(s2 + ':' + w.counters[s2].n + '/b' + w.counters[s2].blob + '/o' + w.counters[s2].obj);
+      }
+      hot.sort(function (a, b) {
+        var pa = a.split(':')[1], pb = b.split(':')[1];
+        return pb - pa;
+      });
+      send({ kind: 'log', text: '交通图[' + key + '] ' + hot.slice(0, 10).join(' ') });
     }
     if (!w.armed) {
       if (createSlots.length === 0) continue;
