@@ -78,7 +78,11 @@ function looksLikeComObj(p) {
   if (p.isNull() || p.compare(SMALL_MAX) < 0) return false;
   try {
     var vt = p.readPointer();
-    if (!inExec(vt)) return false;
+    // D3D9 COM 对象的 vftable 实际住在 rdata（只读数据段），方法指针才指向
+    // exec——只认 exec 会把真设备拒掉、反而放进导入跳转表假候选（2026-09-30
+    // 三连空手而归的根因）。vftable 地址在 d3d9 模块内即可，条目密度由
+    // validateReport 把关。
+    if (!inExec(vt) && !inMod(vt)) return false;
     for (var i = 0; i <= 4; i++) {
       if (!inExec(vt.add(i * 4).readPointer())) return false;
     }
@@ -186,7 +190,9 @@ function lurkCreateDevice(pD3D) {
               var ovt = obj.readPointer();
               var rep = validateReport(ovt);
               if (!rep.ok) return;
-              log('实测 CreateDevice = IDirect3D9 槽 ' + slot + '，设备 vftable @ ' + ovt);
+              deviceFound = true; // lurk 已确认设备：fallbackProbe 的 .data 走行/毒区 sweep 不再启动
+              log('实测 CreateDevice = IDirect3D9 槽 ' + slot + '，设备 vftable @ ' + ovt +
+                '（exec 槽 ' + rep.exec + '/' + rep.n + '）');
               installSlotCounters(ovt, 20);
             } catch (e) { /* 非 CreateDevice 槽位，忽略 */ }
           });
@@ -588,7 +594,7 @@ function installSlotCounters(vt, seconds) {
   calibrating = true;
   var report = {};
   var listeners = [];
-  for (var s = 83; s <= 105; s++) {
+  for (var s = 78; s <= 105; s++) {
     (function (slot) {
       var r = { blob: 0, obj: 0 };
       report[slot] = r;
