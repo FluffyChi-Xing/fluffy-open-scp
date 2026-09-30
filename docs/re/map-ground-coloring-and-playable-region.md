@@ -103,6 +103,10 @@ SimCity.exe 对 type `0x08068AEB` 有 3 处 dword 常量比较（.text @
 JavaScriptCore，仅 UI 网页；`1911.dll` 全量加密无宿主痕迹；exe 无 V8 标记）。
 `SC_RULE_*`（1035 处）= ArgScript 注册的规则名表。
 
+**blob 格式注意**：EcoGame 规则库为自有格式（null 分隔名字表 1035 条 + 数据段），
+与 shader 容器的长度前缀流不同——shader token 解析器不适用，需单独逆向其帧格式
+（首样本已存 `tmp/boc/scripts_main.bin`，SC_RULE_ 出现 1035 次）。
+
 **BOC 逻辑 diff 方法**：BOC 的 6.3MB blob = 修改后的 ArgScript 规则数据库
 全文。用 `tmp/parse_container_tokens.py` 的同族语法解析（长度前缀字符串流）
 可切出规则定义清单；与原版规则库 diff 即得逻辑差异。原版规则库需从
