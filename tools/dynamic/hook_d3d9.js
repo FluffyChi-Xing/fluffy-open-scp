@@ -102,6 +102,23 @@ function looksLikeComObj(p) {
   } catch (e) { return false; }
 }
 
+// 结构预过滤：包装层的堆构 vtable 条目可能指向任何模块——不做 exec 归属
+// 检查，只验证「可读且前 8 槽大半非空」；真伪由内容校验（版本 token）裁决，
+// 每对象只试一次（seen 去重），错对象在 try/catch 内有界失败。
+function structComObj(p) {
+  if (p.isNull() || p.compare(SMALL_MAX) < 0) return false;
+  try {
+    var vt = p.readPointer();
+    if (vt.isNull()) return false;
+    var n = 0;
+    for (var i = 0; i < 8; i++) {
+      var fn = vt.add(i * 4).readPointer();
+      if (!fn.isNull()) n++;
+    }
+    return n >= 4;
+  } catch (e) { return false; }
+}
+
 // 130 槽中指向 exec 的数量（容忍接口尾部稀疏/空槽）
 function validateReport(vt) {
   var exec = 0, n = 0;
@@ -149,7 +166,7 @@ function watchDevice(ovt, rep) {
           try {
             r.n++;
             if (isShaderBlob(args[1])) { r.blob++; return; }
-            if (looksLikeComObj(args[1]) || quickComObj(args[1])) r.obj++;
+            if (structComObj(args[1])) r.obj++;
           } catch (e) {}
         }
       }, 'watch@' + key + '@' + slot);
@@ -713,7 +730,7 @@ function installSlotCounters(vt, seconds) {
         onEnter: function (args) {
           try {
             if (isShaderBlob(args[1])) { r.blob++; return; }
-            if (looksLikeComObj(args[1]) || quickComObj(args[1])) r.obj++;
+            if (structComObj(args[1])) r.obj++;
           } catch (e) { }
         }
       }, 'counter@' + slot);
@@ -795,7 +812,7 @@ function hookBind(vt, slot) {
       if (obj.isNull() || obj.compare(SMALL_MAX) < 0) return;
       var k = obj.toString();
       if (seenBind.has(k)) return;
-      if (!looksLikeComObj(obj) && !quickComObj(obj)) return; // 包装层 shader 对象 vtable 在堆上——quickComObj 密度判据兜底
+      if (!structComObj(obj)) return; // 结构预过滤；真伪由版本 token 内容校验裁决
       seenBind.add(k); // 无论成败只试一次，防失败刷屏
       try {
         // shader/声明对象的 GetFunction/GetDeclaration 同在槽 4
