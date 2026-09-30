@@ -40,8 +40,8 @@ tmp/
 /public/game-ui/gif/
 .zcode/
 
-# lot 高清合成全分辨率图（预览版入 git，见 output/lot_hires/README.md）
-/output/lot_hires/lot_*.png
+# 逆向/合成产物整树不入库——lot 高清合成、探针 dump 等游戏衍生内容只存本地，公共库只收代码与文档
+/output/
 # 动态探针缓存与一次性 dump
 __pycache__/
 /terrain_instances.json
