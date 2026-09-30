@@ -115,6 +115,21 @@ function validateReport(vt) {
   return { exec: exec, n: n, ok: n >= 110 && exec >= 100 };
 }
 
+// 轻量版：shader 子对象（VertexShader/PixelShader）接口槽少、且包装层 vtable
+// 可能堆构——前 24 槽 exec 密度 ≥80% 即认（bind 槽计数用，误报无实害）
+function quickComObj(p) {
+  if (p.isNull() || p.compare(SMALL_MAX) < 0) return false;
+  try {
+    var vt = p.readPointer();
+    var exec = 0;
+    for (var i = 0; i < 24; i++) {
+      var fn = vt.add(i * 4).readPointer();
+      if (!fn.isNull() && inExec(fn)) exec++;
+    }
+    return exec >= 19;
+  } catch (e) { return false; }
+}
+
 function fnAt(vt, slot) { return vt.add(slot * 4).readPointer(); }
 
 function safeAttach(fn, cb, tag) {
@@ -207,8 +222,11 @@ function lurkCreateDevice(pD3D) {
                   ' | ' + diag);
               }
               var obj = pp.readPointer();
-              if (obj.isNull() || !looksLikeComObj(obj)) return;
+              if (obj.isNull()) return;
               var ovt = obj.readPointer();
+              // 判据 = validateReport 密度本身：破解包装层在堆上构建设备
+              // vtable（2026-09-30 实测 0x2073da3c，exec 130/130，不在任何
+              // 模块内）——地址类检查必然误杀，密度 130/130 不可能是假货。
               var rep = validateReport(ovt);
               if (!rep.ok) return;
               deviceFound = true; // lurk 已确认设备：fallbackProbe 的 .data 走行/毒区 sweep 不再启动
@@ -623,7 +641,7 @@ function installSlotCounters(vt, seconds) {
         onEnter: function (args) {
           try {
             if (isShaderBlob(args[1])) { r.blob++; return; }
-            if (looksLikeComObj(args[1])) r.obj++;
+            if (looksLikeComObj(args[1]) || quickComObj(args[1])) r.obj++;
           } catch (e) { }
         }
       }, 'counter@' + slot);
@@ -640,9 +658,19 @@ function installSlotCounters(vt, seconds) {
     }
     log('校准结果：create 槽=' + JSON.stringify(createSlots) +
         ' bind 候选槽=' + JSON.stringify(bindSlots));
-    if (createSlots.length === 0 && bindSlots.length === 0) {
-      log('校准无命中——回报此日志');
-      return;
+    // 校准窗口可能开在片头/加载早期（引擎尚未创建任何 shader）——create 空
+    // 时不自暴自弃，30s 后重校准直到看见 create 流量（覆盖数分钟的长加载），
+    // 24 轮（约 18min）仍无才降级为只挂 bind 候选。
+    if (createSlots.length === 0) {
+      calibrating = false;
+      calibRounds = (calibRounds || 0) + 1;
+      if (calibRounds <= 24) {
+        log('第 ' + calibRounds + ' 轮校准未见 create 流量（bind 候选 ' +
+          JSON.stringify(bindSlots) + '）——30s 后重校准…');
+        setTimeout(function () { installSlotCounters(vt, 15); }, 30000);
+        return;
+      }
+      log('连续 24 轮无 create 流量——降级只挂 bind 候选');
     }
     armed = true;
     createSlots.forEach(function (s) { hookCreate(vt, s); });
