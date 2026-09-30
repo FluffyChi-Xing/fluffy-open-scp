@@ -40,6 +40,11 @@ python tools/dynamic/dump_shaders.py --spawn "D:\ea-games\simcity_offline\SimCit
 
 ## 已知事实（勿重复踩坑）
 
+- **frida 17 已删除 `Memory.readByteArray`**：调用抛 `TypeError: not a
+  function`，被 catch 吞掉 = 扫描假零（09-30 三连扫描空手根因）。替代：
+  `addr.readByteArray(len)` 指针方法 / `Memory.scanSync` 抽样（注意页释放
+  竞态）/ 外部 `ReadProcessMemory`（`external_device_scan.py`）。
+
 - **D3D9 COM 对象的 vftable 实际住在 rdata（只读数据段），方法指针才指向 exec**。
   按「vftable 地址 ∈ exec」筛候选会把真设备拒掉、反而放进导入跳转表假候选
   （2026-09-30 三连会话零捕获+烧 CPU 的根因，已修：inExec→inMod 放宽 +

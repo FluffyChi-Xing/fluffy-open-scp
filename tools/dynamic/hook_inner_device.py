@@ -39,6 +39,19 @@ function validateReport(vt) {
   } catch (e) {}
   return { exec: exec, n: n, ok: n >= 110 && exec >= 100 };
 }
+function structComObj(p) {
+  if (p.isNull()) return false;
+  try {
+    const vt = p.readPointer();
+    if (!vt) return false;
+    let n = 0;
+    for (let i = 0; i < 8; i++) {
+      if (!vt.add(i * 4).readPointer().isNull()) n++;
+    }
+    return n >= 4;
+  } catch (e) { return false; }
+}
+
 function quickComObj(p) {
   if (p.isNull()) return false;
   try {
@@ -63,12 +76,12 @@ function findInnerDevices() {
     }
     const r = pending.shift();
     let off = 0;
-    const CHUNK = 8 * 1048576;
+    const CHUNK = 4 * 1048576;
     function sub() {
-      if (off >= r.size) { setTimeout(step, 0); return; }
+      if (off >= r.size) { setTimeout(step, 40); return; }
       const len = Math.min(CHUNK, r.size - off);
       let buf = null;
-      try { buf = r.base.add(off).readByteArray(len); } catch (e) { off = r.size; setTimeout(sub, 0); return; }
+      try { buf = r.base.add(off).readByteArray(len); } catch (e) { off = r.size; setTimeout(sub, 40); return; }
       if (buf) {
         const u8 = new Uint8Array(buf);
         for (let i = 0; i + 4 <= u8.length; i += 4) {
@@ -97,7 +110,7 @@ function findInnerDevices() {
         }
       }
       off += len;
-      setTimeout(sub, 0);
+      setTimeout(sub, 40);
     }
     sub();
   }
@@ -120,7 +133,7 @@ function watchDevice(obj, vt) {
             try {
               r.n++;
               if (isShaderBlob(args[1])) { r.blob++; return; }
-              if (quickComObj(args[1])) r.obj++;
+              if (structComObj(args[1])) r.obj++;
             } catch (e) {}
           }
         });
@@ -197,7 +210,7 @@ function hookBind(vt, slot) {
       if (obj.isNull()) return;
       const k = obj.toString();
       if (seen[k]) return;
-      if (!quickComObj(obj)) return;
+      if (!structComObj(obj)) return;
       seen[k] = true;
       try {
         const getFn = new NativeFunction(obj.readPointer().add(16).readPointer(),
@@ -260,8 +273,10 @@ def main():
     script = session.create_script(JS)
     script.on("message", on_message)
     script.load()
-    while True:
+    deadline = time.time() + 45 * 60
+    while time.time() < deadline:
         time.sleep(2)
+    print("[寿命到期] 45 分钟硬退出（防探针堆积）")
 
 
 if __name__ == "__main__":

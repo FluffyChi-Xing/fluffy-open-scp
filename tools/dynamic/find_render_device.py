@@ -150,20 +150,24 @@ function hookCreate(vt, slot) {
 }
 
 // 阶段 1：候选 vftable 各挂 slot17(Present) 计数器
-VTS.forEach(function (entry) {
+var listeners = [];
+VTS.slice(0, 6).forEach(function (entry) {
   var vt = ptr(entry[0]);
   try {
-    Interceptor.attach(fnAt(vt, 17), {
+    var l = Interceptor.attach(fnAt(vt, 17), {
       onEnter: function () {
         var c = counters[entry[0]] || (counters[entry[0]] = { n: 0 });
         c.n++;
       }
     });
+    listeners.push(l);
   } catch (e) { send({ kind: 'log', text: 'slot17 hook 失败 ' + entry[0] + ': ' + e }); }
 });
 
 // 阶段 2：30s 后按帧率 signature 锁定渲染设备并武装
 setTimeout(function () {
+  // 计数窗到期：6 个计数器全部 detach（钩子预算铁律）
+  listeners.forEach(function (l) { l.detach(); });
   var best = null, bestN = 0;
   var report = [];
   for (var k in counters) {
@@ -177,21 +181,19 @@ setTimeout(function () {
     return;
   }
   armedVt = ptr('0x' + best);
-  send({ kind: 'log', text: '渲染设备锁定: 0x' + best + '（Present ' + bestN + '/30s）——武装 78..105' });
-  for (var s = 78; s <= 105; s++) {
-    (function (slot) {
-      var fn = fnAt(armedVt, slot);
-      Interceptor.attach(fn, {
-        onEnter: function (args) {
-          try {
-            if (isShaderBlob(args[1])) { hookCreate(armedVt, slot); return; }
-            if (structComObj(args[1])) hookBind(armedVt, slot);
-          } catch (e) {}
-        }
-      });
-    })(s);
-  }
-  send({ kind: 'log', text: '武装完成——请按 A-G 清单飞行，绑定/创建即落盘' });
+  send({ kind: 'log', text: '渲染设备锁定: 0x' + best + '（Present ' + bestN + '/30s）——武装 91/92/100/101 四槽（总活钩≤4）' });
+  [91, 92, 100, 101].forEach(function (slot) {
+    var fn = fnAt(armedVt, slot);
+    Interceptor.attach(fn, {
+      onEnter: function (args) {
+        try {
+          if (isShaderBlob(args[1])) { hookCreate(armedVt, slot); return; }
+          if (structComObj(args[1])) hookBind(armedVt, slot);
+        } catch (e) {}
+      }
+    });
+  });
+  send({ kind: 'log', text: '武装完成（91/92/100/101 四槽）——请按 A-G 清单飞行，绑定/创建即落盘' });
 }, 30000);
 """
 
