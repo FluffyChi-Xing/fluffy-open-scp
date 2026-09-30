@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "疑问与讨论 / Questions & discussion"
+    url: "https://github.com/FluffyChi-Xing/fluffy-open-scp/discussions"
+    about: "使用方式咨询、逆向结论讨论请到这里 / For usage questions and reverse-engineering discussions"

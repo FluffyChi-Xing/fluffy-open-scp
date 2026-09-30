@@ -1,9 +1,0 @@
-LOTM v9 | model: SimCity_Game.package instance=0x01532F56 | meshes=1 materials=1 | bindings=1
-mesh #10   verts=2473   tris=1402   uvKind=2 → material #11 (idx 0) facade=true g=[0-49]×49
-material #11 (idx 0) paramCols=50 bake=有
-  slot0 0xC79F7205 [SimCity_Game.package rw4 paletteF32 50x4（参数表：row0=palU/palU2/interior、row1=regionXform、row2=top、row3=padding/room）]
-  slot1 0x8E01CF0C [SimCity_Graphics.package raster pixFmt21 256x256]
-  slot2 0x5A9497DA [SimCity_Graphics.package raster pixFmt21 256x256]
-  slot3 0xA0287C9C [SimCity_Graphics.package raster pixFmt21 256x256]
-  slot4 0x098B66B7 [SimCity_Graphics.package rw4 rawBGRA 512x16]
-  slot5 0x868DD0BA [SimCity_Graphics.package rw4 DXT5 512x512]
