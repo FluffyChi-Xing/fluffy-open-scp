@@ -184,23 +184,19 @@ setInterval(function () {
       });
       send({ kind: 'log', text: '交通图[' + key + '] ' + hot.slice(0, 10).join(' ') });
     }
-    if (!w.armed) {
-      if (createSlots.length === 0) continue;
+    // 铁律（09-29 定谳）：bind 槽不赌 create——有 obj 流量就全装 bind hook，
+    // 内容校验（版本 token）落盘，错槽自然零产出。create 流量在包装层可能
+    // 永不过 vtable（加载期内部通路），不能作为 bind 武装的前置条件。
+    if (!w.armed && createSlots.length > 0) {
       w.armed = true;
       createSlots.forEach(function (s) { hookCreate(vt, s); });
-      w.armedBind = bindSlots.slice();
-      bindSlots.forEach(function (s) { hookBind(vt, s); });
-      log('武装：设备 ' + key + ' create@' + JSON.stringify(createSlots) +
-        ' bind@' + JSON.stringify(bindSlots) + '（obj 流量 ' + detail.join(',') + '）');
-    } else {
-      // armed 后新亮的 bind 槽补挂（hookBind 按函数地址去重）
-      bindSlots.forEach(function (s) {
-        if (w.armedBind.indexOf(+s) < 0) {
-          w.armedBind.push(+s);
-          hookBind(vt, +s);
-          log('补挂 bind@' + s + '（设备 ' + key + '）');
-        }
-      });
+      log('武装 create@' + JSON.stringify(createSlots) + '（设备 ' + key + '）');
+    }
+    var newBind = bindSlots.filter(function (s) { return w.armedBind.indexOf(+s) < 0; });
+    if (newBind.length > 0) {
+      newBind.forEach(function (s) { w.armedBind.push(+s); hookBind(vt, +s); });
+      log('武装 bind@' + JSON.stringify(newBind) + '（obj 流量 ' +
+        detail.filter(function (d) { return newBind.indexOf(+d.split(':')[0]) >= 0; }).join(',') + '）');
     }
   }
 }, 15000);
@@ -799,7 +795,7 @@ function hookBind(vt, slot) {
       if (obj.isNull() || obj.compare(SMALL_MAX) < 0) return;
       var k = obj.toString();
       if (seenBind.has(k)) return;
-      if (!looksLikeComObj(obj)) return; // 槽位不准时在此拦下非 COM 对象
+      if (!looksLikeComObj(obj) && !quickComObj(obj)) return; // 包装层 shader 对象 vtable 在堆上——quickComObj 密度判据兜底
       seenBind.add(k); // 无论成败只试一次，防失败刷屏
       try {
         // shader/声明对象的 GetFunction/GetDeclaration 同在槽 4
