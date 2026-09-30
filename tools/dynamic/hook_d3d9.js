@@ -40,6 +40,18 @@ function inMod(p) {
   return p.compare(d3d9.base) >= 0 && p.compare(d3d9.base.add(d3d9.size)) < 0;
 }
 
+var gameRange = null;
+function inGameMod(p) {
+  if (gameRange === null) {
+    var g = Process.findModuleByName('SimCity.exe');
+    gameRange = g
+      ? { lo: parseInt(g.base.toString(16), 16), hi: parseInt(g.base.add(g.size).toString(16), 16) }
+      : { lo: 1, hi: 0 };
+  }
+  var a = parseInt(p.toString(16), 16);
+  return a >= gameRange.lo && a < gameRange.hi;
+}
+
 function inExec(p) {
   return execLo !== null && p.compare(execLo) >= 0 && p.compare(execHi) < 0;
 }
@@ -80,9 +92,9 @@ function looksLikeComObj(p) {
     var vt = p.readPointer();
     // D3D9 COM 对象的 vftable 实际住在 rdata（只读数据段），方法指针才指向
     // exec——只认 exec 会把真设备拒掉、反而放进导入跳转表假候选（2026-09-30
-    // 三连空手而归的根因）。vftable 地址在 d3d9 模块内即可，条目密度由
-    // validateReport 把关。
-    if (!inExec(vt) && !inMod(vt)) return false;
+    // 三连会话零捕获+烧 CPU 的根因）。vftable 地址在 d3d9 模块或游戏模块内
+    // 均可（防引擎包装设备），条目密度由 validateReport 把关。
+    if (!inExec(vt) && !inMod(vt) && !inGameMod(vt)) return false;
     for (var i = 0; i <= 4; i++) {
       if (!inExec(vt.add(i * 4).readPointer())) return false;
     }
@@ -182,8 +194,17 @@ function lurkCreateDevice(pD3D) {
             try {
               if (!lurkFirst[slot]) {
                 lurkFirst[slot] = true;
+                var diag = '';
+                try {
+                  var obj0 = pp.readPointer();
+                  var vt0 = obj0.readPointer();
+                  var rep0 = validateReport(vt0);
+                  diag = '设备诊断: vftable=' + vt0 + ' exec=' + rep0.exec + '/' + rep0.n +
+                    ' inExec=' + inExec(vt0) + ' inD3d9=' + inMod(vt0) + ' inGameMod=' + inGameMod(vt0);
+                } catch (e) { diag = '设备诊断失败: ' + e; }
                 log('lurk 槽 ' + slot + ' 首调 args6=' + pp + ' *args6=' +
-                  (function () { try { return pp.readPointer(); } catch (e) { return '不可读'; } })());
+                  (function () { try { return pp.readPointer(); } catch (e) { return '不可读'; } })() +
+                  ' | ' + diag);
               }
               var obj = pp.readPointer();
               if (obj.isNull() || !looksLikeComObj(obj)) return;
