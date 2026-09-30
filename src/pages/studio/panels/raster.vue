@@ -917,13 +917,18 @@ async function syncSheetPreview() {
   sheetLotUrl.value = await composeLotMaterialDataUrl({
     doc: doc.value,
     lotColors: material ? material.colors : newLotColorRgba.value,
-    lotColorsAuthored: material
-      ? [...material.colorsAuthored]
-      : [true, true, true, true],
+    lotBorderColors: material?.lotBorderColors ?? undefined,
+    lotBorderWidths: material?.lotBorderWidths ?? undefined,
+    lotBorderPatternIndices: material?.lotBorderPatternIndices ?? undefined,
+    baseTileIndex: material?.lotBaseTile ?? undefined,
     surfaceUrl: material?.surfacePng
       ? `data:image/png;base64,${material.surfacePng}`
       : null,
+    normalAtlasUrl: material?.normalAtlasPng
+      ? `data:image/png;base64,${material.normalAtlasPng}`
+      : null,
     tilePeriod: material?.tilePeriod ?? null,
+    lotSize: targetLot.value?.summary.lotSize ?? null,
   });
 }
 

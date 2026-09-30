@@ -38,14 +38,16 @@ const {
   lotColorsAuthored,
   lotBorderColors,
   lotBorderWidths,
+  lotBorderPatternIndices,
+  lotBaseTile,
   lotOverlayBoxOffset,
   lotModelBBoxCenter,
   lotMaskPng,
   lotMaskRawRgba,
   lotAlbedoPng,
   lotSurfacePng,
-  lotTintAtlasPng,
   lotNormalAtlasPng,
+  decalLight,
   selectedUnit,
   edit,
   hiddenUnits,
@@ -394,7 +396,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         </button>
       </header>
       <p v-if="diagnostics.length" class="editor-diagnostics">
-        <FIcon name="TriangleAlert" :size="13" aria-label="" />
+        <FIcon name="CircleAlert" :size="13" aria-label="" />
         <span>{{ diagnostics.join(" · ") }}</span>
       </p>
       <div v-if="loading" class="editor-loading">
@@ -427,13 +429,14 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :lot-colors-authored="lotColorsAuthored"
           :lot-border-colors="lotBorderColors"
           :lot-border-widths="lotBorderWidths"
+          :lot-border-pattern-indices="lotBorderPatternIndices"
+          :lot-base-tile="lotBaseTile"
           :lot-overlay-box-offset="lotOverlayBoxOffset"
           :lot-model-bbox-center="lotModelBBoxCenter"
           :lot-mask-png="lotMaskPng"
           :lot-mask-raw-rgba="lotMaskRawRgba"
           :lot-albedo-png="lotAlbedoPng"
           :lot-surface-png="lotSurfacePng"
-          :lot-tint-atlas-png="lotTintAtlasPng"
           :lot-normal-atlas-png="lotNormalAtlasPng"
           :decal-textures="session?.decalTextures ?? []"
           :selected-id="selectedId"
@@ -444,6 +447,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :decal-light="decalLight"
           :tool="tool"
           @select="selectedId = $event"
           @toggle-layer="toggleGroup"
@@ -552,6 +556,17 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   font-size: 11px;
   gap: 6px;
   white-space: nowrap;
+}
+.matbase-input {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 11px;
+  min-height: 24px;
+  padding: 2px 6px;
+  width: 56px;
 }
 .daynight {
   align-items: center;

@@ -4,7 +4,10 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { disposeObject } from "@/lib/three-viewer";
-import { parseLotModelObjects } from "@/lib/three-gltf";
+import {
+  getLotModelObjects,
+  markGeometryShared,
+} from "@/lib/three-gltf";
 import { renderTelemetry } from "@/lib/renderTelemetry";
 import type { RenderTelemetryTrigger } from "@/lib/renderTelemetry";
 import type * as ThreeNamespace from "three";
@@ -23,18 +26,26 @@ import {
   unitId,
   unitMatrix,
 } from "./unitGizmos";
-import { decalFrame, projectDecal } from "@/lib/decalProject";
+import {
+  decalFrame,
+  decalHalfThickness,
+  decalProjector,
+  measureAnchorDistance,
+  projectDecal,
+} from "@/lib/decalProject";
 import { useEditorViewport } from "./useEditorViewport";
 import {
   applyDeferredMaterialMaps,
   applySunEnv,
   createSunEnv,
   dayFactor,
-  loadTintTextures,
+  getDeferredMaps,
+  getTintTextures,
   makeTintMaterial,
   type SunEnvRefs,
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
+import { installHejlToneMapping } from "@/lib/hejlTonemapping";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   applyGroundMask,
@@ -61,14 +72,18 @@ const props = defineProps<{
   lotTilePeriod: [number, number] | null;
   /** LotPlacementTransform 行主序 12 floats；地面矩形取其逆对齐建筑。 */
   lotPlacement: number[] | null;
-  /** LotColor1-4 RGBA（A = 地面贴图索引 0-15）。 */
+  /** LotColor1-4 RGBA（A = 图案/法线图集格号 0-15）。 */
   lotColors: [number, number, number, number][];
-  /** LotColor1-4 是否实际存在（false = 回退色，不参与着色）。 */
+  /** LotColor1-4 是否实际存在（false = 引擎回退调色板，平色参与渲染）。 */
   lotColorsAuthored: boolean[];
-  /** LotBorderColor1-4 的 sRGB RGB（mask 渐变带描边色）。 */
+  /** LotBorderColor1-4 的 sRGB RGB（mask 渐变带描边平色）。 */
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  /** 边框带图案索引（LotBorderColor.A，0-15）。 */
+  lotBorderPatternIndices: number[];
+  /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
+  lotBaseTile: number;
   /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
   lotOverlayBoxOffset: [number, number] | null;
   /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）；null = 无属性。 */
@@ -84,9 +99,7 @@ const props = defineProps<{
   decalTextures: DecalUnitTexture[];
   /** "Lot Textures" 地表共享纹理（data URL；精细模式地面 v2 用）。 */
   lotSurfacePng: string | null;
-  /** 全局共享染色图集（s10）data URL。 */
-  lotTintAtlasPng: string | null;
-  /** 全局共享法线图集（s15）data URL：地面 normalMap。 */
+  /** 全局共享法线图集（s15）data URL：图案质感 normalMap。 */
   lotNormalAtlasPng: string | null;
   selectedId: string | null;
   hiddenUnits: Set<string>;
@@ -100,6 +113,8 @@ const props = defineProps<{
   timeOfDay?: number;
   /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
   powered?: boolean;
+  /** 破洞贴花假内景光参数 [光强因子, 半径因子]（0x0DA76A05/06）；缺失 = 无。 */
+  decalLight?: [number, number] | null;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
   tool?: EditorTool;
 }>();
@@ -138,11 +153,15 @@ watch([lightAzimuth, lightElevation], () => {
   viewport.viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
 // 精细渲染为 HDR 管线（interiorMap.a×16 自发光、×256 艺术自发光）：
-// ACES 把高光压回显示范围，夜间亮窗/房间才与游戏（hejlToneMap）观感一致
+// 接入游戏 post 管线的 hejlToneMap 逐字公式（P3，hejlTonemapping.ts）——
+// 替换此前 ACES@1.12 折中；曝光 1.12 延续旧校准（引擎 sunSky.mSunColor.w
+// 未知，可调）
 watch(
   viewport.viewer,
   (instance) => {
-    instance?.setToneMapping(instance.THREE.ACESFilmicToneMapping, 1.12);
+    if (!instance) return;
+    installHejlToneMapping(instance.THREE);
+    instance.setToneMapping(instance.THREE.CustomToneMapping, 1.12);
   },
   { immediate: true },
 );
@@ -153,13 +172,175 @@ const specUniformRefs: { value: number }[] = [];
 
 let envRefs: SunEnvRefs | null = null;
 
+// ---------------------------------------------------------------------------
+// 会话级缓存：编辑操作（transform/undo → grouping 全量重建）的热路径上，
+// 解码与合成结果完全不变，按「输入源字符串身份」缓存跨 rebuild 复用。
+// ---------------------------------------------------------------------------
+
+/** 图像解码缓存（key = 源 data URL / base64 字符串身份；容量上限防跨会话累积）。 */
+const imageDataCache = new Map<string, Promise<ImageData | null>>();
+const IMAGE_DATA_CACHE_CAP = 16;
+/** 尺寸探测缓存（mask 图宽高，同键空间）。 */
+const imageDimsCache = new Map<string, Promise<{ width: number; height: number } | null>>();
+
+function cacheGetOrLoad<V>(
+  cache: Map<string, Promise<V>>,
+  key: string,
+  load: () => Promise<V>,
+): Promise<V> {
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const pending = load();
+  cache.set(key, pending);
+  if (cache.size > IMAGE_DATA_CACHE_CAP) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (oldest !== undefined && oldest !== key) cache.delete(oldest);
+  }
+  return pending;
+}
+
+function decodeImageData(url: string): Promise<ImageData | null> {
+  return new Promise((resolve) => {
+    const element = new Image();
+    element.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = element.width;
+      canvas.height = element.height;
+      const context = canvas.getContext("2d");
+      if (!context) return resolve(null);
+      context.drawImage(element, 0, 0);
+      resolve(context.getImageData(0, 0, element.width, element.height));
+    };
+    element.onerror = () => resolve(null);
+    element.src = url;
+  });
+}
+
+/** 贴花解码纹理缓存（key = DecalUnitTexture 对象身份；会话更换即失效回收）。 */
+let decalTextureCacheOwner: DecalUnitTexture[] | null = null;
+const decalTextureCache = new Map<DecalUnitTexture, ThreeNamespace.Texture>();
+
+function releaseDecalTextureCache(): void {
+  for (const texture of decalTextureCache.values()) texture.dispose();
+  decalTextureCache.clear();
+  decalTextureCacheOwner = null;
+}
+
+async function getDecalTexture(
+  THREE: typeof ThreeNamespace,
+  texture: DecalUnitTexture,
+): Promise<ThreeNamespace.Texture | null> {
+  if (!texture.png) return null;
+  if (decalTextureCacheOwner !== props.decalTextures) {
+    releaseDecalTextureCache();
+    decalTextureCacheOwner = props.decalTextures;
+  }
+  const hit = decalTextureCache.get(texture);
+  if (hit) return hit;
+  try {
+    // png 是**裸 base64 字符串**（四色解码 PNG），必须走 data URL——
+    // 不能 new Blob([png])：那会把 base64 文本当字节，解码必然失败
+    //（2026-09-26 回归：全部贴花回退绿色占位 gizmo 的根因）。
+    const decoded = await new THREE.TextureLoader().loadAsync(
+      `data:image/png;base64,${texture.png}`,
+    ).catch((error: unknown) => {
+      console.warn("[decal] 纹理 data URL 解码失败", texture.idInstance, error);
+      return null;
+    });
+    if (!decoded) return null;
+    decoded.colorSpace = THREE.SRGBColorSpace;
+    // 采样器口径（引擎变体对象：sign 族 base pass 之后全是 LINEAR×3 + mip；
+    // graffiti 同 LINEAR）：
+    // - 招牌/涂鸦 raw/四色解码源（76708d5 后源图已正确）：Linear + mip =
+    //   游戏观感"锐利而边缘平滑"——POINT 的锯齿是 09-30 误治（模糊的病根
+    //   是纹理源错误，已修）。
+    // - 四色量化回退（quantized，32px 调色板色）：POINT 保像素画可读。
+    // - 破洞：Linear + 禁 mip（视差采样口径）。
+    const quantized = texture.quantized === true;
+    if (quantized) {
+      decoded.magFilter = THREE.NearestFilter;
+      decoded.minFilter = THREE.NearestFilter;
+      decoded.generateMipmaps = false;
+    } else {
+      decoded.generateMipmaps = true;
+      decoded.minFilter = THREE.LinearMipmapLinearFilter;
+    }
+    if (texture.variant === "hole") decoded.flipY = false;
+    decoded.anisotropy = viewport.viewer.value?.maxAnisotropy ?? 1;
+    decalTextureCache.set(texture, decoded);
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+/** decal 投影几何缓存（key = unit+变换+深度+宽高比；payload 更换即失效）。 */
+let decalProjectionCachePayload: LotModelPayload | null | undefined;
+const decalProjectionCache = new Map<string, ThreeNamespace.BufferGeometry>();
+
+function ensureDecalProjectionCache(payload: LotModelPayload | null): void {
+  if (decalProjectionCachePayload === payload) return;
+  for (const geometry of decalProjectionCache.values()) geometry.dispose();
+  decalProjectionCache.clear();
+  decalProjectionCachePayload = payload;
+}
+
+/**
+ * 上一次装配/增量应用的 unit DTO 快照（id → unit）：增量更新判定的对照物。
+ * 全量 rebuild 收尾与增量应用成功后都会刷新。
+ */
+let lastUnitsSnapshot = new Map<string, LotUnitDto>();
+
+function buildUnitsSnapshot(
+  grouping: UnitGrouping,
+): Map<string, LotUnitDto> {
+  const map = new Map<string, LotUnitDto>();
+  for (const unit of [
+    ...grouping.lights,
+    ...grouping.decals,
+    ...grouping.props,
+    ...grouping.effects,
+    ...grouping.spawners,
+    ...grouping.pathPoints,
+  ]) {
+    map.set(unitId(unit), unit);
+  }
+  return map;
+}
+
+/** 除 transform 外的 DTO 等价判定（非 transform 字段变化必须走全量重建）。 */
+function unitEqualsIgnoringTransform(
+  a: LotUnitDto,
+  b: LotUnitDto,
+): boolean {
+  if (a.kind !== b.kind) return false;
+  const restA: Record<string, unknown> = { ...a };
+  const restB: Record<string, unknown> = { ...b };
+  delete restA.transform;
+  delete restB.transform;
+  return JSON.stringify(restA) === JSON.stringify(restB);
+}
+
 const timeOfDay = () => props.timeOfDay ?? 12;
 
 function applySun() {
-  if (envRefs) applySunEnv(envRefs, timeOfDay(), props.powered);
+  if (envRefs) {
+    // 共享 uniform 热切换（不重建材质）——按需渲染下必须显式请求重绘。
+    applySunEnv(envRefs, timeOfDay(), props.powered);
+    // 精细模式：key 光挂 env 太阳（方向/色），地面 Lambert 由它着色并接收
+    // 建筑投影；默认模式保持白模滑杆口径。
+    if (props.renderMode === "refined") {
+      viewport.viewer.value?.setSunFromEnv(
+        envRefs.sunDir.value,
+        envRefs.sunColor.value,
+      );
+    }
+    viewport.viewer.value?.invalidate();
+  }
 }
 watch([() => props.specExperiment, () => props.specMode], () => {
   for (const uniform of specUniformRefs) uniform.value = 2;
+  viewport.viewer.value?.invalidate();
 });
 watch([() => props.timeOfDay, () => props.powered], () => {
   applySun();
@@ -232,7 +413,11 @@ async function ensureGizmo() {
   const controls = new Controls(instance.camera, instance.domElement);
   controls.size = 0.85;
   controls.addEventListener("objectChange", () => {
-    if (controls.dragging) emitLiveTransform(controls.object);
+    if (controls.dragging) {
+      emitLiveTransform(controls.object);
+      // 手柄拖拽直接改对象变换（不触发 grouping watcher），按需渲染下需显式重绘。
+      viewport.viewer.value?.invalidate();
+    }
   });
   controls.addEventListener("dragging-changed", (event) => {
     const dragging = (event as unknown as { value: boolean }).value;
@@ -281,11 +466,15 @@ function updateGizmo() {
   if (!controls) return;
   controls.detach();
   const tool = props.tool ?? "select";
-  if (tool === "select" || !props.selectedId) return;
+  if (tool === "select" || !props.selectedId) {
+    viewport.viewer.value?.invalidate();
+    return;
+  }
   const object = viewport.unitObjects.get(props.selectedId);
   if (!object) return;
   controls.setMode(tool);
   controls.attach(object);
+  viewport.viewer.value?.invalidate();
 }
 
 /** 本次重建的触发来源，供渲染遥测标注（在 watcher 里按变化项判定）。 */
@@ -293,6 +482,10 @@ let pendingTrigger: RenderTelemetryTrigger = "first_load";
 
 /** 贴花投影命中/回退计数（每次装配前重置），供 decal_render 遥测。 */
 const decalStats = { projected: 0, fallback: 0 };
+
+/** 破洞假内景光单次装配上限（防多破洞 lot 光源洪峰）。 */
+const HOLE_LIGHT_MAX = 8;
+let holeLightCount = 0;
 
 /** rebuild 包装：模型载荷身份变化时重新构图（编辑操作保持镜头）。 */
 function rebuildScene() {
@@ -303,6 +496,51 @@ function rebuildScene() {
   return viewport.rebuild(assembleScene, { reframe });
 }
 
+/**
+ * grouping 变化的**增量更新路径**：unit 集合不变、且只有非贴花 unit 的
+ * transform 变化时，原地把新矩阵 decompose 进既有 Object3D——不重建任何
+ * 几何/材质/贴花投影。此前拖拽手柄提交一次 transform、每次 undo/redo 都
+ * 触发全量重建（2046ms p95 的直接来源）；增量路径预期 <5ms。
+ *
+ * 返回 false = 需全量重建（unit 增删、非 transform 字段变化、贴花 transform
+ * ——投影几何随变换而变——或场景尚未装配）。
+ */
+function tryIncrementalGrouping(grouping: UnitGrouping): boolean {
+  const instance = viewport.viewer.value;
+  if (!instance) return false;
+  if (!viewport.sceneReady.value) return false;
+  const next = buildUnitsSnapshot(grouping);
+  const prev = lastUnitsSnapshot;
+  if (prev.size !== next.size) return false;
+  let transformChanged = false;
+  for (const [id, unit] of next) {
+    const old = prev.get(id);
+    if (!old) return false;
+    if (old === unit) continue;
+    if (!unitEqualsIgnoringTransform(old, unit)) return false;
+    // 贴花投影几何在 lot 局部空间随 transform 而变，必须重建；
+    // pathPoint 位置来自 point 字段（不消费 transform），无需应用。
+    if (unit.kind === "decal") return false;
+    transformChanged = true;
+  }
+  lastUnitsSnapshot = next;
+  if (!transformChanged) return true;
+  const THREE = instance.THREE;
+  for (const [id, unit] of next) {
+    // pathPoint 位置来自 point 字段（不消费 transform）。
+    if (unit.kind === "pathPoint" || !unit.transform) continue;
+    const object = viewport.unitObjects.get(id);
+    if (!object) continue;
+    unitMatrix(THREE, unit.transform).decompose(
+      object.position,
+      object.quaternion,
+      object.scale,
+    );
+  }
+  instance.invalidate();
+  return true;
+}
+
 /** 量化 mask 图的尺寸（raw RGBA 字节流构造 ImageData 时需要宽高）。 */
 async function loadMaskImageDims(): Promise<{
   width: number;
@@ -310,23 +548,26 @@ async function loadMaskImageDims(): Promise<{
 } | null> {
   const url = props.lotMaskPng ?? props.lotAlbedoPng;
   if (!url) return null;
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("lot mask failed"));
-      element.src = url;
-    });
-    return { width: image.width, height: image.height };
-  } catch {
-    return null;
-  }
+  return cacheGetOrLoad(imageDimsCache, url, async () => {
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("lot mask failed"));
+        element.src = url;
+      });
+      return { width: image.width, height: image.height };
+    } catch {
+      return null;
+    }
+  });
 }
 
 /** LotMask 原始通道权重图 → ImageData（compose 输入）。
  *  后端是未压缩 RGBA 字节流 base64（A = LC4 权重），**必须用 atob 直接构造
  *  ImageData**——若经 canvas 解码，预乘 alpha 会按 LC4 权重等比压缩/清零
- *  LC1-3 权重，精细合成随即满地判为草皮（2026-09-13 消防局对拍根因）。 */
+ *  LC1-3 权重，精细合成随即满地判为草皮（2026-09-13 消防局对拍根因）。
+ *  结果按源字符串缓存：编辑操作的全量重建不再重复 atob 逐字节拷贝。 */
 function loadRawMaskPixels(width: number, height: number): ImageData | null {
   const base64 = props.lotMaskRawRgba;
   if (!base64) return null;
@@ -340,50 +581,18 @@ function loadRawMaskPixels(width: number, height: number): ImageData | null {
   return new ImageData(pixels, width, height);
 }
 
-/** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入）。 */
-async function loadImageDataFromUrl(
+/** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入，按源 URL 缓存）。 */
+function loadImageDataFromUrl(
   url: string | null,
 ): Promise<ImageData | null> {
-  if (!url) return null;
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("image failed"));
-      element.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, image.width, image.height);
-  } catch {
-    return null;
-  }
+  if (!url) return Promise.resolve(null);
+  return cacheGetOrLoad(imageDataCache, url, () => decodeImageData(url));
 }
 
-async function loadSurfacePixels(): Promise<ImageData | null> {
+function loadSurfacePixels(): Promise<ImageData | null> {
   const url = props.lotSurfacePng;
-  if (!url) return null;
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("lot surface failed"));
-      element.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, image.width, image.height);
-  } catch {
-    return null;
-  }
+  if (!url) return Promise.resolve(null);
+  return cacheGetOrLoad(imageDataCache, url, () => decodeImageData(url));
 }
 
 onMounted(async () => {
@@ -395,6 +604,12 @@ onBeforeUnmount(() => {
   gizmo?.detach();
   gizmo?.dispose();
   gizmo = null;
+  // 跨 rebuild 缓存（模型克隆/材质贴图/地面合成/贴花纹理）**有意跨 unmount
+  // 保留**：全部按 payload/session 身份自失效、容量有界，保留 = 重开同一
+  // property 零解码秒开（GPU 缓冲随旧上下文销毁自动释放，仅剩 JS 侧数据）。
+  imageDataCache.clear();
+  imageDimsCache.clear();
+  lastUnitsSnapshot.clear();
 });
 
 /** 业务场景装配：模型材质 → 地面 → 六类 Unit → 路径折线。 */
@@ -405,7 +620,8 @@ async function assembleScene(
   specUniformRefs.length = 0;
 
   const payload = props.modelPayload;
-  const modelObjects = payload ? await parseLotModelObjects(payload.glbs) : [];
+  // payload 级缓存：命中时返回 clone（共享几何），跳过 GLB parse。
+  const modelObjects = payload ? await getLotModelObjects(payload) : [];
   if (ctx.isStale()) {
     for (const object of modelObjects) disposeObject(object);
     return;
@@ -428,12 +644,7 @@ async function assembleScene(
   });
   const tintResolved =
     props.renderMode === "refined" && payload
-      ? await loadTintTextures(
-          THREE,
-          payload.materials ?? [],
-          ctx.registerTextureUrl,
-          ctx.maxAnisotropy,
-        )
+      ? await getTintTextures(THREE, payload, ctx.maxAnisotropy)
       : [];
   tintSpan.end({
     materials: payload?.materials?.length ?? 0,
@@ -458,6 +669,8 @@ async function assembleScene(
       if (!mesh.isMesh) return;
       // 贴花投影的候选面（精细模式才用；建筑网格在 lot 局部空间为单位变换）
       buildingMeshes.push(mesh);
+      // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
+      mesh.userData.buildingMaterialIndex = materialIndex;
       if (props.renderMode !== "refined") {
         mesh.material = whiteMaterial;
         return;
@@ -486,16 +699,21 @@ async function assembleScene(
     const deferredSpan = renderTelemetry.begin("texture_compose", {
       phase: "deferred",
     });
-    applyDeferredMaterialMaps(
-      THREE,
-      payload,
-      materialGroups,
-      ctx.registerTextureUrl,
-      ctx.isStale,
-      ctx.maxAnisotropy,
-    );
+    // await 全部解码完成再应用：真实成本进 span（此前只覆盖同步签发）；
+    // 缓存命中时 await 即时返回。
+    const deferredMaps = await getDeferredMaps(THREE, payload, ctx.maxAnisotropy);
+    if (!ctx.isStale()) {
+      applyDeferredMaterialMaps(deferredMaps, materialGroups);
+      instance.invalidate();
+    }
     deferredSpan.end({ groups: materialGroups.length });
   }
+  // 阴影链（精细模式）：key 光投影 + 内容网格 castShadow（幂等，重建后
+  // 新网格也补标）。太阳方向/色由 applySun 的 setSunFromEnv 持续驱动；
+  // 此处重放一次 applySun 保证切换渲染模式后 env 太阳立即生效。
+  const shadowsRefined = props.renderMode === "refined";
+  viewport.viewer.value?.setShadowsEnabled(shadowsRefined);
+  if (shadowsRefined) applySun();
 
   // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
   if (props.lotSize) {
@@ -533,15 +751,16 @@ async function assembleScene(
     // 2026-09-13 用户对拍需求）。
     instance.group("lot").add(ground);
     if (props.lotMaskPng || props.lotAlbedoPng) {
-      // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1
-      const [surface, maskDims, tintAtlas, normalAtlas] = await Promise.all([
+      // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1。
+      // applyGroundMask 已 await（compose 成本进 scene_rebuild 遥测；
+      // 解码结果按源字符串缓存，编辑操作的全量重建零重复解码）。
+      const [surface, maskDims, normalAtlas] = await Promise.all([
         loadSurfacePixels(),
         loadMaskImageDims(),
-        loadImageDataFromUrl(props.lotTintAtlasPng),
         loadImageDataFromUrl(props.lotNormalAtlasPng),
       ]);
       if (!surface) {
-        // 精细渲染的材质替换依赖真实图集；静默回退占位 tile 会把沥青画成
+        // 精细渲染的底图格依赖真实图集；静默回退占位 tile 会把沥青画成
         // 亮灰（2026-09-13 对拍教训），必须让用户看到原因。
         console.warn(
           "[lot-ground] 'Lot Textures' surface unavailable — refined ground will use placeholder tiles. Open SimCity_Graphics.package (and the lot's own package) for the real atlas.",
@@ -550,10 +769,9 @@ async function assembleScene(
       const rawMask = maskDims
         ? loadRawMaskPixels(maskDims.width, maskDims.height)
         : null;
-      applyGroundMask({
+      await applyGroundMask({
         rawMask,
         surface,
-        tintAtlas,
         normalAtlas,
         THREE,
         ground,
@@ -563,39 +781,230 @@ async function assembleScene(
         tilePeriod: props.lotTilePeriod,
         refined: props.renderMode === "refined",
         lotColors: props.lotColors,
-        lotColorsAuthored: props.lotColorsAuthored,
         lotBorderColors: props.lotBorderColors,
+        lotBorderPatternIndices: props.lotBorderPatternIndices,
         lotBorderWidths: props.lotBorderWidths,
+        baseTileIndex: props.lotBaseTile,
         lotOverlayBoxOffset: props.lotOverlayBoxOffset,
+        rawMaskKey: props.lotMaskRawRgba,
+        surfaceKey: props.lotSurfacePng,
+        normalAtlasKey: props.lotNormalAtlasPng,
         isStale: ctx.isStale,
       });
     }
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
   }
 
-  /** 贴花材质：四色解码贴图 + 二值 alpha。投影片与浮空回退共用。 */
+  /**
+   * 贴花材质变体（migration.md §52.5 聚类映射）：招牌 = 霓虹自发光
+   * （decalNeonBrighten 证据：Current.color.rgb ×2，无光照、夜间自亮）；
+   * 涂鸦/废墟 = 受光材质——MeshBasic 不受光导致贴花与墙面的光照/明暗完全
+   * 脱节（"不在一个图层"观感的根因），MeshStandard 融入场景光照。
+   */
+  /**
+   * 破洞贴花材质 —— `decalLightInteriorMap` **逐字转写**（2026-09-30
+   * decal_all_families_source.txt 逐字源码，§65.15）：
+   *
+   * ```hlsl
+   * kSunContribution = decalMaterialData[0].x;   // 0x0DA76A05（PE decalLight[0]）
+   * kLightAmount     = decalMaterialData[0].y;   // 0x0DA76A06（PE decalLight[1]）
+   * interiorUv = lerp(tfp.xy, tfp.xy*0.5, tfp.z*0.5+0.5) * -0.5 + 0.5;
+   *              // ↑ z 深度视差：越深 UV 越向中心收缩 = 房间进深
+   * interiorUv  = interiorUv * texXform.xy + texXform.zw;   // → atlas 格
+   * sunColor = saturate(dot(sunDir, normal)) * sunColor.rgb;
+   * shColorDiff = (shColorDiff - sunColor) * kLightAmount
+   *             + sunColor * kSunContribution;
+   * interiorTextureLit = interior.rgb * (shColorDiff + shColorSpec + spec
+   *                    + interior.a · kInteriorMapSelfLightMax，常量 16.0);
+   * rgb = lerp(decal.rgb, interiorTextureLit, saturate(decal.a * 2 - 1));
+   * a   = saturate(decal.a * 2);
+   * ```
+   *
+   * PE 适配：纹理 = 解码条目栅格全图（texXform ≙ 全图 uv）；法线 = 切片
+   * 所在墙面（盒体 z 轴）；场景光 = env 太阳/天空近似（与建筑共享
+   * uSunDir/uSunColor/uDayLight uniform，热切换联动）；自亮峰值 16 为
+   * 夜间值，白天按 uInteriorGlow 缩至 2.5（与建筑内景链同源，恒 16 会
+   * 白天过曝——2026-09-30 用户对拍"太亮"）。旧"建筑 slot5 房间图集 +
+   * 盒体投影 + 渐黑环境光"口径（§62-63）废弃——引擎内景图 = **贴花自身
+   * 纹理**的视差采样。
+   */
+  function createHoleInteriorMaterial(
+    THREE: typeof ThreeNamespace,
+    map: ThreeNamespace.Texture,
+    env: SunEnvRefs,
+    decalData: [number, number] | null,
+    halfDepth: number,
+  ): ThreeNamespace.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: map },
+        uHalfDepth: { value: Math.max(halfDepth, 0.05) },
+        uBoxHalfXY: { value: new THREE.Vector2(1, 1) },
+        // 与建筑注入材质共享同一 env uniform 对象（昼夜热切换联动）
+        uSunDir: env.sunDir,
+        uSunColor: env.sunColor,
+        uDayLight: env.dayLight,
+        // decalMaterialData[0] = (kSunContribution, kLightAmount)
+        uDecalData: {
+          value: new THREE.Vector2(
+            decalData?.[0] ?? 0,
+            decalData?.[1] ?? 0,
+          ),
+        },
+        // 自亮峰值与建筑内景链同源（kInteriorMapSelfLightMax=16 为夜间峰值，
+        // 白天 2.5——恒 16 会导致白天破洞内部过曝，2026-09-30 用户对拍"太亮"）
+        uInteriorGlow: env.glow,
+      },
+      side: THREE.DoubleSide,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vTp;
+        varying vec3 vWorldNormal;
+        uniform float uHalfDepth;
+        uniform vec2 uBoxHalfXY;
+        void main() {
+          vUv = uv;
+          // 盒体归一坐标：xy = ±1（贴花面内），z = ±1（进深，前 +1）。
+          // 切片贴在墙面（z 可能略超出盒前缘，引擎几何被盒体裁到界内），
+          // 必须 clamp 否则视差采样越界。
+          vTp = clamp(position / vec3(max(uBoxHalfXY, vec2(0.001)), uHalfDepth), -1.0, 1.0);
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vTp;
+        varying vec3 vWorldNormal;
+        uniform sampler2D uMap;
+        uniform vec3 uSunDir;
+        uniform vec3 uSunColor;
+        uniform float uDayLight;
+        uniform vec2 uDecalData;
+        uniform float uInteriorGlow;
+        float saturate_(float v) { return clamp(v, 0.0, 1.0); }
+        void main() {
+          vec4 decalTexture = texture2D(uMap, vUv);
+          // 视差内景 UV（逐字）：前面全尺寸、深度一半处缩向中心
+          vec2 interiorUv = mix(vTp.xy, vTp.xy * 0.5, vTp.z * 0.5 + 0.5) * -0.5 + 0.5;
+          vec4 interiorTexture = texture2D(uMap, interiorUv);
+          // 场景光（SimCityLighting 的 env 近似）：天空环境 + 太阳 N·L
+          float sunMod = saturate_(dot(normalize(uSunDir), normalize(vWorldNormal)));
+          vec3 sunColor = sunMod * uSunColor;
+          vec3 shColorDiff = mix(vec3(0.10, 0.11, 0.15), vec3(0.62), uDayLight);
+          shColorDiff -= sunColor;
+          shColorDiff *= uDecalData.y;                  // kLightAmount
+          shColorDiff += sunColor * uDecalData.x;       // kSunContribution
+          vec3 spec = sunColor * 0.12;                  // gloss 0.06 / specE 16 的小镜面
+          // 自亮：kInteriorMapSelfLightMax 的昼夜缩放（uInteriorGlow 2.5..16，
+          // 与建筑内景链同源）——白天 2.5 温和、夜间 16 窗亮
+          vec3 interiorTextureLit = interiorTexture.rgb *
+            (shColorDiff + spec + interiorTexture.a * uInteriorGlow);
+          vec3 col = mix(decalTexture.rgb, interiorTextureLit,
+            saturate_(decalTexture.a * 2.0 - 1.0));
+          float alpha = saturate_(decalTexture.a * 2.0);
+          // ShaderMaterial 不走 three 的 colorspace 编码，手动回 sRGB
+          gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), alpha);
+        }
+      `,
+    });
+  }
+  /**
+   * Decal 材质子类型（migration.md §56-59）：引擎 decal PS 全家族都是
+   * **直采 raster + 标准 alpha 混合**（`Current.color = tex2D(s0, uv)`），
+   * 子类型差异只在增亮/光照/动画分支。raw 纹理的 alpha 本身就是美术授权
+   * 的低不透明度（字母 0.7-0.86、底色 <0.2）——「涂鸦刷进墙里」的效果
+   * = 低 alpha 叠加 + 共享光照，不是屏幕域乘法（§58 的 DstColor 调制
+   * 让暗底 texel 把整块墙压暗、字也没了，已回退）。
+   * - sign（0x73684EFC）：霓虹自发光，×2 增亮（decalFloatQuadNoClip）；
+   * - graffiti（0xE5390A98，cGraphicsUnitVandalism）：×1 直采 alpha 混合；
+   * - 其余（未知材质兜底）：受光 MeshStandard。
+   */
+  const DECAL_MATERIAL_VARIANTS: Record<number, "sign" | "graffiti"> = {
+    0x73684efc: "sign", // 招牌聚类（POWER ELECTRIC/太阳 burst/OMEGACO 等）
+    0xe5390a98: "graffiti", // 涂鸦/贴纸聚类（CRIME/词组拼贴等）
+  };
+
   function buildDecalMaterial(
     THREE: typeof ThreeNamespace,
-    texture: DecalUnitTexture,
-  ): ThreeNamespace.MeshBasicMaterial {
-    const map = new THREE.TextureLoader().load(
-      `data:image/png;base64,${texture.png}`,
-    );
-    map.colorSpace = THREE.SRGBColorSpace;
-    return new THREE.MeshBasicMaterial({
+    dto: DecalUnitTexture,
+    map: ThreeNamespace.Texture,
+    opts: {
+      halfDepth?: number;
+      boxHalfX?: number;
+      boxHalfY?: number;
+      decalData: [number, number] | null;
+      env: SunEnvRefs;
+    },
+  ): ThreeNamespace.Material {
+    const base = {
       map,
       side: THREE.DoubleSide,
-      // 四色解码对「四通道全 <128」的像素输出 alpha=0（原 SCP
-      // RasterImage.CreateFromStream 同口径）——不理会 alpha 会把这些像素
-      // 的 RGB=(0,0,0) 直接画成黑底。alpha 是二值的，alphaTest 即足够
-      //（同地面 fill 口径），无需 transparent 的排序开销。
-      alphaTest: 1 / 255,
-      transparent: false,
+      // raw RGBA 直采（引擎 decal PS：`Current.color = tex2D(s0, uv)`）；
+      // 纹理 alpha 是柔和衰减/掩码：sign 连续混合（光晕）、graffiti 阈值
+      // 裁切（锐利边缘），见下方 switch。
+      transparent: true,
+      depthWrite: false,
       // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
       polygonOffset: true,
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
-    });
+    };
+    // 破洞（decalLightInteriorMap 族）：视差内景 + 场景光分解 + 自亮 ×16
+    //（createHoleInteriorMaterial 逐字转写）。
+    if (dto.variant === "hole") {
+      const material = createHoleInteriorMaterial(
+        THREE,
+        map,
+        opts.env,
+        opts.decalData ?? null,
+        opts?.halfDepth ?? 1,
+      );
+      const boxHalf = material.uniforms.uBoxHalfXY.value as ThreeNamespace.Vector2;
+      boxHalf.set(opts?.boxHalfX ?? 1, opts?.boxHalfY ?? 1);
+      return material;
+    }
+    switch (DECAL_MATERIAL_VARIANTS[(dto.materialInstance ?? 0) >>> 0]) {
+      case "sign":
+        // decalNeonBrighten 逐字：`color.rgb *= shColorDiff + shColorSpec + spec`
+        // ——招牌**响应场景光**（太阳/天空/lot 霓虹点灯，Lambert 即该响应的
+        // PE 等价物：key 光随 env 昼夜驱动、夜间被 lot 真实点灯点亮）；
+        // ×2 = decalFloatQuadNoClip 的增亮，过 hejl tonemap 保持亮度。
+        return new THREE.MeshLambertMaterial({
+          ...base,
+          color: new THREE.Color(2, 2, 2),
+        });
+      case "graffiti":
+        // 涂鸦 = **连续 alpha 混合 + 受光**（引擎 decal PS 逐字：直采
+        // raster + 标准 alpha 混合；raw alpha 字母 0.7-0.86 = 喷漆半透明、
+        // 软边 = 抗锯齿，正是游戏观感）。此前 alphaTest 裁切会把 soft-alpha
+        // 内容（涂鸦内部的房间/色块）整体裁掉——用户对拍"涂鸦不可辨认/
+        // 破洞无内景"的根因（2026-09-30）。受光（MeshStandard）= 引擎
+        // G-buffer 链的等价物（贴花写入 albedo 后统一光照）。不透明 pass
+        // 渲染语义由 alphaTest 改为混合后失去，排序开销可接受。
+        //
+        // 历史注记：09-27 的连续混合"翻车"（光晕模糊）发生在 raw 修复前
+        // ——当时混的是四色量化的抖动 alpha；raw 之后连续混合即引擎口径。
+        return new THREE.MeshStandardMaterial({
+          ...base,
+          transparent: true,
+          roughness: 1,
+          metalness: 0,
+        });
+      default:
+        // 未识别材质兜底同涂鸦口径（直采 + alpha 混合 + 受光）。
+        return new THREE.MeshStandardMaterial({
+          ...base,
+          transparent: true,
+          roughness: 1,
+          metalness: 0,
+        });
+    }
   }
 
   /** 取贴花在 lot 局部的变换矩阵（无变换时为 None）。 */
@@ -611,18 +1020,19 @@ async function assembleScene(
 
   /**
    * 浮空 quad 回退：投影落空（建筑未加载 / 贴花不属于任何建筑面）时仍让
-   * 用户看得到、点得到该 decal。尺寸 = 2×scale × (2×scale)/aspect。
+   * 用户看得到、点得到该 decal。尺寸 = 高 2×scale × 宽 高×aspect（半高语义）。
    */
-  function buildDecalQuadFallback(
+  async function buildDecalQuadFallback(
     THREE: typeof ThreeNamespace,
     unit: DecalUnit,
     texture: DecalUnitTexture,
-  ): ThreeNamespace.Mesh {
+  ): Promise<ThreeNamespace.Mesh | null> {
     const aspect =
       texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
-    // Scale 是半宽（原 SCP `UnitDecal.CreateGeometry`：`rectangle.Length = 2 * Scale`）。
-    const width = Math.max((unit.scale ?? 4) * 2, 0.05);
-    const height = Math.max(width / aspect, 0.05);
+    // scale = 半高（2026-09-27 OMEGACO 对照定谳，见 decalProject.decalFrame）：
+    // 高 = 2×scale、宽 = 高×aspect。此前按半宽推导，aspect>1 的招牌小一半。
+    const height = Math.max((unit.scale ?? 4) * 2, 0.05);
+    const width = Math.max(height * aspect, 0.05);
     const geometry = new THREE.PlaneGeometry(width, height);
     // U 轴镜像：引擎 decal PS 的 UV 是 `textureFloatPosition.xy * -0.5 + 0.5`
     // （U 取负，被 texXform 的 2 倍缩放补回量程），不翻会得到镜像文字
@@ -631,12 +1041,24 @@ async function assembleScene(
     const uv = geometry.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
     uv.needsUpdate = true;
-    const mesh = new THREE.Mesh(geometry, buildDecalMaterial(THREE, texture));
+    const decoded = await getDecalTexture(THREE, texture);
+    if (!decoded) return null;
+    const mesh = new THREE.Mesh(
+      geometry,
+      buildDecalMaterial(THREE, texture, decoded, {
+        env,
+        halfDepth: decalHalfThickness(unit.depth),
+        boxHalfX: width / 2,
+        boxHalfY: height / 2,
+        decalData: props.decalLight ?? null,
+      }),
+    );
     // 回退仍按旧口径沿局部 -Z 让开 depth：引擎 `decalMaterialInfoWithObjectData`
     // 的 VS 取 -z（`float4(-z/-x/-y, 0)`）。
     mesh.translateZ(-(unit.depth ?? 0));
     return mesh;
   }
+
 
   /**
    * 精细模式贴花：优先按引擎 `decalProject` 的方式**投影到建筑几何**
@@ -645,32 +1067,123 @@ async function assembleScene(
    * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
    * `unitObjects` 选中与 `userData.unitId` 注册照旧；投影几何子节点用
    * 逆矩阵抵消父变换，因此几何本身保持 lot 局部坐标。
+   *
+   * 投影结果按 (unit, transform, depth, aspect) 缓存（payload 级）：编辑
+   * 其他 unit 引发的全量重建不再重跑 DecalGeometry CPU 裁剪。
    */
   async function buildDecalObject(
     THREE: typeof ThreeNamespace,
     unit: DecalUnit,
     texture: DecalUnitTexture,
     meshes: ThreeNamespace.Mesh[],
+    proxies: ThreeNamespace.Mesh[],
   ): Promise<ThreeNamespace.Object3D | null> {
-    if (!texture.png) return null;
+    if (!texture.png) {
+      console.warn(
+        "[decal] DTO 无 png：",
+        texture.idInstance,
+        texture.error ?? "unknown",
+      );
+      return null;
+    }
     const aspect =
       texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
+    const decoded = await getDecalTexture(THREE, texture);
+    if (!decoded) return null;
     const frame = decalFrame(THREE, unit, aspect);
+    if (!frame) {
+      console.warn(
+        "[decal] 无有效 transform/scale，无法构建投影帧：",
+        unitId(unit),
+        "transform=",
+        unit.transform
+          ? `matrixLen=${unit.transform.matrix?.length ?? 0}`
+          : "null",
+        "scale=",
+        unit.scale,
+      );
+      return null;
+    }
+    // 地面贴花特例已删除（2026-09-30 用户裁定）：引擎 decal 18 族源码无任何
+    // 向地面/地形投影的设计（grep ground/terrain 仅命中同容器的地形着色器
+    // 常量）——decal = 变换矩阵摆位的四边形，朝向完全由 transform 决定。
+    // 地面平行贴花照常走下方统一投影路径（盒体可命中建筑檐口/基座等结构，
+    // 未命中则回退浮空 quad，姿态仍由 transform 给出）。
     const group = new THREE.Group();
     applyDecalTransform(THREE, unit, group);
 
+    // sign 族 = decalFloatQuadNoClip（引擎逐字：UV 从顶点数据取
+    // `indices.yzw/255`、**NoClip 无体积裁剪**）——招牌/全息贴花是独立
+    // 四边形，按自身 transform 悬挂（可悬浮于墙前/楼顶），**不投影建筑
+    // 几何**。投影路径只服务需要贴合墙面体积的族（涂鸦 decalClip /
+    // 破洞 decalLightInteriorMap——clip 到墙面盒体内）。
+    // 尺寸 = 半高语义：高 2×scale × 宽 高×aspect（与投影路径同源）。
+    if (DECAL_MATERIAL_VARIANTS[(texture.materialInstance ?? 0) >>> 0] === "sign") {
+      const quad = await buildDecalQuadFallback(THREE, unit, texture);
+      if (quad) {
+        group.add(quad);
+        decalStats.projected += 1;
+      }
+      return group;
+    }
+
     if (frame) {
-      const geometry = await projectDecal(THREE, frame, meshes, unit.depth);
+      const projectionKey = `${unitId(unit)}|${JSON.stringify(unit.transform?.matrix ?? null)}|${unit.depth}|${aspect}`;
+      let geometry = decalProjectionCache.get(projectionKey);
+      if (!geometry) {
+        const projected = await projectDecal(
+          THREE,
+          frame,
+          meshes,
+          unit.depth,
+          proxies,
+        );
+        if (projected) {
+          // 投影几何归缓存所有：清场不 dispose（payload 更换时统一释放）。
+          markGeometryShared(projected);
+          decalProjectionCache.set(projectionKey, projected);
+          geometry = projected;
+        }
+      }
       if (geometry) {
         const mesh = new THREE.Mesh(
           geometry,
-          buildDecalMaterial(THREE, texture),
+          buildDecalMaterial(THREE, texture, decoded, {
+            env,
+            halfDepth: decalHalfThickness(unit.depth),
+            boxHalfX: frame.sizeX / 2,
+            boxHalfY: frame.sizeY / 2,
+            decalData: props.decalLight ?? null,
+          }),
         );
         const inverse = frame.matrix.clone().invert();
         mesh.matrixAutoUpdate = false;
         mesh.matrix.copy(inverse);
         group.add(mesh);
         decalStats.projected += 1;
+        // decalInteriorMap 光 pass 近似：lot 带光参数时，沿投影轴向墙面投
+        // 暖色 cookie 光（引擎用贴花贴图作光 cookie、alpha 作衰减）。上限
+        // 8 盏防多破洞 lot 光源洪峰。
+        if (
+          texture.variant === "hole" &&
+          props.decalLight &&
+          holeLightCount < HOLE_LIGHT_MAX
+        ) {
+          const [scaleFactor, radiusFactor] = props.decalLight;
+          const spot = new THREE.SpotLight(
+            0xffdca0,
+            (scaleFactor * 16 + 1) * 3,
+            radiusFactor * 8,
+            0.9,
+            0.6,
+            1,
+          );
+          spot.map = decoded;
+          spot.position.set(0, 0, -0.5);
+          spot.target.position.set(0, 0, 1);
+          group.add(spot, spot.target);
+          holeLightCount += 1;
+        }
         return group;
       }
     }
@@ -679,7 +1192,8 @@ async function assembleScene(
     console.info(
       `[decal] ${unitId(unit)} 投影未命中建筑面，回退浮空 quad（可能在游戏的高细节 LOD 上）`,
     );
-    group.add(buildDecalQuadFallback(THREE, unit, texture));
+    const fallback = await buildDecalQuadFallback(THREE, unit, texture);
+    if (fallback) group.add(fallback);
     return group;
   }
 
@@ -698,17 +1212,40 @@ async function assembleScene(
       texture,
     ]),
   );
+  // 投影代理一次构建（多枚贴花共享）：包装共享缓存几何，无 GPU 成本。
+  ensureDecalProjectionCache(payload);
+  const decalProxies =
+    props.renderMode === "refined" && buildingMeshes.length
+      ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
+      : [];
+  // 贴花解码纹理并行预取（去重后一次解码全部；此前逐 decal 串行 await，
+  // 首载成本 = 贴花数 × 单张解码）。
+  if (props.renderMode === "refined" && decalTextureByKey.size) {
+    await Promise.all(
+      [...new Set(decalTextureByKey.values())].map((texture) =>
+        getDecalTexture(THREE, texture),
+      ),
+    );
+    if (ctx.isStale()) return;
+  }
   const decalSpan = renderTelemetry.begin("decal_render", {
     decals: props.grouping.decals.length,
   });
   decalStats.projected = 0;
   decalStats.fallback = 0;
+  holeLightCount = 0;
   for (const unit of units) {
     // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
     const decalTexture =
       props.renderMode === "refined" && unit.kind === "decal"
         ? decalTextureByKey.get(`${unit.category}:${unit.index}`)
         : undefined;
+    if (props.renderMode === "refined" && unit.kind === "decal" && !decalTexture) {
+      console.warn(
+        `[decal] 配对失败 cat${unit.category}:idx${unit.index}，已注册键：`,
+        [...decalTextureByKey.keys()],
+      );
+    }
     let object: ThreeNamespace.Object3D | null;
     if (props.renderMode === "refined" && unit.kind === "light") {
       object = buildRealLightUnit(THREE, unit);
@@ -719,8 +1256,13 @@ async function assembleScene(
     ) {
       // 贴图解码失败（无 png）→ 退回 gizmo，保证仍可见可选
       object =
-        (await buildDecalObject(THREE, unit, decalTexture, buildingMeshes)) ??
-        buildUnitObject(THREE, unit);
+        (await buildDecalObject(
+          THREE,
+          unit,
+          decalTexture,
+          buildingMeshes,
+          decalProxies,
+        )) ?? buildUnitObject(THREE, unit);
     } else {
       object = buildUnitObject(THREE, unit);
     }
@@ -756,6 +1298,13 @@ async function assembleScene(
   viewport.applyGroupVisibility(props.groupVisibility);
   viewport.applyUnitVisibility(props.hiddenUnits);
   viewport.applySelection(props.selectedId);
+  // 规模统计 → scene_rebuild 遥测 metadata（量化「property 规模 ↔ 耗时」）。
+  ctx.stats.units = units.length;
+  ctx.stats.decals = props.grouping.decals.length;
+  ctx.stats.materials = payload?.materials?.length ?? 0;
+  ctx.stats.meshes = payload?.glbs.length ?? 0;
+  // 全量装配完成：刷新增量判定快照（与本次装配的 grouping 一致）。
+  lastUnitsSnapshot = buildUnitsSnapshot(props.grouping);
 }
 
 /** 日/夜亮度：仅缩放环境四灯；地块真实光源保持常亮（夜间灯依然亮）。 */
@@ -771,26 +1320,39 @@ defineExpose({
     viewport.captureRender(options),
 });
 
+// 模型载荷 / 渲染模式变化 → 全量重建；grouping 变化 → 先试增量（热路径），
+// 失败（unit 增删/字段变化/贴花移动）才全量。同一 flush 内两者都变时
+// （如会话加载），rebuildToken 保证后到者胜出。
 watch(
-  () => [props.modelPayload, props.renderMode, props.grouping] as const,
-  ([payload, mode, grouping], previous) => {
+  () => [props.modelPayload, props.renderMode] as const,
+  ([payload], previous) => {
     // 按变化项判定触发来源（首次拿到 payload 记 first_load，换级记 lod_switch）。
-    if (payload !== previous?.[0]) {
-      pendingTrigger = previous?.[0] == null ? "first_load" : "lod_switch";
-    } else if (mode !== previous?.[1]) {
-      pendingTrigger = "render_mode";
-    } else if (grouping !== previous?.[2]) {
-      pendingTrigger = "grouping";
-    } else {
-      pendingTrigger = "scene_rebuild";
-    }
+    pendingTrigger =
+      previous?.[0] == null
+        ? "first_load"
+        : payload !== previous[0]
+          ? "lod_switch"
+          : "render_mode";
     void rebuildScene();
+  },
+);
+watch(
+  () => props.grouping,
+  (grouping) => {
+    pendingTrigger = "grouping";
+    if (!tryIncrementalGrouping(grouping)) void rebuildScene();
   },
 );
 watch(
   () => props.groupVisibility,
   () => viewport.applyGroupVisibility(props.groupVisibility),
   { deep: true },
+);
+// 单元隐藏此前只在装配期应用（无 watcher → 切换后无效果直到下次重建）；
+// 现在独立生效。
+watch(
+  () => props.hiddenUnits,
+  () => viewport.applyUnitVisibility(props.hiddenUnits),
 );
 watch(
   () => props.hiddenUnits,

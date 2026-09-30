@@ -37,14 +37,15 @@ function boxMesh(center: [number, number, number], size: number) {
 }
 
 describe("decalFrame", () => {
-  it("reads the WPF row-major rows as the basis and scale as half-width", () => {
+  it("reads the WPF row-major rows as the basis and scale as half-height", () => {
     const frame = decalFrame(THREE, decal({ scale: 3 }), 2);
     expect(frame).not.toBeNull();
     expect(frame!.origin.toArray()).toEqual([0, 0, 0]);
     // 只镜像 U 的约定依赖 axisZ 为 +Z
     expect(frame!.axisZ.toArray()).toEqual([0, 0, 1]);
-    expect(frame!.sizeX).toBeCloseTo(6); // 2 × scale
-    expect(frame!.sizeY).toBeCloseTo(3); // 2 × scale / aspect
+    // 2026-09-27 OMEGACO 对照定谳：高 = 2×scale、宽 = 高×aspect
+    expect(frame!.sizeY).toBeCloseTo(6); // 2 × scale
+    expect(frame!.sizeX).toBeCloseTo(12); // 2 × scale × aspect
   });
 
   it("bails out without a scale or a 12-float transform", () => {

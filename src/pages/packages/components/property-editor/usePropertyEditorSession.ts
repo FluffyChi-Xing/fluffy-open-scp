@@ -73,12 +73,15 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** 本地编辑层（PE-重构-2）：transform override + undo/redo，不写回后端。 */
   const edit = createUnitEditLayer();
   const hiddenUnits = ref(new Set<string>());
+  /** 图层可见性。decals 默认关闭：decal↔建筑作用机制尚有逆向缺口（Top 层
+   * 链路部分 mesh 未生效，见 ctx note 2026-09-26），占位/半渲染内容干扰
+   * 对拍；左侧 Outliner 图层开关可随时手动打开。 */
   const groupVisibility = reactive<Record<string, boolean>>({
     model: true,
     lot: true,
     lights: true,
     props: true,
-    decals: true,
+    decals: false,
     effects: true,
     spawners: true,
     paths: true,
@@ -107,8 +110,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       packageId,
       instance: tgi.instance,
     });
+    let result: LotEditorSession | null = null;
     try {
-      const result = await source.readLotEditorSession(packageId, tgi);
+      result = await source.readLotEditorSession(packageId, tgi);
       if (token !== requestToken) return;
       session.value = result;
       modelLods.value = result.modelLods ?? [];
@@ -123,7 +127,16 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       if (token !== requestToken) return;
       loadError.value = "propertyEditorLoadFailed";
     } finally {
-      span.end();
+      // 后端耗时随响应返回：把 span 拆成「后端 parse/bake vs IPC+JSON」归属。
+      span.end(
+        result?.backendMs
+          ? {
+              backendParseMs: Number(result.backendMs.parseMs.toFixed(1)),
+              backendBakeMs: Number(result.backendMs.bakeMs.toFixed(1)),
+              backendTotalMs: Number(result.backendMs.totalMs.toFixed(1)),
+            }
+          : undefined,
+      );
       if (token === requestToken) loading.value = false;
     }
   }
@@ -261,6 +274,15 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return widths && widths.length === 4 ? widths : [0, 0, 0, 0];
   });
 
+  /** 边框带图案索引（LotBorderColor.A，0-15）。 */
+  const lotBorderPatternIndices = computed<number[]>(() => {
+    const indices = session.value?.lotBorderPatternIndices;
+    return indices && indices.length === 4 ? indices : [0, 0, 0, 0];
+  });
+
+  /** 底图格索引（后端三级来源解析；缺省 8 = 顶点默认）。 */
+  const lotBaseTile = computed<number>(() => session.value?.lotBaseTile ?? 8);
+
   const lotOverlayBoxOffset = computed<[number, number] | null>(() => {
     return session.value?.lotOverlayBoxOffset ?? null;
   });
@@ -274,11 +296,6 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return png ? `data:image/png;base64,${png}` : null;
   });
 
-  const lotTintAtlasPng = computed<string | null>(() => {
-    const png = session.value?.lotTintAtlasPng;
-    return png ? `data:image/png;base64,${png}` : null;
-  });
-
   const lotNormalAtlasPng = computed<string | null>(() => {
     const png = session.value?.lotNormalAtlasPng;
     return png ? `data:image/png;base64,${png}` : null;
@@ -287,6 +304,11 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const lotMaskRawRgba = computed<string | null>(() => {
     return session.value?.lotMaskRawRgba ?? null;
   });
+
+  /** 破洞贴花假内景光参数（0x0DA76A05/06；缺失 = lot 无此数据）。 */
+  const decalLight = computed<[number, number] | null>(
+    () => session.value?.decalLight ?? null,
+  );
 
   const lotMaskPng = computed<string | null>(() => {
     const png = session.value?.lotMaskPng;
@@ -341,14 +363,16 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     lotColorsAuthored,
     lotBorderColors,
     lotBorderWidths,
+    lotBorderPatternIndices,
+    lotBaseTile,
     lotOverlayBoxOffset,
     lotModelBBoxCenter,
     lotMaskPng,
     lotMaskRawRgba,
     lotAlbedoPng,
     lotSurfacePng,
-    lotTintAtlasPng,
     lotNormalAtlasPng,
+    decalLight,
     selectedUnit,
     edit,
     hiddenUnits,

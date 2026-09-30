@@ -510,6 +510,14 @@ export interface DecalUnitTexture {
   /** 四色解码后的 PNG（裸 base64）；解析失败为 null。 */
   png: string | null;
   error: string | null;
+  /** 命中字典的 material 引用（effect/变体判定数据源，P4-D1）。 */
+  materialInstance: number | null;
+  /** material 资源 shader-def 槽引用实例（best-effort，失败为 null）。 */
+  shaderDefInstance: number | null;
+  /** "hole" = 破洞家族（raster 原始解码，alpha = 光衰减掩码）。 */
+  variant: string | null;
+  /** true = raw RGBA 解码失败、退四色量化预览（糊/偏色；确认打开 raster 所在包）。 */
+  quantized: boolean;
 }
 export interface PropUnit {
   kind: "prop";
@@ -566,22 +574,25 @@ export interface LotEditorSession {
   /** LotMask 原始通道权重图：未压缩 RGBA 字节流 base64（宽高同 lotMaskPng；
    *  A 字节 = LC4 权重）。不走 PNG+canvas 以避免预乘 alpha 破坏权重。 */
   lotMaskRawRgba: string | null;
-  /** 默认模式地表反照率（通道平色+底图格，服务端按 compose_albedo 口径合成）。 */
+  /** 默认模式地表反照率（引擎口径：平色+边框带+底图格，服务端合成）。 */
   lotAlbedoPng: string | null;
   /** "Lot Textures" 地表共享纹理（DXT5 解码 PNG 裸 base64）。 */
   lotSurfacePng: string | null;
-  /** 全局共享染色图集（s10）：LotColor.A 选格，alpha 做亮度调制（车辙/铺装纹理）。 */
-  lotTintAtlasPng: string | null;
-  /** 全局共享法线图集（s15）：LotColor.A 选格、与底图同平铺，地面起伏来源。 */
+  /** 全局共享法线图集（s15）：主区格号 = LotColor.A、边框带 = LotBorderColor.A，
+   *  按 0x0CCB7FD0 周期平铺，图案质感（地面 normalMap）来源。 */
   lotNormalAtlasPng: string | null;
-  /** LotColor1-4 的 RGBA（A = 地面贴图索引 0-15）。 */
+  /** LotColor1-4 的 RGBA（A = 图案/法线图集格号 0-15）。 */
   lotColors: [number, number, number, number][];
-  /** LotColor1-4 是否实际存在（false = 黑/红/绿/蓝回退，不应着色）。 */
+  /** LotColor1-4 是否实际存在（false = 引擎黑/红/绿/蓝回退调色板，平色参与渲染）。 */
   lotColorsAuthored: boolean[];
-  /** LotBorderColor1-4 的 sRGB RGB——mask 渐变带描边色（缺失通道 = 浅灰）。 */
+  /** LotBorderColor1-4 的 sRGB RGB——mask 渐变带描边平色（缺失通道 = 浅灰）。 */
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（float，边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  /** 边框带图案索引（LotBorderColor.A，0-15）。 */
+  lotBorderPatternIndices: number[];
+  /** 底图格索引（三级来源：0x0CCB7FD6 → 0x0CCB7FD2/FD3 推导 → 默认 8）。 */
+  lotBaseTile: number;
   /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）；null = 无属性。 */
   lotModelBBoxCenter: [number, number] | null;
   /** LotOverlayBoxOffset（0x0CCB7FC9）：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
@@ -590,6 +601,10 @@ export interface LotEditorSession {
   /** 精细渲染贴花纹理（与 units 中 decal 的 category+index 对应）。 */
   decalTextures: DecalUnitTexture[];
   pathPairs: number[];
+  /** 后端阶段耗时（毫秒）：把 texture_compose span 拆成「后端 vs IPC/JSON」归属。 */
+  backendMs?: { parseMs: number; bakeMs: number; totalMs: number };
+  /** 破洞贴花假内景光参数（0x0DA76A05/06）：[光强因子, 半径因子]。 */
+  decalLight?: [number, number] | null;
   diagnostics: string[];
 }
 /** 单个材质的贴图集（官方 Material Set 通道拆分，§27 源码实证语义）。 */
@@ -841,15 +856,25 @@ export interface PropertyDocumentSummary {
   /** kind=decal：MaterialId instance。 */
   materialInstance: number | null;
 }
-/** read_lot_material：覆盖目标 lot 的地表材质授权（渲染预览染色用）。 */
+/** read_lot_material：覆盖目标 lot 的地表材质授权（引擎口径预览合成的全部输入）。 */
 export interface LotMaterialResponse {
-  /** LotColor1-4（sRGB RGB + A = 图集 tile 索引 0-15）。 */
+  /** LotColor1-4（sRGB RGB + A = 图案/法线图集格号 0-15）。 */
   colors: [number, number, number, number][];
   /** 各槽位是否真实存在于 property（false = SCP 黑/红/绿/蓝回退色）。 */
   colorsAuthored: [boolean, boolean, boolean, boolean];
+  /** LotBorderColor1-4 的 sRGB RGB——mask 渐变带描边平色。 */
+  lotBorderColors: [number, number, number][];
+  /** borderWidth1-4——边框带半宽（0.5±bw），全 0 = 无边框带。 */
+  lotBorderWidths: number[];
+  /** 边框带图案索引（LotBorderColor.A，0-15）。 */
+  lotBorderPatternIndices: number[];
+  /** 底图格索引（0x0CCB7FD6 → 0x0CCB7FD2/FD3 推导 → 默认 8）。 */
+  lotBaseTile: number;
   /** "Lot Textures" 地表图集 PNG base64（4×4 格）；null = 缺失/解码失败。 */
   surfacePng: string | null;
-  /** 地面贴图周期 0x0CCB7FD0（米/格）；null = 回退拟合常量 9.6m。 */
+  /** 全局共享法线图集（0x60E7805D）PNG base64；null = 缺失/解码失败。 */
+  normalAtlasPng: string | null;
+  /** 地面贴图周期 0x0CCB7FD0（米/格）；null = 引擎默认 8.0。 */
   tilePeriod: [number, number] | null;
 }
 /** code_tree：modRoot 通用文件树节点。 */
