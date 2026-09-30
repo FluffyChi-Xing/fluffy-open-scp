@@ -10,7 +10,7 @@
 | 类别 | 完成 | 部分 | 无进展 |
 |---|---|---|---|
 | R 区（还原/修复） | R1、R3 | — | R2、R4、R5 |
-| N 区（新主题） | — | N7 | N1、N2、N3、N4、N5、N6 |
+| N 区（新主题） | N8（静态破译） | N7 | N1、N2、N3、N4、N5、N6 |
 | 管线/工具 | 读原语修复、单会话锁、多设备监视、自愈校准、并集扫描、外部扫描器 | — | 进程内 frida 稳定性（三崩实证） |
 
 ## 二、R 区：还原/修复项
@@ -34,7 +34,7 @@
 | N5 | 载具怎么渲染 | ☐ 无进展 | 需 D3D 管线（连续帧矩阵序列） |
 | N6 | 表面递进/伪高精度（simcity_material.pdf） | ☐ 无进展 | 需 D3D 管线（zoom 级 draw 序列对比） |
 | N7 | DLC0 广告路由实证 | ◐ 静态完成 | 全库仅 3 字典、DLC0 共用 sign 字典 `aa8b7058`；三 material 的 RW4 不在 5 主包（shader-def 运行时组装）——**运行时族判定待管线** |
-| N8 | 废弃建筑 mesh 歪斜（引擎形变） | ☐ 无进展 | 09-30 用户新增；需 VS 捕获 |
+| N8 | 废弃建筑 mesh 歪斜（引擎形变） | ◐ **静态破译完成** | 形变=顶点着色器 `deformAbandonedVS`：沿 4 片斜切平面（kPlanes，全部朝 +Z 带 0.2 倾角）取最小距离，凹陷部分沿 kMove(0,0,1) 推移 99%；配套 deformRubbleVS（instanceColor 2.2 次幂瓦砾重着色）+ isAbandoned 开关。**数学完整提取（tmp/dynamic/N8_*.hlsl），可逐字实现进 OpenSCP 渲染器；待定：isAbandoned 触发源（存档状态位）** |
 | N9 | 半边窗偶发复发 | ☐ 无进展 | §65 已修主因；偶发机制未知，需复现+参数表 dump |
 | N10 | frida 读原语/稳定性 | ◐ 部分完成 | `Memory.readByteArray` 已删实锤+修复（指针方法）；进程内堆扫描仍非确定性失明+三崩——**外部 ReadProcessMemory 路线已建成**（`external_device_scan.py`，实测稳定） |
 
