@@ -229,6 +229,47 @@ impl RasterImage {
         Ok(out)
     }
 
+    /// Decal 软边解码：四通道为**覆盖权重**做连续混色，alpha = 主通道强度
+    /// （连续 0..1）——区别于 `decode_lot_mask_rgba` 的二值阈值（LotMask 地表
+    /// 用，保持不变）。decal 贴图需要抗锯齿软边：二值版呈"贴纸感"（09-30
+    /// 用户对拍）。通道→颜色映射与二值版一致（RGBA 下 R→color0、G→color1、
+    /// B→color2、A→color3；引擎优先序 A > R > G > B 仅影响二值选择，连续
+    /// 版按权重归一混合）。
+    pub fn decode_decal_mask_rgba(&self, colors: &[[u8; 4]; 4]) -> Result<Vec<u8>> {
+        let rgba = self.decode_top_mip_rgba()?;
+        const CHANNEL_TO_COLOR: [(usize, usize); 4] = [(3, 3), (0, 0), (1, 1), (2, 2)];
+        let mut out = Vec::with_capacity(rgba.len());
+        for px in rgba.as_chunks::<4>().0 {
+            // 引擎同款线性点积（§lot 路径注释实证：dot(colors, masks) 不按
+            // total 归一）——纯色像素得到精确调色板色，混色像素线性减亮；
+            // alpha = 主通道强度（连续软边）
+            let mut acc = [0.0f32; 4];
+            let mut max_w = 0.0f32;
+            for (channel, ci) in CHANNEL_TO_COLOR {
+                let w = px[channel] as f32;
+                acc[ci] = w;
+                max_w = max_w.max(w);
+            }
+            // 噪声底裁剪：主通道 <24 的弱权重像素（空背景噪声）保持全透明，
+            // 否则整面 quad 蒙上糊膜（09-30 软边 v2 的"全都模糊"根因）
+            if max_w < 24.0 {
+                out.extend_from_slice(&[0, 0, 0, 0]);
+                continue;
+            }
+            let mut px_out = [0u8; 4];
+            for out_c in 0..3 {
+                let mut v = 0.0f32;
+                for (i, color) in colors.iter().enumerate() {
+                    v += (acc[i] / 255.0) * color[out_c] as f32;
+                }
+                px_out[out_c] = v.round().clamp(0.0, 255.0) as u8;
+            }
+            px_out[3] = max_w.round().clamp(0.0, 255.0) as u8;
+            out.extend_from_slice(&px_out);
+        }
+        Ok(out)
+    }
+
     /// 按预览视图渲染为 RGBA8（对齐原 SCP `ViewRaster` 的 Display Channel）。
     ///
     /// `quantized_colors` 仅 `Quantized` 使用，下标语义同 `decode_lot_mask_rgba`。
@@ -391,6 +432,30 @@ mod tests {
         let image = RasterImage::parse(&data).unwrap();
         assert_eq!(image.mips.len(), 2);
         assert_eq!(image.mips[1], vec![9u8; 16]);
+    }
+
+    #[test]
+    fn decal_mask_soft_decode_blends_and_fades() {
+        // 引擎 dot 语义：color = Σ(mask_i/255)×color_i（不按 total 归一——
+        // 混色像素线性减亮），alpha = 主通道强度（连续软边）；
+        // 弱权重噪声底（主通道 <24）裁为全透明，避免整面糊膜。
+        let colors = [[10, 10, 10, 0], [200, 60, 60, 0], [3, 3, 3, 0], [4, 4, 4, 0]];
+        let data = raster(
+            21,
+            3,
+            1,
+            &[
+                0, 0, 255, 0,   // R 满 → dot = color0 全强度
+                0, 0, 128, 0,   // R 半 → color0 半亮度，alpha 连续
+                10, 10, 10, 10, // 弱噪声底（主通道 <24）→ 全透明
+            ],
+        );
+        let image = RasterImage::parse(&data).unwrap();
+        let out = image.decode_decal_mask_rgba(&colors).unwrap();
+        assert_eq!(&out[0..4], &[10, 10, 10, 255]);
+        // R=128 → color0 × (128/255) ≈ (5, 5, 5, 128)：线性减亮 + 软 alpha
+        assert_eq!(&out[4..8], &[5, 5, 5, 128]);
+        assert_eq!(&out[8..12], &[0, 0, 0, 0]);
     }
 
     #[test]

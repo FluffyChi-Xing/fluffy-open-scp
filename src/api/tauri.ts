@@ -518,6 +518,8 @@ export interface DecalUnitTexture {
   variant: string | null;
   /** true = raw RGBA 解码失败、退四色量化预览（糊/偏色；确认打开 raster 所在包）。 */
   quantized: boolean;
+  /** 层颜色 Color1-4（线性×2，[4][4]）——raw 掩码纹理的 GLSL 上色输入。 */
+  colors?: number[][];
 }
 export interface PropUnit {
   kind: "prop";

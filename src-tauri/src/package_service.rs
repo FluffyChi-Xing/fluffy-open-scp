@@ -4184,6 +4184,12 @@ const DECAL_IMAGE_BATCH_MAX: usize = 256;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecalUnitTextureDto {
+    /// 层颜色 Color1-4（线性×2，4×4），GLSL uLayerColors；缺失 = 无 colors 条目。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub colors: Option<Vec<Vec<f32>>>,
+    /// 混合语义："additive" = alpha 全零实心图（加法混合渲染），缺省 = 标准 alpha。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blend: Option<String>,
     /// Decal 类别（0-2，对应 property 的 0x0D109050 + category 列）。
     pub category: u32,
     /// 类别内下标（与前端 DecalUnit 的 index 对应）。
@@ -4310,36 +4316,44 @@ fn resolve_decal_textures(
                 shader_def_instance,
                 variant: None,
                 quantized: false,
+                blend: None,
+                colors: None,
             };
             match entry {
                 Some(entry) => {
                     if out.len() >= DECAL_IMAGE_BATCH_MAX {
                         dto.error = Some("decal texture batch limit reached".into());
                     } else {
-                        // 渲染口径按 raster 载体分派（2026-09-30 探针 vs PE
-                        // 对拍定谳）：
-                        // - 有 Color1-4（招牌/涂鸦族，raster = 四通道掩码）：
-                        //   **四色映射解码为主源**——raw RGBA 的 alpha 通道是
-                        //   LC4 权重（非不透明度），直采会几乎不可见（探针用
-                        //   四色解码清晰，PE 用 raw 看不见，即此根因）。
-                        // - 无 Color1-4（破洞/interior 族，raster = RW4 纹理，
-                        //   alpha = 光衰减掩码）：raw/RW4 直解，alpha 保留。
-                        // 各自失败互为回退。
-                        let has_colors = entry.colors_rgba8().is_some();
+                        // 渲染口径（2026-10-01 探针 v5 定稿，用户验证与游戏
+                        // 一致）：**引擎量化合成**——每像素按 A > B > G > R
+                        // 阈值 ≥128 命中设计层，颜色 = Color 行（存储为线性
+                        // 一半 → ×2 还原），未命中透明。合成观感 = 印刷层 +
+                        // 霓虹层全合成（docs/re/runtime-capture-2026-10-01.md
+                        // §五，探针 decal_render_probe 同公式）。
+                        // 破洞族（无 Color1-4，RW4 纹理）维持 raw/RW4 直解。
+                        let has_colors = entry.colors_rgba8().is_some()
+                            || entry.colors.iter().any(Option::is_some);
                         if has_colors {
-                            let decoded = decode_decal_entry(entry, package, manager);
-                            dto.width = decoded.width;
-                            dto.height = decoded.height;
-                            dto.png = decoded.png_base64;
-                            dto.error = decoded.error;
-                            if dto.png.is_none() {
-                                // 四色失败（raster 缺失/压缩）→ raw 兜底。
-                                let raw = decode_decal_entry_rgba(entry, package, manager);
-                                dto.width = raw.width;
-                                dto.height = raw.height;
-                                dto.png = raw.png_base64;
-                                dto.error = raw.error;
-                            }
+                            // GLSL 逐片元迁移（2026-10-01）：直传 **raw 掩码纹理**
+                            // （RGBA = 四通道距离场/掩码，未量化），层颜色经
+                            // dto.colors 下发，合成在片元着色器逐屏幕像素执行
+                            // （阈值后置 = 引擎边缘 AA 语义，细分=屏幕/纹理比）。
+                            let raw = decode_decal_entry_rgba(entry, package, manager);
+                            dto.width = raw.width;
+                            dto.height = raw.height;
+                            dto.png = raw.png_base64;
+                            dto.error = raw.error;
+                            // Color1-4 → 线性×2（层颜色，GLSL uLayerColors）
+                            dto.colors = Some(
+                                entry
+                                    .colors
+                                    .iter()
+                                    .map(|c| {
+                                        let z: [f32; 4] = c.unwrap_or([0.0; 4]).map(|v| v * 2.0);
+                                        z.to_vec()
+                                    })
+                                    .collect(),
+                            );
                         } else {
                             dto.variant = Some("hole".into());
                             let raw = decode_decal_entry_rgba(entry, package, manager);
@@ -4460,6 +4474,43 @@ fn decode_decal_entry_rgba(
         },
         Err(error) => DecalImageData::failed(index, error, size),
     }
+}
+
+/// 条目 raster 的宽高（元数据，不解像素）。
+fn decal_raster_size(
+    entry: &sc_properties::DecalEntry,
+    package: &Package,
+    manager: &PackageManager,
+) -> (u32, u32) {
+    let Some(raster_key) = entry.raster.clone() else { return (1, 1) };
+    let Some((bytes, type_id, _)) = find_decal_raster(package, manager, Some(raster_key)) else {
+        return (1, 1)
+    };
+    if type_id != RASTER_IMAGE_TYPE {
+        return (1, 1);
+    }
+    match rw4::RasterImage::parse(&bytes) {
+        Ok(r) => (r.width, r.height),
+        Err(_) => (1, 1),
+    }
+}
+
+/// 条目 raster 的原始 RGBA 重取（alpha 语义判定用；与
+/// decode_decal_entry_rgba 同源但只回像素）。
+fn decode_decal_alpha_probe(
+    entry: &sc_properties::DecalEntry,
+    package: &Package,
+    manager: &PackageManager,
+) -> Result<Vec<u8>, String> {
+    let raster_key = entry.raster.clone().ok_or("no raster")?;
+    let Some((bytes, type_id, _)) = find_decal_raster(package, manager, Some(raster_key)) else {
+        return Err("raster not found".into());
+    };
+    if type_id != RASTER_IMAGE_TYPE {
+        return Err("not raw raster".into());
+    }
+    let raster = rw4::RasterImage::parse(&bytes).map_err(|e| e.to_string())?;
+    raster.decode_top_mip_rgba().map_err(|e| e.to_string())
 }
 
 /// material 资源（RW4）shader-def 槽（slot 0x2D）引用实例（best-effort）。
@@ -4699,16 +4750,91 @@ fn decal_dictionary_data(
 }
 
 /// 单条目解码：四色映射量化图 → PNG。
+/// decal 掩码 2× 双线性超采样 + 二值阈值化（09-30 深夜）：低分辨率掩码
+/// 高倍放大时每掩码像素成为色块（马赛克锯齿）——引擎以线性过滤采样掩码，
+/// 高倍放大天然产生半像素过渡；超采样在 CPU 侧复刻该平滑，颜色仍为
+/// 精确调色板色（阈值语义与 decode_lot_mask_rgba 的 A>R>G>B 优先序一致）。
+fn decode_decal_mask_supersampled(
+    raster: &rw4::RasterImage,
+    colors: &[[u8; 4]; 4],
+) -> Result<Vec<u8>, String> {
+    let src = raster
+        .decode_top_mip_rgba()
+        .map_err(|error| error.to_string())?;
+    let (w, h) = (raster.width as usize, raster.height as usize);
+    let (ow, oh) = (w * 2, h * 2);
+    let mut out = Vec::with_capacity(ow * oh * 4);
+    const CHANNEL_TO_COLOR: [(usize, usize); 4] = [(3, 3), (0, 0), (1, 1), (2, 2)];
+    for oy in 0..oh {
+        let fy = (oy as f32 + 0.5) / 2.0 - 0.5;
+        let y0 = (fy.floor().max(0.0) as usize).min(h - 1);
+        let y1 = (y0 + 1).min(h - 1);
+        let ty = (fy - fy.floor()).clamp(0.0, 1.0);
+        for ox in 0..ow {
+            let fx = (ox as f32 + 0.5) / 2.0 - 0.5;
+            let x0 = (fx.floor().max(0.0) as usize).min(w - 1);
+            let x1 = (x0 + 1).min(w - 1);
+            let tx = (fx - fx.floor()).clamp(0.0, 1.0);
+            // 双线性插值四通道权重
+            let mut sample = [0.0f32; 4];
+            for (c, ch) in CHANNEL_TO_COLOR.iter().enumerate() {
+                let p00 = src[(y0 * w + x0) * 4 + ch.0] as f32;
+                let p10 = src[(y0 * w + x1) * 4 + ch.0] as f32;
+                let p01 = src[(y1 * w + x0) * 4 + ch.0] as f32;
+                let p11 = src[(y1 * w + x1) * 4 + ch.0] as f32;
+                let top = p00 * (1.0 - tx) + p10 * tx;
+                let bot = p01 * (1.0 - ty) + p11 * ty;
+                sample[c] = top * (1.0 - ty) + bot * ty;
+            }
+            // 同款优先序阈值化：A > R > G > B，≥128 选中
+            let mut done = false;
+            for (channel, ci) in CHANNEL_TO_COLOR {
+                if sample[channel] >= 128.0 {
+                    let [r, g, b, _] = colors[ci];
+                    out.extend_from_slice(&[r, g, b, 255]);
+                    done = true;
+                    break;
+                }
+            }
+            if !done {
+                out.extend_from_slice(&[0, 0, 0, 0]);
+            }
+        }
+    }
+    Ok(out)
+}
+
 fn decode_decal_entry(
     entry: &sc_properties::DecalEntry,
     package: &Package,
     manager: &PackageManager,
 ) -> DecalImageData {
     let index = entry.index;
-    let Some(colors) = entry.colors_rgba8() else {
-        return DecalImageData::failed(index, "decal entry is missing its four colors", None);
+    // 引擎量化合成解码（探针 v5 定稿公式，2026-10-01 用户验证与游戏一致）：
+    //   每像素按优先级 A > B > G > R 阈值 ≥128 命中设计层；
+    //   命中层颜色 = Color 行（存储为线性一半 → ×2 还原）；
+    //   未命中 → 透明。硬边、无插值、无超采样（引擎直通语义）。
+    let mut rows = [[0f32; 4]; 4];
+    for (ri, c) in entry.colors.iter().enumerate() {
+        if let Some(c) = c {
+            // 存储值 = 线性分量的一半（C# ScR/2 口径）
+            rows[ri] = [
+                (c[0] * 2.0 * 255.0).clamp(0.0, 255.0),
+                (c[1] * 2.0 * 255.0).clamp(0.0, 255.0),
+                (c[2] * 2.0 * 255.0).clamp(0.0, 255.0),
+                255.0,
+            ];
+        }
+    }
+    // 通道 → 颜色行：R→Color1、G→Color2、B→Color3、A→Color4；
+    // 命中优先级 A > B > G > R
+    const PRIORITY: [(usize, usize); 4] = [(3, 3), (2, 2), (1, 1), (0, 0)];
+
+    let Some(raster_key) = entry.raster.clone() else {
+        return DecalImageData::failed(index, "decal entry has no raster", None);
     };
-    let Some((bytes, type_id, _source)) = find_decal_raster(package, manager, entry.raster) else {
+    let Some((bytes, type_id, _source)) = find_decal_raster(package, manager, Some(raster_key))
+    else {
         return DecalImageData::failed(index, "raster resource not found", None);
     };
     if type_id != RASTER_IMAGE_TYPE {
@@ -4724,19 +4850,30 @@ fn decode_decal_entry(
             return DecalImageData::failed(index, format!("raster parse failed: {error}"), None);
         }
     };
-    let size = Some((raster.width, raster.height));
-    if !raster.is_raw_rgba() {
-        return DecalImageData::failed(
-            index,
-            format!("unsupported raster pixel format {}", raster.pixel_format),
-            size,
-        );
-    }
-    let rgba = match raster.decode_lot_mask_rgba(&colors) {
-        Ok(rgba) => rgba,
-        Err(error) => return DecalImageData::failed(index, error.to_string(), size),
+    let src = match raster.decode_top_mip_rgba() {
+        Ok(src) => src,
+        Err(error) => {
+            return DecalImageData::failed(index, error.to_string(), None);
+        }
     };
-    match encode_rgba_png(raster.width, raster.height, rgba) {
+
+    let mut out = Vec::with_capacity(src.len());
+    for px in src.as_chunks::<4>().0 {
+        let mut hit_row: Option<[f32; 4]> = None;
+        for (ch, row) in PRIORITY {
+            if px[ch] >= 128 {
+                hit_row = Some(rows[row]);
+                break;
+            }
+        }
+        match hit_row {
+            Some(row) => {
+                out.extend_from_slice(&[row[0] as u8, row[1] as u8, row[2] as u8, 255]);
+            }
+            None => out.extend_from_slice(&[0, 0, 0, 0]),
+        }
+    }
+    match encode_rgba_png(raster.width, raster.height, out) {
         Ok(png_base64) => DecalImageData {
             index,
             error: None,
@@ -4744,7 +4881,7 @@ fn decode_decal_entry(
             height: Some(raster.height),
             png_base64: Some(png_base64),
         },
-        Err(error) => DecalImageData::failed(index, error, size),
+        Err(error) => DecalImageData::failed(index, error, None),
     }
 }
 
