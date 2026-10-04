@@ -492,6 +492,19 @@ let neonAnimated = false;
 let neonFrame = 0;
 let neonLast = 0;
 
+/** 动态招牌开关（2026-10-05 八轮，用户指令）：仅精细渲染工具条可见，
+ * 默认关 = 静态恒亮招牌（uAnimEnabled=0，不吃扫掠窗、不启动动画时钟）；
+ * 开启后 SDF 族进入扫掠动画并启动 rAF 时钟。 */
+const neonAnimOn = ref(false);
+
+function toggleNeonAnim() {
+  neonAnimOn.value = !neonAnimOn.value;
+  if (envRefs) envRefs.animEnabled.value = neonAnimOn.value ? 1 : 0;
+  if (neonAnimOn.value && neonAnimated) startNeonClock();
+  else stopNeonClock();
+  viewport.viewer.value?.invalidate();
+}
+
 /**
  * 霓虹动画时钟（2026-10-05 六轮）：场景含 SDF 动画 decal 时以 rAF 推进
  * env.time（引擎 gameInfo.time 的墙钟近似）并逐帧 invalidate——viewer 是
@@ -525,7 +538,10 @@ function rebuildScene() {
   // 动画 decal 标志在装配期间由 buildDecalObject 置位；重建完成后按本轮
   // 结果启停霓虹时钟（新一代取代旧装配时同样以最新一轮为准）。
   return viewport.rebuild(assembleScene, { reframe }).then(() => {
-    if (neonAnimated) startNeonClock();
+    // env 每轮重建新建（animEnabled 归 0）→ 按开关状态重新应用；时钟
+    // 只在"场景有 SDF 动画 decal 且开关开启"时运转。
+    if (envRefs) envRefs.animEnabled.value = neonAnimOn.value ? 1 : 0;
+    if (neonAnimated && neonAnimOn.value) startNeonClock();
     else stopNeonClock();
   });
 }
@@ -1822,6 +1838,16 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
         @click="emit('select-tool', entry.tool as EditorTool)"
       >
         <FIcon :name="entry.icon" :size="14" aria-label="" />
+      </button>
+      <button
+        v-if="renderMode === 'refined'"
+        type="button"
+        :class="{ active: neonAnimOn }"
+        :aria-pressed="neonAnimOn"
+        :title="`${$t('package.neonAnim')} — ${$t('package.neonAnimHint')}`"
+        @click="toggleNeonAnim"
+      >
+        <FIcon name="Zap" :size="14" aria-label="" />
       </button>
     </div>
     <div

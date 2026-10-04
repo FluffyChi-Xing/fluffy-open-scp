@@ -28,6 +28,9 @@ export interface EngineEnvRefs {
   /** 霓虹动画时钟（秒，引擎 gameInfo.time 的墙钟近似）：SDF 族
    * decalLightBackground 的 uTime。场景无动画 decal 时可缺省（恒 0）。 */
   time?: { value: number };
+  /** 动态招牌开关（0 = 静态恒亮 / 1 = 扫掠动画）：SDF 族 uAnimEnabled。
+   * 缺省 = 静态（精细渲染工具条"动态招牌"默认关）。 */
+  animEnabled?: { value: number };
 }
 
 export type EngineFamily = "sign" | "clip" | "hole" | "holo" | "sdf";
@@ -162,6 +165,8 @@ export function createEngineDecalMaterial(
       },
       // 霓虹动画时钟：直接引用 env 共享对象（rAF 统一推进，免遍历材质）
       uTime: opts.env.time ?? { value: 0 },
+      // 动态招牌开关（0 = 静态恒亮）：直引 env 共享对象，工具条切换即生效
+      uAnimEnabled: opts.env.animEnabled ?? { value: 0 },
       // per-entry raster = 预裁剪 atlas cell → texXform 恒等
       uTexXform: { value: new THREE.Vector4(1, 1, 0, 0) },
       uDecalWorldDirection: { value: opts.worldDirection.clone().normalize() },

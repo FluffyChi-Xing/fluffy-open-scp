@@ -46,6 +46,7 @@ uniform vec4 uAnimResults;
 uniform vec4 uUseV;
 #define useV uUseV
 uniform float uTime;
+uniform float uAnimEnabled;
 uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
@@ -356,11 +357,22 @@ mod tests {
             "sdf 缺保色相 Reinhard 收尾"
         );
         assert!(ps.contains("outColor.a = coverageA"), "sdf 缺覆盖率 alpha");
-        // sharp-bilinear 保级锐化（量化掩码锐度 = 量化链锐度的 SDF 族等价物，
-        // 且保留中间级别：0.5 二值化压没背景面板/油泵 = "只剩字体"根因）
+        // sharp-bilinear 保级锐化（0.5 二值化压没背景面板/油泵的复发点）
         assert!(
             ps.contains("sdfSharp"),
             "sdf 缺 sharp-bilinear 保级锐化（只剩字体/字体不全的复发点）"
+        );
+        // 调色板归属解码（八轮对拍：球面衰减多通道串色 = 色块根因）
+        assert!(ps.contains("sdfRow0"), "sdf 缺调色板归属解码");
+        assert!(
+            !ps.contains("sphereDistsSqr"),
+            "sdf 残留球面衰减（动态色块无细节的复发点）"
+        );
+        // 动态/静态开关（静态 = powerFactor 恒 1 全亮，默认关）
+        assert!(ps.contains("uAnimEnabled"), "sdf 缺动态招牌开关");
+        assert!(
+            ps.contains("smoothstep(vec4(-0.02"),
+            "sdf 缺扫掠软边（暗到亮渐变的复发点）"
         );
         assert!(
             ps.contains("uSdfTexSize"),

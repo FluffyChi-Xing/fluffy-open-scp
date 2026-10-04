@@ -43,6 +43,9 @@ export type SunEnvRefs = {
   /** 霓虹动画时钟（秒，墙钟累积）：SDF 族 decalLightBackground 的 uTime，
    * 引擎 gameInfo.time 的近似。场景含 SDF 动画 decal 时由装配层 rAF 推进。 */
   time: { value: number };
+  /** 动态招牌开关（0 = 静态恒亮 / 1 = 扫掠动画）：SDF 族 uAnimEnabled，
+   * 由精细渲染工具条切换（默认关——静态招牌，用户 2026-10-05 指令）。 */
+  animEnabled: { value: number };
 };
 
 /** 太阳地平线高度 −1..1（t=6/18 日出日落、12 正午、0/24 子夜）。 */
@@ -131,6 +134,7 @@ export function createSunEnv(THREE: typeof ThreeNamespace): SunEnvRefs {
     glow: { value: 6.0 },
     nightBoost: { value: 1 },
     time: { value: 0 },
+    animEnabled: { value: 0 },
   };
 }
 

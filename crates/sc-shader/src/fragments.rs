@@ -116,10 +116,14 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
                               float4(uvOrig.y, uvOrig.y, uvOrig.y, uvOrig.y), useV);\n\
       float4 animResults = uvCompare - compares;"),
     // ---- PS：灯管调光（decalAnimateSDFDisabled，line 3736 有损修复版）----
-    // 跑马灯未扫到处压暗至 0.1、扫到处全亮（materialTubeLightFactor =
-    // z×8+1）；decalMaterialInfo.w = 供电，断电 → 半亮（lerp 0.5）。原文
+    // 跑马灯扫掠阈值的暗亮窗：animResults 小于 0 = 已扫过（点亮，全亮
+    // materialTubeLightFactor = z×8+1）、未扫到 = 0.1 暗态；阈值两侧
+    // smoothstep 软边 = 引擎"字体+花纹从暗渐变到亮"的过渡带（对拍
+    // TAKEOUT/CHEAP 截图的扫掠辉光边缘，2026-10-05 八轮）。原文
     // lesser_than(animResults, 0) ? vec4 : vec4 的向量条件三目在 GLSL ES
-    // 不合法 → step+mix 等价改写（animResults < 0 → step = 0 → 全亮）。
+    // 不合法 → mix+smoothstep 等价改写。decalMaterialInfo.w = 供电，
+    // 断电 → 半亮（lerp 0.5）。uAnimEnabled = 0（静态模式）→ 恒 1 全亮，
+    // 不吃扫掠窗（精细渲染"动态招牌"开关默认关）。
     // decalMaterialData 为 uniform 不可写 → 调光后权重列落本地 tubeColor0-2
     // （列 0~2 = 输出 RGB 对四掩码通道的权重，转置语义见 decalLightBackground）。
     ("decalAnimateSDFDisabled",
@@ -127,44 +131,43 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       float4 lightFactor = mix(float4(materialTubeLightFactor, materialTubeLightFactor,\n\
                                       materialTubeLightFactor, materialTubeLightFactor),\n\
                                float4(0.1, 0.1, 0.1, 0.1),\n\
-                               step(float4(0.0, 0.0, 0.0, 0.0), animResults));\n\
+                               smoothstep(float4(-0.02, -0.02, -0.02, -0.02),\n\
+                                          float4(0.15, 0.15, 0.15, 0.15), animResults));\n\
       float4 powerFactor = lerp(float4(0.5, 0.5, 0.5, 0.5), lightFactor, decalMaterialInfo.wwww);\n\
+      powerFactor = mix(float4(1.0, 1.0, 1.0, 1.0), powerFactor, float4(uAnimEnabled, uAnimEnabled, uAnimEnabled, uAnimEnabled));\n\
       float4 tubeColor0 = decalMaterialData[0] * powerFactor;\n\
       float4 tubeColor1 = decalMaterialData[1] * powerFactor;\n\
       float4 tubeColor2 = decalMaterialData[2] * powerFactor;"),
-    // ---- PS：SDF 管灯动画（Darken 主体，公式逐字）----
-    // 2026-10-05 原文再核对（line 3747-3779）三处修复：
-    // 1) decalNUS = In.texcoord<t0>.xyz 为引擎顶点流（盒世界尺寸 sizeX/
-    //    sizeY/sphereHeight）——PE 无该顶点流，改 uniform uDecalNUS 注入；
-    // 2) lightScales 原文为 float4（dot(vec4, vec4) 才合法，容器丢 "4"）；
-    // 3) sphereDistsSqr += animEdge²×**animation**×32（上一行刚算的 lerp，
-    //    早前占位 animRatio 系误读）；权重列改用 Disabled 段调光后的
-    //    tubeColor0-2，循环按 GLSL ES 索引限制手工展开。
+    // ---- PS：SDF 调色板归属解码 + 点亮合成（Darken 行为对拍版）----
+    // 2026-10-05 八轮对拍定谳，取代球面衰减版（容器 line 3747-3779 的
+    // 逐字移植）：
+    // 1) 取证：该族贴图纹素 RGBA 恒等于字典 colors 四行之一（加油站
+    //    0x090C71D6：面板 = row0 青 / 油泵 = row1 紫 / 字体 = row3 黄；
+    //    dump_decal_4color + 逐纹素比对）——**贴图自带最终色**，转置
+    //    权重列 dot 只有在 lightScales 为元素 one-hot 时才还原原色；
+    // 2) 球面衰减版 min(2·sdf,1)² 多通道同时点亮（面板吃 B+A 两路 →
+    //    红亮盖字、字体被背景淹没）= "动态色块无细节"的根因；
+    // 3) one-hot 归属（最近调色板行）后每个元素吃自己的 colors 行与
+    //    独立动画通道（w 列 chunks/相位），扫掠以字体+花纹为遮罩从暗
+    //    渐变到亮——与引擎 TAKEOUT/CHEAP 截图逐区域对拍一致。
+    // 球面衰减的 3D 灯管圆润度（circleZ/hwRatio）对量化贴图无对应物，
+    // 随旧版一并移除；uDecalNUS 保留声明供后续校准引用。
     ("decalAnimateSDFDarken",
      "float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\n\
-      float sdfTextureLength = max(uDecalNUS.x, uDecalNUS.y);\n\
-      float sphereHeight = uDecalNUS.z;\n\
-      float hwRatio = sphereHeight * 0.5 / sdfTextureLength;\n\
-      float zScale = 1.0;\n\
-      if (hwRatio < 1.0)\n\
-      {\n\
-        hwRatio = 1.0;\n\
-        zScale = 1.0 / hwRatio;\n\
-      }\n\
-      float circleZ = texturePosition.z;\n\
-      circleZ *= zScale;\n\
-      float4 sdfDists = Current.color;\n\
-      float kMaskCenter = 0.5;\n\
-      float4 circleDists = saturate(1.0 - sdfDists * 1.0 / kMaskCenter) * hwRatio;\n\
-      float4 sphereDistsSqr = circleDists * circleDists + circleZ * circleZ;\n\
-      float4 animEdge = max(animResults, 0.0);\n\
-      float lerpXParam = sphereHeight * 0.5 / uDecalNUS.x;\n\
-      float lerpYParam = sphereHeight * 0.5 / uDecalNUS.y;\n\
-      float4 animation = lerp(float4(lerpXParam, lerpXParam, lerpXParam, lerpXParam),\n\
-                              float4(lerpYParam, lerpYParam, lerpYParam, lerpYParam), useV.xyzw);\n\
-      sphereDistsSqr += animEdge * animEdge * animation * 32.0;\n\
-      float4 lightScales = saturate(1.0 - sqrt(sphereDistsSqr));\n\
-      lightScales *= lightScales;\n\
+      float3 sdfTexel = Current.color.rgb;\n\
+      float3 sdfRow0 = float3(decalMaterialData[0].x, decalMaterialData[1].x, decalMaterialData[2].x);\n\
+      float3 sdfRow1 = float3(decalMaterialData[0].y, decalMaterialData[1].y, decalMaterialData[2].y);\n\
+      float3 sdfRow2 = float3(decalMaterialData[0].z, decalMaterialData[1].z, decalMaterialData[2].z);\n\
+      float3 sdfRow3 = float3(decalMaterialData[0].w, decalMaterialData[1].w, decalMaterialData[2].w);\n\
+      float4 sdfDist = float4(dot(sdfTexel - sdfRow0, sdfTexel - sdfRow0),\n\
+                              dot(sdfTexel - sdfRow1, sdfTexel - sdfRow1),\n\
+                              dot(sdfTexel - sdfRow2, sdfTexel - sdfRow2),\n\
+                              dot(sdfTexel - sdfRow3, sdfTexel - sdfRow3));\n\
+      float sdfBest = min(min(sdfDist.x, sdfDist.y), min(sdfDist.z, sdfDist.w));\n\
+      float4 lightScales = float4(sdfDist.x <= sdfBest ? 1.0 : 0.0,\n\
+                                  sdfDist.y <= sdfBest ? 1.0 : 0.0,\n\
+                                  sdfDist.z <= sdfBest ? 1.0 : 0.0,\n\
+                                  sdfDist.w <= sdfBest ? 1.0 : 0.0);\n\
       float3 lightColor = float3(0.0, 0.0, 0.0);\n\
       lightColor.x = materialLightScale * dot(tubeColor0, lightScales);\n\
       lightColor.y = materialLightScale * dot(tubeColor1, lightScales);\n\

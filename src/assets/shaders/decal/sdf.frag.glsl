@@ -35,6 +35,7 @@ uniform vec4 uAnimResults;
 uniform vec4 uUseV;
 #define useV uUseV
 uniform float uTime;
+uniform float uAnimEnabled;
 uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
@@ -90,35 +91,28 @@ float materialTubeLightFactor = decalMaterialInfo.z * 8.0 + 1.0;
 vec4 lightFactor = mix(vec4(materialTubeLightFactor, materialTubeLightFactor,
 materialTubeLightFactor, materialTubeLightFactor),
 vec4(0.1, 0.1, 0.1, 0.1),
-step(vec4(0.0, 0.0, 0.0, 0.0), animResults));
+smoothstep(vec4(-0.02, -0.02, -0.02, -0.02),
+vec4(0.15, 0.15, 0.15, 0.15), animResults));
 vec4 powerFactor = mix(vec4(0.5, 0.5, 0.5, 0.5), lightFactor, decalMaterialInfo.wwww);
+powerFactor = mix(vec4(1.0, 1.0, 1.0, 1.0), powerFactor, vec4(uAnimEnabled, uAnimEnabled, uAnimEnabled, uAnimEnabled));
 vec4 tubeColor0 = decalMaterialData[0] * powerFactor;
 vec4 tubeColor1 = decalMaterialData[1] * powerFactor;
 vec4 tubeColor2 = decalMaterialData[2] * powerFactor;
 float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;
-float sdfTextureLength = max(uDecalNUS.x, uDecalNUS.y);
-float sphereHeight = uDecalNUS.z;
-float hwRatio = sphereHeight * 0.5 / sdfTextureLength;
-float zScale = 1.0;
-if (hwRatio < 1.0)
-{
-hwRatio = 1.0;
-zScale = 1.0 / hwRatio;
-}
-float circleZ = texturePosition.z;
-circleZ *= zScale;
-vec4 sdfDists = outColor;
-float kMaskCenter = 0.5;
-vec4 circleDists = clamp(1.0 - sdfDists * 1.0 / kMaskCenter, 0.0, 1.0) * hwRatio;
-vec4 sphereDistsSqr = circleDists * circleDists + circleZ * circleZ;
-vec4 animEdge = max(animResults, 0.0);
-float lerpXParam = sphereHeight * 0.5 / uDecalNUS.x;
-float lerpYParam = sphereHeight * 0.5 / uDecalNUS.y;
-vec4 animation = mix(vec4(lerpXParam, lerpXParam, lerpXParam, lerpXParam),
-vec4(lerpYParam, lerpYParam, lerpYParam, lerpYParam), useV.xyzw);
-sphereDistsSqr += animEdge * animEdge * animation * 32.0;
-vec4 lightScales = clamp(1.0 - sqrt(sphereDistsSqr), 0.0, 1.0);
-lightScales *= lightScales;
+vec3 sdfTexel = outColor.rgb;
+vec3 sdfRow0 = vec3(decalMaterialData[0].x, decalMaterialData[1].x, decalMaterialData[2].x);
+vec3 sdfRow1 = vec3(decalMaterialData[0].y, decalMaterialData[1].y, decalMaterialData[2].y);
+vec3 sdfRow2 = vec3(decalMaterialData[0].z, decalMaterialData[1].z, decalMaterialData[2].z);
+vec3 sdfRow3 = vec3(decalMaterialData[0].w, decalMaterialData[1].w, decalMaterialData[2].w);
+vec4 sdfDist = vec4(dot(sdfTexel - sdfRow0, sdfTexel - sdfRow0),
+dot(sdfTexel - sdfRow1, sdfTexel - sdfRow1),
+dot(sdfTexel - sdfRow2, sdfTexel - sdfRow2),
+dot(sdfTexel - sdfRow3, sdfTexel - sdfRow3));
+float sdfBest = min(min(sdfDist.x, sdfDist.y), min(sdfDist.z, sdfDist.w));
+vec4 lightScales = vec4(sdfDist.x <= sdfBest ? 1.0 : 0.0,
+sdfDist.y <= sdfBest ? 1.0 : 0.0,
+sdfDist.z <= sdfBest ? 1.0 : 0.0,
+sdfDist.w <= sdfBest ? 1.0 : 0.0);
 vec3 lightColor = vec3(0.0, 0.0, 0.0);
 lightColor.x = materialLightScale * dot(tubeColor0, lightScales);
 lightColor.y = materialLightScale * dot(tubeColor1, lightScales);

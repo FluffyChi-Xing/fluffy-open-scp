@@ -657,3 +657,44 @@ deadend dead-mtt129cw）。
 验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 15/15
 （新增 sign_tail_lightbox_glow；sdf_chain 断言改查 sharp-bilinear 并
 禁 smoothstep 二值化回潮）。
+
+## 二十、2026-10-05 八轮补丁（"动态色块无细节" = 球面衰减多通道串色；动态/静态开关）
+
+1. **对拍取证（dev 容器 + 引擎截图）**：用户提供的游戏内霓虹截图
+   （TAKEOUT FOOD / CHEAP APARTMENT）显示引擎行为 = **暗色详细底图
+   常驻 + 扫掠带以字体+花纹为遮罩从暗渐变到亮**，不是抛弃细节的
+   动态色块。取证定谳：该族贴图**纹素 RGBA 恒等于字典 colors 四行
+   之一**（加油站 0x090C71D6 逐纹素比对：面板 694px = row0 青 /
+   字体 515px = row3 黄 / 油泵 259px = row1 紫 / 描边 40px = row2
+   粉，dump_decal_4color + 众数统计）——贴图自带最终色，colors 行
+   w 列 = 四路独立动画参数。转置权重列 dot 只有在 lightScales 为
+   元素 one-hot 时才还原原色；球面衰减版 min(2·sdf,1)² 让多通道
+   同时点亮（面板吃 B+A 两路 → 红亮盖字、A 通道权重全场均匀洗色）
+   = "动态色块看不清字体"的根因。容器 dump 在 animResults 赋值处
+   截断（line 4117）、decalAnimateSDFDisabled 块 10KB 含 OCR 噪声，
+   逐字移植不可恢复，改为**行为对拍实现**。
+2. **修复一（fragments.rs decalAnimateSDFDarken 重写）**：lightScales
+   改为**调色板归属 one-hot 解码**（纹素 rgb 对四行最近距离），每个
+   元素吃自己的 colors 行与独立动画通道（w 列 chunks/相位）；球面
+   衰减（circleZ/hwRatio/animEdge 项）对量化贴图无对应物，随旧版
+   移除。点积结构（tubeColor0-2 × lightScales）不变——one-hot 下
+   精确等于 row_id × power_id。
+3. **修复二（decalAnimateSDFDisabled）**：step 硬切改 smoothstep
+   (-0.02, 0.15) 软边 = 扫掠"从暗渐变到亮"的过渡带；新增
+   uAnimEnabled（0 = 静态）→ powerFactor 恒 1 全亮、不吃扫掠窗。
+4. **复算验证**（tmp/sdf_chain_sim.py 八轮版，带 alpha 合成）：静态
+   = 青面板 (0,202,220) + 黄字 (228,185,19) + 紫油泵 (188,10,180)
+   全亮恒显；动态 = 暗态细节可辨 + 扫掠带软边 wipe，与引擎截图
+   逐区域一致（tmp/dynamic/sdf_chain_sim8_alpha.png）。
+5. **动态招牌开关（用户指令）**：精细渲染工具条新增 Zap 按钮
+   （仅 renderMode === 'refined' 显示，默认关 = 静态恒亮）；
+   SunEnvRefs 新增 animEnabled 共享 uniform（createEngineDecalMaterial
+   直引，免重建热切换）；rAF 霓虹时钟只在"场景有 SDF decal 且开关
+   开启"时运转，重建后按开关状态重新应用（env 每轮新建归 0）。
+6. **诚实备注**：one-hot 归属对纹素不恰等于 colors 行的条目（如
+   STORE 0x23D05B09 的 0.82/0.76 级别）退化为最近行归类，可能对
+   不上原配色，需对拍；涂鸦字典（0xE5390A98）md[1]>0 的同链条目
+   观感待对拍；扫掠软边带宽 0.17 uv 为目估初值。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 15/15
+（sdf_chain 断言改查归属解码/动画开关/扫掠软边，禁球面衰减回潮）。
