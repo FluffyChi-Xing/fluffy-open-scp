@@ -1,0 +1,89 @@
+shader 0x700000CF decalProjectNeonSDF flags=0x80000018 vsVer=-130304 psVer=-64768
+== state slot 2 ==
+-- VS fragments (5) --
+  [267] decalMaterialData4SDFSwizzle
+    s1: Current.color = float4(In.texcoord4.x,In.texcoord5.x,In.texcoord6.x,In.texcoord7.x);\nCurrent.color1 = float4(In.texcoord4.y,In.texcoord5.y,In.texcoord6.y,In.texcoord7.y);\nCurrent.texcoord<t0> = float4(In.texcoord4.z,In.texcoord5.z,In.texcoord6.z,In.texcoord7.z);\nCurrent.texcoord<t1> = float4(In.texcoord4.w,In.texcoord5.w,In.texcoord6.w,In.texcoord7.w);\n
+  [254] decalBase
+    s1: int xformIdx = toInt(Current.indices.x);\nfloat3x4 modelToWorld = float3x4(SkinBones[xformIdx + 0], SkinBones[xformIdx + 1], SkinBones[xformIdx + 2]);\nfloat3x4 modelToTexture = float3x4(In.texcoord1, In.texcoord2, In.texcoord3);\nfloat3 modelPos = Current.position.xyz;\nfloat3 worldPos = mul(modelToWorld, float4(modelPos,1));\nCurrent.position = mul(float4(worldPos,1), worldToClip);\nCurrent.texcoord<t0> = In.texcoord0;\n
+    decls: float4 SkinBones[(192)], float4x4 worldToClip
+  [259] decalMaterialInfoWithObjectData
+    s1: int realXformIdx = xformIdx / 3; // Why did I premultiply these again?  So silly.\nint customParamIndex = realXformIdx / 4;\nint customParamCpt = realXformIdx % 4;\nCurrent.texcoord<t0>.xyz = Current.indices.yzw * (1.0 / 255.0);\nCurrent.texcoord<t0>.w = customParams[customParamIndex][customParamCpt];\n
+    decls: float4 customParams[16]
+  [256] decalProject
+    s1: float3x4 cameraToWorldT = transpose(cameraToWorld);\nfloat4x4 cameraToWorld44 = float4x4(\ncameraToWorldT[0],\ncameraToWorldT[1],\ncameraToWorldT[2],\nfloat4(0,0,0,1));\nfloat invSqrMWScale = 1.0 / dot(modelToWorld[0].xyz, modelToWorld[0].xyz);\nfloat3x3 modelToWorldT33 = transpose(make_float3x3(modelToWorld)) * invSqrMWScale;\nfloat3   newTranslation  = -mul(modelToWorldT33, float3(modelToWorld[0].w, modelToWorld[1].w, modelToWorld[2].w));\nfloat4x4 worldToModel = float4x4(\nfloat4(modelToWorldT33[0], newTranslation.x),\nfloat4(modelToWorldT33[1], newTranslation.y),\nfloat4(modelToWorldT33[2], newTranslation.z),\nfloat4(0,0,0,1));\nfloat4x4 cameraToModel = mul(worldToModel, cameraToWorld44);\nfloat4x4 cameraToTexture = mul(float4x4(modelToTexture[0], modelToTexture[1], modelToTexture[2], float4(0,0,0,1)), cameraToModel);\nCurrent.texcoord<t0> = cameraToTexture[0];\nCurrent.texcoord<t1> = cameraToTexture[1];\nCurrent.texcoord<t2> = cameraToTexture[2];\n
+    decls: float4x3 cameraToWorld
+  [261] decalNUS
+    s1: {\nfloat3 NUSTextureSqr;\nNUSTextureSqr.x = dot(modelToTexture[0].xyz, modelToTexture[0].xyz);\nNUSTextureSqr.y = dot(modelToTexture[1].xyz, modelToTexture[1].xyz);\nNUSTextureSqr.z = dot(modelToTexture[2].xyz, modelToTexture[2].xyz);\nfloat uniformSqr = dot(modelToWorld[0].xyz, modelToWorld[0].xyz);\nCurrent.texcoord<t0>.xyz = sqrt(NUSTextureSqr * uniformSqr);\n}\n
+-- PS fragments (8) --
+  [393] decalMaterialData4
+    s1: float4 decalMaterialData[4] = { In.color, In.color1, In.texcoord<t0>, In.texcoord<t1> };\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [37] depthNormalInfo
+    s1: float2 screenUV = Current.vpos.xy * renderTargetInfo0.zw;\nfloat4 rgbaDepth = tex2D(depthMap, screenUV);\nfloat depth = UnpackDepth(rgbaDepth);\nfloat3 worldNormalPack = tex2D(normalMap, screenUV).xyz;\nfloat3 worldNormal = normalize(2 * worldNormalPack - 1);\n
+    s2: extern uniform sampler normalMap : register(s14);\nextern uniform sampler depthMap  : register(s15);\nfloat UnpackDepth(float4 rgbaDepth)\n{\nreturn dot( rgbaDepth.xyz, float3( 1, 1 / 255.0, 1 / (255.0*255.0) ) );\n}\n
+    decls: float4 renderTargetInfo0
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [373] decalBase
+    s1: float4 texXform = In.texcoord<t0>;\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [381] decalMaterialInfo
+    s1: float4 decalMaterialInfo = In.texcoord<t0>;\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [374] decalProject
+    s1:  float screenV = screenUV.y;\n\nfloat3 farPlaneXYZ =\nlerp(\nlerp(viewFarCorners[1].xyz, viewFarCorners[3].xyz, screenUV.x),\nlerp(viewFarCorners[0].xyz, viewFarCorners[2].xyz, screenUV.x),\nscreenV);\nfloat3 camXYZ = farPlaneXYZ * depth;\nfloat4x4 camToTexture = float4x4(In.texcoord<t0>, In.texcoord<t1>, In.texcoord<t2>, float4(0,0,0,1));\nfloat3 texturePosition = mul(camToTexture, float4(camXYZ, 1)).xyz;\nfloat2 uvOrig = texturePosition.xy * -0.5 + 0.5;\nfloat2 uv = uvOrig * texXform.xy + texXform.zw;\nfloat4 decalTexture = tex2D(Sampler<s0>, uv);\nCurrent.color = decalTexture;\n
+    decls: float4 viewFarCorners[4]
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [375] decalClip
+    s1: clip(1 - abs(texturePosition));\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [384] decalAnimateSDF
+    s1: float4 animResults;\nfloat4 useV;\n{\nfloat4 animParameters = decalMaterialData[3];\nuseV = float4(animParameters.x > 0 ? 0 : 1, animParameters.y > 0 ? 0 : 1, animParameters.z > 0 ? 0 : 1, animParameters.w > 0 ? 0 : 1);\nanimParameters = abs(animParameters);\nanimParameters += 0.0001; \nfloat animSpeed = decalMaterialInfo.y;\nfloat animTime = frac(gameInfo.x * animSpeed + 0.9999);  \nfloat4 animOffsets = frac(animParameters);\nfloat4 animChunks = max(float4(1.0, 1.0, 1.0, 1.0), floor(animParameters));\nfloat4 compares = floor((animTime * 3 - animOffsets) * animChunks) * (1 / animChunks);\nfloat4 uvCompare = lerp(uvOrig.xxxx, uvOrig.yyyy, useV.xyzw);\nanimResults = uvCompare - compares;\n}\n
+    decls: float4 gameInfo
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [387] decalLightSDF
+    s1: float3 decalNUS = In.texcoord<t0>.xyz;\nfloat materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\nfloat sdfTextureLength = max(decalNUS.x, decalNUS.y);\nfloat sphereHeight = decalNUS.z;\nfloat hwRatio = sphereHeight * 0.5 / sdfTextureLength;\nfloat zScale = 1;\nif(hwRatio < 1)\n{\nhwRatio = 1;\nzScale = 1 / hwRatio;\n}\nfloat circleZ = texturePosition.z;  // distance from center of texture\ncircleZ *= zScale;\nfloat4 sdfDists = Current.color;\nfloat kMaskCenter = 0.5;\nfloat4 circleDists = saturate(1 - sdfDists * (1.0 / kMaskCenter)) * hwRatio;\nfloat4 sphereDistsSqr = circleDists*circleDists + circleZ*circleZ;\nfloat4 animEdge = max(animResults, 0.0);\nfloat lerpXParam = sphereHeight * 0.5 / decalNUS.x;\nfloat lerpYParam = sphereHeight * 0.5 / decalNUS.y;\nfloat4 animRatio = lerp(float4(lerpXParam, lerpXParam, lerpXParam, lerpXParam), float4(lerpYParam, lerpYParam, lerpYParam, lerpYParam), useV.xyzw);\nsphereDistsSqr += animEdge * animEdge * animRatio * 32;\nfloat4 lightScales = saturate(1 - sqrt(sphereDistsSqr));\nlightScales *= lightScales;\nfloat3 lightColor = float3(0, 0, 0);\nfor(int i = 0; i < 3; ++i)\n{\n// apply light\nlightColor[i] = materialLightScale * dot(decalMaterialData[i],lightScales);\n}\n// de-power\nlightColor *= decalMaterialInfo.w;\nCurrent.color.rgb = lightColor;\nCurrent.color.a = 0;\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+== state slot 3 ==
+-- VS fragments (5) --
+  [267] decalMaterialData4SDFSwizzle
+    s1: Current.color = float4(In.texcoord4.x,In.texcoord5.x,In.texcoord6.x,In.texcoord7.x);\nCurrent.color1 = float4(In.texcoord4.y,In.texcoord5.y,In.texcoord6.y,In.texcoord7.y);\nCurrent.texcoord<t0> = float4(In.texcoord4.z,In.texcoord5.z,In.texcoord6.z,In.texcoord7.z);\nCurrent.texcoord<t1> = float4(In.texcoord4.w,In.texcoord5.w,In.texcoord6.w,In.texcoord7.w);\n
+  [254] decalBase
+    s1: int xformIdx = toInt(Current.indices.x);\nfloat3x4 modelToWorld = float3x4(SkinBones[xformIdx + 0], SkinBones[xformIdx + 1], SkinBones[xformIdx + 2]);\nfloat3x4 modelToTexture = float3x4(In.texcoord1, In.texcoord2, In.texcoord3);\nfloat3 modelPos = Current.position.xyz;\nfloat3 worldPos = mul(modelToWorld, float4(modelPos,1));\nCurrent.position = mul(float4(worldPos,1), worldToClip);\nCurrent.texcoord<t0> = In.texcoord0;\n
+    decls: float4 SkinBones[(192)], float4x4 worldToClip
+  [259] decalMaterialInfoWithObjectData
+    s1: int realXformIdx = xformIdx / 3; // Why did I premultiply these again?  So silly.\nint customParamIndex = realXformIdx / 4;\nint customParamCpt = realXformIdx % 4;\nCurrent.texcoord<t0>.xyz = Current.indices.yzw * (1.0 / 255.0);\nCurrent.texcoord<t0>.w = customParams[customParamIndex][customParamCpt];\n
+    decls: float4 customParams[16]
+  [256] decalProject
+    s1: float3x4 cameraToWorldT = transpose(cameraToWorld);\nfloat4x4 cameraToWorld44 = float4x4(\ncameraToWorldT[0],\ncameraToWorldT[1],\ncameraToWorldT[2],\nfloat4(0,0,0,1));\nfloat invSqrMWScale = 1.0 / dot(modelToWorld[0].xyz, modelToWorld[0].xyz);\nfloat3x3 modelToWorldT33 = transpose(make_float3x3(modelToWorld)) * invSqrMWScale;\nfloat3   newTranslation  = -mul(modelToWorldT33, float3(modelToWorld[0].w, modelToWorld[1].w, modelToWorld[2].w));\nfloat4x4 worldToModel = float4x4(\nfloat4(modelToWorldT33[0], newTranslation.x),\nfloat4(modelToWorldT33[1], newTranslation.y),\nfloat4(modelToWorldT33[2], newTranslation.z),\nfloat4(0,0,0,1));\nfloat4x4 cameraToModel = mul(worldToModel, cameraToWorld44);\nfloat4x4 cameraToTexture = mul(float4x4(modelToTexture[0], modelToTexture[1], modelToTexture[2], float4(0,0,0,1)), cameraToModel);\nCurrent.texcoord<t0> = cameraToTexture[0];\nCurrent.texcoord<t1> = cameraToTexture[1];\nCurrent.texcoord<t2> = cameraToTexture[2];\n
+    decls: float4x3 cameraToWorld
+  [261] decalNUS
+    s1: {\nfloat3 NUSTextureSqr;\nNUSTextureSqr.x = dot(modelToTexture[0].xyz, modelToTexture[0].xyz);\nNUSTextureSqr.y = dot(modelToTexture[1].xyz, modelToTexture[1].xyz);\nNUSTextureSqr.z = dot(modelToTexture[2].xyz, modelToTexture[2].xyz);\nfloat uniformSqr = dot(modelToWorld[0].xyz, modelToWorld[0].xyz);\nCurrent.texcoord<t0>.xyz = sqrt(NUSTextureSqr * uniformSqr);\n}\n
+-- PS fragments (8) --
+  [393] decalMaterialData4
+    s1: float4 decalMaterialData[4] = { In.color, In.color1, In.texcoord<t0>, In.texcoord<t1> };\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [37] depthNormalInfo
+    s1: float2 screenUV = Current.vpos.xy * renderTargetInfo0.zw;\nfloat4 rgbaDepth = tex2D(depthMap, screenUV);\nfloat depth = UnpackDepth(rgbaDepth);\nfloat3 worldNormalPack = tex2D(normalMap, screenUV).xyz;\nfloat3 worldNormal = normalize(2 * worldNormalPack - 1);\n
+    s2: extern uniform sampler normalMap : register(s14);\nextern uniform sampler depthMap  : register(s15);\nfloat UnpackDepth(float4 rgbaDepth)\n{\nreturn dot( rgbaDepth.xyz, float3( 1, 1 / 255.0, 1 / (255.0*255.0) ) );\n}\n
+    decls: float4 renderTargetInfo0
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [373] decalBase
+    s1: float4 texXform = In.texcoord<t0>;\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [381] decalMaterialInfo
+    s1: float4 decalMaterialInfo = In.texcoord<t0>;\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [374] decalProject
+    s1:  float screenV = screenUV.y;\n\nfloat3 farPlaneXYZ =\nlerp(\nlerp(viewFarCorners[1].xyz, viewFarCorners[3].xyz, screenUV.x),\nlerp(viewFarCorners[0].xyz, viewFarCorners[2].xyz, screenUV.x),\nscreenV);\nfloat3 camXYZ = farPlaneXYZ * depth;\nfloat4x4 camToTexture = float4x4(In.texcoord<t0>, In.texcoord<t1>, In.texcoord<t2>, float4(0,0,0,1));\nfloat3 texturePosition = mul(camToTexture, float4(camXYZ, 1)).xyz;\nfloat2 uvOrig = texturePosition.xy * -0.5 + 0.5;\nfloat2 uv = uvOrig * texXform.xy + texXform.zw;\nfloat4 decalTexture = tex2D(Sampler<s0>, uv);\nCurrent.color = decalTexture;\n
+    decls: float4 viewFarCorners[4]
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [375] decalClip
+    s1: clip(1 - abs(texturePosition));\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [384] decalAnimateSDF
+    s1: float4 animResults;\nfloat4 useV;\n{\nfloat4 animParameters = decalMaterialData[3];\nuseV = float4(animParameters.x > 0 ? 0 : 1, animParameters.y > 0 ? 0 : 1, animParameters.z > 0 ? 0 : 1, animParameters.w > 0 ? 0 : 1);\nanimParameters = abs(animParameters);\nanimParameters += 0.0001; \nfloat animSpeed = decalMaterialInfo.y;\nfloat animTime = frac(gameInfo.x * animSpeed + 0.9999);  \nfloat4 animOffsets = frac(animParameters);\nfloat4 animChunks = max(float4(1.0, 1.0, 1.0, 1.0), floor(animParameters));\nfloat4 compares = floor((animTime * 3 - animOffsets) * animChunks) * (1 / animChunks);\nfloat4 uvCompare = lerp(uvOrig.xxxx, uvOrig.yyyy, useV.xyzw);\nanimResults = uvCompare - compares;\n}\n
+    decls: float4 gameInfo
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]
+  [387] decalLightSDF
+    s1: float3 decalNUS = In.texcoord<t0>.xyz;\nfloat materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\nfloat sdfTextureLength = max(decalNUS.x, decalNUS.y);\nfloat sphereHeight = decalNUS.z;\nfloat hwRatio = sphereHeight * 0.5 / sdfTextureLength;\nfloat zScale = 1;\nif(hwRatio < 1)\n{\nhwRatio = 1;\nzScale = 1 / hwRatio;\n}\nfloat circleZ = texturePosition.z;  // distance from center of texture\ncircleZ *= zScale;\nfloat4 sdfDists = Current.color;\nfloat kMaskCenter = 0.5;\nfloat4 circleDists = saturate(1 - sdfDists * (1.0 / kMaskCenter)) * hwRatio;\nfloat4 sphereDistsSqr = circleDists*circleDists + circleZ*circleZ;\nfloat4 animEdge = max(animResults, 0.0);\nfloat lerpXParam = sphereHeight * 0.5 / decalNUS.x;\nfloat lerpYParam = sphereHeight * 0.5 / decalNUS.y;\nfloat4 animRatio = lerp(float4(lerpXParam, lerpXParam, lerpXParam, lerpXParam), float4(lerpYParam, lerpYParam, lerpYParam, lerpYParam), useV.xyzw);\nsphereDistsSqr += animEdge * animEdge * animRatio * 32;\nfloat4 lightScales = saturate(1 - sqrt(sphereDistsSqr));\nlightScales *= lightScales;\nfloat3 lightColor = float3(0, 0, 0);\nfor(int i = 0; i < 3; ++i)\n{\n// apply light\nlightColor[i] = materialLightScale * dot(decalMaterialData[i],lightScales);\n}\n// de-power\nlightColor *= decalMaterialInfo.w;\nCurrent.color.rgb = lightColor;\nCurrent.color.a = 0;\n
+    inst=0xFFFFFFFF grp=0xFFFFFFFF extra=[0, 0, 0, 0, 0, 0, 0]

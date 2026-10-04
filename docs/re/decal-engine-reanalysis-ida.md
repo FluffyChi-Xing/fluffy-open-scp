@@ -237,3 +237,152 @@ behaviorFlags：CD/CF=0x80000018，D1/D2=0x8000001B（低位差 0x03，输入通
 1. **片段重组**：解析 cFragmentShader::Read（行 517375+）的 mStateDepPSFragments + Fragments 表（0x40212002，ReadPSFragments 行 519837+），把四个着色器的实际 PS 片段序列与片段源码（decl text）导出——这是"引擎原版 PS 逻辑"的直接移植蓝本，尤其 decalInteriorMap 的内景采样与 decalNeonTubeSDF 的动画参数化。
 2. renderGroup batch（0/1/2）与 lot 属性 renderGroups[i]（+64 数组）的实际取值普查——确定三族实例在各组的分布，回答"哪些 decal 在 rt7 画、哪些在 rt3 画"。
 3. 0x700000CD 在 Shaders 文件中的另外 3 处引用（6055468/6078584/6102002）——确认是否为其他 shader 的片段依赖或 DirectShader 引用。
+
+## 12. 片段重组终局：四个 decal shader 的原版片段链（Fragments 表全量解析成功）
+
+> 数据源：`SimCity_App.package` Fragments 表（type 0x0469A3F7 group 0x40212002，tmp/fragments_0.bin 1226666B）+
+> Shaders 表（0x40212004，tmp/shaders_0.bin）。解析器：`docs/re/decal-shader-fragments/parse_all_fragments.py`。
+> 四个 shader 的完整片段序列与片段源码：`docs/re/decal-shader-fragments/shader_frags_*.txt`。
+
+### 12.1 Fragments 表布局终局（EOF 精确匹配验证：VS 1023 条 + PS 1024 条，末偏移 == 文件长）
+
+反编译：`ReadVSFragments`（行 521747-521944）、`ReadPSFragments`（行 519837-520158）、
+`cStateDependence::Read`（行 517020-517045）、`cFragmentShader::Read`（行 517375-517495）。
+
+- 表头：version i32(=4) + count i32。VS count=1024 但记录从 fragment 1 起（`i=1; if(v2>1)`，行 521794-521795），实际 1023 条；PS 1024 条（从 index 0 起）。
+- VS 记录（15B 前缀）：`i32 A, i32 B, 3×u8, i32 C(flags)` + str1(len i32+体) + str2 + declVec + `[C&2]` 可选串（= 片段名）。
+- PS 记录（14B 前缀）：`i32 A, i32 B, 2×u8, i32 C` + str1 + str2 + declVec + `i32 instance, i32 group` + `7×i32` + `numNames i32 + ×string`（version>2）+ `[C&2]` 可选串（= 片段名）。
+- **decl 条目 = 名字串 + 4×i16 + i32 + u8（13B）**——反编译只显示 4×i16+i32（行 521907-521911），末尾 u8 为链式全表验证补出的实证字段（少这 1B 全表 1023 条立刻失步）。
+- str1 = 代码体，str2 = 辅助函数/uniform 声明（部分片段为空），可选串 = 片段名（如 NullVS/NullPS/decalProject/decalClip…）。
+- shader 记录（cShaderBase::Read 行 522322：version=8>7 无头三字段）：`vsVer i32 + psVer i32 + mBehaviorFlags i32 + [flags&0x10: 名字]`，随后 cFragmentShader::Read：循环 `u8 slot`（0xFF 终止）→ VS 列表(u32 count + ×[StateDep 24B + i16 片段idx]) + PS 列表（同构）。StateDep（version>6）= u8 type + 3×i16 + 4×i32(mElements/mIfGroups/mIfNotGroups/mSetGroups) + u8 LOD = 24B。
+- **VS 片段索引从 1 起（文件记录 0 = fragment 1）；PS 从 0 起。**
+
+### 12.2 四个 shader 的片段序列（实测，全部为 state slot 2；decalProjectNeonSDF 另有内容相同的 slot 3）
+
+**0x700000D2 decalInteriorMap（破洞）**——VS 5 段 / PS 10 段：
+- VS: decalMaterialData1[263] → decalBase[254] → decalProject[256] → decalWorldDirection[260] → decalFloatQuad[257]
+- PS: decalMaterialData1[390] → deferredDiffuseEnabled[41] → depthInfo[36] → decalBase[373] → **decalProject[374]** → decalWorldDirection[382] → **decalClip[375]** → setupSHBasic[14] → decalLightInteriorMap[379] → **decalInteriorMap[380]**
+
+**0x700000CD decalProjectSDFLitFront（涂鸦）**——VS 5 段 / PS 14 段：
+- VS: decalBase[254] → decalProject[256] → decalWorldDirection[260] → decalMaterialData4SDFSwizzle[267] → decalMaterialInfo[258]
+- PS: deferredDiffuseEnabled[41] → overlayBlend4Chan[336] → depthInfo[36] → decalBase[373] → **decalProject[374]** → decalWorldDirection[382] → **decalClip[375]** → **decalClipBack[396]** → decalMaterialData4[393] → **decalSDF[394]** → setupSHBasic[14] → scLightingApplyDeferred[49] → decalMaterialInfo[381] → **decalOpacity[389]**
+
+**0x700000CF decalProjectNeonSDF（招牌基础相位，slot 2 与 3 同构）**——VS 5 段 / PS 8 段：
+- VS: decalMaterialData4SDFSwizzle[267] → decalBase[254] → decalMaterialInfoWithObjectData[259] → decalProject[256] → decalNUS[261]
+- PS: decalMaterialData4[393] → depthNormalInfo[37] → decalBase[373] → decalMaterialInfo[381] → **decalProject[374]** → **decalClip[375]** → **decalAnimateSDF[384]** → **decalLightSDF[387]**（输出 a=0、rgb=光色，ONE/ONE 加法发光）
+
+**0x700000D1 decalNeonTubeSDF（招牌灯管相位）**——VS 5 段 / PS 12 段：
+- VS: **decalBaseCenter[255]**（把顶点压回纹理中心平面：`modelPos += (modelToTexture[2].xyz * invSqrScale) * -texturePosition.z`）→ decalMaterialInfoWithObjectData[259] → decalFloatQuad[257] → decalMaterialData4SDFSwizzle[267] → decalWorldDirection[260]
+- PS: deferredDiffuseEnabled[41] → overlayBlend4Chan[336] → decalBase[373] → decalMaterialInfo[381] → **decalFloatQuadNoClip[377]**（不重建深度、不裁剪）→ decalMaterialData4[393] → decalWorldDirection[382] → **decalAnimateSDF[384]** → **decalAnimateSDFDarken[386]** → **decalSDF[394]** → setupSHBasic[14] → decalLightNeonTube[388]
+
+### 12.3 "投影还是浮空"的原版答案：由 shader 片段链内建决定，不存在运行时判定
+
+| 机制 | 片段 | 行为 |
+|---|---|---|
+| 屏幕空间投影 | decalProject[374] | `farPlaneXYZ` 双 lerp × `depth`（depthMap 解包）重建视线位置 → `camToTexture` 变换得 `texturePosition`；`uvOrig = texturePosition.xy * -0.5 + 0.5` |
+| 体积裁剪 | decalClip[375] | `clip(1 - abs(texturePosition))`——投影体积 [-1,1]³ 之外的像素直接丢弃。**这就是"有些 decal 根本不渲染"的引擎逻辑**：像素落在体积外即 kill，不是回退成浮空 |
+| 背面裁剪 | decalClipBack[396]（仅涂鸦链有） | `clip(dot(decalWorldDirection, GetDeferredNormal(screenUV)))`——G-buffer 法线与 decal 投影方向点积 ≤0（背面/侧面）即 kill。**投影穿透到模型另一边的根治手段** |
+| 浮空（不投影） | decalFloatQuadNoClip[377] | `textureFloatPosition = In.texcoord0.xyz`（VS decalFloatQuad[257] 直接算好），不读 depthMap、不 clip——全息广告/灯管这类浮空 decal 走此路径，永远贴在 decal 自身 quad 上 |
+
+结论：decal 的"投影/浮空"在**资源制作期由 shader 选择固化**。破洞/涂鸦/招牌基础相位 = 投影 + 体积裁剪；灯管相位 = 中心平面压平（decalBaseCenter）+ 无裁剪。OpenSCP 把浮空类 decal 强制套投影路径（悬空广告被投影显示不全）、以及投影类缺少 decalClipBack（穿透到背面）的回归，对照此表即知修复点：投影类必须实装 `clip(1-abs(texturePosition))` 与（涂鸦）背面点积裁剪；浮空类必须走 NoClip 路径不得接深度重建。
+
+### 12.4 decalInteriorMap[380] 完整像素逻辑（破洞 + 假内景原版实现）
+
+前置：decalProject 已采样 `decalTexture`（破洞贴图）放入 Current.color；decalLightInteriorMap[379] 已算光照：
+`shColorDiff/shColorSpec/spec/shadow = SimCityLighting(shScreenUV, normalize(decalWorldDirection), worldCameraDirection, …)`，先 `Current.color.rgb *= shColorDiff + shColorSpec + spec`。
+
+decalInteriorMap[380] 本体（逐字）：
+
+```hlsl
+const float kSunContributionAmount = decalMaterialData[0].x;   // In.color.x
+const float kLightAmount         = decalMaterialData[0].y;     // In.color.y
+float3 textureFloatPosition = In.texcoord<t0>.xyz;             // VS decalFloatQuad 输出
+float2 interiorUv = lerp(textureFloatPosition.xy, textureFloatPosition.xy * 0.5,
+                         textureFloatPosition.z * 0.5 + 0.5);  // 深度抛物线：z 越深 UV 越向中心收缩
+interiorUv = interiorUv * -0.5 + 0.5;
+interiorUv = interiorUv * texXform.xy + texXform.zw;
+float sunMod = saturate(dot(sunSky.mSunDir.xyz, bumpNormal.xyz));
+float3 sunColor = sunMod * sunSky.mSunColor.rgb * shadow;
+shColorDiff -= sunColor;
+shColorDiff *= kLightAmount;
+shColorSpec *= kLightAmount;
+shColorDiff += sunColor * kSunContributionAmount;
+float4 interiorTexture = tex2D(Sampler<s0>, interiorUv);        // 同一张贴图的第二 UV 采样
+float3 interiorTextureLit = interiorTexture.rgb *
+    (shColorDiff + shColorSpec + spec + interiorTexture.a * kInteriorMapSelfLightMax);  // =16.0
+Current.color.rgb = lerp(Current.color.rgb, interiorTextureLit, saturate(decalTexture.a * 2 - 1));
+Current.color.a   = saturate(decalTexture.a * 2);
+```
+
+关键事实：
+1. **破洞贴图与内景贴图是同一张纹理**（Sampler<s0>），两套 UV：投影 UV（破洞外观）+ 内缩 UV（内景）。
+2. **decalTexture.a 是破洞↔内景的混合闸**：a<0.5 区域显示破洞纹理（alpha 输出 `a*2`，破洞边缘半透明过渡）；a>0.5 区域显示内景。**破洞"纯黑"的直接根因 = 内景采样未实装或光照项为 0**（kLightAmount=0 会把 shColorDiff/spec 清零，只剩 sunColor×kSunContributionAmount + interiorTexture.a×16 自发光项）。
+3. **假内景的景深感来自 UV 抛物线内缩**（z×0.5+0.5 控制 lerp），不需要几何——一个 quad 采样两次即成。
+4. 内景自发光：`interiorTexture.a × 16.0`——内景贴图 alpha 通道 = 自发光遮罩（夜间亮窗），与"所有 decal 夜间自发光"的 bug 区分：只有内景相位有自发光，破洞纹理部分完全受光照控制。
+
+### 12.5 招牌双相位原版实现（霓虹动画的全部参数化）
+
+**相位 1 decalProjectNeonSDF → decalLightSDF[387]**（投影 + 体积裁剪，输出加法光）：
+
+```hlsl
+float3 decalNUS = In.texcoord<t0>.xyz;                          // VS decalNUS[261]：sqrt(NUSTextureSqr * uniformSqr)，纹理三轴世界尺寸
+float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;
+float sdfTextureLength = max(decalNUS.x, decalNUS.y);
+float sphereHeight = decalNUS.z;
+float hwRatio = sphereHeight * 0.5 / sdfTextureLength;
+if (hwRatio < 1) { hwRatio = 1; /* zScale=1/hwRatio 恒1分支 */ }
+float circleZ = texturePosition.z;                              // 离纹理中心平面的距离
+float4 sdfDists = Current.color;                                // SDF 纹理四通道
+float4 circleDists = saturate(1 - sdfDists * 2.0) * hwRatio;    // kMaskCenter=0.5
+float4 sphereDistsSqr = circleDists*circleDists + circleZ*circleZ;
+float4 animEdge = max(animResults, 0.0);                        // 来自 decalAnimateSDF
+sphereDistsSqr += animEdge * animEdge * animRatio * 32;         // 动画相位把光推离字面
+float4 lightScales = saturate(1 - sqrt(sphereDistsSqr));
+lightScales *= lightScales;                                     // 平方衰减的光晕球
+for (int i = 0; i < 3; ++i)
+    lightColor[i] = materialLightScale * dot(decalMaterialData[i], lightScales);  // RGB 三通道 = 三组霓虹色
+lightColor *= decalMaterialInfo.w;                              // de-power
+Current.color.rgb = lightColor; Current.color.a = 0;            // ONE/ONE 加法
+```
+
+**相位 2 decalNeonTubeSDF**（中心平面 quad，无裁剪）：decalFloatQuadNoClip 采样 SDF 纹理 → decalAnimateSDF[384]：
+
+```hlsl
+float4 animParameters = decalMaterialData[3];                   // 每通道：符号=动画方向(U/V)，整数=chunks，小数=offset
+float animSpeed = decalMaterialInfo.y;
+float animTime  = frac(gameInfo.x * animSpeed + 0.9999);        // gameInfo.x = 全局时间
+float4 animOffsets = frac(animParameters);
+float4 animChunks  = max(float4(1,1,1,1), floor(animParameters));
+float4 compares  = floor((animTime * 3 - animOffsets) * animChunks) / animChunks;  // 3 相位轮换
+float4 uvCompare = lerp(uvOrig.xxxx, uvOrig.yyyy, useV.xyzw);
+animResults = uvCompare - compares;                             // <0 = 本通道当前激活
+```
+
+decalAnimateSDFDarken[386]：`lightFactor = animResults<0 ? materialTubeLightFactor(=info.z×8+1) : 0.1`；`powerFactor = lerp(0.5, lightFactor, info.w)`；`decalMaterialData[0..2] *= powerFactor`——**动画只调制三组颜色通道的强度**，随后 decalSDF[394] 用 addOverlay（maskCenter=0.5，fwidth 抗锯齿）把 SDF 纹理四通道当遮罩、以调制后的 decalMaterialData[0..2] 上色。**字体/花纹全程是 SDF 遮罩，动画是遮罩内颜色的亮暗流动**——与游戏实机"字体+花纹从暗渐变到亮"一致。最后 decalLightNeonTube[388]：`Current.color.rgb += shColorSpec + spec`（环境高光叠加）。
+
+decalMaterialData 通道布局（VS decalMaterialData4SDFSwizzle[267]）：In.texcoord4-7 的 x/y/z/w 四个分量分别重组为 4 个 float4 = 4 组通道色/参数（[3]=动画参数）。decalMaterialInfo（decalMaterialInfoWithObjectData[259]）：xyz = Current.indices.yzw/255（逐实例数据），w = customParams[(xformIdx/3)/4][(xformIdx/3)%4]（对象自定义参数）。
+
+### 12.6 涂鸦（decalProjectSDFLitFront）原版实现要点
+
+投影 + 体积裁剪 + **decalClipBack 背面裁剪** + decalSDF（addOverlay 四通道遮罩上色，kBlurWidth=1/maskCenter=0.5/fwidth 锐化——官方清晰度答案：SDF 纹理 + 屏幕空间导数抗锯齿，不是多重采样）+ scLightingApplyDeferred（按 G-buffer 法线受光，与墙面光照一致 → 涂鸦与墙面颜色融合的来源）+ decalOpacity[389]：`Current.color.a *= decalMaterialInfo.x`（逐实例不透明度，ALPHATESTENABLE+alpha 混合）。
+
+### 12.7 与 OpenSCP 当前实现的分歧清单（对拍结论 → 修复依据）
+
+| # | 症状（用户观测） | 原版机制（本节实证） | 分歧点 |
+|---|---|---|---|
+| 1 | 破洞纯黑、无内景 | decalInteriorMap 双 UV 采样 + alpha 混合闸（§12.4） | 内景采样链/光照项未实装；kLightAmount/sunContribution 未从 In.color 读取 |
+| 2 | 破洞贴不上曲面 | decalProject 深度重建逐像素求 texturePosition，天然贴合任意曲面（G-buffer 深度驱动） | PE 若用平面拟合/顶点插值投影则必然在曲面失效——必须逐像素深度重建 |
+| 3 | 投影穿透到背面（回归） | decalClipBack：dot(decalWorldDirection, worldNormal) ≤0 即 kill | 未实装背面裁剪 |
+| 4 | 悬空广告被强制投影显示不全（回归） | 浮空类走 decalFloatQuadNoClip，不重建不裁剪 | 投影/浮空分类依据丢失，全部走了投影路径 |
+| 5 | 霓虹变动态色块、丢字体 | 动画只调制 addOverlay 的颜色强度，SDF 遮罩始终完整（§12.5） | 动画实现丢弃了 SDF 遮罩/静态图案 |
+| 6 | 静态招牌变纯色块 | 招牌视觉 = 相位1(decalLightSDF 加法光) + 相位2(decalNeonTubeSDF 完整 SDF 图案)，两相位都画 | 只画了一个相位或 SDF 采样链错（package_service.rs 的 decode_decal_entry_rgba vs decode_lot_mask_rgba 口径待查） |
+| 7 | 所有 decal 夜间自发光 | 仅内景相位有自发光（interiorTexture.a×16）；招牌发光来自 decalLightSDF/decalLightNeonTube 且受 info.w de-power | 自发光被全局误加 |
+| 8 | 涂鸦模糊退化 | 官方 = SDF + fwidth 单次采样锐化（addOverlay kBlurWidth=1） | 多重采样方案偏离原版，应回到 SDF+fwidth |
+| 9 | 涂鸦与墙面融合 | scLightingApplyDeferred 按 G-buffer 法线受光 + decalOpacity 逐实例 alpha | 受光/opacity 调制缺失 |
+| 10 | 破洞夜间表现 | decalLightInteriorMap 带 shadow 的 SimCityLighting + sunColor 分离（§12.4） | 光照链未按原版分离太阳项 |
+
+### 12.8 遗留核实项
+
+1. 四个 shader 均只在 state slot 2（NeonSDF 另有 slot 3）有定义——slot 0/1（低画质档）无 decal shader 记录，与四画质档 render script 的 rt3 前置调用层级待对齐。
+2. PS 片段 extra[7] 字段与 instance/group（本批全 -1）的语义；decal 纹理绑定实际来自材质 mRTMap 的纹理槽而非片段表。
+3. `overlayBlend4Chan` 完整源码（导出文件中被截断的长 s2）以 tmp/ps_fragments.json[336] 为准。
