@@ -55,6 +55,7 @@ const {
   load,
   toggleGroup,
   toggleUnit,
+  resetViewState,
 } = usePropertyEditorSession(props.packageId, props.tgi);
 
 /** 编辑工具（PE-重构-3）：select = 仅拾取；translate/rotate/scale 挂手柄。 */
@@ -138,6 +139,17 @@ useEditorHotkeys(
 );
 
 const renderMode = ref<"default" | "refined">("default");
+
+// 退出复位（2026-10-04 问题2）：sheet 关闭时把视图状态收回默认——组件
+// 始终挂载（v-model:open），否则 renderMode/图层显隐跨会话残留，下次打开
+// 直接全量重建精细渲染（首帧卡顿）或带着上次隐藏的图层。时段/LOD/编辑
+// 数据保留（用户明确调节/资产），仅复位"视图"维度。
+watch(open, (isOpen, wasOpen) => {
+  if (isOpen || !wasOpen) return;
+  renderMode.value = "default";
+  tool.value = "select";
+  resetViewState();
+});
 /** 通道实验（已停用，见模板注释）：保留状态供复验时恢复。 */
 const specExperiment = ref(false);
 /** 0=自动逐像素 / 1=强制 G / 2=强制 B（精细渲染现固定 2）。 */

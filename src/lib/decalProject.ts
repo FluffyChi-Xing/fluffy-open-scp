@@ -24,6 +24,16 @@ type Three = typeof ThreeNamespace;
  *   `regionDecalProject`（区域 decal）与 `decalSDF`（调试可视化）。
  * - 因此**锚定恒为变换原点**——"贴在墙上"是数据作者把原点放在墙上的结果，
  *   招牌与墙面的小间距在游戏内同样直接渲染（引擎无吸附判定）。
+ *
+ * ## 盒深语义（2026-10-05 casino 探针实锤）
+ *
+ * lot 0x457EA9DB 全部 7 个 decal：两招牌 scale 13.27/5.63 而
+ * **depth×scale 恒 = 1.327m**，五涂鸦恒 ≈ 17.95m → unit.depth 是按
+ * scale 归一化的盒进深，**世界盒深 = depth×scale**，盒 z∈[0, depth×scale]
+ * 沿 +axisZ（63/63 足迹射线全命中 +局部Z），与 RL
+ * `SC::cDecalData::SpawnDecalInstance` 的 model→texture z∈[0,depth]
+ * 映射互证。渲染端（PropertyEditorViewport.buildDecalObject）已按此
+ * 实施；本文件 decalProjector 的 2.5×scale 旧常数仅供测试留存。
  */
 export interface DecalFrame {
   /** 贴花原点（lot 局部）。 */
@@ -40,12 +50,18 @@ export interface DecalFrame {
 }
 
 /**
- * 盒的 Z 半厚下限（米）。只用于破洞体积盒/浮空 quad 回退的材质参数；
- * 投影盒厚度由引擎体积盒语义给出（见 BOX_HALF_NOTE），与 depth 无关。
+ * 盒的 Z 向下限（米）。只用于破洞体积盒的材质参数；投影盒厚度由引擎
+ * 体积盒语义给出（见 BOX_HALF_NOTE），与 depth 无关。
  */
 const HALF_THICKNESS_MIN = 0.05;
 
-/** 投影盒半厚（米）= depth 原值（origin→墙面距离，§41.2 语义）。 */
+/**
+ * 破洞盒 Z 向**全长**（米）= depth 原值。
+ * 2026-10-04 RL 带名代码（`SC::cDecalData::SpawnDecalInstance`）实锤：
+ * model→texture 矩阵把 z ∈ [0, depth] 映射到纹理 z [−1,1]——depth 是
+ * 盒体从原点沿 +axisZ 延伸的**全长**，修正 §41.2"原点→平面距离/半厚"
+ * 旧判（后者会让盒双向各多伸一倍，破洞半盒穿出立面）。
+ */
 export function decalHalfThickness(depth: number | null): number {
   return Math.max(depth ?? 0, HALF_THICKNESS_MIN);
 }
@@ -123,14 +139,15 @@ export function decalProjector(
 }
 
 /**
- * 体积内最近面吸附（引擎延迟投影语义的 CPU 等价，2026-10-01 定稿）：
+ * 体积内最近面吸附（引擎延迟投影语义的 CPU 近似，2026-10-01 定稿）：
  * 自变换原点沿 ±体积轴投射，距离上限 = 引擎体积盒半深（2.5×scale，
  * FUN_006fdce0 基=R×scale×0.5×10 的 Z 半深）——即"体积盒内最近可见面"
- * 的射线代理。命中 → quad 贴该面（招牌观感，等价引擎延迟投影落墙）；
- * 未命中 → quad 停在原点（全息浮空 = 引擎前向路径语义）。
+ * 的射线代理。命中 → quad 贴该面（招牌观感，等价引擎延迟投影落墙）。
  *
- * 这不是发明阈值：距离上限就是引擎体积盒自身的深度，超出即引擎同样
- * 不会投影的范围。
+ * **未命中的处置在调用方**（2026-10-04 修正）：引擎无回退路径——
+ * 延迟模式下盒内无场景深度即不渲染；调用方应跳过该 decal 而不是
+ * 把 quad 停在原点（原点浮空 = 篡改数据位置的第三种错误）。本函数
+ * 仍返回 `{position: origin, hit: false}` 仅供调用方区分两种结果。
  */
 export function snapQuadToSurface(
   THREE: Three,

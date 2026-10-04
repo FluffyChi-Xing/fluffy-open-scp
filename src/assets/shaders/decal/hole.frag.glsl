@@ -81,5 +81,6 @@ vec4 interiorTexture = texture2D(uSampler0, interiorUv);
 vec3 interiorTextureLit = interiorTexture.rgb * (shColorDiff + shColorSpec + spec + interiorTexture.a * kInteriorMapSelfLightMax);
 outColor.rgb = mix(outColor.rgb, interiorTextureLit, clamp(decalTexture.a * 2 - 1, 0.0, 1.0));
 outColor.a = clamp(decalTexture.a * 2, 0.0, 1.0);
+outColor.rgb = pow(max(outColor.rgb, vec3(0.0)), vec3(1.0 / 2.2));
 gl_FragColor = outColor;
 }

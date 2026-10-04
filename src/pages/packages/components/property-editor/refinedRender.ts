@@ -37,6 +37,9 @@ export type SunEnvRefs = {
   dayLight: { value: number };
   powered: { value: number };
   glow: { value: number };
+  /** decal 平涂 shader 的夜间压暗因子（引擎 decal 走延迟光照，夜间只剩
+   * 环境项；平涂无光照响应，恒 1 = 夜间"自发光"）。 */
+  nightBoost: { value: number };
 };
 
 /** 太阳地平线高度 −1..1（t=6/18 日出日落、12 正午、0/24 子夜）。 */
@@ -123,6 +126,7 @@ export function createSunEnv(THREE: typeof ThreeNamespace): SunEnvRefs {
     dayLight: { value: 1 },
     powered: { value: 1 },
     glow: { value: 6.0 },
+    nightBoost: { value: 1 },
   };
 }
 
@@ -177,6 +181,10 @@ export function applySunEnv(
   env.powered.value = powered === false ? 0 : 1;
   // 源码 interiorMap.a×16 为 HDR；观察器无 tonemap，白天压 2.5 / 夜间放开 16
   env.glow.value = 2.5 + (16 - 2.5) * (1 - day);
+  // decal 平涂 shader 无光照响应：白天 1（现状口径），夜间压到环境光水平
+  // （uAmbientDiff ≈ 0.1~0.15 蓝灰）——否则所有贴花夜间相对建筑"自发光"
+  // （2026-10-04 问题3；霓虹/跑马灯族的夜间自亮属 SDF 动画链，待后续任务）。
+  env.nightBoost.value = 0.15 + 0.85 * day;
 }
 
 /** slot0 参数表 f32 → DataTexture（cols×4 RGBA Float，texelFetch 寻址）。 */

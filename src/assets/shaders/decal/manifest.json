@@ -1,4 +1,6 @@
 {
+  "clip.frag": "clip.frag.glsl",
+  "clip.vert": "clip.vert.glsl",
   "hole.frag": "hole.frag.glsl",
   "hole.vert": "hole.vert.glsl",
   "holo.frag": "holo.frag.glsl",

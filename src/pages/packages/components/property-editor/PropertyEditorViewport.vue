@@ -26,7 +26,6 @@ import {
 import {
   decalFrame,
   decalHalfThickness,
-  snapQuadToSurface,
 } from "@/lib/decalProject";
 import type { DecalFrame } from "@/lib/decalProject";
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
@@ -481,7 +480,7 @@ function updateGizmo() {
 let pendingTrigger: RenderTelemetryTrigger = "first_load";
 
 /** 贴花投影命中/回退计数（每次装配前重置），供 decal_render 遥测。 */
-const decalStats = { projected: 0, fallback: 0 };
+const decalStats = { projected: 0, fallback: 0, skipped: 0 };
 
 /** 破洞假内景光单次装配上限（防多破洞 lot 光源洪峰）。 */
 const HOLE_LIGHT_MAX = 8;
@@ -951,6 +950,73 @@ async function assembleScene(
     0xe5390a98: "graffiti", // 涂鸦/贴纸聚类（CRIME/词组拼贴等）
   };
 
+  /** 量化合成（quant）族材质集合（2026-10-04 三轮用户对拍定谳）：字典
+   * 两族都走 0.5 阈值多通道合成——涂鸦的"清晰图案"正是多通道权重经
+   * 阈值链上色的产物（误路由到直采 = 权重通道当颜色 → 彩色模糊涂抹，
+   * 三轮图4）；焦痕/烧灼与未知材质走 clip 直采（raster RGB = 美术内容，
+   * 误走量化 = 层色近黑整块纯黑，二轮图1~3）。 */
+  const DECAL_QUANT_MATERIALS: ReadonlySet<number> = new Set([
+    0x73684efc, 0xe5390a98,
+  ]);
+
+  /** 投影面法线 cutoff：只保留 **N·axisZ ≤ -0.5** 的三角形——即面朝贴花
+   * 原点（投影来向）的面。两个裁剪目标：
+   * 1) |N·axisZ| < 0.5 的切向面被盒体裁剪后 UV 极度拉伸 = 立面"线性涂抹"
+   *    （三轮图2）；
+   * 2) N·axisZ > 0 的**远侧面**（薄板结构背坡、建筑背面外墙——外向法线
+   *    背对原点）= "穿透到另一侧"镜像字（五轮图1~2）。引擎延迟投影逐像素
+   *    取最近深度、天然只画最近面，CPU 几何投影必须同时满足这两个条件
+   *    才能同构（60° 以内朝向原点的曲面绕折仍保留）。 */
+  const DECAL_PROJECTION_NORMAL_CUTOFF = 0.5;
+
+  /** 浮空族判据：sign 字典 decal 的 materialData[1] 下限（≥ 此值 → 引擎
+   * FloatQuad 族，画数据位姿浮空 quad 而非体积投影）。实证：casino 墙
+   * 招牌 0 / 高塔竖幅 0.95~1.0 / DIRTY FACTORY 0.06 / 涂鸦恒 0。 */
+  const DECAL_FLOAT_EMISSIVE_CUTOFF = 0.9;
+
+  /**
+   * 按面法线过滤投影几何：只保留面朝贴花原点的三角形。返回 null = 整盒
+   * 无保留面（按未命中处理）。
+   */
+  function filterDecalProjectionByNormal(
+    THREE: typeof ThreeNamespace,
+    geometry: ThreeNamespace.BufferGeometry,
+    axisZ: ThreeNamespace.Vector3,
+  ): ThreeNamespace.BufferGeometry | null {
+    const pos = geometry.attributes.position;
+    const nrm = geometry.attributes.normal;
+    const uv = geometry.attributes.uv;
+    if (!pos || !nrm || !uv) return geometry; // 无法线不可判，原样保留
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    for (let i = 0; i < pos.count; i += 3) {
+      const dot =
+        ((nrm.getX(i) + nrm.getX(i + 1) + nrm.getX(i + 2)) / 3) * axisZ.x +
+        ((nrm.getY(i) + nrm.getY(i + 1) + nrm.getY(i + 2)) / 3) * axisZ.y +
+        ((nrm.getZ(i) + nrm.getZ(i + 1) + nrm.getZ(i + 2)) / 3) * axisZ.z;
+      // 单向：只留面朝原点的面（远侧面 = 穿透镜像，切向面 = 拉丝）
+      if (dot > -DECAL_PROJECTION_NORMAL_CUTOFF) continue;
+      for (let k = 0; k < 3; k += 1) {
+        positions.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
+        normals.push(nrm.getX(i + k), nrm.getY(i + k), nrm.getZ(i + k));
+        uvs.push(uv.getX(i + k), uv.getY(i + k));
+      }
+    }
+    if (!positions.length) return null;
+    const filtered = new THREE.BufferGeometry();
+    filtered.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    filtered.setAttribute(
+      "normal",
+      new THREE.Float32BufferAttribute(normals, 3),
+    );
+    filtered.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    return filtered;
+  }
+
   function buildDecalMaterial(
     THREE: typeof ThreeNamespace,
     dto: DecalUnitTexture,
@@ -1042,12 +1108,15 @@ async function assembleScene(
   }
 
   /**
-   * 破洞族体积盒（引擎 decalInteriorMap 同构，2026-10-01 重分析定谳）：
-   * 以变换原点为中心的盒体、只渲染内壁（BackSide）——建筑模型有洞时从
-   * 外透过洞看到房间内景，实墙处被深度遮挡不可见。**不切片、不回退**：
-   * 引擎侧该族属浮空分支（SC_cVolumeDecalManager 无任何锚定/距离判定），
-   * 盒体悬于变换处即引擎行为；此前"悬空"的病根是把它当投影族做射线
-   * 锚定，锚不中立即回退浮空 quad（translateZ 让开 depth → 视觉离墙）。
+   * 破洞族体积盒（引擎 decalInteriorMap 同构，2026-10-04 RL 带名代码定谳）：
+   * 盒前缘 = 变换原点、沿 **+axisZ（建筑内侧）延伸 depth 全长**——RL
+   * `SC::cDecalData::SpawnDecalInstance` 的 model→texture 矩阵把
+   * [0, depth] 映射到纹理 z [−1,1]（z 轴 ×2/depth、平移 −depth/2），
+   * xy 居中、**z 不居中**。只渲染内壁（BackSide）：建筑模型有洞时从外
+   * 透过洞看到房间内景，实墙处被深度遮挡不可见。**不切片、不回退**。
+   * 此前居中盒（±depth 双向）一半穿出立面 = "破洞漂浮在建筑外"根因
+   * （PL 文档 §六判方向、RL 代码判数值，两源互证；depth 语义 = 全长，
+   * 修正 §41.2"原点→平面距离/半厚"旧判）。
    */
   function buildHoleVolumeMesh(
     THREE: typeof ThreeNamespace,
@@ -1056,12 +1125,8 @@ async function assembleScene(
     texture: DecalUnitTexture,
     decoded: ThreeNamespace.Texture,
   ): ThreeNamespace.Mesh {
-    const thickness = decalHalfThickness(unit.depth);
-    const geometry = new THREE.BoxGeometry(
-      frame.sizeX,
-      frame.sizeY,
-      thickness * 2,
-    );
+    const depth = decalHalfThickness(unit.depth); // z 向全长（非半厚）
+    const geometry = new THREE.BoxGeometry(frame.sizeX, frame.sizeY, depth);
     // 引擎 uv = texpos.xy × -0.5 + 0.5（U 取负），与切片路径同一镜像口径
     const uv = geometry.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
@@ -1075,36 +1140,40 @@ async function assembleScene(
             worldDirection: frame.axisZ,
             env,
             side: THREE.BackSide,
+            // 体积 VS 的盒归一化（视差内景的 z 进深来源）
+            boxHalf: [frame.sizeX / 2, frame.sizeY / 2, depth / 2],
           })
         : createHoleInteriorMaterial(
             THREE,
             decoded,
             env,
             props.decalLight ?? null,
-            thickness,
+            depth / 2, // 半深 → 盒局部 z∈[−depth/2, +depth/2] 映射 vTp.z∈[−1,1]
             THREE.BackSide,
           );
     const boxHalf = material.uniforms.uBoxHalfXY.value as ThreeNamespace.Vector2;
     boxHalf.set(frame.sizeX / 2, frame.sizeY / 2);
-    return new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Mesh(geometry, material);
+    // 组局部 +Z = axisZ：盒体整体前移到 [0, depth]（前缘落在变换原点）
+    mesh.position.z = depth / 2;
+    return mesh;
   }
 
   /**
-   * 精细模式贴花：优先按引擎 `decalProject` 的方式**投影到建筑几何**
-   * （盒体积裁剪 + 盒内归一化 UV），失败则回退浮空 quad。
+   * 精细模式贴花：破洞族 = 变换原点处的内景体积盒；其余族 = 引擎体积盒
+   * 语义的 DecalGeometry 盒裁剪投影（建筑三角形 → 贴花网格，曲面/阶梯
+   * 立面自然贴合）。盒内无建筑面 = 引擎浮空分支（decalFloatQuad）：
+   * 数据位姿的浮空 quad（holo 广告/远抛实例）。
    *
    * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
    * `unitObjects` 选中与 `userData.unitId` 注册照旧；投影几何子节点用
    * 逆矩阵抵消父变换，因此几何本身保持 lot 局部坐标。
-   *
-   * 投影结果按 (unit, transform, depth, aspect) 缓存（payload 级）：编辑
-   * 其他 unit 引发的全量重建不再重跑 DecalGeometry CPU 裁剪。
    */
   async function buildDecalObject(
     THREE: typeof ThreeNamespace,
     unit: DecalUnit,
     texture: DecalUnitTexture,
-    meshes: ThreeNamespace.Mesh[],
+    _meshes: ThreeNamespace.Mesh[],
     proxies: ThreeNamespace.Mesh[],
   ): Promise<ThreeNamespace.Object3D | null> {
     if (!texture.png) {
@@ -1174,49 +1243,171 @@ async function assembleScene(
       return group;
     }
     if (frame) {
-      // 自持 quad + 体积内最近面吸附（2026-10-01 架构定稿）：引擎延迟投影
-      // 把广告落在体积盒内最近可见面上——单射线代理（±轴、上限 2.5×scale
-      // = 体积盒半深），命中即贴墙、未命中停在原点（全息浮空=引擎语义）。
-      // 不再对建筑几何做任何切片：多层切片/管道沾染/漂浮碎片三类问题同源
-      // （DecalGeometry 把盒内所有面都印一份），架构性消除。
-      const placement = snapQuadToSurface(THREE, frame, proxies);
-      const geometry = new THREE.PlaneGeometry(frame.sizeX, frame.sizeY);
-      // U 镜像（引擎 uv = texpos.xy × -0.5 + 0.5 的已验证口径——文字正读）
-      const quadUv = geometry.attributes.uv;
-      for (let i = 0; i < quadUv.count; i += 1) {
-        quadUv.setX(i, 1 - quadUv.getX(i));
-      }
-      quadUv.needsUpdate = true;
-      {
-        const engineMaterial = ENGINE_SHADER_MATERIALS
-          ? createEngineDecalMaterial(THREE, "sign" satisfies EngineFamily, {
+      // 引擎体积盒的 CPU 同构（2026-10-05 四轮定稿，casino 探针实锤）：
+      // **盒深 = unit.depth × scale**——lot 0x457EA9DB 全部 7 个 decal：
+      // 两招牌 scale 13.27/5.63 而 depth×scale 恒 = 1.327m，五涂鸦恒
+      // ≈17.95m → depth 是按 scale 归一化的盒进深。盒 = xy 居中于原点、
+      // z∈[0, depth×scale] 沿 **+axisZ**（63/63 足迹射线全部命中 +局部Z；
+      // 引擎 decal 面向约定 -z 朝街 ⇒ 墙恒在 +axisZ），与 RL
+      // `SC::cDecalData::SpawnDecalInstance` 的 model→texture z∈[0,depth]
+      // 映射同一语义。招牌盒仅 1.33m 深 ⇒ 背墙/对侧玻璃天然在盒外
+      // （四轮图1 回归根因 = 此前 ~2.5×scale 深盒吞背墙 + "最近命中侧"
+      // 把原点偏玻璃侧的招牌定错侧——两者皆删，不再选侧）。
+      const halfScale = frame.sizeY / 2;
+      const dataDepth =
+        unit.depth !== null && Number.isFinite(unit.depth) && unit.depth > 0
+          ? unit.depth * halfScale
+          : null;
+      // 单向 +axisZ 射线判定盒内是否有建筑面（far = 数据盒深；无 depth
+      // 数据时退回旧 2.5×scale 探测半径）。
+      const raycaster = new THREE.Raycaster(
+        frame.origin,
+        frame.axisZ,
+        0,
+        dataDepth ?? halfScale * 2.5,
+      );
+      const wallHit = raycaster.intersectObjects(proxies, false)[0];
+      const { DecalGeometry } = await import(
+        "three/examples/jsm/geometries/DecalGeometry.js"
+      );
+      if (ctx.isStale()) return null;
+      // 族路由（同三轮）：量化族字典（招牌 + 涂鸦）→ 0.5 阈值多通道
+      // 合成链；其余（焦痕/烧灼/未知）→ clip 直采链。
+      const family: EngineFamily = DECAL_QUANT_MATERIALS.has(
+        (texture.materialInstance ?? 0) >>> 0,
+      )
+        ? "sign"
+        : "clip";
+      // 引擎浮空分支（decalFloatQuad，holo 广告/远抛实例）：在**数据
+      // 位置**画浮空 quad，姿态由 transform 给出——不是"不渲染"（四轮
+      // 图3/4 的 holo 被错误贴上墙 = 此前缺失浮空分支、万物皆投影的
+      // 回归根因）。组已带 unit transform，quad 在组局部恒等姿态即
+      // 数据位姿；材质 DoubleSide 双面可见。
+      const addFloatQuad = () => {
+        const floatMaterial = ENGINE_SHADER_MATERIALS
+          ? createEngineDecalMaterial(THREE, family, {
               map: decoded,
               layerColors: texture.colors,
               decalData: props.decalLight ?? null,
               worldDirection: frame.axisZ,
               env,
             })
-          : null;
-        const mesh = new THREE.Mesh(
-          geometry,
-          engineMaterial ??
-            buildDecalMaterial(THREE, texture, decoded, {
+          : buildDecalMaterial(THREE, texture, decoded, {
               env,
               halfDepth: decalHalfThickness(unit.depth),
               boxHalfX: frame.sizeX / 2,
               boxHalfY: frame.sizeY / 2,
               decalData: props.decalLight ?? null,
-            }),
-        );
-        // 吸附点（lot 空间）→ 组局部。**mesh 不再叠加 frame 旋转**——
-        // applyDecalTransform 已把同一变换分解到 group（旋转+平移），
-        // mesh 再叠一次 = 旋转平方 = 任意朝向（"面片垂直于墙"的根因）。
-        // 组局部 +Z 即 axisZ，quad 恒等姿态下自然平行墙面（DoubleSide）。
-        mesh.position.copy(placement.position.clone().applyMatrix4(frame.matrix.clone().invert()));
-        group.add(mesh);
-        decalStats.projected += 1;
+            });
+        const quadGeometry = new THREE.PlaneGeometry(frame.sizeX, frame.sizeY);
+        const quadUv = quadGeometry.attributes.uv;
+        for (let i = 0; i < quadUv.count; i += 1) quadUv.setX(i, 1 - quadUv.getX(i));
+        quadUv.needsUpdate = true;
+        group.add(new THREE.Mesh(quadGeometry, floatMaterial));
+        decalStats.fallback += 1;
+      };
+      if (!wallHit) {
+        addFloatQuad();
         return group;
       }
+      // 浮空族数据判据（2026-10-05 五轮定谳，docs/re/decal-engine-alignment
+      // §十四）：**sign 字典且 materialData[1] ≥ 0.9 → 引擎 FloatQuad 族**
+      // （holo/竖幅灯牌），跳过投影直接画浮空 quad。实证对拍：
+      // casino 墙招牌 md[1]=0（投影 ✓）、高塔 0x9401CB7A 竖幅 STORE
+      // md[1]=0.95/1.0（用户确认浮空 ✓）、DIRTY FACTORY md[1]=0.06
+      // （投影 ✓）、涂鸦恒 0（投影 ✓）。md[1] 疑似引擎自发光/灯箱变体
+      // 参数，与 FloatQuad 族选择同源；几何判据（离墙距离/盒深）已被
+      // 涂鸦 10m 离墙反例证伪。安全网：贴墙摆放的 sign 浮空 quad 与投影
+      // 观感近乎一致（原点即在墙面），误判代价低。
+      if (
+        family === "sign" &&
+        (unit.materialData?.[1] ?? 0) >= DECAL_FLOAT_EMISSIVE_CUTOFF
+      ) {
+        addFloatQuad();
+        return group;
+      }
+      // 单侧盒投影：z 全深 = 数据盒深（无 depth 数据 = 命中距离 + 2m
+      // 檐口/退台余量），前缘在原点、沿 +axisZ 延伸。
+      const depthZ = dataDepth ?? wallHit.distance + 2.0;
+      const projector = {
+        position: frame.origin
+          .clone()
+          .addScaledVector(frame.axisZ, depthZ / 2),
+        orientation: new THREE.Euler().setFromRotationMatrix(frame.matrix),
+        size: new THREE.Vector3(frame.sizeX, frame.sizeY, depthZ),
+      };
+      const boxRadius =
+        Math.hypot(projector.size.x, projector.size.y, projector.size.z) / 2;
+      const geometries: ThreeNamespace.BufferGeometry[] = [];
+      for (const proxy of proxies) {
+        // 包围球粗筛：盒外建筑网格跳过逐三角形裁剪
+        if (!proxy.geometry.boundingSphere) {
+          proxy.geometry.computeBoundingSphere();
+        }
+        const sphere = proxy.geometry.boundingSphere;
+        if (
+          sphere &&
+          sphere.center.distanceTo(projector.position) >
+            sphere.radius + boxRadius
+        ) {
+          continue;
+        }
+        const clipped = new DecalGeometry(
+          proxy,
+          projector.position,
+          projector.orientation,
+          projector.size,
+        );
+        if ((clipped.attributes.position?.count ?? 0) === 0) continue;
+        const filtered = filterDecalProjectionByNormal(
+          THREE,
+          clipped,
+          frame.axisZ,
+        );
+        if (filtered) geometries.push(filtered);
+      }
+      // 射线命中但法线过滤后无任何可投面（墙面与投影轴近平行的极端
+      // 摆放）→ 同走浮空分支：宁可画在数据位姿也不凭空消失。
+      if (!geometries.length) {
+        addFloatQuad();
+        return group;
+      }
+      // U 镜像（与 quad 路径同口径：引擎 uv = texpos × -0.5 + 0.5，文字正读）
+      for (const geometry of geometries) {
+        const uv = geometry.attributes.uv;
+        for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
+        uv.needsUpdate = true;
+      }
+      const engineMaterial = ENGINE_SHADER_MATERIALS
+        ? createEngineDecalMaterial(THREE, family, {
+            map: decoded,
+            layerColors: texture.colors,
+            decalData: props.decalLight ?? null,
+            worldDirection: frame.axisZ,
+            env,
+            // 投影网格只画正面：薄板/单面墙从背后看时，decal 三角形是
+            // 背面 → 剔除，杜绝"隔着建筑看到镜像字"（五轮图1；法线过滤
+            // 已保证留下的面都朝原点，正面即被投面）。
+            side: THREE.FrontSide,
+          })
+        : buildDecalMaterial(THREE, texture, decoded, {
+            env,
+            halfDepth: decalHalfThickness(unit.depth),
+            boxHalfX: frame.sizeX / 2,
+            boxHalfY: frame.sizeY / 2,
+            decalData: props.decalLight ?? null,
+          });
+      // 投影几何 = lot 局部坐标（代理网格矩阵为恒等）；容器带组局部逆
+      // 变换抵消组上的 unit transform（与旧 quad 的位置逆变换同机制）。
+      const container = new THREE.Group();
+      container.matrix.copy(frame.matrix).invert();
+      container.matrixAutoUpdate = false;
+      for (const geometry of geometries) {
+        container.add(new THREE.Mesh(geometry, engineMaterial));
+      }
+      group.add(container);
+      decalStats.projected += 1;
+      return group;
     }
     return group;
   }
@@ -1301,6 +1492,7 @@ async function assembleScene(
   decalSpan.end({
     projected: decalStats.projected,
     fallback: decalStats.fallback,
+    skipped: decalStats.skipped,
     units: units.length,
   });
 

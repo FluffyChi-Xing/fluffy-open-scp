@@ -73,10 +73,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** 本地编辑层（PE-重构-2）：transform override + undo/redo，不写回后端。 */
   const edit = createUnitEditLayer();
   const hiddenUnits = ref(new Set<string>());
-  /** 图层可见性。decals 默认关闭：decal↔建筑作用机制尚有逆向缺口（Top 层
-   * 链路部分 mesh 未生效，见 ctx note 2026-09-26），占位/半渲染内容干扰
-   * 对拍；左侧 Outliner 图层开关可随时手动打开。 */
-  const groupVisibility = reactive<Record<string, boolean>>({
+  /** 图层可见性默认口径（decals 默认关闭的理由见下）。 */
+  const GROUP_VISIBILITY_DEFAULTS: Record<string, boolean> = {
     model: true,
     lot: true,
     lights: true,
@@ -85,7 +83,23 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     effects: true,
     spawners: true,
     paths: true,
+  };
+  /** 图层可见性。decals 默认关闭：decal↔建筑作用机制尚有逆向缺口（Top 层
+   * 链路部分 mesh 未生效，见 ctx note 2026-09-26），占位/半渲染内容干扰
+   * 对拍；左侧 Outliner 图层开关可随时手动打开。 */
+  const groupVisibility = reactive<Record<string, boolean>>({
+    ...GROUP_VISIBILITY_DEFAULTS,
   });
+
+  /** 视图状态复位（2026-10-04 问题2）：编辑器 sheet 关闭时调用——
+   * 组件保持挂载（v-model:open），ref 状态跨会话残留会导致下次打开直接
+   * 进入上次的精细渲染/图层隐藏组合（首帧卡顿 + 观感跳变）。编辑数据
+   * （transform/字段 override）属用户资产，不在复位范围。 */
+  function resetViewState() {
+    hiddenUnits.value = new Set();
+    Object.assign(groupVisibility, GROUP_VISIBILITY_DEFAULTS);
+    selectedId.value = null;
+  }
 
   let requestToken = 0;
   /** 每次 open 递增，用于把同一 lot 的多次打开区分为不同遥测会话。 */
@@ -381,5 +395,6 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     isUnitHidden,
     toggleUnit,
     toggleGroup,
+    resetViewState,
   };
 }

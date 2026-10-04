@@ -73,10 +73,33 @@ void main() {
 }
 "#;
 
+/// 破洞体积盒 VS（2026-10-04 补）：盒局部坐标归一化 → 引擎纹理空间。
+/// quad VS 把 vTexcoord0.z 恒置 0，体积盒拿不到真实进深 →
+/// decalLightInteriorMap 的视差收缩（lerp 因子 = z×0.5+0.5）退化为常量 0.5，
+/// 是"假内景未实装"观感的直接根因；此处 z = 盒内归一进深（前 −1 → 后 +1）。
+pub const VS_HOLE_VOLUME: &str = r#"// == 由 sc-shader 组合器生成：破洞体积盒 VS（three.js 相容）==
+varying vec3 vTexcoord0;
+varying vec4 vTexcoord4;
+varying vec4 vTexcoord5;
+varying vec2 vUv;
+uniform vec3 uBoxHalf; // (半宽, 半高, 半深)
+void main() {
+  vUv = uv;
+  // x 取负对齐引擎 uv = texpos × -0.5 + 0.5 的镜像口径（与 quad 路径一致）。
+  vec3 n = clamp(position / max(uBoxHalf, vec3(0.001)), -1.0, 1.0);
+  vTexcoord0 = vec3(-n.x, n.y, n.z);
+  vTexcoord4 = vec4(0.0);
+  vTexcoord5 = vec4(0.0);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+"#;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
-    /// 招牌/涂鸦（decalProject 系标准链：直采 + 可选 NeonBrighten）
+    /// 招牌（量化合成链：raster 通道 = 层权重掩码 × Color1-4）
     Sign,
+    /// 涂鸦/焦痕/海报（decalProject 直采链的 PE quad 适配：raster RGB 直采）
+    Clip,
     /// 破洞内景（decalInteriorMap 系）
     Hole,
     /// 全息浮空（decalFloatQuad 系）
@@ -86,11 +109,18 @@ pub enum Family {
 }
 
 impl Family {
-    pub const ALL: [Family; 4] = [Family::Sign, Family::Hole, Family::Holo, Family::Sdf];
+    pub const ALL: [Family; 5] = [
+        Family::Sign,
+        Family::Clip,
+        Family::Hole,
+        Family::Holo,
+        Family::Sdf,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
             Family::Sign => "sign",
+            Family::Clip => "clip",
             Family::Hole => "hole",
             Family::Holo => "holo",
             Family::Sdf => "sdf",
@@ -101,6 +131,7 @@ impl Family {
     fn ps_chain(self) -> &'static [&'static str] {
         match self {
             Family::Sign => &["decalQuantComposite"],
+            Family::Clip => &["decalClipQuad"],
             Family::Hole => &["kInteriorMapSelfLightMax", "decalLightInteriorMap"],
             Family::Holo => &["decalClip", "decalFloatQuadNoClip"],
             Family::Sdf => &["decalAnimateSDFDarken", "decalLightSDF", "decalLightNeonTube"],
@@ -110,8 +141,8 @@ impl Family {
     /// 家族专属前奏：链前需要的采样与共享变量声明。
     fn ps_prelude(self) -> &'static str {
         match self {
-            // 量化合成自采样自上色；decalClip/NeonBrighten 自含——无需共享
-            Family::Sign | Family::Holo => "",
+            // 量化合成自采样自上色；decalClip(Quad)/NeonBrighten 自含——无需共享
+            Family::Sign | Family::Clip | Family::Holo => "",
             // interiorMap 读链上首采的 decalTexture + 场景光变量 + 法线
             Family::Hole => r#"
 vec3 shColorDiff = vec3(0.0);
@@ -134,6 +165,25 @@ float texturePositionZ = 0.0;
         }
     }
 
+    /// PS 尾部：写出前的家族专属收尾。
+    fn ps_tail(self) -> &'static str {
+        match self {
+            // 破洞纹理 = sRGB 颜色纹理（无 Color1-4，GPU 采样自动转线性），
+            // 而 ShaderMaterial 不做输出色彩空间编码——线性直出整体变暗
+            // ~2.2 gamma（焦痕灰 → 纯黑，2026-10-04"破洞完全黑色"根因）。
+            // 手动回 sRGB。sign/holo 纹理为 NoColorSpace 直采直出，无需补偿。
+            Family::Hole => {
+                "outColor.rgb = pow(max(outColor.rgb, vec3(0.0)), vec3(1.0 / 2.2));\ngl_FragColor = outColor;\n"
+            }
+            // 直采族：引擎 decal 走延迟光照（夜间只剩环境项），平涂 shader
+            // 无光照响应——挂 env 昼夜因子（与 sign 的 uNightBoost 同机制）。
+            Family::Clip => {
+                "outColor.rgb *= uNightBoost;\ngl_FragColor = outColor;\n"
+            }
+            _ => "gl_FragColor = outColor;\n",
+        }
+    }
+
     fn needs_lighting(self) -> bool {
         matches!(self, Family::Sign | Family::Sdf | Family::Hole)
     }
@@ -153,10 +203,14 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
         ps.push_str(&translate(src));
         ps.push('\n');
     }
-    ps.push_str("gl_FragColor = outColor;\n");
+    ps.push_str(family.ps_tail());
     ps.push_str("}\n");
 
-    Ok((VS_PREAMBLE.to_string(), ps))
+    let vs = match family {
+        Family::Hole => VS_HOLE_VOLUME.to_string(),
+        _ => VS_PREAMBLE.to_string(),
+    };
+    Ok((vs, ps))
 }
 
 #[cfg(test)]
@@ -183,6 +237,33 @@ mod tests {
         let (_, ps) = compose(Family::Hole).unwrap();
         assert!(ps.contains("kInteriorMapSelfLightMax"));
         assert!(ps.contains("interiorUv"));
+    }
+
+    #[test]
+    fn hole_uses_volume_vs_and_srgb_tail() {
+        let (vs, ps) = compose(Family::Hole).unwrap();
+        // 体积盒 VS：真实进深驱动视差（quad VS 的 z 恒 0 会让内景退化为平面）
+        assert!(vs.contains("uBoxHalf"), "hole VS 缺盒体归一化 uniform");
+        assert!(!vs.contains("vTexcoord0 = vec3(uv * 2.0 - 1.0, 0.0)"));
+        // sRGB 纹理线性采样 → 输出手动回 sRGB（否则破洞整体变暗 ~2.2 gamma）
+        assert!(ps.contains("pow(max(outColor.rgb"), "hole PS 缺 sRGB 收尾");
+    }
+
+    #[test]
+    fn non_hole_ps_has_no_srgb_tail() {
+        // sign/holo 纹理 NoColorSpace 直采直出，不需要 gamma 补偿
+        let (_, ps) = compose(Family::Sign).unwrap();
+        assert!(!ps.contains("pow(max(outColor.rgb"));
+    }
+
+    #[test]
+    fn clip_chain_direct_sample_with_night_boost() {
+        let (_, ps) = compose(Family::Clip).unwrap();
+        // 直采族：vUv 直采（PE quad 几何 UV 已携带引擎镜像）+ 昼夜因子
+        assert!(ps.contains("texture2D(uSampler0, vUv)"));
+        assert!(ps.contains("outColor.rgb *= uNightBoost"));
+        // 不得含量化合成（焦痕误走量化链 = 层色纯黑的根因）
+        assert!(!ps.contains("uLayerColors[3]"));
     }
 
     #[test]

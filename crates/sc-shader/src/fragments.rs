@@ -37,6 +37,16 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       float2 uv = uvOrig * texXform.xy + texXform.zw;\n\
       float4 decalTexture = tex2D(Sampler<s0>, uv);\n\
       Current.color = decalTexture;"),
+    // ---- PS：标准直采（PE quad 适配版，2026-10-04 人工补）----
+    // 引擎 decalClip 的 -0.5 镜像面向投影矩阵纹理坐标；PE quad 的几何 UV
+    // 构建期已做同一镜像（1-x），直接采 vUv 即引擎等价。用途：涂鸦/焦痕/
+    // 海报等**直采族**——引擎按材质路由到 decalProject 直采链（raster RGB
+    // 即美术内容，alpha = 喷漆/烧灼衰减），而非量化合成链（raster 通道 =
+    // 层权重掩码）。焦痕 decal 误走量化链时层色近黑 → 整块纯黑
+    // （2026-10-04 用户图1~3 根因：像素级分析证明纹理 RGB≈0.2-0.35）。
+    ("decalClipQuad",
+     "vec4 decalTexture = texture2D(uSampler0, vUv);\n\
+      Current.color = decalTexture;"),
     // ---- PS：霓虹增亮（SimCityLighting 响应；光照由 uniforms 注入）----
     ("decalNeonBrighten",
      "float3 bumpNormal = normalize(decalWorldDirection);\n\

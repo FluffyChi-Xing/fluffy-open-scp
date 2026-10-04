@@ -11,26 +11,36 @@
 import type * as ThreeNamespace from "three";
 import signFrag from "@/assets/shaders/decal/sign.frag.glsl?raw";
 import signVert from "@/assets/shaders/decal/sign.vert.glsl?raw";
+import clipFrag from "@/assets/shaders/decal/clip.frag.glsl?raw";
 import holeFrag from "@/assets/shaders/decal/hole.frag.glsl?raw";
+import holeVert from "@/assets/shaders/decal/hole.vert.glsl?raw";
 import holoFrag from "@/assets/shaders/decal/holo.frag.glsl?raw";
 /** 与 refinedRender.SunEnvRefs 的结构子集（避免 lib→pages 反向依赖）。 */
 export interface EngineEnvRefs {
   sunDir: { value: ThreeNamespace.Vector3 };
   sunColor: { value: ThreeNamespace.Color };
   dayLight: { value: number };
+  /** 夜间压暗因子（1 = 白天全亮，~0.15 = 夜间环境光近似）：
+   * 引擎 decal 走延迟光照，夜间只剩环境项——平涂 shader 无光照响应，
+   * 恒 1 会让所有贴花夜间"自发光"（2026-10-04 问题3）。 */
+  nightBoost: { value: number };
 }
 
-export type EngineFamily = "sign" | "hole" | "holo" | "sdf";
+export type EngineFamily = "sign" | "clip" | "hole" | "holo" | "sdf";
 
 const FRAG: Record<EngineFamily, string> = {
   sign: signFrag,
+  clip: clipFrag,
   hole: holeFrag,
   holo: holoFrag,
   sdf: holoFrag, // TODO: sdf.frag 需动画 uniform 驱动，先复用 holo 兜底
 };
 const VERT: Record<EngineFamily, string> = {
   sign: signVert,
-  hole: signVert,
+  clip: signVert,
+  // 破洞 = 体积盒 VS（盒局部归一化 + 真实进深 z → 视差内景）；
+  // 此前复用 quad VS（z 恒 0）导致视差收缩退化为常量 = "假内景未实装"。
+  hole: holeVert,
   holo: signVert,
   sdf: signVert,
 };
@@ -50,6 +60,8 @@ export interface EngineMaterialOptions {
   side?: ThreeNamespace.Side;
   /** alpha 全零实心图 → 不透明渲染（海报式）；缺省 → 引擎混合态。 */
   alphaZero?: boolean;
+  /** 破洞体积盒的 (半宽, 半高, 半深)——hole 体积 VS 的 uBoxHalf。 */
+  boxHalf?: [number, number, number];
 }
 
 /**
@@ -76,7 +88,11 @@ export function createEngineDecalMaterial(
             ),
         ),
       },
-      uNightBoost: { value: 1 },
+      uNightBoost: opts.env.nightBoost,
+      // 破洞体积盒归一化（hole 体积 VS 消费；其他家族忽略）
+      uBoxHalf: {
+        value: new THREE.Vector3(...(opts.boxHalf ?? [1, 1, 1])),
+      },
       uDecalMaterialData: {
         value: [
           new THREE.Vector4(kSun, kLight, 0, 0),

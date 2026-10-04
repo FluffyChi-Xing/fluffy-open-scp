@@ -273,6 +273,20 @@ VB 角点 ∈ {0,1}³ + FUN_006fdce0 平移 = 原点 ⇒ **引擎体积盒从原
 穿出立面 = 用户观察到的"破洞盒子在建筑外"根因。
 （修复方向：盒中心 = 原点 + Σ(halfᵢ×axisᵢ)；待批准后动代码。）
 
+> **2026-10-04 RL 带名代码定谳 + 修复落地**：RL
+> `SC::cDecalData::SpawnDecalInstance` 的 model→texture 矩阵证明
+> **只有 z 轴需要从原点起算**——xy 居中（±1，x 含 1/aspect），
+> z ∈ [0, depth] → 纹理 z [−1,1]（z 轴 ×2/depth、平移 −depth/2）。
+> 上文"Σ(halfᵢ×axisᵢ) 三轴同移"据此修正为**仅 z 轴移动 depth/2**；
+> depth 语义 = **全长**（修正 §41.2 半厚旧判）。已实施：
+> `buildHoleVolumeMesh` 盒 z 尺寸 = depth、盒心 = 原点+axisZ×depth/2；
+> 投影族吸附未命中**删除原点回退 quad**（引擎无回退：延迟模式盒内
+> 无深度即不渲染）， decalStats 新增 skipped 计数。vue-tsc ✓
+> vitest 208/208 ✓。同批勘误：RL 证实 decal 存在代码级次分类
+> （cDecalManager 三 decal set normal/vacant/extractor +
+> renderGroup/machineSpec 行属性），详见会话提取产物
+> `tmp/dev-sample-analysis/out/`。
+
 ## 七、本次落地（代码）
 
 - `src/lib/decalProject.ts`：删除 `measureAnchorDistance` 与全部距离常量；
@@ -327,3 +341,155 @@ deadend dead-mtt129cw）。
 - 既有资产：`tmp/dynamic/all_blocks_index.txt`、
   `docs/re/decal-family-routing.md`、`docs/re/hole-interior-pipeline.md`
   （后两篇的冲突处以本文为准）
+
+## 十、2026-10-04 二轮勘误（PE 渲染侧三处与引擎/色彩管线脱节）
+
+1. **破洞"完全黑色"= 色彩空间断裂，非纹理缺失**。破洞 raster 是无
+   Color1-4 的 sRGB 颜色纹理（GPU 采样自动转线性），而 ShaderMaterial
+   不做输出色彩空间编码——线性值直出 sRGB 画布，整体变暗 ~2.2 gamma，
+   焦痕灰（≈0.15）压到 ≈0.02 即"纯黑"。修复：sc-shader 组合器为 hole
+   家族 PS 加 sRGB 收尾（`pow(rgb, 1/2.2)`）；sign/holo 纹理走
+   NoColorSpace 直采直出，无需补偿。（用户报告"破洞纹理与假内景未
+   实装"中"纹理"一项的根因。）
+2. **"假内景未实装"= 体积盒错用 quad VS**。组合器给全部家族共用 quad
+   VS（`vTexcoord0.z` 恒 0），体积盒拿不到真实进深 →
+   `decalLightInteriorMap` 的视差收缩（lerp 因子 = z×0.5+0.5）退化为
+   常量 0.5，内景成平面。修复：hole 家族改用体积盒 VS（盒局部坐标经
+   uBoxHalf 归一化，z = 前 −1 → 后 +1 真实进深）。
+3. **全 decal 夜间"自发光"= 平涂 shader 无光照响应**。sign 链仅
+   `decalQuantComposite`（层色 × uNightBoost，恒 1），昼夜同亮；引擎
+   decal 走延迟光照，夜间只剩环境项。修复：uNightBoost 挂 env 昼夜
+   共享 uniform（白天 1 / 夜间 0.15 ≈ uAmbientDiff 水平），热切换免
+   重建。霓虹/跑马灯族的夜间自亮属 SDF 动画链（decalAnimateSDF +
+   decalLightNeonTube），仍留待后续任务。
+4. **破洞盒前缘内壁恰好是"焦痕环画在墙上"的正解**：BackSide 盒的前
+   缘面（z=0，与墙共面，polygonOffset 赢 z-fight）承担墙表焦痕的显示；
+   盒后缘内壁透过真实模型洞提供进深内景。平坦化前缘在**曲面立面**
+   四角外露（2026-10-04 用户图2），以及**阶梯立面**上 quad/前缘被
+   凸出结构切掉（用户图3~6，原游戏同病）——两者的共同正解是投影化
+   （DecalGeometry 盒裁剪贴面 / 引擎延迟投影语义），列为下一轮任务，
+   需金样本 A/B 对拍后定稿。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 12/12。
+
+## 十一、2026-10-04 二轮勘误之二（用户目视对拍后的根因修正）
+
+1. **§十.1 的 gamma 解释要收窄**：hole PS 缺 sRGB 收尾是真实 bug（影响
+   破洞内景亮度链），但用户图中**墙面纯黑斑块的根因不是它**。像素级
+   分析（tmp/hole_*_raw.png：焦痕区 alpha≈1 处 RGB 均值 0.19~0.36，
+   纹理中不存在"高 alpha + 黑 RGB"像素组合）证明：破洞族纹理经现有
+   shader 数学不可能输出不透明纯黑。纯黑斑块实为**焦痕/烧灼 decal
+   （非 hole 变体、带 Color1-4）被一律走 sign 量化合成链**——`m.a≥0.5
+   → col=layerColors[3]`，层色近黑 → 整块纯黑。引擎按材质把这类
+   decal 路由到 decalProject **直采链**（raster RGB 即美术内容）。
+2. **修复 = 家族路由落地**：sc-shader 新增 clip 族（decalClipQuad =
+   vUv 直采 + uNightBoost 昼夜因子，PE quad 适配引擎 decalClip 链）；
+   视口按 materialInstance 字典路由——`0x73684EFC` → sign（量化），
+   其余（含涂鸦 `0xE5390A98`、焦痕、未知兜底）→ clip（直采）。
+   附带收益：quantized 预览纹理（四色量化已合成 png）直采即正确，
+   不再被量化链二次上色。
+3. **单射线吸附 quad 废弃，DecalGeometry 盒裁剪投影上线**：弧面四角
+   外露、阶梯立面被凸出结构截断（用户图3~6，原游戏同病）的共同正解。
+   投影盒 = 引擎体积盒（原点为中心、Z 全深 5×scale）；深层被投面由
+   深度测试自然隐藏（= 引擎延迟模式最近深度语义）；盒内无建筑面 =
+   不渲染（无回退口径不变）。UV 翻转口径与 quad 路径一致（几何 uv
+   1-x，文字正读已核对）。包围球粗筛控制逐三角形裁剪成本。
+4. **本轮未经目视对拍的残留风险**：DecalGeometry 在锐角折边处的拉伸
+   （three.js 已知 issue #21187）可能在高曲率立面出现条纹；clip 族
+   直采未做 N·L 方向光响应（仅昼夜因子），侧光面可能偏平；广告牌的
+   远抛实例若因盒内无面被跳过，需金样本确认与游戏一致。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 13/13。
+
+## 十二、2026-10-04 三轮勘误（DecalGeometry 投影化后的三个回归/残留）
+
+1. **涂鸦回归量化链**：§十一.2 把涂鸦一并路由 clip 直采是错的——涂鸦
+   raster 的四通道是**层权重掩码**，0.5 阈值多通道合成才是"清晰图案"
+   的来源（用户对拍：直采 = 权重通道当颜色 → 彩色模糊涂抹）。焦痕/
+   烧灼 raster 的 RGB 才是美术内容（直采正确，屋顶焦痕对拍通过）。
+   定谳路由：量化族字典 = {0x73684EFC 招牌, 0xE5390A98 涂鸦} → sign
+   链；其余（焦痕/未知）→ clip 链。
+2. **背墙投影 = 盒子双侧居中的错**：引擎 decalClip 的
+   `clip(-texcoord.z)` 是**半空间裁剪**——贴花只落在原点单侧半盒内
+   的面上。居中盒（±2.5×scale）把 CASINO 招牌同时投到建筑背面玻璃
+   幕墙（镜像字）。修复：±axisZ 射线取最近命中面所在侧（复用吸附
+   证据），投影盒改为原点沿命中侧延伸 2.5×scale 的**单侧盒**。
+3. **立面线性拉丝 = 盒边界切向三角形的 UV 拉伸**（DecalGeometry 的
+   已知缺陷，three #21187）：垂直于投影轴的面（侧墙/屋面/地面，
+   N·轴≈0）被盒裁剪后极度拉伸。修复：投影几何按面法线过滤，
+   |N·axisZ| < 0.5 的三角形整面丢弃（60° 以内曲面绕折保留）。引擎
+   延迟投影逐像素取深度、无三角形拉伸，故游戏无此瑕疵。
+4. **焦痕"模糊"的来源分解**：(a) 主要是拉丝涂抹的观感，法线过滤后
+   收敛；(b) 量化族的锐利来自阈值链（非采样器），直采族的焦痕边缘
+   = 美术授权的软衰减，引擎同为 LINEAR+mip（采样器口径已对齐，含
+   最大各向异性）；(c) 若对拍后仍觉糊，嫌疑是损害系 decal 的盒窗
+   scale 语义（与招牌 2×scale 可能不同族不同值）——需金样本量尺寸。
+
+验证基线：vue-tsc 干净、vitest 208/208。
+
+## 十三、2026-10-05 四轮勘误（盒深 = depth×scale 实锤 + 浮空分支上线）
+
+1. **盒深语义定谳：世界盒深 = unit.depth × scale**（casino 探针，
+   `cargo run -p sc-exporter --release --example decal_unit_dump --
+   SimCity_Game.package 0x457EA9DB` + `decal_projection_probe` 复测）：
+   lot 0x457EA9DB 全部 7 个 decal，两招牌 scale 13.27/5.63 而
+   **depth×scale 恒 = 1.327m**（0.1×13.267 = 0.2355×5.635），五涂鸦
+   depth×scale 恒 ≈ 17.95m（3.453×5.199 ≈ 2.137×8.392 ≈ … ≈ 1.599×
+   11.232）——不同 scale 下乘积严格守恒 ⇒ depth 是按 scale 归一化的
+   盒进深。盒 = xy 居中于变换原点、**z∈[0, depth×scale] 沿 +axisZ**
+   （63/63 足迹射线全命中 +局部Z，墙恒在 +axisZ 单侧），与 RL
+   `SC::cDecalData::SpawnDecalInstance` 的 model→texture z∈[0,depth]
+   映射互证。招牌盒仅 1.33m 深 ⇒ 背墙/对侧玻璃**天然在盒外**，四轮
+   图1 的背墙回归两个根因（~2.5×scale≈33m 深盒吞背墙；三轮"最近
+   命中侧"把原点偏玻璃侧的招牌定错侧）一并删除——**不再选侧，固定
+   +axisZ**。涂鸦盒 18m 深是设计值：曲面/退台立面的绕折全靠深盒
+   罩住（§十一"大盒吸附"判断由此获得数据支撑，但深度来自 depth
+   字段而非固定系数）。
+2. **浮空分支（decalFloatQuad）实装**：+axisZ 射线在数据盒深内无
+   命中 → 在**数据位姿**画浮空 quad（组局部恒等姿态，材质
+   DoubleSide）——这是 holo 全息广告/远抛实例的引擎语义（四轮
+   图3/4：holo 被错误投影贴墙、绕管道弯折 = 此前"万物皆投影、
+   未命中即跳过"缺失浮空分支的回归根因）。法线过滤后无剩余几何
+   的极端情形同走浮空分支（宁可画在数据位姿也不凭空消失）。
+   已知残留：贴墙近处（盒深内）的 holo 与墙招牌静态不可区分
+   （material 只到字典级，同字典混编），仍会被投影——次优可接受，
+   彻底分离需 frida 运行时捕获 shader-def 选择。
+3. **破洞族路径不变**：buildHoleVolumeMesh 维持 depth 原值全长
+   （RL SpawnDecalInstance 实锤，破洞 unit 的 scale 语义待普查——
+   若破洞 scale≠1 则其盒深同样应乘 scale，列入待办测量）。
+4. **material_data 初读**：招牌 = [0.4, 0.0, 0.1]、涂鸦 = [0.5, 0, 0]
+   （0x0D109080+cat，Vector3）——疑似 decalMaterialData 光照三元组
+   （日光/灯光系数？），族间差异稳定，可供后续昼夜/发光对拍。
+
+验证基线：vue-tsc 干净、vitest 208/208。
+
+## 十四、2026-10-05 五轮勘误（穿透镜像字根除 + FloatQuad 族判据定谳）
+
+1. **穿透投影 = 远侧面未剔除**（五轮图1~2，DIRTY FACTORY 镜像字）：盒深
+   = depth×scale 实锤后，深盒（该招牌 2.088×4.40 ≈ 9.2m）会穿过薄板
+   结构把招牌同时投到背坡——法线过滤从 |N·axisZ|≥0.5（双侧保留）收紧
+   为 **N·axisZ ≤ -0.5（只留面朝贴花原点的面）**，投影材质从
+   DoubleSide 改 **FrontSide**（薄单面墙背后看 decal 三角形是背面，
+   剔除即无"隔楼见镜像字"）。引擎延迟投影逐像素取最近深度天然只画
+   最近面，CPU 几何投影以此同构。
+2. **FloatQuad 族判据定谳：sign 字典且 materialData[1] ≥ 0.9 → 浮空**。
+   取证链：579 张招牌条目缩略图墙目视定位 → `decal_find_lots` 反查 →
+   高塔 lot 0x9401CB7A（竖幅 STORE 0x23D05B09，原点离墙 3.76m、盒深
+   4.27m 恰吻墙面，53m 高竖幅）用户确认游戏内浮空。四组对拍一致：
+   casino 墙招牌 md[1]=0 → 投影；高塔竖幅 md[1]=0.95/1.0 → 浮空；
+   DIRTY FACTORY md[1]=0.06 → 投影；涂鸦 md[1] 恒 0 → 投影。
+   **几何判据全部证伪**：离墙距离（涂鸦 10m 仍投影）、盒深余量
+   （0.5m~16m 两族重叠）、命中面朝向（高塔墙面与招牌平行）。
+   md[1] 疑似引擎自发光/灯箱变体参数（与"霓虹/跑马灯"待办同源），
+   FloatQuad 族选择与之绑定。安全网：贴墙 sign 浮空 quad 与投影观感
+   近乎一致，误判代价低； graffiti/焦痕不走此判据。
+3. **残留诚实备注**：0xBBF5B017（老虎纹商业楼）21 个 sign 的 md[1] 在
+   0.2~0.85 之间，按判据全部投影——若游戏内其中部分实为浮空刀旗，
+   阈值需下调（0.9 是保守取值）；img4 的淡绿色半透明 quad 疑为浮空
+   路径缺少引擎 ×2 增亮/emissive 链（decalFloatQuadNoClip，待办）。
+4. **工具沉淀**：`decal_unit_dump`（lot decal 静态字段）、
+   `decal_find_lots`（条目→lot 反查，带父链继承）、`decal_float_scan`
+   （400 lot 命中/material_data 聚合）、`decal_sign_thumbs`（招牌条目
+   贴图导出）均在 crates/sc-exporter/examples/。
+
+验证基线：vue-tsc 干净、vitest 208/208。

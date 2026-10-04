@@ -7475,6 +7475,119 @@ mod hole_pkg_scan {
 }
 
 #[cfg(test)]
+mod decal_taxonomy_scan {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// 【decal 分类学取证】三 category（lot 属性 0x0D109050/51/52）× 字典
+    /// material 的交叉分布——找全息浮空族的数据判据（2026-10-04 四轮：
+    /// 全息广告被误投影、招牌仍上背墙，需要数据侧族判据）。
+    /// `cargo test --release --lib decal_taxonomy_scan -- --nocapture`
+    #[test]
+    fn scan_category_material() {
+        let game_dir = "D:/ea-games/SimCity/SimCityData";
+        let manager = PackageManager::new();
+        let mut owned: Vec<_> = Vec::new();
+        for entry in std::fs::read_dir(game_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("package") {
+                continue;
+            }
+            let Ok(package) = dbpf::Package::open(&path) else { continue };
+            owned.push((path.file_name().unwrap().to_string_lossy().into_owned(), package));
+        }
+        let all: Vec<&Package> = owned.iter().map(|(_, p)| p).collect();
+        let atlases = collect_decal_atlases(&all);
+
+        // 字典清单：group/instance、material、纹理尺寸、条目与颜色统计
+        println!("==== 字典清单（{} 个）====", atlases.len());
+        for dict in &atlases {
+            let with_colors = dict
+                .entries
+                .iter()
+                .filter(|e| e.colors.iter().any(Option::is_some))
+                .count();
+            println!(
+                "  material=0x{:08X} texSize={:?} atlas={:?} entries={} (带色 {} / 无色 {})",
+                dict.material.map(|k| k.instance).unwrap_or(0),
+                dict.texture_size,
+                dict.atlas_size,
+                dict.entries.len(),
+                with_colors,
+                dict.entries.len() - with_colors,
+            );
+        }
+
+        // lot 扫描：三 category → (字典 material, 条目带色否) 计数 + 样本
+        let mut cat_material: [HashMap<(u32, bool), usize>; 3] = Default::default();
+        let mut samples: HashMap<(u32, u32, bool), Vec<String>> = HashMap::new();
+        let mut lots_with_decals = 0usize;
+        for (name, package) in &owned {
+            for e in package.entries() {
+                if e.id.type_id != 0x00B1_B104 {
+                    continue;
+                }
+                // 跳过字典自身（GroupContainer 低 16 位命中图集家族）
+                if sc_properties::is_decal_dictionary_group(e.id.group) {
+                    continue;
+                }
+                let Ok(bytes) = package.read(e) else { continue };
+                let Ok(file) = sc_properties::PropertyFile::parse(&bytes) else { continue };
+                let mut has_decal = false;
+                for category in 0..3u32 {
+                    let Some(prop) = file.get(0x0D10_9050 + category) else { continue };
+                    let sc_properties::Kind::Array(ids) = &prop.kind else { continue };
+                    for value in ids.iter() {
+                        let sc_properties::Value::Key(key) = value else { continue };
+                        let found = atlases.iter().find_map(|dict| {
+                            dict.entries
+                                .iter()
+                                .find(|en| en.id.map(|k| k.instance) == Some(key.instance))
+                                .map(|en| (dict, en))
+                        });
+                        let Some((dict, en)) = found else { continue };
+                        has_decal = true;
+                        let material = dict.material.map(|k| k.instance).unwrap_or(0);
+                        let colored = en.colors.iter().any(Option::is_some);
+                        *cat_material[category as usize]
+                            .entry((material, colored))
+                            .or_default() += 1;
+                        let sample_key = (category, material, colored);
+                        let list = samples.entry(sample_key).or_default();
+                        if list.len() < 3 {
+                            list.push(format!(
+                                "{name}:lot 0x{:08X} entry 0x{:08X}",
+                                e.id.instance, key.instance
+                            ));
+                        }
+                    }
+                }
+                if has_decal {
+                    lots_with_decals += 1;
+                }
+            }
+        }
+        println!("==== category × (material, 带色) 分布（{} lot 含 decal）====", lots_with_decals);
+        for (category, map) in cat_material.iter().enumerate() {
+            let mut rows: Vec<_> = map.iter().collect();
+            rows.sort_by(|a, b| b.1.cmp(a.1));
+            for ((material, colored), count) in rows {
+                println!(
+                    "  cat{category} material=0x{material:08X} colored={colored} → {count} 次"
+                );
+                for s in samples
+                    .get(&(category as u32, *material, *colored))
+                    .into_iter()
+                    .flatten()
+                {
+                    println!("      样本 {s}");
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod decal_atlas_dump {
     use super::*;
 
