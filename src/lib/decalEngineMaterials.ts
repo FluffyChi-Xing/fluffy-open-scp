@@ -91,19 +91,26 @@ export function createEngineDecalMaterial(
 ): ThreeNamespace.ShaderMaterial {
   const [kSun, kLight] = opts.decalData ?? [0, 0];
   const [miX, miY, miZ] = opts.materialInfo ?? [1, 0, 0];
-  // SDF 族的 decalMaterialData 语义不同于其他族：行 0~2 = 三根灯管颜色、
-  // 行 3 = **动画参数表**（符号选 UV 轴 / 整数 = 分块数 / 小数 = 相位）。
-  // DTO colors 统一做过线性×2（量化链的上色口径），而引擎 SDF 链消费的是
-  // 字典原始值——动画参数行被 ×2 会直接破坏 chunks/offsets 编码，故 /2 还原。
+  // SDF 族的 decalMaterialData 语义不同于其他族，且**矩阵按列重组**——
+  // 引擎 VS decalMaterialData4（容器 line 4139）把四行字典 colors 转置：
+  //   列 0~2 = 输出 R/G/B 对四个掩码通道的**权重列**（Darken 的
+  //   dot(data[i], lightScales) = 输出通道 i 加权和，不是"灯管颜色"）；
+  //   列 3（w 列）= 四路独立动画参数（符号选 UV 轴 / 整数 = 分块数 /
+  //   小数 = 相位，供 decalLightBackground）。
+  // 实证（条目 0x23D05B09）：行 w = ±60.0/.3/.6/.9 —— 四路 60 块相位
+  // 错开的追逐灯；不转置时 ±60 的 w 直接进 dot → 输出被 ±60×lsA 撑爆，
+  // 整牌饱和成纯色块（六轮对拍"闪烁色块"根因）。
+  // DTO colors 统一做过线性×2（量化链口径），引擎 SDF 链消费字典原始值
+  // ——动画参数被 ×2 会破坏 chunks/offsets 编码，故 /2 还原。
   const materialDataRows =
     family === "sdf" && opts.layerColors
       ? [0, 1, 2, 3].map(
-          (k) =>
+          (i) =>
             new THREE.Vector4(
-              (opts.layerColors?.[k]?.[0] ?? 0) / 2,
-              (opts.layerColors?.[k]?.[1] ?? 0) / 2,
-              (opts.layerColors?.[k]?.[2] ?? 0) / 2,
-              (opts.layerColors?.[k]?.[3] ?? 0) / 2,
+              (opts.layerColors?.[0]?.[i] ?? 0) / 2,
+              (opts.layerColors?.[1]?.[i] ?? 0) / 2,
+              (opts.layerColors?.[2]?.[i] ?? 0) / 2,
+              (opts.layerColors?.[3]?.[i] ?? 0) / 2,
             ),
         )
       : [

@@ -541,3 +541,33 @@ deadend dead-mtt129cw）。
 
 验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 14/14
 （新增 sdf_chain_full_neon_pipeline 组合断言）。
+
+## 十六、2026-10-05 六轮补丁（霓虹色块根因 = colors 矩阵未转置）
+
+1. **症状**：霓虹招牌变成闪烁的纯色块、看不出字体图案；部分此前锐利的
+   广告牌 decal 退化为半透明色块。
+2. **根因**：`decalMaterialData` 在引擎 VS `decalMaterialData4`
+   （容器 line 4139）中被**转置**——`Current.color = (row0.x, row1.x,
+   row2.x, row3.x)` 等，即 PS 侧消费的是字典 colors 的**列**而非行：
+   - 列 0~2 = 输出 R/G/B 对四个掩码通道的**权重列**（Darken 的
+     `dot(data[i], lightScales)` = 输出通道 i 的四通道加权和）；
+   - 列 3（w 列）= 四路**独立**动画参数。
+   §十五.2"行 0~2 = 三根灯管颜色、行 3 = 动画参数表"的读法**作废**。
+3. **实锤数据**（条目 0x23D05B09，PROBE_DEBUG 直出）：四行 colors 的
+   w 分量 = −60.0 / −60.3 / +60.6 / −60.9 —— 四路各 60 分块、相位
+   0/.3/.6/.9 错开的追逐灯，符号混合 = 三列沿 uv.y、一列沿 uv.x。
+   未转置时 ±60 的 w 直接进 dot → 输出被 ±60×lsA 撑爆/清零 → 整牌
+   饱和纯色块，随 animTime 闪烁。
+4. **修复**：`createEngineDecalMaterial` 对 sdf 族按列重组
+   uDecalMaterialData（data[i] = 四行的第 i 分量），shader 侧零改动
+   ——decalLightBackground 读 data[3] 恰得 w 列动画参数，Darken 的
+   dot(data[0..2], lightScales) 恰为输出 RGB 权重和。贴图通道约定同
+   轮摸清：四通道 = 四级量化掩码（如 STORE：R 背景 0.2/字体 0.82，
+   G 背景 0.8/字体 0.76，A = 覆盖 0/1），kMaskCenter=0.5 的球面衰减
+   让 ≥0.75 的笔画全亮、~0.2 的底板压到 ~16%——"亮字 + 暗底"的
+   灯箱观感由此而来，**不是真 SDF 距离场**。
+5. **路由维持 md[1]>0 → sdf**：色块是矩阵未转置所致，非路由过宽；
+   md[1] 0.2~0.85 的慢速动画招牌在转置修复后应恢复字形。若对拍仍
+   有个别条目异常再考虑阈值。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 14/14。

@@ -91,9 +91,11 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
     ("decalFloatQuadNoClip",
      "Current.color.rgb *= 2;"),
     // ---- PS：霓虹动画背景（decalLightBackground，容器 line 4103 有损修复版）----
-    // 字典条目 colors 行 3 = 动画参数表（**不是颜色**）：分量符号选 UV 轴
+    // decalMaterialData 已经 VS decalMaterialData4 转置（line 4139）：
+    // 第 3 列（w 列）= 四路独立动画参数（**不是颜色**）：分量符号选 UV 轴
     //（> 0 → 用 uv.x，否则 uv.y），abs 后整数 = 分块数 animChunks、小数 =
-    // 相位 animOffsets。gameInfo.x → uTime 墙钟。末行原文截断，按 Darken 的
+    // 相位 animOffsets（实证 0x23D05B09：±60.0/.3/.6/.9 = 四路 60 块相位
+    // 错开的追逐灯）。gameInfo.x → uTime 墙钟。末行原文截断，按 Darken 的
     // 消费语义（animEdge = max(animResults, 0)）修复为 uvCompare - compares。
     // uvOrig 由组合器前奏定义（= vTexcoord0.xy×0.5+0.5；PE quad 几何 UV 已
     // 携带引擎 -0.5 镜像，故此处为正号）。
@@ -114,11 +116,12 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
                               float4(uvOrig.y, uvOrig.y, uvOrig.y, uvOrig.y), useV);\n\
       float4 animResults = uvCompare - compares;"),
     // ---- PS：灯管调光（decalAnimateSDFDisabled，line 3736 有损修复版）----
-    // 跑马灯未扫到处灯管压暗至 0.1、扫到处全亮（materialTubeLightFactor =
+    // 跑马灯未扫到处压暗至 0.1、扫到处全亮（materialTubeLightFactor =
     // z×8+1）；decalMaterialInfo.w = 供电，断电 → 半亮（lerp 0.5）。原文
     // lesser_than(animResults, 0) ? vec4 : vec4 的向量条件三目在 GLSL ES
     // 不合法 → step+mix 等价改写（animResults < 0 → step = 0 → 全亮）。
-    // decalMaterialData 为 uniform 不可写 → 灯管色落本地 tubeColor0-2。
+    // decalMaterialData 为 uniform 不可写 → 调光后权重列落本地 tubeColor0-2
+    // （列 0~2 = 输出 RGB 对四掩码通道的权重，转置语义见 decalLightBackground）。
     ("decalAnimateSDFDisabled",
      "float materialTubeLightFactor = decalMaterialInfo.z * 8.0 + 1.0;\n\
       float4 lightFactor = mix(float4(materialTubeLightFactor, materialTubeLightFactor,\n\
@@ -135,7 +138,7 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
     //    sizeY/sphereHeight）——PE 无该顶点流，改 uniform uDecalNUS 注入；
     // 2) lightScales 原文为 float4（dot(vec4, vec4) 才合法，容器丢 "4"）；
     // 3) sphereDistsSqr += animEdge²×**animation**×32（上一行刚算的 lerp，
-    //    早前占位 animRatio 系误读）；灯管色改用 Disabled 段调光后的
+    //    早前占位 animRatio 系误读）；权重列改用 Disabled 段调光后的
     //    tubeColor0-2，循环按 GLSL ES 索引限制手工展开。
     ("decalAnimateSDFDarken",
      "float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\n\
