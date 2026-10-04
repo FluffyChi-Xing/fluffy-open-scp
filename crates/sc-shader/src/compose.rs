@@ -164,9 +164,12 @@ outColor = decalTexture; // 引擎链上 decalClip 先采样（lerp 基色）
             // sdfDists 来源）；uvOrig 供 decalLightBackground 选轴比较。
             // 场景光变量（shColorDiff/bumpNormal 等）由 decalLightSDF 片段
             // 自声明，前奏不得重复声明（GLSL 重复定义即编译失败）。
+            // coverageA 暂存覆盖率通道（A = 0/1 覆盖掩码），供收尾 alpha——
+            // Darken 后 alpha 仍是第四路距离场，不能当覆盖率用。
             Family::Sdf => r#"
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
 outColor = texture2D(uSampler0, uvOrig);
+float coverageA = outColor.a;
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
 "#,
@@ -188,13 +191,19 @@ float texturePositionZ = 0.0;
             Family::Clip => {
                 "outColor.rgb *= uNightBoost;\ngl_FragColor = outColor;\n"
             }
-            // SDF 霓虹管 = 自发光 HDR（materialLightScale 最高 ×16+0.25），
-            // SDF 纹理 alpha 通道实为第四路距离场而非覆盖率——灯亮处才可见，
-            // alpha 取亮部覆盖度（引擎原链 alpha 残留距离场值，配合加法混合；
-            // PE 用法线混合，以亮部 max 分量为掩码近似）。不吃 uNightBoost：
-            // 霓虹夜间**保持自亮**正是该族语义（2026-10-04 问题3 的对偶）。
+            // SDF 霓虹管 = 自发光 HDR（materialLightScale ×16+0.25、扫到处
+            // 再 ×tubeFactor ≈ 25~55 倍增益）。引擎靠 hejl tonemap 软肩回收；
+            // PE 无 HDR 曝光管线，硬钳 [0,1] 会把文字/面板的色相比（如
+            // (13.3,9.3,5.4) 黄字 vs (24.6,5.7,3.2) 红面板）压成同色白块
+            // ——六轮对拍"运动色块无图案"的根因。改用**保色相 Reinhard**
+            // （rgb/(1+max)：单调、不破坏色相比、保留亮暗扫描对比）。
+            // alpha 取覆盖率通道（前奏暂存的 coverageA）：霓虹面板在覆盖
+            // 区内恒不透明，暗态图案不被墙面底色冲淡。
             Family::Sdf => {
-                "outColor.a = clamp(max(outColor.r, max(outColor.g, outColor.b)), 0.0, 1.0);\ngl_FragColor = outColor;\n"
+                "float scMax = max(outColor.r, max(outColor.g, outColor.b));\n\
+                 outColor.rgb /= 1.0 + scMax;\n\
+                 outColor.a = coverageA;\n\
+                 gl_FragColor = outColor;\n"
             }
             _ => "gl_FragColor = outColor;\n",
         }
@@ -300,9 +309,10 @@ mod tests {
         assert!(ps.contains("materialTubeLightFactor"), "sdf 缺灯管调光段");
         assert!(ps.contains("tubeColor0"), "sdf 缺调光后灯管色");
         assert!(
-            ps.contains("outColor.a = clamp(max(outColor.r"),
-            "sdf 缺亮部 alpha 收尾"
+            ps.contains("outColor.rgb /= 1.0 + scMax"),
+            "sdf 缺保色相 Reinhard 收尾"
         );
+        assert!(ps.contains("outColor.a = coverageA"), "sdf 缺覆盖率 alpha");
         // 场景光变量只许 decalLightSDF 片段声明一次（前奏重复声明 = 编译失败；
         // SimCityLighting 的 inout 形参不含初始化式，用初始化式计数）
         assert_eq!(

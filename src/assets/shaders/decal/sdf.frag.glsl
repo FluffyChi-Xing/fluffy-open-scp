@@ -62,6 +62,7 @@ void main() {
 
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
 outColor = texture2D(uSampler0, uvOrig);
+float coverageA = outColor.a;
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
 #undef animResults
@@ -126,6 +127,8 @@ SimCityLighting(bumpNormal, worldCameraDirection.xyz, gloss, reflectance,
 specE, specStrength, shColorDiff, shColorSpec, spec);
 outColor.rgb += shColorSpec + spec;
 outColor.a *= decalMaterialInfo.x;
-outColor.a = clamp(max(outColor.r, max(outColor.g, outColor.b)), 0.0, 1.0);
+float scMax = max(outColor.r, max(outColor.g, outColor.b));
+outColor.rgb /= 1.0 + scMax;
+outColor.a = coverageA;
 gl_FragColor = outColor;
 }

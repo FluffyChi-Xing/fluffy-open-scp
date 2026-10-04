@@ -571,3 +571,29 @@ deadend dead-mtt129cw）。
    有个别条目异常再考虑阈值。
 
 验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 14/14。
+
+## 十七、2026-10-05 六轮补丁之二（"运动色块"根因 = PE 硬钳毁色相，非公式/路由错误）
+
+1. **排查路径**：对拍同一加油站（SELF SERVE GAS 广告牌 0x090C71D6）
+   动画前后——转置修复后仍是运动色块。取证：该条目与 STORE 同字典
+   （1651/aa8b7058，material 0x73684EFC）、colors 行 w = (−70,+70,+70,4)
+   = 四路追逐参数、raw 贴图 64×32 为 4~5 级量化掩码——**数据侧完全
+   符合 SDF 族特征，路由无误**。
+2. **离线模拟定谳**：用真实 colors/md 逐式复算 SDF 链（Python），输出
+   与 PE 截图同态（大片白/粉/青）——证明 shader 公式与 uniform 接线
+   正确，**引擎公式在这些输入下的原始输出本来就是 25~55 倍 HDR**。
+   文字/面板的全部区分度在色相比里（黄字 (13.3,9.3,5.4) vs 红面板
+   (24.6,5.7,3.2)），引擎靠 hejl tonemap 软肩回收，PE 无 HDR 曝光
+   管线、硬钳 [0,1] → 全部压成 (1,1,1) 白块。
+3. **修复**（compose.rs Sdf 收尾）：**保色相 Reinhard**
+   `rgb /= 1 + max(rgb)`——单调、不破坏色相比、保留亮暗扫描对比；
+   alpha 改取覆盖率通道（前奏暂存 coverageA，A = 0/1 覆盖掩码），
+   暗态图案不再被墙面底色冲淡。同式复算验证：SELF SERVE GAS 文字/
+   油泵图标/追逐扫描带全部可辨，STORE 字形保持。
+4. **诚实备注**：暗态（0.1 调光区）接近全黑是公式本色（lit/dim
+   对比 ~25×）；扫动方向（uvOrig 正号口径）与原作是否一致仍待目视；
+   sphereHeight = sizeY 近似未校准。若对拍发现暗态死黑过重，候选是
+   给 Disabled 段 0.1 地板上调或 Reinhard 加曝光系数。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 14/14
+（sdf_chain_full_neon_pipeline 断言同步更新为 Reinhard/覆盖率收尾）。
