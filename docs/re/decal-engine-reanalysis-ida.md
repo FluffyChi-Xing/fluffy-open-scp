@@ -68,30 +68,46 @@ cDecal 结构填充：texXform = tilePos/tileSize 归一化（987934-987944、98
 3. `renderGroups[i] == 0x96AF4B50` → group 强制为 1，否则继承调用方组（行 101346-101349）
 4. 材质在当前 RenderType 下无 pass → 整批不画（Render 行 984080-984081）——另一处"合法不渲染"
 
-## 4. 渲染：三个 render group 分相位绘制
+## 4. 渲染：三个 render group 的相位与调用序（render script 已取证）
 
 `SC::cDecalManager::Render`（行 984026-984145）：`flags` 即 group（`flags < 3`），直接索引 `mBatches[flags]`（行 984078）。每 atlas→batch：`SetShaderData(4, boneMatrices=对象变换)`（984101）→ `SetShaderData(0x206, mObjectData)`（984102）→ `SetRenderState(material, nullptr, numTextures, textures)` → `DrawBufferRanges(VB, IB, IBRanges)`。
 
-**group 语义**（CPU 侧全部赋值点）：
+**render script 资源已定位并完整解析**（`SimCity_App.package`，type `0x0469A3F7`，group `0x40212005`/`0x40212015`，instance 0-3 对应四个 shader path；二进制大端格式，解析器 `tmp/parse_renderscript.py`，完整转储 `tmp/renderscript/dump_40212015_2.txt`）。`scDecals`（UserDraw，cmdType=5，nameHash `0xE9FFFBFD`）在 shader path 2 脚本中共 10 处调用，分布在 6 个 block；**主相位是 block layer=`0xDA6C50FD`，序列完全确凿**：
+
+```
+Push(13)
+SetRenderTarget rt[16]=diffuse, rt[71]=lightingFog   ; 写入目标：G-buffer diffuse + 光照雾
+SetRaster stage15←rt[14]=depth                        ; 深度 G-buffer 绑为纹理
+SetRaster stage14←rt[15]=normal                       ; 法线 G-buffer 绑为纹理
+Clear
+UserDraw "RenderLocalLights"                          ; 先算局部光照
+RenderLayer 3EC5E45B
+Push
+UserDraw "scDecals" flags=1                           ; group1 先画
+UserDraw "scDecals" flags=0                           ; group0
+UserDraw "scDecals" flags=2                           ; group2 最后
+Pop, Pop
+```
+
+**group 语义**（CPU 侧全部赋值点 + render script 调用序）：
 - group 0：默认（CreateDecals 继承值、RemoveDrawSet(0) 时，行 952586）
-- group 1：decal 的 renderGroup 属性 == 哈希 `0x96AF4B50`（行 101348）——名称未知，可扫包内现有 renderGroup 值枚举；**全息/浮空广告的最有力候选**
-- group 2：unit 模型处于 DrawSet 0 时（AddDrawSet(0)，行 952559-952560）——即模型本体进入主批次时的 decal 组
+- group 1：decal 的 renderGroup 属性 == 哈希 `0x96AF4B50`（行 101348）。**注意：该魔法值在 SimCityData 全部 14 个包的扫描中 0 次出现**（`crates/dbpf/examples/scan_decals.rs`）——基础游戏没有任何 decal 使用 group1；全息浮空广告可能不走 decal 系统（或为 EP1 特有待复查），group1 调用对空 batch 是 no-op
+- group 2：unit 模型处于 DrawSet 0 时（AddDrawSet(0)，行 952559-952560）
 
-注册入口：`RegisterCommand("scDecals", RenderEntry, mDecalManager)`（行 759207-759212）。**三个组由包内 render script 资源在帧内不同相位各调用一次**——相位顺序（以及该相位绑定的全局纹理，如场景深度）在包内 render script 资源里，exe 不可见。【待取证：从包内提取 render script，确认三个 scDecals 调用点的相位与绑定】
+其余调用点：block layer=`0xB711AE7B`（主世界 G-buffer pass，绑定 LDRColorPrevFrame/diffuse/lightScalar/normal/depth，flags=1 与 flags=0 分开两处）、block `0x2492C2A6`（415 命令的大 pass，flags=2 后两处 flags=0）、block `0x327902B7`/`0x471FB4A7`（各一处 flags=0，次要用例）。材质按 `mRTMap[renderType]` 决定在哪个 pass 实际参与（行 984080-984081）。
 
-## 5. 投影贴墙 vs 浮空：判定机制（回答核心问题）
+## 5. 投影贴墙 vs 浮空：判定机制（已确证，不再是推断）
 
-**CPU 侧没有任何"法线判定/投影回退/悬浮回退"逻辑**——SpawnDecalInstance 对每个实例无条件生成立方体盒并提交渲染。差异完全来自两条数据通道：
+**CPU 侧没有任何"法线判定/投影回退/悬浮回退"逻辑**——SpawnDecalInstance 对每个实例无条件生成立方体盒并提交渲染。
 
-1. **材质（shader-def）**：decal info 的材质 key 决定片元着色器行为。m2tex 三行 + 深度缩放恒在顶点里，投不投影由 shader 用不用这套矩阵决定。
-2. **render group → 渲染相位**：group 1（0x96AF4B50）在不同相位绘制。该相位若在世界几何之后、且 shader 直接画盒面 → 视觉浮空（全息广告）；相位若带场景深度 → 投影贴墙。
+**投影贴墙 = 屏幕空间深度/法线重建，render script 级证据确凿**：decal 主相位（§4）把 rt[14]=depth 与 rt[15]=normal 两张 G-buffer 经 SetRaster 绑为纹理，写入目标是 rt[16]=diffuse。配合每顶点携带的完整 4×3 m2tex 投影矩阵（z 行按 2/depth 缩放）与立方体栅格化（IBCube），管线为标准延迟式体积 decal：**PS 采样场景 depth（+normal）重建世界位置 → 乘 m2tex → 三分量在 [0,1] 内才采样着色，否则 discard**。曲面贴合与"不穿透到墙背面"（z 区间裁剪）都由这套机制天然获得。
 
-【推断，高置信】投影贴墙（含曲面贴合）的实现是标准体积 decal：decal pass 绑定场景深度纹理（render script 相位级绑定，exe 不可见），PS 重建世界位置 → 乘 m2tex → 三分量都在 [0,1] 内才采样，否则 discard。证据链：完整 4×3 投影矩阵（含 z 深度行，986984-986988）、立方体而非 quad（IBCube）、decal 在独立相位绘制（render script 命令）。**这同时解释穿透问题：z 区间裁剪正是"不穿透到墙背面"的机制；不做 z 裁剪或不用深度重建，必然穿透/漂浮。**
+**浮空 vs 贴墙的分野在材质 shader-def，不在相位**：三个 group 在同一相位连续绘制（1→0→2），相位对三组一视同仁地绑好了 depth/normal；某个 decal 是否做深度重建投影，取决于其材质（decal info prop `0x0CE5EF4E`）编译的 shader-def 是否采样这两张纹理。盒面直绘型 shader（不采样 depth）即视觉浮空。
 
-【对应 OpenSCP】当前 PE 直接在盒面/墙面上采样贴图的方案：
-- 曲面上无法贴合（缺深度重建）
-- 穿透到模型背面（缺 m2tex z 区间裁剪）
-- 全息广告被错误投影（group 1 应走"直接画盒面"分支而非投影分支）
+【对应 OpenSCP】当前 PE 的问题根因全部对上：
+- 曲面不贴合/穿透背面：缺"采样深度重建 + m2tex z 区间裁剪"——WebGL 可实现（先渲染建筑深度到纹理，decal pass 重建）
+- 全息广告被错误投影：其材质本应是盒面直绘型 shader，PE 对全部 decal 套用了同一投影路径
+- decal 画进 diffuse G-buffer、在 RenderLocalLights 之后 → decal 颜色参与后续光照/CLUT/tonemap，夜间自发光调制的完整链路在此
 
 ## 6. 动态参数通道：materialInfo 三字节的语义
 
@@ -136,8 +152,9 @@ cDecal 结构填充：texXform = tilePos/tileSize 归一化（987934-987944、98
 
 ## 10. 待取证清单（下一步，仍按数据驱动）
 
-1. **包内 render script 资源**：三个 scDecals 调用的相位顺序、各相位绑定的全局纹理（验证场景深度 → 投影型 decal 的深度重建）→ 包扫描工具提取
-2. **renderGroup 哈希名枚举**：扫全部 lot props 的 renderGroups 数组值，统计 0x96AF4B50 出现位置（哪些 decal 是 group1），并尝试反查名称
-3. **decal 材质 key → shader-def 对照**：从包内 decal info 资源读 0x0CE5EF4E，关联到 shader-def 实例，确定投影型 vs 盒面型 vs SDF 霓虹型各自的 shader-def 实例 ID
-4. **零售版交叉验证**：dev beta（2013-01）与零售（2013-03）若渲染脚本/decal 属性布局有差异，以零售 dump（`docs/source-code/_legacy_ghidra_dump/`）+ 游戏内截图对拍为准
+1. ~~包内 render script~~ **已完成**（§4/§5）：三相位 1→0→2 连续绘制、depth+normal G-buffer 绑定、写 diffuse+lightingFog。剩余细项：layer 哈希名反查（`0xDA6C50FD` 等）、block `0xB711AE7B` 主世界 pass 中 decal 的 RenderType 语义、其余 3 个 shader path 脚本（instance 0/1/3）的差异
+2. **renderGroup 哈希名枚举**：0x96AF4B50 在 SimCityData 14 包中 0 命中——需扩扫 EP1/补丁包与 exe 字符串表反查名称；若仍无命中，group1 是预留机制，浮空广告需改从模型/特效系统查证（cGraphicsGameDecals、Swarm effects）
+3. **decal 材质 key → shader-def 对照**：从包内 decal info 资源读 0x0CE5EF4E，关联到 shader-def 实例，确定投影型 vs 盒面型 vs SDF 霓虹型各自的 shader-def 实例 ID（这是"哪些 decal 投影、哪些直绘"的最终判据表）
+4. **零售版交叉验证**：dev beta（2013-01）与零售（2013-03）若渲染脚本/decal 属性布局有差异，以零售 dump（`docs/source-code/_legacy_ghidra_dump/`）+ 游戏内截图对拍为准；render script 已从零售破解版包提取，可直接对比 dev 版包内同名资源
 5. **建筑立面 shader 的 interior 采样链**：slot4 rawBGRA 512×16 调色板 + row0 interior 参数的具体采样方式（假内景实装依据）
+6. **PE decal pass 改造蓝图**（基于已确证机制）：① 建筑/地面先渲深度+法线到纹理；② decal pass 逐像素重建世界坐标 ×m2tex，[0,1]³ 裁剪；③ 盒面直绘型 decal（按材质表）跳过重建直接画盒前面；④ 接 lightPercent 昼夜通道（§6）
