@@ -38,6 +38,7 @@ uniform float uTime;
 uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
+uniform vec2 uSdfTexSize;
 
 varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;
@@ -66,6 +67,10 @@ vec4 m = texture2D(uSampler0, vUv);
       else if (m.b >= 0.5) { col = uLayerColors[2].rgb; alpha = 1.0; }
       else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = 1.0; }
       else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = 1.0; }
-      outColor = vec4(col * uNightBoost, alpha);
+      outColor = vec4(col, alpha);
+float signGain = clamp(decalMaterialInfo.x * 16.0 + 0.25, 1.0, 4.0);
+outColor.rgb *= signGain * mix(1.0, uNightBoost, 0.4);
+float signMax = max(outColor.r, max(outColor.g, outColor.b));
+outColor.rgb /= 1.0 + max(signMax - 1.0, 0.0);
 gl_FragColor = outColor;
 }

@@ -16,7 +16,7 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       else if (m.b >= 0.5) { col = uLayerColors[2].rgb; alpha = 1.0; }
       else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = 1.0; }
       else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = 1.0; }
-      outColor = vec4(col * uNightBoost, alpha);"),
+      outColor = vec4(col, alpha);"),
     // ---- VS ----
     ("decalProject",
      // 引擎原文单行：模型位置经体积矩阵进纹理空间

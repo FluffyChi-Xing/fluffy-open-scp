@@ -38,6 +38,7 @@ uniform float uTime;
 uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
+uniform vec2 uSdfTexSize;
 
 varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;
@@ -61,9 +62,12 @@ specHighlight = spec * specStrength * sunMod * uSunColor3;
 void main() {
 
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
-outColor = texture2D(uSampler0, uvOrig);
-vec4 sdfAa = fwidth(outColor) + 0.001;
-outColor = smoothstep(vec4(0.5) - sdfAa, vec4(0.5) + sdfAa, outColor);
+vec2 sdfTc = uvOrig * uSdfTexSize - 0.5;
+vec2 sdfBase = floor(sdfTc);
+vec2 sdfFrac = sdfTc - sdfBase;
+vec2 sdfSharp = clamp(fwidth(uvOrig) * uSdfTexSize, vec2(1.0), vec2(32.0));
+sdfFrac = clamp((sdfFrac - 0.5) * sdfSharp + 0.5, 0.0, 1.0);
+outColor = texture2D(uSampler0, (sdfBase + 0.5 + sdfFrac) / uSdfTexSize);
 float coverageA = outColor.a;
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)

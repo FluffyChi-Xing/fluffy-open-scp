@@ -49,6 +49,7 @@ uniform float uTime;
 uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
+uniform vec2 uSdfTexSize;
 
 varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;
@@ -164,20 +165,23 @@ outColor = decalTexture; // 引擎链上 decalClip 先采样（lerp 基色）
             // sdfDists 来源）；uvOrig 供 decalLightBackground 选轴比较。
             // 场景光变量（shColorDiff/bumpNormal 等）由 decalLightSDF 片段
             // 自声明，前奏不得重复声明（GLSL 重复定义即编译失败）。
-            // **0.5 轮廓二值化**（六轮对拍"字体半透明+看不清"的修复）：
-            // 这些贴图是 4~5 级量化掩码（非平滑距离场），64×32 拉伸到数
-            // 十米时双线性把 0/1 级别插成连续中间值 → ls 全场半亮 → 文字
-            // 糊成水洗渐变。量化链靠 uLayerColors 的 0.5 硬阈值保持锐利，
-            // SDF 链的等价物就是按级别设计意图（≥0.6 = on / ≤0.3 = off）
-            // 在 0.5 处做屏幕导数抗锯齿的 smoothstep 二值化——字形边缘
-            // 恢复锐利且无锯齿，远景 mip 平均出的中间值同样被推回 0/1。
-            // coverageA 暂存二值化后的覆盖率通道（A = 覆盖掩码），供收尾
-            // alpha——二值化同时治愈边缘半透明。
+            // **sharp-bilinear 保级锐化**（七轮对拍"只剩字体/字体不全"的
+            // 修复，取代 0.5 单阈值二值化）：这些贴图是 4~5 级量化掩码，
+            // 中间级别承载背景面板（G 0.6/B 0.65 青底）与油泵图标
+            // （R 0.29 二级暗区）——二值化把它们全压成 0，动画招牌只剩
+            // 字体。改为 UV 域锐化：把双线性过渡带压缩到 ~1 屏幕像素
+            // （斜率 = 每纹素的屏幕像素数），平台级别原样保留（0.29 仍是
+            // 0.29），与级别取值无关——字形锐利且所有级别完整存活。
+            // 缩小时（pxPerTexel 小于 1）钳回 1 = 退化为普通双线性。
+            // coverageA 暂存覆盖率通道（A = 覆盖掩码），供收尾 alpha。
             Family::Sdf => r#"
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
-outColor = texture2D(uSampler0, uvOrig);
-vec4 sdfAa = fwidth(outColor) + 0.001;
-outColor = smoothstep(vec4(0.5) - sdfAa, vec4(0.5) + sdfAa, outColor);
+vec2 sdfTc = uvOrig * uSdfTexSize - 0.5;
+vec2 sdfBase = floor(sdfTc);
+vec2 sdfFrac = sdfTc - sdfBase;
+vec2 sdfSharp = clamp(fwidth(uvOrig) * uSdfTexSize, vec2(1.0), vec2(32.0));
+sdfFrac = clamp((sdfFrac - 0.5) * sdfSharp + 0.5, 0.0, 1.0);
+outColor = texture2D(uSampler0, (sdfBase + 0.5 + sdfFrac) / uSdfTexSize);
 float coverageA = outColor.a;
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
@@ -199,6 +203,20 @@ float texturePositionZ = 0.0;
             // 无光照响应——挂 env 昼夜因子（与 sign 的 uNightBoost 同机制）。
             Family::Clip => {
                 "outColor.rgb *= uNightBoost;\ngl_FragColor = outColor;\n"
+            }
+            // 静态招牌灯箱自发光（七轮对拍"无动画招牌平涂无灯箱感"的
+            // 修复）：引擎 decalMaterialInfo.x → materialLightScale =
+            // x×16+0.25（casino 0.4 → 6.65，封 4 防过曝）；无 lot 数据
+            // （x=0）时钳到 1 = 保持原样，涂鸦等同链条目不受增益影响。
+            // 夜间 60% 豁免 nightBoost——灯箱夜间保持亮（引擎 decal 走
+            // 延迟光照，招牌属自发光件）。软肩保色相：峰值 ≤1 不动，
+            // 超出部分等比压缩到 1（防 ×4 增益饱和成白块）。
+            Family::Sign => {
+                "float signGain = clamp(decalMaterialInfo.x * 16.0 + 0.25, 1.0, 4.0);\n\
+                 outColor.rgb *= signGain * mix(1.0, uNightBoost, 0.4);\n\
+                 float signMax = max(outColor.r, max(outColor.g, outColor.b));\n\
+                 outColor.rgb /= 1.0 + max(signMax - 1.0, 0.0);\n\
+                 gl_FragColor = outColor;\n"
             }
             // SDF 霓虹管 = 自发光 HDR（materialLightScale ×16+0.25、扫到处
             // 再 ×tubeFactor ≈ 25~55 倍增益）。引擎靠 hejl tonemap 软肩回收；
@@ -309,6 +327,22 @@ mod tests {
     }
 
     #[test]
+    fn sign_tail_lightbox_glow() {
+        let (_, ps) = compose(Family::Sign).unwrap();
+        // 静态招牌灯箱自发光：materialLightScale = x×16+0.25（封 4）+
+        // 夜间 60% 豁免 nightBoost + 保色相软肩
+        assert!(ps.contains("signGain"), "sign 缺灯箱自发光增益");
+        assert!(
+            ps.contains("mix(1.0, uNightBoost, 0.4)"),
+            "sign 缺夜间豁免（灯箱夜间应保持亮）"
+        );
+        assert!(
+            !ps.contains("col * uNightBoost"),
+            "量化链片段残留夜压（与收尾叠加 = 双重压暗）"
+        );
+    }
+
+    #[test]
     fn sdf_chain_full_neon_pipeline() {
         let (_, ps) = compose(Family::Sdf).unwrap();
         // 完整霓虹链：动画背景(uTime 跑马灯) → 灯管调光 → SDF 球面衰减 →
@@ -322,10 +356,19 @@ mod tests {
             "sdf 缺保色相 Reinhard 收尾"
         );
         assert!(ps.contains("outColor.a = coverageA"), "sdf 缺覆盖率 alpha");
-        // 0.5 轮廓二值化（量化掩码锐度 = 量化链 0.5 阈值的 SDF 族等价物）
+        // sharp-bilinear 保级锐化（量化掩码锐度 = 量化链锐度的 SDF 族等价物，
+        // 且保留中间级别：0.5 二值化压没背景面板/油泵 = "只剩字体"根因）
         assert!(
-            ps.contains("smoothstep(vec4(0.5)"),
-            "sdf 缺掩码二值化（字体糊/半透明的复发点）"
+            ps.contains("sdfSharp"),
+            "sdf 缺 sharp-bilinear 保级锐化（只剩字体/字体不全的复发点）"
+        );
+        assert!(
+            ps.contains("uSdfTexSize"),
+            "sdf 缺贴图尺寸 uniform（sharp-bilinear 的纹素坐标输入）"
+        );
+        assert!(
+            !ps.contains("smoothstep(vec4(0.5)"),
+            "sdf 残留 0.5 二值化（会压没中间级别）"
         );
         // 场景光变量只许 decalLightSDF 片段声明一次（前奏重复声明 = 编译失败；
         // SimCityLighting 的 inout 形参不含初始化式，用初始化式计数）
@@ -336,5 +379,11 @@ mod tests {
         );
         // 动画比较量已 #undef 后落局部变量（不再吃 CPU 端 uniform）
         assert!(ps.contains("#undef animResults"), "sdf 缺动画量局部化");
+        // uniform 只允许全局作用域（前奏拼进 main 体，声明必须进序言）
+        let body = ps.split("void main() {").nth(1).unwrap();
+        assert!(
+            !body.contains("uniform "),
+            "main 体内出现 uniform 声明（GLSL 编译错误）"
+        );
     }
 }

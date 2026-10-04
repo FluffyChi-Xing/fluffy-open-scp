@@ -620,3 +620,40 @@ deadend dead-mtt129cw）。
 
 验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 14/14
 （sdf_chain 断言新增 smoothstep 二值化复发点检查）。
+
+## 十九、2026-10-05 七轮补丁（"只剩字体" = 二值化丢中间级别；静态招牌自发光）
+
+1. **根因一（只剩字体/字体不全）**：§十八的 0.5 单阈值二值化按"掩码
+   两级设计"判读，但引擎对拍（加油站 0x090C71D6 原图：青面板 + 黄
+   描边字 + 紫色油泵）证明中间级别承载实体内容——面板 G 0.6/B 0.65
+   （青底）、油泵 R 0.29（二级暗区）。二值化把小于 0.5 的级别全压
+   成 0 → 背景面板与油泵全灭，只剩字体；细笔画落在 0.4~0.5 区间的
+   招牌字体也残缺。
+2. **修复一（sharp-bilinear 保级锐化，compose.rs Sdf 前奏）**：放弃
+   值域阈值，改在 **UV 域**锐化——把双线性过渡带压缩到约 1 屏幕
+   像素（斜率 = fwidth(uv)×texSize = 每纹素屏幕像素数，封 [1,32]），
+   平台级别原样保留（0.29 仍是 0.29），与级别取值无关。新 uniform
+   uSdfTexSize（decalEngineMaterials 从 map.image 取像素尺寸，缺省
+   64×64）。缩小时钳回 1 退化为普通双线性。
+3. **同式复算验证**（tmp/sharp_bilinear_check.py，8 倍放大）：双线性
+   482 个唯一值（糊）；二值化 2 个值、面板级 0.29 死亡；sharp-
+   bilinear **恰 4 个唯一值 = 原图 4 级别**，0.29/1.0 俱存活，过渡带
+   实测 0 像素。拼图目视：青色面板 + 紫油泵 + 黄字三者俱在，与引擎
+   原图一致。
+4. **根因二（静态招牌平涂无灯箱感）**：sign 量化链此前只有平涂上色
+   ×uNightBoost，无发光项。引擎 decalMaterialInfo.x →
+   materialLightScale = x×16+0.25（casino md 0.4 → 6.65）对静态招牌
+   同样适用（灯箱自发光件）。
+5. **修复二（compose.rs Sign 收尾）**：signGain = clamp(x×16+0.25,
+   1, 4)——无 lot 数据（x=0，涂鸦同链条目）钳到 1 保持平涂不误亮；
+   夜间 mix(1, nightBoost, 0.4) = 60% 豁免（灯箱夜间保持亮）；保色相
+   软肩（峰值 ≤1 不动、超出等比压到 1）防 ×4 饱和成白块。夜压从
+   decalQuantComposite 片段移到收尾（避免与豁免叠加成双重压暗）。
+   decalEngineMaterials 缺省 materialInfo 按族分派：sign → x=0，
+   sdf 保持 x=1。
+6. **诚实备注**：signGain 上限 4 与夜间豁免 0.4 是初值，等用户对拍
+   校准；casino 实测 6.65 被封到 4，若对拍偏暗可上调封顶。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 15/15
+（新增 sign_tail_lightbox_glow；sdf_chain 断言改查 sharp-bilinear 并
+禁 smoothstep 二值化回潮）。

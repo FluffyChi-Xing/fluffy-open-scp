@@ -38,6 +38,7 @@ uniform float uTime;
 uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
+uniform vec2 uSdfTexSize;
 
 varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;

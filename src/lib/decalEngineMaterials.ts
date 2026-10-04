@@ -90,7 +90,10 @@ export function createEngineDecalMaterial(
   opts: EngineMaterialOptions,
 ): ThreeNamespace.ShaderMaterial {
   const [kSun, kLight] = opts.decalData ?? [0, 0];
-  const [miX, miY, miZ] = opts.materialInfo ?? [1, 0, 0];
+  // sign 族缺省 x=0：自发光增益 clamp(x×16+0.25, 1, 4) 的缺省即 1（不
+  // 发光、保持平涂）——缺数据时不误亮；sdf 族保持 x=1（霓虹灯强默认）。
+  const [miX, miY, miZ] =
+    opts.materialInfo ?? (family === "sign" ? [0, 0, 0] : [1, 0, 0]);
   // SDF 族的 decalMaterialData 语义不同于其他族，且**矩阵按列重组**——
   // 引擎 VS decalMaterialData4（容器 line 4139）把四行字典 colors 转置：
   //   列 0~2 = 输出 R/G/B 对四个掩码通道的**权重列**（Darken 的
@@ -149,6 +152,14 @@ export function createEngineDecalMaterial(
       },
       // SDF 族盒世界尺寸（引擎 decalNUS 顶点流的 uniform 等价物）
       uDecalNUS: { value: new THREE.Vector3(...(opts.nus ?? [1, 1, 1])) },
+      // SDF 族 sharp-bilinear 的纹素坐标输入（贴图像素尺寸；解码纹理在
+      // 建材质时已就绪，缺省 64×64 不影响定性观感）
+      uSdfTexSize: {
+        value: new THREE.Vector2(
+          (opts.map.image as { width?: number } | null)?.width ?? 64,
+          (opts.map.image as { height?: number } | null)?.height ?? 64,
+        ),
+      },
       // 霓虹动画时钟：直接引用 env 共享对象（rAF 统一推进，免遍历材质）
       uTime: opts.env.time ?? { value: 0 },
       // per-entry raster = 预裁剪 atlas cell → texXform 恒等
