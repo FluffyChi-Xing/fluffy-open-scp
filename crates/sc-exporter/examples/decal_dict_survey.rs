@@ -104,11 +104,14 @@ fn main() {
 
 fn resolve_shader_def(material: u32, packages: &[(String, Package)]) -> Option<u32> {
     for (_, pkg) in packages {
-        let entry = pkg
+        let Some(entry) = pkg
             .entries()
             .iter()
             .find(|e| e.id.type_id == RW4_TYPE && e.id.instance == material)
-            .cloned()?;
+            .cloned()
+        else {
+            continue;
+        };
         let data = pkg.read(&entry).ok()?;
         let file = rw4::Rw4File::parse(&data).ok()?;
         let section = file.sections_of_type(rw4::SectionType::MATERIAL).next()?.number;

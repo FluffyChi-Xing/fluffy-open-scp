@@ -121,7 +121,9 @@ Pop, Pop
 
 **这直接回答"所有 decal 晚上自发光"问题**：引擎里 neon/招牌 decal 的亮度由 lightPercent(y) 经 `decalNeonBrighten`（`color *= shColorDiff + shColorSpec`）+ `decalLightNeonTube`（`a *= decalMaterialInfo.x`）调制，白天 y→1 应衰减自发光；PE 恒亮 = 没有实现 y 通道的昼夜/状态驱动。
 
-## 7. 假内景：不属于 decal 系统（重大方向修正）
+## 7. 假内景：双机制并存（§11  shader 名取证后修正）
+
+**修正（2026-10-05，§11 证据）**：破洞族材质的 compiled-state 着色器名为 **`decalInteriorMap`**（shaders 表 0x700000D2）——破洞 decal 自身就带内景贴图相位，本节"与 decal 系统无关"的强结论作废。并存关系：建筑立面 shader 的 mData 驱动 interior（下文），破洞 decal 有自己的 InteriorMap shader，破洞处露出的内景由后者绘制。
 
 `SC::cGraphicsUnitInteriors`（行 1012688-1012831）计算三个量，经 `GetInfo` 输出 vec3：
 - `x = lightsOnPercent × daytimeAmount × nonAbandonedAmount`（行 1012700）
@@ -134,7 +136,7 @@ Pop, Pop
 - 拆除中（controlFlags 1）→ 全部归 0（行 101809-101813）
 - active 标志 0x20000000 可强制 0.85（行 101801-101807、101814-101815）
 
-**假内景是建筑立面 shader 的功能**（配合 material slot0 paletteF32 45×4 参数表 row0 的 interior 参数 + slot1-3 interior 纹理 + slot4 rawBGRA 512×16 调色板），与 decal 系统无关。**破洞内露出内景 = 立面 shader 在破洞遮罩区域采样 interior 层**，不是破洞 decal 带内景纹理。OpenSCP 要做假内景，必须在建筑 shader 里实现 mData 四分量 + interior 采样链，而不是在 decal shader 里想办法。
+**假内景在建筑立面 shader 一侧的功能**（配合 material slot0 paletteF32 45×4 参数表 row0 的 interior 参数 + slot1-3 interior 纹理 + slot4 rawBGRA 512×16 调色板）：非破洞区域的立面内景（夜间亮窗）由此驱动。破洞 decal 一侧的 `decalInteriorMap` 负责破洞开口内的内景绘制（待 §11 的片段重组确认其采样链）。OpenSCP 要完整实装假内景，两条链都要做；当前"破洞纯黑"的直接原因是 `decalInteriorMap` 相位未实装。
 
 ## 8. 涂鸦（vandalism）
 
@@ -158,3 +160,80 @@ Pop, Pop
 4. **零售版交叉验证**：dev beta（2013-01）与零售（2013-03）若渲染脚本/decal 属性布局有差异，以零售 dump（`docs/source-code/_legacy_ghidra_dump/`）+ 游戏内截图对拍为准；render script 已从零售破解版包提取，可直接对比 dev 版包内同名资源
 5. **建筑立面 shader 的 interior 采样链**：slot4 rawBGRA 512×16 调色板 + row0 interior 参数的具体采样方式（假内景实装依据）
 6. **PE decal pass 改造蓝图**（基于已确证机制）：① 建筑/地面先渲深度+法线到纹理；② decal pass 逐像素重建世界坐标 ×m2tex，[0,1]³ 裁剪；③ 盒面直绘型 decal（按材质表）跳过重建直接画盒前面；④ 接 lightPercent 昼夜通道（§6）
+
+## 11. 材质链终局：MaterialInfo → CompiledStates → shader 名（2026-10-05 取证）
+
+§10-3 的"材质 key → shader-def 对照"已完成，且超出预期：**不需要猜 shader-def，包内直接存着每个材质的 pass 表与着色器名**。
+
+### 11.1 资源链（TGI 全部确证，exe 行号证据）
+
+decal 字典的材质 key（`0x0CE5EF4E`，instance 如 0x73684EFC）**不是包内资源**，而是 `SP::cMaterialManager::mMaterialsMap` 的运行时注册键（`GetMaterialInternal` 行 453384-453404 只查表不加载，全盘扫描已证实这三个 instance 不存在于任何 .package）。注册发生在 `ReadMaterials`（行 453644-453875），数据源为四组按 shader path（instance 0-3）分副本的系统资源：
+
+| 内容 | type | group | 常量（行 167584-167587） |
+|---|---|---|---|
+| MaterialInfo（材质 pass 表） | `0x0469A3F7` | `0x40212000` | kGroupMaterialInfo |
+| CompiledStates arena（渲染状态对象） | `0x2F4E681B` | `0x40212001` | kGroupMaterialCompiledStates |
+| Fragments（着色器片段表） | `0x0469A3F7` | `0x40212002` | kGroupFragments |
+| Shaders（着色器记录，含名字） | `0x0469A3F7` | `0x40212004` | kGroupShaders |
+
+均在 `SimCity_App.package`。解析器：`crates/sc-exporter/examples/material_info_dump.rs`。
+
+### 11.2 MaterialInfo 格式（全大端，387 条记录恰好解析到文件尾）
+
+```
+version u32 (=1)
+loop:
+  materialID u32（0xFFFFFFFF 终止）
+  numTextures u16；×numTextures: instance u32, group u32, samplerA u16, samplerB u16
+  mRTMap 32B = 16 × (numPasses u8, csIndex u8)   ← exe 读进 cMaterialInternal 头 32 字节（行 453758-453764）
+  hasCompiledState 16 × u8                        ← 置位则按序消耗一个 arena 导出对象（行 453766-453790）
+```
+
+自洽性硬证据：path0/1 全部材质的 hasCompiledState 置位数合计 = **664**，arena section 数 = **664**（path2/3 为 669/671，亦各自相等）——导出序号累计方式确证无误。
+
+### 11.3 三族材质的 pass 表（mRTMap，path0 实测）
+
+| viewer RenderType | 破洞 0x4491DE3A | 涂鸦 0xE5390A98 | 招牌 0x73684EFC |
+|---|---|---|---|
+| rt0/rt1 | 不画 | 不画 | 不画 |
+| rt2 | (0,1) 不画 | (0,1) 不画 | (0,1) 不画 |
+| **rt3（decal 相位）** | **1 pass @cs0** | **1 pass @cs0** | **1 pass @cs1** |
+| rt4-15（含 rt7 主世界 G-buffer pass） | 1 pass @cs0 | 1 pass @cs0 | **2 pass @cs0+cs1** |
+
+decal 主相位 block `0xDA6C50FD` 在四个 shader path 的 render script 中均由 `RenderType rt=3` 前置调用（path0-3 逐一核对）——**decal 相位 = viewer rt3，全画质档一致**。
+
+### 11.4 compiled-state 段 = D3D9 渲染状态块 + 着色器 ID
+
+arena（0xCAFED00D 头，664 个 0x2000B 材质段）每段：size u32 → 28B 头（**偏移 0x18 = 着色器 ID 0x700000xx**）→ (stateID, value) 对列表。实测三族四个状态：
+
+| 状态 | 着色器 ID | 关键 D3D9 状态对 |
+|---|---|---|
+| 招牌 cs0 | 0x700000CF | SRCBLEND(0x13)=5 SRCALPHA / DESTBLEND(0x14)=6 INVSRCALPHA |
+| 招牌 cs1 | 0x700000D1 | SRCBLEND=**2 ONE** / DESTBLEND=**2 ONE**（加法发光） |
+| 涂鸦 cs0 | 0x700000CD | ALPHATESTENABLE(0x0F)=1 + SRCALPHA/INVSRCALPHA |
+| 破洞 cs0 | 0x700000D2 | ALPHATESTENABLE + 双状态块（多一组采样器/纹理阶段状态） |
+
+### 11.5 着色器名（Shaders 表 0x40212004，cShaderBase::Read 行 522322-522409：ID → vs/ps version → behaviorFlags → flag&0x10 带名字串）
+
+| ID | 名字 | 归属 | 解读 |
+|---|---|---|---|
+| 0x700000CD | **`decalProjectSDFLitFront`** | 涂鸦 cs0 | 投影 + SDF + 正面受光 |
+| 0x700000CF | **`decalProjectNeonSDF`** | 招牌 cs0 | 投影 + 霓虹 SDF（基础相位：完整图案含背景/图标） |
+| 0x700000D1 | **`decalNeonTubeSDF`** | 招牌 cs1 | 霓虹灯管 SDF（additive 发光相位：字体/花纹遮罩亮度动画） |
+| 0x700000D2 | **`decalInteriorMap`** | 破洞 cs0 | **内景贴图**——破洞 decal 自带假内景相位 |
+
+behaviorFlags：CD/CF=0x80000018，D1/D2=0x8000001B（低位差 0x03，输入通道差异，待片段重组确认）。
+
+### 11.6 终局结论（取代此前全部猜测）
+
+1. **三族全部走屏幕空间投影**：四个着色器三个名字带 `decalProject`，与 decal 相位绑定 depth/normal G-buffer 互为印证；唯一不带 Project 的 `decalNeonTubeSDF` 是招牌的第二叠加相位。
+2. **招牌 = 双相位结构**：`decalProjectNeonSDF`（完整图案：字体+花纹+背景图标，alpha 混合）+ `decalNeonTubeSDF`（灯管发光，ONE/ONE 加法）。霓虹动画属于灯管相位——**动画是字体/花纹遮罩上的亮度渐变，原图案细节始终保留**（与游戏实机观察一致）。PE 当前"丢弃静态图案只留动画色块"的做法在结构上就是错的：两个相位都必须画，动画只调制 additive 相位的强度。
+3. **破洞纯黑的根因**：其着色器本体就是 `decalInteriorMap`——破洞不是"黑洞贴图"，而是"内景传送门"贴图；内景采样链未实装则输出黑。修复方向是实装 InteriorMap 的采样（与建筑立面 interior 链共享 paletteF32 row0 interior 参数/rawBGRA 调色板，§7）。
+4. **涂鸦清晰度的官方答案**：`decalProjectSDFLitFront` 名字即含 SDF——引擎用 SDF 纹理 + `fwidth` 锐化（与 PE 已实现的 sharp-bilinear 方向一致，但官方实现细节要以其片段重组为准，"LitFront"还暗示按法线/正面受光调制，这解释了涂鸦与墙面颜色的融合）。
+5. **rt3 下招牌只画灯管相位（mRTMap=(1,1)）**：decal 相位中招牌的基础图案由 rt7 G-buffer pass 内的 scDecals 调用以 2-pass 绘制（(2,0)）——两组调用覆盖不同 batch group 的招牌实例，组合成完整视觉。PE 改造时两相位都要保留，不能互相替代。
+
+### 11.7 下一步（按序）
+
+1. **片段重组**：解析 cFragmentShader::Read（行 517375+）的 mStateDepPSFragments + Fragments 表（0x40212002，ReadPSFragments 行 519837+），把四个着色器的实际 PS 片段序列与片段源码（decl text）导出——这是"引擎原版 PS 逻辑"的直接移植蓝本，尤其 decalInteriorMap 的内景采样与 decalNeonTubeSDF 的动画参数化。
+2. renderGroup batch（0/1/2）与 lot 属性 renderGroups[i]（+64 数组）的实际取值普查——确定三族实例在各组的分布，回答"哪些 decal 在 rt7 画、哪些在 rt3 画"。
+3. 0x700000CD 在 Shaders 文件中的另外 3 处引用（6055468/6078584/6102002）——确认是否为其他 shader 的片段依赖或 DirectShader 引用。
