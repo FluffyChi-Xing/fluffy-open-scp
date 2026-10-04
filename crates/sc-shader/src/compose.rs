@@ -164,11 +164,20 @@ outColor = decalTexture; // 引擎链上 decalClip 先采样（lerp 基色）
             // sdfDists 来源）；uvOrig 供 decalLightBackground 选轴比较。
             // 场景光变量（shColorDiff/bumpNormal 等）由 decalLightSDF 片段
             // 自声明，前奏不得重复声明（GLSL 重复定义即编译失败）。
-            // coverageA 暂存覆盖率通道（A = 0/1 覆盖掩码），供收尾 alpha——
-            // Darken 后 alpha 仍是第四路距离场，不能当覆盖率用。
+            // **0.5 轮廓二值化**（六轮对拍"字体半透明+看不清"的修复）：
+            // 这些贴图是 4~5 级量化掩码（非平滑距离场），64×32 拉伸到数
+            // 十米时双线性把 0/1 级别插成连续中间值 → ls 全场半亮 → 文字
+            // 糊成水洗渐变。量化链靠 uLayerColors 的 0.5 硬阈值保持锐利，
+            // SDF 链的等价物就是按级别设计意图（≥0.6 = on / ≤0.3 = off）
+            // 在 0.5 处做屏幕导数抗锯齿的 smoothstep 二值化——字形边缘
+            // 恢复锐利且无锯齿，远景 mip 平均出的中间值同样被推回 0/1。
+            // coverageA 暂存二值化后的覆盖率通道（A = 覆盖掩码），供收尾
+            // alpha——二值化同时治愈边缘半透明。
             Family::Sdf => r#"
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
 outColor = texture2D(uSampler0, uvOrig);
+vec4 sdfAa = fwidth(outColor) + 0.001;
+outColor = smoothstep(vec4(0.5) - sdfAa, vec4(0.5) + sdfAa, outColor);
 float coverageA = outColor.a;
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
@@ -313,6 +322,11 @@ mod tests {
             "sdf 缺保色相 Reinhard 收尾"
         );
         assert!(ps.contains("outColor.a = coverageA"), "sdf 缺覆盖率 alpha");
+        // 0.5 轮廓二值化（量化掩码锐度 = 量化链 0.5 阈值的 SDF 族等价物）
+        assert!(
+            ps.contains("smoothstep(vec4(0.5)"),
+            "sdf 缺掩码二值化（字体糊/半透明的复发点）"
+        );
         // 场景光变量只许 decalLightSDF 片段声明一次（前奏重复声明 = 编译失败；
         // SimCityLighting 的 inout 形参不含初始化式，用初始化式计数）
         assert_eq!(

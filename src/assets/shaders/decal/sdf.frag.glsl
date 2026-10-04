@@ -62,6 +62,8 @@ void main() {
 
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
 outColor = texture2D(uSampler0, uvOrig);
+vec4 sdfAa = fwidth(outColor) + 0.001;
+outColor = smoothstep(vec4(0.5) - sdfAa, vec4(0.5) + sdfAa, outColor);
 float coverageA = outColor.a;
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
