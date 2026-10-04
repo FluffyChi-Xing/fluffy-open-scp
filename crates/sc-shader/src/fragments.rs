@@ -90,38 +90,83 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
     // ---- PS：浮空增亮 ----
     ("decalFloatQuadNoClip",
      "Current.color.rgb *= 2;"),
+    // ---- PS：霓虹动画背景（decalLightBackground，容器 line 4103 有损修复版）----
+    // 字典条目 colors 行 3 = 动画参数表（**不是颜色**）：分量符号选 UV 轴
+    //（> 0 → 用 uv.x，否则 uv.y），abs 后整数 = 分块数 animChunks、小数 =
+    // 相位 animOffsets。gameInfo.x → uTime 墙钟。末行原文截断，按 Darken 的
+    // 消费语义（animEdge = max(animResults, 0)）修复为 uvCompare - compares。
+    // uvOrig 由组合器前奏定义（= vTexcoord0.xy×0.5+0.5；PE quad 几何 UV 已
+    // 携带引擎 -0.5 镜像，故此处为正号）。
+    ("decalLightBackground",
+     "#undef animResults\n\
+      #undef useV\n\
+      float4 animParameters = decalMaterialData[3];\n\
+      float4 useV = float4(animParameters.x > 0.0 ? 0.0 : 1.0,\n\
+                           animParameters.y > 0.0 ? 0.0 : 1.0,\n\
+                           animParameters.z > 0.0 ? 0.0 : 1.0,\n\
+                           animParameters.w > 0.0 ? 0.0 : 1.0);\n\
+      animParameters = abs(animParameters) + 0.0001;\n\
+      float animTime = frac(uTime * decalMaterialInfo.y + 0.9999);\n\
+      float4 animOffsets = frac(animParameters);\n\
+      float4 animChunks = max(float4(1.0, 1.0, 1.0, 1.0), floor(animParameters));\n\
+      float4 compares = floor((animTime * 3.0 - animOffsets) * animChunks) * (1.0 / animChunks);\n\
+      float4 uvCompare = lerp(float4(uvOrig.x, uvOrig.x, uvOrig.x, uvOrig.x),\n\
+                              float4(uvOrig.y, uvOrig.y, uvOrig.y, uvOrig.y), useV);\n\
+      float4 animResults = uvCompare - compares;"),
+    // ---- PS：灯管调光（decalAnimateSDFDisabled，line 3736 有损修复版）----
+    // 跑马灯未扫到处灯管压暗至 0.1、扫到处全亮（materialTubeLightFactor =
+    // z×8+1）；decalMaterialInfo.w = 供电，断电 → 半亮（lerp 0.5）。原文
+    // lesser_than(animResults, 0) ? vec4 : vec4 的向量条件三目在 GLSL ES
+    // 不合法 → step+mix 等价改写（animResults < 0 → step = 0 → 全亮）。
+    // decalMaterialData 为 uniform 不可写 → 灯管色落本地 tubeColor0-2。
+    ("decalAnimateSDFDisabled",
+     "float materialTubeLightFactor = decalMaterialInfo.z * 8.0 + 1.0;\n\
+      float4 lightFactor = mix(float4(materialTubeLightFactor, materialTubeLightFactor,\n\
+                                      materialTubeLightFactor, materialTubeLightFactor),\n\
+                               float4(0.1, 0.1, 0.1, 0.1),\n\
+                               step(float4(0.0, 0.0, 0.0, 0.0), animResults));\n\
+      float4 powerFactor = lerp(float4(0.5, 0.5, 0.5, 0.5), lightFactor, decalMaterialInfo.wwww);\n\
+      float4 tubeColor0 = decalMaterialData[0] * powerFactor;\n\
+      float4 tubeColor1 = decalMaterialData[1] * powerFactor;\n\
+      float4 tubeColor2 = decalMaterialData[2] * powerFactor;"),
     // ---- PS：SDF 管灯动画（Darken 主体，公式逐字）----
+    // 2026-10-05 原文再核对（line 3747-3779）三处修复：
+    // 1) decalNUS = In.texcoord<t0>.xyz 为引擎顶点流（盒世界尺寸 sizeX/
+    //    sizeY/sphereHeight）——PE 无该顶点流，改 uniform uDecalNUS 注入；
+    // 2) lightScales 原文为 float4（dot(vec4, vec4) 才合法，容器丢 "4"）；
+    // 3) sphereDistsSqr += animEdge²×**animation**×32（上一行刚算的 lerp，
+    //    早前占位 animRatio 系误读）；灯管色改用 Disabled 段调光后的
+    //    tubeColor0-2，循环按 GLSL ES 索引限制手工展开。
     ("decalAnimateSDFDarken",
-     "float3 decalNUS = In.texcoord<t0>.xyz;\n\
-      float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\n\
-      float sdfTextureLength = max(decalNUS.x, decalNUS.y);\n\
-      float sphereHeight = decalNUS.z;\n\
+     "float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\n\
+      float sdfTextureLength = max(uDecalNUS.x, uDecalNUS.y);\n\
+      float sphereHeight = uDecalNUS.z;\n\
       float hwRatio = sphereHeight * 0.5 / sdfTextureLength;\n\
-      float zScale = 1;\n\
-      if (hwRatio < 1)\n\
+      float zScale = 1.0;\n\
+      if (hwRatio < 1.0)\n\
       {\n\
-        hwRatio = 1;\n\
-        zScale = 1 / hwRatio;\n\
+        hwRatio = 1.0;\n\
+        zScale = 1.0 / hwRatio;\n\
       }\n\
       float circleZ = texturePosition.z;\n\
       circleZ *= zScale;\n\
       float4 sdfDists = Current.color;\n\
       float kMaskCenter = 0.5;\n\
-      float4 circleDists = saturate(1 - sdfDists * 1.0 / kMaskCenter) * hwRatio;\n\
+      float4 circleDists = saturate(1.0 - sdfDists * 1.0 / kMaskCenter) * hwRatio;\n\
       float4 sphereDistsSqr = circleDists * circleDists + circleZ * circleZ;\n\
       float4 animEdge = max(animResults, 0.0);\n\
-      float lerpXParam = sphereHeight * 0.5 / decalNUS.x;\n\
-      float lerpYParam = sphereHeight * 0.5 / decalNUS.y;\n\
+      float lerpXParam = sphereHeight * 0.5 / uDecalNUS.x;\n\
+      float lerpYParam = sphereHeight * 0.5 / uDecalNUS.y;\n\
       float4 animation = lerp(float4(lerpXParam, lerpXParam, lerpXParam, lerpXParam),\n\
                               float4(lerpYParam, lerpYParam, lerpYParam, lerpYParam), useV.xyzw);\n\
-      sphereDistsSqr += animEdge * animEdge * animRatio * 32;\n\
-      float lightScales = saturate(1 - sqrt(sphereDistsSqr));\n\
+      sphereDistsSqr += animEdge * animEdge * animation * 32.0;\n\
+      float4 lightScales = saturate(1.0 - sqrt(sphereDistsSqr));\n\
       lightScales *= lightScales;\n\
-      float3 lightColor = float3(0, 0, 0);\n\
-      for (int i = 0; i < 3; ++i)\n\
-      {\n\
-        lightColor[i] = materialLightScale * dot(decalMaterialData[i], lightScales);\n\
-      }\n\
+      float3 lightColor = float3(0.0, 0.0, 0.0);\n\
+      lightColor.x = materialLightScale * dot(tubeColor0, lightScales);\n\
+      lightColor.y = materialLightScale * dot(tubeColor1, lightScales);\n\
+      lightColor.z = materialLightScale * dot(tubeColor2, lightScales);\n\
+      lightColor *= decalMaterialInfo.w;\n\
       Current.color.rgb = lightColor;"),
     // ---- PS：灯管亮度（场景光叠加）----
     ("decalLightSDF",

@@ -493,3 +493,51 @@ deadend dead-mtt129cw）。
    贴图导出）均在 crates/sc-exporter/examples/。
 
 验证基线：vue-tsc 干净、vitest 208/208。
+
+## 十五、2026-10-05 六轮（招牌自发光 + 霓虹跑马灯实装，md 三元组语义定谳）
+
+1. **lot 侧 material_data 三元组 = 引擎 decalMaterialInfo.xyz**（SDF 霓虹
+   链源码定谳，tmp/dynamic/decal_full_0.txt line 3736-4117；勘误 §十四.2
+   "疑似自发光参数"的猜测）：
+   - `x` → `materialLightScale = x*16 + 0.25`（灯强，SDF 系口径）；
+   - `y` = **animSpeed 跑马灯速度**（`animTime = frac(gameInfo.time ×
+     animSpeed + 0.9999)`，decalLightBackground line 4103）；
+   - `z` → `materialTubeLightFactor = z*8 + 1`（灯管亮度）；
+   - `w` = 供电（断电半亮：`powerFactor = lerp(0.5, lightFactor, w)`，
+     decalAnimateSDFDisabled line 3736）。
+   对拍自洽：casino [0.4,0,0.1] 静态 ✓、高塔 STORE [0.8,1.0,0.1] 动画 ✓、
+   涂鸦 [x,0,0] 静态 ✓。§十四的浮空判据（md[1]≥0.9）经验规则不变，
+   语义应读作"高速动画招牌 = 引擎浮空灯箱族"。
+2. **字典条目 colors 四行对动画招牌不是调色板而是参数表**
+   （decalMaterialData[0..3]）：行 0~2 = 三根灯管颜色；行 3 = 动画参数
+   （分量符号选 UV 轴：>0 用 uv.x 否则 uv.y；abs 后整数 = 分块数
+   animChunks、小数 = 相位 animOffsets）。注意 DTO colors 统一做过
+   线性×2（量化链口径），喂 SDF 链须 /2 还原——动画参数行被 ×2 会
+   直接破坏 chunks/offsets 编码。
+3. **引擎霓虹链五段实装**（sc-shader 管线，sdf.frag.glsl）：
+   `decalLightBackground`（uTime 驱动跑马灯比较量 animResults/useV，
+   末行原文截断按 Darken 消费语义修复为 uvCompare − compares）→
+   `decalAnimateSDFDisabled`（灯管调光：未扫到 0.1 / 扫到全亮；原文
+   向量条件三目改 step+mix 等价）→ `decalAnimateSDFDarken`（SDF 球面
+   衰减合成灯色；本次原文再核对修三处：lightScales 实为 float4、
+   `animEdge²×animation×32` 的 animation 系早前误读为 animRatio 占位、
+   decalNUS 顶点流改 uniform uDecalNUS）→ `decalLightSDF`（场景光叠加）
+   → `decalLightNeonTube`（供电开关）。收尾 alpha = 亮部 max 分量
+   （SDF 纹理 alpha 实为第四路距离场，非覆盖率），**不吃 nightBoost**
+   ——霓虹夜间保持自亮是该族语义（与六轮前"所有 decal 夜间自发光"
+   的 bug 是对偶：只有霓虹族该亮）。
+4. **PE 路由升级**：sign 字典且 md[1] > 0 → sdf 族；md[1] = 0 → 维持
+   sign 量化链。浮空判据同步覆盖 sign/sdf 两族（否则 md[1]≥0.9 的高塔
+   竖幅在分流后会被错误投影——路由升级的直接回归点，已在同轮堵上）。
+   uTime 经 env 共享对象（SunEnvRefs.time）注入全部 SDF 材质，装配层
+   仅在场景含动画 decal 时启动 rAF 推进 + invalidate（按需渲染底座
+   零常驻开销）。uDecalNUS 暂取 (sizeX, sizeY, sizeY)，sphereHeight
+   分量待高塔 STORE（53m 竖幅）目视校准。
+5. **对拍锚点**：高塔 0x9401CB7A 竖幅 STORE 应出跑马灯动画且浮空；
+   casino 墙招牌应**不动**（md[1]=0）；夜间场景霓虹族保持自亮、其余
+   decal 维持夜间压暗。风险：DIRTY FACTORY md[1]=0.06 会进 SDF 链
+   （极慢动画），若其 raster 是权重掩码而非 SDF 距离场观感可能退化
+   ——备选判据是把 SDF 路由阈值从 >0 提到 ≥0.3。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 14/14
+（新增 sdf_chain_full_neon_pipeline 组合断言）。

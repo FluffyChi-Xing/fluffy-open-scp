@@ -34,6 +34,8 @@ uniform vec4 uAnimResults;
 #define animResults uAnimResults
 uniform vec4 uUseV;
 #define useV uUseV
+uniform float uTime;
+uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
 

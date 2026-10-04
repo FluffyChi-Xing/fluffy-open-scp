@@ -486,13 +486,48 @@ const decalStats = { projected: 0, fallback: 0, skipped: 0 };
 const HOLE_LIGHT_MAX = 8;
 let holeLightCount = 0;
 
+/** 本轮装配是否产生了 SDF 霓虹动画 decal（决定重建后是否启动动画时钟）。 */
+let neonAnimated = false;
+/** 霓虹动画时钟 rAF 句柄与上一帧时间戳。 */
+let neonFrame = 0;
+let neonLast = 0;
+
+/**
+ * 霓虹动画时钟（2026-10-05 六轮）：场景含 SDF 动画 decal 时以 rAF 推进
+ * env.time（引擎 gameInfo.time 的墙钟近似）并逐帧 invalidate——viewer 是
+ * 按需渲染底座，无动画场景不启动、零常驻开销。时钟对象由全部 SDF 材质
+ * 共享引用（createEngineDecalMaterial 的 uTime 直引 env.time），推进即
+ * 全场生效，无需遍历材质。
+ */
+function startNeonClock() {
+  if (neonFrame || !envRefs) return;
+  neonLast = performance.now();
+  const tick = (now: number) => {
+    neonFrame = requestAnimationFrame(tick);
+    if (envRefs) envRefs.time.value += (now - neonLast) / 1000;
+    neonLast = now;
+    viewport.viewer.value?.invalidate();
+  };
+  neonFrame = requestAnimationFrame(tick);
+}
+
+function stopNeonClock() {
+  if (neonFrame) cancelAnimationFrame(neonFrame);
+  neonFrame = 0;
+}
+
 /** rebuild 包装：模型载荷身份变化时重新构图（编辑操作保持镜头）。 */
 function rebuildScene() {
   const reframe = props.modelPayload !== lastPayload;
   lastPayload = props.modelPayload;
   // 只改 trigger：sessionKey 已由 usePropertyEditorSession 设好。
   renderTelemetry.setTrigger(pendingTrigger);
-  return viewport.rebuild(assembleScene, { reframe });
+  // 动画 decal 标志在装配期间由 buildDecalObject 置位；重建完成后按本轮
+  // 结果启停霓虹时钟（新一代取代旧装配时同样以最新一轮为准）。
+  return viewport.rebuild(assembleScene, { reframe }).then(() => {
+    if (neonAnimated) startNeonClock();
+    else stopNeonClock();
+  });
 }
 
 /**
@@ -600,6 +635,7 @@ onMounted(async () => {
   await ensureGizmo();
 });
 onBeforeUnmount(() => {
+  stopNeonClock();
   gizmo?.detach();
   gizmo?.dispose();
   gizmo = null;
@@ -971,7 +1007,8 @@ async function assembleScene(
 
   /** 浮空族判据：sign 字典 decal 的 materialData[1] 下限（≥ 此值 → 引擎
    * FloatQuad 族，画数据位姿浮空 quad 而非体积投影）。实证：casino 墙
-   * 招牌 0 / 高塔竖幅 0.95~1.0 / DIRTY FACTORY 0.06 / 涂鸦恒 0。 */
+   * 招牌 0 / 高塔竖幅 0.95~1.0 / DIRTY FACTORY 0.06 / 涂鸦恒 0。
+   * 语义定谳（§十五）：该分量 = animSpeed 跑马灯速度。 */
   const DECAL_FLOAT_EMISSIVE_CUTOFF = 0.9;
 
   /**
@@ -1271,13 +1308,23 @@ async function assembleScene(
         "three/examples/jsm/geometries/DecalGeometry.js"
       );
       if (ctx.isStale()) return null;
-      // 族路由（同三轮）：量化族字典（招牌 + 涂鸦）→ 0.5 阈值多通道
-      // 合成链；其余（焦痕/烧灼/未知）→ clip 直采链。
+      // 族路由（2026-10-05 六轮升级）：量化族字典（招牌 + 涂鸦）内再按
+      // materialData[1] 分流——该分量 = 引擎 decalMaterialInfo.y =
+      // **animSpeed 跑马灯速度**（docs/re/decal-engine-alignment.md §十五，
+      // 早前"疑似自发光参数"的猜测已被 decalLightBackground 源码取代）：
+      //   > 0 → SDF 霓虹管动画链（自发光 + 跑马灯，纹理四通道 = 四路 SDF
+      //         距离场；实证：高塔 STORE 1.0 / DIRTY FACTORY 0.06）；
+      //   = 0 → 量化合成静态链（casino 招牌 / 涂鸦恒 0）；
+      // 其余（焦痕/烧灼/未知）→ clip 直采链。
+      const animSpeed = unit.materialData?.[1] ?? 0;
       const family: EngineFamily = DECAL_QUANT_MATERIALS.has(
         (texture.materialInstance ?? 0) >>> 0,
       )
-        ? "sign"
+        ? animSpeed > 0
+          ? "sdf"
+          : "sign"
         : "clip";
+      if (family === "sdf") neonAnimated = true;
       // 引擎浮空分支（decalFloatQuad，holo 广告/远抛实例）：在**数据
       // 位置**画浮空 quad，姿态由 transform 给出——不是"不渲染"（四轮
       // 图3/4 的 holo 被错误贴上墙 = 此前缺失浮空分支、万物皆投影的
@@ -1291,6 +1338,9 @@ async function assembleScene(
               decalData: props.decalLight ?? null,
               worldDirection: frame.axisZ,
               env,
+              materialInfo: unit.materialData ?? undefined,
+              powered: props.powered,
+              nus: [frame.sizeX, frame.sizeY, frame.sizeY],
             })
           : buildDecalMaterial(THREE, texture, decoded, {
               env,
@@ -1315,13 +1365,16 @@ async function assembleScene(
       // （holo/竖幅灯牌），跳过投影直接画浮空 quad。实证对拍：
       // casino 墙招牌 md[1]=0（投影 ✓）、高塔 0x9401CB7A 竖幅 STORE
       // md[1]=0.95/1.0（用户确认浮空 ✓）、DIRTY FACTORY md[1]=0.06
-      // （投影 ✓）、涂鸦恒 0（投影 ✓）。md[1] 疑似引擎自发光/灯箱变体
-      // 参数，与 FloatQuad 族选择同源；几何判据（离墙距离/盒深）已被
-      // 涂鸦 10m 离墙反例证伪。安全网：贴墙摆放的 sign 浮空 quad 与投影
-      // 观感近乎一致（原点即在墙面），误判代价低。
+      // （投影 ✓）、涂鸦恒 0（投影 ✓）。md[1] 语义已由 §十五定谳 =
+      // animSpeed（引擎 decalMaterialInfo.y）——高速动画招牌恰是引擎的
+      // 浮空灯箱族，与 FloatQuad 族选择同源。注意六轮起 md[1]>0 的招牌
+      // 已分流到 sdf 族，故判据须同时覆盖 sign/sdf（否则高塔竖幅会被
+      // 错误投影——路由升级引入的回归点）。几何判据（离墙距离/盒深）
+      // 已被涂鸦 10m 离墙反例证伪。安全网：贴墙摆放的 sign 浮空 quad 与
+      // 投影观感近乎一致（原点即在墙面），误判代价低。
       if (
-        family === "sign" &&
-        (unit.materialData?.[1] ?? 0) >= DECAL_FLOAT_EMISSIVE_CUTOFF
+        (family === "sign" || family === "sdf") &&
+        animSpeed >= DECAL_FLOAT_EMISSIVE_CUTOFF
       ) {
         addFloatQuad();
         return group;
@@ -1385,6 +1438,9 @@ async function assembleScene(
             decalData: props.decalLight ?? null,
             worldDirection: frame.axisZ,
             env,
+            materialInfo: unit.materialData ?? undefined,
+            powered: props.powered,
+            nus: [frame.sizeX, frame.sizeY, frame.sizeY],
             // 投影网格只画正面：薄板/单面墙从背后看时，decal 三角形是
             // 背面 → 剔除，杜绝"隔着建筑看到镜像字"（五轮图1；法线过滤
             // 已保证留下的面都朝原点，正面即被投面）。
@@ -1448,6 +1504,7 @@ async function assembleScene(
   decalStats.projected = 0;
   decalStats.fallback = 0;
   holeLightCount = 0;
+  neonAnimated = false;
   for (const unit of units) {
     // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
     const decalTexture =

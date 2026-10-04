@@ -45,6 +45,8 @@ uniform vec4 uAnimResults;
 #define animResults uAnimResults
 uniform vec4 uUseV;
 #define useV uUseV
+uniform float uTime;
+uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
 
@@ -134,7 +136,13 @@ impl Family {
             Family::Clip => &["decalClipQuad"],
             Family::Hole => &["kInteriorMapSelfLightMax", "decalLightInteriorMap"],
             Family::Holo => &["decalClip", "decalFloatQuadNoClip"],
-            Family::Sdf => &["decalAnimateSDFDarken", "decalLightSDF", "decalLightNeonTube"],
+            Family::Sdf => &[
+                "decalLightBackground",
+                "decalAnimateSDFDisabled",
+                "decalAnimateSDFDarken",
+                "decalLightSDF",
+                "decalLightNeonTube",
+            ],
         }
     }
 
@@ -152,13 +160,13 @@ vec3 bumpNormal = normalize(uDecalWorldDirection);
 vec4 decalTexture = texture2D(uSampler0, vTexcoord0.xy * 0.5 + 0.5);
 outColor = decalTexture; // 引擎链上 decalClip 先采样（lerp 基色）
 "#,
-            // SDF 链：Current.color 初值（sdfDists 四通道）+ 动画输入 + 场景光
+            // SDF 链：Current.color 初值 = SDF 距离场四通道（Darken 的
+            // sdfDists 来源）；uvOrig 供 decalLightBackground 选轴比较。
+            // 场景光变量（shColorDiff/bumpNormal 等）由 decalLightSDF 片段
+            // 自声明，前奏不得重复声明（GLSL 重复定义即编译失败）。
             Family::Sdf => r#"
-vec3 shColorDiff = vec3(0.0);
-vec3 shColorSpec = vec3(0.0);
-vec3 spec = vec3(0.0);
-vec3 bumpNormal = normalize(uDecalWorldDirection);
-outColor = texture2D(uSampler0, vTexcoord0.xy * 0.5 + 0.5);
+vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
+outColor = texture2D(uSampler0, uvOrig);
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
 "#,
@@ -179,6 +187,14 @@ float texturePositionZ = 0.0;
             // 无光照响应——挂 env 昼夜因子（与 sign 的 uNightBoost 同机制）。
             Family::Clip => {
                 "outColor.rgb *= uNightBoost;\ngl_FragColor = outColor;\n"
+            }
+            // SDF 霓虹管 = 自发光 HDR（materialLightScale 最高 ×16+0.25），
+            // SDF 纹理 alpha 通道实为第四路距离场而非覆盖率——灯亮处才可见，
+            // alpha 取亮部覆盖度（引擎原链 alpha 残留距离场值，配合加法混合；
+            // PE 用法线混合，以亮部 max 分量为掩码近似）。不吃 uNightBoost：
+            // 霓虹夜间**保持自亮**正是该族语义（2026-10-04 问题3 的对偶）。
+            Family::Sdf => {
+                "outColor.a = clamp(max(outColor.r, max(outColor.g, outColor.b)), 0.0, 1.0);\ngl_FragColor = outColor;\n"
             }
             _ => "gl_FragColor = outColor;\n",
         }
@@ -272,5 +288,29 @@ mod tests {
         // 引擎符号全部经 #define 或声明对齐（不出现裸引用即无编译错误主因）
         assert!(ps.contains("#define decalMaterialData uDecalMaterialData"));
         assert!(ps.contains("clamp("));
+    }
+
+    #[test]
+    fn sdf_chain_full_neon_pipeline() {
+        let (_, ps) = compose(Family::Sdf).unwrap();
+        // 完整霓虹链：动画背景(uTime 跑马灯) → 灯管调光 → SDF 球面衰减 →
+        // 场景光叠加 → 供电开关 → 亮部 alpha 收尾
+        assert!(ps.contains("fract(uTime"), "sdf 缺 uTime 动画时钟");
+        assert!(ps.contains("uDecalNUS"), "sdf 缺盒尺寸 uniform");
+        assert!(ps.contains("materialTubeLightFactor"), "sdf 缺灯管调光段");
+        assert!(ps.contains("tubeColor0"), "sdf 缺调光后灯管色");
+        assert!(
+            ps.contains("outColor.a = clamp(max(outColor.r"),
+            "sdf 缺亮部 alpha 收尾"
+        );
+        // 场景光变量只许 decalLightSDF 片段声明一次（前奏重复声明 = 编译失败；
+        // SimCityLighting 的 inout 形参不含初始化式，用初始化式计数）
+        assert_eq!(
+            ps.matches("vec3 shColorDiff = vec3(0, 0, 0)").count(),
+            1,
+            "shColorDiff 重复声明"
+        );
+        // 动画比较量已 #undef 后落局部变量（不再吃 CPU 端 uniform）
+        assert!(ps.contains("#undef animResults"), "sdf 缺动画量局部化");
     }
 }

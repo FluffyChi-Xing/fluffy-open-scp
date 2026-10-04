@@ -34,6 +34,8 @@ uniform vec4 uAnimResults;
 #define animResults uAnimResults
 uniform vec4 uUseV;
 #define useV uUseV
+uniform float uTime;
+uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
 
@@ -58,43 +60,63 @@ specHighlight = spec * specStrength * sunMod * uSunColor3;
 }
 void main() {
 
-vec3 shColorDiff = vec3(0.0);
-vec3 shColorSpec = vec3(0.0);
-vec3 spec = vec3(0.0);
-vec3 bumpNormal = normalize(uDecalWorldDirection);
-outColor = texture2D(uSampler0, vTexcoord0.xy * 0.5 + 0.5);
+vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
+outColor = texture2D(uSampler0, uvOrig);
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
-vec3 decalNUS = vTexcoord0.xyz;
+#undef animResults
+#undef useV
+vec4 animParameters = decalMaterialData[3];
+vec4 useV = vec4(animParameters.x > 0.0 ? 0.0 : 1.0,
+animParameters.y > 0.0 ? 0.0 : 1.0,
+animParameters.z > 0.0 ? 0.0 : 1.0,
+animParameters.w > 0.0 ? 0.0 : 1.0);
+animParameters = abs(animParameters) + 0.0001;
+float animTime = fract(uTime * decalMaterialInfo.y + 0.9999);
+vec4 animOffsets = fract(animParameters);
+vec4 animChunks = max(vec4(1.0, 1.0, 1.0, 1.0), floor(animParameters));
+vec4 compares = floor((animTime * 3.0 - animOffsets) * animChunks) * (1.0 / animChunks);
+vec4 uvCompare = mix(vec4(uvOrig.x, uvOrig.x, uvOrig.x, uvOrig.x),
+vec4(uvOrig.y, uvOrig.y, uvOrig.y, uvOrig.y), useV);
+vec4 animResults = uvCompare - compares;
+float materialTubeLightFactor = decalMaterialInfo.z * 8.0 + 1.0;
+vec4 lightFactor = mix(vec4(materialTubeLightFactor, materialTubeLightFactor,
+materialTubeLightFactor, materialTubeLightFactor),
+vec4(0.1, 0.1, 0.1, 0.1),
+step(vec4(0.0, 0.0, 0.0, 0.0), animResults));
+vec4 powerFactor = mix(vec4(0.5, 0.5, 0.5, 0.5), lightFactor, decalMaterialInfo.wwww);
+vec4 tubeColor0 = decalMaterialData[0] * powerFactor;
+vec4 tubeColor1 = decalMaterialData[1] * powerFactor;
+vec4 tubeColor2 = decalMaterialData[2] * powerFactor;
 float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;
-float sdfTextureLength = max(decalNUS.x, decalNUS.y);
-float sphereHeight = decalNUS.z;
+float sdfTextureLength = max(uDecalNUS.x, uDecalNUS.y);
+float sphereHeight = uDecalNUS.z;
 float hwRatio = sphereHeight * 0.5 / sdfTextureLength;
-float zScale = 1;
-if (hwRatio < 1)
+float zScale = 1.0;
+if (hwRatio < 1.0)
 {
-hwRatio = 1;
-zScale = 1 / hwRatio;
+hwRatio = 1.0;
+zScale = 1.0 / hwRatio;
 }
 float circleZ = texturePosition.z;
 circleZ *= zScale;
 vec4 sdfDists = outColor;
 float kMaskCenter = 0.5;
-vec4 circleDists = clamp(1 - sdfDists * 1.0 / kMaskCenter, 0.0, 1.0) * hwRatio;
+vec4 circleDists = clamp(1.0 - sdfDists * 1.0 / kMaskCenter, 0.0, 1.0) * hwRatio;
 vec4 sphereDistsSqr = circleDists * circleDists + circleZ * circleZ;
 vec4 animEdge = max(animResults, 0.0);
-float lerpXParam = sphereHeight * 0.5 / decalNUS.x;
-float lerpYParam = sphereHeight * 0.5 / decalNUS.y;
+float lerpXParam = sphereHeight * 0.5 / uDecalNUS.x;
+float lerpYParam = sphereHeight * 0.5 / uDecalNUS.y;
 vec4 animation = mix(vec4(lerpXParam, lerpXParam, lerpXParam, lerpXParam),
 vec4(lerpYParam, lerpYParam, lerpYParam, lerpYParam), useV.xyzw);
-sphereDistsSqr += animEdge * animEdge * animRatio * 32;
-float lightScales = clamp(1 - sqrt(sphereDistsSqr), 0.0, 1.0);
+sphereDistsSqr += animEdge * animEdge * animation * 32.0;
+vec4 lightScales = clamp(1.0 - sqrt(sphereDistsSqr), 0.0, 1.0);
 lightScales *= lightScales;
-vec3 lightColor = vec3(0, 0, 0);
-for (int i = 0; i < 3; ++i)
-{
-lightColor[i] = materialLightScale * dot(decalMaterialData[i], lightScales);
-}
+vec3 lightColor = vec3(0.0, 0.0, 0.0);
+lightColor.x = materialLightScale * dot(tubeColor0, lightScales);
+lightColor.y = materialLightScale * dot(tubeColor1, lightScales);
+lightColor.z = materialLightScale * dot(tubeColor2, lightScales);
+lightColor *= decalMaterialInfo.w;
 outColor.rgb = lightColor;
 vec3 bumpNormal = normalize(decalWorldDirection);
 vec3 shColorDiff = vec3(0, 0, 0);
@@ -104,5 +126,6 @@ SimCityLighting(bumpNormal, worldCameraDirection.xyz, gloss, reflectance,
 specE, specStrength, shColorDiff, shColorSpec, spec);
 outColor.rgb += shColorSpec + spec;
 outColor.a *= decalMaterialInfo.x;
+outColor.a = clamp(max(outColor.r, max(outColor.g, outColor.b)), 0.0, 1.0);
 gl_FragColor = outColor;
 }

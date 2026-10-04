@@ -40,6 +40,9 @@ export type SunEnvRefs = {
   /** decal 平涂 shader 的夜间压暗因子（引擎 decal 走延迟光照，夜间只剩
    * 环境项；平涂无光照响应，恒 1 = 夜间"自发光"）。 */
   nightBoost: { value: number };
+  /** 霓虹动画时钟（秒，墙钟累积）：SDF 族 decalLightBackground 的 uTime，
+   * 引擎 gameInfo.time 的近似。场景含 SDF 动画 decal 时由装配层 rAF 推进。 */
+  time: { value: number };
 };
 
 /** 太阳地平线高度 −1..1（t=6/18 日出日落、12 正午、0/24 子夜）。 */
@@ -127,6 +130,7 @@ export function createSunEnv(THREE: typeof ThreeNamespace): SunEnvRefs {
     powered: { value: 1 },
     glow: { value: 6.0 },
     nightBoost: { value: 1 },
+    time: { value: 0 },
   };
 }
 

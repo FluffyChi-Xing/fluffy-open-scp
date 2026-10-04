@@ -15,6 +15,7 @@ import clipFrag from "@/assets/shaders/decal/clip.frag.glsl?raw";
 import holeFrag from "@/assets/shaders/decal/hole.frag.glsl?raw";
 import holeVert from "@/assets/shaders/decal/hole.vert.glsl?raw";
 import holoFrag from "@/assets/shaders/decal/holo.frag.glsl?raw";
+import sdfFrag from "@/assets/shaders/decal/sdf.frag.glsl?raw";
 /** 与 refinedRender.SunEnvRefs 的结构子集（避免 lib→pages 反向依赖）。 */
 export interface EngineEnvRefs {
   sunDir: { value: ThreeNamespace.Vector3 };
@@ -24,6 +25,9 @@ export interface EngineEnvRefs {
    * 引擎 decal 走延迟光照，夜间只剩环境项——平涂 shader 无光照响应，
    * 恒 1 会让所有贴花夜间"自发光"（2026-10-04 问题3）。 */
   nightBoost: { value: number };
+  /** 霓虹动画时钟（秒，引擎 gameInfo.time 的墙钟近似）：SDF 族
+   * decalLightBackground 的 uTime。场景无动画 decal 时可缺省（恒 0）。 */
+  time?: { value: number };
 }
 
 export type EngineFamily = "sign" | "clip" | "hole" | "holo" | "sdf";
@@ -33,7 +37,9 @@ const FRAG: Record<EngineFamily, string> = {
   clip: clipFrag,
   hole: holeFrag,
   holo: holoFrag,
-  sdf: holoFrag, // TODO: sdf.frag 需动画 uniform 驱动，先复用 holo 兜底
+  // SDF 霓虹管链（decalLightBackground → Disabled 调光 → Darken → LightSDF
+  // → NeonTube）：动画由 uTime/uDecalMaterialInfo/uDecalNUS uniform 驱动。
+  sdf: sdfFrag,
 };
 const VERT: Record<EngineFamily, string> = {
   sign: signVert,
@@ -62,6 +68,16 @@ export interface EngineMaterialOptions {
   alphaZero?: boolean;
   /** 破洞体积盒的 (半宽, 半高, 半深)——hole 体积 VS 的 uBoxHalf。 */
   boxHalf?: [number, number, number];
+  /** 引擎 decalMaterialInfo.xyz = lot 侧 material_data 三元组（2026-10-05
+   * 取证定谳，docs/re/decal-engine-alignment.md §十五）：
+   * x → 灯强 materialLightScale = x×16+0.25；y = **animSpeed 跑马灯速度**；
+   * z → 灯管亮度 materialTubeLightFactor = z×8+1。SDF 族必填。 */
+  materialInfo?: [number, number, number];
+  /** 供电状态 → decalMaterialInfo.w（断电 = 霓虹半亮 lerp 0.5）。 */
+  powered?: boolean;
+  /** SDF 族盒世界尺寸 (sizeX, sizeY, sphereHeight)——引擎 decalNUS
+   * （In.texcoord<t0> 顶点流语义；sphereHeight 暂取 sizeY 近似，待对拍校准）。 */
+  nus?: [number, number, number];
 }
 
 /**
@@ -74,6 +90,28 @@ export function createEngineDecalMaterial(
   opts: EngineMaterialOptions,
 ): ThreeNamespace.ShaderMaterial {
   const [kSun, kLight] = opts.decalData ?? [0, 0];
+  const [miX, miY, miZ] = opts.materialInfo ?? [1, 0, 0];
+  // SDF 族的 decalMaterialData 语义不同于其他族：行 0~2 = 三根灯管颜色、
+  // 行 3 = **动画参数表**（符号选 UV 轴 / 整数 = 分块数 / 小数 = 相位）。
+  // DTO colors 统一做过线性×2（量化链的上色口径），而引擎 SDF 链消费的是
+  // 字典原始值——动画参数行被 ×2 会直接破坏 chunks/offsets 编码，故 /2 还原。
+  const materialDataRows =
+    family === "sdf" && opts.layerColors
+      ? [0, 1, 2, 3].map(
+          (k) =>
+            new THREE.Vector4(
+              (opts.layerColors?.[k]?.[0] ?? 0) / 2,
+              (opts.layerColors?.[k]?.[1] ?? 0) / 2,
+              (opts.layerColors?.[k]?.[2] ?? 0) / 2,
+              (opts.layerColors?.[k]?.[3] ?? 0) / 2,
+            ),
+        )
+      : [
+          new THREE.Vector4(kSun, kLight, 0, 0),
+          new THREE.Vector4(0, 0, 0, 0),
+          new THREE.Vector4(0, 0, 0, 0),
+          new THREE.Vector4(0, 0, 0, 0),
+        ];
   return new THREE.ShaderMaterial({
     uniforms: {
       uSampler0: { value: opts.map },
@@ -93,15 +131,19 @@ export function createEngineDecalMaterial(
       uBoxHalf: {
         value: new THREE.Vector3(...(opts.boxHalf ?? [1, 1, 1])),
       },
-      uDecalMaterialData: {
-        value: [
-          new THREE.Vector4(kSun, kLight, 0, 0),
-          new THREE.Vector4(0, 0, 0, 0),
-          new THREE.Vector4(0, 0, 0, 0),
-          new THREE.Vector4(0, 0, 0, 0),
-        ],
+      uDecalMaterialData: { value: materialDataRows },
+      uDecalMaterialInfo: {
+        value: new THREE.Vector4(
+          miX,
+          miY,
+          miZ,
+          opts.powered === false ? 0 : 1,
+        ),
       },
-      uDecalMaterialInfo: { value: new THREE.Vector4(1, 1, 0, 1) },
+      // SDF 族盒世界尺寸（引擎 decalNUS 顶点流的 uniform 等价物）
+      uDecalNUS: { value: new THREE.Vector3(...(opts.nus ?? [1, 1, 1])) },
+      // 霓虹动画时钟：直接引用 env 共享对象（rAF 统一推进，免遍历材质）
+      uTime: opts.env.time ?? { value: 0 },
       // per-entry raster = 预裁剪 atlas cell → texXform 恒等
       uTexXform: { value: new THREE.Vector4(1, 1, 0, 0) },
       uDecalWorldDirection: { value: opts.worldDirection.clone().normalize() },
