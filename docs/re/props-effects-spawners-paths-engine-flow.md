@@ -186,12 +186,21 @@ SC::cGraphicsSeason::FillFromProps(&mSeasonInfo, seasonConfig, mGame);
   行声明）：季节系统直接驱动 `cImpostorRenderer`——公告板图集由季节
   更新过程填充。
 
-**树渲染全链闭合**：lot 树 prop → cGraphicsInstancedImpostor{descriptor
-C602CD31, LOD 位} → 季节 Update 驱动 cImpostorRenderer → descriptor 的
-34 变体（权重表）按 randomBits 选条目 → 离屏渲染进 512×512 图集 →
-公告板粒子（V3FN3FC4BT2F）+ HSV 随机色。**变体的 3D 模型源（34 key 的
-链尾）为运行时/服务器内容，静态数据只有链表头**——PE 用程序化树形公告
-板 + HSV 随机即可获得等价观感。
+**树渲染全链闭合 + 引擎显式回退（source-tree 提取版实证）**：lot 树 prop
+→ cGraphicsInstancedImpostor{descriptor C602CD31, LOD 位} → 季节 Update
+驱动 cImpostorRenderer → descriptor 的 34 变体（权重表）按 randomBits 选
+条目 → 离屏渲染进 512×512 图集 → 公告板粒子（V3FN3FC4BT2F）+ HSV 随机色。
+
+**引擎对缺失变体有显式回退**（`Season::FillFromProps` source-tree 提取版
+逐字）：34 变体 key 逐一查季节日数据 map，**查不到 → `v43 = 782826392`
+（= 0x2EA8FB98，本地 @Game 09878A01 存在的那条）**——即幻影变体统一回落
+到默认树 2EA8FB98 的季节环境。这解释了破解版离线有树：引擎设计就容忍
+变体/季节目录缺席，回退到本地默认树 + 图集原色（HSV 恒等）。
+
+**SIGGRAPH2007 Alpha Tested Magnification**（Chris Green，new-cource 目录
+PDF）= 贴花文字描边/发光技术的源头：距离场文字 + alphaTest 任意缩放放大
++ outline/glow/dropshadow 全在像素着色器（Figure 6/7/9）——与项目贴花族
+的"四通道厚度场/SDF"定谳互证（graffiti 连续喷漆厚度场即距离场应用）。
 
 ## 2. Effects 全流程
 
