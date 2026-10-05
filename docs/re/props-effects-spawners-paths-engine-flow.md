@@ -202,6 +202,87 @@ PDF）= 贴花文字描边/发光技术的源头：距离场文字 + alphaTest �
 + outline/glow/dropshadow 全在像素着色器（Figure 6/7/9）——与项目贴花族
 的"四通道厚度场/SDF"定谳互证（graffiti 连续喷漆厚度场即距离场应用）。
 
+### 1.6 模型树路线评估（2026-10-06 定谳——树 3D 模型存在且可直出，路线可行）
+
+> 背景：真图集公告板（§1.4）每格仅 128×128/128×256，用户反馈近景抠像精度
+> 不足。本轮从 source-tree 源码 + 属性表双向钉死 impostor 离屏渲染源，
+> **四棵真 3D 树模型在本地数据中完整存在**，模型树路线全面可行。
+
+**勘误**：52538f5 提交信息所称"BB2760C9 族/D61B3400 族/8A0D18F7 树模型
+候选族"**全部错误**——那些是带 facade shader（38869BDA）的窄小建筑
+（棚屋/亭子类）。形状探针（高宽比>1.3）恰好把真树排除：树冠宽 39-46m，
+高宽比仅 1.1-1.4。教训：树模型定性不能靠形状，要靠 impostor 配置表反查。
+
+**① 配置链（属性表逐字，App 包 group 40002D00）**：
+
+```
+树种 descriptor C602CD31（1630B，9 键）
+ ├─ 00B2CCCB Parent → 5F804D7E @40002D00（impostor class 表，Parent 继承合并）
+ ├─ 0BD62576 NumAngles = 1
+ ├─ 0DDE0508 = true
+ ├─ 0E0B99FD [34] 变体权重表：2EA8FB98×8、5517D7F7×8、43352C8C×5、
+ │             CBFF65DD×4、DA928B73×4、CD984F66、C683C0D5、BFC2F36A、
+ │             64030073、86CFD463（即 §1.5 的 34 key，全部 G=0 幻影/季节节点）
+ ├─ 0E0B99FE [34] i32 旋转/朝向参数（31,41,120,130,253…）
+ ├─ 0E0B99FF [34] Vector3 HSV 随机域下界（H -31..90, S 0.5..1.2, V 0.6..1.2）
+ ├─ 0E0B9A00 [34] Vector3 HSV 随机域上界（H -20..115, S 1..3, V 0.8..1.8）
+ ├─ 0E0B9A02 bool
+ └─ 0E0B9A03 [34] f32 叶量参数（0.35..1，= cGraphicsSeason mLeafAmount 对位）
+
+impostor class 表 5F804D7E（=1776EABC 同表，8 键，4 part/行）：
+ ├─ 0BD62577 模型 key [4] = 4DF43690 / C2FBD178 / 1113B131 / 89D658DF
+ │             （全在 Graphics 包 T 2F4E681B G 0——真模型实体！）
+ ├─ 0BD62578 每部分 BBox：39×39×47 / 28×28×44 / 46×46×41 / 34×34×30.5 (m)
+ ├─ 0BD62579 动画 key [4] = null
+ ├─ 0BD6257A/7B 图集格宽×高 [4] = 128×128（引擎公告板原生精度！）
+ ├─ 0BD6257C ZBias [4] = 0
+ ├─ 0BD6257E 离屏材质 [4] = CE5BBF5E（×4 同一材质）
+ └─ 0E0B9A01 季节索引 key [4] = CD984F66 / 2EA8FB98 / 2EA8FB98 / 2EA8FB98
+```
+
+**② 引擎消费链（source-tree 提取版逐字，tmp/dynamic/source-tree-impostor/）**：
+
+`cImpostorRenderer::InitImpostorClass`（0x693490）：配置属性表
+（GetPropertiesAsTable，propID 198583671=0x0BD62577 表，列 198583672-681）
+逐行 → `SP::CreateModelInstance(instanceID, groupID)` 建模型实例 →
+`cImpostorClassPart{mModel, mBox, mOffscreenMaterial, mZBias, mRectID…}` →
+`RenderOffscreenForModel`（0x691920）：按 mNumAngles 个方位角投影，
+`DrawBuffersInstanced` 离屏画进 `cRectAllocator(512×512)` 分配的 **128×128**
+格 → 场景内按格贴公告板粒子（V3FN3FC4BT2F）。
+
+→ **引擎世界中树从来只有 128×128 公告板精度**——现有抠像公告板已达
+引擎同档。要超越游戏观感，唯一路径就是把模型直接 3D 渲染，而模型就在本地。
+
+**③ 四模型实体定性（tree_model_dump 探针 + GLB 光栅化目验，全部通过）**：
+
+| part key | 大小 | verts | tris | 形态（光栅化目验） | 自带纹理 |
+| --- | --- | --- | --- | --- | --- |
+| 4DF43690 | 270KB | 732 | 370 | 针叶树（层叠枝叶圆锥形） | tex#0 256×512 树抠像图集 a[0..255] 44% 透明 + 128×256 树皮 + 128×128 地面 |
+| C2FBD178 | 768KB | 4654 | 2661 | 阔叶树（椭圆冠） | tex#0 256×512（30% 透明）+ 128×256 + 256×512 |
+| 1113B131 | 624KB | 2935 | 1774 | 阔叶树（圆冠） | 同布局（38% 透明） |
+| 89D658DF | 624KB | 2651 | 1646 | 阔叶树（开张宽冠） | 同布局（31% 透明） |
+
+每模型单 MESH、真 3D 体积几何（冠层为叶团卡片拼合出的立体轮廓），
+自带文件级 TEXTURE section（材质段 Raw，同垃圾桶 0x903A704C 形态，
+LOTM 构建器 v10 已支持）——tex#0 即树公告板抠像图集同源内容
+（4DF43690 的 tex#0 与 0x835D64F3 上半一致：2×2 四视角抠像+下半地面纹理）。
+
+**④ 孤立图集反证（foliage_ref_scan）**：四包 12133 个 RW4 资源无任何
+材质引用 23 个 foliage 图集实例——图集是引擎按 key 直取的 impostor 系统
+约定资源，不存在引用它们的静态模型；树模型贴图走自身文件级纹理段。
+
+**⑤ PE 落地方案（模型树路线，推荐替代 §1.4 公告板）**：
+
+1. 后端 `resolve_prop_models`：树 prop 下发 4 个 GLB（含文件级纹理 →
+   slot0_png/normal_png）+ descriptor 参数（34 变体权重/HSV 域/叶量）。
+   复用 LOTM v3 容器与车辆/杂件同一条 GLB 通道，无需新格式。
+2. 前端 InstancedMesh 实例化渲染（370-2661 tri/棵，千级实例无压力）；
+   per-instance：randomBits 选变体 → 34 变体表映射 4 part（0E0B9A01 提示
+   part0↔CD984F66，其余映射待实现时定）→ HSV 域随机 tint（instanceColor）
+   + 0E0B99FE 旋转 + 0E0B9A03 叶量（可选 discard 模拟落叶）。
+3. 树叶卡片材质 = alphaTest（tex#0 alpha 通道即剪影，同公告板抠像）。
+4. 图集公告板保留为远景 LOD（可回落），近景换真 3D——超过引擎原生观感。
+
 ## 2. Effects 全流程
 
 | 环节 | 函数（行号） | 内容 |
@@ -240,8 +321,9 @@ pathEntries 表（EcoGame 40E0C400，已实证可读：0x0BD81A2D-31 列族）�
 1. **车辆/杂件**：已实现（LOD 集降序取最高细节 + slot0 彩色 diffuse + 车漆
    lerp——注意实例色的引擎来源是包装属性 0xFBA612，可作为色带的替代/
    校准源：**若包装记录带 0xFBA612 则直接用其色，无则色带随机**）。
-2. **树**：改方案为 impostor 公告板——先挖 `cImpostorRenderer::Init/
-   GetImpostorClass` 找图集来源；有图集 → 按 descriptor 权重铺公告板。
+2. **树**：模型树路线升级（§1.6）——4 棵真 3D 模型 GLB 直出 +
+   InstancedMesh + 变体 HSV tint；图集公告板降级为远景 LOD。
+   （§1.4 公告板方案已落地，作为引擎同档精度保底。）
 3. **实例色**：0xFBA612 读取加入 prop 解析（ ColorRGBA → material.color）。
 4. Effects/Spawners/Paths：维持既有方案（标记 + 语义），无渲染缺口。
 
@@ -250,6 +332,8 @@ pathEntries 表（EcoGame 40E0C400，已实证可读：0x0BD81A2D-31 列族）�
 | 旧结论 | 本文修正 |
 | --- | --- |
 | 树变体模型为服务器流式 3D 内容 | 树 = **impostor 公告板**（cGraphicsInstancedImpostor），无 3D 模型；34 key = 变体权重链表节点，非模型 key |
+| （§1.6 再修正）树 3D 模型不存在于本地 | 公告板离屏渲染源 **4 棵真 3D 树模型在本地**（Graphics 包 4DF43690/C2FBD178/1113B131/89D658DF，由 descriptor C602CD31→Parent 5F804D7E 配置表 0BD62577 列直指） |
+| （52538f5）BB2760C9/D61B3400 族=树模型候选 | **错误**——facade shader 窄小建筑；形状探针高宽比>1.3 恰好排除真树（冠宽 39-46m） |
 | 槽位资源不可解则无法渲染 | 引擎同样只认资源表；不可解 = 引擎也不渲染（我们的 phantom 集合与引擎空白一致） |
 | 实例色来源未知 | 包装属性 0xFBA612（ColorRGBA）→ mModelColor → 实例 tint |
 | spawner 三列为生成数量/agent | buildingVariation 系统（维持 unit-props 文档 §3.2 勘误） |
