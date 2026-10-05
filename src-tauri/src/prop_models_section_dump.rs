@@ -106,21 +106,21 @@ mod tests {
                 );
             }
         }
-        // 文件级 TEXTURE 段解码（杂件模型贴图位置实证）
-        let game_package = dbpf::Package::open(
-            r"D:\ea-games\SimCity\SimCityData\SimCity_Game.package",
+        // 文件级 TEXTURE 段解码（杂件/树模型贴图位置实证）
+        let graphics_package = dbpf::Package::open(
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package",
         )
-        .expect("open game pkg");
-        for inst in [0x903A_704Cu32, 0xAD64_CB3D] {
-            let Some(entry) = game_package
+        .expect("open graphics pkg");
+        for inst in [0x903A_704Cu32, 0xAD64_CB3D, 0x8A0D_18F7, 0xBB27_60C9] {
+            let Some(entry) = graphics_package
                 .entries()
                 .iter()
                 .find(|e| e.id.instance == inst && e.id.type_id == 0x2F4E_681B)
             else {
-                println!("== model {inst:08X}: 不在 Game 包（跳过）");
+                println!("== model {inst:08X}: 不在 Graphics 包（跳过）");
                 continue;
             };
-            let data = game_package.read(entry).expect("read");
+            let data = graphics_package.read(entry).expect("read");
             let file = rw4::Rw4File::parse(&data).expect("parse");
             println!("== model {inst:08X} 文件级 TEXTURE 段:");
             for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
