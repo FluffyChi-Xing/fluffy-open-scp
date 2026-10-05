@@ -41,12 +41,15 @@ mod tests {
             }
         }
         // 材质内嵌数据对比（黑车 CA265D8B vs 垃圾桶 903A704C）：找漫反射色字段
-        for inst in [0xCA26_5D8Bu32, 0x903A_704C] {
-            let entry = package
+        for inst in [0xCA26_5D8Bu32, 0x903A_704C, 0xAD64_CB3D] {
+            let Some(entry) = package
                 .entries()
                 .iter()
                 .find(|e| e.id.instance == inst && e.id.type_id == 0x2F4E_681B)
-                .expect("model");
+            else {
+                println!("== model {inst:08X}: 不在 Graphics 包（跳过）");
+                continue;
+            };
             let data = package.read(entry).expect("read");
             let file = rw4::Rw4File::parse(&data).expect("parse");
             println!("== model {inst:08X}:");
@@ -101,6 +104,36 @@ mod tests {
                     "    tail[:64]: {:02x?}",
                     m.data.iter().take(64).collect::<Vec<_>>()
                 );
+            }
+        }
+        // 文件级 TEXTURE 段解码（杂件模型贴图位置实证）
+        let game_package = dbpf::Package::open(
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Game.package",
+        )
+        .expect("open game pkg");
+        for inst in [0x903A_704Cu32, 0xAD64_CB3D] {
+            let Some(entry) = game_package
+                .entries()
+                .iter()
+                .find(|e| e.id.instance == inst && e.id.type_id == 0x2F4E_681B)
+            else {
+                println!("== model {inst:08X}: 不在 Game 包（跳过）");
+                continue;
+            };
+            let data = game_package.read(entry).expect("read");
+            let file = rw4::Rw4File::parse(&data).expect("parse");
+            println!("== model {inst:08X} 文件级 TEXTURE 段:");
+            for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
+                let t = file.decode_texture(&data, section.number).expect("tex");
+                let px = t.decode_top_mip_rgba().expect("decode");
+                let (w, h) = (t.width as usize, t.height as usize);
+                let img = image::RgbaImage::from_fn(w as u32, h as u32, |x, y| {
+                    let at = (x as usize + y as usize * w) * 4;
+                    image::Rgba([px[at], px[at + 1], px[at + 2], px[at + 3]])
+                });
+                let path = format!("tmp/filetex_{inst:08X}_{}.png", section.number);
+                img.save(&path).expect("save");
+                println!("  #{} {}x{} → {}", section.number, w, h, path);
             }
         }
         let entry = package
