@@ -247,7 +247,7 @@ export interface TintTextureSet {
  * uvKind=2（facade tint 着色器）：贴图**预加载完成**后才建材质——
  * 否则首次编译时 uniform 为 null，采样 alpha=0 → 全部 discard（模型隐形）。
  */
-async function loadTintTextures(
+export async function loadTintTextures(
   THREE: typeof ThreeNamespace,
   materials: LotMaterial[],
   /** 硬件最大各向异性过滤级别（掠射角墙面靠它保清晰度）。 */
@@ -333,6 +333,10 @@ async function loadTintTextures(
                 t.magFilter = THREE.NearestFilter;
                 t.generateMipmaps = false;
                 t.colorSpace = THREE.SRGBColorSpace;
+                // REPEAT：调色板 V = 变体整数行 + 行内小数（引擎同口径；
+                // 行 >0 时 V>1 依赖回绕，建筑行恒 0 不受影响）
+                t.wrapS = THREE.RepeatWrapping;
+                t.wrapT = THREE.RepeatWrapping;
                 return t;
               })
             : Promise.resolve(null),
@@ -573,6 +577,8 @@ export function attachTintShader(
     uPowered: { value: number };
     /** tint 图集半 texel（1/宽, 1/高）：平铺区域边缘的线性滤波内缩量。 */
     uTintTexel: { value: ThreeNamespace.Vector2 };
+    /** 调色板变体行（buildingVariation）：建筑恒 0；prop 按实例选取。 */
+    uPaletteRow: { value: number };
   },
   paramsReady: boolean,
   shaderMapReady: boolean,
@@ -672,6 +678,10 @@ uniform float uInteriorGlow;
 uniform float uDayLight;
 uniform float uPowered;
 uniform vec2 uTintTexel;
+// 调色板变体行（buildingVariation 引擎口径 = 整数行 0..7 实例随机；
+// 调色板纹理 REPEAT 回绕：整数部分选行、tint.g 小数选行内条目）。
+// 建筑恒 0（已对拍口径）；prop/车辆按实例序号确定性取非空行。
+uniform float uPaletteRow;
 #ifdef TINT_SHADERMAP
 uniform sampler2D shaderMapMap;
 #endif
@@ -795,8 +805,8 @@ float scFastNoise(vec3 seed) {
         } else {
           // 源码 lerp(tintBase@palU, tintTop@palU2, facadeTint.a)：Top 层查
           // 调色板第二列（row0.y = palU2），亮度/子采样坐标同样取 Top 值
-          vec4 scPalBase = texture2D(paletteMap, vec2(palOrigin.x + scSub.x, scSub.y));
-          vec4 scPalTop = texture2D(paletteMap, vec2(palOrigin.y + scSubTop.x, scSubTop.y));
+          vec4 scPalBase = texture2D(paletteMap, vec2(palOrigin.x + scSub.x, uPaletteRow + scSub.y));
+          vec4 scPalTop = texture2D(paletteMap, vec2(palOrigin.y + scSubTop.x, uPaletteRow + scSubTop.y));
           scPalColor = mix(scPalBase, scPalTop, scFacade);
           scTintMul = mix(tintValues.b, facadeTintValues.b, scFacade) * 2.0;
           diffuseColor.rgb *= scPalColor.rgb * scTintMul;
@@ -1021,6 +1031,7 @@ export function makeTintMaterial(
   );
   if (interiorReady) tinted.defines.TINT_INTERIOR = "";
   const uSpecGUniform = { value: effectiveSpecMode() };
+  const uPaletteRowUniform = { value: 0 };
   // tint 图集半 texel：shader 里的平铺区域边缘内缩量（接缝修复）。
   const tintImage = tint.tintTex?.image as
     { width?: number; height?: number } | undefined;
@@ -1049,11 +1060,14 @@ export function makeTintMaterial(
       uDayLight: env.dayLight,
       uPowered: env.powered,
       uTintTexel: { value: uTintTexel },
+      uPaletteRow: uPaletteRowUniform,
     },
     Boolean(tint.paramsTex),
     Boolean(tint.shaderTex),
     interiorReady,
   );
+  // 行 uniform 引用挂 userData（prop 按实例设变体行；建筑保持 0）
+  tinted.userData.uPaletteRow = uPaletteRowUniform;
   return [tinted, uSpecGUniform];
 }
 

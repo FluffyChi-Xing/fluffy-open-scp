@@ -53,6 +53,7 @@ describe("unitId", () => {
   it("carries bin/category dimensions for prop and decal units", () => {
     const prop = {
       kind: "prop",
+        resourceId: null,
       index: 2,
       bin: 13,
       transform: null,
@@ -88,7 +89,8 @@ describe("unitId", () => {
 
 describe("unitLabel", () => {
   it("gives prop/spawner a numeric billboard and leaves effect unlabeled", () => {
-    const prop = { kind: "prop", index: 7 } as PropUnit;
+    const prop = { kind: "prop",
+        resourceId: null, index: 7 } as PropUnit;
     const spawner = { kind: "spawner", index: 3 } as SpawnerUnit;
     const effect = { kind: "effect", index: 1 } as EffectUnit;
     expect(unitLabel(prop)).toBe("7");
