@@ -231,6 +231,14 @@ const title = computed(() => {
   return `0x${props.tgi.instance.toString(16).padStart(8, "0").toUpperCase()}`;
 });
 const diagnostics = computed(() => session.value?.diagnostics ?? []);
+
+/**
+ * 左侧工作台 rail（低代码引擎布局对齐）：组件树收进可开合的 sheet——
+ * rail 大纲按钮开关；图钉切换 停靠（占布局列）/悬浮（盖在视口上）。
+ * 物料/源码与提交 Issue 为后续版本入口，当前禁用置灰。
+ */
+const treeSheetOpen = ref(true);
+const treeSheetPinned = ref(true);
 </script>
 
 <template>
@@ -439,15 +447,93 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         {{ $t(loadError) }}
       </p>
       <div v-else-if="session" class="editor-body">
-        <PropertyEditorOutliner
-          :grouping="grouping"
-          :selected-id="selectedId"
-          :hidden-units="hiddenUnits"
-          :group-visibility="groupVisibility"
-          @select="selectedId = $event"
-          @toggle-unit="toggleUnit"
-          @toggle-group="toggleGroup"
-        />
+        <!-- 左侧工作台 rail：大纲（组件树 sheet 开关）/物料/源码（禁用）
+             + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
+        <nav class="editor-rail" :aria-label="$t('package.inspector')">
+          <div class="rail-group">
+            <button
+              type="button"
+              class="rail-item"
+              :class="{ active: treeSheetOpen }"
+              :aria-pressed="treeSheetOpen"
+              :title="$t('package.railOutline')"
+              @click="treeSheetOpen = !treeSheetOpen"
+            >
+              <FIcon name="ListTree" :size="16" aria-label="" />
+              <span>{{ $t("package.railOutline") }}</span>
+            </button>
+            <button
+              type="button"
+              class="rail-item"
+              disabled
+              :title="$t('package.comingSoon')"
+            >
+              <FIcon name="Boxes" :size="16" aria-label="" />
+              <span>{{ $t("package.railMaterials") }}</span>
+            </button>
+            <button
+              type="button"
+              class="rail-item"
+              disabled
+              :title="$t('package.comingSoon')"
+            >
+              <FIcon name="CodeXml" :size="16" aria-label="" />
+              <span>{{ $t("package.railSource") }}</span>
+            </button>
+          </div>
+          <div class="rail-group">
+            <button
+              type="button"
+              class="rail-item"
+              disabled
+              :title="$t('package.comingSoon')"
+            >
+              <FIcon name="Send" :size="16" aria-label="" />
+              <span>{{ $t("package.railSubmitIssue") }}</span>
+            </button>
+          </div>
+        </nav>
+        <!-- 组件树 sheet：图钉=停靠（占布局列），未图钉=悬浮盖在视口上。 -->
+        <div v-if="treeSheetOpen" class="tree-dock" :class="{ float: !treeSheetPinned }">
+          <section
+            class="tree-sheet"
+            :class="{ overlay: !treeSheetPinned }"
+            :aria-label="$t('package.componentTree')"
+          >
+            <header class="tree-sheet-head">
+              <strong>{{ $t("package.componentTree") }}</strong>
+              <div class="tree-sheet-actions">
+                <button
+                  type="button"
+                  class="tree-sheet-btn"
+                  :class="{ active: treeSheetPinned }"
+                  :aria-pressed="treeSheetPinned"
+                  :title="$t('package.pinSheet')"
+                  @click="treeSheetPinned = !treeSheetPinned"
+                >
+                  <FIcon :name="treeSheetPinned ? 'Pin' : 'PinOff'" :size="13" aria-label="" />
+                </button>
+                <button
+                  type="button"
+                  class="tree-sheet-btn"
+                  :title="$t('package.closeSheet')"
+                  @click="treeSheetOpen = false"
+                >
+                  <FIcon name="X" :size="13" aria-label="" />
+                </button>
+              </div>
+            </header>
+            <PropertyEditorOutliner
+              :grouping="grouping"
+              :selected-id="selectedId"
+              :hidden-units="hiddenUnits"
+              :group-visibility="groupVisibility"
+              @select="selectedId = $event"
+              @toggle-unit="toggleUnit"
+              @toggle-group="toggleGroup"
+            />
+          </section>
+        </div>
         <PropertyEditorViewport
           ref="viewportRef"
           :model-payload="modelPayload"
@@ -665,14 +751,134 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   text-align: center;
 }
 .editor-body {
+  position: relative;
   display: grid;
   flex: 1;
-  grid-template-columns: 220px minmax(0, 1fr) 300px;
+  /* rail | 组件树 sheet（停靠时占列，悬浮/关闭塌缩为 0）| 视口 | 检查器 */
+  grid-template-columns: 48px auto minmax(0, 1fr) 360px;
   min-height: 0;
 }
 @media (max-width: 960px) {
   .editor-body {
-    grid-template-columns: 180px minmax(0, 1fr) 240px;
+    grid-template-columns: 44px auto minmax(0, 1fr) 300px;
   }
+}
+/* 左侧工作台 rail：图标+微标签竖排，组间留白，底部组贴齐下缘 */
+.editor-rail {
+  border-inline-end: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: space-between;
+  min-height: 0;
+  padding: 8px 4px;
+}
+.rail-group {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rail-item {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  font-size: 9px;
+  gap: 3px;
+  padding: 6px 2px;
+  width: 40px;
+}
+.rail-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.rail-item.active {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.rail-item:disabled {
+  color: var(--subtle-foreground);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* 组件树 sheet 停靠列：悬浮时塌缩为 0（sheet 转绝对定位于 body） */
+.tree-dock {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+.tree-dock.float {
+  width: 0;
+}
+.tree-sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  width: 232px;
+}
+.tree-sheet.overlay {
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 35%);
+  inset-inline-start: 48px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 15;
+}
+.tree-sheet-head {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 7px 8px 7px 12px;
+}
+.tree-sheet-head strong {
+  font-size: 12px;
+  margin-inline-end: auto;
+}
+.tree-sheet-actions {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+.tree-sheet-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 22px;
+  min-width: 22px;
+  padding: 0;
+}
+.tree-sheet-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.tree-sheet-btn.active {
+  color: var(--accent);
+}
+/* Outliner 自带的分隔线在 sheet 内是双边框，剥掉并占满剩余高度 */
+.tree-sheet :deep(.outliner) {
+  border-inline-end: 0;
+  flex: 1;
+  min-height: 0;
 }
 </style>

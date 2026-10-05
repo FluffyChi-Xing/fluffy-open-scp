@@ -10,7 +10,7 @@ import PropertyEditorRenderTelemetry from "./PropertyEditorRenderTelemetry.vue";
 import { unitId } from "./unitGizmos";
 
 /**
- * 右侧检查器：竖向 tab 栏（属性 / 坐标 / 元数据）。
+ * 右侧检查器：横向 tab 栏（属性 / 坐标 / 元数据 / 渲染遥测）。
  * 属性 = 原只读属性行表；坐标 = 变换编辑；元数据 = 按 Unit 类型的语义
  * 字段编辑。tab 事件上抛由壳落本地编辑命令。
  */
@@ -87,40 +87,37 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
 .inspector {
   border-left: 1px solid var(--border);
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
 }
+/* 横向 tab（低代码引擎检查器对齐）：文字+下划线激活态 */
 .inspector-tabs {
-  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
   flex: none;
   gap: 2px;
-  padding: 8px 6px;
-  width: 52px;
+  padding: 0 8px;
 }
 .inspector-tab {
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-bottom: 2px solid transparent;
   color: var(--muted-foreground);
   cursor: pointer;
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   font: inherit;
-  font-size: 10px;
-  gap: 3px;
-  padding: 7px 0;
+  font-size: 12px;
+  gap: 6px;
+  padding: 8px 10px 7px;
 }
 .inspector-tab:hover {
-  background: var(--surface-hover);
   color: var(--foreground);
 }
 .inspector-tab.active {
-  background: var(--accent);
-  color: var(--foreground);
+  border-bottom-color: var(--accent);
+  color: var(--accent);
 }
 .inspector-content {
   flex: 1;
