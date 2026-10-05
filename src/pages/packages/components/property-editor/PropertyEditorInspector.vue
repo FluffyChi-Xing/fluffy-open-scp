@@ -116,8 +116,10 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   color: var(--foreground);
 }
 .inspector-tab.active {
-  border-bottom-color: var(--accent);
-  color: var(--accent);
+  /* 主题色高亮（--accent 仅 9% brand 调制，做激活态太弱） */
+  border-bottom-color: var(--brand);
+  color: var(--brand);
+  font-weight: 600;
 }
 .inspector-content {
   flex: 1;

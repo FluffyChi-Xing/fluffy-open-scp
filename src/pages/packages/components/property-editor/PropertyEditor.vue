@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FAlert from "@/components/ui/FAlert.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
@@ -223,8 +224,13 @@ async function exportModel(mode: "white" | "textured") {
 const powered = ref(true);
 
 watch(open, (value) => {
-  if (value) void load();
+  if (value) {
+    diagnosticsDismissed = false;
+    void load();
+  }
 });
+/** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
+let diagnosticsDismissed = false;
 const title = computed(() => {
   const assetName = session.value?.assetName;
   if (assetName) return assetName;
@@ -248,6 +254,17 @@ const treeSheetPinned = ref(true);
     width="100vw"
   >
     <div v-if="open" class="editor-root">
+      <!-- 吸顶诊断横幅：会话诊断一次展示，可关闭（重开会话恢复） -->
+      <FAlert
+        v-if="diagnostics.length && !diagnosticsDismissed"
+        class="editor-alert"
+        type="info"
+        closable
+        :close-label="$t('shell.close')"
+        @close="diagnosticsDismissed = true"
+      >
+        {{ diagnostics.join(" · ") }}
+      </FAlert>
       <header class="editor-header">
         <div class="editor-title">
           <strong>{{ $t("package.propertyEditor") }}</strong>
@@ -436,10 +453,6 @@ const treeSheetPinned = ref(true);
           <FIcon name="X" :size="15" aria-label="" />
         </button>
       </header>
-      <p v-if="diagnostics.length" class="editor-diagnostics">
-        <FIcon name="CircleAlert" :size="13" aria-label="" />
-        <span>{{ diagnostics.join(" · ") }}</span>
-      </p>
       <div v-if="loading" class="editor-loading">
         <FSpinner size="sm" :label="$t('common.loading')" />
       </div>
@@ -724,17 +737,12 @@ const treeSheetPinned = ref(true);
   background: var(--surface-hover);
   color: var(--foreground);
 }
-.editor-diagnostics {
-  align-items: center;
-  background: var(--surface-elevated);
-  border-bottom: 1px solid var(--border);
-  color: var(--muted-foreground);
-  display: flex;
-  font-size: 11px;
-  gap: 7px;
-  margin: 0;
-  overflow: hidden;
-  padding: 6px 16px;
+/* 吸顶诊断横幅：盖在滚动内容之上，随 editor-root 顶缘吸附 */
+.editor-alert {
+  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 .editor-loading {
   display: grid;
