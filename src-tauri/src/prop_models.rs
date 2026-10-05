@@ -308,6 +308,25 @@ fn finish(
     if models.is_empty() {
         None
     } else {
+        // LOD/变体数组顺序不保证（消防局实测绘 41K/21.8K/3.6K/9.1K 乱序）——
+        // 按 RW4 体积降序，models[0] 恒为最高细节（前端取首项）。
+        let size_of = |tgi: &TgiDto| -> u32 {
+            packages
+                .iter()
+                .filter_map(|(_, pkg)| {
+                    pkg.entries()
+                        .iter()
+                        .find(|e| {
+                            e.id.instance == tgi.instance
+                                && e.id.type_id == tgi.type_id
+                                && (tgi.group == 0 || e.id.group == tgi.group)
+                        })
+                        .map(|e| e.decompressed_size)
+                })
+                .next()
+                .unwrap_or(0)
+        };
+        models.sort_by(|a, b| size_of(b).cmp(&size_of(a)));
         Some(ResolvedPropModel {
             resource_id,
             models,
