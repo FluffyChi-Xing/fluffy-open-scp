@@ -32,6 +32,9 @@ const KEY_MODEL_EXPLICIT: u32 = 0x0D8C_29C3;
 const KEY_VEHICLE_MODELS: u32 = 0x0D89_7169;
 /// self-key 标记之一（引擎：含任一标记 → 用记录自身 key 当模型 key）。
 const KEY_LOD1: u32 = 0x00F9_EFBB;
+/// 树 LOD 序号（0x0D8C29CF，uint32 0..3）——与 KEY_TREE_STATE 共存 =
+/// cGraphicsInstancedImpostor 触发签名（引擎 FillFromProps 尾段逐字）。
+const KEY_LOD_INDEX: u32 = 0x0D8C_29CF;
 const KEY_TREE_STATE: u32 = 0x0C36_D30D;
 const KEY_PARENT: u32 = 0x00B2_CCCB;
 /// 树种 descriptor 的变体模型 key 数组（App 包 G 40002D00 记录）。
@@ -253,12 +256,24 @@ fn resolve_one(
         }
     }
 
-    // 包装记录：0x0D897169 直出 / 树 descriptor 变体
+    // 包装记录：0x0D897169 直出 / 树标记
     for (w_inst, _w_type, _w_group) in &wrapper_keys {
         for (_, file, _) in find_records(packages, *w_inst) {
             let models = key_list(&file, KEY_VEHICLE_MODELS);
             if !models.is_empty() {
                 return finish(packages, resource_id, models, source);
+            }
+            // 树签名（引擎 cGraphicsInstancedImpostor 触发条件逐字：
+            // 0x0C36D30D descriptor + 0x0D8C29CF LOD 序号共存）——变体模型
+            // 为运行时离屏渲染内容，本地无 3D 数据；标记 source="tree" 供
+            // 前端走程序化公告板（HSV 绿域随机，GetImpostorInfo 同构）。
+            if has_prop(&file, KEY_TREE_STATE) && has_prop(&file, KEY_LOD_INDEX) {
+                return Some(ResolvedPropModel {
+                    resource_id,
+                    models: Vec::new(),
+                    package_id: None,
+                    source: "tree".into(),
+                });
             }
             if let Some((d_inst, _, _)) = first_key(&file, KEY_TREE_STATE) {
                 for (_, desc_file, _) in find_records(packages, d_inst) {
@@ -271,6 +286,10 @@ fn resolve_one(
         }
     }
     None
+}
+
+fn has_prop(file: &PropertyFile, hash: u32) -> bool {
+    !values_of(file, hash).is_empty()
 }
 
 /// 候选 key → 过滤出在已打开包中真实存在的 RW4 模型，补 package id。

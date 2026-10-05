@@ -26,6 +26,7 @@ const {
   loadError,
   modelPayload,
   propModels,
+  propTreeIds,
   releasePropPackages,
   modelLods,
   activeLod,
@@ -449,6 +450,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           ref="viewportRef"
           :model-payload="modelPayload"
           :prop-models="propModels"
+          :prop-tree-ids="propTreeIds"
           :model-lods="modelLods"
           :active-lod="activeLod"
           :render-mode="renderMode"

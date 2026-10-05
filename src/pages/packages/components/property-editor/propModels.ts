@@ -127,6 +127,109 @@ function decodePaletteRows(texture: ThreeNamespace.Texture | null): number[] {
   return nonEmpty.length > 0 ? nonEmpty : [0];
 }
 
+/** 确定性伪随机（mulberry32）：树形变体与 HSV 取色共用，seed = 派生自
+ * resourceID/index 的实例标识——同种子恒同树。 */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 程序化树剪影纹理（128×256 灰度：白=受光叶冠，alpha=轮廓）。
+ * 4 个形状变体按 seed 派生，纹理跨实例缓存。 */
+const treeTextureCache = new Map<number, ThreeNamespace.Texture>();
+function treeSilhouetteTexture(
+  THREE: typeof ThreeNamespace,
+  variant: number,
+): ThreeNamespace.Texture {
+  const cached = treeTextureCache.get(variant);
+  if (cached) return cached;
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    const fallback = new THREE.Texture();
+    treeTextureCache.set(variant, fallback);
+    return fallback;
+  }
+  const ctx = context;
+  const rand = mulberry32(variant * 0x9e3779b9 + 1);
+  // 树干（灰度：tint 后呈暗色）
+  ctx.fillStyle = "rgb(105, 96, 88)";
+  ctx.beginPath();
+  ctx.moveTo(56, 250);
+  ctx.lineTo(62, 170);
+  ctx.lineTo(70, 170);
+  ctx.lineTo(76, 250);
+  ctx.closePath();
+  ctx.fill();
+  // 树冠：4-6 个灰度径向渐变叶冠斑（叠加出团簇轮廓）
+  const blobs = 4 + Math.floor(rand() * 3);
+  for (let i = 0; i < blobs; i += 1) {
+    const cx = 34 + rand() * 60;
+    const cy = 36 + rand() * 130;
+    const r = 24 + rand() * 30;
+    const shade = 185 + Math.floor(rand() * 70);
+    const gradient = ctx.createRadialGradient(cx, cy, r * 0.25, cx, cy, r);
+    gradient.addColorStop(0, `rgba(${shade},${shade},${shade},1)`);
+    gradient.addColorStop(0.75, `rgba(${shade},${shade},${shade},0.9)`);
+    gradient.addColorStop(1, `rgba(${shade},${shade},${shade},0)`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  treeTextureCache.set(variant, texture);
+  return texture;
+}
+
+/**
+ * 树公告板（impostor 等价渲染）：树变体的 3D 源为运行时离屏内容
+ * （本地数据不含，见 docs/re/props-effects-spawners-paths-engine-flow.md
+ * §1.5），PE 以程序化树形公告板 + HSV 绿域随机取色替代——
+ * 颜色公式与引擎 GetImpostorInfo 同构（色域内按实例随机）。
+ * 尺寸：Transform.Unknown（半宽）×16 为冠宽（引擎 impostor 尺寸分数
+ * 同语义），clamp 1.2–12m。Sprite 恒面向相机 = 引擎公告板行为。
+ */
+export function getTreeBillboard(
+  THREE: typeof ThreeNamespace,
+  options: {
+    seed: number;
+    halfWidth: number | null;
+    position: ThreeNamespace.Vector3;
+  },
+): ThreeNamespace.Object3D {
+  const rand = mulberry32(options.seed);
+  const halfWidth = options.halfWidth ?? 0.35;
+  const width = Math.min(12, Math.max(1.2, halfWidth * 16));
+  const height = width * 2;
+  const variant = Math.floor(rand() * 4);
+  const texture = treeSilhouetteTexture(THREE, variant);
+  // HSV 绿域随机（H 0.24–0.36 = 86°–130°，S 0.35–0.7，V 0.3–0.55）
+  const color = new THREE.Color();
+  color.setHSL(0.24 + rand() * 0.12, 0.35 + rand() * 0.35, 0.3 + rand() * 0.25);
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    color,
+    transparent: true,
+    alphaTest: 0.25,
+    depthWrite: true,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.center.set(0.5, 0);
+  sprite.scale.set(width, height, 1);
+  sprite.position.copy(options.position);
+  sprite.position.z = Math.max(0, sprite.position.z);
+  return sprite;
+}
+
 /**
  * 取 prop 载荷的模型对象（模板缓存命中时按实例建材质）。
  * variantSeed = unit.index（同资源多 prop 确定性分散调色板行）。

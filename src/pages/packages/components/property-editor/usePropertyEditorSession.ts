@@ -69,6 +69,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（后端脚本资源表反查）。
    * 异步旁路加载，不阻塞主模型；未命中保持标记锥。 */
   const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
+  /** 树 prop（source=tree，变体模型为运行时内容）→ 程序化公告板渲染。 */
+  const propTreeIds = shallowRef<Set<number>>(new Set());
   /** 当前加载的 LOD（index）；默认取第一个可用级。 */
   const activeLod = ref(0);
   const modelState = ref<ModelState>("pending");
@@ -211,6 +213,12 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     try {
       const { resolutions } = await source.resolvePropModels(ids);
       if (token !== requestToken) return;
+      const trees = new Set(
+        resolutions
+          .filter((resolution) => resolution.source === "tree")
+          .map((resolution) => resolution.resourceId),
+      );
+      propTreeIds.value = trees;
       const next = new Map(propModels.value);
       await Promise.all(
         resolutions.map(async (resolution) => {
@@ -413,6 +421,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelPayload,
     modelLods,
     propModels,
+    propTreeIds,
     releasePropPackages,
     activeLod,
     switchLod,

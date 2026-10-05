@@ -23,7 +23,10 @@ import {
   unitId,
   unitMatrix,
 } from "./unitGizmos";
-import { getPropModelObject } from "./propModels";
+import {
+  getPropModelObject,
+  getTreeBillboard,
+} from "./propModels";
 import {
   decalFrame,
   decalHalfThickness,
@@ -91,6 +94,8 @@ const props = defineProps<{
   lotModelBboxCenter: [number, number] | null;
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（会话旁路加载）。 */
   propModels: Map<number, LotModelPayload>;
+  /** 树 prop 资源 id 集合（source=tree）→ 程序化公告板渲染。 */
+  propTreeIds: Set<number>;
 
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
@@ -1420,6 +1425,30 @@ async function assembleScene(
     let object: ThreeNamespace.Object3D | null;
     if (props.renderMode === "refined" && unit.kind === "light") {
       object = buildRealLightUnit(THREE, unit);
+    } else if (
+      props.renderMode === "refined" &&
+      unit.kind === "prop" &&
+      typeof unit.resourceId === "number" &&
+      props.propTreeIds.has(unit.resourceId)
+    ) {
+      // 树：变体模型为运行时内容（不可离线渲染，见流程文档 §1.5）→
+      // 程序化公告板（HSV 绿域随机，引擎 GetImpostorInfo 同构）。
+      const treePos = new THREE.Vector3();
+      const treeQuat = new THREE.Quaternion();
+      const treeScale = new THREE.Vector3();
+      if (unit.transform) {
+        unitMatrix(THREE, unit.transform).decompose(
+          treePos,
+          treeQuat,
+          treeScale,
+        );
+      }
+      object =
+        getTreeBillboard(THREE, {
+          seed: unit.resourceId * 2654435761 + unit.index,
+          halfWidth: unit.scale,
+          position: treePos,
+        }) ?? buildUnitObject(THREE, unit);
     } else if (
       props.renderMode === "refined" &&
       unit.kind === "prop" &&
