@@ -217,6 +217,14 @@ fn resolve_one(
     let mut wrapper_keys: Vec<(u32, u32, u32)> = Vec::new();
 
     for (_, file, group) in &records {
+        // 分支 0（最短路径）：LOD1 key 直引 RW4 模型（0x00F9EFBB，type
+        // 0x2F4E681B）——普查中 22+8 个 prop（长椅/垃圾桶等杂件）走这条
+        let lod1 = key_list(file, KEY_LOD1);
+        if !lod1.is_empty() {
+            if let Some(done) = finish(packages, resource_id, lod1, "lod1_direct") {
+                return Some(done);
+            }
+        }
         // 分支 2（先查更具体者）：记录自带 Vehicle Models = 载具定义直出
         let vehicle = key_list(file, KEY_VEHICLE_MODELS);
         if !vehicle.is_empty() {

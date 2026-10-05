@@ -544,6 +544,115 @@ fn main() {
                     hits as f32 / all_bin_ids.len() as f32 * 100.0
                 }
             );
+            // 分类普查：96 个 bin id → 记录位置 + 模型可解性 + 包装形状
+            {
+                let mut b1_all: std::collections::HashMap<u32, Vec<(u32, u64)>> = Default::default();
+                for (pi, pkg) in packages.iter().enumerate() {
+                    for e in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE) {
+                        b1_all.entry(e.id.instance).or_default().push((e.id.group, pi as u64));
+                    }
+                }
+                let mut stats: std::collections::BTreeMap<String, usize> = Default::default();
+                for id in &all_bin_ids {
+                    let recs = b1_all.get(id);
+                    let Some(recs) = recs else {
+                        *stats.entry("phantom(无记录)".into()).or_default() += 1;
+                        continue;
+                    };
+                    // 解析第一个记录看形状
+                    let mut shape = "unknown".to_string();
+                    'shape: for (grp, _) in recs {
+                        for pkg in packages.iter() {
+                            for e in pkg.entries().iter().filter(|e| {
+                                e.id.type_id == PROPERTY_RESOURCE_TYPE
+                                    && e.id.instance == *id
+                                    && e.id.group == *grp
+                            }) {
+                                let Ok(data) = pkg.read(e) else { continue };
+                                let Ok(f) = PropertyFile::parse_with_limits(
+                                    &data,
+                                    ParseLimits::default(),
+                                ) else {
+                                    continue;
+                                };
+                                let has = |h: u32| !values_of(&f, h).is_empty();
+                                let explicit = values_of(&f, 0x0D8C_29C3).first().and_then(|v| key_of(v));
+                                let vehicle = has(0x0D89_7169);
+                                let marker = has(0x00F9_EFBB) || has(0x0C36_D30D);
+                                let parent = values_of(&f, 0x00B2_CCCB).first().and_then(|v| key_of(v));
+                                shape = if vehicle {
+                                    "vehicle_models直出".into()
+                                } else if explicit.is_some() {
+                                    format!("显式key→{:08X}", explicit.unwrap().0)
+                                } else if marker {
+                                    "selfkey标记".into()
+                                } else if parent.is_some() {
+                                    format!("parent→{:08x}", parent.unwrap().0)
+                                } else {
+                                    format!("g{:08X}无形状", grp)
+                                };
+                                break 'shape;
+                            }
+                        }
+                    }
+                    // 组族
+                    let g16 = recs.first().map(|(g, _)| g & 0xFFFF).unwrap_or(0);
+                    let key = format!("{shape} @组低16={g16:04X}");
+                    *stats.entry(key).or_default() += 1;
+                }
+                println!("== prop id 分类普查：");
+                for (k, n) in &stats {
+                    println!("  {n:>3} × {k}");
+                }
+                // 每类抽 2 个样本 id 供定性
+                let mut samples: std::collections::BTreeMap<String, Vec<u32>> = Default::default();
+                for id in &all_bin_ids {
+                    let recs = b1_all.get(id);
+                    let Some(recs) = recs else { continue };
+                    let g16 = recs.first().map(|(g, _)| g & 0xFFFF).unwrap_or(0);
+                    let (shape, has_mod) = {
+                        let mut shape = "unknown".to_string();
+                        let mut has_mod = false;
+                        'shape2: for (grp, _) in recs {
+                            for pkg in packages.iter() {
+                                for e in pkg.entries().iter().filter(|e| {
+                                    e.id.type_id == PROPERTY_RESOURCE_TYPE
+                                        && e.id.instance == *id
+                                        && e.id.group == *grp
+                                }) {
+                                    let Ok(data) = pkg.read(e) else { continue };
+                                    let Ok(f) = PropertyFile::parse_with_limits(
+                                        &data,
+                                        ParseLimits::default(),
+                                    ) else {
+                                        continue;
+                                    };
+                                    let has = |h: u32| !values_of(&f, h).is_empty();
+                                    has_mod = has(0x0D8C_29C3) || has(0x0D89_7169);
+                                    shape = if has(0x0D89_7169) {
+                                        "vehicle_models直出".into()
+                                    } else if has(0x0D8C_29C3) {
+                                        "显式key".into()
+                                    } else if has(0x00F9_EFBB) || has(0x0C36_D30D) {
+                                        "selfkey标记".into()
+                                    } else {
+                                        "无形状".into()
+                                    };
+                                    break 'shape2;
+                                }
+                            }
+                        }
+                        (shape, has_mod)
+                    };
+                    let key = format!("{shape} @组低16={g16:04X}");
+                    samples.entry(key).or_default().push(*id);
+                }
+                for (k, ids) in samples {
+                    let hexes: Vec<String> = ids.iter().take(3).map(|i| format!("{i:08X}")).collect();
+                    println!("  样本[{k}]: {}", hexes.join(" "));
+                }
+            }
+
             // 96 个 bin id 的落点分布：全量 B1B104 索引 (instance → group 低16位)
             let mut where_lived: std::collections::HashMap<u32, usize> =
                 std::collections::HashMap::new();
