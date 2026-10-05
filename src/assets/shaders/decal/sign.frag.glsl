@@ -6,6 +6,7 @@ uniform vec4 uDecalMaterialData[4];
 uniform vec4 uDecalMaterialInfo;
 #define decalMaterialInfo uDecalMaterialInfo
 uniform vec4 uTexXform;
+#define texXform uTexXform
 uniform vec3 uDecalWorldDirection;
 #define decalWorldDirection uDecalWorldDirection
 uniform vec3 uWorldNormal;

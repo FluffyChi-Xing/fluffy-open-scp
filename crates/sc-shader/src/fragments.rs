@@ -17,6 +17,19 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = 1.0; }
       else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = 1.0; }
       outColor = vec4(col, alpha);"),
+    // ---- PS：量化合成（复用已有采样版，SDF 族静态分支用）----
+    // 与 decalQuantComposite 同规则，但掩码取自 outColor（= sharp-bilinear
+    // 保级采样结果），不重复采样——2026-10-05 用户指令："动画关 = 按静态
+    // 招牌渲染"（SDF 族贴图同为多级量化掩码，阈值口径一致）。
+    ("decalQuantCompositeFromSample",
+     "vec4 m = outColor;\n\
+      vec3 col = vec3(0.0);\n\
+      float alpha = 0.0;\n\
+      if (m.a >= 0.5)      { col = uLayerColors[3].rgb; alpha = 1.0; }\n\
+      else if (m.b >= 0.5) { col = uLayerColors[2].rgb; alpha = 1.0; }\n\
+      else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = 1.0; }\n\
+      else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = 1.0; }\n\
+      outColor = vec4(col, alpha);"),
     // ---- VS ----
     ("decalProject",
      // 引擎原文单行：模型位置经体积矩阵进纹理空间
@@ -57,12 +70,19 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
                      specE, specStrength, shColorDiff, shColorSpec, spec);\n\
       Current.color.rgb *= shColorDiff + shColorSpec + spec;"),
     // ---- PS：破洞内景（完整公式，容器原文逐字）----
+    // GLSL 适配（2026-10-05 路由修复后首次真正编译此链）：HLSL `static const`
+    // 从 uniform 取值在 GLSL ES 非法（const 要求编译期常量）→ 降为 float；
+    // 整数字面量 2/1 提升为 2.0/1.0（GLSL ES 无 float×int 隐式转换）。
+    // 内景 UV（2026-10-05 四轮）：原版两行
+    //   lerp(tfp.xy, tfp.xy*0.5, tfp.z*0.5+0.5) * -0.5 + 0.5
+    // 依赖场景内真实几何的深度梯度（破洞后露出的楼板）；PE 建筑是空壳 →
+    // 替换为 compose 注入的 holeParallaxUv（视线射线-盒底平面求交，直视
+    // 等价原版、斜视产生窗户式视差）。其余行保持逐字。
     ("decalLightInteriorMap",
-     "const float kSunContributionAmount = decalMaterialData[0].x;\n\
-      const float kLightAmount = decalMaterialData[0].y;\n\
+     "float kSunContributionAmount = decalMaterialData[0].x;\n\
+      float kLightAmount = decalMaterialData[0].y;\n\
       float3 textureFloatPosition = In.texcoord<t0>.xyz;\n\
-      float2 interiorUv = lerp(textureFloatPosition.xy, textureFloatPosition.xy * 0.5, textureFloatPosition.z * 0.5 + 0.5);\n\
-      interiorUv = interiorUv * -0.5 + 0.5;\n\
+      float2 interiorUv = holeParallaxUv(textureFloatPosition);\n\
       interiorUv = interiorUv * texXform.xy + texXform.zw;\n\
       float sunMod = saturate(dot(sunSky.mSunDir.xyz, bumpNormal.xyz));\n\
       float3 sunColor = sunMod * sunSky.mSunColor.rgb * shadow;\n\
@@ -72,10 +92,8 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       shColorDiff += sunColor * kSunContributionAmount;\n\
       float4 interiorTexture = tex2D(Sampler<s0>, interiorUv);\n\
       float3 interiorTextureLit = interiorTexture.rgb * (shColorDiff + shColorSpec + spec + interiorTexture.a * kInteriorMapSelfLightMax);\n\
-      Current.color.rgb = lerp(Current.color.rgb, interiorTextureLit, saturate(decalTexture.a * 2 - 1));\n\
-      Current.color.a = saturate(decalTexture.a * 2);"),
-    ("kInteriorMapSelfLightMax",
-     "static const float kInteriorMapSelfLightMax = 16.000000;"),
+      Current.color.rgb = lerp(Current.color.rgb, interiorTextureLit, saturate(decalTexture.a * 2.0 - 1.0));\n\
+      Current.color.a = saturate(decalTexture.a * 2.0);"),
     // ---- PS：无光变体的假灯球（d3d9 内部：GetDeferredNormal 由 uniform 法线替代）----
     ("decalWorldDirection",
      "float3 materialLightScale = decalMaterialInfo.x * 16.0 + 1;\n\
@@ -117,7 +135,10 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       float4 animResults = uvCompare - compares;"),
     // ---- PS：灯管调光（decalAnimateSDFDisabled，line 3736 有损修复版）----
     // 跑马灯扫掠阈值的暗亮窗：animResults 小于 0 = 已扫过（点亮，全亮
-    // materialTubeLightFactor = z×8+1）、未扫到 = 0.1 暗态；阈值两侧
+    // materialTubeLightFactor = z×8+1）、未扫到 = 0.35 暗态（引擎原文 0.1；
+    // PE 缺引擎的相位1加法光晕 pass + tonemap/bloom，0.1 暗态在 PE 里整牌
+    // 太暗——十二轮用户"动画模式对比度亮度偏低"对拍，提下限补偿，仍保留
+    // 暗→亮流动）；阈值两侧
     // smoothstep 软边 = 引擎"字体+花纹从暗渐变到亮"的过渡带（对拍
     // TAKEOUT/CHEAP 截图的扫掠辉光边缘，2026-10-05 八轮）。原文
     // lesser_than(animResults, 0) ? vec4 : vec4 的向量条件三目在 GLSL ES
@@ -130,7 +151,7 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
      "float materialTubeLightFactor = decalMaterialInfo.z * 8.0 + 1.0;\n\
       float4 lightFactor = mix(float4(materialTubeLightFactor, materialTubeLightFactor,\n\
                                       materialTubeLightFactor, materialTubeLightFactor),\n\
-                               float4(0.1, 0.1, 0.1, 0.1),\n\
+                               float4(0.35, 0.35, 0.35, 0.35),\n\
                                smoothstep(float4(-0.02, -0.02, -0.02, -0.02),\n\
                                           float4(0.15, 0.15, 0.15, 0.15), animResults));\n\
       float4 powerFactor = lerp(float4(0.5, 0.5, 0.5, 0.5), lightFactor, decalMaterialInfo.wwww);\n\
@@ -138,42 +159,26 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       float4 tubeColor0 = decalMaterialData[0] * powerFactor;\n\
       float4 tubeColor1 = decalMaterialData[1] * powerFactor;\n\
       float4 tubeColor2 = decalMaterialData[2] * powerFactor;"),
-    // ---- PS：SDF 调色板归属解码 + 点亮合成（Darken 行为对拍版）----
-    // 2026-10-05 八轮对拍定谳，取代球面衰减版（容器 line 3747-3779 的
-    // 逐字移植）：
-    // 1) 取证：该族贴图纹素 RGBA 恒等于字典 colors 四行之一（加油站
-    //    0x090C71D6：面板 = row0 青 / 油泵 = row1 紫 / 字体 = row3 黄；
-    //    dump_decal_4color + 逐纹素比对）——**贴图自带最终色**，转置
-    //    权重列 dot 只有在 lightScales 为元素 one-hot 时才还原原色；
-    // 2) 球面衰减版 min(2·sdf,1)² 多通道同时点亮（面板吃 B+A 两路 →
-    //    红亮盖字、字体被背景淹没）= "动态色块无细节"的根因；
-    // 3) one-hot 归属（最近调色板行）后每个元素吃自己的 colors 行与
-    //    独立动画通道（w 列 chunks/相位），扫掠以字体+花纹为遮罩从暗
-    //    渐变到亮——与引擎 TAKEOUT/CHEAP 截图逐区域对拍一致。
-    // 球面衰减的 3D 灯管圆润度（circleZ/hwRatio）对量化贴图无对应物，
-    // 随旧版一并移除；uDecalNUS 保留声明供后续校准引用。
+    // ---- PS：SDF 遮罩上色（decalSDF[394] addOverlay，dev 原版语义 ----
+    // 2026-10-05 十一轮重写，按 §12.5 逐字对拍取代八轮的"最近调色板行
+    // one-hot 归属"——dev 没有分类步骤：四通道直接当遮罩（maskCenter=0.5
+    // + fwidth 屏幕导数抗锯齿 = 官方清晰度答案，§12.6），颜色 = 调光后
+    // 权重列与遮罩的**加权求和**：
+    //   lightColor_i = materialLightScale · dot(tubeColor_i, mask4)
+    // one-hot 把过渡区/多通道区像素硬归单一通道 = "纯色块无图案"根因
+    // （用户 09:58 对拍）。alpha = 四通道遮罩 max（覆盖区不透明）。
     ("decalAnimateSDFDarken",
      "float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\n\
-      float3 sdfTexel = Current.color.rgb;\n\
-      float3 sdfRow0 = float3(decalMaterialData[0].x, decalMaterialData[1].x, decalMaterialData[2].x);\n\
-      float3 sdfRow1 = float3(decalMaterialData[0].y, decalMaterialData[1].y, decalMaterialData[2].y);\n\
-      float3 sdfRow2 = float3(decalMaterialData[0].z, decalMaterialData[1].z, decalMaterialData[2].z);\n\
-      float3 sdfRow3 = float3(decalMaterialData[0].w, decalMaterialData[1].w, decalMaterialData[2].w);\n\
-      float4 sdfDist = float4(dot(sdfTexel - sdfRow0, sdfTexel - sdfRow0),\n\
-                              dot(sdfTexel - sdfRow1, sdfTexel - sdfRow1),\n\
-                              dot(sdfTexel - sdfRow2, sdfTexel - sdfRow2),\n\
-                              dot(sdfTexel - sdfRow3, sdfTexel - sdfRow3));\n\
-      float sdfBest = min(min(sdfDist.x, sdfDist.y), min(sdfDist.z, sdfDist.w));\n\
-      float4 lightScales = float4(sdfDist.x <= sdfBest ? 1.0 : 0.0,\n\
-                                  sdfDist.y <= sdfBest ? 1.0 : 0.0,\n\
-                                  sdfDist.z <= sdfBest ? 1.0 : 0.0,\n\
-                                  sdfDist.w <= sdfBest ? 1.0 : 0.0);\n\
+      float4 sdfFw = min(fwidth(Current.color), float4(0.15, 0.15, 0.15, 0.15));\n\
+      float4 sdfMask = smoothstep(float4(0.5, 0.5, 0.5, 0.5) - sdfFw,\n\
+                                  float4(0.5, 0.5, 0.5, 0.5) + sdfFw, Current.color);\n\
       float3 lightColor = float3(0.0, 0.0, 0.0);\n\
-      lightColor.x = materialLightScale * dot(tubeColor0, lightScales);\n\
-      lightColor.y = materialLightScale * dot(tubeColor1, lightScales);\n\
-      lightColor.z = materialLightScale * dot(tubeColor2, lightScales);\n\
+      lightColor.x = materialLightScale * dot(tubeColor0, sdfMask);\n\
+      lightColor.y = materialLightScale * dot(tubeColor1, sdfMask);\n\
+      lightColor.z = materialLightScale * dot(tubeColor2, sdfMask);\n\
       lightColor *= decalMaterialInfo.w;\n\
-      Current.color.rgb = lightColor;"),
+      Current.color.rgb = lightColor;\n\
+      Current.color.a = max(max(sdfMask.x, sdfMask.y), max(sdfMask.z, sdfMask.w));"),
     // ---- PS：灯管亮度（场景光叠加）----
     ("decalLightSDF",
      "float3 bumpNormal = normalize(decalWorldDirection);\n\

@@ -139,6 +139,9 @@ useEditorHotkeys(
 );
 
 const renderMode = ref<"default" | "refined">("default");
+/** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
+ * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
+const neonAnim = ref(false);
 
 // 退出复位（2026-10-04 问题2）：sheet 关闭时把视图状态收回默认——组件
 // 始终挂载（v-model:open），否则 renderMode/图层显隐跨会话残留，下次打开
@@ -147,6 +150,7 @@ const renderMode = ref<"default" | "refined">("default");
 watch(open, (isOpen, wasOpen) => {
   if (isOpen || !wasOpen) return;
   renderMode.value = "default";
+  neonAnim.value = false;
   tool.value = "select";
   resetViewState();
 });
@@ -336,6 +340,16 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FCheckbox v-model="powered" />
           <span>{{ $t("package.powered") }}</span>
         </label>
+        <!-- 动态招牌（2026-10-05 十轮）：关 = 静态量化合成；开 = dev LED
+             扫掠动画（decalNeonTubeSDF 双相位口径，§12.5） -->
+        <label
+          v-if="renderMode === 'refined'"
+          class="spec-experiment"
+          :title="$t('package.neonAnimHint')"
+        >
+          <FCheckbox v-model="neonAnim" />
+          <span>{{ $t("package.neonAnim") }}</span>
+        </label>
         <button
           class="editor-close"
           type="button"
@@ -459,6 +473,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :neon-anim="neonAnim"
           :decal-light="decalLight"
           :tool="tool"
           @select="selectedId = $event"

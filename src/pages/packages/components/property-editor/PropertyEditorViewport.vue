@@ -110,6 +110,10 @@ const props = defineProps<{
   timeOfDay?: number;
   /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
   powered?: boolean;
+  /** 动态招牌开关（默认 false = 静态量化合成招牌）：开启后 SDF 族进入
+   * dev LED 扫掠动画并启动 rAF 时钟。顶部工具条复选框驱动（2026-10-05
+   * 十轮：原视口 ⚡ 按钮用户找不到，挪入顶部工具条"供电"旁）。 */
+  neonAnim?: boolean;
   /** 破洞贴花假内景光参数 [光强因子, 半径因子]（0x0DA76A05/06）；缺失 = 无。 */
   decalLight?: [number, number] | null;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
@@ -246,8 +250,13 @@ async function getDecalTexture(
     });
     if (!decoded) return null;
     // sign/graffiti raw 掩码纹理 = 数据通道（阈值 0.5 作用于线性值），
-    // 必须线性采样；破洞内景图 = 颜色纹理保持 sRGB。
-    if (texture.colors) {
+    // 必须线性采样；破洞内景图 = 颜色纹理保持 sRGB。注意破洞条目**也带
+    // colors 字段**（探针 hole_decal_dump 实证），判据必须按材质实例分流，
+    // 不能只看 colors 有无。
+    const isHoleTexture = DECAL_HOLE_MATERIALS.has(
+      (texture.materialInstance ?? 0) >>> 0,
+    );
+    if (texture.colors && !isHoleTexture) {
       decoded.colorSpace = THREE.NoColorSpace;
     } else {
       decoded.colorSpace = THREE.SRGBColorSpace;
@@ -268,7 +277,8 @@ async function getDecalTexture(
       decoded.generateMipmaps = true;
       decoded.minFilter = THREE.LinearMipmapLinearFilter;
     }
-    if (texture.variant === "hole") decoded.flipY = false;
+    // 破洞 flipY=false 特判已随体积盒路径退役（2026-10-05 二轮）：投影
+    // 路径与其他族共用 UV 口径（文字/图案方向对拍确认），不再单独翻转。
     decoded.anisotropy = viewport.viewer.value?.maxAnisotropy ?? 1;
     decalTextureCache.set(texture, decoded);
     return decoded;
@@ -486,24 +496,35 @@ const decalStats = { projected: 0, fallback: 0, skipped: 0 };
 const HOLE_LIGHT_MAX = 8;
 let holeLightCount = 0;
 
+/** 破洞族材质实例（2026-10-05 探针 hole_decal_dump 全量扫描定谳）：
+ * 字典 0x1813DA18 的 material = 0x4491DE3A（decalInteriorMap /
+ * shader 0x700000D2，docs/re/decal-engine-reanalysis-ida.md §11），
+ * 29 个条目、194 个 decal 实例。早前"无 Color1-4 = 破洞"的判据在全库
+ * 1694 条扫描中 **0 命中**（破洞条目带颜色字段）——后端 variant="hole"
+ * 分支是死代码，破洞一直被错误路由到 clip 直采链（= "破洞是纯平斑块、
+ * 无内景"的真正根因）。 */
+const DECAL_HOLE_MATERIALS: ReadonlySet<number> = new Set([0x4491de3a]);
+
 /** 本轮装配是否产生了 SDF 霓虹动画 decal（决定重建后是否启动动画时钟）。 */
 let neonAnimated = false;
 /** 霓虹动画时钟 rAF 句柄与上一帧时间戳。 */
 let neonFrame = 0;
 let neonLast = 0;
 
-/** 动态招牌开关（2026-10-05 八轮，用户指令）：仅精细渲染工具条可见，
- * 默认关 = 静态恒亮招牌（uAnimEnabled=0，不吃扫掠窗、不启动动画时钟）；
- * 开启后 SDF 族进入扫掠动画并启动 rAF 时钟。 */
-const neonAnimOn = ref(false);
-
-function toggleNeonAnim() {
-  neonAnimOn.value = !neonAnimOn.value;
-  if (envRefs) envRefs.animEnabled.value = neonAnimOn.value ? 1 : 0;
-  if (neonAnimOn.value && neonAnimated) startNeonClock();
+/** 动态招牌开关状态由父组件 prop neonAnim 驱动（顶部工具条复选框）：
+ * 默认关 = 静态量化合成招牌（uAnimEnabled=0）；开启后 SDF 族进入 dev
+ * LED 扫掠动画并启动 rAF 时钟。 */
+function applyNeonAnim(on: boolean) {
+  if (envRefs) envRefs.animEnabled.value = on ? 1 : 0;
+  if (on && neonAnimated) startNeonClock();
   else stopNeonClock();
   viewport.viewer.value?.invalidate();
 }
+
+watch(
+  () => props.neonAnim,
+  (on) => applyNeonAnim(on === true),
+);
 
 /**
  * 霓虹动画时钟（2026-10-05 六轮）：场景含 SDF 动画 decal 时以 rAF 推进
@@ -540,8 +561,8 @@ function rebuildScene() {
   return viewport.rebuild(assembleScene, { reframe }).then(() => {
     // env 每轮重建新建（animEnabled 归 0）→ 按开关状态重新应用；时钟
     // 只在"场景有 SDF 动画 decal 且开关开启"时运转。
-    if (envRefs) envRefs.animEnabled.value = neonAnimOn.value ? 1 : 0;
-    if (neonAnimated && neonAnimOn.value) startNeonClock();
+    if (envRefs) envRefs.animEnabled.value = props.neonAnim === true ? 1 : 0;
+    if (neonAnimated && props.neonAnim === true) startNeonClock();
     else stopNeonClock();
   });
 }
@@ -853,123 +874,6 @@ async function assembleScene(
    * 脱节（"不在一个图层"观感的根因），MeshStandard 融入场景光照。
    */
   /**
-   * 破洞贴花材质 —— `decalLightInteriorMap` **逐字转写**（2026-09-30
-   * decal_all_families_source.txt 逐字源码，§65.15）：
-   *
-   * ```hlsl
-   * kSunContribution = decalMaterialData[0].x;   // 0x0DA76A05（PE decalLight[0]）
-   * kLightAmount     = decalMaterialData[0].y;   // 0x0DA76A06（PE decalLight[1]）
-   * interiorUv = lerp(tfp.xy, tfp.xy*0.5, tfp.z*0.5+0.5) * -0.5 + 0.5;
-   *              // ↑ z 深度视差：越深 UV 越向中心收缩 = 房间进深
-   * interiorUv  = interiorUv * texXform.xy + texXform.zw;   // → atlas 格
-   * sunColor = saturate(dot(sunDir, normal)) * sunColor.rgb;
-   * shColorDiff = (shColorDiff - sunColor) * kLightAmount
-   *             + sunColor * kSunContribution;
-   * interiorTextureLit = interior.rgb * (shColorDiff + shColorSpec + spec
-   *                    + interior.a · kInteriorMapSelfLightMax，常量 16.0);
-   * rgb = lerp(decal.rgb, interiorTextureLit, saturate(decal.a * 2 - 1));
-   * a   = saturate(decal.a * 2);
-   * ```
-   *
-   * PE 适配：纹理 = 解码条目栅格全图（texXform ≙ 全图 uv）；法线 = 切片
-   * 所在墙面（盒体 z 轴）；场景光 = env 太阳/天空近似（与建筑共享
-   * uSunDir/uSunColor/uDayLight uniform，热切换联动）；自亮峰值 16 为
-   * 夜间值，白天按 uInteriorGlow 缩至 2.5（与建筑内景链同源，恒 16 会
-   * 白天过曝——2026-09-30 用户对拍"太亮"）。旧"建筑 slot5 房间图集 +
-   * 盒体投影 + 渐黑环境光"口径（§62-63）废弃——引擎内景图 = **贴花自身
-   * 纹理**的视差采样。
-   */
-  function createHoleInteriorMaterial(
-    THREE: typeof ThreeNamespace,
-    map: ThreeNamespace.Texture,
-    env: SunEnvRefs,
-    decalData: [number, number] | null,
-    halfDepth: number,
-    /** 渲染面：切片贴片用 DoubleSide（贴墙面）；体积盒用 BackSide——
-     * 只画盒内壁，从外面透过建筑模型的洞看到房间内景，实墙处被深度
-     * 遮挡不可见（引擎 decalInteriorMap 体积盒的等价观感）。 */
-    side: ThreeNamespace.Side = THREE.DoubleSide,
-  ): ThreeNamespace.ShaderMaterial {
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        uMap: { value: map },
-        uHalfDepth: { value: Math.max(halfDepth, 0.05) },
-        uBoxHalfXY: { value: new THREE.Vector2(1, 1) },
-        // 与建筑注入材质共享同一 env uniform 对象（昼夜热切换联动）
-        uSunDir: env.sunDir,
-        uSunColor: env.sunColor,
-        uDayLight: env.dayLight,
-        // decalMaterialData[0] = (kSunContribution, kLightAmount)
-        uDecalData: {
-          value: new THREE.Vector2(
-            decalData?.[0] ?? 0,
-            decalData?.[1] ?? 0,
-          ),
-        },
-        // 自亮峰值与建筑内景链同源（kInteriorMapSelfLightMax=16 为夜间峰值，
-        // 白天 2.5——恒 16 会导致白天破洞内部过曝，2026-09-30 用户对拍"太亮"）
-        uInteriorGlow: env.glow,
-      },
-      side,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-      polygonOffsetUnits: -4,
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vTp;
-        varying vec3 vWorldNormal;
-        uniform float uHalfDepth;
-        uniform vec2 uBoxHalfXY;
-        void main() {
-          vUv = uv;
-          // 盒体归一坐标：xy = ±1（贴花面内），z = ±1（进深，前 +1）。
-          // 切片贴在墙面（z 可能略超出盒前缘，引擎几何被盒体裁到界内），
-          // 必须 clamp 否则视差采样越界。
-          vTp = clamp(position / vec3(max(uBoxHalfXY, vec2(0.001)), uHalfDepth), -1.0, 1.0);
-          vWorldNormal = normalize(mat3(modelMatrix) * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vTp;
-        varying vec3 vWorldNormal;
-        uniform sampler2D uMap;
-        uniform vec3 uSunDir;
-        uniform vec3 uSunColor;
-        uniform float uDayLight;
-        uniform vec2 uDecalData;
-        uniform float uInteriorGlow;
-        float saturate_(float v) { return clamp(v, 0.0, 1.0); }
-        void main() {
-          vec4 decalTexture = texture2D(uMap, vUv);
-          // 视差内景 UV（逐字）：前面全尺寸、深度一半处缩向中心
-          vec2 interiorUv = mix(vTp.xy, vTp.xy * 0.5, vTp.z * 0.5 + 0.5) * -0.5 + 0.5;
-          vec4 interiorTexture = texture2D(uMap, interiorUv);
-          // 场景光（SimCityLighting 的 env 近似）：天空环境 + 太阳 N·L
-          float sunMod = saturate_(dot(normalize(uSunDir), normalize(vWorldNormal)));
-          vec3 sunColor = sunMod * uSunColor;
-          vec3 shColorDiff = mix(vec3(0.10, 0.11, 0.15), vec3(0.62), uDayLight);
-          shColorDiff -= sunColor;
-          shColorDiff *= uDecalData.y;                  // kLightAmount
-          shColorDiff += sunColor * uDecalData.x;       // kSunContribution
-          vec3 spec = sunColor * 0.12;                  // gloss 0.06 / specE 16 的小镜面
-          // 自亮：kInteriorMapSelfLightMax 的昼夜缩放（uInteriorGlow 2.5..16，
-          // 与建筑内景链同源）——白天 2.5 温和、夜间 16 窗亮
-          vec3 interiorTextureLit = interiorTexture.rgb *
-            (shColorDiff + spec + interiorTexture.a * uInteriorGlow);
-          vec3 col = mix(decalTexture.rgb, interiorTextureLit,
-            saturate_(decalTexture.a * 2.0 - 1.0));
-          float alpha = saturate_(decalTexture.a * 2.0);
-          // ShaderMaterial 不走 three 的 colorspace 编码，手动回 sRGB
-          gl_FragColor = vec4(pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)), alpha);
-        }
-      `,
-    });
-  }
-  /**
    * Decal 材质子类型（migration.md §56-59）：引擎 decal PS 全家族都是
    * **直采 raster + 标准 alpha 混合**（`Current.color = tex2D(s0, uv)`），
    * 子类型差异只在增亮/光照/动画分支。raw 纹理的 alpha 本身就是美术授权
@@ -1095,20 +999,8 @@ async function assembleScene(
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
     };
-    // 破洞（decalLightInteriorMap 族）：视差内景 + 场景光分解 + 自亮 ×16
-    //（createHoleInteriorMaterial 逐字转写）。
-    if (dto.variant === "hole") {
-      const material = createHoleInteriorMaterial(
-        THREE,
-        map,
-        opts.env,
-        opts.decalData ?? null,
-        opts?.halfDepth ?? 1,
-      );
-      const boxHalf = material.uniforms.uBoxHalfXY.value as ThreeNamespace.Vector2;
-      boxHalf.set(opts?.boxHalfX ?? 1, opts?.boxHalfY ?? 1);
-      return material;
-    }
+    // 破洞族已由引擎材质链（createEngineDecalMaterial "hole"）接管，
+    // buildDecalMaterial 不再处理 hole（手写回退路径 2026-10-05 退役）。
     switch (DECAL_MATERIAL_VARIANTS[(dto.materialInstance ?? 0) >>> 0]) {
       case "sign": {
         // decalNeonBrighten 逐字：`color.rgb *= shColorDiff + shColorSpec + spec`
@@ -1161,61 +1053,10 @@ async function assembleScene(
   }
 
   /**
-   * 破洞族体积盒（引擎 decalInteriorMap 同构，2026-10-04 RL 带名代码定谳）：
-   * 盒前缘 = 变换原点、沿 **+axisZ（建筑内侧）延伸 depth 全长**——RL
-   * `SC::cDecalData::SpawnDecalInstance` 的 model→texture 矩阵把
-   * [0, depth] 映射到纹理 z [−1,1]（z 轴 ×2/depth、平移 −depth/2），
-   * xy 居中、**z 不居中**。只渲染内壁（BackSide）：建筑模型有洞时从外
-   * 透过洞看到房间内景，实墙处被深度遮挡不可见。**不切片、不回退**。
-   * 此前居中盒（±depth 双向）一半穿出立面 = "破洞漂浮在建筑外"根因
-   * （PL 文档 §六判方向、RL 代码判数值，两源互证；depth 语义 = 全长，
-   * 修正 §41.2"原点→平面距离/半厚"旧判）。
-   */
-  function buildHoleVolumeMesh(
-    THREE: typeof ThreeNamespace,
-    frame: DecalFrame,
-    unit: DecalUnit,
-    texture: DecalUnitTexture,
-    decoded: ThreeNamespace.Texture,
-  ): ThreeNamespace.Mesh {
-    const depth = decalHalfThickness(unit.depth); // z 向全长（非半厚）
-    const geometry = new THREE.BoxGeometry(frame.sizeX, frame.sizeY, depth);
-    // 引擎 uv = texpos.xy × -0.5 + 0.5（U 取负），与切片路径同一镜像口径
-    const uv = geometry.attributes.uv;
-    for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
-    uv.needsUpdate = true;
-    const material =
-      ENGINE_SHADER_MATERIALS && props.decalLight !== undefined
-        ? createEngineDecalMaterial(THREE, "hole" satisfies EngineFamily, {
-            map: decoded,
-            layerColors: texture.colors,
-            decalData: props.decalLight ?? null,
-            worldDirection: frame.axisZ,
-            env,
-            side: THREE.BackSide,
-            // 体积 VS 的盒归一化（视差内景的 z 进深来源）
-            boxHalf: [frame.sizeX / 2, frame.sizeY / 2, depth / 2],
-          })
-        : createHoleInteriorMaterial(
-            THREE,
-            decoded,
-            env,
-            props.decalLight ?? null,
-            depth / 2, // 半深 → 盒局部 z∈[−depth/2, +depth/2] 映射 vTp.z∈[−1,1]
-            THREE.BackSide,
-          );
-    const boxHalf = material.uniforms.uBoxHalfXY.value as ThreeNamespace.Vector2;
-    boxHalf.set(frame.sizeX / 2, frame.sizeY / 2);
-    const mesh = new THREE.Mesh(geometry, material);
-    // 组局部 +Z = axisZ：盒体整体前移到 [0, depth]（前缘落在变换原点）
-    mesh.position.z = depth / 2;
-    return mesh;
-  }
-
-  /**
-   * 精细模式贴花：破洞族 = 变换原点处的内景体积盒；其余族 = 引擎体积盒
-   * 语义的 DecalGeometry 盒裁剪投影（建筑三角形 → 贴花网格，曲面/阶梯
-   * 立面自然贴合）。盒内无建筑面 = 引擎浮空分支（decalFloatQuad）：
+   * 精细模式贴花：所有族统一走引擎体积盒语义的 DecalGeometry 盒裁剪投影
+   * （建筑三角形 → 贴面网格，曲面/阶梯立面自然贴合；破洞族 2026-10-05
+   * 并入此路径，体积盒 BackSide 方案退役）。盒内无建筑面：破洞族按
+   * decalClip 语义不渲染，其余族 = 引擎浮空分支（decalFloatQuad）：
    * 数据位姿的浮空 quad（holo 广告/远抛实例）。
    *
    * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
@@ -1266,35 +1107,10 @@ async function assembleScene(
     // 路由（2026-10-01 引擎对齐重分析，docs/re/decal-engine-alignment.md）：
     // Ghidra SC_cVolumeDecalManager FUN_006fdce0 证明 decal 体积盒由变换数据
     // 直接构造，**无射线/无距离判定**——早前的 ≤10m 投影路由是发明物，删除。
-    // 现行分派：破洞族（decalInteriorMap）= 变换原点处的**内景体积盒**
-    // （引擎浮空分支同构，永不回退浮空 quad）；其余族 = 以变换原点为盒心
-    // 的 DecalGeometry 投影（背面剔除对应引擎延迟路径最近深度语义），
-    // 盒未触及任何建筑面时回退浮空 quad。
-    if (frame && texture.variant === "hole") {
-      const mesh = buildHoleVolumeMesh(THREE, frame, unit, texture, decoded);
-      group.add(mesh);
-      decalStats.projected += 1;
-      // decalInteriorMap 光 pass 近似：lot 带光参数时，沿投影轴向墙面投
-      // 暖色 cookie 光（引擎用贴花贴图作光 cookie、alpha 作衰减）。上限
-      // 8 盏防多破洞 lot 光源洪峰。
-      if (props.decalLight && holeLightCount < HOLE_LIGHT_MAX) {
-        const [scaleFactor, radiusFactor] = props.decalLight;
-        const spot = new THREE.SpotLight(
-          0xffdca0,
-          (scaleFactor * 16 + 1) * 3,
-          radiusFactor * 8,
-          0.9,
-          0.6,
-          1,
-        );
-        spot.map = decoded;
-        spot.position.set(0, 0, -0.5);
-        spot.target.position.set(0, 0, 1);
-        group.add(spot, spot.target);
-        holeLightCount += 1;
-      }
-      return group;
-    }
+    // 现行分派：所有族统一走 DecalGeometry 投影（破洞族 2026-10-05 起并入，
+    // 体积盒 BackSide 路径退役——盒内壁不随建筑曲面走 = 破洞不贴合/漂浮根因；
+    // 引擎投影/浮空由 shader 选择固化，破洞 shader decalInteriorMap 内含
+    // decalClip 体积裁剪，几何上就是投影贴面网格）。
     if (frame) {
       // 引擎体积盒的 CPU 同构（2026-10-05 四轮定稿，casino 探针实锤）：
       // **盒深 = unit.depth × scale**——lot 0x457EA9DB 全部 7 个 decal：
@@ -1324,7 +1140,9 @@ async function assembleScene(
         "three/examples/jsm/geometries/DecalGeometry.js"
       );
       if (ctx.isStale()) return null;
-      // 族路由（2026-10-05 六轮升级）：量化族字典（招牌 + 涂鸦）内再按
+      // 族路由（2026-10-05 破洞并入投影路径）：破洞（decalInteriorMap）
+      // 直接路由 hole 链（投影几何 + 内景双 UV + 受光步，与原版片段链
+      // [379]/[380] 逐字对齐）；量化族字典（招牌 + 涂鸦）内再按
       // materialData[1] 分流——该分量 = 引擎 decalMaterialInfo.y =
       // **animSpeed 跑马灯速度**（docs/re/decal-engine-alignment.md §十五，
       // 早前"疑似自发光参数"的猜测已被 decalLightBackground 源码取代）：
@@ -1333,13 +1151,15 @@ async function assembleScene(
       //   = 0 → 量化合成静态链（casino 招牌 / 涂鸦恒 0）；
       // 其余（焦痕/烧灼/未知）→ clip 直采链。
       const animSpeed = unit.materialData?.[1] ?? 0;
-      const family: EngineFamily = DECAL_QUANT_MATERIALS.has(
+      const family: EngineFamily = DECAL_HOLE_MATERIALS.has(
         (texture.materialInstance ?? 0) >>> 0,
       )
-        ? animSpeed > 0
-          ? "sdf"
-          : "sign"
-        : "clip";
+        ? "hole"
+        : DECAL_QUANT_MATERIALS.has((texture.materialInstance ?? 0) >>> 0)
+          ? animSpeed > 0
+            ? "sdf"
+            : "sign"
+          : "clip";
       if (family === "sdf") neonAnimated = true;
       // 引擎浮空分支（decalFloatQuad，holo 广告/远抛实例）：在**数据
       // 位置**画浮空 quad，姿态由 transform 给出——不是"不渲染"（四轮
@@ -1373,6 +1193,10 @@ async function assembleScene(
         decalStats.fallback += 1;
       };
       if (!wallHit) {
+        // 破洞族无浮空分支：引擎 decalInteriorMap 链内含 decalClip 体积
+        // 裁剪——体积盒内无场景深度（未触及建筑面）时整贴花被 clip kill，
+        // 即"根本不渲染"，不是回退浮空（§12.4/§12.7）。
+        if (family === "hole") return group;
         addFloatQuad();
         return group;
       }
@@ -1428,16 +1252,21 @@ async function assembleScene(
           projector.size,
         );
         if ((clipped.attributes.position?.count ?? 0) === 0) continue;
-        const filtered = filterDecalProjectionByNormal(
-          THREE,
-          clipped,
-          frame.axisZ,
-        );
+        // 破洞族不按法线过滤：引擎延迟投影对体积盒内**所有**表面逐像素
+        // 落贴花——破洞后露出的楼板/内墙/远侧内壁正是游戏"内部结构"的
+        // 来源（N·axisZ≤−0.5 过滤会把水平楼板全部滤掉 = 平斑）。FrontSide
+        // 背面剔除 + 建筑实体不透明深度遮挡已防外侧面穿透。
+        const filtered =
+          family === "hole"
+            ? clipped
+            : filterDecalProjectionByNormal(THREE, clipped, frame.axisZ);
         if (filtered) geometries.push(filtered);
       }
       // 射线命中但法线过滤后无任何可投面（墙面与投影轴近平行的极端
-      // 摆放）→ 同走浮空分支：宁可画在数据位姿也不凭空消失。
+      // 摆放）→ 破洞同样不渲染（decalClip 语义）；其余族走浮空分支：
+      // 宁可画在数据位姿也不凭空消失。
       if (!geometries.length) {
+        if (family === "hole") return group;
         addFloatQuad();
         return group;
       }
@@ -1461,6 +1290,27 @@ async function assembleScene(
             // 背面 → 剔除，杜绝"隔着建筑看到镜像字"（五轮图1；法线过滤
             // 已保证留下的面都朝原点，正面即被投面）。
             side: THREE.FrontSide,
+            // 破洞族：盒参数供 VS 计算 tfp.z 真实进深（立面 −1 全尺寸
+            // 内景、破洞后深部结构 +1 中心收缩 = 游戏"内部结构"机制）。
+            // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）。
+            // halfXY/depthM/invRot 供 PS 视线视差（holeParallaxUv）。
+            holeBox:
+              family === "hole"
+                ? {
+                    origin: frame.origin,
+                    axisZ: frame.axisZ,
+                    invDepth: 1 / Math.max(depthZ, 0.01),
+                    halfXY: [frame.sizeX / 2, frame.sizeY / 2],
+                    depthM: depthZ,
+                    // lot→贴花系旋转 = 基矩阵转置（行主序 set：行 = 各基
+                    // 向量，正交基下转置即逆）
+                    invRot: new THREE.Matrix3().set(
+                      frame.axisX.x, frame.axisX.y, frame.axisX.z,
+                      frame.axisY.x, frame.axisY.y, frame.axisY.z,
+                      frame.axisZ.x, frame.axisZ.y, frame.axisZ.z,
+                    ),
+                  }
+                : undefined,
           })
         : buildDecalMaterial(THREE, texture, decoded, {
             env,
@@ -1479,6 +1329,35 @@ async function assembleScene(
       }
       group.add(container);
       decalStats.projected += 1;
+      // 破洞视线视差：每帧把相机位置变换到 mesh 局部（= lot 局部）空间写
+      // 入 uHoleCamLot（container 的 matrixWorld = lot 世界矩阵 × 组链上
+      // 相消的 unit 变换；onBeforeRender 在 updateMatrixWorld 之后触发）。
+      if (family === "hole" && ENGINE_SHADER_MATERIALS) {
+        const shaderMat = engineMaterial as ThreeNamespace.ShaderMaterial;
+        container.onBeforeRender = (_renderer, _scene, camera) => {
+          const camLot = container.worldToLocal(camera.position.clone());
+          (shaderMat.uniforms.uHoleCamLot.value as ThreeNamespace.Vector3).copy(camLot);
+        };
+      }
+      // decalInteriorMap 光 pass 近似（保留自体积盒时代）：lot 带光参数时，
+      // 沿投影轴向墙面投暖色 cookie 光（引擎用贴花贴图作光 cookie、alpha
+      // 作衰减）。上限 8 盏防多破洞 lot 光源洪峰。
+      if (family === "hole" && props.decalLight && holeLightCount < HOLE_LIGHT_MAX) {
+        const [scaleFactor, radiusFactor] = props.decalLight;
+        const spot = new THREE.SpotLight(
+          0xffdca0,
+          (scaleFactor * 16 + 1) * 3,
+          radiusFactor * 8,
+          0.9,
+          0.6,
+          1,
+        );
+        spot.map = decoded;
+        spot.position.set(0, 0, -0.5);
+        spot.target.position.set(0, 0, 1);
+        group.add(spot, spot.target);
+        holeLightCount += 1;
+      }
       return group;
     }
     return group;
@@ -1839,16 +1718,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       >
         <FIcon :name="entry.icon" :size="14" aria-label="" />
       </button>
-      <button
-        v-if="renderMode === 'refined'"
-        type="button"
-        :class="{ active: neonAnimOn }"
-        :aria-pressed="neonAnimOn"
-        :title="`${$t('package.neonAnim')} — ${$t('package.neonAnimHint')}`"
-        @click="toggleNeonAnim"
-      >
-        <FIcon name="Zap" :size="14" aria-label="" />
-      </button>
+      <!-- 动态招牌开关已挪入顶部工具条（供电旁复选框，2026-10-05 十轮） -->
     </div>
     <div
       class="viewport-overlay viewport-visibility"

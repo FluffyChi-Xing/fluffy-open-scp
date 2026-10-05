@@ -6,6 +6,7 @@ uniform vec4 uDecalMaterialData[4];
 uniform vec4 uDecalMaterialInfo;
 #define decalMaterialInfo uDecalMaterialInfo
 uniform vec4 uTexXform;
+#define texXform uTexXform
 uniform vec3 uDecalWorldDirection;
 #define decalWorldDirection uDecalWorldDirection
 uniform vec3 uWorldNormal;
@@ -69,7 +70,6 @@ vec2 sdfFrac = sdfTc - sdfBase;
 vec2 sdfSharp = clamp(fwidth(uvOrig) * uSdfTexSize, vec2(1.0), vec2(32.0));
 sdfFrac = clamp((sdfFrac - 0.5) * sdfSharp + 0.5, 0.0, 1.0);
 outColor = texture2D(uSampler0, (sdfBase + 0.5 + sdfFrac) / uSdfTexSize);
-float coverageA = outColor.a;
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
 #undef animResults
@@ -90,7 +90,7 @@ vec4 animResults = uvCompare - compares;
 float materialTubeLightFactor = decalMaterialInfo.z * 8.0 + 1.0;
 vec4 lightFactor = mix(vec4(materialTubeLightFactor, materialTubeLightFactor,
 materialTubeLightFactor, materialTubeLightFactor),
-vec4(0.1, 0.1, 0.1, 0.1),
+vec4(0.35, 0.35, 0.35, 0.35),
 smoothstep(vec4(-0.02, -0.02, -0.02, -0.02),
 vec4(0.15, 0.15, 0.15, 0.15), animResults));
 vec4 powerFactor = mix(vec4(0.5, 0.5, 0.5, 0.5), lightFactor, decalMaterialInfo.wwww);
@@ -99,26 +99,16 @@ vec4 tubeColor0 = decalMaterialData[0] * powerFactor;
 vec4 tubeColor1 = decalMaterialData[1] * powerFactor;
 vec4 tubeColor2 = decalMaterialData[2] * powerFactor;
 float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;
-vec3 sdfTexel = outColor.rgb;
-vec3 sdfRow0 = vec3(decalMaterialData[0].x, decalMaterialData[1].x, decalMaterialData[2].x);
-vec3 sdfRow1 = vec3(decalMaterialData[0].y, decalMaterialData[1].y, decalMaterialData[2].y);
-vec3 sdfRow2 = vec3(decalMaterialData[0].z, decalMaterialData[1].z, decalMaterialData[2].z);
-vec3 sdfRow3 = vec3(decalMaterialData[0].w, decalMaterialData[1].w, decalMaterialData[2].w);
-vec4 sdfDist = vec4(dot(sdfTexel - sdfRow0, sdfTexel - sdfRow0),
-dot(sdfTexel - sdfRow1, sdfTexel - sdfRow1),
-dot(sdfTexel - sdfRow2, sdfTexel - sdfRow2),
-dot(sdfTexel - sdfRow3, sdfTexel - sdfRow3));
-float sdfBest = min(min(sdfDist.x, sdfDist.y), min(sdfDist.z, sdfDist.w));
-vec4 lightScales = vec4(sdfDist.x <= sdfBest ? 1.0 : 0.0,
-sdfDist.y <= sdfBest ? 1.0 : 0.0,
-sdfDist.z <= sdfBest ? 1.0 : 0.0,
-sdfDist.w <= sdfBest ? 1.0 : 0.0);
+vec4 sdfFw = min(fwidth(outColor), vec4(0.15, 0.15, 0.15, 0.15));
+vec4 sdfMask = smoothstep(vec4(0.5, 0.5, 0.5, 0.5) - sdfFw,
+vec4(0.5, 0.5, 0.5, 0.5) + sdfFw, outColor);
 vec3 lightColor = vec3(0.0, 0.0, 0.0);
-lightColor.x = materialLightScale * dot(tubeColor0, lightScales);
-lightColor.y = materialLightScale * dot(tubeColor1, lightScales);
-lightColor.z = materialLightScale * dot(tubeColor2, lightScales);
+lightColor.x = materialLightScale * dot(tubeColor0, sdfMask);
+lightColor.y = materialLightScale * dot(tubeColor1, sdfMask);
+lightColor.z = materialLightScale * dot(tubeColor2, sdfMask);
 lightColor *= decalMaterialInfo.w;
 outColor.rgb = lightColor;
+outColor.a = max(max(sdfMask.x, sdfMask.y), max(sdfMask.z, sdfMask.w));
 vec3 bumpNormal = normalize(decalWorldDirection);
 vec3 shColorDiff = vec3(0, 0, 0);
 vec3 shColorSpec = vec3(0, 0, 0);
@@ -126,9 +116,7 @@ vec3 spec = vec3(0, 0, 0);
 SimCityLighting(bumpNormal, worldCameraDirection.xyz, gloss, reflectance,
 specE, specStrength, shColorDiff, shColorSpec, spec);
 outColor.rgb += shColorSpec + spec;
-outColor.a *= decalMaterialInfo.x;
 float scMax = max(outColor.r, max(outColor.g, outColor.b));
 outColor.rgb /= 1.0 + scMax;
-outColor.a = coverageA;
 gl_FragColor = outColor;
 }
