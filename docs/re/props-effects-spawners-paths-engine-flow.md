@@ -143,14 +143,21 @@ u8 存储 ×1/255 归一化——`cTerrainForest2::UpdatePixelShaderData` 实证
 （cForestRenderTarget），HSV 色域同源（mSeasonInfo.mColorCache）。用户在
 游戏里看到的大片树 = 此系统 + lot prop 树（impostor）两层。
 
-### 1.4 PE 树渲染落地方案（基于本轮机制）
+### 1.4 PE 树渲染落地方案（2026-10-06 已实现——真图集公告板）
 
-1. **形状**：程序化树形公告板（canvas 生成树冠轮廓 + 树干），或用一张
-   通用树剪影贴图——引擎的图集是运行时渲染的，本地无静态树图集可取。
-2. **颜色**：按本文公式——绿域 HSV 随机（H≈90-130°、S 中高、V 中），
-   每树实例用 randomBits（unit.index 派生）取色，即可复刻"同片树林
-   深浅不一"的游戏观感。
-3. **LOD 位掩码/次 key**：PE 无距离渲染，可忽略。
+1. **形状/颜色 = 游戏真图集**：Graphics 包 **0x835D64F3**（256×512，绿
+   占比 95%，find_foliage_textures 探针命中）= 树公告板图集静态源——
+   上半 256×256 = **2×2 四树格（128×256/格）**，下半为地面纹理。后端
+   `resolve_prop_models` 对树 prop 下发 `treeAtlasPng`（解顶层 mip → 裁
+   上半 → PNG → base64）；前端 Sprite 按 randomBits 选格渲染。
+   **图集 alpha 通道 = 树剪影遮罩**（实测 min=0/max=255，背景 alpha=0）
+   → SpriteMaterial alphaTest 0.5 干净抠像（首版漏开透明渲染成绿底
+   矩形，已修）。
+2. **图集族**：Graphics 包存在多个 64×128 树图集（0x7B500736 绿 98%/
+   0x983213DD 绿 67% 等约 25 个 = 不同树种/尺寸的 impostor 图集族），
+   可按树种 descriptor 关联接入更多树种。
+3. **尺寸**：Transform.Unknown（半宽）×16 为冠宽，clamp 1.2–12m。
+4. **LOD 位掩码/次 key**：PE 无距离渲染，可忽略。
 
 ### 1.5 树的季节目录与"Tree"配置（impostor 深挖第三轮，2026-10-05）
 
