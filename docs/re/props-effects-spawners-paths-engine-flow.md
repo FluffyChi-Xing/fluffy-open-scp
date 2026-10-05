@@ -271,7 +271,28 @@ LOTM 构建器 v10 已支持）——tex#0 即树公告板抠像图集同源内�
 材质引用 23 个 foliage 图集实例——图集是引擎按 key 直取的 impostor 系统
 约定资源，不存在引用它们的静态模型；树模型贴图走自身文件级纹理段。
 
-**⑤ PE 落地方案（模型树路线，推荐替代 §1.4 公告板）**：
+**⑤ PE 落地方案（模型树路线，已实现——真图集公告板降级为回落通道）**：
+
+已实现（本节为实施记录）：后端 `resolve_prop_models` 树签名分支改发
+`source="tree_model"` + 4 个 part 模型 TGI（图集 base64 仍随发供回落，
+模型全缺席时回落 source="tree"）；前端 session 旁路加载 4 形状 LOTM 载荷
+（全部树 prop 共享、只载一次）→ `propModels.ts getTreeModelObject` 真 3D
+渲染：几何/图集纹理跨实例共享（模板缓存），每实例 seed 选形状 + descriptor
+34 变体 HSV 域 tint（0E0B99FF/0E0B9A00 逐字表，8 离散步 GetImpostorInfo
+同构，onBeforeCompile 注入色相旋转+S/V 乘法）+ 随机 yaw + alphaTest 0.5
+叶卡。关键技术定谳：
+
+1. **纹理 V 语义**：树模型 UV 为 RW4 v=0 底部语义，LOTM GLB 直读会采错
+   半张图（四模型冠层绿占比交叉验证：`flipY=true` 命中 48-87%，直读
+   14-69% 且树干误中绿区）——纹理必须 `flipY=true`。
+2. **单材质即整树**：mesh UV 只采 tex#0（树视图图集既是叶卡材质库、也含
+   树干像素区）；tex#1（树皮 128×256）为 LOTM normal 通道伴生下发，前端
+   不用；tex#2（地面）模型内无对应 quad，不消费。
+3. **尺寸连续性**：冠宽沿用公告板口径 `clamp(半宽×16, 1.2, 12)`，模型按
+   自身冠幅（bbox x/y 跨度 39-47m）等比缩放——观感与公告板时代连续。
+4. 叶卡不投影（alpha 不进深度 pass，全四边形影子是假影；公告板同款无影）。
+
+原方案记录（供设计追溯）：
 
 1. 后端 `resolve_prop_models`：树 prop 下发 4 个 GLB（含文件级纹理 →
    slot0_png/normal_png）+ descriptor 参数（34 变体权重/HSV 域/叶量）。

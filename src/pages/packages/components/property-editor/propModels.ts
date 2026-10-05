@@ -281,6 +281,203 @@ export async function getTreeBillboard(
 }
 
 /**
+ * 模型树路线（流程文档 §1.6）：树 impostor 源 3D 模型直出。
+ *
+ * 数据链：树 descriptor C602CD31 → Parent 5F804D7E 配置表 0BD62577 列的
+ * 4 个 part 模型（Graphics 包，针叶/椭圆冠/圆冠/开张冠，370-2661 tri），
+ * 经 read_lot_model_meshes 通道下发（slot0 = 文件级[0] 树视图图集）。
+ * 引擎把这些模型离屏渲染成 128×128 公告板——3D 直出即超越引擎原生精度。
+ *
+ * 每实例：seed 选形状 + descriptor 34 变体 HSV 域随机 tint（GetImpostorInfo
+ * 同构：H 全域旋转 + S/V 乘法，8 离散步）+ 随机 yaw。几何/纹理跨实例共享
+ * （模板缓存），材质每实例新鲜建（uHsvShift uniform 独立，着色器按
+ * customProgramCacheKey 复用）。
+ */
+
+/** 树 3D 形状模板：几何共享 + 冠宽跨度（尺寸匹配用）。 */
+interface TreeShapeTemplate {
+  geometry: ThreeNamespace.BufferGeometry;
+  /** 模型空间冠幅（bbox x/y 跨度较大者，米）。 */
+  canopySpan: number;
+}
+
+const treeShapeCache = new WeakMap<LotModelPayload, TreeShapeTemplate>();
+
+/** 树图集纹理缓存（slot0 PNG 字节引用 → 已载纹理，flipY 修正）。 */
+const treeModelMapCache = new WeakMap<Uint8Array<ArrayBuffer>, ThreeNamespace.Texture>();
+
+/**
+ * 树变体 HSV 域表（descriptor C602CD31 逐字，0E0B99FF 下界/0E0B9A00 上界
+ * ×34 变体，[Hmin,Hmax,Smin,Smax,Vmin,Vmax]；重复行=权重，均匀取样即
+ * 引擎 randomBits 选变体）。min>max 行保留（引擎 lerp 同款反向插值）。
+ * H 单位度（色相旋转），S/V 为乘法因子。
+ */
+const TREE_HSV_VARIANTS: ReadonlyArray<
+  [number, number, number, number, number, number]
+> = [
+  [90, 115, 0.8, 1.5, 0.8, 1.2],
+  [-20, 20, 0.8, 1.2, 1.2, 1.8],
+  [-20, 20, 0.8, 1.0, 1.2, 1.8],
+  [-20, 36, 0.9, 1.3, 0.7, 1.1],
+  [-20, 36, 0.9, 1.3, 0.7, 1.1],
+  [90, 115, 1.2, 3.0, 0.8, 1.2],
+  [90, 115, 1.2, 3.0, 0.8, 1.2],
+  [90, 115, 0.8, 1.5, 0.8, 1.2],
+  [-12, 12, 0.9, 1.3, 0.6, 1.2],
+  [7, -14, 0.95, 1.2, 0.8, 1.0],
+  [-12, 12, 0.8, 1.2, 1.0, 0.8],
+  [-15, 15, 0.9, 1.1, 1.1, 0.8],
+  [-15, 15, 0.9, 1.1, 1.1, 0.8],
+  [-12, 12, 0.8, 1.2, 1.0, 0.8],
+  [-10, 20, 0.8, 1.0, 0.8, 1.0],
+  [-10, 20, 0.8, 1.6, 0.8, 1.0],
+  [-15, 20, 1.1, 1.7, 0.9, 1.1],
+  [-10, 15, 0.8, 1.3, 0.9, 1.1],
+  [-15, 15, 0.9, 1.3, 0.8, 1.1],
+  [-10, 10, 0.9, 1.0, 0.8, 1.0],
+  [-10, 10, 0.8, 1.5, 1.0, 1.0],
+  [-10, 40, 0.8, 1.0, 1.0, 1.0],
+  [10, -10, 0.5, 1.5, 1.0, 1.0],
+  [10, -15, 0.5, 1.5, 1.1, 0.9],
+  [17, -15, 0.5, 1.5, 1.1, 0.9],
+  [10, -20, 0.5, 1.5, 1.0, 1.0],
+  [-10, 10, 0.8, 1.25, 1.1, 0.9],
+  [-10, 10, 0.8, 1.2, 1.1, 0.9],
+  [-10, 10, 0.8, 1.1, 1.1, 0.9],
+  [-10, 10, 0.8, 1.1, 1.1, 0.9],
+  [-10, 10, 0.8, 1.1, 1.1, 0.9],
+  [10, 0, 0.7, 1.0, 1.0, 1.0],
+  [-10, 1, 1.0, 1.0, 1.0, 1.4],
+  [-31, 0, 0.95, 1.1, 1.2, 1.0],
+];
+
+/** 树 3D 实例：形状模板命中 + HSV tint 注入 + 引擎同构尺寸匹配。 */
+export async function getTreeModelObject(
+  THREE: typeof ThreeNamespace,
+  payloads: LotModelPayload[],
+  options: {
+    seed: number;
+    halfWidth: number | null;
+    position: ThreeNamespace.Vector3;
+  },
+): Promise<ThreeNamespace.Object3D | null> {
+  if (!payloads.length) return null;
+  const rand = mulberry32(options.seed);
+  const payload = payloads[Math.floor(rand() * payloads.length) % payloads.length];
+  let shape = treeShapeCache.get(payload);
+  if (!shape) {
+    let roots: ThreeNamespace.Object3D[];
+    try {
+      roots = await parseLotModelObjects(payload.glbs);
+    } catch {
+      return null;
+    }
+    let geometry: ThreeNamespace.BufferGeometry | null = null;
+    for (const root of roots) {
+      root.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (!mesh.isMesh || geometry || !mesh.geometry) return;
+        geometry = mesh.geometry;
+      });
+      if (geometry) break;
+    }
+    if (!geometry) return null;
+    const shared = geometry as ThreeNamespace.BufferGeometry;
+    shared.computeBoundingBox();
+    const box = shared.boundingBox;
+    const span = box
+      ? Math.max(box.max.x - box.min.x, box.max.y - box.min.y)
+      : 0;
+    if (!(span > 0)) return null;
+    for (const root of roots) {
+      root.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (mesh.isMesh && mesh.geometry) markGeometryShared(mesh.geometry);
+      });
+    }
+    shape = { geometry: shared, canopySpan: span };
+    treeShapeCache.set(payload, shape);
+  }
+  // slot0 = 文件级[0] 树视图图集（LOTM v10 提取）。树模型 UV 语义为
+  // RW4 v=0 底部（四模型冠层绿占比交叉验证：flipY=true 命中 48-87%，
+  // 直读 14-69% 且树干误中绿区）——必须 flipY。
+  const mapBytes = payload.materials?.[0]?.slot0Png ?? null;
+  let map = mapBytes ? treeModelMapCache.get(mapBytes) : undefined;
+  if (mapBytes && !map) {
+    const url = pngBlobUrl(mapBytes);
+    try {
+      const loaded = await new THREE.TextureLoader().loadAsync(url);
+      loaded.colorSpace = THREE.SRGBColorSpace;
+      loaded.flipY = true;
+      loaded.anisotropy = 4;
+      map = loaded;
+      treeModelMapCache.set(mapBytes, loaded);
+    } catch {
+      map = undefined;
+    }
+  }
+  // 引擎 GetImpostorInfo：34 变体均匀取样，HSV 各分量 8 离散步 lerp(min,max)
+  const variant =
+    TREE_HSV_VARIANTS[Math.floor(rand() * TREE_HSV_VARIANTS.length) % TREE_HSV_VARIANTS.length];
+  const step = () => Math.floor(rand() * 8) / 8;
+  const hueDegrees = variant[0] + step() * (variant[1] - variant[0]);
+  const satMul = variant[2] + step() * (variant[3] - variant[2]);
+  const valMul = variant[4] + step() * (variant[5] - variant[4]);
+  const hsvUniform = { value: new THREE.Vector3(hueDegrees / 360, satMul, valMul) };
+  const material = new THREE.MeshStandardMaterial({
+    map: map ?? null,
+    alphaTest: map ? 0.5 : 0,
+    side: THREE.DoubleSide,
+    roughness: 0.95,
+    metalness: 0,
+  });
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uHsvShift = hsvUniform;
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+uniform vec3 uHsvShift;
+vec3 scRgb2Hsv(vec3 c) {
+  vec4 p = mix(vec4(c.bg, vec4(0.0, -1.0, 2.0, -1.0).wz), vec4(c.gb, vec4(0.0, -1.0, 2.0, -1.0).xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y);
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+}
+vec3 scHsv2Rgb(vec3 c) {
+  vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}`,
+      )
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+  // 引擎 impostor HSV 随机（GetImpostorInfo 域）：色相旋转 + 饱和/明度乘法
+  #ifdef USE_MAP
+  vec3 scHsv = scRgb2Hsv(diffuseColor.rgb);
+  scHsv.x = fract(scHsv.x + uHsvShift.x);
+  scHsv.y = clamp(scHsv.y * uHsvShift.y, 0.0, 1.0);
+  scHsv.z = clamp(scHsv.z * uHsvShift.z, 0.0, 1.0);
+  diffuseColor.rgb = scHsv2Rgb(scHsv);
+  #endif`,
+      );
+  };
+  material.customProgramCacheKey = () => "tree-hsv";
+  const mesh = new THREE.Mesh(shape.geometry, material);
+  // 尺寸匹配（引擎同构）：公告板口径 冠宽 = clamp(半宽×16, 1.2, 12)，
+  // 3D 模型按自身冠幅等比缩放到同一冠宽——观感尺寸与公告板连续。
+  const halfWidth = options.halfWidth ?? 0.35;
+  const targetWidth = Math.min(12, Math.max(1.2, halfWidth * 16));
+  mesh.scale.setScalar(targetWidth / shape.canopySpan);
+  mesh.position.copy(options.position);
+  mesh.position.z = Math.max(0, mesh.position.z);
+  mesh.rotation.z = rand() * Math.PI * 2;
+  // 叶卡不做投影（alpha 不进深度 pass，全四边形阴影是假影；公告板同款无影）
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
  * 取 prop 载荷的模型对象（模板缓存命中时按实例建材质）。
  * variantSeed = unit.index（同资源多 prop 确定性分散调色板行）。
  */

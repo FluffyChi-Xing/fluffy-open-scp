@@ -69,11 +69,15 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（后端脚本资源表反查）。
    * 异步旁路加载，不阻塞主模型；未命中保持标记锥。 */
   const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
-  /** 树 prop（source=tree，变体模型为运行时内容）→ 程序化公告板渲染。 */
+  /** 树 prop（source=tree/tree_model）资源 id 集合 → 树专用渲染分支。 */
   const propTreeIds = shallowRef<Set<number>>(new Set());
   /** 树公告板图集（base64 PNG，2×2 四树格）：后端从 Graphics 包树图集
    * RW4 解码下发，全部树 prop 共享同一图集。 */
   const treeAtlasPng = shallowRef<string | null>(null);
+  /** 模型树路线（流程文档 §1.6）：descriptor→Parent 配置表的 impostor 源
+   * 3D 模型 LOTM 载荷（≤4 个形状）。全部树 prop 共用同一组，只载一次；
+   * 空数组 = 后端模型缺席，前端回落公告板。 */
+  const treeModelPayloads = shallowRef<LotModelPayload[]>([]);
   /** 当前加载的 LOD（index）；默认取第一个可用级。 */
   const activeLod = ref(0);
   const modelState = ref<ModelState>("pending");
@@ -218,26 +222,47 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       if (token !== requestToken) return;
       const trees = new Set(
         resolutions
-          .filter((resolution) => resolution.source === "tree")
-          .map((resolution) => resolution.resourceId),
+          .filter((r) => r.source === "tree" || r.source === "tree_model")
+          .map((r) => r.resourceId),
       );
       propTreeIds.value = trees;
       const atlas = resolutions.find((r) => r.treeAtlasPng)?.treeAtlasPng ?? null;
       if (atlas) treeAtlasPng.value = atlas;
+      // 模型树路线：树 prop 共用同一组 3D 形状载荷，只载一次（任一形状
+      // 失败跳过；全失败保持空数组 → 前端回落公告板）。
+      const treeModelRes = resolutions.find((r) => r.source === "tree_model");
+      if (treeModelRes && treeModelRes.packageId != null && treeModelRes.models.length) {
+        const pkg = treeModelRes.packageId;
+        const payloads = (
+          await Promise.all(
+            treeModelRes.models.map(async (tgi) => {
+              try {
+                const buffer = await source.readLotModelMeshes(pkg, tgi);
+                return token === requestToken ? parseLotModelContainer(buffer) : null;
+              } catch {
+                return null; // 单形状失败不影响其余
+              }
+            }),
+          )
+        ).filter((p): p is LotModelPayload => p !== null);
+        if (token === requestToken && payloads.length) treeModelPayloads.value = payloads;
+      }
       const next = new Map(propModels.value);
       await Promise.all(
-        resolutions.map(async (resolution) => {
-          const tgi = resolution.models[0];
-          const pkg = resolution.packageId;
-          if (!tgi || pkg == null) return;
-          try {
-            const buffer = await source.readLotModelMeshes(pkg, tgi);
-            if (token !== requestToken) return;
-            next.set(resolution.resourceId, parseLotModelContainer(buffer));
-          } catch {
-            // 单模型失败不影响其余 prop
-          }
-        }),
+        resolutions
+          .filter((r) => r.source !== "tree" && r.source !== "tree_model")
+          .map(async (resolution) => {
+            const tgi = resolution.models[0];
+            const pkg = resolution.packageId;
+            if (!tgi || pkg == null) return;
+            try {
+              const buffer = await source.readLotModelMeshes(pkg, tgi);
+              if (token !== requestToken) return;
+              next.set(resolution.resourceId, parseLotModelContainer(buffer));
+            } catch {
+              // 单模型失败不影响其余 prop
+            }
+          }),
       );
       if (token !== requestToken) return;
       propModels.value = next;
@@ -428,6 +453,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     propModels,
     propTreeIds,
     treeAtlasPng,
+    treeModelPayloads,
     releasePropPackages,
     activeLod,
     switchLod,

@@ -26,6 +26,7 @@ import {
 import {
   getPropModelObject,
   getTreeBillboard,
+  getTreeModelObject,
 } from "./propModels";
 import {
   decalFrame,
@@ -94,9 +95,12 @@ const props = defineProps<{
   lotModelBboxCenter: [number, number] | null;
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（会话旁路加载）。 */
   propModels: Map<number, LotModelPayload>;
-  /** 树 prop 资源 id 集合（source=tree）→ 程序化公告板渲染。 */
+  /** 树 prop 资源 id 集合（source=tree/tree_model）→ 树专用渲染分支。 */
   propTreeIds: Set<number>;
-  /** 树公告板图集 PNG（base64，2×2 四树格 256×256）。 */
+  /** 模型树路线（§1.6）：impostor 源 3D 模型 LOTM 载荷（≤4 形状，共享）；
+   * 空数组 = 后端模型缺席 → 公告板回落。 */
+  treeModelPayloads: LotModelPayload[];
+  /** 树公告板图集 PNG（base64，2×2 四树格；3D 模型加载失败的回落通道）。 */
   treeAtlasPng: string | null;
 
   lotMaskPng: string | null;
@@ -1433,8 +1437,9 @@ async function assembleScene(
       typeof unit.resourceId === "number" &&
       props.propTreeIds.has(unit.resourceId)
     ) {
-      // 树：变体模型为运行时内容（不可离线渲染，见流程文档 §1.5）→
-      // 程序化公告板（HSV 绿域随机，引擎 GetImpostorInfo 同构）。
+      // 树：模型树路线（流程文档 §1.6）——descriptor 配置表的 impostor 源
+      // 3D 模型本地直出（几何/纹理共享，每实例 HSV 变体 tint）；载荷缺席
+      // 或加载失败回落真图集公告板（引擎同档 128×128 精度），再回落标记锥。
       const treePos = new THREE.Vector3();
       const treeQuat = new THREE.Quaternion();
       const treeScale = new THREE.Vector3();
@@ -1445,13 +1450,22 @@ async function assembleScene(
           treeScale,
         );
       }
+      const treeSeed = unit.resourceId * 2654435761 + unit.index;
       object =
+        (props.treeModelPayloads.length
+          ? await getTreeModelObject(THREE, props.treeModelPayloads, {
+              seed: treeSeed,
+              halfWidth: unit.scale,
+              position: treePos,
+            })
+          : null) ??
         (await getTreeBillboard(THREE, {
-          seed: unit.resourceId * 2654435761 + unit.index,
+          seed: treeSeed,
           halfWidth: unit.scale,
           position: treePos,
           atlasBase64: props.treeAtlasPng,
-        })) ?? buildUnitObject(THREE, unit);
+        })) ??
+        buildUnitObject(THREE, unit);
     } else if (
       props.renderMode === "refined" &&
       unit.kind === "prop" &&

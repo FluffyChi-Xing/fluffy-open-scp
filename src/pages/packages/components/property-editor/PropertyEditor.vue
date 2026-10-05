@@ -28,6 +28,7 @@ const {
   propModels,
   propTreeIds,
   treeAtlasPng,
+  treeModelPayloads,
   releasePropPackages,
   modelLods,
   activeLod,
@@ -452,6 +453,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :model-payload="modelPayload"
           :prop-models="propModels"
           :prop-tree-ids="propTreeIds"
+          :tree-model-payloads="treeModelPayloads"
           :tree-atlas-png="treeAtlasPng"
           :model-lods="modelLods"
           :active-lod="activeLod"

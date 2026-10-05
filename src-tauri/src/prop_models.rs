@@ -39,6 +39,11 @@ const KEY_TREE_STATE: u32 = 0x0C36_D30D;
 const KEY_PARENT: u32 = 0x00B2_CCCB;
 /// 树种 descriptor 的变体模型 key 数组（App 包 G 40002D00 记录）。
 const KEY_TREE_VARIANTS: u32 = 0x0E0B_99FD;
+/// 树 impostor 源 3D 模型（descriptor C602CD31 → Parent 5F804D7E 配置表
+/// 0BD62577 列，App 包 G 40002D00；模型实体在 Graphics 包 T 2F4E681B）。
+/// 引擎 RenderOffscreenForModel 把它们离屏渲染成 128×128 公告板——本地
+/// 直出 3D 即超越引擎原生精度（docs/re/props-effects-spawners-paths-engine-flow.md §1.6）。
+const TREE_PART_MODELS: [u32; 4] = [0x4DF4_3690, 0xC2FB_D178, 0x1113_B131, 0x89D6_58DF];
 /// 资源记录的典型 group 低 16 位（EcoGame resources / 安装包 resources）。
 const RESOURCE_GROUP_LOW: [u16; 2] = [0xC100, 0xC600];
 
@@ -50,11 +55,11 @@ pub struct ResolvedPropModel {
     pub models: Vec<TgiDto>,
     /// models[0] 所在的已打开包 id（EcoGame 包已自注册）。
     pub package_id: Option<u64>,
-    /// 命中路径（explicit / vehicle_models / lod1_direct / tree）。
+    /// 命中路径（explicit / vehicle_models / lod1_direct / tree_model / tree）。
     pub source: String,
-    /// 树公告板图集 PNG（base64）：Graphics 包树图集 RW4（0x835D64F3，引擎
-    /// 运行时离屏渲染源模型所在图集体系的静态产物）上半 256×256 = 2×2 四棵
-    /// 树公告板（128×256/格）。仅 source="tree" 时下发。
+    /// 树公告板图集 PNG（base64）：Graphics 包树图集 RW4（0x835D64F3）上半
+    /// 256×256 = 2×2 四棵树公告板。仅树 prop 下发（source=tree_model/tree），
+    /// 前端 3D 模型加载失败时回落公告板渲染。
     pub tree_atlas_png: Option<String>,
 }
 
@@ -268,11 +273,21 @@ fn resolve_one(
                 return finish(packages, resource_id, models, source);
             }
             // 树签名（引擎 cGraphicsInstancedImpostor 触发条件逐字：
-            // 0x0C36D30D descriptor + 0x0D8C29CF LOD 序号共存）——变体模型
-            // 为运行时离屏渲染内容，本地无 3D 数据；标记 source="tree" 供
-            // 前端走程序化公告板（HSV 绿域随机，GetImpostorInfo 同构）。
+            // 0x0C36D30D descriptor + 0x0D8C29CF LOD 序号共存）。
+            // 模型树路线（§1.6）：descriptor→Parent 5F804D7E 配置表的 4 个
+            // impostor 源 3D 模型本地存在（Graphics 包）→ source="tree_model"
+            // 下发模型 key，前端真 3D 渲染；公告板图集仍随载荷下发供回落。
             if has_prop(&file, KEY_TREE_STATE) && has_prop(&file, KEY_LOD_INDEX) {
                 let tree_atlas_png = decode_tree_atlas_base64(packages);
+                if let Some(mut done) = finish(
+                    packages,
+                    resource_id,
+                    TREE_PART_MODELS.iter().map(|i| (*i, RW4_MODEL_TYPE, 0)).collect(),
+                    "tree_model",
+                ) {
+                    done.tree_atlas_png = tree_atlas_png;
+                    return Some(done);
+                }
                 return Some(ResolvedPropModel {
                     resource_id,
                     models: Vec::new(),
@@ -492,6 +507,14 @@ mod tests {
             out.iter().any(|r| matches!(r.source.as_str(), "explicit" | "vehicle_models")),
             "至少一个 prop 解析出 RW4 模型"
         );
+        // 树链（乔木 14984C68-6B）必须走 tree_model（4 个 impostor 源 3D 模型）
+        let tree = out
+            .iter()
+            .find(|r| r.source == "tree_model")
+            .expect("树 prop 应解析出 tree_model");
+        assert_eq!(tree.models.len(), 4, "树应有 4 个 impostor 源模型");
+        assert!(tree.package_id.is_some(), "树模型应定位到所在包");
+        assert!(tree.tree_atlas_png.is_some(), "树应随发公告板图集（回落用）");
     }
 }
 
@@ -513,7 +536,11 @@ mod lotm_dump_tests {
             let package = Package::open(path).expect("open");
             manager.insert(package).expect("insert");
         }
-        for (inst, out) in [(0xCA26_5D8Bu32, "tmp/vehicle.lotm"), (0x903A_704C, "tmp/trashcan.lotm")] {
+        for (inst, out) in [
+            (0xCA26_5D8Bu32, "tmp/vehicle.lotm"),
+            (0x903A_704C, "tmp/trashcan.lotm"),
+            (0x4DF4_3690, "tmp/tree.lotm"),
+        ] {
             let pkg = manager.get(2).expect("graphics pkg");
             let entry = pkg
                 .entries()
