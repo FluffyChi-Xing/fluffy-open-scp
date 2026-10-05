@@ -434,20 +434,20 @@ mod lotm_dump_tests {
             let package = Package::open(path).expect("open");
             manager.insert(package).expect("insert");
         }
-        let pkg = manager.get(2).expect("graphics pkg");
-        let entry = pkg
-            .entries()
-            .iter()
-            .find(|e| e.id.instance == 0xCA26_5D8B && e.id.type_id == 0x2F4E_681B)
-            .expect("model");
-        let data = pkg.read(entry).expect("read");
-        let file = rw4::Rw4File::parse(&data).expect("parse");
-        // build_lot_model_payload 是私有函数——经 pub(crate) 命令路径不可达，
-        // 直接在 tests 内重建调用（同 crate 可见）。
-        let payload = crate::package_service::build_lot_model_payload_for_test(
-            &file, &data, &pkg, &manager, 0xCA26_5D8B,
-        );
-        std::fs::write("tmp/vehicle.lotm", &payload).expect("write lotm");
-        println!("LOTM {} 字节 → tmp/vehicle.lotm", payload.len());
+        for (inst, out) in [(0xCA26_5D8Bu32, "tmp/vehicle.lotm"), (0x903A_704C, "tmp/trashcan.lotm")] {
+            let pkg = manager.get(2).expect("graphics pkg");
+            let entry = pkg
+                .entries()
+                .iter()
+                .find(|e| e.id.instance == inst && e.id.type_id == 0x2F4E_681B)
+                .expect("model");
+            let data = pkg.read(entry).expect("read");
+            let file = rw4::Rw4File::parse(&data).expect("parse");
+            let payload = crate::package_service::build_lot_model_payload_for_test(
+                &file, &data, &pkg, &manager, inst,
+            );
+            std::fs::write(out, &payload).expect("write lotm");
+            println!("{out}: {} 字节", payload.len());
+        }
     }
 }

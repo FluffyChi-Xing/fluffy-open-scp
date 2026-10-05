@@ -81,6 +81,12 @@ RenderOffscreenForModel`（11269 行声明）在运行时把 descriptor 引用�
 → **openscp 落地方案修正**：树 = 公告板渲染。取得 impostor 图集纹理
 （见 1.3）后按 descriptor 变体权重铺公告板；无图集时保持标记锥。
 
+**杂件 props（LOD1 直引族）的贴图位置（2026-10-05 实证补充）**：其模型
+RW4 文件**自带文件级 TEXTURE section**（垃圾桶 0x903A704C：#11=彩色
+diffuse 256×256、#13=法线 256×256），材质段为 Raw（仅参数无引用）——
+LOTM 构建器 v10 已实现：无参数表材质 → 文件级纹理段 [0]→slot0_png、
+[1]→normal_png（垃圾桶实测 slot0 120KB/normal 176KB 正确下发）。
+
 **③ cGraphicsInstancedSim（市民外观表）**
 
 ```

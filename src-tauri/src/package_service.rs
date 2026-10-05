@@ -3618,6 +3618,29 @@ fn resolve_material_resources(
                 resources.slot0_png = encode_rgba_png_bytes(width, height, rgba).ok();
             }
         }
+        // Raw 材质（无纹理引用可走）：prop/杂件模型的贴图在**模型文件自身的
+        // TEXTURE section**（垃圾桶 0x903A704C 实证：#11=彩色 diffuse 256×256、
+        // #13=法线；材质段仅含参数无引用）。按序取 [0]=diffuse→slot0_png、
+        // [1]=normal→normal_png。建筑模型 Decoded 材质走槽位语义，不受影响。
+        if !has_params {
+            let file_textures: Vec<(Vec<u8>, u32, u32)> = file
+                .sections_of_type(rw4::SectionType::TEXTURE)
+                .filter_map(|sec| {
+                    let tex = file.decode_texture(data, sec.number).ok()?;
+                    let rgba = tex.decode_top_mip_rgba().ok()?;
+                    Some((rgba, u32::from(tex.width), u32::from(tex.height)))
+                })
+                .collect();
+            if let Some((rgba, width, height)) = file_textures.first() {
+                resources.slot0_png =
+                    encode_rgba_png_bytes(*width, *height, rgba.clone()).ok();
+            }
+            if file_textures.len() > 1 {
+                let (rgba, width, height) = &file_textures[1];
+                resources.normal_png =
+                    encode_rgba_png_bytes(*width, *height, rgba.clone()).ok();
+            }
+        }
     }
     // slot2：标准切线空间法线（B=沿法线轴，平坦≈128,128,255）+ A=spec（AO 代理）
     if let Some((rgba, width, height)) = slot_rgba(2) {
