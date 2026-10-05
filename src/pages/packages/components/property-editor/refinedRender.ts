@@ -37,6 +37,12 @@ export type SunEnvRefs = {
   dayLight: { value: number };
   powered: { value: number };
   glow: { value: number };
+  /** 破洞 decal 内景自发光峰值（与 glow 分流）：白天 2.5（2026-09-30
+   * "恒 16 白天过曝"对拍结论），夜间 ×nightBoost 与墙同步（2026-10-05
+   * 用户目视：游戏内破洞夜间不自发光）。glow 自 2026-10-05 起为建筑
+   * 内景恒 16（其 HDR 由反照率/emissive 拆分回收）；贴花平涂没有该
+   * 拆分链，跟着恒 16 会把洞内景爆成平白（目视回归），故独立成 uniform。 */
+  decalGlow: { value: number };
   /** decal 平涂 shader 的夜间压暗因子（引擎 decal 走延迟光照，夜间只剩
    * 环境项；平涂无光照响应，恒 1 = 夜间"自发光"）。 */
   nightBoost: { value: number };
@@ -132,6 +138,7 @@ export function createSunEnv(THREE: typeof ThreeNamespace): SunEnvRefs {
     dayLight: { value: 1 },
     powered: { value: 1 },
     glow: { value: 6.0 },
+    decalGlow: { value: 2.5 },
     nightBoost: { value: 1 },
     time: { value: 0 },
     animEnabled: { value: 0 },
@@ -187,8 +194,17 @@ export function applySunEnv(
   env.skyLumRef.value = Math.max(1e-3, averageSkyLuminance(env));
   env.dayLight.value = day;
   env.powered.value = powered === false ? 0 : 1;
-  // 源码 interiorMap.a×16 为 HDR；观察器无 tonemap，白天压 2.5 / 夜间放开 16
-  env.glow.value = 2.5 + (16 - 2.5) * (1 - day);
+  // 源码 kBuildingInteriorMapSelfLightMax = 16 为**恒定** HDR 系数，无昼夜
+  // 插值（引擎内景的昼夜差来自 shColorDiff 环境项，灯亮项恒 a×16；离线
+  // 仿真实测：消防局图集 rgb 本身极暗，内容几乎全靠 a×16 点亮——白天压
+  // 2.5 时亮度仅引擎的 38%，这正是"假内景亮度低/白天正视发黑"的另一半
+  // 病因）。过曝由着色器内 1.0 软肩回收（引擎 hejl tonemap 的廉价近似）。
+  env.glow.value = 16;
+  // 破洞 decal 内景自发光：白天 2.5（2026-09-30 对拍定谳，防高 alpha 段
+  // 爆平白）；夜间 ×nightBoost 与墙同步压暗——2026-10-05 用户目视定谳：
+  // 游戏内破洞夜间**不自发光**（旧口径"夜间 16"作废；机制同涂鸦/平涂
+  // 族 ×uNightBoost，decal 走延迟光照、夜间只剩环境项）。
+  env.decalGlow.value = 2.5 * env.nightBoost.value;
   // decal 平涂 shader 无光照响应：白天 1（现状口径），夜间压到环境光水平
   // （uAmbientDiff ≈ 0.1~0.15 蓝灰）——否则所有贴花夜间相对建筑"自发光"
   // （2026-10-04 问题3；霓虹/跑马灯族的夜间自亮属 SDF 动画链，待后续任务）。
@@ -239,32 +255,50 @@ async function loadTintTextures(
   /** blob URL 收集（由资产缓存持有，跨 rebuild 存活，释放时统一回收）。 */
   cacheUrls: string[],
 ): Promise<TintTextureSet[]> {
-  const loader = new THREE.TextureLoader();
-  // seamless（默认 true）：tint/normal/shader 都是「fract → 图集区域」平铺采样。
-  // 禁 mips 是接缝修复的关键——fract 在平铺边界的 UV 跳变会让硬件在 2×2
-  // quad 上算出爆炸级导数 → mip 级别错乱 → 每条平铺边界一道 1px 亮线
-  // （各向异性还会放大）。引擎用 tex2Dgrad 显式给梯度故无此问题；我们
-  // 以近距离检视为主，牺牲远景 shimmer 换无接缝。
-  const loadTex = (bytes: Uint8Array<ArrayBuffer>, seamless = true) =>
+  // 【2026-10-05 定谳改回 mip+LINEAR】此前「fract 平铺边界 UV 跳变 → 硬件
+  // 2×2 quad 隐式导数爆炸 → mip 错乱 → 接缝亮线」的诊断方向没错，但治疗
+  // 方式（禁 mip、全图 LinearFilter）用力过猛：近距马赛克、远景糊、门窗
+  // 被低 mip 平均成平墙。引擎（building shader 容器取证）全部走
+  // tex2Dgrad，显式导数 = ddx(uv×regionXform) 取**未 fract 域**——平铺
+  // 边界无跳变，mip 级别天然正确，接缝与清晰度兼得。GLSL3 的 textureGrad
+  // 是同物，着色器侧已同步改为显式导数采样（见 TINT_PARAMS 注入段）。
+  //
+  // 【2026-10-05 假内景正视漆黑定谳】<img> 解码路径会把 PNG  rgb **预乘
+  // alpha** 存储、上传时再除回——a=0 处 rgb 直接归零、a≈0 处量化失真
+  // （WebGL 经典坑）。但 DXT5 原生 rgb 与 alpha 独立存储，a=0 处 rgb
+  // 完好（消防局 slot5 取证：全图 rgb 均值 (46,37,26)，a≡0 的图集格也
+  // 有有效 rgb）。内景图集的可见内容大量靠 a×16 自发光项点亮，rgb 被
+  // 摧毁后正视（mip0 点采样）正中受损区→一片漆黑；斜视靠 mip 混合
+  // 邻域幸存像素才可见。shaderMap/tint/normal 的 rgb 同样在 a=0 处携带
+  // 数据（spec/调色板坐标/法线），同病。改用 ImageBitmapLoader +
+  // premultiplyAlpha:'none' 让浏览器交出文件原始值，与引擎采样 DXT5
+  // 原始数据同口径。
+  const bitmapLoader = new THREE.ImageBitmapLoader();
+  bitmapLoader.setOptions({
+    premultiplyAlpha: 'none',
+    colorSpaceConversion: 'none',
+    imageOrientation: 'none',
+  });
+  const loadTex = (bytes: Uint8Array<ArrayBuffer>) =>
     new Promise<ThreeNamespace.Texture>((resolve, reject) => {
       const url = pngBlobUrl(bytes);
       // blob URL 由材质资产缓存持有（见 getRefinedMaterialAssets），
       // 不进逐 rebuild 的 textureUrls——缓存命中的贴图要跨 rebuild 存活。
       cacheUrls.push(url);
-      loader.load(
+      bitmapLoader.load(
         url,
-        (texture) => {
+        (bitmap) => {
+          const texture = new THREE.Texture(bitmap);
           texture.wrapS = THREE.ClampToEdgeWrapping;
           texture.wrapT = THREE.ClampToEdgeWrapping;
           // tint/palette/normal 按后端 bake 同坐标系采样（原始 UV，行 0 =
-          // PNG 首行），不做 three 默认的 flipY 翻转。
+          // PNG 首行），不做 three 默认的 flipY 翻转；imageOrientation:
+          // 'none' 保证浏览器也不在解码时翻转。
           texture.flipY = false;
-          if (seamless) {
-            texture.generateMipmaps = false;
-            texture.minFilter = THREE.LinearFilter;
-          }
-          // 引擎 `tex2Dgrad` + 各向异性采样；仅对保留 mip 的贴图（interior）有意义。
+          // 引擎同款：LINEAR + mip + 最大各向异性（显式导数接管 mip 选择，
+          // 见着色器注入段 textureGrad）。
           texture.anisotropy = maxAnisotropy;
+          texture.needsUpdate = true;
           resolve(texture);
         },
         undefined,
@@ -276,37 +310,43 @@ async function loadTintTextures(
       // 逐材质内 5 张 PNG 并行解码（此前串行 await，首载成本 = 各张之和）。
       const [tintTex, paletteTex, normalTex, shaderTex, interiorTex] =
         await Promise.all([
-          // tint 的 rg 是调色板坐标（索引数据，非颜色）、a 是 0/1 镜像覆盖：
-          // 线性插值会把相邻条目混合成无意义的中间索引——图案边界上的
-          // 门窗被"平均"成平墙条目（2026-09-19 消防局 0x4DE9912B 与
-          // 0xF8F776BF 两例：padding 均为"禁用 Top"量级，门窗全在 Base 层，
-          // 缺失形态与此完全吻合）。与 palette 同理必须点采样。
-          material.tintPng
-            ? loadTex(material.tintPng).then((t) => {
-                t.minFilter = THREE.NearestFilter;
-                t.magFilter = THREE.NearestFilter;
-                return t;
-              })
-            : Promise.resolve(null),
+          // tint 的 rg 是调色板坐标（索引数据）、a 是 0/1 覆盖：2026-09-19
+          // 曾因此强制 Nearest（消防局 0x4DE9912B / 0xF8F776BF 门窗被"平均"
+          // 成平墙）。2026-10-05 引擎取证定谳：当年病根是**隐式导数**在
+          // fract 边界爆炸选错 mip（低 mip 里索引早已被预平均），而非线性
+          // 滤波本身——引擎 tint 同样 LINEAR+mip+各向异性，靠 tex2Dgrad
+          // 显式导数保命。现已复刻该口径（见着色器注入段），Nearest 摘除；
+          // 仅剩 1px 图案边界的索引混合，与游戏逐像素一致。
+          material.tintPng ? loadTex(material.tintPng) : Promise.resolve(null),
           // 调色板 512×16 = 256 列 × 7 行、**每采样点 2×2 像素**，着色器还会加
           // (1/1024,1/32) 把它居中——正是为点采样设计的；线性滤波会把相邻
           // 调色板条目互相抹开。
+          // 【2026-10-05 调色偏差定谳】调色板 RGB 是**颜色数据**（游戏 sRGB
+          // 值），必须标 SRGBColorSpace 让 three 采样时解码到 linear——此前
+          // NoColorSpace 把 sRGB 值当 linear、输出端再编码一次（双重伽马），
+          // 消防局实证：上层砖 (163,77,65)→(209,149,138) 洗白、前脸饱和红
+          // B 通道相对抬升红→品红 (182,5,80)。alpha 携带 specA，sRGB 解码
+          // 不动 alpha 通道，spec 链不受影响。
           material.palettePng
             ? loadTex(material.palettePng).then((t) => {
                 t.minFilter = THREE.NearestFilter;
                 t.magFilter = THREE.NearestFilter;
                 t.generateMipmaps = false;
+                t.colorSpace = THREE.SRGBColorSpace;
                 return t;
               })
             : Promise.resolve(null),
           material.normalPng ? loadTex(material.normalPng) : Promise.resolve(null),
           material.shaderPng ? loadTex(material.shaderPng) : Promise.resolve(null),
           material.interiorPng
-            ? loadTex(material.interiorPng, false).then((t) => {
+            ? loadTex(material.interiorPng).then((t) => {
                 // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
                 // scale）依赖回绕取样；ClampToEdge 会把越界采样钳成边缘纯色（绿/紫块）
                 t.wrapS = THREE.RepeatWrapping;
                 t.wrapT = THREE.RepeatWrapping;
+                // 房间图集 RGB 同为 sRGB 颜色数据（与调色板同因，见调色板处
+                // 定谳记录）；alpha 是 HDR 灯亮强度（×16 链），sRGB 解码不动。
+                t.colorSpace = THREE.SRGBColorSpace;
                 return t;
               })
             : Promise.resolve(null),
@@ -680,23 +720,45 @@ float scFastNoise(vec3 seed) {
         // Unpack 管线的除 tile 一步（uv=raw/|ts|）的 ts 来源未定——v1（除
         // xform）白屏、v2（乘 xform，周期 1/s）砖块放大 3.6×且变糊，双双
         // 证伪回滚（migration.md §49.5）。
-        vec2 tUv = fract(vTintUv) * max(xform.xy - uTintTexel, vec2(0.0)) + xform.zw + uTintTexel * 0.5;
-        vec4 tintValues = texture2D(tintMap, tUv);
+        // 【2026-10-05 镜像区域修复】旧内缩公式 max(scale−texel, 0) 把**负
+        // scale**（镜像区域，消防局 row1 col1=−0.0476、row2 col7=−0.2691）
+        // 钳成 0 → 采样坐标塌缩为常数 → 整块窗板只采一条竖线（tint.a≈0 →
+        // scFacade=0 → 回退砖墙）= 对称双窗只渲染左半的十年病根。改为在
+        // fract 域按 texel/|scale| 比例内缩：正 scale 时与旧公式逐值等价，
+        // 负 scale 时正确覆盖镜像区域。
+        vec2 scInsetB = clamp(uTintTexel / max(abs(xform.xy), vec2(1e-6)), vec2(0.0), vec2(1.0));
+        vec2 scFractB = fract(vTintUv) * (1.0 - scInsetB) + scInsetB * 0.5;
+        vec2 tUv = scFractB * xform.xy + xform.zw;
+        // 引擎 tex2Dgrad 同款显式导数（2026-10-05 取证：导数取**未 fract
+        // 域** ddx(uv×regionXform)）——平铺边界无 UV 跳变，mip 级别天然
+        // 正确。这是 tint/normal/shader 恢复 mip+LINEAR+各向异性的前提；
+        // 隐式导数在 fract 回绕处爆炸选错 mip，正是当年门窗被平均、被迫
+        // Nearest/禁 mip 的病根。
+        vec2 scTintGradX = dFdx(vTintUv * xform.xy);
+        vec2 scTintGradY = dFdy(vTintUv * xform.xy);
+        // Top 层同款（未 fract 域 uv2×regionXform2）；xform2=0（Top 关闭）
+        // 时梯度为 0，对应采样只在下方 if 内发生，无实际影响。
+        vec2 scTopGradX = dFdx(vTopUv * xform2.xy);
+        vec2 scTopGradY = dFdy(vTopUv * xform2.xy);
+        vec4 tintValues = textureGrad(tintMap, tUv, scTintGradX, scTintGradY);
         // 30.2 Top 层（relief_tc 域，uv2×regionXform2）：窗户 motif 所在。
         // 源码（cpp frac 变体定谳）：tilePadding=row3.xy，且
         // reliefSrc = frac(uv2)·(1+padding) − padding/2，越出 [0,1] →
         // outsideTile>0 → facadeTint.a 强制 0（退回 Base 层）。玻璃幕墙楼
         // padding 高达 ~8e4（数值即语义：整体禁用 Top），公寓楼 ~(0.125,0)。
-        // 【2026-09-19 回滚记录】曾尝试把 >1 的 padding 分量按 0 处理
-        // （理由：消防局 Top 区域看起来承载门窗图案），结果整个立面的
-        // facadeTint.a 全程生效、窗户图案漫延全墙——渲染彻底错乱，已回滚。
-        // 大数值 padding 的刀带效应（reliefSrc 几乎处处越界）= 引擎语义的
-        // 「Top 关闭」，原判读正确。消防局窗户实际来自 Base 层的逐顶点
-        // 选列（Color 通道 D3DCOLOR.G），col 0 只是素墙区域之一。
+        // 【2026-10-05 判读修正】旧结论「大数值 padding 一律 = Top 关闭」只对
+        // 墙列成立（col0 pad=(15999,0)，刀带效应全域越界）。消防局**窗列**
+        // （col5-8 等，palU2≠palU、interior=0.125）pad.y≈2497 是配合**退化
+        // uv2**（uv2.y≈0.5±0.0003 常数线、uv2.x 横跨板面）的精确刀带：越界
+        // 检查把 motif 钳进板面中段 ~67% 竖带，上下端回退 Base——引擎原意，
+        // 不是「关闭」。窗 motif 采样域 = 镜像区域（row2 col7 scale.x=
+        // −0.26913，reliefEyeDir 除以 abs(regionXform2) 即为此设）。
         vec2 topUv = vec2(0.0);
         float scFacade = 0.0;
         vec4 facadeTintValues = vec4(0.0);
-        if (xform2.x > 0.0 && xform2.y > 0.0) {
+        // 旧判据 xform2.x > 0 把镜像区域（负 scale）整块跳过——对称双窗只
+        // 渲染左半的直接病根之一；0 才是「区域禁用」标记，判据改为非零。
+        if (abs(xform2.x) > 1e-6 && abs(xform2.y) > 1e-6) {
           vec2 scPad = scRoom.xy;
           // Top 层保持现行公式（ts2/其倒数在参数表无对应行，v1 乱除已弃）。
           vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
@@ -711,8 +773,11 @@ float scFastNoise(vec3 seed) {
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
-          topUv = clamp(reliefSrc, 0.0, 1.0) * max(xform2.xy - uTintTexel, vec2(0.0)) + xform2.zw + uTintTexel * 0.5;
-          facadeTintValues = texture2D(tintMap, topUv);
+          // 镜像安全内缩（同 Base 层：fract 域比例内缩，正负 scale 通用）。
+          vec2 scInsetT = clamp(uTintTexel / max(abs(xform2.xy), vec2(1e-6)), vec2(0.0), vec2(1.0));
+          vec2 scFractT = clamp(reliefSrc, 0.0, 1.0) * (1.0 - scInsetT) + scInsetT * 0.5;
+          topUv = scFractT * xform2.xy + xform2.zw;
+          facadeTintValues = textureGrad(tintMap, topUv, scTopGradX, scTopGradY);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
         vec2 scSubTop = facadeTintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
@@ -736,18 +801,18 @@ float scFastNoise(vec3 seed) {
           scTintMul = mix(tintValues.b, facadeTintValues.b, scFacade) * 2.0;
           diffuseColor.rgb *= scPalColor.rgb * scTintMul;
           #ifdef USE_NORMALMAP
-          // artistAO = normalMapSampled.a（Base/Top 双采样 lerp）
-          float scAo = texture2D(normalMap, tUv).a;
-          if (scFacade > 0.001) scAo = mix(scAo, texture2D(normalMap, topUv).a, scFacade);
+          // artistAO = normalMapSampled.a（Base/Top 双采样 lerp，显式导数同 tint）
+          float scAo = textureGrad(normalMap, tUv, scTintGradX, scTintGradY).a;
+          if (scFacade > 0.001) scAo = mix(scAo, textureGrad(normalMap, topUv, scTopGradX, scTopGradY).a, scFacade);
           diffuseColor.rgb *= scAo;
           #endif
         }
         #ifdef TINT_SHADERMAP
         {
-          vec4 smBase = texture2D(shaderMapMap, tUv);
+          vec4 smBase = textureGrad(shaderMapMap, tUv, scTintGradX, scTintGradY);
           scShaderMap = smBase;
           if (scFacade > 0.001) {
-            scShaderMap = mix(smBase, texture2D(shaderMapMap, topUv), scFacade);
+            scShaderMap = mix(smBase, textureGrad(shaderMapMap, topUv, scTopGradX, scTopGradY), scFacade);
           }
         }
         #endif
@@ -818,22 +883,30 @@ float scFastNoise(vec3 seed) {
           vec2 scInteriorTc = scResultTc * vec2(palOrigin.z) + vec2(0.0, palOrigin.w);
           float scRoomId = scFastNoise(vec3(scInteriorElem, scSeedEff));
           float scRoomVariation = floor(scRoomId * 4.0);
+          // 源码逐字：roomId 取过 variation 后重新归一化（frac(roomId*4)）
+          // 再与 interiorThresholds 比较选亮灯列——此前漏了这步归一化。
+          scRoomId = fract(scRoomId * 4.0);
           // interiorThresholds 引擎值未知，v1 用四分位（0.25/0.5/0.75）
           vec4 scEdge = vec4(step(vec3(0.25, 0.5, 0.75), vec3(scRoomId)), scRoomVariation * 4.0);
           scInteriorTc.x += dot(scEdge, vec4(1.0)) * palOrigin.z;
           vec4 scRoomTex = texture2D(interiorMapMap, scInteriorTc);
-          // 内景照明：房间环境光随昼夜（夜间仅微光）+ 灯亮 a×glow（HDR×16
-          // 的 tonemap 近似，白天压 2.5）×供电（断电全灭，源码 .z hack）
+          // 内景照明拆分（引擎 interiorColor = rgb×(shColorDiff + a×16 +
+          // shColorSpec) 的 three 管线同构）。灯亮系数 = a×uInteriorGlow×
+          // 供电（断电全灭，源码 interiorThresholds.z hack）。
           float scSelfLight = scRoomTex.a * uInteriorGlow * uPowered;
-          // 源码夜间项 = shColorDiff（夜空 SH 非零 + 城市光，非纯黑）；
-          // 常数 0.12 灰是此前无天空近似时的占位——改为月亮底光 + 天空项，
-          // 下限 (0.10,0.12,0.18) 保证房间结构在深夜可辨。
-          vec3 scNightAmb = max(
-            scSkyRadiance(normalize(vec3(0.35, 0.35, 1.0))) * 0.9,
-            vec3(0.10, 0.12, 0.18)
-          );
-          vec3 scAmbient = mix(scNightAmb, vec3(1.0), uDayLight);
-          scInterior = scRoomTex.rgb * (scAmbient + scSelfLight);
+          // 【2026-10-05 夜间定谳】灯亮 a×16 是**光照之外的加法 HDR**（引擎
+          // 恒定、无昼夜插值），此前把（环境+灯亮）合并塞进反照率 → 被场景
+          // 灯二次调制，夜间 applyBrightness 的 ×0.22 把亮灯房间乘灭 =「调
+          // 时段假内景全黑」。拆分：反照率只放房间 rgb（随场景光昼夜，=
+          // shColorDiff 项），灯亮项直接进 totalEmissiveRadiance（three 自
+          // 发光槽，在光照之后原样叠加、不随时段/灯强衰减）。×(1−scOpacity)：
+          // 半混合像素的自发光按窗洞占比衰减（引擎 lerp 在光照前完成，同效）。
+          scInterior = scRoomTex.rgb;
+          vec3 scEmissive = scRoomTex.rgb * (scSelfLight * (1.0 - scOpacity));
+          // 引擎靠 hejl tonemap 回收 HDR；观察器无 tonemap，1.0 以上软肩
+          // （c>1 → 2−1/c，连续可微，灯芯暖白不死白）。
+          scEmissive = mix(scEmissive, 2.0 - 1.0 / max(scEmissive, vec3(1.0)), step(vec3(1.0), scEmissive));
+          totalEmissiveRadiance += scEmissive;
         }
         #endif
         diffuseColor.rgb = mix(scInterior, diffuseColor.rgb, scOpacity);`,
@@ -847,11 +920,13 @@ float scFastNoise(vec3 seed) {
           // 时 = (vTangent, vBitangent, normal)，与引擎 building4DefaultPS 的
           // ApplyNormalMap(vn, tangent, nmap) 同帧；缺切线时才退化为导数拟合。
           // 此前这里自建了一个 tbn 局部遮蔽它，等于永远走导数路径。
-          // 法线与反照率共用 tUv/topUv（同区域、同内缩，像素对齐）。
-          vec3 mapN = texture2D( normalMap, tUv ).xyz * 2.0 - 1.0;
+          // 法线与反照率共用 tUv/topUv（同区域、同内缩，像素对齐）；显式
+          // 导数与 tint 采样同口径（mip 恢复后必须 textureGrad，否则 fract
+          // 边界的隐式导数又会把法线 mip 选炸）。
+          vec3 mapN = textureGrad( normalMap, tUv, scTintGradX, scTintGradY ).xyz * 2.0 - 1.0;
           // Top 层法线（窗框/线脚凹凸）按 facadeTint.a lerp（引擎同用一个 TBN）
           if (scFacade > 0.001) {
-            vec3 nTop = texture2D( normalMap, topUv ).xyz * 2.0 - 1.0;
+            vec3 nTop = textureGrad( normalMap, topUv, scTopGradX, scTopGradY ).xyz * 2.0 - 1.0;
             mapN = mix(mapN, nTop, scFacade);
           }
           mapN.xy *= normalScale;
@@ -882,7 +957,22 @@ float scFastNoise(vec3 seed) {
           float scEnvS = scGloss * 0.75;
           vec3 scEnvDir = normalize(mix(scNormW, reflect(scBent, scNormW), scEnvS));
           vec3 scEnv = scSkyRadiance(scEnvDir);
-          reflectedLight.indirectSpecular += scEnv * scEnvS * diffuseColor.rgb;
+          // 【2026-10-05 玻璃质感定谳】引擎 CombinePS 原文：
+          //   rgb += texCUBE(reflectionSampler, reflectedView) × specResult.y × specStrength
+          // 环境反射**不被反照率调制**——玻璃后的内景再黑，镜面反射照样叠加
+          // （无内景窗户"玻璃质感"的来源：黑玻璃 + 天空/太阳镜面）。
+          // specResult = palette **surface 行**采样 ×tintMul，标量取 **G 通道**
+          // ——此前误用 .a（reflectance 口径）：玻璃 surface 行 G 高 A 低的
+          // 资产上反射归零，幕墙（G/A 双高）碰巧工作、普通窗洞全黑的不对称
+          // 来源（2026-10-05 目视定谳）。gloss（scEnvS）只参与采样方向混合，
+          // 不进强度（引擎原文无此因子）。
+          // ×0.3 = 反射 cubemap 的强度打包：引擎 reflectionSampler 是一张
+          // 具体 cubemap 纹理（整体偏暗），openscp 用解析天空全亮度直加会
+          // 把玻璃洗成灰白（2026-10-05 目视回归）；同族先例 = vehicle 链
+          // reflectionIntensity = 0.3（all_blocks_full.txt 23001 行）。待
+          // 拿到 building cubemap 资产后按实际亮度校准。
+          float scEnvMapStrength = scSurface.g * scTintMul * 0.3;
+          reflectedLight.indirectSpecular += scEnv * scEnvMapStrength * scSpecStrength;
           // 间接漫反射按天空方向重分配（= 源码 EnvLighting 的 SkyColor(sampleDir)）：
           // 用亮度比 scLum/uSkyLumRef 作乘性因子，**球面均值为 1**——只改变各朝向的
           // 环境光分布，不抬整体曝光。此前是常数 AmbientLight，各朝向完全相同（发平）。

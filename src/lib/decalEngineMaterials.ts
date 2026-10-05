@@ -31,9 +31,12 @@ export interface EngineEnvRefs {
   /** 动态招牌开关（0 = 静态恒亮 / 1 = 扫掠动画）：SDF 族 uAnimEnabled。
    * 缺省 = 静态（精细渲染工具条"动态招牌"默认关）。 */
   animEnabled?: { value: number };
-  /** 内景自发光峰值（破洞 kInteriorMapSelfLightMax）：与建筑内景链同源
-   * env.glow（白天 ~2.5 / 夜间 ~16），HDR 值不硬编码（2026-09-30 恒 16
-   * 白天过曝教训）。缺省恒 16。 */
+  /** 内景自发光峰值（破洞 kInteriorMapSelfLightMax）：白天 2.5（2026-09-30
+   * 恒 16 白天过曝教训），夜间 ×nightBoost 与墙同步（2026-10-05 用户目视：
+   * 游戏内破洞夜间不自发光）。不要绑建筑链的 glow——它 2026-10-05 起
+   * 恒 16（HDR 由反照率/emissive 拆分回收），贴花平涂没有该链。 */
+  decalGlow?: { value: number };
+  /** @deprecated 旧字段名；建洞材质请用 decalGlow（见上）。 */
   glow?: { value: number };
 }
 
@@ -192,9 +195,10 @@ export function createEngineDecalMaterial(
       uTime: opts.env.time ?? { value: 0 },
       // 动态招牌开关（0 = 静态恒亮）：直引 env 共享对象，工具条切换即生效
       uAnimEnabled: opts.env.animEnabled ?? { value: 0 },
-      // 破洞内景自发光峰值（kInteriorMapSelfLightMax）：与建筑内景链同源
-      // env.glow 热切换（白天 ~2.5 / 夜间 ~16）
-      uInteriorGlow: opts.env.glow ?? { value: 16 },
+      // 破洞内景自发光峰值（kInteriorMapSelfLightMax）：白天 2.5、夜间
+      // ×nightBoost 与墙同步（decalGlow 曲线在 applySunEnv）——不绑建筑
+      // 链 glow（恒 16 白天爆平白、夜间自发光，双目视回归定谳）。
+      uInteriorGlow: opts.env.decalGlow ?? opts.env.glow ?? { value: 16 },
       // 破洞族盒参数（VS 的 tfp.z 真实进深；缺省恒前缘 = 全尺寸内景）
       uHoleOrigin: { value: opts.holeBox?.origin.clone() ?? new THREE.Vector3() },
       uHoleAxisZ: {

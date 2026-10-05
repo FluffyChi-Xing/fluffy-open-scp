@@ -226,8 +226,14 @@ float texturePositionZ = 0.0;
             // 而 ShaderMaterial 不做输出色彩空间编码——线性直出整体变暗
             // ~2.2 gamma（焦痕灰 → 纯黑，2026-10-04"破洞完全黑色"根因）。
             // 手动回 sRGB。sign/holo 纹理为 NoColorSpace 直采直出，无需补偿。
+            // 【2026-10-05 软肩】内景项 interiorTexture.a×16 是 HDR（引擎
+            // 末端 hejl tonemap 回收）；贴图 alpha 实为洞形状掩码（取证
+            // tmp/hole_tex alpha 直方图：15-20% 像素 >0.8），高段直冲 8-16
+            // 无压缩 → 整块 clip 平白（目视"白色发光块"）。gamma 前插 1.0
+            // 软肩（c>1 → 2−1/c，与建筑内景链同口径）把 HDR 段压回可视域。
             Family::Hole => {
-                "outColor.rgb = pow(max(outColor.rgb, vec3(0.0)), vec3(1.0 / 2.2));\ngl_FragColor = outColor;\n"
+                "outColor.rgb = mix(outColor.rgb, 2.0 - 1.0 / max(outColor.rgb, vec3(1.0)), step(vec3(1.0), outColor.rgb));\n\
+                 outColor.rgb = pow(max(outColor.rgb, vec3(0.0)), vec3(1.0 / 2.2));\ngl_FragColor = outColor;\n"
             }
             // 直采族：引擎 decal 走延迟光照（夜间只剩环境项），平涂 shader
             // 无光照响应——挂 env 昼夜因子（与 sign 的 uNightBoost 同机制）。
@@ -269,9 +275,13 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
     let mut ps = String::from(PS_PREAMBLE);
     if family == Family::Hole {
         // 内景自发光峰值：引擎常量 16 是 HDR 值（靠 tonemap 回收）；PE 无 HDR
-        // 管线，挂 env.glow（白天 2.5 / 夜间 16，与建筑内景链同源，
-        // 2026-09-30"恒 16 白天过曝"对拍结论）。以 #define 覆盖片段内的
-        // 引擎常量名，保持 decalLightInteriorMap 片段逐字。
+        // 管线，挂 env.decalGlow——白天 2.5（2026-09-30"恒 16 白天过曝"对拍
+        // 结论）、夜间 ×nightBoost 与墙同步（2026-10-05 用户目视定谳：游戏
+        // 内破洞夜间**不自发光**；机制同涂鸦/平涂族 ×uNightBoost）。曲线在
+        // refinedRender.applySunEnv，不绑建筑 glow（恒 16，其 HDR 由反照率/
+        // emissive 拆分回收，贴花无该链不能跟）。
+        // 以 #define 覆盖片段内的引擎常量名，保持 decalLightInteriorMap
+        // 片段逐字。
         ps.push_str("uniform float uInteriorGlow;\n#define kInteriorMapSelfLightMax uInteriorGlow\n");
         // 视线视差（2026-10-05 四轮，用户"破洞各角度完全一样"对拍）：引擎
         // 原版靠**场景内真实几何**（破洞后露出的楼板）让 tfp.z 逐像素变化
