@@ -145,22 +145,42 @@ export async function getPropModelObject(
     } catch {
       return null;
     }
-    // UV 修正：GLTF 导出器按建筑 tint 链约定写 V'=-V（该链靠着色器 frac()
-    // 回绕负 V 存活）；prop 是传统 UV0 直采，负 V 被 ClampToEdge 钳成单排
-    // 纹素（整车灰色的根因）。几何为本模块新鲜解析，就地翻回。
-    for (const root of roots) {
-      root.traverse((child) => {
-        const mesh = child as ThreeNamespace.Mesh;
-        if (!mesh.isMesh) return;
-        const uv = mesh.geometry.attributes.uv as
-          | ThreeNamespace.BufferAttribute
-          | undefined;
-        if (!uv) return;
-        for (let i = 0; i < uv.count; i += 1) {
-          uv.setY(i, -uv.getY(i));
+    // UV 修正（数据驱动）：GLTF 导出器恒写 V'=-V。车辆等模型原始 V 为正
+    // → 导出后全负（ClampToEdge 钳成单排纹素 = 灰车/条纹根因）→ 需翻回；
+    // 垃圾桶等模型原始 V 本身为负 → 导出后为正 → 翻回反而破坏。按载荷内
+    // 全体 UV 的 minV 判定：minV < -0.5 才整体翻回。几何为本模块新鲜解析，
+    // 就地修改安全。
+    {
+      let minV = Number.POSITIVE_INFINITY;
+      for (const root of roots) {
+        root.traverse((child) => {
+          const mesh = child as ThreeNamespace.Mesh;
+          if (!mesh.isMesh) return;
+          const uv = mesh.geometry.attributes.uv as
+            | ThreeNamespace.BufferAttribute
+            | undefined;
+          if (!uv) return;
+          for (let i = 0; i < uv.count; i += 1) {
+            minV = Math.min(minV, uv.getY(i));
+          }
+        });
+      }
+      if (minV < -0.5) {
+        for (const root of roots) {
+          root.traverse((child) => {
+            const mesh = child as ThreeNamespace.Mesh;
+            if (!mesh.isMesh) return;
+            const uv = mesh.geometry.attributes.uv as
+              | ThreeNamespace.BufferAttribute
+              | undefined;
+            if (!uv) return;
+            for (let i = 0; i < uv.count; i += 1) {
+              uv.setY(i, -uv.getY(i));
+            }
+            uv.needsUpdate = true;
+          });
         }
-        uv.needsUpdate = true;
-      });
+      }
     }
     const urls: string[] = [];
     const tintSets = await loadTintTextures(

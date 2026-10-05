@@ -3622,7 +3622,9 @@ fn resolve_material_resources(
         // TEXTURE section**（垃圾桶 0x903A704C 实证：#11=彩色 diffuse 256×256、
         // #13=法线；材质段仅含参数无引用）。按序取 [0]=diffuse→slot0_png、
         // [1]=normal→normal_png。建筑模型 Decoded 材质走槽位语义，不受影响。
-        if !has_params {
+        // 【限定 slots 空】车辆 Decoded 材质若也被文件扫描，会被模型文件里的
+        // 2×2 占位纹理覆盖 slot0 = 白车回归（2026-10-05 实测）。
+        if !has_params && slots.is_empty() {
             let file_textures: Vec<(Vec<u8>, u32, u32)> = file
                 .sections_of_type(rw4::SectionType::TEXTURE)
                 .filter_map(|sec| {
