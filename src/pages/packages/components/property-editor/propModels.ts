@@ -242,14 +242,15 @@ export async function getTreeBillboard(
   if (options.atlasBase64) {
     const atlas = await loadTreeAtlas(THREE, options.atlasBase64);
     if (atlas) {
-      // 克隆纹理挂每格偏移（共享图像数据）
+      // 克隆纹理挂每格偏移（共享图像数据）；alphaTest 抠树剪影——图集
+      // alpha 即剪影遮罩（min 0/max 255），背景格 alpha=0 被裁掉
       const cellTexture = atlas.clone();
       cellTexture.needsUpdate = true;
       cellTexture.repeat.set(0.5, 0.5);
       cellTexture.offset.set(col * 0.5, 0.5 - row * 0.5);
       material = new THREE.SpriteMaterial({
         map: cellTexture,
-        transparent: false,
+        alphaTest: 0.5,
       });
     }
   }

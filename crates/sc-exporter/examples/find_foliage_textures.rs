@@ -59,13 +59,24 @@ fn main() {
                 );
                 // 竖长条优先落盘（树公告板轮廓特征：高>宽 且 ≥128 高）
                 if h > w && h >= 128 {
+                    // alpha 通道直读（不强制 255）：树剪影可能存于 alpha
+                    let mut aMin = 255u8;
+                    let mut aMax = 0u8;
+                    let mut aSum = 0usize;
+                    for i in 0..(w * h) {
+                        let a = rgba[i * 4 + 3];
+                        aMin = aMin.min(a);
+                        aMax = aMax.max(a);
+                        aSum += a as usize;
+                    }
+                    println!("  alpha: min={aMin} max={aMax} mean={}", aSum / (w * h));
                     let img = image::RgbaImage::from_fn(w as u32, h as u32, |x, y| {
                         let at = (x as usize + y as usize * w) * 4;
                         image::Rgba([
                             rgba[at],
                             rgba[at + 1],
                             rgba[at + 2],
-                            255,
+                            rgba[at + 3],
                         ])
                     });
                     let out = format!("tmp/foliage_{:08X}.png", e.id.instance);
