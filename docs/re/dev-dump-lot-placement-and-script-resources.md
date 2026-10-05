@@ -75,9 +75,33 @@ FillFromUnit + CalculateUnitLotTransform 链把 lot 本地点映到世界。
 
 `GB::cEcoGameScripts::Init(gameID, numAddOns, addOnIDs)`（662313 行）：
 
-- sim 主表 = `PropertyManager->GetPropertyList(gameID, group **0x40700000**)`；
+- sim 主表 = `PropertyManager->GetPropertyList(gameID, group **0x40800200**)`
+  （1082130944 的十六进制；初版文档误写 0x40700000，2026-10-05 P1 实证勘误）；
 - 属性 **0x0C947ABC**（LocalKey）→ nonSim 主表（`GetPropertyList(key.instance, key.group)`）；
-- addon 组 **0x40700001**（逐 addOnID 同构）。
+- addon 组 **0x40800201**（逐 addOnID 同构）。
+
+**【2026-10-05 P1 实证补正：数据源】** 资源表条目主要不在 SimCity_Game.package，
+而在 **`SimCityUserData/EcoGame/*.package`（服务器下发的玩法脚本包）**：
+master 记录实测在 SimCity_Game.package G **40E0C800**（I 622B9CD7，209 属性，
+按"含 0x7E0AC01 group 数组"内容反查定位——离线无需 gameID），
+但 **resource 表条目本体在 EcoGame 包 G 40E0C100**、path 条目在 **G 40E0C400**。
+同族还有 Sandbox-Scripts / HeroesAndVillains-Scripts（版本化多份，取最新）。
+离线配方：扫 EcoGame 目录全部 package 的 B1B104 记录即得资源表；
+安装目录内 40E1Cxxx 族（units 2027 条/resources 81 条等）为 shipped 副本，
+与 EcoGame 有互补关系（sweep 实测 6673 lot 的 96 个 bin id 与安装包资源表仅 8% 交集，
+并入 EcoGame 后大幅提升）。
+
+**prop→模型链端到端实证（消防局 0x4DE9912B 全部 10 个 prop id）：**
+
+- 车辆 0AB4DFE1-E3：EcoGame 资源（40E0C100）→ 显式 key 0x0D8C29C3 →
+  模型包装（Game.package 40E02D00）→ 属性 0x0D897169 = **直接 RW4 key 数组
+  （type 0x2F4E681B，多 LOD）** → Graphics.package RW4 实证（0xCA265D8B 41KB、
+  0x0534ACA8 21.8KB）。
+- 车辆 92BEE95F / 54CA89F0：**self-key 分支**（0x00F9EFBB/0x0D897169 标记在记录内）。
+- 树 14984C68-6B：显式 key → **逐 LOD 包装**（0x0D8C29CF uint32 = LOD 序号 0..3，
+  四包装共享）→ 0x0C36D30D → 树种 descriptor（**App.package G 40002D00**，
+  0x0E0B99FD = 34 个模型 key 数组 = 同树种多变体，对应游戏内"多种不同的树"）；
+  终端一跳（09878A01 类记录系统）未通，待后续映射。
 
 ### 3.2 九张子表 = 主表上的 KeyArray 属性（每项是一个 group id）
 
