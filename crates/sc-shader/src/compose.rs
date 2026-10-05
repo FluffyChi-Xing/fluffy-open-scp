@@ -52,6 +52,7 @@ uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
 uniform vec2 uSdfTexSize;
+uniform float uGraffiti;
 
 varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;
@@ -236,15 +237,20 @@ float texturePositionZ = 0.0;
             // 静态招牌灯箱自发光（七轮对拍"无动画招牌平涂无灯箱感"的
             // 修复）：引擎 decalMaterialInfo.x → materialLightScale =
             // x×16+0.25（casino 0.4 → 6.65，封 4 防过曝）；无 lot 数据
-            // （x=0）时钳到 1 = 保持原样，涂鸦等同链条目不受增益影响。
-            // 夜间 60% 豁免 nightBoost——灯箱夜间保持亮（引擎 decal 走
-            // 延迟光照，招牌属自发光件）。软肩保色相：峰值 ≤1 不动，
-            // 超出部分等比压缩到 1（防 ×4 增益饱和成白块）。
+            // （x=0）时钳到 1 = 保持原样。夜间 60% 豁免 nightBoost——
+            // 灯箱夜间保持亮（引擎 decal 走延迟光照，招牌属自发光件）。
+            // 软肩保色相：峰值 ≤1 不动，超出部分等比压缩到 1。
+            // **涂鸦分流（uGraffiti=1，十三轮定谳）**：materialLightScale
+            // 是 SDF 霓虹链口径（§十五），涂鸦 md=[0.5,0,0] 误进灯箱公式
+            // = ×4 增益 + 夜间豁免 → "涂鸦夜间自发光"根因。引擎涂鸦 rt0
+            // 编译状态无任何自发光项（标准 alpha 混合 + alphaTest 0.02）
+            // → ×uNightBoost 与墙同步昼夜，软肩跳过。
             Family::Sign => {
                 "float signGain = clamp(decalMaterialInfo.x * 16.0 + 0.25, 1.0, 4.0);\n\
-                 outColor.rgb *= signGain * mix(1.0, uNightBoost, 0.4);\n\
+                 float lightbox = signGain * mix(1.0, uNightBoost, 0.4);\n\
+                 outColor.rgb *= mix(lightbox, uNightBoost, uGraffiti);\n\
                  float signMax = max(outColor.r, max(outColor.g, outColor.b));\n\
-                 outColor.rgb /= 1.0 + max(signMax - 1.0, 0.0);\n\
+                 outColor.rgb /= 1.0 + max(signMax - 1.0, 0.0) * (1.0 - uGraffiti);\n\
                  gl_FragColor = outColor;\n"
             }
             // SDF 族收尾已随 compose() 的链尾 Reinhard 内联（保色相 + 覆盖率
@@ -299,10 +305,25 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
     }
     ps.push_str("void main() {\n");
     ps.push_str(family.ps_prelude());
-    for name in family.ps_chain() {
-        let src = fragments::get(name).ok_or_else(|| anyhow::anyhow!("缺片段 {name}"))?;
+    if family == Family::Sign {
+        // 涂鸦/招牌分流（十三轮）：同字典量化族字典内按 uGraffiti 走两条
+        // 合成——涂鸦 = 喷漆连续厚度 alpha（融合）；招牌 = 硬 alpha 量化
+        // 合成（灯箱平涂底色）。选色阈值链两路一致（可辨识度不变）。
+        ps.push_str("if (uGraffiti > 0.5) {\n");
+        let src = fragments::get("decalGraffitiComposite")
+            .ok_or_else(|| anyhow::anyhow!("缺片段 decalGraffitiComposite"))?;
         ps.push_str(&translate(src));
-        ps.push('\n');
+        ps.push_str("\n} else {\n");
+        let src = fragments::get("decalQuantComposite")
+            .ok_or_else(|| anyhow::anyhow!("缺片段 decalQuantComposite"))?;
+        ps.push_str(&translate(src));
+        ps.push_str("\n}\n");
+    } else {
+        for name in family.ps_chain() {
+            let src = fragments::get(name).ok_or_else(|| anyhow::anyhow!("缺片段 {name}"))?;
+            ps.push_str(&translate(src));
+            ps.push('\n');
+        }
     }
     if family == Family::Sdf {
         // 十二轮回归单路径（用户 DIRTY FACTORY 对拍：静态量化合成对 SDF
@@ -426,6 +447,31 @@ mod tests {
         assert!(
             !ps.contains("col * uNightBoost"),
             "量化链片段残留夜压（与收尾叠加 = 双重压暗）"
+        );
+    }
+
+    #[test]
+    fn sign_graffiti_branch() {
+        let (_, ps) = compose(Family::Sign).unwrap();
+        // 涂鸦分流（十三轮定谳：涂鸦 rt0 编译状态 = 标准 alpha 混合 +
+        // alphaTest 0.02，无自发光项；raster 通道 = 连续喷漆厚度场）
+        assert!(
+            ps.contains("if (uGraffiti > 0.5) {"),
+            "sign 缺涂鸦/招牌分流"
+        );
+        assert!(
+            ps.contains("alpha = m.a;"),
+            "涂鸦缺连续厚度 alpha（喷漆融合的引擎语义，硬 1.0 = 不透明贴纸）"
+        );
+        assert!(
+            ps.contains("mix(lightbox, uNightBoost, uGraffiti)"),
+            "涂鸦收尾缺 uNightBoost 分流（夜间自发光根因：md 0.5 误进灯箱 ×4）"
+        );
+        // 选色阈值链两路一致（可辨识度现状不变）
+        assert_eq!(
+            ps.matches("uLayerColors[3].rgb").count(),
+            2,
+            "涂鸦/招牌两路的优先级选色链应同构"
         );
     }
 

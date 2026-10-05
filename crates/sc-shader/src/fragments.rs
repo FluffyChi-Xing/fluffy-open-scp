@@ -17,6 +17,24 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = 1.0; }
       else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = 1.0; }
       outColor = vec4(col, alpha);"),
+    // ---- PS：涂鸦喷漆合成（2026-10-05 十三轮对拍定谳）----
+    // 取证（graffiti_decal_dump 探针，3 字典 18 条目）：涂鸦 raster 四通道
+    // = **每层喷漆的连续厚度场**（直方图 16 桶连续分布，非量化级别）；
+    // 单通道独占 40~76%（层间很少重叠）；大量条目 A 恒 0（纹理 A 不是混合
+    // 因子）。编译状态 rt0 定谳混合态：ALPHATEST(ref 5/255≈0.02 只裁极弱
+    // 雾区) + SRCALPHA/INVSRCALPHA 标准混合——**alpha 必由掩码强度导出**。
+    // 引擎观感 = 喷漆半透明与墙面融合（字母主体 0.7-0.86 透出墙色）。
+    // 保守适配：选色保留 0.5 阈值优先级链（可辨识度现状不变），alpha 从
+    // 硬 1.0 改为被选层的**连续强度**——图案轮廓不变，厚度半透明 = 融合。
+    ("decalGraffitiComposite",
+     "vec4 m = texture2D(uSampler0, vUv);
+      vec3 col = vec3(0.0);
+      float alpha = 0.0;
+      if (m.a >= 0.5)      { col = uLayerColors[3].rgb; alpha = m.a; }
+      else if (m.b >= 0.5) { col = uLayerColors[2].rgb; alpha = m.b; }
+      else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = m.g; }
+      else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = m.r; }
+      outColor = vec4(col, alpha);"),
     // ---- PS：量化合成（复用已有采样版，SDF 族静态分支用）----
     // 与 decalQuantComposite 同规则，但掩码取自 outColor（= sharp-bilinear
     // 保级采样结果），不重复采样——2026-10-05 用户指令："动画关 = 按静态

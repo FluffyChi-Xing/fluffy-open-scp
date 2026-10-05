@@ -698,3 +698,44 @@ deadend dead-mtt129cw）。
 
 验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 15/15
 （sdf_chain 断言改查归属解码/动画开关/扫掠软边，禁球面衰减回潮）。
+
+## 二十一、2026-10-05 十三轮（涂鸦融合定谳：连续喷漆厚度场 + rt0 混合态；去夜间自发光）
+
+1. **涂鸦 raster 真相（探针 `graffiti_decal_dump`，3 字典 18 条目直方图）**：
+   四通道 = **每层喷漆的连续厚度场**（16 桶直方图连续分布，**不是**
+   sign 族那种 4~5 级量化级别）；≥128 通道数 1 独占 40~76%（层间很少
+   重叠）；大量条目 **A 恒 0**（纹理 A 不是混合因子）。§六"真彩 RGB(A)"
+   与§十二"量化掩码"由此调和：§六错在把"单层连续强度 + colors 近似色"
+   读成真彩（"纯 R+A 红色涂鸦" = 单层红喷漆）；§十二对在对拍结论
+   （直采 = 把强度场当颜色 → 黄白模糊涂抹，INDUSTRIAL 条目 G/A 两通道
+   同形字 × 青色系层色 = 游戏内青色字，直采则成黄白）但"量化 0/1"判读
+   同样不成立——掩码连续，0.5 阈值链只是可用近似。
+2. **rt0 编译状态定谳混合态**（`tmp/cstate_E5390A98_rt0.bin` 状态对
+   解析）：ZENABLE=1 / ZWRITE=0 / **ALPHATESTENABLE=1, ALPHAFUNC=
+   GREATEREQUAL, ALPHAREF=5（≈0.02，只裁极弱雾区）** / **SRCBLEND=
+   SRCALPHA, DESTBLEND=INVSRCALPHA（标准 alpha 混合）** / CULLMODE=CW。
+   A 恒 0 条目在此状态下要可见 ⇒ **PS 输出的 alpha 必由掩码强度导出**，
+   纹理 A 不作混合因子。招牌 rt0 同区块无 ALPHATEST——两族混合态不同。
+3. **夜间自发光根因**：涂鸦 md=[0.5,0,0]（§十三.4），materialLightScale
+   = x×16+0.25 是 **SDF 霓虹链口径**（§十五）；涂鸦同走 sign 族收尾时
+   0.5×16+0.25=8.25 被封到 **×4 增益 + 夜间 60% 豁免** → 夜间比墙亮
+   ~2.7 倍 = "涂鸦夜间自发光"。引擎涂鸦无任何自发光项。
+4. **修复（compose.rs / fragments.rs / decalEngineMaterials.ts /
+   Viewport）**：sign 族内按新 uniform **uGraffiti** 分流——
+   - 合成：新片段 `decalGraffitiComposite` = 选色保留 0.5 阈值优先级链
+     （可辨识度现状不变），**alpha = 被选层连续强度**（喷漆厚度 → 墙面
+     透出 = 引擎融合观感；轮廓位置不变）；
+   - 收尾：`mix(lightbox, uNightBoost, uGraffiti)`——涂鸦 ×uNightBoost
+     与墙同步昼夜、无增益无豁免，软肩跳过；招牌路径不变。
+   - Viewport 按 materialInstance 0xE5390A98 置 uGraffiti=1（投影与
+     浮空两路同口径）。
+5. **诚实备注**：(a) 选色阈值 0.5 是保守适配——引擎 alphaTest ref 仅
+   0.02，意味着引擎保留了 2%~50% 的薄雾喷漆区（haze），我们仍裁掉；
+   若对拍发现引擎涂鸦边缘有薄雾晕，候选是把阈值降到 ~0.1 并加
+   smoothstep 过渡。(b) 层间重叠区的引擎合成方式（顺序 over vs 加权
+   和）未逐字取证——单通道独占 40~76% 意味着差异面小。(c) 加法/滤色
+   类混合态在涂鸦 rt0 中未出现，§五.5 的"加法猜测"对涂鸦证伪（标准
+   alpha 混合 + PS 自产 alpha 即正解）。
+
+验证基线：vue-tsc 干净、vitest 208/208、cargo test -p sc-shader 17/17
+（新增 sign_graffiti_branch 断言：分流/连续 alpha/收尾 mix/两路选色同构）。

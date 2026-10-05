@@ -1177,6 +1177,8 @@ async function assembleScene(
               materialInfo: unit.materialData ?? undefined,
               powered: props.powered,
               nus: [frame.sizeX, frame.sizeY, frame.sizeY],
+              graffiti:
+                ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
             })
           : buildDecalMaterial(THREE, texture, decoded, {
               env,
@@ -1286,6 +1288,9 @@ async function assembleScene(
             materialInfo: unit.materialData ?? undefined,
             powered: props.powered,
             nus: [frame.sizeX, frame.sizeY, frame.sizeY],
+            // 涂鸦（0xE5390A98）：喷漆连续厚度 alpha + 无灯箱增益/夜间
+            // 豁免（rt0 编译状态定谳：标准 alpha 混合，无自发光项）
+            graffiti: ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
             // 投影网格只画正面：薄板/单面墙从背后看时，decal 三角形是
             // 背面 → 剔除，杜绝"隔着建筑看到镜像字"（五轮图1；法线过滤
             // 已保证留下的面都朝原点，正面即被投面）。

@@ -73,6 +73,10 @@ export interface EngineMaterialOptions {
   side?: ThreeNamespace.Side;
   /** alpha 全零实心图 → 不透明渲染（海报式）；缺省 → 引擎混合态。 */
   alphaZero?: boolean;
+  /** 涂鸦分流（uGraffiti）：1 = 喷漆连续厚度 alpha + ×uNightBoost（无灯箱
+   * 增益、无夜间豁免——涂鸦 rt0 编译状态 = 标准 alpha 混合 + alphaTest
+   * 0.02，无自发光项）；0/缺省 = 招牌灯箱。仅 sign 族消费。 */
+  graffiti?: boolean;
   /** 破洞体积盒的 (半宽, 半高, 半深)——hole 体积 VS 的 uBoxHalf。 */
   boxHalf?: [number, number, number];
   /** 引擎 decalMaterialInfo.xyz = lot 侧 material_data 三元组（2026-10-05
@@ -159,6 +163,8 @@ export function createEngineDecalMaterial(
         ),
       },
       uNightBoost: opts.env.nightBoost,
+      // 涂鸦/招牌分流（仅 sign 族 PS 消费）
+      uGraffiti: { value: opts.graffiti ? 1 : 0 },
       // 破洞体积盒归一化（hole 体积 VS 消费；其他家族忽略）
       uBoxHalf: {
         value: new THREE.Vector3(...(opts.boxHalf ?? [1, 1, 1])),

@@ -41,6 +41,7 @@ uniform vec3 uDecalNUS;
 uniform vec4 uLayerColors[4];
 uniform float uNightBoost;
 uniform vec2 uSdfTexSize;
+uniform float uGraffiti;
 
 varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;
@@ -62,6 +63,16 @@ float spec = pow(nDotH, specE);
 specHighlight = spec * specStrength * sunMod * uSunColor3;
 }
 void main() {
+if (uGraffiti > 0.5) {
+vec4 m = texture2D(uSampler0, vUv);
+      vec3 col = vec3(0.0);
+      float alpha = 0.0;
+      if (m.a >= 0.5)      { col = uLayerColors[3].rgb; alpha = m.a; }
+      else if (m.b >= 0.5) { col = uLayerColors[2].rgb; alpha = m.b; }
+      else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = m.g; }
+      else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = m.r; }
+      outColor = vec4(col, alpha);
+} else {
 vec4 m = texture2D(uSampler0, vUv);
       vec3 col = vec3(0.0);
       float alpha = 0.0;
@@ -70,9 +81,11 @@ vec4 m = texture2D(uSampler0, vUv);
       else if (m.g >= 0.5) { col = uLayerColors[1].rgb; alpha = 1.0; }
       else if (m.r >= 0.5) { col = uLayerColors[0].rgb; alpha = 1.0; }
       outColor = vec4(col, alpha);
+}
 float signGain = clamp(decalMaterialInfo.x * 16.0 + 0.25, 1.0, 4.0);
-outColor.rgb *= signGain * mix(1.0, uNightBoost, 0.4);
+float lightbox = signGain * mix(1.0, uNightBoost, 0.4);
+outColor.rgb *= mix(lightbox, uNightBoost, uGraffiti);
 float signMax = max(outColor.r, max(outColor.g, outColor.b));
-outColor.rgb /= 1.0 + max(signMax - 1.0, 0.0);
+outColor.rgb /= 1.0 + max(signMax - 1.0, 0.0) * (1.0 - uGraffiti);
 gl_FragColor = outColor;
 }
