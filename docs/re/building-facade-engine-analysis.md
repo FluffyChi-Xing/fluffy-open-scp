@@ -220,6 +220,59 @@ interiorColor = interiorMap.rgb * (shColorDiff + interiorMap.aaa * kBuildingInte
 | 假内景亮度低 | interiorMap.a×16 HDR 自发光 + shColorDiff 环境项 + tonemap | a 通道是否消费、自发光系数、无 HDR 管线时的等效曝光 |
 | 幕墙不像玻璃 | shaderMap.a≈0 内景 + specStrength/specE/gloss + 天空 LUT 反射向 + cubemap s6 | 高光通道（b/g）、cubemap 反射是否缺失、gloss 环境项 |
 
+## 7.6 Maya 作者着色器源码对拍（2026-10-06，Discord Danny50205 提供）
+
+Discord 用户分享了 **Maxis Maya 作者着色器源码**（DCC 预览用未编译 HLSL，
+`std_VS/std_PS`——发行版 building4 编译着色器的“源代码”，存档
+`maya-building4-authoring-shader.fx_source.txt`，1128 行）。权威级对拍：
+**项目实现与作者源码逐段一致，无需改动**。
+
+### 7.6.1 逐字证实（项目实现 = 作者源码）
+
+| 机制 | 作者源码 | 项目实现 |
+| --- | --- | --- |
+| Base 采样 | `frac(uv)·regionXform.xy + regionXform.zw`（+ uv_ddx/uv_ddy） | ✓ 同 |
+| 镂空 | `clip(baseTintValues.a - 0.5)` | ✓ 0.5 |
+| Top 层 outsideTile | `dot(saturate(float4(0-tc, tc-1)), 1)`，`facadeTintValuesTop.a = 0` | ✓ 同 |
+| tilePadding 变换 | `uv2 = frac(uv2)·(1+padding) − padding·0.5` | ✓ cpp frac 变体逐字 |
+| **padding 0-hack** | `padding==0 → abs(TileSize)` | ✓（row3 语义） |
+| **TileU/TileV 关闭** | `padding = 1000` | ✓ 大 padding=Top 关闭（实证 15999/8e4 即此机制）|
+| 内景栅格 | `interiorUv = uv·regionXform.xy·roomInvSize` | ✓ |
+| **内景选房** | `roomId = FastNoise(elem, seed)`；`variation = floor(roomId·4)`；`roomId = frac(roomId·4)`；阈值 `max` 瀑布 | ✓ 全同（4 分位阈值 = InteriorThreshold1/2/3） |
+| **内景 seed** | `MaterialNameHash/255`；`<0.5 → FastNoise(量化模型位置)` | ✓ 同构（编译版 = 模型位置） |
+| 六槽位采样 | Color/AO/Normal/Spec 各 base+top 按 facadeTint.a lerp | ✓ |
+| specE | `tintResult.a³×2048 (+1/+2)` | ✓（编译 +1）|
+| 双 pass palette | `BuildingPaletteSample(palU/palU2, …)` → tint/spec lerp | ✓ |
+| alphaTest + 双面 | AlphaRef 0x80（≈0.5）、CullMode=none（Culled 变体 CCW） | ✓ DoubleSide + 0.5 |
+| **采样器色彩空间** | **Color/AO/Normal/Spec/Depth = LINEAR；TintPalette/InteriorMap = SRGB** | ✓ palette/interior 标 sRGB（2026-10-05 调色定谳复证）；diffuse 线性采样 + 输出 sRGB 编码 = 净透传 |
+
+### 7.6.2 关键新知（作者源码独有）
+
+1. **palette V 行 = buildingVariation**：`kNumPaletteVariations = 7`、
+   `kInvPaletteHeight = 1/8`（7 变体行 + 底部 surface 行 = 8 行）。Maya 里
+   PaletteVariation 是滑杆；游戏运行时 = **每栋建筑实例分配的变体号**——
+   同款建筑颜色略异的机制确认。项目恒行 0（正典外观），uPaletteRow 能力
+   已具备（树公告板已用），建筑可按 lot 哈希接入变体行。
+2. **内景种子双源**：`interiorRandomSeed = MaterialNameHash/255`；`<0.5 →
+   FastNoise(量化模型位置)`——材料名哈希为主、位置兜底。项目用模型位置
+   （=编译版语义）✓。
+3. **TileSize 除法在 VS**：`uv = Uv / abs(tileSize)`（PS 里 regionXform 是
+   纯区域矩形）——项目 LOTM 烘焙的 UV0 已含等价变换（对拍通过），无需改。
+4. **实例色 0xFBA612 = 游戏运行时加入**（Maya 作者版无此属性 →
+   mModelColor 实例 tint）——车辆 paint lerp 的实例色来源确认。
+5. **Roughness**：`paletteRoughness = specResult.a`，应用于
+   `lightContributions = pow(lc, (1+roughness)²)`（逐灯模糊）——编译版
+   building4 未含此应用（记录备查）。
+
+### 7.6.3 数值差异表（作者源码 vs 发行版编译）
+
+| 项 | Maya 作者 | 发行版编译 | 判定 |
+| --- | --- | --- | --- |
+| specE 尾数 | +2 | +1 | 微差无关紧要 |
+| 内景光照项 | `diffuseLight`（Maya 三灯） | `shColorDiff + shColorSpec`（游戏 SH+太阳） | 平台差异，语义同构 |
+| palette V | PaletteVariation 滑杆（作者手选） | buildingVariation（每实例自动分配） | 游戏=自动变体 |
+| 材质引用 | 0x0D897169 / 0x00F9EFBB 直挂 | 同 | ✓ |
+
 ## 7.5 官方材质制作文档对拍（2026-10-06，Discord Danny50205 提供）
 
 Maxis 官方材质参数文档（设计期）逐项对照发行版二进制与本项目实现：
