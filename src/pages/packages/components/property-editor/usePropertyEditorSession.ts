@@ -432,7 +432,13 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return hiddenUnits.value.has(unitId(unit));
   }
 
-  function toggleUnit(unit: LotUnitDto) {
+  function toggleUnit(unit: LotUnitDto, groupKey?: string) {
+    // 组隐藏时点子项眼睛 = 恢复整组：组开关不写个体隐藏态，恢复后
+    // 个体隐藏记录原样保留（组关→组开不丢个体的独立显隐设置）。
+    if (groupKey && groupVisibility[groupKey] === false) {
+      groupVisibility[groupKey] = true;
+      return;
+    }
     const id = unitId(unit);
     const next = new Set(hiddenUnits.value);
     if (next.has(id)) next.delete(id);
