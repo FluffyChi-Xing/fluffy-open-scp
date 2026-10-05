@@ -97,6 +97,21 @@ LOTM 构建器 v10 已实现：无参数表材质 → 文件级纹理段 [0]→s
 
 → 小人群体定义（spawner 的外观提供者）。PE 展示为标记 + 外观参数即可。
 
+### 1.2.1 prop 子分类与标志性代表（贴图/模型实证定性，2026-10-05 普查）
+
+6673 个 lot 共 96 个不同 prop id，全分类后子类及代表：
+
+| 子类 | 代表 resourceID | 实物（贴图/模型解码定性） | 渲染路径 | PE |
+| --- | --- | --- | --- | --- |
+| 轿车/旅行车 | 0AB4DFE1-E3 | 4 LOD 轿车+旅行车（slot0 彩色图集 19.5KB） | 显式 key→Vehicle Models | ✓ 真实模型 |
+| 垃圾清运车 | 92BEE95F | C600 载具定义带车灯列 | vehicle_models 直出 | ✓ 真实模型 |
+| 混凝土搅拌车 | 54CA89F0 | 搅拌车单模型 | LOD1 直引 | ✓ 真实模型 |
+| 大型垃圾箱 | 85271637→903A704C | 连体垃圾箱+垃圾堆（slot0 256×256 图集 120KB） | LOD1 直引 | ✓ 真实模型 |
+| 街道家具 | 9375C65E→AD64CB3D | 长椅/野餐桌/停车计费器（256×256 家具图集） | LOD1 直引 | ✓ 真实模型 |
+| 乔木 | 14984C68-6B | 4 LOD 资源族 → 树种 descriptor（34 变体权重表） | 显式 key→impostor | 锥体（变体模型=运行时/服务器内容） |
+
+（普查明细见 docs/design/pe-component-replacement.md §4.5 本地稿）
+
 ### 1.3 树的颜色与图集机制（cImpostorRenderer 深挖，2026-10-05 续）
 
 **颜色公式（`cGraphicsInstancedImpostor::GetImpostorInfo`，753747 逐字）**：
@@ -136,6 +151,40 @@ u8 存储 ×1/255 归一化——`cTerrainForest2::UpdatePixelShaderData` 实证
    每树实例用 randomBits（unit.index 派生）取色，即可复刻"同片树林
    深浅不一"的游戏观感。
 3. **LOD 位掩码/次 key**：PE 无距离渲染，可忽略。
+
+### 1.5 树的季节目录与"Tree"配置（impostor 深挖第三轮，2026-10-05）
+
+**季节色缓存来源（`cGraphicsSeason::FillFromProps` 749167 + 调用点
+764640 逐字）**：
+
+```c
+v53 = EA::StdC::FNV1_String8("Tree", 0x811C9DC5, kCharCaseLower);
+     // = 0xE085813D（大小写折叠）
+v51->GetPropertyList(v51, v53, kImpostorConfigGroup, &seasonConfig);
+SC::cGraphicsSeason::FillFromProps(&mSeasonInfo, seasonConfig, mGame);
+```
+
+- **kImpostorConfigGroup = 0x3FFF0000**（170035 行）；树种 descriptor
+  C602CD31 的 Parent 正指向该组——impostor 配置体系确认。
+- **"Tree" 配置（0xE085813D @0x3FFF0000）在全部本地数据源缺席**（安装包
+  全套/离线版全套 84 个 EcoGame 文件/mod 包/Server、Cache 包均扫无）——
+  季节 HSV 色域为服务器内容。缺席路径实测推演：`FillFromProps(null)`
+  空转 → 色缓存空 → `GetImpostorInfo` 回落 `kDefaultTreeEnvironemnt`
+  （全零 HSV）→ **颜色调制恒等，树以图集原色渲染**——破解版不联网也
+  有树，即此回落路径。
+- `BuildCacheForDay(dayOfYear)`（749009 行）：按年积日在 day-keyframe
+  （u8 HSV 对，p_mDay±偏移）间 lerp——叶量（mLeafAmount）随季节渐变
+  （落叶机制）。
+- **`cGraphicsSeason::Update(pRenderer, impostorClass, pGame)`**（11246
+  行声明）：季节系统直接驱动 `cImpostorRenderer`——公告板图集由季节
+  更新过程填充。
+
+**树渲染全链闭合**：lot 树 prop → cGraphicsInstancedImpostor{descriptor
+C602CD31, LOD 位} → 季节 Update 驱动 cImpostorRenderer → descriptor 的
+34 变体（权重表）按 randomBits 选条目 → 离屏渲染进 512×512 图集 →
+公告板粒子（V3FN3FC4BT2F）+ HSV 随机色。**变体的 3D 模型源（34 key 的
+链尾）为运行时/服务器内容，静态数据只有链表头**——PE 用程序化树形公告
+板 + HSV 随机即可获得等价观感。
 
 ## 2. Effects 全流程
 
