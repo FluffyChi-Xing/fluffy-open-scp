@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
@@ -16,6 +16,7 @@ import type {
   LotUnitDto,
 } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
+import { unitLabel } from "./usePropertyEditorSession";
 import {
   buildPathLine,
   buildRealLightUnit,
@@ -153,10 +154,134 @@ const emit = defineEmits<{
     } | null,
   ];
 }>();
-useI18n();
+const { t } = useI18n();
+/** 悬停中的 Unit（dashed 描边 + 左上角小字标签）。 */
+const hoveredId = ref<string | null>(null);
 const viewport = useEditorViewport({
   onTapUnit: (id) => emit("select", id),
+  onHoverUnit: (id) => {
+    hoveredId.value = id;
+  },
 });
+
+// ---------------------------------------------------------------------------
+// 拾取反馈 overlay（低代码引擎画布对齐）：悬停 = dashed 主题色描边 + 左上角
+// 小字；选中 = solid 主题色描边 + 左上角 name-tag。框体由 viewer.onFrame
+// 跟随相机重投影；包围盒按 rebuild 代数缓存（Unit 不动，投影每帧算）。
+// 地面/建筑模型不属于 Unit，不参与（用户口径 2026-10-06）。
+// ---------------------------------------------------------------------------
+const hoverBoxEl = ref<HTMLElement | null>(null);
+const selectBoxEl = ref<HTMLElement | null>(null);
+const unitById = computed<Map<string, LotUnitDto>>(() => {
+  const map = new Map<string, LotUnitDto>();
+  const groups = props.grouping;
+  for (const unit of [
+    ...groups.lights,
+    ...groups.decals,
+    ...groups.props,
+    ...groups.effects,
+    ...groups.spawners,
+    ...groups.pathPoints,
+  ]) {
+    map.set(unitId(unit), unit);
+  }
+  return map;
+});
+function overlayLabel(id: string): string {
+  const unit = unitById.value.get(id);
+  return unit ? unitLabel(unit, t) : id;
+}
+/** 包围盒缓存（世界系；rebuild 换代清空）。 */
+const overlayBoxCache = new Map<string, ThreeNamespace.Box3>();
+let overlayBoxRevision = -1;
+
+function unitScreenRect(
+  id: string,
+): { left: number; top: number; width: number; height: number } | null {
+  const instance = viewport.viewer.value;
+  if (!instance) return null;
+  const object = viewport.unitObjects.get(id);
+  if (!object || !object.visible) return null;
+  if (overlayBoxRevision !== viewport.revision.value) {
+    overlayBoxCache.clear();
+    overlayBoxRevision = viewport.revision.value;
+  }
+  let box = overlayBoxCache.get(id);
+  if (!box) {
+    box = new instance.THREE.Box3().setFromObject(object);
+    if (box.isEmpty()) return null;
+    overlayBoxCache.set(id, box);
+  }
+  const corner = new instance.THREE.Vector3();
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < 8; i += 1) {
+    corner.set(
+      i & 1 ? box.max.x : box.min.x,
+      i & 2 ? box.max.y : box.min.y,
+      i & 4 ? box.max.z : box.min.z,
+    );
+    const screen = instance.worldToScreen(corner);
+    // 任一角落在相机后方 = 框体投影退化，整体隐藏
+    if (screen.behind) return null;
+    minX = Math.min(minX, screen.x);
+    maxX = Math.max(maxX, screen.x);
+    minY = Math.min(minY, screen.y);
+    maxY = Math.max(maxY, screen.y);
+  }
+  if (!Number.isFinite(minX)) return null;
+  // 小标记（灯/路径点 gizmo）给 20px 下限，保持可辨识
+  const width = Math.max(20, maxX - minX);
+  const height = Math.max(20, maxY - minY);
+  return {
+    left: (minX + maxX) / 2 - width / 2,
+    top: (minY + maxY) / 2 - height / 2,
+    width,
+    height,
+  };
+}
+
+function placeBox(el: HTMLElement | null, id: string | null, label: string) {
+  if (!el) return;
+  if (!id) {
+    el.style.display = "none";
+    return;
+  }
+  const rect = unitScreenRect(id);
+  if (!rect) {
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "block";
+  el.style.left = `${rect.left}px`;
+  el.style.top = `${rect.top}px`;
+  el.style.width = `${rect.width}px`;
+  el.style.height = `${rect.height}px`;
+  const labelEl = el.firstElementChild as HTMLElement | null;
+  if (labelEl) labelEl.textContent = label;
+}
+
+function updatePickOverlay() {
+  const hover = hoveredId.value;
+  const selected = props.selectedId;
+  // 选中框优先；悬停同一目标时不重复画
+  placeBox(
+    hoverBoxEl.value,
+    hover && hover !== selected ? hover : null,
+    hover ? overlayLabel(hover) : "",
+  );
+  placeBox(selectBoxEl.value, selected, selected ? overlayLabel(selected) : "");
+}
+watch(viewport.viewer, (instance) => {
+  instance?.setOnFrame(() => updatePickOverlay());
+  updatePickOverlay();
+});
+watch([hoveredId, () => props.selectedId, viewport.revision], () =>
+  updatePickOverlay(),
+);
+onBeforeUnmount(() => viewport.viewer.value?.setOnFrame(null));
 const lightPanelOpen = ref(false);
 const lodPanelOpen = ref(false);
 const infoPanelOpen = ref(false);
@@ -1621,7 +1746,23 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
     <div
       :ref="(el) => (viewport.container.value = el as HTMLElement | null)"
       class="viewport-3d"
-    />
+    >
+      <!-- 拾取反馈：悬停 dashed + 小字 / 选中 solid + name-tag（主题色） -->
+      <div
+        :ref="(el) => (hoverBoxEl = el as HTMLElement | null)"
+        class="pick-box"
+        aria-hidden="true"
+      >
+        <span class="pick-label" />
+      </div>
+      <div
+        :ref="(el) => (selectBoxEl = el as HTMLElement | null)"
+        class="pick-box pick-selected"
+        aria-hidden="true"
+      >
+        <span class="pick-label pick-tag" />
+      </div>
+    </div>
     <div
       v-if="modelState === 'loading'"
       class="viewport-overlay viewport-status"
@@ -1850,7 +1991,36 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  position: relative;
   touch-action: none;
+}
+/* 拾取反馈框：屏幕空间投影（unitScreenRect），随渲染帧跟随相机 */
+.pick-box {
+  border: 1.5px dashed var(--brand);
+  display: none;
+  pointer-events: none;
+  position: absolute;
+  z-index: 5;
+}
+.pick-box.pick-selected {
+  border: 2px solid var(--brand);
+  border-radius: 2px;
+}
+.pick-label {
+  color: var(--brand);
+  font-size: 10px;
+  left: 0;
+  line-height: 1;
+  padding: 2px 5px;
+  position: absolute;
+  top: 0;
+  transform: translateY(calc(-100% - 2px));
+  white-space: nowrap;
+}
+.pick-tag {
+  background: var(--brand);
+  border-radius: 3px;
+  color: #fff;
 }
 .viewport-3d:active {
   cursor: grabbing;

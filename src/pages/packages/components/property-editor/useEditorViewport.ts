@@ -37,6 +37,16 @@ export interface EditorViewportRebuildCtx {
   stats: Record<string, unknown>;
 }
 
+/** 悬停拾取的目标组（地面/建筑模型除外——它们不是 Unit，不参与 hover/选中框）。 */
+export const PICKABLE_GROUPS = [
+  "lights",
+  "props",
+  "decals",
+  "effects",
+  "spawners",
+  "paths",
+] as const;
+
 /**
  * 编辑器视口底座：viewer 生命周期、拾取→select、rebuild 骨架（清组/
  * 防竞态/贴图 URL 回收/收尾构图）、可见性与选中应用、渲染截图。
@@ -45,6 +55,7 @@ export interface EditorViewportRebuildCtx {
  */
 export function useEditorViewport(options: {
   onTapUnit: (id: string | null) => void;
+  onHoverUnit?: (id: string | null) => void;
 }) {
   const container = shallowRef<HTMLElement | null>(null);
   const viewer = shallowRef<ThreeViewer | null>(null);
@@ -62,22 +73,58 @@ export function useEditorViewport(options: {
     readyResolve = resolve;
   });
 
+  /** 近距离兜底半径（px）：小标记 gizmo 射线难命中，光标附近最近的
+   * unit 锚点直接当选——「PE 难以选中原件」的主修手段。 */
+  const PROXIMITY_PX = 14;
+  /** 命中对象 → unitId：沿父链找 userData.unitId；未命中时以光标坐标做
+   * 近距离兜底（event 为 null = hover 场景，raycast 已含全部目标，不兜底）。 */
+  function resolveUnitId(
+    object: ThreeNamespace.Object3D | null,
+    event: { clientX: number; clientY: number } | null,
+  ): string | null {
+    let node = object;
+    while (node) {
+      if (typeof node.userData?.unitId === "string") return node.userData.unitId;
+      node = node.parent;
+    }
+    if (!event || !viewer.value) return null;
+    const instance = viewer.value;
+    const rect = container.value?.getBoundingClientRect();
+    if (!rect) return null;
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const anchor = new instance.THREE.Vector3();
+    let best: string | null = null;
+    let bestDist = PROXIMITY_PX;
+    for (const [id, unitObject] of unitObjects) {
+      if (!unitObject.visible) continue;
+      unitObject.getWorldPosition(anchor);
+      const screen = instance.worldToScreen(anchor);
+      if (screen.behind) continue;
+      const dist = Math.hypot(screen.x - pointerX, screen.y - pointerY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = id;
+      }
+    }
+    return best;
+  }
+
   onMounted(async () => {
     const element = container.value;
     if (!element) return;
     viewer.value = await ThreeViewer.create(element, {
       onTap: (hit) => {
-        let node: ThreeNamespace.Object3D | null = hit.object;
-        while (node) {
-          if (typeof node.userData?.unitId === "string") {
-            options.onTapUnit(node.userData.unitId);
-            return;
-          }
-          node = node.parent;
-        }
-        options.onTapUnit(null);
+        options.onTapUnit(resolveUnitId(hit.object, hit.event));
+      },
+      onHover: (hit) => {
+        options.onHoverUnit?.(hit ? resolveUnitId(hit.object, null) : null);
       },
     });
+    // 悬停拾取只对 unit 图层组（建筑/地面命中不属于任何 Unit）
+    viewer.value.setHoverTargets(
+      PICKABLE_GROUPS.map((name) => viewer.value!.group(name)),
+    );
     readyResolve?.();
   });
   onBeforeUnmount(() => {

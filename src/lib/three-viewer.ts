@@ -2,23 +2,25 @@ import type * as ThreeNamespace from "three";
 import { isSharedGeometry } from "@/lib/three-gltf";
 
 export interface ViewerTapHit {
-  object: ThreeNamespace.Object3D;
-  point: ThreeNamespace.Vector3;
+  /** 命中对象；null = 点在空白处（未命中任何内容）——编辑器据此取消选中。 */
+  object: ThreeNamespace.Object3D | null;
+  point: ThreeNamespace.Vector3 | null;
   event: PointerEvent;
 }
 
 export interface ThreeViewerOptions {
-  /** 左键轻点（位移 < 4px 且未按 Shift）命中 content 内容时回调。 */
+  /** 左键轻点（位移 < 4px 且未按 Shift）回调；命中空白时 object=null。 */
   onTap?: (hit: ViewerTapHit) => void;
+  /** 悬停拾取（仅对 setHoverTargets 登记的目标）：进入/离开时回调。 */
+  onHover?: (hit: { object: ThreeNamespace.Object3D } | null) => void;
+  /** 每次真实渲染后的回调（选中框等屏幕空间 overlay 的跟随时机）。 */
+  onFrame?: () => void;
 }
 
 type Three = typeof ThreeNamespace;
 
 // 三灯 + 环境光的基准强度；setEnvironmentBrightness 按倍率缩放这些基准值。
 const KEY_LIGHT_INTENSITY = 2.2;
-/** 选中高亮：标准材质加自发光，无光照材质（贴花）改乘这一浅蓝。 */
-const HIGHLIGHT_EMISSIVE = 0x2f5fb0;
-const HIGHLIGHT_BASIC_TINT = 0x9db4e0;
 const FILL_LIGHT_INTENSITY = 0.5;
 const RIM_LIGHT_INTENSITY = 0.65;
 const AMBIENT_LIGHT_INTENSITY = 0.38;
@@ -68,6 +70,7 @@ export class ThreeViewer {
   /** 挂起/恢复轨道相机与轻点拾取（TransformControls dragging-changed 用）。 */
   setOrbitEnabled(enabled: boolean) {
     this.orbitEnabled = enabled;
+    if (!enabled) this.setHovered(null);
   }
 
   private readonly renderer: ThreeNamespace.WebGLRenderer;
@@ -81,6 +84,10 @@ export class ThreeViewer {
   private readonly ambientLight: ThreeNamespace.AmbientLight;
   private readonly raycaster: ThreeNamespace.Raycaster;
   private readonly groups = new Map<string, ThreeNamespace.Group>();
+  /** 悬停拾取的目标根列表（编辑器登记 unit 图层组；空 = 不做 hover 拾取）。 */
+  private hoverTargets: ThreeNamespace.Object3D[] = [];
+  private lastHoverObject: ThreeNamespace.Object3D | null = null;
+  private onFrameCb: (() => void) | null = null;
   private grid: ThreeNamespace.GridHelper | null = null;
   private observer: ResizeObserver | undefined;
   private frame = 0;
@@ -105,6 +112,29 @@ export class ThreeViewer {
   /** 请求下一帧重绘（视觉变更后调用；相机/灯光等 viewer 内部方法已自带）。 */
   invalidate() {
     this.needsRender = true;
+  }
+
+  /** 登记悬停拾取目标（unit 图层组根）；空数组关闭 hover 拾取。 */
+  setHoverTargets(targets: ThreeNamespace.Object3D[]) {
+    this.hoverTargets = targets;
+  }
+
+  /** 注册/注销渲染后回调（overlay 跟随相机用；幂等覆盖）。 */
+  setOnFrame(callback: (() => void) | null) {
+    this.onFrameCb = callback;
+  }
+
+  /** 世界坐标 → 容器相对屏幕像素；behind = 点在相机后方（投影无效）。 */
+  worldToScreen(
+    vector: ThreeNamespace.Vector3,
+  ): { x: number; y: number; behind: boolean } {
+    const projected = vector.clone().project(this.camera);
+    const rect = this.container.getBoundingClientRect();
+    return {
+      x: ((projected.x + 1) / 2) * rect.width,
+      y: ((1 - projected.y) / 2) * rect.height,
+      behind: projected.z > 1 || projected.z < -1,
+    };
   }
 
   static async create(
@@ -333,44 +363,14 @@ export class ThreeViewer {
     this.needsRender = true;
   }
 
-  /** 选中高亮（emissive），object 为 null 清除。 */
+  /**
+   * 选中登记。选中视觉 = 屏幕空间描边框 + name-tag（编辑器层 overlay 绘制，
+   * onFrame 跟随相机）；旧材质染色方案已撤——染色对贴花/无光照材质需分别
+   * 打补丁且不够醒目（2026-10-06 用户反馈）。
+   */
   setSelected(object: ThreeNamespace.Object3D | null) {
-    if (this.selected === object) return;
-    this.applyHighlight(this.selected, false);
     this.selected = object;
-    this.applyHighlight(this.selected, true);
     this.needsRender = true;
-  }
-
-  private applyHighlight(object: ThreeNamespace.Object3D | null, on: boolean) {
-    object?.traverse((child) => {
-      const mesh = child as ThreeNamespace.Mesh;
-      if (!mesh.isMesh) return;
-      const materials = Array.isArray(mesh.material)
-        ? mesh.material
-        : [mesh.material];
-      for (const material of materials) {
-        const standard = material as ThreeNamespace.MeshStandardMaterial;
-        if (standard.emissive) {
-          standard.emissive.setHex(on ? HIGHLIGHT_EMISSIVE : 0x000000);
-          continue;
-        }
-        // 无光照材质（贴花投影用的 MeshBasicMaterial）没有 emissive，
-        // 改用 color 乘一个浅蓝——不处理则选中贴花完全无反馈。
-        const basic = material as ThreeNamespace.MeshBasicMaterial;
-        if (!basic.color) continue;
-        const saved = basic.userData.__highlightBase as number | undefined;
-        if (on) {
-          if (saved === undefined) {
-            basic.userData.__highlightBase = basic.color.getHex();
-          }
-          basic.color.setHex(HIGHLIGHT_BASIC_TINT);
-        } else if (saved !== undefined) {
-          basic.color.setHex(saved);
-          delete basic.userData.__highlightBase;
-        }
-      }
-    });
   }
 
   private applyCamera() {
@@ -423,22 +423,51 @@ export class ThreeViewer {
     this.lastX = event.clientX;
     this.lastY = event.clientY;
     this.moved = 0;
+    // 拖拽期间悬停框无意义，清掉
+    this.setHovered(null);
     this.container.setPointerCapture(event.pointerId);
   };
 
   private onPointerMove = (event: PointerEvent) => {
-    if (!this.pointerActive) return;
-    const dx = event.clientX - this.lastX;
-    const dy = event.clientY - this.lastY;
-    this.lastX = event.clientX;
-    this.lastY = event.clientY;
-    this.moved += Math.abs(dx) + Math.abs(dy);
-    if (this.pointerButton === 1 || (this.pointerButton === 0 && this.pointerShift)) {
-      this.pan(dx, dy);
-    } else if (this.pointerButton === 0) {
-      this.orbit(dx, dy);
+    if (this.pointerActive) {
+      const dx = event.clientX - this.lastX;
+      const dy = event.clientY - this.lastY;
+      this.lastX = event.clientX;
+      this.lastY = event.clientY;
+      this.moved += Math.abs(dx) + Math.abs(dy);
+      if (this.pointerButton === 1 || (this.pointerButton === 0 && this.pointerShift)) {
+        this.pan(dx, dy);
+      } else if (this.pointerButton === 0) {
+        this.orbit(dx, dy);
+      }
+      return;
     }
+    // 非拖拽悬停：仅对登记目标做轻量拾取（unit 图层组，不含建筑/地面）
+    if (!this.orbitEnabled || !this.options.onHover) return;
+    this.setHovered(this.raycastTargets(event, this.hoverTargets));
   };
+
+  private setHovered(object: ThreeNamespace.Object3D | null) {
+    if (this.lastHoverObject === object) return;
+    this.lastHoverObject = object;
+    this.options.onHover?.(object ? { object } : null);
+  }
+
+  /** 对目标根列表做射线拾取（回收里向上找 unitId 由使用方负责）。 */
+  private raycastTargets(
+    event: { clientX: number; clientY: number },
+    targets: ThreeNamespace.Object3D[],
+  ): ThreeNamespace.Object3D | null {
+    if (!targets.length) return null;
+    const rect = this.container.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    const pointer = new this.THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(pointer, this.camera);
+    return this.raycaster.intersectObjects(targets, true)[0]?.object ?? null;
+  }
 
   private onPointerUp = (event: PointerEvent) => {
     if (!this.pointerActive) return;
@@ -460,11 +489,13 @@ export class ThreeViewer {
       -((event.clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(pointer, this.camera);
-    const hits = this.raycaster.intersectObject(this.content, true);
-    const hit = hits[0];
-    if (hit && this.options.onTap) {
-      this.options.onTap({ object: hit.object, point: hit.point, event });
-    }
+    const hit = this.raycaster.intersectObject(this.content, true)[0] ?? null;
+    // 未命中也回调（object=null）：点空白取消选中与点地面取消同语义
+    this.options.onTap?.({
+      object: hit?.object ?? null,
+      point: hit?.point ?? null,
+      event,
+    });
   }
 
   private onWheel = (event: WheelEvent) => {
@@ -487,6 +518,8 @@ export class ThreeViewer {
     if (!this.needsRender) return;
     this.needsRender = false;
     this.renderer.render(this.scene, this.camera);
+    // 渲染后回调：屏幕空间 overlay（选中/悬停描边框）在此跟随相机
+    this.onFrameCb?.();
   };
 
   /**
