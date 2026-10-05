@@ -97,12 +97,45 @@ LOTM 构建器 v10 已实现：无参数表材质 → 文件级纹理段 [0]→s
 
 → 小人群体定义（spawner 的外观提供者）。PE 展示为标记 + 外观参数即可。
 
-### 1.3 未决（树的唯一缺口）
+### 1.3 树的颜色与图集机制（cImpostorRenderer 深挖，2026-10-05 续）
 
-impostor 图集的实际纹理/条目格式：`cImpostorRenderer::Init/GetImpostorClass/
-RenderOffscreenForModel`（11249-11274 行声明区，函数体未深挖）。下一步 =
-读 `cImpostorRenderer::Init` + `GetImpostorClass` 找图集纹理 key 的来源
-（全局或按 descriptor），拿到树图集后即可实现公告板渲染。
+**颜色公式（`cGraphicsInstancedImpostor::GetImpostorInfo`，753747 逐字）**：
+
+```
+env = pGfx->mSeasonInfo.mColorCache[mModelType]   // mModelType = descriptor
+      key instance（C602CD31）索引季节色缓存；越界回落
+      kDefaultTreeEnvironemnt
+返回色（HSV 域随机，randomBits 每实例不同）：
+  H = HsvMin[0] + ((randomBits>>4 )&7)/8 × (HsvMax[0]-HsvMin[0])
+  S = HsvMin[1] + ((randomBits>>7 )&7)/8 × (HsvMax[1]-HsvMin[1])
+  V = HsvMin[2] + ((randomBits>>10)&7)/8 × (HsvMax[2]-HsvMin[2])
+（打包为 RRRGGGBBB 位域）
+```
+
+**kDefaultTreeEnvironemnt = {flags:1, HsvMin:(0,0,0), HsvMax:(0,0,0), 1.0}**
+（170018 行）——缺省环境无色域（全零），实际色域来自 mSeasonInfo.mColorCache
+（按 descriptor 实例索引，每树种一个 cTreeEnvironment{HsvMin[3],HsvMax[3]}，
+u8 存储 ×1/255 归一化——`cTerrainForest2::UpdatePixelShaderData` 实证）。
+
+**图集机制（`cImpostorRenderer::Init`，749707）**：atlas = **运行时生成**——
+`cRectAllocator::Clear(512, 512)` 动态矩形分配（512×512 图集）；impostor
+以粒子公告板批渲染（`RenderOneParticleBatch`，顶点 V3FN3FC4BT2F）；最多
+2 个 impostor class（`mClasses[2]`）。图集内容 = `RenderOffscreenForModel`
+运行时离屏渲染注册模型所得，**非静态贴图**。
+
+**新发现：`cTerrainForest2` 地形森林系统**（00430150 区）——地图级森林
+独立于 lot prop 树：专用材质（shader 0x299）+ 森林渲染目标
+（cForestRenderTarget），HSV 色域同源（mSeasonInfo.mColorCache）。用户在
+游戏里看到的大片树 = 此系统 + lot prop 树（impostor）两层。
+
+### 1.4 PE 树渲染落地方案（基于本轮机制）
+
+1. **形状**：程序化树形公告板（canvas 生成树冠轮廓 + 树干），或用一张
+   通用树剪影贴图——引擎的图集是运行时渲染的，本地无静态树图集可取。
+2. **颜色**：按本文公式——绿域 HSV 随机（H≈90-130°、S 中高、V 中），
+   每树实例用 randomBits（unit.index 派生）取色，即可复刻"同片树林
+   深浅不一"的游戏观感。
+3. **LOD 位掩码/次 key**：PE 无距离渲染，可忽略。
 
 ## 2. Effects 全流程
 
