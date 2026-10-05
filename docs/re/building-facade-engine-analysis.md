@@ -220,7 +220,63 @@ interiorColor = interiorMap.rgb * (shColorDiff + interiorMap.aaa * kBuildingInte
 | 假内景亮度低 | interiorMap.a×16 HDR 自发光 + shColorDiff 环境项 + tonemap | a 通道是否消费、自发光系数、无 HDR 管线时的等效曝光 |
 | 幕墙不像玻璃 | shaderMap.a≈0 内景 + specStrength/specE/gloss + 天空 LUT 反射向 + cubemap s6 | 高光通道（b/g）、cubemap 反射是否缺失、gloss 环境项 |
 
-## 8. 本次恢复的新资产
+## 7.5 官方材质制作文档对拍（2026-10-06，Discord Danny50205 提供）
+
+Maxis 官方材质参数文档（设计期）逐项对照发行版二进制与本项目实现：
+
+### 7.5.1 全局常量（文档 vs 发行版着色器 vs 项目）
+
+| 常量 | 文档（设计期） | 发行版着色器 | 项目 | 判定 |
+| --- | --- | --- | --- | --- |
+| kBuildingInteriorMapInvDepth | 0.5 | 0.5 | 0.5 | ✓ 一致 |
+| kInteriorMapBackSize | 50% | 0.5 | 0.5 | ✓ |
+| kBuildingInteriorMapSelfLightMax | **20** | **16.0** | uInteriorGlow=16 | 发行版调低，**从发行版** |
+| kBuildingFlatLevel | 23 | 23（reliefPng 平面钳制） | — | ✓ |
+| kBuildingSpecOverdrive | **12** | **2.0** | ×2 | 发行版大调低，**从发行版** |
+| ReliefMapConeSteps/BinarySteps | 8→20 / 4→10 | relief 恒等被裁剪 | 未实现 | 印证 cone-step 编码 |
+| kAbandonedDesaturate/Darkening/AOExp | 85%/70%/8 | 同 | 未实现 | ✓ |
+| kAbandonedSpecScale/Cap | 25%/0.05 | 同 | 未实现 | ✓ |
+
+（文档=设计期参数，发行版两处大调低——SelfLightMax 20→16、SpecOverdrive
+12→2。对拍基准=发行版二进制。）
+
+### 7.5.2 调色板布局（文档给出官方语义——本文新增）
+
+256 条目 × 2 列（512 宽），**四逻辑行带**（文档 4 行；资产 512×16 = 每行
+2px × 2 子采样）：
+
+```
+RGB:  行 1-2 = Tint 色        行 3-4 = Emissive（实际 R=G=B）
+A:    行 1-2 = Specular Power  行 3-4 = Roughness（反射清晰度）
+```
+
+对照发行版着色器：`colorValues`（RGB tint，乘 tint.b×2）+ `surfaceValues`
+（kSurfacePalV 底行：R=emissive 强度、A=reflectance）——**一致**。新增认知：
+①palette 含**独立 Emissive 带**（实际 R=G=B → 白色×强度近似成立）；
+②alpha 双语义 = Specular Power（上带）/ **Roughness（下带，反射清晰度
+——发行版未消费，记录备查）**；PaletteSize 恒 256 ✓。
+
+### 7.5.3 材质参数（Maya 编码为顶点数据——语义命名对照）
+
+| 文档参数名 | 项目对应 | 新增认知 |
+| --- | --- | --- |
+| PaletteIndex / PaletteIndexBase | palU / palU2（base & overlay 双 pass） | ✓ 命名实证 |
+| TileSizeBase/OffsetBase / TileSize/Offset | regionXform row1 / row2 | ✓ |
+| **TilePadding（实为 VisibleTileSize）** | row3.xy | **0-hack：0=默认=TileSize**；>TileSize 露 base；<TileSize 重复子域且 reliefmap 可视外扩 |
+| TileU / TileV（开关） | — | **未勾 ≈ TilePadding 1000**——实证发现的大 padding 值（15999/8e4）机制即此（Top 层关闭）|
+| UseSpecifiedRandomSeed / MaterialRandomSeed / ForceSpecificVariation | vSeed（内景随机种子） | **同 seed 的多材质对同一房号选出同一内景**——楼内一致性由 seed 保证（项目 per-model seed 已满足）|
+| InteriorMapSize | interiorScale（行数 4/8/16） | 图集行数可变 |
+| InteriorMapSelection | interior_offset | 行号选择；房间点亮 = 模拟入住率（A→B→C→D 调试参数）|
+| InteriorMapRoomSize/Back/ForeRelative | roomInvSize / interiorOffset | fore/back 相对缩放按 TileSizeBase/TilePadding |
+
+内景图集：每个 interior 占图集 **50% = 后墙**，墙面深度**线性**（非透视）
+——与盒体投影参数互证。facadeAtlas/Palette/Interior 三纹理全场景统一。
+
+### 7.5.4 结论
+
+文档 = 设计期官方参数（无实现错误），但两处核心常量被发行版调低；布局/机
+制描述与本项目逆向**全面互证**（TilePadding 语义、TileU/V 关闭、内景 50%
+后墙、palette 256 条目）。项目无需改动；Roughness 带/入住率点亮记录备查。
 
 - `tmp/dynamic/all_blocks_full.txt`（无损 2406 块）、`tmp/building_shaders_full.txt`
   （建筑族 5 个完整块：ClipAndReliefMapPS 23.8KB / InteriorAndVariationSetupVS 6.5KB /
