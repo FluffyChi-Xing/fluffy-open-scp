@@ -1441,6 +1441,11 @@ async function assembleScene(
             propModel.scale,
           );
         }
+        // flags==15 hack：Scale 存于 Transform.Unknown（DTO 独立 scale 字段，
+        // 半宽语义）——锥体可忽略，真模型必须叠加，否则广告牌等超出构架
+        if (unit.kind === "prop" && typeof unit.scale === "number") {
+          propModel.scale.multiplyScalar(unit.scale);
+        }
         object = propModel;
       } else {
         object = buildUnitObject(THREE, unit);
