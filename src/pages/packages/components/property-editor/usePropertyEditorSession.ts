@@ -71,6 +71,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
   /** 树 prop（source=tree，变体模型为运行时内容）→ 程序化公告板渲染。 */
   const propTreeIds = shallowRef<Set<number>>(new Set());
+  /** 树公告板图集（base64 PNG，2×2 四树格）：后端从 Graphics 包树图集
+   * RW4 解码下发，全部树 prop 共享同一图集。 */
+  const treeAtlasPng = shallowRef<string | null>(null);
   /** 当前加载的 LOD（index）；默认取第一个可用级。 */
   const activeLod = ref(0);
   const modelState = ref<ModelState>("pending");
@@ -219,6 +222,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
           .map((resolution) => resolution.resourceId),
       );
       propTreeIds.value = trees;
+      const atlas = resolutions.find((r) => r.treeAtlasPng)?.treeAtlasPng ?? null;
+      if (atlas) treeAtlasPng.value = atlas;
       const next = new Map(propModels.value);
       await Promise.all(
         resolutions.map(async (resolution) => {
@@ -422,6 +427,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelLods,
     propModels,
     propTreeIds,
+    treeAtlasPng,
     releasePropPackages,
     activeLod,
     switchLod,

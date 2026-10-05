@@ -190,38 +190,87 @@ function treeSilhouetteTexture(
   return texture;
 }
 
+/** 树公告板图集纹理缓存（base64 → 已载纹理）。 */
+const treeAtlasTextureCache = new Map<string, ThreeNamespace.Texture>();
+
+async function loadTreeAtlas(
+  THREE: typeof ThreeNamespace,
+  base64: string,
+): Promise<ThreeNamespace.Texture | null> {
+  const cached = treeAtlasTextureCache.get(base64);
+  if (cached) return cached;
+  try {
+    const texture = await new THREE.TextureLoader().loadAsync(
+      `data:image/png;base64,${base64}`,
+    );
+    texture.colorSpace = THREE.SRGBColorSpace;
+    // 图集 256×256 = 2×2 树格（128×256/格）；flipY=true（TextureLoader
+    // 默认）下行 0 在 v=1，格行偏移换算见调用处
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    treeAtlasTextureCache.set(base64, texture);
+    return texture;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * 树公告板（impostor 等价渲染）：树变体的 3D 源为运行时离屏内容
- * （本地数据不含，见 docs/re/props-effects-spawners-paths-engine-flow.md
- * §1.5），PE 以程序化树形公告板 + HSV 绿域随机取色替代——
- * 颜色公式与引擎 GetImpostorInfo 同构（色域内按实例随机）。
- * 尺寸：Transform.Unknown（半宽）×16 为冠宽（引擎 impostor 尺寸分数
- * 同语义），clamp 1.2–12m。Sprite 恒面向相机 = 引擎公告板行为。
+ * 树公告板：优先用后端下发的树图集真纹理（Graphics 包 0x835D64F3，
+ * 256×256 = 2×2 四树格，游戏树的静态图集源）；图集缺席回落程序化
+ * 树剪影 + HSV 绿域随机。种子决定格位（四树确定性分散）。
+ * Sprite 恒面向相机 = 引擎公告板行为；base 锚点、z 钳地。
  */
-export function getTreeBillboard(
+export async function getTreeBillboard(
   THREE: typeof ThreeNamespace,
   options: {
     seed: number;
     halfWidth: number | null;
     position: ThreeNamespace.Vector3;
+    atlasBase64: string | null;
   },
-): ThreeNamespace.Object3D {
+): Promise<ThreeNamespace.Object3D> {
   const rand = mulberry32(options.seed);
   const halfWidth = options.halfWidth ?? 0.35;
   const width = Math.min(12, Math.max(1.2, halfWidth * 16));
   const height = width * 2;
-  const variant = Math.floor(rand() * 4);
-  const texture = treeSilhouetteTexture(THREE, variant);
-  // HSV 绿域随机（H 0.24–0.36 = 86°–130°，S 0.35–0.7，V 0.3–0.55）
-  const color = new THREE.Color();
-  color.setHSL(0.24 + rand() * 0.12, 0.35 + rand() * 0.35, 0.3 + rand() * 0.25);
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    color,
-    transparent: true,
-    alphaTest: 0.25,
-    depthWrite: true,
-  });
+  const cell = Math.floor(rand() * 4);
+  const col = cell % 2;
+  const row = Math.floor(cell / 2);
+
+  let material: ThreeNamespace.SpriteMaterial | null = null;
+  if (options.atlasBase64) {
+    const atlas = await loadTreeAtlas(THREE, options.atlasBase64);
+    if (atlas) {
+      // 克隆纹理挂每格偏移（共享图像数据）
+      const cellTexture = atlas.clone();
+      cellTexture.needsUpdate = true;
+      cellTexture.repeat.set(0.5, 0.5);
+      cellTexture.offset.set(col * 0.5, 0.5 - row * 0.5);
+      material = new THREE.SpriteMaterial({
+        map: cellTexture,
+        transparent: false,
+      });
+    }
+  }
+  if (!material) {
+    // 回落：程序化树剪影 + HSV 绿域随机
+    const variant = Math.floor(rand() * 4);
+    const texture = treeSilhouetteTexture(THREE, variant);
+    const color = new THREE.Color();
+    color.setHSL(
+      0.24 + rand() * 0.12,
+      0.35 + rand() * 0.35,
+      0.3 + rand() * 0.25,
+    );
+    material = new THREE.SpriteMaterial({
+      map: texture,
+      color,
+      transparent: true,
+      alphaTest: 0.25,
+      depthWrite: true,
+    });
+  }
   const sprite = new THREE.Sprite(material);
   sprite.center.set(0.5, 0);
   sprite.scale.set(width, height, 1);

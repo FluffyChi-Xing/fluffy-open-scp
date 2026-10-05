@@ -50,8 +50,12 @@ pub struct ResolvedPropModel {
     pub models: Vec<TgiDto>,
     /// models[0] 所在的已打开包 id（EcoGame 包已自注册）。
     pub package_id: Option<u64>,
-    /// 命中路径（explicit / vehicle_models / descriptor / selfkey）。
+    /// 命中路径（explicit / vehicle_models / lod1_direct / tree）。
     pub source: String,
+    /// 树公告板图集 PNG（base64）：Graphics 包树图集 RW4（0x835D64F3，引擎
+    /// 运行时离屏渲染源模型所在图集体系的静态产物）上半 256×256 = 2×2 四棵
+    /// 树公告板（128×256/格）。仅 source="tree" 时下发。
+    pub tree_atlas_png: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -268,11 +272,13 @@ fn resolve_one(
             // 为运行时离屏渲染内容，本地无 3D 数据；标记 source="tree" 供
             // 前端走程序化公告板（HSV 绿域随机，GetImpostorInfo 同构）。
             if has_prop(&file, KEY_TREE_STATE) && has_prop(&file, KEY_LOD_INDEX) {
+                let tree_atlas_png = decode_tree_atlas_base64(packages);
                 return Some(ResolvedPropModel {
                     resource_id,
                     models: Vec::new(),
                     package_id: None,
                     source: "tree".into(),
+                    tree_atlas_png,
                 });
             }
             if let Some((d_inst, _, _)) = first_key(&file, KEY_TREE_STATE) {
@@ -290,6 +296,59 @@ fn resolve_one(
 
 fn has_prop(file: &PropertyFile, hash: u32) -> bool {
     !values_of(file, hash).is_empty()
+}
+
+/// 树公告板图集：Graphics 包 RW4 0x835D64F3（256×512）上半 256×256 =
+/// 2×2 四棵树公告板（128×256/格）。解顶层 mip → 裁上半 → PNG → base64。
+/// 引擎同图集：impostor 图集为运行时离屏渲染产物，此 RW4 为其静态源
+/// （绿占比扫描 95% 命中，四树公告板目视确认）。
+fn decode_tree_atlas_base64(packages: &[(u64, Arc<Package>)]) -> Option<String> {
+    const ATLAS_INSTANCE: u32 = 0x835D_64F3;
+    const RW4_MODEL_TYPE: u32 = 0x2F4E_681B;
+    for (_, pkg) in packages {
+        let Some(entry) = pkg
+            .entries()
+            .iter()
+            .find(|e| e.id.instance == ATLAS_INSTANCE && e.id.type_id == RW4_MODEL_TYPE)
+        else {
+            continue;
+        };
+        let Ok(data) = pkg.read(entry) else {
+            continue;
+        };
+        let Ok(file) = rw4::Rw4File::parse(&data) else {
+            continue;
+        };
+        let Some(sec) = file.sections_of_type(rw4::SectionType::TEXTURE).next().map(|s| s.number)
+        else {
+            continue;
+        };
+        let Ok(tex) = file.decode_texture(&data, sec) else {
+            continue;
+        };
+        let Ok(rgba) = tex.decode_top_mip_rgba() else {
+            continue;
+        };
+        let (w, h) = (tex.width as usize, tex.height as usize);
+        // 裁上半（树公告板 2×2；下半为地面纹理，非树）
+        let top_h = h / 2;
+        let mut cropped = Vec::with_capacity(w * top_h * 4);
+        for y in 0..top_h {
+            let src = (y * w) * 4;
+            cropped.extend_from_slice(&rgba[src..src + w * 4]);
+        }
+        let img = image::RgbaImage::from_fn(w as u32, top_h as u32, |x, y| {
+            let at = (x as usize + y as usize * w) * 4;
+            image::Rgba([cropped[at], cropped[at + 1], cropped[at + 2], cropped[at + 3]])
+        });
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .ok()?;
+        use base64::Engine as _;
+        return Some(base64::engine::general_purpose::STANDARD.encode(png.into_inner()));
+    }
+    None
 }
 
 /// 候选 key → 过滤出在已打开包中真实存在的 RW4 模型，补 package id。
@@ -351,6 +410,7 @@ fn finish(
             models,
             package_id,
             source: source.to_string(),
+            tree_atlas_png: None,
         })
     }
 }

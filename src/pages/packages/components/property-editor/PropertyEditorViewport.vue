@@ -96,6 +96,8 @@ const props = defineProps<{
   propModels: Map<number, LotModelPayload>;
   /** 树 prop 资源 id 集合（source=tree）→ 程序化公告板渲染。 */
   propTreeIds: Set<number>;
+  /** 树公告板图集 PNG（base64，2×2 四树格 256×256）。 */
+  treeAtlasPng: string | null;
 
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
@@ -1444,11 +1446,12 @@ async function assembleScene(
         );
       }
       object =
-        getTreeBillboard(THREE, {
+        (await getTreeBillboard(THREE, {
           seed: unit.resourceId * 2654435761 + unit.index,
           halfWidth: unit.scale,
           position: treePos,
-        }) ?? buildUnitObject(THREE, unit);
+          atlasBase64: props.treeAtlasPng,
+        })) ?? buildUnitObject(THREE, unit);
     } else if (
       props.renderMode === "refined" &&
       unit.kind === "prop" &&

@@ -651,6 +651,8 @@ export interface ResolvedPropModel {
   /** models[0] 所在的已打开包 id（EcoGame 包已由后端自注册）。 */
   packageId: number | null;
   source: string;
+  /** 树公告板图集 PNG（base64，source=tree 时下发，2×2 四树格 256×256）。 */
+  treeAtlasPng: string | null;
 }
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。
