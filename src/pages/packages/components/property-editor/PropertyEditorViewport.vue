@@ -23,6 +23,7 @@ import {
   unitId,
   unitMatrix,
 } from "./unitGizmos";
+import { getPropModelObject } from "./propModels";
 import {
   decalFrame,
   decalHalfThickness,
@@ -81,10 +82,15 @@ const props = defineProps<{
   lotBorderPatternIndices: number[];
   /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
   lotBaseTile: number;
-  /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
+  /** LotOverlayBoxOffset（0x0CCB7FC9，引擎 unitOffset）：地面 quad 在 lot
+   * 系的中心偏移；null = 原点（引擎栅格公式缺省）。 */
   lotOverlayBoxOffset: [number, number] | null;
-  /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）；null = 无属性。 */
+  /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）。【2026-10-05
+   * 试点后不再消费】：引擎栅格映射无 bbox 中心机制（该属性只喂 zoning
+   * frontage/depth 截断），保留 DTO 仅供诊断对照。 */
   lotModelBboxCenter: [number, number] | null;
+  /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（会话旁路加载）。 */
+  propModels: Map<number, LotModelPayload>;
 
   lotMaskPng: string | null;
   /** LotMask 原始通道权重图（v4 软混合输入）。 */
@@ -787,8 +793,8 @@ async function assembleScene(
   viewport.viewer.value?.setShadowsEnabled(shadowsRefined);
   if (shadowsRefined) applySun();
 
-  // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
-  if (props.lotSize) {
+    // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
+    if (props.lotSize) {
     const groundSpan = renderTelemetry.begin("lot_render", {
       refined: props.renderMode === "refined",
     });
@@ -797,25 +803,19 @@ async function assembleScene(
     if (props.lotPlacement) {
       ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
     }
-    // 引擎定位定案（FUN_008ba1c0/FUN_007e2260 逐字 + 五样本对照，2026-09-19）：
-    // 地面 quad（LotSize 尺寸）中心 = placement 变换后的 Model Bounding Box
-    // 中心（0x00F9EFBA）；LotOverlayBoxOffset（0x0CCB7FC9）存在时覆盖之。
-    // 建筑在编辑器中以模型原点摆放，故地面相对建筑 = R·center（placement
-    // 平移 t 属整组装位，不进入相对关系）。五样本对照：塔楼 ≈0、图书馆
-    // −0.41、EP1 房 +2.89、消防局 0（相对）——旧实现误差 = bboxC + 2·t
-    // （消防局 8m = 2×4m 平移，用户目视的大偏移）。
-    const pm = props.lotPlacement;
-    const r00 = pm ? pm[0] : 1;
-    const r01 = pm ? pm[3] : 0;
-    const r10 = pm ? pm[1] : 0;
-    const r11 = pm ? pm[4] : 1;
-    const centerLocal =
-      props.lotOverlayBoxOffset ?? props.lotModelBboxCenter ?? [0, 0];
-    const tx = r00 * centerLocal[0] + r01 * centerLocal[1];
-    const ty = r10 * centerLocal[0] + r11 * centerLocal[1];
-    if (Math.abs(tx) > 1e-4 || Math.abs(ty) > 1e-4) {
-      ground.matrix.premultiply(
-        new THREE.Matrix4().makeTranslation(tx, ty, 0),
+    // 【2026-10-05 试点：引擎栅格定位口径（dev-dump 文档 §四 F7）】
+    // 地面 quad 在 lot 本地系的中心 = unitOffset（0x0CCB7FC9，缺省 0）——
+    // 引擎 mask UV 公式 uv=(pos−unitOffset)/LotSize+0.5（migration §42.8）
+    // 没有 bbox 中心机制；0x00F9EFBA 声明 bbox 在引擎只喂 zoning
+    // frontage/depth 截断（GetUnitBoundingBoxInternal），不再作地面中心
+    // fallback（图书馆 −0.41 / EP1 房 +2.89 残差的疑源）。
+    // 偏移在 lot 系施加 = postmultiply（P⁻¹·T(c)）：θ=0 的 lot 与旧实现
+    // 逐值等价（旧 premultiply T(A·c)·P⁻¹ 在 θ=0 时同为平移 c−t），θ≠0
+    // 时修正偏移的旋转方向（旧 A·c 按 P 正向旋转，方向相反）。
+    const centerLocal = props.lotOverlayBoxOffset ?? [0, 0];
+    if (Math.abs(centerLocal[0]) > 1e-4 || Math.abs(centerLocal[1]) > 1e-4) {
+      ground.matrix.multiply(
+        new THREE.Matrix4().makeTranslation(centerLocal[0], centerLocal[1], 0),
       );
     }
     ground.matrixAutoUpdate = false;
@@ -1420,6 +1420,31 @@ async function assembleScene(
     let object: ThreeNamespace.Object3D | null;
     if (props.renderMode === "refined" && unit.kind === "light") {
       object = buildRealLightUnit(THREE, unit);
+    } else if (
+      props.renderMode === "refined" &&
+      unit.kind === "prop" &&
+      typeof unit.resourceId === "number" &&
+      props.propModels.get(unit.resourceId)
+    ) {
+      // P2 精细替换：真实模型（脚本资源表反查），失败退回标记锥。
+      // 模型几何在自身原点，slot 变换（引擎 unitModel∘slotTransform）在此
+      // 应用——锥体由 buildUnitObject 内部做同件事。
+      const propPayload = props.propModels.get(unit.resourceId);
+      const propModel = propPayload
+        ? await getPropModelObject(THREE, propPayload, envRefs ?? undefined, unit.index)
+        : null;
+      if (propModel) {
+        if (unit.transform) {
+          unitMatrix(THREE, unit.transform).decompose(
+            propModel.position,
+            propModel.quaternion,
+            propModel.scale,
+          );
+        }
+        object = propModel;
+      } else {
+        object = buildUnitObject(THREE, unit);
+      }
     } else if (
       props.renderMode === "refined" &&
       unit.kind === "decal" &&

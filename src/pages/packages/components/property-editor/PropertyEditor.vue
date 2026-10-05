@@ -25,6 +25,8 @@ const {
   loading,
   loadError,
   modelPayload,
+  propModels,
+  releasePropPackages,
   modelLods,
   activeLod,
   switchLod,
@@ -153,6 +155,8 @@ watch(open, (isOpen, wasOpen) => {
   neonAnim.value = false;
   tool.value = "select";
   resetViewState();
+  // 卸载 prop 解析自动注册的 EcoGame 包（会话范围=注册范围）
+  releasePropPackages();
 });
 /** 通道实验（已停用，见模板注释）：保留状态供复验时恢复。 */
 const specExperiment = ref(false);
@@ -444,6 +448,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         <PropertyEditorViewport
           ref="viewportRef"
           :model-payload="modelPayload"
+          :prop-models="propModels"
           :model-lods="modelLods"
           :active-lod="activeLod"
           :render-mode="renderMode"

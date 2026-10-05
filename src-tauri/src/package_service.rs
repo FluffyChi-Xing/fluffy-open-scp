@@ -71,7 +71,7 @@ impl PackageManager {
         }
     }
 
-    fn insert(&self, package: Package) -> Result<(u64, Arc<Package>), PackageError> {
+    pub(crate) fn insert(&self, package: Package) -> Result<(u64, Arc<Package>), PackageError> {
         let mut packages = self
             .packages
             .lock()
@@ -90,7 +90,7 @@ impl PackageManager {
         Ok((id, package))
     }
 
-    fn close(&self, id: u64) -> Result<(), PackageError> {
+    pub(crate) fn close(&self, id: u64) -> Result<(), PackageError> {
         self.packages
             .lock()
             .map_err(|_| PackageError::StatePoisoned)?
@@ -117,6 +117,21 @@ impl PackageManager {
             .values()
             .cloned()
             .collect())
+    }
+
+    /// 路径去重（EcoGame 自注册跳过已打开者）。
+    pub(crate) fn is_path_open(&self, path: &Path) -> bool {
+        let Ok(canon) = std::fs::canonicalize(path) else {
+            return false;
+        };
+        self.packages
+            .lock()
+            .map(|packages| {
+                packages
+                    .values()
+                    .any(|pkg| pkg.path() == &canon)
+            })
+            .unwrap_or(false)
     }
 
     /// 所有已打开包的 (id, package) 快照（需要回报资源所在包 id 时使用）。
@@ -2467,6 +2482,9 @@ pub async fn read_lot_editor_session(
             // 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
             // 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
             // 与 128px→96×96 相容）。
+            // 【2026-10-05 1m/px 试点回退】0xBA637D54 三证据虽支持 1m/px，
+            // 但目视无改善且部分 mod lot 地面被拉大破坏（用户报告）——
+            // 待拿到引擎 raster 范围的直接证据后再议。
             let lot_size = document.lot_size.or_else(|| {
                 mask_dims.map(|(w, h)| {
                     let size = [w as f32 * 0.75, h as f32 * 0.75];
@@ -3418,6 +3436,10 @@ struct MaterialBake {
 struct MaterialResources {
     bake: Option<MaterialBake>,
     base_color_png: Option<Vec<u8>>,
+    /// slot0 原始纹理（**车辆/prop 槽位语义 = 漫反射**；建筑 slot0 是参数表
+    /// 不在此列）。仅无参数表材质下发——车辆彩色 diffuse（slot1 是其
+    /// 灰度副本，建筑槽位语义误用会得到灰车，2026-10-05 实证）。
+    slot0_png: Option<Vec<u8>>,
     normal_png: Option<Vec<u8>>,
     roughness_png: Option<Vec<u8>>,
     ao_png: Option<Vec<u8>>,
@@ -3500,6 +3522,7 @@ fn resolve_material_resources(
     let mut resources = MaterialResources {
         bake: None,
         base_color_png: None,
+        slot0_png: None,
         normal_png: None,
         roughness_png: None,
         ao_png: None,
@@ -3549,6 +3572,7 @@ fn resolve_material_resources(
     // slot4 = 256×8 tint palette（512×16，2×2 像素块）——烘焙链最终查色表
     let palette_raw = slot_rgba(4);
     // 组装烘焙上下文（building4 链：有 slot0 参数表时 slot1 = tint 查表键）
+    let has_params = params.is_some();
     let mut baked = false;
     if let (
         Some((params_table, param_cols)),
@@ -3585,6 +3609,14 @@ fn resolve_material_resources(
         // 旧"R→调色板 LUT"产物为 (palU,palU2,0.125) 垃圾色，已废弃。
         if let Some((rgba, width, height)) = slot1 {
             resources.base_color_png = encode_rgba_png_bytes(width, height, rgba).ok();
+        }
+        // 车辆/prop 槽位语义：slot0 = 彩色漫反射（vehicleSetupSHParams 的
+        // diffuseSampler）。仅无参数表材质解析（建筑 slot0 是 f32 参数表，
+        // 上方已消费）。
+        if !has_params {
+            if let Some((rgba, width, height)) = slot_rgba(0) {
+                resources.slot0_png = encode_rgba_png_bytes(width, height, rgba).ok();
+            }
         }
     }
     // slot2：标准切线空间法线（B=沿法线轴，平坦≈128,128,255）+ A=spec（AO 代理）
@@ -3759,7 +3791,7 @@ pub async fn read_lot_model_meshes(
                 ));
             }
             let file = rw4::Rw4File::parse(data)?;
-            Ok(build_lot_model_payload(
+            Ok(build_lot_model_payload_for_test(
                 &file,
                 data,
                 package,
@@ -3770,6 +3802,47 @@ pub async fn read_lot_model_meshes(
     )
     .await?;
     Ok(tauri::ipc::Response::new(payload))
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropModelsResponse {
+    pub resolutions: Vec<crate::prop_models::ResolvedPropModel>,
+}
+
+/// PE 精细替换：lot prop resourceID → RW4 模型 TGI（含 EcoGame 包自注册）。
+/// 详见 crate::prop_models 模块文档。
+#[tauri::command]
+pub async fn resolve_prop_models(
+    state: State<'_, AppState>,
+    request: crate::prop_models::PropModelsRequest,
+) -> Result<PropModelsResponse, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let resolutions =
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::prop_models::resolve_all(&manager, &request.resource_ids)
+        })
+        .await
+        .map_err(|error| CommandError::internal(format!("prop model resolve failed: {error}")))?
+        .map_err(CommandError::from)?;
+    Ok(PropModelsResponse { resolutions })
+}
+
+/// PE 关闭时卸载 prop 解析自动注册的 EcoGame 包（会话范围=注册范围，
+/// 防止脚本包污染全局资源查找池——同实例跨包碰撞曾致 lot 渲染概率异常）。
+#[tauri::command]
+pub async fn release_prop_model_packages(
+    state: State<'_, AppState>,
+) -> Result<u32, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let released =
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::prop_models::release_registered(&manager)
+        })
+        .await
+        .map_err(|error| CommandError::internal(format!("release failed: {error}")))?
+        .map_err(CommandError::from)?;
+    Ok(released as u32)
 }
 
 /// 组装 LOTM 容器：按 MeshMaterialAssignment（0x2001A）逐 mesh 配材质。
@@ -3786,7 +3859,7 @@ pub async fn read_lot_model_meshes(
 /// v8 = v7 + 每材质第 9 张 PNG（slot5 alpha = relief 高度灰度，浮雕 bumpMap）。
 /// v9 = v8 − 第 9 张 PNG（前端视差已回滚、reliefPng 从不加载，停发省 IPC；
 /// 前端解析器同时兼容 v8/v9）。
-fn build_lot_model_payload(
+pub(crate) fn build_lot_model_payload_for_test(
     file: &rw4::Rw4File,
     data: &[u8],
     package: &Package,
@@ -3944,7 +4017,9 @@ fn build_lot_model_payload(
 
     let mut out = Vec::new();
     out.extend_from_slice(&LOT_MODEL_PAYLOAD_MAGIC.to_le_bytes());
-    out.extend_from_slice(&9u32.to_le_bytes());
+    // v10 = v9 + 每材质第 9 张 PNG（slot0 原始纹理，车辆/prop 漫反射；
+    // 前端解析器同时兼容 v9/v10）
+    out.extend_from_slice(&10u32.to_le_bytes());
     out.extend_from_slice(&(glbs.len() as u32).to_le_bytes());
     for glb in &glbs {
         out.extend_from_slice(&(glb.len() as u32).to_le_bytes());
@@ -3961,6 +4036,7 @@ fn build_lot_model_payload(
             &material.palette_png,
             &material.shader_png,
             &material.interior_png,
+            &material.slot0_png,
         ] {
             match png {
                 Some(bytes) => {
@@ -5846,13 +5922,13 @@ mod lot_payload_tests {
         let file = rw4::Rw4File::parse(&data).unwrap();
 
         let started = std::time::Instant::now();
-        let payload = build_lot_model_payload(&file, &data, &package, &manager, MODEL);
+        let payload = build_lot_model_payload_for_test(&file, &data, &package, &manager, MODEL);
         let elapsed = started.elapsed();
 
         let read_u32 =
             |offset: usize| u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap());
         assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
-        assert_eq!(read_u32(4), 9, "container version 9");
+        assert_eq!(read_u32(4), 10, "container version 10");
         let mesh_count = read_u32(8) as usize;
         assert_eq!(mesh_count, 1, "1 exportable mesh");
 
@@ -5865,8 +5941,8 @@ mod lot_payload_tests {
         offset += 4;
         assert_eq!(material_count, 1, "1 material via assignment");
         for _ in 0..material_count {
-            for _ in 0..8 {
-                // baseColor / normal / roughness / ao / tint / palette / shaderMap / interiorMap
+            for _ in 0..9 {
+                // baseColor / normal / roughness / ao / tint / palette / shaderMap / interiorMap / slot0（v10）
                 offset += 4 + read_u32(offset) as usize;
             }
             // params f32 + paramCols
@@ -5904,11 +5980,11 @@ mod lot_payload_tests {
             eprintln!("skipping: SimCity_Game.package 不可用");
             return;
         };
-        let payload = build_lot_model_payload(&file, &data, &package, &manager, MODEL);
+        let payload = build_lot_model_payload_for_test(&file, &data, &package, &manager, MODEL);
         let read_u32 =
             |offset: usize| u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap());
         assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
-        assert_eq!(read_u32(4), 9, "container version 9");
+        assert_eq!(read_u32(4), 10, "container version 10");
         // 布局（见 build_lot_model_payload 文档）：mesh GLB 段 → 材质 8 PNG +
         // 参数表 → 每 mesh 5 字节绑定 → 诊断文本。
         let mesh_count = read_u32(8) as usize;
@@ -5919,7 +5995,7 @@ mod lot_payload_tests {
         let material_count = read_u32(offset) as usize;
         offset += 4;
         for _ in 0..material_count {
-            for _ in 0..8 {
+            for _ in 0..9 {
                 offset += 4 + read_u32(offset) as usize;
             }
             offset += 4 + read_u32(offset) as usize;

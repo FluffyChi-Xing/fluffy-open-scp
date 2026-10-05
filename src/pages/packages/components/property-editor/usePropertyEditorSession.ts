@@ -66,6 +66,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const modelPayload = shallowRef<LotModelPayload | null>(null);
   /** LOD1~LOD4 资源位置；index 0 = LOD1，缺失级为 null。 */
   const modelLods = shallowRef<(LotModelLodRef | null)[]>([]);
+  /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（后端脚本资源表反查）。
+   * 异步旁路加载，不阻塞主模型；未命中保持标记锥。 */
+  const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
   /** 当前加载的 LOD（index）；默认取第一个可用级。 */
   const activeLod = ref(0);
   const modelState = ref<ModelState>("pending");
@@ -182,6 +185,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       }
       modelPayload.value = payload;
       modelState.value = "ready";
+      void loadPropModels(token);
     } catch {
       if (token !== requestToken) return;
       modelState.value = "error";
@@ -189,6 +193,50 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     } finally {
       span.end(meta);
     }
+  }
+
+  /** P2 精细替换：拉取 prop 组件的真实模型载荷（resourceID 去重 →
+   * 后端脚本资源表反查 → 逐模型 LOTM）。失败静默（退回标记锥）。 */
+  async function loadPropModels(token: number) {
+    const units = (session.value?.units ?? []) as LotUnitDto[];
+    const ids = [
+      ...new Set(
+        units
+          .filter((unit): unit is LotUnitDto & { kind: "prop" } => unit.kind === "prop")
+          .map((unit) => unit.resourceId)
+          .filter((id): id is number => typeof id === "number"),
+      ),
+    ];
+    if (!ids.length) return;
+    try {
+      const { resolutions } = await source.resolvePropModels(ids);
+      if (token !== requestToken) return;
+      const next = new Map(propModels.value);
+      await Promise.all(
+        resolutions.map(async (resolution) => {
+          const tgi = resolution.models[0];
+          const pkg = resolution.packageId;
+          if (!tgi || pkg == null) return;
+          try {
+            const buffer = await source.readLotModelMeshes(pkg, tgi);
+            if (token !== requestToken) return;
+            next.set(resolution.resourceId, parseLotModelContainer(buffer));
+          } catch {
+            // 单模型失败不影响其余 prop
+          }
+        }),
+      );
+      if (token !== requestToken) return;
+      propModels.value = next;
+    } catch {
+      // 解析整体失败：prop 全部保持标记锥
+    }
+  }
+
+  /** PE 关闭：卸载 prop 解析自动注册的 EcoGame 包——注册范围=会话范围，
+   * 不卸载会污染全局资源查找池（同实例跨包碰撞 → lot 渲染概率异常）。 */
+  function releasePropPackages() {
+    void source.releasePropModelPackages().catch(() => {});
   }
 
   /** 切换 LOD：同级别幂等；请求中忽略新切换（requestToken 已防竞态）。 */
@@ -364,6 +412,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     loadError,
     modelPayload,
     modelLods,
+    propModels,
+    releasePropPackages,
     activeLod,
     switchLod,
     modelState,
