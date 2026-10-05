@@ -506,9 +506,15 @@ const treeSheetPinned = ref(true);
             </button>
           </div>
         </nav>
-        <!-- 组件树 sheet：图钉=停靠（占布局列），未图钉=悬浮盖在视口上。 -->
-        <div v-if="treeSheetOpen" class="tree-dock" :class="{ float: !treeSheetPinned }">
+        <!-- 组件树 sheet：图钉=停靠（占布局列），未图钉=悬浮盖在视口上。
+             dock 恒驻（空占位保持 grid 四列对位）——v-if 移除会让后续子元素
+             左移错列，检查器落进 auto 列被内容撑爆（真机 bug 2026-10-06）。 -->
+        <div
+          class="tree-dock"
+          :class="{ float: !treeSheetPinned || !treeSheetOpen }"
+        >
           <section
+            v-if="treeSheetOpen"
             class="tree-sheet"
             :class="{ overlay: !treeSheetPinned }"
             :aria-label="$t('package.componentTree')"
