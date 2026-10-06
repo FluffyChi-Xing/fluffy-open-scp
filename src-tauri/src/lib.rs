@@ -17,6 +17,7 @@ mod map_panel;
 mod media_tools;
 mod mod_project;
 mod overrides;
+mod pe_schema;
 mod prop_models;
 mod prop_models_section_dump;
 mod package_browser;
@@ -50,6 +51,7 @@ use raster_edit::{
     read_raster_rgba, register_decal_entry, save_raster_overlay,
 };
 use package_browser::{list_game_tree, list_package_files};
+use pe_schema::build_pe_schema;
 use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
     read_decal_dictionary, read_decal_images, read_erz_preview, read_image_preview,
@@ -150,6 +152,7 @@ pub fn run() {
             read_resource_text,
             read_resource_text_range,
             read_lot_editor_session,
+            build_pe_schema,
             read_lot_model_meshes, read_sim_parts, release_prop_model_packages, resolve_prop_models,
             read_raster_preview,
             read_image_preview,

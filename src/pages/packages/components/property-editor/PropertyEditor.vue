@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FAlert from "@/components/ui/FAlert.vue";
+import FTooltip from "@/components/ui/FTooltip.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
@@ -96,6 +97,72 @@ function commitFields(id: string, patch: Record<string, unknown>) {
  * 不触碰任何游戏 package；真正的 DBPF overlay 写回在资产-1（RW4
  * 写回器）落地后接入，届时同样以此按钮为唯一入口。
  */
+// ---- Schema（低代码资产管线 v1，docs/design/lowcode-asset-pipeline.md）----
+// 打开时把「当前 session + 编辑层覆盖」提交后端引擎，产出规范化
+// openscp.lot-asset/1 JSON；FCode 只读预览，导出写 .lot.json。
+const schemaOpen = ref(false);
+const schemaBusy = ref(false);
+const schemaJson = ref("");
+async function openSchemaSheet() {
+  if (schemaBusy.value || !session.value) return;
+  schemaBusy.value = true;
+  try {
+    const overrides = [...edit.overrides.entries()].map(([id, matrix]) => ({
+      id,
+      matrix,
+    }));
+    const fieldPatches = [...edit.fieldOverrides.entries()].map(
+      ([id, fields]) => ({ id, fields }),
+    );
+    const merged = new Map<string, { id: string; matrix?: number[]; fields?: Record<string, unknown> }>();
+    for (const entry of [...overrides, ...fieldPatches]) {
+      merged.set(entry.id, { ...merged.get(entry.id), ...entry });
+    }
+    const current = session.value;
+    const request = {
+      session: {
+        assetName: current.assetName ?? null,
+        tgi: props.tgi,
+        modelLods: current.modelLods,
+        lotSize: current.lotSize,
+        lotTilePeriod: current.lotTilePeriod,
+        lotPlacement: current.lotPlacement,
+        lotColors: current.lotColors,
+        lotColorsAuthored: current.lotColorsAuthored,
+        lotBorderColors: current.lotBorderColors,
+        lotBorderWidths: current.lotBorderWidths,
+        lotBorderPatternIndices: current.lotBorderPatternIndices,
+        lotBaseTile: current.lotBaseTile,
+        lotOverlayBoxOffset: current.lotOverlayBoxOffset,
+        lotModelBBoxCenter: current.lotModelBBoxCenter,
+        units: current.units,
+      },
+      overrides: [...merged.values()],
+      hiddenUnitIds: [...hiddenUnits.value],
+      groups: { ...groupVisibility },
+    };
+    const result = await tauriApi.packages.buildPeSchema(request);
+    schemaJson.value = result.schemaJson;
+    schemaOpen.value = true;
+  } finally {
+    schemaBusy.value = false;
+  }
+}
+async function exportSchema() {
+  if (!schemaJson.value) return;
+  const binary = JSON.stringify(JSON.parse(schemaJson.value), null, 2);
+  let payload = "";
+  for (const byte of new TextEncoder().encode(binary))
+    payload += String.fromCharCode(byte);
+  const path = await tauriApi.packages.saveFile(
+    `${session.value?.assetName ?? "lot"}.lot.json`,
+    "json",
+  );
+  if (!path) return;
+  await command("write_export_file", {
+    request: { path, dataBase64: btoa(payload) },
+  });
+}
 const saveEditsBusy = ref(false);
 async function saveLocalEdits() {
   if (saveEditsBusy.value || !edit.editCount.value) return;
@@ -276,6 +343,20 @@ const treeSheetPinned = ref(true);
           :aria-label="$t('package.renderMode')"
           :title="$t('package.renderModeHint')"
         >
+        <!-- Schema：低代码资产 JSON（查看/导出，docs/design/lowcode-asset-pipeline.md） -->
+        <FTooltip :text="$t('package.schemaSheet')" side="bottom">
+          <template #trigger>
+            <button
+              type="button"
+              class="editor-close"
+              :disabled="schemaBusy || !session"
+              :aria-label="$t('package.schemaSheet')"
+              @click="openSchemaSheet"
+            >
+              <FIcon name="Braces" :size="15" aria-label="" />
+            </button>
+          </template>
+        </FTooltip>
           <button
             type="button"
             :class="{ active: renderMode === 'default' }"
@@ -464,46 +545,64 @@ const treeSheetPinned = ref(true);
              + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
         <nav class="editor-rail" :aria-label="$t('package.inspector')">
           <div class="rail-group">
-            <button
-              type="button"
-              class="rail-item"
-              :class="{ active: treeSheetOpen }"
-              :aria-pressed="treeSheetOpen"
-              :title="$t('package.railOutline')"
-              @click="treeSheetOpen = !treeSheetOpen"
-            >
-              <FIcon name="ListTree" :size="16" aria-label="" />
-              <span>{{ $t("package.railOutline") }}</span>
-            </button>
-            <button
-              type="button"
-              class="rail-item"
-              disabled
-              :title="$t('package.comingSoon')"
-            >
-              <FIcon name="Boxes" :size="16" aria-label="" />
-              <span>{{ $t("package.railMaterials") }}</span>
-            </button>
-            <button
-              type="button"
-              class="rail-item"
-              disabled
-              :title="$t('package.comingSoon')"
-            >
-              <FIcon name="CodeXml" :size="16" aria-label="" />
-              <span>{{ $t("package.railSource") }}</span>
-            </button>
+            <FTooltip :text="$t('package.railOutline')" side="right">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="rail-item"
+                  :class="{ active: treeSheetOpen }"
+                  :aria-pressed="treeSheetOpen"
+                  :aria-label="$t('package.railOutline')"
+                  @click="treeSheetOpen = !treeSheetOpen"
+                >
+                  <FIcon name="ListTree" :size="17" aria-label="" />
+                </button>
+              </template>
+            </FTooltip>
+            <FTooltip :text="$t('package.railMaterials')" side="right">
+              <template #trigger>
+                <span class="rail-item-wrap">
+                  <button
+                    type="button"
+                    class="rail-item"
+                    disabled
+                    :aria-label="$t('package.railMaterials')"
+                  >
+                    <FIcon name="Boxes" :size="17" aria-label="" />
+                  </button>
+                </span>
+              </template>
+            </FTooltip>
+            <FTooltip :text="$t('package.railSource')" side="right">
+              <template #trigger>
+                <span class="rail-item-wrap">
+                  <button
+                    type="button"
+                    class="rail-item"
+                    disabled
+                    :aria-label="$t('package.railSource')"
+                  >
+                    <FIcon name="CodeXml" :size="17" aria-label="" />
+                  </button>
+                </span>
+              </template>
+            </FTooltip>
           </div>
           <div class="rail-group">
-            <button
-              type="button"
-              class="rail-item"
-              disabled
-              :title="$t('package.comingSoon')"
-            >
-              <FIcon name="Send" :size="16" aria-label="" />
-              <span>{{ $t("package.railSubmitIssue") }}</span>
-            </button>
+            <FTooltip :text="$t('package.railSubmitIssue')" side="right">
+              <template #trigger>
+                <span class="rail-item-wrap">
+                  <button
+                    type="button"
+                    class="rail-item"
+                    disabled
+                    :aria-label="$t('package.railSubmitIssue')"
+                  >
+                    <FIcon name="Send" :size="17" aria-label="" />
+                  </button>
+                </span>
+              </template>
+            </FTooltip>
           </div>
         </nav>
         <!-- 组件树 sheet：图钉=停靠（占布局列），未图钉=悬浮盖在视口上。
@@ -612,6 +711,33 @@ const treeSheetPinned = ref(true);
         :model-state="modelState"
         :selected-unit="selectedUnit"
       />
+      <FSheet
+        v-model:open="schemaOpen"
+        :label="$t('package.schemaSheet')"
+        width="72vw"
+      >
+        <div class="schema-sheet-body">
+          <div class="schema-toolbar">
+            <span class="schema-hint">{{ $t("package.schemaHint") }}</span>
+            <button
+              type="button"
+              class="schema-export"
+              :disabled="!schemaJson"
+              @click="exportSchema"
+            >
+              <FIcon name="Download" :size="13" aria-label="" />
+              {{ $t("package.schemaExport") }}
+            </button>
+          </div>
+          <FCode
+            :code="schemaJson"
+            lang="json"
+            copy-label="Copy"
+            copied-label="Copied"
+            class="schema-code"
+          />
+        </div>
+      </FSheet>
     </div>
   </FSheet>
 </template>
@@ -801,18 +927,12 @@ const treeSheetPinned = ref(true);
   color: var(--muted-foreground);
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  font: inherit;
-  font-size: 9px;
-  gap: 3px;
-  padding: 6px 2px;
+  justify-content: center;
+  min-height: 34px;
   width: 40px;
 }
-.rail-item span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.rail-item-wrap {
+  display: inline-flex;
 }
 .rail-item:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -890,6 +1010,50 @@ const treeSheetPinned = ref(true);
   color: var(--accent);
 }
 /* Outliner 自带的分隔线在 sheet 内是双边框，剥掉并占满剩余高度 */
+.schema-sheet-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 16px;
+}
+.schema-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+.schema-hint {
+  color: var(--subtle-foreground);
+  flex: 1;
+  font-size: 11px;
+}
+.schema-export {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11px;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
+}
+.schema-export:hover {
+  background: var(--surface-hover);
+}
+.schema-export:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.schema-code {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 .tree-sheet :deep(.outliner) {
   border-inline-end: 0;
   flex: 1;

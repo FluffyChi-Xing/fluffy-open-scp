@@ -399,6 +399,8 @@ export const tauriApi = {
     releasePropModelPackages: () =>
       command<number>("release_prop_model_packages", {}),
     readSimParts: () => command<ArrayBuffer>("read_sim_parts", {}),
+    buildPeSchema: (request: unknown) =>
+      command<{ schemaJson: string }>("build_pe_schema", { request }),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },

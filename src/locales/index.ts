@@ -1063,6 +1063,10 @@ const messages = {
       comingSoon: "即将推出",
       pinSheet: "停靠/悬浮切换",
       closeSheet: "关闭组件树",
+      schemaSheet: "Schema",
+      schemaExport: "导出 JSON",
+      schemaHint:
+        "当前 PE 状态的 openscp.lot-asset/1 资产 JSON（含全部编辑覆盖）；未来构建管线与解析引擎消费此格式。",
       renderTelemetryHint:
         "只读观测面板：记录首次加载与每次重建时各渲染阶段的耗时，不影响渲染本身。",
       renderStages: "各阶段耗时（近 7 天）",
@@ -2645,6 +2649,10 @@ const messages = {
       comingSoon: "Coming soon",
       pinSheet: "Toggle dock/float",
       closeSheet: "Close component tree",
+      schemaSheet: "Schema",
+      schemaExport: "Export JSON",
+      schemaHint:
+        "Asset JSON (openscp.lot-asset/1) of the current PE state including all edit overrides; consumed by the future build pipeline and parser.",
       renderTelemetryHint:
         "Read-only panel: records per-stage timings on first load and on every rebuild, without touching the renderer.",
       renderStages: "Stage timings (last 7 days)",
