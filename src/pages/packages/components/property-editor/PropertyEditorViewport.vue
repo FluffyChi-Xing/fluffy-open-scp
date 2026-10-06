@@ -259,14 +259,20 @@ function updatePickOverlay() {
 }
 
 // ---- 编辑模式：组件库拖放放置 + 删除 ----
-function onCanvasDragOver(event: DragEvent) {
+// 拖放监听挂 window（捕获级）：组件库 FSheet 的全屏遮罩（pointer-events
+// auto、z 80）会拦截画布上的 drop——面板开着拖放时 drop 的目标元素是
+// 遮罩而非画布，元素级处理器永远收不到（真机勘误 2026-10-06）。
+const UNIT_DRAG_TYPE = "application/x-openscp-unit";
+function onWindowDragOver(event: DragEvent) {
   if (!props.editEnabled) return;
-  event.preventDefault();
+  if (!event.dataTransfer?.types.includes(UNIT_DRAG_TYPE)) return;
+  event.preventDefault(); // 允许 drop
 }
-function onCanvasDrop(event: DragEvent) {
+function onWindowDrop(event: DragEvent) {
   if (!props.editEnabled) return;
-  const raw = event.dataTransfer?.getData("application/x-openscp-unit");
+  const raw = event.dataTransfer?.getData(UNIT_DRAG_TYPE);
   if (!raw) return;
+  event.preventDefault();
   let payload: Parameters<typeof emit.placeUnit>[0];
   try {
     payload = JSON.parse(raw);
@@ -280,6 +286,14 @@ function onCanvasDrop(event: DragEvent) {
   if (!position) return;
   emit("place-unit", payload, position);
 }
+onMounted(() => {
+  window.addEventListener("dragover", onWindowDragOver, true);
+  window.addEventListener("drop", onWindowDrop, true);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("dragover", onWindowDragOver, true);
+  window.removeEventListener("drop", onWindowDrop, true);
+});
 function onDeleteSelected() {
   if (props.selectedId) emit("delete-unit", props.selectedId);
 }
@@ -1733,8 +1747,6 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
     <div
       :ref="(el) => (viewport.container.value = el as HTMLElement | null)"
       class="viewport-3d"
-      @dragover.prevent="onCanvasDragOver"
-      @drop.prevent="onCanvasDrop"
     >
       <!-- 拾取反馈标签：轮廓壳在 viewer 内（模型描边），此处仅文字 -->
       <span
