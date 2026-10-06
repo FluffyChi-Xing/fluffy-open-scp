@@ -351,8 +351,30 @@ FNV 爆破未命中，留待真数据采样）。
 ③ 分支（0x0C36D30D 无 0x0D8C29CF）读 8 列外观表 **0x0CBD25C1-CB**
 （heads/bodies/outfits 及其 Max + ScalesMin/Max，0x0CBD25CA/CB = 缩放域）
 → `cSimGraphicsInfo[]`。`GetSimData`/`GetSimPaletteData` 按 randomBits
-取模选出 `(body≤3, head≤80, outfitPalette)` + 缩放——**小人模型库是城市
-级全局目录（body 4 型 / head 80 型），非 lot 资产，本地包未见**。
+取模选出 `(body≤3, head≤80, outfitPalette)` + 缩放。
+
+**小人模型本地齐活（2026-10-06 探针实证，用户假设证实）**：离线版有
+小人且不同建筑小人皮肤不同 = 降级源在本地。证据链：
+1. **GI_Simm_\* 角色外观定义**（database_main.s3db 注册表 41 条名字）：
+   SimCity_Game @40E02D00 的 144B B1B104 property（AgentVehicleModel
+   语义 0x2D00），内容恰为外观表单行——如 GI_Simm_polofficer_ma =
+   heads[16..16] × bodies[0..0] × outfits[197..197]（固定组合）；居民
+   等为区间。Parent 指向 Agent 家族根 F7989474 @48E1C600。
+2. **家族根 F7989474**：自带 0.8×0.8×1.5m 人形 bbox（0x00F9EFBA），
+   0x0C36D30D → **22706EFA = 小人 impostor class**（29 part 配置：8
+   方位角、Male_Head 挂点头、宽 32/16px 图集格、animSpeed 6/4）——
+   小人近景真模型、远景 impostor 公告板，与树同构。
+3. **部件模型 23/23 全本地**：impostor class 表的模型 key 全部命中
+   RW4（0x2F4E681B）——18 个 @SimCity_Graphics + 5 个 @SimCity_Game。
+   定性（tree_model_dump + 光栅化目验）：E5537FAB/FAC9B16D/A4EB8B32 =
+   **T-pose 身体**（1.72m 宽×1.49m 高，99-106 verts/68-72 tris，双臂
+   平举）；22A445FE 等 20 个 = **头部**（0.24-0.42m 低模头，45-88
+   tris）；每部件自带 256×256 衣服/皮肤纹理（outfit 调色板着色源）。
+   合成：身体原点 + 头挂 Male_Head 骨位（颈顶 ~z1.45）。
+4. sim 部件模型 key 全清单（23）：身体 E5537FAB A4EB8B32 FAC9B16D；
+   头部 22A445FE F4B845DF 92EAC3EB C3512C8A B93F52B2 E6626E09 157D7231
+   50077BB0 446BBC79 612B41F5 BBB36488 359DE97F 76550072 C54FFD13
+   35E2F199 55DF9CAE FF472323 279C922A 97EFA2B7 4F4947B7。
 
 **勘误坐实（source-tree 逐字）**：0x0E715928 → `mBuildingVariation` 基值、
 0x0E715929 → `mBuildingVariation += unitSlot % count`、0x0F0E2BF1 →
@@ -365,8 +387,11 @@ source-tree 双重坐实）。PE DTO 的 `count/countRandom/agent` 字段名系�
 **PE 渲染落地（2026-10-06 已实现）**：spawner 单元从蓝色标记锥改为
 **小人占位人形**（`buildSimFigure`）——双腿+躯干+双臂+头球，身高
 ~1.75m±抖动，肤色/衣色按 unit id FNV 种子确定性取自调色板（同锚点恒同
-外观）。不渲染真小人的原因：模型库非本地资产；占位人形直接传达「此处有
-agent 刷新/服务锚点」。
+外观）。~~不渲染真小人的原因：模型库非本地资产~~（已被上述探针推翻）。
+**升级路径（真小人渲染，待实施）**：身体/头部 GLB 经全局资产通道下发
+（非 lot 资产，新命令按上面 23 个模型 key 提取），前端按 GI_Simm_\*
+外观区间随机合成「身体 + 头(颈点) + outfit 调色板 tint」——观感即游戏
+近景小人。
 
 ## 4. Paths 全流程
 
