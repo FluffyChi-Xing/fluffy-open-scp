@@ -518,6 +518,11 @@ watch(open, (value) => {
   if (value) {
     diagnosticsDismissed = false;
     void load();
+  } else {
+    // 关闭即回锁定态：工具栏/物料面板/拖放/删除随 editEnabled 复位
+    // （用户资产编辑——放置记录/变换/字段——按既有口径不在复位范围）
+    editEnabled.value = false;
+    materialsOpen.value = false;
   }
 });
 /** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
