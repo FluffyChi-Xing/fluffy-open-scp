@@ -39,7 +39,7 @@ const {
   modelPayload,
   propModels,
   propTreeIds,
-  referencedModelInstances,
+  referencedModels,
   treeAtlasPng,
   treeModelPayloads,
   releasePropPackages,
@@ -154,11 +154,28 @@ const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>
     const keyword = materialsSearch.value.trim().toLowerCase();
     // 过滤器（用户口径）：只展示当前 property 引用的组件——这些模型的
     // 渲染路径已被本资产验证，拖入必然可用（随机目录模型可能无法渲染）
+    const referencedSet = new Set(referencedModels.value.map((r) => r.instance));
+    const packageOf = new Map(
+      referencedModels.value.map((r) => [r.instance, r.packageId]),
+    );
     const matched = modelCatalog.value.filter(
       (entry) =>
-        referencedModelInstances.value.has(entry.instance) &&
+        referencedSet.has(entry.instance) &&
         (keyword ? entry.name.toLowerCase().includes(keyword) : true),
     );
+    // 引用了但目录缺席的模型（纯 hex 名被目录噪声过滤排除，如树部件）
+    // → 兜底补入：包 id 取引用条目（readLotModelMeshes 可按需加载）
+    for (const refEntry of referencedModels.value) {
+      if (matched.some((entry) => entry.instance === refEntry.instance)) continue;
+      const hexName = `模型 0x${refEntry.instance.toString(16).toUpperCase()}`;
+      if (keyword && !hexName.toLowerCase().includes(keyword)) continue;
+      matched.push({
+        packageId: refEntry.packageId,
+        instance: refEntry.instance,
+        name: hexName,
+        size: 0,
+      });
+    }
     const groups = new Map<string, ModelCatalogEntry[]>();
     for (const entry of matched) {
       const group = entry.name.split(/[_\s-]/)[0] || entry.name;

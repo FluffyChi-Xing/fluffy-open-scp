@@ -69,9 +69,10 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（后端脚本资源表反查）。
    * 异步旁路加载，不阻塞主模型；未命中保持标记锥。 */
   const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
-  /** 当前 property 引用的模型实例 id 集（LOD + prop 解析结果）——组件库
-   * 目录过滤器数据源（仅展示本资产引用、可正常渲染的组件）。 */
-  const referencedModelInstances = ref(new Set<number>());
+  /** 当前 property 引用的模型条目（LOD + prop 解析结果，含所在包 id）——
+   * 组件库目录过滤器数据源（仅展示本资产引用、可正常渲染的组件）；
+   * 树模型等纯 hex 名条目会被目录噪声过滤排除，由组件库侧按此兜底补入。 */
+  const referencedModels = ref<{ packageId: number; instance: number }[]>([]);
   /** 树 prop（source=tree/tree_model）资源 id 集合 → 树专用渲染分支。 */
   const propTreeIds = shallowRef<Set<number>>(new Set());
   /** 树公告板图集（base64 PNG，2×2 四树格）：后端从 Graphics 包树图集
@@ -250,15 +251,20 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
         ).filter((p): p is LotModelPayload => p !== null);
         if (token === requestToken && payloads.length) treeModelPayloads.value = payloads;
       }
-      const next = new Map(propModels.value);
-      // 记录引用的模型实例（组件库目录过滤：只展示本资产引用的组件）
-      const referenced = new Set<number>();
+      // 记录引用的模型条目（组件库目录过滤 + 缺席兜底）——**全部来源**：
+      // tree/tree_model 的破洞树模型同为可放置组件，勿因加载通道不同而排除
+      const referenced = new Map<string, { packageId: number; instance: number }>();
       for (const resolution of resolutions) {
         for (const model of resolution.models) {
-          if (model) referenced.add(model.instance);
+          if (model)
+            referenced.set(`${model.instance}`, {
+              packageId: resolution.packageId,
+              instance: model.instance,
+            });
         }
       }
-      referencedModelInstances.value = referenced;
+      referencedModels.value = [...referenced.values()];
+      const next = new Map(propModels.value);
       await Promise.all(
         resolutions
           .filter((r) => r.source !== "tree" && r.source !== "tree_model")
@@ -475,7 +481,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelLods,
     propModels,
     propTreeIds,
-    referencedModelInstances,
+    referencedModels,
     treeAtlasPng,
     treeModelPayloads,
     releasePropPackages,
