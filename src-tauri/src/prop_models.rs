@@ -540,6 +540,7 @@ mod lotm_dump_tests {
             (0xCA26_5D8Bu32, "tmp/vehicle.lotm"),
             (0x903A_704C, "tmp/trashcan.lotm"),
             (0x4DF4_3690, "tmp/tree.lotm"),
+            (0x22A4_45FE, "tmp/simhead.lotm"),
         ] {
             let pkg = manager.get(2).expect("graphics pkg");
             let entry = pkg
