@@ -1687,12 +1687,22 @@ watch(
   () => viewport.applyGroupVisibility(props.groupVisibility),
   { deep: true },
 );
-// 放置单元的直挂模型载荷异步到位 → 重建放行真模型渲染
-// （放置瞬间载荷未到，先以标记锥兜底；载荷 map 引用变化即触发）
-watch(() => props.addedModelPayloads, () => {
-  pendingTrigger = "grouping";
-  void rebuildScene();
-});
+// 异步资产通道到位 → 重建放行真实渲染（prop 模型/树模型/小人部件/
+// 拖入直挂模型）。初始重建时这些通道往往未就绪：树走公告板兜底、
+// prop 走标记锥、spawner 走占位人形——通道到位即补渲染
+// （真机勘误 2026-10-06：拖动道具触发重建后树才“一下变对”）。
+watch(
+  () => [
+    props.propModels,
+    props.treeModelPayloads,
+    props.addedModelPayloads,
+    simParts.value,
+  ] as const,
+  () => {
+    pendingTrigger = "grouping";
+    void rebuildScene();
+  },
+);
 // 单元隐藏此前只在装配期应用（无 watcher → 切换后无效果直到下次重建）；
 // 现在独立生效。
 watch(
