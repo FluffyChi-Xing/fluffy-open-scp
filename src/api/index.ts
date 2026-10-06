@@ -401,6 +401,10 @@ export const tauriApi = {
     readSimParts: () => command<ArrayBuffer>("read_sim_parts", {}),
     buildPeSchema: (request: unknown) =>
       command<{ schemaJson: string }>("build_pe_schema", { request }),
+    listModelCatalog: () =>
+      command<
+        { packageId: number; instance: number; name: string; size: number }[]
+      >("list_model_catalog", {}),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },

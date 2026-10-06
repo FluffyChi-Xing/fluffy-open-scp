@@ -144,6 +144,12 @@ pub struct BuildPeSchemaRequest {
     /// 图层可见性（编辑器视图状态）。
     #[serde(default)]
     pub groups: BTreeMap<String, bool>,
+    /// 拖拽放置新增的单元（schema units 增量）。
+    #[serde(default)]
+    pub added_units: Vec<UnitInput>,
+    /// 已删除单元的 id（session units 过滤）。
+    #[serde(default)]
+    pub deleted_unit_ids: Vec<String>,
 }
 
 fn unit_id(kind: &str, bin: Option<i64>, category: Option<i64>, index: i64) -> String {
@@ -211,7 +217,16 @@ fn unit_json(
             }
         }
         "prop" => {
-            for key in ["bin", "slot", "resourceId", "scale"] {
+            // modelTgi/modelPackageId = 直挂 RW4 模型的放置单元（schema 扩展位：
+            // 既有 resourceId 语义走脚本资源表，直挂模型经构建管线转正）
+            for key in [
+                "bin",
+                "slot",
+                "resourceId",
+                "scale",
+                "modelTgi",
+                "modelPackageId",
+            ] {
                 if let Some(value) = extra.get(key) {
                     object.insert(key.to_string(), value.clone());
                 }
@@ -264,15 +279,26 @@ pub fn build_schema(request: &BuildPeSchemaRequest) -> String {
     }
     let hidden: std::collections::HashSet<&String> = request.hidden_unit_ids.iter().collect();
 
-    let units: Vec<Value> = session
+    let deleted: std::collections::HashSet<&String> =
+        request.deleted_unit_ids.iter().collect();
+    let mut units: Vec<Value> = session
         .units
         .iter()
+        .filter(|unit| {
+            let id = unit_id(&unit.kind, unit.bin, unit.category, unit.index);
+            !deleted.contains(&id)
+        })
         .map(|unit| {
             let id = unit_id(&unit.kind, unit.bin, unit.category, unit.index);
             let hidden = hidden.contains(&id);
             unit_json(unit, &id, overrides.get(&id).copied(), hidden)
         })
         .collect();
+    for added in &request.added_units {
+        let id = unit_id(&added.kind, added.bin, added.category, added.index);
+        let hidden = hidden.contains(&id);
+        units.push(unit_json(added, &id, overrides.get(&id).copied(), hidden));
+    }
 
     let lods: Vec<Value> = session
         .model_lods

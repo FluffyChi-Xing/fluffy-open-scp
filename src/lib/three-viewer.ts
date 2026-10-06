@@ -237,6 +237,26 @@ export class ThreeViewer {
     this.onFrameCb = callback;
   }
 
+  /**
+   * 屏幕坐标 → 地面平面交点（游戏坐标 x/y/z，z=上）。落在取景网格平面上，
+   * 拖拽放置组件的落点定位用；无交点（视线平行/背向）返回 null。
+   */
+  groundPointAt(clientX: number, clientY: number): [number, number, number] | null {
+    const rect = this.container.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    const pointer = new this.THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(pointer, this.camera);
+    const planeY = this.grid?.position.y ?? 0;
+    const hit = new this.THREE.Vector3();
+    const plane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), -planeY);
+    if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
+    const game = this.world.worldToLocal(hit.clone());
+    return [game.x, game.y, Math.max(0, game.z)];
+  }
+
   /** 世界坐标 → 容器相对屏幕像素；behind = 点在相机后方（投影无效）。 */
   worldToScreen(
     vector: ThreeNamespace.Vector3,

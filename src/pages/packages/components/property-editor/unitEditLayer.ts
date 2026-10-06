@@ -49,6 +49,10 @@ export interface UnitEditLayer {
   overrides: Map<string, number[]>;
   /** unitId → 字段 patch（元数据编辑：lightType/radius 等，不含 transform）。 */
   fieldOverrides: Map<string, Record<string, unknown>>;
+  /** 拖拽放置新增的单元（schema units 的增量源）。 */
+  addedUnits: LotUnitDto[];
+  /** 已删除单元的 id（session 既有单元软删除；新增单元走 addedUnits 移除）。 */
+  deletedIds: Set<string>;
   canUndo: ComputedRef<boolean>;
   canRedo: ComputedRef<boolean>;
   /** override 条数（含被撤销前的历史；UI 显示"本地编辑"状态用）。 */
@@ -57,6 +61,10 @@ export interface UnitEditLayer {
   setUnitTransform(id: string, matrix: number[]): void;
   /** 记录并立即应用一条元数据字段 patch（命令栈可撤销）。 */
   setUnitFields(id: string, patch: Record<string, unknown>): void;
+  /** 放置新单元（组件库拖入；可撤销）。 */
+  addUnit(unit: LotUnitDto): void;
+  /** 删除单元：新增单元直接移除；既有单元软删除（可撤销恢复）。 */
+  removeUnit(id: string): void;
   undo(): void;
   redo(): void;
   /** 丢弃全部本地编辑（重载会话时调用）。 */
@@ -66,6 +74,8 @@ export interface UnitEditLayer {
 export function createUnitEditLayer(): UnitEditLayer {
   const overrides = reactive(new Map<string, number[]>());
   const fieldOverrides = reactive(new Map<string, Record<string, unknown>>());
+  const addedUnits = reactive<LotUnitDto[]>([]);
+  const deletedIds = reactive(new Set<string>());
   const undoStack: UnitEditCommand[] = [];
   const redoStack: UnitEditCommand[] = [];
   const version = ref(0);
@@ -98,12 +108,36 @@ export function createUnitEditLayer(): UnitEditLayer {
   const editCount = computed(() => {
     void version.value;
     const ids = new Set([...overrides.keys(), ...fieldOverrides.keys()]);
-    return ids.size;
+    return ids.size + addedUnits.length + deletedIds.size;
   });
+
+  function removeUnitInternal(id: string) {
+    const addedIndex = addedUnits.findIndex(
+      (unit) => unitId(unit) === id,
+    );
+    if (addedIndex >= 0) {
+      addedUnits.splice(addedIndex, 1);
+      setOverride(id, null);
+      setFields(id, null);
+      return;
+    }
+    deletedIds.add(id);
+  }
+
+  function restoreUnitInternal(id: string, unit: LotUnitDto | null) {
+    if (unit) {
+      // 新增单元的撤销恢复
+      addedUnits.push(unit);
+      return;
+    }
+    deletedIds.delete(id);
+  }
 
   return {
     overrides,
     fieldOverrides,
+    addedUnits,
+    deletedIds,
     canUndo,
     canRedo,
     editCount,
@@ -126,6 +160,41 @@ export function createUnitEditLayer(): UnitEditLayer {
         undo: () => setFields(id, prev),
       });
     },
+    addUnit(unit) {
+      const snapshot: LotUnitDto | null = null;
+      pushCommand({
+        label: `add:${unitId(unit)}`,
+        redo: () => {
+          addedUnits.push(unit);
+          deletedIds.delete(unitId(unit));
+        },
+        undo: () => {
+          const index = addedUnits.findIndex(
+            (added) => unitId(added) === unitId(unit),
+          );
+          if (index >= 0) addedUnits.splice(index, 1);
+        },
+      });
+      void snapshot;
+    },
+    removeUnit(id) {
+      const addedIndex = addedUnits.findIndex(
+        (added) => unitId(added) === id,
+      );
+      const removedAdded =
+        addedIndex >= 0 ? (addedUnits.splice(addedIndex, 1)[0] ?? null) : null;
+      const wasDeleted = deletedIds.has(id);
+      if (addedIndex < 0) deletedIds.add(id);
+      pushCommand({
+        label: `remove:${id}`,
+        redo: () => removeUnitInternal(id),
+        undo: () => {
+          if (removedAdded) addedUnits.push(removedAdded);
+          else if (wasDeleted) deletedIds.add(id);
+          else deletedIds.delete(id);
+        },
+      });
+    },
     undo() {
       const command = undoStack.pop();
       if (!command) return;
@@ -143,6 +212,8 @@ export function createUnitEditLayer(): UnitEditLayer {
     reset() {
       overrides.clear();
       fieldOverrides.clear();
+      addedUnits.length = 0;
+      deletedIds.clear();
       undoStack.length = 0;
       redoStack.length = 0;
       version.value += 1;

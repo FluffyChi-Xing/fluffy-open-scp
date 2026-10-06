@@ -8,7 +8,15 @@ import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FCode from "@/components/ui/FCode.vue";
-import type { Tgi } from "@/api/tauri";
+import type {
+  LotModelPayload,
+  LotUnitDto,
+  Tgi,
+} from "@/api/tauri";
+import {
+  parseLotModelContainer,
+} from "@/lib/three-gltf";
+import { createDataSource } from "@/api/data-source";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
 import PropertyEditorViewport, {
   type EditorTool,
@@ -98,6 +106,196 @@ function commitFields(id: string, patch: Record<string, unknown>) {
  * 不触碰任何游戏 package；真正的 DBPF overlay 写回在资产-1（RW4
  * 写回器）落地后接入，届时同样以此按钮为唯一入口。
  */
+// ---- 编辑模式（锁定/解锁）----
+// 锁定 = 只读视图（原"只读视图"pill 的交互化）；解锁后：视口工具栏显示、
+// rail 物料入口可用、组件可拖入画布、name-tag 旁出现删除按钮。
+const editEnabled = ref(false);
+function toggleEditEnabled() {
+  editEnabled.value = !editEnabled.value;
+}
+
+// ---- 组件库（物料）sheet：从已打开包的命名 RW4 模型目录拖入放置 ----
+const materialsOpen = ref(false);
+const materialsBusy = ref(false);
+interface ModelCatalogEntry {
+  packageId: number;
+  instance: number;
+  name: string;
+  size: number;
+}
+const modelCatalog = ref<ModelCatalogEntry[]>([]);
+const materialsTab = ref<"props" | "spawners" | "effects" | "paths" | "lights">(
+  "props",
+);
+const materialsSearch = ref("");
+/** 折叠面板展开状态（按组名；缺省全展开）。 */
+const collapsedGroups = ref(new Set<string>());
+function openMaterialsPanel() {
+  materialsOpen.value = true;
+  if (modelCatalog.value.length || materialsBusy.value) return;
+  materialsBusy.value = true;
+  tauriApi.packages
+    .listModelCatalog()
+    .then((entries) => {
+      modelCatalog.value = entries;
+    })
+    .catch(() => {
+      modelCatalog.value = [];
+    })
+    .finally(() => {
+      materialsBusy.value = false;
+    });
+}
+/** props 目录按名称首段（分隔符前）分组建目（可折叠）。 */
+const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>(
+  () => {
+    const keyword = materialsSearch.value.trim().toLowerCase();
+    const matched = modelCatalog.value.filter((entry) =>
+      keyword ? entry.name.toLowerCase().includes(keyword) : true,
+    );
+    const groups = new Map<string, ModelCatalogEntry[]>();
+    for (const entry of matched) {
+      const group = entry.name.split(/[_\s-]/)[0] || entry.name;
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group)!.push(entry);
+    }
+    return [...groups.entries()]
+      .map(([name, list]) => ({ name, entries: list }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  },
+);
+function toggleGroupCollapse(name: string) {
+  const next = new Set(collapsedGroups.value);
+  if (next.has(name)) next.delete(name);
+  else next.add(name);
+  collapsedGroups.value = next;
+}
+
+/** 组件库条目拖拽启动：载荷写 dataTransfer（画布 drop 解析放置）。 */
+function onEntryDragStart(event: DragEvent, payload: unknown) {
+  event.dataTransfer?.setData(
+    "application/x-openscp-unit",
+    JSON.stringify(payload),
+  );
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+}
+
+// ---- 放置/删除：unitEditLayer 资产编辑 + 视口回调 ----
+interface DropPayload {
+  kind: "light" | "prop" | "spawner" | "effect" | "pathPoint";
+  /** light 预设。 */
+  lightType?: "Point" | "Spot" | "Line";
+  /** prop 直挂模型。 */
+  packageId?: number;
+  tgi?: Tgi;
+  name?: string;
+}
+const addedModelPayloads = ref(new Map<number, LotModelPayload>());
+const sourceForPlacement = createDataSource();
+function nextIndexOf(kind: string): number {
+  const units = session.value?.units ?? [];
+  let max = -1;
+  for (const unit of units) {
+    if (unit.kind !== kind) continue;
+    if (unit.index > max) max = unit.index;
+  }
+  for (const added of edit.addedUnits) {
+    if (added.kind !== kind) continue;
+    if (added.index > max) max = added.index;
+  }
+  return max + 1;
+}
+function onDropUnit(payload: DropPayload, position: [number, number, number]) {
+  if (!editEnabled.value) return;
+  const transform = {
+    matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, position[0], position[1], position[2]],
+  };
+  let unit: LotUnitDto;
+  if (payload.kind === "light") {
+    unit = {
+      kind: "light",
+      index: nextIndexOf("light"),
+      transform,
+      lightType: payload.lightType ?? "Point",
+      color: [1, 1, 1],
+      outerRadius: 8,
+      innerRadius: null,
+      diffuse: null,
+      length: null,
+      cullDistance: "Far",
+      isVolumetric: false,
+      debugName: null,
+      fields: [],
+    } as LotUnitDto;
+  } else if (payload.kind === "prop" && payload.tgi && payload.packageId != null) {
+    unit = {
+      kind: "prop",
+      index: nextIndexOf("prop"),
+      bin: 1,
+      resourceId: payload.tgi.instance,
+      transform,
+      slot: null,
+      scale: null,
+      modelTgi: payload.tgi,
+      modelPackageId: payload.packageId,
+      fields: [],
+    } as unknown as LotUnitDto;
+  } else if (payload.kind === "spawner") {
+    unit = {
+      kind: "spawner",
+      index: nextIndexOf("spawner"),
+      transform,
+      id: null,
+      count: null,
+      countRandom: null,
+      agent: null,
+      fields: [],
+    } as LotUnitDto;
+  } else if (payload.kind === "effect") {
+    unit = {
+      kind: "effect",
+      index: nextIndexOf("effect"),
+      transform,
+      effectId: null,
+      enabled: true,
+      fields: [],
+    } as LotUnitDto;
+  } else {
+    unit = {
+      kind: "pathPoint",
+      index: nextIndexOf("pathPoint"),
+      point: position,
+      tangent: null,
+      pointIndex: null,
+      fields: [],
+    } as LotUnitDto;
+  }
+  edit.addUnit(unit);
+  pendingSelectId.value = unitId(unit);
+  // 直挂 prop：异步取 LOTM 载荷入缓存（渲染器从此读取）
+  if (payload.kind === "prop" && payload.tgi && payload.packageId != null) {
+    const instance = payload.tgi.instance;
+    sourceForPlacement
+      .readLotModelMeshes(payload.packageId, {
+        typeId: 0x2f4e_681b,
+        group: 0,
+        instance,
+      })
+      .then((buffer) => {
+        const next = new Map(addedModelPayloads.value);
+        next.set(instance, parseLotModelContainer(buffer));
+        addedModelPayloads.value = next;
+      })
+      .catch(() => {
+        // 载荷失败：标记锥兜底（渲染分支自处理）
+      });
+  }
+}
+function onDeleteUnit(id: string) {
+  edit.removeUnit(id);
+  if (selectedId.value === id) selectedId.value = null;
+}
+
 // ---- Schema（低代码资产管线 v1，docs/design/lowcode-asset-pipeline.md）----
 // 打开时把「当前 session + 编辑层覆盖」提交后端引擎，产出规范化
 // openscp.lot-asset/1 JSON；FCode 只读预览，导出写 .lot.json。
@@ -507,12 +705,32 @@ const treeSheetPinned = ref(true);
             {{ $t("package.exportMeshTextured") }}
           </button>
         </FDropdown>
+        <!-- 编辑模式锁定开关（原"只读视图"pill 的交互化）：解锁 = 工具栏/
+             物料/拖放放置/删除可用 -->
+        <FTooltip
+          :text="
+            editEnabled ? $t('package.editLock') : $t('package.editUnlock')
+          "
+          side="bottom"
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="editor-close"
+              :class="{ active: editEnabled }"
+              :aria-pressed="editEnabled"
+              :aria-label="
+                editEnabled ? $t('package.editLock') : $t('package.editUnlock')
+              "
+              @click="toggleEditEnabled"
+            >
+              <FIcon :name="editEnabled ? 'LockOpen' : 'Lock'" :size="15" aria-label="" />
+            </button>
+          </template>
+        </FTooltip>
         <span v-if="edit.editCount.value" class="editor-readonly editor-edits">
           {{ $t("package.localEdits", { n: edit.editCount.value }) }}
         </span>
-        <span v-else class="editor-readonly">{{
-          $t("package.propertyEditorReadonly")
-        }}</span>
         <button
           class="editor-close"
           type="button"
@@ -547,14 +765,23 @@ const treeSheetPinned = ref(true);
                 </button>
               </template>
             </FTooltip>
-            <FTooltip :text="$t('package.railMaterials')" side="right">
+            <FTooltip
+              :text="
+                editEnabled
+                  ? $t('package.materialsPanel')
+                  : $t('package.editUnlockFirst')
+              "
+              side="right"
+            >
               <template #trigger>
                 <span class="rail-item-wrap">
                   <button
                     type="button"
                     class="rail-item"
-                    disabled
-                    :aria-label="$t('package.railMaterials')"
+                    :class="{ active: materialsOpen }"
+                    :disabled="!editEnabled"
+                    :aria-label="$t('package.materialsPanel')"
+                    @click="openMaterialsPanel"
                   >
                     <FIcon name="Boxes" :size="17" aria-label="" />
                   </button>
@@ -640,6 +867,12 @@ const treeSheetPinned = ref(true);
         </div>
         <PropertyEditorViewport
           ref="viewportRef"
+          :edit-enabled="editEnabled"
+          :added-model-payloads="addedModelPayloads"
+          :pending-select-id="pendingSelectId"
+          :resolve-added-model="resolveAddedModel"
+          @place-unit="onPlaceUnit"
+          @delete-unit="onDeleteUnit"
           :model-payload="modelPayload"
           :prop-models="propModels"
           :prop-tree-ids="propTreeIds"
@@ -697,6 +930,151 @@ const treeSheetPinned = ref(true);
         :model-state="modelState"
         :selected-unit="selectedUnit"
       />
+      <FSheet
+        v-model:open="materialsOpen"
+        :label="$t('package.materialsPanel')"
+        width="min(420px, 92vw)"
+      >
+        <div class="materials-body">
+          <div class="materials-tabs" role="tablist">
+            <button
+              v-for="tab in [
+                { id: 'props', label: 'package.groupProps' },
+                { id: 'spawners', label: 'package.groupSpawners' },
+                { id: 'effects', label: 'package.groupEffects' },
+                { id: 'paths', label: 'package.groupPaths' },
+                { id: 'lights', label: 'package.groupLights' },
+              ]"
+              :key="tab.id"
+              type="button"
+              role="tab"
+              class="materials-tab"
+              :class="{ active: materialsTab === tab.id }"
+              :aria-selected="materialsTab === tab.id"
+              @click="materialsTab = tab.id"
+            >
+              {{ $t(tab.label) }}
+            </button>
+          </div>
+          <input
+            v-if="materialsTab === 'props'"
+            v-model="materialsSearch"
+            class="materials-search"
+            type="search"
+            :placeholder="$t('package.materialsSearch')"
+          />
+          <div class="materials-groups">
+            <template v-if="materialsTab === 'props'">
+              <div
+                v-for="group in catalogGroups"
+                :key="group.name"
+                class="materials-group"
+              >
+                <button
+                  type="button"
+                  class="materials-group-head"
+                  @click="toggleGroupCollapse(group.name)"
+                >
+                  <span>{{ group.name }}</span>
+                  <FIcon
+                    :name="
+                      collapsedGroups.has(group.name) ? 'ChevronUp' : 'ChevronDown'
+                    "
+                    :size="13"
+                    aria-label=""
+                  />
+                </button>
+                <div
+                  v-show="!collapsedGroups.has(group.name)"
+                  class="materials-grid"
+                >
+                  <div
+                    v-for="entry in group.entries"
+                    :key="`${entry.packageId}:${entry.instance}`"
+                    class="materials-entry"
+                    draggable="true"
+                    @dragstart="
+                      onEntryDragStart($event, {
+                        kind: 'prop',
+                        packageId: entry.packageId,
+                        tgi: {
+                          typeId: 0x2f4e681b,
+                          group: 0,
+                          instance: entry.instance,
+                        },
+                        name: entry.name,
+                      })
+                    "
+                  >
+                    <FIcon name="Box" :size="20" aria-label="" />
+                    <span>{{ entry.name }}</span>
+                  </div>
+                </div>
+              </div>
+              <p v-if="!catalogGroups.length" class="materials-empty">
+                {{ $t('package.materialsEmpty') }}
+              </p>
+            </template>
+            <template v-else-if="materialsTab === 'lights'">
+              <div class="materials-grid">
+                <div
+                  v-for="preset in [
+                    { lightType: 'Point', label: 'package.lightPoint' },
+                    { lightType: 'Spot', label: 'package.lightSpot' },
+                    { lightType: 'Line', label: 'package.lightLine' },
+                  ]"
+                  :key="preset.lightType"
+                  class="materials-entry"
+                  draggable="true"
+                  @dragstart="
+                    onEntryDragStart($event, {
+                      kind: 'light',
+                      lightType: preset.lightType,
+                    })
+                  "
+                >
+                  <FIcon name="Lightbulb" :size="20" aria-label="" />
+                  <span>{{ $t(preset.label) }}</span>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="materials-grid">
+                <div
+                  v-for="entry in [
+                    {
+                      tab: 'spawners',
+                      kind: 'spawner',
+                      label: 'package.groupSpawners',
+                      icon: 'MapPin',
+                    },
+                    {
+                      tab: 'effects',
+                      kind: 'effect',
+                      label: 'package.groupEffects',
+                      icon: 'Zap',
+                    },
+                    {
+                      tab: 'paths',
+                      kind: 'pathPoint',
+                      label: 'package.groupPaths',
+                      icon: 'Spline',
+                    },
+                  ]"
+                  v-show="materialsTab === entry.tab"
+                  :key="entry.tab"
+                  class="materials-entry"
+                  draggable="true"
+                  @dragstart="onEntryDragStart($event, { kind: entry.kind })"
+                >
+                  <FIcon :name="entry.icon" :size="20" aria-label="" />
+                  <span>{{ $t(entry.label) }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </FSheet>
       <FSheet
         v-model:open="schemaOpen"
         :label="$t('package.schemaSheet')"
@@ -1039,6 +1417,115 @@ const treeSheetPinned = ref(true);
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+.materials-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 14px;
+}
+.materials-tabs {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 2px;
+}
+.materials-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px 6px;
+}
+.materials-tab:hover {
+  color: var(--foreground);
+}
+.materials-tab.active {
+  border-bottom-color: var(--brand);
+  color: var(--brand);
+  font-weight: 600;
+}
+.materials-search {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+.materials-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.materials-group {
+  margin-bottom: 8px;
+}
+.materials-group-head {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 8px;
+  width: 100%;
+}
+.materials-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 6px;
+}
+.materials-entry {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  min-height: 64px;
+  justify-content: center;
+  overflow: hidden;
+  padding: 8px 4px;
+  text-align: center;
+}
+.materials-entry:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.materials-entry:active {
+  cursor: grabbing;
+}
+.materials-entry span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.materials-empty {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+.editor-close.active {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 .tree-sheet :deep(.outliner) {
   border-inline-end: 0;

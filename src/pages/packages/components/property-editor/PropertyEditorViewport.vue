@@ -14,6 +14,7 @@ import type {
   LotModelLodRef,
   LotModelPayload,
   LotUnitDto,
+  Tgi,
 } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
 import { unitLabel } from "./usePropertyEditorSession";
@@ -136,6 +137,10 @@ const props = defineProps<{
   decalLight?: [number, number] | null;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
   tool?: EditorTool;
+  /** 编辑模式（解锁）：工具栏可见、画布可拖放、name-tag 带删除钮。 */
+  editEnabled?: boolean;
+  /** 拖入的直挂模型载荷（instance → LOTM 载荷；真模型渲染用）。 */
+  addedModelPayloads?: Map<number, LotModelPayload>;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -144,6 +149,19 @@ const emit = defineEmits<{
   "select-tool": [tool: EditorTool];
   /** 手柄拖拽结束提交变换（行主序 12 floats），由壳落本地编辑命令。 */
   "commit-transform": [id: string, matrix: number[]];
+  /** 组件库拖放放置：载荷 + 落点（游戏坐标），由壳创建单元。 */
+  "place-unit": [
+    payload: {
+      kind: "light" | "prop" | "spawner" | "effect" | "pathPoint";
+      lightType?: "Point" | "Spot" | "Line";
+      packageId?: number;
+      tgi?: Tgi;
+      name?: string;
+    },
+    position: [number, number, number],
+  ];
+  /** 删除组件（name-tag 垃圾桶按钮）。 */
+  "delete-unit": [id: string];
   /** 拖拽中的实时变换（id 为 null 表示结束）；坐标面板即时显示用。 */
   "live-transform": [
     id: string | null,
@@ -240,6 +258,32 @@ function updatePickOverlay() {
   placeTag(selectTagEl.value, selected, selected ? overlayLabel(selected) : "");
 }
 
+// ---- 编辑模式：组件库拖放放置 + 删除 ----
+function onCanvasDragOver(event: DragEvent) {
+  if (!props.editEnabled) return;
+  event.preventDefault();
+}
+function onCanvasDrop(event: DragEvent) {
+  if (!props.editEnabled) return;
+  const raw = event.dataTransfer?.getData("application/x-openscp-unit");
+  if (!raw) return;
+  let payload: Parameters<typeof emit.placeUnit>[0];
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const position = viewport.viewer.value?.groundPointAt(
+    event.clientX,
+    event.clientY,
+  );
+  if (!position) return;
+  emit("place-unit", payload, position);
+}
+function onDeleteSelected() {
+  if (props.selectedId) emit("delete-unit", props.selectedId);
+}
+
 /** 轮廓壳应用：hover 虚线；选中实线经 viewer.setSelected 内部应用。 */
 function applyOutlines() {
   const instance = viewport.viewer.value;
@@ -263,6 +307,11 @@ watch(viewport.viewer, (instance) => {
 watch([hoveredId, () => props.selectedId, viewport.revision], () => {
   applyOutlines();
   updatePickOverlay();
+});
+// 放置后待选中：分组重建（revision 前进）且新单元已入组时选中
+watch([() => props.pendingSelectId, viewport.revision], () => {
+  const pending = props.pendingSelectId;
+  if (pending) emit("select", pending);
 });
 onBeforeUnmount(() => {
   viewport.viewer.value?.setOnFrame(null);
@@ -1684,6 +1733,8 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
     <div
       :ref="(el) => (viewport.container.value = el as HTMLElement | null)"
       class="viewport-3d"
+      @dragover.prevent="onCanvasDragOver"
+      @drop.prevent="onCanvasDrop"
     >
       <!-- 拾取反馈标签：轮廓壳在 viewer 内（模型描边），此处仅文字 -->
       <span
@@ -1695,7 +1746,18 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
         :ref="(el) => (selectTagEl = el as HTMLElement | null)"
         class="pick-label pick-tag"
         aria-hidden="true"
-      />
+      >
+        <span class="pick-tag-text" />
+        <button
+          v-if="props.editEnabled"
+          type="button"
+          class="pick-delete"
+          :aria-label="$t('package.deleteUnit')"
+          @click.stop="onDeleteSelected"
+        >
+          <FIcon name="Trash2" :size="11" aria-label="" />
+        </button>
+      </span>
     </div>
     <div
       v-if="modelState === 'loading'"
@@ -1854,6 +1916,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       </div>
     </div>
     <div
+      v-if="props.editEnabled"
       class="viewport-overlay viewport-toolrail"
       role="group"
       :aria-label="$t('package.editorTools')"
@@ -1946,7 +2009,28 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
   background: var(--brand);
   border-radius: 3px;
   color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-inline-end: 3px;
   text-shadow: none;
+}
+.pick-delete {
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  min-height: 16px;
+  min-width: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  pointer-events: auto;
+}
+.pick-delete:hover {
+  background: rgb(255 255 255 / 25%);
 }
 .viewport-3d:active {
   cursor: grabbing;

@@ -29,6 +29,8 @@ export interface UnitRenderContext {
   treeIds: Set<number>;
   /** prop：resourceID → LOTM 载荷。 */
   propModels: Map<number, LotModelPayload>;
+  /** 拖入的直挂模型载荷（instance → LOTM 载荷；优先于 propModels）。 */
+  addedModelPayloads?: Map<number, LotModelPayload>;
   /** 日夜环境（车漆/tint 着色链）。 */
   envRefs: SunEnvRefs | null;
   /** spawner：小人部件资产（全局，进程级缓存）。 */

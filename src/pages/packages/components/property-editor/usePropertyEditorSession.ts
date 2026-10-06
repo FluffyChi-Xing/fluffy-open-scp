@@ -285,8 +285,14 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   }
 
   const grouping = computed<UnitGrouping>(() => {
+    // 资产编辑（低代码管线）：既有单元过滤软删除，追加拖拽放置的新单元
     const units = mergeUnitOverrides(
-      (session.value?.units ?? []) as LotUnitDto[],
+      [
+        ...((session.value?.units ?? []) as LotUnitDto[]).filter(
+          (unit) => !edit.deletedIds.has(unitId(unit)),
+        ),
+        ...edit.addedUnits,
+      ],
       edit.overrides,
       edit.fieldOverrides,
     );

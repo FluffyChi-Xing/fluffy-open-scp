@@ -8001,3 +8001,71 @@ mod decal_resolve_diag {
         }
     }
 }
+
+// ---- 组件库道具目录（低代码管线：放置组件的数据源）----
+
+/// 已打开包中的命名 RW4 模型（组件库「道具」页条目）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalogEntry {
+    pub package_id: u64,
+    pub instance: u32,
+    pub name: String,
+    pub size: u64,
+}
+
+/// 扫描全部已打开包的 RW4 模型，仅保留 registry 命名条目（过滤纯 hex
+/// 噪声实例名），按名排序、上限 400。前端拖拽放置后按 packageId+instance
+/// 直接取 LOTM 载荷渲染。
+#[tauri::command]
+pub async fn list_model_catalog(
+    state: State<'_, AppState>,
+) -> Result<Vec<ModelCatalogEntry>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        let all = manager.all_packages_with_ids()?;
+        let mut entries: Vec<ModelCatalogEntry> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (package_id, package) in &all {
+            let registry =
+                package_registry(&store, &manager, package, bundled_registry.as_deref());
+            for entry in package
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == 0x2F4E_681B)
+            {
+                if !seen.insert(entry.id.instance) {
+                    continue;
+                }
+                let Some(name) = registry.as_deref().and_then(|registry| {
+                    let record = registry.instances().get(&entry.id.instance)?;
+                    let trimmed = record.name.trim();
+                    (!trimmed.is_empty()).then(|| trimmed.to_string())
+                }) else {
+                    continue;
+                };
+                // 过滤纯 hex 噪声名（至少一个非十六进制字母字符，如
+                // "Lside corner"/"GI_Simm_*"；"0AB4DFE1" 形噪声被滤掉）
+                if !name
+                    .chars()
+                    .any(|c| c.is_alphabetic() && !c.is_ascii_hexdigit())
+                {
+                    continue;
+                }
+                entries.push(ModelCatalogEntry {
+                    package_id: *package_id,
+                    instance: entry.id.instance,
+                    name,
+                    size: u64::from(entry.decompressed_size),
+                });
+            }
+        }
+        entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        entries.truncate(400);
+        Ok(entries)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}

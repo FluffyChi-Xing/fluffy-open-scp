@@ -20,7 +20,8 @@ export const renderPropUnit: UnitRenderer = async (
   if (ctx.renderMode !== "refined" || unit.kind !== "prop") return null;
   const payload =
     typeof unit.resourceId === "number"
-      ? ctx.propModels.get(unit.resourceId)
+      ? (ctx.propModels.get(unit.resourceId) ??
+        ctx.addedModelPayloads?.get(unit.resourceId))
       : undefined;
   if (!payload) return null;
   const propModel = await getPropModelObject(
