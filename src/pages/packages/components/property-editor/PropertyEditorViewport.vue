@@ -1686,6 +1686,12 @@ watch(
   () => viewport.applyGroupVisibility(props.groupVisibility),
   { deep: true },
 );
+// 放置单元的直挂模型载荷异步到位 → 重建放行真模型渲染
+// （放置瞬间载荷未到，先以标记锥兜底；载荷 map 引用变化即触发）
+watch(() => props.addedModelPayloads, () => {
+  pendingTrigger = "grouping";
+  void rebuildScene();
+});
 // 单元隐藏此前只在装配期应用（无 watcher → 切换后无效果直到下次重建）；
 // 现在独立生效。
 watch(
