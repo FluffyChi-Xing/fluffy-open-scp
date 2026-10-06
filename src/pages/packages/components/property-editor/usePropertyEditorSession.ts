@@ -301,9 +301,10 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     void loadLod(++requestToken, index, "lod_switch");
   }
 
-  const grouping = computed<UnitGrouping>(() => {
-    // 资产编辑（低代码管线）：既有单元过滤软删除，追加拖拽放置的新单元
-    const units = mergeUnitOverrides(
+  /** 有效单元集 = 既有单元（滤软删除）+ 拖拽新增单元，应用覆盖。
+   * grouping / flatUnits / selectedUnit 共用此单一来源（资产编辑一致性）。 */
+  const effectiveUnits = computed<LotUnitDto[]>(() =>
+    mergeUnitOverrides(
       [
         ...((session.value?.units ?? []) as LotUnitDto[]).filter(
           (unit) => !edit.deletedIds.has(unitId(unit)),
@@ -312,7 +313,10 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       ],
       edit.overrides,
       edit.fieldOverrides,
-    );
+    ),
+  );
+  const grouping = computed<UnitGrouping>(() => {
+    const units = effectiveUnits.value;
     const result: UnitGrouping = {
       lights: [],
       decals: [],
@@ -346,13 +350,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return result;
   });
 
-  const flatUnits = computed<LotUnitDto[]>(() =>
-    mergeUnitOverrides(
-      (session.value?.units ?? []) as LotUnitDto[],
-      edit.overrides,
-      edit.fieldOverrides,
-    ),
-  );
+  const flatUnits = computed<LotUnitDto[]>(() => effectiveUnits.value);
 
   const lotTilePeriod = computed<[number, number] | null>(
     () => session.value?.lotTilePeriod ?? null,
@@ -447,7 +445,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const selectedUnit = computed<LotUnitDto | null>(() => {
     if (!selectedId.value) return null;
     return (
-      flatUnits.value.find((unit) => unitId(unit) === selectedId.value) ?? null
+      effectiveUnits.value.find((unit) => unitId(unit) === selectedId.value) ?? null
     );
   });
 

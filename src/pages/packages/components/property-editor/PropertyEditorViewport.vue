@@ -1554,6 +1554,7 @@ async function assembleScene(
     treeAtlasPng: props.treeAtlasPng,
     treeIds: props.propTreeIds,
     propModels: props.propModels,
+    addedModelPayloads: props.addedModelPayloads,
     envRefs,
     simParts: simParts.value,
   };
