@@ -32,7 +32,7 @@ export const renderTreeUnit: UnitRenderer = async (
     (ctx.treeModelPayloads.length
       ? await getTreeModelObject(ctx.THREE, ctx.treeModelPayloads, {
           seed,
-          halfWidth: unit.scale,
+          scale,
           position,
         })
       : null) ??

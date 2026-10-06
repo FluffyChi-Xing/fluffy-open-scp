@@ -314,7 +314,8 @@ export async function getTreeModelObject(
   payloads: LotModelPayload[],
   options: {
     seed: number;
-    halfWidth: number | null;
+    /** 单元变换分解出的缩放（缺省 = 原生尺寸）。 */
+    scale?: ThreeNamespace.Vector3;
     position: ThreeNamespace.Vector3;
   },
 ): Promise<ThreeNamespace.Object3D | null> {
@@ -384,11 +385,10 @@ export async function getTreeModelObject(
     metalness: 0,
   });
   const mesh = new THREE.Mesh(shape.geometry, material);
-  // 尺寸匹配（引擎同构）：公告板口径 冠宽 = clamp(半宽×16, 1.2, 12)，
-  // 3D 模型按自身冠幅等比缩放到同一冠宽——观感尺寸与公告板连续。
-  const halfWidth = options.halfWidth ?? 0.35;
-  const targetWidth = Math.min(12, Math.max(1.2, halfWidth * 16));
-  mesh.scale.setScalar(targetWidth / shape.canopySpan);
+  // 尺寸 = 模型原生 × 单元变换缩放（引擎 impostor 同构：聚合模型 ×
+  // 单元 scale）。此前误用公告板冠宽标定（半宽×16 钳 1.2-12）——树单元
+  // 半宽 ~0.07-0.13 时算出 1-2m 矮树（真机勘误 2026-10-06）。
+  if (options.scale) mesh.scale.copy(options.scale);
   mesh.position.copy(options.position);
   mesh.position.z = Math.max(0, mesh.position.z);
   mesh.rotation.z = rand() * Math.PI * 2;
