@@ -23,6 +23,7 @@ import PropertyEditorViewport, {
 } from "./PropertyEditorViewport.vue";
 import PropertyEditorInspector from "./PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
+import { unitId } from "./unitGizmos";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { useEditorHotkeys } from "./useEditorHotkeys";
 import { exportLotModel } from "@/composables/useModelExport";
