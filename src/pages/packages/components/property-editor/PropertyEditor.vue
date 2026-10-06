@@ -39,6 +39,7 @@ const {
   modelPayload,
   propModels,
   propTreeIds,
+  referencedModelInstances,
   treeAtlasPng,
   treeModelPayloads,
   releasePropPackages,
@@ -151,8 +152,12 @@ function openMaterialsPanel() {
 const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>(
   () => {
     const keyword = materialsSearch.value.trim().toLowerCase();
-    const matched = modelCatalog.value.filter((entry) =>
-      keyword ? entry.name.toLowerCase().includes(keyword) : true,
+    // 过滤器（用户口径）：只展示当前 property 引用的组件——这些模型的
+    // 渲染路径已被本资产验证，拖入必然可用（随机目录模型可能无法渲染）
+    const matched = modelCatalog.value.filter(
+      (entry) =>
+        referencedModelInstances.value.has(entry.instance) &&
+        (keyword ? entry.name.toLowerCase().includes(keyword) : true),
     );
     const groups = new Map<string, ModelCatalogEntry[]>();
     for (const entry of matched) {

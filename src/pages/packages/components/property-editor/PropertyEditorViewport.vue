@@ -233,7 +233,10 @@ function placeTag(el: HTMLElement | null, id: string | null, label: string) {
   el.style.display = "block";
   el.style.left = `${anchor.x}px`;
   el.style.top = `${anchor.y}px`;
-  el.textContent = label;
+  // 写入文本子节点而非容器 textContent——容器内还有删除按钮节点，
+  // 整体赋值会把它抹掉（真机勘误 2026-10-06）。
+  const textEl = el.querySelector(".pick-tag-text") as HTMLElement | null;
+  if (textEl) textEl.textContent = label;
 }
 
 function updatePickOverlay() {

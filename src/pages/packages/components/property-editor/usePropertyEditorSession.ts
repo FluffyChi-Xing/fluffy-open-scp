@@ -69,6 +69,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（后端脚本资源表反查）。
    * 异步旁路加载，不阻塞主模型；未命中保持标记锥。 */
   const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
+  /** 当前 property 引用的模型实例 id 集（LOD + prop 解析结果）——组件库
+   * 目录过滤器数据源（仅展示本资产引用、可正常渲染的组件）。 */
+  const referencedModelInstances = ref(new Set<number>());
   /** 树 prop（source=tree/tree_model）资源 id 集合 → 树专用渲染分支。 */
   const propTreeIds = shallowRef<Set<number>>(new Set());
   /** 树公告板图集（base64 PNG，2×2 四树格）：后端从 Graphics 包树图集
@@ -248,6 +251,14 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
         if (token === requestToken && payloads.length) treeModelPayloads.value = payloads;
       }
       const next = new Map(propModels.value);
+      // 记录引用的模型实例（组件库目录过滤：只展示本资产引用的组件）
+      const referenced = new Set<number>();
+      for (const resolution of resolutions) {
+        for (const model of resolution.models) {
+          if (model) referenced.add(model.instance);
+        }
+      }
+      referencedModelInstances.value = referenced;
       await Promise.all(
         resolutions
           .filter((r) => r.source !== "tree" && r.source !== "tree_model")
@@ -464,6 +475,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelLods,
     propModels,
     propTreeIds,
+    referencedModelInstances,
     treeAtlasPng,
     treeModelPayloads,
     releasePropPackages,
