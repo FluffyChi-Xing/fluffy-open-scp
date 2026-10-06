@@ -102,11 +102,21 @@ async function simPartTemplate(
       if (mesh.isMesh && mesh.geometry) markGeometryShared(mesh.geometry);
     });
   }
-  // 漫反射 = 文件级 tex[1]（LOTM normalPng 通道）；tex[0] 是法线图。
+  // 漫反射选择（按字节数取大者）：sim 部件 tex[0]=法线/占位图（128/32 尺寸、
+  // 纯色或蓝紫平色）、tex[1]=漫反射图集（256×256，脸/衣 UV 清晰）——
+  // LOTM 通道名（slot0/normal）在该家族与语义相反且易错，尺寸启发式对
+  // 两套映射都稳健。真机曾渲染出 tex#0 平色紫头（通道绑定错位），此法根除。
+  // UV 语义同树（RW4 v0 底部）→ flipY=true。
+  const candidates = [
+    part.payload.materials?.[0]?.normalPng,
+    part.payload.materials?.[0]?.slot0Png,
+    part.payload.materials?.[0]?.baseColorPng,
+  ].filter((bytes): bytes is Uint8Array<ArrayBuffer> => !!bytes);
   const mapBytes =
-    part.payload.materials?.[0]?.normalPng ??
-    part.payload.materials?.[0]?.slot0Png ??
-    null;
+    candidates.reduce<Uint8Array<ArrayBuffer> | null>(
+      (largest, bytes) => (largest === null || bytes.length > largest.length ? bytes : largest),
+      null,
+    ) ?? null;
   let map = mapBytes ? simTextureCache.get(mapBytes) : undefined;
   if (mapBytes && !map) {
     try {
@@ -176,13 +186,13 @@ export async function getSimFigure(
   ]);
   if (!bodyTemplate || !headTemplate) return null;
 
-  // outfit 调色板近似：淡彩 tint（明度抬高避免脏色）
-  const tint = new THREE.Color().setHSL(rand(), 0.35, 0.72);
+  // 不做全身 tint：引擎 outfit 调色板只换衣服区（掩码/调色板纹理未定位），
+  // 全图乘色会把肤色/浅色区一并染花（真机勘误 2026-10-06）。外观差异由
+  // 身体 3 型 × 头 20 型的组合承担。
   const bodyMesh = new THREE.Mesh(
     bodyTemplate.geometry,
     new THREE.MeshStandardMaterial({
       map: bodyTemplate.map,
-      color: bodyTemplate.map ? tint : 0xffffff,
       roughness: 0.75,
       metalness: 0,
       side: THREE.DoubleSide,
