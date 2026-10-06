@@ -26,6 +26,7 @@ import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { useEditorHotkeys } from "./useEditorHotkeys";
 import { exportLotModel } from "@/composables/useModelExport";
+import { useEventListener } from "@vueuse/core";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 
@@ -171,17 +172,10 @@ function toggleGroupCollapse(name: string) {
   collapsedGroups.value = next;
 }
 
-/** 组件库条目拖拽启动：载荷写 dataTransfer（画布 drop 解析放置）。 */
-function onEntryDragStart(event: DragEvent, payload: unknown) {
-  event.dataTransfer?.setData(
-    "application/x-openscp-unit",
-    JSON.stringify(payload),
-  );
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
-}
+
 
 // ---- 放置/删除：unitEditLayer 资产编辑 + 视口回调 ----
-interface DropPayload {
+interface PlacePayload {
   kind: "light" | "prop" | "spawner" | "effect" | "pathPoint";
   /** light 预设。 */
   lightType?: "Point" | "Spot" | "Line";
@@ -205,7 +199,29 @@ function nextIndexOf(kind: string): number {
   }
   return max + 1;
 }
-function onDropUnit(payload: DropPayload, position: [number, number, number]) {
+// 指针级放置拖拽（@vueuse/core useEventListener）：pointerdown 拾起面板
+// 条目 → window 跟踪指针 → pointerup 落点放置。不走 HTML5 DnD——FSheet
+// 全屏遮罩会拦截原生拖放并给出禁止光标（真机勘误 2026-10-06）。
+const placementPayload = ref<PlacePayload | null>(null);
+useEventListener(window, "pointerup", (event: PointerEvent) => {
+  const payload = placementPayload.value;
+  if (!payload) return;
+  placementPayload.value = null;
+  document.body.style.cursor = "";
+  const position = viewportRef.value?.groundPointAt(
+    event.clientX,
+    event.clientY,
+  );
+  if (!position) return; // 落点不在地面平面（视线朝天）→ 取消
+  void onPlaceUnit(payload, position);
+});
+function beginPlacementDrag(event: PointerEvent, payload: PlacePayload) {
+  if (!editEnabled.value) return;
+  event.preventDefault();
+  placementPayload.value = payload;
+  document.body.style.cursor = "copy";
+}
+function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) {
   if (!editEnabled.value) return;
   const transform = {
     matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, position[0], position[1], position[2]],
@@ -437,6 +453,10 @@ const timeOfDay = ref(12);
 // 浮雕开关已撤销（见模板注释），reliefEnabled 状态一并移除。
 const viewportRef = ref<{
   captureRender: (options?: { includeDecals?: boolean }) => string | null;
+  groundPointAt: (
+    clientX: number,
+    clientY: number,
+  ) => [number, number, number] | null;
 } | null>(null);
 
 /** 视口渲染图导出：剔除 gizmo 组后的视口截图（两种渲染模式均可用）。 */
@@ -992,9 +1012,8 @@ const treeSheetPinned = ref(true);
                     v-for="entry in group.entries"
                     :key="`${entry.packageId}:${entry.instance}`"
                     class="materials-entry"
-                    draggable="true"
-                    @dragstart="
-                      onEntryDragStart($event, {
+                    @pointerdown.stop.prevent="
+                      beginPlacementDrag($event, {
                         kind: 'prop',
                         packageId: entry.packageId,
                         tgi: {
@@ -1025,9 +1044,8 @@ const treeSheetPinned = ref(true);
                   ]"
                   :key="preset.lightType"
                   class="materials-entry"
-                  draggable="true"
-                  @dragstart="
-                    onEntryDragStart($event, {
+                  @pointerdown.stop.prevent="
+                    beginPlacementDrag($event, {
                       kind: 'light',
                       lightType: preset.lightType,
                     })
@@ -1064,8 +1082,9 @@ const treeSheetPinned = ref(true);
                   v-show="materialsTab === entry.tab"
                   :key="entry.tab"
                   class="materials-entry"
-                  draggable="true"
-                  @dragstart="onEntryDragStart($event, { kind: entry.kind })"
+                  @pointerdown.stop.prevent="
+                    beginPlacementDrag($event, { kind: entry.kind })
+                  "
                 >
                   <FIcon :name="entry.icon" :size="20" aria-label="" />
                   <span>{{ $t(entry.label) }}</span>

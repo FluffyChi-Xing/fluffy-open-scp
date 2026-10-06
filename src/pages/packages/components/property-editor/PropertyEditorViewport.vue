@@ -14,7 +14,6 @@ import type {
   LotModelLodRef,
   LotModelPayload,
   LotUnitDto,
-  Tgi,
 } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
 import { unitLabel } from "./usePropertyEditorSession";
@@ -149,17 +148,7 @@ const emit = defineEmits<{
   "select-tool": [tool: EditorTool];
   /** 手柄拖拽结束提交变换（行主序 12 floats），由壳落本地编辑命令。 */
   "commit-transform": [id: string, matrix: number[]];
-  /** 组件库拖放放置：载荷 + 落点（游戏坐标），由壳创建单元。 */
-  "place-unit": [
-    payload: {
-      kind: "light" | "prop" | "spawner" | "effect" | "pathPoint";
-      lightType?: "Point" | "Spot" | "Line";
-      packageId?: number;
-      tgi?: Tgi;
-      name?: string;
-    },
-    position: [number, number, number],
-  ];
+
   /** 删除组件（name-tag 垃圾桶按钮）。 */
   "delete-unit": [id: string];
   /** 拖拽中的实时变换（id 为 null 表示结束）；坐标面板即时显示用。 */
@@ -262,38 +251,7 @@ function updatePickOverlay() {
 // 拖放监听挂 window（捕获级）：组件库 FSheet 的全屏遮罩（pointer-events
 // auto、z 80）会拦截画布上的 drop——面板开着拖放时 drop 的目标元素是
 // 遮罩而非画布，元素级处理器永远收不到（真机勘误 2026-10-06）。
-const UNIT_DRAG_TYPE = "application/x-openscp-unit";
-function onWindowDragOver(event: DragEvent) {
-  if (!props.editEnabled) return;
-  if (!event.dataTransfer?.types.includes(UNIT_DRAG_TYPE)) return;
-  event.preventDefault(); // 允许 drop
-}
-function onWindowDrop(event: DragEvent) {
-  if (!props.editEnabled) return;
-  const raw = event.dataTransfer?.getData(UNIT_DRAG_TYPE);
-  if (!raw) return;
-  event.preventDefault();
-  let payload: Parameters<typeof emit.placeUnit>[0];
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    return;
-  }
-  const position = viewport.viewer.value?.groundPointAt(
-    event.clientX,
-    event.clientY,
-  );
-  if (!position) return;
-  emit("place-unit", payload, position);
-}
-onMounted(() => {
-  window.addEventListener("dragover", onWindowDragOver, true);
-  window.addEventListener("drop", onWindowDrop, true);
-});
-onBeforeUnmount(() => {
-  window.removeEventListener("dragover", onWindowDragOver, true);
-  window.removeEventListener("drop", onWindowDrop, true);
-});
+
 function onDeleteSelected() {
   if (props.selectedId) emit("delete-unit", props.selectedId);
 }
@@ -1692,6 +1650,9 @@ function applyBrightness() {
 defineExpose({
   captureRender: (options?: { includeDecals?: boolean }) =>
     viewport.captureRender(options),
+  /** 屏幕坐标 → 地面平面交点（游戏坐标），组件库拖放放置用。 */
+  groundPointAt: (clientX: number, clientY: number) =>
+    viewport.viewer.value?.groundPointAt(clientX, clientY) ?? null,
 });
 
 // 模型载荷 / 渲染模式变化 → 全量重建；grouping 变化 → 先试增量（热路径），
