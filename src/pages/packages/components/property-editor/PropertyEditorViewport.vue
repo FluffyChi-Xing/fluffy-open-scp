@@ -20,6 +20,7 @@ import { unitLabel } from "./usePropertyEditorSession";
 import {
   buildPathLine,
   buildRealLightUnit,
+  buildSpawnerPlaceholder,
   buildUnitObject,
   unitId,
   unitMatrix,
@@ -1657,7 +1658,7 @@ async function assembleScene(
         figure.position.z = Math.max(0, figure.position.z);
         object = figure;
       } else {
-        object = buildUnitObject(THREE, unit);
+        object = buildSpawnerPlaceholder(THREE, unit);
       }
     } else if (
       props.renderMode === "refined" &&

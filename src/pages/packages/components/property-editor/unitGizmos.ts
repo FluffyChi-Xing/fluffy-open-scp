@@ -111,8 +111,7 @@ const SIM_PANTS_COLORS = [0x303040, 0x40485c, 0x242428, 0x54423a];
  * Max + 缩放域）按 randomBits 取模解析（body≤3/head≤80/outfit 调色板，
  * 城市级全局模型目录，本地包未见）——故 PE 用占位人形而非真模型。
  */
-function buildSimFigure(THREE: Three, seed: number): ThreeNamespace.Object3D {
-  const rand = mulberry32(seed);
+function buildSimFigure(THREE: Three, seed: number): ThreeNamespace.Object3D {  const rand = mulberry32(seed);
   const skin = SIM_SKIN_TONES[Math.floor(rand() * SIM_SKIN_TONES.length)];
   const outfit = SIM_OUTFIT_COLORS[Math.floor(rand() * SIM_OUTFIT_COLORS.length)];
   const pants = SIM_PANTS_COLORS[Math.floor(rand() * SIM_PANTS_COLORS.length)];
@@ -141,6 +140,20 @@ function buildSimFigure(THREE: Three, seed: number): ThreeNamespace.Object3D {
   addLimb(new THREE.SphereGeometry(0.155, 14, 12), skin, 1.62);
   group.scale.setScalar(jitter);
   return group;
+}
+
+/**
+ * spawner 占位人形（精细模式真小人资产缺席时的降级）：风格化人形 + 单元
+ * 变换（内部 applyTransform，含位置/朝向——真小人通道外的兜底必须自带
+ * 变换，否则全堆在原点）。
+ */
+export function buildSpawnerPlaceholder(
+  THREE: Three,
+  unit: LotUnitDto,
+): ThreeNamespace.Object3D {
+  const figure = buildSimFigure(THREE, spawnerSeed(unit));
+  applyTransform(THREE, figure, unit.transform);
+  return figure;
 }
 
 /**
@@ -328,8 +341,8 @@ export function buildUnitObject(
       object = buildMarkerCone(THREE, PROP_COLOR, unit.transform);
       break;
     case "spawner":
-      // spawner = agent 刷新锚点 → 小人占位（seed=id 哈希，确定性外观）
-      object = buildSimFigure(THREE, spawnerSeed(unit));
+      // 默认模式 = 蓝色标记锥（真小人/占位人形仅精细模式，见 Viewport）
+      object = buildMarkerCone(THREE, SPAWNER_COLOR, unit.transform);
       break;
     case "decal":
       object = buildDecal(THREE, unit);
