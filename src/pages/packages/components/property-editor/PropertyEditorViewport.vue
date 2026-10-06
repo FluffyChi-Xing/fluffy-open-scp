@@ -20,21 +20,15 @@ import { unitLabel } from "./usePropertyEditorSession";
 import {
   buildPathLine,
   buildRealLightUnit,
-  buildSpawnerPlaceholder,
   buildUnitObject,
   unitId,
   unitMatrix,
 } from "./unitGizmos";
+import { loadSimParts, type SimPart } from "./simAssets";
 import {
-  getPropModelObject,
-  getTreeBillboard,
-  getTreeModelObject,
-} from "./propModels";
-import {
-  getSimFigure,
-  loadSimParts,
-  type SimPart,
-} from "./simAssets";
+  renderRefinedAssetUnit,
+  type UnitRenderContext,
+} from "./renderers";
 import {
   decalFrame,
   decalHalfThickness,
@@ -1547,6 +1541,17 @@ async function assembleScene(
     );
     if (ctx.isStale()) return;
   }
+  // 资产渲染分发上下文（tree/prop/spawner 渲染器只读输入；每轮重建刷新）
+  const assetCtx: UnitRenderContext = {
+    THREE,
+    renderMode: props.renderMode,
+    treeModelPayloads: props.treeModelPayloads,
+    treeAtlasPng: props.treeAtlasPng,
+    treeIds: props.propTreeIds,
+    propModels: props.propModels,
+    envRefs,
+    simParts: simParts.value,
+  };
   const decalSpan = renderTelemetry.begin("decal_render", {
     decals: props.grouping.decals.length,
   });
@@ -1571,97 +1576,6 @@ async function assembleScene(
       object = buildRealLightUnit(THREE, unit);
     } else if (
       props.renderMode === "refined" &&
-      unit.kind === "prop" &&
-      typeof unit.resourceId === "number" &&
-      props.propTreeIds.has(unit.resourceId)
-    ) {
-      // 树：模型树路线（流程文档 §1.6）——descriptor 配置表的 impostor 源
-      // 3D 模型本地直出（几何/纹理共享，每实例 HSV 变体 tint）；载荷缺席
-      // 或加载失败回落真图集公告板（引擎同档 128×128 精度），再回落标记锥。
-      const treePos = new THREE.Vector3();
-      const treeQuat = new THREE.Quaternion();
-      const treeScale = new THREE.Vector3();
-      if (unit.transform) {
-        unitMatrix(THREE, unit.transform).decompose(
-          treePos,
-          treeQuat,
-          treeScale,
-        );
-      }
-      const treeSeed = unit.resourceId * 2654435761 + unit.index;
-      object =
-        (props.treeModelPayloads.length
-          ? await getTreeModelObject(THREE, props.treeModelPayloads, {
-              seed: treeSeed,
-              halfWidth: unit.scale,
-              position: treePos,
-            })
-          : null) ??
-        (await getTreeBillboard(THREE, {
-          seed: treeSeed,
-          halfWidth: unit.scale,
-          position: treePos,
-          atlasBase64: props.treeAtlasPng,
-        })) ??
-        buildUnitObject(THREE, unit);
-    } else if (
-      props.renderMode === "refined" &&
-      unit.kind === "prop" &&
-      typeof unit.resourceId === "number" &&
-      props.propModels.get(unit.resourceId)
-    ) {
-      // P2 精细替换：真实模型（脚本资源表反查），失败退回标记锥。
-      // 模型几何在自身原点，slot 变换（引擎 unitModel∘slotTransform）在此
-      // 应用——锥体由 buildUnitObject 内部做同件事。
-      const propPayload = props.propModels.get(unit.resourceId);
-      const propModel = propPayload
-        ? await getPropModelObject(THREE, propPayload, envRefs ?? undefined, unit.index)
-        : null;
-      if (propModel) {
-        if (unit.transform) {
-          unitMatrix(THREE, unit.transform).decompose(
-            propModel.position,
-            propModel.quaternion,
-            propModel.scale,
-          );
-        }
-        // flags==15 hack：Scale 存于 Transform.Unknown（DTO 独立 scale 字段，
-        // 半宽语义）——锥体可忽略，真模型必须叠加，否则广告牌等超出构架
-        if (unit.kind === "prop" && typeof unit.scale === "number") {
-          propModel.scale.multiplyScalar(unit.scale);
-        }
-        object = propModel;
-      } else {
-        object = buildUnitObject(THREE, unit);
-      }
-    } else if (
-      props.renderMode === "refined" &&
-      unit.kind === "spawner" &&
-      simParts.value.length
-    ) {
-      // 真小人（§3.1）：身体+头按外观随机合成（全局资产，进程级缓存），
-      // 失败退占位人形（buildUnitObject 内）。
-      const spawnerPos = new THREE.Vector3();
-      const spawnerQuat = new THREE.Quaternion();
-      const spawnerScale = new THREE.Vector3();
-      if (unit.transform) {
-        unitMatrix(THREE, unit.transform).decompose(
-          spawnerPos,
-          spawnerQuat,
-          spawnerScale,
-        );
-      }
-      const figure = await getSimFigure(THREE, simParts.value, unit);
-      if (figure) {
-        figure.position.copy(spawnerPos);
-        figure.quaternion.copy(spawnerQuat);
-        figure.position.z = Math.max(0, figure.position.z);
-        object = figure;
-      } else {
-        object = buildSpawnerPlaceholder(THREE, unit);
-      }
-    } else if (
-      props.renderMode === "refined" &&
       unit.kind === "decal" &&
       decalTexture
     ) {
@@ -1675,7 +1589,11 @@ async function assembleScene(
           decalProxies,
         )) ?? buildUnitObject(THREE, unit);
     } else {
-      object = buildUnitObject(THREE, unit);
+      // 资产渲染分发（tree/prop/spawner 独立渲染器，互不回归——2026-10-06
+      // 拆分；灯光/贴花耦合视口内部状态，暂留原位）。失败统一退标记锥。
+      object =
+        (await renderRefinedAssetUnit(assetCtx, unit)) ??
+        buildUnitObject(THREE, unit);
     }
     if (!object) continue;
     // 统一在此登记：精细模式的光源/贴花不再走 buildUnitObject，其 userData
