@@ -249,9 +249,13 @@ export class ThreeViewer {
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(pointer, this.camera);
-    const planeY = this.grid?.position.y ?? 0;
+    // 游戏地面 = world 局部 z=0 平面：场景法线 +y、过 world 原点
+    // （此前误用取景网格高度 grid.position.y——内容居中后为负值，
+    // 交点沿视线被推偏 = 放置落点跑偏的根因）
+    const worldOrigin = new this.THREE.Vector3();
+    this.world.getWorldPosition(worldOrigin);
+    const plane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), -worldOrigin.y);
     const hit = new this.THREE.Vector3();
-    const plane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), -planeY);
     if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
     const game = this.world.worldToLocal(hit.clone());
     return [game.x, game.y, Math.max(0, game.z)];

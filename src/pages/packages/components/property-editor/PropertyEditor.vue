@@ -207,6 +207,12 @@ interface PlacePayload {
   name?: string;
 }
 const addedModelPayloads = ref(new Map<number, LotModelPayload>());
+/** 放置后待选中的 unit id：grouping 重建（revision 前进）后由 Viewport
+ * emit select 落地；取消选中时由壳清空避免重复选中。 */
+const pendingSelectId = ref<string | null>(null);
+watch(selectedId, (value) => {
+  if (!value) pendingSelectId.value = null;
+});
 const sourceForPlacement = createDataSource();
 function nextIndexOf(kind: string): number {
   const units = session.value?.units ?? [];
