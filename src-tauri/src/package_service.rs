@@ -3797,6 +3797,142 @@ pub async fn write_export_file(request: WriteExportRequest) -> Result<(), Comman
     Ok(())
 }
 
+// ---- 小人部件模型（GI_Simm 家族，props 文档 §3.1）----
+
+/// 小人 impostor class 22706EFA 的部件模型 key（探针 23/23 本地实证）。
+const SIM_BODY_KEYS: [u32; 3] = [0xE553_7FAB, 0xA4EB_8B32, 0xFAC9_B16D];
+const SIM_HEAD_KEYS: [u32; 20] = [
+    0x22A4_45FE, 0xF4B8_45DF, 0x92EA_C3EB, 0xC351_2C8A, 0xB93F_52B2, 0xE662_6E09,
+    0x157D_7231, 0x5007_7BB0, 0x446B_BC79, 0x612B_41F5, 0xBBB3_6488, 0x359D_E97F,
+    0x7655_0072, 0xC54F_FD13, 0x35E2_F199, 0x55DF_9CAE, 0xFF47_2323, 0x279C_922A,
+    0x97EF_A2B7, 0x4F49_47B7,
+];
+/// "SIMF"（小端 u32 0x464D4953）。
+const SIM_PARTS_MAGIC: u32 = 0x464D_4953;
+
+/// 定位小人模型所在的 Graphics/Game 包：优先已打开的同名包，否则从
+/// 已打开包路径向上找 `SimCityData/`（ecogame_dirs 同款推导），再退
+/// 用户设置的 game_data_path。
+fn locate_sim_source_packages(
+    manager: &PackageManager,
+    store: &sc_store::Store,
+) -> Result<Vec<(String, Package)>, PackageError> {
+    let mut found: Vec<(String, Package)> = Vec::new();
+    let mut has = |name: &str, found: &mut Vec<(String, Package)>| {
+        found.iter().any(|(n, _)| n == name)
+    };
+    if let Ok(all) = manager.all_packages_with_ids() {
+        for (_, pkg) in &all {
+            let Some(name) = pkg.path().file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if name.eq_ignore_ascii_case("SimCity_Graphics.package")
+                || name.eq_ignore_ascii_case("SimCity_Game.package")
+            {
+                if !has(name, &mut found) {
+                    found.push((name.to_string(), Package::open(pkg.path())?));
+                }
+            }
+        }
+    }
+    if found.len() < 2 {
+        // 从已打开包路径向上找 SimCityData 目录 + 设置目录，双路兜底
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Ok(all) = manager.all_packages_with_ids() {
+            for (_, pkg) in &all {
+                let mut dir = pkg.path().parent().map(|p| p.to_path_buf());
+                for _ in 0..4 {
+                    let Some(d) = dir else { break };
+                    candidates.push(d.join("SimCityData"));
+                    dir = d.parent().map(|p| p.to_path_buf());
+                }
+            }
+        }
+        if let Ok(Some(settings)) = store.app_settings() {
+            if let Some(game_data_path) = settings.game_data_path {
+                candidates.push(PathBuf::from(&game_data_path));
+            }
+        }
+        for dir in candidates {
+            if found.iter().any(|(n, _)| n == "SimCity_Graphics.package")
+                && found.iter().any(|(n, _)| n == "SimCity_Game.package")
+            {
+                break;
+            }
+            for name in ["SimCity_Graphics.package", "SimCity_Game.package"] {
+                if has(name, &mut found) {
+                    continue;
+                }
+                let path = dir.join(name);
+                if path.is_file() && let Ok(package) = Package::open(&path) {
+                    found.push((name.to_string(), package));
+                }
+            }
+        }
+    }
+    if found.is_empty() {
+        return Err(PackageError::PackageNotFound(0));
+    }
+    Ok(found)
+}
+
+/// PE 真小人渲染的全局资产通道：提取 23 个小人部件模型（身体+头部，
+/// props 文档 §3.1）为 LOTM 载荷序列。
+///
+/// 容器（小端）：`"SIMF" | u32 version=1 | u32 part_count`，每部件
+/// `u32 instance | u8 kind(0=身体,1=头部) | u32 len | LOTM v10 字节`。
+/// 前端按 kind 分组随机合成（身体原点 + 头挂颈点 + outfit tint）。
+#[tauri::command]
+pub async fn read_sim_parts(state: State<'_, AppState>) -> Result<tauri::ipc::Response, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || -> Result<tauri::ipc::Response, PackageError> {
+        let sources = locate_sim_source_packages(&manager, &store)?;
+        let mut out = Vec::new();
+        out.extend_from_slice(&SIM_PARTS_MAGIC.to_le_bytes());
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes()); // part_count 占位
+        let mut part_count = 0u32;
+        for (kind, keys) in [(0u8, &SIM_BODY_KEYS[..]), (1u8, &SIM_HEAD_KEYS[..])] {
+            for key in keys {
+                let Some(package) = sources
+                    .iter()
+                    .find(|(_, pkg)| {
+                        pkg.entries().iter().any(|e| {
+                            e.id.type_id == 0x2F4E_681B && e.id.instance == *key
+                        })
+                    })
+                    .map(|(_, p)| p)
+                else {
+                    continue; // 单部件缺失跳过（探针实证 23/23 命中）
+                };
+                let Some(entry) = package
+                    .entries()
+                    .iter()
+                    .find(|e| e.id.type_id == 0x2F4E_681B && e.id.instance == *key)
+                    .cloned()
+                else {
+                    continue;
+                };
+                let data = package.read(&entry)?;
+                let file = rw4::Rw4File::parse(&data)?;
+                let lotm = build_lot_model_payload_for_test(&file, &data, package, &manager, *key);
+                out.extend_from_slice(&key.to_le_bytes());
+                out.push(kind);
+                out.extend_from_slice(&(lotm.len() as u32).to_le_bytes());
+                out.extend_from_slice(&lotm);
+                part_count += 1;
+            }
+        }
+        let count_at = 8usize;
+        out[count_at..count_at + 4].copy_from_slice(&part_count.to_le_bytes());
+        Ok(tauri::ipc::Response::new(out))
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
+}
+
 #[tauri::command]
 pub async fn read_lot_model_meshes(
     state: State<'_, AppState>,
@@ -3890,8 +4026,7 @@ pub(crate) fn build_lot_model_payload_for_test(
     package: &Package,
     manager: &PackageManager,
     model_instance: u32,
-) -> Vec<u8> {
-    let bindings = file.decode_mesh_material_bindings(data);
+) -> Vec<u8> {    let bindings = file.decode_mesh_material_bindings(data);
     let fallback_material = file
         .sections_of_type(rw4::SectionType::MATERIAL)
         .find_map(|s| {

@@ -388,10 +388,14 @@ source-tree 双重坐实）。PE DTO 的 `count/countRandom/agent` 字段名系�
 **小人占位人形**（`buildSimFigure`）——双腿+躯干+双臂+头球，身高
 ~1.75m±抖动，肤色/衣色按 unit id FNV 种子确定性取自调色板（同锚点恒同
 外观）。~~不渲染真小人的原因：模型库非本地资产~~（已被上述探针推翻）。
-**升级路径（真小人渲染，待实施）**：身体/头部 GLB 经全局资产通道下发
-（非 lot 资产，新命令按上面 23 个模型 key 提取），前端按 GI_Simm_\*
-外观区间随机合成「身体 + 头(颈点) + outfit 调色板 tint」——观感即游戏
-近景小人。
+**真小人渲染（2026-10-06 已实现）**：后端 `read_sim_parts` 命令（SIMF
+容器：`SIMF|ver=1|count|{instance|kind|len|LOTM}`，Graphics/Game 包定位
+=已打开同名包→路径上溯 SimCityData→settings game_data_path）→ 前端
+`simAssets.ts` 进程级缓存 → spawner 单元 = 身体(3 型随机) + 头(20 型
+随机) 挂颈点（body maxZ 对 head minZ 留 0.04 嵌入）+ 衣服色相 tint
+（outfit 调色板近似）。纹理槽位实测：小人部件 tex[0]=法线（蓝紫）、
+tex[1]=漫反射（脸/手套/衣服 UV）——漫反射取 LOTM `normalPng` 通道
+（与 Raw 映射惯例相反，勿改）。资产缺席时回落占位人形 `buildSimFigure`。
 
 ## 4. Paths 全流程
 

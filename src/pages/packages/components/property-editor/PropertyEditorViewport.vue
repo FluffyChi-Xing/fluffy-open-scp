@@ -28,7 +28,12 @@ import {
   getPropModelObject,
   getTreeBillboard,
   getTreeModelObject,
+  getSimFigure,
 } from "./propModels";
+import {
+  loadSimParts,
+  type SimPart,
+} from "./simAssets";
 import {
   decalFrame,
   decalHalfThickness,
@@ -157,6 +162,13 @@ const emit = defineEmits<{
 const { t } = useI18n();
 /** 悬停中的 Unit（dashed 描边 + 左上角小字标签）。 */
 const hoveredId = ref<string | null>(null);
+/** 小人部件资产（全局，进程级缓存）：spawner 真小人渲染。 */
+const simParts = ref<SimPart[]>([]);
+onMounted(() => {
+  void loadSimParts().then((parts) => {
+    simParts.value = parts;
+  });
+});
 const viewport = useEditorViewport({
   onTapUnit: (id) => emit("select", id),
   onHoverUnit: (id) => {
@@ -1618,6 +1630,32 @@ async function assembleScene(
           propModel.scale.multiplyScalar(unit.scale);
         }
         object = propModel;
+      } else {
+        object = buildUnitObject(THREE, unit);
+      }
+    } else if (
+      props.renderMode === "refined" &&
+      unit.kind === "spawner" &&
+      simParts.value.length
+    ) {
+      // 真小人（§3.1）：身体+头按外观随机合成（全局资产，进程级缓存），
+      // 失败退占位人形（buildUnitObject 内）。
+      const spawnerPos = new THREE.Vector3();
+      const spawnerQuat = new THREE.Quaternion();
+      const spawnerScale = new THREE.Vector3();
+      if (unit.transform) {
+        unitMatrix(THREE, unit.transform).decompose(
+          spawnerPos,
+          spawnerQuat,
+          spawnerScale,
+        );
+      }
+      const figure = await getSimFigure(THREE, simParts.value, unit);
+      if (figure) {
+        figure.position.copy(spawnerPos);
+        figure.quaternion.copy(spawnerQuat);
+        figure.position.z = Math.max(0, figure.position.z);
+        object = figure;
       } else {
         object = buildUnitObject(THREE, unit);
       }
