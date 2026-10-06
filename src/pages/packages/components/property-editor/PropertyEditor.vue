@@ -7,6 +7,7 @@ import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
+import FCode from "@/components/ui/FCode.vue";
 import type { Tgi } from "@/api/tauri";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
 import PropertyEditorViewport, {

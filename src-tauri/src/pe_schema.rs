@@ -349,3 +349,84 @@ pub fn build_pe_schema(
 pub struct PeSchemaResponse {
     pub schema_json: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 合成 session → schema 引擎输出结构验证（文档 §4 顶层序 + 单元映射）。
+    #[test]
+    fn builds_v1_schema_from_session_and_edits() {
+        let request: BuildPeSchemaRequest = serde_json::from_value(json!({
+            "session": {
+                "assetName": "消防局",
+                "tgi": {"typeId": 11636840, "group": 1089206272, "instance": 31478123},
+                "modelLods": [
+                    {"tgi": {"typeId": 792537883, "group": 0, "instance": 3972099656}},
+                    null
+                ],
+                "lotSize": [48, 96],
+                "lotTilePeriod": [8, 8],
+                "lotColors": [[0.28, 0.2, 0.2, 7]],
+                "lotColorsAuthored": [true],
+                "lotBorderColors": [],
+                "lotBorderWidths": [],
+                "lotBorderPatternIndices": [],
+                "lotBaseTile": 8,
+                "units": [
+                    {
+                        "kind": "light", "index": 0,
+                        "transform": {"matrix": [1,0,0,0, 1,0,0,0, 1,0,0, 24,10,48]},
+                        "lightType": "Spot",
+                        "color": [1, 0.95, 0.85],
+                        "outerRadius": 22,
+                        "fields": [
+                            {"hash": 3716578309u32, "typeName": "Text", "value": "front"}
+                        ]
+                    },
+                    {
+                        "kind": "prop", "index": 3, "bin": 1,
+                        "slot": 2, "scale": 0.35
+                    }
+                ]
+            },
+            "overrides": [
+                {"id": "light:0", "matrix": [1,0,0,0, 1,0,0,0, 1,0,0, 30,12,50],
+                 "fields": {"0x0DA76A05": 1.4}}
+            ],
+            "hiddenUnitIds": ["prop:1:3"],
+            "groups": {"decals": false}
+        })).expect("request deserialized");
+
+        let schema = build_schema(&request);
+        let value: Value = serde_json::from_str(&schema).expect("schema 是合法 JSON");
+
+        assert_eq!(value["$schema"], "openscp.lot-asset/1");
+        assert_eq!(value["version"], 1);
+        assert_eq!(value["meta"]["name"], "消防局");
+        assert_eq!(
+            value["meta"]["source"]["tgi"]["typeId"],
+            "0x00B1B104"
+        );
+        assert_eq!(value["lot"]["size"], json!([48, 96]));
+        assert_eq!(value["lot"]["colors"][0]["authored"], true);
+        // LOD 引用 hex 化 + 缺失级 = null
+        assert_eq!(
+            value["model"]["lods"][0]["ref"]["tgi"]["instance"],
+            "0xECEB3C46"
+        );
+        assert_eq!(value["model"]["lods"][1]["ref"], Value::Null);
+        let units = value["units"].as_array().expect("units");
+        assert_eq!(units.len(), 2);
+        // 覆盖矩阵生效 + 字段 patch 并入 fields
+        assert_eq!(units[0]["id"], "light:0");
+        assert_eq!(units[0]["transform"]["matrix"][9], 30.0);
+        assert_eq!(units[0]["fields"]["0x0DA76A05"], json!(1.4));
+        // prop id 规则（bin:index）+ 隐藏态入 visible
+        assert_eq!(units[1]["id"], "prop:1:3");
+        assert_eq!(units[1]["visible"], false);
+        // editor 视图状态
+        assert_eq!(value["editor"]["groups"]["decals"], false);
+    }
+}
