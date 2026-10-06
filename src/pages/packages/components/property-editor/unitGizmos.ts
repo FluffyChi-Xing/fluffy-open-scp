@@ -26,6 +26,17 @@ export function unitId(unit: LotUnitDto): string {
   return `${unit.kind}:${unit.index}`;
 }
 
+/** unit id → 数字 seed（FNV-1）：小人外观确定性随机用。 */
+function spawnerSeed(unit: LotUnitDto): number {
+  const id = unitId(unit);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 /**
  * WPF Matrix3D（行主序、行向量约定、平移在末行）→ three Matrix4。
  * 列向量约定需转置：3×3 转置、平移入第 4 列。
@@ -67,6 +78,69 @@ function standardMaterial(
     opacity,
     side: THREE.DoubleSide,
   });
+}
+
+/** 确定性伪随机（mulberry32）：小人肤色/衣色/身高抖动用，seed 派生自
+ * unit id——同一刷新点恒同一小人。 */
+function mulberry32(seed: number): () => number {  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = Math.imul(t ^ (t >>> 7), 61 | t) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 小人肤色/衣色调色板（观感校准用近似；引擎真值在外观表调色板，未本地化）。 */
+const SIM_SKIN_TONES = [0xe8b89a, 0xd9a077, 0xb97a50, 0x8a5a38, 0x6b4226];
+const SIM_OUTFIT_COLORS = [
+  0xc81e1e, 0x1e40c8, 0x20c050, 0xf0a000, 0x8848c8, 0x20b0b0, 0xe8e8e8,
+  0x303038, 0xc84890,
+];
+const SIM_PANTS_COLORS = [0x303040, 0x40485c, 0x242428, 0x54423a];
+
+/**
+ * 小人占位（spawner 渲染，2026-10-06）：风格化人形——双腿+躯干+双臂+头球，
+ * 站姿，身高 ~1.75m ± 抖动。肤色/衣色按 seed 确定性取自调色板。
+ *
+ * 引擎口径（props 文档 §3，source-tree 实证）：spawner = cUnitModel 的
+ * 具名位置锚点（0x0E1BAC61 键列 instance=锚点名 id + 0x0E1BAC62 变换列 →
+ * mUnitLocations），agent 在此生成（GetUnitLocation = 模型变换∘锚点变换，
+ * BuildUnitJSValue 按名字哈希硬编码查询）；小人外观由
+ * cGraphicsInstancedSim 外观表（0x0CBD25C1-CB：heads/bodies/outfits 及
+ * Max + 缩放域）按 randomBits 取模解析（body≤3/head≤80/outfit 调色板，
+ * 城市级全局模型目录，本地包未见）——故 PE 用占位人形而非真模型。
+ */
+function buildSimFigure(THREE: Three, seed: number): ThreeNamespace.Object3D {
+  const rand = mulberry32(seed);
+  const skin = SIM_SKIN_TONES[Math.floor(rand() * SIM_SKIN_TONES.length)];
+  const outfit = SIM_OUTFIT_COLORS[Math.floor(rand() * SIM_OUTFIT_COLORS.length)];
+  const pants = SIM_PANTS_COLORS[Math.floor(rand() * SIM_PANTS_COLORS.length)];
+  const jitter = 0.92 + rand() * 0.16;
+
+  const group = new THREE.Group();
+  const addLimb = (
+    geometry: ThreeNamespace.CylinderGeometry | ThreeNamespace.SphereGeometry,
+    color: number,
+    y: number,
+    x = 0,
+  ) => {
+    const mesh = new THREE.Mesh(geometry, standardMaterial(THREE, color));
+    mesh.position.set(x, y, 0);
+    group.add(mesh);
+  };
+  // 双腿（裤色）：r0.09 h0.78，站距 0.22
+  addLimb(new THREE.CylinderGeometry(0.085, 0.1, 0.78, 10), pants, 0.39, -0.11);
+  addLimb(new THREE.CylinderGeometry(0.085, 0.1, 0.78, 10), pants, 0.39, 0.11);
+  // 躯干（衣色）：肩宽收腰
+  addLimb(new THREE.CylinderGeometry(0.17, 0.21, 0.62, 12), outfit, 1.09);
+  // 双臂（衣色）：垂放体侧
+  addLimb(new THREE.CylinderGeometry(0.055, 0.065, 0.58, 8), outfit, 1.06, -0.27);
+  addLimb(new THREE.CylinderGeometry(0.055, 0.065, 0.58, 8), outfit, 1.06, 0.27);
+  // 头（肤色）
+  addLimb(new THREE.SphereGeometry(0.155, 14, 12), skin, 1.62);
+  group.scale.setScalar(jitter);
+  return group;
 }
 
 /**
@@ -254,7 +328,8 @@ export function buildUnitObject(
       object = buildMarkerCone(THREE, PROP_COLOR, unit.transform);
       break;
     case "spawner":
-      object = buildMarkerCone(THREE, SPAWNER_COLOR, unit.transform);
+      // spawner = agent 刷新锚点 → 小人占位（seed=id 哈希，确定性外观）
+      object = buildSimFigure(THREE, spawnerSeed(unit));
       break;
     case "decal":
       object = buildDecal(THREE, unit);

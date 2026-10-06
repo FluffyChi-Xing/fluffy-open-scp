@@ -328,10 +328,45 @@ LOTM 构建器 v10 已支持）——tex#0 即树公告板抠像图集同源内�
 | --- | --- | --- |
 | 装配 | `cUnitModel` 属性段（958480） | 0x0E1BAC61（Key 数组）+ 0x0E1BAC62（Transform 数组）→ `mUnitLocations: vector_map<instance, transform>` |
 | 消费 | 位置查询 API（952960 区） | 按名取 transform——**agent 生成/服务点查询**（门口/车位/停机位）；无渲染消费 |
-| 勘误 | 同段 | 0x0E715928/29（buildingVariation 基值/变体数）+ 0x0F0E2BF1（影响 bin）= **建筑变体系统**（调色板行选择），与 spawner 无关 |
+| 勘误 | 同段 | 0x0E715928/29（buildingVariation 基值/变体数）+ 0x0F0E2BF1（影响 bin）= **建筑变体系统**（维持 unit-props 文档 §3.2 勘误） |
 
 **无渲染形态**：spawner 列不产生可见物，是游戏逻辑锚点。PE = 语义标记
 （按位置名/用途图标），标签需脚本反查 id 语义。
+
+### 3.1 Spawner 全链闭合 + PE 小人占位渲染（2026-10-06 source-tree 实证）
+
+**锚点装配（cUnitModel::FillFromProps 逐字）**：`kUnitLocationTable` 读
+属性表——键列 **0x0E1BAC61**（`unitLocationIDs`，**键的 instance 字段 =
+锚点名 id**）+ 值列 **0x0E1BAC62**（Transform，typeID 56）→ 逐行写入
+`mUnitLocations`（vector_map，按锚点 id 有序）。
+
+**消费（GetUnitLocation 0x78C3B0 / GetUnitLocationLocal）**：二分查
+`mUnitLocations`，输出 = **模型变换 ∘ 锚点局部变换**（`PreTransformBy`）。
+调用方：`cVignette::GetWorldLocation`/`DestinationIsAnActor`（镜头暗角目
+的地）、`BuildUnitJSValue`（**硬编码锚点名 0x141EED53 查询**——agent 行
+为脚本按名字取点，与用户观察「spawner 位置 = 小人刷新点」吻合；该名字
+FNV 爆破未命中，留待真数据采样）。
+
+**外观链（cGraphicsInstancedSim）**：cGraphicsInstanced::FillFromProps
+③ 分支（0x0C36D30D 无 0x0D8C29CF）读 8 列外观表 **0x0CBD25C1-CB**
+（heads/bodies/outfits 及其 Max + ScalesMin/Max，0x0CBD25CA/CB = 缩放域）
+→ `cSimGraphicsInfo[]`。`GetSimData`/`GetSimPaletteData` 按 randomBits
+取模选出 `(body≤3, head≤80, outfitPalette)` + 缩放——**小人模型库是城市
+级全局目录（body 4 型 / head 80 型），非 lot 资产，本地包未见**。
+
+**勘误坐实（source-tree 逐字）**：0x0E715928 → `mBuildingVariation` 基值、
+0x0E715929 → `mBuildingVariation += unitSlot % count`、0x0F0E2BF1 →
+`IndexFromResourceID` 查 variation 影响资源 → `mVariationInfluenceBinIndex`
+——三者均在 cUnitModel::FillFromProps 消费，**与 spawner 无关**（发行包
+472 个 spawner lot 全 0 命中，此前语义取自脱壳 exe FUN_00786000，本轮
+source-tree 双重坐实）。PE DTO 的 `count/countRandom/agent` 字段名系历史
+误标（列恒缺省无实害），保留字段位仅作诊断。
+
+**PE 渲染落地（2026-10-06 已实现）**：spawner 单元从蓝色标记锥改为
+**小人占位人形**（`buildSimFigure`）——双腿+躯干+双臂+头球，身高
+~1.75m±抖动，肤色/衣色按 unit id FNV 种子确定性取自调色板（同锚点恒同
+外观）。不渲染真小人的原因：模型库非本地资产；占位人形直接传达「此处有
+agent 刷新/服务锚点」。
 
 ## 4. Paths 全流程
 
