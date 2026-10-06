@@ -200,10 +200,11 @@ export class ThreeViewer {
       shell.scale.copy(mesh.scale);
       return shell;
     };
-    // 目标本身是 Mesh（锥体/占位人形等 buildUnitObject 直出）：壳挂本地
-    // 恒等变换（hull 已是 target 子级，继承其世界变换）
+    // 目标本身是 Mesh（锥体/占位人形等 buildUnitObject 直出）：壳挂恒等
+    // 变换——hull 已是 target 子级，target 自带变换；再复制本地变换会双重
+    // 叠加（真机：轮廓偏移到两倍位置）。
     if ((target as ThreeNamespace.Mesh).isMesh) {
-      hull.add(shellFor(target as ThreeNamespace.Mesh));
+      hull.add(new this.THREE.Mesh((target as ThreeNamespace.Mesh).geometry, material));
       return hull;
     }
     const walk = (src: ThreeNamespace.Object3D, dst: ThreeNamespace.Object3D) => {
