@@ -62,8 +62,8 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       shColorDiff += sunColor * kSunContributionAmount;\n\
       float4 interiorTexture = tex2D(Sampler<s0>, interiorUv);\n\
       float3 interiorTextureLit = interiorTexture.rgb * (shColorDiff + shColorSpec + spec + interiorTexture.a * kInteriorMapSelfLightMax);\n\
-      Current.color.rgb = lerp(Current.color.rgb, interiorTextureLit, saturate(decalTexture.a * 2 - 1));\n\
-      Current.color.a = saturate(decalTexture.a * 2);"),
+      Current.color.rgb = lerp(Current.color.rgb, interiorTextureLit, saturate(decalTexture.a * 2.0 - 1.0));\n\
+      Current.color.a = saturate(decalTexture.a * 2.0);"),
     ("kInteriorMapSelfLightMax",
      "static const float kInteriorMapSelfLightMax = 16.000000;"),
     // ---- PS：无光变体的假灯球（d3d9 内部：GetDeferredNormal 由 uniform 法线替代）----

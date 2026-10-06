@@ -21,7 +21,7 @@ pub const SYMBOLS: &[(&str, &str)] = &[
     // 数据装载（PS uniform）
     ("decalMaterialData", "uniform vec4 uDecalMaterialData[4];\n#define decalMaterialData uDecalMaterialData"),
     ("decalMaterialInfo", "uniform vec4 uDecalMaterialInfo;\n#define decalMaterialInfo uDecalMaterialInfo"),
-    ("texXform", "uniform vec4 uTexXform;"),
+    ("texXform", "uniform vec4 uTexXform;\n#define texXform uTexXform"),
     ("decalWorldDirection", "uniform vec3 uDecalWorldDirection;\n#define decalWorldDirection uDecalWorldDirection"),
     // 引擎环境（前向近似输入）
     ("sunSky", "uniform vec4 uSunDir;\nuniform vec4 uSunColor;\nstruct cSunSkyInfo { vec4 mSunDir; vec4 mSunColor; };\n#define sunSky uSunSkyInfo\nuniform cSunSkyInfo uSunSkyInfo;"),
@@ -108,6 +108,13 @@ pub fn translate(hlsl: &str) -> String {
     // 11. sunSky 结构成员 → 扁平 uniform（three.js Vector3 直传）
     out = out.replace("sunSky.mSunDir.xyz", "uSunDir3");
     out = out.replace("sunSky.mSunColor.rgb", "uSunColor3");
+    // HLSL 允许 uniform 派生的局部 const；GLSL ES 要求常量表达式。
+    for name in ["kSunContributionAmount", "kLightAmount"] {
+        out = out.replace(
+            &format!("const float {name} = decalMaterialData"),
+            &format!("float {name} = decalMaterialData"),
+        );
+    }
 
     out
 }

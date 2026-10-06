@@ -12,6 +12,7 @@ import type * as ThreeNamespace from "three";
 import signFrag from "@/assets/shaders/decal/sign.frag.glsl?raw";
 import signVert from "@/assets/shaders/decal/sign.vert.glsl?raw";
 import holeFrag from "@/assets/shaders/decal/hole.frag.glsl?raw";
+import holeVert from "@/assets/shaders/decal/hole.vert.glsl?raw";
 import holoFrag from "@/assets/shaders/decal/holo.frag.glsl?raw";
 /** 与 refinedRender.SunEnvRefs 的结构子集（避免 lib→pages 反向依赖）。 */
 export interface EngineEnvRefs {
@@ -30,7 +31,7 @@ const FRAG: Record<EngineFamily, string> = {
 };
 const VERT: Record<EngineFamily, string> = {
   sign: signVert,
-  hole: signVert,
+  hole: holeVert,
   holo: signVert,
   sdf: signVert,
 };
@@ -50,6 +51,8 @@ export interface EngineMaterialOptions {
   side?: ThreeNamespace.Side;
   /** alpha 全零实心图 → 不透明渲染（海报式）；缺省 → 引擎混合态。 */
   alphaZero?: boolean;
+  /** 破洞局部盒体的半宽、半高、半深；用于统一六个面的纹理空间。 */
+  boxHalfSize?: [number, number, number];
 }
 
 /**
@@ -62,9 +65,17 @@ export function createEngineDecalMaterial(
   opts: EngineMaterialOptions,
 ): ThreeNamespace.ShaderMaterial {
   const [kSun, kLight] = opts.decalData ?? [0, 0];
+  const halfSize = opts.boxHalfSize ?? [1, 1, 1];
   return new THREE.ShaderMaterial({
     uniforms: {
       uSampler0: { value: opts.map },
+      uBoxHalfXY: {
+        value: new THREE.Vector2(
+          Math.max(halfSize[0], 0.001),
+          Math.max(halfSize[1], 0.001),
+        ),
+      },
+      uHalfDepth: { value: Math.max(halfSize[2], 0.001) },
       uLayerColors: {
         value: [0, 1, 2, 3].map(
           (k) =>

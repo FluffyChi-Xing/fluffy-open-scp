@@ -17,6 +17,7 @@ uniform vec4 uDecalMaterialData[4];
 uniform vec4 uDecalMaterialInfo;
 #define decalMaterialInfo uDecalMaterialInfo
 uniform vec4 uTexXform;
+#define texXform uTexXform
 uniform vec3 uDecalWorldDirection;
 #define decalWorldDirection uDecalWorldDirection
 uniform vec3 uWorldNormal;
@@ -73,6 +74,23 @@ void main() {
 }
 "#;
 
+/// 破洞使用体积坐标；BoxGeometry 每个面的独立 uv 不能表示房间深度。
+pub const HOLE_VS: &str = r#"// == 由 sc-shader 组合器生成：破洞体积 VS（three.js 相容）==
+uniform vec2 uBoxHalfXY;
+uniform float uHalfDepth;
+varying vec3 vTexcoord0;
+varying vec4 vTexcoord4;
+varying vec4 vTexcoord5;
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  vTexcoord0 = position / max(vec3(uBoxHalfXY, uHalfDepth), vec3(0.001));
+  vTexcoord4 = vec4((modelMatrix * vec4(position, 1.0)).xyz - cameraPosition, 0.0);
+  vTexcoord5 = vec4(0.0);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+"#;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     /// 招牌/涂鸦（decalProject 系标准链：直采 + 可选 NeonBrighten）
@@ -118,7 +136,10 @@ vec3 shColorDiff = vec3(0.0);
 vec3 shColorSpec = vec3(0.0);
 vec3 spec = vec3(0.0);
 vec3 bumpNormal = normalize(uDecalWorldDirection);
-vec4 decalTexture = texture2D(uSampler0, vTexcoord0.xy * 0.5 + 0.5);
+SimCityLighting(bumpNormal, normalize(vTexcoord4.xyz), gloss, reflectance,
+                specE, specStrength, shColorDiff, shColorSpec, spec);
+vec2 decalUv = (vTexcoord0.xy * -0.5 + 0.5) * texXform.xy + texXform.zw;
+vec4 decalTexture = texture2D(uSampler0, decalUv);
 outColor = decalTexture; // 引擎链上 decalClip 先采样（lerp 基色）
 "#,
             // SDF 链：Current.color 初值（sdfDists 四通道）+ 动画输入 + 场景光
@@ -156,7 +177,12 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
     ps.push_str("gl_FragColor = outColor;\n");
     ps.push_str("}\n");
 
-    Ok((VS_PREAMBLE.to_string(), ps))
+    let vs = if family == Family::Hole {
+        HOLE_VS
+    } else {
+        VS_PREAMBLE
+    };
+    Ok((vs.to_string(), ps))
 }
 
 #[cfg(test)]
@@ -180,9 +206,13 @@ mod tests {
 
     #[test]
     fn hole_chain_has_self_light() {
-        let (_, ps) = compose(Family::Hole).unwrap();
+        let (vs, ps) = compose(Family::Hole).unwrap();
         assert!(ps.contains("kInteriorMapSelfLightMax"));
         assert!(ps.contains("interiorUv"));
+        assert!(vs.contains("position / max(vec3(uBoxHalfXY, uHalfDepth)"));
+        assert!(ps.contains("#define texXform uTexXform"));
+        assert!(ps.contains("SimCityLighting(bumpNormal, normalize(vTexcoord4.xyz)"));
+        assert!(!ps.contains("const float kLightAmount"));
     }
 
     #[test]

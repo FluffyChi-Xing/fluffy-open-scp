@@ -1075,6 +1075,7 @@ async function assembleScene(
             worldDirection: frame.axisZ,
             env,
             side: THREE.BackSide,
+            boxHalfSize: [frame.sizeX / 2, frame.sizeY / 2, thickness],
           })
         : createHoleInteriorMaterial(
             THREE,

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <title>破洞体积材质 · GPU 回归</title>
+  <style>
+    body {
+      margin: 32px;
+      background: #14202b;
+      color: #dce8ef;
+      font: 16px/1.6 system-ui;
+    }
+    canvas {
+      max-width: 100%;
+      border: 1px solid #547080;
+    }
+    pre {
+      white-space: pre-wrap;
+    }
+    h1 {
+      font-size: 24px;
+    }
+    p {
+      color: #9fb4c5;
+    }
+  </style>
+  <h1>破洞体积材质 · WebGL 回归</h1>
+  <p>全部纹理由代码生成；不含游戏资产。通过 Vite 打开此页。</p>
+  <canvas id="view"></canvas>
+  <pre id="result">正在验证 GPU…</pre>
+  <script type="module">
+    import * as THREE from "three";
+    import { createEngineDecalMaterial } from "/src/lib/decalEngineMaterials.ts";
+    const output = document.querySelector("#result");
+    try {
+      const renderer = new THREE.WebGLRenderer({
+        canvas: document.querySelector("#view"),
+        antialias: true,
+      });
+      renderer.setSize(800, 400);
+      renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+      const errors = [];
+      renderer.debug.onShaderError = (gl, program, vertex, fragment) =>
+        errors.push(
+          gl.getShaderInfoLog(vertex),
+          gl.getShaderInfoLog(fragment),
+          gl.getProgramInfoLog(program),
+        );
+      const env = {
+        sunDir: { value: new THREE.Vector3(0, 0, -1) },
+        sunColor: { value: new THREE.Color(1, 1, 1) },
+        dayLight: { value: 1 },
+      };
+      const constant = new THREE.DataTexture(
+        new Uint8Array([4, 6, 8, 255]),
+        1,
+        1,
+      );
+      constant.needsUpdate = true;
+      const material = createEngineDecalMaterial(THREE, "hole", {
+        map: constant,
+        decalData: [0, 4],
+        worldDirection: new THREE.Vector3(0, 0, 1),
+        env,
+        side: THREE.BackSide,
+        boxHalfSize: [2, 1, 1],
+      });
+      const scene = new THREE.Scene(),
+        box = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 2), material);
+      scene.add(box);
+      const camera = new THREE.OrthographicCamera(
+        -2.4,
+        2.4,
+        1.2,
+        -1.2,
+        0.1,
+        100,
+      );
+      camera.position.set(0, 0, 6);
+      camera.lookAt(0, 0, 0);
+      const target = new THREE.WebGLRenderTarget(64, 64);
+      function pixel() {
+        renderer.setRenderTarget(target);
+        renderer.clear();
+        renderer.render(scene, camera);
+        const p = new Uint8Array(4);
+        renderer.readRenderTargetPixels(target, 32, 32, 1, 1, p);
+        return [...p];
+      }
+      const checks = [];
+      const check = (name, pass, detail) => checks.push({ name, pass, detail });
+      check(
+        "体积尺寸 uniform 可供视口访问",
+        material.uniforms.uBoxHalfXY?.value.x === 2 &&
+          material.uniforms.uHalfDepth?.value === 1,
+      );
+      material.uniforms.uAmbientDiff.value.set(0, 0, 0);
+      material.uniforms.uSpecularScale.value = 0;
+      const dark = pixel();
+      material.uniforms.uAmbientDiff.value.set(1, 1, 1);
+      const lit = pixel();
+      check(
+        "生产片元着色器编译、链接并输出颜色",
+        errors.length === 0 && dark[0] > 0,
+        { errors, dark },
+      );
+      check("内景光照使用已初始化的环境光", lit[0] > dark[0] + 8, {
+        dark,
+        lit,
+      });
+      const coordinates = material.clone();
+      coordinates.fragmentShader =
+        "precision highp float; varying vec3 vTexcoord0; void main(){gl_FragColor=vec4(vTexcoord0*.5+.5,1.);}";
+      box.material = coordinates;
+      const back = pixel();
+      check("后壁深度为 -1，而非招牌固定的 0", back[2] < 2, { back });
+      box.material = material;
+      const texels = new Uint8Array(128 * 128 * 4);
+      for (let y = 0; y < 128; y++)
+        for (let x = 0; x < 128; x++) {
+          const i = (y * 128 + x) * 4;
+          texels.set(
+            [
+              2 + Math.round(x / 12),
+              2 + Math.round(y / 14),
+              ((x >> 4) + (y >> 4)) % 2 ? 9 : 3,
+              255,
+            ],
+            i,
+          );
+        }
+      const room = new THREE.DataTexture(texels, 128, 128);
+      room.needsUpdate = true;
+      room.magFilter = THREE.LinearFilter;
+      material.uniforms.uSampler0.value = room;
+      material.uniforms.uAmbientDiff.value.set(0.1, 0.11, 0.15);
+      const view = new THREE.PerspectiveCamera(40, 2, 0.1, 100);
+      view.position.set(4, 1.8, 6);
+      view.lookAt(0, 0, 0);
+      renderer.setRenderTarget(null);
+      renderer.setClearColor(0x14202b);
+      renderer.render(scene, view);
+      const passed = checks.every((c) => c.pass);
+      output.dataset.status = passed ? "passed" : "failed";
+      output.textContent = JSON.stringify({ passed, checks }, null, 2);
+      target.dispose();
+      coordinates.dispose();
+      constant.dispose();
+    } catch (error) {
+      output.dataset.status = "failed";
+      output.textContent = String(error.stack || error);
+    }
+  </script>
+</html>

@@ -6,6 +6,7 @@ uniform vec4 uDecalMaterialData[4];
 uniform vec4 uDecalMaterialInfo;
 #define decalMaterialInfo uDecalMaterialInfo
 uniform vec4 uTexXform;
+#define texXform uTexXform
 uniform vec3 uDecalWorldDirection;
 #define decalWorldDirection uDecalWorldDirection
 uniform vec3 uWorldNormal;
@@ -62,11 +63,14 @@ vec3 shColorDiff = vec3(0.0);
 vec3 shColorSpec = vec3(0.0);
 vec3 spec = vec3(0.0);
 vec3 bumpNormal = normalize(uDecalWorldDirection);
-vec4 decalTexture = texture2D(uSampler0, vTexcoord0.xy * 0.5 + 0.5);
+SimCityLighting(bumpNormal, normalize(vTexcoord4.xyz), gloss, reflectance,
+                specE, specStrength, shColorDiff, shColorSpec, spec);
+vec2 decalUv = (vTexcoord0.xy * -0.5 + 0.5) * texXform.xy + texXform.zw;
+vec4 decalTexture = texture2D(uSampler0, decalUv);
 outColor = decalTexture; // 引擎链上 decalClip 先采样（lerp 基色）
  const float kInteriorMapSelfLightMax = 16.000000;
-const float kSunContributionAmount = decalMaterialData[0].x;
-const float kLightAmount = decalMaterialData[0].y;
+float kSunContributionAmount = decalMaterialData[0].x;
+float kLightAmount = decalMaterialData[0].y;
 vec3 textureFloatPosition = vTexcoord0.xyz;
 vec2 interiorUv = mix(textureFloatPosition.xy, textureFloatPosition.xy * 0.5, textureFloatPosition.z * 0.5 + 0.5);
 interiorUv = interiorUv * -0.5 + 0.5;
@@ -79,7 +83,7 @@ shColorSpec *= kLightAmount;
 shColorDiff += sunColor * kSunContributionAmount;
 vec4 interiorTexture = texture2D(uSampler0, interiorUv);
 vec3 interiorTextureLit = interiorTexture.rgb * (shColorDiff + shColorSpec + spec + interiorTexture.a * kInteriorMapSelfLightMax);
-outColor.rgb = mix(outColor.rgb, interiorTextureLit, clamp(decalTexture.a * 2 - 1, 0.0, 1.0));
-outColor.a = clamp(decalTexture.a * 2, 0.0, 1.0);
+outColor.rgb = mix(outColor.rgb, interiorTextureLit, clamp(decalTexture.a * 2.0 - 1.0, 0.0, 1.0));
+outColor.a = clamp(decalTexture.a * 2.0, 0.0, 1.0);
 gl_FragColor = outColor;
 }
