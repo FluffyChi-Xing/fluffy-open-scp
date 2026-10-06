@@ -30,6 +30,7 @@ fn f32_array(values: &[serde_json::Value]) -> Vec<f64> {
 
 /// 前端 `Tgi`（十进制 u32）镜像。
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TgiInput {
     pub type_id: u32,
     pub group: u32,
@@ -38,6 +39,7 @@ pub struct TgiInput {
 
 /// 前端 `LotEditorSession` 的 schema 相关子集（serde 忽略未列字段）。
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionInput {
     #[serde(default)]
     pub asset_name: Option<String>,
@@ -71,6 +73,7 @@ pub struct SessionInput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LodRefInput {
     pub tgi: TgiInput,
 }
@@ -78,6 +81,7 @@ pub struct LodRefInput {
 /// 前端 `LotUnitDto` 镜像：公共字段 + kind 特有字段整体保留（tagged 展开
 /// 在 unit_json 里按 kind 映射，未升格字段原样透传）。
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UnitInput {
     pub kind: String,
     #[serde(default)]
@@ -97,6 +101,7 @@ pub struct UnitInput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransformInput {
     /// WPF Matrix3D 行主序 12 floats。
     #[serde(default)]
@@ -104,6 +109,7 @@ pub struct TransformInput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FieldInput {
     pub hash: u32,
     #[serde(default)]
@@ -114,6 +120,7 @@ pub struct FieldInput {
 
 /// 前端编辑层覆盖（unitEditLayer）。
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UnitEditInput {
     pub id: String,
     /// 行主序 12 floats（transform 整体替换）。
@@ -125,6 +132,7 @@ pub struct UnitEditInput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BuildPeSchemaRequest {
     pub session: SessionInput,
     /// 编辑层：unitId → 覆盖。

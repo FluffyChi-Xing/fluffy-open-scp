@@ -343,20 +343,7 @@ const treeSheetPinned = ref(true);
           :aria-label="$t('package.renderMode')"
           :title="$t('package.renderModeHint')"
         >
-        <!-- Schema：低代码资产 JSON（查看/导出，docs/design/lowcode-asset-pipeline.md） -->
-        <FTooltip :text="$t('package.schemaSheet')" side="bottom">
-          <template #trigger>
-            <button
-              type="button"
-              class="editor-close"
-              :disabled="schemaBusy || !session"
-              :aria-label="$t('package.schemaSheet')"
-              @click="openSchemaSheet"
-            >
-              <FIcon name="Braces" :size="15" aria-label="" />
-            </button>
-          </template>
-        </FTooltip>
+
           <button
             type="button"
             :class="{ active: renderMode === 'default' }"
