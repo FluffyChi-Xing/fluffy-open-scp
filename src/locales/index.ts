@@ -1080,6 +1080,8 @@ const messages = {
       modelFallbackName: "模型 0x{hex}",
       schemaSheet: "Schema",
       schemaExport: "导出 JSON",
+      schemaRefresh: "刷新",
+      schemaDiff: "变更对比",
       schemaHint:
         "当前 PE 状态的 openscp.lot-asset/1 资产 JSON（含全部编辑覆盖）；未来构建管线与解析引擎消费此格式。",
       renderTelemetryHint:
@@ -2683,6 +2685,8 @@ const messages = {
       modelFallbackName: "Model 0x{hex}",
       schemaSheet: "Schema",
       schemaExport: "Export JSON",
+      schemaRefresh: "Refresh",
+      schemaDiff: "Diff",
       schemaHint:
         "Asset JSON (openscp.lot-asset/1) of the current PE state including all edit overrides; consumed by the future build pipeline and parser.",
       renderTelemetryHint:

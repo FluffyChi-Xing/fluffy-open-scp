@@ -382,7 +382,14 @@ function onDeleteUnit(id: string) {
 // 后用户的一切增删改查都实时反映在这份 JSON 上（渲染/检查器/Schema
 // sheet 三方同源），导出即所得。FCode 只读预览，导出写 .lot.json。
 const schemaOpen = ref(false);
+/** 手动刷新代数：活体 computed 本就随编辑联动，此钮是显式保险
+ * （用户指令 2026-10-06：编辑后要能手动刷新 schema JSON）。 */
+const schemaRevision = ref(0);
+/** 变更对比开关：开 = FCode diff 视图（编辑基线 → 当前活体）。 */
+const schemaDiff = ref(false);
 const schemaJson = computed(() => {
+  // 读 revision 进依赖：刷新按钮强制重算（其余依赖 reactive 自动联动）
+  void schemaRevision.value;
   const current = session.value;
   if (!current) return "";
   // flatUnits = effectiveUnits（session 已合并 overrides/fieldOverrides/
@@ -406,6 +413,34 @@ const schemaJson = computed(() => {
       units: flatUnits.value,
       hiddenUnitIds: [...hiddenUnits.value],
       groups: { ...groupVisibility },
+    }),
+    null,
+    2,
+  );
+});
+/** 编辑基线 = session 原始单元（无编辑层覆盖、无隐藏）——diff 的 before 侧。 */
+const schemaBaseJson = computed(() => {
+  const current = session.value;
+  if (!current) return "";
+  return JSON.stringify(
+    buildSchemaDoc({
+      assetName: current.assetName ?? null,
+      tgi: props.tgi,
+      modelLods: current.modelLods,
+      lotSize: current.lotSize,
+      lotTilePeriod: current.lotTilePeriod,
+      lotPlacement: current.lotPlacement,
+      lotBaseTile: current.lotBaseTile,
+      lotColors: current.lotColors,
+      lotColorsAuthored: current.lotColorsAuthored,
+      lotBorderColors: current.lotBorderColors,
+      lotBorderWidths: current.lotBorderWidths,
+      lotBorderPatternIndices: current.lotBorderPatternIndices,
+      lotOverlayBoxOffset: current.lotOverlayBoxOffset,
+      lotModelBBoxCenter: current.lotModelBBoxCenter,
+      units: current.units as LotUnitDto[],
+      hiddenUnitIds: [],
+      groups: {},
     }),
     null,
     2,
@@ -1159,6 +1194,26 @@ const treeSheetPinned = ref(true);
             <button
               type="button"
               class="schema-export"
+              :class="{ active: schemaDiff }"
+              :aria-pressed="schemaDiff"
+              :title="$t('package.schemaDiff')"
+              @click="schemaDiff = !schemaDiff"
+            >
+              <FIcon name="GitCompare" :size="13" aria-label="" />
+              {{ $t("package.schemaDiff") }}
+            </button>
+            <button
+              type="button"
+              class="schema-export"
+              :title="$t('package.schemaRefresh')"
+              @click="schemaRevision++"
+            >
+              <FIcon name="RefreshCw" :size="13" aria-label="" />
+              {{ $t("package.schemaRefresh") }}
+            </button>
+            <button
+              type="button"
+              class="schema-export"
               :disabled="!schemaJson"
               @click="exportSchema"
             >
@@ -1168,6 +1223,8 @@ const treeSheetPinned = ref(true);
           </div>
           <FCode
             :code="schemaJson"
+            :base-code="schemaDiff ? schemaBaseJson : ''"
+            line-numbers
             lang="json"
             copy-label="Copy"
             copied-label="Copied"
@@ -1483,6 +1540,12 @@ const treeSheetPinned = ref(true);
 }
 .schema-export:hover {
   background: var(--surface-hover);
+}
+/* 变更对比开关激活态：品牌描边 + 浅底（与 rail 按钮同语义） */
+.schema-export.active {
+  background: var(--accent);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 .schema-export:disabled {
   cursor: not-allowed;
