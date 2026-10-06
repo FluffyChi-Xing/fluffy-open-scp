@@ -42,6 +42,8 @@ const props = withDefaults(defineProps<Props>(), {
             background: 'var(--popover, var(--surface-elevated))',
             color: 'var(--popover-foreground, var(--foreground))',
             borderColor: 'var(--border)',
+            // PE 根 FSheet 浮层 z=80；teleport 到 body 的浮层须压过它
+            zIndex: 120,
           }"
         >
           <slot>{{ props.text }}</slot>

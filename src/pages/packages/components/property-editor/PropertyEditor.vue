@@ -575,16 +575,14 @@ const treeSheetPinned = ref(true);
             </FTooltip>
             <FTooltip :text="$t('package.railSource')" side="right">
               <template #trigger>
-                <span class="rail-item-wrap">
-                  <button
-                    type="button"
-                    class="rail-item"
-                    disabled
-                    :aria-label="$t('package.railSource')"
-                  >
-                    <FIcon name="CodeXml" :size="17" aria-label="" />
-                  </button>
-                </span>
+                <button
+                  type="button"
+                  class="rail-item"
+                  :aria-label="$t('package.railSource')"
+                  @click="openSchemaSheet"
+                >
+                  <FIcon name="CodeXml" :size="17" aria-label="" />
+                </button>
               </template>
             </FTooltip>
           </div>
