@@ -532,6 +532,12 @@ export interface PropUnit {
   /** 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。 */
   scale: number | null;
   fields: UnitFieldDto[];
+  /**
+   * 放置的直挂模型扩展位（= pe_schema prop 白名单同名键）：拖拽放置的
+   * 组件携带真实来源 TGI 与所在包；lot 既有单元无此二字段。
+   */
+  modelTgi?: Tgi | null;
+  modelPackageId?: number | null;
 }
 export interface PathPointUnit {
   kind: "pathPoint";

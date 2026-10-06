@@ -252,9 +252,11 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
         if (token === requestToken && payloads.length) treeModelPayloads.value = payloads;
       }
       // 记录引用的模型条目（组件库目录过滤 + 缺席兜底）——**全部来源**：
-      // tree/tree_model 的破洞树模型同为可放置组件，勿因加载通道不同而排除
+      // tree/tree_model 的破洞树模型同为可放置组件，勿因加载通道不同而排除。
+      // packageId 缺席（未定位到所在包）的 resolution 无法按需加载，跳过。
       const referenced = new Map<string, { packageId: number; instance: number }>();
       for (const resolution of resolutions) {
+        if (resolution.packageId == null) continue;
         for (const model of resolution.models) {
           if (model)
             referenced.set(`${model.instance}`, {

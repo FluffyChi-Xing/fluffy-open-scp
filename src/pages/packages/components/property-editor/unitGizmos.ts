@@ -152,7 +152,10 @@ export function buildSpawnerPlaceholder(
   unit: LotUnitDto,
 ): ThreeNamespace.Object3D {
   const figure = buildSimFigure(THREE, spawnerSeed(unit));
-  applyTransform(THREE, figure, unit.transform);
+  // pathPoint 无 transform（位置由 point 承载），联合收窄
+  if (unit.kind !== "pathPoint") {
+    applyTransform(THREE, figure, unit.transform);
+  }
   return figure;
 }
 

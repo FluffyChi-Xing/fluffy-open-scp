@@ -142,6 +142,8 @@ const props = defineProps<{
   editEnabled?: boolean;
   /** 拖入的直挂模型载荷（instance → LOTM 载荷；真模型渲染用）。 */
   addedModelPayloads?: Map<number, LotModelPayload>;
+  /** 放置后待选中：分组重建且新单元入组时自动选中（shell 传入）。 */
+  pendingSelectId?: string | null;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];

@@ -148,10 +148,36 @@ interface ModelCatalogEntry {
   size: number;
 }
 const modelCatalog = ref<ModelCatalogEntry[]>([]);
-const materialsTab = ref<"props" | "spawners" | "effects" | "paths" | "lights">(
-  "props",
-);
+const materialsTab = ref<MaterialTabId>("props");
 const materialsSearch = ref("");
+/** 物料页签/灯源预设/占位类目：字面量联合常量（模板内联数组会把 id/
+ * lightType/kind 放宽成 string，赋值回联合 ref 时 TS2322）。 */
+type MaterialTabId = "props" | "spawners" | "effects" | "paths" | "lights";
+const MATERIAL_TABS: { id: MaterialTabId; label: string }[] = [
+  { id: "props", label: "package.groupProps" },
+  { id: "spawners", label: "package.groupSpawners" },
+  { id: "effects", label: "package.groupEffects" },
+  { id: "paths", label: "package.groupPaths" },
+  { id: "lights", label: "package.groupLights" },
+];
+const LIGHT_PRESETS: {
+  lightType: "Point" | "Spot" | "Line";
+  label: string;
+}[] = [
+  { lightType: "Point", label: "package.lightPoint" },
+  { lightType: "Spot", label: "package.lightSpot" },
+  { lightType: "Line", label: "package.lightLine" },
+];
+const PLACE_ENTRIES: {
+  tab: MaterialTabId;
+  kind: "spawner" | "effect" | "pathPoint";
+  label: string;
+  icon: string;
+}[] = [
+  { tab: "spawners", kind: "spawner", label: "package.groupSpawners", icon: "MapPin" },
+  { tab: "effects", kind: "effect", label: "package.groupEffects", icon: "Zap" },
+  { tab: "paths", kind: "pathPoint", label: "package.groupPaths", icon: "Spline" },
+];
 /** 折叠面板展开状态（按组名；缺省全展开）。 */
 const collapsedGroups = ref(new Set<string>());
 function openMaterialsPanel() {
@@ -978,8 +1004,6 @@ const treeSheetPinned = ref(true);
           :edit-enabled="editEnabled"
           :added-model-payloads="addedModelPayloads"
           :pending-select-id="pendingSelectId"
-          :resolve-added-model="resolveAddedModel"
-          @place-unit="onPlaceUnit"
           @delete-unit="onDeleteUnit"
           :model-payload="modelPayload"
           :prop-models="propModels"
@@ -1047,13 +1071,7 @@ const treeSheetPinned = ref(true);
         <div class="materials-body">
           <div class="materials-tabs" role="tablist">
             <button
-              v-for="tab in [
-                { id: 'props', label: 'package.groupProps' },
-                { id: 'spawners', label: 'package.groupSpawners' },
-                { id: 'effects', label: 'package.groupEffects' },
-                { id: 'paths', label: 'package.groupPaths' },
-                { id: 'lights', label: 'package.groupLights' },
-              ]"
+              v-for="tab in MATERIAL_TABS"
               :key="tab.id"
               type="button"
               role="tab"
@@ -1126,11 +1144,7 @@ const treeSheetPinned = ref(true);
             <template v-else-if="materialsTab === 'lights'">
               <div class="materials-grid">
                 <div
-                  v-for="preset in [
-                    { lightType: 'Point', label: 'package.lightPoint' },
-                    { lightType: 'Spot', label: 'package.lightSpot' },
-                    { lightType: 'Line', label: 'package.lightLine' },
-                  ]"
+                  v-for="preset in LIGHT_PRESETS"
                   :key="preset.lightType"
                   class="materials-entry"
                   @pointerdown.stop.prevent="
@@ -1148,26 +1162,7 @@ const treeSheetPinned = ref(true);
             <template v-else>
               <div class="materials-grid">
                 <div
-                  v-for="entry in [
-                    {
-                      tab: 'spawners',
-                      kind: 'spawner',
-                      label: 'package.groupSpawners',
-                      icon: 'MapPin',
-                    },
-                    {
-                      tab: 'effects',
-                      kind: 'effect',
-                      label: 'package.groupEffects',
-                      icon: 'Zap',
-                    },
-                    {
-                      tab: 'paths',
-                      kind: 'pathPoint',
-                      label: 'package.groupPaths',
-                      icon: 'Spline',
-                    },
-                  ]"
+                  v-for="entry in PLACE_ENTRIES"
                   v-show="materialsTab === entry.tab"
                   :key="entry.tab"
                   class="materials-entry"
