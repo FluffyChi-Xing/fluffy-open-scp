@@ -172,13 +172,13 @@ const viewport = useEditorViewport({
 });
 
 // ---------------------------------------------------------------------------
-// 拾取反馈 overlay（低代码引擎画布对齐）：悬停 = dashed 主题色描边 + 左上角
-// 小字；选中 = solid 主题色描边 + 左上角 name-tag。框体由 viewer.onFrame
-// 跟随相机重投影；包围盒按 rebuild 代数缓存（Unit 不动，投影每帧算）。
-// 地面/建筑模型不属于 Unit，不参与（用户口径 2026-10-06）。
+// 拾取反馈（2026-10-06 二轮）：轮廓壳（viewer 反转壳体，hover 虚线/选中
+// 实线，贴模型剪影）+ 锚定组件原点的文字标签。屏幕空间 AABB 方框已撤
+// （精细灯光 bbox 爆炸 + 方框随视角变形，用户反馈）。
+// 地面/建筑模型不属于 Unit，不参与。
 // ---------------------------------------------------------------------------
-const hoverBoxEl = ref<HTMLElement | null>(null);
-const selectBoxEl = ref<HTMLElement | null>(null);
+const hoverTagEl = ref<HTMLElement | null>(null);
+const selectTagEl = ref<HTMLElement | null>(null);
 const unitById = computed<Map<string, LotUnitDto>>(() => {
   const map = new Map<string, LotUnitDto>();
   const groups = props.grouping;
@@ -198,97 +198,78 @@ function overlayLabel(id: string): string {
   const unit = unitById.value.get(id);
   return unit ? unitLabel(unit, t) : id;
 }
-/** 包围盒缓存（世界系；rebuild 换代清空）。 */
-const overlayBoxCache = new Map<string, ThreeNamespace.Box3>();
-let overlayBoxRevision = -1;
 
-function unitScreenRect(
-  id: string,
-): { left: number; top: number; width: number; height: number } | null {
+/** 组件原点 → 容器相对屏幕坐标（标签锚点）。 */
+function tagAnchor(id: string): { x: number; y: number } | null {
   const instance = viewport.viewer.value;
   if (!instance) return null;
   const object = viewport.unitObjects.get(id);
   if (!object || !object.visible) return null;
-  if (overlayBoxRevision !== viewport.revision.value) {
-    overlayBoxCache.clear();
-    overlayBoxRevision = viewport.revision.value;
-  }
-  let box = overlayBoxCache.get(id);
-  if (!box) {
-    box = new instance.THREE.Box3().setFromObject(object);
-    if (box.isEmpty()) return null;
-    overlayBoxCache.set(id, box);
-  }
-  const corner = new instance.THREE.Vector3();
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  for (let i = 0; i < 8; i += 1) {
-    corner.set(
-      i & 1 ? box.max.x : box.min.x,
-      i & 2 ? box.max.y : box.min.y,
-      i & 4 ? box.max.z : box.min.z,
-    );
-    const screen = instance.worldToScreen(corner);
-    // 任一角落在相机后方 = 框体投影退化，整体隐藏
-    if (screen.behind) return null;
-    minX = Math.min(minX, screen.x);
-    maxX = Math.max(maxX, screen.x);
-    minY = Math.min(minY, screen.y);
-    maxY = Math.max(maxY, screen.y);
-  }
-  if (!Number.isFinite(minX)) return null;
-  // 小标记（灯/路径点 gizmo）给 20px 下限，保持可辨识
-  const width = Math.max(20, maxX - minX);
-  const height = Math.max(20, maxY - minY);
-  return {
-    left: (minX + maxX) / 2 - width / 2,
-    top: (minY + maxY) / 2 - height / 2,
-    width,
-    height,
-  };
+  const world = new instance.THREE.Vector3();
+  object.getWorldPosition(world);
+  const screen = instance.worldToScreen(world);
+  if (screen.behind) return null;
+  return { x: screen.x, y: screen.y };
 }
 
-function placeBox(el: HTMLElement | null, id: string | null, label: string) {
+function placeTag(el: HTMLElement | null, id: string | null, label: string) {
   if (!el) return;
   if (!id) {
     el.style.display = "none";
     return;
   }
-  const rect = unitScreenRect(id);
-  if (!rect) {
+  const anchor = tagAnchor(id);
+  if (!anchor) {
     el.style.display = "none";
     return;
   }
   el.style.display = "block";
-  el.style.left = `${rect.left}px`;
-  el.style.top = `${rect.top}px`;
-  el.style.width = `${rect.width}px`;
-  el.style.height = `${rect.height}px`;
-  const labelEl = el.firstElementChild as HTMLElement | null;
-  if (labelEl) labelEl.textContent = label;
+  el.style.left = `${anchor.x}px`;
+  el.style.top = `${anchor.y}px`;
+  el.textContent = label;
 }
 
 function updatePickOverlay() {
   const hover = hoveredId.value;
   const selected = props.selectedId;
-  // 选中框优先；悬停同一目标时不重复画
-  placeBox(
-    hoverBoxEl.value,
+  placeTag(
+    hoverTagEl.value,
     hover && hover !== selected ? hover : null,
     hover ? overlayLabel(hover) : "",
   );
-  placeBox(selectBoxEl.value, selected, selected ? overlayLabel(selected) : "");
+  placeTag(selectTagEl.value, selected, selected ? overlayLabel(selected) : "");
+}
+
+/** 轮廓壳应用：hover 虚线；选中实线经 viewer.setSelected 内部应用。 */
+function applyOutlines() {
+  const instance = viewport.viewer.value;
+  if (!instance) return;
+  const hover = hoveredId.value;
+  const hoverObject =
+    hover && hover !== props.selectedId
+      ? viewport.unitObjects.get(hover) ?? null
+      : null;
+  instance.setHoverOutline(hoverObject);
+  const selected = props.selectedId;
+  instance.setSelected(
+    selected ? viewport.unitObjects.get(selected) ?? null : null,
+  );
 }
 watch(viewport.viewer, (instance) => {
   instance?.setOnFrame(() => updatePickOverlay());
+  applyOutlines();
   updatePickOverlay();
 });
-watch([hoveredId, () => props.selectedId, viewport.revision], () =>
-  updatePickOverlay(),
-);
-onBeforeUnmount(() => viewport.viewer.value?.setOnFrame(null));
+watch([hoveredId, () => props.selectedId, viewport.revision], () => {
+  applyOutlines();
+  updatePickOverlay();
+});
+onBeforeUnmount(() => {
+  viewport.viewer.value?.setOnFrame(null);
+  const instance = viewport.viewer.value;
+  instance?.setHoverOutline(null);
+  instance?.setSelectedOutline(null);
+});
 const lightPanelOpen = ref(false);
 const lodPanelOpen = ref(false);
 const infoPanelOpen = ref(false);
@@ -1704,21 +1685,17 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       :ref="(el) => (viewport.container.value = el as HTMLElement | null)"
       class="viewport-3d"
     >
-      <!-- 拾取反馈：悬停 dashed + 小字 / 选中 solid + name-tag（主题色） -->
-      <div
-        :ref="(el) => (hoverBoxEl = el as HTMLElement | null)"
-        class="pick-box"
+      <!-- 拾取反馈标签：轮廓壳在 viewer 内（模型描边），此处仅文字 -->
+      <span
+        :ref="(el) => (hoverTagEl = el as HTMLElement | null)"
+        class="pick-label"
         aria-hidden="true"
-      >
-        <span class="pick-label" />
-      </div>
-      <div
-        :ref="(el) => (selectBoxEl = el as HTMLElement | null)"
-        class="pick-box pick-selected"
+      />
+      <span
+        :ref="(el) => (selectTagEl = el as HTMLElement | null)"
+        class="pick-label pick-tag"
         aria-hidden="true"
-      >
-        <span class="pick-label pick-tag" />
-      </div>
+      />
     </div>
     <div
       v-if="modelState === 'loading'"
@@ -1951,33 +1928,25 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
   position: relative;
   touch-action: none;
 }
-/* 拾取反馈框：屏幕空间投影（unitScreenRect），随渲染帧跟随相机 */
-.pick-box {
-  border: 1.5px dashed var(--brand);
-  display: none;
-  pointer-events: none;
-  position: absolute;
-  z-index: 5;
-}
-.pick-box.pick-selected {
-  border: 2px solid var(--brand);
-  border-radius: 2px;
-}
+/* 拾取反馈标签（轮廓壳在 viewer 内，模型描边）：锚定组件原点上方 */
 .pick-label {
   color: var(--brand);
+  display: none;
   font-size: 10px;
-  left: 0;
   line-height: 1;
-  padding: 2px 5px;
+  padding: 2px 4px;
+  pointer-events: none;
   position: absolute;
-  top: 0;
-  transform: translateY(calc(-100% - 2px));
+  text-shadow: 0 1px 2px rgb(0 0 0 / 60%);
+  transform: translateY(calc(-100% - 6px));
   white-space: nowrap;
+  z-index: 5;
 }
 .pick-tag {
   background: var(--brand);
   border-radius: 3px;
   color: #fff;
+  text-shadow: none;
 }
 .viewport-3d:active {
   cursor: grabbing;

@@ -114,6 +114,109 @@ export class ThreeViewer {
     this.needsRender = true;
   }
 
+  /** 主题色描边（品牌色 #0878FE，与 UI --brand 一致）。 */
+  private static readonly OUTLINE_COLOR = 0x0878fe;
+
+  private hoverOutline: { target: ThreeNamespace.Object3D; hull: ThreeNamespace.Object3D } | null =
+    null;
+  private selectedOutline: {
+    target: ThreeNamespace.Object3D;
+    hull: ThreeNamespace.Object3D;
+  } | null = null;
+
+  /**
+   * 悬停/选中轮廓壳（反转壳体法）：把目标网格克隆为「法线外扩 + BackSide +
+   * 纯色」的壳，挂在目标对象下继承变换——轮廓贴着模型剪影走，不随视角变形
+   * （2026-10-06 取代屏幕空间 AABB 方框：方框大小不定且精细灯光 bbox 爆炸）。
+   * hover=虚线、selected=实线；null = 清除。
+   */
+  setHoverOutline(object: ThreeNamespace.Object3D | null) {
+    this.applyOutline("hover", object);
+  }
+
+  setSelectedOutline(object: ThreeNamespace.Object3D | null) {
+    this.applyOutline("selected", object);
+  }
+
+  private applyOutline(
+    kind: "hover" | "selected",
+    target: ThreeNamespace.Object3D | null,
+  ) {
+    const current = kind === "hover" ? this.hoverOutline : this.selectedOutline;
+    if ((current?.target ?? null) === target) return;
+    if (current) {
+      current.hull.parent?.remove(current.hull);
+      current.hull.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (mesh.isMesh) (mesh.material as ThreeNamespace.Material).dispose();
+      });
+    }
+    const entry = target
+      ? { target, hull: this.buildOutlineHull(target, kind) }
+      : null;
+    if (entry) target.add(entry.hull);
+    if (kind === "hover") this.hoverOutline = entry;
+    else this.selectedOutline = entry;
+    this.needsRender = true;
+  }
+
+  /** 轮廓壳构建：克隆目标子树的 mesh/group（跳过光源等非网格），共用几何。 */
+  private buildOutlineHull(
+    target: ThreeNamespace.Object3D,
+    kind: "hover" | "selected",
+  ): ThreeNamespace.Object3D {
+    const dashed = kind === "hover";
+    // 壳厚随取景半径缩放（近似恒定屏幕厚度）
+    const width = Math.max(this.frameRadius, 1) * (dashed ? 0.005 : 0.01);
+    const material = new this.THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new this.THREE.Color(ThreeViewer.OUTLINE_COLOR) },
+        uWidth: { value: width },
+        uDash: { value: dashed ? 1 : 0 },
+      },
+      vertexShader: `
+        uniform float uWidth;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vec3 n = normalize(normalMatrix * normal);
+          mv.xyz += n * uWidth;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor;
+        uniform float uDash;
+        void main() {
+          if (uDash > 0.5 && mod(floor(gl_FragCoord.x / 9.0) + floor(gl_FragCoord.y / 9.0), 2.0) < 1.0) discard;
+          gl_FragColor = vec4(uColor, 1.0);
+        }`,
+      side: this.THREE.BackSide,
+    });
+    const hull = new this.THREE.Group();
+    hull.name = "__outlineHull";
+    const walk = (src: ThreeNamespace.Object3D, dst: ThreeNamespace.Object3D) => {
+      for (const child of [...src.children]) {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (mesh.isMesh) {
+          const shell = new this.THREE.Mesh(mesh.geometry, material);
+          shell.position.copy(mesh.position);
+          shell.quaternion.copy(mesh.quaternion);
+          shell.scale.copy(mesh.scale);
+          dst.add(shell);
+        } else if ((child as ThreeNamespace.Object3D).isGroup) {
+          const group = new this.THREE.Group();
+          group.position.copy(child.position);
+          group.quaternion.copy(child.quaternion);
+          group.scale.copy(child.scale);
+          dst.add(group);
+          walk(child, group);
+        }
+        // 光源/线条等其他类型跳过（路径线无轮廓语义）
+      }
+    };
+    walk(target, hull);
+    return hull;
+  }
+
   /** 登记悬停拾取目标（unit 图层组根）；空数组关闭 hover 拾取。 */
   setHoverTargets(targets: ThreeNamespace.Object3D[]) {
     this.hoverTargets = targets;
@@ -364,12 +467,13 @@ export class ThreeViewer {
   }
 
   /**
-   * 选中登记。选中视觉 = 屏幕空间描边框 + name-tag（编辑器层 overlay 绘制，
-   * onFrame 跟随相机）；旧材质染色方案已撤——染色对贴花/无光照材质需分别
-   * 打补丁且不够醒目（2026-10-06 用户反馈）。
+   * 选中登记 + 实线轮廓壳。选中视觉 = 模型轮廓描边（反转壳体法）+ 左上角
+   * name-tag（DOM 层）；旧材质染色方案已撤（对贴花/无光照材质要分别打
+   * 补丁且不够醒目）。object 为 null 清除。
    */
   setSelected(object: ThreeNamespace.Object3D | null) {
     this.selected = object;
+    this.applyOutline("selected", object);
     this.needsRender = true;
   }
 
