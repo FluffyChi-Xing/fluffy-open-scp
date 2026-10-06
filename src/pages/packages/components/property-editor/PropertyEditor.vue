@@ -250,10 +250,38 @@ function beginPlacementDrag(event: PointerEvent, payload: PlacePayload) {
   placementPayload.value = payload;
   document.body.style.cursor = "copy";
 }
+/** 行主序矩阵的均匀缩放（三基向量长度均值）；无变换 = 1。 */
+function matrixScale(matrix: number[] | undefined): number {
+  if (!matrix || matrix.length !== 12) return 1;
+  const l = (x: number, y: number, z: number) => Math.hypot(x, y, z);
+  return (
+    (l(matrix[0], matrix[1], matrix[2]) +
+      l(matrix[3], matrix[4], matrix[5]) +
+      l(matrix[6], matrix[7], matrix[8])) /
+    3
+  );
+}
+
+/** 同类既有单元的中位缩放（数据驱动：与相邻树/组件观感一致）。 */
+function medianScaleOfKind(kind: string): number {
+  const scales = (session.value?.units ?? [])
+    .filter((unit) => unit.kind === kind && unit.transform)
+    .map((unit) => matrixScale(unit.transform!.matrix))
+    .filter((scale) => scale > 0.001)
+    .sort((a, b) => a - b);
+  return scales.length ? scales[Math.floor(scales.length / 2)] : 1;
+}
+
 function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) {
   if (!editEnabled.value) return;
+  // 基向量 = 同类既有单元的中位缩放（引擎按单元数据缩放聚合模型；
+  // 数据无缩放时退化为 1）
+  const defaultScale = medianScaleOfKind(payload.kind);
   const transform = {
-    matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, position[0], position[1], position[2]],
+    matrix: [
+      defaultScale, 0, 0, 0, defaultScale, 0, 0, 0, defaultScale, 0, 0,
+      position[0], position[1], position[2],
+    ],
   };
   let unit: LotUnitDto;
   if (payload.kind === "light") {
