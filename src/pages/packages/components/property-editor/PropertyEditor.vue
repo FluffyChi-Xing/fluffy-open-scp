@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FAlert from "@/components/ui/FAlert.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
@@ -25,6 +26,11 @@ const {
   loading,
   loadError,
   modelPayload,
+  propModels,
+  propTreeIds,
+  treeAtlasPng,
+  treeModelPayloads,
+  releasePropPackages,
   modelLods,
   activeLod,
   switchLod,
@@ -55,6 +61,7 @@ const {
   load,
   toggleGroup,
   toggleUnit,
+  resetViewState,
 } = usePropertyEditorSession(props.packageId, props.tgi);
 
 /** 编辑工具（PE-重构-3）：select = 仅拾取；translate/rotate/scale 挂手柄。 */
@@ -138,6 +145,23 @@ useEditorHotkeys(
 );
 
 const renderMode = ref<"default" | "refined">("default");
+/** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
+ * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
+const neonAnim = ref(false);
+
+// 退出复位（2026-10-04 问题2）：sheet 关闭时把视图状态收回默认——组件
+// 始终挂载（v-model:open），否则 renderMode/图层显隐跨会话残留，下次打开
+// 直接全量重建精细渲染（首帧卡顿）或带着上次隐藏的图层。时段/LOD/编辑
+// 数据保留（用户明确调节/资产），仅复位"视图"维度。
+watch(open, (isOpen, wasOpen) => {
+  if (isOpen || !wasOpen) return;
+  renderMode.value = "default";
+  neonAnim.value = false;
+  tool.value = "select";
+  resetViewState();
+  // 卸载 prop 解析自动注册的 EcoGame 包（会话范围=注册范围）
+  releasePropPackages();
+});
 /** 通道实验（已停用，见模板注释）：保留状态供复验时恢复。 */
 const specExperiment = ref(false);
 /** 0=自动逐像素 / 1=强制 G / 2=强制 B（精细渲染现固定 2）。 */
@@ -200,14 +224,27 @@ async function exportModel(mode: "white" | "textured") {
 const powered = ref(true);
 
 watch(open, (value) => {
-  if (value) void load();
+  if (value) {
+    diagnosticsDismissed = false;
+    void load();
+  }
 });
+/** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
+let diagnosticsDismissed = false;
 const title = computed(() => {
   const assetName = session.value?.assetName;
   if (assetName) return assetName;
   return `0x${props.tgi.instance.toString(16).padStart(8, "0").toUpperCase()}`;
 });
 const diagnostics = computed(() => session.value?.diagnostics ?? []);
+
+/**
+ * 左侧工作台 rail（低代码引擎布局对齐）：组件树收进可开合的 sheet——
+ * rail 大纲按钮开关；图钉切换 停靠（占布局列）/悬浮（盖在视口上）。
+ * 物料/源码与提交 Issue 为后续版本入口，当前禁用置灰。
+ */
+const treeSheetOpen = ref(true);
+const treeSheetPinned = ref(true);
 </script>
 
 <template>
@@ -217,6 +254,17 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
     width="100vw"
   >
     <div v-if="open" class="editor-root">
+      <!-- 吸顶诊断横幅：会话诊断一次展示，可关闭（重开会话恢复） -->
+      <FAlert
+        v-if="diagnostics.length && !diagnosticsDismissed"
+        class="editor-alert"
+        type="info"
+        closable
+        :close-label="$t('shell.close')"
+        @close="diagnosticsDismissed = true"
+      >
+        {{ diagnostics.join(" · ") }}
+      </FAlert>
       <header class="editor-header">
         <div class="editor-title">
           <strong>{{ $t("package.propertyEditor") }}</strong>
@@ -324,6 +372,16 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FCheckbox v-model="powered" />
           <span>{{ $t("package.powered") }}</span>
         </label>
+        <!-- 动态招牌（2026-10-05 十轮）：关 = 静态量化合成；开 = dev LED
+             扫掠动画（decalNeonTubeSDF 双相位口径，§12.5） -->
+        <label
+          v-if="renderMode === 'refined'"
+          class="spec-experiment"
+          :title="$t('package.neonAnimHint')"
+        >
+          <FCheckbox v-model="neonAnim" />
+          <span>{{ $t("package.neonAnim") }}</span>
+        </label>
         <button
           class="editor-close"
           type="button"
@@ -395,10 +453,6 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           <FIcon name="X" :size="15" aria-label="" />
         </button>
       </header>
-      <p v-if="diagnostics.length" class="editor-diagnostics">
-        <FIcon name="CircleAlert" :size="13" aria-label="" />
-        <span>{{ diagnostics.join(" · ") }}</span>
-      </p>
       <div v-if="loading" class="editor-loading">
         <FSpinner size="sm" :label="$t('common.loading')" />
       </div>
@@ -406,18 +460,106 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
         {{ $t(loadError) }}
       </p>
       <div v-else-if="session" class="editor-body">
-        <PropertyEditorOutliner
-          :grouping="grouping"
-          :selected-id="selectedId"
-          :hidden-units="hiddenUnits"
-          :group-visibility="groupVisibility"
-          @select="selectedId = $event"
-          @toggle-unit="toggleUnit"
-          @toggle-group="toggleGroup"
-        />
+        <!-- 左侧工作台 rail：大纲（组件树 sheet 开关）/物料/源码（禁用）
+             + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
+        <nav class="editor-rail" :aria-label="$t('package.inspector')">
+          <div class="rail-group">
+            <button
+              type="button"
+              class="rail-item"
+              :class="{ active: treeSheetOpen }"
+              :aria-pressed="treeSheetOpen"
+              :title="$t('package.railOutline')"
+              @click="treeSheetOpen = !treeSheetOpen"
+            >
+              <FIcon name="ListTree" :size="16" aria-label="" />
+              <span>{{ $t("package.railOutline") }}</span>
+            </button>
+            <button
+              type="button"
+              class="rail-item"
+              disabled
+              :title="$t('package.comingSoon')"
+            >
+              <FIcon name="Boxes" :size="16" aria-label="" />
+              <span>{{ $t("package.railMaterials") }}</span>
+            </button>
+            <button
+              type="button"
+              class="rail-item"
+              disabled
+              :title="$t('package.comingSoon')"
+            >
+              <FIcon name="CodeXml" :size="16" aria-label="" />
+              <span>{{ $t("package.railSource") }}</span>
+            </button>
+          </div>
+          <div class="rail-group">
+            <button
+              type="button"
+              class="rail-item"
+              disabled
+              :title="$t('package.comingSoon')"
+            >
+              <FIcon name="Send" :size="16" aria-label="" />
+              <span>{{ $t("package.railSubmitIssue") }}</span>
+            </button>
+          </div>
+        </nav>
+        <!-- 组件树 sheet：图钉=停靠（占布局列），未图钉=悬浮盖在视口上。
+             dock 恒驻（空占位保持 grid 四列对位）——v-if 移除会让后续子元素
+             左移错列，检查器落进 auto 列被内容撑爆（真机 bug 2026-10-06）。 -->
+        <div
+          class="tree-dock"
+          :class="{ float: !treeSheetPinned || !treeSheetOpen }"
+        >
+          <section
+            v-if="treeSheetOpen"
+            class="tree-sheet"
+            :class="{ overlay: !treeSheetPinned }"
+            :aria-label="$t('package.componentTree')"
+          >
+            <header class="tree-sheet-head">
+              <strong>{{ $t("package.componentTree") }}</strong>
+              <div class="tree-sheet-actions">
+                <button
+                  type="button"
+                  class="tree-sheet-btn"
+                  :class="{ active: treeSheetPinned }"
+                  :aria-pressed="treeSheetPinned"
+                  :title="$t('package.pinSheet')"
+                  @click="treeSheetPinned = !treeSheetPinned"
+                >
+                  <FIcon :name="treeSheetPinned ? 'Pin' : 'PinOff'" :size="13" aria-label="" />
+                </button>
+                <button
+                  type="button"
+                  class="tree-sheet-btn"
+                  :title="$t('package.closeSheet')"
+                  @click="treeSheetOpen = false"
+                >
+                  <FIcon name="X" :size="13" aria-label="" />
+                </button>
+              </div>
+            </header>
+            <PropertyEditorOutliner
+              :grouping="grouping"
+              :selected-id="selectedId"
+              :hidden-units="hiddenUnits"
+              :group-visibility="groupVisibility"
+              @select="selectedId = $event"
+              @toggle-unit="toggleUnit"
+              @toggle-group="toggleGroup"
+            />
+          </section>
+        </div>
         <PropertyEditorViewport
           ref="viewportRef"
           :model-payload="modelPayload"
+          :prop-models="propModels"
+          :prop-tree-ids="propTreeIds"
+          :tree-model-payloads="treeModelPayloads"
+          :tree-atlas-png="treeAtlasPng"
           :model-lods="modelLods"
           :active-lod="activeLod"
           :render-mode="renderMode"
@@ -447,6 +589,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :neon-anim="neonAnim"
           :decal-light="decalLight"
           :tool="tool"
           @select="selectedId = $event"
@@ -600,17 +743,12 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   background: var(--surface-hover);
   color: var(--foreground);
 }
-.editor-diagnostics {
-  align-items: center;
-  background: var(--surface-elevated);
-  border-bottom: 1px solid var(--border);
-  color: var(--muted-foreground);
-  display: flex;
-  font-size: 11px;
-  gap: 7px;
-  margin: 0;
-  overflow: hidden;
-  padding: 6px 16px;
+/* 吸顶诊断横幅：盖在滚动内容之上，随 editor-root 顶缘吸附 */
+.editor-alert {
+  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 .editor-loading {
   display: grid;
@@ -627,14 +765,134 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
   text-align: center;
 }
 .editor-body {
+  position: relative;
   display: grid;
   flex: 1;
-  grid-template-columns: 220px minmax(0, 1fr) 300px;
+  /* rail | 组件树 sheet（停靠时占列，悬浮/关闭塌缩为 0）| 视口 | 检查器 */
+  grid-template-columns: 48px auto minmax(0, 1fr) 360px;
   min-height: 0;
 }
 @media (max-width: 960px) {
   .editor-body {
-    grid-template-columns: 180px minmax(0, 1fr) 240px;
+    grid-template-columns: 44px auto minmax(0, 1fr) 300px;
   }
+}
+/* 左侧工作台 rail：图标+微标签竖排，组间留白，底部组贴齐下缘 */
+.editor-rail {
+  border-inline-end: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: space-between;
+  min-height: 0;
+  padding: 8px 4px;
+}
+.rail-group {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rail-item {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  font-size: 9px;
+  gap: 3px;
+  padding: 6px 2px;
+  width: 40px;
+}
+.rail-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.rail-item.active {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.rail-item:disabled {
+  color: var(--subtle-foreground);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* 组件树 sheet 停靠列：悬浮时塌缩为 0（sheet 转绝对定位于 body） */
+.tree-dock {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+.tree-dock.float {
+  width: 0;
+}
+.tree-sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  width: 232px;
+}
+.tree-sheet.overlay {
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 35%);
+  inset-inline-start: 48px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 15;
+}
+.tree-sheet-head {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 7px 8px 7px 12px;
+}
+.tree-sheet-head strong {
+  font-size: 12px;
+  margin-inline-end: auto;
+}
+.tree-sheet-actions {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+.tree-sheet-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 22px;
+  min-width: 22px;
+  padding: 0;
+}
+.tree-sheet-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.tree-sheet-btn.active {
+  color: var(--accent);
+}
+/* Outliner 自带的分隔线在 sheet 内是双边框，剥掉并占满剩余高度 */
+.tree-sheet :deep(.outliner) {
+  border-inline-end: 0;
+  flex: 1;
+  min-height: 0;
 }
 </style>

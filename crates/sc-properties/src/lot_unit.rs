@@ -152,6 +152,9 @@ pub enum LotUnit {
         /// 分箱内下标；C# Billboard 序号用的是 bin（`Prop.bin`）。
         index: usize,
         bin: usize,
+        /// 原型资源 id（ID 列同下标 Key.instance）→ 脚本资源表反查 RW4 模型
+        /// （PE 精细替换；解析链见 src-tauri prop_models.rs 模块文档）。
+        resource_id: Option<u32>,
         transform: Option<UnitTransform>,
         slot: Option<i32>,
         /// 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。
@@ -269,6 +272,21 @@ fn unit_transform(
             ));
             None
         }
+    }
+}
+
+/// prop 槽位的资源 id：ID 列是**本箱资源清单**（引擎 cUnitBinDraw
+/// mResources → mResourceSlots 逐槽指派），不是逐槽原型——列长常少于
+/// transform 列，槽位循环取用（index % 列长）。同下标直取会让多余槽位
+/// 全部无模型（消防局 8 车位只出 3 辆的根因）。
+fn unit_resource_id_cycled(file: &PropertyFile, hash: u32, index: usize) -> Option<u32> {
+    let column = column(file, hash)?;
+    if column.is_empty() {
+        return None;
+    }
+    match &column[index % column.len()] {
+        Value::Key(key) => Some(key.instance),
+        _ => None,
     }
 }
 
@@ -518,6 +536,7 @@ fn assemble_props(file: &PropertyFile, out: &mut LotUnits) {
             out.units.push(LotUnit::Prop {
                 index,
                 bin,
+                resource_id: unit_resource_id_cycled(file, id_hash, index),
                 transform: unit_transform(file, transform_hash, index, &mut out.diagnostics),
                 slot: unit_i32(file, slot_hash, index),
                 scale: unit_transform_scale(file, transform_hash, index),

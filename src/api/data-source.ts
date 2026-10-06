@@ -27,6 +27,7 @@ import type {
   ResourcePreview,
   ResourceSummary,
   ResolvedResourceName,
+  ResolvedPropModel as PropModelResolution,
   Rw4ResourceData,
   ErzResourceData,
   Rw4SectionDetail,
@@ -101,6 +102,12 @@ export interface OpenScpDataSource {
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
   /** 返回 `read_lot_model_meshes` 原始字节容器（LotModelPayload，见 tauri.ts）。 */
   readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
+  /** PE 精细替换：prop resourceID → RW4 模型 TGI（含 EcoGame 包自注册）。 */
+  resolvePropModels(
+    resourceIds: number[],
+  ): Promise<{ resolutions: PropModelResolution[] }>;
+  /** PE 关闭：卸载自动注册的 EcoGame 包（会话范围=注册范围）。 */
+  releasePropModelPackages(): Promise<number>;
   /** 文本预览全量原始字节（服务端 8MB 上限，见 read_resource_text）。 */
   readResourceText(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
   /** 文本分段动态加载：[offset, offset+length) 原始字节。 */
@@ -177,6 +184,8 @@ function tauriDataSource(): OpenScpDataSource {
     readDecalImages: tauriApi.packages.readDecalImages,
     readLotEditorSession: tauriApi.packages.readLotEditorSession,
     readLotModelMeshes: tauriApi.packages.readLotModelMeshes,
+    resolvePropModels: tauriApi.packages.resolvePropModels,
+    releasePropModelPackages: tauriApi.packages.releasePropModelPackages,
     readResourceText: tauriApi.packages.readResourceText,
     readResourceTextRange: tauriApi.packages.readResourceTextRange,
     readRasterPreview: tauriApi.packages.readRasterPreview,
@@ -563,6 +572,13 @@ function mockDataSource(): OpenScpDataSource {
       view.setUint32(8, 0, true); // mesh_count
       view.setUint32(12, 0, true); // material_count
       return out;
+    },
+    async resolvePropModels(resourceIds) {
+      // 浏览器 demo 模式：无模型可解析（prop 保持标记锥）
+      return { resolutions: [] as PropModelResolution[] };
+    },
+    async releasePropModelPackages() {
+      return 0;
     },
     async readResourceText(_packageId, _tgi) {
       // demo 模式文本内容直接内联在 previewResource，无全量通道

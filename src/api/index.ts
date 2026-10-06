@@ -74,6 +74,7 @@ import {
   type Tgi,
   type WorkspaceEntry,
   type WorkspaceStatus,
+  type ResolvedPropModel,
 } from "./tauri";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -391,6 +392,13 @@ export const tauriApi = {
       command<ArrayBuffer>("read_lot_model_meshes", {
         request: { packageId, tgi },
       }),
+    resolvePropModels: (resourceIds: number[]) =>
+      command<{ resolutions: ResolvedPropModel[] }>("resolve_prop_models", {
+        request: { resourceIds },
+      }),
+    releasePropModelPackages: () =>
+      command<number>("release_prop_model_packages", {}),
+    readSimParts: () => command<ArrayBuffer>("read_sim_parts", {}),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },

@@ -66,6 +66,18 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const modelPayload = shallowRef<LotModelPayload | null>(null);
   /** LOD1~LOD4 资源位置；index 0 = LOD1，缺失级为 null。 */
   const modelLods = shallowRef<(LotModelLodRef | null)[]>([]);
+  /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（后端脚本资源表反查）。
+   * 异步旁路加载，不阻塞主模型；未命中保持标记锥。 */
+  const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
+  /** 树 prop（source=tree/tree_model）资源 id 集合 → 树专用渲染分支。 */
+  const propTreeIds = shallowRef<Set<number>>(new Set());
+  /** 树公告板图集（base64 PNG，2×2 四树格）：后端从 Graphics 包树图集
+   * RW4 解码下发，全部树 prop 共享同一图集。 */
+  const treeAtlasPng = shallowRef<string | null>(null);
+  /** 模型树路线（流程文档 §1.6）：descriptor→Parent 配置表的 impostor 源
+   * 3D 模型 LOTM 载荷（≤4 个形状）。全部树 prop 共用同一组，只载一次；
+   * 空数组 = 后端模型缺席，前端回落公告板。 */
+  const treeModelPayloads = shallowRef<LotModelPayload[]>([]);
   /** 当前加载的 LOD（index）；默认取第一个可用级。 */
   const activeLod = ref(0);
   const modelState = ref<ModelState>("pending");
@@ -73,10 +85,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** 本地编辑层（PE-重构-2）：transform override + undo/redo，不写回后端。 */
   const edit = createUnitEditLayer();
   const hiddenUnits = ref(new Set<string>());
-  /** 图层可见性。decals 默认关闭：decal↔建筑作用机制尚有逆向缺口（Top 层
-   * 链路部分 mesh 未生效，见 ctx note 2026-09-26），占位/半渲染内容干扰
-   * 对拍；左侧 Outliner 图层开关可随时手动打开。 */
-  const groupVisibility = reactive<Record<string, boolean>>({
+  /** 图层可见性默认口径（decals 默认关闭的理由见下）。 */
+  const GROUP_VISIBILITY_DEFAULTS: Record<string, boolean> = {
     model: true,
     lot: true,
     lights: true,
@@ -85,7 +95,23 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     effects: true,
     spawners: true,
     paths: true,
+  };
+  /** 图层可见性。decals 默认关闭：decal↔建筑作用机制尚有逆向缺口（Top 层
+   * 链路部分 mesh 未生效，见 ctx note 2026-09-26），占位/半渲染内容干扰
+   * 对拍；左侧 Outliner 图层开关可随时手动打开。 */
+  const groupVisibility = reactive<Record<string, boolean>>({
+    ...GROUP_VISIBILITY_DEFAULTS,
   });
+
+  /** 视图状态复位（2026-10-04 问题2）：编辑器 sheet 关闭时调用——
+   * 组件保持挂载（v-model:open），ref 状态跨会话残留会导致下次打开直接
+   * 进入上次的精细渲染/图层隐藏组合（首帧卡顿 + 观感跳变）。编辑数据
+   * （transform/字段 override）属用户资产，不在复位范围。 */
+  function resetViewState() {
+    hiddenUnits.value = new Set();
+    Object.assign(groupVisibility, GROUP_VISIBILITY_DEFAULTS);
+    selectedId.value = null;
+  }
 
   let requestToken = 0;
   /** 每次 open 递增，用于把同一 lot 的多次打开区分为不同遥测会话。 */
@@ -168,6 +194,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       }
       modelPayload.value = payload;
       modelState.value = "ready";
+      void loadPropModels(token);
     } catch {
       if (token !== requestToken) return;
       modelState.value = "error";
@@ -175,6 +202,79 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     } finally {
       span.end(meta);
     }
+  }
+
+  /** P2 精细替换：拉取 prop 组件的真实模型载荷（resourceID 去重 →
+   * 后端脚本资源表反查 → 逐模型 LOTM）。失败静默（退回标记锥）。 */
+  async function loadPropModels(token: number) {
+    const units = (session.value?.units ?? []) as LotUnitDto[];
+    const ids = [
+      ...new Set(
+        units
+          .filter((unit): unit is LotUnitDto & { kind: "prop" } => unit.kind === "prop")
+          .map((unit) => unit.resourceId)
+          .filter((id): id is number => typeof id === "number"),
+      ),
+    ];
+    if (!ids.length) return;
+    try {
+      const { resolutions } = await source.resolvePropModels(ids);
+      if (token !== requestToken) return;
+      const trees = new Set(
+        resolutions
+          .filter((r) => r.source === "tree" || r.source === "tree_model")
+          .map((r) => r.resourceId),
+      );
+      propTreeIds.value = trees;
+      const atlas = resolutions.find((r) => r.treeAtlasPng)?.treeAtlasPng ?? null;
+      if (atlas) treeAtlasPng.value = atlas;
+      // 模型树路线：树 prop 共用同一组 3D 形状载荷，只载一次（任一形状
+      // 失败跳过；全失败保持空数组 → 前端回落公告板）。
+      const treeModelRes = resolutions.find((r) => r.source === "tree_model");
+      if (treeModelRes && treeModelRes.packageId != null && treeModelRes.models.length) {
+        const pkg = treeModelRes.packageId;
+        const payloads = (
+          await Promise.all(
+            treeModelRes.models.map(async (tgi) => {
+              try {
+                const buffer = await source.readLotModelMeshes(pkg, tgi);
+                return token === requestToken ? parseLotModelContainer(buffer) : null;
+              } catch {
+                return null; // 单形状失败不影响其余
+              }
+            }),
+          )
+        ).filter((p): p is LotModelPayload => p !== null);
+        if (token === requestToken && payloads.length) treeModelPayloads.value = payloads;
+      }
+      const next = new Map(propModels.value);
+      await Promise.all(
+        resolutions
+          .filter((r) => r.source !== "tree" && r.source !== "tree_model")
+          .map(async (resolution) => {
+            const tgi = resolution.models[0];
+            const pkg = resolution.packageId;
+            if (!tgi || pkg == null) return;
+            try {
+              const buffer = await source.readLotModelMeshes(pkg, tgi);
+              if (token !== requestToken) return;
+              next.set(resolution.resourceId, parseLotModelContainer(buffer));
+            } catch {
+              // 单模型失败不影响其余 prop
+            }
+          }),
+      );
+      if (token !== requestToken) return;
+      propModels.value = next;
+    } catch {
+      // 解析整体失败：prop 全部保持标记锥
+    }
+  }
+
+  /** PE 关闭：卸载 prop 解析自动注册的 EcoGame 包——注册范围=会话范围，
+   * 不卸载会污染全局资源查找池（同实例跨包碰撞 → lot 渲染概率异常）。 */
+  function releasePropPackages() {
+    void source.releasePropModelPackages().catch(() => {});
   }
 
   /** 切换 LOD：同级别幂等；请求中忽略新切换（requestToken 已防竞态）。 */
@@ -332,7 +432,13 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return hiddenUnits.value.has(unitId(unit));
   }
 
-  function toggleUnit(unit: LotUnitDto) {
+  function toggleUnit(unit: LotUnitDto, groupKey?: string) {
+    // 组隐藏时点子项眼睛 = 恢复整组：组开关不写个体隐藏态，恢复后
+    // 个体隐藏记录原样保留（组关→组开不丢个体的独立显隐设置）。
+    if (groupKey && groupVisibility[groupKey] === false) {
+      groupVisibility[groupKey] = true;
+      return;
+    }
     const id = unitId(unit);
     const next = new Set(hiddenUnits.value);
     if (next.has(id)) next.delete(id);
@@ -350,6 +456,11 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     loadError,
     modelPayload,
     modelLods,
+    propModels,
+    propTreeIds,
+    treeAtlasPng,
+    treeModelPayloads,
+    releasePropPackages,
     activeLod,
     switchLod,
     modelState,
@@ -381,5 +492,6 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     isUnitHidden,
     toggleUnit,
     toggleGroup,
+    resetViewState,
   };
 }

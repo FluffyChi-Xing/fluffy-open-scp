@@ -1,0 +1,1129 @@
+
+// Art tuning parameters, need to match the values in buildings.smt
+static const float kBuildingInteriorMapInvDepth = 0.5;  // 1 / depth of interior
+static const float kBuildingInteriorMapBackSize = 0.5;  // amount of interior map used for back wall
+static const float kBuildingInteriorMapSelfLightMax = 16;
+static const float kBuildingInteriorDilation = 0.9;     // Amount of interior map texture to draw, to avoid bleeding into adjacent atlas tiles.
+static const int kBuildingFlatLevel = 23;               // depth in texture of 'flat' area, depth less than this is "above" the surface of the polygon
+static const float kBuildingSpecOverdrive = 2;          // maximum specular strength
+static const int kNumPaletteVariations = 7;
+static const float kInvPaletteHeight = 1.0 / (kNumPaletteVariations + 1);
+
+// Should match the values in building4FutureGlowPS
+static const float   kFutureGlowBrightness  = 50;
+static const float   kFutureGlowSpeed       = -0.25;
+static const float   kFutureGlowWaveAmplitude = 0.05;
+static const float   kFutureGlowWaveFrequency = 0.5;
+static const float   kFutureGlowWaveAnim    = 3;
+static const float   kFutureGlowInvLength   = .12;
+static const float   kFutureGlowSharp       = 4;
+
+// Should match the value in shFragments.smt
+static const float kGlossyMax = 1.0;
+
+#undef CHEAP
+
+// parameters
+
+#ifndef EXPORTED
+
+// data for the export script and/or setup scripts to use
+#define MAXIMUM_PALETTE_SIZE 256
+uniform string facadeAtlas <
+    //string UIWidget = "none";
+> = "facade_placeholder";
+uniform string facadePalette <
+    //string UIWidget = "none";
+> = "palette_placeholder";
+uniform string facadeInterior <
+    //string UIWidget = "none";
+> = "interior_test";
+uniform int PaletteSize <
+    //string UIWidget = "none";
+> = 64;
+
+uniform int PaletteIndexBase <
+	string UIWidget = "slider";
+	int UIMin = 0;
+	int UIMax = MAXIMUM_PALETTE_SIZE - 1;
+	int UIStep = 1;
+> = 0;
+
+uniform float2 TileSizeBase = float2(1,1);
+uniform float2 TileOffsetBase = float2(0,0);
+
+uniform int PaletteIndex <
+	string UIWidget = "slider";
+	int UIMin = 0;
+	int UIMax = MAXIMUM_PALETTE_SIZE - 1;
+	int UIStep = 1;
+> = 0;
+
+uniform float2 TileSize = float2(1,1);
+uniform float2 TileOffset = float2(0,0);
+uniform float2 TilePadding = float2(0,0);
+uniform bool TileU = true;
+uniform bool TileV = true;
+
+uniform int MaterialNameHash <
+    //string UIWidget = "none";
+    int UIMin = 0;
+    int UIMax = 127;
+    int UIStep = 1;
+> = 0;
+
+uniform int MaterialRandomSeed <
+    string UIWidget = "slider";
+    int UIMin = 0;
+    int UIMax = 127;
+    int UIStep = 1;
+> = 0;
+
+uniform bool UseSpecifiedRandomSeed = false;
+uniform bool ForceSpecificVariation = false;
+
+uniform bool BackFaceCull = false;
+
+uniform int InteriorMapSize <
+    string UIWidget = "slider";
+    int UIMin = 1;
+    int UIMax = 16;
+    int UIStep = 1;
+> = 8;
+
+uniform int InteriorMapSelection <
+    string UIWidget = "slider";
+    int UIMin = 0;
+    int UIMax = 15;
+    int UIStep = 1;
+> = 0;
+
+uniform float2 InteriorMapRoomSize = float2(1.0,1.0);
+uniform bool InteriorSizeBackRelative = false;
+uniform bool InteriorSizeForeRelative = false;
+
+#endif // !EXPORTED
+
+uniform shared bool DebugDrawInterior = false;
+uniform shared float DebugDrawInteriorVisibility <
+    string UIWidget = "slider";
+    float UIMin = 0.0;
+    float UIMax = 1.0;
+    float UIStep = 0.01;
+> = 1.0f;
+uniform shared bool DebugShowInteriorVariation = false;
+uniform shared bool DebugShowRoomNumbers = false;
+uniform shared int DebugRoomNumberTile <
+    string UIWidget = "slider";
+    int UIMin = 1;
+    int UIMax = 10;
+    int UIStep = 1;
+> = 4;
+
+uniform shared bool DebugDisableReliefMap           = false;
+uniform shared bool DebugLighting                   = false;
+uniform shared bool DebugNormals                    = false;
+uniform shared bool DebugRGB                        = false;
+uniform shared bool DebugSpec                       = false;
+uniform shared bool DebugAO                         = false;
+uniform shared bool DebugShowUVDiff                 = false;
+uniform shared bool DebugTestTransparentOutsideTile = false;
+uniform shared bool DebugShowOutsideTile            = false;
+uniform shared bool DebugEnvironmentMap             = false;
+uniform shared bool DebugEmissiveMap       		    = false;
+uniform shared bool DebugFutureGlow                 = false;
+uniform shared bool DebugFutureGlowIgnoreAOFactor   = false;
+
+uniform shared float3 ambientColor <
+    string UIName = "Ambient Color";
+    string UIWidget = "colorpicker";
+> = float3(1,1,1);
+
+uniform shared float ambientStrength <
+    string UIName = "Ambient";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 1;
+> = .3;
+
+uniform shared float3 light1Color <
+    string UIName = "Light 1 Color";
+    string UIWidget = "colorpicker";
+> = float3(1,1,1);
+
+uniform shared float3 light1DirView <
+    string UIName = "Light 1 Direction";
+    string UIWidget = "matrix";
+    string Source = "object";
+    string Space = "WorldView";
+    string Type = "forward";
+> = float3(0,0,1);
+
+uniform shared float light1Strength <
+    string UIName = "Light 1";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 2;
+> = .7;
+
+uniform shared float3 light2Color <
+    string UIName = "Light 2 Color";
+    string UIWidget = "colorpicker";
+> = float3(1,1,1);
+
+uniform shared float3 light2DirView <
+    string UIName = "Light 2 Direction";
+    string UIWidget = "matrix";
+    string Source = "object";
+    string Space = "WorldView";
+    string Type = "forward";
+> = float3(0,0,1);
+
+uniform shared float light2Strength <
+    string UIName = "Light 2";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 2;
+> = 0;
+
+uniform shared float3 light3Color <
+    string UIName = "Light 3 Color";
+    string UIWidget = "colorpicker";
+> = float3(1,1,1);
+
+uniform shared float3 light3DirView <
+    string UIName = "Light 3 Direction";
+    string UIWidget = "matrix";
+    string Source = "object";
+    string Space = "WorldView";
+    string Type = "forward";
+> = float3(0,0,1);
+
+uniform shared float light3Strength <
+    string UIName = "Light 3";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 2;
+> = 0;
+
+uniform shared float InteriorSeed <
+    string UIName = "RandomSeed";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 1;
+> = 0.5;
+
+uniform shared float InteriorThreshold1 <
+    string UIName = "Interior A->B";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 1;
+> = 1;
+
+uniform shared float InteriorThreshold2 <
+    string UIName = "Interior B->C";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 1;
+> = 1;
+
+uniform shared float InteriorThreshold3 <
+    string UIName = "Interior C->D";
+    string UIWidget = "slider";
+    float UIMin = 0;
+    float UIMax = 1;
+> = 1;
+
+uniform shared int PaletteVariation <
+    string UIName = "Variation";
+    string UIWidget = "slider";
+    int UIMin = 0;
+    int UIMax = kNumPaletteVariations - 1;
+> = 0;
+
+//////// TEXTURES /////////////////////
+
+#define TEXTURE_INTERFACE string UIWidget = "hide";
+
+texture ColorTexture : DIFFUSE <
+//    string ResourceName = FACADE_TEXTURES ".Color.MasterBeauty.tga";
+    TEXTURE_INTERFACE
+    string UIName =  "Diffuse Texture";
+    string ResourceType = "2D";
+>;
+
+texture AOTexture <
+//    string ResourceName = FACADE_TEXTURES ".AO.MasterBeauty.tga";
+    TEXTURE_INTERFACE
+    string UIName =  "AO Texture";
+    string ResourceType = "2D";
+>;
+
+texture NormalTexture <
+//    string ResourceName = FACADE_TEXTURES ".Color.normalCam.tga";
+    TEXTURE_INTERFACE
+    string UIName =  "Normal Map";
+    string ResourceType = "2D";
+>;
+
+texture SpecTexture <
+//    string ResourceName = FACADE_TEXTURES ".Specular.MasterBeauty.tga";
+    TEXTURE_INTERFACE
+    string UIName =  "Spec Strength Map";
+    string ResourceType = "2D";
+>;
+
+texture DepthTexture <
+//    string ResourceName = FACADE_TEXTURES ".Depth.MasterBeauty.tga";
+    TEXTURE_INTERFACE
+    string UIName =  "Height Map";
+    string ResourceType = "2D";
+>;
+
+texture TintPaletteTexture <
+//	string ResourceName = PALETTE_TEXTURE ".tga";
+    TEXTURE_INTERFACE
+	string UIName = "Palette";
+	string ResourceType = "2D";
+>;
+
+texture InteriorMapAtlasTexture <
+//    string ResourceName = INTERIOR_TEXTURE ".tga";
+    TEXTURE_INTERFACE
+    string UIName = "Interior Map";
+    string ResourceType = "2D";
+>;
+
+texture EnvironmentMapTexture <
+    //string ResourceName = "default_env_map.dds";
+    //TEXTURE_INTERFACE
+    string UIName = "Environment Map";
+    string ResourceType = "Cube";
+>;
+
+// SAMPLERS
+
+sampler2D ColorSampler = sampler_state {
+    Texture = <ColorTexture>;
+	MinFilter = Linear;
+	MagFilter = Linear;
+	MipFilter = Linear;
+    AddressU = Wrap;
+    AddressV = Wrap;
+    SRGBTexture = 0;
+};
+
+sampler2D AOSampler = sampler_state {
+    Texture = <AOTexture>;
+	MinFilter = Linear;
+	MagFilter = Linear;
+	MipFilter = Linear;
+    AddressU = Wrap;
+    AddressV = Wrap;
+    SRGBTexture = 0;
+};
+
+sampler2D NormalSampler = sampler_state {
+    Texture = <NormalTexture>;
+    FILTER = MIN_MAG_MIP_LINEAR;
+    AddressU = Wrap;
+    AddressV = Wrap;
+    SRGBTexture = 0;
+};
+
+sampler2D SpecSampler = sampler_state {
+    Texture = <SpecTexture>;
+    FILTER = MIN_MAG_MIP_LINEAR;
+    AddressU = Wrap;
+    AddressV = Wrap;
+    SRGBTexture = 0;
+};
+
+sampler2D DepthSampler = sampler_state {
+    Texture = <DepthTexture>;
+    FILTER = MIN_MAG_MIP_LINEAR;
+    AddressU = Wrap;
+    AddressV = Wrap;
+    SRGBTexture = 0;
+};
+
+sampler2D TintPaletteSampler = sampler_state {
+	Texture = <TintPaletteTexture>;
+	FILTER = MIN_MAG_MIP_POINT;
+    SRGBTexture = 1;
+};
+
+sampler2D InteriorMapAtlasSampler = sampler_state {
+    Texture = <InteriorMapAtlasTexture>;
+    FILTER = MIN_MAG_MIP_LINEAR;
+    AddressU = Wrap;
+    AddressV = Wrap;
+    SRGBTexture = 1;
+};
+
+samplerCUBE EnvironmentMapSampler = sampler_state {
+    Texture = <EnvironmentMapTexture>;
+    MinFilter = Linear;
+    MagFilter = Linear;
+    MipFilter = Linear;
+    AddressU  = Wrap;
+    AddressV  = Wrap;
+    SRGBTexture = 1;
+};
+
+float4x4 modelToWorld : World;
+float4x4 modelToCamera : WorldView;
+float4x4 cameraToWorld : View;
+float4x4 modelToClip : WorldViewProjection;
+float curTime : TIME;
+
+bool RenderSwatch <
+    bool SasUiVisible = false;
+    string Geometry = "plane";
+> = false;
+
+#include "y:/MayaShaders/reliefmap.fxi"
+#include "y:/MayaShaders/palette.fxi"
+
+//////// CONNECTOR DATA STRUCTURES ///////////
+
+/* data from application vertex buffer */
+struct vertexInput {
+    float3 Position : POSITION;
+    float2 Uv       : TEXCOORD0;
+    float2 Uv2      : TEXCOORD1;
+
+    #ifdef EXPORTED
+    float2 texcoord2 : TEXCOORD2;
+    float2 texcoord3 : TEXCOORD3;
+    float2 texcoord4 : TEXCOORD4;
+    float2 texcoord5 : TEXCOORD5;
+    float2 texcoord6 : TEXCOORD6;
+    float2 texcoord7 : TEXCOORD7;
+    float4 color : COLOR0;
+    #endif
+
+    float3 Normal   : NORMAL;
+    float3 Tangent  : TANGENT0;
+};
+
+/* data passed from vertex shader to pixel shader */
+struct vertexOutput {
+    float4 HPosition        : POSITION;
+    
+    // from building4DefaultVS in building4.smt
+    float4 texcoord0        : TEXCOORD0;
+    float4 texcoord1        : TEXCOORD1;
+    float4 texcoord2        : TEXCOORD2; // xyz -> shColorDiff, unused in maya.  store view position here for spec
+    float4 texcoord3        : TEXCOORD3; // xyz -> shColorSpec, unused in maya.  store debug info here
+    float4 texcoord4        : TEXCOORD4;
+    float4 texcoord5        : TEXCOORD5;
+    float4 texcoord6        : TEXCOORD6;
+    float4 texcoord7        : TEXCOORD7; // xyz -> worldNormal, maya lighting is in view space so use viewNormal here
+    float4 color            : COLOR0;    // xyz -> worldTangent, maya lighting is in view space so use viewTangent here
+    float4 color1           : COLOR1;
+};
+
+// ReliefLib
+
+
+static const float kFlatLevel = kBuildingFlatLevel / 255.0; 
+
+static const int kLinearSteps = 32;               // number of steps through cone map to find inside&outside point
+static const int kBinarySteps = 16;                // number of binary search steps to find intersection from inside&outside point
+
+static const float kInterpolatorQuantizationFactor = 255;
+
+///////// VERTEX SHADING /////////////////////
+
+static const float kWorldToTextureRatio = 1;
+
+float FastNoise(float3 seed)
+{
+    // These two lines should compile to a single mad instruction
+    seed *= float3(78.233, 12.9898, 43758.5453);
+    seed += float3(0.819 * 78.233, 0.819 * 12.9898, 0.819 * 43758.5453);
+    
+    // frac / mul / frac / mul / frac, ugh.  Wonder if there is a better way to do this?
+    // Sadly, the transformation that does all the mults first fails because the
+    // precision is way too low.
+    float random = frac(seed.z * frac(seed.x * frac(seed.y)));  // [0,1]
+    
+    return random;
+}
+
+vertexOutput std_VS(vertexInput In)
+{
+#ifdef EXPORTED
+    // Maya inverts our texcoords
+    In.texcoord2.y = 1 - In.texcoord2.y;
+    In.texcoord3.y = 1 - In.texcoord3.y;
+    In.texcoord4.y = 1 - In.texcoord4.y;
+    In.texcoord5.y = 1 - In.texcoord5.y;
+    In.texcoord6.y = 1 - In.texcoord6.y;
+    In.texcoord7.y = 1 - In.texcoord7.y;
+#endif
+
+	vertexOutput Out;
+	float3 debug = 0;
+
+    float4 inPosition = float4(In.Position.xyz, 1);
+    Out.HPosition = mul(inPosition, modelToClip);
+	if(RenderSwatch)
+	    Out.HPosition.xy *= 3;
+
+	float3 normal = In.Normal.xyz;
+	float3 tangent = In.Tangent.xyz;
+	float3 binormal = cross(tangent, normal);
+
+    float3 viewTangent = mul(float4(tangent,0), modelToCamera).xyz;
+    float3 viewBinormal = mul(float4(binormal,0), modelToCamera).xyz;
+    float3 viewNormal = mul(float4(normal,0), modelToCamera).xyz;
+    float3 viewPos = mul(inPosition, modelToCamera).xyz;
+    
+    float3x3 tangentSpace = float3x3(viewTangent, viewBinormal, viewNormal);
+    float3 eyeDir = -mul(tangentSpace, viewPos);
+
+#ifdef EXPORTED
+    float palBaseColor = In.color.r;
+    float palTopColor = In.color.g;
+
+    // unpack interior texture transform
+    // 4 bits size (1 to 16)
+    // 4 bits index (0 to size-1)
+    float interiorTexData = In.color.b * (16 * 255.0 / 256.0);
+    int interiorSize = floor(interiorTexData) + 1;
+    int interiorSelection = floor(frac(interiorTexData) * 16);
+    float interiorScale = 1.0f / interiorSize;
+    float interiorOffset = interiorSelection * interiorScale;
+    float interiorRandomSeed = In.color.a;
+    
+    float2 tileSize = In.texcoord2.xy;
+    float2 tileOffset = In.texcoord3.xy;
+    float2 tileSize2 = In.texcoord4.xy;
+    float2 tileOffset2 = In.texcoord5.xy;
+    float2 tilePadding = In.texcoord6.xy;
+    float2 interiorRoomInvSize = In.texcoord7.xy;
+#else
+    float palBaseColor = BuildingPaletteConvert(PaletteIndexBase, PaletteSize);
+    float palTopColor  = BuildingPaletteConvert(PaletteIndex, PaletteSize);
+
+    float interiorScale = 1.0 / InteriorMapSize;
+    float interiorOffset = interiorScale * InteriorMapSelection;
+
+    float2 tileSize = TileSizeBase;
+    float2 tileOffset = TileOffsetBase;
+    float2 tileSize2 = TileSize;
+    float2 tileOffset2 = TileOffset;
+    float2 tilePadding = TilePadding;
+    if(tilePadding.x == 0)
+        tilePadding.x = abs(TileSize.x);
+    if(tilePadding.y == 0)
+        tilePadding.y = abs(TileSize.y);
+
+	// If user specifies wanting to using a specific seed, assign
+	// the defined value from slider to interiorRandomSeed.
+	// Otherwise, use the value set by the tool in MaterialNameHash
+	// (which we expect to be from 0 to 127)
+	int randomSeedSrc = MaterialNameHash;
+	if(UseSpecifiedRandomSeed)
+	{
+	    randomSeedSrc = MaterialRandomSeed;
+	    if(ForceSpecificVariation)  // never changes even if you move the building
+	        randomSeedSrc += 128;
+	}
+	float interiorRandomSeed = randomSeedSrc * (1.0 / 255.0);
+
+    // get interior size and handle back/fore relative
+    float2 interiorRoomSize = InteriorMapRoomSize;
+    if(InteriorSizeBackRelative)
+        interiorRoomSize *= abs(TileSizeBase);
+    else if(InteriorSizeForeRelative)
+        interiorRoomSize *= abs(tilePadding);
+    float2 interiorRoomInvSize = 1.0 / interiorRoomSize;
+
+    if(!TileU)
+        tilePadding.x = 1000;
+    if(!TileV)
+        tilePadding.y = 1000;
+
+    tilePadding /= abs(tileSize2.xy);
+    tilePadding -= 1;
+    //tilePadding = max(tilePadding, 0);
+#endif
+
+    float palU = BuildingPaletteVS(palBaseColor, 1.0 / PaletteSize);
+    float palU2 = BuildingPaletteVS(palTopColor, 1.0 / PaletteSize);
+
+    int2 quantizedModelPosition = floor(float2(InteriorSeed * 2048 - 1024, InteriorSeed * 1024 - 512));
+    if(interiorRandomSeed < 0.5)
+        interiorRandomSeed = FastNoise(float3(quantizedModelPosition, interiorRandomSeed));
+
+    if(DebugShowUVDiff)
+        debug.xy = In.Uv.xy - In.Uv2.xy;
+
+    float2 uv = In.Uv.xy * (kWorldToTextureRatio / abs(tileSize));
+    float2 uv2 = In.Uv2.xy * (kWorldToTextureRatio / abs(tileSize2));
+    uv2 = uv2 + (tilePadding * .5);  // center within tile, will un-offset later in pixelshader
+    uv2 = uv2 / (1 + tilePadding); // this is what we should export
+    
+    float3 interiorThresholds;
+    interiorThresholds.x = InteriorThreshold1;
+    interiorThresholds.y = max(interiorThresholds.x, InteriorThreshold2);
+    interiorThresholds.z = max(interiorThresholds.y, InteriorThreshold3);
+	
+    Out.texcoord0 = float4(uv, uv2);
+    Out.texcoord1 = float4(eyeDir, palU);
+    Out.texcoord2 = float4(viewPos, palU2);
+    Out.texcoord3 = float4(debug.xyz, 0);
+    Out.texcoord4 = float4(interiorRoomInvSize, tilePadding);
+    Out.texcoord5 = float4(tileSize, tileOffset);
+    Out.texcoord6 = float4(tileSize2, tileOffset2);
+    Out.texcoord7 = float4(viewNormal, interiorScale);
+    Out.color     = float4(viewTangent, interiorOffset);
+    Out.color1    = float4(interiorThresholds, interiorRandomSeed);
+    Out.color1    = floor(Out.color1 * 255) + 0.5; // avoid interpolation artifacts during unpack
+    return Out;
+}
+
+///////// PIXEL SHADING //////////////////////
+
+// entries around the outside (clockwise from top-left)
+//                               0 1 2 3 4  5  6  7   8   9   A    B    C    D    X     Y     Z     W
+static const int digitTL       = 1+0+4+8+0 +32+64+128+256+512+1024+2048+4096+8192+0    +0    +65536+0     ;
+static const int digitTR       = 1+0+4+8+0 +32+64+128+256+512+1024+0   +4096+8192+0    +0    +65536+0     ;
+static const int digitRT       = 1+0+4+8+0 +0 +0 +0  +256+512+1024+0   +0   +8192+0    +0    +0    +131072;
+static const int digitRB       = 1+0+0+8+0 +32+64+0  +256+512+1024+2048+0   +8192+0    +0    +0    +131072;
+static const int digitBR       = 1+0+4+8+0 +32+64+0  +256+512+0   +2048+4096+8192+0    +0    +65536+0     ;
+static const int digitBL       = 1+0+4+8+0 +32+64+0  +256+512+0   +2048+4096+8192+0    +0    +65536+0     ;
+static const int digitLB       = 1+0+4+0+0 +0 +64+0  +256+0  +1024+2048+4096+8192+0    +0    +0    +131072;
+static const int digitLT       = 1+0+0+0+16+32+64+0  +256+512+1024+2048+4096+8192+0    +0    +0    +131072;
+
+// entries from the center (clockwise from top-left)
+//                               0 1 2 3 4  5  6  7   8   9   A    B    C    D    X     Y     Z     W
+static const int digitCTL      = 0+0+0+0+0 +0 +0 +0  +0  +0  +0   +0   +0   +0   +16384+32768+0    +0     ;
+static const int digitCT       = 0+2+0+0+16+0 +0 +0  +0  +0  +0   +2048+0   +0   +0    +0    +0    +0     ;
+static const int digitCTR      = 0+0+0+0+0 +0 +0 +128+0  +0  +0   +0   +0   +0   +16384+32768+65536+0     ;
+static const int digitCR       = 0+0+4+8+16+32+64+0  +256+512+1024+2048+0   +0   +0    +0    +0    +0     ;
+static const int digitCBR      = 0+0+0+0+0 +0 +0 +0  +0  +0  +0   +0   +0   +0   +16384+0    +0    +131072;
+static const int digitCB       = 0+2+0+0+16+0 +0 +0  +0  +0  +0   +0   +0   +0   +0    +32768+0    +0     ;
+static const int digitCBL      = 0+0+0+0+0 +0 +0 +128+0  +0  +0   +0   +0   +0   +16384+0    +65536+131072;
+static const int digitCL       = 0+0+4+8+16+32+64+0  +256+512+1024+2048+0   +0   +0    +0    +0    +0     ;
+
+float evalBit(int n, int flags)
+{
+    //return float((flags >> n) & 1);
+    float shift = pow(2, -n);
+    float flag = floor(flags * shift + shift * 0.5);
+    bool bit = abs(frac(flag * 0.5) - 0.5) < 0.1;
+    return bit ? 1 : 0;
+    //return shift;
+}
+
+float drawDigit(int n, float2 uv)
+{
+    const float kBorder      = 0.05;
+    float2 edge2 = abs(uv - 0.5);
+    float  edge = max(edge2.x, edge2.y);
+    if(edge > (0.5 - kBorder))
+        return 0;
+    uv = uv * (1.0 / (1 - 2*kBorder)) - kBorder;
+
+    int flags = 0;
+    float value = 0;
+    if(uv.y < 0.1)
+    {
+        if(uv.x < 0.5)
+            flags = digitTL;
+        else
+            flags = digitTR;
+    }
+    else if(uv.y > 0.9)
+    {
+        if(uv.x < 0.5)
+            flags = digitBL;
+        else
+            flags = digitBR;
+    }
+    else if(abs(uv.y - 0.5) < 0.05)
+    {
+        if(uv.x < 0.5)
+            flags = digitCL;
+        else
+            flags = digitCR;
+    }
+    value = saturate(value + evalBit(n, flags));
+    flags = 0;
+    if(uv.x < 0.2)
+    {
+        if(uv.y < 0.5)
+            flags = digitLT;
+        else
+            flags = digitLB;
+    }
+    else if(uv.x > 0.8)
+    {
+        if(uv.y < 0.5)
+            flags = digitRT;
+        else
+            flags = digitRB;
+    }
+    else if(abs(uv.x - 0.5) < 0.1)
+    {
+        if(uv.y < 0.5)
+            flags = digitCT;
+        else
+            flags = digitCB;
+    }
+    value = saturate(value + evalBit(n, flags));
+    flags = 0;
+    if(abs(1 - uv.x - uv.y) < 0.1)
+    {
+        if(uv.y < 0.5)
+            flags = digitCTR;
+        else
+            flags = digitCBL;
+    }
+    else if(abs(uv.x - uv.y) < 0.1)
+    {
+        if(uv.y < 0.5)
+            flags = digitCTL;
+        else
+            flags = digitCBR;
+    }
+    value = saturate(value + evalBit(n, flags));
+    return value;
+}
+
+static const float3 kFgColorTable[10] = {
+    1,1,1,
+    1,0,1,
+    0,0,1,
+    0,1,1,
+    0,1,0,
+    1,1,0,
+    1,0,0,
+    0.5,0.8,0.3,
+    0.7,0.7,0.7,
+    0,0.5,0.9,
+};
+
+static const float3 kBgVariationTable[4] = {
+    1,0,0,
+    0,1,0,
+    0,0,1,
+    1,1,1,
+};
+
+void divmod(int x, int v, out int d, out int m)
+{
+    d = floor(x * (1.0 / v) + (0.25 / v));
+    m = x - d*v;
+}
+
+float3 RoomNumberColor(int2 elem, float2 uv, int variation, float roomId)
+{
+    // box around the outside of each room
+    const float kBorderEdge = 0.01;
+    const float kBorder     = 0.05;
+    
+    if(1) // draw border around rooms
+    {
+        float2 edge2 = abs(uv - 0.5);
+        float  edge = max(edge2.x, edge2.y);
+        if(edge > (0.5 - kBorderEdge))
+            return float3(0.7, 0.7, 0.7);
+            
+        if(DebugRoomNumberTile <= 1)
+        {
+            if(edge > (0.5 - kBorder))
+                return 0;
+            uv = uv * (1.0 / (1 - 2*kBorder)) - kBorder;
+        }
+        else
+        {
+            uv = uv * (1.0 / (1 - 2*kBorderEdge)) - kBorderEdge;
+        }
+    }
+    
+    uv = frac(uv * DebugRoomNumberTile);
+    if(DebugRoomNumberTile > 1) // draw border around tiles for readability
+    {
+        float2 edge2 = abs(uv - 0.5);
+        float  edge = max(edge2.x, edge2.y);
+        if(edge > (0.5 - kBorderEdge))
+            return float3(0.1, 0.1, 0.1);
+        if(edge > (0.5 - kBorder))
+            return 0;
+        uv = uv * (1.0 / (1 - 2*kBorder)) - kBorder;
+    }
+
+    int digit;
+    float3 bg;
+    float3 fg;
+    
+    if(UseSpecifiedRandomSeed && ForceSpecificVariation)
+    {
+        bg = kBgVariationTable[variation] * 0.15;
+        fg = 1;
+        
+        if(uv.x < 0.25)
+        {
+            digit = 14 + variation;  // xyzw
+        }
+        else if(uv.x < 0.5)
+        {
+            return bg;
+        }
+        else
+        {
+            int roomPercent = floor(roomId * 100);
+            int tens, ones;
+            divmod(roomPercent, 10, tens, ones);
+            if(uv.x < 0.75)
+                digit = tens;
+            else
+                digit = ones;
+        }
+        uv.x = frac(uv.x * 4);
+    }
+    else
+    {
+        int roomNum = uv.x > 0.5 ? elem.x : -elem.y;
+        uv.x = frac(uv.x * 2);
+        bg = roomNum < 0 ? float3(0.1,0,0) : 0;
+        roomNum = abs(roomNum);
+        
+        int colorTableEntry, roomIdx;
+        divmod(roomNum, 100, colorTableEntry, roomIdx);
+        fg = kFgColorTable[colorTableEntry % 10];
+        
+        int tens, ones;
+        divmod(roomIdx, 10, tens, ones);
+        digit = uv.x > 0.5 ? ones : tens;
+        uv.x = frac(uv.x * 2);
+    }
+
+    return lerp(bg, fg, drawDigit(digit, uv));
+}
+
+float CalcBlinnPhongSchlick(float3 lightDir, float3 viewDir, float3 normal, float specE, float specF)
+{
+    float3 halfVector = normalize(lightDir - viewDir);
+    float nDotH = saturate(dot(normal, halfVector));
+
+    float spec = pow(nDotH, specE);
+    float specNormalizingFactor = (specE + 2) / 8;
+    
+    float schlick = specF + (1 - specF)*pow((1 - dot(halfVector,lightDir)),5);
+
+    return spec*schlick*specNormalizingFactor;
+    //return pow((1 - dot(halfVector,lightDir)),5);
+}
+
+float4 std_PS(vertexOutput In) : COLOR
+{
+    In.color1 = floor(In.color1) * (1.0 / 255.0);  // deal with interpolator inaccuracy
+    
+	// unpack
+    float2 uv = In.texcoord0.xy;
+    float2 uv2 = In.texcoord0.zw;
+    float3 eyeDir = In.texcoord1.xyz;
+    float palU = In.texcoord1.w;
+    float3 viewPos = In.texcoord2.xyz;
+    float palU2 = In.texcoord2.w;
+    float3 debug = In.texcoord3.xyz;
+    float2 interiorRoomInvSize = In.texcoord4.xy;
+    float2 tilePadding = In.texcoord4.zw;
+    float4 regionXform = In.texcoord5;
+    float4 regionXform2 = In.texcoord6;
+    float3 viewNormal = normalize(In.texcoord7.xyz);
+    float interiorScale = In.texcoord7.w;
+    float3 viewTangent = normalize(In.color.xyz);
+    float interiorOffset = In.color.w;
+    float3 interiorThresholds = In.color1.xyz;
+    float interiorRandomSeed = In.color1.w;
+
+    // calculate ddx/ddy for mipmap
+    float2 uv_ddx = ddx(uv * regionXform.xy);
+    float2 uv_ddy = ddy(uv * regionXform.xy);
+
+    // sample base layer, alpha test out
+    float2 baseUv = frac(uv) * regionXform.xy + regionXform.zw;
+    float4 baseTintValues = tex2D(ColorSampler, baseUv, uv_ddx, uv_ddy);
+    clip(baseTintValues.a - 0.5);
+
+    // handling tiling if required
+    uv2 = frac(uv2);
+    uv2 = uv2 * (1 + tilePadding) - (tilePadding * .5);
+    float2 reliefSrc = uv2;
+
+#ifdef CHEAP
+    float2 relief_result_tc = reliefMapNullNoClamp(reliefSrc, regionXform2, tcMinMax);
+#else
+    float3 reliefEyeDir = eyeDir;
+    reliefEyeDir.xy /= abs(regionXform2.xy); // todo we undo this in the reliefmap function
+    float2 relief_result_tc = reliefMapLinear(reliefSrc, reliefEyeDir, regionXform2, kFlatLevel, kLinearSteps, kBinarySteps, uv_ddx, uv_ddy);
+
+    if(DebugDisableReliefMap)
+        relief_result_tc = reliefSrc;
+#endif
+
+    float4 tcBoundary = float4(0 - relief_result_tc.xy, relief_result_tc.xy - 1);
+    float outsideTile = dot(saturate(tcBoundary), 1);  // we really just care about this being > 0, the magnitude is irrelevant
+    float2 relief_tc = relief_result_tc * regionXform2.xy + regionXform2.zw;
+
+    float2 interiorUv = uv * regionXform.xy * interiorRoomInvSize;
+    int2 interiorElem = floor(interiorUv);
+    float2 interiorSrcUv = frac(interiorUv);
+
+    // and we need to adjust eyeDir to fit the room size
+    float3 interiorEyeDir = eyeDir;
+    interiorEyeDir *= interiorRoomInvSize.xyx;
+	float2 interior_result_tc = interiorMap(interiorEyeDir, interiorSrcUv, kBuildingInteriorMapInvDepth, kBuildingInteriorMapBackSize, kBuildingInteriorDilation);
+	float2 interior_tc = interior_result_tc * interiorScale.xx + float2(0, interiorOffset);
+	
+    // Figure out what psuedo-random room we are in
+    float roomId = FastNoise(float3(interiorElem, interiorRandomSeed));
+    float roomVariation = floor(roomId * 4);  // choose between 4 possible room types
+    roomId = frac(roomId * 4);
+
+    // Choose an interior from the atlas based on the room id and the bin values
+    float4 interior_edge = float4(step(interiorThresholds, roomId.xxx), roomVariation * 4); // each variation takes 4 slots in map
+    float interior_offset = dot(interior_edge, 1);
+    interior_tc.x += interior_offset * interiorScale;
+
+    float4 facadeTintValuesBase = tex2D(ColorSampler,  baseUv,  uv_ddx, uv_ddy);    
+    float4 facadeTintValuesTop  = tex2D(ColorSampler,   relief_tc,  uv_ddx, uv_ddy);
+    float4 normalMapBase        = tex2D(NormalSampler,  baseUv,     uv_ddx, uv_ddy);
+    float4 normalMapTop         = tex2D(NormalSampler,  relief_tc,  uv_ddx, uv_ddy);
+    float4 aoMapBase            = tex2D(AOSampler,      baseUv,     uv_ddx, uv_ddy);
+    float4 aoMapTop             = tex2D(AOSampler,      relief_tc,  uv_ddx, uv_ddy);
+    float4 specMapBase          = tex2D(SpecSampler,    baseUv,     uv_ddx, uv_ddy);
+    float4 specMapTop           = tex2D(SpecSampler,    relief_tc,  uv_ddx, uv_ddy);
+    float4 interiorMap          = tex2D(InteriorMapAtlasSampler, interior_tc);
+    facadeTintValuesTop.a       = (outsideTile > 0) ? 0 : facadeTintValuesTop.a;
+
+    // Is normal lerp good enough?  Should renormalize?
+    float4 rgbMapSample   = lerp(facadeTintValuesBase, facadeTintValuesTop, facadeTintValuesTop.a);
+    float4 normalMapSample  = lerp(normalMapBase, normalMapTop, facadeTintValuesTop.a);
+    float4 aoMapSample      = lerp(aoMapBase, aoMapTop, facadeTintValuesTop.a);
+    float4 specMapSample    = lerp(specMapBase, specMapTop, facadeTintValuesTop.a);
+    
+    // tint
+    float4 tintBase, specBase, tintTop, specTop;
+    BuildingPaletteSample(palU, float4(baseTintValues.xyz, 0), 1.0 / PaletteSize, PaletteVariation, kInvPaletteHeight, tintBase, specBase);
+    BuildingPaletteSample(palU2, float4(facadeTintValuesTop.xyz, 0), 1.0 / PaletteSize, PaletteVariation, kInvPaletteHeight, tintTop, specTop);
+    float4 tintResult = lerp(tintBase, tintTop, facadeTintValuesTop.a);
+    float4 specResult = lerp(specBase, specTop, facadeTintValuesTop.a);
+    float3 tintColor  = tintResult.rgb;
+
+    // unpack
+    float3 normalMap = normalMapSample.rgb;
+    float3 artistRGB = rgbMapSample.rgb;
+    float artistSpec = specMapSample.r;
+    float artistAO = aoMapSample.r;
+    float paletteEmissive = specResult.r;
+    float paletteRoughness = specResult.a;
+    float specStrength = specMapSample.r * kBuildingSpecOverdrive;
+    float artistOpacity = specMapSample.a;
+    float specE = tintResult.a*2048.0+2.0; // exponent comes from region palette
+    float gloss = kGlossyMax * paletteRoughness; // TODO: split roughness and gloss?
+
+
+    float3x3 tangentSpace = float3x3(viewTangent, normalize(cross(viewNormal, viewTangent)), viewNormal);
+    float3 bumpNormal = mul( normalMap.xyz * 2 - 1, tangentSpace );
+    float3 reflectionDir = reflect( normalize(viewPos), viewNormal );
+
+    // lighting
+    float3x3 lightMatrix = float3x3(light1DirView, light2DirView, light3DirView);
+    float4x3 colorMatrix = float4x3(light1Color,
+                                    light2Color,
+                                    light3Color,
+                                    ambientColor);
+    float3 lightContributions = saturate(mul(lightMatrix, bumpNormal));
+    lightContributions = pow(lightContributions, (1+paletteRoughness)*(1+paletteRoughness));
+    float4 lightAmounts = float4(lightContributions, 1) * float4(light1Strength, light2Strength, light3Strength, ambientStrength);
+    float3 diffuseLight = mul(lightAmounts, colorMatrix);
+    
+    float3 worldReflectionDir = mul((float3x3)cameraToWorld, reflectionDir);
+    worldReflectionDir = float3(worldReflectionDir.x, worldReflectionDir.z, -worldReflectionDir.y); // TEMP fix cubemap
+    float3 envMapColor = texCUBE(EnvironmentMapSampler, worldReflectionDir).xyz;
+    float envMapStrength = specResult.g * specStrength;
+    
+    #ifndef CHEAP
+    if(RenderSwatch)
+        diffuseLight = 1;
+    #endif
+
+    float spec =  specStrength
+                * lightContributions.x
+                * CalcBlinnPhongSchlick(normalize(light1DirView), normalize(viewPos), bumpNormal,
+                                        specE, paletteRoughness);
+
+    // apply lighting and ao
+    float3 exteriorColor = tintColor * (diffuseLight + paletteEmissive.xxx) * artistAO;
+    float3 interiorColor = interiorMap.rgb * (diffuseLight + interiorMap.aaa * kBuildingInteriorMapSelfLightMax);
+    float3 finalColor = lerp(interiorColor, exteriorColor, artistOpacity);
+    
+    // apply spec & environment map
+    finalColor += tintColor * spec + envMapColor * envMapStrength;
+
+    float3 outColor = float4(finalColor, 1);
+    //outColor.rgb = 100000*abs(spec) + sunMod * sunColor;
+    
+    #ifndef CHEAP
+    if(DebugDrawInterior)
+        outColor = lerp(outColor, interiorMap.rgb, DebugDrawInteriorVisibility);
+    if(DebugLighting)
+        outColor.rgb = diffuseLight;
+    if(DebugNormals)
+        outColor.rgb = bumpNormal * .5 + .5;
+    if(DebugRGB)
+        outColor.rgb = artistRGB;
+    if(DebugSpec)
+        outColor.rgb = artistSpec;
+    if(DebugAO)
+        outColor.rgb = artistAO;
+    if(DebugShowUVDiff)
+        outColor.rgb = abs(debug.xyy);
+
+    if(DebugShowOutsideTile && (outsideTile > 0))
+        outColor.rgb = float3(0,1,1);
+
+    if(DebugShowInteriorVariation)
+    {
+        // room color
+        float3 colors[4] = { 1,0,0, 0,1,0, 0,0,1, 1,1,1 };
+        float3 color = colors[roomVariation] * (dot(interior_edge.xyz, 0.2) + 0.4);
+        
+        // do some fake lighting
+        float2 intpos = interior_result_tc * 4 - 2;
+        if(intpos.x < -1 && abs(intpos.x) > abs(intpos.y))
+            color *= 0.8;  // left
+        else if(intpos.x > 1 && abs(intpos.x) > abs(intpos.y))
+            color *= 0.7;  // right
+        else if(intpos.y < -1)
+            color *= 0.6;  // top
+        else if(intpos.y > 1)
+            color *= 0.9;  // bottom
+        else
+            color *= 0.5;  // back
+            
+        outColor = lerp(outColor, color, DebugDrawInteriorVisibility);
+    }
+    
+    if(DebugShowRoomNumbers)
+        outColor = lerp(outColor, RoomNumberColor(interiorElem, interiorSrcUv, roomVariation, roomId), DebugDrawInteriorVisibility);
+        
+    if(DebugEnvironmentMap)
+        outColor = envMapStrength;
+		
+	if(DebugEmissiveMap)
+        outColor = paletteEmissive;	
+        
+    if(DebugFutureGlow)
+    {
+        // get glow color
+        float animTime = curTime * -1.0 / 24.0f; //gameInfo.x * kFutureGlowSpeed;
+        float lightU = uv.x * kFutureGlowInvLength;
+        lightU += sin(uv.y * kFutureGlowWaveFrequency + animTime * -12) * kFutureGlowWaveAmplitude;
+        float alongAmount = frac(animTime + lightU);
+        alongAmount = saturate(alongAmount * 2 - 1);
+        alongAmount = alongAmount * 1.5;
+        alongAmount -= 3 * saturate(alongAmount - 1);
+        alongAmount = pow(alongAmount, kFutureGlowSharp);
+        float glowLine = alongAmount;
+        float wireFactor = 1 - aoMapSample.r; //normalMapSampled.a;
+        wireFactor *= wireFactor;
+        float poweredAmount = 1; //interiorThresholds.z;
+
+        if(DebugFutureGlowIgnoreAOFactor)
+            wireFactor = 0.04; // equal to ~20% AO
+        float3 extraEmissive = (glowLine * wireFactor * poweredAmount * kFutureGlowBrightness) * tintColor.rgb;
+        
+        // darken whole building and show glow
+        outColor = outColor*0.1 + extraEmissive;
+    }
+    #endif
+    
+    return float4(outColor,1);
+}
+
+///// TECHNIQUES /////////////////////////////
+
+/*
+RasterizerState DisableCulling
+{
+    CullMode = NONE;
+};
+
+DepthStencilState DepthEnabling
+{
+	DepthEnable = TRUE;
+};
+
+BlendState DisableBlend
+{
+	BlendEnable[0] = FALSE;
+};
+
+technique10 Main10 <
+	string Script = "Pass=p0;";
+> {
+    pass p0 <
+	string Script = "Draw=geometry;";
+    > {
+        SetVertexShader( CompileShader( vs_4_0, std_VS() ) );
+        SetGeometryShader( NULL );
+        SetPixelShader( CompileShader( ps_4_0, std_PS() ) );
+
+        SetRasterizerState(DisableCulling);
+        SetDepthStencilState(DepthEnabling, 0);
+        SetBlendState(DisableBlend, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF);
+    }
+}
+*/
+
+technique Main <
+	string Script = "Pass=p0;";
+> {
+    pass p0 <
+	string Script = "Draw=geometry;";
+    > {
+        VertexShader = compile vs_3_0 std_VS();
+		ZEnable = true;
+		ZWriteEnable = true;
+
+		AlphaTestEnable = true;
+		AlphaFunc = Greater;
+		AlphaRef = 0x000080;
+
+		//ZFunc = LessEqual;
+		//AlphaBlendEnable = false;
+		CullMode = none;
+		SRGBWriteEnable = 1;
+        PixelShader = compile ps_3_0 std_PS();
+    }
+}
+technique Culled <
+	string Script = "Pass=p0;";
+> {
+    pass p0 <
+	string Script = "Draw=geometry;";
+    > {
+        VertexShader = compile vs_3_0 std_VS();
+		ZEnable = true;
+		ZWriteEnable = true;
+
+		AlphaTestEnable = true;
+		AlphaFunc = Greater;
+		AlphaRef = 0x000080;
+
+		//ZFunc = LessEqual;
+		//AlphaBlendEnable = false;
+		CullMode = CCW;
+		SRGBWriteEnable = 1;
+        PixelShader = compile ps_3_0 std_PS();
+    }
+}

@@ -518,11 +518,15 @@ export interface DecalUnitTexture {
   variant: string | null;
   /** true = raw RGBA 解码失败、退四色量化预览（糊/偏色；确认打开 raster 所在包）。 */
   quantized: boolean;
+  /** 层颜色 Color1-4（线性×2，[4][4]）——raw 掩码纹理的 GLSL 上色输入。 */
+  colors?: number[][];
 }
 export interface PropUnit {
   kind: "prop";
   index: number;
   bin: number;
+  /** 原型资源 id（脚本资源表反查 RW4 模型；PE 精细替换）。 */
+  resourceId: number | null;
   transform: UnitTransformDto | null;
   slot: number | null;
   /** 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。 */
@@ -611,6 +615,9 @@ export interface LotEditorSession {
 export interface LotMaterialTextures {
   /** slot1 漫反射贴图（仅无 slot0 参数表的 simple diffuse 材质下发）。 */
   baseColorPng: Uint8Array<ArrayBuffer> | null;
+  /** slot0 原始纹理（v10+）：**车辆/prop 槽位语义 = 彩色漫反射**（建筑
+   * slot0 是 f32 参数表不下发）。prop 材质优先用它当 map。 */
+  slot0Png: Uint8Array<ArrayBuffer> | null;
   /** slot2 法线（标准切线空间 RGB，B=沿法线轴；A=spec）。 */
   normalPng: Uint8Array<ArrayBuffer> | null;
   /** slot3 shader map B 反转 = 粗糙度灰度。 */
@@ -635,6 +642,17 @@ export interface LotMaterialTextures {
    */
   paramsF32: Float32Array | null;
   paramCols: number;
+}
+/** PE 精细替换：`resolve_prop_models` 的单条解析结果。 */
+export interface ResolvedPropModel {
+  resourceId: number;
+  /** 候选模型（变体/LOD）；前端按 prop 序号确定性挑选。 */
+  models: Tgi[];
+  /** models[0] 所在的已打开包 id（EcoGame 包已由后端自注册）。 */
+  packageId: number | null;
+  source: string;
+  /** 树公告板图集 PNG（base64，source=tree 时下发，2×2 四树格 256×256）。 */
+  treeAtlasPng: string | null;
 }
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。

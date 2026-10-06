@@ -17,6 +17,8 @@ mod map_panel;
 mod media_tools;
 mod mod_project;
 mod overrides;
+mod prop_models;
+mod prop_models_section_dump;
 mod package_browser;
 mod package_service;
 mod raster_edit;
@@ -52,9 +54,11 @@ use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
     read_decal_dictionary, read_decal_images, read_erz_preview, read_image_preview,
     read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
+    read_sim_parts,
     read_resource_bytes, read_resource_data, read_resource_text, read_resource_text_range,
     read_rw4_preview, read_rw4_section_detail,
-    read_wwise_bank, resolve_name, resolve_names, write_export_file,
+    read_wwise_bank, release_prop_model_packages, resolve_name, resolve_names,
+    resolve_prop_models, write_export_file,
 };
 use render_telemetry::{render_telemetry_clear, render_telemetry_record, render_telemetry_summary};
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
@@ -146,7 +150,7 @@ pub fn run() {
             read_resource_text,
             read_resource_text_range,
             read_lot_editor_session,
-            read_lot_model_meshes,
+            read_lot_model_meshes, read_sim_parts, release_prop_model_packages, resolve_prop_models,
             read_raster_preview,
             read_image_preview,
             write_export_file,

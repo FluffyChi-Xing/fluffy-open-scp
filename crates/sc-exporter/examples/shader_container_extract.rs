@@ -21,8 +21,12 @@ fn main() -> dbpf::Result<()> {
             if e.id.type_id == TARGET_TYPE {
                 let body = pkg.read(e)?;
                 println!("{name}: inst={:08x} grp={:08x} size={}", e.id.instance, e.id.group, body.len());
-                let out = format!(r"D:\rust\packages\fluffy-open-scp\tmp\dynamic\shader_container_{}_{}.bin",
-                                  name.trim_end_matches(".package"), e.id.instance);
+                let out = format!(
+                    r"D:\rust\packages\fluffy-open-scp\tmp\dynamic\shader_container_{}_g{:08x}_{}.bin",
+                    name.trim_end_matches(".package"),
+                    e.id.group,
+                    e.id.instance
+                );
                 std::fs::write(&out, &body)?;
                 println!("  -> {out}");
             }

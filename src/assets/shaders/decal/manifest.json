@@ -1,0 +1,12 @@
+{
+  "clip.frag": "clip.frag.glsl",
+  "clip.vert": "clip.vert.glsl",
+  "hole.frag": "hole.frag.glsl",
+  "hole.vert": "hole.vert.glsl",
+  "holo.frag": "holo.frag.glsl",
+  "holo.vert": "holo.vert.glsl",
+  "sdf.frag": "sdf.frag.glsl",
+  "sdf.vert": "sdf.vert.glsl",
+  "sign.frag": "sign.frag.glsl",
+  "sign.vert": "sign.vert.glsl"
+}

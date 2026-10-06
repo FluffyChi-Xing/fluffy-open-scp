@@ -121,6 +121,7 @@ describe("mergeUnitOverrides", () => {
   it("replaces the transform of overridden units and keeps others by reference", () => {
     const untouched = {
       kind: "prop",
+        resourceId: null,
       index: 0,
       bin: 0,
       transform: null,
@@ -130,6 +131,7 @@ describe("mergeUnitOverrides", () => {
     } as PropUnit;
     const edited = {
       kind: "prop",
+        resourceId: null,
       index: 1,
       bin: 0,
       transform: { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0] },

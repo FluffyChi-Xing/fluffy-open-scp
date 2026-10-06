@@ -40,6 +40,18 @@ function inMod(p) {
   return p.compare(d3d9.base) >= 0 && p.compare(d3d9.base.add(d3d9.size)) < 0;
 }
 
+var gameRange = null;
+function inGameMod(p) {
+  if (gameRange === null) {
+    var g = Process.findModuleByName('SimCity.exe');
+    gameRange = g
+      ? { lo: parseInt(g.base.toString(16), 16), hi: parseInt(g.base.add(g.size).toString(16), 16) }
+      : { lo: 1, hi: 0 };
+  }
+  var a = parseInt(p.toString(16), 16);
+  return a >= gameRange.lo && a < gameRange.hi;
+}
+
 function inExec(p) {
   return execLo !== null && p.compare(execLo) >= 0 && p.compare(execHi) < 0;
 }
@@ -78,11 +90,32 @@ function looksLikeComObj(p) {
   if (p.isNull() || p.compare(SMALL_MAX) < 0) return false;
   try {
     var vt = p.readPointer();
-    if (!inExec(vt)) return false;
+    // D3D9 COM 对象的 vftable 实际住在 rdata（只读数据段），方法指针才指向
+    // exec——只认 exec 会把真设备拒掉、反而放进导入跳转表假候选（2026-09-30
+    // 三连会话零捕获+烧 CPU 的根因）。vftable 地址在 d3d9 模块或游戏模块内
+    // 均可（防引擎包装设备），条目密度由 validateReport 把关。
+    if (!inExec(vt) && !inMod(vt) && !inGameMod(vt)) return false;
     for (var i = 0; i <= 4; i++) {
       if (!inExec(vt.add(i * 4).readPointer())) return false;
     }
     return true;
+  } catch (e) { return false; }
+}
+
+// 结构预过滤：包装层的堆构 vtable 条目可能指向任何模块——不做 exec 归属
+// 检查，只验证「可读且前 8 槽大半非空」；真伪由内容校验（版本 token）裁决，
+// 每对象只试一次（seen 去重），错对象在 try/catch 内有界失败。
+function structComObj(p) {
+  if (p.isNull() || p.compare(SMALL_MAX) < 0) return false;
+  try {
+    var vt = p.readPointer();
+    if (vt.isNull()) return false;
+    var n = 0;
+    for (var i = 0; i < 8; i++) {
+      var fn = vt.add(i * 4).readPointer();
+      if (!fn.isNull()) n++;
+    }
+    return n >= 4;
   } catch (e) { return false; }
 }
 
@@ -98,6 +131,92 @@ function validateReport(vt) {
   } catch (e) { /* 读过界即止 */ }
   return { exec: exec, n: n, ok: n >= 110 && exec >= 100 };
 }
+
+// 轻量版：shader 子对象（VertexShader/PixelShader）接口槽少、且包装层 vtable
+// 可能堆构——前 24 槽 exec 密度 ≥80% 即认（bind 槽计数用，误报无实害）
+function quickComObj(p) {
+  if (p.isNull() || p.compare(SMALL_MAX) < 0) return false;
+  try {
+    var vt = p.readPointer();
+    var exec = 0;
+    for (var i = 0; i < 24; i++) {
+      var fn = vt.add(i * 4).readPointer();
+      if (!fn.isNull() && inExec(fn)) exec++;
+    }
+    return exec >= 19;
+  } catch (e) { return false; }
+}
+
+// ---------- C2. 多设备永久监视（2026-09-30） ----------
+// 每次 spawn 都有两个 Direct3DCreate9（片头播放器/渲染各一）——单设备赌注
+// 会押错。所有确认设备挂常驻计数器（槽 78-105），巡视器每 15s 检查：谁家
+// 出现 create 流量（blob）就武装谁；armed 后新亮的 bind 槽也补挂。
+var watchedDevices = {};
+function watchDevice(ovt, rep) {
+  var key = ovt.toString();
+  if (watchedDevices[key]) return;
+  var w = { counters: {}, listeners: [], armed: false, armedBind: [] };
+  watchedDevices[key] = w;
+  for (var s = 3; s <= 129; s++) {
+    (function (slot) {
+      var r = { blob: 0, obj: 0, n: 0 };
+      w.counters[slot] = r;
+      var l = safeAttach(fnAt(ovt, slot), {
+        onEnter: function (args) {
+          try {
+            r.n++;
+            if (isShaderBlob(args[1])) { r.blob++; return; }
+            if (structComObj(args[1])) r.obj++;
+          } catch (e) {}
+        }
+      }, 'watch@' + key + '@' + slot);
+      if (l) w.listeners.push(l);
+    })(s);
+  }
+  log('实测设备 ' + key + '（exec ' + rep.exec + '/' + rep.n + '）进入永久监视——' +
+    '等 create 流量出现即自动武装（巡视器 15s/轮）');
+}
+
+var trafficTicks = 0;
+setInterval(function () {
+  for (var key in watchedDevices) {
+    var w = watchedDevices[key];
+    var vt = ptr(key);
+    var createSlots = [], bindSlots = [], detail = [];
+    for (var s in w.counters) {
+      var r = w.counters[s];
+      if (r.blob > 0) createSlots.push(+s);
+      if (r.obj > 0) { bindSlots.push(+s); detail.push(s + ':' + r.obj); }
+    }
+    // 交通图：每 2 轮（30s）打印总流量前 10 的槽位
+    trafficTicks++;
+    if (trafficTicks % 2 === 0) {
+      var hot = [];
+      for (var s2 in w.counters) {
+        if (w.counters[s2].n > 0) hot.push(s2 + ':' + w.counters[s2].n + '/b' + w.counters[s2].blob + '/o' + w.counters[s2].obj);
+      }
+      hot.sort(function (a, b) {
+        var pa = a.split(':')[1], pb = b.split(':')[1];
+        return pb - pa;
+      });
+      send({ kind: 'log', text: '交通图[' + key + '] ' + hot.slice(0, 10).join(' ') });
+    }
+    // 铁律（09-29 定谳）：bind 槽不赌 create——有 obj 流量就全装 bind hook，
+    // 内容校验（版本 token）落盘，错槽自然零产出。create 流量在包装层可能
+    // 永不过 vtable（加载期内部通路），不能作为 bind 武装的前置条件。
+    if (!w.armed && createSlots.length > 0) {
+      w.armed = true;
+      createSlots.forEach(function (s) { hookCreate(vt, s); });
+      log('武装 create@' + JSON.stringify(createSlots) + '（设备 ' + key + '）');
+    }
+    var newBind = bindSlots.filter(function (s) { return w.armedBind.indexOf(+s) < 0; });
+    if (newBind.length > 0) {
+      newBind.forEach(function (s) { w.armedBind.push(+s); hookBind(vt, +s); });
+      log('武装 bind@' + JSON.stringify(newBind) + '（obj 流量 ' +
+        detail.filter(function (d) { return newBind.indexOf(+d.split(':')[0]) >= 0; }).join(',') + '）');
+    }
+  }
+}, 15000);
 
 function fnAt(vt, slot) { return vt.add(slot * 4).readPointer(); }
 
@@ -178,16 +297,31 @@ function lurkCreateDevice(pD3D) {
             try {
               if (!lurkFirst[slot]) {
                 lurkFirst[slot] = true;
+                var diag = '';
+                try {
+                  var obj0 = pp.readPointer();
+                  var vt0 = obj0.readPointer();
+                  var rep0 = validateReport(vt0);
+                  diag = '设备诊断: vftable=' + vt0 + ' exec=' + rep0.exec + '/' + rep0.n +
+                    ' inExec=' + inExec(vt0) + ' inD3d9=' + inMod(vt0) + ' inGameMod=' + inGameMod(vt0);
+                } catch (e) { diag = '设备诊断失败: ' + e; }
                 log('lurk 槽 ' + slot + ' 首调 args6=' + pp + ' *args6=' +
-                  (function () { try { return pp.readPointer(); } catch (e) { return '不可读'; } })());
+                  (function () { try { return pp.readPointer(); } catch (e) { return '不可读'; } })() +
+                  ' | ' + diag);
               }
               var obj = pp.readPointer();
-              if (obj.isNull() || !looksLikeComObj(obj)) return;
+              if (obj.isNull()) return;
               var ovt = obj.readPointer();
+              // 判据 = validateReport 密度本身：破解包装层在堆上构建设备
+              // vtable（2026-09-30 实测 0x2073da3c，exec 130/130，不在任何
+              // 模块内）——地址类检查必然误杀，密度 130/130 不可能是假货。
               var rep = validateReport(ovt);
               if (!rep.ok) return;
-              log('实测 CreateDevice = IDirect3D9 槽 ' + slot + '，设备 vftable @ ' + ovt);
-              installSlotCounters(ovt, 20);
+              // 游戏会创建多个 IDirect3D9/设备（片头播放器一个、渲染一个，
+              // 2026-09-30 每次 spawn 都是两次 Direct3DCreate9）——全部纳入
+              // 永久监视，谁家出现 create 流量就武装谁，不赌第一个。
+              deviceFound = true;
+              watchDevice(ovt, rep);
             } catch (e) { /* 非 CreateDevice 槽位，忽略 */ }
           });
         }
@@ -562,13 +696,19 @@ function fallbackProbe() {
   if (probeRounds > 8) { log('探测 8 轮无果——回报此日志'); return; }
   log('探测第 ' + probeRounds + ' 轮：.data 对象图行走…');
   var vts = walkGameData();
+  // 并集策略（2026-09-30）：行走候选与全堆扫描候选合并——渲染设备可能只在
+  // 堆里（.data 根不可达）， walking 有货时全堆扫描同样要跑，二者不互斥。
+  var heapVts = scanHeapV2();
+  heapVts.forEach(function (vt) {
+    if (vts.indexOf(vt) < 0) vts.push(vt);
+  });
   if (vts.length > 0) {
     // 全槽 bind sweep：SetPixelShader/SetVertexShader 藏在任何槽都逃不过
     // token 校验（错误槽位零产出）；recon 仅用于 create 槽发现
     vts.forEach(function (vt) {
       for (var s = 0; s <= 110; s++) hookBind(vt, s);
     });
-    log('已对 ' + vts.length + ' 个候选装全槽 bind sweep（0..110）');
+    log('已对 ' + vts.length + ' 个候选装全槽 bind sweep（0..110，含全堆 ' + heapVts.length + '）');
     reconAll(vts);
     return;
   }
@@ -588,7 +728,7 @@ function installSlotCounters(vt, seconds) {
   calibrating = true;
   var report = {};
   var listeners = [];
-  for (var s = 83; s <= 105; s++) {
+  for (var s = 78; s <= 105; s++) {
     (function (slot) {
       var r = { blob: 0, obj: 0 };
       report[slot] = r;
@@ -596,7 +736,7 @@ function installSlotCounters(vt, seconds) {
         onEnter: function (args) {
           try {
             if (isShaderBlob(args[1])) { r.blob++; return; }
-            if (looksLikeComObj(args[1])) r.obj++;
+            if (structComObj(args[1])) r.obj++;
           } catch (e) { }
         }
       }, 'counter@' + slot);
@@ -613,9 +753,19 @@ function installSlotCounters(vt, seconds) {
     }
     log('校准结果：create 槽=' + JSON.stringify(createSlots) +
         ' bind 候选槽=' + JSON.stringify(bindSlots));
-    if (createSlots.length === 0 && bindSlots.length === 0) {
-      log('校准无命中——回报此日志');
-      return;
+    // 校准窗口可能开在片头/加载早期（引擎尚未创建任何 shader）——create 空
+    // 时不自暴自弃，30s 后重校准直到看见 create 流量（覆盖数分钟的长加载），
+    // 24 轮（约 18min）仍无才降级为只挂 bind 候选。
+    if (createSlots.length === 0) {
+      calibrating = false;
+      calibRounds = (calibRounds || 0) + 1;
+      if (calibRounds <= 24) {
+        log('第 ' + calibRounds + ' 轮校准未见 create 流量（bind 候选 ' +
+          JSON.stringify(bindSlots) + '）——30s 后重校准…');
+        setTimeout(function () { installSlotCounters(vt, 15); }, 30000);
+        return;
+      }
+      log('连续 24 轮无 create 流量——降级只挂 bind 候选');
     }
     armed = true;
     createSlots.forEach(function (s) { hookCreate(vt, s); });
@@ -668,7 +818,7 @@ function hookBind(vt, slot) {
       if (obj.isNull() || obj.compare(SMALL_MAX) < 0) return;
       var k = obj.toString();
       if (seenBind.has(k)) return;
-      if (!looksLikeComObj(obj)) return; // 槽位不准时在此拦下非 COM 对象
+      if (!structComObj(obj)) return; // 结构预过滤；真伪由版本 token 内容校验裁决
       seenBind.add(k); // 无论成败只试一次，防失败刷屏
       try {
         // shader/声明对象的 GetFunction/GetDeclaration 同在槽 4

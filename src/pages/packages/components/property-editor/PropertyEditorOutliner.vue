@@ -13,9 +13,9 @@ const props = defineProps<{
   hiddenUnits: Set<string>;
   groupVisibility: Record<string, boolean>;
 }>();
-defineEmits<{
+const emit = defineEmits<{
   select: [id: string | null];
-  "toggle-unit": [unit: LotUnitDto];
+  "toggle-unit": [unit: LotUnitDto, groupKey: string];
   "toggle-group": [name: string];
 }>();
 const { t } = useI18n();
@@ -54,10 +54,42 @@ const sections = computed<OutlinerSection[]>(() => [
     items: props.grouping.pathPoints,
   },
 ]);
+
+/** 子项有效可见 = 组开 且 个体未被隐藏。组关闭必须同步反映到子项眼睛
+ * （真机勘误：此前只看个体 hiddenUnits，关组后子项仍显示开眼）。 */
+function unitVisible(section: OutlinerSection, unit: LotUnitDto): boolean {
+  return (
+    props.groupVisibility[section.key] !== false &&
+    !props.hiddenUnits.has(unitId(unit))
+  );
+}
+
+function onToggleUnit(section: OutlinerSection, unit: LotUnitDto) {
+  emit("toggle-unit", unit, section.key);
+}
 </script>
 
 <template>
   <aside class="outliner" :aria-label="$t('package.outliner')">
+    <!-- 地面（lot）图层：无 Unit 条目，独占一行显隐开关 -->
+    <div class="outliner-section">
+      <div class="outliner-section-head">
+        <button
+          type="button"
+          class="outliner-eye"
+          :aria-pressed="groupVisibility.lot !== false"
+          :aria-label="$t('package.visibilityToggleFor', { name: $t('package.groupLot') })"
+          @click="$emit('toggle-group', 'lot')"
+        >
+          <FIcon
+            :name="groupVisibility.lot === false ? 'EyeOff' : 'Eye'"
+            :size="13"
+            aria-label=""
+          />
+        </button>
+        <span class="outliner-section-title">{{ $t("package.groupLot") }}</span>
+      </div>
+    </div>
     <div
       v-for="section in sections"
       :key="section.key"
@@ -86,17 +118,17 @@ const sections = computed<OutlinerSection[]>(() => [
         <li
           v-for="unit in section.items"
           :key="unitId(unit)"
-          :class="{ selected: selectedId === unitId(unit), hidden: hiddenUnits.has(unitId(unit)) }"
+          :class="{ selected: selectedId === unitId(unit), hidden: !unitVisible(section, unit) }"
         >
           <button
             type="button"
             class="outliner-eye"
-            :aria-pressed="!hiddenUnits.has(unitId(unit))"
+            :aria-pressed="unitVisible(section, unit)"
             :aria-label="$t('package.visibilityToggleFor', { name: unitLabel(unit, t) })"
-            @click="$emit('toggle-unit', unit)"
+            @click="onToggleUnit(section, unit)"
           >
             <FIcon
-              :name="hiddenUnits.has(unitId(unit)) ? 'EyeOff' : 'Eye'"
+              :name="unitVisible(section, unit) ? 'Eye' : 'EyeOff'"
               :size="12"
               aria-label=""
             />

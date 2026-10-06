@@ -26,6 +26,17 @@ export function unitId(unit: LotUnitDto): string {
   return `${unit.kind}:${unit.index}`;
 }
 
+/** unit id → 数字 seed（FNV-1）：小人外观确定性随机用。 */
+function spawnerSeed(unit: LotUnitDto): number {
+  const id = unitId(unit);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 /**
  * WPF Matrix3D（行主序、行向量约定、平移在末行）→ three Matrix4。
  * 列向量约定需转置：3×3 转置、平移入第 4 列。
@@ -69,6 +80,82 @@ function standardMaterial(
   });
 }
 
+/** 确定性伪随机（mulberry32）：小人肤色/衣色/身高抖动用，seed 派生自
+ * unit id——同一刷新点恒同一小人。 */
+function mulberry32(seed: number): () => number {  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = Math.imul(t ^ (t >>> 7), 61 | t) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 小人肤色/衣色调色板（观感校准用近似；引擎真值在外观表调色板，未本地化）。 */
+const SIM_SKIN_TONES = [0xe8b89a, 0xd9a077, 0xb97a50, 0x8a5a38, 0x6b4226];
+const SIM_OUTFIT_COLORS = [
+  0xc81e1e, 0x1e40c8, 0x20c050, 0xf0a000, 0x8848c8, 0x20b0b0, 0xe8e8e8,
+  0x303038, 0xc84890,
+];
+const SIM_PANTS_COLORS = [0x303040, 0x40485c, 0x242428, 0x54423a];
+
+/**
+ * 小人占位（spawner 渲染，2026-10-06）：风格化人形——双腿+躯干+双臂+头球，
+ * 站姿，身高 ~1.75m ± 抖动。肤色/衣色按 seed 确定性取自调色板。
+ *
+ * 引擎口径（props 文档 §3，source-tree 实证）：spawner = cUnitModel 的
+ * 具名位置锚点（0x0E1BAC61 键列 instance=锚点名 id + 0x0E1BAC62 变换列 →
+ * mUnitLocations），agent 在此生成（GetUnitLocation = 模型变换∘锚点变换，
+ * BuildUnitJSValue 按名字哈希硬编码查询）；小人外观由
+ * cGraphicsInstancedSim 外观表（0x0CBD25C1-CB：heads/bodies/outfits 及
+ * Max + 缩放域）按 randomBits 取模解析（body≤3/head≤80/outfit 调色板，
+ * 城市级全局模型目录，本地包未见）——故 PE 用占位人形而非真模型。
+ */
+function buildSimFigure(THREE: Three, seed: number): ThreeNamespace.Object3D {  const rand = mulberry32(seed);
+  const skin = SIM_SKIN_TONES[Math.floor(rand() * SIM_SKIN_TONES.length)];
+  const outfit = SIM_OUTFIT_COLORS[Math.floor(rand() * SIM_OUTFIT_COLORS.length)];
+  const pants = SIM_PANTS_COLORS[Math.floor(rand() * SIM_PANTS_COLORS.length)];
+  const jitter = 0.92 + rand() * 0.16;
+
+  const group = new THREE.Group();
+  const addLimb = (
+    geometry: ThreeNamespace.CylinderGeometry | ThreeNamespace.SphereGeometry,
+    color: number,
+    y: number,
+    x = 0,
+  ) => {
+    const mesh = new THREE.Mesh(geometry, standardMaterial(THREE, color));
+    mesh.position.set(x, y, 0);
+    group.add(mesh);
+  };
+  // 双腿（裤色）：r0.09 h0.78，站距 0.22
+  addLimb(new THREE.CylinderGeometry(0.085, 0.1, 0.78, 10), pants, 0.39, -0.11);
+  addLimb(new THREE.CylinderGeometry(0.085, 0.1, 0.78, 10), pants, 0.39, 0.11);
+  // 躯干（衣色）：肩宽收腰
+  addLimb(new THREE.CylinderGeometry(0.17, 0.21, 0.62, 12), outfit, 1.09);
+  // 双臂（衣色）：垂放体侧
+  addLimb(new THREE.CylinderGeometry(0.055, 0.065, 0.58, 8), outfit, 1.06, -0.27);
+  addLimb(new THREE.CylinderGeometry(0.055, 0.065, 0.58, 8), outfit, 1.06, 0.27);
+  // 头（肤色）
+  addLimb(new THREE.SphereGeometry(0.155, 14, 12), skin, 1.62);
+  group.scale.setScalar(jitter);
+  return group;
+}
+
+/**
+ * spawner 占位人形（精细模式真小人资产缺席时的降级）：风格化人形 + 单元
+ * 变换（内部 applyTransform，含位置/朝向——真小人通道外的兜底必须自带
+ * 变换，否则全堆在原点）。
+ */
+export function buildSpawnerPlaceholder(
+  THREE: Three,
+  unit: LotUnitDto,
+): ThreeNamespace.Object3D {
+  const figure = buildSimFigure(THREE, spawnerSeed(unit));
+  applyTransform(THREE, figure, unit.transform);
+  return figure;
+}
+
 /**
  * SCP 单元图元显示约定（真实包 + 用户对拍逐轮校准，见 migration.md §15：
  * 数据帧 Z-up、行向量 p·M，SCP CreateGeometry 中的 R(±90) 为无效死代码）：
@@ -102,75 +189,24 @@ function buildLight(THREE: Three, unit: LightUnit): ThreeNamespace.Object3D {
 }
 
 /**
- * 标记锥上的序号标签文本（原 SCP `UnitBinDrawSlot.CreateGeometry` 的
- * `BillboardTextVisual3D`）。effect 无序号语义 → null。
- */
-export function unitLabel(unit: LotUnitDto): string | null {
-  if (unit.kind === "prop" || unit.kind === "spawner") return String(unit.index);
-  return null;
-}
-
-/** 同一文本共用一张 canvas 纹理（一个地块里序号重复率高）。 */
-const labelTextureCache = new Map<string, ThreeNamespace.Texture>();
-
-function labelTexture(
-  THREE: Three,
-  text: string,
-): ThreeNamespace.Texture | null {
-  const cached = labelTextureCache.get(text);
-  if (cached) return cached;
-  // happy-dom / 无 canvas 环境：返回 null，标签静默跳过（不影响图元本身）
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  canvas.width = 96;
-  canvas.height = 48;
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#141414";
-  ctx.font = "bold 32px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  labelTextureCache.set(text, texture);
-  return texture;
-}
-
-/**
  * Effect/Prop/Spawner 共用的标记锥（h2.5、开口半径 1）。
  * 预旋转 +90°X 使宽端沿 +M 第 3 行：恒等变换下宽端朝上、尖锥向下（▼，
  * 对齐原 SCP 截图；上一轮 -90°X 曾导致上下颠倒）。
- * `label` 非空时在锥体上方挂序号 billboard（原版同款）。
+ * 原"锥上序号 billboard"已撤（2026-10-06 用户指令）：场景内常驻小标签牌
+ * 视觉噪声大，label 职责移交 hover/选中描边框的左上角标签（Viewport
+ * 拾取 overlay）。
  */
 function buildMarkerCone(
   THREE: Three,
   color: number,
   transform: UnitTransformDto | null,
-  label?: string | null,
 ): ThreeNamespace.Object3D {
   const geometry = new THREE.CylinderGeometry(1, 0.001, 2.5, 24, 1, false);
   geometry.translate(0, 1.25, 0);
   geometry.rotateX(Math.PI / 2);
   const mesh = new THREE.Mesh(geometry, standardMaterial(THREE, color));
-  if (!label) {
-    applyTransform(THREE, mesh, transform);
-    return mesh;
-  }
-  const texture = labelTexture(THREE, label);
-  const group = new THREE.Group();
-  group.add(mesh);
-  if (texture) {
-    const sprite = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true }),
-    );
-    sprite.scale.set(2, 1, 1);
-    sprite.position.set(0, 3, 0);
-    group.add(sprite);
-  }
-  applyTransform(THREE, group, transform);
-  return group;
+  applyTransform(THREE, mesh, transform);
+  return mesh;
 }
 
 /** 贴花矩形：正面近透明、背面绿色（同 SCP RectangleVisual3D），尺寸 2×Scale。 */
@@ -302,10 +338,11 @@ export function buildUnitObject(
       object = buildMarkerCone(THREE, EFFECT_COLOR, unit.transform);
       break;
     case "prop":
-      object = buildMarkerCone(THREE, PROP_COLOR, unit.transform, unitLabel(unit));
+      object = buildMarkerCone(THREE, PROP_COLOR, unit.transform);
       break;
     case "spawner":
-      object = buildMarkerCone(THREE, SPAWNER_COLOR, unit.transform, unitLabel(unit));
+      // 默认模式 = 蓝色标记锥（真小人/占位人形仅精细模式，见 Viewport）
+      object = buildMarkerCone(THREE, SPAWNER_COLOR, unit.transform);
       break;
     case "decal":
       object = buildDecal(THREE, unit);

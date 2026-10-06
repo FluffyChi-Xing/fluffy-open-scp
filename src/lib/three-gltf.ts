@@ -27,10 +27,12 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     throw new Error("lot model payload magic mismatch");
   }
   const version = readU32();
-  if (version !== 8 && version !== 9) {
+  if (version !== 8 && version !== 9 && version !== 10) {
     throw new Error(`unsupported lot model payload version ${version}`);
   }
-  const pngsPerMaterial = version >= 9 ? 8 : 9;
+  // v8=9 张（含已废弃 relief）、v9=8 张、v10=9 张（第 9 张 = slot0 原始
+  // 纹理，车辆/prop 漫反射；建筑槽位语义不同，仅 prop 消费）
+  const pngsPerMaterial = version >= 10 ? 9 : version >= 9 ? 8 : 9;
   const meshCount = readU32();
   const glbs: ArrayBuffer[] = [];
   for (let index = 0; index < meshCount; index += 1) {
@@ -56,9 +58,19 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
     };
     const pngs: (Uint8Array<ArrayBuffer> | null)[] = [];
     for (let png = 0; png < pngsPerMaterial; png += 1) pngs.push(readPng());
-    const [baseColorPng, normalPng, roughnessPng, aoPng, tintPng, palettePng, shaderPng, interiorPng] =
-      pngs;
+    const [
+      baseColorPng,
+      normalPng,
+      roughnessPng,
+      aoPng,
+      tintPng,
+      palettePng,
+      shaderPng,
+      interiorPng,
+      slot0Png,
+    ] = pngs;
     // v8 的第 9 张（relief）读取后即弃：字段仅为类型兼容保留，无消费方。
+    // v10 的第 9 张 = slot0 原始纹理（车辆 diffuse，见 LotMaterialTextures）。
     const paramsLength = readU32();
     let paramsF32: Float32Array | null = null;
     if (paramsLength > 0) {
@@ -78,6 +90,7 @@ export function parseLotModelContainer(buffer: ArrayBuffer): LotModelPayload {
       palettePng,
       shaderPng,
       interiorPng,
+      slot0Png: slot0Png ?? null,
       reliefPng: null,
       paramsF32,
       paramCols,

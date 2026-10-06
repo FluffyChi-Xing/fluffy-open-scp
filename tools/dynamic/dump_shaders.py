@@ -158,7 +158,38 @@ def working_set(pid: int) -> int:
         k32.CloseHandle(h)
 
 
+# 锁在仓库根 tmp/（本脚本位于 tools/dynamic/，需上溯三级）
+LOCK_PATH = Path(__file__).resolve().parent.parent.parent / "tmp" / "dynamic" / "capture.lock"
+
+
+def acquire_capture_lock():
+    """单会话铁律（2026-09-30 双会话叠加致游戏冻结的教训）：同一时刻只允许
+    一个捕获宿主。锁文件记录 PID——宿主存活则拒绝启动；残留死锁自动接管。"""
+    import os
+    if LOCK_PATH.exists():
+        old = 0
+        try:
+            old = int(LOCK_PATH.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            old = 0
+        if old and old != os.getpid():
+            alive = False
+            try:
+                h = ctypes.windll.kernel32.OpenProcess(0x1000, False, old)
+                if h:
+                    alive = True
+                    ctypes.windll.kernel32.CloseHandle(h)
+            except Exception:
+                alive = False
+            if alive:
+                raise SystemExit(
+                    f"已有捕获会话在运行（PID {old}）——单会话铁律：先停止它再启动。")
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+
+
 def main():
+    acquire_capture_lock()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", default="SimCity.exe", help="attach 目标进程名")

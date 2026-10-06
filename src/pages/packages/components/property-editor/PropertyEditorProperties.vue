@@ -225,6 +225,8 @@ const empty = computed(() => !props.unit);
 .fields-table {
   border-collapse: collapse;
   font-size: 11px;
+  /* 固定布局 + 键列定宽：值列长串（Transform 12 元组等）不再挤压键列 */
+  table-layout: fixed;
   width: 100%;
 }
 .fields-table th {
@@ -236,12 +238,19 @@ const empty = computed(() => !props.unit);
   text-align: start;
   text-transform: uppercase;
 }
+.fields-table th:first-child,
+.fields-table td:first-child {
+  width: 96px;
+}
 .fields-table td {
   border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
   padding: 5px 6px;
   vertical-align: top;
+}
+.fields-table td:first-child {
+  overflow-wrap: normal;
 }
 .fields-table td span {
   color: var(--foreground);

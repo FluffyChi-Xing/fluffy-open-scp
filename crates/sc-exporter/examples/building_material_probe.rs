@@ -284,6 +284,39 @@ fn main() {
             r1[0], r1[1], r1[2], r1[3]
         );
     }
+    // 全列 row0：palU/palU2 基列决定同区域不同配色（半窗/调色问题对拍）
+    println!("\n全列 row0(palU/palU2/interior/seed)：");
+    for c in 0..param_w {
+        let r0 = param_values.get(c).copied().unwrap_or([0.0; 4]);
+        println!(
+            "  col{c:>3}: palU={:.5} palU2={:.5} interior={:.3} seed={:.3}",
+            r0[0], r0[1], r0[2], r0[3]
+        );
+    }
+    // 全列 row2/row3：Top 层变换与 padding——「大 padding 禁用 Top」的
+    // 推断只在 col0 验证过，窗列的 Top 路径可能完全不同（半窗对拍）
+    println!("\n全列 row2(regionXform2)：");
+    for c in 0..param_w {
+        let r2 = param_values
+            .get(2 * param_w + c)
+            .copied()
+            .unwrap_or([0.0; 4]);
+        println!(
+            "  col{c:>3}: scale=({:.5},{:.5}) off=({:.5},{:.5})",
+            r2[0], r2[1], r2[2], r2[3]
+        );
+    }
+    println!("\n全列 row3(padding/roomInv)：");
+    for c in 0..param_w {
+        let r3 = param_values
+            .get(3 * param_w + c)
+            .copied()
+            .unwrap_or([0.0; 4]);
+        println!(
+            "  col{c:>3}: pad=({:.3},{:.3}) roomInv=({:.5},{:.5})",
+            r3[0], r3[1], r3[2], r3[3]
+        );
+    }
     let pal_origin = row(0);
     let xform = row(1);
     let xform2 = row(2);

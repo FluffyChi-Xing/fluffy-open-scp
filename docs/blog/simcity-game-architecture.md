@@ -231,6 +231,24 @@ flowchart LR
   地形/着色对象、区域对象、shader-def 变体效果对象（招牌 6 变体 / 涂鸦 5 变体）
   等。
 
+**09-30 追加（实战检验与修正）**：
+
+- **frida 17 已删除 `Memory.readByteArray`**（调用抛 `TypeError: not a
+  function`，被 `catch` 吞掉 = 扫描假零）——上文"16 MB 分块 readByteArray"
+  今日不可用；替代：`addr.readByteArray(len)` 指针方法、`Memory.scanSync`
+  抽样（仍只读安全）、或外部 `ReadProcessMemory`（`external_device_scan.py`，
+  零注入零干扰，实测稳定）。升级 frida 大版本后第一步先做 API 存在性对照。
+- **d3d9 烟幕结论终局实证**：预算内钩子（活钩 ≤6）武装于堆构/rdata vftable
+  设备（`0x2072ff7c`/`0x6c2b1490`，Present 帧率 2679/30s）后零状态调用——
+  d3d9 层可见设备全部为**资源/呈现辅助**；加载期接口（bind@98:35582o/
+  create@80:8672b）进城后即释放。城市渲染确实不经 d3d9 COM 层，与"渲染走
+  RW4 设备抽象"互证。
+- **钩子预算量化**：活钩 ≤6、计数窗 ≤10s、先计数后武装、用完即 detach、
+  城内不新增钩子——热槽每调用 JS 回调在千次/秒流量下必烧 CPU（三次崩溃
+  换来的边界）。单会话锁 `capture.lock` 机制化（双宿主叠加即拒绝）。
+- 状态追踪表：`docs/runtime-capture.md`（A-G 清单 + 废弃建筑歪斜/半边窗
+  复现等新增目标）。
+
 ## 9. Shader 源码就在包里
 
 虽然 shader-def 在 exe 里，但 **HLSL 源码本身是明文数据**：typeId `0x0469A3F7`

@@ -3,9 +3,9 @@ import type * as ThreeNamespace from "three";
 import type { DecalUnit } from "@/api/tauri";
 import {
   decalFrame,
+  decalHalfThickness,
   decalProjector,
-  measureAnchorDistance,
-  projectDecal,
+  snapQuadToSurface,
 } from "./decalProject";
 
 const THREE = (await import("three")) as typeof ThreeNamespace;
@@ -29,9 +29,14 @@ function decal(overrides: Partial<DecalUnit> = {}): DecalUnit {
   };
 }
 
-/** 轴对齐立方体，中心在 center、边长 size。 */
-function boxMesh(center: [number, number, number], size: number) {
-  const geometry = new THREE.BoxGeometry(size, size, size);
+/** 单面片。facing="toward"：法线 -Z（迎着从原点出发的 +Z 射线，可被命中）；
+ * facing="away"：法线 +Z（背面朝射线——Raycaster 按材质 FrontSide 剔除）。 */
+function quadMesh(
+  center: [number, number, number],
+  facing: "toward" | "away",
+) {
+  const geometry = new THREE.PlaneGeometry(4, 4);
+  if (facing === "toward") geometry.rotateY(Math.PI);
   geometry.translate(...center);
   return new THREE.Mesh(geometry);
 }
@@ -41,7 +46,6 @@ describe("decalFrame", () => {
     const frame = decalFrame(THREE, decal({ scale: 3 }), 2);
     expect(frame).not.toBeNull();
     expect(frame!.origin.toArray()).toEqual([0, 0, 0]);
-    // 只镜像 U 的约定依赖 axisZ 为 +Z
     expect(frame!.axisZ.toArray()).toEqual([0, 0, 1]);
     // 2026-09-27 OMEGACO 对照定谳：高 = 2×scale、宽 = 高×aspect
     expect(frame!.sizeY).toBeCloseTo(6); // 2 × scale
@@ -57,71 +61,52 @@ describe("decalFrame", () => {
   });
 });
 
-describe("measureAnchorDistance", () => {
-  it("anchors on the nearest surface along +local Z", () => {
-    const frame = decalFrame(THREE, decal({ scale: 2 }), 1)!;
-    // 立方体近面在 z = 1（中心 6、边长 10）
-    const mesh = boxMesh([0, 0, 6], 10);
-    const anchor = measureAnchorDistance(THREE, frame, [mesh]);
-    expect(anchor).toBeCloseTo(1, 1);
-  });
-
-  it("returns null when nothing is within range", () => {
-    const frame = decalFrame(THREE, decal({ scale: 2 }), 1)!;
-    const mesh = boxMesh([0, 0, 500], 10);
-    expect(measureAnchorDistance(THREE, frame, [mesh])).toBeNull();
+describe("decalHalfThickness", () => {
+  it("passes depth through and floors at a small epsilon", () => {
+    expect(decalHalfThickness(1.056)).toBeCloseTo(1.056);
+    expect(decalHalfThickness(9)).toBeCloseTo(9);
+    expect(decalHalfThickness(0.2)).toBeCloseTo(0.2);
+    expect(decalHalfThickness(null)).toBeCloseTo(0.05);
   });
 });
 
 describe("decalProjector", () => {
-  it("centers the box on the anchor and keeps it thin", () => {
+  it("centers the engine volume box on the transform origin", () => {
+    // 盒 = 横向可见窗 2×scale×aspect、Z 全深 5×scale（基 0.5×10 实锤）
     const frame = decalFrame(THREE, decal({ scale: 2, depth: 0.2 }), 1)!;
-    const { position, size } = decalProjector(THREE, frame, 4, 0.2);
-    expect(position.toArray()).toEqual([0, 0, 4]);
+    const { position, size } = decalProjector(THREE, frame);
+    expect(position.toArray()).toEqual([0, 0, 0]);
     expect(size.x).toBeCloseTo(4);
     expect(size.y).toBeCloseTo(4);
-    // depth 0.2 < 下限 0.5 ⇒ 半厚取 0.5
-    expect(size.z).toBeCloseTo(1);
-  });
-
-  it("clamps the half-thickness into [0.5, 2]", () => {
-    const frame = decalFrame(THREE, decal({ scale: 2, depth: 9 }), 1)!;
-    expect(decalProjector(THREE, frame, 0, 9).size.z).toBeCloseTo(4);
+    expect(size.z).toBeCloseTo(10); // 5 × scale
   });
 });
 
-describe("projectDecal", () => {
-  it("projects the decal onto the wall and keeps its UVs in-box", async () => {
-    const frame = decalFrame(THREE, decal({ scale: 2 }), 1)!;
-    const mesh = boxMesh([0, 0, 6], 10);
-    const geometry = await projectDecal(THREE, frame, [mesh], 0.2);
-    expect(geometry).not.toBeNull();
-    const position = geometry!.attributes.position;
-    expect(position.count).toBeGreaterThan(0);
-    let uvMin = Infinity;
-    let uvMax = -Infinity;
-    const uv = geometry!.attributes.uv;
-    for (let i = 0; i < position.count; i += 1) {
-      // 近面在 z = 1，被 ±size/2 的薄盒夹住
-      expect(position.getZ(i)).toBeGreaterThan(0.4);
-      expect(position.getZ(i)).toBeLessThan(1.6);
-      // 足迹是 4×4，裁剪后退化到面片上
-      expect(Math.abs(position.getX(i))).toBeLessThanOrEqual(2.01);
-      expect(Math.abs(position.getY(i))).toBeLessThanOrEqual(2.01);
-      uvMin = Math.min(uvMin, uv.getX(i));
-      uvMax = Math.max(uvMax, uv.getX(i));
-    }
-    expect(uvMax - uvMin).toBeGreaterThan(0.9);
+describe("snapQuadToSurface", () => {
+  it("snaps to the nearest surface inside the volume half-depth", () => {
+    const frame = decalFrame(THREE, decal({ scale: 2 }), 1)!; // 半深 2.5
+    // 墙面在 z = 1（-Z 法线朝向原点侧的射线）
+    const wall = quadMesh([0, 0, 1], "toward");
+    const { position, hit } = snapQuadToSurface(THREE, frame, [wall]);
+    expect(hit).toBe(true);
+    expect(position.z).toBeCloseTo(1 - 0.03, 2); // 贴面 - 3cm 回撤
+    expect(position.x).toBeCloseTo(0);
+    expect(position.y).toBeCloseTo(0);
   });
 
-  it("returns null when the decal points at nothing", async () => {
+  it("prefers the nearer of two surfaces on opposite sides", () => {
     const frame = decalFrame(THREE, decal({ scale: 2 }), 1)!;
-    const mesh = boxMesh([0, 0, 500], 10);
-    expect(await projectDecal(THREE, frame, [mesh], 0.2)).toBeNull();
+    const far = quadMesh([0, 0, 2], "toward");
+    const near = quadMesh([0, 0, 0.5], "toward");
+    const { position } = snapQuadToSurface(THREE, frame, [far, near]);
+    expect(position.z).toBeCloseTo(0.5 - 0.03, 2);
   });
 
-  it("returns null without building meshes", async () => {
-    const frame = decalFrame(THREE, decal({ scale: 2 }), 1)!;
-    expect(await projectDecal(THREE, frame, [], 0.2)).toBeNull();
+  it("stays at the origin when nothing is inside the volume", () => {
+    const frame = decalFrame(THREE, decal({ scale: 2 }), 1)!; // 半深 2.5
+    const wall = quadMesh([0, 0, 10], "toward"); // 体积盒之外
+    const { position, hit } = snapQuadToSurface(THREE, frame, [wall]);
+    expect(hit).toBe(false);
+    expect(position.toArray()).toEqual([0, 0, 0]);
   });
 });

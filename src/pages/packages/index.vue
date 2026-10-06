@@ -263,11 +263,18 @@ async function exportMeshTarget(target: MeshExportTarget) {
     meshExportBusy.value = false;
   }
 }
-const canExportMesh = computed(
-  () =>
-    selected.value?.tgi.typeId === PROPERTY_TYPE_ID ||
-    selected.value?.tgi.typeId === RW4_TYPE_ID,
-);
+/** 导出 Mesh 入口门控：RW4 模型文件恒可导；property 仅资产单元
+ * （semantic=unit，LOD 导出目标来自 lot 会话）——动作/任务、模型包装等
+ * 非单元 property 无网格可导，入口直接隐藏（历史遗留，2026-10-06 用户口径）。 */
+const canExportMesh = computed(() => {
+  const resource = selected.value;
+  if (!resource) return false;
+  if (resource.tgi.typeId === RW4_TYPE_ID) return true;
+  return (
+    resource.tgi.typeId === PROPERTY_TYPE_ID &&
+    resource.semantic?.id === "unit"
+  );
+});
 watch(meshMenuOpen, (open: boolean) => {
   if (open) void loadMeshTargets();
 });

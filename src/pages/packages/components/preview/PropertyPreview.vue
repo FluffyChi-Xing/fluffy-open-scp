@@ -71,10 +71,13 @@ function hashLabel(hash: number) {
           $t("package.toolbarViewChildren")
         }}
       </button>
+      <!-- 属性编辑器（3D 视口）仅对带模型的 property 家族显示——非单元
+           property（动作/任务、模型包装等）入口直接隐藏而非置灰
+           （2026-10-06 用户口径）。 -->
       <button
+        v-if="hasMesh"
         type="button"
         :aria-label="$t('package.propertyEditor')"
-        :disabled="!hasMesh"
         @click="editorOpen = true"
       >
         <FIcon name="SquarePen" :size="13" aria-label="" />{{
