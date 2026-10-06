@@ -52,8 +52,10 @@ import { installHejlToneMapping } from "@/lib/hejlTonemapping";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   applyGroundMask,
+  buildLotDimensions,
   buildLotRect,
   placementInverse,
+  type LotDimensionAnchor,
 } from "./editorGround";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
@@ -186,6 +188,20 @@ const viewport = useEditorViewport({
 // ---------------------------------------------------------------------------
 const hoverTagEl = ref<HTMLElement | null>(null);
 const selectTagEl = ref<HTMLElement | null>(null);
+
+// ---- Lot 三维尺度标注（长/宽/高，自地块一角）----
+// 线段在 viewer "dimensions" 组（editorGround.buildLotDimensions）；
+// 文字标签随帧投影（同 pick-tag 通道）。game = lot 局部锚点经地面矩阵
+// 换算后的游戏系坐标（world.localToWorld 后投影）。
+const dimLabels = ref<
+  (LotDimensionAnchor & { game: [number, number, number] })[]
+>([]);
+const dimLabelEls = ref<(HTMLElement | null)[]>([]);
+const dimAxisLabel = computed(() => ({
+  length: t("package.dimLength"),
+  width: t("package.dimWidth"),
+  height: t("package.dimHeight"),
+}));
 const unitById = computed<Map<string, LotUnitDto>>(() => {
   const map = new Map<string, LotUnitDto>();
   const groups = props.grouping;
@@ -239,6 +255,34 @@ function placeTag(el: HTMLElement | null, id: string | null, label: string) {
   if (textEl) textEl.textContent = label;
 }
 
+/** 尺度标签逐帧投影：游戏系锚点 → world → 屏幕像素（居中锚定）。 */
+function updateDimLabels() {
+  const instance = viewport.viewer.value;
+  if (!instance) return;
+  // 跟随 dimensions 组可见性开关（线段隐藏时标签同隐）
+  const hidden = props.groupVisibility.dimensions === false;
+  for (let index = 0; index < dimLabels.value.length; index += 1) {
+    const el = dimLabelEls.value[index];
+    const dim = dimLabels.value[index];
+    if (!el || !dim) continue;
+    if (hidden) {
+      el.style.display = "none";
+      continue;
+    }
+    const scenePoint = instance.world.localToWorld(
+      new instance.THREE.Vector3(...dim.game),
+    );
+    const screen = instance.worldToScreen(scenePoint);
+    if (screen.behind) {
+      el.style.display = "none";
+      continue;
+    }
+    el.style.display = "block";
+    el.style.left = `${screen.x}px`;
+    el.style.top = `${screen.y}px`;
+  }
+}
+
 function updatePickOverlay() {
   const hover = hoveredId.value;
   const selected = props.selectedId;
@@ -248,6 +292,7 @@ function updatePickOverlay() {
     hover ? overlayLabel(hover) : "",
   );
   placeTag(selectTagEl.value, selected, selected ? overlayLabel(selected) : "");
+  updateDimLabels();
 }
 
 // ---- 编辑模式：组件库拖放放置 + 删除 ----
@@ -484,6 +529,28 @@ function unitEqualsIgnoringTransform(
   return JSON.stringify(restA) === JSON.stringify(restB);
 }
 
+/** DTO 的缩放倍率字段（仅 prop/decal 携带；其余 kind 无此字段视为 1）。 */
+function unitScaleValue(unit: LotUnitDto): number | null {
+  return unit.kind === "prop" || unit.kind === "decal" ? unit.scale : null;
+}
+
+/**
+ * 仅 DTO scale（缩放倍率）变化的判定：返回新值/旧值倍率（旧值 null 视
+ * 为 1）；其余字段有任何差异返回 null（须全量重建）。
+ */
+function scaleOnlyDelta(a: LotUnitDto, b: LotUnitDto): number | null {
+  if (a.kind !== b.kind) return null;
+  const restA: Record<string, unknown> = { ...a, scale: 0 };
+  const restB: Record<string, unknown> = { ...b, scale: 0 };
+  delete restA.transform;
+  delete restB.transform;
+  if (JSON.stringify(restA) !== JSON.stringify(restB)) return null;
+  const previous = unitScaleValue(a) ?? 1;
+  const next = unitScaleValue(b) ?? 1;
+  if (previous === next || previous <= 1e-8) return null;
+  return next / previous;
+}
+
 const timeOfDay = () => props.timeOfDay ?? 12;
 
 function applySun() {
@@ -545,6 +612,23 @@ let keyLightInitialized = false;
 /** 上一次 rebuild 的模型载荷（身份变化 = 模型/LOD 更换 → 重构图）。 */
 let lastPayload: LotModelPayload | null | undefined;
 
+/** 对象 TRS → 单元变换语义 TRS：除掉渲染器烘焙的 DTO scale
+ * （userData.incrementalScale）——提交的 override 矩阵在全量重建会被
+ * 渲染器再乘回来，不除 = 编辑过的树在下次重建二次缩放（0.06²）。 */
+function unitSemanticTRS(object: ThreeNamespace.Object3D): {
+  position: ThreeNamespace.Vector3;
+  quaternion: ThreeNamespace.Quaternion;
+  scale: ThreeNamespace.Vector3;
+} {
+  const THREE = viewport.viewer.value?.THREE;
+  const scale = object.scale.clone();
+  const baked = object.userData.incrementalScale as number | undefined;
+  if (THREE && typeof baked === "number" && Math.abs(baked) > 1e-8) {
+    scale.divideScalar(baked);
+  }
+  return { position: object.position, quaternion: object.quaternion, scale };
+}
+
 function emitLiveTransform(object: ThreeNamespace.Object3D | null) {
   if (!object || typeof object.userData?.unitId !== "string") {
     emit("live-transform", null, null);
@@ -552,11 +636,12 @@ function emitLiveTransform(object: ThreeNamespace.Object3D | null) {
   }
   const THREE = viewport.viewer.value?.THREE;
   if (!THREE) return;
+  const trs = unitSemanticTRS(object);
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   new THREE.Matrix4()
-    .compose(object.position, object.quaternion, object.scale)
+    .compose(trs.position, trs.quaternion, trs.scale)
     .decompose(position, quaternion, scale);
   const euler = new THREE.Euler().setFromQuaternion(quaternion, "XYZ");
   const deg = 180 / Math.PI;
@@ -587,11 +672,12 @@ async function ensureGizmo() {
     instance.setOrbitEnabled(!dragging);
     if (dragging) {
       const object = controls.object;
+      // 与 commitGizmo 同语义（除掉烘焙 scale），否则无位移提交判等失败
       dragStartMatrix = object
         ? new instance.THREE.Matrix4().compose(
             object.position,
             object.quaternion,
-            object.scale,
+            unitSemanticTRS(object).scale,
           )
         : null;
     } else {
@@ -610,10 +696,11 @@ function commitGizmo(controls: TransformControls) {
   if (!object || typeof object.userData?.unitId !== "string") return;
   const THREE = viewport.viewer.value?.THREE;
   if (!THREE) return;
+  const trs = unitSemanticTRS(object);
   const matrix = new THREE.Matrix4().compose(
-    object.position,
-    object.quaternion,
-    object.scale,
+    trs.position,
+    trs.quaternion,
+    trs.scale,
   );
   // 未产生位移的点击（拖拽起止矩阵相同）不产生冗余命令
   if (dragStartMatrix && matrix.equals(dragStartMatrix)) return;
@@ -738,29 +825,62 @@ function tryIncrementalGrouping(grouping: UnitGrouping): boolean {
   const prev = lastUnitsSnapshot;
   if (prev.size !== next.size) return false;
   let transformChanged = false;
+  /** 仅 scale 变化的 unit（id → 新旧倍率）：免全量重建的热路径。 */
+  const scaleRatios = new Map<string, number>();
   for (const [id, unit] of next) {
     const old = prev.get(id);
     if (!old) return false;
     if (old === unit) continue;
-    if (!unitEqualsIgnoringTransform(old, unit)) return false;
+    if (!unitEqualsIgnoringTransform(old, unit)) {
+      // 缩放倍率编辑（属性面板 scale 字段）：数字标注对象走增量比例；
+      // keepScale（公告板/小人尺寸公式独立）与贴花投影几何仍须全量。
+      const ratio = scaleOnlyDelta(old, unit);
+      if (ratio === null || unit.kind === "decal") return false;
+      const object = viewport.unitObjects.get(id);
+      const flag = object?.userData.incrementalScale;
+      if (flag === "keepScale") return false;
+      if (typeof flag === "number") scaleRatios.set(id, ratio);
+      // 无标注 = 矩阵语义（标记锥/灯等，scale 不参与渲染）→ 增量安全
+      continue;
+    }
     // 贴花投影几何在 lot 局部空间随 transform 而变，必须重建；
     // pathPoint 位置来自 point 字段（不消费 transform），无需应用。
     if (unit.kind === "decal") return false;
     transformChanged = true;
   }
   lastUnitsSnapshot = next;
-  if (!transformChanged) return true;
+  if (!transformChanged && scaleRatios.size === 0) return true;
   const THREE = instance.THREE;
+  // 增量 transform 应用语义（渲染器在 userData.incrementalScale 标注）：
+  // - 缺省 = 对象 scale 就是矩阵 decompose（标记锥/灯/贴花/占位人形）；
+  // - 数字 = 渲染器把 DTO scale 烘焙进了对象 scale（树/prop 真模型），
+  //   decompose 后必须补乘，否则 51m 原生巨树（真机勘误 2026-10-06）；
+  //   伴随 scaleRatio（缩放倍率编辑）时再乘倍率；
+  // - "keepScale" = 对象尺寸自持（公告板/合成小人），只应用位置/朝向。
+  const scratchScale = new THREE.Vector3();
   for (const [id, unit] of next) {
     // pathPoint 位置来自 point 字段（不消费 transform）。
     if (unit.kind === "pathPoint" || !unit.transform) continue;
     const object = viewport.unitObjects.get(id);
     if (!object) continue;
+    const incrementalScale = object.userData.incrementalScale as
+      | number
+      | "keepScale"
+      | undefined;
     unitMatrix(THREE, unit.transform).decompose(
       object.position,
       object.quaternion,
-      object.scale,
+      incrementalScale === "keepScale" ? scratchScale : object.scale,
     );
+    if (typeof incrementalScale === "number") {
+      object.scale.multiplyScalar(incrementalScale);
+      const ratio = scaleRatios.get(id);
+      if (ratio !== undefined) {
+        object.scale.multiplyScalar(ratio);
+        // 烘焙系数随新倍率更新——下次增量 decompose/提交除回都用新值
+        object.userData.incrementalScale = unitScaleValue(unit) ?? 1;
+      }
+    }
   }
   instance.invalidate();
   return true;
@@ -1013,6 +1133,29 @@ async function assembleScene(
       });
     }
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
+
+    // Lot 三维尺度标注（用户需求 2026-10-06）：长/宽取地面矩形两邻边，
+    // 高取建筑 bbox 实际高度（世界系 Y 跨度；世界仅旋转，跨度=游戏系 Z）。
+    instance.scene.updateMatrixWorld(true);
+    const modelBox = new THREE.Box3().setFromObject(instance.group("model"));
+    const lotHeight = modelBox.isEmpty()
+      ? 0
+      : Math.max(0, modelBox.max.y - modelBox.min.y);
+    const dims = buildLotDimensions(THREE, props.lotSize, lotHeight);
+    if (dims) {
+      // 与地面矩形同一矩阵（placement 逆 + overlay 中心偏移），标注贴地边
+      dims.object.matrix.copy(ground.matrix);
+      dims.object.matrixAutoUpdate = false;
+      instance.group("dimensions").add(dims.object);
+      dimLabels.value = dims.anchors.map((anchor) => ({
+        ...anchor,
+        game: new THREE.Vector3(...anchor.point)
+          .applyMatrix4(dims.object.matrix)
+          .toArray() as [number, number, number],
+      }));
+    } else {
+      dimLabels.value = [];
+    }
   }
 
   /**
@@ -1735,6 +1878,14 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
         class="pick-label"
         aria-hidden="true"
       />
+      <!-- 尺度标注文字（线段在 viewer dimensions 组，随帧投影居中锚定） -->
+      <span
+        v-for="(dim, index) in dimLabels"
+        :key="dim.axis"
+        :ref="(el) => (dimLabelEls[index] = el as HTMLElement | null)"
+        class="pick-label dim-label"
+        aria-hidden="true"
+      >{{ dimAxisLabel[dim.axis] }} {{ dim.text }}</span>
       <span
         :ref="(el) => (selectTagEl = el as HTMLElement | null)"
         class="pick-label pick-tag"
@@ -1941,6 +2092,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
         v-for="name in [
           'model',
           'lot',
+          'dimensions',
           'lights',
           'props',
           'decals',
@@ -2007,6 +2159,12 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
   gap: 5px;
   padding-inline-end: 3px;
   text-shadow: none;
+}
+/* 尺度标注标签：线段中点居中锚定（覆盖 pick-label 的上方偏移） */
+.dim-label {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  transform: translate(-50%, -50%);
 }
 .pick-delete {
   background: transparent;

@@ -27,8 +27,8 @@ const AMBIENT_LIGHT_INTENSITY = 0.38;
 
 export function disposeObject(object: ThreeNamespace.Object3D) {
   object.traverse((child) => {
-    const mesh = child as ThreeNamespace.Mesh;
-    if (mesh.isMesh) {
+    const mesh = child as ThreeNamespace.Mesh & { isLine?: boolean };
+    if (mesh.isMesh || mesh.isLine) {
       // 共享缓存几何（payload 级模型缓存，见 three-gltf.getLotModelObjects）
       // 归缓存所有，清场不销毁——缓存更换时统一释放。
       if (!isSharedGeometry(mesh.geometry)) mesh.geometry?.dispose();
@@ -154,7 +154,7 @@ export class ThreeViewer {
     const entry = target
       ? { target, hull: this.buildOutlineHull(target, kind) }
       : null;
-    if (entry) target.add(entry.hull);
+    if (entry && target) target.add(entry.hull);
     if (kind === "hover") this.hoverOutline = entry;
     else this.selectedOutline = entry;
     this.needsRender = true;
@@ -168,51 +168,74 @@ export class ThreeViewer {
     const dashed = kind === "hover";
     // 壳厚随取景半径缩放（近似恒定屏幕厚度）
     const width = Math.max(this.frameRadius, 1) * (dashed ? 0.005 : 0.01);
-    const material = new this.THREE.ShaderMaterial({
-      uniforms: {
-        uColor: { value: new this.THREE.Color(ThreeViewer.OUTLINE_COLOR) },
-        uWidth: { value: width },
-        uDash: { value: dashed ? 1 : 0 },
-      },
-      vertexShader: `
-        uniform float uWidth;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vec3 n = normalize(normalMatrix * normal);
-          mv.xyz += n * uWidth;
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: `
-        uniform vec3 uColor;
-        uniform float uDash;
-        void main() {
-          if (uDash > 0.5 && mod(floor(gl_FragCoord.x / 9.0) + floor(gl_FragCoord.y / 9.0), 2.0) < 1.0) discard;
-          gl_FragColor = vec4(uColor, 1.0);
-        }`,
-      side: this.THREE.BackSide,
-    });
-    const hull = new this.THREE.Group();
-    hull.name = "__outlineHull";
-    const shellFor = (mesh: ThreeNamespace.Mesh) => {
-      const shell = new this.THREE.Mesh(mesh.geometry, material);
-      shell.position.copy(mesh.position);
-      shell.quaternion.copy(mesh.quaternion);
-      shell.scale.copy(mesh.scale);
+    // 壳体逐 mesh 构建以继承各自的漫反射贴图——alpha 镂空网格（树叶卡）
+    // 的壳体须同步 alphaTest 抠透，否则描边色从镂空缝隙整面透出
+    //（真机：树冠蓝色棋盘格，2026-10-06）。
+    const shellMaterial = (mesh: ThreeNamespace.Mesh) => {
+      const srcMaterial = Array.isArray(mesh.material)
+        ? mesh.material[0]
+        : mesh.material;
+      const map =
+        (srcMaterial as ThreeNamespace.MeshStandardMaterial | undefined)?.map ??
+        null;
+      return new this.THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: new this.THREE.Color(ThreeViewer.OUTLINE_COLOR) },
+          uWidth: { value: width },
+          uDash: { value: dashed ? 1 : 0 },
+          uMap: { value: map },
+          uHasMap: { value: map ? 1 : 0 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          uniform float uWidth;
+          void main() {
+            vUv = uv;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            vec3 n = normalize(normalMatrix * normal);
+            mv.xyz += n * uWidth;
+            gl_Position = projectionMatrix * mv;
+          }`,
+        fragmentShader: `
+          varying vec2 vUv;
+          uniform vec3 uColor;
+          uniform float uDash;
+          uniform sampler2D uMap;
+          uniform float uHasMap;
+          void main() {
+            if (uHasMap > 0.5 && texture2D(uMap, vUv).a < 0.5) discard;
+            if (uDash > 0.5 && mod(floor(gl_FragCoord.x / 9.0) + floor(gl_FragCoord.y / 9.0), 2.0) < 1.0) discard;
+            gl_FragColor = vec4(uColor, 1.0);
+          }`,
+        side: this.THREE.BackSide,
+      });
+    };
+    const shellFor = (mesh: ThreeNamespace.Mesh, inheritTransform: boolean) => {
+      const shell = new this.THREE.Mesh(mesh.geometry, shellMaterial(mesh));
+      if (inheritTransform) {
+        shell.position.copy(mesh.position);
+        shell.quaternion.copy(mesh.quaternion);
+        shell.scale.copy(mesh.scale);
+      }
       return shell;
     };
+    const hull = new this.THREE.Group();
+    hull.name = "__outlineHull";
     // 目标本身是 Mesh（锥体/占位人形等 buildUnitObject 直出）：壳挂恒等
     // 变换——hull 已是 target 子级，target 自带变换；再复制本地变换会双重
     // 叠加（真机：轮廓偏移到两倍位置）。
     if ((target as ThreeNamespace.Mesh).isMesh) {
-      hull.add(new this.THREE.Mesh((target as ThreeNamespace.Mesh).geometry, material));
+      hull.add(shellFor(target as ThreeNamespace.Mesh, false));
       return hull;
     }
     const walk = (src: ThreeNamespace.Object3D, dst: ThreeNamespace.Object3D) => {
       for (const child of [...src.children]) {
         const mesh = child as ThreeNamespace.Mesh;
         if (mesh.isMesh) {
-          dst.add(shellFor(mesh));
-        } else if ((child as ThreeNamespace.Object3D).isGroup) {
+          dst.add(shellFor(mesh, true));
+        } else if (
+          (child as ThreeNamespace.Object3D & { isGroup?: boolean }).isGroup
+        ) {
           const group = new this.THREE.Group();
           group.position.copy(child.position);
           group.quaternion.copy(child.quaternion);
@@ -554,6 +577,10 @@ export class ThreeViewer {
 
   private onPointerDown = (event: PointerEvent) => {
     if (this.pointerActive) return;
+    // 覆盖层 UI（name-tag 删除钮等）按下不启动轨道/指针捕获——容器
+    // setPointerCapture 会把后续 pointerup 重定位到容器，click 落在
+    // 公共祖先=容器上，按钮收不到（真机：删除钮失效，2026-10-06）。
+    if (event.target !== this.renderer.domElement) return;
     if (!this.orbitEnabled) return;
     this.pointerActive = true;
     this.pointerButton = event.button;

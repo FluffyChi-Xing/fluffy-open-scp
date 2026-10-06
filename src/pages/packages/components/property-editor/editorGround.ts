@@ -92,6 +92,85 @@ export function groundFillMesh(
   ) as ThreeNamespace.Mesh | undefined;
 }
 
+/** 尺度标注的一条锚点：轴别 + lot 局部系锚点（线段中点）+ 米数文本。 */
+export interface LotDimensionAnchor {
+  axis: "length" | "width" | "height";
+  /** 线段中点（lot 局部系，Z-up）；调用方按地面矩阵换算到游戏系投影。 */
+  point: [number, number, number];
+  /** 显示文本，如 "32.0 m"（不含轴名前缀，前缀由 i18n 提供）。 */
+  text: string;
+}
+
+/**
+ * Lot 三维尺度标注（用户需求 2026-10-06）：自地块一角出发的工程标注式
+ * 三线——长（X 边外平移）/宽（Y 边外平移）/高（竖直线，建筑实际高度，
+ * 0 = 无建筑省略）。线段单 geometry LineSegments + 端部垂足刻线；文字
+ * 标签由装配层按 anchors 逐帧投影（同 pick-tag 通道）。
+ * 返回 null = 无可标注（缺 LotSize）。
+ */
+export function buildLotDimensions(
+  THREE: typeof ThreeNamespace,
+  lotSize: [number, number],
+  height: number,
+): { object: ThreeNamespace.LineSegments; anchors: LotDimensionAnchor[] } | null {
+  const [w, d] = lotSize;
+  if (!(w > 0) || !(d > 0)) return null;
+  // 外偏移：随地块取寸（小 lot 不挤、大 lot 不远），高度线占角。
+  const offset = Math.min(Math.max(Math.min(w, d) * 0.08, 0.5), 4);
+  const z = 0.15;
+  const x0 = -w / 2;
+  const x1 = w / 2;
+  const y0 = -d / 2;
+  const y1 = d / 2;
+  const xa = x0 - offset; // 宽/高线的标注轴
+  const ya = y0 - offset; // 长线的标注轴
+  const tick = offset * 0.35;
+  const points: number[] = [];
+  const push = (
+    a: [number, number, number],
+    b: [number, number, number],
+  ) => {
+    points.push(...a, ...b);
+  };
+  // 长：沿 X 边外侧的标注线 + 两端自地块角点的垂足延长刻线
+  push([x0, ya, z], [x1, ya, z]);
+  push([x0, y0, z], [x0, ya - tick, z]);
+  push([x1, y0, z], [x1, ya - tick, z]);
+  // 宽：沿 Y 边外侧
+  push([xa, y0, z], [xa, y1, z]);
+  push([x0, y0, z], [xa - tick, y0, z]);
+  push([x0, y1, z], [xa - tick, y1, z]);
+  // 高：占角竖直线 + 上下端横刻线
+  const hasHeight = height > 0.01;
+  if (hasHeight) {
+    push([xa, ya, z], [xa, ya, height]);
+    push([xa - tick, ya, z], [xa + tick, ya, z]);
+    push([xa - tick, ya, height], [xa + tick, ya, height]);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(points, 3),
+  );
+  const object = new THREE.LineSegments(
+    geometry,
+    new THREE.LineBasicMaterial({ color: 0x0878fe }),
+  );
+  object.name = "__lotDimensions";
+  const anchors: LotDimensionAnchor[] = [
+    { axis: "length", point: [0, ya, z], text: `${w.toFixed(1)} m` },
+    { axis: "width", point: [xa, 0, z], text: `${d.toFixed(1)} m` },
+  ];
+  if (hasHeight) {
+    anchors.push({
+      axis: "height",
+      point: [xa, ya, height / 2],
+      text: `${height.toFixed(1)} m`,
+    });
+  }
+  return { object, anchors };
+}
+
 /**
  * 地面合成/贴图缓存（会话级）：compose 输入在编辑操作（transform/undo 引发的
  * grouping 全量重建）中完全不变，命中缓存 = 零合成零解码。key 由全部输入的

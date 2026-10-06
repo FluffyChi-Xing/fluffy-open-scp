@@ -57,9 +57,13 @@ fn main() {
                         .map(|t| basis_scale(&t.matrix))
                         .unwrap_or(1.0);
                     let unknown = scale.as_ref().map(|v| v.to_string()).unwrap_or("-".into());
-                    let height = 51.2 * basis;
+                    let m = transform
+                        .as_ref()
+                        .map(|t| format!("{:?}", t.matrix))
+                        .unwrap_or("-".into());
                     println!(
-                        "  树 idx {index} rid {rid:08X} 基缩放 {basis:.3} scale字段 {unknown} → 推算树高 {height:.1}m"
+                        "  树 idx {index} rid {rid:08X} 基缩放 {basis:.3} scale字段 {unknown}
+    matrix = {m}"
                     );
                     shown += 1;
                 }

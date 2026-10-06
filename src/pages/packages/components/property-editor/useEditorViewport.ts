@@ -7,6 +7,7 @@ import type * as ThreeNamespace from "three";
 export const VIEWPORT_GROUPS = [
   "model",
   "lot",
+  "dimensions",
   "lights",
   "props",
   "decals",

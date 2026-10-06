@@ -24,14 +24,17 @@ import PropertyEditorViewport, {
 import PropertyEditorInspector from "./PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { unitId } from "./unitGizmos";
+import { buildSchemaDoc } from "./peSchemaDoc";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { useEditorHotkeys } from "./useEditorHotkeys";
 import { exportLotModel } from "@/composables/useModelExport";
 import { useEventListener } from "@vueuse/core";
+import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 
 const props = defineProps<{ packageId: number; tgi: Tgi }>();
+const { t } = useI18n();
 const open = defineModel<boolean>("open", { default: false });
 const {
   session,
@@ -50,6 +53,7 @@ const {
   modelState,
   selectedId,
   grouping,
+  flatUnits,
   lotSize,
   lotTilePeriod,
   lotPlacement,
@@ -103,6 +107,23 @@ function commitTransform(id: string, matrix: number[]) {
 function commitFields(id: string, patch: Record<string, unknown>) {
   edit.setUnitFields(id, patch);
 }
+
+/**
+ * 选中 prop 是否可编辑「缩放倍率」：仅真实模型渲染分支消费 DTO scale
+ * （树模型 = propTreeIds；prop/放置直挂模型 = 有 LOTM 载荷）。标记锥
+ * 兜底的 prop 编辑它无观感意义，不显示。
+ */
+const selectedScaleEditable = computed(() => {
+  const unit = selectedUnit.value;
+  if (!unit || unit.kind !== "prop") return false;
+  const rid = unit.resourceId;
+  if (typeof rid !== "number") return false;
+  return (
+    propTreeIds.value.has(rid) ||
+    propModels.value.has(rid) ||
+    addedModelPayloads.value.has(rid)
+  );
+});
 
 /**
  * 显式保存：本地编辑导出为 JSON 补丁文件。当前编辑仅存在于内存，
@@ -168,7 +189,9 @@ const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>
     // → 兜底补入：包 id 取引用条目（readLotModelMeshes 可按需加载）
     for (const refEntry of referencedModels.value) {
       if (matched.some((entry) => entry.instance === refEntry.instance)) continue;
-      const hexName = `模型 0x${refEntry.instance.toString(16).toUpperCase()}`;
+      const hexName = t("package.modelFallbackName", {
+        hex: `0x${refEntry.instance.toString(16).toUpperCase()}`,
+      });
       if (keyword && !hexName.toLowerCase().includes(keyword)) continue;
       matched.push({
         packageId: refEntry.packageId,
@@ -354,56 +377,40 @@ function onDeleteUnit(id: string) {
 }
 
 // ---- Schema（低代码资产管线 v1，docs/design/lowcode-asset-pipeline.md）----
-// 打开时把「当前 session + 编辑层覆盖」提交后端引擎，产出规范化
-// openscp.lot-asset/1 JSON；FCode 只读预览，导出写 .lot.json。
+// 活体文档：编辑态（session + 编辑层覆盖合并后的 effectiveUnits）的前端
+// JSON 投影，openscp.lot-asset/1 结构与后端 build_schema 同构——解锁编辑
+// 后用户的一切增删改查都实时反映在这份 JSON 上（渲染/检查器/Schema
+// sheet 三方同源），导出即所得。FCode 只读预览，导出写 .lot.json。
 const schemaOpen = ref(false);
-const schemaBusy = ref(false);
-const schemaJson = ref("");
-async function openSchemaSheet() {
-  if (schemaBusy.value || !session.value) return;
-  schemaBusy.value = true;
-  try {
-    const overrides = [...edit.overrides.entries()].map(([id, matrix]) => ({
-      id,
-      matrix,
-    }));
-    const fieldPatches = [...edit.fieldOverrides.entries()].map(
-      ([id, fields]) => ({ id, fields }),
-    );
-    const merged = new Map<string, { id: string; matrix?: number[]; fields?: Record<string, unknown> }>();
-    for (const entry of [...overrides, ...fieldPatches]) {
-      merged.set(entry.id, { ...merged.get(entry.id), ...entry });
-    }
-    const current = session.value;
-    const request = {
-      session: {
-        assetName: current.assetName ?? null,
-        tgi: props.tgi,
-        modelLods: current.modelLods,
-        lotSize: current.lotSize,
-        lotTilePeriod: current.lotTilePeriod,
-        lotPlacement: current.lotPlacement,
-        lotColors: current.lotColors,
-        lotColorsAuthored: current.lotColorsAuthored,
-        lotBorderColors: current.lotBorderColors,
-        lotBorderWidths: current.lotBorderWidths,
-        lotBorderPatternIndices: current.lotBorderPatternIndices,
-        lotBaseTile: current.lotBaseTile,
-        lotOverlayBoxOffset: current.lotOverlayBoxOffset,
-        lotModelBBoxCenter: current.lotModelBBoxCenter,
-        units: current.units,
-      },
-      overrides: [...merged.values()],
+const schemaJson = computed(() => {
+  const current = session.value;
+  if (!current) return "";
+  // flatUnits = effectiveUnits（session 已合并 overrides/fieldOverrides/
+  // 增删）——文档即渲染链路正在消费的生效值
+  return JSON.stringify(
+    buildSchemaDoc({
+      assetName: current.assetName ?? null,
+      tgi: props.tgi,
+      modelLods: current.modelLods,
+      lotSize: current.lotSize,
+      lotTilePeriod: current.lotTilePeriod,
+      lotPlacement: current.lotPlacement,
+      lotBaseTile: current.lotBaseTile,
+      lotColors: current.lotColors,
+      lotColorsAuthored: current.lotColorsAuthored,
+      lotBorderColors: current.lotBorderColors,
+      lotBorderWidths: current.lotBorderWidths,
+      lotBorderPatternIndices: current.lotBorderPatternIndices,
+      lotOverlayBoxOffset: current.lotOverlayBoxOffset,
+      lotModelBBoxCenter: current.lotModelBBoxCenter,
+      units: flatUnits.value,
       hiddenUnitIds: [...hiddenUnits.value],
       groups: { ...groupVisibility },
-    };
-    const result = await tauriApi.packages.buildPeSchema(request);
-    schemaJson.value = result.schemaJson;
-    schemaOpen.value = true;
-  } finally {
-    schemaBusy.value = false;
-  }
-}
+    }),
+    null,
+    2,
+  );
+});
 async function exportSchema() {
   if (!schemaJson.value) return;
   const binary = JSON.stringify(JSON.parse(schemaJson.value), null, 2);
@@ -860,7 +867,7 @@ const treeSheetPinned = ref(true);
                   type="button"
                   class="rail-item"
                   :aria-label="$t('package.railSource')"
-                  @click="openSchemaSheet"
+                  @click="schemaOpen = true"
                 >
                   <FIcon name="CodeXml" :size="17" aria-label="" />
                 </button>
@@ -986,6 +993,7 @@ const treeSheetPinned = ref(true);
         <PropertyEditorInspector
           :unit="selectedUnit"
           :live-transform="liveTransform"
+          :scale-editable="selectedScaleEditable"
           @update-transform="commitTransform"
           @update-fields="commitFields"
         />
@@ -1323,13 +1331,15 @@ const treeSheetPinned = ref(true);
   position: relative;
   display: grid;
   flex: 1;
-  /* rail | 组件树 sheet（停靠时占列，悬浮/关闭塌缩为 0）| 视口 | 检查器 */
-  grid-template-columns: 48px auto minmax(0, 1fr) 360px;
+  /* rail | 组件树 sheet（停靠时占列，悬浮/关闭塌缩为 0）| 视口 | 检查器
+     （360px 中文恰好，英文 Properties/Transform/Metadata/Render Telemetry
+     四 tab 溢出——加宽至 384px，tab 栏同时允许换行兜底，2026-10-06） */
+  grid-template-columns: 48px auto minmax(0, 1fr) 384px;
   min-height: 0;
 }
 @media (max-width: 960px) {
   .editor-body {
-    grid-template-columns: 44px auto minmax(0, 1fr) 300px;
+    grid-template-columns: 44px auto minmax(0, 1fr) 320px;
   }
 }
 /* 左侧工作台 rail：图标+微标签竖排，组间留白，底部组贴齐下缘 */

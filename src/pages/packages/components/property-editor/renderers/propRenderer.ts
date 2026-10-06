@@ -40,7 +40,13 @@ export const renderPropUnit: UnitRenderer = async (
     );
   }
   // flags==15 hack：Scale 存于 Transform.Unknown（DTO 独立 scale 字段，
-  // 半宽语义）——锥体可忽略，真模型必须叠加，否则广告牌等超出构架
+  // 半宽语义）——锥体可忽略，真模型必须叠加，否则广告牌等超出构架。
+  // 叠加即烘焙：对象 scale ≠ 矩阵 decompose，增量路径须按
+  // incrementalScale 补乘（见 tryIncrementalGrouping），提交须除回。
+  // 恒标注数字（缺省 1）：放置单元 scale=null 起步的缩放倍率编辑才能走
+  // 增量比例路径。
+  propModel.userData.incrementalScale =
+    typeof unit.scale === "number" ? unit.scale : 1;
   if (typeof unit.scale === "number") {
     propModel.scale.multiplyScalar(unit.scale);
   }
