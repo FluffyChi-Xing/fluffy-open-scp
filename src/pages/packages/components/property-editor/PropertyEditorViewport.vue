@@ -28,9 +28,9 @@ import {
   getPropModelObject,
   getTreeBillboard,
   getTreeModelObject,
-  getSimFigure,
 } from "./propModels";
 import {
+  getSimFigure,
   loadSimParts,
   type SimPart,
 } from "./simAssets";
