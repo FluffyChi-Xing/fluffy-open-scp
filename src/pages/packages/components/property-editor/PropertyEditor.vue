@@ -215,6 +215,10 @@ watch(selectedId, (value) => {
   if (!value) pendingSelectId.value = null;
 });
 const sourceForPlacement = createDataSource();
+
+/** 放置 prop（树部件家族）的默认缩放：0.2 × 原生 ~51m ≈ 10m 树高
+ * （对拍消防局 lot 树道具 scale 分布的两级中值），缩放手柄可调。 */
+const PLACED_PROP_SCALE = 0.2;
 function nextIndexOf(kind: string): number {
   const units = session.value?.units ?? [];
   let max = -1;
@@ -250,36 +254,16 @@ function beginPlacementDrag(event: PointerEvent, payload: PlacePayload) {
   placementPayload.value = payload;
   document.body.style.cursor = "copy";
 }
-/** 行主序矩阵的均匀缩放（三基向量长度均值）；无变换 = 1。 */
-function matrixScale(matrix: number[] | undefined): number {
-  if (!matrix || matrix.length !== 12) return 1;
-  const l = (x: number, y: number, z: number) => Math.hypot(x, y, z);
-  return (
-    (l(matrix[0], matrix[1], matrix[2]) +
-      l(matrix[3], matrix[4], matrix[5]) +
-      l(matrix[6], matrix[7], matrix[8])) /
-    3
-  );
-}
-
-/** 同类既有单元的中位缩放（数据驱动：与相邻树/组件观感一致）。 */
-function medianScaleOfKind(kind: string): number {
-  const scales = (session.value?.units ?? [])
-    .filter((unit) => unit.kind === kind && unit.transform)
-    .map((unit) => matrixScale(unit.transform!.matrix))
-    .filter((scale) => scale > 0.001)
-    .sort((a, b) => a - b);
-  return scales.length ? scales[Math.floor(scales.length / 2)] : 1;
-}
-
 function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) {
   if (!editEnabled.value) return;
   // 基向量 = 同类既有单元的中位缩放（引擎按单元数据缩放聚合模型；
   // 数据无缩放时退化为 1）
-  const defaultScale = medianScaleOfKind(payload.kind);
+  // 放置 prop（树部件家族）默认缩放 0.2：×原生 ~51m ≈ 10m 树高
+  // （对拍消防局 lot 树道具 scale 分布的两级中值），缩放手柄可调。
+  const placedScale = payload.kind === "prop" ? PLACED_PROP_SCALE : 1;
   const transform = {
     matrix: [
-      defaultScale, 0, 0, 0, defaultScale, 0, 0, 0, defaultScale, 0, 0,
+      placedScale, 0, 0, 0, placedScale, 0, 0, 0, placedScale, 0, 0,
       position[0], position[1], position[2],
     ],
   };

@@ -47,10 +47,8 @@ export const renderPropUnit: UnitRenderer = async (
   // 放置的直挂模型（树部件家族实测，props 文档 §3.1）：纹理槽位语义与
   // 杂件相反——tex[0]=法线/占位（乳白）、tex[1]=漫反射图集（叶/皮彩色）。
   // 漫反射按 PNG 字节数取大者（彩色图集压缩后恒大于法线小图），叶卡
-  // alphaTest 抠透。
-  // 高度归一 7.5m：lot 数据对拍（消防局 0xE917279C）树道具 scale 字段
-  // 0.06-0.30 两组（≈3m/9-15m，即用户目测“5-10m 两级”），7.5m 取两级
-  // 中值；缩放手柄可调。
+  // alphaTest 抠透。高度由放置单元的 transform 缩放承载（默认 0.2 ≈
+  // 10m 树高，用户经缩放手柄调整）。
   if (unit.modelTgi) {
     const materialSet = payload.materials?.[0];
     const diffuse = [materialSet?.normalPng, materialSet?.slot0Png]
@@ -86,9 +84,6 @@ export const renderPropUnit: UnitRenderer = async (
         });
       }
     }
-    const bounds = new ctx.THREE.Box3().setFromObject(propModel);
-    const height = Math.max(bounds.max.z - bounds.min.z, 0.01);
-    propModel.scale.multiplyScalar(7.5 / height);
   }
   return propModel;
 };
