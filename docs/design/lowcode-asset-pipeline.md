@@ -1,8 +1,9 @@
 # 低代码资产管线与 Lot 资产 Schema（v1 确定稿）
 
-> 状态：**规划/设计定稿**（未实现）。本文记录产品目标与 Property Editor
-> 预期产出 `lot.json` 的 v1 格式规范，作为后续 schema 解析引擎、拖拽编辑、
-> 构建打包三类开发的单一依据。取证日期 2026-10-06。
+> 状态：**设计定稿，第一环已落地**（2026-10-06：`build_pe_schema` 引擎 +
+> PE Schema sheet 查看/导出已实现，commit 37d7114 起；编辑模式解锁/拖拽
+> 放置/删除/实时同步已实现，f73c464）。本文是 schema 格式与低代码资产
+> 管线（模组项目形态/节点图/构建打包）的单一依据。取证日期 2026-10-06。
 > 字段与 `src/api/tauri.ts` 的 `LotEditorSession`/`LotUnitDto` 一一对应，
 > 与 `docs/re/props-effects-spawners-paths-engine-flow.md` 的引擎取证互为映射。
 
@@ -21,6 +22,20 @@
 4. 前置条件：decal / props / effects / spawners 机制全部弄清
    （props-effects 文档持续更新中）；机制清楚一项，schema 对应字段的
    「TBD」位转正，拖拽式资产编辑能力随之解锁。
+5. **模组项目类型化**：开发面板新建模组时按类型（assets mod / code mod /
+   未来更多）自动创建根目录与**对应的资产子目录**（assets/lots、
+   assets/models、assets/textures、scripts/…，见 §1A 目录树）；玩家导入的
+   glb 模型、贴图等静态资源经**节点集成的编辑器**管理在对应子目录，
+   配置由该节点的 schema JSON 承载。
+6. **Vue Flow 定制管线图（开发面板升级）**：模组开发的前因后果以流程节点
+   可视化——每个节点 = 一个开发单元（lot-asset 节点 / code-mod 节点 /
+   模型/贴图资产节点…），节点间以 **handle + edge** 表达依赖关系；节点
+   的 schema JSON 与元数据全部由 package.json 实现版本控制（§1A.5）。
+7. **现代化项目管理 = 屏蔽底层实现**：模组项目文件夹最终表现为「多个
+   不同部分的 schema JSON 由 package.json 管理元数据+依赖，各 schema
+   JSON 管理对应部分的静态资源配置」；用户只需在对应节点用集成工具完成
+   静态资源开发，点构建即产出最终 .package（§10）——RW4/raster 写回等
+   底层细节对用户透明。
 
 ## 1. 总体管线
 
@@ -34,18 +49,113 @@
                        └───────────────┬────────────────┘
                                        │ 「构建」（右上角按钮）
                        ┌───────────────▼────────────────┐
-                       │ 1. 更新 modRoot/package.json     │
-                       │    （覆盖 TGI 清单/版本/产物表） │
-                       │ 2. 目录产物 → 一个/多个 .package │
+                       │ 1. 校验节点图（§1A：schema 校验/  │
+                       │    依赖存在/无循环/冲突汇总）    │
+                       │ 2. 更新 modRoot/package.json     │
+                       │    （节点注册表/覆盖 TGI/产物表） │
+                       │ 3. 按拓扑序逐节点编译：           │
                        │    property 行写回（sc-properties）│
                        │    raster 写回（mask/纹理）      │
                        │    RW4 条目直拷/重打包           │
+                       │ 4. 产物合并 → 一个/多个 .package │
                        └────────────────────────────────┘
 ```
 
 **关键分层**：编辑态（PE 内存中的 overrides/选中/图层）只属于「编辑器视
 图状态」；**资产语义**只看 lot.json。渲染器（three 场景重建）与写回器
 （DBPF 打包）是 lot.json 的两个独立消费者，互不依赖对方。
+
+## 1A. 模组项目形态与节点管线（Vue Flow，规划）
+
+### 1A.1 项目类型与目录约定
+
+创建模组时按类型初始化根目录（已有逻辑）+ 按类型的资产子目录：
+
+```
+<modRoot>/
+  package.json                # 模组清单 + 节点图 + 依赖（见 1A.5）
+  assets/                     # ── assets mod 类型 ──
+    lots/<name>/lot.json      # lot-asset 节点（本文 §4 schema）
+    lots/<name>/masks/…       # LotMask / 手绘图层（raster 节点产物）
+    models/*.glb | *.rw4      # 导入模型（asset 节点，经编辑器转换）
+    textures/*.png            # 贴图资产（texture 节点）
+  scripts/                    # ── code mod 类型 ──
+    *.argscript | *.js        # ArgScript/脚本节点（code-mod 节点产物）
+  ui/                         # 未来 UI 编辑节点
+```
+
+- **assets mod**：以资产节点为主（lot 布局/模型/贴图），构建产物 =
+  资源型 .package（property/raster/RW4 条目）。
+- **code mod**：以脚本节点为主（EcoGame ArgScript / 规则脚本），构建产物 =
+  脚本资源型 .package。
+- 混合类型 = 两者并存，构建时按节点类型分别编译、按 package.json 的
+  产物表合并为一个或多个 .package。
+
+### 1A.2 节点模型（Vue Flow 管线图）
+
+开发工作台用 **Vue Flow 定制管线图**呈现模组开发全貌：
+
+- **节点 = 开发单元**：每类节点绑定一种集成编辑器与一份 schema JSON——
+  | 节点类型 | schema | 集成编辑器 | 产物 |
+  | --- | --- | --- | --- |
+  | `lot-asset` | lot.json（本文 §4） | Property Editor（3D 视口/拖拽/检查器） | property 行 + raster |
+  | `raster` | texture.json（待定义） | Raster 绘制面板 | 0x2F4E681C 条目 |
+  | `model-import` | model.json（待定义） | glb 导入向导（坐标/缩放/材质映射） | RW4 条目 |
+  | `code-mod` | script.json（待定义） | 文本/ArgScript 编辑器 | 脚本资源 |
+- **handle + edge = 依赖**：lot-asset 节点引用模型/贴图资产节点（edge =
+  "此 schema 依赖彼产物"）；依赖缺失/循环在图上高亮，构建前可校验。
+- 节点状态可视化：草稿（schema 未构建）/ 已构建（产物版本号）/ 错误
+  （schema 校验或资源缺失）。
+- 布局由用户手排（Vue Flow 存位置于 package.json），依赖边由 schema 的
+  引用关系自动推导（模型/贴图 file 引用 → 对应资产节点）。
+
+### 1A.3 资产导入流
+
+玩家拖入 glb/贴图：在对应 asset 节点（或新建）经**导入向导**完成
+坐标/缩放/材质映射 → 产物落 `assets/models|textures/` 子目录 → 节点
+schema 登记文件引用与转换参数 → 下游 lot-asset 节点即可通过 file 引用
+消费（构建时转 RW4/raster 并回填 TGI，§10）。
+
+### 1A.4 编辑回写语义
+
+PE 的所有编辑（放置/删除/移动/调参）**只写 lot.json**（第一环已落地），
+不直接改 property——编辑固有组件同样产生 schema 差异而非原始 property
+副本；「还原资产布局」由解析引擎按 schema 重建（§9），「产出 .package」
+由构建管线按 schema 编译（§10）。编辑/还原/构建三者以 schema 为唯一
+交接面。
+
+### 1A.5 package.json v2（节点图版本控制）
+
+```jsonc
+{
+  "name": "机制优化mod",
+  "version": "0.1.0",
+  "type": "assets-mod",                  // assets-mod | code-mod | hybrid
+  "nodes": {                             // 节点注册表（Vue Flow 数据源）
+    "lot-main": {
+      "type": "lot-asset",
+      "schema": "assets/lots/main/lot.json",
+      "editor": "property-editor",
+      "position": { "x": 120, "y": 80 },
+      "deps": ["model-warehouse", "texture-roof"],
+      "build": { "outputs": ["dist/mod-main.package"] }
+    },
+    "model-warehouse": {
+      "type": "model-import",
+      "schema": "assets/models/warehouse/model.json",
+      "editor": "model-import-wizard",
+      "deps": [],
+      "build": { "outputs": ["dist/warehouse.rw4"] }
+    }
+  },
+  "dependencies": { },                   // 跨模组依赖（远端 mod 包）
+}
+```
+
+- 节点 schema 的版本与元数据（编辑时间/作者/内容 hash）由 package.json
+  统一登记；Vue Flow 的节点位置也存此处（重开还原布局）。
+- 覆盖检测沿用既有规划（跨模组 TGI 冲突），叠加节点图后可精确到
+  「哪个节点的哪个产物冲突」。
 
 ## 2. 文件约定
 
@@ -309,20 +419,39 @@ R×scale×0.5×10），唯一判据 = 可见类别；破洞家族 raster 即光�
 
 ## 10. 构建管线（工作台「构建」按钮，未来）
 
-1. 扫描 `assets/lots/**/lot.json`（及未来 UI 编辑/脚本资产），
+**构建 = 按节点图拓扑序遍历**（§1A.5 package.json.nodes）：先校验
+（schema 校验、依赖存在、无循环依赖、覆盖冲突汇总），再逐节点把
+schema + 静态资源编译为资源条目，最后按产物表合并输出 .package：
+
+1. 扫描节点图（assets/lots/**/lot.json 与未来 UI/脚本节点），
    汇总「覆盖 TGI 清单」（source.tgi → 本资产）。
-2. 更新 `modRoot/package.json`：版本、覆盖 TGI 列表、产物表（跨模组冲突
-   检测靠它，见 note-mubbaul5 规划）。
-3. 打包（复用现有 DBPF 写栈 `crates/dbpf` + sc-properties 编码器 +
+2. 更新 `modRoot/package.json`：版本、节点注册表、覆盖 TGI 列表、
+   产物表（跨模组冲突检测靠它，见 note-mubbaul5 规划）。
+3. 逐节点编译（复用现有 DBPF 写栈 `crates/dbpf` + sc-properties 编码器 +
    raster 写回）：
-   - `lot.json` → 0x00B1B104 property 行（具名字段按 §5/§7 映射表反编码，
-     fields 透传）；
-   - `masks/*.png` → raster 条目（0x2F4E681C，残缺 TGI 惯例）；
-   - `models/*.rw4` → 2F4E681B 条目；GLB → 暂不（需 RW4 写回器，资产-1）；
-   - 脚本资源（ArgScript/EcoGame）→ 对应资源类型（机制待逆向清单见
-     roadmap）。
-4. 一个资产一个 `.package`（对齐官方 mod-airport.package 惯例），
-   构建器可按 package.json 的产物表合并/拆分。
+   - `lot-asset` 节点：`lot.json` → 0x00B1B104 property 行（具名字段按
+     §5/§7 映射表反编码，fields 透传）；
+   - `raster` 节点：masks/贴图 → 0x2F4E681C raster 条目（残缺 TGI 惯例）；
+   - `model-import` 节点：RW4 → 2F4E681B 条目直拷；GLB → 暂不（需 RW4
+     写回器，资产-1）；
+   - `code-mod` 节点：脚本 → 对应资源类型（机制待逆向清单见 roadmap）。
+4. 产物组织：一个资产节点一个 `.package`（对齐官方 mod-airport.package
+   惯例），可按 package.json 产物表合并/拆分；构建错误按节点回reporting
+   （Vue Flow 节点标红 + 错误面板定位到 schema 字段）。
+
+## 10A. 实施状态（滚动更新）
+
+| 环节 | 状态 | 落点 |
+| --- | --- | --- |
+| schema v1 格式定稿 | ✅ 本文 §4-§8 | docs/design/lowcode-asset-pipeline.md |
+| PE schema 引擎（session+编辑覆盖 → JSON） | ✅ `build_pe_schema` 命令 | src-tauri/src/pe_schema.rs |
+| PE Schema sheet（FCode 查看 + 导出 .lot.json） | ✅ | PropertyEditor.vue |
+| PE 编辑模式（解锁/拖放放置/删除/移动调参实时同步） | ✅ | renderers/ + unitEditLayer v2 + Viewport |
+| 拖拽放置（组件库面板 + 地面取点 + 落点选中） | ✅ 本轮 | materials sheet + groundPointAt |
+| 解析引擎（lot.json → 场景重建） | ⏳ 排期 | 复用 refinedGround/buildUnitObject（§9） |
+| Vue Flow 管线图工作台 | ⏳ 排期 | §1A.2（package.json v2 节点注册表） |
+| 构建管线（多 schema → .package） | ⏳ 排期 | §10（DBPF 写栈已有） |
+| 导入向导（glb→RW4） | ⏳ 依赖 RW4 写回器（资产-1） | §10 |
 
 ## 11. 与机制待清项的关系（schema 的 TBD 位）
 
