@@ -1,0 +1,76 @@
+name: "🐛 Bug 报告 / Bug Report"
+description: "报告 OpenSCP 的缺陷 / Report a defect in OpenSCP"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请先 [搜索现有 Issue](https://github.com/FluffyChi-Xing/fluffy-open-scp/issues?q=is%3Aissue) 避免重复。
+        Thanks for the report! Please [search existing issues](https://github.com/FluffyChi-Xing/fluffy-open-scp/issues?q=is%3Aissue) first.
+
+        ⚠️ **请勿上传游戏原版资源或你的存档数据**；如需样本，请构造能触发问题的最小合成 `.package`。
+        ⚠️ **Do not upload original game assets or save games**; provide a minimal synthetic `.package` that triggers the issue instead.
+  - type: textarea
+    id: description
+    attributes:
+      label: "问题描述 / What happened?"
+      description: "期望行为 vs 实际行为 / Expected behavior vs actual behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: "复现步骤 / Reproduction steps"
+      description: "打开了哪个 .package、哪个 TGI/条目、执行了什么操作 / Which package, TGI/entry, and actions"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: "影响区域 / Area"
+      options:
+        - "资源浏览/解析 (Browsing / parsing: DBPF · RW4 · 属性表)"
+        - "模型/贴图/音视频预览 (Model / texture / AV preview)"
+        - "Lot 编辑器 / Raster 绘制 (Lot editor / raster paint)"
+        - "地图面板 (Map panel)"
+        - "导出 (Export: glTF / OBJ / 音视频)"
+        - "打包/构建/启动 (Packaging / build / launch)"
+        - "其他 (Other)"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "OpenSCP 版本/构建 / Version or build"
+      description: "提交哈希或安装包版本 / commit hash or installer version"
+      placeholder: "e.g. 34846db / v0.x installer"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: "操作系统 / Operating system"
+      options:
+        - "Windows"
+        - "macOS"
+        - "Linux"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: "日志 / 控制台输出 / Logs or console output"
+      render: shell
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "截图或录屏 / Screenshots or recording"
+      description: "如涉及渲染观感问题，请附对比截图 / For rendering issues, attach comparison screenshots"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "确认 / Confirmations"
+      options:
+        - label: "我已搜索现有 Issue，没有重复 / I searched existing issues and found no duplicate"
+        - label: "我使用的是最新构建 / I am on the latest build"
+        - label: "我没有上传游戏原版资源或存档 / I did not upload original game assets or saves"

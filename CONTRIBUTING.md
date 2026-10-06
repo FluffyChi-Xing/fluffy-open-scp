@@ -7,11 +7,14 @@ Thanks for your interest in contributing to OpenSCP! This guide is provided in C
 
 ## 中文
 
-### 分支模型
+### 分支模型与 PR 流程
 
-- `master`：稳定主干，始终保持可构建、可打包状态。
-- `dev/xx`（如 `dev/map`、`dev/lots`）：功能开发分支，**由项目所有者创建**。
-- 贡献流程：在所有者创建的 `dev/xx` 分支上开发并提交；功能完成后由所有者审阅合入 `master`。请勿直接向 `master` 推送大改动。
+- `master`：稳定主干，始终保持可构建、可打包状态。**已开启分支保护：禁止直接 push，所有变更一律通过 Pull Request 合入。**
+- `dev/xx`（如 `dev/map`、`dev/rendering-optimisation`）：功能开发分支，**由项目所有者创建**，作为长期特性的集成线。
+- **外部贡献者**：fork 本仓库 → 从 `master` 切出 `feat/xxx` / `fix/xxx` 分支 → 开发完成后向 `master` 发起 PR。
+- **审合规则**：PR 由项目所有者审阅合并；合并前 PR 模板中的自查项需实际执行并通过。逆向结论类变更请在 PR 描述中给出证据链（`docs/roadmap/migration.md` 章节或探针输出）。
+- **决策机制**：项目方向、格式底座 API 与发布节奏由项目所有者最终决策；大功能欢迎先开 Issue/Discussion 讨论达成共识再动手。
+- **社区规范**：参与本项目即表示同意[行为准则](./CODE_OF_CONDUCT.md)；安全问题请勿公开 Issue，见[安全策略](./SECURITY.md)。
 
 ### 提交规范
 
@@ -77,11 +80,14 @@ npm run dev     # 开发运行
 
 ## English
 
-### Branch Model
+### Branch Model & PR Workflow
 
-- `master`: stable trunk; always keep it buildable and shippable.
-- `dev/xx` (e.g. `dev/map`, `dev/lots`): feature branches, **created by the project owner**.
-- Workflow: develop and commit on the owner-created `dev/xx` branch; the owner reviews and merges into `master`. Avoid pushing large changes directly to `master`.
+- `master`: stable trunk; always keep it buildable and shippable. **Branch protection is enabled: direct pushes are blocked — every change lands via Pull Request.**
+- `dev/xx` (e.g. `dev/map`, `dev/rendering-optimisation`): feature branches, **created by the project owner**, serving as integration lines for long-running features.
+- **External contributors**: fork this repo → branch `feat/xxx` / `fix/xxx` off `master` → open a PR against `master` when ready.
+- **Review & merge**: PRs are reviewed and merged by the project owner; the PR-template checklist must be actually executed and green before merge. For reverse-engineering changes, cite the evidence chain in the PR description (a `docs/roadmap/migration.md` section or probe output).
+- **Decision making**: project direction, foundation-crate APIs, and release cadence are ultimately decided by the project owner; large features should reach consensus in an Issue/Discussion first.
+- **Community standards**: participating means agreeing to the [Code of Conduct](./CODE_OF_CONDUCT.md); never report security issues publicly — see the [Security Policy](./SECURITY.md).
 
 ### Commit Convention
 
