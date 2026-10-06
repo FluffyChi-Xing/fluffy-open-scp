@@ -193,15 +193,24 @@ export class ThreeViewer {
     });
     const hull = new this.THREE.Group();
     hull.name = "__outlineHull";
+    const shellFor = (mesh: ThreeNamespace.Mesh) => {
+      const shell = new this.THREE.Mesh(mesh.geometry, material);
+      shell.position.copy(mesh.position);
+      shell.quaternion.copy(mesh.quaternion);
+      shell.scale.copy(mesh.scale);
+      return shell;
+    };
+    // 目标本身是 Mesh（锥体/占位人形等 buildUnitObject 直出）：壳挂本地
+    // 恒等变换（hull 已是 target 子级，继承其世界变换）
+    if ((target as ThreeNamespace.Mesh).isMesh) {
+      hull.add(shellFor(target as ThreeNamespace.Mesh));
+      return hull;
+    }
     const walk = (src: ThreeNamespace.Object3D, dst: ThreeNamespace.Object3D) => {
       for (const child of [...src.children]) {
         const mesh = child as ThreeNamespace.Mesh;
         if (mesh.isMesh) {
-          const shell = new this.THREE.Mesh(mesh.geometry, material);
-          shell.position.copy(mesh.position);
-          shell.quaternion.copy(mesh.quaternion);
-          shell.scale.copy(mesh.scale);
-          dst.add(shell);
+          dst.add(shellFor(mesh));
         } else if ((child as ThreeNamespace.Object3D).isGroup) {
           const group = new this.THREE.Group();
           group.position.copy(child.position);
