@@ -1,5 +1,11 @@
 import type * as ThreeNamespace from "three";
 import type { LotModelPayload } from "@/api/tauri";
+import {
+  nodesToObjects,
+  type GltfNodeDto,
+  type GltfParseRequest,
+  type GltfParseResponse,
+} from "./gltfParseDto";
 
 /** 与 Rust 侧 `LOT_MODEL_PAYLOAD_MAGIC` 一致："LOTM"（小端字节序）。 */
 const PAYLOAD_MAGIC = 0x4d54_4f4c;
@@ -128,8 +134,42 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
  * 解析地块模型的全部 GLB 为 Object3D。
  * gltf.rs 根节点自带 Z-up→Y-up 的 -90°X 旋转，而视口 world 组已做同款
  * 旋转（模型须与 Unit gizmo 共享 Z-up 世界），这里剥掉根旋转避免双重旋转。
+ *
+ * 首选 Worker 解析（2026-10-07 性能轮）：GLB 是自家导出器产出的纯静态
+ * 几何（零内嵌纹理/无骨架动画，package_service `EmbeddedTextures::default()`
+ * + `skeleton=None`），worker 内 GLTFLoader 无 DOM 依赖——数百 ms 的同步
+ * 解析移出主线程，主线程只付 memcpy 级 BufferAttribute 重建。Worker 不可
+ * 用/解析失败回退主线程原路径（行为逐值等价）。
  */
 export async function parseLotModelObjects(
+  glbs: ArrayBuffer[],
+): Promise<ThreeNamespace.Object3D[]> {
+  if (typeof Worker !== "undefined") {
+    const worker = getGltfParseWorker();
+    if (worker) {
+      try {
+        // glbs 传副本并转移：payload.glbs 保持完好（缓存/诊断可能复用）；
+        // memcpy（≤8MB/ mesh 上限）远小于主线程 parse 本身。
+        const copies = glbs.map((glb) => glb.slice(0));
+        const id = ++nextGltfParseJobId;
+        const nodes = await new Promise<GltfNodeDto[]>((resolve, reject) => {
+          pendingGltfParseJobs.set(id, { resolve, reject });
+          worker.postMessage(
+            { id, glbs: copies } satisfies GltfParseRequest,
+            copies,
+          );
+        });
+        const THREE = await import("three");
+        return nodesToObjects(nodes, THREE);
+      } catch {
+        // 断链已标记（worker 回退主线程后续走同步路径）
+      }
+    }
+  }
+  return parseLotModelObjectsOnMainThread(glbs);
+}
+
+async function parseLotModelObjectsOnMainThread(
   glbs: ArrayBuffer[],
 ): Promise<ThreeNamespace.Object3D[]> {
   const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
@@ -144,6 +184,57 @@ export async function parseLotModelObjects(
     }),
   );
   return objects;
+}
+
+// ---------------------------------------------------------------------------
+// GLB 解析 Worker 调度（单例 + 作业表 + 断链回退；groundCompose 同款模式）
+// ---------------------------------------------------------------------------
+
+let gltfParseWorker: Worker | null = null;
+let gltfParseWorkerBroken = false;
+let nextGltfParseJobId = 0;
+const pendingGltfParseJobs = new Map<
+  number,
+  {
+    resolve: (nodes: GltfNodeDto[]) => void;
+    reject: (error: Error) => void;
+  }
+>();
+
+function getGltfParseWorker(): Worker | null {
+  if (gltfParseWorker) return gltfParseWorker;
+  if (gltfParseWorkerBroken) return null;
+  try {
+    gltfParseWorker = new Worker(
+      new URL("./gltfParseWorker.ts", import.meta.url),
+      { type: "module" },
+    );
+    gltfParseWorker.onmessage = (
+      event: MessageEvent<GltfParseResponse>,
+    ) => {
+      const job = pendingGltfParseJobs.get(event.data.id);
+      if (!job) return;
+      pendingGltfParseJobs.delete(event.data.id);
+      if (event.data.error || !event.data.nodes) {
+        // 单次失败（导出器超限 GLB 等）→ 标断链，本次回退主线程。
+        gltfParseWorkerBroken = true;
+        job.reject(new Error(event.data.error ?? "gltf parse worker empty"));
+        return;
+      }
+      job.resolve(event.data.nodes);
+    };
+    gltfParseWorker.onerror = () => {
+      gltfParseWorkerBroken = true;
+      for (const job of pendingGltfParseJobs.values()) {
+        job.reject(new Error("gltf parse worker crashed"));
+      }
+      pendingGltfParseJobs.clear();
+    };
+    return gltfParseWorker;
+  } catch {
+    gltfParseWorkerBroken = true;
+    return null;
+  }
 }
 
 /**
