@@ -84,6 +84,7 @@ async function loadTexture(
   const texture = await new THREE.TextureLoader().loadAsync(url);
   if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
   texture.flipY = false;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.anisotropy = 4;
   return texture;
 }
@@ -415,42 +416,18 @@ export async function getPropModelObject(
     } catch {
       return null;
     }
-    // UV 修正（数据驱动）：GLTF 导出器恒写 V'=-V。车辆等模型原始 V 为正
-    // → 导出后全负（ClampToEdge 钳成单排纹素 = 灰车/条纹根因）→ 需翻回；
-    // 垃圾桶等模型原始 V 本身为负 → 导出后为正 → 翻回反而破坏。按载荷内
-    // 全体 UV 的 minV 判定：minV < -0.5 才整体翻回。几何为本模块新鲜解析，
-    // 就地修改安全。
-    {
-      let minV = Number.POSITIVE_INFINITY;
-      for (const root of roots) {
-        root.traverse((child) => {
-          const mesh = child as ThreeNamespace.Mesh;
-          if (!mesh.isMesh) return;
-          const uv = mesh.geometry.attributes.uv as
-            | ThreeNamespace.BufferAttribute
-            | undefined;
-          if (!uv) return;
-          for (let i = 0; i < uv.count; i += 1) {
-            minV = Math.min(minV, uv.getY(i));
-          }
-        });
-      }
-      if (minV < -0.5) {
-        for (const root of roots) {
-          root.traverse((child) => {
-            const mesh = child as ThreeNamespace.Mesh;
-            if (!mesh.isMesh) return;
-            const uv = mesh.geometry.attributes.uv as
-              | ThreeNamespace.BufferAttribute
-              | undefined;
-            if (!uv) return;
-            for (let i = 0; i < uv.count; i += 1) {
-              uv.setY(i, -uv.getY(i));
-            }
-            uv.needsUpdate = true;
-          });
-        }
-      }
+    // Undo the exporter V'=-V for each vertex. Native D3D samplers wrap
+    // negative UVs too; choosing orientation from a model-wide minimum picks
+    // unrelated atlas regions on signs and breaks meshes sharing the material.
+    for (const root of roots) {
+      root.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (!mesh.isMesh) return;
+        const uv = mesh.geometry.attributes.uv;
+        if (!uv) return;
+        for (let i = 0; i < uv.count; i += 1) uv.setY(i, -uv.getY(i));
+        uv.needsUpdate = true;
+      });
     }
     const urls: string[] = [];
     const tintSets = await loadTintTextures(
