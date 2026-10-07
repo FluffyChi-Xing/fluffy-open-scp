@@ -1095,6 +1095,29 @@ async function assembleScene(
   specUniformRefs.length = 0;
 
   const payload = props.modelPayload;
+  /** 贴花投影目标：全部建筑网格（在 lot 局部空间为单位变换）。模型线
+   * 填充，贴花线在汇合点后消费。 */
+  const buildingMeshes: ThreeNamespace.Mesh[] = [];
+  // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）。
+  // 必须立刻按当前时段求值：天空三段色与 uSkyLumRef（球面均值）都依赖它，
+  // 否则首帧用的是 createSunEnv 的占位值（间接光会整体偏暗）。
+  const env = createSunEnv(THREE);
+  applySunEnv(env, timeOfDay(), props.powered);
+  envRefs = env;
+  // 阶段间让出一帧（2026-10-07 性能轮）：整段装配遥测 p95 ≈ 1s，全程
+  // 不切片则输入/滚动全程卡死。每个让出点后必须查 isStale——让出期间
+  // 新一代重建可能已开跑（rebuild 骨架在让出前已清场）。
+  await yieldToBrowser();
+  if (ctx.isStale()) return;
+
+  // ---- 三线并发（2026-10-07 二轮）：模型/地面/单元互不依赖输出——
+  // 原串行 await 链总时长 = 各环节之和（模型最快出画、灯光/道具/地面
+  // 整段滞后的直接原因）；并行后总时长 ≈ 最慢环节。贴花投影依赖建筑
+  // 网格（模型线产物）、尺度标注依赖模型 bbox + 地面矩阵 → 汇合点后
+  // 串行收尾。每线各自保留 isStale 检查。
+
+  // 模型线：GLB 解析 → 材质/tint → 延迟贴图 → 阴影。
+  const modelStage = (async () => {
   // payload 级缓存：命中时返回 clone（共享几何），跳过 GLB parse。
   const modelObjects = payload ? await getLotModelObjects(payload) : [];
   if (ctx.isStale()) {
@@ -1111,8 +1134,6 @@ async function assembleScene(
   const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
     payload?.materials ?? []
   ).map(() => []);
-  /** 贴花投影目标：全部建筑网格（在 lot 局部空间为单位变换）。 */
-  const buildingMeshes: ThreeNamespace.Mesh[] = [];
   const tintSpan = renderTelemetry.begin("texture_compose", {
     phase: "tint",
     refined: props.renderMode === "refined",
@@ -1125,17 +1146,6 @@ async function assembleScene(
     materials: payload?.materials?.length ?? 0,
     tinted: tintResolved.filter((entry) => entry?.tintTex).length,
   });
-  if (ctx.isStale()) return;
-  // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）。
-  // 必须立刻按当前时段求值：天空三段色与 uSkyLumRef（球面均值）都依赖它，
-  // 否则首帧用的是 createSunEnv 的占位值（间接光会整体偏暗）。
-  const env = createSunEnv(THREE);
-  applySunEnv(env, timeOfDay(), props.powered);
-  envRefs = env;
-  // 阶段间让出一帧（2026-10-07 性能轮）：整段装配遥测 p95 ≈ 1s，全程
-  // 不切片则输入/滚动全程卡死。每个让出点后必须查 isStale——让出期间
-  // 新一代重建可能已开跑（rebuild 骨架在让出前已清场）。
-  await yieldToBrowser();
   if (ctx.isStale()) return;
   // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
   // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
@@ -1194,9 +1204,15 @@ async function assembleScene(
   const shadowsRefined = props.renderMode === "refined";
   viewport.viewer.value?.setShadowsEnabled(shadowsRefined);
   if (shadowsRefined) applySun();
+  })();
 
-    // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
-    if (props.lotSize) {
+  // 地面线：LotSize 矩形 + placement 逆 + mask 合成（与模型零依赖）。
+  // 尺度标注依赖模型 bbox（模型线产物）→ 汇合点后再建。
+  const groundStage = (async () => {
+    if (!props.lotSize) {
+      dimLabels.value = [];
+      return null;
+    }
     const groundSpan = renderTelemetry.begin("lot_render", {
       refined: props.renderMode === "refined",
     });
@@ -1267,30 +1283,8 @@ async function assembleScene(
       });
     }
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
-
-    // Lot 三维尺度标注（用户需求 2026-10-06）：长/宽取地面矩形两邻边，
-    // 高取建筑 bbox 实际高度（世界系 Y 跨度；世界仅旋转，跨度=游戏系 Z）。
-    instance.scene.updateMatrixWorld(true);
-    const modelBox = new THREE.Box3().setFromObject(instance.group("model"));
-    const lotHeight = modelBox.isEmpty()
-      ? 0
-      : Math.max(0, modelBox.max.y - modelBox.min.y);
-    const dims = buildLotDimensions(THREE, props.lotSize, lotHeight);
-    if (dims) {
-      // 与地面矩形同一矩阵（placement 逆 + overlay 中心偏移），标注贴地边
-      dims.object.matrix.copy(ground.matrix);
-      dims.object.matrixAutoUpdate = false;
-      instance.group("dimensions").add(dims.object);
-      dimLabels.value = dims.anchors.map((anchor) => ({
-        ...anchor,
-        game: new THREE.Vector3(...anchor.point)
-          .applyMatrix4(dims.object.matrix)
-          .toArray() as [number, number, number],
-      }));
-    } else {
-      dimLabels.value = [];
-    }
-  }
+    return ground;
+  })();
 
   /**
    * 贴花材质变体（migration.md §52.5 聚类映射）：招牌 = 霓虹自发光
@@ -1808,59 +1802,110 @@ async function assembleScene(
       texture,
     ]),
   );
-  // 吸附射线目标：建筑网格代理（quad 摆放用）
-  const decalProxies =
-    props.renderMode === "refined" && buildingMeshes.length
-      ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
-      : [];
   // 贴花解码纹理并行预取（去重后一次解码全部；此前逐 decal 串行 await，
-  // 首载成本 = 贴花数 × 单张解码）。
-  if (props.renderMode === "refined" && decalTextureByKey.size) {
-    await Promise.all(
-      [...new Set(decalTextureByKey.values())].map((texture) =>
-        getDecalTexture(THREE, texture),
-      ),
-    );
-    if (ctx.isStale()) return;
-  }
+  // 首载成本 = 贴花数 × 单张解码）——与模型/地面线并发（只依赖 props）。
+  const decalPrefetch =
+    props.renderMode === "refined" && decalTextureByKey.size
+      ? Promise.all(
+          [...new Set(decalTextureByKey.values())].map((texture) =>
+            getDecalTexture(THREE, texture),
+          ),
+        )
+      : Promise.resolve();
   // 资产渲染分发上下文（tree/prop/spawner 渲染器只读输入；每轮重建刷新）
   const assetCtx = buildAssetCtx();
-  const decalSpan = renderTelemetry.begin("decal_render", {
-    decals: props.grouping.decals.length,
-  });
-  decalStats.projected = 0;
-  decalStats.fallback = 0;
-  holeLightCount = 0;
-  neonAnimated = false;
+  // 单元线：非贴花单元先行（灯光/道具/spawner/路径点，与模型/地面并发）；
+  // 贴花收集到汇合点后投影（依赖建筑网格 = 模型线产物）。
+  const decalUnits: DecalUnit[] = [];
   let unitBudget = 0;
   for (const unit of units) {
+    if (unit.kind === "decal") {
+      decalUnits.push(unit);
+      continue;
+    }
     // 每 8 个 unit 让出一帧：单元渲染器虽是 async，缓存命中时同步 resolve
-    // → 整段循环实际单任务执行；贴花投影/树模板命中可达数十 unit，
-    // 不切片则循环期间输入全程卡死。循环内已有逐 unit isStale 检查。
+    // → 整段循环实际单任务执行；树模板命中可达数十 unit，不切片则循环
+    // 期间输入全程卡死。循环内已有逐 unit isStale 检查。
     if (++unitBudget >= 8) {
       unitBudget = 0;
       await yieldToBrowser();
       if (ctx.isStale()) return;
     }
-    // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
-    const decalTexture =
-      props.renderMode === "refined" && unit.kind === "decal"
-        ? decalTextureByKey.get(`${unit.category}:${unit.index}`)
-        : undefined;
-    if (props.renderMode === "refined" && unit.kind === "decal" && !decalTexture) {
+    // 精细模式：光源用真实 three.js 光源；道具/spawner 走资产渲染分发
+    //（tree/prop/spawner 独立渲染器，互不回归——2026-10-06 拆分）。
+    // 失败统一退标记锥。
+    const object =
+      (props.renderMode === "refined" && unit.kind === "light"
+        ? buildRealLightUnit(THREE, unit)
+        : null) ??
+      (await renderRefinedAssetUnit(assetCtx, unit)) ??
+      buildUnitObject(THREE, unit);
+    if (!object) continue;
+    // 统一在此登记：精细模式的道具/spawner 不走 buildUnitObject 时其
+    // userData 由此补齐（此前精细模式光源因此点不中）。
+    object.userData.unitId = unitId(unit);
+    object.userData.unitKind = unit.kind;
+    instance.group(kindGroup(unit.kind)).add(object);
+    ctx.unitObjects.set(unitId(unit), object);
+    if (ctx.isStale()) return;
+  }
+
+  // ---- 汇合点：三线全部落地（或已因过期自行退出）----
+  const ground = await groundStage;
+  await modelStage;
+  await decalPrefetch;
+  if (ctx.isStale()) return;
+
+  // Lot 三维尺度标注（用户需求 2026-10-06）：长/宽取地面矩形两邻边，
+  // 高取建筑 bbox 实际高度（世界系 Y 跨度；世界仅旋转，跨度=游戏系 Z）。
+  if (props.lotSize && ground) {
+    instance.scene.updateMatrixWorld(true);
+    const modelBox = new THREE.Box3().setFromObject(instance.group("model"));
+    const lotHeight = modelBox.isEmpty()
+      ? 0
+      : Math.max(0, modelBox.max.y - modelBox.min.y);
+    const dims = buildLotDimensions(THREE, props.lotSize, lotHeight);
+    if (dims) {
+      // 与地面矩形同一矩阵（placement 逆 + overlay 中心偏移），标注贴地边
+      dims.object.matrix.copy(ground.matrix);
+      dims.object.matrixAutoUpdate = false;
+      instance.group("dimensions").add(dims.object);
+      dimLabels.value = dims.anchors.map((anchor) => ({
+        ...anchor,
+        game: new THREE.Vector3(...anchor.point)
+          .applyMatrix4(dims.object.matrix)
+          .toArray() as [number, number, number],
+      }));
+    } else {
+      dimLabels.value = [];
+    }
+  }
+
+  // 贴花投影（依赖建筑网格 = 模型线产物；纹理已在预取线解码）。
+  const decalSpan = renderTelemetry.begin("decal_render", {
+    decals: decalUnits.length,
+  });
+  decalStats.projected = 0;
+  decalStats.fallback = 0;
+  holeLightCount = 0;
+  neonAnimated = false;
+  // 吸附射线目标：建筑网格代理（quad 摆放用）
+  const decalProxies =
+    props.renderMode === "refined" && buildingMeshes.length
+      ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
+      : [];
+  for (const unit of decalUnits) {
+    const decalTexture = decalTextureByKey.get(
+      `${unit.category}:${unit.index}`,
+    );
+    if (props.renderMode === "refined" && !decalTexture) {
       console.warn(
         `[decal] 配对失败 cat${unit.category}:idx${unit.index}，已注册键：`,
         [...decalTextureByKey.keys()],
       );
     }
     let object: ThreeNamespace.Object3D | null;
-    if (props.renderMode === "refined" && unit.kind === "light") {
-      object = buildRealLightUnit(THREE, unit);
-    } else if (
-      props.renderMode === "refined" &&
-      unit.kind === "decal" &&
-      decalTexture
-    ) {
+    if (props.renderMode === "refined" && decalTexture) {
       // 贴图解码失败（无 png）→ 退回 gizmo，保证仍可见可选
       object =
         (await buildDecalObject(
@@ -1871,15 +1916,9 @@ async function assembleScene(
           decalProxies,
         )) ?? buildUnitObject(THREE, unit);
     } else {
-      // 资产渲染分发（tree/prop/spawner 独立渲染器，互不回归——2026-10-06
-      // 拆分；灯光/贴花耦合视口内部状态，暂留原位）。失败统一退标记锥。
-      object =
-        (await renderRefinedAssetUnit(assetCtx, unit)) ??
-        buildUnitObject(THREE, unit);
+      object = buildUnitObject(THREE, unit);
     }
     if (!object) continue;
-    // 统一在此登记：精细模式的光源/贴花不再走 buildUnitObject，其 userData
-    // 由此补齐（此前精细模式光源因此点不中）。
     object.userData.unitId = unitId(unit);
     object.userData.unitKind = unit.kind;
     instance.group(kindGroup(unit.kind)).add(object);
@@ -1890,7 +1929,7 @@ async function assembleScene(
     projected: decalStats.projected,
     fallback: decalStats.fallback,
     skipped: decalStats.skipped,
-    units: units.length,
+    units: decalUnits.length,
   });
 
   // 路径折线：按 point_index 排序连接（pathPairs 语义未定，先 best-effort）。
