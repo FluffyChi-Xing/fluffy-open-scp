@@ -29,6 +29,9 @@ fn main() {
                 }
                 Ok(rw4::MaterialSection::Raw(m)) => {
                     println!("  MATERIAL #{} Raw ({}B)", mat.number, m.len());
+                    for (offset, words) in m.chunks(16).enumerate() {
+                        println!("    {:04X}: {:02X?}", offset * 16, words);
+                    }
                 }
                 Err(e) => println!("  MATERIAL #{} err {e}", mat.number),
             }
