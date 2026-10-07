@@ -64,17 +64,32 @@ export interface GroundComposeOutput {
 }
 
 /** sRGB 字节 → 线性 0..1（lot_composite 同公式）。 */
-function srgbToLinear(byte: number): number {
+function decodeSrgb(byte: number): number {
   const srgb = byte / 255;
   return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+const SRGB_LINEAR = Float64Array.from({ length: 256 }, (_, byte) => decodeSrgb(byte));
+const SRGB_THRESHOLDS = Float64Array.from({ length: 255 }, (_, byte) => decodeSrgb(byte + 0.5));
+// A small inverse lookup with boundary correction preserves rounded byte output.
+// Ground composition used to evaluate six powers for every covered pixel.
+const SRGB_BUCKETS = Uint8Array.from({ length: 4097 }, (_, bucket) => {
+  const linear = bucket / 4096;
+  let byte = 0;
+  while (byte < 255 && linear >= SRGB_THRESHOLDS[byte]) byte += 1;
+  return byte;
+});
+
+function srgbToLinear(byte: number): number {
+  return SRGB_LINEAR[byte] ?? decodeSrgb(byte);
 }
 
 /** 线性 0..1 → sRGB 字节。 */
 function linearToSrgbByte(linear: number): number {
   const clamped = Math.min(1, Math.max(0, Number.isFinite(linear) ? linear : 0));
-  const srgb =
-    clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055;
-  return Math.round(srgb * 255);
+  let byte = SRGB_BUCKETS[Math.floor(clamped * 4096)];
+  while (byte < 255 && clamped >= SRGB_THRESHOLDS[byte]) byte += 1;
+  return byte;
 }
 
 /** v1 回退路径的最近色硬分配（量化 mask RGB → 通道下标）。 */
@@ -174,18 +189,15 @@ function samplePatternBilinear(
   const y1 = wrapY(y0 + 1);
   const wx = wrap(x0);
   const wy = wrapY(y0);
-  const at = (x: number, y: number): [number, number, number] => {
-    const offset = (y * source.width + x) * 4;
-    return [source.data[offset], source.data[offset + 1], source.data[offset + 2]];
-  };
-  const topLeft = at(wx, wy);
-  const topRight = at(x1, wy);
-  const bottomLeft = at(wx, y1);
-  const bottomRight = at(x1, y1);
+  const topLeft = (wy * source.width + wx) * 4;
+  const topRight = (wy * source.width + x1) * 4;
+  const bottomLeft = (y1 * source.width + wx) * 4;
+  const bottomRight = (y1 * source.width + x1) * 4;
+  const data = source.data;
   const out: [number, number, number] = [0, 0, 0];
   for (let c = 0; c < 3; c += 1) {
-    const top = topLeft[c] + (topRight[c] - topLeft[c]) * tx;
-    const bottom = bottomLeft[c] + (bottomRight[c] - bottomLeft[c]) * tx;
+    const top = data[topLeft + c] + (data[topRight + c] - data[topLeft + c]) * tx;
+    const bottom = data[bottomLeft + c] + (data[bottomRight + c] - data[bottomLeft + c]) * tx;
     out[c] = top + (bottom - top) * ty;
   }
   return out;
@@ -408,7 +420,7 @@ export interface GroundComposeResponse {
 /** Worker 消息端最小接口（避免引入 webworker lib 全局类型）。 */
 interface ComposeWorkerScope {
   onmessage: ((event: MessageEvent<GroundComposeRequest>) => void) | null;
-  postMessage(message: GroundComposeResponse | { id: number; error: string }): void;
+  postMessage(message: GroundComposeResponse | { id: number; error: string }, transfer?: Transferable[]): void;
 }
 
 /** Worker 入口（仅 worker 上下文执行）。 */
@@ -417,7 +429,7 @@ export function runGroundComposeWorker(scope: ComposeWorkerScope): void {
     const { id, input } = event.data;
     try {
       const output = composeGroundPixels(input);
-      scope.postMessage({ id, ...output });
+      scope.postMessage({ id, ...output }, [output.albedo.buffer]);
     } catch (error) {
       scope.postMessage({
         id,

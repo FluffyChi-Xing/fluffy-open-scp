@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { decalRoute } from "./decalRouting";
+import { prepareGroundComposer } from "./refinedGround";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -873,6 +875,7 @@ function rebuildScene() {
   lastPayload = props.modelPayload;
   // 只改 trigger：sessionKey 已由 usePropertyEditorSession 设好。
   renderTelemetry.setTrigger(pendingTrigger);
+  pendingTrigger = "scene_rebuild";
   // 动画 decal 标志在装配期间由 buildDecalObject 置位；重建完成后按本轮
   // 结果启停霓虹时钟（新一代取代旧装配时同样以最新一轮为准）。
   return viewport
@@ -905,6 +908,7 @@ const TRIGGER_PRIORITY: Record<RenderTelemetryTrigger, number> = {
   scene_rebuild: 0,
 };
 let rebuildScheduled = false;
+let rebuildRequested = false;
 function scheduleRebuild(trigger: RenderTelemetryTrigger) {
   if (props.suspended) return;
   if (
@@ -913,25 +917,20 @@ function scheduleRebuild(trigger: RenderTelemetryTrigger) {
   ) {
     pendingTrigger = trigger;
   }
+  rebuildRequested = true;
   if (rebuildScheduled) return;
   rebuildScheduled = true;
-  requestAnimationFrame(() => {
-    rebuildScheduled = false;
-    // 整程单飞串行化（2026-10-08）：等在飞重建**完全落地**（含 GPU 预热/
-    // 预编译窗口）再开新一轮——编译窗口内开新一轮 = dispose 在编译的材质
-    //（three 轮询抛 isReady + 半成品帧乱码）。轮询 64ms，无死锁（在飞
-    // 必然经 stale 看门狗/超时落地）。
-    const kick = () => {
-      if (props.suspended) return;
-      viewport
-        .whenSettled()
-        .then(() => {
-          if (props.suspended) return;
-          void rebuildScene();
-        })
-        .catch(() => {});
-    };
-    kick();
+  requestAnimationFrame(async () => {
+    try {
+      while (rebuildRequested && !props.suspended) {
+        await viewport.whenSettled();
+        if (props.suspended) break;
+        rebuildRequested = false;
+        await rebuildScene();
+      }
+    } finally {
+      rebuildScheduled = false;
+    }
   });
 }
 
@@ -1335,6 +1334,7 @@ async function assembleScene(
       dimLabels.value = [];
       return null;
     }
+    if (props.renderMode === "refined") prepareGroundComposer();
     const groundSpan = renderTelemetry.begin("lot_render", {
       refined: props.renderMode === "refined",
     });
@@ -1471,13 +1471,7 @@ async function assembleScene(
    *    背对原点）= "穿透到另一侧"镜像字（五轮图1~2）。引擎延迟投影逐像素
    *    取最近深度、天然只画最近面，CPU 几何投影必须同时满足这两个条件
    *    才能同构（60° 以内朝向原点的曲面绕折仍保留）。 */
-  const DECAL_PROJECTION_NORMAL_CUTOFF = 0.5;
-
-  /** 浮空族判据：sign 字典 decal 的 materialData[1] 下限（≥ 此值 → 引擎
-   * FloatQuad 族，画数据位姿浮空 quad 而非体积投影）。实证：casino 墙
-   * 招牌 0 / 高塔竖幅 0.95~1.0 / DIRTY FACTORY 0.06 / 涂鸦恒 0。
-   * 语义定谳（§十五）：该分量 = animSpeed 跑马灯速度。 */
-  const DECAL_FLOAT_EMISSIVE_CUTOFF = 0.9;
+  const DECAL_PROJECTION_NORMAL_CUTOFF = 0;
 
   /**
    * 按面法线过滤投影几何：只保留面朝贴花原点的三角形。返回 null = 整盒
@@ -1532,6 +1526,9 @@ async function assembleScene(
       boxHalfY?: number;
       decalData: [number, number] | null;
       env: SunEnvRefs;
+      depthTest?: boolean;
+      depthWrite?: boolean;
+      alphaTest?: number;
     },
   ): ThreeNamespace.Material {
     const base = {
@@ -1541,7 +1538,9 @@ async function assembleScene(
       // 纹理 alpha 是柔和衰减/掩码：sign 连续混合（光晕）、graffiti 阈值
       // 裁切（锐利边缘），见下方 switch。
       transparent: true,
-      depthWrite: false,
+      depthTest: opts.depthTest ?? true,
+      depthWrite: opts.depthWrite ?? false,
+      alphaTest: opts.alphaTest ?? 0,
       // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
       polygonOffset: true,
       polygonOffsetFactor: -4,
@@ -1675,39 +1674,12 @@ async function assembleScene(
         unit.depth !== null && Number.isFinite(unit.depth) && unit.depth > 0
           ? unit.depth * halfScale
           : null;
-      // 单向 +axisZ 射线判定盒内是否有建筑面（far = 数据盒深；无 depth
-      // 数据时退回旧 2.5×scale 探测半径）。
-      const raycaster = new THREE.Raycaster(
-        frame.origin,
-        frame.axisZ,
-        0,
-        dataDepth ?? halfScale * 2.5,
-      );
-      const wallHit = raycaster.intersectObjects(proxies, false)[0];
       const { DecalGeometry } = await import(
         "three/examples/jsm/geometries/DecalGeometry.js"
       );
       if (ctx.isStale()) return null;
-      // 族路由（2026-10-05 破洞并入投影路径）：破洞（decalInteriorMap）
-      // 直接路由 hole 链（投影几何 + 内景双 UV + 受光步，与原版片段链
-      // [379]/[380] 逐字对齐）；量化族字典（招牌 + 涂鸦）内再按
-      // materialData[1] 分流——该分量 = 引擎 decalMaterialInfo.y =
-      // **animSpeed 跑马灯速度**（docs/re/decal-engine-alignment.md §十五，
-      // 早前"疑似自发光参数"的猜测已被 decalLightBackground 源码取代）：
-      //   > 0 → SDF 霓虹管动画链（自发光 + 跑马灯，纹理四通道 = 四路 SDF
-      //         距离场；实证：高塔 STORE 1.0 / DIRTY FACTORY 0.06）；
-      //   = 0 → 量化合成静态链（casino 招牌 / 涂鸦恒 0）；
-      // 其余（焦痕/烧灼/未知）→ clip 直采链。
-      const animSpeed = unit.materialData?.[1] ?? 0;
-      const family: EngineFamily = DECAL_HOLE_MATERIALS.has(
-        (texture.materialInstance ?? 0) >>> 0,
-      )
-        ? "hole"
-        : DECAL_QUANT_MATERIALS.has((texture.materialInstance ?? 0) >>> 0)
-          ? animSpeed > 0
-            ? "sdf"
-            : "sign"
-          : "clip";
+      const route = decalRoute(texture.materialInstance);
+      const family: EngineFamily = route.family;
       if (family === "sdf") neonAnimated = true;
       // 引擎浮空分支（decalFloatQuad，holo 广告/远抛实例）：在**数据
       // 位置**画浮空 quad，姿态由 transform 给出——不是"不渲染"（四轮
@@ -1727,6 +1699,9 @@ async function assembleScene(
               nus: [frame.sizeX, frame.sizeY, frame.sizeY],
               graffiti:
                 ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
+              depthTest: true,
+              depthWrite: true,
+              alphaTest: 0.01,
             })
           : buildDecalMaterial(THREE, texture, decoded, {
               env,
@@ -1734,44 +1709,26 @@ async function assembleScene(
               boxHalfX: frame.sizeX / 2,
               boxHalfY: frame.sizeY / 2,
               decalData: props.decalLight ?? null,
+              depthTest: true,
+              depthWrite: true,
+              alphaTest: 0.01,
             });
         const quadGeometry = new THREE.PlaneGeometry(frame.sizeX, frame.sizeY);
         const quadUv = quadGeometry.attributes.uv;
         for (let i = 0; i < quadUv.count; i += 1) quadUv.setX(i, 1 - quadUv.getX(i));
         quadUv.needsUpdate = true;
-        group.add(new THREE.Mesh(quadGeometry, floatMaterial));
+        const quad = new THREE.Mesh(quadGeometry, floatMaterial);
+        // decalBaseCenter collapses the volume onto texturePosition.z = 0.
+        quad.position.z = (dataDepth ?? 0) / 2;
+        group.add(quad);
         decalStats.fallback += 1;
       };
-      if (!wallHit) {
-        // 破洞族无浮空分支：引擎 decalInteriorMap 链内含 decalClip 体积
-        // 裁剪——体积盒内无场景深度（未触及建筑面）时整贴花被 clip kill，
-        // 即"根本不渲染"，不是回退浮空（§12.4/§12.7）。
-        if (family === "hole") return group;
+      if (route.surface === "plane") {
         addFloatQuad();
-        return group;
       }
-      // 浮空族数据判据（2026-10-05 五轮定谳，docs/re/decal-engine-alignment
-      // §十四）：**sign 字典且 materialData[1] ≥ 0.9 → 引擎 FloatQuad 族**
-      // （holo/竖幅灯牌），跳过投影直接画浮空 quad。实证对拍：
-      // casino 墙招牌 md[1]=0（投影 ✓）、高塔 0x9401CB7A 竖幅 STORE
-      // md[1]=0.95/1.0（用户确认浮空 ✓）、DIRTY FACTORY md[1]=0.06
-      // （投影 ✓）、涂鸦恒 0（投影 ✓）。md[1] 语义已由 §十五定谳 =
-      // animSpeed（引擎 decalMaterialInfo.y）——高速动画招牌恰是引擎的
-      // 浮空灯箱族，与 FloatQuad 族选择同源。注意六轮起 md[1]>0 的招牌
-      // 已分流到 sdf 族，故判据须同时覆盖 sign/sdf（否则高塔竖幅会被
-      // 错误投影——路由升级引入的回归点）。几何判据（离墙距离/盒深）
-      // 已被涂鸦 10m 离墙反例证伪。安全网：贴墙摆放的 sign 浮空 quad 与
-      // 投影观感近乎一致（原点即在墙面），误判代价低。
-      if (
-        (family === "sign" || family === "sdf") &&
-        animSpeed >= DECAL_FLOAT_EMISSIVE_CUTOFF
-      ) {
-        addFloatQuad();
-        return group;
-      }
-      // 单侧盒投影：z 全深 = 数据盒深（无 depth 数据 = 命中距离 + 2m
-      // 檐口/退台余量），前缘在原点、沿 +axisZ 延伸。
-      const depthZ = dataDepth ?? wallHit.distance + 2.0;
+      // A projected volume can intersect a wall even when its centre ray misses.
+      // Empty volumes stay empty; graffiti must never turn into floating quads.
+      const depthZ = dataDepth ?? halfScale * 2.5;
       const projector = {
         position: frame.origin
           .clone()
@@ -1807,19 +1764,13 @@ async function assembleScene(
         // 来源（N·axisZ≤−0.5 过滤会把水平楼板全部滤掉 = 平斑）。FrontSide
         // 背面剔除 + 建筑实体不透明深度遮挡已防外侧面穿透。
         const filtered =
-          family === "hole"
+          family === "hole" || route.surface === "plane"
             ? clipped
             : filterDecalProjectionByNormal(THREE, clipped, frame.axisZ);
+        if (filtered !== clipped) clipped.dispose();
         if (filtered) geometries.push(filtered);
       }
-      // 射线命中但法线过滤后无任何可投面（墙面与投影轴近平行的极端
-      // 摆放）→ 破洞同样不渲染（decalClip 语义）；其余族走浮空分支：
-      // 宁可画在数据位姿也不凭空消失。
-      if (!geometries.length) {
-        if (family === "hole") return group;
-        addFloatQuad();
-        return group;
-      }
+      if (!geometries.length) return group;
       // U 镜像（与 quad 路径同口径：引擎 uv = texpos × -0.5 + 0.5，文字正读）
       for (const geometry of geometries) {
         const uv = geometry.attributes.uv;
@@ -1827,7 +1778,7 @@ async function assembleScene(
         uv.needsUpdate = true;
       }
       const engineMaterial = ENGINE_SHADER_MATERIALS
-        ? createEngineDecalMaterial(THREE, family, {
+        ? createEngineDecalMaterial(THREE, route.surface === "plane" ? "neon-light" : family, {
             map: decoded,
             layerColors: texture.colors,
             decalData: props.decalLight ?? null,
@@ -1835,7 +1786,7 @@ async function assembleScene(
             env,
             materialInfo: unit.materialData ?? undefined,
             powered: props.powered,
-            nus: [frame.sizeX, frame.sizeY, frame.sizeY],
+            nus: [2 / frame.sizeX, 2 / frame.sizeY, 2 / depthZ],
             // 涂鸦（0xE5390A98）：喷漆连续厚度 alpha + 无灯箱增益/夜间
             // 豁免（rt0 编译状态定谳：标准 alpha 混合，无自发光项）
             graffiti: ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
@@ -1848,7 +1799,7 @@ async function assembleScene(
             // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）。
             // halfXY/depthM/invRot 供 PS 视线视差（holeParallaxUv）。
             holeBox:
-              family === "hole"
+              family === "hole" || route.surface === "plane"
                 ? {
                     origin: frame.origin,
                     axisZ: frame.axisZ,
@@ -1946,18 +1897,17 @@ async function assembleScene(
   // 单元线：非贴花单元先行（灯光/道具/spawner/路径点，与模型/地面并发）；
   // 贴花收集到汇合点后投影（依赖建筑网格 = 模型线产物）。
   const decalUnits: DecalUnit[] = [];
-  let unitBudget = 0;
+  let unitSliceStart = performance.now();
   for (const unit of units) {
     if (unit.kind === "decal") {
       decalUnits.push(unit);
       continue;
     }
-    // 每 8 个 unit 让出一帧：单元渲染器虽是 async，缓存命中时同步 resolve
-    // → 整段循环实际单任务执行；树模板命中可达数十 unit，不切片则循环
-    // 期间输入全程卡死。循环内已有逐 unit isStale 检查。
-    if (++unitBudget >= 8) {
-      unitBudget = 0;
+    // Yield by elapsed work, not object count: cached units must not each pay
+    // a fixed animation-frame delay, while expensive batches stay interruptible.
+    if (performance.now() - unitSliceStart >= 8) {
       await yieldToBrowser();
+      unitSliceStart = performance.now();
       if (ctx.isStale()) return;
     }
     // 精细模式：光源用真实 three.js 光源；道具/spawner 走资产渲染分发
@@ -1980,9 +1930,15 @@ async function assembleScene(
   }
 
   // ---- 汇合点：三线全部落地（或已因过期自行退出）----
-  const ground = await groundStage;
   await modelStage;
+  if (ctx.isStale()) return;
+  // Unit lighting is now complete and pruned. Compile stable model materials
+  // concurrently with the independent ground worker; never compile a ground
+  // placeholder that applyGroundMask is about to replace and dispose.
+  const stableShaders = ctx.prepareStableShaders();
+  const ground = await groundStage;
   await decalPrefetch;
+  await stableShaders;
   if (ctx.isStale()) return;
 
   // Lot 三维尺度标注（用户需求 2026-10-06）：长/宽取地面矩形两邻边，

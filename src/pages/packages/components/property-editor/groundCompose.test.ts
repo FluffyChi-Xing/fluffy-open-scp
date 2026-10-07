@@ -58,6 +58,23 @@ function input(overrides: Partial<GroundComposeInput>): GroundComposeInput {
 }
 
 describe("groundCompose 引擎语义（generic_lot 直译）", () => {
+  it("preserves rounded sRGB bytes across dark and bright pattern shading", () => {
+    for (let normal = 0; normal < 256; normal += 7) {
+      const shade = Math.min(1.45, Math.max(0.55, 1 - 1.4 * (normal / 127.5 - 1)));
+      const base = input({
+        rawMask: pixels(1, 1, () => [255, 0, 0, 0]),
+        normalAtlas: pixels(4, 4, () => [normal, normal, 255, 255]),
+        outSize: { width: 1, height: 1 },
+      });
+      for (let byte = 0; byte < 256; byte += 1) {
+        base.lotColors[0] = [byte, 255 - byte, byte / 2, 0];
+        const result = composeGroundPixels(base);
+        const expected = bake([byte, 255 - byte, byte / 2], shade).map(v => Math.min(255, v));
+        expect(Array.from(result.albedo.subarray(0, 3))).toEqual(expected);
+      }
+    }
+  });
+
   it("覆盖区 = 胜者通道平色直出（不采样漫反射、不乘 tint）", () => {
     // R+G 同时过阈 → 瀑布 A>B>G>R → G（通道 1）胜出。
     const out = composeGroundPixels(

@@ -118,6 +118,11 @@ function getComposeWorker(): Worker | null {
   }
 }
 
+/** Start the module worker while source textures are still decoding. */
+export function prepareGroundComposer(): void {
+  getComposeWorker();
+}
+
 function composeViaWorker(
   input: GroundComposeInput,
   transfers: ArrayBuffer[],

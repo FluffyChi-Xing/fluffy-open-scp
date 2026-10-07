@@ -22,6 +22,7 @@ export type ViewportGroupName = (typeof VIEWPORT_GROUPS)[number];
  * 业务场景搭建，底座负责前后清理、防竞态与收尾。
  */
 export interface EditorViewportRebuildCtx {
+  prepareStableShaders: () => Promise<void>;
   viewer: ThreeViewer;
   THREE: typeof ThreeNamespace;
   token: number;
@@ -195,11 +196,16 @@ export function useEditorViewport(options: {
     if (!instance) return;
     const token = ++rebuildToken;
     assembling = true;
+    instance.setSceneAssembling(true);
     for (const name of VIEWPORT_GROUPS) instance.clearGroup(name);
     unitObjects.clear();
     for (const url of textureUrls) URL.revokeObjectURL(url);
     textureUrls.length = 0;
     const ctx: EditorViewportRebuildCtx = {
+      prepareStableShaders: () => {
+        pruneExcessLights();
+        return instance.prepareGroupShaders(["model", "props", "spawners"], () => token !== rebuildToken);
+      },
       viewer: instance,
       THREE: instance.THREE,
       token,
@@ -242,6 +248,7 @@ export function useEditorViewport(options: {
       // 仅当前代清旗/唤醒：过期代误清会抹掉新一代的在飞标记
       if (token === rebuildToken) {
         assembling = false;
+        instance.setSceneAssembling(false);
         for (const waiter of rebuildWaiters.splice(0)) waiter();
       }
       span.end(ctx.stats);

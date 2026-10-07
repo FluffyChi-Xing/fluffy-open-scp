@@ -108,6 +108,13 @@ export class ThreeViewer {
   /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
    * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
   private needsRender = true;
+  private assemblingScene = false;
+
+  /** Do not compile/draw transient material and light combinations during assembly. */
+  setSceneAssembling(value: boolean) {
+    this.assemblingScene = value;
+    if (!value) this.invalidate();
+  }
   /** 已预热纹理（initTexture 一次性上传去重）。 */
   private readonly primedTextures = new WeakSet<ThreeNamespace.Texture>();
 
@@ -169,25 +176,43 @@ export class ThreeViewer {
    * race：任何一侧先到即放行，挂死不再可能。three 内部的那次 uncaught
    * 日志无害（编译轮询已死，首帧走同步链接兜底）。
    */
-  async prepareShaders(isStale: () => boolean = () => false): Promise<void> {
+  async prepareShaders(
+    isStale: () => boolean = () => false,
+    objects: ThreeNamespace.Object3D = this.scene,
+  ): Promise<void> {
     let settled = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        this.renderer.compileAsync(this.scene, this.camera).catch(() => {}),
+        this.renderer.compileAsync(objects, this.camera, this.scene).catch(() => {}),
         new Promise<void>((resolve) => {
           watchdog = setInterval(() => {
             if (settled || isStale()) resolve();
           }, 64);
         }),
-        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+        new Promise<void>((resolve) => { timeout = setTimeout(resolve, 5000); }),
       ]);
     } catch {
       // promise 层拒绝兜底（首轮 draw 走同步链接，不劣化）
     } finally {
       settled = true;
       if (watchdog) clearInterval(watchdog);
+      if (timeout) clearTimeout(timeout);
     }
+  }
+
+  /** Compile completed meshes against the final lights while ground pixels bake.
+   * The temporary root contains no lights and never reparents the live scene.
+   */
+  prepareGroupShaders(names: string[], isStale: () => boolean): Promise<void> {
+    const root = new this.THREE.Group();
+    for (const name of names) {
+      this.groups.get(name)?.traverse((object) => {
+        if ((object as ThreeNamespace.Mesh).isMesh) root.add(object.clone(false));
+      });
+    }
+    return this.prepareShaders(isStale, root);
   }
 
   /** 主题色描边（品牌色 #0878FE，与 UI --brand 一致）。 */
@@ -757,7 +782,7 @@ export class ThreeViewer {
 
   private renderLoop = () => {
     this.frame = requestAnimationFrame(this.renderLoop);
-    if (!this.needsRender) return;
+    if (this.assemblingScene || !this.needsRender) return;
     this.needsRender = false;
     this.renderer.render(this.scene, this.camera);
     // 渲染后回调：屏幕空间 overlay（选中/悬停描边框）在此跟随相机
