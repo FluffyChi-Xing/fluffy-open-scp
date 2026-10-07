@@ -2096,8 +2096,64 @@ function applyBrightness() {
 }
 
 defineExpose({
-  captureRender: (options?: { includeDecals?: boolean }) =>
-    viewport.captureRender(options),
+  /**
+   * 渲染图导出（2026-10-08 修复）：尺度数值标签是 HTML 浮层，不进
+   * WebGL 画布——截图后按当前投影把标签补绘到 2D 画布再导出，否则
+   * 只截到尺度线、截不到数值。
+   */
+  captureRender: async (options?: {
+    includeDecals?: boolean;
+  }): Promise<string | null> => {
+    const dataUrl = viewport.captureRender(options);
+    if (!dataUrl) return null;
+    const instance = viewport.viewer.value;
+    if (!instance || !dimLabels.value.length) return dataUrl;
+    // 尺度组隐藏（图层开关）时不补标签
+    if (props.groupVisibility.dimensions === false) return dataUrl;
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("capture load failed"));
+        element.src = dataUrl;
+      });
+      const rect = viewport.container.value?.getBoundingClientRect();
+      // 截图像素 = CSS 像素 × DPR：标签按同一比例缩放对位
+      const ratio = rect?.width ? image.naturalWidth / rect.width : 1;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return dataUrl;
+      context.drawImage(image, 0, 0);
+      context.font = `600 ${Math.max(10, Math.round(12 * ratio))}px ui-sans-serif, system-ui, sans-serif`;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillStyle = "#0878fe";
+      context.shadowColor = "rgba(0, 0, 0, 0.6)";
+      context.shadowBlur = 2 * ratio;
+      const axisLabels: Record<LotDimensionAnchor["axis"], string> = {
+        length: t("package.dimLength"),
+        width: t("package.dimWidth"),
+        height: t("package.dimHeight"),
+      };
+      for (const dim of dimLabels.value) {
+        const scenePoint = instance.world.localToWorld(
+          new instance.THREE.Vector3(...dim.game),
+        );
+        const screen = instance.worldToScreen(scenePoint);
+        if (screen.behind) continue;
+        context.fillText(
+          `${axisLabels[dim.axis]} ${dim.text}`,
+          screen.x * ratio,
+          screen.y * ratio,
+        );
+      }
+      return canvas.toDataURL("image/png");
+    } catch {
+      return dataUrl;
+    }
+  },
   /** 屏幕坐标 → 地面平面交点（游戏坐标），组件库拖放放置用。 */
   groundPointAt: (clientX: number, clientY: number) =>
     viewport.viewer.value?.groundPointAt(clientX, clientY) ?? null,

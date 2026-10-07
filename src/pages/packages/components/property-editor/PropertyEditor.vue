@@ -572,7 +572,9 @@ const specMode = ref(2);
 const timeOfDay = ref(12);
 // 浮雕开关已撤销（见模板注释），reliefEnabled 状态一并移除。
 const viewportRef = ref<{
-  captureRender: (options?: { includeDecals?: boolean }) => string | null;
+  captureRender: (options?: {
+    includeDecals?: boolean;
+  }) => Promise<string | null>;
   groundPointAt: (
     clientX: number,
     clientY: number,
@@ -585,8 +587,9 @@ async function exportRenderImage() {
   if (renderShotBusy.value) return;
   renderShotBusy.value = true;
   try {
-    // 精细模式下 decal 是投影到墙面的真实内容，导出保留（供像素核验与出图）
-    const dataUrl = viewportRef.value?.captureRender({
+    // 精细模式下 decal 是投影到墙面的真实内容，导出保留（供像素核验与出图）。
+    // 尺度标签补绘在 captureRender 内完成（await：图像加载+合成）。
+    const dataUrl = await viewportRef.value?.captureRender({
       includeDecals: renderMode.value === "refined",
     });
     if (!dataUrl) return;
