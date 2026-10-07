@@ -165,8 +165,22 @@ export async function parseLotModelObjects(
         const objects = nodesToObjects(nodes, THREE);
         // DEV 自检：主线程重解析同批 GLB 与 worker 产物逐节点逐属性比对
         //（2026-10-08 贴图乱码取证——分歧点直接进控制台）。生产构建零成本。
+        // 注意快照必须在返回前拷贝：worker DTO 的属性数组与重建几何**共享
+        // buffer（零拷贝）**，调用方的就地改写（propModels UV 翻转）会透过
+        // 别名写进 DTO——不拷贝则合法翻转被误报为解析分歧（真机误报实证）。
         if (import.meta.env.DEV) {
-          void verifyWorkerParity(glbs, nodes);
+          const snapshot = nodes.map((node) => ({
+            ...node,
+            transform: node.transform.slice(),
+            attributes: Object.fromEntries(
+              Object.entries(node.attributes).map(([name, attribute]) => [
+                name,
+                { ...attribute, array: attribute.array.slice() },
+              ]),
+            ),
+            index: node.index?.slice(),
+          }));
+          void verifyWorkerParity(glbs, snapshot);
         }
         return objects;
       } catch {

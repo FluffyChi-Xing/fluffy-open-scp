@@ -1198,6 +1198,27 @@ async function assembleScene(
       mesh.material = refined;
       if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
     });
+    // DEV 诊断（2026-10-08 EP1 贴图乱码取证）：逐 mesh 材质分派摘要——
+    // uvKind/材质列/属性表/tint 是否命中/最终材质类型与 map 绑定。乱码时
+    // 控制台按行暴露 tint 链断点（tint 纹理缺失→退通用材质？deferred
+    // 未绑定？）。生产构建零成本。
+    if (import.meta.env.DEV) {
+      const summaries: string[] = [];
+      object.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (!mesh.isMesh) return;
+        const material = mesh.material as ThreeNamespace.MeshStandardMaterial;
+        const attributes = Object.keys(mesh.geometry.attributes).join(",");
+        summaries.push(
+          `m${index} uvKind=${payload?.meshUvKinds[index] ?? 0} mat=${materialIndex} ` +
+            `attrs=[${attributes}] type=${material?.type} ` +
+            `map=${material?.map ? "Y" : "N"} vc=${material?.vertexColors ? "Y" : "N"}`,
+        );
+      });
+      if (summaries.length) {
+        console.info(`[building-materials] glb#${index}\n${summaries.join("\n")}`);
+      }
+    }
     instance.group("model").add(object);
   }
   if (props.renderMode === "refined" && payload) {
