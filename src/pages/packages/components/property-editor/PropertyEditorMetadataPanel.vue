@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FColorPicker from "@/components/ui/FColorPicker.vue";
-import type { LightUnit, LotUnitDto } from "@/api/tauri";
+import type { LightUnit, LotUnitDto, PropUnit } from "@/api/tauri";
 import { unitId } from "./unitGizmos";
 
 /**
  * 元数据 tab：按 Unit 类型给出语义字段编辑（写本地字段 override，可撤销）。
- * MVP 覆盖 light（类型/颜色/半径/漫射/长度）；其余类型只读提示
- * （decal 按用户裁决暂缓）。
+ * 覆盖 light（类型/颜色/半径/漫射/长度）与 prop（缩放倍率）；其余类型只读
+ * 提示（decal 按用户裁决暂缓）。新组件族按节追加（divider 语义）。
  */
-const props = defineProps<{ unit: LotUnitDto | null }>();
+const props = defineProps<{
+  unit: LotUnitDto | null;
+  /** 选中 prop 是否可编辑「缩放倍率」（真实模型渲染分支才消费）。 */
+  scaleEditable?: boolean;
+  /** 编辑模式解锁（toolbar Lock/LockOpen）——锁定时只读展示。 */
+  editEnabled?: boolean;
+}>();
 const emit = defineEmits<{
   "update-fields": [id: string, patch: Record<string, unknown>];
 }>();
@@ -21,6 +27,34 @@ const { t } = useI18n();
 const light = computed(() =>
   props.unit?.kind === "light" ? (props.unit as LightUnit) : null,
 );
+const prop = computed(() =>
+  props.unit?.kind === "prop" ? (props.unit as PropUnit) : null,
+);
+/** 锁定 = toolbar 未解锁：元数据全部控件只读（解锁门控统一入口）。 */
+const locked = computed(() => props.editEnabled !== true);
+
+// prop 真实模型（树/放置直挂）：缩放倍率（DTO 独立 scale 字段，null 视为 1；
+// 渲染器烘焙、提交除回，与手柄/增量路径同一语义——见 tryIncrementalGrouping）
+const scaleDraft = ref("");
+watch(
+  () => [props.unit, props.scaleEditable] as const,
+  ([unit]) => {
+    scaleDraft.value =
+      unit && unit.kind === "prop" && typeof unit.scale === "number"
+        ? String(unit.scale)
+        : "1";
+  },
+  { immediate: true },
+);
+function commitScale() {
+  const unit = props.unit;
+  if (locked.value || !unit || unit.kind !== "prop") return;
+  const value = Number.parseFloat(scaleDraft.value);
+  const current = typeof unit.scale === "number" ? unit.scale : 1;
+  if (!Number.isFinite(value) || value <= 0) return;
+  if (Math.abs(value - current) < 1e-6) return;
+  emit("update-fields", unitId(unit), { scale: value });
+}
 
 const LIGHT_TYPES = ["Point", "Spot", "Line"] as const;
 const typeOpen = ref(false);
@@ -38,13 +72,13 @@ const NUMBER_FIELDS: NumberField[] = [
 ];
 
 function setLightType(type: string) {
-  if (!light.value) return;
+  if (locked.value || !light.value) return;
   emit("update-fields", unitId(light.value), { lightType: type });
   typeOpen.value = false;
 }
 
 function setNumberField(key: NumberField["key"], event: Event) {
-  if (!light.value) return;
+  if (locked.value || !light.value) return;
   const value = Number((event.target as HTMLInputElement).value);
   if (!Number.isFinite(value)) return;
   emit("update-fields", unitId(light.value), { [key]: value });
@@ -70,7 +104,7 @@ function hexToFloats(hex: string): [number, number, number] {
 }
 const colorHex = computed(() => floatsToHex(light.value?.color ?? null));
 function setColor(hex: string) {
-  if (!light.value) return;
+  if (locked.value || !light.value) return;
   emit("update-fields", unitId(light.value), { color: hexToFloats(hex) });
 }
 </script>
@@ -78,46 +112,82 @@ function setColor(hex: string) {
 <template>
   <div class="metadata-panel">
     <p v-if="!unit" class="panel-empty">{{ $t("package.noUnitSelected") }}</p>
-    <template v-else-if="light">
+    <template v-else-if="prop">
+      <!-- prop 缩放倍率（从属性 tab 移入元数据 tab，2026-10-08 用户指令）：
+           DTO 独立 scale 字段，null 视为 1；真实模型渲染分支消费 -->
+      <!-- 布局（2026-10-08 用户指令）：左侧上下=名称+解释，右侧=输入框；
+           仅 toolbar 解锁（editEnabled）后可编辑 -->
       <section class="panel-section">
-        <h4>{{ $t("package.lightType") }}</h4>
-        <FDropdown v-model:open="typeOpen" :width="160">
-          <template #trigger>
-            <button type="button" class="type-trigger">
-              <span>{{ light.lightType ?? "Point" }}</span>
-              <FIcon name="ChevronDown" :size="14" aria-label="" />
+        <div class="scale-row">
+          <div class="scale-label">
+            <span>{{ $t("package.scaleMultiplier") }}</span>
+            <small>{{ $t("package.scaleMultiplierHint") }}</small>
+          </div>
+          <input
+            v-model="scaleDraft"
+            class="scale-input"
+            type="number"
+            step="0.01"
+            min="0.01"
+            :disabled="locked"
+            :title="locked ? $t('package.editUnlockFirst') : undefined"
+            :aria-label="$t('package.scaleMultiplier')"
+            @change="commitScale"
+          />
+        </div>
+      </section>
+    </template>
+    <template v-else-if="light">
+      <!-- 灯光三节：统一左标签/右控件布局；锁定（toolbar 未解锁）时全部禁用 -->
+      <section class="panel-section">
+        <div class="scale-row">
+          <div class="scale-label">
+            <span>{{ $t("package.lightType") }}</span>
+          </div>
+          <FDropdown v-model:open="typeOpen" :width="150">
+            <template #trigger>
+              <button
+                type="button"
+                class="type-trigger"
+                :disabled="locked"
+              >
+                <span>{{ light.lightType ?? "Point" }}</span>
+                <FIcon name="ChevronDown" :size="14" aria-label="" />
+              </button>
+            </template>
+            <button
+              v-for="type in LIGHT_TYPES"
+              :key="type"
+              type="button"
+              :class="{ selected: (light.lightType ?? 'Point') === type }"
+              @click="setLightType(type)"
+            >
+              <FIcon
+                :name="(light.lightType ?? 'Point') === type ? 'Check' : 'CircleDot'"
+                :size="14"
+                aria-label=""
+              />
+              {{ type }}
             </button>
-          </template>
-          <button
-            v-for="type in LIGHT_TYPES"
-            :key="type"
-            type="button"
-            :class="{ selected: (light.lightType ?? 'Point') === type }"
-            @click="setLightType(type)"
-          >
-            <FIcon
-              :name="(light.lightType ?? 'Point') === type ? 'Check' : 'CircleDot'"
-              :size="14"
-              aria-label=""
-            />
-            {{ type }}
-          </button>
-        </FDropdown>
+          </FDropdown>
+        </div>
       </section>
       <section class="panel-section">
-        <h4>{{ $t("package.lightColor") }}</h4>
-        <div class="axis-row color-row">
-          <span class="field-label">{{ t("package.lightColor") }}</span>
-          <FColorPicker
-            :model-value="colorHex"
-            :title="t('common.colorPicker')"
-            @update:model-value="setColor"
-          />
+        <div class="scale-row">
+          <div class="scale-label">
+            <span>{{ $t("package.lightColor") }}</span>
+          </div>
+          <div class="color-control" :class="{ locked }">
+            <FColorPicker
+              :model-value="colorHex"
+              :title="t('common.colorPicker')"
+              @update:model-value="setColor"
+            />
+          </div>
         </div>
         <p class="readonly-hex">{{ colorHex }}</p>
       </section>
       <section class="panel-section">
-        <h4>{{ $t("package.metadataNumbers") }}</h4>
         <div class="axis-rows">
           <label v-for="field in NUMBER_FIELDS" :key="field.key" class="axis-row">
             <span class="field-label">{{ t(field.label) }}</span>
@@ -125,6 +195,7 @@ function setColor(hex: string) {
               type="number"
               :step="field.step"
               :value="light[field.key] ?? 0"
+              :disabled="locked"
               :aria-label="t(field.label)"
               @change="setNumberField(field.key, $event)"
             />
@@ -164,6 +235,7 @@ function setColor(hex: string) {
   gap: 8px;
   justify-content: space-between;
   min-height: 28px;
+  white-space: nowrap;
   padding: 0 8px;
   width: 100%;
 }
@@ -204,6 +276,71 @@ function setColor(hex: string) {
   min-height: 26px;
   padding: 0 8px;
   width: 100%;
+}
+.field-hint {
+  color: var(--subtle-foreground);
+  font-size: 10px;
+  margin: 2px 0 0;
+}
+/* 缩放倍率行：左=名称+解释（上下堆叠），右=输入框 */
+.scale-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.scale-label {
+  display: flex;
+  flex-direction: column;
+}
+.scale-label > span {
+  color: var(--foreground);
+  font-size: 12px;
+}
+.scale-label > small {
+  color: var(--subtle-foreground);
+  font-size: 10px;
+}
+.scale-input {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-height: 26px;
+  padding: 0 8px;
+  text-align: end;
+  width: 96px;
+}
+.scale-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.metadata-panel.locked .type-trigger,
+.metadata-panel.locked .axis-row input,
+.metadata-panel.locked .scale-input {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.metadata-panel.locked .color-control {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+/* 颜色选择器触发器 width:100%——容器须占满行内剩余宽度，否则内缩。
+   FPopover 锚点是 inline-flex（内容定宽），需转为 flex item 并让其
+   撑满，按钮的 width:100% 才有正确的百分比基准。 */
+.scale-row .color-control {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+.scale-row .color-control :deep(.f-popover-anchor) {
+  flex: 1 1 auto;
+  width: auto;
 }
 .panel-empty {
   color: var(--subtle-foreground);

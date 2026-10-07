@@ -1065,6 +1065,7 @@ const treeSheetPinned = ref(true);
           :unit="selectedUnit"
           :live-transform="liveTransform"
           :scale-editable="selectedScaleEditable"
+          :edit-enabled="editEnabled"
           @update-transform="commitTransform"
           @update-fields="commitFields"
         />

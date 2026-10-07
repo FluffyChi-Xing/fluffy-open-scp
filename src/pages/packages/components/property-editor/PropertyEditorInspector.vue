@@ -20,6 +20,8 @@ const props = defineProps<{
   liveTransform?: { id: string; position: [number, number, number] } | null;
   /** 选中 prop 是否显示「缩放倍率」编辑（真实模型渲染分支才消费）。 */
   scaleEditable?: boolean;
+  /** 编辑模式解锁态（透传给元数据面板的编辑门控）。 */
+  editEnabled?: boolean;
 }>();
 const emit = defineEmits<{
   "update-transform": [id: string, matrix: number[]];
@@ -67,8 +69,6 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
       <PropertyEditorProperties
         v-if="activeTab === 'properties'"
         :unit="unit"
-        :scale-editable="scaleEditable"
-        @update-fields="(id, patch) => emit('update-fields', id, patch)"
       />
       <PropertyEditorTransformPanel
         v-else-if="activeTab === 'transform'"
@@ -79,6 +79,8 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
       <PropertyEditorMetadataPanel
         v-else-if="activeTab === 'metadata'"
         :unit="unit"
+        :scale-editable="scaleEditable"
+        :edit-enabled="editEnabled"
         @update-fields="(id, patch) => emit('update-fields', id, patch)"
       />
       <!-- 只读渲染遥测：不接任何视口 prop，切页签不会触发 rebuildScene()。 -->

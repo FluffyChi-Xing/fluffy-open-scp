@@ -1,17 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { LotUnitDto, UnitKeyDto } from "@/api/tauri";
-import { unitId } from "./unitGizmos";
 
-const props = defineProps<{
-  unit: LotUnitDto | null;
-  /** 选中 prop 是否显示「缩放倍率」编辑（真实模型渲染分支才消费）。 */
-  scaleEditable?: boolean;
-}>();
-const emit = defineEmits<{
-  "update-fields": [id: string, patch: Record<string, unknown>];
-}>();
+const props = defineProps<{ unit: LotUnitDto | null }>();
 const { t } = useI18n();
 
 interface SummaryRow {
@@ -119,30 +111,6 @@ const summary = computed<SummaryRow[]>(() => {
 
 const fields = computed(() => props.unit?.fields ?? []);
 const empty = computed(() => !props.unit);
-
-// ---- 定制元数据节（divider 分节）：选中组件 kind 专属的可编辑字段 ----
-// 现阶段 prop 真模型（树/放置直挂）= 缩放倍率（DTO 独立 scale 字段，
-// null 视为 1）；未来按组件族放开编辑，沿用本节结构逐节追加。
-const scaleDraft = ref("");
-watch(
-  () => [props.unit, props.scaleEditable] as const,
-  ([unit]) => {
-    scaleDraft.value =
-      unit && unit.kind === "prop" && typeof unit.scale === "number"
-        ? String(unit.scale)
-        : "1";
-  },
-  { immediate: true },
-);
-function commitScale() {
-  const unit = props.unit;
-  if (!unit || unit.kind !== "prop") return;
-  const value = Number.parseFloat(scaleDraft.value);
-  const current = typeof unit.scale === "number" ? unit.scale : 1;
-  if (!Number.isFinite(value) || value <= 0) return;
-  if (Math.abs(value - current) < 1e-6) return;
-  emit("update-fields", unitId(unit), { scale: value });
-}
 </script>
 
 <template>
@@ -166,33 +134,6 @@ function commitScale() {
           </dd>
         </div>
       </dl>
-      <!-- 定制元数据节：divider 分节，选中不同组件族在此追加专属编辑项 -->
-      <h4 class="section-title">{{ $t("package.customMetadata") }}</h4>
-      <dl
-        v-if="unit && scaleEditable && unit.kind === 'prop'"
-        class="summary-list"
-      >
-        <div>
-          <dt>
-            {{ $t("package.scaleMultiplier") }}
-            <small class="meta-hint">{{
-              $t("package.scaleMultiplierHint")
-            }}</small>
-          </dt>
-          <dd>
-            <input
-              v-model="scaleDraft"
-              class="meta-number"
-              type="number"
-              step="0.01"
-              min="0.01"
-              :aria-label="$t('package.scaleMultiplier')"
-              @change="commitScale"
-            />
-          </dd>
-        </div>
-      </dl>
-      <p v-else class="meta-empty">{{ $t("package.noCustomMeta") }}</p>
       <h4 v-if="fields.length" class="fields-title">
         {{ $t("package.unitFields") }}
       </h4>
@@ -280,46 +221,6 @@ function commitScale() {
   margin: 14px 0 8px;
   padding-top: 10px;
   text-transform: uppercase;
-}
-/* 定制元数据节标题 = divider（与 fields-title 同款分隔线语义） */
-.section-title {
-  border-top: 1px solid var(--brand);
-  color: var(--muted-foreground);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  margin: 14px 0 8px;
-  padding-top: 10px;
-  text-transform: uppercase;
-}
-.meta-hint {
-  color: var(--subtle-foreground);
-  display: block;
-  font-size: 9px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  margin-top: 2px;
-  text-transform: none;
-}
-.meta-number {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--foreground);
-  font: inherit;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  max-width: 96px;
-  padding: 3px 6px;
-  width: 100%;
-}
-.meta-number:focus {
-  border-color: var(--brand);
-  outline: none;
-}
-.meta-empty {
-  color: var(--subtle-foreground);
-  font-size: 11px;
-  margin: 0;
 }
 .fields-table {
   border-collapse: collapse;
