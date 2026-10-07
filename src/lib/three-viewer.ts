@@ -157,17 +157,36 @@ export class ThreeViewer {
   }
 
   /**
-   * 场景全部材质的 GPU 程序预编译（KHR_parallel_shader_compile 可用时
-   * 异步轮询链接，老驱动回退同步）。精细渲染装配出的几十种 MeshStandard/
-   * tint 变体若在首次 draw 时同步链接，会出现连续数秒的整帧卡顿——
-   * 遥测各阶段之和远小于用户感知的 3-10s，差值主要在这里与纹理上传。
-   * 在放行首帧（invalidate）前调用。
+   * 场景全部材质的 GPU 程序预编译。KHR_parallel_shader_compile 可用时
+   * compileAsync 异步轮询链接，老驱动回退同步。
+   *
+   * **竞态防御（2026-10-08 勘误）**：three 的轮询回调读取
+   * `materialProperties.currentProgram`——若编译窗口内材质被 dispose
+   * （新一轮重建 clearGroup / 资产刷新换对象），会抛 uncaught
+   * "reading 'isReady'" 且 **promise 永不 settle**，管线（invalidate/
+   * assembling 旗）随之挂死，场景冻在半成品帧（用户观测：部分建筑
+   * 贴图乱码 + 控制台 isReady 报错）。故与 stale 看门狗 + 兜底超时
+   * race：任何一侧先到即放行，挂死不再可能。three 内部的那次 uncaught
+   * 日志无害（编译轮询已死，首帧走同步链接兜底）。
    */
-  async prepareShaders(): Promise<void> {
+  async prepareShaders(isStale: () => boolean = () => false): Promise<void> {
+    let settled = false;
+    let watchdog: ReturnType<typeof setInterval> | undefined;
     try {
-      await this.renderer.compileAsync(this.scene, this.camera);
+      await Promise.race([
+        this.renderer.compileAsync(this.scene, this.camera).catch(() => {}),
+        new Promise<void>((resolve) => {
+          watchdog = setInterval(() => {
+            if (settled || isStale()) resolve();
+          }, 64);
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+      ]);
     } catch {
-      // 回退：首次 draw 时同步编译（three 内部 program 缓存兜底，不劣化）
+      // promise 层拒绝兜底（首轮 draw 走同步链接，不劣化）
+    } finally {
+      settled = true;
+      if (watchdog) clearInterval(watchdog);
     }
   }
 

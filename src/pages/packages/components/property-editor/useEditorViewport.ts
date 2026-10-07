@@ -227,12 +227,17 @@ export function useEditorViewport(options: {
       span.end(ctx.stats);
     }
     // GPU 侧准备放遥测外（保留各阶段可比性）：全量纹理预热 + 程序预编译
-    // 完成后再放行首帧——首次 draw 不再承担纹理上传与 program 链接
-    // （装配"完成"后窗口仍卡数秒的主因；遥测各阶段之和远小于用户感知
-    // 时长，差值主要在此）。
+    // 完成后再放行首帧——首次 draw 不再承担纹理上传与 program 链接。
+    // prepareShaders 内建 stale 看门狗（编译窗口内新一代重建 dispose 材质
+    // 会致 three 轮询抛错且 promise 不 settle——2026-10-08 勘误）；尾部
+    // try 兜底保证 assembling 旗/首帧放行绝不被 GPU 侧异常挂死。
     if (token !== rebuildToken) return;
-    instance.primeTextures();
-    await instance.prepareShaders();
+    try {
+      instance.primeTextures();
+      await instance.prepareShaders(() => token !== rebuildToken);
+    } catch {
+      // GPU 准备失败不阻塞出画（首轮 draw 走同步路径兜底）
+    }
     if (token !== rebuildToken) return;
     instance.invalidate();
     assembling = false;
