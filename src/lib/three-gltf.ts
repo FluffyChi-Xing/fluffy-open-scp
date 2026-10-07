@@ -1,6 +1,8 @@
 import type * as ThreeNamespace from "three";
 import type { LotModelPayload } from "@/api/tauri";
 import {
+  diffNodeDtos,
+  extractObjectTree,
   nodesToObjects,
   type GltfNodeDto,
   type GltfParseRequest,
@@ -160,13 +162,47 @@ export async function parseLotModelObjects(
           );
         });
         const THREE = await import("three");
-        return nodesToObjects(nodes, THREE);
+        const objects = nodesToObjects(nodes, THREE);
+        // DEV 自检：主线程重解析同批 GLB 与 worker 产物逐节点逐属性比对
+        //（2026-10-08 贴图乱码取证——分歧点直接进控制台）。生产构建零成本。
+        if (import.meta.env.DEV) {
+          void verifyWorkerParity(glbs, nodes);
+        }
+        return objects;
       } catch {
         // 断链已标记（worker 回退主线程后续走同步路径）
       }
     }
   }
   return parseLotModelObjectsOnMainThread(glbs);
+}
+
+/** DEV 自检：主线程重解析并比对 worker 节点 DTO（分歧 = worker 提取侧损）。 */
+async function verifyWorkerParity(
+  glbs: ArrayBuffer[],
+  workerNodes: GltfNodeDto[],
+): Promise<void> {
+  try {
+    const THREE = await import("three");
+    const { GLTFLoader } = await import(
+      "three/examples/jsm/loaders/GLTFLoader.js"
+    );
+    const loader = new GLTFLoader();
+    const expected: GltfNodeDto[] = [];
+    for (const glb of glbs) {
+      const gltf = await loader.parseAsync(glb, "");
+      for (const child of gltf.scene.children) child.rotation.set(0, 0, 0);
+      expected.push(...extractObjectTree(gltf.scene, THREE));
+    }
+    const diff = diffNodeDtos(expected, workerNodes);
+    if (diff) {
+      console.warn(
+        `[gltf-worker] 解析分歧（贴图异常时把本行发给开发者）: ${diff}`,
+      );
+    }
+  } catch {
+    // 自检自身失败（如 GLTFLoader 在当前环境不可用）不影响主流程
+  }
 }
 
 async function parseLotModelObjectsOnMainThread(

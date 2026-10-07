@@ -165,6 +165,61 @@ function placeholder(
   return placeholderMaterial;
 }
 
+
+/** 诊断：两份节点 DTO 的第一处分歧（worker 自检用；null = 逐元素一致）。
+ * 只比内容不比引用——transfer 前后的 buffer 身份必然不同。 */
+export function diffNodeDtos(
+  expected: GltfNodeDto[],
+  actual: GltfNodeDto[],
+): string | null {
+  if (expected.length !== actual.length) {
+    return `node count ${expected.length} != ${actual.length}`;
+  }
+  for (let i = 0; i < expected.length; i += 1) {
+    const a = expected[i];
+    const b = actual[i];
+    if (a.parent !== b.parent) return `node${i} parent ${a.parent} != ${b.parent}`;
+    if (a.isMesh !== b.isMesh) return `node${i} isMesh ${a.isMesh} != ${b.isMesh}`;
+    if (a.transform.length !== b.transform.length) {
+      return `node${i} transform length mismatch`;
+    }
+    for (let t = 0; t < a.transform.length; t += 1) {
+      if (Math.abs(a.transform[t] - b.transform[t]) > 1e-5) {
+        return `node${i} transform[${t}] ${a.transform[t]} != ${b.transform[t]}`;
+      }
+    }
+    const names = new Set([...Object.keys(a.attributes), ...Object.keys(b.attributes)]);
+    for (const name of names) {
+      const attrA = a.attributes[name];
+      const attrB = b.attributes[name];
+      if (!attrA) return `node${i} attr ${name} missing in expected`;
+      if (!attrB) return `node${i} attr ${name} missing in actual`;
+      if (attrA.itemSize !== attrB.itemSize) {
+        return `node${i} attr ${name} itemSize ${attrA.itemSize} != ${attrB.itemSize}`;
+      }
+      if (attrA.array.length !== attrB.array.length) {
+        return `node${i} attr ${name} length ${attrA.array.length} != ${attrB.array.length}`;
+      }
+      for (let v = 0; v < attrA.array.length; v += 1) {
+        if (Math.abs(attrA.array[v] - attrB.array[v]) > 1e-5) {
+          return `node${i} attr ${name}[${v}] ${attrA.array[v]} != ${attrB.array[v]}`;
+        }
+      }
+    }
+    if ((a.index?.length ?? 0) !== (b.index?.length ?? 0)) {
+      return `node${i} index length mismatch`;
+    }
+    if (a.index && b.index) {
+      for (let v = 0; v < a.index.length; v += 1) {
+        if (a.index[v] !== b.index[v]) {
+          return `node${i} index[${v}] ${a.index[v]} != ${b.index[v]}`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /** 扁平节点表 → Object3D 根数组（主线程重建；buffer 零拷贝入 BufferAttribute）。 */
 export function nodesToObjects(
   nodes: GltfNodeDto[],
