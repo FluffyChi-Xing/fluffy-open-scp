@@ -51,16 +51,30 @@ pub struct RegionRenderDto {
 pub fn map_panel_list_regions(package_path: String) -> Result<Vec<RegionSummaryDto>, String> {
     let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
         .map_err(|e| e.to_string())?;
-    Ok(region_map::list_regions(&package)
-        .into_iter()
-        .map(|r| RegionSummaryDto {
-            group: format!("{:08X}", r.group),
-            display_name: r.display_name,
-            display_name_en: r.display_name_en,
-            numeric_id: r.numeric_id,
-            plot_count: r.plot_count,
-        })
-        .collect())
+    // 真名链：区域模板 join → 注册表 → zh locale（旁包缺失时回退内置表）
+    let parent = std::path::Path::new(&package_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let sibling = |name: &str| dbpf::Package::open(parent.join(name)).ok();
+    let ep1 = sibling("SimCityDataEP1.package");
+    let game = sibling("SimCity_Game.package");
+    let locale = dbpf::Package::open(parent.join("Locale").join("zh-tw").join("Data.package")).ok();
+    Ok(sc_properties::region_3d::region_list_named(
+        &package,
+        ep1.as_ref(),
+        game.as_ref(),
+        locale.as_ref(),
+    )
+    .into_iter()
+    .map(|r| RegionSummaryDto {
+        group: format!("{:08X}", r.group),
+        display_name: r.display_name,
+        display_name_en: r.display_name_en,
+        numeric_id: r.numeric_id,
+        plot_count: r.plot_count,
+    })
+    .collect())
 }
 
 #[tauri::command]
@@ -114,6 +128,81 @@ pub fn map_panel_render_region(
         plots,
         brushes,
         resource_layers,
+    })
+}
+
+/// 3D 预览数据。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Region3DDto {
+    /// 高度 PNG（RGBA：R=raw 高 8 位、G=低 8 位，无损 16-bit 编码）。
+    pub height_png_base64: String,
+    /// 生态 PNG（RGBA：R=土壤、G=森林、B=地下水、A=255）。
+    pub ground_png_base64: String,
+    pub terrain_textures: std::collections::HashMap<String, String>,
+    pub size: u32,
+    pub meters_per_pixel: f32,
+    pub origin_world: (f32, f32),
+    pub water_z: f32,
+    pub height_div: f32,
+    pub height_bias: f32,
+    pub desert: bool,
+    pub display_name: Option<String>,
+    pub display_name_en: Option<String>,
+    pub plots: Vec<sc_properties::region_3d::Region3DPlot>,
+    /// 资源画刷清单（目标 map 名 + stamp 世界坐标）。
+    pub brushes: Vec<(String, Vec<(f32, f32)>)>,
+}
+
+/// 区域 3D 数据（高度场 + 地面场 + 地块名 + 伟工位）。
+/// 自动探测旁包：同目录 SimCityDataEP1.package / SimCity_Game.package /
+/// Locale/zh-tw/Data.package（缺失时名字链与伟工位降级）。
+#[tauri::command]
+pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region3DDto, String> {
+    let group =
+        u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
+    let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
+        .map_err(|e| e.to_string())?;
+    let parent = std::path::Path::new(&package_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let sibling = |name: &str| -> Option<dbpf::Package> {
+        dbpf::Package::open(parent.join(name)).ok()
+    };
+    let ep1 = sibling("SimCityDataEP1.package");
+    let game = sibling("SimCity_Game.package");
+    let locale = parent
+        .join("Locale")
+        .join("zh-tw")
+        .join("Data.package");
+    let locale = dbpf::Package::open(locale).ok();
+    let out = sc_properties::region_3d::region_3d(
+        &package,
+        group,
+        ep1.as_ref(),
+        game.as_ref(),
+        locale.as_ref(),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(Region3DDto {
+        terrain_textures: sibling("SimCity_App.package")
+            .map(|p| sc_properties::region_3d::terrain_detail_pngs(&p))
+            .unwrap_or_default().into_iter().map(|(name, png)|
+                (name, base64::engine::general_purpose::STANDARD.encode(png))).collect(),
+        height_png_base64: base64::engine::general_purpose::STANDARD.encode(&out.height_png),
+        ground_png_base64: base64::engine::general_purpose::STANDARD.encode(&out.ground_png),
+        size: out.size,
+        meters_per_pixel: out.meters_per_pixel,
+        origin_world: out.origin_world,
+        water_z: out.water_z,
+        height_div: out.height_div,
+        height_bias: out.height_bias,
+        desert: out.desert,
+        display_name: out.display_name,
+        display_name_en: out.display_name_en,
+        plots: out.plots,
+        brushes: out.brushes,
     })
 }
 

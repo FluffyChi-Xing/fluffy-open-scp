@@ -59,3 +59,40 @@ export const RESOURCE_COLORS: Record<string, string> = {
 export function resourceColor(kind: string): string {
   return RESOURCE_COLORS[kind.toLowerCase()] ?? "#ff00ff";
 }
+
+/** 3D 预览地块（城市或伟工位）。 */
+export interface Region3DPlot {
+  x: number;
+  y: number;
+  /** 场地基准面高（米）。 */
+  z: number;
+  uid: string;
+  name: string | null;
+  nameEn?: string | null;
+  kind: "city" | "greatwork";
+}
+
+/** map_panel_region_3d 返回的区域 3D 数据。 */
+export interface Region3DData {
+  /** 高度 PNG（RGBA：R=raw 高 8 位、G=低 8 位，无损 16-bit 编码）。 */
+  heightPngBase64: string;
+  /** 生态数据 PNG（RGBA：R=土壤、G=森林、B=地下水、A=255；非 sRGB）。 */
+  groundPngBase64: string;
+  /** Game terrain diffuse faces, loaded from the adjacent App package. */
+  terrainTextures?: Partial<Record<"dirt" | "grass" | "cliff" | "sand", string>>;
+  /** 场边长（2048）。 */
+  size: number;
+  metersPerPixel: number;
+  originWorld: [number, number];
+  /** 水面世界高（米，-870）。 */
+  waterZ: number;
+  /** z = raw / heightDiv + heightBias。 */
+  heightDiv: number;
+  heightBias: number;
+  desert: boolean;
+  displayName: string | null;
+  displayNameEn: string | null;
+  plots: Region3DPlot[];
+  /** 资源画刷清单（目标 map 名 + stamp 世界坐标）。 */
+  brushes: [string, [number, number][]][];
+}

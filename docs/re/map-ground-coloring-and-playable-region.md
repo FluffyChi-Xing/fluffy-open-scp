@@ -1,5 +1,8 @@
 # 地图绿地着色 + 可游玩区域/BOC——引擎侧分析（2026-10-01）
 
+> **2026-10-08 补充**：已提取完整 getGrassAmount，并确认 lot lawn 与区域
+> terrainPS 不是同一着色路径，见 [区域地形着色勘误](map-terrain-color-correction.md)。
+
 > 来源：shader 容器命名片段解析（本目录 shader-fragment-census.md 的延伸）+
 > 社区 mod「外围区建造Mod」（BOC，Build Outside City）包体解析。
 > 状态：绿地着色公式链**完整提取**（getGrassAmount 主体待补）；

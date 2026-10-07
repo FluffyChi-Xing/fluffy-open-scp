@@ -74,25 +74,26 @@ const CELL: f32 = 8.0;
 
 /// 全部 RT0 区域 + 已知离线区域的显示名（组 id → 中文名 / 英文名）。
 ///
-/// 名称链路（2026-09-24 破解）：JS 模板注册表（Game 包 67771F5C:40464200:7CCC548C）
-/// 模板名→locale hash → locale JSON hash→中文名；模板↔组桥接 = 城市数 +
-/// 官方图鉴地形目验（tmp/region_preview/source，2026-09-24 全部对上）：
-/// 泰坦峽谷=狭长峡谷河流、三角洲=分叉水系、藍綠森林=排除法、荒涼=荒瘠山地核爆坑。
-/// 例外：E0183D94/DB25018C 两张地形图几乎相同（教程地图复用），
-/// 按官方 diorama 植被匹配分配，待游戏内存档 MetaData 终验。
+/// 名称链路（2026-10-07 定案，docs/re/map-3d-preview-research.md §2）：
+/// EP1 包区域模板 JSON（按城市场地整平高逐城判别同布局组）→ Game 包注册表
+/// → zh locale。本表是断链回退，与链路结论一致。注意内部代号 ≠ 零售名
+/// （Sawyer=三角洲、LittleGorge=泰坦峽谷、Gallia=藍綠森林）；
+/// 旧目验映射 BC357A2B↔泰坦峽谷、B12DE348↔三角洲、E41A82B8↔愛華特灣
+/// 系"排除法"猜测，已被场地 z 证据推翻（锚点：白水谷=存档 MetaData）。
+/// 荒涼（SC_Desolation）与绵延不毛（Oasis）的地形不在 RT0（后者在 RT1）。
 const REGION_NAMES: &[(u32, &str, &str)] = &[
-    (0xBEAF_0510, "白水谷", "Whitewater Valley"),   // Confluence；存档 MetaData 佐证
-    (0x9F73_5B20, "绵延不毛之地", "Oasis"),         // 离线版包
-    (0xD01F_A985, "地平线群岛", "Horizon Keys"),    // 11 城 + 3 伟工，官方一致
-    (0x9E9B_1FF0, "大理石湖", "Caspian Lake"),      // 10 城，唯一
-    (0xC2A9_C48F, "三一岬", "Cape Trinity"),        // 3 城，唯一
-    (0xBC35_7A2B, "泰坦峡谷", "Titan Gorge"),       // 16 城；峡谷河流目验
-    (0xB12D_E348, "三角洲", "Discovery Delta"),     // 16 城；分叉水系目验
-    (0xC041_82E4, "藍綠森林", "Viridian Woods"),    // 16 城；排除法（官方繁中名沿用）
-    (0xA0B6_0DDE, "荒涼", "Desolation"),            // 7 城；荒瘠山地+核爆坑目验
-    (0xE41A_82B8, "愛華特灣", "Edgewater Bay"),     // 7 城；环抱海湾目验
-    (0xE018_3D94, "追日灣", "Twin Cities"),         // 2 城；与 DB25018C 为复用双图，待终验
-    (0xDB25_018C, "奮進島", "Tutorial"),            // 2 城；同上，待终验
+    (0xBEAF_0510, "白水谷", "Confluence"),       // 存档 MetaData 实锤
+    (0x9F73_5B20, "綿延不毛之地", "Oasis"),       // 地形在 RT1
+    (0xD01F_A985, "地平線群島", "Horizon"),       // 11 城 + 3 伟工
+    (0x9E9B_1FF0, "大理石湖", "CaspianLake"),
+    (0xC2A9_C48F, "三一岬", "CapeTrinity"),
+    (0xBC35_7A2B, "三角洲", "Sawyer"),            // z 判别（旧目验误作泰坦峽谷）
+    (0xB12D_E348, "泰坦峽谷", "LittleGorge"),     // z 判别（旧目验误作三角洲）
+    (0xC041_82E4, "藍綠森林", "Gallia"),
+    (0xA0B6_0DDE, "愛華特灣", "EdgeWaterBay"),    // z 判别（旧目验误作荒涼）
+    (0xE41A_82B8, "反影環礁", "Reflection"),      // z 判别（旧目验误作愛華特灣）
+    (0xE018_3D94, "追日灣", "TwinCities"),
+    (0xDB25_018C, "奮進島", "Tutorial"),
 ];
 
 /// 按语言取区域显示名（zh = 中文名，其余 = 英文名）；未收录返回 None。

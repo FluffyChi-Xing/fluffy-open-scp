@@ -1,22 +1,24 @@
 <script setup lang="ts">
 /**
- * 地图开发面板：区域地形合成预览。
- * 左 = 地图预览卡片（工具栏：全屏检查），右 = 属性与图层区。
- * 全屏 sheet 复用同一 MapViewer，便于更细致的地图检查。
- * 渲染管线：sc_properties::region_map（341-tile 金字塔 + 全局水位面 3336）。
+ * 地图开发面板：区域地形 3D 预览。
+ * 左 = 地图预览卡片（工具栏：全屏检查），右 = 属性与图层区（布局沿用 v1）。
+ * 全屏 sheet 复用同一 MapViewer3D，便于更细致的地图检查。
+ * 渲染管线：sc_properties::region_3d（341-tile 金字塔 + ED 地面场 +
+ * 水位面 4928(-870m) + 地块名/伟工位；three.js 位移网格 + 引擎式顶点色）。
  */
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FEmpty from "@/components/extensions/FEmpty.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import MapViewer from "@/components/map/MapViewer.vue";
+import MapViewer3D from "@/components/map/MapViewer3D.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import { brushResourceKind } from "@/lib/region-map";
-import type { RegionRender, RegionSummary } from "@/lib/region-map";
+import type { Region3DData, RegionSummary } from "@/lib/region-map";
 
 const { t, te, locale } = useI18n();
 const gamePackages = useGamePackagesStore();
@@ -24,7 +26,7 @@ const gamePackages = useGamePackagesStore();
 const selectedPackageId = ref<number | null>(null);
 const regions = ref<RegionSummary[]>([]);
 const selectedGroup = ref("");
-const render = ref<RegionRender | null>(null);
+const render = ref<Region3DData | null>(null);
 const loadingRegions = ref(false);
 const loadingRender = ref(false);
 const errorMsg = ref("");
@@ -97,7 +99,7 @@ async function renderRegion() {
   errorMsg.value = "";
   try {
     loadingRender.value = true;
-    render.value = await invoke<RegionRender>("map_panel_render_region", {
+    render.value = await invoke<Region3DData>("map_panel_region_3d", {
       packagePath: packagePathOf(packageId),
       group: selectedGroup.value,
     });
@@ -265,11 +267,16 @@ function resourceLabel(kind: string): string {
           </button>
         </div>
         <div class="card-viewer">
-          <MapViewer
-            :render="render"
-            :show-plots="showPlots"
-            :visible-resources="visibleResourceKinds"
-          />
+          <MapViewer3D :data="render" :show-plots="showPlots" />
+          <div v-if="!render && !loadingRender" class="viewer-empty">
+            <FEmpty
+              icon-name="Map"
+              variant="compact"
+              status="default"
+              :title="t('studio.map.emptyTitle')"
+              :desc="t('studio.map.emptyDescription')"
+            />
+          </div>
         </div>
       </div>
 
@@ -280,18 +287,18 @@ function resourceLabel(kind: string): string {
           </h3>
           <dl v-if="render" class="props">
             <dt>{{ t("studio.map.sizeLabel") }}</dt>
-            <dd>{{ render.width }}×{{ render.height }}</dd>
+            <dd>{{ render.size }}×{{ render.size }}</dd>
             <dt>{{ t("studio.map.originWorld") }}</dt>
             <dd class="mono">
-              {{ render.originWorld?.[0]?.toFixed(0) ?? "?" }},
-              {{ render.originWorld?.[1]?.toFixed(0) ?? "?" }}
+              {{ render.originWorld[0].toFixed(0) }},
+              {{ render.originWorld[1].toFixed(0) }}
             </dd>
             <dt>{{ t("studio.map.waterPlane") }}</dt>
-            <dd>{{ render.waterPlane }}</dd>
+            <dd>{{ Math.round((render.waterZ + 1024) * 32) }}</dd>
             <dt>{{ t("studio.map.desertMode") }}</dt>
             <dd>{{ render.desert ? t("studio.map.yes") : t("studio.map.no") }}</dd>
             <dt>{{ t("studio.map.plotCount") }}</dt>
-            <dd>{{ render.plotCount }}</dd>
+            <dd>{{ render.plots.filter((p) => p.kind === "city").length }}</dd>
             <dt>{{ t("studio.map.brushCount") }}</dt>
             <dd>{{ render.brushes.length }}</dd>
           </dl>
@@ -375,12 +382,7 @@ function resourceLabel(kind: string): string {
           </button>
         </header>
         <div class="sheet-viewer">
-          <MapViewer
-            v-if="sheetOpen"
-            :render="render"
-            :show-plots="showPlots"
-            :visible-resources="visibleResourceKinds"
-          />
+          <MapViewer3D v-if="sheetOpen" :data="render" :show-plots="showPlots" />
         </div>
       </div>
     </FSheet>
@@ -564,8 +566,19 @@ function resourceLabel(kind: string): string {
   opacity: 0.45;
 }
 .card-viewer {
+  position: relative;
   flex: 1;
   min-height: 0;
+}
+.viewer-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+.viewer-empty :deep(.f-empty) {
+  max-width: 22rem;
 }
 .side-panel {
   width: 272px;
