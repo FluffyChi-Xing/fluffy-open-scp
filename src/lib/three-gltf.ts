@@ -137,19 +137,23 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
  * gltf.rs 根节点自带 Z-up→Y-up 的 -90°X 旋转，而视口 world 组已做同款
  * 旋转（模型须与 Unit gizmo 共享 Z-up 世界），这里剥掉根旋转避免双重旋转。
  *
- * Worker 解析（2026-10-08）**默认关闭**：真机 EP1 建筑贴图乱码与其并存，
- * 根因未定谳（解析层 roundtrip 已证无损，疑点在属性绑定/纹理状态层）——
- * 回退主线程已知正确路径，Worker 仅 URL 带 `?gltfWorker` 时启用供继续
- * 取证（DEV 自检对拍随行）。性能收益待根因修复后再默认开启。
+ * Worker 解析开关（2026-10-08 默认关闭）：EP1 贴图乱码与 Worker 路径并存
+ * 过，但当时乱码的另一嫌疑（编译窗口 dispose 竞态）已由重建串行化修复且
+ * **修复后 Worker 从未复测**——开关做成可持续切换（localStorage
+ * `openscp.gltfWorker=1` / URL `?gltfWorker`）供 A/B 复测定谳：串行化后
+ * 仍乱码 → 根因在 Worker 特有运行时层；不乱码 → 恢复默认开启。
  */
 export async function parseLotModelObjects(
   glbs: ArrayBuffer[],
 ): Promise<ThreeNamespace.Object3D[]> {
   let workerEnabled = false;
   try {
+    // 双通道开关：URL `?gltfWorker`（打包版一次性）或 localStorage
+    // `openscp.gltfWorker=1`（持久，打包版设置面板外也可切）
     workerEnabled =
       typeof Worker !== "undefined" &&
-      new URLSearchParams(window.location.search).has("gltfWorker");
+      (new URLSearchParams(window.location.search).has("gltfWorker") ||
+        localStorage.getItem("openscp.gltfWorker") === "1");
   } catch {
     workerEnabled = false;
   }
@@ -170,12 +174,16 @@ export async function parseLotModelObjects(
         });
         const THREE = await import("three");
         const objects = nodesToObjects(nodes, THREE);
-        // DEV 自检：主线程重解析同批 GLB 与 worker 产物逐节点逐属性比对
-        //（2026-10-08 贴图乱码取证——分歧点直接进控制台）。生产构建零成本。
+        // 取证自检：主线程重解析同批 GLB 与 worker 产物逐节点逐属性比对
+        //（2026-10-08 贴图乱码取证——分歧点直接进控制台）。DEV 自动启用；
+        // 打包构建用 localStorage `openscp.gltfParity=1` 显式开启。
         // 注意快照必须在返回前拷贝：worker DTO 的属性数组与重建几何**共享
         // buffer（零拷贝）**，调用方的就地改写（propModels UV 翻转）会透过
         // 别名写进 DTO——不拷贝则合法翻转被误报为解析分歧（真机误报实证）。
-        if (import.meta.env.DEV) {
+        if (
+          import.meta.env.DEV ||
+          localStorage.getItem("openscp.gltfParity") === "1"
+        ) {
           const snapshot = nodes.map((node) => ({
             ...node,
             transform: node.transform.slice(),

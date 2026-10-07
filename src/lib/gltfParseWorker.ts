@@ -37,12 +37,16 @@ export async function handleGltfParse(
 
 export function runGltfParseWorker(scope: WorkerScope): void {
   scope.onmessage = (event: MessageEvent<GltfParseRequest>) => {
-    const { id } = event.data;
+    const { id, cloneResponse } = event.data;
     void handleGltfParse(event.data)
       .then((nodes) => {
+        // cloneResponse = 结构化克隆应答（EP1 乱码二分：排除 transfer/
+        // detach 边界；拷贝成本仅取证期间存在）
         scope.postMessage(
           { id, nodes },
-          collectNodeTransfers(nodes) as ArrayBuffer[],
+          cloneResponse
+            ? undefined
+            : (collectNodeTransfers(nodes) as ArrayBuffer[]),
         );
       })
       .catch((error: unknown) => {

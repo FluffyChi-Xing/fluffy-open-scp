@@ -53,6 +53,11 @@ export interface GltfParseRequest {
   id: number;
   /** GLB 字节（调用方保证为副本——转移后本侧 detach）。 */
   glbs: ArrayBuffer[];
+  /**
+   * 应答节点 DTO 是否走 transferable 转移（2026-10-08 EP1 乱码二分）：
+   * false = 结构化克隆应答（拷贝，排除 transfer/detach 边界）。
+   */
+  cloneResponse?: boolean;
 }
 
 /** 收集全部可转移 buffer（属性/索引/变换）。 */
