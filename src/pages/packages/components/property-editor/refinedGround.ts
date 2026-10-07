@@ -118,14 +118,19 @@ function getComposeWorker(): Worker | null {
   }
 }
 
-function composeViaWorker(input: GroundComposeInput): Promise<GroundComposeResponse> {
+function composeViaWorker(
+  input: GroundComposeInput,
+  transfers: ArrayBuffer[],
+): Promise<GroundComposeResponse> {
   const worker = getComposeWorker();
   if (!worker) return Promise.reject(new Error("worker unavailable"));
   return new Promise((resolve, reject) => {
     const id = ++nextJobId;
     pendingJobs.set(id, { resolve, reject });
-    // postMessage 结构化克隆即拷贝 typed array，主线程 input 不受影响。
-    worker.postMessage({ id, input });
+    // transferable 零拷贝：postMessage 默认结构化克隆整份像素输入
+    // （2048² 级 = 数十 MB 主线程拷贝）。仅转移本次调用的新鲜产物；
+    // 共享缓存的 buffer（tile() 回退/normalAtlas）必须走克隆路径。
+    worker.postMessage({ id, input }, transfers);
   });
 }
 
@@ -223,12 +228,26 @@ export async function composeRefinedGround(options: {
     tilesY,
     outSize,
   };
+  // 可转移 buffer：mask 像素恒为本次新提取；baseTile 在 surface 图集切格
+  // 分支是新拷贝（copyAtlasRegion），本地 tile() 回退分支是共享缓存（不可
+  // 转移，转移会把缓存 buffer detach）。
+  const transfers: ArrayBuffer[] = [input.mask.data.buffer];
+  if (useSurface && baseTile) transfers.push(baseTile.data.buffer);
   let response: GroundComposeResponse;
   try {
-    response = await composeViaWorker(input);
+    response = await composeViaWorker(input, transfers);
   } catch {
-    // 回退主线程（postMessage 克隆不破坏主线程 input）。
-    response = composeOnMainThread(input);
+    // 回退主线程。转移过的 buffer 已 detach（mask 画布内容仍在，重新
+    // getImageData；baseTile 按来源重取）。
+    const remask = maskContext.getImageData(0, 0, width, height);
+    const retryInput: GroundComposeInput = {
+      ...input,
+      mask: imageDataPixels(remask),
+      baseTile: useSurface
+        ? copyAtlasRegion(imageDataPixels(surface!), baseTileIndex % 16, tileW, tileH)
+        : await tile(baseTileIndex % 16),
+    };
+    response = composeOnMainThread(retryInput);
   }
   const canvas = document.createElement("canvas");
   canvas.width = response.width;

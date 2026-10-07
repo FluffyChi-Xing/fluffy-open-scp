@@ -108,10 +108,52 @@ export class ThreeViewer {
   /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
    * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
   private needsRender = true;
+  /** 已预热纹理（initTexture 一次性上传去重）。 */
+  private readonly primedTextures = new WeakSet<ThreeNamespace.Texture>();
 
   /** 请求下一帧重绘（视觉变更后调用；相机/灯光等 viewer 内部方法已自带）。 */
   invalidate() {
     this.needsRender = true;
+  }
+
+  /**
+   * 单纹理提前上传 GPU（initTexture）：首次 draw 不再承担该纹理的上传
+   * +mipmap 生成整帧冻结。大纹理（地面合成 2048²、facade 图集）在所属
+   * 装配线内调用 = 上传与其它线并发，不占汇合后的首帧。
+   */
+  primeTexture(texture: ThreeNamespace.Texture): void {
+    if (this.primedTextures.has(texture)) return;
+    this.primedTextures.add(texture);
+    try {
+      this.renderer.initTexture(texture);
+    } catch {
+      // 上传失败（上下文丢失等）→ 交给首次 draw 的常规路径
+    }
+  }
+
+  /**
+   * 场景全量纹理预热（装配收尾调用）：遍历收集全部未上传纹理逐个
+   * initTexture——上传成本在放行首帧前一次性付清，首帧 draw 只剩 draw。
+   */
+  primeTextures(): void {
+    const materials: ThreeNamespace.Material[] = [];
+    this.scene.traverse((object) => {
+      const mesh = object as ThreeNamespace.Mesh;
+      if (!mesh.isMesh && !(object as ThreeNamespace.Sprite).isSprite) return;
+      const material = mesh.material as
+        | ThreeNamespace.Material
+        | ThreeNamespace.Material[]
+        | undefined;
+      if (!material) return;
+      if (Array.isArray(material)) materials.push(...material);
+      else materials.push(material);
+    });
+    for (const material of materials) {
+      for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+        const texture = value as ThreeNamespace.Texture;
+        if (texture?.isTexture) this.primeTexture(texture);
+      }
+    }
   }
 
   /**

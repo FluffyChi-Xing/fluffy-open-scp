@@ -54,6 +54,7 @@ import {
   applyGroundMask,
   buildLotDimensions,
   buildLotRect,
+  groundFillMesh,
   placementInverse,
   type LotDimensionAnchor,
 } from "./editorGround";
@@ -1283,6 +1284,13 @@ async function assembleScene(
       });
     }
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
+    // 地面合成产物提前上传 GPU：2048² +mipmap 的上传是首帧大冻结源，
+    // 放在地面线内 = 与模型/单元线并发吸收（不占汇合后的首帧）。
+    const fill = groundFillMesh(ground);
+    const fillMap = (fill?.material as ThreeNamespace.Material | undefined)
+      ? ((fill!.material as ThreeNamespace.MeshLambertMaterial).map ?? null)
+      : null;
+    if (fillMap) instance.primeTexture(fillMap);
     return ground;
   })();
 

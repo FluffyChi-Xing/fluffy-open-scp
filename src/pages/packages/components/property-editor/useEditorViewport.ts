@@ -226,10 +226,12 @@ export function useEditorViewport(options: {
       if (token === rebuildToken) assembling = false;
       span.end(ctx.stats);
     }
-    // GPU 程序预编译放遥测外（保留各阶段可比性）：await 完成后再放行
-    // 首帧——首次 draw 不再同步链接全部 program（装配"完成"后窗口仍卡
-    // 数秒的主因；遥测各阶段之和远小于用户感知时长，差值主要在此）。
+    // GPU 侧准备放遥测外（保留各阶段可比性）：全量纹理预热 + 程序预编译
+    // 完成后再放行首帧——首次 draw 不再承担纹理上传与 program 链接
+    // （装配"完成"后窗口仍卡数秒的主因；遥测各阶段之和远小于用户感知
+    // 时长，差值主要在此）。
     if (token !== rebuildToken) return;
+    instance.primeTextures();
     await instance.prepareShaders();
     if (token !== rebuildToken) return;
     instance.invalidate();
