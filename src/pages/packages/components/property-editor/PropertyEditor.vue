@@ -544,8 +544,19 @@ const neonAnim = ref(false);
 // 始终挂载（v-model:open），否则 renderMode/图层显隐跨会话残留，下次打开
 // 直接全量重建精细渲染（首帧卡顿）或带着上次隐藏的图层。时段/LOD/编辑
 // 数据保留（用户明确调节/资产），仅复位"视图"维度。
+//
+// 挂起位（2026-10-07 性能轮）：关闭时 renderMode 复位会让视口触发一次
+// 完整重建——与 releasePropPackages（后台卸包）同帧抢主线程，即"点击
+// 关闭卡顿"。先置 suspended（视口全部重建触发器静默）再复位，重开时
+// 翻回 false，视口自行补一次重建对齐当前模式。
+const peSuspended = ref(false);
 watch(open, (isOpen, wasOpen) => {
-  if (isOpen || !wasOpen) return;
+  if (isOpen === wasOpen) return;
+  if (isOpen) {
+    peSuspended.value = false;
+    return;
+  }
+  peSuspended.value = true;
   renderMode.value = "default";
   neonAnim.value = false;
   tool.value = "select";
@@ -1002,6 +1013,7 @@ const treeSheetPinned = ref(true);
         <PropertyEditorViewport
           ref="viewportRef"
           :edit-enabled="editEnabled"
+          :suspended="peSuspended"
           :added-model-payloads="addedModelPayloads"
           :pending-select-id="pendingSelectId"
           @delete-unit="onDeleteUnit"

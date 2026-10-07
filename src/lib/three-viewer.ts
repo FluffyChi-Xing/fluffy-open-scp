@@ -114,6 +114,21 @@ export class ThreeViewer {
     this.needsRender = true;
   }
 
+  /**
+   * 场景全部材质的 GPU 程序预编译（KHR_parallel_shader_compile 可用时
+   * 异步轮询链接，老驱动回退同步）。精细渲染装配出的几十种 MeshStandard/
+   * tint 变体若在首次 draw 时同步链接，会出现连续数秒的整帧卡顿——
+   * 遥测各阶段之和远小于用户感知的 3-10s，差值主要在这里与纹理上传。
+   * 在放行首帧（invalidate）前调用。
+   */
+  async prepareShaders(): Promise<void> {
+    try {
+      await this.renderer.compileAsync(this.scene, this.camera);
+    } catch {
+      // 回退：首次 draw 时同步编译（three 内部 program 缓存兜底，不劣化）
+    }
+  }
+
   /** 主题色描边（品牌色 #0878FE，与 UI --brand 一致）。 */
   private static readonly OUTLINE_COLOR = 0x0878fe;
 

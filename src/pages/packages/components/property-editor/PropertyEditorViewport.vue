@@ -144,6 +144,13 @@ const props = defineProps<{
   addedModelPayloads?: Map<number, LotModelPayload>;
   /** 放置后待选中：分组重建且新单元入组时自动选中（shell 传入）。 */
   pendingSelectId?: string | null;
+  /**
+   * 挂起（PE sheet 关闭中）：全部重建触发器静默——关闭时 shell 会复位
+   * renderMode，不挂起就会在卸载 EcoGame 包的同时触发一次完整重建
+   * （关闭卡顿根因，2026-10-07）。恢复可见时由 shell 翻回 false，
+   * 视口补一次重建对齐当前渲染模式。
+   */
+  suspended?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -810,6 +817,36 @@ function rebuildScene() {
   });
 }
 
+// ---- 重建合并调度（2026-10-07 性能轮）----
+// 遥测实证：2154 次场景重建 / 682 次模型加载 ≈ 3.2×——模型载荷、grouping、
+// 资产四通道（prop 模型/树模型/小人/直挂）各自触发全量重建，加载窗口内
+// 邻帧到达即白跑 2-3 次（每次含全场景 dispose + 重装配 + 首帧编译）。
+// 改为 rAF 单飞：同一帧内的多个触发合并为一次重建；触发语义按优先级
+// 保留（lod_switch/first_load > render_mode > grouping）。
+const TRIGGER_PRIORITY: Record<RenderTelemetryTrigger, number> = {
+  first_load: 3,
+  lod_switch: 3,
+  render_mode: 2,
+  grouping: 1,
+  scene_rebuild: 0,
+};
+let rebuildScheduled = false;
+function scheduleRebuild(trigger: RenderTelemetryTrigger) {
+  if (props.suspended) return;
+  if (
+    !pendingTrigger ||
+    TRIGGER_PRIORITY[trigger] >= TRIGGER_PRIORITY[pendingTrigger]
+  ) {
+    pendingTrigger = trigger;
+  }
+  if (rebuildScheduled) return;
+  rebuildScheduled = true;
+  requestAnimationFrame(() => {
+    rebuildScheduled = false;
+    void rebuildScene();
+  });
+}
+
 /**
  * grouping 变化的**增量更新路径**：unit 集合不变、且只有非贴花 unit 的
  * transform 变化时，原地把新矩阵 decompose 进既有 Object3D——不重建任何
@@ -961,6 +998,96 @@ onBeforeUnmount(() => {
 });
 
 /** 业务场景装配：模型材质 → 地面 → 六类 Unit → 路径折线。 */
+
+/** 让出一帧给浏览器（绘制/输入/合成）：装配全程 >1s（遥测 p95 ≈ 1s），
+ * 不切片则输入与滚动在整段装配期间卡死。切片代价 = 多几次帧往返
+ * （16.7ms/次），换整段可交互。 */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/** 资产渲染分发上下文（装配与部分刷新共用；每次调用按当前 props 取值）。 */
+function buildAssetCtx(): UnitRenderContext {
+  return {
+    THREE: viewport.viewer.value!.THREE,
+    renderMode: props.renderMode,
+    treeModelPayloads: props.treeModelPayloads,
+    treeAtlasPng: props.treeAtlasPng,
+    treeIds: props.propTreeIds,
+    propModels: props.propModels,
+    addedModelPayloads: props.addedModelPayloads,
+    envRefs,
+    simParts: simParts.value,
+  };
+}
+
+// ---- 资产通道部分刷新（2026-10-07 性能轮）----
+// 遥测实证 2154 次场景重建 / 682 次加载：通道到位的"补渲染"此前走全量
+// 重建——建筑/地面/贴花/路径全部推倒重来，实际只有 prop/spawner 两族
+// 的呈现随载荷变化。改为只重渲染受影响族并原位换对象：
+//   - 真实渲染器对 prop/spawner 是模板化快路径（GLB/材质模板缓存命中）
+//   - 建筑网格、贴花投影、地面合成完全不动
+// 守卫：suspended / 重建在飞（在飞装配自会消费新通道值）/ 跨 await 代数
+// 变化（新一代已清场，塞回旧对象 = 幽灵对象）。
+type AssetRefreshKind = "prop" | "spawner";
+const pendingRefreshKinds = new Set<AssetRefreshKind>();
+let refreshScheduled = false;
+function scheduleAssetRefresh(kinds: AssetRefreshKind[]) {
+  if (props.suspended) return;
+  if (viewport.isAssembling()) return; // 在飞装配读的就是新通道值
+  for (const kind of kinds) pendingRefreshKinds.add(kind);
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  requestAnimationFrame(() => {
+    refreshScheduled = false;
+    const kinds = [...pendingRefreshKinds];
+    pendingRefreshKinds.clear();
+    void refreshAssetUnits(kinds);
+  });
+}
+async function refreshAssetUnits(kinds: AssetRefreshKind[]) {
+  const instance = viewport.viewer.value;
+  if (!instance || props.suspended || !kinds.length) return;
+  const epoch = viewport.rebuildEpoch();
+  const assetCtx = buildAssetCtx();
+  const span = renderTelemetry.begin("scene_rebuild", {
+    refresh: kinds.join("+"),
+  });
+  try {
+    for (const kind of kinds) {
+      const family = kind === "prop" ? props.grouping.props : props.grouping.spawners;
+      for (const unit of family) {
+        if (viewport.rebuildEpoch() !== epoch) return; // 新一代已开跑
+        const id = unitId(unit);
+        const previous = viewport.unitObjects.get(id);
+        if (!previous) continue; // 尚未装配（首建路径），重建自会处理
+        const object =
+          (await renderRefinedAssetUnit(assetCtx, unit)) ??
+          buildUnitObject(assetCtx.THREE, unit);
+        if (!object) continue;
+        if (viewport.rebuildEpoch() !== epoch) {
+          disposeObject(object);
+          return;
+        }
+        object.userData.unitId = id;
+        object.userData.unitKind = unit.kind;
+        object.visible = !props.hiddenUnits.has(id);
+        instance.group(kindGroup(kind)).add(object);
+        viewport.unitObjects.set(id, object);
+        instance.group(kindGroup(kind)).remove(previous);
+        disposeObject(previous);
+      }
+    }
+  } finally {
+    span.end();
+  }
+  // 刷新的单元对象已换代：选中/描边/手柄若指向旧对象需重挂
+  applyOutlines();
+  updatePickOverlay();
+  if (props.selectedId) updateGizmo();
+  instance.invalidate();
+}
+
 async function assembleScene(
   ctx: Parameters<Parameters<typeof viewport.rebuild>[0]>[0],
 ) {
@@ -1005,6 +1132,11 @@ async function assembleScene(
   const env = createSunEnv(THREE);
   applySunEnv(env, timeOfDay(), props.powered);
   envRefs = env;
+  // 阶段间让出一帧（2026-10-07 性能轮）：整段装配遥测 p95 ≈ 1s，全程
+  // 不切片则输入/滚动全程卡死。每个让出点后必须查 isStale——让出期间
+  // 新一代重建可能已开跑（rebuild 骨架在让出前已清场）。
+  await yieldToBrowser();
+  if (ctx.isStale()) return;
   // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
   // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
   // 居中（bbox≈0 实证），mask 空腔与其错位另有机制（0x0CCB7FD2/D3
@@ -1692,17 +1824,7 @@ async function assembleScene(
     if (ctx.isStale()) return;
   }
   // 资产渲染分发上下文（tree/prop/spawner 渲染器只读输入；每轮重建刷新）
-  const assetCtx: UnitRenderContext = {
-    THREE,
-    renderMode: props.renderMode,
-    treeModelPayloads: props.treeModelPayloads,
-    treeAtlasPng: props.treeAtlasPng,
-    treeIds: props.propTreeIds,
-    propModels: props.propModels,
-    addedModelPayloads: props.addedModelPayloads,
-    envRefs,
-    simParts: simParts.value,
-  };
+  const assetCtx = buildAssetCtx();
   const decalSpan = renderTelemetry.begin("decal_render", {
     decals: props.grouping.decals.length,
   });
@@ -1710,7 +1832,16 @@ async function assembleScene(
   decalStats.fallback = 0;
   holeLightCount = 0;
   neonAnimated = false;
+  let unitBudget = 0;
   for (const unit of units) {
+    // 每 8 个 unit 让出一帧：单元渲染器虽是 async，缓存命中时同步 resolve
+    // → 整段循环实际单任务执行；贴花投影/树模板命中可达数十 unit，
+    // 不切片则循环期间输入全程卡死。循环内已有逐 unit isStale 检查。
+    if (++unitBudget >= 8) {
+      unitBudget = 0;
+      await yieldToBrowser();
+      if (ctx.isStale()) return;
+    }
     // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
     const decalTexture =
       props.renderMode === "refined" && unit.kind === "decal"
@@ -1806,25 +1937,25 @@ defineExpose({
 
 // 模型载荷 / 渲染模式变化 → 全量重建；grouping 变化 → 先试增量（热路径），
 // 失败（unit 增删/字段变化/贴花移动）才全量。同一 flush 内两者都变时
-// （如会话加载），rebuildToken 保证后到者胜出。
+// （如会话加载），rebuildToken 保证后到者胜出。全部触发走 scheduleRebuild
+// 合并（2026-10-07：原始实现各通道独立重建，3.2× 重复，见调度器注释）。
 watch(
   () => [props.modelPayload, props.renderMode] as const,
   ([payload], previous) => {
     // 按变化项判定触发来源（首次拿到 payload 记 first_load，换级记 lod_switch）。
-    pendingTrigger =
+    const trigger: RenderTelemetryTrigger =
       previous?.[0] == null
         ? "first_load"
         : payload !== previous[0]
           ? "lod_switch"
           : "render_mode";
-    void rebuildScene();
+    scheduleRebuild(trigger);
   },
 );
 watch(
   () => props.grouping,
   (grouping) => {
-    pendingTrigger = "grouping";
-    if (!tryIncrementalGrouping(grouping)) void rebuildScene();
+    if (!tryIncrementalGrouping(grouping)) scheduleRebuild("grouping");
   },
 );
 watch(
@@ -1832,10 +1963,10 @@ watch(
   () => viewport.applyGroupVisibility(props.groupVisibility),
   { deep: true },
 );
-// 异步资产通道到位 → 重建放行真实渲染（prop 模型/树模型/小人部件/
-// 拖入直挂模型）。初始重建时这些通道往往未就绪：树走公告板兜底、
-// prop 走标记锥、spawner 走占位人形——通道到位即补渲染
-// （真机勘误 2026-10-06：拖动道具触发重建后树才“一下变对”）。
+// 异步资产通道到位 → **部分刷新**受影响族（prop/spawner 原位换对象），
+// 不再整场重建（2026-10-07：此前四通道各触发一次全量重建，建筑/地面/
+// 贴花全部白跑——遥测 2154 重建/682 加载 ≈ 3.2× 的主要成分）。初始重建
+// 未就绪时 unitObjects 为空，刷新自然 no-op，由重建本身消费新载荷。
 watch(
   () => [
     props.propModels,
@@ -1843,9 +1974,17 @@ watch(
     props.addedModelPayloads,
     simParts.value,
   ] as const,
-  () => {
-    pendingTrigger = "grouping";
-    void rebuildScene();
+  (next, previous) => {
+    const kinds: AssetRefreshKind[] = [];
+    if (
+      next[0] !== previous[0] ||
+      next[1] !== previous[1] ||
+      next[2] !== previous[2]
+    ) {
+      kinds.push("prop");
+    }
+    if (next[3] !== previous[3]) kinds.push("spawner");
+    if (kinds.length) scheduleAssetRefresh(kinds);
   },
 );
 // 单元隐藏此前只在装配期应用（无 watcher → 切换后无效果直到下次重建）；
@@ -1854,9 +1993,14 @@ watch(
   () => props.hiddenUnits,
   () => viewport.applyUnitVisibility(props.hiddenUnits),
 );
+// 挂起恢复（sheet 重开）→ 补一次重建对齐当前渲染模式（关闭期间模式被
+// 复位为 default 而未重建）；挂起期间触发器静默（scheduleRebuild 入口
+// 拦截），恢复后的这一次由本 watch 发起。
 watch(
-  () => props.hiddenUnits,
-  () => viewport.applyUnitVisibility(props.hiddenUnits),
+  () => props.suspended,
+  (suspended, wasSuspended) => {
+    if (wasSuspended && suspended === false) scheduleRebuild("render_mode");
+  },
 );
 watch(
   () => props.selectedId,

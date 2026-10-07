@@ -68,6 +68,8 @@ export function useEditorViewport(options: {
   /** 是否已构图过（首次构图后保持相机，编辑操作不再重置镜头）。 */
   let framed = false;
   let rebuildToken = 0;
+  /** 重建在飞标记：资产通道部分刷新据此让位（见 isAssembling）。 */
+  let assembling = false;
   let readyResolve: (() => void) | null = null;
   /** viewer 创建完成信号（装配层 onMounted 后据此触发首次 rebuild）。 */
   const ready = new Promise<void>((resolve) => {
@@ -190,6 +192,7 @@ export function useEditorViewport(options: {
     const instance = viewer.value;
     if (!instance) return;
     const token = ++rebuildToken;
+    assembling = true;
     for (const name of VIEWPORT_GROUPS) instance.clearGroup(name);
     unitObjects.clear();
     for (const url of textureUrls) URL.revokeObjectURL(url);
@@ -218,10 +221,19 @@ export function useEditorViewport(options: {
       }
       sceneReady.value = true;
       revision.value += 1;
-      instance.invalidate();
     } finally {
+      // 仅当前代清旗：过期代的 finally 若误清，会抹掉新一代的在飞标记
+      if (token === rebuildToken) assembling = false;
       span.end(ctx.stats);
     }
+    // GPU 程序预编译放遥测外（保留各阶段可比性）：await 完成后再放行
+    // 首帧——首次 draw 不再同步链接全部 program（装配"完成"后窗口仍卡
+    // 数秒的主因；遥测各阶段之和远小于用户感知时长，差值主要在此）。
+    if (token !== rebuildToken) return;
+    await instance.prepareShaders();
+    if (token !== rebuildToken) return;
+    instance.invalidate();
+    assembling = false;
   }
 
   function applyGroupVisibility(map: Record<string, boolean>) {
@@ -264,6 +276,18 @@ export function useEditorViewport(options: {
     viewer.value?.resetView();
   }
 
+  /** 是否有重建在飞：资产通道的部分刷新据此让位（在飞的装配自会消费
+   * 新通道值，刷新反而会产生重复对象）。 */
+  function isAssembling(): boolean {
+    return assembling;
+  }
+
+  /** 当前重建代数（token）：部分刷新跨 await 后核对，代数变化 = 新一代
+   * 重建已开跑（清场过），必须中止，否则把旧对象塞回新场景。 */
+  function rebuildEpoch(): number {
+    return rebuildToken;
+  }
+
   return {
     container,
     viewer,
@@ -277,6 +301,8 @@ export function useEditorViewport(options: {
     applySelection,
     captureRender,
     resetView,
+    isAssembling,
+    rebuildEpoch,
   };
 }
 
