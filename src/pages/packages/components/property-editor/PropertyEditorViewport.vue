@@ -809,13 +809,20 @@ function rebuildScene() {
   renderTelemetry.setTrigger(pendingTrigger);
   // 动画 decal 标志在装配期间由 buildDecalObject 置位；重建完成后按本轮
   // 结果启停霓虹时钟（新一代取代旧装配时同样以最新一轮为准）。
-  return viewport.rebuild(assembleScene, { reframe }).then(() => {
-    // env 每轮重建新建（animEnabled 归 0）→ 按开关状态重新应用；时钟
-    // 只在"场景有 SDF 动画 decal 且开关开启"时运转。
-    if (envRefs) envRefs.animEnabled.value = props.neonAnim === true ? 1 : 0;
-    if (neonAnimated && props.neonAnim === true) startNeonClock();
-    else stopNeonClock();
-  });
+  return viewport
+    .rebuild(assembleScene, { reframe })
+    .then(() => {
+      // env 每轮重建新建（animEnabled 归 0）→ 按开关状态重新应用；时钟
+      // 只在"场景有 SDF 动画 decal 且开关开启"时运转。
+      if (envRefs) envRefs.animEnabled.value = props.neonAnim === true ? 1 : 0;
+      if (neonAnimated && props.neonAnim === true) startNeonClock();
+      else stopNeonClock();
+    })
+    .catch((error) => {
+      // 装配异常显式化（2026-10-08 EP1 乱码取证）：异常若无声吞掉，场景
+      // 会停在半装配状态（默认材质混杂）且断点不可见。
+      console.error("[pe] 场景装配异常:", error);
+    });
 }
 
 // ---- 重建合并调度（2026-10-07 性能轮）----
@@ -1176,27 +1183,38 @@ async function assembleScene(
       buildingMeshes.push(mesh);
       // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
       mesh.userData.buildingMaterialIndex = materialIndex;
-      if (props.renderMode !== "refined") {
+      try {
+        if (props.renderMode !== "refined") {
+          mesh.material = whiteMaterial;
+          return;
+        }
+        const tint = tintResolved[materialIndex];
+        if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
+          // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
+          const [tinted, specUniform] = makeTintMaterial(THREE, tint, env);
+          specUniformRefs.push(specUniform);
+          mesh.material = tinted;
+          return;
+        }
+        // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
+        const refined = new THREE.MeshStandardMaterial({
+          vertexColors: Boolean(mesh.geometry.attributes.color),
+          roughness: 0.82,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        });
+        mesh.material = refined;
+        if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
+      } catch (error) {
+        // 逐 mesh 兜底（2026-10-08 EP1 乱码取证）：装配异常若逃出 traverse
+        // 会中断整个模型线——后续 mesh 留在 GLTFLoader 默认材质（金属灰/
+        // 环境乱码观感），且异常吞掉真实断点。此处打印异常并退白模。
+        console.error(
+          `[building-materials] glb#${index} mesh 材质装配异常:`,
+          error,
+        );
         mesh.material = whiteMaterial;
-        return;
       }
-      const tint = tintResolved[materialIndex];
-      if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
-        // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env);
-        specUniformRefs.push(specUniform);
-        mesh.material = tinted;
-        return;
-      }
-      // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
-      const refined = new THREE.MeshStandardMaterial({
-        vertexColors: Boolean(mesh.geometry.attributes.color),
-        roughness: 0.82,
-        metalness: 0,
-        side: THREE.DoubleSide,
-      });
-      mesh.material = refined;
-      if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
     });
     // DEV 诊断（2026-10-08 EP1 贴图乱码取证）：逐 mesh 材质分派摘要——
     // uvKind/材质列/属性表/tint 是否命中/最终材质类型与 map 绑定。乱码时
