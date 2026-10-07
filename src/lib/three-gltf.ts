@@ -137,16 +137,23 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
  * gltf.rs 根节点自带 Z-up→Y-up 的 -90°X 旋转，而视口 world 组已做同款
  * 旋转（模型须与 Unit gizmo 共享 Z-up 世界），这里剥掉根旋转避免双重旋转。
  *
- * 首选 Worker 解析（2026-10-07 性能轮）：GLB 是自家导出器产出的纯静态
- * 几何（零内嵌纹理/无骨架动画，package_service `EmbeddedTextures::default()`
- * + `skeleton=None`），worker 内 GLTFLoader 无 DOM 依赖——数百 ms 的同步
- * 解析移出主线程，主线程只付 memcpy 级 BufferAttribute 重建。Worker 不可
- * 用/解析失败回退主线程原路径（行为逐值等价）。
+ * Worker 解析（2026-10-08）**默认关闭**：真机 EP1 建筑贴图乱码与其并存，
+ * 根因未定谳（解析层 roundtrip 已证无损，疑点在属性绑定/纹理状态层）——
+ * 回退主线程已知正确路径，Worker 仅 URL 带 `?gltfWorker` 时启用供继续
+ * 取证（DEV 自检对拍随行）。性能收益待根因修复后再默认开启。
  */
 export async function parseLotModelObjects(
   glbs: ArrayBuffer[],
 ): Promise<ThreeNamespace.Object3D[]> {
-  if (typeof Worker !== "undefined") {
+  let workerEnabled = false;
+  try {
+    workerEnabled =
+      typeof Worker !== "undefined" &&
+      new URLSearchParams(window.location.search).has("gltfWorker");
+  } catch {
+    workerEnabled = false;
+  }
+  if (workerEnabled) {
     const worker = getGltfParseWorker();
     if (worker) {
       try {

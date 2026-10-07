@@ -569,7 +569,8 @@ export class ThreeViewer {
   setShadowsEnabled(enabled: boolean) {
     const changed = this.renderer.shadowMap.enabled !== enabled;
     this.renderer.shadowMap.enabled = enabled;
-    this.renderer.shadowMap.type = this.THREE.PCFSoftShadowMap;
+    // PCFSoft 已被 three 弃用（内部直接转 PCF，还刷弃用告警）——直用 PCF
+    this.renderer.shadowMap.type = this.THREE.PCFShadowMap;
     this.keyLight.castShadow = enabled;
     this.content.traverse((child) => {
       const mesh = child as ThreeNamespace.Mesh;
