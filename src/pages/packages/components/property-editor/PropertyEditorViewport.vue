@@ -33,6 +33,11 @@ import {
   decalFrame,
   decalHalfThickness,
 } from "@/lib/decalProject";
+import type {
+  ImageDecodeRequest,
+  ImageDecodeResponse,
+  Pixels,
+} from "./imageDecode";
 import type { DecalFrame } from "@/lib/decalProject";
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
 import type { EngineFamily } from "@/lib/decalEngineMaterials";
@@ -424,6 +429,67 @@ function decodeImageData(url: string): Promise<ImageData | null> {
     element.onerror = () => resolve(null);
     element.src = url;
   });
+}
+
+// ---- 图像像素解码 Worker（2026-10-08 OffscreenCanvas 轮）----
+// 地表共享图集（2048² 级）的 drawImage + getImageData 是首载主线程的
+// 一块大额同步占用；移入 Worker（createImageBitmap + OffscreenCanvas
+// 全程离线执行），主线程只收 transferable 像素。失败回退主线程同款
+// 实现（下方 decodeImageData），调用方无感。
+let imageDecodeWorker: Worker | null = null;
+let imageDecodeWorkerBroken = false;
+let nextImageDecodeJobId = 0;
+const pendingImageDecodeJobs = new Map<
+  number,
+  { resolve: (pixels: Pixels) => void; reject: (error: Error) => void }
+>();
+
+function getImageDecodeWorker(): Worker | null {
+  if (imageDecodeWorker) return imageDecodeWorker;
+  if (imageDecodeWorkerBroken) return null;
+  try {
+    imageDecodeWorker = new Worker(
+      new URL("./imageDecodeWorker.ts", import.meta.url),
+      { type: "module" },
+    );
+    imageDecodeWorker.onmessage = (
+      event: MessageEvent<ImageDecodeResponse>,
+    ) => {
+      const job = pendingImageDecodeJobs.get(event.data.id);
+      if (!job) return;
+      pendingImageDecodeJobs.delete(event.data.id);
+      if (event.data.error || !event.data.pixels) {
+        imageDecodeWorkerBroken = true;
+        job.reject(new Error(event.data.error ?? "image decode empty"));
+        return;
+      }
+      job.resolve(event.data.pixels);
+    };
+    imageDecodeWorker.onerror = () => {
+      imageDecodeWorkerBroken = true;
+      for (const job of pendingImageDecodeJobs.values()) {
+        job.reject(new Error("image decode worker crashed"));
+      }
+      pendingImageDecodeJobs.clear();
+    };
+    return imageDecodeWorker;
+  } catch {
+    imageDecodeWorkerBroken = true;
+    return null;
+  }
+}
+
+/** Worker 解码（PNG/dataURL → Pixels）；不可用时回退主线程 decodeImageData。 */
+async function decodePixelsForUrl(url: string): Promise<ImageData | null> {
+  const worker = getImageDecodeWorker();
+  if (!worker) return decodeImageData(url);
+  const id = ++nextImageDecodeJobId;
+  const pixels = await new Promise<Pixels>((resolve, reject) => {
+    pendingImageDecodeJobs.set(id, { resolve, reject });
+    worker.postMessage({ id, url } satisfies ImageDecodeRequest);
+  }).catch(() => null);
+  if (!pixels) return decodeImageData(url);
+  return new ImageData(pixels.data, pixels.width, pixels.height);
 }
 
 /** 贴花解码纹理缓存（key = DecalUnitTexture 对象身份；会话更换即失效回收）。 */
@@ -998,7 +1064,9 @@ function loadImageDataFromUrl(
 function loadSurfacePixels(): Promise<ImageData | null> {
   const url = props.lotSurfacePng;
   if (!url) return Promise.resolve(null);
-  return cacheGetOrLoad(imageDataCache, url, () => decodeImageData(url));
+  // 地表图集（2048² 级）经 Worker 解码：主线程不再承担大图
+  // drawImage+getImageData 的整块同步占用（OffscreenCanvas 轮）
+  return cacheGetOrLoad(imageDataCache, url, () => decodePixelsForUrl(url));
 }
 
 onMounted(async () => {

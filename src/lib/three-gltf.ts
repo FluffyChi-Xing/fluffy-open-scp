@@ -1,13 +1,6 @@
 import type * as ThreeNamespace from "three";
 import type { LotModelPayload } from "@/api/tauri";
-import {
-  diffNodeDtos,
-  extractObjectTree,
-  nodesToObjects,
-  type GltfNodeDto,
-  type GltfParseRequest,
-  type GltfParseResponse,
-} from "./gltfParseDto";
+
 
 /** 与 Rust 侧 `LOT_MODEL_PAYLOAD_MAGIC` 一致："LOTM"（小端字节序）。 */
 const PAYLOAD_MAGIC = 0x4d54_4f4c;
@@ -137,104 +130,13 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
  * gltf.rs 根节点自带 Z-up→Y-up 的 -90°X 旋转，而视口 world 组已做同款
  * 旋转（模型须与 Unit gizmo 共享 Z-up 世界），这里剥掉根旋转避免双重旋转。
  *
- * Worker 解析开关（2026-10-08 默认关闭）：EP1 贴图乱码与 Worker 路径并存
- * 过，但当时乱码的另一嫌疑（编译窗口 dispose 竞态）已由重建串行化修复且
- * **修复后 Worker 从未复测**——开关做成可持续切换（localStorage
- * `openscp.gltfWorker=1` / URL `?gltfWorker`）供 A/B 复测定谳：串行化后
- * 仍乱码 → 根因在 Worker 特有运行时层；不乱码 → 恢复默认开启。
+ * 【2026-10-08】GLB 解析 Worker 实验回滚：EP1 建筑贴图乱码与 Worker 路径
+ * 稳定复现相关（用户 A/B 实证：Worker=1 乱/Worker=2 好；transfer/克隆两种
+ * 传输均乱；重建串行化修复无效），根因在 Worker 环境的解析行为差异，
+ * 未定谳前回归主线程。取证基建保留：sc-exporter example dump_facade_glbs
+ * （真实 EP1 facade GLB 落盘）+ git 历史（aec08b2..e1c276b 可查实现）。
  */
 export async function parseLotModelObjects(
-  glbs: ArrayBuffer[],
-): Promise<ThreeNamespace.Object3D[]> {
-  let workerEnabled = false;
-  try {
-    // 双通道开关：URL `?gltfWorker`（打包版一次性）或 localStorage
-    // `openscp.gltfWorker=1`（持久，打包版设置面板外也可切）
-    workerEnabled =
-      typeof Worker !== "undefined" &&
-      (new URLSearchParams(window.location.search).has("gltfWorker") ||
-        localStorage.getItem("openscp.gltfWorker") === "1");
-  } catch {
-    workerEnabled = false;
-  }
-  if (workerEnabled) {
-    const worker = getGltfParseWorker();
-    if (worker) {
-      try {
-        // glbs 传副本并转移：payload.glbs 保持完好（缓存/诊断可能复用）；
-        // memcpy（≤8MB/ mesh 上限）远小于主线程 parse 本身。
-        const copies = glbs.map((glb) => glb.slice(0));
-        const id = ++nextGltfParseJobId;
-        const nodes = await new Promise<GltfNodeDto[]>((resolve, reject) => {
-          pendingGltfParseJobs.set(id, { resolve, reject });
-          worker.postMessage(
-            { id, glbs: copies } satisfies GltfParseRequest,
-            copies,
-          );
-        });
-        const THREE = await import("three");
-        const objects = nodesToObjects(nodes, THREE);
-        // 取证自检：主线程重解析同批 GLB 与 worker 产物逐节点逐属性比对
-        //（2026-10-08 贴图乱码取证——分歧点直接进控制台）。DEV 自动启用；
-        // 打包构建用 localStorage `openscp.gltfParity=1` 显式开启。
-        // 注意快照必须在返回前拷贝：worker DTO 的属性数组与重建几何**共享
-        // buffer（零拷贝）**，调用方的就地改写（propModels UV 翻转）会透过
-        // 别名写进 DTO——不拷贝则合法翻转被误报为解析分歧（真机误报实证）。
-        if (
-          import.meta.env.DEV ||
-          localStorage.getItem("openscp.gltfParity") === "1"
-        ) {
-          const snapshot = nodes.map((node) => ({
-            ...node,
-            transform: node.transform.slice(),
-            attributes: Object.fromEntries(
-              Object.entries(node.attributes).map(([name, attribute]) => [
-                name,
-                { ...attribute, array: attribute.array.slice() },
-              ]),
-            ),
-            index: node.index?.slice(),
-          }));
-          void verifyWorkerParity(glbs, snapshot);
-        }
-        return objects;
-      } catch {
-        // 断链已标记（worker 回退主线程后续走同步路径）
-      }
-    }
-  }
-  return parseLotModelObjectsOnMainThread(glbs);
-}
-
-/** DEV 自检：主线程重解析并比对 worker 节点 DTO（分歧 = worker 提取侧损）。 */
-async function verifyWorkerParity(
-  glbs: ArrayBuffer[],
-  workerNodes: GltfNodeDto[],
-): Promise<void> {
-  try {
-    const THREE = await import("three");
-    const { GLTFLoader } = await import(
-      "three/examples/jsm/loaders/GLTFLoader.js"
-    );
-    const loader = new GLTFLoader();
-    const expected: GltfNodeDto[] = [];
-    for (const glb of glbs) {
-      const gltf = await loader.parseAsync(glb, "");
-      for (const child of gltf.scene.children) child.rotation.set(0, 0, 0);
-      expected.push(...extractObjectTree(gltf.scene, THREE));
-    }
-    const diff = diffNodeDtos(expected, workerNodes);
-    if (diff) {
-      console.warn(
-        `[gltf-worker] 解析分歧（贴图异常时把本行发给开发者）: ${diff}`,
-      );
-    }
-  } catch {
-    // 自检自身失败（如 GLTFLoader 在当前环境不可用）不影响主流程
-  }
-}
-
-async function parseLotModelObjectsOnMainThread(
   glbs: ArrayBuffer[],
 ): Promise<ThreeNamespace.Object3D[]> {
   const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
@@ -249,57 +151,6 @@ async function parseLotModelObjectsOnMainThread(
     }),
   );
   return objects;
-}
-
-// ---------------------------------------------------------------------------
-// GLB 解析 Worker 调度（单例 + 作业表 + 断链回退；groundCompose 同款模式）
-// ---------------------------------------------------------------------------
-
-let gltfParseWorker: Worker | null = null;
-let gltfParseWorkerBroken = false;
-let nextGltfParseJobId = 0;
-const pendingGltfParseJobs = new Map<
-  number,
-  {
-    resolve: (nodes: GltfNodeDto[]) => void;
-    reject: (error: Error) => void;
-  }
->();
-
-function getGltfParseWorker(): Worker | null {
-  if (gltfParseWorker) return gltfParseWorker;
-  if (gltfParseWorkerBroken) return null;
-  try {
-    gltfParseWorker = new Worker(
-      new URL("./gltfParseWorker.ts", import.meta.url),
-      { type: "module" },
-    );
-    gltfParseWorker.onmessage = (
-      event: MessageEvent<GltfParseResponse>,
-    ) => {
-      const job = pendingGltfParseJobs.get(event.data.id);
-      if (!job) return;
-      pendingGltfParseJobs.delete(event.data.id);
-      if (event.data.error || !event.data.nodes) {
-        // 单次失败（导出器超限 GLB 等）→ 标断链，本次回退主线程。
-        gltfParseWorkerBroken = true;
-        job.reject(new Error(event.data.error ?? "gltf parse worker empty"));
-        return;
-      }
-      job.resolve(event.data.nodes);
-    };
-    gltfParseWorker.onerror = () => {
-      gltfParseWorkerBroken = true;
-      for (const job of pendingGltfParseJobs.values()) {
-        job.reject(new Error("gltf parse worker crashed"));
-      }
-      pendingGltfParseJobs.clear();
-    };
-    return gltfParseWorker;
-  } catch {
-    gltfParseWorkerBroken = true;
-    return null;
-  }
 }
 
 /**
