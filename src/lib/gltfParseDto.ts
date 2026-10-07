@@ -12,7 +12,22 @@ import type * as ThreeNamespace from "three";
  * 根旋转剥离约定（与主线程旧路径逐值等价）：worker 在提取前对
  * `gltf.scene.children` 执行 `rotation.set(0,0,0)`——gltf.rs 根节点的
  * Z-up→Y-up 旋转由视口 world 组承担，双重旋转须剥掉。
+ *
+ * **属性必须全量搬运（2026-10-07 勘误）**：导出器写的不止 POSITION/
+ * NORMAL/TEXCOORD_0——TEXCOORD_1 = 逐顶点材质索引+内景种子（前端 tint
+ * 着色器按 uv1.x 选 regionXform 行）、TEXCOORD_2/3 = facade 世界投影
+ * 双 UV 域（Base/Top 层）、COLOR_0 = 顶点色（可能归一化 UByte）。GLTFLoader
+ * 命名 TEXCOORD_0→uv、TEXCOORD_n→uvN——属性表按名全量转移，itemSize/
+ * normalized 一并保留，漏一个 = 贴图整面采错区域（真机：建筑全灰）。
  */
+
+/** 单个顶点属性：按 accessor 组件类型的数组 + 布局元数据。 */
+export interface GltfAttributeDto {
+  array: Float32Array | Uint16Array | Uint8Array;
+  itemSize: number;
+  /** COLOR_0 归一化 UByte 时为 true（漏掉 = 顶点色爆表）。 */
+  normalized?: boolean;
+}
 
 /** 扁平节点（前序遍历；parent = 节点表下标，-1 = 根级）。 */
 export interface GltfNodeDto {
@@ -21,12 +36,8 @@ export interface GltfNodeDto {
   isMesh: boolean;
   /** 列主序 Matrix4.elements 16 项。 */
   transform: Float32Array;
-  position?: Float32Array;
-  normal?: Float32Array;
-  uv?: Float32Array;
-  /** COLOR_0 顶点色（3 或 4 分量，见 colorItemSize）。 */
-  color?: Float32Array;
-  colorItemSize?: number;
+  /** 顶点属性按 GLTFLoader 命名全量搬运（position/normal/uv/uv1..3/color）。 */
+  attributes: Record<string, GltfAttributeDto>;
   index?: Uint32Array | Uint16Array;
 }
 
@@ -49,17 +60,50 @@ export function collectNodeTransfers(nodes: GltfNodeDto[]): ArrayBufferLike[] {
   const transfers = new Set<ArrayBufferLike>();
   for (const node of nodes) {
     transfers.add(node.transform.buffer);
-    for (const array of [
-      node.position,
-      node.normal,
-      node.uv,
-      node.color,
-      node.index,
-    ]) {
-      if (array) transfers.add(array.buffer);
+    for (const attribute of Object.values(node.attributes)) {
+      transfers.add(attribute.array.buffer);
     }
+    if (node.index) transfers.add(node.index.buffer);
   }
   return [...transfers];
+}
+
+/** BufferAttribute/InterleavedBufferAttribute → 独立 DTO（必要时去交错）。 */
+function attributeToDto(
+  attribute: ThreeNamespace.BufferAttribute,
+): GltfAttributeDto {
+  // 导出器写非交错 accessor；InterleavedBufferAttribute（GLB 共享
+  // bufferView 时 GLTFLoader 产出）无 .array，按 getX 逐顶点去交错。
+  const interleaved = attribute as unknown as {
+    isInterleavedBufferAttribute?: boolean;
+    data?: { array: Float32Array | Uint16Array | Uint8Array };
+    stride?: number;
+    offset?: number;
+  };
+  if (interleaved.isInterleavedBufferAttribute && interleaved.data) {
+    const count = attribute.count;
+    const itemSize = attribute.itemSize;
+    const ArrayCtor = interleaved.data.array.constructor as
+      | Float32ArrayConstructor
+      | Uint16ArrayConstructor
+      | Uint8ArrayConstructor;
+    const out = new ArrayCtor(count * itemSize);
+    for (let i = 0; i < count; i += 1) {
+      for (let c = 0; c < itemSize; c += 1) {
+        out[i * itemSize + c] = attribute.getComponent(i, c);
+      }
+    }
+    return {
+      array: out,
+      itemSize,
+      normalized: attribute.normalized || undefined,
+    };
+  }
+  return {
+    array: attribute.array as Float32Array,
+    itemSize: attribute.itemSize,
+    normalized: attribute.normalized || undefined,
+  };
 }
 
 /**
@@ -86,22 +130,15 @@ export function extractObjectTree(
       name: node.name,
       isMesh,
       transform: new Float32Array(matrix.elements),
+      attributes: {},
     };
     const index = nodes.push(dto) - 1;
     if (isMesh) {
       const geometry = mesh.geometry;
-      const position = geometry.getAttribute("position");
-      dto.position = position
-        ? (position.array as Float32Array)
-        : new Float32Array(0);
-      const normal = geometry.getAttribute("normal");
-      dto.normal = normal ? (normal.array as Float32Array) : undefined;
-      const uv = geometry.getAttribute("uv");
-      dto.uv = uv ? (uv.array as Float32Array) : undefined;
-      const color = geometry.getAttribute("color");
-      if (color) {
-        dto.color = color.array as Float32Array;
-        dto.colorItemSize = color.itemSize;
+      for (const [name, attribute] of Object.entries(geometry.attributes)) {
+        dto.attributes[name] = attributeToDto(
+          attribute as ThreeNamespace.BufferAttribute,
+        );
       }
       dto.index = geometry.index
         ? (geometry.index.array as Uint32Array | Uint16Array)
@@ -139,27 +176,13 @@ export function nodesToObjects(
     let object: ThreeNamespace.Object3D;
     if (node.isMesh) {
       const geometry = new THREE.BufferGeometry();
-      if (node.position) {
+      for (const [name, attribute] of Object.entries(node.attributes)) {
         geometry.setAttribute(
-          "position",
-          new THREE.BufferAttribute(node.position, 3),
-        );
-      }
-      if (node.normal) {
-        geometry.setAttribute(
-          "normal",
-          new THREE.BufferAttribute(node.normal, 3),
-        );
-      }
-      if (node.uv) {
-        geometry.setAttribute("uv", new THREE.BufferAttribute(node.uv, 2));
-      }
-      if (node.color) {
-        geometry.setAttribute(
-          "color",
+          name,
           new THREE.BufferAttribute(
-            node.color,
-            node.colorItemSize ?? 3,
+            attribute.array,
+            attribute.itemSize,
+            attribute.normalized,
           ),
         );
       }
@@ -167,7 +190,6 @@ export function nodesToObjects(
         geometry.setIndex(new THREE.BufferAttribute(node.index, 1));
       }
       const mesh = new THREE.Mesh(geometry, placeholder(THREE));
-      mesh.castShadow = false;
       object = mesh;
     } else {
       object = new THREE.Group();

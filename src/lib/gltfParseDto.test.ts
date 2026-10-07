@@ -12,7 +12,17 @@ function buildTree(): THREE.Object3D {
   root.name = "root";
   root.position.set(1, 2, 3);
 
+  const addUv1 = (geometry: THREE.BufferGeometry) => {
+    // TEXCOORD_1 = (materialIndex/255, interiorSeed/255, 0, 0)——tint 着色器
+    // 按顶点选 regionXform 行的关键属性（漏搬 = 贴图整面采错区域）
+    const count = geometry.getAttribute("position").count;
+    const uv1 = new Float32Array(count * 4);
+    for (let i = 0; i < count; i += 1) uv1[i * 4] = (i % 4) / 255;
+    geometry.setAttribute("uv1", new THREE.BufferAttribute(uv1, 4));
+  };
+
   const box = new THREE.BoxGeometry(2, 2, 2);
+  addUv1(box);
   const mesh0 = new THREE.Mesh(box);
   mesh0.name = "mesh0";
   mesh0.position.set(4, 5, 6);
@@ -26,6 +36,7 @@ function buildTree(): THREE.Object3D {
   const color = new Float32Array(plane.getAttribute("position").count * 4);
   for (let i = 0; i < color.length; i += 1) color[i + 3] = 255;
   plane.setAttribute("color", new THREE.BufferAttribute(color, 4));
+  addUv1(plane);
   const mesh1 = new THREE.Mesh(plane);
   mesh1.name = "mesh1";
 
@@ -79,6 +90,10 @@ describe("gltfParseDto extract/rebuild roundtrip", () => {
     expect(mesh0.geometry.getAttribute("uv").array).toEqual(
       oldMesh0.geometry.getAttribute("uv").array,
     );
+    expect(mesh0.geometry.getAttribute("uv1").array).toEqual(
+      oldMesh0.geometry.getAttribute("uv1").array,
+    );
+    expect(mesh0.geometry.getAttribute("uv1").itemSize).toBe(4);
     expect(mesh0.geometry.index?.array).toEqual(
       oldMesh0.geometry.index?.array,
     );
@@ -97,8 +112,8 @@ describe("gltfParseDto extract/rebuild roundtrip", () => {
     const buffers = new Set(transfers);
     for (const node of nodes) {
       expect(buffers.has(node.transform.buffer)).toBe(true);
-      for (const array of [node.position, node.normal, node.uv, node.color]) {
-        if (array) expect(buffers.has(array.buffer)).toBe(true);
+      for (const attribute of Object.values(node.attributes)) {
+        expect(buffers.has(attribute.array.buffer)).toBe(true);
       }
       if (node.index) {
         expect(buffers.has(node.index.buffer)).toBe(true);
