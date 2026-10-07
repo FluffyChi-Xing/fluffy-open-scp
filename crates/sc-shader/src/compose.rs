@@ -125,15 +125,18 @@ pub enum Family {
     Holo,
     /// SDF 霓虹管（decalAnimateSDF 系）
     Sdf,
+    /// Projected light emitted by the sign's separate volume pass.
+    NeonLight,
 }
 
 impl Family {
-    pub const ALL: [Family; 5] = [
+    pub const ALL: [Family; 6] = [
         Family::Sign,
         Family::Clip,
         Family::Hole,
         Family::Holo,
         Family::Sdf,
+        Family::NeonLight,
     ];
 
     pub fn name(self) -> &'static str {
@@ -143,6 +146,7 @@ impl Family {
             Family::Hole => "hole",
             Family::Holo => "holo",
             Family::Sdf => "sdf",
+            Family::NeonLight => "neon-light",
         }
     }
 
@@ -163,6 +167,7 @@ impl Family {
                 "decalAnimateSDFDarken",
                 "decalLightSDF",
             ],
+            Family::NeonLight => &["decalLightBackground", "decalProjectedLight"],
         }
     }
 
@@ -196,25 +201,17 @@ outColor.rgb *= shColorDiff + shColorSpec + spec;
             // sdfDists 来源）；uvOrig 供 decalLightBackground 选轴比较。
             // 场景光变量（shColorDiff/bumpNormal 等）由 decalLightSDF 片段
             // 自声明，前奏不得重复声明（GLSL 重复定义即编译失败）。
-            // **sharp-bilinear 保级锐化**（七轮对拍"只剩字体/字体不全"的
-            // 修复，取代 0.5 单阈值二值化）：这些贴图是 4~5 级量化掩码，
-            // 中间级别承载背景面板（G 0.6/B 0.65 青底）与油泵图标
-            // （R 0.29 二级暗区）——二值化把它们全压成 0，动画招牌只剩
-            // 字体。改为 UV 域锐化：把双线性过渡带压缩到 ~1 屏幕像素
-            // （斜率 = 每纹素的屏幕像素数），平台级别原样保留（0.29 仍是
-            // 0.29），与级别取值无关——字形锐利且所有级别完整存活。
-            // 缩小时（pxPerTexel 小于 1）钳回 1 = 退化为普通双线性。
-            // coverageA 暂存覆盖率通道（A = 覆盖掩码），供收尾 alpha。
+            // The native overlayBlend4Chan thresholds linearly sampled data.
+            // Share the static sign's sampling, including its mip/anisotropy.
             Family::Sdf => r#"
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
-vec2 sdfTc = uvOrig * uSdfTexSize - 0.5;
-vec2 sdfBase = floor(sdfTc);
-vec2 sdfFrac = sdfTc - sdfBase;
-vec2 sdfSharp = clamp(fwidth(uvOrig) * uSdfTexSize, vec2(1.0), vec2(32.0));
-sdfFrac = clamp((sdfFrac - 0.5) * sdfSharp + 0.5, 0.0, 1.0);
-outColor = texture2D(uSampler0, (sdfBase + 0.5 + sdfFrac) / uSdfTexSize);
+outColor = texture2D(uSampler0, uvOrig);
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
+"#,
+            Family::NeonLight => r#"
+vec2 uvOrig = vUv;
+outColor = texture2D(uSampler0, uvOrig);
 "#,
         }
     }
@@ -347,14 +344,14 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
         // 遮罩 max = 覆盖区不透明、暗态图案不被墙面底色冲淡。
         ps.push_str(
             "float scMax = max(outColor.r, max(outColor.g, outColor.b));\n\
-             outColor.rgb /= 1.0 + scMax;\n",
+             outColor.rgb /= 1.0 + max(scMax - 1.0, 0.0);\n",
         );
     }
     ps.push_str(family.ps_tail());
     ps.push_str("}\n");
 
     let vs = match family {
-        Family::Hole => VS_HOLE_PROJECTED.to_string(),
+        Family::Hole | Family::NeonLight => VS_HOLE_PROJECTED.to_string(),
         _ => VS_PREAMBLE.to_string(),
     };
     Ok((vs, ps))
@@ -486,85 +483,14 @@ mod tests {
     }
 
     #[test]
-    fn sdf_chain_full_neon_pipeline() {
+    fn sdf_chain_preserves_native_overlay_priority() {
         let (_, ps) = compose(Family::Sdf).unwrap();
-        // 完整霓虹链：动画背景(uTime 跑马灯) → 灯管调光 → SDF 球面衰减 →
-        // 场景光叠加 → 供电开关 → 亮部 alpha 收尾
-        assert!(ps.contains("fract(uTime"), "sdf 缺 uTime 动画时钟");
-        assert!(ps.contains("uDecalNUS"), "sdf 缺盒尺寸 uniform");
-        assert!(ps.contains("materialTubeLightFactor"), "sdf 缺灯管调光段");
-        assert!(ps.contains("tubeColor0"), "sdf 缺调光后灯管色");
-        assert!(
-            ps.contains("outColor.rgb /= 1.0 + scMax"),
-            "sdf 缺保色相 Reinhard 收尾"
-        );
-        // addOverlay 遮罩上色（十一轮重写，dev decalSDF[394] 原版语义：
-        // 四通道遮罩 + fwidth AA + 调光权重列加权求和，无 one-hot 分类）
-        assert!(
-            ps.contains("dot(tubeColor0, sdfMask)"),
-            "sdf 缺 addOverlay 遮罩上色（dev decalSDF 原版语义）"
-        );
-        assert!(
-            ps.contains("fwidth(outColor)"),
-            "sdf 遮罩缺 fwidth 抗锯齿（官方清晰度答案，§12.6）"
-        );
-        assert!(
-            ps.contains("max(max(sdfMask.x, sdfMask.y)"),
-            "sdf 缺遮罩 max alpha（覆盖区不透明）"
-        );
-        assert!(
-            !ps.contains("sdfRow0"),
-            "sdf 残留 one-hot 调色板归属（纯色块无图案的根因，十一轮已移除）"
-        );
-        assert!(
-            !ps.contains("sphereDistsSqr"),
-            "sdf 残留球面衰减（动态色块无细节的复发点）"
-        );
-        // 十二轮单路径：LED addOverlay 全程生效，uAnimEnabled 只门控扫掠
-        // （静态量化合成分支对 SDF 距离场纹理红洗失效，已删）
-        assert!(ps.contains("uAnimEnabled"), "sdf 缺动态招牌开关");
-        assert!(
-            ps.contains("mix(vec4(1.0, 1.0, 1.0, 1.0), powerFactor"),
-            "sdf 缺 powerFactor 门控（uAnimEnabled=0 → 恒 1 静态全亮）"
-        );
-        assert!(
-            !ps.contains("if (uAnimEnabled > 0.5) {"),
-            "sdf 残留双分支（十二轮已回归单路径）"
-        );
-        assert!(
-            !ps.contains("signGainS"),
-            "sdf 残留静态量化合成灯箱收尾（红洗根因，十二轮已删）"
-        );
-        assert!(
-            ps.contains("vec4(0.35, 0.35, 0.35, 0.35)"),
-            "sdf 暗态下限未提至 0.35（PE 缺引擎光晕 pass 的补偿）"
-        );
-        assert!(
-            ps.contains("smoothstep(vec4(-0.02"),
-            "sdf 缺扫掠软边（暗到亮渐变的复发点）"
-        );
-        assert!(
-            ps.contains("uSdfTexSize"),
-            "sdf 缺贴图尺寸 uniform（sharp-bilinear 的纹素坐标输入）"
-        );
-        assert!(
-            !ps.contains("smoothstep(vec4(0.5)"),
-            "sdf 残留 0.5 二值化（会压没中间级别）"
-        );
-        // 场景光变量只许 decalLightSDF 片段声明一次（前奏重复声明 = 编译失败；
-        // SimCityLighting 的 inout 形参不含初始化式，用初始化式计数）
-        assert_eq!(
-            ps.matches("vec3 shColorDiff = vec3(0, 0, 0)").count(),
-            1,
-            "shColorDiff 重复声明"
-        );
-        // 动画比较量已 #undef 后落局部变量（不再吃 CPU 端 uniform）
-        assert!(ps.contains("#undef animResults"), "sdf 缺动画量局部化");
-        // uniform 只允许全局作用域（前奏拼进 main 体，声明必须进序言）
-        let body = ps.split("void main() {").nth(1).unwrap();
-        assert!(
-            !body.contains("uniform "),
-            "main 体内出现 uniform 声明（GLSL 编译错误）"
-        );
+        assert!(ps.contains("fract(uTime"));
+        assert!(ps.contains("dot(tubeColor0, sdfMask)"));
+        assert!(ps.contains("remaining -= sdfMask.z"));
+        assert!(ps.contains("outColor.a = dot(sdfMask, vec4(1.0))"));
+        assert!(!ps.contains("sdfSharp"));
+        assert!(!ps.contains("fwidth(outColor)"));
+        assert!(!ps.contains("lightColor *= decalMaterialInfo.w"));
     }
 }

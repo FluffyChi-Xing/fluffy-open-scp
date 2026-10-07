@@ -16,6 +16,7 @@ import holeFrag from "@/assets/shaders/decal/hole.frag.glsl?raw";
 import holeVert from "@/assets/shaders/decal/hole.vert.glsl?raw";
 import holoFrag from "@/assets/shaders/decal/holo.frag.glsl?raw";
 import sdfFrag from "@/assets/shaders/decal/sdf.frag.glsl?raw";
+import neonLightFrag from "@/assets/shaders/decal/neon-light.frag.glsl?raw";
 /** 与 refinedRender.SunEnvRefs 的结构子集（避免 lib→pages 反向依赖）。 */
 export interface EngineEnvRefs {
   sunDir: { value: ThreeNamespace.Vector3 };
@@ -40,7 +41,7 @@ export interface EngineEnvRefs {
   glow?: { value: number };
 }
 
-export type EngineFamily = "sign" | "clip" | "hole" | "holo" | "sdf";
+export type EngineFamily = "sign" | "clip" | "hole" | "holo" | "sdf" | "neon-light";
 
 const FRAG: Record<EngineFamily, string> = {
   sign: signFrag,
@@ -50,6 +51,7 @@ const FRAG: Record<EngineFamily, string> = {
   // SDF 霓虹管链（decalLightBackground → Disabled 调光 → Darken → LightSDF
   // → NeonTube）：动画由 uTime/uDecalMaterialInfo/uDecalNUS uniform 驱动。
   sdf: sdfFrag,
+  "neon-light": neonLightFrag,
 };
 const VERT: Record<EngineFamily, string> = {
   sign: signVert,
@@ -59,6 +61,7 @@ const VERT: Record<EngineFamily, string> = {
   hole: holeVert,
   holo: signVert,
   sdf: signVert,
+  "neon-light": holeVert,
 };
 
 export interface EngineMaterialOptions {
@@ -74,6 +77,12 @@ export interface EngineMaterialOptions {
   env: EngineEnvRefs;
   /** 渲染面（体积盒用 BackSide，quad 用 DoubleSide）。 */
   side?: ThreeNamespace.Side;
+  /** 深度测试/写入策略。悬浮广告牌需要写入深度以遮挡后方广告牌；
+   * 投影 decal 保持只测试深度，避免破坏共面贴花排序。 */
+  depthTest?: boolean;
+  depthWrite?: boolean;
+  /** 悬浮广告牌的透明像素不应占用深度；SDF 掩码使用极小阈值裁掉空白。 */
+  alphaTest?: number;
   /** alpha 全零实心图 → 不透明渲染（海报式）；缺省 → 引擎混合态。 */
   alphaZero?: boolean;
   /** 涂鸦分流（uGraffiti）：1 = 喷漆连续厚度 alpha + ×uNightBoost（无灯箱
@@ -135,7 +144,7 @@ export function createEngineDecalMaterial(
   // 颜色权重列保持 DTO 满亮度（与静态分支 uLayerColors 同口径——此前四
   // 行一起 /2 = LED 比静态暗 2 倍的叠加因子，"淡到看不见"对拍）。
   const materialDataRows =
-    family === "sdf" && opts.layerColors
+    (family === "sdf" || family === "neon-light") && opts.layerColors
       ? [0, 1, 2, 3].map(
           (i) =>
             new THREE.Vector4(
@@ -244,9 +253,13 @@ export function createEngineDecalMaterial(
     fragmentShader: FRAG[family],
     side: opts.side ?? THREE.DoubleSide,
     // 量化合成产物 = 硬 alpha 裁剪 → 标准 alpha 混合即正确
-    blending: THREE.NormalBlending,
+    blending: family === "neon-light" ? THREE.CustomBlending : THREE.NormalBlending,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
     transparent: true,
-    depthWrite: false,
+    depthTest: opts.depthTest ?? true,
+    depthWrite: opts.depthWrite ?? false,
+    alphaTest: opts.alphaTest ?? 0,
     polygonOffset: true,
     polygonOffsetFactor: -4,
     polygonOffsetUnits: -4,
