@@ -70,6 +70,8 @@ export function useEditorViewport(options: {
   let rebuildToken = 0;
   /** 重建在飞标记：资产通道部分刷新据此让位（见 isAssembling）。 */
   let assembling = false;
+  /** 在飞重建完全落地的等待者（whenSettled；尾部统一 flush）。 */
+  const rebuildWaiters: (() => void)[] = [];
   let readyResolve: (() => void) | null = null;
   /** viewer 创建完成信号（装配层 onMounted 后据此触发首次 rebuild）。 */
   const ready = new Promise<void>((resolve) => {
@@ -221,26 +223,29 @@ export function useEditorViewport(options: {
       }
       sceneReady.value = true;
       revision.value += 1;
+      // GPU 侧准备（遥测外语义的收尾段，仍在"在飞"窗口内）：全量纹理
+      // 预热 + 程序预编译完成后再放行首帧——首次 draw 不再承担纹理上传
+      // 与 program 链接。prepareShaders 内建 stale 看门狗；整个窗口被
+      // whenSettled 串行化覆盖（编译窗口内开新一轮 = dispose 在编译的
+      // 材质 → three 轮询抛 isReady + 半成品帧，2026-10-08 勘误）。
+      if (token === rebuildToken) {
+        try {
+          instance.primeTextures();
+          await instance.prepareShaders(() => token !== rebuildToken);
+        } catch {
+          // GPU 准备失败不阻塞出画（首轮 draw 走同步路径兜底）
+        }
+        if (token !== rebuildToken) return;
+        instance.invalidate();
+      }
     } finally {
-      // 仅当前代清旗：过期代的 finally 若误清，会抹掉新一代的在飞标记
-      if (token === rebuildToken) assembling = false;
+      // 仅当前代清旗/唤醒：过期代误清会抹掉新一代的在飞标记
+      if (token === rebuildToken) {
+        assembling = false;
+        for (const waiter of rebuildWaiters.splice(0)) waiter();
+      }
       span.end(ctx.stats);
     }
-    // GPU 侧准备放遥测外（保留各阶段可比性）：全量纹理预热 + 程序预编译
-    // 完成后再放行首帧——首次 draw 不再承担纹理上传与 program 链接。
-    // prepareShaders 内建 stale 看门狗（编译窗口内新一代重建 dispose 材质
-    // 会致 three 轮询抛错且 promise 不 settle——2026-10-08 勘误）；尾部
-    // try 兜底保证 assembling 旗/首帧放行绝不被 GPU 侧异常挂死。
-    if (token !== rebuildToken) return;
-    try {
-      instance.primeTextures();
-      await instance.prepareShaders(() => token !== rebuildToken);
-    } catch {
-      // GPU 准备失败不阻塞出画（首轮 draw 走同步路径兜底）
-    }
-    if (token !== rebuildToken) return;
-    instance.invalidate();
-    assembling = false;
   }
 
   function applyGroupVisibility(map: Record<string, boolean>) {
@@ -289,6 +294,19 @@ export function useEditorViewport(options: {
     return assembling;
   }
 
+  /**
+   * 等待在飞重建**完全落地**（含尾部 GPU 预热/预编译窗口）。调度器据此
+   * 把 rebuild 整程单飞串行化：编译窗口内开新一轮会 dispose 在编译的
+   * 材质（three 轮询崩 + 半成品中间帧），串行后该竞态整类消失
+   * （2026-10-08）。
+   */
+  function whenSettled(): Promise<void> {
+    if (!assembling) return Promise.resolve();
+    return new Promise((resolve) => {
+      rebuildWaiters.push(resolve);
+    });
+  }
+
   /** 当前重建代数（token）：部分刷新跨 await 后核对，代数变化 = 新一代
    * 重建已开跑（清场过），必须中止，否则把旧对象塞回新场景。 */
   function rebuildEpoch(): number {
@@ -310,6 +328,7 @@ export function useEditorViewport(options: {
     resetView,
     isAssembling,
     rebuildEpoch,
+    whenSettled,
   };
 }
 

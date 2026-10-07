@@ -6545,6 +6545,79 @@ mod tests {
     use super::*;
     use dbpf::{OverlayEntry, write_uncompressed_overlay};
 
+    /// 手动取证（GLB Worker 贴图乱码，2026-10-08）：扫 EP1/Game/Graphics 包里
+    /// 带 facade 世界投影 UV（GLB 含 TEXCOORD_2 = EP1 FLOAT4 TexCoord 特征）
+    /// 的建筑模型，把**真实载荷**（build_lot_model_payload_for_test 全量产出）
+    /// 落盘供前端 roundtrip 测试消费。
+    /// cargo test -p fluffy-open-scp --release dump_ep1_facade_payloads -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn dump_ep1_facade_payloads() {
+        let paths = [
+            r"D:\ea-games\SimCity\SimCityData\SimCity_DLC0.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCityDataEP1.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Game.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package",
+        ];
+        let manager = PackageManager::new();
+        std::fs::create_dir_all("tmp/gltf_fixture").expect("mkdir");
+        let mut dumped = 0usize;
+        let mut scanned = 0usize;
+        let mut with_payload = 0usize;
+        let mut with_uv1 = 0usize;
+        'outer: for path in paths {
+            let Ok(package) = Package::open(path) else { continue };
+            let arc = manager.insert(package).expect("insert").1;
+            let entries: Vec<_> = arc
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == RW4_MODEL_TYPE)
+                .cloned()
+                .collect();
+            for entry in entries {
+                if dumped >= 3 {
+                    break 'outer;
+                }
+                let Ok(data) = arc.read(&entry) else { continue };
+                let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+                let payload = build_lot_model_payload_for_test(
+                    &file,
+                    &data,
+                    &arc,
+                    &manager,
+                    entry.id.instance,
+                );
+                scanned += 1;
+                if !payload.windows(11).any(|w| w == b"TEXCOORD_1") {
+                    continue;
+                }
+                with_uv1 += 1;
+                let has_facade_uv = payload
+                    .windows(11)
+                    .any(|window| window == b"TEXCOORD_2");
+                if !has_facade_uv {
+                    continue;
+                }
+                with_payload += 1;
+                let out = format!(
+                    "tmp/gltf_fixture/ep1_{:08X}.bin",
+                    entry.id.instance
+                );
+                std::fs::write(&out, &payload).expect("write payload");
+                println!(
+                    "EP1 facade payload {:08X}: bytes={} -> {}",
+                    entry.id.instance,
+                    payload.len(),
+                    out,
+                );
+                dumped += 1;
+            }
+        }
+        println!(
+            "dumped {dumped}; scanned {scanned}; with_payload {with_payload}; with_uv1 {with_uv1}"
+        );
+    }
+
     #[test]
     fn lot_albedo_threshold_priority_and_base_tile() {
         // 消防局 LC1 的线性值经 sRGB 编码后应为 (82,87,81)（2026-09-13 对拍）。

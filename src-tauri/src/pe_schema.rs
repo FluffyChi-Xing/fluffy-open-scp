@@ -389,7 +389,7 @@ mod tests {
                 "assetName": "消防局",
                 "tgi": {"typeId": 11636840, "group": 1089206272, "instance": 31478123},
                 "modelLods": [
-                    {"tgi": {"typeId": 792537883, "group": 0, "instance": 3972099656}},
+                    {"tgi": {"typeId": 792537883, "group": 0, "instance": 3972099656u64}},
                     null
                 ],
                 "lotSize": [48, 96],

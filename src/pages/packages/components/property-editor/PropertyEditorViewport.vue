@@ -844,7 +844,21 @@ function scheduleRebuild(trigger: RenderTelemetryTrigger) {
   rebuildScheduled = true;
   requestAnimationFrame(() => {
     rebuildScheduled = false;
-    void rebuildScene();
+    // 整程单飞串行化（2026-10-08）：等在飞重建**完全落地**（含 GPU 预热/
+    // 预编译窗口）再开新一轮——编译窗口内开新一轮 = dispose 在编译的材质
+    //（three 轮询抛 isReady + 半成品帧乱码）。轮询 64ms，无死锁（在飞
+    // 必然经 stale 看门狗/超时落地）。
+    const kick = () => {
+      if (props.suspended) return;
+      viewport
+        .whenSettled()
+        .then(() => {
+          if (props.suspended) return;
+          void rebuildScene();
+        })
+        .catch(() => {});
+    };
+    kick();
   });
 }
 
