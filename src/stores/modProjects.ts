@@ -93,8 +93,10 @@ export const useModProjectsStore = defineStore("modProjects", () => {
     name: string,
     groupId?: number,
     description?: string,
+    author?: string,
+    modType?: string,
   ) {
-    await tauriApi.studio.projects.create(name, groupId, description);
+    await tauriApi.studio.projects.create(name, groupId, description, author, modType);
     await loadAll();
   }
 

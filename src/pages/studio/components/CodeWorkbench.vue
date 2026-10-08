@@ -32,6 +32,9 @@ import { rgbaBase64ToPngDataUrl, makeCheckerboard } from "@/lib/raster-editor/en
 import { extensionIconUrl } from "@/lib/resource-types";
 import ResourcePreviewView from "@/pages/packages/components/preview/ResourcePreview.vue";
 import NotesSheet from "./NotesSheet.vue";
+import ModFlowWorkbench from './mod-flow/ModFlowWorkbench.vue';
+import FlowInitializeSheet from './mod-flow/FlowInitializeSheet.vue';
+import { isEngineManifest } from './mod-flow/contracts';
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
@@ -94,6 +97,11 @@ const imageZoom = ref<ImageZoom>("fit");
 const manifestCreated = ref<boolean | null>(null);
 const moreOpen = ref(false);
 const notesOpen = ref(false);
+const engineEnabled = ref(false);
+const projectManifest = shallowRef<Record<string, unknown>>({});
+const engineReady = ref(false);
+const initializeOpen = ref(false);
+const flowPanel = ref<InstanceType<typeof ModFlowWorkbench> | null>(null);
 
 const fatalMessage = computed(() => {
   switch (fatalCode.value) {
@@ -109,13 +117,17 @@ const fatalMessage = computed(() => {
 const rows = computed(() =>
   flattenCodeTree(tree.value?.entries ?? [], expanded.value),
 );
+let treeRequest = 0;
 
 async function loadTree(keepSelection = false) {
   if (!isTauri() || loading.value) return;
+  const request = ++treeRequest;
+  const projectPath = props.project.relPath;
   loading.value = true;
   fatalCode.value = null;
   try {
-    const response = await tauriApi.workspace.codeTree(props.project.relPath);
+    const response = await tauriApi.workspace.codeTree(projectPath);
+    if (request !== treeRequest) return;
     tree.value = response;
     // 首层目录自动展开一次：模组内子文件夹（如 SimCityData）直接可见。
     if (!autoExpanded.value) {
@@ -133,6 +145,7 @@ async function loadTree(keepSelection = false) {
       if (!stillThere) clearViewer();
     }
   } catch (cause) {
+    if (request !== treeRequest) return;
     const code = (cause as { code?: string }).code ?? "command_failed";
     if (
       code === "mod_root_not_configured" ||
@@ -143,15 +156,22 @@ async function loadTree(keepSelection = false) {
       toast.error(t("studio.code.loadFailed"));
     }
   } finally {
-    loading.value = false;
+    if (request === treeRequest) loading.value = false;
   }
   // package.json 机制：缺失即扫描自动生成（结果以文件形式出现在树里）。
   try {
-    const manifest = await tauriApi.workspace.codeManifest(props.project.relPath);
+    const manifest = await tauriApi.workspace.codeManifest(projectPath);
+    if (request !== treeRequest) return;
+    engineEnabled.value = isEngineManifest(manifest.manifest);
+    projectManifest.value = manifest.manifest;
+    if (engineEnabled.value) void flowPanel.value?.refresh();
     if (manifest.created) {
       manifestCreated.value = true;
       toast.success(t("studio.code.manifestCreated"));
-      const response = await tauriApi.workspace.codeTree(props.project.relPath);
+    }
+    if (manifest.created || manifest.manifest.origin === 'openscp') {
+      const response = await tauriApi.workspace.codeTree(projectPath);
+      if (request !== treeRequest) return;
       tree.value = response;
     }
   } catch {
@@ -195,6 +215,7 @@ function onRowClick(row: CodeRow) {
     return;
   }
   const node = findNode(tree.value?.entries ?? [], row.relativePath);
+  if (engineEnabled.value) { selected.value = node; return; }
   if (node) void selectFile(node);
 }
 
@@ -323,12 +344,17 @@ const imageStyle = computed(() => {
 });
 
 function resetWorkbench() {
+  treeRequest++;
+  initializeOpen.value = false;
   tree.value = null;
   loading.value = false;
   fatalCode.value = null;
   expanded.value = new Set();
   autoExpanded.value = false;
   manifestCreated.value = null;
+  engineEnabled.value = false;
+  projectManifest.value = {};
+  engineReady.value = false;
   clearViewer();
 }
 
@@ -355,6 +381,9 @@ watch(
         <p v-if="tree" class="root-path">{{ tree.rootPath }}</p>
       </div>
       <div class="heading-actions">
+        <span v-if="projectManifest.origin" class="tree-stats">{{ t(projectManifest.origin === 'openscp' ? 'flow.standard' : 'flow.community') }}</span>
+        <button v-if="engineEnabled" class="refresh-button" :disabled="!engineReady" :title="t(engineReady ? 'flow.ready' : 'flow.blocked')" @click="flowPanel?.build()">{{ t('flow.build') }}</button>
+        <button v-else class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
         <span v-if="tree" class="tree-stats">
           {{
             $t("studio.code.stats", {
@@ -384,7 +413,8 @@ watch(
       </div>
     </header>
 
-    <p class="code-hint">{{ $t("studio.code.hint") }}</p>
+    <p class="code-hint">{{ $t(engineEnabled ? 'flow.fileHint' : 'studio.code.hint') }}</p>
+    <FlowInitializeSheet v-if="initializeOpen" v-model:open="initializeOpen" :project="project.relPath" :manifest="projectManifest" @initialized="loadTree(true)" />
 
     <p v-if="!isTauri()" class="web-hint">{{ $t("studio.raster.webHint") }}</p>
 
@@ -448,7 +478,8 @@ watch(
 
       <!-- 右：按扩展名分流的工作台查看器 -->
       <ResizablePanel id="code-viewer" :default-size="74" :min-size="40">
-        <div class="viewer" :class="{ empty: !selected }">
+        <ModFlowWorkbench v-if="engineEnabled" :key="project.relPath" ref="flowPanel" :project="project.relPath" :selected-path="selected?.relativePath" @status="engineReady = $event" @saved="loadTree(true)" />
+        <div v-else class="viewer" :class="{ empty: !selected }">
           <template v-if="selected">
             <!-- 右上角 toolbar：路径 + 缩放（图片）/ 笔记 / more 浮层 -->
             <header class="viewer-head">

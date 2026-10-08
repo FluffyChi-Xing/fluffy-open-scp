@@ -5,7 +5,6 @@ import {
   command,
   subscribe,
   type ActivityEvent,
-  type AudioPreview,
   type ExportProgress,
   type ExportStatus,
   type GameDirectoryDetection,
@@ -25,8 +24,6 @@ import {
   type PackageStatistics,
   type OverrideScanResponse,
   type LocaleTablesResponse,
-  type LocaleTableSummary,
-  type LocaleItem,
   type LocaleItemsResponse,
   type LocaleTableEdit,
   type LocaleTgi,
@@ -141,9 +138,9 @@ export const tauriApi = {
       command<StudioConfigStatus>("studio_complete_onboarding"),
     projects: {
       list: () => command<ModProjectView[]>("mod_project_list"),
-      create: (name: string, groupId?: number, description?: string) =>
+      create: (name: string, groupId?: number, description?: string, author?: string, modType?: string) =>
         command<ModProjectView>("mod_project_create", {
-          request: { name, groupId, description },
+          request: { name, groupId, description, author, modType },
         }),
       update: (
         id: number,

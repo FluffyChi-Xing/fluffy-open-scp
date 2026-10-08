@@ -1,8 +1,10 @@
 import { createI18n } from "vue-i18n";
 import { appConfig } from "@/config/app";
+import { flowZh, flowEn } from './mod-flow';
 
 const messages = {
   "zh-CN": {
+    flow: flowZh,
     navigation: {
       workspace: "工作区",
       workspaceHome: "文档工作区",
@@ -1566,6 +1568,7 @@ const messages = {
     },
   },
   "en-US": {
+    flow: flowEn,
     navigation: {
       workspace: "Workspace",
       workspaceHome: "Docs workspace",

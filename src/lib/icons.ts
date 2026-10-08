@@ -1,4 +1,10 @@
 import {
+  Mountain,
+  Waves,
+  LandPlot,
+  Route,
+  SlidersHorizontal,
+  FileBox,
   Activity,
   ArrowDown,
   ArrowLeft,
@@ -166,6 +172,12 @@ export const iconAliases = {
 export type FluffyIconAlias = keyof typeof iconAliases;
 
 const iconRegistry: Record<string, LucideIcon> = {
+  Mountain,
+  Waves,
+  LandPlot,
+  Route,
+  SlidersHorizontal,
+  FileBox,
   Activity,
   ArrowDown,
   ArrowLeft,

@@ -49,8 +49,10 @@ async function submitCreate(
   name: string,
   groupId?: number,
   description?: string,
+  author?: string,
+  modType?: string,
 ) {
-  await store.createProject(name, groupId, description);
+  await store.createProject(name, groupId, description, author, modType);
 }
 
 async function submitUpdate(

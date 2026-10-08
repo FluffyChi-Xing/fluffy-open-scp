@@ -22,6 +22,7 @@ export default tseslint.config(
     rules: {
       'vue/multi-word-component-names': 'off',
       'vue/no-v-html': 'off',
+      'vue/no-restricted-html-elements': ['error', { element: 'select', message: 'Use FDropdown (or the FSelect wrapper backed by FDropdown), never a native select.' }],
       'vue/require-default-prop': 'off',
       'vue/attributes-order': 'off',
       'vue/one-component-per-file': 'off'
