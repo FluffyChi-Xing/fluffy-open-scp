@@ -2,8 +2,8 @@
 /**
  * 3D 地图查看器：three.js 分块 LOD 地形（引擎同款 2048m 块 × 16×16：
  * 近 8m/格=游戏精度、中 32m、远 128m；解析法线跨块无缝）+
- * 全局水位面 + 地块框/伟工标记（本地化名）+ 路网 ribbon（跨水=桥面+桥墩）+
- * 蓝色尺度标注（图2式）。按需渲染：相机静止不进 GPU。
+ * 水面纹理 + 实例化植被 + 地块框/伟工标记 + 栅格道路预览 + 生态资源图层。
+ * 相机和图层变化按需渲染；水面可见时以 30fps 更新波纹。
  * 数据源 = map_panel_region_3d（16m/格 高度+地面编码 PNG）。
  * 交互：左键旋转 / 中键或右键平移 / 滚轮缩放（事件就地拦截，不冒泡到页面）。
  */
@@ -15,11 +15,22 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import type { Region3DData } from "@/lib/region-map";
 import { createTerrainMaterial } from "./terrain-material";
 import { createTerrainSkirtGeometry } from "./terrain-skirt";
+import { roadPreviewMask } from "./map-fields";
+import { createVegetation } from "./map-vegetation";
+import { nativeTreeAssets } from "./map-native-assets";
+import { createNativeRoads } from "./map-native-roads";
+import { createMapWater } from "./map-water";
+import { createMapSceneRoot, mapToScene, sceneToMap } from "./map-coordinates";
 
 const props = defineProps<{
   data: Region3DData | null;
   /** 地块框层开关（默认开）。 */
   showPlots?: boolean;
+  showVegetation?: boolean;
+  showWater?: boolean;
+  showRoads?: boolean;
+  activeResource?: string | null;
+  resourceOpacity?: number;
 }>();
 const { t, locale } = useI18n();
 const localizedLabels: Array<{ sprite: THREE.Sprite; text: () => string; color: string; fontPx: number }> = [];
@@ -52,11 +63,14 @@ let camera: THREE.PerspectiveCamera | null = null;
 let controls: OrbitControls | null = null;
 let root: THREE.Group | null = null;
 let plotGroup: THREE.Group | null = null;
+let vegetationGroup: THREE.Group | null = null;
+let roadGroup: THREE.Group | null = null;
+let waterMesh: THREE.Mesh | null = null;
+let setResource: ((kind: string | null, opacity: number) => void) | null = null;
+let buildGeneration = 0;
 let raf = 0;
 let observer: ResizeObserver | null = null;
 let needsRenderFlag = true; // 按需渲染：任何视觉变更/尺寸变化都置位
-
-const HALF = 16384;
 
 /** 解码 base64 PNG → 像素（无损经 canvas ImageData）。 */
 async function decodePng(b64: string): Promise<ImageData> {
@@ -296,6 +310,8 @@ function makeTerrainEngine(
       ORGY + chunk.cy * CHUNK + CHUNK / 2,
     );
     const cam = cameraRef();
+    // Chunk centers are map-local; the camera is in the corrected Three world.
+    centerV.z = -centerV.z;
     const d = cam ? cam.position.distanceTo(centerV) : 1e9;
     if (d < 5200) return 0;
     if (d < 14000) return 1;
@@ -335,10 +351,11 @@ function makeTerrainEngine(
     idxCache.clear();
   }
 
-  return { group, updateLods, processQueue, dispose, heightWorld };
+  return { group, updateLods, processQueue, dispose, heightWorld, setResource: terrainMaterial.setResource };
 }
 
 async function build(data: Region3DData) {
+  const generation = ++buildGeneration;
   disposeScene();
   error.value = "";
   const container = wrap.value;
@@ -348,6 +365,9 @@ async function build(data: Region3DData) {
   // ── 数据解码 ──
   let heightPx: ImageData;
   let groundPx: ImageData;
+  let foamPixels: ImageData | undefined;
+  let treePixels: ImageData[];
+  const roadPixels: Record<string, ImageData> = {};
   const detailPixels: Partial<Record<"dirt" | "grass" | "cliff" | "sand", ImageData>> = {};
   try {
     [heightPx, groundPx] = await Promise.all([
@@ -358,10 +378,16 @@ async function build(data: Region3DData) {
       const png = data.terrainTextures?.[slot];
       if (png) detailPixels[slot] = await decodePng(png);
     }));
+    if (data.waterFoamPngBase64) foamPixels = await decodePng(data.waterFoamPngBase64);
+    treePixels = await Promise.all((data.forestModels ?? []).map(model => decodePng(model.diffusePngBase64)));
+    await Promise.all(Object.entries(data.roadAssets?.textures ?? {}).map(async ([id,png]) => {roadPixels[id]=await decodePng(png);}));
+    await Promise.all(Object.entries(data.roadAssets?.models ?? {}).map(async ([id,model]) => {roadPixels[`model:${id}`]=await decodePng(model.diffusePngBase64);}));
   } catch (e) {
+    if (generation !== buildGeneration) return;
     error.value = String(e);
     return;
   }
+  if (generation !== buildGeneration) return;
   const S = heightPx.width; // 以解码后实际尺寸为准（防 DTO 字段不齐产生 NaN 采样）
   const raw = new Uint16Array(S * S);
   for (let i = 0; i < S * S; i++) raw[i] = heightPx.data[i * 4] * 256 + heightPx.data[i * 4 + 1];
@@ -373,8 +399,8 @@ async function build(data: Region3DData) {
   camera = new THREE.PerspectiveCamera(45, 1, 20, 200000);
   const ORG = data.originWorld;
   const SPAN = data.size * data.metersPerPixel;
-  const CTR = new THREE.Vector3(ORG[0] + SPAN / 2, 0, ORG[1] + SPAN / 2);
-  camera.position.set(CTR.x + SPAN * 0.28, CTR.y + SPAN * 1.05, CTR.z + SPAN * 1.3);
+  const CTR = mapToScene(ORG[0] + SPAN / 2, ORG[1] + SPAN / 2, 0);
+  camera.position.copy(mapToScene(ORG[0] + SPAN * 0.78, ORG[1] + SPAN * 1.8, SPAN * 1.05));
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -393,6 +419,7 @@ async function build(data: Region3DData) {
   controls.minDistance = 800;
   controls.maxDistance = Math.max(30000, SPAN * 2.2);
   controls.target.copy(CTR);
+  controls.saveState();
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.PAN,
@@ -400,12 +427,12 @@ async function build(data: Region3DData) {
   };
 
   const sun = new THREE.DirectionalLight(0xffffff, 1.35);
-  sun.position.set(9000, 22000, 8000);
+  sun.position.copy(mapToScene(9000, 8000, 22000));
   scene.add(sun);
   scene.add(new THREE.AmbientLight(0xffffff, 0.62));
   scene.add(new THREE.HemisphereLight(0x9db8d8, 0x30281c, 0.5));
 
-  root = new THREE.Group();
+  root = createMapSceneRoot();
   scene.add(root);
 
   // ── 分块 LOD 地形 ──
@@ -420,22 +447,20 @@ async function build(data: Region3DData) {
     },
   );
   root.add(terrain.group);
+  setResource = terrain.setResource;
+  setResource(props.activeResource ?? null, props.resourceOpacity ?? 0.75);
+  const roadMask = roadPreviewMask(groundPx.data, S);
 
   terrain.updateLods();
   terrain.processQueue(256); // 首帧一次成型（全图 LOD2 ≈ 1.3 万顶点）
 
   // ── 水面 ──
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(SPAN, SPAN),
-    new THREE.MeshLambertMaterial({
-      color: "#2b5c93",
-      transparent: true,
-      opacity: 0.82,
-    }),
-  );
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(CTR.x, data.waterZ, CTR.z);
-  root.add(water);
+  const water = createMapWater(data, heightPx, foamPixels);
+  waterMesh = water.mesh;
+  const hasWater = raw.some((value) => value / data.heightDiv + data.heightBias < data.waterZ);
+  waterMesh.userData.hasWater = hasWater;
+  waterMesh.visible = hasWater && props.showWater !== false && !props.activeResource;
+  root.add(waterMesh);
 
   // ── 地面网格（图2式底格，水下）──
   const grid = new THREE.GridHelper(
@@ -446,170 +471,17 @@ async function build(data: Region3DData) {
   );
   (grid.material as THREE.Material).transparent = true;
   (grid.material as THREE.Material).opacity = 0.55;
-  grid.position.set(CTR.x, data.waterZ - 6, CTR.z);
+  grid.position.set(ORG[0] + SPAN / 2, data.waterZ - 6, ORG[1] + SPAN / 2);
   root.add(grid);
 
-  // ── 路网（ED b0==0 mask：16m 格链提取 → Chaikin 平滑 → 平滑路带；跨水=桥面+桥墩）──
-  const rp: number[] = [];
-  const rc: number[] = [];
-  const ri: number[] = [];
-  const pillarMats: THREE.Matrix4[] = [];
-  const cells = S; // 16m/格
-  const cellM = SPAN / cells;
-  const hDivL = data.heightDiv || 32;
-  const hBiasL = data.heightBias ?? -1024;
-  const isRoad = (x: number, y: number): boolean =>
-    x >= 0 && y >= 0 && x < cells && y < cells && groundPx.data[(y * S + x) * 4 + 2] === 0;
-  // 桥墩：水下路段每 4 格立一根（从水下到桥面）
-  for (let y = 0; y < cells; y++) {
-    for (let x = 0; x < cells; x += 4) {
-      if (!isRoad(x, y)) continue;
-      const terZ = raw[y * S + x] / hDivL + hBiasL;
-      if (terZ >= data.waterZ) continue;
-      const deckZ = Math.max(terZ + 4, data.waterZ + 9);
-      const bottom = data.waterZ - 14;
-      const h = deckZ - bottom;
-      pillarMats.push(
-        new THREE.Matrix4().compose(
-          new THREE.Vector3(ORG[0] + x * cellM + cellM / 2, bottom + h / 2, ORG[1] + y * cellM + cellM / 2),
-          new THREE.Quaternion(),
-          new THREE.Vector3(10, h, 10),
-        ),
-      );
-    }
-  }
-  // 1) 链提取（8 邻接走带，端点优先、方向延续；环路/交叉口由兜底遍历收尾）
-  const DIRS8: [number, number][] = [
-    [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1],
-  ];
-  const visited = new Uint8Array(cells * cells);
-  const nbrs = (x: number, y: number): [number, number][] => {
-    const out: [number, number][] = [];
-    for (const [dx, dy] of DIRS8) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (isRoad(nx, ny) && !visited[ny * cells + nx]) out.push([nx, ny]);
-    }
-    return out;
-  };
-  const walkChain = (sx: number, sy: number): [number, number][] => {
-    const chain: [number, number][] = [[sx, sy]];
-    visited[sy * cells + sx] = 1;
-    for (;;) {
-      const [cx, cy] = chain[chain.length - 1];
-      const cands = nbrs(cx, cy);
-      if (!cands.length) break;
-      let best = cands[0];
-      if (chain.length >= 2) {
-        const [qx, qy] = chain[chain.length - 2];
-        const dx = cx - qx;
-        const dy = cy - qy;
-        let bestDot = -Infinity;
-        for (const c of cands) {
-          const d = (c[0] - cx) * dx + (c[1] - cy) * dy;
-          if (d > bestDot) {
-            bestDot = d;
-            best = c;
-          }
-        }
-      }
-      chain.push(best);
-      visited[best[1] * cells + best[0]] = 1;
-      if (chain.length > 20000) break;
-    }
-    return chain;
-  };
-  const chains: [number, number][][] = [];
-  for (let y = 0; y < cells; y++) {
-    for (let x = 0; x < cells; x++) {
-      if (isRoad(x, y) && !visited[y * cells + x] && nbrs(x, y).length === 1) {
-        chains.push(walkChain(x, y));
-      }
-    }
-  }
-  for (let y = 0; y < cells; y++) {
-    for (let x = 0; x < cells; x++) {
-      if (isRoad(x, y) && !visited[y * cells + x]) chains.push(walkChain(x, y));
-    }
-  }
-  // 2) Chaikin 平滑 ×2（16m→4m 点距）→ 沿曲线铺路带
-  const roadY = (wx: number, wy: number): number => {
-    const ter = terrain.heightWorld(wx, wy);
-    return Math.max(ter + 2.5, data.waterZ + 9);
-  };
-  const HW = 14; // 半宽（路宽 28m）
-  let base = 0;
-  for (const chain of chains) {
-    if (chain.length < 2) continue;
-    let pts: [number, number][] = chain.map(([x, y]) => [
-      ORG[0] + (x + 0.5) * cellM,
-      ORG[1] + (y + 0.5) * cellM,
-    ]);
-    for (let it = 0; it < 2; it++) {
-      const out: [number, number][] = [pts[0]];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const [ax, ay] = pts[i];
-        const [bx, by] = pts[i + 1];
-        out.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25]);
-        out.push([ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]);
-      }
-      out.push(pts[pts.length - 1]);
-      pts = out;
-    }
-    let prevL: number[] | null = null;
-    let prevR: number[] | null = null;
-    for (let i = 0; i < pts.length; i++) {
-      const [wx, wy] = pts[i];
-      const z = roadY(wx, wy);
-      const [fx, fy] = pts[Math.min(i + 1, pts.length - 1)];
-      const [bx2, by2] = pts[Math.max(i - 1, 0)];
-      let dx = fx - bx2;
-      let dy = fy - by2;
-      const len = Math.hypot(dx, dy) || 1;
-      dx /= len;
-      dy /= len;
-      const L = [wx - dy * HW, z, wy + dx * HW];
-      const R = [wx + dy * HW, z, wy - dx * HW];
-      if (prevL && prevR) {
-        rp.push(
-          prevL[0], prevL[1], prevL[2],
-          prevR[0], prevR[1], prevR[2],
-          L[0], L[1], L[2],
-          R[0], R[1], R[2],
-        );
-        for (let k = 0; k < 4; k++) rc.push(0.216, 0.204, 0.184);
-        ri.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
-        base += 4;
-      }
-      prevL = L;
-      prevR = R;
-    }
-  }
-  if (base > 0) {
-    const rgeo = new THREE.BufferGeometry();
-    rgeo.setAttribute("position", new THREE.Float32BufferAttribute(rp, 3));
-    rgeo.setAttribute("color", new THREE.Float32BufferAttribute(rc, 3));
-    rgeo.setIndex(ri);
-    // 平面路带：法线恒朝上，避免逐段法线抖动
-    const rnorm = new Float32Array(rp.length);
-    for (let i = 0; i < rnorm.length; i += 3) rnorm[i + 1] = 1;
-    rgeo.setAttribute("normal", new THREE.BufferAttribute(rnorm, 3));
-    root.add(
-      new THREE.Mesh(
-        rgeo,
-        new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
-      ),
-    );
-  }
-  if (pillarMats.length) {
-    const pillars = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshLambertMaterial({ color: 0x6b6257 }),
-      pillarMats.length,
-    );
-    pillarMats.forEach((m, i) => pillars.setMatrixAt(i, m));
-    root.add(pillars);
-  }
+  const roads = data.saveLayers && data.roadAssets ? createNativeRoads(data, roadPixels, terrain.heightWorld) : new THREE.Group();
+  roads.visible = props.showRoads !== false && !props.activeResource;
+  roadGroup = roads;
+  root.add(roads);
+  vegetationGroup = createVegetation(data, groundPx, roadMask, terrain.heightWorld,
+    nativeTreeAssets(data.forestModels ?? [], treePixels, renderer));
+  vegetationGroup.visible = props.showVegetation !== false && !props.activeResource;
+  root.add(vegetationGroup);
 
   // ── 地块框 + 伟工标记 + 名字标签 ──
   plotGroup = new THREE.Group();
@@ -732,19 +604,26 @@ async function build(data: Region3DData) {
     terrain.updateLods();
   });
   let lastLodTs = 0;
+  let lastWaterTs = 0;
   const loop = () => {
     raf = requestAnimationFrame(loop);
     if (!renderer || !scene || !camera || !controls) return;
     const moved = controls.update();
     // 地形碰撞：相机不得低于脚下地形 +30m（双线性采样含裁剪窗外沿）
     {
-      const minY = terrain.heightWorld(camera.position.x, camera.position.z) + 30;
+      const mapCamera = sceneToMap(camera.position);
+      const minY = terrain.heightWorld(mapCamera.x, mapCamera.y) + 30;
       if (camera.position.y < minY) {
         camera.position.y = minY;
         needsRenderFlag = true;
       }
     }
     const now = performance.now();
+    if (water.mesh.visible && !document.hidden && now - lastWaterTs >= 1000 / 30) {
+      lastWaterTs = now;
+      water.update(now / 1000);
+      needsRenderFlag = true;
+    }
     if (now - lastLodTs > 120) {
       lastLodTs = now;
       terrain.processQueue(6);
@@ -772,17 +651,36 @@ function onResize() {
 
 function disposeScene() {
   cancelAnimationFrame(raf);
-  for (const { sprite } of localizedLabels) sprite.material.map?.dispose();
+  controls?.dispose();
+  controls = null;
+  renderer?.dispose();
+  renderer?.domElement.remove();
+  renderer = null;
+  setResource = null;
+  waterMesh = null;
+  roadGroup = null;
+  vegetationGroup = null;
   localizedLabels.length = 0;
   plotGroup = null;
   if (root) {
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    const labelTextures = new Set<THREE.Texture>();
     root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
+      if (m.geometry) geometries.add(m.geometry);
       const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-      else mat?.dispose();
+      if (Array.isArray(mat)) mat.forEach((x) => materials.add(x));
+      else if (mat) materials.add(mat);
+      if ((o as THREE.Sprite).isSprite) {
+        const map = (o as THREE.Sprite).material.map;
+        if (map) labelTextures.add(map);
+      }
+      if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
     });
+    geometries.forEach((g) => g.dispose());
+    materials.forEach((m) => m.dispose());
+    labelTextures.forEach((texture) => texture.dispose());
     scene?.remove(root);
     root = null;
   }
@@ -795,12 +693,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  buildGeneration++;
   observer?.disconnect();
-  controls?.dispose();
   disposeScene();
-  renderer?.dispose();
-  renderer?.domElement.remove();
-  renderer = null;
   scene = null;
 });
 
@@ -808,14 +703,24 @@ watch(
   () => props.data,
   (d) => {
     if (d) void build(d);
+    else { buildGeneration++; ready.value = false; disposeScene(); }
   },
 );
 watch(
   () => props.showPlots,
   (v) => {
     if (plotGroup) plotGroup.visible = v !== false;
+    needsRenderFlag = true;
   },
 );
+watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activeResource, props.resourceOpacity], () => {
+  const resourceView = Boolean(props.activeResource);
+  if (vegetationGroup) vegetationGroup.visible = props.showVegetation !== false && !resourceView;
+  if (roadGroup) roadGroup.visible = props.showRoads !== false && !resourceView;
+  if (waterMesh) waterMesh.visible = waterMesh.userData.hasWater && props.showWater !== false && !resourceView;
+  setResource?.(props.activeResource ?? null, props.resourceOpacity ?? 0.75);
+  needsRenderFlag = true;
+});
 </script>
 
 <template>
@@ -829,10 +734,7 @@ watch(
       :title="t('studio.map.resetView')"
       @click="
         () => {
-          if (camera && controls) {
-            camera.position.set(9000, 17000, 21000);
-            controls.target.set(0, 0, 0);
-          }
+          controls?.reset();
         }
       "
     >

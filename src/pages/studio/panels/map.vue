@@ -8,6 +8,8 @@
  */
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { open } from "@tauri-apps/plugin-dialog";
+import { hasStateResource } from "@/components/map/map-state-fields";
 import { invoke } from "@tauri-apps/api/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
@@ -15,14 +17,30 @@ import FDropdown from "@/components/ui/FDropdown.vue";
 import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
+import MapResourceControls from "@/components/map/MapResourceControls.vue";
 import MapViewer3D from "@/components/map/MapViewer3D.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import { brushResourceKind } from "@/lib/region-map";
+import { ecoChannel } from "@/components/map/map-fields";
 import type { Region3DData, RegionSummary } from "@/lib/region-map";
 
 const { t, te, locale } = useI18n();
 const gamePackages = useGamePackagesStore();
 
+const saveDirectory = ref<string | null>(null);
+function resourceAvailable(kind: string) {
+  return ecoChannel(kind) !== null || hasStateResource(render.value, kind);
+}
+async function chooseSave() {
+  const path = await open({
+    directory: true,
+    multiple: false,
+    title: t("studio.map.loadSave"),
+  });
+  if (typeof path !== "string") return;
+  saveDirectory.value = path;
+  await renderRegion();
+}
 const selectedPackageId = ref<number | null>(null);
 const regions = ref<RegionSummary[]>([]);
 const selectedGroup = ref("");
@@ -44,20 +62,26 @@ function regionDisplayName(r: {
   return primary ?? fallback ?? r.group;
 }
 
-const openedPackages = computed(() => gamePackages.opened.map((o) => o.package));
+const openedPackages = computed(() =>
+  gamePackages.opened.map((o) => o.package),
+);
 /** 渲染结果的区域名（跟随 UI 语言）。 */
 const renderRegionName = computed(() => {
   const r = render.value;
   if (!r) return "";
   const zh = locale.value.startsWith("zh");
-  return (zh ? r.displayName : r.displayNameEn) ?? r.displayName ?? r.displayNameEn ?? "";
+  return (
+    (zh ? r.displayName : r.displayNameEn) ??
+    r.displayName ??
+    r.displayNameEn ??
+    ""
+  );
 });
 const selectedRegionName = computed(
   () =>
     regions.value
       .filter((r) => r.group === selectedGroup.value)
-      .map(regionDisplayName)[0] ??
-    selectedGroup.value,
+      .map(regionDisplayName)[0] ?? selectedGroup.value,
 );
 
 function packageName(packageId: number): string {
@@ -74,7 +98,25 @@ function packagePathOf(packageId: number): string {
   );
 }
 
+let renderRequest = 0;
+let regionsRequest = 0;
+function selectRegion(group: string) {
+  if (group === selectedGroup.value) return;
+  ++renderRequest;
+  loadingRender.value = false;
+  selectedGroup.value = group;
+  saveDirectory.value = null;
+  render.value = null;
+  activeResource.value = null;
+  errorMsg.value = "";
+}
 async function selectPackage(packageId: number | null) {
+  const request = ++regionsRequest;
+  ++renderRequest;
+  loadingRender.value = false;
+  loadingRegions.value = false;
+  activeResource.value = null;
+  saveDirectory.value = null;
   selectedPackageId.value = packageId;
   regions.value = [];
   selectedGroup.value = "";
@@ -83,51 +125,72 @@ async function selectPackage(packageId: number | null) {
   if (packageId === null) return;
   loadingRegions.value = true;
   try {
-    regions.value = await invoke<RegionSummary[]>("map_panel_list_regions", {
+    const result = await invoke<RegionSummary[]>("map_panel_list_regions", {
       packagePath: packagePathOf(packageId),
     });
+    if (request === regionsRequest) regions.value = result;
   } catch (e) {
-    errorMsg.value = String(e);
+    if (request === regionsRequest) errorMsg.value = String(e);
   } finally {
-    loadingRegions.value = false;
+    if (request === regionsRequest) loadingRegions.value = false;
   }
 }
 
 async function renderRegion() {
   const packageId = selectedPackageId.value;
   if (packageId === null || !selectedGroup.value) return;
+  const request = ++renderRequest;
   errorMsg.value = "";
+  activeResource.value = null;
   try {
     loadingRender.value = true;
-    render.value = await invoke<Region3DData>("map_panel_region_3d", {
+    const result = await invoke<Region3DData>("map_panel_region_3d", {
       packagePath: packagePathOf(packageId),
       group: selectedGroup.value,
+      saveDirectory: saveDirectory.value,
     });
+    if (request === renderRequest) render.value = result;
   } catch (e) {
-    errorMsg.value = String(e);
+    if (request === renderRequest) errorMsg.value = String(e);
   } finally {
-    loadingRender.value = false;
+    if (request === renderRequest) loadingRender.value = false;
   }
 }
 
 // ── 图层状态：地块框开关 + 资源分布图层单选（null = 关闭；对齐游戏数据视图）──
 const showPlots = ref(true);
+const showVegetation = ref(true);
+const showWater = ref(true);
+const showRoads = ref(true);
+const resourceOpacity = ref(0.75);
 const brushes = computed(() => render.value?.brushes ?? []);
 const resourceKinds = computed(() => {
-  const kinds: string[] = [];
+  const kinds: string[] = render.value
+    ? ["soil", "waterTable", "forest", "coal", "ore", "oil"]
+    : [];
   for (const [name] of brushes.value) {
     const kind = brushResourceKind(name);
-    if (!kinds.some((k) => k.toLowerCase() === kind.toLowerCase())) kinds.push(kind);
+    if (!kinds.some((k) => k.toLowerCase() === kind.toLowerCase()))
+      kinds.push(kind);
   }
   return kinds;
 });
 const activeResource = ref<string | null>(null);
-const visibleResourceKinds = computed(() =>
-  activeResource.value ? [activeResource.value] : [],
+const viewerLayers = computed(() => ({
+  showPlots: showPlots.value,
+  showVegetation: showVegetation.value,
+  showWater: showWater.value,
+  showRoads: showRoads.value,
+  activeResource: activeResource.value,
+  resourceOpacity: resourceOpacity.value,
+}));
+const resourceOptions = computed(() =>
+  resourceKinds.value.map((kind) => ({
+    kind,
+    label: resourceLabel(kind),
+    available: resourceAvailable(kind),
+  })),
 );
-function selectResource(kind: string) {
-  activeResource.value = activeResource.value === kind ? null : kind;
-}
 function resourceLabel(kind: string): string {
   const key = `studio.map.res${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
   return te(key) ? t(key) : kind;
@@ -202,7 +265,7 @@ function resourceLabel(kind: string): string {
           v-for="r in regions"
           :key="r.group"
           type="button"
-          @click="selectedGroup = r.group"
+          @click="selectRegion(r.group)"
         >
           <FIcon
             :name="selectedGroup === r.group ? 'Check' : 'MapPin'"
@@ -224,9 +287,37 @@ function resourceLabel(kind: string): string {
         <FIcon name="Play" :size="14" />
         {{ loadingRender ? t("studio.map.rendering") : t("studio.map.render") }}
       </button>
+      <button
+        type="button"
+        class="package-trigger"
+        :disabled="!render || loadingRender"
+        @click="chooseSave"
+        :title="
+          render?.referenceDirectory ??
+          saveDirectory ??
+          t('studio.map.loadSave')
+        "
+      >
+        <FIcon name="FolderOpen" :size="14" />{{
+          t(
+            render?.referenceDirectory || saveDirectory
+              ? "studio.map.changeSave"
+              : "studio.map.loadSave",
+          )
+        }}
+      </button>
     </section>
 
     <p v-if="errorMsg" class="error-message" role="alert">{{ errorMsg }}</p>
+    <p v-if="render" class="notice" role="status">
+      {{
+        t(
+          render.roadAssets
+            ? "studio.map.referenceLoaded"
+            : "studio.map.referenceMissing",
+        )
+      }}
+    </p>
     <p v-if="!openedPackages.length" class="notice" role="status">
       {{ t("studio.map.needPackage") }}
     </p>
@@ -236,26 +327,12 @@ function resourceLabel(kind: string): string {
       <div class="viewer-card">
         <!-- 顶部工具条：横向 flex 右对齐（分段式图层切换 + outline 展开） -->
         <div class="card-toolbar">
-          <div class="layer-seg" role="group" :aria-label="t('studio.map.layersTitle')">
-            <button
-              type="button"
-              :class="{ active: activeResource === null }"
-              :title="t('studio.map.layerOff')"
-              @click="activeResource = null"
-            >
-              {{ t("studio.map.layerOff") }}
-            </button>
-            <button
-              v-for="kind in resourceKinds"
-              :key="kind"
-              type="button"
-              :class="{ active: activeResource === kind }"
-              :title="resourceLabel(kind)"
-              @click="selectResource(kind)"
-            >
-              {{ resourceLabel(kind) }}
-            </button>
-          </div>
+          <MapResourceControls
+            v-model="activeResource"
+            v-model:opacity="resourceOpacity"
+            :options="resourceOptions"
+            :disabled="!render || loadingRender"
+          />
           <button
             type="button"
             class="outline-btn"
@@ -267,7 +344,7 @@ function resourceLabel(kind: string): string {
           </button>
         </div>
         <div class="card-viewer">
-          <MapViewer3D :data="render" :show-plots="showPlots" />
+          <MapViewer3D :data="render" v-bind="viewerLayers" />
           <div v-if="!render && !loadingRender" class="viewer-empty">
             <FEmpty
               icon-name="Map"
@@ -296,7 +373,9 @@ function resourceLabel(kind: string): string {
             <dt>{{ t("studio.map.waterPlane") }}</dt>
             <dd>{{ Math.round((render.waterZ + 1024) * 32) }}</dd>
             <dt>{{ t("studio.map.desertMode") }}</dt>
-            <dd>{{ render.desert ? t("studio.map.yes") : t("studio.map.no") }}</dd>
+            <dd>
+              {{ render.desert ? t("studio.map.yes") : t("studio.map.no") }}
+            </dd>
             <dt>{{ t("studio.map.plotCount") }}</dt>
             <dd>{{ render.plots.filter((p) => p.kind === "city").length }}</dd>
             <dt>{{ t("studio.map.brushCount") }}</dt>
@@ -321,21 +400,18 @@ function resourceLabel(kind: string): string {
             <FCheckbox v-model="showPlots" />
             {{ t("studio.map.layerPlots") }}
           </label>
-          <button
-            v-for="kind in resourceKinds"
-            :key="kind"
-            type="button"
-            class="layer-option"
-            :class="{ active: activeResource === kind }"
-            @click="selectResource(kind)"
-          >
-            <FIcon
-              :name="activeResource === kind ? 'Check' : 'Square'"
-              :size="13"
-              aria-label=""
-            />
-            {{ resourceLabel(kind) }}
-          </button>
+          <label class="layer-toggle">
+            <FCheckbox v-model="showVegetation" />
+            {{ t("studio.map.layerVegetation") }}
+          </label>
+          <label class="layer-toggle">
+            <FCheckbox v-model="showWater" />
+            {{ t("studio.map.layerWater") }}
+          </label>
+          <label class="layer-toggle">
+            <FCheckbox v-model="showRoads" />
+            {{ t("studio.map.layerRoads") }}
+          </label>
           <p class="side-note">{{ t("studio.map.layersNote") }}</p>
         </section>
 
@@ -352,26 +428,12 @@ function resourceLabel(kind: string): string {
             {{ renderRegionName || selectedRegionName }}
             <span class="sheet-sub">{{ t("studio.map.fullscreen") }}</span>
           </div>
-          <div class="layer-seg" role="group" :aria-label="t('studio.map.layersTitle')">
-            <button
-              type="button"
-              :class="{ active: activeResource === null }"
-              :title="t('studio.map.layerOff')"
-              @click="activeResource = null"
-            >
-              {{ t("studio.map.layerOff") }}
-            </button>
-            <button
-              v-for="kind in resourceKinds"
-              :key="kind"
-              type="button"
-              :class="{ active: activeResource === kind }"
-              :title="resourceLabel(kind)"
-              @click="selectResource(kind)"
-            >
-              {{ resourceLabel(kind) }}
-            </button>
-          </div>
+          <MapResourceControls
+            v-model="activeResource"
+            v-model:opacity="resourceOpacity"
+            :options="resourceOptions"
+            :disabled="!render || loadingRender"
+          />
           <button
             type="button"
             class="outline-btn"
@@ -382,7 +444,7 @@ function resourceLabel(kind: string): string {
           </button>
         </header>
         <div class="sheet-viewer">
-          <MapViewer3D v-if="sheetOpen" :data="render" :show-plots="showPlots" />
+          <MapViewer3D v-if="sheetOpen" :data="render" v-bind="viewerLayers" />
         </div>
       </div>
     </FSheet>
@@ -507,43 +569,6 @@ function resourceLabel(kind: string): string {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-/* 分段式切换（对齐 property editor 的默认/精细渲染切换） */
-.layer-seg {
-  display: inline-flex;
-  flex-wrap: wrap;
-}
-.layer-seg button {
-  align-items: center;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  font-size: 11px;
-  gap: 6px;
-  min-height: 24px;
-  padding: 2px 9px;
-}
-.layer-seg button:first-child {
-  border-end-end-radius: 0;
-  border-start-end-radius: 0;
-}
-.layer-seg button:last-child {
-  border-end-start-radius: 0;
-  border-start-start-radius: 0;
-  margin-inline-start: -1px;
-}
-.layer-seg button + button {
-  margin-inline-start: -1px;
-}
-.layer-seg button.active {
-  color: var(--foreground);
-  opacity: 0.95;
-}
-.layer-seg button:hover {
-  color: var(--foreground);
-}
 /* outline 图标按钮（展开/关闭，对齐 property editor） */
 .outline-btn {
   align-items: center;
@@ -640,34 +665,6 @@ function resourceLabel(kind: string): string {
   font-size: 0.75rem;
   padding: 0.25rem 0;
   cursor: pointer;
-}
-.res-dot {
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
-  height: 9px;
-  width: 9px;
-}
-.layer-option {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  display: flex;
-  font-size: 0.75rem;
-  gap: 0.5rem;
-  padding: 0.3rem 0.4rem;
-  text-align: start;
-  width: 100%;
-}
-.layer-option:hover {
-  background: var(--surface-hover);
-  color: var(--foreground);
-}
-.layer-option.active {
-  color: var(--foreground);
 }
 .side-note {
   margin: 0.5rem 0 0;

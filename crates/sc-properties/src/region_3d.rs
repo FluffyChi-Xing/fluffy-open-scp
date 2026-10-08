@@ -15,6 +15,59 @@ use serde::Serialize;
 
 use crate::region_map::{self, SHARED_ED_GRID, SHARED_TILE_GRID};
 
+/// Properties read by cTessendorfWater::FillFromProps (0x4362F0).
+/// Keep missing parameters absent; preview defaults are not game data.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionWaterParams {
+    pub time_step_factor: Option<f32>,
+    pub specular_power: Option<f32>,
+    pub specular_scale: Option<f32>,
+}
+
+pub fn region_water_params(package: &dbpf::Package, group: u32) -> Option<RegionWaterParams> {
+    let entry = package.entries().iter().find(|e|
+        e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == 0x2FFD_7EED)?;
+    let bytes = package.read(entry).ok()?;
+    let props = crate::PropertyFile::parse(&bytes).ok()?;
+    Some(water_params_from_props(&props))
+}
+
+fn water_params_from_props(props: &crate::PropertyFile) -> RegionWaterParams {
+    let number = |hash| match &props.get(hash)?.kind {
+        crate::Kind::Scalar(crate::Value::Float(value)) if value.is_finite() && *value >= 0.0 => Some(*value),
+        _ => None,
+    };
+    RegionWaterParams {
+        time_step_factor: number(0x5EF6_BAD4),
+        specular_power: number(0x377C_2266),
+        specular_scale: number(0x72BF_2867),
+    }
+}
+
+#[cfg(test)]
+mod water_tests {
+    use super::*;
+
+    #[test]
+    fn water_parameters_preserve_zero_and_reject_invalid_values() {
+        let values = [(0x5EF6_BAD4u32, 0.0f32), (0x377C_2266, f32::NAN), (0x72BF_2867, -1.0)];
+        let mut bytes = 3u32.to_be_bytes().to_vec();
+        for (hash, value) in values {
+            bytes.extend(hash.to_be_bytes());
+            bytes.extend(13u16.to_be_bytes());
+            bytes.extend(0u16.to_be_bytes());
+            bytes.extend(value.to_be_bytes());
+        }
+        let props = crate::PropertyFile::parse(&bytes).unwrap();
+        let params = water_params_from_props(&props);
+        assert_eq!(params.time_step_factor, Some(0.0));
+        assert_eq!(params.specular_power, None);
+        assert_eq!(params.specular_scale, None);
+        assert_eq!(water_params_from_props(&crate::PropertyFile::default()).time_step_factor, None);
+    }
+}
+
 /// FNV-1（先乘后异或）+ 逐字节 ASCII 小写——引擎 SPIDFromName 同款（L1153188）。
 pub fn fnv1_lower(s: &str) -> u32 {
     let mut h: u32 = 0x811C_9DC5;

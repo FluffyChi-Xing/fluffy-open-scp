@@ -1,5 +1,13 @@
 import * as THREE from "three";
 import type { Region3DData } from "@/lib/region-map";
+import { resourceColor } from "@/lib/region-map";
+import { ecoChannel } from "./map-fields";
+import { MAP_WORLD_XY_GLSL } from "./map-coordinates";
+import { hasStateResource, stateResourcePixels, STATE_RESOURCE_IDS } from "./map-state-fields";
+
+export type TerrainMaterial = THREE.MeshLambertMaterial & {
+  setResource: (kind: string | null, opacity: number) => void;
+};
 
 /** Data fields stay in world space and at source resolution, independently of mesh LOD.
  * See docs/re/map-terrain-color-correction.md for the exporter/HLSL evidence.
@@ -10,7 +18,7 @@ export function createTerrainMaterial(
   raw: Uint16Array,
   ecoPixels: Uint8ClampedArray,
   detailPixels: Partial<Record<"dirt" | "grass" | "cliff" | "sand", ImageData>> = {},
-): THREE.MeshLambertMaterial {
+): TerrainMaterial {
   const size = Math.round(Math.sqrt(raw.length));
   const spacing = data.metersPerPixel;
   const normals = new Uint8Array(size * size * 4);
@@ -47,6 +55,8 @@ export function createTerrainMaterial(
   };
   const eco = field(new Uint8Array(ecoPixels));
   const normal = field(normals);
+  const savedResources = Object.fromEntries(Object.keys(STATE_RESOURCE_IDS)
+    .filter(kind => hasStateResource(data, kind)).map(kind => [kind, field(stateResourcePixels(data, kind, size))]));
   const detail = (slot: keyof typeof detailPixels, fallback: string) => {
     const px = detailPixels[slot];
     const color = new THREE.Color(fallback).convertLinearToSRGB();
@@ -67,9 +77,22 @@ export function createTerrainMaterial(
     dirtMap: detail("dirt", "#ac946d"), grassMap: detail("grass", "#58813f"),
     cliffMap: detail("cliff", "#b7a07b"), sandMap: detail("sand", "#c5b588"),
   };
-  const mat = new THREE.MeshLambertMaterial();
+  const mat = new THREE.MeshLambertMaterial() as TerrainMaterial;
+  const overlay = {
+    resourceChannel: { value: -1 }, resourceOpacity: { value: 0.75 },
+    resourceColor: { value: new THREE.Color() },
+    savedResource: { value: eco },
+  };
+  mat.setResource = (kind, opacity) => {
+    const saved = kind ? savedResources[kind] : undefined;
+    overlay.savedResource.value = saved ?? eco;
+    overlay.resourceChannel.value = saved ? 3 : ecoChannel(kind) ?? -1;
+    overlay.resourceOpacity.value = Math.max(0, Math.min(1, opacity));
+    overlay.resourceColor.value.set(resourceColor(kind ?? ""));
+  };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, {
+      ...overlay,
       ...Object.fromEntries(Object.entries(textures).map(([key, value]) => [key, { value }])),
       terrainEco: { value: eco },
       terrainNormals: { value: normal },
@@ -86,11 +109,11 @@ export function createTerrainMaterial(
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        "#include <common>\nvarying vec3 vTerrainWorld;",
+        `#include <common>\nvarying vec3 vTerrainWorld;\n${MAP_WORLD_XY_GLSL}`,
       )
       .replace(
         "#include <begin_vertex>",
-        "#include <begin_vertex>\nvTerrainWorld = (modelMatrix * vec4(position, 1.0)).xyz;",
+        "#include <begin_vertex>\nvec3 sceneWorld = (modelMatrix * vec4(position, 1.0)).xyz;\nvTerrainWorld = vec3(mapWorldXY(sceneWorld).x, sceneWorld.y, mapWorldXY(sceneWorld).y);",
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -105,6 +128,10 @@ uniform float terrainExtent;
 uniform float terrainTexel;
 uniform float terrainWaterZ;
 uniform vec3 dryColor, grassColor, cliffColor, sandColor, forestColor;
+uniform int resourceChannel;
+uniform sampler2D savedResource;
+uniform float resourceOpacity;
+uniform vec3 resourceColor;
 float terrainHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float terrainNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -155,13 +182,23 @@ surface = mix(surface, forestColor, forest * 0.6);
 float detail = terrainNoise(worldXZ / 8.0);
 surface *= 0.95 + detail * 0.10;
 diffuseColor.rgb = surface;
+if (resourceChannel >= 0) {
+  float amount = resourceChannel == 0 ? eco.r : resourceChannel == 1 ? eco.g : eco.b;
+  vec4 saved = texture2D(savedResource, ecoUV);
+  if (resourceChannel == 3) amount = saved.r * saved.a;
+  float band = floor(clamp(amount, 0.0, 0.999) * 4.0) / 3.0;
+  vec3 resourceTint = mix(vec3(0.85), resourceColor, 0.25 + band * 0.75);
+  float coverage = smoothstep(0.0, 0.035, amount);
+  diffuseColor.rgb = mix(surface, resourceTint, coverage * resourceOpacity);
+}
 `,
       );
   };
-  mat.customProgramCacheKey = () => "region-game-diffuse-v2";
+  mat.customProgramCacheKey = () => "region-game-diffuse-resource-v5-saved";
   mat.addEventListener("dispose", () => {
     eco.dispose();
     normal.dispose();
+    Object.values(savedResources).forEach(tex => tex.dispose());
     Object.values(textures).forEach((tex) => tex.dispose());
   });
   return mat;

@@ -34,6 +34,8 @@ mod lot;
 mod lot_unit;
 mod model;
 pub mod region_3d;
+pub mod region_state;
+pub mod map_assets;
 pub mod region_map;
 pub mod region_write;
 pub mod semantic;
