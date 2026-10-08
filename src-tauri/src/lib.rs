@@ -16,6 +16,7 @@ mod locale_service;
 mod map_panel;
 mod media_tools;
 mod mod_project;
+mod mod_flow;
 mod overrides;
 mod pe_schema;
 mod prop_models;
@@ -196,6 +197,7 @@ pub fn run() {
             code_package_entries,
             code_resource_preview,
             code_manifest,
+            workspace::code_flow,
             workspace_create_markdown,
             workspace_rename,
             workspace_move,
