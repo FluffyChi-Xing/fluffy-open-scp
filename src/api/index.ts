@@ -400,7 +400,7 @@ export const tauriApi = {
       command<{ schemaJson: string }>("build_pe_schema", { request }),
     listModelCatalog: () =>
       command<
-        { packageId: number; instance: number; name: string; size: number }[]
+        { packageId: number; packagePath: string; instance: number; group: number; name: string; size: number }[]
       >("list_model_catalog", {}),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {

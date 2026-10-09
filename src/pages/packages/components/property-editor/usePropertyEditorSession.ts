@@ -32,7 +32,7 @@ export function unitLabel(
     case "decal":
       return `${t("package.groupDecals")} ${unit.category + 1}·${unit.index + 1}`;
     case "prop":
-      return `${t("package.groupProps")} ${unit.bin}·${unit.index + 1}`;
+      return unit.displayName ?? `${t("package.groupProps")} ${unit.bin}·${unit.index + 1}`;
     case "pathPoint":
       return `${t("package.groupPaths")} #${unit.pointIndex ?? unit.index}`;
     case "effect":
@@ -72,7 +72,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** 当前 property 引用的模型条目（LOD + prop 解析结果，含所在包 id）——
    * 组件库目录过滤器数据源（仅展示本资产引用、可正常渲染的组件）；
    * 树模型等纯 hex 名条目会被目录噪声过滤排除，由组件库侧按此兜底补入。 */
-  const referencedModels = ref<{ packageId: number; instance: number }[]>([]);
+  const referencedModels = ref<{ packageId: number; instance: number; group: number; resourceId: number }[]>([]);
   /** 树 prop（source=tree/tree_model）资源 id 集合 → 树专用渲染分支。 */
   const propTreeIds = shallowRef<Set<number>>(new Set());
   /** 树公告板图集（base64 PNG，2×2 四树格）：后端从 Graphics 包树图集
@@ -254,14 +254,16 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       // 记录引用的模型条目（组件库目录过滤 + 缺席兜底）——**全部来源**：
       // tree/tree_model 的破洞树模型同为可放置组件，勿因加载通道不同而排除。
       // packageId 缺席（未定位到所在包）的 resolution 无法按需加载，跳过。
-      const referenced = new Map<string, { packageId: number; instance: number }>();
+      const referenced = new Map<string, { packageId: number; instance: number; group: number; resourceId: number }>();
       for (const resolution of resolutions) {
         if (resolution.packageId == null) continue;
         for (const model of resolution.models) {
           if (model)
-            referenced.set(`${model.instance}`, {
+            referenced.set(`${resolution.packageId}:${model.group}:${model.instance}`, {
               packageId: resolution.packageId,
               instance: model.instance,
+              group: model.group,
+              resourceId: resolution.resourceId,
             });
         }
       }

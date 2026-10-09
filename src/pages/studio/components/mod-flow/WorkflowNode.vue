@@ -3,10 +3,14 @@ import { computed, shallowRef } from "vue";
 import { Handle, Position } from "@vue-flow/core";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
+import AssetFlowTool from "./AssetFlowTool.vue";
+import { BUILDING_SLOTS } from "./assetFlow";
 import NodeConfigForm from "./NodeConfigForm.vue";
 import type { FlowSchema } from "./contracts";
 const props = defineProps<{
   kind: string;
+  project: string;
+  schemas: FlowSchema[];
   schema?: FlowSchema;
   invalid: boolean;
   busy: boolean;
@@ -21,7 +25,7 @@ const { t } = useI18n();
 const collapsed = shallowRef(false),
   dirty = shallowRef(false);
 const source = computed(() =>
-  ["map-source", "static-resource"].includes(props.kind),
+  ["map-source", "static-resource", "texture-input"].includes(props.kind),
 );
 const output = computed(() => props.kind === "output");
 const complex = computed(() => props.kind === "static-resource");
@@ -33,7 +37,7 @@ function setDirty(value: boolean) {
 <template>
   <article
     class="workflow-node"
-    :class="{ invalid, source, output, 'map-node': kind === 'map-source' }"
+    :class="{ invalid, source, output, 'map-node': kind === 'map-source', 'asset-node': kind === 'building-asset' }"
   >
     <header class="node-heading">
       <button
@@ -44,7 +48,7 @@ function setDirty(value: boolean) {
       >
         <FIcon :name="collapsed ? 'ChevronRight' : 'ChevronDown'" :size="14" />
       </button>
-      <h3>{{ t(`flow.nodes.${kind}`) }}</h3>
+      <h3>{{ kind === 'texture-input' ? `${BUILDING_SLOTS[Number(schema?.config.slot) || 0].id} · ${BUILDING_SLOTS[Number(schema?.config.slot) || 0].label}` : t(`flow.nodes.${kind}`) }}</h3>
       <span
         class="status-dot"
         :class="{ dirty }"
@@ -66,7 +70,7 @@ function setDirty(value: boolean) {
       }}</span>
     </div>
     <Handle
-      v-if="!source"
+      v-if="!source && kind !== 'building-asset'"
       type="target"
       :position="Position.Left"
       :style="{ top: '55px' }"
@@ -76,8 +80,15 @@ function setDirty(value: boolean) {
       :position="Position.Right"
       :style="{ top: '55px' }"
     />
+    <div v-if="kind === 'building-asset'" class="asset-ports">
+      <div v-for="(slot, index) in BUILDING_SLOTS" :key="slot.id" class="asset-port">
+        <Handle :id="slot.id" type="target" :position="Position.Left" :style="{ top: `${94 + index * 28}px` }" />
+        {{ slot.id }} · {{ slot.label }}
+      </div>
+    </div>
     <div v-show="!collapsed">
-      <div v-if="complex" class="complex-tool nodrag">
+      <AssetFlowTool v-if="schema && ['texture-input', 'building-asset'].includes(kind)" :project="project" :schema="schema" :schemas="schemas" :busy="busy" @save="emit('save', $event)" @dirty="setDirty" @resize="emit('resize')" />
+      <div v-else-if="complex" class="complex-tool nodrag">
         <p>{{ t("flow.assetToolHint") }}</p>
         <button :disabled="busy" @click="emit('edit')">
           <FIcon name="SlidersHorizontal" :size="13" />{{
@@ -97,6 +108,8 @@ function setDirty(value: boolean) {
   </article>
 </template>
 <style scoped>
+.asset-ports { padding: 6px 16px; font-size: 12px; }
+.asset-port { height: 28px; display: flex; align-items: center; }
 .workflow-node {
   --node-accent: var(--primary);
   width: 340px;
@@ -106,6 +119,7 @@ function setDirty(value: boolean) {
   color: var(--foreground);
   box-shadow: 0 4px 14px #0002;
 }
+.workflow-node.asset-node { width: 460px; }
 .workflow-node.map-node {
   width: 420px;
 }

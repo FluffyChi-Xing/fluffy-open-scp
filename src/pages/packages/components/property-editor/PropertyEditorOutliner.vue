@@ -6,12 +6,15 @@ import type { LotUnitDto } from "@/api/tauri";
 import { unitLabel } from "./usePropertyEditorSession";
 import type { UnitGrouping } from "./usePropertyEditorSession";
 import { unitId } from "./unitGizmos";
+import { unitCategory, type AssetCategory } from "./assetCategories";
 
 const props = defineProps<{
   grouping: UnitGrouping;
   selectedId: string | null;
   hiddenUnits: Set<string>;
   groupVisibility: Record<string, boolean>;
+  treeIds?: Set<number>;
+  propCategories?: Map<number, AssetCategory>;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -67,6 +70,16 @@ function unitVisible(section: OutlinerSection, unit: LotUnitDto): boolean {
 function onToggleUnit(section: OutlinerSection, unit: LotUnitDto) {
   emit("toggle-unit", unit, section.key);
 }
+function categories(section: OutlinerSection) {
+  const groups = new Map<string, LotUnitDto[]>();
+  for (const unit of section.items) {
+    const name = unitCategory(unit, props.treeIds, props.propCategories);
+    const items = groups.get(name) ?? [];
+    items.push(unit);
+    groups.set(name, items);
+  }
+  return [...groups].map(([name, items]) => ({ name, items }));
+}
 </script>
 
 <template>
@@ -114,9 +127,11 @@ function onToggleUnit(section: OutlinerSection, unit: LotUnitDto) {
         <span class="outliner-section-title">{{ section.label }}</span>
         <small>{{ section.items.length }}</small>
       </div>
+      <details v-for="category in categories(section)" :key="category.name" open class="outliner-category">
+        <summary>{{ category.name }} <small>{{ category.items.length }}</small></summary>
       <ul>
         <li
-          v-for="unit in section.items"
+          v-for="unit in category.items"
           :key="unitId(unit)"
           :class="{ selected: selectedId === unitId(unit), hidden: !unitVisible(section, unit) }"
         >
@@ -138,13 +153,17 @@ function onToggleUnit(section: OutlinerSection, unit: LotUnitDto) {
             {{ unitLabel(unit, t) }}
           </button>
         </li>
-        <li v-if="!section.items.length" class="outliner-empty">—</li>
       </ul>
+      </details>
+      <p v-if="!section.items.length" class="outliner-empty">—</p>
     </div>
   </aside>
 </template>
 
 <style scoped>
+.outliner-category { margin-inline-start: 12px; border-inline-start: 1px solid var(--border); padding-inline-start: 8px; }
+.outliner-category summary { cursor: pointer; font-size: 12px; padding: 6px 0; color: var(--muted-foreground); }
+.outliner-category small { margin-inline-start: 6px; }
 .outliner {
   border-inline-end: 1px solid var(--border);
   overflow-y: auto;

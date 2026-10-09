@@ -55,15 +55,6 @@ describe("图案层 wrap 采样（切割痕定位）", () => {
 
     // 解析列剖面：输出像素中心 u → frac((u−0.5)·6)·256 − 0.5 → nx 线性插值；
     // 明暗在线性空间相乘后回 sRGB（与实现同式，gamma 不可省）。
-    const decode = (byte: number): number => {
-      const srgb = byte / 255;
-      return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-    };
-    const encode = (linear: number): number => {
-      const srgb =
-        linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
-      return Math.round(srgb * 255);
-    };
     const expectColumn = (x: number): number => {
       const u = (x + 0.5) / out.width;
       const fx = ((u - 0.5) * 6 - Math.floor((u - 0.5) * 6)) * 256 - 0.5;
@@ -71,26 +62,23 @@ describe("图案层 wrap 采样（切割痕定位）", () => {
       const tx = fx - x0;
       const wx0 = x0 < 0 ? x0 + 256 : x0;
       const wx1 = x0 + 1 >= 256 ? x0 + 1 - 256 : x0 + 1;
-      const nx = (wx0 * (1 - tx) + wx1 * tx) / 127.5 - 1;
-      const shade = Math.min(1.45, Math.max(0.55, 1 - 0.7 * nx));
-      return encode(decode(200) * shade);
+      const nx = (wx0 * (1 - tx) + wx1 * tx) / 127.5 - 0.9985;
+      const ny = 128 / 127.5 - 0.9985, nz = 2 - 0.9985;
+      return Math.round((nx / Math.hypot(nx, ny, nz) * .5 + .5) * 255);
     };
     const columnMean = (x: number): number => {
       let sum = 0;
-      for (let y = 0; y < out.height; y += 1) sum += out.albedo[(y * out.width + x) * 4];
+      for (let y = 0; y < out.height; y += 1) sum += out.normal[(y * out.width + x) * 4];
       return sum / out.height;
     };
     let worst = 0;
-    let worstX = -1;
     for (let x = 0; x < out.width; x += 1) {
       const deviation = Math.abs(columnMean(x) - expectColumn(x));
       if (deviation > worst) {
         worst = deviation;
-        worstX = x;
       }
     }
     expect(worst).toBeLessThan(1.5);
-    expect(worstX).toBeGreaterThanOrEqual(0);
   });
 
   it("相位 wrap 处（fx<0 / fx≥W）不产生 NaN 黑像素", () => {

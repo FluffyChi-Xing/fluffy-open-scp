@@ -9,6 +9,10 @@ export interface ViewerTapHit {
 }
 
 export interface ThreeViewerOptions {
+  /** Maximum backing-store DPR; detailed editors can opt into native 2x. */
+  maxPixelRatio?: number;
+  /** Lower the pixel budget during camera interaction; restore on idle. */
+  interactionPixelRatio?: number;
   /** 左键轻点（位移 < 4px 且未按 Shift）回调；命中空白时 object=null。 */
   onTap?: (hit: ViewerTapHit) => void;
   /** 悬停拾取（仅对 setHoverTargets 登记的目标）：进入/离开时回调。 */
@@ -173,19 +177,26 @@ export class ThreeViewer {
    * "reading 'isReady'" 且 **promise 永不 settle**，管线（invalidate/
    * assembling 旗）随之挂死，场景冻在半成品帧（用户观测：部分建筑
    * 贴图乱码 + 控制台 isReady 报错）。故与 stale 看门狗 + 兜底超时
-   * race：任何一侧先到即放行，挂死不再可能。three 内部的那次 uncaught
-   * 日志无害（编译轮询已死，首帧走同步链接兜底）。
+   * race：过期调用不再阻塞场景；dispose 另外等待真实编译结束，
+   * 防止关闭/重开编辑 Sheet 时提前销毁轮询引用的材质。
    */
+  private readonly pendingCompilations = new Set<Promise<unknown>>();
+  private disposed = false;
+
   async prepareShaders(
     isStale: () => boolean = () => false,
     objects: ThreeNamespace.Object3D = this.scene,
   ): Promise<void> {
+    if (this.disposed || isStale()) return;
+    const compilation = this.renderer.compileAsync(objects, this.camera, this.scene).catch(() => {});
+    this.pendingCompilations.add(compilation);
+    void compilation.finally(() => this.pendingCompilations.delete(compilation));
     let settled = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        this.renderer.compileAsync(objects, this.camera, this.scene).catch(() => {}),
+        compilation,
         new Promise<void>((resolve) => {
           watchdog = setInterval(() => {
             if (settled || isStale()) resolve();
@@ -422,8 +433,10 @@ export class ThreeViewer {
       alpha: true,
       powerPreference: "high-performance",
     });
-    // 高 DPR 屏（125%/150% 缩放）全屏片元成本翻倍，钳制 1.5 保帧率
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // 默认限制高 DPR 屏的片元成本；精细编辑器可显式提高上限。
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio, options.maxPixelRatio ?? 1.5),
+    );
     container.appendChild(this.renderer.domElement);
 
     // 三灯白模布光：key 跟随滑杆，fill/rim 固定相对方向，保证无贴图也有立体感。
@@ -599,7 +612,7 @@ export class ThreeViewer {
     this.keyLight.castShadow = enabled;
     this.content.traverse((child) => {
       const mesh = child as ThreeNamespace.Mesh;
-      if (mesh.isMesh) mesh.castShadow = enabled;
+      if (mesh.isMesh) mesh.castShadow = enabled && !mesh.userData.pickOnly;
     });
     if (changed) {
       this.content.traverse((child) => {
@@ -648,12 +661,14 @@ export class ThreeViewer {
   }
 
   private orbit(dx: number, dy: number) {
+    this.beginCameraInteraction();
     this.orbitTheta -= (dx * Math.PI) / 180 * 0.6;
     this.orbitPhi -= (dy * Math.PI) / 180 * 0.6;
     this.applyCamera();
   }
 
   private pan(dx: number, dy: number) {
+    this.beginCameraInteraction();
     // 沿相机 right/up 平移轨道目标，步长随相机距离缩放。
     const scale = this.cameraDistance * 0.0016;
     const right = new this.THREE.Vector3().setFromMatrixColumn(
@@ -668,6 +683,7 @@ export class ThreeViewer {
   }
 
   private zoom(direction: number) {
+    this.beginCameraInteraction();
     const factor = direction > 0 ? 1.12 : 1 / 1.12;
     const radius = this.frameRadius;
     this.cameraDistance = Math.min(
@@ -780,6 +796,22 @@ export class ThreeViewer {
     this.needsRender = true;
   }
 
+  private qualityRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private beginCameraInteraction() {
+    const limit = this.options.interactionPixelRatio;
+    if (limit === undefined) return;
+    const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
+    const moving = Math.min(full, limit);
+    if (this.renderer.getPixelRatio() !== moving) this.renderer.setPixelRatio(moving);
+    if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
+    this.qualityRestoreTimer = setTimeout(() => {
+      this.qualityRestoreTimer = null;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
+      this.invalidate();
+    }, 180);
+  }
+
   private renderLoop = () => {
     this.frame = requestAnimationFrame(this.renderLoop);
     if (this.assemblingScene || !this.needsRender) return;
@@ -794,6 +826,8 @@ export class ThreeViewer {
    * 恢复可见性。需在渲染后同一同步段读取（未开 preserveDrawingBuffer）。
    */
   captureScreenshot(excludeGroups: string[] = []): string | null {
+    const previousRatio = this.renderer.getPixelRatio();
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
     const hidden: ThreeNamespace.Group[] = [];
     for (const name of excludeGroups) {
       const group = this.groups.get(name);
@@ -809,10 +843,15 @@ export class ThreeViewer {
       return null;
     } finally {
       for (const group of hidden) group.visible = true;
+      this.renderer.setPixelRatio(previousRatio);
+      this.invalidate();
     }
   }
 
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
     cancelAnimationFrame(this.frame);
     this.observer?.disconnect();
     this.container.removeEventListener("pointerdown", this.onPointerDown);
@@ -821,11 +860,17 @@ export class ThreeViewer {
     this.container.removeEventListener("pointercancel", this.onPointerUp);
     this.container.removeEventListener("wheel", this.onWheel);
     this.container.removeEventListener("mousedown", this.onMouseDown);
-    disposeObject(this.scene);
-    this.grid?.geometry.dispose();
-    (this.grid?.material as ThreeNamespace.Material | null)?.dispose();
-    this.keyLight.dispose();
-    this.renderer.dispose();
+    // Three's async shader poll still references material properties. Detach UI
+    // now, but release GPU/material objects only once those polls have settled.
+    const release = () => {
+      disposeObject(this.scene);
+      this.grid?.geometry.dispose();
+      (this.grid?.material as ThreeNamespace.Material | null)?.dispose();
+      this.keyLight.dispose();
+      this.renderer.dispose();
+    };
+    if (this.pendingCompilations.size) void Promise.allSettled([...this.pendingCompilations]).then(release);
+    else release();
     this.renderer.domElement.remove();
   }
 }

@@ -9,6 +9,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "mod_flow_assets.rs"]
+mod asset_inputs;
+
 pub const FORMAT: &str = "openscp.mod";
 /// Stable resource locations shared by project creation, existing projects and schemas.
 pub fn ensure_project_layout(root: &Path, mod_type: &str) -> Result<Value, String> {
@@ -42,6 +45,8 @@ pub fn dispatch(root: &Path, name: &str, action: &str, payload: Value) -> Result
     let _guard = FLOW_LOCK.lock().map_err(|_| "Workflow lock failed")?;
     let string = |key: &str| payload[key].as_str().unwrap_or("");
     match action {
+        "import-asset" => asset_inputs::import(root, &payload),
+        "read-asset" => asset_inputs::describe(root, string("asset")),
         "inspect" => serde_json::to_value(inspect(root)?).map_err(|e| e.to_string()),
         "initialize" => serde_json::to_value(initialize(
             root,
@@ -354,6 +359,7 @@ pub fn initialize(
             "map-metadata",
             "output",
         ],
+        _ if mod_type == "assets" => vec!["texture-input", "texture-input", "texture-input", "texture-input", "texture-input", "texture-input", "building-asset", "output"],
         _ => vec!["static-resource", "output"],
     };
     let layout = ensure_project_layout(root, mod_type)?;
@@ -375,6 +381,8 @@ pub fn initialize(
             "noise-height" => {
                 json!({"seed":1,"amplitude_meters":80,"wavelength_meters":2048,"base_meters":-850})
             }
+            "texture-input" => json!({"asset":"","slot":i}),
+            "building-asset" => json!({"asset":"","document":"","property":"","slot0":"texture-input-1","slot1":"texture-input-2","slot2":"texture-input-3","slot3":"texture-input-4","slot4":"texture-input-5","slot5":"texture-input-6"}),
             "static-resource" => json!({"asset":"","tgi":"","source_package":""}),
             "output" => json!({"file":"mod.package"}),
             "coordinate-alignment" => json!({"action":"configure"}),
@@ -391,7 +399,9 @@ pub fn initialize(
         ));
         deps.insert(
             id.clone(),
-            if i == 0 {
+            if *kind == "building-asset" {
+                (1..=6).map(|n| format!("texture-input-{n}")).collect()
+            } else if i == 0 || *kind == "texture-input" {
                 vec![]
             } else {
                 vec![nodes.last().map(|n: &Node| n.id.clone()).unwrap()]
@@ -401,7 +411,10 @@ pub fn initialize(
             id,
             schema,
             kind: kind.to_string(),
-            position: [(i % 3) as f64 * 290. + 40., (i / 3) as f64 * 210. + 60.],
+            position: if *kind == "texture-input" { [40., i as f64 * 280. + 60.] }
+                else if *kind == "building-asset" { [570., 400.] }
+                else if mod_type == "assets" && mode == "assets" { [1120., 400.] }
+                else { [(i % 3) as f64 * 290. + 40., (i / 3) as f64 * 210. + 60.] },
         });
     }
     let now = std::time::SystemTime::now()
@@ -507,7 +520,7 @@ pub fn inspect(root: &Path) -> Result<FlowState, String> {
     for (id, parents) in &deps {
         if nodes
             .iter()
-            .any(|n| &n.id == id && matches!(n.kind.as_str(), "map-source" | "static-resource"))
+            .any(|n| &n.id == id && matches!(n.kind.as_str(), "map-source" | "static-resource" | "texture-input"))
             && !parents.is_empty()
             || parents
                 .iter()
@@ -641,7 +654,8 @@ pub fn inspect(root: &Path) -> Result<FlowState, String> {
             );
         }
     }
-    if height == 0 && !schemas.iter().any(|s| s.kind == "static-resource") {
+    asset_inputs::validate_links(&schemas, &deps, &mut diagnostics);
+    if height == 0 && !schemas.iter().any(|s| matches!(s.kind.as_str(), "static-resource" | "building-asset")) {
         diagnostic(
             &mut diagnostics,
             None,
@@ -654,7 +668,7 @@ pub fn inspect(root: &Path) -> Result<FlowState, String> {
         for s in &schemas {
             let path = match s.kind.as_str() {
                 "map-source" => Some(PathBuf::from(s.config["package"].as_str().unwrap())),
-                "static-resource" => Some(safe_path(root, s.config["asset"].as_str().unwrap())?),
+                "static-resource" | "building-asset" => Some(safe_path(root, s.config["asset"].as_str().unwrap())?),
                 _ => None,
             };
             if let Some(path) = path {
@@ -685,6 +699,7 @@ pub fn inspect(root: &Path) -> Result<FlowState, String> {
 }
 fn validate_schema(root: &Path, s: &Schema, out: &mut Vec<Diagnostic>) {
     let error = match s.kind.as_str() {
+        "texture-input" | "building-asset" => asset_inputs::validate(root, s),
         "map-source" => {
             let p = s.config["package"].as_str().unwrap_or("");
             let group = s.config["group"].as_str().unwrap_or("");
@@ -855,6 +870,14 @@ pub fn build(root: &Path, requested: &IntermediateModel) -> Result<Value, String
             .find(|s| &s.id == id)
             .ok_or("Missing schema")?;
         match s.kind.as_str() {
+            "building-asset" => {
+                let p = safe_path(root, s.config["asset"].as_str().unwrap())?;
+                let package = dbpf::Package::open(p).map_err(|e| e.to_string())?;
+                for entry in package.entries() {
+                    if entry.decompressed_size > 128 * 1024 * 1024 { return Err("Resource exceeds 128 MiB".into()); }
+                    entries.push(dbpf::OverlayEntry::new(entry.id, package.read(entry).map_err(|e| e.to_string())?));
+                }
+            }
             "static-resource" => {
                 let p = safe_path(root, s.config["asset"].as_str().unwrap())?;
                 if fs::metadata(&p).map_err(|e| e.to_string())?.len() > 128 * 1024 * 1024 {
@@ -929,7 +952,7 @@ pub fn build(root: &Path, requested: &IntermediateModel) -> Result<Value, String
     for s in &im.schemas {
         let path = match s.kind.as_str() {
             "map-source" => Some(PathBuf::from(s.config["package"].as_str().unwrap())),
-            "static-resource" => Some(safe_path(root, s.config["asset"].as_str().unwrap())?),
+            "static-resource" | "building-asset" => Some(safe_path(root, s.config["asset"].as_str().unwrap())?),
             _ => None,
         };
         if let Some(path) = path {
@@ -1038,7 +1061,7 @@ mod tests {
                 "Example",
                 "Author",
                 "Description",
-                "assets",
+                "gameplay",
                 "assets",
             )
             .unwrap();
@@ -1070,6 +1093,50 @@ mod tests {
         assert_eq!(result, build(&f.0, &im).unwrap());
         fs::write(f.0.join("asset.bin"), b"edited asset").unwrap();
         assert!(build(&f.0, &im).unwrap_err().contains("stale"));
+    }
+
+    fn verify_native_asset_flow(source: &Path) {
+        let f = Fixture::new();
+        let state = initialize(&f.0, "Native", "A", "D", "assets", "assets").unwrap();
+        assert_eq!(state.schemas.iter().filter(|s| s.kind == "texture-input").count(), 6);
+        let imported = asset_inputs::import(&f.0, &json!({"path": source})).unwrap();
+        let mut building = state.schemas.iter().find(|s| s.kind == "building-asset").unwrap().clone();
+        building.config["asset"] = imported["asset"].clone();
+        let state = save_node(&f.0, &state.revision, building.clone()).unwrap();
+        assert!(state.im.is_some(), "{:?}", serde_json::to_value(&state.diagnostics));
+        let result = build(&f.0, state.im.as_ref().unwrap()).unwrap();
+        let original = dbpf::Package::open(source).unwrap();
+        let rebuilt = dbpf::Package::open(result["path"].as_str().unwrap()).unwrap();
+        assert_eq!(original.entries().len(), rebuilt.entries().len());
+        for entry in original.entries() {
+            let output = rebuilt.entries().iter().find(|e| e.id == entry.id).unwrap();
+            assert_eq!(original.read(entry).unwrap(), rebuilt.read(output).unwrap());
+        }
+        building.config["document"] = json!("{\"$schema\":\"openscp.lot-asset/1\"}");
+        let edited = save_node(&f.0, &state.revision, building.clone()).unwrap();
+        assert!(edited.im.is_none(), "Uncompiled edits must not silently build the source");
+        building.config["document"] = json!("");
+        building.config["slot2"] = json!("missing-input");
+        let broken = save_node(&f.0, &edited.revision, building).unwrap();
+        assert!(broken.im.is_none());
+        assert!(asset_inputs::describe(&f.0, "../escape.package").is_err());
+    }
+    #[test]
+    fn native_asset_flow_preserves_all_resources_and_blocks_uncompiled_edits() {
+        let f = Fixture::new();
+        let bytes = dbpf::write_uncompressed_overlay(&[
+            dbpf::OverlayEntry::new(parse_tgi("00B1B104:40E1C000:8357B87F").unwrap(), b"property"),
+            dbpf::OverlayEntry::new(parse_tgi("2F4E681B:00000000:89435924").unwrap(), b"model"),
+            dbpf::OverlayEntry::new(parse_tgi("3F8662EA:00000000:00000001").unwrap(), b"script"),
+        ]).unwrap();
+        let source = f.0.join("native.package");
+        fs::write(&source, bytes).unwrap();
+        verify_native_asset_flow(&source);
+    }
+    #[test]
+    #[ignore = "requires SC_FLOW_ASSET_PACKAGE pointing to a community asset package"]
+    fn community_asset_package_roundtrip() {
+        verify_native_asset_flow(Path::new(&std::env::var("SC_FLOW_ASSET_PACKAGE").unwrap()));
     }
     #[test]
     fn recognizes_only_explicit_supported_manifests() {

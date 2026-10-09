@@ -143,15 +143,17 @@ export function createEngineDecalMaterial(
   // 参数**需要 /2 还原（±120 → ±60，chunks/offsets 编码不被 ×2 破坏）；
   // 颜色权重列保持 DTO 满亮度（与静态分支 uLayerColors 同口径——此前四
   // 行一起 /2 = LED 比静态暗 2 倍的叠加因子，"淡到看不见"对拍）。
+  // The projected-light pass consumes the original HLSL weights, not the
+  // doubled display colours used by the tube. Undo DTO ×2 for all four columns.
   const materialDataRows =
     (family === "sdf" || family === "neon-light") && opts.layerColors
       ? [0, 1, 2, 3].map(
           (i) =>
             new THREE.Vector4(
-              (opts.layerColors?.[0]?.[i] ?? 0) / (i === 3 ? 2 : 1),
-              (opts.layerColors?.[1]?.[i] ?? 0) / (i === 3 ? 2 : 1),
-              (opts.layerColors?.[2]?.[i] ?? 0) / (i === 3 ? 2 : 1),
-              (opts.layerColors?.[3]?.[i] ?? 0) / (i === 3 ? 2 : 1),
+              (opts.layerColors?.[0]?.[i] ?? 0) / (i === 3 || family === "neon-light" ? 2 : 1),
+              (opts.layerColors?.[1]?.[i] ?? 0) / (i === 3 || family === "neon-light" ? 2 : 1),
+              (opts.layerColors?.[2]?.[i] ?? 0) / (i === 3 || family === "neon-light" ? 2 : 1),
+              (opts.layerColors?.[3]?.[i] ?? 0) / (i === 3 || family === "neon-light" ? 2 : 1),
             ),
         )
       : [

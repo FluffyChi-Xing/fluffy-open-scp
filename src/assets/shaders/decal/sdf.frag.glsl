@@ -113,5 +113,6 @@ specE, specStrength, shColorDiff, shColorSpec, spec);
 outColor.rgb += shColorSpec + spec;
 float scMax = max(outColor.r, max(outColor.g, outColor.b));
 outColor.rgb /= 1.0 + max(scMax - 1.0, 0.0);
+if (outColor.a < 0.01) discard;
 gl_FragColor = outColor;
 }

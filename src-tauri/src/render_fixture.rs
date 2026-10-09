@@ -10,8 +10,17 @@ fn export_property_render_fixture() {
     std::fs::create_dir_all(&out).unwrap();
     let manager = PackageManager::new();
     let mut target = None;
+    let mut model_package_id = None;
+    let model_package = std::env::var("SC_MODEL_PACKAGE").unwrap_or("SimCity_Game.package".into());
     for name in ["SimCityDataEP1.package", "SimCity_Game.package", "SimCity_App.package", "SimCity_Graphics.package", "SimCity_DLC0.package"] {
+        // Reproduce base-game reports without silently selecting an EP1 override.
+        if name == "SimCityDataEP1.package" && std::env::var_os("SC_FIXTURE_BASE_GAME_ONLY").is_some() {
+            continue;
+        }
         let (id, package) = manager.insert(Package::open(base.join(name)).unwrap()).unwrap();
+        if name == model_package {
+            model_package_id = Some(id);
+        }
         if target.is_none() {
             if let Some(entry) = package.entries().iter().find(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.instance == instance) {
                 target = Some((id, Arc::clone(&package), entry.id));
@@ -21,9 +30,28 @@ fn export_property_render_fixture() {
     let (id, package, key) = target.expect("lot property");
     let store = sc_store::Store::open(out.join("fixture.sqlite")).unwrap();
     let data = package.read(package.entry(key).unwrap()).unwrap();
-    let session = build_lot_editor_session(&data, &package, &manager, &store,
+    let mut session = build_lot_editor_session(&data, &package, &manager, &store,
         LotEditorSessionRequest { package_id: id, tgi: key.into() }, None).unwrap();
+    if let Ok(model_hex) = std::env::var("SC_MODEL_INSTANCE") {
+        let model_instance = u32::from_str_radix(model_hex.trim_start_matches("0x"), 16).unwrap();
+        session.model_lods = vec![Some(LodModelRef {
+            package_id: model_package_id.expect("requested model package must be loaded"),
+            tgi: TgiDto { type_id: RW4_MODEL_TYPE, group: 0, instance: model_instance },
+        })];
+    }
     std::fs::write(out.join("session.json"), serde_json::to_vec(&session).unwrap()).unwrap();
+    std::fs::write(out.join("properties.json"), serde_json::to_vec_pretty(&session.document.properties).unwrap()).unwrap();
+    if let Some(mask) = session.document.lot_mask {
+        for (_, pkg) in manager.all_packages_with_ids().unwrap() {
+            if let Some(entry) = pkg.entries().iter().find(|e| e.id.type_id == RASTER_IMAGE_TYPE && e.id.instance == mask.instance) {
+                let bytes = pkg.read(entry).unwrap();
+                let raster = rw4::RasterImage::parse(&bytes).unwrap();
+                eprintln!("mask {:08X} {}x{} mip bytes {:?}", mask.instance, raster.width, raster.height, raster.mips.iter().map(Vec::len).collect::<Vec<_>>());
+                std::fs::write(out.join("mask.raster"), bytes).unwrap();
+                break;
+            }
+        }
+    }
     let export = |package_id: u64, key: &TgiDto, filename: &str| {
         let package = manager.get(package_id).unwrap();
         let data = package.read(package.entry(key.clone().into()).unwrap()).unwrap();

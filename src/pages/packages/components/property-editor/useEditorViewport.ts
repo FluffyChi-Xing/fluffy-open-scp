@@ -56,6 +56,8 @@ export const PICKABLE_GROUPS = [
  * rebuild(assembly) 回调注入。
  */
 export function useEditorViewport(options: {
+  maxPixelRatio?: number;
+  interactionPixelRatio?: number;
   onTapUnit: (id: string | null) => void;
   onHoverUnit?: (id: string | null) => void;
 }) {
@@ -120,6 +122,8 @@ export function useEditorViewport(options: {
     const element = container.value;
     if (!element) return;
     viewer.value = await ThreeViewer.create(element, {
+      maxPixelRatio: options.maxPixelRatio,
+      interactionPixelRatio: options.interactionPixelRatio,
       onTap: (hit) => {
         options.onTapUnit(resolveUnitId(hit.object, hit.event));
       },

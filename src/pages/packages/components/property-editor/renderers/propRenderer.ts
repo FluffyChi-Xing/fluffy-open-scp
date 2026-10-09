@@ -1,8 +1,8 @@
 import type * as ThreeNamespace from "three";
 import type { LotUnitDto } from "@/api/tauri";
-import { pngBlobUrl } from "@/lib/three-gltf";
+import { assetCategory, directModelKey } from "../assetCategories";
 import { unitMatrix } from "../unitGizmos";
-import { getPropModelObject } from "../propModels";
+import { getPropModelObject, getTreeModelObject } from "../propModels";
 import type { UnitRenderContext, UnitRenderer } from "./types";
 
 /**
@@ -19,12 +19,22 @@ export const renderPropUnit: UnitRenderer = async (
   unit: LotUnitDto,
 ): Promise<ThreeNamespace.Object3D | null> => {
   if (ctx.renderMode !== "refined" || unit.kind !== "prop") return null;
-  const payload =
-    typeof unit.resourceId === "number"
-      ? (ctx.propModels.get(unit.resourceId) ??
-        ctx.addedModelPayloads?.get(unit.resourceId))
-      : undefined;
+  const payload = unit.modelTgi
+    ? ctx.addedModelPayloads?.get(directModelKey(unit))
+    : typeof unit.resourceId === "number" ? ctx.propModels.get(unit.resourceId) : undefined;
   if (!payload) return null;
+  // Raw tree kit entries use the same verified atlas decoder as resolved trees.
+  if (unit.modelTgi && assetCategory(unit.modelTgi.instance, unit.displayName) === "trees") {
+    const position = new ctx.THREE.Vector3();
+    const rotation = new ctx.THREE.Quaternion();
+    const scale = new ctx.THREE.Vector3(1, 1, 1);
+    if (unit.transform) unitMatrix(ctx.THREE, unit.transform).decompose(position, rotation, scale);
+    const scalar = unit.scale ?? 1;
+    scale.multiplyScalar(scalar);
+    const tree = await getTreeModelObject(ctx.THREE, [payload], { seed: unit.index, position, scale });
+    if (tree) { tree.quaternion.copy(rotation); tree.userData.incrementalScale = scalar; }
+    return tree;
+  }
   const propModel = await getPropModelObject(
     ctx.THREE,
     payload,
@@ -49,47 +59,6 @@ export const renderPropUnit: UnitRenderer = async (
     typeof unit.scale === "number" ? unit.scale : 1;
   if (typeof unit.scale === "number") {
     propModel.scale.multiplyScalar(unit.scale);
-  }
-  // 放置的直挂模型（树部件家族实测，props 文档 §3.1）：纹理槽位语义与
-  // 杂件相反——tex[0]=法线/占位（乳白）、tex[1]=漫反射图集（叶/皮彩色）。
-  // 漫反射按 PNG 字节数取大者（彩色图集压缩后恒大于法线小图），叶卡
-  // alphaTest 抠透。高度由放置单元的 transform 缩放承载（默认 0.2 ≈
-  // 10m 树高，用户经缩放手柄调整）。
-  if (unit.modelTgi) {
-    const materialSet = payload.materials?.[0];
-    const diffuse = [materialSet?.normalPng, materialSet?.slot0Png]
-      .filter((bytes): bytes is Uint8Array<ArrayBuffer> => !!bytes)
-      .sort((a, b) => b.length - a.length)[0] ?? null;
-    if (diffuse) {
-      const texture = await new Promise<ThreeNamespace.Texture | null>((resolve) => {
-        new ctx.THREE.TextureLoader().load(
-          pngBlobUrl(diffuse),
-          (loaded) => {
-            loaded.colorSpace = ctx.THREE.SRGBColorSpace;
-            loaded.flipY = true;
-            loaded.anisotropy = 4;
-            resolve(loaded);
-          },
-          undefined,
-          () => resolve(null),
-        );
-      });
-      if (texture) {
-        propModel.traverse((child) => {
-          const mesh = child as ThreeNamespace.Mesh;
-          if (!mesh.isMesh) return;
-          const materials = Array.isArray(mesh.material)
-            ? mesh.material
-            : [mesh.material];
-          for (const material of materials) {
-            const standard = material as ThreeNamespace.MeshStandardMaterial;
-            standard.map = texture;
-            standard.alphaTest = 0.5;
-            standard.needsUpdate = true;
-          }
-        });
-      }
-    }
   }
   return propModel;
 };

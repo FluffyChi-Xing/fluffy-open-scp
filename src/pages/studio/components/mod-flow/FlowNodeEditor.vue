@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import FSheet from "@/components/ui/FSheet.vue";
+import AssetFlowTool from "./AssetFlowTool.vue";
 import NodeConfigForm from "./NodeConfigForm.vue";
 import { useI18n } from "vue-i18n";
 import type { FlowSchema } from "./contracts";
-defineProps<{ schema: FlowSchema | null; busy: boolean }>();
+defineProps<{
+  schema: FlowSchema | null;
+  busy: boolean;
+  project: string;
+  schemas: FlowSchema[];
+}>();
 const emit = defineEmits<{ save: [schema: FlowSchema] }>();
 const open = defineModel<boolean>("open", { default: false });
 const { t } = useI18n();
@@ -14,7 +20,18 @@ const { t } = useI18n();
       <h2>{{ schema ? t(`flow.nodes.${schema.kind}`) : t("flow.edit") }}</h2>
       <button @click="open = false">{{ t("flow.close") }}</button>
     </header>
-    <NodeConfigForm :schema="schema" :busy="busy" @save="emit('save', $event)"
+    <AssetFlowTool
+      v-if="schema && ['texture-input', 'building-asset'].includes(schema.kind)"
+      :schema="schema"
+      :schemas="schemas"
+      :project="project"
+      :busy="busy"
+      @save="emit('save', $event)" />
+    <NodeConfigForm
+      v-else
+      :schema="schema"
+      :busy="busy"
+      @save="emit('save', $event)"
   /></FSheet>
 </template>
 <style scoped>

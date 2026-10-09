@@ -117,7 +117,11 @@ const dependencies = computed(
 );
 const edges = computed(() =>
   Object.entries(dependencies.value).flatMap(([target, parents]) =>
-    parents.map((source) => ({ id: `${source}:${target}`, source, target })),
+    parents.flatMap((source) => {
+      const schema = state.value?.schemas.find(s => s.id === target);
+      const slots = schema?.kind === 'building-asset' ? Object.entries(schema.config).filter(([k, v]) => /^slot[0-5]$/.test(k) && v === source).map(([k]) => k) : [undefined];
+      return slots.map(targetHandle => ({ id: `${source}:${target}:${targetHandle ?? ''}`, source, target, targetHandle }));
+    }),
   ),
 );
 watch(readyToBuild, (value) => emit("status", value), { immediate: true });
@@ -148,11 +152,21 @@ async function connect(connection: Connection) {
     state.value.nodes.some(
       (n) =>
         (n.id === connection.target &&
-          ["map-source", "static-resource"].includes(n.kind)) ||
+          ["map-source", "static-resource", "texture-input"].includes(n.kind)) ||
         (n.id === connection.source && n.kind === "output"),
     )
   )
     return;
+  const targetSchema = state.value.schemas.find(s => s.id === connection.target);
+  if (targetSchema?.kind === 'building-asset') {
+    if (!/^slot[0-5]$/.test(connection.targetHandle ?? '') || !state.value.nodes.some(n => n.id === connection.source && n.kind === 'texture-input')) return;
+    const updated = { ...targetSchema, config: { ...targetSchema.config, [connection.targetHandle!]: connection.source } };
+    if (!await save(updated)) return;
+    const deps = structuredClone(dependencies.value);
+    deps[connection.target] = [...new Set(Object.entries(updated.config).filter(([k]) => /^slot[0-5]$/.test(k)).map(([, v]) => String(v)))];
+    await saveGraph(state.value.nodes, deps);
+    return;
+  }
   const deps = structuredClone(dependencies.value);
   deps[connection.target] = [
     ...new Set([...(deps[connection.target] ?? []), connection.source]),
@@ -174,6 +188,14 @@ async function removeEdge(id: string) {
   if (!state.value) return;
   const edge = edges.value.find((e) => e.id === id);
   if (!edge) return;
+  const target = state.value.schemas.find(s => s.id === edge.target);
+  if (target?.kind === "building-asset" && edge.targetHandle) {
+    const updated = { ...target, config: { ...target.config, [edge.targetHandle]: "" } };
+    if (!await save(updated)) return;
+    const deps = structuredClone(dependencies.value);
+    deps[edge.target] = [...new Set(Object.entries(updated.config).filter(([k, v]) => /^slot[0-5]$/.test(k) && v).map(([, v]) => String(v)))];
+    await saveGraph(state.value.nodes, deps); return;
+  }
   const deps = structuredClone(dependencies.value);
   deps[edge.target] = deps[edge.target]!.filter((x) => x !== edge.source);
   await saveGraph(state.value.nodes, deps);
@@ -227,6 +249,8 @@ defineExpose({
       <template #node-workflow="{ id, data }">
         <WorkflowNode
           :kind="data.kind"
+          :project="project"
+          :schemas="state?.schemas ?? []"
           :schema="data.schema"
           :invalid="data.invalid"
           :busy="busy"
@@ -268,6 +292,8 @@ defineExpose({
       v-if="editorOpen"
       v-model:open="editorOpen"
       :schema="edited"
+      :project="project"
+      :schemas="state?.schemas ?? []"
       :busy="busy"
       @save="saveNode"
     />

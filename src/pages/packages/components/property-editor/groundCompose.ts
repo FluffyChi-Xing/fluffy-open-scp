@@ -1,30 +1,4 @@
-/**
- * 精细地面合成的**纯像素核心**（无 DOM 依赖）——主线程与 Worker 共用。
- *
- * 引擎语义（`generic_lot` 像素着色器逐字直译，= lot_composite.rs 校准口径，
- * 见 docs/blog/raster-lot-rendering.md §3/§5/§7）：
- *  1. 选区：raw mask 四通道权重 > 0.5−borderWidth 硬阈值 one-hot，按引擎
- *     优先级瀑布 A边框 > A主色 > B边框 > B主色 > G边框 > G主色 > R边框 >
- *     R主色（w→z→y→x）选出唯一胜者；边框带 = 权重 ∈ (0.5−bw, 0.5+bw]；
- *  2. 反照率：胜者输出**平色**（主区 LotColor.RGB / 边框带
- *     LotBorderColor.RGB，后端已 linear→sRGB）——引擎覆盖区不采样漫反射
- *     （tile×tint 双重变暗已证伪，博客 §7.3）；
- *  3. 图案质感：胜者格号（主区 = LotColor.A / 边框带 = LotBorderColor.A）
- *     选法线图集 0x60E7805D 的 4×4 格，按 (u−0.5)·tiles 相位平铺（单 lot
- *     视图的引擎 uv1 世界锚定等价形式），**坡度明暗直接烘焙进反照率**
- *     （线性空间相乘后回 sRGB）。烘焙而非 normalMap 实时光照的裁定：
- *     引擎 lotCalcLighting 是强风格化项（切线空间线性项 ×1.4，明暗差可达
- *     ±45%，lot_composite shade_of 同款对拍校准），而真实法线在平射阳光下
- *     的 N·L 响应是二阶小量——PE 曾用 normalMap+Phong 结果图案不可见
- *     （2026-09-29 用户对拍：精细与默认几乎无差异）；
- *  4. 未覆盖区：底图格（Lot Textures 图集第 baseTile 格，数据驱动三级来源）
- *     **按 0x0CCB7FD0 周期平铺**（与图案层同密度；引擎为 uv0 整格拉伸，
- *     此处有意偏离换清晰度——见 sampleBaseCell 注记），无图案光照。
- *
- * 画布即引擎空间：后端已做行序翻转（row 0 = 北/+Y），mask 列 0 = 西（−X）
- * 直采；4× 超采样 + 双线性权重 = GPU 口径（阈值在插值之后）。
- */
-
+/** CPU composition of lot albedo and tangent normals; lighting stays dynamic. */
 export interface Pixels {
   data: Uint8ClampedArray<ArrayBuffer>;
   width: number;
@@ -47,6 +21,9 @@ export interface GroundComposeInput {
   lotBorderWidths: number[] | null;
   /** 全局共享法线图集（4×4 格，0x60E7805D）；null = 无图案光照（纯平色）。 */
   normalAtlas: Pixels | null;
+  baseTileIndex?: number;
+  lotColorHeights?: number[] | null;
+  lotBorderHeights?: number[] | null;
   /** 图案平铺次数（逐轴）= LotSize / 0x0CCB7FD0（非整数）。 */
   tilesX: number;
   tilesY: number;
@@ -59,37 +36,9 @@ export interface GroundComposeInput {
 
 export interface GroundComposeOutput {
   albedo: Uint8ClampedArray<ArrayBuffer>;
+  normal: Uint8ClampedArray<ArrayBuffer>;
   width: number;
   height: number;
-}
-
-/** sRGB 字节 → 线性 0..1（lot_composite 同公式）。 */
-function decodeSrgb(byte: number): number {
-  const srgb = byte / 255;
-  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-}
-
-const SRGB_LINEAR = Float64Array.from({ length: 256 }, (_, byte) => decodeSrgb(byte));
-const SRGB_THRESHOLDS = Float64Array.from({ length: 255 }, (_, byte) => decodeSrgb(byte + 0.5));
-// A small inverse lookup with boundary correction preserves rounded byte output.
-// Ground composition used to evaluate six powers for every covered pixel.
-const SRGB_BUCKETS = Uint8Array.from({ length: 4097 }, (_, bucket) => {
-  const linear = bucket / 4096;
-  let byte = 0;
-  while (byte < 255 && linear >= SRGB_THRESHOLDS[byte]) byte += 1;
-  return byte;
-});
-
-function srgbToLinear(byte: number): number {
-  return SRGB_LINEAR[byte] ?? decodeSrgb(byte);
-}
-
-/** 线性 0..1 → sRGB 字节。 */
-function linearToSrgbByte(linear: number): number {
-  const clamped = Math.min(1, Math.max(0, Number.isFinite(linear) ? linear : 0));
-  let byte = SRGB_BUCKETS[Math.floor(clamped * 4096)];
-  while (byte < 255 && clamped >= SRGB_THRESHOLDS[byte]) byte += 1;
-  return byte;
 }
 
 /** v1 回退路径的最近色硬分配（量化 mask RGB → 通道下标）。 */
@@ -138,12 +87,8 @@ function frac(value: number): number {
 /**
  * 底图格采样（双线性 wrap，**按周期平铺**）。
  *
- * ⚠ **有意偏离引擎**：引擎 shader（docs/overview/lot-rendering.md §3-①）
- * 用 uv0（lot 局部 0..1）把底图格**整格拉伸**铺满地块——大 lot 的底图纹素
- * = LotSize/256（216m lot ≈ 0.84m/纹素），近看是低密度色块（用户对拍
- * "马赛克"）。此处改为与图案层同相位/同周期（0x0CCB7FD0，默认 8m）平铺：
- * 底图纹素密度 = 256/8 = 32px/m，与覆盖区一致。游戏对拍若证实引擎观感
- * （拉伸）更符合预期，回滚本函数为 uv0 拉伸插值即可。
+ * generic_lot 的 baseUV 来自 texcoord0.zw，并以 frac(baseUV) 平铺；
+ * CreateUnitLotGraphics 按 0x0CCB7FD0 指定的米制周期生成该坐标。
  */
 function sampleBaseCell(
   source: Pixels,
@@ -156,8 +101,9 @@ function sampleBaseCell(
 }
 
 /**
- * 图案格平铺采样（双线性，wrap）：引擎 uv1 相位 (u−0.5)·tiles（单 lot 等价
- * 形式）。平铺重复之间无缝 wrap；输出密度≈格原生密度（1:1）时退化为最近邻
+ * 图案格平铺采样（双线性，wrap）：引擎 U 沿 +X，V 沿 -Y。
+ * 输出行 v 沿 +Y（遮罩已由后端翻行），图集仍保留原始行序。
+ * 平铺重复之间无缝 wrap；输出密度≈格原生密度（1:1）时退化为最近邻
  * ——即探针口径；密度不足（上限裁剪）时双线性软化而非最近邻丢线。
  */
 function samplePatternBilinear(
@@ -168,7 +114,7 @@ function samplePatternBilinear(
   tilesY: number,
 ): [number, number, number] {
   const fx = frac((u - 0.5) * tilesX) * source.width - 0.5;
-  const fy = frac((v - 0.5) * tilesY) * source.height - 0.5;
+  const fy = frac((0.5 - v) * tilesY) * source.height - 0.5;
   const x0 = Math.floor(fx);
   const y0 = Math.floor(fy);
   const tx = fx - x0;
@@ -261,6 +207,7 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
   const outW = size.width;
   const outH = size.height;
   const composed = new Uint8ClampedArray(outW * outH * 4);
+  const normals = new Uint8ClampedArray(composed.length);
 
   const borderIndices =
     input.lotBorderPatternIndices && input.lotBorderPatternIndices.length === 4
@@ -282,26 +229,6 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
     }
     return cached;
   }
-  /**
-   * 图案格法线 → 坡度明暗（lot_composite `shade_of` 同款：平整 = 1.0，
-   * 逆光面暗、向光面亮，近似引擎 lotCalcLighting 的图案光照）。
-   */
-  function shadeAt(cell: Pixels, u: number, v: number): number {
-    const LIGHT_X = -0.5;
-    const LIGHT_Y = -0.5;
-    const STRENGTH = 1.4;
-    const [nr, ng] = samplePatternBilinear(
-      cell,
-      u,
-      v,
-      input.tilesX,
-      input.tilesY,
-    );
-    const nx = nr / 127.5 - 1;
-    const ny = ng / 127.5 - 1;
-    return Math.min(1.45, Math.max(0.55, 1 + STRENGTH * (nx * LIGHT_X + ny * LIGHT_Y)));
-  }
-
   /** 画布 UV → raw mask 通道权重（双线性，= 引擎 GPU 采样口径）。
    *  边缘的亚 texel 平滑来自 mask 自带的软渐变坡；此前最近邻是 2026-09-13
    *  为抑制「高优通道外扩」改的，但外扩本就是引擎同款行为（GPU 双线性 +
@@ -333,6 +260,29 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
     return out;
   }
 
+  // overlayGetHeight: ordered channel blending, including the authored border
+  // height. Bake fwidth at output texel resolution; quarter-mask-texel offsets
+  // match the HLSL normal reconstruction (samplerInfo5.zw * .25).
+  const edge = 7 * Math.max(1 / outW, 1 / outH) * 1.5;
+  const smooth = (center: number, value: number): number => {
+    const lo = Math.max(center - edge, 0.05);
+    const hi = Math.min(center + edge, 0.95);
+    const t = Math.min(1, Math.max(0, (value - lo) / Math.max(hi - lo, 1e-6)));
+    return t * t * (3 - 2 * t);
+  };
+  const hasHeight = !!rawMask && [...(input.lotColorHeights ?? []), ...(input.lotBorderHeights ?? [])].some(h => h !== 0);
+  function heightAt(u: number, v: number): number {
+    const weights = sampleWeights(u, v);
+    let height = 0;
+    for (let c = 0; c < 4; c++) {
+      const mask = smooth(0.5 - borderWidths[c], weights[c]);
+      const border = 1 - smooth(0.5 + borderWidths[c], weights[c]);
+      const main = input.lotColorHeights?.[c] ?? 0;
+      const h = main + ((input.lotBorderHeights?.[c] ?? 0) - main) * border;
+      height += (h - height) * mask;
+    }
+    return height;
+  }
   for (let y = 0; y < outH; y += 1) {
     for (let x = 0; x < outW; x += 1) {
       const at = (y * outW + x) * 4;
@@ -365,23 +315,21 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
           );
         }
       }
+      let normalCell = patternCell(input.baseTileIndex ?? 8);
       if (channel >= 0) {
-        // 覆盖区 = 平色 × 图案坡度明暗（引擎不采样漫反射；明暗在线性空间
-        // 相乘后回 sRGB = 探针 tinted() 同款）。边框色缺失回退浅灰 156
-        //（= 后端 LotBorderColor 回退值）。
+        // 覆盖区使用主色或边框固有色，图案和高度法线单独输出供动态光照。
+        // 边框色缺失回退浅灰 156（后端 LotBorderColor 默认值）。
         const flat = channelIsBorder
           ? input.lotBorderColors?.[channel] ?? [156, 156, 156]
           : input.lotColors[channel];
-        const cell = patternCell(
+        normalCell = patternCell(
           channelIsBorder ? borderIndices[channel] : input.lotColors[channel][3],
         );
-        const shade = cell ? shadeAt(cell, u, v) : 1;
-        composed[at] = linearToSrgbByte(srgbToLinear(flat[0]) * shade);
-        composed[at + 1] = linearToSrgbByte(srgbToLinear(flat[1]) * shade);
-        composed[at + 2] = linearToSrgbByte(srgbToLinear(flat[2]) * shade);
+        composed[at] = flat[0];
+        composed[at + 1] = flat[1];
+        composed[at + 2] = flat[2];
       } else {
-        // 未覆盖区 = 底图格按周期平铺（与图案层同密度，见 sampleBaseCell
-        // 的偏离注记）；引擎 overlayMask=0 无图案光照。
+        // 未覆盖区使用底图漫反射和 baseTileIndex 指向的图案法线。
         if (input.baseTile) {
           const [br, bg, bb] = sampleBaseCell(
             input.baseTile,
@@ -399,10 +347,27 @@ export function composeGroundPixels(input: GroundComposeInput): GroundComposeOut
           composed[at + 2] = 255;
         }
       }
+      let nx = 0, ny = 0, nz = 1;
+      if (normalCell) {
+        const n = samplePatternBilinear(normalCell, u, v, input.tilesX, input.tilesY);
+        nx = n[0] / 127.5 - 0.9985;
+        ny = n[1] / 127.5 - 0.9985;
+        nz = n[2] / 127.5 - 0.9985;
+      }
+      if (hasHeight && channel >= 0) {
+        const du = 0.25 / rawMask!.width, dv = 0.25 / rawMask!.height;
+        nx += heightAt(u - du, v) - heightAt(u + du, v);
+        ny += heightAt(u, v - dv) - heightAt(u, v + dv);
+      }
+      const length = Math.hypot(nx, ny, nz) || 1;
+      normals[at] = (nx / length * 0.5 + 0.5) * 255;
+      normals[at + 1] = (ny / length * 0.5 + 0.5) * 255;
+      normals[at + 2] = (nz / length * 0.5 + 0.5) * 255;
+      normals[at + 3] = 255;
       composed[at + 3] = 255;
     }
   }
-  return { albedo: composed, width: outW, height: outH };
+  return { albedo: composed, normal: normals, width: outW, height: outH };
 }
 
 /** worker 消息协议（结构化克隆）。 */
@@ -413,6 +378,7 @@ export interface GroundComposeRequest {
 export interface GroundComposeResponse {
   id: number;
   albedo: Uint8ClampedArray<ArrayBuffer>;
+  normal: Uint8ClampedArray<ArrayBuffer>;
   width: number;
   height: number;
 }
@@ -429,7 +395,7 @@ export function runGroundComposeWorker(scope: ComposeWorkerScope): void {
     const { id, input } = event.data;
     try {
       const output = composeGroundPixels(input);
-      scope.postMessage({ id, ...output }, [output.albedo.buffer]);
+      scope.postMessage({ id, ...output }, [output.albedo.buffer, output.normal.buffer]);
     } catch (error) {
       scope.postMessage({
         id,

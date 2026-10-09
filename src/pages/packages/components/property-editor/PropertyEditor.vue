@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FAlert from "@/components/ui/FAlert.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
@@ -18,13 +18,12 @@ import {
 } from "@/lib/three-gltf";
 import { createDataSource } from "@/api/data-source";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
-import PropertyEditorViewport, {
-  type EditorTool,
-} from "./PropertyEditorViewport.vue";
+import type { EditorTool } from "./PropertyEditorViewport.vue";
+import PropertyEditorViewport from "./SchemaPropertyViewport.vue";
 import PropertyEditorInspector from "./PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { unitId } from "./unitGizmos";
-import { buildSchemaDoc } from "./peSchemaDoc";
+import { buildSchemaDoc, unitsFromSchema } from "./peSchemaDoc";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { useEditorHotkeys } from "./useEditorHotkeys";
 import { exportLotModel } from "@/composables/useModelExport";
@@ -33,7 +32,10 @@ import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 
-const props = defineProps<{ packageId: number; tgi: Tgi }>();
+import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix } from "./assetCategories";
+import type { PropUnit } from "@/api/tauri";
+const props = defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null }>();
+const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
 const open = defineModel<boolean>("open", { default: false });
 const {
@@ -78,7 +80,6 @@ const {
   load,
   toggleGroup,
   toggleUnit,
-  resetViewState,
 } = usePropertyEditorSession(props.packageId, props.tgi);
 
 /** 编辑工具（PE-重构-3）：select = 仅拾取；translate/rotate/scale 挂手柄。 */
@@ -121,7 +122,7 @@ const selectedScaleEditable = computed(() => {
   return (
     propTreeIds.value.has(rid) ||
     propModels.value.has(rid) ||
-    addedModelPayloads.value.has(rid)
+    addedModelPayloads.value.has(directModelKey(unit))
   );
 });
 
@@ -138,16 +139,51 @@ function toggleEditEnabled() {
   editEnabled.value = !editEnabled.value;
 }
 
+// Restore the persisted document once per loaded session; all subsequent edits
+// keep using the same undoable commands and schema-renderer contract.
+watch(session, current => {
+  if (!current || !props.initialSchema) return;
+  const restored = unitsFromSchema(props.initialSchema);
+  const original = new Set(current.units.map(unit => unitId(unit as LotUnitDto)));
+  const restoredIds = new Set(restored.map(unitId));
+  for (const id of original) if (!restoredIds.has(id)) edit.removeUnit(id);
+  for (const unit of restored) {
+    const id = unitId(unit);
+    if (!original.has(id)) edit.addUnit(unit);
+    else {
+      if ('transform' in unit && unit.transform) edit.setUnitTransform(id, unit.transform.matrix);
+      const { fields, ...patch } = unit;
+      edit.setUnitFields(id, { ...patch, fields });
+    }
+  }
+  const editor = props.initialSchema.editor as { groups?: Record<string, boolean>; unitVisibility?: Record<string, boolean> };
+  Object.assign(groupVisibility, editor?.groups ?? {});
+  hiddenUnits.value = new Set(Object.entries(editor?.unitVisibility ?? {}).filter(([, v]) => !v).map(([id]) => id));
+  editEnabled.value = true;
+});
+
 // ---- 组件库（物料）sheet：从已打开包的命名 RW4 模型目录拖入放置 ----
 const materialsOpen = ref(false);
 const materialsBusy = ref(false);
 interface ModelCatalogEntry {
   packageId: number;
+  packagePath?: string;
   instance: number;
+  group: number;
   name: string;
   size: number;
+  template?: PropUnit;
 }
 const modelCatalog = ref<ModelCatalogEntry[]>([]);
+const propCategories = computed(() => {
+  const result = new Map<number, import("./assetCategories").AssetCategory>();
+  for (const ref of referencedModels.value) {
+    const entry = modelCatalog.value.find(e => e.packageId === ref.packageId && e.group === ref.group && e.instance === ref.instance);
+    const category = assetCategory(ref.instance, entry?.name, propTreeIds.value);
+    if (category !== "other") result.set(ref.resourceId, category);
+  }
+  return result;
+});
 const materialsTab = ref<MaterialTabId>("props");
 const materialsSearch = ref("");
 /** 物料页签/灯源预设/占位类目：字面量联合常量（模板内联数组会把 id/
@@ -200,21 +236,15 @@ function openMaterialsPanel() {
 const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>(
   () => {
     const keyword = materialsSearch.value.trim().toLowerCase();
-    // 过滤器（用户口径）：只展示当前 property 引用的组件——这些模型的
-    // 渲染路径已被本资产验证，拖入必然可用（随机目录模型可能无法渲染）
-    const referencedSet = new Set(referencedModels.value.map((r) => r.instance));
-    const packageOf = new Map(
-      referencedModels.value.map((r) => [r.instance, r.packageId]),
-    );
-    const matched = modelCatalog.value.filter(
+    // Named models from opened packages plus resolved prototypes in this lot.
+    const matched = modelCatalog.value.map(entry => ({ ...entry })).filter(
       (entry) =>
-        referencedSet.has(entry.instance) &&
         (keyword ? entry.name.toLowerCase().includes(keyword) : true),
     );
     // 引用了但目录缺席的模型（纯 hex 名被目录噪声过滤排除，如树部件）
     // → 兜底补入：包 id 取引用条目（readLotModelMeshes 可按需加载）
     for (const refEntry of referencedModels.value) {
-      if (matched.some((entry) => entry.instance === refEntry.instance)) continue;
+      if (matched.some((entry) => entry.instance === refEntry.instance && entry.group === refEntry.group && entry.packageId === refEntry.packageId)) continue;
       const hexName = t("package.modelFallbackName", {
         hex: `0x${refEntry.instance.toString(16).toUpperCase()}`,
       });
@@ -222,13 +252,16 @@ const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>
       matched.push({
         packageId: refEntry.packageId,
         instance: refEntry.instance,
+        group: refEntry.group,
         name: hexName,
         size: 0,
       });
     }
     const groups = new Map<string, ModelCatalogEntry[]>();
     for (const entry of matched) {
-      const group = entry.name.split(/[_\s-]/)[0] || entry.name;
+      const reference = referencedModels.value.find(r => r.instance === entry.instance && r.group === entry.group && r.packageId === entry.packageId);
+      entry.template = grouping.value.props.find(u => u.resourceId === reference?.resourceId);
+      const group = CATEGORY_LABELS[assetCategory(entry.template?.resourceId ?? entry.instance, entry.name, propTreeIds.value)];
       if (!groups.has(group)) groups.set(group, []);
       groups.get(group)!.push(entry);
     }
@@ -253,10 +286,29 @@ interface PlacePayload {
   lightType?: "Point" | "Spot" | "Line";
   /** prop 直挂模型。 */
   packageId?: number;
+  packagePath?: string;
   tgi?: Tgi;
   name?: string;
+  template?: PropUnit;
 }
-const addedModelPayloads = ref(new Map<number, LotModelPayload>());
+const addedModelPayloads = ref(new Map<string, LotModelPayload>());
+// Restore direct model dependencies when reopening a saved document.
+watch(session, async current => {
+  const document = props.initialSchema;
+  if (!current || !document) return;
+  for (const unit of unitsFromSchema(document)) {
+    if (unit.kind !== "prop" || !unit.modelTgi || unit.modelPackageId == null || unit.resourceId == null) continue;
+    try {
+      const pkg = unit.modelPackagePath
+        ? (await tauriApi.packages.open(unit.modelPackagePath)).package.packageId : unit.modelPackageId;
+      const bytes = await tauriApi.packages.readLotModelMeshes(pkg, unit.modelTgi);
+      if (session.value !== current) return;
+      edit.setUnitFields(unitId(unit), { modelPackageId: pkg });
+      addedModelPayloads.value = new Map(addedModelPayloads.value).set(directModelKey({ ...unit, modelPackageId: pkg }), parseLotModelContainer(bytes));
+    } catch { /* Unavailable package remains an explicit unresolved marker. */ }
+  }
+}, { immediate: true });
+
 /** 放置后待选中的 unit id：grouping 重建（revision 前进）后由 Viewport
  * emit select 落地；取消选中时由壳清空避免重复选中。 */
 const pendingSelectId = ref<string | null>(null);
@@ -309,15 +361,15 @@ function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) 
   // 数据无缩放时退化为 1）
   // 放置 prop（树部件家族）默认缩放 0.2：×原生 ~51m ≈ 10m 树高
   // （对拍消防局 lot 树道具 scale 分布的两级中值），缩放手柄可调。
-  const placedScale = payload.kind === "prop" ? PLACED_PROP_SCALE : 1;
+  const placedScale = payload.kind === "prop" && assetCategory(payload.tgi?.instance ?? null, payload.name) === "trees" ? PLACED_PROP_SCALE : 1;
   const transform = {
-    matrix: [
-      placedScale, 0, 0, 0, placedScale, 0, 0, 0, placedScale, 0, 0,
-      position[0], position[1], position[2],
-    ],
+    matrix: placementMatrix(position, placedScale),
   };
   let unit: LotUnitDto;
-  if (payload.kind === "light") {
+  if (payload.kind === "prop" && payload.template) {
+    unit = clonePropForPlacement(payload.template, nextIndexOf("prop"), position);
+    unit.displayName = payload.name;
+  } else if (payload.kind === "light") {
     unit = {
       kind: "light",
       index: nextIndexOf("light"),
@@ -342,8 +394,10 @@ function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) 
       transform,
       slot: null,
       scale: null,
+      displayName: payload.name,
       modelTgi: payload.tgi,
       modelPackageId: payload.packageId,
+      modelPackagePath: payload.packagePath,
       fields: [],
     } as unknown as LotUnitDto;
   } else if (payload.kind === "spawner") {
@@ -379,17 +433,13 @@ function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) 
   edit.addUnit(unit);
   pendingSelectId.value = unitId(unit);
   // 直挂 prop：异步取 LOTM 载荷入缓存（渲染器从此读取）
-  if (payload.kind === "prop" && payload.tgi && payload.packageId != null) {
-    const instance = payload.tgi.instance;
+  if (payload.kind === "prop" && !payload.template && payload.tgi && payload.packageId != null) {
+    const cacheKey = directModelKey({ modelTgi: payload.tgi, modelPackageId: payload.packageId });
     sourceForPlacement
-      .readLotModelMeshes(payload.packageId, {
-        typeId: 0x2f4e_681b,
-        group: 0,
-        instance,
-      })
+      .readLotModelMeshes(payload.packageId, payload.tgi)
       .then((buffer) => {
         const next = new Map(addedModelPayloads.value);
-        next.set(instance, parseLotModelContainer(buffer));
+        next.set(cacheKey, parseLotModelContainer(buffer));
         addedModelPayloads.value = next;
       })
       .catch(() => {
@@ -433,6 +483,8 @@ const schemaJson = computed(() => {
       lotColorsAuthored: current.lotColorsAuthored,
       lotBorderColors: current.lotBorderColors,
       lotBorderWidths: current.lotBorderWidths,
+      lotColorHeights: current.lotColorHeights,
+      lotBorderHeights: current.lotBorderHeights,
       lotBorderPatternIndices: current.lotBorderPatternIndices,
       lotOverlayBoxOffset: current.lotOverlayBoxOffset,
       lotModelBBoxCenter: current.lotModelBBoxCenter,
@@ -444,6 +496,21 @@ const schemaJson = computed(() => {
     2,
   );
 });
+const sceneDocument = computed(() => schemaJson.value ? JSON.parse(schemaJson.value) as Record<string, unknown> : null);
+const renderGrouping = computed(() => {
+  if (!editEnabled.value || !sceneDocument.value) return grouping.value;
+  const units = unitsFromSchema(sceneDocument.value);
+  return {
+    lights: units.filter((u): u is import("@/api/tauri").LightUnit => u.kind === "light"),
+    decals: units.filter((u): u is import("@/api/tauri").DecalUnit => u.kind === "decal"),
+    props: units.filter((u): u is PropUnit => u.kind === "prop"),
+    effects: units.filter((u): u is import("@/api/tauri").EffectUnit => u.kind === "effect"),
+    spawners: units.filter((u): u is import("@/api/tauri").SpawnerUnit => u.kind === "spawner"),
+    pathPoints: units.filter((u): u is import("@/api/tauri").PathPointUnit => u.kind === "pathPoint"),
+  };
+});
+watch(sceneDocument, doc => { if (editEnabled.value && doc) emit("schema-change", doc); });
+defineExpose({ getSchema: () => sceneDocument.value });
 /** 编辑基线 = session 原始单元（无编辑层覆盖、无隐藏）——diff 的 before 侧。 */
 const schemaBaseJson = computed(() => {
   const current = session.value;
@@ -461,6 +528,8 @@ const schemaBaseJson = computed(() => {
       lotColorsAuthored: current.lotColorsAuthored,
       lotBorderColors: current.lotBorderColors,
       lotBorderWidths: current.lotBorderWidths,
+      lotColorHeights: current.lotColorHeights,
+      lotBorderHeights: current.lotBorderHeights,
       lotBorderPatternIndices: current.lotBorderPatternIndices,
       lotOverlayBoxOffset: current.lotOverlayBoxOffset,
       lotModelBBoxCenter: current.lotModelBBoxCenter,
@@ -492,25 +561,7 @@ async function saveLocalEdits() {
   if (saveEditsBusy.value || !edit.editCount.value) return;
   saveEditsBusy.value = true;
   try {
-    const payload = {
-      packageId: props.packageId,
-      tgi: props.tgi,
-      assetName: session.value?.assetName ?? null,
-      transforms: [...edit.overrides.entries()],
-      fields: [...edit.fieldOverrides.entries()],
-    };
-    const json = JSON.stringify(payload, null, 2);
-    let binary = "";
-    for (const byte of new TextEncoder().encode(json))
-      binary += String.fromCharCode(byte);
-    const path = await tauriApi.packages.saveFile(
-      `${session.value?.assetName ?? "lot"}-edits.json`,
-      "json",
-    );
-    if (!path) return;
-    await command("write_export_file", {
-      request: { path, dataBase64: btoa(binary) },
-    });
+    await exportSchema();
   } finally {
     saveEditsBusy.value = false;
   }
@@ -536,6 +587,7 @@ useEditorHotkeys(
 );
 
 const renderMode = ref<"default" | "refined">("default");
+const effectiveRenderMode = computed(() => editEnabled.value ? "refined" : renderMode.value);
 /** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
 const neonAnim = ref(false);
@@ -560,7 +612,7 @@ watch(open, (isOpen, wasOpen) => {
   renderMode.value = "default";
   neonAnim.value = false;
   tool.value = "select";
-  resetViewState();
+  selectedId.value = null;
   // 卸载 prop 解析自动注册的 EcoGame 包（会话范围=注册范围）
   releasePropPackages();
 });
@@ -643,6 +695,7 @@ watch(open, (value) => {
     materialsOpen.value = false;
   }
 });
+onMounted(() => { if (open.value) void load(); });
 /** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
 let diagnosticsDismissed = false;
 const title = computed(() => {
@@ -693,14 +746,16 @@ const treeSheetPinned = ref(true);
 
           <button
             type="button"
-            :class="{ active: renderMode === 'default' }"
+            :class="{ active: effectiveRenderMode === 'default' }"
+            :disabled="editEnabled"
+            :title="editEnabled ? '编辑模式使用精细渲染' : undefined"
             @click="renderMode = 'default'"
           >
             {{ $t("package.renderModeDefault") }}
           </button>
           <button
             type="button"
-            :class="{ active: renderMode === 'refined' }"
+            :class="{ active: effectiveRenderMode === 'refined' }"
             @click="renderMode = 'refined'"
           >
             {{ $t("package.renderModeRefined") }}
@@ -710,7 +765,7 @@ const treeSheetPinned = ref(true);
              效果最佳，精细渲染已在 Viewport 固定 specMode=2。复验时恢复
              此块与 specExperiment/specMode 的 prop 传递即可。
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.specExperimentHint')"
         >
@@ -718,7 +773,7 @@ const treeSheetPinned = ref(true);
           <span>{{ $t("package.specExperiment") }}</span>
         </label>
         <div
-          v-if="renderMode === 'refined' && specExperiment"
+          v-if="effectiveRenderMode === 'refined' && specExperiment"
           class="render-mode spec-channel"
           role="group"
           :aria-label="$t('package.specExperiment')"
@@ -747,7 +802,7 @@ const treeSheetPinned = ref(true);
         </div>
         -->
         <div
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="daynight"
           :title="$t('package.timeOfDayHint')"
         >
@@ -771,7 +826,7 @@ const treeSheetPinned = ref(true);
              reliefMap() 已被编译为恒等——游戏本体无浮雕，数据无高度源。
              LOTM v8 的 reliefPng 字段保留（若未来找到真实高度图可恢复）。
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.reliefHint')"
         >
@@ -780,7 +835,7 @@ const treeSheetPinned = ref(true);
         </label>
         -->
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.poweredHint')"
         >
@@ -790,7 +845,7 @@ const treeSheetPinned = ref(true);
         <!-- 动态招牌（2026-10-05 十轮）：关 = 静态量化合成；开 = dev LED
              扫掠动画（decalNeonTubeSDF 双相位口径，§12.5） -->
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.neonAnimHint')"
         >
@@ -845,7 +900,7 @@ const treeSheetPinned = ref(true);
             {{ $t("package.exportMeshWhite") }}
           </button>
           <button
-            v-if="renderMode === 'refined'"
+            v-if="effectiveRenderMode === 'refined'"
             type="button"
             @click="exportModel('textured')"
           >
@@ -1003,7 +1058,9 @@ const treeSheetPinned = ref(true);
               </div>
             </header>
             <PropertyEditorOutliner
-              :grouping="grouping"
+              :tree-ids="propTreeIds"
+              :prop-categories="propCategories"
+              :grouping="renderGrouping"
               :selected-id="selectedId"
               :hidden-units="hiddenUnits"
               :group-visibility="groupVisibility"
@@ -1014,21 +1071,22 @@ const treeSheetPinned = ref(true);
           </section>
         </div>
         <PropertyEditorViewport
+          :schema="editEnabled ? sceneDocument : null"
           ref="viewportRef"
           :edit-enabled="editEnabled"
           :suspended="peSuspended"
           :added-model-payloads="addedModelPayloads"
           :pending-select-id="pendingSelectId"
           @delete-unit="onDeleteUnit"
-          :model-payload="modelPayload"
+          :model-payload="previewPayload ?? modelPayload"
           :prop-models="propModels"
           :prop-tree-ids="propTreeIds"
           :tree-model-payloads="treeModelPayloads"
           :tree-atlas-png="treeAtlasPng"
           :model-lods="modelLods"
           :active-lod="activeLod"
-          :render-mode="renderMode"
-          :grouping="grouping"
+          :render-mode="effectiveRenderMode"
+          :grouping="renderGrouping"
           :lot-size="lotSize"
           :lot-tile-period="lotTilePeriod"
           :lot-placement="lotPlacement"
@@ -1036,6 +1094,8 @@ const treeSheetPinned = ref(true);
           :lot-colors-authored="lotColorsAuthored"
           :lot-border-colors="lotBorderColors"
           :lot-border-widths="lotBorderWidths"
+          :lot-color-heights="session?.lotColorHeights"
+          :lot-border-heights="session?.lotBorderHeights"
           :lot-border-pattern-indices="lotBorderPatternIndices"
           :lot-base-tile="lotBaseTile"
           :lot-overlay-box-offset="lotOverlayBoxOffset"
@@ -1075,7 +1135,7 @@ const treeSheetPinned = ref(true);
       </div>
       <PropertyEditorStatusBar
         v-if="session"
-        :grouping="grouping"
+        :grouping="renderGrouping"
         :model-state="modelState"
         :selected-unit="selectedUnit"
       />
@@ -1133,18 +1193,20 @@ const treeSheetPinned = ref(true);
                 >
                   <div
                     v-for="entry in group.entries"
-                    :key="`${entry.packageId}:${entry.instance}`"
+                    :key="`${entry.packageId}:${entry.group}:${entry.instance}`"
                     class="materials-entry"
                     @pointerdown.stop.prevent="
                       beginPlacementDrag($event, {
                         kind: 'prop',
                         packageId: entry.packageId,
+                        packagePath: entry.packagePath,
                         tgi: {
                           typeId: 0x2f4e681b,
-                          group: 0,
+                          group: entry.group,
                           instance: entry.instance,
                         },
                         name: entry.name,
+                        template: entry.template,
                       })
                     "
                   >

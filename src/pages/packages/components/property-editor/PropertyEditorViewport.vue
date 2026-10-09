@@ -40,7 +40,6 @@ import type {
   ImageDecodeResponse,
   Pixels,
 } from "./imageDecode";
-import type { DecalFrame } from "@/lib/decalProject";
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
 import type { EngineFamily } from "@/lib/decalEngineMaterials";
 import { useEditorViewport } from "./useEditorViewport";
@@ -93,16 +92,15 @@ const props = defineProps<{
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  lotColorHeights?: number[];
+  lotBorderHeights?: number[];
   /** 边框带图案索引（LotBorderColor.A，0-15）。 */
   lotBorderPatternIndices: number[];
   /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
   lotBaseTile: number;
-  /** LotOverlayBoxOffset（0x0CCB7FC9，引擎 unitOffset）：地面 quad 在 lot
-   * 系的中心偏移；null = 原点（引擎栅格公式缺省）。 */
+  /** Authored lot-space overlay centre; null uses the declared unit bbox centre. */
   lotOverlayBoxOffset: [number, number] | null;
-  /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）。【2026-10-05
-   * 试点后不再消费】：引擎栅格映射无 bbox 中心机制（该属性只喂 zoning
-   * frontage/depth 截断），保留 DTO 仅供诊断对照。 */
+  /** Declared unit bounding-box centre (0x00F9EFBA), used only if offset is absent. */
   lotModelBboxCenter: [number, number] | null;
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（会话旁路加载）。 */
   propModels: Map<number, LotModelPayload>;
@@ -149,7 +147,7 @@ const props = defineProps<{
   /** 编辑模式（解锁）：工具栏可见、画布可拖放、name-tag 带删除钮。 */
   editEnabled?: boolean;
   /** 拖入的直挂模型载荷（instance → LOTM 载荷；真模型渲染用）。 */
-  addedModelPayloads?: Map<number, LotModelPayload>;
+  addedModelPayloads?: Map<string, LotModelPayload>;
   /** 放置后待选中：分组重建且新单元入组时自动选中（shell 传入）。 */
   pendingSelectId?: string | null;
   /**
@@ -191,6 +189,8 @@ onMounted(() => {
   });
 });
 const viewport = useEditorViewport({
+  maxPixelRatio: 2,
+  interactionPixelRatio: 1,
   onTapUnit: (id) => emit("select", id),
   onHoverUnit: (id) => {
     hoveredId.value = id;
@@ -1343,16 +1343,11 @@ async function assembleScene(
     if (props.lotPlacement) {
       ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
     }
-    // 【2026-10-05 试点：引擎栅格定位口径（dev-dump 文档 §四 F7）】
-    // 地面 quad 在 lot 本地系的中心 = unitOffset（0x0CCB7FC9，缺省 0）——
-    // 引擎 mask UV 公式 uv=(pos−unitOffset)/LotSize+0.5（migration §42.8）
-    // 没有 bbox 中心机制；0x00F9EFBA 声明 bbox 在引擎只喂 zoning
-    // frontage/depth 截断（GetUnitBoundingBoxInternal），不再作地面中心
-    // fallback（图书馆 −0.41 / EP1 房 +2.89 残差的疑源）。
-    // 偏移在 lot 系施加 = postmultiply（P⁻¹·T(c)）：θ=0 的 lot 与旧实现
-    // 逐值等价（旧 premultiply T(A·c)·P⁻¹ 在 θ=0 时同为平移 c−t），θ≠0
-    // 时修正偏移的旋转方向（旧 A·c 按 P 正向旋转，方向相反）。
-    const centerLocal = props.lotOverlayBoxOffset ?? [0, 0];
+    // cZoningGame::CreateUnitLotGraphics (0x8BA1C0) and cRegionCityLots
+    // (0x86DCB0) use the authored offset, including an explicit zero; only a
+    // missing property falls back to the declared unit bounding-box centre.
+    // Apply it in lot coordinates, before inverse placement: P^-1 * T(c).
+    const centerLocal = props.lotOverlayBoxOffset ?? props.lotModelBboxCenter ?? [0, 0];
     if (Math.abs(centerLocal[0]) > 1e-4 || Math.abs(centerLocal[1]) > 1e-4) {
       ground.matrix.multiply(
         new THREE.Matrix4().makeTranslation(centerLocal[0], centerLocal[1], 0),
@@ -1396,6 +1391,8 @@ async function assembleScene(
         lotBorderColors: props.lotBorderColors,
         lotBorderPatternIndices: props.lotBorderPatternIndices,
         lotBorderWidths: props.lotBorderWidths,
+        lotColorHeights: props.lotColorHeights,
+        lotBorderHeights: props.lotBorderHeights,
         baseTileIndex: props.lotBaseTile,
         lotOverlayBoxOffset: props.lotOverlayBoxOffset,
         rawMaskKey: props.lotMaskRawRgba,
@@ -1453,15 +1450,6 @@ async function assembleScene(
     0x73684efc: "sign", // 招牌聚类（POWER ELECTRIC/太阳 burst/OMEGACO 等）
     0xe5390a98: "graffiti", // 涂鸦/贴纸聚类（CRIME/词组拼贴等）
   };
-
-  /** 量化合成（quant）族材质集合（2026-10-04 三轮用户对拍定谳）：字典
-   * 两族都走 0.5 阈值多通道合成——涂鸦的"清晰图案"正是多通道权重经
-   * 阈值链上色的产物（误路由到直采 = 权重通道当颜色 → 彩色模糊涂抹，
-   * 三轮图4）；焦痕/烧灼与未知材质走 clip 直采（raster RGB = 美术内容，
-   * 误走量化 = 层色近黑整块纯黑，二轮图1~3）。 */
-  const DECAL_QUANT_MATERIALS: ReadonlySet<number> = new Set([
-    0x73684efc, 0xe5390a98,
-  ]);
 
   /** 投影面法线 cutoff：只保留 **N·axisZ ≤ -0.5** 的三角形——即面朝贴花
    * 原点（投影来向）的面。两个裁剪目标：

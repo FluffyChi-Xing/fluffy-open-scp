@@ -523,6 +523,7 @@ export interface DecalUnitTexture {
 }
 export interface PropUnit {
   kind: "prop";
+  displayName?: string;
   index: number;
   bin: number;
   /** 原型资源 id（脚本资源表反查 RW4 模型；PE 精细替换）。 */
@@ -538,6 +539,7 @@ export interface PropUnit {
    */
   modelTgi?: Tgi | null;
   modelPackageId?: number | null;
+  modelPackagePath?: string;
 }
 export interface PathPointUnit {
   kind: "pathPoint";
@@ -599,6 +601,8 @@ export interface LotEditorSession {
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（float，边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  lotColorHeights?: number[];
+  lotBorderHeights?: number[];
   /** 边框带图案索引（LotBorderColor.A，0-15）。 */
   lotBorderPatternIndices: number[];
   /** 底图格索引（三级来源：0x0CCB7FD6 → 0x0CCB7FD2/FD3 推导 → 默认 8）。 */

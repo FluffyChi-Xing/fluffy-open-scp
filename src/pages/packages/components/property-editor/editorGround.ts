@@ -38,10 +38,8 @@ export function buildLotRect(
       alphaTest: 1 / 255,
     }),
   );
-  // 方向定论（2026-09-12 mask 可视化 + 用户对拍）：identity 即正确——
-  // "默认渲染道路正常"直接证明 mask UV 无需任何翻转；此前的"镜像感"
-  // 实为 placement=None 时建筑居中 vs mask 足迹凹口偏置的错位
-  // （maskAnchorOffset 自动锚定解决），不是镜像。
+  // 后端已将原始遮罩翻行：PlaneGeometry 的 V 沿 +Y，纹理 flipY=false。
+  // 引擎的原始遮罩 V 沿 -Y；此处无需再次翻转。
   fill.position.z = 0.02;
   group.add(border, fill);
   return group;
@@ -177,17 +175,22 @@ export function buildLotDimensions(
  * 身份（源字符串/数值）构成；容量 4 环形淘汰，淘汰时 dispose 贴图。
  */
 const groundTextureCache = new Map<string, ThreeNamespace.Texture>();
-const groundComposeCache = new Map<string, ThreeNamespace.Texture>();
+type GroundTextures = { albedo: ThreeNamespace.Texture; normal: ThreeNamespace.Texture };
+const groundComposeCache = new Map<string, GroundTextures>();
+function disposeGround(textures: GroundTextures | undefined) {
+  textures?.albedo.dispose();
+  textures?.normal.dispose();
+}
 // 4096² 贴图 64MB/张——容量 2 防显存失控（典型会话 1-2 个 lot）。
 const GROUND_CACHE_CAP = 2;
 
-function putGroundCache(key: string, texture: ThreeNamespace.Texture) {
+function putGroundCache(key: string, texture: GroundTextures) {
   if (groundComposeCache.has(key)) return;
   groundComposeCache.set(key, texture);
   if (groundComposeCache.size > GROUND_CACHE_CAP) {
     const oldest = groundComposeCache.keys().next().value as string | undefined;
     if (oldest !== undefined) {
-      groundComposeCache.get(oldest)?.dispose();
+      disposeGround(groundComposeCache.get(oldest));
       groundComposeCache.delete(oldest);
     }
   }
@@ -195,7 +198,7 @@ function putGroundCache(key: string, texture: ThreeNamespace.Texture) {
 
 /** 视口销毁/会话更换时清缓存（dispose 全部贴图）。 */
 export function releaseGroundComposeCache(): void {
-  for (const texture of groundComposeCache.values()) texture.dispose();
+  for (const texture of groundComposeCache.values()) disposeGround(texture);
   groundComposeCache.clear();
   for (const texture of groundTextureCache.values()) texture.dispose();
   groundTextureCache.clear();
@@ -223,6 +226,8 @@ function groundComposeKey(options: {
   lotBorderColors?: [number, number, number][];
   lotBorderPatternIndices?: number[];
   lotBorderWidths?: number[];
+  lotColorHeights?: number[];
+  lotBorderHeights?: number[];
   lotSize?: [number, number] | null;
   tilePeriod?: [number, number] | null;
   baseTileIndex: number;
@@ -237,6 +242,8 @@ function groundComposeKey(options: {
     o.lotBorderColors ?? null,
     o.lotBorderPatternIndices ?? null,
     o.lotBorderWidths ?? null,
+    o.lotColorHeights ?? null,
+    o.lotBorderHeights ?? null,
     o.lotSize,
     o.tilePeriod,
     o.baseTileIndex,
@@ -265,7 +272,7 @@ export async function applyGroundMask(options: {
   surface?: ImageData | null;
   /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
   baseTileIndex: number;
-  /** 全局共享法线图集像素（s15；图案坡度明暗烘焙来源）。 */
+  /** 全局共享法线图集像素（s15；切线空间法线来源）。 */
   normalAtlas?: ImageData | null;
   /** LotMask 原始通道权重图（阈值选区输入；null = 量化图最近色硬分配）。 */
   rawMask?: ImageData | null;
@@ -275,6 +282,8 @@ export async function applyGroundMask(options: {
   lotBorderPatternIndices?: number[];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths?: number[];
+  lotColorHeights?: number[];
+  lotBorderHeights?: number[];
   /** LotOverlayBoxOffset：地面 quad 中心覆盖；null = 引擎回退锚点包围盒中心。 */
   lotOverlayBoxOffset?: [number, number] | null;
   /** 缓存 key 源（源字符串身份；与 ImageData 参数一一对应）。 */
@@ -313,12 +322,7 @@ export async function applyGroundMask(options: {
   const fill = groundFillMesh(ground);
   if (!fill) return;
   if (refined && maskPng) {
-    // 精细模式：引擎语义 = 通道 >0.5−bw 阈值 + A>B>G>R 优先级瀑布 →
-    // 胜者平色 × 图案坡度明暗（**烘焙进反照率**，lotCalcLighting 的探针
-    // 近似口径 = output/lot_hires pattern 同款；normalMap 实时光照在平射
-    // 阳光下响应是二阶小量，图案不可见——2026-09-29 用户对拍裁定）；
-    // 未覆盖区底图格整格拉伸。
-    // compose 成本曾是游离在遥测外的主线程大头——单独纳管成 span。
+    // Albedo and normal are composed separately; the current sun lights both.
     const span = renderTelemetry.begin("texture_compose", {
       phase: "ground",
     });
@@ -332,6 +336,8 @@ export async function applyGroundMask(options: {
         lotBorderColors,
         lotBorderPatternIndices,
         lotBorderWidths,
+        lotColorHeights: options.lotColorHeights,
+        lotBorderHeights: options.lotBorderHeights,
         lotSize,
         tilePeriod,
         baseTileIndex,
@@ -352,6 +358,8 @@ export async function applyGroundMask(options: {
           lotBorderColors: lotBorderColors ?? null,
           lotBorderPatternIndices: lotBorderPatternIndices ?? null,
           lotBorderWidths: lotBorderWidths ?? null,
+          lotColorHeights: options.lotColorHeights,
+          lotBorderHeights: options.lotBorderHeights,
         });
         if (composed) {
           putGroundCache(key, composed);
@@ -360,11 +368,12 @@ export async function applyGroundMask(options: {
       }
       if (isStale() || !result) return;
       const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
-      // 精细地面 = Lambert 受光材质：颜色来自 env 太阳（视口 setSunFromEnv
-      // 把 key 光挂到共享 env 的太阳方向/色——与模型注入光照同源，昼夜/亮度
-      // 滑杆联动），并接收建筑投影（fill.receiveShadow + viewer 阴影链）。
-      // 此前 MeshBasic+env 因子无阴影；更早 MeshPhong+白灯不随昼夜色温变。
-      const lit = new THREE.MeshLambertMaterial({ map: result });
+      // 地面法线随共享 env 太阳方向/颜色受光，并接收建筑投影。
+      const lit = new THREE.MeshPhongMaterial({
+        map: result.albedo, normalMap: result.normal,
+        // Detail enhancement for the editor's broad daylight rig; keep relief dynamic.
+        normalScale: new THREE.Vector2(1.8, 1.8), shininess: 8, specular: 0x111111,
+      });
       fill.receiveShadow = true;
       fillMaterial.dispose();
       fill.material = lit;

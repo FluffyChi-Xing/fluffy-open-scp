@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type * as ThreeNamespace from "three";
-import { unitId, unitMatrix } from "./unitGizmos";
-import type { DecalUnit, EffectUnit, PropUnit, SpawnerUnit } from "@/api/tauri";
+import { buildRealLightUnit, unitId, unitMatrix } from "./unitGizmos";
+import type { DecalUnit, LightUnit, PropUnit, SpawnerUnit } from "@/api/tauri";
 
 const THREE = (await import("three")) as typeof ThreeNamespace;
+
+describe("refined light selection", () => {
+  it.each(["Point", "Spot"])("%s picks only the emitter while preserving its light range", lightType => {
+    const unit = { kind: "light", lightType, outerRadius: 80, length: 100, transform: null } as LightUnit;
+    const object = buildRealLightUnit(THREE, unit);
+    object.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster(new THREE.Vector3(10, 0, 200), new THREE.Vector3(0, 0, -1));
+    expect(ray.intersectObject(object, true)).toHaveLength(0);
+    ray.ray.origin.x = 0;
+    expect(ray.intersectObject(object, true).length).toBeGreaterThan(0);
+    const proxy = object.children.find(o => o.userData.pickOnly) as ThreeNamespace.Mesh;
+    expect(new THREE.Box3().setFromObject(proxy).getSize(new THREE.Vector3()).length()).toBeLessThan(4);
+    expect((object.children[0] as ThreeNamespace.PointLight).distance).toBe(160);
+  });
+});
 
 describe("unitMatrix", () => {
   it("maps WPF row-major translation into the three.js translation column", () => {

@@ -554,6 +554,9 @@ pub struct LotEditorSession {
     /// borderWidth1-4（0xD7AF046-49，float）——逐通道边框带半宽；
     /// 全 0 = 无边框（0.5±0 带为空集）。
     pub lot_border_widths: [f32; 4],
+    /// Authored lot relief: color and border heights (generic_lot normal pass).
+    pub lot_color_heights: [f32; 4],
+    pub lot_border_heights: [f32; 4],
     /// 边框带图案索引（LotBorderColor.A，0-15）——边框带法线图案格号。
     pub lot_border_pattern_indices: [u8; 4],
     /// 底图格索引（三级来源：0x0CCB7FD6 → 0x0CCB7FD2/FD3 推导 → 默认 8）。
@@ -2441,7 +2444,13 @@ let lot_normal_atlas_png = decode_lot_surface_png(
     },
 )
 .ok()
-.map(|(png, _)| png);
+.and_then(|(_, mut pixels)| {
+    // Normal atlas alpha encodes coverage, not image opacity. Canvas decoding
+    // premultiplies alpha and destroys low-alpha RGB; this RGB-only preview
+    // must be opaque. The original package and base coverage remain untouched.
+    for pixel in pixels.rgba.chunks_exact_mut(4) { pixel[3] = 255; }
+    encode_rgba_png(pixels.width, pixels.height, pixels.rgba).ok()
+});
 let mut mask_dims: Option<(u32, u32)> = None;
 let lot_mask_images = document.lot_mask.and_then(|key| {
     match decode_lot_mask_png(package, manager, key, colors) {
@@ -2553,6 +2562,8 @@ Ok(LotEditorSession {
     lot_colors_authored,
     lot_border_colors,
     lot_border_widths,
+    lot_color_heights: lot_height_vector(&document.properties, 0x0D02_D58A),
+    lot_border_heights: lot_height_vector(&document.properties, 0x0D02_D58B),
     lot_border_pattern_indices,
     lot_base_tile: lot_base_tile as u8,
     lot_overlay_box_offset: document.lot_offset,
@@ -2577,9 +2588,21 @@ Ok(LotEditorSession {
 })
 }
 
-/// "Lot Textures"（0x0CCB7FD4）地表共享纹理：跨包定位纯纹理 RW4 →
-/// DXT5 解码 → PNG（shader lotTextureSampler 的绑定源；4×4 tile 图集）。
-/// "Lot Textures" 共享图集的内存像素（4×4 tile；默认反照率的底图格来源）。
+/// Authored channel/border relief used by generic_lot::overlayGetHeight.
+fn lot_height_vector(properties: &sc_properties::PropertyFile, hash: u32) -> [f32; 4] {
+    properties
+        .get(hash)
+        .and_then(|p| p.scalar().or_else(|| p.array().and_then(|v| v.first())))
+        .and_then(|value| match value {
+            sc_properties::Value::Vector4(values) => {
+                Some(values.map(|v| if v.is_finite() { v } else { 0.0 }))
+            }
+            _ => None,
+        })
+        .unwrap_or([0.0; 4])
+}
+
+/// Decoded 4x4 lot surface atlas, shared by preview albedo composition.
 pub(crate) struct SurfacePixels {
     width: u32,
     height: u32,
@@ -8094,7 +8117,9 @@ mod decal_resolve_diag {
 #[serde(rename_all = "camelCase")]
 pub struct ModelCatalogEntry {
     pub package_id: u64,
+    pub package_path: String,
     pub instance: u32,
+    pub group: u32,
     pub name: String,
     pub size: u64,
 }
@@ -8121,7 +8146,7 @@ pub async fn list_model_catalog(
                 .iter()
                 .filter(|e| e.id.type_id == 0x2F4E_681B)
             {
-                if !seen.insert(entry.id.instance) {
+                if !seen.insert((*package_id, entry.id.group, entry.id.instance)) {
                     continue;
                 }
                 let Some(name) = registry.as_deref().and_then(|registry| {
@@ -8141,7 +8166,9 @@ pub async fn list_model_catalog(
                 }
                 entries.push(ModelCatalogEntry {
                     package_id: *package_id,
+                    package_path: package.path().to_string_lossy().into_owned(),
                     instance: entry.id.instance,
+                    group: entry.id.group,
                     name,
                     size: u64::from(entry.decompressed_size),
                 });

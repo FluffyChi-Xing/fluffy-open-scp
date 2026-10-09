@@ -39,7 +39,16 @@ const KIND_KEYS: Record<string, string[]> = {
   ],
   effect: ["effectId", "enabled"],
   decal: ["category", "scale", "depth", "materialData"],
-  prop: ["bin", "slot", "resourceId", "scale", "modelTgi", "modelPackageId"],
+  prop: [
+    "bin",
+    "slot",
+    "resourceId",
+    "scale",
+    "modelTgi",
+    "modelPackageId",
+    "modelPackagePath",
+    "displayName",
+  ],
   pathPoint: ["point", "tangent", "pointIndex"],
   spawner: ["id", "count", "countRandom", "agent"],
 };
@@ -47,11 +56,47 @@ const KIND_KEYS: Record<string, string[]> = {
 const hex32 = (value: number) =>
   `0x${(value >>> 0).toString(16).padStart(8, "0").toUpperCase()}`;
 
+/** Renderer adapter: JSON is the editable scene contract, never a Three object. */
+export function unitsFromSchema(
+  document: Record<string, unknown>,
+): LotUnitDto[] {
+  if (
+    document.$schema !== "openscp.lot-asset/1" ||
+    !Array.isArray(document.units)
+  )
+    throw new Error("Unsupported lot asset schema");
+  return document.units.map((value) => {
+    const row = value as Record<string, unknown>;
+    if (typeof row.kind !== "string" || !Object.hasOwn(KIND_KEYS, row.kind))
+      throw new Error("Unknown unit kind");
+    const index = Number(row.index ?? String(row.id).split(":").at(-1));
+    if (!Number.isSafeInteger(index) || index < 0)
+      throw new Error("Invalid unit index");
+    const unit: Record<string, unknown> = {
+      kind: row.kind,
+      index,
+      fields: row.fieldRows ?? [],
+    };
+    for (const key of KIND_KEYS[row.kind])
+      if (row[key === "id" ? "spawnerId" : key] !== undefined)
+        unit[key] = row[key === "id" ? "spawnerId" : key];
+    if (row.transform) {
+      const matrix = (row.transform as { matrix?: number[] }).matrix;
+      if (!matrix || matrix.length !== 12 || !matrix.every(Number.isFinite))
+        throw new Error("Transform must contain 12 finite numbers");
+      unit.transform = { matrix: [...matrix] };
+    } else if (row.kind !== "pathPoint") unit.transform = null;
+    return unit as unknown as LotUnitDto;
+  });
+}
+
 /** DTO → schema 单元对象（fields 透传位含原始属性行）。 */
 export function schemaUnitJson(unit: LotUnitDto): Record<string, unknown> {
   const object: Record<string, unknown> = {
     id: unitId(unit),
     kind: unit.kind,
+    index: unit.index,
+    fieldRows: unit.fields,
     visible: true,
   };
   if ("transform" in unit && unit.transform) {
@@ -59,7 +104,7 @@ export function schemaUnitJson(unit: LotUnitDto): Record<string, unknown> {
   }
   for (const key of KIND_KEYS[unit.kind] ?? []) {
     const value = (unit as unknown as Record<string, unknown>)[key];
-    if (value !== undefined) object[key] = value;
+    if (value !== undefined) object[key === "id" ? "spawnerId" : key] = value;
   }
   const fields = unit.fields ?? [];
   if (fields.length) {
@@ -87,6 +132,8 @@ export interface SchemaDocInput {
   lotColorsAuthored: boolean[];
   lotBorderColors: [number, number, number][];
   lotBorderWidths: number[];
+  lotColorHeights?: number[];
+  lotBorderHeights?: number[];
   lotBorderPatternIndices: number[];
   lotOverlayBoxOffset: [number, number] | null;
   lotModelBBoxCenter: [number, number] | null;
@@ -122,6 +169,8 @@ export function buildSchemaDoc(input: SchemaDocInput): Record<string, unknown> {
       })),
       borderColors: input.lotBorderColors,
       borderWidths: input.lotBorderWidths,
+      colorHeights: input.lotColorHeights ?? [0, 0, 0, 0],
+      borderHeights: input.lotBorderHeights ?? [0, 0, 0, 0],
       borderPatterns: input.lotBorderPatternIndices,
       overlayBoxOffset: input.lotOverlayBoxOffset,
       modelBBoxCenter: input.lotModelBBoxCenter,

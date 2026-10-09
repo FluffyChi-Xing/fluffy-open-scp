@@ -575,8 +575,6 @@ export function attachTintShader(
     uDayLight: { value: number };
     /** 5d 供电：0 = 内景自发光全灭（源码 interiorThresholds.z） */
     uPowered: { value: number };
-    /** tint 图集半 texel（1/宽, 1/高）：平铺区域边缘的线性滤波内缩量。 */
-    uTintTexel: { value: ThreeNamespace.Vector2 };
     /** 调色板变体行（buildingVariation）：建筑恒 0；prop 按实例选取。 */
     uPaletteRow: { value: number };
   },
@@ -651,6 +649,59 @@ varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
+// Clamp only the border, without rescaling every brick/window inside a tile.
+// Each atlas has its own resolution (normal/shader often differ from tint).
+vec4 scSampleAtlas(sampler2D atlas, vec2 uv, vec4 region, vec2 dx, vec2 dy) {
+  vec2 halfTexel = 0.5 / vec2(textureSize(atlas, 0));
+  vec2 inset = min(halfTexel, abs(region.xy) * 0.5);
+  vec2 lo = min(region.zw, region.zw + region.xy) + inset;
+  vec2 hi = max(region.zw, region.zw + region.xy) - inset;
+  return textureGrad(atlas, clamp(uv, lo, hi), dx, dy);
+}
+vec4 scCubicWeights(float t) {
+  float t2 = t * t;
+  float t3 = t2 * t;
+  return vec4(-0.5*t + t2 - 0.5*t3, 1.0 - 2.5*t2 + 1.5*t3,
+              0.5*t + 2.0*t2 - 1.5*t3, -0.5*t2 + 0.5*t3);
+}
+// Reconstruct magnified curves instead of flattening each source texel into a
+// sharper square. Clamp Catmull-Rom to the central texels to avoid halos and
+// invalid palette indices/coverage. Keep mip/aniso sampling at minification.
+vec4 scSampleFacade(sampler2D atlas, vec2 uv, vec4 region, vec2 dx, vec2 dy) {
+  vec2 size = vec2(textureSize(atlas, 0));
+  vec2 texelDx = dx * size;
+  vec2 texelDy = dy * size;
+  float footprint = max(length(texelDx), length(texelDy));
+  vec4 linearSample = scSampleAtlas(atlas, uv, region, dx, dy);
+  if (footprint >= 1.0) return linearSample;
+  vec2 p = uv * size - 0.5;
+  vec4 wx = scCubicWeights(fract(p.x));
+  vec4 wy = scCubicWeights(fract(p.y));
+    // The two positive centre weights can share one hardware bilinear tap.
+    // This is exactly the separable Catmull-Rom kernel, reduced from 16 to 9 taps.
+    vec3 weightsX = vec3(wx.x, wx.y + wx.z, wx.w);
+    vec3 weightsY = vec3(wy.x, wy.y + wy.z, wy.w);
+    vec3 positionsX = floor(p.x) + vec3(-0.5, 0.5 + wx.z / weightsX.y, 2.5);
+    vec3 positionsY = floor(p.y) + vec3(-0.5, 0.5 + wy.z / weightsY.y, 2.5);
+    vec4 result = vec4(0.0);
+    for (int y = 0; y < 3; y++) {
+      for (int x = 0; x < 3; x++) {
+        result += scSampleAtlas(atlas, vec2(positionsX[x], positionsY[y]) / size,
+          region, vec2(0.0), vec2(0.0)) * weightsX[x] * weightsY[y];
+      }
+    }
+  vec4 low = vec4(1.0);
+  vec4 high = vec4(0.0);
+    for (int y = 0; y < 2; y++) {
+      for (int x = 0; x < 2; x++) {
+        vec2 tapUv = (floor(p) + vec2(float(x), float(y)) + 0.5) / size;
+      vec4 tap = scSampleAtlas(atlas, tapUv, region, vec2(0.0), vec2(0.0));
+        low = min(low, tap);
+        high = max(high, tap);
+    }
+  }
+  return mix(linearSample, clamp(result, low, high), 1.0 - smoothstep(0.5, 1.0, footprint));
+}
 #ifdef TINT_PARAMS
 uniform sampler2D paramsMap;
 #endif
@@ -677,7 +728,6 @@ uniform float uSpecMode;
 uniform float uInteriorGlow;
 uniform float uDayLight;
 uniform float uPowered;
-uniform vec2 uTintTexel;
 // 调色板变体行（buildingVariation 引擎口径 = 整数行 0..7 实例随机；
 // 调色板纹理 REPEAT 回绕：整数部分选行、tint.g 小数选行内条目）。
 // 建筑恒 0（已对拍口径）；prop/车辆按实例序号确定性取非空行。
@@ -724,33 +774,30 @@ float scFastNoise(vec3 seed) {
         vec4 xform2 = vec4(0.0);
         vec4 scRoom = vec4(0.0);
 #endif
-        // 半 texel 内缩：tint 是图集，fract=0/1 处的线性滤波核会读到相邻
-        // 区域内容（Base 层此前没有 padding 保护——接缝的第二个成因）。
+        // 保留原始平铺相位；scSampleAtlas 按各贴图尺寸钳制半 texel 边界，
+        // 不再缩放整块区域（旧公式实际只在两侧各留了四分之一 texel）。
         // 【2026-09-27】平铺周期 = 1.0 原始单位为对拍定谳口径：引擎
         // Unpack 管线的除 tile 一步（uv=raw/|ts|）的 ts 来源未定——v1（除
         // xform）白屏、v2（乘 xform，周期 1/s）砖块放大 3.6×且变糊，双双
         // 证伪回滚（migration.md §49.5）。
-        // 【2026-10-05 镜像区域修复】旧内缩公式 max(scale−texel, 0) 把**负
-        // scale**（镜像区域，消防局 row1 col1=−0.0476、row2 col7=−0.2691）
-        // 钳成 0 → 采样坐标塌缩为常数 → 整块窗板只采一条竖线（tint.a≈0 →
-        // scFacade=0 → 回退砖墙）= 对称双窗只渲染左半的十年病根。改为在
-        // fract 域按 texel/|scale| 比例内缩：正 scale 时与旧公式逐值等价，
-        // 负 scale 时正确覆盖镜像区域。
-        vec2 scInsetB = clamp(uTintTexel / max(abs(xform.xy), vec2(1e-6)), vec2(0.0), vec2(1.0));
-        vec2 scFractB = fract(vTintUv) * (1.0 - scInsetB) + scInsetB * 0.5;
-        vec2 tUv = scFractB * xform.xy + xform.zw;
+        // region.xy 可为负（镜像窗）；采样边界用两端的 min/max，保留镜像。
+        vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
         // 引擎 tex2Dgrad 同款显式导数（2026-10-05 取证：导数取**未 fract
         // 域** ddx(uv×regionXform)）——平铺边界无 UV 跳变，mip 级别天然
         // 正确。这是 tint/normal/shader 恢复 mip+LINEAR+各向异性的前提；
         // 隐式导数在 fract 回绕处爆炸选错 mip，正是当年门窗被平均、被迫
         // Nearest/禁 mip 的病根。
-        vec2 scTintGradX = dFdx(vTintUv * xform.xy);
-        vec2 scTintGradY = dFdy(vTintUv * xform.xy);
-        // Top 层同款（未 fract 域 uv2×regionXform2）；xform2=0（Top 关闭）
-        // 时梯度为 0，对应采样只在下方 if 内发生，无实际影响。
-        vec2 scTopGradX = dFdx(vTopUv * xform2.xy);
-        vec2 scTopGradY = dFdy(vTopUv * xform2.xy);
-        vec4 tintValues = textureGrad(tintMap, tUv, scTintGradX, scTintGradY);
+        // paramsMap is a discrete lookup: differentiating its jumps incorrectly
+        // selects coarse mips along material boundaries, even at close range.
+        vec2 scTintGradX = dFdx(vTintUv) * xform.xy;
+        vec2 scTintGradY = dFdy(vTintUv) * xform.xy;
+        // Close-up preview uses the actual Top footprint, independently of brick
+        // density. Include padding: near-constant UVs can be expanded by 2500x.
+        // Differentiate BEFORE fract/clamp and the discrete parameter lookup.
+        vec2 scTopScale = (1.0 + scRoom.xy) * xform2.xy;
+        vec2 scTopGradX = dFdx(vTopUv) * scTopScale;
+        vec2 scTopGradY = dFdy(vTopUv) * scTopScale;
+        vec4 tintValues = scSampleFacade(tintMap, tUv, xform, scTintGradX, scTintGradY);
         // 30.2 Top 层（relief_tc 域，uv2×regionXform2）：窗户 motif 所在。
         // 源码（cpp frac 变体定谳）：tilePadding=row3.xy，且
         // reliefSrc = frac(uv2)·(1+padding) − padding/2，越出 [0,1] →
@@ -783,11 +830,9 @@ float scFastNoise(vec3 seed) {
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
-          // 镜像安全内缩（同 Base 层：fract 域比例内缩，正负 scale 通用）。
-          vec2 scInsetT = clamp(uTintTexel / max(abs(xform2.xy), vec2(1e-6)), vec2(0.0), vec2(1.0));
-          vec2 scFractT = clamp(reliefSrc, 0.0, 1.0) * (1.0 - scInsetT) + scInsetT * 0.5;
-          topUv = scFractT * xform2.xy + xform2.zw;
-          facadeTintValues = textureGrad(tintMap, topUv, scTopGradX, scTopGradY);
+          // 先定位 Top 图集区域，采样时再按每张图的 texel 尺寸保护边缘。
+          topUv = clamp(reliefSrc, 0.0, 1.0) * xform2.xy + xform2.zw;
+          facadeTintValues = scSampleFacade(tintMap, topUv, xform2, scTopGradX, scTopGradY);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
         vec2 scSubTop = facadeTintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
@@ -795,6 +840,9 @@ float scFastNoise(vec3 seed) {
         vec4 scPalColor = vec4(1.0);
         float scTintMul = tintValues.b * 2.0;
         vec4 scShaderMap = vec4(1.0);
+        #ifdef USE_NORMALMAP
+        vec4 scNormalSample = vec4(0.5, 0.5, 1.0, 1.0);
+        #endif
         if (tintValues.a < 0.5) {
           // 引擎 building4Clip 的镂空是**无条件 clip**（不按朝向豁免）。
           // 此前的「下向面豁免」观察器缓解（地板底面继承镂空模板、从下仰视
@@ -812,17 +860,19 @@ float scFastNoise(vec3 seed) {
           diffuseColor.rgb *= scPalColor.rgb * scTintMul;
           #ifdef USE_NORMALMAP
           // artistAO = normalMapSampled.a（Base/Top 双采样 lerp，显式导数同 tint）
-          float scAo = textureGrad(normalMap, tUv, scTintGradX, scTintGradY).a;
-          if (scFacade > 0.001) scAo = mix(scAo, textureGrad(normalMap, topUv, scTopGradX, scTopGradY).a, scFacade);
-          diffuseColor.rgb *= scAo;
+          // Normal and material data use the engine's linear filtering. Cubic
+          // reconstruction is reserved for visible colour/coverage contours.
+          scNormalSample = scSampleAtlas(normalMap, tUv, xform, scTintGradX, scTintGradY);
+          if (scFacade > 0.001) scNormalSample = mix(scNormalSample, scSampleAtlas(normalMap, topUv, xform2, scTopGradX, scTopGradY), scFacade);
+          diffuseColor.rgb *= scNormalSample.a;
           #endif
         }
         #ifdef TINT_SHADERMAP
         {
-          vec4 smBase = textureGrad(shaderMapMap, tUv, scTintGradX, scTintGradY);
+          vec4 smBase = scSampleAtlas(shaderMapMap, tUv, xform, scTintGradX, scTintGradY);
           scShaderMap = smBase;
           if (scFacade > 0.001) {
-            scShaderMap = mix(smBase, textureGrad(shaderMapMap, topUv, scTopGradX, scTopGradY), scFacade);
+            scShaderMap = mix(smBase, scSampleAtlas(shaderMapMap, topUv, xform2, scTopGradX, scTopGradY), scFacade);
           }
         }
         #endif
@@ -923,24 +973,33 @@ float scFastNoise(vec3 seed) {
       )
       .replace(
         "#include <normal_fragment_maps>",
-        `#include <normal_fragment_maps>
+        `
         #ifdef USE_NORMALMAP_TANGENTSPACE
         {
-          // 用 three 建好的 tbn（<normal_fragment_begin> 里）：GLB 带 TANGENT
-          // 时 = (vTangent, vBitangent, normal)，与引擎 building4DefaultPS 的
-          // ApplyNormalMap(vn, tangent, nmap) 同帧；缺切线时才退化为导数拟合。
-          // 此前这里自建了一个 tbn 局部遮蔽它，等于永远走导数路径。
           // 法线与反照率共用 tUv/topUv（同区域、同内缩，像素对齐）；显式
           // 导数与 tint 采样同口径（mip 恢复后必须 textureGrad，否则 fract
           // 边界的隐式导数又会把法线 mip 选炸）。
-          vec3 mapN = textureGrad( normalMap, tUv, scTintGradX, scTintGradY ).xyz * 2.0 - 1.0;
-          // Top 层法线（窗框/线脚凹凸）按 facadeTint.a lerp（引擎同用一个 TBN）
-          if (scFacade > 0.001) {
-            vec3 nTop = textureGrad( normalMap, topUv, scTopGradX, scTopGradY ).xyz * 2.0 - 1.0;
-            mapN = mix(mapN, nTop, scFacade);
-          }
+          // Reuse the RGBA sample already reconstructed for AO, including Top.
+          vec3 mapN = scNormalSample.xyz * 2.0 - 0.9985;
           mapN.xy *= normalScale;
-          normal = normalize( tbn * mapN );
+          // ApplyNormalMap: re-orthogonalize the interpolated tangent against N.
+          // Missing tangents must use the facade UV, not the baked color UV.
+          #ifdef USE_TANGENT
+            vec3 scNormalN = normalize(vNormal);
+            vec3 scNormalB = normalize(cross(scNormalN, vTangent));
+            vec3 scNormalT = cross(scNormalB, scNormalN);
+            mat3 scNormalFrame = mat3(scNormalT, scNormalB, scNormalN);
+            #ifdef DOUBLE_SIDED
+              scNormalFrame *= faceDirection;
+            #endif
+          #else
+            mat3 scNormalFrame = getTangentFrame(-vViewPosition, normal, vTintUv);
+            #ifdef DOUBLE_SIDED
+              scNormalFrame[0] *= faceDirection;
+              scNormalFrame[1] *= faceDirection;
+            #endif
+          #endif
+          normal = normalize(scNormalFrame * mapN);
         }
         #endif`,
       )
@@ -1032,13 +1091,6 @@ export function makeTintMaterial(
   if (interiorReady) tinted.defines.TINT_INTERIOR = "";
   const uSpecGUniform = { value: effectiveSpecMode() };
   const uPaletteRowUniform = { value: 0 };
-  // tint 图集半 texel：shader 里的平铺区域边缘内缩量（接缝修复）。
-  const tintImage = tint.tintTex?.image as
-    { width?: number; height?: number } | undefined;
-  const uTintTexel =
-    tintImage?.width && tintImage?.height
-      ? new THREE.Vector2(0.5 / tintImage.width, 0.5 / tintImage.height)
-      : new THREE.Vector2(0, 0);
   attachTintShader(
     tinted,
     {
@@ -1059,7 +1111,6 @@ export function makeTintMaterial(
       uInteriorGlow: env.glow,
       uDayLight: env.dayLight,
       uPowered: env.powered,
-      uTintTexel: { value: uTintTexel },
       uPaletteRow: uPaletteRowUniform,
     },
     Boolean(tint.paramsTex),

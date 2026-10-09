@@ -63,6 +63,8 @@ export const flowZh = {
   preserve: "保留源数据",
   configure: "待开发",
   nodes: {
+    "texture-input": "贴图输入",
+    "building-asset": "建筑资产",
     "map-source": "地图来源",
     "height-edit": "地形高度",
     "noise-height": "Perlin 噪声",
@@ -145,6 +147,8 @@ export const flowEn = {
   preserve: "Preserve source",
   configure: "Not implemented",
   nodes: {
+    "texture-input": "Texture input",
+    "building-asset": "Building asset",
     "map-source": "Map source",
     "height-edit": "Terrain height",
     "noise-height": "Perlin noise",

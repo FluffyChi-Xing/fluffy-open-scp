@@ -344,7 +344,8 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
         // 遮罩 max = 覆盖区不透明、暗态图案不被墙面底色冲淡。
         ps.push_str(
             "float scMax = max(outColor.r, max(outColor.g, outColor.b));\n\
-             outColor.rgb /= 1.0 + max(scMax - 1.0, 0.0);\n",
+             outColor.rgb /= 1.0 + max(scMax - 1.0, 0.0);\n\
+             if (outColor.a < 0.01) discard;\n",
         );
     }
     ps.push_str(family.ps_tail());
@@ -489,6 +490,7 @@ mod tests {
         assert!(ps.contains("dot(tubeColor0, sdfMask)"));
         assert!(ps.contains("remaining -= sdfMask.z"));
         assert!(ps.contains("outColor.a = dot(sdfMask, vec4(1.0))"));
+        assert!(ps.contains("if (outColor.a < 0.01) discard;"));
         assert!(!ps.contains("sdfSharp"));
         assert!(!ps.contains("fwidth(outColor)"));
         assert!(!ps.contains("lightColor *= decalMaterialInfo.w"));

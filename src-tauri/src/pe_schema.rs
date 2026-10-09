@@ -242,7 +242,7 @@ fn unit_json(
         "spawner" => {
             for key in ["id", "count", "countRandom", "agent"] {
                 if let Some(value) = extra.get(key) {
-                    object.insert(key.to_string(), value.clone());
+                    object.insert(if key == "id" { "spawnerId" } else { key }.to_string(), value.clone());
                 }
             }
         }
@@ -387,9 +387,9 @@ mod tests {
         let request: BuildPeSchemaRequest = serde_json::from_value(json!({
             "session": {
                 "assetName": "消防局",
-                "tgi": {"typeId": 11636840, "group": 1089206272, "instance": 31478123},
+                "tgi": {"typeId": 0x00B1B104u32, "group": 1089206272, "instance": 31478123},
                 "modelLods": [
-                    {"tgi": {"typeId": 792537883, "group": 0, "instance": 3972099656u64}},
+                    {"tgi": {"typeId": 792537883, "group": 0, "instance": 0xECEB3C46u64}},
                     null
                 ],
                 "lotSize": [48, 96],
@@ -403,7 +403,7 @@ mod tests {
                 "units": [
                     {
                         "kind": "light", "index": 0,
-                        "transform": {"matrix": [1,0,0,0, 1,0,0,0, 1,0,0, 24,10,48]},
+                        "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 24,10,48]},
                         "lightType": "Spot",
                         "color": [1, 0.95, 0.85],
                         "outerRadius": 22,
@@ -414,11 +414,12 @@ mod tests {
                     {
                         "kind": "prop", "index": 3, "bin": 1,
                         "slot": 2, "scale": 0.35
-                    }
+                    },
+                    {"kind":"spawner", "index":4, "id":{"typeId":1,"group":2,"instance":3}}
                 ]
             },
             "overrides": [
-                {"id": "light:0", "matrix": [1,0,0,0, 1,0,0,0, 1,0,0, 30,12,50],
+                {"id": "light:0", "matrix": [1,0,0, 0,1,0, 0,0,1, 30,12,50],
                  "fields": {"0x0DA76A05": 1.4}}
             ],
             "hiddenUnitIds": ["prop:1:3"],
@@ -435,7 +436,7 @@ mod tests {
             value["meta"]["source"]["tgi"]["typeId"],
             "0x00B1B104"
         );
-        assert_eq!(value["lot"]["size"], json!([48, 96]));
+        assert_eq!(value["lot"]["size"], json!([48.0, 96.0]));
         assert_eq!(value["lot"]["colors"][0]["authored"], true);
         // LOD 引用 hex 化 + 缺失级 = null
         assert_eq!(
@@ -444,7 +445,9 @@ mod tests {
         );
         assert_eq!(value["model"]["lods"][1]["ref"], Value::Null);
         let units = value["units"].as_array().expect("units");
-        assert_eq!(units.len(), 2);
+        assert_eq!(units.len(), 3);
+        assert_eq!(units[2]["id"], "spawner:4");
+        assert_eq!(units[2]["spawnerId"]["instance"], 3);
         // 覆盖矩阵生效 + 字段 patch 并入 fields
         assert_eq!(units[0]["id"], "light:0");
         assert_eq!(units[0]["transform"]["matrix"][9], 30.0);
