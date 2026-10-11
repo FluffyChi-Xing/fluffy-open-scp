@@ -2,9 +2,12 @@ import { createI18n } from "vue-i18n";
 import { appConfig } from "@/config/app";
 import { flowZh, flowEn } from './mod-flow';
 
+import { rasterZh, rasterEn } from "./raster-editor";
+
 const messages = {
   "zh-CN": {
     flow: flowZh,
+    rasterEditor: rasterZh,
     navigation: {
       workspace: "工作区",
       workspaceHome: "文档工作区",
@@ -1569,6 +1572,7 @@ const messages = {
   },
   "en-US": {
     flow: flowEn,
+    rasterEditor: rasterEn,
     navigation: {
       workspace: "Workspace",
       workspaceHome: "Docs workspace",

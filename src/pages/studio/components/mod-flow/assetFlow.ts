@@ -1,4 +1,18 @@
 import type { LotMaterialTextures, LotModelPayload } from "@/api/tauri";
+import { i18n } from '@/locales';
+import { parseRasterSchema } from '@/lib/raster-editor/schema';
+import { base64ToRgba, rgbaToBase64 } from '@/lib/raster-editor/encoders';
+import { encodeRgbaPng } from '@/lib/raster-editor/png';
+
+/** Preview adapter only. The authoritative draft retains raw RGBA / float32 values. */
+export function rasterDraftAsset(document: string, expectedSlot: number): ProjectAsset {
+  const schema = parseRasterSchema(document);
+  if (schema.profile !== `slot${expectedSlot}`) throw new Error(i18n.global.t('rasterEditor.text163'));
+  const base64 = expectedSlot === 0
+    ? btoa(JSON.stringify(schema.parameters))
+    : rgbaToBase64(new Uint8ClampedArray(encodeRgbaPng(schema.image!.width, schema.image!.height, base64ToRgba(schema.image!.data))));
+  return { asset: `raster-draft.${expectedSlot === 0 ? 'json' : 'png'}`, path: '', size: Math.floor(base64.length * 3 / 4), base64 };
+}
 
 export const BUILDING_SLOTS = [
   {

@@ -11,6 +11,11 @@ import {
 import { quantizeToImageData, toImageData } from "@/lib/raster-editor/encoders";
 import type { RasterHistory } from "@/lib/raster-editor/history";
 import {
+  channelPixels,
+  restoreOtherChannels,
+  type Channel,
+} from "@/lib/raster-editor/schema";
+import {
   drawRect,
   floodFill,
   strokeParkingRow,
@@ -48,6 +53,7 @@ const props = defineProps<{
   quantized?: boolean;
   /** 米/像素比例（Lot raster 惯例 0.75）；为 null 时不显示米标尺。 */
   metersPerPixel?: number | null;
+  channel?: Channel;
 }>();
 const emit = defineEmits<{
   change: [];
@@ -120,9 +126,19 @@ function syncCanvasSize() {
 
 function render() {
   if (!ctx) return;
-  const image = props.quantized
-    ? quantizeToImageData(props.doc)
-    : toImageData(props.doc);
+  const before = dragBefore ?? curve?.base;
+  if (before)
+    restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
+  const image =
+    props.channel && props.channel !== "rgba"
+      ? new ImageData(
+          new Uint8ClampedArray(channelPixels(props.doc.pixels, props.channel)),
+          props.doc.width,
+          props.doc.height,
+        )
+      : props.quantized
+        ? quantizeToImageData(props.doc)
+        : toImageData(props.doc);
   ctx.putImageData(image, 0, 0);
 }
 
@@ -149,10 +165,13 @@ function fit() {
   const ratio = Math.min(
     available / props.doc.width,
     availableHeight / props.doc.height,
-    1,
+    16,
   );
   setZoom(Math.max(0.05, ratio));
-  pan.value = { x: 0, y: 0 };
+  pan.value = {
+    x: (element.clientWidth - props.doc.width * zoom.value) / 2,
+    y: (element.clientHeight - props.doc.height * zoom.value) / 2,
+  };
 }
 
 // ── 指针交互 ──
@@ -433,6 +452,7 @@ function commitCurve(control: { x: number; y: number }) {
 function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
   const rect = dirty ? clampRect(dirty, props.doc) : null;
   if (rect && before) {
+    restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
     historyInstance.value.push(makeEdit(rect, before));
   }
   render();
@@ -526,6 +546,7 @@ function onKeyup(event: KeyboardEvent) {
 
 onMounted(() => {
   syncCanvasSize();
+  fit();
   window.addEventListener("keydown", onKeydown);
   window.addEventListener("keyup", onKeyup);
 });
@@ -535,16 +556,24 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => props.quantized,
-  () => render(),
+  () => [props.quantized, props.channel],
+  () => {
+    cancelDraft();
+    render();
+  },
 );
 watch(
   () => props.tool,
   () => cancelDraft(),
 );
 watch(
-  () => [props.doc.width, props.doc.height],
+  () => props.doc,
   () => {
+    dragBefore = null;
+    dragDirty = null;
+    curve = null;
+    dragMode = "none";
+    points = [];
     syncCanvasSize();
     fit();
   },
@@ -592,7 +621,7 @@ watch(
     <span v-if="metersPerPixel" class="scale-badge">
       1 px = {{ props.metersPerPixel }} m
     </span>
-    <div class="hud">
+    <div class="hud" :class="{ 'with-ruler': metersPerPixel }">
       <span v-if="cursor" class="hud-item">
         {{ cursorText }}
       </span>
@@ -649,11 +678,15 @@ watch(
   image-rendering: pixelated;
 }
 .hud {
+  z-index: 3;
   bottom: 10px;
   display: flex;
   gap: 6px;
   left: 10px;
   position: absolute;
+}
+.hud.with-ruler {
+  left: 54px;
 }
 .ruler {
   pointer-events: none;
@@ -742,5 +775,10 @@ watch(
   font-size: 10px;
   position: absolute;
   right: 12px;
+}
+@media (max-width: 1100px) {
+  .space-hint {
+    display: none;
+  }
 }
 </style>

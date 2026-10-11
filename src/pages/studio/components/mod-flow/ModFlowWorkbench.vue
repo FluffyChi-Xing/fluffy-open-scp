@@ -281,7 +281,7 @@ defineExpose({
           <button v-if="diagnostic.node" @click="edit(diagnostic.node)">
             {{ diagnostic.node }}
           </button>
-          {{ diagnostic.detail }}
+          {{ diagnostic.detail === 'rasterEditor.buildUnsupported' ? t('rasterEditor.buildUnsupported') : diagnostic.detail }}
         </li>
       </ul>
       <p v-if="artifact">

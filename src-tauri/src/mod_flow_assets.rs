@@ -40,6 +40,9 @@ pub(super) fn describe(root: &Path, relative: &str) -> Result<Value, String> {
 pub(super) fn validate(root: &Path, schema: &Schema) -> Option<&'static str> {
     let file = schema.config["asset"].as_str().unwrap_or("");
     if schema.kind == "texture-input" {
+        if !schema.config["document"].as_str().unwrap_or("").is_empty() {
+            return Some("rasterEditor.buildUnsupported");
+        }
         return if file.is_empty() || safe_path(root, file).is_ok_and(|p| p.is_file()) { None }
         else { Some("Texture input is missing") };
     }
@@ -67,5 +70,21 @@ pub(super) fn validate_links(schemas: &[Schema], deps: &BTreeMap<String, Vec<Str
                 diagnostic(out, Some(&building.id), "compile", "贴图预览已绑定；替换材质槽的 RW4 写回尚未接入，禁止静默忽略贴图构建");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod raster_draft_tests {
+    use super::*;
+
+    #[test]
+    fn raster_schema_cannot_be_silently_omitted_from_a_build() {
+        let mut schema: Schema = serde_json::from_value(json!({
+            "schema_version": 1, "id": "texture-input-1", "kind": "texture-input",
+            "config": { "asset": "", "slot": 0, "document": "{\"format\":\"openscp.raster\"}" }
+        })).unwrap();
+        assert_eq!(validate(Path::new("."), &schema), Some("rasterEditor.buildUnsupported"));
+        schema.config["document"] = json!("");
+        assert!(validate(Path::new("."), &schema).is_none());
     }
 }

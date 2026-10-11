@@ -20,6 +20,7 @@ import {
   BUILDING_SLOTS,
   applyBuildingSlots,
   assetBytes,
+  rasterDraftAsset,
   type ProjectAsset,
 } from "./assetFlow";
 const PropertyEditor = defineAsyncComponent(
@@ -225,16 +226,16 @@ watch(
   () =>
     BUILDING_SLOTS.map(
       (s) =>
-        props.schemas.find((n) => n.id === config.value[s.id])?.config.asset ??
-        "",
+        props.schemas.find((n) => n.id === config.value[s.id])?.config,
     ),
   async (paths) => {
     if (isTexture.value) return;
     const epoch = ++textureGeneration;
     try {
       const inputs = await Promise.all(
-        paths.map((path) =>
-          path ? request<ProjectAsset>("read-asset", { asset: path }) : null,
+        paths.map((input, index) =>
+          input?.document ? rasterDraftAsset(String(input.document), index) :
+          input?.asset ? request<ProjectAsset>("read-asset", { asset: input.asset }) : null,
         ),
       );
       if (epoch !== textureGeneration) return;

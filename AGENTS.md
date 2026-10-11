@@ -10,3 +10,8 @@ Record reusable findings with `ctx learn` and evidence; verify against code or t
 Record a reproducible failed approach with `ctx deadend`; do not save routine chatter or tool transcripts.
 Use `ctx import` to preview existing agent memories, and `ctx import --apply` to store candidates.
 <!-- fluffy-context:end -->
+
+## Internationalization
+All user-facing interface text must use i18n, including labels, hints, errors,
+empty states, dialog titles, and accessibility labels. Maintain both zh-CN and
+en-US messages and verify that switching languages updates the active UI.

@@ -2126,6 +2126,13 @@ watch(
     if (!tryIncrementalGrouping(grouping)) scheduleRebuild("grouping");
   },
 );
+// Raster editing updates the ground independently of models and units.
+watch(
+  () => [props.lotMaskPng, props.lotMaskRawRgba, props.lotSurfacePng,
+    props.lotNormalAtlasPng, props.lotColors, props.lotSize, props.lotTilePeriod],
+  () => scheduleRebuild("grouping"),
+  { deep: true },
+);
 watch(
   () => props.groupVisibility,
   () => viewport.applyGroupVisibility(props.groupVisibility),
