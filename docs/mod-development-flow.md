@@ -65,7 +65,15 @@ disabled until the inspected plan is valid, with independent server-side validat
 - Static resource files plus explicit TGI → deterministic DBPF 3 overlay.
 - Existing region → height offset → all 341 height tiles regenerated across five
   levels from a 4096² field.
-- Seeded Perlin height generation for an existing region's replacement heightfield.
+- Deterministic fBm v1 height generation for an existing region's replacement heightfield
+  (seed, octaves, lacunarity, persistence, wavelength, amplitude and base height).
+- Optional 4096×4096 16-bit grayscale height input from a project-relative asset. The
+  image is normalized to [-1, 1] before applying base/amplitude and is included in the
+  inspected input fingerprint, so rebuilding after an image change is rejected as stale.
+- Map metadata schemas carry separate zh-CN/en-US names and descriptions, plus selection
+  image and enabled city/great-work IDs. These fields are persisted with every node and
+  switch with the application locale; game registry writers remain gated until their TGI
+  chains are verified.
 - Source slot/resource/road/selection metadata preservation (no writes).
 - Output stored in `build/<content-hash>/<filename>.package`; adjacent `build.json`
   records IM, input fingerprints, artifact SHA-256, and resource TGIs. Every output
@@ -79,7 +87,7 @@ disabled until the inspected plan is valid, with independent server-side validat
 2. **Whole region as one city:** source → slots → coordinate alignment → resources
    → metadata → output. Coordinate alignment deliberately blocks builds until game
    simulation bounds and transitions are verified.
-3. **Noise terrain:** source → Perlin → slots → resources → roads → metadata → output.
+3. **Noise terrain:** source → fBm or grayscale height → slots → resources → roads → metadata → output.
    Incomplete metadata nodes initially block builds. Explicitly preserving existing
    data produces replacement terrain, not an independently registered new map.
 

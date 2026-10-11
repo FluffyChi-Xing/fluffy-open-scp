@@ -4,6 +4,7 @@
 use serde::Serialize;
 use std::collections::HashSet;
 use std::io::Read;
+use std::io::Write;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,8 +50,12 @@ fn state_file(directory: &std::path::Path) -> Result<Option<RegionState>, String
         .map_err(|e| format!("{}: {e}", file.display()))
 }
 
-/// Discover only the standard Games/account/region hierarchy. Match the state
-/// environment before loading city resource fields; never borrow another map.
+fn save_template_name(directory: &std::path::Path) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(directory.join("misc/MetaData")).ok()?).ok()?;
+    v.get("template")?.get("name")?.as_str().map(str::to_owned)
+}
+
+/// Discover saves by the template identity in `misc/MetaData`.
 pub fn discover_save(root: &std::path::Path, group: u32, plots: &[crate::region_3d::Region3DPlot]) -> Option<(std::path::PathBuf, SaveLayers)> {
     let mut candidates = Vec::new();
     for account in std::fs::read_dir(root).ok()?.flatten() {
@@ -66,9 +71,15 @@ pub fn discover_save(root: &std::path::Path, group: u32, plots: &[crate::region_
         }
     }
     candidates.sort_by(|a,b|b.0.cmp(&a.0).then_with(||a.1.cmp(&b.1)));
+    let expected = crate::region_3d::template_name_for_group(group);
     for (_,path) in candidates {
         if let Ok(Some(state))=state_file(&path.join("0")) {
-            if state.environment==group {
+            let matches = match (expected, save_template_name(&path)) {
+                (Some(e), Some(a)) => e.eq_ignore_ascii_case(&a),
+                (None, _) => state.environment == group,
+                _ => false,
+            };
+            if matches {
                 if let Ok(layers)=load_save(&path,group,plots) {return Some((path,layers));}
             }
         }
@@ -84,12 +95,8 @@ pub fn load_save(
     plots: &[crate::region_3d::Region3DPlot],
 ) -> Result<SaveLayers, String> {
     let region = state_file(&directory.join("0"))?.ok_or("save has no region state")?;
-    if region.environment != group {
-        return Err(format!(
-            "save region {:08X} does not match {group:08X}",
-            region.environment
-        ));
-    }
+    // EGB.environment is the shared EcoGame/script environment id, not the
+    // RegionTerrain group. Template identity is checked by discover_save.
     let mut sources = vec![StateSource {
         site: "0".into(),
         origin: [0.0; 2],
@@ -168,6 +175,21 @@ pub struct StateUnit {
     pub rotation: [f32; 9],
     pub position: [f32; 3],
 }
+
+/// Write the supported v20 subset. Runtime-only fields are emitted empty;
+/// this is intended for bootstrap candidates and round-trip verification.
+pub fn write_state(state: &RegionState) -> Result<Vec<u8>, String> {
+    let mut w=Vec::new(); let u=|w:&mut Vec<u8>,v:u32|w.extend(v.to_be_bytes());
+    let i=|w:&mut Vec<u8>,v:i32|u(w,v as u32); let f=|w:&mut Vec<u8>,v:f32|u(w,v.to_bits());
+    u(&mut w,20); u(&mut w,0);u(&mut w,0);u(&mut w,0);u(&mut w,state.environment);u(&mut w,0);u(&mut w,0);u(&mut w,0);
+    u(&mut w,state.maps.len() as u32);u(&mut w,4);
+    for m in &state.maps { let n=m.size.checked_mul(m.size).ok_or("map size overflow")?; if m.values.len()!=n{return Err("map size mismatch".into())}; u(&mut w,m.id);u(&mut w,n as u32);let mut s=0i64;for &v in &m.values{i(&mut w,v);s+=v as i64}w.extend((s as u64).to_be_bytes()); }
+    u(&mut w,state.units.len() as u32);u(&mut w,state.units.len() as u32);u(&mut w,13);
+    for (slot,x) in state.units.iter().enumerate(){u(&mut w,slot as u32);u(&mut w,x.id);u(&mut w,0);u(&mut w,x.graphics_group);u(&mut w,x.graphics_state);u(&mut w,0);u(&mut w,0);let mut fl=0u16;if x.scale!=1.0{fl|=1};if x.rotation!=[1.,0.,0.,0.,1.,0.,0.,0.,1.]{fl|=2};if x.position!=[0.;3]{fl|=4};w.extend(fl.to_be_bytes());if fl&1!=0{f(&mut w,x.scale)}if fl&2!=0{for &v in &x.rotation{f(&mut w,v)}}if fl&4!=0{for &v in &x.position{f(&mut w,v)}}w.extend([0;16]);u(&mut w,0);u(&mut w,0);}
+    u(&mut w,6); let pc=state.curves.len()*2; slots(&mut w,pc);for c in &state.curves{for p in [c.controls[0],c.controls[3]]{for v in p{f(&mut w,v)}}} slots(&mut w,pc);for c in &state.curves{for t in [0,1]{for k in 0..3{let v=if t==0{3.*(c.controls[1][k]-c.controls[0][k])}else{3.*(c.controls[3][k]-c.controls[2][k])};f(&mut w,v)}}} slots(&mut w,state.curves.len());for (n,c) in state.curves.iter().enumerate(){for v in [2*n as i32,2*n as i32+1,2*n as i32,2*n as i32+1,-1,-1,c.path as i32]{i(&mut w,v)}}u(&mut w,pc as u32);w.extend(std::iter::repeat_n(0,pc*16));let pn=state.curves.iter().map(|c|c.path).max().map_or(0,|x|x+1);slots(&mut w,pn);for p in 0..pn{u(&mut w,state.curves.iter().find(|c|c.path==p).map_or(0,|c|c.entry_id));w.extend([0;20]);}slots(&mut w,0);Ok(w)
+}
+fn slots(w:&mut Vec<u8>,n:usize){w.extend((n as u32).to_be_bytes());w.extend(0u32.to_be_bytes());}
+pub fn write_state_gzip(state:&RegionState)->Result<Vec<u8>,String>{let b=write_state(state)?;let mut o=Vec::new();let mut z=flate2::write::GzEncoder::new(&mut o,flate2::Compression::default());z.write_all(&b).map_err(|e|e.to_string())?;z.finish().map_err(|e|e.to_string())?;Ok(o)}
 
 struct Reader<'a> {
     bytes: &'a [u8],

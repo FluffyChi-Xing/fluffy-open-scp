@@ -21,6 +21,16 @@ describe("region layer mapping", () => {
     for (let y = 0; y < 16; y++) pixels[(y * 16 + 8) * 4 + 1] = 0;
     expect(roadPreviewMask(pixels, 16)[8 * 16 + 8]).toBe(1);
   });
+  it("keeps the boundary of a rasterised road wider than three cells", () => {
+    const pixels = new Uint8ClampedArray(32 * 32 * 4).fill(255);
+    for (let y = 0; y < 32; y++) for (let x = 11; x < 21; x++) {
+      const i = (y * 32 + x) * 4;
+      pixels[i + 1] = 0;
+      pixels[i + 2] = 0;
+    }
+    expect(roadPreviewMask(pixels, 32)[16 * 32 + 11]).toBe(1);
+    expect(roadPreviewMask(pixels, 32)[16 * 32 + 16]).toBe(1);
+  });
   it("keeps tree placement deterministic and separates independent jitter channels", () => {
     expect(cellRandom(-10, 82, 1)).toBe(cellRandom(-10, 82, 1));
     expect(cellRandom(-10, 82, 1)).not.toBe(cellRandom(-10, 82, 2));

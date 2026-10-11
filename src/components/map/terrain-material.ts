@@ -4,6 +4,7 @@ import { resourceColor } from "@/lib/region-map";
 import { ecoChannel } from "./map-fields";
 import { MAP_WORLD_XY_GLSL } from "./map-coordinates";
 import { hasStateResource, stateResourcePixels, STATE_RESOURCE_IDS } from "./map-state-fields";
+import { brushResourceKind } from "@/lib/region-map";
 
 export type TerrainMaterial = THREE.MeshLambertMaterial & {
   setResource: (kind: string | null, opacity: number) => void;
@@ -55,6 +56,36 @@ export function createTerrainMaterial(
   };
   const eco = field(new Uint8Array(ecoPixels));
   const normal = field(normals);
+  // A fresh region has no EGB typed maps yet, but its static EcoMapBrushes
+  // already contain the seeds used by the game's bootstrap. Rasterise those
+  // seeds into the same single-channel texture shape as a saved resource map.
+  // This keeps the material path identical for aligned and unaligned previews.
+  const brushResources: Record<string, THREE.DataTexture> = {};
+  for (const [name, stamps] of data.brushes ?? []) {
+    const kind = brushResourceKind(name).toLowerCase();
+    if (!stamps.length || brushResources[kind]) continue;
+    const pixels = new Uint8Array(size * size * 4);
+    // The game expands a brush seed into a typed-map field during bootstrap;
+    // a 680 m marker is only the seed and looked like a lone resource dot.
+    // Use a broad falloff so an unaligned preview shows the editable field
+    // that the bootstrap will write, rather than the seed marker itself.
+    const radius = Math.max(4, Math.round(2400 / Math.max(1, spacing)));
+    for (const [wx, wy] of stamps) {
+      const cx = Math.round((wx - data.originWorld[0]) / spacing);
+      const cy = Math.round((wy - data.originWorld[1]) / spacing);
+      for (let y = Math.max(0, cy - radius); y <= Math.min(size - 1, cy + radius); y++) {
+        for (let x = Math.max(0, cx - radius); x <= Math.min(size - 1, cx + radius); x++) {
+          const d = Math.hypot(x - cx, y - cy) / radius;
+          if (d > 1) continue;
+          const k = (y * size + x) * 4;
+          const falloff = Math.max(0, 1 - d * d);
+          const value = Math.max(pixels[k], Math.round(falloff * 255));
+          pixels[k] = value; pixels[k + 1] = value; pixels[k + 2] = value; pixels[k + 3] = 255;
+        }
+      }
+    }
+    brushResources[kind] = field(pixels);
+  }
   const savedResources = Object.fromEntries(Object.keys(STATE_RESOURCE_IDS)
     .filter(kind => hasStateResource(data, kind)).map(kind => [kind, field(stateResourcePixels(data, kind, size))]));
   const detail = (slot: keyof typeof detailPixels, fallback: string) => {
@@ -85,8 +116,13 @@ export function createTerrainMaterial(
   };
   mat.setResource = (kind, opacity) => {
     const saved = kind ? savedResources[kind] : undefined;
-    overlay.savedResource.value = saved ?? eco;
-    overlay.resourceChannel.value = saved ? 3 : ecoChannel(kind) ?? -1;
+    const brush = kind ? brushResources[kind.toLowerCase()] : undefined;
+    // Preserve the authoritative aligned-map channels. Static brush seeds
+    // are only a fallback for resource kinds (coal/ore/oil) that have no ED
+    // channel; letting them override soil/water/forest corrupts aligned saves.
+    const channel = kind ? ecoChannel(kind) : null;
+    overlay.savedResource.value = saved ?? (channel === null ? brush : undefined) ?? eco;
+    overlay.resourceChannel.value = saved || (channel === null && brush) ? 3 : channel ?? -1;
     overlay.resourceOpacity.value = Math.max(0, Math.min(1, opacity));
     overlay.resourceColor.value.set(resourceColor(kind ?? ""));
   };
@@ -199,6 +235,7 @@ if (resourceChannel >= 0) {
     eco.dispose();
     normal.dispose();
     Object.values(savedResources).forEach(tex => tex.dispose());
+      Object.values(brushResources).forEach(tex => tex.dispose());
     Object.values(textures).forEach((tex) => tex.dispose());
   });
   return mat;

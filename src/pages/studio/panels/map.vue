@@ -29,7 +29,13 @@ const gamePackages = useGamePackagesStore();
 
 const saveDirectory = ref<string | null>(null);
 function resourceAvailable(kind: string) {
-  return ecoChannel(kind) !== null || hasStateResource(render.value, kind);
+  if (ecoChannel(kind) !== null || hasStateResource(render.value, kind)) return true;
+  // Static region packages expose brush sources even without a calibrated save.
+  return (render.value?.brushes ?? []).some(
+    ([name, stamps]) =>
+      brushResourceKind(name).toLowerCase() === kind.toLowerCase() &&
+      stamps.length > 0,
+  );
 }
 async function chooseSave() {
   const path = await open({
@@ -445,6 +451,25 @@ function resourceLabel(kind: string): string {
         </header>
         <div class="sheet-viewer">
           <MapViewer3D v-if="sheetOpen" :data="render" v-bind="viewerLayers" />
+          <aside class="sheet-layer-panel" :aria-label="t('studio.map.layersTitle')">
+            <h3>{{ t("studio.map.layersTitle") }}</h3>
+            <label class="layer-toggle">
+              <FCheckbox v-model="showPlots" />
+              {{ t("studio.map.layerPlots") }}
+            </label>
+            <label class="layer-toggle">
+              <FCheckbox v-model="showVegetation" />
+              {{ t("studio.map.layerVegetation") }}
+            </label>
+            <label class="layer-toggle">
+              <FCheckbox v-model="showWater" />
+              {{ t("studio.map.layerWater") }}
+            </label>
+            <label class="layer-toggle">
+              <FCheckbox v-model="showRoads" />
+              {{ t("studio.map.layerRoads") }}
+            </label>
+          </aside>
         </div>
       </div>
     </FSheet>
@@ -712,5 +737,29 @@ function resourceLabel(kind: string): string {
 .sheet-viewer {
   flex: 1;
   min-height: 0;
+  position: relative;
+}
+.sheet-layer-panel {
+  position: absolute;
+  /* MapViewer3D's reset/refresh control occupies the first 28px at top-right. */
+  top: 3.25rem;
+  right: 0.75rem;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 10rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: var(--surface, #ffffff);
+  color: var(--foreground, #111827);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.2));
+  backdrop-filter: blur(10px);
+}
+.sheet-layer-panel h3 {
+  margin: 0 0 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 650;
 }
 </style>

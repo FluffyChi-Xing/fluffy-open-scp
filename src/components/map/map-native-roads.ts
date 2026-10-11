@@ -2,13 +2,69 @@ import * as THREE from "three";
 import type { Region3DData, StateSource } from "@/lib/region-map";
 import { nativeGeometry, nativeTexture } from "./map-native-assets";
 import { sweepSections } from "./map-sweep";
+import { roadPreviewMask } from "./map-fields";
 
 function inside(x: number, y: number, b: readonly number[]): boolean {
   return x >= b[0] && y >= b[1] && x < b[2] && y < b[3];
 }
+
+/** Build a save-independent road layer from the region ED road-control field.
+ * ED is exported with the map package, so this remains available for untouched
+ * regions while the higher fidelity spline layer is only an optional overlay.
+ */
+export function createStaticRoads(
+  data: Region3DData,
+  ground: ImageData,
+  height: (x: number, y: number) => number,
+): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "static-regional-road-network";
+  const mask = roadPreviewMask(ground.data, ground.width);
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const half = data.metersPerPixel * 0.5;
+  for (let py = 1; py < ground.height - 1; py++) {
+    for (let px = 1; px < ground.width - 1; px++) {
+      if (!mask[py * ground.width + px]) continue;
+      const x = data.originWorld[0] + (px + 0.5) * data.metersPerPixel;
+      const y = data.originWorld[1] + (py + 0.5) * data.metersPerPixel;
+      // The first frame uses a coarse terrain LOD whose triangle plane can be
+      // a few metres above the bilinear height sample.  Lift the preview
+      // ribbon enough to avoid being depth-occluded; native EGB roads keep
+      // their own engine z and are unaffected by this fallback.
+      const z = height(x, y) + 6;
+      const base = positions.length / 3;
+      positions.push(x - half, z, y - half, x + half, z, y - half, x + half, z, y + half, x - half, z, y + half);
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  if (!positions.length) return group;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  const material = new THREE.MeshBasicMaterial({ color: 0x3d3a37, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "static-road-mask";
+  group.add(mesh);
+  return group;
+}
 /** Empty-map preview uses only region zero, including roads inside city bounds. */
 export function ownsRoadPoint(source: StateSource): boolean {
   return source.site === "0";
+}
+
+/**
+ * Choose one authoritative road source for the preview. Once the region EGB
+ * supplies curves, its cEcoPathSet is the engine source of truth; drawing the
+ * ED raster beneath it creates duplicate/offset roads and makes broken raster
+ * fragments look like real topology. The raster is only a no-save fallback.
+ */
+export function hasNativeRoadNetwork(data: Pick<Region3DData, "saveLayers">): boolean {
+  return Boolean(
+    data.saveLayers?.sources.some(
+      (source) => ownsRoadPoint(source) && source.curves.length > 0,
+    ),
+  );
 }
 /** Source splines and ribbon width/UV/offsets, never raster-derived centerlines. */
 export function createNativeRoads(

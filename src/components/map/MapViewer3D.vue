@@ -12,13 +12,14 @@ import { useI18n } from "vue-i18n";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import FIcon from "@/components/extensions/FIcon.vue";
+import { brushResourceKind, resourceColor } from "@/lib/region-map";
 import type { Region3DData } from "@/lib/region-map";
 import { createTerrainMaterial } from "./terrain-material";
 import { createTerrainSkirtGeometry } from "./terrain-skirt";
 import { roadPreviewMask } from "./map-fields";
 import { createVegetation } from "./map-vegetation";
 import { nativeTreeAssets } from "./map-native-assets";
-import { createNativeRoads } from "./map-native-roads";
+import { createNativeRoads, hasNativeRoadNetwork } from "./map-native-roads";
 import { createMapWater } from "./map-water";
 import { createMapSceneRoot, mapToScene, sceneToMap } from "./map-coordinates";
 
@@ -65,6 +66,7 @@ let root: THREE.Group | null = null;
 let plotGroup: THREE.Group | null = null;
 let vegetationGroup: THREE.Group | null = null;
 let roadGroup: THREE.Group | null = null;
+let resourceGroup: THREE.Group | null = null;
 let waterMesh: THREE.Mesh | null = null;
 let setResource: ((kind: string | null, opacity: number) => void) | null = null;
 let buildGeneration = 0;
@@ -111,6 +113,43 @@ function textSprite(text: string, color: string, fontPx = 42): THREE.Sprite {
   spr.scale.set((cv.width / cv.height) * scale, scale, 1);
   spr.renderOrder = 10;
   return spr;
+}
+
+function createResourceBrushes(data: Region3DData, height: (x: number, y: number) => number): THREE.Group {
+  const root = new THREE.Group();
+  root.name = "static-resource-brushes";
+  const byKind = new Map<string, THREE.Group>();
+  for (const [name, stamps] of data.brushes ?? []) {
+    const kind = brushResourceKind(name).toLowerCase();
+    if (!stamps.length) continue;
+    const group = byKind.get(kind) ?? (() => {
+      const g = new THREE.Group();
+      g.name = kind;
+      byKind.set(kind, g);
+      root.add(g);
+      return g;
+    })();
+    const material = new THREE.MeshBasicMaterial({
+      color: resourceColor(kind), transparent: true, opacity: 0.58,
+      depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+    });
+    for (const [x, y] of stamps) {
+      // A brush is an area seed, not a point marker.  Keep it visible while
+      // inspecting a resource layer even when the coarse terrain LOD places
+      // its sampled height slightly above the stamp plane.
+      const mesh = new THREE.Mesh(new THREE.CircleGeometry(680, 32), material);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, height(x, y) + 4, y);
+      mesh.renderOrder = 8;
+      group.add(mesh);
+    }
+  }
+  return root;
+}
+
+function updateResourceBrushVisibility(kind: string | null): void {
+  if (!resourceGroup) return;
+  for (const child of resourceGroup.children) child.visible = !!kind && child.name === kind.toLowerCase();
 }
 
 /** 蓝色尺度标注组（图2式）：主尺线 + 端点刻 + 步进刻度与标签。 */
@@ -474,10 +513,26 @@ async function build(data: Region3DData) {
   grid.position.set(ORG[0] + SPAN / 2, data.waterZ - 6, ORG[1] + SPAN / 2);
   root.add(grid);
 
-  const roads = data.saveLayers && data.roadAssets ? createNativeRoads(data, roadPixels, terrain.heightWorld) : new THREE.Group();
+  // Road appearance is a path-level asset (curve + PathEntry extrusion), not
+  // a colour that can be recovered from ED.  Only render the same native
+  // ribbon/material chain used by an aligned save.  Showing ED as a flat
+  // raster fallback produced misleading brown/grey blocks, so an unaligned
+  // map deliberately has no road mesh until its template paths are decoded.
+  const roads = hasNativeRoadNetwork(data) && data.roadAssets
+    ? createNativeRoads(data, roadPixels, terrain.heightWorld)
+    : new THREE.Group();
+  roads.name = hasNativeRoadNetwork(data)
+    ? "regional-road-network"
+    : "regional-road-network-unavailable";
   roads.visible = props.showRoads !== false && !props.activeResource;
   roadGroup = roads;
   root.add(roads);
+  // Static brush seeds are rasterised into the terrain resource texture. Do
+  // not add the old centre-circle debug markers; they obscured the actual
+  // distribution and made every unaligned map look like one resource dot.
+  resourceGroup = new THREE.Group();
+  resourceGroup.name = "static-resource-brushes";
+  root.add(resourceGroup);
   vegetationGroup = createVegetation(data, groundPx, roadMask, terrain.heightWorld,
     nativeTreeAssets(data.forestModels ?? [], treePixels, renderer));
   vegetationGroup.visible = props.showVegetation !== false && !props.activeResource;
@@ -659,6 +714,7 @@ function disposeScene() {
   setResource = null;
   waterMesh = null;
   roadGroup = null;
+  resourceGroup = null;
   vegetationGroup = null;
   localizedLabels.length = 0;
   plotGroup = null;
@@ -717,6 +773,7 @@ watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activ
   const resourceView = Boolean(props.activeResource);
   if (vegetationGroup) vegetationGroup.visible = props.showVegetation !== false && !resourceView;
   if (roadGroup) roadGroup.visible = props.showRoads !== false && !resourceView;
+  updateResourceBrushVisibility(props.activeResource ?? null);
   if (waterMesh) waterMesh.visible = waterMesh.userData.hasWater && props.showWater !== false && !resourceView;
   setResource?.(props.activeResource ?? null, props.resourceOpacity ?? 0.75);
   needsRenderFlag = true;

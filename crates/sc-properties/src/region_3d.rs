@@ -227,6 +227,10 @@ fn template_prior(group: u32) -> Option<&'static str> {
         .map(|(_, n)| *n)
 }
 
+pub fn template_name_for_group(group: u32) -> Option<&'static str> {
+    template_prior(group)
+}
+
 /// 模板 ↔ 区域 join。同布局区域（16 城三图/7 城三图/2 城双图）坐标完全相同，
 /// 用「城市场地整平高 vs 模板 z」逐城判别；仍平手时由先验英文名终裁。
 fn match_template<'a>(

@@ -1,7 +1,7 @@
 //! Versioned project manifest -> validated intermediate model -> DBPF overlay.
 //! The engine reads schema files itself; UI validation never authorizes a build.
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -359,7 +359,16 @@ pub fn initialize(
             "map-metadata",
             "output",
         ],
-        _ if mod_type == "assets" => vec!["texture-input", "texture-input", "texture-input", "texture-input", "texture-input", "texture-input", "building-asset", "output"],
+        _ if mod_type == "assets" => vec![
+            "texture-input",
+            "texture-input",
+            "texture-input",
+            "texture-input",
+            "texture-input",
+            "texture-input",
+            "building-asset",
+            "output",
+        ],
         _ => vec!["static-resource", "output"],
     };
     let layout = ensure_project_layout(root, mod_type)?;
@@ -379,13 +388,24 @@ pub fn initialize(
             "map-source" => json!({"package":"","group":""}),
             "height-edit" => json!({"delta_meters":0}),
             "noise-height" => {
-                json!({"seed":1,"amplitude_meters":80,"wavelength_meters":2048,"base_meters":-850})
+                json!({"seed":1,"algorithm":"fbm-v1","input_mode":"noise","grayscale_asset":"","amplitude_meters":80,"wavelength_meters":2048,"octaves":5,"lacunarity":2.0,"persistence":0.5,"base_meters":-850,"water_level_meters":0})
             }
             "texture-input" => json!({"asset":"","slot":i}),
-            "building-asset" => json!({"asset":"","document":"","property":"","slot0":"texture-input-1","slot1":"texture-input-2","slot2":"texture-input-3","slot3":"texture-input-4","slot4":"texture-input-5","slot5":"texture-input-6"}),
+            "building-asset" => {
+                json!({"asset":"","document":"","property":"","slot0":"texture-input-1","slot1":"texture-input-2","slot2":"texture-input-3","slot3":"texture-input-4","slot4":"texture-input-5","slot5":"texture-input-6"})
+            }
             "static-resource" => json!({"asset":"","tgi":"","source_package":""}),
             "output" => json!({"file":"mod.package"}),
             "coordinate-alignment" => json!({"action":"configure"}),
+            "map-metadata" => {
+                json!({"action":if mode=="original"{"preserve"}else{"configure"},"region_name_zh_cn":"","region_name_en_us":"","region_description_zh_cn":"","region_description_en_us":"","selection_image":""})
+            }
+            "city-slots" => {
+                json!({"action":if mode=="original"{"preserve"}else{"configure"},"enabled_city_ids":"","enabled_great_work_ids":""})
+            }
+            "resources" => {
+                json!({"action":if mode=="original"{"preserve"}else{"configure"},"brush_asset":"","target":"coal","blend":"replace","strength":1.0})
+            }
             _ => json!({"action":if mode=="original"{"preserve"}else{"configure"}}),
         };
         schema_files.push((
@@ -411,10 +431,15 @@ pub fn initialize(
             id,
             schema,
             kind: kind.to_string(),
-            position: if *kind == "texture-input" { [40., i as f64 * 280. + 60.] }
-                else if *kind == "building-asset" { [570., 400.] }
-                else if mod_type == "assets" && mode == "assets" { [1120., 400.] }
-                else { [(i % 3) as f64 * 290. + 40., (i / 3) as f64 * 210. + 60.] },
+            position: if *kind == "texture-input" {
+                [40., i as f64 * 280. + 60.]
+            } else if *kind == "building-asset" {
+                [570., 400.]
+            } else if mod_type == "assets" && mode == "assets" {
+                [1120., 400.]
+            } else {
+                [(i % 3) as f64 * 290. + 40., (i / 3) as f64 * 210. + 60.]
+            },
         });
     }
     let now = std::time::SystemTime::now()
@@ -518,10 +543,13 @@ pub fn inspect(root: &Path) -> Result<FlowState, String> {
     revision =
         digest(&serde_json::to_vec(&json!({"manifest":manifest,"schemas":schemas})).unwrap());
     for (id, parents) in &deps {
-        if nodes
-            .iter()
-            .any(|n| &n.id == id && matches!(n.kind.as_str(), "map-source" | "static-resource" | "texture-input"))
-            && !parents.is_empty()
+        if nodes.iter().any(|n| {
+            &n.id == id
+                && matches!(
+                    n.kind.as_str(),
+                    "map-source" | "static-resource" | "texture-input"
+                )
+        }) && !parents.is_empty()
             || parents
                 .iter()
                 .any(|parent| nodes.iter().any(|n| &n.id == parent && n.kind == "output"))
@@ -655,7 +683,11 @@ pub fn inspect(root: &Path) -> Result<FlowState, String> {
         }
     }
     asset_inputs::validate_links(&schemas, &deps, &mut diagnostics);
-    if height == 0 && !schemas.iter().any(|s| matches!(s.kind.as_str(), "static-resource" | "building-asset")) {
+    if height == 0
+        && !schemas
+            .iter()
+            .any(|s| matches!(s.kind.as_str(), "static-resource" | "building-asset"))
+    {
         diagnostic(
             &mut diagnostics,
             None,
@@ -668,7 +700,13 @@ pub fn inspect(root: &Path) -> Result<FlowState, String> {
         for s in &schemas {
             let path = match s.kind.as_str() {
                 "map-source" => Some(PathBuf::from(s.config["package"].as_str().unwrap())),
-                "static-resource" | "building-asset" => Some(safe_path(root, s.config["asset"].as_str().unwrap())?),
+                "static-resource" | "building-asset" => {
+                    Some(safe_path(root, s.config["asset"].as_str().unwrap())?)
+                }
+                "noise-height" if s.config["input_mode"] == "grayscale" => Some(safe_path(
+                    root,
+                    s.config["grayscale_asset"].as_str().unwrap(),
+                )?),
                 _ => None,
             };
             if let Some(path) = path {
@@ -750,10 +788,37 @@ fn validate_schema(root: &Path, s: &Schema, out: &mut Vec<Diagnostic>) {
                 && s.config["base_meters"]
                     .as_f64()
                     .is_some_and(|v| (-1024.0..=1023.).contains(&v))
+                && s.config["algorithm"]
+                    .as_str()
+                    .is_some_and(|v| v == "fbm-v1")
+                && s.config["input_mode"]
+                    .as_str()
+                    .is_some_and(|v| v == "noise" || v == "grayscale")
+                && s.config["octaves"]
+                    .as_u64()
+                    .is_some_and(|v| (1..=12).contains(&v))
+                && s.config["lacunarity"]
+                    .as_f64()
+                    .is_some_and(|v| (1.0..=4.0).contains(&v))
+                && s.config["persistence"]
+                    .as_f64()
+                    .is_some_and(|v| (0.05..=1.0).contains(&v))
+                && s.config["water_level_meters"]
+                    .as_f64()
+                    .is_some_and(|v| (-1024.0..=1023.).contains(&v))
             {
-                None
+                if s.config["input_mode"] == "grayscale" {
+                    let asset = s.config["grayscale_asset"].as_str().unwrap_or("");
+                    if asset.is_empty() || safe_path(root, asset).is_ok_and(|p| !p.is_file()) {
+                        Some("Select a project-relative grayscale height image")
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             } else {
-                Some("Invalid noise parameters")
+                Some("Invalid fBm parameters (algorithm, octaves, lacunarity or persistence)")
             }
         }
         "static-resource" => {
@@ -778,7 +843,9 @@ fn validate_schema(root: &Path, s: &Schema, out: &mut Vec<Diagnostic>) {
             if s.config["action"] == "preserve" {
                 None
             } else {
-                Some("This editor is not yet verified for writing; preserve source data or leave the workflow blocked")
+                Some(
+                    "This editor is not yet verified for writing; preserve source data or leave the workflow blocked",
+                )
             }
         }
         "coordinate-alignment" => {
@@ -874,8 +941,13 @@ pub fn build(root: &Path, requested: &IntermediateModel) -> Result<Value, String
                 let p = safe_path(root, s.config["asset"].as_str().unwrap())?;
                 let package = dbpf::Package::open(p).map_err(|e| e.to_string())?;
                 for entry in package.entries() {
-                    if entry.decompressed_size > 128 * 1024 * 1024 { return Err("Resource exceeds 128 MiB".into()); }
-                    entries.push(dbpf::OverlayEntry::new(entry.id, package.read(entry).map_err(|e| e.to_string())?));
+                    if entry.decompressed_size > 128 * 1024 * 1024 {
+                        return Err("Resource exceeds 128 MiB".into());
+                    }
+                    entries.push(dbpf::OverlayEntry::new(
+                        entry.id,
+                        package.read(entry).map_err(|e| e.to_string())?,
+                    ));
                 }
             }
             "static-resource" => {
@@ -901,18 +973,42 @@ pub fn build(root: &Path, requested: &IntermediateModel) -> Result<Value, String
                 )
                 .map_err(|e| e.to_string())?;
                 let mut heights = sc_properties::region_write::read_region_field(&pkg, group)?;
+                let grayscale = if s.kind == "noise-height" && s.config["input_mode"] == "grayscale"
+                {
+                    let asset = safe_path(root, s.config["grayscale_asset"].as_str().unwrap())?;
+                    let image = image::open(asset)
+                        .map_err(|e| format!("Failed to read grayscale height image: {e}"))?
+                        .into_luma16();
+                    if image.width() != 4096 || image.height() != 4096 {
+                        return Err(format!(
+                            "Grayscale height image must be 4096x4096, got {}x{}",
+                            image.width(),
+                            image.height()
+                        ));
+                    }
+                    Some(image.into_raw())
+                } else {
+                    None
+                };
                 for (i, h) in heights.iter_mut().enumerate() {
                     let z = if s.kind == "height-edit" {
                         *h as f64 / 32. - 1024. + s.config["delta_meters"].as_f64().unwrap()
+                    } else if let Some(gray) = grayscale.as_ref() {
+                        s.config["base_meters"].as_f64().unwrap()
+                            + s.config["amplitude_meters"].as_f64().unwrap()
+                                * (gray[i] as f64 / 65535.0 * 2.0 - 1.0)
                     } else {
                         s.config["base_meters"].as_f64().unwrap()
                             + s.config["amplitude_meters"].as_f64().unwrap()
-                                * noise(
+                                * fbm(
                                     (i % 4096) as f64 * 8.
                                         / s.config["wavelength_meters"].as_f64().unwrap(),
                                     (i / 4096) as f64 * 8.
                                         / s.config["wavelength_meters"].as_f64().unwrap(),
                                     s.config["seed"].as_u64().unwrap() as u32,
+                                    s.config["octaves"].as_u64().unwrap() as u32,
+                                    s.config["lacunarity"].as_f64().unwrap(),
+                                    s.config["persistence"].as_f64().unwrap(),
                                 )
                     };
                     *h = ((z + 1024.) * 32.).round().clamp(0., 65535.) as u16;
@@ -952,7 +1048,9 @@ pub fn build(root: &Path, requested: &IntermediateModel) -> Result<Value, String
     for s in &im.schemas {
         let path = match s.kind.as_str() {
             "map-source" => Some(PathBuf::from(s.config["package"].as_str().unwrap())),
-            "static-resource" | "building-asset" => Some(safe_path(root, s.config["asset"].as_str().unwrap())?),
+            "static-resource" | "building-asset" => {
+                Some(safe_path(root, s.config["asset"].as_str().unwrap())?)
+            }
             _ => None,
         };
         if let Some(path) = path {
@@ -1039,6 +1137,20 @@ fn noise(x: f64, y: f64, seed: u32) -> f64 {
     )
 }
 
+fn fbm(mut x: f64, mut y: f64, seed: u32, octaves: u32, lacunarity: f64, persistence: f64) -> f64 {
+    let mut value = 0.0;
+    let mut amplitude = 1.0;
+    let mut total = 0.0;
+    for octave in 0..octaves {
+        value += noise(x, y, seed.wrapping_add(octave.wrapping_mul(0x9E37_79B9))) * amplitude;
+        total += amplitude;
+        x *= lacunarity;
+        y *= lacunarity;
+        amplitude *= persistence;
+    }
+    if total == 0.0 { 0.0 } else { value / total }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1098,12 +1210,28 @@ mod tests {
     fn verify_native_asset_flow(source: &Path) {
         let f = Fixture::new();
         let state = initialize(&f.0, "Native", "A", "D", "assets", "assets").unwrap();
-        assert_eq!(state.schemas.iter().filter(|s| s.kind == "texture-input").count(), 6);
+        assert_eq!(
+            state
+                .schemas
+                .iter()
+                .filter(|s| s.kind == "texture-input")
+                .count(),
+            6
+        );
         let imported = asset_inputs::import(&f.0, &json!({"path": source})).unwrap();
-        let mut building = state.schemas.iter().find(|s| s.kind == "building-asset").unwrap().clone();
+        let mut building = state
+            .schemas
+            .iter()
+            .find(|s| s.kind == "building-asset")
+            .unwrap()
+            .clone();
         building.config["asset"] = imported["asset"].clone();
         let state = save_node(&f.0, &state.revision, building.clone()).unwrap();
-        assert!(state.im.is_some(), "{:?}", serde_json::to_value(&state.diagnostics));
+        assert!(
+            state.im.is_some(),
+            "{:?}",
+            serde_json::to_value(&state.diagnostics)
+        );
         let result = build(&f.0, state.im.as_ref().unwrap()).unwrap();
         let original = dbpf::Package::open(source).unwrap();
         let rebuilt = dbpf::Package::open(result["path"].as_str().unwrap()).unwrap();
@@ -1114,7 +1242,10 @@ mod tests {
         }
         building.config["document"] = json!("{\"$schema\":\"openscp.lot-asset/1\"}");
         let edited = save_node(&f.0, &state.revision, building.clone()).unwrap();
-        assert!(edited.im.is_none(), "Uncompiled edits must not silently build the source");
+        assert!(
+            edited.im.is_none(),
+            "Uncompiled edits must not silently build the source"
+        );
         building.config["document"] = json!("");
         building.config["slot2"] = json!("missing-input");
         let broken = save_node(&f.0, &edited.revision, building).unwrap();
@@ -1125,10 +1256,14 @@ mod tests {
     fn native_asset_flow_preserves_all_resources_and_blocks_uncompiled_edits() {
         let f = Fixture::new();
         let bytes = dbpf::write_uncompressed_overlay(&[
-            dbpf::OverlayEntry::new(parse_tgi("00B1B104:40E1C000:8357B87F").unwrap(), b"property"),
+            dbpf::OverlayEntry::new(
+                parse_tgi("00B1B104:40E1C000:8357B87F").unwrap(),
+                b"property",
+            ),
             dbpf::OverlayEntry::new(parse_tgi("2F4E681B:00000000:89435924").unwrap(), b"model"),
             dbpf::OverlayEntry::new(parse_tgi("3F8662EA:00000000:00000001").unwrap(), b"script"),
-        ]).unwrap();
+        ])
+        .unwrap();
         let source = f.0.join("native.package");
         fs::write(&source, bytes).unwrap();
         verify_native_asset_flow(&source);
@@ -1179,11 +1314,13 @@ mod tests {
         let output = state.nodes[1].id.clone();
         manifest["internal_dependencies"][&source] = json!([output]);
         save_json(&f.0, "package.json", &manifest, true).unwrap();
-        assert!(inspect(&f.0)
-            .unwrap()
-            .diagnostics
-            .iter()
-            .any(|d| d.detail.contains("Source nodes cannot")));
+        assert!(
+            inspect(&f.0)
+                .unwrap()
+                .diagnostics
+                .iter()
+                .any(|d| d.detail.contains("Source nodes cannot"))
+        );
     }
     #[test]
     fn external_schema_edits_invalidate_save_revision() {
@@ -1209,11 +1346,13 @@ mod tests {
         manifest["internal_dependencies"][first] = json!([]);
         manifest["internal_dependencies"][last] = json!([]);
         save_json(&f.0, "package.json", &manifest, true).unwrap();
-        assert!(inspect(&f.0)
-            .unwrap()
-            .diagnostics
-            .iter()
-            .any(|d| d.code == "disconnected"));
+        assert!(
+            inspect(&f.0)
+                .unwrap()
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "disconnected")
+        );
     }
     #[test]
     fn protects_paths_and_existing_manifests() {
@@ -1266,16 +1405,26 @@ mod tests {
         let f = Fixture::new();
         let state = initialize(&f.0, "Map", "A", "D", "map", "whole-region").unwrap();
         assert!(state.im.is_none());
-        assert!(state
-            .diagnostics
-            .iter()
-            .any(|d| d.node.as_deref() == Some("coordinate-alignment-3")));
+        assert!(
+            state
+                .diagnostics
+                .iter()
+                .any(|d| d.node.as_deref() == Some("coordinate-alignment-3"))
+        );
     }
     #[test]
     fn noise_is_continuous_and_seeded() {
         assert_eq!(noise(2.5, 3.75, 42), noise(2.5, 3.75, 42));
         assert!((noise(1. - 1e-7, 0.4, 42) - noise(1. + 1e-7, 0.4, 42)).abs() < 1e-5);
         assert_ne!(noise(0.31, 0.73, 42), noise(0.31, 0.73, 43));
+    }
+
+    #[test]
+    fn fbm_is_reproducible_and_normalized() {
+        let a = fbm(0.31, 0.73, 42, 5, 2.0, 0.5);
+        assert_eq!(a, fbm(0.31, 0.73, 42, 5, 2.0, 0.5));
+        assert!((-1.0..=1.0).contains(&a));
+        assert_ne!(a, fbm(0.31, 0.73, 43, 5, 2.0, 0.5));
     }
 
     /// Opt-in integration test: retail packages remain outside the repository.

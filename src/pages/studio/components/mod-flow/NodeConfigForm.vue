@@ -82,6 +82,23 @@ function save() {
         "
         @update:model-value="config[field] = $event"
       />
+      <FDropdownSelect
+        v-else-if="field === 'input_mode'"
+        :model-value="String(config[field])"
+        :disabled="busy"
+        :options="[
+          { value: 'noise', label: t('flow.noiseInput') },
+          { value: 'grayscale', label: t('flow.grayscaleInput') },
+        ]"
+        @update:model-value="config[field] = $event"
+      />
+      <FDropdownSelect
+        v-else-if="field === 'algorithm'"
+        :model-value="String(config[field])"
+        :disabled="busy"
+        :options="[{ value: 'fbm-v1', label: t('flow.fbmV1') }]"
+        @update:model-value="config[field] = $event"
+      />
       <input
         v-else-if="typeof config[field] === 'number'"
         v-model.number="config[field]"

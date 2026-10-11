@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Region3DData, RoadSweep } from "@/lib/region-map";
-import { createNativeRoads } from "./map-native-roads";
+import { createNativeRoads, createStaticRoads, hasNativeRoadNetwork } from "./map-native-roads";
 import * as THREE from "three";
 
 const pixel = {
@@ -86,6 +86,17 @@ const data = {
 } as unknown as Region3DData;
 
 describe("native empty-map geometry", () => {
+  it("prefers region-zero curves over the ED fallback", () => {
+    expect(hasNativeRoadNetwork(data)).toBe(true);
+    expect(
+      hasNativeRoadNetwork({
+        saveLayers: {
+          sources: [{ site: "0", origin: [0, 0], bounds: null, maps: [], curves: [] }],
+        },
+      } as unknown as Region3DData),
+    ).toBe(false);
+  });
+
   it("keeps railway repetition in metres and excludes played-city copies", () => {
     const group = createNativeRoads(
       data,
@@ -111,5 +122,24 @@ describe("native empty-map geometry", () => {
         mesh.material.dispose();
       }
     }
+  });
+});
+
+describe("static region road geometry", () => {
+  it("renders ED road-control cells without save layers", () => {
+    const size = 16;
+    const pixels = new Uint8ClampedArray(size * size * 4).fill(255);
+    for (let y = 0; y < size; y++) {
+      const i = (y * size + 8) * 4;
+      pixels[i + 1] = 0;
+      pixels[i + 2] = 0;
+    }
+    const group = createStaticRoads(
+      { size, metersPerPixel: 16, originWorld: [-128, -128] } as Region3DData,
+      { width: size, height: size, data: pixels } as ImageData,
+      () => 0,
+    );
+    expect(group.children).toHaveLength(1);
+    expect((group.children[0] as THREE.Mesh).geometry.getAttribute("position").count).toBeGreaterThan(0);
   });
 });
