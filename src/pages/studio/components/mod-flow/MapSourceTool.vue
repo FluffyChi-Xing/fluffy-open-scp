@@ -65,7 +65,6 @@ async function render() {
     const data = await invoke<Region3DData>("map_panel_region_3d", {
       packagePath: packagePath.value,
       group: group.value,
-      saveDirectory: null,
     });
     if (token === request) {
       preview.value = data;

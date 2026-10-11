@@ -6,55 +6,34 @@
  * 渲染管线：sc_properties::region_3d（341-tile 金字塔 + ED 地面场 +
  * 水位面 4928(-870m) + 地块名/伟工位；three.js 位移网格 + 引擎式顶点色）。
  */
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
-import { open } from "@tauri-apps/plugin-dialog";
 import { hasStateResource } from "@/components/map/map-state-fields";
 import { invoke } from "@tauri-apps/api/core";
 import FIcon from "@/components/extensions/FIcon.vue";
-import FEmpty from "@/components/extensions/FEmpty.vue";
+import MapPlotDetails from "@/components/map/MapPlotDetails.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
-
 
 import FTypography from "@/components/extensions/FTypography.vue";
 
 import MapPreviewPane from "@/components/map/MapPreviewPane.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
-import { brushResourceKind } from "@/lib/region-map";
 import { ecoChannel } from "@/components/map/map-fields";
 import type { Region3DData, RegionSummary } from "@/lib/region-map";
 
 const { t, te, locale } = useI18n();
 const gamePackages = useGamePackagesStore();
 
-const saveDirectory = ref<string | null>(null);
 function resourceAvailable(kind: string) {
-  if (ecoChannel(kind) !== null || hasStateResource(render.value, kind)) return true;
-  // Static region packages expose brush sources even without a calibrated save.
-  return (render.value?.brushes ?? []).some(
-    ([name, stamps]) =>
-      brushResourceKind(name).toLowerCase() === kind.toLowerCase() &&
-      stamps.length > 0,
-  );
-}
-async function chooseSave() {
-  const path = await open({
-    directory: true,
-    multiple: false,
-    title: t("studio.map.loadSave"),
-  });
-  if (typeof path !== "string") return;
-  saveDirectory.value = path;
-  await renderRegion();
+  return ecoChannel(kind) !== null || hasStateResource(render.value, kind);
 }
 const selectedPackageId = ref<number | null>(null);
 const regions = ref<RegionSummary[]>([]);
 const selectedGroup = ref("");
-const render = ref<Region3DData | null>(null);
+const render = shallowRef<Region3DData | null>(null);
 const loadingRegions = ref(false);
 const loadingRender = ref(false);
 const errorMsg = ref("");
-
 
 /** 按当前 UI 语言取区域名（zh → 中文名，否则英文名），缺失回退另一语言/组 id。 */
 function regionDisplayName(r: {
@@ -104,7 +83,6 @@ function selectRegion(group: string) {
   ++renderRequest;
   loadingRender.value = false;
   selectedGroup.value = group;
-  saveDirectory.value = null;
   render.value = null;
 
   selectedPlotUid.value = null;
@@ -117,7 +95,6 @@ async function selectPackage(packageId: number | null) {
   loadingRegions.value = false;
 
   selectedPlotUid.value = null;
-  saveDirectory.value = null;
   selectedPackageId.value = packageId;
   regions.value = [];
   selectedGroup.value = "";
@@ -148,9 +125,11 @@ async function renderRegion() {
     const result = await invoke<Region3DData>("map_panel_region_3d", {
       packagePath: packagePathOf(packageId),
       group: selectedGroup.value,
-      saveDirectory: saveDirectory.value,
     });
-    if (request === renderRequest) render.value = result;
+    if (request === renderRequest) {
+      render.value = result;
+      selectedPlotUid.value = null;
+    }
   } catch (e) {
     if (request === renderRequest) errorMsg.value = String(e);
   } finally {
@@ -160,38 +139,15 @@ async function renderRegion() {
 
 // ── 图层状态：地块框开关 + 资源分布图层单选（null = 关闭；对齐游戏数据视图）──
 
-
-
-
-
-const brushes = computed(() => render.value?.brushes ?? []);
-const resourceKinds = computed(() => {
-  const kinds: string[] = render.value
-    ? ["soil", "waterTable", "forest", "coal", "ore", "oil"]
-    : [];
-  for (const [name] of brushes.value) {
-    const kind = brushResourceKind(name);
-    if (["desirability", "desirabilitytwo"].includes(kind.toLowerCase())) continue;
-    if (!kinds.some((k) => k.toLowerCase() === kind.toLowerCase()))
-      kinds.push(kind);
-  }
-  return kinds;
-});
-
+const resourceKinds = computed(() =>
+  render.value ? ["soil", "waterTable", "forest", "coal", "ore", "oil"] : [],
+);
 const selectedPlotUid = ref<string | null>(null);
 const selectedPlot = computed(
-  () => render.value?.plots.find((plot) => plot.uid === selectedPlotUid.value) ?? null,
+  () =>
+    render.value?.plots.find((plot) => plot.uid === selectedPlotUid.value) ??
+    null,
 );
-const selectedPlotResources = computed(() => {
-  const plot = selectedPlot.value;
-  if (!plot) return [];
-  return brushes.value.flatMap(([name, stamps]) => {
-    const kind = brushResourceKind(name);
-    if (!resourceKinds.value.includes(kind)) return [];
-    const count = stamps.filter(([x, y]) => Math.abs(x - plot.x) <= 1024 && Math.abs(y - plot.y) <= 1024).length;
-    return count ? [t("studio.map.cityResourceSeeds", { resource: resourceLabel(kind), count })] : [];
-  });
-});
 const resourceOptions = computed(() =>
   resourceKinds.value.map((kind) => ({
     kind,
@@ -295,36 +251,18 @@ function resourceLabel(kind: string): string {
         <FIcon name="Play" :size="14" />
         {{ loadingRender ? t("studio.map.rendering") : t("studio.map.render") }}
       </button>
-      <button
-        type="button"
-        class="package-trigger"
-        :disabled="!render || loadingRender"
-        @click="chooseSave"
-        :title="
-          render?.referenceDirectory ??
-          saveDirectory ??
-          t('studio.map.loadSave')
-        "
-      >
-        <FIcon name="FolderOpen" :size="14" />{{
-          t(
-            render?.referenceDirectory || saveDirectory
-              ? "studio.map.changeSave"
-              : "studio.map.loadSave",
-          )
-        }}
-      </button>
     </section>
 
     <p v-if="errorMsg" class="error-message" role="alert">{{ errorMsg }}</p>
     <p v-if="render" class="notice" role="status">
       {{
         t(
-          render.roadAssets
-            ? "studio.map.referenceLoaded"
-            : "studio.map.referenceMissing",
+          `studio.map.static${render.staticStatus === "ready" ? "Ready" : render.staticStatus === "invalid" ? "Invalid" : "Missing"}`,
         )
       }}
+      <span v-if="render.staticStatus === 'ready' && !render.roadAssets">{{
+        t("studio.map.roadAssetsMissing")
+      }}</span>
     </p>
     <p v-if="!openedPackages.length" class="notice" role="status">
       {{ t("studio.map.needPackage") }}
@@ -333,81 +271,32 @@ function resourceLabel(kind: string): string {
     <!-- 主区：左预览卡片 + 右面板 -->
     <div class="workspace">
       <div class="viewer-card">
-        <MapPreviewPane :data="render" :title="renderRegionName" :options="resourceOptions" @select-plot="selectedPlotUid = $event" />
+        <MapPreviewPane
+          :data="render"
+          :title="renderRegionName"
+          :options="resourceOptions"
+          :selected-plot-uid="selectedPlotUid"
+          @select-plot="selectedPlotUid = $event"
+        />
       </div>
       <aside class="side-panel">
-        <section class="side-section">
-          <h3>
-            {{ renderRegionName || t("studio.map.propertiesTitle") }}
-          </h3>
-          <dl v-if="render" class="props">
-            <dt>{{ t("studio.map.sizeLabel") }}</dt>
-            <dd>{{ render.size }}×{{ render.size }}</dd>
-            <dt>{{ t("studio.map.originWorld") }}</dt>
-            <dd class="mono">
-              {{ render.originWorld[0].toFixed(0) }},
-              {{ render.originWorld[1].toFixed(0) }}
-            </dd>
-            <dt>{{ t("studio.map.waterPlane") }}</dt>
-            <dd>{{ Math.round((render.waterZ + 1024) * 32) }}</dd>
-            <dt>{{ t("studio.map.desertMode") }}</dt>
-            <dd>
-              {{ render.desert ? t("studio.map.yes") : t("studio.map.no") }}
-            </dd>
-            <dt>{{ t("studio.map.plotCount") }}</dt>
-            <dd>{{ render.plots.filter((p) => p.kind === "city").length }}</dd>
-            <dt>{{ t("studio.map.brushCount") }}</dt>
-            <dd>{{ render.brushes.length }}</dd>
-          </dl>
-          <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
-        </section>
-
-        <section class="side-section">
-          <h3>{{ t("studio.map.citySlotsTitle") }}</h3>
-          <div v-if="render?.plots.length" class="plot-list">
-            <button
-              v-for="plot in render.plots"
-              :key="plot.uid"
-              type="button"
-              class="plot-button"
-              :class="{ active: selectedPlotUid === plot.uid }"
-              @click="selectedPlotUid = plot.uid"
-            >
-              <span>{{ plot.kind === "city" ? t("studio.map.citySite", { id: plot.uid }) : t("studio.map.greatWorkSite") }}</span>
-              <small>{{ locale.startsWith("zh") ? (plot.name ?? plot.nameEn ?? plot.uid) : (plot.nameEn ?? plot.name ?? plot.uid) }}</small>
-            </button>
-          </div>
-          <FEmpty v-if="!selectedPlot" icon-name="MapPin" variant="compact" status="default" :title="t('studio.map.emptyPlotTitle')" :desc="t('studio.map.emptyPlotDescription')" />
-        </section>
-        <section v-if="selectedPlot" class="side-section plot-details">
-          <h3>{{ t("studio.map.cityDetailsTitle") }}</h3>
-          <dl class="props">
-            <dt>{{ t("studio.map.cityName") }}</dt>
-            <dd>{{ locale.startsWith("zh") ? (selectedPlot.name ?? selectedPlot.nameEn ?? selectedPlot.uid) : (selectedPlot.nameEn ?? selectedPlot.name ?? selectedPlot.uid) }}</dd>
-            <dt>{{ t("studio.map.cityDescription") }}</dt>
-            <dd>{{ t("studio.map.cityDescriptionFallback") }}</dd>
-            <dt>{{ t("studio.map.cityResources") }}</dt>
-            <dd><p v-for="resource in selectedPlotResources" :key="resource">{{ resource }}</p><span v-if="!selectedPlotResources.length">{{ t("studio.map.noCityResources") }}</span></dd>
-          </dl>
-        </section>
-
-
-
-        <p class="side-foot">{{ t("studio.map.pipelineNote") }}</p>
+        <MapPlotDetails :data="render" :plot="selectedPlot" />
       </aside>
     </div>
-
   </section>
 </template>
 
 <style scoped>
 .map-page {
-  padding-bottom: 3rem;
+  box-sizing: border-box;
+  padding-bottom: 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   height: 100%;
+  max-height: calc(100dvh - 7.5rem);
   min-height: 0;
+  overflow: hidden;
 }
 .page-header {
   display: flex;
@@ -494,19 +383,23 @@ function resourceLabel(kind: string): string {
   display: flex;
   gap: 0.75rem;
   flex: 1;
-  min-height: 480px;
+  min-height: 0;
+  overflow: hidden;
 }
 /* 预览卡片：顶部横向工具条（分段式图层切换 + outline 按钮） */
 .viewer-card {
   flex: 1;
   min-width: 0;
-  min-height: 480px;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
   display: flex;
   flex-direction: column;
+}
+:deep(.map-preview-pane) {
+  min-height: 0;
 }
 .card-toolbar {
   align-items: center;
@@ -562,132 +455,9 @@ function resourceLabel(kind: string): string {
   gap: 0.9rem;
   overflow-y: auto;
 }
-.side-section {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  padding: 0.85rem 1rem;
-}
-.side-section h3 {
-  margin: 0 0 0.6rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-.props {
-  margin: 0;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.35rem 0.8rem;
-  font-size: 0.75rem;
-}
-.props dt {
-  color: var(--muted-foreground);
-}
-.props dd {
-  margin: 0;
-  text-align: right;
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
-.mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
-.side-empty {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--subtle-foreground);
-}
-.brush-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.75rem;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--muted-foreground);
-}
-.plot-list { display: grid; gap: 6px; }
-.plot-button { display: grid; gap: 3px; width: 100%; text-align: start; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); cursor: pointer; }
-.plot-button:hover, .plot-button.active { background: var(--surface-hover); border-color: var(--brand); }
-.plot-button small { color: var(--muted-foreground); }
-.layer-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  padding: 0.25rem 0;
-  cursor: pointer;
-}
-.side-note {
-  margin: 0.5rem 0 0;
-  font-size: 0.6875rem;
-  color: var(--subtle-foreground);
-}
-.side-foot {
-  margin: auto 0 0;
-  font-size: 0.6875rem;
-  color: var(--subtle-foreground);
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
 .menu-empty {
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
   color: var(--muted-foreground);
-}
-/* 全屏检查 sheet */
-.sheet-body {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  gap: 0.75rem;
-  padding: 0.9rem 1.1rem;
-}
-.sheet-header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-.sheet-title {
-  flex: 1;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-.sheet-sub {
-  margin-left: 0.5rem;
-  font-size: 0.6875rem;
-  font-weight: 400;
-  color: var(--subtle-foreground);
-  font-family: var(--font-mono, ui-monospace, monospace);
-}
-/* 对齐 property editor 的 outline 图标按钮（见 .outline-btn） */
-.sheet-viewer {
-  flex: 1;
-  min-height: 0;
-  position: relative;
-}
-.sheet-layer-panel {
-  position: absolute;
-  /* MapViewer3D's reset/refresh control occupies the first 28px at top-right. */
-  top: 3.25rem;
-  right: 0.75rem;
-  z-index: 12;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  min-width: 10rem;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 0.55rem;
-  background: var(--surface, #ffffff);
-  color: var(--foreground, #111827);
-  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.2));
-  backdrop-filter: blur(10px);
-}
-.sheet-layer-panel h3 {
-  margin: 0 0 0.15rem;
-  font-size: 0.75rem;
-  font-weight: 650;
 }
 </style>

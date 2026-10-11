@@ -5,7 +5,7 @@
 //! - ED（0x03E421ED）= A8R8G8B8：小端 b0=地下水、b1=森林、b2=土壤；
 //!   ExportRegionEcoMapsRecursively 在道路控制区清除 G/B，故 b0==0 可沿用为路网近似。
 //! - 伟工位 = EP1 包区域模板 JSON（instance 4529F96F）`map.greatWorks[]`，
-//!   与区域组按城市坐标 join；
+//!   与区域组按 bootstrap environment join；
 //! - 名字链 = Game 包注册表 JS（模板名→stringID）→ locale JSON（zh-tw
 //!   instance = FNV1_lower("automatedregiontemplates")）查表。
 use std::collections::HashMap;
@@ -161,12 +161,13 @@ pub fn assembled_ed(package: &dbpf::Package, group: u32) -> Option<(Vec<u8>, Vec
 /// 地块（城市或伟工位）。
 #[derive(Debug, Clone, Serialize)]
 pub struct Region3DPlot {
+    pub info: Option<crate::region_city::CityInfo>,
     /// 世界坐标（米）。
     pub x: f32,
     pub y: f32,
     /// 场地基准面高（米）。城市来自模板 JSON z；伟工位 = 高度图采样。
     pub z: f32,
-    /// 地块 uid（地块表名字串，如 "1026"）；伟工位为空。
+    /// 地块 uid（地块表名字串，如 "1026"）；伟工位使用 greatwork:name。
     pub uid: String,
     /// 本地化名（城市名/区域伟工标签；链路缺失时 None）。
     pub name: Option<String>,
@@ -203,21 +204,23 @@ pub struct Region3D {
     pub brushes: Vec<(String, Vec<(f32, f32)>)>,
 }
 
-/// RT0/RT1 区域组 → 模板名先验（z 逐城判别的结论，仅作平手终裁与断链回退）。
-/// 同布局组（16 城三图/7 城双图）曾全靠这条表纠偏；详见 docs/re/map-3d-preview-research.md §2。
+/// Verified template names for legacy callers; preview joins use bootstrap identity.
 const TEMPLATE_PRIOR: &[(u32, &str)] = &[
     (0xBEAF_0510, "Confluence"),
+    (0x9E67_572A, "Caspiar"),
+    (0xDD19_35B6, "SC_Desolation"),
+    (0x936E_CB37, "SC_Hinsara"),
     (0x9F73_5B20, "Oasis"),
     (0xD01F_A985, "Horizon"),
     (0x9E9B_1FF0, "CaspianLake"),
     (0xC2A9_C48F, "CapeTrinity"),
-    (0xB12D_E348, "LittleGorge"),
+    (0xB12D_E348, "Gallia"),
     (0xBC35_7A2B, "Sawyer"),
-    (0xC041_82E4, "Gallia"),
+    (0xC041_82E4, "LittleGorge"),
     (0xA0B6_0DDE, "EdgeWaterBay"),
     (0xE41A_82B8, "Reflection"),
-    (0xE018_3D94, "TwinCities"),
-    (0xDB25_018C, "Tutorial"),
+    (0xE018_3D94, "Tutorial"),
+    (0xDB25_018C, "TwinCities"),
 ];
 
 fn template_prior(group: u32) -> Option<&'static str> {
@@ -229,59 +232,6 @@ fn template_prior(group: u32) -> Option<&'static str> {
 
 pub fn template_name_for_group(group: u32) -> Option<&'static str> {
     template_prior(group)
-}
-
-/// 模板 ↔ 区域 join。同布局区域（16 城三图/7 城三图/2 城双图）坐标完全相同，
-/// 用「城市场地整平高 vs 模板 z」逐城判别；仍平手时由先验英文名终裁。
-fn match_template<'a>(
-    templates: &'a [RegionTemplate],
-    uids: &[String],
-    pos: &[(f32, f32)],
-    ids: &[u32],
-    package: &dbpf::Package,
-    prior_en: Option<&str>,
-) -> Option<&'a RegionTemplate> {
-    let mut site_z: Vec<Option<f64>> = vec![None; uids.len()];
-    let uid_row: HashMap<&str, usize> = uids
-        .iter()
-        .enumerate()
-        .map(|(i, u)| (u.as_str(), i))
-        .collect();
-    templates
-        .iter()
-        .map(|t| {
-            let mut pos_matches = 0usize;
-            let mut z_matches = 0usize;
-            for (uid, x, y, tz) in &t.cities {
-                if pos.iter()
-                    .any(|(px, py)| {
-                        (*px - *x as f32).abs() < 4.0 && (*py - *y as f32).abs() < 4.0
-                    })
-                {
-                    pos_matches += 1;
-                }
-                if let Some(tz) = tz {
-                    if let Some(row) = uid_row.get(uid.as_str()).copied() {
-                        if site_z[row].is_none() && row < ids.len() {
-                            site_z[row] = city_site_z(package, ids[row]);
-                        }
-                        if let Some(z) = site_z[row] {
-                            if (z - tz).abs() < 15.0 {
-                                z_matches += 1;
-                            }
-                        }
-                    }
-                }
-            }
-            let prior_bonus = if prior_en == Some(t.name.as_str()) { 1 } else { 0 };
-            (
-                pos_matches * 1_000_000 + z_matches * 1_000 + t.cities.len() + prior_bonus,
-                t,
-            )
-        })
-        .filter(|(s, _)| *s > 1_000_000)
-        .max_by_key(|(s, _)| *s)
-        .map(|(_, t)| t)
 }
 
 /// 注册表查找：全名 → 归一化（去 `_`/`-` 小写）→ SC_ 前缀剥离 → 包含。
@@ -402,6 +352,7 @@ pub fn city_site_z(package: &dbpf::Package, city_group: u32) -> Option<f64> {
 /// EP1 区域模板（AutomatedRegionTemplates.json）。
 #[derive(Debug, Clone)]
 pub struct RegionTemplate {
+    pub region: Option<u32>,
     pub name: String,
     /// (uid, x, y, z)
     pub cities: Vec<(String, f64, f64, Option<f64>)>,
@@ -411,6 +362,7 @@ pub struct RegionTemplate {
 
 /// 解析 EP1 包内全部区域模板（type 0x0A98EAF0, instance 0x4529F96F）。
 pub fn parse_region_templates(ep1: &dbpf::Package) -> Vec<RegionTemplate> {
+    let bindings = crate::region_bootstrap::catalog(ep1).unwrap_or_default();
     let mut out = Vec::new();
     for e in ep1.entries() {
         if e.id.type_id != 0x0A98_EAF0 || e.id.instance != 0x4529_F96F {
@@ -447,7 +399,7 @@ pub fn parse_region_templates(ep1: &dbpf::Package) -> Vec<RegionTemplate> {
             }
         }
         if !name.is_empty() {
-            out.push(RegionTemplate { name, cities, great_works: gws });
+            out.push(RegionTemplate { region: bindings.iter().find(|b| b.metadata.group == e.id.group && b.metadata.instance == e.id.instance).map(|b| b.region), name, cities, great_works: gws });
         }
     }
     out
@@ -477,7 +429,7 @@ pub fn parse_template_registry(game: &dbpf::Package) -> HashMap<String, (u32, Ha
                 let name_start = head.rfind("},").map(|i| i + 2).unwrap_or(0);
                 let seg = head[name_start..].trim_start_matches(['\n', '\r', ' ']);
                 if let Some(colon) = seg.find(":{Enabled:1,") {
-                    entries.push((pos, seg[..colon].trim().to_string(), id));
+                    entries.push((pos, seg[..colon].trim().rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_').next().unwrap_or("").to_string(), id));
                 }
             }
             from = pos + marker.len();
@@ -581,15 +533,8 @@ pub fn region_list_named(
     let has_locale = locale.is_some();
     base.into_iter()
         .map(|r| {
-            let (uids, pos, ids) = plot_table(package, r.group).unwrap_or_default();
-            let matched = match_template(
-                &templates,
-                &uids,
-                &pos,
-                &ids,
-                package,
-                template_prior(r.group),
-            );
+            let (uids, _, _) = plot_table(package, r.group).unwrap_or_default();
+            let matched = templates.iter().find(|t| t.region == Some(r.group));
             let reg = matched.and_then(|t| registry_lookup(&registry, &t.name).cloned());
             let zh = if has_locale {
                 reg.as_ref().and_then(|(id, _)| locale_names.get(id).cloned())
@@ -604,7 +549,7 @@ pub fn region_list_named(
             RegionListItem {
                 group: r.group,
                 numeric_id: r.numeric_id,
-                plot_count: r.plot_count,
+                plot_count: uids.len(),
                 display_name,
                 display_name_en,
             }
@@ -642,6 +587,7 @@ mod visible_bounds_tests {
         assert_eq!(super::english_region_name(0xCF049F2D).as_deref(), Some("Norwich Hills"));
         assert_eq!(super::english_region_name(0), None);
         let plot = super::Region3DPlot {
+            info: None,
             x: 0.0, y: 0.0, z: 0.0, uid: "1027".into(),
             name: Some("清水".into()), name_en: super::english_region_name(0xFC0C91CF),
             kind: "city".into(),
@@ -690,16 +636,9 @@ pub fn region_3d(
     let sea_z = sea as f32 / 32.0 - 1024.0;
 
     // 先取地块表 + 模板 join（伟工位），据包围盒裁剪装配窗口
-    let (uids, pos, ids) = plot_table(package, group).unwrap_or_default();
+    let (uids, pos, _) = plot_table(package, group).unwrap_or_default();
     let templates = ep1.map(parse_region_templates).unwrap_or_default();
-    let matched0 = match_template(
-        &templates,
-        &uids,
-        &pos,
-        &ids,
-        package,
-        template_prior(group),
-    );
+    let matched0 = templates.iter().find(|t| t.region == Some(group));
     // cTerrainRegion::FillFromProps / VisibleRegionContainsXY: the visible
     // square is centered at world origin; it is independent of plot bounds.
     let visible_size = region_visible_size(package, group);
@@ -776,6 +715,7 @@ pub fn region_3d(
     let locale_names = locale.map(parse_locale_names).unwrap_or_default();
     let reg = matched.and_then(|t| registry_lookup(&registry, &t.name).cloned());
 
+    let city_info = game.map(|g| crate::region_city::registry(g, locale, None)).unwrap_or_default();
     let mut plots = Vec::new();
     let gw_z = |x: f64, y: f64| sample_z(x, y);
     for (uid, (px, py)) in uids.iter().zip(pos.iter()) {
@@ -791,6 +731,7 @@ pub fn region_3d(
             .and_then(|id| locale_names.get(id))
             .cloned();
         plots.push(Region3DPlot {
+            info: reg.as_ref().and_then(|(_, cities)| cities.get(uid)).and_then(|id|city_info.get(id)).cloned(),
             x: *px,
             y: *py,
             z,
@@ -804,10 +745,11 @@ pub fn region_3d(
     if let Some(t) = matched {
         for (n, x, y) in &t.great_works {
             plots.push(Region3DPlot {
+                info: None,
                 x: *x as f32,
                 y: *y as f32,
                 z: gw_z(*x, *y),
-                uid: String::new(),
+                uid: format!("greatwork:{n}"),
                 name: region_map::region_display_name(group, true).map(|_| "伟大工程位".to_string()),
                 name_en: None, // Generic site label is translated by the viewer.
                 kind: "greatwork".into(),

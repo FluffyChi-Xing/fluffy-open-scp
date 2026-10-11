@@ -12,75 +12,21 @@ export function hasStateResource(
   data: Region3DData | null,
   kind: string,
 ): boolean {
-  const id = STATE_RESOURCE_IDS[kind];
+  const id = STATE_RESOURCE_IDS[canonicalResourceKind(kind)];
   return (
     id !== undefined &&
-    !!data?.saveLayers?.sources.some(
+    !!data?.staticLayers?.sources.some(
       (s) => s.bounds && s.maps.some((m) => m.id === id),
     )
   );
 }
 
-/** SoilLayer is the saved absolute height field (also exported as 03E421F0).
- * Keep the original region outside city simulation bounds; saved roads use these grades.
- */
-export function applySavedCityFields(
-  data: Region3DData,
-  raw: Uint16Array,
-  eco: ImageData,
-): void {
-  const size = eco.width,
-    spacing = data.metersPerPixel;
-  for (const source of data.saveLayers?.sources ?? []) {
-    if (!source.bounds) continue;
-    const [x0, y0, x1, y1] = source.bounds;
-    const height = source.maps.find((m) => m.id === 0x6f9f6ab3);
-    const channels = [0x28f896a4, 0x1d52be3e, 0x0f92dc56].map((id) =>
-      source.maps.find((m) => m.id === id),
-    );
-    for (
-      let y = Math.max(0, Math.ceil((y0 - data.originWorld[1]) / spacing));
-      y < Math.min(size, Math.ceil((y1 - data.originWorld[1]) / spacing));
-      y++
-    ) {
-      for (
-        let x = Math.max(0, Math.ceil((x0 - data.originWorld[0]) / spacing));
-        x < Math.min(size, Math.ceil((x1 - data.originWorld[0]) / spacing));
-        x++
-      ) {
-        const mx = (data.originWorld[0] + x * spacing - x0) / 16,
-          my = (data.originWorld[1] + y * spacing - y0) / 16;
-        const sample = (m: NonNullable<typeof height>) => {
-          const ix = Math.min(m.size - 1, Math.floor(mx)),
-            iy = Math.min(m.size - 1, Math.floor(my));
-          const nx = Math.min(m.size - 1, ix + 1),
-            ny = Math.min(m.size - 1, iy + 1),
-            tx = mx - ix,
-            ty = my - iy;
-          return (
-            (m.values[iy * m.size + ix] * (1 - tx) +
-              m.values[iy * m.size + nx] * tx) *
-              (1 - ty) +
-            (m.values[ny * m.size + ix] * (1 - tx) +
-              m.values[ny * m.size + nx] * tx) *
-              ty
-          );
-        };
-        if (height)
-          raw[y * size + x] = Math.max(
-            0,
-            Math.min(65535, Math.round(sample(height))),
-          );
-        channels.forEach((m, c) => {
-          if (m)
-            eco.data[(y * size + x) * 4 + c] = Math.round(
-              (Math.max(0, Math.min(65535, sample(m))) / 65535) * 255,
-            );
-        });
-      }
-    }
-  }
+/** Keep resource names stable across package keys and UI labels. */
+export function canonicalResourceKind(kind: string): string {
+  const lower = kind.toLowerCase();
+  return lower === "watertable" ? "waterTable" : kind;
 }
+
 /** Resample only inside observed city squares. Alpha distinguishes no data from zero. */
 export function stateResourcePixels(
   data: Region3DData,
@@ -89,8 +35,10 @@ export function stateResourcePixels(
 ): Uint8Array {
   const pixels = new Uint8Array(size * size * 4);
   const spacing = data.metersPerPixel;
-  for (const source of data.saveLayers?.sources ?? []) {
-    const map = source.maps.find((m) => m.id === STATE_RESOURCE_IDS[kind]);
+  for (const source of data.staticLayers?.sources ?? []) {
+    const map = source.maps.find(
+      (m) => m.id === STATE_RESOURCE_IDS[canonicalResourceKind(kind)],
+    );
     if (!map || !source.bounds) continue;
     const [x0, y0, x1, y1] = source.bounds;
     for (
@@ -103,13 +51,25 @@ export function stateResourcePixels(
         x < Math.min(size, Math.ceil((x1 - data.originWorld[0]) / spacing));
         x++
       ) {
-        const mx = Math.floor(
-          ((data.originWorld[0] + x * spacing - x0) / (x1 - x0)) * map.size,
+        const mx = Math.max(
+          0,
+          Math.min(
+            map.size - 1,
+            Math.floor(
+              ((data.originWorld[0] + x * spacing - x0) / (x1 - x0)) * map.size,
+            ),
+          ),
         );
-        const my = Math.floor(
-          ((data.originWorld[1] + y * spacing - y0) / (y1 - y0)) * map.size,
+        const my = Math.max(
+          0,
+          Math.min(
+            map.size - 1,
+            Math.floor(
+              ((data.originWorld[1] + y * spacing - y0) / (y1 - y0)) * map.size,
+            ),
+          ),
         );
-        const value = map.values[my * map.size + mx];
+        const value = map.values[my * map.size + mx] ?? 0;
         const i = (y * size + x) * 4;
         pixels[i] = Math.round(
           (Math.max(0, Math.min(65535, value)) / 65535) * 255,
@@ -119,4 +79,20 @@ export function stateResourcePixels(
     }
   }
   return pixels;
+}
+
+/** Measured occupied cells, not brush count or a fabricated tonnage. */
+export function cityResourceSummary(data: Region3DData | null, uid?: string) {
+  const source = data?.staticLayers?.sources.find(
+    (s) => s.site === uid && s.bounds,
+  );
+  return Object.entries(STATE_RESOURCE_IDS).map(([kind, id]) => {
+    const map = source?.maps.find((m) => m.id === id);
+    return {
+      kind,
+      coverage: map?.values.length
+        ? (100 * map.values.filter((v) => v > 0).length) / map.values.length
+        : null,
+    };
+  });
 }

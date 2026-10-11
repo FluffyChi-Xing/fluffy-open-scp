@@ -28,7 +28,7 @@ const data = {
   size: 128,
   metersPerPixel: 16,
   originWorld: [-1024, -1024],
-  saveLayers: {
+  staticLayers: {
     sources: [
       { site: "0", origin: [0, 0], bounds: null, maps: [], curves: [curve] },
       {
@@ -128,7 +128,7 @@ describe("native empty-map geometry", () => {
     expect(hasNativeRoadNetwork(data)).toBe(true);
     expect(
       hasNativeRoadNetwork({
-        saveLayers: {
+        staticLayers: {
           sources: [
             { site: "0", origin: [0, 0], bounds: null, maps: [], curves: [] },
           ],

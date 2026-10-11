@@ -1,6 +1,6 @@
 //! Read-only map/path subset of retail EcoGame states. Source: cEcoGame::Read,
 //! cEcoMap::Read, cEcoUnit::Read, cEcoPathSet::Read and SplineRepForSegment.
-//! Retail v17/v20 headers and v4 map sums differ from the older dev source.
+//! Retail v17/v18/v20 headers and v4 map sums differ from the older dev source.
 use serde::Serialize;
 use std::collections::HashSet;
 use std::io::Read;
@@ -299,7 +299,7 @@ impl Reader<'_> {
 pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
     let mut r = Reader { bytes, pos: 0 };
     let version = r.u()?;
-    if !matches!(version, 17 | 20) {
+    if !matches!(version, 17 | 18 | 20) {
         return Err(format!("unsupported EcoGame version {version}"));
     }
     r.take(8)?; // game ID and scripts version
@@ -309,10 +309,10 @@ pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
     let skills = r.count(16384)?;
     r.take(skills * 8)?;
     r.take(8)?; // ticks, next UID
-    if version == 17 {
+    if version <= 18 {
         // Older retail files retain an additional empty skill-state collection.
         if r.u()? != 0 {
-            return Err("unsupported nonempty v17 skill-state extension".into());
+            return Err("unsupported nonempty v17/v18 skill-state extension".into());
         }
     }
     let n = r.count(1024)?;
@@ -501,7 +501,7 @@ mod tests {
     }
     fn sample_state(version: u32) -> Vec<u8> {
         let mut words = vec![version, 1, 1, 0, 0xC04182E4, 0, 0, 1];
-        if version == 17 {
+        if version <= 18 {
             words.push(0);
         }
         words.extend([1, 4, 0xD779C976, 1, 7, 0, 7, 0, 0, 13]);
@@ -517,7 +517,7 @@ mod tests {
     }
     #[test]
     fn reads_retail_header_variants_and_exact_bezier_controls() {
-        for version in [17, 20] {
+        for version in [17, 18, 20] {
             let bytes = sample_state(version);
             let state = read_state(&bytes).unwrap();
             assert_eq!(state.maps[0].values, vec![7]);

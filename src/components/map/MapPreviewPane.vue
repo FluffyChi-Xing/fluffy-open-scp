@@ -11,6 +11,7 @@ import type { Region3DData } from "@/lib/region-map";
 const props = defineProps<{
   data: Region3DData | null;
   title?: string;
+  selectedPlotUid?: string | null;
   options?: { kind: string; label: string; available: boolean }[];
 }>();
 const emit = defineEmits<{ selectPlot: [uid: string] }>();
@@ -24,6 +25,7 @@ const plots = ref(true),
   roads = ref(true);
 const layers = computed(() => ({
   showPlots: plots.value,
+  selectedPlotUid: props.selectedPlotUid,
   showVegetation: vegetation.value,
   showWater: water.value,
   showRoads: roads.value,
@@ -132,7 +134,7 @@ watch(options, () => {
 .map-preview-pane {
   display: flex;
   flex-direction: column;
-  min-height: 480px;
+  min-height: 0;
   height: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -165,7 +167,7 @@ button {
 .viewport {
   position: relative;
   flex: 1;
-  min-height: 400px;
+  min-height: 0;
 }
 .empty {
   position: absolute;

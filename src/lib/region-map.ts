@@ -62,6 +62,20 @@ export function resourceColor(kind: string): string {
 
 /** 3D 预览地块（城市或伟工位）。 */
 export interface Region3DPlot {
+  info?: {
+    nameEntry: string;
+    descriptionEntry: string | null;
+    description: string | null;
+    descriptionEn: string | null;
+    buildable: number | null;
+    wind: number | null;
+    water: number | null;
+    coal: number | null;
+    ore: number | null;
+    oil: number | null;
+    rail: boolean | null;
+    shipping: boolean | null;
+  } | null;
   x: number;
   y: number;
   /** 场地基准面高（米）。 */
@@ -74,9 +88,14 @@ export interface Region3DPlot {
 
 /** map_panel_region_3d 返回的区域 3D 数据。 */
 export interface Region3DData {
-  referenceDirectory?: string | null;
+  staticStatus?: "ready" | "missing" | "invalid";
+  staticError?: string | null;
   forestModels?: MapModel[];
-  saveLayers?: { sources: StateSource[] } | null;
+  staticLayers?: {
+    sources: StateSource[];
+    template?: string;
+    cities?: { site: string; environment: string; version: number }[];
+  } | null;
   roadAssets?: {
     instances: {
       property: number;

@@ -3,7 +3,7 @@ import { stateResourcePixels, hasStateResource } from "./map-state-fields";
 import { ownsRoadPoint } from "./map-native-roads";
 import type { Region3DData, StateSource } from "@/lib/region-map";
 
-describe("saved map registration", () => {
+describe("static map registration", () => {
   const city: StateSource = {
     site: "1029",
     origin: [0, 0],
@@ -22,7 +22,7 @@ describe("saved map registration", () => {
     size: 4,
     metersPerPixel: 16,
     originWorld: [-32, -32],
-    saveLayers: { sources: [regional, city] },
+    staticLayers: { sources: [regional, city] },
   } as Region3DData;
   it("distinguishes observed zero from unavailable cells and preserves asymmetric field orientation", () => {
     const p = stateResourcePixels(data, "coal", 4);
@@ -33,8 +33,25 @@ describe("saved map registration", () => {
     expect(p[(2 * 4 + 1) * 4]).toBe(128);
     expect(hasStateResource(data, "oil")).toBe(false);
   });
-  it("keeps regional roads inside city bounds and excludes played-city roads", () => {
+  it("keeps regional roads inside city bounds and excludes duplicate city roads", () => {
     expect(ownsRoadPoint(city)).toBe(false);
     expect(ownsRoadPoint(regional)).toBe(true);
+  });
+  it("clamps samples at the city edge and accepts case-insensitive water labels", () => {
+    const edge = {
+      ...data,
+      staticLayers: {
+        sources: [
+          regional,
+          {
+            ...city,
+            bounds: [-16, -16, 16, 16],
+            maps: [{ id: 0x0f92dc56, size: 2, values: [65535, 0, 0, 65535] }],
+          },
+        ],
+      },
+    } as Region3DData;
+    expect(hasStateResource(edge, "watertable")).toBe(true);
+    expect(() => stateResourcePixels(edge, "watertable", 4)).not.toThrow();
   });
 });

@@ -27,6 +27,7 @@ const props = defineProps<{
   data: Region3DData | null;
   /** 地块框层开关（默认开）。 */
   showPlots?: boolean;
+  selectedPlotUid?: string | null;
   showVegetation?: boolean;
   showWater?: boolean;
   showRoads?: boolean;
@@ -67,7 +68,6 @@ let root: THREE.Group | null = null;
 let plotGroup: THREE.Group | null = null;
 let vegetationGroup: THREE.Group | null = null;
 let roadGroup: THREE.Group | null = null;
-let resourceGroup: THREE.Group | null = null;
 let waterMesh: THREE.Mesh | null = null;
 let setResource: ((kind: string | null, opacity: number) => void) | null = null;
 let buildGeneration = 0;
@@ -114,11 +114,6 @@ function textSprite(text: string, color: string, fontPx = 42): THREE.Sprite {
   spr.scale.set((cv.width / cv.height) * scale, scale, 1);
   spr.renderOrder = 10;
   return spr;
-}
-
-function updateResourceBrushVisibility(kind: string | null): void {
-  if (!resourceGroup) return;
-  for (const child of resourceGroup.children) child.visible = !!kind && child.name === kind.toLowerCase();
 }
 
 /** 蓝色尺度标注组（图2式）：主尺线 + 端点刻 + 步进刻度与标签。 */
@@ -492,26 +487,16 @@ async function build(data: Region3DData) {
   grid.position.set(ORG[0] + SPAN / 2, data.waterZ - 6, ORG[1] + SPAN / 2);
   root.add(grid);
 
-  // Road appearance is a path-level asset (curve + PathEntry extrusion), not
-  // a colour that can be recovered from ED.  Only render the same native
-  // ribbon/material chain used by an aligned save.  Showing ED as a flat
-  // raster fallback produced misleading brown/grey blocks, so an unaligned
-  // map deliberately has no road mesh until its template paths are decoded.
+  // Original site-0 curves and PathEntry assets from the shipped bootstrap.
   const roads = hasNativeRoadNetwork(data) && data.roadAssets
     ? createNativeRoads(data, roadPixels, terrain.heightWorld)
     : new THREE.Group();
   roads.name = hasNativeRoadNetwork(data)
     ? "regional-road-network"
     : "regional-road-network-unavailable";
-  roads.visible = props.showRoads !== false && !props.activeResource;
+  roads.visible = props.showRoads !== false;
   roadGroup = roads;
   root.add(roads);
-  // Static brush seeds are rasterised into the terrain resource texture. Do
-  // not add the old centre-circle debug markers; they obscured the actual
-  // distribution and made every unaligned map look like one resource dot.
-  resourceGroup = new THREE.Group();
-  resourceGroup.name = "static-resource-brushes";
-  root.add(resourceGroup);
   vegetationGroup = createVegetation(data, groundPx, roadMask, terrain.heightWorld,
     nativeTreeAssets(data.forestModels ?? [], treePixels, renderer));
   vegetationGroup.visible = props.showVegetation !== false && !props.activeResource;
@@ -566,6 +551,10 @@ async function build(data: Region3DData) {
       lg.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
       outline = new THREE.LineSegments(lg, yellow);
     }
+    // Give every slot its own material so selection never recolors other slots.
+    outline.material = (outline.material as THREE.LineBasicMaterial).clone();
+    outline.userData.outlineUid = p.uid;
+    outline.userData.defaultColor = (outline.material as THREE.LineBasicMaterial).color.getHex();
     outline.renderOrder = 5;
     plotGroup.add(outline);
     if (isGw) {
@@ -596,6 +585,9 @@ async function build(data: Region3DData) {
     plotGroup.add(hitArea);
     plotGroup.add(label);
   }
+  yellow.dispose();
+  magenta.dispose();
+  updatePlotSelection();
   root.add(plotGroup);
 
   // ── 尺度标注（图2式蓝尺）：南缘 X 尺 + 西缘 Y 尺 + 角上高尺 ──
@@ -699,7 +691,6 @@ function disposeScene() {
   setResource = null;
   waterMesh = null;
   roadGroup = null;
-  resourceGroup = null;
   vegetationGroup = null;
   localizedLabels.length = 0;
   plotGroup = null;
@@ -747,6 +738,16 @@ watch(
     else { buildGeneration++; ready.value = false; disposeScene(); }
   },
 );
+function updatePlotSelection() {
+  needsRenderFlag = true;
+  for (const object of plotGroup?.children ?? []) {
+    if (!(object instanceof THREE.Line) || !object.userData.outlineUid) continue;
+    const material = object.material as THREE.LineBasicMaterial;
+    material.color.setHex(object.userData.outlineUid === props.selectedPlotUid ? 0x40ffff : object.userData.defaultColor);
+  }
+}
+watch(() => props.selectedPlotUid, updatePlotSelection);
+
 watch(
   () => props.showPlots,
   (v) => {
@@ -757,8 +758,7 @@ watch(
 watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activeResource, props.resourceOpacity], () => {
   const resourceView = Boolean(props.activeResource);
   if (vegetationGroup) vegetationGroup.visible = props.showVegetation !== false && !resourceView;
-  if (roadGroup) roadGroup.visible = props.showRoads !== false && !resourceView;
-  updateResourceBrushVisibility(props.activeResource ?? null);
+  if (roadGroup) roadGroup.visible = props.showRoads !== false;
   if (waterMesh) waterMesh.visible = waterMesh.userData.hasWater && props.showWater !== false && !resourceView;
   setResource?.(props.activeResource ?? null, props.resourceOpacity ?? 0.75);
   needsRenderFlag = true;

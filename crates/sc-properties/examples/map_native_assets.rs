@@ -12,6 +12,7 @@ fn main() {
         .unwrap()
         .iter()
         .map(|p| sc_properties::region_3d::Region3DPlot {
+            info: None,
             x: p["x"].as_f64().unwrap() as f32,
             y: p["y"].as_f64().unwrap() as f32,
             z: p["z"].as_f64().unwrap() as f32,

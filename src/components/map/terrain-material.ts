@@ -3,8 +3,12 @@ import type { Region3DData } from "@/lib/region-map";
 import { resourceColor } from "@/lib/region-map";
 import { ecoChannel } from "./map-fields";
 import { MAP_WORLD_XY_GLSL } from "./map-coordinates";
-import { hasStateResource, stateResourcePixels, STATE_RESOURCE_IDS } from "./map-state-fields";
-import { brushResourceKind } from "@/lib/region-map";
+import {
+  canonicalResourceKind,
+  hasStateResource,
+  stateResourcePixels,
+  STATE_RESOURCE_IDS,
+} from "./map-state-fields";
 
 export type TerrainMaterial = THREE.MeshLambertMaterial & {
   setResource: (kind: string | null, opacity: number) => void;
@@ -18,7 +22,9 @@ export function createTerrainMaterial(
   data: Region3DData,
   raw: Uint16Array,
   ecoPixels: Uint8ClampedArray,
-  detailPixels: Partial<Record<"dirt" | "grass" | "cliff" | "sand", ImageData>> = {},
+  detailPixels: Partial<
+    Record<"dirt" | "grass" | "cliff" | "sand", ImageData>
+  > = {},
 ): TerrainMaterial {
   const size = Math.round(Math.sqrt(raw.length));
   const spacing = data.metersPerPixel;
@@ -56,44 +62,27 @@ export function createTerrainMaterial(
   };
   const eco = field(new Uint8Array(ecoPixels));
   const normal = field(normals);
-  // A fresh region has no EGB typed maps yet, but its static EcoMapBrushes
-  // already contain the seeds used by the game's bootstrap. Rasterise those
-  // seeds into the same single-channel texture shape as a saved resource map.
-  // This keeps the material path identical for aligned and unaligned previews.
-  const brushResources: Record<string, THREE.DataTexture> = {};
-  for (const [name, stamps] of data.brushes ?? []) {
-    const kind = brushResourceKind(name).toLowerCase();
-    if (!stamps.length || brushResources[kind]) continue;
-    const pixels = new Uint8Array(size * size * 4);
-    // The game expands a brush seed into a typed-map field during bootstrap;
-    // a 680 m marker is only the seed and looked like a lone resource dot.
-    // Use a broad falloff so an unaligned preview shows the editable field
-    // that the bootstrap will write, rather than the seed marker itself.
-    const radius = Math.max(4, Math.round(2400 / Math.max(1, spacing)));
-    for (const [wx, wy] of stamps) {
-      const cx = Math.round((wx - data.originWorld[0]) / spacing);
-      const cy = Math.round((wy - data.originWorld[1]) / spacing);
-      for (let y = Math.max(0, cy - radius); y <= Math.min(size - 1, cy + radius); y++) {
-        for (let x = Math.max(0, cx - radius); x <= Math.min(size - 1, cx + radius); x++) {
-          const d = Math.hypot(x - cx, y - cy) / radius;
-          if (d > 1) continue;
-          const k = (y * size + x) * 4;
-          const falloff = Math.max(0, 1 - d * d);
-          const value = Math.max(pixels[k], Math.round(falloff * 255));
-          pixels[k] = value; pixels[k + 1] = value; pixels[k + 2] = value; pixels[k + 3] = 255;
-        }
-      }
-    }
-    brushResources[kind] = field(pixels);
-  }
-  const savedResources = Object.fromEntries(Object.keys(STATE_RESOURCE_IDS)
-    .filter(kind => hasStateResource(data, kind)).map(kind => [kind, field(stateResourcePixels(data, kind, size))]));
+  const resourceField = (kind: string) => {
+    const texture = field(stateResourcePixels(data, kind, size));
+    // Preserve city mask boundaries and valid zero cells at the source 16 m grid.
+    texture.magFilter = texture.minFilter = THREE.NearestFilter;
+    return texture;
+  };
+  const staticResources = Object.fromEntries(
+    Object.keys(STATE_RESOURCE_IDS)
+      .filter((kind) => hasStateResource(data, kind))
+      .map((kind) => [kind.toLowerCase(), resourceField(kind)]),
+  );
   const detail = (slot: keyof typeof detailPixels, fallback: string) => {
     const px = detailPixels[slot];
     const color = new THREE.Color(fallback).convertLinearToSRGB();
     const tex = new THREE.DataTexture(
-      px ? new Uint8Array(px.data) : new Uint8Array([color.r * 255, color.g * 255, color.b * 255, 255]),
-      px?.width ?? 1, px?.height ?? 1, THREE.RGBAFormat,
+      px
+        ? new Uint8Array(px.data)
+        : new Uint8Array([color.r * 255, color.g * 255, color.b * 255, 255]),
+      px?.width ?? 1,
+      px?.height ?? 1,
+      THREE.RGBAFormat,
     );
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -105,31 +94,36 @@ export function createTerrainMaterial(
     return tex;
   };
   const textures = {
-    dirtMap: detail("dirt", "#ac946d"), grassMap: detail("grass", "#58813f"),
-    cliffMap: detail("cliff", "#b7a07b"), sandMap: detail("sand", "#c5b588"),
+    dirtMap: detail("dirt", "#ac946d"),
+    grassMap: detail("grass", "#58813f"),
+    cliffMap: detail("cliff", "#b7a07b"),
+    sandMap: detail("sand", "#c5b588"),
   };
   const mat = new THREE.MeshLambertMaterial() as TerrainMaterial;
   const overlay = {
-    resourceChannel: { value: -1 }, resourceOpacity: { value: 0.75 },
+    resourceChannel: { value: -1 },
+    resourceOpacity: { value: 0.75 },
     resourceColor: { value: new THREE.Color() },
-    savedResource: { value: eco },
+    staticResource: { value: eco },
+    hasStaticResource: { value: false },
   };
   mat.setResource = (kind, opacity) => {
-    const saved = kind ? savedResources[kind] : undefined;
-    const brush = kind ? brushResources[kind.toLowerCase()] : undefined;
-    // Preserve the authoritative aligned-map channels. Static brush seeds
-    // are only a fallback for resource kinds (coal/ore/oil) that have no ED
-    // channel; letting them override soil/water/forest corrupts aligned saves.
+    const resource = kind
+      ? staticResources[canonicalResourceKind(kind).toLowerCase()]
+      : undefined;
     const channel = kind ? ecoChannel(kind) : null;
-    overlay.savedResource.value = saved ?? (channel === null ? brush : undefined) ?? eco;
-    overlay.resourceChannel.value = saved || (channel === null && brush) ? 3 : channel ?? -1;
+    overlay.staticResource.value = resource ?? eco;
+    overlay.hasStaticResource.value = !!resource;
+    overlay.resourceChannel.value = channel ?? (resource ? 3 : -1);
     overlay.resourceOpacity.value = Math.max(0, Math.min(1, opacity));
     overlay.resourceColor.value.set(resourceColor(kind ?? ""));
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, {
       ...overlay,
-      ...Object.fromEntries(Object.entries(textures).map(([key, value]) => [key, { value }])),
+      ...Object.fromEntries(
+        Object.entries(textures).map(([key, value]) => [key, { value }]),
+      ),
       terrainEco: { value: eco },
       terrainNormals: { value: normal },
       terrainOrigin: { value: new THREE.Vector2(...data.originWorld) },
@@ -165,7 +159,8 @@ uniform float terrainTexel;
 uniform float terrainWaterZ;
 uniform vec3 dryColor, grassColor, cliffColor, sandColor, forestColor;
 uniform int resourceChannel;
-uniform sampler2D savedResource;
+uniform sampler2D staticResource;
+uniform bool hasStaticResource;
 uniform float resourceOpacity;
 uniform vec3 resourceColor;
 float terrainHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -220,8 +215,10 @@ surface *= 0.95 + detail * 0.10;
 diffuseColor.rgb = surface;
 if (resourceChannel >= 0) {
   float amount = resourceChannel == 0 ? eco.r : resourceChannel == 1 ? eco.g : eco.b;
-  vec4 saved = texture2D(savedResource, ecoUV);
-  if (resourceChannel == 3) amount = saved.r * saved.a;
+  vec4 citySample = texture2D(staticResource, ecoUV);
+  if (resourceChannel == 3) amount = 0.0;
+  // Alpha marks the city domain: a valid zero overrides regional ED too.
+  if (hasStaticResource) amount = mix(amount, citySample.r, citySample.a);
   float band = floor(clamp(amount, 0.0, 0.999) * 4.0) / 3.0;
   vec3 resourceTint = mix(vec3(0.85), resourceColor, 0.25 + band * 0.75);
   float coverage = smoothstep(0.0, 0.035, amount);
@@ -230,12 +227,11 @@ if (resourceChannel >= 0) {
 `,
       );
   };
-  mat.customProgramCacheKey = () => "region-game-diffuse-resource-v5-saved";
+  mat.customProgramCacheKey = () => "region-game-diffuse-resource-v6-static";
   mat.addEventListener("dispose", () => {
     eco.dispose();
     normal.dispose();
-    Object.values(savedResources).forEach(tex => tex.dispose());
-      Object.values(brushResources).forEach(tex => tex.dispose());
+    Object.values(staticResources).forEach((tex) => tex.dispose());
     Object.values(textures).forEach((tex) => tex.dispose());
   });
   return mat;

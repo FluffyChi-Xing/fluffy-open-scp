@@ -4,7 +4,6 @@
 //! 无需按区域求解/缓存。
 use base64::Engine as _;
 use serde::Serialize;
-use tauri::Manager;
 
 use sc_properties::{region_map, region_write};
 
@@ -144,8 +143,9 @@ pub struct Region3DDto {
     pub water_foam_png_base64: Option<String>,
     pub water_params: Option<sc_properties::region_3d::RegionWaterParams>,
     pub forest_models: Vec<sc_properties::map_assets::MapModel>,
-    pub save_layers: Option<sc_properties::region_state::SaveLayers>,
-    pub reference_directory: Option<String>,
+    pub static_layers: Option<sc_properties::region_bootstrap::StaticLayers>,
+    pub static_status: String,
+    pub static_error: Option<String>,
     pub road_assets: Option<sc_properties::map_assets::RoadAssets>,
     pub size: u32,
     pub meters_per_pixel: f32,
@@ -165,7 +165,7 @@ pub struct Region3DDto {
 /// 自动探测旁包：同目录 SimCityDataEP1.package / SimCity_Game.package /
 /// Locale/zh-tw/Data.package（缺失时名字链与伟工位降级）。
 #[tauri::command]
-pub fn map_panel_region_3d(app_handle: tauri::AppHandle, package_path: String, group: String, save_directory: Option<String>) -> Result<Region3DDto, String> {
+pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region3DDto, String> {
     let group =
         u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
     let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
@@ -184,7 +184,7 @@ pub fn map_panel_region_3d(app_handle: tauri::AppHandle, package_path: String, g
         .join("zh-tw")
         .join("Data.package");
     let locale = dbpf::Package::open(locale).ok();
-    let out = sc_properties::region_3d::region_3d(
+    let mut out = sc_properties::region_3d::region_3d(
         &package,
         group,
         ep1.as_ref(),
@@ -192,20 +192,28 @@ pub fn map_panel_region_3d(app_handle: tauri::AppHandle, package_path: String, g
         locale.as_ref(),
     )
     .map_err(|e| e.to_string())?;
+    // Localized introduction prose is optional; do not invent translations.
+    let english = dbpf::Package::open(parent.join("Locale/en-us/Data.package")).ok();
+    if let (Some(game), Some(english)) = (game.as_ref(), english.as_ref()) {
+        let entries = sc_properties::region_city::registry(game, locale.as_ref(), Some(english));
+        for plot in &mut out.plots {
+            if let Some(info) = &mut plot.info {
+                if let Ok(id) = u32::from_str_radix(&info.name_entry, 16) {
+                    if let Some(entry) = entries.get(&id) { *info = entry.clone(); }
+                }
+            }
+        }
+    }
     let graphics = sibling("SimCity_Graphics.package");
     let app = sibling("SimCity_App.package");
-    let reference = if let Some(path)=save_directory.filter(|p|!p.is_empty()) {
-        let layers=sc_properties::region_state::load_save(std::path::Path::new(&path),group,&out.plots)?;
-        Some((std::path::PathBuf::from(path),layers))
-    } else {
-        app_handle.path().document_dir().ok().and_then(|documents|
-            sc_properties::region_state::discover_save(&documents.join("SimCity").join("Games"),group,&out.plots))
+    let (static_layers, static_status, static_error) = match ep1.as_ref() {
+        Some(ep1) => match sc_properties::region_bootstrap::load(&package, ep1, group) {
+            Ok(layers) => (Some(layers), "ready".to_string(), None),
+            Err(error) => (None, "invalid".to_string(), Some(error)),
+        },
+        None => (None, "missing".to_string(), None),
     };
-    let (reference_directory,save_layers)=match reference {
-        Some((path,layers))=>(Some(path.to_string_lossy().into_owned()),Some(layers)),
-        None=>(None,None),
-    };
-    let road_assets = save_layers.as_ref().and_then(|layers| {
+    let road_assets = static_layers.as_ref().and_then(|layers| {
         let game = game.as_ref()?;
         let ids: std::collections::BTreeSet<_> = layers.sources.iter().flat_map(|s| s.curves.iter().map(|c| c.entry_id)).collect();
         let textures: Vec<_> = [graphics.as_ref(), app.as_ref(), ep1.as_ref()].into_iter().flatten().collect();
@@ -215,8 +223,9 @@ pub fn map_panel_region_3d(app_handle: tauri::AppHandle, package_path: String, g
     });
     Ok(Region3DDto {
         forest_models: graphics.as_ref().map(sc_properties::map_assets::forest_models).unwrap_or_default(),
-        save_layers,
-        reference_directory,
+        static_layers,
+        static_status,
+        static_error,
         road_assets,
         water_params: sc_properties::region_3d::region_water_params(&package, group),
         water_foam_png_base64: sibling("SimCity_App.package")

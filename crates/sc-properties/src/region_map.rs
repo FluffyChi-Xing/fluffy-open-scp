@@ -9,7 +9,7 @@
 //!   b0=植被密度+路网、b1=草量（草地着色）、b2=材质权重。
 use std::collections::HashMap;
 
-use image::{Rgb, RgbImage, Rgba};
+use image::{Rgb, RgbImage};
 
 /// 全游戏共享的 mip0 tile 排布（由 `tile_arrange` 像素级金字塔匹配复原，
 /// BEAF0510 完美树：单根 0x7ADCBE88，节点 [1,4,16,64,256]）。
@@ -74,26 +74,25 @@ const CELL: f32 = 8.0;
 
 /// 全部 RT0 区域 + 已知离线区域的显示名（组 id → 中文名 / 英文名）。
 ///
-/// 名称链路（2026-10-07 定案，docs/re/map-3d-preview-research.md §2）：
-/// EP1 包区域模板 JSON（按城市场地整平高逐城判别同布局组）→ Game 包注册表
-/// → zh locale。本表是断链回退，与链路结论一致。注意内部代号 ≠ 零售名
-/// （Sawyer=三角洲、LittleGorge=泰坦峽谷、Gallia=藍綠森林）；
-/// 旧目验映射 BC357A2B↔泰坦峽谷、B12DE348↔三角洲、E41A82B8↔愛華特灣
-/// 系"排除法"猜测，已被场地 z 证据推翻（锚点：白水谷=存档 MetaData）。
-/// 荒涼（SC_Desolation）与绵延不毛（Oasis）的地形不在 RT0（后者在 RT1）。
+/// 名称链路（2026-10-12，docs/re/map-static-bootstrap.md）：
+/// EP1 bootstrap environment → metadata → Game registry → locale.
+/// Verified fallback for all 15 installed regions; see map-static-bootstrap.md.
 const REGION_NAMES: &[(u32, &str, &str)] = &[
-    (0xBEAF_0510, "白水谷", "Confluence"),       // 存档 MetaData 实锤
-    (0x9F73_5B20, "綿延不毛之地", "Oasis"),       // 地形在 RT1
-    (0xD01F_A985, "地平線群島", "Horizon"),       // 11 城 + 3 伟工
+    (0x9E67_572A, "寧靜群島", "Caspiar"),
+    (0xDD19_35B6, "荒涼", "SC_Desolation"),
+    (0x936E_CB37, "翠綠叢林", "SC_Hinsara"),
+    (0xBEAF_0510, "白水谷", "Confluence"),
+    (0x9F73_5B20, "綿延不毛之地", "Oasis"),
+    (0xD01F_A985, "地平線群島", "Horizon"),
     (0x9E9B_1FF0, "大理石湖", "CaspianLake"),
     (0xC2A9_C48F, "三一岬", "CapeTrinity"),
-    (0xBC35_7A2B, "三角洲", "Sawyer"),            // z 判别（旧目验误作泰坦峽谷）
-    (0xB12D_E348, "泰坦峽谷", "LittleGorge"),     // z 判别（旧目验误作三角洲）
-    (0xC041_82E4, "藍綠森林", "Gallia"),
-    (0xA0B6_0DDE, "愛華特灣", "EdgeWaterBay"),    // z 判别（旧目验误作荒涼）
-    (0xE41A_82B8, "反影環礁", "Reflection"),      // z 判别（旧目验误作愛華特灣）
-    (0xE018_3D94, "追日灣", "TwinCities"),
-    (0xDB25_018C, "奮進島", "Tutorial"),
+    (0xBC35_7A2B, "三角洲", "Sawyer"),
+    (0xB12D_E348, "藍綠森林", "Gallia"),
+    (0xC041_82E4, "泰坦峽谷", "LittleGorge"),
+    (0xA0B6_0DDE, "愛華特灣", "EdgeWaterBay"),
+    (0xE41A_82B8, "反影環礁", "Reflection"),
+    (0xE018_3D94, "奮進島", "Tutorial"),
+    (0xDB25_018C, "追日灣", "TwinCities"),
 ];
 
 /// 按语言取区域显示名（zh = 中文名，其余 = 英文名）；未收录返回 None。

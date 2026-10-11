@@ -8,10 +8,7 @@ function inside(x: number, y: number, b: readonly number[]): boolean {
   return x >= b[0] && y >= b[1] && x < b[2] && y < b[3];
 }
 
-/** Build a save-independent road layer from the region ED road-control field.
- * ED is exported with the map package, so this remains available for untouched
- * regions while the higher fidelity spline layer is only an optional overlay.
- */
+/** Legacy diagnostic ED mask. Not used by the map preview: ED cannot supply topology. */
 export function createStaticRoads(
   data: Region3DData,
   ground: ImageData,
@@ -77,17 +74,12 @@ export function ownsRoadPoint(source: StateSource): boolean {
   return source.site === "0";
 }
 
-/**
- * Choose one authoritative road source for the preview. Once the region EGB
- * supplies curves, its cEcoPathSet is the engine source of truth; drawing the
- * ED raster beneath it creates duplicate/offset roads and makes broken raster
- * fragments look like real topology. The raster is only a no-save fallback.
- */
+/** Original regional bootstrap is the sole road source for static previews. */
 export function hasNativeRoadNetwork(
-  data: Pick<Region3DData, "saveLayers">,
+  data: Pick<Region3DData, "staticLayers">,
 ): boolean {
   return Boolean(
-    data.saveLayers?.sources.some(
+    data.staticLayers?.sources.some(
       (source) => ownsRoadPoint(source) && source.curves.length > 0,
     ),
   );
@@ -176,7 +168,7 @@ export function createNativeRoads(
     number,
     { positions: number[]; uvs: number[]; indices: number[] }
   >();
-  const sources = (data.saveLayers?.sources ?? []).filter(ownsRoadPoint);
+  const sources = (data.staticLayers?.sources ?? []).filter(ownsRoadPoint);
   for (const source of sources)
     for (const record of source.curves) {
       const components = data.roadAssets?.ribbons[record.entryId] ?? [];
@@ -332,7 +324,7 @@ function appendModelSweeps(
   pixels: Record<string, ImageData>,
   height: (x: number, y: number) => number,
 ) {
-  const sources = (data.saveLayers?.sources ?? []).filter(ownsRoadPoint);
+  const sources = (data.staticLayers?.sources ?? []).filter(ownsRoadPoint);
   const batches = new Map<
     number,
     { positions: number[]; uvs: number[]; indices: number[] }
