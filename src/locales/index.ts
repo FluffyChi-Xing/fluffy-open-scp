@@ -1,12 +1,14 @@
 import { createI18n } from "vue-i18n";
 import { appConfig } from "@/config/app";
 import { flowZh, flowEn } from './mod-flow';
+import { mapGraphZh, mapGraphEn } from './map-graph';
 
 import { rasterZh, rasterEn } from "./raster-editor";
 
 const messages = {
   "zh-CN": {
     flow: flowZh,
+    mapGraph: mapGraphZh,
     rasterEditor: rasterZh,
     navigation: {
       workspace: "工作区",
@@ -27,7 +29,7 @@ const messages = {
       deployments: "部署",
       settings: "设置",
       components: "组件展示",
-      charts: "ECharts 图表",
+      charts: "统计图表",
       icons: "图标",
       tree: "树形结构",
       table: "数据表格",
@@ -164,6 +166,7 @@ const messages = {
         resetView: "复位视角",
         mapExtent: "{size} km 见方",
         gridDetail: "16 m/格 · 近处 8 m",
+        sampleDetail: "{sample} m/采样 · 近处 {mesh} m/格",
         emptyDescription: "选择已打开的 package 和区域，点击「渲染」查看地图。",
         layersTitle: "图层",
         resourceControls: "资源",
@@ -193,6 +196,16 @@ const messages = {
         resGroundpollution: "地面污染",
         fullscreen: "全屏检查",
         resourcesTitle: "资源画刷",
+        citySlotsTitle: "城市与伟大工程槽位",
+        cityDetailsTitle: "槽位详情",
+        cityName: "城市名称",
+        cityDescription: "城市介绍",
+        cityDescriptionFallback: "当前接口尚未提供城市介绍。",
+        cityResourceSeeds: "{resource}：槽位内 {count} 个静态画刷种子（非储量）",
+        cityResources: "城市资源信息",
+        noCityResources: "暂无可用资源信息",
+        emptyPlotTitle: "请选择槽位",
+        emptyPlotDescription: "渲染区域后选择一个城市或伟大工程槽位。",
         pipelineNote: "341-tile 金字塔 + 水位面 4928（-870m）+ 湿度×坡度着色",
         panHint: "中键 / 空格拖动平移 · 滚轮以指针为中心缩放",
       },
@@ -1342,8 +1355,8 @@ const messages = {
       eyebrow: "设计系统展示",
       componentsTitle: "组件",
       componentsDescription: "用于控制台界面的基础交互状态和表面层级。",
-      chartsTitle: "ECharts 图表",
-      chartsDescription: "按需注册的响应式图表示例。",
+      chartsTitle: "统计图表",
+      chartsDescription: "基于 Lieflat Charts 模板的响应式 SVG 图表。",
       traffic: "平台流量",
       trafficDescription: "请求量与部署频次趋势。",
       lastSevenDays: "最近 7 天",
@@ -1572,6 +1585,7 @@ const messages = {
   },
   "en-US": {
     flow: flowEn,
+    mapGraph: mapGraphEn,
     rasterEditor: rasterEn,
     navigation: {
       workspace: "Workspace",
@@ -1592,7 +1606,7 @@ const messages = {
       deployments: "Deployments",
       settings: "Settings",
       components: "Components",
-      charts: "ECharts",
+      charts: "Charts",
       icons: "Icons",
       tree: "Tree",
       table: "Data table",
@@ -1735,6 +1749,7 @@ const messages = {
         resetView: "Reset view",
         mapExtent: "{size} km square",
         gridDetail: "16 m/cell · 8 m nearby",
+        sampleDetail: "{sample} m/sample · {mesh} m/cell nearby",
         emptyDescription: "Choose an opened package and a region, then click Render to preview the map.",
         layersTitle: "Layers",
         resourceControls: "Resources",
@@ -1764,6 +1779,16 @@ const messages = {
         resGroundpollution: "Ground Pollution",
         fullscreen: "Inspect fullscreen",
         resourcesTitle: "Resource brushes",
+        citySlotsTitle: "City and great work slots",
+        cityDetailsTitle: "Slot details",
+        cityName: "City name",
+        cityDescription: "City description",
+        cityDescriptionFallback: "The current interface does not provide city descriptions yet.",
+        cityResourceSeeds: "{resource}: {count} static brush seeds inside the slot (not reserves)",
+        cityResources: "City resources",
+        noCityResources: "No resource information available",
+        emptyPlotTitle: "Select a slot",
+        emptyPlotDescription: "Render the region, then choose a city or great work slot.",
         pipelineNote: "341-tile pyramid + water plane 4928 (-870 m) + moisture×slope shading",
         panHint: "Middle-drag / Space to pan · wheel zooms at pointer",
       },
@@ -2957,9 +2982,9 @@ const messages = {
       componentsTitle: "Components",
       componentsDescription:
         "Core interaction states and surface hierarchy for console interfaces.",
-      chartsTitle: "ECharts",
+      chartsTitle: "Charts",
       chartsDescription:
-        "A responsive chart example with on-demand registration.",
+        "Responsive SVG charts based on Lieflat Charts templates.",
       traffic: "Platform traffic",
       trafficDescription: "Request and deployment trends.",
       lastSevenDays: "Last 7 days",

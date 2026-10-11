@@ -12,7 +12,7 @@ import { useI18n } from "vue-i18n";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import FIcon from "@/components/extensions/FIcon.vue";
-import { brushResourceKind, resourceColor } from "@/lib/region-map";
+
 import type { Region3DData } from "@/lib/region-map";
 import { createTerrainMaterial } from "./terrain-material";
 import { createTerrainSkirtGeometry } from "./terrain-skirt";
@@ -34,6 +34,7 @@ const props = defineProps<{
   resourceOpacity?: number;
 }>();
 const { t, locale } = useI18n();
+const emit = defineEmits<{ selectPlot: [uid: string] }>();
 const localizedLabels: Array<{ sprite: THREE.Sprite; text: () => string; color: string; fontPx: number }> = [];
 
 function localizedSprite(text: () => string, color: string, fontPx = 42): THREE.Sprite {
@@ -113,38 +114,6 @@ function textSprite(text: string, color: string, fontPx = 42): THREE.Sprite {
   spr.scale.set((cv.width / cv.height) * scale, scale, 1);
   spr.renderOrder = 10;
   return spr;
-}
-
-function createResourceBrushes(data: Region3DData, height: (x: number, y: number) => number): THREE.Group {
-  const root = new THREE.Group();
-  root.name = "static-resource-brushes";
-  const byKind = new Map<string, THREE.Group>();
-  for (const [name, stamps] of data.brushes ?? []) {
-    const kind = brushResourceKind(name).toLowerCase();
-    if (!stamps.length) continue;
-    const group = byKind.get(kind) ?? (() => {
-      const g = new THREE.Group();
-      g.name = kind;
-      byKind.set(kind, g);
-      root.add(g);
-      return g;
-    })();
-    const material = new THREE.MeshBasicMaterial({
-      color: resourceColor(kind), transparent: true, opacity: 0.58,
-      depthWrite: false, depthTest: false, side: THREE.DoubleSide,
-    });
-    for (const [x, y] of stamps) {
-      // A brush is an area seed, not a point marker.  Keep it visible while
-      // inspecting a resource layer even when the coarse terrain LOD places
-      // its sampled height slightly above the stamp plane.
-      const mesh = new THREE.Mesh(new THREE.CircleGeometry(680, 32), material);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(x, height(x, y) + 4, y);
-      mesh.renderOrder = 8;
-      group.add(mesh);
-    }
-  }
-  return root;
 }
 
 function updateResourceBrushVisibility(kind: string | null): void {
@@ -241,11 +210,11 @@ function makeTerrainEngine(
     return h / hDiv + hBias;
   }
 
-  const CHUNK = 2048;
   const ORGX = data.originWorld[0];
   const ORGY = data.originWorld[1];
   const SPAN = data.size * data.metersPerPixel;
-  const N = Math.max(1, Math.round(SPAN / CHUNK)); // 后端已对齐 2048 格
+  const N = Math.max(1, Math.round(SPAN / 2048));
+  const CHUNK = SPAN / N; // Preserve exact procedural extents; native 2048 m tiles are unchanged.
   const LOD_VERTS = [257, 65, 17]; // 每块边顶点数（8m/32m/128m 格）
   const idxCache = new Map<number, Uint32Array>();
 
@@ -446,8 +415,18 @@ async function build(data: Region3DData) {
   container.appendChild(renderer.domElement);
   // 中键自动滚屏 / 右键菜单 / 滚轮页面滚动：就地拦截，不冒泡到页面
   const el = renderer.domElement;
+  let pointerStart: [number, number] = [0, 0];
   el.addEventListener("pointerdown", (e) => {
+    pointerStart = [e.clientX, e.clientY];
     if (e.button === 1 || e.button === 2) e.preventDefault();
+  });
+  el.addEventListener("pointerup", (e) => {
+    if (e.button !== 0 || Math.hypot(e.clientX - pointerStart[0], e.clientY - pointerStart[1]) > 5 || !camera || !plotGroup?.visible) return;
+    const bounds = el.getBoundingClientRect();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((e.clientX - bounds.left) / bounds.width * 2 - 1, 1 - (e.clientY - bounds.top) / bounds.height * 2), camera);
+    const hit = ray.intersectObjects(plotGroup.children, true).find(h => h.object.userData.plotUid);
+    if (hit) emit("selectPlot", hit.object.userData.plotUid);
   });
   el.addEventListener("contextmenu", (e) => e.preventDefault());
   el.addEventListener("wheel", (e) => e.preventDefault(), { passive: false });
@@ -609,6 +588,12 @@ async function build(data: Region3DData) {
       38,
     );
     label.position.set(p.x, z + (isGw ? 430 : 180), p.y);
+    label.userData.plotUid = p.uid;
+    const hitArea = new THREE.Mesh(new THREE.PlaneGeometry(isGw ? 1536 : 2048, isGw ? 1536 : 2048), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+    hitArea.rotation.x = -Math.PI / 2;
+    hitArea.position.set(p.x, z, p.y);
+    hitArea.userData.plotUid = p.uid;
+    plotGroup.add(hitArea);
     plotGroup.add(label);
   }
   root.add(plotGroup);
@@ -799,7 +784,7 @@ watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activ
     </button>
     <div v-if="ready" class="hud">
       <span class="hud-item">{{ t('studio.map.mapExtent', { size: data ? (data.size * data.metersPerPixel / 1000).toFixed(1) : '?' }) }}</span>
-      <span class="hud-item">{{ t('studio.map.gridDetail') }}</span>
+      <span class="hud-item">{{ t('studio.map.sampleDetail', { sample: data?.metersPerPixel.toFixed(1) ?? '?', mesh: data ? (data.size * data.metersPerPixel / Math.max(1, Math.round(data.size * data.metersPerPixel / 2048)) / 256).toFixed(1) : '?' }) }}</span>
     </div>
   </div>
 </template>
@@ -817,6 +802,8 @@ watch(() => [props.showVegetation, props.showWater, props.showRoads, props.activ
   position: absolute;
   inset: 0;
   display: block;
+  width: 100%;
+  height: 100%;
 }
 .ph {
   position: absolute;

@@ -14,11 +14,11 @@ import { invoke } from "@tauri-apps/api/core";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
-import FCheckbox from "@/components/ui/FCheckbox.vue";
-import FSheet from "@/components/ui/FSheet.vue";
+
+
 import FTypography from "@/components/extensions/FTypography.vue";
-import MapResourceControls from "@/components/map/MapResourceControls.vue";
-import MapViewer3D from "@/components/map/MapViewer3D.vue";
+
+import MapPreviewPane from "@/components/map/MapPreviewPane.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import { brushResourceKind } from "@/lib/region-map";
 import { ecoChannel } from "@/components/map/map-fields";
@@ -54,7 +54,7 @@ const render = ref<Region3DData | null>(null);
 const loadingRegions = ref(false);
 const loadingRender = ref(false);
 const errorMsg = ref("");
-const sheetOpen = ref(false);
+
 
 /** 按当前 UI 语言取区域名（zh → 中文名，否则英文名），缺失回退另一语言/组 id。 */
 function regionDisplayName(r: {
@@ -83,13 +83,6 @@ const renderRegionName = computed(() => {
     ""
   );
 });
-const selectedRegionName = computed(
-  () =>
-    regions.value
-      .filter((r) => r.group === selectedGroup.value)
-      .map(regionDisplayName)[0] ?? selectedGroup.value,
-);
-
 function packageName(packageId: number): string {
   const opened = gamePackages.opened.find(
     (entry) => entry.package.packageId === packageId,
@@ -113,7 +106,8 @@ function selectRegion(group: string) {
   selectedGroup.value = group;
   saveDirectory.value = null;
   render.value = null;
-  activeResource.value = null;
+
+  selectedPlotUid.value = null;
   errorMsg.value = "";
 }
 async function selectPackage(packageId: number | null) {
@@ -121,7 +115,8 @@ async function selectPackage(packageId: number | null) {
   ++renderRequest;
   loadingRender.value = false;
   loadingRegions.value = false;
-  activeResource.value = null;
+
+  selectedPlotUid.value = null;
   saveDirectory.value = null;
   selectedPackageId.value = packageId;
   regions.value = [];
@@ -147,7 +142,7 @@ async function renderRegion() {
   if (packageId === null || !selectedGroup.value) return;
   const request = ++renderRequest;
   errorMsg.value = "";
-  activeResource.value = null;
+
   try {
     loadingRender.value = true;
     const result = await invoke<Region3DData>("map_panel_region_3d", {
@@ -164,11 +159,11 @@ async function renderRegion() {
 }
 
 // ── 图层状态：地块框开关 + 资源分布图层单选（null = 关闭；对齐游戏数据视图）──
-const showPlots = ref(true);
-const showVegetation = ref(true);
-const showWater = ref(true);
-const showRoads = ref(true);
-const resourceOpacity = ref(0.75);
+
+
+
+
+
 const brushes = computed(() => render.value?.brushes ?? []);
 const resourceKinds = computed(() => {
   const kinds: string[] = render.value
@@ -176,20 +171,27 @@ const resourceKinds = computed(() => {
     : [];
   for (const [name] of brushes.value) {
     const kind = brushResourceKind(name);
+    if (["desirability", "desirabilitytwo"].includes(kind.toLowerCase())) continue;
     if (!kinds.some((k) => k.toLowerCase() === kind.toLowerCase()))
       kinds.push(kind);
   }
   return kinds;
 });
-const activeResource = ref<string | null>(null);
-const viewerLayers = computed(() => ({
-  showPlots: showPlots.value,
-  showVegetation: showVegetation.value,
-  showWater: showWater.value,
-  showRoads: showRoads.value,
-  activeResource: activeResource.value,
-  resourceOpacity: resourceOpacity.value,
-}));
+
+const selectedPlotUid = ref<string | null>(null);
+const selectedPlot = computed(
+  () => render.value?.plots.find((plot) => plot.uid === selectedPlotUid.value) ?? null,
+);
+const selectedPlotResources = computed(() => {
+  const plot = selectedPlot.value;
+  if (!plot) return [];
+  return brushes.value.flatMap(([name, stamps]) => {
+    const kind = brushResourceKind(name);
+    if (!resourceKinds.value.includes(kind)) return [];
+    const count = stamps.filter(([x, y]) => Math.abs(x - plot.x) <= 1024 && Math.abs(y - plot.y) <= 1024).length;
+    return count ? [t("studio.map.cityResourceSeeds", { resource: resourceLabel(kind), count })] : [];
+  });
+});
 const resourceOptions = computed(() =>
   resourceKinds.value.map((kind) => ({
     kind,
@@ -331,38 +333,8 @@ function resourceLabel(kind: string): string {
     <!-- 主区：左预览卡片 + 右面板 -->
     <div class="workspace">
       <div class="viewer-card">
-        <!-- 顶部工具条：横向 flex 右对齐（分段式图层切换 + outline 展开） -->
-        <div class="card-toolbar">
-          <MapResourceControls
-            v-model="activeResource"
-            v-model:opacity="resourceOpacity"
-            :options="resourceOptions"
-            :disabled="!render || loadingRender"
-          />
-          <button
-            type="button"
-            class="outline-btn"
-            :title="t('studio.map.fullscreen')"
-            :disabled="!render"
-            @click="sheetOpen = true"
-          >
-            <FIcon name="Expand" :size="15" aria-label="" />
-          </button>
-        </div>
-        <div class="card-viewer">
-          <MapViewer3D :data="render" v-bind="viewerLayers" />
-          <div v-if="!render && !loadingRender" class="viewer-empty">
-            <FEmpty
-              icon-name="Map"
-              variant="compact"
-              status="default"
-              :title="t('studio.map.emptyTitle')"
-              :desc="t('studio.map.emptyDescription')"
-            />
-          </div>
-        </div>
+        <MapPreviewPane :data="render" :title="renderRegionName" :options="resourceOptions" @select-plot="selectedPlotUid = $event" />
       </div>
-
       <aside class="side-panel">
         <section class="side-section">
           <h3>
@@ -391,88 +363,40 @@ function resourceLabel(kind: string): string {
         </section>
 
         <section class="side-section">
-          <h3>{{ t("studio.map.resourcesTitle") }}</h3>
-          <ul v-if="brushes.length" class="brush-list">
-            <li v-for="[name, stamps] in brushes" :key="name">
-              {{ name }} · {{ stamps.length }}
-            </li>
-          </ul>
-          <p v-else class="side-empty">{{ t("studio.map.emptySide") }}</p>
+          <h3>{{ t("studio.map.citySlotsTitle") }}</h3>
+          <div v-if="render?.plots.length" class="plot-list">
+            <button
+              v-for="plot in render.plots"
+              :key="plot.uid"
+              type="button"
+              class="plot-button"
+              :class="{ active: selectedPlotUid === plot.uid }"
+              @click="selectedPlotUid = plot.uid"
+            >
+              <span>{{ plot.kind === "city" ? t("studio.map.citySite", { id: plot.uid }) : t("studio.map.greatWorkSite") }}</span>
+              <small>{{ locale.startsWith("zh") ? (plot.name ?? plot.nameEn ?? plot.uid) : (plot.nameEn ?? plot.name ?? plot.uid) }}</small>
+            </button>
+          </div>
+          <FEmpty v-if="!selectedPlot" icon-name="MapPin" variant="compact" status="default" :title="t('studio.map.emptyPlotTitle')" :desc="t('studio.map.emptyPlotDescription')" />
+        </section>
+        <section v-if="selectedPlot" class="side-section plot-details">
+          <h3>{{ t("studio.map.cityDetailsTitle") }}</h3>
+          <dl class="props">
+            <dt>{{ t("studio.map.cityName") }}</dt>
+            <dd>{{ locale.startsWith("zh") ? (selectedPlot.name ?? selectedPlot.nameEn ?? selectedPlot.uid) : (selectedPlot.nameEn ?? selectedPlot.name ?? selectedPlot.uid) }}</dd>
+            <dt>{{ t("studio.map.cityDescription") }}</dt>
+            <dd>{{ t("studio.map.cityDescriptionFallback") }}</dd>
+            <dt>{{ t("studio.map.cityResources") }}</dt>
+            <dd><p v-for="resource in selectedPlotResources" :key="resource">{{ resource }}</p><span v-if="!selectedPlotResources.length">{{ t("studio.map.noCityResources") }}</span></dd>
+          </dl>
         </section>
 
-        <section class="side-section">
-          <h3>{{ t("studio.map.layersTitle") }}</h3>
-          <label class="layer-toggle">
-            <FCheckbox v-model="showPlots" />
-            {{ t("studio.map.layerPlots") }}
-          </label>
-          <label class="layer-toggle">
-            <FCheckbox v-model="showVegetation" />
-            {{ t("studio.map.layerVegetation") }}
-          </label>
-          <label class="layer-toggle">
-            <FCheckbox v-model="showWater" />
-            {{ t("studio.map.layerWater") }}
-          </label>
-          <label class="layer-toggle">
-            <FCheckbox v-model="showRoads" />
-            {{ t("studio.map.layerRoads") }}
-          </label>
-          <p class="side-note">{{ t("studio.map.layersNote") }}</p>
-        </section>
+
 
         <p class="side-foot">{{ t("studio.map.pipelineNote") }}</p>
       </aside>
     </div>
 
-    <!-- 全屏检查 sheet：复用同一渲染与查看器 -->
-    <FSheet :open="sheetOpen" width="100vw" @update:open="sheetOpen = $event">
-      <div class="sheet-body">
-        <header class="sheet-header">
-          <span class="page-icon"><FIcon name="Map" :size="18" /></span>
-          <div class="sheet-title">
-            {{ renderRegionName || selectedRegionName }}
-            <span class="sheet-sub">{{ t("studio.map.fullscreen") }}</span>
-          </div>
-          <MapResourceControls
-            v-model="activeResource"
-            v-model:opacity="resourceOpacity"
-            :options="resourceOptions"
-            :disabled="!render || loadingRender"
-          />
-          <button
-            type="button"
-            class="outline-btn"
-            :aria-label="t('shell.close')"
-            @click="sheetOpen = false"
-          >
-            <FIcon name="X" :size="15" aria-label="" />
-          </button>
-        </header>
-        <div class="sheet-viewer">
-          <MapViewer3D v-if="sheetOpen" :data="render" v-bind="viewerLayers" />
-          <aside class="sheet-layer-panel" :aria-label="t('studio.map.layersTitle')">
-            <h3>{{ t("studio.map.layersTitle") }}</h3>
-            <label class="layer-toggle">
-              <FCheckbox v-model="showPlots" />
-              {{ t("studio.map.layerPlots") }}
-            </label>
-            <label class="layer-toggle">
-              <FCheckbox v-model="showVegetation" />
-              {{ t("studio.map.layerVegetation") }}
-            </label>
-            <label class="layer-toggle">
-              <FCheckbox v-model="showWater" />
-              {{ t("studio.map.layerWater") }}
-            </label>
-            <label class="layer-toggle">
-              <FCheckbox v-model="showRoads" />
-              {{ t("studio.map.layerRoads") }}
-            </label>
-          </aside>
-        </div>
-      </div>
-    </FSheet>
   </section>
 </template>
 
@@ -683,6 +607,10 @@ function resourceLabel(kind: string): string {
   font-family: var(--font-mono, ui-monospace, monospace);
   color: var(--muted-foreground);
 }
+.plot-list { display: grid; gap: 6px; }
+.plot-button { display: grid; gap: 3px; width: 100%; text-align: start; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); cursor: pointer; }
+.plot-button:hover, .plot-button.active { background: var(--surface-hover); border-color: var(--brand); }
+.plot-button small { color: var(--muted-foreground); }
 .layer-toggle {
   display: flex;
   align-items: center;

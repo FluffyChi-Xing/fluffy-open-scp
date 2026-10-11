@@ -13,6 +13,10 @@ import "@vue-flow/core/dist/theme-default.css";
 import { useModFlow } from "./useModFlow";
 import FlowNodeEditor from "./FlowNodeEditor.vue";
 import WorkflowNode from "./WorkflowNode.vue";
+import MapGenerationNode from "./MapGenerationNode.vue";
+import { useMapGraph } from "./useMapGraph";
+import FDropdown from "@/components/ui/FDropdown.vue";
+import type { MapNodeKind } from "@/lib/map-graph";
 import type { FlowSchema } from "./contracts";
 const props = defineProps<{ project: string; selectedPath?: string }>();
 const emit = defineEmits<{ status: [ready: boolean]; saved: [] }>();
@@ -29,6 +33,14 @@ const {
   build,
 } = useModFlow(toRef(props, "project"));
 const graphId = `mod-flow-${useId()}`;
+const generation = useMapGraph(toRef(props, "project"));
+const generationMenu = ref(false);
+const generationKinds: MapNodeKind[] = ["extent", "perlin", "value", "image", "blend", "grass", "trees", "output"];
+function addGeneration(kind: MapNodeKind) { generationMenu.value = false; frameNode(generation.add(kind)); }
+function showGeneration() {
+  generation.visible.value = !generation.visible.value;
+  if (generation.visible.value) requestAnimationFrame(() => requestAnimationFrame(() => { void fitView({nodes: generation.graph.value.nodes.map(n => n.id), padding: 0.12, maxZoom: 1, duration: 200}); }));
+}
 function frameNode(id: string) {
   updateNodeInternals([id]);
   requestAnimationFrame(() => {
@@ -58,7 +70,7 @@ onNodesInitialized(() => {
 });
 const dirtyNodes = ref(new Set<string>());
 const readyToBuild = computed(
-  () => canBuild.value && dirtyNodes.value.size === 0,
+  () => canBuild.value && dirtyNodes.value.size === 0 && !generation.visible.value,
 );
 function markDirty(id: string, dirty: boolean) {
   const next = new Set(dirtyNodes.value);
@@ -67,6 +79,11 @@ function markDirty(id: string, dirty: boolean) {
   dirtyNodes.value = next;
 }
 async function arrange() {
+  if (generation.visible.value) {
+    generation.graph.value.nodes.forEach((node, index) => generation.move(node.id, {x: index * 370, y: -1100}));
+    void fitView({nodes: generation.graph.value.nodes.map(n => n.id), padding: 0.12, maxZoom: 1, duration: 200});
+    return;
+  }
   if (!state.value || busy.value) return;
   const width =
     Math.max(420, ...getNodes.value.map((n) => n.dimensions.width)) + 90;
@@ -141,6 +158,7 @@ async function saveNode(schema: FlowSchema) {
   }
 }
 async function connect(connection: Connection) {
+  if (connection.source?.startsWith("mapgen-") || connection.target?.startsWith("mapgen-")) { generation.connect(connection); return; }
   if (
     !state.value ||
     !connection.source ||
@@ -174,6 +192,7 @@ async function connect(connection: Connection) {
   await saveGraph(state.value.nodes, deps);
 }
 async function move(event: NodeDragEvent) {
+  if (event.node.id.startsWith("mapgen-")) { generation.move(event.node.id, event.node.position); return; }
   if (!state.value) return;
   await saveGraph(
     state.value.nodes.map((n) =>
@@ -185,6 +204,7 @@ async function move(event: NodeDragEvent) {
   );
 }
 async function removeEdge(id: string) {
+  if (id.startsWith("mapgen-")) { generation.remove(id); return; }
   if (!state.value) return;
   const edge = edges.value.find((e) => e.id === id);
   if (!edge) return;
@@ -214,6 +234,8 @@ defineExpose({
     <header class="flow-toolbar">
       <span>{{ t("flow.title") }}</span>
       <div>
+        <button :aria-pressed="generation.visible.value" @click="showGeneration">{{ t("mapGraph.title") }}</button>
+        <FDropdown v-if="generation.visible.value" v-model:open="generationMenu"><template #trigger><button>{{ t("mapGraph.add") }}</button></template><button v-for="kind in generationKinds" :key="kind" @click="addGeneration(kind)">{{ t(`mapGraph.nodes.${kind}`) }}</button></FDropdown>
         <button :disabled="busy" @click="arrange">
           {{ t("flow.arrange") }}
         </button>
@@ -235,8 +257,8 @@ defineExpose({
     </p>
     <VueFlow
       :id="graphId"
-      :nodes="nodes"
-      :edges="edges"
+      :nodes="[...nodes, ...generation.nodes.value]"
+      :edges="[...edges, ...generation.edges.value]"
       :nodes-draggable="!busy"
       :nodes-connectable="!busy"
       :delete-key-code="null"
@@ -246,6 +268,7 @@ defineExpose({
       @edge-double-click="({ edge }) => removeEdge(edge.id)"
     >
       <Background :gap="20" pattern-color="var(--border)" />
+      <template #node-map-generation="{ data }"><MapGenerationNode :node="data.node" :field="data.field" :error="data.error" @update="generation.update" @remove="generation.remove(data.node.id)" /></template>
       <template #node-workflow="{ id, data }">
         <WorkflowNode
           :kind="data.kind"
@@ -262,8 +285,10 @@ defineExpose({
       </template>
     </VueFlow>
     <footer class="flow-result" aria-live="polite">
-      <p v-if="error" role="alert">{{ error }}</p>
-      <p>
+      <p v-if="generation.visible.value">{{ t("mapGraph.hint") }}</p>
+      <p v-if="generation.error.value" role="alert">{{ t(`mapGraph.errors.${generation.error.value}`) }}</p>
+      <p v-if="error && !generation.visible.value" role="alert">{{ error }}</p>
+      <p v-if="!generation.visible.value">
         {{
           t(
             busy
@@ -276,7 +301,7 @@ defineExpose({
           )
         }}
       </p>
-      <ul v-if="state?.diagnostics.length">
+      <ul v-if="state?.diagnostics.length && !generation.visible.value">
         <li v-for="(diagnostic, i) in state.diagnostics" :key="i">
           <button v-if="diagnostic.node" @click="edit(diagnostic.node)">
             {{ diagnostic.node }}
