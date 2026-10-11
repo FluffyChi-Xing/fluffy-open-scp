@@ -88,3 +88,50 @@ a standalone map editor. For now a selected local region state supplies referenc
 paths and units; it is not presented as a reconstruction of a played city.
 The future schema must distinguish original map assets from reference snapshots
 and retain TGI, unit transforms, spline topology and extrusion definitions.
+
+## 道路外观 Property 的字段级含义
+
+本轮对 `00B1B104:09558B7E:DC6C325F` 和路径条目
+`00B1B104:40E1C400:017A430A` 做了完整转储。截图中看到的
+`0x09558829`～`0x0955882D` 不是区域道路中心线坐标，它们是挤出组件表的
+逐行参数；`0x0955882C` 才是每个组件的三维局部偏移。`DC6C325F` 有 28 行，
+而 `017A430A` 的静态挤出配置有 12 行，行号与组件 Key 数组
+`0x09558827` / `0xBCC53802` 对齐。
+
+| 属性 | 当前引擎用途 | 证据 |
+|---|---|---|
+| `0x09558821` | MeshExtrusionMaterial 的材质 Key | `cMeshExtrusionMaterial::Init`，现有 `road_assets` 已解析 |
+| `0x09558827` | 每行的模型/组件回退 Key | `InitExtrusionComponents`；组件 Key 无法解析时回退到该列 |
+| `0x09558828` | sweep 起始距离/起始偏移 | `RoadSweep.start` |
+| `0x09558829` | 重复间隔（interval） | `RoadSweep.interval` |
+| `0x0955882A` | sweep 长度；负值表示从末端锚定 | `GetSweepInfo` 的负 length 分支 |
+| `0x0955882B` | 重复步长（step） | `RoadSweep.step` |
+| `0x0955882C` | 组件局部 XYZ 偏移 | `GenerateExtrusion*` 前的父级 offset 累加 |
+| `0x0955882D` | 是否沿曲线扭曲/跟随切线 | `RoadSweep.distort` |
+| `0x0955882E` | 是否重复 UV | `RoadSweep.repeat_uv` |
+| `0x0A49AEA4` | 每行纹理覆盖 Key | 组件纹理不存在时的覆盖链 |
+
+`DC6C325F` 的 `0x0955882C` 包含 `[24,0,0.1]`、`[-24,0,0.1]`、
+`[20.5,0,-23.5]` 等成对值，说明它描述的是道路截面上的车道、护栏、
+桥梁或附件相对位置；它不提供道路在 CapeTrinity 世界中的平移。世界位置
+仍来自 `30360939` 的 UnitTransform，路径曲线则来自 `0x0CAA680D` 等字段。
+
+路径条目 `017A430A` 同时包含：
+
+```text
+0x09532375 → static extrusion 24789770
+0x09532377 → interactive/realtime extrusion 2363035178
+```
+
+因此真实道路渲染链已经可以完整表达为：
+
+```text
+EGB/UnitTransform + EcoPathSet 曲线
+ → PathEntry (40E1C400)
+ → static/realtime extrusion (09558B7E)
+ → component/model/texture/material
+```
+
+当前 OpenSCP 缺少的是区域初始 `UnitTransform` 和运行时切分后的
+EcoPathSet；道路外观 Property 本身已经足够支持真实材质、车道宽度、桥梁
+附件和重复模型的还原。

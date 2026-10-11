@@ -60,10 +60,6 @@ export default defineConfig(({ mode }) => {
         'three/examples/jsm/controls/TransformControls.js',
         '@vue-flow/core',
         '@vue-flow/background',
-        'echarts/core',
-        'echarts/charts',
-        'echarts/components',
-        'echarts/renderers',
         'shiki',
         'markdown-it'
       ]

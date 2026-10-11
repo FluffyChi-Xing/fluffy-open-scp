@@ -15,7 +15,12 @@ fn main() {
         }
     }
     let mut package_paths = Vec::new();
-    collect(std::path::Path::new(&root), &mut package_paths);
+    let root_path = std::path::Path::new(&root);
+    if root_path.is_file() {
+        package_paths.push(root_path.to_path_buf());
+    } else {
+        collect(root_path, &mut package_paths);
+    }
     // The script table stores local keys (type/group zero). Resolve those
     // instances across every package in the installation, as the engine's
     // ResourceManager does, instead of only within the script bundle.
@@ -37,7 +42,10 @@ fn main() {
         };
         for e in pkg.entries() {
             let Ok(bytes) = pkg.read(e) else { continue };
-            let Ok(pf) = sc_properties::PropertyFile::parse(&bytes) else {
+            let Ok(pf) = sc_properties::PropertyFile::parse_with_limits(
+                &bytes,
+                sc_properties::ParseLimits::default(),
+            ) else {
                 continue;
             };
             let keys = pf
@@ -73,7 +81,10 @@ fn main() {
                         );
                         if target.id.type_id == 0x00B1_B104 {
                             if let Ok(b) = pkg.read(target) {
-                                if let Ok(unit) = sc_properties::PropertyFile::parse(&b) {
+                                if let Ok(unit) = sc_properties::PropertyFile::parse_with_limits(
+                                    &b,
+                                    sc_properties::ParseLimits::default(),
+                                ) {
                                     for h in [
                                         0x0CAA_680D,
                                         0x0CAA_6841,

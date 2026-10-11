@@ -1,80 +1,36 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BarChart, LineChart } from "echarts/charts";
-import {
-  GridComponent,
-  LegendComponent,
-  TooltipComponent,
-} from "echarts/components";
-import { CanvasRenderer } from "echarts/renderers";
+import { useI18n } from "vue-i18n";
 import FChart from "@/components/extensions/FChart.vue";
-
-interface TooltipDatum {
-  axisValueLabel?: string;
-  color?: string;
-  seriesName?: string;
-  value?: number;
-}
-const modules = [
-  BarChart,
-  CanvasRenderer,
-  GridComponent,
-  LegendComponent,
-  LineChart,
-  TooltipComponent,
-];
-
-function formatAxisTooltip(params: unknown): string {
-  const items = (Array.isArray(params) ? params : [params]) as TooltipDatum[];
-  const axisLabel = items[0]?.axisValueLabel ?? "";
-  const rows = items
-    .filter((item) => item.seriesName)
-    .map((item) => {
-      const marker = `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${item.color ?? "var(--primary)"};margin-right:8px"></span>`;
-      const value =
-        typeof item.value === "number"
-          ? item.value.toLocaleString()
-          : String(item.value ?? "");
-      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:24px"><span style="display:flex;align-items:center;color:var(--muted-foreground);font-size:13px;line-height:1.8">${marker}${item.seriesName}</span><strong style="color:var(--foreground);font-size:13px;font-weight:600">${value}</strong></div>`;
-    })
-    .join("");
-  return `<div style="background:var(--surface-elevated);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:10px 12px;min-width:150px">${axisLabel ? `<div style="color:var(--subtle-foreground);font-size:11px;font-weight:700;letter-spacing:.08em;margin-bottom:4px;text-transform:uppercase">${axisLabel}</div>` : ""}${rows}</div>`;
-}
-
-const option = computed(() => ({
-  color: ["#4f46e5", "#22a06b"],
-  grid: { left: 36, right: 20, top: 44, bottom: 28 },
-  legend: { top: 8, textStyle: { color: "#7c8090" } },
-  tooltip: {
-    trigger: "axis",
-    confine: true,
-    backgroundColor: "transparent",
-    borderColor: "transparent",
-    borderWidth: 0,
-    padding: 0,
-    formatter: formatAxisTooltip,
-  },
-  xAxis: {
-    type: "category",
-    data: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    axisLine: { lineStyle: { color: "#d8dae0" } },
-  },
-  yAxis: { type: "value", splitLine: { lineStyle: { color: "#eceef2" } } },
-  series: [
-    {
-      name: "Requests",
-      type: "line",
-      smooth: true,
-      data: [84, 119, 92, 158, 141, 187, 206],
+const { t, locale } = useI18n({
+  useScope: "local",
+  missingWarn: false,
+  fallbackWarn: false,
+  messages: {
+    "zh-CN": {
+      requests: "请求",
+      deployments: "部署",
+      source: "来源：演示数据 · 每个点代表一天，空心点为周末",
     },
-    {
-      name: "Deployments",
-      type: "bar",
-      barMaxWidth: 26,
-      data: [12, 18, 15, 25, 21, 30, 35],
+    "en-US": {
+      requests: "Requests",
+      deployments: "Deployments",
+      source: "Source: demo data · One dot per day; hollow dots mark weekends",
     },
-  ],
-}));
+  },
+});
+const labels = computed(() =>
+  Array.from({ length: 7 }, (_, i) =>
+    new Intl.DateTimeFormat(locale.value, {
+      weekday: "short",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(2026, 9, 5 + i))),
+  ),
+);
+const series = computed(() => [
+  { name: t("requests"), values: [84, 119, 92, 158, 141, 187, 206] },
+  { name: t("deployments"), values: [12, 18, 15, 25, 21, 30, 35] },
+]);
 </script>
 
 <template>
@@ -93,11 +49,12 @@ const option = computed(() => ({
         <span>{{ $t("showcase.lastSevenDays") }}</span>
       </div>
       <FChart
-        :modules="modules"
-        :option="option"
-        height="340px"
+        :labels="labels"
+        :series="series"
+        :label="$t('showcase.traffic')"
         class="chart"
       />
+      <p class="source">{{ t("source") }}</p>
     </article>
   </section>
 </template>
@@ -145,6 +102,12 @@ const option = computed(() => ({
 .panel-heading span {
   color: var(--subtle-foreground);
   font-size: 12px;
+}
+.source {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
 }
 .chart {
   margin-top: 16px;

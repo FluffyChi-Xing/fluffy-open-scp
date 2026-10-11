@@ -26,7 +26,6 @@
     "axios": "^1.19.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "echarts": "^5.6.0",
     "embla-carousel-vue": "^8.6.0",
     "lucide-vue-next": "^0.468.0",
     "markdown-it": "^15.0.0",

@@ -98,6 +98,59 @@ the first file is a post-bootstrap snapshot, not a prerequisite resource.
 This matches the observed empty save: after creating the region, a region EGB
 and city EGB files appear even though no such file existed before selection.
 
+## Local script package verification
+
+The bootstrap tables are present in the offline `EcoGame` script packages. In
+the current retail script revision, `SimCity-Scripts_287520926.package` contains
+the `00B1B104:40800200:622B9CD7` SimProperties master with:
+
+```text
+0x0ADFE207 = [E9708DA6, 484E6E46]
+0x0ADFE208 = [Transform(0, 0, 0), Transform(0, 0, 0)]
+```
+
+The two keys resolve to Unit resources in group `40E0C000`. `E9708DA6` is a
+2048×2048 unit with a non-sim reference and no authored path arrays. `484E6E46`
+is the shared starter unit with 75 graphics/child references and no direct
+`0x0CAA680D` path array. The same table and values are repeated across the
+installed script revisions. This is an important negative result: the generic
+SimProperties `PrecreateUnits` table is real and can be reproduced offline, but
+it does not contain the CapeTrinity road network or its world placement.
+
+The road Unit found in `SimCity_Game.package` (`30360939`) therefore belongs to
+the static path resource catalogue, not to this generic two-row precreate table.
+Its local points and PathEntry IDs can be decoded, but a CapeTrinity-specific
+transform/selection list is still supplied by the region box/bootstrap state.
+OpenSCP must not treat the zero transforms above as the placement of the region
+road network.
+
+## Clean CapeTrinity save as bootstrap evidence
+
+The local sandbox save `Games/9a3b6720a2b84853/3` is a useful control sample:
+`misc/MetaData` identifies it as CapeTrinity, with all three city UIDs and the
+Great Works position from the static template, and the city states have zero
+simulation ticks. Its region EGB contains 66 units and 118 curves. Two of the
+units are the static road Unit `30360939`, positioned at approximately
+`(981.14, 2902.82, -851.57)` and `(-1626.11, 1698.47, -844.92)` with different
+rotations.
+
+All 118 curves use only 11 distinct PathEntry instance IDs. Scanning every
+static property resource in `SimCityData` finds exactly one resource matching
+those IDs: Unit `00B1B104:40E1C000:30360939`, with 36 local points, 22 point
+indices, 36 tangents and 11 PathEntry keys. This establishes a narrower model:
+the authored road source is one static Unit instantiated twice; the remaining
+curve records are runtime-split/connected segments produced from those authored
+paths and region connectors. They cannot be recovered by copying only the 22
+base segments into an EGB.
+
+The clean-save evidence is recorded in `tmp/save3-region.json`,
+`tmp/save3-unit-resource.log` and `tmp/static-path-match-save3.log`. The next
+implementation step is to reproduce the two road Unit transforms and the
+runtime path splitting/connector records from the three static city positions,
+Great Works position and map bounds. Until that is implemented, the existing
+22-curve bootstrap remains a geometry probe rather than a game-compatible empty
+region state.
+
 ## Consequences for OpenSCP
 
 The minimum faithful bootstrap representation is therefore:

@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::io::Write;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateSource {
     pub site: String,
@@ -15,7 +15,7 @@ pub struct StateSource {
     pub maps: Vec<StateMap>,
     pub curves: Vec<StateCurve>,
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveLayers {
     pub sources: Vec<StateSource>,
@@ -148,21 +148,21 @@ pub fn load_save(
     })
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateMap {
     pub id: u32,
     pub size: usize,
     pub values: Vec<i32>,
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateCurve {
     pub entry_id: u32,
     pub path: usize,
     pub controls: [[f32; 3]; 4],
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegionState {
     pub version: u32,
@@ -172,7 +172,7 @@ pub struct RegionState {
     pub units: Vec<StateUnit>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateUnit {
     pub id: u32,
@@ -181,6 +181,54 @@ pub struct StateUnit {
     pub scale: f32,
     pub rotation: [f32; 9],
     pub position: [f32; 3],
+}
+
+/// Rebuild the authored path segments carried by a static Unit property.
+///
+/// Region EGBs store only the resulting world splines.  The retail bootstrap
+/// starts from the Unit's `0x0CAA680D` points, `0x0CB00ED8` tangents,
+/// `0x0CAA6841` point pairs and `0x0CC8FE7A` path-entry keys, then applies the
+/// Unit transform.  The point Z values are lane/path metadata; the world
+/// elevation comes from the Unit transform and terrain, so this function
+/// preserves the transform Z for the bootstrap candidate.
+pub fn curves_from_static_unit(prop: &crate::PropertyFile, unit: &StateUnit) -> Vec<StateCurve> {
+    let vecs = |hash: u32| -> Vec<[f32; 3]> {
+        prop.get(hash)
+            .and_then(|p| p.array())
+            .into_iter()
+            .flatten()
+            .filter_map(|v| match v { crate::Value::Vector3(x) => Some(*x), _ => None })
+            .collect()
+    };
+    let ints: Vec<usize> = prop.get(0x0CAA_6841).and_then(|p| p.array()).into_iter()
+        .flatten().filter_map(|v| match v { crate::Value::Int32(x) if *x >= 0 => Some(*x as usize), _ => None }).collect();
+    let entries: Vec<u32> = prop.get(0x0CC8_FE7A).and_then(|p| p.array()).into_iter()
+        .flatten().filter_map(|v| match v { crate::Value::Key(k) => Some(k.instance), _ => None }).collect();
+    let points = vecs(0x0CAA_680D);
+    let tangents = vecs(0x0CB0_0ED8);
+    let transform = |v: [f32; 3]| -> [f32; 3] {
+        let r = &unit.rotation;
+        [unit.position[0] + r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
+         unit.position[1] + r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
+         unit.position[2]]
+    };
+    let tangent = |v: [f32; 3]| -> [f32; 3] {
+        let r = &unit.rotation;
+        [r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
+         r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
+         r[6] * v[0] + r[7] * v[1] + r[8] * v[2]]
+    };
+    let mut out = Vec::new();
+    for i in 0..entries.len() {
+        let (Some(&a), Some(&b)) = (ints.get(i * 2), ints.get(i * 2 + 1)) else { break };
+        let (Some(&pa), Some(&pb), Some(&ta), Some(&tb)) = (points.get(a), points.get(b), tangents.get(a), tangents.get(b)) else { continue };
+        let p0 = transform(pa); let p3 = transform(pb);
+        let t0 = tangent(ta); let t1 = tangent(tb);
+        out.push(StateCurve { entry_id: entries[i], path: i, controls: [p0,
+            [p0[0] + t0[0], p0[1] + t0[1], p0[2] + t0[2]],
+            [p3[0] - t1[0], p3[1] - t1[1], p3[2] - t1[2]], p3] });
+    }
+    out
 }
 
 /// Write the supported v20 subset. Runtime-only fields are emitted empty;
