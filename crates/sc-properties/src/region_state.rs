@@ -494,4 +494,18 @@ mod tests {
         };
         assert!(r.slots().is_err());
     }
+
+    #[test]
+    fn writer_round_trips_sample_state() {
+        let original = read_state(&sample_state(20)).unwrap();
+        let encoded = write_state(&original).unwrap();
+        let decoded = read_state(&encoded).unwrap();
+        assert_eq!(decoded.environment, original.environment);
+        assert_eq!(decoded.maps.len(), original.maps.len());
+        assert_eq!(decoded.maps[0].values, original.maps[0].values);
+        assert_eq!(decoded.units.len(), original.units.len());
+        assert_eq!(decoded.curves.len(), original.curves.len());
+        assert_eq!(decoded.curves[0].entry_id, original.curves[0].entry_id);
+        assert_eq!(decoded.curves[0].controls, original.curves[0].controls);
+    }
 }
