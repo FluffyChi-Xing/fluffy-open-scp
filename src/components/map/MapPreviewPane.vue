@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import MapViewer3D from "./MapViewer3D.vue";
 import MapResourceControls from "./MapResourceControls.vue";
 import FSheet from "@/components/ui/FSheet.vue";
-import FCheckbox from "@/components/ui/FCheckbox.vue";
+import { Switch } from "@/components/ui/switch";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import type { Region3DData } from "@/lib/region-map";
@@ -111,18 +111,18 @@ watch(options, () => {
     <Teleport to="body" :disabled="!fullscreen">
       <aside :class="['layers', { floating: fullscreen }]">
         <label
-          ><FCheckbox v-model="plots" />{{ t("studio.map.layerPlots") }}</label
+          ><Switch v-model="plots" :aria-label="t('studio.map.layerPlots')" />{{ t("studio.map.layerPlots") }}</label
         >
         <label
-          ><FCheckbox v-model="vegetation" />{{
+          ><Switch v-model="vegetation" :aria-label="t('studio.map.layerVegetation')" />{{
             t("studio.map.layerVegetation")
           }}</label
         >
         <label
-          ><FCheckbox v-model="water" />{{ t("studio.map.layerWater") }}</label
+          ><Switch v-model="water" :aria-label="t('studio.map.layerWater')" />{{ t("studio.map.layerWater") }}</label
         >
         <label
-          ><FCheckbox v-model="roads" />{{ t("studio.map.layerRoads") }}</label
+          ><Switch v-model="roads" :aria-label="t('studio.map.layerRoads')" />{{ t("studio.map.layerRoads") }}</label
         >
       </aside>
     </Teleport>

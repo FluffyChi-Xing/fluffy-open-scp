@@ -577,6 +577,7 @@ export function attachTintShader(
     uPowered: { value: number };
     /** 调色板变体行（buildingVariation）：建筑恒 0；prop 按实例选取。 */
     uPaletteRow: { value: number };
+    uReliefEnabled: { value: number };
   },
   paramsReady: boolean,
   shaderMapReady: boolean,
@@ -734,6 +735,58 @@ uniform float uPowered;
 uniform float uPaletteRow;
 #ifdef TINT_SHADERMAP
 uniform sampler2D shaderMapMap;
+uniform float uReliefEnabled;
+// Building4 uses a short cone-step relief pass for the facade height channel.
+// The distance/flat-level tests keep this path cheap for walls and distant LODs.
+vec2 scReliefUv(vec2 src, vec3 eye, sampler2D heightMap, vec4 region, vec2 dx, vec2 dy) {
+  if (uReliefEnabled < 0.5) return src;
+  float distSq = dot(vViewPosition, vViewPosition);
+  if (distSq > 16000.0) return src;
+  vec2 probe = src * region.xy + region.zw;
+  vec4 control = scSampleAtlas(heightMap, probe, region, dx, dy);
+  float height = control.r;
+  // shaderMap.a is the building4 artist-opacity/window mask: opaque facade
+  // pixels are 1, while windows, doors and grille motifs are below 1. Relief
+  // on an opaque wall only magnifies atlas noise into visible stripes.
+  if (control.a > 0.90) return src;
+  if (height <= (23.0 / 255.0)) return src;
+  float coneRatio = clamp(control.g, 0.08, 1.0);
+  vec2 ray = clamp(eye.xy / max(abs(eye.z), 0.001), vec2(-2.0), vec2(2.0));
+  // kReliefDepth=.16, kConeSteps=8, kBinarySteps=2 (building4).
+  vec2 stepUv = ray * 0.16 * coneRatio / 8.0;
+  vec2 prev = src;
+  vec2 cur = src;
+  float layer = 0.0;
+  for (int i = 0; i < 8; i++) {
+    prev = cur;
+    cur -= stepUv;
+    layer += 1.0 / 8.0;
+    float h = scSampleAtlas(heightMap, cur * region.xy + region.zw, region, dx, dy).r;
+    if (layer >= h) break;
+  }
+  vec2 lo = prev;
+  vec2 hi = cur;
+  for (int i = 0; i < 2; i++) {
+    vec2 mid = (lo + hi) * 0.5;
+    float h = scSampleAtlas(heightMap, mid * region.xy + region.zw, region, dx, dy).r;
+    if (layer - (0.5 / 8.0) < h) hi = mid; else lo = mid;
+  }
+  return clamp((lo + hi) * 0.5, 0.0, 1.0);
+}
+vec3 scReliefEyeDir() {
+  vec3 posV = -vViewPosition;
+  vec3 dpx = dFdx(posV);
+  vec3 dpy = dFdy(posV);
+  vec2 dux = dFdx(vTopUv);
+  vec2 duy = dFdy(vTopUv);
+  float det = dux.x * duy.y - duy.x * dux.y;
+  if (abs(det) < 1e-6) return vec3(0.0, 0.0, 1.0);
+  vec3 tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
+  vec3 tangentV = normalize((dpy * dux.x - dpx * duy.x) / det);
+  vec3 normalV = normalize(cross(tangentU, tangentV));
+  vec3 eyeV = normalize(vViewPosition);
+  return normalize(vec3(dot(eyeV, tangentU), dot(eyeV, tangentV), dot(eyeV, normalV)));
+}
 #endif
 #ifdef TINT_INTERIOR
 uniform sampler2D interiorMapMap;
@@ -819,13 +872,15 @@ float scFastNoise(vec3 seed) {
           vec2 scPad = scRoom.xy;
           // Top 层保持现行公式（ts2/其倒数在参数表无对应行，v1 乱除已弃）。
           vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
-          #ifdef TINT_RELIEF
-          // 【2026-09-20 回滚】曾按标准 relief mapping 补写视差（用 reliefPng
-          // alpha 作高度），实证高度通道语义不可靠：reliefPng 是 slot5 alpha
-          // 的另一份导出——与「逐窗灯亮通道」同源，拿灯亮当深度会把窗户
-          // motif 拖到全墙/屋顶任意位置并随视角闪烁（多楼实证）。游戏本编译
-          // 版 reliefMap() 本就是恒等（被裁剪），回滚后与游戏行为一致。
-          // 重启前提：先从 Wwise/DXT5 原始数据确证真实高度通道。
+          #ifdef TINT_SHADERMAP
+          // shaderMap.r is the authored facade height/cone channel.  Keep the
+          // original derivatives so mip selection remains stable across tiles.
+          // Very large padding is the engine's "Top disabled/knife-edge" marker;
+          // sampling relief there turns the degenerate UV into visible stripes.
+          if (max(abs(scPad.x), abs(scPad.y)) < 8.0) {
+            reliefSrc = scReliefUv(reliefSrc, scReliefEyeDir(), shaderMapMap, xform2,
+              scTopGradX, scTopGradY);
+          }
           #endif
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
@@ -969,6 +1024,11 @@ float scFastNoise(vec3 seed) {
           totalEmissiveRadiance += scEmissive;
         }
         #endif
+        // Building palettes carry an independent emissive row (surface.r).
+        // Feed it into Three's additive HDR path so facade light strips and
+        // illuminated trim work without a decal or a separate light unit.
+        float scPaletteEmissive = max(scSurface.r, 0.0) * scTintMul * uPowered;
+        totalEmissiveRadiance += diffuseColor.rgb * scPaletteEmissive * scOpacity;
         diffuseColor.rgb = mix(scInterior, diffuseColor.rgb, scOpacity);`,
       )
       .replace(
@@ -1071,6 +1131,7 @@ export function makeTintMaterial(
   THREE: typeof ThreeNamespace,
   tint: TintTextureSet,
   env: SunEnvRefs,
+  reliefEnabled = false,
 ): [ThreeNamespace.MeshStandardMaterial, { value: number }] {
   const tinted = new THREE.MeshStandardMaterial({
     roughness: 0.9,
@@ -1112,6 +1173,7 @@ export function makeTintMaterial(
       uDayLight: env.dayLight,
       uPowered: env.powered,
       uPaletteRow: uPaletteRowUniform,
+      uReliefEnabled: { value: reliefEnabled ? 1 : 0 },
     },
     Boolean(tint.paramsTex),
     Boolean(tint.shaderTex),

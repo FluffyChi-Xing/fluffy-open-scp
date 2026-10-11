@@ -3,6 +3,7 @@ import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 import { computed } from "vue";
 import FSelect from "@/components/ui/FSelect.vue";
+import { Switch } from "@/components/ui/switch";
 import type {
   Channel,
   RasterTool,
@@ -163,7 +164,7 @@ const tools = computed<{ id: RasterTool; label: string }[]>(() => [
           @update:model-value="channel = $event as Channel"
       /></label>
       <label v-if="lot"
-        ><input v-model="quantized" type="checkbox" />
+        ><Switch v-model="quantized" :aria-label="t('rasterEditor.text123')" />
         {{ t("rasterEditor.text123") }}
       </label>
     </div>
@@ -240,3 +241,4 @@ input[type="color"] {
   padding-inline: 7px;
 }
 </style>
+

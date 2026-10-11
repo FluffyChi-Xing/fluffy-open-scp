@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Switch } from "@/components/ui/switch";
 /**
  * 步骤 ②「菜单提示」表单：hover 弹窗的全部内容 ——
  * 描述文案、rollover 大图（454×263）、造价/预算、解锁提示、锁定态。
@@ -43,7 +44,7 @@ const emit = defineEmits<{ (e: "crop"): void }>();
       <input v-model="model.unlock" type="text" />
     </label>
     <label class="field-check">
-      <input v-model="model.locked" type="checkbox" />
+      <Switch v-model="model.locked" aria-label="锁定" />
       <span>锁定（hardGate，未批准/達到上限）</span>
     </label>
   </div>

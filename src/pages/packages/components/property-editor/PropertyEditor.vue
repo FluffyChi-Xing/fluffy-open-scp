@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FAlert from "@/components/ui/FAlert.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
-import FCheckbox from "@/components/ui/FCheckbox.vue";
+import { Switch } from "@/components/ui/switch";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
@@ -591,6 +591,8 @@ const effectiveRenderMode = computed(() => editEnabled.value ? "refined" : rende
 /** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
 const neonAnim = ref(false);
+/** 表面浮雕开关：默认关闭，开启后才运行近景 cone-step 视差。 */
+const reliefEnabled = ref(false);
 
 // 退出复位（2026-10-04 问题2）：sheet 关闭时把视图状态收回默认——组件
 // 始终挂载（v-model:open），否则 renderMode/图层显隐跨会话残留，下次打开
@@ -611,6 +613,7 @@ watch(open, (isOpen, wasOpen) => {
   peSuspended.value = true;
   renderMode.value = "default";
   neonAnim.value = false;
+  reliefEnabled.value = false;
   tool.value = "select";
   selectedId.value = null;
   // 卸载 prop 解析自动注册的 EcoGame 包（会话范围=注册范围）
@@ -821,25 +824,22 @@ const treeSheetPinned = ref(true);
             }}
           </span>
         </div>
-        <!-- 浮雕开关（2026-09-10 撤销）：实证 slot5 alpha = 逐窗灯亮掩码而非
-             几何高度（用户实测玻璃出现规律块纹），且该发行版 shader 的
-             reliefMap() 已被编译为恒等——游戏本体无浮雕，数据无高度源。
-             LOTM v8 的 reliefPng 字段保留（若未来找到真实高度图可恢复）。
+        <!-- 表面浮雕：默认关闭，避免普通 property 预览增加像素着色成本。
+             开启后使用 shaderMap.r 高度通道执行游戏同口径 cone-step relief。 -->
         <label
           v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.reliefHint')"
         >
-          <FCheckbox v-model="reliefEnabled" />
+          <Switch v-model="reliefEnabled" :aria-label="$t('package.relief')" />
           <span>{{ $t("package.relief") }}</span>
         </label>
-        -->
         <label
           v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.poweredHint')"
         >
-          <FCheckbox v-model="powered" />
+          <Switch v-model="powered" :aria-label="$t('package.powered')" />
           <span>{{ $t("package.powered") }}</span>
         </label>
         <!-- 动态招牌（2026-10-05 十轮）：关 = 静态量化合成；开 = dev LED
@@ -849,7 +849,7 @@ const treeSheetPinned = ref(true);
           class="spec-experiment"
           :title="$t('package.neonAnimHint')"
         >
-          <FCheckbox v-model="neonAnim" />
+          <Switch v-model="neonAnim" :aria-label="$t('package.neonAnim')" />
           <span>{{ $t("package.neonAnim") }}</span>
         </label>
         <button
@@ -1114,6 +1114,7 @@ const treeSheetPinned = ref(true);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :relief-enabled="reliefEnabled"
           :neon-anim="neonAnim"
           :decal-light="decalLight"
           :tool="tool"

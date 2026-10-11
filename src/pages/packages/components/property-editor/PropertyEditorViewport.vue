@@ -137,6 +137,8 @@ const props = defineProps<{
   timeOfDay?: number;
   /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
   powered?: boolean;
+  /** 表面浮雕开关（默认 false）：开启近景 cone-step relief。 */
+  reliefEnabled?: boolean;
   /** 动态招牌开关（默认 false = 静态量化合成招牌）：开启后 SDF 族进入
    * dev LED 扫掠动画并启动 rAF 时钟。顶部工具条复选框驱动（2026-10-05
    * 十轮：原视口 ⚡ 按钮用户找不到，挪入顶部工具条"供电"旁）。 */
@@ -1260,7 +1262,12 @@ async function assembleScene(
         const tint = tintResolved[materialIndex];
         if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
           // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-          const [tinted, specUniform] = makeTintMaterial(THREE, tint, env);
+          const [tinted, specUniform] = makeTintMaterial(
+            THREE,
+            tint,
+            env,
+            props.reliefEnabled === true,
+          );
           specUniformRefs.push(specUniform);
           mesh.material = tinted;
           return;
@@ -2110,7 +2117,7 @@ defineExpose({
 // （如会话加载），rebuildToken 保证后到者胜出。全部触发走 scheduleRebuild
 // 合并（2026-10-07：原始实现各通道独立重建，3.2× 重复，见调度器注释）。
 watch(
-  () => [props.modelPayload, props.renderMode] as const,
+  () => [props.modelPayload, props.renderMode, props.reliefEnabled] as const,
   ([payload], previous) => {
     // 按变化项判定触发来源（首次拿到 payload 记 first_load，换级记 lod_switch）。
     const trigger: RenderTelemetryTrigger =

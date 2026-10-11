@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 import { matchesDecalProfile } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
+import { Switch } from "@/components/ui/switch";
 import { computed, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
 import { useGamePackagesStore } from "@/stores/gamePackages";
@@ -185,7 +186,7 @@ function setTile(i: number, tile: number) {
     <h3>{{ t("rasterEditor.text049") }}</h3>
     <fieldset :disabled="disabled" @change="emit('changed')">
       <label
-        ><input v-model="sampling.generateMips" type="checkbox" />
+        ><Switch v-model="sampling.generateMips" :aria-label="t('rasterEditor.text050')" />
         {{ t("rasterEditor.text050") }}
       </label>
       <p>{{ t("rasterEditor.text051") }}</p>
@@ -382,3 +383,5 @@ button {
   cursor: pointer;
 }
 </style>
+
+
