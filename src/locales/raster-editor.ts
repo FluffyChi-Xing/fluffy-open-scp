@@ -1,5 +1,73 @@
 export const rasterZh = {
-  buildUnsupported: "Raster 编辑 Schema 已保存；材质 Raster/RW4 编译尚未接入，无法构建含此草稿的流程。",
+  dataRgb: "RGB 数据（不透明显示）",
+  dataAlpha: "A 通道数据（灰度）",
+  channelStrength: "A / 覆盖强度",
+  channelValue: "{channel} 通道数值",
+  decalLayer: "Color{n} · {channel} 通道",
+  decalColor: "颜色 {n}",
+  previewTitle: {
+    "decal-sign": "招牌四色材质预览",
+    "decal-graffiti": "涂鸦覆盖与配色预览",
+    "decal-sdf": "SDF / 霓虹材质预览",
+    "decal-interior": "内景材质正面预览",
+    "decal-rgba": "RGBA 贴花透明合成预览",
+  },
+  profileGuide: {
+    slot0: "四行 float4 参数表，按列编辑材质参数，不作为 RGBA 图像绘制。",
+    slot1:
+      "颜色控制数据：RGB 与 A 有独立用途。画布不将 A 当透明度；单通道模式只修改选中通道。",
+    slot2:
+      "RGB 保存法线方向，A 保存 AO；法线中性值为 128/128/255。A 以独立灰度图检查。",
+    slot3:
+      "Shader Map 是材质数据，B 用于高光参数；不要按普通照片混色。选择单通道编辑数值。",
+    slot4: "调色板供材质索引采样，编辑色块时保留原尺寸与格子位置。",
+    slot5:
+      "建筑室内图集按区域采样；RGB 和 A 分开检查，避免透明显示隐藏像素数据。",
+    "lot-mask":
+      "RGB 与 A 都是材质层权重。画布显示数据，最终外观由 Lot 材质与图案决定。",
+    "lot-texture":
+      "地表图集按 4×4 格采样，A 是材质数据。绘制时保留格子布局与尺寸。",
+    "decal-sign":
+      "Color1–4 对应 R/G/B/A 四个掩码通道。选择颜色层绘制；A 为第四层，不是整张图的透明度。",
+    "decal-graffiti":
+      "Color1–4 对应 R/G/B/A，覆盖强度控制喷涂厚度。预览使用涂鸦透明覆盖规则，不添加招牌灯光增益。",
+    "decal-sdf":
+      "四个通道分别保存距离场。默认编辑 R 的数值，切换通道可查看其他场；A 为零不代表 RGB 没有图案。直接绘制不会自动生成或重建距离场。预览为静态亮灯状态。",
+    "decal-interior":
+      "RGB 为室内图像；A 同时参与覆盖与内景混合、自发光。预览使用内景材质的正面视角；四色配色对此类型无效。",
+    "decal-rgba":
+      "直接编辑 RGBA，A 控制透明度，不使用四色调色板。二维预览显示贴花自身；浮空位置由资产的投影与变换决定。",
+    rgba: "普通颜色图像，A 控制透明度；选择单通道可检查透明像素中保留的数据。",
+  },
+  decalPreview: "Decal 材质预览",
+  decalPreviewError: "无法初始化 Decal 预览，请检查 WebGL 是否可用。",
+  decalPreviewHint:
+    "正面静态材质预览；随绘制、四色配色和宽高比更新。场景投影、动画与墙面背景不包含在此预览中。",
+  missingLotMaterial:
+    "此引用只有 Lot 遮罩，没有可解析的材质颜色和图案索引。请打开对应建筑及父级属性包，并选择该建筑的 Lot 引用；同一遮罩可用于多种材质。",
+  sourceSearch: "实例 ID / 分组 ID",
+  rw4Export:
+    "此来源是 RW4 纹理容器。请导出 PNG 或编辑 JSON；尚不支持将编辑结果写回 RW4 副本。",
+  filteredSources:
+    "按当前用途与真实引用筛选；引用方及纹理所在的包都须已打开。通用 RGBA 列出全部 Raster。",
+  noMatchingSources:
+    "没有匹配资源。请打开引用这些纹理的 Lot、Decal 字典或建筑模型包。",
+  layer4: "第 4 层 · A 权重",
+  layer3: "第 3 层 · R 权重",
+  layer2: "第 2 层 · G 权重",
+  layer1: "第 1 层 · B 权重",
+  channels: {
+    rgba: "按材质层绘制",
+    r: "R · 第 3 层权重",
+    g: "G · 第 2 层权重",
+    b: "B · 第 1 层权重",
+    a: "A · 第 4 层权重",
+  },
+  lotGuide:
+    "Lot 遮罩记录四层地面材质的权重，不是最终颜色：B→第1层，G→第2层，R→第3层，A→第4层（A 不是透明度）。选择“按材质层绘制”和一个材质层后直接绘制；擦除会清空权重，露出底层地面。右侧 LC1–LC4 配置实际颜色和图案，3D 预览查看最终效果。单通道模式仅修改对应权重；原始 RGBA 的显示色不等于游戏材质色。",
+
+  buildUnsupported:
+    "Raster 编辑 Schema 已保存；材质 Raster/RW4 编译尚未接入，无法构建含此草稿的流程。",
   text001: "当前副本有未保存编辑。要替换当前副本吗？",
   text002: "副本 · {p0}",
   text003: "该 schema 用途与当前节点槽位不一致。",
@@ -179,13 +247,84 @@ export const rasterZh = {
   loadingPreview: "正在载入游戏地面材质…",
   previewError: "地面材质载入失败：",
   missingAtlas:
-    "请打开 SimCity_Graphics.package 和包含 Lot 的资源包以预览真实地面材质。",
+    "已加载包中未找到可解码的 Lot 地表图集。请打开 SimCity_Graphics.package；自定义图集还需打开对应依赖包。",
   nativePackages:
     "浏览器模式无法访问游戏内存资源。请在桌面应用中打开 Package。",
   noPackages: "尚未打开 Package。请先在源文件解析中载入资源包。",
 };
 export const rasterEn = {
-  buildUnsupported: "Raster editing schema is saved. Raster/RW4 material compilation is not connected yet; workflows containing this draft cannot be built.",
+  dataRgb: "RGB data (opaque display)",
+  dataAlpha: "A channel data (grayscale)",
+  channelStrength: "A / coverage strength",
+  channelValue: "{channel} channel value",
+  decalLayer: "Color{n} · {channel} channel",
+  decalColor: "Color {n}",
+  previewTitle: {
+    "decal-sign": "Four-color sign material",
+    "decal-graffiti": "Graffiti color and coverage",
+    "decal-sdf": "SDF / neon material",
+    "decal-interior": "Interior material front view",
+    "decal-rgba": "RGBA decal transparency",
+  },
+  profileGuide: {
+    slot0:
+      "Four float4 parameter rows. Edit material columns, not RGBA pixels.",
+    slot1:
+      "Color control data: RGB and A serve separate purposes. The canvas ignores A opacity; single-channel edits preserve other channels.",
+    slot2:
+      "RGB stores normal direction; A stores AO. Neutral normal is 128/128/255. Inspect A separately in grayscale.",
+    slot3:
+      "Shader Map stores material data; B controls specular response. Select a channel to edit values rather than blending as a photograph.",
+    slot4:
+      "Materials sample this palette by index. Keep the source dimensions and cell positions.",
+    slot5:
+      "Building interiors sample atlas regions. Inspect RGB and A separately so transparency cannot hide pixel data.",
+    "lot-mask":
+      "RGB and A are material weights. The canvas shows data; Lot materials and patterns define the final appearance.",
+    "lot-texture":
+      "The surface atlas uses a 4×4 layout; A stores material data. Preserve cell positions and dimensions.",
+    "decal-sign":
+      "Color1–4 map to R/G/B/A mask channels. Paint a selected color layer. A is the fourth layer, not image opacity.",
+    "decal-graffiti":
+      "Color1–4 map to R/G/B/A. Coverage strength controls paint thickness. Preview uses graffiti coverage without sign lighting gain.",
+    "decal-sdf":
+      "Each channel stores a distance field. R value editing is selected by default; inspect other fields by switching channels. Zero A does not mean RGB is empty. Painting does not generate or rebuild distance fields. Preview shows static powered lighting.",
+    "decal-interior":
+      "RGB stores the interior image; A controls coverage, interior blending and emission. Preview uses the interior shader from the front. Four-color palettes do not apply.",
+    "decal-rgba":
+      "Edit RGBA directly; A controls transparency and no four-color palette is used. Preview shows the decal itself; floating placement depends on asset projection and transforms.",
+    rgba: "Ordinary color image with A opacity. Inspect individual channels to see data preserved in transparent pixels.",
+  },
+  decalPreview: "Decal material preview",
+  decalPreviewError:
+    "Unable to initialize the Decal preview. Check WebGL availability.",
+  decalPreviewHint:
+    "Static front view, updated with painting, layer colors and aspect ratio. Scene projection, animation and wall backgrounds are not included.",
+  missingLotMaterial:
+    "This reference provides a Lot mask but no resolved material colors or pattern indices. Open its building and parent Property packages and select that building's Lot reference. One mask can serve multiple materials.",
+  sourceSearch: "Instance ID / group ID",
+  rw4Export:
+    "This source is an RW4 texture container. Export PNG or editing JSON; writing an edited RW4 copy is not supported yet.",
+  filteredSources:
+    "Filtered by purpose and actual references. Open both the referring package and texture package. General RGBA lists all Raster resources.",
+  noMatchingSources:
+    "No matching resources. Open the Lot, Decal dictionary, or building model packages that reference these textures.",
+  layer4: "Layer 4 · A weight",
+  layer3: "Layer 3 · R weight",
+  layer2: "Layer 2 · G weight",
+  layer1: "Layer 1 · B weight",
+  channels: {
+    rgba: "Paint material layers",
+    r: "R · Layer 3 weight",
+    g: "G · Layer 2 weight",
+    b: "B · Layer 1 weight",
+    a: "A · Layer 4 weight",
+  },
+  lotGuide:
+    "A Lot mask stores four ground material weights, not final colors: B→layer 1, G→layer 2, R→layer 3, A→layer 4 (A is not opacity). Choose Paint material layers and a layer, then draw. Erasing clears weights to reveal the base ground. Set actual colors and patterns under LC1–LC4 and inspect the 3D preview. Single-channel mode edits only that weight; raw RGBA display colors are not game material colors.",
+
+  buildUnsupported:
+    "Raster editing schema is saved. Raster/RW4 material compilation is not connected yet; workflows containing this draft cannot be built.",
   text001: "The current copy has unsaved changes. Replace it?",
   text002: "Copy · {p0}",
   text003: "This schema does not match the node's texture slot.",
@@ -383,7 +522,7 @@ export const rasterEn = {
   loadingPreview: "Loading game ground materials…",
   previewError: "Unable to load ground materials:",
   missingAtlas:
-    "Open SimCity_Graphics.package and a package containing Lots to preview real ground materials.",
+    "No decodable Lot surface atlas was found in the loaded packages. Open SimCity_Graphics.package; custom atlases also require their dependency packages.",
   nativePackages:
     "Browser mode cannot access game resources in memory. Open a Package in the desktop app.",
   noPackages:

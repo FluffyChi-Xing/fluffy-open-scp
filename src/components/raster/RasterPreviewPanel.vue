@@ -2,8 +2,13 @@
 import { useI18n } from "vue-i18n";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
+import RasterDecalPreview from "./RasterDecalPreview.vue";
 import type { RasterSource } from "@/lib/raster-editor/schema";
 import { computed } from "vue";
+import {
+  PROFILE_BEHAVIOR,
+  dataChannelPixels,
+} from "@/lib/raster-editor/profileBehavior";
 import type { RasterDocument } from "@/lib/raster-editor/document";
 import {
   rgbaBase64ToPngDataUrl,
@@ -23,6 +28,8 @@ const props = defineProps<{
   channel: Channel;
   profile: RasterProfile;
   colors: [number, number, number, number][];
+  decalColors: string[];
+  decalAspectRatio: number;
 }>();
 const { t } = useI18n();
 const raw = computed(() => {
@@ -35,7 +42,19 @@ const rawPng = computed(() =>
 const preview = computed(() => {
   void props.version;
   return rgbaBase64ToPngDataUrl(
-    rgbaToBase64(channelPixels(props.doc.pixels, props.channel)),
+    rgbaToBase64(
+      props.channel === "rgba" && PROFILE_BEHAVIOR[props.profile].dataChannels
+        ? dataChannelPixels(props.doc.pixels)
+        : channelPixels(props.doc.pixels, props.channel),
+    ),
+    props.doc.width,
+    props.doc.height,
+  );
+});
+const alphaPreview = computed(() => {
+  void props.version;
+  return rgbaBase64ToPngDataUrl(
+    rgbaToBase64(channelPixels(props.doc.pixels, "a")),
     props.doc.width,
     props.doc.height,
   );
@@ -56,11 +75,33 @@ const materialPreview = computed(() => {
     <RasterPreviewCard
       :title="
         channel === 'rgba'
-          ? t('rasterEditor.raw')
+          ? t(
+              PROFILE_BEHAVIOR[profile].dataChannels
+                ? 'rasterEditor.dataRgb'
+                : 'rasterEditor.raw',
+            )
           : t('rasterEditor.channel', { channel: channel.toUpperCase() })
       "
     >
       <img :src="preview" :alt="t('rasterEditor.raw')" />
+    </RasterPreviewCard>
+    <RasterPreviewCard
+      v-if="PROFILE_BEHAVIOR[profile].dataChannels"
+      :title="t('rasterEditor.dataAlpha')"
+    >
+      <img :src="alphaPreview" :alt="t('rasterEditor.dataAlpha')" />
+    </RasterPreviewCard>
+    <RasterPreviewCard
+      v-if="profile.startsWith('decal-')"
+      :title="t(`rasterEditor.previewTitle.${profile}`)"
+    >
+      <RasterDecalPreview
+        :doc="doc"
+        :version="version"
+        :profile="profile"
+        :colors="decalColors"
+        :aspect-ratio="decalAspectRatio"
+      />
     </RasterPreviewCard>
     <RasterPreviewCard v-if="materialPreview" :title="t('rasterEditor.layers')">
       <img :src="materialPreview" :alt="t('rasterEditor.layers')" />

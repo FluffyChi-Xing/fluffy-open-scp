@@ -44,7 +44,9 @@ JSON 包含用途、Lot 四组 RGB+tile、Decal 颜色/比例/字典/Entry ID、
 PNG 和参数表 JSON 可用于其他资产工具，完整 Raster JSON 可恢复编辑。
 覆盖现有 Lot 保留其原始 Property，配色控件只用于新建 Lot。
 包内载入目前受后端 RGBA 解码能力限制；压缩/浮点资源不会伪装成可绘制 RGBA8。
-slot0 通过参数 JSON 编辑/导入/导出，不从原生 RW4 抽取或写回。
+slot0 支持从内存包的 RW4 抽取参数表，以及参数 JSON 编辑/导入/导出；尚不写回 RW4。
+包内目录按 Lot 属性、Decal 字典材质和建筑六槽引用筛选，并解析跨包依赖。
+复制保留源尺寸。RW4 图像可导出 PNG/schema，禁止将 Raster 字节写入 RW4 TGI。
 
 流程节点只保存 schema，不弹出 package 保存框。建筑预览通过 `rasterDraftAsset`
 将五张图像和参数表绑定回原六槽。后端 `mod_flow_assets::validate` 阻止含编辑
@@ -53,12 +55,20 @@ slot0 通过参数 JSON 编辑/导入/导出，不从原生 RW4 抽取或写回�
 
 ## 界面与预览
 
+`profileBehavior.ts` 是所有用途的完整行为表，统一声明数据通道显示、层绘制、四色配色和默认通道。
+数据贴图画布以不透明 RGB 显示，A 单独灰度预览；显示转换不修改原始像素。
+Lot 的层顺序为 A/R/G/B，Decal Color1–4 为 R/G/B/A，绘制与取色使用同一映射。
+涂鸦支持覆盖强度；SDF 默认编辑 R 数值且保持其他通道；内景/RGBA 不显示无效四色控件。
+各 Decal 类型使用 Property Editor 的同族 shader 和独立说明；SDF 预览为静态，笔刷不重建距离场。
+
 所有界面词条（包括提示、错误、无障碍标签与用途说明）必须走 i18n；
 Raster 词条集中在 `src/locales/raster-editor.ts`，同时维护中英文，运行中切换语言生效。
 Package 列表来自 `useGamePackagesStore.opened`，自动选择内存中的首个包；
 浏览器模式显示明确的桌面环境提示，不隐去资源入口。
 Lot 3D 预览直接复用 Property Editor 的精细渲染器，传递原始 RGBA，避免 Alpha 预乘污染。
-新建遮罩从已打开包的 Lot 会话取得共享图集；缺少图集时提示打开依赖包，不冒充真实渲染。
+新建遮罩直接从已打开包读取游戏共享地表/法线图集，无需建筑 Lot Property。
+绑定 Lot 优先使用自己的图集；共享图集不可用时继续搜索其他 Lot 会话，跳过空项或失败项。
+借用图集不替换当前 Lot 的尺寸与边框；缺少图集时提示打开依赖包，不冒充真实渲染。
 绑定已有 Lot 时保留尺寸、平铺周期及边框参数；绘制、配色、图案索引更新会触发地面重建。
 
 依据：`src-tauri/src/package_service.rs` 的 building4 六槽解析、

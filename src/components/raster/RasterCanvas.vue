@@ -9,6 +9,7 @@ import {
   type Rect,
 } from "@/lib/raster-editor/document";
 import { quantizeToImageData, toImageData } from "@/lib/raster-editor/encoders";
+import { dataChannelPixels } from "@/lib/raster-editor/profileBehavior";
 import type { RasterHistory } from "@/lib/raster-editor/history";
 import {
   channelPixels,
@@ -54,6 +55,7 @@ const props = defineProps<{
   /** 米/像素比例（Lot raster 惯例 0.75）；为 null 时不显示米标尺。 */
   metersPerPixel?: number | null;
   channel?: Channel;
+  dataChannels?: boolean;
 }>();
 const emit = defineEmits<{
   change: [];
@@ -138,7 +140,13 @@ function render() {
         )
       : props.quantized
         ? quantizeToImageData(props.doc)
-        : toImageData(props.doc);
+        : props.dataChannels
+          ? new ImageData(
+              dataChannelPixels(props.doc.pixels),
+              props.doc.width,
+              props.doc.height,
+            )
+          : toImageData(props.doc);
   ctx.putImageData(image, 0, 0);
 }
 
@@ -491,6 +499,10 @@ function makeEdit(rect: Rect, beforeFull: Uint8ClampedArray) {
 }
 
 function renderRegion(region: Rect) {
+  if (props.dataChannels || props.channel !== "rgba") {
+    render();
+    return;
+  }
   if (!ctx) return;
   const image = props.quantized
     ? quantizeToImageData(props.doc)
@@ -556,7 +568,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => [props.quantized, props.channel],
+  () => [props.quantized, props.channel, props.dataChannels],
   () => {
     cancelDraft();
     render();

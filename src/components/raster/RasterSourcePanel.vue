@@ -15,10 +15,21 @@ import {
   type RasterSchema,
   type RasterSource,
 } from "@/lib/raster-editor/schema";
-import type { Tgi } from "@/api/tauri";
-const props = defineProps<{ profile: RasterProfile; disabled?: boolean }>();
+import {
+  catalogKey,
+  type RasterCatalogEntry,
+} from "@/lib/raster-editor/catalog";
+import type { DecalEntryMeta, PropertyDocumentSummary, Tgi } from "@/api/tauri";
+const props = defineProps<{
+  profile: RasterProfile;
+  disabled?: boolean;
+  imageWidth?: number;
+  imageHeight?: number;
+}>();
 const emit = defineEmits<{
   create: [width: number, height: number];
+  loadLot: [summary: PropertyDocumentSummary & { packageId: number }];
+  loadDecal: [entry: DecalEntryMeta, source: RasterSource];
   image: [
     image: { width: number; height: number; pixels: Uint8ClampedArray },
     source: RasterSource,
@@ -30,13 +41,22 @@ const packages = useGamePackagesStore();
 const width = ref(64),
   height = ref(64),
   packageId = ref<number | null>(null);
-const entries = ref<{ tgi: Tgi; name: string }[]>([]);
+const entries = ref<(RasterCatalogEntry & { name: string })[]>([]);
+watch(
+  () => [props.imageWidth, props.imageHeight],
+  ([w, h]) => {
+    if (w && h) {
+      width.value = w;
+      height.value = h;
+    }
+  },
+  { immediate: true },
+);
 const query = ref(""),
   busy = ref(false),
   error = ref(""),
   selected = ref("");
-const offset = ref(0),
-  hasMore = ref(false);
+
 const visible = computed(() =>
   entries.value.filter((e) =>
     e.name.toLowerCase().includes(query.value.toLowerCase()),
@@ -50,35 +70,23 @@ const key = (t: Tgi) =>
   [t.typeId, t.group, t.instance]
     .map((n) => n.toString(16).padStart(8, "0"))
     .join(":");
-async function list(more = false) {
+async function list() {
   const generation = ++epoch;
-  if (!more) {
-    entries.value = [];
-    offset.value = 0;
-    selected.value = "";
-  }
+  entries.value = [];
+  selected.value = "";
   if (packageId.value == null) {
     busy.value = false;
-    hasMore.value = false;
     return;
   }
   busy.value = true;
   error.value = "";
   try {
-    const page = await tauriApi.packages.listResources(
-      packageId.value,
-      offset.value,
-      200,
-      undefined,
-      0x2f4e681c,
-    );
+    const rows = await tauriApi.raster.catalog(packageId.value, props.profile);
     if (generation !== epoch) return;
-    entries.value = [
-      ...entries.value,
-      ...page.items.map((e) => ({ tgi: e.tgi, name: key(e.tgi) })),
-    ];
-    offset.value += page.items.length;
-    hasMore.value = page.items.length === 200;
+    entries.value = rows.map((e) => ({
+      ...e,
+      name: `${key(e.tgi)} · ${key(e.owner)}${e.entryIndex == null ? "" : " #" + e.entryIndex}`,
+    }));
   } catch (e) {
     if (generation === epoch) error.value = String(e);
   } finally {
@@ -91,8 +99,8 @@ watch(packageId, () => {
 watch(
   () => props.profile,
   () => {
-    epoch++;
-    busy.value = false;
+    query.value = "";
+    void list();
   },
 );
 watch(
@@ -100,21 +108,61 @@ watch(
   (ids) => {
     if (packageId.value == null || !ids.includes(packageId.value))
       packageId.value = ids[0] ?? null;
+    else void list();
   },
   { immediate: true },
 );
 async function copy() {
-  const entry = entries.value.find((e) => e.name === selected.value),
+  const entry = entries.value.find((e) => catalogKey(e) === selected.value),
     id = packageId.value;
   if (!entry || id == null) return;
   const generation = ++epoch;
   busy.value = true;
   error.value = "";
   try {
-    const data = await tauriApi.raster.readRgba(id, entry.tgi);
+    if (props.profile === "lot-mask") {
+      emit("loadLot", {
+        packageId: entry.ownerPackageId,
+        tgi: entry.owner,
+        lotMask: entry.tgi,
+        lotMaskResolved: entry.tgi,
+        lotMaskPackageId: entry.packageId,
+        lotSize: null,
+        entryCount: null,
+        materialInstance: null,
+      });
+      return;
+    }
+    if (props.profile.startsWith("decal-") && entry.entryIndex != null) {
+      const dictionary = await tauriApi.packages.readDecalDictionary(
+        entry.ownerPackageId,
+        entry.owner,
+      );
+      if (generation !== epoch) return;
+      const item = dictionary.entries.find((e) => e.index === entry.entryIndex);
+      if (item)
+        emit(
+          "loadDecal",
+          { ...item, raster: entry.tgi },
+          {
+            name: key(entry.owner),
+            packageId: entry.ownerPackageId,
+            tgi: entry.owner,
+          },
+        );
+      return;
+    }
+    const data = await tauriApi.raster.readSource(
+      id,
+      entry.tgi,
+      props.profile === "slot0",
+    );
     if (generation !== epoch) return;
-    if (!data.decodable || !data.rgbaBase64)
-      throw new Error(t("rasterEditor.text084", { p0: data.pixelFormat }));
+    if (data.parameters) {
+      emit("parameters", validateParameters(data.parameters));
+      return;
+    }
+    if (!data.rgbaBase64) throw new Error(t("rasterEditor.text157"));
     emit(
       "image",
       {
@@ -185,8 +233,8 @@ function create() {
   <section class="source-panel">
     <h3>{{ t("rasterEditor.text088") }}</h3>
     <fieldset :disabled="disabled || busy">
-      <template v-if="profile !== 'slot0'">
-        <div class="dimensions">
+      <div class="package-source">
+        <div v-if="profile !== 'slot0'" class="dimensions">
           <label>
             {{ t("rasterEditor.text089") }}
             <input
@@ -200,8 +248,10 @@ function create() {
             <input v-model.number="height" type="number" min="1" max="4096"
           /></label>
         </div>
-        <button @click="create">{{ t("rasterEditor.text091") }}</button>
-        <button v-if="isTauri()" @click="importImage">
+        <button v-if="profile !== 'slot0'" @click="create">
+          {{ t("rasterEditor.text091") }}
+        </button>
+        <button v-if="isTauri() && profile !== 'slot0'" @click="importImage">
           {{ t("rasterEditor.text092") }}
         </button>
         <div class="package-source">
@@ -225,26 +275,21 @@ function create() {
           /></label>
           <label>
             {{ t("rasterEditor.text095") }}
-            <input v-model="query" placeholder="instance / group"
+            <input v-model="query" :placeholder="t('rasterEditor.sourceSearch')"
           /></label>
           <FSelect
             v-model="selected"
             :disabled="disabled || busy"
             :options="[
               { value: '', label: t('rasterEditor.text096') },
-              ...visible
-                .slice(0, 300)
-                .map((e) => ({ value: e.name, label: e.name })),
+              ...visible.map((e) => ({ value: catalogKey(e), label: e.name })),
             ]"
           />
-          <button v-if="hasMore" @click="list(true)">
-            {{ t("rasterEditor.text097") }} {{ entries.length }}
-          </button>
           <button :disabled="!selected" @click="copy">
             {{ t("rasterEditor.text098") }}
           </button>
         </div>
-      </template>
+      </div>
       <label class="json-import"
         >{{
           profile === "slot0"
@@ -256,6 +301,10 @@ function create() {
           @change="importJson"
       /></label>
     </fieldset>
+    <p>{{ t("rasterEditor.filteredSources") }}</p>
+    <p v-if="!busy && !entries.length">
+      {{ t("rasterEditor.noMatchingSources") }}
+    </p>
     <p v-if="busy" role="status">{{ t("rasterEditor.text101") }}</p>
     <p v-if="error" role="alert">{{ error }}</p>
   </section>

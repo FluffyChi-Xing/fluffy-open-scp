@@ -8,11 +8,17 @@ import RasterToolbar from "./RasterToolbar.vue";
 import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
+import { catalogKey } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
+import RasterMaterialPanel from "./RasterMaterialPanel.vue";
+import { useRasterSession } from "./useRasterSession";
 
 const api = vi.hoisted(() => ({
   native: true,
   listResources: vi.fn(),
+  catalog: vi.fn(),
+  readSource: vi.fn(),
+  readDecalDictionary: vi.fn(),
   readRgba: vi.fn(),
   readLotEditorSession: vi.fn(),
   listPropertyDocuments: vi.fn(),
@@ -34,33 +40,127 @@ afterEach(() => {
 });
 
 describe("Raster editor regressions", () => {
+  it.each([
+    "decal-sign",
+    "decal-graffiti",
+    "decal-sdf",
+    "decal-interior",
+    "decal-rgba",
+  ] as const)("shows only meaningful palette controls for %s", (profile) => {
+    const session = useRasterSession();
+    const wrapper = shallowMount(RasterMaterialPanel, {
+      props: {
+        profile,
+        lot: session.lot.value,
+        decal: session.decal.value,
+        sampling: session.sampling.value,
+      },
+      global,
+    });
+    expect(wrapper.findAll('input[type="color"]')).toHaveLength(
+      ["decal-interior", "decal-rgba"].includes(profile) ? 0 : 4,
+    );
+    wrapper.unmount();
+  });
+  it("reloads the catalog for every specialized profile and clears old selections", async () => {
+    api.catalog.mockResolvedValue([]);
+    const wrapper = shallowMount(RasterSourcePanel, {
+      props: { profile: "rgba" },
+      global,
+    });
+    await flushPromises();
+    for (const profile of [
+      "slot0",
+      "slot1",
+      "slot2",
+      "slot3",
+      "slot4",
+      "slot5",
+      "lot-mask",
+      "lot-texture",
+      "decal-sign",
+      "decal-graffiti",
+      "decal-sdf",
+      "decal-interior",
+      "decal-rgba",
+    ] as const) {
+      await wrapper.setProps({ profile });
+      await flushPromises();
+      expect(api.catalog).toHaveBeenLastCalledWith(42, profile);
+      expect(wrapper.findAllComponents(FSelect)[1].props("modelValue")).toBe(
+        "",
+      );
+    }
+    await wrapper.setProps({ imageWidth: 256, imageHeight: 128 });
+    expect(
+      wrapper
+        .findAll("input[type=number]")
+        .map((i) => (i.element as HTMLInputElement).value),
+    ).toEqual(["256", "128"]);
+    wrapper.unmount();
+  });
+  it("loads a Lot reference with the actual cross-package mask identity", async () => {
+    const tgi = { typeId: 0x2f4e681c, group: 4, instance: 7 };
+    const owner = { typeId: 0x00b1b104, group: 8, instance: 9 };
+    const entry = {
+      packageId: 42,
+      tgi,
+      ownerPackageId: 99,
+      owner,
+      entryIndex: null,
+    };
+    api.catalog.mockResolvedValue([entry]);
+    const wrapper = shallowMount(RasterSourcePanel, {
+      props: { profile: "lot-mask" },
+      global,
+    });
+    await flushPromises();
+    wrapper
+      .findAllComponents(FSelect)[1]
+      .vm.$emit("update:modelValue", catalogKey(entry));
+    await nextTick();
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("从选中资源"))!
+      .trigger("click");
+    expect(wrapper.emitted("loadLot")![0][0]).toMatchObject({
+      packageId: 99,
+      tgi: owner,
+      lotMaskResolved: tgi,
+      lotMaskPackageId: 42,
+    });
+    expect(api.readSource).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("lists in-memory Package resources and loads exact pixels with their source identity", async () => {
     const tgi = { typeId: 0x2f4e681c, group: 1, instance: 9 };
-    api.listResources.mockResolvedValue({ items: [{ tgi }] });
-    api.readRgba.mockResolvedValue({
+    const entry = {
+      packageId: 42,
+      tgi,
+      ownerPackageId: 42,
+      owner: tgi,
+      entryIndex: null,
+    };
+    api.catalog.mockResolvedValue([entry]);
+    api.readSource.mockResolvedValue({
       width: 1,
       height: 1,
       decodable: true,
       rgbaBase64: btoa(String.fromCharCode(12, 34, 56, 0)),
     });
     const wrapper = shallowMount(RasterSourcePanel, {
-      props: { profile: "lot-mask" },
+      props: { profile: "rgba" },
       global,
     });
     await flushPromises();
-    expect(api.listResources).toHaveBeenCalledWith(
-      42,
-      0,
-      200,
-      undefined,
-      0x2f4e681c,
-    );
+    expect(api.catalog).toHaveBeenCalledWith(42, "rgba");
     const selects = wrapper.findAllComponents(FSelect);
     expect(selects[0].props("options")).toContainEqual({
       value: "42",
       label: "Actual.package",
     });
-    selects[1].vm.$emit("update:modelValue", "2f4e681c:00000001:00000009");
+    selects[1].vm.$emit("update:modelValue", catalogKey(entry));
     await nextTick();
     await wrapper
       .findAll("button")
@@ -157,6 +257,7 @@ describe("Raster editor regressions", () => {
     await flushPromises();
     const viewport = wrapper.getComponent(PropertyEditorViewport);
     expect(viewport.props("renderMode")).toBe("refined");
+    expect(viewport.props("groundOnly")).toBe(true);
     expect(viewport.props("lotSurfacePng")).toBe(
       "data:image/png;base64,surface",
     );

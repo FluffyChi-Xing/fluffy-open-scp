@@ -24,6 +24,7 @@ mod prop_models_section_dump;
 mod package_browser;
 mod package_service;
 mod raster_edit;
+mod raster_catalog;
 mod render_telemetry;
 mod settings;
 mod stats;
@@ -167,6 +168,9 @@ pub fn run() {
             read_raster_rgba,
             save_raster_overlay,
             list_property_documents,
+            raster_catalog::list_raster_catalog,
+            raster_catalog::read_raster_source,
+            raster_catalog::read_lot_preview_atlases,
             read_lot_material,
             register_decal_entry,
             create_lot_overlay,

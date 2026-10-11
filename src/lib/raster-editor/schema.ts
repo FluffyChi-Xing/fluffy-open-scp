@@ -209,7 +209,7 @@ export interface RasterSchema {
   };
 }
 export function isMaskProfile(profile: RasterProfile) {
-  return profile === "lot-mask" || profile === "decal-sign";
+  return profile === "lot-mask" || profile === "decal-sign" || profile === "decal-graffiti";
 }
 export function validateParameters(value: unknown): ParameterTable {
   const p = value as ParameterTable | null;

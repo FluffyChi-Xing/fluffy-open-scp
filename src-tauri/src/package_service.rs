@@ -2604,9 +2604,9 @@ fn lot_height_vector(properties: &sc_properties::PropertyFile, hash: u32) -> [f3
 
 /// Decoded 4x4 lot surface atlas, shared by preview albedo composition.
 pub(crate) struct SurfacePixels {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) rgba: Vec<u8>,
 }
 
 /// 从图集像素裁出第 `index` 格（4×4，行主序）；尺寸不足时返回 None。

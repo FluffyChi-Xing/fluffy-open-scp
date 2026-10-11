@@ -255,6 +255,9 @@ export const tauriApi = {
       command<CodeManifestResponse>("code_manifest", { request: { project } }),
   },
   raster: {
+    readLotPreviewAtlases: () => command<{lotSurfacePng: string; lotNormalAtlasPng: string | null} | null>("read_lot_preview_atlases"),
+    catalog: (packageId: number, profile: string) => command<import("@/lib/raster-editor/catalog").RasterCatalogEntry[]>("list_raster_catalog", { packageId, profile }),
+    readSource: (packageId: number, tgi: Tgi, parameters = false) => command<{width:number; height:number; rgbaBase64:string|null; parameters: {cols:number; values:number[]}|null}>("read_raster_source", {packageId, tgi, parameters}),
     readImageRgba: (path: string) =>
       command<ImageRgbaResponse>("read_image_rgba", { request: { path } }),
     readRgba: (packageId: number, tgi: Tgi) =>

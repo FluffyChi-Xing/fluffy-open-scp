@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, shallowRef, watch } from "vue";
+import { onBeforeUnmount, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { isTauri, tauriApi } from "@/api";
+import { isTauri } from "@/api";
+import { loadLotPreviewSession } from "./lotPreviewSession";
 import type { LotEditorSession } from "@/api/tauri";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import type { RasterSource } from "@/lib/raster-editor/schema";
@@ -18,7 +19,8 @@ const props = defineProps<{
 }>();
 const { t } = useI18n();
 const packages = useGamePackagesStore();
-const session = shallowRef<LotEditorSession | null>(null);
+const session = shallowRef<Partial<LotEditorSession> | null>(null);
+const bound = shallowRef<LotEditorSession | null>(null);
 const error = shallowRef("");
 const loading = shallowRef(false);
 let generation = 0;
@@ -29,35 +31,20 @@ watch(
   async () => {
     const epoch = ++generation;
     session.value = null;
+    bound.value = null;
     error.value = "";
+    loading.value = false;
     if (!isTauri()) return;
     loading.value = true;
     try {
-      let target = props.target;
-      // New masks still need the game's shared surface and normal atlases.
-      if (!target?.tgi || target.packageId == null) {
-        for (const p of packages.opened) {
-          const docs = await tauriApi.raster.listPropertyDocuments(
-            p.package.packageId,
-            "lot",
-          );
-          if (epoch !== generation) return;
-          if (docs[0]) {
-            target = {
-              name: "",
-              packageId: p.package.packageId,
-              tgi: docs[0].tgi,
-            };
-            break;
-          }
-        }
-      }
-      if (target?.tgi && target.packageId != null) {
-        const value = await tauriApi.packages.readLotEditorSession(
-          target.packageId,
-          target.tgi,
-        );
-        if (epoch === generation) session.value = value;
+      const value = await loadLotPreviewSession(
+        props.target,
+        packages.opened.map((p) => p.package.packageId),
+        () => epoch !== generation,
+      );
+      if (epoch === generation) {
+        session.value = value.atlas;
+        bound.value = value.bound;
       }
     } catch (e) {
       if (epoch === generation) error.value = String(e);
@@ -69,7 +56,6 @@ watch(
 );
 const pngUrl = (value?: string | null) =>
   value ? `data:image/png;base64,${value}` : null;
-const bound = computed(() => (props.target ? session.value : null));
 const grouping = {
   lights: [],
   decals: [],
@@ -93,6 +79,7 @@ const treeIds = new Set<number>();
     </p>
     <PropertyEditorViewport
       v-if="session?.lotSurfacePng"
+      ground-only
       :model-payload="null"
       :model-lods="[]"
       :active-lod="0"
@@ -130,7 +117,7 @@ const treeIds = new Set<number>();
       :decal-textures="[]"
       :selected-id="null"
       :hidden-units="emptySet"
-      :group-visibility="{ lot: true }"
+      :group-visibility="{ lot: true, dimensions: false }"
       model-state="missing"
     />
   </div>

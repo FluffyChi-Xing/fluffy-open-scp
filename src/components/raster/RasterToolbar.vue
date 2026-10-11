@@ -3,7 +3,11 @@ import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 import { computed } from "vue";
 import FSelect from "@/components/ui/FSelect.vue";
-import type { Channel, RasterTool } from "@/lib/raster-editor/schema";
+import type {
+  Channel,
+  RasterTool,
+  RasterProfile,
+} from "@/lib/raster-editor/schema";
 const tool = defineModel<RasterTool>("tool", { required: true });
 const size = defineModel<number>("size", { required: true });
 const color = defineModel<string>("color", { required: true });
@@ -16,12 +20,28 @@ const parkingLength = defineModel<number>("parkingLength", { required: true });
 const parkingSpacing = defineModel<number>("parkingSpacing", {
   required: true,
 });
-defineProps<{
-  mask: boolean;
-  canUndo: boolean;
-  canRedo: boolean;
-  lot: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    profile?: RasterProfile;
+    mask: boolean;
+    canUndo: boolean;
+    canRedo: boolean;
+    lot: boolean;
+  }>(),
+  { profile: "rgba" },
+);
+const channelValue = computed({
+  get: () => {
+    if (channel.value === "a") return alpha.value;
+    const offset = { r: 1, g: 3, b: 5, rgba: 1 }[channel.value];
+    return parseInt(color.value.slice(offset, offset + 2), 16);
+  },
+  set: (value: number) => {
+    const byte = Math.max(0, Math.min(255, Math.round(value || 0)));
+    if (channel.value === "a") alpha.value = byte;
+    else color.value = "#" + byte.toString(16).padStart(2, "0").repeat(3);
+  },
+});
 const emit = defineEmits<{ undo: []; redo: [] }>();
 const tools = computed<{ id: RasterTool; label: string }[]>(() => [
   { id: "brush", label: t("rasterEditor.text102") },
@@ -87,19 +107,47 @@ const tools = computed<{ id: RasterTool; label: string }[]>(() => [
         <FSelect
           :model-value="String(layer)"
           :options="[
-            { value: '0', label: t('rasterEditor.text118') },
-            { value: '1', label: t('rasterEditor.text119') },
-            { value: '2', label: t('rasterEditor.text120') },
-            { value: '3', label: t('rasterEditor.text121') },
+            {
+              value: '0',
+              label: lot
+                ? t('rasterEditor.layer4')
+                : t('rasterEditor.decalLayer', { n: 1, channel: 'R' }),
+            },
+            {
+              value: '1',
+              label: lot
+                ? t('rasterEditor.layer3')
+                : t('rasterEditor.decalLayer', { n: 2, channel: 'G' }),
+            },
+            {
+              value: '2',
+              label: lot
+                ? t('rasterEditor.layer2')
+                : t('rasterEditor.decalLayer', { n: 3, channel: 'B' }),
+            },
+            {
+              value: '3',
+              label: lot
+                ? t('rasterEditor.layer1')
+                : t('rasterEditor.decalLayer', { n: 4, channel: 'A' }),
+            },
           ]"
           @update:model-value="layer = Number($event)"
       /></label>
-      <label v-if="!mask || channel !== 'rgba'"
+      <label v-if="!mask && channel === 'rgba'"
         >RGB <input v-model="color" type="color"
       /></label>
-      <label v-if="!mask || channel !== 'rgba'"
-        >Alpha <input v-model.number="alpha" type="number" min="0" max="255"
+      <label
+        v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')"
+        >{{ t("rasterEditor.channelStrength") }}
+        <input v-model.number="alpha" type="number" min="0" max="255"
       /></label>
+      <label v-if="channel !== 'rgba'"
+        >{{
+          t("rasterEditor.channelValue", { channel: channel.toUpperCase() })
+        }}
+        <input v-model.number="channelValue" type="number" min="0" max="255" />
+      </label>
       <label>
         {{ t("rasterEditor.text122") }}
         <FSelect
@@ -107,19 +155,31 @@ const tools = computed<{ id: RasterTool; label: string }[]>(() => [
           :options="
             ['rgba', 'r', 'g', 'b', 'a'].map((value) => ({
               value,
-              label: value.toUpperCase(),
+              label: lot
+                ? t(`rasterEditor.channels.${value}`)
+                : value.toUpperCase(),
             }))
           "
           @update:model-value="channel = $event as Channel"
       /></label>
-      <label v-if="mask"
+      <label v-if="lot"
         ><input v-model="quantized" type="checkbox" />
         {{ t("rasterEditor.text123") }}
       </label>
     </div>
+    <p v-if="lot" class="lot-guide">{{ t("rasterEditor.lotGuide") }}</p>
+    <p class="lot-guide">
+      {{ t(`rasterEditor.profileGuide.${props.profile}`) }}
+    </p>
   </div>
 </template>
 <style scoped>
+.lot-guide {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
 .raster-toolbar {
   display: grid;
   gap: 8px;

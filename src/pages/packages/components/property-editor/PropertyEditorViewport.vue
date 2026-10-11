@@ -74,6 +74,7 @@ export type EditorTool = "select" | "translate" | "rotate" | "scale";
  * 底座/业务拆分见 docs/roadmap/asset-development.md §二（PE-重构-1）。
  */
 const props = defineProps<{
+  groundOnly?: boolean;
   modelPayload: LotModelPayload | null;
   /** LOD1~LOD4 资源位置（index 0 = LOD1）；缺失级为 null。 */
   modelLods: (LotModelLodRef | null)[];
@@ -184,6 +185,7 @@ const hoveredId = ref<string | null>(null);
 /** 小人部件资产（全局，进程级缓存）：spawner 真小人渲染。 */
 const simParts = ref<SimPart[]>([]);
 onMounted(() => {
+  if (props.groundOnly) return;
   void loadSimParts().then((parts) => {
     simParts.value = parts;
   });
@@ -1931,7 +1933,7 @@ async function assembleScene(
 
   // Lot 三维尺度标注（用户需求 2026-10-06）：长/宽取地面矩形两邻边，
   // 高取建筑 bbox 实际高度（世界系 Y 跨度；世界仅旋转，跨度=游戏系 Z）。
-  if (props.lotSize && ground) {
+  if (props.lotSize && ground && !props.groundOnly) {
     instance.scene.updateMatrixWorld(true);
     const modelBox = new THREE.Box3().setFromObject(instance.group("model"));
     const lotHeight = modelBox.isEmpty()
@@ -2225,13 +2227,13 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       </span>
     </div>
     <div
-      v-if="modelState === 'loading'"
+      v-if="!groundOnly && modelState === 'loading'"
       class="viewport-overlay viewport-status"
     >
       <FSpinner size="sm" :label="$t('common.loading')" />
     </div>
     <p
-      v-else-if="modelState === 'missing' || modelState === 'error'"
+      v-else-if="!groundOnly && (modelState === 'missing' || modelState === 'error')"
       class="viewport-overlay viewport-status"
       role="status"
     >
@@ -2241,7 +2243,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
           : $t("package.propertyEditorModelError")
       }}
     </p>
-    <div class="viewport-overlay viewport-tools">
+    <div v-if="!groundOnly" class="viewport-overlay viewport-tools">
       <button
         type="button"
         :aria-label="$t('package.lodSwitch')"
@@ -2381,7 +2383,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       </div>
     </div>
     <div
-      v-if="props.editEnabled"
+      v-if="props.editEnabled && !groundOnly"
       class="viewport-overlay viewport-toolrail"
       role="group"
       :aria-label="$t('package.editorTools')"
@@ -2405,6 +2407,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       <!-- 动态招牌开关已挪入顶部工具条（供电旁复选框，2026-10-05 十轮） -->
     </div>
     <div
+      v-if="!groundOnly"
       class="viewport-overlay viewport-visibility"
       role="group"
       :aria-label="$t('package.visibilityToggles')"

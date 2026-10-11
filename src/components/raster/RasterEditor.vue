@@ -5,11 +5,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import { RasterDocument } from "@/lib/raster-editor/document";
-import {
-  LOT_LAYERS,
-  layerOfPixel,
-  base64ToRgba,
-} from "@/lib/raster-editor/encoders";
+import { base64ToRgba } from "@/lib/raster-editor/encoders";
 import {
   RASTER_PROFILES,
   type Channel,
@@ -28,6 +24,11 @@ import RasterSourcePanel from "./RasterSourcePanel.vue";
 import RasterMaterialPanel from "./RasterMaterialPanel.vue";
 import RasterPreviewPanel from "./RasterPreviewPanel.vue";
 import { useRasterSession } from "./useRasterSession";
+import {
+  PROFILE_BEHAVIOR,
+  layerPaint,
+  pickedLayer,
+} from "@/lib/raster-editor/profileBehavior";
 import {
   downloadJson,
   downloadRasterAsset,
@@ -75,7 +76,7 @@ const tool = ref<RasterTool>("brush"),
   size = ref(4),
   color = ref("#ffffff"),
   alpha = ref(255),
-  channel = ref<Channel>("rgba"),
+  channel = ref<Channel>(PROFILE_BEHAVIOR[profile.value].defaultChannel),
   layer = ref(0),
   tolerance = ref(0),
   quantized = ref(false);
@@ -90,8 +91,12 @@ const descriptor = computed(() =>
   RASTER_PROFILES.find((p) => p.id === profile.value)!,
 );
 const brushColor = computed<Rgba>(() => {
-  if (mask.value && channel.value === "rgba")
-    return [...LOT_LAYERS[layer.value].paint] as Rgba;
+  if (PROFILE_BEHAVIOR[profile.value].layers && channel.value === "rgba")
+    return layerPaint(
+      profile.value,
+      layer.value,
+      profile.value === "decal-graffiti" ? alpha.value : 255,
+    );
   const rgb = [
     parseInt(color.value.slice(1, 3), 16),
     parseInt(color.value.slice(3, 5), 16),
@@ -106,7 +111,7 @@ onBeforeUnmount(() => {
 watch(dirty, (value) => emit("dirty", value));
 watch(profile, () => {
   quantized.value = false;
-  channel.value = "rgba";
+  channel.value = PROFILE_BEHAVIOR[profile.value].defaultChannel;
   tool.value = "brush";
   schemaText.value = "";
 });
@@ -160,8 +165,10 @@ function pick(rgba: Rgba) {
       .map((n) => n.toString(16).padStart(2, "0"))
       .join("");
   alpha.value = rgba[3];
-  const picked = layerOfPixel(rgba);
+  const picked = pickedLayer(profile.value, rgba);
   if (picked != null) layer.value = picked;
+  if (profile.value === "decal-graffiti" && picked != null)
+    alpha.value = rgba[picked];
 }
 function output(download = false) {
   error.value = "";
@@ -242,7 +249,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
   saving.value = true;
   error.value = "";
   try {
-    const tgi = { ...entry.raster, typeId: 0x2f4e681c };
+    const tgi = { ...entry.raster, typeId: entry.raster.typeId || 0x2f4e681c };
     const ids = [
       ...new Set(
         [
@@ -252,9 +259,11 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
       ),
     ];
     for (const id of ids) {
-      const image = await tauriApi.raster.readRgba(id, tgi).catch(() => null);
+      const image = await tauriApi.raster
+        .readSource(id, tgi)
+        .catch(() => tauriApi.raster.readRgba(id, tgi).catch(() => null));
       if (epoch !== generation) return;
-      if (!image?.decodable || !image.rgbaBase64) continue;
+      if (!image?.rgbaBase64) continue;
       session.install(
         new RasterDocument(
           image.width,
@@ -378,6 +387,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             v-model:parking-length="parkingLength"
             v-model:parking-spacing="parkingSpacing"
             :mask="mask"
+            :profile="profile"
             :lot="profile === 'lot-mask'"
             :can-undo="canUndo"
             :can-redo="canRedo"
@@ -396,8 +406,11 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             :parking-length="Math.max(1, Math.min(256, parkingLength || 1))"
             :parking-spacing="Math.max(1, Math.min(256, parkingSpacing || 1))"
             :fill-tolerance="Math.max(0, Math.min(510, tolerance || 0))"
-            :quantized="mask && quantized && channel === 'rgba'"
+            :quantized="
+              profile === 'lot-mask' && quantized && channel === 'rgba'
+            "
             :channel="channel"
+            :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
             :meters-per-pixel="
               profile === 'lot-mask' ? sampling.metersPerPixel : null
             "
@@ -457,6 +470,10 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
       </main>
       <aside class="inspector">
         <RasterSourcePanel
+          :image-width="doc?.width"
+          :image-height="doc?.height"
+          @load-lot="loadLot"
+          @load-decal="loadDecal"
           :profile="profile"
           :disabled="locked"
           @create="(w, h) => replace(() => session.create(w, h))"
@@ -488,6 +505,8 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           :channel="channel"
           :profile="profile"
           :colors="lot.colors"
+          :decal-colors="decal.colors"
+          :decal-aspect-ratio="decal.aspectRatio"
           :target="lot.target"
           :meters-per-pixel="sampling.metersPerPixel"
         />

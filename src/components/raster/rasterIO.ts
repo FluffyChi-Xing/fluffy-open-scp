@@ -70,6 +70,8 @@ export async function saveRasterCopy(
   const s = parseRasterSchema(value);
   if (!s.image || s.profile === "slot0")
     throw new Error(t("rasterEditor.text037"));
+  if (kind === "raster" && s.source?.tgi?.typeId === 0x2f4e681b)
+    throw new Error(t("rasterEditor.rw4Export"));
   const { width, height, data: rgbaBase64 } = s.image;
   if (kind === "lot" && s.profile !== "lot-mask")
     throw new Error(t("rasterEditor.text038"));
@@ -158,10 +160,14 @@ export async function loadLotCopy(
   for (const id of candidates) {
     const image = await tauriApi.raster.readRgba(id, mask).catch(() => null);
     if (!image?.decodable || !image.rgbaBase64) continue;
-    const material = await tauriApi.raster.readLotMaterial(
+    // Use exactly the material session consumed by Property Editor.
+    const materialSession = await tauriApi.packages.readLotEditorSession(
       summary.packageId,
       summary.tgi,
     );
+    if (!materialSession.lotColorsAuthored?.some(Boolean))
+      throw new Error(t("rasterEditor.missingLotMaterial"));
+    const material = { colors: materialSession.lotColors };
     return {
       image: {
         width: image.width,

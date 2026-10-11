@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { PROFILE_BEHAVIOR } from "@/lib/raster-editor/profileBehavior";
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
+import { matchesDecalProfile } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
 import { computed, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
@@ -80,7 +82,14 @@ async function scan() {
         ).map((d) => ({ ...d, packageId: p.package.packageId })),
       ),
     );
-    if (epoch === generation) documents.value = results.flat();
+    if (epoch === generation)
+      documents.value = results
+        .flat()
+        .filter(
+          (d) =>
+            !isDecal.value ||
+            matchesDecalProfile(props.profile, d.materialInstance),
+        );
   } catch (e) {
     if (epoch === generation) error.value = String(e);
   } finally {
@@ -225,9 +234,9 @@ function setTile(i: number, tile: number) {
         </button>
       </template>
       <template v-if="isDecal">
-        <div class="colors">
+        <div v-if="PROFILE_BEHAVIOR[profile].palette" class="colors">
           <label v-for="(c, i) in decal.colors" :key="i"
-            >Color{{ i + 1
+            >{{ t("rasterEditor.decalColor", { n: i + 1 })
             }}<input
               :value="c"
               type="color"
@@ -279,7 +288,7 @@ function setTile(i: number, tile: number) {
         <p>{{ t("rasterEditor.text063") }} {{ label(decal.atlas) }}</p>
         <p>{{ t("rasterEditor.text064") }}</p>
       </template>
-      <template v-if="profile.startsWith('lot-') || isDecal">
+      <template v-if="profile === 'lot-mask' || isDecal">
         <button
           :disabled="busy || !isTauri() || !packages.opened.length"
           @click="scan"
