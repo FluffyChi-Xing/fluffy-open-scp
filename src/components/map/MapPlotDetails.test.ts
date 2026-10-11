@@ -69,12 +69,15 @@ describe("selected city details", () => {
     expect(wrapper.text()).not.toContain("其他城市");
     expect(wrapper.text()).toContain("0.0% 面积");
     expect(wrapper.text()).toContain("50.0% 面积");
+    expect(wrapper.text()).toContain("城市地下水");
+    expect(wrapper.text()).not.toContain("区域地下水");
     expect(wrapper.text()).toContain("无数据");
     i18n.global.locale.value = "en-US";
     await nextTick();
     expect(wrapper.text()).toContain("Test City");
     expect(wrapper.text()).toContain("Original description");
     expect(wrapper.text()).toContain("Buildable area");
+    expect(wrapper.text()).toContain("City Groundwater");
     expect(wrapper.text()).not.toContain("原始城市介绍");
     await wrapper.setProps({ plot: null });
     expect(wrapper.text()).not.toContain("Test City");

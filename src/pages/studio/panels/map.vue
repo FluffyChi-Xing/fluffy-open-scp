@@ -140,7 +140,9 @@ async function renderRegion() {
 // ── 图层状态：地块框开关 + 资源分布图层单选（null = 关闭；对齐游戏数据视图）──
 
 const resourceKinds = computed(() =>
-  render.value ? ["soil", "waterTable", "forest", "coal", "ore", "oil"] : [],
+  render.value
+    ? ["soil", "waterTable", "cityWaterTable", "forest", "coal", "ore", "oil"]
+    : [],
 );
 const selectedPlotUid = ref<string | null>(null);
 const selectedPlot = computed(

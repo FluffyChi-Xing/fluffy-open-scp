@@ -108,9 +108,12 @@ export function createTerrainMaterial(
     hasStaticResource: { value: false },
   };
   mat.setResource = (kind, opacity) => {
-    const resource = kind
-      ? staticResources[canonicalResourceKind(kind).toLowerCase()]
-      : undefined;
+    // Regional groundwater uses ED everywhere; city groundwater uses only
+    // bounded bootstrap cells and has no regional fallback (channel 3).
+    const resource =
+      kind && kind.toLowerCase() !== "watertable"
+        ? staticResources[canonicalResourceKind(kind).toLowerCase()]
+        : undefined;
     const channel = kind ? ecoChannel(kind) : null;
     overlay.staticResource.value = resource ?? eco;
     overlay.hasStaticResource.value = !!resource;

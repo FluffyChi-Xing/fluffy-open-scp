@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import type { Region3DData } from "@/lib/region-map";
+import { hasStateResource } from "./map-state-fields";
 const props = defineProps<{
   data: Region3DData | null;
   title?: string;
@@ -35,9 +36,9 @@ const layers = computed(() => ({
 const options = computed(() =>
   (
     props.options ??
-    ["soil", "waterTable", "forest"].map((kind) => ({
+    ["soil", "waterTable", "cityWaterTable", "forest"].map((kind) => ({
       kind,
-      available: true,
+      available: kind !== "cityWaterTable" || hasStateResource(props.data, kind),
       label: t(`studio.map.res${kind[0]!.toUpperCase() + kind.slice(1)}`),
     }))
   ).filter(

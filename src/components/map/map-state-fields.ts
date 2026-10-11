@@ -24,7 +24,9 @@ export function hasStateResource(
 /** Keep resource names stable across package keys and UI labels. */
 export function canonicalResourceKind(kind: string): string {
   const lower = kind.toLowerCase();
-  return lower === "watertable" ? "waterTable" : kind;
+  return lower === "watertable" || lower === "citywatertable"
+    ? "waterTable"
+    : kind;
 }
 
 /** Resample only inside observed city squares. Alpha distinguishes no data from zero. */
@@ -89,7 +91,7 @@ export function cityResourceSummary(data: Region3DData | null, uid?: string) {
   return Object.entries(STATE_RESOURCE_IDS).map(([kind, id]) => {
     const map = source?.maps.find((m) => m.id === id);
     return {
-      kind,
+      kind: kind === "waterTable" ? "cityWaterTable" : kind,
       coverage: map?.values.length
         ? (100 * map.values.filter((v) => v > 0).length) / map.values.length
         : null,

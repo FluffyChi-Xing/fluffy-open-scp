@@ -48,6 +48,7 @@ export const RESOURCE_COLORS: Record<string, string> = {
   ore: "#f0b429",
   oreMetal: "#c9a227",
   watertable: "#2f86eb",
+  citywatertable: "#2f86eb",
   soil: "#a06a3b",
   forest: "#2e9e44",
   desirability: "#e05656",
