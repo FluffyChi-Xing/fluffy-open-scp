@@ -74,11 +74,14 @@ pub fn discover_save(root: &std::path::Path, group: u32, plots: &[crate::region_
     let expected = crate::region_3d::template_name_for_group(group);
     for (_,path) in candidates {
         if let Ok(Some(state))=state_file(&path.join("0")) {
-            let matches = match (expected, save_template_name(&path)) {
-                (Some(e), Some(a)) => e.eq_ignore_ascii_case(&a),
-                (None, _) => state.environment == group,
-                _ => false,
-            };
+            let matches = state.environment == group
+                && match (expected, save_template_name(&path)) {
+                    (Some(e), Some(a)) => a.eq_ignore_ascii_case(e),
+                    // Older saves may have no metadata; EGB environment is
+                    // still the authoritative map identity in that case.
+                    (_, None) => true,
+                    (None, Some(_)) => true,
+                };
             if matches {
                 if let Ok(layers)=load_save(&path,group,plots) {return Some((path,layers));}
             }
@@ -95,8 +98,12 @@ pub fn load_save(
     plots: &[crate::region_3d::Region3DPlot],
 ) -> Result<SaveLayers, String> {
     let region = state_file(&directory.join("0"))?.ok_or("save has no region state")?;
-    // EGB.environment is the shared EcoGame/script environment id, not the
-    // RegionTerrain group. Template identity is checked by discover_save.
+    if region.environment != _group {
+        return Err(format!(
+            "save region {:08X} does not match {_group:08X}",
+            region.environment
+        ));
+    }
     let mut sources = vec![StateSource {
         site: "0".into(),
         origin: [0.0; 2],
