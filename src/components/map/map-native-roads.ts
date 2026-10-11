@@ -34,15 +34,39 @@ export function createStaticRoads(
       // their own engine z and are unaffected by this fallback.
       const z = height(x, y) + 6;
       const base = positions.length / 3;
-      positions.push(x - half, z, y - half, x + half, z, y - half, x + half, z, y + half, x - half, z, y + half);
+      positions.push(
+        x - half,
+        z,
+        y - half,
+        x + half,
+        z,
+        y - half,
+        x + half,
+        z,
+        y + half,
+        x - half,
+        z,
+        y + half,
+      );
       indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }
   if (!positions.length) return group;
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
   geometry.setIndex(indices);
-  const material = new THREE.MeshBasicMaterial({ color: 0x3d3a37, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x3d3a37,
+    transparent: true,
+    opacity: 0.88,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    side: THREE.DoubleSide,
+  });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = "static-road-mask";
   group.add(mesh);
@@ -59,12 +83,86 @@ export function ownsRoadPoint(source: StateSource): boolean {
  * ED raster beneath it creates duplicate/offset roads and makes broken raster
  * fragments look like real topology. The raster is only a no-save fallback.
  */
-export function hasNativeRoadNetwork(data: Pick<Region3DData, "saveLayers">): boolean {
+export function hasNativeRoadNetwork(
+  data: Pick<Region3DData, "saveLayers">,
+): boolean {
   return Boolean(
     data.saveLayers?.sources.some(
       (source) => ownsRoadPoint(source) && source.curves.length > 0,
     ),
   );
+}
+
+/** Convert a game row-major rotation into preview coordinates. */
+export function roadUnitTransform(
+  rotation: readonly number[],
+  scale: number,
+  position: readonly [number, number, number],
+): THREE.Matrix4 {
+  const [x, y, z] = position;
+  // cSPTransform stores the three axis vectors consecutively (column-major).
+  // Pack game z-up into the preview map-local (x,height,y) coordinates.
+  return new THREE.Matrix4().set(
+    rotation[0] * scale,
+    rotation[3] * scale,
+    rotation[6] * scale,
+    x,
+    rotation[2] * scale,
+    rotation[5] * scale,
+    rotation[8] * scale,
+    z,
+    rotation[1] * scale,
+    rotation[4] * scale,
+    rotation[7] * scale,
+    y,
+    0,
+    0,
+    0,
+    1,
+  );
+}
+
+type CurveRecord = NonNullable<StateSource["curves"]>[number];
+
+/** Split one EcoPathSet path into drawable chains.
+ *
+ * A path slot can contain disconnected branches after the game inserts city
+ * connectors and intersection splits.  Treating the slot as one mandatory
+ * chain made the old renderer discard every model sweep when any branch did
+ * not connect exactly.  Keep each entry type separate and tolerate the small
+ * float error introduced by EGB serialization.
+ */
+export function curveChains(records: CurveRecord[]): CurveRecord[][];
+export function curveChains(records: CurveRecord[]): CurveRecord[][] {
+  const remaining = [...records];
+  const chains: CurveRecord[][] = [];
+  const tolerance = 0.25;
+  const distance = (a: number[], b: number[]) =>
+    Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  while (remaining.length) {
+    // EGB does not guarantee segment order. Start at a segment whose start
+    // point has no predecessor in this entry/path; if a closed loop has no
+    // such point, fall back to the first remaining segment.
+    const first = remaining.findIndex(
+      (record) =>
+        !remaining.some(
+          (other) =>
+            other !== record &&
+            distance(other.controls[3], record.controls[0]) <= tolerance,
+        ),
+    );
+    const chain = [remaining.splice(first < 0 ? 0 : first, 1)[0]];
+    while (remaining.length) {
+      const previous = chain[chain.length - 1].controls[3];
+      const next = remaining.findIndex(
+        (record) => distance(previous, record.controls[0]) <= tolerance,
+      );
+      if (next < 0) break;
+      chain.push(remaining.splice(next, 1)[0]);
+    }
+    chains.push(chain);
+  }
+  return chains;
 }
 /** Source splines and ribbon width/UV/offsets, never raster-derived centerlines. */
 export function createNativeRoads(
@@ -205,24 +303,7 @@ function appendRegionalJunctions(
       continue;
     // cSPTransform stores x/y/z axis vectors consecutively. Pack game z-up
     // into the shared map root's (x,height,y); that root owns the reflection.
-    const transform = new THREE.Matrix4().set(
-      r[0] * s,
-      r[3] * s,
-      r[6] * s,
-      x,
-      r[2] * s,
-      r[5] * s,
-      r[8] * s,
-      z,
-      r[1] * s,
-      r[4] * s,
-      r[7] * s,
-      y,
-      0,
-      0,
-      0,
-      1,
-    );
+    const transform = roadUnitTransform(r, s, [x, y, z]);
     const geometry = nativeGeometry(model);
     geometry.applyMatrix4(transform);
     const index = geometry.index!;
@@ -264,153 +345,149 @@ function appendModelSweeps(
       paths.set(c.path, list);
     }
     for (const records of paths.values()) {
-      const sweeps = data.roadAssets?.sweeps[records[0].entryId] ?? [];
-      if (!sweeps.length) continue;
-      const remaining = [...records];
-      const equal = (a: number[], b: number[]) => a.every((v, i) => v === b[i]);
-      let first = remaining.findIndex(
-        (r) =>
-          !remaining.some(
-            (o) => o !== r && equal(o.controls[3], r.controls[0]),
-          ),
-      );
-      if (first < 0) first = 0;
-      const ordered = [remaining.splice(first, 1)[0]];
-      while (remaining.length) {
-        const i = remaining.findIndex((r) =>
-          equal(ordered.at(-1)!.controls[3], r.controls[0]),
-        );
-        if (i < 0) break;
-        ordered.push(remaining.splice(i, 1)[0]);
+      const byEntry = new Map<number, typeof records>();
+      for (const record of records) {
+        const list = byEntry.get(record.entryId) ?? [];
+        list.push(record);
+        byEntry.set(record.entryId, list);
       }
-      if (remaining.length) continue; // Never connect disjoint topology with an invented segment.
-      const path = new THREE.CurvePath<THREE.Vector3>();
-      for (const r of ordered) {
-        const c = r.controls.map(
-          (p) =>
-            new THREE.Vector3(
-              p[0] + source.origin[0],
-              p[1] + source.origin[1],
-              p[2],
-            ),
-        );
-        path.add(new THREE.CubicBezierCurve3(c[0], c[1], c[2], c[3]));
-      }
-      const length = path.getLength();
-      if (length < 0.01) continue;
-      for (const sweep of sweeps) {
-        const model = data.roadAssets?.models[sweep.model];
-        if (!model || !pixels[`model:${sweep.model}`]) continue;
-        const rotation = new THREE.Euler(
-          ...(sweep.rotation.map((v) => (v * Math.PI) / 180) as [
-            number,
-            number,
-            number,
-          ]),
-          "ZYX",
-        );
-        const transform = new THREE.Matrix4().compose(
-          new THREE.Vector3(),
-          new THREE.Quaternion().setFromEuler(rotation),
-          // GenerateExtrusionPropInstance applies mScale.x as a uniform scale.
-          sweep.instance
-            ? new THREE.Vector3().setScalar(sweep.scale[0])
-            : new THREE.Vector3(...sweep.scale),
-        );
-        const vertices: THREE.Vector3[] = [];
-        for (let i = 0; i < model.positions.length; i += 3)
-          vertices.push(
-            new THREE.Vector3(
-              ...(model.positions.slice(i, i + 3) as [number, number, number]),
-            ).applyMatrix4(transform),
-          );
-        const minY = Math.min(...vertices.map((v) => v.y)),
-          maxY = Math.max(...vertices.map((v) => v.y));
-        const minZ = Math.min(...vertices.map((v) => v.z)),
-          maxZ = Math.max(...vertices.map((v) => v.z));
-        const tileLength = Math.max(0.001, maxY - minY);
-        const batch = batches.get(sweep.model) ?? {
-          positions: [],
-          uvs: [],
-          indices: [],
-        };
-        batches.set(sweep.model, batch);
-        for (const section of sweepSections(sweep, length, tileLength)) {
-          const distance = section.start;
-          const center = path.getPointAt(
-            Math.min(1, (distance + section.length / 2) / length),
-          );
-          const span = data.size * data.metersPerPixel;
-          if (
-            !inside(center.x, center.y, [
-              ...data.originWorld,
-              data.originWorld[0] + span,
-              data.originWorld[1] + span,
-            ])
-          )
-            continue;
-          const stackHeight = Math.max(0.1, maxZ - minZ);
-          const copies =
-            sweep.stackToGround && !sweep.relativeToGround
-              ? Math.min(
-                  100,
-                  Math.max(
-                    1,
-                    Math.ceil(
-                      (center.z +
-                        sweep.offset[2] +
-                        minZ -
-                        height(center.x, center.y)) /
-                        stackHeight,
-                    ),
-                  ),
-                )
-              : 1;
-          for (let stack = 0; stack < copies; stack++) {
-            const base = batch.positions.length / 3;
-            for (const [vi, v] of vertices.entries()) {
-              const rigid = sweep.instance || !sweep.distort;
-              const along = rigid
-                ? distance
-                : distance +
-                  ((v.y - minY + sweep.offset[1]) / tileLength) *
-                    section.length;
-              const t = Math.max(0, Math.min(1, along / length)),
-                p = path.getPointAt(t),
-                tangent = path.getTangentAt(t);
-              const norm = Math.hypot(tangent.x, tangent.y) || 1,
-                nx = tangent.y / norm,
-                ny = -tangent.x / norm;
-              const x =
-                p.x +
-                nx * (v.x + sweep.offset[0]) +
-                (rigid ? tangent.x * (v.y + sweep.offset[1]) : 0);
-              const y =
-                p.y +
-                ny * (v.x + sweep.offset[0]) +
-                (rigid ? tangent.y * (v.y + sweep.offset[1]) : 0);
-              const z =
-                (sweep.relativeToGround ? height(x, y) : p.z) +
-                v.z +
-                sweep.offset[2] -
-                stack * stackHeight;
-              batch.positions.push(x, z, y);
-              batch.uvs.push(
-                model.uvs[vi * 2],
-                sweep.repeatUv && !sweep.instance
-                  ? along / tileLength
-                  : model.uvs[vi * 2 + 1],
+      for (const entryRecords of byEntry.values()) {
+        const sweeps = data.roadAssets?.sweeps[entryRecords[0].entryId] ?? [];
+        if (!sweeps.length) continue;
+        for (const ordered of curveChains(entryRecords)) {
+          const path = new THREE.CurvePath<THREE.Vector3>();
+          for (const r of ordered) {
+            const c = r.controls.map(
+              (p) =>
+                new THREE.Vector3(
+                  p[0] + source.origin[0],
+                  p[1] + source.origin[1],
+                  p[2],
+                ),
+            );
+            path.add(new THREE.CubicBezierCurve3(c[0], c[1], c[2], c[3]));
+          }
+          const length = path.getLength();
+          if (length < 0.01) continue;
+          for (const sweep of sweeps) {
+            const model = data.roadAssets?.models[sweep.model];
+            if (!model || !pixels[`model:${sweep.model}`]) continue;
+            const rotation = new THREE.Euler(
+              ...(sweep.rotation.map((v) => (v * Math.PI) / 180) as [
+                number,
+                number,
+                number,
+              ]),
+              "ZYX",
+            );
+            const transform = new THREE.Matrix4().compose(
+              new THREE.Vector3(),
+              new THREE.Quaternion().setFromEuler(rotation),
+              // GenerateExtrusionPropInstance applies mScale.x as a uniform scale.
+              sweep.instance
+                ? new THREE.Vector3().setScalar(sweep.scale[0])
+                : new THREE.Vector3(...sweep.scale),
+            );
+            const vertices: THREE.Vector3[] = [];
+            for (let i = 0; i < model.positions.length; i += 3)
+              vertices.push(
+                new THREE.Vector3(
+                  ...(model.positions.slice(i, i + 3) as [
+                    number,
+                    number,
+                    number,
+                  ]),
+                ).applyMatrix4(transform),
               );
-            }
-            const reflected = sweep.instance
-              ? sweep.scale[0] < 0
-              : sweep.scale.reduce((a, b) => a * b, 1) < 0;
-            for (let i = 0; i < model.indices.length; i += 3) {
-              batch.indices.push(
-                base + model.indices[i],
-                base + model.indices[i + (reflected ? 1 : 2)],
-                base + model.indices[i + (reflected ? 2 : 1)],
+            const minY = Math.min(...vertices.map((v) => v.y)),
+              maxY = Math.max(...vertices.map((v) => v.y));
+            const minZ = Math.min(...vertices.map((v) => v.z)),
+              maxZ = Math.max(...vertices.map((v) => v.z));
+            const tileLength = Math.max(0.001, maxY - minY);
+            const batch = batches.get(sweep.model) ?? {
+              positions: [],
+              uvs: [],
+              indices: [],
+            };
+            batches.set(sweep.model, batch);
+            for (const section of sweepSections(sweep, length, tileLength)) {
+              const distance = section.start;
+              const center = path.getPointAt(
+                Math.min(1, (distance + section.length / 2) / length),
               );
+              const span = data.size * data.metersPerPixel;
+              if (
+                !inside(center.x, center.y, [
+                  ...data.originWorld,
+                  data.originWorld[0] + span,
+                  data.originWorld[1] + span,
+                ])
+              )
+                continue;
+              const stackHeight = Math.max(0.1, maxZ - minZ);
+              const copies =
+                sweep.stackToGround && !sweep.relativeToGround
+                  ? Math.min(
+                      100,
+                      Math.max(
+                        1,
+                        Math.ceil(
+                          (center.z +
+                            sweep.offset[2] +
+                            minZ -
+                            height(center.x, center.y)) /
+                            stackHeight,
+                        ),
+                      ),
+                    )
+                  : 1;
+              for (let stack = 0; stack < copies; stack++) {
+                const base = batch.positions.length / 3;
+                for (const [vi, v] of vertices.entries()) {
+                  const rigid = sweep.instance || !sweep.distort;
+                  const along = rigid
+                    ? distance
+                    : distance +
+                      ((v.y - minY + sweep.offset[1]) / tileLength) *
+                        section.length;
+                  const t = Math.max(0, Math.min(1, along / length)),
+                    p = path.getPointAt(t),
+                    tangent = path.getTangentAt(t);
+                  const norm = Math.hypot(tangent.x, tangent.y) || 1,
+                    nx = tangent.y / norm,
+                    ny = -tangent.x / norm;
+                  const x =
+                    p.x +
+                    nx * (v.x + sweep.offset[0]) +
+                    (rigid ? tangent.x * (v.y + sweep.offset[1]) : 0);
+                  const y =
+                    p.y +
+                    ny * (v.x + sweep.offset[0]) +
+                    (rigid ? tangent.y * (v.y + sweep.offset[1]) : 0);
+                  const z =
+                    (sweep.relativeToGround ? height(x, y) : p.z) +
+                    v.z +
+                    sweep.offset[2] -
+                    stack * stackHeight;
+                  batch.positions.push(x, z, y);
+                  batch.uvs.push(
+                    model.uvs[vi * 2],
+                    sweep.repeatUv && !sweep.instance
+                      ? along / tileLength
+                      : model.uvs[vi * 2 + 1],
+                  );
+                }
+                const reflected = sweep.instance
+                  ? sweep.scale[0] < 0
+                  : sweep.scale.reduce((a, b) => a * b, 1) < 0;
+                for (let i = 0; i < model.indices.length; i += 3) {
+                  batch.indices.push(
+                    base + model.indices[i],
+                    base + model.indices[i + (reflected ? 1 : 2)],
+                    base + model.indices[i + (reflected ? 2 : 1)],
+                  );
+                }
+              }
             }
           }
         }

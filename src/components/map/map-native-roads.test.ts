@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Region3DData, RoadSweep } from "@/lib/region-map";
-import { createNativeRoads, createStaticRoads, hasNativeRoadNetwork } from "./map-native-roads";
+import type { Region3DData, RoadSweep, StateSource } from "@/lib/region-map";
+import {
+  createNativeRoads,
+  createStaticRoads,
+  curveChains,
+  hasNativeRoadNetwork,
+  roadUnitTransform,
+} from "./map-native-roads";
 import * as THREE from "three";
 
 const pixel = {
@@ -8,7 +14,7 @@ const pixel = {
   height: 1,
   data: new Uint8ClampedArray([255, 255, 255, 255]),
 } as ImageData;
-const curve = {
+const curve: StateSource["curves"][number] = {
   entryId: 1,
   path: 0,
   controls: [
@@ -86,12 +92,46 @@ const data = {
 } as unknown as Region3DData;
 
 describe("native empty-map geometry", () => {
+  it("maps CapeTrinity unit Y axis into the world road direction", () => {
+    const matrix = roadUnitTransform(
+      [0.006266865, 0.9999804, 0, -0.9999804, 0.006266865, 0, 0, 0, 1],
+      1,
+      [981.13574, 2902.8171, -851.5662],
+    );
+    const endpoint = new THREE.Vector3(0, -100, 1).applyMatrix4(matrix);
+    expect(endpoint.x).toBeCloseTo(1081.13, 1);
+    expect(endpoint.z).toBeCloseTo(2902.19, 1);
+  });
+
+  it("splits disconnected branches while preserving small EGB endpoint error", () => {
+    const records: StateSource["curves"] = [
+      curve,
+      {
+        ...curve,
+        controls: curve.controls.map(
+          (p) => [p[0] + 100, p[1], p[2]] as [number, number, number],
+        ),
+      },
+      {
+        ...curve,
+        controls: curve.controls.map(
+          (p) => [p[0], p[1] + 1000.1, p[2]] as [number, number, number],
+        ),
+      },
+    ];
+    const chains = curveChains(records);
+    expect(chains).toHaveLength(2);
+    expect(chains.map((chain) => chain.length).sort()).toEqual([1, 2]);
+  });
+
   it("prefers region-zero curves over the ED fallback", () => {
     expect(hasNativeRoadNetwork(data)).toBe(true);
     expect(
       hasNativeRoadNetwork({
         saveLayers: {
-          sources: [{ site: "0", origin: [0, 0], bounds: null, maps: [], curves: [] }],
+          sources: [
+            { site: "0", origin: [0, 0], bounds: null, maps: [], curves: [] },
+          ],
         },
       } as unknown as Region3DData),
     ).toBe(false);
@@ -140,6 +180,8 @@ describe("static region road geometry", () => {
       () => 0,
     );
     expect(group.children).toHaveLength(1);
-    expect((group.children[0] as THREE.Mesh).geometry.getAttribute("position").count).toBeGreaterThan(0);
+    expect(
+      (group.children[0] as THREE.Mesh).geometry.getAttribute("position").count,
+    ).toBeGreaterThan(0);
   });
 });
