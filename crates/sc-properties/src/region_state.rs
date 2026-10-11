@@ -98,9 +98,9 @@ pub fn load_save(
     plots: &[crate::region_3d::Region3DPlot],
 ) -> Result<SaveLayers, String> {
     let region = state_file(&directory.join("0"))?.ok_or("save has no region state")?;
-    if region.environment != _group {
+    if region.environment != group {
         return Err(format!(
-            "save region {:08X} does not match {_group:08X}",
+            "save region {:08X} does not match {group:08X}",
             region.environment
         ));
     }
