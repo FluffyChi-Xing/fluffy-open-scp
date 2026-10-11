@@ -28,11 +28,11 @@ const plots = computed(() =>
 <template>
   <figure class="f-chart">
     <figcaption class="legend">
-      <span v-for="(series, index) in plots" :key="series.name"
+      <span v-for="(plot, index) in plots" :key="plot.name"
         ><i
-          :style="{ background: series.color }"
+          :style="{ background: plot.color }"
           :class="{ hollow: index > 0 }"
-        />{{ series.name }}</span
+        />{{ plot.name }}</span
       >
     </figcaption>
     <svg viewBox="0 0 600 290" role="img" :aria-label="label">
@@ -52,17 +52,17 @@ const plots = computed(() =>
         <text :x="x(i)" y="274" text-anchor="middle">{{ day }}</text>
       </g>
       <g
-        v-for="(series, index) in plots"
-        :key="series.name"
-        :style="{ color: series.color }"
+        v-for="(plot, index) in plots"
+        :key="plot.name"
+        :style="{ color: plot.color }"
       >
         <path
-          :d="series.path"
+          :d="plot.path"
           class="hairline"
           :stroke-dasharray="index ? '4 4' : undefined"
         />
         <circle
-          v-for="(value, i) in series.values"
+          v-for="(value, i) in plot.values"
           :key="i"
           :cx="x(i)"
           :cy="y(value)"
@@ -71,15 +71,15 @@ const plots = computed(() =>
           stroke="currentColor"
           tabindex="0"
         >
-          <title>{{ labels[i] }} · {{ series.name }}: {{ value }}</title>
+          <title>{{ labels[i] }} · {{ plot.name }}: {{ value }}</title>
         </circle>
       </g>
     </svg>
     <div class="values">
       <span v-for="(day, i) in labels" :key="i"
         ><strong>{{ day }}</strong
-        ><span v-for="series in plots" :key="series.name"
-          >{{ series.name }} {{ series.values[i] }}</span
+        ><span v-for="plot in plots" :key="plot.name"
+          >{{ plot.name }} {{ plot.values[i] }}</span
         ></span
       >
     </div>

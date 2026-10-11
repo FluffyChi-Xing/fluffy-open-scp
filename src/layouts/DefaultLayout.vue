@@ -235,11 +235,16 @@ watch(
           />
         </div>
         <div class="content-frame">
-          <RouterView v-slot="{ Component }"
-            ><component
-              :is="Component"
-              :key="`${route.fullPath}:${viewRevision}`"
-          /></RouterView>
+          <RouterView v-slot="{ Component }">
+            <Transition name="page" mode="out-in">
+              <div
+                :key="`${route.fullPath}:${viewRevision}`"
+                class="route-page"
+              >
+                <component :is="Component" />
+              </div>
+            </Transition>
+          </RouterView>
         </div>
         <footer class="footer">
           <span>{{ appConfig.name }}</span
@@ -322,6 +327,25 @@ watch(
   padding: 40px clamp(20px, 4vw, 56px) 20px;
   width: 100%;
 }
+.route-page {
+  min-width: 0;
+}
+.page-enter-active {
+  transition:
+    opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+    transform 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.page-leave-active {
+  pointer-events: none;
+  transition: opacity 100ms ease-out;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-leave-to {
+  opacity: 0;
+}
 .drawer-overlay {
   background: oklch(0.1 0.01 260 / 0.45);
   border: 0;
@@ -365,6 +389,13 @@ watch(
 @media (prefers-reduced-motion: reduce) {
   .sidebar {
     transition: none;
+  }
+  .page-enter-active,
+  .page-leave-active {
+    transition: none;
+  }
+  .page-enter-from {
+    transform: none;
   }
 }
 </style>
