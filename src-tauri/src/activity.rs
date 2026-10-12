@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::runtime_observer::ObserverManager;
 
 use sc_store::{ActivityClearResult, Event, Operation, Package, Store, StoreError};
 use serde::Serialize;
@@ -14,6 +15,7 @@ pub struct AppState {
     pub(crate) packages: Arc<PackageManager>,
     pub(crate) workspace: Arc<WorkspaceManager>,
     pub(crate) app: AppHandle,
+    pub(crate) observer: Arc<ObserverManager>,
 }
 
 impl AppState {
@@ -23,6 +25,7 @@ impl AppState {
             packages: Arc::new(PackageManager::new()),
             workspace: Arc::new(WorkspaceManager::new()),
             app,
+            observer: Arc::new(ObserverManager::new()),
         }
     }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onActivated } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
@@ -7,10 +7,16 @@ import { useOpenScpOverview } from "@/composables/useOpenScpOverview";
 import { usePackageStats } from "@/composables/usePackageStats";
 import { useRenderTelemetry } from "@/composables/useRenderTelemetry";
 import ExtensionStatsCards from "./components/ExtensionStatsCards.vue";
+import RuntimeLogsCard from "./components/RuntimeLogsCard.vue";
 import RenderStatsCard from "./components/RenderStatsCard.vue";
 
 const overview = useOpenScpOverview();
 const { snapshot, loading, error, demo } = overview;
+let activatedOnce = false;
+onActivated(() => {
+  if (activatedOnce) void overview.reload();
+  activatedOnce = true;
+});
 const historyPaths = computed(() =>
   Array.from(
     new Set((snapshot.value?.recentPackages ?? []).map((item) => item.path)),
@@ -86,6 +92,7 @@ function age(timestamp: number) {
           ><strong>{{ snapshot.failedOperations }}</strong>
         </article>
       </section>
+      <RuntimeLogsCard :events="snapshot.recentEvents" />
       <ExtensionStatsCards
         :stats="packageStats.stats.value"
         :loading="packageStats.loading.value"

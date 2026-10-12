@@ -80,6 +80,8 @@ BOC 的 Overplop/rollback 设计本身说明：放置成功与模拟状态一致
 
 ### 目标 1 实验包为什么会“仍然显示 3 个城市”
 
+2026-10-12 消费者追踪修正：下文对 Game registry 控制城市列表的表述过强。零售 launcher 的 `ShowTemplateDetails` 明确使用 `template.map.cities.length`，`RemapTemplateToRegion` 要求 boxes 与 cities 数量一致；游戏内 `ReceiveRegionData` 遍历引擎/API 返回的 boxes。registry 提供默认名称、介绍及评分，删除其中一项不会删除模板或运行时槽位。两份 registry 都存在，但不能据此断言覆盖另一份就能解决计数。详细证据见 [实际消费者与 UI 桥](map-consumers-ui-bridge-camera.md)。以下保留实验阶段记录。
+
 这个现象不能再解释为“只改了一个字段所以引擎忽略”。目标 1 的资源闭包有
 两个容易漏掉的层级：
 

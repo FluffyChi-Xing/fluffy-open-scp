@@ -26,6 +26,7 @@ mod package_service;
 mod raster_edit;
 mod raster_catalog;
 mod render_telemetry;
+mod runtime_observer;
 mod settings;
 mod stats;
 mod version_service;
@@ -139,6 +140,11 @@ pub fn run() {
             render_telemetry_record,
             render_telemetry_summary,
             render_telemetry_clear,
+            runtime_observer::observer_list_processes,
+            runtime_observer::observer_start,
+            runtime_observer::observer_stop,
+            runtime_observer::observer_status,
+            runtime_observer::observer_sync,
             version_list_targets,
             version_list_changesets,
             version_changeset_detail,

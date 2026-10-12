@@ -1,5 +1,7 @@
 # tools/dynamic — SimCity (2013) D3D9 动态抓取（Frida）
 
+UI 原生桥研究见 [ui-observer](ui-observer/README.md)：提供只读运行时核对，以及两个固定入口的 Frida 元数据观察器。UI 覆盖脚本因黑屏已停用。新原生观察器不复用 D3D9 钩子或 safe_attach.py 的地址计算；已捕获真实方法调用，参数和事件仍待解码。
+
 背景与结论见 `docs/roadmap/migration.md` §65。目标：从活进程中抓取
 shader 字节码 / 常量 / 状态流，破解 shader-def（静态翻包原理性不可得）。
 

@@ -16,6 +16,10 @@
 | 新区域初始化与 EGB 生命周期 | [map-bootstrap-egb-facts.md](map-bootstrap-egb-facts.md) | 已找到零售静态 bootstrap；独立生成可被游戏接受的新 EGB 仍未完成 |
 | 坐标、UnitTransform 与渲染故障 | [map-coordinate-rendering-facts.md](map-coordinate-rendering-facts.md) | 坐标边界已统一；交叉口和 sweep 模型仍需实机对拍 |
 | 编辑器目标与 package 产物 | [map-editor-flow-requirements.md](map-editor-flow-requirements.md) | 需求账本；不是已实现功能清单 |
+| 地图实际消费者、UI 通信与相机边界 | [map-consumers-ui-bridge-camera.md](map-consumers-ui-bridge-camera.md) | 区分模板计数/运行时 boxes/registry 文案；定位原生回调和开发版多层相机限制，零售动态验证待完成 |
+| 当前离线发售版命令/事件协议 | [retail-ui-command-event-protocol.md](retail-ui-command-event-protocol.md) | 核对实际 EXE 与安装包 JS；默认原生回调和直接事件推送；隔离合约测试通过，尚无实机抓流 |
+
+| 零售 EAWebKit 运行时 | [retail-eawebkit-runtime.md](retail-eawebkit-runtime.md) | 确认 JSC；实机读出两个页面及 Client 注册表；DebugLog 空处理、Inspector 工厂返回空；已捕获原生调用元数据；参数与事件待解码 |
 
 ## 证据等级与文件约定
 
