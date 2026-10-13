@@ -31,4 +31,13 @@ describe("ParticleSolver", () => {
     expect(sampleScalar([1, 3, 5], 0.25)).toBe(2);
     expect(sampleScalar([], 0.5, 0)).toBe(0);
   });
+
+  it("applies the decoded wind scalar as deterministic lateral motion", () => {
+    const calm = new ParticleSolver({ ...particle, windStrength: 0 }, particle, 7, 8);
+    const windy = new ParticleSolver({ ...particle, windStrength: 2 }, { ...particle, windStrength: 2 }, 7, 8);
+    calm.advance(0.5);
+    windy.advance(0.5);
+    expect(windy.particles).toHaveLength(calm.particles.length);
+    expect(windy.particles.some((item, index) => item.position[0] !== calm.particles[index].position[0])).toBe(true);
+  });
 });

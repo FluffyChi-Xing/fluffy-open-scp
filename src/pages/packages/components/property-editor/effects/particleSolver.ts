@@ -99,8 +99,14 @@ export class ParticleSolver {
         continue;
       }
       const damping = Math.exp(-Math.max(0, source.drag) * dt);
+      // Swarm exposes wind as a scalar rather than a vector. A stable, slow
+      // lateral field gives material and smoke particles visible motion while
+      // keeping previews deterministic across renders.
+      const wind = source.windStrength * Math.sin(this.elapsed * 0.7 + i * 0.31);
       for (let axis = 0; axis < 3; axis++) {
-        const force = source.directionForce[axis] + (axis === 2 ? -source.gravityStrength : 0);
+        const force = source.directionForce[axis]
+          + (axis === 0 ? wind : 0)
+          + (axis === 2 ? -source.gravityStrength : 0);
         particle.velocity[axis] = (particle.velocity[axis] + force * dt) * damping;
         particle.position[axis] += particle.velocity[axis] * dt;
       }

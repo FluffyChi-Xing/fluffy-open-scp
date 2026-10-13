@@ -150,10 +150,6 @@ pub async fn read_effect_preview(
                             unsupported_blocks += 1;
                             continue;
                         };
-                        if particle.texture.draw_mode == 15 {
-                            unsupported_blocks += 1;
-                            continue;
-                        }
                         let texture_png_base64 = if particle.texture.instance == u32::MAX {
                             None
                         } else {
