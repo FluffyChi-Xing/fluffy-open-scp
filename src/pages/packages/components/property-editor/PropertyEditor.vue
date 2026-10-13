@@ -594,8 +594,9 @@ const effectiveRenderMode = computed(() => editEnabled.value ? "refined" : rende
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
 const neonAnim = ref(false);
 const effectRendering = ref(false);
+const effectsActive = computed(() => effectRendering.value && effectiveRenderMode.value === "refined" && open.value);
 const effectUnits = computed(() => renderGrouping.value.effects);
-const effectPreview = useEffectPreview(() => props.packageId, effectRendering, effectUnits);
+const effectPreview = useEffectPreview(() => props.packageId, effectsActive, effectUnits);
 const effectRenderTitle = computed(() => t(
   effectPreview.failed.value ? "package.effectRenderingError"
     : effectPreview.loading.value ? "package.effectRenderingLoading"
@@ -1136,7 +1137,7 @@ const treeSheetPinned = ref(true);
           :powered="powered"
           :relief-enabled="reliefEnabled"
           :neon-anim="neonAnim"
-          :render-effects="effectRendering"
+          :render-effects="effectsActive"
           :effect-definitions="effectPreview.definitions.value"
           :decal-light="decalLight"
           :tool="tool"

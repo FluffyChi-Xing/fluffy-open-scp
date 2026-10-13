@@ -1,4 +1,4 @@
-import { shallowRef, watch, type Ref } from "vue";
+import { onScopeDispose, shallowRef, watch, type Ref } from "vue";
 import { createDataSource } from "@/api/data-source";
 import type { EffectDefinitionData, EffectUnit } from "@/api/tauri";
 
@@ -29,6 +29,8 @@ export function useEffectPreview(
       .filter((id): id is number => id != null))];
     if (!ids.length) {
       definitions.value = new Map();
+      loading.value = false;
+      failed.value = false;
       limited.value = false;
       return;
     }
@@ -57,6 +59,8 @@ export function useEffectPreview(
       if (generation === request) loading.value = false;
     }
   }, { immediate: true });
+
+  onScopeDispose(() => { generation += 1; });
 
   return { definitions, loading, failed, limited };
 }
