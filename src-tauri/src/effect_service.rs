@@ -158,7 +158,7 @@ pub async fn read_effect_preview(
                             unsupported_blocks += 1;
                             continue;
                         }
-                        let (particle, emission) = if block.type_code == 2 {
+                        let (particle, emission, fast_reference) = if block.type_code == 2 {
                             let meta = metas
                                 .iter()
                                 .find(|m| m.index == block.component_index as usize);
@@ -168,7 +168,11 @@ pub async fn read_effect_preview(
                                     .iter()
                                     .find(|p| p.type_code == c.type_code && p.index == c.index)
                             });
-                            (particle, meta.map(|m| &m.emitter))
+                            (
+                                particle,
+                                meta.map(|m| &m.emitter),
+                                child.is_some_and(|child| child.type_code == 12),
+                            )
                         } else {
                             (
                                 particles.iter().find(|p| {
@@ -176,9 +180,10 @@ pub async fn read_effect_preview(
                                         && p.index == block.component_index as usize
                                 }),
                                 None,
+                                block.type_code == 12,
                             )
                         };
-                        let fallback = particle.is_none() && block.type_code == 12;
+                        let fallback = particle.is_none() && fast_reference;
                         let particle = match particle {
                             Some(particle) => particle.clone(),
                             None if fallback => {
