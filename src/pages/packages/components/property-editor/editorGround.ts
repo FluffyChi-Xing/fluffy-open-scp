@@ -252,7 +252,7 @@ function groundComposeKey(options: {
 
 /**
  * LotMask 贴图：加载后按渲染模式应用到地面 fill——默认模式贴服务端合成的
- * 反照率图（引擎口径平色+底图格，缺失时回退量化图），精细模式走引擎语义
+ * 纯色分区图（缺失时回退量化图），精细模式走引擎语义
  * 合成（composeRefinedGround，Worker 化 + 缓存）。异步完成按 isStale 守卫
  * 丢弃过期代；返回 Promise 供装配层 await（合成成本纳入 scene_rebuild 遥测）。
  */
@@ -310,7 +310,6 @@ export async function applyGroundMask(options: {
     lotBorderWidths,
     isStale,
   } = options;
-  // 默认模式优先用反照率图；精细模式的合成输入仍是量化 mask。
   const flatPng = refined ? maskPng : (albedoPng ?? maskPng);
   if (!flatPng) return;
   const texture = await loadGroundTexture(THREE, flatPng);
@@ -321,6 +320,18 @@ export async function applyGroundMask(options: {
   texture.flipY = false;
   const fill = groundFillMesh(ground);
   if (!fill) return;
+  const applyFlat = async () => {
+    const fallback = refined && albedoPng ? await loadGroundTexture(THREE, albedoPng) : texture;
+    if (isStale()) return;
+    fallback.colorSpace = THREE.SRGBColorSpace;
+    fallback.flipY = false;
+    const material = fill.material as ThreeNamespace.MeshBasicMaterial;
+    material.map = fallback;
+    material.transparent = false;
+    material.opacity = 1;
+    material.color.set(0xffffff);
+    material.needsUpdate = true;
+  };
   if (refined && maskPng) {
     // Albedo and normal are composed separately; the current sun lights both.
     const span = renderTelemetry.begin("texture_compose", {
@@ -366,12 +377,16 @@ export async function applyGroundMask(options: {
           result = composed;
         }
       }
-      if (isStale() || !result) return;
+      if (isStale()) return;
+      if (!result) {
+        await applyFlat();
+        span.end({ failed: true });
+        return;
+      }
       const fillMaterial = fill.material as ThreeNamespace.MeshBasicMaterial;
       // 地面法线随共享 env 太阳方向/颜色受光，并接收建筑投影。
       const lit = new THREE.MeshPhongMaterial({
         map: result.albedo, normalMap: result.normal,
-        // Detail enhancement for the editor's broad daylight rig; keep relief dynamic.
         normalScale: new THREE.Vector2(1.8, 1.8), shininess: 8, specular: 0x111111,
       });
       fill.receiveShadow = true;
@@ -379,15 +394,11 @@ export async function applyGroundMask(options: {
       fill.material = lit;
       span.end({ cacheHit });
     } catch {
+      await applyFlat();
       span.end({ failed: true });
     }
   } else {
-    const material = fill.material as ThreeNamespace.MeshBasicMaterial;
-    material.map = texture;
-    material.transparent = false;
-    material.opacity = 1;
-    material.color.set(0xffffff);
-    material.needsUpdate = true;
+    await applyFlat();
   }
 }
 

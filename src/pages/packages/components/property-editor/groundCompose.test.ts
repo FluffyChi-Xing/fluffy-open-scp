@@ -5,6 +5,7 @@ import {
   type GroundComposeInput,
   type Pixels,
 } from "./groundCompose";
+import { enhanceTintDetail } from "./refinedGround";
 
 /** 构造纯色/函数填充的 RGBA Pixels。 */
 function pixels(
@@ -58,6 +59,14 @@ function input(overrides: Partial<GroundComposeInput>): GroundComposeInput {
 }
 
 describe("groundCompose 引擎语义（generic_lot 直译）", () => {
+  it("keeps the untinted base tile intact while sharpening colored paving", () => {
+    const albedo = new Uint8ClampedArray([120, 120, 120, 255, 120, 120, 120, 255]);
+    const normals = new Uint8ClampedArray([60, 60, 255, 255, 60, 60, 255, 255]);
+    const mask = { data: new Uint8ClampedArray([255, 0, 0, 0, 0, 0, 0, 0]), width: 2, height: 1 } as ImageData;
+    enhanceTintDetail(albedo, normals, 2, 1, mask);
+    expect(albedo[0]).toBeGreaterThan(120);
+    expect([...albedo.slice(4, 8)]).toEqual([120, 120, 120, 255]);
+  });
   it("samples the original atlas V axis along negative world Y", () => {
     const out = composeGroundPixels(input({
       baseTile: pixels(1, 4, (_, y) => [40 * (y + 1), 0, 0, 255]),

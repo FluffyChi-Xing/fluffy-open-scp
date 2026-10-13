@@ -34,6 +34,7 @@ vi.mock("@/stores/gamePackages", () => ({
 }));
 const global = { plugins: [i18n] };
 afterEach(() => {
+  vi.unstubAllGlobals();
   i18n.global.locale.value = "zh-CN";
   api.native = true;
   vi.clearAllMocks();
@@ -209,6 +210,23 @@ describe("Raster editor regressions", () => {
     picker.unmount();
     toolbar.unmount();
   });
+  it("translates the lot drawing and layer selection controls live", async () => {
+    const toolbar = shallowMount(RasterToolbar, {
+      props: {
+        tool: "brush", size: 4, color: "#ffffff", alpha: 255,
+        channel: "rgba", quantized: true, layer: 0, tolerance: 0,
+        parkingLength: 13, parkingSpacing: 6, mask: true,
+        canUndo: false, canRedo: false, lot: true, profile: "lot-mask",
+      },
+      global,
+    });
+    expect(toolbar.text()).toContain("点选图层");
+    i18n.global.locale.value = "en-US";
+    await nextTick();
+    expect(toolbar.text()).toContain("Select layer");
+    expect(toolbar.text()).toContain("Filled polygon");
+    toolbar.unmount();
+  });
   it("opens a fullscreen sheet and restores the trigger focus on close", async () => {
     const wrapper = mount(RasterPreviewCard, {
       props: { title: "Raw RGBA" },
@@ -229,6 +247,13 @@ describe("Raster editor regressions", () => {
     wrapper.unmount();
   });
   it("passes live raw mask data and game atlases into the Property Editor renderer", async () => {
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(private callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+      disconnect() {}
+    });
     api.readLotEditorSession.mockResolvedValue({
       lotSurfacePng: "surface",
       lotNormalAtlasPng: "normal",

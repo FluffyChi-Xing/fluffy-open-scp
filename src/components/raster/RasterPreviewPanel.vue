@@ -4,7 +4,7 @@ import RasterPreviewCard from "./RasterPreviewCard.vue";
 import RasterLotPreview from "./RasterLotPreview.vue";
 import RasterDecalPreview from "./RasterDecalPreview.vue";
 import type { RasterSource } from "@/lib/raster-editor/schema";
-import { computed } from "vue";
+import { computed, onBeforeUnmount, shallowRef, watch } from "vue";
 import {
   PROFILE_BEHAVIOR,
   dataChannelPixels,
@@ -32,15 +32,45 @@ const props = defineProps<{
   decalAspectRatio: number;
 }>();
 const { t } = useI18n();
-const raw = computed(() => {
-  void props.version;
-  return rgbaToBase64(props.doc.pixels);
+const previewVersion = shallowRef(props.version);
+let previewTimer: ReturnType<typeof setTimeout> | null = null;
+watch(() => props.version, (value) => {
+  if (previewTimer) clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    previewVersion.value = value;
+    previewTimer = null;
+  }, 180);
 });
-const rawPng = computed(() =>
-  rgbaBase64ToPngDataUrl(raw.value, props.doc.width, props.doc.height),
-);
+onBeforeUnmount(() => {
+  if (previewTimer) clearTimeout(previewTimer);
+});
+type LotSnapshot = {
+  raw: string;
+  png: string;
+  width: number;
+  height: number;
+  metersPerPixel: number;
+  colors: [number, number, number, number][];
+  target: RasterSource | null;
+  texture: boolean;
+};
+const lotSnapshot = shallowRef<LotSnapshot | null>(null);
+function refreshLotPreview() {
+  const raw = rgbaToBase64(props.doc.pixels);
+  lotSnapshot.value = {
+    raw,
+    png: rgbaBase64ToPngDataUrl(raw, props.doc.width, props.doc.height),
+    width: props.doc.width,
+    height: props.doc.height,
+    metersPerPixel: props.metersPerPixel,
+    colors: props.colors.map((color) => [...color] as [number, number, number, number]),
+    target: props.target ? { ...props.target, tgi: props.target.tgi ? { ...props.target.tgi } : undefined } : null,
+    texture: props.profile === "lot-texture",
+  };
+}
+watch(() => [props.doc, props.profile, props.target], () => { lotSnapshot.value = null; });
 const preview = computed(() => {
-  void props.version;
+  void previewVersion.value;
   return rgbaBase64ToPngDataUrl(
     rgbaToBase64(
       props.channel === "rgba" && PROFILE_BEHAVIOR[props.profile].dataChannels
@@ -52,7 +82,7 @@ const preview = computed(() => {
   );
 });
 const alphaPreview = computed(() => {
-  void props.version;
+  void previewVersion.value;
   return rgbaBase64ToPngDataUrl(
     rgbaToBase64(channelPixels(props.doc.pixels, "a")),
     props.doc.width,
@@ -60,7 +90,7 @@ const alphaPreview = computed(() => {
   );
 });
 const materialPreview = computed(() => {
-  void props.version;
+  void previewVersion.value;
   return props.profile === "lot-mask"
     ? simulateLotDataUrl(
         props.doc,
@@ -109,17 +139,21 @@ const materialPreview = computed(() => {
     <RasterPreviewCard
       v-if="profile.startsWith('lot-')"
       :title="t('rasterEditor.lot3d')"
+      refreshable
+      @refresh="refreshLotPreview"
     >
       <RasterLotPreview
-        :raw="raw"
-        :png="rawPng"
-        :width="doc.width"
-        :height="doc.height"
-        :meters-per-pixel="metersPerPixel"
-        :colors="colors"
-        :target="target"
-        :texture="profile === 'lot-texture'"
+        v-if="lotSnapshot"
+        :raw="lotSnapshot.raw"
+        :png="lotSnapshot.png"
+        :width="lotSnapshot.width"
+        :height="lotSnapshot.height"
+        :meters-per-pixel="lotSnapshot.metersPerPixel"
+        :colors="lotSnapshot.colors"
+        :target="lotSnapshot.target"
+        :texture="lotSnapshot.texture"
       />
+      <p v-else class="refresh-hint" role="status">{{ t('rasterEditor.refreshPreviewHint') }}</p>
     </RasterPreviewCard>
   </section>
 </template>
@@ -135,5 +169,15 @@ img {
   image-rendering: pixelated;
   background: repeating-conic-gradient(#80808030 0% 25%, transparent 0% 50%)
     0/16px 16px;
+}
+.refresh-hint {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 16px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-align: center;
 }
 </style>

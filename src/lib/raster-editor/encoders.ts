@@ -193,12 +193,33 @@ export const FALLBACK_LOT_DYES: readonly (readonly [number, number, number])[] =
   [0, 0, 255],
 ];
 
+/** Diagnostic layer image: preserve weak weights and overlapping layers. */
+export function lotLayerPreviewPixels(
+  doc: RasterDocument,
+  dyeColors: readonly (readonly [number, number, number])[] = FALLBACK_LOT_DYES,
+): Uint8ClampedArray {
+  const output = new Uint8ClampedArray(doc.width * doc.height * 4);
+  for (let index = 0; index < doc.width * doc.height; index += 1) {
+    const at = index * 4;
+    const weights = [doc.pixels[at], doc.pixels[at + 1], doc.pixels[at + 2], doc.pixels[at + 3]];
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    if (!total) continue;
+    const strength = Math.max(...weights) / 255;
+    for (let channel = 0; channel < 3; channel += 1) {
+      const mixed = weights.reduce((sum, weight, layer) =>
+        sum + weight * (dyeColors[layer]?.[channel] ?? FALLBACK_LOT_DYES[layer][channel]), 0) / total;
+      // Raise low-weight details against dark material colors without changing the source.
+      output[at + channel] = Math.round(mixed * strength + 52 * (1 - strength));
+    }
+    output[at + 3] = Math.min(255, total);
+  }
+  return output;
+}
+
 /**
- * Lot 地表渲染模拟（引擎口径）：四通道按游戏映射染色——R→LotColor1、
- * G→LotColor2、B→LotColor3、A→LotColor4（优先级 A > R > G > B，阈值 128，
- * 与 rw4 decode_lot_mask_rgba 同口径），未覆盖区铺草地格。染料色 = 覆盖
- * 目标 lot 的 LotColor1-4 授权（sRGB 字节），未载入目标时用 SCP 缺省色。
- * 不含 Lot Textures 图集材质与平铺周期——以属性授权为准。
+ * Lot layer diagnostic: blend all four stored weights with the authored LotColor
+ * values. This preserves overlapping and sub-threshold marks for editing; the
+ * actual game material is rendered separately with the surface atlas.
  */
 export function simulateLotDataUrl(
   doc: RasterDocument,
@@ -211,28 +232,8 @@ export function simulateLotDataUrl(
   canvas.height = doc.height;
   const context = canvas.getContext("2d");
   if (!context) return "";
-  // 通道序 [A,R,G,B] → LotColor 下标 [3,0,1,2]。
-  const channelToDye = [3, 0, 1, 2];
   const image = context.createImageData(doc.width, doc.height);
-  for (let index = 0; index < doc.width * doc.height; index += 1) {
-    const base = index * 4;
-    const channels = [
-      doc.pixels[base + 3],
-      doc.pixels[base],
-      doc.pixels[base + 1],
-      doc.pixels[base + 2],
-    ];
-    for (let layer = 0; layer < 4; layer += 1) {
-      if (channels[layer] >= 128) {
-        const [r, g, b] = dyeColors[channelToDye[layer]] ?? FALLBACK_LOT_DYES[channelToDye[layer]];
-        image.data[base] = r;
-        image.data[base + 1] = g;
-        image.data[base + 2] = b;
-        image.data[base + 3] = 255;
-        break;
-      }
-    }
-  }
+  image.data.set(lotLayerPreviewPixels(doc, dyeColors));
   const temp = document.createElement("canvas");
   temp.width = doc.width;
   temp.height = doc.height;

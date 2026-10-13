@@ -2467,14 +2467,9 @@ let lot_mask_images = document.lot_mask.and_then(|key| {
 let lot_mask_png = lot_mask_images.as_ref().map(|(png, _, _)| png.clone());
 let lot_mask_raw_rgba =
     lot_mask_images.as_ref().map(|(_, raw, _)| raw.clone());
-// 默认模式反照率：引擎口径（阈值瀑布 → 通道平色/边框带平色，
-// 未覆盖区铺底图格整格拉伸、U 轴镜像）。
+// 默认模式只显示 LotColor/边框纯色分区；图集纹理仅供精细模式使用。
 let lot_albedo_png = lot_mask_images.as_ref().and_then(|(_, _, raw_rgba)| {
     let (w, h) = mask_dims.expect("mask dims set when mask decoded");
-    let surface = lot_surface
-        .as_ref()
-        .and_then(Option::as_ref)
-        .map(|(_, pixels)| pixels);
     match compose_lot_albedo_rgba(
         raw_rgba,
         w as usize,
@@ -2482,7 +2477,7 @@ let lot_albedo_png = lot_mask_images.as_ref().and_then(|(_, _, raw_rgba)| {
         colors,
         lot_border_colors,
         lot_border_widths,
-        surface,
+        None,
         lot_base_tile,
     ) {
         Ok(rgba) => match encode_rgba_png(w, h, rgba) {
@@ -2640,9 +2635,8 @@ fn extract_atlas_cell(
 /// 胜者输出**平色**（边框带 (0.5−bw, 0.5+bw] → LotBorderColor，主区 →
 /// LotColor；后端已 linear→sRGB），引擎覆盖区**不采样漫反射**——
 /// "tile×tint 双重变暗"旧语义已证伪（博客 §7.3），质感由法线图案光照
-/// 承担（精细模式）。无胜者铺底图格：Lot Textures 图集第 `base_tile` 格
-/// **整格拉伸**铺满地块（shader `lerp(lotBaseUVMin, +.25, uv0)`，无平铺），
-/// 图集 U 轴与 mask 列序相反（§5b 朝向，采样 u = 1−u）。
+/// 承担（精细模式）。默认模式未覆盖区使用中性纯色；传入图集时可按
+/// 游戏 UV 铺底图格，图集 U 轴与 mask 列序相反（§5b 朝向）。
 #[allow(clippy::too_many_arguments)]
 fn compose_lot_albedo_rgba(
     raw: &[u8],
@@ -2711,9 +2705,7 @@ fn compose_lot_albedo_rgba(
                         let src = (sy * *cw + sx) * 4;
                         out[offset..offset + 3].copy_from_slice(&pixels[src..src + 3]);
                     }
-                    None => {
-                        out[offset..offset + 3].copy_from_slice(&[255, 255, 255]);
-                    }
+                    None => out[offset..offset + 3].copy_from_slice(&[92, 113, 100]),
                 },
             }
             out[offset + 3] = 255;
@@ -6691,12 +6683,12 @@ mod tests {
         assert_eq!(&out[0..3], &[10, 20, 30], "G 胜出 → LotColor 平色直出");
         // 像素 1 中心 u=0.75 → 镜像 0.25 → cell sx=0；v=0.5 → sy=1 → 色 10*0+1。
         assert_eq!(&out[4..8], &[1, 1, 1, 255], "未覆盖区铺底图格（U 镜像）");
-        // 图集缺失 → 白色底图兜底（lot_composite unwrap_or(255) 同款）。
+        // 默认模式不采样图集，未覆盖区使用中性纯色。
         let out = compose_lot_albedo_rgba(
             &raw, 2, 1, colors, borders, [0.0; 4], None, 8,
         )
         .expect("compose albedo");
-        assert_eq!(&out[4..8], &[255, 255, 255, 255]);
+        assert_eq!(&out[4..8], &[92, 113, 100, 255]);
     }
 
     #[test]

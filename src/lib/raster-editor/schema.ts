@@ -170,7 +170,11 @@ export type RasterTool =
   | "fill"
   | "picker"
   | "parking"
-  | "curve";
+  | "curve"
+  | "rect-fill"
+  | "polyline"
+  | "polygon"
+  | "layer-picker";
 export type Channel = "rgba" | "r" | "g" | "b" | "a";
 export interface ParameterTable {
   cols: number;

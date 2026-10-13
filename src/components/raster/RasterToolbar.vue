@@ -50,6 +50,9 @@ const tools = computed<{ id: RasterTool; label: string }[]>(() => [
   { id: "line", label: t("rasterEditor.text104") },
   { id: "curve", label: t("rasterEditor.text105") },
   { id: "rect", label: t("rasterEditor.text106") },
+  { id: "rect-fill", label: t("rasterEditor.filledRectangle") },
+  { id: "polyline", label: t("rasterEditor.polyline") },
+  { id: "polygon", label: t("rasterEditor.polygon") },
   { id: "fill", label: t("rasterEditor.text107") },
   { id: "picker", label: t("rasterEditor.text108") },
 ]);
@@ -61,6 +64,7 @@ const tools = computed<{ id: RasterTool; label: string }[]>(() => [
         v-for="entry in tools"
         :key="entry.id"
         :aria-pressed="tool === entry.id"
+        :title="entry.id === 'curve' ? t('rasterEditor.curveHint') : ['polyline', 'polygon'].includes(entry.id) ? t('rasterEditor.multiPointHint') : entry.label"
         @click="tool = entry.id"
       >
         {{ entry.label }}
@@ -71,6 +75,9 @@ const tools = computed<{ id: RasterTool; label: string }[]>(() => [
         @click="tool = 'parking'"
       >
         {{ t("rasterEditor.text110") }}
+      </button>
+      <button v-if="lot && quantized" :aria-pressed="tool === 'layer-picker'" @click="tool = 'layer-picker'">
+        {{ t("rasterEditor.selectLayer") }}
       </button>
       <button :disabled="!canUndo" @click="emit('undo')">
         {{ t("rasterEditor.text111") }}</button

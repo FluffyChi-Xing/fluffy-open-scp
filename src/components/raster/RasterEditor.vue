@@ -410,12 +410,14 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               profile === 'lot-mask' && quantized && channel === 'rgba'
             "
             :channel="channel"
+            :lot-layer="profile === 'lot-mask' ? layer : null"
             :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
             :meters-per-pixel="
               profile === 'lot-mask' ? sampling.metersPerPixel : null
             "
             @change="changed"
             @pick-color="pick"
+            @pick-layer="layer = $event; tool = 'brush'"
           />
           <footer class="document-footer">
             <code>{{ doc.width }} × {{ doc.height }} · RGBA8</code

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, shallowRef, watch } from "vue";
+import { onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { isTauri } from "@/api";
 import { loadLotPreviewSession } from "./lotPreviewSession";
@@ -23,13 +23,33 @@ const session = shallowRef<Partial<LotEditorSession> | null>(null);
 const bound = shallowRef<LotEditorSession | null>(null);
 const error = shallowRef("");
 const loading = shallowRef(false);
+const root = shallowRef<HTMLElement | null>(null);
+const visible = shallowRef(typeof IntersectionObserver === "undefined");
+let visibilityObserver: IntersectionObserver | null = null;
+onMounted(() => {
+  if (!root.value || typeof IntersectionObserver === "undefined") return;
+  visibilityObserver = new IntersectionObserver(([entry]) => {
+    visible.value = entry.isIntersecting;
+  }, { root: root.value.closest(".inspector"), threshold: 0.01 });
+  visibilityObserver.observe(root.value);
+});
 let generation = 0;
-onBeforeUnmount(() => generation++);
+let loadedKey = "";
+onBeforeUnmount(() => {
+  generation++;
+  visibilityObserver?.disconnect();
+});
 watch(
   () =>
-    [props.target, packages.opened.map((p) => p.package.packageId)] as const,
+    [visible.value, props.target, packages.opened.map((p) => p.package.packageId)] as const,
   async () => {
     const epoch = ++generation;
+    if (!visible.value) {
+      loading.value = false;
+      return;
+    }
+    const key = JSON.stringify([props.target, packages.opened.map((p) => p.package.packageId)]);
+    if (key === loadedKey && session.value) return;
     session.value = null;
     bound.value = null;
     error.value = "";
@@ -45,6 +65,7 @@ watch(
       if (epoch === generation) {
         session.value = value.atlas;
         bound.value = value.bound;
+        loadedKey = key;
       }
     } catch (e) {
       if (epoch === generation) error.value = String(e);
@@ -69,7 +90,7 @@ const emptySet = new Set<string>();
 const treeIds = new Set<number>();
 </script>
 <template>
-  <div class="lot-preview">
+  <div ref="root" class="lot-preview">
     <p v-if="loading" role="status">{{ t("rasterEditor.loadingPreview") }}</p>
     <p v-else-if="error" role="alert">
       {{ t("rasterEditor.previewError") }} {{ error }}
@@ -78,7 +99,7 @@ const treeIds = new Set<number>();
       {{ t("rasterEditor.missingAtlas") }}
     </p>
     <PropertyEditorViewport
-      v-if="session?.lotSurfacePng"
+      v-if="visible && session?.lotSurfacePng"
       ground-only
       :model-payload="null"
       :model-lods="[]"

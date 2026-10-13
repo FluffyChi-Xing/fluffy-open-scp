@@ -3,6 +3,7 @@ import { RasterDocument, clampRect, unionRect } from "./document";
 import { RasterHistory } from "./history";
 import {
   drawRect,
+  fillPolygon,
   floodFill,
   stampBrush,
   strokeParkingRow,
@@ -14,9 +15,19 @@ import {
   base64ToRgba,
   rgbaToBase64,
   layerOfPixel,
+  lotLayerPreviewPixels,
 } from "./encoders";
 
 const RED: Rgba = [255, 0, 0, 255];
+
+it("keeps partial Lot weights visible in the layer illustration", () => {
+  const doc = new RasterDocument(2, 1);
+  doc.pixels.set([255, 0, 0, 0, 64, 0, 0, 0]);
+  const pixels = lotLayerPreviewPixels(doc, [[100, 40, 20]]);
+  expect([...pixels.slice(0, 4)]).toEqual([100, 40, 20, 255]);
+  expect(pixels[7]).toBe(64);
+  expect(pixels[4]).not.toBe(pixels[0]);
+});
 
 describe("RasterDocument", () => {
   it("rejects non-positive dimensions and short buffers", () => {
@@ -89,6 +100,13 @@ describe("RasterHistory", () => {
 });
 
 describe("tools", () => {
+  it("fills a clipped lot polygon while leaving exterior pixels untouched", () => {
+    const doc = new RasterDocument(6, 6);
+    fillPolygon(doc, [{ x: -1, y: 1 }, { x: 5, y: 1 }, { x: 5, y: 5 }, { x: -1, y: 5 }], RED, () => {});
+    expect(doc.getPixel(2, 2)).toEqual(RED);
+    expect(doc.getPixel(2, 0)).toEqual([0, 0, 0, 0]);
+    expect(doc.getPixel(5, 5)).toEqual([0, 0, 0, 0]);
+  });
   it("stamps a brush inside bounds and reports dirty rect", () => {
     const doc = new RasterDocument(4, 4);
     const touched: { x: number; y: number }[] = [];

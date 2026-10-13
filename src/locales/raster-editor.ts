@@ -1,4 +1,10 @@
 export const rasterZh = {
+  filledRectangle: "实心矩形",
+  polyline: "多段线",
+  polygon: "多边形填充",
+  selectLayer: "点选图层",
+  multiPointHint: "单击添加点，双击或 Enter 完成，Esc 取消",
+  curveHint: "拖出起止点，移动鼠标调整弧度，单击完成",
   dataRgb: "RGB 数据（不透明显示）",
   dataAlpha: "A 通道数据（灰度）",
   channelStrength: "A / 覆盖强度",
@@ -244,6 +250,8 @@ export const rasterZh = {
   channel: "{channel} 通道灰度",
   layers: "Lot 分层示意",
   lot3d: "Lot 游戏材质预览",
+  refreshPreview: "刷新游戏材质预览",
+  refreshPreviewHint: "点击右上角刷新按钮生成游戏材质预览。绘制后的变化也需要手动刷新。",
   loadingPreview: "正在载入游戏地面材质…",
   previewError: "地面材质载入失败：",
   missingAtlas:
@@ -253,6 +261,12 @@ export const rasterZh = {
   noPackages: "尚未打开 Package。请先在源文件解析中载入资源包。",
 };
 export const rasterEn = {
+  filledRectangle: "Filled rectangle",
+  polyline: "Polyline",
+  polygon: "Filled polygon",
+  selectLayer: "Select layer",
+  multiPointHint: "Click to add points; double-click or Enter to finish; Esc to cancel",
+  curveHint: "Drag between endpoints, move to bend, then click to finish",
   dataRgb: "RGB data (opaque display)",
   dataAlpha: "A channel data (grayscale)",
   channelStrength: "A / coverage strength",
@@ -519,6 +533,8 @@ export const rasterEn = {
   channel: "{channel} channel grayscale",
   layers: "Lot layer illustration",
   lot3d: "Lot game material preview",
+  refreshPreview: "Refresh game material preview",
+  refreshPreviewHint: "Use Refresh above to generate the game material preview. Refresh again after editing to see changes.",
   loadingPreview: "Loading game ground materials…",
   previewError: "Unable to load ground materials:",
   missingAtlas:
