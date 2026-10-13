@@ -516,6 +516,7 @@ export interface EffectEmitterData {
   particle: SwarmParticle;
   emission: SwarmParticle | null;
   texturePngBase64: string | null;
+  fallback: boolean;
 }
 export interface EffectDefinitionData {
   effectId: number;

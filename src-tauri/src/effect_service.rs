@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use sc_properties::swarm::{BlockTransform, EFFECT_COLLECTION_TYPE, SwarmCollection};
 use sc_properties::swarm_particle::{
-    ParticleComponent, decode_meta_particle_components, decode_particle_components_prefix,
+    ParticleComponent, TextureRef, decode_meta_particle_components,
+    decode_particle_components_prefix,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -31,6 +32,9 @@ pub struct EffectEmitter {
     pub particle: ParticleComponent,
     pub emission: Option<ParticleComponent>,
     pub texture_png_base64: Option<String>,
+    /// Fast-particle payloads are not decoded yet; this keeps the limitation
+    /// visible while still giving the editor an animated preview.
+    pub fallback: bool,
 }
 
 #[derive(Serialize)]
@@ -46,6 +50,34 @@ pub struct EffectDefinition {
 pub struct EffectPreviewResponse {
     pub effects: Vec<EffectDefinition>,
     pub diagnostics: Vec<String>,
+}
+
+fn fast_particle_fallback() -> ParticleComponent {
+    ParticleComponent {
+        type_code: 12,
+        index: 0,
+        flags: 0,
+        life: [1.6, 2.8],
+        emit_direction_min: [-0.2, 0.35, -0.2],
+        emit_direction_max: [0.2, 1.0, 0.2],
+        emit_speed: [0.25, 0.9],
+        emit_volume_min: [-0.12, 0.0, -0.12],
+        emit_volume_max: [0.12, 0.18, 0.12],
+        rate: vec![18.0],
+        rate_loop: 0.0,
+        size: vec![0.18, 0.55, 0.9],
+        alpha: vec![0.0, 0.62, 0.0],
+        color: vec![[0.72, 0.76, 0.8]],
+        texture: TextureRef {
+            group: u32::MAX,
+            instance: u32::MAX,
+            draw_mode: 0,
+        },
+        direction_force: [0.0, 0.12, 0.0],
+        wind_strength: 0.18,
+        gravity_strength: 0.0,
+        drag: 0.7,
+    }
 }
 
 #[tauri::command]
@@ -146,9 +178,17 @@ pub async fn read_effect_preview(
                                 None,
                             )
                         };
-                        let Some(particle) = particle else {
-                            unsupported_blocks += 1;
-                            continue;
+                        let fallback = particle.is_none() && block.type_code == 12;
+                        let particle = match particle {
+                            Some(particle) => particle.clone(),
+                            None if fallback => {
+                                unsupported_blocks += 1;
+                                fast_particle_fallback()
+                            }
+                            None => {
+                                unsupported_blocks += 1;
+                                continue;
+                            }
                         };
                         let texture_png_base64 = if particle.texture.instance == u32::MAX {
                             None
@@ -170,9 +210,10 @@ pub async fn read_effect_preview(
                         }
                         emitters.push(EffectEmitter {
                             transform: block.transform.clone(),
-                            particle: particle.clone(),
+                            particle,
                             emission: emission.cloned(),
                             texture_png_base64,
+                            fallback,
                         });
                         remaining_emitters -= 1;
                     }
