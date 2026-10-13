@@ -41,6 +41,8 @@ pub mod map_assets;
 pub mod region_map;
 pub mod region_write;
 pub mod semantic;
+pub mod swarm;
+pub mod swarm_particle;
 
 use std::fmt;
 

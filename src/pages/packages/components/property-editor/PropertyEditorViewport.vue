@@ -13,6 +13,7 @@ import type * as ThreeNamespace from "three";
 import type {
   DecalUnit,
   DecalUnitTexture,
+  EffectDefinitionData,
   LotModelLodRef,
   LotModelPayload,
   LotUnitDto,
@@ -55,6 +56,7 @@ import {
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
 import { installHejlToneMapping } from "@/lib/hejlTonemapping";
+import { createParticleEffect, type ParticleEffectView } from "./effects/particleRenderer";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   applyGroundMask,
@@ -143,6 +145,8 @@ const props = defineProps<{
    * dev LED 扫掠动画并启动 rAF 时钟。顶部工具条复选框驱动（2026-10-05
    * 十轮：原视口 ⚡ 按钮用户找不到，挪入顶部工具条"供电"旁）。 */
   neonAnim?: boolean;
+  renderEffects?: boolean;
+  effectDefinitions?: Map<number, EffectDefinitionData>;
   /** 破洞贴花假内景光参数 [光强因子, 半径因子]（0x0DA76A05/06）；缺失 = 无。 */
   decalLight?: [number, number] | null;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
@@ -833,6 +837,37 @@ let neonAnimated = false;
 /** 霓虹动画时钟 rAF 句柄与上一帧时间戳。 */
 let neonFrame = 0;
 let neonLast = 0;
+const particleViews: ParticleEffectView[] = [];
+let particleFrame = 0;
+let particleLast = 0;
+
+function stopParticleClock() {
+  if (particleFrame) cancelAnimationFrame(particleFrame);
+  particleFrame = 0;
+}
+
+function clearParticleViews() {
+  stopParticleClock();
+  for (const view of particleViews) view.dispose();
+  particleViews.length = 0;
+}
+
+function startParticleClock() {
+  if (particleFrame || !particleViews.length || props.suspended || props.renderMode !== "refined" || !props.renderEffects || props.groupVisibility.effects === false) return;
+  particleLast = performance.now();
+  const tick = (now: number) => {
+    if (props.suspended || props.renderMode !== "refined" || !props.renderEffects || props.groupVisibility.effects === false) {
+      stopParticleClock();
+      return;
+    }
+    const delta = Math.min(0.1, (now - particleLast) / 1000);
+    particleLast = now;
+    for (const view of particleViews) view.tick(delta);
+    viewport.viewer.value?.invalidate();
+    particleFrame = requestAnimationFrame(tick);
+  };
+  particleFrame = requestAnimationFrame(tick);
+}
 
 /** 动态招牌开关状态由父组件 prop neonAnim 驱动（顶部工具条复选框）：
  * 默认关 = 静态量化合成招牌（uAnimEnabled=0）；开启后 SDF 族进入 dev
@@ -875,6 +910,7 @@ function stopNeonClock() {
 
 /** rebuild 包装：模型载荷身份变化时重新构图（编辑操作保持镜头）。 */
 function rebuildScene() {
+  clearParticleViews();
   const reframe = props.modelPayload !== lastPayload;
   lastPayload = props.modelPayload;
   // 只改 trigger：sessionKey 已由 usePropertyEditorSession 设好。
@@ -890,6 +926,7 @@ function rebuildScene() {
       if (envRefs) envRefs.animEnabled.value = props.neonAnim === true ? 1 : 0;
       if (neonAnimated && props.neonAnim === true) startNeonClock();
       else stopNeonClock();
+      startParticleClock();
     })
     .catch((error) => {
       // 装配异常显式化（2026-10-08 EP1 乱码取证）：异常若无声吞掉，场景
@@ -1079,6 +1116,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   stopNeonClock();
+  clearParticleViews();
   gizmo?.detach();
   gizmo?.dispose();
   gizmo = null;
@@ -1910,7 +1948,17 @@ async function assembleScene(
     // 精细模式：光源用真实 three.js 光源；道具/spawner 走资产渲染分发
     //（tree/prop/spawner 独立渲染器，互不回归——2026-10-06 拆分）。
     // 失败统一退标记锥。
+    const effectDefinition = unit.kind === "effect" && unit.effectId
+      ? props.effectDefinitions?.get(unit.effectId.instance) : undefined;
+    const particleView = props.renderMode === "refined" && props.renderEffects
+      && unit.kind === "effect" && unit.enabled !== false && effectDefinition?.emitters.length
+      ? createParticleEffect(
+          THREE, unit, effectDefinition.emitters,
+          Math.max(32, Math.min(320, Math.floor(2400 / Math.max(1, props.grouping.effects.length)))),
+        ) : null;
+    if (particleView) particleViews.push(particleView);
     const object =
+      particleView?.object ??
       (props.renderMode === "refined" && unit.kind === "light"
         ? buildRealLightUnit(THREE, unit)
         : null) ??
@@ -2130,9 +2178,25 @@ watch(
   },
 );
 watch(
+  () => [props.renderEffects, props.effectDefinitions] as const,
+  () => {
+    if (!props.renderEffects) {
+      stopParticleClock();
+      if (particleViews.length) scheduleRebuild("grouping");
+    } else if (props.effectDefinitions?.size) {
+      scheduleRebuild("grouping");
+    }
+  },
+);
+watch(() => props.suspended, (suspended) => {
+  if (suspended) stopParticleClock();
+  else startParticleClock();
+});
+watch(
   () => props.grouping,
   (grouping) => {
-    if (!tryIncrementalGrouping(grouping)) scheduleRebuild("grouping");
+    if (props.renderEffects && props.effectDefinitions?.size) scheduleRebuild("grouping");
+    else if (!tryIncrementalGrouping(grouping)) scheduleRebuild("grouping");
   },
 );
 // Raster editing updates the ground independently of models and units.
@@ -2144,7 +2208,11 @@ watch(
 );
 watch(
   () => props.groupVisibility,
-  () => viewport.applyGroupVisibility(props.groupVisibility),
+  () => {
+    viewport.applyGroupVisibility(props.groupVisibility);
+    if (props.groupVisibility.effects === false) stopParticleClock();
+    else startParticleClock();
+  },
   { deep: true },
 );
 // 异步资产通道到位 → **部分刷新**受影响族（prop/spawner 原位换对象），

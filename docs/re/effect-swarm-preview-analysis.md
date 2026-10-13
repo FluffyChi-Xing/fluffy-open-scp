@@ -1,5 +1,12 @@
 # Effect（EA Swarm 粒子系统）预览——机制分析与实现路线（2026-10-08 只读取证）
 
+## 当前实现（2026-10-14）
+
+- Property Editor 精细模式的 Effect 开关按需解析集合；默认模式保留黄色锥体。
+- `sc-properties::swarm_particle` 解普通粒子与 MetaParticle 的发射参数和子组件引用；Tauri 资源层按实际 TGI 查 RW4 纹理并解码 PNG；前端独立的固定步长解算器与 Three 点精灵渲染器限制粒子总量和帧开销。
+- 安装包主集合的 37 个普通粒子及 250 个 MetaParticle 已按 section 边界验证；首个普通粒子的纹理键 `0x4D272BC5` 已在游戏包中解码为 PNG。主集合的 MetaParticle 多数指向地形 Brush（type 32），这类组件不作为屏幕粒子渲染。
+- App 包的其他集合存在同版本字段布局差异。后端保留已验证的组件前缀并返回诊断；未能确认边界的组件、快速粒子（type 12）、材质型贴图（draw mode 15）、缺失纹理及非粒子类型仍显示标记锥，这部分还需继续对拍。模拟目前覆盖基础发射、生命周期、方向力、重力和阻尼，尚未覆盖 Swarm 的表面碰撞、随机游走、子粒子死亡效果等行为。
+
 > 目标：在 Property Editor 实现 effect 单元的 Swarm 粒子模拟预览。
 > 数据源实证：SimCity_Game / App / DLC0 / EP1 / Graphics 五包只读扫描 +
 > exe 反编译（dev-dump）+ source-tree 类结构。附真实数据样本与分阶段路线。
@@ -18,8 +25,8 @@ Swarm 效果集合资源
   实体位置：SimCity_App.package（基础全部）+ SimCity_DLC0.package（扩展）
     ——SimCityData 12 包全扫：Game/Graphics/EP1 内**零**效果集合
     ——lot effect_id 的 instance 在包条目层**零**直配（名字只在集合内部表）
-  格式：编译态 cCollection 二进制（非 ArgScript 明文；主集合仅 41 段可读
-    串、无效果名明文——名字以 FNV 哈希存表；头 0x25=37 效果计数）
+  格式：编译态 cCollection 二进制（非 ArgScript 明文；名字以 FNV 哈希存
+    导出表；主集合第一个组件段 count=37，VisualEffect count=347）
     ↓ cIEffectsManager::AddCollection
 运行时
   EffectControl → SetEffectsRunning(enable, 1, externalId)   ← enabled 列
@@ -44,10 +51,10 @@ Swarm 效果集合资源
 
 - 新命令 `read_effect_collections`：扫包收集 T 0xEA5118B0 资源（组
   0x40450200/01/02 + 0x408043xx），按 group=画质档/扩展组分组下发
-- 逆向 cCollection 二进制：头（00 04 00 01 00 02 = 版本/段计数）→ 效果
-  计数（0x25）→ 效果表（名字 FNV + 组件偏移）→ 组件块。需对拍
-  `EA::Swarm::cCollection` 读取函数（exe 24330 区 GetEffectInfo/
-  AddComponentResources 回读）
+- 已实现 `sc_properties::swarm::SwarmCollection::parse`：版本 4、组件/资源
+  段边界、变长 VisualEffect block、导出名字哈希与导入索引。主集合
+  `effects_main.col` 284720 字节可完整解析，含 347 个 VisualEffect。
+- 尚需解码各组件段的粒子参数和贴图引用，供后续模拟渲染使用。
 - 阶段产出：`{效果名 FNV → 组件清单（类型/数量/资源引用）}`——足够做
   「效果卡片」UI（名字语义 + 组成），数据确定性 100%
 
@@ -78,8 +85,8 @@ Swarm 效果集合资源
 
 ## 三、风险与未知
 
-- cCollection 二进制结构未逆向（37 效果的表布局、组件块格式）——需
-  exe 回读 cCollection::Read 或盲拆对比多集合样本（已有 81 资源可交叉）
+- 集合容器、VisualEffect block 和导出表已解析；各组件类型的参数载荷
+  仍需逐型解析和游戏对拍。
 - 部分效果含音/光组件：PE 预览只做视觉粒子，光组件可复用
   buildRealLightUnit
 - EP1 特有效果可能引用 EP1 贴图（DLC0 内自洽，已实证存在扩展集合）

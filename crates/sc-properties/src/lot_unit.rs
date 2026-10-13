@@ -132,7 +132,10 @@ pub enum LotUnit {
     Effect {
         index: usize,
         transform: Option<UnitTransform>,
+        /// Swarm visual effect name key (0x02A907B5).
         effect_id: Option<UnitKey>,
+        /// Runtime external control ID (0x02A907BB), distinct from the effect name.
+        external_id: Option<UnitKey>,
         enabled: Option<bool>,
         fields: Vec<UnitField>,
     },
@@ -452,7 +455,8 @@ fn assemble_effects(file: &PropertyFile, out: &mut LotUnits) {
         out.units.push(LotUnit::Effect {
             index,
             transform: unit_transform(file, EFFECT_TRANSFORMS, index, &mut out.diagnostics),
-            effect_id: unit_key(file, EFFECT_REF_IDS, index),
+            effect_id: unit_key(file, EFFECT_IDS, index),
+            external_id: unit_key(file, EFFECT_REF_IDS, index),
             enabled: unit_bool(file, EFFECT_ENABLED, index),
             fields: collect_fields(file, &EFFECT_COLUMN_HASHES, index),
         });
@@ -1001,6 +1005,15 @@ mod tests {
                 Kind::Array(vec![transform_value(None, &matrix)]),
             ),
             prop(
+                EFFECT_IDS,
+                PropType::Key,
+                Kind::Array(vec![Value::Key(Key {
+                    instance: 0x123,
+                    type_id: 0,
+                    group: 0,
+                })]),
+            ),
+            prop(
                 EFFECT_REF_IDS,
                 PropType::Key,
                 Kind::Array(vec![Value::Key(Key {
@@ -1023,12 +1036,13 @@ mod tests {
         let units = assemble_units(&file);
         assert_eq!(units.units.len(), 2);
         let LotUnit::Effect {
-            effect_id, enabled, ..
+            effect_id, external_id, enabled, ..
         } = &units.units[0]
         else {
             panic!("expected effect");
         };
-        assert_eq!(effect_id.as_ref().map(|key| key.instance), Some(0x777));
+        assert_eq!(effect_id.as_ref().map(|key| key.instance), Some(0x123));
+        assert_eq!(external_id.as_ref().map(|key| key.instance), Some(0x777));
         assert_eq!(enabled, &Some(false));
         assert!(matches!(
             units.units[1],

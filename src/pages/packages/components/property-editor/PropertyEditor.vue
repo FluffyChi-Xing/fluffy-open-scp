@@ -26,6 +26,7 @@ import { unitId } from "./unitGizmos";
 import { buildSchemaDoc, unitsFromSchema } from "./peSchemaDoc";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { useEditorHotkeys } from "./useEditorHotkeys";
+import { useEffectPreview } from "./effects/useEffectPreview";
 import { exportLotModel } from "@/composables/useModelExport";
 import { useEventListener } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
@@ -417,6 +418,7 @@ function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) 
       index: nextIndexOf("effect"),
       transform,
       effectId: null,
+      externalId: null,
       enabled: true,
       fields: [],
     } as LotUnitDto;
@@ -591,6 +593,15 @@ const effectiveRenderMode = computed(() => editEnabled.value ? "refined" : rende
 /** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
 const neonAnim = ref(false);
+const effectRendering = ref(false);
+const effectUnits = computed(() => renderGrouping.value.effects);
+const effectPreview = useEffectPreview(() => props.packageId, effectRendering, effectUnits);
+const effectRenderTitle = computed(() => t(
+  effectPreview.failed.value ? "package.effectRenderingError"
+    : effectPreview.loading.value ? "package.effectRenderingLoading"
+      : effectPreview.limited.value ? "package.effectRenderingLimited"
+        : "package.effectRenderingHint",
+));
 /** 表面浮雕开关：默认关闭，开启后才运行近景 cone-step 视差。 */
 const reliefEnabled = ref(false);
 
@@ -613,6 +624,7 @@ watch(open, (isOpen, wasOpen) => {
   peSuspended.value = true;
   renderMode.value = "default";
   neonAnim.value = false;
+  effectRendering.value = false;
   reliefEnabled.value = false;
   tool.value = "select";
   selectedId.value = null;
@@ -851,6 +863,14 @@ const treeSheetPinned = ref(true);
         >
           <Switch v-model="neonAnim" :aria-label="$t('package.neonAnim')" />
           <span>{{ $t("package.neonAnim") }}</span>
+        </label>
+        <label
+          v-if="effectiveRenderMode === 'refined'"
+          class="spec-experiment"
+          :title="effectRenderTitle"
+        >
+          <Switch v-model="effectRendering" :aria-label="$t('package.effectRendering')" />
+          <span>{{ $t("package.effectRendering") }}</span>
         </label>
         <button
           class="editor-close"
@@ -1116,6 +1136,8 @@ const treeSheetPinned = ref(true);
           :powered="powered"
           :relief-enabled="reliefEnabled"
           :neon-anim="neonAnim"
+          :render-effects="effectRendering"
+          :effect-definitions="effectPreview.definitions.value"
           :decal-light="decalLight"
           :tool="tool"
           @select="selectedId = $event"

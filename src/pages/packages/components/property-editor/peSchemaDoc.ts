@@ -37,7 +37,7 @@ const KIND_KEYS: Record<string, string[]> = {
     "isVolumetric",
     "debugName",
   ],
-  effect: ["effectId", "enabled"],
+  effect: ["effectId", "externalId", "enabled"],
   decal: ["category", "scale", "depth", "materialData"],
   prop: [
     "bin",

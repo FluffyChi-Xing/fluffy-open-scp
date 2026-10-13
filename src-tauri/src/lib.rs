@@ -9,6 +9,8 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod effect_service;
+mod effect_resources;
 mod annotations;
 mod atomic_fs;
 mod debug_tools;
@@ -162,6 +164,7 @@ pub fn run() {
             read_resource_text,
             read_resource_text_range,
             read_lot_editor_session,
+            effect_service::read_effect_preview,
             build_pe_schema,
             list_model_catalog,
             read_lot_model_meshes, read_sim_parts, release_prop_model_packages, resolve_prop_models,

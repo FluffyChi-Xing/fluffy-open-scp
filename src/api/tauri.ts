@@ -485,8 +485,46 @@ export interface EffectUnit {
   index: number;
   transform: UnitTransformDto | null;
   effectId: UnitKeyDto | null;
+  externalId: UnitKeyDto | null;
   enabled: boolean | null;
   fields: UnitFieldDto[];
+}
+
+export interface SwarmParticle {
+  typeCode: number;
+  index: number;
+  flags: number;
+  life: [number, number];
+  emitDirectionMin: [number, number, number];
+  emitDirectionMax: [number, number, number];
+  emitSpeed: [number, number];
+  emitVolumeMin: [number, number, number];
+  emitVolumeMax: [number, number, number];
+  rate: number[];
+  rateLoop: number;
+  size: number[];
+  alpha: number[];
+  color: [number, number, number][];
+  texture: { group: number; instance: number; drawMode: number };
+  directionForce: [number, number, number];
+  windStrength: number;
+  gravityStrength: number;
+  drag: number;
+}
+export interface EffectEmitterData {
+  transform: { scale: number; rotation: number[]; offset: [number, number, number] };
+  particle: SwarmParticle;
+  emission: SwarmParticle | null;
+  texturePngBase64: string | null;
+}
+export interface EffectDefinitionData {
+  effectId: number;
+  emitters: EffectEmitterData[];
+  unsupportedBlocks: number;
+}
+export interface EffectPreviewResponse {
+  effects: EffectDefinitionData[];
+  diagnostics: string[];
 }
 export interface DecalUnit {
   kind: "decal";

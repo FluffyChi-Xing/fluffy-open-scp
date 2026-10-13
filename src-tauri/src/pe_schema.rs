@@ -202,8 +202,10 @@ fn unit_json(
             }
         }
         "effect" => {
-            if let Some(value) = extra.get("effectId") {
-                object.insert("effectId".into(), value.clone());
+            for key in ["effectId", "externalId"] {
+                if let Some(value) = extra.get(key) {
+                    object.insert(key.into(), value.clone());
+                }
             }
             if let Some(value) = extra.get("enabled") {
                 object.insert("enabled".into(), value.clone());
