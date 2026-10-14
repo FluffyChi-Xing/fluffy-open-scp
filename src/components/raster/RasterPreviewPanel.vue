@@ -13,19 +13,17 @@ import type { RasterDocument } from "@/lib/raster-editor/document";
 import {
   rgbaBase64ToPngDataUrl,
   rgbaToBase64,
-  simulateLotDataUrl,
 } from "@/lib/raster-editor/encoders";
 import {
   channelPixels,
-  type Channel,
   type RasterProfile,
 } from "@/lib/raster-editor/schema";
+import { composeGroundPixels } from "@/pages/packages/components/property-editor/groundCompose";
 const props = defineProps<{
   target: RasterSource | null;
   metersPerPixel: number;
   doc: RasterDocument;
   version: number;
-  channel: Channel;
   profile: RasterProfile;
   colors: [number, number, number, number][];
   decalColors: string[];
@@ -73,9 +71,9 @@ const preview = computed(() => {
   void previewVersion.value;
   return rgbaBase64ToPngDataUrl(
     rgbaToBase64(
-      props.channel === "rgba" && PROFILE_BEHAVIOR[props.profile].dataChannels
+      PROFILE_BEHAVIOR[props.profile].dataChannels
         ? dataChannelPixels(props.doc.pixels)
-        : channelPixels(props.doc.pixels, props.channel),
+        : props.doc.pixels,
     ),
     props.doc.width,
     props.doc.height,
@@ -89,28 +87,51 @@ const alphaPreview = computed(() => {
     props.doc.height,
   );
 });
-const materialPreview = computed(() => {
+const currentLotRaw = computed(() => {
   void previewVersion.value;
-  return props.profile === "lot-mask"
-    ? simulateLotDataUrl(
-        props.doc,
-        null,
-        props.colors.map((c) => [c[0], c[1], c[2]] as const),
-      )
-    : "";
+  return rgbaToBase64(props.doc.pixels);
+});
+const currentLotPng = computed(() =>
+  rgbaBase64ToPngDataUrl(currentLotRaw.value, props.doc.width, props.doc.height),
+);
+const currentLotAlbedoPng = computed(() => {
+  void previewVersion.value;
+  const output = composeGroundPixels({
+    mask: {
+      data: props.doc.pixels,
+      width: props.doc.width,
+      height: props.doc.height,
+    },
+    rawMask: {
+      data: props.doc.pixels,
+      width: props.doc.width,
+      height: props.doc.height,
+    },
+    baseTile: null,
+    lotColors: props.colors,
+    lotBorderColors: null,
+    lotBorderPatternIndices: null,
+    lotBorderWidths: null,
+    normalAtlas: null,
+    tilesX: 1,
+    tilesY: 1,
+  });
+  return rgbaBase64ToPngDataUrl(
+    rgbaToBase64(output.albedo),
+    output.width,
+    output.height,
+  );
 });
 </script>
 <template>
   <section class="preview-panel">
     <RasterPreviewCard
       :title="
-        channel === 'rgba'
-          ? t(
-              PROFILE_BEHAVIOR[profile].dataChannels
-                ? 'rasterEditor.dataRgb'
-                : 'rasterEditor.raw',
-            )
-          : t('rasterEditor.channel', { channel: channel.toUpperCase() })
+        t(
+          PROFILE_BEHAVIOR[profile].dataChannels
+            ? 'rasterEditor.dataRgb'
+            : 'rasterEditor.raw',
+        )
       "
     >
       <img :src="preview" :alt="t('rasterEditor.raw')" />
@@ -133,8 +154,22 @@ const materialPreview = computed(() => {
         :aspect-ratio="decalAspectRatio"
       />
     </RasterPreviewCard>
-    <RasterPreviewCard v-if="materialPreview" :title="t('rasterEditor.layers')">
-      <img :src="materialPreview" :alt="t('rasterEditor.layers')" />
+    <RasterPreviewCard
+      v-if="profile.startsWith('lot-')"
+      :title="t('rasterEditor.layers')"
+    >
+      <RasterLotPreview
+        :raw="currentLotRaw"
+        :png="currentLotPng"
+        :width="doc.width"
+        :height="doc.height"
+        :meters-per-pixel="metersPerPixel"
+        :colors="colors"
+        :target="target"
+        :texture="profile === 'lot-texture'"
+        :albedo-png="currentLotAlbedoPng"
+        render-mode="default"
+      />
     </RasterPreviewCard>
     <RasterPreviewCard
       v-if="profile.startsWith('lot-')"
@@ -152,6 +187,7 @@ const materialPreview = computed(() => {
         :colors="lotSnapshot.colors"
         :target="lotSnapshot.target"
         :texture="lotSnapshot.texture"
+        render-mode="refined"
       />
       <p v-else class="refresh-hint" role="status">{{ t('rasterEditor.refreshPreviewHint') }}</p>
     </RasterPreviewCard>

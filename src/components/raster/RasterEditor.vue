@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
+import FSelect from "@/components/ui/FSelect.vue";
+import FIcon from "@/components/extensions/FIcon.vue";
+import FTooltip from "@/components/ui/FTooltip.vue";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import { RasterDocument } from "@/lib/raster-editor/document";
 import { base64ToRgba } from "@/lib/raster-editor/encoders";
@@ -17,7 +20,6 @@ import {
 import type { Rgba } from "@/lib/raster-editor/tools";
 import type { DecalEntryMeta, PropertyDocumentSummary } from "@/api/tauri";
 import RasterCanvas from "./RasterCanvas.vue";
-import RasterProfilePicker from "./RasterProfilePicker.vue";
 import RasterToolbar from "./RasterToolbar.vue";
 import RasterParameterTable from "./RasterParameterTable.vue";
 import RasterSourcePanel from "./RasterSourcePanel.vue";
@@ -70,6 +72,7 @@ const {
 } = session;
 if (!props.initialSchema && props.initialProfile)
   profile.value = props.initialProfile;
+const editorStarted = ref(!!props.initialSchema || !!props.initialProfile);
 const packages = useGamePackagesStore();
 const canvas = ref<InstanceType<typeof RasterCanvas> | null>(null);
 const tool = ref<RasterTool>("brush"),
@@ -78,10 +81,15 @@ const tool = ref<RasterTool>("brush"),
   alpha = ref(255),
   channel = ref<Channel>(PROFILE_BEHAVIOR[profile.value].defaultChannel),
   layer = ref(0),
-  tolerance = ref(0),
-  quantized = ref(false);
+  tolerance = ref(0);
 const parkingLength = ref(13),
   parkingSpacing = ref(6);
+const baseLotPixels = shallowRef<Uint8ClampedArray | null>(null);
+const lotOverlayPixels = shallowRef<Uint8ClampedArray | null>(null);
+const lotOverlayTouched = shallowRef<Uint8Array | null>(null);
+const lotLastPixels = shallowRef<Uint8ClampedArray | null>(null);
+const baseLotVisible = ref(true);
+const baseLotLocked = ref(false);
 const error = ref(""),
   status = ref(""),
   saving = ref(false),
@@ -104,13 +112,24 @@ const brushColor = computed<Rgba>(() => {
   ];
   return [rgb[0], rgb[1], rgb[2], Math.min(255, Math.max(0, alpha.value || 0))];
 });
+const channelValue = computed({
+  get: () => {
+    if (channel.value === "a") return alpha.value;
+    const offset = { r: 1, g: 3, b: 5, rgba: 1 }[channel.value];
+    return parseInt(color.value.slice(offset, offset + 2), 16);
+  },
+  set: (value: number) => {
+    const byte = Math.max(0, Math.min(255, Math.round(value || 0)));
+    if (channel.value === "a") alpha.value = byte;
+    else color.value = "#" + byte.toString(16).padStart(2, "0").repeat(3);
+  },
+});
 let generation = 0;
 onBeforeUnmount(() => {
   generation++;
 });
 watch(dirty, (value) => emit("dirty", value));
 watch(profile, () => {
-  quantized.value = false;
   channel.value = PROFILE_BEHAVIOR[profile.value].defaultChannel;
   tool.value = "brush";
   schemaText.value = "";
@@ -152,10 +171,58 @@ function restore(value: RasterSchema) {
   });
 }
 function changeProfile(value: RasterProfile) {
+  editorStarted.value = true;
   if (value !== profile.value) {
     generation++;
     session.changeProfile(value);
   }
+}
+const profileOptions = computed(() =>
+  RASTER_PROFILES.map((item) => ({ value: item.id, label: item.label })),
+);
+function toggleLotBaseVisible() {
+  if (!doc.value || !baseLotPixels.value || !lotOverlayPixels.value) return;
+  baseLotVisible.value = !baseLotVisible.value;
+  composeLotLayers();
+  version.value++;
+}
+function composeLotLayers() {
+  if (!doc.value || !baseLotPixels.value || !lotOverlayPixels.value || !lotOverlayTouched.value) return;
+  for (let i = 0, pixel = 0; i < doc.value.pixels.length; i += 4, pixel += 1) {
+    const base = baseLotVisible.value ? baseLotPixels.value[i] : 0;
+    const overlay = lotOverlayTouched.value[pixel] ? lotOverlayPixels.value[i] : base;
+    doc.value.pixels[i] = overlay;
+    doc.value.pixels[i + 1] = lotOverlayTouched.value[pixel] ? lotOverlayPixels.value[i + 1] : (baseLotVisible.value ? baseLotPixels.value[i + 1] : 0);
+    doc.value.pixels[i + 2] = lotOverlayTouched.value[pixel] ? lotOverlayPixels.value[i + 2] : (baseLotVisible.value ? baseLotPixels.value[i + 2] : 0);
+    doc.value.pixels[i + 3] = lotOverlayTouched.value[pixel] ? lotOverlayPixels.value[i + 3] : (baseLotVisible.value ? baseLotPixels.value[i + 3] : 0);
+  }
+  lotLastPixels.value = doc.value.pixels.slice();
+}
+function onCanvasChange() {
+  if (profile.value === "lot-mask" && baseLotPixels.value && lotOverlayPixels.value && lotOverlayTouched.value && doc.value) {
+    if (!baseLotLocked.value) {
+      baseLotPixels.value = doc.value.pixels.slice();
+      lotOverlayPixels.value.fill(0);
+      lotOverlayTouched.value.fill(0);
+    } else {
+      const previous = lotLastPixels.value ?? baseLotPixels.value;
+      for (let i = 0, pixel = 0; i < doc.value.pixels.length; i += 4, pixel += 1) {
+        const changed = doc.value.pixels[i] !== previous[i]
+          || doc.value.pixels[i + 1] !== previous[i + 1]
+          || doc.value.pixels[i + 2] !== previous[i + 2]
+          || doc.value.pixels[i + 3] !== previous[i + 3];
+        if (changed) {
+          lotOverlayPixels.value[i] = doc.value.pixels[i];
+          lotOverlayPixels.value[i + 1] = doc.value.pixels[i + 1];
+          lotOverlayPixels.value[i + 2] = doc.value.pixels[i + 2];
+          lotOverlayPixels.value[i + 3] = doc.value.pixels[i + 3];
+          lotOverlayTouched.value[pixel] = 1;
+        }
+      }
+    }
+    composeLotLayers();
+  }
+  changed();
 }
 function pick(rgba: Rgba) {
   color.value =
@@ -233,6 +300,12 @@ async function loadLot(
       value.source.name,
     );
     lot.value = { colors: value.material.colors, target: value.target };
+    baseLotPixels.value = value.image.pixels.slice();
+    lotOverlayPixels.value = new Uint8ClampedArray(value.image.pixels.length);
+    lotOverlayTouched.value = new Uint8Array(value.image.width * value.image.height);
+    lotLastPixels.value = value.image.pixels.slice();
+    baseLotVisible.value = true;
+    baseLotLocked.value = true;
   } catch (e) {
     if (epoch === generation) error.value = String(e);
   } finally {
@@ -310,15 +383,20 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
     :aria-label="t('rasterEditor.text011')"
   >
     <header class="editor-heading">
-      <div>
-        <span class="context-label">{{
-          mode === "flow"
-            ? t("rasterEditor.text012")
-            : t("rasterEditor.text013")
-        }}</span>
-        <h1>
-          Raster <span> {{ t("rasterEditor.text014") }} </span>
-        </h1>
+      <div class="profile-control">
+        <span class="control-label">{{ t("rasterEditor.text083") }}</span>
+        <FSelect
+          class="profile-select"
+          :model-value="editorStarted ? profile : ''"
+          :options="[
+            { value: '', label: t('rasterEditor.text170') },
+            ...profileOptions,
+          ]"
+          :disabled="locked"
+          @update:model-value="
+            (value) => value && changeProfile(value as RasterProfile)
+          "
+        />
       </div>
       <div class="actions">
         <button :disabled="!ready || locked" @click="exportAsset">
@@ -337,6 +415,13 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         >
           {{ t("rasterEditor.text018") }}</button
         ><button
+          v-else-if="profile === 'lot-mask'"
+          class="primary"
+          :disabled="!doc || locked || !isTauri()"
+          @click="save('lot')"
+        >
+          {{ t("rasterEditor.text031") }}
+        </button><button
           v-else-if="profile !== 'slot0'"
           class="primary"
           :disabled="!doc || locked || !isTauri()"
@@ -346,23 +431,56 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         </button>
       </div>
     </header>
-    <div class="editor-layout">
-      <RasterProfilePicker
-        :model-value="profile"
-        :locked="lockedProfile || locked"
-        @update:model-value="changeProfile"
-      />
+    <div class="editor-layout" :class="{ 'is-empty': !editorStarted }">
+      <aside v-if="editorStarted" class="left-rail">
+        <div v-if="profile === 'lot-mask' && doc" class="layer-section">
+          <h2>{{ t("rasterEditor.baseLayer") }}</h2>
+          <div v-if="baseLotPixels" class="base-layer-row">
+            <span class="layer-swatch base-layer-swatch" />
+            <span class="base-layer-name">{{ t("rasterEditor.baseLayer") }}</span>
+            <FTooltip :text="baseLotVisible ? t('rasterEditor.hideLayer') : t('rasterEditor.showLayer')">
+              <template #trigger><button type="button" class="layer-icon-button" :aria-label="baseLotVisible ? t('rasterEditor.hideLayer') : t('rasterEditor.showLayer')" @click="toggleLotBaseVisible"><FIcon :name="baseLotVisible ? 'Eye' : 'EyeOff'" :size="14" /></button></template>
+            </FTooltip>
+            <FTooltip :text="baseLotLocked ? t('rasterEditor.unlockLayer') : t('rasterEditor.lockLayer')">
+              <template #trigger><button type="button" class="layer-icon-button" :aria-label="baseLotLocked ? t('rasterEditor.unlockLayer') : t('rasterEditor.lockLayer')" @click="baseLotLocked = !baseLotLocked"><FIcon :name="baseLotLocked ? 'Lock' : 'LockOpen'" :size="14" /></button></template>
+            </FTooltip>
+          </div>
+          <div v-if="lotOverlayPixels" class="base-layer-row overlay-layer-row">
+            <span class="layer-swatch overlay-layer-swatch" />
+            <span class="base-layer-name">{{ t("rasterEditor.drawingLayer") }}</span>
+          </div>
+        </div>
+        <div v-if="editorStarted" class="rail-section source-section">
+          <RasterSourcePanel
+            :image-width="doc?.width"
+            :image-height="doc?.height"
+            @load-lot="loadLot"
+            @load-decal="loadDecal"
+            :profile="profile"
+            :disabled="locked"
+            @create="(w, h) => replace(() => session.create(w, h))"
+            @image="image"
+            @schema="restore"
+            @parameters="
+              (value) =>
+                replace(() => {
+                  parameters = value;
+                  changed();
+                })
+            "
+          />
+        </div>
+      </aside>
       <main class="workspace" :inert="locked">
-        <div class="document-heading">
+        <div v-if="editorStarted" class="document-heading">
           <div>
             <strong>{{ descriptor.label }}</strong>
-            <p>{{ descriptor.hint }}</p>
           </div>
           <span class="dirty-state">{{
             dirty ? t("rasterEditor.text020") : t("rasterEditor.text021")
           }}</span>
         </div>
-        <label class="document-name">
+        <label v-if="editorStarted" class="document-name">
           {{ t("rasterEditor.text022") }}
           <input v-model="name" :disabled="locked" @input="changed"
         /></label>
@@ -375,50 +493,44 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           "
         />
         <template v-else-if="doc && history">
-          <RasterToolbar
-            v-model:tool="tool"
-            v-model:size="size"
-            v-model:color="color"
-            v-model:alpha="alpha"
-            v-model:channel="channel"
-            v-model:layer="layer"
-            v-model:quantized="quantized"
-            v-model:tolerance="tolerance"
-            v-model:parking-length="parkingLength"
-            v-model:parking-spacing="parkingSpacing"
-            :mask="mask"
-            :profile="profile"
-            :lot="profile === 'lot-mask'"
-            :can-undo="canUndo"
-            :can-redo="canRedo"
-            @undo="canvas?.undo()"
-            @redo="canvas?.redo()"
-          />
-          <RasterCanvas
-            :key="`${profile}:${doc.width}:${doc.height}`"
-            ref="canvas"
-            class="editor-canvas"
-            :doc="doc"
-            :history="history"
-            :tool="tool"
-            :color="brushColor"
-            :brush-size="Math.max(1, Math.min(256, size || 1))"
-            :parking-length="Math.max(1, Math.min(256, parkingLength || 1))"
-            :parking-spacing="Math.max(1, Math.min(256, parkingSpacing || 1))"
-            :fill-tolerance="Math.max(0, Math.min(510, tolerance || 0))"
-            :quantized="
-              profile === 'lot-mask' && quantized && channel === 'rgba'
-            "
-            :channel="channel"
-            :lot-layer="profile === 'lot-mask' ? layer : null"
-            :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
-            :meters-per-pixel="
-              profile === 'lot-mask' ? sampling.metersPerPixel : null
-            "
-            @change="changed"
-            @pick-color="pick"
-            @pick-layer="layer = $event; tool = 'brush'"
-          />
+          <div class="canvas-stage">
+            <RasterCanvas
+              :key="`${profile}:${doc.width}:${doc.height}`"
+              ref="canvas"
+              class="editor-canvas"
+              :doc="doc"
+              :history="history"
+              :tool="tool"
+              :color="brushColor"
+              :brush-size="Math.max(1, Math.min(256, size || 1))"
+              :parking-length="Math.max(1, Math.min(256, parkingLength || 1))"
+              :parking-spacing="Math.max(1, Math.min(256, parkingSpacing || 1))"
+              :fill-tolerance="Math.max(0, Math.min(510, tolerance || 0))"
+              :quantized="profile === 'lot-mask'"
+              :channel="channel"
+              display-channel="rgba"
+              :lot-layer="profile === 'lot-mask' ? layer : null"
+              :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
+              :meters-per-pixel="profile === 'lot-mask' ? sampling.metersPerPixel : null"
+              @change="onCanvasChange"
+              @pick-color="pick"
+              @pick-layer="layer = $event; tool = 'brush'"
+            />
+            <RasterToolbar
+              v-model:tool="tool"
+              v-model:layer="layer"
+              :profile="profile"
+              :lot="profile === 'lot-mask'"
+              :can-undo="canUndo"
+              :can-redo="canRedo"
+              @undo="canvas?.undo()"
+              @redo="canvas?.redo()"
+            />
+          </div>
+          <div class="editor-guidance">
+            <p v-if="profile === 'lot-mask'">{{ t("rasterEditor.lotGuide") }}</p>
+            <p>{{ t(`rasterEditor.profileGuide.${profile}`) }}</p>
+          </div>
           <footer class="document-footer">
             <code>{{ doc.width }} × {{ doc.height }} · RGBA8</code
             ><span>{{
@@ -435,22 +547,14 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             }}</span>
           </footer>
         </template>
-        <div v-else class="empty-canvas">
-          <strong> {{ t("rasterEditor.text028") }} </strong>
-          <p>{{ t("rasterEditor.text029") }}</p>
-          <p>{{ t("rasterEditor.text030") }}</p>
+        <div v-else class="empty-canvas empty-editor">
+          <strong>{{ t("rasterEditor.text170") }}</strong>
         </div>
         <div
-          v-if="mode === 'standalone' && doc && isTauri()"
+          v-if="mode === 'standalone' && doc && isTauri() && profile.startsWith('decal-')"
           class="material-actions"
         >
           <button
-            v-if="profile === 'lot-mask'"
-            :disabled="locked"
-            @click="save('lot')"
-          >
-            {{ t("rasterEditor.text031") }}</button
-          ><button
             v-if="profile.startsWith('decal-')"
             :disabled="locked || !decal.atlas"
             @click="save('decal')"
@@ -470,27 +574,22 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           <pre>{{ schemaText.slice(0, 8000) }}</pre>
         </details>
       </main>
-      <aside class="inspector">
-        <RasterSourcePanel
-          :image-width="doc?.width"
-          :image-height="doc?.height"
-          @load-lot="loadLot"
-          @load-decal="loadDecal"
-          :profile="profile"
-          :disabled="locked"
-          @create="(w, h) => replace(() => session.create(w, h))"
-          @image="image"
-          @schema="restore"
-          @parameters="
-            (value) =>
-              replace(() => {
-                parameters = value;
-                changed();
-              })
-          "
-        />
+      <aside v-if="editorStarted" class="inspector">
+        <section class="editor-controls">
+          <h2>{{ t("rasterEditor.text171") }}</h2>
+          <label>{{ t("rasterEditor.text113") }}<input v-model.number="size" type="number" min="1" max="256" /></label>
+          <label v-if="tool === 'fill'">{{ t("rasterEditor.text114") }}<input v-model.number="tolerance" type="number" min="0" max="510" /></label>
+          <template v-if="tool === 'parking'">
+            <label>{{ t("rasterEditor.text115") }}<input v-model.number="parkingLength" type="number" min="1" max="256" /></label>
+            <label>{{ t("rasterEditor.text116") }}<input v-model.number="parkingSpacing" type="number" min="1" max="256" /></label>
+          </template>
+          <label v-if="!mask && channel === 'rgba'">RGB <input v-model="color" type="color" /></label>
+          <label v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')">{{ t("rasterEditor.channelStrength") }}<input v-model.number="alpha" type="number" min="0" max="255" /></label>
+          <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
+          <label>{{ t("rasterEditor.text122") }}<FSelect :model-value="channel" :options="['rgba','r','g','b','a'].map((value) => ({ value, label: profile === 'lot-mask' ? t(`rasterEditor.channels.${value}`) : value.toUpperCase() }))" @update:model-value="channel = $event as Channel" /></label>
+        </section>
         <RasterMaterialPanel
-          v-if="profile !== 'slot0'"
+          v-if="editorStarted && profile !== 'slot0'"
           v-model:lot="lot"
           v-model:decal="decal"
           v-model:sampling="sampling"
@@ -501,10 +600,9 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           @changed="changed"
         />
         <RasterPreviewPanel
-          v-if="doc && profile !== 'slot0'"
+          v-if="editorStarted && doc && profile !== 'slot0'"
           :doc="doc"
           :version="version"
-          :channel="channel"
           :profile="profile"
           :colors="lot.colors"
           :decal-colors="decal.colors"
@@ -519,7 +617,11 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
 <style scoped>
 .raster-editor {
   color: var(--foreground);
-  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
   min-width: 0;
 }
 .editor-heading {
@@ -528,19 +630,35 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
-  margin-bottom: 22px;
+  min-height: 54px;
+  margin-bottom: 0;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
+.profile-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.control-label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.profile-select { width: min(260px, 32vw); }
+.profile-select :deep(.f-select) { min-height: 34px; }
 .context-label {
   color: var(--muted-foreground);
   font-size: 11px;
 }
 h1 {
-  font-size: 26px;
+  font-size: 20px;
   margin: 5px 0 0;
-  letter-spacing: -0.7px;
 }
 h1 span {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 500;
   margin-left: 6px;
 }
@@ -567,19 +685,99 @@ button:disabled {
   cursor: default;
 }
 .editor-layout {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 160px minmax(320px, 1fr) 290px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  grid-template-columns: 208px minmax(0, 1fr) 304px;
+  border: 0;
+  border-radius: 0;
   background: var(--surface);
   overflow: hidden;
 }
+.editor-layout.is-empty { grid-template-columns: minmax(0, 1fr); }
+.left-rail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-elevated);
+}
+.rail-section + .rail-section {
+  border-top: 1px solid var(--border);
+}
+.layer-section { padding: 16px 10px; }
+.layer-section h2 {
+  margin: 0 6px 10px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+.layer-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 8px;
+  text-align: start;
+  border-color: transparent;
+  background: transparent;
+}
+.layer-button[aria-pressed="true"] {
+  color: var(--primary);
+  background: var(--accent);
+  border-color: var(--border);
+}
+.layer-swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+}
+.base-layer-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 24px 24px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.base-layer-swatch { background: var(--surface-hover); }
+.overlay-layer-row { border-top: 0; margin-top: 0; }
+.overlay-layer-swatch { background: color-mix(in srgb, var(--primary) 38%, var(--surface)); }
+.base-layer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.layer-icon-button:hover { color: var(--foreground); background: var(--surface-hover); }
+.profile-section :deep(.raster-profiles) {
+  padding: 14px 10px;
+}
+.source-section :deep(.source-panel) {
+  padding: 14px;
+}
 .workspace {
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-inline: 1px solid var(--border);
+  background: var(--background);
 }
 .document-heading {
-  padding: 16px;
+  flex: none;
+  padding: 12px 16px 8px;
   display: flex;
   gap: 10px;
   justify-content: space-between;
@@ -602,7 +800,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 16px 12px;
+  padding: 0 16px 8px;
   color: var(--muted-foreground);
   font-size: 11px;
 }
@@ -616,21 +814,51 @@ button:disabled {
   padding: 6px;
   font-size: 12px;
 }
+.canvas-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  padding: 0 10px 10px;
+}
 .editor-canvas {
-  height: min(58vh, 640px);
-  min-height: 360px;
+  flex: 1;
+  min-height: 260px;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+.canvas-stage :deep(.raster-toolbar) {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 50px;
+  width: fit-content;
+  max-width: calc(100% - 44px);
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px);
 }
 .document-footer {
   display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  padding: 12px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-height: 0;
+  height: 1.2em;
+  padding: 0 8px;
   border-top: 1px solid var(--border);
-  font-size: 10px;
+  font-size: 9px;
+  line-height: 1.2;
   color: var(--muted-foreground);
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .empty-canvas {
-  min-height: 420px;
+  flex: 1;
+  min-height: 0;
   display: grid;
   place-content: center;
   padding: 32px;
@@ -638,6 +866,7 @@ button:disabled {
   background: radial-gradient(circle, var(--border) 1px, transparent 1px) 0/20px
     20px;
 }
+.empty-editor { background: var(--background); }
 .empty-canvas strong {
   font-size: 18px;
 }
@@ -648,9 +877,57 @@ button:disabled {
 }
 .inspector {
   min-width: 0;
-  max-height: 85vh;
+  min-height: 0;
+  background: var(--surface-elevated);
   overflow: auto;
 }
+.editor-controls {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.editor-controls h2 {
+  margin: 0 0 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+.editor-controls label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.editor-controls input {
+  min-width: 0;
+  width: 116px;
+  padding: 5px 7px;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.editor-controls input[type="color"] { width: 34px; padding: 2px; }
+.editor-controls :deep(.f-select) { min-height: 30px; font-size: 11px; }
+.editor-guidance {
+  flex: none;
+  margin: 0 10px 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warning) 13%, var(--surface));
+  color: color-mix(in srgb, var(--warning) 70%, var(--foreground));
+}
+.editor-guidance p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.editor-guidance p + p { margin-top: 3px; }
 .material-actions,
 .message {
   padding: 12px 16px;
@@ -674,33 +951,43 @@ pre {
   outline-offset: 2px;
 }
 .embedded {
-  padding: 12px;
+  padding: 8px;
 }
 @media (max-width: 1100px) {
   .editor-layout {
-    grid-template-columns: 140px minmax(300px, 1fr);
+    grid-template-columns: 190px minmax(0, 1fr);
   }
+  .editor-layout.is-empty { grid-template-columns: minmax(0, 1fr); }
   .inspector {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border-top: 1px solid var(--border);
-    max-height: none;
+    max-height: 360px;
   }
 }
 @media (max-width: 700px) {
   .raster-editor {
-    padding: 12px;
+    height: auto;
+    min-height: calc(100dvh - 56px);
   }
   .editor-layout {
     display: block;
+    overflow: visible;
   }
+  .left-rail { max-height: none; }
   .workspace {
     border: 0;
     border-block: 1px solid var(--border);
   }
   .inspector {
     display: block;
+  }
+  .canvas-stage { min-height: 480px; }
+  .canvas-stage :deep(.raster-toolbar) {
+    left: 50%;
+    bottom: 42px;
+    max-width: calc(100% - 24px);
   }
 }
 </style>
