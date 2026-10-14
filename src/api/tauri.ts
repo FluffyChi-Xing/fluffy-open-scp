@@ -503,9 +503,17 @@ export interface SwarmParticle {
   rate: number[];
   rateLoop: number;
   size: number[];
+  aspect: number[];
+  rotation: number[];
   alpha: number[];
   color: [number, number, number][];
   texture: { group: number; instance: number; drawMode: number };
+  tileCount: [number, number];
+  frameStart: number;
+  frameCount: number;
+  frameRandom: number;
+  frameSpeed: number;
+  frameSpeedByLife: boolean;
   directionForce: [number, number, number];
   windStrength: number;
   gravityStrength: number;
@@ -875,6 +883,9 @@ export interface SettingsStatus {
   gameDataPath?: string;
   gameDirectory?: GameDirectoryStatus;
 }
+
+export interface GameProcessInfo { pid: number; name: string }
+export interface DeployGameModResult { artifact: string; destination: string; gameRunning: boolean; processes: GameProcessInfo[] }
 export interface GameDirectoryDetection {
   candidates: GameDirectoryStatus[];
 }

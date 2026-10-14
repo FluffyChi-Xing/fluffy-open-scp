@@ -1951,7 +1951,7 @@ async function assembleScene(
     const effectDefinition = unit.kind === "effect" && unit.effectId
       ? props.effectDefinitions?.get(unit.effectId.instance) : undefined;
     const particleView = props.renderMode === "refined" && props.renderEffects
-      && unit.kind === "effect" && unit.enabled !== false && effectDefinition?.emitters.length
+      && unit.kind === "effect" && effectDefinition?.emitters.length
       ? createParticleEffect(
           THREE, unit, effectDefinition.emitters,
           Math.max(32, Math.min(320, Math.floor(2400 / Math.max(1, props.grouping.effects.length)))),

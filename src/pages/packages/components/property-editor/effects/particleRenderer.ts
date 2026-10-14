@@ -2,6 +2,7 @@ import type * as ThreeNamespace from "three";
 import type { EffectEmitterData, EffectUnit } from "@/api/tauri";
 import { unitMatrix } from "../unitGizmos";
 import { ParticleSolver, sampleColor, sampleScalar } from "./particleSolver";
+import { particleAtlasFrame } from "./particleFrame";
 
 type Three = typeof ThreeNamespace;
 
@@ -40,43 +41,94 @@ export function createParticleEffect(
   const views = emitters.map((emitter, index) => {
     const count = Math.max(1, Math.floor(capacity / emitters.length));
     const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    const sizes = new Float32Array(count);
-    const alphas = new Float32Array(count);
+    const positions = new Float32Array(count * 4 * 3);
+    const colors = new Float32Array(count * 4 * 3);
+    const sizes = new Float32Array(count * 4);
+    const alphas = new Float32Array(count * 4);
+    const aspects = new Float32Array(count * 4);
+    const rotations = new Float32Array(count * 4);
+    const frames = new Float32Array(count * 4);
+    const nextFrames = new Float32Array(count * 4);
+    const frameMixes = new Float32Array(count * 4);
+    const corners = new Float32Array(count * 4 * 2);
+    const indices = new Uint16Array(count * 6);
+    for (let i = 0; i < count; i++) {
+      corners.set([-1, -1, 1, -1, -1, 1, 1, 1], i * 8);
+      const base = i * 4;
+      indices.set([base, base + 1, base + 2, base + 2, base + 1, base + 3], i * 6);
+    }
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     for (const [name, array, width] of [
       ["position", positions, 3], ["aColor", colors, 3],
       ["aSize", sizes, 1], ["aAlpha", alphas, 1],
+      ["aAspect", aspects, 1], ["aRotation", rotations, 1],
+      ["aFrame", frames, 1], ["aFrameMix", frameMixes, 1],
+      ["aNextFrame", nextFrames, 1],
+      ["aCorner", corners, 2],
     ] as const) {
       const attribute = new THREE.BufferAttribute(array, width).setUsage(THREE.DynamicDrawUsage);
       geometry.setAttribute(name, attribute);
     }
     geometry.setDrawRange(0, 0);
+    const tilesU = Math.max(1, emitter.particle.tileCount[0]);
+    const tilesV = Math.max(1, emitter.particle.tileCount[1]);
     const material = new THREE.ShaderMaterial({
-      uniforms: { uMap: { value: null }, uHasMap: { value: false } },
+      uniforms: {
+        uMap: { value: null }, uHasMap: { value: false },
+        uTiles: { value: new THREE.Vector2(tilesU, tilesV) },
+      },
       vertexShader: `
         attribute vec3 aColor;
         attribute float aSize;
         attribute float aAlpha;
+        attribute float aAspect;
+        attribute float aRotation;
+        attribute float aFrame;
+        attribute float aFrameMix;
+        attribute float aNextFrame;
+        attribute vec2 aCorner;
         varying vec3 vColor;
         varying float vAlpha;
+        varying vec2 vUv;
+        varying float vFrame;
+        varying float vFrameMix;
+        varying float vNextFrame;
         void main() {
           vColor = aColor;
           vAlpha = aAlpha;
+          vUv = aCorner * 0.5 + 0.5;
+          vFrame = aFrame;
+          vFrameMix = aFrameMix;
+          vNextFrame = aNextFrame;
           vec4 view = modelViewMatrix * vec4(position, 1.0);
+          vec2 corner = vec2(aCorner.x * max(0.01, aAspect), aCorner.y) * aSize * 0.5;
+          float sine = sin(aRotation);
+          float cosine = cos(aRotation);
+          view.xy += vec2(cosine * corner.x - sine * corner.y,
+                          sine * corner.x + cosine * corner.y);
           gl_Position = projectionMatrix * view;
-          gl_PointSize = clamp(aSize * 350.0 / max(1.0, -view.z), 1.0, 96.0);
         }
       `,
       fragmentShader: `
         uniform sampler2D uMap;
         uniform bool uHasMap;
+        uniform vec2 uTiles;
         varying vec3 vColor;
         varying float vAlpha;
+        varying vec2 vUv;
+        varying float vFrame;
+        varying float vFrameMix;
+        varying float vNextFrame;
+        vec2 atlasUv(float frame) {
+          float column = mod(frame, uTiles.x);
+          float row = floor(frame / uTiles.x);
+          return (vec2(column, row) + vUv) / uTiles;
+        }
         void main() {
-          vec2 uv = gl_PointCoord;
-          float edge = 1.0 - smoothstep(0.42, 0.5, length(uv - 0.5));
-          vec4 texel = uHasMap ? texture2D(uMap, uv) : vec4(1.0, 1.0, 1.0, edge);
+          float edge = 1.0 - smoothstep(0.42, 0.5, length(vUv - 0.5));
+          vec4 texel = uHasMap
+            ? mix(texture2D(uMap, atlasUv(vFrame)), texture2D(uMap, atlasUv(vNextFrame)), vFrameMix)
+            : vec4(1.0, 1.0, 1.0, edge);
           gl_FragColor = vec4(vColor * texel.rgb, vAlpha * texel.a);
         }
       `,
@@ -98,11 +150,11 @@ export function createParticleEffect(
       };
       image.src = `data:image/png;base64,${emitter.texturePngBase64}`;
     }
-    const points = new THREE.Points(geometry, material);
-    points.frustumCulled = false;
-    points.matrix.copy(blockMatrix(THREE, emitter));
-    points.matrixAutoUpdate = false;
-    object.add(points);
+    const quads = new THREE.Mesh(geometry, material);
+    quads.frustumCulled = false;
+    quads.matrix.copy(blockMatrix(THREE, emitter));
+    quads.matrixAutoUpdate = false;
+    object.add(quads);
     const solver = new ParticleSolver(
       emitter.particle, emitter.emission ?? emitter.particle,
       (unit.effectId?.instance ?? unit.index) ^ Math.imul(index + 1, 0x9e3779b1),
@@ -111,16 +163,25 @@ export function createParticleEffect(
     return {
       tick(delta: number) {
         solver.advance(delta);
-        geometry.setDrawRange(0, solver.particles.length);
+        geometry.setDrawRange(0, solver.particles.length * 6);
         solver.particles.forEach((particle, i) => {
           const phase = particle.age / particle.life;
           const color = sampleColor(emitter.particle.color, phase);
-          positions.set(particle.position, i * 3);
-          colors.set(color, i * 3);
-          sizes[i] = Math.max(0, sampleScalar(emitter.particle.size, phase) * Math.abs(emitter.transform.scale));
-          alphas[i] = Math.max(0, Math.min(1, sampleScalar(emitter.particle.alpha, phase)));
+          const frame = particleAtlasFrame(emitter.particle, particle);
+          for (let corner = 0; corner < 4; corner++) {
+            const vertex = i * 4 + corner;
+            positions.set(particle.position, vertex * 3);
+            colors.set(color, vertex * 3);
+            sizes[vertex] = Math.max(0, sampleScalar(emitter.particle.size, phase));
+            alphas[vertex] = Math.max(0, Math.min(1, sampleScalar(emitter.particle.alpha, phase)));
+            aspects[vertex] = sampleScalar(emitter.particle.aspect, phase);
+            rotations[vertex] = sampleScalar(emitter.particle.rotation, phase, 0) * Math.PI * 2;
+            frames[vertex] = frame.current;
+            nextFrames[vertex] = frame.next;
+            frameMixes[vertex] = frame.mix;
+          }
         });
-        for (const name of ["position", "aColor", "aSize", "aAlpha"]) {
+        for (const name of ["position", "aColor", "aSize", "aAlpha", "aAspect", "aRotation", "aFrame", "aNextFrame", "aFrameMix"]) {
           geometry.getAttribute(name).needsUpdate = true;
         }
       },

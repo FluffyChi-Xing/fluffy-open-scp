@@ -9,8 +9,9 @@ const particle: SwarmParticle = {
   emitSpeed: [2, 2],
   emitVolumeMin: [0, 0, 0], emitVolumeMax: [0, 0, 0],
   rate: [120], rateLoop: 0,
-  size: [1, 2], alpha: [1, 0], color: [[1, 1, 1]],
+  size: [1, 2], aspect: [1], rotation: [0], alpha: [1, 0], color: [[1, 1, 1]],
   texture: { group: 0, instance: 0, drawMode: 4 },
+  tileCount: [1, 1], frameStart: 0, frameCount: 1, frameRandom: 0, frameSpeed: 0, frameSpeedByLife: false,
   directionForce: [0, 0, 0], windStrength: 0, gravityStrength: 0, drag: 0,
 };
 

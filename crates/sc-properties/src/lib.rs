@@ -25,23 +25,24 @@
 //! ```
 
 mod combine;
-pub mod decal;
 pub mod debug_tools;
+pub mod decal;
 mod error;
 pub mod inherit;
 pub mod locale;
 mod lot;
 mod lot_unit;
+pub mod map_assets;
 mod model;
 pub mod region_3d;
-pub mod region_state;
 pub mod region_bootstrap;
 pub mod region_city;
-pub mod map_assets;
 pub mod region_map;
+pub mod region_state;
 pub mod region_write;
 pub mod semantic;
 pub mod swarm;
+pub mod swarm_material;
 pub mod swarm_particle;
 
 use std::fmt;
@@ -60,9 +61,7 @@ pub use lot::{
     LOD1_MODEL_HASH, LOT_MASK_HASH, LOT_PLACEMENT_HASH, LOT_SIZE_HASH, LotEditorDocument,
     PROPERTY_RESOURCE_TYPE,
 };
-pub use lot_unit::{
-    LotUnit, LotUnits, UnitField, UnitKey, UnitTransform, assemble_units,
-};
+pub use lot_unit::{LotUnit, LotUnits, UnitField, UnitKey, UnitTransform, assemble_units};
 pub use model::{Key, Kind, PropType, Property, PropertyEncoding, Text, Transform, Value};
 pub use semantic::{
     BRUSH_HEIGHTMAP_NAME, BRUSH_RESOLUTION, PropertySemantic, property_semantic,

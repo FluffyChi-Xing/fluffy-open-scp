@@ -31,9 +31,17 @@ pub struct ParticleComponent {
     pub rate: Vec<f32>,
     pub rate_loop: f32,
     pub size: Vec<f32>,
+    pub aspect: Vec<f32>,
+    pub rotation: Vec<f32>,
     pub alpha: Vec<f32>,
     pub color: Vec<[f32; 3]>,
     pub texture: TextureRef,
+    pub tile_count: [u8; 2],
+    pub frame_start: u8,
+    pub frame_count: u8,
+    pub frame_random: u8,
+    pub frame_speed: f32,
+    pub frame_speed_by_life: bool,
     pub direction_force: [f32; 3],
     pub wind_strength: f32,
     pub gravity_strength: f32,
@@ -231,21 +239,10 @@ fn read_common(
     }
     // MetaParticle cycles
     else {
-        if r.little_arrays {
-            r.skip(6)?;
-        } else {
-            let extended = r.plausible_curve_count(14);
-            let compact = r.plausible_curve_count(6);
-            if extended {
-                r.skip(14)?;
-            } else if compact {
-                r.skip(6)?;
-            } else {
-                return Err(SwarmError::Invalid(
-                    r.base + r.pos,
-                    "unknown particle rate layout",
-                ));
-            }
+        r.skip(6)?; // rate cycles and speed scale
+        if !r.little_arrays {
+            r.skip_curve(4)?; // version 2 speed curve
+            r.skip(4)?; // speed variation
         }
     }
     Ok(ParticleComponent {
@@ -261,6 +258,8 @@ fn read_common(
         rate,
         rate_loop,
         size: Vec::new(),
+        aspect: Vec::new(),
+        rotation: Vec::new(),
         alpha: Vec::new(),
         color: Vec::new(),
         texture: TextureRef {
@@ -268,6 +267,12 @@ fn read_common(
             instance: u32::MAX,
             draw_mode: 15,
         },
+        tile_count: [1, 1],
+        frame_start: 0,
+        frame_count: 1,
+        frame_random: 0,
+        frame_speed: 0.0,
+        frame_speed_by_life: ((flags >> 32) & 4) != 0,
         direction_force: [0.0; 3],
         wind_strength: 0.0,
         gravity_strength: 0.0,
@@ -294,15 +299,21 @@ fn read_particle(r: &mut Reader<'_>) -> Result<ParticleComponent, SwarmError> {
     let mut p = read_common(r, (high << 32) | low, true, false)?;
     p.size = r.f32_curve()?;
     r.skip(4)?; // size variation
-    r.skip_curve(4)?; // aspect ratio
+    p.aspect = r.f32_curve()?;
     r.skip(12)?; // aspect variation, rotation variation/offset
-    r.skip_curve(4)?; // rotation curve
+    p.rotation = r.f32_curve()?;
     p.alpha = r.f32_curve()?;
     r.skip(4)?; // alpha variation
     p.color = r.color_curve()?;
     r.skip(12)?; // color variation
     p.texture = read_texture(r)?;
-    r.skip(8 + 4)?; // physics, tiling, frame controls, frame speed
+    r.skip(2)?; // physics type and override set
+    p.tile_count = [r.u8()?, r.u8()?];
+    r.skip(1)?; // align mode
+    p.frame_start = r.u8()?;
+    p.frame_count = r.u8()?;
+    p.frame_random = r.u8()?;
+    p.frame_speed = r.f32()?;
     p.direction_force = r.f32_triple_le()?;
     p.wind_strength = r.f32()?;
     p.gravity_strength = r.f32()?;
@@ -336,13 +347,6 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    fn plausible_curve_count(&self, offset: usize) -> bool {
-        self.data
-            .get(self.pos + offset..self.pos + offset + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_be_bytes)
-            .is_some_and(|count| (1..=1024).contains(&count))
-    }
     fn take(&mut self, len: usize) -> Result<&[u8], SwarmError> {
         let end = self
             .pos
@@ -417,6 +421,21 @@ impl Reader<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_two_speed_curve_consumes_its_full_length() {
+        let mut bytes = vec![0u8; 126];
+        bytes[88..92].copy_from_slice(&1u32.to_be_bytes()); // rate curve
+        bytes[106..110].copy_from_slice(&3u32.to_be_bytes()); // speed curve
+        let mut reader = Reader {
+            data: &bytes,
+            pos: 0,
+            base: 0,
+            little_arrays: false,
+        };
+        read_common(&mut reader, 0, true, false).unwrap();
+        assert_eq!(reader.pos, bytes.len());
+    }
 
     #[test]
     fn retail_collection_particle_sections_align() {

@@ -5,6 +5,7 @@ export interface ParticleState {
   velocity: [number, number, number];
   age: number;
   life: number;
+  frameOffset: number;
 }
 
 function curve(values: number[], phase: number, fallback: number): number {
@@ -89,6 +90,9 @@ export class ParticleSolver {
         velocity: direction.map((value) => value / length * speed) as [number, number, number],
         age: 0,
         life: Math.max(0.05, this.range(...this.appearance.life)),
+        frameOffset: this.appearance.frameRandom > 0
+          ? Math.floor(this.random() * this.appearance.frameRandom) * (this.appearance.frameCount || 1)
+          : 0,
       });
     }
     for (let i = this.particles.length - 1; i >= 0; i--) {

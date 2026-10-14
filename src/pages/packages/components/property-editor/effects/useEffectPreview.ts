@@ -24,7 +24,6 @@ export function useEffectPreview(
       return;
     }
     const ids = [...new Set(current
-      .filter((unit) => unit.enabled !== false)
       .map((unit) => unit.effectId?.instance)
       .filter((id): id is number => id != null))];
     if (!ids.length) {
