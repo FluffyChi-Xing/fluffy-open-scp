@@ -1,17 +1,17 @@
 /** CPU composition of lot albedo and tangent normals; lighting stays dynamic. */
-export interface Pixels {
-  data: Uint8ClampedArray<ArrayBuffer>;
+export interface Pixels<TBuffer extends ArrayBufferLike = ArrayBuffer> {
+  data: Uint8ClampedArray<TBuffer>;
   width: number;
   height: number;
 }
 
-export interface GroundComposeInput {
+export interface GroundComposeInput<TBuffer extends ArrayBufferLike = ArrayBuffer> {
   /** 量化 mask 图（RGB = 通道色字节，alpha = 覆盖）——rawMask 缺失时的回退源。 */
-  mask: Pixels;
+  mask: Pixels<TBuffer>;
   /** 原始通道权重图；缺失时回退量化图最近色硬分配。 */
-  rawMask: Pixels | null;
+  rawMask: Pixels<TBuffer> | null;
   /** 底图格像素（Lot Textures 图集第 baseTile 格已切出）；null = 白。 */
-  baseTile: Pixels | null;
+  baseTile: Pixels<TBuffer> | null;
   lotColors: [number, number, number, number][];
   /** LotBorderColor1-4 的 sRGB RGB；null = 无边框带。 */
   lotBorderColors: [number, number, number][] | null;
@@ -20,7 +20,7 @@ export interface GroundComposeInput {
   /** borderWidth1-4（边框带半宽，0..0.5）；null/全 0 = 无边框。 */
   lotBorderWidths: number[] | null;
   /** 全局共享法线图集（4×4 格，0x60E7805D）；null = 无图案光照（纯平色）。 */
-  normalAtlas: Pixels | null;
+  normalAtlas: Pixels<TBuffer> | null;
   baseTileIndex?: number;
   lotColorHeights?: number[] | null;
   lotBorderHeights?: number[] | null;
@@ -63,7 +63,7 @@ export function nearestChannel(
 
 /** 从 4×4 图集切第 index 格为独立 Pixels（纯数组切片，Worker 可用）。 */
 export function copyAtlasRegion(
-  atlas: Pixels,
+  atlas: Pixels<ArrayBufferLike>,
   index: number,
   cellW: number,
   cellH: number,
@@ -91,7 +91,7 @@ function frac(value: number): number {
  * CreateUnitLotGraphics 按 0x0CCB7FD0 指定的米制周期生成该坐标。
  */
 function sampleBaseCell(
-  source: Pixels,
+  source: Pixels<ArrayBufferLike>,
   u: number,
   v: number,
   tilesX: number,
@@ -107,7 +107,7 @@ function sampleBaseCell(
  * ——即探针口径；密度不足（上限裁剪）时双线性软化而非最近邻丢线。
  */
 function samplePatternBilinear(
-  source: Pixels,
+  source: Pixels<ArrayBufferLike>,
   u: number,
   v: number,
   tilesX: number,
@@ -192,7 +192,7 @@ export function groundOutputSize(
  * 权重双线性插值（阈值在插值后逐像素施加 = GPU 口径）+ 平色×图案明暗/
  * 底图直出。
  */
-export function composeGroundPixels(input: GroundComposeInput): GroundComposeOutput {
+export function composeGroundPixels(input: GroundComposeInput<ArrayBufferLike>): GroundComposeOutput {
   const { mask, rawMask } = input;
   const width = mask.width;
   const height = mask.height;
