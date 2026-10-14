@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 
-from eawebkit_runtime import inspect, Reader
+from eawebkit_runtime import inspect, Reader, validate_view
 
 TEXT = {
     "zh-CN": {"description": "EAWebKit 最小原生观察：3 个入口，限时自动撤回。",
@@ -77,11 +77,35 @@ def prepare(pid, seconds, directory):
     config = {'exeModule': 'SimCity.exe', 'dllModule': 'EAWebKit.dll',
               'eventRva': 0x62F500, 'eventBytes': event, 'eventSites': sites,
               'objectVtableRva': 0x777B08, 'arrayVtableRva': 0x870CD0, 'arrayDepth': 6, 'objectDepth': 7, 'valueBudget': 256, 'invokeRva': 0x632930, 'logRva': 0x5AC490, 'invokeBytes': invoke,
-              'valueVtableRva': 0x778A88, 'logBytes': logger, 'bindings': bindings, 'seconds': seconds}
+              'valueVtableRva': 0x778A88, 'logBytes': logger, 'bindings': bindings, 'seconds': seconds, 'refreshBindings': True}
     directory.mkdir(parents=True, exist_ok=False)
     (directory / 'preflight.json').write_text(json.dumps(survey, indent=2, ensure_ascii=False), encoding='utf-8')
     (directory / 'config.json').write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding='utf-8')
     return config
+
+
+def validate_candidate(pid, host_text):
+    """Read-only validation outside game callbacks; never trust a reported address."""
+    reader = Reader(pid)
+    try:
+        modules = {m['name'].lower(): m for m in reader.modules}
+        if 'eawebkit.dll' not in modules or 'simcity.exe' not in modules:
+            return None
+        host = int(host_text, 16)
+        view = reader.u32(host + 0xB0)
+        item = validate_view(reader, view, modules['eawebkit.dll']['base'] + 0x85C2B8)
+        if not item or int(item['userData'], 16) != host:
+            return None
+        bound = item.get('clientBinding', {})
+        if bound.get('location') != {'module': 'SimCity.exe', 'rva': '0x632930'}:
+            return None
+        if reader.u32(reader.u32(host) + 0x50) != modules['simcity.exe']['base'] + 0x62F500:
+            return None
+        return {'object': bound['object'], 'vtable': bound['vtable'], 'host': item['userData'],
+                'view': item['view'], 'private': item['private'], 'page': item['page'],
+                'uri': item.get('currentFrameURI'), 'methods': [x['name'] for x in item['registeredCallbacks']]}
+    finally:
+        reader.close()
 
 
 def capture(pid, config, directory, ready_callback=lambda: None):
@@ -95,6 +119,9 @@ def capture(pid, config, directory, ready_callback=lambda: None):
     counts = Counter()
     session = script = None
     total_bytes = 0
+    pending_hosts = set()
+    attempted_hosts = {}
+    summary['bindingRefresh'] = []
 
     def save():
         temporary = directory / 'status.tmp'
@@ -113,12 +140,15 @@ def capture(pid, config, directory, ready_callback=lambda: None):
                 return
             payload = message['payload']
             kind = payload.get('kind')
+            for host in payload.get('candidateHosts', [])[:16]:
+                if config.get('refreshBindings') and isinstance(host, str) and len(pending_hosts) < 16:
+                    pending_hosts.add(host)
             if kind == 'ready':
                 summary['ready'] = True
                 ready_callback()
             rows = payload.get('records', [])
             encoded = ''.join(json.dumps(x, ensure_ascii=False) + '\n' for x in rows).encode('utf-8')
-            if total_bytes + len(encoded) > 8 * 1024 * 1024:
+            if total_bytes + len(encoded) > config.get('diskLimitBytes', 8 * 1024 * 1024):
                 summary['stopReason'] = 'disk_limit'
                 stopped.set()
             elif encoded:
@@ -132,6 +162,7 @@ def capture(pid, config, directory, ready_callback=lambda: None):
                         key = 'result:' + key
                     counts[key] += 1
                 summary['counts'] = dict(counts)
+            summary['diagnostics'] = payload.get('diagnostics', summary.get('diagnostics', {}))
             summary['channels'] = payload.get('channels', summary.get('channels', {}))
             summary['dropped'] = payload.get('dropped', summary['dropped'])
             summary['decodeErrors'] = payload.get('errors', summary['decodeErrors'])
@@ -167,6 +198,23 @@ def capture(pid, config, directory, ready_callback=lambda: None):
             if directory.with_suffix('.stop').exists():
                 summary['stopReason'] = 'requested'
                 break
+            with lock:
+                candidates = list(pending_hosts)[:4]
+                pending_hosts.difference_update(candidates)
+            for host in candidates:
+                now = time.monotonic()
+                if now - attempted_hosts.get(host, 0) < 2 or len(summary['bindingRefresh']) >= 64:
+                    continue
+                attempted_hosts[host] = now
+                try:
+                    binding = validate_candidate(pid, host)
+                    accepted = bool(binding and script.exports_sync.addbinding(binding))
+                    entry = {'time': int(time.time() * 1000), 'host': host, 'accepted': accepted, 'binding': binding}
+                except Exception as error:
+                    entry = {'time': int(time.time() * 1000), 'host': host, 'accepted': False, 'error': str(error)[:160]}
+                with lock:
+                    summary['bindingRefresh'].append(entry)
+                    save()
     except KeyboardInterrupt:
         summary['stopReason'] = 'interrupted'
     finally:
@@ -205,9 +253,20 @@ def main():
     parser.add_argument('--pid', type=int, required=True, help=labels['pid'])
     parser.add_argument('--directory', type=Path, required=True, help=labels['directory'])
     parser.add_argument('--seconds', type=int, default=60, help=labels['seconds'])
+    parser.add_argument('--exhaustive', action='store_true', help='保留所有已挂接入口记录，不做每秒采样')
     args = parser.parse_args()
     try:
         config = prepare(args.pid, args.seconds, args.directory)
+        if args.exhaustive:
+            config['channelMaxLimit'] = 1000000
+            config['channelLimits'] = {name: 1000000 for name in (
+                'command', 'query', 'other', 'console', 'result', 'event',
+                'mutation', 'mutationResult', 'template', 'templateResult',
+                'region', 'regionResult')}
+            config['diskLimitBytes'] = 128 * 1024 * 1024
+            config['channelQueueLimit'] = 1000000
+            config['batchLimit'] = 4096
+            config['finalBatchLimit'] = 1000000
         if args.directory.with_suffix('.stop').exists():
             (args.directory / 'status.json').write_text(json.dumps({'ready': False, 'stopReason': 'requested', 'unloaded': True, 'detached': True}), encoding='utf-8')
             return

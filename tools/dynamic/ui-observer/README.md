@@ -202,3 +202,57 @@ python tools/dynamic/ui-observer/historical_checks.py tmp/ui-log-samples/v5 --ou
 
 The report distinguishes observed-save signals from missing create-region, localization,
 and resource-reload evidence. 报告区分已有存档信号与创建区域、词条、资源重载证据。
+
+
+## 稀有写请求独立采样（2026-10-13）
+
+`SaveLocalGame`、`SaveRegionAs`、`UpdateBoxName`、`UpdateRegionName` 虽然通过
+RequestGameData 传输，却具有写副作用。原生观察器先读取经过结构校验的、最多
+32 个 UTF-16 单元的请求前缀，再决定采样通道。它们使用 `mutation` 与
+`mutationResult` 独立额度和队列，通过 callSequence 关联；原始 channel/name
+仍保留 invoke/RequestGameData 和 result，附加 operationKind=mutation。
+普通查询依旧限流；独立通道本身也有上限，仍须检查 accepted/dropped。
+
+每批 diagnostics 包含 unknownInvokeBinding、unknownEventHost 和
+requestPrefixUnreadable。前两项用于揭示初始绑定之外的调用，不会自动信任新对象；
+未知绑定仍被过滤。字符串不是已验证的 flat 结构时不尝试执行 getter 或展开 rope。
+
+```powershell
+node --test tools/dynamic/ui-observer/native_agent.test.cjs
+python tools/dynamic/ui-observer/test_native_fixture.py tmp/ui-webkit/native_fixture.exe
+```
+
+前者验证普通查询额度饱和后四种写请求和返回仍可配对，并拒绝相似前缀；后者
+验证独立 x86 进程的原调用、线程、解码和撤回后入口恢复。不会主动调用游戏 API。
+
+
+## 已校验绑定刷新（2026-10-13）
+
+零售配置启用 refreshBindings。未知调用仅上报有界 host 候选（每批最多 16）；
+Python 在游戏回调外只读验证 View/Private/Page、宿主反向引用、注册方法和
+Client 入口，并检查事件派发入口。探针再复核对象、宿主、view/private/page
+双向指针与入口表后才登记，最多 64 个绑定。每轮最多验证 4 个候选，单 host
+至少间隔 2 秒；记录最多 64 次刷新结果。未校验对象继续过滤，不调用引擎 API。
+
+status.json 的 bindingRefresh 记录候选、时间、校验结果和新绑定；diagnostics
+记录未知调用及成功更新次数。新绑定出现到验证完成之间仍存在漏采窗口，
+这些调用不能补回；此机制不是完整生命周期 hook，也不保证捕获最早的加载事件。
+
+
+## RegionTemplates 专项（2026-10-13）
+
+`RegionTemplates` 请求/返回使用 template/templateResult 独立通道（各每秒 2 次）。
+返回的专用解码上限为数组 32 项、对象 64 个自有属性、深度 12、12000 个值、
+40 ms 时间预算；普通请求仍使用原有上限。返回 observation 标明耗时、读取节点数
+和 deadlineReached。必须递归检查 truncated、unsupported 和深度限制，才能判定
+实际完整性；声明数组长度与实际展开项数分开统计。仍不调用 getter 或引擎 API。
+
+
+## 区域创建与身份专项（2026-10-13）
+
+CreateRegion、CreateBox、GetRegionDetails、LatestBox、activeBoxId、ActiveCityUID、RegionID
+使用 region/regionResult 独立通道，各每秒最多4次；前两项仍标注 operationKind=mutation。
+返回使用与模板相同的有界展开预算，observation.profile=region-lifecycle。
+这些通道仍可能限流，采样后必须检查 dropped 与每个字段的截断标志，不能声称全量。
+回归测试验证普通查询饱和时创建/身份请求仍能配对、创建操作副作用标签、相似前缀拒绝，
+以及专项额度耗尽后的丢弃。独立 x86 fixture 验证520次原调用、双线程和撤回恢复。
