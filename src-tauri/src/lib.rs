@@ -29,6 +29,7 @@ mod raster_edit;
 mod raster_catalog;
 mod render_telemetry;
 mod runtime_observer;
+mod game_launch;
 mod settings;
 mod stats;
 mod version_service;
@@ -147,6 +148,9 @@ pub fn run() {
             runtime_observer::observer_stop,
             runtime_observer::observer_status,
             runtime_observer::observer_sync,
+            game_launch::game_processes,
+            game_launch::deploy_game_mod,
+            game_launch::launch_game,
             version_list_targets,
             version_list_changesets,
             version_changeset_detail,

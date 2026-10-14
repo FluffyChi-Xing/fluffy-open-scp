@@ -63,6 +63,8 @@ import {
   type RenderTelemetrySummary,
   type RollbackResult,
   type SettingsStatus,
+  type GameProcessInfo,
+  type DeployGameModResult,
   type SetupStatusResponse,
   type StudioConfigStatus,
   type TelemetryClearResult,
@@ -253,6 +255,10 @@ export const tauriApi = {
       }),
     codeManifest: (project: string) =>
       command<CodeManifestResponse>("code_manifest", { request: { project } }),
+    deployGameMod: (project: string, artifact: string) =>
+      command<DeployGameModResult>("deploy_game_mod", { request: { project, artifact } }),
+    gameProcesses: () => command<GameProcessInfo[]>("game_processes"),
+    launchGame: () => command<GameProcessInfo>("launch_game"),
   },
   raster: {
     readLotPreviewAtlases: () => command<{lotSurfacePng: string; lotNormalAtlasPng: string | null} | null>("read_lot_preview_atlases"),
