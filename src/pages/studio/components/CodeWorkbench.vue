@@ -102,6 +102,27 @@ const projectManifest = shallowRef<Record<string, unknown>>({});
 const engineReady = ref(false);
 const initializeOpen = ref(false);
 const flowPanel = ref<InstanceType<typeof ModFlowWorkbench> | null>(null);
+const deployBusy = ref(false);
+
+async function buildDeployAndLaunch() {
+  if (!engineReady.value || deployBusy.value) return;
+  deployBusy.value = true;
+  try {
+    const artifact = await flowPanel.value?.buildArtifact();
+    if (!artifact) return;
+    const deployed = await tauriApi.workspace.deployGameMod(props.project.relPath, artifact);
+    toast.success(t("flow.deploySuccess", { path: deployed.destination }));
+    if (!deployed.gameRunning && window.confirm(t("flow.launchConfirm"))) {
+      const process = await tauriApi.workspace.launchGame();
+      toast.success(t("flow.launchStarted", { pid: process.pid }));
+    }
+  } catch (cause) {
+    const code = (cause as { code?: string }).code ?? "";
+    toast.error(t(`flow.${code || "deployFailed"}`));
+  } finally {
+    deployBusy.value = false;
+  }
+}
 
 const fatalMessage = computed(() => {
   switch (fatalCode.value) {
@@ -382,7 +403,11 @@ watch(
       </div>
       <div class="heading-actions">
         <span v-if="projectManifest.origin" class="tree-stats">{{ t(projectManifest.origin === 'openscp' ? 'flow.standard' : 'flow.community') }}</span>
-        <button v-if="engineEnabled" class="refresh-button" :disabled="!engineReady" :title="t(engineReady ? 'flow.ready' : 'flow.blocked')" @click="flowPanel?.build()">{{ t('flow.build') }}</button>
+        <button v-if="engineEnabled" class="refresh-button" :disabled="!engineReady || deployBusy" :title="t(engineReady ? 'flow.ready' : 'flow.blocked')" @click="flowPanel?.build()">{{ t('flow.build') }}</button>
+        <button v-if="engineEnabled" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
+          <FIcon :name="deployBusy ? 'Loader2' : 'Play'" :size="13" aria-label="" />
+          {{ t(deployBusy ? 'flow.buildDeploying' : 'flow.buildDeploy') }}
+        </button>
         <button v-else class="refresh-button" :disabled="loading || !tree" @click="initializeOpen = true">{{ t('flow.initialize') }}</button>
         <span v-if="tree" class="tree-stats">
           {{

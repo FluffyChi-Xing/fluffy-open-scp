@@ -222,6 +222,11 @@ async function removeEdge(id: string) {
 }
 defineExpose({
   build: () => (readyToBuild.value ? build() : undefined),
+  buildArtifact: async () => {
+    if (!readyToBuild.value) return undefined;
+    await build();
+    return artifact.value || undefined;
+  },
   refresh,
 });
 </script>

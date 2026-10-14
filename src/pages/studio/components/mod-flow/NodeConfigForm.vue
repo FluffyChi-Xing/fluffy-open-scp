@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 
 import type { FlowSchema } from "./contracts";
 import MapSourceTool from "./MapSourceTool.vue";
+import { useGamePackagesStore } from "@/stores/gamePackages";
 const props = defineProps<{ schema: FlowSchema | null; busy: boolean }>();
 const emit = defineEmits<{
   save: [schema: FlowSchema];
@@ -13,6 +14,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const gamePackages = useGamePackagesStore();
 const config = ref<Record<string, string | number>>({});
 watch(
   () => JSON.stringify(props.schema?.config),
@@ -44,6 +46,31 @@ const preserveOnly = computed(() =>
     props.schema?.kind ?? "",
   ),
 );
+const openedPackageOptions = computed(() =>
+  [...gamePackages.opened]
+    .sort((a, b) => Number(b.package.packageId === gamePackages.activePackageId) - Number(a.package.packageId === gamePackages.activePackageId))
+    .map((entry) => ({
+      value: entry.package.path,
+      label: entry.package.path.split(/[\\/]/).pop() || entry.package.path,
+    })),
+);
+const sourcePackageChoice = computed({
+  get: () => {
+    const value = String(config.value.source_package ?? "");
+    return value && openedPackageOptions.value.some((option) => option.value === value)
+      ? value
+      : value
+        ? "__manual__"
+        : "__none__";
+  },
+  set: (value: string) => {
+    if (value === "__none__") config.value.source_package = "";
+    else if (value === "__manual__") {
+      if (!String(config.value.source_package ?? "")) config.value.source_package = "";
+    } else config.value.source_package = value;
+  },
+});
+const sourcePackageIsManual = computed(() => sourcePackageChoice.value === "__manual__");
 function save() {
   if (props.schema)
     emit("save", { ...props.schema, config: { ...config.value } });
@@ -98,6 +125,23 @@ function save() {
         :disabled="busy"
         :options="[{ value: 'fbm-v1', label: t('flow.fbmV1') }]"
         @update:model-value="config[field] = $event"
+      />
+      <input
+        v-if="field === 'source_package' && sourcePackageIsManual"
+        v-model="config[field]"
+        :disabled="busy"
+        :placeholder="t('flow.sourcePackageManualHint')"
+        spellcheck="false"
+      />
+      <FDropdownSelect
+        v-else-if="field === 'source_package'"
+        v-model="sourcePackageChoice"
+        :disabled="busy"
+        :options="[
+          { value: '__none__', label: t('flow.sourcePackageNone') },
+          ...openedPackageOptions,
+          { value: '__manual__', label: t('flow.sourcePackageManual') },
+        ]"
       />
       <input
         v-else-if="typeof config[field] === 'number'"
