@@ -1,5 +1,20 @@
 # 运行时日志复核与补捕获清单（2026-10-13）
 
+## 最新进展（完整模板采样后）
+
+以下早期审计描述的是当时版本，不代表当前探针仍有相同限制。现已增加写请求独立额度、经外部校验的动态绑定刷新，以及 RegionTemplates 专用有界解码。保存/中文改名已配对成功；同进程保存重载名称读回和用户流畅度验收通过。
+
+本轮完整取得 14 个模板、128 个城市和 128 个 boxes；三一岬 key=247。城市 XY 向零截断后，128 项均唯一对应同模板同索引 box；仅 LittleGorge 两项含小数差异。此对应关系不是持久化 box ID 映射。详情见 retail-eawebkit-runtime.md 的完整 RegionTemplates 节和 `tmp/ui-log-samples/region-templates-20261013/mapping-validation.json`。
+
+接下来按证据缺口推进：
+
+1. 模板 → 创建区域返回的 region/box/city 身份 → 初始资源 → 模拟读值 → 保存重载。已有 Confluence 样本已核对：key248 → region9 → box71/UID1030 → 资金查询。新建“观测测试1013”已捕获 region10/box77/UID1030，且消费后保存、彻底退出、新进程加载后仍读回 box77/UID1030/region10 与资金954311；见 `spend-restart-20261013-runtime-analysis/restart-evidence.json`。
+2. 另存为和跨进程中文名称可靠解码；不要把有界解码中的乱码当作名称未持久化。
+3. 词条最终显示值对应的 TGI、来源包及本地化 ID；现有网页桥不足以归因旧覆盖包失败。
+4. 摄像机活动控制器、夹取前后坐标和边界来源；移动通知不证明 clamp 位置，需要独立原生观察点。
+
+普通查询仍限流，未知绑定校验前仍会漏掉首次调用；当前结果不应描述为无损日志。完整模板轮探针已撤回，用户确认无卡顿。
+
 ## 本轮范围
 
 提交 `6b58622` 后，对已有五组导出 timeline 做离线复核；本轮没有附加或注入游戏。
@@ -49,4 +64,11 @@
 
 ## 下一步实施重点
 
-先补观测连续性和字符串解码诊断，再重做一轮改名/保存重载；之后进行模板/资源专项，最后为摄像机增加独立观察面。无需再次证明已有的普通 PostGameCommand / RequestGameData 调用形态。
+先补字符串解码诊断和另存为专项；之后补煤/油/矿初始栅格、道路/地形与跨城模拟证据，最后为摄像机增加独立观察面。无需再次证明已有的普通 PostGameCommand / RequestGameData 调用形态。
+
+
+## 2026-10-13 补充：已定位保存和改名入口
+
+零售 Game JS 已确认保存 `SaveLocalGame`、另存为 `SaveRegionAs`、城市改名 `UpdateBoxName`、区域改名 `UpdateRegionName` 都通过 RequestGameData。原有“可能由更外层原生菜单触发”的推测已修正；这也意味着整个 RequestGameData 通道不能被归为只读。
+
+save-reload-60s 已存在保存提示事件 2628581196（三条，showNotification=true/false/true）。下一步优先级增加“稀有写请求独立采样”，解决当前每秒 40 次共享查询限流在参数解码前丢弃的问题。该事件仅反映保存提示，不替代返回值和文件持久化校验。完整调用链见 retail-eawebkit-runtime.md 的保存与改名修正节。

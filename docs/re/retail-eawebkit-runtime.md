@@ -324,7 +324,7 @@ python tools/dynamic/ui-observer/historical_checks.py tmp/ui-log-samples/v5 --ou
 1030 (-2560,-1656, -855)
 ```
 
-同一响应包含 5 个 boxes（67–71），每个新 box 的 `regionTemplateName=Confluence`，资源初始化包含 `mayor_Rating.amount=0`、`simoleons.amount=0`、`simoleonsForFrontEnd.amount=50000`、`total_Residential.amount=0`。`GetRegionDetails/9` 重复返回同一 map/boxes；`PlayingRegions` 返回包含 boxes 的 regions 集合。`CreateBox/7/55/...` 返回认领后的 box 对象，`cities_count=0`，名称在当前 UTF-16 flat string 读取中出现乱码，需以原始值和游戏界面对拍，不能据此断言词条资源损坏。
+同一响应包含 5 个 boxes（67–71），每个新 box 的 `regionTemplateName=Confluence`，资源初始化包含 `mayor_Rating.amount=0`、`simoleons.amount=0`、`simoleonsForFrontEnd.amount=50000`、`total_Residential.amount=0`。`GetRegionDetails/9` 重复返回同一 map/boxes；`PlayingRegions` 返回包含 boxes 的 regions 集合。v6 的 `CreateBox/9/71/河灣` 返回 id=71、isClaimed="true"、name="河灣"；`cities_count=0` 属于嵌套 creator 字段，不能当作该区域城市数量。此前将其他轮次的请求和乱码描述混入此处，已按 v6 JSON 修正。
 
 这证明了“模板→城市槽位→box→资源初始化”的 UI 消费链，补足了已有存档样本没有的证据。仍未观察到独立 `RegionTemplates` 请求或 locale/string 表加载；模板名来自创建响应中的 `regionTemplateName`。查询采样有独立限流，不能将丢弃计数视为游戏请求失败。
 
@@ -358,4 +358,178 @@ RegionPlayers/{"ids":[{"city":1026,"user":1911777},{"city":1027,"user":1911777},
 
 用户在观察器运行期间执行了保存城市、退出菜单、重新读档并切换区域城市。`tmp/ui-log-samples/save-reload-60s/` 捕获到两次 `handleEscapeKey`、`optionsMenuActive/true|false`、`deselecttool` 以及重载后的一组 `tickerMod/*` 初始化命令，但没有 `GameLoaded`、`GameLoadingFinalized`、`regiondata` 或独立 `save/load` 命令。有效桥记录的时间跨度约 4.8 秒，之后长时间无新记录。
 
-因此当前证据表明保存/加载主流程可能由更外层的原生菜单/存档服务处理，或在页面重建期间暂时脱离已绑定的 EAWebKit Client 桥。不能把“未捕获到 save/load”解释为“保存没有发生”；下一步应把原生文件/进程级观察与页面桥采样并行，而不是继续增加同一入口的采样时长。
+此处此前曾推测保存可能由更外层原生菜单处理；2026-10-13 已由零售 Game JS 核对修正：保存按钮明确通过 RequestGameData("SaveLocalGame") 触发。未捕获请求不能推出它绕过网页桥；应先排查共享查询限流和页面绑定覆盖，再以文件观察核对持久化。详见下一节。
+
+
+## 保存与改名的 UI 调用链修正（2026-10-13）
+
+用户提供保存/另存为和城市命名界面截图后，重新直接核对提取的零售 `game-7CCC548C.js`，SHA-256 `683c66fe0d0146b9b630bbe59e1df89848fc05d907f3028147c01ff4f407431b`。没有执行脚本或向游戏发请求。
+
+| 操作 | UI 路径 | 离线桥请求 |
+|---|---|---|
+| 保存游戏 | MainMenuSave → PostSaveGameCommand | RequestGameData("SaveLocalGame") |
+| 另存为 | MainMenuSaveAs → CreateSaveAsDialog → SaveRegionAs → HandleSaveRegionAs | RequestGameData("SaveRegionAs/<regionID>/<name>/<boolean>") |
+| 城市改名 | AcceptButton → SubmitRenameForm → RenameCity → HandleCityRename | RequestGameData("UpdateBoxName/<boxID>/<name>") |
+| 区域改名 | SubmitRenameForm → RenameRegion → HandleRegionRename | RequestGameData("UpdateRegionName/<regionID>/<name>") |
+
+可复核提取文件行号：保存/另存为按钮 906–907，PostSaveGameCommand 961，SubmitRenameForm 4695，HandleCityRename 4696，HandleRegionRename 4697，HandleSaveRegionAs 4698。普通保存无后缀；PostSaveGameCommand 的其他调用方可能追加 true 参数，其含义应结合各调用点验证。
+
+保存回调检查第一个结果的 `json.result === true`，并处理 `json.error`（11 对应磁盘空间不足提示）。离线改名回调读取 `json.name` 更新城市显示，传入的是 playingBox.id，不能与 map.cities 的 UID 混为一谈。在线模式的城市改名另走 XHR POST `/box/<id>/updateName/<name>.json`；当前离线分析应按离线分支处理。
+
+**RequestGameData 不是只读 API。** 接口名称是传输分类，不能作为权限或副作用分类。保存、改名、创建区域等写操作都能通过此方法进入引擎；未来控制台必须逐操作分类，不能开放整个查询接口为只读白名单。
+
+旧 `save-reload-60s` 样本实际上包含 3 条 `kEventTriggerSaveCityNotification=2628581196`（常量在 Game JS 第 800 行），序号 172/173/512，payload.showNotification 为 true/false/true。此前仅用基础 UI 常量目录时，该 ID 没有得到语义名称。这支持保存 UI 通知确实经过观测桥，但通知开关不是磁盘持久化完成证明。
+
+四组地图/改名/保存专项 timeline 中均未找到上述四个请求字符串。native_agent 的 RequestGameData 共用每秒 40 次额度，且先 admit('query') 再解码参数；因此稀有写请求可被高频资源查询挤掉。这是另一项已确认的采集机制盲区，尚不能确定哪一次漏采由它造成。
+
+下一步：在有界读取请求名称后，为上述请求与返回设置独立额度和配对统计；同时维护已校验的页面绑定生命周期。再分别进行保存、改名、另存为单动作采样，避免把所有操作挤在一个窗口中。普通读取与有副作用请求在分析中分开标注，但不主动重放请求。
+
+
+## 保存与改名独立额度实机验证（2026-10-13）
+
+在用户确认已有城市就位后启动 60 秒探针，ready 后通知用户操作。
+原始会话 `tmp/ui-native-save-rename-priority-20261013`；JSON 导出
+`tmp/ui-log-samples/save-rename-priority-20261013`，另有 `mutations.json` 专项记录。
+
+- 总记录 5519：96 命令、2400 普通查询及返回、611 事件、6 个写请求及返回。
+- 4 次 `SaveLocalGame` 均返回 `json.result=true`，桥调用耗时 208/196/212/205 ms。
+- 2 次 `UpdateBoxName/8/哈机密`，均返回 `json.name="哈机密"`；输入与返回中文一致；用户随后确认实际名称正确。
+- mutation / mutationResult 各接受 6 条、丢弃 0；普通查询 66999 次中采样 2400 次、丢弃 64599 次。该样本证实独立额度在高频查询负载下仍能抓到这些写请求，不证明过去每次漏采的唯一原因。
+- unknownInvokeBinding、unknownEventHost、requestPrefixUnreadable 均为 0；这是当前稳定城市窗口的证据，不能外推重载后的绑定覆盖。
+- agent/解码错误 0，无 crashReported，正常 unload/detach；外部只读核对三个入口恢复原字节，证据位于会话 restoration.json。
+- 准入回归测试证明普通查询额度耗尽后四种写请求与返回仍能配对；独立 x86 fixture 520 次原调用、双线程和撤回恢复均通过。
+
+本轮闭合了 UI → 写请求 → 引擎返回的路径。未执行保存后重载或另存为，不能单凭返回值证明持久化最终状态；用户随后确认名称正确、无卡顿；本轮名称对照与主观流畅度验收通过。
+
+
+## 保存/重载与绑定刷新实机证据（2026-10-13）
+
+用户确认城市就位，探针 ready 后通知保存、回菜单、重载同一城市。会话
+`tmp/ui-native-save-reload-bindings-20261013`，导出
+`tmp/ui-log-samples/save-reload-bindings-20261013`，专项请求/返回在
+`region-and-reload-evidence.json`。
+
+- 60 秒窗口取得 3804 记录，首末跨度 59.959 秒。
+- `SaveLocalGame` 和 `SaveLocalGame/true/true` 各一次，均有配对成功返回 `json.result=true`。
+- 出现 3 次通过校验的绑定更新：Launcher 资源页、WebKitPanel.html、游戏资源页。对象 `0x7107ea78` 在后两阶段被复用，但 host/page 已改变，说明不能只按对象地址当作永久身份。
+- unknownInvokeBinding=4、unknownEventHost=4；这些验证前调用未记录，不能回补。其余命令还因普通通道限流丢弃 177 次、普通查询丢弃 50312 次，写请求/返回和已接收事件通道丢弃 0。
+- GameLoaded 247678832 两次，GameLoadingFinalized 254599144 一次；记录在绑定更新后继续。
+- 首次捕获 RegionTemplates 返回，其 regionTemplates 数组声明长度 14，但有 8 项/对象属性/值预算等截断，不能称为完整模板导出。
+- LatestBox 三次均返回 id=8、name="哈机密"；随后 activeBoxId="8"、ActiveCityUID=1026、RegionID=2。PlayingRegions 也被捕获。这构成同一进程保存/重载阶段的名称读回和城市身份关联证据；不等同于重新启动进程后对磁盘存档的独立验证。
+- 无 agent/解码错误或 crashReported；正常撤回且三个入口字节恢复，见 restoration.json。
+- 用户随后对重载后显示名称与运行状态回复“是，无卡顿”；结合上述名称读回和加载完成事件，本轮同进程重载验收通过。彻底退出游戏再启动的跨进程持久化仍未验证。
+
+新绑定基于未知调用候选，在进程外只读 validate_view 后再在探针内复核；没有自动调用引擎函数。绑定更新有界且存在首次调用漏采窗口；它不是直接 hook 页面生命周期。后续更新对复用的 object/host 移除旧映射，避免把地址当永久身份。
+
+## 完整 RegionTemplates 采样（2026-10-13）
+
+用户确认城市就位后启动 60 秒观察，ready 后通知保存、返回菜单、打开创建区域页并切换模板；没有主动调用游戏 API。会话 `tmp/ui-native-region-templates-20261013`，导出 `tmp/ui-log-samples/region-templates-20261013`。原始类型数据保留在 timeline，简化字段在 `templates-projection.json`，完整性与坐标核对在 `mapping-validation.json`。
+
+RegionTemplates 请求及返回各一条，专项通道丢弃 0。递归检查无截断或未解码节点，数组声明长度与实际项数一致；解码 1709 个值，耗时约 12 ms，没有触及 40 ms 截止预算。
+
+| 模板 | key | 城市 / boxes | 伟大工程 |
+|---|---|---|---|
+| SC_Hinsara | 276 | 8 / 8 | 2 |
+| Gallia | 249 | 16 / 16 | 4 |
+| TwinCities | 246 | 2 / 2 | 1 |
+| Oasis | 273 | 14 / 14 | 2 |
+| LittleGorge | 245 | 16 / 16 | 4 |
+| Horizon | 250 | 11 / 11 | 3 |
+| CapeTrinity | 247 | 3 / 3 | 1 |
+| Confluence | 248 | 5 / 5 | 1 |
+| Caspiar | 274 | 6 / 6 | 2 |
+| SC_Desolation | 275 | 7 / 7 | 1 |
+| EdgeWaterBay | 254 | 7 / 7 | 1 |
+| CaspianLake | 256 | 10 / 10 | 2 |
+| Reflection | 251 | 7 / 7 | 1 |
+| Sawyer | 252 | 16 / 16 | 4 |
+
+共 14 个模板、128 个城市和 128 个 boxes。将城市 XY 向零截断后，每个城市都唯一匹配同模板同数组索引的 box。只有 LittleGorge 的 UID 1038、1039 存在原始坐标差异：城市 Y 分别为 -4275.7001953125、-6285.39990234375，box Y 为 -4275、-6285。这是观测到的对应关系，尚未证明引擎转换规则。模板 boxes 没有持久化 id，不能把数组索引当作创建后 box ID，也不能跨模板仅凭 UID 认定同一城市。
+
+三一岬 CapeTrinity 仍在当前运行时列表中，key=247，3 城市、3 boxes、1 伟大工程。当前未安装历史屏蔽包，因此此结果不能单独解释旧覆盖包为什么失败。词条来源包、TGI、locale/string ID 仍需独立资源消费证据。
+
+全窗口 873 条记录：330 组查询及返回、19 条事件、194 条命令；2 次绑定更新，未知 invoke 绑定 4 次、未知 event host 1 次。普通命令丢弃 175 次、查询丢弃 4712 次，因此不是无损事件流。无 agent/解码错误，unload/detach 成功，三个入口恢复字节见 restoration.json。用户随后确认本轮无卡顿。
+
+下一缺口是把完整模板与创建返回的实际 region ID、box ID、city UID、资源初始化字段逐项关联，再对照模拟读取与保存重载。当前完整导出不等同于已验证新增槽位可模拟、单城扩边可用或新地图生成成功。
+
+
+## 创建区域样本与完整模板的交叉核对（2026-10-13）
+
+本次仅离线分析既有 v6 样本，没有注入或调用游戏。报告 `tmp/ui-log-samples/creation-chain-20261013/correlation.json` 保存源文件 SHA-256、请求序号、字段投影、身份读回及资金变化；原始返回仍在 v6 queries.json，部分对象属性被旧预算截断，不能把缺失字段当不存在。
+
+- v6 序号 23：CreateRegion/33333/248/true 返回 region id=9、区域级 boxId=66、城市 boxes 67–71。5 个 map.cities 的 UID/XYZ 与最新模板 Confluence/key248 完全一致。
+- Launcher JS 1528 行：先 GetCityIndexByUID(a.boxUid, i.map.cities)，再用 i.boxes[g].id 调用 CreateBox。因此按数组索引得到 1026→67、1027→68、1028→69、1029→70、1030→71；这是前端消费规则，实际入城读回只验证了最后一项。
+- 序号 25：CreateBox/9/71/河灣 返回 id=71、isClaimed=true 的字符串值、同名名称。随后 PostGameCommand loadGame/71（序号40）。activeBoxId 两次读回 "71"，ActiveCityUID 两次为1030，RegionID两次为9；regiondata/9 和 RegionPlayers city1030 也出现。
+- 资金资源 ID 932594546 在 Game JS 303 行明确定义为 kResourceIDSimoleons。resourceAmount 和 binAmount 共56次读值，最初均50000；随后观察到1000000、997598、995249、993146、991709。两接口采样时刻不同，不能要求逐条相同；也未证明资金跃升的原因。创建返回的 simoleons.amount=0 / simoleonsForFrontEnd.amount=50000 是区域列表字段，不能直接等同为稳定模拟资金。
+- 此链已覆盖模板、创建区域、认领、入城身份和运行时资金读取，但尚未覆盖同一 region9/box71 的保存重载。此前“哈机密”的 region2/box8 重载样本不能补上另一个城市的持久化证据。
+
+词条消费也得到更具体的静态线索：Launcher 1530 行在缺省城市名时调用 GetCityStubDescription(templateName, cityUID)，取 cityName 经 ParseLocaleString/LoadString 后送入 CreateBox；1517 行的查询来源是 kRegionalDefaultCityInfo。它说明默认名称的使用位置，但仍不提供实际 locale 资源来源包/TGI 或旧覆盖包加载优先级。
+
+摄像机命令需避免误判：v6 中捕获的 UnlockCamera 在 Game JS 877 行 OnGlobalUILoaded 中自动发送，5294 行的模态窗口关闭也发送同名命令。此证据支持它用于恢复交互，不能证明解除空间边界；边缘 clamp 仍需原生控制器观察。
+
+
+## 新区域创建专项：显式 box UID 补齐（2026-10-13）
+
+用户告知旧区域33333已删除，因此确认创建页就位后，启动新60秒窗口，再通知创建“观测测试1013”。会话 `tmp/ui-native-creation-lifecycle-20261013`，导出 `tmp/ui-log-samples/creation-lifecycle-20261013/creation-evidence.json`。
+
+新增 region/regionResult 独立有界通道后，CreateRegion、CreateBox、GetRegionDetails 和两组身份查询共9对，接受9/丢弃0，递归检查无截断或未解码节点。前三个响应解码分别3/4/2 ms，均未触及时间预算。
+
+- CreateRegion/观测测试1013/248/true 返回 region id=10，区域级 boxId=72，城市 boxes 73–77，Confluence/key248，sandbox=true。
+- 这次直接读到每个 box.uid：73→1026、74→1027、75→1028、76→1029、77→1030，全部与同索引 map.cities.uid 一致。此前只能依赖 UI 索引规则的映射，现有原生响应字段直接支持。
+- CreateBox/10/77/河灣 返回 id=77、uid=1030、region.id=10、name=河灣。两组 activeBoxId/ActiveCityUID/RegionID 分别读回77/1030/10。区域名和城市名中文均完整解码，实际画面待用户对照。
+- CreateRegion 返回的 map.cities 与最新完整模板逐项相同。其嵌套 template.boxes=[]、template.map={} 是本响应实际返回的空容器（无截断），不能拿它们替代顶层 map/boxes，也不能据此认定模板缺城市。
+- 166条 Simoleons resourceAmount/binAmount 查询读值包含50000和1000000；创建列表默认金额并非持续模拟余额。尚未证明跃升原因，也未验证该城市保存重载。
+
+全窗口3326条记录，普通查询丢弃61910；未知event host5次、绑定更新2次。无agent/解码错误，正常unload/detach，外部只读核对三个入口恢复原字节（restoration.json）。主观流畅度和屏幕资金反馈待用户确认。独立回归及x86 fixture通过，fixture原调用520次、双线程及撤回恢复成功。
+
+
+### 新区域用户对照结果
+
+用户确认城市名称正确，地图显示名为“白水谷”（本轮模板 Confluence/key248），且主动开启沙盒模式：普通初始资金50000，沙盒入城后变为1000000。该解释与 CreateRegion 请求末段 true、响应 sandbox=true 以及资金查询50000→1000000相符。资金变化原因已获得用户操作与运行数据的交叉支持，不应再列为不明异常；原生资金赋值函数尚未追踪。本次回复未单独确认流畅度，不能补记为无卡顿。
+
+下一轮保存重载应对照 region10/box77/UID1030、“河灣”和实际保存时的沙盒余额；城市运行可能收支变化，不要求余额永远固定1000000。
+
+
+## 白水谷沙盒城市同进程保存重载（2026-10-13）
+
+用户确认河灣就位后，启动60秒观察并在ready后通知保存、回菜单、重载同一城市。会话 `tmp/ui-native-sandbox-reload-20261013`，专项证据 `tmp/ui-log-samples/sandbox-reload-20261013/reload-evidence.json`。
+
+- SaveLocalGame（序号3546）和 SaveLocalGame/true/true（3812）均返回 json.result=true。
+- 菜单阶段3次 LatestBox 完整返回 id=77、uid=1030、name=河灣、regionTemplateName=Confluence；resources.simoleons.amount 与 simoleonsForFrontEnd.amount 均为1000000，ticks=27。初建时两个字段分别为0/50000，现在列表数据已更新；不把该结果解释为直接读取磁盘。
+- 重载身份查询 activeBoxId="77"（3985）、ActiveCityUID=1030（3991）、RegionID=10（3993），与创建轮一致；同时捕获 GameLoadingFinalized（3970）和两条 GameLoaded（4077/4078）。仅按所见序列记录，不推断事件名的严格阶段顺序。
+- 资金查询共315条全部1000000；其中首次保存前258条、重载身份读回之后45条。创建→认领→模拟资金读取→保存成功返回→菜单数据→同进程重载身份/资金读回的证据已连通。用户此前已说明沙盒入城资金为1000000。
+- 选定保存/身份/LatestBox返回均无截断或未解码节点。mutation通道2对、region通道6对，均零丢弃。全窗口4658条记录，普通查询丢弃46927、命令丢弃161；未知invoke/event各4次，校验后更新绑定3次，仍不是无损流。
+- agent/解码错误0、无crashReported，正常unload/detach；三个入口字节已恢复，见restoration.json。用户随后确认名称、资金显示一致且无卡顿，并说明没有消费，所以金额不变。本轮验证的是未消费条件下的同进程保存重载，不证明已消费余额的持久化。
+
+此结果仅验证同一进程内的保存重载；完整退出进程后的存档持久化和文件写入仍未独立验证。煤/油/矿初始栅格以及道路、地形和跨城模拟也不包含在本次资金证据中。
+
+
+## 消费后保存第一轮（2026-10-13）
+
+用户确认暂停就位后启动60秒观察，ready后通知修路、记余额并保存。实际窗口还出现同进程回菜单/重载，动作顺序待用户确认。会话 `tmp/ui-native-spend-save-20261013`；专项 `tmp/ui-log-samples/spend-save-20261013/spend-evidence.json`。
+
+- 4847条记录；5条SaveLocalGame类请求，4条捕获到json.result=true。最后一条序号4846位于窗口末尾，没有捕获返回，不判断失败或成功。
+- 286条资金查询，最初1000000，依次出现支出后的995807、991851、989573、962073，重载后又出现961217、957585、954311；两接口采样并非同步，最终均为954311。
+- 菜单LatestBox三次返回box77/UID1030/河灣，simoleons.amount=962073，simoleonsForFrontEnd.amount=1000000。两个字段此时实际不同，不能把前端字段当持久化模拟余额。重载身份读回77/1030/10。
+- 普通查询丢弃46312、命令丢弃168；写通道无额度丢弃，最后一次无返回属窗口边界待核对。未知invoke/event各4次、绑定更新3次。agent/解码错误0，正常卸载detach，三个入口恢复已核对。
+- 对区域10存档只读记录消费前后文件大小/mtime/哈希：区域0和城市1030的EGB文件更新，misc/MetaData及4个SLDelta内容改变；两次逐文件读取的前后stat一致。快照不是原子目录快照，也没有解码文件中的余额，因此仅支持磁盘发生变化。JSON位于 `tmp/ui-log-samples/spend-restart-20261013/`。
+
+下一阶段先确认用户当前余额及暂停状态，再正常退出并核对旧进程消失；新进程在菜单就位后再启动观察并通知载入，避免错过身份查询。跨进程验证尚未完成。
+
+用户随后确认消费轮末尾余额954311、无卡顿。已请求正常退出到桌面并暂不重启，等待核对旧进程退出；跨进程验证仍未完成。
+
+跨进程验证准备：用户确认彻底退出，随后系统进程枚举确认SimCity.exe数量为0（process-exit.json）；只读记录12个退出后存档文件的哈希/mtime，逐文件读取稳定（files-after-exit.json）。用户要求放宽窗口，后续加载轮采用主菜单就位后180秒，片头不计入。尚未启动新进程采样。
+
+
+## 消费后保存的跨进程重载证据（2026-10-13）
+
+在消费后保存轮确认余额为 954311、旧游戏进程退出后，系统确认旧 `SimCity.exe` 数量为 0，并在新进程进入菜单后启动 180 秒观察。原始会话 `tmp/ui-native-spend-restart-20261013`，离线汇总与结构化证据位于 `tmp/ui-log-samples/spend-restart-20261013-runtime-analysis/`。
+
+- 新进程 PID 45840（`2026-10-13T02:10:06+08:00`）成功发出 `loadGame/77`；`LatestBox` 返回 `id=77`、`uid=1030`、`regionTemplateName=Confluence`、`ticks=140`。
+- 随后的身份查询读回 `activeBoxId="77"`、`ActiveCityUID=1030`、`RegionID=10`，与消费前创建和同进程重载轮一致。
+- `kResourceIDSimoleons=932594546` 的 `resourceAmount` 与 `binAmount` 在新进程窗口内持续读回 `954311`，支持消费后保存状态跨进程恢复。
+- `LatestBox.name` 在当前有界解码结果中显示为乱码，不能用它否定存档名称；本轮身份与资金字段可用，名称仍需独立字符串解码或画面对照。
+- 会话共 12231 条记录（29 条命令、5805 组 RequestGameData/返回、592 条事件），普通查询丢弃 116733 条、事件丢弃 207 条；无解码错误、崩溃，正常卸载并恢复入口字节。因此这是有界采样，不是无损事件流。
+- 保存动作发生在旧进程退出前，本次新进程窗口未再次捕获 `SaveLocalGame`；跨进程结论来自旧进程的保存/文件变化证据与新进程的加载读回，不能把新窗口当作保存请求回执。
+
+该轮把“消费后保存→彻底退出→新进程加载→身份/资金读回”链路闭合。仍未覆盖另存为、跨进程中文名称可靠解码、煤/油/矿初始栅格以及道路、地形和跨城模拟。
