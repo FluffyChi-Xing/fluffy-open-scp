@@ -1,14 +1,5 @@
 <script setup lang="ts">
-/**
- * UI 工作台舞台：在 Shadow DOM 里按 ui_replica 复刻站（probe_fire/ui_replica）
- * 逐像素重建 1600×900 的游戏 HUD——布局树经 scrui 两段式布局解析成嵌套绝对定位
- * DOM，样式/数据/几何全部来自复刻站的逆向产物（css/*.css + data/*.js），
- * 默认观感与复刻站完全一致。
- *
- * 舞台之上只叠工作台自身的元素：一级菜单末位的「＋」与自定义分类删除角标
- * （编辑功能入口）。菜单交互（点圆钮开合二级面板、点槽位进编辑）桥接到
- * uiWorkbench store。
- */
+/** @summary Render an installed-resource authoring preview in isolated Shadow DOM; runtime state remains unknown. */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
@@ -41,6 +32,7 @@ onBeforeUnmount(() => observer?.disconnect());
 /* ── 复刻渲染装配（Shadow DOM，样式隔离，游戏 CSS 不泄漏到应用） ── */
 const booting = ref(false);
 const bootFailed = ref(false);
+let bootPending = false;
 let shadow: ShadowRoot | null = null;
 let palette: HudPalette | null = null;
 /** 分类圆钮行锚点（拊件定位用）。 */
@@ -58,6 +50,7 @@ watch(
   () => store.replica,
   async (data) => {
     if (data) await boot(data);
+    else { shadow?.replaceChildren(); palette = null; rowGeom.value = null; }
   },
 );
 
@@ -74,12 +67,15 @@ watch(
 );
 
 async function boot(data: ReplicaData): Promise<void> {
-  if (!stageInner.value || booting.value) return;
+  if (!stageInner.value) return;
+  if (booting.value) { bootPending = true; return; }
+  bootPending = false;
   booting.value = true;
   bootFailed.value = false;
   try {
     shadow ??= stageInner.value.attachShadow({ mode: "open" });
-    await injectReplicaStyles(shadow);
+    await injectReplicaStyles(shadow, data.previewGeneration, data);
+    if (store.replica !== data) { shadow.replaceChildren(); return; }
     injectWorkbenchStyles(shadow);
 
     // 重建视口（复刻站 index.html 的 #viewport > #stage 结构；缩放由外层 Vue 负责，
@@ -120,6 +116,7 @@ async function boot(data: ReplicaData): Promise<void> {
     console.warn("[uiWorkbench] 复刻舞台装配失败", cause);
   } finally {
     booting.value = false;
+    if (store.replica && (bootPending || store.replica !== data)) void boot(store.replica);
   }
 }
 
