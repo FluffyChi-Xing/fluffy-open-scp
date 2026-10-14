@@ -44,7 +44,10 @@ impl F0Pyramid {
     pub fn iter_tiles(&self) -> impl Iterator<Item = (usize, usize, usize, u32)> + '_ {
         self.levels.iter().enumerate().flat_map(|(l, grid)| {
             grid.iter().enumerate().flat_map(move |(y, row)| {
-                row.iter().copied().enumerate().map(move |(x, inst)| (l, x, y, inst))
+                row.iter()
+                    .copied()
+                    .enumerate()
+                    .map(move |(x, inst)| (l, x, y, inst))
             })
         })
     }
@@ -144,8 +147,7 @@ fn tile_payload(level_field: &[u16], field_dim: usize, x: usize, y: usize) -> Ve
     let mut out = vec![0u16; TILE_PX * TILE_PX];
     for r in 0..TILE_PX {
         let src = (y * TILE_PX + r) * field_dim + x * TILE_PX;
-        out[r * TILE_PX..(r + 1) * TILE_PX]
-            .copy_from_slice(&level_field[src..src + TILE_PX]);
+        out[r * TILE_PX..(r + 1) * TILE_PX].copy_from_slice(&level_field[src..src + TILE_PX]);
     }
     out
 }
@@ -199,52 +201,79 @@ pub fn solve_f0_pyramid(package: &Package, group: u32) -> Result<F0Pyramid, Stri
     // filtering mip0 accumulates the retail mip filter's phase/rounding error,
     // especially at the root of steep regions such as Titan Gorge.
     let mut levels: Vec<Vec<Vec<u32>>> = (0..PYRAMID_LEVELS)
-        .map(|level| vec![vec![0; 1 << level]; 1 << level]).collect();
+        .map(|level| vec![vec![0; 1 << level]; 1 << level])
+        .collect();
     levels[PYRAMID_LEVELS - 1] = SHARED_TILE_GRID.iter().map(|row| row.to_vec()).collect();
-    let mut unknown: Vec<u32> = tiles.keys().copied().filter(|id| !mip0_set.contains(id)).collect();
+    let mut unknown: Vec<u32> = tiles
+        .keys()
+        .copied()
+        .filter(|id| !mip0_set.contains(id))
+        .collect();
     unknown.sort_unstable();
     // Retail names encode the LOD in the low bits of the shared grid IDs.
     // Prefer that identity when the complete set is present: content-only
     // matching cannot distinguish identical flat/ocean tiles reliably.
-    let retail_ids=(0..PYRAMID_LEVELS-1).all(|level| (0..1usize<<level).all(|y|
-        (0..1usize<<level).all(|x|tiles.contains_key(&(SHARED_TILE_GRID[y][x] ^ (4-level) as u32)))));
+    let retail_ids = (0..PYRAMID_LEVELS - 1).all(|level| {
+        (0..1usize << level).all(|y| {
+            (0..1usize << level)
+                .all(|x| tiles.contains_key(&(SHARED_TILE_GRID[y][x] ^ (4 - level) as u32)))
+        })
+    });
     let mut field_dim = REGION_FIELD_PX;
     for level in (0..PYRAMID_LEVELS - 1).rev() {
         let expected_field = downsample2(&field, field_dim);
         field_dim /= 2;
         let grid_dim = 1usize << level;
-        let expected: Vec<_> = (0..grid_dim).flat_map(|y| (0..grid_dim).map(move |x| (x, y)))
-            .map(|(x,y)| (x,y,tile_payload(&expected_field, field_dim,x,y))).collect();
-        let mut candidates=Vec::new();
+        let expected: Vec<_> = (0..grid_dim)
+            .flat_map(|y| (0..grid_dim).map(move |x| (x, y)))
+            .map(|(x, y)| (x, y, tile_payload(&expected_field, field_dim, x, y)))
+            .collect();
+        let mut candidates = Vec::new();
         for &id in &unknown {
-            for (slot,(_,_,pixels)) in expected.iter().enumerate() {
-                let (x,y,_)=&expected[slot];
-                if retail_ids && id != (SHARED_TILE_GRID[*y][*x] ^ (4-level) as u32){continue;}
-                candidates.push((subsample_l1(&tiles[&id], pixels),id,slot));
+            for (slot, (_, _, pixels)) in expected.iter().enumerate() {
+                let (x, y, _) = &expected[slot];
+                if retail_ids && id != (SHARED_TILE_GRID[*y][*x] ^ (4 - level) as u32) {
+                    continue;
+                }
+                candidates.push((subsample_l1(&tiles[&id], pixels), id, slot));
             }
         }
         // Best matches take precedence, independent of HashMap iteration order.
-        candidates.sort_by(|a,b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
-        let mut used=HashSet::new();let mut taken=HashSet::new();
-        for (error,id,slot) in candidates {
-            if used.contains(&id) || taken.contains(&slot) {continue;}
-            if error > MATCH_ERROR_THRESHOLD {break;}
-            used.insert(id);taken.insert(slot);
-            let (x,y,_)=&expected[slot];levels[level][*y][*x]=id;
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        let mut used = HashSet::new();
+        let mut taken = HashSet::new();
+        for (error, id, slot) in candidates {
+            if used.contains(&id) || taken.contains(&slot) {
+                continue;
+            }
+            if error > MATCH_ERROR_THRESHOLD {
+                break;
+            }
+            used.insert(id);
+            taken.insert(slot);
+            let (x, y, _) = &expected[slot];
+            levels[level][*y][*x] = id;
         }
-        if taken.len()!=expected.len() {
-            return Err(format!("Level {level}: only {}/{} tiles matched within error {MATCH_ERROR_THRESHOLD}",taken.len(),expected.len()));
+        if taken.len() != expected.len() {
+            return Err(format!(
+                "Level {level}: only {}/{} tiles matched within error {MATCH_ERROR_THRESHOLD}",
+                taken.len(),
+                expected.len()
+            ));
         }
         unknown.retain(|id| !used.contains(id));
         // The next comparison uses this level's source pixels, not a regenerated mip.
-        field=vec![0;field_dim*field_dim];
-        for y in 0..grid_dim {for x in 0..grid_dim {
-            let pixels=&tiles[&levels[level][y][x]];
-            for row in 0..TILE_PX {
-                let offset=(y*TILE_PX+row)*field_dim+x*TILE_PX;
-                field[offset..offset+TILE_PX].copy_from_slice(&pixels[row*TILE_PX..(row+1)*TILE_PX]);
+        field = vec![0; field_dim * field_dim];
+        for y in 0..grid_dim {
+            for x in 0..grid_dim {
+                let pixels = &tiles[&levels[level][y][x]];
+                for row in 0..TILE_PX {
+                    let offset = (y * TILE_PX + row) * field_dim + x * TILE_PX;
+                    field[offset..offset + TILE_PX]
+                        .copy_from_slice(&pixels[row * TILE_PX..(row + 1) * TILE_PX]);
+                }
             }
-        }}
+        }
     }
     Ok(F0Pyramid { levels })
 }
@@ -404,23 +433,52 @@ mod tests {
 
     #[test]
     fn downsample2_matches_box_average() {
-        let src: Vec<u16> = vec![10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 5, 6, 7, 8];
+        let src: Vec<u16> = vec![
+            10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 5, 6, 7, 8,
+        ];
         let out = downsample2(&src, 4);
-        assert_eq!(out, vec![(10 + 20 + 50 + 60) / 4, (30 + 40 + 70 + 80) / 4, (90 + 100 + 5 + 6) / 4, (110 + 120 + 7 + 8) / 4]);
+        assert_eq!(
+            out,
+            vec![
+                (10 + 20 + 50 + 60) / 4,
+                (30 + 40 + 70 + 80) / 4,
+                (90 + 100 + 5 + 6) / 4,
+                (110 + 120 + 7 + 8) / 4
+            ]
+        );
     }
 
     #[test]
     fn flat_retail_tiles_keep_identity_instead_of_matching_by_content() {
-        let path=std::env::temp_dir().join(format!("openscp-flat-retail-{}.package",std::process::id()));
-        let mut entries=Vec::new();let payload=vec![6400u16;TILE_PX*TILE_PX];
-        for level in 0..PYRAMID_LEVELS {for y in 0..1usize<<level {for x in 0..1usize<<level {
-            let id=SHARED_TILE_GRID[y][x] ^ (4-level) as u32;
-            entries.push(OverlayEntry::new(ResourceId{type_id:F0_TYPE_ID,group:42,instance:id},encode_tile(None,&payload)));
-        }}}
-        dbpf::write_uncompressed_overlay_to_path(&path,&entries).unwrap();
-        let package=Package::open(&path).unwrap();let pyramid=solve_f0_pyramid(&package,42).unwrap();
-        for (level,x,y,id) in pyramid.iter_tiles(){assert_eq!(id,SHARED_TILE_GRID[y][x] ^ (4-level) as u32);}
-        drop(package);std::fs::remove_file(path).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "openscp-flat-retail-{}.package",
+            std::process::id()
+        ));
+        let mut entries = Vec::new();
+        let payload = vec![6400u16; TILE_PX * TILE_PX];
+        for level in 0..PYRAMID_LEVELS {
+            for y in 0..1usize << level {
+                for x in 0..1usize << level {
+                    let id = SHARED_TILE_GRID[y][x] ^ (4 - level) as u32;
+                    entries.push(OverlayEntry::new(
+                        ResourceId {
+                            type_id: F0_TYPE_ID,
+                            group: 42,
+                            instance: id,
+                        },
+                        encode_tile(None, &payload),
+                    ));
+                }
+            }
+        }
+        dbpf::write_uncompressed_overlay_to_path(&path, &entries).unwrap();
+        let package = Package::open(&path).unwrap();
+        let pyramid = solve_f0_pyramid(&package, 42).unwrap();
+        for (level, x, y, id) in pyramid.iter_tiles() {
+            assert_eq!(id, SHARED_TILE_GRID[y][x] ^ (4 - level) as u32);
+        }
+        drop(package);
+        std::fs::remove_file(path).unwrap();
     }
 
     /// 合成区域整链路回归：写包 → 求解排布 → 重建 overlay → 回读逐 tile 比对。

@@ -55,7 +55,8 @@ watch(
 const query = ref(""),
   busy = ref(false),
   error = ref(""),
-  selected = ref("");
+  selected = ref(""),
+  jsonFileName = ref("");
 
 const visible = computed(() =>
   entries.value.filter((e) =>
@@ -204,6 +205,7 @@ async function importJson(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+  jsonFileName.value = file.name;
   error.value = "";
   try {
     if (file.size > 96 * 1024 * 1024)
@@ -290,16 +292,24 @@ function create() {
           </button>
         </div>
       </div>
-      <label class="json-import"
-        >{{
+      <label class="json-import">
+        <span>{{
           profile === "slot0"
             ? t("rasterEditor.text099")
             : t("rasterEditor.text100")
-        }}<input
-          type="file"
-          accept=".json,application/json"
-          @change="importJson"
-      /></label>
+        }}</span>
+        <span class="file-picker">
+          <span class="file-picker-button">{{ t("rasterEditor.chooseFile") }}</span>
+          <span class="file-name">{{ jsonFileName || t("rasterEditor.noFileSelected") }}</span>
+          <input
+            class="file-input"
+            type="file"
+            accept=".json,application/json"
+            :aria-label="t('rasterEditor.chooseFile')"
+            @change="importJson"
+          />
+        </span>
+      </label>
     </fieldset>
     <p>{{ t("rasterEditor.filteredSources") }}</p>
     <p v-if="!busy && !entries.length">
@@ -330,6 +340,46 @@ label {
   gap: 5px;
   font-size: 11px;
   color: var(--muted-foreground);
+}
+.json-import {
+  align-items: stretch;
+}
+.file-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  padding: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.file-picker-button {
+  flex: none;
+  padding: 4px 7px;
+  color: var(--foreground);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 11px;
+}
+.file-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
 }
 input,
 select,

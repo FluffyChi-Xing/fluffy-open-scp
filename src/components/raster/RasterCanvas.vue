@@ -50,6 +50,8 @@ const props = defineProps<{
   /** 米/像素比例（Lot raster 惯例 0.75）；为 null 时不显示米标尺。 */
   metersPerPixel?: number | null;
   channel?: Channel;
+  /** Display channel is independent from the channel being painted. */
+  displayChannel?: Channel;
   lotLayer?: number | null;
   dataChannels?: boolean;
 }>();
@@ -136,10 +138,11 @@ function render() {
   const before = dragBefore ?? curve?.base ?? polygonDraft?.base;
   if (before)
     restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
+  const displayChannel = props.displayChannel ?? "rgba";
   const image =
-    props.channel && props.channel !== "rgba"
+    displayChannel !== "rgba"
       ? new ImageData(
-          new Uint8ClampedArray(channelPixels(props.doc.pixels, props.channel)),
+          new Uint8ClampedArray(channelPixels(props.doc.pixels, displayChannel)),
           props.doc.width,
           props.doc.height,
         )
@@ -622,8 +625,9 @@ function renderRegion(region: Rect) {
   const rect = clampRect(region, props.doc);
   if (!rect) return;
   const pixels = props.doc.copyRegion(rect);
-  const image = props.channel && props.channel !== "rgba"
-    ? new ImageData(new Uint8ClampedArray(channelPixels(pixels, props.channel)), rect.w, rect.h)
+  const displayChannel = props.displayChannel ?? "rgba";
+  const image = displayChannel !== "rgba"
+    ? new ImageData(new Uint8ClampedArray(channelPixels(pixels, displayChannel)), rect.w, rect.h)
     : props.quantized
       ? quantizeToImageData(new RasterDocument(rect.w, rect.h, pixels))
       : new ImageData(new Uint8ClampedArray(props.dataChannels ? dataChannelPixels(pixels) : pixels), rect.w, rect.h);
@@ -685,7 +689,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => [props.quantized, props.channel, props.dataChannels],
+  () => [props.quantized, props.displayChannel, props.dataChannels],
   () => {
     cancelDraft();
     render();

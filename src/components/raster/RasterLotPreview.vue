@@ -16,7 +16,10 @@ const props = defineProps<{
   colors: [number, number, number, number][];
   target: RasterSource | null;
   texture: boolean;
+  renderMode?: "default" | "refined";
+  albedoPng?: string | null;
 }>();
+const renderMode = props.renderMode ?? "default";
 const { t } = useI18n();
 const packages = useGamePackagesStore();
 const session = shallowRef<Partial<LotEditorSession> | null>(null);
@@ -104,7 +107,7 @@ const treeIds = new Set<number>();
       :model-payload="null"
       :model-lods="[]"
       :active-lod="0"
-      render-mode="refined"
+      :render-mode="renderMode"
       :grouping="grouping"
       :lot-size="
         (texture ? session?.lotSize : bound?.lotSize) ?? [
@@ -128,7 +131,7 @@ const treeIds = new Set<number>();
       :lot-model-bbox-center="null"
       :lot-mask-png="texture ? pngUrl(session?.lotMaskPng) : png"
       :lot-mask-raw-rgba="texture ? (session?.lotMaskRawRgba ?? null) : raw"
-      :lot-albedo-png="null"
+      :lot-albedo-png="renderMode === 'default' ? (albedoPng ?? pngUrl(session?.lotAlbedoPng)) : null"
       :lot-surface-png="texture ? png : pngUrl(session?.lotSurfacePng)"
       :lot-normal-atlas-png="pngUrl(session?.lotNormalAtlasPng)"
       :prop-models="emptyMap"

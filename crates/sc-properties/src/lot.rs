@@ -122,7 +122,7 @@ fn value_transform(properties: &PropertyFile, hash: u32) -> Option<Transform> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Property, PropertyEncoding, PropType};
+    use crate::model::{PropType, Property, PropertyEncoding};
     use crate::{Kind, Value};
 
     fn prop(hash: u32, kind: Kind) -> Property {
@@ -144,7 +144,10 @@ mod tests {
 
     fn file(values: Vec<Property>) -> PropertyFile {
         let claimed_count = values.len() as u32;
-        PropertyFile { values, claimed_count }
+        PropertyFile {
+            values,
+            claimed_count,
+        }
     }
 
     #[test]

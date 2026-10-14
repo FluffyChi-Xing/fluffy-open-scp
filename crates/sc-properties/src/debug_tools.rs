@@ -80,7 +80,11 @@ pub fn build_debug_tools_overlay(
                     .iter()
                     .map(|old| (HASH_UI_TOOL_CATEGORY, *old, ui_category)),
             )
-            .chain(old_parents.iter().map(|old| (HASH_PARENT, *old, LIVE_TOOL_PARENT)))
+            .chain(
+                old_parents
+                    .iter()
+                    .map(|old| (HASH_PARENT, *old, LIVE_TOOL_PARENT)),
+            )
             .collect();
         let patched = patch_property_refs(&data, &refs, |f, h| key_instances(f, h))?;
         patches.push(DebugToolPatch {
@@ -174,7 +178,9 @@ where
 /// 该属性里所有 Key 的 instance（标量或数组皆可），按出现顺序去重。
 pub fn key_instances(file: &PropertyFile, hash: u32) -> Vec<u32> {
     let mut out = Vec::new();
-    let Some(property) = file.get(hash) else { return out };
+    let Some(property) = file.get(hash) else {
+        return out;
+    };
     let mut push = |k: &crate::Key| {
         if !out.contains(&k.instance) {
             out.push(k.instance);
@@ -197,7 +203,9 @@ pub fn key_instances(file: &PropertyFile, hash: u32) -> Vec<u32> {
 /// 该属性里所有 Text 的串 instance（标量或数组皆可），按出现顺序去重。
 pub fn text_instances(file: &PropertyFile, hash: u32) -> Vec<u32> {
     let mut out = Vec::new();
-    let Some(property) = file.get(hash) else { return out };
+    let Some(property) = file.get(hash) else {
+        return out;
+    };
     let mut push = |t: &crate::Text| {
         if !out.contains(&t.instance_id) {
             out.push(t.instance_id);
