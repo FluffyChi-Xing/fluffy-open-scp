@@ -1,0 +1,33 @@
+{
+  "name": "openscp-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vitepress dev docs --host 127.0.0.1",
+    "build": "vitepress build docs",
+    "preview": "vitepress preview docs --host 127.0.0.1",
+    "check": "vue-tsc --noEmit",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.8",
+    "@tailwindcss/vite": "^4.1.14",
+    "lucide-vue-next": "^0.468.0",
+    "tailwindcss": "^4.1.14",
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.1.1"
+  },
+  "overrides": {
+    "vite": "^6.4.4"
+  }
+}
