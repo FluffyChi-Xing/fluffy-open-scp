@@ -83,7 +83,7 @@ async function importLocalAssets(): Promise<void> {
 const gameLanguages: { locale: GameTextLocale; label: string }[] = [
   { locale: "en-US", label: "English" },
   { locale: "pl-PL", label: "Polski" },
-  { locale: "zh-CN", label: "中文" },
+  { locale: "zh-CN", label: "简体中文" },
   { locale: "zh-TW", label: "繁體中文" },
 ];
 
@@ -164,8 +164,8 @@ const step = ref<1 | 2>(1);
 /* 裁切器：icon 128×128 PNG、hover 大图 454×263 JPEG（游戏资源实测尺寸） */
 const cropperTarget = ref<"preview" | "marquee" | null>(null);
 const cropperPresets = {
-  preview: { width: 128, height: 128, format: "image/png" as const, title: "槽位图标（128×128 PNG）" },
-  marquee: { width: 454, height: 263, format: "image/jpeg" as const, title: "Hover 大图（454×263 JPEG）" },
+  preview: { width: 128, height: 128, format: "image/png" as const, title: "" },
+  marquee: { width: 454, height: 263, format: "image/jpeg" as const, title: "" },
 };
 function onCropped(dataUrl: string): void {
   if (cropperTarget.value === "preview") draft.value.preview = dataUrl;
@@ -178,7 +178,7 @@ function exportProperty(): void {
   if (!entry) return;
   const bytes = store.buildEntryProperty(entry.tool.id);
   if (!bytes) {
-    window.alert("新增条目还没有游戏 instance，请使用「导出 .package」");
+    window.alert(t("studio.workbench.propertyExportRequiresInstance"));
     return;
   }
   downloadBytes(bytes, `${entry.tool.id}.property`);
@@ -278,14 +278,14 @@ function removeDraft(): void {
           <StepperItem :step="1" class="flex-1 gap-0 pr-1">
             <StepperTrigger class="shrink-0 flex-row gap-2">
               <StepperIndicator />
-              <StepperTitle class="whitespace-nowrap">菜单条目</StepperTitle>
+              <StepperTitle class="whitespace-nowrap">{{ t("studio.workbench.menuEntryStep") }}</StepperTitle>
             </StepperTrigger>
             <StepperSeparator class="min-w-4 flex-1" />
           </StepperItem>
           <StepperItem :step="2" class="flex-1 gap-0 pl-1">
             <StepperTrigger class="shrink-0 flex-row gap-2">
               <StepperIndicator />
-              <StepperTitle class="whitespace-nowrap">菜单提示</StepperTitle>
+              <StepperTitle class="whitespace-nowrap">{{ t("studio.workbench.menuTipStep") }}</StepperTitle>
             </StepperTrigger>
           </StepperItem>
         </Stepper>
@@ -299,7 +299,7 @@ function removeDraft(): void {
           <MenuFormTip v-show="step === 2" v-model="draft" @crop="cropperTarget = 'marquee'" />
 
           <div class="step-flow">
-            <button v-if="step === 2" type="button" class="act" @click="step = 1">上一步</button>
+          <button v-if="step === 2" type="button" class="act" @click="step = 1">{{ t("studio.workbench.previousStep") }}</button>
             <button v-if="step === 1" type="button" class="act primary" @click="step = 2">
               下一步：菜单提示
             </button>
@@ -307,11 +307,11 @@ function removeDraft(): void {
         </div>
 
         <div class="sheet-actions">
-          <button type="button" class="act" @click="exportProperty">导出 property</button>
+          <button type="button" class="act" @click="exportProperty">{{ t("studio.workbench.exportProperty") }}</button>
           <button type="button" class="act danger" @click="removeDraft">
-            {{ editingEntry.isNew ? t("studio.workbench.discard") : "还原" }}
+            {{ editingEntry.isNew ? t("studio.workbench.discard") : t("studio.workbench.restore") }}
           </button>
-          <button type="button" class="act primary" @click="applyDraft">应用</button>
+          <button type="button" class="act primary" @click="applyDraft">{{ t("studio.workbench.apply") }}</button>
         </div>
       </div>
     </FSheet>

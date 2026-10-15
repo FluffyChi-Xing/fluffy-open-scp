@@ -123,7 +123,7 @@ export function createHudRender(data: ReplicaData, options?: {
     if (!dr || dr.type !== 2 || !Array.isArray(dr.images) || !dr.images.length) return null;
     const states = dr.images.map((ref): { url: string; name: string } | null => {
       if (typeof ref !== "string" || !ref || ref.toLowerCase() === "none") return null;
-      if (/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(ref)) return { url: ref, name: "local-preview-image" };
+      if (/^data:image\/(?:png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(ref)) return { url: ref, name: "local-preview-image" };
       const name = ref.split(/[\\/]/).pop();
       const url = name ? assets[name] : undefined;
       return url && name ? { url, name } : null;

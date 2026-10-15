@@ -18,7 +18,7 @@ import { updatePosition } from "@/lib/game-ui/scrui";
 
 /** @summary Restrict inline preview backgrounds to locally decoded raster data. */
 function previewBackground(value: string | null | undefined): string {
-  return value && /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ? `url('${value}')` : "none";
+  return value && /^data:image\/(?:png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(value) ? `url('${value}')` : "none";
 }
 import type { ReplicaData, ReplicaNode, ReplicaSlotRow, ReplicaTool } from "./types";
 

@@ -49,14 +49,14 @@ export function localResourcePath(reference: string, from = ""): string {
 function imageReference(reference: string): string {
   if (/^installed-game:[\da-f]{8}:[\da-f]{8}:[\da-f]{8}$/i.test(reference)) return reference;
   const name = localResourcePath(reference).split("/").pop()!;
-  if (!/^[\w .-]+\.(?:png|jpe?g|gif|webp)$/i.test(name)) throw new Error("Unsupported installed image reference"); return name;
+  if (!/^[\w .-]+\.(?:png|jpe?g|gif)$/i.test(name)) throw new Error("Unsupported installed image reference"); return name;
 }
 /** @summary Read generation-bound images from installed packages, validating MIME and encoding. */
 export function localImage(reference: string, generation = localAssetGeneration()): Promise<string> {
   const normalized = imageReference(reference), key = `${generation}:${normalized}`;
   const cached = images.get(key); if (cached) return cached;
   const pending = boundedRead<{ mime: string; base64: string }>("local_game_assets_resource", { reference: normalized, generation }).then(({ mime, base64 }) => {
-    if (!/^image\/(?:png|jpeg|gif|webp)$/.test(mime) || !/^[A-Za-z\d+/]*={0,2}$/.test(base64)) throw new Error("Installed resource has invalid media encoding");
+    if (!/^image\/(?:png|jpeg|gif)$/.test(mime) || !/^[A-Za-z\d+/]*={0,2}$/.test(base64)) throw new Error("Installed resource has invalid media encoding");
     const value = `data:${mime};base64,${base64}`;
     installedMedia.add(value);
     return value;
