@@ -1,6 +1,10 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "docs/.vitepress/dist",
+<<<<<<< HEAD
   "cleanUrls": true,
   "ignoreCommand": "node scripts/vercel-ignore.mjs"
+=======
+  "cleanUrls": true
+>>>>>>> origin/master
 }
