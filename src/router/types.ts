@@ -24,6 +24,7 @@ export type IconName =
   | 'boxes'
   | 'sticky'
   | 'history'
+  | 'activity'
 
 export type RouteMeta = RouteRecordRaw['meta'] & {
   titleKey: string

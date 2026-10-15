@@ -1,0 +1,68 @@
+/* ComfyUI proportions, using OpenSCP's existing palette. No node transforms:
+   handles must remain aligned with Vue Flow's connection geometry. */
+.app-shell .flow-workbench .vue-flow {
+  background-color: var(--background);
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--border) 32%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--border) 32%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 120px 120px;
+}
+.app-shell .flow-workbench :is(.workflow-node, .generation-node) {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--background) 25%, var(--surface));
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+.app-shell .flow-workbench :is(.workflow-node, .generation-node) > header {
+  border-radius: calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0;
+  background: color-mix(in srgb, var(--surface-hover) 55%, var(--surface));
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.app-shell .flow-workbench .selected :is(.workflow-node, .generation-node) {
+  outline: 1px solid var(--primary);
+  outline-offset: 2px;
+  border-color: var(--primary);
+  box-shadow: var(--shadow-lg);
+}
+.app-shell .flow-workbench .vue-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 25%, var(--border));
+  background: var(--muted-foreground);
+}
+.app-shell .flow-workbench .vue-flow__handle-right {
+  background: var(--scp-primary-300);
+}
+/* Map nodes also style their port label as .source; don't inset the source handle. */
+.app-shell .flow-workbench .generation-node .vue-flow__handle-right {
+  right: 0;
+}
+.app-shell .flow-workbench .vue-flow__edge-path {
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+}
+.app-shell .flow-workbench .vue-flow__edge.selected .vue-flow__edge-path {
+  stroke: var(--primary);
+}
+.app-shell .flow-workbench :is(.node-config, .generation-node .body) input {
+  background: color-mix(in srgb, var(--background) 65%, var(--surface));
+  border-color: color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: var(--radius-md);
+}
+.app-shell .flow-workbench :is(.node-ports, .generation-node .ports) {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}

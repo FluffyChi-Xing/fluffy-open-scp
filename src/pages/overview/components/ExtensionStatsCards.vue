@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import type {
@@ -16,15 +17,36 @@ interface Props {
 
 const props = defineProps<Props>();
 const expanded = ref(false);
+const { t: globalT } = useI18n({ useScope: "global" });
+const { t } = useI18n({
+  useScope: "local",
+  missingWarn: false,
+  fallbackWarn: false,
+  messages: {
+    "zh-CN": {
+      tickHint: "每格约 1% · 前五类以外合并绘制，完整数值见列表",
+      chartSource: "来源：历史打开的 package · 解压后统计",
+      shareHint: "长度 = 容量占比 · 共用 0–100% 刻度",
+    },
+    "en-US": {
+      tickHint:
+        "Each tick ≈ 1% · Beyond the top five is grouped; full values in the list",
+      chartSource: "Source: previously opened packages · Decompressed data",
+      shareHint: "Length = size share · Shared 0–100% scale",
+    },
+  },
+});
 
-/** lieflat 语义：无序类目多，色相按类目分配；unknown 固定用主题灰。 */
+/** Lieflat F4/F5: one token-derived lightness ladder; category names carry identity. */
 const palette = [
-  "#4f46e5", "#0ea5e9", "#22a06b", "#f59e0b", "#e11d48",
-  "#8b5cf6", "#14b8a6", "#ec4899", "#84cc16", "#f97316",
-  "#06b6d4", "#a855f7", "#eab308", "#10b981", "#f43f5e",
-  "#3b82f6", "#d946ef", "#65a30d", "#fb923c", "#2dd4bf",
+  "var(--foreground)",
+  "color-mix(in srgb, var(--foreground) 86%, var(--surface))",
+  "color-mix(in srgb, var(--foreground) 74%, var(--surface))",
+  "color-mix(in srgb, var(--foreground) 64%, var(--surface))",
+  "color-mix(in srgb, var(--foreground) 56%, var(--surface))",
+  "var(--muted-foreground)",
 ];
-const UNKNOWN_COLOR = "#8a8f9d";
+const UNKNOWN_COLOR = "var(--muted-foreground)";
 
 interface ExtSlice {
   ext: string;
@@ -65,7 +87,9 @@ const sizeSlices = computed(() =>
 );
 
 function colorOf(item: ExtSlice, index: number): string {
-  return item.known ? palette[index % palette.length] : UNKNOWN_COLOR;
+  return item.known
+    ? palette[Math.min(index, palette.length - 1)]!
+    : UNKNOWN_COLOR;
 }
 
 /* ── F4 tick donut：环段按占比分角，段间留缝，中心放总数 ── */
@@ -81,17 +105,29 @@ interface DonutSegment {
 }
 
 function buildDonut(items: ExtSlice[]): DonutSegment[] {
+  // F4 supports at most six segments. The full unaggregated legend remains below.
+  if (items.length > 6) {
+    const tail = items.slice(5);
+    items = [
+      ...items.slice(0, 5),
+      {
+        ext: globalT("package.other"),
+        count: tail.reduce((sum, item) => sum + item.count, 0),
+        size: tail.reduce((sum, item) => sum + item.size, 0),
+        known: false,
+      },
+    ];
+  }
   const total = items.reduce((sum, item) => sum + item.count, 0) || 1;
   const cx = 100;
   const cy = 100;
-  const r0 = 62;
+  const r0 = 70;
   const r1 = 86;
-  const pad = 1.4; // 段间呼吸缝（度）
   let angle = -90;
   return items.map((item, index) => {
     const sweep = (item.count / total) * 360;
-    const a0 = angle + pad / 2;
-    const a1 = angle + sweep - pad / 2;
+    const a0 = angle;
+    const a1 = angle + sweep;
     angle += sweep;
     return {
       key: item.ext,
@@ -100,37 +136,28 @@ function buildDonut(items: ExtSlice[]): DonutSegment[] {
       size: item.size,
       known: item.known,
       color: colorOf(item, index),
-      path: annulusPath(cx, cy, r0, r1, a0, Math.max(a1, a0 + 0.2)),
+      // Gallery B4: radial tick field, one tick approximates one percentage point.
+      path: Array.from({ length: 100 }, (_, tick) => -90 + (tick + 0.5) * 3.6)
+        .filter((a) => a >= a0 && a < a1)
+        .map((a) => {
+          const start = polar(cx, cy, r0, a);
+          const end = polar(cx, cy, r1, a);
+          return `M ${start[0]} ${start[1]} L ${end[0]} ${end[1]}`;
+        })
+        .join(" "),
       percent: (item.count / total) * 100,
     };
   });
 }
 
-function polar(cx: number, cy: number, r: number, deg: number): [number, number] {
-  const rad = (deg * Math.PI) / 180;
-  return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
-}
-
-function annulusPath(
+function polar(
   cx: number,
   cy: number,
-  r0: number,
-  r1: number,
-  a0: number,
-  a1: number,
-): string {
-  const [x0o, y0o] = polar(cx, cy, r1, a0);
-  const [x1o, y1o] = polar(cx, cy, r1, a1);
-  const [x1i, y1i] = polar(cx, cy, r0, a1);
-  const [x0i, y0i] = polar(cx, cy, r0, a0);
-  const large = a1 - a0 > 180 ? 1 : 0;
-  return [
-    `M ${x0o} ${y0o}`,
-    `A ${r1} ${r1} 0 ${large} 1 ${x1o} ${y1o}`,
-    `L ${x1i} ${y1i}`,
-    `A ${r0} ${r0} 0 ${large} 0 ${x0i} ${y0i}`,
-    "Z",
-  ].join(" ");
+  r: number,
+  deg: number,
+): [number, number] {
+  const rad = (deg * Math.PI) / 180;
+  return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
 }
 
 const donut = computed(() => buildDonut(countSlices.value));
@@ -147,8 +174,8 @@ interface SizeRow {
   percent: number;
 }
 
-const sizeTotal = computed(() =>
-  sizeSlices.value.reduce((sum, item) => sum + item.size, 0) || 1,
+const sizeTotal = computed(
+  () => sizeSlices.value.reduce((sum, item) => sum + item.size, 0) || 1,
 );
 const sizeRows = computed<SizeRow[]>(() =>
   sizeSlices.value.map((item, index) => ({
@@ -190,7 +217,8 @@ function buildPackageDetail(pkg: PackageStat): PackageDetail {
       percent: (item.size / sizeTotalPkg) * 100,
     })),
     knownPercent:
-      (pkg.knownDecompressed / (pkg.knownDecompressed + pkg.unknownDecompressed || 1)) *
+      (pkg.knownDecompressed /
+        (pkg.knownDecompressed + pkg.unknownDecompressed || 1)) *
       100,
   };
 }
@@ -280,13 +308,20 @@ function formatBytes(value: number): string {
                 v-for="seg in donut"
                 :key="seg.key"
                 :d="seg.path"
-                :fill="seg.color"
+                fill="none"
+                :stroke="seg.color"
                 class="donut-seg"
                 @mouseenter="
                   showTooltip($event, seg.ext, [
-                    { label: $t('home.fileCount'), value: seg.count.toLocaleString() },
+                    {
+                      label: $t('home.fileCount'),
+                      value: seg.count.toLocaleString(),
+                    },
                     { label: '%', value: `${seg.percent.toFixed(2)}%` },
-                    { label: $t('home.totalSize'), value: formatBytes(seg.size) },
+                    {
+                      label: $t('home.totalSize'),
+                      value: formatBytes(seg.size),
+                    },
                   ])
                 "
                 @mousemove="moveTooltip"
@@ -305,25 +340,36 @@ function formatBytes(value: number): string {
                 :key="item.ext"
                 @mouseenter="
                   showTooltip($event, item.ext, [
-                    { label: $t('home.fileCount'), value: item.count.toLocaleString() },
+                    {
+                      label: $t('home.fileCount'),
+                      value: item.count.toLocaleString(),
+                    },
                     {
                       label: '%',
                       value: `${((item.count / (totalCount || 1)) * 100).toFixed(2)}%`,
                     },
-                    { label: $t('home.totalSize'), value: formatBytes(item.size) },
+                    {
+                      label: $t('home.totalSize'),
+                      value: formatBytes(item.size),
+                    },
                   ])
                 "
                 @mousemove="moveTooltip"
                 @mouseleave="hideTooltip"
               >
-                <span class="legend-dot" :style="{ background: colorOf(item, index) }" />
-                <span class="legend-name">{{ item.ext }}</span>
+                <span
+                  class="legend-dot"
+                  :style="{ background: colorOf(item, index) }"
+                />
+                <span class="legend-name" :title="item.ext">{{ item.ext }}</span>
                 <span class="legend-value">
                   {{ ((item.count / (totalCount || 1)) * 100).toFixed(1) }}%
                 </span>
               </li>
             </ul>
           </div>
+          <p class="chart-note">{{ t("tickHint") }}</p>
+          <p class="chart-source">{{ t("chartSource") }}</p>
         </article>
         <article class="stats-card">
           <header class="stats-header">
@@ -364,18 +410,28 @@ function formatBytes(value: number): string {
                 <span
                   class="size-fill"
                   :style="{
-                    width: `${Math.max(row.percent, 0.25)}%`,
-                    background: row.color,
+                    width: `${row.percent}%`,
+                    color: row.color,
                   }"
                 />
               </span>
               <span class="size-percent">{{ row.percent.toFixed(1) }}%</span>
             </li>
           </ul>
+          <p class="chart-note">{{ t("shareHint") }}</p>
+          <p class="chart-source">{{ t("chartSource") }}</p>
         </article>
       </div>
-      <button class="breakdown-toggle" type="button" @click="expanded = !expanded">
-        <FIcon :name="expanded ? 'ChevronUp' : 'ChevronDown'" :size="16" aria-label="" />
+      <button
+        class="breakdown-toggle"
+        type="button"
+        @click="expanded = !expanded"
+      >
+        <FIcon
+          :name="expanded ? 'ChevronUp' : 'ChevronDown'"
+          :size="16"
+          aria-label=""
+        />
         {{ expanded ? $t("home.hideBreakdown") : $t("home.showBreakdown") }}
       </button>
       <section v-if="expanded" class="package-breakdown">
@@ -391,25 +447,44 @@ function formatBytes(value: number): string {
             <strong :title="detail.pkg.path">{{ detail.pkg.name }}</strong>
             <span class="muted">
               {{ detail.pkg.entryCount.toLocaleString() }} ·
-              {{ formatBytes(detail.pkg.knownDecompressed + detail.pkg.unknownDecompressed) }}
+              {{
+                formatBytes(
+                  detail.pkg.knownDecompressed + detail.pkg.unknownDecompressed,
+                )
+              }}
             </span>
-            <span class="coverage-chip small" :class="{ low: detail.knownPercent < 90 }">
+            <span
+              class="coverage-chip small"
+              :class="{ low: detail.knownPercent < 90 }"
+            >
               {{ $t("home.known") }} {{ detail.knownPercent.toFixed(1) }}%
             </span>
           </header>
           <div class="package-body">
-            <svg viewBox="0 0 200 200" class="mini-donut" role="img">
+            <svg
+              viewBox="0 0 200 200"
+              class="mini-donut"
+              role="img"
+              :aria-label="`${detail.pkg.name} · ${$t('home.extensionCountCard')}`"
+            >
               <path
                 v-for="seg in detail.donut"
                 :key="seg.key"
                 :d="seg.path"
-                :fill="seg.color"
+                fill="none"
+                :stroke="seg.color"
                 class="donut-seg"
                 @mouseenter="
                   showTooltip($event, `${detail.pkg.name} · ${seg.ext}`, [
-                    { label: $t('home.fileCount'), value: seg.count.toLocaleString() },
+                    {
+                      label: $t('home.fileCount'),
+                      value: seg.count.toLocaleString(),
+                    },
                     { label: '%', value: `${seg.percent.toFixed(2)}%` },
-                    { label: $t('home.totalSize'), value: formatBytes(seg.size) },
+                    {
+                      label: $t('home.totalSize'),
+                      value: formatBytes(seg.size),
+                    },
                   ])
                 "
                 @mousemove="moveTooltip"
@@ -426,7 +501,10 @@ function formatBytes(value: number): string {
                 class="size-row"
                 @mouseenter="
                   showTooltip($event, `${detail.pkg.name} · ${row.ext}`, [
-                    { label: $t('home.totalSize'), value: formatBytes(row.size) },
+                    {
+                      label: $t('home.totalSize'),
+                      value: formatBytes(row.size),
+                    },
                     { label: '%', value: `${row.percent.toFixed(2)}%` },
                   ])
                 "
@@ -440,8 +518,8 @@ function formatBytes(value: number): string {
                   <span
                     class="size-fill"
                     :style="{
-                      width: `${Math.max(row.percent, 0.25)}%`,
-                      background: row.color,
+                      width: `${row.percent}%`,
+                      color: row.color,
                     }"
                   />
                 </span>
@@ -471,7 +549,11 @@ function formatBytes(value: number): string {
         aria-hidden="true"
       >
         <strong class="stats-tooltip-title">{{ tooltip.title }}</strong>
-        <span v-for="row in tooltip.rows" :key="row.label" class="stats-tooltip-row">
+        <span
+          v-for="row in tooltip.rows"
+          :key="row.label"
+          class="stats-tooltip-row"
+        >
           <span class="muted">{{ row.label }}</span>
           <strong>{{ row.value }}</strong>
         </span>
@@ -486,30 +568,33 @@ function formatBytes(value: number): string {
   gap: 14px;
 }
 .stats-cards-grid {
-  align-items: start; /* 卡片高度由各自内容决定，互不拉伸 */
+  align-items: stretch;
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .stats-card {
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   min-width: 0;
-  padding: 16px 18px;
+  padding: 22px;
 }
 .stats-header {
   align-items: flex-start;
   display: flex;
   gap: 12px;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
 }
 .coverage-chip {
-  background: var(--accent);
+  background: var(--surface-hover);
   border-radius: var(--radius-sm);
-  color: var(--primary);
+  color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 700;
   padding: 4px 8px;
@@ -529,7 +614,9 @@ function formatBytes(value: number): string {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+  grid-template-columns: minmax(130px, 180px) minmax(0, 1fr);
+  min-height: 220px;
+  flex: 1;
 }
 .donut {
   display: block;
@@ -537,8 +624,7 @@ function formatBytes(value: number): string {
 }
 .donut-seg {
   cursor: default;
-  stroke: var(--surface);
-  stroke-width: 1;
+  stroke-width: 1.8;
   transition: opacity 120ms ease;
 }
 .donut-seg:hover {
@@ -566,8 +652,7 @@ function formatBytes(value: number): string {
 .legend {
   display: grid;
   gap: 2px 14px;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(10, auto);
+  grid-auto-flow: row;
   list-style: none;
   margin: 0;
   max-height: 220px;
@@ -577,7 +662,9 @@ function formatBytes(value: number): string {
 .legend li {
   align-items: center;
   border-radius: var(--radius-sm);
-  display: flex;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 44px;
+  min-width: 0;
   font-size: 11px;
   gap: 7px;
   padding: 2px 5px;
@@ -592,6 +679,7 @@ function formatBytes(value: number): string {
   width: 8px;
 }
 .legend-name {
+  min-width: 0;
   color: var(--foreground);
   font-weight: 600;
   overflow: hidden;
@@ -602,6 +690,7 @@ function formatBytes(value: number): string {
   color: var(--muted-foreground);
   margin-inline-start: auto;
   font-variant-numeric: tabular-nums;
+  text-align: end;
 }
 
 /* ── size tick rows ── */
@@ -610,7 +699,9 @@ function formatBytes(value: number): string {
   gap: 5px;
   list-style: none;
   margin: 0;
-  max-height: 340px;
+  height: 220px;
+  max-height: 220px;
+  align-content: start;
   overflow-y: auto;
   padding: 0;
 }
@@ -634,16 +725,19 @@ function formatBytes(value: number): string {
 }
 .size-track {
   background: color-mix(in oklab, var(--muted-foreground) 12%, transparent);
-  border-radius: 999px;
+  border-radius: 0;
   display: block;
-  height: 12px;
+  height: 16px;
   overflow: hidden;
 }
 .size-fill {
-  border-radius: 999px;
+  background: repeating-linear-gradient(
+    90deg,
+    currentColor 0 1.5px,
+    transparent 1.5px 4px
+  );
   display: block;
   height: 100%;
-  min-width: 2px;
   transition: width 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .size-percent {
@@ -711,6 +805,7 @@ function formatBytes(value: number): string {
 }
 .size-rows.compact {
   gap: 3px;
+  height: auto;
   max-height: none;
 }
 .size-rows.compact .size-row {
@@ -737,6 +832,23 @@ function formatBytes(value: number): string {
   color: var(--danger);
   font-size: 12px;
   margin: 0;
+}
+.chart-note,
+.chart-source {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 16px 0 0;
+}
+.chart-source {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+@media (max-width: 1100px) {
+  .stats-cards-grid {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 850px) {
   .stats-cards-grid,

@@ -1,4 +1,4 @@
-import { createApp } from "vue";
+import { createApp, nextTick } from "vue";
 import { createPinia } from "pinia";
 import { CalendarDays } from "lucide-vue-next";
 import { registerIcons } from "@/lib/icons";
@@ -42,3 +42,18 @@ createApp(App)
   .use(i18n)
   .use(createPermissionPlugin(appConfig.permission))
   .mount("#app");
+
+// Presentation only: dismiss once the initial lazy route has rendered.
+void router.isReady().then(async () => {
+  await nextTick();
+  const splash = document.getElementById("app-startup");
+  if (!splash) return;
+  requestAnimationFrame(() => {
+    splash.classList.add("is-ready");
+    splash.addEventListener("transitionend", () => splash.remove(), {
+      once: true,
+    });
+    // Reduced-motion has no transitionend event.
+    window.setTimeout(() => splash.remove(), 250);
+  });
+});

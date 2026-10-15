@@ -8,8 +8,8 @@
 
 use serde::Serialize;
 
-use crate::model::Value;
 use crate::PropertyFile;
+use crate::model::Value;
 
 // ---- Light（14 列并行数组） ----
 pub const LIGHT_IDS: u32 = 0x0CAA_8F10;
@@ -132,7 +132,10 @@ pub enum LotUnit {
     Effect {
         index: usize,
         transform: Option<UnitTransform>,
+        /// Swarm visual effect name key (0x02A907B5).
         effect_id: Option<UnitKey>,
+        /// Runtime external control ID (0x02A907BB), distinct from the effect name.
+        external_id: Option<UnitKey>,
         enabled: Option<bool>,
         fields: Vec<UnitField>,
     },
@@ -452,7 +455,8 @@ fn assemble_effects(file: &PropertyFile, out: &mut LotUnits) {
         out.units.push(LotUnit::Effect {
             index,
             transform: unit_transform(file, EFFECT_TRANSFORMS, index, &mut out.diagnostics),
-            effect_id: unit_key(file, EFFECT_REF_IDS, index),
+            effect_id: unit_key(file, EFFECT_IDS, index),
+            external_id: unit_key(file, EFFECT_REF_IDS, index),
             enabled: unit_bool(file, EFFECT_ENABLED, index),
             fields: collect_fields(file, &EFFECT_COLUMN_HASHES, index),
         });
@@ -487,11 +491,7 @@ fn assemble_spawners(file: &PropertyFile, out: &mut LotUnits) {
 }
 
 fn assemble_path_points(file: &PropertyFile, out: &mut LotUnits) {
-    let hashes = [
-        PATH_POINT_POINTS,
-        PATH_POINT_TANGENTS,
-        PATH_POINT_INDICES,
-    ];
+    let hashes = [PATH_POINT_POINTS, PATH_POINT_TANGENTS, PATH_POINT_INDICES];
     for index in 0..parallel_count(file, &hashes) {
         let present = hashes
             .iter()
@@ -684,7 +684,13 @@ mod tests {
         let file = file_of(vec![float_array(LIGHT_LENGTHS, &[4.0, 6.0])]);
         let units = assemble_units(&file);
         assert_eq!(units.units.len(), 2);
-        assert!(matches!(units.units[0], LotUnit::Light { length: Some(4.0), .. }));
+        assert!(matches!(
+            units.units[0],
+            LotUnit::Light {
+                length: Some(4.0),
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -816,7 +822,10 @@ mod tests {
             prop(
                 PROP_TRANSFORM_BASE, // bin 0
                 PropType::Transform,
-                Kind::Array(vec![transform_value(None, &matrix_translation(0.0, 0.0, 1.0))]),
+                Kind::Array(vec![transform_value(
+                    None,
+                    &matrix_translation(0.0, 0.0, 1.0),
+                )]),
             ),
             prop(
                 PROP_SLOT_BASE, // bin 0
@@ -843,7 +852,10 @@ mod tests {
             panic!("expected prop");
         };
         assert_eq!((*bin, *slot), (0, Some(0)));
-        let LotUnit::Prop { index, bin, slot, .. } = &units.units[2] else {
+        let LotUnit::Prop {
+            index, bin, slot, ..
+        } = &units.units[2]
+        else {
             panic!("expected prop");
         };
         assert_eq!((*index, *bin, *slot), (1, 13, Some(1)));
@@ -855,7 +867,10 @@ mod tests {
             prop(
                 PROP_TRANSFORM_BASE, // bin 0
                 PropType::Transform,
-                Kind::Array(vec![transform_value(Some(0.75), &matrix_translation(0.0, 0.0, 1.0))]),
+                Kind::Array(vec![transform_value(
+                    Some(0.75),
+                    &matrix_translation(0.0, 0.0, 1.0),
+                )]),
             ),
             key_array(PROP_ID_BASE, &[0x14984C69]), // bin 0 原型引用
         ]);
@@ -864,7 +879,11 @@ mod tests {
         let LotUnit::Prop { scale, fields, .. } = &units.units[0] else {
             panic!("expected prop");
         };
-        assert_eq!(*scale, Some(0.75), "Scale 来自 Transform.Unknown（flags 15）");
+        assert_eq!(
+            *scale,
+            Some(0.75),
+            "Scale 来自 Transform.Unknown（flags 15）"
+        );
         // 原型 id 无法解析成资源，但必须作为字段透出（属性面板可见）
         assert!(fields.iter().any(|f| f.hash == PROP_ID_BASE));
     }
@@ -876,7 +895,10 @@ mod tests {
             prop(
                 SPAWNER_TRANSFORMS,
                 PropType::Transform,
-                Kind::Array(vec![transform_value(None, &matrix_translation(0.0, 0.0, 0.0))]),
+                Kind::Array(vec![transform_value(
+                    None,
+                    &matrix_translation(0.0, 0.0, 0.0),
+                )]),
             ),
             prop(
                 SPAWNER_COUNT,
@@ -916,12 +938,18 @@ mod tests {
             prop(
                 PATH_POINT_POINTS,
                 PropType::Vector3,
-                Kind::Array(vec![Value::Vector3([0.0, 0.0, 0.0]), Value::Vector3([4.0, 0.0, 0.0])]),
+                Kind::Array(vec![
+                    Value::Vector3([0.0, 0.0, 0.0]),
+                    Value::Vector3([4.0, 0.0, 0.0]),
+                ]),
             ),
             prop(
                 PATH_POINT_TANGENTS,
                 PropType::Vector3,
-                Kind::Array(vec![Value::Vector3([1.0, 0.0, 0.0]), Value::Vector3([1.0, 0.0, 0.0])]),
+                Kind::Array(vec![
+                    Value::Vector3([1.0, 0.0, 0.0]),
+                    Value::Vector3([1.0, 0.0, 0.0]),
+                ]),
             ),
             prop(
                 PATH_POINT_INDICES,
@@ -971,10 +999,7 @@ mod tests {
             ),
         ]);
         let units = assemble_units(&file);
-        let LotUnit::Spawner {
-            transform, id, ..
-        } = &units.units[0]
-        else {
+        let LotUnit::Spawner { transform, id, .. } = &units.units[0] else {
             panic!("expected spawner");
         };
         assert_eq!(transform, &None);
@@ -1001,6 +1026,15 @@ mod tests {
                 Kind::Array(vec![transform_value(None, &matrix)]),
             ),
             prop(
+                EFFECT_IDS,
+                PropType::Key,
+                Kind::Array(vec![Value::Key(Key {
+                    instance: 0x123,
+                    type_id: 0,
+                    group: 0,
+                })]),
+            ),
+            prop(
                 EFFECT_REF_IDS,
                 PropType::Key,
                 Kind::Array(vec![Value::Key(Key {
@@ -1023,16 +1057,17 @@ mod tests {
         let units = assemble_units(&file);
         assert_eq!(units.units.len(), 2);
         let LotUnit::Effect {
-            effect_id, enabled, ..
+            effect_id,
+            external_id,
+            enabled,
+            ..
         } = &units.units[0]
         else {
             panic!("expected effect");
         };
-        assert_eq!(effect_id.as_ref().map(|key| key.instance), Some(0x777));
+        assert_eq!(effect_id.as_ref().map(|key| key.instance), Some(0x123));
+        assert_eq!(external_id.as_ref().map(|key| key.instance), Some(0x777));
         assert_eq!(enabled, &Some(false));
-        assert!(matches!(
-            units.units[1],
-            LotUnit::Spawner { index: 0, .. }
-        ));
+        assert!(matches!(units.units[1], LotUnit::Spawner { index: 0, .. }));
     }
 }

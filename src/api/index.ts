@@ -5,7 +5,6 @@ import {
   command,
   subscribe,
   type ActivityEvent,
-  type AudioPreview,
   type ExportProgress,
   type ExportStatus,
   type GameDirectoryDetection,
@@ -25,8 +24,6 @@ import {
   type PackageStatistics,
   type OverrideScanResponse,
   type LocaleTablesResponse,
-  type LocaleTableSummary,
-  type LocaleItem,
   type LocaleItemsResponse,
   type LocaleTableEdit,
   type LocaleTgi,
@@ -66,6 +63,8 @@ import {
   type RenderTelemetrySummary,
   type RollbackResult,
   type SettingsStatus,
+  type GameProcessInfo,
+  type DeployGameModResult,
   type SetupStatusResponse,
   type StudioConfigStatus,
   type TelemetryClearResult,
@@ -141,9 +140,9 @@ export const tauriApi = {
       command<StudioConfigStatus>("studio_complete_onboarding"),
     projects: {
       list: () => command<ModProjectView[]>("mod_project_list"),
-      create: (name: string, groupId?: number, description?: string) =>
+      create: (name: string, groupId?: number, description?: string, author?: string, modType?: string) =>
         command<ModProjectView>("mod_project_create", {
-          request: { name, groupId, description },
+          request: { name, groupId, description, author, modType },
         }),
       update: (
         id: number,
@@ -256,8 +255,15 @@ export const tauriApi = {
       }),
     codeManifest: (project: string) =>
       command<CodeManifestResponse>("code_manifest", { request: { project } }),
+    deployGameMod: (project: string, artifact: string) =>
+      command<DeployGameModResult>("deploy_game_mod", { request: { project, artifact } }),
+    gameProcesses: () => command<GameProcessInfo[]>("game_processes"),
+    launchGame: () => command<GameProcessInfo>("launch_game"),
   },
   raster: {
+    readLotPreviewAtlases: () => command<{lotSurfacePng: string; lotNormalAtlasPng: string | null} | null>("read_lot_preview_atlases"),
+    catalog: (packageId: number, profile: string) => command<import("@/lib/raster-editor/catalog").RasterCatalogEntry[]>("list_raster_catalog", { packageId, profile }),
+    readSource: (packageId: number, tgi: Tgi, parameters = false) => command<{width:number; height:number; rgbaBase64:string|null; parameters: {cols:number; values:number[]}|null}>("read_raster_source", {packageId, tgi, parameters}),
     readImageRgba: (path: string) =>
       command<ImageRgbaResponse>("read_image_rgba", { request: { path } }),
     readRgba: (packageId: number, tgi: Tgi) =>
@@ -399,6 +405,12 @@ export const tauriApi = {
     releasePropModelPackages: () =>
       command<number>("release_prop_model_packages", {}),
     readSimParts: () => command<ArrayBuffer>("read_sim_parts", {}),
+    buildPeSchema: (request: unknown) =>
+      command<{ schemaJson: string }>("build_pe_schema", { request }),
+    listModelCatalog: () =>
+      command<
+        { packageId: number; packagePath: string; instance: number; group: number; name: string; size: number }[]
+      >("list_model_catalog", {}),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },

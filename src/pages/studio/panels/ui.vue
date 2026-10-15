@@ -23,7 +23,6 @@ import {
   StepperTitle,
   StepperTrigger,
 } from "@/components/ui/stepper";
-import { downloadBytes } from "@/lib/game-ui/menu-export";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
 import FSheet from "@/components/ui/FSheet.vue";
@@ -118,18 +117,6 @@ function onCropped(dataUrl: string): void {
   if (cropperTarget.value === "marquee") draft.value.marquee = dataUrl;
 }
 
-/** 单条菜单条目 → .property 资源下载（仅既有游戏条目可导）。 */
-function exportProperty(): void {
-  const entry = editingEntry.value;
-  if (!entry) return;
-  const bytes = store.buildEntryProperty(entry.tool.id);
-  if (!bytes) {
-    window.alert("新增条目还没有游戏 instance，请使用「导出 .package」");
-    return;
-  }
-  downloadBytes(bytes, `${entry.tool.id}.property`);
-}
-
 function removeDraft(): void {
   const entry = editingEntry.value;
   if (!entry) return;
@@ -159,6 +146,16 @@ function removeDraft(): void {
     <p v-if="loading" class="notice" role="status">{{ t("studio.workbench.loading") }}</p>
 
     <div class="toolbar">
+      <div class="view-switch" role="group" :aria-label="t('studio.workbench.viewMode')">
+        <button
+          v-for="mode in (['city', 'region', 'development'] as const)"
+          :key="mode"
+          type="button"
+          :aria-pressed="store.viewMode === mode"
+          :class="{ selected: store.viewMode === mode }"
+          @click="store.setViewMode(mode)"
+        >{{ t(`studio.workbench.dim${mode === 'city' ? 'City' : mode === 'region' ? 'Region' : 'Development'}`) }}</button>
+      </div>
       <button type="button" class="ghost-btn" @click="showMechanism = !showMechanism">
         <FIcon :name="showMechanism ? 'ChevronUp' : 'ChevronDown'" :size="13" aria-label="" />
         {{ t("studio.workbench.mechanism") }}
@@ -196,14 +193,14 @@ function removeDraft(): void {
           <StepperItem :step="1" class="flex-1 gap-0 pr-1">
             <StepperTrigger class="shrink-0 flex-row gap-2">
               <StepperIndicator />
-              <StepperTitle class="whitespace-nowrap">菜单条目</StepperTitle>
+              <StepperTitle class="whitespace-nowrap">{{ t('studio.workbench.stepEntry') }}</StepperTitle>
             </StepperTrigger>
             <StepperSeparator class="min-w-4 flex-1" />
           </StepperItem>
           <StepperItem :step="2" class="flex-1 gap-0 pl-1">
             <StepperTrigger class="shrink-0 flex-row gap-2">
               <StepperIndicator />
-              <StepperTitle class="whitespace-nowrap">菜单提示</StepperTitle>
+              <StepperTitle class="whitespace-nowrap">{{ t('studio.workbench.stepTip') }}</StepperTitle>
             </StepperTrigger>
           </StepperItem>
         </Stepper>
@@ -217,19 +214,18 @@ function removeDraft(): void {
           <MenuFormTip v-show="step === 2" v-model="draft" @crop="cropperTarget = 'marquee'" />
 
           <div class="step-flow">
-            <button v-if="step === 2" type="button" class="act" @click="step = 1">上一步</button>
+            <button v-if="step === 2" type="button" class="act" @click="step = 1">{{ t('studio.workbench.previous') }}</button>
             <button v-if="step === 1" type="button" class="act primary" @click="step = 2">
-              下一步：菜单提示
+              {{ t('studio.workbench.nextTip') }}
             </button>
           </div>
         </div>
 
         <div class="sheet-actions">
-          <button type="button" class="act" @click="exportProperty">导出 property</button>
           <button type="button" class="act danger" @click="removeDraft">
-            {{ editingEntry.isNew ? t("studio.workbench.discard") : "还原" }}
+            {{ editingEntry.isNew ? t("studio.workbench.discard") : t("studio.workbench.removeEntry") }}
           </button>
-          <button type="button" class="act primary" @click="applyDraft">应用</button>
+          <button type="button" class="act primary" @click="applyDraft">{{ t('studio.workbench.apply') }}</button>
         </div>
       </div>
     </FSheet>
@@ -298,6 +294,25 @@ function removeDraft(): void {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
+}
+.view-switch {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  overflow: hidden;
+}
+.view-switch button {
+  background: transparent;
+  border: 0;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 7px 12px;
+}
+.view-switch button.selected {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 .ghost-btn {
   align-items: center;

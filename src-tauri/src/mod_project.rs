@@ -298,6 +298,8 @@ pub struct ModProjectCreateRequest {
     pub name: String,
     pub group_id: Option<i64>,
     pub description: Option<String>,
+    pub author: Option<String>,
+    pub mod_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -361,6 +363,11 @@ pub async fn mod_project_create(
             return Err(ModProjectError::ProjectExists(name));
         }
         fs::create_dir(&folder)?;
+        let mod_type=request.mod_type.as_deref().unwrap_or("assets");
+        if !["map","code","assets","gameplay"].contains(&mod_type){let _=fs::remove_dir(&folder);return Err(ModProjectError::InvalidName);}
+        let metadata=serde_json::json!({"format":"openscp.mod","manifest_version":2,"origin":"openscp","name":name,"version":"0.1.0","description":request.description.as_deref().unwrap_or(""),"author":request.author.as_deref().unwrap_or(""),"mod_type":mod_type,"created_at":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"engine":{"enabled":false,"version":1},"internal_dependencies":{},"outer_dependencies":[]});
+        if let Err(error)=crate::atomic_fs::write_atomic(&folder.join("package.json"),&serde_json::to_vec_pretty(&metadata).unwrap(),false){let _=fs::remove_dir(&folder);return Err(error.into());}
+        crate::mod_flow::ensure_project_layout(&folder,mod_type).map_err(|e|ModProjectError::Io(io::Error::other(e)))?;
         let input = ModProjectInput {
             name: name.clone(),
             rel_path: name,
@@ -372,6 +379,7 @@ pub async fn mod_project_create(
             Ok(project) => project,
             // 建库失败回滚磁盘文件夹，避免留下无记录的孤儿目录
             Err(error) => {
+                let _ = fs::remove_file(folder.join("package.json"));
                 let _ = fs::remove_dir(&folder);
                 return Err(ModProjectError::from(error));
             }

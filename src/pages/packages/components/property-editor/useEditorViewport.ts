@@ -7,6 +7,7 @@ import type * as ThreeNamespace from "three";
 export const VIEWPORT_GROUPS = [
   "model",
   "lot",
+  "dimensions",
   "lights",
   "props",
   "decals",
@@ -21,6 +22,7 @@ export type ViewportGroupName = (typeof VIEWPORT_GROUPS)[number];
  * 业务场景搭建，底座负责前后清理、防竞态与收尾。
  */
 export interface EditorViewportRebuildCtx {
+  prepareStableShaders: () => Promise<void>;
   viewer: ThreeViewer;
   THREE: typeof ThreeNamespace;
   token: number;
@@ -54,6 +56,8 @@ export const PICKABLE_GROUPS = [
  * rebuild(assembly) 回调注入。
  */
 export function useEditorViewport(options: {
+  maxPixelRatio?: number;
+  interactionPixelRatio?: number;
   onTapUnit: (id: string | null) => void;
   onHoverUnit?: (id: string | null) => void;
 }) {
@@ -67,6 +71,10 @@ export function useEditorViewport(options: {
   /** 是否已构图过（首次构图后保持相机，编辑操作不再重置镜头）。 */
   let framed = false;
   let rebuildToken = 0;
+  /** 重建在飞标记：资产通道部分刷新据此让位（见 isAssembling）。 */
+  let assembling = false;
+  /** 在飞重建完全落地的等待者（whenSettled；尾部统一 flush）。 */
+  const rebuildWaiters: (() => void)[] = [];
   let readyResolve: (() => void) | null = null;
   /** viewer 创建完成信号（装配层 onMounted 后据此触发首次 rebuild）。 */
   const ready = new Promise<void>((resolve) => {
@@ -114,6 +122,8 @@ export function useEditorViewport(options: {
     const element = container.value;
     if (!element) return;
     viewer.value = await ThreeViewer.create(element, {
+      maxPixelRatio: options.maxPixelRatio,
+      interactionPixelRatio: options.interactionPixelRatio,
       onTap: (hit) => {
         options.onTapUnit(resolveUnitId(hit.object, hit.event));
       },
@@ -189,11 +199,17 @@ export function useEditorViewport(options: {
     const instance = viewer.value;
     if (!instance) return;
     const token = ++rebuildToken;
+    assembling = true;
+    instance.setSceneAssembling(true);
     for (const name of VIEWPORT_GROUPS) instance.clearGroup(name);
     unitObjects.clear();
     for (const url of textureUrls) URL.revokeObjectURL(url);
     textureUrls.length = 0;
     const ctx: EditorViewportRebuildCtx = {
+      prepareStableShaders: () => {
+        pruneExcessLights();
+        return instance.prepareGroupShaders(["model", "props", "spawners"], () => token !== rebuildToken);
+      },
       viewer: instance,
       THREE: instance.THREE,
       token,
@@ -217,8 +233,28 @@ export function useEditorViewport(options: {
       }
       sceneReady.value = true;
       revision.value += 1;
-      instance.invalidate();
+      // GPU 侧准备（遥测外语义的收尾段，仍在"在飞"窗口内）：全量纹理
+      // 预热 + 程序预编译完成后再放行首帧——首次 draw 不再承担纹理上传
+      // 与 program 链接。prepareShaders 内建 stale 看门狗；整个窗口被
+      // whenSettled 串行化覆盖（编译窗口内开新一轮 = dispose 在编译的
+      // 材质 → three 轮询抛 isReady + 半成品帧，2026-10-08 勘误）。
+      if (token === rebuildToken) {
+        try {
+          instance.primeTextures();
+          await instance.prepareShaders(() => token !== rebuildToken);
+        } catch {
+          // GPU 准备失败不阻塞出画（首轮 draw 走同步路径兜底）
+        }
+        if (token !== rebuildToken) return;
+        instance.invalidate();
+      }
     } finally {
+      // 仅当前代清旗/唤醒：过期代误清会抹掉新一代的在飞标记
+      if (token === rebuildToken) {
+        assembling = false;
+        instance.setSceneAssembling(false);
+        for (const waiter of rebuildWaiters.splice(0)) waiter();
+      }
       span.end(ctx.stats);
     }
   }
@@ -263,6 +299,31 @@ export function useEditorViewport(options: {
     viewer.value?.resetView();
   }
 
+  /** 是否有重建在飞：资产通道的部分刷新据此让位（在飞的装配自会消费
+   * 新通道值，刷新反而会产生重复对象）。 */
+  function isAssembling(): boolean {
+    return assembling;
+  }
+
+  /**
+   * 等待在飞重建**完全落地**（含尾部 GPU 预热/预编译窗口）。调度器据此
+   * 把 rebuild 整程单飞串行化：编译窗口内开新一轮会 dispose 在编译的
+   * 材质（three 轮询崩 + 半成品中间帧），串行后该竞态整类消失
+   * （2026-10-08）。
+   */
+  function whenSettled(): Promise<void> {
+    if (!assembling) return Promise.resolve();
+    return new Promise((resolve) => {
+      rebuildWaiters.push(resolve);
+    });
+  }
+
+  /** 当前重建代数（token）：部分刷新跨 await 后核对，代数变化 = 新一代
+   * 重建已开跑（清场过），必须中止，否则把旧对象塞回新场景。 */
+  function rebuildEpoch(): number {
+    return rebuildToken;
+  }
+
   return {
     container,
     viewer,
@@ -276,6 +337,9 @@ export function useEditorViewport(options: {
     applySelection,
     captureRender,
     resetView,
+    isAssembling,
+    rebuildEpoch,
+    whenSettled,
   };
 }
 

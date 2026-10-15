@@ -32,7 +32,7 @@ export function unitLabel(
     case "decal":
       return `${t("package.groupDecals")} ${unit.category + 1}·${unit.index + 1}`;
     case "prop":
-      return `${t("package.groupProps")} ${unit.bin}·${unit.index + 1}`;
+      return unit.displayName ?? `${t("package.groupProps")} ${unit.bin}·${unit.index + 1}`;
     case "pathPoint":
       return `${t("package.groupPaths")} #${unit.pointIndex ?? unit.index}`;
     case "effect":
@@ -69,6 +69,10 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（后端脚本资源表反查）。
    * 异步旁路加载，不阻塞主模型；未命中保持标记锥。 */
   const propModels = shallowRef<Map<number, LotModelPayload>>(new Map());
+  /** 当前 property 引用的模型条目（LOD + prop 解析结果，含所在包 id）——
+   * 组件库目录过滤器数据源（仅展示本资产引用、可正常渲染的组件）；
+   * 树模型等纯 hex 名条目会被目录噪声过滤排除，由组件库侧按此兜底补入。 */
+  const referencedModels = ref<{ packageId: number; instance: number; group: number; resourceId: number }[]>([]);
   /** 树 prop（source=tree/tree_model）资源 id 集合 → 树专用渲染分支。 */
   const propTreeIds = shallowRef<Set<number>>(new Set());
   /** 树公告板图集（base64 PNG，2×2 四树格）：后端从 Graphics 包树图集
@@ -247,6 +251,23 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
         ).filter((p): p is LotModelPayload => p !== null);
         if (token === requestToken && payloads.length) treeModelPayloads.value = payloads;
       }
+      // 记录引用的模型条目（组件库目录过滤 + 缺席兜底）——**全部来源**：
+      // tree/tree_model 的破洞树模型同为可放置组件，勿因加载通道不同而排除。
+      // packageId 缺席（未定位到所在包）的 resolution 无法按需加载，跳过。
+      const referenced = new Map<string, { packageId: number; instance: number; group: number; resourceId: number }>();
+      for (const resolution of resolutions) {
+        if (resolution.packageId == null) continue;
+        for (const model of resolution.models) {
+          if (model)
+            referenced.set(`${resolution.packageId}:${model.group}:${model.instance}`, {
+              packageId: resolution.packageId,
+              instance: model.instance,
+              group: model.group,
+              resourceId: resolution.resourceId,
+            });
+        }
+      }
+      referencedModels.value = [...referenced.values()];
       const next = new Map(propModels.value);
       await Promise.all(
         resolutions
@@ -284,12 +305,22 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     void loadLod(++requestToken, index, "lod_switch");
   }
 
-  const grouping = computed<UnitGrouping>(() => {
-    const units = mergeUnitOverrides(
-      (session.value?.units ?? []) as LotUnitDto[],
+  /** 有效单元集 = 既有单元（滤软删除）+ 拖拽新增单元，应用覆盖。
+   * grouping / flatUnits / selectedUnit 共用此单一来源（资产编辑一致性）。 */
+  const effectiveUnits = computed<LotUnitDto[]>(() =>
+    mergeUnitOverrides(
+      [
+        ...((session.value?.units ?? []) as LotUnitDto[]).filter(
+          (unit) => !edit.deletedIds.has(unitId(unit)),
+        ),
+        ...edit.addedUnits,
+      ],
       edit.overrides,
       edit.fieldOverrides,
-    );
+    ),
+  );
+  const grouping = computed<UnitGrouping>(() => {
+    const units = effectiveUnits.value;
     const result: UnitGrouping = {
       lights: [],
       decals: [],
@@ -323,13 +354,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     return result;
   });
 
-  const flatUnits = computed<LotUnitDto[]>(() =>
-    mergeUnitOverrides(
-      (session.value?.units ?? []) as LotUnitDto[],
-      edit.overrides,
-      edit.fieldOverrides,
-    ),
-  );
+  const flatUnits = computed<LotUnitDto[]>(() => effectiveUnits.value);
 
   const lotTilePeriod = computed<[number, number] | null>(
     () => session.value?.lotTilePeriod ?? null,
@@ -424,7 +449,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   const selectedUnit = computed<LotUnitDto | null>(() => {
     if (!selectedId.value) return null;
     return (
-      flatUnits.value.find((unit) => unitId(unit) === selectedId.value) ?? null
+      effectiveUnits.value.find((unit) => unitId(unit) === selectedId.value) ?? null
     );
   });
 
@@ -458,6 +483,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelLods,
     propModels,
     propTreeIds,
+    referencedModels,
     treeAtlasPng,
     treeModelPayloads,
     releasePropPackages,

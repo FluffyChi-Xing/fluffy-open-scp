@@ -186,7 +186,7 @@ export function createHudPalette(
   }
 
   /** 布局自带工具按钮的分类（见 build.py 的 SKIP_SLOT_ROW）。 */
-  const SKIP_SLOT_ROW = new Set(["3193C0BE"]);
+  const SKIP_SLOT_ROW = new Set<string>();
 
   /** 游戏行为：二级槽位一行最多 8 个，超出的用 ◀/▶ 翻页，不换行。 */
   const PAGE_SIZE = 8;
@@ -218,23 +218,26 @@ export function createHudPalette(
         bodyEl.appendChild(rolloverEl);
       }
       const media = tool.marquee || tool.preview;
+      const escape = (value: string): string => value.replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[char] ?? char);
       const stats = (tool.stats ?? [])
         .map(
           (row) =>
-            `<div class="hud-rollover-stat"><span class="label">${row.label}</span><span class="value">${row.value ?? ""}</span></div>`,
+            `<div class="hud-rollover-stat"><span class="label">${escape(row.label)}</span><span class="value">${escape(row.value ?? "")}</span></div>`,
         )
         .join("");
       const simoleon = data.assets["icn-simoleon.png"] ?? "/game-ui/replica/assets/icn-simoleon.png";
       const costCell = (value: string | null | undefined): string =>
-        `<div class="cell"><span class="simoleon" style="background-image:url('${simoleon}')"></span>${value || "—"}</div>`;
+        `<div class="cell"><span class="simoleon" style="background-image:url('${simoleon}')"></span>${escape(value || "—")}</div>`;
       rolloverEl.innerHTML = `
-        <div class="hud-rollover-title">${tool.label ?? ""}</div>
+        <div class="hud-rollover-title">${escape(tool.label ?? "")}</div>
         <div class="hud-rollover-media${tool.marquee ? "" : " icon-only"}">
           <div class="hud-rollover-img" style="background-image:url('${media ?? ""}')"></div>
-          ${tool.desc ? `<div class="hud-rollover-desc toolRolloverDescription">${tool.desc}</div>` : ""}
+          ${tool.desc ? `<div class="hud-rollover-desc toolRolloverDescription">${escape(tool.desc)}</div>` : ""}
         </div>
         ${stats ? `<div class="hud-rollover-stats">${stats}</div>` : ""}
-        ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${tool.unlock}</div>` : ""}
+        ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${escape(tool.unlock)}</div>` : ""}
         <div class="hud-rollover-cost">${costCell(tool.cost)}${costCell(tool.upkeep)}</div>
       `;
       // 定位：槽位的 offsetParent 是槽位行（absolute），先换算到 body 坐标；

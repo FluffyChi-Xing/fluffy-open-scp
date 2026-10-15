@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FDropdownSelect from "@/components/ui/FSelect.vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -17,7 +18,13 @@ const props = defineProps<{
 }>();
 const open = defineModel<boolean>("open", { default: false });
 const emit = defineEmits<{
-  create: [name: string, groupId?: number, description?: string];
+  create: [
+    name: string,
+    groupId?: number,
+    description?: string,
+    author?: string,
+    modType?: string,
+  ];
   update: [
     id: number,
     fields: {
@@ -36,6 +43,8 @@ const name = ref("");
 const groupId = ref<number | undefined>(undefined);
 const groupMenuOpen = ref(false);
 const description = ref("");
+const author = ref("");
+const modType = ref("map");
 const status = ref("active");
 const error = ref("");
 const busy = ref(false);
@@ -57,6 +66,8 @@ watch(open, (value) => {
   name.value = props.project?.name ?? "";
   groupId.value = props.project?.groupId ?? undefined;
   description.value = props.project?.description ?? "";
+  author.value = "";
+  modType.value = "map";
   status.value = props.project?.status ?? "active";
 });
 
@@ -80,6 +91,8 @@ async function submit() {
         name.value,
         groupId.value,
         description.value.trim() || undefined,
+        author.value.trim(),
+        modType.value,
       );
     }
     open.value = false;
@@ -124,6 +137,21 @@ async function submit() {
         <small>{{ $t("studio.projects.form.nameHint") }}</small>
       </label>
 
+      <label v-if="!isEdit" class="field"
+        ><span>{{ $t("flow.author") }}</span
+        ><input v-model="author" required
+      /></label>
+      <label v-if="!isEdit" class="field"
+        ><span>{{ $t("flow.modType") }}</span
+        ><FDropdownSelect
+          v-model="modType"
+          :options="
+            ['map', 'code', 'assets', 'gameplay'].map((value) => ({
+              value,
+              label: t(`flow.${value}`),
+            }))
+          "
+      /></label>
       <div class="field">
         <span>{{ $t("studio.projects.form.groupLabel") }}</span>
         <FDropdown v-model:open="groupMenuOpen" :width="220">

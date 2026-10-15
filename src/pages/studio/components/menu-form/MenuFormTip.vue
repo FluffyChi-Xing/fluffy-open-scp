@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { Switch } from "@/components/ui/switch";
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 /**
  * 步骤 ②「菜单提示」表单：hover 弹窗的全部内容 ——
  * 描述文案、rollover 大图（454×263）、造价/预算、解锁提示、锁定态。
@@ -18,33 +21,33 @@ const emit = defineEmits<{ (e: "crop"): void }>();
 <template>
   <div class="form">
     <label class="field">
-      <span>Hover 文案（描述）</span>
+      <span>{{ t('studio.workbench.tipDescription') }}</span>
       <textarea v-model="model.desc" rows="3" />
     </label>
     <div class="field">
-      <span>Hover 大图 454×263</span>
+      <span>{{ t('studio.workbench.tipImage') }}</span>
       <button type="button" class="img-btn" @click="emit('crop')">
         <img v-if="model.marquee" :src="model.marquee" alt="" />
-        <span v-else class="img-btn-hint">点击上传，自动裁切到 454×263</span>
+        <span v-else class="img-btn-hint">{{ t('studio.workbench.uploadTip') }}</span>
       </button>
     </div>
     <div class="field-row">
       <label class="field">
-        <span>造价 §</span>
+        <span>{{ t('studio.workbench.cost') }}</span>
         <input v-model="model.cost" type="text" placeholder="27,500" />
       </label>
       <label class="field">
-        <span>预算/小时 §</span>
+        <span>{{ t('studio.workbench.upkeep') }}</span>
         <input v-model="model.upkeep" type="text" placeholder="-856" />
       </label>
     </div>
     <label class="field">
-      <span>解锁提示</span>
+      <span>{{ t('studio.workbench.unlock') }}</span>
       <input v-model="model.unlock" type="text" />
     </label>
     <label class="field-check">
-      <input v-model="model.locked" type="checkbox" />
-      <span>锁定（hardGate，未批准/達到上限）</span>
+      <Switch v-model="model.locked" :aria-label="t('studio.workbench.locked')" />
+      <span>{{ t('studio.workbench.locked') }}</span>
     </label>
   </div>
 </template>

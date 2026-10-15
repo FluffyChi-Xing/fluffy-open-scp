@@ -1,0 +1,559 @@
+//! Read-only map/path subset of retail EcoGame states. Source: cEcoGame::Read,
+//! cEcoMap::Read, cEcoUnit::Read, cEcoPathSet::Read and SplineRepForSegment.
+//! Retail v17/v18/v20 headers and v4 map sums differ from the older dev source.
+use serde::Serialize;
+use std::collections::HashSet;
+use std::io::Read;
+use std::io::Write;
+
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateSource {
+    pub site: String,
+    pub origin: [f32; 2],
+    pub bounds: Option<[f32; 4]>,
+    pub maps: Vec<StateMap>,
+    pub curves: Vec<StateCurve>,
+}
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveLayers {
+    pub sources: Vec<StateSource>,
+    pub regional_units: Vec<StateUnit>,
+}
+
+fn state_file(directory: &std::path::Path) -> Result<Option<RegionState>, String> {
+    if !directory.is_dir() {
+        return Ok(None);
+    }
+    let mut files: Vec<_> = std::fs::read_dir(directory)
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "egb"))
+        .collect();
+    files.sort_by_key(|p| p.metadata().and_then(|m| m.modified()).ok());
+    let Some(file) = files.last() else {
+        return Ok(None);
+    };
+    let input = std::fs::File::open(file).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    flate2::read::GzDecoder::new(input)
+        .take(128 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > 128 * 1024 * 1024 {
+        return Err("state exceeds decompression limit".into());
+    }
+    read_state(&bytes)
+        .map(Some)
+        .map_err(|e| format!("{}: {e}", file.display()))
+}
+
+fn save_template_name(directory: &std::path::Path) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(directory.join("misc/MetaData")).ok()?).ok()?;
+    v.get("template")?.get("name")?.as_str().map(str::to_owned)
+}
+
+/// Discover saves by the template identity in `misc/MetaData`.
+pub fn discover_save(root: &std::path::Path, group: u32, plots: &[crate::region_3d::Region3DPlot]) -> Option<(std::path::PathBuf, SaveLayers)> {
+    let mut candidates = Vec::new();
+    for account in std::fs::read_dir(root).ok()?.flatten() {
+        let Ok(regions)=std::fs::read_dir(account.path()) else {continue};
+        for region in regions.flatten() {
+            let path=region.path();
+            let zero=path.join("0");
+            if !zero.is_dir() {continue;}
+            let modified=std::fs::read_dir(&zero).ok().into_iter().flatten().flatten()
+                .filter(|e|e.path().extension().is_some_and(|x|x=="egb"))
+                .filter_map(|e|e.metadata().ok()?.modified().ok()).max();
+            candidates.push((modified,path));
+        }
+    }
+    candidates.sort_by(|a,b|b.0.cmp(&a.0).then_with(||a.1.cmp(&b.1)));
+    let expected = crate::region_3d::template_name_for_group(group);
+    for (_,path) in candidates {
+        if let Ok(Some(state))=state_file(&path.join("0")) {
+            let matches = state.environment == group
+                && match (expected, save_template_name(&path)) {
+                    (Some(e), Some(a)) => a.eq_ignore_ascii_case(e),
+                    // Older saves may have no metadata; EGB environment is
+                    // still the authoritative map identity in that case.
+                    (_, None) => true,
+                    (None, Some(_)) => true,
+                };
+            if matches {
+                if let Ok(layers)=load_save(&path,group,plots) {return Some((path,layers));}
+            }
+        }
+    }
+    None
+}
+
+/// Region zero is the authoritative identity/outer network. City maps cover only
+/// their 2048m simulation squares; unavailable cells are never filled by inference.
+pub fn load_save(
+    directory: &std::path::Path,
+    group: u32,
+    plots: &[crate::region_3d::Region3DPlot],
+) -> Result<SaveLayers, String> {
+    let region = state_file(&directory.join("0"))?.ok_or("save has no region state")?;
+    if region.environment != group {
+        return Err(format!(
+            "save region {:08X} does not match {group:08X}",
+            region.environment
+        ));
+    }
+    let mut sources = vec![StateSource {
+        site: "0".into(),
+        origin: [0.0; 2],
+        bounds: None,
+        maps: vec![],
+        curves: region.curves,
+    }];
+    for plot in plots.iter().filter(|p| p.kind == "city") {
+        let Some(city) = state_file(&directory.join(&plot.uid))? else {
+            continue;
+        };
+        if city.maps.iter().any(|m| m.size != 128) {
+            return Err("unsupported city map dimensions".into());
+        }
+        sources.push(StateSource {
+            site: plot.uid.clone(),
+            origin: [plot.x, plot.y],
+            bounds: Some([
+                plot.x - 1024.0,
+                plot.y - 1024.0,
+                plot.x + 1024.0,
+                plot.y + 1024.0,
+            ]),
+            // City saves supply reference resource fields only. Never replace the
+            // empty-map network, height or ecology with played-city state.
+            maps: city
+                .maps
+                .into_iter()
+                .filter(|m| {
+                    matches!(
+                        m.id,
+                        0xD779C976 | 0xD74AF22B | 0x76D10FF2 | 0x0F92DC56 | 0x5B9DB0F3
+                    )
+                })
+                .collect(),
+            curves: vec![],
+        });
+    }
+    Ok(SaveLayers {
+        sources,
+        regional_units: region.units,
+    })
+}
+
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateMap {
+    pub id: u32,
+    pub size: usize,
+    pub values: Vec<i32>,
+}
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateCurve {
+    pub entry_id: u32,
+    pub path: usize,
+    pub controls: [[f32; 3]; 4],
+}
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionState {
+    pub version: u32,
+    pub environment: u32,
+    pub maps: Vec<StateMap>,
+    pub curves: Vec<StateCurve>,
+    pub units: Vec<StateUnit>,
+}
+
+#[derive(Debug, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateUnit {
+    pub id: u32,
+    pub graphics_group: u32,
+    pub graphics_state: u32,
+    pub scale: f32,
+    pub rotation: [f32; 9],
+    pub position: [f32; 3],
+}
+
+/// Rebuild the authored path segments carried by a static Unit property.
+///
+/// Region EGBs store only the resulting world splines.  The retail bootstrap
+/// starts from the Unit's `0x0CAA680D` points, `0x0CB00ED8` tangents,
+/// `0x0CAA6841` point pairs and `0x0CC8FE7A` path-entry keys, then applies the
+/// Unit transform.  The point Z values are lane/path metadata; the world
+/// elevation comes from the Unit transform and terrain, so this function
+/// preserves the transform Z for the bootstrap candidate.
+pub fn curves_from_static_unit(prop: &crate::PropertyFile, unit: &StateUnit) -> Vec<StateCurve> {
+    let vecs = |hash: u32| -> Vec<[f32; 3]> {
+        prop.get(hash)
+            .and_then(|p| p.array())
+            .into_iter()
+            .flatten()
+            .filter_map(|v| match v { crate::Value::Vector3(x) => Some(*x), _ => None })
+            .collect()
+    };
+    let ints: Vec<usize> = prop.get(0x0CAA_6841).and_then(|p| p.array()).into_iter()
+        .flatten().filter_map(|v| match v { crate::Value::Int32(x) if *x >= 0 => Some(*x as usize), _ => None }).collect();
+    let entries: Vec<u32> = prop.get(0x0CC8_FE7A).and_then(|p| p.array()).into_iter()
+        .flatten().filter_map(|v| match v { crate::Value::Key(k) => Some(k.instance), _ => None }).collect();
+    let points = vecs(0x0CAA_680D);
+    let tangents = vecs(0x0CB0_0ED8);
+    let transform = |v: [f32; 3]| -> [f32; 3] {
+        let r = &unit.rotation;
+        [unit.position[0] + r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
+         unit.position[1] + r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
+         unit.position[2]]
+    };
+    let tangent = |v: [f32; 3]| -> [f32; 3] {
+        let r = &unit.rotation;
+        [r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
+         r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
+         r[6] * v[0] + r[7] * v[1] + r[8] * v[2]]
+    };
+    let mut out = Vec::new();
+    for i in 0..entries.len() {
+        let (Some(&a), Some(&b)) = (ints.get(i * 2), ints.get(i * 2 + 1)) else { break };
+        let (Some(&pa), Some(&pb), Some(&ta), Some(&tb)) = (points.get(a), points.get(b), tangents.get(a), tangents.get(b)) else { continue };
+        let p0 = transform(pa); let p3 = transform(pb);
+        let t0 = tangent(ta); let t1 = tangent(tb);
+        out.push(StateCurve { entry_id: entries[i], path: i, controls: [p0,
+            [p0[0] + t0[0], p0[1] + t0[1], p0[2] + t0[2]],
+            [p3[0] - t1[0], p3[1] - t1[1], p3[2] - t1[2]], p3] });
+    }
+    out
+}
+
+/// Write the supported v20 subset. Runtime-only fields are emitted empty;
+/// this is intended for bootstrap candidates and round-trip verification.
+pub fn write_state(state: &RegionState) -> Result<Vec<u8>, String> {
+    let mut w=Vec::new(); let u=|w:&mut Vec<u8>,v:u32|w.extend(v.to_be_bytes());
+    let i=|w:&mut Vec<u8>,v:i32|u(w,v as u32); let f=|w:&mut Vec<u8>,v:f32|u(w,v.to_bits());
+    u(&mut w,20); u(&mut w,0);u(&mut w,0);u(&mut w,0);u(&mut w,state.environment);u(&mut w,0);u(&mut w,0);u(&mut w,0);
+    u(&mut w,state.maps.len() as u32);u(&mut w,4);
+    for m in &state.maps { let n=m.size.checked_mul(m.size).ok_or("map size overflow")?; if m.values.len()!=n{return Err("map size mismatch".into())}; u(&mut w,m.id);u(&mut w,n as u32);let mut s=0i64;for &v in &m.values{i(&mut w,v);s+=v as i64}w.extend((s as u64).to_be_bytes()); }
+    u(&mut w,state.units.len() as u32);u(&mut w,state.units.len() as u32);u(&mut w,13);
+    for (slot,x) in state.units.iter().enumerate(){u(&mut w,slot as u32);u(&mut w,x.id);u(&mut w,0);u(&mut w,x.graphics_group);u(&mut w,x.graphics_state);u(&mut w,0);u(&mut w,0);let mut fl=0u16;if x.scale!=1.0{fl|=1};if x.rotation!=[1.,0.,0.,0.,1.,0.,0.,0.,1.]{fl|=2};if x.position!=[0.;3]{fl|=4};w.extend(fl.to_be_bytes());if fl&1!=0{f(&mut w,x.scale)}if fl&2!=0{for &v in &x.rotation{f(&mut w,v)}}if fl&4!=0{for &v in &x.position{f(&mut w,v)}}w.extend([0;16]);u(&mut w,0);u(&mut w,0);}
+    u(&mut w,6); let pc=state.curves.len()*2; slots(&mut w,pc);for c in &state.curves{for p in [c.controls[0],c.controls[3]]{for v in p{f(&mut w,v)}}} slots(&mut w,pc);for c in &state.curves{for t in [0,1]{for k in 0..3{let v=if t==0{3.*(c.controls[1][k]-c.controls[0][k])}else{3.*(c.controls[3][k]-c.controls[2][k])};f(&mut w,v)}}} slots(&mut w,state.curves.len());for (n,c) in state.curves.iter().enumerate(){for v in [2*n as i32,2*n as i32+1,2*n as i32,2*n as i32+1,-1,-1,c.path as i32]{i(&mut w,v)}}u(&mut w,pc as u32);w.extend(std::iter::repeat_n(0,pc*16));let pn=state.curves.iter().map(|c|c.path).max().map_or(0,|x|x+1);slots(&mut w,pn);for p in 0..pn{u(&mut w,state.curves.iter().find(|c|c.path==p).map_or(0,|c|c.entry_id));w.extend([0;20]);}slots(&mut w,0);Ok(w)
+}
+fn slots(w:&mut Vec<u8>,n:usize){w.extend((n as u32).to_be_bytes());w.extend(0u32.to_be_bytes());}
+pub fn write_state_gzip(state:&RegionState)->Result<Vec<u8>,String>{let b=write_state(state)?;let mut o=Vec::new();let mut z=flate2::write::GzEncoder::new(&mut o,flate2::Compression::default());z.write_all(&b).map_err(|e|e.to_string())?;z.finish().map_err(|e|e.to_string())?;Ok(o)}
+
+struct Reader<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+impl Reader<'_> {
+    fn take(&mut self, n: usize) -> Result<&[u8], String> {
+        let end = self.pos.checked_add(n).ok_or("state length overflow")?;
+        let out = self
+            .bytes
+            .get(self.pos..end)
+            .ok_or_else(|| format!("truncated state at {}", self.pos))?;
+        self.pos = end;
+        Ok(out)
+    }
+    fn u(&mut self) -> Result<u32, String> {
+        Ok(u32::from_be_bytes(self.take(4)?.try_into().unwrap()))
+    }
+    fn count(&mut self, limit: usize) -> Result<usize, String> {
+        let n = self.u()? as usize;
+        if n > limit {
+            return Err(format!("state count {n} exceeds {limit}"));
+        }
+        Ok(n)
+    }
+    fn vec3(&mut self) -> Result<[f32; 3], String> {
+        let v = [
+            f32::from_bits(self.u()?),
+            f32::from_bits(self.u()?),
+            f32::from_bits(self.u()?),
+        ];
+        if v.iter().any(|v| !v.is_finite()) {
+            return Err("non-finite path coordinate".into());
+        }
+        Ok(v)
+    }
+    fn slots(&mut self) -> Result<(usize, HashSet<usize>), String> {
+        let count = self.count(1_000_000)?;
+        let n = self.count(count)?;
+        let mut free = HashSet::new();
+        for _ in 0..n {
+            let slot = self.u()? as usize;
+            if slot >= count || !free.insert(slot) {
+                return Err("invalid free slot".into());
+            }
+        }
+        Ok((count, free))
+    }
+}
+
+/// Input must already be decompressed. Never searches arbitrary bytes for paths.
+pub fn read_state(bytes: &[u8]) -> Result<RegionState, String> {
+    let mut r = Reader { bytes, pos: 0 };
+    let version = r.u()?;
+    if !matches!(version, 17 | 18 | 20) {
+        return Err(format!("unsupported EcoGame version {version}"));
+    }
+    r.take(8)?; // game ID and scripts version
+    let addons = r.count(256)?;
+    r.take(addons * 8)?;
+    let environment = r.u()?;
+    let skills = r.count(16384)?;
+    r.take(skills * 8)?;
+    r.take(8)?; // ticks, next UID
+    if version <= 18 {
+        // Older retail files retain an additional empty skill-state collection.
+        if r.u()? != 0 {
+            return Err("unsupported nonempty v17/v18 skill-state extension".into());
+        }
+    }
+    let n = r.count(1024)?;
+    let map_version = r.u()?;
+    if !matches!(map_version, 3 | 4) {
+        return Err(format!("unsupported map version {map_version}"));
+    }
+    let mut maps = Vec::new();
+    for _ in 0..n {
+        let id = r.u()?;
+        let count = r.count(4_194_304)?;
+        let size = (count as f64).sqrt() as usize;
+        if size == 0 || size * size != count {
+            return Err("non-square state map".into());
+        }
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            values.push(r.u()? as i32);
+        }
+        let sum = if map_version == 4 {
+            ((r.u()? as u64) << 32 | r.u()? as u64) as i64
+        } else {
+            r.u()? as i32 as i64
+        };
+        if values.iter().map(|&v| i64::from(v)).sum::<i64>() != sum {
+            return Err(format!("map {id:08X} sum mismatch"));
+        }
+        maps.push(StateMap { id, size, values });
+    }
+    let units = r.count(1_000_000)?;
+    let max_slots = r.count(1_000_000)?;
+    if units > max_slots || r.u()? != 13 {
+        return Err("unsupported unit table".into());
+    }
+    let mut used = HashSet::new();
+    let mut unit_records = Vec::new();
+    for _ in 0..units {
+        let slot = r.u()? as usize;
+        if slot >= max_slots || !used.insert(slot) {
+            return Err("invalid unit slot".into());
+        }
+        let id = r.u()?;
+        r.u()?; // UID
+        let graphics_group = r.u()?;
+        let graphics_state = r.u()?;
+        r.take(8)?; // map XY
+        let flags = u16::from_be_bytes(r.take(2)?.try_into().unwrap());
+        if flags & !15 != 0 {
+            return Err("unsupported transform flags".into());
+        }
+        let scale = if flags & 1 != 0 {
+            f32::from_bits(r.u()?)
+        } else {
+            1.0
+        };
+        let mut rotation = [1., 0., 0., 0., 1., 0., 0., 0., 1.];
+        if flags & 2 != 0 {
+            for axis in rotation.chunks_mut(3) {
+                axis.copy_from_slice(&r.vec3()?);
+            }
+        }
+        let position = if flags & 4 != 0 { r.vec3()? } else { [0.; 3] };
+        if !scale.is_finite() {
+            return Err("non-finite unit scale".into());
+        }
+        unit_records.push(StateUnit {
+            id,
+            graphics_group,
+            graphics_state,
+            scale,
+            rotation,
+            position,
+        });
+        r.take(16)?; // control flags, zone, creation tick
+        let bins = r.count(16383)?;
+        r.take(bins * 8)?;
+        let connected = r.count(max_slots)?;
+        r.take(connected * 4)?;
+    }
+    if r.u()? != 6 {
+        return Err("unsupported path-set version".into());
+    }
+    let (n, free_points) = r.slots()?;
+    let mut points = Vec::new();
+    for _ in 0..n {
+        points.push(r.vec3()?);
+    }
+    let (n, free_tangents) = r.slots()?;
+    let mut tangents = Vec::new();
+    for _ in 0..n {
+        tangents.push(r.vec3()?);
+    }
+    let (n, free) = r.slots()?;
+    let mut segments = Vec::new();
+    for i in 0..n {
+        if free.contains(&i) {
+            continue;
+        }
+        let mut s = [0i32; 7];
+        for v in &mut s {
+            *v = r.u()? as i32;
+        }
+        segments.push(s);
+    }
+    let point_data = r.count(1_000_000)?;
+    if point_data != points.len() {
+        return Err("path point metadata count mismatch".into());
+    }
+    r.take(point_data * 16)?; // first segment/dir and three point-data words
+    let (n, free) = r.slots()?;
+    let mut paths = vec![None; n];
+    for (i, path) in paths.iter_mut().enumerate() {
+        if free.contains(&i) {
+            continue;
+        }
+        let id = r.u()?;
+        r.take(20)?;
+        *path = Some(id);
+    }
+    let (n, free) = r.slots()?;
+    r.take((n - free.len()) * 24)?; // path groups
+    let mut curves = Vec::new();
+    for s in segments {
+        let point = |i: i32| -> Result<[f32; 3], String> {
+            if i < 0 || free_points.contains(&(i as usize)) {
+                return Err("dead path point".into());
+            }
+            points
+                .get(i as usize)
+                .copied()
+                .ok_or_else(|| "invalid path point".into())
+        };
+        let a = point(s[0])?;
+        let b = point(s[1])?;
+        let tangent = |i: i32| -> Result<[f32; 3], String> {
+            if i < 0 {
+                return Ok(std::array::from_fn(|k| b[k] - a[k]));
+            }
+            if free_tangents.contains(&(i as usize)) {
+                return Err("dead tangent".into());
+            }
+            tangents
+                .get(i as usize)
+                .copied()
+                .ok_or_else(|| "invalid tangent".into())
+        };
+        let ta = tangent(s[2])?;
+        let tb = tangent(s[3])?;
+        let entry_id = paths
+            .get(s[6] as usize)
+            .copied()
+            .flatten()
+            .ok_or("invalid segment path")?;
+        curves.push(StateCurve {
+            entry_id,
+            path: s[6] as usize,
+            controls: [
+                a,
+                std::array::from_fn(|k| a[k] + ta[k] / 3.0),
+                std::array::from_fn(|k| b[k] - tb[k] / 3.0),
+                b,
+            ],
+        });
+    }
+    Ok(RegionState {
+        version,
+        environment,
+        maps,
+        curves,
+        units: unit_records,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn rejects_truncated_and_unknown_states() {
+        assert!(read_state(&[]).is_err());
+        assert!(read_state(&20u32.to_be_bytes()).is_err());
+        assert!(
+            read_state(&99u32.to_be_bytes())
+                .unwrap_err()
+                .contains("unsupported")
+        );
+    }
+    fn sample_state(version: u32) -> Vec<u8> {
+        let mut words = vec![version, 1, 1, 0, 0xC04182E4, 0, 0, 1];
+        if version <= 18 {
+            words.push(0);
+        }
+        words.extend([1, 4, 0xD779C976, 1, 7, 0, 7, 0, 0, 13]);
+        words.extend([6, 2, 0]); // path version and two live points
+        words.extend([0f32, 0., 10., 12., 0., 10.].map(f32::to_bits));
+        words.extend([2, 0]);
+        words.extend([12f32, 0., 0., 12., 0., 0.].map(f32::to_bits));
+        words.extend([1, 0, 0, 1, 0, 1, 0, 0, 0]); // one segment
+        words.extend([2, 0, 0, 0, 0, 0, 0, 0, 0]); // point link/data arrays
+        words.extend([1, 0, 0x017A430A, 0, 0, 1, u32::MAX, u32::MAX]);
+        words.extend([0, 0]); // no groups
+        words.into_iter().flat_map(u32::to_be_bytes).collect()
+    }
+    #[test]
+    fn reads_retail_header_variants_and_exact_bezier_controls() {
+        for version in [17, 18, 20] {
+            let bytes = sample_state(version);
+            let state = read_state(&bytes).unwrap();
+            assert_eq!(state.maps[0].values, vec![7]);
+            assert_eq!(state.curves[0].entry_id, 0x017A430A);
+            assert_eq!(
+                state.curves[0].controls,
+                [[0., 0., 10.], [4., 0., 10.], [8., 0., 10.], [12., 0., 10.]]
+            );
+            for end in [8, 32, bytes.len() - 1] {
+                assert!(read_state(&bytes[..end]).is_err());
+            }
+        }
+    }
+    #[test]
+    fn rejects_corrupt_field_sum_and_invalid_slots() {
+        let mut bytes = sample_state(20);
+        bytes[48..52].copy_from_slice(&9u32.to_be_bytes());
+        assert!(read_state(&bytes).unwrap_err().contains("sum mismatch"));
+        let mut r = Reader {
+            bytes: &[0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+            pos: 0,
+        };
+        assert!(r.slots().is_err());
+    }
+
+    #[test]
+    fn writer_round_trips_sample_state() {
+        let original = read_state(&sample_state(20)).unwrap();
+        let encoded = write_state(&original).unwrap();
+        let decoded = read_state(&encoded).unwrap();
+        assert_eq!(decoded.environment, original.environment);
+        assert_eq!(decoded.maps.len(), original.maps.len());
+        assert_eq!(decoded.maps[0].values, original.maps[0].values);
+        assert_eq!(decoded.units.len(), original.units.len());
+        assert_eq!(decoded.curves.len(), original.curves.len());
+        assert_eq!(decoded.curves[0].entry_id, original.curves[0].entry_id);
+        assert_eq!(decoded.curves[0].controls, original.curves[0].controls);
+    }
+}

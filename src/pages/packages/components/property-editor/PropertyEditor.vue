@@ -1,25 +1,43 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FAlert from "@/components/ui/FAlert.vue";
-import FCheckbox from "@/components/ui/FCheckbox.vue";
+import FTooltip from "@/components/ui/FTooltip.vue";
+import { Switch } from "@/components/ui/switch";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
-import type { Tgi } from "@/api/tauri";
+import FCode from "@/components/ui/FCode.vue";
+import type {
+  LotModelPayload,
+  LotUnitDto,
+  Tgi,
+} from "@/api/tauri";
+import {
+  parseLotModelContainer,
+} from "@/lib/three-gltf";
+import { createDataSource } from "@/api/data-source";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
-import PropertyEditorViewport, {
-  type EditorTool,
-} from "./PropertyEditorViewport.vue";
+import type { EditorTool } from "./PropertyEditorViewport.vue";
+import PropertyEditorViewport from "./SchemaPropertyViewport.vue";
 import PropertyEditorInspector from "./PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
+import { unitId } from "./unitGizmos";
+import { buildSchemaDoc, unitsFromSchema } from "./peSchemaDoc";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { useEditorHotkeys } from "./useEditorHotkeys";
+import { useEffectPreview } from "./effects/useEffectPreview";
 import { exportLotModel } from "@/composables/useModelExport";
+import { useEventListener } from "@vueuse/core";
+import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 
-const props = defineProps<{ packageId: number; tgi: Tgi }>();
+import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix } from "./assetCategories";
+import type { PropUnit } from "@/api/tauri";
+const props = defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null }>();
+const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
+const { t } = useI18n();
 const open = defineModel<boolean>("open", { default: false });
 const {
   session,
@@ -28,6 +46,7 @@ const {
   modelPayload,
   propModels,
   propTreeIds,
+  referencedModels,
   treeAtlasPng,
   treeModelPayloads,
   releasePropPackages,
@@ -37,6 +56,7 @@ const {
   modelState,
   selectedId,
   grouping,
+  flatUnits,
   lotSize,
   lotTilePeriod,
   lotPlacement,
@@ -61,7 +81,6 @@ const {
   load,
   toggleGroup,
   toggleUnit,
-  resetViewState,
 } = usePropertyEditorSession(props.packageId, props.tgi);
 
 /** 编辑工具（PE-重构-3）：select = 仅拾取；translate/rotate/scale 挂手柄。 */
@@ -92,34 +111,459 @@ function commitFields(id: string, patch: Record<string, unknown>) {
 }
 
 /**
+ * 选中 prop 是否可编辑「缩放倍率」：仅真实模型渲染分支消费 DTO scale
+ * （树模型 = propTreeIds；prop/放置直挂模型 = 有 LOTM 载荷）。标记锥
+ * 兜底的 prop 编辑它无观感意义，不显示。
+ */
+const selectedScaleEditable = computed(() => {
+  const unit = selectedUnit.value;
+  if (!unit || unit.kind !== "prop") return false;
+  const rid = unit.resourceId;
+  if (typeof rid !== "number") return false;
+  return (
+    propTreeIds.value.has(rid) ||
+    propModels.value.has(rid) ||
+    addedModelPayloads.value.has(directModelKey(unit))
+  );
+});
+
+/**
  * 显式保存：本地编辑导出为 JSON 补丁文件。当前编辑仅存在于内存，
  * 不触碰任何游戏 package；真正的 DBPF overlay 写回在资产-1（RW4
  * 写回器）落地后接入，届时同样以此按钮为唯一入口。
  */
+// ---- 编辑模式（锁定/解锁）----
+// 锁定 = 只读视图（原"只读视图"pill 的交互化）；解锁后：视口工具栏显示、
+// rail 物料入口可用、组件可拖入画布、name-tag 旁出现删除按钮。
+const editEnabled = ref(false);
+function toggleEditEnabled() {
+  editEnabled.value = !editEnabled.value;
+}
+
+// Restore the persisted document once per loaded session; all subsequent edits
+// keep using the same undoable commands and schema-renderer contract.
+watch(session, current => {
+  if (!current || !props.initialSchema) return;
+  const restored = unitsFromSchema(props.initialSchema);
+  const original = new Set(current.units.map(unit => unitId(unit as LotUnitDto)));
+  const restoredIds = new Set(restored.map(unitId));
+  for (const id of original) if (!restoredIds.has(id)) edit.removeUnit(id);
+  for (const unit of restored) {
+    const id = unitId(unit);
+    if (!original.has(id)) edit.addUnit(unit);
+    else {
+      if ('transform' in unit && unit.transform) edit.setUnitTransform(id, unit.transform.matrix);
+      const { fields, ...patch } = unit;
+      edit.setUnitFields(id, { ...patch, fields });
+    }
+  }
+  const editor = props.initialSchema.editor as { groups?: Record<string, boolean>; unitVisibility?: Record<string, boolean> };
+  Object.assign(groupVisibility, editor?.groups ?? {});
+  hiddenUnits.value = new Set(Object.entries(editor?.unitVisibility ?? {}).filter(([, v]) => !v).map(([id]) => id));
+  editEnabled.value = true;
+});
+
+// ---- 组件库（物料）sheet：从已打开包的命名 RW4 模型目录拖入放置 ----
+const materialsOpen = ref(false);
+const materialsBusy = ref(false);
+interface ModelCatalogEntry {
+  packageId: number;
+  packagePath?: string;
+  instance: number;
+  group: number;
+  name: string;
+  size: number;
+  template?: PropUnit;
+}
+const modelCatalog = ref<ModelCatalogEntry[]>([]);
+const propCategories = computed(() => {
+  const result = new Map<number, import("./assetCategories").AssetCategory>();
+  for (const ref of referencedModels.value) {
+    const entry = modelCatalog.value.find(e => e.packageId === ref.packageId && e.group === ref.group && e.instance === ref.instance);
+    const category = assetCategory(ref.instance, entry?.name, propTreeIds.value);
+    if (category !== "other") result.set(ref.resourceId, category);
+  }
+  return result;
+});
+const materialsTab = ref<MaterialTabId>("props");
+const materialsSearch = ref("");
+/** 物料页签/灯源预设/占位类目：字面量联合常量（模板内联数组会把 id/
+ * lightType/kind 放宽成 string，赋值回联合 ref 时 TS2322）。 */
+type MaterialTabId = "props" | "spawners" | "effects" | "paths" | "lights";
+const MATERIAL_TABS: { id: MaterialTabId; label: string }[] = [
+  { id: "props", label: "package.groupProps" },
+  { id: "spawners", label: "package.groupSpawners" },
+  { id: "effects", label: "package.groupEffects" },
+  { id: "paths", label: "package.groupPaths" },
+  { id: "lights", label: "package.groupLights" },
+];
+const LIGHT_PRESETS: {
+  lightType: "Point" | "Spot" | "Line";
+  label: string;
+}[] = [
+  { lightType: "Point", label: "package.lightPoint" },
+  { lightType: "Spot", label: "package.lightSpot" },
+  { lightType: "Line", label: "package.lightLine" },
+];
+const PLACE_ENTRIES: {
+  tab: MaterialTabId;
+  kind: "spawner" | "effect" | "pathPoint";
+  label: string;
+  icon: string;
+}[] = [
+  { tab: "spawners", kind: "spawner", label: "package.groupSpawners", icon: "MapPin" },
+  { tab: "effects", kind: "effect", label: "package.groupEffects", icon: "Zap" },
+  { tab: "paths", kind: "pathPoint", label: "package.groupPaths", icon: "Spline" },
+];
+/** 折叠面板展开状态（按组名；缺省全展开）。 */
+const collapsedGroups = ref(new Set<string>());
+function openMaterialsPanel() {
+  materialsOpen.value = true;
+  if (modelCatalog.value.length || materialsBusy.value) return;
+  materialsBusy.value = true;
+  tauriApi.packages
+    .listModelCatalog()
+    .then((entries) => {
+      modelCatalog.value = entries;
+    })
+    .catch(() => {
+      modelCatalog.value = [];
+    })
+    .finally(() => {
+      materialsBusy.value = false;
+    });
+}
+/** props 目录按名称首段（分隔符前）分组建目（可折叠）。 */
+const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>(
+  () => {
+    const keyword = materialsSearch.value.trim().toLowerCase();
+    // Named models from opened packages plus resolved prototypes in this lot.
+    const matched = modelCatalog.value.map(entry => ({ ...entry })).filter(
+      (entry) =>
+        (keyword ? entry.name.toLowerCase().includes(keyword) : true),
+    );
+    // 引用了但目录缺席的模型（纯 hex 名被目录噪声过滤排除，如树部件）
+    // → 兜底补入：包 id 取引用条目（readLotModelMeshes 可按需加载）
+    for (const refEntry of referencedModels.value) {
+      if (matched.some((entry) => entry.instance === refEntry.instance && entry.group === refEntry.group && entry.packageId === refEntry.packageId)) continue;
+      const hexName = t("package.modelFallbackName", {
+        hex: `0x${refEntry.instance.toString(16).toUpperCase()}`,
+      });
+      if (keyword && !hexName.toLowerCase().includes(keyword)) continue;
+      matched.push({
+        packageId: refEntry.packageId,
+        instance: refEntry.instance,
+        group: refEntry.group,
+        name: hexName,
+        size: 0,
+      });
+    }
+    const groups = new Map<string, ModelCatalogEntry[]>();
+    for (const entry of matched) {
+      const reference = referencedModels.value.find(r => r.instance === entry.instance && r.group === entry.group && r.packageId === entry.packageId);
+      entry.template = grouping.value.props.find(u => u.resourceId === reference?.resourceId);
+      const group = CATEGORY_LABELS[assetCategory(entry.template?.resourceId ?? entry.instance, entry.name, propTreeIds.value)];
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group)!.push(entry);
+    }
+    return [...groups.entries()]
+      .map(([name, list]) => ({ name, entries: list }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  },
+);
+function toggleGroupCollapse(name: string) {
+  const next = new Set(collapsedGroups.value);
+  if (next.has(name)) next.delete(name);
+  else next.add(name);
+  collapsedGroups.value = next;
+}
+
+
+
+// ---- 放置/删除：unitEditLayer 资产编辑 + 视口回调 ----
+interface PlacePayload {
+  kind: "light" | "prop" | "spawner" | "effect" | "pathPoint";
+  /** light 预设。 */
+  lightType?: "Point" | "Spot" | "Line";
+  /** prop 直挂模型。 */
+  packageId?: number;
+  packagePath?: string;
+  tgi?: Tgi;
+  name?: string;
+  template?: PropUnit;
+}
+const addedModelPayloads = ref(new Map<string, LotModelPayload>());
+// Restore direct model dependencies when reopening a saved document.
+watch(session, async current => {
+  const document = props.initialSchema;
+  if (!current || !document) return;
+  for (const unit of unitsFromSchema(document)) {
+    if (unit.kind !== "prop" || !unit.modelTgi || unit.modelPackageId == null || unit.resourceId == null) continue;
+    try {
+      const pkg = unit.modelPackagePath
+        ? (await tauriApi.packages.open(unit.modelPackagePath)).package.packageId : unit.modelPackageId;
+      const bytes = await tauriApi.packages.readLotModelMeshes(pkg, unit.modelTgi);
+      if (session.value !== current) return;
+      edit.setUnitFields(unitId(unit), { modelPackageId: pkg });
+      addedModelPayloads.value = new Map(addedModelPayloads.value).set(directModelKey({ ...unit, modelPackageId: pkg }), parseLotModelContainer(bytes));
+    } catch { /* Unavailable package remains an explicit unresolved marker. */ }
+  }
+}, { immediate: true });
+
+/** 放置后待选中的 unit id：grouping 重建（revision 前进）后由 Viewport
+ * emit select 落地；取消选中时由壳清空避免重复选中。 */
+const pendingSelectId = ref<string | null>(null);
+watch(selectedId, (value) => {
+  if (!value) pendingSelectId.value = null;
+});
+const sourceForPlacement = createDataSource();
+
+/** 放置 prop（树部件家族）的默认缩放：0.2 × 原生 ~51m ≈ 10m 树高
+ * （对拍消防局 lot 树道具 scale 分布的两级中值），缩放手柄可调。 */
+const PLACED_PROP_SCALE = 0.2;
+function nextIndexOf(kind: string): number {
+  const units = session.value?.units ?? [];
+  let max = -1;
+  for (const unit of units) {
+    if (unit.kind !== kind) continue;
+    if (unit.index > max) max = unit.index;
+  }
+  for (const added of edit.addedUnits) {
+    if (added.kind !== kind) continue;
+    if (added.index > max) max = added.index;
+  }
+  return max + 1;
+}
+// 指针级放置拖拽（@vueuse/core useEventListener）：pointerdown 拾起面板
+// 条目 → window 跟踪指针 → pointerup 落点放置。不走 HTML5 DnD——FSheet
+// 全屏遮罩会拦截原生拖放并给出禁止光标（真机勘误 2026-10-06）。
+const placementPayload = ref<PlacePayload | null>(null);
+useEventListener(window, "pointerup", (event: PointerEvent) => {
+  const payload = placementPayload.value;
+  if (!payload) return;
+  placementPayload.value = null;
+  document.body.style.cursor = "";
+  const position = viewportRef.value?.groundPointAt(
+    event.clientX,
+    event.clientY,
+  );
+  if (!position) return; // 落点不在地面平面（视线朝天）→ 取消
+  void onPlaceUnit(payload, position);
+});
+function beginPlacementDrag(event: PointerEvent, payload: PlacePayload) {
+  if (!editEnabled.value) return;
+  event.preventDefault();
+  placementPayload.value = payload;
+  document.body.style.cursor = "copy";
+}
+function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) {
+  if (!editEnabled.value) return;
+  // 基向量 = 同类既有单元的中位缩放（引擎按单元数据缩放聚合模型；
+  // 数据无缩放时退化为 1）
+  // 放置 prop（树部件家族）默认缩放 0.2：×原生 ~51m ≈ 10m 树高
+  // （对拍消防局 lot 树道具 scale 分布的两级中值），缩放手柄可调。
+  const placedScale = payload.kind === "prop" && assetCategory(payload.tgi?.instance ?? null, payload.name) === "trees" ? PLACED_PROP_SCALE : 1;
+  const transform = {
+    matrix: placementMatrix(position, placedScale),
+  };
+  let unit: LotUnitDto;
+  if (payload.kind === "prop" && payload.template) {
+    unit = clonePropForPlacement(payload.template, nextIndexOf("prop"), position);
+    unit.displayName = payload.name;
+  } else if (payload.kind === "light") {
+    unit = {
+      kind: "light",
+      index: nextIndexOf("light"),
+      transform,
+      lightType: payload.lightType ?? "Point",
+      color: [1, 1, 1],
+      outerRadius: 8,
+      innerRadius: null,
+      diffuse: null,
+      length: null,
+      cullDistance: "Far",
+      isVolumetric: false,
+      debugName: null,
+      fields: [],
+    } as LotUnitDto;
+  } else if (payload.kind === "prop" && payload.tgi && payload.packageId != null) {
+    unit = {
+      kind: "prop",
+      index: nextIndexOf("prop"),
+      bin: 1,
+      resourceId: payload.tgi.instance,
+      transform,
+      slot: null,
+      scale: null,
+      displayName: payload.name,
+      modelTgi: payload.tgi,
+      modelPackageId: payload.packageId,
+      modelPackagePath: payload.packagePath,
+      fields: [],
+    } as unknown as LotUnitDto;
+  } else if (payload.kind === "spawner") {
+    unit = {
+      kind: "spawner",
+      index: nextIndexOf("spawner"),
+      transform,
+      id: null,
+      count: null,
+      countRandom: null,
+      agent: null,
+      fields: [],
+    } as LotUnitDto;
+  } else if (payload.kind === "effect") {
+    unit = {
+      kind: "effect",
+      index: nextIndexOf("effect"),
+      transform,
+      effectId: null,
+      externalId: null,
+      enabled: true,
+      fields: [],
+    } as LotUnitDto;
+  } else {
+    unit = {
+      kind: "pathPoint",
+      index: nextIndexOf("pathPoint"),
+      point: position,
+      tangent: null,
+      pointIndex: null,
+      fields: [],
+    } as LotUnitDto;
+  }
+  edit.addUnit(unit);
+  pendingSelectId.value = unitId(unit);
+  // 直挂 prop：异步取 LOTM 载荷入缓存（渲染器从此读取）
+  if (payload.kind === "prop" && !payload.template && payload.tgi && payload.packageId != null) {
+    const cacheKey = directModelKey({ modelTgi: payload.tgi, modelPackageId: payload.packageId });
+    sourceForPlacement
+      .readLotModelMeshes(payload.packageId, payload.tgi)
+      .then((buffer) => {
+        const next = new Map(addedModelPayloads.value);
+        next.set(cacheKey, parseLotModelContainer(buffer));
+        addedModelPayloads.value = next;
+      })
+      .catch(() => {
+        // 载荷失败：标记锥兜底（渲染分支自处理）
+      });
+  }
+}
+function onDeleteUnit(id: string) {
+  edit.removeUnit(id);
+  if (selectedId.value === id) selectedId.value = null;
+}
+
+// ---- Schema（低代码资产管线 v1，docs/design/lowcode-asset-pipeline.md）----
+// 活体文档：编辑态（session + 编辑层覆盖合并后的 effectiveUnits）的前端
+// JSON 投影，openscp.lot-asset/1 结构与后端 build_schema 同构——解锁编辑
+// 后用户的一切增删改查都实时反映在这份 JSON 上（渲染/检查器/Schema
+// sheet 三方同源），导出即所得。FCode 只读预览，导出写 .lot.json。
+const schemaOpen = ref(false);
+/** 手动刷新代数：活体 computed 本就随编辑联动，此钮是显式保险
+ * （用户指令 2026-10-06：编辑后要能手动刷新 schema JSON）。 */
+const schemaRevision = ref(0);
+/** 变更对比开关：开 = FCode diff 视图（编辑基线 → 当前活体）。 */
+const schemaDiff = ref(false);
+const schemaJson = computed(() => {
+  // 读 revision 进依赖：刷新按钮强制重算（其余依赖 reactive 自动联动）
+  void schemaRevision.value;
+  const current = session.value;
+  if (!current) return "";
+  // flatUnits = effectiveUnits（session 已合并 overrides/fieldOverrides/
+  // 增删）——文档即渲染链路正在消费的生效值
+  return JSON.stringify(
+    buildSchemaDoc({
+      assetName: current.assetName ?? null,
+      tgi: props.tgi,
+      modelLods: current.modelLods,
+      lotSize: current.lotSize,
+      lotTilePeriod: current.lotTilePeriod,
+      lotPlacement: current.lotPlacement,
+      lotBaseTile: current.lotBaseTile,
+      lotColors: current.lotColors,
+      lotColorsAuthored: current.lotColorsAuthored,
+      lotBorderColors: current.lotBorderColors,
+      lotBorderWidths: current.lotBorderWidths,
+      lotColorHeights: current.lotColorHeights,
+      lotBorderHeights: current.lotBorderHeights,
+      lotBorderPatternIndices: current.lotBorderPatternIndices,
+      lotOverlayBoxOffset: current.lotOverlayBoxOffset,
+      lotModelBBoxCenter: current.lotModelBBoxCenter,
+      units: flatUnits.value,
+      hiddenUnitIds: [...hiddenUnits.value],
+      groups: { ...groupVisibility },
+    }),
+    null,
+    2,
+  );
+});
+const sceneDocument = computed(() => schemaJson.value ? JSON.parse(schemaJson.value) as Record<string, unknown> : null);
+const renderGrouping = computed(() => {
+  if (!editEnabled.value || !sceneDocument.value) return grouping.value;
+  const units = unitsFromSchema(sceneDocument.value);
+  return {
+    lights: units.filter((u): u is import("@/api/tauri").LightUnit => u.kind === "light"),
+    decals: units.filter((u): u is import("@/api/tauri").DecalUnit => u.kind === "decal"),
+    props: units.filter((u): u is PropUnit => u.kind === "prop"),
+    effects: units.filter((u): u is import("@/api/tauri").EffectUnit => u.kind === "effect"),
+    spawners: units.filter((u): u is import("@/api/tauri").SpawnerUnit => u.kind === "spawner"),
+    pathPoints: units.filter((u): u is import("@/api/tauri").PathPointUnit => u.kind === "pathPoint"),
+  };
+});
+watch(sceneDocument, doc => { if (editEnabled.value && doc) emit("schema-change", doc); });
+defineExpose({ getSchema: () => sceneDocument.value });
+/** 编辑基线 = session 原始单元（无编辑层覆盖、无隐藏）——diff 的 before 侧。 */
+const schemaBaseJson = computed(() => {
+  const current = session.value;
+  if (!current) return "";
+  return JSON.stringify(
+    buildSchemaDoc({
+      assetName: current.assetName ?? null,
+      tgi: props.tgi,
+      modelLods: current.modelLods,
+      lotSize: current.lotSize,
+      lotTilePeriod: current.lotTilePeriod,
+      lotPlacement: current.lotPlacement,
+      lotBaseTile: current.lotBaseTile,
+      lotColors: current.lotColors,
+      lotColorsAuthored: current.lotColorsAuthored,
+      lotBorderColors: current.lotBorderColors,
+      lotBorderWidths: current.lotBorderWidths,
+      lotColorHeights: current.lotColorHeights,
+      lotBorderHeights: current.lotBorderHeights,
+      lotBorderPatternIndices: current.lotBorderPatternIndices,
+      lotOverlayBoxOffset: current.lotOverlayBoxOffset,
+      lotModelBBoxCenter: current.lotModelBBoxCenter,
+      units: current.units as LotUnitDto[],
+      hiddenUnitIds: [],
+      groups: {},
+    }),
+    null,
+    2,
+  );
+});
+async function exportSchema() {
+  if (!schemaJson.value) return;
+  const binary = JSON.stringify(JSON.parse(schemaJson.value), null, 2);
+  let payload = "";
+  for (const byte of new TextEncoder().encode(binary))
+    payload += String.fromCharCode(byte);
+  const path = await tauriApi.packages.saveFile(
+    `${session.value?.assetName ?? "lot"}.lot.json`,
+    "json",
+  );
+  if (!path) return;
+  await command("write_export_file", {
+    request: { path, dataBase64: btoa(payload) },
+  });
+}
 const saveEditsBusy = ref(false);
 async function saveLocalEdits() {
   if (saveEditsBusy.value || !edit.editCount.value) return;
   saveEditsBusy.value = true;
   try {
-    const payload = {
-      packageId: props.packageId,
-      tgi: props.tgi,
-      assetName: session.value?.assetName ?? null,
-      transforms: [...edit.overrides.entries()],
-      fields: [...edit.fieldOverrides.entries()],
-    };
-    const json = JSON.stringify(payload, null, 2);
-    let binary = "";
-    for (const byte of new TextEncoder().encode(json))
-      binary += String.fromCharCode(byte);
-    const path = await tauriApi.packages.saveFile(
-      `${session.value?.assetName ?? "lot"}-edits.json`,
-      "json",
-    );
-    if (!path) return;
-    await command("write_export_file", {
-      request: { path, dataBase64: btoa(binary) },
-    });
+    await exportSchema();
   } finally {
     saveEditsBusy.value = false;
   }
@@ -145,20 +589,46 @@ useEditorHotkeys(
 );
 
 const renderMode = ref<"default" | "refined">("default");
+const effectiveRenderMode = computed(() => editEnabled.value ? "refined" : renderMode.value);
 /** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
 const neonAnim = ref(false);
+const effectRendering = ref(false);
+const effectsActive = computed(() => effectRendering.value && effectiveRenderMode.value === "refined" && open.value);
+const effectUnits = computed(() => renderGrouping.value.effects);
+const effectPreview = useEffectPreview(() => props.packageId, effectsActive, effectUnits);
+const effectRenderTitle = computed(() => t(
+  effectPreview.failed.value ? "package.effectRenderingError"
+    : effectPreview.loading.value ? "package.effectRenderingLoading"
+      : effectPreview.limited.value ? "package.effectRenderingLimited"
+        : "package.effectRenderingHint",
+));
+/** 表面浮雕开关：默认关闭，开启后才运行近景 cone-step 视差。 */
+const reliefEnabled = ref(false);
 
 // 退出复位（2026-10-04 问题2）：sheet 关闭时把视图状态收回默认——组件
 // 始终挂载（v-model:open），否则 renderMode/图层显隐跨会话残留，下次打开
 // 直接全量重建精细渲染（首帧卡顿）或带着上次隐藏的图层。时段/LOD/编辑
 // 数据保留（用户明确调节/资产），仅复位"视图"维度。
+//
+// 挂起位（2026-10-07 性能轮）：关闭时 renderMode 复位会让视口触发一次
+// 完整重建——与 releasePropPackages（后台卸包）同帧抢主线程，即"点击
+// 关闭卡顿"。先置 suspended（视口全部重建触发器静默）再复位，重开时
+// 翻回 false，视口自行补一次重建对齐当前模式。
+const peSuspended = ref(false);
 watch(open, (isOpen, wasOpen) => {
-  if (isOpen || !wasOpen) return;
+  if (isOpen === wasOpen) return;
+  if (isOpen) {
+    peSuspended.value = false;
+    return;
+  }
+  peSuspended.value = true;
   renderMode.value = "default";
   neonAnim.value = false;
+  effectRendering.value = false;
+  reliefEnabled.value = false;
   tool.value = "select";
-  resetViewState();
+  selectedId.value = null;
   // 卸载 prop 解析自动注册的 EcoGame 包（会话范围=注册范围）
   releasePropPackages();
 });
@@ -170,7 +640,13 @@ const specMode = ref(2);
 const timeOfDay = ref(12);
 // 浮雕开关已撤销（见模板注释），reliefEnabled 状态一并移除。
 const viewportRef = ref<{
-  captureRender: (options?: { includeDecals?: boolean }) => string | null;
+  captureRender: (options?: {
+    includeDecals?: boolean;
+  }) => Promise<string | null>;
+  groundPointAt: (
+    clientX: number,
+    clientY: number,
+  ) => [number, number, number] | null;
 } | null>(null);
 
 /** 视口渲染图导出：剔除 gizmo 组后的视口截图（两种渲染模式均可用）。 */
@@ -179,8 +655,9 @@ async function exportRenderImage() {
   if (renderShotBusy.value) return;
   renderShotBusy.value = true;
   try {
-    // 精细模式下 decal 是投影到墙面的真实内容，导出保留（供像素核验与出图）
-    const dataUrl = viewportRef.value?.captureRender({
+    // 精细模式下 decal 是投影到墙面的真实内容，导出保留（供像素核验与出图）。
+    // 尺度标签补绘在 captureRender 内完成（await：图像加载+合成）。
+    const dataUrl = await viewportRef.value?.captureRender({
       includeDecals: renderMode.value === "refined",
     });
     if (!dataUrl) return;
@@ -227,8 +704,14 @@ watch(open, (value) => {
   if (value) {
     diagnosticsDismissed = false;
     void load();
+  } else {
+    // 关闭即回锁定态：工具栏/物料面板/拖放/删除随 editEnabled 复位
+    // （用户资产编辑——放置记录/变换/字段——按既有口径不在复位范围）
+    editEnabled.value = false;
+    materialsOpen.value = false;
   }
 });
+onMounted(() => { if (open.value) void load(); });
 /** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
 let diagnosticsDismissed = false;
 const title = computed(() => {
@@ -276,16 +759,19 @@ const treeSheetPinned = ref(true);
           :aria-label="$t('package.renderMode')"
           :title="$t('package.renderModeHint')"
         >
+
           <button
             type="button"
-            :class="{ active: renderMode === 'default' }"
+            :class="{ active: effectiveRenderMode === 'default' }"
+            :disabled="editEnabled"
+            :title="editEnabled ? '编辑模式使用精细渲染' : undefined"
             @click="renderMode = 'default'"
           >
             {{ $t("package.renderModeDefault") }}
           </button>
           <button
             type="button"
-            :class="{ active: renderMode === 'refined' }"
+            :class="{ active: effectiveRenderMode === 'refined' }"
             @click="renderMode = 'refined'"
           >
             {{ $t("package.renderModeRefined") }}
@@ -295,7 +781,7 @@ const treeSheetPinned = ref(true);
              效果最佳，精细渲染已在 Viewport 固定 specMode=2。复验时恢复
              此块与 specExperiment/specMode 的 prop 传递即可。
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.specExperimentHint')"
         >
@@ -303,7 +789,7 @@ const treeSheetPinned = ref(true);
           <span>{{ $t("package.specExperiment") }}</span>
         </label>
         <div
-          v-if="renderMode === 'refined' && specExperiment"
+          v-if="effectiveRenderMode === 'refined' && specExperiment"
           class="render-mode spec-channel"
           role="group"
           :aria-label="$t('package.specExperiment')"
@@ -332,7 +818,7 @@ const treeSheetPinned = ref(true);
         </div>
         -->
         <div
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="daynight"
           :title="$t('package.timeOfDayHint')"
         >
@@ -351,36 +837,41 @@ const treeSheetPinned = ref(true);
             }}
           </span>
         </div>
-        <!-- 浮雕开关（2026-09-10 撤销）：实证 slot5 alpha = 逐窗灯亮掩码而非
-             几何高度（用户实测玻璃出现规律块纹），且该发行版 shader 的
-             reliefMap() 已被编译为恒等——游戏本体无浮雕，数据无高度源。
-             LOTM v8 的 reliefPng 字段保留（若未来找到真实高度图可恢复）。
+        <!-- 表面浮雕：默认关闭，避免普通 property 预览增加像素着色成本。
+             开启后使用 shaderMap.r 高度通道执行游戏同口径 cone-step relief。 -->
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.reliefHint')"
         >
-          <FCheckbox v-model="reliefEnabled" />
+          <Switch v-model="reliefEnabled" :aria-label="$t('package.relief')" />
           <span>{{ $t("package.relief") }}</span>
         </label>
-        -->
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.poweredHint')"
         >
-          <FCheckbox v-model="powered" />
+          <Switch v-model="powered" :aria-label="$t('package.powered')" />
           <span>{{ $t("package.powered") }}</span>
         </label>
         <!-- 动态招牌（2026-10-05 十轮）：关 = 静态量化合成；开 = dev LED
              扫掠动画（decalNeonTubeSDF 双相位口径，§12.5） -->
         <label
-          v-if="renderMode === 'refined'"
+          v-if="effectiveRenderMode === 'refined'"
           class="spec-experiment"
           :title="$t('package.neonAnimHint')"
         >
-          <FCheckbox v-model="neonAnim" />
+          <Switch v-model="neonAnim" :aria-label="$t('package.neonAnim')" />
           <span>{{ $t("package.neonAnim") }}</span>
+        </label>
+        <label
+          v-if="effectiveRenderMode === 'refined'"
+          class="spec-experiment"
+          :title="effectRenderTitle"
+        >
+          <Switch v-model="effectRendering" :aria-label="$t('package.effectRendering')" />
+          <span>{{ $t("package.effectRendering") }}</span>
         </label>
         <button
           class="editor-close"
@@ -430,7 +921,7 @@ const treeSheetPinned = ref(true);
             {{ $t("package.exportMeshWhite") }}
           </button>
           <button
-            v-if="renderMode === 'refined'"
+            v-if="effectiveRenderMode === 'refined'"
             type="button"
             @click="exportModel('textured')"
           >
@@ -438,12 +929,32 @@ const treeSheetPinned = ref(true);
             {{ $t("package.exportMeshTextured") }}
           </button>
         </FDropdown>
+        <!-- 编辑模式锁定开关（原"只读视图"pill 的交互化）：解锁 = 工具栏/
+             物料/拖放放置/删除可用 -->
+        <FTooltip
+          :text="
+            editEnabled ? $t('package.editLock') : $t('package.editUnlock')
+          "
+          side="bottom"
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="editor-close"
+              :class="{ active: editEnabled }"
+              :aria-pressed="editEnabled"
+              :aria-label="
+                editEnabled ? $t('package.editLock') : $t('package.editUnlock')
+              "
+              @click="toggleEditEnabled"
+            >
+              <FIcon :name="editEnabled ? 'LockOpen' : 'Lock'" :size="15" aria-label="" />
+            </button>
+          </template>
+        </FTooltip>
         <span v-if="edit.editCount.value" class="editor-readonly editor-edits">
           {{ $t("package.localEdits", { n: edit.editCount.value }) }}
         </span>
-        <span v-else class="editor-readonly">{{
-          $t("package.propertyEditorReadonly")
-        }}</span>
         <button
           class="editor-close"
           type="button"
@@ -464,46 +975,71 @@ const treeSheetPinned = ref(true);
              + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
         <nav class="editor-rail" :aria-label="$t('package.inspector')">
           <div class="rail-group">
-            <button
-              type="button"
-              class="rail-item"
-              :class="{ active: treeSheetOpen }"
-              :aria-pressed="treeSheetOpen"
-              :title="$t('package.railOutline')"
-              @click="treeSheetOpen = !treeSheetOpen"
+            <FTooltip :text="$t('package.railOutline')" side="right">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="rail-item"
+                  :class="{ active: treeSheetOpen }"
+                  :aria-pressed="treeSheetOpen"
+                  :aria-label="$t('package.railOutline')"
+                  @click="treeSheetOpen = !treeSheetOpen"
+                >
+                  <FIcon name="ListTree" :size="17" aria-label="" />
+                </button>
+              </template>
+            </FTooltip>
+            <FTooltip
+              :text="
+                editEnabled
+                  ? $t('package.materialsPanel')
+                  : $t('package.editUnlockFirst')
+              "
+              side="right"
             >
-              <FIcon name="ListTree" :size="16" aria-label="" />
-              <span>{{ $t("package.railOutline") }}</span>
-            </button>
-            <button
-              type="button"
-              class="rail-item"
-              disabled
-              :title="$t('package.comingSoon')"
-            >
-              <FIcon name="Boxes" :size="16" aria-label="" />
-              <span>{{ $t("package.railMaterials") }}</span>
-            </button>
-            <button
-              type="button"
-              class="rail-item"
-              disabled
-              :title="$t('package.comingSoon')"
-            >
-              <FIcon name="CodeXml" :size="16" aria-label="" />
-              <span>{{ $t("package.railSource") }}</span>
-            </button>
+              <template #trigger>
+                <span class="rail-item-wrap">
+                  <button
+                    type="button"
+                    class="rail-item"
+                    :class="{ active: materialsOpen }"
+                    :disabled="!editEnabled"
+                    :aria-label="$t('package.materialsPanel')"
+                    @click="openMaterialsPanel"
+                  >
+                    <FIcon name="Boxes" :size="17" aria-label="" />
+                  </button>
+                </span>
+              </template>
+            </FTooltip>
+            <FTooltip :text="$t('package.railSource')" side="right">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="rail-item"
+                  :aria-label="$t('package.railSource')"
+                  @click="schemaOpen = true"
+                >
+                  <FIcon name="CodeXml" :size="17" aria-label="" />
+                </button>
+              </template>
+            </FTooltip>
           </div>
           <div class="rail-group">
-            <button
-              type="button"
-              class="rail-item"
-              disabled
-              :title="$t('package.comingSoon')"
-            >
-              <FIcon name="Send" :size="16" aria-label="" />
-              <span>{{ $t("package.railSubmitIssue") }}</span>
-            </button>
+            <FTooltip :text="$t('package.railSubmitIssue')" side="right">
+              <template #trigger>
+                <span class="rail-item-wrap">
+                  <button
+                    type="button"
+                    class="rail-item"
+                    disabled
+                    :aria-label="$t('package.railSubmitIssue')"
+                  >
+                    <FIcon name="Send" :size="17" aria-label="" />
+                  </button>
+                </span>
+              </template>
+            </FTooltip>
           </div>
         </nav>
         <!-- 组件树 sheet：图钉=停靠（占布局列），未图钉=悬浮盖在视口上。
@@ -543,7 +1079,9 @@ const treeSheetPinned = ref(true);
               </div>
             </header>
             <PropertyEditorOutliner
-              :grouping="grouping"
+              :tree-ids="propTreeIds"
+              :prop-categories="propCategories"
+              :grouping="renderGrouping"
               :selected-id="selectedId"
               :hidden-units="hiddenUnits"
               :group-visibility="groupVisibility"
@@ -554,16 +1092,22 @@ const treeSheetPinned = ref(true);
           </section>
         </div>
         <PropertyEditorViewport
+          :schema="editEnabled ? sceneDocument : null"
           ref="viewportRef"
-          :model-payload="modelPayload"
+          :edit-enabled="editEnabled"
+          :suspended="peSuspended"
+          :added-model-payloads="addedModelPayloads"
+          :pending-select-id="pendingSelectId"
+          @delete-unit="onDeleteUnit"
+          :model-payload="previewPayload ?? modelPayload"
           :prop-models="propModels"
           :prop-tree-ids="propTreeIds"
           :tree-model-payloads="treeModelPayloads"
           :tree-atlas-png="treeAtlasPng"
           :model-lods="modelLods"
           :active-lod="activeLod"
-          :render-mode="renderMode"
-          :grouping="grouping"
+          :render-mode="effectiveRenderMode"
+          :grouping="renderGrouping"
           :lot-size="lotSize"
           :lot-tile-period="lotTilePeriod"
           :lot-placement="lotPlacement"
@@ -571,6 +1115,8 @@ const treeSheetPinned = ref(true);
           :lot-colors-authored="lotColorsAuthored"
           :lot-border-colors="lotBorderColors"
           :lot-border-widths="lotBorderWidths"
+          :lot-color-heights="session?.lotColorHeights"
+          :lot-border-heights="session?.lotBorderHeights"
           :lot-border-pattern-indices="lotBorderPatternIndices"
           :lot-base-tile="lotBaseTile"
           :lot-overlay-box-offset="lotOverlayBoxOffset"
@@ -589,7 +1135,10 @@ const treeSheetPinned = ref(true);
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
           :powered="powered"
+          :relief-enabled="reliefEnabled"
           :neon-anim="neonAnim"
+          :render-effects="effectsActive"
+          :effect-definitions="effectPreview.definitions.value"
           :decal-light="decalLight"
           :tool="tool"
           @select="selectedId = $event"
@@ -602,16 +1151,184 @@ const treeSheetPinned = ref(true);
         <PropertyEditorInspector
           :unit="selectedUnit"
           :live-transform="liveTransform"
+          :scale-editable="selectedScaleEditable"
+          :edit-enabled="editEnabled"
           @update-transform="commitTransform"
           @update-fields="commitFields"
         />
       </div>
       <PropertyEditorStatusBar
         v-if="session"
-        :grouping="grouping"
+        :grouping="renderGrouping"
         :model-state="modelState"
         :selected-unit="selectedUnit"
       />
+      <FSheet
+        v-model:open="materialsOpen"
+        :label="$t('package.materialsPanel')"
+        width="min(420px, 92vw)"
+      >
+        <div class="materials-body">
+          <div class="materials-tabs" role="tablist">
+            <button
+              v-for="tab in MATERIAL_TABS"
+              :key="tab.id"
+              type="button"
+              role="tab"
+              class="materials-tab"
+              :class="{ active: materialsTab === tab.id }"
+              :aria-selected="materialsTab === tab.id"
+              @click="materialsTab = tab.id"
+            >
+              {{ $t(tab.label) }}
+            </button>
+          </div>
+          <input
+            v-if="materialsTab === 'props'"
+            v-model="materialsSearch"
+            class="materials-search"
+            type="search"
+            :placeholder="$t('package.materialsSearch')"
+          />
+          <div class="materials-groups">
+            <template v-if="materialsTab === 'props'">
+              <div
+                v-for="group in catalogGroups"
+                :key="group.name"
+                class="materials-group"
+              >
+                <button
+                  type="button"
+                  class="materials-group-head"
+                  @click="toggleGroupCollapse(group.name)"
+                >
+                  <span>{{ group.name }}</span>
+                  <FIcon
+                    :name="
+                      collapsedGroups.has(group.name) ? 'ChevronUp' : 'ChevronDown'
+                    "
+                    :size="13"
+                    aria-label=""
+                  />
+                </button>
+                <div
+                  v-show="!collapsedGroups.has(group.name)"
+                  class="materials-grid"
+                >
+                  <div
+                    v-for="entry in group.entries"
+                    :key="`${entry.packageId}:${entry.group}:${entry.instance}`"
+                    class="materials-entry"
+                    @pointerdown.stop.prevent="
+                      beginPlacementDrag($event, {
+                        kind: 'prop',
+                        packageId: entry.packageId,
+                        packagePath: entry.packagePath,
+                        tgi: {
+                          typeId: 0x2f4e681b,
+                          group: entry.group,
+                          instance: entry.instance,
+                        },
+                        name: entry.name,
+                        template: entry.template,
+                      })
+                    "
+                  >
+                    <FIcon name="Box" :size="20" aria-label="" />
+                    <span>{{ entry.name }}</span>
+                  </div>
+                </div>
+              </div>
+              <p v-if="!catalogGroups.length" class="materials-empty">
+                {{ $t('package.materialsEmpty') }}
+              </p>
+            </template>
+            <template v-else-if="materialsTab === 'lights'">
+              <div class="materials-grid">
+                <div
+                  v-for="preset in LIGHT_PRESETS"
+                  :key="preset.lightType"
+                  class="materials-entry"
+                  @pointerdown.stop.prevent="
+                    beginPlacementDrag($event, {
+                      kind: 'light',
+                      lightType: preset.lightType,
+                    })
+                  "
+                >
+                  <FIcon name="Lightbulb" :size="20" aria-label="" />
+                  <span>{{ $t(preset.label) }}</span>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="materials-grid">
+                <div
+                  v-for="entry in PLACE_ENTRIES"
+                  v-show="materialsTab === entry.tab"
+                  :key="entry.tab"
+                  class="materials-entry"
+                  @pointerdown.stop.prevent="
+                    beginPlacementDrag($event, { kind: entry.kind })
+                  "
+                >
+                  <FIcon :name="entry.icon" :size="20" aria-label="" />
+                  <span>{{ $t(entry.label) }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </FSheet>
+      <FSheet
+        v-model:open="schemaOpen"
+        :label="$t('package.schemaSheet')"
+        width="72vw"
+      >
+        <div class="schema-sheet-body">
+          <div class="schema-toolbar">
+            <span class="schema-hint">{{ $t("package.schemaHint") }}</span>
+            <button
+              type="button"
+              class="schema-export"
+              :class="{ active: schemaDiff }"
+              :aria-pressed="schemaDiff"
+              :title="$t('package.schemaDiff')"
+              @click="schemaDiff = !schemaDiff"
+            >
+              <FIcon name="GitCompare" :size="13" aria-label="" />
+              {{ $t("package.schemaDiff") }}
+            </button>
+            <button
+              type="button"
+              class="schema-export"
+              :title="$t('package.schemaRefresh')"
+              @click="schemaRevision++"
+            >
+              <FIcon name="RefreshCw" :size="13" aria-label="" />
+              {{ $t("package.schemaRefresh") }}
+            </button>
+            <button
+              type="button"
+              class="schema-export"
+              :disabled="!schemaJson"
+              @click="exportSchema"
+            >
+              <FIcon name="Download" :size="13" aria-label="" />
+              {{ $t("package.schemaExport") }}
+            </button>
+          </div>
+          <FCode
+            :code="schemaJson"
+            :base-code="schemaDiff ? schemaBaseJson : ''"
+            line-numbers
+            lang="json"
+            copy-label="Copy"
+            copied-label="Copied"
+            class="schema-code"
+          />
+        </div>
+      </FSheet>
     </div>
   </FSheet>
 </template>
@@ -768,13 +1485,15 @@ const treeSheetPinned = ref(true);
   position: relative;
   display: grid;
   flex: 1;
-  /* rail | 组件树 sheet（停靠时占列，悬浮/关闭塌缩为 0）| 视口 | 检查器 */
-  grid-template-columns: 48px auto minmax(0, 1fr) 360px;
+  /* rail | 组件树 sheet（停靠时占列，悬浮/关闭塌缩为 0）| 视口 | 检查器
+     （360px 中文恰好，英文 Properties/Transform/Metadata/Render Telemetry
+     四 tab 溢出——加宽至 384px，tab 栏同时允许换行兜底，2026-10-06） */
+  grid-template-columns: 48px auto minmax(0, 1fr) 384px;
   min-height: 0;
 }
 @media (max-width: 960px) {
   .editor-body {
-    grid-template-columns: 44px auto minmax(0, 1fr) 300px;
+    grid-template-columns: 44px auto minmax(0, 1fr) 320px;
   }
 }
 /* 左侧工作台 rail：图标+微标签竖排，组间留白，底部组贴齐下缘 */
@@ -801,18 +1520,12 @@ const treeSheetPinned = ref(true);
   color: var(--muted-foreground);
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  font: inherit;
-  font-size: 9px;
-  gap: 3px;
-  padding: 6px 2px;
+  justify-content: center;
+  min-height: 34px;
   width: 40px;
 }
-.rail-item span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.rail-item-wrap {
+  display: inline-flex;
 }
 .rail-item:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -890,6 +1603,165 @@ const treeSheetPinned = ref(true);
   color: var(--accent);
 }
 /* Outliner 自带的分隔线在 sheet 内是双边框，剥掉并占满剩余高度 */
+.schema-sheet-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 16px;
+}
+.schema-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+.schema-hint {
+  color: var(--subtle-foreground);
+  flex: 1;
+  font-size: 11px;
+}
+.schema-export {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11px;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
+}
+.schema-export:hover {
+  background: var(--surface-hover);
+}
+/* 变更对比开关激活态：品牌描边 + 浅底（与 rail 按钮同语义） */
+.schema-export.active {
+  background: var(--accent);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.schema-export:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.schema-code {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.materials-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 14px;
+}
+.materials-tabs {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 2px;
+}
+.materials-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px 6px;
+}
+.materials-tab:hover {
+  color: var(--foreground);
+}
+.materials-tab.active {
+  border-bottom-color: var(--brand);
+  color: var(--brand);
+  font-weight: 600;
+}
+.materials-search {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+.materials-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.materials-group {
+  margin-bottom: 8px;
+}
+.materials-group-head {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 8px;
+  width: 100%;
+}
+.materials-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 6px;
+}
+.materials-entry {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  min-height: 64px;
+  justify-content: center;
+  overflow: hidden;
+  padding: 8px 4px;
+  text-align: center;
+}
+.materials-entry:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.materials-entry:active {
+  cursor: grabbing;
+}
+.materials-entry span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.materials-empty {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+.editor-close.active {
+  border-color: var(--brand);
+  color: var(--brand);
+}
 .tree-sheet :deep(.outliner) {
   border-inline-end: 0;
   flex: 1;

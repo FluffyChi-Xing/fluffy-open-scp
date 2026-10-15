@@ -1,0 +1,67 @@
+/* The application tokens are available before its module loads. */
+#app-startup {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  transition:
+    opacity 200ms ease-out,
+    visibility 200ms;
+}
+#app-startup strong {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+#startup-label {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+html:not([lang="en-US"]) #startup-label [lang="en-US"],
+html[lang="en-US"] #startup-label [lang="zh-CN"] {
+  display: none;
+}
+.startup-progress {
+  width: 144px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.startup-progress span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  animation: startup-progress 1.3s ease-in-out infinite;
+}
+#app-startup.is-ready {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+@keyframes startup-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #app-startup {
+    transition: none;
+  }
+  .startup-progress span {
+    animation: none;
+    width: 100%;
+  }
+}

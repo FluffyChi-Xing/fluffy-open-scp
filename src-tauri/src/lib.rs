@@ -9,6 +9,8 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod effect_service;
+mod effect_resources;
 mod annotations;
 mod atomic_fs;
 mod debug_tools;
@@ -16,13 +18,18 @@ mod locale_service;
 mod map_panel;
 mod media_tools;
 mod mod_project;
+mod mod_flow;
 mod overrides;
+mod pe_schema;
 mod prop_models;
 mod prop_models_section_dump;
 mod package_browser;
 mod package_service;
 mod raster_edit;
+mod raster_catalog;
 mod render_telemetry;
+mod runtime_observer;
+mod game_launch;
 mod settings;
 mod stats;
 mod version_service;
@@ -50,11 +57,13 @@ use raster_edit::{
     read_raster_rgba, register_decal_entry, save_raster_overlay,
 };
 use package_browser::{list_game_tree, list_package_files};
+use pe_schema::build_pe_schema;
 use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
     read_decal_dictionary, read_decal_images, read_erz_preview, read_image_preview,
     read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
     read_sim_parts,
+    list_model_catalog,
     read_resource_bytes, read_resource_data, read_resource_text, read_resource_text_range,
     read_rw4_preview, read_rw4_section_detail,
     read_wwise_bank, release_prop_model_packages, resolve_name, resolve_names,
@@ -114,6 +123,7 @@ pub fn run() {
             map_panel::map_panel_list_regions,
             map_panel::map_panel_render_region,
             map_panel::map_panel_write_heightmap,
+            map_panel::map_panel_region_3d,
             debug_tools::debug_tools_write_overlay,
             annotation_create,
             annotation_update,
@@ -133,6 +143,14 @@ pub fn run() {
             render_telemetry_record,
             render_telemetry_summary,
             render_telemetry_clear,
+            runtime_observer::observer_list_processes,
+            runtime_observer::observer_start,
+            runtime_observer::observer_stop,
+            runtime_observer::observer_status,
+            runtime_observer::observer_sync,
+            game_launch::game_processes,
+            game_launch::deploy_game_mod,
+            game_launch::launch_game,
             version_list_targets,
             version_list_changesets,
             version_changeset_detail,
@@ -150,6 +168,9 @@ pub fn run() {
             read_resource_text,
             read_resource_text_range,
             read_lot_editor_session,
+            effect_service::read_effect_preview,
+            build_pe_schema,
+            list_model_catalog,
             read_lot_model_meshes, read_sim_parts, release_prop_model_packages, resolve_prop_models,
             read_raster_preview,
             read_image_preview,
@@ -160,6 +181,9 @@ pub fn run() {
             read_raster_rgba,
             save_raster_overlay,
             list_property_documents,
+            raster_catalog::list_raster_catalog,
+            raster_catalog::read_raster_source,
+            raster_catalog::read_lot_preview_atlases,
             read_lot_material,
             register_decal_entry,
             create_lot_overlay,
@@ -190,6 +214,7 @@ pub fn run() {
             code_package_entries,
             code_resource_preview,
             code_manifest,
+            workspace::code_flow,
             workspace_create_markdown,
             workspace_rename,
             workspace_move,

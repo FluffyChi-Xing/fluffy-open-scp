@@ -142,8 +142,14 @@ mod tests {
                 scalar(H_PARENT, Value::Float(3.0)),
             ]))
         });
-        assert_eq!(merged.get(H_CHILD).unwrap().scalar(), Some(&Value::Float(1.0)));
-        assert_eq!(merged.get(H_PARENT).unwrap().scalar(), Some(&Value::Float(3.0)));
+        assert_eq!(
+            merged.get(H_CHILD).unwrap().scalar(),
+            Some(&Value::Float(1.0))
+        );
+        assert_eq!(
+            merged.get(H_PARENT).unwrap().scalar(),
+            Some(&Value::Float(3.0))
+        );
         assert!(merged.get(PARENT_HASH).is_none(), "Parent 键不应保留");
         assert_eq!(merged.values.len(), 2);
     }
@@ -159,8 +165,14 @@ mod tests {
             0xBBBB => Some(file_of(vec![scalar(H_PARENT, Value::Float(9.0))])),
             _ => None,
         });
-        assert_eq!(merged.get(H_CHILD).unwrap().scalar(), Some(&Value::Float(2.0)));
-        assert_eq!(merged.get(H_PARENT).unwrap().scalar(), Some(&Value::Float(9.0)));
+        assert_eq!(
+            merged.get(H_CHILD).unwrap().scalar(),
+            Some(&Value::Float(2.0))
+        );
+        assert_eq!(
+            merged.get(H_PARENT).unwrap().scalar(),
+            Some(&Value::Float(9.0))
+        );
     }
 
     #[test]
@@ -173,7 +185,10 @@ mod tests {
             ]))
         });
         assert_eq!(merged.values.len(), 1);
-        assert_eq!(merged.get(H_CHILD).unwrap().scalar(), Some(&Value::Float(5.0)));
+        assert_eq!(
+            merged.get(H_CHILD).unwrap().scalar(),
+            Some(&Value::Float(5.0))
+        );
     }
 
     #[test]
@@ -183,7 +198,10 @@ mod tests {
             parent(PARENT_HASH, 0xAAAA),
         ]);
         let merged = flatten_parent_inheritance(root, |_| None);
-        assert_eq!(merged.get(H_CHILD).unwrap().scalar(), Some(&Value::Float(7.0)));
+        assert_eq!(
+            merged.get(H_CHILD).unwrap().scalar(),
+            Some(&Value::Float(7.0))
+        );
         assert!(merged.get(PARENT_HASH).is_none());
         assert_eq!(merged.values.len(), 1);
     }

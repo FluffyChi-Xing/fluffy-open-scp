@@ -13,8 +13,8 @@
 //!    ——适用于游戏 UI/装配侧家族（Unit/Agent/Menu…，group 形如 0x48E1C500）。
 use serde::Serialize;
 
-use crate::inherit::PARENT_HASH;
 use crate::PropertyFile;
+use crate::inherit::PARENT_HASH;
 
 /// 特征键：画笔/地图模板的 heightmap 名称（string8，如 "heightmap"/"forestheightmap"）。
 pub const BRUSH_HEIGHTMAP_NAME: u32 = 0x0DBA_3A9C;
@@ -259,17 +259,50 @@ mod tests {
 
     #[test]
     fn group_low16_matches_known_families() {
-        assert_eq!(property_semantic_by_group(0x48E1_C000), PropertySemantic::Unit);
-        assert_eq!(property_semantic_by_group(0x48E1_C600), PropertySemantic::Agent);
-        assert_eq!(property_semantic_by_group(0x40E0_2D00), PropertySemantic::AgentVehicleModel);
-        assert_eq!(property_semantic_by_group(0x48E1_C500), PropertySemantic::SimAction);
-        assert_eq!(property_semantic_by_group(0x48E1_E800), PropertySemantic::ResourceEntry);
-        assert_eq!(property_semantic_by_group(0x0000_C100), PropertySemantic::ResourceDef);
-        assert_eq!(property_semantic_by_group(0x0955_8B7E), PropertySemantic::Path);
-        assert_eq!(property_semantic_by_group(0x09A4_BA03), PropertySemantic::MenuCategory);
-        assert_eq!(property_semantic_by_group(0x40E0_E900), PropertySemantic::UtilityLine);
-        assert_eq!(property_semantic_by_group(0xB185_1651), PropertySemantic::DecalAtlas);
-        assert_eq!(property_semantic_by_group(0x1234_5678), PropertySemantic::Other);
+        assert_eq!(
+            property_semantic_by_group(0x48E1_C000),
+            PropertySemantic::Unit
+        );
+        assert_eq!(
+            property_semantic_by_group(0x48E1_C600),
+            PropertySemantic::Agent
+        );
+        assert_eq!(
+            property_semantic_by_group(0x40E0_2D00),
+            PropertySemantic::AgentVehicleModel
+        );
+        assert_eq!(
+            property_semantic_by_group(0x48E1_C500),
+            PropertySemantic::SimAction
+        );
+        assert_eq!(
+            property_semantic_by_group(0x48E1_E800),
+            PropertySemantic::ResourceEntry
+        );
+        assert_eq!(
+            property_semantic_by_group(0x0000_C100),
+            PropertySemantic::ResourceDef
+        );
+        assert_eq!(
+            property_semantic_by_group(0x0955_8B7E),
+            PropertySemantic::Path
+        );
+        assert_eq!(
+            property_semantic_by_group(0x09A4_BA03),
+            PropertySemantic::MenuCategory
+        );
+        assert_eq!(
+            property_semantic_by_group(0x40E0_E900),
+            PropertySemantic::UtilityLine
+        );
+        assert_eq!(
+            property_semantic_by_group(0xB185_1651),
+            PropertySemantic::DecalAtlas
+        );
+        assert_eq!(
+            property_semantic_by_group(0x1234_5678),
+            PropertySemantic::Other
+        );
     }
 
     #[test]
@@ -278,8 +311,16 @@ mod tests {
         let file = PropertyFile {
             claimed_count: 0,
             values: vec![
-                prop(BRUSH_HEIGHTMAP_NAME, PropType::String8, Kind::Scalar(Value::String8("heightmap".into()))),
-                prop(BRUSH_RESOLUTION, PropType::UInt32, Kind::Scalar(Value::UInt32(256))),
+                prop(
+                    BRUSH_HEIGHTMAP_NAME,
+                    PropType::String8,
+                    Kind::Scalar(Value::String8("heightmap".into())),
+                ),
+                prop(
+                    BRUSH_RESOLUTION,
+                    PropType::UInt32,
+                    Kind::Scalar(Value::UInt32(256)),
+                ),
             ],
         };
         assert_eq!(
@@ -298,14 +339,26 @@ mod tests {
                 Kind::Scalar(Value::String8("heightmap".into())),
             )],
         };
-        assert_eq!(property_semantic(&file, 0x48E1_C600), PropertySemantic::Agent);
+        assert_eq!(
+            property_semantic(&file, 0x48E1_C600),
+            PropertySemantic::Agent
+        );
     }
 
     #[test]
     fn unit_family_beats_unknown_group() {
-        let file = PropertyFile { claimed_count: 0, values: vec![] };
-        assert_eq!(property_semantic(&file, 0x42E1_C000), PropertySemantic::Unit);
-        assert_eq!(property_semantic(&file, 0x0000_0000), PropertySemantic::ModelWrapper);
+        let file = PropertyFile {
+            claimed_count: 0,
+            values: vec![],
+        };
+        assert_eq!(
+            property_semantic(&file, 0x42E1_C000),
+            PropertySemantic::Unit
+        );
+        assert_eq!(
+            property_semantic(&file, 0x0000_0000),
+            PropertySemantic::ModelWrapper
+        );
     }
 
     #[test]
@@ -315,16 +368,23 @@ mod tests {
         let file = PropertyFile {
             claimed_count: 0,
             values: vec![
-                prop(PARENT_HASH, PropType::Key, Kind::Scalar(Value::Key(crate::Key {
-                    type_id: 0x00B1_B104,
-                    group: 0x40E1_C000,
-                    instance: 0x2092_116E,
-                }))),
+                prop(
+                    PARENT_HASH,
+                    PropType::Key,
+                    Kind::Scalar(Value::Key(crate::Key {
+                        type_id: 0x00B1_B104,
+                        group: 0x40E1_C000,
+                        instance: 0x2092_116E,
+                    })),
+                ),
                 prop(0x00F9_EFBA, PropType::Key, Kind::Empty),
                 prop(0x00F9_EFBB, PropType::Key, Kind::Empty),
             ],
         };
-        assert_eq!(property_semantic(&file, 0x40B7_A83D), PropertySemantic::Unit);
+        assert_eq!(
+            property_semantic(&file, 0x40B7_A83D),
+            PropertySemantic::Unit
+        );
     }
 
     #[test]
@@ -341,7 +401,10 @@ mod tests {
                 })),
             )],
         };
-        assert_eq!(property_semantic(&file, 0x97B9_9ADA), PropertySemantic::DecalAtlas);
+        assert_eq!(
+            property_semantic(&file, 0x97B9_9ADA),
+            PropertySemantic::DecalAtlas
+        );
     }
 
     #[test]
@@ -359,7 +422,10 @@ mod tests {
                 })),
             )],
         };
-        assert_eq!(property_semantic(&file, 0x61F0_EC00), PropertySemantic::Other);
+        assert_eq!(
+            property_semantic(&file, 0x61F0_EC00),
+            PropertySemantic::Other
+        );
     }
 
     #[test]
@@ -368,12 +434,20 @@ mod tests {
         let file = PropertyFile {
             claimed_count: 0,
             values: vec![
-                prop(ENVIRONMENT_ENABLE_HASH, PropType::Bool, Kind::Scalar(Value::Bool(true))),
-                prop(ENVIRONMENT_REGION_HASH, PropType::Key, Kind::Scalar(Value::Key(crate::Key {
-                    type_id: 0,
-                    group: 0xD3B5_2DEF,
-                    instance: 0x51E7_A18D,
-                }))),
+                prop(
+                    ENVIRONMENT_ENABLE_HASH,
+                    PropType::Bool,
+                    Kind::Scalar(Value::Bool(true)),
+                ),
+                prop(
+                    ENVIRONMENT_REGION_HASH,
+                    PropType::Key,
+                    Kind::Scalar(Value::Key(crate::Key {
+                        type_id: 0,
+                        group: 0xD3B5_2DEF,
+                        instance: 0x51E7_A18D,
+                    })),
+                ),
             ],
         };
         assert_eq!(
@@ -381,6 +455,9 @@ mod tests {
             PropertySemantic::EnvironmentLink
         );
         assert_eq!(PropertySemantic::EnvironmentLink.label_zh(), "环境绑定");
-        assert_eq!(PropertySemantic::EnvironmentLink.label_en(), "Environment Link");
+        assert_eq!(
+            PropertySemantic::EnvironmentLink.label_en(),
+            "Environment Link"
+        );
     }
 }

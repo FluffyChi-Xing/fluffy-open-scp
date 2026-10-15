@@ -26,5 +26,8 @@ export const renderSpawnerUnit: UnitRenderer = async (
   figure.position.copy(position);
   figure.quaternion.copy(quaternion);
   figure.position.z = Math.max(0, figure.position.z);
+  // 人形尺寸自持（合成骨架自带比例，矩阵缩放不参与渲染）→ 增量路径
+  // 只跟位置/朝向
+  figure.userData.incrementalScale = "keepScale";
   return figure;
 };

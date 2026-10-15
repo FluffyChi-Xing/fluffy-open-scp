@@ -18,6 +18,17 @@ import {
 } from "@/lib/game-ui/menu-export";
 import { loadReplicaData } from "@/lib/game-ui/replica/loader";
 import type { ReplicaData, ReplicaTool } from "@/lib/game-ui/replica/types";
+import { i18n } from "@/locales";
+
+export type UiWorkbenchView = "city" | "region" | "development";
+
+interface LegacyWorkbench {
+  city?: { categories?: { id: string; items?: { id: string; label: string; pos: number }[] }[] };
+  university?: {
+    label: string;
+    tools?: { id: string; label: string; pos: number; icon?: string | null }[];
+  };
+}
 
 /**
  * UI 工作台状态：一级菜单 → 二级面板钻入 + 菜单项编辑覆盖。
@@ -74,10 +85,13 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const edits = ref<Record<string, ToolEdit>>({});
   /** menuId → 新增项（保持插入顺序）。 */
   const added = ref<Record<string, WorkbenchTool[]>>({});
+  const removed = ref<Record<string, string[]>>({});
   /** 正在编辑的条目（打开 Sheet）。 */
   const editingEntry = shallowRef<MenuEntry | null>(null);
   /** 工作台里新建的分类（一级菜单末位「＋」产生）。 */
   const customCategories = ref<WorkbenchCategory[]>([]);
+  const viewMode = ref<UiWorkbenchView>("city");
+  const legacyWorkbench = shallowRef<LegacyWorkbench | null>(null);
 
   /** 从复刻数据脚本装载（幂等；数据进程内缓存）。 */
   async function load(): Promise<void> {
@@ -85,40 +99,18 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     loadError.value = null;
     try {
       const data = await loadReplicaData();
-      await backfillParkTools(data);
+      try {
+        const response = await fetch("/game-ui/workbench.json");
+        legacyWorkbench.value = (await response.json()) as LegacyWorkbench;
+      } catch {
+        legacyWorkbench.value = null;
+      }
       hydrate(data);
     } catch (cause) {
       loadError.value = String(cause);
       console.warn("[uiWorkbench] 复刻数据装载失败", cause);
     } finally {
       loading.value = false;
-    }
-  }
-
-  /** 公园分类的工具条目在逆向产物里缺失（Game/App/EP1/DLC0 四包都无对应
-   * Menu 条目），从旧工作台数据链 workbench.json 回填——重构前公园可以
-   * 解析出菜单项，行为保持一致。预览资源旧链同样没有 → 槽位走占位图。 */
-  async function backfillParkTools(data: ReplicaData): Promise<void> {
-    const parkCategory =
-      data.model.categories.find((c) => c.label === "公園") ??
-      data.model.categories.find((c) => c.id === "899BEA70");
-    if (!parkCategory || (data.tools[parkCategory.id]?.length ?? 0) > 0) return;
-    try {
-      const response = await fetch("/game-ui/workbench.json");
-      const legacy = (await response.json()) as {
-        city?: { categories?: { id: string; items?: { id: string; label: string }[] }[] };
-      };
-      const park = legacy.city?.categories?.find((category) => category.id === "park");
-      if (!park?.items?.length) return;
-      data.tools[parkCategory.id] = park.items.map((item) => ({
-        instance: item.id,
-        label: item.label,
-        preview: null,
-        marquee: null,
-        locked: false,
-      }));
-    } catch (cause) {
-      console.warn("[uiWorkbench] 公园菜单项回填失败", cause);
     }
   }
 
@@ -139,6 +131,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     entered.value = true;
   }
 
+  function setViewMode(mode: UiWorkbenchView): void {
+    viewMode.value = mode;
+    entered.value = false;
+    selectedMenuId.value = categories.value[0]?.id ?? null;
+  }
+
   /** 二级返回一级。 */
   function leaveMenu(): void {
     entered.value = false;
@@ -153,6 +151,36 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       icon: cat.icon,
       items: (data?.tools[cat.id] ?? []).map(replicaToolToWorkbench),
     }));
+    if (viewMode.value === "region") {
+      const tr = i18n.global.t;
+      const regionCategories: WorkbenchCategory[] = [
+        ["REGION-GREAT-WORKS", "regionGreatWorks"],
+        ["REGION-COMMUTERS", "regionCommuters"],
+        ["REGION-TRANSPORT", "regionTransport"],
+        ["REGION-UTILITIES", "regionUtilities"],
+        ["REGION-SERVICES", "regionServices"],
+        ["REGION-GIFTS", "regionGifts"],
+      ].map(([id, key]) => ({ id, label: tr(`studio.workbench.${key}`), icon: null, items: [] }));
+      return [...regionCategories, ...customCategories.value];
+    }
+    if (viewMode.value === "development") {
+      const tools = legacyWorkbench.value?.university?.tools ?? [];
+      return [
+        {
+          id: "DEVELOPMENT",
+          label: legacyWorkbench.value?.university?.label ?? "城市发展",
+          icon: null,
+          items: tools.map((tool) => ({
+            id: tool.id,
+            label: tool.label || tool.id,
+            pos: tool.pos,
+            icon: tool.icon ?? null,
+            source: "locale" as const,
+          })),
+        },
+        ...customCategories.value,
+      ];
+    }
     return [...base, ...customCategories.value];
   });
 
@@ -164,6 +192,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     const menuAdditions = added.value[category.id] ?? [];
     const entries: MenuEntry[] = sortTools(
       category.items
+        .filter((tool) => !(removed.value[category.id] ?? []).includes(tool.id))
         .map((tool) => applyEdit(tool, edits.value[tool.id]))
         .concat(menuAdditions.map((tool) => applyEdit(tool, edits.value[tool.id]))),
     ).map((tool) => ({
@@ -231,6 +260,11 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         ...added.value,
         [menuId]: added.value[menuId].filter((tool) => tool.id !== itemId),
       };
+    } else {
+      removed.value = {
+        ...removed.value,
+        [menuId]: [...new Set([...(removed.value[menuId] ?? []), itemId])],
+      };
     }
     const next = { ...edits.value };
     delete next[itemId];
@@ -242,10 +276,47 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   function exportOverlay(): string {
     return JSON.stringify(
       {
-        format: "openscp-ui-workbench-overlay/1",
+        format: "openscp-ui-workbench-overlay/2",
+        viewMode: viewMode.value,
         edits: edits.value,
         added: added.value,
         customCategories: customCategories.value,
+      },
+      null,
+      2,
+    );
+  }
+
+  function exportSchema(): string {
+    return JSON.stringify(
+      {
+        schemaVersion: 1,
+        source: "openscp-ui-workbench",
+        activeView: viewMode.value,
+        menus: categories.value.map((category) => ({
+          id: category.id,
+          label: category.label,
+          icon: category.icon,
+          items: category.items
+            .filter((tool) => !(removed.value[category.id] ?? []).includes(tool.id))
+            .concat(added.value[category.id] ?? [])
+            .map((tool) => applyEdit(tool, edits.value[tool.id]))
+            .sort((a, b) => a.pos - b.pos)
+            .map((tool) => ({
+              id: tool.id,
+              label: tool.label,
+              position: tool.pos,
+              icon: tool.icon,
+              preview: tool.preview ?? null,
+              marquee: tool.marquee ?? null,
+              description: tool.desc ?? "",
+              unlock: tool.unlock ?? "",
+              stats: tool.stats ?? [],
+              cost: tool.cost ?? null,
+              upkeep: tool.upkeep ?? null,
+              locked: tool.locked ?? false,
+            })),
+        })),
       },
       null,
       2,
@@ -345,6 +416,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   function resetAll(): void {
     edits.value = {};
     added.value = {};
+    removed.value = {};
     editingEntry.value = null;
   }
 
@@ -356,13 +428,16 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     entered,
     edits,
     added,
+    removed,
     editingEntry,
     customCategories,
+    viewMode,
     categories,
     activeMenu,
     hydrate,
     load,
     enterMenu,
+    setViewMode,
     leaveMenu,
     openEditor,
     addCategory,
@@ -371,6 +446,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     addItem,
     removeItem,
     exportOverlay,
+    exportSchema,
     buildGameExport,
     buildEntryProperty,
     resetAll,

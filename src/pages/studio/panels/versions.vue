@@ -21,6 +21,7 @@ import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
+import { Switch } from "@/components/ui/switch";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import { isTauri } from "@/api";
@@ -169,7 +170,7 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
           </div>
           <div class="file-actions">
             <label class="force-row" :title="t('version.forceHint')">
-              <input v-model="force" type="checkbox" />
+              <Switch v-model="force" :aria-label="t('version.rollbackForce')" />
               <span>{{ t("version.rollbackForce") }}</span>
             </label>
             <button type="button" class="ghost-button" :disabled="busy" @click="captureBaseline">
@@ -800,3 +801,4 @@ async function onDelete(entry: ChangesetSummary): Promise<void> {
   }
 }
 </style>
+

@@ -1,0 +1,98 @@
+/* Explicit card surfaces only; editors, canvas pixels and token definitions stay intact. */
+html
+  body
+  :is(
+    .ui-glass-card.ui-glass-card,
+    .overview-page .metric-card,
+    .overview-page .panel,
+    .stats-cards .stats-card,
+    .stats-cards .package-card,
+    .overview-page > .stats-card,
+    .dashboard .chart-card,
+    .dashboard .kpi-card,
+    .panel-card.panel-card,
+    .f-panel.f-panel,
+    .settings-card.settings-card,
+    .setup-card.setup-card,
+    .wizard-card.wizard-card,
+    .step-card.step-card,
+    .stat-card.stat-card,
+    .topic-card.topic-card,
+    .info-card.info-card,
+    .lod-card.lod-card,
+    .preview-card.preview-card,
+    .icon-card.icon-card,
+    .item-card.item-card
+  ) {
+  background: var(--surface);
+  box-shadow:
+    var(--shadow-xs),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+@supports (backdrop-filter: blur(1px)) {
+  html
+    body
+    :is(
+      .ui-glass-card.ui-glass-card,
+      .overview-page .metric-card,
+      .overview-page .panel,
+      .stats-cards .stats-card,
+      .stats-cards .package-card,
+      .overview-page > .stats-card,
+      .dashboard .chart-card,
+      .dashboard .kpi-card,
+      .panel-card.panel-card,
+      .f-panel.f-panel,
+      .settings-card.settings-card,
+      .setup-card.setup-card,
+      .wizard-card.wizard-card,
+      .step-card.step-card,
+      .stat-card.stat-card,
+      .topic-card.topic-card,
+      .info-card.info-card,
+      .lod-card.lod-card,
+      .preview-card.preview-card,
+      .icon-card.icon-card,
+      .item-card.item-card
+    ) {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--surface-elevated) 86%, transparent),
+      color-mix(in srgb, var(--surface) 78%, transparent)
+    );
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+    backdrop-filter: blur(18px) saturate(120%);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  html
+    body
+    :is(
+      .ui-glass-card.ui-glass-card,
+      .overview-page .metric-card,
+      .overview-page .panel,
+      .stats-cards .stats-card,
+      .stats-cards .package-card,
+      .overview-page > .stats-card,
+      .dashboard .chart-card,
+      .dashboard .kpi-card,
+      .panel-card.panel-card,
+      .f-panel.f-panel,
+      .settings-card.settings-card,
+      .setup-card.setup-card,
+      .wizard-card.wizard-card,
+      .step-card.step-card,
+      .stat-card.stat-card,
+      .topic-card.topic-card,
+      .info-card.info-card,
+      .lod-card.lod-card,
+      .preview-card.preview-card,
+      .icon-card.icon-card,
+      .item-card.item-card,
+      .f-sheet.f-sheet,
+      .f-toast.f-toast
+    ) {
+    background: var(--surface);
+    backdrop-filter: none;
+  }
+}

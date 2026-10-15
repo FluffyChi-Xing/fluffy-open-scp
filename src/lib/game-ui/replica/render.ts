@@ -27,7 +27,7 @@ const VALUES: Record<string, string> = {
 const SKIP_SUBTREE = new Set<number>([100, 18, 28, 1394, 1908, 301, 973, 1061, 1059, 1057, 8495, 1551]);
 
 /** 模式切换器：三张模式图叠放，游戏只显示当前模式。城市视图默认城市模式。 */
-const MODE_ONLY = new Set<number>([1114]); // 1114=city 1019=region 1451=bigbiz
+const MODE_IIDS = { city: 1114, region: 1019, development: 1451 } as const;
 
 /** 默认隐藏（与 reference/city.png 未展开态比对得出）：
  *  点开面板后才出现的大底衬（743/1065/254）、RCI 外圈内凹底板（839）、
@@ -90,11 +90,13 @@ export interface HudRender {
 export function createHudRender(data: ReplicaData, options?: {
   /** 额外的一级分类（工作台新建的），追加在圆钮行末位。 */
   extraCategories?: ReplicaCategory[];
+  categories?: ReplicaCategory[];
+  mode?: keyof typeof MODE_IIDS;
 }): HudRender {
   const assets = data.assets;
   const locale = data.locale;
   const model: ReplicaModel = {
-    categories: [...data.model.categories, ...(options?.extraCategories ?? [])],
+    categories: [...(options?.categories ?? data.model.categories), ...(options?.extraCategories ?? [])],
     row: data.model.row,
   };
 
@@ -329,7 +331,7 @@ export function createHudRender(data: ReplicaData, options?: {
       node.comment === "region mode" ||
       node.comment === "city mode"
     ) {
-      if (!MODE_ONLY.has(node.instanceID as number)) return null;
+      if (node.instanceID !== MODE_IIDS[options?.mode ?? "city"]) return null;
     }
     const ax = absX + rect.x;
     const ay = absY + rect.y;

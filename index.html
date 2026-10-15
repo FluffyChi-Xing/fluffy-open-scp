@@ -1,12 +1,24 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#4f46e5" />
+    <meta name="theme-color" content="#0878FE" />
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/startup.css" />
     <title>OpenSCP</title>
   </head>
   <body>
+    <!-- Visible before the application module and lazy routes download. -->
+    <div id="app-startup" role="status" aria-live="polite">
+      <img src="/scp-logo.png" width="64" height="64" alt="" />
+      <strong>OpenSCP</strong>
+      <div class="startup-progress" aria-hidden="true"><span></span></div>
+      <span id="startup-label"
+        ><span lang="zh-CN">正在加载…</span
+        ><span lang="en-US">Loading…</span></span
+      >
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

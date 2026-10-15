@@ -485,8 +485,55 @@ export interface EffectUnit {
   index: number;
   transform: UnitTransformDto | null;
   effectId: UnitKeyDto | null;
+  externalId: UnitKeyDto | null;
   enabled: boolean | null;
   fields: UnitFieldDto[];
+}
+
+export interface SwarmParticle {
+  typeCode: number;
+  index: number;
+  flags: number;
+  life: [number, number];
+  emitDirectionMin: [number, number, number];
+  emitDirectionMax: [number, number, number];
+  emitSpeed: [number, number];
+  emitVolumeMin: [number, number, number];
+  emitVolumeMax: [number, number, number];
+  rate: number[];
+  rateLoop: number;
+  size: number[];
+  aspect: number[];
+  rotation: number[];
+  alpha: number[];
+  color: [number, number, number][];
+  texture: { group: number; instance: number; drawMode: number };
+  tileCount: [number, number];
+  frameStart: number;
+  frameCount: number;
+  frameRandom: number;
+  frameSpeed: number;
+  frameSpeedByLife: boolean;
+  directionForce: [number, number, number];
+  windStrength: number;
+  gravityStrength: number;
+  drag: number;
+}
+export interface EffectEmitterData {
+  transform: { scale: number; rotation: number[]; offset: [number, number, number] };
+  particle: SwarmParticle;
+  emission: SwarmParticle | null;
+  texturePngBase64: string | null;
+  fallback: boolean;
+}
+export interface EffectDefinitionData {
+  effectId: number;
+  emitters: EffectEmitterData[];
+  unsupportedBlocks: number;
+}
+export interface EffectPreviewResponse {
+  effects: EffectDefinitionData[];
+  diagnostics: string[];
 }
 export interface DecalUnit {
   kind: "decal";
@@ -523,6 +570,7 @@ export interface DecalUnitTexture {
 }
 export interface PropUnit {
   kind: "prop";
+  displayName?: string;
   index: number;
   bin: number;
   /** 原型资源 id（脚本资源表反查 RW4 模型；PE 精细替换）。 */
@@ -532,6 +580,13 @@ export interface PropUnit {
   /** 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。 */
   scale: number | null;
   fields: UnitFieldDto[];
+  /**
+   * 放置的直挂模型扩展位（= pe_schema prop 白名单同名键）：拖拽放置的
+   * 组件携带真实来源 TGI 与所在包；lot 既有单元无此二字段。
+   */
+  modelTgi?: Tgi | null;
+  modelPackageId?: number | null;
+  modelPackagePath?: string;
 }
 export interface PathPointUnit {
   kind: "pathPoint";
@@ -593,6 +648,8 @@ export interface LotEditorSession {
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（float，边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  lotColorHeights?: number[];
+  lotBorderHeights?: number[];
   /** 边框带图案索引（LotBorderColor.A，0-15）。 */
   lotBorderPatternIndices: number[];
   /** 底图格索引（三级来源：0x0CCB7FD6 → 0x0CCB7FD2/FD3 推导 → 默认 8）。 */
@@ -826,6 +883,9 @@ export interface SettingsStatus {
   gameDataPath?: string;
   gameDirectory?: GameDirectoryStatus;
 }
+
+export interface GameProcessInfo { pid: number; name: string }
+export interface DeployGameModResult { artifact: string; destination: string; gameRunning: boolean; processes: GameProcessInfo[] }
 export interface GameDirectoryDetection {
   candidates: GameDirectoryStatus[];
 }

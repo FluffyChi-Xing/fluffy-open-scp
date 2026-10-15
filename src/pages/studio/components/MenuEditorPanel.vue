@@ -12,16 +12,16 @@ import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
-import { downloadBytes } from "@/lib/game-ui/menu-export";
 import { toolIconName, toolPreview } from "@/lib/game-ui/workbench";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
-const { activeMenu, edits } = storeToRefs(store);
+const { activeMenu, edits, added, customCategories } = storeToRefs(store);
 
-const editedCount = computed(() => Object.keys(edits.value).length);
+const editedCount = computed(() => Object.keys(edits.value).length +
+  Object.values(added.value).reduce((count, entries) => count + entries.length, 0) + customCategories.value.length);
 
 /** 加载失败的槽位图（如运行时资产落后于数据）→ 回退 FIcon 占位。 */
 const brokenThumbs = ref<Record<string, boolean>>({});
@@ -32,24 +32,10 @@ function emitEdit(id: string): void {
 }
 
 function onExport(): void {
-  const json = store.exportOverlay();
+  const json = store.exportSchema();
   void navigator.clipboard?.writeText(json).then(
     () => window.alert(t("studio.workbench.exportCopied")),
     () => window.alert(json),
-  );
-}
-
-/** 内存编辑 → 游戏覆盖包（菜单 property + locale diff + 裁切图片）。 */
-function onExportPackage(): void {
-  const result = store.buildGameExport();
-  if (result.entryCount === 0) {
-    window.alert(t("studio.workbench.exportEmpty"));
-    return;
-  }
-  const note = result.warnings.length ? `\n\n${result.warnings.join("\n")}` : "";
-  downloadBytes(result.bytes, `menu-override-${result.entryCount}.package`);
-  window.alert(
-    `${t("studio.workbench.exportDone")}：${result.entryCount} entries / ${result.localeCount} strings${note}`,
   );
 }
 
@@ -86,6 +72,9 @@ function onAdd(): void {
     />
 
     <div v-else class="item-list">
+      <p v-if="activeMenu.entries.length === 0" class="empty-menu">
+        {{ t('studio.workbench.emptyMenu') }}
+      </p>
       <button
         v-for="entry in activeMenu.entries"
         :key="entry.tool.id"
@@ -128,11 +117,8 @@ function onAdd(): void {
 
 
     <footer class="panel-foot">
-      <button type="button" class="foot-btn" :disabled="!editedCount" @click="onExport">
+      <button type="button" class="foot-btn primary" @click="onExport">
         {{ t("studio.workbench.export") }}
-      </button>
-      <button type="button" class="foot-btn primary" :disabled="!editedCount" @click="onExportPackage">
-        导出 .package
       </button>
       <button type="button" class="foot-btn danger" :disabled="!editedCount" @click="store.resetAll()">
         {{ t("studio.workbench.reset") }}
@@ -196,6 +182,12 @@ function onAdd(): void {
   min-height: 0;
   overflow: auto;
   padding: 10px;
+}
+.empty-menu {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 2px;
 }
 .empty-body {
   flex: 1;
