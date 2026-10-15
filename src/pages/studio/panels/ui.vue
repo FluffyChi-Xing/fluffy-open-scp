@@ -8,10 +8,14 @@
  * patch_property_overlay + 版本记录通道。
  */
 import { onMounted, ref, watch } from "vue";
+import { open } from "@tauri-apps/plugin-dialog";
+import { localAssetStatus, prepareLocalAssets, localPreviewWarnings, type LocalAssetStatus } from "@/lib/game-ui/local-assets";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
+import { installedGameLanguage, type GameTextLocale } from "@/lib/game-ui/replica/loader";
 import FImageCropper from "@/components/extensions/FImageCropper.vue";
 import MenuFormBasics from "../components/menu-form/MenuFormBasics.vue";
 import MenuFormTip from "../components/menu-form/MenuFormTip.vue";
@@ -37,10 +41,60 @@ const store = useUiWorkbenchStore();
 const { loading, editingEntry } = storeToRefs(store);
 
 onMounted(() => {
-  void store.load();
+  void initializeInstalledPreview();
 });
 
 const showMechanism = ref(false);
+const languageMenuOpen = ref(false);
+const importingAssets = ref(false);
+const assetImportError = ref<string | null>(null);
+const availableGameLanguages = ref<string[]>([]);
+const languageNotice = ref<string | null>(null);
+
+/** @summary Select an installed language and explicitly disclose changes to the preferred language. */
+async function loadInstalledPreview(status: LocalAssetStatus): Promise<void> {
+  availableGameLanguages.value = status.availableLocales ?? [];
+  if (!status.ready) { await store.load(); return; }
+  const selected = installedGameLanguage(store.gameLocale, availableGameLanguages.value);
+  languageNotice.value = selected === store.gameLocale ? null : t("studio.workbench.installedLanguageSelected", { requested: store.gameLocale, selected });
+  await store.load(selected);
+}
+
+/** @summary Refresh installation metadata before the first model request; never silently assume English exists. */
+async function initializeInstalledPreview(): Promise<void> {
+  try { await loadInstalledPreview(await localAssetStatus()); }
+  catch (error) { assetImportError.value = error instanceof Error ? error.message : String(error); }
+}
+
+/** @summary Select only the game installation; cancellation preserves the current attachment. */
+async function importLocalAssets(): Promise<void> {
+  importingAssets.value = true;
+  assetImportError.value = null;
+  try {
+    const gameDataPath = await open({ directory: true, multiple: false, title: t("studio.workbench.chooseGameData") });
+    if (typeof gameDataPath !== "string") return;
+    await loadInstalledPreview(await prepareLocalAssets(gameDataPath));
+  } catch (error) {
+    assetImportError.value = error instanceof Error ? error.message : JSON.stringify(error);
+  } finally {
+    importingAssets.value = false;
+  }
+}
+const gameLanguages: { locale: GameTextLocale; label: string }[] = [
+  { locale: "en-US", label: "English" },
+  { locale: "pl-PL", label: "Polski" },
+  { locale: "zh-CN", label: "中文" },
+  { locale: "zh-TW", label: "繁體中文" },
+];
+
+/** @summary Switch original game text while preserving the current editing overrides. */
+async function selectGameLanguage(locale: GameTextLocale): Promise<void> {
+  languageMenuOpen.value = false;
+  if (!availableGameLanguages.value.includes(locale)) return;
+  languageNotice.value = null;
+  if (locale !== store.gameLocale) await store.load(locale);
+}
+
 
 /** Sheet 的临时编辑态（打开时从条目拷贝，确认才写回 store）。 */
 const draft = ref<{
@@ -79,8 +133,8 @@ watch(editingEntry, (entry) => {
       upkeep: entry.tool.upkeep ?? "",
       unlock: entry.tool.unlock ?? "",
       locked: entry.tool.locked ?? false,
-      preview: typeof entry.tool.preview === "string" && entry.tool.preview.startsWith("data:") ? entry.tool.preview : null,
-      marquee: typeof entry.tool.marquee === "string" && entry.tool.marquee.startsWith("data:") ? entry.tool.marquee : null,
+      preview: store.edits[entry.tool.id]?.preview ?? (entry.isNew ? entry.tool.preview ?? null : null),
+      marquee: store.edits[entry.tool.id]?.marquee ?? (entry.isNew ? entry.tool.marquee ?? null : null),
     };
   }
 });
@@ -157,8 +211,36 @@ function removeDraft(): void {
     </div>
 
     <p v-if="loading" class="notice" role="status">{{ t("studio.workbench.loading") }}</p>
+    <p v-else-if="store.loadError" class="notice" role="alert">{{ t("studio.ui.noSlides") }}</p>
+    <p v-if="store.loadError" class="notice" role="alert">{{ store.loadError }}</p>
+    <p v-if="assetImportError" class="notice" role="alert">{{ assetImportError }}</p>
+    <p v-if="languageNotice" class="notice" role="status">{{ languageNotice }}</p>
+    <details v-if="store.replica?.diagnostics?.length" class="notice">
+      <summary>{{ t("studio.workbench.installedDiagnostics") }}</summary>
+      <ul><li v-for="(diagnostic, index) in store.replica.diagnostics" :key="index">{{ diagnostic }}</li></ul>
+    </details>
+    <details v-if="localPreviewWarnings.length" class="notice">
+      <summary>{{ t("studio.workbench.missingLegacyArtwork", { count: localPreviewWarnings.length }) }}</summary>
+      <ul><li v-for="name in localPreviewWarnings" :key="name">{{ name }}</li></ul>
+    </details>
 
     <div class="toolbar">
+      <button type="button" class="ghost-btn" :disabled="loading || importingAssets" @click="importLocalAssets">
+        {{ t("studio.workbench.importLocalAssets") }}
+      </button>
+      <FDropdown v-model:open="languageMenuOpen">
+        <template #trigger>
+          <button type="button" class="ghost-btn" :disabled="loading" :aria-label="t('studio.workbench.gameTextLanguage')">
+            <FIcon name="Languages" :size="13" aria-label="" />
+            {{ gameLanguages.find((language) => language.locale === store.gameLocale)?.label }}
+          </button>
+        </template>
+        <button v-for="language in gameLanguages" :key="language.locale" type="button"
+          :disabled="loading || !availableGameLanguages.includes(language.locale)" role="menuitemradio" :aria-checked="store.gameLocale === language.locale"
+          @click="selectGameLanguage(language.locale)">
+          {{ language.label }}
+        </button>
+      </FDropdown>
       <button type="button" class="ghost-btn" @click="showMechanism = !showMechanism">
         <FIcon :name="showMechanism ? 'ChevronUp' : 'ChevronDown'" :size="13" aria-label="" />
         {{ t("studio.workbench.mechanism") }}

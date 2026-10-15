@@ -1,68 +1,53 @@
-/**
- * ui_replica 复刻数据装载：把 public/game-ui/replica/data/*.js 以 <script> 注入
- * （它们是 `window.HUD_* = {...}` 形式的生成产物，与复刻站完全一致），然后读取全局。
- *
- * 装载结果进程内缓存；测试直接构造 ReplicaData 调 store.hydrate，不走这里。
- */
+/** @summary Load generation-bound local preview data without executing imported game scripts. */
 import type { ReplicaData } from "./types";
+import { invoke } from "@tauri-apps/api/core";
+import { localAssetStatus, resolveLocalImages } from "../local-assets";
 
-const DATA_BASE = "/game-ui/replica/data/";
-const DATA_FILES = [
-  "assets.js",
-  "locale.js",
-  "model.js",
-  "layout.js",
-  "tools.js",
-  "palette.js",
-] as const;
+export type GameTextLocale = "en-US" | "pl-PL" | "zh-CN" | "zh-TW";
+const localizedData = new Map<string, Promise<ReplicaData>>();
 
-let cached: Promise<ReplicaData> | null = null;
+/** @summary Preserve the original authoring corpus language while keeping installed locale identities distinct. */
+export function gameTextLocale(language = "zh-TW"): GameTextLocale {
+  const normalized = language.toLowerCase();
+  if (normalized.startsWith("pl")) return "pl-PL";
+  if (normalized.startsWith("zh-tw") || normalized.startsWith("zh-hant")) return "zh-TW";
+  if (normalized.startsWith("zh")) return "zh-CN";
+  return "en-US";
+}
 
-export function loadReplicaData(): Promise<ReplicaData> {
-  cached ??= (async () => {
-    for (const name of DATA_FILES) {
-      await injectScript(DATA_BASE + name);
+/** @summary Choose an installed language explicitly; callers must display a notice when it differs. */
+export function installedGameLanguage(preferred: GameTextLocale, available: readonly string[]): GameTextLocale {
+  const supported = (["en-US", "pl-PL", "zh-CN", "zh-TW"] as const).filter((locale) => available.includes(locale));
+  if (supported.includes(preferred)) return preferred;
+  if (!supported.length) throw new Error("No supported game-text language is installed");
+  return supported[0]!;
+}
+
+/** @summary Read a complete replica from one validated attachment, with retry after errors. */
+export async function loadReplicaData(language = "zh-TW"): Promise<ReplicaData> {
+  const status = await localAssetStatus();
+  if (!status.ready || !status.generation) throw new Error("Local game preview is not configured. Select the installed SimCityData directory first.");
+  const generation = status.generation;
+  const locale = gameTextLocale(language);
+  const key = `${generation}:${locale}`;
+  const cached = localizedData.get(key);
+  if (cached) return cached;
+  const pending = (async () => {
+    const data = await invoke<ReplicaData>("local_game_assets_model", { locale, generation });
+    if (data.previewGeneration !== generation) throw new Error("Installed model generation changed during preview loading");
+    const { layout, assets, locale: text, model, tools, palette } = data;
+    if (!layout || !model?.categories || !palette?.byCategory || !tools || !assets) throw new Error("Incomplete local replica data");
+    if (Object.values(assets).some((path) => typeof path !== "string" || !/^installed-game:[\da-f]{8}:[\da-f]{8}:[\da-f]{8}$/i.test(path))) throw new Error("Non-local asset map is forbidden");
+    for (const category of model.categories) {
+      const icon = category.icon;
+      if (icon != null && (typeof icon !== "string" || !/^installed-game:[\da-f]{8}:[\da-f]{8}:[\da-f]{8}$/i.test(icon))) throw new Error("Non-local installed category icon is forbidden");
     }
-    return readGlobals();
-  })();
-  // 失败时清空缓存：否则被缓存的是 rejected promise，一次瞬态失败
-  // （dev server 抖动等）之后本次会话永远装载失败。
-  return cached.catch((cause) => {
-    cached = null;
-    throw cause;
-  });
+    const resolved = await resolveLocalImages({ layout, assets, locale: text, model, tools, palette, previewGeneration: generation }, generation);
+    const finalStatus = await localAssetStatus();
+    if (!finalStatus.ready || finalStatus.generation !== generation) throw new Error("Installed model generation changed during preview loading");
+    return Object.assign(resolved, { stylesheets: data.stylesheets, requiredStyleClasses: data.requiredStyleClasses, originalDrawableTypeCounts: data.originalDrawableTypeCounts, diagnostics: data.diagnostics, resolvedLocale: data.resolvedLocale });
+  })().catch((cause) => { localizedData.delete(key); throw cause; });
+  localizedData.set(key, pending);
+  return pending;
 }
 
-function injectScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = src;
-    script.addEventListener("load", () => resolve());
-    script.addEventListener("error", () => reject(new Error(`复刻数据脚本加载失败：${src}`)));
-    document.head.appendChild(script);
-  });
-}
-
-interface ReplicaGlobals {
-  HUD_LAYOUT?: ReplicaData["layout"];
-  ASSET_MAP?: ReplicaData["assets"];
-  HUD_LOCALE?: ReplicaData["locale"];
-  CATEGORY_MODEL?: ReplicaData["model"];
-  HUD_TOOLS?: ReplicaData["tools"];
-  HUD_PALETTE?: ReplicaData["palette"];
-}
-
-function readGlobals(): ReplicaData {
-  const global = window as unknown as ReplicaGlobals;
-  if (!global.HUD_LAYOUT || !global.CATEGORY_MODEL || !global.HUD_PALETTE || !global.HUD_TOOLS) {
-    throw new Error("复刻数据不完整：缺少 HUD_LAYOUT / CATEGORY_MODEL / HUD_PALETTE / HUD_TOOLS");
-  }
-  return {
-    layout: global.HUD_LAYOUT,
-    assets: global.ASSET_MAP ?? {},
-    locale: global.HUD_LOCALE ?? {},
-    model: global.CATEGORY_MODEL,
-    tools: global.HUD_TOOLS,
-    palette: global.HUD_PALETTE,
-  };
-}

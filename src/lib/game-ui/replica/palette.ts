@@ -1,19 +1,25 @@
 /**
- * 二级面板（工具调色板）—— probe_fire/ui_replica/js/palette.js 的 TS 移植。
+ * @summary Second-level tool palette panel, ported to TypeScript from probe_fire/ui_replica/js/palette.js.
  *
- * 开/关机制来自布局数据本身：每个一级分类对象带 kPropToolCategoryPaletteLayout
- * 指向一个布局资源，该布局根节点上挂着动画，触发器为 Shown(12) / Hidden(13) ——
- * 「显示该布局」= 打开，「隐藏」= 关闭且同一条时间轴反向播放。
+ * Open/close behavior comes from layout data. Each top-level category's kPropToolCategoryPaletteLayout
+ * references a layout resource whose root has an animation triggered by Shown(12) / Hidden(13).
+ * Showing the layout opens it; hiding closes it by reversing the same timeline.
  *
- * 动画实测参数（panel reveal up，367ms）：
- *   面板本体 controlTop 80 → -38（升起 118px）、controlOpacity 0 → 1
+ * Observed animation parameters (panel reveal up, 367ms):
+ *   panel controlTop 80 -> -38 (rises 118px), controlOpacity 0 -> 1
  *
- * 相对 ui_replica 的差异（仅工作台钩子，不改变默认观感）：
- *   - 槽位行工具清单可由调用方覆盖（工作台的编辑覆盖/新增条目）；
- *   - 槽位可挂点击回调与「新增条目」删除角标。
+ * Differences from ui_replica are workbench hooks that preserve the default appearance:
+ *   - callers may override slot-row tool lists with edited or added workbench entries;
+ *   - slots may have click callbacks and delete badges for added entries.
  */
 import { designPass, type NodeElementFactory } from "./render";
+import { formatPreviewRichText } from "./rich-text";
 import { updatePosition } from "@/lib/game-ui/scrui";
+
+/** @summary Restrict inline preview backgrounds to locally decoded raster data. */
+function previewBackground(value: string | null | undefined): string {
+  return value && /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ? `url('${value}')` : "none";
+}
 import type { ReplicaData, ReplicaNode, ReplicaSlotRow, ReplicaTool } from "./types";
 
 export interface SlotTool extends ReplicaTool {
@@ -55,7 +61,7 @@ export function createHudPalette(
   createNodeElement: NodeElementFactory,
   hooks: PaletteHooks = {},
 ): HudPalette {
-  let host: HTMLElement | null = null; // 舞台上的固定容器（负责定位与显隐）
+  let host: HTMLElement | null = null; /** @summary Fixed stage container controlling position and visibility. */
   let body: HTMLElement | null = null; // 当前面板的布局树
   let currentId: string | null = null;
   let currentLabel = "";
@@ -221,20 +227,20 @@ export function createHudPalette(
       const stats = (tool.stats ?? [])
         .map(
           (row) =>
-            `<div class="hud-rollover-stat"><span class="label">${row.label}</span><span class="value">${row.value ?? ""}</span></div>`,
+            `<div class="hud-rollover-stat"><span class="label">${formatPreviewRichText(row.label)}</span><span class="value">${formatPreviewRichText(row.value)}</span></div>`,
         )
         .join("");
-      const simoleon = data.assets["icn-simoleon.png"] ?? "/game-ui/replica/assets/icn-simoleon.png";
+      const simoleon = data.assets["icn-simoleon.png"] ?? "";
       const costCell = (value: string | null | undefined): string =>
-        `<div class="cell"><span class="simoleon" style="background-image:url('${simoleon}')"></span>${value || "—"}</div>`;
+        `<div class="cell"><span class="simoleon" style="background-image:${previewBackground(simoleon)}"></span>${formatPreviewRichText(value || "—")}</div>`;
       rolloverEl.innerHTML = `
-        <div class="hud-rollover-title">${tool.label ?? ""}</div>
+        <div class="hud-rollover-title">${formatPreviewRichText(tool.label)}</div>
         <div class="hud-rollover-media${tool.marquee ? "" : " icon-only"}">
-          <div class="hud-rollover-img" style="background-image:url('${media ?? ""}')"></div>
-          ${tool.desc ? `<div class="hud-rollover-desc toolRolloverDescription">${tool.desc}</div>` : ""}
+          <div class="hud-rollover-img" style="background-image:${previewBackground(media)}"></div>
+          ${tool.desc ? `<div class="hud-rollover-desc toolRolloverDescription">${formatPreviewRichText(tool.desc)}</div>` : ""}
         </div>
         ${stats ? `<div class="hud-rollover-stats">${stats}</div>` : ""}
-        ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${tool.unlock}</div>` : ""}
+        ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${formatPreviewRichText(tool.unlock)}</div>` : ""}
         <div class="hud-rollover-cost">${costCell(tool.cost)}${costCell(tool.upkeep)}</div>
       `;
       // 定位：槽位的 offsetParent 是槽位行（absolute），先换算到 body 坐标；
@@ -332,10 +338,10 @@ export function createHudPalette(
         slot.style.top = "-14px";
         slot.style.width = `${(cfg.pitch - 4).toFixed(2)}px`;
         slot.style.height = "66px";
-        const img = tool.preview || tool.marquee || "/game-ui/replica/assets/tool_placeholder.png";
-        // 双层背景：图标 + 椭圆光垫（palette-tool-select-hl，见 replica.css 注释）
-        const pad = data.assets["palette-tool-select-hl.png"] ?? "/game-ui/replica/assets/palette-tool-select-hl.png";
-        slot.style.backgroundImage = `url('${img}'), url('${pad}')`;
+        const img = tool.preview || tool.marquee || data.assets["tool_placeholder.png"] || "";
+        /** @summary Two background layers: icon and oval glow pad (palette-tool-select-hl; see replica.css comments). */
+        const pad = data.assets["palette-tool-select-hl.png"] ?? "";
+        slot.style.backgroundImage = `${previewBackground(img)}, ${previewBackground(pad)}`;
         slot.title = tool.label || tool.instance;
         slot.addEventListener("mouseenter", () => showRollover(tool, slot, parentEl));
         slot.addEventListener("mouseleave", hideRollover);
