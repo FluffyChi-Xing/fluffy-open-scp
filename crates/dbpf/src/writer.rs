@@ -105,11 +105,16 @@ pub fn write_uncompressed_overlay(entries: &[OverlayEntry]) -> WriterResult<Vec<
             u32::try_from(offset).map_err(|_| WriterError::SizeOverflow("resource offset"))?;
         let len =
             u32::try_from(e.data.len()).map_err(|_| WriterError::SizeOverflow("resource size"))?;
+        if len > 0x7fff_ffff {
+            return Err(WriterError::SizeOverflow("31-bit resource size"));
+        }
         out.extend_from_slice(&e.id.type_id.to_le_bytes());
         out.extend_from_slice(&e.id.group.to_le_bytes());
         out.extend_from_slice(&e.id.instance.to_le_bytes());
         out.extend_from_slice(&offset32.to_le_bytes());
-        out.extend_from_slice(&len.to_le_bytes());
+        // Retail consumes the following compression/commit word only when bit 31
+        // is set. Without it, the next entry starts four bytes too early.
+        out.extend_from_slice(&(len | 0x8000_0000).to_le_bytes());
         out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(&0i16.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes());

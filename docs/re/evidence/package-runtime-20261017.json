@@ -1,0 +1,3006 @@
+{
+  "schema": 1,
+  "target": "00B1B104:00000000:4483E856",
+  "runs": [
+    {
+      "name": "baseline",
+      "pid": 59940,
+      "exe": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCity\\SimCity.exe",
+      "sha256": "2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab",
+      "ready": {
+        "kind": "ready",
+        "base": "0x400000",
+        "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCity\\SimCity.exe",
+        "hooks": [
+          "directory",
+          "scan",
+          "admission",
+          "register",
+          "open",
+          "find",
+          "findRecord",
+          "record"
+        ]
+      },
+      "resumed": true,
+      "detached": true,
+      "errors": [],
+      "summary": {
+        "hits": {
+          "directory": 48,
+          "scan": 2,
+          "open": 126,
+          "admission": 13,
+          "register": 52,
+          "record": 36336,
+          "find": 258,
+          "findRecord": 502
+        },
+        "dropped": 0,
+        "errors": 0,
+        "total": 696
+      },
+      "raw": "tmp/package-runtime-baseline-20261017",
+      "traceSha256": "d8a8303882c5789b91d6ec80c62edee3c6780b873c4ee01e0c9b5188f2d1e4eb",
+      "events": [
+        {
+          "sequence": 1,
+          "time": 1792168517489,
+          "thread": 27256,
+          "phase": "directory",
+          "id": "06CBED39",
+          "path": null
+        },
+        {
+          "sequence": 2,
+          "time": 1792168517489,
+          "thread": 27256,
+          "phase": "scan",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\",
+          "priority": 0
+        },
+        {
+          "sequence": 5,
+          "time": 1792168517492,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e1dd60",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Oppie_TrainStation.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 9,
+          "time": 1792168517497,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e1e350",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCityDataEP1.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 13,
+          "time": 1792168517500,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3eb5d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_App.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 16,
+          "time": 1792168517502,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e44b80",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_Banks.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 19,
+          "time": 1792168517505,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e45040",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_MusicStreams.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 22,
+          "time": 1792168517507,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e45960",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_SpeechBanks.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 25,
+          "time": 1792168517509,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e46870",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_Streams.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 28,
+          "time": 1792168517511,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e47ca0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_DLC0.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 31,
+          "time": 1792168517517,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3e2d950",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Game.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 34,
+          "time": 1792168517521,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3ff7a00",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Graphics.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 37,
+          "time": 1792168517526,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3f217b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_RegionTerrain0.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 40,
+          "time": 1792168517528,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x3eea0e0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_RegionTerrain1.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 42,
+          "time": 1792168517529,
+          "thread": 27256,
+          "phase": "directory",
+          "id": "00A0214F",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Config\\"
+        },
+        {
+          "sequence": 43,
+          "time": 1792168517531,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x4049040",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 10,
+          "result": true
+        },
+        {
+          "sequence": 50,
+          "time": 1792168517608,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x4082010",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Locale\\en-us\\Data.package"
+          },
+          "register": true,
+          "priority": 1,
+          "result": true
+        },
+        {
+          "sequence": 58,
+          "time": 1792168517625,
+          "thread": 27256,
+          "phase": "directory",
+          "id": "00A0214B",
+          "path": "C:\\Users\\FluffyCHi_Xing\\Documents\\SimCity\\"
+        },
+        {
+          "sequence": 64,
+          "time": 1792168517649,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x4081610",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 68,
+          "time": 1792168517652,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x408b460",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 72,
+          "time": 1792168517653,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x408b670",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 73,
+          "time": 1792168517654,
+          "thread": 27256,
+          "phase": "directory",
+          "id": "00A02151",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\"
+        },
+        {
+          "sequence": 77,
+          "time": 1792168517656,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x408b9a0",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 78,
+          "time": 1792168517657,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x4082cb0",
+            "vtableRva": "0x92a0c0",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 79,
+          "time": 1792168517658,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x408bc60",
+            "vtableRva": "0x92a0c0",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 80,
+          "time": 1792168517667,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x4083330",
+            "vtableRva": "0x8f49b8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 84,
+          "time": 1792168517676,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x41886e0",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 88,
+          "time": 1792168517679,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x418aa00",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 89,
+          "time": 1792168517679,
+          "thread": 27256,
+          "phase": "scan",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\Packages\\",
+          "priority": 0
+        },
+        {
+          "sequence": 94,
+          "time": 1792168517684,
+          "thread": 27256,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x4082010",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Locale\\en-us\\Data.package"
+          },
+          "materialize": false,
+          "result": false
+        },
+        {
+          "sequence": 95,
+          "time": 1792168517685,
+          "thread": 27256,
+          "phase": "findRecord",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "recordKey": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3eb5d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_App.package"
+          }
+        },
+        {
+          "sequence": 555,
+          "time": 1792168521763,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x4049410",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\LocalSettings.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 557,
+          "time": 1792168521764,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x40497b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\TerrainForServer.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 559,
+          "time": 1792168532806,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2deefce0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\UpdaterData.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 560,
+          "time": 1792168532808,
+          "thread": 27256,
+          "phase": "directory",
+          "id": "08F03C82",
+          "path": null
+        },
+        {
+          "sequence": 561,
+          "time": 1792168532808,
+          "thread": 27256,
+          "phase": "directory",
+          "id": "08F03C82",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\"
+        },
+        {
+          "sequence": 562,
+          "time": 1792168532927,
+          "thread": 27256,
+          "phase": "directory",
+          "id": "08F03C83",
+          "path": null
+        },
+        {
+          "sequence": 646,
+          "time": 1792168532999,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3acfb0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCity-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 648,
+          "time": 1792168533000,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bb160",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCProgressive-Scripts_277330354.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 650,
+          "time": 1792168533001,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3a97a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\Sandbox-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 652,
+          "time": 1792168533001,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bf750",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCWorship-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 654,
+          "time": 1792168533002,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3ad8c0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAirships-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 656,
+          "time": 1792168533002,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bab10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCPlay-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 658,
+          "time": 1792168533003,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bba90",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRedCross-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 660,
+          "time": 1792168533003,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b5d40",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLondon-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 662,
+          "time": 1792168533004,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b3de0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLaunchArcology-Scripts_281459438.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 664,
+          "time": 1792168533004,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b7720",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMicroMania-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 666,
+          "time": 1792168533005,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bdf70",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCTelia-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 668,
+          "time": 1792168533005,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3afe80",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementWheels-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 670,
+          "time": 1792168533006,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bc010",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRollerCoasterCrown-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 672,
+          "time": 1792168533006,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3af350",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementThrill-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 674,
+          "time": 1792168533007,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b6760",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMediaMarkt-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 676,
+          "time": 1792168533007,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3ba190",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCParis-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 678,
+          "time": 1792168533007,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b3430",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCEP1-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 680,
+          "time": 1792168533008,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bd380",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCSimsPark-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 682,
+          "time": 1792168533008,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b47a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLaunchMemorialPark-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 684,
+          "time": 1792168533009,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3bc9a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRomanCasino-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 686,
+          "time": 1792168533010,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3ae9a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementClassic-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 688,
+          "time": 1792168533011,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b0ba0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCBerlin-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 690,
+          "time": 1792168533011,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b2090",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCCrest-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 692,
+          "time": 1792168533012,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b89e0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCNissan-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 694,
+          "time": 1792168533012,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3b6ea0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMetro-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 696,
+          "time": 1792168533013,
+          "thread": 27256,
+          "phase": "register",
+          "manager": "0x3e126b0",
+          "database": {
+            "pointer": "0x2e3a7e10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\HeroesAndVillains-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        }
+      ]
+    },
+    {
+      "name": "userdata",
+      "pid": 61532,
+      "exe": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCity\\SimCity.exe",
+      "sha256": "2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab",
+      "ready": {
+        "kind": "ready",
+        "base": "0x400000",
+        "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCity\\SimCity.exe",
+        "hooks": [
+          "directory",
+          "scan",
+          "admission",
+          "register",
+          "open",
+          "find",
+          "findRecord",
+          "record"
+        ]
+      },
+      "resumed": true,
+      "detached": true,
+      "errors": [],
+      "summary": {
+        "hits": {
+          "directory": 48,
+          "scan": 2,
+          "open": 127,
+          "admission": 14,
+          "register": 53,
+          "record": 37081,
+          "find": 258,
+          "findRecord": 502
+        },
+        "dropped": 0,
+        "errors": 0,
+        "total": 209
+      },
+      "raw": "tmp/package-runtime-userdata-20261017",
+      "traceSha256": "8b54ae3927796794e27535bc42df75919bae4fda06c0148548a033f4d5bc195b",
+      "events": [
+        {
+          "sequence": 1,
+          "time": 1792168638234,
+          "thread": 23528,
+          "phase": "directory",
+          "id": "06CBED39",
+          "path": null
+        },
+        {
+          "sequence": 2,
+          "time": 1792168638234,
+          "thread": 23528,
+          "phase": "scan",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\",
+          "priority": 0
+        },
+        {
+          "sequence": 5,
+          "time": 1792168638235,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3cbdd60",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Oppie_TrainStation.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 8,
+          "time": 1792168638239,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3cbe350",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCityDataEP1.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 11,
+          "time": 1792168638240,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3d55d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_App.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 14,
+          "time": 1792168638240,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce4b80",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_Banks.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 17,
+          "time": 1792168638241,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce5040",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_MusicStreams.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 20,
+          "time": 1792168638241,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce5960",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_SpeechBanks.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 23,
+          "time": 1792168638242,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce6870",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_Streams.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 26,
+          "time": 1792168638242,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce7ca0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_DLC0.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 29,
+          "time": 1792168638246,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ccd950",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Game.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 32,
+          "time": 1792168638248,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3e97a00",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Graphics.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 35,
+          "time": 1792168638251,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3dc17b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_RegionTerrain0.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 38,
+          "time": 1792168638253,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3d8a0e0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_RegionTerrain1.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 40,
+          "time": 1792168638253,
+          "thread": 23528,
+          "phase": "directory",
+          "id": "00A0214F",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Config\\"
+        },
+        {
+          "sequence": 41,
+          "time": 1792168638254,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ee9040",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 10,
+          "result": true
+        },
+        {
+          "sequence": 43,
+          "time": 1792168638286,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f22010",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Locale\\en-us\\Data.package"
+          },
+          "register": true,
+          "priority": 1,
+          "result": true
+        },
+        {
+          "sequence": 45,
+          "time": 1792168638290,
+          "thread": 23528,
+          "phase": "directory",
+          "id": "00A0214B",
+          "path": "C:\\Users\\FluffyCHi_Xing\\Documents\\SimCity\\"
+        },
+        {
+          "sequence": 46,
+          "time": 1792168638293,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f21610",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 47,
+          "time": 1792168638293,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2b460",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 48,
+          "time": 1792168638294,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2b670",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 49,
+          "time": 1792168638294,
+          "thread": 23528,
+          "phase": "directory",
+          "id": "00A02151",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\"
+        },
+        {
+          "sequence": 50,
+          "time": 1792168638294,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2b9a0",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 51,
+          "time": 1792168638295,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f22cb0",
+            "vtableRva": "0x92a0c0",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 52,
+          "time": 1792168638295,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2bc60",
+            "vtableRva": "0x92a0c0",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 53,
+          "time": 1792168638300,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f23330",
+            "vtableRva": "0x8f49b8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 54,
+          "time": 1792168638301,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x40286e0",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 55,
+          "time": 1792168638302,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x402ab30",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 56,
+          "time": 1792168638302,
+          "thread": 23528,
+          "phase": "scan",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\Packages\\",
+          "priority": 0
+        },
+        {
+          "sequence": 57,
+          "time": 1792168638302,
+          "thread": 23528,
+          "phase": "open",
+          "database": {
+            "pointer": "0x402ae00",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\Packages\\000_openscp_loader_probe_20261017.package"
+          },
+          "access": 1,
+          "result": true
+        },
+        {
+          "sequence": 58,
+          "time": 1792168638302,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x402ae00",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\Packages\\000_openscp_loader_probe_20261017.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 59,
+          "time": 1792168638302,
+          "thread": 23528,
+          "phase": "admission",
+          "database": {
+            "pointer": "0x402ae00",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\Packages\\000_openscp_loader_probe_20261017.package"
+          },
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 61,
+          "time": 1792168638303,
+          "thread": 23528,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3f22010",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Locale\\en-us\\Data.package"
+          },
+          "materialize": false,
+          "result": false
+        },
+        {
+          "sequence": 62,
+          "time": 1792168638304,
+          "thread": 23528,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3cbdd60",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Oppie_TrainStation.package"
+          },
+          "materialize": false,
+          "result": false
+        },
+        {
+          "sequence": 63,
+          "time": 1792168638304,
+          "thread": 23528,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3cbe350",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCityDataEP1.package"
+          },
+          "materialize": false,
+          "result": false
+        },
+        {
+          "sequence": 64,
+          "time": 1792168638304,
+          "thread": 23528,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3d55d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_App.package"
+          },
+          "materialize": false,
+          "result": true
+        },
+        {
+          "sequence": 65,
+          "time": 1792168638304,
+          "thread": 23528,
+          "phase": "findRecord",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "recordKey": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3d55d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_App.package"
+          }
+        },
+        {
+          "sequence": 66,
+          "time": 1792168638304,
+          "thread": 23528,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3d55d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_App.package"
+          },
+          "materialize": true,
+          "result": true
+        },
+        {
+          "sequence": 68,
+          "time": 1792168639986,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ee9410",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\LocalSettings.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 70,
+          "time": 1792168639986,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ee97b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\TerrainForServer.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 72,
+          "time": 1792168646656,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2dbf0300",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\UpdaterData.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 73,
+          "time": 1792168646657,
+          "thread": 23528,
+          "phase": "directory",
+          "id": "08F03C82",
+          "path": null
+        },
+        {
+          "sequence": 74,
+          "time": 1792168646657,
+          "thread": 23528,
+          "phase": "directory",
+          "id": "08F03C82",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\"
+        },
+        {
+          "sequence": 75,
+          "time": 1792168646755,
+          "thread": 23528,
+          "phase": "directory",
+          "id": "08F03C83",
+          "path": null
+        },
+        {
+          "sequence": 159,
+          "time": 1792168646813,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0ad610",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCity-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 161,
+          "time": 1792168646813,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0bb7c0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCProgressive-Scripts_277330354.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 163,
+          "time": 1792168646814,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0a9e00",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\Sandbox-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 165,
+          "time": 1792168646814,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0bfdb0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCWorship-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 167,
+          "time": 1792168646814,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0adf20",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAirships-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 169,
+          "time": 1792168646814,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0bb170",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCPlay-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 171,
+          "time": 1792168646814,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0bc0f0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRedCross-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 173,
+          "time": 1792168646815,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b63a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLondon-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 175,
+          "time": 1792168646815,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b4440",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLaunchArcology-Scripts_281459438.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 177,
+          "time": 1792168646815,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b7d80",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMicroMania-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 179,
+          "time": 1792168646816,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0be5d0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCTelia-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 181,
+          "time": 1792168646816,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b04e0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementWheels-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 183,
+          "time": 1792168646817,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0bc670",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRollerCoasterCrown-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 185,
+          "time": 1792168646817,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0af9b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementThrill-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 187,
+          "time": 1792168646817,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b6dc0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMediaMarkt-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 189,
+          "time": 1792168646818,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0ba7f0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCParis-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 191,
+          "time": 1792168646818,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b3a90",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCEP1-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 193,
+          "time": 1792168646819,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0bd9e0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCSimsPark-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 195,
+          "time": 1792168646819,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b4e00",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLaunchMemorialPark-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 197,
+          "time": 1792168646819,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0bd000",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRomanCasino-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 199,
+          "time": 1792168646820,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0af000",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementClassic-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 201,
+          "time": 1792168646820,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b1200",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCBerlin-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 203,
+          "time": 1792168646821,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b26f0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCCrest-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 205,
+          "time": 1792168646821,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b9040",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCNissan-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 207,
+          "time": 1792168646821,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0b7500",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMetro-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 209,
+          "time": 1792168646822,
+          "thread": 23528,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0a8470",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\HeroesAndVillains-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        }
+      ]
+    },
+    {
+      "name": "data",
+      "pid": 54300,
+      "exe": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCity\\SimCity.exe",
+      "sha256": "2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab",
+      "ready": {
+        "kind": "ready",
+        "base": "0x400000",
+        "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCity\\SimCity.exe",
+        "hooks": [
+          "directory",
+          "scan",
+          "admission",
+          "register",
+          "open",
+          "find",
+          "findRecord",
+          "record"
+        ]
+      },
+      "resumed": true,
+      "detached": true,
+      "errors": [],
+      "summary": {
+        "hits": {
+          "directory": 48,
+          "scan": 2,
+          "open": 127,
+          "admission": 14,
+          "register": 53,
+          "record": 37314,
+          "find": 258,
+          "findRecord": 502
+        },
+        "dropped": 0,
+        "errors": 0,
+        "total": 207
+      },
+      "raw": "tmp/package-runtime-data-20261017",
+      "traceSha256": "c89da4b39aa25fe7d2a630cb1b1e869745856887310930fd50975749ef377532",
+      "events": [
+        {
+          "sequence": 1,
+          "time": 1792168750397,
+          "thread": 43200,
+          "phase": "directory",
+          "id": "06CBED39",
+          "path": null
+        },
+        {
+          "sequence": 2,
+          "time": 1792168750397,
+          "thread": 43200,
+          "phase": "scan",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\",
+          "priority": 0
+        },
+        {
+          "sequence": 3,
+          "time": 1792168750398,
+          "thread": 43200,
+          "phase": "open",
+          "database": {
+            "pointer": "0x3cbdde0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\000_openscp_loader_probe_20261017.package"
+          },
+          "access": 1,
+          "result": true
+        },
+        {
+          "sequence": 4,
+          "time": 1792168750398,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3cbdde0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\000_openscp_loader_probe_20261017.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 5,
+          "time": 1792168750398,
+          "thread": 43200,
+          "phase": "admission",
+          "database": {
+            "pointer": "0x3cbdde0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\000_openscp_loader_probe_20261017.package"
+          },
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 8,
+          "time": 1792168750398,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3cbe2c0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Oppie_TrainStation.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 11,
+          "time": 1792168750402,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3cbe8b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCityDataEP1.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 14,
+          "time": 1792168750403,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3d56270",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_App.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 17,
+          "time": 1792168750403,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce50e0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_Banks.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 20,
+          "time": 1792168750404,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce55a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_MusicStreams.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 23,
+          "time": 1792168750404,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce5ec0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_SpeechBanks.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 26,
+          "time": 1792168750404,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce6dd0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Audio_Streams.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 29,
+          "time": 1792168750405,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ce8200",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_DLC0.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 32,
+          "time": 1792168750408,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ccdeb0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Game.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 35,
+          "time": 1792168750411,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3e97f60",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Graphics.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 38,
+          "time": 1792168750413,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3dc1d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_RegionTerrain0.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 41,
+          "time": 1792168750414,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3d8a640",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_RegionTerrain1.package"
+          },
+          "register": true,
+          "priority": 0,
+          "result": true
+        },
+        {
+          "sequence": 43,
+          "time": 1792168750415,
+          "thread": 43200,
+          "phase": "directory",
+          "id": "00A0214F",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Config\\"
+        },
+        {
+          "sequence": 44,
+          "time": 1792168750415,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ee95a0",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 10,
+          "result": true
+        },
+        {
+          "sequence": 46,
+          "time": 1792168750445,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f224c0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Locale\\en-us\\Data.package"
+          },
+          "register": true,
+          "priority": 1,
+          "result": true
+        },
+        {
+          "sequence": 48,
+          "time": 1792168750452,
+          "thread": 43200,
+          "phase": "directory",
+          "id": "00A0214B",
+          "path": "C:\\Users\\FluffyCHi_Xing\\Documents\\SimCity\\"
+        },
+        {
+          "sequence": 49,
+          "time": 1792168750459,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f21ac0",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 50,
+          "time": 1792168750459,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2b910",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 51,
+          "time": 1792168750461,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2bb20",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 52,
+          "time": 1792168750461,
+          "thread": 43200,
+          "phase": "directory",
+          "id": "00A02151",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\"
+        },
+        {
+          "sequence": 53,
+          "time": 1792168750462,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2be50",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 54,
+          "time": 1792168750463,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f23160",
+            "vtableRva": "0x92a0c0",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 55,
+          "time": 1792168750463,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f2c110",
+            "vtableRva": "0x92a0c0",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 56,
+          "time": 1792168750466,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3f237e0",
+            "vtableRva": "0x8f49b8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 57,
+          "time": 1792168750467,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x4028b90",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 58,
+          "time": 1792168750468,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x402aeb0",
+            "vtableRva": "0x929ff8",
+            "path": null
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 59,
+          "time": 1792168750468,
+          "thread": 43200,
+          "phase": "scan",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\Packages\\",
+          "priority": 0
+        },
+        {
+          "sequence": 61,
+          "time": 1792168750470,
+          "thread": 43200,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3f224c0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\Locale\\en-us\\Data.package"
+          },
+          "materialize": false,
+          "result": false
+        },
+        {
+          "sequence": 62,
+          "time": 1792168750470,
+          "thread": 43200,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3cbdde0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\000_openscp_loader_probe_20261017.package"
+          },
+          "materialize": false,
+          "result": true
+        },
+        {
+          "sequence": 63,
+          "time": 1792168750470,
+          "thread": 43200,
+          "phase": "findRecord",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "recordKey": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3cbdde0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\000_openscp_loader_probe_20261017.package"
+          }
+        },
+        {
+          "sequence": 64,
+          "time": 1792168750470,
+          "thread": 43200,
+          "phase": "record",
+          "key": {
+            "instance": "4483E856",
+            "type": "00B1B104",
+            "group": "00000000"
+          },
+          "database": {
+            "pointer": "0x3cbdde0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\000_openscp_loader_probe_20261017.package"
+          },
+          "materialize": true,
+          "result": true
+        },
+        {
+          "sequence": 66,
+          "time": 1792168752083,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ee9970",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\LocalSettings.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 68,
+          "time": 1792168752083,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x3ee9d10",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\TerrainForServer.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 70,
+          "time": 1792168760859,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2dc201b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\UpdaterData.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 71,
+          "time": 1792168760862,
+          "thread": 43200,
+          "phase": "directory",
+          "id": "08F03C82",
+          "path": null
+        },
+        {
+          "sequence": 72,
+          "time": 1792168760862,
+          "thread": 43200,
+          "phase": "directory",
+          "id": "08F03C82",
+          "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\"
+        },
+        {
+          "sequence": 73,
+          "time": 1792168761025,
+          "thread": 43200,
+          "phase": "directory",
+          "id": "08F03C83",
+          "path": null
+        },
+        {
+          "sequence": 157,
+          "time": 1792168761098,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0dd4c0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCity-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 159,
+          "time": 1792168761099,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0eb670",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCProgressive-Scripts_277330354.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 161,
+          "time": 1792168761099,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0d9cb0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\Sandbox-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 163,
+          "time": 1792168761100,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0efc60",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCWorship-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 165,
+          "time": 1792168761100,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0dddd0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAirships-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 167,
+          "time": 1792168761101,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0eb020",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCPlay-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 169,
+          "time": 1792168761101,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0ebfa0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRedCross-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 171,
+          "time": 1792168761101,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e6250",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLondon-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 173,
+          "time": 1792168761103,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e42f0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLaunchArcology-Scripts_281459438.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 175,
+          "time": 1792168761103,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e7c30",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMicroMania-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 177,
+          "time": 1792168761104,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0ee480",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCTelia-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 179,
+          "time": 1792168761104,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e0390",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementWheels-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 181,
+          "time": 1792168761104,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0ec520",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRollerCoasterCrown-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 183,
+          "time": 1792168761105,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0df860",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementThrill-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 185,
+          "time": 1792168761105,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e6c70",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMediaMarkt-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 187,
+          "time": 1792168761106,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0ea6a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCParis-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 189,
+          "time": 1792168761106,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e3940",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCEP1-Scripts_287520926.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 191,
+          "time": 1792168761107,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0ed890",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCSimsPark-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 193,
+          "time": 1792168761107,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e4cb0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCLaunchMemorialPark-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 195,
+          "time": 1792168761108,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0eceb0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCRomanCasino-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 197,
+          "time": 1792168761109,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0deeb0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCAmusementClassic-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 199,
+          "time": 1792168761109,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e10b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCBerlin-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 201,
+          "time": 1792168761110,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e25a0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCCrest-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 203,
+          "time": 1792168761110,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e8ef0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCNissan-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 205,
+          "time": 1792168761111,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0e73b0",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\SimCityDLCMetro-Scripts_276985846.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        },
+        {
+          "sequence": 207,
+          "time": 1792168761111,
+          "thread": 43200,
+          "phase": "register",
+          "manager": "0x3cb26b0",
+          "database": {
+            "pointer": "0x2e0d8320",
+            "vtableRva": "0x929e20",
+            "path": "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityUserData\\EcoGame\\HeroesAndVillains-Scripts_277156632.package"
+          },
+          "register": true,
+          "priority": 100,
+          "result": true
+        }
+      ]
+    }
+  ],
+  "fixture": {
+    "bytes": 1369,
+    "sha256": "729306cf4e0c7c65db718837c1f680d79389c684406d9f306818d92b0c3d7ef6",
+    "payloadBytes": 1237,
+    "payloadSha256": "0e3ccc6d31aac46c185aea262549ef87c4de4da5fafcc5da2b87028feda007af",
+    "source": "SimCityData/SimCity_App.package",
+    "unchangedPayload": true
+  }
+}
