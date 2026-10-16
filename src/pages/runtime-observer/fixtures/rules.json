@@ -1,0 +1,45 @@
+[
+  {
+    "channel": "simulation.rule",
+    "schema": 1,
+    "phase": "log-entry",
+    "scope": "global",
+    "sequence": 1,
+    "stateIndex": 318,
+    "unitSlot": null,
+    "unitStamp": null,
+    "readErrors": [],
+    "simTicks": 16111,
+    "mapping": {
+      "ruleIndex": 380,
+      "ruleSetIndex": 0,
+      "ruleWithinSet": 380
+    },
+    "applyCount": 1
+  },
+  {
+    "channel": "simulation.rule",
+    "schema": 1,
+    "phase": "log-entry",
+    "scope": "unit",
+    "sequence": 1,
+    "stateIndex": 135,
+    "unitSlot": 827,
+    "unitStamp": null,
+    "readErrors": [],
+    "simTicks": 16257,
+    "mapping": {
+      "ruleIndex": 31661,
+      "ruleSetIndex": 0,
+      "ruleWithinSet": 31661
+    },
+    "applyCount": 3,
+    "maxApply": 9,
+    "maxPossibleMapApply": 0,
+    "selectedUnits": {
+      "values": [],
+      "count": 0,
+      "truncated": false
+    }
+  }
+]

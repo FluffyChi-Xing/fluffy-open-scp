@@ -1,0 +1,267 @@
+[
+  {
+    "channel": "simulation.condition",
+    "schema": 1,
+    "phase": "global-eligibility",
+    "time": 1792180525007,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0x018781d5",
+    "ruleIndex": 379,
+    "simTicks": 22673,
+    "control": {
+      "actual": [
+        2147909446,
+        0
+      ],
+      "mask": [
+        0,
+        0
+      ],
+      "expected": [
+        0,
+        0
+      ],
+      "matches": true
+    },
+    "minApply": 1,
+    "configuredMaxApply": 1,
+    "applyResourceId": "0x00000000",
+    "fromBinOpsOffset": -1,
+    "countCapture": "captured",
+    "operations": [
+      {
+        "ordinal": 0,
+        "resourceId": "0x01f70557",
+        "input": 0,
+        "output": -1,
+        "status": "observed",
+        "bin": {
+          "pointer": "0x4552d394",
+          "binIndex": 513,
+          "resourceIndex": 5780,
+          "amount": 1,
+          "capacity": 1
+        }
+      }
+    ],
+    "readErrors": [],
+    "resourceCount": 0,
+    "nativeAllowed": false,
+    "finalApplyCount": 0,
+    "diagnosis": {
+      "count": 0,
+      "reason": "range-above",
+      "ordinal": 0
+    },
+    "sequence": 1
+  },
+  {
+    "channel": "simulation.condition",
+    "schema": 1,
+    "phase": "global-eligibility",
+    "time": 1792180525007,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0x739d42ff",
+    "ruleIndex": 380,
+    "simTicks": 22673,
+    "control": {
+      "actual": [
+        2147909446,
+        0
+      ],
+      "mask": [
+        0,
+        0
+      ],
+      "expected": [
+        0,
+        0
+      ],
+      "matches": true
+    },
+    "minApply": 1,
+    "configuredMaxApply": 1,
+    "applyResourceId": "0x00000000",
+    "fromBinOpsOffset": -1,
+    "countCapture": "captured",
+    "operations": [
+      {
+        "ordinal": 0,
+        "resourceId": "0x98ec1f24",
+        "input": 0,
+        "output": 1,
+        "status": "observed",
+        "bin": {
+          "pointer": "0x4552e900",
+          "binIndex": 970,
+          "resourceIndex": 5212,
+          "amount": 22,
+          "capacity": 24
+        }
+      }
+    ],
+    "readErrors": [],
+    "resourceCount": 2,
+    "nativeAllowed": true,
+    "finalApplyCount": 1,
+    "diagnosis": {
+      "reason": "allowed"
+    },
+    "sequence": 2
+  },
+  {
+    "channel": "simulation.condition",
+    "schema": 1,
+    "phase": "global-eligibility",
+    "time": 1792180526016,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0x739d42ff",
+    "ruleIndex": 380,
+    "simTicks": 22675,
+    "control": {
+      "actual": [
+        2147909446,
+        0
+      ],
+      "mask": [
+        0,
+        0
+      ],
+      "expected": [
+        0,
+        0
+      ],
+      "matches": true
+    },
+    "minApply": 1,
+    "configuredMaxApply": 1,
+    "applyResourceId": "0x00000000",
+    "fromBinOpsOffset": -1,
+    "countCapture": "captured",
+    "operations": [
+      {
+        "ordinal": 0,
+        "resourceId": "0x98ec1f24",
+        "input": 0,
+        "output": 1,
+        "status": "observed",
+        "bin": {
+          "pointer": "0x4552e900",
+          "binIndex": 970,
+          "resourceIndex": 5212,
+          "amount": 24,
+          "capacity": 24
+        }
+      }
+    ],
+    "readErrors": [],
+    "resourceCount": 0,
+    "nativeAllowed": false,
+    "finalApplyCount": 0,
+    "diagnosis": {
+      "count": 0,
+      "reason": "capacity-shortfall",
+      "ordinal": 0
+    },
+    "sequence": 21
+  },
+  {
+    "channel": "simulation.condition",
+    "schema": 1,
+    "phase": "global-eligibility",
+    "time": 1792180527492,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0x9172ad26",
+    "ruleIndex": 390,
+    "simTicks": 22678,
+    "control": {
+      "actual": [
+        2147909446,
+        0
+      ],
+      "mask": [
+        0,
+        0
+      ],
+      "expected": [
+        0,
+        0
+      ],
+      "matches": true
+    },
+    "minApply": 1,
+    "configuredMaxApply": 10,
+    "applyResourceId": "0x00000000",
+    "fromBinOpsOffset": -1,
+    "countCapture": "captured",
+    "operations": [
+      {
+        "ordinal": 0,
+        "resourceId": "0x80550550",
+        "input": 1,
+        "output": 0,
+        "status": "observed",
+        "bin": {
+          "pointer": "0x4552cf80",
+          "binIndex": 426,
+          "resourceIndex": 5409,
+          "amount": 0,
+          "capacity": 90
+        }
+      }
+    ],
+    "readErrors": [],
+    "resourceCount": 0,
+    "nativeAllowed": false,
+    "finalApplyCount": 0,
+    "diagnosis": {
+      "count": 0,
+      "reason": "input-shortfall",
+      "ordinal": 0
+    },
+    "sequence": 61
+  },
+  {
+    "channel": "simulation.condition",
+    "schema": 1,
+    "phase": "global-eligibility",
+    "time": 1792180527492,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0xe8fc6cbe",
+    "ruleIndex": 9437187,
+    "simTicks": 22678,
+    "control": {
+      "actual": [
+        2147909446,
+        0
+      ],
+      "mask": [
+        4,
+        0
+      ],
+      "expected": [
+        0,
+        0
+      ],
+      "matches": false
+    },
+    "minApply": 1,
+    "configuredMaxApply": 1,
+    "applyResourceId": "0x00000000",
+    "fromBinOpsOffset": -1,
+    "countCapture": "not-observed",
+    "operations": [],
+    "readErrors": [],
+    "nativeAllowed": false,
+    "finalApplyCount": 0,
+    "diagnosis": {
+      "reason": "control-flags"
+    },
+    "sequence": 79
+  }
+]

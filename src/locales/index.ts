@@ -4,12 +4,14 @@ import { flowZh, flowEn } from './mod-flow';
 import { mapGraphZh, mapGraphEn } from './map-graph';
 
 import { rasterZh, rasterEn } from "./raster-editor";
+import { diagnosticsZh, diagnosticsEn } from './diagnostics';
 
 const messages = {
   "zh-CN": {
     flow: flowZh,
     mapGraph: mapGraphZh,
     rasterEditor: rasterZh,
+    diagnostics: diagnosticsZh,
     navigation: {
       workspace: "工作区",
       workspaceHome: "文档工作区",
@@ -1696,6 +1698,7 @@ const messages = {
     flow: flowEn,
     mapGraph: mapGraphEn,
     rasterEditor: rasterEn,
+    diagnostics: diagnosticsEn,
     navigation: {
       workspace: "Workspace",
       workspaceHome: "Docs workspace",

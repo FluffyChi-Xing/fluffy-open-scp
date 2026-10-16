@@ -1,0 +1,47 @@
+[
+  {
+    "channel": "simulation.effect",
+    "schema": 1,
+    "phase": "unit-local-resource-update",
+    "time": 1792181281855,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0xac95e620",
+    "ruleIndex": 31862,
+    "simTicks": 24056,
+    "applyCount": 278,
+    "operations": [
+      {
+        "ordinal": 0,
+        "resourceId": "0x9e3c3dfa",
+        "input": 0,
+        "output": 1,
+        "status": "observed",
+        "before": {
+          "pointer": "0x456b3b78",
+          "resourceIndex": 1117,
+          "binIndex": 38,
+          "amount": 586,
+          "capacity": 864
+        },
+        "after": {
+          "pointer": "0x456b3b78",
+          "resourceIndex": 1117,
+          "binIndex": 38,
+          "amount": 864,
+          "capacity": 864
+        },
+        "delta": 278,
+        "expectedDeltaInt32": 278,
+        "matchesInt32": true
+      }
+    ],
+    "readErrors": [],
+    "unitSlot": 189,
+    "unitPointer": "0x45a2b1a8",
+    "unitStamp": null,
+    "resourceOwner": "unit-local",
+    "nativeSuccess": true,
+    "sequence": 1
+  }
+]

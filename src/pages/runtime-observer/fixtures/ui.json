@@ -1,0 +1,165 @@
+[
+  {
+    "channel": "invoke",
+    "arguments": [
+      {
+        "type": "string",
+        "status": "flat",
+        "length": 20,
+        "truncated": false,
+        "text": "totalElapsedGameTime"
+      }
+    ],
+    "argumentsTruncated": false,
+    "name": "RequestGameData",
+    "argumentCount": 1,
+    "requestName": "totalElapsedGameTime",
+    "threadId": 44504,
+    "binding": "0x62c1bbf8",
+    "page": "0xfbbca228",
+    "sequence": 1,
+    "time": 1791907231470,
+    "samplingChannel": "query"
+  },
+  {
+    "channel": "result",
+    "name": "RequestGameData",
+    "requestName": "totalElapsedGameTime",
+    "callSequence": 1,
+    "binding": "0x62c1bbf8",
+    "page": "0xfbbca228",
+    "threadId": 44504,
+    "success": true,
+    "result": {
+      "type": "double",
+      "value": 14570.13671875
+    },
+    "sequence": 2,
+    "time": 1791907231470,
+    "samplingChannel": "result"
+  },
+  {
+    "channel": "invoke",
+    "arguments": [
+      {
+        "type": "string",
+        "status": "flat",
+        "length": 24,
+        "truncated": false,
+        "text": "resourceAmount/932594546"
+      }
+    ],
+    "argumentsTruncated": false,
+    "name": "RequestGameData",
+    "argumentCount": 1,
+    "requestName": "resourceAmount",
+    "threadId": 44504,
+    "binding": "0x62c1bbf8",
+    "page": "0xfbbca228",
+    "sequence": 3,
+    "time": 1791907231470,
+    "samplingChannel": "query"
+  },
+  {
+    "channel": "result",
+    "name": "RequestGameData",
+    "requestName": "resourceAmount",
+    "callSequence": 3,
+    "binding": "0x62c1bbf8",
+    "page": "0xfbbca228",
+    "threadId": 44504,
+    "success": true,
+    "result": {
+      "type": "int32",
+      "value": 1221911
+    },
+    "sequence": 4,
+    "time": 1791907231470,
+    "samplingChannel": "result"
+  },
+  {
+    "channel": "event",
+    "name": "ReceiveGameEventFromClient",
+    "callerRva": "0x369d7c",
+    "binding": "0x62c1bbf8",
+    "page": "0xfbbca228",
+    "threadId": 44504,
+    "eventID": 199450092,
+    "event": {
+      "type": "array",
+      "status": "dense",
+      "length": 2,
+      "items": [
+        {
+          "type": "int32",
+          "value": 199450092
+        },
+        {
+          "type": "object",
+          "status": "own_data",
+          "properties": [
+            {
+              "name": "eventID",
+              "value": {
+                "type": "int32",
+                "value": 1769747626
+              }
+            },
+            {
+              "name": "eventPosition",
+              "value": {
+                "type": "array",
+                "status": "dense",
+                "length": 3,
+                "items": [
+                  {
+                    "type": "double",
+                    "value": 351.659912109375
+                  },
+                  {
+                    "type": "double",
+                    "value": -959.7479858398438
+                  },
+                  {
+                    "type": "double",
+                    "value": -806.473876953125
+                  }
+                ],
+                "truncated": false
+              }
+            },
+            {
+              "name": "unitRef",
+              "value": {
+                "type": "object",
+                "status": "own_data",
+                "properties": [
+                  {
+                    "name": "slot",
+                    "value": {
+                      "type": "int32",
+                      "value": 76
+                    }
+                  },
+                  {
+                    "name": "stamp",
+                    "value": {
+                      "type": "int32",
+                      "value": 0
+                    }
+                  }
+                ],
+                "truncated": false
+              }
+            }
+          ],
+          "truncated": false
+        }
+      ],
+      "truncated": false
+    },
+    "sequence": 90,
+    "time": 1791907231534,
+    "samplingChannel": "event"
+  }
+]

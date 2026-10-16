@@ -1,0 +1,63 @@
+[
+  {
+    "channel": "simulation.rule",
+    "schema": 1,
+    "phase": "log-entry",
+    "scope": "global",
+    "sequence": 1,
+    "stateIndex": 315,
+    "unitSlot": null,
+    "unitStamp": null,
+    "readErrors": [],
+    "simTicks": 21179,
+    "mapping": {
+      "ruleIndex": 380,
+      "ruleSetIndex": 0,
+      "ruleWithinSet": 380,
+      "resourceKey": {
+        "instance": 1647025367,
+        "type": 134646505,
+        "group": 1082130944
+      },
+      "ruleId": 1939686143,
+      "ruleIdHex": "0x739d42ff",
+      "baseRuleWithinSet": 380
+    },
+    "applyCount": 1
+  },
+  {
+    "channel": "simulation.rule",
+    "schema": 1,
+    "phase": "log-entry",
+    "scope": "unit",
+    "sequence": 2,
+    "stateIndex": 12,
+    "unitSlot": 392,
+    "unitStamp": null,
+    "readErrors": [],
+    "simTicks": 21179,
+    "mapping": {
+      "ruleIndex": 10447,
+      "ruleSetIndex": 0,
+      "ruleWithinSet": 10447,
+      "resourceKey": {
+        "instance": 1647025367,
+        "type": 134646505,
+        "group": 1082130944
+      },
+      "ruleId": 4028305077,
+      "ruleIdHex": "0xf01b0eb5",
+      "baseRuleWithinSet": 10447
+    },
+    "applyCount": 1,
+    "maxApply": -1,
+    "maxPossibleMapApply": 0,
+    "selectedUnits": {
+      "values": [
+        30
+      ],
+      "count": 1,
+      "truncated": false
+    }
+  }
+]

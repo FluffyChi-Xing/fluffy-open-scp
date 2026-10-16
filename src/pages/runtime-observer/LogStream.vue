@@ -132,13 +132,16 @@ input[type="search"] {
   font-size: 12px;
 }
 .viewport {
-  height: clamp(320px, calc(100vh - 360px), 850px);
+  height: clamp(180px, 36vh, 420px);
   overflow: auto;
   font:
     12px/22px ui-monospace,
     Consolas,
     monospace;
   padding: 6px 0;
+}
+.viewport:has(.empty) {
+  height: 80px;
 }
 .line {
   display: flex;

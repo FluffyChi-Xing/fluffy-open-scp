@@ -19,6 +19,10 @@ node_modules/
 /docs/packages
 /docs/source-code
 
+# Reverse-engineering exported logs/evidence remain local; keep reports and code.
+/docs/re/**/*.json
+/docs/re/**/*.jsonl
+
 # rust / tauri
 target/
 src-tauri/gen/

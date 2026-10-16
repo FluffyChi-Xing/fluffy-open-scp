@@ -1,0 +1,71 @@
+[
+  {
+    "channel": "resource.provenance",
+    "schema": 1,
+    "phase": "record",
+    "sequence": 6,
+    "time": 1792177936477,
+    "requestId": 1,
+    "recordKey": {
+      "instance": 1647025367,
+      "type": 134646507,
+      "group": 1082130944
+    },
+    "database": {
+      "pointer": "0x2e0dc570",
+      "vtableRva": "0x929e20",
+      "path": "D:/fixture/SimCityUserData/EcoGame/SimCity-Scripts_287520926.package"
+    },
+    "success": true,
+    "record": "0x2e7220c0",
+    "materialize": true
+  },
+  {
+    "channel": "resource.provenance",
+    "schema": 1,
+    "phase": "create",
+    "sequence": 7,
+    "time": 1792177936496,
+    "requestId": 1,
+    "success": true,
+    "resource": "0x2e722284",
+    "record": "0x2e7220c0",
+    "database": {
+      "pointer": "0x2e0dc570",
+      "vtableRva": "0x929e20",
+      "path": "D:/fixture/SimCityUserData/EcoGame/SimCity-Scripts_287520926.package"
+    },
+    "recordKey": {
+      "instance": 1647025367,
+      "type": 134646507,
+      "group": 1082130944
+    }
+  },
+  {
+    "channel": "resource.provenance",
+    "schema": 1,
+    "phase": "request",
+    "sequence": 9,
+    "time": 1792177936496,
+    "requestId": 1,
+    "threadId": 12184,
+    "key": {
+      "instance": 1647025367,
+      "type": 134646505,
+      "group": 1082130944
+    },
+    "success": true,
+    "resource": "0x2e722284",
+    "provenance": "created-from-record",
+    "database": {
+      "pointer": "0x2e0dc570",
+      "vtableRva": "0x929e20",
+      "path": "D:/fixture/SimCityUserData/EcoGame/SimCity-Scripts_287520926.package"
+    },
+    "recordKey": {
+      "instance": 1647025367,
+      "type": 134646507,
+      "group": 1082130944
+    }
+  }
+]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import argparse
 import json
 from pathlib import Path
 
@@ -22,11 +23,11 @@ def load_rows(root: Path):
     return sorted(rows)
 
 
-def decode_candidates(data: bytes):
+def decode_candidates(data: bytes, *, stream_version: int):
     result = []
     for offset in range(max(0, len(data) - 3)):
         try:
-            h = decode_action_header(data, offset)
+            h = decode_action_header(data, offset, stream_version=stream_version)
         except DeltaDecodeError:
             continue
         if h.action_id < 32:
@@ -34,7 +35,7 @@ def decode_candidates(data: bytes):
     return result
 
 
-def analyze(root: Path):
+def analyze(root: Path, *, stream_version: int):
     rows = load_rows(root)
     groups = collections.defaultdict(list)
     for seq, obj, phase, data in rows:
@@ -44,7 +45,7 @@ def analyze(root: Path):
     for obj, parts in sorted(groups.items(), key=lambda item: min(x[0] for x in item[1])):
         parts.sort()
         data = b"".join(x[2] for x in parts)
-        candidates = decode_candidates(data)
+        candidates = decode_candidates(data, stream_version=stream_version)
         all_candidates.extend(candidates)
         streams.append({
             "object": obj,
@@ -56,6 +57,8 @@ def analyze(root: Path):
             "action_candidates": candidates,
         })
     return {
+        "interpretation": "byte-pattern candidates only; XOR state snapshots are not a proven action stream",
+        "stream_version_assumption": stream_version,
         "write_rows": len(rows),
         "plaintext_bytes": sum(len(x[3]) for x in rows),
         "stream_count": len(streams),
@@ -72,9 +75,14 @@ def analyze(root: Path):
 
 
 def main():
-    root = Path(__file__).resolve().parents[2] / "tmp/dynamic/live/delta-xor/capture"
-    report = analyze(root)
-    out = root / "analysis.json"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--stream-version', type=int, required=True, help='Inner action-stream version, NOT MFS envelope version 4; this remains an assumption for XOR candidates')
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2] / "tmp/dynamic/live/delta-xor/capture")
+    args = parser.parse_args()
+    if args.stream_version < 0: parser.error('stream version must be non-negative')
+    root = args.root
+    report = analyze(root, stream_version=args.stream_version)
+    out = root / f"analysis-candidates-v{args.stream_version}.json"
     out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps({k: report[k] for k in ("write_rows", "plaintext_bytes", "stream_count", "action_candidate_count", "action_id_counts")}, indent=2))
 

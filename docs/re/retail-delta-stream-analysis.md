@@ -1,5 +1,17 @@
 # Retail Delta Stream Analysis
 
+## 2026-10-17 correction: retail action semantics
+
+The actual retail encoder at VA `0x5CC130` uses data2 extension/sentinel
+`0xFE/0xFF`. Its decoder at `0x5CC1D0` accepts an additional version argument:
+versions below 27 use legacy `0x3E/0x3F`; versions 27+ use `0xFE/0xFF`.
+The outer MFS version 4 is not a verified value for this argument.
+The offline header decoder now requires an explicit `stream_version`.
+Retail action 2 selects the current unit; action 1 then carries data1=0 and
+data2=stateIndex. The development enum's `Unused2` must not be applied here.
+See [retail entrypoint evidence](retail-rule-logging-entrypoints-20261017.md).
+Historical XOR byte candidates below remain unproven as action streams.
+
 ## Verified envelope
 
 `SLDelta*_1.mfs` begins with a little endian `uint32` version (`4`). The
@@ -14,8 +26,16 @@ big endian uint32  kind
 byte[]              payload
 ```
 
-The records are contiguous, delta IDs are monotonic, and the payload length
-is a multiple of 24 in the captured files. This is an outer retail envelope;
+The records are contiguous, and the payload length
+is a multiple of 24 in the initial captured files. Delta IDs were monotonic in those samples only;
+2026-10-17 live-save copies of SLDelta8_1 and SLDelta9_1 contain structurally valid
+ID regressions (63528→63475 and 63529→63476). Parsers now preserve file order
+rather than rejecting these files. The cause of the regressions remains unresolved.
+See `evidence/delta-import-regressions-20261017.json` for hashes, offsets and counts.
+Not every .mfs file is a standalone v4 envelope: the observed SLDelta11_1 header
+is `24 7e 0d 00`, and SLDelta11_2 lacks the expected record marker at offset 4.
+Their wrapper/segmentation semantics are not established by this inspection.
+This is an outer retail envelope;
 it must not be passed directly to the development `EncodeActionHeader`
 decoder.
 

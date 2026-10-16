@@ -1,0 +1,105 @@
+[
+  {
+    "sequence": 3,
+    "time": 1792168750398,
+    "thread": 43200,
+    "phase": "open",
+    "database": {
+      "pointer": "0x3cbdde0",
+      "vtableRva": "0x929e20",
+      "path": "fixture/000_openscp_loader_probe_20261017.package"
+    },
+    "access": 1,
+    "result": true
+  },
+  {
+    "sequence": 4,
+    "time": 1792168750398,
+    "thread": 43200,
+    "phase": "register",
+    "manager": "0x3cb26b0",
+    "database": {
+      "pointer": "0x3cbdde0",
+      "vtableRva": "0x929e20",
+      "path": "fixture/000_openscp_loader_probe_20261017.package"
+    },
+    "register": true,
+    "priority": 0,
+    "result": true
+  },
+  {
+    "sequence": 61,
+    "time": 1792168750470,
+    "thread": 43200,
+    "phase": "record",
+    "key": {
+      "instance": "4483E856",
+      "type": "00B1B104",
+      "group": "00000000"
+    },
+    "database": {
+      "pointer": "0x3f224c0",
+      "vtableRva": "0x929e20",
+      "path": "fixture/Data.package"
+    },
+    "materialize": false,
+    "result": false
+  },
+  {
+    "sequence": 62,
+    "time": 1792168750470,
+    "thread": 43200,
+    "phase": "record",
+    "key": {
+      "instance": "4483E856",
+      "type": "00B1B104",
+      "group": "00000000"
+    },
+    "database": {
+      "pointer": "0x3cbdde0",
+      "vtableRva": "0x929e20",
+      "path": "fixture/000_openscp_loader_probe_20261017.package"
+    },
+    "materialize": false,
+    "result": true
+  },
+  {
+    "sequence": 63,
+    "time": 1792168750470,
+    "thread": 43200,
+    "phase": "findRecord",
+    "key": {
+      "instance": "4483E856",
+      "type": "00B1B104",
+      "group": "00000000"
+    },
+    "recordKey": {
+      "instance": "4483E856",
+      "type": "00B1B104",
+      "group": "00000000"
+    },
+    "database": {
+      "pointer": "0x3cbdde0",
+      "vtableRva": "0x929e20",
+      "path": "fixture/000_openscp_loader_probe_20261017.package"
+    }
+  },
+  {
+    "sequence": 64,
+    "time": 1792168750470,
+    "thread": 43200,
+    "phase": "record",
+    "key": {
+      "instance": "4483E856",
+      "type": "00B1B104",
+      "group": "00000000"
+    },
+    "database": {
+      "pointer": "0x3cbdde0",
+      "vtableRva": "0x929e20",
+      "path": "fixture/000_openscp_loader_probe_20261017.package"
+    },
+    "materialize": true,
+    "result": true
+  }
+]
