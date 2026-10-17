@@ -18,6 +18,7 @@ import type { ReplicaSubmenuItem } from "@/lib/game-ui/replica/types";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
 import FSheet from "@/components/ui/FSheet.vue";
+import FStartupLoading from "@/components/ui/FStartupLoading.vue";
 import UiWorkbenchStage from "../components/UiWorkbenchStage.vue";
 import MenuEditorPanel from "../components/MenuEditorPanel.vue";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
@@ -223,8 +224,13 @@ function removeDraft(): void {
       </header>
     </div>
 
-    <p v-if="loading" class="notice" role="status">{{ t("studio.workbench.loading") }}</p>
+    <FStartupLoading
+      v-if="loading"
+      class="workbench-loading"
+      :label="t('studio.workbench.rebuilding')"
+    />
 
+    <template v-else>
     <div class="toolbar">
       <div class="view-switch" role="group" :aria-label="t('studio.workbench.viewMode')">
         <button
@@ -318,6 +324,8 @@ function removeDraft(): void {
         </div>
       </div>
     </FSheet>
+
+    </template>
 
     <!-- schema diff 预览 -->
     <FSheet
@@ -479,6 +487,10 @@ function removeDraft(): void {
   border-radius: var(--radius-md);
   padding: 10px 12px;
 }
+.workbench-loading {
+  height: 660px;
+}
+
 .workspace {
   /* 固定高度：重建舞台与面板互不影响（面板内自行滚动） */
   display: grid;

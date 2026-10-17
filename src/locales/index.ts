@@ -527,6 +527,7 @@ const messages = {
         description:
           "用游戏原生资产重建菜单 UI：点击菜单在右侧预览条目，单条编辑实时生效，末位「＋」新增条目。",
         loading: "正在载入菜单数据与资产…",
+        rebuilding: "正在从游戏数据重建菜单…",
         dimCity: "城市",
         dimBigbiz: "大商业",
         dimRegion: "区域",
@@ -2307,6 +2308,7 @@ const messages = {
         description:
           "Rebuild the game menus with native assets: click a menu to preview its entries, edit inline with live feedback, and append new entries via the dashed tile.",
         loading: "Loading menu data and assets…",
+        rebuilding: "Rebuilding menus from game data…",
         dimCity: "City",
         dimRegion: "Region",
         dimDevelopment: "City development",
