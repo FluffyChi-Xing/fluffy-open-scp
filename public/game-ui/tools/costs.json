@@ -1,6 +1,7 @@
 {
   "costs": {
     "00A4D275": {
+      "addonContainer": "27F869B9",
       "cost": 43000,
       "maintenance": -250,
       "unit": "A50FC927"
@@ -25,6 +26,7 @@
       "unit": "F7C452A8"
     },
     "05456823": {
+      "addonContainer": "4DD662FB",
       "cost": 20000,
       "maintenance": -400,
       "unit": "30236D71"
@@ -40,6 +42,7 @@
       "unit": "025F1C3F"
     },
     "069C4C4D": {
+      "addonContainer": "2B32C2B2",
       "cost": 150000,
       "maintenance": -300,
       "unit": "99E9D683"
@@ -60,16 +63,19 @@
       "unit": "45CAA711"
     },
     "09E6C73B": {
+      "addonContainer": "E547FF8B",
       "cost": 10000,
       "maintenance": -500,
       "unit": "73B67F75"
     },
     "0ABBA7F9": {
+      "addonContainer": "2353E3B9",
       "config": "B0EDBB5E",
       "configCost": 400,
       "unit": "5D1E0327"
     },
     "0ABBA7FA": {
+      "addonContainer": "BCA5FFC2",
       "config": "B0EDBB5D",
       "configCost": 400,
       "unit": "5D1E0324"
@@ -107,6 +113,7 @@
       "unit": "31A5448E"
     },
     "0DB10CE6": {
+      "addonContainer": "7027ACFA",
       "cost": 10000,
       "maintenance": -600,
       "unit": "1A3D26DC"
@@ -123,6 +130,7 @@
       "unit": "79B2FC41"
     },
     "103A2DDC": {
+      "addonContainer": "EDF68A04",
       "cost": 37500,
       "maintenance": -450,
       "unit": "CB547742"
@@ -141,31 +149,37 @@
       "unit": "B88A960F"
     },
     "1230E4D6": {
+      "addonContainer": "1483C8AE",
       "config": "3E288601",
       "configCost": 400,
       "unit": "ECEB3C48"
     },
     "1230E4D7": {
+      "addonContainer": "0D3F7E27",
       "config": "3E288600",
       "configCost": 400,
       "unit": "ECEB3C49"
     },
     "1230E4D8": {
+      "addonContainer": "94337A40",
       "cost": 100,
       "maintenance": -10,
       "unit": "ECEB3C46"
     },
     "1230E4D9": {
+      "addonContainer": "D7EA0499",
       "cost": 100,
       "maintenance": -10,
       "unit": "ECEB3C47"
     },
     "1230E4DA": {
+      "addonContainer": "FCBCC5A2",
       "config": "3E28860D",
       "configCost": 400,
       "unit": "ECEB3C44"
     },
     "1230E4DB": {
+      "addonContainer": "AC0575FB",
       "config": "3E28860C",
       "configCost": 400,
       "unit": "ECEB3C45"
@@ -186,16 +200,19 @@
       "unit": "358128DC"
     },
     "164C80E7": {
+      "addonContainer": "FEFF22A0",
       "cost": 33000,
       "maintenance": -145,
       "unit": "9122C84D"
     },
     "16C83FE7": {
+      "addonContainer": "7D7EF748",
       "cost": 37500,
       "maintenance": -450,
       "unit": "58612B15"
     },
     "16E35B82": {
+      "addonContainer": "678D4017",
       "cost": 225000,
       "maintenance": -600,
       "unit": "E9722544"
@@ -245,6 +262,7 @@
       "roadCost": 2
     },
     "185BEFDA": {
+      "addonContainer": "4C55CDFE",
       "config": "B88A4D18",
       "configCost": 400,
       "unit": "8391B938"
@@ -269,6 +287,7 @@
       "unit": "29A48C09"
     },
     "1A90129D": {
+      "addonContainer": "DF0F194A",
       "cost": 17000,
       "maintenance": -450,
       "unit": "94C243EB"
@@ -279,6 +298,7 @@
       "unit": "3A2900B1"
     },
     "1BE77B24": {
+      "addonContainer": "24E5D7ED",
       "cost": 7000,
       "maintenance": -25,
       "unit": "6BA94E36"
@@ -319,16 +339,19 @@
       "unit": "1A854114"
     },
     "1FF4EA25": {
+      "addonContainer": "ED9A904D",
       "config": "5F364514",
       "configCost": 400,
       "unit": "BEAA1C33"
     },
     "1FF4EA26": {
+      "addonContainer": "7DB65936",
       "config": "5F364517",
       "configCost": 400,
       "unit": "BEAA1C30"
     },
     "20FD2E32": {
+      "addonContainer": "36046740",
       "cost": 120000,
       "maintenance": -1700,
       "unit": "E02667A4"
@@ -339,6 +362,7 @@
       "unit": "E2DBBDBB"
     },
     "22404DF3": {
+      "addonContainer": "E8A9DDFF",
       "config": "9333796E",
       "configCost": 400,
       "unit": "412B4B21"
@@ -363,6 +387,7 @@
       "unit": "0D28D3F9"
     },
     "26D10B62": {
+      "addonContainer": "1C818EB6",
       "cost": 37500,
       "maintenance": -450,
       "unit": "1DEA21B0"
@@ -388,6 +413,7 @@
       "unit": "9C60CE00"
     },
     "29873FA2": {
+      "addonContainer": "7987C2C3",
       "cost": 16000,
       "maintenance": -400,
       "unit": "C264A268"
@@ -398,6 +424,7 @@
       "unit": "F6B22F02"
     },
     "2AF606C8": {
+      "addonContainer": "C3D8D7E8",
       "config": "BBB40603",
       "configCost": 400,
       "unit": "6514772E"
@@ -466,6 +493,7 @@
       "unit": "210C0C6D"
     },
     "33FAE703": {
+      "addonContainer": "9C9468C5",
       "cost": 9000,
       "maintenance": -300,
       "unit": "5244A0A5"
@@ -491,11 +519,13 @@
       "unit": "2EF0B784"
     },
     "376D6FFB": {
+      "addonContainer": "41CC51DC",
       "cost": 30000,
       "maintenance": -100,
       "unit": "57EA3A31"
     },
     "381F87FB": {
+      "addonContainer": "7027ACFA",
       "cost": 10000,
       "maintenance": -600,
       "unit": "B0A36B65"
@@ -526,6 +556,7 @@
       "unit": "BABF2EA3"
     },
     "3BE9CDA6": {
+      "addonContainer": "E547FF8B",
       "cost": 10000,
       "maintenance": -500,
       "unit": "572A12CC"
@@ -541,6 +572,7 @@
       "unit": "75C66B9D"
     },
     "3D965136": {
+      "addonContainer": "B05C3EFE",
       "config": "F1042EB1",
       "configCost": 400,
       "unit": "7BDF0A38"
@@ -591,16 +623,19 @@
       "unit": "DFBAD673"
     },
     "46173A50": {
+      "addonContainer": "E2C3A1B4",
       "config": "014389BD",
       "configCost": 400,
       "unit": "44969C52"
     },
     "46173A53": {
+      "addonContainer": "5D110E4F",
       "config": "014389BE",
       "configCost": 400,
       "unit": "44969C51"
     },
     "47190AD4": {
+      "addonContainer": "05FA89D1",
       "cost": 64000,
       "maintenance": -400,
       "unit": "DCA517F2"
@@ -611,6 +646,7 @@
       "unit": "C90C01AC"
     },
     "47DE4F86": {
+      "addonContainer": "25173F4B",
       "cost": 17500,
       "maintenance": -90,
       "unit": "156AFD30"
@@ -626,11 +662,13 @@
       "unit": "044B456E"
     },
     "49CC1D7B": {
+      "addonContainer": "474D6D2F",
       "config": "5421719E",
       "configCost": 400,
       "unit": "69F4E9F1"
     },
     "4A8E26DF": {
+      "addonContainer": "9D2EF585",
       "cost": 88000,
       "maintenance": -1600,
       "unit": "4250AE35"
@@ -661,6 +699,7 @@
       "unit": "423BA688"
     },
     "4FF4E214": {
+      "addonContainer": "D140F1A8",
       "config": "C09CF13F",
       "configCost": 400,
       "unit": "8A723BEE"
@@ -685,16 +724,19 @@
       "roadCost": 0
     },
     "546E7EA4": {
+      "addonContainer": "12122B11",
       "cost": 145000,
       "maintenance": -1300,
       "unit": "DA87B792"
     },
     "54B959B9": {
+      "addonContainer": "F3A0CDA5",
       "cost": 60000,
       "maintenance": -400,
       "unit": "263E0569"
     },
     "54B959BA": {
+      "addonContainer": "F3A0CDA6",
       "cost": 22500,
       "maintenance": -100,
       "unit": "85A5E95C"
@@ -705,6 +747,7 @@
       "unit": "75081487"
     },
     "55B4DF4F": {
+      "addonContainer": "7DB5F9E0",
       "cost": 45000,
       "maintenance": -750,
       "unit": "4722AB8D"
@@ -769,6 +812,7 @@
       "unit": "FF90B5AB"
     },
     "5F440583": {
+      "addonContainer": "646A72BE",
       "cost": 37500,
       "maintenance": -450,
       "unit": "405D7010"
@@ -779,6 +823,7 @@
       "unit": "7CC6A90D"
     },
     "60DD132D": {
+      "addonContainer": "807D55A5",
       "config": "68CFD01C",
       "configCost": 400,
       "unit": "797264EB"
@@ -864,11 +909,13 @@
       "unit": "80CA469F"
     },
     "6D0235EE": {
+      "addonContainer": "82E02B34",
       "cost": 20000,
       "maintenance": -400,
       "unit": "E917279C"
     },
     "6DE007F7": {
+      "addonContainer": "C19F12E7",
       "config": "6189F809",
       "configCost": 400,
       "unit": "6189F809"
@@ -920,6 +967,7 @@
       "unit": "BBF240B9"
     },
     "73DCC936": {
+      "addonContainer": "A0ABC8AF",
       "cost": 33500,
       "maintenance": -250,
       "unit": "243980BC"
@@ -929,11 +977,13 @@
       "roadCost": 0
     },
     "74A54D88": {
+      "addonContainer": "C2487690",
       "config": "03C62B7B",
       "configCost": 400,
       "unit": "C32C22B6"
     },
     "74A54D8B": {
+      "addonContainer": "716883CB",
       "config": "03C62B78",
       "configCost": 400,
       "unit": "C32C22B5"
@@ -963,6 +1013,7 @@
       "unit": "E608D9DA"
     },
     "79F3ED13": {
+      "addonContainer": "596C9AB0",
       "cost": 20000,
       "maintenance": -300,
       "unit": "0403377D"
@@ -988,6 +1039,7 @@
       "unit": "34E0E232"
     },
     "7A90E787": {
+      "addonContainer": "D05EB40B",
       "config": "B739AB42",
       "configCost": 400,
       "unit": "AC6D23F5"
@@ -1022,6 +1074,7 @@
       "unit": "DC933D24"
     },
     "7F2BE24E": {
+      "addonContainer": "051E6202",
       "config": "EB98F19D",
       "configCost": 400,
       "unit": "4B621B64"
@@ -1032,6 +1085,7 @@
       "unit": "E5138F44"
     },
     "81C8CD4A": {
+      "addonContainer": "D140F1A8",
       "config": "1D3D4A49",
       "configCost": 400,
       "unit": "342EE580"
@@ -1047,6 +1101,7 @@
       "unit": "AE936DEA"
     },
     "8251CB11": {
+      "addonContainer": "ACB98A42",
       "cost": 0,
       "maintenance": -200,
       "unit": "2D8850B8"
@@ -1072,6 +1127,7 @@
       "unit": "FDC3CD4B"
     },
     "83ABE66B": {
+      "addonContainer": "9F40C287",
       "config": "10E2F686",
       "configCost": 400,
       "unit": "5280A8E9"
@@ -1087,6 +1143,7 @@
       "unit": "A1AC62F5"
     },
     "8577904A": {
+      "addonContainer": "5D2C8B7F",
       "cost": 95000,
       "maintenance": -1700,
       "unit": "B40CD52C"
@@ -1126,6 +1183,7 @@
       "roadCost": 0
     },
     "8C4A3CD5": {
+      "addonContainer": "763FF179",
       "cost": 44000,
       "maintenance": -400,
       "unit": "244F51DB"
@@ -1150,16 +1208,19 @@
       "roadCost": 0
     },
     "8E67B653": {
+      "addonContainer": "CE1B6308",
       "cost": 30000,
       "maintenance": -400,
       "unit": "18D36A29"
     },
     "8F5E7184": {
+      "addonContainer": "8F21D478",
       "config": "3250D003",
       "configCost": 400,
       "unit": "788F8F9E"
     },
     "908629EA": {
+      "addonContainer": "4E12A6A6",
       "config": "05EBF0A0",
       "configCost": 400,
       "unit": "8D4EE6C0"
@@ -1200,6 +1261,7 @@
       "unit": "B739AB42"
     },
     "95434A56": {
+      "addonContainer": "30626E3F",
       "cost": 110000,
       "maintenance": -350,
       "unit": "AFE69AEC"
@@ -1301,11 +1363,13 @@
       "unit": "5418BEB6"
     },
     "9EFAE1F4": {
+      "addonContainer": "BD97E124",
       "cost": 85000,
       "maintenance": -1700,
       "unit": "A6B04F92"
     },
     "9FF1CAB9": {
+      "addonContainer": "82F1A2B5",
       "config": "88A0FE8B",
       "configCost": 120,
       "unit": "4DD31F1B"
@@ -1321,11 +1385,13 @@
       "unit": "735819AF"
     },
     "A0EED2D1": {
+      "addonContainer": "918887B1",
       "cost": 83000,
       "maintenance": -200,
       "unit": "A16FC27F"
     },
     "A11A3819": {
+      "addonContainer": "FC9848D6",
       "cost": 55000,
       "maintenance": -175,
       "unit": "ED00A9EF"
@@ -1361,6 +1427,7 @@
       "unit": "62A7BD23"
     },
     "A6E1B70B": {
+      "addonContainer": "533DC0BB",
       "cost": 37500,
       "maintenance": -450,
       "unit": "F7003B05"
@@ -1371,6 +1438,7 @@
       "unit": "8BC7733C"
     },
     "A94AAF37": {
+      "addonContainer": "34182A37",
       "config": "5418BEB6",
       "configCost": 400,
       "unit": "4D719039"
@@ -1400,6 +1468,7 @@
       "roadCost": 0
     },
     "AC8A698B": {
+      "addonContainer": "437AB00F",
       "config": "5A00207E",
       "configCost": 400,
       "unit": "59292C11"
@@ -1416,6 +1485,7 @@
       "unit": "E41F40BD"
     },
     "AF3EAA80": {
+      "addonContainer": "1E67365A",
       "cost": 60000,
       "maintenance": -1100,
       "unit": "64F750E2"
@@ -1426,6 +1496,7 @@
       "unit": "03CC91C5"
     },
     "B01CEDE4": {
+      "addonContainer": "88B9CF60",
       "cost": 42000,
       "maintenance": -500,
       "unit": "A826FA3E"
@@ -1446,6 +1517,7 @@
       "unit": "3D44730B"
     },
     "B4440028": {
+      "addonContainer": "0707E659",
       "cost": 22500,
       "maintenance": -125,
       "unit": "E619095A"
@@ -1471,6 +1543,7 @@
       "unit": "EDDEF58C"
     },
     "B655235F": {
+      "addonContainer": "F964E181",
       "cost": 85000,
       "maintenance": -500,
       "unit": "6EC857E9"
@@ -1496,6 +1569,7 @@
       "unit": "EED1642D"
     },
     "B7CBFC10": {
+      "addonContainer": "2D2A1A7D",
       "cost": 27500,
       "maintenance": -856,
       "unit": "6E296726"
@@ -1530,6 +1604,7 @@
       "unit": "C09CF13F"
     },
     "BC843E9B": {
+      "addonContainer": "1C7FE991",
       "cost": 8000,
       "maintenance": -80,
       "unit": "B5923139"
@@ -1564,6 +1639,7 @@
       "roadCost": 0
     },
     "C0A75B3A": {
+      "addonContainer": "3445A02E",
       "config": "025F1C3F",
       "configCost": 400,
       "unit": "7137A3C8"
@@ -1704,6 +1780,7 @@
       "roadCost": 0
     },
     "D44673F9": {
+      "addonContainer": "B125568D",
       "config": "86442B54",
       "configCost": 400,
       "unit": "FD446873"
@@ -1758,6 +1835,7 @@
       "unit": "DED37149"
     },
     "DC02CAED": {
+      "addonContainer": "8EC55325",
       "config": "27BC4C9C",
       "configCost": 400,
       "unit": "077E326B"
@@ -1783,6 +1861,7 @@
       "unit": "6109B7C0"
     },
     "DF2C1BBA": {
+      "addonContainer": "F575AD72",
       "config": "A0927CFC",
       "configCost": 400,
       "unit": "60D39CF4"
@@ -1803,6 +1882,7 @@
       "unit": "442C6C8D"
     },
     "E1D58211": {
+      "addonContainer": "00FA93C5",
       "cost": 260000,
       "maintenance": -450,
       "unit": "20C9774B"
@@ -1833,11 +1913,13 @@
       "unit": "545986D7"
     },
     "E8792D59": {
+      "addonContainer": "FAB93DB1",
       "cost": 40000,
       "maintenance": -375,
       "unit": "8357B87F"
     },
     "E8D7CA3D": {
+      "addonContainer": "CCAE5D2D",
       "config": "361B15CE",
       "configCost": 400,
       "unit": "74C549D3"
@@ -1878,6 +1960,7 @@
       "unit": "6413DAA4"
     },
     "EF12DD01": {
+      "addonContainer": "DC8602C9",
       "cost": 31000,
       "maintenance": -575,
       "unit": "C6C4E7D7"
@@ -1888,6 +1971,7 @@
       "unit": "BCA8451E"
     },
     "F0DBD6F2": {
+      "addonContainer": "FC6A5A82",
       "cost": 30000,
       "maintenance": -375,
       "unit": "F77983E4"
@@ -1989,6 +2073,98 @@
   },
   "format": "openscp-menu-costs/3",
   "source": "paths: piece 0x0E76A7E2 (cToolPathPlacer); plop: menuUnit 0x0975695F -> EcoGame 40E0C000 0x0A8A41DA/0x09AE19D7 (cToolPlop); submenus: unit children 0x07E0AD0A -> menuUnit reverse; fallback: config 0x0C8EE92F by 6C969DEE name",
+  "submenuContainers": {
+    "00A4D275": "27F869B9",
+    "05456823": "4DD662FB",
+    "069C4C4D": "2B32C2B2",
+    "09E6C73B": "E547FF8B",
+    "0ABBA7F9": "2353E3B9",
+    "0ABBA7FA": "BCA5FFC2",
+    "0DB10CE6": "7027ACFA",
+    "103A2DDC": "EDF68A04",
+    "1230E4D6": "1483C8AE",
+    "1230E4D7": "0D3F7E27",
+    "1230E4D8": "94337A40",
+    "1230E4D9": "D7EA0499",
+    "1230E4DA": "FCBCC5A2",
+    "1230E4DB": "AC0575FB",
+    "164C80E7": "FEFF22A0",
+    "16C83FE7": "7D7EF748",
+    "16E35B82": "678D4017",
+    "185BEFDA": "4C55CDFE",
+    "1A90129D": "DF0F194A",
+    "1BE77B24": "24E5D7ED",
+    "1FF4EA25": "ED9A904D",
+    "1FF4EA26": "7DB65936",
+    "20FD2E32": "36046740",
+    "22404DF3": "E8A9DDFF",
+    "26D10B62": "1C818EB6",
+    "29873FA2": "7987C2C3",
+    "2AF606C8": "C3D8D7E8",
+    "33FAE703": "9C9468C5",
+    "376D6FFB": "41CC51DC",
+    "381F87FB": "7027ACFA",
+    "3A4D2FDA": "150FF66E",
+    "3BE9CDA6": "E547FF8B",
+    "3D965136": "B05C3EFE",
+    "41CD00BB": "97550BAB",
+    "46173A50": "E2C3A1B4",
+    "46173A53": "5D110E4F",
+    "47190AD4": "05FA89D1",
+    "47DE4F86": "25173F4B",
+    "49CC1D7B": "474D6D2F",
+    "4A8E26DF": "9D2EF585",
+    "4FF4E214": "D140F1A8",
+    "546E7EA4": "12122B11",
+    "54B959B9": "F3A0CDA5",
+    "54B959BA": "F3A0CDA6",
+    "55B4DF4F": "7DB5F9E0",
+    "5F440583": "646A72BE",
+    "60DD132D": "807D55A5",
+    "6D0235EE": "82E02B34",
+    "6DE007F7": "C19F12E7",
+    "73DCC936": "A0ABC8AF",
+    "74A54D88": "C2487690",
+    "74A54D8B": "716883CB",
+    "78B21E35": "1652CA49",
+    "78B21E36": "E1B1C012",
+    "79F3ED13": "596C9AB0",
+    "7A90E787": "D05EB40B",
+    "7F2BE24E": "051E6202",
+    "81C8CD4A": "D140F1A8",
+    "8251CB11": "ACB98A42",
+    "83ABE66B": "9F40C287",
+    "8577904A": "5D2C8B7F",
+    "8C4A3CD5": "763FF179",
+    "8E67B653": "CE1B6308",
+    "8F5E7184": "8F21D478",
+    "908629EA": "4E12A6A6",
+    "95434A56": "30626E3F",
+    "9D122A62": "4B4D8D42",
+    "9EFAE1F4": "BD97E124",
+    "9FF1CAB9": "82F1A2B5",
+    "A0EED2D1": "918887B1",
+    "A11A3819": "FC9848D6",
+    "A6E1B70B": "533DC0BB",
+    "A94AAF37": "34182A37",
+    "AC8A6988": "57285274",
+    "AC8A698B": "437AB00F",
+    "AF3EAA80": "1E67365A",
+    "B01CEDE4": "88B9CF60",
+    "B4440028": "0707E659",
+    "B655235F": "F964E181",
+    "B7CBFC10": "2D2A1A7D",
+    "BC843E9B": "1C7FE991",
+    "C0A75B3A": "3445A02E",
+    "D44673F9": "B125568D",
+    "DC02CAED": "8EC55325",
+    "DF2C1BBA": "F575AD72",
+    "E1D58211": "00FA93C5",
+    "E8792D59": "FAB93DB1",
+    "E8D7CA3D": "CCAE5D2D",
+    "EF12DD01": "DC8602C9",
+    "F0DBD6F2": "FC6A5A82"
+  },
   "submenus": {
     "00A4D275": [
       {

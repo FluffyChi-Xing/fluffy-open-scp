@@ -10,6 +10,28 @@ import { command, TauriUnavailableError } from "@/api/tauri";
 
 const cache = new Map<string, string>();
 
+/** 菜单条目的图标/大图走完整 TGI 引用（toolIconKey/marquee 键的目标资源）。 */
+export async function gameAssetTgiDataUrl(
+  type: number,
+  instance: number,
+  group?: number,
+): Promise<string | null> {
+  const key = `tgi:${type.toString(16)}:${instance.toString(16)}:${group ?? "*"}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+  try {
+    const result = await command<{ dataBase64: string; mime: string }>("game_asset", {
+      request: { tgi: { type, instance, group } },
+    });
+    const url = `data:${result.mime};base64,${result.dataBase64}`;
+    cache.set(key, url);
+    return url;
+  } catch (error) {
+    if (error instanceof TauriUnavailableError) return null;
+    return null;
+  }
+}
+
 export async function gameAssetDataUrl(refPath: string): Promise<string | null> {
   const cached = cache.get(refPath);
   if (cached) return cached;

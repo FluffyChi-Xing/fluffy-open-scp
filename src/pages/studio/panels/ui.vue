@@ -14,6 +14,7 @@ import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FImageCropper from "@/components/extensions/FImageCropper.vue";
 import MenuSheetBody from "../components/menu-form/MenuSheetBody.vue";
+import type { CopyTargetNode } from "../components/menu-form/MenuTargetTree.vue";
 import type { ReplicaSubmenuItem } from "@/lib/game-ui/replica/types";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
@@ -128,10 +129,36 @@ watch(editingEntry, (entry) => {
 const memberships = computed(() =>
   editingEntry.value ? store.membershipsOf(editingEntry.value.tool.id) : [],
 );
-/** 复制目标候选：真实容器（当前视图 + 跨视图的大学子菜单）与自定义菜单。 */
-const copyTargets = computed(() =>
-  editingEntry.value ? store.copyTargetMenus(editingEntry.value.menuId) : [],
-);
+/** 复制目标树：当前视角的一级菜单为根；带子菜单容器的建筑为第二层
+ * （选中建筑 = 复制进该建筑的子菜单容器）。 */
+const copyTargets = computed<CopyTargetNode[]>(() => {
+  const entry = editingEntry.value;
+  if (!entry) return [];
+  const menuId = entry.menuId;
+  const containers = store.submenuContainerTargets();
+  const byTopMenu = new Map<string, CopyTargetNode[]>();
+  for (const target of containers) {
+    if (target.menuId === entry.tool.id) continue;
+    for (const [catId, tools] of Object.entries(store.replica?.tools ?? {})) {
+      if (!tools.some((tool) => tool.instance === target.menuId)) continue;
+      if (!byTopMenu.has(catId)) byTopMenu.set(catId, []);
+      byTopMenu.get(catId)!.push({
+        id: target.container,
+        label: t("studio.workbench.submenuOf", { name: target.building || target.menuId }),
+        kind: "container",
+      });
+      break;
+    }
+  }
+  return store.categories
+    .filter((category) => category.id !== menuId && !category.id.startsWith("REGION-"))
+    .map((category) => ({
+      id: category.id,
+      label: category.label,
+      kind: "menu" as const,
+      children: byTopMenu.get(category.id),
+    }));
+});
 
 /** 当前条目的建筑子菜单（costs.json 反查产物；无则不显示）。 */
 const submenus = computed(() =>
@@ -143,13 +170,18 @@ function onOpenSubmenu(item: ReplicaSubmenuItem): void {
   store.openSubmenuItem(item);
 }
 
-/** 复制到目标菜单并立即编辑副本（SCP Copy Entry 语义）。 */
-function onCopyTo(targetId: string): void {
+/** 复制到目标（SCP Copy Entry 语义）：一级菜单走分类副本；
+ * 建筑子菜单容器走容器副本（导出为该容器的归属）。 */
+function onCopyTo(target: CopyTargetNode): void {
   const entry = editingEntry.value;
   if (!entry) return;
-  const created = store.duplicateToMenu(entry.menuId, entry.tool.id, targetId);
+  if (target.kind === "container") {
+    store.duplicateToContainer(entry.menuId, entry.tool.id, target.id);
+    return;
+  }
+  const created = store.duplicateToMenu(entry.menuId, entry.tool.id, target.id);
   if (!created) return;
-  store.enterMenu(targetId);
+  store.enterMenu(target.id);
   store.editingEntry = created;
 }
 

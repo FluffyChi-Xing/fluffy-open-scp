@@ -79,6 +79,8 @@ export interface MenuCostIndex {
   costs: Record<string, MenuCostHit>;
   /** 建筑子菜单（menuUnit 子单位反查的模块菜单条目）。 */
   submenus?: Record<string, ReplicaSubmenuItem[]>;
+  /** 菜单条目 instance → 建筑子菜单容器 instance（0x0AFE27CA 反查）。 */
+  submenuContainers?: Record<string, string>;
 }
 
 /** 把造价索引合并进复刻工具表：只填 cost/upkeep 为空的条目。
@@ -225,6 +227,9 @@ async function loadCostIndex(): Promise<MenuCostIndex> {
 function mergeSubmenus(data: ReplicaData, index: MenuCostIndex): void {
   if (index.submenus && Object.keys(index.submenus).length > 0) {
     data.submenus = { ...(data.submenus ?? {}), ...index.submenus };
+  }
+  if (index.submenuContainers && Object.keys(index.submenuContainers).length > 0) {
+    data.submenuContainers = { ...(data.submenuContainers ?? {}), ...index.submenuContainers };
   }
 }
 

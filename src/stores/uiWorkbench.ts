@@ -249,10 +249,13 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     for (const [menuId, additions] of Object.entries(added.value)) {
       if (additions.length === 0) continue;
       if (out.some(({ category }) => category.id === menuId)) continue;
-      const items = menuId === UNIVERSITY_MENU_CONTAINER ? universityItems.value : [];
-      const label = menuId === UNIVERSITY_MENU_CONTAINER
-        ? universityLabel()
-        : additions[0]?.label ?? menuId;
+      const items: WorkbenchTool[] =
+        menuId === UNIVERSITY_MENU_CONTAINER ? universityItems.value : [];
+      // 任意 hex 容器（建筑子菜单容器等）都能成为导出行：标签取容器语义名
+      const label =
+        menuId === UNIVERSITY_MENU_CONTAINER
+          ? universityLabel()
+          : (containerLabelOf(menuId) ?? additions[0]?.label ?? menuId);
       out.push(effectiveEntries({ id: menuId, label, icon: null, items }));
     }
     return out;
@@ -421,6 +424,58 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
 
   /** 副本的工作台 id：可读（COPY-<源id>-<目标>-<n>）；编译时按非游戏
    * instance 走 FNV 分配新身份，与源条目互不覆盖。 */
+  /** 容器语义名：反查哪栋建筑的子菜单容器是该 instance，取建筑名。 */
+  function containerLabelOf(containerHex: string): string | null {
+    const map = replica.value?.submenuContainers ?? {};
+    const menu = Object.entries(map).find(([, container]) => container === containerHex)?.[0];
+    if (!menu) return null;
+    for (const tools of Object.values(replica.value?.tools ?? {})) {
+      const hit = tools.find((tool) => tool.instance === menu);
+      if (hit?.label) return hit.label;
+    }
+    return null;
+  }
+
+  /** 建筑子菜单容器目标全集（树选择器第二层：建筑 → 容器）。 */
+  function submenuContainerTargets(): { menuId: string; building: string; container: string }[] {
+    const map = replica.value?.submenuContainers ?? {};
+    const out: { menuId: string; building: string; container: string }[] = [];
+    for (const [menu, container] of Object.entries(map)) {
+      let building = "";
+      for (const tools of Object.values(replica.value?.tools ?? {})) {
+        const hit = tools.find((tool) => tool.instance === menu);
+        if (hit?.label) {
+          building = hit.label;
+          break;
+        }
+      }
+      out.push({ menuId: menu, building, container });
+    }
+    return out;
+  }
+
+  /** 拷贝进任意建筑子菜单容器（容器 instance 必须是游戏 hex id）。
+   * 容器不是可浏览分类 —— 副本通过 schema diff / 编译导出体现。 */
+  function duplicateToContainer(sourceMenuId: string, itemId: string, containerHex: string): MenuEntry | null {
+    if (!/^[0-9A-F]{8}$/.test(containerHex)) return null;
+    const source = categories.value.find((category) => category.id === sourceMenuId);
+    if (!source) return null;
+    const base = source.items.find((tool) => tool.id === itemId)
+      ?? (added.value[sourceMenuId] ?? []).find((tool) => tool.id === itemId);
+    if (!base) return null;
+    const snapshot = applyEdit(base, edits.value[itemId]);
+    const targetAdditions = added.value[containerHex] ?? [];
+    let salt = 0;
+    let copyId = copyToolId(itemId, containerHex, salt);
+    while (targetAdditions.some((tool) => tool.id === copyId)) {
+      copyId = copyToolId(itemId, containerHex, ++salt);
+    }
+    const maxPos = targetAdditions.reduce((max, tool) => Math.max(max, tool.pos), 0);
+    const copy: WorkbenchTool = { ...snapshot, id: copyId, pos: maxPos + 10 };
+    added.value = { ...added.value, [containerHex]: [...targetAdditions, copy] };
+    return { menuId: containerHex, tool: copy, isNew: true };
+  }
+
   function copyToolId(sourceId: string, targetMenuId: string, salt: number): string {
     const suffix = salt === 0 ? "" : `-${salt}`;
     return `COPY-${sourceId}-${targetMenuId}${suffix}`;
@@ -761,6 +816,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     addItem,
     addUniversitySidewalkToRoad,
     duplicateToMenu,
+    duplicateToContainer,
+    submenuContainerTargets,
+    containerLabelOf,
     membershipsOf,
     copyTargetMenus,
     removeItem,

@@ -157,4 +157,6 @@ export interface ReplicaData {
   subtabs?: Record<string, ReplicaSubtab[]>;
   /** 建筑子菜单（costs.json 产物；缺省无）。 */
   submenus?: Record<string, ReplicaSubmenuItem[]>;
+  /** 建筑子菜单容器（菜单条目 instance → 容器 instance；复制目标用）。 */
+  submenuContainers?: Record<string, string>;
 }

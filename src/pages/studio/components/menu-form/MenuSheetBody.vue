@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import FSelect, { type SelectOption } from "@/components/ui/FSelect.vue";
+import MenuTargetTree, { type CopyTargetNode } from "./MenuTargetTree.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { Switch } from "@/components/ui/switch";
 import type { ReplicaSubmenuItem } from "@/lib/game-ui/replica/types";
@@ -26,9 +26,9 @@ const model = defineModel<{
   stats: { label: string; value: string }[];
 }>({ required: true });
 
-const props = defineProps<{
+defineProps<{
   memberships: { id: string; label: string }[];
-  copyTargets: { id: string; label: string }[];
+  copyTargets: CopyTargetNode[];
   /** 建筑子菜单条目（costs.json 反查；无则不渲染该分区）。 */
   submenus?: ReplicaSubmenuItem[];
   /** 当前层来自子菜单（隐藏删除/复制到菜单等仅一级可用的动作）。 */
@@ -37,20 +37,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "crop", target: "preview" | "marquee"): void;
-  (e: "copy", targetId: string): void;
+  (e: "copy", target: CopyTargetNode): void;
   (e: "open-submenu", item: ReplicaSubmenuItem): void;
 }>();
 
 /* ── 复制到菜单 ── */
-const copyTargetId = ref("");
-const copyOptions = computed<SelectOption[]>(() =>
-  props.copyTargets.map((menu) => ({ label: menu.label, value: menu.id })),
-);
-const copyReady = computed(() => copyTargetId.value !== "");
+const copyTarget = ref<CopyTargetNode | null>(null);
+const copyReady = computed(() => copyTarget.value !== null);
 function onCopy(): void {
-  if (!copyTargetId.value) return;
-  emit("copy", copyTargetId.value);
-  copyTargetId.value = "";
+  if (!copyTarget.value) return;
+  emit("copy", copyTarget.value);
+  copyTarget.value = null;
 }
 
 /* ── 统计行 ── */
@@ -94,10 +91,10 @@ function removeStat(index: number): void {
       <div class="field">
         <span>{{ t('studio.workbench.copyTo') }}</span>
         <div class="copy-row">
-          <FSelect
-            v-model="copyTargetId"
-            :options="copyOptions"
-            :aria-label="t('studio.workbench.copyTo')"
+          <MenuTargetTree
+            v-model="copyTarget"
+            :nodes="copyTargets"
+            :placeholder="t('studio.workbench.copyTargetPlaceholder')"
           />
           <button type="button" class="copy-btn" :disabled="!copyReady" @click="onCopy">
             {{ t('studio.workbench.copyAction') }}
