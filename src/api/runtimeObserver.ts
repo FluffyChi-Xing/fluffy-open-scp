@@ -5,7 +5,7 @@ export interface ObserverStatus { running: boolean; pid?: number; directory?: st
 
 export const runtimeObserver = {
   listProcesses: () => command<GameProcess[]>("observer_list_processes"),
-  start: (pid: number, seconds = 60) => command<ObserverStatus>("observer_start", { pid, seconds }),
+  start: (pid: number, seconds = 60, profile = "balanced") => command<ObserverStatus>("observer_start", { pid, seconds, profile }),
   stop: () => command<ObserverStatus>("observer_stop"),
   status: () => command<ObserverStatus>("observer_status"),
   sync: () => command<number>("observer_sync"),

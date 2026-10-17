@@ -12,6 +12,7 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FButton from "@/components/ui/FButton.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
+import FSelect from "@/components/ui/FSelect.vue";
 import LogStream from "./LogStream.vue";
 import DiagnosticWorkbench from "./DiagnosticWorkbench.vue";
 import {
@@ -32,6 +33,7 @@ const status = ref(empty());
 const captureEpoch = ref(0);
 const processes = ref<GameProcess[]>([]);
 const selectedPid = ref<number>();
+const profile = ref("balanced");
 const error = ref("");
 const displayError = computed(() => {
   try {
@@ -53,6 +55,14 @@ const processMenuOpen = computed({
 });
 const selectedProcess = computed(() =>
   processes.value.find((p) => p.pid === selectedPid.value),
+);
+const profileOptions = computed(() =>
+  ["balanced", "ui-events", "bridge-commands", "engine-messages"].map(
+    (value) => ({
+      value,
+      label: t(`runtimeObserver.profile.${value}.label`),
+    }),
+  ),
 );
 let timer: ReturnType<typeof setTimeout> | undefined;
 let active = false;
@@ -129,7 +139,7 @@ async function start() {
   status.value = empty();
   processMenu.value = false;
   try {
-    const next = await runtimeObserver.start(selectedPid.value, 60);
+    const next = await runtimeObserver.start(selectedPid.value, 60, profile.value);
     if (active) status.value = next;
     else await runtimeObserver.stop();
   } catch (e) {
@@ -260,6 +270,20 @@ onBeforeUnmount(release);
                 @click="scan"
                 >{{ t("runtimeObserver.scan") }}</FButton
               >
+            </div>
+            <div class="controls">
+              <label class="profile-picker">
+                <span>{{ t("runtimeObserver.profileLabel") }}</span>
+                <FSelect
+                  v-model="profile"
+                  :options="profileOptions"
+                  :disabled="status.running || busy"
+                  :aria-label="t('runtimeObserver.profileLabel')"
+                />
+              </label>
+              <p class="profile-description">
+                {{ t(`runtimeObserver.profile.${profile}.description`) }}
+              </p>
             </div>
             <div class="controls">
               <FButton
@@ -418,6 +442,30 @@ dt {
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+.profile-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(100%, 260px);
+}
+.profile-picker :deep(.f-select-anchor) {
+  flex: 0 1 150px;
+  width: 150px;
+}
+.profile-picker :deep(.f-select) {
+  min-height: 30px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.profile-description {
+  max-width: 420px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
 }
 .process-chevron {
   display: block;

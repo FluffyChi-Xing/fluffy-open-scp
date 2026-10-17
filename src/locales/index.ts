@@ -113,6 +113,13 @@ const messages = {
       streamDescription: "页面离开后释放；关键事件摘要同步到活动数据库。",
       memoryOnly: "内存流",
       noLogs: "开始捕获后，日志会出现在这里。",
+      profileLabel: "采样预设",
+      profile: {
+        balanced: { label: "均衡观察", description: "各 UI bridge 通道使用默认限额。" },
+        "ui-events": { label: "UI 事件", description: "提高事件与区域事件额度，适合观察城市界面事件。" },
+        "bridge-commands": { label: "桥接命令", description: "提高 command/query/result 额度，适合追踪 UI bridge 调用。" },
+        "engine-messages": { label: "引擎消息", description: "提高 console/other/result 额度，适合观察 EAWebKit 消息。" },
+      },
       category: {
         resource: "资源",
         simulation: "模拟",
@@ -1813,6 +1820,13 @@ const messages = {
       streamDescription: "Released when you leave this page; key event summaries sync to the activity database.",
       memoryOnly: "Memory only",
       noLogs: "Logs will appear here after capture starts.",
+      profileLabel: "Sampling profile",
+      profile: {
+        balanced: { label: "Balanced", description: "Use the default limits for each UI bridge channel." },
+        "ui-events": { label: "UI events", description: "Raise event and region limits for city interface events." },
+        "bridge-commands": { label: "Bridge commands", description: "Raise command/query/result limits for UI bridge calls." },
+        "engine-messages": { label: "Engine messages", description: "Raise console/other/result limits for EAWebKit messages." },
+      },
       category: {
         resource: "Resource",
         simulation: "Simulation",

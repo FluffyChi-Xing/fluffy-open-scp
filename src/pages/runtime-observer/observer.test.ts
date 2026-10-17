@@ -151,7 +151,7 @@ describe("observer controls", () => {
       .find((b) => b.text().includes("开始捕获"))!
       .trigger("click");
     await flushPromises();
-    expect(runtimeObserver.start).toHaveBeenCalledWith(5, 60);
+    expect(runtimeObserver.start).toHaveBeenCalledWith(5, 60, "balanced");
     expect(w.find('[role="alert"]').text()).toContain(
       "未找到通过校验的网页绑定",
     );

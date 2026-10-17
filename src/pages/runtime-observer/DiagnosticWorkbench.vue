@@ -376,11 +376,15 @@ input[type="search"] {
   margin: 8px 0 0;
 }
 .category-filter :deep(.f-select-anchor) {
-  width: 190px;
+  width: 160px;
 }
 .category-filter :deep(.f-select) {
-  min-width: 190px;
+  min-width: 160px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 8px;
   font-size: 12px;
+  line-height: 1.2;
 }
 .diagnostics :deep(.f-button) {
   min-height: 28px;
