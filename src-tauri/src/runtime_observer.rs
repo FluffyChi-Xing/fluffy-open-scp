@@ -44,7 +44,7 @@ pub async fn observer_list_processes() -> Result<Vec<GameProcess>, CommandError>
 }
 
 #[tauri::command]
-pub async fn observer_start(state: State<'_, AppState>, pid: u32, seconds: Option<u32>) -> Result<ObserverStatus, CommandError> {
+pub async fn observer_start(state: State<'_, AppState>, pid: u32, seconds: Option<u32>, profile: Option<String>) -> Result<ObserverStatus, CommandError> {
     let manager = state.observer.clone();
     manager.reap();
     let mut child_guard = manager.child.lock().unwrap();
@@ -56,7 +56,8 @@ pub async fn observer_start(state: State<'_, AppState>, pid: u32, seconds: Optio
     let stderr = std::fs::File::create(dir.with_extension("stderr")).map_err(|e| CommandError::internal(e.to_string()))?;
     let mut command = Command::new("python");
     #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
-    let child = command.current_dir(&root).args([script.to_string_lossy().as_ref(), "--pid", &pid.to_string(), "--seconds", &seconds.unwrap_or(60).to_string(), "--directory", dir.to_string_lossy().as_ref()]).stdout(Stdio::null()).stderr(Stdio::from(stderr)).spawn().map_err(|e| CommandError::internal(format!("failed to start observer: {e}")))?;
+    let profile = profile.unwrap_or_else(|| "balanced".into());
+    let child = command.current_dir(&root).args([script.to_string_lossy().as_ref(), "--pid", &pid.to_string(), "--seconds", &seconds.unwrap_or(60).to_string(), "--profile", &profile, "--directory", dir.to_string_lossy().as_ref()]).stdout(Stdio::null()).stderr(Stdio::from(stderr)).spawn().map_err(|e| CommandError::internal(format!("failed to start observer: {e}")))?;
     *child_guard = Some(child); *manager.pid.lock().unwrap() = Some(pid); *manager.directory.lock().unwrap() = Some(dir); *manager.cursor.lock().unwrap() = 0; *manager.synced.lock().unwrap() = 0;
     Ok(ObserverStatus { running: true, pid: Some(pid), directory: manager.directory.lock().unwrap().as_ref().map(|p| p.to_string_lossy().to_string()), records: 0, synced: 0, status: None, recent: Vec::new(), event_counts: HashMap::new() })
 }

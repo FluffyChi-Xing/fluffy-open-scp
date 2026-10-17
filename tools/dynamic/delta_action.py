@@ -30,13 +30,17 @@ def _read_i32_be(data: bytes, offset: int) -> int:
     return struct.unpack_from(">i", data, offset)[0]
 
 
-def decode_action_header(data: bytes, offset: int = 0) -> ActionHeader:
+def decode_action_header(data: bytes, offset: int = 0, *, stream_version: int) -> ActionHeader:
     """Decode one ``EncodeActionHeader`` value from *data*.
 
-    The retail/development implementation writes the 32-bit header in big
-    endian. ``0xfffe`` and ``0x3e`` are extension markers; ``0xffff`` and
-    ``0x3f`` encode -1. The returned ``header_size`` includes extensions.
+    Both builds write the header big endian. data1 uses 0xfffe/0xffff.
+    Retail DecodeActionHeader (VA 0x5cc1d0, known offline build) selects
+    data2 markers 0x3e/0x3f for stream versions below 0x1b and 0xfe/0xff
+    otherwise. The stream version is NOT the outer MFS envelope version 4.
+    Require the caller to supply it rather than guessing from payload bytes.
     """
+    if isinstance(stream_version, bool) or not isinstance(stream_version, int) or stream_version < 0:
+        raise DeltaDecodeError("stream_version must be a non-negative integer")
     if offset < 0 or offset + 4 > len(data):
         raise DeltaDecodeError("truncated action header")
     header = struct.unpack_from(">I", data, offset)[0]
@@ -61,9 +65,10 @@ def decode_action_header(data: bytes, offset: int = 0) -> ActionHeader:
     else:
         data1 = raw_data1
 
-    if raw_data2 == 0x3F:
+    extension2 = 0x3E if stream_version < 0x1B else 0xFE
+    if raw_data2 == extension2 + 1:
         data2 = -1
-    elif raw_data2 == 0x3E:
+    elif raw_data2 >= extension2:
         data2 = _read_i32_be(data, cursor)
         cursor += 4
     else:
@@ -72,7 +77,7 @@ def decode_action_header(data: bytes, offset: int = 0) -> ActionHeader:
     return ActionHeader(offset, action_id, data1, data2, header, cursor - offset)
 
 
-def iter_action_headers(data: bytes, *, offset: int = 0, limit: Optional[int] = None):
+def iter_action_headers(data: bytes, *, stream_version: int, offset: int = 0, limit: Optional[int] = None):
     """Yield headers until bytes end or *limit* records are reached.
 
     This is useful for probing a raw stream. It stops at the first byte that
@@ -83,7 +88,7 @@ def iter_action_headers(data: bytes, *, offset: int = 0, limit: Optional[int] = 
     cursor = offset
     while cursor + 4 <= len(data) and (limit is None or count < limit):
         try:
-            record = decode_action_header(data, cursor)
+            record = decode_action_header(data, cursor, stream_version=stream_version)
         except DeltaDecodeError:
             return
         yield record

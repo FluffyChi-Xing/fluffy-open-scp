@@ -126,6 +126,12 @@ python -m unittest discover -s tools/dynamic/ui-observer -p test_eawebkit_runtim
 python tools/dynamic/ui-observer/native_trace.py --pid <当前PID> --seconds 120 --directory tmp/ui-native-new
 ```
 
+原生观察器支持有界采样预设：`balanced`（默认）、`ui-events`、`bridge-commands`、`engine-messages`。预设只调整已验证 UI bridge / EAWebKit 通道的每秒额度，不代表资源、建筑或交通模拟 native 日志；这些专题仍需独立探针。
+
+```powershell
+python tools/dynamic/ui-observer/native_trace.py --pid <当前PID> --profile ui-events --seconds 60 --directory tmp/ui-native-events
+```
+
 准备阶段重新校验 EXE/DLL 指纹、绑定对象和入口字节，不接受任意地址参数。目标为 EXE RVA `0x632930`（Client.invokeMethod）和 DLL RVA `0x5AC490`（ChromeClientEA::addMessageToConsole）。后者是已核对的日志构造函数入口，不 hook 多个回调共用的 DebugLog 空函数。目标均用实际模块基址加 RVA。
 
 第一类记录只有方法名、参数数量、线程、绑定页面、序号和时间；不读取 JavascriptValue 参数内容。第二类复制最多 512 UTF-16 字符的控制台文本/来源、行号和等级。两类保留原调用；没有返回值替换。页面切换产生的新绑定不自动纳入首轮配置。

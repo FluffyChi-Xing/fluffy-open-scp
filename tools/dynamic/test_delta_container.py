@@ -19,9 +19,9 @@ class DeltaContainerTests(unittest.TestCase):
         self.assertEqual(version, 4)
         self.assertEqual([(r.delta_id, r.size, r.payload) for r in rows], [(10, 27, b"abc"), (12, 28, b"defg")])
 
-    def test_rejects_backwards_ids(self):
-        with self.assertRaises(DeltaContainerError):
-            parse_records(struct.pack("<I", 4) + record(10, b"") + record(9, b""))
+    def test_preserves_backwards_ids_in_file_order(self):
+        _, rows = parse_records(struct.pack("<I", 4) + record(10, b"") + record(9, b""))
+        self.assertEqual([r.delta_id for r in rows], [10, 9])
 
     def test_rejects_truncated_record(self):
         with self.assertRaises(DeltaContainerError):

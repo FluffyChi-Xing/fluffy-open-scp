@@ -12,7 +12,7 @@ const PROP_FIXTURE =
   "000000050977aa8f0020000083f06c632f7d000440e024000a09f5fa002200006c969dee64ec016b0dc1e3e0000900000000012c0eb1fc0500220030000000020000000850aa0bea0eb1fe4150aa0bea0eb1fe440f1a181d0001000001";
 
 const DBPF_FIXTURE =
-  "444250460300000000000000000000000000000000000000000000000000000000000000020000000000000040000000000000000000000000000000030000006000000000000000000000000000000000000000000000000000000000000000040000000000000004b1b100018a870934800864a0000000030000000300000000000000f0ea980a01bffa0201000000a30000000200000002000000000000000102034142";
+  "444250460300000000000000000000000000000000000000000000000000000000000000020000000000000040000000000000000000000000000000030000006000000000000000000000000000000000000000000000000000000000000000040000000000000004b1b100018a870934800864a0000000030000800300000000000000f0ea980a01bffa0201000000a30000000200008002000000000000000102034142";
 
 describe("encodePropertyFile（对拍 Rust encode_canonical）", () => {
   const entries: PropEntry[] = [
@@ -97,5 +97,26 @@ describe("writeUncompressedOverlay（对拍 Rust write_uncompressed_overlay）",
 
   it("拒绝重复 TGI", () => {
     expect(() => writeUncompressedOverlay([entries[0], entries[0]])).toThrow();
+  });
+
+  it("按游戏可选字段规则读取多条索引，不发生四字节错位", () => {
+    const bytes = writeUncompressedOverlay(entries);
+    const view = new DataView(bytes.buffer);
+    let cursor = 104;
+    for (const expected of [entries[1], entries[0]]) {
+      expect(view.getUint32(cursor, true)).toBe(expected.type);
+      expect(view.getUint32(cursor + 4, true)).toBe(expected.group);
+      expect(view.getUint32(cursor + 8, true)).toBe(expected.instance);
+      const offset = view.getUint32(cursor + 12, true);
+      const sizeField = view.getUint32(cursor + 16, true);
+      const size = sizeField & 0x7fffffff;
+      cursor += 24;
+      if (sizeField & 0x80000000) {
+        expect(view.getUint32(cursor, true)).toBe(0);
+        cursor += 4;
+      }
+      expect(bytes.slice(offset, offset + size)).toEqual(expected.data);
+    }
+    expect(cursor).toBe(view.getUint32(64, true) + view.getUint32(44, true));
   });
 });

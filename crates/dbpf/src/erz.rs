@@ -121,7 +121,8 @@ pub struct ErzSummary {
 ///
 /// 受支持的布局（record == `SUPPORTED_LAYOUT`）完整走一遍流（含全部规则
 /// 记录的形状校验），任何布局错位都会在这里报错而不是产出错误摘要。
-/// 旧补丁布局（record != 14，游戏已不读取的残留包）降级为仅解析文件头，
+/// 本解析器尚不支持的旧布局（record != 14）降级为仅解析文件头；
+/// 零售游戏仍可读取部分旧布局，不能据解析器能力判断包是否被游戏加载。
 /// `layout_supported=false`、`exact=false`。
 pub fn parse_summary(data: &[u8]) -> Result<ErzSummary, ErzError> {
     let mut r = Reader::new(data);
@@ -146,8 +147,8 @@ pub fn parse_summary(data: &[u8]) -> Result<ErzSummary, ErzError> {
     }
     for i in 0..rule_count {
         let name_hash = r.u32()?;
-        r.skip(4)?; // 伴随哈希（模块/作用域归属，推断）
-        r.skip(4)?; // f2
+        r.skip(4)?; // RuleBase.mFlags（零售 Read 0x5FDB00）
+        r.skip(4)?; // RuleBase.mSimInfo.mOffset
         for _ in 0..5 {
             r.skip(8)?; // (p, q) 条件/动作对
         }

@@ -1,0 +1,12 @@
+[
+  {
+    "sequence": 2,
+    "time": 1792170997866,
+    "threadId": 14496,
+    "channel": "engine.console",
+    "text": {
+      "text": "=== Instancing can be enabled\n",
+      "truncated": false
+    }
+  }
+]

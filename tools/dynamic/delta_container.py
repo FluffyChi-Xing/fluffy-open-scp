@@ -37,7 +37,6 @@ def parse_records(data: bytes) -> tuple[int, list[DeltaRecord]]:
     version = struct.unpack_from("<I", data, 0)[0]
     records: list[DeltaRecord] = []
     cursor = 4
-    previous_id = None
     while cursor < len(data):
         if cursor + HEADER_SIZE > len(data):
             raise DeltaContainerError(f"truncated record header at {cursor}")
@@ -49,10 +48,7 @@ def parse_records(data: bytes) -> tuple[int, list[DeltaRecord]]:
         end = cursor + size
         if end > len(data):
             raise DeltaContainerError(f"truncated record at {cursor}: need {size} bytes")
-        if previous_id is not None and delta_id < previous_id:
-            raise DeltaContainerError(f"delta id moved backwards at {cursor}")
         records.append(DeltaRecord(cursor, size, delta_id, sim_ticks, kind, data[cursor + HEADER_SIZE:end]))
-        previous_id = delta_id
         cursor = end
     return version, records
 

@@ -30,11 +30,19 @@ TEXT = {
               "event_entry": "Event entry bytes do not match; another observer may be active",
               "invoke_entry": "Invoke or log entry bytes do not match; another observer may be active", "duration": "Capture duration must be 5–300 seconds"},
 }
+PROFILES = {
+    'balanced': {},
+    'ui-events': {'event': 240, 'region': 120, 'regionResult': 120},
+    'bridge-commands': {'command': 240, 'query': 120, 'result': 120},
+    'engine-messages': {'console': 240, 'other': 160, 'result': 120},
+}
 
 
-def prepare(pid, seconds, directory):
+def prepare(pid, seconds, directory, profile='balanced'):
     if not 5 <= seconds <= 300:
         raise ValueError('duration')
+    if profile not in PROFILES:
+        raise ValueError('profile')
     survey = inspect(pid, views=True)
     candidates = survey.get('views', {}).get('candidates', [])
     bindings = []
@@ -77,7 +85,8 @@ def prepare(pid, seconds, directory):
     config = {'exeModule': 'SimCity.exe', 'dllModule': 'EAWebKit.dll',
               'eventRva': 0x62F500, 'eventBytes': event, 'eventSites': sites,
               'objectVtableRva': 0x777B08, 'arrayVtableRva': 0x870CD0, 'arrayDepth': 6, 'objectDepth': 7, 'valueBudget': 256, 'invokeRva': 0x632930, 'logRva': 0x5AC490, 'invokeBytes': invoke,
-              'valueVtableRva': 0x778A88, 'logBytes': logger, 'bindings': bindings, 'seconds': seconds, 'refreshBindings': True}
+              'valueVtableRva': 0x778A88, 'logBytes': logger, 'bindings': bindings, 'seconds': seconds, 'refreshBindings': True,
+              'profile': profile, 'channelLimits': PROFILES[profile]}
     directory.mkdir(parents=True, exist_ok=False)
     (directory / 'preflight.json').write_text(json.dumps(survey, indent=2, ensure_ascii=False), encoding='utf-8')
     (directory / 'config.json').write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -112,7 +121,7 @@ def capture(pid, config, directory, ready_callback=lambda: None):
     import frida
     lock = threading.RLock()
     stopped = threading.Event()
-    summary = {'pid': pid, 'ready': False, 'records': 0, 'counts': {}, 'agentErrors': [],
+    summary = {'pid': pid, 'profile': config.get('profile', 'balanced'), 'ready': False, 'records': 0, 'counts': {}, 'agentErrors': [],
                'dropped': 0, 'decodeErrors': 0, 'unloaded': False, 'detached': False,
                'fridaVersion': frida.__version__, 'runtime': 'QJS', 'passiveObservation': True,
                'readOnlyProcess': False}
@@ -253,10 +262,11 @@ def main():
     parser.add_argument('--pid', type=int, required=True, help=labels['pid'])
     parser.add_argument('--directory', type=Path, required=True, help=labels['directory'])
     parser.add_argument('--seconds', type=int, default=60, help=labels['seconds'])
+    parser.add_argument('--profile', choices=sorted(PROFILES), default='balanced')
     parser.add_argument('--exhaustive', action='store_true', help='保留所有已挂接入口记录，不做每秒采样')
     args = parser.parse_args()
     try:
-        config = prepare(args.pid, args.seconds, args.directory)
+        config = prepare(args.pid, args.seconds, args.directory, args.profile)
         if args.exhaustive:
             config['channelMaxLimit'] = 1000000
             config['channelLimits'] = {name: 1000000 for name in (
