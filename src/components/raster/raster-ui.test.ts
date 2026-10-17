@@ -181,7 +181,7 @@ describe("Raster editor regressions", () => {
       props: { modelValue: "slot2" },
       global,
     });
-    const toolbar = shallowMount(RasterToolbar, {
+    const toolbar = mount(RasterToolbar, {
       props: {
         tool: "brush",
         size: 1,
@@ -205,13 +205,13 @@ describe("Raster editor regressions", () => {
     expect(picker.text()).toContain("Six building slots");
     expect(picker.text()).toContain("Normal / AO");
     expect(picker.text()).not.toMatch(/[\u3400-\u9fff]/);
-    expect(toolbar.text()).toContain("Brush");
+    expect(toolbar.findAll("button[aria-label]").map(b => b.attributes("aria-label"))).toContain("Brush");
     expect(toolbar.text()).not.toMatch(/[\u3400-\u9fff]/);
     picker.unmount();
     toolbar.unmount();
   });
   it("translates the lot drawing and layer selection controls live", async () => {
-    const toolbar = shallowMount(RasterToolbar, {
+    const toolbar = mount(RasterToolbar, {
       props: {
         tool: "brush", size: 4, color: "#ffffff", alpha: 255,
         channel: "rgba", quantized: true, layer: 0, tolerance: 0,
@@ -220,11 +220,11 @@ describe("Raster editor regressions", () => {
       },
       global,
     });
-    expect(toolbar.text()).toContain("点选图层");
+    expect(toolbar.findAll("button[aria-label]").map(b => b.attributes("aria-label"))).toContain("点选图层");
     i18n.global.locale.value = "en-US";
     await nextTick();
-    expect(toolbar.text()).toContain("Select layer");
-    expect(toolbar.text()).toContain("Filled polygon");
+    expect(toolbar.findAll("button[aria-label]").map(b => b.attributes("aria-label"))).toContain("Select layer");
+    expect(toolbar.findAll("button[aria-label]").map(b => b.attributes("aria-label"))).toContain("Filled polygon");
     toolbar.unmount();
   });
   it("opens a fullscreen sheet and restores the trigger focus on close", async () => {
@@ -263,6 +263,7 @@ describe("Raster editor regressions", () => {
       global,
       props: {
         raw: "original",
+        renderMode: "refined",
         png: "data:image/png;base64,mask",
         width: 32,
         height: 64,

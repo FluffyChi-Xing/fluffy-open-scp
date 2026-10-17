@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { i18n } from "./index";
+import ts from "typescript";
 
 /**
  * i18n key 审计：源码里所有 t()/$t() 引用的静态 key（含动态模板前缀）
@@ -73,14 +74,42 @@ const localeKeys = new Map<LocaleName, Set<string>>(
   ]),
 );
 
-const staticKeys: string[] = [];
+const staticKeys: { key: string; local: Map<string, Set<string>> }[] = [];
 const dynamicPrefixes: string[] = [];
 for (const file of collectFiles(SRC_ROOT)) {
   const source = readFileSync(file, "utf8");
-  for (const [, , raw] of source.matchAll(KEY_RE)) {
+  const script = file.endsWith(".vue")
+    ? source.match(/<script\b[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? ""
+    : source;
+  const local = new Map<string, Set<string>>();
+  const ast = ts.createSourceFile(file + ".ts", script, ts.ScriptTarget.Latest, true);
+  function readObject(node: ts.Expression): unknown {
+    if (ts.isStringLiteralLike(node)) return node.text;
+    if (!ts.isObjectLiteralExpression(node)) return undefined;
+    return Object.fromEntries(node.properties.flatMap(property => {
+      if (!ts.isPropertyAssignment(property)) return [];
+      const name = property.name;
+      if (!ts.isIdentifier(name) && !ts.isStringLiteralLike(name)) return [];
+      return [[name.text, readObject(property.initializer)]];
+    }));
+  }
+  function visit(node: ts.Node) {
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === "useI18n" && node.arguments[0]) {
+      const options = readObject(node.arguments[0]) as { useScope?: string; messages?: Record<string, unknown> } | undefined;
+      if (options?.useScope === "local" && options.messages) {
+        for (const [locale, messages] of Object.entries(options.messages)) local.set(locale, flatten(messages));
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  for (const match of source.matchAll(KEY_RE)) {
+    const raw = match[2];
     const marker = raw.indexOf("${");
-    if (marker === -1) {
-      staticKeys.push(raw);
+    if (/^\s*\+/.test(source.slice(match.index! + match[0].length))) {
+      dynamicPrefixes.push(raw);
+    } else if (marker === -1) {
+      staticKeys.push({ key: raw, local });
     } else if (marker > 0) {
       dynamicPrefixes.push(raw.slice(0, marker));
     }
@@ -90,9 +119,9 @@ for (const file of collectFiles(SRC_ROOT)) {
 describe("i18n key audit", () => {
   it("静态 key 在每个语言包都存在", () => {
     const missing: string[] = [];
-    for (const key of new Set(staticKeys)) {
+    for (const { key, local } of staticKeys) {
       for (const locale of LOCALES) {
-        if (!localeKeys.get(locale)!.has(key)) {
+        if (!localeKeys.get(locale)!.has(key) && !local.get(locale)?.has(key)) {
           missing.push(`${key} @ ${locale}`);
         }
       }

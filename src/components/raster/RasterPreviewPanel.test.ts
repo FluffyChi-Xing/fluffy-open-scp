@@ -53,13 +53,14 @@ it("creates a frozen Lot preview only on refresh and translates the prompt", asy
     },
     global: { plugins: [i18n], renderStubDefaultSlot: true },
   });
-  expect(wrapper.findComponent(RasterLotPreview).exists()).toBe(false);
+  expect(wrapper.findAllComponents(RasterLotPreview)).toHaveLength(1);
+  expect(wrapper.getComponent(RasterLotPreview).props("renderMode")).toBe("default");
   expect(wrapper.text()).toContain(i18n.global.t("rasterEditor.refreshPreviewHint"));
   const lotCard = wrapper.findAllComponents(RasterPreviewCard).at(-1)!;
   expect(lotCard.props("refreshable")).toBe(true);
   lotCard.vm.$emit("refresh");
   await wrapper.vm.$nextTick();
-  const preview = wrapper.getComponent(RasterLotPreview);
+  const preview = wrapper.findAllComponents(RasterLotPreview).find(p => p.props("renderMode") === "refined")!;
   const originalRaw = preview.props("raw");
   doc.pixels.set([0, 255, 0, 0]);
   await wrapper.setProps({ version: 1 });
