@@ -50,3 +50,6 @@ tmp/
 __pycache__/
 /terrain_instances.json
 /water_objs/
+
+# Original game UI payloads are resolved from the installed game.
+/public/game-ui/

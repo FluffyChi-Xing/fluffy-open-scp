@@ -1,11 +1,12 @@
 /**
- * HUD 布局树 → 嵌套绝对定位 DOM（probe_fire/ui_replica/js/render.js 的 TS 移植，
- * 逻辑逐条对应；子元素坐标系 = 父元素左上角，与游戏引擎一致）。
+ * @summary Convert the HUD layout tree to nested absolutely positioned DOM, ported from probe_fire/ui_replica/js/render.js.
+ * Logic corresponds directly; child coordinates originate at the parent's top-left corner, matching the game engine.
  *
- * 规则（与游戏 UI 引擎对齐）：
- *   drawable.type=2  images[]      图片，按元素框拉伸（background-size:100% 100%）
- *   drawable.type=5  cssStyles[]   直接挂游戏 CSS 类
- *   长度 >1 视为按钮多态：0 常态 1 悬停 2 按下 3 禁用 4 选中 5 选中悬停 6 选中按下 7 选中禁用
+ * Rules matching the game UI engine:
+ *   drawable.type=2  images[]      Images stretched to the element box (background-size:100% 100%)
+ *   drawable.type=5  cssStyles[]   Attach game CSS classes directly
+ *   Arrays longer than one encode button states: 0 normal, 1 hover, 2 pressed, 3 disabled,
+ *   4 selected, 5 selected-hover, 6 selected-pressed, 7 selected-disabled
  *   scale / rotation → transform；desiredOpacity → opacity
  */
 import { initOffsets, updatePosition } from "@/lib/game-ui/scrui";
@@ -124,6 +125,7 @@ export function createHudRender(data: ReplicaData, options?: {
     if (!dr || dr.type !== 2 || !Array.isArray(dr.images) || !dr.images.length) return null;
     const states = dr.images.map((ref): { url: string; name: string } | null => {
       if (typeof ref !== "string" || !ref || ref.toLowerCase() === "none") return null;
+      if (/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(ref)) return { url: ref, name: "local-preview-image" };
       const name = ref.split(/[\\/]/).pop();
       const url = name ? assets[name] : undefined;
       return url && name ? { url, name } : null;
@@ -167,9 +169,9 @@ export function createHudRender(data: ReplicaData, options?: {
     else if (node.overflowType === 4) el.style.overflow = "auto";
   }
 
-  /** 状态数组里同一个类会重复出现（例如按下的美术沿用常态），所以不能逐槽
-   * toggle——后一个槽会把前一个槽刚挂上的同名类删掉。先移除全部去重后的类，
-   * 再挂当前态那一个。 */
+  /** @summary State arrays may repeat classes, for example when pressed artwork reuses normal artwork.
+   * Toggling each slot would let a later slot remove a class just added by an earlier slot.
+   * Remove all unique classes first, then attach the active state's class. */
   function makeStateful(el: HTMLElement, kind: "image" | "css", list: ({ url: string } | string | null)[], selected: boolean): void {
     const n = list.length;
     function at(state: number): number {
@@ -186,7 +188,7 @@ export function createHudRender(data: ReplicaData, options?: {
         const s = list[i] || list[0];
         el.style.backgroundImage = s ? `url('${(s as { url: string }).url}')` : "none";
       } else {
-        for (let k = 0; k < (distinct?.length ?? 0); k++) el.classList.remove(distinct![k]);
+        for (const className of distinct ?? []) el.classList.remove(className);
         if (list[i]) el.classList.add(list[i] as string);
       }
     }
@@ -221,6 +223,9 @@ export function createHudRender(data: ReplicaData, options?: {
     el.style.width = `${rect.w.toFixed(2)}px`;
     el.style.height = `${rect.h.toFixed(2)}px`;
     applyExtras(el, node);
+    if (node._unavailableResources?.length) {
+      el.dataset.unavailableResources = JSON.stringify(node._unavailableResources);
+    }
 
     const text = textOf(node);
     const imgs = imageStates(node);
@@ -303,7 +308,7 @@ export function createHudRender(data: ReplicaData, options?: {
       const c = n.comment || "";
       if (c === "icon norm") {
         if (cat.icon) {
-          n.drawable = { type: 2, images: [String(cat.icon).split("/").pop() ?? ""] };
+          n.drawable = { type: 2, images: [cat.icon] };
         } else {
           n.visibility = false;
         }

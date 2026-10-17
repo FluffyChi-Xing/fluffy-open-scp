@@ -15,6 +15,8 @@ mod annotations;
 mod atomic_fs;
 mod debug_tools;
 mod locale_service;
+mod local_game_assets;
+mod installed_game_preview;
 mod map_panel;
 mod media_tools;
 mod mod_project;
@@ -99,6 +101,7 @@ fn detect_media_tools() -> MediaTools {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(local_game_assets::LocalGameAssets::default())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("openscp.db");
@@ -119,6 +122,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            local_game_assets::local_game_assets_prepare,
+            local_game_assets::local_game_assets_status,
+            local_game_assets::local_game_assets_resource,
+            local_game_assets::local_game_assets_model,
+            local_game_assets::local_game_assets_stylesheet,
             greet,
             map_panel::map_panel_list_regions,
             map_panel::map_panel_render_region,

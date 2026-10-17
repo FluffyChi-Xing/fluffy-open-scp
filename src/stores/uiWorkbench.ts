@@ -16,7 +16,8 @@ import {
   type LocaleString,
   type MenuExportEntry,
 } from "@/lib/game-ui/menu-export";
-import { loadReplicaData } from "@/lib/game-ui/replica/loader";
+import { loadReplicaData, type GameTextLocale } from "@/lib/game-ui/replica/loader";
+import { isInstalledPreviewImage } from "@/lib/game-ui/local-assets";
 import type { ReplicaData, ReplicaTool } from "@/lib/game-ui/replica/types";
 import { i18n } from "@/locales";
 
@@ -31,14 +32,14 @@ interface LegacyWorkbench {
 }
 
 /**
- * UI 工作台状态：一级菜单 → 二级面板钻入 + 菜单项编辑覆盖。
+ * @summary UI workbench state: top-level menu navigation into second-level panels and menu-item edit overrides.
  *
- * 数据源 = ui_replica 复刻数据（public/game-ui/replica/data/*.js，逆向产物生成）：
- * 一级 14 个分类来自 CATEGORY_MODEL（Menu/Menu2 推导），二级槽位来自 HUD_TOOLS，
- * 面板布局来自 HUD_PALETTE；舞台渲染（Shadow DOM）在 UiWorkbenchStage 里完成，
- * store 只维护菜单模型与**纯前端编辑覆盖**（`edits` / `added`），实时反映到
- * 复刻 UI 与右侧面板上；「落库」当前以 overlay JSON 导出，后端写回
- * （patch_property_overlay + 版本记录通道）是下一轮接入点。
+ * Native code assembles categories, tools, locales and panel layouts from the selected installed game.
+ * Installed properties supply data through the established upstream category and authoring projection.
+ * UiWorkbenchStage renders the normalized model in Shadow DOM.
+ * This store maintains only the menu model and frontend edit overrides (edits / added), reflected live
+ * in the replica UI and right panel. Persistence currently exports overlay JSON; backend writeback
+ * (patch_property_overlay plus version recording) is the integration point for the next iteration.
  */
 
 /** 面板里一条菜单项的最终视图（基础数据 + 编辑覆盖 + 新增标记）。 */
@@ -75,7 +76,10 @@ export function replicaToolToWorkbench(tool: ReplicaTool, index: number): Workbe
 export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   /** ui_replica 复刻数据（菜单模型 + 面板布局 + 舞台渲染的输入）。 */
   const replica = shallowRef<ReplicaData | null>(null);
+  /** @summary Selected original game text language, independent of the application UI. */
+  const gameLocale = ref<GameTextLocale>("zh-TW");
   const loading = shallowRef(false);
+  let loadEpoch = 0;
   const loadError = shallowRef<string | null>(null);
   /** 当前选中一级分类 id。 */
   const selectedMenuId = ref<string | null>(null);
@@ -93,24 +97,23 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const viewMode = ref<UiWorkbenchView>("city");
   const legacyWorkbench = shallowRef<LegacyWorkbench | null>(null);
 
-  /** 从复刻数据脚本装载（幂等；数据进程内缓存）。 */
-  async function load(): Promise<void> {
+  /** @summary Load the generation-bound installed-resource model; newer requests supersede older work. */
+  async function load(locale: GameTextLocale = gameLocale.value): Promise<void> {
+    const epoch = ++loadEpoch;
+    replica.value = null;
     loading.value = true;
     loadError.value = null;
     try {
-      const data = await loadReplicaData();
-      try {
-        const response = await fetch("/game-ui/workbench.json");
-        legacyWorkbench.value = (await response.json()) as LegacyWorkbench;
-      } catch {
-        legacyWorkbench.value = null;
-      }
+      const data = structuredClone(await loadReplicaData(locale));
+      if (epoch !== loadEpoch) return;
       hydrate(data);
+      gameLocale.value = locale;
     } catch (cause) {
-      loadError.value = String(cause);
+      if (epoch !== loadEpoch) return;
+      loadError.value = cause && typeof cause === "object" && "message" in cause ? String(cause.message) : String(cause);
       console.warn("[uiWorkbench] 复刻数据装载失败", cause);
     } finally {
-      loading.value = false;
+      if (epoch === loadEpoch) loading.value = false;
     }
   }
 
@@ -210,8 +213,21 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     void menuId;
   }
 
+  /** @summary Recognize installed media even when copied to another item or retained after a generation change. */
+  function installedImage(value: unknown): boolean {
+    return typeof value === "string" && (isInstalledPreviewImage(value) || Object.values(replica.value?.tools ?? {}).some((tools) => tools.some((tool) => value === tool.preview || value === tool.marquee)));
+  }
+
+  /** @summary Keep original display resources referenced by the base model instead of embedding them in edit payloads. */
+  function authoredEdit(patch: ToolEdit): ToolEdit {
+    const result = { ...patch };
+    if (installedImage(result.preview)) delete result.preview;
+    if (installedImage(result.marquee)) delete result.marquee;
+    return result;
+  }
+
   function updateItem(menuId: string, itemId: string, patch: ToolEdit): void {
-    edits.value = { ...edits.value, [itemId]: { ...edits.value[itemId], ...patch } };
+    edits.value = { ...edits.value, [itemId]: authoredEdit({ ...edits.value[itemId], ...patch }) };
     void menuId;
   }
 
@@ -278,8 +294,8 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       {
         format: "openscp-ui-workbench-overlay/2",
         viewMode: viewMode.value,
-        edits: edits.value,
-        added: added.value,
+        edits: Object.fromEntries(Object.entries(edits.value).map(([id, edit]) => [id, authoredEdit(edit)])),
+        added: Object.fromEntries(Object.entries(added.value).map(([id, tools]) => [id, tools.map((tool) => ({ ...tool, preview: installedImage(tool.preview) ? null : tool.preview, marquee: installedImage(tool.marquee) ? null : tool.marquee }))])),
         customCategories: customCategories.value,
       },
       null,
@@ -367,10 +383,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           unlockStringId = fnv1Lower(`str:unlock:${tool.id}:${tool.unlock}`);
           locale.push({ table: LOCALE_TABLES.toolUnlock, id: unlockStringId, text: tool.unlock });
         }
-        const croppedIcon =
-          typeof tool.preview === "string" && tool.preview.startsWith("data:") ? tool.preview : undefined;
-        const croppedMarquee =
-          typeof tool.marquee === "string" && tool.marquee.startsWith("data:") ? tool.marquee : undefined;
+        /** @summary Installed display data URLs are references, not user-authored crop payloads. */
+        const original = data?.tools[category.id]?.find((item) => item.instance === tool.id);
+        const authoredIcon = edit?.preview ?? (isNew ? tool.preview : undefined);
+        const authoredMarquee = edit?.marquee ?? (isNew ? tool.marquee : undefined);
+        const croppedIcon = typeof authoredIcon === "string" && authoredIcon.startsWith("data:") && authoredIcon !== original?.preview && !installedImage(authoredIcon) ? authoredIcon : undefined;
+        const croppedMarquee = typeof authoredMarquee === "string" && authoredMarquee.startsWith("data:") && authoredMarquee !== original?.marquee && !installedImage(authoredMarquee) ? authoredMarquee : undefined;
         if (edit?.cost != null || edit?.upkeep != null) {
           warnings.push(`${tool.label || tool.id}：造价/预算编辑在 GlassBox 模拟侧，属性覆盖不含`);
         }
@@ -422,6 +440,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
 
   return {
     replica,
+    gameLocale,
     loading,
     loadError,
     selectedMenuId,

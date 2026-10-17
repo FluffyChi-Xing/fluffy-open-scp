@@ -1,0 +1,72 @@
+/* ---------------------------------------------------------------------------
+ * 以下类在已解包的 10 个 CSS 里不存在（游戏实际样式表未随包导出），
+ * 按同级类 + 游戏截图重建，仅用于复刻页观感。
+ * ------------------------------------------------------------------------- */
+
+/* 底部操作栏圆钮：游戏为图片 Button_Palette_Rounded_*.png，此处只兜底 */
+.HUDMenuButton {
+    border-radius: 100px;
+    background: -webkit-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(228,228,228,1) 100%);
+    background: linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(228,228,228,1) 100%);
+    -webkit-box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+.HUDMenuButtonHover {
+    border-radius: 100px;
+    background: -webkit-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(214,235,250,1) 100%);
+    background: linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(214,235,250,1) 100%);
+    -webkit-box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+}
+.HUDMenuButtonSelect {
+    border-radius: 100px;
+    background: -webkit-linear-gradient(top, rgba(92,180,240,1) 0%, rgba(17,161,224,1) 100%);
+    background: linear-gradient(180deg, rgba(92,180,240,1) 0%, rgba(17,161,224,1) 100%);
+    -webkit-box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+.HUDMenuButtonSelectHover, .HUDMenuButtonSelectSelected {
+    border-radius: 100px;
+    background: -webkit-linear-gradient(top, rgba(120,200,250,1) 0%, rgba(30,175,238,1) 100%);
+    background: linear-gradient(180deg, rgba(120,200,250,1) 0%, rgba(30,175,238,1) 100%);
+}
+
+/* 速度面板的红色播放/暂停钮（该类在已解包 CSS 中缺失，按 reference/city.png 重建） */
+.HUDMenuButtonRtSquareRed {
+    border-radius: 50%;
+    background: -webkit-linear-gradient(top, rgba(214, 34, 34, 1) 0%, rgba(186, 20, 20, 1) 48%, rgba(146, 8, 8, 1) 100%);
+    background: linear-gradient(180deg, rgba(214, 34, 34, 1) 0%, rgba(186, 20, 20, 1) 48%, rgba(146, 8, 8, 1) 100%);
+    -webkit-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* 底部独立胶囊（城市名 / 满意度 / 全数据图层钮）。
+ * 游戏未展开面板时是**全圆角**浅色胶囊：32px 高的按钮呈圆钮形，277px 宽的城市名呈药丸形，
+ * 同一个 16px 圆角两种都对得上。展开态的大底衬（city naming tab 等）另由容器控制。 */
+.Tab_Btm_Normal_Rounded {
+    border-radius: 16px;
+    background: -webkit-linear-gradient(top, rgba(250,250,250,1) 0%, rgba(226,226,226,1) 100%);
+    background: linear-gradient(180deg, rgba(250,250,250,1) 0%, rgba(226,226,226,1) 100%);
+    -webkit-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.Tab_Btm_Over_Rounded {
+    border-radius: 16px;
+    background: -webkit-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(232,244,252,1) 100%);
+    background: linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(232,244,252,1) 100%);
+}
+.Tab_Btm_On_Rounded {
+    border-radius: 16px;
+    background: -webkit-linear-gradient(top, rgba(92,180,240,1) 0%, rgba(17,161,224,1) 100%);
+    background: linear-gradient(180deg, rgba(92,180,240,1) 0%, rgba(17,161,224,1) 100%);
+}
+.Tab_Btm_On_Over_Rounded {
+    border-radius: 16px;
+    background: -webkit-linear-gradient(top, rgba(120,200,250,1) 0%, rgba(30,175,238,1) 100%);
+    background: linear-gradient(180deg, rgba(120,200,250,1) 0%, rgba(30,175,238,1) 100%);
+}
+.Tab_Btm_Off_Rounded {
+    border-radius: 16px;
+    background: -webkit-linear-gradient(top, rgba(190,190,190,1) 0%, rgba(160,160,160,1) 100%);
+    background: linear-gradient(180deg, rgba(190,190,190,1) 0%, rgba(160,160,160,1) 100%);
+}

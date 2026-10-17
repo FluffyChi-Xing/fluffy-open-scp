@@ -2,8 +2,10 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
+import { assertNoBundledGameAssets } from './scripts/game-asset-boundary'
 
 export default defineConfig(({ mode }) => {
+  assertNoBundledGameAssets(process.cwd())
   const env = loadEnv(mode, process.cwd())
   const proxy: Record<string, ProxyOptions> = {}
   if (env.VITE_FLUFFY_OSS_BASE_URL?.startsWith('/') && env.VITE_FLUFFY_OSS_PROXY_TARGET) {

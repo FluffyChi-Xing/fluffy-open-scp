@@ -1,9 +1,8 @@
 /**
- * ui_replica 复刻数据的类型描述。
+ * @summary Normalized installed-game data consumed by the OpenSCP preview renderer.
  *
- * 数据文件（public/game-ui/replica/data/*.js）由 probe_fire/ui_replica/tools/build.py
- * 从逆向产物生成；本目录只消费，不再重复生成。结构与 probe_fire/ui_replica 中的
- * render.js / palette.js 所读取的字段一一对应。
+ * Native code reads original layout, property and locale resources from the selected installation.
+ * Numeric references and generation identity remain explicit; no generated replica scripts are required.
  */
 
 /** 布局树节点（globalui2 裁剪 + 子模块内联后的产物）。 */
@@ -38,10 +37,12 @@ export interface ReplicaNode {
   rootElement?: { overflow?: string; backgroundColor?: string } | null;
   overflowType?: number;
   layoutPath?: string;
-  /** build.py 内联子模块时打的模块路径标记。 */
+  /** @summary Source module path retained by the installed-resource compatibility adapter. */
   _module?: string;
   /** layoutPath 指向的模块缺失。 */
   _missing?: boolean;
+  /** @summary Original resource names unavailable in this installation; no replacement artwork is fabricated. */
+  _unavailableResources?: string[];
   children?: ReplicaNode[];
 }
 
@@ -108,6 +109,8 @@ export interface ReplicaTool {
   preview: string | null;
   marquee: string | null;
   locked: boolean;
+  /** @summary Static authoring data cannot establish the current simulation unlock state. */
+  unlockState?: "unknown" | "locked" | "unlocked";
 }
 
 export interface ReplicaModel {
@@ -128,6 +131,18 @@ export interface ReplicaPalette {
 
 /** data/*.js 六个全局的聚合。 */
 export interface ReplicaData {
+  /** @summary Original installed CSS resources selected by numeric identity, with display names for diagnostics. */
+  stylesheets?: { name: string; reference: string }[];
+  /** @summary Style families required by the normalized installed layout and its palettes. */
+  requiredStyleClasses?: string[];
+  /** @summary Original drawable kinds observed before normalization, for explicit coverage diagnostics. */
+  originalDrawableTypeCounts?: Record<string, number>;
+  /** @summary Required/optional data limitations observed by the installed-resource adapter. */
+  diagnostics?: (string | { code: string; [key: string]: unknown })[];
+  /** @summary Explicit language used by the native model, independently of application UI language. */
+  resolvedLocale?: string;
+  /** @summary Immutable local attachment used for this complete preview load. */
+  previewGeneration?: string;
   layout: ReplicaNode;
   assets: Record<string, string>;
   locale: Record<string, Record<string, string>>;

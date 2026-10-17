@@ -523,6 +523,12 @@ const messages = {
         empty: "创建第一个项目后，这里会出现统计。",
       },
       workbench: {
+        importLocalAssets: "连接已安装的 SimCity",
+        gameTextLanguage: "游戏文本语言",
+        installedLanguageSelected: "已安装的游戏不包含 {requested} 文本；预览使用可用的 {selected}。可在语言菜单中更改。",
+        installedDiagnostics: "已安装游戏的预览诊断",
+        missingLegacyArtwork: "安装中缺少 {count} 个旧版 CSS 图像引用；未显示这些装饰。展开查看诊断。",
+        chooseGameData: "选择 SimCityData 安装目录",
         title: "UI 工作台",
         description:
           "用游戏原生资产重建菜单 UI：点击菜单在右侧预览条目，单条编辑实时生效，末位「＋」新增条目。",
@@ -624,7 +630,7 @@ const messages = {
         editPlaceholder:
           "编辑功能暂未实装——当前版本专注于游戏前端 UI 的重建预览。",
         noSlides:
-          "预览数据缺失：请先运行 ui_assets 示例生成 public/game-ui/ui-preview.json。",
+          "预览不可用：请连接已安装的 SimCityData，并查看所需资源的诊断信息。",
         rebuildNotice: "重建预览 · 非游戏实时画面",
         caption:
           "静态资源采样自 SimCity_App.package；完整重建将随 WP3 开发推进。",
@@ -2249,6 +2255,12 @@ const messages = {
         empty: "Stats appear once you create the first project.",
       },
       workbench: {
+        importLocalAssets: "Connect installed SimCity",
+        gameTextLanguage: "Game text language",
+        installedLanguageSelected: "The installed game does not contain {requested} text; preview uses available {selected}. You can change it in the language menu.",
+        installedDiagnostics: "Installed-game preview diagnostics",
+        missingLegacyArtwork: "{count} legacy CSS image references are absent from this installation; those decorations are omitted. Expand for diagnostics.",
+        chooseGameData: "Choose the installed SimCityData directory",
         title: "UI workbench",
         description:
           "Rebuild the game menus with native assets: click a menu to preview its entries, edit inline with live feedback, and append new entries via the dashed tile.",
@@ -2352,7 +2364,7 @@ const messages = {
         editPlaceholder:
           "Editing is not implemented yet — this release focuses on rebuilding the game frontend UI as a preview.",
         noSlides:
-          "Preview data missing: run the ui_assets example to generate public/game-ui/ui-preview.json first.",
+          "Preview unavailable: connect the installed SimCityData directory and inspect the required-resource diagnostics.",
         rebuildNotice: "Rebuilt preview · not the live game",
         caption:
           "Static assets sampled from SimCity_App.package; full rebuild lands with WP3.",
