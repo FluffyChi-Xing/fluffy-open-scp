@@ -6,7 +6,7 @@ import vue from 'eslint-plugin-vue'
 
 export default tseslint.config(
   {
-    ignores: ['.claude/**', 'dist/**', 'target/**', 'node_modules/**', 'src-tauri/gen/**']
+    ignores: ['.claude/**', 'dist/**', 'target/**', 'node_modules/**', 'src-tauri/gen/**', 'tools/**', 'website/**', 'output/**', 'tmp/**']
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
