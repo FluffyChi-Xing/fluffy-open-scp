@@ -257,6 +257,8 @@ export const tauriApi = {
       command<CodeManifestResponse>("code_manifest", { request: { project } }),
     deployGameMod: (project: string, artifact: string) =>
       command<DeployGameModResult>("deploy_game_mod", { request: { project, artifact } }),
+    deployUiOverlay: (dataBase64: string) =>
+      command<DeployGameModResult>("deploy_ui_overlay", { request: { dataBase64 } }),
     gameProcesses: () => command<GameProcessInfo[]>("game_processes"),
     launchGame: () => command<GameProcessInfo>("launch_game"),
   },

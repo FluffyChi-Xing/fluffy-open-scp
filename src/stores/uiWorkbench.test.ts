@@ -148,4 +148,104 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     const schema = JSON.parse(store.exportSchema());
     expect(schema.menus[0].items.map((item: { id: string }) => item.id)).not.toContain("BBBB0001");
   });
+
+  it("图片三态：移除大图后有效视图为 null，不再回落基础资产", () => {
+    const store = makeStore();
+    const data = replicaFixture();
+    data.tools["CAT_ROAD"][0] = {
+      ...data.tools["CAT_ROAD"][0],
+      marquee: "/game-ui/replica/assets/tool_BBBB0001.jpg",
+    };
+    store.hydrate(data);
+    store.enterMenu("CAT_ROAD");
+    expect(store.activeMenu?.entries[0].tool.marquee).toContain("tool_BBBB0001.jpg");
+    store.updateItem("CAT_ROAD", "BBBB0001", { marquee: null });
+    expect(store.activeMenu?.entries[0].tool.marquee).toBeNull();
+  });
+
+  it("duplicateToMenu：新身份副本快照源条目，与源互不影响", () => {
+    const store = makeStore();
+    store.enterMenu("CAT_ROAD");
+    store.updateItem("CAT_ROAD", "BBBB0001", { label: "改名后的泥路" });
+    const copy = store.duplicateToMenu("CAT_ROAD", "BBBB0001", "CAT_PARK");
+    expect(copy).not.toBeNull();
+    expect(copy?.menuId).toBe("CAT_PARK");
+    expect(copy?.isNew).toBe(true);
+    expect(copy?.tool.id).not.toBe("BBBB0001");
+    expect(copy?.tool.label).toBe("改名后的泥路"); // 快照含已有编辑
+    expect(copy?.tool.pos).toBe(10); // 目标菜单当前为空 → 末位
+
+    // 拷贝后源继续编辑，副本不受影响（编辑只落在各自覆盖键上）
+    store.updateItem("CAT_ROAD", "BBBB0001", { label: "又改了" });
+    expect(store.activeMenu?.entries[0].tool.label).toBe("又改了");
+    store.enterMenu("CAT_PARK");
+    expect(store.activeMenu?.entries[0].tool.label).toBe("改名后的泥路");
+    expect(store.activeMenu?.entries[0].tool.id).toBe(copy?.tool.id);
+
+    // 重复拷贝到同一菜单：id 不冲突
+    const second = store.duplicateToMenu("CAT_ROAD", "BBBB0001", "CAT_PARK");
+    expect(second?.tool.id).not.toBe(copy?.tool.id);
+  });
+
+  it("membershipsOf 列出基础归属与新增归属", () => {
+    const store = makeStore();
+    store.duplicateToMenu("CAT_ROAD", "BBBB0001", "CAT_PARK");
+    const memberships = store.membershipsOf("BBBB0001");
+    expect(memberships.map((menu) => menu.id)).toEqual(["CAT_ROAD"]);
+    const copyId = (store.added["CAT_PARK"] ?? [])[0]?.id ?? "";
+    expect(store.membershipsOf(copyId).map((menu) => menu.id)).toEqual(["CAT_PARK"]);
+  });
+
+  it("buildGameExport 基于有效视图：只导编辑/新增条目，归属容器为真实 id", () => {
+    const store = useUiWorkbenchStore();
+    const data = replicaFixture();
+    // 真实容器 id（AC12C904 道路）+ 真实条目大图资产
+    data.model.categories[0] = { id: "AC12C904", label: "道路", icon: null, iconHash: null };
+    data.tools["AC12C904"] = [
+      {
+        instance: "7DD8A627",
+        label: "低密度泥路",
+        preview: "/game-ui/replica/assets/tool_icon_2531E3C9.png",
+        marquee: "/game-ui/replica/assets/tool_7DD8A627.jpg",
+        locked: false,
+      },
+      { instance: "B7D3F194", label: "低密道街道", preview: null, marquee: null, locked: false },
+    ];
+    delete data.tools["CAT_ROAD"];
+    store.hydrate(data);
+    store.enterMenu("AC12C904");
+
+    // 无编辑 → 不导出任何条目
+    expect(store.buildGameExport().entryCount).toBe(0);
+
+    // 编辑一个条目（含造价）→ 只导出它；造价警告说明 GlassBox 侧不进包
+    store.updateItem("AC12C904", "7DD8A627", { label: "我的泥路", cost: "20" });
+    const result = store.buildGameExport();
+    expect(result.entryCount).toBe(1);
+    expect(result.warnings.join()).toContain("GlassBox");
+
+    // 移除大图 → 仍然导出（其它编辑保留），但不再有大图悬空引用
+    store.updateItem("AC12C904", "7DD8A627", { marquee: null });
+    expect(store.buildGameExport().entryCount).toBe(1);
+
+    // 拷贝到大学容器（9D2EF585，真实 id）→ 新条目以该容器为归属导出
+    const copy = store.duplicateToMenu("AC12C904", "7DD8A627", "9D2EF585");
+    expect(copy).not.toBeNull();
+    const withCopy = store.buildGameExport();
+    expect(withCopy.entryCount).toBe(2);
+
+    // 非游戏容器（自定义分类）里的新增条目给出可读警告且不进包
+    store.addCategory("我的菜单");
+    const customId = store.categories.at(-1)?.id ?? "";
+    store.addItem(customId, "自定义条目", null);
+    const withCustom = store.buildGameExport();
+    expect(withCustom.entryCount).toBe(2);
+    expect(withCustom.warnings.join()).toContain("不是游戏容器 instance");
+  });
+
+  it("development 视图使用真实大学容器 id（9D2EF585）", () => {
+    const store = makeStore();
+    store.setViewMode("development");
+    expect(store.categories[0]?.id).toBe("9D2EF585");
+  });
 });

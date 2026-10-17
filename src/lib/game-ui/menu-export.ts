@@ -62,12 +62,17 @@ export interface MenuExportEntry {
   titleStringId?: number;
   descStringId?: number;
   unlockStringId?: number;
-  /** 槽位图标 instance（ICON_TYPE/ICON_GROUP 资源）；缺省不写图标键。 */
+  /** 槽位图标资源 instance（ICON_TYPE/ICON_GROUP）；缺省不写图标键。
+   * 新图随 iconPng 落在同 instance；引用基础游戏原图时不带 iconPng。 */
   iconInstance?: number;
   /** locked → 写 hardGate 键（值沿用观察到的形态）。 */
   locked?: boolean;
   /** 原始图片字节（PNG / JPEG），缺省跳过对应资源。 */
   iconPng?: Uint8Array;
+  /** rollover 大图资源 instance；缺省 = 本次不写 marquee 键
+   * （条目从未有过大图、或用户明确移除大图）。 */
+  marqueeInstance?: number;
+  /** 大图字节（与新图一起写入；引用原图时缺省）。 */
   marqueeJpg?: Uint8Array;
 }
 
@@ -101,12 +106,16 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
       valueType: "int32",
       values: [{ kind: "int32", value: entry.uiPosition }],
     },
-    {
+  ];
+  // marquee 键只在确有大图时写：instance 指向大图资源（引用原图 = 原
+  // instance；新图 = 新 instance）。无条件写键会产生指向不存在资源的悬空引用。
+  if (entry.marqueeInstance != null) {
+    values.push({
       hash: HASH.marquee,
       valueType: "key",
-      values: [{ kind: "key", instance: entry.instance, typeId: MARQUEE_TYPE, group: 0 }],
-    },
-  ];
+      values: [{ kind: "key", instance: entry.marqueeInstance, typeId: MARQUEE_TYPE, group: 0 }],
+    });
+  }
   if (entry.descStringId != null) {
     values.push({
       hash: HASH.desc,
@@ -156,6 +165,12 @@ export interface MenuExportResult {
 }
 
 export function buildMenuExport(input: MenuExportInput): MenuExportResult {
+  if (input.entries.length === 0) {
+    return {
+      package: writeUncompressedOverlay([]),
+      property: new Uint8Array(),
+    };
+  }
   const entries: DbpfEntry[] = [];
   for (const entry of input.entries) {
     entries.push({
@@ -167,8 +182,8 @@ export function buildMenuExport(input: MenuExportInput): MenuExportResult {
     if (entry.iconPng && entry.iconInstance != null) {
       entries.push({ type: ICON_TYPE, group: ICON_GROUP, instance: entry.iconInstance, data: entry.iconPng });
     }
-    if (entry.marqueeJpg) {
-      entries.push({ type: MARQUEE_TYPE, group: 0, instance: entry.instance, data: entry.marqueeJpg });
+    if (entry.marqueeJpg && entry.marqueeInstance != null) {
+      entries.push({ type: MARQUEE_TYPE, group: 0, instance: entry.marqueeInstance, data: entry.marqueeJpg });
     }
   }
   for (const tableId of new Set(input.locale.map((s) => s.table))) {
@@ -192,6 +207,26 @@ export function dataUrlToBytes(dataUrl: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** 复刻资产命名约定（build.py 产物）：rollover 大图 `tool_<instance>.jpg`、
+ * 槽位图标 `tool_icon_<instance>.png`，instance 即游戏内对应资源的
+ * instance（大图 0x3F8662EA / 图标 PNG 0x2F7D0004 组 0x40E02400）。
+ * 拷贝条目引用共享原图时，用这里反推出「键要指向的原资源 instance」。 */
+export function marqueeInstanceFromAsset(path: string): number | null {
+  return instanceFromAsset(path, /^tool_([0-9A-F]{8})\.jpg$/);
+}
+
+export function iconInstanceFromAsset(path: string): number | null {
+  return instanceFromAsset(path, /^tool_icon_([0-9A-F]{8})\.png$/);
+}
+
+function instanceFromAsset(path: string, pattern: RegExp): number | null {
+  const base = path.split(/[\\/]/).pop() ?? "";
+  const match = pattern.exec(base);
+  if (!match) return null;
+  const value = Number.parseInt(match[1], 16);
+  return Number.isFinite(value) ? value : null;
 }
 
 export function sprintf32(value: number): string {

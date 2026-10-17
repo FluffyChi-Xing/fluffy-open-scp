@@ -152,17 +152,17 @@ function effectiveTools(data: ReplicaData, categoryId: string): SlotTool[] | und
   const base = data.tools[categoryId] ?? [];
   return activeMenu.entries.map((entry) => {
     const source = base.find((tool) => tool.instance === entry.tool.id);
-    // 编辑覆盖（activeMenu 的 tool 已应用 edits）优先于基础数据：
-    // 舞台槽位与弹窗实时反映名称/描述/造价/图片的修改。
+    // entry.tool 已经是应用过覆盖的完整有效视图（store.effectiveEntries），
+    // 三态编辑（null = 移除）在这里不能回退基础值，直接取最终值。
     const edited = entry.tool;
     return {
       instance: entry.tool.id,
       label: edited.label || source?.label || "",
-      preview: edited.preview ?? source?.preview ?? null,
-      marquee: edited.marquee ?? source?.marquee ?? null,
+      preview: edited.preview ?? null,
+      marquee: edited.marquee ?? null,
       desc: edited.desc ?? source?.desc,
       unlock: edited.unlock ?? source?.unlock,
-      stats: source?.stats,
+      stats: edited.stats ?? source?.stats,
       cost: edited.cost ?? source?.cost ?? null,
       upkeep: edited.upkeep ?? source?.upkeep ?? null,
       locked: edited.locked ?? source?.locked ?? false,

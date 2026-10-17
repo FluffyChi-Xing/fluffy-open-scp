@@ -13,6 +13,7 @@ import { storeToRefs } from "pinia";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import { toolIconName, toolPreview } from "@/lib/game-ui/workbench";
+import { downloadBytes } from "@/lib/game-ui/menu-export";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
 
@@ -37,6 +38,22 @@ function onExport(): void {
     () => window.alert(t("studio.workbench.exportCopied")),
     () => window.alert(json),
   );
+}
+
+function onBuild(): void {
+  const result = store.buildGameExport();
+  if (result.entryCount === 0) {
+    window.alert(t("studio.workbench.buildEmpty"));
+    return;
+  }
+  downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
+  const warning = result.warnings.length > 0
+    ? `\n\n${result.warnings.join("\n")}`
+    : "";
+  window.alert(t("studio.workbench.buildComplete", {
+    entries: result.entryCount,
+    locales: result.localeCount,
+  }) + warning);
 }
 
 function onAdd(): void {
@@ -102,7 +119,18 @@ function onAdd(): void {
           <span class="item-meta">
             <span class="tabnum">pos {{ entry.tool.pos }}</span>
             <span class="dot">·</span>
-            <span>{{ entry.tool.source === "locale" ? t("studio.workbench.srcLocale") : t("studio.workbench.srcUnresolved") }}</span>
+            <span>{{
+              entry.tool.source === "locale"
+                ? t("studio.workbench.srcLocale")
+                : entry.tool.source === "preset"
+                  ? t("studio.workbench.srcPreset")
+                  : t("studio.workbench.srcUnresolved")
+            }}</span>
+          </span>
+          <span v-if="entry.tool.cost !== null && entry.tool.cost !== undefined || entry.tool.upkeep !== null && entry.tool.upkeep !== undefined" class="item-meta item-finance">
+            <span>{{ t("studio.workbench.costShort") }} {{ entry.tool.cost ?? "—" }}</span>
+            <span class="dot">·</span>
+            <span>{{ t("studio.workbench.upkeepShort") }} {{ entry.tool.upkeep ?? "—" }}</span>
           </span>
         </span>
         <FIcon class="item-chev" name="ChevronRight" :size="14" aria-label="" />
@@ -117,6 +145,9 @@ function onAdd(): void {
 
 
     <footer class="panel-foot">
+      <button type="button" class="foot-btn primary" :disabled="!editedCount" @click="onBuild">
+        {{ t("studio.workbench.buildPackage") }}
+      </button>
       <button type="button" class="foot-btn primary" @click="onExport">
         {{ t("studio.workbench.export") }}
       </button>
@@ -306,6 +337,7 @@ function onAdd(): void {
 .panel-foot {
   border-top: 1px solid var(--border);
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 10px 12px;
 }
@@ -321,6 +353,9 @@ function onAdd(): void {
   padding: 0 6px;
   transition: border-color 120ms ease, color 120ms ease;
   white-space: nowrap;
+}
+.panel-foot .foot-btn:first-child {
+  flex-basis: 100%;
 }
 .foot-btn:hover:not(:disabled) {
   border-color: var(--primary);

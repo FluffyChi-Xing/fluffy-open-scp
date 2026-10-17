@@ -40,7 +40,7 @@ export interface WorkbenchTool {
   /** hardGate（0x0975695F）标记的锁定项。 */
   locked?: boolean;
   /** 名称来源：locale = 游戏字符串表；unresolved = 尚无译名。 */
-  source: "locale" | "unresolved";
+  source: "locale" | "unresolved" | "preset";
 }
 
 export interface WorkbenchCategory {
@@ -133,7 +133,12 @@ export function assetPathForRef(ref: string): string | null {
 
 /** 单条菜单项的编辑覆盖（保存在工作台内存；导出时装配成覆盖资源）。
  * `icon` 是 FIcon 名覆盖；`preview`/`marquee` 是裁切组件产出的 dataURL
- * （或资产路径），未提供时回落基础数据。 */
+ * 或基础资产路径。
+ *
+ * 三态语义（所有编辑器编辑的是副本 = 原始数据 + 覆盖，绝不改基础数据）：
+ * - `undefined` = 不修改（回落基础值）；
+ * - `null` = 明确移除（大图/槽位图不回落，展示与导出都视为无图）；
+ * - 字符串 = 替换。 */
 export interface ToolEdit {
   label?: string;
   icon?: string | null;
@@ -145,6 +150,9 @@ export interface ToolEdit {
   locked?: boolean;
   preview?: string | null;
   marquee?: string | null;
+  /** 统计行覆盖（undefined 不改 / 数组替换，[] = 清空）。只作用于工作台
+   * 展示与 schema 导出 —— 游戏侧统计行由 Unit 条目派生，property 覆盖不含。 */
+  stats?: { label: string; value: string | null }[];
 }
 
 /** 应用编辑后的展示视图。 */
@@ -164,7 +172,8 @@ export function applyEdit(
     upkeep: edit.upkeep ?? tool.upkeep,
     locked: edit.locked ?? tool.locked,
     preview: edit.preview !== undefined ? edit.preview : tool.preview,
-    marquee: edit.marquee ?? tool.marquee,
+    marquee: edit.marquee !== undefined ? edit.marquee : tool.marquee,
+    stats: edit.stats !== undefined ? edit.stats : tool.stats,
   };
 }
 
