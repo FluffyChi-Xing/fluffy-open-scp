@@ -9,6 +9,7 @@
  *
  * 装载结果进程内缓存；测试直接构造 ReplicaData 调 store.hydrate，不走这里。
  */
+import { gameAssetDataUrl } from "@/lib/game-assets";
 import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "./types";
 
 const DATA_BASE = "/game-ui/replica/data/";
@@ -104,6 +105,42 @@ export function mergeMenuCosts(
   }
 }
 
+interface BakedSlotNode {
+  x: number;
+  image: string;
+}
+
+/** 布局树里烘焙的工具槽位节点（drawable 首图是 *_default.png 状态图）。 */
+function collectBakedSlots(layout: ReplicaData["palette"]["byCategory"][string]["layout"]): BakedSlotNode[] {
+  const out: BakedSlotNode[] = [];
+  const walk = (node: ReplicaData["layout"]): void => {
+    const image = node.drawable?.images?.[0];
+    if (image && /_default\.png$/.test(image) && (node.comment ?? "").includes("Tool")) {
+      out.push({ x: node.left ?? 0, image });
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  walk(layout);
+  return out;
+}
+
+/** 把布局烘焙槽位引用的图片改从玩家安装包解析（game_asset 路径寻址）。
+ * 仅当烘焙节点数与条目数一致时按 x 序 ↔ pos 序一一配对；解析失败保留
+ * 仓库内置回退路径。 */
+async function resolvePaletteIcons(data: ReplicaData): Promise<void> {
+  for (const [categoryId, entry] of Object.entries(data.palette?.byCategory ?? {})) {
+    const tools = data.tools[categoryId] ?? [];
+    if (tools.length === 0) continue;
+    const nodes = collectBakedSlots(entry.layout);
+    if (nodes.length !== tools.length) continue;
+    const sortedNodes = [...nodes].sort((a, b) => a.x - b.x);
+    for (const [index, node] of sortedNodes.entries()) {
+      const url = await gameAssetDataUrl(node.image);
+      if (url) tools[index].preview = url;
+    }
+  }
+}
+
 async function loadCostIndex(): Promise<MenuCostIndex> {
   const parsed = (await loadJson(COSTS_URL)) as Partial<MenuCostIndex> | null;
   return { ...parsed, costs: parsed?.costs ?? {} };
@@ -133,6 +170,8 @@ export function loadReplicaData(): Promise<ReplicaData> {
     const costIndex = await loadCostIndex();
     mergeSubmenus(data, costIndex);
     mergeMenuCosts(data.tools, costIndex);
+    // 布局烘焙槽位图标改走玩家安装包解析（Tauri）；浏览器回退仓库内置路径
+    await resolvePaletteIcons(data);
     return data;
   })();
   // 失败时清空缓存：否则被缓存的是 rejected promise，一次瞬态失败

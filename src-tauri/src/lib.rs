@@ -10,6 +10,7 @@
 
 mod activity;
 mod effect_service;
+mod game_assets;
 mod effect_resources;
 mod annotations;
 mod atomic_fs;
@@ -151,6 +152,7 @@ pub fn run() {
             game_launch::game_processes,
             game_launch::deploy_game_mod,
             game_launch::deploy_ui_overlay,
+            game_assets::game_asset,
             game_launch::launch_game,
             version_list_targets,
             version_list_changesets,
