@@ -2,9 +2,14 @@
  * ui_replica 复刻数据装载：把 public/game-ui/replica/data/*.js 以 <script> 注入
  * （它们是 `window.HUD_* = {...}` 形式的生成产物，与复刻站完全一致），然后读取全局。
  *
+ * 装载时合并 public/game-ui/tools/costs.json（menu_cost_dump 从实际安装包提取的
+ * 真实造价索引，按 6C969DEE 名称字串联查 40E1C000/61F0C000 单元配置）——
+ * 只回填 cost 为空的条目；维护费与道路造价在静态包中不存在（GlassBox 模拟侧），
+ * 保持 null 由 UI 显示「未解析」。
+ *
  * 装载结果进程内缓存；测试直接构造 ReplicaData 调 store.hydrate，不走这里。
  */
-import type { ReplicaData } from "./types";
+import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "./types";
 
 const DATA_BASE = "/game-ui/replica/data/";
 const DATA_FILES = [
@@ -15,6 +20,101 @@ const DATA_FILES = [
   "tools.js",
   "palette.js",
 ] as const;
+const COSTS_URL = "/game-ui/tools/costs.json";
+const EXTRA_CONTAINERS_URL = "/game-ui/tools/extra-containers.json";
+
+/** extra-containers.json：运行时装配分类（公共運輸/公園）的静态聚合成员。 */
+interface ExtraContainers {
+  format?: string;
+  tools?: Record<string, ReplicaTool[]>;
+  subtabs?: Record<string, { label: string; instances: string[] }[]>;
+}
+
+/** 只回填空的分类：这俩面板在 Menu/Menu2 静态数据里 0 成员（按钮序表
+ * 0x57572DAC 证实按钮存在，游戏由运行时装配），用聚合产物补齐；
+ * 子分类标签同步进 data.subtabs（palette 渲染 tab 行用）。 */
+function mergeExtraContainers(
+  data: ReplicaData,
+  extra: ExtraContainers,
+): void {
+  for (const [categoryId, list] of Object.entries(extra?.tools ?? {})) {
+    if ((data.tools[categoryId]?.length ?? 0) === 0 && list.length > 0) {
+      data.tools[categoryId] = list;
+    }
+  }
+  if (extra?.subtabs && Object.keys(extra.subtabs).length > 0) {
+    data.subtabs = { ...(data.subtabs ?? {}), ...extra.subtabs };
+  }
+}
+
+async function loadJson(url: string): Promise<unknown | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+/** costs.json 的一条命中（unit/config/piece 供溯源）。
+ * cost/maintenance = plop 建造价/维护（EcoGame Unit 条目，cToolPlop 语义）；
+ * roadCost = 道路 rollover 单价（分段定义 0x0E76A7E2，无键=0 即免费）；
+ * configCost = 资产配置 Cost（名称联查兜底）。 */
+export interface MenuCostHit {
+  cost?: number;
+  maintenance?: number;
+  roadCost?: number;
+  configCost?: number;
+  unit?: string;
+  config?: string;
+  piece?: string;
+  name?: string;
+}
+
+export interface MenuCostIndex {
+  format?: string;
+  source?: string;
+  costs: Record<string, MenuCostHit>;
+  /** 建筑子菜单（menuUnit 子单位反查的模块菜单条目）。 */
+  submenus?: Record<string, ReplicaSubmenuItem[]>;
+}
+
+/** 把造价索引合并进复刻工具表：只填 cost/upkeep 为空的条目。
+ * 道路 roadCost（分段定义 0x0E76A7E2，无键=0）也作为显示造价——
+ * §0 = 引擎语义「免费」（原版道路铺设不要钱）。纯函数，便于测试。 */
+export function mergeMenuCosts(
+  tools: Record<string, ReplicaTool[]>,
+  index: MenuCostIndex,
+): void {
+  const costs = index?.costs ?? {};
+  for (const list of Object.values(tools)) {
+    for (const tool of list) {
+      const hit = costs[tool.instance];
+      if (!hit) continue;
+      if (tool.cost == null) {
+        if (hit.cost != null) tool.cost = String(hit.cost);
+        else if (hit.roadCost != null) tool.cost = String(hit.roadCost);
+        else if (hit.configCost != null) tool.cost = String(hit.configCost);
+      }
+      if (tool.upkeep == null && hit.maintenance != null) {
+        tool.upkeep = String(hit.maintenance);
+      }
+    }
+  }
+}
+
+async function loadCostIndex(): Promise<MenuCostIndex> {
+  const parsed = (await loadJson(COSTS_URL)) as Partial<MenuCostIndex> | null;
+  return { ...parsed, costs: parsed?.costs ?? {} };
+}
+
+/** costs.json 的 submenus 挂到 data.submenus（建筑子菜单，Sheet 嵌套编辑用）。 */
+function mergeSubmenus(data: ReplicaData, index: MenuCostIndex): void {
+  if (index.submenus && Object.keys(index.submenus).length > 0) {
+    data.submenus = { ...(data.submenus ?? {}), ...index.submenus };
+  }
+}
 
 let cached: Promise<ReplicaData> | null = null;
 
@@ -23,7 +123,17 @@ export function loadReplicaData(): Promise<ReplicaData> {
     for (const name of DATA_FILES) {
       await injectScript(DATA_BASE + name);
     }
-    return readGlobals();
+    const data = readGlobals();
+    // 增强数据：缺失/损坏都不阻塞菜单装载。
+    // 顺序：先补齐运行时装配分类（公共運輸/公園），造价合并才能覆盖到它们。
+    mergeExtraContainers(
+      data,
+      ((await loadJson(EXTRA_CONTAINERS_URL)) as ExtraContainers | null) ?? {},
+    );
+    const costIndex = await loadCostIndex();
+    mergeSubmenus(data, costIndex);
+    mergeMenuCosts(data.tools, costIndex);
+    return data;
   })();
   // 失败时清空缓存：否则被缓存的是 rejected promise，一次瞬态失败
   // （dev server 抖动等）之后本次会话永远装载失败。

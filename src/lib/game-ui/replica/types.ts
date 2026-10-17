@@ -126,6 +126,25 @@ export interface ReplicaPalette {
   row: ReplicaSlotRow;
 }
 
+/** 建筑子菜单条目（menuUnit 的子单位反查出的模块菜单，costs.json 产物）。 */
+export interface ReplicaSubmenuItem {
+  instance: string;
+  name: string;
+  desc?: string;
+  preview?: string | null;
+  marquee?: string | null;
+  cost?: number | null;
+  maintenance?: number | null;
+}
+
+/** 文件夹式分类（公共交通/公園）的子分类标签：palette 内按 instance 过滤。 */
+export interface ReplicaSubtab {
+  /** 游戏标签文案（公車/路面電車/火車/船…，来自提取产物）。 */
+  label: string;
+  /** 该子分类包含的条目 instance。 */
+  instances: string[];
+}
+
 /** data/*.js 六个全局的聚合。 */
 export interface ReplicaData {
   layout: ReplicaNode;
@@ -134,4 +153,8 @@ export interface ReplicaData {
   model: ReplicaModel;
   tools: Record<string, ReplicaTool[]>;
   palette: ReplicaPalette;
+  /** 文件夹分类的子分类（extra-containers 产物；缺省无）。 */
+  subtabs?: Record<string, ReplicaSubtab[]>;
+  /** 建筑子菜单（costs.json 产物；缺省无）。 */
+  submenus?: Record<string, ReplicaSubmenuItem[]>;
 }

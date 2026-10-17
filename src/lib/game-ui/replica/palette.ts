@@ -50,6 +50,7 @@ export interface HudPalette {
  * 使它对到参考图实测的 745。 */
 const PANEL = { x: 0, h: 150, barY: 745 };
 
+
 export function createHudPalette(
   data: ReplicaData,
   createNodeElement: NodeElementFactory,
@@ -102,7 +103,7 @@ export function createHudPalette(
 
     attachLabel(body, entry.layout, label);
     attachCloseButton(body);
-    attachSlotRow(body, categoryId, entry.slotRow, barY);
+attachSlotRow(body, categoryId, entry.slotRow, barY);
     return true;
   }
 
@@ -188,9 +189,6 @@ export function createHudPalette(
   /** 布局自带工具按钮的分类（见 build.py 的 SKIP_SLOT_ROW）。 */
   const SKIP_SLOT_ROW = new Set<string>();
 
-  /** 游戏行为：二级槽位一行最多 8 个，超出的用 ◀/▶ 翻页，不换行。 */
-  const PAGE_SIZE = 8;
-
   /* ── hover 信息提示框（游戏里的 BuildingRollover）──
    * 白底圆角窗 + 钢蓝标题 + rollover 大图 + 图底半透明黑条描述 +
    * 锁定项的红色解锁提示。数据全部来自菜单条目 property
@@ -240,11 +238,14 @@ export function createHudPalette(
         ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${escape(tool.unlock)}</div>` : ""}
         <div class="hud-rollover-cost">${costCell(tool.cost)}${costCell(tool.upkeep)}</div>
       `;
-      // 定位：槽位的 offsetParent 是槽位行（absolute），先换算到 body 坐标；
-      // 水平跟槽位居中并夹在面板内，竖直贴在槽位行上方。
-      const row = slot.offsetParent as HTMLElement | null;
-      const cx = (row?.offsetLeft ?? 0) + slot.offsetLeft + slot.offsetWidth / 2;
-      const top = (row?.offsetTop ?? 0) + slot.offsetTop;
+      // 定位：槽位 rect → body 坐标（getBoundingClientRect 是缩放后的客户端
+      // 坐标，除以当前缩放比换回布局坐标）。烘焙槽位与动态槽位的
+      // offsetParent 链不同，统一走 rect 换算才不会漂移。
+      const bodyRect = bodyEl.getBoundingClientRect();
+      const scale = bodyRect.width / (bodyEl.clientWidth || bodyRect.width || 1) || 1;
+      const slotRect = slot.getBoundingClientRect();
+      const cx = (slotRect.left - bodyRect.left) / scale + slotRect.width / scale / 2;
+      const top = (slotRect.top - bodyRect.top) / scale;
       const width = rolloverEl.offsetWidth || 320;
       // 游戏弹窗锚定：指针三角（左缘 38px）正对槽位中心，窗体向右延伸；
       // 右缘越界时整体夹回面板内。
@@ -257,19 +258,53 @@ export function createHudPalette(
     }, 80);
   }
 
-  /** 槽位行：把该分类的工具平铺出来做预览。一行最多 8 个，超出的部分由
-   * 面板布局自带的翻页钮（data-comment "page left"/"page right"）翻页查看。
+  /** 槽位行：把该分类的工具平铺出来做预览。
    *
-   * 槽位图标 = 菜单条目 property 的 kPropToolIconKey（0x0977AA8F，组 40E02400
-   * 的等轴模型渲染 PNG，构建期已拷进 assets/）；preview 为空的条目（如公园
-   * 旧数据回填）回退 tool_placeholder.png。 */
+   * 每页容量对拍游戏规则（引擎把槽位从左信息块右侧排到右翻页钮为止，
+   * 放得下几个排几个，超出的翻页，不换行）：容量 = ⌊(右箭头左缘 − 行首x) / pitch⌋。
+   * 各分类布局的左块宽度/箭头位置不同 → 每页数量随菜单不同（同一布局拉伸
+   * 后也会随舞台分辨率变化），不写死。
+   *
+   * 文件夹式分类（公共交通/公園）带子分类标签（data.subtabs）：面板底部
+   * 渲染 pill 行（对拍游戏：公車/路面電車/火車/船…），槽位行只显示当前
+   * 子分类的条目。 */
   function attachSlotRow(parentEl: HTMLElement, categoryId: string, cfg: ReplicaSlotRow, barY: number): void {
     if (SKIP_SLOT_ROW.has(categoryId)) return; // 布局自带工具按钮的分类不再叠一行
-    const tools = hooks.getTools?.(categoryId) ?? (data.tools[categoryId] as SlotTool[] | undefined) ?? [];
-    if (!tools.length) return;
-    const perRow = Math.min(PAGE_SIZE, tools.length);
-    const pageCount = Math.ceil(tools.length / perRow);
+    const allTools = hooks.getTools?.(categoryId) ?? (data.tools[categoryId] as SlotTool[] | undefined) ?? [];
+    if (!allTools.length) return;
+    // 布局自带固定槽位的分类（区域调色板：居中、无分页、分割线是背景图）：
+    // 不画通用动态行，把 hover/点击直接绑到烘焙槽位节点上 —— 位置、分割线
+    // 全部保持游戏原样。
+    // 「Dezone Tool」是小写 z，选择器必须忽略大小写才能把取消分区一起命中
+    const bakedSlots = Array.from(
+      parentEl.querySelectorAll<HTMLElement>('[data-comment]'),
+    )
+      .filter((el) => /zone tool$/i.test(el.dataset.comment ?? ''))
+      .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    if (bakedSlots.length > 0) {
+      // allTools 已按 uiPosition 排序（stage 的有效视图），顺序即游戏槽位顺序
+      const tools = allTools;
+      bakedSlots.forEach((slot, index) => {
+        const tool = tools[index];
+        if (!tool) {
+          slot.style.visibility = 'hidden';
+          return;
+        }
+        // .hud-el 默认 pointer-events:none（布局元素不可交互），必须显式打开
+        slot.style.pointerEvents = 'auto';
+        slot.style.cursor = 'pointer';
+        slot.addEventListener('mouseenter', () => showRollover(tool, slot, parentEl));
+        slot.addEventListener('mouseleave', hideRollover);
+        slot.addEventListener('click', () => hooks.onSlotClick?.(categoryId, tool));
+        slot.title = tool.label || tool.instance;
+      });
+      return;
+    }
+    const subtabs = data.subtabs?.[categoryId] ?? [];
+    let activeTab = 0;
     let page = 0;
+    let perRow = 1;
+    let pageCount = 1;
     // 行首锚在 ◀ 翻页钮右侧 —— 各布局条左端的搜索/信息块宽度不同，
     // 用固定值一定会踩到别的元素。注意 getBoundingClientRect 是缩放后的
     // 客户端坐标，舞台几何按布局坐标系（未缩放）算，必须除回当前缩放比。
@@ -282,14 +317,71 @@ export function createHudPalette(
     const leftBtns = Array.from(parentEl.querySelectorAll('[data-comment="page left"]'));
     const rightBtns = Array.from(parentEl.querySelectorAll('[data-comment="page right"]'));
     const leftBtn = leftBtns[0];
+    const rightBtn = rightBtns[0];
     const startX = leftBtn ? Math.max(cfg.startX, rel(leftBtn, "right") + 6) : cfg.startX;
+    const stripEnd = rightBtn
+      ? rel(rightBtn, "left") - 6
+      : parentEl.clientWidth - cfg.pitch * 0.5;
+
+    /** 当前子分类过滤后的条目池。 */
+    function pool(): SlotTool[] {
+      if (subtabs.length === 0) return allTools;
+      const allowed = new Set(subtabs[activeTab]?.instances ?? []);
+      const picked = allTools.filter((tool) => allowed.has(tool.instance));
+      return picked.length > 0 ? picked : allTools;
+    }
+
     const row = document.createElement("div");
     row.className = "hud-palette-row";
     row.style.left = `${startX}px`;
     row.style.top = `${barY + (cfg.topInBar || 0)}px`; // 相对菜单条，各布局通用
-    row.style.width = `${perRow * cfg.pitch}px`;
     row.style.height = `${cfg.slotH}px`;
     parentEl.appendChild(row);
+
+    function reflow(): void {
+      const count = pool().length;
+      perRow = Math.max(1, Math.min(count, Math.floor((stripEnd - startX) / cfg.pitch)));
+      pageCount = Math.ceil(count / perRow);
+      if (page >= pageCount) page = Math.max(0, pageCount - 1);
+      row.style.width = `${perRow * cfg.pitch}px`;
+    }
+
+    // 子分类 pill 行（游戏内位于面板条底部：公車/路面電車/火車/船…）
+    if (subtabs.length > 0) {
+      const pills = document.createElement("div");
+      pills.className = "hud-subtabs";
+      pills.style.cssText = `align-items:center;display:flex;gap:6px;left:${startX}px;position:absolute;top:${barY + cfg.slotH + 16}px;`;
+      const paintPills = (): void => {
+        pills.querySelectorAll("button").forEach((el, i) => {
+          const active = i === activeTab;
+          const el2 = el as HTMLElement;
+          el2.style.background = active ? "#2f9bf4" : "linear-gradient(#f2f8fd,#cddff0)";
+          el2.style.color = active ? "#fff" : "#1c3d5a";
+          el2.style.borderColor = active ? "#1f7fd0" : "#8aa5be";
+        });
+      };
+      subtabs.forEach((tab, index) => {
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.textContent = tab.label;
+        pill.style.cssText =
+          "background:linear-gradient(#f2f8fd,#cddff0);border:1px solid #8aa5be;" +
+          "border-radius:999px;color:#1c3d5a;cursor:pointer;font:bold 12px/1 sans-serif;" +
+          "padding:4px 14px;";
+        pill.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (activeTab === index) return;
+          activeTab = index;
+          page = 0;
+          paintPills();
+          reflow();
+          paintPage();
+        });
+        pills.appendChild(pill);
+      });
+      paintPills();
+      parentEl.appendChild(pills);
+    }
 
     // 多页时才把布局自带的 ◀/▶ 翻页钮接上（.hud-el 默认 pointer-events:none，
     // 且单页时应与复刻站观感完全一致——装饰态）；端点钮置灰。
@@ -325,6 +417,7 @@ export function createHudPalette(
 
     function paintPage(): void {
       hideRollover();
+      const tools = pool();
       row.textContent = "";
       tools.slice(page * perRow, page * perRow + perRow).forEach((tool, i) => {
         const slot = document.createElement("div");
@@ -364,6 +457,7 @@ export function createHudPalette(
       }
     }
 
+    reflow();
     wirePager();
     paintPage();
   }
