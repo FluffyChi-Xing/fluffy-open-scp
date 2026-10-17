@@ -15,12 +15,48 @@ import ResourceEffects from "./ResourceEffects.vue";
 import conditions from "./fixtures/rule-conditions.json";
 import RuleEligibility from "./RuleEligibility.vue";
 import { captureQuality } from "./captureQuality";
-import { analyze, parseTrace, selectEvidence } from "./diagnostics";
+import {
+  analyze,
+  parseTrace,
+  semanticCategory,
+  selectEvidence,
+} from "./diagnostics";
 import Workbench from "./DiagnosticWorkbench.vue";
 import QualityPanel from "./CaptureQuality.vue";
 import LogStream from "./LogStream.vue";
+import FSelect from "@/components/ui/FSelect.vue";
 
 describe("diagnostic evidence", () => {
+  it("classifies static evidence by semantic category and filters the result list", async () => {
+    const consumption = analyze(unitEffects, "consumption").rows[0];
+    const production = analyze(effects, "production").rows[0];
+    expect(semanticCategory(consumption)).toBe("resource-production");
+    expect(semanticCategory(production)).toBe("resource-production");
+    const wrapper = mount(Workbench, { global: { plugins: [i18n] } });
+    const input = wrapper.find("input[type=file]");
+    Object.defineProperty(input.element, "files", {
+      value: [
+        {
+          name: "categories.jsonl",
+          size: 100,
+          text: async () =>
+            [...unitEffects, effects[0]]
+              .map((r) => JSON.stringify(r))
+              .join("\n"),
+        },
+      ],
+    });
+    await input.trigger("change");
+    await flushPromises();
+    expect(wrapper.findAll(".category-resource-production")).toHaveLength(2);
+    await wrapper
+      .findComponent(FSelect)
+      .vm.$emit("update:modelValue", "resource-production");
+    await flushPromises();
+    expect(wrapper.findAll(".evidence-row")).toHaveLength(2);
+    i18n.global.locale.value = "zh-CN";
+    wrapper.unmount();
+  });
   it("colors semantic live log categories and exposes structured hover details", async () => {
     const w = mount(LogStream, {
       props: {

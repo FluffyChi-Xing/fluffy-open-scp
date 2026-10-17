@@ -17,8 +17,40 @@ export interface DiagnosticSession {
   invalid: number[];
   captureStatus?: Raw;
 }
+export type SemanticCategory =
+  | "resource-consumption"
+  | "resource-production"
+  | "resource-flow"
+  | "rule-execution"
+  | "condition-check"
+  | "resource-source"
+  | "ui-event"
+  | "ui-call"
+  | "engine"
+  | "marker"
+  | "unknown";
 const object = (v: unknown): Raw =>
   v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Raw) : {};
+
+export function semanticCategory(row: Evidence): SemanticCategory {
+  const channel = String(row.raw.channel ?? "");
+  if (channel === "simulation.effect") {
+    const operations = Array.isArray(row.raw.operations) ? row.raw.operations : [];
+    const consumes = operations.some((op) => Number(object(op).input) > 0);
+    const produces = operations.some((op) => Number(object(op).output) > 0);
+    if (consumes && !produces) return "resource-consumption";
+    if (produces && !consumes) return "resource-production";
+    return "resource-flow";
+  }
+  if (channel === "simulation.condition") return "condition-check";
+  if (channel === "simulation.rule") return "rule-execution";
+  if (channel === "resource.provenance") return "resource-source";
+  if (channel === "engine" || channel.startsWith("engine.")) return "engine";
+  if (channel === "host.marker") return "marker";
+  if (channel === "event") return row.source === "simulation" ? "rule-execution" : "ui-event";
+  if (["invoke", "result", "console"].includes(channel)) return "ui-call";
+  return "unknown";
+}
 
 /** Decode only the tagged values emitted by the validated UI probe. */
 export function decode(v: unknown, depth = 0): unknown {

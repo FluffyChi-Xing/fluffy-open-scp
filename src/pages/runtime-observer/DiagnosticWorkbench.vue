@@ -4,13 +4,14 @@ import { useI18n } from "vue-i18n";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
 import FAlert from "@/components/ui/FAlert.vue";
 import FButton from "@/components/ui/FButton.vue";
+import FSelect from "@/components/ui/FSelect.vue";
 import LocalFilePicker from "./LocalFilePicker.vue";
 import EvidenceDetail from "./EvidenceDetail.vue";
 import EvidenceValue from "./EvidenceValue.vue";
 import CaptureQuality from "./CaptureQuality.vue";
 import ResourceEffects from "./ResourceEffects.vue";
 import RuleEligibility from "./RuleEligibility.vue";
-import { selectEvidence } from "./diagnostics";
+import { semanticCategory, selectEvidence } from "./diagnostics";
 import { useDiagnosticSession } from "./useDiagnosticSession";
 const { t } = useI18n();
 const {
@@ -27,6 +28,7 @@ const {
 } = useDiagnosticSession();
 const source = shallowRef("all");
 const query = shallowRef("");
+const category = shallowRef("all");
 const marker = shallowRef("");
 const page = shallowRef(0);
 const sources = [
@@ -38,8 +40,30 @@ const sources = [
   "marker",
   "unknown",
 ];
+const categories = [
+  "all",
+  "resource-consumption",
+  "resource-production",
+  "resource-flow",
+  "rule-execution",
+  "condition-check",
+  "resource-source",
+  "ui-event",
+  "ui-call",
+  "engine",
+  "marker",
+  "unknown",
+];
+const categoryOptions = computed(() =>
+  categories.map((value) => ({
+    value,
+    label: t(`diagnostics.category.${value}`),
+  })),
+);
 const filtered = computed(() =>
-  selectEvidence(session.value?.rows ?? [], source.value, query.value),
+  selectEvidence(session.value?.rows ?? [], source.value, query.value).filter(
+    (row) => category.value === "all" || semanticCategory(row) === category.value,
+  ),
 );
 const pages = computed(() =>
   Math.max(1, Math.ceil(filtered.value.length / 100)),
@@ -53,7 +77,7 @@ const pairs = computed(
       (r) => r.raw.channel === "result" && r.pair !== undefined,
     ).length ?? 0,
 );
-watch([source, query, session], () => {
+watch([source, category, query, session], () => {
   page.value = 0;
 });
 function addMarker() {
@@ -155,6 +179,14 @@ function addMarker() {
             :aria-label="t('diagnostics.search')"
             :placeholder="t('diagnostics.search')"
           />
+          <label class="category-filter">
+            <span>{{ t("diagnostics.categoryFilter") }}</span>
+            <FSelect
+              v-model="category"
+              :options="categoryOptions"
+              :aria-label="t('diagnostics.categoryFilter')"
+            />
+          </label>
           <p v-if="source === 'simulation' || source === 'all'">
             {{ t("diagnostics.boundary") }}
           </p>
@@ -184,11 +216,19 @@ function addMarker() {
             tabindex="0"
             :aria-label="t('diagnostics.results')"
           >
-            <li v-for="row in visible" :key="row.id">
+            <li
+              v-for="row in visible"
+              :key="row.id"
+              class="evidence-row"
+              :class="`category-${semanticCategory(row)}`"
+            >
               <strong
                 >{{ t(`diagnostics.${row.source}`) }} · {{ row.stage }} · #{{
                   row.raw.sequence ?? row.id
-                }}</strong
+                }}
+                <span class="category-badge">
+                  {{ t(`diagnostics.category.${semanticCategory(row)}`) }}
+                </span></strong
               >
               <dl>
                 <div
@@ -329,6 +369,19 @@ input[type="search"] {
   width: 100%;
   box-sizing: border-box;
 }
+.category-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.category-filter :deep(.f-select-anchor) {
+  width: 190px;
+}
+.category-filter :deep(.f-select) {
+  min-width: 190px;
+  font-size: 12px;
+}
 .diagnostics :deep(.f-button) {
   min-height: 28px;
   padding: 0 9px;
@@ -436,6 +489,48 @@ li {
   border-top: 1px solid var(--border);
   padding: 8px 0;
   font-size: 12px;
+}
+.evidence-row > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+.category-resource-consumption,
+.category-resource-production,
+.category-resource-flow {
+  color: #b98525;
+}
+.category-rule-execution {
+  color: #4b8ecf;
+}
+.category-condition-check {
+  color: #b36bce;
+}
+.category-resource-source {
+  color: #2d9a72;
+}
+.category-ui-event,
+.category-ui-call {
+  color: #6f78c9;
+}
+.category-engine {
+  color: #c45b5b;
+}
+.category-marker,
+.category-unknown {
+  color: var(--muted-foreground);
 }
 dl {
   display: grid;
