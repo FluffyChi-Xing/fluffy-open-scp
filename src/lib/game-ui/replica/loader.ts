@@ -202,7 +202,9 @@ async function resolveLayoutAssetMap(data: ReplicaData): Promise<void> {
   }
 }
 
-/** 一级分类圆钮图标（model.js 的 iconHash 即 PNG instance）。 */
+/** 一级分类圆钮图标（model.js 的 iconHash 即 PNG instance）。
+ * 渲染层取 icon 路径的文件名查 ASSET_MAP —— 所以解析结果必须写进
+ * assets[basename]，不能替换 icon 本身（dataURL 会被 basename 逻辑撕碎）。 */
 async function resolveCategoryIcons(data: ReplicaData): Promise<void> {
   for (const category of data.model.categories) {
     const hash = category.iconHash;
@@ -210,7 +212,7 @@ async function resolveCategoryIcons(data: ReplicaData): Promise<void> {
     const instance = Number.parseInt(hash, 16);
     if (!Number.isFinite(instance)) continue;
     const url = await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance);
-    if (url) category.icon = url;
+    if (url) data.assets[`cat_${hash}.png`] = url;
   }
 }
 
