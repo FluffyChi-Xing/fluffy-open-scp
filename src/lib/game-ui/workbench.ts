@@ -11,8 +11,37 @@
  * - 图片资源按 **instance = FNV-1(小写去扩展名)** 命名存储，与提取目录
  *   `public/game-ui/<ext>/<group>_<instance>.<ext>` 一一对应。
  *
- * preview 为 null 的条目（如公园回填的旧数据）：槽位/缩略图回退 tool_placeholder.png。
+ * preview 为 null 的条目：槽位/缩略图回退 PLACEHOLDER_FALLBACK（OpenSCP 自绘）。
  */
+
+/** 无图条目的自绘占位（灰底问号，data URI）——替代游戏提取的占位图。 */
+export const PLACEHOLDER_FALLBACK =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">' +
+      '<rect width="128" height="128" rx="10" fill="#2a2f3a"/>' +
+      '<text x="64" y="82" font-family="sans-serif" font-size="56" fill="#8b93a3" text-anchor="middle">?</text>' +
+    "</svg>",
+  );
+
+/** rollover 底部的模拟币图标（自绘 § 圆形，data URI）。 */
+export const SIMOLEON_FALLBACK =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">' +
+      '<circle cx="10" cy="10" r="9" fill="#3b82d6"/>' +
+      '<text x="10" y="15" font-family="sans-serif" font-size="13" fill="#fff" text-anchor="middle">§</text>' +
+    "</svg>",
+  );
+
+/** 动态槽位的椭圆光垫（自绘径向渐变，data URI）。 */
+export const SLOT_PAD_FALLBACK =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="121" height="50">' +
+      '<ellipse cx="60" cy="25" rx="52" ry="18" fill="#dfe7ee" opacity="0.85"/>' +
+    "</svg>",
+  );
 
 export interface WorkbenchTool {
   /** 工具 property 的 instance（0x%08X 大写十六进制）。 */

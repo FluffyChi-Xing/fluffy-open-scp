@@ -12,6 +12,7 @@
  *   - 槽位行工具清单可由调用方覆盖（工作台的编辑覆盖/新增条目）；
  *   - 槽位可挂点击回调与「新增条目」删除角标。
  */
+import { PLACEHOLDER_FALLBACK, SIMOLEON_FALLBACK, SLOT_PAD_FALLBACK } from "@/lib/game-ui/workbench";
 import { designPass, type NodeElementFactory } from "./render";
 import { updatePosition } from "@/lib/game-ui/scrui";
 import type { ReplicaData, ReplicaNode, ReplicaSlotRow, ReplicaTool } from "./types";
@@ -225,7 +226,7 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
             `<div class="hud-rollover-stat"><span class="label">${escape(row.label)}</span><span class="value">${escape(row.value ?? "")}</span></div>`,
         )
         .join("");
-      const simoleon = data.assets["icn-simoleon.png"] ?? "/game-ui/replica/assets/icn-simoleon.png";
+      const simoleon = data.assets["icn-simoleon.png"] ?? SIMOLEON_FALLBACK;
       const costCell = (value: string | null | undefined): string =>
         `<div class="cell"><span class="simoleon" style="background-image:url('${simoleon}')"></span>${escape(value || "—")}</div>`;
       rolloverEl.innerHTML = `
@@ -428,9 +429,9 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
         slot.style.top = "-14px";
         slot.style.width = `${(cfg.pitch - 4).toFixed(2)}px`;
         slot.style.height = "66px";
-        const img = tool.preview || tool.marquee || "/game-ui/replica/assets/tool_placeholder.png";
-        // 双层背景：图标 + 椭圆光垫（palette-tool-select-hl，见 replica.css 注释）
-        const pad = data.assets["palette-tool-select-hl.png"] ?? "/game-ui/replica/assets/palette-tool-select-hl.png";
+        const img = tool.preview || tool.marquee || PLACEHOLDER_FALLBACK;
+        // 双层背景：图标 + 椭圆光垫（自绘光垫，见 SLOT_PAD_FALLBACK）
+        const pad = data.assets["palette-tool-select-hl.png"] ?? SLOT_PAD_FALLBACK;
         slot.style.backgroundImage = `url('${img}'), url('${pad}')`;
         slot.title = tool.label || tool.instance;
         slot.addEventListener("mouseenter", () => showRollover(tool, slot, parentEl));

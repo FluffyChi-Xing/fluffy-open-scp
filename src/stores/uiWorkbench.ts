@@ -369,7 +369,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       label: i18n.global.t("studio.workbench.universitySidewalk"),
       pos: Math.max(...road.items.map((item) => item.pos), 0) + 10,
       icon: null,
-      preview: "/game-ui/replica/assets/tool_placeholder.png",
+      preview: null,
       marquee: "/game-ui/reference/university.png",
       desc: i18n.global.t("studio.workbench.universitySidewalkDesc"),
       unlock: "",
