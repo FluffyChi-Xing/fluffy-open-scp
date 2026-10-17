@@ -9,7 +9,7 @@
  *
  * 装载结果进程内缓存；测试直接构造 ReplicaData 调 store.hydrate，不走这里。
  */
-import { gameAssetDataUrl } from "@/lib/game-assets";
+import { gameAssetDataUrl, gameAssetTgiDataUrl } from "@/lib/game-assets";
 import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "./types";
 
 const DATA_BASE = "/game-ui/replica/data/";
@@ -141,6 +141,79 @@ async function resolvePaletteIcons(data: ReplicaData): Promise<void> {
   }
 }
 
+
+const ICON_PNG_TYPE = 0x2f7d0004;
+const ICON_PNG_GROUP = 0x40e02400;
+const MARQUEE_JPG_TYPE = 0x3f8662ea;
+
+/** 全部菜单条目的槽位图标/大图：文件名内嵌资源 instance
+ * （tool_icon_<i>.png / tool_<i>.jpg），按 TGI 从玩家安装包解析。 */
+async function resolveToolImages(data: ReplicaData): Promise<void> {
+  const lists: (ReplicaTool | ReplicaSubmenuItem)[][] = [
+    ...Object.values(data.tools),
+    ...Object.values(data.submenus ?? {}),
+  ];
+  for (const tools of lists) {
+    for (const tool of tools) {
+      const icon = /tool_icon_([0-9A-Fa-f]{8})\.png$/.exec(tool.preview ?? "");
+      if (icon) {
+        const instance = Number.parseInt(icon[1], 16);
+        const url =
+          (await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance, ICON_PNG_GROUP)) ??
+          (await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance));
+        if (url) tool.preview = url;
+      }
+      const marquee = /tool_([0-9A-Fa-f]{8})\.jpg$/.exec(tool.marquee ?? "");
+      if (marquee) {
+        const instance = Number.parseInt(marquee[1], 16);
+        const url = await gameAssetTgiDataUrl(MARQUEE_JPG_TYPE, instance);
+        if (url) tool.marquee = url;
+      }
+    }
+  }
+}
+
+/** 布局树的全部图片引用（路径寻址）→ 覆盖 ASSET_MAP 的 basename 条目。
+ * HUD 主布局与各调色板布局都走这一条通道；解析失败的引用保留内置回退。 */
+async function resolveLayoutAssetMap(data: ReplicaData): Promise<void> {
+  const trees: ReplicaData["layout"][] = [data.layout];
+  for (const entry of Object.values(data.palette?.byCategory ?? {})) {
+    trees.push(entry.layout);
+  }
+  const refs: string[] = [];
+  const walk = (node: ReplicaData["layout"]): void => {
+    for (const image of node.drawable?.images ?? []) {
+      if (image) refs.push(image);
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  for (const tree of trees) walk(tree);
+  const unique = [...new Set(refs)];
+  const chunk = 24;
+  for (let i = 0; i < unique.length; i += chunk) {
+    await Promise.all(
+      unique.slice(i, i + chunk).map(async (ref) => {
+        const url = await gameAssetDataUrl(ref);
+        if (!url) return;
+        const base = ref.split(/[\/]/).pop() ?? ref;
+        data.assets[base] = url;
+      }),
+    );
+  }
+}
+
+/** 一级分类圆钮图标（model.js 的 iconHash 即 PNG instance）。 */
+async function resolveCategoryIcons(data: ReplicaData): Promise<void> {
+  for (const category of data.model.categories) {
+    const hash = category.iconHash;
+    if (!hash) continue;
+    const instance = Number.parseInt(hash, 16);
+    if (!Number.isFinite(instance)) continue;
+    const url = await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance);
+    if (url) category.icon = url;
+  }
+}
+
 async function loadCostIndex(): Promise<MenuCostIndex> {
   const parsed = (await loadJson(COSTS_URL)) as Partial<MenuCostIndex> | null;
   return { ...parsed, costs: parsed?.costs ?? {} };
@@ -172,6 +245,10 @@ export function loadReplicaData(): Promise<ReplicaData> {
     mergeMenuCosts(data.tools, costIndex);
     // 布局烘焙槽位图标改走玩家安装包解析（Tauri）；浏览器回退仓库内置路径
     await resolvePaletteIcons(data);
+    // 全部菜单条目的槽位图标/大图 + 布局图片引用 → 玩家安装包
+    await resolveToolImages(data);
+    await resolveLayoutAssetMap(data);
+    await resolveCategoryIcons(data);
     return data;
   })();
   // 失败时清空缓存：否则被缓存的是 rejected promise，一次瞬态失败
