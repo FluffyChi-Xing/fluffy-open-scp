@@ -18,8 +18,44 @@ import { captureQuality } from "./captureQuality";
 import { analyze, parseTrace, selectEvidence } from "./diagnostics";
 import Workbench from "./DiagnosticWorkbench.vue";
 import QualityPanel from "./CaptureQuality.vue";
+import LogStream from "./LogStream.vue";
 
 describe("diagnostic evidence", () => {
+  it("colors semantic live log categories and exposes structured hover details", async () => {
+    const w = mount(LogStream, {
+      props: {
+        rows: [
+          {
+            sequence: 12,
+            time: Date.now(),
+            channel: "simulation.effect",
+            phase: "unit-local-resource-update",
+            ruleId: "0xd715d72f",
+            unitSlot: 889,
+            operations: [{ resourceId: "0xe71f36b7", input: 1, output: 0 }],
+          },
+          {
+            sequence: 13,
+            time: Date.now(),
+            channel: "engine.warning",
+            text: "probe warning",
+          },
+        ],
+      },
+      global: { plugins: [i18n] },
+    });
+    expect(w.findAll(".tone-resource")).toHaveLength(1);
+    expect(w.findAll(".tone-engine")).toHaveLength(1);
+    expect(w.text()).toContain("资源");
+    expect(w.text()).toContain("通道");
+    expect(w.text()).toContain("0xd715d72f");
+    i18n.global.locale.value = "en-US";
+    await flushPromises();
+    expect(w.text()).toContain("Resource");
+    expect(w.text()).toContain("Semantic category");
+    i18n.global.locale.value = "zh-CN";
+    w.unmount();
+  });
   it("retains unit-local ownership without inventing a stable identity and renders the measured update", () => {
     const row = analyze(unitEffects, "real-unit-effects").rows[0];
     expect(row.source).toBe("simulation");

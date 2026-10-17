@@ -32,11 +32,13 @@ def main():
     target.add_argument('--launch-exe', type=Path, help='Start the specified build with hooks installed before resume')
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--seconds', type=int, default=20)
-    ap.add_argument('--scope', choices=['global', 'unit', 'both', 'provenance', 'effects', 'unit-effects', 'conditions'], default='global')
-    ap.add_argument('--rule-id', type=lambda s: int(s, 0), help='Effects/unit-effects/conditions scope: filter uint32 rule ID')
+    ap.add_argument('--scope', choices=['global', 'unit', 'both', 'provenance', 'effects', 'unit-effects', 'unit-consumption', 'conditions'], default='global')
+    ap.add_argument('--rule-id', type=lambda s: int(s, 0), help='Filter uint32 rule ID for rule/effects/conditions scopes')
+    ap.add_argument('--resource-id', type=lambda s: int(s, 0), help='Effects scopes: filter operation resource ID')
     ap.add_argument('--state-index', type=int)
     ap.add_argument('--unit-slot', type=int)
     ap.add_argument('--max-records', type=int, default=250)
+    ap.add_argument('--all-targets', action='store_true', help='Effects scopes: observe multiple units/rules until max-records')
     args = ap.parse_args()
     if not 1 <= args.seconds <= 120 or not 1 <= args.max_records <= 2000 or (args.pid is not None and args.pid <= 0):
         ap.error('pid must be positive; seconds 1..120; max-records 1..2000')
@@ -48,15 +50,19 @@ def main():
         ap.error('provenance observes rule resource loads, not rule state/slot indices')
     if args.scope in ['effects', 'conditions'] and (args.unit_slot is not None or args.state_index is not None):
         ap.error('effects/conditions use rule-id, not state-index or unit-slot')
-    if args.scope == 'unit-effects' and args.state_index is not None:
+    if args.scope in ['unit-effects', 'unit-consumption'] and args.state_index is not None:
         ap.error('unit-effects uses rule-id/unit-slot, not state-index')
-    if args.rule_id is not None and (args.scope not in ['effects', 'unit-effects', 'conditions'] or not 0 <= args.rule_id <= 0xffffffff):
-        ap.error('rule-id requires effects/unit-effects/conditions scope and a uint32 value')
+    if args.rule_id is not None and (args.scope not in ['global', 'unit', 'both', 'effects', 'unit-effects', 'unit-consumption', 'conditions'] or not 0 <= args.rule_id <= 0xffffffff):
+        ap.error('rule-id requires a rule, effects or conditions scope and a uint32 value')
+    if args.resource_id is not None and (args.scope not in ['effects', 'unit-effects', 'unit-consumption'] or not 0 <= args.resource_id <= 0xffffffff):
+        ap.error('resource-id requires effects/unit-effects/unit-consumption scope and a uint32 value')
+    if args.all_targets and args.scope not in ['effects', 'unit-effects', 'unit-consumption']:
+        ap.error('all-targets requires effects, unit-effects or unit-consumption scope')
     if args.launch_exe and args.scope != 'provenance':
         ap.error('launch-exe is only supported for provenance capture')
     import frida
     args.out.mkdir(parents=True, exist_ok=False)
-    agent_name = {'provenance': 'provenance_agent.js', 'effects': 'effects_agent.js', 'unit-effects': 'effects_agent.js', 'conditions': 'conditions_agent.js'}.get(args.scope, 'rule_agent.js')
+    agent_name = {'provenance': 'provenance_agent.js', 'effects': 'effects_agent.js', 'unit-effects': 'effects_agent.js', 'unit-consumption': 'effects_agent.js', 'conditions': 'conditions_agent.js'}.get(args.scope, 'rule_agent.js')
     agent = Path(__file__).with_name(agent_name).read_text(encoding='utf-8')
     status = {'pid': args.pid, 'startedUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
               'seconds': args.seconds, 'scope': args.scope, 'records': 0, 'ready': False,
@@ -67,6 +73,10 @@ def main():
         status['sampling'] = 'first matching global game/rule, <=16 effective operations, capped; snapshots around native writes'
     if args.scope == 'unit-effects':
         status['sampling'] = 'first matching game/unit slot/pointer/rule; unit-local bins only; <=16 effective operations, capped; stamp unknown'
+    if args.scope == 'unit-consumption':
+        status['sampling'] = 'first unit-local ApplyBinRule with input > 0; unit-local bins only; <=16 effective operations, capped; stamp unknown'
+        if args.all_targets:
+            status['sampling'] = 'all unit-local ApplyBinRule targets with input > 0 until max-records; unit-local bins only; <=16 operations; stamp unknown'
     if args.scope == 'conditions':
         status['sampling'] = 'first matching game, optional rule ID; capped eligibility checks; <=16 effective operations per count check'
     gone = threading.Event()
@@ -107,9 +117,15 @@ def main():
         if pe.sha256 != RETAIL_SHA or identity['arch'] != 'ia32':
             raise ValueError('unsupported_live_build')
         status.update({'identity': identity, 'sha256': pe.sha256})
-        selected_hooks = {'provenance': PROVENANCE_HOOKS, 'effects': EFFECT_HOOKS, 'unit-effects': UNIT_EFFECT_HOOKS, 'conditions': CONDITION_HOOKS}.get(args.scope, HOOKS)
-        kinds = list(selected_hooks) if args.scope in ['both', 'provenance', 'effects', 'unit-effects', 'conditions'] else [args.scope]
-        cfg = {'stateIndex': args.state_index, 'unitSlot': args.unit_slot, 'ruleId': args.rule_id, 'maxRecords': args.max_records,
+        selected_hooks = {'provenance': PROVENANCE_HOOKS, 'effects': EFFECT_HOOKS, 'unit-effects': UNIT_EFFECT_HOOKS, 'unit-consumption': UNIT_EFFECT_HOOKS, 'conditions': CONDITION_HOOKS}.get(args.scope, HOOKS)
+        scope_hooks = {
+            'effects': ['globalRun', 'applyOps', 'binFind'],
+            'unit-effects': ['unitRun', 'applyOps', 'binFind'],
+            'unit-consumption': ['unitRun', 'applyOps', 'binFind'],
+            'conditions': ['globalCheck', 'resourceCount', 'binFind'],
+        }
+        kinds = list(selected_hooks) if args.scope in ['both', 'provenance'] else scope_hooks.get(args.scope, [args.scope])
+        cfg = {'stateIndex': args.state_index, 'unitSlot': args.unit_slot, 'ruleId': args.rule_id, 'resourceId': args.resource_id, 'requireInputPositive': args.scope == 'unit-consumption', 'allTargets': args.all_targets, 'maxRecords': args.max_records,
                'hooks': {k: {'rva': selected_hooks[k], 'bytes': pe.read(selected_hooks[k], 16)[1].hex()} for k in kinds}}
         (args.out / 'config.json').write_text(json.dumps(cfg, indent=2), encoding='utf-8')
         status['ready'] = script.exports_sync.arm(cfg)

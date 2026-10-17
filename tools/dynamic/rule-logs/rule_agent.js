@@ -127,6 +127,7 @@ function record(kind, context) {
             const owner = kind === 'global' ? game.add(0x478) : vector(game.add(0x554), 0x380, unitSlot);
             return ruleMapping(game, owner, stateIndex, kind);
         });
+        if (config.ruleId != null && (!row.mapping || row.mapping.ruleId !== config.ruleId)) { count.filtered++; return; }
         if (kind === 'global') {
             read('applyCount', () => vector(game.add(0x520), 0x2c, stateIndex).add(0x1c).readS32());
             if (row.mapping) read('ruleDefinition', () => globalDefinition(row.mapping));

@@ -13,6 +13,10 @@ python tools/dynamic/rule-logs/capture.py --pid <当前游戏PID> --scope unit -
 
 在 OpenSCP 诊断工作台导入 `trace.jsonl`，再导入同目录 `status.json` 查看采集质量。`hits` 是入口总命中，`filtered` 是主动筛除，`dropped` 是超过容量/队列限制；三者不能混淆。字段读取失败保留部分记录和 `readErrors`。
 
+采集类别按 native 证据分层：`simulation.rule` 是规则入口，`simulation.effect` 是资源 bin 更新，`simulation.condition` 是可执行条件，`provenance` 是资源来源。资源消费应使用 `unit-consumption`，生产/消费资源可进一步用 `--resource-id 0x...` 定向；规则执行可用 `--scope unit`/`global` 加 `--rule-id 0x...`。这两种过滤会在 hook 内尽早丢弃无关目标，避免把全量事件送入工作台。
+
+当前没有已验证的零售版交通模拟入口，也没有可靠字段把 unit 标记为建筑。因此不能提供名义上的“交通日志”或自动“建筑日志”类别；`simulation.rule` 的 unit 记录只有在用户用已知 rule ID/slot 定向后才能作为建筑规则候选，报告中必须保留该语义限制。渲染层 trafficTicks、draw/bind 事件不属于交通寻路证据。
+
 `simulation.rule` schema 1 的 `log-entry` 表示进入 LogGlobalRule / LogUnitRule，包含 tick、状态索引、规则索引和执行计数。它不证明 delta 已写入或所有规则尝试都被覆盖。单位 slot 不是完整身份：stamp 未知，保留 null；脚本名称和输入输出 bin 仍未知。跨城市、加载存档后应重新采集，不复用旧指针。
 
 运行验证见 `docs/re/evidence/rule-logging-runtime-20261017.json`。采集器目前是命令行工具；工作台负责导入分析，尚无一键原生日志触发按钮。
@@ -44,6 +48,14 @@ python tools/dynamic/rule-logs/verify_effects.py tmp/unit-effects
 ```
 
 15 秒实测捕获一次资源 586→864（+278），错误/丢失/未完成均为零。高频 hook 有开销，建议短窗口定向采集；详细证据与限制见 `docs/re/unit-resource-effects-20261017.md`。
+
+`--scope unit-consumption` 专门跳过 `input=0` 的生产型规则，接受首个单位本地 `input > 0` 的资源操作，用于观察消费/投入资源。它仍只记录一个目标，不能代表所有建筑或交通代理。
+
+```powershell
+python tools/dynamic/rule-logs/capture.py --pid <PID> --scope unit-consumption --seconds 15 --out tmp/unit-consumption
+```
+
+若要观察多个单位和规则，可加 `--all-targets`；仍受 `--max-records` 上限约束，建议短窗口使用。实机 5 秒、上限 100 的对拍捕获了 57 个不同单位指针、80 个单位/规则组合；同时因高频调用触达上限而丢弃 13,873 个后续候选，因此这不是全量日志。
 
 ## 全局条件检查
 

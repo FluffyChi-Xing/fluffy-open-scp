@@ -55,8 +55,8 @@ const callbacks = {
             const id = rule.readU32(), ruleIndex = arg(this.context, 1).toUInt32();
             if (config.ruleId !== null && id !== config.ruleId) return;
             const key = game.toString() + ':' + unitSlot + ':' + unit.toString() + ':' + ruleIndex + ':' + id;
-            if (target && key !== target) return;
-            Object.assign(this.frame, {target: true, kind: 'unit-local', key, game, unit, unitSlot, rule, ruleIndex, ruleId: id});
+            if (!config.allTargets && target && key !== target) return;
+            Object.assign(this.frame, {target: !config.requireInputPositive, kind: 'unit-local', key, game, unit, unitSlot, rule, ruleIndex, ruleId: id});
         },
         leave() { if (this.frame) pop(parents, this.tid, this.frame); },
     },
@@ -69,7 +69,7 @@ const callbacks = {
             const id = rule.readU32(), ruleIndex = arg(this.context, 0).toUInt32();
             if (config.ruleId !== null && id !== config.ruleId) return;
             const key = game.toString() + ':' + ruleIndex + ':' + id;
-            if (target && key !== target) return;
+            if (!config.allTargets && target && key !== target) return;
             Object.assign(this.frame, {target: true, kind: 'global', key, game, rule, ruleIndex, ruleId: id});
         },
         leave() { if (this.frame) pop(parents, this.tid, this.frame); },
@@ -79,20 +79,35 @@ const callbacks = {
             this.tid = Process.getCurrentThreadId(); this.frame = {active: false};
             push(updates, this.tid, this.frame);
             const p = top(parents, this.tid), f = this.frame;
-            if (!p || !p.target) { channels.applyOps.filtered++; return; }
+            if (!p || (!p.target && !(p.kind === 'unit-local' && config.requireInputPositive))) { channels.applyOps.filtered++; return; }
             const isUnit = p.kind === 'unit-local';
             if (!this.context.esp.readPointer().equals(mod.base.add(isUnit ? 0x21de80 : 0x2189fe))) { channels.applyOps.filtered++; return; }
             const bins = arg(this.context, 2), game = arg(this.context, 3);
             if (!game.equals(p.game) || !bins.equals(isUnit ? p.unit.add(0x210) : game.add(0x478))) throw Error('resource_owner_mismatch');
-            if (target && target !== p.key) { channels.applyOps.filtered++; return; }
+            if (!p.target && p.kind === 'unit-local' && config.requireInputPositive) {
+                const probeOps = arg(this.context, 1), probeCount = probeOps.readS32(), probeArray = probeOps.add(4).readPointer();
+                if (probeCount < 0 || probeCount > 16 || (probeCount && probeArray.isNull())) { channels.applyOps.filtered++; return; }
+                let consumes = false;
+                for (let i = 0; i < probeCount; i++) {
+                    const op = probeArray.add(i * 12);
+                    if ((config.resourceId === null || op.readU32() === config.resourceId) && op.add(4).readS32() > 0) consumes = true;
+                }
+                if (!consumes) { channels.applyOps.filtered++; return; }
+                p.target = true;
+                if (!config.allTargets) target = p.key;
+            }
+            if (!config.allTargets && target && target !== p.key) { channels.applyOps.filtered++; return; }
             if (total + reserved >= config.maxRecords) { dropped++; channels.applyOps.dropped++; return; }
             const ops = arg(this.context, 1), count = ops.readS32(), array = ops.add(4).readPointer();
             if (count < 0 || count > 16 || (count && array.isNull())) { channels.applyOps.filtered++; return; }
             const operations = [];
             for (let i = 0; i < count; i++) {
                 const at = array.add(i * 12), output = at.add(8).readS32();
-                operations.push({ordinal: i, resourceId: '0x' + at.readU32().toString(16).padStart(8, '0'), input: at.add(4).readS32(), output, status: output < 0 ? 'not-mutated-range-condition' : 'not-reached'});
+                const resourceId = at.readU32();
+                if (config.resourceId !== null && resourceId !== config.resourceId) continue;
+                operations.push({ordinal: i, resourceId: '0x' + resourceId.toString(16).padStart(8, '0'), input: at.add(4).readS32(), output, status: output < 0 ? 'not-mutated-range-condition' : 'not-reached'});
             }
+            if (!operations.length) { channels.applyOps.filtered++; return; }
             const row = {channel: 'simulation.effect', schema: 1, phase: isUnit ? 'unit-local-resource-update' : 'global-resource-update',
                 time: Date.now(), threadId: this.tid, game: game.toString(),
                 ruleId: '0x' + p.ruleId.toString(16).padStart(8, '0'), ruleIndex: p.ruleIndex,
@@ -100,7 +115,7 @@ const callbacks = {
                 operations, readErrors: []};
             if (isUnit) Object.assign(row, {unitSlot: p.unitSlot, unitPointer: p.unit.toString(), unitStamp: null, resourceOwner: 'unit-local'});
             Object.assign(f, {active: true, bins, row, cursor: 0, pending: null});
-            target = p.key; reserved++;
+            if (!config.allTargets) target = p.key; reserved++;
         },
         leave(rv) {
             const f = this.frame;
@@ -164,7 +179,7 @@ rpc.exports = {
                 }));
             }
             timer = setInterval(flush, 100); Interceptor.flush();
-            return {hooks: Object.keys(cfg.hooks), scope: cfg.hooks.unitRun ? 'unit-local-resource-effects' : 'global-resource-effects'};
+            return {hooks: Object.keys(cfg.hooks), scope: cfg.requireInputPositive ? 'unit-resource-consumption' : (cfg.hooks.unitRun ? 'unit-local-resource-effects' : 'global-resource-effects')};
         } catch (e) { stop(); throw e; }
     }, stop,
 };

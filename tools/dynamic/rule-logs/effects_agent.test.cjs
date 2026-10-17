@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const {readFileSync} = require('node:fs');
 const {join} = require('node:path');
 
-function harness(ops = [[5, 0, 1]], unitMode = false) {
+function harness(ops = [[5, 0, 1]], unitMode = false, requireInputPositive = false) {
   const mem = new Map(), batches = [];
   function ptr(n) {
     n = Number(n) >>> 0;
@@ -17,7 +17,7 @@ function harness(ops = [[5, 0, 1]], unitMode = false) {
   const ctx = {Process: {getModuleByName: () => ({base: ptr(0x400000)}), getCurrentThreadId: () => 1},
     rpc: {exports: {}}, send: b => batches.push(b), clearInterval() {}};
   vm.createContext(ctx); vm.runInContext(readFileSync(join(__dirname, 'effects_agent.js'), 'utf8'), ctx);
-  vm.runInContext("config={ruleId:null,unitSlot:null,maxRecords:10};stopped=false;for(const n of ['globalRun','unitRun','applyOps','binFind'])channels[n]={hits:0,accepted:0,filtered:0,dropped:0,errors:0}", ctx);
+  vm.runInContext(`config={ruleId:null,resourceId:null,unitSlot:null,maxRecords:10,requireInputPositive:${requireInputPositive ? 'true' : 'false'}};stopped=false;for(const n of ['globalRun','unitRun','applyOps','binFind'])channels[n]={hits:0,accepted:0,filtered:0,dropped:0,errors:0}`, ctx);
   function enter(name, args, ecx, ret = 0) {
     const stack = 0x9000 + (name === 'applyOps' ? 0x100 : name === 'binFind' ? 0x200 : 0);
     mem.set(stack, ret); args.forEach((a,i) => mem.set(stack + 4 + i * 4, a));
@@ -78,4 +78,12 @@ test('unit context excludes global and zone update call sites',()=>{
   }
   assert.equal(vm.runInContext('channels.applyOps.filtered',h.ctx),4);
   const row=h.finish();assert.equal(row.operations[0].before,undefined);assert.ok(row.readErrors.includes('missing_lookup'));
+});
+test('unit consumption scope filters zero-input production rules',()=>{
+  const h=harness([[5,0,1]],true,true);h.lookup();const row=h.finish();
+  assert.equal(row,undefined);assert.equal(vm.runInContext('channels.applyOps.filtered',h.ctx),1);
+});
+test('unit consumption scope accepts a positive-input operation',()=>{
+  const h=harness([[5,2,1]],true,true);h.lookup();h.mem.set(0x5004,9);const row=h.finish();
+  assert.equal(row.resourceOwner,'unit-local');assert.equal(row.operations[0].input,2);assert.equal(row.operations[0].delta,-1);
 });
