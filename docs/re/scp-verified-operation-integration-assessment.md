@@ -2,6 +2,8 @@
 
 日期：2026-10-17
 
+> 后续复核修正：请以 [菜单编辑闭环方案](menu-editing-closed-loop-20261017.md) 为当前实施依据。PDF 的 Parent Menu 是 `0x0DB9FC63` 归属数组，不是 `0x00B2CCCB` 继承 Parent。第 80 页只更换菜单 Property Instance 就保留原项并新增入口，不要求下文 M2 所列的 Unit/LOD 深复制；该深复制仅适用于独立资产变体。当前源码已有未接入页面的 package 导出实现，但存在原字段丢失与编辑值未应用等问题；“只保存 JSON”描述的是页面出口，不代表没有导出代码。以下保留为初轮评估，相关阶段划分已由新方案替代。
+
 本评估只覆盖 `scp.pdf` 中与 SimCityPak / Property / 菜单和资源编辑有关的操作，
 以及 `D:\source-map\Simcitypak-v2` 中可直接核对的 C# 实现。日志追查暂不作为本轮前置条件。
 
