@@ -1,6 +1,7 @@
 import type * as ThreeNamespace from "three";
 import type { LotModelPayload } from "@/api/tauri";
 
+
 /** 与 Rust 侧 `LOT_MODEL_PAYLOAD_MAGIC` 一致："LOTM"（小端字节序）。 */
 const PAYLOAD_MAGIC = 0x4d54_4f4c;
 
@@ -128,6 +129,12 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
  * 解析地块模型的全部 GLB 为 Object3D。
  * gltf.rs 根节点自带 Z-up→Y-up 的 -90°X 旋转，而视口 world 组已做同款
  * 旋转（模型须与 Unit gizmo 共享 Z-up 世界），这里剥掉根旋转避免双重旋转。
+ *
+ * 【2026-10-08】GLB 解析 Worker 实验回滚：EP1 建筑贴图乱码与 Worker 路径
+ * 稳定复现相关（用户 A/B 实证：Worker=1 乱/Worker=2 好；transfer/克隆两种
+ * 传输均乱；重建串行化修复无效），根因在 Worker 环境的解析行为差异，
+ * 未定谳前回归主线程。取证基建保留：sc-exporter example dump_facade_glbs
+ * （真实 EP1 facade GLB 落盘）+ git 历史（aec08b2..e1c276b 可查实现）。
  */
 export async function parseLotModelObjects(
   glbs: ArrayBuffer[],

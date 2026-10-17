@@ -554,6 +554,9 @@ pub struct LotEditorSession {
     /// borderWidth1-4（0xD7AF046-49，float）——逐通道边框带半宽；
     /// 全 0 = 无边框（0.5±0 带为空集）。
     pub lot_border_widths: [f32; 4],
+    /// Authored lot relief: color and border heights (generic_lot normal pass).
+    pub lot_color_heights: [f32; 4],
+    pub lot_border_heights: [f32; 4],
     /// 边框带图案索引（LotBorderColor.A，0-15）——边框带法线图案格号。
     pub lot_border_pattern_indices: [u8; 4],
     /// 底图格索引（三级来源：0x0CCB7FD6 → 0x0CCB7FD2/FD3 推导 → 默认 8）。
@@ -2337,245 +2340,268 @@ pub async fn read_lot_editor_session(
         request.package_id,
         request.tgi.clone(),
         move |data, package, manager, store| {
-            let backend_started = std::time::Instant::now();
-            let tgi = request.tgi;
-            if tgi.type_id != PROPERTY_RESOURCE_TYPE {
-                return Err(PackageError::InvalidArgument(
-                    "lot editor requires a property resource".into(),
-                ));
-            }
-            let properties = sc_properties::PropertyFile::parse_with_limits(
-                data,
-                sc_properties::ParseLimits::default(),
-            )?;
-            // Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
-            // LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
-            // 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
-            let properties = flatten_lot_parents(properties, package, manager);
-            // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
-            // 附带 materialData 三元组存在性与 material/shader-def 引用
-            // 诊断（P4-D1 证据链）。
-            let (decal_textures, decal_diag) =
-                resolve_decal_textures(&properties, package, manager);
-            // 破洞贴花假内景光参数（S1）：两个 scalar 即引擎 decalInteriorMap
-            // 的光强/半径因子（实证 lot：0.5/2.0 → lightScale=9、invRadius=8）。
-            // 须在 properties 被 from_property_file 消耗前读取。
-            let decal_light = {
-                let get = |hash: u32| -> Option<f32> {
-                    properties.get(hash).and_then(|p| p.scalar()).and_then(|v| match v {
-                        sc_properties::Value::Float(f) => Some(*f),
-                        _ => None,
-                    })
-                };
-                match (get(0x0DA7_6A05), get(0x0DA7_6A06)) {
-                    (Some(scale), Some(radius)) => Some([scale, radius]),
-                    _ => None,
-                }
-            };
-            let document = sc_properties::LotEditorDocument::from_property_file(properties);
-            let lot_units = document.assemble_units();
-            let mut diagnostics = lot_units.diagnostics;
-            diagnostics.extend(decal_diag);
-            let (model_lods, lod_diagnostics) = resolve_lod_model_refs(
-                package,
-                request.package_id,
-                manager,
-                document.model_lods.clone(),
-            );
-            diagnostics.extend(lod_diagnostics);
-            let model_available = model_lods.iter().any(|lod| lod.is_some());
-            let model_key = model_lods
-                .iter()
-                .find_map(|lod| lod.as_ref().map(|reference| reference.tgi.clone()));
-            let registry = package_registry(store, manager, package, bundled_registry.as_deref());
-            let asset_name = semantic_instance_name(registry.as_deref(), tgi.instance);
-            if registry.is_none() {
-                diagnostics.push("property registry is unavailable; using hash identifiers".into());
-            }
-            let parse_ms = backend_started.elapsed().as_secs_f64() * 1000.0;
-            let bake_started = std::time::Instant::now();
-            let (colors, lot_colors_authored) = lot_colors(&document);
-            let (lot_border_colors, lot_border_widths, lot_border_pattern_indices) =
-                lot_borders(&document);
-            // 底图格三级来源（数据驱动，不可硬编码草地格）。
-            let (lot_base_tile, lot_base_tile_src) = lot_base_tile(&document);
-            diagnostics.push(format!(
-                "lot base tile = {lot_base_tile} (source: {lot_base_tile_src})"
-            ));
-            // 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）。
-            // 像素保留在内存供默认反照率合成取底图格，PNG 供前端精细渲染。
-            let lot_surface = document.lot_textures.map(|key| {
-                match decode_lot_surface_png(package, manager, key) {
-                    Ok(decoded) => Some(decoded),
-                    Err(message) => {
-                        diagnostics.push(message);
-                        None
-                    }
-                }
-            });
-            let lot_surface_png =
-                lot_surface.as_ref().and_then(|surface| surface.as_ref().map(|s| s.0.clone()));
-            // 全局共享法线图集（s15 `lotNormalSampler`；键 0x0D0082F1 的目标实例
-            // 0x60E7805D）——逐 lot 相同，标准切线空间。主区格号 = `LotColor.A`、
-            // 边框带格号 = `LotBorderColor.A`，按 0x0CCB7FD0 周期平铺作为地面
-            // normalMap：引擎的图案质感（方格勾缝/砂砾颗粒）全部来自这一层，
-            // 覆盖区反照率是平色、不采样漫反射（博客 §3）。
-            let lot_normal_atlas_png = decode_lot_surface_png(
-                package,
-                manager,
-                sc_properties::Key {
-                    instance: 0x60E7_805D,
-                    type_id: 0,
-                    group: 0,
-                },
-            )
-            .ok()
-            .map(|(png, _)| png);
-            let mut mask_dims: Option<(u32, u32)> = None;
-            let lot_mask_images = document.lot_mask.and_then(|key| {
-                match decode_lot_mask_png(package, manager, key, colors) {
-                    Ok((png, raw_rgba_base64, dims, raw_rgba)) => {
-                        mask_dims = Some(dims);
-                        Some((png, raw_rgba_base64, raw_rgba))
-                    }
-                    Err(message) => {
-                        diagnostics.push(message);
-                        None
-                    }
-                }
-            });
-            let lot_mask_png = lot_mask_images.as_ref().map(|(png, _, _)| png.clone());
-            let lot_mask_raw_rgba =
-                lot_mask_images.as_ref().map(|(_, raw, _)| raw.clone());
-            // 默认模式反照率：引擎口径（阈值瀑布 → 通道平色/边框带平色，
-            // 未覆盖区铺底图格整格拉伸、U 轴镜像）。
-            let lot_albedo_png = lot_mask_images.as_ref().and_then(|(_, _, raw_rgba)| {
-                let (w, h) = mask_dims.expect("mask dims set when mask decoded");
-                let surface = lot_surface
-                    .as_ref()
-                    .and_then(Option::as_ref)
-                    .map(|(_, pixels)| pixels);
-                match compose_lot_albedo_rgba(
-                    raw_rgba,
-                    w as usize,
-                    h as usize,
-                    colors,
-                    lot_border_colors,
-                    lot_border_widths,
-                    surface,
-                    lot_base_tile,
-                ) {
-                    Ok(rgba) => match encode_rgba_png(w, h, rgba) {
-                        Ok(png) => Some(png),
-                        Err(message) => {
-                            diagnostics.push(message);
-                            None
-                        }
-                    },
-                    Err(message) => {
-                        diagnostics.push(message);
-                        None
-                    }
-                }
-            });
-            // EP1 等部分 lot 无 LotSize（0x0CCB7FC8）属性但带 LotMask：地面
-            // 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
-            // 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
-            // 与 128px→96×96 相容）。
-            // 【2026-10-05 1m/px 试点回退】0xBA637D54 三证据虽支持 1m/px，
-            // 但目视无改善且部分 mod lot 地面被拉大破坏（用户报告）——
-            // 待拿到引擎 raster 范围的直接证据后再议。
-            let lot_size = document.lot_size.or_else(|| {
-                mask_dims.map(|(w, h)| {
-                    let size = [w as f32 * 0.75, h as f32 * 0.75];
-                    diagnostics.push(format!(
-                        "LotSize property missing; ground rect derived from LotMask raster {}x{}px -> {:.0}x{:.0}m",
-                        w, h, size[0], size[1]
-                    ));
-                    size
-                })
-            });
-            // 地面贴图周期 0x0CCB7FD0（米/格）；缺失走引擎默认 8.0，并做引擎的
-            // 除数保护（落在 (-0.1, 0.1) 的值一律置 0.1，避免除以近零）。
-            let lot_tile_period = document
-                .properties
-                .get(0x0CCB_7FD0)
-                .and_then(|property| property.scalar())
-                .and_then(|value| match value {
-                    sc_properties::Value::Vector2(values) => Some(*values),
-                    _ => None,
-                })
-                .map(|values| {
-                    values.map(|value| {
-                        if value.abs() < 0.1 { 0.1 } else { value }
-                    })
-                })
-                .or(Some([8.0, 8.0]));
-            let bake_ms = bake_started.elapsed().as_secs_f64() * 1000.0;
-            let timing = BackendTiming {
-                parse_ms,
-                bake_ms,
-                total_ms: backend_started.elapsed().as_secs_f64() * 1000.0,
-            };
-            diagnostics.push(format!(
-                "backend timing: parse+units+LOD {:.1}ms, bake(decode/compose/png) {:.1}ms, total {:.1}ms",
-                timing.parse_ms, timing.bake_ms, timing.total_ms
-            ));
-            Ok(LotEditorSession {
-                tgi,
-                asset_name,
-                model_key,
-                model_lods,
-                lot_size,
-                lot_tile_period,                // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
-                lot_placement: document
-                    .placement
-                    .clone()
-                    .filter(|t| t.matrix.len() == 12)
-                    .map(|t| t.matrix.try_into().unwrap()),
-                lot_mask_png,
-                lot_mask_raw_rgba,
-                lot_albedo_png,
-                lot_normal_atlas_png,
-                lot_surface_png,
-                lot_colors: colors,
-                lot_colors_authored,
-                lot_border_colors,
-                lot_border_widths,
-                lot_border_pattern_indices,
-                lot_base_tile: lot_base_tile as u8,
-                lot_overlay_box_offset: document.lot_offset,
-                lot_model_bbox_center: document
-                    .properties
-                    .get(0x00F9_EFBA)
-                    .and_then(|p| p.scalar().or_else(|| p.array().and_then(|v| v.first())))
-                    .and_then(|value| match value {
-                        sc_properties::Value::BoundingBox { min, max } => {
-                            Some([(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0])
-                        }
-                        _ => None,
-                    }),
-                decal_textures,
-                units: lot_units.units,
-                path_pairs: lot_units.path_pairs,
-                document,
-                model_available,
-                backend_ms: Some(timing),
-                decal_light,
-                diagnostics,
-            })
+            build_lot_editor_session(data, package, manager, store, request, bundled_registry.as_deref())
         },
     )
     .await
 }
 
-/// "Lot Textures"（0x0CCB7FD4）地表共享纹理：跨包定位纯纹理 RW4 →
-/// DXT5 解码 → PNG（shader lotTextureSampler 的绑定源；4×4 tile 图集）。
-/// "Lot Textures" 共享图集的内存像素（4×4 tile；默认反照率的底图格来源）。
+
+fn build_lot_editor_session(
+    data: &[u8], package: &Package, manager: &PackageManager, store: &sc_store::Store,
+    request: LotEditorSessionRequest, bundled_registry: Option<&Path>,
+) -> Result<LotEditorSession, PackageError> {
+let backend_started = std::time::Instant::now();
+let tgi = request.tgi;
+if tgi.type_id != PROPERTY_RESOURCE_TYPE {
+    return Err(PackageError::InvalidArgument(
+        "lot editor requires a property resource".into(),
+    ));
+}
+let properties = sc_properties::PropertyFile::parse_with_limits(
+    data,
+    sc_properties::ParseLimits::default(),
+)?;
+// Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
+// LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
+// 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
+let properties = flatten_lot_parents(properties, package, manager);
+// 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
+// 附带 materialData 三元组存在性与 material/shader-def 引用
+// 诊断（P4-D1 证据链）。
+let (decal_textures, decal_diag) =
+    resolve_decal_textures(&properties, package, manager);
+// 破洞贴花假内景光参数（S1）：两个 scalar 即引擎 decalInteriorMap
+// 的光强/半径因子（实证 lot：0.5/2.0 → lightScale=9、invRadius=8）。
+// 须在 properties 被 from_property_file 消耗前读取。
+let decal_light = {
+    let get = |hash: u32| -> Option<f32> {
+        properties.get(hash).and_then(|p| p.scalar()).and_then(|v| match v {
+            sc_properties::Value::Float(f) => Some(*f),
+            _ => None,
+        })
+    };
+    match (get(0x0DA7_6A05), get(0x0DA7_6A06)) {
+        (Some(scale), Some(radius)) => Some([scale, radius]),
+        _ => None,
+    }
+};
+let document = sc_properties::LotEditorDocument::from_property_file(properties);
+let lot_units = document.assemble_units();
+let mut diagnostics = lot_units.diagnostics;
+diagnostics.extend(decal_diag);
+let (model_lods, lod_diagnostics) = resolve_lod_model_refs(
+    package,
+    request.package_id,
+    manager,
+    document.model_lods.clone(),
+);
+diagnostics.extend(lod_diagnostics);
+let model_available = model_lods.iter().any(|lod| lod.is_some());
+let model_key = model_lods
+    .iter()
+    .find_map(|lod| lod.as_ref().map(|reference| reference.tgi.clone()));
+let registry = package_registry(store, manager, package, bundled_registry);
+let asset_name = semantic_instance_name(registry.as_deref(), tgi.instance);
+if registry.is_none() {
+    diagnostics.push("property registry is unavailable; using hash identifiers".into());
+}
+let parse_ms = backend_started.elapsed().as_secs_f64() * 1000.0;
+let bake_started = std::time::Instant::now();
+let (colors, lot_colors_authored) = lot_colors(&document);
+let (lot_border_colors, lot_border_widths, lot_border_pattern_indices) =
+    lot_borders(&document);
+// 底图格三级来源（数据驱动，不可硬编码草地格）。
+let (lot_base_tile, lot_base_tile_src) = lot_base_tile(&document);
+diagnostics.push(format!(
+    "lot base tile = {lot_base_tile} (source: {lot_base_tile_src})"
+));
+// 地表共享纹理（"Lot Textures" 0x0CCB7FD4 → 纯纹理 RW4，DXT5）。
+// 像素保留在内存供默认反照率合成取底图格，PNG 供前端精细渲染。
+let lot_surface = document.lot_textures.map(|key| {
+    match decode_lot_surface_png(package, manager, key) {
+        Ok(decoded) => Some(decoded),
+        Err(message) => {
+            diagnostics.push(message);
+            None
+        }
+    }
+});
+let lot_surface_png =
+    lot_surface.as_ref().and_then(|surface| surface.as_ref().map(|s| s.0.clone()));
+// 全局共享法线图集（s15 `lotNormalSampler`；键 0x0D0082F1 的目标实例
+// 0x60E7805D）——逐 lot 相同，标准切线空间。主区格号 = `LotColor.A`、
+// 边框带格号 = `LotBorderColor.A`，按 0x0CCB7FD0 周期平铺作为地面
+// normalMap：引擎的图案质感（方格勾缝/砂砾颗粒）全部来自这一层，
+// 覆盖区反照率是平色、不采样漫反射（博客 §3）。
+let lot_normal_atlas_png = decode_lot_surface_png(
+    package,
+    manager,
+    sc_properties::Key {
+        instance: 0x60E7_805D,
+        type_id: 0,
+        group: 0,
+    },
+)
+.ok()
+.and_then(|(_, mut pixels)| {
+    // Normal atlas alpha encodes coverage, not image opacity. Canvas decoding
+    // premultiplies alpha and destroys low-alpha RGB; this RGB-only preview
+    // must be opaque. The original package and base coverage remain untouched.
+    for pixel in pixels.rgba.chunks_exact_mut(4) { pixel[3] = 255; }
+    encode_rgba_png(pixels.width, pixels.height, pixels.rgba).ok()
+});
+let mut mask_dims: Option<(u32, u32)> = None;
+let lot_mask_images = document.lot_mask.and_then(|key| {
+    match decode_lot_mask_png(package, manager, key, colors) {
+        Ok((png, raw_rgba_base64, dims, raw_rgba)) => {
+            mask_dims = Some(dims);
+            Some((png, raw_rgba_base64, raw_rgba))
+        }
+        Err(message) => {
+            diagnostics.push(message);
+            None
+        }
+    }
+});
+let lot_mask_png = lot_mask_images.as_ref().map(|(png, _, _)| png.clone());
+let lot_mask_raw_rgba =
+    lot_mask_images.as_ref().map(|(_, raw, _)| raw.clone());
+// 默认模式只显示 LotColor/边框纯色分区；图集纹理仅供精细模式使用。
+let lot_albedo_png = lot_mask_images.as_ref().and_then(|(_, _, raw_rgba)| {
+    let (w, h) = mask_dims.expect("mask dims set when mask decoded");
+    match compose_lot_albedo_rgba(
+        raw_rgba,
+        w as usize,
+        h as usize,
+        colors,
+        lot_border_colors,
+        lot_border_widths,
+        None,
+        lot_base_tile,
+    ) {
+        Ok(rgba) => match encode_rgba_png(w, h, rgba) {
+            Ok(png) => Some(png),
+            Err(message) => {
+                diagnostics.push(message);
+                None
+            }
+        },
+        Err(message) => {
+            diagnostics.push(message);
+            None
+        }
+    }
+});
+// EP1 等部分 lot 无 LotSize（0x0CCB7FC8）属性但带 LotMask：地面
+// 矩形无法构建。回退：mask 光栅尺寸 × 0.75 m/px（主流换算，
+// 如 64px↔48m、128px↔96m；0x5A6EC675 无 LotSize + bbox 71×57
+// 与 128px→96×96 相容）。
+// 【2026-10-05 1m/px 试点回退】0xBA637D54 三证据虽支持 1m/px，
+// 但目视无改善且部分 mod lot 地面被拉大破坏（用户报告）——
+// 待拿到引擎 raster 范围的直接证据后再议。
+let lot_size = document.lot_size.or_else(|| {
+    mask_dims.map(|(w, h)| {
+        let size = [w as f32 * 0.75, h as f32 * 0.75];
+        diagnostics.push(format!(
+            "LotSize property missing; ground rect derived from LotMask raster {}x{}px -> {:.0}x{:.0}m",
+            w, h, size[0], size[1]
+        ));
+        size
+    })
+});
+// 地面贴图周期 0x0CCB7FD0（米/格）；缺失走引擎默认 8.0，并做引擎的
+// 除数保护（落在 (-0.1, 0.1) 的值一律置 0.1，避免除以近零）。
+let lot_tile_period = document
+    .properties
+    .get(0x0CCB_7FD0)
+    .and_then(|property| property.scalar())
+    .and_then(|value| match value {
+        sc_properties::Value::Vector2(values) => Some(*values),
+        _ => None,
+    })
+    .map(|values| {
+        values.map(|value| {
+            if value.abs() < 0.1 { 0.1 } else { value }
+        })
+    })
+    .or(Some([8.0, 8.0]));
+let bake_ms = bake_started.elapsed().as_secs_f64() * 1000.0;
+let timing = BackendTiming {
+    parse_ms,
+    bake_ms,
+    total_ms: backend_started.elapsed().as_secs_f64() * 1000.0,
+};
+diagnostics.push(format!(
+    "backend timing: parse+units+LOD {:.1}ms, bake(decode/compose/png) {:.1}ms, total {:.1}ms",
+    timing.parse_ms, timing.bake_ms, timing.total_ms
+));
+Ok(LotEditorSession {
+    tgi,
+    asset_name,
+    model_key,
+    model_lods,
+    lot_size,
+    lot_tile_period,                // C# CreateLotModel 只消费 12 floats 的完整矩阵（取逆贴地）
+    lot_placement: document
+        .placement
+        .clone()
+        .filter(|t| t.matrix.len() == 12)
+        .map(|t| t.matrix.try_into().unwrap()),
+    lot_mask_png,
+    lot_mask_raw_rgba,
+    lot_albedo_png,
+    lot_normal_atlas_png,
+    lot_surface_png,
+    lot_colors: colors,
+    lot_colors_authored,
+    lot_border_colors,
+    lot_border_widths,
+    lot_color_heights: lot_height_vector(&document.properties, 0x0D02_D58A),
+    lot_border_heights: lot_height_vector(&document.properties, 0x0D02_D58B),
+    lot_border_pattern_indices,
+    lot_base_tile: lot_base_tile as u8,
+    lot_overlay_box_offset: document.lot_offset,
+    lot_model_bbox_center: document
+        .properties
+        .get(0x00F9_EFBA)
+        .and_then(|p| p.scalar().or_else(|| p.array().and_then(|v| v.first())))
+        .and_then(|value| match value {
+            sc_properties::Value::BoundingBox { min, max } => {
+                Some([(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0])
+            }
+            _ => None,
+        }),
+    decal_textures,
+    units: lot_units.units,
+    path_pairs: lot_units.path_pairs,
+    document,
+    model_available,
+    backend_ms: Some(timing),
+    decal_light,
+    diagnostics,
+})
+}
+
+/// Authored channel/border relief used by generic_lot::overlayGetHeight.
+fn lot_height_vector(properties: &sc_properties::PropertyFile, hash: u32) -> [f32; 4] {
+    properties
+        .get(hash)
+        .and_then(|p| p.scalar().or_else(|| p.array().and_then(|v| v.first())))
+        .and_then(|value| match value {
+            sc_properties::Value::Vector4(values) => {
+                Some(values.map(|v| if v.is_finite() { v } else { 0.0 }))
+            }
+            _ => None,
+        })
+        .unwrap_or([0.0; 4])
+}
+
+/// Decoded 4x4 lot surface atlas, shared by preview albedo composition.
 pub(crate) struct SurfacePixels {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) rgba: Vec<u8>,
 }
 
 /// 从图集像素裁出第 `index` 格（4×4，行主序）；尺寸不足时返回 None。
@@ -2609,9 +2635,8 @@ fn extract_atlas_cell(
 /// 胜者输出**平色**（边框带 (0.5−bw, 0.5+bw] → LotBorderColor，主区 →
 /// LotColor；后端已 linear→sRGB），引擎覆盖区**不采样漫反射**——
 /// "tile×tint 双重变暗"旧语义已证伪（博客 §7.3），质感由法线图案光照
-/// 承担（精细模式）。无胜者铺底图格：Lot Textures 图集第 `base_tile` 格
-/// **整格拉伸**铺满地块（shader `lerp(lotBaseUVMin, +.25, uv0)`，无平铺），
-/// 图集 U 轴与 mask 列序相反（§5b 朝向，采样 u = 1−u）。
+/// 承担（精细模式）。默认模式未覆盖区使用中性纯色；传入图集时可按
+/// 游戏 UV 铺底图格，图集 U 轴与 mask 列序相反（§5b 朝向）。
 #[allow(clippy::too_many_arguments)]
 fn compose_lot_albedo_rgba(
     raw: &[u8],
@@ -2680,9 +2705,7 @@ fn compose_lot_albedo_rgba(
                         let src = (sy * *cw + sx) * 4;
                         out[offset..offset + 3].copy_from_slice(&pixels[src..src + 3]);
                     }
-                    None => {
-                        out[offset..offset + 3].copy_from_slice(&[255, 255, 255]);
-                    }
+                    None => out[offset..offset + 3].copy_from_slice(&[92, 113, 100]),
                 },
             }
             out[offset + 3] = 255;
@@ -6049,6 +6072,10 @@ fn emit_progress(
 }
 
 #[cfg(test)]
+#[path = "render_fixture.rs"]
+mod render_fixture;
+
+#[cfg(test)]
 mod lot_payload_tests {
     use super::*;
 
@@ -6545,6 +6572,79 @@ mod tests {
     use super::*;
     use dbpf::{OverlayEntry, write_uncompressed_overlay};
 
+    /// 手动取证（GLB Worker 贴图乱码，2026-10-08）：扫 EP1/Game/Graphics 包里
+    /// 带 facade 世界投影 UV（GLB 含 TEXCOORD_2 = EP1 FLOAT4 TexCoord 特征）
+    /// 的建筑模型，把**真实载荷**（build_lot_model_payload_for_test 全量产出）
+    /// 落盘供前端 roundtrip 测试消费。
+    /// cargo test -p fluffy-open-scp --release dump_ep1_facade_payloads -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn dump_ep1_facade_payloads() {
+        let paths = [
+            r"D:\ea-games\SimCity\SimCityData\SimCity_DLC0.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCityDataEP1.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Game.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package",
+        ];
+        let manager = PackageManager::new();
+        std::fs::create_dir_all("tmp/gltf_fixture").expect("mkdir");
+        let mut dumped = 0usize;
+        let mut scanned = 0usize;
+        let mut with_payload = 0usize;
+        let mut with_uv1 = 0usize;
+        'outer: for path in paths {
+            let Ok(package) = Package::open(path) else { continue };
+            let arc = manager.insert(package).expect("insert").1;
+            let entries: Vec<_> = arc
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == RW4_MODEL_TYPE)
+                .cloned()
+                .collect();
+            for entry in entries {
+                if dumped >= 3 {
+                    break 'outer;
+                }
+                let Ok(data) = arc.read(&entry) else { continue };
+                let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+                let payload = build_lot_model_payload_for_test(
+                    &file,
+                    &data,
+                    &arc,
+                    &manager,
+                    entry.id.instance,
+                );
+                scanned += 1;
+                if !payload.windows(11).any(|w| w == b"TEXCOORD_1") {
+                    continue;
+                }
+                with_uv1 += 1;
+                let has_facade_uv = payload
+                    .windows(11)
+                    .any(|window| window == b"TEXCOORD_2");
+                if !has_facade_uv {
+                    continue;
+                }
+                with_payload += 1;
+                let out = format!(
+                    "tmp/gltf_fixture/ep1_{:08X}.bin",
+                    entry.id.instance
+                );
+                std::fs::write(&out, &payload).expect("write payload");
+                println!(
+                    "EP1 facade payload {:08X}: bytes={} -> {}",
+                    entry.id.instance,
+                    payload.len(),
+                    out,
+                );
+                dumped += 1;
+            }
+        }
+        println!(
+            "dumped {dumped}; scanned {scanned}; with_payload {with_payload}; with_uv1 {with_uv1}"
+        );
+    }
+
     #[test]
     fn lot_albedo_threshold_priority_and_base_tile() {
         // 消防局 LC1 的线性值经 sRGB 编码后应为 (82,87,81)（2026-09-13 对拍）。
@@ -6583,12 +6683,12 @@ mod tests {
         assert_eq!(&out[0..3], &[10, 20, 30], "G 胜出 → LotColor 平色直出");
         // 像素 1 中心 u=0.75 → 镜像 0.25 → cell sx=0；v=0.5 → sy=1 → 色 10*0+1。
         assert_eq!(&out[4..8], &[1, 1, 1, 255], "未覆盖区铺底图格（U 镜像）");
-        // 图集缺失 → 白色底图兜底（lot_composite unwrap_or(255) 同款）。
+        // 默认模式不采样图集，未覆盖区使用中性纯色。
         let out = compose_lot_albedo_rgba(
             &raw, 2, 1, colors, borders, [0.0; 4], None, 8,
         )
         .expect("compose albedo");
-        assert_eq!(&out[4..8], &[255, 255, 255, 255]);
+        assert_eq!(&out[4..8], &[92, 113, 100, 255]);
     }
 
     #[test]
@@ -8000,4 +8100,76 @@ mod decal_resolve_diag {
             );
         }
     }
+}
+
+// ---- 组件库道具目录（低代码管线：放置组件的数据源）----
+
+/// 已打开包中的命名 RW4 模型（组件库「道具」页条目）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalogEntry {
+    pub package_id: u64,
+    pub package_path: String,
+    pub instance: u32,
+    pub group: u32,
+    pub name: String,
+    pub size: u64,
+}
+
+/// 扫描全部已打开包的 RW4 模型，仅保留 registry 命名条目（过滤纯 hex
+/// 噪声实例名），按名排序、上限 400。前端拖拽放置后按 packageId+instance
+/// 直接取 LOTM 载荷渲染。
+#[tauri::command]
+pub async fn list_model_catalog(
+    state: State<'_, AppState>,
+) -> Result<Vec<ModelCatalogEntry>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        let all = manager.all_packages_with_ids()?;
+        let mut entries: Vec<ModelCatalogEntry> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (package_id, package) in &all {
+            let registry =
+                package_registry(&store, &manager, package, bundled_registry.as_deref());
+            for entry in package
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == 0x2F4E_681B)
+            {
+                if !seen.insert((*package_id, entry.id.group, entry.id.instance)) {
+                    continue;
+                }
+                let Some(name) = registry.as_deref().and_then(|registry| {
+                    let record = registry.instances().get(&entry.id.instance)?;
+                    let trimmed = record.name.trim();
+                    (!trimmed.is_empty()).then(|| trimmed.to_string())
+                }) else {
+                    continue;
+                };
+                // 过滤纯 hex 噪声名（至少一个非十六进制字母字符，如
+                // "Lside corner"/"GI_Simm_*"；"0AB4DFE1" 形噪声被滤掉）
+                if !name
+                    .chars()
+                    .any(|c| c.is_alphabetic() && !c.is_ascii_hexdigit())
+                {
+                    continue;
+                }
+                entries.push(ModelCatalogEntry {
+                    package_id: *package_id,
+                    package_path: package.path().to_string_lossy().into_owned(),
+                    instance: entry.id.instance,
+                    group: entry.id.group,
+                    name,
+                    size: u64::from(entry.decompressed_size),
+                });
+            }
+        }
+        entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        entries.truncate(400);
+        Ok(entries)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
 }

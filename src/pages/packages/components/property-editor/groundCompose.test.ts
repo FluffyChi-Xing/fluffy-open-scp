@@ -5,6 +5,7 @@ import {
   type GroundComposeInput,
   type Pixels,
 } from "./groundCompose";
+import { enhanceTintDetail } from "./refinedGround";
 
 /** 构造纯色/函数填充的 RGBA Pixels。 */
 function pixels(
@@ -58,6 +59,52 @@ function input(overrides: Partial<GroundComposeInput>): GroundComposeInput {
 }
 
 describe("groundCompose 引擎语义（generic_lot 直译）", () => {
+  it("keeps the untinted base tile intact while sharpening colored paving", () => {
+    const albedo = new Uint8ClampedArray([120, 120, 120, 255, 120, 120, 120, 255]);
+    const normals = new Uint8ClampedArray([60, 60, 255, 255, 60, 60, 255, 255]);
+    const mask = { data: new Uint8ClampedArray([255, 0, 0, 0, 0, 0, 0, 0]), width: 2, height: 1 } as ImageData;
+    enhanceTintDetail(albedo, normals, 2, 1, mask);
+    expect(albedo[0]).toBeGreaterThan(120);
+    expect([...albedo.slice(4, 8)]).toEqual([120, 120, 120, 255]);
+  });
+  it("samples the original atlas V axis along negative world Y", () => {
+    const out = composeGroundPixels(input({
+      baseTile: pixels(1, 4, (_, y) => [40 * (y + 1), 0, 0, 255]),
+      normalAtlas: pixels(4, 16, (_, y) => [128, 40 * (y % 4 + 1), 255, 255]),
+      baseTileIndex: 0,
+      outSize: { width: 4, height: 4 },
+    }));
+    // Output row centers have world Y = [-.375,-.125,.125,.375].
+    // frac(-Y) samples source rows [1,0,3,2], not [2,3,0,1].
+    expect([0, 1, 2, 3].map(y => out.albedo[y * 16])).toEqual([80, 40, 160, 120]);
+    expect(out.normal[1]).toBeLessThan(128);
+    expect(out.normal[2 * 16 + 1]).toBeGreaterThan(128);
+  });
+
+  it("keeps albedo independent of the normal direction", () => {
+    const make = (red: number) => composeGroundPixels(input({
+      rawMask: pixels(1, 1, () => [255, 0, 0, 0]),
+      normalAtlas: pixels(4, 4, () => [red, 128, 255, 255]),
+    }));
+    const left = make(64), right = make(192);
+    expect(left.albedo).toEqual(right.albedo);
+    expect(left.normal[0]).toBeLessThan(128);
+    expect(right.normal[0]).toBeGreaterThan(128);
+  });
+
+  it("authored height edges produce opposing normals on either side of a raised strip", () => {
+    const out = composeGroundPixels(input({
+      mask: pixels(16, 4),
+      rawMask: pixels(16, 4, x => [255, x >= 5 && x <= 10 ? 255 : 0, 0, 0]),
+      lotColorHeights: [0, 3, 0, 0],
+      outSize: { width: 256, height: 64 },
+    }));
+    const row = Array.from({length: out.width}, (_, x) => out.normal[(32*out.width+x)*4]);
+    expect(Math.min(...row.slice(60, 110))).toBeLessThan(100);
+    expect(Math.max(...row.slice(150, 200))).toBeGreaterThan(155);
+    expect(row[128]).toBe(128);
+  });
+
   it("覆盖区 = 胜者通道平色直出（不采样漫反射、不乘 tint）", () => {
     // R+G 同时过阈 → 瀑布 A>B>G>R → G（通道 1）胜出。
     const out = composeGroundPixels(
@@ -136,7 +183,7 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
     expect(out.albedo[at + 2]).toBe(64);
   });
 
-  it("图案光照烘焙进反照率：平色 × 法线图集坡度明暗（主区格号 = LotColor.A）", () => {
+  it("主区颜色独立于法线（主区格号 = LotColor.A）", () => {
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -145,17 +192,17 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
       }),
     );
     // R 通道胜出，LotColor.A=0 → 格 0（图集 px [0,64,255]）：
-    // nx=−1、ny≈−0.498 → shade = 1+1.4·(0.5+0.249) = 2.049 → clamp 1.45（向光上限）。
+    // nx<0，仅改变单独输出的法线；反照率保持原色。
     expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual(
-      bake([10, 20, 30], 1.45),
+      [10, 20, 30],
     );
-    // 输出不再含 normal 通道（图案光照不走实时光照）。
+    expect(out.normal.length).toBe(out.albedo.length);
+    expect(out.normal[0]).toBeLessThan(128);
     expect(out.albedo.length).toBe(out.width * out.height * 4);
   });
 
-  it("图案光照双向：逆光面变暗（clamp 下限 0.55）", () => {
-    // 自建图集：格 0 px = [255,128,255] → nx=+1、ny≈+0.004 →
-    // shade = 1+1.4·(−0.5−0.002) ≈ 0.297 → clamp 0.55。
+  it("倾斜法线不改变固有颜色", () => {
+    // 自建图集：格 0 px = [255,128,255]，倾斜法线不能污染反照率。
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -166,11 +213,11 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
       }),
     );
     expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual(
-      bake([10, 20, 30], 0.55),
+      [10, 20, 30],
     );
   });
 
-  it("边框带图案格号 = LotBorderColor.A，同款烘焙", () => {
+  it("边框带颜色和法线分别输出", () => {
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -179,14 +226,13 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
         normalAtlas: atlas16(),
       }),
     );
-    // A 边框带 → 反照率 = LotBorderColor4 × 图案格 borderIndices[3]=7 明暗
-    //（格 7 px [7,64,255] → shade 同样触顶 1.45）。
+    // A 边框带反照率来自 LotBorderColor4，图案格 7 单独写入法线。
     expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual(
-      bake([101, 111, 121], 1.45),
+      [101, 111, 121],
     );
   });
 
-  it("无法线图集时覆盖区 = 纯平色（shade=1，无明暗）", () => {
+  it("无法线图集时覆盖区保留固有色", () => {
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -197,7 +243,7 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
     expect([out.albedo[0], out.albedo[1], out.albedo[2]]).toEqual([10, 20, 30]);
   });
 
-  it("未覆盖区无图案光照：底图格逐字节直出", () => {
+  it("未覆盖区反照率仍来自底图格", () => {
     const out = composeGroundPixels(
       input({
         mask: pixels(1, 1),
@@ -229,20 +275,3 @@ describe("groundOutputSize（图案原生密度 = 探针 hires 口径）", () =>
     expect(groundOutputSize(128, 128, 9, 9, 1)).toEqual({ width: 512, height: 512 });
   });
 });
-
-/**
- * 烘焙公式（独立实现，= lot_composite tinted/shade_of 同款）：
- * 线性空间相乘后回 sRGB。
- */
-function bake(flat: [number, number, number], shade: number): [number, number, number] {
-  return [encode(decode(flat[0]) * shade), encode(decode(flat[1]) * shade), encode(decode(flat[2]) * shade)];
-}
-function decode(byte: number): number {
-  const srgb = byte / 255;
-  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-}
-function encode(linear: number): number {
-  const srgb =
-    linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
-  return Math.round(srgb * 255);
-}

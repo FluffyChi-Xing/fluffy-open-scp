@@ -19,6 +19,17 @@ import {
 import { loadReplicaData, type GameTextLocale } from "@/lib/game-ui/replica/loader";
 import { isInstalledPreviewImage } from "@/lib/game-ui/local-assets";
 import type { ReplicaData, ReplicaTool } from "@/lib/game-ui/replica/types";
+import { i18n } from "@/locales";
+
+export type UiWorkbenchView = "city" | "region" | "development";
+
+interface LegacyWorkbench {
+  city?: { categories?: { id: string; items?: { id: string; label: string; pos: number }[] }[] };
+  university?: {
+    label: string;
+    tools?: { id: string; label: string; pos: number; icon?: string | null }[];
+  };
+}
 
 /**
  * @summary UI workbench state: top-level menu navigation into second-level panels and menu-item edit overrides.
@@ -78,10 +89,13 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const edits = ref<Record<string, ToolEdit>>({});
   /** menuId → 新增项（保持插入顺序）。 */
   const added = ref<Record<string, WorkbenchTool[]>>({});
+  const removed = ref<Record<string, string[]>>({});
   /** 正在编辑的条目（打开 Sheet）。 */
   const editingEntry = shallowRef<MenuEntry | null>(null);
   /** 工作台里新建的分类（一级菜单末位「＋」产生）。 */
   const customCategories = ref<WorkbenchCategory[]>([]);
+  const viewMode = ref<UiWorkbenchView>("city");
+  const legacyWorkbench = shallowRef<LegacyWorkbench | null>(null);
 
   /** @summary Load the generation-bound installed-resource model; newer requests supersede older work. */
   async function load(locale: GameTextLocale = gameLocale.value): Promise<void> {
@@ -120,6 +134,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     entered.value = true;
   }
 
+  function setViewMode(mode: UiWorkbenchView): void {
+    viewMode.value = mode;
+    entered.value = false;
+    selectedMenuId.value = categories.value[0]?.id ?? null;
+  }
+
   /** 二级返回一级。 */
   function leaveMenu(): void {
     entered.value = false;
@@ -134,6 +154,36 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       icon: cat.icon,
       items: (data?.tools[cat.id] ?? []).map(replicaToolToWorkbench),
     }));
+    if (viewMode.value === "region") {
+      const tr = i18n.global.t;
+      const regionCategories: WorkbenchCategory[] = [
+        ["REGION-GREAT-WORKS", "regionGreatWorks"],
+        ["REGION-COMMUTERS", "regionCommuters"],
+        ["REGION-TRANSPORT", "regionTransport"],
+        ["REGION-UTILITIES", "regionUtilities"],
+        ["REGION-SERVICES", "regionServices"],
+        ["REGION-GIFTS", "regionGifts"],
+      ].map(([id, key]) => ({ id, label: tr(`studio.workbench.${key}`), icon: null, items: [] }));
+      return [...regionCategories, ...customCategories.value];
+    }
+    if (viewMode.value === "development") {
+      const tools = legacyWorkbench.value?.university?.tools ?? [];
+      return [
+        {
+          id: "DEVELOPMENT",
+          label: legacyWorkbench.value?.university?.label ?? "城市发展",
+          icon: null,
+          items: tools.map((tool) => ({
+            id: tool.id,
+            label: tool.label || tool.id,
+            pos: tool.pos,
+            icon: tool.icon ?? null,
+            source: "locale" as const,
+          })),
+        },
+        ...customCategories.value,
+      ];
+    }
     return [...base, ...customCategories.value];
   });
 
@@ -145,6 +195,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     const menuAdditions = added.value[category.id] ?? [];
     const entries: MenuEntry[] = sortTools(
       category.items
+        .filter((tool) => !(removed.value[category.id] ?? []).includes(tool.id))
         .map((tool) => applyEdit(tool, edits.value[tool.id]))
         .concat(menuAdditions.map((tool) => applyEdit(tool, edits.value[tool.id]))),
     ).map((tool) => ({
@@ -225,6 +276,11 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         ...added.value,
         [menuId]: added.value[menuId].filter((tool) => tool.id !== itemId),
       };
+    } else {
+      removed.value = {
+        ...removed.value,
+        [menuId]: [...new Set([...(removed.value[menuId] ?? []), itemId])],
+      };
     }
     const next = { ...edits.value };
     delete next[itemId];
@@ -236,10 +292,47 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   function exportOverlay(): string {
     return JSON.stringify(
       {
-        format: "openscp-ui-workbench-overlay/1",
+        format: "openscp-ui-workbench-overlay/2",
+        viewMode: viewMode.value,
         edits: Object.fromEntries(Object.entries(edits.value).map(([id, edit]) => [id, authoredEdit(edit)])),
         added: Object.fromEntries(Object.entries(added.value).map(([id, tools]) => [id, tools.map((tool) => ({ ...tool, preview: installedImage(tool.preview) ? null : tool.preview, marquee: installedImage(tool.marquee) ? null : tool.marquee }))])),
         customCategories: customCategories.value,
+      },
+      null,
+      2,
+    );
+  }
+
+  function exportSchema(): string {
+    return JSON.stringify(
+      {
+        schemaVersion: 1,
+        source: "openscp-ui-workbench",
+        activeView: viewMode.value,
+        menus: categories.value.map((category) => ({
+          id: category.id,
+          label: category.label,
+          icon: category.icon,
+          items: category.items
+            .filter((tool) => !(removed.value[category.id] ?? []).includes(tool.id))
+            .concat(added.value[category.id] ?? [])
+            .map((tool) => applyEdit(tool, edits.value[tool.id]))
+            .sort((a, b) => a.pos - b.pos)
+            .map((tool) => ({
+              id: tool.id,
+              label: tool.label,
+              position: tool.pos,
+              icon: tool.icon,
+              preview: tool.preview ?? null,
+              marquee: tool.marquee ?? null,
+              description: tool.desc ?? "",
+              unlock: tool.unlock ?? "",
+              stats: tool.stats ?? [],
+              cost: tool.cost ?? null,
+              upkeep: tool.upkeep ?? null,
+              locked: tool.locked ?? false,
+            })),
+        })),
       },
       null,
       2,
@@ -341,6 +434,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   function resetAll(): void {
     edits.value = {};
     added.value = {};
+    removed.value = {};
     editingEntry.value = null;
   }
 
@@ -353,13 +447,16 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     entered,
     edits,
     added,
+    removed,
     editingEntry,
     customCategories,
+    viewMode,
     categories,
     activeMenu,
     hydrate,
     load,
     enterMenu,
+    setViewMode,
     leaveMenu,
     openEditor,
     addCategory,
@@ -368,6 +465,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     addItem,
     removeItem,
     exportOverlay,
+    exportSchema,
     buildGameExport,
     buildEntryProperty,
     resetAll,

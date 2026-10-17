@@ -1,0 +1,84 @@
+[
+  {
+    "channel": "simulation.effect",
+    "schema": 1,
+    "phase": "global-resource-update",
+    "time": 1792179996983,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0xc2181f55",
+    "ruleIndex": 368,
+    "simTicks": 21728,
+    "applyCount": 1,
+    "operations": [
+      {
+        "ordinal": 0,
+        "resourceId": "0xc9fb4c92",
+        "input": 0,
+        "output": 1,
+        "status": "observed",
+        "before": {
+          "pointer": "0x4552e8e8",
+          "resourceIndex": 4631,
+          "binIndex": 968,
+          "amount": 2,
+          "capacity": 24
+        },
+        "after": {
+          "pointer": "0x4552e8e8",
+          "resourceIndex": 4631,
+          "binIndex": 968,
+          "amount": 3,
+          "capacity": 24
+        },
+        "delta": 1,
+        "expectedDeltaInt32": 1,
+        "matchesInt32": true
+      }
+    ],
+    "readErrors": [],
+    "nativeSuccess": true,
+    "sequence": 1
+  },
+  {
+    "channel": "simulation.effect",
+    "schema": 1,
+    "phase": "global-resource-update",
+    "time": 1792179999080,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "ruleId": "0xc2181f55",
+    "ruleIndex": 368,
+    "simTicks": 21729,
+    "applyCount": 1,
+    "operations": [
+      {
+        "ordinal": 0,
+        "resourceId": "0xc9fb4c92",
+        "input": 0,
+        "output": 1,
+        "status": "observed",
+        "before": {
+          "pointer": "0x4552e8e8",
+          "resourceIndex": 4631,
+          "binIndex": 968,
+          "amount": 3,
+          "capacity": 24
+        },
+        "after": {
+          "pointer": "0x4552e8e8",
+          "resourceIndex": 4631,
+          "binIndex": 968,
+          "amount": 4,
+          "capacity": 24
+        },
+        "delta": 1,
+        "expectedDeltaInt32": 1,
+        "matchesInt32": true
+      }
+    ],
+    "readErrors": [],
+    "nativeSuccess": true,
+    "sequence": 2
+  }
+]

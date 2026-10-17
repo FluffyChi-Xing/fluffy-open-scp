@@ -9,15 +9,24 @@ import {
   type Rect,
 } from "@/lib/raster-editor/document";
 import { quantizeToImageData, toImageData } from "@/lib/raster-editor/encoders";
+import { dataChannelPixels } from "@/lib/raster-editor/profileBehavior";
 import type { RasterHistory } from "@/lib/raster-editor/history";
+import {
+  channelPixels,
+  restoreOtherChannels,
+  type Channel,
+} from "@/lib/raster-editor/schema";
 import {
   drawRect,
   floodFill,
   strokeParkingRow,
   strokePath,
   strokeQuadCurve,
+  fillPolygon,
   type Rgba,
 } from "@/lib/raster-editor/tools";
+import type { RasterTool } from "@/lib/raster-editor/schema";
+import { pickedLayer } from "@/lib/raster-editor/profileBehavior";
 
 /**
  * Raster 绘制画布：原生 canvas 按 1:1 像素持有文档，CSS transform 缩放平移
@@ -27,15 +36,7 @@ import {
 const props = defineProps<{
   doc: RasterDocument;
   history: RasterHistory;
-  tool:
-    | "brush"
-    | "eraser"
-    | "line"
-    | "rect"
-    | "fill"
-    | "picker"
-    | "parking"
-    | "curve";
+  tool: RasterTool;
   color: Rgba;
   brushSize: number;
   /** 油漆桶容差（RGBA 欧氏距离，0 = 精确匹配；抗锯齿图片建议 16-48）。 */
@@ -48,10 +49,16 @@ const props = defineProps<{
   quantized?: boolean;
   /** 米/像素比例（Lot raster 惯例 0.75）；为 null 时不显示米标尺。 */
   metersPerPixel?: number | null;
+  channel?: Channel;
+  /** Display channel is independent from the channel being painted. */
+  displayChannel?: Channel;
+  lotLayer?: number | null;
+  dataChannels?: boolean;
 }>();
 const emit = defineEmits<{
   change: [];
   "pick-color": [rgba: Rgba];
+  "pick-layer": [layer: number];
   "zoom-change": [zoom: number];
 }>();
 
@@ -64,9 +71,17 @@ const cursor = ref<{ x: number; y: number } | null>(null);
 const panning = ref(false);
 /** 经 computed 解引用，避免对 props 的直接方法调用（vue/no-mutating-props）。 */
 const historyInstance = computed(() => props.history);
+const documentInstance = computed(() => props.doc);
 
 let ctx: CanvasRenderingContext2D | null = null;
 let spaceDown = false;
+let shapeFrame = 0;
+let pendingShapeEnd: { x: number; y: number } | null = null;
+function cancelShapeFrame() {
+  if (shapeFrame) cancelAnimationFrame(shapeFrame);
+  shapeFrame = 0;
+  pendingShapeEnd = null;
+}
 
 /** Lot 比例尺：可选米步长，保证屏幕间距 ≥ 72px。 */
 const METER_STEPS = [0.75, 1.5, 3, 6, 12, 24, 48, 96, 192];
@@ -120,9 +135,26 @@ function syncCanvasSize() {
 
 function render() {
   if (!ctx) return;
-  const image = props.quantized
-    ? quantizeToImageData(props.doc)
-    : toImageData(props.doc);
+  const before = dragBefore ?? curve?.base ?? polygonDraft?.base;
+  if (before)
+    restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
+  const displayChannel = props.displayChannel ?? "rgba";
+  const image =
+    displayChannel !== "rgba"
+      ? new ImageData(
+          new Uint8ClampedArray(channelPixels(props.doc.pixels, displayChannel)),
+          props.doc.width,
+          props.doc.height,
+        )
+      : props.quantized
+        ? quantizeToImageData(props.doc)
+        : props.dataChannels
+          ? new ImageData(
+              dataChannelPixels(props.doc.pixels),
+              props.doc.width,
+              props.doc.height,
+            )
+          : toImageData(props.doc);
   ctx.putImageData(image, 0, 0);
 }
 
@@ -149,10 +181,13 @@ function fit() {
   const ratio = Math.min(
     available / props.doc.width,
     availableHeight / props.doc.height,
-    1,
+    16,
   );
   setZoom(Math.max(0.05, ratio));
-  pan.value = { x: 0, y: 0 };
+  pan.value = {
+    x: (element.clientWidth - props.doc.width * zoom.value) / 2,
+    y: (element.clientHeight - props.doc.height * zoom.value) / 2,
+  };
 }
 
 // ── 指针交互 ──
@@ -171,6 +206,23 @@ let curve: {
   p2: { x: number; y: number };
   base: Uint8ClampedArray;
 } | null = null;
+let polygonDraft: { base: Uint8ClampedArray; vertices: { x: number; y: number }[] } | null = null;
+
+function preserveErasedLotLayers(before: Uint8ClampedArray, dirty: Rect | null) {
+  if (props.tool !== "eraser" || props.lotLayer == null || props.channel !== "rgba") return;
+  if (!dirty) return;
+  const selected = [3, 0, 1, 2][props.lotLayer];
+  const rect = clampRect(dirty, props.doc);
+  if (!rect) return;
+  for (let y = rect.y; y < rect.y + rect.h; y += 1) {
+    for (let x = rect.x; x < rect.x + rect.w; x += 1) {
+      const at = (y * props.doc.width + x) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        if (channel !== selected) documentInstance.value.pixels[at + channel] = before[at + channel];
+      }
+    }
+  }
+}
 
 function toPixel(event: PointerEvent): { x: number; y: number } {
   const element = canvas.value!;
@@ -179,6 +231,22 @@ function toPixel(event: PointerEvent): { x: number; y: number } {
     x: Math.floor((event.clientX - rect.left) / zoom.value),
     y: Math.floor((event.clientY - rect.top) / zoom.value),
   };
+}
+
+function constrainedEnd(from: { x: number; y: number }, to: { x: number; y: number }, shift: boolean) {
+  if (!shift) return to;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (props.tool === "rect" || props.tool === "rect-fill") {
+    const side = Math.max(Math.abs(dx), Math.abs(dy));
+    return { x: from.x + Math.sign(dx || 1) * side, y: from.y + Math.sign(dy || 1) * side };
+  }
+  if (props.tool === "line" || props.tool === "polyline") {
+    const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+    const distance = Math.hypot(dx, dy);
+    return { x: Math.round(from.x + Math.cos(angle) * distance), y: Math.round(from.y + Math.sin(angle) * distance) };
+  }
+  return to;
 }
 
 const cursorText = computed(() => {
@@ -243,13 +311,32 @@ function drawShapeDraft(
       props.doc,
       from,
       to,
-      1,
+      props.brushSize,
       activeColor(),
-      false,
+      props.tool === "rect-fill",
       () => {},
     );
   }
   render();
+}
+
+function drawMultiPointDraft(cursor?: { x: number; y: number }) {
+  if (!polygonDraft) return;
+  props.doc.pixels.set(polygonDraft.base);
+  const vertices = cursor ? [...polygonDraft.vertices, cursor] : polygonDraft.vertices;
+  dragDirty = props.tool === "polygon" && vertices.length >= 3
+    ? fillPolygon(props.doc, vertices, activeColor(), () => {})
+    : strokePath(props.doc, vertices, props.brushSize, activeColor(), () => {});
+  render();
+}
+
+function commitMultiPoint() {
+  if (!polygonDraft) return;
+  const state = polygonDraft;
+  drawMultiPointDraft();
+  polygonDraft = null;
+  pushEdit(dragDirty, state.base);
+  dragDirty = null;
 }
 
 function previewCurveBend(control: { x: number; y: number }) {
@@ -269,6 +356,7 @@ function previewCurveBend(control: { x: number; y: number }) {
 }
 
 function onPointerDown(event: PointerEvent) {
+  if ((event.target as HTMLElement).closest("button")) return;
   if (event.button === 1 || spaceDown) {
     dragMode = "pan";
     panning.value = true;
@@ -282,11 +370,30 @@ function onPointerDown(event: PointerEvent) {
     return;
   }
   if (event.button !== 0) return;
-  const pixel = toPixel(event);
+  if (event.target !== canvas.value) return;
+  let pixel = toPixel(event);
+  if (!props.doc.inside(pixel.x, pixel.y)) return;
+  if (props.tool === "layer-picker") {
+    if (props.doc.inside(pixel.x, pixel.y)) {
+      const selected = pickedLayer("lot-mask", props.doc.getPixel(pixel.x, pixel.y));
+      if (selected !== null) emit("pick-layer", selected);
+    }
+    return;
+  }
   if (props.tool === "picker") {
     if (props.doc.inside(pixel.x, pixel.y)) {
       emit("pick-color", props.doc.getPixel(pixel.x, pixel.y));
     }
+    return;
+  }
+  if (props.tool === "polyline" || props.tool === "polygon") {
+    if (!props.doc.inside(pixel.x, pixel.y)) return;
+    if (!polygonDraft) polygonDraft = { base: props.doc.pixels.slice(), vertices: [] };
+    const vertices = polygonDraft.vertices;
+    if (vertices.length && props.tool === "polyline") pixel = constrainedEnd(vertices[vertices.length - 1], pixel, event.shiftKey);
+    if (!vertices.length || vertices[vertices.length - 1].x !== pixel.x || vertices[vertices.length - 1].y !== pixel.y)
+      vertices.push(pixel);
+    drawMultiPointDraft();
     return;
   }
   if (props.tool === "fill") {
@@ -299,6 +406,7 @@ function onPointerDown(event: PointerEvent) {
       () => {},
       props.fillTolerance ?? 0,
     );
+    preserveErasedLotLayers(before, dirty);
     pushEdit(dirty, before);
     return;
   }
@@ -312,6 +420,7 @@ function onPointerDown(event: PointerEvent) {
   if (
     props.tool === "line" ||
     props.tool === "rect" ||
+    props.tool === "rect-fill" ||
     props.tool === "parking" ||
     props.tool === "curve"
   ) {
@@ -328,12 +437,15 @@ function onPointerDown(event: PointerEvent) {
     activeColor(),
     () => {},
   );
+  preserveErasedLotLayers(dragBefore, dragDirty);
   render();
 }
 
 function onPointerMove(event: PointerEvent) {
   const pixel = toPixel(event);
-  cursor.value = props.doc.inside(pixel.x, pixel.y) ? pixel : null;
+  const nextCursor = props.doc.inside(pixel.x, pixel.y) ? pixel : null;
+  if (nextCursor?.x !== cursor.value?.x || nextCursor?.y !== cursor.value?.y)
+    cursor.value = nextCursor;
   if (dragMode === "pan") {
     pan.value = {
       x: panStart.px + (event.clientX - panStart.x),
@@ -343,6 +455,11 @@ function onPointerMove(event: PointerEvent) {
   }
   if (dragMode === "none" && props.tool === "curve" && curve) {
     previewCurveBend(pixel);
+    return;
+  }
+  if (dragMode === "none" && polygonDraft) {
+    const last = polygonDraft.vertices[polygonDraft.vertices.length - 1];
+    drawMultiPointDraft(last ? constrainedEnd(last, pixel, event.shiftKey) : pixel);
     return;
   }
   if (dragMode === "paint") {
@@ -357,17 +474,31 @@ function onPointerMove(event: PointerEvent) {
       () => {},
     );
     if (dirty) {
+      if (dragBefore) preserveErasedLotLayers(dragBefore, dirty);
       dragDirty = unionRect(dragDirty, dirty);
       renderRegion(dirty);
     }
     return;
   }
   if (dragMode === "shape" && dragStart) {
-    drawShapeDraft(dragStart, pixel);
+    pendingShapeEnd = constrainedEnd(dragStart, pixel, event.shiftKey);
+    if (!shapeFrame) shapeFrame = requestAnimationFrame(() => {
+      shapeFrame = 0;
+      if (dragMode === "shape" && dragStart && pendingShapeEnd)
+        drawShapeDraft(dragStart, pendingShapeEnd);
+      pendingShapeEnd = null;
+    });
   }
 }
 
+function onPointerLeave() {
+  if (dragMode === "none") cursor.value = null;
+}
+
 function onPointerUp(event: PointerEvent) {
+  cancelShapeFrame();
+  const target = event.currentTarget as HTMLElement;
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
   if (dragMode === "pan") {
     dragMode = "none";
     panning.value = false;
@@ -394,16 +525,26 @@ function onPointerUp(event: PointerEvent) {
     return;
   }
   if (dragMode === "paint" || dragMode === "shape") {
+    if (dragMode === "shape" && dragStart && props.tool !== "curve")
+      drawShapeDraft(dragStart, constrainedEnd(dragStart, toPixel(event), event.shiftKey));
     commitDrag();
   }
 }
 
-function onPointerCancel() {
+function onDoubleClick() {
+  if (polygonDraft) commitMultiPoint();
+}
+
+function onPointerCancel(event: PointerEvent) {
+  const target = event.currentTarget as HTMLElement;
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
   cancelDraft();
 }
 
 function commitDrag() {
+  cancelShapeFrame();
   const before = dragBefore;
+  if (before) preserveErasedLotLayers(before, dragDirty);
   pushEdit(dragDirty, before);
   dragMode = "none";
   dragBefore = null;
@@ -433,6 +574,7 @@ function commitCurve(control: { x: number; y: number }) {
 function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
   const rect = dirty ? clampRect(dirty, props.doc) : null;
   if (rect && before) {
+    restoreOtherChannels(props.doc.pixels, before, props.channel ?? "rgba");
     historyInstance.value.push(makeEdit(rect, before));
   }
   render();
@@ -441,6 +583,14 @@ function pushEdit(dirty: Rect | null, before: Uint8ClampedArray | null) {
 
 /** 取消当前草稿（Esc / pointercancel / 切换工具）：回滚文档并清状态。 */
 function cancelDraft() {
+  cancelShapeFrame();
+  if (polygonDraft) {
+    props.doc.pixels.set(polygonDraft.base);
+    polygonDraft = null;
+    dragDirty = null;
+    render();
+    return;
+  }
   if (curve) {
     props.doc.pixels.set(curve.base);
     curve = null;
@@ -472,18 +622,16 @@ function makeEdit(rect: Rect, beforeFull: Uint8ClampedArray) {
 
 function renderRegion(region: Rect) {
   if (!ctx) return;
-  const image = props.quantized
-    ? quantizeToImageData(props.doc)
-    : toImageData(props.doc);
-  ctx.putImageData(
-    image,
-    0,
-    0,
-    Math.max(0, region.x),
-    Math.max(0, region.y),
-    Math.min(props.doc.width, region.w),
-    Math.min(props.doc.height, region.h),
-  );
+  const rect = clampRect(region, props.doc);
+  if (!rect) return;
+  const pixels = props.doc.copyRegion(rect);
+  const displayChannel = props.displayChannel ?? "rgba";
+  const image = displayChannel !== "rgba"
+    ? new ImageData(new Uint8ClampedArray(channelPixels(pixels, displayChannel)), rect.w, rect.h)
+    : props.quantized
+      ? quantizeToImageData(new RasterDocument(rect.w, rect.h, pixels))
+      : new ImageData(new Uint8ClampedArray(props.dataChannels ? dataChannelPixels(pixels) : pixels), rect.w, rect.h);
+  ctx.putImageData(image, rect.x, rect.y);
 }
 
 function undo() {
@@ -517,6 +665,10 @@ function onWheel(event: WheelEvent) {
 
 function onKeydown(event: KeyboardEvent) {
   if (event.code === "Space") spaceDown = true;
+  if (event.code === "Enter" && polygonDraft) {
+    event.preventDefault();
+    commitMultiPoint();
+  }
   if (event.code === "Escape") cancelDraft();
 }
 
@@ -526,25 +678,37 @@ function onKeyup(event: KeyboardEvent) {
 
 onMounted(() => {
   syncCanvasSize();
+  fit();
   window.addEventListener("keydown", onKeydown);
   window.addEventListener("keyup", onKeyup);
 });
 onBeforeUnmount(() => {
+  cancelShapeFrame();
   window.removeEventListener("keydown", onKeydown);
   window.removeEventListener("keyup", onKeyup);
 });
 
 watch(
-  () => props.quantized,
-  () => render(),
+  () => [props.quantized, props.displayChannel, props.dataChannels],
+  () => {
+    cancelDraft();
+    render();
+  },
 );
 watch(
   () => props.tool,
   () => cancelDraft(),
 );
 watch(
-  () => [props.doc.width, props.doc.height],
+  () => props.doc,
   () => {
+    cancelShapeFrame();
+    dragBefore = null;
+    dragDirty = null;
+    curve = null;
+    polygonDraft = null;
+    dragMode = "none";
+    points = [];
     syncCanvasSize();
     fit();
   },
@@ -559,8 +723,10 @@ watch(
     @wheel="onWheel"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
+    @pointerleave="onPointerLeave"
     @pointerup="onPointerUp"
     @pointercancel="onPointerCancel"
+    @dblclick="onDoubleClick"
   >
     <div
       class="canvas-plane"
@@ -592,7 +758,7 @@ watch(
     <span v-if="metersPerPixel" class="scale-badge">
       1 px = {{ props.metersPerPixel }} m
     </span>
-    <div class="hud">
+    <div class="hud" :class="{ 'with-ruler': metersPerPixel }">
       <span v-if="cursor" class="hud-item">
         {{ cursorText }}
       </span>
@@ -630,7 +796,7 @@ watch(
   background-size: 16px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  cursor: crosshair;
+  cursor: default;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -647,13 +813,18 @@ watch(
 .surface {
   display: block;
   image-rendering: pixelated;
+  cursor: crosshair;
 }
 .hud {
+  z-index: 3;
   bottom: 10px;
   display: flex;
   gap: 6px;
   left: 10px;
   position: absolute;
+}
+.hud.with-ruler {
+  left: 54px;
 }
 .ruler {
   pointer-events: none;
@@ -742,5 +913,10 @@ watch(
   font-size: 10px;
   position: absolute;
   right: 12px;
+}
+@media (max-width: 1100px) {
+  .space-hint {
+    display: none;
+  }
 }
 </style>

@@ -152,7 +152,10 @@ export function buildSpawnerPlaceholder(
   unit: LotUnitDto,
 ): ThreeNamespace.Object3D {
   const figure = buildSimFigure(THREE, spawnerSeed(unit));
-  applyTransform(THREE, figure, unit.transform);
+  // pathPoint 无 transform（位置由 point 承载），联合收窄
+  if (unit.kind !== "pathPoint") {
+    applyTransform(THREE, figure, unit.transform);
+  }
   return figure;
 }
 
@@ -299,27 +302,20 @@ export function buildRealLightUnit(
   // 灯球/灯管属方向性错误，已撤）。
   let proxyGeometry: ThreeNamespace.BufferGeometry;
   if (unit.lightType === "Line") {
-    proxyGeometry = new THREE.BoxGeometry(2, length, 2);
+    proxyGeometry = new THREE.BoxGeometry(1, length, 1);
     proxyGeometry.translate(0, length / 2, 0);
   } else if (unit.lightType === "Spot") {
-    proxyGeometry = new THREE.CylinderGeometry(
-      Math.max(radius * 0.5, 1),
-      Math.max(radius * 0.5, 1),
-      length,
-      8,
-      1,
-      true,
-    );
-    proxyGeometry.translate(0, length / 2, 0);
+    // Select the emitter, never its cone of influence.
+    proxyGeometry = new THREE.SphereGeometry(1, 12, 8);
   } else {
-    proxyGeometry = new THREE.SphereGeometry(radius, 8, 6);
+    proxyGeometry = new THREE.SphereGeometry(1, 12, 8);
   }
-  group.add(
-    new THREE.Mesh(
+  const proxy = new THREE.Mesh(
       proxyGeometry,
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
-    ),
-  );
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false }),
+    );
+  proxy.userData.pickOnly = true;
+  group.add(proxy);
   applyTransform(THREE, group, unit.transform);
   return group;
 }

@@ -7,6 +7,29 @@
 
 /// (片段名, HLSL 源码) 列表。占位符约定：转译阶段注入声明。
 pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
+    // decalProjectNeonSDF / decalLightSDF [387]. Kept separate from the tube
+    // overlay: this is additive illumination of geometry inside the volume.
+    ("decalProjectedLight", r#"
+      float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;
+      float sdfTextureLength = max(uDecalNUS.x, uDecalNUS.y);
+      float sphereHeight = uDecalNUS.z;
+      float hwRatio = sphereHeight * 0.5 / sdfTextureLength;
+      float zScale = 1.0;
+      if (hwRatio < 1.0) { hwRatio = 1.0; zScale = 1.0 / hwRatio; }
+      float circleZ = vTexcoord0.z * zScale;
+      vec4 circleDists = clamp(1.0 - outColor * 2.0, 0.0, 1.0) * hwRatio;
+      vec4 sphereDistsSqr = circleDists * circleDists + circleZ * circleZ;
+      vec4 animEdge = max(animResults, 0.0) * uAnimEnabled;
+      vec4 animRatio = mix(vec4(sphereHeight * 0.5 / uDecalNUS.x),
+                           vec4(sphereHeight * 0.5 / uDecalNUS.y), useV);
+      sphereDistsSqr += animEdge * animEdge * animRatio * 32.0;
+      vec4 lightScales = clamp(1.0 - sqrt(sphereDistsSqr), 0.0, 1.0);
+      lightScales *= lightScales;
+      outColor.rgb = materialLightScale * vec3(dot(decalMaterialData[0], lightScales),
+        dot(decalMaterialData[1], lightScales), dot(decalMaterialData[2], lightScales));
+      outColor.rgb *= decalMaterialInfo.w;
+      outColor.a = 0.0;
+    "#),
     // ---- PS：量化合成（探针 v5 逐字；GPU 双线性采样 + 阈值后置 + 优先级链）----
     ("decalQuantComposite",
      "vec4 m = texture2D(uSampler0, vUv);
@@ -177,26 +200,20 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
       float4 tubeColor0 = decalMaterialData[0] * powerFactor;\n\
       float4 tubeColor1 = decalMaterialData[1] * powerFactor;\n\
       float4 tubeColor2 = decalMaterialData[2] * powerFactor;"),
-    // ---- PS：SDF 遮罩上色（decalSDF[394] addOverlay，dev 原版语义 ----
-    // 2026-10-05 十一轮重写，按 §12.5 逐字对拍取代八轮的"最近调色板行
-    // one-hot 归属"——dev 没有分类步骤：四通道直接当遮罩（maskCenter=0.5
-    // + fwidth 屏幕导数抗锯齿 = 官方清晰度答案，§12.6），颜色 = 调光后
-    // 权重列与遮罩的**加权求和**：
-    //   lightColor_i = materialLightScale · dot(tubeColor_i, mask4)
-    // one-hot 把过渡区/多通道区像素硬归单一通道 = "纯色块无图案"根因
-    // （用户 09:58 对拍）。alpha = 四通道遮罩 max（覆盖区不透明）。
-    ("decalAnimateSDFDarken",
-     "float materialLightScale = decalMaterialInfo.x * 16.0 + 0.25;\n\
-      float4 sdfFw = min(fwidth(Current.color), float4(0.15, 0.15, 0.15, 0.15));\n\
-      float4 sdfMask = smoothstep(float4(0.5, 0.5, 0.5, 0.5) - sdfFw,\n\
-                                  float4(0.5, 0.5, 0.5, 0.5) + sdfFw, Current.color);\n\
-      float3 lightColor = float3(0.0, 0.0, 0.0);\n\
-      lightColor.x = materialLightScale * dot(tubeColor0, sdfMask);\n\
-      lightColor.y = materialLightScale * dot(tubeColor1, sdfMask);\n\
-      lightColor.z = materialLightScale * dot(tubeColor2, sdfMask);\n\
-      lightColor *= decalMaterialInfo.w;\n\
-      Current.color.rgb = lightColor;\n\
-      Current.color.a = max(max(sdfMask.x, sdfMask.y), max(sdfMask.z, sdfMask.w));"),
+    // decalSDF calls overlayBlend4Chan, not an additive four-channel blend.
+    // With borderWidth=0, its A/B/G/R cascade selects exactly one layer.
+    // Animation changes that layer's color, never its coverage or priority.
+    ("decalAnimateSDFDarken", r#"
+      vec4 sdfMask = vec4(greaterThan(outColor, vec4(0.5)));
+      float remaining = 1.0 - sdfMask.w;
+      sdfMask.z = min(sdfMask.z, remaining);
+      remaining -= sdfMask.z;
+      sdfMask.y = min(sdfMask.y, remaining);
+      remaining -= sdfMask.y;
+      sdfMask.x = min(sdfMask.x, remaining);
+      outColor.rgb = vec3(dot(tubeColor0, sdfMask), dot(tubeColor1, sdfMask), dot(tubeColor2, sdfMask));
+      outColor.a = dot(sdfMask, vec4(1.0));
+    "#),
     // ---- PS：灯管亮度（场景光叠加）----
     ("decalLightSDF",
      "float3 bumpNormal = normalize(decalWorldDirection);\n\

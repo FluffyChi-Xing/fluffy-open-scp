@@ -16,13 +16,13 @@ describe("SettingsPanel", () => {
       global: { mocks: { $t: (key: string) => key } },
     });
 
-    const checkboxes = wrapper.findAll('input[type="checkbox"]');
-    expect(checkboxes).toHaveLength(5);
+    const switches = wrapper.findAll('button[role="switch"]');
+    expect(switches).toHaveLength(5);
 
-    await checkboxes[1].setValue(false);
+    await switches[1].trigger("click");
     expect(store.showNavbar).toBe(false);
 
-    await checkboxes[3].setValue(true);
+    await switches[3].trigger("click");
     expect(store.colorWeak).toBe(true);
 
     // FSelect 已改为 FDropdown 渲染（无原生 select）：点开菜单后选 280

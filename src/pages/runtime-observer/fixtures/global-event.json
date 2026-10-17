@@ -1,0 +1,38 @@
+{
+  "channel": "event",
+  "name": "ReceiveGameEventFromClient",
+  "callerRva": "0x369d7c",
+  "binding": "0x62c1bbf8",
+  "page": "0xfbbca228",
+  "threadId": 44504,
+  "eventID": 248287250,
+  "event": {
+    "type": "array",
+    "status": "dense",
+    "length": 2,
+    "items": [
+      {
+        "type": "int32",
+        "value": 248287250
+      },
+      {
+        "type": "object",
+        "status": "own_data",
+        "properties": [
+          {
+            "name": "eventID",
+            "value": {
+              "type": "int32",
+              "value": 1935375069
+            }
+          }
+        ],
+        "truncated": false
+      }
+    ],
+    "truncated": false
+  },
+  "sequence": 40090,
+  "time": 1791907258186,
+  "samplingChannel": "event"
+}

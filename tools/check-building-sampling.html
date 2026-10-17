@@ -1,0 +1,110 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Building atlas GPU regression</title>
+<pre id="results">Running WebGL2 readback checks…</pre>
+<script type="module">
+// Serve with Vite, then open /tools/check-building-sampling.html.
+// Synthetic data only: no game installation or copyrighted fixtures required.
+import * as THREE from "three";
+import { createSunEnv, makeTintMaterial } from "/src/pages/packages/components/property-editor/refinedRender.ts";
+
+const [building] = makeTintMaterial(THREE, {
+  tintTex: null, paletteTex: null, normalTex: null, shaderTex: null,
+  interiorTex: null, paramsTex: null, paramCols: 0,
+}, createSunEnv(THREE));
+const injected = { ...THREE.ShaderLib.standard, uniforms: {} };
+building.onBeforeCompile(injected, null);
+const start = injected.fragmentShader.indexOf("vec4 scSampleAtlas(");
+const end = injected.fragmentShader.indexOf("#ifdef TINT_PARAMS", start);
+if (start < 0 || end < start) throw new Error("Building sampler injection missing");
+const sampling = injected.fragmentShader.slice(start, end);
+const renderer = new THREE.WebGLRenderer();
+const target = new THREE.WebGLRenderTarget(64, 64, { depthBuffer: false });
+const material = new THREE.RawShaderMaterial({
+  glslVersion: THREE.GLSL3,
+  uniforms: {
+    atlas: { value: null },
+    reconstruct: { value: true },
+    footprint: { value: 0.001 },
+    region: { value: new THREE.Vector4(1, 1, 0, 0) },
+  },
+  vertexShader: `precision highp float;
+    in vec3 position; in vec2 uv; out vec2 vUv;
+    void main() { vUv=uv; gl_Position=vec4(position,1.0); }`,
+  fragmentShader: `precision highp float;
+    uniform sampler2D atlas; uniform bool reconstruct; uniform float footprint;
+    uniform vec4 region; in vec2 vUv; out vec4 color;
+    ${sampling}
+    void main() {
+      vec2 uv=mix(vec2(0.25),vec2(0.75),vUv);
+      vec2 dx=vec2(footprint,0.0),dy=vec2(0.0,footprint);
+      color=reconstruct ? scSampleFacade(atlas,uv,region,dx,dy)
+                        : scSampleAtlas(atlas,uv,region,dx,dy);
+    }`,
+});
+const geometry = new THREE.PlaneGeometry(2, 2);
+const scene = new THREE.Scene();
+scene.add(new THREE.Mesh(geometry, material));
+const camera = new THREE.Camera();
+const textures = [];
+function texture(pixel) {
+  const bytes = new Uint8Array(8 * 8 * 4);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    bytes.set(pixel(x, y), (y * 8 + x) * 4);
+  }
+  const result = new THREE.DataTexture(bytes, 8, 8);
+  result.magFilter = THREE.LinearFilter;
+  result.minFilter = THREE.LinearMipmapLinearFilter;
+  result.generateMipmaps = true;
+  result.needsUpdate = true;
+  textures.push(result);
+  return result;
+}
+function render(atlas, reconstruct = true, footprint = 0.001) {
+  Object.assign(material.uniforms.atlas, { value: atlas });
+  material.uniforms.reconstruct.value = reconstruct;
+  material.uniforms.footprint.value = footprint;
+  renderer.setRenderTarget(target);
+  renderer.render(scene, camera);
+  const pixels = new Uint8Array(64 * 64 * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, 64, 64, pixels);
+  return pixels;
+}
+const checks = {};
+const ramp = texture((x, y) => [16 + 16*x + 8*y, 80, 120, 64 + 8*x]);
+const pixels = render(ramp);
+// Catmull-Rom must reproduce an affine signal, rather than turning each texel
+// into a plateau (the previous sharp-bilinear implementation fails this).
+checks.affineReconstruction = true;
+for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+  const u = (0.25 + 0.5 * (x + 0.5) / 64) * 8 - 0.5;
+  const v = (0.25 + 0.5 * (y + 0.5) / 64) * 8 - 0.5;
+  const i = (y*64+x)*4;
+  if (Math.abs(pixels[i] - (16 + 16*u + 8*v)) > 1
+      || Math.abs(pixels[i+3] - (64 + 8*u)) > 1) checks.affineReconstruction = false;
+}
+const diagonal = texture((x, y) => {
+  const value = x+y < 7 ? 64 : 192;
+  return [value, value, value, value];
+});
+const edge = render(diagonal);
+checks.noColorOrCoverageOvershoot = edge.every(v => v >= 64 && v <= 192);
+const farLinear = render(diagonal, false, 0.5);
+const farCubic = render(diagonal, true, 0.5);
+checks.minificationUnchanged = farLinear.every((v, i) => v === farCubic[i]);
+const packed = texture(x => x < 4 ? [64, 64, 64, 64] : [224, 224, 224, 224]);
+material.uniforms.region.value.set(0.5, 1, 0, 0);
+checks.noNeighborTileBleed = render(packed).every(v => v === 64);
+material.uniforms.region.value.set(-0.5, 1, 0.5, 0);
+checks.mirroredRegion = render(packed).every(v => v === 64);
+material.uniforms.region.value.set(1/8, 1/8, 2/8, 2/8);
+checks.singleTexelRegion = render(packed).every(v => v === 64);
+checks.noWebGLError = renderer.getContext().getError() === 0;
+window.samplingChecks = checks;
+window.samplingPassed = Object.values(checks).every(Boolean);
+document.getElementById("results").textContent = JSON.stringify({ passed: window.samplingPassed, checks }, null, 2);
+for (const t of textures) t.dispose();
+target.dispose(); material.dispose(); building.dispose(); geometry.dispose(); renderer.dispose();
+if (!window.samplingPassed) throw new Error("Building sampling regression failed");
+</script>

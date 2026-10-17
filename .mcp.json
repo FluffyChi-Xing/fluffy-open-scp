@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fluffy-context": {
+      "command": "C:\\nvm4w\\nodejs\\node.exe",
+      "args": [
+        "C:\\Users\\FluffyCHi_Xing\\AppData\\Local\\nvm\\v24.6.0\\node_modules\\fluffy-context\\dist\\src\\cli\\main.js",
+        "agent",
+        "serve"
+      ]
+    }
+  }
+}

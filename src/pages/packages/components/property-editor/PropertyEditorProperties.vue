@@ -59,6 +59,8 @@ const summary = computed<SummaryRow[]>(() => {
     case "effect": {
       if (unit.effectId)
         rows.push({ label: t("package.effectId"), value: formatKey(unit.effectId) });
+      if (unit.externalId)
+        rows.push({ label: t("package.effectExternalId"), value: formatKey(unit.externalId) });
       if (unit.enabled !== null)
         rows.push({ label: t("package.effectEnabled"), value: String(unit.enabled) });
       break;

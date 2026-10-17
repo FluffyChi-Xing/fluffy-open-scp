@@ -10,8 +10,8 @@ if (!base.startsWith('/') || !base.endsWith('/')) throw new Error('SITE_BASE mus
 const siteUrl = resolveSiteUrl(process.env.SITE_URL)
 const preview = process.env.VERCEL_ENV === 'preview'
 const verification = [
-  ['google-site-verification', process.env.GOOGLE_SITE_VERIFICATION],
-  ['msvalidate.01', process.env.BING_SITE_VERIFICATION]
+  ['google-site-verification', process.env.GOOGLE_SITE_VERIFICATION || 'yU8udrf9pd_cGdqLAWpMi9Y6NdGqwTBd8MU9w8C1SRE'],
+  ['msvalidate.01', process.env.BING_SITE_VERIFICATION || '6C718B6C7AB6FA176E4E482759901E92']
 ] as const
 export default defineConfig({
   title: 'OpenSCP',

@@ -36,6 +36,7 @@ Thanks for your interest in contributing to OpenSCP! This guide is provided in C
 | `chore` | 杂项维护 |
 
 - 描述使用祈使句、单行不超过 72 字符；一个提交只做一件逻辑上独立的事。
+- 所有提交信息使用英文，包括标题、正文和 footer，便于国际社区检索、审阅和协作。
 - `scope` 建议使用模块名：`region`（区域地图）、`map-panel`（地图面板）、`lots`（地块）、`rw4`、`dbpf` 等。
 
 ### 开发流程
@@ -109,6 +110,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 | `chore` | maintenance |
 
 - Imperative mood, single line under 72 chars; one logical change per commit.
+- Write all commit messages in English, including the subject, body, and footers, so the international community can search and review the history.
 - Suggested scopes: `region` (region map), `map-panel`, `lots`, `rw4`, `dbpf`.
 
 ### Development Workflow

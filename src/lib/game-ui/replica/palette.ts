@@ -192,7 +192,7 @@ export function createHudPalette(
   }
 
   /** 布局自带工具按钮的分类（见 build.py 的 SKIP_SLOT_ROW）。 */
-  const SKIP_SLOT_ROW = new Set(["3193C0BE"]);
+  const SKIP_SLOT_ROW = new Set<string>();
 
   /** 游戏行为：二级槽位一行最多 8 个，超出的用 ◀/▶ 翻页，不换行。 */
   const PAGE_SIZE = 8;
@@ -224,6 +224,9 @@ export function createHudPalette(
         bodyEl.appendChild(rolloverEl);
       }
       const media = tool.marquee || tool.preview;
+      const escape = (value: string): string => value.replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[char] ?? char);
       const stats = (tool.stats ?? [])
         .map(
           (row) =>

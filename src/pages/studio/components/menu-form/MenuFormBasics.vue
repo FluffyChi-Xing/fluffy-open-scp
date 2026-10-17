@@ -3,6 +3,8 @@
  * 步骤 ①「菜单条目」表单：显示名称、排序、FIcon 覆盖、槽位图标（128×128）。
  * 裁切图片只负责产出 dataURL 并回写 model，弹窗交互由宿主（Sheet）承接。
  */
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 const model = defineModel<{
   label: string;
   pos: number;
@@ -16,25 +18,25 @@ const emit = defineEmits<{ (e: "crop"): void }>();
 <template>
   <div class="form">
     <label class="field">
-      <span>显示名称</span>
+      <span>{{ t('studio.workbench.fieldLabel') }}</span>
       <input v-model="model.label" type="text" />
     </label>
     <div class="field-row">
       <label class="field">
-        <span>排序（uiPosition）</span>
+        <span>{{ t('studio.workbench.fieldPos') }}</span>
         <input v-model.number="model.pos" type="number" />
       </label>
       <label class="field">
-        <span>图标（FIcon 名，可选）</span>
+        <span>{{ t('studio.workbench.fieldIcon') }}</span>
         <input v-model="model.icon" type="text" placeholder="Box" />
       </label>
     </div>
-    <p class="field-hint">留空 = 占位图标；可填图标库任意名称（Box / House / Zap…），实时预览。</p>
+    <p class="field-hint">{{ t('studio.workbench.iconHint') }}</p>
     <div class="field">
-      <span>槽位图标 128×128</span>
+      <span>{{ t('studio.workbench.slotIcon') }}</span>
       <button type="button" class="img-btn" @click="emit('crop')">
         <img v-if="model.preview" :src="model.preview" alt="" />
-        <span v-else class="img-btn-hint">点击上传，自动裁切到 128×128</span>
+        <span v-else class="img-btn-hint">{{ t('studio.workbench.uploadSlot') }}</span>
       </button>
     </div>
   </div>

@@ -115,18 +115,55 @@ export function drawRect(
   const y0 = Math.min(from.y, to.y);
   const x1 = Math.max(from.x, to.x);
   const y1 = Math.max(from.y, to.y);
+  if (!fill) {
+    return strokePath(doc, [
+      { x: x0, y: y0 }, { x: x1, y: y0 },
+      { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 },
+    ], size, rgba, plot);
+  }
   let dirty: Rect | null = null;
   for (let y = y0; y <= y1; y += 1) {
     for (let x = x0; x <= x1; x += 1) {
-      const onEdge = x === x0 || x === x1 || y === y0 || y === y1;
-      if (fill || onEdge) {
+      if (!doc.inside(x, y)) continue;
+      doc.setPixel(x, y, rgba);
+      plot(x, y);
+      dirty = unionRect(dirty, { x, y, w: 1, h: 1 });
+    }
+  }
+  return dirty;
+}
+
+/** Fill a closed polygon using pixel-center intersections with each scanline. */
+export function fillPolygon(
+  doc: RasterDocument,
+  vertices: { x: number; y: number }[],
+  rgba: Rgba,
+  plot: PlotFn,
+): Rect | null {
+  if (vertices.length < 3) return null;
+  const minY = Math.max(0, Math.floor(Math.min(...vertices.map((p) => p.y))));
+  const maxY = Math.min(doc.height - 1, Math.ceil(Math.max(...vertices.map((p) => p.y))));
+  let dirty: Rect | null = null;
+  for (let y = minY; y <= maxY; y += 1) {
+    const intersections: number[] = [];
+    for (let i = 0; i < vertices.length; i += 1) {
+      const a = vertices[i];
+      const b = vertices[(i + 1) % vertices.length];
+      if ((a.y <= y + 0.5 && b.y > y + 0.5) || (b.y <= y + 0.5 && a.y > y + 0.5)) {
+        intersections.push(a.x + ((y + 0.5 - a.y) * (b.x - a.x)) / (b.y - a.y));
+      }
+    }
+    intersections.sort((a, b) => a - b);
+    for (let i = 0; i + 1 < intersections.length; i += 2) {
+      const left = Math.max(0, Math.ceil(intersections[i] - 0.5));
+      const right = Math.min(doc.width - 1, Math.floor(intersections[i + 1] - 0.5));
+      for (let x = left; x <= right; x += 1) {
         doc.setPixel(x, y, rgba);
         plot(x, y);
         dirty = unionRect(dirty, { x, y, w: 1, h: 1 });
       }
     }
   }
-  void size;
   return dirty;
 }
 

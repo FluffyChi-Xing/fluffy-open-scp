@@ -11,8 +11,8 @@ import type * as ThreeNamespace from "three";
 
 /**
  * 精细渲染的 LotMask 地面合成编排：像素提取（DOM）→ 纯核心计算（Worker
- * 优先、主线程回退，见 groundCompose.ts）→ CanvasTexture 包装。引擎口径
- * （generic_lot）：覆盖区平色 × 图案坡度明暗（烘焙进反照率），未覆盖区底图格。
+ * 优先、主线程回退，见 groundCompose.ts）→ 反照率/法线 DataTexture。
+ * 图案与边框高度只写入法线，太阳和局部灯光实时计算受光效果。
  *
  * 主线程成本曾是 rebuild 隐藏大头（~1M 像素 ×2 张图的 JS 逐像素循环），
  * 且游离在全部遥测 span 之外——现移入 Worker，调用方用
@@ -118,14 +118,24 @@ function getComposeWorker(): Worker | null {
   }
 }
 
-function composeViaWorker(input: GroundComposeInput): Promise<GroundComposeResponse> {
+/** Start the module worker while source textures are still decoding. */
+export function prepareGroundComposer(): void {
+  getComposeWorker();
+}
+
+function composeViaWorker(
+  input: GroundComposeInput,
+  transfers: ArrayBuffer[],
+): Promise<GroundComposeResponse> {
   const worker = getComposeWorker();
   if (!worker) return Promise.reject(new Error("worker unavailable"));
   return new Promise((resolve, reject) => {
     const id = ++nextJobId;
     pendingJobs.set(id, { resolve, reject });
-    // postMessage 结构化克隆即拷贝 typed array，主线程 input 不受影响。
-    worker.postMessage({ id, input });
+    // transferable 零拷贝：postMessage 默认结构化克隆整份像素输入
+    // （2048² 级 = 数十 MB 主线程拷贝）。仅转移本次调用的新鲜产物；
+    // 共享缓存的 buffer（tile() 回退/normalAtlas）必须走克隆路径。
+    worker.postMessage({ id, input }, transfers);
   });
 }
 
@@ -133,6 +143,11 @@ function composeViaWorker(input: GroundComposeInput): Promise<GroundComposeRespo
 function composeOnMainThread(input: GroundComposeInput): GroundComposeResponse {
   const output = composeGroundPixels(input);
   return { id: -1, ...output };
+}
+
+export interface GroundTextures {
+  albedo: ThreeNamespace.Texture;
+  normal: ThreeNamespace.Texture;
 }
 
 export async function composeRefinedGround(options: {
@@ -147,7 +162,7 @@ export async function composeRefinedGround(options: {
   surface?: ImageData | null;
   /** 底图格索引（后端三级来源解析结果）。 */
   baseTileIndex: number;
-  /** 全局共享法线图集像素（s15；图案坡度明暗烘焙来源）。 */
+  /** 全局共享法线图集像素（s15；切线空间法线来源）。 */
   normalAtlas?: ImageData | null;
   /** 原始通道权重图；缺失时回退量化图最近色硬分配。 */
   rawMask?: ImageData | null;
@@ -157,7 +172,9 @@ export async function composeRefinedGround(options: {
   lotBorderPatternIndices?: number[] | null;
   /** borderWidth1-4（边框带半宽，0..0.5）；undefined/全 0 = 无边框。 */
   lotBorderWidths?: number[] | null;
-}): Promise<ThreeNamespace.CanvasTexture | null> {
+  lotColorHeights?: number[] | null;
+  lotBorderHeights?: number[] | null;
+}): Promise<GroundTextures | null> {
   const {
     THREE,
     maskImage,
@@ -219,35 +236,73 @@ export async function composeRefinedGround(options: {
     lotBorderPatternIndices: lotBorderPatternIndices ?? null,
     lotBorderWidths: lotBorderWidths ?? null,
     normalAtlas: normalAtlas ? imageDataPixels(normalAtlas) : null,
+    baseTileIndex,
+    lotColorHeights: options.lotColorHeights,
+    lotBorderHeights: options.lotBorderHeights,
     tilesX,
     tilesY,
     outSize,
   };
+  // 可转移 buffer：mask 像素恒为本次新提取；baseTile 在 surface 图集切格
+  // 分支是新拷贝（copyAtlasRegion），本地 tile() 回退分支是共享缓存（不可
+  // 转移，转移会把缓存 buffer detach）。
+  const transfers: ArrayBuffer[] = [input.mask.data.buffer];
+  if (useSurface && baseTile) transfers.push(baseTile.data.buffer);
   let response: GroundComposeResponse;
   try {
-    response = await composeViaWorker(input);
+    response = await composeViaWorker(input, transfers);
   } catch {
-    // 回退主线程（postMessage 克隆不破坏主线程 input）。
-    response = composeOnMainThread(input);
+    // 回退主线程。转移过的 buffer 已 detach（mask 画布内容仍在，重新
+    // getImageData；baseTile 按来源重取）。
+    const remask = maskContext.getImageData(0, 0, width, height);
+    const retryInput: GroundComposeInput = {
+      ...input,
+      mask: imageDataPixels(remask),
+      baseTile: useSurface
+        ? copyAtlasRegion(imageDataPixels(surface!), baseTileIndex % 16, tileW, tileH)
+        : await tile(baseTileIndex % 16),
+    };
+    response = composeOnMainThread(retryInput);
   }
-  const canvas = document.createElement("canvas");
-  canvas.width = response.width;
-  canvas.height = response.height;
-  const context = canvas.getContext("2d");
-  if (!context) return null;
-  context.putImageData(
-    new ImageData(response.albedo, response.width, response.height),
-    0,
-    0,
-  );
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.flipY = false;
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
-  texture.anisotropy = 8;
-  return texture;
+  if (rawMask && normalAtlas) {
+    enhanceTintDetail(response.albedo, response.normal, response.width, response.height, rawMask);
+  }
+  const makeTexture = (bytes: Uint8ClampedArray<ArrayBuffer>, color: boolean) => {
+    const texture = new THREE.DataTexture(new Uint8Array(bytes.buffer), response.width, response.height);
+    texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    texture.flipY = false;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
+    texture.anisotropy = 8;
+    texture.needsUpdate = true;
+    return texture;
+  };
+  return { albedo: makeTexture(response.albedo, true), normal: makeTexture(response.normal, false) };
+}
+
+/** View-only relief on dyed ground; the calibrated compose core keeps flat albedo. */
+export function enhanceTintDetail(
+  albedo: Uint8ClampedArray,
+  normals: Uint8ClampedArray,
+  width: number,
+  height: number,
+  mask: ImageData,
+): void {
+  for (let y = 0; y < height; y += 1) {
+    const maskY = Math.min(mask.height - 1, Math.floor((y + 0.5) * mask.height / height));
+    for (let x = 0; x < width; x += 1) {
+      const maskX = Math.min(mask.width - 1, Math.floor((x + 0.5) * mask.width / width));
+      const maskAt = (maskY * mask.width + maskX) * 4;
+      if (mask.data[maskAt] < 128 && mask.data[maskAt + 1] < 128 &&
+          mask.data[maskAt + 2] < 128 && mask.data[maskAt + 3] < 128) continue;
+      const at = (y * width + x) * 4;
+      const nx = normals[at] / 127.5 - 1;
+      const ny = normals[at + 1] / 127.5 - 1;
+      const shade = Math.min(1.4, Math.max(0.6, 1 - 0.55 * (nx + ny)));
+      for (let c = 0; c < 3; c += 1) albedo[at + c] = Math.round(albedo[at + c] * shade);
+    }
+  }
 }
 
 /**

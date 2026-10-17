@@ -51,16 +51,30 @@ pub struct RegionRenderDto {
 pub fn map_panel_list_regions(package_path: String) -> Result<Vec<RegionSummaryDto>, String> {
     let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
         .map_err(|e| e.to_string())?;
-    Ok(region_map::list_regions(&package)
-        .into_iter()
-        .map(|r| RegionSummaryDto {
-            group: format!("{:08X}", r.group),
-            display_name: r.display_name,
-            display_name_en: r.display_name_en,
-            numeric_id: r.numeric_id,
-            plot_count: r.plot_count,
-        })
-        .collect())
+    // 真名链：区域模板 join → 注册表 → zh locale（旁包缺失时回退内置表）
+    let parent = std::path::Path::new(&package_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let sibling = |name: &str| dbpf::Package::open(parent.join(name)).ok();
+    let ep1 = sibling("SimCityDataEP1.package");
+    let game = sibling("SimCity_Game.package");
+    let locale = dbpf::Package::open(parent.join("Locale").join("zh-tw").join("Data.package")).ok();
+    Ok(sc_properties::region_3d::region_list_named(
+        &package,
+        ep1.as_ref(),
+        game.as_ref(),
+        locale.as_ref(),
+    )
+    .into_iter()
+    .map(|r| RegionSummaryDto {
+        group: format!("{:08X}", r.group),
+        display_name: r.display_name,
+        display_name_en: r.display_name_en,
+        numeric_id: r.numeric_id,
+        plot_count: r.plot_count,
+    })
+    .collect())
 }
 
 #[tauri::command]
@@ -115,6 +129,143 @@ pub fn map_panel_render_region(
         brushes,
         resource_layers,
     })
+}
+
+/// 3D 预览数据。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Region3DDto {
+    /// 高度 PNG（RGBA：R=raw 高 8 位、G=低 8 位，无损 16-bit 编码）。
+    pub height_png_base64: String,
+    /// 生态 PNG（RGBA：R=土壤、G=森林、B=地下水、A=255）。
+    pub ground_png_base64: String,
+    pub terrain_textures: std::collections::HashMap<String, String>,
+    pub water_foam_png_base64: Option<String>,
+    pub water_params: Option<sc_properties::region_3d::RegionWaterParams>,
+    pub forest_models: Vec<sc_properties::map_assets::MapModel>,
+    pub static_layers: Option<sc_properties::region_bootstrap::StaticLayers>,
+    pub static_status: String,
+    pub static_error: Option<String>,
+    pub road_assets: Option<sc_properties::map_assets::RoadAssets>,
+    pub size: u32,
+    pub meters_per_pixel: f32,
+    pub origin_world: (f32, f32),
+    pub water_z: f32,
+    pub height_div: f32,
+    pub height_bias: f32,
+    pub desert: bool,
+    pub display_name: Option<String>,
+    pub display_name_en: Option<String>,
+    pub plots: Vec<sc_properties::region_3d::Region3DPlot>,
+    /// 资源画刷清单（目标 map 名 + stamp 世界坐标）。
+    pub brushes: Vec<(String, Vec<(f32, f32)>)>,
+}
+
+/// 区域 3D 数据（高度场 + 地面场 + 地块名 + 伟工位）。
+/// 自动探测旁包：同目录 SimCityDataEP1.package / SimCity_Game.package /
+/// Locale/zh-tw/Data.package（缺失时名字链与伟工位降级）。
+#[tauri::command]
+pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region3DDto, String> {
+    let group =
+        u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
+    let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
+        .map_err(|e| e.to_string())?;
+    let parent = std::path::Path::new(&package_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let sibling = |name: &str| -> Option<dbpf::Package> {
+        dbpf::Package::open(parent.join(name)).ok()
+    };
+    let ep1 = sibling("SimCityDataEP1.package");
+    let game = sibling("SimCity_Game.package");
+    let locale = parent
+        .join("Locale")
+        .join("zh-tw")
+        .join("Data.package");
+    let locale = dbpf::Package::open(locale).ok();
+    let mut out = sc_properties::region_3d::region_3d(
+        &package,
+        group,
+        ep1.as_ref(),
+        game.as_ref(),
+        locale.as_ref(),
+    )
+    .map_err(|e| e.to_string())?;
+    // Localized introduction prose is optional; do not invent translations.
+    let english = dbpf::Package::open(parent.join("Locale/en-us/Data.package")).ok();
+    if let (Some(game), Some(english)) = (game.as_ref(), english.as_ref()) {
+        let entries = sc_properties::region_city::registry(game, locale.as_ref(), Some(english));
+        for plot in &mut out.plots {
+            if let Some(info) = &mut plot.info {
+                if let Ok(id) = u32::from_str_radix(&info.name_entry, 16) {
+                    if let Some(entry) = entries.get(&id) { *info = entry.clone(); }
+                }
+            }
+        }
+    }
+    let graphics = sibling("SimCity_Graphics.package");
+    let app = sibling("SimCity_App.package");
+    let (static_layers, static_status, static_error) = match ep1.as_ref() {
+        Some(ep1) => match sc_properties::region_bootstrap::load(&package, ep1, group) {
+            Ok(layers) => (Some(layers), "ready".to_string(), None),
+            Err(error) => (None, "invalid".to_string(), Some(error)),
+        },
+        None => (None, "missing".to_string(), None),
+    };
+    let road_assets = static_layers.as_ref().and_then(|layers| {
+        let game = game.as_ref()?;
+        let ids: std::collections::BTreeSet<_> = layers.sources.iter().flat_map(|s| s.curves.iter().map(|c| c.entry_id)).collect();
+        let textures: Vec<_> = [graphics.as_ref(), app.as_ref(), ep1.as_ref()].into_iter().flatten().collect();
+        let mut roads=sc_properties::map_assets::road_assets(game, &textures, &ids.into_iter().collect::<Vec<_>>());
+        sc_properties::map_assets::append_road_instances(&mut roads,game,&textures,&layers.regional_units);
+        Some(roads)
+    });
+    Ok(Region3DDto {
+        forest_models: graphics.as_ref().map(sc_properties::map_assets::forest_models).unwrap_or_default(),
+        static_layers,
+        static_status,
+        static_error,
+        road_assets,
+        water_params: sc_properties::region_3d::region_water_params(&package, group),
+        water_foam_png_base64: sibling("SimCity_App.package")
+            .and_then(|p| water_foam_png(&p))
+            .map(|png| base64::engine::general_purpose::STANDARD.encode(png)),
+        terrain_textures: sibling("SimCity_App.package")
+            .map(|p| sc_properties::region_3d::terrain_detail_pngs(&p))
+            .unwrap_or_default().into_iter().map(|(name, png)|
+                (name, base64::engine::general_purpose::STANDARD.encode(png))).collect(),
+        height_png_base64: base64::engine::general_purpose::STANDARD.encode(&out.height_png),
+        ground_png_base64: base64::engine::general_purpose::STANDARD.encode(&out.ground_png),
+        size: out.size,
+        meters_per_pixel: out.meters_per_pixel,
+        origin_world: out.origin_world,
+        water_z: out.water_z,
+        height_div: out.height_div,
+        height_bias: out.height_bias,
+        desert: out.desert,
+        display_name: out.display_name,
+        display_name_en: out.display_name_en,
+        plots: out.plots,
+        brushes: out.brushes,
+    })
+}
+
+/// cWaterTextureSet::Init binds beach_foam (FNV-1 A8EAF18E), group zero.
+/// Water height/normal/choppy textures are generated by the runtime FFT.
+fn water_foam_png(package: &dbpf::Package) -> Option<Vec<u8>> {
+    let entry = package.entries().iter().find(|e|
+        e.id.type_id == 0x2F4E_681B && e.id.group == 0 && e.id.instance == 0xA8EA_F18E)?;
+    let bytes = package.read(entry).ok()?;
+    let file = rw4::Rw4File::parse(&bytes).ok()?;
+    let section = file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+    let texture = file.decode_texture(&bytes, section).ok()?;
+    let image = image::RgbaImage::from_raw(u32::from(texture.width), u32::from(texture.height),
+        texture.decode_top_mip_rgba().ok()?)?;
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgba8(image).write_to(
+        &mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
+    Some(png)
 }
 
 /// 高度图写回结果。

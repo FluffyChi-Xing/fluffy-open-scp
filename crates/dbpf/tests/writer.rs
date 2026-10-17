@@ -66,3 +66,32 @@ fn duplicate_tgi_rejected() {
         Err(WriterError::DuplicateResource(_))
     ));
 }
+
+/// Independent retail cursor semantics, not Package's permissive fixed stride.
+/// A one-entry roundtrip cannot expose a missing optional-word flag.
+#[test]
+fn retail_cursor_consumes_multiple_entries_and_empty_payload() {
+    let input = [
+        OverlayEntry::new(id(2, 8, 3), b"payload"),
+        OverlayEntry::new(id(1, 4, 2), b""),
+        OverlayEntry::new(id(3, 9, 4), b"end"),
+    ];
+    let bytes = write_uncompressed_overlay(&input).unwrap();
+    let word = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+    let mut cursor = 104;
+    for expected in [&input[1], &input[0], &input[2]] {
+        assert_eq!(id(word(cursor), word(cursor + 4), word(cursor + 8)), expected.id);
+        let offset = word(cursor + 12) as usize;
+        let size_field = word(cursor + 16);
+        let size = (size_field & 0x7fff_ffff) as usize;
+        assert_eq!(size, expected.data.len());
+        assert_eq!(word(cursor + 20) as usize, size);
+        cursor += 24;
+        if size_field & 0x8000_0000 != 0 {
+            assert_eq!(word(cursor), 0); // stored, uncommitted
+            cursor += 4;
+        }
+        assert_eq!(&bytes[offset..offset + size], expected.data.as_slice());
+    }
+    assert_eq!(cursor, word(0x40) as usize + word(0x2c) as usize);
+}

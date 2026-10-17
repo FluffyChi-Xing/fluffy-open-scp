@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { join, tempDir } from "@tauri-apps/api/path";
 import { isTauri, tauriApi } from "./index";
+import { command } from "./tauri";
 import { i18n } from "../locales";
 
 /** UI 语言 → 游戏 Locale 目录名（zh 系一律 zh-tw，游戏无 zh-cn 包）。 */
@@ -19,6 +20,7 @@ import type {
   PropertyResourceData,
   DecalDictionaryData,
   DecalImageData,
+  EffectPreviewResponse,
   LotEditorSession,
   RasterChannel,
   RasterPreviewData,
@@ -100,6 +102,7 @@ export interface OpenScpDataSource {
     indices: number[],
   ): Promise<DecalImageData[]>;
   readLotEditorSession(packageId: number, tgi: Tgi): Promise<LotEditorSession>;
+  readEffectPreview(packageId: number, effectIds: number[]): Promise<EffectPreviewResponse>;
   /** 返回 `read_lot_model_meshes` 原始字节容器（LotModelPayload，见 tauri.ts）。 */
   readLotModelMeshes(packageId: number, tgi: Tgi): Promise<ArrayBuffer>;
   /** PE 精细替换：prop resourceID → RW4 模型 TGI（含 EcoGame 包自注册）。 */
@@ -183,6 +186,10 @@ function tauriDataSource(): OpenScpDataSource {
     readDecalDictionary: tauriApi.packages.readDecalDictionary,
     readDecalImages: tauriApi.packages.readDecalImages,
     readLotEditorSession: tauriApi.packages.readLotEditorSession,
+    readEffectPreview: (packageId, effectIds) =>
+      command<EffectPreviewResponse>("read_effect_preview", {
+        request: { packageId, effectIds },
+      }),
     readLotModelMeshes: tauriApi.packages.readLotModelMeshes,
     resolvePropModels: tauriApi.packages.resolvePropModels,
     releasePropModelPackages: tauriApi.packages.releasePropModelPackages,
@@ -451,6 +458,9 @@ function mockDataSource(): OpenScpDataSource {
     },
     async readDecalImages(_packageId, _tgi, _indices) {
       return [];
+    },
+    async readEffectPreview() {
+      return { effects: [], diagnostics: [] };
     },
     async readLotEditorSession(_packageId, tgi) {
       const matrix = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];

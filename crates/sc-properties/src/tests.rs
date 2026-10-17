@@ -609,9 +609,9 @@ mod locale_tests {
 fn locale_items_round_trip_preserves_comments_and_keys() {
     use crate::locale::{parse_locale_items, serialize_locale_items};
     let original = [
-        0xEF, 0xBB, 0xBF, b'{', b'"', b'/', b'/', b'"', b':', b'"', b'h', b'i', b'"', b',',
-        b'"', b'0', b'x', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'1', b'"', b':',
-        b'"', 0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD, b'"', b'}',
+        0xEF, 0xBB, 0xBF, b'{', b'"', b'/', b'/', b'"', b':', b'"', b'h', b'i', b'"', b',', b'"',
+        b'0', b'x', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'1', b'"', b':', b'"', 0xE4, 0xBD,
+        0xA0, 0xE5, 0xA5, 0xBD, b'"', b'}',
     ];
     let items = parse_locale_items(&original).unwrap();
     assert_eq!(items.len(), 2);
@@ -627,10 +627,18 @@ fn locale_items_round_trip_preserves_comments_and_keys() {
 
 #[test]
 fn serialize_locale_items_rejects_duplicates() {
-    use crate::locale::{serialize_locale_items, LocaleItem};
+    use crate::locale::{LocaleItem, serialize_locale_items};
     let items = vec![
-        LocaleItem { key: "0x00000001".into(), id: Some(1), text: "a".into() },
-        LocaleItem { key: "0x1".into(), id: Some(1), text: "b".into() },
+        LocaleItem {
+            key: "0x00000001".into(),
+            id: Some(1),
+            text: "a".into(),
+        },
+        LocaleItem {
+            key: "0x1".into(),
+            id: Some(1),
+            text: "b".into(),
+        },
     ];
     assert!(serialize_locale_items(&items).is_err());
 }

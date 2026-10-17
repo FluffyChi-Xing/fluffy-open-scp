@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, nextTick, useTemplateRef, watch } from "vue";
 import FIcon from "../extensions/FIcon.vue";
 import FDropdown from "./FDropdown.vue";
 
@@ -16,6 +16,44 @@ interface Props {
 const props = defineProps<Props>();
 const model = defineModel<string>({ default: "" });
 const open = ref(false);
+const trigger = useTemplateRef<HTMLButtonElement>("trigger");
+const optionButtons = useTemplateRef<HTMLButtonElement[]>("optionButtons");
+watch(open, async (value) => {
+  if (props.disabled) {
+    open.value = false;
+    return;
+  }
+  if (value) {
+    await nextTick();
+    const index = props.options.findIndex(
+      (option) => option.value === model.value,
+    );
+    optionButtons.value?.[Math.max(0, index)]?.focus();
+  }
+});
+watch(
+  () => props.disabled,
+  (value) => {
+    if (value) open.value = false;
+  },
+);
+function navigate(event: KeyboardEvent, index: number) {
+  const buttons = optionButtons.value ?? [];
+  if (["ArrowDown", "ArrowUp", "Home", "End", "Escape"].includes(event.key)) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  if (event.key === "ArrowDown") buttons[(index + 1) % buttons.length]?.focus();
+  if (event.key === "ArrowUp")
+    buttons[(index + buttons.length - 1) % buttons.length]?.focus();
+  if (event.key === "Home") buttons[0]?.focus();
+  if (event.key === "End") buttons.at(-1)?.focus();
+  if (event.key === "Escape") {
+    open.value = false;
+    trigger.value?.focus();
+  }
+  if (event.key === "Tab") open.value = false;
+}
 const emit = defineEmits<{ change: [value: string] }>();
 
 /**
@@ -27,48 +65,68 @@ const selected = computed(() =>
 );
 
 function choose(option: SelectOption) {
+  if (props.disabled) return;
   model.value = option.value;
   open.value = false;
   emit("change", option.value);
+  trigger.value?.focus();
 }
 </script>
 
 <template>
-  <FDropdown v-model:open="open" :width="220" class="f-select-anchor"
-    ><template #trigger
+  <div class="f-select-anchor">
+    <FDropdown v-model:open="open" :width="280"
+      ><template #trigger
+        ><button
+          :id="props.id"
+          ref="trigger"
+          type="button"
+          class="f-select"
+          :class="{ invalid: props.invalid }"
+          :disabled="props.disabled"
+          :aria-invalid="props.invalid || undefined"
+          aria-haspopup="menu"
+          :aria-expanded="open"
+          @keydown.down.prevent="open = !props.disabled"
+          @keydown.up.prevent="open = !props.disabled"
+        >
+          <span class="f-select-label" :class="{ placeholder: !selected }">{{
+            selected?.label ?? model ?? ""
+          }}</span
+          ><FIcon
+            name="ChevronDown"
+            :size="13"
+            aria-label=""
+          /></button></template
       ><button
-        :id="props.id"
+        v-for="(option, index) in props.options"
+        ref="optionButtons"
+        :key="option.value"
         type="button"
-        class="f-select"
-        :class="{ invalid: props.invalid }"
-        :disabled="props.disabled"
-        :aria-invalid="props.invalid || undefined"
-        :aria-haspopup="'listbox'"
+        role="menuitemradio"
+        :aria-checked="option.value === model"
+        @keydown="navigate($event, index)"
+        @click="choose(option)"
       >
-        <span class="f-select-label" :class="{ placeholder: !selected }">{{
-          selected?.label ?? model ?? ""
-        }}</span
-        ><FIcon
-          name="ChevronDown"
-          :size="13"
+        <FIcon
+          :name="option.value === model ? 'Check' : 'Minus'"
+          :size="14"
           aria-label=""
-        /></button></template
-    ><button
-      v-for="option in props.options"
-      :key="option.value"
-      type="button"
-      @click="choose(option)"
+        />{{ option.label }}
+      </button></FDropdown
     >
-      <FIcon
-        :name="option.value === model ? 'Check' : 'Minus'"
-        :size="14"
-        aria-label=""
-      />{{ option.label }}
-    </button></FDropdown
-  >
+  </div>
 </template>
 
 <style scoped>
+.f-select-anchor {
+  width: 100%;
+  min-width: 0;
+}
+.f-select-anchor :deep(.f-dropdown-anchor) {
+  display: flex;
+  width: 100%;
+}
 .f-select {
   align-items: center;
   background: var(--surface-elevated);

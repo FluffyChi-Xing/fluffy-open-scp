@@ -11,7 +11,7 @@ import type { ReplicaData } from "@/lib/game-ui/replica/types";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
-const { customCategories } = storeToRefs(store);
+const { customCategories, viewMode } = storeToRefs(store);
 
 /* ── 舞台缩放：容器内等比放下 1600×900（舞台高度固定，不随面板高度变化） ── */
 const host = ref<HTMLElement>();
@@ -38,7 +38,7 @@ let palette: HudPalette | null = null;
 /** 分类圆钮行锚点（拊件定位用）。 */
 const rowGeom = ref<{ absY: number; count: number } | null>(null);
 
-const builtinCount = computed(() => store.replica?.model.categories.length ?? 0);
+const builtinCount = computed(() => viewMode.value === "city" ? (store.replica?.model.categories.length ?? 0) : viewMode.value === "development" ? 1 : 6);
 
 // 复刻数据是进程内缓存的同一对象引用：store 已 hydrate 过（二次进入本页/
 // HMR）时 watch 不会再触发，必须在挂载时补一次装配，否则舞台空白且无报错。
@@ -61,6 +61,9 @@ watch(
     if (store.replica) await boot(store.replica);
   },
 );
+watch(viewMode, async () => {
+  if (store.replica) await boot(store.replica);
+});
 watch(
   () => store.activeMenu?.entries.map((entry) => `${entry.tool.id}:${entry.tool.label}`).join("|"),
   () => palette?.repaint(),
@@ -90,6 +93,10 @@ async function boot(data: ReplicaData): Promise<void> {
     shadow.appendChild(viewport);
 
     const hud = createHudRender(data, {
+      mode: viewMode.value,
+      categories: store.categories
+        .filter((category) => !customCategories.value.some((custom) => custom.id === category.id))
+        .map((category) => ({ id: category.id, label: category.label, icon: category.icon, iconHash: null })),
       extraCategories: customCategories.value.map((c) => ({
         id: c.id,
         label: c.label,
@@ -100,7 +107,21 @@ async function boot(data: ReplicaData): Promise<void> {
     const { categoryRow } = hud.render(stageEl);
     rowGeom.value = categoryRow;
 
-    palette = createHudPalette(data, hud.createNodeElement, {
+    const fallbackPalette = data.palette.byCategory["95A9D6FD"];
+    const paletteData: ReplicaData = {
+      ...data,
+      palette: {
+        ...data.palette,
+        byCategory: {
+          ...data.palette.byCategory,
+          ...Object.fromEntries(store.categories
+            .filter((category) => !data.palette.byCategory[category.id])
+            .map((category) => [category.id, fallbackPalette])),
+          ...Object.fromEntries(customCategories.value.map((category) => [category.id, fallbackPalette])),
+        },
+      },
+    };
+    palette = createHudPalette(paletteData, hud.createNodeElement, {
       getTools: (categoryId) => effectiveTools(data, categoryId),
       onSlotClick: (categoryId, tool) => store.openEditor(categoryId, tool.instance),
       onRemoveItem: (categoryId, tool) => store.removeItem(categoryId, tool.instance),
@@ -249,16 +270,16 @@ function addCatStyle(): Record<string, string> {
         <button
           type="button"
           class="wb-add-cat"
-          title="新增一级菜单分类"
+          :title="t('studio.workbench.addCategory')"
           :style="addCatStyle()"
-          @click="store.addCategory('新分类')"
+          @click="store.addCategory(t('studio.workbench.newCategory'))"
         >
           <span aria-hidden="true">＋</span>
         </button>
       </template>
 
       <p v-if="store.loadError" class="stage-error" role="alert">
-        复刻数据装载失败：{{ store.loadError }}
+        {{ t('studio.workbench.loadFailed') }}: {{ store.loadError }}
       </p>
     </div>
   </div>

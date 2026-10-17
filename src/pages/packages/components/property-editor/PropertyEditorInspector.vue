@@ -18,6 +18,10 @@ const props = defineProps<{
   unit: LotUnitDto | null;
   /** 手柄拖拽中的实时变换（坐标 tab 即时显示）。 */
   liveTransform?: { id: string; position: [number, number, number] } | null;
+  /** 选中 prop 是否显示「缩放倍率」编辑（真实模型渲染分支才消费）。 */
+  scaleEditable?: boolean;
+  /** 编辑模式解锁态（透传给元数据面板的编辑门控）。 */
+  editEnabled?: boolean;
 }>();
 const emit = defineEmits<{
   "update-transform": [id: string, matrix: number[]];
@@ -75,6 +79,8 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
       <PropertyEditorMetadataPanel
         v-else-if="activeTab === 'metadata'"
         :unit="unit"
+        :scale-editable="scaleEditable"
+        :edit-enabled="editEnabled"
         @update-fields="(id, patch) => emit('update-fields', id, patch)"
       />
       <!-- 只读渲染遥测：不接任何视口 prop，切页签不会触发 rebuildScene()。 -->
@@ -91,11 +97,13 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   min-height: 0;
   min-width: 0;
 }
-/* 横向 tab（低代码引擎检查器对齐）：文字+下划线激活态 */
+/* 横向 tab（低代码引擎检查器对齐）：文字+下划线激活态；英文长标签
+   （Render Telemetry）在窄面板下换行而非裁切 */
 .inspector-tabs {
   border-bottom: 1px solid var(--border);
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 0 8px;
 }
@@ -111,6 +119,7 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   font-size: 12px;
   gap: 6px;
   padding: 8px 10px 7px;
+  white-space: nowrap;
 }
 .inspector-tab:hover {
   color: var(--foreground);

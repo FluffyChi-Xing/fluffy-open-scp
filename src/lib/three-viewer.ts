@@ -9,6 +9,10 @@ export interface ViewerTapHit {
 }
 
 export interface ThreeViewerOptions {
+  /** Maximum backing-store DPR; detailed editors can opt into native 2x. */
+  maxPixelRatio?: number;
+  /** Lower the pixel budget during camera interaction; restore on idle. */
+  interactionPixelRatio?: number;
   /** 左键轻点（位移 < 4px 且未按 Shift）回调；命中空白时 object=null。 */
   onTap?: (hit: ViewerTapHit) => void;
   /** 悬停拾取（仅对 setHoverTargets 登记的目标）：进入/离开时回调。 */
@@ -27,8 +31,8 @@ const AMBIENT_LIGHT_INTENSITY = 0.38;
 
 export function disposeObject(object: ThreeNamespace.Object3D) {
   object.traverse((child) => {
-    const mesh = child as ThreeNamespace.Mesh;
-    if (mesh.isMesh) {
+    const mesh = child as ThreeNamespace.Mesh & { isLine?: boolean };
+    if (mesh.isMesh || mesh.isLine) {
       // 共享缓存几何（payload 级模型缓存，见 three-gltf.getLotModelObjects）
       // 归缓存所有，清场不销毁——缓存更换时统一释放。
       if (!isSharedGeometry(mesh.geometry)) mesh.geometry?.dispose();
@@ -108,10 +112,118 @@ export class ThreeViewer {
   /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
    * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
   private needsRender = true;
+  private assemblingScene = false;
+
+  /** Do not compile/draw transient material and light combinations during assembly. */
+  setSceneAssembling(value: boolean) {
+    this.assemblingScene = value;
+    if (!value) this.invalidate();
+  }
+  /** 已预热纹理（initTexture 一次性上传去重）。 */
+  private readonly primedTextures = new WeakSet<ThreeNamespace.Texture>();
 
   /** 请求下一帧重绘（视觉变更后调用；相机/灯光等 viewer 内部方法已自带）。 */
   invalidate() {
     this.needsRender = true;
+  }
+
+  /**
+   * 单纹理提前上传 GPU（initTexture）：首次 draw 不再承担该纹理的上传
+   * +mipmap 生成整帧冻结。大纹理（地面合成 2048²、facade 图集）在所属
+   * 装配线内调用 = 上传与其它线并发，不占汇合后的首帧。
+   */
+  primeTexture(texture: ThreeNamespace.Texture): void {
+    if (this.primedTextures.has(texture)) return;
+    this.primedTextures.add(texture);
+    try {
+      this.renderer.initTexture(texture);
+    } catch {
+      // 上传失败（上下文丢失等）→ 交给首次 draw 的常规路径
+    }
+  }
+
+  /**
+   * 场景全量纹理预热（装配收尾调用）：遍历收集全部未上传纹理逐个
+   * initTexture——上传成本在放行首帧前一次性付清，首帧 draw 只剩 draw。
+   */
+  primeTextures(): void {
+    const materials: ThreeNamespace.Material[] = [];
+    this.scene.traverse((object) => {
+      const mesh = object as ThreeNamespace.Mesh;
+      if (!mesh.isMesh && !(object as ThreeNamespace.Sprite).isSprite) return;
+      const material = mesh.material as
+        | ThreeNamespace.Material
+        | ThreeNamespace.Material[]
+        | undefined;
+      if (!material) return;
+      if (Array.isArray(material)) materials.push(...material);
+      else materials.push(material);
+    });
+    for (const material of materials) {
+      for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+        const texture = value as ThreeNamespace.Texture;
+        if (texture?.isTexture) this.primeTexture(texture);
+      }
+    }
+  }
+
+  /**
+   * 场景全部材质的 GPU 程序预编译。KHR_parallel_shader_compile 可用时
+   * compileAsync 异步轮询链接，老驱动回退同步。
+   *
+   * **竞态防御（2026-10-08 勘误）**：three 的轮询回调读取
+   * `materialProperties.currentProgram`——若编译窗口内材质被 dispose
+   * （新一轮重建 clearGroup / 资产刷新换对象），会抛 uncaught
+   * "reading 'isReady'" 且 **promise 永不 settle**，管线（invalidate/
+   * assembling 旗）随之挂死，场景冻在半成品帧（用户观测：部分建筑
+   * 贴图乱码 + 控制台 isReady 报错）。故与 stale 看门狗 + 兜底超时
+   * race：过期调用不再阻塞场景；dispose 另外等待真实编译结束，
+   * 防止关闭/重开编辑 Sheet 时提前销毁轮询引用的材质。
+   */
+  private readonly pendingCompilations = new Set<Promise<unknown>>();
+  private disposed = false;
+
+  async prepareShaders(
+    isStale: () => boolean = () => false,
+    objects: ThreeNamespace.Object3D = this.scene,
+  ): Promise<void> {
+    if (this.disposed || isStale()) return;
+    const compilation = this.renderer.compileAsync(objects, this.camera, this.scene).catch(() => {});
+    this.pendingCompilations.add(compilation);
+    void compilation.finally(() => this.pendingCompilations.delete(compilation));
+    let settled = false;
+    let watchdog: ReturnType<typeof setInterval> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        compilation,
+        new Promise<void>((resolve) => {
+          watchdog = setInterval(() => {
+            if (settled || isStale()) resolve();
+          }, 64);
+        }),
+        new Promise<void>((resolve) => { timeout = setTimeout(resolve, 5000); }),
+      ]);
+    } catch {
+      // promise 层拒绝兜底（首轮 draw 走同步链接，不劣化）
+    } finally {
+      settled = true;
+      if (watchdog) clearInterval(watchdog);
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  /** Compile completed meshes against the final lights while ground pixels bake.
+   * The temporary root contains no lights and never reparents the live scene.
+   */
+  prepareGroupShaders(names: string[], isStale: () => boolean): Promise<void> {
+    const root = new this.THREE.Group();
+    for (const name of names) {
+      this.groups.get(name)?.traverse((object) => {
+        if ((object as ThreeNamespace.Mesh).isMesh) root.add(object.clone(false));
+      });
+    }
+    return this.prepareShaders(isStale, root);
   }
 
   /** 主题色描边（品牌色 #0878FE，与 UI --brand 一致）。 */
@@ -154,7 +266,7 @@ export class ThreeViewer {
     const entry = target
       ? { target, hull: this.buildOutlineHull(target, kind) }
       : null;
-    if (entry) target.add(entry.hull);
+    if (entry && target) target.add(entry.hull);
     if (kind === "hover") this.hoverOutline = entry;
     else this.selectedOutline = entry;
     this.needsRender = true;
@@ -168,51 +280,74 @@ export class ThreeViewer {
     const dashed = kind === "hover";
     // 壳厚随取景半径缩放（近似恒定屏幕厚度）
     const width = Math.max(this.frameRadius, 1) * (dashed ? 0.005 : 0.01);
-    const material = new this.THREE.ShaderMaterial({
-      uniforms: {
-        uColor: { value: new this.THREE.Color(ThreeViewer.OUTLINE_COLOR) },
-        uWidth: { value: width },
-        uDash: { value: dashed ? 1 : 0 },
-      },
-      vertexShader: `
-        uniform float uWidth;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vec3 n = normalize(normalMatrix * normal);
-          mv.xyz += n * uWidth;
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: `
-        uniform vec3 uColor;
-        uniform float uDash;
-        void main() {
-          if (uDash > 0.5 && mod(floor(gl_FragCoord.x / 9.0) + floor(gl_FragCoord.y / 9.0), 2.0) < 1.0) discard;
-          gl_FragColor = vec4(uColor, 1.0);
-        }`,
-      side: this.THREE.BackSide,
-    });
-    const hull = new this.THREE.Group();
-    hull.name = "__outlineHull";
-    const shellFor = (mesh: ThreeNamespace.Mesh) => {
-      const shell = new this.THREE.Mesh(mesh.geometry, material);
-      shell.position.copy(mesh.position);
-      shell.quaternion.copy(mesh.quaternion);
-      shell.scale.copy(mesh.scale);
+    // 壳体逐 mesh 构建以继承各自的漫反射贴图——alpha 镂空网格（树叶卡）
+    // 的壳体须同步 alphaTest 抠透，否则描边色从镂空缝隙整面透出
+    //（真机：树冠蓝色棋盘格，2026-10-06）。
+    const shellMaterial = (mesh: ThreeNamespace.Mesh) => {
+      const srcMaterial = Array.isArray(mesh.material)
+        ? mesh.material[0]
+        : mesh.material;
+      const map =
+        (srcMaterial as ThreeNamespace.MeshStandardMaterial | undefined)?.map ??
+        null;
+      return new this.THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: new this.THREE.Color(ThreeViewer.OUTLINE_COLOR) },
+          uWidth: { value: width },
+          uDash: { value: dashed ? 1 : 0 },
+          uMap: { value: map },
+          uHasMap: { value: map ? 1 : 0 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          uniform float uWidth;
+          void main() {
+            vUv = uv;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            vec3 n = normalize(normalMatrix * normal);
+            mv.xyz += n * uWidth;
+            gl_Position = projectionMatrix * mv;
+          }`,
+        fragmentShader: `
+          varying vec2 vUv;
+          uniform vec3 uColor;
+          uniform float uDash;
+          uniform sampler2D uMap;
+          uniform float uHasMap;
+          void main() {
+            if (uHasMap > 0.5 && texture2D(uMap, vUv).a < 0.5) discard;
+            if (uDash > 0.5 && mod(floor(gl_FragCoord.x / 9.0) + floor(gl_FragCoord.y / 9.0), 2.0) < 1.0) discard;
+            gl_FragColor = vec4(uColor, 1.0);
+          }`,
+        side: this.THREE.BackSide,
+      });
+    };
+    const shellFor = (mesh: ThreeNamespace.Mesh, inheritTransform: boolean) => {
+      const shell = new this.THREE.Mesh(mesh.geometry, shellMaterial(mesh));
+      if (inheritTransform) {
+        shell.position.copy(mesh.position);
+        shell.quaternion.copy(mesh.quaternion);
+        shell.scale.copy(mesh.scale);
+      }
       return shell;
     };
+    const hull = new this.THREE.Group();
+    hull.name = "__outlineHull";
     // 目标本身是 Mesh（锥体/占位人形等 buildUnitObject 直出）：壳挂恒等
     // 变换——hull 已是 target 子级，target 自带变换；再复制本地变换会双重
     // 叠加（真机：轮廓偏移到两倍位置）。
     if ((target as ThreeNamespace.Mesh).isMesh) {
-      hull.add(new this.THREE.Mesh((target as ThreeNamespace.Mesh).geometry, material));
+      hull.add(shellFor(target as ThreeNamespace.Mesh, false));
       return hull;
     }
     const walk = (src: ThreeNamespace.Object3D, dst: ThreeNamespace.Object3D) => {
       for (const child of [...src.children]) {
         const mesh = child as ThreeNamespace.Mesh;
         if (mesh.isMesh) {
-          dst.add(shellFor(mesh));
-        } else if ((child as ThreeNamespace.Object3D).isGroup) {
+          dst.add(shellFor(mesh, true));
+        } else if (
+          (child as ThreeNamespace.Object3D & { isGroup?: boolean }).isGroup
+        ) {
           const group = new this.THREE.Group();
           group.position.copy(child.position);
           group.quaternion.copy(child.quaternion);
@@ -235,6 +370,30 @@ export class ThreeViewer {
   /** 注册/注销渲染后回调（overlay 跟随相机用；幂等覆盖）。 */
   setOnFrame(callback: (() => void) | null) {
     this.onFrameCb = callback;
+  }
+
+  /**
+   * 屏幕坐标 → 地面平面交点（游戏坐标 x/y/z，z=上）。落在取景网格平面上，
+   * 拖拽放置组件的落点定位用；无交点（视线平行/背向）返回 null。
+   */
+  groundPointAt(clientX: number, clientY: number): [number, number, number] | null {
+    const rect = this.container.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    const pointer = new this.THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(pointer, this.camera);
+    // 游戏地面 = world 局部 z=0 平面：场景法线 +y、过 world 原点
+    // （此前误用取景网格高度 grid.position.y——内容居中后为负值，
+    // 交点沿视线被推偏 = 放置落点跑偏的根因）
+    const worldOrigin = new this.THREE.Vector3();
+    this.world.getWorldPosition(worldOrigin);
+    const plane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), -worldOrigin.y);
+    const hit = new this.THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
+    const game = this.world.worldToLocal(hit.clone());
+    return [game.x, game.y, Math.max(0, game.z)];
   }
 
   /** 世界坐标 → 容器相对屏幕像素；behind = 点在相机后方（投影无效）。 */
@@ -274,8 +433,10 @@ export class ThreeViewer {
       alpha: true,
       powerPreference: "high-performance",
     });
-    // 高 DPR 屏（125%/150% 缩放）全屏片元成本翻倍，钳制 1.5 保帧率
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // 默认限制高 DPR 屏的片元成本；精细编辑器可显式提高上限。
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio, options.maxPixelRatio ?? 1.5),
+    );
     container.appendChild(this.renderer.domElement);
 
     // 三灯白模布光：key 跟随滑杆，fill/rim 固定相对方向，保证无贴图也有立体感。
@@ -446,11 +607,12 @@ export class ThreeViewer {
   setShadowsEnabled(enabled: boolean) {
     const changed = this.renderer.shadowMap.enabled !== enabled;
     this.renderer.shadowMap.enabled = enabled;
-    this.renderer.shadowMap.type = this.THREE.PCFSoftShadowMap;
+    // PCFSoft 已被 three 弃用（内部直接转 PCF，还刷弃用告警）——直用 PCF
+    this.renderer.shadowMap.type = this.THREE.PCFShadowMap;
     this.keyLight.castShadow = enabled;
     this.content.traverse((child) => {
       const mesh = child as ThreeNamespace.Mesh;
-      if (mesh.isMesh) mesh.castShadow = enabled;
+      if (mesh.isMesh) mesh.castShadow = enabled && !mesh.userData.pickOnly;
     });
     if (changed) {
       this.content.traverse((child) => {
@@ -499,12 +661,14 @@ export class ThreeViewer {
   }
 
   private orbit(dx: number, dy: number) {
+    this.beginCameraInteraction();
     this.orbitTheta -= (dx * Math.PI) / 180 * 0.6;
     this.orbitPhi -= (dy * Math.PI) / 180 * 0.6;
     this.applyCamera();
   }
 
   private pan(dx: number, dy: number) {
+    this.beginCameraInteraction();
     // 沿相机 right/up 平移轨道目标，步长随相机距离缩放。
     const scale = this.cameraDistance * 0.0016;
     const right = new this.THREE.Vector3().setFromMatrixColumn(
@@ -519,6 +683,7 @@ export class ThreeViewer {
   }
 
   private zoom(direction: number) {
+    this.beginCameraInteraction();
     const factor = direction > 0 ? 1.12 : 1 / 1.12;
     const radius = this.frameRadius;
     this.cameraDistance = Math.min(
@@ -530,6 +695,10 @@ export class ThreeViewer {
 
   private onPointerDown = (event: PointerEvent) => {
     if (this.pointerActive) return;
+    // 覆盖层 UI（name-tag 删除钮等）按下不启动轨道/指针捕获——容器
+    // setPointerCapture 会把后续 pointerup 重定位到容器，click 落在
+    // 公共祖先=容器上，按钮收不到（真机：删除钮失效，2026-10-06）。
+    if (event.target !== this.renderer.domElement) return;
     if (!this.orbitEnabled) return;
     this.pointerActive = true;
     this.pointerButton = event.button;
@@ -627,9 +796,25 @@ export class ThreeViewer {
     this.needsRender = true;
   }
 
+  private qualityRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private beginCameraInteraction() {
+    const limit = this.options.interactionPixelRatio;
+    if (limit === undefined) return;
+    const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
+    const moving = Math.min(full, limit);
+    if (this.renderer.getPixelRatio() !== moving) this.renderer.setPixelRatio(moving);
+    if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
+    this.qualityRestoreTimer = setTimeout(() => {
+      this.qualityRestoreTimer = null;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
+      this.invalidate();
+    }, 180);
+  }
+
   private renderLoop = () => {
     this.frame = requestAnimationFrame(this.renderLoop);
-    if (!this.needsRender) return;
+    if (this.assemblingScene || !this.needsRender) return;
     this.needsRender = false;
     this.renderer.render(this.scene, this.camera);
     // 渲染后回调：屏幕空间 overlay（选中/悬停描边框）在此跟随相机
@@ -641,6 +826,8 @@ export class ThreeViewer {
    * 恢复可见性。需在渲染后同一同步段读取（未开 preserveDrawingBuffer）。
    */
   captureScreenshot(excludeGroups: string[] = []): string | null {
+    const previousRatio = this.renderer.getPixelRatio();
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
     const hidden: ThreeNamespace.Group[] = [];
     for (const name of excludeGroups) {
       const group = this.groups.get(name);
@@ -656,10 +843,15 @@ export class ThreeViewer {
       return null;
     } finally {
       for (const group of hidden) group.visible = true;
+      this.renderer.setPixelRatio(previousRatio);
+      this.invalidate();
     }
   }
 
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
     cancelAnimationFrame(this.frame);
     this.observer?.disconnect();
     this.container.removeEventListener("pointerdown", this.onPointerDown);
@@ -668,11 +860,17 @@ export class ThreeViewer {
     this.container.removeEventListener("pointercancel", this.onPointerUp);
     this.container.removeEventListener("wheel", this.onWheel);
     this.container.removeEventListener("mousedown", this.onMouseDown);
-    disposeObject(this.scene);
-    this.grid?.geometry.dispose();
-    (this.grid?.material as ThreeNamespace.Material | null)?.dispose();
-    this.keyLight.dispose();
-    this.renderer.dispose();
+    // Three's async shader poll still references material properties. Detach UI
+    // now, but release GPU/material objects only once those polls have settled.
+    const release = () => {
+      disposeObject(this.scene);
+      this.grid?.geometry.dispose();
+      (this.grid?.material as ThreeNamespace.Material | null)?.dispose();
+      this.keyLight.dispose();
+      this.renderer.dispose();
+    };
+    if (this.pendingCompilations.size) void Promise.allSettled([...this.pendingCompilations]).then(release);
+    else release();
     this.renderer.domElement.remove();
   }
 }

@@ -13,6 +13,7 @@ function replicaFixture(): ReplicaData {
       categories: [
         { id: "CAT_ROAD", label: "道路", icon: null, iconHash: null },
         { id: "CAT_PARK", label: "公園", icon: null, iconHash: null },
+        { id: "3193C0BE", label: "區域", icon: null, iconHash: null },
       ],
       row: { pitch: 46.85, size: 43, centerX: 875.5, offsetY: 0 },
     },
@@ -47,7 +48,7 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     expect(store.replica).not.toBeNull();
     expect(store.selectedMenuId).toBeNull();
     expect(store.activeMenu).toBeNull();
-    expect(store.categories.map((category) => category.id)).toEqual(["CAT_ROAD", "CAT_PARK"]);
+    expect(store.categories.map((category) => category.id)).toEqual(["CAT_ROAD", "CAT_PARK", "3193C0BE"]);
     store.enterMenu("CAT_ROAD");
     expect(store.activeMenu?.label).toBe("道路");
     expect(store.activeMenu?.entries.map((entry) => entry.tool.id)).toEqual([
@@ -55,6 +56,16 @@ describe("uiWorkbench store（复刻数据模型）", () => {
       "BBBB0002",
       "BBBB0003",
     ]);
+  });
+
+  it("keeps zoning in city view and uses separate region menu groups", () => {
+    const store = makeStore();
+    expect(store.categories.some((category) => category.id === "3193C0BE")).toBe(true);
+    store.setViewMode("region");
+    expect(store.categories.some((category) => category.id === "3193C0BE")).toBe(false);
+    expect(store.categories.map((category) => category.id)).toContain("REGION-TRANSPORT");
+    store.setViewMode("city");
+    expect(store.categories.some((category) => category.id === "3193C0BE")).toBe(true);
   });
 
   it("工具视图映射：顺序即排序键，空名回退 instance 且标记未解析", () => {
@@ -119,7 +130,7 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     store.addItem("CAT_ROAD", "新道路", null);
     store.addCategory("新分类");
     const overlay = JSON.parse(store.exportOverlay());
-    expect(overlay.format).toBe("openscp-ui-workbench-overlay/1");
+    expect(overlay.format).toBe("openscp-ui-workbench-overlay/2");
     expect(overlay.edits["BBBB0001"].label).toBe("我的道路");
     expect(overlay.added.CAT_ROAD).toHaveLength(1);
     expect(overlay.customCategories).toHaveLength(1);
@@ -127,5 +138,14 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     store.resetAll();
     expect(Object.keys(store.edits)).toHaveLength(0);
     expect(store.activeMenu?.entries.some((entry) => entry.isNew)).toBe(false);
+  });
+
+  it("deleting a built-in entry removes it from the active menu and schema", () => {
+    const store = makeStore();
+    store.enterMenu("CAT_ROAD");
+    store.removeItem("CAT_ROAD", "BBBB0001");
+    expect(store.activeMenu?.entries.map((entry) => entry.tool.id)).not.toContain("BBBB0001");
+    const schema = JSON.parse(store.exportSchema());
+    expect(schema.menus[0].items.map((item: { id: string }) => item.id)).not.toContain("BBBB0001");
   });
 });

@@ -14,7 +14,14 @@ export function useFloatingMenu(
     if (!el || !open.value) return
     await nextTick()
     const rect = el.getBoundingClientRect()
-    const style: CSSProperties = { top: `${rect.bottom + gap}px` }
+    const below = Math.max(0, window.innerHeight - rect.bottom - gap * 2)
+    const above = Math.max(0, rect.top - gap * 2)
+    const flip = below < Math.min(320, panel.value?.scrollHeight ?? 320) && above > below
+    const available = Math.min(320, flip ? above : below)
+    const style: CSSProperties = {
+      maxHeight: `${available}px`, overflowY: 'auto', overscrollBehavior: 'contain',
+      ...(flip ? { bottom: `${window.innerHeight - rect.top + gap}px` } : { top: `${rect.bottom + gap}px` }),
+    }
     if (rect.left + panelWidth <= window.innerWidth - gap) {
       style.left = `${Math.max(8, rect.left)}px`
     } else {

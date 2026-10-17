@@ -1,0 +1,58 @@
+[
+  {
+    "channel": "simulation.rule",
+    "schema": 1,
+    "phase": "log-entry",
+    "scope": "global",
+    "sequence": 1,
+    "time": 1792178643876,
+    "threadId": 12184,
+    "game": "0x2dc4dbf8",
+    "stateIndex": 315,
+    "unitSlot": null,
+    "unitStamp": null,
+    "readErrors": [],
+    "simTicks": 20204,
+    "deltaStream": "0x2dc22090",
+    "mapping": {
+      "ruleIndex": 368,
+      "ruleSetIndex": 0,
+      "ruleWithinSet": 368,
+      "resourceKey": {
+        "instance": 1647025367,
+        "type": 134646505,
+        "group": 1082130944
+      },
+      "ruleId": 3256360789,
+      "ruleIdHex": "0xc2181f55",
+      "baseRuleWithinSet": 368,
+      "rulePointer": "0x2e45b7b0",
+      "scriptsPointer": "0x2e7219b0",
+      "ruleSetPointer": "0x2e722140"
+    },
+    "applyCount": 1,
+    "ruleDefinition": {
+      "flags": 0,
+      "simInfoOffset": -1,
+      "resources": {
+        "offset": 631216,
+        "count": 1,
+        "values": [
+          {
+            "resourceId": "0xc9fb4c92",
+            "input": 0,
+            "output": 1
+          }
+        ],
+        "truncated": false
+      },
+      "fromBinOps": {
+        "offset": -1,
+        "count": 0
+      },
+      "minApply": 1,
+      "maxApply": 1,
+      "applyResourceId": "0x00000000"
+    }
+  }
+]

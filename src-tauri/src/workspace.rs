@@ -1439,6 +1439,15 @@ fn build_code_manifest(
     }
 
     Ok(json!({
+        "format": "openscp.mod",
+        "manifest_version": 2,
+        "origin": "community",
+        "type": "nonstandard",
+        "description": "",
+        "created_at": fs::metadata(root).ok().and_then(|m|m.created().ok()).and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_millis() as u64),
+        "engine": {"enabled": false, "version": 1},
+        "internal_dependencies": {},
+        "outer_dependencies": [],
         "name": project,
         "version": "0.1.0",
         "generator": "openscp",
@@ -1462,10 +1471,11 @@ pub async fn code_manifest(
 ) -> Result<CodeManifestResponse, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
+        let _guard=crate::mod_flow::FLOW_LOCK.lock().map_err(|_|CommandError::internal("Workflow lock failed"))?;
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
-        let manifest_path = root.join(CODE_MANIFEST_NAME);
+        let manifest_path = crate::mod_flow::safe_path(&root,CODE_MANIFEST_NAME).map_err(CommandError::internal)?;
         let existed = manifest_path.is_file();
-        let manifest = if existed {
+        let mut manifest: serde_json::Value = if existed {
             let bytes = fs::read(&manifest_path).map_err(WorkspaceError::from)?;
             serde_json::from_slice(&bytes).map_err(|error| {
                 CommandError::from(WorkspaceError::InvalidPath(error.to_string()))
@@ -1480,6 +1490,27 @@ pub async fn code_manifest(
             write_atomic(&manifest_path, &pretty, false).map_err(CommandError::from)?;
             value
         };
+        // Old generated inventories are community imports, not engine projects.
+        // Preserve arbitrary third-party fields and never infer engine capability.
+        if !manifest.is_object(){return Err(CommandError::internal("Manifest must be an object"));}
+        if manifest["format"]==crate::mod_flow::FORMAT && manifest["origin"]=="openscp" {
+            let layout=crate::mod_flow::ensure_project_layout(&root,manifest["mod_type"].as_str().unwrap_or("assets")).map_err(CommandError::internal)?;
+            if manifest["resource_layout"]!=layout {
+                manifest["resource_layout"]=layout;
+                write_atomic(&manifest_path,&serde_json::to_vec_pretty(&manifest).map_err(|e|CommandError::internal(e.to_string()))?,true).map_err(CommandError::from)?;
+            }
+        }
+        if !crate::mod_flow::engine_manifest(&manifest) && manifest["engine"]["enabled"]!=true {
+            let inventory=build_code_manifest(&root,&request.project).map_err(CommandError::from)?;
+            for key in ["name","description","created_at","engine","internal_dependencies","outer_dependencies"]{if manifest.get(key).is_none(){manifest[key]=inventory[key].clone();}}
+            for key in ["stats","packages","tgiCount","tgiTruncated","tgis"]{manifest[key]=inventory[key].clone();}
+            if manifest.get("origin").is_none() {manifest["origin"]=serde_json::json!("community");manifest["type"]=serde_json::json!("nonstandard");}
+            let game=store.app_settings().ok().flatten().and_then(|s|s.game_data_path);
+            manifest["override_detection"]=crate::mod_flow::detect_overrides(&root,game.as_deref().map(Path::new));
+            manifest["outer_dependencies"]=manifest["override_detection"]["mappings"].clone();
+            let pretty=serde_json::to_vec_pretty(&manifest).map_err(|e|CommandError::internal(e.to_string()))?;
+            write_atomic(&manifest_path,&pretty,true).map_err(CommandError::from)?;
+        }
         Ok(CodeManifestResponse {
             existed,
             created: !existed,
@@ -1488,6 +1519,17 @@ pub async fn code_manifest(
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[derive(Deserialize)]
+pub struct FlowRequest { pub project:String, pub action:String, #[serde(default)] pub payload:serde_json::Value }
+#[command]
+pub async fn code_flow(state:State<'_,AppState>,request:FlowRequest)->Result<serde_json::Value,CommandError>{
+    let store=Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move||{
+        let root=code_root(&store,&request.project).map_err(CommandError::from)?;
+        crate::mod_flow::dispatch(&root,&request.project,&request.action,request.payload).map_err(|e|CommandError::new("flow_error",e))
+    }).await.map_err(|e|CommandError::internal(e.to_string()))?
 }
 
 #[cfg(test)]

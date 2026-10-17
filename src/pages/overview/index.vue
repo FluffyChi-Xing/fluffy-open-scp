@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onActivated } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
+import FSkeleton from "@/components/ui/FSkeleton.vue";
 import { useOpenScpOverview } from "@/composables/useOpenScpOverview";
 import { usePackageStats } from "@/composables/usePackageStats";
 import { useRenderTelemetry } from "@/composables/useRenderTelemetry";
 import ExtensionStatsCards from "./components/ExtensionStatsCards.vue";
+import RuntimeLogsCard from "./components/RuntimeLogsCard.vue";
 import RenderStatsCard from "./components/RenderStatsCard.vue";
 
 const overview = useOpenScpOverview();
 const { snapshot, loading, error, demo } = overview;
+let activatedOnce = false;
+onActivated(() => {
+  if (activatedOnce) void overview.reload();
+  activatedOnce = true;
+});
 const historyPaths = computed(() =>
   Array.from(
     new Set((snapshot.value?.recentPackages ?? []).map((item) => item.path)),
@@ -85,6 +92,7 @@ function age(timestamp: number) {
           ><strong>{{ snapshot.failedOperations }}</strong>
         </article>
       </section>
+      <RuntimeLogsCard :events="snapshot.recentEvents" />
       <ExtensionStatsCards
         :stats="packageStats.stats.value"
         :loading="packageStats.loading.value"
@@ -169,29 +177,76 @@ function age(timestamp: number) {
         </article>
       </section></template
     >
-    <div v-else-if="loading" class="loading-state" role="status">
-      <FIcon name="LoaderCircle" :size="20" aria-label="" />{{
-        $t("common.loading")
-      }}
+    <div
+      v-else-if="loading"
+      class="overview-skeleton"
+      role="status"
+      :aria-label="$t('common.loading')"
+    >
+      <span class="sr-only">{{ $t("common.loading") }}</span>
+      <div class="metrics" aria-hidden="true">
+        <div v-for="n in 4" :key="n" class="metric-card">
+          <FSkeleton width="65%" /><FSkeleton width="45%" height="32px" />
+        </div>
+      </div>
+      <div class="content-grid" aria-hidden="true">
+        <FSkeleton v-for="n in 2" :key="n" height="340px" />
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.overview-page {
+.overview-skeleton {
   display: grid;
   gap: 24px;
 }
+.overview-page {
+  display: grid;
+  gap: 24px;
+  max-width: 1440px;
+  margin-inline: auto;
+  min-width: 0;
+  background: radial-gradient(
+    ellipse at 65% 0%,
+    color-mix(in srgb, var(--primary) 4%, transparent),
+    transparent 55%
+  );
+}
 .overview-header {
-  align-items: flex-end;
+  align-items: center;
   display: flex;
   gap: 24px;
   justify-content: space-between;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.overview-header :deep(h1) {
+  font-size: clamp(26px, 2.4vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+}
+.overview-header :deep(p:not(.eyebrow)) {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 10px 0 0;
+  max-width: 62ch;
+}
+.overview-page :deep(h3) {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.5;
+}
+.overview-page :deep(.f-typography-secondary) {
+  font-size: 12px;
+  line-height: 1.65;
 }
 .eyebrow {
-  color: var(--primary);
+  color: var(--muted-foreground);
   font-size: 11px;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0.08em;
   margin: 0 0 10px;
   text-transform: uppercase;
@@ -253,18 +308,27 @@ function age(timestamp: number) {
 }
 .metric-card {
   display: grid;
-  gap: 10px;
-  padding: 18px;
+  grid-template-columns: 1fr auto;
+  gap: 18px 10px;
+  padding: 20px 22px;
 }
 .metric-card > svg {
-  color: var(--primary);
+  color: var(--muted-foreground);
+  grid-column: 2;
+  grid-row: 1;
 }
 .metric-card span {
+  grid-column: 1;
+  grid-row: 1;
   color: var(--muted-foreground);
   font-size: 12px;
 }
 .metric-card strong {
-  font-size: 30px;
+  grid-column: 1 / -1;
+  font-size: 32px;
+  line-height: 1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
 }
 .metric-alert > svg,
@@ -274,7 +338,7 @@ function age(timestamp: number) {
 .content-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: 1.15fr 0.85fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .panel {
   min-width: 0;

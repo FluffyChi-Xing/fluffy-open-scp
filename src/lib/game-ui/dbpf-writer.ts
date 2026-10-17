@@ -56,7 +56,8 @@ export function writeUncompressedOverlay(input: DbpfEntry[]): Uint8Array {
     view.setUint32(record + 4, entry.group >>> 0, true);
     view.setUint32(record + 8, entry.instance >>> 0, true);
     view.setUint32(record + 12, offset, true);
-    view.setUint32(record + 16, entry.data.length, true);
+    // Bit 31 declares the compression/commit word at +24, even for stored data.
+    view.setUint32(record + 16, entry.data.length | 0x80000000, true);
     view.setUint32(record + 20, entry.data.length, true);
     view.setInt16(record + 24, 0, true);
     view.setUint16(record + 26, 0, true);

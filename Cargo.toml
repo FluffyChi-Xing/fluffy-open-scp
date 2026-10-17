@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.10.0"
+version = "0.10.1"
 edition = "2024"
 license = "MIT"
 
@@ -31,6 +31,9 @@ rayon = "1.11"
 [profile.dev]
 opt-level = 1
 debug = "line-tables-only"
+# Tauri's repeated dev relinks can retain stale LLVM anonymous symbols when
+# incremental codegen units are reused across interrupted builds.
+incremental = false
 
 [profile.dev.package."*"]
 opt-level = 2

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { decalRoute } from "./decalRouting";
+import { prepareGroundComposer } from "./refinedGround";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -11,6 +13,7 @@ import type * as ThreeNamespace from "three";
 import type {
   DecalUnit,
   DecalUnitTexture,
+  EffectDefinitionData,
   LotModelLodRef,
   LotModelPayload,
   LotUnitDto,
@@ -33,7 +36,11 @@ import {
   decalFrame,
   decalHalfThickness,
 } from "@/lib/decalProject";
-import type { DecalFrame } from "@/lib/decalProject";
+import type {
+  ImageDecodeRequest,
+  ImageDecodeResponse,
+  Pixels,
+} from "./imageDecode";
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
 import type { EngineFamily } from "@/lib/decalEngineMaterials";
 import { useEditorViewport } from "./useEditorViewport";
@@ -49,11 +56,15 @@ import {
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
 import { installHejlToneMapping } from "@/lib/hejlTonemapping";
+import { createParticleEffect, type ParticleEffectView } from "./effects/particleRenderer";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   applyGroundMask,
+  buildLotDimensions,
   buildLotRect,
+  groundFillMesh,
   placementInverse,
+  type LotDimensionAnchor,
 } from "./editorGround";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
@@ -65,6 +76,7 @@ export type EditorTool = "select" | "translate" | "rotate" | "scale";
  * 底座/业务拆分见 docs/roadmap/asset-development.md §二（PE-重构-1）。
  */
 const props = defineProps<{
+  groundOnly?: boolean;
   modelPayload: LotModelPayload | null;
   /** LOD1~LOD4 资源位置（index 0 = LOD1）；缺失级为 null。 */
   modelLods: (LotModelLodRef | null)[];
@@ -83,16 +95,15 @@ const props = defineProps<{
   lotBorderColors: [number, number, number][];
   /** borderWidth1-4（边框带半宽）；全 0 = 无边框。 */
   lotBorderWidths: number[];
+  lotColorHeights?: number[];
+  lotBorderHeights?: number[];
   /** 边框带图案索引（LotBorderColor.A，0-15）。 */
   lotBorderPatternIndices: number[];
   /** 底图格索引（后端三级来源：0x0CCB7FD6 → 推导 → 8）。 */
   lotBaseTile: number;
-  /** LotOverlayBoxOffset（0x0CCB7FC9，引擎 unitOffset）：地面 quad 在 lot
-   * 系的中心偏移；null = 原点（引擎栅格公式缺省）。 */
+  /** Authored lot-space overlay centre; null uses the declared unit bbox centre. */
   lotOverlayBoxOffset: [number, number] | null;
-  /** Model Bounding Box（0x00F9EFBA）的 xy 中心（模型空间）。【2026-10-05
-   * 试点后不再消费】：引擎栅格映射无 bbox 中心机制（该属性只喂 zoning
-   * frontage/depth 截断），保留 DTO 仅供诊断对照。 */
+  /** Declared unit bounding-box centre (0x00F9EFBA), used only if offset is absent. */
   lotModelBboxCenter: [number, number] | null;
   /** P2 精细替换：prop resourceID → 已解析 LOTM 载荷（会话旁路加载）。 */
   propModels: Map<number, LotModelPayload>;
@@ -128,14 +139,31 @@ const props = defineProps<{
   timeOfDay?: number;
   /** 供电（默认 true）：断电 = 内景自发光全灭（源码 interiorThresholds.z hack）。 */
   powered?: boolean;
+  /** 表面浮雕开关（默认 false）：开启近景 cone-step relief。 */
+  reliefEnabled?: boolean;
   /** 动态招牌开关（默认 false = 静态量化合成招牌）：开启后 SDF 族进入
    * dev LED 扫掠动画并启动 rAF 时钟。顶部工具条复选框驱动（2026-10-05
    * 十轮：原视口 ⚡ 按钮用户找不到，挪入顶部工具条"供电"旁）。 */
   neonAnim?: boolean;
+  renderEffects?: boolean;
+  effectDefinitions?: Map<number, EffectDefinitionData>;
   /** 破洞贴花假内景光参数 [光强因子, 半径因子]（0x0DA76A05/06）；缺失 = 无。 */
   decalLight?: [number, number] | null;
   /** 当前编辑工具（select = 仅拾取；其余挂 TransformControls 手柄）。 */
   tool?: EditorTool;
+  /** 编辑模式（解锁）：工具栏可见、画布可拖放、name-tag 带删除钮。 */
+  editEnabled?: boolean;
+  /** 拖入的直挂模型载荷（instance → LOTM 载荷；真模型渲染用）。 */
+  addedModelPayloads?: Map<string, LotModelPayload>;
+  /** 放置后待选中：分组重建且新单元入组时自动选中（shell 传入）。 */
+  pendingSelectId?: string | null;
+  /**
+   * 挂起（PE sheet 关闭中）：全部重建触发器静默——关闭时 shell 会复位
+   * renderMode，不挂起就会在卸载 EcoGame 包的同时触发一次完整重建
+   * （关闭卡顿根因，2026-10-07）。恢复可见时由 shell 翻回 false，
+   * 视口补一次重建对齐当前渲染模式。
+   */
+  suspended?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -144,6 +172,9 @@ const emit = defineEmits<{
   "select-tool": [tool: EditorTool];
   /** 手柄拖拽结束提交变换（行主序 12 floats），由壳落本地编辑命令。 */
   "commit-transform": [id: string, matrix: number[]];
+
+  /** 删除组件（name-tag 垃圾桶按钮）。 */
+  "delete-unit": [id: string];
   /** 拖拽中的实时变换（id 为 null 表示结束）；坐标面板即时显示用。 */
   "live-transform": [
     id: string | null,
@@ -160,11 +191,14 @@ const hoveredId = ref<string | null>(null);
 /** 小人部件资产（全局，进程级缓存）：spawner 真小人渲染。 */
 const simParts = ref<SimPart[]>([]);
 onMounted(() => {
+  if (props.groundOnly) return;
   void loadSimParts().then((parts) => {
     simParts.value = parts;
   });
 });
 const viewport = useEditorViewport({
+  maxPixelRatio: 2,
+  interactionPixelRatio: 1,
   onTapUnit: (id) => emit("select", id),
   onHoverUnit: (id) => {
     hoveredId.value = id;
@@ -179,6 +213,20 @@ const viewport = useEditorViewport({
 // ---------------------------------------------------------------------------
 const hoverTagEl = ref<HTMLElement | null>(null);
 const selectTagEl = ref<HTMLElement | null>(null);
+
+// ---- Lot 三维尺度标注（长/宽/高，自地块一角）----
+// 线段在 viewer "dimensions" 组（editorGround.buildLotDimensions）；
+// 文字标签随帧投影（同 pick-tag 通道）。game = lot 局部锚点经地面矩阵
+// 换算后的游戏系坐标（world.localToWorld 后投影）。
+const dimLabels = ref<
+  (LotDimensionAnchor & { game: [number, number, number] })[]
+>([]);
+const dimLabelEls = ref<(HTMLElement | null)[]>([]);
+const dimAxisLabel = computed(() => ({
+  length: t("package.dimLength"),
+  width: t("package.dimWidth"),
+  height: t("package.dimHeight"),
+}));
 const unitById = computed<Map<string, LotUnitDto>>(() => {
   const map = new Map<string, LotUnitDto>();
   const groups = props.grouping;
@@ -226,7 +274,38 @@ function placeTag(el: HTMLElement | null, id: string | null, label: string) {
   el.style.display = "block";
   el.style.left = `${anchor.x}px`;
   el.style.top = `${anchor.y}px`;
-  el.textContent = label;
+  // 写入文本子节点而非容器 textContent——容器内还有删除按钮节点，
+  // 整体赋值会把它抹掉（真机勘误 2026-10-06）。
+  const textEl = el.querySelector(".pick-tag-text") as HTMLElement | null;
+  if (textEl) textEl.textContent = label;
+}
+
+/** 尺度标签逐帧投影：游戏系锚点 → world → 屏幕像素（居中锚定）。 */
+function updateDimLabels() {
+  const instance = viewport.viewer.value;
+  if (!instance) return;
+  // 跟随 dimensions 组可见性开关（线段隐藏时标签同隐）
+  const hidden = props.groupVisibility.dimensions === false;
+  for (let index = 0; index < dimLabels.value.length; index += 1) {
+    const el = dimLabelEls.value[index];
+    const dim = dimLabels.value[index];
+    if (!el || !dim) continue;
+    if (hidden) {
+      el.style.display = "none";
+      continue;
+    }
+    const scenePoint = instance.world.localToWorld(
+      new instance.THREE.Vector3(...dim.game),
+    );
+    const screen = instance.worldToScreen(scenePoint);
+    if (screen.behind) {
+      el.style.display = "none";
+      continue;
+    }
+    el.style.display = "block";
+    el.style.left = `${screen.x}px`;
+    el.style.top = `${screen.y}px`;
+  }
 }
 
 function updatePickOverlay() {
@@ -238,6 +317,16 @@ function updatePickOverlay() {
     hover ? overlayLabel(hover) : "",
   );
   placeTag(selectTagEl.value, selected, selected ? overlayLabel(selected) : "");
+  updateDimLabels();
+}
+
+// ---- 编辑模式：组件库拖放放置 + 删除 ----
+// 拖放监听挂 window（捕获级）：组件库 FSheet 的全屏遮罩（pointer-events
+// auto、z 80）会拦截画布上的 drop——面板开着拖放时 drop 的目标元素是
+// 遮罩而非画布，元素级处理器永远收不到（真机勘误 2026-10-06）。
+
+function onDeleteSelected() {
+  if (props.selectedId) emit("delete-unit", props.selectedId);
 }
 
 /** 轮廓壳应用：hover 虚线；选中实线经 viewer.setSelected 内部应用。 */
@@ -263,6 +352,11 @@ watch(viewport.viewer, (instance) => {
 watch([hoveredId, () => props.selectedId, viewport.revision], () => {
   applyOutlines();
   updatePickOverlay();
+});
+// 放置后待选中：分组重建（revision 前进）且新单元已入组时选中
+watch([() => props.pendingSelectId, viewport.revision], () => {
+  const pending = props.pendingSelectId;
+  if (pending) emit("select", pending);
 });
 onBeforeUnmount(() => {
   viewport.viewer.value?.setOnFrame(null);
@@ -345,6 +439,67 @@ function decodeImageData(url: string): Promise<ImageData | null> {
     element.onerror = () => resolve(null);
     element.src = url;
   });
+}
+
+// ---- 图像像素解码 Worker（2026-10-08 OffscreenCanvas 轮）----
+// 地表共享图集（2048² 级）的 drawImage + getImageData 是首载主线程的
+// 一块大额同步占用；移入 Worker（createImageBitmap + OffscreenCanvas
+// 全程离线执行），主线程只收 transferable 像素。失败回退主线程同款
+// 实现（下方 decodeImageData），调用方无感。
+let imageDecodeWorker: Worker | null = null;
+let imageDecodeWorkerBroken = false;
+let nextImageDecodeJobId = 0;
+const pendingImageDecodeJobs = new Map<
+  number,
+  { resolve: (pixels: Pixels) => void; reject: (error: Error) => void }
+>();
+
+function getImageDecodeWorker(): Worker | null {
+  if (imageDecodeWorker) return imageDecodeWorker;
+  if (imageDecodeWorkerBroken) return null;
+  try {
+    imageDecodeWorker = new Worker(
+      new URL("./imageDecodeWorker.ts", import.meta.url),
+      { type: "module" },
+    );
+    imageDecodeWorker.onmessage = (
+      event: MessageEvent<ImageDecodeResponse>,
+    ) => {
+      const job = pendingImageDecodeJobs.get(event.data.id);
+      if (!job) return;
+      pendingImageDecodeJobs.delete(event.data.id);
+      if (event.data.error || !event.data.pixels) {
+        imageDecodeWorkerBroken = true;
+        job.reject(new Error(event.data.error ?? "image decode empty"));
+        return;
+      }
+      job.resolve(event.data.pixels);
+    };
+    imageDecodeWorker.onerror = () => {
+      imageDecodeWorkerBroken = true;
+      for (const job of pendingImageDecodeJobs.values()) {
+        job.reject(new Error("image decode worker crashed"));
+      }
+      pendingImageDecodeJobs.clear();
+    };
+    return imageDecodeWorker;
+  } catch {
+    imageDecodeWorkerBroken = true;
+    return null;
+  }
+}
+
+/** Worker 解码（PNG/dataURL → Pixels）；不可用时回退主线程 decodeImageData。 */
+async function decodePixelsForUrl(url: string): Promise<ImageData | null> {
+  const worker = getImageDecodeWorker();
+  if (!worker) return decodeImageData(url);
+  const id = ++nextImageDecodeJobId;
+  const pixels = await new Promise<Pixels>((resolve, reject) => {
+    pendingImageDecodeJobs.set(id, { resolve, reject });
+    worker.postMessage({ id, url } satisfies ImageDecodeRequest);
+  }).catch(() => null);
+  if (!pixels) return decodeImageData(url);
+  return new ImageData(pixels.data, pixels.width, pixels.height);
 }
 
 /** 贴花解码纹理缓存（key = DecalUnitTexture 对象身份；会话更换即失效回收）。 */
@@ -460,6 +615,28 @@ function unitEqualsIgnoringTransform(
   return JSON.stringify(restA) === JSON.stringify(restB);
 }
 
+/** DTO 的缩放倍率字段（仅 prop/decal 携带；其余 kind 无此字段视为 1）。 */
+function unitScaleValue(unit: LotUnitDto): number | null {
+  return unit.kind === "prop" || unit.kind === "decal" ? unit.scale : null;
+}
+
+/**
+ * 仅 DTO scale（缩放倍率）变化的判定：返回新值/旧值倍率（旧值 null 视
+ * 为 1）；其余字段有任何差异返回 null（须全量重建）。
+ */
+function scaleOnlyDelta(a: LotUnitDto, b: LotUnitDto): number | null {
+  if (a.kind !== b.kind) return null;
+  const restA: Record<string, unknown> = { ...a, scale: 0 };
+  const restB: Record<string, unknown> = { ...b, scale: 0 };
+  delete restA.transform;
+  delete restB.transform;
+  if (JSON.stringify(restA) !== JSON.stringify(restB)) return null;
+  const previous = unitScaleValue(a) ?? 1;
+  const next = unitScaleValue(b) ?? 1;
+  if (previous === next || previous <= 1e-8) return null;
+  return next / previous;
+}
+
 const timeOfDay = () => props.timeOfDay ?? 12;
 
 function applySun() {
@@ -521,6 +698,23 @@ let keyLightInitialized = false;
 /** 上一次 rebuild 的模型载荷（身份变化 = 模型/LOD 更换 → 重构图）。 */
 let lastPayload: LotModelPayload | null | undefined;
 
+/** 对象 TRS → 单元变换语义 TRS：除掉渲染器烘焙的 DTO scale
+ * （userData.incrementalScale）——提交的 override 矩阵在全量重建会被
+ * 渲染器再乘回来，不除 = 编辑过的树在下次重建二次缩放（0.06²）。 */
+function unitSemanticTRS(object: ThreeNamespace.Object3D): {
+  position: ThreeNamespace.Vector3;
+  quaternion: ThreeNamespace.Quaternion;
+  scale: ThreeNamespace.Vector3;
+} {
+  const THREE = viewport.viewer.value?.THREE;
+  const scale = object.scale.clone();
+  const baked = object.userData.incrementalScale as number | undefined;
+  if (THREE && typeof baked === "number" && Math.abs(baked) > 1e-8) {
+    scale.divideScalar(baked);
+  }
+  return { position: object.position, quaternion: object.quaternion, scale };
+}
+
 function emitLiveTransform(object: ThreeNamespace.Object3D | null) {
   if (!object || typeof object.userData?.unitId !== "string") {
     emit("live-transform", null, null);
@@ -528,11 +722,12 @@ function emitLiveTransform(object: ThreeNamespace.Object3D | null) {
   }
   const THREE = viewport.viewer.value?.THREE;
   if (!THREE) return;
+  const trs = unitSemanticTRS(object);
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   new THREE.Matrix4()
-    .compose(object.position, object.quaternion, object.scale)
+    .compose(trs.position, trs.quaternion, trs.scale)
     .decompose(position, quaternion, scale);
   const euler = new THREE.Euler().setFromQuaternion(quaternion, "XYZ");
   const deg = 180 / Math.PI;
@@ -563,11 +758,12 @@ async function ensureGizmo() {
     instance.setOrbitEnabled(!dragging);
     if (dragging) {
       const object = controls.object;
+      // 与 commitGizmo 同语义（除掉烘焙 scale），否则无位移提交判等失败
       dragStartMatrix = object
         ? new instance.THREE.Matrix4().compose(
             object.position,
             object.quaternion,
-            object.scale,
+            unitSemanticTRS(object).scale,
           )
         : null;
     } else {
@@ -586,10 +782,11 @@ function commitGizmo(controls: TransformControls) {
   if (!object || typeof object.userData?.unitId !== "string") return;
   const THREE = viewport.viewer.value?.THREE;
   if (!THREE) return;
+  const trs = unitSemanticTRS(object);
   const matrix = new THREE.Matrix4().compose(
-    object.position,
-    object.quaternion,
-    object.scale,
+    trs.position,
+    trs.quaternion,
+    trs.scale,
   );
   // 未产生位移的点击（拖拽起止矩阵相同）不产生冗余命令
   if (dragStartMatrix && matrix.equals(dragStartMatrix)) return;
@@ -640,6 +837,37 @@ let neonAnimated = false;
 /** 霓虹动画时钟 rAF 句柄与上一帧时间戳。 */
 let neonFrame = 0;
 let neonLast = 0;
+const particleViews: ParticleEffectView[] = [];
+let particleFrame = 0;
+let particleLast = 0;
+
+function stopParticleClock() {
+  if (particleFrame) cancelAnimationFrame(particleFrame);
+  particleFrame = 0;
+}
+
+function clearParticleViews() {
+  stopParticleClock();
+  for (const view of particleViews) view.dispose();
+  particleViews.length = 0;
+}
+
+function startParticleClock() {
+  if (particleFrame || !particleViews.length || props.suspended || props.renderMode !== "refined" || !props.renderEffects || props.groupVisibility.effects === false) return;
+  particleLast = performance.now();
+  const tick = (now: number) => {
+    if (props.suspended || props.renderMode !== "refined" || !props.renderEffects || props.groupVisibility.effects === false) {
+      stopParticleClock();
+      return;
+    }
+    const delta = Math.min(0.1, (now - particleLast) / 1000);
+    particleLast = now;
+    for (const view of particleViews) view.tick(delta);
+    viewport.viewer.value?.invalidate();
+    particleFrame = requestAnimationFrame(tick);
+  };
+  particleFrame = requestAnimationFrame(tick);
+}
 
 /** 动态招牌开关状态由父组件 prop neonAnim 驱动（顶部工具条复选框）：
  * 默认关 = 静态量化合成招牌（uAnimEnabled=0）；开启后 SDF 族进入 dev
@@ -682,18 +910,68 @@ function stopNeonClock() {
 
 /** rebuild 包装：模型载荷身份变化时重新构图（编辑操作保持镜头）。 */
 function rebuildScene() {
+  clearParticleViews();
   const reframe = props.modelPayload !== lastPayload;
   lastPayload = props.modelPayload;
   // 只改 trigger：sessionKey 已由 usePropertyEditorSession 设好。
   renderTelemetry.setTrigger(pendingTrigger);
+  pendingTrigger = "scene_rebuild";
   // 动画 decal 标志在装配期间由 buildDecalObject 置位；重建完成后按本轮
   // 结果启停霓虹时钟（新一代取代旧装配时同样以最新一轮为准）。
-  return viewport.rebuild(assembleScene, { reframe }).then(() => {
-    // env 每轮重建新建（animEnabled 归 0）→ 按开关状态重新应用；时钟
-    // 只在"场景有 SDF 动画 decal 且开关开启"时运转。
-    if (envRefs) envRefs.animEnabled.value = props.neonAnim === true ? 1 : 0;
-    if (neonAnimated && props.neonAnim === true) startNeonClock();
-    else stopNeonClock();
+  return viewport
+    .rebuild(assembleScene, { reframe })
+    .then(() => {
+      // env 每轮重建新建（animEnabled 归 0）→ 按开关状态重新应用；时钟
+      // 只在"场景有 SDF 动画 decal 且开关开启"时运转。
+      if (envRefs) envRefs.animEnabled.value = props.neonAnim === true ? 1 : 0;
+      if (neonAnimated && props.neonAnim === true) startNeonClock();
+      else stopNeonClock();
+      startParticleClock();
+    })
+    .catch((error) => {
+      // 装配异常显式化（2026-10-08 EP1 乱码取证）：异常若无声吞掉，场景
+      // 会停在半装配状态（默认材质混杂）且断点不可见。
+      console.error("[pe] 场景装配异常:", error);
+    });
+}
+
+// ---- 重建合并调度（2026-10-07 性能轮）----
+// 遥测实证：2154 次场景重建 / 682 次模型加载 ≈ 3.2×——模型载荷、grouping、
+// 资产四通道（prop 模型/树模型/小人/直挂）各自触发全量重建，加载窗口内
+// 邻帧到达即白跑 2-3 次（每次含全场景 dispose + 重装配 + 首帧编译）。
+// 改为 rAF 单飞：同一帧内的多个触发合并为一次重建；触发语义按优先级
+// 保留（lod_switch/first_load > render_mode > grouping）。
+const TRIGGER_PRIORITY: Record<RenderTelemetryTrigger, number> = {
+  first_load: 3,
+  lod_switch: 3,
+  render_mode: 2,
+  grouping: 1,
+  scene_rebuild: 0,
+};
+let rebuildScheduled = false;
+let rebuildRequested = false;
+function scheduleRebuild(trigger: RenderTelemetryTrigger) {
+  if (props.suspended) return;
+  if (
+    !pendingTrigger ||
+    TRIGGER_PRIORITY[trigger] >= TRIGGER_PRIORITY[pendingTrigger]
+  ) {
+    pendingTrigger = trigger;
+  }
+  rebuildRequested = true;
+  if (rebuildScheduled) return;
+  rebuildScheduled = true;
+  requestAnimationFrame(async () => {
+    try {
+      while (rebuildRequested && !props.suspended) {
+        await viewport.whenSettled();
+        if (props.suspended) break;
+        rebuildRequested = false;
+        await rebuildScene();
+      }
+    } finally {
+      rebuildScheduled = false;
+    }
   });
 }
 
@@ -714,29 +992,62 @@ function tryIncrementalGrouping(grouping: UnitGrouping): boolean {
   const prev = lastUnitsSnapshot;
   if (prev.size !== next.size) return false;
   let transformChanged = false;
+  /** 仅 scale 变化的 unit（id → 新旧倍率）：免全量重建的热路径。 */
+  const scaleRatios = new Map<string, number>();
   for (const [id, unit] of next) {
     const old = prev.get(id);
     if (!old) return false;
     if (old === unit) continue;
-    if (!unitEqualsIgnoringTransform(old, unit)) return false;
+    if (!unitEqualsIgnoringTransform(old, unit)) {
+      // 缩放倍率编辑（属性面板 scale 字段）：数字标注对象走增量比例；
+      // keepScale（公告板/小人尺寸公式独立）与贴花投影几何仍须全量。
+      const ratio = scaleOnlyDelta(old, unit);
+      if (ratio === null || unit.kind === "decal") return false;
+      const object = viewport.unitObjects.get(id);
+      const flag = object?.userData.incrementalScale;
+      if (flag === "keepScale") return false;
+      if (typeof flag === "number") scaleRatios.set(id, ratio);
+      // 无标注 = 矩阵语义（标记锥/灯等，scale 不参与渲染）→ 增量安全
+      continue;
+    }
     // 贴花投影几何在 lot 局部空间随 transform 而变，必须重建；
     // pathPoint 位置来自 point 字段（不消费 transform），无需应用。
     if (unit.kind === "decal") return false;
     transformChanged = true;
   }
   lastUnitsSnapshot = next;
-  if (!transformChanged) return true;
+  if (!transformChanged && scaleRatios.size === 0) return true;
   const THREE = instance.THREE;
+  // 增量 transform 应用语义（渲染器在 userData.incrementalScale 标注）：
+  // - 缺省 = 对象 scale 就是矩阵 decompose（标记锥/灯/贴花/占位人形）；
+  // - 数字 = 渲染器把 DTO scale 烘焙进了对象 scale（树/prop 真模型），
+  //   decompose 后必须补乘，否则 51m 原生巨树（真机勘误 2026-10-06）；
+  //   伴随 scaleRatio（缩放倍率编辑）时再乘倍率；
+  // - "keepScale" = 对象尺寸自持（公告板/合成小人），只应用位置/朝向。
+  const scratchScale = new THREE.Vector3();
   for (const [id, unit] of next) {
     // pathPoint 位置来自 point 字段（不消费 transform）。
     if (unit.kind === "pathPoint" || !unit.transform) continue;
     const object = viewport.unitObjects.get(id);
     if (!object) continue;
+    const incrementalScale = object.userData.incrementalScale as
+      | number
+      | "keepScale"
+      | undefined;
     unitMatrix(THREE, unit.transform).decompose(
       object.position,
       object.quaternion,
-      object.scale,
+      incrementalScale === "keepScale" ? scratchScale : object.scale,
     );
+    if (typeof incrementalScale === "number") {
+      object.scale.multiplyScalar(incrementalScale);
+      const ratio = scaleRatios.get(id);
+      if (ratio !== undefined) {
+        object.scale.multiplyScalar(ratio);
+        // 烘焙系数随新倍率更新——下次增量 decompose/提交除回都用新值
+        object.userData.incrementalScale = unitScaleValue(unit) ?? 1;
+      }
+    }
   }
   instance.invalidate();
   return true;
@@ -793,7 +1104,9 @@ function loadImageDataFromUrl(
 function loadSurfacePixels(): Promise<ImageData | null> {
   const url = props.lotSurfacePng;
   if (!url) return Promise.resolve(null);
-  return cacheGetOrLoad(imageDataCache, url, () => decodeImageData(url));
+  // 地表图集（2048² 级）经 Worker 解码：主线程不再承担大图
+  // drawImage+getImageData 的整块同步占用（OffscreenCanvas 轮）
+  return cacheGetOrLoad(imageDataCache, url, () => decodePixelsForUrl(url));
 }
 
 onMounted(async () => {
@@ -803,6 +1116,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   stopNeonClock();
+  clearParticleViews();
   gizmo?.detach();
   gizmo?.dispose();
   gizmo = null;
@@ -815,6 +1129,96 @@ onBeforeUnmount(() => {
 });
 
 /** 业务场景装配：模型材质 → 地面 → 六类 Unit → 路径折线。 */
+
+/** 让出一帧给浏览器（绘制/输入/合成）：装配全程 >1s（遥测 p95 ≈ 1s），
+ * 不切片则输入与滚动在整段装配期间卡死。切片代价 = 多几次帧往返
+ * （16.7ms/次），换整段可交互。 */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/** 资产渲染分发上下文（装配与部分刷新共用；每次调用按当前 props 取值）。 */
+function buildAssetCtx(): UnitRenderContext {
+  return {
+    THREE: viewport.viewer.value!.THREE,
+    renderMode: props.renderMode,
+    treeModelPayloads: props.treeModelPayloads,
+    treeAtlasPng: props.treeAtlasPng,
+    treeIds: props.propTreeIds,
+    propModels: props.propModels,
+    addedModelPayloads: props.addedModelPayloads,
+    envRefs,
+    simParts: simParts.value,
+  };
+}
+
+// ---- 资产通道部分刷新（2026-10-07 性能轮）----
+// 遥测实证 2154 次场景重建 / 682 次加载：通道到位的"补渲染"此前走全量
+// 重建——建筑/地面/贴花/路径全部推倒重来，实际只有 prop/spawner 两族
+// 的呈现随载荷变化。改为只重渲染受影响族并原位换对象：
+//   - 真实渲染器对 prop/spawner 是模板化快路径（GLB/材质模板缓存命中）
+//   - 建筑网格、贴花投影、地面合成完全不动
+// 守卫：suspended / 重建在飞（在飞装配自会消费新通道值）/ 跨 await 代数
+// 变化（新一代已清场，塞回旧对象 = 幽灵对象）。
+type AssetRefreshKind = "prop" | "spawner";
+const pendingRefreshKinds = new Set<AssetRefreshKind>();
+let refreshScheduled = false;
+function scheduleAssetRefresh(kinds: AssetRefreshKind[]) {
+  if (props.suspended) return;
+  if (viewport.isAssembling()) return; // 在飞装配读的就是新通道值
+  for (const kind of kinds) pendingRefreshKinds.add(kind);
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  requestAnimationFrame(() => {
+    refreshScheduled = false;
+    const kinds = [...pendingRefreshKinds];
+    pendingRefreshKinds.clear();
+    void refreshAssetUnits(kinds);
+  });
+}
+async function refreshAssetUnits(kinds: AssetRefreshKind[]) {
+  const instance = viewport.viewer.value;
+  if (!instance || props.suspended || !kinds.length) return;
+  const epoch = viewport.rebuildEpoch();
+  const assetCtx = buildAssetCtx();
+  const span = renderTelemetry.begin("scene_rebuild", {
+    refresh: kinds.join("+"),
+  });
+  try {
+    for (const kind of kinds) {
+      const family = kind === "prop" ? props.grouping.props : props.grouping.spawners;
+      for (const unit of family) {
+        if (viewport.rebuildEpoch() !== epoch) return; // 新一代已开跑
+        const id = unitId(unit);
+        const previous = viewport.unitObjects.get(id);
+        if (!previous) continue; // 尚未装配（首建路径），重建自会处理
+        const object =
+          (await renderRefinedAssetUnit(assetCtx, unit)) ??
+          buildUnitObject(assetCtx.THREE, unit);
+        if (!object) continue;
+        if (viewport.rebuildEpoch() !== epoch) {
+          disposeObject(object);
+          return;
+        }
+        object.userData.unitId = id;
+        object.userData.unitKind = unit.kind;
+        object.visible = !props.hiddenUnits.has(id);
+        instance.group(kindGroup(kind)).add(object);
+        viewport.unitObjects.set(id, object);
+        instance.group(kindGroup(kind)).remove(previous);
+        disposeObject(previous);
+      }
+    }
+  } finally {
+    span.end();
+  }
+  // 刷新的单元对象已换代：选中/描边/手柄若指向旧对象需重挂
+  applyOutlines();
+  updatePickOverlay();
+  if (props.selectedId) updateGizmo();
+  instance.invalidate();
+}
+
 async function assembleScene(
   ctx: Parameters<Parameters<typeof viewport.rebuild>[0]>[0],
 ) {
@@ -822,6 +1226,29 @@ async function assembleScene(
   specUniformRefs.length = 0;
 
   const payload = props.modelPayload;
+  /** 贴花投影目标：全部建筑网格（在 lot 局部空间为单位变换）。模型线
+   * 填充，贴花线在汇合点后消费。 */
+  const buildingMeshes: ThreeNamespace.Mesh[] = [];
+  // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）。
+  // 必须立刻按当前时段求值：天空三段色与 uSkyLumRef（球面均值）都依赖它，
+  // 否则首帧用的是 createSunEnv 的占位值（间接光会整体偏暗）。
+  const env = createSunEnv(THREE);
+  applySunEnv(env, timeOfDay(), props.powered);
+  envRefs = env;
+  // 阶段间让出一帧（2026-10-07 性能轮）：整段装配遥测 p95 ≈ 1s，全程
+  // 不切片则输入/滚动全程卡死。每个让出点后必须查 isStale——让出期间
+  // 新一代重建可能已开跑（rebuild 骨架在让出前已清场）。
+  await yieldToBrowser();
+  if (ctx.isStale()) return;
+
+  // ---- 三线并发（2026-10-07 二轮）：模型/地面/单元互不依赖输出——
+  // 原串行 await 链总时长 = 各环节之和（模型最快出画、灯光/道具/地面
+  // 整段滞后的直接原因）；并行后总时长 ≈ 最慢环节。贴花投影依赖建筑
+  // 网格（模型线产物）、尺度标注依赖模型 bbox + 地面矩阵 → 汇合点后
+  // 串行收尾。每线各自保留 isStale 检查。
+
+  // 模型线：GLB 解析 → 材质/tint → 延迟贴图 → 阴影。
+  const modelStage = (async () => {
   // payload 级缓存：命中时返回 clone（共享几何），跳过 GLB parse。
   const modelObjects = payload ? await getLotModelObjects(payload) : [];
   if (ctx.isStale()) {
@@ -838,8 +1265,6 @@ async function assembleScene(
   const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
     payload?.materials ?? []
   ).map(() => []);
-  /** 贴花投影目标：全部建筑网格（在 lot 局部空间为单位变换）。 */
-  const buildingMeshes: ThreeNamespace.Mesh[] = [];
   const tintSpan = renderTelemetry.begin("texture_compose", {
     phase: "tint",
     refined: props.renderMode === "refined",
@@ -853,12 +1278,6 @@ async function assembleScene(
     tinted: tintResolved.filter((entry) => entry?.tintTex).length,
   });
   if (ctx.isStale()) return;
-  // 5d 日/夜环境共享 uniform（全部 tint 材质引用同一组对象）。
-  // 必须立刻按当前时段求值：天空三段色与 uSkyLumRef（球面均值）都依赖它，
-  // 否则首帧用的是 createSunEnv 的占位值（间接光会整体偏暗）。
-  const env = createSunEnv(THREE);
-  applySunEnv(env, timeOfDay(), props.powered);
-  envRefs = env;
   // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
   // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
   // 居中（bbox≈0 实证），mask 空腔与其错位另有机制（0x0CCB7FD2/D3
@@ -873,28 +1292,65 @@ async function assembleScene(
       buildingMeshes.push(mesh);
       // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
       mesh.userData.buildingMaterialIndex = materialIndex;
-      if (props.renderMode !== "refined") {
+      try {
+        if (props.renderMode !== "refined") {
+          mesh.material = whiteMaterial;
+          return;
+        }
+        const tint = tintResolved[materialIndex];
+        if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
+          // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
+          const [tinted, specUniform] = makeTintMaterial(
+            THREE,
+            tint,
+            env,
+            props.reliefEnabled === true,
+          );
+          specUniformRefs.push(specUniform);
+          mesh.material = tinted;
+          return;
+        }
+        // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
+        const refined = new THREE.MeshStandardMaterial({
+          vertexColors: Boolean(mesh.geometry.attributes.color),
+          roughness: 0.82,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        });
+        mesh.material = refined;
+        if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
+      } catch (error) {
+        // 逐 mesh 兜底（2026-10-08 EP1 乱码取证）：装配异常若逃出 traverse
+        // 会中断整个模型线——后续 mesh 留在 GLTFLoader 默认材质（金属灰/
+        // 环境乱码观感），且异常吞掉真实断点。此处打印异常并退白模。
+        console.error(
+          `[building-materials] glb#${index} mesh 材质装配异常:`,
+          error,
+        );
         mesh.material = whiteMaterial;
-        return;
       }
-      const tint = tintResolved[materialIndex];
-      if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
-        // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-        const [tinted, specUniform] = makeTintMaterial(THREE, tint, env);
-        specUniformRefs.push(specUniform);
-        mesh.material = tinted;
-        return;
-      }
-      // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
-      const refined = new THREE.MeshStandardMaterial({
-        vertexColors: Boolean(mesh.geometry.attributes.color),
-        roughness: 0.82,
-        metalness: 0,
-        side: THREE.DoubleSide,
-      });
-      mesh.material = refined;
-      if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
     });
+    // DEV 诊断（2026-10-08 EP1 贴图乱码取证）：逐 mesh 材质分派摘要——
+    // uvKind/材质列/属性表/tint 是否命中/最终材质类型与 map 绑定。乱码时
+    // 控制台按行暴露 tint 链断点（tint 纹理缺失→退通用材质？deferred
+    // 未绑定？）。生产构建零成本。
+    if (import.meta.env.DEV) {
+      const summaries: string[] = [];
+      object.traverse((child) => {
+        const mesh = child as ThreeNamespace.Mesh;
+        if (!mesh.isMesh) return;
+        const material = mesh.material as ThreeNamespace.MeshStandardMaterial;
+        const attributes = Object.keys(mesh.geometry.attributes).join(",");
+        summaries.push(
+          `m${index} uvKind=${payload?.meshUvKinds[index] ?? 0} mat=${materialIndex} ` +
+            `attrs=[${attributes}] type=${material?.type} ` +
+            `map=${material?.map ? "Y" : "N"} vc=${material?.vertexColors ? "Y" : "N"}`,
+        );
+      });
+      if (summaries.length) {
+        console.info(`[building-materials] glb#${index}\n${summaries.join("\n")}`);
+      }
+    }
     instance.group("model").add(object);
   }
   if (props.renderMode === "refined" && payload) {
@@ -916,9 +1372,16 @@ async function assembleScene(
   const shadowsRefined = props.renderMode === "refined";
   viewport.viewer.value?.setShadowsEnabled(shadowsRefined);
   if (shadowsRefined) applySun();
+  })();
 
-    // Lot 地面矩形（LotSize）；有 LotMask 时异步贴四色量化图。
-    if (props.lotSize) {
+  // 地面线：LotSize 矩形 + placement 逆 + mask 合成（与模型零依赖）。
+  // 尺度标注依赖模型 bbox（模型线产物）→ 汇合点后再建。
+  const groundStage = (async () => {
+    if (!props.lotSize) {
+      dimLabels.value = [];
+      return null;
+    }
+    if (props.renderMode === "refined") prepareGroundComposer();
     const groundSpan = renderTelemetry.begin("lot_render", {
       refined: props.renderMode === "refined",
     });
@@ -927,16 +1390,11 @@ async function assembleScene(
     if (props.lotPlacement) {
       ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
     }
-    // 【2026-10-05 试点：引擎栅格定位口径（dev-dump 文档 §四 F7）】
-    // 地面 quad 在 lot 本地系的中心 = unitOffset（0x0CCB7FC9，缺省 0）——
-    // 引擎 mask UV 公式 uv=(pos−unitOffset)/LotSize+0.5（migration §42.8）
-    // 没有 bbox 中心机制；0x00F9EFBA 声明 bbox 在引擎只喂 zoning
-    // frontage/depth 截断（GetUnitBoundingBoxInternal），不再作地面中心
-    // fallback（图书馆 −0.41 / EP1 房 +2.89 残差的疑源）。
-    // 偏移在 lot 系施加 = postmultiply（P⁻¹·T(c)）：θ=0 的 lot 与旧实现
-    // 逐值等价（旧 premultiply T(A·c)·P⁻¹ 在 θ=0 时同为平移 c−t），θ≠0
-    // 时修正偏移的旋转方向（旧 A·c 按 P 正向旋转，方向相反）。
-    const centerLocal = props.lotOverlayBoxOffset ?? [0, 0];
+    // cZoningGame::CreateUnitLotGraphics (0x8BA1C0) and cRegionCityLots
+    // (0x86DCB0) use the authored offset, including an explicit zero; only a
+    // missing property falls back to the declared unit bounding-box centre.
+    // Apply it in lot coordinates, before inverse placement: P^-1 * T(c).
+    const centerLocal = props.lotOverlayBoxOffset ?? props.lotModelBboxCenter ?? [0, 0];
     if (Math.abs(centerLocal[0]) > 1e-4 || Math.abs(centerLocal[1]) > 1e-4) {
       ground.matrix.multiply(
         new THREE.Matrix4().makeTranslation(centerLocal[0], centerLocal[1], 0),
@@ -980,6 +1438,8 @@ async function assembleScene(
         lotBorderColors: props.lotBorderColors,
         lotBorderPatternIndices: props.lotBorderPatternIndices,
         lotBorderWidths: props.lotBorderWidths,
+        lotColorHeights: props.lotColorHeights,
+        lotBorderHeights: props.lotBorderHeights,
         baseTileIndex: props.lotBaseTile,
         lotOverlayBoxOffset: props.lotOverlayBoxOffset,
         rawMaskKey: props.lotMaskRawRgba,
@@ -989,7 +1449,15 @@ async function assembleScene(
       });
     }
     groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
-  }
+    // 地面合成产物提前上传 GPU：2048² +mipmap 的上传是首帧大冻结源，
+    // 放在地面线内 = 与模型/单元线并发吸收（不占汇合后的首帧）。
+    const fill = groundFillMesh(ground);
+    const fillMap = (fill?.material as ThreeNamespace.Material | undefined)
+      ? ((fill!.material as ThreeNamespace.MeshLambertMaterial).map ?? null)
+      : null;
+    if (fillMap) instance.primeTexture(fillMap);
+    return ground;
+  })();
 
   /**
    * 贴花材质变体（migration.md §52.5 聚类映射）：招牌 = 霓虹自发光
@@ -1030,15 +1498,6 @@ async function assembleScene(
     0xe5390a98: "graffiti", // 涂鸦/贴纸聚类（CRIME/词组拼贴等）
   };
 
-  /** 量化合成（quant）族材质集合（2026-10-04 三轮用户对拍定谳）：字典
-   * 两族都走 0.5 阈值多通道合成——涂鸦的"清晰图案"正是多通道权重经
-   * 阈值链上色的产物（误路由到直采 = 权重通道当颜色 → 彩色模糊涂抹，
-   * 三轮图4）；焦痕/烧灼与未知材质走 clip 直采（raster RGB = 美术内容，
-   * 误走量化 = 层色近黑整块纯黑，二轮图1~3）。 */
-  const DECAL_QUANT_MATERIALS: ReadonlySet<number> = new Set([
-    0x73684efc, 0xe5390a98,
-  ]);
-
   /** 投影面法线 cutoff：只保留 **N·axisZ ≤ -0.5** 的三角形——即面朝贴花
    * 原点（投影来向）的面。两个裁剪目标：
    * 1) |N·axisZ| < 0.5 的切向面被盒体裁剪后 UV 极度拉伸 = 立面"线性涂抹"
@@ -1047,13 +1506,7 @@ async function assembleScene(
    *    背对原点）= "穿透到另一侧"镜像字（五轮图1~2）。引擎延迟投影逐像素
    *    取最近深度、天然只画最近面，CPU 几何投影必须同时满足这两个条件
    *    才能同构（60° 以内朝向原点的曲面绕折仍保留）。 */
-  const DECAL_PROJECTION_NORMAL_CUTOFF = 0.5;
-
-  /** 浮空族判据：sign 字典 decal 的 materialData[1] 下限（≥ 此值 → 引擎
-   * FloatQuad 族，画数据位姿浮空 quad 而非体积投影）。实证：casino 墙
-   * 招牌 0 / 高塔竖幅 0.95~1.0 / DIRTY FACTORY 0.06 / 涂鸦恒 0。
-   * 语义定谳（§十五）：该分量 = animSpeed 跑马灯速度。 */
-  const DECAL_FLOAT_EMISSIVE_CUTOFF = 0.9;
+  const DECAL_PROJECTION_NORMAL_CUTOFF = 0;
 
   /**
    * 按面法线过滤投影几何：只保留面朝贴花原点的三角形。返回 null = 整盒
@@ -1108,6 +1561,9 @@ async function assembleScene(
       boxHalfY?: number;
       decalData: [number, number] | null;
       env: SunEnvRefs;
+      depthTest?: boolean;
+      depthWrite?: boolean;
+      alphaTest?: number;
     },
   ): ThreeNamespace.Material {
     const base = {
@@ -1117,7 +1573,9 @@ async function assembleScene(
       // 纹理 alpha 是柔和衰减/掩码：sign 连续混合（光晕）、graffiti 阈值
       // 裁切（锐利边缘），见下方 switch。
       transparent: true,
-      depthWrite: false,
+      depthTest: opts.depthTest ?? true,
+      depthWrite: opts.depthWrite ?? false,
+      alphaTest: opts.alphaTest ?? 0,
       // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
       polygonOffset: true,
       polygonOffsetFactor: -4,
@@ -1251,39 +1709,12 @@ async function assembleScene(
         unit.depth !== null && Number.isFinite(unit.depth) && unit.depth > 0
           ? unit.depth * halfScale
           : null;
-      // 单向 +axisZ 射线判定盒内是否有建筑面（far = 数据盒深；无 depth
-      // 数据时退回旧 2.5×scale 探测半径）。
-      const raycaster = new THREE.Raycaster(
-        frame.origin,
-        frame.axisZ,
-        0,
-        dataDepth ?? halfScale * 2.5,
-      );
-      const wallHit = raycaster.intersectObjects(proxies, false)[0];
       const { DecalGeometry } = await import(
         "three/examples/jsm/geometries/DecalGeometry.js"
       );
       if (ctx.isStale()) return null;
-      // 族路由（2026-10-05 破洞并入投影路径）：破洞（decalInteriorMap）
-      // 直接路由 hole 链（投影几何 + 内景双 UV + 受光步，与原版片段链
-      // [379]/[380] 逐字对齐）；量化族字典（招牌 + 涂鸦）内再按
-      // materialData[1] 分流——该分量 = 引擎 decalMaterialInfo.y =
-      // **animSpeed 跑马灯速度**（docs/re/decal-engine-alignment.md §十五，
-      // 早前"疑似自发光参数"的猜测已被 decalLightBackground 源码取代）：
-      //   > 0 → SDF 霓虹管动画链（自发光 + 跑马灯，纹理四通道 = 四路 SDF
-      //         距离场；实证：高塔 STORE 1.0 / DIRTY FACTORY 0.06）；
-      //   = 0 → 量化合成静态链（casino 招牌 / 涂鸦恒 0）；
-      // 其余（焦痕/烧灼/未知）→ clip 直采链。
-      const animSpeed = unit.materialData?.[1] ?? 0;
-      const family: EngineFamily = DECAL_HOLE_MATERIALS.has(
-        (texture.materialInstance ?? 0) >>> 0,
-      )
-        ? "hole"
-        : DECAL_QUANT_MATERIALS.has((texture.materialInstance ?? 0) >>> 0)
-          ? animSpeed > 0
-            ? "sdf"
-            : "sign"
-          : "clip";
+      const route = decalRoute(texture.materialInstance);
+      const family: EngineFamily = route.family;
       if (family === "sdf") neonAnimated = true;
       // 引擎浮空分支（decalFloatQuad，holo 广告/远抛实例）：在**数据
       // 位置**画浮空 quad，姿态由 transform 给出——不是"不渲染"（四轮
@@ -1303,6 +1734,9 @@ async function assembleScene(
               nus: [frame.sizeX, frame.sizeY, frame.sizeY],
               graffiti:
                 ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
+              depthTest: true,
+              depthWrite: true,
+              alphaTest: 0.01,
             })
           : buildDecalMaterial(THREE, texture, decoded, {
               env,
@@ -1310,44 +1744,26 @@ async function assembleScene(
               boxHalfX: frame.sizeX / 2,
               boxHalfY: frame.sizeY / 2,
               decalData: props.decalLight ?? null,
+              depthTest: true,
+              depthWrite: true,
+              alphaTest: 0.01,
             });
         const quadGeometry = new THREE.PlaneGeometry(frame.sizeX, frame.sizeY);
         const quadUv = quadGeometry.attributes.uv;
         for (let i = 0; i < quadUv.count; i += 1) quadUv.setX(i, 1 - quadUv.getX(i));
         quadUv.needsUpdate = true;
-        group.add(new THREE.Mesh(quadGeometry, floatMaterial));
+        const quad = new THREE.Mesh(quadGeometry, floatMaterial);
+        // decalBaseCenter collapses the volume onto texturePosition.z = 0.
+        quad.position.z = (dataDepth ?? 0) / 2;
+        group.add(quad);
         decalStats.fallback += 1;
       };
-      if (!wallHit) {
-        // 破洞族无浮空分支：引擎 decalInteriorMap 链内含 decalClip 体积
-        // 裁剪——体积盒内无场景深度（未触及建筑面）时整贴花被 clip kill，
-        // 即"根本不渲染"，不是回退浮空（§12.4/§12.7）。
-        if (family === "hole") return group;
+      if (route.surface === "plane") {
         addFloatQuad();
-        return group;
       }
-      // 浮空族数据判据（2026-10-05 五轮定谳，docs/re/decal-engine-alignment
-      // §十四）：**sign 字典且 materialData[1] ≥ 0.9 → 引擎 FloatQuad 族**
-      // （holo/竖幅灯牌），跳过投影直接画浮空 quad。实证对拍：
-      // casino 墙招牌 md[1]=0（投影 ✓）、高塔 0x9401CB7A 竖幅 STORE
-      // md[1]=0.95/1.0（用户确认浮空 ✓）、DIRTY FACTORY md[1]=0.06
-      // （投影 ✓）、涂鸦恒 0（投影 ✓）。md[1] 语义已由 §十五定谳 =
-      // animSpeed（引擎 decalMaterialInfo.y）——高速动画招牌恰是引擎的
-      // 浮空灯箱族，与 FloatQuad 族选择同源。注意六轮起 md[1]>0 的招牌
-      // 已分流到 sdf 族，故判据须同时覆盖 sign/sdf（否则高塔竖幅会被
-      // 错误投影——路由升级引入的回归点）。几何判据（离墙距离/盒深）
-      // 已被涂鸦 10m 离墙反例证伪。安全网：贴墙摆放的 sign 浮空 quad 与
-      // 投影观感近乎一致（原点即在墙面），误判代价低。
-      if (
-        (family === "sign" || family === "sdf") &&
-        animSpeed >= DECAL_FLOAT_EMISSIVE_CUTOFF
-      ) {
-        addFloatQuad();
-        return group;
-      }
-      // 单侧盒投影：z 全深 = 数据盒深（无 depth 数据 = 命中距离 + 2m
-      // 檐口/退台余量），前缘在原点、沿 +axisZ 延伸。
-      const depthZ = dataDepth ?? wallHit.distance + 2.0;
+      // A projected volume can intersect a wall even when its centre ray misses.
+      // Empty volumes stay empty; graffiti must never turn into floating quads.
+      const depthZ = dataDepth ?? halfScale * 2.5;
       const projector = {
         position: frame.origin
           .clone()
@@ -1383,19 +1799,13 @@ async function assembleScene(
         // 来源（N·axisZ≤−0.5 过滤会把水平楼板全部滤掉 = 平斑）。FrontSide
         // 背面剔除 + 建筑实体不透明深度遮挡已防外侧面穿透。
         const filtered =
-          family === "hole"
+          family === "hole" || route.surface === "plane"
             ? clipped
             : filterDecalProjectionByNormal(THREE, clipped, frame.axisZ);
+        if (filtered !== clipped) clipped.dispose();
         if (filtered) geometries.push(filtered);
       }
-      // 射线命中但法线过滤后无任何可投面（墙面与投影轴近平行的极端
-      // 摆放）→ 破洞同样不渲染（decalClip 语义）；其余族走浮空分支：
-      // 宁可画在数据位姿也不凭空消失。
-      if (!geometries.length) {
-        if (family === "hole") return group;
-        addFloatQuad();
-        return group;
-      }
+      if (!geometries.length) return group;
       // U 镜像（与 quad 路径同口径：引擎 uv = texpos × -0.5 + 0.5，文字正读）
       for (const geometry of geometries) {
         const uv = geometry.attributes.uv;
@@ -1403,7 +1813,7 @@ async function assembleScene(
         uv.needsUpdate = true;
       }
       const engineMaterial = ENGINE_SHADER_MATERIALS
-        ? createEngineDecalMaterial(THREE, family, {
+        ? createEngineDecalMaterial(THREE, route.surface === "plane" ? "neon-light" : family, {
             map: decoded,
             layerColors: texture.colors,
             decalData: props.decalLight ?? null,
@@ -1411,7 +1821,7 @@ async function assembleScene(
             env,
             materialInfo: unit.materialData ?? undefined,
             powered: props.powered,
-            nus: [frame.sizeX, frame.sizeY, frame.sizeY],
+            nus: [2 / frame.sizeX, 2 / frame.sizeY, 2 / depthZ],
             // 涂鸦（0xE5390A98）：喷漆连续厚度 alpha + 无灯箱增益/夜间
             // 豁免（rt0 编译状态定谳：标准 alpha 混合，无自发光项）
             graffiti: ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
@@ -1424,7 +1834,7 @@ async function assembleScene(
             // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）。
             // halfXY/depthM/invRot 供 PS 视线视差（holeParallaxUv）。
             holeBox:
-              family === "hole"
+              family === "hole" || route.surface === "plane"
                 ? {
                     origin: frame.origin,
                     axisZ: frame.axisZ,
@@ -1507,59 +1917,125 @@ async function assembleScene(
       texture,
     ]),
   );
-  // 吸附射线目标：建筑网格代理（quad 摆放用）
-  const decalProxies =
-    props.renderMode === "refined" && buildingMeshes.length
-      ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
-      : [];
   // 贴花解码纹理并行预取（去重后一次解码全部；此前逐 decal 串行 await，
-  // 首载成本 = 贴花数 × 单张解码）。
-  if (props.renderMode === "refined" && decalTextureByKey.size) {
-    await Promise.all(
-      [...new Set(decalTextureByKey.values())].map((texture) =>
-        getDecalTexture(THREE, texture),
-      ),
-    );
+  // 首载成本 = 贴花数 × 单张解码）——与模型/地面线并发（只依赖 props）。
+  const decalPrefetch =
+    props.renderMode === "refined" && decalTextureByKey.size
+      ? Promise.all(
+          [...new Set(decalTextureByKey.values())].map((texture) =>
+            getDecalTexture(THREE, texture),
+          ),
+        )
+      : Promise.resolve();
+  // 资产渲染分发上下文（tree/prop/spawner 渲染器只读输入；每轮重建刷新）
+  const assetCtx = buildAssetCtx();
+  // 单元线：非贴花单元先行（灯光/道具/spawner/路径点，与模型/地面并发）；
+  // 贴花收集到汇合点后投影（依赖建筑网格 = 模型线产物）。
+  const decalUnits: DecalUnit[] = [];
+  let unitSliceStart = performance.now();
+  for (const unit of units) {
+    if (unit.kind === "decal") {
+      decalUnits.push(unit);
+      continue;
+    }
+    // Yield by elapsed work, not object count: cached units must not each pay
+    // a fixed animation-frame delay, while expensive batches stay interruptible.
+    if (performance.now() - unitSliceStart >= 8) {
+      await yieldToBrowser();
+      unitSliceStart = performance.now();
+      if (ctx.isStale()) return;
+    }
+    // 精细模式：光源用真实 three.js 光源；道具/spawner 走资产渲染分发
+    //（tree/prop/spawner 独立渲染器，互不回归——2026-10-06 拆分）。
+    // 失败统一退标记锥。
+    const effectDefinition = unit.kind === "effect" && unit.effectId
+      ? props.effectDefinitions?.get(unit.effectId.instance) : undefined;
+    const particleView = props.renderMode === "refined" && props.renderEffects
+      && unit.kind === "effect" && effectDefinition?.emitters.length
+      ? createParticleEffect(
+          THREE, unit, effectDefinition.emitters,
+          Math.max(32, Math.min(320, Math.floor(2400 / Math.max(1, props.grouping.effects.length)))),
+        ) : null;
+    if (particleView) particleViews.push(particleView);
+    const object =
+      particleView?.object ??
+      (props.renderMode === "refined" && unit.kind === "light"
+        ? buildRealLightUnit(THREE, unit)
+        : null) ??
+      (await renderRefinedAssetUnit(assetCtx, unit)) ??
+      buildUnitObject(THREE, unit);
+    if (!object) continue;
+    // 统一在此登记：精细模式的道具/spawner 不走 buildUnitObject 时其
+    // userData 由此补齐（此前精细模式光源因此点不中）。
+    object.userData.unitId = unitId(unit);
+    object.userData.unitKind = unit.kind;
+    instance.group(kindGroup(unit.kind)).add(object);
+    ctx.unitObjects.set(unitId(unit), object);
     if (ctx.isStale()) return;
   }
-  // 资产渲染分发上下文（tree/prop/spawner 渲染器只读输入；每轮重建刷新）
-  const assetCtx: UnitRenderContext = {
-    THREE,
-    renderMode: props.renderMode,
-    treeModelPayloads: props.treeModelPayloads,
-    treeAtlasPng: props.treeAtlasPng,
-    treeIds: props.propTreeIds,
-    propModels: props.propModels,
-    envRefs,
-    simParts: simParts.value,
-  };
+
+  // ---- 汇合点：三线全部落地（或已因过期自行退出）----
+  await modelStage;
+  if (ctx.isStale()) return;
+  // Unit lighting is now complete and pruned. Compile stable model materials
+  // concurrently with the independent ground worker; never compile a ground
+  // placeholder that applyGroundMask is about to replace and dispose.
+  const stableShaders = ctx.prepareStableShaders();
+  const ground = await groundStage;
+  await decalPrefetch;
+  await stableShaders;
+  if (ctx.isStale()) return;
+
+  // Lot 三维尺度标注（用户需求 2026-10-06）：长/宽取地面矩形两邻边，
+  // 高取建筑 bbox 实际高度（世界系 Y 跨度；世界仅旋转，跨度=游戏系 Z）。
+  if (props.lotSize && ground && !props.groundOnly) {
+    instance.scene.updateMatrixWorld(true);
+    const modelBox = new THREE.Box3().setFromObject(instance.group("model"));
+    const lotHeight = modelBox.isEmpty()
+      ? 0
+      : Math.max(0, modelBox.max.y - modelBox.min.y);
+    const dims = buildLotDimensions(THREE, props.lotSize, lotHeight);
+    if (dims) {
+      // 与地面矩形同一矩阵（placement 逆 + overlay 中心偏移），标注贴地边
+      dims.object.matrix.copy(ground.matrix);
+      dims.object.matrixAutoUpdate = false;
+      instance.group("dimensions").add(dims.object);
+      dimLabels.value = dims.anchors.map((anchor) => ({
+        ...anchor,
+        game: new THREE.Vector3(...anchor.point)
+          .applyMatrix4(dims.object.matrix)
+          .toArray() as [number, number, number],
+      }));
+    } else {
+      dimLabels.value = [];
+    }
+  }
+
+  // 贴花投影（依赖建筑网格 = 模型线产物；纹理已在预取线解码）。
   const decalSpan = renderTelemetry.begin("decal_render", {
-    decals: props.grouping.decals.length,
+    decals: decalUnits.length,
   });
   decalStats.projected = 0;
   decalStats.fallback = 0;
   holeLightCount = 0;
   neonAnimated = false;
-  for (const unit of units) {
-    // 精细模式：光源用真实 three.js 光源、贴花投影到建筑面；其余组件保持标记锥
-    const decalTexture =
-      props.renderMode === "refined" && unit.kind === "decal"
-        ? decalTextureByKey.get(`${unit.category}:${unit.index}`)
-        : undefined;
-    if (props.renderMode === "refined" && unit.kind === "decal" && !decalTexture) {
+  // 吸附射线目标：建筑网格代理（quad 摆放用）
+  const decalProxies =
+    props.renderMode === "refined" && buildingMeshes.length
+      ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
+      : [];
+  for (const unit of decalUnits) {
+    const decalTexture = decalTextureByKey.get(
+      `${unit.category}:${unit.index}`,
+    );
+    if (props.renderMode === "refined" && !decalTexture) {
       console.warn(
         `[decal] 配对失败 cat${unit.category}:idx${unit.index}，已注册键：`,
         [...decalTextureByKey.keys()],
       );
     }
     let object: ThreeNamespace.Object3D | null;
-    if (props.renderMode === "refined" && unit.kind === "light") {
-      object = buildRealLightUnit(THREE, unit);
-    } else if (
-      props.renderMode === "refined" &&
-      unit.kind === "decal" &&
-      decalTexture
-    ) {
+    if (props.renderMode === "refined" && decalTexture) {
       // 贴图解码失败（无 png）→ 退回 gizmo，保证仍可见可选
       object =
         (await buildDecalObject(
@@ -1570,15 +2046,9 @@ async function assembleScene(
           decalProxies,
         )) ?? buildUnitObject(THREE, unit);
     } else {
-      // 资产渲染分发（tree/prop/spawner 独立渲染器，互不回归——2026-10-06
-      // 拆分；灯光/贴花耦合视口内部状态，暂留原位）。失败统一退标记锥。
-      object =
-        (await renderRefinedAssetUnit(assetCtx, unit)) ??
-        buildUnitObject(THREE, unit);
+      object = buildUnitObject(THREE, unit);
     }
     if (!object) continue;
-    // 统一在此登记：精细模式的光源/贴花不再走 buildUnitObject，其 userData
-    // 由此补齐（此前精细模式光源因此点不中）。
     object.userData.unitId = unitId(unit);
     object.userData.unitKind = unit.kind;
     instance.group(kindGroup(unit.kind)).add(object);
@@ -1589,7 +2059,7 @@ async function assembleScene(
     projected: decalStats.projected,
     fallback: decalStats.fallback,
     skipped: decalStats.skipped,
-    units: units.length,
+    units: decalUnits.length,
   });
 
   // 路径折线：按 point_index 排序连接（pathPairs 语义未定，先 best-effort）。
@@ -1627,37 +2097,147 @@ function applyBrightness() {
 }
 
 defineExpose({
-  captureRender: (options?: { includeDecals?: boolean }) =>
-    viewport.captureRender(options),
+  /**
+   * 渲染图导出（2026-10-08 修复）：尺度数值标签是 HTML 浮层，不进
+   * WebGL 画布——截图后按当前投影把标签补绘到 2D 画布再导出，否则
+   * 只截到尺度线、截不到数值。
+   */
+  captureRender: async (options?: {
+    includeDecals?: boolean;
+  }): Promise<string | null> => {
+    const dataUrl = viewport.captureRender(options);
+    if (!dataUrl) return null;
+    const instance = viewport.viewer.value;
+    if (!instance || !dimLabels.value.length) return dataUrl;
+    // 尺度组隐藏（图层开关）时不补标签
+    if (props.groupVisibility.dimensions === false) return dataUrl;
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("capture load failed"));
+        element.src = dataUrl;
+      });
+      const rect = viewport.container.value?.getBoundingClientRect();
+      // 截图像素 = CSS 像素 × DPR：标签按同一比例缩放对位
+      const ratio = rect?.width ? image.naturalWidth / rect.width : 1;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return dataUrl;
+      context.drawImage(image, 0, 0);
+      context.font = `600 ${Math.max(10, Math.round(12 * ratio))}px ui-sans-serif, system-ui, sans-serif`;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillStyle = "#0878fe";
+      context.shadowColor = "rgba(0, 0, 0, 0.6)";
+      context.shadowBlur = 2 * ratio;
+      const axisLabels: Record<LotDimensionAnchor["axis"], string> = {
+        length: t("package.dimLength"),
+        width: t("package.dimWidth"),
+        height: t("package.dimHeight"),
+      };
+      for (const dim of dimLabels.value) {
+        const scenePoint = instance.world.localToWorld(
+          new instance.THREE.Vector3(...dim.game),
+        );
+        const screen = instance.worldToScreen(scenePoint);
+        if (screen.behind) continue;
+        context.fillText(
+          `${axisLabels[dim.axis]} ${dim.text}`,
+          screen.x * ratio,
+          screen.y * ratio,
+        );
+      }
+      return canvas.toDataURL("image/png");
+    } catch {
+      return dataUrl;
+    }
+  },
+  /** 屏幕坐标 → 地面平面交点（游戏坐标），组件库拖放放置用。 */
+  groundPointAt: (clientX: number, clientY: number) =>
+    viewport.viewer.value?.groundPointAt(clientX, clientY) ?? null,
 });
 
 // 模型载荷 / 渲染模式变化 → 全量重建；grouping 变化 → 先试增量（热路径），
 // 失败（unit 增删/字段变化/贴花移动）才全量。同一 flush 内两者都变时
-// （如会话加载），rebuildToken 保证后到者胜出。
+// （如会话加载），rebuildToken 保证后到者胜出。全部触发走 scheduleRebuild
+// 合并（2026-10-07：原始实现各通道独立重建，3.2× 重复，见调度器注释）。
 watch(
-  () => [props.modelPayload, props.renderMode] as const,
+  () => [props.modelPayload, props.renderMode, props.reliefEnabled] as const,
   ([payload], previous) => {
     // 按变化项判定触发来源（首次拿到 payload 记 first_load，换级记 lod_switch）。
-    pendingTrigger =
+    const trigger: RenderTelemetryTrigger =
       previous?.[0] == null
         ? "first_load"
         : payload !== previous[0]
           ? "lod_switch"
           : "render_mode";
-    void rebuildScene();
+    scheduleRebuild(trigger);
   },
 );
+watch(
+  () => [props.renderEffects, props.effectDefinitions] as const,
+  () => {
+    if (!props.renderEffects) {
+      stopParticleClock();
+      if (particleViews.length) scheduleRebuild("grouping");
+    } else if (props.effectDefinitions?.size) {
+      scheduleRebuild("grouping");
+    }
+  },
+);
+watch(() => props.suspended, (suspended) => {
+  if (suspended) stopParticleClock();
+  else startParticleClock();
+});
 watch(
   () => props.grouping,
   (grouping) => {
-    pendingTrigger = "grouping";
-    if (!tryIncrementalGrouping(grouping)) void rebuildScene();
+    if (props.renderEffects && props.effectDefinitions?.size) scheduleRebuild("grouping");
+    else if (!tryIncrementalGrouping(grouping)) scheduleRebuild("grouping");
   },
+);
+// Raster editing updates the ground independently of models and units.
+watch(
+  () => [props.lotMaskPng, props.lotMaskRawRgba, props.lotSurfacePng,
+    props.lotNormalAtlasPng, props.lotColors, props.lotSize, props.lotTilePeriod],
+  () => scheduleRebuild("grouping"),
+  { deep: true },
 );
 watch(
   () => props.groupVisibility,
-  () => viewport.applyGroupVisibility(props.groupVisibility),
+  () => {
+    viewport.applyGroupVisibility(props.groupVisibility);
+    if (props.groupVisibility.effects === false) stopParticleClock();
+    else startParticleClock();
+  },
   { deep: true },
+);
+// 异步资产通道到位 → **部分刷新**受影响族（prop/spawner 原位换对象），
+// 不再整场重建（2026-10-07：此前四通道各触发一次全量重建，建筑/地面/
+// 贴花全部白跑——遥测 2154 重建/682 加载 ≈ 3.2× 的主要成分）。初始重建
+// 未就绪时 unitObjects 为空，刷新自然 no-op，由重建本身消费新载荷。
+watch(
+  () => [
+    props.propModels,
+    props.treeModelPayloads,
+    props.addedModelPayloads,
+    simParts.value,
+  ] as const,
+  (next, previous) => {
+    const kinds: AssetRefreshKind[] = [];
+    if (
+      next[0] !== previous[0] ||
+      next[1] !== previous[1] ||
+      next[2] !== previous[2]
+    ) {
+      kinds.push("prop");
+    }
+    if (next[3] !== previous[3]) kinds.push("spawner");
+    if (kinds.length) scheduleAssetRefresh(kinds);
+  },
 );
 // 单元隐藏此前只在装配期应用（无 watcher → 切换后无效果直到下次重建）；
 // 现在独立生效。
@@ -1665,9 +2245,14 @@ watch(
   () => props.hiddenUnits,
   () => viewport.applyUnitVisibility(props.hiddenUnits),
 );
+// 挂起恢复（sheet 重开）→ 补一次重建对齐当前渲染模式（关闭期间模式被
+// 复位为 default 而未重建）；挂起期间触发器静默（scheduleRebuild 入口
+// 拦截），恢复后的这一次由本 watch 发起。
 watch(
-  () => props.hiddenUnits,
-  () => viewport.applyUnitVisibility(props.hiddenUnits),
+  () => props.suspended,
+  (suspended, wasSuspended) => {
+    if (wasSuspended && suspended === false) scheduleRebuild("render_mode");
+  },
 );
 watch(
   () => props.selectedId,
@@ -1691,20 +2276,39 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
         class="pick-label"
         aria-hidden="true"
       />
+      <!-- 尺度标注文字（线段在 viewer dimensions 组，随帧投影居中锚定） -->
+      <span
+        v-for="(dim, index) in dimLabels"
+        :key="dim.axis"
+        :ref="(el) => (dimLabelEls[index] = el as HTMLElement | null)"
+        class="pick-label dim-label"
+        aria-hidden="true"
+      >{{ dimAxisLabel[dim.axis] }} {{ dim.text }}</span>
       <span
         :ref="(el) => (selectTagEl = el as HTMLElement | null)"
         class="pick-label pick-tag"
         aria-hidden="true"
-      />
+      >
+        <span class="pick-tag-text" />
+        <button
+          v-if="props.editEnabled"
+          type="button"
+          class="pick-delete"
+          :aria-label="$t('package.deleteUnit')"
+          @click.stop="onDeleteSelected"
+        >
+          <FIcon name="Trash2" :size="11" aria-label="" />
+        </button>
+      </span>
     </div>
     <div
-      v-if="modelState === 'loading'"
+      v-if="!groundOnly && modelState === 'loading'"
       class="viewport-overlay viewport-status"
     >
       <FSpinner size="sm" :label="$t('common.loading')" />
     </div>
     <p
-      v-else-if="modelState === 'missing' || modelState === 'error'"
+      v-else-if="!groundOnly && (modelState === 'missing' || modelState === 'error')"
       class="viewport-overlay viewport-status"
       role="status"
     >
@@ -1714,7 +2318,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
           : $t("package.propertyEditorModelError")
       }}
     </p>
-    <div class="viewport-overlay viewport-tools">
+    <div v-if="!groundOnly" class="viewport-overlay viewport-tools">
       <button
         type="button"
         :aria-label="$t('package.lodSwitch')"
@@ -1854,6 +2458,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       </div>
     </div>
     <div
+      v-if="props.editEnabled && !groundOnly"
       class="viewport-overlay viewport-toolrail"
       role="group"
       :aria-label="$t('package.editorTools')"
@@ -1877,6 +2482,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       <!-- 动态招牌开关已挪入顶部工具条（供电旁复选框，2026-10-05 十轮） -->
     </div>
     <div
+      v-if="!groundOnly"
       class="viewport-overlay viewport-visibility"
       role="group"
       :aria-label="$t('package.visibilityToggles')"
@@ -1885,6 +2491,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
         v-for="name in [
           'model',
           'lot',
+          'dimensions',
           'lights',
           'props',
           'decals',
@@ -1946,7 +2553,34 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
   background: var(--brand);
   border-radius: 3px;
   color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-inline-end: 3px;
   text-shadow: none;
+}
+/* 尺度标注标签：线段中点居中锚定（覆盖 pick-label 的上方偏移） */
+.dim-label {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  transform: translate(-50%, -50%);
+}
+.pick-delete {
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  min-height: 16px;
+  min-width: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  pointer-events: auto;
+}
+.pick-delete:hover {
+  background: rgb(255 255 255 / 25%);
 }
 .viewport-3d:active {
   cursor: grabbing;
