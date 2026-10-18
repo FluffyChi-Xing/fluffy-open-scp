@@ -572,14 +572,16 @@ async function exportDocument() {
 <style scoped>
 .procedural-page {
   display: flex;
-  flex: 1;
-  /* 抵消 content-frame 的镀铬内边距：全幅贴边（顶 36px，水平 clamp） */
+  /* 抵消 content-frame 的镀铬内边距：全幅贴边（顶 36px，水平 clamp）；
+   * 高度补回负 margin 吃掉的顶部镀铬，贴住页脚上缘 */
+  height: calc(100% + 36px);
   margin: -36px calc(-1 * clamp(20px, 4vw, 56px)) 0;
   min-height: 0;
   position: relative;
 }
 @media (max-width: 720px) {
   .procedural-page {
+    height: calc(100% + 24px);
     margin: -24px -16px 0;
   }
 }

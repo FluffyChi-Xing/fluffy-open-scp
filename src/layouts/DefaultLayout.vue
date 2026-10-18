@@ -332,9 +332,10 @@ watch(
   width: 100%;
 }
 .route-page {
-  display: flex;
+  /* 保持 block：页面根的 max-width + margin auto 居中语义依赖块布局
+   * （flex 容器里 auto 外边距会阻止 stretch，概览等页会按内容收缩）。
+   * 需要撑满的页面（程序化建筑）自行 height:100% + 抵消镀铬。 */
   flex: 1;
-  flex-direction: column;
   min-height: 0;
   min-width: 0;
 }
