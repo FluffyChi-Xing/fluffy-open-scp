@@ -45,15 +45,17 @@ const editedCount = computed(
 );
 /** schema diff 预览 sheet */
 const showDiff = ref(false);
-/** 打开 diff sheet 时才计算（避免每次编辑触发大 JSON 序列化与行级比对）。 */
+/** false = 完整 JSON 查看；true = 变更对比（基础 → 当前）。 */
+const diffMode = ref(false);
+/** 打开 sheet 时才计算（避免每次编辑触发大 JSON 序列化与行级比对）。 */
 const diffBase = ref("");
 const diffCurrent = ref("");
-watch(showDiff, (open) => {
-  if (open) {
-    diffBase.value = store.schemaDocument(false);
-    diffCurrent.value = store.schemaDocument(true);
-  }
-});
+function openSchemaSheet(diff: boolean): void {
+  diffBase.value = store.schemaDocument(false);
+  diffCurrent.value = store.schemaDocument(true);
+  diffMode.value = diff;
+  showDiff.value = true;
+}
 
 /** bytes → base64（Tauri 命令传输用）。 */
 function toBase64(bytes: Uint8Array): string {
@@ -295,6 +297,10 @@ function removeDraft(): void {
         {{ t("studio.workbench.mechanism") }}
       </button>
       <div class="toolbar-spacer">
+        <button type="button" class="ghost-btn" @click="openSchemaSheet(false)">
+          <FIcon name="Braces" :size="13" aria-label="" />
+          {{ t("studio.workbench.schemaJson") }}
+        </button>
         <button type="button" class="ghost-btn primary" :disabled="!editedCount" @click="onBuildInject">
           <FIcon name="Package" :size="13" aria-label="" />
           {{ t("studio.workbench.buildInject") }}
@@ -343,7 +349,7 @@ function removeDraft(): void {
             type="button"
             class="ghost-btn"
             :disabled="!editedCount"
-            @click="showDiff = true"
+            @click="openSchemaSheet(true)"
           >
             <FIcon name="GitCompare" :size="12" aria-label="" />
             {{ t("studio.workbench.schemaDiff") }}
@@ -389,8 +395,23 @@ function removeDraft(): void {
       @update:open="!$event && (showDiff = false)"
     >
       <div class="diff-body">
+        <div class="diff-modes">
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ active: !diffMode }"
+            @click="diffMode = false"
+          >JSON</button>
+          <button
+            type="button"
+            class="mode-btn"
+            :class="{ active: diffMode }"
+            :disabled="!editedCount"
+            @click="diffMode = true"
+          >{{ t("studio.workbench.schemaDiff") }}</button>
+        </div>
         <FCode
-          :base-code="diffBase"
+          :base-code="diffMode ? diffBase : ''"
           :code="diffCurrent"
           lang="json"
           line-numbers
@@ -493,6 +514,30 @@ function removeDraft(): void {
   filter: brightness(1.08);
 }
 .ghost-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.diff-modes {
+  display: flex;
+  gap: 6px;
+}
+.mode-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+}
+.mode-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+}
+.mode-btn:disabled {
   cursor: default;
   opacity: 0.45;
 }
