@@ -797,7 +797,11 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           );
         } else {
           const reason = result.status === "rejected"
-            ? String(result.reason)
+            ? result.reason instanceof Error
+              ? result.reason.message
+              : typeof result.reason === "object" && result.reason != null
+                ? JSON.stringify(result.reason)
+                : String(result.reason)
             : "返回空";
           warnings.push(`全量 property 复制失败(${reason})，回退合成条目`);
         }

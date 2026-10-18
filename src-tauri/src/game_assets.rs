@@ -252,22 +252,72 @@ fn set_scalar_key(file: &mut PropertyFile, hash: u32, key: Value) {
     set_scalar_value(file, hash, PropType::Key, key);
 }
 
+fn fixed_array_item_size(prop_type: PropType) -> Option<i32> {
+    match prop_type {
+        PropType::Bool => Some(1),
+        PropType::Int32 | PropType::UInt32 | PropType::Float => Some(4),
+        PropType::Key => Some(12),
+        PropType::Text => Some(8),
+        PropType::Vector2 => Some(8),
+        PropType::Vector3 | PropType::ColorRgb => Some(12),
+        PropType::Vector4 | PropType::ColorRgba => Some(16),
+        PropType::BoundingBox => Some(24),
+        PropType::Transform | PropType::String8 | PropType::String16 => None,
+    }
+}
+
+fn normalize_array_item_sizes(file: &mut PropertyFile) {
+    for prop in &mut file.values {
+        if matches!(prop.kind, Kind::Array(_)) {
+            if let Some(size) = fixed_array_item_size(prop.prop_type) {
+                prop.encoding.array_item_size = Some(size);
+            }
+        }
+    }
+}
+
+fn remove_property(file: &mut PropertyFile, hash: u32) {
+    file.values.retain(|prop| prop.hash != hash);
+}
+
 fn set_scalar_text(file: &mut PropertyFile, hash: u32, table: u32, id: u32) {
-    set_array_values(
-        file,
+    let value = Value::Text(sc_properties::Text {
+        table_id: table,
+        instance_id: id,
+    });
+    for prop in &mut file.values {
+        if prop.hash == hash {
+            if prop.encoding.flags & 0x30 != 0 {
+                prop.kind = Kind::Array(vec![value]);
+                prop.encoding.array_item_size = Some(8);
+            } else {
+                prop.kind = Kind::Scalar(value);
+                prop.encoding.array_item_size = None;
+            }
+            prop.prop_type = PropType::Text;
+            return;
+        }
+    }
+    file.values.push(Property {
         hash,
-        PropType::Text,
-        vec![Value::Text(sc_properties::Text {
-            table_id: table,
-            instance_id: id,
-        })],
-    );
+        prop_type: PropType::Text,
+        kind: Kind::Scalar(value),
+        encoding: Default::default(),
+    });
 }
 
 fn set_scalar_value(file: &mut PropertyFile, hash: u32, prop_type: PropType, value: Value) {
     for prop in &mut file.values {
         if prop.hash == hash {
-            prop.kind = Kind::Scalar(value);
+            // Some game resources encode singleton values as one-item arrays.
+            // Preserve that shape, but normalize the item size for the new type.
+            if prop.encoding.flags & 0x30 != 0 {
+                prop.kind = Kind::Array(vec![value]);
+                prop.encoding.array_item_size = fixed_array_item_size(prop_type);
+            } else {
+                prop.kind = Kind::Scalar(value);
+                prop.encoding.array_item_size = None;
+            }
             prop.prop_type = prop_type;
             return;
         }
@@ -285,6 +335,10 @@ fn set_array_values(file: &mut PropertyFile, hash: u32, prop_type: PropType, val
         if prop.hash == hash {
             prop.kind = Kind::Array(values);
             prop.prop_type = prop_type;
+            // Source packages occasionally contain non-canonical array strides
+            // (for example Text with item_size=520). The values we emit use the
+            // canonical fixed stride required by encode_canonical.
+            prop.encoding.array_item_size = fixed_array_item_size(prop_type);
             return;
         }
     }
@@ -378,6 +432,13 @@ pub async fn game_property_copy(
         }
         if let Some(id) = request.unlock_string_id {
             set_scalar_text(&mut file, 0x0DE8_4DDC, 0x4B54_417A, id);
+        } else {
+            // A copied source can carry an inherited unlock pointer even when
+            // the edited menu entry has no unlock text. Keeping that stale
+            // pointer produces a visible `***` in game when its source locale
+            // item is unavailable.
+            remove_property(&mut file, 0x0DE8_4DDC);
+            remove_property(&mut file, 0x0DE8_4DD3);
         }
         // 排序
         if let Some(pos) = request.position {
@@ -409,6 +470,11 @@ pub async fn game_property_copy(
                 }),
             );
         }
+        // Existing game files contain legacy text arrays whose metadata says
+        // item_size=520 even though each parsed Text value is 8 bytes. The
+        // copied file must be normalized as a whole, including untouched
+        // statistics/tooltip arrays, before canonical encoding.
+        normalize_array_item_sizes(&mut file);
         let key_count = file.values.len();
         let bytes = file
             .encode_canonical()
@@ -420,4 +486,59 @@ pub async fn game_property_copy(
     })
     .await
     .map_err(|e| crate::activity::CommandError::internal(e.to_string()))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sc_properties::{PropertyEncoding, Text};
+
+    #[test]
+    fn overriding_noncanonical_text_array_normalizes_item_size() {
+        let mut file = PropertyFile {
+            values: vec![Property {
+                hash: 0x0A09_F5FA,
+                prop_type: PropType::Text,
+                kind: Kind::Array(vec![Value::Text(Text {
+                    table_id: 0,
+                    instance_id: 0,
+                })]),
+                encoding: PropertyEncoding {
+                    flags: 0x30,
+                    array_item_size: Some(520),
+                },
+            }],
+            claimed_count: 1,
+        };
+
+        set_scalar_text(&mut file, 0x0A09_F5FA, 0x6C96_9DEE, 0x1234_5678);
+        let encoded = file.encode_canonical().expect("canonical text array");
+        let reparsed = PropertyFile::parse(&encoded).expect("reparse canonical text array");
+        let property = reparsed.get(0x0A09_F5FA).expect("title property");
+        assert_eq!(property.encoding.array_item_size, Some(8));
+        assert!(matches!(property.kind, Kind::Array(ref values) if values.len() == 1));
+    }
+
+    #[test]
+    fn untouched_noncanonical_text_array_is_normalized_before_copy_encoding() {
+        let mut file = PropertyFile {
+            values: vec![Property {
+                hash: 0x0E94_855A,
+                prop_type: PropType::Text,
+                kind: Kind::Array(vec![Value::Text(Text {
+                    table_id: 0x50AA_0BEA,
+                    instance_id: 1,
+                })]),
+                encoding: PropertyEncoding {
+                    flags: 0x30,
+                    array_item_size: Some(520),
+                },
+            }],
+            claimed_count: 1,
+        };
+
+        normalize_array_item_sizes(&mut file);
+        assert!(file.encode_canonical().is_ok());
+        assert_eq!(file.values[0].encoding.array_item_size, Some(8));
+    }
 }

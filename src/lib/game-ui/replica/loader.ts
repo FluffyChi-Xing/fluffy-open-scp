@@ -167,6 +167,14 @@ async function resolveToolImages(data: ReplicaData): Promise<void> {
           tool.preview = url;
           tool.previewTgi = { type: ICON_PNG_TYPE, group: ICON_PNG_GROUP, instance };
         }
+      } else if (tool.preview && !tool.preview.startsWith("data:")) {
+        // Some containers (notably the Region RCI tools) use named layout
+        // assets such as RCI_Residential_default.png instead of the
+        // tool_icon_<instance>.png convention. Resolve those paths through
+        // the same ResourceMan lookup used by palette layout images so the
+        // editor and the generated menu both receive the real game bitmap.
+        const url = await gameAssetDataUrl(tool.preview);
+        if (url) tool.preview = url;
       }
       const marquee = /tool_([0-9A-Fa-f]{8})\.jpg$/.exec(tool.marquee ?? "");
       if (marquee) {
