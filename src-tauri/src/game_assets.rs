@@ -107,12 +107,26 @@ fn cached_index(game_data: &Path) -> std::sync::MutexGuard<'static, Option<Asset
     guard
 }
 
+/// 直接按 TGI 查询（菜单条目的图标/大图用完整 TGI 引用，不走路径哈希）。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTgi {
+    pub r#type: u32,
+    pub instance: u32,
+    /// 可选组过滤；缺省 = 不限组（group 0 优先）。
+    pub group: Option<u32>,
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameAssetRequest {
-    /// 布局树里的原始图片路径，如
+    /// 布局树里的原始图片路径（路径寻址），如
     /// `Graphics/ToolIcons/RCI_Residential_default.png`。
-    pub path: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    /// 菜单条目的图标/大图走完整 TGI（toolIconKey/marquee 键的引用目标）。
+    #[serde(default)]
+    pub tgi: Option<GameTgi>,
 }
 
 #[tauri::command]
@@ -136,31 +150,57 @@ pub async fn game_asset(
             "Game data directory is unavailable",
         ));
     }
-    let stem = stem_of(&request.path).to_string();
-    let instance = fnv1_lower(&stem);
+    let (instance, want_type, want_group) = match (&request.tgi, &request.path) {
+        (Some(tgi), _) => (tgi.instance, Some(tgi.r#type), tgi.group),
+        (None, Some(path)) => (fnv1_lower(stem_of(path)), None, Some(0)),
+        _ => {
+            return Err(CommandError::new(
+                "game_asset_bad_request",
+                "provide either path or tgi",
+            ))
+        }
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = cached_index(&game_data);
         let Some(index) = guard.as_ref() else {
             return Err(CommandError::internal("game asset index unavailable"));
         };
-        let candidates = index.entries.get(&instance).ok_or_else(|| {
+        let missing = || {
             CommandError::new(
                 "game_asset_missing",
-                format!("no package resource for stem {stem:?}"),
+                format!("no package resource for instance {instance:08X}"),
             )
-        })?;
-        for (path, entry) in candidates {
-            let Ok(package) = dbpf::Package::open(path) else { continue };
-            let Ok(data) = package.read(entry) else { continue };
+        };
+        let candidates = index.entries.get(&instance).ok_or_else(missing)?;
+        let candidates: Vec<_> = candidates
+            .iter()
+            .filter(|(_, entry)| want_type.map_or(true, |t| entry.id.type_id == t))
+            .filter(|(_, entry)| {
+                want_group.map_or(true, |g| {
+                    entry.id.group == g || (g != 0 && entry.id.group != 0)
+                })
+            })
+            .collect();
+        let read_candidate = |(path, entry): (&PathBuf, &dbpf::IndexEntry)| -> Option<GameAssetData> {
+            let Ok(package) = dbpf::Package::open(path) else { return None };
+            let Ok(data) = package.read(entry) else { return None };
             let mime = if entry.id.type_id == TYPE_PNG { "image/png" } else { "image/jpeg" };
-            return Ok(GameAssetData {
+            Some(GameAssetData {
                 data_base64: base64::engine::general_purpose::STANDARD.encode(&data),
                 mime: mime.into(),
-            });
+            })
+        };
+        let from_ref = index.entries.get(&instance).ok_or_else(missing)?;
+        let from_filtered = candidates.iter().map(|(p, e)| (p, e));
+        let from_all = from_ref.iter().map(|(p, e)| (p, e));
+        for candidate in from_filtered.chain(from_all) {
+            if let Some(result) = read_candidate(candidate) {
+                return Ok(result);
+            }
         }
         Err(CommandError::new(
             "game_asset_missing",
-            format!("unreadable resource for stem {stem:?}"),
+            format!("unreadable resource for instance {instance:08X}"),
         ))
     })
     .await

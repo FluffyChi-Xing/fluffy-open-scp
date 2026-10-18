@@ -88,6 +88,8 @@ fn key_instances(file: &PropertyFile, hash: u32) -> Vec<u32> {
 
 struct MenuRow {
     name: Option<u32>,
+    /// 建筑子菜单容器（Unit 条目 0x0AFE27CA 的目标；有子菜单的建筑才有）。
+    addon_container: Option<u32>,
     /// 完整标题 Text 引用（表 id + 字符串 id；DLC 用独立表）。
     title: Option<(u32, u32)>,
     /// 完整描述 Text 引用。
@@ -183,6 +185,7 @@ fn main() {
                         piece: key_instance(&file, HASH_PIECE),
                         menu_path_cost: num_of(&file, HASH_PATH_COST),
                         icon_key: key_instance(&file, HASH_TOOL_ICON_KEY),
+                        addon_container: None,
                         cats: key_instances(&file, HASH_UI_CATEGORIES),
                         pos: num_of(&file, HASH_UI_POSITION),
                     },
@@ -222,6 +225,15 @@ fn main() {
                         key_instance(&file, HASH_ADDON_CONTAINER),
                     ),
                 );
+            }
+        }
+    }
+
+    // 二遍：menuUnit → Unit 条目 0x0AFE27CA = 建筑子菜单容器
+    for row in menus.values_mut() {
+        if let Some(unit) = row.menu_unit {
+            if let Some((_, _, _, container)) = units.get(&unit) {
+                row.addon_container = *container;
             }
         }
     }
@@ -402,17 +414,27 @@ fn main() {
         if let Some(p) = row.piece {
             entry.insert("piece".into(), json!(format!("{p:08X}")));
         }
+        if let Some(c) = row.addon_container {
+            entry.insert("addonContainer".into(), json!(format!("{c:08X}")));
+        }
         costs.insert(format!("{menu:08X}"), json!(entry));
     }
     let submenus_json: serde_json::Map<String, serde_json::Value> = submenus
         .into_iter()
         .map(|(menu, items)| (format!("{menu:08X}"), json!(items)))
         .collect();
+    let submenu_containers: serde_json::Map<String, serde_json::Value> = menus
+        .iter()
+        .filter_map(|(menu, row)| {
+            row.addon_container.map(|c| (format!("{menu:08X}"), json!(format!("{c:08X}"))))
+        })
+        .collect();
     let payload = json!({
         "format": "openscp-menu-costs/3",
         "source": "paths: piece 0x0E76A7E2 (cToolPathPlacer); plop: menuUnit 0x0975695F -> EcoGame 40E0C000 0x0A8A41DA/0x09AE19D7 (cToolPlop); submenus: unit children 0x07E0AD0A -> menuUnit reverse; fallback: config 0x0C8EE92F by 6C969DEE name",
         "costs": costs,
         "submenus": submenus_json,
+        "submenuContainers": submenu_containers,
     });
     std::fs::write(&out_json, serde_json::to_string_pretty(&payload).unwrap() + "
 ")
