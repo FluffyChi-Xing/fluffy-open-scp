@@ -45,7 +45,15 @@ const editedCount = computed(
 );
 /** schema diff 预览 sheet */
 const showDiff = ref(false);
-const diffText = computed(() => store.schemaDiffText());
+/** 打开 diff sheet 时才计算（避免每次编辑触发大 JSON 序列化与行级比对）。 */
+const diffBase = ref("");
+const diffCurrent = ref("");
+watch(showDiff, (open) => {
+  if (open) {
+    diffBase.value = store.schemaDocument(false);
+    diffCurrent.value = store.schemaDocument(true);
+  }
+});
 
 /** bytes → base64（Tauri 命令传输用）。 */
 function toBase64(bytes: Uint8Array): string {
@@ -375,7 +383,10 @@ function removeDraft(): void {
     >
       <div class="diff-body">
         <FCode
-          :code="diffText || t('studio.workbench.diffEmpty')"
+          :base-code="diffBase"
+          :code="diffCurrent"
+          lang="json"
+          line-numbers
           :copy-label="t('code.copy')"
           :copied-label="t('code.copied')"
           :collapse-label="t('code.collapse')"
@@ -479,10 +490,15 @@ function removeDraft(): void {
   opacity: 0.45;
 }
 .diff-body {
-  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 220px);
+  min-height: 0;
+  padding: 12px 16px 16px;
 }
 .diff-body :deep(.f-code) {
-  max-height: 60vh;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 .view-switch {

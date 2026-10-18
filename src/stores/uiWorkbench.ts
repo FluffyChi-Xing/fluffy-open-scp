@@ -20,7 +20,6 @@ import {
 } from "@/lib/game-ui/menu-export";
 import { loadReplicaData } from "@/lib/game-ui/replica/loader";
 import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "@/lib/game-ui/replica/types";
-import { diffLines, formatDiff } from "@/lib/json-diff";
 import { i18n } from "@/locales";
 
 export type UiWorkbenchView = "city" | "region" | "development";
@@ -622,24 +621,6 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return schemaDocument(true);
   }
 
-  /** 基础 → 当前覆盖 的 schema JSON 行级 diff（同一序列化器，真 JSON 语义：
-   * 新增菜单/条目/字段变化都以 JSON 片段呈现，便于快速核对加了什么）。 */
-  function schemaDiffText(): string {
-    const base = schemaDocument(false).split("\n");
-    const current = schemaDocument(true).split("\n");
-    const lines = diffLines(base, current);
-    if (lines.every((line) => line.kind === " ")) return "";
-    return formatDiff(lines);
-  }
-
-  /** 单条菜单条目 → .property 资源字节（Sheet 内按条目导出）。 */
-  /** 装配游戏覆盖包（.package）：内存编辑 → diff 级覆盖资源
-   * （菜单条目 property + locale 表 diff + 裁切图标/大图）。
-   * 数据源 = allEffectiveEntries()（与面板/舞台同一有效模型）：
-   * 编辑值、新增条目会真正进入包内，被移除的条目不出现。
-   * 大图/图标键只在确有图时写——用户移除大图后不再产生悬空引用；
-   * 引用基础原图时（复刻资产路径）按路径反推原资源 instance，拷贝条目
-   * 与原条目共享同一份图。造价/预算编辑不在包内（GlassBox 模拟侧）→ warnings。 */
   function buildGameExport(): {
     bytes: Uint8Array;
     entryCount: number;
@@ -816,7 +797,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     removeItem,
     exportOverlay,
     exportSchema,
-    schemaDiffText,
+    schemaDocument,
     buildGameExport,
     buildEntryProperty,
     resetAll,
