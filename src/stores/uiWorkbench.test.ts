@@ -196,7 +196,7 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     expect(store.membershipsOf(copyId).map((menu) => menu.id)).toEqual(["CAT_PARK"]);
   });
 
-  it("buildGameExport 基于有效视图：只导编辑/新增条目，归属容器为真实 id", () => {
+  it("buildGameExport 基于有效视图：只导编辑/新增条目，归属容器为真实 id", async () => {
     const store = useUiWorkbenchStore();
     const data = replicaFixture();
     // 真实容器 id（AC12C904 道路）+ 真实条目大图资产
@@ -216,29 +216,29 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     store.enterMenu("AC12C904");
 
     // 无编辑 → 不导出任何条目
-    expect(store.buildGameExport().entryCount).toBe(0);
+    expect(await (await store.buildGameExport()).entryCount).toBe(0);
 
     // 编辑一个条目（含造价）→ 只导出它；造价警告说明 GlassBox 侧不进包
     store.updateItem("AC12C904", "7DD8A627", { label: "我的泥路", cost: "20" });
-    const result = store.buildGameExport();
+    const result = await store.buildGameExport();
     expect(result.entryCount).toBe(1);
     expect(result.warnings.join()).toContain("GlassBox");
 
     // 移除大图 → 仍然导出（其它编辑保留），但不再有大图悬空引用
     store.updateItem("AC12C904", "7DD8A627", { marquee: null });
-    expect(store.buildGameExport().entryCount).toBe(1);
+    expect(await (await store.buildGameExport()).entryCount).toBe(1);
 
     // 拷贝到大学容器（9D2EF585，真实 id）→ 新条目以该容器为归属导出
     const copy = store.duplicateToMenu("AC12C904", "7DD8A627", "9D2EF585");
     expect(copy).not.toBeNull();
-    const withCopy = store.buildGameExport();
+    const withCopy = await store.buildGameExport();
     expect(withCopy.entryCount).toBe(2);
 
     // 非游戏容器（自定义分类）里的新增条目给出可读警告且不进包
     store.addCategory("我的菜单");
     const customId = store.categories.at(-1)?.id ?? "";
     store.addItem(customId, "自定义条目", null);
-    const withCustom = store.buildGameExport();
+    const withCustom = await store.buildGameExport();
     expect(withCustom.entryCount).toBe(2);
     expect(withCustom.warnings.join()).toContain("不是游戏容器 instance");
   });

@@ -9,17 +9,30 @@ import {
   type WorkbenchTool,
 } from "@/lib/game-ui/workbench";
 import {
+  buildLocaleResource,
   buildMenuExport,
   buildMenuPropertyResource,
   dataUrlToBytes,
   iconInstanceFromAsset,
+  ICON_GROUP,
+  ICON_TYPE,
+  LOCALE_GROUP,
   LOCALE_TABLES,
+  LOCALE_TYPE,
   marqueeInstanceFromAsset,
+  MARQUEE_TYPE,
+  MENU_GROUP,
+  MENU_PROP_TYPE,
+  writeUncompressedOverlay,
+  type DbpfEntry,
   type LocaleString,
   type MenuExportEntry,
 } from "@/lib/game-ui/menu-export";
+import { gamePropertyCopy } from "@/lib/game-assets";
+import { TauriUnavailableError } from "@/api/tauri";
 import { loadReplicaData } from "@/lib/game-ui/replica/loader";
 import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "@/lib/game-ui/replica/types";
+import { isTauri } from "@/api";
 import { i18n } from "@/locales";
 
 export type UiWorkbenchView = "city" | "region" | "development";
@@ -87,6 +100,9 @@ export function replicaToolToWorkbench(tool: ReplicaTool, index: number): Workbe
     upkeep: tool.upkeep,
     locked: tool.locked,
     source: tool.label ? "locale" : "unresolved",
+    sourceInstance: /^[0-9A-F]{8}$/.test(tool.instance) ? tool.instance : undefined,
+    previewTgi: tool.previewTgi,
+    marqueeTgi: tool.marqueeTgi,
   };
 }
 
@@ -417,7 +433,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       copyId = copyToolId(itemId, targetMenuId, ++salt);
     }
     const maxPos = existing.reduce((max, tool) => Math.max(max, tool.pos), 0);
-    const copy: WorkbenchTool = { ...snapshot, id: copyId, pos: maxPos + 10 };
+    const copy: WorkbenchTool = {
+      ...snapshot,
+      id: copyId,
+      pos: maxPos + 10,
+      sourceInstance: /^[0-9A-F]{8}$/.test(snapshot.id) ? snapshot.id : undefined,
+    };
     added.value = { ...added.value, [targetMenuId]: [...targetAdditions, copy] };
     return { menuId: targetMenuId, tool: copy, isNew: true };
   }
@@ -471,7 +492,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       copyId = copyToolId(itemId, containerHex, ++salt);
     }
     const maxPos = targetAdditions.reduce((max, tool) => Math.max(max, tool.pos), 0);
-    const copy: WorkbenchTool = { ...snapshot, id: copyId, pos: maxPos + 10 };
+    const copy: WorkbenchTool = {
+      ...snapshot,
+      id: copyId,
+      pos: maxPos + 10,
+      sourceInstance: /^[0-9A-F]{8}$/.test(snapshot.id) ? snapshot.id : undefined,
+    };
     added.value = { ...added.value, [containerHex]: [...targetAdditions, copy] };
     return { menuId: containerHex, tool: copy, isNew: true };
   }
@@ -496,7 +522,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       copyId = copyToolId(snapshot.id, target.id, ++salt);
     }
     const maxPos = targetItems.reduce((max, tool) => Math.max(max, tool.pos), 0);
-    const copy: WorkbenchTool = { ...snapshot, id: copyId, pos: maxPos + 10 };
+    const copy: WorkbenchTool = {
+      ...snapshot,
+      id: copyId,
+      pos: maxPos + 10,
+      sourceInstance: /^[0-9A-F]{8}$/.test(snapshot.id) ? snapshot.id : undefined,
+    };
     added.value = { ...added.value, [target.id]: [...(added.value[target.id] ?? []), copy] };
     return { menuId: target.id, tool: copy, isNew: true };
   }
@@ -621,12 +652,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return schemaDocument(true);
   }
 
-  function buildGameExport(): {
+  async function buildGameExport(): Promise<{
     bytes: Uint8Array;
     entryCount: number;
     localeCount: number;
     warnings: string[];
-  } {
+  }> {
     const data = replica.value;
     const entries: MenuExportEntry[] = [];
     const locale: LocaleString[] = [];
@@ -704,12 +735,21 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         }
         entries.push({
           instance,
+          sourceInstance: /^[0-9A-F]{8}$/.test(tool.sourceInstance ?? "")
+            ? Number.parseInt(tool.sourceInstance!, 16)
+            : undefined,
           uiCategories,
           uiPosition: tool.pos,
           titleStringId,
           descStringId,
           unlockStringId,
           iconInstance,
+          iconTgi: iconInstance != null && croppedIcon == null
+            ? { type: 0x2f7d0004, group: 0x40e02400, instance: iconInstance }
+            : undefined,
+          marqueeTgi: preservedMarquee != null
+            ? { type: 0x3f8662ea, group: 0, instance: preservedMarquee }
+            : undefined,
           iconPng: croppedIcon ? dataUrlToBytes(croppedIcon) : undefined,
           marqueeInstance,
           marqueeJpg: croppedMarquee ? dataUrlToBytes(croppedMarquee) : undefined,
@@ -726,8 +766,95 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         warnings.push(`「${label}」中移除的 ${id}：覆盖包无法表达整删除，游戏内将保留原条目`);
       }
     }
-    const result = buildMenuExport({ entries, locale });
-    return { bytes: result.package, entryCount: entries.length, localeCount: locale.length, warnings };
+    // 全量 property 复制：有源 instance 的条目走后端深拷贝（家族键随源条目
+    // 保留），失败/不可用时回退合成 property。先发全部请求（并行），再按
+    // instance 归位 property 资源条目。
+    const copyRequests = entries.filter((entry) => entry.sourceInstance != null);
+    const copiedProperties = new Map<number, Uint8Array>();
+    const tauriUnavailable = !isTauri();
+    if (copyRequests.length > 0 && !tauriUnavailable) {
+      const results = await Promise.allSettled(
+        copyRequests.map((entry) =>
+          gamePropertyCopy({
+            sourceInstance: entry.sourceInstance!,
+            newInstance: entry.instance,
+            uiCategories: entry.uiCategories,
+            titleStringId: entry.titleStringId,
+            descStringId: entry.descStringId,
+            unlockStringId: entry.unlockStringId,
+            position: entry.uiPosition,
+            iconTgi: entry.iconTgi,
+            marqueeTgi: entry.marqueeTgi,
+          }),
+        ),
+      );
+      for (const [index, result] of results.entries()) {
+        const entry = copyRequests[index];
+        if (result.status === "fulfilled" && result.value) {
+          copiedProperties.set(
+            entry.instance,
+            Uint8Array.from(atob(result.value.dataBase64), (c) => c.charCodeAt(0)),
+          );
+        } else {
+          warnings.push(
+            `${entry.titleStringId ?? entry.instance.toString(16)}：全量 property 复制失败，回退合成条目`,
+          );
+        }
+      }
+    }
+
+    // 合成 property 仅用于没有源 property 的条目（新 FNV 条目/复制失败回退）
+    const overlayEntries: DbpfEntry[] = [];
+    for (const entry of entries) {
+      const copiedBytes = copiedProperties.get(entry.instance);
+      if (copiedBytes) {
+        overlayEntries.push({
+          type: MENU_PROP_TYPE,
+          group: MENU_GROUP,
+          instance: entry.instance,
+          data: copiedBytes,
+        });
+        continue;
+      }
+      overlayEntries.push({
+        type: MENU_PROP_TYPE,
+        group: MENU_GROUP,
+        instance: entry.instance,
+        data: buildMenuPropertyResource(entry),
+      });
+    }
+    // 图标/大图资源：仅用户替换过图（无源 TGI 的 dataURL）才随包
+    for (const entry of entries) {
+      if (entry.iconPng && entry.iconInstance != null) {
+        overlayEntries.push({
+          type: ICON_TYPE,
+          group: ICON_GROUP,
+          instance: entry.iconInstance,
+          data: entry.iconPng,
+        });
+      }
+      if (entry.marqueeJpg && entry.marqueeInstance != null) {
+        overlayEntries.push({
+          type: MARQUEE_TYPE,
+          group: 0,
+          instance: entry.marqueeInstance,
+          data: entry.marqueeJpg,
+        });
+      }
+    }
+    for (const tableId of new Set(locale.map((s) => s.table))) {
+      overlayEntries.push({
+        type: LOCALE_TYPE,
+        group: LOCALE_GROUP,
+        instance: tableId,
+        data: buildLocaleResource(
+          locale.filter((s) => s.table === tableId),
+          tableId,
+        ),
+      });
+    }
+    const bytes = writeUncompressedOverlay(overlayEntries);
+    return { bytes, entryCount: entries.length, localeCount: locale.length, warnings };
   }
 
 

@@ -70,6 +70,11 @@ export interface WorkbenchTool {
   locked?: boolean;
   /** 名称来源：locale = 游戏字符串表；unresolved = 尚无译名。 */
   source: "locale" | "unresolved" | "preset";
+  /** 源条目的游戏 instance（真实条目才有）——导出时用于全量 property 复制。 */
+  sourceInstance?: string;
+  /** 图标/大图在玩家安装包中的 TGI（运行时解析产物；用户替换图片后清除）。 */
+  previewTgi?: { type: number; group: number; instance: number };
+  marqueeTgi?: { type: number; group: number; instance: number };
 }
 
 export interface WorkbenchCategory {

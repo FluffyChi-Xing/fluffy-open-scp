@@ -17,6 +17,9 @@
 import { encodePropertyFile, type PropEntry } from "./prop-format";
 import { writeUncompressedOverlay, type DbpfEntry } from "./dbpf-writer";
 
+export { writeUncompressedOverlay };
+export type { DbpfEntry };
+
 export const MENU_PROP_TYPE = 0x00b1b104;
 export const MENU_GROUP = 0x09878a01;
 export const ICON_TYPE = 0x2f7d0004;
@@ -55,6 +58,12 @@ export const LOCALE_TABLES = {
 export interface MenuExportEntry {
   /** 菜单条目 instance（u32）。新条目由工作台生成。 */
   instance: number;
+  /** 源条目 instance（真实条目复制时用于后端全量 property 复制）。 */
+  sourceInstance?: number;
+  /** 用户替换图标时随包的图标资源 TGI（写入 toolIconKey/iconNormal）。 */
+  iconTgi?: { type: number; group: number; instance: number };
+  /** 用户替换大图时随包的大图资源 TGI（写入 marquee 键）。 */
+  marqueeTgi?: { type: number; group: number; instance: number };
   /** 归属的一级分类 instance 列表（0x0DB9FC63）。 */
   uiCategories: number[];
   uiPosition: number;

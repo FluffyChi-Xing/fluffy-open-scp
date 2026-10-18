@@ -163,13 +163,19 @@ async function resolveToolImages(data: ReplicaData): Promise<void> {
         const url =
           (await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance, ICON_PNG_GROUP)) ??
           (await gameAssetTgiDataUrl(ICON_PNG_TYPE, instance));
-        if (url) tool.preview = url;
+        if (url) {
+          tool.preview = url;
+          tool.previewTgi = { type: ICON_PNG_TYPE, group: ICON_PNG_GROUP, instance };
+        }
       }
       const marquee = /tool_([0-9A-Fa-f]{8})\.jpg$/.exec(tool.marquee ?? "");
       if (marquee) {
         const instance = Number.parseInt(marquee[1], 16);
         const url = await gameAssetTgiDataUrl(MARQUEE_JPG_TYPE, instance);
-        if (url) tool.marquee = url;
+        if (url) {
+          tool.marquee = url;
+          tool.marqueeTgi = { type: MARQUEE_JPG_TYPE, group: 0, instance };
+        }
       }
     }
   }

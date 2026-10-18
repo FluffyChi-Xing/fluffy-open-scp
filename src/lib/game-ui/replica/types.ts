@@ -108,6 +108,10 @@ export interface ReplicaTool {
   preview: string | null;
   marquee: string | null;
   locked: boolean;
+  /** 预览图在玩家安装包中的 TGI（运行时解析产物；用户替换图片后清除）。 */
+  previewTgi?: { type: number; group: number; instance: number };
+  /** 大图在玩家安装包中的 TGI。 */
+  marqueeTgi?: { type: number; group: number; instance: number };
 }
 
 export interface ReplicaModel {
@@ -133,6 +137,8 @@ export interface ReplicaSubmenuItem {
   desc?: string;
   preview?: string | null;
   marquee?: string | null;
+  previewTgi?: { type: number; group: number; instance: number };
+  marqueeTgi?: { type: number; group: number; instance: number };
   cost?: number | null;
   maintenance?: number | null;
 }

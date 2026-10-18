@@ -47,3 +47,30 @@ export async function gameAssetDataUrl(refPath: string): Promise<string | null> 
     return null;
   }
 }
+
+export interface PropertyCopyRequest {
+  sourceInstance: number;
+  newInstance: number;
+  uiCategories: number[];
+  titleStringId?: number;
+  descStringId?: number;
+  unlockStringId?: number;
+  position?: number;
+  iconTgi?: { type: number; group: number; instance: number };
+  marqueeTgi?: { type: number; group: number; instance: number };
+}
+
+/** 菜单条目全量 property 深拷贝（家族键随源条目保留），返回编码后的
+ * property 资源字节（base64）。后端读玩家安装包里的源条目并做受控变换。 */
+export async function gamePropertyCopy(
+  request: PropertyCopyRequest,
+): Promise<{ dataBase64: string; keyCount: number } | null> {
+  try {
+    return await command<{ dataBase64: string; keyCount: number }>("game_property_copy", {
+      request,
+    });
+  } catch (error) {
+    if (error instanceof TauriUnavailableError) return null;
+    return null;
+  }
+}

@@ -64,7 +64,7 @@ function toBase64(bytes: Uint8Array): string {
 /** 编译 .package 并注入游戏 Packages 目录；非 Tauri 环境回退为下载。
  * 反馈全部走 toast（项目禁用原生弹窗）。 */
 async function onBuildInject(): Promise<void> {
-  const result = store.buildGameExport();
+  const result = await store.buildGameExport();
   if (result.entryCount === 0) {
     toast.warning(t("studio.workbench.buildEmpty"));
     return;

@@ -66,7 +66,7 @@ async function onExport(): Promise<void> {
 const toast = useToast();
 
 async function onBuild(): Promise<void> {
-  const result = store.buildGameExport();
+  const result = await store.buildGameExport();
   if (result.entryCount === 0) {
     toast.warning(t("studio.workbench.buildEmpty"));
     return;
