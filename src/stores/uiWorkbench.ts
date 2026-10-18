@@ -577,37 +577,110 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     );
   }
 
-  function exportSchema(): string {
+  /** schema JSON 文档：includeOverrides=false = 基础数据（无编辑/新增/移除），
+   * true = 当前有效视图。diff 与导出共用同一序列化器。 */
+  function schemaDocument(includeOverrides: boolean): string {
+    const menus = (includeOverrides
+      ? allEffectiveEntries()
+      : categories.value.map((category) => ({
+          category,
+          entries: category.items.map((tool) => ({ tool, isNew: false })),
+        }))
+    ).map(({ category, entries }) => ({
+      id: category.id,
+      label: category.label,
+      icon: category.icon,
+      items: entries.map(({ tool }) => ({
+        id: tool.id,
+        label: tool.label,
+        position: tool.pos,
+        icon: tool.icon,
+        preview: tool.preview ?? null,
+        marquee: tool.marquee ?? null,
+        description: tool.desc ?? "",
+        unlock: tool.unlock ?? "",
+        stats: tool.stats ?? [],
+        cost: tool.cost ?? null,
+        upkeep: tool.upkeep ?? null,
+        locked: tool.locked ?? false,
+      })),
+    }));
     return JSON.stringify(
       {
         schemaVersion: 1,
         source: "openscp-ui-workbench",
         activeView: viewMode.value,
-        menus: allEffectiveEntries().map(({ category, entries }) => ({
-          id: category.id,
-          label: category.label,
-          icon: category.icon,
-          items: entries.map(({ tool }) => ({
-            id: tool.id,
-            label: tool.label,
-            position: tool.pos,
-            icon: tool.icon,
-            preview: tool.preview ?? null,
-            marquee: tool.marquee ?? null,
-            description: tool.desc ?? "",
-            unlock: tool.unlock ?? "",
-            stats: tool.stats ?? [],
-            cost: tool.cost ?? null,
-            upkeep: tool.upkeep ?? null,
-            locked: tool.locked ?? false,
-          })),
-        })),
+        menus,
       },
       null,
       2,
     );
   }
 
+  function exportSchema(): string {
+    return schemaDocument(true);
+  }
+
+  /** 基础 → 当前覆盖 的菜单 schema 文本 diff（工具条 diff 预览用）。
+   * 与 exportSchema/buildGameExport 同一有效模型，只列出有变化的分类与条目。 */
+  function schemaDiffText(): string {
+    const lines: string[] = [];
+    for (const { category, entries } of allEffectiveEntries()) {
+      const baseById = new Map(category.items.map((tool) => [tool.id, tool]));
+      const catLines: string[] = [];
+      for (const entry of entries) {
+        const tool = entry.tool;
+        const base = baseById.get(tool.id);
+        if (!base) {
+          catLines.push(`  + ${tool.label || tool.id} (${tool.id}) 新增`);
+          continue;
+        }
+        const fields: string[] = [];
+        const cmp = (name: string, a: unknown, b: unknown): void => {
+          const sa = a == null || a === "" ? "—" : String(a);
+          const sb = b == null || b === "" ? "—" : String(b);
+          if (sa !== sb) fields.push(`${name}: ${sb} → ${sa}`);
+        };
+        cmp("名称", tool.label, base.label);
+        cmp("排序", tool.pos, base.pos);
+        cmp("造价", tool.cost ?? null, base.cost ?? null);
+        cmp("维护", tool.upkeep ?? null, base.upkeep ?? null);
+        if ((tool.desc ?? "") !== (base.desc ?? "")) fields.push("描述: 已修改");
+        if ((tool.unlock ?? "") !== (base.unlock ?? "")) fields.push("解锁: 已修改");
+        if ((tool.locked ?? false) !== (base.locked ?? false)) {
+          fields.push(`锁定: ${(base.locked ?? false) ? "开" : "关"} → ${(tool.locked ?? false) ? "开" : "关"}`);
+        }
+        const image = (value: string | null | undefined): string =>
+          value == null ? "已移除" : value.startsWith("data:") ? "新图" : value;
+        if ((tool.preview ?? null) !== (base.preview ?? null)) {
+          fields.push(`槽位图标: ${image(tool.preview)}`);
+        }
+        if ((tool.marquee ?? null) !== (base.marquee ?? null)) {
+          fields.push(`大图: ${image(tool.marquee)}`);
+        }
+        if (JSON.stringify(tool.stats ?? []) !== JSON.stringify(base.stats ?? [])) {
+          fields.push("统计行: 已修改");
+        }
+        if (fields.length > 0) {
+          catLines.push(`  ~ ${base.label || tool.id} (${tool.id})`);
+          for (const field of fields) catLines.push(`      ${field}`);
+        }
+      }
+      for (const id of removed.value[category.id] ?? []) {
+        const base = baseById.get(id);
+        if (base && !entries.some((entry) => entry.tool.id === id)) {
+          catLines.push(`  - ${base.label || id} (${id}) 移除`);
+        }
+      }
+      if (catLines.length > 0) {
+        lines.push(`[${category.label} ${category.id}]`);
+        lines.push(...catLines);
+      }
+    }
+    return lines.join("\n");
+  }
+
+  /** 单条菜单条目 → .property 资源字节（Sheet 内按条目导出）。 */
   /** 装配游戏覆盖包（.package）：内存编辑 → diff 级覆盖资源
    * （菜单条目 property + locale 表 diff + 裁切图标/大图）。
    * 数据源 = allEffectiveEntries()（与面板/舞台同一有效模型）：
@@ -724,66 +797,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return { bytes: result.package, entryCount: entries.length, localeCount: locale.length, warnings };
   }
 
-  /** 基础 → 当前覆盖 的菜单 schema 文本 diff（工具条 diff 预览用）。
-   * 与 exportSchema/buildGameExport 同一有效模型，只列出有变化的分类与条目。 */
-  function schemaDiffText(): string {
-    const lines: string[] = [];
-    for (const { category, entries } of allEffectiveEntries()) {
-      const baseById = new Map(category.items.map((tool) => [tool.id, tool]));
-      const catLines: string[] = [];
-      for (const entry of entries) {
-        const tool = entry.tool;
-        const base = baseById.get(tool.id);
-        if (!base) {
-          catLines.push(`  + ${tool.label || tool.id} (${tool.id}) 新增`);
-          continue;
-        }
-        const fields: string[] = [];
-        const cmp = (name: string, a: unknown, b: unknown): void => {
-          const sa = a == null || a === "" ? "—" : String(a);
-          const sb = b == null || b === "" ? "—" : String(b);
-          if (sa !== sb) fields.push(`${name}: ${sb} → ${sa}`);
-        };
-        cmp("名称", tool.label, base.label);
-        cmp("排序", tool.pos, base.pos);
-        cmp("造价", tool.cost ?? null, base.cost ?? null);
-        cmp("维护", tool.upkeep ?? null, base.upkeep ?? null);
-        if ((tool.desc ?? "") !== (base.desc ?? "")) fields.push("描述: 已修改");
-        if ((tool.unlock ?? "") !== (base.unlock ?? "")) fields.push("解锁: 已修改");
-        if ((tool.locked ?? false) !== (base.locked ?? false)) {
-          fields.push(`锁定: ${(base.locked ?? false) ? "开" : "关"} → ${(tool.locked ?? false) ? "开" : "关"}`);
-        }
-        const image = (value: string | null | undefined): string =>
-          value == null ? "已移除" : value.startsWith("data:") ? "新图" : value;
-        if ((tool.preview ?? null) !== (base.preview ?? null)) {
-          fields.push(`槽位图标: ${image(tool.preview)}`);
-        }
-        if ((tool.marquee ?? null) !== (base.marquee ?? null)) {
-          fields.push(`大图: ${image(tool.marquee)}`);
-        }
-        if (JSON.stringify(tool.stats ?? []) !== JSON.stringify(base.stats ?? [])) {
-          fields.push("统计行: 已修改");
-        }
-        if (fields.length > 0) {
-          catLines.push(`  ~ ${base.label || tool.id} (${tool.id})`);
-          for (const field of fields) catLines.push(`      ${field}`);
-        }
-      }
-      for (const id of removed.value[category.id] ?? []) {
-        const base = baseById.get(id);
-        if (base && !entries.some((entry) => entry.tool.id === id)) {
-          catLines.push(`  - ${base.label || id} (${id}) 移除`);
-        }
-      }
-      if (catLines.length > 0) {
-        lines.push(`[${category.label} ${category.id}]`);
-        lines.push(...catLines);
-      }
-    }
-    return lines.join("\n");
-  }
 
-  /** 单条菜单条目 → .property 资源字节（Sheet 内按条目导出）。 */
   function buildEntryProperty(itemId: string): Uint8Array | null {
     const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
     const data = replica.value;
