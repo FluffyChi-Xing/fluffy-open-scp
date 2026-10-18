@@ -253,14 +253,14 @@ fn set_scalar_key(file: &mut PropertyFile, hash: u32, key: Value) {
 }
 
 fn set_scalar_text(file: &mut PropertyFile, hash: u32, table: u32, id: u32) {
-    set_scalar_value(
+    set_array_values(
         file,
         hash,
         PropType::Text,
-        Value::Text(sc_properties::Text {
+        vec![Value::Text(sc_properties::Text {
             table_id: table,
             instance_id: id,
-        }),
+        })],
     );
 }
 
@@ -320,16 +320,20 @@ pub async fn game_property_copy(
         let Some(index) = guard.as_ref() else {
             return Err(CommandError::internal("game asset index unavailable"));
         };
-        let candidates = index
-            .entries
-            .get(&source_instance)
-            .ok_or_else(|| {
-                CommandError::new(
-                    "game_property_missing",
-                    format!("source property 0x{source_instance:08X} not found"),
-                )
-            })?
-            .clone();
+        // 索引可能是在旧代码下构建的（缺少 property 类型）——找不到时重建一次
+        let candidates = match index.entries.get(&source_instance) {
+            Some(c) if c.iter().any(|(_, e)| e.id.type_id == TYPE_PROPERTY) => c.clone(),
+            _ => {
+                *guard = Some(build_index(&game_data));
+                let index = guard.as_ref().unwrap();
+                index.entries.get(&source_instance).ok_or_else(|| {
+                    CommandError::new(
+                        "game_property_missing",
+                        format!("source property 0x{source_instance:08X} not found"),
+                    )
+                })?.clone()
+            }
+        };
         let mut copied: Option<PropertyFile> = None;
         for (path, entry) in &candidates {
             if entry.id.type_id != TYPE_PROPERTY {
