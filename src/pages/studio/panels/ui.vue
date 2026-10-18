@@ -295,10 +295,6 @@ function removeDraft(): void {
         {{ t("studio.workbench.mechanism") }}
       </button>
       <div class="toolbar-spacer">
-        <button type="button" class="ghost-btn" :disabled="!editedCount" @click="showDiff = true">
-          <FIcon name="GitCompare" :size="13" aria-label="" />
-          {{ t("studio.workbench.schemaDiff") }}
-        </button>
         <button type="button" class="ghost-btn primary" :disabled="!editedCount" @click="onBuildInject">
           <FIcon name="Package" :size="13" aria-label="" />
           {{ t("studio.workbench.buildInject") }}
@@ -338,10 +334,21 @@ function removeDraft(): void {
           <FIcon name="ArrowLeft" :size="13" aria-label="" />
           {{ t('studio.workbench.backToParent') }}
         </button>
-        <p class="sheet-id">
-          {{ t("studio.workbench.sheetId") }}:
-          <code>{{ editingEntry.tool.id }}</code>
-        </p>
+        <div class="sheet-head-row">
+          <p class="sheet-id">
+            {{ t("studio.workbench.sheetId") }}:
+            <code>{{ editingEntry.tool.id }}</code>
+          </p>
+          <button
+            type="button"
+            class="ghost-btn"
+            :disabled="!editedCount"
+            @click="showDiff = true"
+          >
+            <FIcon name="GitCompare" :size="12" aria-label="" />
+            {{ t("studio.workbench.schemaDiff") }}
+          </button>
+        </div>
 
         <div class="sheet-scroll">
           <MenuSheetBody
@@ -491,12 +498,20 @@ function removeDraft(): void {
 }
 .diff-body {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  height: calc(100vh - 220px);
   min-height: 0;
   padding: 12px 16px 16px;
 }
 .diff-body :deep(.f-code) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.diff-body :deep(.f-code-body),
+.diff-body :deep(.f-code-diff) {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -598,6 +613,12 @@ function removeDraft(): void {
   padding-top: 12px;
 }
 
+.sheet-head-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
 .sheet-id {
   color: var(--muted-foreground);
   font-size: 11px;
