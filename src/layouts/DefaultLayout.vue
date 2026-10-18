@@ -311,8 +311,12 @@ watch(
   flex: none;
 }
 .content-frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   margin-inline: auto;
   max-width: 100%;
+  min-height: 0;
   padding: 36px clamp(20px, 4vw, 56px) 0;
   width: 100%;
 }
@@ -328,6 +332,10 @@ watch(
   width: 100%;
 }
 .route-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   min-width: 0;
 }
 .page-enter-active {

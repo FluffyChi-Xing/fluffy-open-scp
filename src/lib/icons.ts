@@ -164,6 +164,7 @@ export const iconAliases = {
   image: "Image",
   panelTop: "PanelTop",
   boxes: "Boxes",
+  house: "House",
   sticky: "StickyNote",
   history: "History",
   code: "CodeXml",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, useSlots, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FAlert from "@/components/ui/FAlert.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
@@ -9,6 +9,7 @@ import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FCode from "@/components/ui/FCode.vue";
 import type {
+  LotEditorSession,
   LotModelPayload,
   LotUnitDto,
   Tgi,
@@ -35,7 +36,17 @@ import { tauriApi } from "@/api";
 
 import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
-const props = defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null }>();
+const props = defineProps<{
+  packageId: number;
+  tgi: Tgi;
+  initialSchema?: Record<string, unknown> | null;
+  previewPayload?: LotModelPayload | null;
+  embedded?: boolean;
+  empty?: boolean;
+  /** 合成会话（程序化建筑）：前端构造的 session + 模型载荷，跳过后端
+   * 加载。载荷随生成器参数重新生成（新对象），已放置 unit 由编辑层保留。 */
+  synthetic?: { session: LotEditorSession; payload: LotModelPayload | null } | null;
+}>();
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
 const open = defineModel<boolean>("open", { default: false });
@@ -79,6 +90,8 @@ const {
   hiddenUnits,
   groupVisibility,
   load,
+  adoptSynthetic,
+  releaseSynthetic,
   toggleGroup,
   toggleUnit,
 } = usePropertyEditorSession(props.packageId, props.tgi);
@@ -142,10 +155,10 @@ function toggleEditEnabled() {
 
 // Restore the persisted document once per loaded session; all subsequent edits
 // keep using the same undoable commands and schema-renderer contract.
-watch(session, current => {
-  if (!current || !props.initialSchema) return;
-  const restored = unitsFromSchema(props.initialSchema);
-  const original = new Set(current.units.map(unit => unitId(unit as LotUnitDto)));
+/** 从 lot-asset schema 文档恢复编辑态（session 载入时 / 合成会话导入时）。 */
+function restoreFromSchema(document: Record<string, unknown>) {
+  const restored = unitsFromSchema(document);
+  const original = new Set((session.value?.units ?? []).map(unit => unitId(unit as LotUnitDto)));
   const restoredIds = new Set(restored.map(unitId));
   for (const id of original) if (!restoredIds.has(id)) edit.removeUnit(id);
   for (const unit of restored) {
@@ -157,10 +170,14 @@ watch(session, current => {
       edit.setUnitFields(id, { ...patch, fields });
     }
   }
-  const editor = props.initialSchema.editor as { groups?: Record<string, boolean>; unitVisibility?: Record<string, boolean> };
+  const editor = document.editor as { groups?: Record<string, boolean>; unitVisibility?: Record<string, boolean> };
   Object.assign(groupVisibility, editor?.groups ?? {});
   hiddenUnits.value = new Set(Object.entries(editor?.unitVisibility ?? {}).filter(([, v]) => !v).map(([id]) => id));
   editEnabled.value = true;
+}
+watch(session, current => {
+  if (!current || !props.initialSchema) return;
+  restoreFromSchema(props.initialSchema);
 });
 
 // ---- 组件库（物料）sheet：从已打开包的命名 RW4 模型目录拖入放置 ----
@@ -189,14 +206,21 @@ const materialsTab = ref<MaterialTabId>("props");
 const materialsSearch = ref("");
 /** 物料页签/灯源预设/占位类目：字面量联合常量（模板内联数组会把 id/
  * lightType/kind 放宽成 string，赋值回联合 ref 时 TS2322）。 */
-type MaterialTabId = "props" | "spawners" | "effects" | "paths" | "lights";
+type MaterialTabId = "props" | "lots" | "spawners" | "effects" | "paths" | "lights";
 const MATERIAL_TABS: { id: MaterialTabId; label: string }[] = [
+  { id: "lots", label: "package.groupLots" },
   { id: "props", label: "package.groupProps" },
   { id: "spawners", label: "package.groupSpawners" },
   { id: "effects", label: "package.groupEffects" },
   { id: "paths", label: "package.groupPaths" },
   { id: "lights", label: "package.groupLights" },
 ];
+/** Lot 页签 = 宿主注入的地面纹理浏览器（materials-lots 插槽）；普通
+ * property 编辑没有注入方，页签隐藏。 */
+const slotShell = useSlots();
+const visibleMaterialTabs = computed(() =>
+  MATERIAL_TABS.filter(tab => tab.id !== "lots" || slotShell["materials-lots"]),
+);
 const LIGHT_PRESETS: {
   lightType: "Point" | "Spot" | "Line";
   label: string;
@@ -512,7 +536,16 @@ const renderGrouping = computed(() => {
   };
 });
 watch(sceneDocument, doc => { if (editEnabled.value && doc) emit("schema-change", doc); });
-defineExpose({ getSchema: () => sceneDocument.value });
+defineExpose({
+  getSchema: () => sceneDocument.value,
+  /** 合成会话的文档导入入口：把 lot-asset 单元恢复进编辑层。 */
+  restoreSchema: (document: Record<string, unknown>) => {
+    if (!session.value) return;
+    restoreFromSchema(document);
+  },
+  /** 读取当前渲染模式（绑定贴图后提示用；模式本身只能经头部开关切换）。 */
+  getRenderMode: () => renderMode.value,
+});
 /** 编辑基线 = session 原始单元（无编辑层覆盖、无隐藏）——diff 的 before 侧。 */
 const schemaBaseJson = computed(() => {
   const current = session.value;
@@ -589,7 +622,29 @@ useEditorHotkeys(
 );
 
 const renderMode = ref<"default" | "refined">("default");
-const effectiveRenderMode = computed(() => editEnabled.value ? "refined" : renderMode.value);
+/** 渲染模式唯一入口 = 头部「默认/精细」切换开关;解锁编辑等其他操作
+ * 一律不得改变渲染模式(用户指令:精细渲染仅能经该开关进入)。 */
+const effectiveRenderMode = computed(() => renderMode.value);
+
+// ---- 合成会话（程序化建筑）----
+let syntheticEngaged = false;
+watch(() => props.synthetic, value => {
+  if (value) {
+    if (!syntheticEngaged) {
+      // 首次进入合成模式：清掉真实会话可能残留的编辑层，回锁定态
+      syntheticEngaged = true;
+      edit.reset();
+      editEnabled.value = false;
+      materialsOpen.value = false;
+      selectedId.value = null;
+    }
+    adoptSynthetic(value.session, value.payload);
+    return;
+  }
+  if (!syntheticEngaged) return;
+  syntheticEngaged = false;
+  releaseSynthetic();
+});
 /** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
 const neonAnim = ref(false);
@@ -701,9 +756,12 @@ async function exportModel(mode: "white" | "textured") {
 const powered = ref(true);
 
 watch(open, (value) => {
-  if (value) {
+  if (value && !props.empty && !props.synthetic) {
     diagnosticsDismissed = false;
     void load();
+  } else if (value && props.synthetic) {
+    // 程序化建筑：打开时不走后端加载（合成会话由 synthetic watcher 注入）
+    diagnosticsDismissed = false;
   } else {
     // 关闭即回锁定态：工具栏/物料面板/拖放/删除随 editEnabled 复位
     // （用户资产编辑——放置记录/变换/字段——按既有口径不在复位范围）
@@ -711,7 +769,7 @@ watch(open, (value) => {
     materialsOpen.value = false;
   }
 });
-onMounted(() => { if (open.value) void load(); });
+onMounted(() => { if (open.value && !props.empty && !props.synthetic) void load(); });
 /** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
 let diagnosticsDismissed = false;
 const title = computed(() => {
@@ -735,8 +793,22 @@ const treeSheetPinned = ref(true);
     v-model:open="open"
     :label="$t('package.propertyEditor')"
     width="100vw"
+    :embedded="props.embedded"
   >
-    <div v-if="open" class="editor-root">
+    <div v-if="open && props.empty" class="editor-root editor-root-empty">
+      <header class="editor-header">
+        <div class="editor-title">
+          <strong>{{ $t("package.propertyEditor") }}</strong>
+          <small>{{ $t("proceduralBuilding.emptyEditorSubtitle") }}</small>
+        </div>
+      </header>
+      <div class="editor-empty-state">
+        <FIcon name="Box" :size="28" aria-label="" />
+        <strong>{{ $t("proceduralBuilding.emptyEditorTitle") }}</strong>
+        <p>{{ $t("proceduralBuilding.emptyEditorDescription") }}</p>
+      </div>
+    </div>
+    <div v-else-if="open" class="editor-root">
       <!-- 吸顶诊断横幅：会话诊断一次展示，可关闭（重开会话恢复） -->
       <FAlert
         v-if="diagnostics.length && !diagnosticsDismissed"
@@ -763,8 +835,6 @@ const treeSheetPinned = ref(true);
           <button
             type="button"
             :class="{ active: effectiveRenderMode === 'default' }"
-            :disabled="editEnabled"
-            :title="editEnabled ? '编辑模式使用精细渲染' : undefined"
             @click="renderMode = 'default'"
           >
             {{ $t("package.renderModeDefault") }}
@@ -873,6 +943,9 @@ const treeSheetPinned = ref(true);
           <Switch v-model="effectRendering" :aria-label="$t('package.effectRendering')" />
           <span>{{ $t("package.effectRendering") }}</span>
         </label>
+        <!-- 宿主页面扩展位（程序化建筑的生成器面板开关等），置于保存/导出
+             按钮之前，与既有图标按钮同排。 -->
+        <slot name="toolbar-extra" />
         <button
           class="editor-close"
           type="button"
@@ -1171,7 +1244,7 @@ const treeSheetPinned = ref(true);
         <div class="materials-body">
           <div class="materials-tabs" role="tablist">
             <button
-              v-for="tab in MATERIAL_TABS"
+              v-for="tab in visibleMaterialTabs"
               :key="tab.id"
               type="button"
               role="tab"
@@ -1242,6 +1315,10 @@ const treeSheetPinned = ref(true);
               <p v-if="!catalogGroups.length" class="materials-empty">
                 {{ $t('package.materialsEmpty') }}
               </p>
+            </template>
+            <template v-else-if="materialsTab === 'lots'">
+              <!-- 宿主注入的 Lot 地面纹理浏览器（程序化建筑） -->
+              <slot name="materials-lots" />
             </template>
             <template v-else-if="materialsTab === 'lights'">
               <div class="materials-grid">
@@ -1767,4 +1844,9 @@ const treeSheetPinned = ref(true);
   flex: 1;
   min-height: 0;
 }
+.editor-root-empty { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.editor-empty-state { align-items: center; color: var(--muted-foreground); display: flex; flex: 1; flex-direction: column; gap: 10px; justify-content: center; min-height: 560px; text-align: center; }
+.editor-empty-state svg { color: var(--primary); }
+.editor-empty-state strong { color: var(--foreground); font-size: 14px; }
+.editor-empty-state p { font-size: 12px; line-height: 1.6; margin: 0; max-width: 420px; }
 </style>

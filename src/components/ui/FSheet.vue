@@ -4,6 +4,8 @@ import { onBeforeUnmount, watch } from "vue";
 interface Props {
   label?: string;
   width?: string;
+  /** Render the panel in the current layout instead of teleporting to an overlay. */
+  embedded?: boolean;
 }
 const props = defineProps<Props>();
 const open = defineModel<boolean>("open", { default: false });
@@ -22,7 +24,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Teleport to="body"
+  <div v-if="props.embedded" class="f-sheet-embedded"><slot /></div>
+  <Teleport v-else to="body"
     ><div
       class="f-sheet-overlay"
       :class="{ visible: open }"
@@ -46,6 +49,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .f-sheet {
   overscroll-behavior: contain;
+}
+.f-sheet-embedded {
+  display: flex;
+  min-height: 0;
+  width: 100%;
 }
 .f-sheet-overlay {
   background: oklch(0.1 0.01 260 / 0.45);

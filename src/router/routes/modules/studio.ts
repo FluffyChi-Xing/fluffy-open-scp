@@ -113,5 +113,16 @@ export default {
         order: 55,
       },
     },
+    {
+      name: "procedural-building",
+      path: "procedural-building",
+      component: () => import("@/pages/procedural-building/index.vue"),
+      meta: {
+        titleKey: "navigation.proceduralBuilding",
+        icon: "house",
+        groupKey: "navigation.modding",
+        order: 60,
+      },
+    },
   ],
 } satisfies RouteModule;

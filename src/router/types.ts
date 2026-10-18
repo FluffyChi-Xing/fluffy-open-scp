@@ -22,6 +22,7 @@ export type IconName =
   | 'map'
   | 'panelTop'
   | 'boxes'
+  | 'house'
   | 'sticky'
   | 'history'
   | 'activity'

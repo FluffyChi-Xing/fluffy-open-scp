@@ -305,6 +305,37 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     void loadLod(++requestToken, index, "lod_switch");
   }
 
+  /**
+   * 注入合成会话（程序化建筑 demo）：不经过后端，直接 adoption 一份
+   * 前端构造的 LotEditorSession + 模型载荷。与 load() 的关键差异：
+   * 不重置编辑层——生成器参数变化重新生成载荷时，用户拖放的 unit
+   * （编辑层数据）必须跨代存活。
+   */
+  function adoptSynthetic(next: LotEditorSession, payload: LotModelPayload | null) {
+    requestToken += 1;
+    loading.value = false;
+    loadError.value = "";
+    session.value = next;
+    modelPayload.value = payload;
+    modelLods.value = next.modelLods ?? [];
+    activeLod.value = 0;
+    modelState.value = payload ? "ready" : "missing";
+    selectedId.value = null;
+  }
+
+  /** 退出合成会话（synthetic prop 清空时）：回到未加载态。 */
+  function releaseSynthetic() {
+    requestToken += 1;
+    loading.value = true;
+    loadError.value = "";
+    session.value = null;
+    modelPayload.value = null;
+    modelLods.value = [];
+    activeLod.value = 0;
+    modelState.value = "pending";
+    selectedId.value = null;
+  }
+
   /** 有效单元集 = 既有单元（滤软删除）+ 拖拽新增单元，应用覆盖。
    * grouping / flatUnits / selectedUnit 共用此单一来源（资产编辑一致性）。 */
   const effectiveUnits = computed<LotUnitDto[]>(() =>
@@ -515,6 +546,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     hiddenUnits,
     groupVisibility,
     load,
+    adoptSynthetic,
+    releaseSynthetic,
     isUnitHidden,
     toggleUnit,
     toggleGroup,
