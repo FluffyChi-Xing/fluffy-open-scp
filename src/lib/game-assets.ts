@@ -6,7 +6,8 @@
  * 在玩家全部 package 的合并索引里取 PNG/JPG 字节。
  * 非 Tauri 环境（浏览器预览）返回 null，调用方回退仓库内置资源。
  */
-import { command, TauriUnavailableError } from "@/api/tauri";
+import { command } from "@/api/tauri";
+import { isTauri } from "@/api";
 
 const cache = new Map<string, string>();
 
@@ -27,7 +28,6 @@ export async function gameAssetTgiDataUrl(
     cache.set(key, url);
     return url;
   } catch (error) {
-    if (error instanceof TauriUnavailableError) return null;
     return null;
   }
 }
@@ -43,7 +43,6 @@ export async function gameAssetDataUrl(refPath: string): Promise<string | null> 
     cache.set(refPath, url);
     return url;
   } catch (error) {
-    if (error instanceof TauriUnavailableError) return null;
     return null;
   }
 }
@@ -65,12 +64,8 @@ export interface PropertyCopyRequest {
 export async function gamePropertyCopy(
   request: PropertyCopyRequest,
 ): Promise<{ dataBase64: string; keyCount: number } | null> {
-  try {
-    return await command<{ dataBase64: string; keyCount: number }>("game_property_copy", {
-      request,
-    });
-  } catch (error) {
-    if (error instanceof TauriUnavailableError) return null;
-    return null;
-  }
+  if (!isTauri()) return null;
+  return await command<{ dataBase64: string; keyCount: number }>("game_property_copy", {
+    request,
+  });
 }

@@ -796,9 +796,10 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
             Uint8Array.from(atob(result.value.dataBase64), (c) => c.charCodeAt(0)),
           );
         } else {
-          warnings.push(
-            `${entry.titleStringId ?? entry.instance.toString(16)}：全量 property 复制失败，回退合成条目`,
-          );
+          const reason = result.status === "rejected"
+            ? String(result.reason)
+            : "返回空";
+          warnings.push(`全量 property 复制失败(${reason})，回退合成条目`);
         }
       }
     }
