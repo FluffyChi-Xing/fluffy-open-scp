@@ -179,9 +179,18 @@ function onCopyTo(target: CopyTargetNode): void {
   const created = store.duplicateEntry(target, entry.tool);
   if (!created) return;
   if (target.kind === "menu") {
+    // 目标可能属于其他视角（如在发展视角复制到城市一级菜单）：
+    // 当前视图没有该分类时先切视角，再定位目标菜单并打开副本
+    if (!store.categories.some((category) => category.id === target.id)) {
+      store.setViewMode("city");
+    }
     store.enterMenu(target.id);
     store.editingEntry = created;
+    return;
   }
+  // 容器副本不出现在工作台视图（游戏内显示在建筑面板）
+  const label = store.containerLabelOf(target.id) ?? target.label;
+  window.alert(t("studio.workbench.containerCopied", { label }));
 }
 
 /** 应用 = 计算草稿相对条目有效视图的 diff，只把变化的字段写进覆盖。
