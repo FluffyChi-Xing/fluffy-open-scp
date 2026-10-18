@@ -58,16 +58,35 @@ async function onExport(): Promise<void> {
   );
 }
 
-function onBuild(): void {
+/** 编译 .package 并让用户选择保存位置（与导出 JSON 同一套交互）。
+ * 非 Tauri 环境回退为下载。 */
+async function onBuild(): Promise<void> {
   const result = store.buildGameExport();
   if (result.entryCount === 0) {
     window.alert(t("studio.workbench.buildEmpty"));
     return;
   }
-  downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
   const warning = result.warnings.length > 0
     ? `\n\n${result.warnings.join("\n")}`
     : "";
+  try {
+    const path = await tauriApi.packages.saveFile("OpenSCP-ui-overlay.package", "package");
+    if (path) {
+      let base64 = "";
+      for (const byte of result.bytes) base64 += String.fromCharCode(byte);
+      await command("write_export_file", {
+        request: { path, dataBase64: btoa(base64) },
+      });
+      window.alert(t("studio.workbench.buildComplete", {
+        entries: result.entryCount,
+        locales: result.localeCount,
+      }) + `\n${path}` + warning);
+      return;
+    }
+  } catch {
+    // 非 Tauri 环境 → 下载回退
+  }
+  downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
   window.alert(t("studio.workbench.buildComplete", {
     entries: result.entryCount,
     locales: result.localeCount,
@@ -378,6 +397,12 @@ function onAdd(): void {
 .foot-btn:hover:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
+}
+/* primary 实底按钮 hover 只提亮，不能把文字染成同底色（否则字消失） */
+.foot-btn.primary:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary-foreground, #fff);
+  filter: brightness(1.1);
 }
 .foot-btn.primary {
   background: var(--primary, #0b78fe);
