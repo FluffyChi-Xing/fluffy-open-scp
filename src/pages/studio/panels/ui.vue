@@ -44,18 +44,9 @@ const editedCount = computed(
     store.customCategories.length,
 );
 /** schema diff 预览 sheet */
-const showDiff = ref(false);
-/** false = 完整 JSON 查看；true = 变更对比（基础 → 当前）。 */
-const diffMode = ref(false);
-/** 打开 sheet 时才计算（避免每次编辑触发大 JSON 序列化与行级比对）。 */
-const diffBase = ref("");
-const diffCurrent = ref("");
-function openSchemaSheet(diff: boolean): void {
-  diffBase.value = store.schemaDocument(false);
-  diffCurrent.value = store.schemaDocument(true);
-  diffMode.value = diff;
-  showDiff.value = true;
-}
+// Schema JSON 预览已下线：全量 JSON + 行级 diff 的渲染压力过大。
+// 功能代码保留（store.schemaDocument / json diff 思路），待改为
+// 视口内分块加载后再回归。
 
 /** bytes → base64（Tauri 命令传输用）。 */
 function toBase64(bytes: Uint8Array): string {
@@ -297,10 +288,6 @@ function removeDraft(): void {
         {{ t("studio.workbench.mechanism") }}
       </button>
       <div class="toolbar-spacer">
-        <button type="button" class="ghost-btn" @click="openSchemaSheet(false)">
-          <FIcon name="Braces" :size="13" aria-label="" />
-          {{ t("studio.workbench.schemaJson") }}
-        </button>
         <button type="button" class="ghost-btn primary" :disabled="!editedCount" @click="onBuildInject">
           <FIcon name="Package" :size="13" aria-label="" />
           {{ t("studio.workbench.buildInject") }}
@@ -340,21 +327,10 @@ function removeDraft(): void {
           <FIcon name="ArrowLeft" :size="13" aria-label="" />
           {{ t('studio.workbench.backToParent') }}
         </button>
-        <div class="sheet-head-row">
-          <p class="sheet-id">
-            {{ t("studio.workbench.sheetId") }}:
-            <code>{{ editingEntry.tool.id }}</code>
-          </p>
-          <button
-            type="button"
-            class="ghost-btn"
-            :disabled="!editedCount"
-            @click="openSchemaSheet(true)"
-          >
-            <FIcon name="GitCompare" :size="12" aria-label="" />
-            {{ t("studio.workbench.schemaDiff") }}
-          </button>
-        </div>
+        <p class="sheet-id">
+          {{ t("studio.workbench.sheetId") }}:
+          <code>{{ editingEntry.tool.id }}</code>
+        </p>
 
         <div class="sheet-scroll">
           <MenuSheetBody
@@ -386,42 +362,6 @@ function removeDraft(): void {
     </FSheet>
 
     </template>
-
-    <!-- schema diff 预览 -->
-    <FSheet
-      :open="showDiff"
-      width="640px"
-      :label="t('studio.workbench.diffTitle')"
-      @update:open="!$event && (showDiff = false)"
-    >
-      <div class="diff-body">
-        <div class="diff-modes">
-          <button
-            type="button"
-            class="mode-btn"
-            :class="{ active: !diffMode }"
-            @click="diffMode = false"
-          >JSON</button>
-          <button
-            type="button"
-            class="mode-btn"
-            :class="{ active: diffMode }"
-            :disabled="!editedCount"
-            @click="diffMode = true"
-          >{{ t("studio.workbench.schemaDiff") }}</button>
-        </div>
-        <FCode
-          :base-code="diffMode ? diffBase : ''"
-          :code="diffCurrent"
-          lang="json"
-          line-numbers
-          :copy-label="t('code.copy')"
-          :copied-label="t('code.copied')"
-          :collapse-label="t('code.collapse')"
-          :expand-label="t('code.expand')"
-        />
-      </div>
-    </FSheet>
 
     <!-- 图片裁切器：槽位图标 128×128 PNG / hover 大图 454×263 JPEG -->
     <FImageCropper
@@ -516,50 +456,6 @@ function removeDraft(): void {
 .ghost-btn:disabled {
   cursor: default;
   opacity: 0.45;
-}
-.diff-modes {
-  display: flex;
-  gap: 6px;
-}
-.mode-btn {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  padding: 4px 12px;
-}
-.mode-btn.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-foreground);
-  font-weight: 600;
-}
-.mode-btn:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-.diff-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  padding: 12px 16px 16px;
-}
-.diff-body :deep(.f-code) {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-.diff-body :deep(.f-code-body),
-.diff-body :deep(.f-code-diff) {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 .view-switch {
   background: var(--surface);

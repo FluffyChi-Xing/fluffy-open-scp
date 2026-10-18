@@ -14,6 +14,8 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import { toolIconName, toolPreview } from "@/lib/game-ui/workbench";
 import { downloadBytes } from "@/lib/game-ui/menu-export";
+import { tauriApi } from "@/api";
+import { command } from "@/api/tauri";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
 
@@ -32,11 +34,27 @@ function emitEdit(id: string): void {
   if (entry) store.editingEntry = entry;
 }
 
-function onExport(): void {
+/** 导出 schema JSON（菜单配置过长，写文件而非剪贴板）。
+ * Tauri 走保存对话框；浏览器回退为下载。 */
+async function onExport(): Promise<void> {
   const json = store.exportSchema();
-  void navigator.clipboard?.writeText(json).then(
-    () => window.alert(t("studio.workbench.exportCopied")),
-    () => window.alert(json),
+  try {
+    const path = await tauriApi.packages.saveFile("openscp-ui-workbench.schema.json", "json");
+    if (path) {
+      let base64 = "";
+      for (const byte of new TextEncoder().encode(json)) base64 += String.fromCharCode(byte);
+      await command("write_export_file", {
+        request: { path, dataBase64: btoa(base64) },
+      });
+      return;
+    }
+  } catch {
+    // 非 Tauri 环境 → 下载回退
+  }
+  downloadBytes(
+    new TextEncoder().encode(json),
+    "openscp-ui-workbench.schema.json",
+    "application/json",
   );
 }
 
