@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+const TYPE_PROPERTY: u32 = 0x00B1_B104;
 const TYPE_PNG: u32 = 0x2F7D_0004;
 const TYPE_JPG: u32 = 0x3F86_62EA;
 
@@ -85,7 +86,11 @@ fn build_index(game_data: &Path) -> AssetIndex {
     for path in package_paths(game_data) {
         let Ok(package) = dbpf::Package::open(&path) else { continue };
         for entry in package.entries() {
-            if entry.id.type_id == TYPE_PNG || entry.id.type_id == TYPE_JPG {
+            // 全类型入索引：布局资产走 PNG/JPG，菜单条目复制走 property
+            if matches!(
+                entry.id.type_id,
+                TYPE_PNG | TYPE_JPG | TYPE_PROPERTY
+            ) {
                 entries
                     .entry(entry.id.instance)
                     .or_default()
@@ -202,6 +207,212 @@ pub async fn game_asset(
             "game_asset_missing",
             format!("unreadable resource for instance {instance:08X}"),
         ))
+    })
+    .await
+    .map_err(|e| crate::activity::CommandError::internal(e.to_string()))?
+}
+
+// ── 菜单条目全量 property 复制 ─────────────────────────────────────────
+// 复制 = 源条目 property 深拷贝 + 受控变换（归属/身份/文案指针/图标指针）。
+// 家族键（parent、分段引用、路径单价、统计行…）随源条目原样保留——
+// 这是 SCP 教程式复制的语义，保证新条目在游戏内功能完整。
+
+use sc_properties::{Kind, PropType, Property, PropertyFile, Value};
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgiRef {
+    pub r#type: u32,
+    pub group: u32,
+    pub instance: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyCopyRequest {
+    pub source_instance: u32,
+    pub new_instance: u32,
+    pub ui_categories: Vec<u32>,
+    pub title_string_id: Option<u32>,
+    pub desc_string_id: Option<u32>,
+    pub unlock_string_id: Option<u32>,
+    pub position: Option<i32>,
+    pub icon_tgi: Option<TgiRef>,
+    pub marquee_tgi: Option<TgiRef>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyCopyResult {
+    pub data_base64: String,
+    pub key_count: usize,
+}
+
+fn set_scalar_key(file: &mut PropertyFile, hash: u32, key: Value) {
+    set_scalar_value(file, hash, PropType::Key, key);
+}
+
+fn set_scalar_text(file: &mut PropertyFile, hash: u32, table: u32, id: u32) {
+    set_scalar_value(
+        file,
+        hash,
+        PropType::Text,
+        Value::Text(sc_properties::Text {
+            table_id: table,
+            instance_id: id,
+        }),
+    );
+}
+
+fn set_scalar_value(file: &mut PropertyFile, hash: u32, prop_type: PropType, value: Value) {
+    for prop in &mut file.values {
+        if prop.hash == hash {
+            prop.kind = Kind::Scalar(value);
+            prop.prop_type = prop_type;
+            return;
+        }
+    }
+    file.values.push(Property {
+        hash,
+        prop_type,
+        kind: Kind::Scalar(value),
+        encoding: Default::default(),
+    });
+}
+
+fn set_array_values(file: &mut PropertyFile, hash: u32, prop_type: PropType, values: Vec<Value>) {
+    for prop in &mut file.values {
+        if prop.hash == hash {
+            prop.kind = Kind::Array(values);
+            prop.prop_type = prop_type;
+            return;
+        }
+    }
+    file.values.push(Property {
+        hash,
+        prop_type,
+        kind: Kind::Array(values),
+        encoding: Default::default(),
+    });
+}
+
+#[tauri::command]
+pub async fn game_property_copy(
+    state: tauri::State<'_, crate::activity::AppState>,
+    request: PropertyCopyRequest,
+) -> Result<PropertyCopyResult, crate::activity::CommandError> {
+    use crate::activity::CommandError;
+    let game_data = state
+        .store
+        .app_settings()
+        .map_err(CommandError::from)?
+        .and_then(|s| s.game_data_path)
+        .ok_or_else(|| {
+            CommandError::new(
+                "game_directory_not_configured",
+                "Game data directory is not configured",
+            )
+        })?;
+    let game_data = PathBuf::from(game_data);
+    let source_instance = request.source_instance;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = cached_index(&game_data);
+        let Some(index) = guard.as_ref() else {
+            return Err(CommandError::internal("game asset index unavailable"));
+        };
+        let candidates = index
+            .entries
+            .get(&source_instance)
+            .ok_or_else(|| {
+                CommandError::new(
+                    "game_property_missing",
+                    format!("source property 0x{source_instance:08X} not found"),
+                )
+            })?
+            .clone();
+        let mut copied: Option<PropertyFile> = None;
+        for (path, entry) in &candidates {
+            if entry.id.type_id != TYPE_PROPERTY {
+                continue;
+            }
+            let Ok(package) = dbpf::Package::open(path) else { continue };
+            let Ok(data) = package.read(entry) else { continue };
+            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            copied = Some(file);
+            break;
+        }
+        let Some(mut file) = copied else {
+            return Err(CommandError::new(
+                "game_property_missing",
+                format!("no readable property for 0x{source_instance:08X}"),
+            ));
+        };
+
+        // 归属：uiCategories 数组整体替换（核心编辑）
+        set_array_values(
+            &mut file,
+            0x0DB9_FC63,
+            PropType::Key,
+            request
+                .ui_categories
+                .iter()
+                .map(|c| {
+                    Value::Key(sc_properties::Key {
+                        type_id: 0,
+                        group: 0,
+                        instance: *c,
+                    })
+                })
+                .collect(),
+        );
+        // 文案指针：提供了新字符串 id 才覆盖，否则沿用源条目字符串
+        if let Some(id) = request.title_string_id {
+            set_scalar_text(&mut file, 0x0A09_F5FA, 0x6C96_9DEE, id);
+        }
+        if let Some(id) = request.desc_string_id {
+            set_scalar_text(&mut file, 0x0A09_F5FB, 0x50AA_0BEA, id);
+        }
+        if let Some(id) = request.unlock_string_id {
+            set_scalar_text(&mut file, 0x0DE8_4DDC, 0x4B54_417A, id);
+        }
+        // 排序
+        if let Some(pos) = request.position {
+            set_array_values(
+                &mut file,
+                0x0DC1_E3E0,
+                PropType::Int32,
+                vec![Value::Int32(pos)],
+            );
+        }
+        // 图标/大图指针：用户替换了图才覆盖；沿用原图时不发新资源
+        if let Some(tgi) = &request.icon_tgi {
+            let key = Value::Key(sc_properties::Key {
+                type_id: tgi.r#type,
+                group: tgi.group,
+                instance: tgi.instance,
+            });
+            set_scalar_key(&mut file, 0x0977_AA8F, key.clone());
+            set_scalar_key(&mut file, 0x0975_6950, key);
+        }
+        if let Some(tgi) = &request.marquee_tgi {
+            set_scalar_key(
+                &mut file,
+                0x0DDE_EE56,
+                Value::Key(sc_properties::Key {
+                    type_id: tgi.r#type,
+                    group: tgi.group,
+                    instance: tgi.instance,
+                }),
+            );
+        }
+        let key_count = file.values.len();
+        let bytes = file
+            .encode_canonical()
+            .map_err(|e| CommandError::new("game_property_encode_failed", e.to_string()))?;
+        Ok(PropertyCopyResult {
+            data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+            key_count,
+        })
     })
     .await
     .map_err(|e| crate::activity::CommandError::internal(e.to_string()))?

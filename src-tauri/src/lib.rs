@@ -153,6 +153,7 @@ pub fn run() {
             game_launch::deploy_game_mod,
             game_launch::deploy_ui_overlay,
             game_assets::game_asset,
+            game_assets::game_property_copy,
             game_launch::launch_game,
             version_list_targets,
             version_list_changesets,
