@@ -25,6 +25,7 @@ import UiWorkbenchStage from "../components/UiWorkbenchStage.vue";
 import MenuEditorPanel from "../components/MenuEditorPanel.vue";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { tauriApi } from "@/api";
+import { TauriUnavailableError } from "@/api/tauri";
 import { downloadBytes } from "@/lib/game-ui/menu-export";
 import type { ToolEdit } from "@/lib/game-ui/workbench";
 
@@ -60,21 +61,27 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** 编译 .package 并注入游戏 Packages 目录；非 Tauri 环境回退为下载。 */
+/** 编译 .package 并注入游戏 Packages 目录；非 Tauri 环境回退为下载。
+ * 反馈全部走 toast（项目禁用原生弹窗）。 */
 async function onBuildInject(): Promise<void> {
   const result = store.buildGameExport();
   if (result.entryCount === 0) {
-    window.alert(t("studio.workbench.buildEmpty"));
+    toast.warning(t("studio.workbench.buildEmpty"));
     return;
   }
   try {
     const deployed = await tauriApi.workspace.deployUiOverlay(toBase64(result.bytes));
-    let message = t("studio.workbench.injectSuccess", { dest: deployed.destination });
-    if (deployed.gameRunning) message += "\n" + t("studio.workbench.injectGameRunning");
-    window.alert(message);
-  } catch {
-    downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
-    window.alert(t("studio.workbench.injectFallback"));
+    toast.success(t("studio.workbench.injectSuccess", { dest: deployed.destination }));
+    if (deployed.gameRunning) {
+      toast.warning(t("studio.workbench.injectGameRunning"));
+    }
+  } catch (error) {
+    if (error instanceof TauriUnavailableError) {
+      downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
+      toast.info(t("studio.workbench.injectFallback"));
+      return;
+    }
+    toast.error(t("studio.workbench.injectFailed"));
   }
 }
 
