@@ -20,6 +20,7 @@ import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FStartupLoading from "@/components/ui/FStartupLoading.vue";
+import { useToast } from "@/composables/useToast";
 import UiWorkbenchStage from "../components/UiWorkbenchStage.vue";
 import MenuEditorPanel from "../components/MenuEditorPanel.vue";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
@@ -28,6 +29,7 @@ import { downloadBytes } from "@/lib/game-ui/menu-export";
 import type { ToolEdit } from "@/lib/game-ui/workbench";
 
 const { t } = useI18n();
+const toast = useToast();
 const store = useUiWorkbenchStore();
 const { loading, editingEntry } = storeToRefs(store);
 
@@ -191,7 +193,7 @@ function onCopyTo(target: CopyTargetNode): void {
   }
   // 容器副本不出现在工作台视图（游戏内显示在建筑面板）
   const label = store.containerLabelOf(target.id) ?? target.label;
-  window.alert(t("studio.workbench.containerCopied", { label }));
+  toast.success(t("studio.workbench.containerCopied", { label }));
 }
 
 /** 应用 = 计算草稿相对条目有效视图的 diff，只把变化的字段写进覆盖。

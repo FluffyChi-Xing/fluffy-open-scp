@@ -18,6 +18,7 @@ import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
+import { useToast } from "@/composables/useToast";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
@@ -28,6 +29,8 @@ const editedCount = computed(() => Object.keys(edits.value).length +
 
 /** 加载失败的槽位图（如运行时资产落后于数据）→ 回退 FIcon 占位。 */
 const brokenThumbs = ref<Record<string, boolean>>({});
+/** 最近一次编译的覆盖警告（toast 之外常驻显示）。 */
+const buildWarnings = ref<string[]>([]);
 
 function emitEdit(id: string): void {
   const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === id);
@@ -59,16 +62,20 @@ async function onExport(): Promise<void> {
 }
 
 /** 编译 .package 并让用户选择保存位置（与导出 JSON 同一套交互）。
- * 非 Tauri 环境回退为下载。 */
+ * 非 Tauri 环境回退为下载。结果用 toast 通知（不用系统弹窗）。 */
+const toast = useToast();
+
 async function onBuild(): Promise<void> {
   const result = store.buildGameExport();
   if (result.entryCount === 0) {
-    window.alert(t("studio.workbench.buildEmpty"));
+    toast.warning(t("studio.workbench.buildEmpty"));
     return;
   }
-  const warning = result.warnings.length > 0
-    ? `\n\n${result.warnings.join("\n")}`
-    : "";
+  buildWarnings.value = result.warnings;
+  const summary = t("studio.workbench.buildComplete", {
+    entries: result.entryCount,
+    locales: result.localeCount,
+  });
   try {
     const path = await tauriApi.packages.saveFile("OpenSCP-ui-overlay.package", "package");
     if (path) {
@@ -77,20 +84,14 @@ async function onBuild(): Promise<void> {
       await command("write_export_file", {
         request: { path, dataBase64: btoa(base64) },
       });
-      window.alert(t("studio.workbench.buildComplete", {
-        entries: result.entryCount,
-        locales: result.localeCount,
-      }) + `\n${path}` + warning);
+      toast.success(summary, { title: path });
       return;
     }
   } catch {
     // 非 Tauri 环境 → 下载回退
   }
   downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
-  window.alert(t("studio.workbench.buildComplete", {
-    entries: result.entryCount,
-    locales: result.localeCount,
-  }) + warning);
+  toast.success(summary);
 }
 
 function onAdd(): void {
@@ -180,6 +181,10 @@ function onAdd(): void {
       </button>
     </div>
 
+
+    <ul v-if="buildWarnings.length > 0" class="build-warnings">
+      <li v-for="(warning, index) in buildWarnings" :key="index">{{ warning }}</li>
+    </ul>
 
     <footer class="panel-foot">
       <button type="button" class="foot-btn primary" :disabled="!editedCount" @click="onBuild">
@@ -370,6 +375,17 @@ function onAdd(): void {
 }
 .add-plus {
   font-size: 15px;
+}
+.build-warnings {
+  color: var(--warning, #d9a03f);
+  font-size: 11px;
+  line-height: 1.5;
+  list-style: none;
+  margin: 0;
+  padding: 0 12px;
+}
+.build-warnings li::before {
+  content: "⚠ ";
 }
 .panel-foot {
   border-top: 1px solid var(--border);
