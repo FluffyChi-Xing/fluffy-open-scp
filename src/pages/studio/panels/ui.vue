@@ -175,14 +175,13 @@ function onOpenSubmenu(item: ReplicaSubmenuItem): void {
 function onCopyTo(target: CopyTargetNode): void {
   const entry = editingEntry.value;
   if (!entry) return;
-  if (target.kind === "container") {
-    store.duplicateToContainer(entry.menuId, entry.tool.id, target.id);
-    return;
-  }
-  const created = store.duplicateToMenu(entry.menuId, entry.tool.id, target.id);
+  // 显式快照：子菜单条目不在任何工作台分类里，也能照常复制
+  const created = store.duplicateEntry(target, entry.tool);
   if (!created) return;
-  store.enterMenu(target.id);
-  store.editingEntry = created;
+  if (target.kind === "menu") {
+    store.enterMenu(target.id);
+    store.editingEntry = created;
+  }
 }
 
 /** 应用 = 计算草稿相对条目有效视图的 diff，只把变化的字段写进覆盖。
@@ -333,7 +332,6 @@ function removeDraft(): void {
             :memberships="memberships"
             :copy-targets="copyTargets"
             :submenus="submenus"
-            :nested="!!editingEntry.isSubmenu"
             @crop="cropperTarget = $event"
             @copy="onCopyTo"
             @open-submenu="onOpenSubmenu"

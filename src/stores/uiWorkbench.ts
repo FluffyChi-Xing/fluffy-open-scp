@@ -476,6 +476,31 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     return { menuId: containerHex, tool: copy, isNew: true };
   }
 
+  /** 通用复制：按显式快照复制到目标（一级菜单或建筑子菜单容器）。
+   * 子菜单条目不在任何分类里，Sheet 内复制必须走快照而非源分类查找。 */
+  function duplicateEntry(
+    target: { id: string; kind: string },
+    snapshot: WorkbenchTool,
+  ): MenuEntry | null {
+    const isHex = /^[0-9A-F]{8}$/.test(target.id);
+    if (!isHex) return null; // 自定义菜单暂不提供复制目标
+    const targetCategory = categories.value.find((category) => category.id === target.id);
+    const targetAdditions = added.value[target.id] ?? [];
+    const targetItems =
+      target.kind === "menu"
+        ? [...(targetCategory?.items ?? []), ...targetAdditions]
+        : targetAdditions;
+    let salt = 0;
+    let copyId = copyToolId(snapshot.id, target.id, salt);
+    while (targetItems.some((tool) => tool.id === copyId)) {
+      copyId = copyToolId(snapshot.id, target.id, ++salt);
+    }
+    const maxPos = targetItems.reduce((max, tool) => Math.max(max, tool.pos), 0);
+    const copy: WorkbenchTool = { ...snapshot, id: copyId, pos: maxPos + 10 };
+    added.value = { ...added.value, [target.id]: [...(added.value[target.id] ?? []), copy] };
+    return { menuId: target.id, tool: copy, isNew: true };
+  }
+
   function copyToolId(sourceId: string, targetMenuId: string, salt: number): string {
     const suffix = salt === 0 ? "" : `-${salt}`;
     return `COPY-${sourceId}-${targetMenuId}${suffix}`;
@@ -817,6 +842,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     addUniversitySidewalkToRoad,
     duplicateToMenu,
     duplicateToContainer,
+    duplicateEntry,
     submenuContainerTargets,
     containerLabelOf,
     membershipsOf,

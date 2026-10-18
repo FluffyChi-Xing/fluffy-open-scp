@@ -31,8 +31,6 @@ defineProps<{
   copyTargets: CopyTargetNode[];
   /** 建筑子菜单条目（costs.json 反查；无则不渲染该分区）。 */
   submenus?: ReplicaSubmenuItem[];
-  /** 当前层来自子菜单（隐藏删除/复制到菜单等仅一级可用的动作）。 */
-  nested?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -81,8 +79,8 @@ function removeStat(index: number): void {
       <p class="field-hint">{{ t('studio.workbench.iconHint') }}</p>
     </section>
 
-    <!-- 归属与复制（仅一级条目） -->
-    <section v-if="!nested" class="form-section">
+    <!-- 归属与复制（嵌套的子菜单条目同样可复制） -->
+    <section class="form-section">
       <h3 class="section-title">{{ t('studio.workbench.sectionMembership') }}</h3>
       <p class="member-chips">
         <span v-for="menu in memberships" :key="menu.id" class="chip">{{ menu.label }}</span>
