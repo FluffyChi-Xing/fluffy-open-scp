@@ -479,6 +479,10 @@ name = "menu_asset_extract"
 path = "menu/menu_asset_extract.rs"
 
 [[example]]
+name = "cot_menu_cluster"
+path = "menu/cot_menu_cluster.rs"
+
+[[example]]
 name = "menu_cost_dump"
 path = "menu/menu_cost_dump.rs"
 
@@ -493,6 +497,10 @@ path = "menu/path_cost_scan.rs"
 [[example]]
 name = "road_cost_probe"
 path = "menu/road_cost_probe.rs"
+
+[[example]]
+name = "prop_hash_scan"
+path = "property/prop_hash_scan.rs"
 
 [[example]]
 name = "prop_roundtrip"

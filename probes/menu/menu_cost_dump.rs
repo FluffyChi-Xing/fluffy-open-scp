@@ -49,6 +49,11 @@ const HASH_UI_POSITION: u32 = 0x0DC1_E3E0; // 菜单内排序
 const HASH_STAT_TITLE: u32 = 0x0EB1_FC05; // 统计行模板 Text 数组
 const HASH_STAT_PARAM: u32 = 0x0EB1_FC22; // 统计行参数 = Unit 条目上的 float 属性 hash
 const HASH_UNLOCK_STRING: u32 = 0x0DE8_4DDC; // 解锁条件 Text 数组
+const HASH_PARENT: u32 = 0x00B2_CCCB; // unit → unit parent（占位 unit 指向真身）
+/// 疑似字段但已排除建造上限语义：0x0A7917C8 在 133 条目上取值 1~66，
+/// 其中可无限建造的诊所=1；游戏「可用:N」徽章数值来源仍未定位
+/// （徽章文案 = locale 4B54417A:0x0edf2f12「可用：」，数值来自运行时）。
+const HASH_FLAG_0A7917C8: u32 = 0x0A79_17C8;
 
 const MENU_INSTANCE_TYPES: [u16; 2] = [0x8A01, 0xC900];
 const PIECE_GROUPS: [u32; 1] = [0x40E1_C400];
@@ -110,6 +115,20 @@ struct MenuRow {
     /// uiCategories（归属容器；子菜单容器命中用）。
     cats: Vec<u32>,
     pos: Option<i32>,
+}
+
+/// EcoGame Unit 条目的语义视图。DLC 包的 Unit 组号各不相同
+/// （40E0C000/48E0C000/41EFC000/47EFC000/61EFC000…），按语义键识别。
+struct EcoUnit {
+    construction: Option<i32>,
+    maintenance: Option<i32>,
+    children: Vec<u32>,
+    addon_container: Option<u32>,
+    floats: BTreeMap<u32, f32>,
+    /// unit → unit parent（占位 unit 经 parent 指向真身，如 V博士大樓）。
+    parent: Option<u32>,
+    /// 未证实语义字段（0x0A7917C8）：诊所=1 但可无限建造，已排除建造上限。
+    flag_0a7917c8: Option<i32>,
 }
 
 /// locale 表集合：从任意传入包自动收集 0x0A98EAF0 资源（BOM + 紧凑 JSON）。
@@ -228,9 +247,10 @@ fn main() {
     // name id -> [(包序, config instance, Cost)]（仅带 Cost 的配置）
     let mut config_by_name: BTreeMap<u32, Vec<(usize, u32, i32)>> = BTreeMap::new();
     // eco unit instance -> (constr, maint, children, 子菜单容器)
-    // eco unit instance -> (constr, maint, children, 子菜单容器, float 属性表)
-    let mut units: BTreeMap<u32, (Option<i32>, Option<i32>, Vec<u32>, Option<u32>, BTreeMap<u32, f32>)> =
-        BTreeMap::new();
+    // eco unit instance -> 完整语义视图（见 EcoUnit）
+    let mut units: BTreeMap<u32, EcoUnit> = BTreeMap::new();
+    // 全属性 parent 关系（instance → 0x00B2CCCB 目标；占位 unit 沿此指向真身）
+    let mut prop_parents: BTreeMap<u32, u32> = BTreeMap::new();
 
     let mut opened = Vec::new();
     for (package_index, path) in packages.iter().enumerate() {
@@ -246,6 +266,9 @@ fn main() {
             }
             let Ok(data) = package.read(entry) else { continue };
             let Ok(file) = PropertyFile::parse(&data) else { continue };
+            if let Some(parent) = key_instance(&file, HASH_PARENT) {
+                prop_parents.insert(entry.id.instance, parent);
+            }
             let instance_type = (entry.id.group & 0xFFFF) as u16;
             if MENU_INSTANCE_TYPES.contains(&instance_type) {
                 menus.insert(
@@ -332,13 +355,15 @@ fn main() {
                 }
                 units.insert(
                     entry.id.instance,
-                    (
-                        num_of(&file, HASH_CONSTRUCTION),
-                        num_of(&file, HASH_MAINT),
-                        key_instances(&file, HASH_CHILD_UNITS),
-                        key_instance(&file, HASH_ADDON_CONTAINER),
+                    EcoUnit {
+                        construction: num_of(&file, HASH_CONSTRUCTION),
+                        maintenance: num_of(&file, HASH_MAINT),
+                        children: key_instances(&file, HASH_CHILD_UNITS),
+                        addon_container: key_instance(&file, HASH_ADDON_CONTAINER),
                         floats,
-                    ),
+                        parent: key_instance(&file, HASH_PARENT),
+                        flag_0a7917c8: num_of(&file, HASH_FLAG_0A7917C8),
+                    },
                 );
             }
         }
@@ -347,8 +372,8 @@ fn main() {
     // 二遍：menuUnit → Unit 条目 0x0AFE27CA = 建筑子菜单容器
     for row in menus.values_mut() {
         if let Some(unit) = row.menu_unit {
-            if let Some((_, _, _, container, _)) = units.get(&unit) {
-                row.addon_container = *container;
+            if let Some(unit) = units.get(&unit) {
+                row.addon_container = unit.addon_container;
             }
         }
     }
@@ -356,25 +381,45 @@ fn main() {
     // 建筑造价：menuUnit → EcoGame Unit（顶层 + 一层子单位求和，镜像 cToolPlop）。
     // 维护费同结构求和后取负 —— 游戏弹窗显示「-300/小時」= -(200 顶层 + 100 子单位)
     // （公車站 79F3ED13 实测对拍）。
+    // 占位 unit 跟随：部分 DLC 建筑（V博士大樓）的 menuUnit 指向无造价键的
+    // 占位条目（可能根本不是 Unit），真身沿 0x00B2CCCB parent 链可达。最多跟两级。
+    let resolve_unit = |menu_unit: u32| -> Option<(&EcoUnit, Option<u32>)> {
+        if let Some(unit) = units.get(&menu_unit) {
+            if unit.construction.is_some() || unit.maintenance.is_some() {
+                return Some((unit, None));
+            }
+        }
+        let mut candidate = prop_parents.get(&menu_unit).copied();
+        for _ in 0..2 {
+            let parent = candidate?;
+            if let Some(unit) = units.get(&parent) {
+                if unit.construction.is_some() || unit.maintenance.is_some() {
+                    return Some((unit, Some(parent)));
+                }
+            }
+            candidate = prop_parents.get(&parent).copied();
+        }
+        None
+    };
     let plop_cost = |menu_unit: u32| -> (Option<i32>, Option<i32>) {
-        let Some((constr, maint, children, _, _)) = units.get(&menu_unit) else {
+        let Some((unit, _)) = resolve_unit(menu_unit) else {
             return (None, None);
         };
-        let mut total = *constr;
-        let mut maint_total = *maint;
-        if let Some(base) = constr {
-            for child in children {
-                if let Some((c, _, _, _, _)) = units.get(child) {
-                    if let Some(c) = c {
+        let mut total = unit.construction;
+        let mut maint_total = unit.maintenance;
+        if let Some(base) = unit.construction {
+            for child in &unit.children {
+                if let Some(child_unit) = units.get(child) {
+                    if let Some(c) = child_unit.construction {
                         total = Some(base + c);
                     }
                 }
             }
         }
-        if let Some(base_maint) = maint {
-            for child in children {
-                if let Some((_, m, _, _, _)) = units.get(child) {
-                    if let Some(m) = m {
+        if let Some(base_maint) = unit.maintenance {
+            for child in &unit.children {
+                if let Some(child_unit) = units.get(child) {
+                    if let Some(m) = child_unit.maintenance {
                         maint_total = Some(base_maint + m);
                     }
                 }
@@ -423,7 +468,9 @@ fn main() {
     let mut submenus: BTreeMap<u32, Vec<serde_json::Value>> = BTreeMap::new();
     for (menu, row) in &menus {
         let Some(unit) = row.menu_unit else { continue };
-        let Some((_, _, children, addon_container, _)) = units.get(&unit) else { continue };
+        let Some(unit) = units.get(&unit) else { continue };
+        let children = &unit.children;
+        let addon_container = unit.addon_container;
         // 两种机制取并集：
         // a) 附加面板容器（Unit 0x0AFE27CA → 容器；成员 = uiCategories 含该容器的条目，
         //    如大学 9D2EF585 / 各消防警察模块面板）；
@@ -431,7 +478,7 @@ fn main() {
         let mut candidate_menus: Vec<u32> = Vec::new();
         if let Some(container) = addon_container {
             for (candidate, candidate_row) in &menus {
-                if candidate != menu && candidate_row.cats.contains(container) {
+                if candidate != menu && candidate_row.cats.contains(&container) {
                     candidate_menus.push(*candidate);
                 }
             }
@@ -509,7 +556,10 @@ fn main() {
         let desc = row.desc.and_then(|(t, i)| locales.resolve(t, i));
         // 模板驱动 + 参数游标：带 ~占位符~ 的行消耗一个 Unit float 参数；
         // 无占位符的行（如「空氣汙染率：無」）不消耗，值取冒号后字面量。
-        let unit_floats = row.menu_unit.and_then(|unit| units.get(&unit));
+        let unit_floats = row
+            .menu_unit
+            .and_then(|unit| units.get(&unit))
+            .map(|unit| &unit.floats);
         let stats: Vec<serde_json::Value> = row
             .stat_rows
             .iter()
@@ -517,7 +567,7 @@ fn main() {
             .map(|(stat_row, hash)| {
                 let value = if stat_row.has_param {
                     unit_floats
-                        .and_then(|(_, _, _, _, floats)| floats.get(hash))
+                        .and_then(|floats| floats.get(hash))
                         .copied()
                         .map(|f| {
                             let num = if f.fract() == 0.0 {
