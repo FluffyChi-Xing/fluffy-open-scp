@@ -71,62 +71,6 @@ fn copy_atomic(source: &Path, destination: &Path) -> Result<(), CommandError> {
     Ok(())
 }
 
-/// LocaleManager registers packages from the game's Locale directories before
-/// it registers SimCityUserData/Packages. Keep the normal UI overlay there for
-/// properties/assets, and mirror only locale resources into both language
-/// directories so custom string IDs resolve in either installation locale.
-fn deploy_ui_locale_companions(
-    game_data: &Path,
-    overlay: &Path,
-) -> Result<(), CommandError> {
-    const LOCALE_TYPE: u32 = 0x0A98_EAF0;
-    let package = dbpf::Package::open(overlay)
-        .map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
-    let mut entries = Vec::new();
-    for entry in package.entries() {
-        if entry.id.type_id != LOCALE_TYPE {
-            continue;
-        }
-        let data = package
-            .read(entry)
-            .map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
-        entries.push(dbpf::OverlayEntry::new(entry.id, data));
-    }
-
-    let root = game_data.join("Locale");
-    for language in ["zh-tw", "en-us"] {
-        let destination = root
-            .join(language)
-            .join("OpenSCP-ui-overlay.package");
-        if entries.is_empty() {
-            if destination.exists() {
-                fs::remove_file(&destination)
-                    .map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
-            }
-            continue;
-        }
-        let parent = destination.parent().expect("locale destination parent");
-        fs::create_dir_all(parent)
-            .map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
-        let bytes = dbpf::write_uncompressed_overlay(&entries)
-            .map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
-        let temp = destination.with_extension("package.tmp");
-        fs::write(&temp, bytes)
-            .map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
-        if destination.exists() {
-            fs::remove_file(&destination).map_err(|e| {
-                let _ = fs::remove_file(&temp);
-                CommandError::new("deploy_failed", e.to_string())
-            })?;
-        }
-        if let Err(error) = fs::rename(&temp, &destination) {
-            let _ = fs::remove_file(&temp);
-            return Err(CommandError::new("deploy_failed", error.to_string()));
-        }
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn game_processes() -> Result<Vec<GameProcessInfo>, CommandError> {
     tauri::async_runtime::spawn_blocking(processes)
@@ -153,10 +97,6 @@ pub async fn deploy_game_mod(state: State<'_, AppState>, request: DeployGameModR
         fs::create_dir_all(&packages).map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
         let destination = packages.join(safe_filename(&request.project));
         copy_atomic(&artifact, &destination)?;
-        // Locale resources embedded in a normal package are not registered by
-        // LocaleManager. Mirror them into the language directories as well so
-        // packages deployed through the generic mod path resolve their text.
-        deploy_ui_locale_companions(&game_data, &destination)?;
         let found = processes()?;
         Ok(DeployGameModResult { artifact: artifact.to_string_lossy().into_owned(), destination: destination.to_string_lossy().into_owned(), game_running: !found.is_empty(), processes: found })
     }).await.map_err(|e| CommandError::internal(e.to_string()))?
@@ -201,7 +141,6 @@ pub async fn deploy_ui_overlay(
             let _ = fs::remove_file(&temp);
             return Err(CommandError::new("deploy_failed", error.to_string()));
         }
-        deploy_ui_locale_companions(&game_data, &destination)?;
         let found = processes()?;
         Ok(DeployGameModResult {
             artifact: format!("in-memory ({} bytes)", data.len()),
