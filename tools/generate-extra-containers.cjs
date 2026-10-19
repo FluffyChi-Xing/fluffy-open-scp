@@ -43,6 +43,15 @@ const TRANSIT_SUBTABS = [
 ];
 const TRANSIT_CONTAINERS = TRANSIT_SUBTABS.flatMap((t) => t.via);
 const PARK_ROOTS = ["C725C506", "F1035727", "4EEB801B", "F970A822"];
+// 公園子分類 = 價格檔（成員 uiCategories 指向的深層容器按檔位清晰分簇，
+// 2026-10-20 聚類實證：§ 基礎公園/操場、$$ 公園/森林、$$ 運動場、$$$ 廣場/雕塑）。
+const PARK_SUBTABS = [
+  { label: "基本 $", via: ["07049250", "D05EB40B"] },
+  { label: "公園 $$", via: ["97164E47", "8EC55325"] },
+  { label: "運動 $$", via: ["D91C434F", "F575AD72"] },
+  { label: "廣場 $$$", via: ["2A31842A", "2982952B", "C2487690", "1483C8AE"] },
+];
+const PARK_SUBTAB_CONTAINERS = PARK_SUBTABS.flatMap((t) => t.via);
 
 function decorate(row) {
   const instance = row.instance;
@@ -90,6 +99,13 @@ function membersByParents(roots) {
 }
 
 const transitRows = membersByCategories(TRANSIT_CONTAINERS);
+const parkRows = membersByParents(PARK_ROOTS);
+const parkSubtabs = PARK_SUBTABS.map((tab) => ({
+  label: tab.label,
+  instances: membersByCategories(PARK_SUBTAB_CONTAINERS)
+    .filter((row) => tab.via.some((c) => String(row.uiCategories ?? "").split(",").includes(c)))
+    .map((row) => row.instance),
+})).filter((tab) => tab.instances.length > 0);
 const transitTools = transitRows.map(decorate);
 // 子分类 → 成员 instance 列表（palette 按 tab 过滤）
 const transitSubtabs = TRANSIT_SUBTABS.map((tab) => ({
@@ -109,6 +125,7 @@ const out = {
   },
   subtabs: {
     CBC27856: transitSubtabs,
+    "899BEA70": parkSubtabs,
   },
   tools: {
     CBC27856: transitTools,
