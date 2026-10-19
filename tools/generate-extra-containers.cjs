@@ -43,13 +43,16 @@ const TRANSIT_SUBTABS = [
 ];
 const TRANSIT_CONTAINERS = TRANSIT_SUBTABS.flatMap((t) => t.via);
 const PARK_ROOTS = ["C725C506", "F1035727", "4EEB801B", "F970A822"];
-// 公園子分類 = 價格檔（成員 uiCategories 指向的深層容器按檔位清晰分簇，
-// 2026-10-20 聚類實證：§ 基礎公園/操場、$$ 公園/森林、$$ 運動場、$$$ 廣場/雕塑）。
+// 公園子分類（實機對拍 2026-10-20：基本($)/運動($$)/自然($$)/廣場($$$)/
+// 正式($$$)）。成員 uiCategories 指向的深層容器按內容歸位：
+// 自然 = 森林/小徑/城市公園；正式 = 噴泉/反射池等法式整形園藝；
+// 廣場 = 花園廣場/雕塑花園/都會廣場。
 const PARK_SUBTABS = [
-  { label: "基本 $", via: ["07049250", "D05EB40B"] },
-  { label: "公園 $$", via: ["97164E47", "8EC55325"] },
-  { label: "運動 $$", via: ["D91C434F", "F575AD72"] },
-  { label: "廣場 $$$", via: ["2A31842A", "2982952B", "C2487690", "1483C8AE"] },
+  { label: "基本 ($)", via: ["07049250", "D05EB40B"] },
+  { label: "運動 ($$)", via: ["D91C434F", "F575AD72"] },
+  { label: "自然 ($$)", via: ["97164E47", "8EC55325"] },
+  { label: "廣場 ($$$)", via: ["2A31842A", "1483C8AE"] },
+  { label: "正式 ($$$)", via: ["2982952B", "C2487690"] },
 ];
 const PARK_SUBTAB_CONTAINERS = PARK_SUBTABS.flatMap((t) => t.via);
 
