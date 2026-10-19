@@ -347,8 +347,13 @@ attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
 
     const row = document.createElement("div");
     row.className = "hud-palette-row";
+    // 带 tab 的菜单：槽位行整体上移一个 tab 行高，tab 行落在槽位行正下方
+    // （对拍游戏：地標建築上沿探出條頂更多，tab 行在條內下部）。
+    const hasTabs = subtabs.length > 0;
+    const TAB_ROW_H = 34;
+    const slotTop = barY + (cfg.topInBar || 0) - (hasTabs ? TAB_ROW_H : 0);
     row.style.left = `${startX}px`;
-    row.style.top = `${barY + (cfg.topInBar || 0)}px`; // 相对菜单条，各布局通用
+    row.style.top = `${slotTop}px`;
     row.style.height = `${cfg.slotH}px`;
     parentEl.appendChild(row);
 
@@ -365,8 +370,8 @@ attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
     if (subtabs.length > 0) {
       const pills = document.createElement("div");
       pills.className = "hud-subtabs";
-      // 錨定條底：帶 tab 的佈局條更高，底對齊讓 tab 行落在條內加高帶。
-      const pillsTop = barH ? barY + barH - 32 : barY + cfg.slotH + 6;
+      // tab 行紧贴上移后的槽位行下方。
+      const pillsTop = slotTop + cfg.slotH + 6;
       pills.style.cssText =
         `align-items:stretch;display:flex;gap:8px;left:${startX}px;position:absolute;` +
         `top:${pillsTop}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:30;`;
