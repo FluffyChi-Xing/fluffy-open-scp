@@ -347,11 +347,14 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
       row.style.width = `${perRow * cfg.pitch}px`;
     }
 
-    // 子分类 pill 行（游戏内位于面板条底部：公車/路面電車/火車/船…）
+    // 子分类 pill 行（对拍游戏：槽位行正下方一整行等宽大按钮，公車/路面
+    // 電車/火車/船/飛機/磁浮列車…），点击切换当前子分类的槽位池。
     if (subtabs.length > 0) {
       const pills = document.createElement("div");
       pills.className = "hud-subtabs";
-      pills.style.cssText = `align-items:center;display:flex;gap:6px;left:${startX}px;position:absolute;top:${barY + cfg.slotH + 16}px;`;
+      pills.style.cssText =
+        `align-items:stretch;display:flex;gap:8px;left:${startX}px;position:absolute;` +
+        `top:${barY + cfg.slotH + 6}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:6;`;
       const paintPills = (): void => {
         pills.querySelectorAll("button").forEach((el, i) => {
           const active = i === activeTab;
@@ -367,8 +370,8 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
         pill.textContent = tab.label;
         pill.style.cssText =
           "background:linear-gradient(#f2f8fd,#cddff0);border:1px solid #8aa5be;" +
-          "border-radius:999px;color:#1c3d5a;cursor:pointer;font:bold 12px/1 sans-serif;" +
-          "padding:4px 14px;";
+          "border-radius:999px;color:#1c3d5a;cursor:pointer;font:bold 13px/26px sans-serif;" +
+          "flex:1 1 0;height:26px;padding:0 10px;position:relative;text-align:center;";
         pill.addEventListener("click", (e) => {
           e.stopPropagation();
           if (activeTab === index) return;

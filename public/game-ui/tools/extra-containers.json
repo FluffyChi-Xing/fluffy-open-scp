@@ -8,7 +8,11 @@
         "A63DDC77",
         "4B277752",
         "DC8602C9",
-        "6AFE622F"
+        "6AFE622F",
+        "3E9C273B",
+        "FD631707",
+        "5817C009",
+        "F79888D2"
       ],
       "by": "uiCategories"
     },
@@ -59,6 +63,22 @@
           "EF12DD01",
           "0D8ECC28"
         ]
+      },
+      {
+        "label": "飛機",
+        "instances": [
+          "6B9BC12C",
+          "B655235F"
+        ]
+      },
+      {
+        "label": "磁浮列車",
+        "instances": [
+          "DBD08512",
+          "0085BF9D",
+          "0085BF9E",
+          "AC71C12B"
+        ]
       }
     ]
   },
@@ -69,20 +89,11 @@
         "label": "公車站",
         "desc": "幫助您的模擬市民在不同來往城市的地方！公車將會在這裡停下接載低收入及中收入模擬市民。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "公車數量",
-            "value": "3"
-          },
-          {
-            "label": "公車容量",
-            "value": "40個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_0403377D.png",
-        "marquee": "/game-ui/replica/assets/tool_79F3ED13.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -90,16 +101,11 @@
         "label": "客運火車站",
         "desc": "全部上來！沿著火車軌道放置這個車站，引進區域中所有城市的火車服務。客運列車從各個城市運來通勤者和消費者，同時也從區域運來低收入和中收入觀光客。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "火車容量",
-            "value": "500個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_8357B87F.png",
-        "marquee": "/game-ui/replica/assets/tool_E8792D59.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -107,20 +113,11 @@
         "label": "電車車廠",
         "desc": "鈴！鈴！這個車站為您的城市提供基本的電車系統。包括3輛電車，但您需要增加電車站，電車才可以行駛。需要放置在高密度的電車大道上。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "電車數量",
-            "value": "3"
-          },
-          {
-            "label": "電車容量",
-            "value": "200個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_F77983E4.png",
-        "marquee": "/game-ui/replica/assets/tool_F0DBD6F2.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -128,16 +125,11 @@
         "label": "電車站",
         "desc": "這是模擬市民在馬路中央最適合停下來的地方！這個車站放在高密度的電車大道上，讓模擬市民上下電車。<br><b>需要一個電車廠。</b>",
         "unlock": "",
-        "stats": [
-          {
-            "label": "電車容量",
-            "value": "200個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_0D28D3F9.png",
-        "marquee": "/game-ui/replica/assets/tool_25F6FBE7.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -157,16 +149,11 @@
         "label": "公車站牌",
         "desc": "等車… 公車在這裡停下接載低收入及中收入模擬市民。<br><b>地區需要有公車總站或公車站。</b>",
         "unlock": "",
-        "stats": [
-          {
-            "label": "公車站容量",
-            "value": "125個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_FE043FDC.png",
-        "marquee": "/game-ui/replica/assets/tool_F2F6645E.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -178,7 +165,7 @@
         "cost": null,
         "upkeep": null,
         "preview": null,
-        "marquee": "/game-ui/replica/assets/tool_0BB68749.jpg",
+        "marquee": null,
         "locked": false
       },
       {
@@ -186,21 +173,24 @@
         "label": "高密度電車大道",
         "desc": "這廣闊的6線道支持高密度分區，並在路口設有交通燈。道路上的電車軌支持電車站。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "線道數量：6",
-            "value": null
-          },
-          {
-            "label": "支援最大密度：高",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_E2C9E170.png",
-        "marquee": "/game-ui/replica/assets/tool_1055F94B.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": false
+      },
+      {
+        "instance": "6B9BC12C",
+        "label": "",
+        "desc": "",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": null,
+        "marquee": null,
+        "locked": true
       },
       {
         "instance": "A543ECF1",
@@ -210,8 +200,20 @@
         "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_62A7BD23.png",
+        "preview": null,
         "marquee": "/game-ui/replica/assets/tool_A543ECF1.jpg",
+        "locked": true
+      },
+      {
+        "instance": "DBD08512",
+        "label": "",
+        "desc": "",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -219,16 +221,35 @@
         "label": "公車轉乘站",
         "desc": "市區接駁公車在這裡停車接載中低收入模擬市民。通勤者可以在後面停泊車輛，然後再乘坐公車。<br><b>地區需要有公車總站或公車站。</b>",
         "unlock": "",
-        "stats": [
-          {
-            "label": "公車站容量",
-            "value": "80個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_FC2AE414.png",
-        "marquee": "/game-ui/replica/assets/tool_83C19CD6.jpg",
+        "preview": null,
+        "marquee": null,
+        "locked": true
+      },
+      {
+        "instance": "0085BF9D",
+        "label": "",
+        "desc": "",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": null,
+        "marquee": null,
+        "locked": true
+      },
+      {
+        "instance": "0085BF9E",
+        "label": "",
+        "desc": "",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -236,20 +257,11 @@
         "label": "公車總站",
         "desc": "為較大的都會和區域而設的公車總站。低收入和中收入模擬市民可以開車來這裡，然後再乘公車。都會公車可以在城市裡和鄰近設有公車站或有蓋車站的城市讓模擬市民上下公車。區域公車可以在此讓觀光客上下車。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "公車數量",
-            "value": "3"
-          },
-          {
-            "label": "公車容量",
-            "value": "80個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_4722AB8D.png",
-        "marquee": "/game-ui/replica/assets/tool_55B4DF4F.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -257,33 +269,47 @@
         "label": "客運渡輪碼頭 ",
         "desc": "客運渡輪碼頭運載低收入和中收入勞工往來區域以水相連的城市。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "渡輪容量",
-            "value": "1000個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_0EC5C375.png",
+        "preview": null,
         "marquee": "/game-ui/replica/assets/tool_97C5802B.jpg",
         "locked": true
       },
       {
-        "instance": "EB3C5BA1",
-        "label": "德國高鐵站",
-        "desc": "歡迎！沿著火車站放置鐵軌來讓區域的火車行駛。高速客運火車讓通勤者和消費者在城市間移動，並帶來了區域內低收入和中等收入的觀光客。<br>源自：德國",
+        "instance": "AC71C12B",
+        "label": "",
+        "desc": "",
         "unlock": "",
-        "stats": [
-          {
-            "label": "火車容量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_251251E3.png",
-        "marquee": "/game-ui/replica/assets/tool_EB3C5BA1.jpg",
+        "preview": null,
+        "marquee": null,
+        "locked": false
+      },
+      {
+        "instance": "B655235F",
+        "label": "市立機場",
+        "desc": "用小型客運飛機運送中收入觀光客到您的城 。升級機場，以應付高收入觀光客，並增加容量或運送貨物。居民不想住在機場附近，但機場可以令附近的工廠更快樂。",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": null,
+        "marquee": null,
+        "locked": true
+      },
+      {
+        "instance": "EB3C5BA1",
+        "label": "",
+        "desc": "",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -291,33 +317,23 @@
         "label": "渡輪碼頭",
         "desc": "總碼頭放置在海岸線，讓通勤者上下渡輪。增加郵輪碼頭或額外的客運郵輪碼頭使城市進步得更快。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "渡輪容量",
-            "value": "1000個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_C6C4E7D7.png",
-        "marquee": "/game-ui/replica/assets/tool_EF12DD01.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
         "instance": "921AEACD",
-        "label": "雙層巴士總站",
-        "desc": "公車總站提供迷人的雙層巴士，可提供低收入和中等收入的模擬市民在城市內移動。<br>原自：英國",
+        "label": "",
+        "desc": "",
         "unlock": "",
-        "stats": [
-          {
-            "label": "公車容量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_14A2B727.png",
-        "marquee": "/game-ui/replica/assets/tool_921AEACD.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -325,15 +341,10 @@
         "label": "郵輪碼頭",
         "desc": "有沒有人要玩推圓盤遊戲？讓郵輪停泊，帶來區域裡的中收入及富豪觀光客。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "郵輪容量",
-            "value": "2000個模擬市民"
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_31A5448E.png",
+        "preview": null,
         "marquee": "/game-ui/replica/assets/tool_0D8ECC28.jpg",
         "locked": true
       }
@@ -341,47 +352,25 @@
     "899BEA70": [
       {
         "instance": "2A2E0433",
-        "label": "AR體育中心(§§)",
-        "desc": "這座創新的公園利用擴增實境附件的定位軟體，提供互動式的障礙訓練場，還有滑板、攀岩等眾多設施！",
+        "label": "",
+        "desc": "",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          },
-          {
-            "label": "將附近的住宅、商店或工廠未來化",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_143D02C9.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
       {
         "instance": "D9F5D292",
-        "label": "激勵園地(§)",
-        "desc": "孩子們學習進行各種運動和遊戲時，有他們自己的互動世界可供探索，而且這一切都在一個安全的學習環境中。",
+        "label": "",
+        "desc": "",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          },
-          {
-            "label": "將附近的住宅、商店或工廠未來化",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_0F63F2BC.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -390,19 +379,10 @@
         "label": "噴泉廣場(§§§)",
         "desc": "石板、噴泉、花朵。您還能要求甚麼呢？",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_C32C22B6.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -411,19 +391,10 @@
         "label": "圍欄噴泉廣場(§§§)",
         "desc": "這個滿布噴泉的小廣場有哥特式的圍欄。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_C32C22B5.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -432,20 +403,11 @@
         "label": "花朵廣場(§§§)",
         "desc": "您是那麼愛花朵，您要有一個全部都是花朵的公園。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_44969C52.png",
-        "marquee": "/game-ui/replica/assets/tool_46173A50.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -453,19 +415,10 @@
         "label": "大噴泉公園(§§§)",
         "desc": "這個巨大的噴泉位於戲劇性廣場的中心。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_05EBF0A0.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -474,20 +427,11 @@
         "label": "噴泉廣場(§§§)",
         "desc": "石板、噴泉、花朵。您還能要求甚麼呢？",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_C32C22B6.png",
-        "marquee": "/game-ui/replica/assets/tool_74A54D88.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -495,16 +439,11 @@
         "label": "柏油路公園(§)",
         "desc": "剛好有足夠的空間容納四方形和跳房子遊戲。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_AC6D23F5.png",
-        "marquee": "/game-ui/replica/assets/tool_7A90E787.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -512,19 +451,10 @@
         "label": "小噴泉公園(§§§)",
         "desc": "美麗、光澤的瓷磚和五顏六色的鮮花圍繞著一個簡單的噴泉。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_FD446873.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -533,15 +463,10 @@
         "label": "柏油路公園(§)",
         "desc": "剛好有足夠的空間容納四方形和跳房子遊戲。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_AC6D23F5.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -550,19 +475,10 @@
         "label": "池塘(§§)",
         "desc": "鴨子、小型船賽或者碰碰睡蓮的浮葉。幾乎有無限的選擇。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_077E326B.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -571,19 +487,10 @@
         "label": "公共網球場(§§)",
         "desc": "網球，有人要玩嗎﹖模擬市民喜歡在您的新球場上打網球！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_A0927CFC.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -592,20 +499,11 @@
         "label": "池塘(§§)",
         "desc": "鴨子、小型船賽或者碰碰睡蓮的浮葉。幾乎有無限的選擇。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_077E326B.png",
-        "marquee": "/game-ui/replica/assets/tool_DC02CAED.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -613,19 +511,10 @@
         "label": "反射池公園(§§§)",
         "desc": "最適合現代的睡眠。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_C427032F.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -634,20 +523,11 @@
         "label": "公共網球場(§§)",
         "desc": "網球，有人要玩嗎﹖模擬市民喜歡在您的新球場上打網球！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_A0927CFC.png",
-        "marquee": "/game-ui/replica/assets/tool_DF2C1BBA.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -655,20 +535,11 @@
         "label": "籃球場(§§)",
         "desc": "您已經獲得前排門票，可以觀看球員進球得分！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_B88A4D18.png",
-        "marquee": "/game-ui/replica/assets/tool_185BEFDA.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -676,16 +547,11 @@
         "label": "盪鞦韆遊樂場(§)",
         "desc": "盪鞦韆時間！盪到最高點！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_BEAA1C30.png",
-        "marquee": "/game-ui/replica/assets/tool_1FF4EA26.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -693,19 +559,10 @@
         "label": "波浪形小徑公園(§§)",
         "desc": "打造您自己的客製、容易逃脫的迷宮！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_69F4E9F1.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -714,19 +571,10 @@
         "label": "籃球場(§§)",
         "desc": "您已經獲得前排門票，可以觀看球員進球得分！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_B88A4D18.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -735,20 +583,11 @@
         "label": "波浪形小徑公園(§§)",
         "desc": "打造您自己的客製、容易逃脫的迷宮！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_69F4E9F1.png",
-        "marquee": "/game-ui/replica/assets/tool_49CC1D7B.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -756,20 +595,11 @@
         "label": "圍欄噴泉廣場(§§§)",
         "desc": "這個滿布噴泉的小廣場有哥特式的圍欄。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_C32C22B5.png",
-        "marquee": "/game-ui/replica/assets/tool_74A54D8B.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -777,15 +607,10 @@
         "label": "盪鞦韆遊樂場(§)",
         "desc": "盪鞦韆時間！盪到最高點！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_BEAA1C30.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -794,20 +619,11 @@
         "label": "雙行人行道(§§§)",
         "desc": "這條人行道比較寬敞，並有樹蔭覆蓋。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_ECEB3C48.png",
-        "marquee": "/game-ui/replica/assets/tool_1230E4D6.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -815,16 +631,11 @@
         "label": "轉轉遊樂場(§)",
         "desc": "這是個放置小狗的最佳地點，讓小狗可以到處跑和跳！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_BEAA1C33.png",
-        "marquee": "/game-ui/replica/assets/tool_1FF4EA25.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -832,20 +643,11 @@
         "label": "直路公園(§§)",
         "desc": "用這個方便的公園，幫助您的模擬市民走筆直和狹窄的道路。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_6514772E.png",
-        "marquee": "/game-ui/replica/assets/tool_2AF606C8.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -853,20 +655,11 @@
         "label": "小型雕塑花園(§§§)",
         "desc": "基地的牌匾上寫著「無意義的橢圓形 - 亨利力斯」",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_44969C51.png",
-        "marquee": "/game-ui/replica/assets/tool_46173A53.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -874,20 +667,11 @@
         "label": "排球場(§§)",
         "desc": "抓住每個服務的機會，為您的城市提供一個排球場！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_797264EB.png",
-        "marquee": "/game-ui/replica/assets/tool_60DD132D.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -895,19 +679,10 @@
         "label": "小型雕塑花園(§§§)",
         "desc": "基地的牌匾上寫著「無意義的橢圓形 - 亨利力斯」",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_44969C51.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -916,19 +691,10 @@
         "label": "排球場(§§)",
         "desc": "抓住每個服務的機會，為您的城市提供一個排球場！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_797264EB.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -937,19 +703,10 @@
         "label": "直路公園(§§)",
         "desc": "用這個方便的公園，幫助您的模擬市民走筆直和狹窄的道路。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_6514772E.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -958,20 +715,11 @@
         "label": "小噴泉公園(§§§)",
         "desc": "美麗、光澤的瓷磚和五顏六色的鮮花圍繞著一個簡單的噴泉。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_FD446873.png",
-        "marquee": "/game-ui/replica/assets/tool_D44673F9.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -979,15 +727,10 @@
         "label": "轉轉遊樂場(§)",
         "desc": "這是個放置小狗的最佳地點，讓小狗可以到處跑和跳！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_BEAA1C33.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -996,19 +739,10 @@
         "label": "五顏六色的小徑公園(§§)",
         "desc": "花朵不會讓您在小徑裡迷路。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_7137A3C8.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1017,20 +751,11 @@
         "label": "簡單的人行道(§§§)",
         "desc": "這條廣闊的人行道有一些樹木和灌木叢，為您的城市中心添上一抹綠色。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_ECEB3C49.png",
-        "marquee": "/game-ui/replica/assets/tool_1230E4D7.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1038,20 +763,11 @@
         "label": "中滑板公園(§§)",
         "desc": "這個滑板公園的邊緣有充足的坡道和許多管道。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_412B4B21.png",
-        "marquee": "/game-ui/replica/assets/tool_22404DF3.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1059,15 +775,10 @@
         "label": "烤肉區(§)",
         "desc": "這個被草叢包圍的方便地點讓任何模擬市民都可以生火烤肉。會出什麼亂子呢？",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_9C447D91.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1076,20 +787,11 @@
         "label": "反射池公園(§§§)",
         "desc": "最適合現代的睡眠。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_C427032F.png",
-        "marquee": "/game-ui/replica/assets/tool_6DE007F7.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1097,19 +799,10 @@
         "label": "花朵廣場(§§§)",
         "desc": "您是那麼愛花朵，您要有一個全部都是花朵的公園。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_44969C52.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1118,19 +811,10 @@
         "label": "中滑板公園(§§)",
         "desc": "這個滑板公園的邊緣有充足的坡道和許多管道。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_412B4B21.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1139,16 +823,11 @@
         "label": "烤肉區(§)",
         "desc": "這個被草叢包圍的方便地點讓任何模擬市民都可以生火烤肉。會出什麼亂子呢？",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_9C447D91.png",
-        "marquee": "/game-ui/replica/assets/tool_9FF1CAB9.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1156,20 +835,11 @@
         "label": "五顏六色的小徑公園(§§)",
         "desc": "花朵不會讓您在小徑裡迷路。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_7137A3C8.png",
-        "marquee": "/game-ui/replica/assets/tool_C0A75B3A.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1177,16 +847,11 @@
         "label": "一排高樹(§§)",
         "desc": "在高污染的建築物之間增添一些綠色地帶，至少看起來就像您有盡一點綠色的努力。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_ECEB3C46.png",
-        "marquee": "/game-ui/replica/assets/tool_1230E4D8.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1194,16 +859,11 @@
         "label": "一排矮樹(§§)",
         "desc": "在高污染的建築物之間增添一些綠色地帶，至少看起來就像您有盡一點綠色的努力。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_ECEB3C47.png",
-        "marquee": "/game-ui/replica/assets/tool_1230E4D9.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1211,20 +871,11 @@
         "label": "中型雕塑花園(§§§)",
         "desc": "在這個廣場的中心的幾何雕塑命名為「徵稅代表」。這是甚麼意思呢﹖這是甚麼意思呢﹖",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_7BDF0A38.png",
-        "marquee": "/game-ui/replica/assets/tool_3D965136.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1232,20 +883,11 @@
         "label": "大型滑板公園(§§)",
         "desc": "把那些空的游泳池作基本的用途！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_4B621B64.png",
-        "marquee": "/game-ui/replica/assets/tool_7F2BE24E.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1253,16 +895,11 @@
         "label": "燒烤區(§)",
         "desc": "為您的公園添加一股淡淡的牧豆樹和打火機燃料的味道。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_342EE580.png",
-        "marquee": "/game-ui/replica/assets/tool_81C8CD4A.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1270,20 +907,11 @@
         "label": "大噴泉公園(§§§)",
         "desc": "這個巨大的噴泉位於戲劇性廣場的中心。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_05EBF0A0.png",
-        "marquee": "/game-ui/replica/assets/tool_908629EA.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1291,20 +919,11 @@
         "label": "中型小徑森林 (§§)",
         "desc": "這座寬敞的公園有足夠的小徑能讓人漫步其間，還有一個色彩繽紛的美麗花床。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_EDDEF58C.png",
-        "marquee": "/game-ui/replica/assets/tool_9D122A62.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1312,19 +931,10 @@
         "label": "中型雕塑花園(§§§)",
         "desc": "在這個廣場的中心的幾何雕塑命名為「徵稅代表」。這是甚麼意思呢﹖這是甚麼意思呢﹖",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_7BDF0A38.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1333,15 +943,10 @@
         "label": "燒烤區(§)",
         "desc": "為您的公園添加一股淡淡的牧豆樹和打火機燃料的味道。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_342EE580.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1350,19 +955,10 @@
         "label": "小徑公園(§§)",
         "desc": "讓模擬市民一起散步的小徑，可以浪漫也可能會尷尬沉默。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_EDDEF58C.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1371,16 +967,11 @@
         "label": "水公園遊樂場(§)",
         "desc": "孩子們一定會喜歡在這個有趣的水樂場裡玩水。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_8A723BEE.png",
-        "marquee": "/game-ui/replica/assets/tool_4FF4E214.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1388,20 +979,11 @@
         "label": "大型雕塑花園(§§§)",
         "desc": "望著「人」，這個雕塑代表著人與自然和自己的永恆的鬥爭。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_4D719039.png",
-        "marquee": "/game-ui/replica/assets/tool_A94AAF37.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1409,19 +991,10 @@
         "label": "水公園遊樂場(§)",
         "desc": "孩子們一定會喜歡在這個有趣的水樂場裡玩水。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_8A723BEE.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1430,20 +1003,11 @@
         "label": "大型都會雕塑花園 (§§§)",
         "desc": "這座驚人的哥狄亞斯繩結雕像是模擬製品所推出的。「模擬製品：製造任何東西」",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_5280A8E9.png",
-        "marquee": "/game-ui/replica/assets/tool_83ABE66B.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1451,16 +1015,11 @@
         "label": "小型操場 (§)",
         "desc": "希望您喜歡草地，因為這裡有很多！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_59292C11.png",
-        "marquee": "/game-ui/replica/assets/tool_AC8A698B.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1468,15 +1027,10 @@
         "label": "小型操場 (§)",
         "desc": "希望您喜歡草地，因為這裡有很多！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_59292C11.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1485,20 +1039,11 @@
         "label": "都會綠地 (§§§)",
         "desc": "增加一個讓加班過度的辦公室機器人們在午餐時間可以沐浴在陽光下的美好地點。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_5D1E0324.png",
-        "marquee": "/game-ui/replica/assets/tool_0ABBA7FA.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1506,20 +1051,11 @@
         "label": "綠蔭人行道(§§)",
         "desc": "美麗的樹木和五顏六色的鮮花圍繞著這條寧靜的人行道。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_ECEB3C44.png",
-        "marquee": "/game-ui/replica/assets/tool_1230E4DA.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1527,16 +1063,11 @@
         "label": "附停車場的小型土地 (§)",
         "desc": "不是每個露天草地都有方便的停車場！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_59292C12.png",
-        "marquee": "/game-ui/replica/assets/tool_AC8A6988.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1544,20 +1075,11 @@
         "label": "階梯式都會綠地 (§§§)",
         "desc": "幾乎就像是城市中央出現了大自然！",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加高價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_5D1E0327.png",
-        "marquee": "/game-ui/replica/assets/tool_0ABBA7F9.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1565,20 +1087,11 @@
         "label": "波浪綠蔭人行道(§§)",
         "desc": "公園部門的官員堅持說舖路組在舖設這條人行道時沒有喝酒。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_ECEB3C45.png",
-        "marquee": "/game-ui/replica/assets/tool_1230E4DB.jpg",
+        "preview": null,
+        "marquee": null,
         "locked": true
       },
       {
@@ -1589,7 +1102,7 @@
         "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_3AF4DA23.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1601,7 +1114,7 @@
         "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_B208559D.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       },
@@ -1622,19 +1135,10 @@
         "label": "小滑板公園(§§)",
         "desc": "為社區的SK89z在您的摩天大廈之間擠進多一個滑板公園。",
         "unlock": "",
-        "stats": [
-          {
-            "label": "增加中價土地價值",
-            "value": null
-          },
-          {
-            "label": "每日旅客量",
-            "value": null
-          }
-        ],
+        "stats": [],
         "cost": null,
         "upkeep": null,
-        "preview": "/game-ui/replica/assets/tool_icon_6413DAA4.png",
+        "preview": null,
         "marquee": null,
         "locked": true
       }

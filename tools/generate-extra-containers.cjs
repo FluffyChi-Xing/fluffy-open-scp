@@ -36,6 +36,10 @@ const TRANSIT_SUBTABS = [
   { label: "路面電車", via: ["A63DDC77"] },
   { label: "火車", via: ["4B277752"] },
   { label: "船", via: ["DC8602C9", "6AFE622F"] },
+  // 飛機（飛艇庫，Airships DLC）與磁浮列車（EP1：軌道/車站；車庫單列容器）
+  // 2026-10-20 補齊——此前「无静态成员不设」的判断有误，容器实为聚合可达。
+  { label: "飛機", via: ["3E9C273B"] },
+  { label: "磁浮列車", via: ["FD631707", "5817C009", "F79888D2"] },
 ];
 const TRANSIT_CONTAINERS = TRANSIT_SUBTABS.flatMap((t) => t.via);
 const PARK_ROOTS = ["C725C506", "F1035727", "4EEB801B", "F970A822"];
