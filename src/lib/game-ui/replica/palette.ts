@@ -89,13 +89,16 @@ export function createHudPalette(
     const tree = entry.layout;
     designPass(tree, stageW, PANEL.h);
 
-    const barY = measureBarY(tree, stageW, PANEL.h);
+    const bar = measureBar(tree, stageW, PANEL.h);
+    const barY = bar.y;
     body = document.createElement("div");
     body.className = "hud-palette-body";
     body.style.left = `${PANEL.x}px`;
     body.style.top = `${PANEL.barY - barY}px`;
     body.style.width = `${stageW}px`;
-    body.style.height = `${PANEL.h}px`;
+    // 带 tab 的文件夾佈局條更高：容器隨量得的條高加高，否則 tab 行溢出被
+    // 底部圖標行遮擋。
+    body.style.height = `${Math.max(PANEL.h, bar.h ?? PANEL.h)}px`;
     host.appendChild(body);
 
     const r = updatePosition(tree, stageW, PANEL.h);
@@ -104,7 +107,7 @@ export function createHudPalette(
 
     attachLabel(body, entry.layout, label);
     attachCloseButton(body);
-attachSlotRow(body, categoryId, entry.slotRow, barY);
+attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
     return true;
   }
 
@@ -137,18 +140,22 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
     return s;
   }
 
-  /** 先空跑一遍布局，量出背景条（CSS Palette_tab）落在 body 内的 y。 */
-  function measureBarY(tree: ReplicaNode, w: number, h: number): number {
-    let barY: number | null = null;
+  /** 先空跑一遍布局，量出背景条（CSS Palette_tab）在 body 内的 y 与高度。
+   * 带 tab 的菜单（公共運輸/公園等文件夾佈局）背景條比普通菜單高——tab 行
+   * 就在加高的條內，錨定條底才能不被底部圖標行遮擋。 */
+  function measureBar(tree: ReplicaNode, w: number, h: number): { y: number; h: number | null } {
+    let bar: { y: number; h: number | null } | null = null;
     const walk = (n: ReplicaNode, px: number, py: number, pw: number, ph: number): void => {
       const r = updatePosition(n, pw, ph);
       const ay = py + r.y;
       const dr = n.drawable;
-      if (barY === null && dr && (dr.cssStyles || [])[0] === "Palette_tab") barY = ay;
+      if (bar === null && dr && (dr.cssStyles || [])[0] === "Palette_tab") {
+        bar = { y: ay, h: r.h || null };
+      }
       for (const c of n.children || []) walk(c, px + r.x, ay, r.w, r.h);
     };
     walk(tree, 0, 0, w, h);
-    return barY ?? 0;
+    return bar ?? { y: 0, h: null };
   }
 
   /** 面板里布局数据表达不了的部分：分类名与槽位行由运行时填。
@@ -269,7 +276,13 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
    * 文件夹式分类（公共交通/公園）带子分类标签（data.subtabs）：面板底部
    * 渲染 pill 行（对拍游戏：公車/路面電車/火車/船…），槽位行只显示当前
    * 子分类的条目。 */
-  function attachSlotRow(parentEl: HTMLElement, categoryId: string, cfg: ReplicaSlotRow, barY: number): void {
+  function attachSlotRow(
+    parentEl: HTMLElement,
+    categoryId: string,
+    cfg: ReplicaSlotRow,
+    barY: number,
+    barH?: number | null,
+  ): void {
     if (SKIP_SLOT_ROW.has(categoryId)) return; // 布局自带工具按钮的分类不再叠一行
     const allTools = hooks.getTools?.(categoryId) ?? (data.tools[categoryId] as SlotTool[] | undefined) ?? [];
     if (!allTools.length) return;
@@ -352,9 +365,11 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
     if (subtabs.length > 0) {
       const pills = document.createElement("div");
       pills.className = "hud-subtabs";
+      // 錨定條底：帶 tab 的佈局條更高，底對齊讓 tab 行落在條內加高帶。
+      const pillsTop = barH ? barY + barH - 32 : barY + cfg.slotH + 6;
       pills.style.cssText =
         `align-items:stretch;display:flex;gap:8px;left:${startX}px;position:absolute;` +
-        `top:${barY + cfg.slotH + 6}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:30;`;
+        `top:${pillsTop}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:30;`;
       const paintPills = (): void => {
         pills.querySelectorAll("button").forEach((el, i) => {
           const active = i === activeTab;
