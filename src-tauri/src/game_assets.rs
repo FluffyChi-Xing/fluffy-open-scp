@@ -231,7 +231,14 @@ pub struct TgiRef {
 #[serde(rename_all = "camelCase")]
 pub struct PropertyCopyRequest {
     pub source_instance: u32,
+    /// 源分组过滤：同 instance 可能存在于多个包/分组（如 BC45E41B 同时在
+    /// DLC0 41F0C900 与 EP1 61F0C900），提供后精确命中工作台所见的那个源。
+    pub source_group: Option<u32>,
     pub new_instance: u32,
+    /// 统计行模板重写（全量 Text 引用，写自有表）：前端编辑统计行 label 后
+    /// 传入；缺省保留源统计行。
+    #[serde(default)]
+    pub stat_title_refs: Option<Vec<StatTitleRef>>,
     pub ui_categories: Vec<u32>,
     pub title_string_id: Option<u32>,
     pub desc_string_id: Option<u32>,
@@ -245,11 +252,20 @@ pub struct PropertyCopyRequest {
     pub marquee_tgi: Option<TgiRef>,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatTitleRef {
+    pub table: u32,
+    pub instance: u32,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PropertyCopyResult {
     pub data_base64: String,
     pub key_count: usize,
+    /// 实际读取的源 property 分组——覆盖包必须用同分组放置才能命中。
+    pub source_group: u32,
 }
 
 fn set_scalar_key(file: &mut PropertyFile, hash: u32, key: Value) {
@@ -393,18 +409,24 @@ pub async fn game_property_copy(
                 })?.clone()
             }
         };
-        let mut copied: Option<PropertyFile> = None;
+        let source_group = request.source_group;
+        let mut copied: Option<(PropertyFile, u32)> = None;
         for (path, entry) in &candidates {
             if entry.id.type_id != TYPE_PROPERTY {
                 continue;
             }
+            if let Some(group) = source_group {
+                if entry.id.group != group {
+                    continue;
+                }
+            }
             let Ok(package) = dbpf::Package::open(path) else { continue };
             let Ok(data) = package.read(entry) else { continue };
             let Ok(file) = PropertyFile::parse(&data) else { continue };
-            copied = Some(file);
+            copied = Some((file, entry.id.group));
             break;
         }
-        let Some(mut file) = copied else {
+        let Some((mut file, source_group)) = copied else {
             return Err(CommandError::new(
                 "game_property_missing",
                 format!("no readable property for 0x{source_instance:08X}"),
@@ -443,6 +465,19 @@ pub async fn game_property_copy(
             remove_property(&mut file, 0x0DE8_4DD3);
         }
         // 两者皆否 = 未编辑文案的拷贝：保留源解锁引用（ref-first）。
+        // 统计行模板重写（前端编辑统计行 label 后的全量引用，写自有表）。
+        if let Some(refs) = &request.stat_title_refs {
+            let values = refs
+                .iter()
+                .map(|r| {
+                    Value::Text(sc_properties::Text {
+                        table_id: r.table,
+                        instance_id: r.instance,
+                    })
+                })
+                .collect();
+            set_array_values(&mut file, 0x0EB1_FC05, PropType::Text, values);
+        }
         // 排序
         if let Some(pos) = request.position {
             set_array_values(
@@ -484,10 +519,325 @@ pub async fn game_property_copy(
         Ok(PropertyCopyResult {
             data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
             key_count,
+            source_group,
         })
     })
     .await
     .map_err(|e| crate::activity::CommandError::internal(e.to_string()))?
+}
+
+// ===== property read/patch 原语：Sheet 深层语义编辑（经济/统计行）的数据通道 =====
+use tauri::State;
+use crate::activity::CommandError;
+// 数据规范由 encode_canonical 保证（对原版属性逐字节往返，见 sc-properties 测试）：
+// float/int 补丁走类型化标量写入，Text 数组补丁走 520 步长数组重写。
+
+/// 候选包挑选启发式：EcoGame 脚本包带版本号（Scripts_<v>），取路径中最长
+/// 数字串最大者 = 最新版本；无版本号的包得 0 分排在前。
+fn candidate_score(path: &Path) -> u64 {
+    path.to_string_lossy()
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|segment| segment.len() >= 6)
+        .filter_map(|segment| segment.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0)
+}
+
+/// 按 instance（可选 group 过滤）挑出最佳 property 候选：版本号新者优先。
+fn pick_property_candidate<'a>(
+    candidates: &'a [(PathBuf, dbpf::IndexEntry)],
+    group: Option<u32>,
+) -> Option<&'a (PathBuf, dbpf::IndexEntry)> {
+    candidates
+        .iter()
+        .filter(|(_, entry)| {
+            entry.id.type_id == TYPE_PROPERTY && group.is_none_or(|g| entry.id.group == g)
+        })
+        .max_by_key(|(path, _)| candidate_score(path))
+}
+
+fn read_value_dto(v: &Value) -> PropertyReadValue {
+    let mut dto = PropertyReadValue {
+        kind: match v {
+            Value::Bool(_) => "bool",
+            Value::Int32(_) => "int32",
+            Value::UInt32(_) => "uint32",
+            Value::Float(_) => "float",
+            Value::Text(_) => "text",
+            Value::Key(_) => "key",
+            _ => "other",
+        }
+        .to_string(),
+        int: None,
+        float: None,
+        text: None,
+        key: None,
+    };
+    match v {
+        Value::Bool(b) => dto.int = Some(i64::from(*b)),
+        Value::Int32(i) => dto.int = Some(i64::from(*i)),
+        Value::UInt32(u) => dto.int = Some(i64::from(*u)),
+        Value::Float(f) => dto.float = Some(f64::from(*f)),
+        Value::Text(t) => dto.text = Some([t.table_id, t.instance_id]),
+        Value::Key(k) => dto.key = Some([k.type_id, k.group, k.instance]),
+        _ => {}
+    }
+    dto
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyReadValue {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub int: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub float: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<[u32; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<[u32; 3]>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyReadEntry {
+    pub hash: u32,
+    pub array: bool,
+    pub values: Vec<PropertyReadValue>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyReadRequest {
+    pub instance: u32,
+    pub group: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyReadResult {
+    pub type_id: u32,
+    pub group: u32,
+    pub instance: u32,
+    pub keys: Vec<PropertyReadEntry>,
+}
+
+/// 读取一条 property 的类型化视图（Sheet 深层编辑先读后改的数据源）。
+#[tauri::command]
+pub async fn game_property_read(
+    state: State<'_, crate::activity::AppState>,
+    request: PropertyReadRequest,
+) -> Result<PropertyReadResult, CommandError> {
+    let game_data = state
+        .store
+        .app_settings()
+        .map_err(CommandError::from)?
+        .and_then(|s| s.game_data_path)
+        .ok_or_else(|| {
+            CommandError::new(
+                "game_directory_not_configured",
+                "Game data directory is not configured",
+            )
+        })?;
+    let game_data = PathBuf::from(game_data);
+    let instance = request.instance;
+    let group = request.group;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = cached_index(&game_data);
+        let Some(index) = guard.as_ref() else {
+            return Err(CommandError::internal("game asset index unavailable"));
+        };
+        let Some(candidates) = index.entries.get(&instance) else {
+            return Err(CommandError::new(
+                "game_property_missing",
+                format!("source property 0x{instance:08X} not found"),
+            ));
+        };
+        let Some((path, entry)) = pick_property_candidate(candidates, group) else {
+            return Err(CommandError::new(
+                "game_property_missing",
+                format!("no readable property for 0x{instance:08X}"),
+            ));
+        };
+        let package = dbpf::Package::open(path)
+            .map_err(|e| CommandError::new("game_property_missing", format!("open failed: {e}")))?;
+        let data = package
+            .read(entry)
+            .map_err(|e| CommandError::new("game_property_missing", format!("read failed: {e}")))?;
+        let file = PropertyFile::parse(&data)
+            .map_err(|e| CommandError::new("game_property_parse_failed", e.to_string()))?;
+        let keys = file
+            .values
+            .iter()
+            .map(|prop| {
+                let values: Vec<PropertyReadValue> = match &prop.kind {
+                    Kind::Scalar(v) => vec![read_value_dto(v)],
+                    Kind::Array(vs) => vs.iter().map(read_value_dto).collect(),
+                    Kind::Empty => vec![],
+                };
+                PropertyReadEntry {
+                    hash: prop.hash,
+                    array: matches!(prop.kind, Kind::Array(_)),
+                    values,
+                }
+            })
+            .collect();
+        Ok(PropertyReadResult {
+            type_id: entry.id.type_id,
+            group: entry.id.group,
+            instance: entry.id.instance,
+            keys,
+        })
+    })
+    .await
+    .map_err(|e| CommandError::internal(e.to_string()))?
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchFloat {
+    pub hash: u32,
+    pub value: f64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchInt {
+    pub hash: u32,
+    pub value: i64,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchTextRef {
+    pub table: u32,
+    pub instance: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchTextRefs {
+    pub hash: u32,
+    pub refs: Vec<PropertyPatchTextRef>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchRequest {
+    pub instance: u32,
+    pub group: Option<u32>,
+    #[serde(default)]
+    pub set_floats: Vec<PropertyPatchFloat>,
+    #[serde(default)]
+    pub set_ints: Vec<PropertyPatchInt>,
+    #[serde(default)]
+    pub set_text_refs: Vec<PropertyPatchTextRefs>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyPatchResult {
+    pub data_base64: String,
+    pub type_id: u32,
+    pub group: u32,
+    pub instance: u32,
+}
+
+/// 类型化键补丁：读源 property → 按键改值 → encode_canonical 规范编码，
+/// 回显完整 TGI（覆盖包必须按原 TGI 放置才能命中同一条目）。
+#[tauri::command]
+pub async fn game_property_patch(
+    state: State<'_, crate::activity::AppState>,
+    request: PropertyPatchRequest,
+) -> Result<PropertyPatchResult, CommandError> {
+    use base64::Engine;
+    let game_data = state
+        .store
+        .app_settings()
+        .map_err(CommandError::from)?
+        .and_then(|s| s.game_data_path)
+        .ok_or_else(|| {
+            CommandError::new(
+                "game_directory_not_configured",
+                "Game data directory is not configured",
+            )
+        })?;
+    let game_data = PathBuf::from(game_data);
+    let instance = request.instance;
+    let group = request.group;
+    let set_floats = request.set_floats.clone();
+    let set_ints = request.set_ints.clone();
+    let set_text_refs = request.set_text_refs.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = cached_index(&game_data);
+        let Some(index) = guard.as_ref() else {
+            return Err(CommandError::internal("game asset index unavailable"));
+        };
+        let Some(candidates) = index.entries.get(&instance) else {
+            return Err(CommandError::new(
+                "game_property_missing",
+                format!("source property 0x{instance:08X} not found"),
+            ));
+        };
+        let Some((path, entry)) = pick_property_candidate(candidates, group) else {
+            return Err(CommandError::new(
+                "game_property_missing",
+                format!("no readable property for 0x{instance:08X}"),
+            ));
+        };
+        let type_id = entry.id.type_id;
+        let group = entry.id.group;
+        let package = dbpf::Package::open(path)
+            .map_err(|e| CommandError::new("game_property_missing", format!("open failed: {e}")))?;
+        let data = package
+            .read(entry)
+            .map_err(|e| CommandError::new("game_property_missing", format!("read failed: {e}")))?;
+        let mut file = PropertyFile::parse(&data)
+            .map_err(|e| CommandError::new("game_property_parse_failed", e.to_string()))?;
+
+        for patch in &set_floats {
+            set_scalar_value(
+                &mut file,
+                patch.hash,
+                PropType::Float,
+                Value::Float(patch.value as f32),
+            );
+        }
+        for patch in &set_ints {
+            set_scalar_value(
+                &mut file,
+                patch.hash,
+                PropType::Int32,
+                Value::Int32(patch.value.clamp(i32::MIN as i64, i32::MAX as i64) as i32),
+            );
+        }
+        for patch in &set_text_refs {
+            let values = patch
+                .refs
+                .iter()
+                .map(|r| {
+                    Value::Text(sc_properties::Text {
+                        table_id: r.table,
+                        instance_id: r.instance,
+                    })
+                })
+                .collect();
+            set_array_values(&mut file, patch.hash, PropType::Text, values);
+        }
+
+        let encoded = file
+            .encode_canonical()
+            .map_err(|e| CommandError::new("game_property_encode_failed", e.to_string()))?;
+        Ok(PropertyPatchResult {
+            data_base64: base64::engine::general_purpose::STANDARD.encode(&encoded),
+            type_id,
+            group,
+            instance,
+        })
+    })
+    .await
+    .map_err(|e| CommandError::internal(e.to_string()))?
 }
 
 #[cfg(test)]

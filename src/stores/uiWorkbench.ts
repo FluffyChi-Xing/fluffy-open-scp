@@ -29,7 +29,12 @@ import {
   type LocaleString,
   type MenuExportEntry,
 } from "@/lib/game-ui/menu-export";
-import { gamePropertyCopy } from "@/lib/game-assets";
+import {
+  gamePropertyCopy,
+  gamePropertyPatch,
+  gamePropertyRead,
+  type PropertyPatchFloat,
+} from "@/lib/game-assets";
 import { TauriUnavailableError } from "@/api/tauri";
 import { loadReplicaData } from "@/lib/game-ui/replica/loader";
 import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "@/lib/game-ui/replica/types";
@@ -665,6 +670,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     const warnings: string[] = [];
     const seen = new Set<string>();
     const effective = allEffectiveEntries();
+    const unitEconTasks: {
+      label: string;
+      sourceInstance: number;
+      edit: ToolEdit;
+      tool: WorkbenchTool;
+    }[] = [];
     for (const { category, entries: menuEntries } of effective) {
       for (const { tool } of menuEntries) {
         // 最小变更集合：只有被编辑过、新增过、或被移出过菜单的条目才进包。
@@ -737,6 +748,16 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         }
         // 解锁文案被显式清空（源有、副本无）→ 后端删除解锁键；未改动则保留源引用。
         const removeUnlockString = copyOfSource && edit?.unlock != null && !tool.unlock;
+        // 统计行模板重写：label 被编辑 → 全量引用写自有表（未改行也换新 ID，
+        // 文本不变——「引用 ↔ 词条对得上」不变式优先于 ID 复用）。
+        let statTitleRefs: { table: number; instance: number }[] | undefined;
+        if (edit?.stats != null) {
+          statTitleRefs = edit.stats.map((s) => {
+            const id = fnv1Lower(`str:stat:${tool.id}:${s.label}`);
+            locale.push({ table: OPENSCP_LOCALE_TABLE, id, text: s.label });
+            return { table: OPENSCP_LOCALE_TABLE, instance: id };
+          });
+        }
         // 图片三态：dataURL = 新图（随包写入 + 新 instance）；资产路径 =
         // 引用基础原图（只写键，instance 从文件名反推）；null = 已移除（不写键）。
         const croppedIcon =
@@ -753,8 +774,29 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           ? fnv1Lower(`icon:${tool.id}`)
           : preservedIcon ?? undefined;
         const marqueeInstance = croppedMarquee ? instance : preservedMarquee ?? undefined;
-        if (edits.value[tool.id]?.cost != null || edits.value[tool.id]?.upkeep != null) {
-          warnings.push(`${tool.label || tool.id}：造价/预算编辑在 GlassBox 模拟侧，属性覆盖不含`);
+        // Unit 经济/统计值补丁任务：造价/维护/统计数值写在 EcoGame Unit 上
+        // （menuUnit 链），编译时读取源 property 定位 Unit 后按原 TGI 补丁。
+        const econTouched =
+          edit?.cost != null || edit?.upkeep != null || edit?.stats != null;
+        const tauriUnavailable = !isTauri();
+        if (econTouched && !tauriUnavailable) {
+          const econSource = /^[0-9A-F]{8}$/.test(tool.sourceInstance ?? "")
+            ? Number.parseInt(tool.sourceInstance!, 16)
+            : knownInstance
+              ? Number.parseInt(tool.id, 16)
+              : undefined;
+          if (econSource != null) {
+            unitEconTasks.push({
+              label: tool.label || tool.id,
+              sourceInstance: econSource,
+              edit,
+              tool,
+            });
+          } else {
+            warnings.push(
+              `${tool.label || tool.id}：新条目无 menuUnit 链，造价/维护/统计编辑暂不支持`,
+            );
+          }
         }
         entries.push({
           instance,
@@ -767,6 +809,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           descStringId,
           unlockStringId,
           removeUnlockString,
+          statTitleRefs,
           iconInstance,
           iconTgi: iconInstance != null && croppedIcon == null
             ? { type: 0x2f7d0004, group: 0x40e02400, instance: iconInstance }
@@ -807,6 +850,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
             descStringId: entry.descStringId,
             unlockStringId: entry.unlockStringId,
             removeUnlockString: entry.removeUnlockString,
+            statTitleRefs: entry.statTitleRefs,
             position: entry.uiPosition,
             iconTgi: entry.iconTgi,
             marqueeTgi: entry.marqueeTgi,
@@ -853,6 +897,76 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         data: buildMenuPropertyResource(entry),
       });
     }
+    // Unit 经济/统计值补丁：造价(0x0A8A41DA)/维护(0x09AE19D7)/统计参数
+    // (unitEffectParameter hash) 写在 EcoGame Unit 上。按源 property 的
+    // menuUnit 定位；直接 Unit 无造价键时沿 parent 找真身（V博士大樓式占位）。
+    // 覆盖按 Unit 原分组放置（回显 TGI），与游戏读取路径一致。
+    for (const task of unitEconTasks) {
+      const parseNum = (raw: string): number =>
+        Number.parseFloat(String(raw).replace(/[,，§\s]/g, ""));
+      const menu = await gamePropertyRead({ instance: task.sourceInstance });
+      if (!menu) {
+        warnings.push(`${task.label}：读取菜单 property 失败，跳过经济补丁`);
+        continue;
+      }
+      const menuUnitEntry = menu.keys.find((k) => k.hash === 0x0975695f);
+      const menuUnit = menuUnitEntry?.values[0]?.key?.[2];
+      if (menuUnit == null) {
+        warnings.push(`${task.label}：条目无 menuUnit（道路类不走 Unit 链），跳过经济补丁`);
+        continue;
+      }
+      let unit = await gamePropertyRead({ instance: menuUnit });
+      if (!unit) {
+        warnings.push(`${task.label}：读取 Unit 0x${menuUnit.toString(16)} 失败，跳过经济补丁`);
+        continue;
+      }
+      const hasEconKeys = (r: PropertyReadResult): boolean =>
+        r.keys.some((k) => k.hash === 0x0a8a41da) ||
+        r.keys.some((k) => k.hash === 0x09ae19d7);
+      if (!hasEconKeys(unit)) {
+        const parentEntry = unit.keys.find((k) => k.hash === 0x00b2cccb);
+        const parent = parentEntry?.values[0]?.key?.[2];
+        const parentRead = parent != null ? await gamePropertyRead({ instance: parent }) : null;
+        if (parentRead && hasEconKeys(parentRead)) unit = parentRead;
+      }
+
+      const setFloats: PropertyPatchFloat[] = [];
+      if (task.edit.cost != null) {
+        const value = parseNum(task.edit.cost);
+        if (!Number.isNaN(value)) setFloats.push({ hash: 0x0a8a41da, value });
+      }
+      if (task.edit.upkeep != null) {
+        const value = Math.abs(parseNum(task.edit.upkeep));
+        if (!Number.isNaN(value)) setFloats.push({ hash: 0x09ae19d7, value });
+      }
+      const params = menu.keys.find((k) => k.hash === 0x0eb1fc22)?.values ?? [];
+      if (task.edit.stats) {
+        for (const [index, stat] of task.edit.stats.entries()) {
+          const param = params[index]?.int;
+          if (param == null || param <= 0 || stat.value == null) continue;
+          const value = parseNum(stat.value);
+          if (!Number.isNaN(value)) setFloats.push({ hash: param >>> 0, value });
+        }
+      }
+      if (setFloats.length === 0) continue;
+
+      const patched = await gamePropertyPatch({
+        instance: unit.instance,
+        group: unit.group,
+        setFloats,
+      });
+      if (patched) {
+        overlayEntries.push({
+          type: patched.typeId,
+          group: patched.group,
+          instance: patched.instance,
+          data: Uint8Array.from(atob(patched.dataBase64), (c) => c.charCodeAt(0)),
+        });
+      } else {
+        warnings.push(`${task.label}：Unit 经济补丁失败（后端不可用）`);
+      }
+    }
+
     // 图标/大图资源：仅用户替换过图（无源 TGI 的 dataURL）才随包
     for (const entry of entries) {
       if (entry.iconPng && entry.iconInstance != null) {

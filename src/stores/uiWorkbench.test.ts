@@ -218,11 +218,12 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     // 无编辑 → 不导出任何条目
     expect(await (await store.buildGameExport()).entryCount).toBe(0);
 
-    // 编辑一个条目（含造价）→ 只导出它；造价警告说明 GlassBox 侧不进包
+    // 编辑一个条目（含造价）→ 只导出它；造价已支持写入 EcoGame Unit
+    // （非 Tauri 环境跳过 Unit 补丁，不再告警）
     store.updateItem("AC12C904", "7DD8A627", { label: "我的泥路", cost: "20" });
     const result = await store.buildGameExport();
     expect(result.entryCount).toBe(1);
-    expect(result.warnings.join()).toContain("GlassBox");
+    expect(result.warnings.join()).not.toContain("GlassBox");
 
     // 移除大图 → 仍然导出（其它编辑保留），但不再有大图悬空引用
     store.updateItem("AC12C904", "7DD8A627", { marquee: null });

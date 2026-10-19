@@ -49,7 +49,11 @@ export async function gameAssetDataUrl(refPath: string): Promise<string | null> 
 
 export interface PropertyCopyRequest {
   sourceInstance: number;
+  /** 源分组过滤：同 instance 可能存在于多个包/分组，提供后精确命中。 */
+  sourceGroup?: number;
   newInstance: number;
+  /** 统计行模板重写（全量 Text 引用，写自有表）。 */
+  statTitleRefs?: { table: number; instance: number }[];
   uiCategories: number[];
   titleStringId?: number;
   descStringId?: number;
@@ -65,9 +69,76 @@ export interface PropertyCopyRequest {
  * property 资源字节（base64）。后端读玩家安装包里的源条目并做受控变换。 */
 export async function gamePropertyCopy(
   request: PropertyCopyRequest,
-): Promise<{ dataBase64: string; keyCount: number } | null> {
+): Promise<
+  { dataBase64: string; keyCount: number; sourceGroup: number } | null
+> {
   if (!isTauri()) return null;
-  return await command<{ dataBase64: string; keyCount: number }>("game_property_copy", {
+  return await command<{
+    dataBase64: string;
+    keyCount: number;
+    sourceGroup: number;
+  }>("game_property_copy", {
     request,
   });
+}
+
+/** property 类型化读取（Sheet 深层编辑先读后改）。 */
+export interface PropertyReadEntry {
+  hash: number;
+  array: boolean;
+  values: {
+    kind: string;
+    int?: number;
+    float?: number;
+    text?: [number, number];
+    key?: [number, number, number];
+  }[];
+}
+
+export interface PropertyReadResult {
+  typeId: number;
+  group: number;
+  instance: number;
+  keys: PropertyReadEntry[];
+}
+
+export async function gamePropertyRead(request: {
+  instance: number;
+  group?: number;
+}): Promise<PropertyReadResult | null> {
+  if (!isTauri()) return null;
+  return await command<PropertyReadResult>("game_property_read", { request });
+}
+
+export interface PropertyPatchFloat {
+  hash: number;
+  value: number;
+}
+
+export interface PropertyPatchTextRefs {
+  hash: number;
+  refs: { table: number; instance: number }[];
+}
+
+export interface PropertyPatchRequest {
+  instance: number;
+  group?: number;
+  setFloats?: PropertyPatchFloat[];
+  setInts?: { hash: number; value: number }[];
+  setTextRefs?: PropertyPatchTextRefs[];
+}
+
+/** 类型化键补丁：读源 → 改值 → 规范编码，回显完整 TGI。 */
+export async function gamePropertyPatch(
+  request: PropertyPatchRequest,
+): Promise<
+  { dataBase64: string; typeId: number; group: number; instance: number } | null
+> {
+  if (!isTauri()) return null;
+  return await command<{
+    dataBase64: string;
+    typeId: number;
+    group: number;
+    instance: number;
+  }>("game_property_patch", { request });
 }

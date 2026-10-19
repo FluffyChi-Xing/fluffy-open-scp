@@ -84,6 +84,8 @@ export interface MenuExportEntry {
   unlockStringId?: number;
   /** 源有解锁文案而副本被清空 → 后端删除解锁键；缺省保留源引用。 */
   removeUnlockString?: boolean;
+  /** 统计行模板重写（全量 Text 引用，写自有表）。 */
+  statTitleRefs?: { table: number; instance: number }[];
   /** 槽位图标资源 instance（ICON_TYPE/ICON_GROUP）；缺省不写图标键。
    * 新图随 iconPng 落在同 instance；引用基础游戏原图时不带 iconPng。 */
   iconInstance?: number;
