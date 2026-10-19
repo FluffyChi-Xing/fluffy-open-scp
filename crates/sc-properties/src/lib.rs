@@ -186,17 +186,26 @@ impl PropertyFile {
                     let count = i32::try_from(values.len()).map_err(|_| Error::ArrayTooLarge {
                         hash: property.hash,
                     })?;
-                    let item_size = property.encoding.array_item_size.unwrap_or(0);
-                    if item_size < 0
-                        || fixed_value_size(property.prop_type)
-                            .is_some_and(|expected| item_size != expected)
-                    {
-                        return Err(Error::InvalidArrayItemSize {
-                            hash: property.hash,
-                            expected: fixed_value_size(property.prop_type).unwrap_or(0),
-                            actual: item_size,
-                        });
-                    }
+                    // Text 数组的 item_size 是游戏加载器可见的声明步长（原版一律
+                    // 520，实际文件步长仍为每项 8 字节）。写成 8 时游戏解析多元素
+                    // Text 数组失败（实机 2026-10-19 验证：菜单统计行渲染 ***），
+                    // 因此无论来源如何都按惯例声明。
+                    let item_size = if property.prop_type == PropType::Text {
+                        TEXT_ARRAY_ITEM_SIZE
+                    } else {
+                        let item_size = property.encoding.array_item_size.unwrap_or(0);
+                        if item_size < 0
+                            || fixed_value_size(property.prop_type)
+                                .is_some_and(|expected| item_size != expected)
+                        {
+                            return Err(Error::InvalidArrayItemSize {
+                                hash: property.hash,
+                                expected: fixed_value_size(property.prop_type).unwrap_or(0),
+                                actual: item_size,
+                            });
+                        }
+                        item_size
+                    };
                     out.extend_from_slice(&count.to_be_bytes());
                     out.extend_from_slice(&item_size.to_be_bytes());
                     for value in values {
@@ -283,6 +292,11 @@ fn fixed_value_size(prop_type: PropType) -> Option<i32> {
         PropType::Transform | PropType::String8 | PropType::String16 => return None,
     })
 }
+
+/// Text 数组在游戏文件里声明的 item_size。这只是加载器可见的元数据——
+/// 每个条目在文件里仍占 8 字节（table+instance）；原版所有 Text 数组
+/// （含 n=1 的「标题/描述」）都声明 520，写 8 会导致游戏解析失败。
+pub const TEXT_ARRAY_ITEM_SIZE: i32 = 520;
 
 fn write_value(out: &mut Vec<u8>, property: &Property, value: &Value, flags: u16) -> Result<()> {
     let type_matches = matches!(

@@ -18,6 +18,7 @@ import {
   ICON_TYPE,
   LOCALE_GROUP,
   LOCALE_TABLES,
+  OPENSCP_LOCALE_TABLE,
   LOCALE_TYPE,
   marqueeInstanceFromAsset,
   MARQUEE_TYPE,
@@ -703,16 +704,16 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           continue;
         }
         const titleStringId = fnv1Lower(`str:title:${tool.id}:${tool.label}`);
-        locale.push({ table: LOCALE_TABLES.toolName, id: titleStringId, text: tool.label });
+        locale.push({ table: OPENSCP_LOCALE_TABLE, id: titleStringId, text: tool.label });
         let descStringId: number | undefined;
         let unlockStringId: number | undefined;
         if (tool.desc) {
           descStringId = fnv1Lower(`str:desc:${tool.id}:${tool.desc}`);
-          locale.push({ table: LOCALE_TABLES.toolDesc, id: descStringId, text: tool.desc });
+          locale.push({ table: OPENSCP_LOCALE_TABLE, id: descStringId, text: tool.desc });
         }
         if (tool.unlock) {
           unlockStringId = fnv1Lower(`str:unlock:${tool.id}:${tool.unlock}`);
-          locale.push({ table: LOCALE_TABLES.toolUnlock, id: unlockStringId, text: tool.unlock });
+          locale.push({ table: OPENSCP_LOCALE_TABLE, id: unlockStringId, text: tool.unlock });
         }
         // 图片三态：dataURL = 新图（随包写入 + 新 instance）；资产路径 =
         // 引用基础原图（只写键，instance 从文件名反推）；null = 已移除（不写键）。

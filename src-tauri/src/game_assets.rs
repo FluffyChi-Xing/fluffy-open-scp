@@ -257,7 +257,9 @@ fn fixed_array_item_size(prop_type: PropType) -> Option<i32> {
         PropType::Bool => Some(1),
         PropType::Int32 | PropType::UInt32 | PropType::Float => Some(4),
         PropType::Key => Some(12),
-        PropType::Text => Some(8),
+        // Text 数组步长是游戏加载器可见元数据（见 sc_properties::TEXT_ARRAY_ITEM_SIZE），
+        // 必须按原版惯例声明 520；写 8 会让游戏解析统计行等数组失败。
+        PropType::Text => Some(sc_properties::TEXT_ARRAY_ITEM_SIZE),
         PropType::Vector2 => Some(8),
         PropType::Vector3 | PropType::ColorRgb => Some(12),
         PropType::Vector4 | PropType::ColorRgba => Some(16),
@@ -289,7 +291,7 @@ fn set_scalar_text(file: &mut PropertyFile, hash: u32, table: u32, id: u32) {
         if prop.hash == hash {
             if prop.encoding.flags & 0x30 != 0 {
                 prop.kind = Kind::Array(vec![value]);
-                prop.encoding.array_item_size = Some(8);
+                prop.encoding.array_item_size = Some(sc_properties::TEXT_ARRAY_ITEM_SIZE);
             } else {
                 prop.kind = Kind::Scalar(value);
                 prop.encoding.array_item_size = None;
@@ -335,9 +337,8 @@ fn set_array_values(file: &mut PropertyFile, hash: u32, prop_type: PropType, val
         if prop.hash == hash {
             prop.kind = Kind::Array(values);
             prop.prop_type = prop_type;
-            // Source packages occasionally contain non-canonical array strides
-            // (for example Text with item_size=520). The values we emit use the
-            // canonical fixed stride required by encode_canonical.
+            // Text 数组的 520 步长是游戏可见元数据（必须保留/声明），其余类型
+            // 统一规范到 encode_canonical 要求的固定步长。
             prop.encoding.array_item_size = fixed_array_item_size(prop_type);
             return;
         }
@@ -425,13 +426,13 @@ pub async fn game_property_copy(
         );
         // 文案指针：提供了新字符串 id 才覆盖，否则沿用源条目字符串
         if let Some(id) = request.title_string_id {
-            set_scalar_text(&mut file, 0x0A09_F5FA, 0x6C96_9DEE, id);
+            set_scalar_text(&mut file, 0x0A09_F5FA, sc_properties::locale::OPENSCP_LOCALE_TABLE, id);
         }
         if let Some(id) = request.desc_string_id {
-            set_scalar_text(&mut file, 0x0A09_F5FB, 0x50AA_0BEA, id);
+            set_scalar_text(&mut file, 0x0A09_F5FB, sc_properties::locale::OPENSCP_LOCALE_TABLE, id);
         }
         if let Some(id) = request.unlock_string_id {
-            set_scalar_text(&mut file, 0x0DE8_4DDC, 0x4B54_417A, id);
+            set_scalar_text(&mut file, 0x0DE8_4DDC, sc_properties::locale::OPENSCP_LOCALE_TABLE, id);
         } else {
             // A copied source can carry an inherited unlock pointer even when
             // the edited menu entry has no unlock text. Keeping that stale
@@ -470,10 +471,9 @@ pub async fn game_property_copy(
                 }),
             );
         }
-        // Existing game files contain legacy text arrays whose metadata says
-        // item_size=520 even though each parsed Text value is 8 bytes. The
-        // copied file must be normalized as a whole, including untouched
-        // statistics/tooltip arrays, before canonical encoding.
+        // Text 数组的 520 步长是游戏加载器可见元数据（实机验证：写成 8 会让
+        // 统计行等数组解析失败）；整文件统一到各类型约定步长后再编码，包括
+        // 未改动的统计/提示数组。
         normalize_array_item_sizes(&mut file);
         let key_count = file.values.len();
         let bytes = file
@@ -494,7 +494,7 @@ mod tests {
     use sc_properties::{PropertyEncoding, Text};
 
     #[test]
-    fn overriding_noncanonical_text_array_normalizes_item_size() {
+    fn overriding_text_array_keeps_game_stride() {
         let mut file = PropertyFile {
             values: vec![Property {
                 hash: 0x0A09_F5FA,
@@ -515,12 +515,15 @@ mod tests {
         let encoded = file.encode_canonical().expect("canonical text array");
         let reparsed = PropertyFile::parse(&encoded).expect("reparse canonical text array");
         let property = reparsed.get(0x0A09_F5FA).expect("title property");
-        assert_eq!(property.encoding.array_item_size, Some(8));
+        assert_eq!(
+            property.encoding.array_item_size,
+            Some(sc_properties::TEXT_ARRAY_ITEM_SIZE)
+        );
         assert!(matches!(property.kind, Kind::Array(ref values) if values.len() == 1));
     }
 
     #[test]
-    fn untouched_noncanonical_text_array_is_normalized_before_copy_encoding() {
+    fn untouched_text_array_keeps_game_stride_before_copy_encoding() {
         let mut file = PropertyFile {
             values: vec![Property {
                 hash: 0x0E94_855A,
@@ -531,7 +534,8 @@ mod tests {
                 })]),
                 encoding: PropertyEncoding {
                     flags: 0x30,
-                    array_item_size: Some(520),
+                    // 之前错误地规范化成 8 的 stride 也要自愈回游戏惯例值。
+                    array_item_size: Some(8),
                 },
             }],
             claimed_count: 1,
@@ -539,6 +543,9 @@ mod tests {
 
         normalize_array_item_sizes(&mut file);
         assert!(file.encode_canonical().is_ok());
-        assert_eq!(file.values[0].encoding.array_item_size, Some(8));
+        assert_eq!(
+            file.values[0].encoding.array_item_size,
+            Some(sc_properties::TEXT_ARRAY_ITEM_SIZE)
+        );
     }
 }

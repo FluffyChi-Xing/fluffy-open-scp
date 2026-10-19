@@ -94,7 +94,7 @@ BE5744E0 四个根 + 若干模块容器。
 + unit/piece/config 溯源），loader `mergeMenuCosts` 只回填空值。再生成命令：
 
 ```
-cargo run -p sc-properties --release --example menu_cost_dump -- \
+cargo run -p probes --release --example menu_cost_dump -- \
   public/game-ui/tools/costs.json \
   <SimCityData>/SimCity_Game.package <SimCityData>/SimCityDataEP1.package \
   <SimCityData>/SimCity_DLC0.package \
@@ -177,7 +177,7 @@ Sheet 大图右上角 ✕ → 草稿 marquee=null → 应用后 `edits.marquee=n
 
 游戏目录以实际可玩安装为准（本轮：`D:\ea-games\simcity_offline\SimCity：Cites
 of Tomorrow\SimCityData`）。costs.json 再生成：
-`cargo run -p sc-properties --release --example menu_cost_dump -- public/game-ui/tools/costs.json <SimCity_Game.package> <SimCityDataEP1.package> <SimCity_DLC0.package>`
+`cargo run -p probes --release --example menu_cost_dump -- public/game-ui/tools/costs.json <SimCity_Game.package> <SimCityDataEP1.package> <SimCity_DLC0.package>`
 
 ## 7. 本轮代码落点
 
@@ -198,3 +198,46 @@ of Tomorrow\SimCityData`）。costs.json 再生成：
 - 区域视图容器与全部子菜单容器名（0/165）是运行时数据；静态可编辑面 = 城市
   14 容器 + 大学 9D2EF585 + 自定义分类。
 - hardGate 锁定键语义、六态图标的状态映射仍按模板/类型逐例确认。
+
+## 9. 追加定案（2026-10-19 实机闭环）：词条交付与功能绑定补全
+
+### 9.1 词条交付三定律（全部实机验证）
+
+1. **位置无关**：游戏是扁平 TGI 表，包放 SimCityData / SimCityUserData/Packages
+   只影响优先级。此前「locale 必须镜像进 Locale/<lang>」是误判（混杂变量），
+   伴生包镜像逻辑（deploy_ui_locale_companions）已删除。
+2. **格式决定成败**：locale 表必须是仿原版宽松排版（BOM + \r\n + 缩进 +
+   `"键" : "值"`）；单行紧凑 JSON 会被整表解析丢弃（表内已有键也 ***）。
+   buildLocaleResource / serialize_locale_items 均已改为宽松排版。
+3. **自定义词条进自有表**：原版表 ID（6C969DEE/50AA0BEA/4B54417A）被 Locale
+   数据先注册，其他目录的重定义整表不生效；全新表 ID 任意目录可用。
+   OpenSCP 自有表 = `0xBF82F7CE`（FNV-1("openscp/strings")，前端
+   OPENSCP_LOCALE_TABLE / Rust sc_properties::locale::OPENSCP_LOCALE_TABLE），
+   先例：SimRollerCompletePack（裸包 + 自有表 01111109）。
+
+### 9.2 属性编码第二格式坑
+
+Text 数组的 `item_size` 是游戏加载器可见元数据：原版一律 **520**（文件内每项
+仍 8 字节）。写成 8（此前 normalize_array_item_sizes 的"规范化"）会让游戏解析
+多元素 Text 数组失败——菜单统计行渲染 *** 的直接原因。
+`encode_canonical` 对 Text 数组一律声明 `TEXT_ARRAY_ITEM_SIZE=520`；
+修复后原版属性 解析→编码 逐字节无损（prop_roundtrip 实证）。
+
+### 9.3 功能绑定链补全（对拍 地铁Mod / 消防局 / baseline 人行道）
+
+- **道路/步道**：菜单条目 → `0xD13BB4A6` 分段定义（如 B718847E）+
+  `0x0E76A7E2` 单价；parent=12E3214B 道路家族。无 Unit。
+- **Plop 建筑**：菜单条目 → `menuUnit 0x0975695F` → **EcoGame 脚本包**
+  Unit（40E0C000；维护 0x09AE19D7、造价 0x0A8A41DA、子单位 0x07E0AD0A）
+  → `0x0A0209A5` 数组 → **建筑定义 40E0C700**（本次新发现的第四层）；
+  Unit 另有 `0x08E17ED7` → 40E1C000 资产配置。
+- **地铁Mod 的新菜单姿势**（新菜单绑定已有功能的模板）：新菜单条目
+  menuUnit → 自己的 Unit/资产配置（内容拷贝自 EP1）；六态图标自带包内；
+  **title/desc 允许 Text{FFFFFFFF,FFFFFFFF} 空引用**（游戏容忍，渲染空白），
+  名称经 `0x09E91B9C` 属性指针 → 车站定义属性（0x09B711C3 名称、
+  0x0CB8E249 Unit 列表）；uiCategories → 包内自带的新分类容器。
+
+### 9.4 探针沉淀（probes/ 目录）
+
+locale_companion_build / locale_own_table / text_ref_hunt / prop_layout /
+prop_bytes_diff / prop_roundtrip / pkg_merge——本轮全部结论的复现工具。

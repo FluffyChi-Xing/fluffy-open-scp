@@ -47,7 +47,17 @@ export const HASH = {
   unitEffectParameter: 0x0eb1fc22,
 } as const;
 
-/** 文案表 id（游戏原表，diff 覆盖）。 */
+/**
+ * OpenSCP 自有 locale 表 id（FNV-1("openscp/strings")，与原版 356 张表无冲突）。
+ *
+ * 自定义词条一律写进这张新表、Text 引用指向它——不要重定义原版表
+ * （6C969DEE/50AA0BEA/4B54417A）：原版表 ID 被游戏 Locale 数据先注册，
+ * 其他目录里的重定义整表不生效（实机 2026-10-19 验证）；新表 ID 则任意
+ * 目录可用（社区先例 SimRollerCompletePack 同款做法）。
+ */
+export const OPENSCP_LOCALE_TABLE = 0xbf82f7ce;
+
+/** 原版文案表 id（只用于读取/对照原版字符串，不再作为写入目标）。 */
 export const LOCALE_TABLES = {
   toolName: 0x6c969dee,
   toolDesc: 0x50aa0bea,
@@ -102,7 +112,7 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
     {
       hash: HASH.title,
       valueType: "text",
-      values: [{ kind: "text", tableId: LOCALE_TABLES.toolName, instanceId: entry.titleStringId ?? 0 }],
+      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.titleStringId ?? 0 }],
     },
     {
       hash: HASH.uiCategory,
@@ -129,7 +139,7 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
     values.push({
       hash: HASH.desc,
       valueType: "text",
-      values: [{ kind: "text", tableId: LOCALE_TABLES.toolDesc, instanceId: entry.descStringId }],
+      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.descStringId }],
     });
   }
   if (entry.iconInstance != null) {
@@ -144,19 +154,27 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
     values.push({
       hash: HASH.unlockString,
       valueType: "text",
-      values: [{ kind: "text", tableId: LOCALE_TABLES.toolUnlock, instanceId: entry.unlockStringId }],
+      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.unlockStringId }],
     });
     values.push({ hash: HASH.unlockTargetAmount, valueType: "int32", values: [{ kind: "int32", value: 1 }] });
   }
   return encodePropertyFile(values);
 }
 
-/** locale 表覆盖资源（BOM + 紧凑 JSON，只含本次改动的字符串）。 */
+/**
+ * locale 表覆盖资源（BOM + 仿原版宽松排版 JSON，只含本次改动的字符串）。
+ *
+ * 排版必须模仿原版（换行 + 缩进 + `"键" : "值"`）：游戏对单行紧凑 JSON
+ * 解析失败并整表丢弃（实机 2026-10-19 验证，菜单统计行/名称渲染 ***）；
+ * 社区先例 SimRollerCompletePack 的裸包 locale 表同样是宽松排版。
+ */
 export function buildLocaleResource(strings: LocaleString[], tableId: number): Uint8Array {
   const table = strings.filter((s) => s.table === tableId);
   const ordered = [...table].sort((a, b) => a.id - b.id);
-  const parts = ordered.map((s) => `${JSON.stringify(sprintf32(s.id))}:${JSON.stringify(s.text)}`);
-  const json = `{${parts.join(",")}}`;
+  const lines = ordered.map(
+    (s) => `    ${JSON.stringify(sprintf32(s.id))} : ${JSON.stringify(s.text)}`,
+  );
+  const json = lines.length > 0 ? `{\r\n${lines.join(",\r\n")}\r\n}` : "{}";
   // UTF-8 BOM 前缀（SimCity locale 资源固定 3 字节）
   return Uint8Array.from([0xef, 0xbb, 0xbf, ...new TextEncoder().encode(json)]);
 }
