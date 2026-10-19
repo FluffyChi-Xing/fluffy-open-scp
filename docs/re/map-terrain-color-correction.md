@@ -94,7 +94,7 @@
 ## 检查与复现
 
 ```powershell
-cargo run -p sc-properties --example terrain_color_probe -- D:/ea-games/SimCity/SimCityData C04182E4 tmp/terrain-color-titan
+cargo run -p probes --example terrain_color_probe -- D:/ea-games/SimCity/SimCityData C04182E4 tmp/terrain-color-titan
 cargo test -p sc-properties --lib
 node node_modules/vue-tsc/bin/vue-tsc.js -b --noEmit
 node node_modules/vite/bin/vite.js build

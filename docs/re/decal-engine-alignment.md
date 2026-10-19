@@ -430,7 +430,7 @@ deadend dead-mtt129cw）。
 ## 十三、2026-10-05 四轮勘误（盒深 = depth×scale 实锤 + 浮空分支上线）
 
 1. **盒深语义定谳：世界盒深 = unit.depth × scale**（casino 探针，
-   `cargo run -p sc-exporter --release --example decal_unit_dump --
+   `cargo run -p probes --release --example decal_unit_dump --
    SimCity_Game.package 0x457EA9DB` + `decal_projection_probe` 复测）：
    lot 0x457EA9DB 全部 7 个 decal，两招牌 scale 13.27/5.63 而
    **depth×scale 恒 = 1.327m**（0.1×13.267 = 0.2355×5.635），五涂鸦
