@@ -233,13 +233,28 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     expect(copy).not.toBeNull();
     const withCopy = await store.buildGameExport();
     expect(withCopy.entryCount).toBe(2);
+    // ref-first：副本拷的是已编辑的源（所见即所得）→ 快照文案需要自己的词条
+    expect(withCopy.localeCount).toBe(2);
+
+    // 拷贝未编辑过的源（B7D3F194 低密道街道）→ 沿用原版引用，不产生词条
+    const plainCopy = store.duplicateToMenu("AC12C904", "B7D3F194", "9D2EF585");
+    expect(plainCopy).not.toBeNull();
+    const withPlain = await store.buildGameExport();
+    expect(withPlain.entryCount).toBe(3);
+    expect(withPlain.localeCount).toBe(2);
+
+    // 编辑副本标题 → 铸新 ID 并落自有表词条（词条数组按次重建，无残留）
+    store.updateItem("9D2EF585", copy!.tool.id, { label: "副本泥路" });
+    const withCopyEdited = await store.buildGameExport();
+    expect(withCopyEdited.entryCount).toBe(3);
+    expect(withCopyEdited.localeCount).toBe(2);
 
     // 非游戏容器（自定义分类）里的新增条目给出可读警告且不进包
     store.addCategory("我的菜单");
     const customId = store.categories.at(-1)?.id ?? "";
     store.addItem(customId, "自定义条目", null);
     const withCustom = await store.buildGameExport();
-    expect(withCustom.entryCount).toBe(2);
+    expect(withCustom.entryCount).toBe(3);
     expect(withCustom.warnings.join()).toContain("不是游戏容器 instance");
   });
 

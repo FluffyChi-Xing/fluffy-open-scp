@@ -703,18 +703,40 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           );
           continue;
         }
-        const titleStringId = fnv1Lower(`str:title:${tool.id}:${tool.label}`);
-        locale.push({ table: OPENSCP_LOCALE_TABLE, id: titleStringId, text: tool.label });
+        // ref-first 语义：拷贝条目的文案与源一致 → 不铸新 ID、不写词条，
+        // 由后端全量拷贝保留源引用（源串在原版/自有表里必然可得）；编辑过
+        // 才铸新 ID 进自有表。不变式是「引用 ↔ 资源对得上」，ID 新旧无关。
+        const copyOfSource = /^[0-9A-F]{8}$/.test(tool.sourceInstance ?? "");
+        const sourceInstanceHex = copyOfSource ? tool.sourceInstance!.toLowerCase() : undefined;
+        const sourceTool = sourceInstanceHex
+          ? Object.values(data?.tools ?? {})
+              .flat()
+              .find((candidate) => candidate.instance.toLowerCase() === sourceInstanceHex)
+          : undefined;
+        // 副本快照与源原文的差异（拷贝时源已被编辑）同样视为「有改动」：
+        // 所见即所得，副本要显示拷贝时的文案就必须有自己的词条。
+        const snapDiffTitle = sourceTool != null && tool.label !== sourceTool.label;
+        const snapDiffDesc = sourceTool != null && (tool.desc ?? "") !== (sourceTool.desc ?? "");
+        const snapDiffUnlock = sourceTool != null && (tool.unlock ?? "") !== (sourceTool.unlock ?? "");
+        const titleEdited = !copyOfSource || snapDiffTitle || edit?.label != null;
+        const descEdited = !copyOfSource || snapDiffDesc || edit?.desc != null;
+        const unlockEdited = !copyOfSource || snapDiffUnlock || edit?.unlock != null;
+        const titleStringId = titleEdited ? fnv1Lower(`str:title:${tool.id}:${tool.label}`) : undefined;
+        if (titleStringId != null) {
+          locale.push({ table: OPENSCP_LOCALE_TABLE, id: titleStringId, text: tool.label });
+        }
         let descStringId: number | undefined;
-        let unlockStringId: number | undefined;
-        if (tool.desc) {
+        if (descEdited && tool.desc) {
           descStringId = fnv1Lower(`str:desc:${tool.id}:${tool.desc}`);
           locale.push({ table: OPENSCP_LOCALE_TABLE, id: descStringId, text: tool.desc });
         }
-        if (tool.unlock) {
+        let unlockStringId: number | undefined;
+        if (unlockEdited && tool.unlock) {
           unlockStringId = fnv1Lower(`str:unlock:${tool.id}:${tool.unlock}`);
           locale.push({ table: OPENSCP_LOCALE_TABLE, id: unlockStringId, text: tool.unlock });
         }
+        // 解锁文案被显式清空（源有、副本无）→ 后端删除解锁键；未改动则保留源引用。
+        const removeUnlockString = copyOfSource && edit?.unlock != null && !tool.unlock;
         // 图片三态：dataURL = 新图（随包写入 + 新 instance）；资产路径 =
         // 引用基础原图（只写键，instance 从文件名反推）；null = 已移除（不写键）。
         const croppedIcon =
@@ -744,6 +766,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
           titleStringId,
           descStringId,
           unlockStringId,
+          removeUnlockString,
           iconInstance,
           iconTgi: iconInstance != null && croppedIcon == null
             ? { type: 0x2f7d0004, group: 0x40e02400, instance: iconInstance }
@@ -783,6 +806,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
             titleStringId: entry.titleStringId,
             descStringId: entry.descStringId,
             unlockStringId: entry.unlockStringId,
+            removeUnlockString: entry.removeUnlockString,
             position: entry.uiPosition,
             iconTgi: entry.iconTgi,
             marqueeTgi: entry.marqueeTgi,

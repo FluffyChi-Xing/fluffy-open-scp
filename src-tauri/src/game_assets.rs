@@ -236,6 +236,10 @@ pub struct PropertyCopyRequest {
     pub title_string_id: Option<u32>,
     pub desc_string_id: Option<u32>,
     pub unlock_string_id: Option<u32>,
+    /// 源有解锁文案而副本被清空 → 删除解锁键；缺省 false = 保留源引用
+    /// （未编辑文案的拷贝，源串在原版/自有表里必然可得）。
+    #[serde(default)]
+    pub remove_unlock_string: bool,
     pub position: Option<i32>,
     pub icon_tgi: Option<TgiRef>,
     pub marquee_tgi: Option<TgiRef>,
@@ -433,14 +437,12 @@ pub async fn game_property_copy(
         }
         if let Some(id) = request.unlock_string_id {
             set_scalar_text(&mut file, 0x0DE8_4DDC, sc_properties::locale::OPENSCP_LOCALE_TABLE, id);
-        } else {
-            // A copied source can carry an inherited unlock pointer even when
-            // the edited menu entry has no unlock text. Keeping that stale
-            // pointer produces a visible `***` in game when its source locale
-            // item is unavailable.
+        } else if request.remove_unlock_string {
+            // 显式清空解锁文案：删除解锁键，避免副本携带悬空指针。
             remove_property(&mut file, 0x0DE8_4DDC);
             remove_property(&mut file, 0x0DE8_4DD3);
         }
+        // 两者皆否 = 未编辑文案的拷贝：保留源解锁引用（ref-first）。
         // 排序
         if let Some(pos) = request.position {
             set_array_values(

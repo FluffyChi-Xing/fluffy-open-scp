@@ -77,10 +77,13 @@ export interface MenuExportEntry {
   /** 归属的一级分类 instance 列表（0x0DB9FC63）。 */
   uiCategories: number[];
   uiPosition: number;
-  /** locale 引用（新字符串 id 由工作台分配）。 */
+  /** locale 引用（新字符串 id 由工作台分配）。未编辑文案的拷贝不铸 ID，
+   * 由后端全量拷贝保留源引用。 */
   titleStringId?: number;
   descStringId?: number;
   unlockStringId?: number;
+  /** 源有解锁文案而副本被清空 → 后端删除解锁键；缺省保留源引用。 */
+  removeUnlockString?: boolean;
   /** 槽位图标资源 instance（ICON_TYPE/ICON_GROUP）；缺省不写图标键。
    * 新图随 iconPng 落在同 instance；引用基础游戏原图时不带 iconPng。 */
   iconInstance?: number;
@@ -110,11 +113,6 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
       values: [{ kind: "key", instance: PLOP_MENU_PARENT, typeId: MENU_PROP_TYPE, group: 0x48e1eb00 }],
     },
     {
-      hash: HASH.title,
-      valueType: "text",
-      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.titleStringId ?? 0 }],
-    },
-    {
       hash: HASH.uiCategory,
       valueType: "key",
       array: true,
@@ -126,6 +124,14 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
       values: [{ kind: "int32", value: entry.uiPosition }],
     },
   ];
+  // 标题键只在铸了新 ID 时写：未编辑文案的拷贝不写键，后端保留源引用。
+  if (entry.titleStringId != null) {
+    values.push({
+      hash: HASH.title,
+      valueType: "text",
+      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.titleStringId }],
+    });
+  }
   // marquee 键只在确有大图时写：instance 指向大图资源（引用原图 = 原
   // instance；新图 = 新 instance）。无条件写键会产生指向不存在资源的悬空引用。
   if (entry.marqueeInstance != null) {

@@ -54,6 +54,8 @@ export interface PropertyCopyRequest {
   titleStringId?: number;
   descStringId?: number;
   unlockStringId?: number;
+  /** 源有解锁文案而副本被清空 → 删除解锁键；缺省保留源引用。 */
+  removeUnlockString?: boolean;
   position?: number;
   iconTgi?: { type: number; group: number; instance: number };
   marqueeTgi?: { type: number; group: number; instance: number };
