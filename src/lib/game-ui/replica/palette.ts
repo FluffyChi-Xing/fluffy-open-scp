@@ -374,7 +374,10 @@ attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
       const pillsTop = slotTop + cfg.slotH + 6;
       pills.style.cssText =
         `align-items:stretch;display:flex;gap:8px;left:${startX}px;position:absolute;` +
-        `top:${pillsTop}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:30;`;
+        `top:${pillsTop}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:30;` +
+        // palette 容器链上 pointer-events:none（布局元素不可交互），pill 行
+        // 必须显式恢复，否则点击穿透到舞台（tab 无法切换的直接原因）。
+        "pointer-events:auto;";
       const paintPills = (): void => {
         pills.querySelectorAll("button").forEach((el, i) => {
           const active = i === activeTab;
