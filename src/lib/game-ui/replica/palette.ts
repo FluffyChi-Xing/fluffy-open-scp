@@ -354,7 +354,7 @@ attachSlotRow(body, categoryId, entry.slotRow, barY);
       pills.className = "hud-subtabs";
       pills.style.cssText =
         `align-items:stretch;display:flex;gap:8px;left:${startX}px;position:absolute;` +
-        `top:${barY + cfg.slotH + 6}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:6;`;
+        `top:${barY + cfg.slotH + 6}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:30;`;
       const paintPills = (): void => {
         pills.querySelectorAll("button").forEach((el, i) => {
           const active = i === activeTab;
