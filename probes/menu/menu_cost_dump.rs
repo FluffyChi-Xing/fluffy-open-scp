@@ -46,6 +46,9 @@ const HASH_ADDON_CONTAINER: u32 = 0x0AFE_27CA; // 建筑子菜单容器（Unit �
 const HASH_TOOL_ICON_KEY: u32 = 0x0977_AA8F; // 槽位图标键
 const HASH_UI_CATEGORIES: u32 = 0x0DB9_FC63; // 归属菜单数组
 const HASH_UI_POSITION: u32 = 0x0DC1_E3E0; // 菜单内排序
+const HASH_STAT_TITLE: u32 = 0x0EB1_FC05; // 统计行模板 Text 数组
+const HASH_STAT_PARAM: u32 = 0x0EB1_FC22; // 统计行参数 = Unit 条目上的 float 属性 hash
+const HASH_UNLOCK_STRING: u32 = 0x0DE8_4DDC; // 解锁条件 Text 数组
 
 const MENU_INSTANCE_TYPES: [u16; 2] = [0x8A01, 0xC900];
 const PIECE_GROUPS: [u32; 1] = [0x40E1_C400];
@@ -94,6 +97,12 @@ struct MenuRow {
     title: Option<(u32, u32)>,
     /// 完整描述 Text 引用。
     desc: Option<(u32, u32)>,
+    /// 解锁条件文案（全表 locale 解析；多条件按序）。
+    unlock: Vec<String>,
+    /// 统计行（scan 期定形：label/值尾注/是否消耗参数/字面量值）。
+    stat_rows: Vec<StatRow>,
+    /// 统计行参数（与 stat_rows 平行；值 = Unit 条目上的 float 属性 hash）。
+    stat_params: Vec<u32>,
     menu_unit: Option<u32>,
     piece: Option<u32>,
     menu_path_cost: Option<i32>,
@@ -136,6 +145,71 @@ impl LocaleTables {
     }
 }
 
+/// Unit 条目语义判定（跨 DLC 包组号各不相同：40E0C000/48E0C000/47EFC000/
+/// 61EFC000…，但都携带建造成本/维护/子单位键之一）。
+fn is_unit_entry(file: &PropertyFile) -> bool {
+    num_of(file, HASH_CONSTRUCTION).is_some()
+        || num_of(file, HASH_MAINT).is_some()
+        || !key_instances(file, HASH_CHILD_UNITS).is_empty()
+}
+
+/// 去掉模板里的粗体标签。
+fn clean_tags(s: &str) -> String {
+    s.replace("<B>", "")
+        .replace("</B>", "")
+        .replace("<b>", "")
+        .replace("</b>", "")
+}
+
+/// 统计行模板拆分：`<B>監牢</B>：~amount:number~` → ("監牢", Some(""))，
+/// `~amount~ ~exponent~W` 的后缀保留为值尾注（其余占位符剔除）。
+/// 一行统计的定形结果。
+struct StatRow {
+    label: String,
+    /// 有占位符时：Unit float 之后的值尾注（如 " 分鐘"、" W"）。
+    suffix: Option<String>,
+    /// 是否消耗一个 Unit float 参数。
+    has_param: bool,
+    /// 无占位符时的字面量值（如 "無"、"高"）。
+    literal: Option<String>,
+}
+
+/// 统计行模板拆分：`<B>監牢</B>：~amount:number~` → 監牢 + 消耗参数；
+/// `空氣汙染率：無`（无占位符）→ label/字面量值按最后一个冒号切分。
+fn split_template(t: &str) -> StatRow {
+    let clean = clean_tags(t);
+    if let Some(start) = clean.find('~') {
+        if let Some(rel) = clean[start + 1..].find('~') {
+            let end = start + 1 + rel;
+            let label = clean[..start].trim().trim_end_matches(['：', ':']).trim().to_string();
+            let mut suffix = clean[end + 1..].to_string();
+            while let Some(s) = suffix.find('~') {
+                if let Some(rel) = suffix[s + 1..].find('~') {
+                    suffix.replace_range(s..s + rel + 2, "");
+                } else {
+                    break;
+                }
+            }
+            return StatRow {
+                label,
+                suffix: Some(suffix),
+                has_param: true,
+                literal: None,
+            };
+        }
+    }
+    let (label, literal) = match clean.rsplit_once(['：', ':']) {
+        Some((head, rest)) => (head.trim().to_string(), Some(rest.trim().to_string())),
+        None => (clean.trim().to_string(), None),
+    };
+    StatRow {
+        label,
+        suffix: None,
+        has_param: false,
+        literal,
+    }
+}
+
 fn text_ref(file: &PropertyFile, hash: u32) -> Option<(u32, u32)> {
     values_of(file, hash).into_iter().find_map(|v| match v {
         Value::Text(t) => Some((t.table_id, t.instance_id)),
@@ -154,7 +228,9 @@ fn main() {
     // name id -> [(包序, config instance, Cost)]（仅带 Cost 的配置）
     let mut config_by_name: BTreeMap<u32, Vec<(usize, u32, i32)>> = BTreeMap::new();
     // eco unit instance -> (constr, maint, children, 子菜单容器)
-    let mut units: BTreeMap<u32, (Option<i32>, Option<i32>, Vec<u32>, Option<u32>)> = BTreeMap::new();
+    // eco unit instance -> (constr, maint, children, 子菜单容器, float 属性表)
+    let mut units: BTreeMap<u32, (Option<i32>, Option<i32>, Vec<u32>, Option<u32>, BTreeMap<u32, f32>)> =
+        BTreeMap::new();
 
     let mut opened = Vec::new();
     for (package_index, path) in packages.iter().enumerate() {
@@ -181,6 +257,38 @@ fn main() {
                         }),
                         title: text_ref(&file, HASH_TITLE),
                         desc: text_ref(&file, HASH_DESC),
+                        unlock: values_of(&file, HASH_UNLOCK_STRING)
+                            .into_iter()
+                            .filter_map(|v| match v {
+                                Value::Text(t) => locales.resolve(t.table_id, t.instance_id),
+                                _ => None,
+                            })
+                            .collect(),
+                        stat_params: values_of(&file, HASH_STAT_PARAM)
+                            .into_iter()
+                            .filter_map(|v| match v {
+                                Value::UInt32(u) => Some(*u),
+                                Value::Int32(i) => Some(*i as u32),
+                                _ => None,
+                            })
+                            .collect(),
+                        stat_rows: values_of(&file, HASH_STAT_TITLE)
+                            .into_iter()
+                            .map(|v| match v {
+                                Value::Text(t) => {
+                                    let resolved = locales
+                                        .resolve(t.table_id, t.instance_id)
+                                        .unwrap_or_else(|| format!("0x{:08x}", t.instance_id));
+                                    split_template(&resolved)
+                                }
+                                _ => StatRow {
+                                    label: String::new(),
+                                    suffix: None,
+                                    has_param: false,
+                                    literal: None,
+                                },
+                            })
+                            .collect(),
                         menu_unit: key_instance(&file, HASH_MENU_UNIT),
                         piece: key_instance(&file, HASH_PIECE),
                         menu_path_cost: num_of(&file, HASH_PATH_COST),
@@ -199,9 +307,7 @@ fn main() {
                 for prop in &file.values {
                     for v in values_of(&file, prop.hash) {
                         if let Value::Text(t) = v {
-                            if t.table_id == LOCALE_NAMES {
-                                names.push(t.instance_id);
-                            }
+                            names.push(t.instance_id);
                         }
                     }
                 }
@@ -215,7 +321,15 @@ fn main() {
                             .push((package_index, entry.id.instance, cost));
                     }
                 }
-            } else if UNIT_GROUPS.contains(&entry.id.group) {
+            } else if is_unit_entry(&file) {
+                let mut floats = BTreeMap::new();
+                for prop in &file.values {
+                    for v in values_of(&file, prop.hash) {
+                        if let Value::Float(f) = v {
+                            floats.insert(prop.hash, *f);
+                        }
+                    }
+                }
                 units.insert(
                     entry.id.instance,
                     (
@@ -223,6 +337,7 @@ fn main() {
                         num_of(&file, HASH_MAINT),
                         key_instances(&file, HASH_CHILD_UNITS),
                         key_instance(&file, HASH_ADDON_CONTAINER),
+                        floats,
                     ),
                 );
             }
@@ -232,7 +347,7 @@ fn main() {
     // 二遍：menuUnit → Unit 条目 0x0AFE27CA = 建筑子菜单容器
     for row in menus.values_mut() {
         if let Some(unit) = row.menu_unit {
-            if let Some((_, _, _, container)) = units.get(&unit) {
+            if let Some((_, _, _, container, _)) = units.get(&unit) {
                 row.addon_container = *container;
             }
         }
@@ -242,14 +357,14 @@ fn main() {
     // 维护费同结构求和后取负 —— 游戏弹窗显示「-300/小時」= -(200 顶层 + 100 子单位)
     // （公車站 79F3ED13 实测对拍）。
     let plop_cost = |menu_unit: u32| -> (Option<i32>, Option<i32>) {
-        let Some((constr, maint, children, _)) = units.get(&menu_unit) else {
+        let Some((constr, maint, children, _, _)) = units.get(&menu_unit) else {
             return (None, None);
         };
         let mut total = *constr;
         let mut maint_total = *maint;
         if let Some(base) = constr {
             for child in children {
-                if let Some((c, _, _, _)) = units.get(child) {
+                if let Some((c, _, _, _, _)) = units.get(child) {
                     if let Some(c) = c {
                         total = Some(base + c);
                     }
@@ -258,7 +373,7 @@ fn main() {
         }
         if let Some(base_maint) = maint {
             for child in children {
-                if let Some((_, m, _, _)) = units.get(child) {
+                if let Some((_, m, _, _, _)) = units.get(child) {
                     if let Some(m) = m {
                         maint_total = Some(base_maint + m);
                     }
@@ -308,7 +423,7 @@ fn main() {
     let mut submenus: BTreeMap<u32, Vec<serde_json::Value>> = BTreeMap::new();
     for (menu, row) in &menus {
         let Some(unit) = row.menu_unit else { continue };
-        let Some((_, _, children, addon_container)) = units.get(&unit) else { continue };
+        let Some((_, _, children, addon_container, _)) = units.get(&unit) else { continue };
         // 两种机制取并集：
         // a) 附加面板容器（Unit 0x0AFE27CA → 容器；成员 = uiCategories 含该容器的条目，
         //    如大学 9D2EF585 / 各消防警察模块面板）；
@@ -389,10 +504,62 @@ fn main() {
                 }
             }
         }
-        if road_cost.is_none() && cost.is_none() && maintenance.is_none() && config_cost.is_none() {
+        // 名称/描述/解锁/统计（全表 locale 解析）——工作台用它回填未解析条目。
+        let name = row.title.and_then(|(t, i)| locales.resolve(t, i));
+        let desc = row.desc.and_then(|(t, i)| locales.resolve(t, i));
+        // 模板驱动 + 参数游标：带 ~占位符~ 的行消耗一个 Unit float 参数；
+        // 无占位符的行（如「空氣汙染率：無」）不消耗，值取冒号后字面量。
+        let unit_floats = row.menu_unit.and_then(|unit| units.get(&unit));
+        let stats: Vec<serde_json::Value> = row
+            .stat_rows
+            .iter()
+            .zip(row.stat_params.iter())
+            .map(|(stat_row, hash)| {
+                let value = if stat_row.has_param {
+                    unit_floats
+                        .and_then(|(_, _, _, _, floats)| floats.get(hash))
+                        .copied()
+                        .map(|f| {
+                            let num = if f.fract() == 0.0 {
+                                format!("{}", f as i64)
+                            } else {
+                                format!("{f}")
+                            };
+                            match &stat_row.suffix {
+                                Some(suffix) if !suffix.is_empty() => format!("{num}{suffix}"),
+                                _ => num,
+                            }
+                        })
+                } else {
+                    stat_row.literal.clone()
+                };
+                json!({ "label": stat_row.label, "value": value })
+            })
+            .filter(|row| !row["label"].as_str().unwrap_or("").is_empty())
+            .collect();
+        if road_cost.is_none()
+            && cost.is_none()
+            && maintenance.is_none()
+            && config_cost.is_none()
+            && name.is_none()
+            && row.unlock.is_empty()
+            && row.stat_rows.is_empty()
+        {
             continue;
         }
         let mut entry = serde_json::Map::new();
+        if let Some(name) = name {
+            entry.insert("name".into(), json!(name));
+        }
+        if let Some(desc) = desc {
+            entry.insert("desc".into(), json!(desc));
+        }
+        if !row.unlock.is_empty() {
+            entry.insert("unlock".into(), json!(row.unlock));
+        }
+        if !row.stat_rows.is_empty() {
+            entry.insert("stats".into(), json!(stats));
+        }
         if let Some(v) = road_cost {
             entry.insert("roadCost".into(), json!(v));
         }

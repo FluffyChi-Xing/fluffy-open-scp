@@ -71,6 +71,11 @@ export interface MenuCostHit {
   config?: string;
   piece?: string;
   name?: string;
+  /** 全表 locale 解析的描述/解锁（v4）。 */
+  desc?: string;
+  unlock?: string[];
+  /** 统计行（与菜单条目 stats 按下标对齐；value null = 该行无数值）。 */
+  stats?: { label: string; value: string | null }[];
 }
 
 export interface MenuCostIndex {
@@ -102,6 +107,19 @@ export function mergeMenuCosts(
       }
       if (tool.upkeep == null && hit.maintenance != null) {
         tool.upkeep = String(hit.maintenance);
+      }
+      // v4：名称/描述/解锁/统计值回填——DLC 条目的文案在独立 locale 表，
+      // 旧提取器没解析到（label 为空时工作台只能显示 instance id）。
+      if (!tool.label && hit.name) tool.label = hit.name;
+      if (!tool.desc && hit.desc) tool.desc = hit.desc;
+      if (!tool.unlock && hit.unlock?.length) tool.unlock = hit.unlock.join("、");
+      if (hit.stats?.length) {
+        for (const [index, stat] of hit.stats.entries()) {
+          const target = tool.stats?.[index];
+          if (target && target.value == null && stat.value != null) {
+            target.value = stat.value;
+          }
+        }
       }
     }
   }
