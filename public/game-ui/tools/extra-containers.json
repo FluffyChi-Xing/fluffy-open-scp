@@ -24,6 +24,64 @@
         "F970A822"
       ],
       "by": "parent"
+    },
+    "AFA8707D": {
+      "via": [
+        "AFA8707D"
+      ],
+      "by": "uiCategories"
+    },
+    "3A798ED7": {
+      "via": [
+        "3A798ED7"
+      ],
+      "by": "uiCategories"
+    },
+    "74CD2EB0": {
+      "via": [
+        "74CD2EB0"
+      ],
+      "by": "uiCategories"
+    },
+    "BEE1C73E": {
+      "via": [
+        "BEE1C73E"
+      ],
+      "by": "uiCategories"
+    },
+    "0BFA0784": {
+      "via": [
+        "0BFA0784"
+      ],
+      "by": "uiCategories"
+    },
+    "94E412ED": {
+      "via": [
+        "3F43E038",
+        "546FD9CE",
+        "0653C631",
+        "E286FFA5"
+      ],
+      "by": "uiCategories"
+    },
+    "895E329B": {
+      "via": [
+        "E996DFCF",
+        "41E4831D"
+      ],
+      "by": "uiCategories"
+    },
+    "1D23D2FD": {
+      "via": [
+        "1D23D2FD"
+      ],
+      "by": "uiCategories"
+    },
+    "692D1886": {
+      "via": [
+        "692D1886"
+      ],
+      "by": "uiCategories"
     }
   },
   "subtabs": {
@@ -201,6 +259,91 @@
           "3A4D2FDA",
           "B2CC43D2",
           "4DCED59F"
+        ]
+      }
+    ],
+    "94E412ED": [
+      {
+        "label": "",
+        "labelKey": "studio.workbench.developmentTabs.landmarks",
+        "instances": [
+          "0DE29485",
+          "B91284EE",
+          "2BBD3F21",
+          "96FE1D2F",
+          "EB9B1350",
+          "1111DD2D",
+          "60861B5E",
+          "3EDE3895",
+          "C0E5BE77",
+          "B2A38A5F",
+          "D6093278",
+          "B68CB7D8",
+          "2F2D5FFB",
+          "7A9A921E",
+          "3C2E2227",
+          "D7098DCC",
+          "B88EB069",
+          "E43AB5D8",
+          "7929649F",
+          "330B54A5",
+          "6D4AF4A9",
+          "59D8FBB1",
+          "74168A83"
+        ]
+      },
+      {
+        "label": "",
+        "labelKey": "studio.workbench.developmentTabs.stadiums",
+        "instances": [
+          "069C4C4D",
+          "16E35B82"
+        ]
+      },
+      {
+        "label": "",
+        "labelKey": "studio.workbench.developmentTabs.attractions",
+        "instances": [
+          "3CFDEABA",
+          "46BA4797",
+          "51B708A9",
+          "83B7F016",
+          "C5A11916",
+          "CFC84E1D",
+          "DAE498C6",
+          "ED2CD768"
+        ]
+      },
+      {
+        "label": "",
+        "labelKey": "studio.workbench.developmentTabs.worship",
+        "instances": [
+          "77449D72",
+          "EBCF7B11",
+          "4A45C334",
+          "F0B0471C"
+        ]
+      }
+    ],
+    "895E329B": [
+      {
+        "label": "",
+        "labelKey": "studio.workbench.developmentTabs.standardTowers",
+        "instances": [
+          "33945913",
+          "A72786AC",
+          "05A85970",
+          "ECC08133"
+        ]
+      },
+      {
+        "label": "",
+        "labelKey": "studio.workbench.developmentTabs.eliteTowers",
+        "instances": [
+          "3A67AC3D",
+          "12620956",
+          "151F0252",
+          "ECC08133"
         ]
       }
     ]
@@ -1880,6 +2023,1642 @@
         "preview": "/game-ui/replica/assets/tool_icon_6413DAA4.png",
         "marquee": null,
         "locked": true
+      }
+    ],
+    "AFA8707D": [
+      {
+        "instance": "54B959BA",
+        "label": "煤礦礦坑",
+        "desc": "讓您飛黃騰達的時候到了！翻開地球的中心來圖利！在煤礦發電廠使用，售賣給本地的產業，或者通過貿易倉庫在全球市場出售。僱用許多低收入勞工來深入您的礦井，幫您做這些骯髒的工作。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "製造率",
+            "value": "24000~exponent~噸/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_85A5E95C.png",
+        "marquee": "/game-ui/replica/assets/tool_54B959BA.jpg",
+        "locked": true,
+        "uiCategories": [
+          "AFA8707D"
+        ]
+      },
+      {
+        "instance": "B4440028",
+        "label": "原礦坑",
+        "desc": "您對於閃亮的東西情有獨鍾嗎？好吧，那麼看看這個吧！送勞工去您的城市地底來開採原礦。售賣原礦至本地產業，或者通過貿易倉庫在全球市場上銷售。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "製造率",
+            "value": "24000~exponent~噸/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_E619095A.png",
+        "marquee": "/game-ui/replica/assets/tool_B4440028.jpg",
+        "locked": true,
+        "uiCategories": [
+          "AFA8707D"
+        ]
+      },
+      {
+        "instance": "5F440583",
+        "label": "金屬總部",
+        "desc": "金屬總部是任何開採煤礦和原礦城市的基石。賣出煤礦或原礦來升級您的總部，並獲取像是冶煉廠、高級煤礦坑或者貿易港的成就。",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_405D7010.png",
+        "marquee": "/game-ui/replica/assets/tool_5F440583.jpg",
+        "locked": true,
+        "uiCategories": [
+          "AFA8707D"
+        ]
+      },
+      {
+        "instance": "73DCC936",
+        "label": "冶煉廠",
+        "desc": "原礦自然不錯，但可知甚麼才最有價值﹖金屬和合金。冶煉原礦成為金屬，或把煤混進去成為合金。售賣金屬或合金給本地產業或通過貿易倉庫在全球市場出售。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "製造率",
+            "value": "24000~exponent~噸/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_243980BC.png",
+        "marquee": "/game-ui/replica/assets/tool_73DCC936.jpg",
+        "locked": true,
+        "uiCategories": [
+          "AFA8707D"
+        ]
+      },
+      {
+        "instance": "54B959B9",
+        "label": "高級煤礦坑",
+        "desc": "好好利用近來冶金技術的進步和特定環境法規的廢除！用更快的速度從這蘊藏豐富且更廣闊的煤礦坑開採煤礦。這個礦坑會雇用大量工人來工作，並有大型集貨地，可以放煤礦。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "製造率",
+            "value": "96000~exponent~噸/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_263E0569.png",
+        "marquee": "/game-ui/replica/assets/tool_54B959B9.jpg",
+        "locked": true,
+        "uiCategories": [
+          "AFA8707D"
+        ]
+      }
+    ],
+    "3A798ED7": [
+      {
+        "instance": "47DE4F86",
+        "label": "油井",
+        "desc": "要感謝恐龍給您這些石油，還有甚麼比用石油來賺模擬幣更好的方法﹖泵出藏在您城市地底下的原油。用石油發電廠運作您的城市！銷售桶裝原油至本地產業，或通過貿易倉庫在全球市場發售。謝謝您，恐龍！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "生産率",
+            "value": "24000~exponent~桶/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_156AFD30.png",
+        "marquee": "/game-ui/replica/assets/tool_47DE4F86.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3A798ED7"
+        ]
+      },
+      {
+        "instance": "26D10B62",
+        "label": "石油總部",
+        "desc": "如果您城市的血管裡有原油，而您的心臟噴射燃料的話，您的城市便準備好成為石油總部。通過貿易倉庫在全球市場銷售原油，以進接使用石油升級項目，包括煉油廠，讓您生產燃料和塑料。",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_1DEA21B0.png",
+        "marquee": "/game-ui/replica/assets/tool_26D10B62.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3A798ED7"
+        ]
+      },
+      {
+        "instance": "00A4D275",
+        "label": "煉油廠",
+        "desc": "原油價格下跌？採用多角化經營吧！把您的原油提煉成燃料來製造塑膠，通過貿易港在全球市場上發售。增加一個燃料分餾單位製造燃料或用於偉大工程！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "生産率",
+            "value": "24000~exponent~桶/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_A50FC927.png",
+        "marquee": "/game-ui/replica/assets/tool_00A4D275.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3A798ED7"
+        ]
+      }
+    ],
+    "74CD2EB0": [
+      {
+        "instance": "1BE77B24",
+        "label": "貿易倉庫",
+        "desc": "使用基礎單位進行煤和原油等資源的進口、入口和倉儲。同時也可接受工業貨物。額外的貿易倉庫會吸引更多來自全球市場的貨車。不需要電力或水就可運作。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "全球市場出貨：每",
+            "value": "60分鐘"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_6BA94E36.png",
+        "marquee": "/game-ui/replica/assets/tool_1BE77B24.jpg",
+        "locked": true,
+        "uiCategories": [
+          "74CD2EB0"
+        ]
+      },
+      {
+        "instance": "103A2DDC",
+        "label": "貿易總部",
+        "desc": "成為進出口大亨，累積大量財富！以低價從全球市場買進，然後用可以賺取最多模擬幣的價位賣出！在全球市場獲利，以擴展您的貿易項目。",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_CB547742.png",
+        "marquee": "/game-ui/replica/assets/tool_103A2DDC.jpg",
+        "locked": true,
+        "uiCategories": [
+          "74CD2EB0"
+        ]
+      },
+      {
+        "instance": "A11A3819",
+        "label": "貿易港",
+        "desc": "可以進口、出口並儲存商品資源或貨物。大型集貨地可容納的貨物數量是貿易倉庫的十倍。鐵路和貨船接駁路線可讓貨物透過鐵路和水路進口與出口。需要電力和水才能運作。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "全球市場出貨：每",
+            "value": "60分鐘"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_ED00A9EF.png",
+        "marquee": "/game-ui/replica/assets/tool_A11A3819.jpg",
+        "locked": true,
+        "uiCategories": [
+          "74CD2EB0"
+        ]
+      }
+    ],
+    "BEE1C73E": [
+      {
+        "instance": "95434A56",
+        "label": "處理器工廠",
+        "desc": "現在，好像甚麼都有處理器在裡面。應該是您的處理器！使用合金和塑料製造處理器，通過貿易倉庫在全球市場銷售。如果需要的話，可以從全球市場進口合金和塑料。受過教育的勞工可以提高工廠的效率。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "生産率",
+            "value": "24000~exponent~箱/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_AFE69AEC.png",
+        "marquee": "/game-ui/replica/assets/tool_95434A56.jpg",
+        "locked": true,
+        "uiCategories": [
+          "BEE1C73E"
+        ]
+      },
+      {
+        "instance": "A6E1B70B",
+        "label": "電器總部",
+        "desc": "擁抱科技，並準備迎接我們的機器人之王！製造處理器以升級和改善您的總部。研究創新的消費電子產品技術。",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_F7003B05.png",
+        "marquee": "/game-ui/replica/assets/tool_A6E1B70B.jpg",
+        "locked": true,
+        "uiCategories": [
+          "BEE1C73E"
+        ]
+      },
+      {
+        "instance": "E1D58211",
+        "label": "電子產品工廠",
+        "desc": "把您非常有用、高科技的處理器放在電視裡，讓模擬市民可以看著人們遇到惡運的節目來入睡。通過貿易倉庫，在全球市場銷售您的電視圖利。受過教育的勞工會提高工廠的效率。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "生産率",
+            "value": "36000~exponent~箱/天"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_20C9774B.png",
+        "marquee": "/game-ui/replica/assets/tool_E1D58211.jpg",
+        "locked": true,
+        "uiCategories": [
+          "BEE1C73E"
+        ]
+      }
+    ],
+    "0BFA0784": [
+      {
+        "instance": "57FCAD9F",
+        "label": "賭場",
+        "desc": "觀光客拼了命也要進入這家賭場，花掉他們辛苦賺來的模擬幣。藉由替賭場大廳升級來增加收益。罪犯會在賭場裡蠢蠢欲動。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "低收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個低收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "中等收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個中等收入賭客的收入/小時：§",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_21B156C1.png",
+        "marquee": "/game-ui/replica/assets/tool_57FCAD9F.jpg",
+        "locked": true,
+        "uiCategories": [
+          "0BFA0784"
+        ]
+      },
+      {
+        "instance": "16C83FE7",
+        "label": "博弈總部",
+        "desc": "燈光！奢華的排場！閃閃動人！從您的賭場賺取模擬幣，只要注意犯罪行為！利用成功的賭場來獲取賭場娛樂、住宿和博弈的升級項目。",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_58612B15.png",
+        "marquee": "/game-ui/replica/assets/tool_16C83FE7.jpg",
+        "locked": true,
+        "uiCategories": [
+          "0BFA0784"
+        ]
+      },
+      {
+        "instance": "D9051D86",
+        "label": "科幻賭場",
+        "desc": "帶我去找您的莊家！把您的交通工具停在這個中等價位科幻主題賭場的後方停放處。注意賭場內難纏的人物。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "低收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個低收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "中等收入賭客容量",
+            "value": "250"
+          },
+          {
+            "label": "每個中等收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_2ABFC148.png",
+        "marquee": "/game-ui/replica/assets/tool_D9051D86.jpg",
+        "locked": true,
+        "uiCategories": [
+          "0BFA0784"
+        ]
+      },
+      {
+        "instance": "A67FFA75",
+        "label": "豪華賭場",
+        "desc": "這間摩登的賭場以玻璃和鋼鐵設計。吸引中收入的觀光客。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "低收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個低收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "中等收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個中等收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "高收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個高收入賭客的收入/小時：§",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_AFEFBF8F.png",
+        "marquee": "/game-ui/replica/assets/tool_A67FFA75.jpg",
+        "locked": true,
+        "uiCategories": [
+          "0BFA0784"
+        ]
+      },
+      {
+        "instance": "95431B20",
+        "label": "羅馬幸運賭場",
+        "desc": "市長萬歲！願財神保佑您的賭場！吸引中收入的觀光客到這家壯觀到引人側目的賭場賭博。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中等收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個中等收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "高收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個高收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_A94FB11E.png",
+        "marquee": "/game-ui/replica/assets/tool_95431B20.jpg",
+        "locked": true,
+        "uiCategories": [
+          "0BFA0784"
+        ]
+      },
+      {
+        "instance": "5F3B027C",
+        "label": "優雅賭場",
+        "desc": "這間時髦的賭場讓人想起特別為暴發戶設計的古典義大利度假村。這間昂貴的賭場只為城市中最有眼光的上流人士而開。您會需要吸引富有的觀光客來應付高額的維護成本。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中等收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個中等收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "高收入賭客容量",
+            "value": null
+          },
+          {
+            "label": "每個高收入賭客的收入/小時：§",
+            "value": null
+          },
+          {
+            "label": "增加高價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_3CE0F852.png",
+        "marquee": "/game-ui/replica/assets/tool_5F3B027C.jpg",
+        "locked": true,
+        "uiCategories": [
+          "0BFA0784"
+        ]
+      }
+    ],
+    "94E412ED": [
+      {
+        "instance": "069C4C4D",
+        "label": "世界博覽中心",
+        "desc": "投資在博覽中心會把您的小城鎮變成一個觀光目的地！安排令人興奮的活動，例如足球比賽和搖滾音樂會，然後準備好您的城市，迎接數以噸計的尖叫著的粉絲！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "最大利潤：§",
+            "value": "189000"
+          },
+          {
+            "label": "最高出席人數",
+            "value": "3000"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_99E9D683.png",
+        "marquee": "/game-ui/replica/assets/tool_069C4C4D.jpg",
+        "locked": true,
+        "uiCategories": [
+          "546FD9CE"
+        ]
+      },
+      {
+        "instance": "0DE29485",
+        "label": "生態建築發射中心",
+        "desc": "讓觀光客飛上太空並獲得一次性的門票收益。罪犯和遊民也能登船，但他們不會買票。<br/><br/>在生態建築發射後，發射中心能作為太空博物館和紀念碑，直到您新增另一座發射用生態建築為止。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": null
+          },
+          {
+            "label": "最高殖民者數量",
+            "value": null
+          },
+          {
+            "label": "最大發射收益",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_DBE91BDB.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "3CFDEABA",
+        "label": "巨花園地精",
+        "desc": "根據二手資訊雕刻出來的。這些難以發現的地精通常藏在視線之外。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "每日旅客量",
+            "value": null
+          },
+          {
+            "label": "低觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_EC2607CC.png",
+        "marquee": "/game-ui/replica/assets/tool_3CFDEABA.jpg",
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "46BA4797",
+        "label": "閃亮遊樂園",
+        "desc": "閃亮遊樂園最適合闔家光臨！為您的遊樂園打開樂趣之門。<br><br>為您的遊樂園新增販賣部以增加收益。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": null
+          },
+          {
+            "label": "乘坐人數",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_9D56EBFD.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "51B708A9",
+        "label": "巨大駝馬賴瑞",
+        "desc": "哇，我的好友，那是大駝馬！從城市各地來到的成群模擬市民將聚集於此，在驚奇中將自己的目光聚焦在最愛的駱駝上。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "每日旅客量",
+            "value": null
+          },
+          {
+            "label": "低觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_F7585A07.png",
+        "marquee": "/game-ui/replica/assets/tool_51B708A9.jpg",
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "83B7F016",
+        "label": "世上最大的毛線球",
+        "desc": "如果解開的話，組成這巨球的毛線將會好幾次纏繞著這城市的邊緣！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "每日旅客量",
+            "value": null
+          },
+          {
+            "label": "低觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_24770E0C.png",
+        "marquee": "/game-ui/replica/assets/tool_83B7F016.jpg",
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "C5A11916",
+        "label": "驚奇地探險遊樂園",
+        "desc": "用驚奇地探險遊樂園讓整座城興奮不已！用這讓人興奮的大門迎接遊樂園的開張。<br><br>為您的遊樂園新增販賣部以增加收益。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": null
+          },
+          {
+            "label": "乘坐人數",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_025D3B3C.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "CFC84E1D",
+        "label": "奇妙之輪遊樂園",
+        "desc": "歡迎所有人來到奇妙之輪遊樂園！為您的遊樂園設置車子主題的大門。<br><br>為您的遊樂園新增販賣部以增加收益。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": null
+          },
+          {
+            "label": "乘坐人數",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_4F4EF7CF.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "DAE498C6",
+        "label": "恐龍朵莉",
+        "desc": "此色彩繽紛的鰓恐龍看起來在侏羅紀綠洲裡逛的很高興。希望她能永遠待在那！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "每日旅客量",
+            "value": null
+          },
+          {
+            "label": "低觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_2C49C0B0.png",
+        "marquee": "/game-ui/replica/assets/tool_DAE498C6.jpg",
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "ED2CD768",
+        "label": "Maxis超人雕像",
+        "desc": "由Maxis超人本人雕塑輪廓優美的哨兵機警的矗立著，在需要的時刻看守著你的城市！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "每日旅客量",
+            "value": null
+          },
+          {
+            "label": "低觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_7E15C48A.png",
+        "marquee": "/game-ui/replica/assets/tool_ED2CD768.jpg",
+        "locked": true,
+        "uiCategories": [
+          "7AA45EB3",
+          "0653C631"
+        ]
+      },
+      {
+        "instance": "16E35B82",
+        "label": "專業體育館",
+        "desc": "專業體育館面積龐大，每個活動都可以容納更多觀光客，賺取更多利潤！準備好您城市的集體運輸系統，接載許多尖叫著的粉絲！可惜他們的門票全部可以全額退還，如果他們不能準時到達參加活動，您便會錯失模擬幣！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "最大利潤：§",
+            "value": "300000"
+          },
+          {
+            "label": "最高出席人數",
+            "value": "15000"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_E9722544.png",
+        "marquee": "/game-ui/replica/assets/tool_16E35B82.jpg",
+        "locked": true,
+        "uiCategories": [
+          "546FD9CE"
+        ]
+      },
+      {
+        "instance": "77449D72",
+        "label": "宗教場所：教堂",
+        "desc": "這座美麗的教堂沉浸在平和的氣氛中。迷惘的模擬市民會湧入這裡，並帶著喜樂的光芒離開。小心別剷平一座教堂就是了…",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "儀式時段：早上6點至8點 以及 晚上6點至8點",
+            "value": null
+          },
+          {
+            "label": "信徒容納人數",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_F3BF6A10.png",
+        "marquee": "/game-ui/replica/assets/tool_77449D72.jpg",
+        "locked": true,
+        "uiCategories": [
+          "E286FFA5"
+        ]
+      },
+      {
+        "instance": "EBCF7B11",
+        "label": "宗教場所：清真寺",
+        "desc": "這棟獨特的建築能為所有社區添增特色。尋找更高力量的模擬市民會來到這裡，並心平氣和地離開。別剷平一座清真寺來挑釁命運…",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "儀式時段：早上6點至8點 以及 晚上8點至10點",
+            "value": null
+          },
+          {
+            "label": "信徒容納人數",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_8D603F7B.png",
+        "marquee": "/game-ui/replica/assets/tool_EBCF7B11.jpg",
+        "locked": true,
+        "uiCategories": [
+          "E286FFA5"
+        ]
+      },
+      {
+        "instance": "4A45C334",
+        "label": "宗教場所：現代廟宇",
+        "desc": "少了傳統廟宇的派頭，這座寺廟已將它的靈氣對準了未來。尋求指引的模擬市民會來到此地，帶回內心的平靜。剷平一座現代廟宇可是不智之舉…",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "儀式時段：早上8點至10點 以及 晚上8點至10點",
+            "value": null
+          },
+          {
+            "label": "信徒容納人數",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_B697EBEA.png",
+        "marquee": "/game-ui/replica/assets/tool_4A45C334.jpg",
+        "locked": true,
+        "uiCategories": [
+          "E286FFA5"
+        ]
+      },
+      {
+        "instance": "F0B0471C",
+        "label": "宗教場所：寺廟",
+        "desc": "這座華美的寺廟給人歷史悠久的感覺。虔誠的模擬市民會為新的遠景前來，然後滿足地回家。如果您想繼續受到人民的愛戴，就別剷平這座寺廟…",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "儀式時段：早上8點至10點 以及 晚上6點至8點",
+            "value": null
+          },
+          {
+            "label": "信徒容納人數",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_5C8790F6.png",
+        "marquee": "/game-ui/replica/assets/tool_F0B0471C.jpg",
+        "locked": true,
+        "uiCategories": [
+          "E286FFA5"
+        ]
+      },
+      {
+        "instance": "B91284EE",
+        "label": "Arc de Triomphe",
+        "desc": "最適合喜歡法國華麗的人士，讓您的城市添上一點現代法國的氣派！<br>原自︰法國巴黎<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": "800"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_ECD81F84.png",
+        "marquee": "/game-ui/replica/assets/tool_B91284EE.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "2BBD3F21",
+        "label": "大笨鐘",
+        "desc": "大笨鐘是在名為伊麗莎白塔上的時鐘。現在還不算太晚，不是嗎？您最好看看時間！<br>英國風格的高收入與中等密度房舍與商店會在大笨鐘四周發展成住宅區和商業區。<br>原自：英國，倫敦<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_5FBFA1F3.png",
+        "marquee": "/game-ui/replica/assets/tool_2BBD3F21.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "96FE1D2F",
+        "label": "五十周年紀念拱門",
+        "desc": "這個觸目的拱門標誌著您的城市的獨立！看著觀光客被這個著名的地標吸引到此拍照。<br>原自︰比利時布魯塞爾<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_C42C6F05.png",
+        "marquee": "/game-ui/replica/assets/tool_96FE1D2F.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "EB9B1350",
+        "label": "艾菲爾鐵塔",
+        "desc": "讓您的城市充滿豐富的法式風情！超過 300 公尺高的艾菲爾鐵塔 24 小時開放，而且也可當作商店。<br>法國風格的高收入與中等密度房舍與商店會在艾菲爾鐵塔四周發展成住宅區和商業區。<br>原自：法國，巴黎<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_859AEF9A.png",
+        "marquee": "/game-ui/replica/assets/tool_EB9B1350.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "1111DD2D",
+        "label": "布蘭登堡拱門",
+        "desc": "這座新古典的拱門上有羅馬勝利女神維多利亞所駕馭的二輪四馬馬車<br>德國風格的高收入與中等密度房舍與商店會在布蘭登堡拱門四周發展成住宅區和商業區。<br>原自：德國，柏林<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_5A9D7E13.png",
+        "marquee": "/game-ui/replica/assets/tool_1111DD2D.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "60861B5E",
+        "label": "荷蘭風車",
+        "desc": "荷蘭以美麗的田園風車著名。<br>原自︰荷蘭<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_6B7DB378.png",
+        "marquee": "/game-ui/replica/assets/tool_60861B5E.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "3EDE3895",
+        "label": "Edifício Copan",
+        "desc": "有這種波浪形的辦公大樓，就算是最密集的城市環境，也可以增添流動的風格。<br>原自︰巴西聖保羅<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "居民",
+            "value": "1100"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_4DC31F9B.png",
+        "marquee": "/game-ui/replica/assets/tool_3EDE3895.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "C0E5BE77",
+        "label": "帝國大廈",
+        "desc": "這不再是世界上最高的建築物，但這座震撼的建築物可以說是大蘋果市的核心。<br>原自︰美國紐約<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": "800"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_118282E9.png",
+        "marquee": "/game-ui/replica/assets/tool_C0E5BE77.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "B2A38A5F",
+        "label": "Giralda",
+        "desc": "這個鐘塔是塞維利亞大教堂的前宣禮塔。<br>原自︰西班牙塞維利亞<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_D574A4E5.png",
+        "marquee": "/game-ui/replica/assets/tool_B2A38A5F.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "D6093278",
+        "label": "環球劇院",
+        "desc": "世界是一個大舞台，現在您可以把環球劇場的另一個仿製建築引進您的城市！<br>原自︰英國倫敦<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "最大利潤：§",
+            "value": "42000"
+          },
+          {
+            "label": "最高出席人數",
+            "value": "3000"
+          },
+          {
+            "label": "高階觀光客吸引力",
+            "value": "800"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_05F8529A.png",
+        "marquee": "/game-ui/replica/assets/tool_D6093278.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "B68CB7D8",
+        "label": "Kölner Dom",
+        "desc": "這個來自科隆的著名哥特式教堂以高尖頂為冠冕。<br>原自︰德國科隆<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_C3DEA586.png",
+        "marquee": "/game-ui/replica/assets/tool_B68CB7D8.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "2F2D5FFB",
+        "label": "比薩斜塔",
+        "desc": "傾斜3.99度，模擬市民參觀過這座名塔後，會難以走在一條直線上。<br>原自︰義大利比薩<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": "800"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_EB1A36B5.png",
+        "marquee": "/game-ui/replica/assets/tool_2F2D5FFB.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "7A9A921E",
+        "label": "奧斯陸歌劇院",
+        "desc": "這個古怪的現代歌劇院是歌劇和芭蕾舞表演的場地。<br>原自︰挪威奧斯陸<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "最大利潤：§",
+            "value": "72800"
+          },
+          {
+            "label": "最高出席人數",
+            "value": "1364"
+          },
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_2F6D31A4.png",
+        "marquee": "/game-ui/replica/assets/tool_7A9A921E.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "3C2E2227",
+        "label": "Rundetårn",
+        "desc": "哥本哈根的「圓塔」是一個歷史性的紀念碑和公共天文觀測台。<br>原自︰丹麥哥本哈根<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_369382E5.png",
+        "marquee": "/game-ui/replica/assets/tool_3C2E2227.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "D7098DCC",
+        "label": "自由女神像",
+        "desc": "還有甚麼地方可以讓您站在一個女生的頭上﹖這個巨型雕像是法國愛美國的明證。把它添加到您的城市！<br>原自︰美國紐約<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": "800"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_9F35D0EE.png",
+        "marquee": "/game-ui/replica/assets/tool_D7098DCC.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "B88EB069",
+        "label": "聖巴索大教堂",
+        "desc": "這個紅場大教堂的正式名稱太長了，難以記憶。<br>原自︰俄羅斯莫斯科<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_DB0C5623.png",
+        "marquee": "/game-ui/replica/assets/tool_B88EB069.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "E43AB5D8",
+        "label": "斯德哥爾摩市政廳",
+        "desc": "不要因為您的市政廳不如斯德哥爾摩市政廳那麼酷而妒忌。<br>原自︰瑞典斯德哥爾摩<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_E363B446.png",
+        "marquee": "/game-ui/replica/assets/tool_E43AB5D8.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "7929649F",
+        "label": "雪梨歌劇院",
+        "desc": "為您的城市添上雪梨歌劇院獨一無二的剪影，並看著成群結隊的觀光客蜂擁而至！<br>原自︰澳洲雪梨<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "最大利潤：§",
+            "value": "74200"
+          },
+          {
+            "label": "最高出席人數",
+            "value": "2679"
+          },
+          {
+            "label": "高階觀光客吸引力",
+            "value": "800"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_BDEE0EF9.png",
+        "marquee": "/game-ui/replica/assets/tool_7929649F.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "330B54A5",
+        "label": "東京鐵塔",
+        "desc": "這座格子高塔廣播東洋電視劇和動畫到您城市中的所有家庭。<br>原自︰日本東京<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_084DB48F.png",
+        "marquee": "/game-ui/replica/assets/tool_330B54A5.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "6D4AF4A9",
+        "label": "Zamek Królewski w Warszawie",
+        "desc": "華沙皇家城堡是波蘭王室的歷代家居。<br>原自︰波蘭華沙<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "高階觀光客吸引力",
+            "value": "800"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_0F2C7223.png",
+        "marquee": "/game-ui/replica/assets/tool_6D4AF4A9.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "59D8FBB1",
+        "label": "華盛頓紀念碑",
+        "desc": "這是世界上最知名的方尖碑之一，華盛頓紀念碑矗立169.294公尺。<br>原自︰美國華盛頓<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_B5EA9817.png",
+        "marquee": "/game-ui/replica/assets/tool_59D8FBB1.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      },
+      {
+        "instance": "74168A83",
+        "label": "威利斯大廈",
+        "desc": "這座108層的高樓是美國最高的建築物。<br>原自︰美國芝加哥<br>",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "中階觀光客吸引力",
+            "value": "400"
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": "500"
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_8D007745.png",
+        "marquee": "/game-ui/replica/assets/tool_74168A83.jpg",
+        "locked": true,
+        "uiCategories": [
+          "3F43E038"
+        ]
+      }
+    ],
+    "895E329B": [
+      {
+        "instance": "33945913",
+        "label": "超級巨塔含公寓樓層(§)",
+        "desc": "建造一座充滿模擬市民的巨塔。堆疊居民賴以生存的公寓、商場和辦公室樓層。用服務樓層來支持基礎樓層，以建立自給自足的社群。<br><br>本同捆包含了公寓樓層 (§)，可為超級巨塔帶來居民。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "支持低、中收入模擬市民",
+            "value": null
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_898BFDF5.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "E996DFCF"
+        ]
+      },
+      {
+        "instance": "3A67AC3D",
+        "label": "菁英超級巨塔含公寓樓層(§§)",
+        "desc": "用高塔尖頂來滿足挑剔模擬市民的需求。風景優美的塔頂視野和茂盛的植物，符合公寓樓層、商場樓層和辦公室樓層中要求許多的模擬市民所想要的生活風格。<br><br>本同捆包含了公寓樓層 (§§)，可為超級巨塔帶來居民。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "支持中、高收入模擬市民",
+            "value": null
+          },
+          {
+            "label": "增加高價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_BBB50000.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "41E4831D"
+        ]
+      },
+      {
+        "instance": "12620956",
+        "label": "菁英超級巨塔含商場樓層(§§)",
+        "desc": "用高塔尖頂來滿足挑剔模擬市民的需求。風景優美的塔頂視野和茂盛的植物，符合公寓樓層、商場樓層和辦公室樓層中要求許多的模擬市民所想要的生活風格。<br><br><br><br>本同捆包含了商場樓層 (§§)，用購物讓超級巨塔活絡起來。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "支持中、高收入模擬市民",
+            "value": null
+          },
+          {
+            "label": "增加高價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_226B3EB0.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "41E4831D"
+        ]
+      },
+      {
+        "instance": "A72786AC",
+        "label": "超級巨塔含商場樓層(§)",
+        "desc": "建造一座充滿模擬市民的巨塔。堆疊居民賴以生存的公寓、商場和辦公室樓層。用服務樓層來支持基礎樓層，以建立自給自足的社群。<br><br>本同捆包含了商場樓層 (§)，用購物讓超級巨塔活絡起來。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "支持低、中收入模擬市民",
+            "value": null
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_AEA1D5C7.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "E996DFCF"
+        ]
+      },
+      {
+        "instance": "05A85970",
+        "label": "超級巨塔含辦公室樓層（低科技）",
+        "desc": "建造一座充滿模擬市民的巨塔。堆疊居民賴以生存的公寓、商場和辦公室樓層。用服務樓層來支持基礎樓層，以建立自給自足的社群。<br><br>辦公室樓層 (低技術) 可為超級巨塔帶來工作，使其活絡。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "支持低、中收入模擬市民",
+            "value": null
+          },
+          {
+            "label": "增加中價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_64F28D21.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "E996DFCF"
+        ]
+      },
+      {
+        "instance": "151F0252",
+        "label": "菁英超級巨塔含辦公室樓層（中科技）",
+        "desc": "用高塔尖頂來滿足挑剔模擬市民的需求。風景優美的塔頂視野和茂盛的植物，符合公寓樓層、商場樓層和辦公室樓層中要求許多的模擬市民所想要的生活風格。<br><br>辦公室樓層 (低技術) 可為超級巨塔帶來工作，使其活絡。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "支持中、高收入模擬市民",
+            "value": null
+          },
+          {
+            "label": "增加高價土地價值",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_9F0FEEAA.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "41E4831D"
+        ]
+      },
+      {
+        "instance": "ECC08133",
+        "label": "空中橋樑",
+        "desc": "用這條電磁車管道連接各座超級巨塔，讓模擬市民得以在超級巨塔間通行。模擬市民也許永遠都不用在馬路上移動了！",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_82117C6F.png",
+        "marquee": null,
+        "locked": false,
+        "uiCategories": [
+          "E996DFCF",
+          "41E4831D"
+        ]
+      }
+    ],
+    "1D23D2FD": [
+      {
+        "instance": "E10210BD",
+        "label": "研究中心",
+        "desc": "研究先進科技，並傳送讓它們運作所需的ControlNet。雇用高收入勞工以加速研究和傳送更多ControlNet。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "增加高價土地價值",
+            "value": null
+          },
+          {
+            "label": "增加附近工業建築的技術等級",
+            "value": null
+          },
+          {
+            "label": "ControlNet最大傳輸率",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_6F08CBF7.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "1D23D2FD"
+        ]
+      },
+      {
+        "instance": "1AC9FFB4",
+        "label": "ControlNet設備站",
+        "desc": "在您的城市中放置這個，好在研究中心的ControlNet不堪使用時，傳送ControlNet給研究中心的技術。",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "增加高價土地價值",
+            "value": null
+          },
+          {
+            "label": "ControlNet最大傳輸率",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_74AFA83E.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "1D23D2FD"
+        ]
+      }
+    ],
+    "692D1886": [
+      {
+        "instance": "EF7A242B",
+        "label": "OmegaCo工廠",
+        "desc": "OmegaCo想要幫您發大財！利用原油和原礦製造Omega。當您將市內和整個區域內的工廠和商店變成OmegaCo加盟商，就會累積大量模擬幣！",
+        "unlock": "",
+        "stats": [
+          {
+            "label": "Omega產量",
+            "value": null
+          }
+        ],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_071D31E5.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "692D1886"
+        ]
+      },
+      {
+        "instance": "2CF4EF86",
+        "label": "OmegaCo總部",
+        "desc": "累積更多的財富吧！OmegaCo總部的部門可以讓您用無人機來將住宅變成加盟商，直接在您的OmegaCo工廠抽取資源，或利用垂直起降機空運資源到您的城市中。",
+        "unlock": "",
+        "stats": [],
+        "cost": null,
+        "upkeep": null,
+        "preview": "/game-ui/replica/assets/tool_icon_2AF0198C.png",
+        "marquee": null,
+        "locked": true,
+        "uiCategories": [
+          "692D1886"
+        ]
       }
     ]
   }

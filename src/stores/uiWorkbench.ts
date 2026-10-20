@@ -31,15 +31,20 @@ import {
 } from "@/lib/game-ui/menu-export";
 import {
   gamePropertyCopy,
+  gameMenuGroupsCompile,
   gamePropertyPatch,
   gamePropertyRead,
   type PropertyPatchFloat,
+  type PropertyReadResult,
 } from "@/lib/game-assets";
 import { TauriUnavailableError } from "@/api/tauri";
 import { loadReplicaData } from "@/lib/game-ui/replica/loader";
 import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "@/lib/game-ui/replica/types";
 import { isTauri } from "@/api";
 import { i18n } from "@/locales";
+
+import developmentMenus from "@/lib/game-ui/development-menus.json";
+import { useCountLimits } from "@/lib/game-ui/count-limits";
 
 export type UiWorkbenchView = "city" | "region" | "development";
 
@@ -80,8 +85,7 @@ export interface MenuEntry {
  * （uiCategories）数组决定——条目 property 指向容器 instance，一个条目
  * 可以同时挂在多个菜单下。工作台三类视图对应的真实容器：
  * - 城市（city）= 复刻数据的 14 个一级分类（AC12C904 道路…）；
- * - 城市发展（development）= 大学子菜单容器 9D2EF585（8 个成员：人行道、
- *   大學標誌、宿舍、四大学院；与 tools.json 的 uiCategories 反查完全一致）；
+ * - 城市发展（development）= development-menus.json 中的九类产业菜单；
  * - 区域（region）= RegionUI 布局的按钮组由运行时填充，静态包无容器
  *   instance → 保持占位 id，不参与编译导出。 */
 export const UNIVERSITY_MENU_CONTAINER = "9D2EF585";
@@ -113,6 +117,7 @@ export function replicaToolToWorkbench(tool: ReplicaTool, index: number): Workbe
 }
 
 export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
+  const countLimits = useCountLimits();
   /** ui_replica 复刻数据（菜单模型 + 面板布局 + 舞台渲染的输入）。 */
   const replica = shallowRef<ReplicaData | null>(null);
   const loading = shallowRef(false);
@@ -132,6 +137,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const editorStack = shallowRef<MenuEntry[]>([]);
   /** 工作台里新建的分类（一级菜单末位「＋」产生）。 */
   const customCategories = ref<WorkbenchCategory[]>([]);
+  const menuGroups = ref<{ id: string; parentId: string; label: string }[]>([]);
+  const moves = ref<Record<string, { from: string; to: string }[]>>({});
+  const stableInstances = ref<Record<string, number>>({});
   const viewMode = ref<UiWorkbenchView>("city");
   const legacyWorkbench = shallowRef<LegacyWorkbench | null>(null);
 
@@ -175,13 +183,13 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
 
   function setViewMode(mode: UiWorkbenchView): void {
     viewMode.value = mode;
-    entered.value = false;
-    selectedMenuId.value = categories.value[0]?.id ?? null;
+    leaveMenu();
   }
 
-  /** 二级返回一级。 */
+  /** 关闭菜单时清除选中项，让右侧详情同步回到空状态。 */
   function leaveMenu(): void {
     entered.value = false;
+    selectedMenuId.value = null;
   }
 
   /** 大学容器的条目（真实 instance id；与 tools.json 里 uiCategories=9D2EF585
@@ -223,24 +231,109 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     }
     if (viewMode.value === "development") {
       return [
-        {
-          // 真实菜单容器 instance：大学子菜单（0x0DB9FC63 归属键的目标值）。
-          // 用真 id 而非占位符，拷贝/新增条目才能编译出游戏可读的归属。
-          id: UNIVERSITY_MENU_CONTAINER,
-          label: legacyWorkbench.value?.university?.label ?? "城市发展",
-          icon: null,
-          items: universityItems.value,
-        },
+        ...developmentMenus.map((menu) => ({
+          id: menu.id,
+          label: i18n.global.t(`studio.workbench.developmentMenus.${menu.key}`),
+          icon: `/game-ui/replica/assets/cat_${menu.icon}.png`,
+          items: (data?.tools[menu.id] ?? []).map(replicaToolToWorkbench),
+        })),
         ...customCategories.value,
       ];
     }
     return [...base, ...customCategories.value];
   });
 
+  const rootMenus = computed<WorkbenchCategory[]>(() => [
+    ...(replica.value?.model.categories ?? []).map(cat => ({
+      id: cat.id, label: cat.label, icon: cat.icon,
+      items: (replica.value?.tools[cat.id] ?? []).map(replicaToolToWorkbench),
+    })),
+    ...developmentMenus.map(menu => ({ id: menu.id,
+      label: i18n.global.t(`studio.workbench.developmentMenus.${menu.key}`), icon: null,
+      items: (replica.value?.tools[menu.id] ?? []).map(replicaToolToWorkbench),
+    })),
+  ]);
+
+  function sourceContainers(id: string): string[] {
+    const development = developmentMenus.find(menu => menu.id === id);
+    if (development) return development.via;
+    if (id === "CBC27856") return ["2A99C945", "A63DDC77", "4B277752", "DC8602C9", "6AFE622F", "3E9C273B", "FD631707", "5817C009", "F79888D2"];
+    if (id === "899BEA70") return ["07049250", "D05EB40B", "D91C434F", "F575AD72", "97164E47", "8EC55325", "2A31842A", "1483C8AE", "2982952B", "C2487690"];
+    return [id];
+  }
+
+  const moveTargets = computed(() => rootMenus.value.flatMap(root => [
+    ...(sourceContainers(root.id).length === 1 && sourceContainers(root.id)[0] === root.id
+      ? [{ id: root.id, label: root.label }] : []),
+    ...menuGroups.value.filter(group => group.parentId === root.id)
+      .map(group => ({ id: group.id, label: `${root.label} / ${group.label}` })),
+  ]).filter(target => /^[0-9A-F]{8}$/.test(target.id) && target.id !== "3193C0BE"));
+
+  function createMenuGroup(parentId: string, label: string): string | null {
+    if (!label.trim() || parentId === "3193C0BE" || !/^[0-9A-F]{8}$/.test(parentId) || !rootMenus.value.some(root => root.id === parentId)) return null;
+    let salt = 0;
+    let id: string;
+    const occupied = new Set([...Object.keys(replica.value?.tools ?? {}),
+      ...Object.values(replica.value?.tools ?? {}).flat().map(tool => tool.instance),
+      ...menuGroups.value.map(group => group.id)]);
+    do { id = fnv1Lower(`openscp:subcategory:${parentId}:${label.trim()}:${salt++}`).toString(16).toUpperCase().padStart(8, "0"); }
+    while (occupied.has(id));
+    menuGroups.value = [...menuGroups.value, { id, parentId, label: label.trim() }];
+    return id;
+  }
+
+  function menuEntries(menuId: string): MenuEntry[] {
+    const root = rootMenus.value.find(root => root.id === menuId);
+    const group = menuGroups.value.find(group => group.id === menuId);
+    if (!root && !group) return [];
+    return effectiveEntries(root ?? { id: group!.id, label: group!.label, icon: null, items: [] }).entries;
+  }
+
+  function groupTabs(rootId: string) {
+    const direct = menuEntries(rootId);
+    const base = replica.value?.subtabs?.[rootId] ?? [];
+    const custom = menuGroups.value.filter(group => group.parentId === rootId);
+    if (!custom.length) return base.map((tab, index) => ({ ...tab,
+      instances: [...tab.instances.filter(id => direct.some(entry => entry.tool.id === id)),
+        ...(index === 0 ? direct.filter(entry => !base.some(tab => tab.instances.includes(entry.tool.id))).map(entry => entry.tool.id) : [])],
+    }));
+    const remaining = new Set(direct.map(entry => entry.tool.id));
+    return [
+      ...(base.length ? base.map(tab => ({ ...tab, instances: tab.instances.filter(id => remaining.has(id)) }))
+        : [{ label: i18n.global.t("studio.workbench.ungrouped"), instances: [...remaining] }]),
+      ...custom.map(group => ({ label: group.label, instances: menuEntries(group.id).map(entry => entry.tool.id) })),
+    ];
+  }
+
+  function moveEntry(from: string, itemId: string, to: string): MenuEntry | null {
+    if (from === to || !moveTargets.value.some(target => target.id === to)) return null;
+    const entry = menuEntries(from).find(entry => entry.tool.id === itemId);
+    if (!entry) return null;
+    if (!/^[0-9A-F]{8}$/.test(itemId) && stableInstances.value[itemId] == null) {
+      stableInstances.value = { ...stableInstances.value,
+        [itemId]: fnv1Lower(`menu-item:${from}:${itemId}:${entry.tool.label}`) };
+    }
+    moves.value = { ...moves.value, [itemId]: [...(moves.value[itemId] ?? []), { from, to }] };
+    added.value = { ...added.value,
+      [from]: (added.value[from] ?? []).filter(tool => tool.id !== itemId),
+      [to]: [...(added.value[to] ?? []).filter(tool => tool.id !== itemId), entry.tool],
+    };
+    removed.value = { ...removed.value,
+      [from]: [...new Set([...(removed.value[from] ?? []), itemId])],
+      [to]: (removed.value[to] ?? []).filter(id => id !== itemId),
+    };
+    // Preserve drafts/edits and menu identity; moving is not deleting or copying.
+    const result = { menuId: to, tool: entry.tool, isNew: entry.isNew };
+    if (editingEntry.value?.tool.id === itemId) editingEntry.value = result;
+    return result;
+  }
+
   /** 面板当前展示的菜单（含编辑覆盖与新增项）。 */
   const activeMenu = computed<{ id: string; label: string; entries: MenuEntry[] } | null>(() => {
     if (!replica.value) return null;
-    const category = categories.value.find((candidate) => candidate.id === selectedMenuId.value);
+    const group = menuGroups.value.find(group => group.id === selectedMenuId.value);
+    const category = categories.value.find((candidate) => candidate.id === selectedMenuId.value)
+      ?? (group ? { id: group.id, label: group.label, icon: null, items: [] } : undefined);
     if (!category) return null;
     return { id: category.id, label: category.label, entries: effectiveEntries(category).entries };
   });
@@ -253,13 +346,13 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     const dropped = removed.value[category.id] ?? [];
     const entries: MenuEntry[] = sortTools(
       category.items
-        .filter((tool) => !dropped.includes(tool.id))
+        .filter((tool) => !dropped.includes(tool.id) && !menuAdditions.some(added => added.id === tool.id))
         .map((tool) => applyEdit(tool, edits.value[tool.id]))
         .concat(menuAdditions.map((tool) => applyEdit(tool, edits.value[tool.id]))),
     ).map((tool) => ({
       menuId: category.id,
       tool,
-      isNew: menuAdditions.some((addedTool) => addedTool.id === tool.id),
+      isNew: menuAdditions.some((addedTool) => addedTool.id === tool.id) && !/^[0-9A-F]{8}$/.test(tool.id),
     }));
     return { category, entries };
   }
@@ -267,7 +360,19 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   /** 全部菜单的有效视图（导出的唯一数据源）。跨视图容器（大学
    * 9D2EF585）不在当前视图分类里，但有新增/拷贝条目时同样参与导出。 */
   function allEffectiveEntries(): { category: WorkbenchCategory; entries: MenuEntry[] }[] {
-    const out = categories.value.map((category) => effectiveEntries(category));
+    const out = [...rootMenus.value, ...customCategories.value].map((category) => effectiveEntries(category));
+    // Keep edited development entries exportable after switching back to another view.
+    for (const menu of developmentMenus) {
+      if (out.some(({ category }) => category.id === menu.id)) continue;
+      const items = (replica.value?.tools[menu.id] ?? []).map(replicaToolToWorkbench);
+      if (!items.some((tool) => edits.value[tool.id]) && !(added.value[menu.id]?.length)) continue;
+      out.push(effectiveEntries({
+        id: menu.id,
+        label: i18n.global.t(`studio.workbench.developmentMenus.${menu.key}`),
+        icon: null,
+        items,
+      }));
+    }
     for (const [menuId, additions] of Object.entries(added.value)) {
       if (additions.length === 0) continue;
       if (out.some(({ category }) => category.id === menuId)) continue;
@@ -277,7 +382,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       const label =
         menuId === UNIVERSITY_MENU_CONTAINER
           ? universityLabel()
-          : (containerLabelOf(menuId) ?? additions[0]?.label ?? menuId);
+          : (menuGroups.value.find(group => group.id === menuId)?.label ?? containerLabelOf(menuId) ?? additions[0]?.label ?? menuId);
       out.push(effectiveEntries({ id: menuId, label, icon: null, items }));
     }
     return out;
@@ -285,7 +390,8 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
 
   /** 面板点击条目 → 打开编辑 Sheet（已有打开中的 Sheet 时压栈，形成嵌套）。 */
   function openEditor(menuId: string, itemId: string): void {
-    const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
+    const entry = menuEntries(menuId).find((candidate) => candidate.tool.id === itemId)
+      ?? activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
     if (entry) {
       if (editingEntry.value) {
         editorStack.value = [...editorStack.value, editingEntry.value];
@@ -564,7 +670,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     const data = replica.value;
     const out: { id: string; label: string }[] = [];
     const seenIds = new Set<string>();
-    const menus: { id: string; label: string; items: WorkbenchTool[] }[] = categories.value.map(
+    const menus: { id: string; label: string; items: WorkbenchTool[] }[] = rootMenus.value.map(
       (category) => ({ id: category.id, label: category.label, items: category.items }),
     );
     if (!menus.some((menu) => menu.id === UNIVERSITY_MENU_CONTAINER)) {
@@ -576,7 +682,10 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       const inBase = (data?.tools[menu.id] ?? []).some((tool) => tool.instance === itemId)
         || menu.items.some((tool) => tool.id === itemId);
       const inAdded = (added.value[menu.id] ?? []).some((tool) => tool.id === itemId);
-      if (inBase || inAdded) out.push({ id: menu.id, label: menu.label });
+      if ((inBase && !(removed.value[menu.id] ?? []).includes(itemId)) || inAdded) out.push({ id: menu.id, label: menu.label });
+    }
+    for (const group of menuGroups.value) {
+      if ((added.value[group.id] ?? []).some(tool => tool.id === itemId)) out.push({ id: group.id, label: group.label });
     }
     return out;
   }
@@ -606,8 +715,13 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         format: "openscp-ui-workbench-overlay/2",
         viewMode: viewMode.value,
         edits: edits.value,
+        countLimits: countLimits.snapshot(),
         added: added.value,
         customCategories: customCategories.value,
+        menuGroups: menuGroups.value,
+        moves: moves.value,
+        removed: removed.value,
+        stableInstances: stableInstances.value,
       },
       null,
       2,
@@ -647,6 +761,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         schemaVersion: 1,
         source: "openscp-ui-workbench",
         activeView: viewMode.value,
+        countLimits: includeOverrides ? countLimits.snapshot() : { individual: {}, shared: {} },
+        menuGroups: includeOverrides ? menuGroups.value : [],
+        moves: includeOverrides ? moves.value : {},
         menus,
       },
       null,
@@ -670,6 +787,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     const warnings: string[] = [];
     const seen = new Set<string>();
     const effective = allEffectiveEntries();
+    const sourceGroups = new Map<number, number>();
     const unitEconTasks: {
       label: string;
       sourceInstance: number;
@@ -689,9 +807,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         if (seen.has(tool.id)) continue;
         seen.add(tool.id);
         const knownInstance = /^[0-9A-F]{8}$/.test(tool.id);
-        const instance = knownInstance
+        const instance = stableInstances.value[tool.id] ?? (knownInstance
           ? Number.parseInt(tool.id, 16)
-          : fnv1Lower(`menu-item:${category.id}:${tool.id}:${tool.label}`);
+          : fnv1Lower(`menu-item:${category.id}:${tool.id}:${tool.label}`));
         // 归属容器 = 有效归属：真实游戏 instance 在复刻数据中的全部分类，
         // 减去被移出；新增/拷贝条目落到其所在分类（必须是真实容器 id）。
         const resolvedCategories = knownInstance
@@ -700,12 +818,35 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
                 (data?.tools[catId] ?? []).some((t) => t.instance === tool.id)
                 && !(removed.value[catId] ?? []).includes(tool.id),
               )
-              .map((catId) => Number.parseInt(catId, 16))
+              .flatMap((catId) => (
+                data?.tools[catId]?.find((t) => t.instance === tool.id)?.uiCategories ?? [catId]
+              ).map((id) => Number.parseInt(id, 16)))
           : [];
         const ownContainer = !knownInstance && /^[0-9A-F]{8}$/.test(category.id)
           ? [Number.parseInt(category.id, 16)]
           : [];
-        const uiCategories = [...new Set([...resolvedCategories, ...ownContainer])];
+        let uiCategories = [...new Set([...resolvedCategories, ...ownContainer])];
+        const operations = moves.value[tool.id];
+        if (operations?.length) {
+          if (!isTauri()) throw new Error(i18n.global.t("studio.workbench.organizationNativeRequired"));
+          let initial: number[];
+          if (knownInstance) {
+            const source = await gamePropertyRead({ instance });
+            if (source) sourceGroups.set(instance, source.group);
+            const membership = source?.keys.find(key => key.hash === 0x0db9fc63);
+            if (!source || !membership) throw new Error(i18n.global.t("studio.workbench.organizationReadFailed"));
+            initial = membership.values.flatMap(value => value.key ? [value.key[2]] : []);
+          } else initial = [Number.parseInt(operations[0].from, 16)];
+          for (const operation of operations) {
+            const remove = [...sourceContainers(operation.from), operation.from].map(id => Number.parseInt(id, 16));
+            if (!initial.some(id => remove.includes(id))) {
+              throw new Error(i18n.global.t("studio.workbench.organizationReadFailed"));
+            }
+            initial = initial.filter(id => !remove.includes(id));
+            initial.push(Number.parseInt(operation.to, 16));
+          }
+          uiCategories = [...new Set(initial)];
+        }
         if (uiCategories.length === 0) {
           warnings.push(
             knownInstance
@@ -838,12 +979,14 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     // instance 归位 property 资源条目。
     const copyRequests = entries.filter((entry) => entry.sourceInstance != null);
     const copiedProperties = new Map<number, Uint8Array>();
+    const copiedGroups = new Map<number, number>();
     const tauriUnavailable = !isTauri();
     if (copyRequests.length > 0 && !tauriUnavailable) {
       const results = await Promise.allSettled(
         copyRequests.map((entry) =>
           gamePropertyCopy({
             sourceInstance: entry.sourceInstance!,
+            sourceGroup: sourceGroups.get(entry.instance),
             newInstance: entry.instance,
             uiCategories: entry.uiCategories,
             titleStringId: entry.titleStringId,
@@ -860,6 +1003,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       for (const [index, result] of results.entries()) {
         const entry = copyRequests[index];
         if (result.status === "fulfilled" && result.value) {
+          copiedGroups.set(entry.instance, result.value.sourceGroup);
           copiedProperties.set(
             entry.instance,
             Uint8Array.from(atob(result.value.dataBase64), (c) => c.charCodeAt(0)),
@@ -872,6 +1016,9 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
                 ? JSON.stringify(result.reason)
                 : String(result.reason)
             : "返回空";
+          if (Object.keys(moves.value).some(id => (stableInstances.value[id] ?? Number.parseInt(id, 16)) === entry.instance)) {
+            throw new Error(i18n.global.t("studio.workbench.organizationReadFailed"));
+          }
           warnings.push(`全量 property 复制失败(${reason})，回退合成条目`);
         }
       }
@@ -884,7 +1031,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       if (copiedBytes) {
         overlayEntries.push({
           type: MENU_PROP_TYPE,
-          group: MENU_GROUP,
+          group: copiedGroups.get(entry.instance) ?? MENU_GROUP,
           instance: entry.instance,
           data: copiedBytes,
         });
@@ -986,6 +1133,24 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         });
       }
     }
+    let groupResourceCount = 0;
+    if (menuGroups.value.length && !isTauri()) throw new Error(i18n.global.t("studio.workbench.organizationNativeRequired"));
+    for (const parentId of new Set(menuGroups.value.map(group => group.parentId))) {
+      const defaultTitleStringId = fnv1Lower(`openscp:ungrouped:${parentId}`);
+      locale.push({ table: OPENSCP_LOCALE_TABLE, id: defaultTitleStringId, text: i18n.global.t("studio.workbench.ungrouped") });
+      const children = menuGroups.value.filter(group => group.parentId === parentId).map(group => {
+        const titleStringId = fnv1Lower(`openscp:group-title:${group.id}`);
+        locale.push({ table: OPENSCP_LOCALE_TABLE, id: titleStringId, text: group.label });
+        return { instance: Number.parseInt(group.id, 16), titleStringId };
+      });
+      const resources = await gameMenuGroupsCompile({ parentInstance: Number.parseInt(parentId, 16),
+        parentGroup: developmentMenus.some(menu => menu.id === parentId) ? 0x0c298bdd : 0x09a4ba03,
+        newGroup: fnv1Lower(`openscp:subcategory-group:${parentId}`), localeTable: OPENSCP_LOCALE_TABLE,
+        defaultTitleStringId, children });
+      for (const resource of resources) overlayEntries.push({ type: resource.typeId, group: resource.group,
+        instance: resource.instance, data: Uint8Array.from(atob(resource.dataBase64), c => c.charCodeAt(0)) });
+      groupResourceCount += resources.length;
+    }
     for (const tableId of new Set(locale.map((s) => s.table))) {
       overlayEntries.push({
         type: LOCALE_TYPE,
@@ -997,8 +1162,14 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         ),
       });
     }
+    const countResources = await countLimits.compile(overlayEntries);
+    for (const resource of countResources) {
+      const index = overlayEntries.findIndex((r) => r.type === resource.type && r.group === resource.group && r.instance === resource.instance);
+      if (index < 0) overlayEntries.push(resource);
+      else overlayEntries[index] = resource;
+    }
     const bytes = writeUncompressedOverlay(overlayEntries);
-    return { bytes, entryCount: entries.length, localeCount: locale.length, warnings };
+    return { bytes, entryCount: entries.length + countResources.length + groupResourceCount, localeCount: locale.length, warnings };
   }
 
 
@@ -1023,6 +1194,12 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   }
 
   function resetAll(): void {
+    countLimits.reset();
+    if (menuGroups.value.some(group => group.id === selectedMenuId.value) || customCategories.value.some(group => group.id === selectedMenuId.value)) leaveMenu();
+    menuGroups.value = [];
+    moves.value = {};
+    stableInstances.value = {};
+    customCategories.value = [];
     edits.value = {};
     added.value = {};
     removed.value = {};
@@ -1030,6 +1207,8 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   }
 
   return {
+    menuGroups, moves, rootMenus, moveTargets, createMenuGroup, menuEntries, moveEntry, groupTabs,
+    countLimits,
     replica,
     loading,
     loadError,

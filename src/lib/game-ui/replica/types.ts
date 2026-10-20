@@ -90,6 +90,8 @@ export interface ReplicaStatRow {
 
 /** 二级槽位的一个工具条目。 */
 export interface ReplicaTool {
+  /** Actual game membership; aggregated palettes must preserve these on export. */
+  uiCategories?: string[];
   /** 工具 property 的 instance（0x%08X 大写十六进制）。 */
   instance: string;
   /** locale 解析后的显示名；可能为空串。 */
@@ -145,6 +147,7 @@ export interface ReplicaSubmenuItem {
 
 /** 文件夹式分类（公共交通/公園）的子分类标签：palette 内按 instance 过滤。 */
 export interface ReplicaSubtab {
+  labelKey?: string;
   /** 游戏标签文案（公車/路面電車/火車/船…，来自提取产物）。 */
   label: string;
   /** 该子分类包含的条目 instance。 */

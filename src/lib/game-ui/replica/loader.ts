@@ -9,6 +9,7 @@
  *
  * 装载结果进程内缓存；测试直接构造 ReplicaData 调 store.hydrate，不走这里。
  */
+import developmentMenus from "../development-menus.json";
 import { gameAssetDataUrl, gameAssetTgiDataUrl } from "@/lib/game-assets";
 import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "./types";
 
@@ -38,6 +39,9 @@ function mergeExtraContainers(
   data: ReplicaData,
   extra: ExtraContainers,
 ): void {
+  for (const menu of developmentMenus) {
+    data.assets[`cat_${menu.icon}.png`] = `/game-ui/replica/assets/cat_${menu.icon}.png`;
+  }
   for (const [categoryId, list] of Object.entries(extra?.tools ?? {})) {
     if ((data.tools[categoryId]?.length ?? 0) === 0 && list.length > 0) {
       data.tools[categoryId] = list;
@@ -240,7 +244,7 @@ async function resolveLayoutAssetMap(data: ReplicaData): Promise<void> {
  * 渲染层取 icon 路径的文件名查 ASSET_MAP —— 所以解析结果必须写进
  * assets[basename]，不能替换 icon 本身（dataURL 会被 basename 逻辑撕碎）。 */
 async function resolveCategoryIcons(data: ReplicaData): Promise<void> {
-  for (const category of data.model.categories) {
+  for (const category of [...data.model.categories, ...developmentMenus.map((menu) => ({ iconHash: menu.icon }))]) {
     const hash = category.iconHash;
     if (!hash) continue;
     const instance = Number.parseInt(hash, 16);

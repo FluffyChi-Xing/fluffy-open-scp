@@ -18,6 +18,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
+const developmentMenus = require("../src/lib/game-ui/development-menus.json");
 const tools = JSON.parse(fs.readFileSync(path.join(root, "public/game-ui/tools/tools.json"), "utf8"));
 const locale = (table) =>
   JSON.parse(fs.readFileSync(path.join(root, `public/game-ui/locale/${table}.json`), "utf8"));
@@ -137,6 +138,21 @@ const out = {
 };
 
 const outPath = path.join(root, "public/game-ui/tools/extra-containers.json");
+// Development roots are 0C298BDD categories, not building module containers.
+for (const menu of developmentMenus) {
+  const rows = membersByCategories(menu.via);
+  out.containers[menu.id] = { via: menu.via, by: "uiCategories" };
+  out.tools[menu.id] = rows.map((row) => ({
+    ...decorate(row),
+    uiCategories: row.uiCategories.split(","),
+  }));
+  if (menu.tabs) out.subtabs[menu.id] = menu.via.map((container, index) => ({
+    label: "",
+    labelKey: `studio.workbench.developmentTabs.${menu.tabs[index]}`,
+    instances: membersByCategories([container]).map((row) => row.instance),
+  }));
+  console.log(`${menu.key}: ${rows.length}`);
+}
 fs.writeFileSync(outPath, JSON.stringify(out, null, 2) + "\n");
 console.log(
   `CBC27856 公共運輸: ${transitTools.length} 条（${transitSubtabs.length} 个子分类）；899BEA70 公園: ${out.tools["899BEA70"].length} 条 → ${outPath}`,

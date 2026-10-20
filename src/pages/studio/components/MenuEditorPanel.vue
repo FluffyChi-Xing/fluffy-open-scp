@@ -19,13 +19,14 @@ import { command } from "@/api/tauri";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
 import { useToast } from "@/composables/useToast";
+import MenuGroupingPanel from "./menu-form/MenuGroupingPanel.vue";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
 const { activeMenu, edits, added, customCategories } = storeToRefs(store);
 
 const editedCount = computed(() => Object.keys(edits.value).length +
-  Object.values(added.value).reduce((count, entries) => count + entries.length, 0) + customCategories.value.length);
+  Object.values(added.value).reduce((count, entries) => count + entries.length, 0) + customCategories.value.length + store.countLimits.editCount + store.menuGroups.length + Object.keys(store.moves).length);
 
 /** 加载失败的槽位图（如运行时资产落后于数据）→ 回退 FIcon 占位。 */
 const brokenThumbs = ref<Record<string, boolean>>({});
@@ -66,7 +67,12 @@ async function onExport(): Promise<void> {
 const toast = useToast();
 
 async function onBuild(): Promise<void> {
-  const result = await store.buildGameExport();
+  let result: Awaited<ReturnType<typeof store.buildGameExport>>;
+  try { result = await store.buildGameExport(); }
+  catch (error) {
+    toast.error(error instanceof Error ? error.message : t(store.menuGroups.length || Object.keys(store.moves).length ? "studio.workbench.organizationWriteFailed" : "studio.workbench.countLimitsWriteFailed"));
+    return;
+  }
   if (result.entryCount === 0) {
     toast.warning(t("studio.workbench.buildEmpty"));
     return;
@@ -118,6 +124,7 @@ function onAdd(): void {
       <span v-if="editedCount" class="edit-badge">{{ editedCount }} Δ</span>
     </header>
 
+    <MenuGroupingPanel v-if="activeMenu" :menu-id="activeMenu.id" />
     <FEmpty
       v-if="!activeMenu"
       class="empty-body"

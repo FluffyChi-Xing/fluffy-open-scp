@@ -1,6 +1,13 @@
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReplicaData } from "@/lib/game-ui/replica/types";
+import * as menuExport from "@/lib/game-ui/menu-export";
+import * as gameAssets from "@/lib/game-assets";
+import * as runtime from "@/api";
+import { i18n } from "@/locales";
+import developmentMenus from "@/lib/game-ui/development-menus.json";
+import extraContainers from "../../public/game-ui/tools/extra-containers.json";
+import countManifest from "../../public/game-ui/tools/count-limits.json";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 
 /** 复刻数据 fixture：结构同 public/game-ui/replica/data/*.js 的全局。 */
@@ -42,6 +49,73 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     store.hydrate(replicaFixture());
     return store;
   }
+
+  it("copying the fire station to roads and changing only price sends no other Unit edits", async () => {
+    const store = useUiWorkbenchStore();
+    const data = replicaFixture();
+    data.model.categories = [
+      { id: "AC12C904", label: "道路", icon: null, iconHash: null },
+      { id: "9FAC79C9", label: "消防", icon: null, iconHash: null },
+    ];
+    data.tools = {
+      AC12C904: [],
+      "9FAC79C9": [{ instance: "6D0235EE", label: "消防局", preview: null, marquee: null,
+        cost: "20000", upkeep: "400", locked: true, stats: [{ label: "回应时间", value: null }] }],
+    };
+    store.hydrate(data);
+    const native = vi.spyOn(runtime, "isTauri").mockReturnValue(true);
+    const copy = vi.spyOn(gameAssets, "gamePropertyCopy").mockResolvedValue({ dataBase64: "AAAAAA==", keyCount: 0, sourceGroup: 0x09878a01 });
+    const read = vi.spyOn(gameAssets, "gamePropertyRead").mockImplementation(async ({ instance }) => ({
+      typeId: 0xb1b104, group: instance === 0x6d0235ee ? 0x09878a01 : 0x40e0c000, instance,
+      keys: instance === 0x6d0235ee
+        ? [{ hash: 0x0975695f, array: false, values: [{ kind: "key", key: [0, 0, 0xe917279c] }] }]
+        : [{ hash: 0x0a8a41da, array: false, values: [{ kind: "float", float: 20000 }] },
+           { hash: 0x09ae19d7, array: false, values: [{ kind: "float", float: 400 }] }],
+    }));
+    const patch = vi.spyOn(gameAssets, "gamePropertyPatch").mockResolvedValue({
+      dataBase64: "AAAAAA==", typeId: 0xb1b104, group: 0x40e0c000, instance: 0xe917279c,
+    });
+    try {
+      const duplicate = store.duplicateToMenu("9FAC79C9", "6D0235EE", "AC12C904")!;
+      await store.buildGameExport();
+      expect(patch).not.toHaveBeenCalled();
+      const initialCopy = structuredClone(copy.mock.calls[0][0]);
+      store.updateItem("AC12C904", duplicate.tool.id, { cost: "20" });
+      const exported = await store.buildGameExport();
+      expect(exported.warnings).toEqual([]);
+      expect(copy.mock.calls[1][0]).toEqual(initialCopy);
+      expect(read.mock.calls.map(([request]) => request.instance)).toEqual([0x6d0235ee, 0xe917279c]);
+      expect(patch).toHaveBeenCalledExactlyOnceWith({
+        instance: 0xe917279c, group: 0x40e0c000, setFloats: [{ hash: 0x0a8a41da, value: 20 }],
+      });
+      expect(store.countLimits.editCount).toBe(0);
+    } finally {
+      native.mockRestore(); copy.mockRestore(); read.mockRestore(); patch.mockRestore();
+    }
+  });
+
+  it("exports count-only changes across views and resets shared edits", async () => {
+    const store = makeStore();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => countManifest }));
+    try {
+      await store.countLimits.load("C0E5BE77");
+      store.countLimits.apply({ source: "C0E5BE77", individual: 2, shared: 5 });
+      store.setViewMode("region");
+      expect(JSON.parse(store.exportSchema()).countLimits.shared["4B427C97"].value).toBe(5);
+      expect(JSON.parse(store.exportOverlay()).countLimits.individual.C0E5BE77).toBe(2);
+      const compile = vi.spyOn(store.countLimits, "compile").mockImplementation(async (base) => {
+        expect(base).toEqual([]);
+        return [{ type: 0xb1b104, group: 0x40e0c000, instance: 0x118282e9, data: new Uint8Array([0, 0, 0, 0]) }];
+      });
+      const result = await store.buildGameExport();
+      expect(result.entryCount).toBe(1);
+      expect(compile).toHaveBeenCalledTimes(1);
+      expect(new TextDecoder().decode(result.bytes.subarray(0, 4))).toBe("DBPF");
+      store.resetAll();
+      expect(store.countLimits.editCount).toBe(0);
+      compile.mockRestore();
+    } finally { vi.unstubAllGlobals(); }
+  });
 
   it("hydrate 后一级菜单为复刻数据的分类列表，默认不选中任何菜单", () => {
     const store = makeStore();
@@ -85,7 +159,8 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     expect(store.selectedMenuId).toBe("CAT_ROAD");
     store.leaveMenu();
     expect(store.entered).toBe(false);
-    expect(store.selectedMenuId).toBe("CAT_ROAD"); // 保持选中，便于面板回看
+    expect(store.selectedMenuId).toBeNull();
+    expect(store.activeMenu).toBeNull();
   });
 
   it("updateItem 只做覆盖，未编辑字段回落基础数据", () => {
@@ -137,7 +212,8 @@ describe("uiWorkbench store（复刻数据模型）", () => {
 
     store.resetAll();
     expect(Object.keys(store.edits)).toHaveLength(0);
-    expect(store.activeMenu?.entries.some((entry) => entry.isNew)).toBe(false);
+    expect(store.activeMenu).toBeNull();
+    expect(store.customCategories).toEqual([]);
   });
 
   it("deleting a built-in entry removes it from the active menu and schema", () => {
@@ -259,9 +335,43 @@ describe("uiWorkbench store（复刻数据模型）", () => {
     expect(withCustom.warnings.join()).toContain("不是游戏容器 instance");
   });
 
-  it("development 视图使用真实大学容器 id（9D2EF585）", () => {
+  it("development exposes exactly nine industry menus with real members, never university", () => {
     const store = makeStore();
+    store.hydrate({ ...replicaFixture(), tools: extraContainers.tools });
     store.setViewMode("development");
-    expect(store.categories[0]?.id).toBe("9D2EF585");
+    expect(store.categories.map((c) => c.id)).toEqual(developmentMenus.map((m) => m.id));
+    expect(store.categories).toHaveLength(9);
+    expect(store.categories.some((c) => c.id === "9D2EF585")).toBe(false);
+    for (const category of store.categories) {
+      expect(category.items.length).toBeGreaterThan(0);
+      store.enterMenu(category.id);
+      expect(store.activeMenu?.entries.length).toBe(category.items.length);
+    }
+    expect(store.categories[0].items.map((t) => t.id)).not.toContain("CF6406C8");
+    const previous = i18n.global.locale.value;
+    try {
+      i18n.global.locale.value = "en-US";
+      expect(store.categories[0].label).toBe("Mining");
+      expect(store.activeMenu?.label).toBe("OmegaCo");
+      i18n.global.locale.value = "zh-CN";
+      expect(store.categories[0].label).toBe("采矿");
+      expect(store.activeMenu?.label).toBe("欧米伽");
+    } finally { i18n.global.locale.value = previous; }
+  });
+
+  it("export preserves actual subcategory membership for aggregated development menus", async () => {
+    const store = makeStore();
+    store.hydrate({ ...replicaFixture(), tools: extraContainers.tools });
+    store.setViewMode("development");
+    const tower = store.categories.find((c) => c.id === "895E329B")!.items[0];
+    store.updateItem("895E329B", tower.id, { label: "Tower copy title" });
+    const build = vi.spyOn(menuExport, "buildMenuPropertyResource");
+    try {
+      store.setViewMode("city");
+      const result = await store.buildGameExport();
+      expect(result.entryCount).toBe(1);
+      expect(result.warnings).toEqual([]);
+      expect(build.mock.calls[0][0].uiCategories).toEqual([0xE996DFCF]);
+    } finally { build.mockRestore(); }
   });
 });

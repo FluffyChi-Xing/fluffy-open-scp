@@ -12,10 +12,11 @@
  *   - 槽位行工具清单可由调用方覆盖（工作台的编辑覆盖/新增条目）；
  *   - 槽位可挂点击回调与「新增条目」删除角标。
  */
+import { i18n } from "@/locales";
 import { PLACEHOLDER_FALLBACK, SIMOLEON_FALLBACK, SLOT_PAD_FALLBACK } from "@/lib/game-ui/workbench";
 import { designPass, type NodeElementFactory } from "./render";
 import { updatePosition } from "@/lib/game-ui/scrui";
-import type { ReplicaData, ReplicaNode, ReplicaSlotRow, ReplicaTool } from "./types";
+import type { ReplicaData, ReplicaNode, ReplicaSlotRow, ReplicaTool, ReplicaSubtab } from "./types";
 
 export interface SlotTool extends ReplicaTool {
   /** 本条是工作台新增的（未落库）→ 显示删除角标。 */
@@ -23,6 +24,7 @@ export interface SlotTool extends ReplicaTool {
 }
 
 export interface PaletteHooks {
+  getSubtabs?: (categoryId: string) => ReplicaSubtab[];
   /** 槽位被点击（默认无）。 */
   onSlotClick?: (categoryId: string, tool: SlotTool) => void;
   /** 工作台删除新增条目（仅 isNew 槽位的角标触发）。 */
@@ -285,7 +287,7 @@ attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
   ): void {
     if (SKIP_SLOT_ROW.has(categoryId)) return; // 布局自带工具按钮的分类不再叠一行
     const allTools = hooks.getTools?.(categoryId) ?? (data.tools[categoryId] as SlotTool[] | undefined) ?? [];
-    if (!allTools.length) return;
+    if (!allTools.length && !(hooks.getSubtabs?.(categoryId)?.length)) return;
     // 布局自带固定槽位的分类（区域调色板：居中、无分页、分割线是背景图）：
     // 不画通用动态行，把 hover/点击直接绑到烘焙槽位节点上 —— 位置、分割线
     // 全部保持游戏原样。
@@ -314,7 +316,7 @@ attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
       });
       return;
     }
-    const subtabs = data.subtabs?.[categoryId] ?? [];
+    const subtabs = hooks.getSubtabs?.(categoryId) ?? data.subtabs?.[categoryId] ?? [];
     let activeTab = 0;
     let page = 0;
     let perRow = 1;
@@ -341,8 +343,7 @@ attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
     function pool(): SlotTool[] {
       if (subtabs.length === 0) return allTools;
       const allowed = new Set(subtabs[activeTab]?.instances ?? []);
-      const picked = allTools.filter((tool) => allowed.has(tool.instance));
-      return picked.length > 0 ? picked : allTools;
+      return allTools.filter((tool) => allowed.has(tool.instance) || (tool.isNew && !hooks.getSubtabs));
     }
 
     const row = document.createElement("div");
@@ -390,11 +391,11 @@ attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
       subtabs.forEach((tab, index) => {
         const pill = document.createElement("button");
         pill.type = "button";
-        pill.textContent = tab.label;
+        pill.textContent = tab.labelKey ? i18n.global.t(tab.labelKey) : tab.label;
         pill.style.cssText =
           "background:linear-gradient(#f2f8fd,#cddff0);border:1px solid #8aa5be;" +
-          "border-radius:999px;color:#1c3d5a;cursor:pointer;font:bold 13px/26px sans-serif;" +
-          "flex:1 1 0;height:26px;padding:0 10px;position:relative;text-align:center;";
+          "border-radius:999px;color:#1c3d5a;cursor:pointer;font:bold 12px/26px sans-serif;" +
+          "flex:0 0 auto;height:26px;max-width:220px;min-width:92px;padding:0 12px;position:relative;text-align:center;";
         pill.addEventListener("click", (e) => {
           e.stopPropagation();
           if (activeTab === index) return;

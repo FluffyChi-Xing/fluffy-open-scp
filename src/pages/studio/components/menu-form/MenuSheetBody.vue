@@ -5,6 +5,9 @@ import MenuTargetTree, { type CopyTargetNode } from "./MenuTargetTree.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { Switch } from "@/components/ui/switch";
 import type { ReplicaSubmenuItem } from "@/lib/game-ui/replica/types";
+import MenuCountLimits from "./MenuCountLimits.vue";
+import MenuMoveControl from "./MenuMoveControl.vue";
+import type { CountLimitDraft } from "@/lib/game-ui/count-limits";
 const { t } = useI18n();
 
 /**
@@ -24,18 +27,22 @@ const model = defineModel<{
   preview: string | null;
   marquee: string | null;
   stats: { label: string; value: string }[];
+  countLimits: CountLimitDraft | null;
 }>({ required: true });
 
 defineProps<{
   memberships: { id: string; label: string }[];
   copyTargets: CopyTargetNode[];
+  moveTargets?: { id: string; label: string }[];
   /** 建筑子菜单条目（costs.json 反查；无则不渲染该分区）。 */
   submenus?: ReplicaSubmenuItem[];
+  countSource?: string | null;
 }>();
 
 const emit = defineEmits<{
   (e: "crop", target: "preview" | "marquee"): void;
   (e: "copy", target: CopyTargetNode): void;
+  (e: "move", target: string): void;
   (e: "open-submenu", item: ReplicaSubmenuItem): void;
 }>();
 
@@ -100,6 +107,7 @@ function removeStat(index: number): void {
         </div>
         <p class="field-hint">{{ t('studio.workbench.copyHint') }}</p>
       </div>
+      <MenuMoveControl v-if="moveTargets?.length" :targets="moveTargets" @move="emit('move', $event)" />
     </section>
 
     <!-- 图像 -->
@@ -176,6 +184,8 @@ function removeStat(index: number): void {
       </label>
       <p class="field-hint">{{ t('studio.workbench.financeHint') }}</p>
     </section>
+
+    <MenuCountLimits v-model="model.countLimits" :source="countSource ?? null" />
 
     <!-- 统计行 -->
     <section class="form-section">

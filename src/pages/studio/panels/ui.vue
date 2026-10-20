@@ -28,6 +28,7 @@ import { tauriApi } from "@/api";
 import { TauriUnavailableError } from "@/api/tauri";
 import { downloadBytes } from "@/lib/game-ui/menu-export";
 import type { ToolEdit } from "@/lib/game-ui/workbench";
+import type { CountLimitDraft } from "@/lib/game-ui/count-limits";
 
 const { t } = useI18n();
 const toast = useToast();
@@ -44,7 +45,7 @@ const editedCount = computed(
   () =>
     Object.keys(store.edits).length +
     Object.values(store.added).reduce((count, list) => count + list.length, 0) +
-    store.customCategories.length,
+    store.customCategories.length + store.countLimits.editCount + store.menuGroups.length + Object.keys(store.moves).length,
 );
 /** schema diff 预览 sheet */
 // Schema JSON 预览已下线：全量 JSON + 行级 diff 的渲染压力过大。
@@ -64,7 +65,13 @@ function toBase64(bytes: Uint8Array): string {
 /** 编译 .package 并注入游戏 Packages 目录；非 Tauri 环境回退为下载。
  * 反馈全部走 toast（项目禁用原生弹窗）。 */
 async function onBuildInject(): Promise<void> {
-  const result = await store.buildGameExport();
+  let result: Awaited<ReturnType<typeof store.buildGameExport>>;
+  try {
+    result = await store.buildGameExport();
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : t(store.menuGroups.length || Object.keys(store.moves).length ? "studio.workbench.organizationWriteFailed" : "studio.workbench.countLimitsWriteFailed"));
+    return;
+  }
   if (result.entryCount === 0) {
     toast.warning(t("studio.workbench.buildEmpty"));
     return;
@@ -98,6 +105,7 @@ const draft = ref<{
   preview: string | null;
   marquee: string | null;
   stats: { label: string; value: string }[];
+  countLimits: CountLimitDraft | null;
 }>({
   label: "",
   icon: "",
@@ -110,6 +118,7 @@ const draft = ref<{
   preview: null,
   marquee: null,
   stats: [],
+  countLimits: null,
 });
 
 /** Sheet 打开时从条目**拷贝**到临时编辑态（编辑副本；应用才写回覆盖）。
@@ -125,6 +134,7 @@ watch(editingEntry, (entry) => {
       upkeep: entry.tool.upkeep ?? "",
       unlock: entry.tool.unlock ?? "",
       locked: entry.tool.locked ?? false,
+      countLimits: null,
       preview: entry.tool.preview ?? null,
       marquee: entry.tool.marquee ?? null,
       stats: (entry.tool.stats ?? []).map((stat) => ({
@@ -133,6 +143,12 @@ watch(editingEntry, (entry) => {
       })),
     };
   }
+});
+
+const countSource = computed(() => {
+  const tool = editingEntry.value?.tool;
+  const source = tool?.sourceInstance ?? tool?.id;
+  return source && /^[0-9a-f]{8}$/i.test(source) ? source.toUpperCase() : null;
 });
 
 /** 条目当前归属的菜单（「指哪打哪」：编辑前先看清它挂在哪）。 */
@@ -182,6 +198,21 @@ function onOpenSubmenu(item: ReplicaSubmenuItem): void {
 
 /** 复制到目标（SCP Copy Entry 语义）：一级菜单走分类副本；
  * 建筑子菜单容器走容器副本（导出为该容器的归属）。 */
+function onMoveTo(target: string): void {
+  const entry = editingEntry.value;
+  if (!entry) return;
+  if (!applyDraft()) return;
+  const moved = store.moveEntry(entry.menuId, entry.tool.id, target);
+  if (moved) {
+    const rootId = store.menuGroups.find(group => group.id === target)?.parentId ?? target;
+    if (!store.categories.some(category => category.id === rootId)) {
+      store.setViewMode(store.replica?.model.categories.some(category => category.id === rootId) ? "city" : "development");
+    }
+    store.enterMenu(target);
+    store.editingEntry = moved;
+  }
+}
+
 function onCopyTo(target: CopyTargetNode): void {
   const entry = editingEntry.value;
   if (!entry) return;
@@ -205,9 +236,16 @@ function onCopyTo(target: CopyTargetNode): void {
 
 /** 应用 = 计算草稿相对条目有效视图的 diff，只把变化的字段写进覆盖。
  * 图片三态：未动 → 不写键；null → 明确移除；字符串 → 替换。 */
-function applyDraft(): void {
+function applyDraft(): boolean {
   const entry = editingEntry.value;
-  if (!entry) return;
+  if (!entry) return false;
+  if (draft.value.countLimits) {
+    try { store.countLimits.apply(draft.value.countLimits); }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t("studio.workbench.countLimitsInvalid"));
+      return false;
+    }
+  }
   const tool = entry.tool;
   const patch: ToolEdit = {};
   if (draft.value.label !== tool.label) patch.label = draft.value.label;
@@ -231,6 +269,7 @@ function applyDraft(): void {
   if (JSON.stringify(draftStats) !== JSON.stringify(tool.stats ?? [])) patch.stats = draftStats;
   if (Object.keys(patch).length > 0) store.updateItem(entry.menuId, entry.tool.id, patch);
   store.closeEditor();
+  return true;
 }
 
 /* 裁切器：icon 128×128 PNG、hover 大图 454×263 JPEG（游戏资源实测尺寸） */
@@ -346,9 +385,12 @@ function removeDraft(): void {
             v-model="draft"
             :memberships="memberships"
             :copy-targets="copyTargets"
+            :move-targets="editingEntry.isSubmenu ? [] : store.moveTargets.filter(target => target.id !== editingEntry?.menuId)"
             :submenus="submenus"
+            :count-source="countSource"
             @crop="cropperTarget = $event"
             @copy="onCopyTo"
+            @move="onMoveTo"
             @open-submenu="onOpenSubmenu"
           />
         </div>
