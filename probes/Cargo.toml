@@ -20,6 +20,10 @@ serde.workspace = true
 serde_json = "1"
 flate2 = "1"
 
+[[example]]
+name = "building_economy_audit"
+path = "property/building_economy_audit.rs"
+
 # package —— DBPF 容器 / 索引 / TGI 通用查找
 [[example]]
 name = "dbpf_fixture"

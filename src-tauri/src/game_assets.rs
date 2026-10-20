@@ -14,6 +14,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+pub mod count_limits;
+pub mod menu_groups;
+
 const TYPE_PROPERTY: u32 = 0x00B1_B104;
 const TYPE_PNG: u32 = 0x2F7D_0004;
 const TYPE_JPG: u32 = 0x3F86_62EA;

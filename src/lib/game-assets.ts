@@ -65,6 +65,17 @@ export interface PropertyCopyRequest {
   marqueeTgi?: { type: number; group: number; instance: number };
 }
 
+export async function gameMenuGroupsCompile(request: {
+  parentInstance: number;
+  parentGroup: number;
+  newGroup: number;
+  localeTable: number;
+  defaultTitleStringId: number;
+  children: { instance: number; titleStringId: number }[];
+}): Promise<{ dataBase64: string; typeId: number; group: number; instance: number }[]> {
+  return command("game_menu_groups_compile", { request });
+}
+
 /** 菜单条目全量 property 深拷贝（家族键随源条目保留），返回编码后的
  * property 资源字节（base64）。后端读玩家安装包里的源条目并做受控变换。 */
 export async function gamePropertyCopy(
