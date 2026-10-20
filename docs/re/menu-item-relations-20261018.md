@@ -18,10 +18,10 @@
 | 表面 | 数据源 | 容器 instance |
 | --- | --- | --- |
 | 城市（city） | SimCityData Menu/Menu2 + GlobalUI2 布局 + ToolCategories locale | 14 个一级分类（AC12C904 道路、3193C0BE 分区、8E8B4E10 电力…） |
-| 城市发展（development） | Menu/Menu2（大学子菜单） | **9D2EF585**（8 成员：人行道 9A38E382、大學標誌 DE770DBE、宿舍 75A90B66、商務學院 64088034、工程學院 2491343B、法學院 16FC99FA、醫學院 36E3E922、理工學院 1F1799B4） |
+| 城市发展（development） | 0C298BDD 顶层产业分类（2026-10-20 更正） | 采矿 AFA8707D、钻油 3A798ED7、贸易 74CD2EB0、电子 BEE1C73E、赌博 0BFA0784、文化 94E412ED、超级巨塔 895E329B、研究中心 1D23D2FD、欧米伽 692D1886 |
 | 区域（region） | `Layouts/Region/RegionUI.js` 布局；按钮组由**运行时填充** | 静态包内无容器 instance（大奇观/通勤者/交通/公用/服务/礼物 6 组） |
 
-9D2EF585 的双重验证：tools.json 里 `uiCategories` 含 9D2EF585 的条目恰好是上面
+大学不是城市发展菜单。9D2EF585 仅为大学建筑子菜单，其成员的双重验证：tools.json 里 `uiCategories` 含 9D2EF585 的条目恰好是上面
 8 个 instance；`workbench.json` 的 university 工具列表也是同样 8 个 id。
 14 个一级分类本身**不在** Menu/Menu2 导出集里（被 649 条的 uiCategories 引用、
 自身无条目）——它们的显示名走 ToolCategories locale 表，按钮由 HUD 运行时装配。
@@ -241,3 +241,21 @@ Text 数组的 `item_size` 是游戏加载器可见元数据：原版一律 **52
 
 locale_companion_build / locale_own_table / text_ref_hunt / prop_layout /
 prop_bytes_diff / prop_roundtrip / pkg_merge——本轮全部结论的复现工具。
+
+
+## 2026-10-20 城市发展九菜单接入
+
+分类定义统一存于 `src/lib/game-ui/development-menus.json`，由生成器与工作台共同读取。
+顶层容器和图标经 `ui_menu_survey` 扫描原版 SimCity_Game.package 与 SimCityDataEP1.package 核对：
+顶层类为 0C298BDD；文化通过 0F978DAC 子分类聚合，超级巨塔通过 101B50A0 子分类聚合。
+文化还包含 DLC 宗教场所 E286FFA5。条目来自 tools.json 的 uiCategories，而非建筑模块的 parent。
+
+- 文化：地标 3F43E038、体育场馆 546FD9CE、景点 0653C631、宗教场所 E286FFA5。
+- 超级巨塔：普通 E996DFCF、精英 41E4831D；楼层模块属于建筑子菜单，不混入顶层。
+- 采矿 0707E659 和钻油 25173F4B 是建筑模块容器；旧待办中的这两个 ID 不可作为顶层分类。
+- 九类条目数分别为 5、3、3、3、6、37、7、2、2，共 68 条；大学不在此视图。
+- 聚合条目保留原始 uiCategories，编辑导出不会把文化/巨塔的分组 ID 替代真实成员归属。
+- 新分类及子分类名称通过 zh-CN/en-US i18n；游戏资源文案仍采用安装包提取的语言。
+
+验证：28 项菜单/store/loader 测试通过，vue-tsc 检查通过；浏览器已核对九入口、文化和巨塔子分类、
+打开面板时中英文切换。未执行游戏内注入验证。
