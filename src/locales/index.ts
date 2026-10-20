@@ -557,16 +557,40 @@ const messages = {
         locked: "锁定",
         overlay: "参考截图",
         mechanism: "使用说明",
-        mechanismBody:
-          "菜单条目数据结构：每个条目都是同一条 0x00B1B104 property，变体只来自可选指针的组合。\n"
-          + "显示指针（→ locale 表）：名称 0x0A09F5FA、描述 0x0A09F5FB、解锁 0x0DE84DDC、统计模板 0x0EB1FC05（内嵌 ~amount~ 占位）。\n"
-          + "行为指针：归属菜单 0x0DB9FC63（数组，一个条目可挂多个菜单）、继承 parent 0x00B2CCCB、menuUnit 0x0975695F（建筑 → EcoGame Unit 条目）、道路分段 0xD13BB4A6、槽位图标 0x0977AA8F、大图 0x0DDEEE56、排序 0x0DC1E3E0。\n"
-          + "弹窗每行的出处：统计行 = 模板文本 + Unit 条目上 float（unitEffectParameter 是 Unit 条目的 property 哈希）；造价/维护 = menuUnit 的 0x0A8A41DA / 0x09AE19D7（子单位 0x07E0AD0A 求和、维护取负）；道路造价 = 分段定义 0x0E76A7E2（无键 = 免费）。\n"
-          + "关联 package（游戏把所有包注册进同一张 ResourceMan 索引、按 TGI 命中，包名只决定扫描范围与优先级）：\n"
-          + "· SimCity_Game.package：菜单条目、道路分段 40E1C400、单元配置 40E1C000、DLC 模块定义 40E0E000\n"
-          + "· SimCityDataEP1.package / SimCity_DLC0.package：CoT 与 DLC 扩展（61F0C000 / 61F0C900）\n"
-          + "· SimCityUserData/EcoGame/SimCity-Scripts_*.package：Unit 条目 40E0C000（建造 0x0A8A41DA、维护 0x09AE19D7、统计值）\n"
-          + "· Locale/en-us/Data.package：全部 locale 表（本安装该目录实际为繁中；DLC 名称在独立表如 7B45C298）",
+        mechanismBody: `{'{'}
+  // 所有菜单项都使用同一种 property；字段是否出现取决于菜单类型。
+  "tgi": {'{'} "type": "0x00B1B104", "group": "来源包分组", "instance": "菜单项实例" {'}'},
+  "display": {'{'}
+    // → Locale 表：名称、描述、解锁提示和统计行模板。
+    "title": "0x0A09F5FA",
+    "description": "0x0A09F5FB",
+    "unlock": "0x0DE84DDC[]",
+    "statTemplates": "0x0EB1FC05[]",
+    "statParameters": "0x0EB1FC22[] // 与模板一一对应的 Unit 属性哈希"
+  {'}'},
+  "menu": {'{'}
+    "uiCategories": "0x0DB9FC63[] // 所属菜单；移动时替换元素",
+    "parent": "0x00B2CCCB // 功能家族继承边",
+    "position": "0x0DC1E3E0 // 菜单内排序",
+    "menuUnit": "0x0975695F // 建筑经济链入口",
+    "piece": "0xD13BB4A6 // 道路/步道分段入口"
+  {'}'},
+  "assets": {'{'}
+    "slotIcon": "0x0977AA8F → PNG",
+    "marquee": "0x0DDEEE56 → JPG"
+  {'}'},
+  "economy": {'{'}
+    // menuUnit → EcoGame Unit；子单位由 0x07E0AD0A 一层求和。
+    "buildCost": "0x0A8A41DA // float",
+    "upkeepPerHour": "0x09AE19D7 // float，显示时取负",
+    "roadCost": "piece.0x0E76A7E2 // 无键 = 免费"
+  {'}'},
+  "sources": {'{'}
+    "menu": "SimCity_Game.package / 0x00B1B104",
+    "unit": "SimCityUserData/EcoGame/SimCity-Scripts_*.package / 0x40E0C000",
+    "locale": "Locale/en-us/Data.package（实际文本以内容为准）"
+  {'}'}
+{'}'}`,
         panelTitle: "菜单条目预览",
         panelHint: "点击左侧重建 UI 中的任一菜单，这里会列出该级的条目",
         emptyMenu: "该菜单没有已解析的静态条目，可在此新增。",
@@ -2344,16 +2368,40 @@ const messages = {
         screenUniversity: "University building menu",
         overlay: "Reference",
         mechanism: "How to use",
-        mechanismBody:
-          "Menu entry data model: every entry is the same 0x00B1B104 property; variants come only from optional pointer combinations.\n"
-          + "Display pointers (→ locale tables): title 0x0A09F5FA, desc 0x0A09F5FB, unlock 0x0DE84DDC, stat templates 0x0EB1FC05 (with ~amount~ placeholders).\n"
-          + "Behavior pointers: membership 0x0DB9FC63 (array, one entry can sit in several menus), parent 0x00B2CCCB, menuUnit 0x0975695F (building → EcoGame Unit entry), path piece 0xD13BB4A6, slot icon 0x0977AA8F, marquee 0x0DDEEE56, position 0x0DC1E3E0.\n"
-          + "Rollover line sources: stats = template text + a float on the Unit entry (unitEffectParameter is a property hash on that Unit); cost/upkeep = menuUnit's 0x0A8A41DA / 0x09AE19D7 (child units 0x07E0AD0A summed, upkeep negated); road cost = piece 0x0E76A7E2 (absent = free).\n"
-          + "Packages (the game registers all packages into one ResourceMan index and resolves by TGI; file names only decide scan scope and priority):\n"
-          + "· SimCity_Game.package — menu entries, path pieces 40E1C400, unit configs 40E1C000, DLC module defs 40E0E000\n"
-          + "· SimCityDataEP1.package / SimCity_DLC0.package — CoT & DLC extensions (61F0C000 / 61F0C900)\n"
-          + "· SimCityUserData/EcoGame/SimCity-Scripts_*.package — Unit entries 40E0C000 (construction 0x0A8A41DA, upkeep 0x09AE19D7, stat values)\n"
-          + "· Locale/en-us/Data.package — all locale tables (in this install that folder actually holds Traditional Chinese; DLC names live in separate tables like 7B45C298)",
+        mechanismBody: `{'{'}
+  // Every menu item uses one property shape; optional pointers define variants.
+  "tgi": {'{'} "type": "0x00B1B104", "group": "source package group", "instance": "menu item instance" {'}'},
+  "display": {'{'}
+    // → Locale tables: title, description, unlock text, and stat templates.
+    "title": "0x0A09F5FA",
+    "description": "0x0A09F5FB",
+    "unlock": "0x0DE84DDC[]",
+    "statTemplates": "0x0EB1FC05[]",
+    "statParameters": "0x0EB1FC22[] // matching Unit property hashes"
+  {'}'},
+  "menu": {'{'}
+    "uiCategories": "0x0DB9FC63[] // menu membership; moving replaces an element",
+    "parent": "0x00B2CCCB // functional family inheritance",
+    "position": "0x0DC1E3E0 // order within a menu",
+    "menuUnit": "0x0975695F // building economy chain entry",
+    "piece": "0xD13BB4A6 // road/path segment entry"
+  {'}'},
+  "assets": {'{'}
+    "slotIcon": "0x0977AA8F → PNG",
+    "marquee": "0x0DDEEE56 → JPG"
+  {'}'},
+  "economy": {'{'}
+    // menuUnit → EcoGame Unit; child units are summed one level via 0x07E0AD0A.
+    "buildCost": "0x0A8A41DA // float",
+    "upkeepPerHour": "0x09AE19D7 // float, displayed as a negative value",
+    "roadCost": "piece.0x0E76A7E2 // missing key means free"
+  {'}'},
+  "sources": {'{'}
+    "menu": "SimCity_Game.package / 0x00B1B104",
+    "unit": "SimCityUserData/EcoGame/SimCity-Scripts_*.package / 0x40E0C000",
+    "locale": "Locale/en-us/Data.package (trust content over folder name)"
+  {'}'}
+{'}'}`,
         panelTitle: "Menu entries",
         panelHint: "Click any menu in the rebuilt UI to list its entries here",
         emptyMenu: "No static entries have been resolved for this menu. You can add one here.",
