@@ -14,9 +14,7 @@ import type {
   LotUnitDto,
   Tgi,
 } from "@/api/tauri";
-import {
-  parseLotModelContainer,
-} from "@/lib/three-gltf";
+import { parseLotModelContainer } from "@/lib/three-gltf";
 import { createDataSource } from "@/api/data-source";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
 import type { EditorTool } from "./PropertyEditorViewport.vue";
@@ -34,7 +32,13 @@ import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 
-import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix } from "./assetCategories";
+import {
+  assetCategory,
+  CATEGORY_LABELS,
+  clonePropForPlacement,
+  directModelKey,
+  placementMatrix,
+} from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
 const props = defineProps<{
   packageId: number;
@@ -45,9 +49,14 @@ const props = defineProps<{
   empty?: boolean;
   /** 合成会话（程序化建筑）：前端构造的 session + 模型载荷，跳过后端
    * 加载。载荷随生成器参数重新生成（新对象），已放置 unit 由编辑层保留。 */
-  synthetic?: { session: LotEditorSession; payload: LotModelPayload | null } | null;
+  synthetic?: {
+    session: LotEditorSession;
+    payload: LotModelPayload | null;
+  } | null;
 }>();
-const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
+const emit = defineEmits<{
+  "schema-change": [document: Record<string, unknown>];
+}>();
 const { t } = useI18n();
 const open = defineModel<boolean>("open", { default: false });
 const {
@@ -158,24 +167,34 @@ function toggleEditEnabled() {
 /** 从 lot-asset schema 文档恢复编辑态（session 载入时 / 合成会话导入时）。 */
 function restoreFromSchema(document: Record<string, unknown>) {
   const restored = unitsFromSchema(document);
-  const original = new Set((session.value?.units ?? []).map(unit => unitId(unit as LotUnitDto)));
+  const original = new Set(
+    (session.value?.units ?? []).map((unit) => unitId(unit as LotUnitDto)),
+  );
   const restoredIds = new Set(restored.map(unitId));
   for (const id of original) if (!restoredIds.has(id)) edit.removeUnit(id);
   for (const unit of restored) {
     const id = unitId(unit);
     if (!original.has(id)) edit.addUnit(unit);
     else {
-      if ('transform' in unit && unit.transform) edit.setUnitTransform(id, unit.transform.matrix);
+      if ("transform" in unit && unit.transform)
+        edit.setUnitTransform(id, unit.transform.matrix);
       const { fields, ...patch } = unit;
       edit.setUnitFields(id, { ...patch, fields });
     }
   }
-  const editor = document.editor as { groups?: Record<string, boolean>; unitVisibility?: Record<string, boolean> };
+  const editor = document.editor as {
+    groups?: Record<string, boolean>;
+    unitVisibility?: Record<string, boolean>;
+  };
   Object.assign(groupVisibility, editor?.groups ?? {});
-  hiddenUnits.value = new Set(Object.entries(editor?.unitVisibility ?? {}).filter(([, v]) => !v).map(([id]) => id));
+  hiddenUnits.value = new Set(
+    Object.entries(editor?.unitVisibility ?? {})
+      .filter(([, v]) => !v)
+      .map(([id]) => id),
+  );
   editEnabled.value = true;
 }
-watch(session, current => {
+watch(session, (current) => {
   if (!current || !props.initialSchema) return;
   restoreFromSchema(props.initialSchema);
 });
@@ -196,8 +215,17 @@ const modelCatalog = ref<ModelCatalogEntry[]>([]);
 const propCategories = computed(() => {
   const result = new Map<number, import("./assetCategories").AssetCategory>();
   for (const ref of referencedModels.value) {
-    const entry = modelCatalog.value.find(e => e.packageId === ref.packageId && e.group === ref.group && e.instance === ref.instance);
-    const category = assetCategory(ref.instance, entry?.name, propTreeIds.value);
+    const entry = modelCatalog.value.find(
+      (e) =>
+        e.packageId === ref.packageId &&
+        e.group === ref.group &&
+        e.instance === ref.instance,
+    );
+    const category = assetCategory(
+      ref.instance,
+      entry?.name,
+      propTreeIds.value,
+    );
     if (category !== "other") result.set(ref.resourceId, category);
   }
   return result;
@@ -206,7 +234,8 @@ const materialsTab = ref<MaterialTabId>("props");
 const materialsSearch = ref("");
 /** 物料页签/灯源预设/占位类目：字面量联合常量（模板内联数组会把 id/
  * lightType/kind 放宽成 string，赋值回联合 ref 时 TS2322）。 */
-type MaterialTabId = "props" | "lots" | "spawners" | "effects" | "paths" | "lights";
+type MaterialTabId =
+  "props" | "lots" | "spawners" | "effects" | "paths" | "lights";
 const MATERIAL_TABS: { id: MaterialTabId; label: string }[] = [
   { id: "lots", label: "package.groupLots" },
   { id: "props", label: "package.groupProps" },
@@ -219,7 +248,9 @@ const MATERIAL_TABS: { id: MaterialTabId; label: string }[] = [
  * property 编辑没有注入方，页签隐藏。 */
 const slotShell = useSlots();
 const visibleMaterialTabs = computed(() =>
-  MATERIAL_TABS.filter(tab => tab.id !== "lots" || slotShell["materials-lots"]),
+  MATERIAL_TABS.filter(
+    (tab) => tab.id !== "lots" || slotShell["materials-lots"],
+  ),
 );
 const LIGHT_PRESETS: {
   lightType: "Point" | "Spot" | "Line";
@@ -235,9 +266,24 @@ const PLACE_ENTRIES: {
   label: string;
   icon: string;
 }[] = [
-  { tab: "spawners", kind: "spawner", label: "package.groupSpawners", icon: "MapPin" },
-  { tab: "effects", kind: "effect", label: "package.groupEffects", icon: "Zap" },
-  { tab: "paths", kind: "pathPoint", label: "package.groupPaths", icon: "Spline" },
+  {
+    tab: "spawners",
+    kind: "spawner",
+    label: "package.groupSpawners",
+    icon: "MapPin",
+  },
+  {
+    tab: "effects",
+    kind: "effect",
+    label: "package.groupEffects",
+    icon: "Zap",
+  },
+  {
+    tab: "paths",
+    kind: "pathPoint",
+    label: "package.groupPaths",
+    icon: "Spline",
+  },
 ];
 /** 折叠面板展开状态（按组名；缺省全展开）。 */
 const collapsedGroups = ref(new Set<string>());
@@ -258,51 +304,72 @@ function openMaterialsPanel() {
     });
 }
 /** props 目录按名称首段（分隔符前）分组建目（可折叠）。 */
-const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>(
-  () => {
-    const keyword = materialsSearch.value.trim().toLowerCase();
-    // Named models from opened packages plus resolved prototypes in this lot.
-    const matched = modelCatalog.value.map(entry => ({ ...entry })).filter(
-      (entry) =>
-        (keyword ? entry.name.toLowerCase().includes(keyword) : true),
+const catalogGroups = computed<
+  { name: string; entries: ModelCatalogEntry[] }[]
+>(() => {
+  const keyword = materialsSearch.value.trim().toLowerCase();
+  // Named models from opened packages plus resolved prototypes in this lot.
+  const matched = modelCatalog.value
+    .map((entry) => ({ ...entry }))
+    .filter((entry) =>
+      keyword ? entry.name.toLowerCase().includes(keyword) : true,
     );
-    // 引用了但目录缺席的模型（纯 hex 名被目录噪声过滤排除，如树部件）
-    // → 兜底补入：包 id 取引用条目（readLotModelMeshes 可按需加载）
-    for (const refEntry of referencedModels.value) {
-      if (matched.some((entry) => entry.instance === refEntry.instance && entry.group === refEntry.group && entry.packageId === refEntry.packageId)) continue;
-      const hexName = t("package.modelFallbackName", {
-        hex: `0x${refEntry.instance.toString(16).toUpperCase()}`,
-      });
-      if (keyword && !hexName.toLowerCase().includes(keyword)) continue;
-      matched.push({
-        packageId: refEntry.packageId,
-        instance: refEntry.instance,
-        group: refEntry.group,
-        name: hexName,
-        size: 0,
-      });
-    }
-    const groups = new Map<string, ModelCatalogEntry[]>();
-    for (const entry of matched) {
-      const reference = referencedModels.value.find(r => r.instance === entry.instance && r.group === entry.group && r.packageId === entry.packageId);
-      entry.template = grouping.value.props.find(u => u.resourceId === reference?.resourceId);
-      const group = CATEGORY_LABELS[assetCategory(entry.template?.resourceId ?? entry.instance, entry.name, propTreeIds.value)];
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group)!.push(entry);
-    }
-    return [...groups.entries()]
-      .map(([name, list]) => ({ name, entries: list }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  },
-);
+  // 引用了但目录缺席的模型（纯 hex 名被目录噪声过滤排除，如树部件）
+  // → 兜底补入：包 id 取引用条目（readLotModelMeshes 可按需加载）
+  for (const refEntry of referencedModels.value) {
+    if (
+      matched.some(
+        (entry) =>
+          entry.instance === refEntry.instance &&
+          entry.group === refEntry.group &&
+          entry.packageId === refEntry.packageId,
+      )
+    )
+      continue;
+    const hexName = t("package.modelFallbackName", {
+      hex: `0x${refEntry.instance.toString(16).toUpperCase()}`,
+    });
+    if (keyword && !hexName.toLowerCase().includes(keyword)) continue;
+    matched.push({
+      packageId: refEntry.packageId,
+      instance: refEntry.instance,
+      group: refEntry.group,
+      name: hexName,
+      size: 0,
+    });
+  }
+  const groups = new Map<string, ModelCatalogEntry[]>();
+  for (const entry of matched) {
+    const reference = referencedModels.value.find(
+      (r) =>
+        r.instance === entry.instance &&
+        r.group === entry.group &&
+        r.packageId === entry.packageId,
+    );
+    entry.template = grouping.value.props.find(
+      (u) => u.resourceId === reference?.resourceId,
+    );
+    const group =
+      CATEGORY_LABELS[
+        assetCategory(
+          entry.template?.resourceId ?? entry.instance,
+          entry.name,
+          propTreeIds.value,
+        )
+      ];
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group)!.push(entry);
+  }
+  return [...groups.entries()]
+    .map(([name, list]) => ({ name, entries: list }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+});
 function toggleGroupCollapse(name: string) {
   const next = new Set(collapsedGroups.value);
   if (next.has(name)) next.delete(name);
   else next.add(name);
   collapsedGroups.value = next;
 }
-
-
 
 // ---- 放置/删除：unitEditLayer 资产编辑 + 视口回调 ----
 interface PlacePayload {
@@ -318,21 +385,41 @@ interface PlacePayload {
 }
 const addedModelPayloads = ref(new Map<string, LotModelPayload>());
 // Restore direct model dependencies when reopening a saved document.
-watch(session, async current => {
-  const document = props.initialSchema;
-  if (!current || !document) return;
-  for (const unit of unitsFromSchema(document)) {
-    if (unit.kind !== "prop" || !unit.modelTgi || unit.modelPackageId == null || unit.resourceId == null) continue;
-    try {
-      const pkg = unit.modelPackagePath
-        ? (await tauriApi.packages.open(unit.modelPackagePath)).package.packageId : unit.modelPackageId;
-      const bytes = await tauriApi.packages.readLotModelMeshes(pkg, unit.modelTgi);
-      if (session.value !== current) return;
-      edit.setUnitFields(unitId(unit), { modelPackageId: pkg });
-      addedModelPayloads.value = new Map(addedModelPayloads.value).set(directModelKey({ ...unit, modelPackageId: pkg }), parseLotModelContainer(bytes));
-    } catch { /* Unavailable package remains an explicit unresolved marker. */ }
-  }
-}, { immediate: true });
+watch(
+  session,
+  async (current) => {
+    const document = props.initialSchema;
+    if (!current || !document) return;
+    for (const unit of unitsFromSchema(document)) {
+      if (
+        unit.kind !== "prop" ||
+        !unit.modelTgi ||
+        unit.modelPackageId == null ||
+        unit.resourceId == null
+      )
+        continue;
+      try {
+        const pkg = unit.modelPackagePath
+          ? (await tauriApi.packages.open(unit.modelPackagePath)).package
+              .packageId
+          : unit.modelPackageId;
+        const bytes = await tauriApi.packages.readLotModelMeshes(
+          pkg,
+          unit.modelTgi,
+        );
+        if (session.value !== current) return;
+        edit.setUnitFields(unitId(unit), { modelPackageId: pkg });
+        addedModelPayloads.value = new Map(addedModelPayloads.value).set(
+          directModelKey({ ...unit, modelPackageId: pkg }),
+          parseLotModelContainer(bytes),
+        );
+      } catch {
+        /* Unavailable package remains an explicit unresolved marker. */
+      }
+    }
+  },
+  { immediate: true },
+);
 
 /** 放置后待选中的 unit id：grouping 重建（revision 前进）后由 Viewport
  * emit select 落地；取消选中时由壳清空避免重复选中。 */
@@ -380,19 +467,30 @@ function beginPlacementDrag(event: PointerEvent, payload: PlacePayload) {
   placementPayload.value = payload;
   document.body.style.cursor = "copy";
 }
-function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) {
+function onPlaceUnit(
+  payload: PlacePayload,
+  position: [number, number, number],
+) {
   if (!editEnabled.value) return;
   // 基向量 = 同类既有单元的中位缩放（引擎按单元数据缩放聚合模型；
   // 数据无缩放时退化为 1）
   // 放置 prop（树部件家族）默认缩放 0.2：×原生 ~51m ≈ 10m 树高
   // （对拍消防局 lot 树道具 scale 分布的两级中值），缩放手柄可调。
-  const placedScale = payload.kind === "prop" && assetCategory(payload.tgi?.instance ?? null, payload.name) === "trees" ? PLACED_PROP_SCALE : 1;
+  const placedScale =
+    payload.kind === "prop" &&
+    assetCategory(payload.tgi?.instance ?? null, payload.name) === "trees"
+      ? PLACED_PROP_SCALE
+      : 1;
   const transform = {
     matrix: placementMatrix(position, placedScale),
   };
   let unit: LotUnitDto;
   if (payload.kind === "prop" && payload.template) {
-    unit = clonePropForPlacement(payload.template, nextIndexOf("prop"), position);
+    unit = clonePropForPlacement(
+      payload.template,
+      nextIndexOf("prop"),
+      position,
+    );
     unit.displayName = payload.name;
   } else if (payload.kind === "light") {
     unit = {
@@ -410,7 +508,11 @@ function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) 
       debugName: null,
       fields: [],
     } as LotUnitDto;
-  } else if (payload.kind === "prop" && payload.tgi && payload.packageId != null) {
+  } else if (
+    payload.kind === "prop" &&
+    payload.tgi &&
+    payload.packageId != null
+  ) {
     unit = {
       kind: "prop",
       index: nextIndexOf("prop"),
@@ -459,8 +561,16 @@ function onPlaceUnit(payload: PlacePayload, position: [number, number, number]) 
   edit.addUnit(unit);
   pendingSelectId.value = unitId(unit);
   // 直挂 prop：异步取 LOTM 载荷入缓存（渲染器从此读取）
-  if (payload.kind === "prop" && !payload.template && payload.tgi && payload.packageId != null) {
-    const cacheKey = directModelKey({ modelTgi: payload.tgi, modelPackageId: payload.packageId });
+  if (
+    payload.kind === "prop" &&
+    !payload.template &&
+    payload.tgi &&
+    payload.packageId != null
+  ) {
+    const cacheKey = directModelKey({
+      modelTgi: payload.tgi,
+      modelPackageId: payload.packageId,
+    });
     sourceForPlacement
       .readLotModelMeshes(payload.packageId, payload.tgi)
       .then((buffer) => {
@@ -522,20 +632,36 @@ const schemaJson = computed(() => {
     2,
   );
 });
-const sceneDocument = computed(() => schemaJson.value ? JSON.parse(schemaJson.value) as Record<string, unknown> : null);
+const sceneDocument = computed(() =>
+  schemaJson.value
+    ? (JSON.parse(schemaJson.value) as Record<string, unknown>)
+    : null,
+);
 const renderGrouping = computed(() => {
   if (!editEnabled.value || !sceneDocument.value) return grouping.value;
   const units = unitsFromSchema(sceneDocument.value);
   return {
-    lights: units.filter((u): u is import("@/api/tauri").LightUnit => u.kind === "light"),
-    decals: units.filter((u): u is import("@/api/tauri").DecalUnit => u.kind === "decal"),
+    lights: units.filter(
+      (u): u is import("@/api/tauri").LightUnit => u.kind === "light",
+    ),
+    decals: units.filter(
+      (u): u is import("@/api/tauri").DecalUnit => u.kind === "decal",
+    ),
     props: units.filter((u): u is PropUnit => u.kind === "prop"),
-    effects: units.filter((u): u is import("@/api/tauri").EffectUnit => u.kind === "effect"),
-    spawners: units.filter((u): u is import("@/api/tauri").SpawnerUnit => u.kind === "spawner"),
-    pathPoints: units.filter((u): u is import("@/api/tauri").PathPointUnit => u.kind === "pathPoint"),
+    effects: units.filter(
+      (u): u is import("@/api/tauri").EffectUnit => u.kind === "effect",
+    ),
+    spawners: units.filter(
+      (u): u is import("@/api/tauri").SpawnerUnit => u.kind === "spawner",
+    ),
+    pathPoints: units.filter(
+      (u): u is import("@/api/tauri").PathPointUnit => u.kind === "pathPoint",
+    ),
   };
 });
-watch(sceneDocument, doc => { if (editEnabled.value && doc) emit("schema-change", doc); });
+watch(sceneDocument, (doc) => {
+  if (editEnabled.value && doc) emit("schema-change", doc);
+});
 defineExpose({
   getSchema: () => sceneDocument.value,
   /** 合成会话的文档导入入口：把 lot-asset 单元恢复进编辑层。 */
@@ -545,6 +671,8 @@ defineExpose({
   },
   /** 读取当前渲染模式（绑定贴图后提示用；模式本身只能经头部开关切换）。 */
   getRenderMode: () => renderMode.value,
+  groundPointAt: (x: number, y: number) =>
+    viewportRef.value?.groundPointAt(x, y) ?? null,
 });
 /** 编辑基线 = session 原始单元（无编辑层覆盖、无隐藏）——diff 的 before 侧。 */
 const schemaBaseJson = computed(() => {
@@ -628,36 +756,53 @@ const effectiveRenderMode = computed(() => renderMode.value);
 
 // ---- 合成会话（程序化建筑）----
 let syntheticEngaged = false;
-watch(() => props.synthetic, value => {
-  if (value) {
-    if (!syntheticEngaged) {
-      // 首次进入合成模式：清掉真实会话可能残留的编辑层，回锁定态
-      syntheticEngaged = true;
-      edit.reset();
-      editEnabled.value = false;
-      materialsOpen.value = false;
-      selectedId.value = null;
+watch(
+  () => props.synthetic,
+  (value) => {
+    if (value) {
+      if (!syntheticEngaged) {
+        // 首次进入合成模式：清掉真实会话可能残留的编辑层，回锁定态
+        syntheticEngaged = true;
+        edit.reset();
+        editEnabled.value = false;
+        materialsOpen.value = false;
+        selectedId.value = null;
+      }
+      adoptSynthetic(value.session, value.payload);
+      return;
     }
-    adoptSynthetic(value.session, value.payload);
-    return;
-  }
-  if (!syntheticEngaged) return;
-  syntheticEngaged = false;
-  releaseSynthetic();
-});
+    if (!syntheticEngaged) return;
+    syntheticEngaged = false;
+    releaseSynthetic();
+  },
+);
 /** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
 const neonAnim = ref(false);
 const effectRendering = ref(false);
-const effectsActive = computed(() => effectRendering.value && effectiveRenderMode.value === "refined" && open.value);
+const effectsActive = computed(
+  () =>
+    effectRendering.value &&
+    effectiveRenderMode.value === "refined" &&
+    open.value,
+);
 const effectUnits = computed(() => renderGrouping.value.effects);
-const effectPreview = useEffectPreview(() => props.packageId, effectsActive, effectUnits);
-const effectRenderTitle = computed(() => t(
-  effectPreview.failed.value ? "package.effectRenderingError"
-    : effectPreview.loading.value ? "package.effectRenderingLoading"
-      : effectPreview.limited.value ? "package.effectRenderingLimited"
-        : "package.effectRenderingHint",
-));
+const effectPreview = useEffectPreview(
+  () => props.packageId,
+  effectsActive,
+  effectUnits,
+);
+const effectRenderTitle = computed(() =>
+  t(
+    effectPreview.failed.value
+      ? "package.effectRenderingError"
+      : effectPreview.loading.value
+        ? "package.effectRenderingLoading"
+        : effectPreview.limited.value
+          ? "package.effectRenderingLimited"
+          : "package.effectRenderingHint",
+  ),
+);
 /** 表面浮雕开关：默认关闭，开启后才运行近景 cone-step 视差。 */
 const reliefEnabled = ref(false);
 
@@ -769,7 +914,9 @@ watch(open, (value) => {
     materialsOpen.value = false;
   }
 });
-onMounted(() => { if (open.value && !props.empty && !props.synthetic) void load(); });
+onMounted(() => {
+  if (open.value && !props.empty && !props.synthetic) void load();
+});
 /** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
 let diagnosticsDismissed = false;
 const title = computed(() => {
@@ -831,7 +978,6 @@ const treeSheetPinned = ref(true);
           :aria-label="$t('package.renderMode')"
           :title="$t('package.renderModeHint')"
         >
-
           <button
             type="button"
             :class="{ active: effectiveRenderMode === 'default' }"
@@ -940,7 +1086,10 @@ const treeSheetPinned = ref(true);
           class="spec-experiment"
           :title="effectRenderTitle"
         >
-          <Switch v-model="effectRendering" :aria-label="$t('package.effectRendering')" />
+          <Switch
+            v-model="effectRendering"
+            :aria-label="$t('package.effectRendering')"
+          />
           <span>{{ $t("package.effectRendering") }}</span>
         </label>
         <!-- 宿主页面扩展位（程序化建筑的生成器面板开关等），置于保存/导出
@@ -1021,7 +1170,11 @@ const treeSheetPinned = ref(true);
               "
               @click="toggleEditEnabled"
             >
-              <FIcon :name="editEnabled ? 'LockOpen' : 'Lock'" :size="15" aria-label="" />
+              <FIcon
+                :name="editEnabled ? 'LockOpen' : 'Lock'"
+                :size="15"
+                aria-label=""
+              />
             </button>
           </template>
         </FTooltip>
@@ -1139,7 +1292,11 @@ const treeSheetPinned = ref(true);
                   :title="$t('package.pinSheet')"
                   @click="treeSheetPinned = !treeSheetPinned"
                 >
-                  <FIcon :name="treeSheetPinned ? 'Pin' : 'PinOff'" :size="13" aria-label="" />
+                  <FIcon
+                    :name="treeSheetPinned ? 'Pin' : 'PinOff'"
+                    :size="13"
+                    aria-label=""
+                  />
                 </button>
                 <button
                   type="button"
@@ -1278,7 +1435,9 @@ const treeSheetPinned = ref(true);
                   <span>{{ group.name }}</span>
                   <FIcon
                     :name="
-                      collapsedGroups.has(group.name) ? 'ChevronUp' : 'ChevronDown'
+                      collapsedGroups.has(group.name)
+                        ? 'ChevronUp'
+                        : 'ChevronDown'
                     "
                     :size="13"
                     aria-label=""
@@ -1313,7 +1472,7 @@ const treeSheetPinned = ref(true);
                 </div>
               </div>
               <p v-if="!catalogGroups.length" class="materials-empty">
-                {{ $t('package.materialsEmpty') }}
+                {{ $t("package.materialsEmpty") }}
               </p>
             </template>
             <template v-else-if="materialsTab === 'lots'">
@@ -1844,9 +2003,33 @@ const treeSheetPinned = ref(true);
   flex: 1;
   min-height: 0;
 }
-.editor-root-empty { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-.editor-empty-state { align-items: center; color: var(--muted-foreground); display: flex; flex: 1; flex-direction: column; gap: 10px; justify-content: center; min-height: 560px; text-align: center; }
-.editor-empty-state svg { color: var(--primary); }
-.editor-empty-state strong { color: var(--foreground); font-size: 14px; }
-.editor-empty-state p { font-size: 12px; line-height: 1.6; margin: 0; max-width: 420px; }
+.editor-root-empty {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.editor-empty-state {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  min-height: 560px;
+  text-align: center;
+}
+.editor-empty-state svg {
+  color: var(--primary);
+}
+.editor-empty-state strong {
+  color: var(--foreground);
+  font-size: 14px;
+}
+.editor-empty-state p {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 420px;
+}
 </style>

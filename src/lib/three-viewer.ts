@@ -152,15 +152,15 @@ export class ThreeViewer {
       const mesh = object as ThreeNamespace.Mesh;
       if (!mesh.isMesh && !(object as ThreeNamespace.Sprite).isSprite) return;
       const material = mesh.material as
-        | ThreeNamespace.Material
-        | ThreeNamespace.Material[]
-        | undefined;
+        ThreeNamespace.Material | ThreeNamespace.Material[] | undefined;
       if (!material) return;
       if (Array.isArray(material)) materials.push(...material);
       else materials.push(material);
     });
     for (const material of materials) {
-      for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+      for (const value of Object.values(
+        material as unknown as Record<string, unknown>,
+      )) {
         const texture = value as ThreeNamespace.Texture;
         if (texture?.isTexture) this.primeTexture(texture);
       }
@@ -188,9 +188,13 @@ export class ThreeViewer {
     objects: ThreeNamespace.Object3D = this.scene,
   ): Promise<void> {
     if (this.disposed || isStale()) return;
-    const compilation = this.renderer.compileAsync(objects, this.camera, this.scene).catch(() => {});
+    const compilation = this.renderer
+      .compileAsync(objects, this.camera, this.scene)
+      .catch(() => {});
     this.pendingCompilations.add(compilation);
-    void compilation.finally(() => this.pendingCompilations.delete(compilation));
+    void compilation.finally(() =>
+      this.pendingCompilations.delete(compilation),
+    );
     let settled = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -202,7 +206,9 @@ export class ThreeViewer {
             if (settled || isStale()) resolve();
           }, 64);
         }),
-        new Promise<void>((resolve) => { timeout = setTimeout(resolve, 5000); }),
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(resolve, 5000);
+        }),
       ]);
     } catch {
       // promise 层拒绝兜底（首轮 draw 走同步链接，不劣化）
@@ -220,7 +226,8 @@ export class ThreeViewer {
     const root = new this.THREE.Group();
     for (const name of names) {
       this.groups.get(name)?.traverse((object) => {
-        if ((object as ThreeNamespace.Mesh).isMesh) root.add(object.clone(false));
+        if ((object as ThreeNamespace.Mesh).isMesh)
+          root.add(object.clone(false));
       });
     }
     return this.prepareShaders(isStale, root);
@@ -229,8 +236,10 @@ export class ThreeViewer {
   /** 主题色描边（品牌色 #0878FE，与 UI --brand 一致）。 */
   private static readonly OUTLINE_COLOR = 0x0878fe;
 
-  private hoverOutline: { target: ThreeNamespace.Object3D; hull: ThreeNamespace.Object3D } | null =
-    null;
+  private hoverOutline: {
+    target: ThreeNamespace.Object3D;
+    hull: ThreeNamespace.Object3D;
+  } | null = null;
   private selectedOutline: {
     target: ThreeNamespace.Object3D;
     hull: ThreeNamespace.Object3D;
@@ -340,7 +349,10 @@ export class ThreeViewer {
       hull.add(shellFor(target as ThreeNamespace.Mesh, false));
       return hull;
     }
-    const walk = (src: ThreeNamespace.Object3D, dst: ThreeNamespace.Object3D) => {
+    const walk = (
+      src: ThreeNamespace.Object3D,
+      dst: ThreeNamespace.Object3D,
+    ) => {
       for (const child of [...src.children]) {
         const mesh = child as ThreeNamespace.Mesh;
         if (mesh.isMesh) {
@@ -376,9 +388,19 @@ export class ThreeViewer {
    * 屏幕坐标 → 地面平面交点（游戏坐标 x/y/z，z=上）。落在取景网格平面上，
    * 拖拽放置组件的落点定位用；无交点（视线平行/背向）返回 null。
    */
-  groundPointAt(clientX: number, clientY: number): [number, number, number] | null {
+  groundPointAt(
+    clientX: number,
+    clientY: number,
+  ): [number, number, number] | null {
     const rect = this.container.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return null;
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    )
+      return null;
     const pointer = new this.THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
@@ -389,7 +411,10 @@ export class ThreeViewer {
     // 交点沿视线被推偏 = 放置落点跑偏的根因）
     const worldOrigin = new this.THREE.Vector3();
     this.world.getWorldPosition(worldOrigin);
-    const plane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), -worldOrigin.y);
+    const plane = new this.THREE.Plane(
+      new this.THREE.Vector3(0, 1, 0),
+      -worldOrigin.y,
+    );
     const hit = new this.THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
     const game = this.world.worldToLocal(hit.clone());
@@ -397,9 +422,11 @@ export class ThreeViewer {
   }
 
   /** 世界坐标 → 容器相对屏幕像素；behind = 点在相机后方（投影无效）。 */
-  worldToScreen(
-    vector: ThreeNamespace.Vector3,
-  ): { x: number; y: number; behind: boolean } {
+  worldToScreen(vector: ThreeNamespace.Vector3): {
+    x: number;
+    y: number;
+    behind: boolean;
+  } {
     const projected = vector.clone().project(this.camera);
     const rect = this.container.getBoundingClientRect();
     return {
@@ -451,7 +478,10 @@ export class ThreeViewer {
     this.fillLight.position.set(-1, 0.4, -0.8);
     this.rimLight = new THREE.DirectionalLight(0xffffff, RIM_LIGHT_INTENSITY);
     this.rimLight.position.set(0.4, -0.6, -1);
-    this.ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_LIGHT_INTENSITY);
+    this.ambientLight = new THREE.AmbientLight(
+      0xffffff,
+      AMBIENT_LIGHT_INTENSITY,
+    );
     this.scene.add(
       this.ambientLight,
       this.keyLight,
@@ -662,8 +692,8 @@ export class ThreeViewer {
 
   private orbit(dx: number, dy: number) {
     this.beginCameraInteraction();
-    this.orbitTheta -= (dx * Math.PI) / 180 * 0.6;
-    this.orbitPhi -= (dy * Math.PI) / 180 * 0.6;
+    this.orbitTheta -= ((dx * Math.PI) / 180) * 0.6;
+    this.orbitPhi -= ((dy * Math.PI) / 180) * 0.6;
     this.applyCamera();
   }
 
@@ -675,7 +705,10 @@ export class ThreeViewer {
       this.camera.matrix,
       0,
     );
-    const up = new this.THREE.Vector3().setFromMatrixColumn(this.camera.matrix, 1);
+    const up = new this.THREE.Vector3().setFromMatrixColumn(
+      this.camera.matrix,
+      1,
+    );
     this.orbitTarget
       .addScaledVector(right, -dx * scale)
       .addScaledVector(up, dy * scale);
@@ -718,7 +751,10 @@ export class ThreeViewer {
       this.lastX = event.clientX;
       this.lastY = event.clientY;
       this.moved += Math.abs(dx) + Math.abs(dy);
-      if (this.pointerButton === 1 || (this.pointerButton === 0 && this.pointerShift)) {
+      if (
+        this.pointerButton === 1 ||
+        (this.pointerButton === 0 && this.pointerShift)
+      ) {
         this.pan(dx, dy);
       } else if (this.pointerButton === 0) {
         this.orbit(dx, dy);
@@ -801,13 +837,20 @@ export class ThreeViewer {
   private beginCameraInteraction() {
     const limit = this.options.interactionPixelRatio;
     if (limit === undefined) return;
-    const full = Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5);
+    const full = Math.min(
+      window.devicePixelRatio,
+      this.options.maxPixelRatio ?? 1.5,
+    );
     const moving = Math.min(full, limit);
-    if (this.renderer.getPixelRatio() !== moving) this.renderer.setPixelRatio(moving);
-    if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
+    if (this.renderer.getPixelRatio() !== moving)
+      this.renderer.setPixelRatio(moving);
+    if (this.qualityRestoreTimer !== null)
+      clearTimeout(this.qualityRestoreTimer);
     this.qualityRestoreTimer = setTimeout(() => {
       this.qualityRestoreTimer = null;
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
+      this.renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5),
+      );
       this.invalidate();
     }, 180);
   }
@@ -827,7 +870,9 @@ export class ThreeViewer {
    */
   captureScreenshot(excludeGroups: string[] = []): string | null {
     const previousRatio = this.renderer.getPixelRatio();
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5));
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio, this.options.maxPixelRatio ?? 1.5),
+    );
     const hidden: ThreeNamespace.Group[] = [];
     for (const name of excludeGroups) {
       const group = this.groups.get(name);
@@ -851,7 +896,8 @@ export class ThreeViewer {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.qualityRestoreTimer !== null) clearTimeout(this.qualityRestoreTimer);
+    if (this.qualityRestoreTimer !== null)
+      clearTimeout(this.qualityRestoreTimer);
     cancelAnimationFrame(this.frame);
     this.observer?.disconnect();
     this.container.removeEventListener("pointerdown", this.onPointerDown);
@@ -869,7 +915,8 @@ export class ThreeViewer {
       this.keyLight.dispose();
       this.renderer.dispose();
     };
-    if (this.pendingCompilations.size) void Promise.allSettled([...this.pendingCompilations]).then(release);
+    if (this.pendingCompilations.size)
+      void Promise.allSettled([...this.pendingCompilations]).then(release);
     else release();
     this.renderer.domElement.remove();
   }

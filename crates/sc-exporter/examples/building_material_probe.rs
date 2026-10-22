@@ -4,6 +4,7 @@
 //! ```text
 //! cargo run -p sc-exporter --release --example building_material_probe -- \
 //!   <model_package> <model_instance_hex> --out=<dir> [--col=N] [lookup_package...]
+//!   <graphics_package> --property=<type:group:instance> --out=<dir>
 //! ```
 //!
 //! 链路公式逐字对齐前端 `refinedRender.ts` 注入的 fragment（building4）：
@@ -21,6 +22,7 @@
 //! 平面预览取 UV ∈ [0,1]²（整数 UV 经 fract 收敛到单个 facade cell）。
 use dbpf::Package;
 use rw4::{Rw4File, SectionType};
+use sc_properties::{LotEditorDocument, PropertyFile};
 
 const RASTER_TYPE: u32 = 0x2F4E_681C;
 const RW4_TYPE: u32 = 0x2F4E_681B;
@@ -144,7 +146,8 @@ fn main() {
         raw.iter()
             .find_map(|arg| arg.strip_prefix(&format!("--{name}=")).map(str::to_owned))
     };
-    if positional.len() < 2 {
+    let property = flag("property");
+    if positional.is_empty() || (property.is_none() && positional.len() < 2) {
         eprintln!(
             "usage: building_material_probe <model_package> <model_instance_hex> \
              --out=<dir> [--col=N] [lookup_package...]"
@@ -152,8 +155,10 @@ fn main() {
         std::process::exit(2);
     }
     let model_path = positional[0].clone();
-    let instance = u32::from_str_radix(positional[1].trim_start_matches("0x"), 16)
-        .unwrap_or_else(|error| panic!("bad instance: {error}"));
+    let mut instance = if property.is_none() {
+        u32::from_str_radix(positional[1].trim_start_matches("0x"), 16)
+            .unwrap_or_else(|error| panic!("bad instance: {error}"))
+    } else { 0 };
     let out_dir = flag("out").unwrap_or_else(|| "tmp/building_material".to_owned());
     let column: usize = flag("col")
         .map(|value| value.parse().unwrap_or_else(|e| panic!("bad --col: {e}")))
@@ -161,14 +166,39 @@ fn main() {
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|error| panic!("create {out_dir}: {error}"));
 
     let mut paths = vec![model_path.clone()];
-    paths.extend(positional[2..].iter().map(|value| (*value).clone()));
+    paths.extend(positional[if property.is_some() { 1 } else { 2 }..].iter().map(|value| (*value).clone()));
     let packages: Vec<Package> = paths
         .iter()
         .map(|path| Package::open(path).unwrap_or_else(|error| panic!("open {path}: {error}")))
         .collect();
 
+    // Property TGI entry point: resolve its LOD1 model before running the
+    // same six-slot material probe. This keeps the experiment reproducible
+    // from the asset identity supplied by the user rather than a guessed RW4.
+    let mut model_group = None;
+    if let Some(ref spec) = property {
+        let parts: Vec<u32> = spec.split(':').map(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).expect("hex TGI")).collect();
+        let (group, prop_instance) = match parts.as_slice() {
+            [g, i] => (*g, *i),
+            [0x00B1_B104, g, i] => (*g, *i),
+            _ => panic!("expected property type:group:instance"),
+        };
+        let entry = packages[0].entries().iter().find(|e|
+            e.id.type_id == 0x00B1_B104 && e.id.group == group && e.id.instance == prop_instance)
+            .cloned().unwrap_or_else(|| panic!("property 0x{group:08X}:0x{prop_instance:08X} not found"));
+        let property_file = PropertyFile::parse(&packages[0].read(&entry).expect("read property"))
+            .expect("parse property");
+        let doc = LotEditorDocument::from_property_file(property_file);
+        let model = doc.model_lods[0].as_ref()
+            .unwrap_or_else(|| panic!("property has no LOD1 model"));
+        instance = model.instance;
+        assert_eq!(model.type_id, RW4_TYPE, "LOD1 must reference RW4");
+        model_group = Some(model.group);
+        println!("property 0x{group:08X}:0x{prop_instance:08X} -> LOD1 model TGI 0x{:08X}:0x{:08X}:0x{:08X}", model.type_id, model.group, model.instance);
+    }
+
     // ---- 模型 → 材质绑定 ----
-    let (owner, entry) = find_entry(&packages, RW4_TYPE, instance, None)
+    let (owner, entry) = find_entry(&packages, RW4_TYPE, instance, model_group)
         .unwrap_or_else(|| panic!("model 0x{instance:08X} not found"));
     println!(
         "model 0x{:08X}-0x{:08X}-0x{:08X}  pkg={}",
@@ -184,10 +214,32 @@ fn main() {
             binding.mesh_section, binding.material_section, binding.unknown2
         );
     }
-    let binding = bindings.first().copied().expect("no mesh→material binding");
+    let binding_index: usize = flag("binding").map(|v| v.parse().expect("binding index")).unwrap_or(0);
+    let binding = bindings.get(binding_index).copied().expect("mesh material binding index out of range");
     let material = file
         .decode_material(&data, binding.material_section)
         .expect("decode material");
+    // Preserve original geometry/dual UVs as evidence. The planar synthesis
+    // does not need this mesh; it is used for the control projection only.
+    let mesh = file.decode_mesh(&data, binding.mesh_section).expect("mesh");
+    let vertices: Vec<_> = mesh.vertices.iter().map(|v| {
+        let mut pos = [0.; 3];
+        let mut uv = [0.; 4];
+        let mut col = 0u8;
+        for (e, value) in &v.components {
+            match (e.usage, value) {
+                (rw4::DeclarationUsage::Position, rw4::ComponentValue::Float3(p)) => pos = *p,
+                (rw4::DeclarationUsage::TexCoord, rw4::ComponentValue::Float4(p)) if e.index == 0 => uv = *p,
+                (rw4::DeclarationUsage::Color, rw4::ComponentValue::D3DColor {g, ..}) => col = *g,
+                (rw4::DeclarationUsage::Color, rw4::ComponentValue::UByte4(p)) => col = p[1],
+                _ => (),
+            }
+        }
+        serde_json::json!({"position":pos, "uv":uv, "column":col})
+    }).collect();
+    std::fs::write(format!("{out_dir}/mesh.json"), serde_json::to_vec(
+        &serde_json::json!({"vertices":vertices,"triangles":mesh.triangles,"mesh_section":binding.mesh_section})
+    ).unwrap()).unwrap();
     let refs: Vec<_> = material
         .texture_refs()
         .iter()
@@ -259,6 +311,14 @@ fn main() {
         return;
     };
     let col = column.min(param_w.saturating_sub(1));
+    std::fs::write(format!("{out_dir}/params.json"), serde_json::to_vec_pretty(
+        &serde_json::json!({"width": param_w, "height": param_h, "values": param_values,
+            "property_tgi": property, "package": paths[owner],
+            "model_tgi": format!("{:08X}:{:08X}:{instance:08X}",entry.id.type_id,entry.id.group),
+            "model_instance": format!("{instance:08X}"),
+            "slots": material.texture_refs().iter().filter(|r| r.slot != rw4::SHADER_DEF_MARKER)
+                .map(|r| serde_json::json!({"slot":r.slot,"instance":format!("{:08X}", r.texture_instance)})).collect::<Vec<_>>()})
+    ).unwrap()).unwrap();
     let row = |r: usize| -> [f32; 4] {
         param_values
             .get(r * param_w + col)

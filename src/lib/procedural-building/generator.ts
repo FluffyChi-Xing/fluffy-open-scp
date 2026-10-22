@@ -8,6 +8,7 @@ import {
   buildingFootprint,
 } from "./schema";
 import { mulberry32 } from "./rng";
+import { normalizeBlockMass, generateMassParts } from "./massing";
 
 /** 立面模块算法（参考 ProceduralBuildingsThreeJS 的 generator.ts 移植）：
  * 1 开间 = 3 m 的立面节奏；底层挑高；标准层逐开间开窗位；腰线层
@@ -67,14 +68,16 @@ function sidePoint(
   return [cx, cy];
 }
 
-function levelSpan(parameters: ProceduralBuildingParameters, level: number): {
+function levelSpan(
+  parameters: ProceduralBuildingParameters,
+  level: number,
+): {
   base: number;
   height: number;
 } {
   if (level === 0) return { base: 0, height: parameters.groundFloorHeight };
   return {
-    base:
-      parameters.groundFloorHeight + (level - 1) * parameters.floorHeight,
+    base: parameters.groundFloorHeight + (level - 1) * parameters.floorHeight,
     height: parameters.floorHeight,
   };
 }
@@ -82,7 +85,8 @@ function levelSpan(parameters: ProceduralBuildingParameters, level: number): {
 /** 阳台层（featured = 第 1 标准层 + 顶层）。 */
 function balconyRows(mode: BalconyMode, floors: number): Set<number> {
   if (mode === "none" || floors < 1) return new Set();
-  if (mode === "all") return new Set(Array.from({ length: floors }, (_, i) => i + 1));
+  if (mode === "all")
+    return new Set(Array.from({ length: floors }, (_, i) => i + 1));
   return new Set([1, floors]);
 }
 
@@ -126,6 +130,16 @@ export function normalizeParameters(
       input.detail === "random"
         ? input.detail
         : "alternating",
+    ...(input.windowSpacing === undefined
+      ? {}
+      : {
+          windowSpacing: Number.isFinite(Number(input.windowSpacing))
+            ? Math.max(0, Math.min(12, Number(input.windowSpacing)))
+            : 0,
+        }),
+    ...(input.blockMass
+      ? { blockMass: normalizeBlockMass(input.blockMass) }
+      : {}),
   };
 }
 
@@ -134,6 +148,7 @@ export function generateBuildingParts(
   seed: number,
 ): BuildingPart[] {
   const parameters = normalizeParameters(rawParameters);
+  if (parameters.blockMass) return generateMassParts(parameters.blockMass);
   const { width, depth } = buildingFootprint(parameters);
   const W = width;
   const D = depth;
@@ -141,11 +156,20 @@ export function generateBuildingParts(
   const hd = D / 2;
   const parts: BuildingPart[] = [];
   const totalLevels = parameters.floors + 1;
-  const top = parameters.groundFloorHeight + parameters.floors * parameters.floorHeight;
+  const top =
+    parameters.groundFloorHeight + parameters.floors * parameters.floorHeight;
   const rng = mulberry32(seed);
 
   // 基础与室内地坪
-  parts.push(part("foundation", "foundation", "ground", [0, 0, -0.25], [W + 0.6, D + 0.6, 0.5]));
+  parts.push(
+    part(
+      "foundation",
+      "foundation",
+      "ground",
+      [0, 0, -0.25],
+      [W + 0.6, D + 0.6, 0.5],
+    ),
+  );
   parts.push(part("slab", "slab", "ground", [0, 0, 0.06], [W, D, 0.12]));
 
   // 转角壁柱（每层一段，角点外突）
@@ -209,7 +233,9 @@ export function generateBuildingParts(
               "refend",
               "trim",
               [lx, ly, parameters.groundFloorHeight - lintelH / 2],
-              isX ? [halfSpan * 2, 0.12, lintelH] : [0.12, halfSpan * 2, lintelH],
+              isX
+                ? [halfSpan * 2, 0.12, lintelH]
+                : [0.12, halfSpan * 2, lintelH],
             ),
           );
         }
@@ -267,7 +293,9 @@ export function generateBuildingParts(
             "refend",
             "trim",
             [bx, by, base + 0.12],
-            isX ? [halfSpan * 2 + 0.16, 0.14, 0.24] : [0.14, halfSpan * 2 + 0.16, 0.24],
+            isX
+              ? [halfSpan * 2 + 0.16, 0.14, 0.24]
+              : [0.14, halfSpan * 2 + 0.16, 0.24],
           ),
         );
       }
@@ -275,31 +303,103 @@ export function generateBuildingParts(
   }
 
   // 檐口 + 上沿
-  parts.push(part("cornice", "cornice", "trim", [0, 0, top + 0.25], [W + 0.7, D + 0.7, 0.5]));
-  parts.push(part("cornice-lip", "cornice", "trim", [0, 0, top + 0.62], [W + 1.0, D + 1.0, 0.18]));
+  parts.push(
+    part(
+      "cornice",
+      "cornice",
+      "trim",
+      [0, 0, top + 0.25],
+      [W + 0.7, D + 0.7, 0.5],
+    ),
+  );
+  parts.push(
+    part(
+      "cornice-lip",
+      "cornice",
+      "trim",
+      [0, 0, top + 0.62],
+      [W + 1.0, D + 1.0, 0.18],
+    ),
+  );
 
   if (parameters.roofStyle === "mansard") {
-    parts.push(part("mansard-1", "mansardStep", "roof", [0, 0, top + 1.2], [W + 0.15, D + 0.15, 1.3]));
-    parts.push(part("mansard-2", "mansardStep", "roof", [0, 0, top + 2.5], [Math.max(2, W - 2.2), Math.max(2, D - 2.2), 1.25]));
-    parts.push(part("roof-cap", "roofSlab", "roof", [0, 0, top + 3.25], [Math.max(1, W - 3.6), Math.max(1, D - 3.6), 0.25]));
+    parts.push(
+      part(
+        "mansard-1",
+        "mansardStep",
+        "roof",
+        [0, 0, top + 1.2],
+        [W + 0.15, D + 0.15, 1.3],
+      ),
+    );
+    parts.push(
+      part(
+        "mansard-2",
+        "mansardStep",
+        "roof",
+        [0, 0, top + 2.5],
+        [Math.max(2, W - 2.2), Math.max(2, D - 2.2), 1.25],
+      ),
+    );
+    parts.push(
+      part(
+        "roof-cap",
+        "roofSlab",
+        "roof",
+        [0, 0, top + 3.25],
+        [Math.max(1, W - 3.6), Math.max(1, D - 3.6), 0.25],
+      ),
+    );
     // 老虎窗：正面每开间一扇（出挑体量；窗面由贴图表达）
     const dormerBays = Math.min(parameters.baysX, 6);
     for (let bay = 0; bay < dormerBays; bay += 1) {
       const x = (bay - (dormerBays - 1) / 2) * Math.min(BAY, W / dormerBays);
-      parts.push(part(`dormer-${bay + 1}`, "dormer", "roof", [x, hd + 0.2, top + 1.6], [0.95, 0.7, 1.15]));
+      parts.push(
+        part(
+          `dormer-${bay + 1}`,
+          "dormer",
+          "roof",
+          [x, hd + 0.2, top + 1.6],
+          [0.95, 0.7, 1.15],
+        ),
+      );
     }
   } else {
-    parts.push(part("roof-slab", "roofSlab", "roof", [0, 0, top + 0.85], [W - 0.3, D - 0.3, 0.35]));
+    parts.push(
+      part(
+        "roof-slab",
+        "roofSlab",
+        "roof",
+        [0, 0, top + 0.85],
+        [W - 0.3, D - 0.3, 0.35],
+      ),
+    );
     // 屋顶设备（seed 决定有无与位置）
     if (rng() < 0.75) {
       const bx = (rng() * 2 - 1) * Math.max(0.5, hw - 2.2);
       const by = (rng() * 2 - 1) * Math.max(0.5, hd - 1.8);
-      parts.push(part("bulkhead", "bulkhead", "wall", [bx, by, top + 1.2 + 1.15], [Math.min(3, W * 0.4), Math.min(2.2, D * 0.4), 2.3]));
+      parts.push(
+        part(
+          "bulkhead",
+          "bulkhead",
+          "wall",
+          [bx, by, top + 1.2 + 1.15],
+          [Math.min(3, W * 0.4), Math.min(2.2, D * 0.4), 2.3],
+        ),
+      );
     }
     if (rng() < 0.6) {
       const ax = (rng() * 2 - 1) * Math.max(0.5, hw - 1.5);
       const ay = (rng() * 2 - 1) * Math.max(0.5, hd - 1.5);
-      parts.push(part("roof-ac", "bulkhead", "trim", [ax, ay, top + 1.2], [1.4, 1.0, 0.7]));
+      parts.push(
+        part(
+          "roof-ac",
+          "bulkhead",
+          "trim",
+          [ax, ay, top + 1.2],
+          [1.4, 1.0, 0.7],
+        ),
+      );
     }
   }
 

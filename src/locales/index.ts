@@ -1,10 +1,10 @@
 import { createI18n } from "vue-i18n";
 import { appConfig } from "@/config/app";
-import { flowZh, flowEn } from './mod-flow';
-import { mapGraphZh, mapGraphEn } from './map-graph';
+import { flowZh, flowEn } from "./mod-flow";
+import { mapGraphZh, mapGraphEn } from "./map-graph";
 
 import { rasterZh, rasterEn } from "./raster-editor";
-import { diagnosticsZh, diagnosticsEn } from './diagnostics';
+import { diagnosticsZh, diagnosticsEn } from "./diagnostics";
 
 const messages = {
   "zh-CN": {
@@ -63,6 +63,58 @@ const messages = {
       sectionStyle: "风格",
       sectionSeed: "随机种子",
       sectionTextures: "材质贴图",
+      sectionBlocks: "体块组合",
+      junctionHint: "此翼楼绕 Y 形连接点旋转；修改宽度会保持连接比例。",
+      cutoutLabel: "挖空 {index}",
+      cutoutHint:
+        "偏移相对于体块中心，随体块旋转。穿过外墙形成凹槽，贯穿全高形成庭院。",
+      blocksHint: "用米制体块搭建大型、平整的建筑，并可旋转、连接或挖空。",
+      blockPreset: "体块预设",
+      blockPreset_single: "单体块",
+      blockPreset_y: "Y 形",
+      blockPreset_courtyard: "庭院",
+      blockLabel: "体块 {index}",
+      addBlock: "添加体块",
+      removeBlock: "删除体块",
+      width: "宽度 (m)",
+      depth: "进深 (m)",
+      height: "高度 (m)",
+      rotation: "旋转 (°)",
+      offsetX: "偏移 X (m)",
+      offsetY: "偏移 Y (m)",
+      baseHeight: "底部高度 (m)",
+      cutout: "挖空",
+      cutoutWidth: "挖空宽度",
+      cutoutDepth: "挖空进深",
+      cutoutHeight: "挖空高度",
+      cutoutOffsetX: "挖空偏移 X",
+      cutoutOffsetY: "挖空偏移 Y",
+      cutoutOffsetZ: "挖空偏移 Z",
+      addCutout: "添加挖空",
+      removeCutout: "删除挖空",
+      massSummary: "{width}×{depth} m · 高度 {height} m · {parts} 个体块",
+      windowSpacing: "窗户间距",
+      windowSpacingHint:
+        "调整重复窗格之间的水平留白；0 m 保持源建筑的默认密铺节奏。",
+      propertyMaterial: "建筑材质 · Property TGI",
+      propertyTgiPlaceholder: "00b1b104:42e1c000:35dd7d33",
+      propertyTgiHint:
+        "输入已打开 package 中的建筑 Property TGI，自动复用其主体材质。选择视口顶部的「精细」查看效果。",
+      propertyResolving: "正在解析建筑材质…",
+      propertyLoaded: "已映射 {name}（LOD{lod}）的建筑材质",
+      propertyInvalidTgi:
+        "请输入完整 Property TGI：00b1b104:组ID:实例ID，每段为 8 位十六进制数。",
+      propertyNoPackages:
+        "请先在源文件解析中打开建筑所在的 package，再输入 TGI。",
+      propertyNotFound:
+        "无法从已打开的 package 读取该 Property，请检查 TGI 和来源包。",
+      propertyNoModel:
+        "该 Property 没有可用模型，请打开包含关联模型的 package 后重试。",
+      propertyUnsupported:
+        "模型缺少可用的建筑材质、参数表或 UV 数据，请确认相关贴图包已打开。",
+      propertyResolveFailed: "建筑材质读取失败，请检查关联 package 后重试。",
+      propertyRetry: "重新解析",
+      propertyClear: "清除材质",
       baysX: "面宽开间",
       baysY: "进深开间",
       floors: "标准层",
@@ -90,11 +142,18 @@ const messages = {
       slotUnbound: "默认色",
       bindTexture: "选择游戏贴图",
       lotGround: "Lot 地面遮罩",
-      lotGroundHint: "在「Lot 地面遮罩」页签点选 Lot 即加载；地面由 LotMask + LotColor 合成器按游戏口径渲染。",
+      lotGroundHint:
+        "在「Lot 地面遮罩」页签点选 Lot 即加载；地面由 LotMask + LotColor 合成器按游戏口径渲染。",
       lotUnbound: "未加载",
       lotMaskBound: "已加载 {label} 的地面遮罩",
-      refinedHint: "当前为默认白模，不显示贴图——用右上角「默认/精细」开关切换后可见",
+      refinedHint:
+        "当前为默认白模，不显示贴图——用右上角「默认/精细」开关切换后可见",
       lotEmpty: "未找到 Lot（先打开包含 Lot 的 package）",
+      lotSize: "原始尺寸 {width} × {depth} m",
+      lotPickHint:
+        "点击或拖到视口使用此 Lot，保留原始尺寸。预览使用 Lot 分层配色。",
+      lotPrevious: "上一页",
+      lotNext: "下一页",
       lotScanFailed: "Lot 扫描失败",
       slotBound: "已绑定到{slot}",
       prevPage: "上一页",
@@ -104,7 +163,8 @@ const messages = {
       pickerTitle: "选择游戏贴图",
       pickerPackage: "来源 package",
       pickerSearch: "搜索 instance / 名称…",
-      pickerEmpty: "没有匹配的 raster 贴图（清空搜索或先打开包含贴图的 package）",
+      pickerEmpty:
+        "没有匹配的 raster 贴图（清空搜索或先打开包含贴图的 package）",
       pickerNotDecodable: "无法解码（压缩格式仅元数据）",
       pickerSize: "{width}×{height}",
       generating: "正在生成建筑…",
@@ -119,7 +179,8 @@ const messages = {
       reopenEditor: "重新打开编辑器",
       emptyEditorSubtitle: "等待程序化模型或源 Property",
       emptyEditorTitle: "Property Editor 已就绪",
-      emptyEditorDescription: "当前没有载入 Property。后续从程序化生成器或源文件解析选择资产后，将在这里直接编辑。",
+      emptyEditorDescription:
+        "当前没有载入 Property。后续从程序化生成器或源文件解析选择资产后，将在这里直接编辑。",
     },
     runtimeObserver: {
       overview: {
@@ -137,7 +198,8 @@ const messages = {
       },
       eyebrow: "游戏运行时",
       title: "日志监控台",
-      description: "扫描正在运行的游戏进程，按需捕获桥接命令、查询和事件。原始日志只保存在当前页面会话。",
+      description:
+        "扫描正在运行的游戏进程，按需捕获桥接命令、查询和事件。原始日志只保存在当前页面会话。",
       scan: "扫描进程",
       processes: "游戏进程",
       noProcesses: "没有找到正在运行的进程。",
@@ -154,7 +216,8 @@ const messages = {
       previewUnavailable: "游戏画面预览尚未接入",
       errors: {
         scan_incomplete: "网页对象扫描未完成，请稍后重试；诊断已保留",
-        binding_missing: "未找到通过校验的网页绑定，请等待游戏界面加载完成后重试",
+        binding_missing:
+          "未找到通过校验的网页绑定，请等待游戏界面加载完成后重试",
         event_site: "事件调用点校验失败",
         host_binding: "网页宿主绑定已变化，请重试",
         event_entry: "事件入口字节不匹配，可能已有其他观察器运行",
@@ -181,10 +244,24 @@ const messages = {
       noLogs: "开始捕获后，日志会出现在这里。",
       profileLabel: "采样预设",
       profile: {
-        balanced: { label: "均衡观察", description: "各 UI bridge 通道使用默认限额。" },
-        "ui-events": { label: "UI 事件", description: "提高事件与区域事件额度，适合观察城市界面事件。" },
-        "bridge-commands": { label: "桥接命令", description: "提高 command/query/result 额度，适合追踪 UI bridge 调用。" },
-        "engine-messages": { label: "引擎消息", description: "提高 console/other/result 额度，适合观察 EAWebKit 消息。" },
+        balanced: {
+          label: "均衡观察",
+          description: "各 UI bridge 通道使用默认限额。",
+        },
+        "ui-events": {
+          label: "UI 事件",
+          description: "提高事件与区域事件额度，适合观察城市界面事件。",
+        },
+        "bridge-commands": {
+          label: "桥接命令",
+          description:
+            "提高 command/query/result 额度，适合追踪 UI bridge 调用。",
+        },
+        "engine-messages": {
+          label: "引擎消息",
+          description:
+            "提高 console/other/result 额度，适合观察 EAWebKit 消息。",
+        },
       },
       category: {
         resource: "资源",
@@ -324,30 +401,36 @@ const messages = {
         cityRail: "铁路连接",
         cityShipping: "航运连接",
         introLevel: "{value} / 3",
-        introResourceLevels: "游戏介绍等级（0–3）：煤 {coal} · 油 {oil} · 矿 {ore} · 地下水 {water}",
+        introResourceLevels:
+          "游戏介绍等级（0–3）：煤 {coal} · 油 {oil} · 矿 {ore} · 地下水 {water}",
         staticReady: "已加载地图原始路网与城市资源，直接来自游戏静态模板。",
-        staticMissing: "未找到同目录的 SimCityDataEP1.package。城市资源和原生路网不可用。",
+        staticMissing:
+          "未找到同目录的 SimCityDataEP1.package。城市资源和原生路网不可用。",
         staticInvalid: "静态地图模板缺失或校验失败。城市资源和原生路网不可用。",
-        roadAssetsMissing: "缺少同目录的 SimCity_Game.package，无法显示道路材质。",
+        roadAssetsMissing:
+          "缺少同目录的 SimCity_Game.package，无法显示道路材质。",
         cityPosition: "中心坐标",
         cityElevation: "场地高程",
         cityArea: "城市范围",
         cityEnvironment: "城市资源组",
-        cityResourceExplanation: "显示初始网格中非零资源的面积占比，不代表可开采储量。",
+        cityResourceExplanation:
+          "显示初始网格中非零资源的面积占比，不代表可开采储量。",
         resourceCoverage: "{value}% 面积",
         resourceUnknown: "无数据",
         layerPlots: "地块",
         layerVegetation: "植被",
         layerWater: "水面",
         layerRoads: "道路预览",
-        resourceLow: "低", resourceHigh: "高",
+        resourceLow: "低",
+        resourceHigh: "高",
         resourceOpacity: "图层不透明度",
         resourceUnavailable: "该资源没有可用的静态分布数据",
-          loadSave: "选择区域参考数据",
-          changeSave: "更换区域参考数据",
+        loadSave: "选择区域参考数据",
+        changeSave: "更换区域参考数据",
         layerResources: "资源画刷环",
         layerOff: "关闭",
-        layersNote: "上方“资源”切换分布图层；查看资源时暂时隐藏植被与水面，道路继续显示。",
+        layersNote:
+          "上方“资源”切换分布图层；查看资源时暂时隐藏植被与水面，道路继续显示。",
         resCoal: "煤矿",
         resOre: "原矿",
         resOil: "原油",
@@ -366,7 +449,8 @@ const messages = {
         cityName: "城市名称",
         cityDescription: "城市介绍",
         cityDescriptionFallback: "当前接口尚未提供城市介绍。",
-        cityResourceSeeds: "{resource}：槽位内 {count} 个静态画刷种子（非储量）",
+        cityResourceSeeds:
+          "{resource}：槽位内 {count} 个静态画刷种子（非储量）",
         cityResources: "城市资源信息",
         noCityResources: "暂无可用资源信息",
         emptyPlotTitle: "请选择槽位",
@@ -491,8 +575,7 @@ const messages = {
           "导出包入游戏前，可先用资源预览的 Decal Dictionary 打开同一 atlas 验证新条目。",
         decalNeedDoc: "先在画布载入要注册的印花图案。",
         newLot: "新建 Lot（从画布生成）",
-        newLotSizeLabel:
-          "LotSize = 画布 {w}×{h} px × 0.75 = {wm}×{hm} m",
+        newLotSizeLabel: "LotSize = 画布 {w}×{h} px × 0.75 = {wm}×{hm} m",
         newLotColorsLabel: "LotColor1-4（RGB 材质色，图集索引 = 地面贴图格）",
         newLotColorN: "LC{n} · {channel} 通道",
         newLotTile: "图集",
@@ -624,15 +707,15 @@ const messages = {
         overlay: "参考截图",
         mechanism: "使用说明",
         mechanismBody:
-          "菜单条目数据结构：每个条目都是同一条 0x00B1B104 property，变体只来自可选指针的组合。\n"
-          + "显示指针（→ locale 表）：名称 0x0A09F5FA、描述 0x0A09F5FB、解锁 0x0DE84DDC、统计模板 0x0EB1FC05（内嵌 ~amount~ 占位）。\n"
-          + "行为指针：归属菜单 0x0DB9FC63（数组，一个条目可挂多个菜单）、继承 parent 0x00B2CCCB、menuUnit 0x0975695F（建筑 → EcoGame Unit 条目）、道路分段 0xD13BB4A6、槽位图标 0x0977AA8F、大图 0x0DDEEE56、排序 0x0DC1E3E0。\n"
-          + "弹窗每行的出处：统计行 = 模板文本 + Unit 条目上 float（unitEffectParameter 是 Unit 条目的 property 哈希）；造价/维护 = menuUnit 的 0x0A8A41DA / 0x09AE19D7（子单位 0x07E0AD0A 求和、维护取负）；道路造价 = 分段定义 0x0E76A7E2（无键 = 免费）。\n"
-          + "关联 package（游戏把所有包注册进同一张 ResourceMan 索引、按 TGI 命中，包名只决定扫描范围与优先级）：\n"
-          + "· SimCity_Game.package：菜单条目、道路分段 40E1C400、单元配置 40E1C000、DLC 模块定义 40E0E000\n"
-          + "· SimCityDataEP1.package / SimCity_DLC0.package：CoT 与 DLC 扩展（61F0C000 / 61F0C900）\n"
-          + "· SimCityUserData/EcoGame/SimCity-Scripts_*.package：Unit 条目 40E0C000（建造 0x0A8A41DA、维护 0x09AE19D7、统计值）\n"
-          + "· Locale/en-us/Data.package：全部 locale 表（本安装该目录实际为繁中；DLC 名称在独立表如 7B45C298）",
+          "菜单条目数据结构：每个条目都是同一条 0x00B1B104 property，变体只来自可选指针的组合。\n" +
+          "显示指针（→ locale 表）：名称 0x0A09F5FA、描述 0x0A09F5FB、解锁 0x0DE84DDC、统计模板 0x0EB1FC05（内嵌 ~amount~ 占位）。\n" +
+          "行为指针：归属菜单 0x0DB9FC63（数组，一个条目可挂多个菜单）、继承 parent 0x00B2CCCB、menuUnit 0x0975695F（建筑 → EcoGame Unit 条目）、道路分段 0xD13BB4A6、槽位图标 0x0977AA8F、大图 0x0DDEEE56、排序 0x0DC1E3E0。\n" +
+          "弹窗每行的出处：统计行 = 模板文本 + Unit 条目上 float（unitEffectParameter 是 Unit 条目的 property 哈希）；造价/维护 = menuUnit 的 0x0A8A41DA / 0x09AE19D7（子单位 0x07E0AD0A 求和、维护取负）；道路造价 = 分段定义 0x0E76A7E2（无键 = 免费）。\n" +
+          "关联 package（游戏把所有包注册进同一张 ResourceMan 索引、按 TGI 命中，包名只决定扫描范围与优先级）：\n" +
+          "· SimCity_Game.package：菜单条目、道路分段 40E1C400、单元配置 40E1C000、DLC 模块定义 40E0E000\n" +
+          "· SimCityDataEP1.package / SimCity_DLC0.package：CoT 与 DLC 扩展（61F0C000 / 61F0C900）\n" +
+          "· SimCityUserData/EcoGame/SimCity-Scripts_*.package：Unit 条目 40E0C000（建造 0x0A8A41DA、维护 0x09AE19D7、统计值）\n" +
+          "· Locale/en-us/Data.package：全部 locale 表（本安装该目录实际为繁中；DLC 名称在独立表如 7B45C298）",
         panelTitle: "菜单条目预览",
         panelHint: "点击左侧重建 UI 中的任一菜单，这里会列出该级的条目",
         emptyMenu: "该菜单没有已解析的静态条目，可在此新增。",
@@ -653,16 +736,19 @@ const messages = {
         upkeepShort: "维护/小时 §",
         costPlaceholder: "未解析，可手填",
         upkeepPlaceholder: "未解析，可手填",
-        financeHint: "造价/维护提取自游戏模拟数据（EcoGame Unit 条目与道路分段定义，可重跑 menu_cost_dump 再生成）；缺失条目可手动填写。原版道路铺设免费。",
+        financeHint:
+          "造价/维护提取自游戏模拟数据（EcoGame Unit 条目与道路分段定义，可重跑 menu_cost_dump 再生成）；缺失条目可手动填写。原版道路铺设免费。",
         universitySidewalk: "大学人行道",
-        universitySidewalkDesc: "大学模块提供的两线人行道，可作为道路菜单条目。",
+        universitySidewalkDesc:
+          "大学模块提供的两线人行道，可作为道路菜单条目。",
         universityMenu: "大学",
         laneCount: "线道数量",
         maxDensity: "支持最大密度",
         mediumDensity: "中",
         removeImage: "移除图片",
         marqueeHint: "点击大图可重新上传并裁切；移除后编译时不写入大图资源。",
-        imageHint: "左：槽位图标 128×128；右：rollover 大图 454×263。点击重新上传裁切，✕ 移除。",
+        imageHint:
+          "左：槽位图标 128×128；右：rollover 大图 454×263。点击重新上传裁切，✕ 移除。",
         sectionBasics: "基本",
         sectionMembership: "归属与复制",
         sectionImages: "图像",
@@ -674,12 +760,14 @@ const messages = {
         statRemove: "删除此统计行",
         statLabelPlaceholder: "标签（如 公車數量）",
         statValuePlaceholder: "值（如 3）",
-        statsHint: "统计行用于工作台展示与 schema 导出；游戏侧由 Unit 条目派生，属性覆盖不含。",
+        statsHint:
+          "统计行用于工作台展示与 schema 导出；游戏侧由 Unit 条目派生，属性覆盖不含。",
         submenuHint: "点击子菜单条目在新的 Sheet 层中编辑（返回上级弹回）。",
         backToParent: "返回上级",
         copyTargetPlaceholder: "选择目标菜单或建筑子菜单",
         submenuOf: "{name} 子菜单",
-        containerCopied: "已复制到「{label} 子菜单」。编译并注入后，游戏内该建筑的面板会出现此条目（可用 Schema diff 核对）。",
+        containerCopied:
+          "已复制到「{label} 子菜单」。编译并注入后，游戏内该建筑的面板会出现此条目（可用 Schema diff 核对）。",
         schemaDiff: "变更对比",
         schemaJson: "Schema JSON",
         injectFailed: "注入失败：写入游戏目录时出错。",
@@ -688,19 +776,22 @@ const messages = {
         buildInject: "编译并注入",
         injectSuccess: "已注入游戏目录：{dest}",
         injectGameRunning: "注意：游戏正在运行，重启后生效。",
-        injectFallback: "当前不在 Tauri 运行时（浏览器预览），已改为下载 .package。",
+        injectFallback:
+          "当前不在 Tauri 运行时（浏览器预览），已改为下载 .package。",
         cropperPreviewTitle: "槽位图标（128×128 PNG）",
         cropperMarqueeTitle: "Hover 大图（454×263 JPEG）",
         membership: "归属菜单",
         membershipNone: "未挂在任何菜单",
         copyTo: "复制到菜单",
         copyAction: "复制",
-        copyHint: "副本获得新身份并立即打开编辑；图标与大图先共享原图，两边编辑互不影响。",
+        copyHint:
+          "副本获得新身份并立即打开编辑；图标与大图先共享原图，两边编辑互不影响。",
         export: "导出 JSON",
         exportCopied: "overlay JSON 已复制到剪贴板",
         buildPackage: "编译 .package",
         buildEmpty: "没有待编译的菜单编辑。先修改或新增一个条目。",
-        buildComplete: "已生成 .package：{entries} 个菜单条目，{locales} 条文案。",
+        buildComplete:
+          "已生成 .package：{entries} 个菜单条目，{locales} 条文案。",
         exportEmpty: "还没有可导出的编辑",
         exportDone: "覆盖包已导出",
         reset: "还原全部",
@@ -1529,7 +1620,8 @@ const messages = {
       noBytes: "没有读取到字节",
       selectResource: "选择资源查看详情",
       noPreview: "暂无可用预览",
-      searchTgi: "搜索 TGI 或语义名称（如 0x2f4e681b、greatworks，不区分大小写）",
+      searchTgi:
+        "搜索 TGI 或语义名称（如 0x2f4e681b、greatworks，不区分大小写）",
       relief: "浮雕",
       exportMesh: "导出 Mesh",
       audioPlay: "播放",
@@ -1577,7 +1669,7 @@ const messages = {
       resizeTree: "调整文件树高度",
       resizeNavigation: "调整导航宽度",
       resizePreview: "调整预览宽度",
-            semanticName: "语义名称",
+      semanticName: "语义名称",
       erz: {
         meta: "ERZ 编译规则库 · 布局 {major}.{minor} · record {record}",
         exactOk: "结构校验通过",
@@ -1593,7 +1685,8 @@ const messages = {
         statSectionC: "段 C 记录（tag 2）",
         statSectionCHint: "变长记录（哈希 + f32 三数组）",
         statConstants: "常量表（set 语句）",
-        statConstantsHint: "(hash, value) 对 = 文本规则 set Name Value 的编译形式",
+        statConstantsHint:
+          "(hash, value) 对 = 文本规则 set Name Value 的编译形式",
         statDSection: "D 段子对象 / 条目",
         statDSectionHint: "外层对象数 × (内层条目数 × 20B)，与常量表按序耦合",
         statESection: "E 段子对象 / 条目",
@@ -1897,6 +1990,61 @@ const messages = {
       sectionStyle: "Style",
       sectionSeed: "Random seed",
       sectionTextures: "Material textures",
+      sectionBlocks: "Block masses",
+      junctionHint:
+        "This wing rotates around the Y junction; resizing its width keeps the connection ratio.",
+      cutoutLabel: "Cutout {index}",
+      cutoutHint:
+        "Offsets are relative to the block centre and rotate with it. Cross an outer wall for a recess, or the full height for a courtyard.",
+      blocksHint:
+        "Build large, flat buildings in metres, with rotated wings, junctions and cutouts.",
+      blockPreset: "Block preset",
+      blockPreset_single: "Single block",
+      blockPreset_y: "Y shape",
+      blockPreset_courtyard: "Courtyard",
+      blockLabel: "Block {index}",
+      addBlock: "Add block",
+      removeBlock: "Remove block",
+      width: "Width (m)",
+      depth: "Depth (m)",
+      height: "Height (m)",
+      rotation: "Rotation (°)",
+      offsetX: "Offset X (m)",
+      offsetY: "Offset Y (m)",
+      baseHeight: "Base height (m)",
+      cutout: "Cutout",
+      cutoutWidth: "Cutout width",
+      cutoutDepth: "Cutout depth",
+      cutoutHeight: "Cutout height",
+      cutoutOffsetX: "Cutout offset X",
+      cutoutOffsetY: "Cutout offset Y",
+      cutoutOffsetZ: "Cutout offset Z",
+      addCutout: "Add cutout",
+      removeCutout: "Remove cutout",
+      massSummary: "{width}×{depth} m · {height} m tall · {parts} blocks",
+      windowSpacing: "Window spacing",
+      windowSpacingHint:
+        "Adjust horizontal space between repeated window motifs; 0 m keeps the source cadence.",
+      propertyMaterial: "Building material · Property TGI",
+      propertyTgiPlaceholder: "00b1b104:42e1c000:35dd7d33",
+      propertyTgiHint:
+        "Enter a building Property TGI from an open package to reuse its main surface materials. Select Refined above the viewport to see the result.",
+      propertyResolving: "Resolving building materials…",
+      propertyLoaded: "Mapped materials from {name} (LOD{lod})",
+      propertyInvalidTgi:
+        "Enter a full Property TGI: 00b1b104:group:instance, with 8 hexadecimal digits per segment.",
+      propertyNoPackages:
+        "Open the building’s package in Source parsing before entering its TGI.",
+      propertyNotFound:
+        "Cannot read this Property from the open packages. Check the TGI and source package.",
+      propertyNoModel:
+        "This Property has no available model. Open its model package and retry.",
+      propertyUnsupported:
+        "The model lacks usable building materials, parameters or UVs. Check that its texture packages are open.",
+      propertyResolveFailed:
+        "Failed to read building materials. Check the related packages and retry.",
+      propertyRetry: "Retry",
+      propertyClear: "Clear material",
       baysX: "Frontage bays",
       baysY: "Depth bays",
       floors: "Upper floors",
@@ -1924,11 +2072,18 @@ const messages = {
       slotUnbound: "Default color",
       bindTexture: "Pick a game texture",
       lotGround: "Lot ground mask",
-      lotGroundHint: "Pick a lot in the Lot ground masks tab to load it; the ground is rendered by the game-style LotMask + LotColor composer.",
+      lotGroundHint:
+        "Pick a lot in the Lot ground masks tab to load it; the ground is rendered by the game-style LotMask + LotColor composer.",
       lotUnbound: "Not loaded",
       lotMaskBound: "Loaded the ground mask of {label}",
-      refinedHint: "White-model mode hides textures — switch to Refined via the top Default/Refined toggle to see them",
+      refinedHint:
+        "White-model mode hides textures — switch to Refined via the top Default/Refined toggle to see them",
       lotEmpty: "No lots found — open a package containing lots first",
+      lotSize: "Original size {width} × {depth} m",
+      lotPickHint:
+        "Click or drag into the viewport to use a Lot at its original size. Previews show Lot layer colors.",
+      lotPrevious: "Previous page",
+      lotNext: "Next page",
       lotScanFailed: "Lot scan failed",
       slotBound: "Bound to {slot}",
       prevPage: "Previous page",
@@ -1938,7 +2093,8 @@ const messages = {
       pickerTitle: "Pick a game texture",
       pickerPackage: "Source package",
       pickerSearch: "Search instance / name…",
-      pickerEmpty: "No matching raster textures (clear the search or open a package with textures first)",
+      pickerEmpty:
+        "No matching raster textures (clear the search or open a package with textures first)",
       pickerNotDecodable: "Not decodable (compressed, metadata only)",
       pickerSize: "{width}×{height}",
       generating: "Generating building…",
@@ -1953,7 +2109,8 @@ const messages = {
       reopenEditor: "Reopen the editor",
       emptyEditorSubtitle: "Waiting for a procedural model or source Property",
       emptyEditorTitle: "Property Editor is ready",
-      emptyEditorDescription: "No Property is loaded yet. Choose an asset from the procedural generator or source parsing to edit it here.",
+      emptyEditorDescription:
+        "No Property is loaded yet. Choose an asset from the procedural generator or source parsing to edit it here.",
     },
     runtimeObserver: {
       overview: {
@@ -1971,7 +2128,8 @@ const messages = {
       },
       eyebrow: "Game runtime",
       title: "Log console",
-      description: "Scan a running game process and capture bridge commands, queries, and events on demand. Raw logs stay in this page session.",
+      description:
+        "Scan a running game process and capture bridge commands, queries, and events on demand. Raw logs stay in this page session.",
       scan: "Scan processes",
       processes: "Game processes",
       noProcesses: "No running processes found.",
@@ -1987,12 +2145,16 @@ const messages = {
       stopping: "Detaching probe…",
       previewUnavailable: "Game preview is not connected",
       errors: {
-        scan_incomplete: "Page object scan did not finish. Retry shortly; diagnostics were retained",
-        binding_missing: "No validated page binding found. Wait for the game UI to load and retry",
+        scan_incomplete:
+          "Page object scan did not finish. Retry shortly; diagnostics were retained",
+        binding_missing:
+          "No validated page binding found. Wait for the game UI to load and retry",
         event_site: "Event call site validation failed",
         host_binding: "Page host binding changed; retry",
-        event_entry: "Event entry bytes do not match; another observer may be active",
-        invoke_entry: "Invoke or log entry bytes do not match; another observer may be active",
+        event_entry:
+          "Event entry bytes do not match; another observer may be active",
+        invoke_entry:
+          "Invoke or log entry bytes do not match; another observer may be active",
         duration: "Capture duration must be 5–300 seconds",
       },
       follow: "Follow logs",
@@ -2010,15 +2172,30 @@ const messages = {
       eventTotal: "Event window",
       eventTotalHint: "recent events only",
       streamTitle: "Live log stream",
-      streamDescription: "Released when you leave this page; key event summaries sync to the activity database.",
+      streamDescription:
+        "Released when you leave this page; key event summaries sync to the activity database.",
       memoryOnly: "Memory only",
       noLogs: "Logs will appear here after capture starts.",
       profileLabel: "Sampling profile",
       profile: {
-        balanced: { label: "Balanced", description: "Use the default limits for each UI bridge channel." },
-        "ui-events": { label: "UI events", description: "Raise event and region limits for city interface events." },
-        "bridge-commands": { label: "Bridge commands", description: "Raise command/query/result limits for UI bridge calls." },
-        "engine-messages": { label: "Engine messages", description: "Raise console/other/result limits for EAWebKit messages." },
+        balanced: {
+          label: "Balanced",
+          description: "Use the default limits for each UI bridge channel.",
+        },
+        "ui-events": {
+          label: "UI events",
+          description:
+            "Raise event and region limits for city interface events.",
+        },
+        "bridge-commands": {
+          label: "Bridge commands",
+          description: "Raise command/query/result limits for UI bridge calls.",
+        },
+        "engine-messages": {
+          label: "Engine messages",
+          description:
+            "Raise console/other/result limits for EAWebKit messages.",
+        },
       },
       category: {
         resource: "Resource",
@@ -2088,7 +2265,8 @@ const messages = {
         resizeHint: "Drag to resize the tree and viewer",
         pickHint: "Pick a file on the left to inspect it",
         textTooLarge: "Text exceeds 4 MB and cannot be previewed yet.",
-        binaryHint: "Binary file — preview and editing arrive in a later release.",
+        binaryHint:
+          "Binary file — preview and editing arrive in a later release.",
         imageAlt: "Image preview",
         packageCard: "DBPF container",
         packageEntries: "Resources",
@@ -2128,7 +2306,8 @@ const messages = {
         meta: "Region terrain composite preview — 341-tile pyramid + global water plane",
         configLabel: "Render configuration",
         selectPackage: "Choose an opened package",
-        needPackage: "Open a region package in source parsing first (RegionTerrain*.package).",
+        needPackage:
+          "Open a region package in source parsing first (RegionTerrain*.package).",
         regionLabel: "Region",
         regionPlaceholder: "Pick a region",
         emptyRegions: "Enumerate a package to pick a region",
@@ -2155,39 +2334,50 @@ const messages = {
         mapExtent: "{size} km square",
         gridDetail: "16 m/cell · 8 m nearby",
         sampleDetail: "{sample} m/sample · {mesh} m/cell nearby",
-        emptyDescription: "Choose an opened package and a region, then click Render to preview the map.",
+        emptyDescription:
+          "Choose an opened package and a region, then click Render to preview the map.",
         layersTitle: "Layers",
         resourceControls: "Resources",
-        descriptionUnavailable: "The installed assets do not include a city description in this language.",
+        descriptionUnavailable:
+          "The installed assets do not include a city description in this language.",
         cityBuildable: "Buildable area",
         cityWind: "Wind rating",
         cityRail: "Rail connection",
         cityShipping: "Shipping connection",
         introLevel: "{value} / 3",
-        introResourceLevels: "Game ratings (0–3): coal {coal} · oil {oil} · ore {ore} · groundwater {water}",
-        staticReady: "Original roads and city resources loaded from the shipped map templates.",
-        staticMissing: "SimCityDataEP1.package is missing from this directory. City resources and native roads are unavailable.",
-        staticInvalid: "The static map template is missing or failed validation. City resources and native roads are unavailable.",
-        roadAssetsMissing: "SimCity_Game.package is missing from this directory; road materials are unavailable.",
+        introResourceLevels:
+          "Game ratings (0–3): coal {coal} · oil {oil} · ore {ore} · groundwater {water}",
+        staticReady:
+          "Original roads and city resources loaded from the shipped map templates.",
+        staticMissing:
+          "SimCityDataEP1.package is missing from this directory. City resources and native roads are unavailable.",
+        staticInvalid:
+          "The static map template is missing or failed validation. City resources and native roads are unavailable.",
+        roadAssetsMissing:
+          "SimCity_Game.package is missing from this directory; road materials are unavailable.",
         cityPosition: "Center coordinates",
         cityElevation: "Site elevation",
         cityArea: "City extent",
         cityEnvironment: "City resource group",
-        cityResourceExplanation: "Area occupied by nonzero cells in the initial resource grid, not extractable reserves.",
+        cityResourceExplanation:
+          "Area occupied by nonzero cells in the initial resource grid, not extractable reserves.",
         resourceCoverage: "{value}% area",
         resourceUnknown: "No data",
         layerPlots: "Plots",
         layerVegetation: "Vegetation",
         layerWater: "Water",
         layerRoads: "Road preview",
-        resourceLow: "Low", resourceHigh: "High",
+        resourceLow: "Low",
+        resourceHigh: "High",
         resourceOpacity: "Layer opacity",
-        resourceUnavailable: "No static distribution is available for this resource.",
-          loadSave: "Choose region reference",
-          changeSave: "Change region reference",
+        resourceUnavailable:
+          "No static distribution is available for this resource.",
+        loadSave: "Choose region reference",
+        changeSave: "Change region reference",
         layerResources: "Resource brush rings",
         layerOff: "Off",
-        layersNote: "Use Resources above the map to select a distribution. Vegetation and water are temporarily hidden; roads remain visible.",
+        layersNote:
+          "Use Resources above the map to select a distribution. Vegetation and water are temporarily hidden; roads remain visible.",
         resCoal: "Coal",
         resOre: "Raw Ore",
         resOil: "Crude Oil",
@@ -2205,13 +2395,17 @@ const messages = {
         cityDetailsTitle: "Slot details",
         cityName: "City name",
         cityDescription: "City description",
-        cityDescriptionFallback: "The current interface does not provide city descriptions yet.",
-        cityResourceSeeds: "{resource}: {count} static brush seeds inside the slot (not reserves)",
+        cityDescriptionFallback:
+          "The current interface does not provide city descriptions yet.",
+        cityResourceSeeds:
+          "{resource}: {count} static brush seeds inside the slot (not reserves)",
         cityResources: "City resources",
         noCityResources: "No resource information available",
         emptyPlotTitle: "Select a slot",
-        emptyPlotDescription: "Render the region, then choose a city or great work slot.",
-        pipelineNote: "341-tile pyramid + water plane 4928 (-870 m) + moisture×slope shading",
+        emptyPlotDescription:
+          "Render the region, then choose a city or great work slot.",
+        pipelineNote:
+          "341-tile pyramid + water plane 4928 (-870 m) + moisture×slope shading",
         panHint: "Middle-drag / Space to pan · wheel zooms at pointer",
       },
       raster: {
@@ -2386,8 +2580,7 @@ const messages = {
         open: "Develop",
         edit: "Edit",
         delete: "Delete",
-        openHint:
-          "Open the code workbench (file tree + type-aware preview)",
+        openHint: "Open the code workbench (file tree + type-aware preview)",
         folderMissing: "Folder missing",
         deleteConfirm:
           "Remove this project's record? The folder on disk is kept.",
@@ -2478,18 +2671,19 @@ const messages = {
         overlay: "Reference",
         mechanism: "How to use",
         mechanismBody:
-          "Menu entry data model: every entry is the same 0x00B1B104 property; variants come only from optional pointer combinations.\n"
-          + "Display pointers (→ locale tables): title 0x0A09F5FA, desc 0x0A09F5FB, unlock 0x0DE84DDC, stat templates 0x0EB1FC05 (with ~amount~ placeholders).\n"
-          + "Behavior pointers: membership 0x0DB9FC63 (array, one entry can sit in several menus), parent 0x00B2CCCB, menuUnit 0x0975695F (building → EcoGame Unit entry), path piece 0xD13BB4A6, slot icon 0x0977AA8F, marquee 0x0DDEEE56, position 0x0DC1E3E0.\n"
-          + "Rollover line sources: stats = template text + a float on the Unit entry (unitEffectParameter is a property hash on that Unit); cost/upkeep = menuUnit's 0x0A8A41DA / 0x09AE19D7 (child units 0x07E0AD0A summed, upkeep negated); road cost = piece 0x0E76A7E2 (absent = free).\n"
-          + "Packages (the game registers all packages into one ResourceMan index and resolves by TGI; file names only decide scan scope and priority):\n"
-          + "· SimCity_Game.package — menu entries, path pieces 40E1C400, unit configs 40E1C000, DLC module defs 40E0E000\n"
-          + "· SimCityDataEP1.package / SimCity_DLC0.package — CoT & DLC extensions (61F0C000 / 61F0C900)\n"
-          + "· SimCityUserData/EcoGame/SimCity-Scripts_*.package — Unit entries 40E0C000 (construction 0x0A8A41DA, upkeep 0x09AE19D7, stat values)\n"
-          + "· Locale/en-us/Data.package — all locale tables (in this install that folder actually holds Traditional Chinese; DLC names live in separate tables like 7B45C298)",
+          "Menu entry data model: every entry is the same 0x00B1B104 property; variants come only from optional pointer combinations.\n" +
+          "Display pointers (→ locale tables): title 0x0A09F5FA, desc 0x0A09F5FB, unlock 0x0DE84DDC, stat templates 0x0EB1FC05 (with ~amount~ placeholders).\n" +
+          "Behavior pointers: membership 0x0DB9FC63 (array, one entry can sit in several menus), parent 0x00B2CCCB, menuUnit 0x0975695F (building → EcoGame Unit entry), path piece 0xD13BB4A6, slot icon 0x0977AA8F, marquee 0x0DDEEE56, position 0x0DC1E3E0.\n" +
+          "Rollover line sources: stats = template text + a float on the Unit entry (unitEffectParameter is a property hash on that Unit); cost/upkeep = menuUnit's 0x0A8A41DA / 0x09AE19D7 (child units 0x07E0AD0A summed, upkeep negated); road cost = piece 0x0E76A7E2 (absent = free).\n" +
+          "Packages (the game registers all packages into one ResourceMan index and resolves by TGI; file names only decide scan scope and priority):\n" +
+          "· SimCity_Game.package — menu entries, path pieces 40E1C400, unit configs 40E1C000, DLC module defs 40E0E000\n" +
+          "· SimCityDataEP1.package / SimCity_DLC0.package — CoT & DLC extensions (61F0C000 / 61F0C900)\n" +
+          "· SimCityUserData/EcoGame/SimCity-Scripts_*.package — Unit entries 40E0C000 (construction 0x0A8A41DA, upkeep 0x09AE19D7, stat values)\n" +
+          "· Locale/en-us/Data.package — all locale tables (in this install that folder actually holds Traditional Chinese; DLC names live in separate tables like 7B45C298)",
         panelTitle: "Menu entries",
         panelHint: "Click any menu in the rebuilt UI to list its entries here",
-        emptyMenu: "No static entries have been resolved for this menu. You can add one here.",
+        emptyMenu:
+          "No static entries have been resolved for this menu. You can add one here.",
         newItem: "New entry",
         newTag: "new",
         addItem: "Add menu entry",
@@ -2507,16 +2701,20 @@ const messages = {
         upkeepShort: "Upkeep/hour §",
         costPlaceholder: "not parsed — type to override",
         upkeepPlaceholder: "not parsed — type to override",
-        financeHint: "Cost/upkeep are extracted from the game's simulation data (EcoGame unit entries and path pieces; rerun menu_cost_dump to refresh); fill missing values manually. Roads are free to build in the base game.",
+        financeHint:
+          "Cost/upkeep are extracted from the game's simulation data (EcoGame unit entries and path pieces; rerun menu_cost_dump to refresh); fill missing values manually. Roads are free to build in the base game.",
         universitySidewalk: "University sidewalk",
-        universitySidewalkDesc: "Two-lane sidewalk supplied by the university module, exposed as a road menu entry.",
+        universitySidewalkDesc:
+          "Two-lane sidewalk supplied by the university module, exposed as a road menu entry.",
         universityMenu: "University",
         laneCount: "Lane count",
         maxDensity: "Maximum density",
         mediumDensity: "Medium",
         removeImage: "Remove image",
-        marqueeHint: "Click the image to upload and crop a replacement; removed images are not written to the build.",
-        imageHint: "Left: slot icon 128×128; right: rollover image 454×263. Click to re-crop, ✕ to remove.",
+        marqueeHint:
+          "Click the image to upload and crop a replacement; removed images are not written to the build.",
+        imageHint:
+          "Left: slot icon 128×128; right: rollover image 454×263. Click to re-crop, ✕ to remove.",
         sectionBasics: "Basics",
         sectionMembership: "Membership & copy",
         sectionImages: "Images",
@@ -2528,33 +2726,41 @@ const messages = {
         statRemove: "Remove this stat row",
         statLabelPlaceholder: "Label (e.g. Number of buses)",
         statValuePlaceholder: "Value (e.g. 3)",
-        statsHint: "Stat rows feed the workbench display and schema export; in-game they derive from the Unit entry and are not part of the property override.",
-        submenuHint: "Click a submenu entry to edit it in a stacked sheet (back returns to the parent).",
+        statsHint:
+          "Stat rows feed the workbench display and schema export; in-game they derive from the Unit entry and are not part of the property override.",
+        submenuHint:
+          "Click a submenu entry to edit it in a stacked sheet (back returns to the parent).",
         backToParent: "Back to parent",
         copyTargetPlaceholder: "Choose a target menu or building submenu",
         submenuOf: "{name} submenu",
-        containerCopied: "Copied into the \"{label}\" submenu. After build & inject, the entry appears in that building's in-game panel (verify with Schema diff).",
+        containerCopied:
+          'Copied into the "{label}" submenu. After build & inject, the entry appears in that building\'s in-game panel (verify with Schema diff).',
         schemaDiff: "Schema diff",
         schemaJson: "Schema JSON",
         diffTitle: "Menu schema diff (base → current overrides)",
         diffEmpty: "No differences: current overrides match the base data.",
         buildInject: "Build & inject",
         injectSuccess: "Injected into the game directory: {dest}",
-        injectGameRunning: "Note: the game is running — the change applies after a restart.",
+        injectGameRunning:
+          "Note: the game is running — the change applies after a restart.",
         injectFailed: "Injection failed: error writing to the game directory.",
-        injectFallback: "Not in the Tauri runtime (browser preview) — the .package was downloaded instead.",
+        injectFallback:
+          "Not in the Tauri runtime (browser preview) — the .package was downloaded instead.",
         cropperPreviewTitle: "Slot icon (128×128 PNG)",
         cropperMarqueeTitle: "Hover image (454×263 JPEG)",
         membership: "Menus",
         membershipNone: "Not in any menu",
         copyTo: "Copy to menu",
         copyAction: "Copy",
-        copyHint: "The copy gets a new identity and opens for editing; icon and marquee images stay shared until replaced.",
+        copyHint:
+          "The copy gets a new identity and opens for editing; icon and marquee images stay shared until replaced.",
         export: "Export JSON",
         exportCopied: "Overlay JSON copied to clipboard",
         buildPackage: "Build .package",
-        buildEmpty: "There are no menu edits to build. Edit or add an entry first.",
-        buildComplete: "Built .package: {entries} menu entries and {locales} locale strings.",
+        buildEmpty:
+          "There are no menu edits to build. Edit or add an entry first.",
+        buildComplete:
+          "Built .package: {entries} menu entries and {locales} locale strings.",
         exportEmpty: "No edits to export yet",
         exportDone: "Override package exported",
         reset: "Reset all edits",
@@ -3287,11 +3493,15 @@ const messages = {
       neonAnim: "Animated signs",
       neonAnimHint: "Neon sign sweep animation (off = static lit)",
       effectRendering: "Render effects",
-      effectRenderingPending: "Swarm data parsing is ready; the particle renderer is not connected yet",
-      effectRenderingHint: "Load and render particle effects on demand in refined mode",
+      effectRenderingPending:
+        "Swarm data parsing is ready; the particle renderer is not connected yet",
+      effectRenderingHint:
+        "Load and render particle effects on demand in refined mode",
       effectRenderingLoading: "Loading particle effect data",
-      effectRenderingError: "Could not load particle effects; turn off and on to retry",
-      effectRenderingLimited: "Some effects use simplified particles or remain as markers",
+      effectRenderingError:
+        "Could not load particle effects; turn off and on to retry",
+      effectRenderingLimited:
+        "Some effects use simplified particles or remain as markers",
       toolMove: "Move",
       toolRotate: "Rotate",
       toolScale: "Scale",
@@ -3413,7 +3623,8 @@ const messages = {
       noBytes: "No bytes read",
       selectResource: "Select a resource to inspect it",
       noPreview: "No preview available",
-      searchTgi: "Search TGI or name (e.g. 0x2f4e681b, greatworks; case-insensitive)",
+      searchTgi:
+        "Search TGI or name (e.g. 0x2f4e681b, greatworks; case-insensitive)",
       relief: "Relief",
       exportMesh: "Export Mesh",
       audioPlay: "Play",
@@ -3462,7 +3673,7 @@ const messages = {
       resizeTree: "Resize file tree height",
       resizeNavigation: "Resize navigation width",
       resizePreview: "Resize preview width",
-            semanticName: "Semantic name",
+      semanticName: "Semantic name",
       erz: {
         meta: "ERZ compiled rule set · layout {major}.{minor} · record {record}",
         exactOk: "Structure verified",
@@ -3470,17 +3681,21 @@ const messages = {
         legacyNotice:
           "This is a legacy-patch rule record layout (record {record}); only the file header is parsed. The game reads only the newest patch package at runtime — open the latest script package to inspect the full structure.",
         statRules: "Rules (compiled unitRule)",
-        statRulesHint: "Each carries condition/action/routing field groups plus 12B sub-entries",
+        statRulesHint:
+          "Each carries condition/action/routing field groups plus 12B sub-entries",
         statSectionA: "Section A records (tag 5)",
         statSectionAHint: "Fixed 18×u32 records",
         statSectionB: "Section B records (tag 8)",
         statSectionBHint: "Fixed 10×u32+4×u64+8×u32 records",
         statSectionC: "Section C records (tag 2)",
-        statSectionCHint: "Variable-length records (hashes + f32 triple arrays)",
+        statSectionCHint:
+          "Variable-length records (hashes + f32 triple arrays)",
         statConstants: "Constant table (set statements)",
-        statConstantsHint: "(hash, value) pairs = compiled form of `set Name Value` in text rules",
+        statConstantsHint:
+          "(hash, value) pairs = compiled form of `set Name Value` in text rules",
         statDSection: "Section D objects / entries",
-        statDSectionHint: "Outer objects × (inner entries × 20B), ordered with the constant table",
+        statDSectionHint:
+          "Outer objects × (inner entries × 20B), ordered with the constant table",
         statESection: "Section E objects / entries",
         statESectionHint: "Second sequence using the Section D layout",
         statPool: "String pool",
