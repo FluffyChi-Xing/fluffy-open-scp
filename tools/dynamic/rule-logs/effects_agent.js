@@ -54,9 +54,11 @@ const callbacks = {
             if (begin.isNull() || size < 0 || size % 0x380 || size / 0x380 > 1000000 || unitSlot < 0 || unitSlot >= size / 0x380 || !unit.equals(begin.add(unitSlot * 0x380))) throw Error('unit_identity_bounds');
             const id = rule.readU32(), ruleIndex = arg(this.context, 1).toUInt32();
             if (config.ruleId !== null && id !== config.ruleId) return;
+            const unitEntryId = unit.add(0x0C).readU32();
+            if (config.unitEntryId !== null && unitEntryId !== config.unitEntryId) return;
             const key = game.toString() + ':' + unitSlot + ':' + unit.toString() + ':' + ruleIndex + ':' + id;
             if (!config.allTargets && target && key !== target) return;
-            Object.assign(this.frame, {target: !config.requireInputPositive, kind: 'unit-local', key, game, unit, unitSlot, rule, ruleIndex, ruleId: id});
+            Object.assign(this.frame, {target: !config.requireInputPositive, kind: 'unit-local', key, game, unit, unitSlot, rule, ruleIndex, ruleId: id, unitEntryId});
         },
         leave() { if (this.frame) pop(parents, this.tid, this.frame); },
     },
@@ -104,10 +106,15 @@ const callbacks = {
             for (let i = 0; i < count; i++) {
                 const at = array.add(i * 12), output = at.add(8).readS32();
                 const resourceId = at.readU32();
-                if (config.resourceId !== null && resourceId !== config.resourceId) continue;
                 operations.push({ordinal: i, resourceId: '0x' + resourceId.toString(16).padStart(8, '0'), input: at.add(4).readS32(), output, status: output < 0 ? 'not-mutated-range-condition' : 'not-reached'});
             }
-            if (!operations.length) { channels.applyOps.filtered++; return; }
+            // Filter whole updates, never the operation sequence: native bin
+            // lookups still visit every non-negative-output operation. Pruning
+            // this array mislabels bins or reports spurious extra_lookup errors.
+            if (!operations.length || (config.resourceId !== null && !operations.some(op =>
+                op.resourceId === '0x' + config.resourceId.toString(16).padStart(8, '0')))) {
+                channels.applyOps.filtered++; return;
+            }
             const row = {channel: 'simulation.effect', schema: 1, phase: isUnit ? 'unit-local-resource-update' : 'global-resource-update',
                 time: Date.now(), threadId: this.tid, game: game.toString(),
                 ruleId: '0x' + p.ruleId.toString(16).padStart(8, '0'), ruleIndex: p.ruleIndex,

@@ -14,8 +14,9 @@ import sys
 import threading
 import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'probes' / 'runtime'))
 from package_loader_probe import PE
+from capture_lock import acquire_capture_lock, release_capture_lock
 
 HOOKS = {"global": 0x1CFE20, "unit": 0x1D47F0}
 PROVENANCE_HOOKS = {'request': 0x511760, 'cache': 0x511110, 'record': 0x4EA530, 'create': 0x1C9980}
@@ -37,8 +38,9 @@ def main():
     ap.add_argument('--resource-id', type=lambda s: int(s, 0), help='Effects scopes: filter operation resource ID')
     ap.add_argument('--state-index', type=int)
     ap.add_argument('--unit-slot', type=int)
+    ap.add_argument('--unit-entry-id', type=lambda s: int(s, 0), help='Filter runtime UnitEntry ID for unit scopes')
     ap.add_argument('--max-records', type=int, default=250)
-    ap.add_argument('--all-targets', action='store_true', help='Effects scopes: observe multiple units/rules until max-records')
+    ap.add_argument('--all-targets', action='store_true', help='Rule/effects scopes: observe multiple targets until max-records')
     args = ap.parse_args()
     if not 1 <= args.seconds <= 120 or not 1 <= args.max_records <= 2000 or (args.pid is not None and args.pid <= 0):
         ap.error('pid must be positive; seconds 1..120; max-records 1..2000')
@@ -46,6 +48,8 @@ def main():
         ap.error('indices must be non-negative')
     if args.unit_slot is not None and args.scope == 'global':
         ap.error('unit-slot requires unit or both scope')
+    if args.unit_entry_id is not None and args.scope not in ['unit', 'both', 'unit-effects', 'unit-consumption']:
+        ap.error('unit-entry-id requires a unit scope')
     if args.scope == 'provenance' and (args.unit_slot is not None or args.state_index is not None):
         ap.error('provenance observes rule resource loads, not rule state/slot indices')
     if args.scope in ['effects', 'conditions'] and (args.unit_slot is not None or args.state_index is not None):
@@ -56,8 +60,8 @@ def main():
         ap.error('rule-id requires a rule, effects or conditions scope and a uint32 value')
     if args.resource_id is not None and (args.scope not in ['effects', 'unit-effects', 'unit-consumption'] or not 0 <= args.resource_id <= 0xffffffff):
         ap.error('resource-id requires effects/unit-effects/unit-consumption scope and a uint32 value')
-    if args.all_targets and args.scope not in ['effects', 'unit-effects', 'unit-consumption']:
-        ap.error('all-targets requires effects, unit-effects or unit-consumption scope')
+    if args.all_targets and args.scope not in ['global', 'unit', 'both', 'effects', 'unit-effects', 'unit-consumption']:
+        ap.error('all-targets requires a rule or resource observation scope')
     if args.launch_exe and args.scope != 'provenance':
         ap.error('launch-exe is only supported for provenance capture')
     import frida
@@ -68,7 +72,7 @@ def main():
               'seconds': args.seconds, 'scope': args.scope, 'records': 0, 'ready': False,
               'detached': False, 'errors': [], 'fridaVersion': frida.__version__,
               'agentSha256': hashlib.sha256(agent.encode()).hexdigest(),
-              'sampling': 'rule resource requests, capped' if args.scope == 'provenance' else 'first matching game/slot/stateIndex per scope, then capped'}
+              'sampling': 'rule resource requests, capped' if args.scope == 'provenance' else ('all matching game/slot/stateIndex targets, capped' if args.all_targets else 'first matching game/slot/stateIndex per scope, then capped')}
     if args.scope == 'effects':
         status['sampling'] = 'first matching global game/rule, <=16 effective operations, capped; snapshots around native writes'
     if args.scope == 'unit-effects':
@@ -79,6 +83,10 @@ def main():
             status['sampling'] = 'all unit-local ApplyBinRule targets with input > 0 until max-records; unit-local bins only; <=16 operations; stamp unknown'
     if args.scope == 'conditions':
         status['sampling'] = 'first matching game, optional rule ID; capped eligibility checks; <=16 effective operations per count check'
+    if args.all_targets and args.scope in ['effects', 'unit-effects']:
+        status['sampling'] = 'all matching resource updates, capped; <=16 effective operations; full operation sequence retained'
+    if args.resource_id is not None:
+        status['resourceFilter'] = 'select updates containing this resource; retain companion operations for lookup alignment'
     gone = threading.Event()
     session = script = None
     device = None
@@ -96,7 +104,18 @@ def main():
             elif m['type'] == 'error':
                 status['errors'].append(m)
 
+    def detached(reason, crash=None):
+        status['detachReason'] = reason
+        status['unexpectedDetach'] = not status.get('cleanupStarted', False)
+        if crash:
+            status['crash'] = str(crash)
+        if status['unexpectedDetach']:
+            status['errors'].append('unexpected_detach:' + str(reason))
+        gone.set()
+
     try:
+        # Serialize the entire injected-agent lifecycle, before device.attach.
+        acquire_capture_lock()
         device = frida.get_local_device()
         if args.launch_exe:
             launch = PE(args.launch_exe)
@@ -108,7 +127,7 @@ def main():
             args.pid = launched_pid
             status.update({'pid': launched_pid, 'spawned': True, 'resumed': False})
         session = device.attach(args.pid)
-        session.on('detached', lambda *_: gone.set())
+        session.on('detached', detached)
         script = session.create_script(agent, runtime='qjs')
         script.on('message', message)
         script.load()
@@ -125,7 +144,7 @@ def main():
             'conditions': ['globalCheck', 'resourceCount', 'binFind'],
         }
         kinds = list(selected_hooks) if args.scope in ['both', 'provenance'] else scope_hooks.get(args.scope, [args.scope])
-        cfg = {'stateIndex': args.state_index, 'unitSlot': args.unit_slot, 'ruleId': args.rule_id, 'resourceId': args.resource_id, 'requireInputPositive': args.scope == 'unit-consumption', 'allTargets': args.all_targets, 'maxRecords': args.max_records,
+        cfg = {'stateIndex': args.state_index, 'unitSlot': args.unit_slot, 'unitEntryId': args.unit_entry_id, 'ruleId': args.rule_id, 'resourceId': args.resource_id, 'requireInputPositive': args.scope == 'unit-consumption', 'allTargets': args.all_targets, 'maxRecords': args.max_records,
                'hooks': {k: {'rva': selected_hooks[k], 'bytes': pe.read(selected_hooks[k], 16)[1].hex()} for k in kinds}}
         (args.out / 'config.json').write_text(json.dumps(cfg, indent=2), encoding='utf-8')
         status['ready'] = script.exports_sync.arm(cfg)
@@ -139,6 +158,7 @@ def main():
     except Exception as e:
         status['errors'].append(str(e))
     finally:
+        status['cleanupStarted'] = True
         if script and not gone.is_set():
             try:
                 summary = script.exports_sync.stop()
@@ -149,6 +169,7 @@ def main():
                 status['errors'].append(str(e))
             try:
                 script.unload()
+                status['scriptUnloaded'] = True
             except Exception as e:
                 status['errors'].append(str(e))
         if session and not gone.is_set():
@@ -163,10 +184,19 @@ def main():
                 status['resumed'] = True
             except Exception as e:
                 status['errors'].append(str(e))
+        if device and args.pid:
+            try:
+                status['targetAliveAfterCleanup'] = any(p.pid == args.pid for p in device.enumerate_processes())
+                if not status['targetAliveAfterCleanup']:
+                    status['errors'].append('target_exited_during_capture')
+            except Exception as e:
+                status['errors'].append('target_liveness_unknown:' + str(e))
         with lock:
             trace.close()
             (args.out / 'status.json').write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding='utf-8')
-        print(json.dumps({'out': str(args.out), 'records': status['records'], 'errors': status['errors']}), flush=True)
+        release_capture_lock()
+        print(json.dumps({'out': str(args.out), 'records': status['records'], 'errors': status['errors'],
+                          'readErrors': status.get('summary', {}).get('errors', 0)}), flush=True)
     read_errors = status.get('summary', {}).get('errors', 0)
     return 1 if status['errors'] or read_errors else 0
 

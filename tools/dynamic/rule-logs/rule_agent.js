@@ -112,8 +112,7 @@ function record(kind, context) {
             (kind === 'unit' && config.unitSlot !== null && unitSlot !== config.unitSlot)) { count.filtered++; return; }
         // Pin to the first matching object and rule, not every unit/tick in the city.
         const key = game.toString() + ':' + unitSlot + ':' + stateIndex;
-        if (!targets[kind]) targets[kind] = key;
-        if (targets[kind] !== key) { count.filtered++; return; }
+        if (!config.allTargets && targets[kind] && targets[kind] !== key) { count.filtered++; return; }
         if (total >= config.maxRecords || queue.length >= 256) { dropped++; count.dropped++; return; }
         const row = {channel: 'simulation.rule', schema: 1, phase: 'log-entry', scope: kind,
             sequence: ++sequence, time: Date.now(), threadId: Process.getCurrentThreadId(),
@@ -127,7 +126,13 @@ function record(kind, context) {
             const owner = kind === 'global' ? game.add(0x478) : vector(game.add(0x554), 0x380, unitSlot);
             return ruleMapping(game, owner, stateIndex, kind);
         });
+        if (kind === 'unit') {
+            read('unitEntryIndex', () => vector(game.add(0x554), 0x380, unitSlot).readS32());
+            read('unitEntryId', () => '0x' + vector(game.add(0x554), 0x380, unitSlot).add(0x0C).readU32().toString(16).padStart(8, '0'));
+        }
+        if (kind === 'unit' && config.unitEntryId != null && row.unitEntryId !== ('0x' + config.unitEntryId.toString(16).padStart(8, '0'))) { count.filtered++; return; }
         if (config.ruleId != null && (!row.mapping || row.mapping.ruleId !== config.ruleId)) { count.filtered++; return; }
+        if (!targets[kind]) targets[kind] = key;
         if (kind === 'global') {
             read('applyCount', () => vector(game.add(0x520), 0x2c, stateIndex).add(0x1c).readS32());
             if (row.mapping) read('ruleDefinition', () => globalDefinition(row.mapping));

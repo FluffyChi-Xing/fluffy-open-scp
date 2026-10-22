@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const {readFileSync} = require('node:fs');
 const {join} = require('node:path');
 
-function harness(ops = [[5, 0, 1]], unitMode = false, requireInputPositive = false) {
+function harness(ops = [[5, 0, 1]], unitMode = false, requireInputPositive = false, resourceId = null) {
   const mem = new Map(), batches = [];
   function ptr(n) {
     n = Number(n) >>> 0;
@@ -17,7 +17,7 @@ function harness(ops = [[5, 0, 1]], unitMode = false, requireInputPositive = fal
   const ctx = {Process: {getModuleByName: () => ({base: ptr(0x400000)}), getCurrentThreadId: () => 1},
     rpc: {exports: {}}, send: b => batches.push(b), clearInterval() {}};
   vm.createContext(ctx); vm.runInContext(readFileSync(join(__dirname, 'effects_agent.js'), 'utf8'), ctx);
-  vm.runInContext(`config={ruleId:null,resourceId:null,unitSlot:null,maxRecords:10,requireInputPositive:${requireInputPositive ? 'true' : 'false'}};stopped=false;for(const n of ['globalRun','unitRun','applyOps','binFind'])channels[n]={hits:0,accepted:0,filtered:0,dropped:0,errors:0}`, ctx);
+  vm.runInContext(`config={ruleId:null,resourceId:${resourceId},unitSlot:null,unitEntryId:null,maxRecords:10,requireInputPositive:${requireInputPositive ? 'true' : 'false'}};stopped=false;for(const n of ['globalRun','unitRun','applyOps','binFind'])channels[n]={hits:0,accepted:0,filtered:0,dropped:0,errors:0}`, ctx);
   function enter(name, args, ecx, ret = 0) {
     const stack = 0x9000 + (name === 'applyOps' ? 0x100 : name === 'binFind' ? 0x200 : 0);
     mem.set(stack, ret); args.forEach((a,i) => mem.set(stack + 4 + i * 4, a));
@@ -26,7 +26,7 @@ function harness(ops = [[5, 0, 1]], unitMode = false, requireInputPositive = fal
   }
   function leave(name, call, result=1) { ctx.call=call;ctx.rv=ptr(result);vm.runInContext(`callbacks.${name}.leave.call(call,rv)`,ctx); }
   const game=0x10000,unit=0x7000,bins=unitMode ? unit+0x210 : game+0x478;
-  mem.set(game+0x554,unit);mem.set(game+0x558,unit+0x380);
+  mem.set(game+0x554,unit);mem.set(game+0x558,unit+0x380);mem.set(unit+0x0c,0x700c);
   mem.set(0x2000,0xc2181f55); mem.set(game+0x17a0,100);
   mem.set(0x3000,ops.length);mem.set(0x3004,0x4000);
   ops.forEach((op,i)=>op.forEach((v,j)=>mem.set(0x4000+i*12+j*4,v)));
@@ -86,4 +86,23 @@ test('unit consumption scope filters zero-input production rules',()=>{
 test('unit consumption scope accepts a positive-input operation',()=>{
   const h=harness([[5,2,1]],true,true);h.lookup();h.mem.set(0x5004,9);const row=h.finish();
   assert.equal(row.resourceOwner,'unit-local');assert.equal(row.operations[0].input,2);assert.equal(row.operations[0].delta,-1);
+});
+test('resource filter retains preceding lookups so the selected resource is not assigned another bin',()=>{
+  const h=harness([[6,0,2],[5,0,1]],true,false,5);
+  h.lookup();h.mem.set(0x5004,12);h.lookup();h.mem.set(0x5004,13);
+  const row=h.finish();
+  assert.deepEqual(Array.from(row.operations,o=>[o.ordinal,o.resourceId,o.delta]),[[0,'0x00000006',2],[1,'0x00000005',1]]);
+  assert.equal(row.readErrors.length,0);
+});
+test('garbage condition followed by three companion updates retains all lookup ordinals',()=>{
+  const h=harness([[5,0,-1],[6,10,0],[7,0,2],[8,0,3]],true,false,5);
+  h.lookup();h.mem.set(0x5004,0);h.lookup();h.mem.set(0x5004,2);h.lookup();h.mem.set(0x5004,5);
+  const row=h.finish();
+  assert.equal(row.operations[0].status,'not-mutated-range-condition');
+  assert.deepEqual(Array.from(row.operations.slice(1),o=>o.delta),[-10,2,3]);
+  assert.equal(row.readErrors.length,0);
+});
+test('resource filter rejects an update with no matching resource',()=>{
+  const h=harness([[6,0,2]],true,false,5);h.lookup();
+  assert.equal(h.finish(),undefined);
 });
