@@ -38,7 +38,7 @@ cargo run -p probes --release --example <名称> -- <参数...>
 | [`effect/`] | Swarm / 特效 | 5 |
 | [`zone/`] | 分区颜色与图标 | 4 |
 | [`registry/`] | sc-registry 注册表查询 | 3 |
-| [`runtime/`] | 游戏运行时注入 / 日志（python） | 2 |
+| [`runtime/`] | 游戏运行时注入 / 进程外读取 / 离线对拍（python） | 13（另4个测试文件） |
 
 ## 迁移来源与改名
 
@@ -375,3 +375,13 @@ cargo run -p probes --release --example <名称> -- <参数...>
 
 - [`package_loader_probe`]（package_loader_probe.py）：复现 SimCity 包加载器的静态证据（只读 PE，--disassemble 需 capstone）。
 - [`rule_logging_probe`]（rule_logging_probe.py）：从零售 PE 复现有界 rule-logging 证据（纯静态读取）。
+
+- `runtime/unit_rule_resource_bridge.py`：只读解码ERZ的UnitRule资源前缀/fromBinOps，对拍小学与水泵日志；不支持完整规则写回。
+- `runtime/school_rule_schedule.py`：离线解码小学规则的 SimInfo、Property 专用化与周期配置，对齐已保存日志；不连接游戏进程，引用图不等于运行时启用清单。
+- `runtime/school_timed_watch.py`：进程外只读采集小学资源、实时周期时钟、核心规则调度状态；允许事件规则数组正常扩展，核心身份变化即停止。配套 `analyze_school_timed_watch.py` 离线分析。
+- `runtime/analyze_school_dawn.py`：只读已保存快照与安装版ERZ，展开全部bin变化（含ExtraWorker/Paused），给出前后样本时间边界、资源操作候选及源文件SHA-256；不连接游戏，候选不等于实际执行。
+- `runtime/compare_worker_mod.py`：解析已解包社区Mod的人员查询与加法公式，对照小学单实例快照；不执行Mod脚本，明确connectedUnits与单实例的口径差异。
+- `runtime/capture_lock.py`：注入采集入口共用的Windows命名互斥锁，覆盖attach到detach；相关测试不访问游戏。
+- `runtime/inspect_crash_dump.py`：离线解析x86 minidump、模块、异常和栈候选，不把栈扫描当作完整调用栈。
+- `runtime/rule_log_volume.py`、`runtime/unit_entry_inventory.py`：有界的日志量级与UnitEntry身份注入采集，使用共享锁。
+- `runtime/school_resource_watch.py`：进程外只读资源快照；`analyze_school_timed_watch.py`支持按tick窗口离线分析，并保留窗口前一帧的变化参照。
