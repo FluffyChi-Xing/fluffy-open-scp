@@ -3,6 +3,8 @@ import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
+import FEmpty from "@/components/extensions/FEmpty.vue";
+import { Switch } from "@/components/ui/switch";
 import { isTauri, tauriApi } from "@/api";
 import type { SemanticCard } from "@/api/tauri";
 import {
@@ -271,6 +273,15 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 
     <!-- 载具/小人卡：列表 / 3D 切换 -->
     <template v-else-if="card.kind === 'vehicle'">
+      <FEmpty
+        v-if="!card.models.length"
+        variant="compact"
+        icon-name="CarFront"
+        status="warning"
+        :title="$t('package.card.vehicleEmptyTitle')"
+        :desc="$t('package.card.vehicleEmptyDesc')"
+      />
+      <template v-else>
       <div class="view-toggle">
         <button
           type="button"
@@ -283,14 +294,18 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
           :disabled="!card.models.length"
           @click="show3d = true"
         >{{ $t("package.card.view3d") }}</button>
-        <label class="texture-toggle"><input v-model="textured" type="checkbox" />{{ $t("package.card.vehicleTextures") }}</label>
+        <label class="texture-toggle"><Switch v-model="textured" :aria-label="$t('package.card.vehicleTextures')" />{{ $t("package.card.vehicleTextures") }}</label>
       </div>
-
       <div v-if="show3d" class="vehicle-3d">
         <FSpinner v-if="meshState === 'loading'" size="sm" :label="$t('common.loading')" />
-        <p v-else-if="meshState === 'error' || !meshObjs.length" class="card-empty">
-          {{ $t("package.card.meshUnavailable") }}
-        </p>
+        <FEmpty
+          v-else-if="meshState === 'error' || !meshObjs.length"
+          variant="compact"
+          icon-name="CarFront"
+          status="warning"
+          :title="$t('package.card.meshUnavailableTitle')"
+          :desc="$t('package.card.meshUnavailable')"
+        />
         <MeshPreviewView
           v-else-if="meshObjs.length"
           :obj-base64s="meshObjs"
@@ -352,6 +367,7 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
           </ul>
         </section>
       </div>
+      </template>
     </template>
 
     <!-- 道路卡 -->
