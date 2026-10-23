@@ -4722,6 +4722,12 @@ fn decode_decal_entry_rgba(
             Err(message) => DecalImageData::failed(index, message, None),
         };
     };
+    if type_id == RW4_MODEL_TYPE {
+        return match decode_lot_surface_png(package, manager, raster_key) {
+            Ok((png_base64, _)) => DecalImageData { index, error: None, width: None, height: None, png_base64: Some(png_base64) },
+            Err(message) => DecalImageData::failed(index, message, None),
+        };
+    }
     if type_id != RASTER_IMAGE_TYPE {
         return DecalImageData::failed(
             index,
