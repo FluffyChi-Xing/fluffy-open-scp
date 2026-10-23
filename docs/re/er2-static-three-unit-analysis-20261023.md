@@ -68,6 +68,132 @@ OmegaCo 属性本身还给出了 `Oil`、`Ore`、`Processor` 的资源引用，�
 
 同样，静态规则没有把某个资源 ID直接标成 Omega 成品。原油、原矿与隐藏双缓冲之间存在明确的规则操作，但目前只能确认生产链的结构，不能从静态系数计算 Omega 每小时产量或原油/原矿配比。
 
+## ArgScript 语法节选与二进制解析的对应关系
+
+下面的代码块先说明发行版文本规则通常长什么样，再把本轮 AEB 中已经解码的资源操作翻译成接近作者视角的写法。医院、小学和 OmegaCo 的这些代码块都不是从发行版逐字恢复的原文：本轮只提取到了主规则库和 EP1 的 AEB 二进制，EP1 没有对应 AEC 文本。因此，代码块中的名称是已确认的资源符号或 `0x...` 规则 ID，带“重建”标记的行只表达二进制语义。
+
+### 基本语法
+
+仓库中实际提取到的 AEC 文本使用以下几类结构：
+
+```er2
+unitRule SomeUnitRule
+    local SomeResource in 1
+    local SomeOtherResource out 1
+    global CityCounter out !CityCounter@global
+    applyCount 1
+    onSuccess SomeUnitRule_Next
+    onFail SomeUnitRule_Stop
+end
+```
+
+`unitRule` 是规则块，后面的 `local`、`nearby`、`map`、`global` 是资源查找作用域；`in` 表示输入/消耗条件，`out` 表示写入。`applyCount` 控制一次规则允许应用的次数，`onSuccess`、`onFail` 和 `chain` 连接控制流，`!Name@scope` 表示从另一个作用域读取动态数量。编译后，这些行不再保留原始名称，而是进入 UnitRule 的资源前缀和 `fromBinOps` 数组。
+
+二进制解码结果可以按下面的方式阅读：
+
+```text
+local   (resourceId, input, output)
+fromBinOps(sourceScope, sourceResourceId,
+           targetScope, targetOperation, writeMode)
+```
+
+例如 `(0x96CF3B07, 3, 3)` 是“原矿操作的输入和输出字段都为 3”，属于检查/配额推进候选；它不能直接翻译成“消费 3 单位”。`writeMode=2` 表示目标操作的基础输出会被来源 bin 的动态数量替换，这就是 `out !SomeResource@scope` 在编译规则中的一个常见落点。
+
+### 医院：等待室动态数量与治疗写入
+
+医院 bundle `0x61C1B2DF` 的 UnitRule 数组是 `0x84040876`、`0x480E93D6`、`0xF900A7CC`。其中 `0x84040876` 的语义可写成：
+
+```er2
+# 重建节选：不是发行版原文
+unitRule 0x84040876
+    nearby 0xECCD9036 out !WaitingRoom@local
+    # fromBinOps: scope0 WaitingRoom(0x2903C3D3)
+    #             -> scope1 operation0, writeMode=2
+end
+```
+
+这里 `WaitingRoom` 的运行时索引是 `5756`，所以静态的 `999999` 不是实际治疗数量。它只是目标操作的基础值，运行时由等待室 bin 覆盖。医院运行时规则 `0x581CE1E0` 还实际写入 `SickHealing`（索引 `2432`）：
+
+```er2
+# 由运行时 effect 与静态字段对拍得到的语义节选
+unitRule Hospital_Heal
+    local SickHealing out 1
+end
+```
+
+`0x480E93D6` 的 `(0x0DCC49E8, 1, 0)` 和 `0xF900A7CC` 的两个动态本地操作暂时没有正式符号，不能把它们直接改名为“病患清除”或“招聘”。
+
+### 小学：学生、席位和教育状态
+
+小学 `0x6C042367` bundle 的 10 条本地规则包含多个 `1→1` 状态维护操作。已确认的资源符号可以用作者视角表示为：
+
+```er2
+# 重建节选：资源名称来自符号表，控制流名称未知
+unitRule PrimarySchool_Study
+    local Student out 1
+    local TotalStudents out 1
+    local SpotsForKids in 1
+    local StudentStudyingE2 out 1
+end
+```
+
+本轮直接解码到的 `0x23E737BD` 更精确地是：
+
+```text
+local  0xC02F343B: (1, 1)
+local  SpotsForKids(0x05DAADA6): (1, 1)
+global 0xBE2C0EB3: (999999, 0)
+fromBinOps: scope3/global 0xBE2C0EB3 -> local operation0
+```
+
+因此上面的 `Student`/`StudentStudyingE2` 是教育链的语义概览，不是声称它们都由同一条 `0x23E737BD` 写入。小学事件规则 `0xBA80A329` 和 `0xE9EE9534` 还会同步操作 `SpotsForKids` 与另一组 global 资源；要把它们命名为“入学”“放学”仍需结合 Agent/Transport 日志。
+
+### OmegaCo：原油、原矿、处理器和扩展产线
+
+OmegaCo 的基础检查规则 `0x645B10E4` 可以翻译成：
+
+```er2
+# 重建节选：input=output=3，不能解释成净消费
+unitRule OmegaCo_CheckInputs
+    local Ore in 3
+    local Oil in 3
+    nearby 0x44F5CF6C in 1
+    nearby 0x7A19A243 in 1
+    nearby 0x18867D33 in 1
+end
+```
+
+对应 AEB 资源前缀是：
+
+```text
+local Ore(0x96CF3B07): (3, 3)
+local Oil(0xBF75DC04): (3, 3)
+nearby 0x44F5CF6C / 0x7A19A243 / 0x18867D33: (1, 1)
+```
+
+处理器候选规则 `0x88DE7AA1` 的二进制操作是：
+
+```er2
+# 重建节选：位于独立扩展 bundle
+unitRule OmegaCo_ProcessorExtension
+    local 0xB935C1D9 in 1
+    local Processor out 1
+end
+```
+
+这只能证明规则存在一个 Processor `0→1` 基础操作；`applyCount`、动态特化以及无人机成品资源还没有闭合，所以不能把它解释成“一个处理器生产一架无人机”。该规则所在的 bundle 与基础 OmegaCo bundle 分离，符合无人机线是扩展模块的证据。
+
+OmegaCo 还有两类由 `fromBinOps` 表达的缓冲/转运规则。以 `0x95BA3AA1` 为例：
+
+```text
+local  0x11A2434E: (999999, 999999)
+local  0x8E25D7FB: (999999, 0)
+fromBinOps: 0x11A2434E -> operation0,
+            0x8E25D7FB -> operation1(writeMode=2)
+```
+
+这类结构说明“基础输出会从另一个 bin 动态取得”，但没有给出资源的人类名称。隐藏资源、Omega 成品、原油/原矿实际消耗量必须继续用运行时的 `applyCount` 和 bin 前后快照确认。
+
 ## 与运行时观察的合并结论
 
 目前可以安全写入分析器的结论是：
