@@ -1683,6 +1683,23 @@ fn key_refs(file: &sc_properties::PropertyFile, hash: u32) -> Vec<SemanticKeyRef
     refs
 }
 
+fn key_refs_of_type(file: &sc_properties::PropertyFile, type_id: u32) -> Vec<SemanticKeyRef> {
+    let mut out = Vec::new();
+    for property in &file.values {
+        let mut scan = |value: &sc_properties::Value| {
+            if let sc_properties::Value::Key(key) = value {
+                if key.type_id == type_id { out.push(SemanticKeyRef { type_id: key.type_id, group_id: key.group, instance_id: key.instance }); }
+            }
+        };
+        match &property.kind {
+            sc_properties::Kind::Scalar(value) => scan(value),
+            sc_properties::Kind::Array(values) => values.iter().for_each(&mut scan),
+            sc_properties::Kind::Empty => {}
+        }
+    }
+    out
+}
+
 fn scalar_of<T>(
     file: &sc_properties::PropertyFile,
     hash: u32,
@@ -1822,7 +1839,10 @@ fn extract_semantic_card(
             SemanticCardData::Vehicle {
                 parent: first_key_ref(file, KEY_PARENT),
                 name: resolved_texts(file, AGENT_NAME, locale),
-                models: key_refs(file, AGENT_VEHICLE_MODELS),
+                models: {
+                    let declared = key_refs(file, AGENT_VEHICLE_MODELS);
+                    if declared.is_empty() { key_refs_of_type(file, RW4_MODEL_TYPE) } else { declared }
+                },
                 light_count: file
                     .get(AGENT_LIGHT_IDS)
                     .map(|p| match &p.kind {
@@ -5218,13 +5238,11 @@ pub async fn read_decal_dictionary(
                     "decal dictionary requires a property resource".into(),
                 ));
             }
-            if !sc_properties::is_decal_dictionary_group(tgi.group) {
-                return Err(PackageError::InvalidArgument(format!(
-                    "group {:08X} is not a decal atlas instance type",
-                    tgi.group
-                )));
-            }
             let dictionary = sc_properties::DecalDictionary::parse(data)?;
+            let property_file = sc_properties::PropertyFile::parse(data)?;
+            if !sc_properties::decal::looks_like_dictionary(&property_file) {
+                return Err(PackageError::InvalidArgument("property has no decal dictionary columns".into()));
+            }
             Ok(decal_dictionary_data(dictionary, package, manager))
         },
     )

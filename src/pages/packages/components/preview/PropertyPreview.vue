@@ -80,7 +80,8 @@ async function confirmBuildingTextureExport() {
 
 /** Decal Dictionary（贴花图鉴）用相册取代属性表。 */
 const isDecalDictionary = computed(() =>
-  isDecalAtlasGroup(props.preview.tgi.group),
+  isDecalAtlasGroup(props.preview.tgi.group) ||
+  props.preview.semantic?.id === "decal-atlas",
 );
 /** 命中专属预览卡家族（后端 extract_semantic_card）。 */
 const semanticCard = computed(() => props.preview.card ?? null);

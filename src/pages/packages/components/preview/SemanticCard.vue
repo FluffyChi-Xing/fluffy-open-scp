@@ -134,6 +134,8 @@ const show3d = ref(false);
 const activeModelIndex = ref(0);
 const modelMenuOpen = ref(false);
 const meshObjs = ref<string[]>([]);
+const texturePngs = ref<string[]>([]);
+const textured = ref(false);
 const meshState = ref<"idle" | "loading" | "ready" | "error">("idle");
 
 watch([show3d, activeModelIndex], async ([on, index]) => {
@@ -147,6 +149,7 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
   }
   meshState.value = "loading";
   meshObjs.value = [];
+  texturePngs.value = [];
   try {
     const tgi = {
       typeId: model.typeId,
@@ -170,6 +173,11 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
     meshObjs.value = details
       .map((d) => d.mesh?.objBase64)
       .filter((obj): obj is string => !!obj);
+    if (textured.value) {
+      const textureSections = preview.sections.filter((s) => s.typeCode === 0x20_003);
+      const textures = await Promise.all(textureSections.map((s) => tauriApi.packages.readRw4Section(props.packageId, tgi, s.number)));
+      texturePngs.value = textures.map((d) => d.texture?.pngBase64).filter((v): v is string => !!v);
+    }
     meshState.value = meshObjs.value.length ? "ready" : "error";
   } catch {
     meshObjs.value = [];
@@ -180,6 +188,8 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
 function selectModel(index: number) {
   activeModelIndex.value = index;
 }
+
+watch(textured, () => { if (show3d.value) void (async () => { const index = activeModelIndex.value; show3d.value = false; await Promise.resolve(); show3d.value = true; activeModelIndex.value = index; })(); });
 </script>
 
 <template>
@@ -273,6 +283,7 @@ function selectModel(index: number) {
           :disabled="!card.models.length"
           @click="show3d = true"
         >{{ $t("package.card.view3d") }}</button>
+        <label class="texture-toggle"><input v-model="textured" type="checkbox" />{{ $t("package.card.vehicleTextures") }}</label>
       </div>
 
       <div v-if="show3d" class="vehicle-3d">
@@ -283,6 +294,8 @@ function selectModel(index: number) {
         <MeshPreviewView
           v-else-if="meshObjs.length"
           :obj-base64s="meshObjs"
+          :texture-png-base64s="texturePngs"
+          :textured="textured"
           class="vehicle-mesh"
         />
         <FDropdown

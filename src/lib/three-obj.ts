@@ -12,6 +12,7 @@ export function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
 /** 解析 RW4 导出的 OBJ 文本为白模 Object3D（共享 MeshStandardMaterial，补算缺失法线）。 */
 export async function parseObjModel(
   objBase64: string,
+  texturePngBase64?: string,
 ): Promise<ThreeNamespace.Object3D> {
   const THREE = await import("three");
   const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
@@ -23,6 +24,12 @@ export async function parseObjModel(
     metalness: 0.12,
     side: THREE.DoubleSide,
   });
+  if (texturePngBase64) {
+    const loader = new THREE.TextureLoader();
+    material.map = loader.load(`data:image/png;base64,${texturePngBase64}`);
+    material.map.colorSpace = THREE.SRGBColorSpace;
+    material.needsUpdate = true;
+  }
   object.traverse((child) => {
     const mesh = child as ThreeNamespace.Mesh;
     if (mesh.isMesh) {

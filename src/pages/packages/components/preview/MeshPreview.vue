@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { ThreeViewer } from "@/lib/three-viewer";
 import { parseObjModel } from "@/lib/three-obj";
 
-const props = defineProps<{ objBase64s: string[] }>();
+const props = defineProps<{ objBase64s: string[]; texturePngBase64s?: string[]; textured?: boolean }>();
 const { t } = useI18n();
 const container = shallowRef<HTMLElement | null>(null);
 const error = ref("");
@@ -20,7 +20,8 @@ async function rebuild() {
   error.value = "";
   try {
     // 多网格（同一模型的多个 MESH 节）并行解析后合并进同一场景
-    const objects = await Promise.all(props.objBase64s.map(parseObjModel));
+    const texture = props.textured ? props.texturePngBase64s?.[0] : undefined;
+    const objects = await Promise.all(props.objBase64s.map((obj) => parseObjModel(obj, texture)));
     instance.setModel(objects);
     instance.setKeyLight(lightAzimuth.value, lightElevation.value);
     ready.value = true;
@@ -47,7 +48,7 @@ watch([lightAzimuth, lightElevation], () => {
   viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
 watch(
-  () => props.objBase64s,
+  () => [props.objBase64s, props.texturePngBase64s, props.textured],
   () => void rebuild(),
   { deep: true },
 );
