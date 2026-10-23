@@ -188,7 +188,14 @@ export class ThreeViewer {
     objects: ThreeNamespace.Object3D = this.scene,
   ): Promise<void> {
     if (this.disposed || isStale()) return;
-    const compilation = this.renderer.compileAsync(objects, this.camera, this.scene).catch(() => {});
+    // compileAsync in recent Three versions keeps an internal promise polling
+    // materialProperties.currentProgram. Rebuilding a Property Editor scene can
+    // dispose that material during the poll, producing an uncaught `isReady` read.
+    // The synchronous compiler is safe across scene generations; the watchdog and
+    // timeout still keep the rebuild responsive on slow drivers.
+    const compilation = Promise.resolve().then(() => {
+      if (!this.disposed && !isStale()) this.renderer.compile(objects, this.camera, this.scene);
+    }).catch(() => {});
     this.pendingCompilations.add(compilation);
     void compilation.finally(() => this.pendingCompilations.delete(compilation));
     let settled = false;

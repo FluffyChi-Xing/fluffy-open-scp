@@ -992,6 +992,8 @@ fn resource_page(
 /// （"Greyscale Map (16-bit)"），且不含 EP1 类型。
 pub(crate) fn verified_type_name(type_id: u32) -> Option<&'static str> {
     Some(match type_id {
+        0x0806_8AEB => "ER2 Binary Rule File",
+        0x0806_8AEC => "ER2 Rule File",
         // 内容实证：游戏状态机脚本纯文本（官方 viewer=viewText）
         0x024A_0E52 => "State Script",
         // 官方注释：grey/color field maps (terrain)

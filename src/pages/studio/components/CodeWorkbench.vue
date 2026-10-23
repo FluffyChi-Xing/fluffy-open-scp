@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import FCode from "@/components/ui/FCode.vue";
+import MonacoEditor from "@/components/ui/MonacoEditor.vue";
 import FPopover from "@/components/ui/FPopover.vue";
 import {
   Resizable,
@@ -605,12 +605,12 @@ watch(
               {{ viewerError }}
             </p>
 
-            <!-- 文本族：FCode 高亮（shiki 语法映射，txt 纯文本） -->
+            <!-- 文本族：Monaco 语义高亮（ER2 关键字由自定义语言注册） -->
             <div
               v-else-if="viewerKind === 'text' && textDoc"
               class="text-viewer"
             >
-              <FCode :code="textContent" :lang="textLanguage" />
+              <MonacoEditor :value="textContent" :language="textLanguage" />
             </div>
 
             <!-- 图片：棋盘底 + 缩放 -->

@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import FCode from "@/components/ui/FCode.vue";
+import MonacoEditor from "@/components/ui/MonacoEditor.vue";
 import { isTauri, tauriApi } from "@/api";
 import { foldBinaryRuns } from "@/lib/text-decode";
 import type { TextPreview } from "@/api/tauri";
 
 /**
  * 文本预览：全量渲染，杜绝虚拟滚动窗口数学带来的截断类问题。
- * - ≤1MB：FCode 整篇 shiki 高亮；
- * - >1MB：原生 <pre> 完整渲染（浏览器原生滚动），关闭高亮保渲染流畅；
+ * - 使用 Monaco 渲染源码，ER2 注册专用关键字高亮；
  * - 超 8MB 首段（read_resource_text 上限）：滚动接近尾部自动经
  *   read_resource_text_range 续读 2MB（utf-16le 与无句柄场景除外），
  *   追加分段按二进制段折叠口径处理。
@@ -17,7 +16,6 @@ const props = defineProps<{ preview: TextPreview }>();
 
 const CHUNK_BYTES = 2 * 1024 * 1024;
 /** 高亮渲染的字符数上限（超出转纯文本整篇渲染）。 */
-const FCODE_MAX_CHARS = 1_000_000;
 /** 距已加载尾部多少字符触发续读。 */
 const LOAD_MORE_CHARS = 40_000;
 
@@ -54,9 +52,6 @@ const lines = computed(() =>
   fullContent.value.length ? fullContent.value.split("\n") : [],
 );
 
-const useHighlight = computed(
-  () => fullContent.value.length <= FCODE_MAX_CHARS,
-);
 
 onBeforeUnmount(() => {
   if (copiedTimer) clearTimeout(copiedTimer);
@@ -136,13 +131,8 @@ async function loadMore() {
         {{ copied ? $t("package.copied") : $t("package.copy") }}
       </button>
     </div>
-    <FCode
-      v-if="useHighlight"
-      :code="fullContent"
-      :lang="preview.language"
-    />
-    <div v-else class="text-plain-wrap" @scroll.passive="onPlainScroll">
-      <pre class="text-plain"><code>{{ fullContent }}</code></pre>
+    <div class="text-editor-wrap" @scroll.passive="onPlainScroll">
+      <MonacoEditor :value="fullContent" :language="preview.language" />
     </div>
   </div>
 </template>

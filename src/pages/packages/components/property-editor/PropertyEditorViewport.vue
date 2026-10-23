@@ -1775,6 +1775,15 @@ async function assembleScene(
         Math.hypot(projector.size.x, projector.size.y, projector.size.z) / 2;
       const geometries: ThreeNamespace.BufferGeometry[] = [];
       for (const proxy of proxies) {
+        const position = proxy.geometry.getAttribute("position");
+        // Malformed community TGI data can contain NaN/Infinity vertices. Three's
+        // bounding sphere then becomes NaN and breaks the whole render pass.
+        if (!position || !Number.isFinite(position.count) || position.count === 0) continue;
+        let validPosition = true;
+        for (let i = 0; i < position.count && validPosition; i += 1) {
+          validPosition = Number.isFinite(position.getX(i)) && Number.isFinite(position.getY(i)) && Number.isFinite(position.getZ(i));
+        }
+        if (!validPosition) continue;
         // 包围球粗筛：盒外建筑网格跳过逐三角形裁剪
         if (!proxy.geometry.boundingSphere) {
           proxy.geometry.computeBoundingSphere();
@@ -1793,6 +1802,14 @@ async function assembleScene(
           projector.orientation,
           projector.size,
         );
+        const clippedPosition = clipped.getAttribute("position");
+        if (clippedPosition) {
+          let finite = true;
+          for (let i = 0; i < clippedPosition.count && finite; i += 1) {
+            finite = Number.isFinite(clippedPosition.getX(i)) && Number.isFinite(clippedPosition.getY(i)) && Number.isFinite(clippedPosition.getZ(i));
+          }
+          if (!finite) { clipped.dispose(); continue; }
+        }
         if ((clipped.attributes.position?.count ?? 0) === 0) continue;
         // 破洞族不按法线过滤：引擎延迟投影对体积盒内**所有**表面逐像素
         // 落贴花——破洞后露出的楼板/内墙/远侧内壁正是游戏"内部结构"的

@@ -35,6 +35,9 @@ const TEXT_EXTENSIONS = new Set([
   "sh",
   "log",
   "toml",
+  "hlsl",
+  "fx",
+  "er2",
 ]);
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif", "bmp"]);
@@ -77,6 +80,9 @@ const SHIKI_LANGUAGE_BY_EXTENSION: Record<string, string> = {
   yml: "yaml",
   toml: "toml",
   ini: "ini",
+  hlsl: "cpp",
+  fx: "cpp",
+  er2: "er2",
 };
 
 export function shikiLanguageOf(name: string): string {
