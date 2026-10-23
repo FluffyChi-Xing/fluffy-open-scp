@@ -1599,6 +1599,16 @@ const messages = {
         valueColumn: "值",
         moreInHex: "其余 {count} 条见 hex 视图。",
       },
+      ecogame: {
+        decompressed: "解压后",
+        version: "版本",
+        environment: "环境",
+        maps: "地图",
+        units: "单位",
+        curves: "路径曲线",
+        tableWords: "状态表原始字段",
+        partial: "这是有界结构预览；未知字段以原始大端字显示。",
+      },
     },
     showcase: {
       eyebrow: "设计系统展示",
@@ -3474,6 +3484,16 @@ const messages = {
         hashColumn: "Hash",
         valueColumn: "Value",
         moreInHex: "{count} more entries are visible in the hex view.",
+      },
+      ecogame: {
+        decompressed: "decompressed",
+        version: "Version",
+        environment: "Environment",
+        maps: "Maps",
+        units: "Units",
+        curves: "Path curves",
+        tableWords: "Raw state table fields",
+        partial: "This is a bounded structural preview; unknown fields are shown as raw big-endian words.",
       },
     },
     showcase: {

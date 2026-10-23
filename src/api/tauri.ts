@@ -205,6 +205,20 @@ export interface ErzResourceData {
   /** 规则记录布局是否受支持（false = 旧补丁布局，仅文件头）。 */
   layoutSupported: boolean;
 }
+export interface EcoGameResourceData {
+  typeName: string;
+  totalLength: number;
+  compressed: boolean;
+  decompressedLength: number | null;
+  version: number | null;
+  environment: number | null;
+  mapCount: number | null;
+  unitCount: number | null;
+  curveCount: number | null;
+  tableWords: number[];
+  exact: boolean;
+  error: string | null;
+}
 export interface ResolvedResourceName {
   tgi: Tgi;
   displayName: string | null;
@@ -789,6 +803,12 @@ export interface ErzPreview extends PreviewData {
   tgi?: Tgi;
   data: ErzResourceData;
 }
+export interface EcoGamePreview extends PreviewData {
+  kind: "ecogame";
+  packageId: number;
+  tgi: Tgi;
+  data: EcoGameResourceData;
+}
 export interface FontPreview extends PreviewData {
   kind: "font";
   packageId?: number;
@@ -807,6 +827,7 @@ export type ResourcePreview =
   | PropertyPreview
   | Rw4Preview
   | ErzPreview
+  | EcoGamePreview
   | FontPreview;
 export interface ResourceAnnotation {
   id: number;

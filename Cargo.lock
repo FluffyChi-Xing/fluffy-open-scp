@@ -951,6 +951,7 @@ version = "0.10.1"
 dependencies = [
  "base64 0.22.1",
  "dbpf",
+ "flate2",
  "image",
  "rw4",
  "sc-exporter",

@@ -27,4 +27,5 @@ thiserror.workspace = true
 sha2 = "0.10"
 base64.workspace = true
 image.workspace = true
+flate2 = "1"
 tauri-plugin-dialog = "^2"

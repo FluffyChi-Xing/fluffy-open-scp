@@ -971,6 +971,14 @@ async function tauriPreview(
       return { kind: "hex", ...base };
     }
   }
+  if (resource.tgi.typeId === 0x08068aed || resource.tgi.typeId === 0x08068aee) {
+    try {
+      const data = await tauriApi.packages.readEcoGamePreview(packageId, resource.tgi);
+      return { kind: "ecogame", packageId, tgi: resource.tgi, ...base, data };
+    } catch {
+      return { kind: "hex", ...base };
+    }
+  }
   const language = textPreviewLanguage(resource.tgi.typeId);
   if (language || looksLikeText(Uint8Array.from(bytes.bytes))) {
     // 全量字节经 ipc::Response 原始通道（4KB 仅用于嗅探，见 read_resource_text）

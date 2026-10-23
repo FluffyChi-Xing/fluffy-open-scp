@@ -53,6 +53,7 @@ import {
   type DecalImageData,
   type Rw4ResourceData,
   type ErzResourceData,
+  type EcoGameResourceData,
   type Rw4SectionDetail,
   type CaptureBaselineResponse,
   type ChangesetDetailResponse,
@@ -427,6 +428,10 @@ export const tauriApi = {
       }),
     readErzPreview: (packageId: number, tgi: Tgi) =>
       command<ErzResourceData>("read_erz_preview", {
+        request: { packageId, tgi },
+      }),
+    readEcoGamePreview: (packageId: number, tgi: Tgi) =>
+      command<EcoGameResourceData>("read_ecogame_preview", {
         request: { packageId, tgi },
       }),
     readRw4Section: (packageId: number, tgi: Tgi, number: number) =>

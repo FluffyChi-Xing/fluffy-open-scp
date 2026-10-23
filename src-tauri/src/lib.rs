@@ -61,7 +61,7 @@ use package_browser::{list_game_tree, list_package_files};
 use pe_schema::build_pe_schema;
 use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
-    read_decal_dictionary, read_decal_images, read_erz_preview, read_image_preview,
+    read_decal_dictionary, read_decal_images, read_erz_preview, read_ecogame_preview, read_image_preview,
     read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
     read_sim_parts,
     list_model_catalog,
@@ -198,7 +198,7 @@ pub fn run() {
             create_lot_overlay,
             read_decal_dictionary,
             read_decal_images,
-            read_erz_preview,
+            read_erz_preview, read_ecogame_preview,
             read_rw4_preview,
             read_rw4_section_detail,
             read_wwise_bank,

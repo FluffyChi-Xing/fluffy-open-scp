@@ -1932,6 +1932,23 @@ pub struct ErzPreviewData {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EcoGamePreviewData {
+    pub type_name: String,
+    pub total_length: usize,
+    pub compressed: bool,
+    pub decompressed_length: Option<usize>,
+    pub version: Option<u32>,
+    pub environment: Option<u32>,
+    pub map_count: Option<usize>,
+    pub unit_count: Option<usize>,
+    pub curve_count: Option<usize>,
+    pub table_words: Vec<u32>,
+    pub exact: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ErzConstantDto {
     pub hash: u32,
     pub value: u32,
@@ -4914,7 +4931,14 @@ fn find_decal_raster(
     key: Option<sc_properties::Key>,
 ) -> Option<(Vec<u8>, u32, String)> {
     let key = key?;
-    find_resource_across_packages_named(package, manager, key.instance, &[RASTER_IMAGE_TYPE])
+    // Decal dictionaries contain both raw Raster resources and RW4 texture
+    // wrappers (the latter are used by the hole/interior atlas family).
+    find_resource_across_packages_named(
+        package,
+        manager,
+        key.instance,
+        &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE],
+    )
 }
 
 fn decal_raster_status(
@@ -4933,9 +4957,32 @@ fn decal_raster_status(
         reason: Some(reason),
     };
 
+    let rw4_key = key.clone();
     let Some((bytes, type_id, source)) = find_decal_raster(package, manager, key) else {
         return missing("raster resource not found".into());
     };
+    if type_id == RW4_MODEL_TYPE {
+        return match rw4_key.and_then(|k| decode_lot_surface_png(package, manager, k).ok()) {
+            Some(_) => DecalRasterStatus {
+                found: true,
+                width: None,
+                height: None,
+                pixel_format: None,
+                decodable: true,
+                source_package: Some(source),
+                reason: None,
+            },
+            None => DecalRasterStatus {
+                found: true,
+                width: None,
+                height: None,
+                pixel_format: None,
+                decodable: false,
+                source_package: Some(source),
+                reason: Some("RW4 decal texture could not be decoded".into()),
+            },
+        };
+    }
     let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
         return DecalRasterStatus {
             found: true,
@@ -5280,6 +5327,50 @@ pub async fn read_erz_preview(
         },
     )
     .await
+}
+
+/// EcoGame state resources are gzip-wrapped region snapshots. The state table
+/// companion is currently undocumented; expose a bounded big-endian word view
+/// so it is useful for inspection without pretending unknown fields are known.
+#[tauri::command]
+pub async fn read_ecogame_preview(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<EcoGamePreviewData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(manager, store, request.package_id, request.tgi.clone(), move |data, _, _, _| {
+        let is_state = request.tgi.type_id == 0x0806_8AED;
+        let mut decompressed = Vec::new();
+        let compressed = data.starts_with(&[0x1f, 0x8b]);
+        if is_state && compressed {
+            flate2::read::GzDecoder::new(data).take(128 * 1024 * 1024 + 1)
+                .read_to_end(&mut decompressed).map_err(|e| PackageError::InvalidArgument(e.to_string()))?;
+        } else if is_state {
+            decompressed.extend_from_slice(data);
+        }
+        let mut out = EcoGamePreviewData {
+            type_name: if is_state { "EcoGame State Data".into() } else { "EcoGame State Table".into() },
+            total_length: data.len(), compressed, decompressed_length: None, version: None,
+            environment: None, map_count: None, unit_count: None, curve_count: None,
+            table_words: Vec::new(), exact: false, error: None,
+        };
+        if is_state {
+            out.decompressed_length = Some(decompressed.len());
+            match sc_properties::region_state::read_state(&decompressed) {
+                Ok(parsed) => {
+                    out.version = Some(parsed.version); out.environment = Some(parsed.environment);
+                    out.map_count = Some(parsed.maps.len()); out.unit_count = Some(parsed.units.len());
+                    out.curve_count = Some(parsed.curves.len()); out.exact = true;
+                }
+                Err(error) => out.error = Some(error),
+            }
+        } else {
+            out.table_words = data.chunks_exact(4).take(256).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])).collect();
+            out.exact = data.len() % 4 == 0;
+        }
+        Ok(out)
+    }).await
 }
 
 #[tauri::command]
