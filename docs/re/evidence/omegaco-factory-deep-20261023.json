@@ -1,0 +1,1719 @@
+{
+  "source": "tmp\\omegaco-deep-20261023\\consumption-60s\\trace.jsonl",
+  "records": 703,
+  "resourceSummary": {
+    "0x96cf3b07": {
+      "records": 114,
+      "delta": 35000,
+      "input": 300,
+      "output": 314,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x645b10e4",
+        "0xbcfc4767",
+        "0xf776e9fa"
+      ]
+    },
+    "0xbf75dc04": {
+      "records": 104,
+      "delta": 22550,
+      "input": 300,
+      "output": 304,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x645b10e4",
+        "0xed7cb6ea",
+        "0xf2c1a0fd"
+      ]
+    },
+    "0x14116eef": {
+      "records": 56,
+      "delta": 0,
+      "input": 28,
+      "output": 28,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x1c05b490",
+        "0x25752918"
+      ]
+    },
+    "0x7359d065": {
+      "records": 52,
+      "delta": 0,
+      "input": 26,
+      "output": 26,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xdc785750",
+        "0xe8ddc8da"
+      ]
+    },
+    "0xbb6a484f": {
+      "records": 50,
+      "delta": -139523,
+      "input": 50,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x1c05b490",
+        "0xad7b0dde"
+      ]
+    },
+    "0xb1731656": {
+      "records": 46,
+      "delta": -46,
+      "input": 46,
+      "output": 0,
+      "slots": [
+        63,
+        170,
+        485,
+        561
+      ],
+      "rules": [
+        "0x5ba3eddb"
+      ]
+    },
+    "0x450b19c9": {
+      "records": 46,
+      "delta": -745329,
+      "input": 46,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6657ff32",
+        "0xdc785750"
+      ]
+    },
+    "0x415586b3": {
+      "records": 42,
+      "delta": -263250,
+      "input": 263250,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6001451b"
+      ]
+    },
+    "0xd3c17458": {
+      "records": 42,
+      "delta": -394450,
+      "input": 394450,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6001451b"
+      ]
+    },
+    "0x77f787d7": {
+      "records": 42,
+      "delta": -353950,
+      "input": 42,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x4858795f"
+      ]
+    },
+    "0x25973b51": {
+      "records": 42,
+      "delta": -1749430,
+      "input": 1749430,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xde7f2c2f"
+      ]
+    },
+    "0xae6ddfed": {
+      "records": 40,
+      "delta": -350950,
+      "input": 350950,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x5eb21683"
+      ]
+    },
+    "0xb7401c68": {
+      "records": 37,
+      "delta": -222750,
+      "input": 37,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x478b4e70"
+      ]
+    },
+    "0xc8120d0a": {
+      "records": 32,
+      "delta": -197500,
+      "input": 197500,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6c96bc34"
+      ]
+    },
+    "0x67344592": {
+      "records": 23,
+      "delta": 0,
+      "input": 129,
+      "output": 108,
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ],
+      "rules": [
+        "0x474c0a4a",
+        "0x89f6cf5f",
+        "0x8a4df07d",
+        "0x9117bbe5",
+        "0xa88b0d6c",
+        "0xc55275e0",
+        "0xf849198a"
+      ]
+    },
+    "0x1fd156b6": {
+      "records": 17,
+      "delta": -6,
+      "input": 17,
+      "output": 14,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x758a7319",
+        "0xb5a0d2dc",
+        "0xdb745613",
+        "0xf521e0f8"
+      ]
+    },
+    "0x6d39bbca": {
+      "records": 15,
+      "delta": -231121,
+      "input": 276971,
+      "output": 45850,
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ],
+      "rules": [
+        "0x50b9377a",
+        "0x9de84a67",
+        "0xa77279d8",
+        "0xe7f0b545"
+      ]
+    },
+    "0x2cfe923b": {
+      "records": 14,
+      "delta": -69430,
+      "input": 14,
+      "output": 0,
+      "slots": [
+        70,
+        170
+      ],
+      "rules": [
+        "0x2b6a230b"
+      ]
+    },
+    "0x7b5637c5": {
+      "records": 13,
+      "delta": -11,
+      "input": 74,
+      "output": 74,
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ],
+      "rules": [
+        "0x474c0a4a",
+        "0x48feb94d",
+        "0x4caf41f5",
+        "0x8ff25533",
+        "0xcf317cdc"
+      ]
+    },
+    "0x11a2434e": {
+      "records": 12,
+      "delta": 199680,
+      "input": 1996800,
+      "output": 2196480,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x95ba3aa1"
+      ]
+    },
+    "0x8e25d7fb": {
+      "records": 12,
+      "delta": -2196480,
+      "input": 2196480,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x95ba3aa1"
+      ]
+    },
+    "0xf40144d9": {
+      "records": 12,
+      "delta": 8320,
+      "input": 83200,
+      "output": 91520,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x5e403840"
+      ]
+    },
+    "0xce415e6a": {
+      "records": 12,
+      "delta": -91520,
+      "input": 91520,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x5e403840"
+      ]
+    },
+    "0x61bc0a40": {
+      "records": 12,
+      "delta": -231121,
+      "input": 2628,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ],
+      "rules": [
+        "0x9117bbe5",
+        "0xc55275e0",
+        "0xea72c2ab"
+      ]
+    },
+    "0x950d6372": {
+      "records": 12,
+      "delta": -15000,
+      "input": 12,
+      "output": 0,
+      "slots": [
+        70,
+        418,
+        485
+      ],
+      "rules": [
+        "0xf776e9fa"
+      ]
+    },
+    "0xe719c4a6": {
+      "records": 8,
+      "delta": -80,
+      "input": 6,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ],
+      "rules": [
+        "0x48feb94d",
+        "0x88ce4106",
+        "0xf849198a"
+      ]
+    },
+    "0x85c39038": {
+      "records": 7,
+      "delta": -57204,
+      "input": 7,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xaeb9294d"
+      ]
+    },
+    "0x9e3c3dfa": {
+      "records": 7,
+      "delta": -7056,
+      "input": 7056,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xd54f8b18"
+      ]
+    },
+    "0x8e8b4e10": {
+      "records": 7,
+      "delta": -66465,
+      "input": 66465,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xd51cb94c"
+      ]
+    },
+    "0xcb9e50b7": {
+      "records": 7,
+      "delta": -3,
+      "input": 6,
+      "output": 4,
+      "slots": [
+        63,
+        170,
+        418,
+        485
+      ],
+      "rules": [
+        "0x529c28f2",
+        "0x99a66118",
+        "0xb5a0d2dc",
+        "0xf521e0f8"
+      ]
+    },
+    "0x2260ed7b": {
+      "records": 6,
+      "delta": -6,
+      "input": 6,
+      "output": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x8400a26d",
+        "0x89658099",
+        "0xfb96a369"
+      ]
+    },
+    "0x2afeaa77": {
+      "records": 5,
+      "delta": -3,
+      "input": 4,
+      "output": 2,
+      "slots": [
+        63,
+        170,
+        418,
+        485
+      ],
+      "rules": [
+        "0x0953b885",
+        "0x99a66118",
+        "0xb5a0d2dc",
+        "0xf521e0f8"
+      ]
+    },
+    "0xe33cf2d2": {
+      "records": 4,
+      "delta": -4,
+      "input": 4,
+      "output": 0,
+      "slots": [
+        70,
+        170,
+        418,
+        485
+      ],
+      "rules": [
+        "0x087126b0",
+        "0x6278a0d8",
+        "0x7dc20a29"
+      ]
+    },
+    "0xcc64621b": {
+      "records": 4,
+      "delta": -40000,
+      "input": 4,
+      "output": 0,
+      "slots": [
+        70,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xbcfc4767",
+        "0xed7cb6ea"
+      ]
+    },
+    "0x1e14b6c2": {
+      "records": 3,
+      "delta": 0,
+      "input": 2,
+      "output": 2,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x276e0e22",
+        "0x7dc20a29",
+        "0xe43d9975"
+      ]
+    },
+    "0x073c2066": {
+      "records": 2,
+      "delta": 0,
+      "input": 0,
+      "output": -2,
+      "slots": [
+        70,
+        418
+      ],
+      "rules": [
+        "0x6278a0d8"
+      ]
+    },
+    "0x61ffd1b5": {
+      "records": 2,
+      "delta": -2550,
+      "input": 2,
+      "output": 0,
+      "slots": [
+        485
+      ],
+      "rules": [
+        "0xf2c1a0fd"
+      ]
+    },
+    "0x1c28703c": {
+      "records": 2,
+      "delta": -1,
+      "input": 2,
+      "output": -2,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x7dc20a29",
+        "0xeea2ef0b"
+      ]
+    },
+    "0xf5cc9dcc": {
+      "records": 2,
+      "delta": -1,
+      "input": 1,
+      "output": -1,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x276e0e22",
+        "0xfafa74b1"
+      ]
+    },
+    "0x1159ecd7": {
+      "records": 2,
+      "delta": 0,
+      "input": 1,
+      "output": 1,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x78121e31",
+        "0xfafa74b1"
+      ]
+    },
+    "0xaecac2db": {
+      "records": 2,
+      "delta": -5,
+      "input": 2,
+      "output": 0,
+      "slots": [
+        63,
+        485
+      ],
+      "rules": [
+        "0xf521e0f8"
+      ]
+    },
+    "0xb1731654": {
+      "records": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "slots": [
+        561
+      ],
+      "rules": [
+        "0x0e6bd62d"
+      ]
+    },
+    "0x6106b1cb": {
+      "records": 1,
+      "delta": -3,
+      "input": 1,
+      "output": 0,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x99a66118"
+      ]
+    },
+    "0x3462b642": {
+      "records": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x21265ed5"
+      ]
+    },
+    "0x7528ccd9": {
+      "records": 1,
+      "delta": -2,
+      "input": 2,
+      "output": 0,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x898ec006"
+      ]
+    },
+    "0x1c4571ec": {
+      "records": 1,
+      "delta": 0,
+      "input": 0,
+      "output": 0,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x898ec006"
+      ]
+    },
+    "0x1c4571ef": {
+      "records": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x898ec006"
+      ]
+    },
+    "0x1c4571ee": {
+      "records": 1,
+      "delta": 0,
+      "input": 0,
+      "output": 0,
+      "slots": [
+        170
+      ],
+      "rules": [
+        "0x898ec006"
+      ]
+    }
+  },
+  "ruleSummary": {
+    "0x645b10e4": {
+      "operations": 200,
+      "delta": 0,
+      "input": 600,
+      "output": 600,
+      "resources": [
+        "0x96cf3b07",
+        "0xbf75dc04"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x6001451b": {
+      "operations": 84,
+      "delta": -657700,
+      "input": 657700,
+      "output": 0,
+      "resources": [
+        "0x415586b3",
+        "0xd3c17458"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x1c05b490": {
+      "operations": 56,
+      "delta": 0,
+      "input": 28,
+      "output": 28,
+      "resources": [
+        "0x14116eef",
+        "0xbb6a484f"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xdc785750": {
+      "operations": 52,
+      "delta": 0,
+      "input": 26,
+      "output": 26,
+      "resources": [
+        "0x450b19c9",
+        "0x7359d065"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x5ba3eddb": {
+      "operations": 46,
+      "delta": -46,
+      "input": 46,
+      "output": 0,
+      "resources": [
+        "0xb1731656"
+      ],
+      "slots": [
+        63,
+        170,
+        485,
+        561
+      ]
+    },
+    "0x4858795f": {
+      "operations": 42,
+      "delta": -353950,
+      "input": 42,
+      "output": 0,
+      "resources": [
+        "0x77f787d7"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xde7f2c2f": {
+      "operations": 42,
+      "delta": -1749430,
+      "input": 1749430,
+      "output": 0,
+      "resources": [
+        "0x25973b51"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x5eb21683": {
+      "operations": 40,
+      "delta": -350950,
+      "input": 350950,
+      "output": 0,
+      "resources": [
+        "0xae6ddfed"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x478b4e70": {
+      "operations": 37,
+      "delta": -222750,
+      "input": 37,
+      "output": 0,
+      "resources": [
+        "0xb7401c68"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x6c96bc34": {
+      "operations": 32,
+      "delta": -197500,
+      "input": 197500,
+      "output": 0,
+      "resources": [
+        "0xc8120d0a"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x25752918": {
+      "operations": 28,
+      "delta": -54243,
+      "input": 28,
+      "output": 0,
+      "resources": [
+        "0x14116eef"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xe8ddc8da": {
+      "operations": 26,
+      "delta": -253394,
+      "input": 26,
+      "output": 0,
+      "resources": [
+        "0x7359d065"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x95ba3aa1": {
+      "operations": 24,
+      "delta": -1996800,
+      "input": 4193280,
+      "output": 2196480,
+      "resources": [
+        "0x11a2434e",
+        "0x8e25d7fb"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x5e403840": {
+      "operations": 24,
+      "delta": -83200,
+      "input": 174720,
+      "output": 91520,
+      "resources": [
+        "0xce415e6a",
+        "0xf40144d9"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xf776e9fa": {
+      "operations": 24,
+      "delta": 0,
+      "input": 12,
+      "output": 12,
+      "resources": [
+        "0x950d6372",
+        "0x96cf3b07"
+      ],
+      "slots": [
+        70,
+        418,
+        485
+      ]
+    },
+    "0xad7b0dde": {
+      "operations": 22,
+      "delta": -85280,
+      "input": 22,
+      "output": 0,
+      "resources": [
+        "0xbb6a484f"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x6657ff32": {
+      "operations": 20,
+      "delta": -491935,
+      "input": 20,
+      "output": 0,
+      "resources": [
+        "0x450b19c9"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0x2b6a230b": {
+      "operations": 14,
+      "delta": -69430,
+      "input": 14,
+      "output": 0,
+      "resources": [
+        "0x2cfe923b"
+      ],
+      "slots": [
+        70,
+        170
+      ]
+    },
+    "0xc55275e0": {
+      "operations": 8,
+      "delta": -129492,
+      "input": 1312,
+      "output": 4,
+      "resources": [
+        "0x61bc0a40",
+        "0x67344592"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0x9117bbe5": {
+      "operations": 8,
+      "delta": -100062,
+      "input": 1312,
+      "output": 4,
+      "resources": [
+        "0x61bc0a40",
+        "0x67344592"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0x474c0a4a": {
+      "operations": 8,
+      "delta": 0,
+      "input": 4,
+      "output": 4,
+      "resources": [
+        "0x67344592",
+        "0x7b5637c5"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0xf521e0f8": {
+      "operations": 8,
+      "delta": -20,
+      "input": 8,
+      "output": 0,
+      "resources": [
+        "0x1fd156b6",
+        "0x2afeaa77",
+        "0xaecac2db",
+        "0xcb9e50b7"
+      ],
+      "slots": [
+        63,
+        485
+      ]
+    },
+    "0x758a7319": {
+      "operations": 7,
+      "delta": 0,
+      "input": 7,
+      "output": 7,
+      "resources": [
+        "0x1fd156b6"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xaeb9294d": {
+      "operations": 7,
+      "delta": -57204,
+      "input": 7,
+      "output": 0,
+      "resources": [
+        "0x85c39038"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xdb745613": {
+      "operations": 7,
+      "delta": 0,
+      "input": 7,
+      "output": 7,
+      "resources": [
+        "0x1fd156b6"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xd54f8b18": {
+      "operations": 7,
+      "delta": -7056,
+      "input": 7056,
+      "output": 0,
+      "resources": [
+        "0x9e3c3dfa"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xd51cb94c": {
+      "operations": 7,
+      "delta": -66465,
+      "input": 66465,
+      "output": 0,
+      "resources": [
+        "0x8e8b4e10"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ]
+    },
+    "0xe7f0b545": {
+      "operations": 4,
+      "delta": 0,
+      "input": 26200,
+      "output": 26200,
+      "resources": [
+        "0x6d39bbca"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0x50b9377a": {
+      "operations": 4,
+      "delta": -131072,
+      "input": 131072,
+      "output": 0,
+      "resources": [
+        "0x6d39bbca"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0x9de84a67": {
+      "operations": 4,
+      "delta": -100049,
+      "input": 100049,
+      "output": 0,
+      "resources": [
+        "0x6d39bbca"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0xea72c2ab": {
+      "operations": 4,
+      "delta": -865,
+      "input": 4,
+      "output": 0,
+      "resources": [
+        "0x61bc0a40"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0x8a4df07d": {
+      "operations": 4,
+      "delta": -20,
+      "input": 20,
+      "output": 0,
+      "resources": [
+        "0x67344592"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0xa88b0d6c": {
+      "operations": 4,
+      "delta": -240,
+      "input": 4,
+      "output": 0,
+      "resources": [
+        "0x67344592"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0x88ce4106": {
+      "operations": 4,
+      "delta": -80,
+      "input": 4,
+      "output": 0,
+      "resources": [
+        "0xe719c4a6"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0xf849198a": {
+      "operations": 4,
+      "delta": 0,
+      "input": 100,
+      "output": 98,
+      "resources": [
+        "0x67344592",
+        "0xe719c4a6"
+      ],
+      "slots": [
+        63,
+        170
+      ]
+    },
+    "0x4caf41f5": {
+      "operations": 4,
+      "delta": 0,
+      "input": 40,
+      "output": 40,
+      "resources": [
+        "0x7b5637c5"
+      ],
+      "slots": [
+        63,
+        70,
+        170,
+        418
+      ]
+    },
+    "0x6278a0d8": {
+      "operations": 4,
+      "delta": -2,
+      "input": 2,
+      "output": -2,
+      "resources": [
+        "0x073c2066",
+        "0xe33cf2d2"
+      ],
+      "slots": [
+        70,
+        418
+      ]
+    },
+    "0x89658099": {
+      "operations": 4,
+      "delta": -4,
+      "input": 4,
+      "output": 0,
+      "resources": [
+        "0x2260ed7b"
+      ],
+      "slots": [
+        63,
+        70,
+        418,
+        561
+      ]
+    },
+    "0xf2c1a0fd": {
+      "operations": 4,
+      "delta": 0,
+      "input": 2,
+      "output": 2,
+      "resources": [
+        "0x61ffd1b5",
+        "0xbf75dc04"
+      ],
+      "slots": [
+        485
+      ]
+    },
+    "0xbcfc4767": {
+      "operations": 4,
+      "delta": 0,
+      "input": 2,
+      "output": 2,
+      "resources": [
+        "0x96cf3b07",
+        "0xcc64621b"
+      ],
+      "slots": [
+        70,
+        485
+      ]
+    },
+    "0x898ec006": {
+      "operations": 4,
+      "delta": -3,
+      "input": 3,
+      "output": 0,
+      "resources": [
+        "0x1c4571ec",
+        "0x1c4571ee",
+        "0x1c4571ef",
+        "0x7528ccd9"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x48feb94d": {
+      "operations": 4,
+      "delta": -192,
+      "input": 4,
+      "output": 2,
+      "resources": [
+        "0x7b5637c5",
+        "0xe719c4a6"
+      ],
+      "slots": [
+        63,
+        170
+      ]
+    },
+    "0xed7cb6ea": {
+      "operations": 4,
+      "delta": 0,
+      "input": 2,
+      "output": 2,
+      "resources": [
+        "0xbf75dc04",
+        "0xcc64621b"
+      ],
+      "slots": [
+        418,
+        561
+      ]
+    },
+    "0xa77279d8": {
+      "operations": 3,
+      "delta": 0,
+      "input": 19650,
+      "output": 19650,
+      "resources": [
+        "0x6d39bbca"
+      ],
+      "slots": [
+        70,
+        170,
+        418
+      ]
+    },
+    "0x7dc20a29": {
+      "operations": 3,
+      "delta": 0,
+      "input": 2,
+      "output": -1,
+      "resources": [
+        "0x1c28703c",
+        "0x1e14b6c2",
+        "0xe33cf2d2"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x99a66118": {
+      "operations": 3,
+      "delta": 3,
+      "input": 1,
+      "output": 2,
+      "resources": [
+        "0x2afeaa77",
+        "0x6106b1cb",
+        "0xcb9e50b7"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x529c28f2": {
+      "operations": 3,
+      "delta": 0,
+      "input": 3,
+      "output": 3,
+      "resources": [
+        "0xcb9e50b7"
+      ],
+      "slots": [
+        63,
+        418,
+        485
+      ]
+    },
+    "0xb5a0d2dc": {
+      "operations": 3,
+      "delta": -3,
+      "input": 3,
+      "output": 0,
+      "resources": [
+        "0x1fd156b6",
+        "0x2afeaa77",
+        "0xcb9e50b7"
+      ],
+      "slots": [
+        418
+      ]
+    },
+    "0xcf317cdc": {
+      "operations": 2,
+      "delta": -188,
+      "input": 2,
+      "output": 0,
+      "resources": [
+        "0x7b5637c5"
+      ],
+      "slots": [
+        63,
+        170
+      ]
+    },
+    "0xfafa74b1": {
+      "operations": 2,
+      "delta": 0,
+      "input": 1,
+      "output": 1,
+      "resources": [
+        "0x1159ecd7",
+        "0xf5cc9dcc"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x276e0e22": {
+      "operations": 2,
+      "delta": -1,
+      "input": 1,
+      "output": -1,
+      "resources": [
+        "0x1e14b6c2",
+        "0xf5cc9dcc"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x0e6bd62d": {
+      "operations": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0xb1731654"
+      ],
+      "slots": [
+        561
+      ]
+    },
+    "0xfb96a369": {
+      "operations": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0x2260ed7b"
+      ],
+      "slots": [
+        485
+      ]
+    },
+    "0x087126b0": {
+      "operations": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0xe33cf2d2"
+      ],
+      "slots": [
+        485
+      ]
+    },
+    "0x8ff25533": {
+      "operations": 1,
+      "delta": 0,
+      "input": 30,
+      "output": 30,
+      "resources": [
+        "0x7b5637c5"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x89f6cf5f": {
+      "operations": 1,
+      "delta": -73,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0x67344592"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x0953b885": {
+      "operations": 1,
+      "delta": 0,
+      "input": 1,
+      "output": 1,
+      "resources": [
+        "0x2afeaa77"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0xe43d9975": {
+      "operations": 1,
+      "delta": 0,
+      "input": 1,
+      "output": 1,
+      "resources": [
+        "0x1e14b6c2"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x78121e31": {
+      "operations": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0x1159ecd7"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0xeea2ef0b": {
+      "operations": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0x1c28703c"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x21265ed5": {
+      "operations": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0x3462b642"
+      ],
+      "slots": [
+        170
+      ]
+    },
+    "0x8400a26d": {
+      "operations": 1,
+      "delta": -1,
+      "input": 1,
+      "output": 0,
+      "resources": [
+        "0x2260ed7b"
+      ],
+      "slots": [
+        170
+      ]
+    }
+  },
+  "interpretation": {
+    "confirmedUtilityConsumption": {
+      "water": "0x9e3c3dfa, delta -1008 per observed event",
+      "power": "0x8e8b4e10, delta -9495 per observed event"
+    },
+    "confirmedRefillOrTransfer": {
+      "rawOre": "0x96cf3b07, positive writes to capacity 60000",
+      "crudeOil": "0xbf75dc04, positive writes to capacity 60000",
+      "processor": "0xbee1c73e, no non-zero delta in this unit-consumption window"
+    },
+    "unresolved": [
+      "0x415586b3",
+      "0xd3c17458",
+      "0x11a2434e",
+      "0x8e25d7fb",
+      "0xf40144d9",
+      "0xce415e6a"
+    ]
+  }
+}
