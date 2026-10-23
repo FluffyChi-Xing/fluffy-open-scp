@@ -66,7 +66,7 @@ use package_service::{
     read_sim_parts,
     list_model_catalog,
     read_resource_bytes, read_resource_data, read_resource_text, read_resource_text_range,
-    read_rw4_preview, read_rw4_section_detail,
+    read_rw4_material_textures, read_rw4_preview, read_rw4_section_detail,
     read_wwise_bank, release_prop_model_packages, resolve_name, resolve_names,
     resolve_prop_models, write_export_file,
 };
@@ -200,6 +200,7 @@ pub fn run() {
             read_decal_images,
             read_erz_preview, read_ecogame_preview,
             read_rw4_preview,
+            read_rw4_material_textures,
             read_rw4_section_detail,
             read_wwise_bank,
             resolve_name,

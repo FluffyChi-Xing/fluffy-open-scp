@@ -31,6 +31,7 @@ import type {
   ResolvedResourceName,
   ResolvedPropModel as PropModelResolution,
   Rw4ResourceData,
+  Rw4MaterialTexturesData,
   ErzResourceData,
   Rw4SectionDetail,
   Tgi,
@@ -126,6 +127,7 @@ export interface OpenScpDataSource {
     channel?: RasterChannel,
   ): Promise<RasterPreviewData>;
   readRw4Preview(packageId: number, tgi: Tgi): Promise<Rw4ResourceData>;
+  readRw4MaterialTextures(packageId: number, tgi: Tgi): Promise<Rw4MaterialTexturesData>;
   /** ERZ（0x08068AEB 编译规则库）结构摘要。 */
   readErzPreview(packageId: number, tgi: Tgi): Promise<ErzResourceData>;
   readRw4Section(
@@ -197,6 +199,7 @@ function tauriDataSource(): OpenScpDataSource {
     readResourceTextRange: tauriApi.packages.readResourceTextRange,
     readRasterPreview: tauriApi.packages.readRasterPreview,
     readRw4Preview: tauriApi.packages.readRw4Preview,
+    readRw4MaterialTextures: tauriApi.packages.readRw4MaterialTextures,
     readErzPreview: tauriApi.packages.readErzPreview,
     readRw4Section: tauriApi.packages.readRw4Section,
     previewResource: tauriPreview,
@@ -572,6 +575,9 @@ function mockDataSource(): OpenScpDataSource {
     },
     async readRw4Preview(_packageId, _tgi) {
       return { fileType: "Model", sections: mockRw4Sections };
+    },
+    async readRw4MaterialTextures() {
+      return { pngBase64s: [] };
     },
     async readLotModelMeshes(_packageId, _tgi) {
       // 浏览器 demo 模式：合法空容器 v2（0 网格、0 材质）；GLB 构建在 Rust 导出器侧

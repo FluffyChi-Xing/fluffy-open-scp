@@ -52,6 +52,7 @@ import {
   type DecalDictionaryData,
   type DecalImageData,
   type Rw4ResourceData,
+  type Rw4MaterialTexturesData,
   type ErzResourceData,
   type EcoGameResourceData,
   type Rw4SectionDetail,
@@ -424,6 +425,10 @@ export const tauriApi = {
       }),
     readRw4Preview: (packageId: number, tgi: Tgi) =>
       command<Rw4ResourceData>("read_rw4_preview", {
+        request: { packageId, tgi },
+      }),
+    readRw4MaterialTextures: (packageId: number, tgi: Tgi) =>
+      command<Rw4MaterialTexturesData>("read_rw4_material_textures", {
         request: { packageId, tgi },
       }),
     readErzPreview: (packageId: number, tgi: Tgi) =>

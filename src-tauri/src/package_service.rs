@@ -2017,6 +2017,12 @@ pub struct Rw4SectionDetail {
     pub hex_dump: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4MaterialTexturesDto {
+    pub png_base64s: Vec<String>,
+}
+
 /// property 条目值文本化（code 工作台资源预览共用）。
 pub(crate) fn property_value_text(kind: &sc_properties::Kind) -> (String, Option<usize>) {
     match kind {
@@ -5301,6 +5307,60 @@ pub async fn read_rw4_preview(
         request.package_id,
         request.tgi,
         |data, _, _, _| rw4_sections(data),
+    )
+    .await
+}
+
+/// Resolve vehicle/prop material diffuse textures, including textures referenced
+/// by material slots in other loaded packages.
+#[tauri::command]
+pub async fn read_rw4_material_textures(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<Rw4MaterialTexturesDto, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        |data, package, manager, _| {
+            let file = rw4::Rw4File::parse(data)?;
+            let mut pngs = Vec::new();
+            for binding in file.decode_mesh_material_bindings(data) {
+                let resources = resolve_material_resources(
+                    &file,
+                    data,
+                    package,
+                    manager,
+                    binding.material_section,
+                );
+                if let Some(png) = resources.slot0_png.or(resources.base_color_png) {
+                    use base64::{engine::general_purpose::STANDARD, Engine as _};
+                    pngs.push(STANDARD.encode(png));
+                }
+            }
+            // Some prop materials have no decoded bindings but keep diffuse maps
+            // directly in the model file.
+            if pngs.is_empty() {
+                for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
+                    if let Ok(texture) = file.decode_texture(data, section.number) {
+                        if let Ok(rgba) = texture.decode_top_mip_rgba() {
+                            if let Ok(png) = encode_rgba_png_bytes(
+                                u32::from(texture.width),
+                                u32::from(texture.height),
+                                rgba,
+                            ) {
+                                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                                pngs.push(STANDARD.encode(png));
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Rw4MaterialTexturesDto { png_base64s: pngs })
+        },
     )
     .await
 }

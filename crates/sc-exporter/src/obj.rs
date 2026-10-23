@@ -41,7 +41,14 @@ pub fn export_obj(mesh: &DecodedMesh) -> String {
     for t in &mesh.triangles {
         // C# 仅跳过 i == j；其余原样输出
         if t[0] != t[1] {
-            out.push_str(&format!("f  {} {} {}\r\n", t[0] + 1, t[1] + 1, t[2] + 1));
+            // Keep position, UV and normal indices aligned so a loaded diffuse
+            // texture can actually be sampled by Three.js OBJLoader.
+            out.push_str(&format!(
+                "f  {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}\r\n",
+                t[0] + 1,
+                t[1] + 1,
+                t[2] + 1
+            ));
             faces += 1;
         }
     }

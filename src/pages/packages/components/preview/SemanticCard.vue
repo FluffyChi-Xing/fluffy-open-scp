@@ -176,9 +176,11 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
       .map((d) => d.mesh?.objBase64)
       .filter((obj): obj is string => !!obj);
     if (textured.value) {
-      const textureSections = preview.sections.filter((s) => s.typeCode === 0x20_003);
-      const textures = await Promise.all(textureSections.map((s) => tauriApi.packages.readRw4Section(props.packageId, tgi, s.number)));
-      texturePngs.value = textures.map((d) => d.texture?.pngBase64).filter((v): v is string => !!v);
+      const textures = await tauriApi.packages.readRw4MaterialTextures(
+        props.packageId,
+        tgi,
+      );
+      texturePngs.value = textures.pngBase64s;
     }
     meshState.value = meshObjs.value.length ? "ready" : "error";
   } catch {
@@ -596,8 +598,10 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
   font-size: 11px;
 }
 .view-toggle {
+  align-items: center;
   display: flex;
-  gap: 4px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .view-toggle button {
   background: var(--surface-elevated);
@@ -615,6 +619,14 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 .view-toggle button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+.texture-toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  line-height: 1;
+  margin-left: 4px;
+  white-space: nowrap;
 }
 .vehicle-3d {
   display: flex;

@@ -20,8 +20,15 @@ async function rebuild() {
   error.value = "";
   try {
     // 多网格（同一模型的多个 MESH 节）并行解析后合并进同一场景
-    const texture = props.textured ? props.texturePngBase64s?.[0] : undefined;
-    const objects = await Promise.all(props.objBase64s.map((obj) => parseObjModel(obj, texture)));
+    const objects = await Promise.all(
+      props.objBase64s.map((obj, index) => {
+        const textures = props.texturePngBase64s ?? [];
+        const texture = props.textured
+          ? textures[index] ?? textures[0]
+          : undefined;
+        return parseObjModel(obj, texture);
+      }),
+    );
     instance.setModel(objects);
     instance.setKeyLight(lightAzimuth.value, lightElevation.value);
     ready.value = true;
