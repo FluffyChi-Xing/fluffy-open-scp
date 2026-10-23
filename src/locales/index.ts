@@ -1527,6 +1527,11 @@ const messages = {
       exportLotRefined: "导出精细渲染 Lot",
       exportMeshWhite: "导出白模 (GLB)",
       exportMeshTextured: "导出带贴图模型 (GLB)",
+      exportBuildingTextures: "导出建筑六槽贴图",
+      exportBuildingTexturesHint: "选择一个文件夹，应用会写入每个材质的 slot0–5 文件和清单。",
+      exportDirectory: "导出目录",
+      exportDirectoryPlaceholder: "输入或选择导出目录",
+      chooseDirectory: "选择文件夹",
       reliefHint:
         "Top 层浮雕：slot5 alpha 高度图作凹凸贴图（引擎 reliefMap 视差的近似）",
       clearSearch: "清除搜索",
@@ -3397,6 +3402,11 @@ const messages = {
       exportLotRefined: "Export refined-render lot",
       exportMeshWhite: "Export white model (GLB)",
       exportMeshTextured: "Export textured model (GLB)",
+      exportBuildingTextures: "Export building six-slot textures",
+      exportBuildingTexturesHint: "Choose a folder and the app will write each material's slot0–5 files and manifest.",
+      exportDirectory: "Export folder",
+      exportDirectoryPlaceholder: "Enter or choose an export folder",
+      chooseDirectory: "Choose folder",
       reliefHint:
         "Top-layer relief: slot5 alpha height as bump map (approximation of the engine reliefMap parallax)",
       clearSearch: "Clear search",
