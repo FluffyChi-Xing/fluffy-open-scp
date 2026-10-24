@@ -142,7 +142,7 @@ async function simPartTemplate(
   return template;
 }
 
-/** unit id → 数字 seed（FNV-1）：同一刷新点恒同一小人。 */
+/** unit id → 数字 seed（FNV-1）：同一 UnitLocation 的预览结果稳定。 */
 function simSeed(unit: LotUnitDto): number {
   const id = unitId(unit);
   let hash = 0x811c9dc5;
@@ -151,6 +151,38 @@ function simSeed(unit: LotUnitDto): number {
     hash = Math.imul(hash, 0x01000193);
   }
   return hash >>> 0;
+}
+
+/**
+ * Property Editor 的人口预览只表达“这个锚点可能暂时有几名 Agent”，不
+ * 伪造游戏运行时的精确人数。游戏里的 UnitLocation 只是命名锚点，是否
+ * 激活、由哪条 ER2/Transport 规则创建 Agent，以及 Agent 是否组队，都在
+ * 模拟运行时决定。这里用稳定 seed 做一次可复现的蒙特卡洛样本：未激活
+ * 的点交给调用方显示锚点，激活的点显示 2~5 名外观各异的示意 Agent。
+ */
+export interface SpawnerPopulationPreview {
+  seed: number;
+  count: number;
+  /** 仅供 UI/渲染标记使用，不代表游戏中的 spawn chance 字段。 */
+  active: boolean;
+}
+
+const SPAWNER_PREVIEW_ACTIVE_CHANCE = 0.62;
+const SPAWNER_PREVIEW_MIN_COUNT = 2;
+const SPAWNER_PREVIEW_COUNT_RANGE = 4;
+
+export function getSpawnerPopulationPreview(
+  unit: LotUnitDto,
+): SpawnerPopulationPreview {
+  const seed = simSeed(unit) ^ 0x5f37_59df;
+  const rand = mulberry32(seed);
+  if (rand() >= SPAWNER_PREVIEW_ACTIVE_CHANCE) {
+    return { seed, count: 0, active: false };
+  }
+  const count =
+    SPAWNER_PREVIEW_MIN_COUNT +
+    Math.floor(rand() * SPAWNER_PREVIEW_COUNT_RANGE);
+  return { seed, count, active: true };
 }
 
 function mulberry32(seed: number): () => number {
@@ -167,17 +199,20 @@ function mulberry32(seed: number): () => number {
  * 组装一个小人：按 seed 随机 身体（3 型）+ 头（20 型），outfit 调色板以
  * 衣服色相 tint 近似（引擎真值是调色板纹理换列，本地未定位）。头部挂
  * 身体颈点（body maxZ 与 head minZ 对齐，留 0.04 重叠）。
- * 返回 null = 资产缺席（调用方退占位人形）。
+ * `seedSalt` 用于同一 UnitLocation 的多 Agent 预览，确保每个成员的
+ * body/head 组合稳定且互不相同。返回 null = 资产缺席。
  */
 export async function getSimFigure(
   THREE: typeof ThreeNamespace,
   parts: SimPart[],
   unit: LotUnitDto,
+  seedSalt = 0,
 ): Promise<ThreeNamespace.Object3D | null> {
   const bodies = parts.filter((part) => part.kind === "body");
   const heads = parts.filter((part) => part.kind === "head");
   if (!bodies.length || !heads.length) return null;
-  const rand = mulberry32(simSeed(unit));
+  const saltedSeed = simSeed(unit) ^ Math.imul(seedSalt + 1, 0x9e37_79b9);
+  const rand = mulberry32(saltedSeed >>> 0);
   const body = bodies[Math.floor(rand() * bodies.length) % bodies.length];
   const head = heads[Math.floor(rand() * heads.length) % heads.length];
   const [bodyTemplate, headTemplate] = await Promise.all([
@@ -222,5 +257,38 @@ export async function getSimFigure(
   // 叶卡口径同树：不做投影（alpha 不进深度 pass）
   bodyMesh.receiveShadow = true;
   headMesh.receiveShadow = true;
+  return group;
+}
+
+/**
+ * 构造一个 UnitLocation 的人群示意。根节点不带 Unit transform，调用方
+ * 负责把整个群体放到建筑的局部锚点；成员在局部 XZ 平面散开并轻微转向，
+ * 这样同一点不会再退化成重叠的单个固定小人。
+ */
+export async function getSimPopulation(
+  THREE: typeof ThreeNamespace,
+  parts: SimPart[],
+  unit: LotUnitDto,
+): Promise<ThreeNamespace.Group | null> {
+  const preview = getSpawnerPopulationPreview(unit);
+  if (!preview.active || preview.count <= 0) return null;
+
+  const group = new THREE.Group();
+  const rand = mulberry32(preview.seed ^ 0x243f_6a88);
+  let rendered = 0;
+  for (let index = 0; index < preview.count; index += 1) {
+    const figure = await getSimFigure(THREE, parts, unit, index);
+    if (!figure) continue;
+    const angle = rand() * Math.PI * 2;
+    const radius = 0.28 + rand() * 0.58;
+    figure.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+    figure.rotation.y = angle + Math.PI + (rand() - 0.5) * 0.7;
+    figure.userData.populationMember = index;
+    group.add(figure);
+    rendered += 1;
+  }
+  if (!rendered) return null;
+  group.userData.previewPopulation = rendered;
+  group.userData.previewPopulationMode = "runtime-sample";
   return group;
 }
