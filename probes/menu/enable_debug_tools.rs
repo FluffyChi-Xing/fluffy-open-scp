@@ -10,7 +10,7 @@
 //! 用法：
 //!   cargo run -p probes --release --example enable_debug_tools -- \
 //!       <SimCity_Game.package> <out.package> [--cat=0xAC12C904] [--ui=0xAC12C904]
-//!       [--action=0x1943CB96] [--start=110] [--dry]
+//!       [--action=0x1943CB96] [--shell] [--shell-package=<package>] [--start=110] [--dry]
 
 use dbpf::{OverlayEntry, Package};
 use sc_properties::debug_tools;
@@ -25,12 +25,17 @@ const CONTROL_TITLE_OLD: u32 = 0x7C9A_0071; // 「宿舍」
 const CONTROL_TITLE_NEW: u32 = 0x64EC_016B; // 「商務學院」
 /// 标题键（对照实验用）。
 const HASH_TITLE: u32 = 0x0A09_F5FA;
+const HASH_DESC: u32 = 0x0A09_F5FB;
 /// 诊断用：工具实现 action。默认不修改；`--action=0x1943CB96` 可把
 /// 三个 debug 条目的 action 临时映射到已存在的 cToolPlop，用于区分
 /// “菜单覆盖未命中”与“原 action 没有 native factory”。
 const HASH_ACTION: u32 = 0x08F6_72C7;
 const HASH_UI_POSITION: u32 = 0x0DC1_E3E0;
 const ROAD_CATEGORY: u32 = 0xAC12_C904;
+/// 已在道路菜单 100 槽显示的完整条目，作为诊断菜单外壳。
+const SHELL_TOOL: u32 = 0x85A8_C58D;
+const SHELL_TITLE: u32 = 0x7C06_37AC;
+const SHELL_DESC: u32 = 0x0E0A_7F0B;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -44,11 +49,16 @@ fn main() {
     let ui = parse_hex(&args, "--ui=").unwrap_or(ROAD_CATEGORY);
     let action = parse_hex(&args, "--action=");
     let start = parse_i32(&args, "--start=").unwrap_or(110);
+    let shell = args.iter().any(|a| a == "--shell");
+    let shell_package_path = args
+        .iter()
+        .find_map(|a| a.strip_prefix("--shell-package="));
     if !dry && out_path.is_none() {
         panic!("需要输出路径，或加 --dry");
     }
 
     let package = Package::open(base_path).expect("open base package");
+    let shell_package = shell_package_path.map(|path| Package::open(path).expect("open shell package"));
     let (entries, patches) =
         debug_tools::build_debug_tools_overlay(&package, cat, ui).expect("build overlay");
     for p in &patches {
@@ -67,7 +77,57 @@ fn main() {
 
     // ---- 阳性对照：把「宿舍」标题改指到「商務學院」的串 id ----
     let mut entries = entries;
-    if let Some(action) = action {
+    if shell {
+        let source = shell_package.as_ref().unwrap_or(&package);
+        let shell_entry = source
+            .entries()
+            .iter()
+            .find(|e| {
+                e.id.type_id == PROPERTY_TYPE
+                    && e.id.group == TOOL_GROUP
+                    && e.id.instance == SHELL_TOOL
+            })
+            .expect("road shell tool 0x85A8C58D missing from base package");
+        let shell_data = source.read(shell_entry).expect("read road shell tool");
+        let text_ids = [
+            (0xA2AA_4268, 0xE0ED_1D4A, 0x6BA4_FCCB),
+            (0x53B7_7423, 0x5B14_202F, 0x9586_FDE0),
+            (0xB65E_1F2E, 0x0D64_8E40, 0x0D64_8E41),
+        ];
+        for entry in entries.iter_mut() {
+            let Some((target, title, desc)) = text_ids
+                .iter()
+                .find(|(target, ..)| *target == entry.id.instance)
+            else {
+                continue;
+            };
+            let index = match *target {
+                0xA2AA_4268 => 0,
+                0x53B7_7423 => 1,
+                0xB65E_1F2E => 2,
+                _ => unreachable!(),
+            };
+            let mut patched = debug_tools::patch_property_refs(
+                &shell_data,
+                &[(HASH_TITLE, SHELL_TITLE, *title)],
+                |f, h| debug_tools::text_instances(f, h),
+            )
+            .expect("patch shell title");
+            patched = debug_tools::patch_property_refs(
+                &patched,
+                &[(HASH_DESC, SHELL_DESC, *desc)],
+                |f, h| debug_tools::text_instances(f, h),
+            )
+            .expect("patch shell description");
+            entry.data = debug_tools::patch_property_i32(
+                &patched,
+                HASH_UI_POSITION,
+                100,
+                start + index,
+            )
+            .expect("patch shell menu position");
+        }
+    } else if let Some(action) = action {
         for entry in entries.iter_mut() {
             if !debug_tools::DEBUG_TOOLS.contains(&entry.id.instance) {
                 continue;

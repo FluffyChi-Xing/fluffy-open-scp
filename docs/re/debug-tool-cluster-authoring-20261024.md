@@ -78,6 +78,12 @@ uiPosition   = 110 / 111 / 112
 实例”这条链；这不是 authoring 工具实现，也不会把 cToolPlop 伪装成 Unit
 Prop/Snap/Connecter 编辑器。
 
+道路菜单实测后发现，三个原始 debug Property 只有 8 个字段，没有完整图标状态
+和 hard gate，游戏 UI 会在菜单组装时将其过滤。当前包的诊断模式因此复制已经能
+显示的 `0x85A8C58D` 道路条目作为外壳，再替换三个 debug 条目的标题、描述和
+位置。`enable_debug_tools` 通过 `--shell --shell-package=<OpenSCP-ui-overlay.package>`
+生成该模式；外壳只用于验证可见性，不代表已经恢复原生 authoring 行为。
+
 早期使用现有的 `sc_properties::debug_tools` 补丁逻辑生成过教育分类的独立覆盖包：
 
 ```text
