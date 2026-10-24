@@ -67,7 +67,7 @@ overlay 中验证过的同级菜单字段：
 
 ```text
 Parent       = 0xAF042E9A
-分类         = 0xAC12C904
+工具分类     = 0xC710B6E9
 UI 分类      = 0xAC12C904
 uiPosition   = 110 / 111 / 112
 ```
@@ -98,7 +98,7 @@ D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP-
 
 ```text
 Parent       BE5744E0 -> AF042E9A
-菜单分类      3D752D6A -> AC12C904
+工具分类      3D752D6A -> C710B6E9
 UI 子分类     A2A33338 -> AC12C904
 菜单位置      100/200/300 -> 110/111/112
 ```
