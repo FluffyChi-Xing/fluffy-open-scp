@@ -114,16 +114,15 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
     // GLSL 适配（2026-10-05 路由修复后首次真正编译此链）：HLSL `static const`
     // 从 uniform 取值在 GLSL ES 非法（const 要求编译期常量）→ 降为 float；
     // 整数字面量 2/1 提升为 2.0/1.0（GLSL ES 无 float×int 隐式转换）。
-    // 内景 UV（2026-10-05 四轮）：原版两行
+    // 内景 UV（2026-10-05 四轮）：decalInteriorMap 使用
     //   lerp(tfp.xy, tfp.xy*0.5, tfp.z*0.5+0.5) * -0.5 + 0.5
-    // 依赖场景内真实几何的深度梯度（破洞后露出的楼板）；PE 建筑是空壳 →
-    // 替换为 compose 注入的 holeParallaxUv（视线射线-盒底平面求交，直视
-    // 等价原版、斜视产生窗户式视差）。其余行保持逐字。
+    // 选取破洞贴图相位；holeInteriorUv 同时复刻 building4 interiorMap()
+    // 的眼睛方向盒体求交，让空壳模型也保留随视角变化的内部结构。
     ("decalLightInteriorMap",
      "float kSunContributionAmount = decalMaterialData[0].x;\n\
       float kLightAmount = decalMaterialData[0].y;\n\
       float3 textureFloatPosition = In.texcoord<t0>.xyz;\n\
-      float2 interiorUv = holeParallaxUv(textureFloatPosition);\n\
+      float2 interiorUv = holeInteriorUv(textureFloatPosition);\n\
       interiorUv = interiorUv * texXform.xy + texXform.zw;\n\
       float sunMod = saturate(dot(sunSky.mSunDir.xyz, bumpNormal.xyz));\n\
       float3 sunColor = sunMod * sunSky.mSunColor.rgb * shadow;\n\

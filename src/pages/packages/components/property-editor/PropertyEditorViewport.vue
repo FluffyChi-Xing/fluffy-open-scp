@@ -1848,18 +1848,15 @@ async function assembleScene(
             side: THREE.FrontSide,
             // 破洞族：盒参数供 VS 计算 tfp.z 真实进深（立面 −1 全尺寸
             // 内景、破洞后深部结构 +1 中心收缩 = 游戏"内部结构"机制）。
-            // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）。
-            // halfXY/depthM/invRot 供 PS 视线视差（holeParallaxUv）。
+            // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）；
+            // PS 按游戏 decalInteriorMap + building4 interiorMap 盒体求交，
+            // 使用 tfp.z 和视线方向生成随相机变化的假内景。
             holeBox:
               family === "hole" || route.surface === "plane"
                 ? {
                     origin: frame.origin,
                     axisZ: frame.axisZ,
                     invDepth: 1 / Math.max(depthZ, 0.01),
-                    halfXY: [frame.sizeX / 2, frame.sizeY / 2],
-                    depthM: depthZ,
-                    // lot→贴花系旋转 = 基矩阵转置（行主序 set：行 = 各基
-                    // 向量，正交基下转置即逆）
                     invRot: new THREE.Matrix3().set(
                       frame.axisX.x, frame.axisX.y, frame.axisX.z,
                       frame.axisY.x, frame.axisY.y, frame.axisY.z,
@@ -1885,9 +1882,6 @@ async function assembleScene(
       }
       group.add(container);
       decalStats.projected += 1;
-      // 破洞视线视差：每帧把相机位置变换到 mesh 局部（= lot 局部）空间写
-      // 入 uHoleCamLot（container 的 matrixWorld = lot 世界矩阵 × 组链上
-      // 相消的 unit 变换；onBeforeRender 在 updateMatrixWorld 之后触发）。
       if (family === "hole" && ENGINE_SHADER_MATERIALS) {
         const shaderMat = engineMaterial as ThreeNamespace.ShaderMaterial;
         container.onBeforeRender = (_renderer, _scene, camera) => {

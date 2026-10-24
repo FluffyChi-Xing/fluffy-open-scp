@@ -280,29 +280,26 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
         // 以 #define 覆盖片段内的引擎常量名，保持 decalLightInteriorMap
         // 片段逐字。
         ps.push_str("uniform float uInteriorGlow;\n#define kInteriorMapSelfLightMax uInteriorGlow\n");
-        // 视线视差（2026-10-05 四轮，用户"破洞各角度完全一样"对拍）：引擎
-        // 原版靠**场景内真实几何**（破洞后露出的楼板）让 tfp.z 逐像素变化
-        // 产生纵深；PE 建筑模型是空壳（无内部几何）→ z 恒为立面深度 →
-        // 内景全尺寸平贴。此处改用与窗户 interior mapping 同族的
-        // **视线射线-盒底平面求交**：从立面像素沿视线射到盒内虚拟后墙
-        // （z=depth），采样命中点——直视时与原版公式完全一致，斜视时内景
-        // 随视角移动（= 游戏窗户假内景的观感）。
-        // vObjPos/uHoleCamLot 同为 mesh 局部（= lot 局部）空间；
-        // uHoleInvRot = 贴花基矩阵转置（lot 局部 → 贴花系）。
+        // decalInteriorMap[380] 使用投影深度；建筑 facade 的 interiorMap()
+        // 再用眼睛方向与盒体后墙求交。Property Editor 以 lot 局部坐标提供
+        // vObjPos/uHoleCamLot，保持这条视角变化链。
         ps.push_str(
             "varying vec3 vObjPos;\n\
-             uniform vec2 uHoleHalfXY;\n\
-             uniform float uHoleDepthM;\n\
              uniform mat3 uHoleInvRot;\n\
              uniform vec3 uHoleCamLot;\n\
-             vec2 holeParallaxUv(vec3 tfp) {\n\
-             \x20 vec3 dirLot = normalize(vObjPos - uHoleCamLot);\n\
-             \x20 vec3 dir = uHoleInvRot * dirLot;\n\
-             \x20 float zm = (tfp.z * 0.5 + 0.5) * uHoleDepthM;\n\
-             \x20 float s = max((uHoleDepthM - zm) / max(dir.z, 0.05), 0.0);\n\
-             \x20 vec2 hit = tfp.xy * uHoleHalfXY + dir.xy * s;\n\
-             \x20 vec2 norm = hit / uHoleHalfXY;\n\
-             \x20 return norm * -0.5 + 0.5;\n\
+             vec2 holeInteriorUv(vec3 tfp) {\n\
+             \x20 vec3 eyeDir = normalize(uHoleInvRot * (vObjPos - uHoleCamLot));\n\
+             \x20 eyeDir.z *= 0.5;\n\
+             \x20 vec2 decalTfp = mix(tfp.xy, tfp.xy * 0.5, tfp.z * 0.5 + 0.5);\n\
+             \x20 vec2 tc = decalTfp * -0.5 + 0.5;\n\
+             \x20 vec3 pos = vec3(tc, 0.0) * -2.0 + 1.0;\n\
+             \x20 pos.z = tfp.z;\n\
+             \x20 vec3 safeEye = sign(eyeDir + vec3(0.0001)) * max(abs(eyeDir), vec3(0.0001));\n\
+             \x20 vec3 k = (sign(eyeDir) - pos) / safeEye;\n\
+             \x20 float t = min(k.x, min(k.y, k.z));\n\
+             \x20 vec3 target = pos + t * eyeDir;\n\
+             \x20 target.xy *= mix(0.9, 0.5, target.z);\n\
+             \x20 return target.xy * -0.5 + 0.5;\n\
              }\n",
         );
     }
@@ -384,10 +381,11 @@ mod tests {
         assert!(ps.contains("interiorUv"));
         // 自发光峰值挂 env.glow（白天 2.5 / 夜间 16），不硬编码引擎 HDR 常量
         assert!(ps.contains("#define kInteriorMapSelfLightMax uInteriorGlow"));
-        // 视线视差（空壳建筑的纵深来源）：射线-盒底平面求交函数已注入
-        assert!(ps.contains("holeParallaxUv(textureFloatPosition)"));
+        // 游戏 decalInteriorMap[380] + building4 interiorMap() 的视线盒体求交
+        assert!(ps.contains("holeInteriorUv(textureFloatPosition)"));
         assert!(ps.contains("uniform mat3 uHoleInvRot;"));
-        assert!(ps.contains("varying vec3 vObjPos;"));
+        assert!(ps.contains("vec2 decalTfp = mix(tfp.xy, tfp.xy * 0.5"));
+        assert!(ps.contains("target.xy *= mix(0.9, 0.5, target.z)"));
     }
 
     #[test]
