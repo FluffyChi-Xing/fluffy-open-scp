@@ -874,6 +874,10 @@ name = "resource_brush_probe"
 path = "terrain/resource_brush_probe.rs"
 
 [[example]]
+name = "terrain_brush_resource_audit"
+path = "terrain/terrain_brush_resource_audit.rs"
+
+[[example]]
 name = "script_water_scan"
 path = "terrain/script_water_scan.rs"
 

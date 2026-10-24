@@ -291,6 +291,7 @@ cargo run -p probes --release --example <名称> -- <参数...>
 - [`map_unit_audit`]（sc-properties）：Read-only audit of regional unit definitions and bridge models.
 - [`normal_atlas_probe`]（sc-exporter）：法线图案图集（0x60E7805D）边缘列/行解剖 —— 排查 PE 精细地面
 - [`resource_brush_probe`]（sc-properties）：
+- [`terrain_brush_resource_audit`]（sc-properties）：读取隐藏 Terrain Brush 目录，并审计刷子 Key 在安装包及区域 group 中是否有可执行 definition。用法：`cargo run -p probes --release --example terrain_brush_resource_audit -- <SimCityData>`。
 - [`script_water_scan`]（sc-properties）：探针：全包扫描文本资源（JS 脚本等）中的 waterLevel / seaLevel / water level 引用。
 - [`stamp_hunt`]（sc-properties）：探针：全类型、全包按 instance 搜 eco/terrain 画刷 stamp 资源。仅开发用。
 - [`subresource_dump`]（sc-properties）：探针：区域子资源全清单——名称、画刷 Key、变换、目标 map、分辨率。
