@@ -440,10 +440,11 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
     <template v-else-if="card.kind === 'resource-entry'">
       <section class="card-section">
         <h4>{{ $t("package.card.slots") }}</h4>
+        <p class="semantic-hint">{{ $t("package.card.resourceEntryHint") }}</p>
         <table v-if="card.slots.length" class="slot-table">
           <thead>
             <tr>
-              <th>#</th>
+              <th>{{ $t("package.card.slotIndex") }}</th>
               <th>{{ $t("package.card.resource") }}</th>
               <th v-for="p in 4" :key="p">{{ $t("package.card.paramN", { n: p }) }}</th>
             </tr>
@@ -452,10 +453,15 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
             <tr v-for="(slot, i) in card.slots" :key="i">
               <td>{{ i + 1 }}</td>
               <td :title="keyText(slot.resource)">
-                {{ slotNames.get(i) ?? keyText(slot.resource) }}
+                <strong class="slot-resource-name">
+                  {{ slotNames.get(i) ?? $t("package.card.unnamedResource") }}
+                </strong>
+                <code class="slot-resource-tgi">{{ keyText(slot.resource) }}</code>
               </td>
-              <td v-for="(v, j) in slot.values" :key="j">
-                {{ v ?? "—" }}
+              <td v-for="(v, j) in slot.values" :key="j" class="slot-value">
+                <span :class="{ 'slot-value-empty': v == null }">
+                  {{ v ?? $t("package.card.unsetValue") }}
+                </span>
               </td>
             </tr>
           </tbody>
@@ -467,10 +473,10 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
           {{ $t(card.enabled ? "package.card.enabled" : "package.card.disabled") }}
         </span>
         <span v-if="card.floatA != null" class="duration-badge">
-          <code class="ref-code">0x0D560650</code> = {{ card.floatA }}
+          {{ $t("package.card.scalarA") }} <code class="ref-code">{{ card.floatA }}</code>
         </span>
         <span v-if="card.floatB != null" class="duration-badge">
-          <code class="ref-code">0x0D6F3BE1</code> = {{ card.floatB }}
+          {{ $t("package.card.scalarB") }} <code class="ref-code">{{ card.floatB }}</code>
         </span>
       </div>
     </template>
@@ -678,6 +684,37 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
 .slot-table th {
   color: var(--muted-foreground);
   font-weight: 600;
+}
+.semantic-hint {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+  margin: 0 0 8px;
+}
+.slot-resource-name,
+.slot-resource-tgi {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slot-resource-name {
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.slot-resource-tgi {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  margin-top: 2px;
+}
+.slot-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right !important;
+}
+.slot-value-empty {
+  color: var(--muted-foreground);
 }
 .menu-description {
   font-size: 13px;
