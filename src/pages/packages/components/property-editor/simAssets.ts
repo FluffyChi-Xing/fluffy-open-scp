@@ -262,8 +262,9 @@ export async function getSimFigure(
 
 /**
  * 构造一个 UnitLocation 的人群示意。根节点不带 Unit transform，调用方
- * 负责把整个群体放到建筑的局部锚点；成员在局部 XZ 平面散开并轻微转向，
- * 这样同一点不会再退化成重叠的单个固定小人。
+ * 负责把整个群体放到建筑的局部锚点；Sim 部件的模型空间是 Z-up（头颈
+ * 对齐也使用 bbox 的 Z 轴），所以成员必须在局部 XY 地面平面散开并绕 Z
+ * 轴转向。这样不会把“朝向随机”误变成绕水平轴翻倒。
  */
 export async function getSimPopulation(
   THREE: typeof ThreeNamespace,
@@ -281,8 +282,8 @@ export async function getSimPopulation(
     if (!figure) continue;
     const angle = rand() * Math.PI * 2;
     const radius = 0.28 + rand() * 0.58;
-    figure.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-    figure.rotation.y = angle + Math.PI + (rand() - 0.5) * 0.7;
+    figure.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+    figure.rotation.z = angle + Math.PI + (rand() - 0.5) * 0.7;
     figure.userData.populationMember = index;
     group.add(figure);
     rendered += 1;

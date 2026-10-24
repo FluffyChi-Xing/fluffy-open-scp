@@ -389,7 +389,7 @@ source-tree 双重坐实）。PE DTO 的 `count/countRandom/agent` 字段名系�
 小人，这与游戏里“一个位置可能暂时没有 Agent，也可能有一组 Agent”的观察不符。
 现实现先按 `spawner:index` 做稳定的运行时样本：约 62% 的锚点显示 2~5 名
 示意 Agent，其余锚点保留蓝色 UnitLocation 锚点；同点成员使用不同 seed 选择
-body/head 组合并在局部 XZ 平面散开。这个数量是编辑器可复现的视觉样本，不是
+body/head 组合并在局部 XY 地面平面散开（Sim 模型为 Z-up）。这个数量是编辑器可复现的视觉样本，不是
 游戏运行时人数或 ER2 的 `chance` 字段。
 **真小人渲染（2026-10-06 已实现）**：后端 `read_sim_parts` 命令（SIMF
 容器：`SIMF|ver=1|count|{instance|kind|len|LOTM}`，Graphics/Game 包定位
