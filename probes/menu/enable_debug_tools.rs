@@ -9,10 +9,11 @@
 //!
 //! 用法：
 //!   cargo run -p probes --release --example enable_debug_tools -- \
-//!       <SimCity_Game.package> <out.package> [--cat=0xC710B6E9] [--ui=0x9D2EF585] [--dry]
+//!       <SimCity_Game.package> <out.package> [--cat=0xAC12C904] [--ui=0xAC12C904]
+//!       [--action=0x1943CB96] [--start=110] [--dry]
 
 use dbpf::{OverlayEntry, Package};
-use sc_properties::debug_tools::{self, DEFAULT_CATEGORY, DEFAULT_UI_CATEGORY};
+use sc_properties::debug_tools;
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const TOOL_GROUP: u32 = debug_tools::TOOL_GROUP;
@@ -24,15 +25,25 @@ const CONTROL_TITLE_OLD: u32 = 0x7C9A_0071; // 「宿舍」
 const CONTROL_TITLE_NEW: u32 = 0x64EC_016B; // 「商務學院」
 /// 标题键（对照实验用）。
 const HASH_TITLE: u32 = 0x0A09_F5FA;
+/// 诊断用：工具实现 action。默认不修改；`--action=0x1943CB96` 可把
+/// 三个 debug 条目的 action 临时映射到已存在的 cToolPlop，用于区分
+/// “菜单覆盖未命中”与“原 action 没有 native factory”。
+const HASH_ACTION: u32 = 0x08F6_72C7;
+const HASH_UI_POSITION: u32 = 0x0DC1_E3E0;
+const ROAD_CATEGORY: u32 = 0xAC12_C904;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
-    let base_path = positional.first().expect("usage: enable_debug_tools <base.package> <out.package> [--cat=] [--ui=] [--dry]");
+    let base_path = positional
+        .first()
+        .expect("usage: enable_debug_tools <base.package> <out.package> [--cat=] [--ui=] [--dry]");
     let out_path = positional.get(1);
     let dry = args.iter().any(|a| a == "--dry");
-    let cat = parse_hex(&args, "--cat=").unwrap_or(DEFAULT_CATEGORY);
-    let ui = parse_hex(&args, "--ui=").unwrap_or(DEFAULT_UI_CATEGORY);
+    let cat = parse_hex(&args, "--cat=").unwrap_or(ROAD_CATEGORY);
+    let ui = parse_hex(&args, "--ui=").unwrap_or(ROAD_CATEGORY);
+    let action = parse_hex(&args, "--action=");
+    let start = parse_i32(&args, "--start=").unwrap_or(110);
     if !dry && out_path.is_none() {
         panic!("需要输出路径，或加 --dry");
     }
@@ -56,6 +67,44 @@ fn main() {
 
     // ---- 阳性对照：把「宿舍」标题改指到「商務學院」的串 id ----
     let mut entries = entries;
+    if let Some(action) = action {
+        for entry in entries.iter_mut() {
+            if !debug_tools::DEBUG_TOOLS.contains(&entry.id.instance) {
+                continue;
+            }
+            let old_action = entry.id.instance;
+            let mut patched = debug_tools::patch_key_property_instances(
+                &entry.data,
+                HASH_ACTION,
+                old_action,
+                action,
+            )
+            .expect("patch diagnostic action");
+            let old_position = match old_action {
+                0xA2AA_4268 => 100,
+                0x53B7_7423 => 200,
+                0xB65E_1F2E => 300,
+                _ => unreachable!(),
+            };
+            let index = match old_action {
+                0xA2AA_4268 => 0,
+                0x53B7_7423 => 1,
+                0xB65E_1F2E => 2,
+                _ => unreachable!(),
+            };
+            patched = debug_tools::patch_property_i32(
+                &patched,
+                HASH_UI_POSITION,
+                old_position,
+                start + index,
+            )
+            .expect("patch diagnostic menu position");
+            entry.data = patched;
+            println!(
+                "诊断 action 0x{old_action:08X} -> 0x{action:08X}（cToolPlop 等已有 factory 时用于验证工具创建链）"
+            );
+        }
+    }
     if let Some(entry) = package.entries().iter().find(|e| {
         e.id.type_id == PROPERTY_TYPE && e.id.group == TOOL_GROUP && e.id.instance == CONTROL_TOOL
     }) {
@@ -86,16 +135,23 @@ fn main() {
     }
     dbpf::write_uncompressed_overlay_to_path(out_path, &entries).expect("write overlay");
     let size = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
-    println!("\n已写出 {out_path}（{size} 字节，{} 条资源）", entries.len());
+    println!(
+        "\n已写出 {out_path}（{size} 字节，{} 条资源）",
+        entries.len()
+    );
 
     // 自检：重新打开并回读条目
     let check = Package::open(out_path).expect("reopen overlay");
     println!("--- 回读校验（{} 条）---", check.entries().len());
     for entry in check.entries() {
-        let Ok(data) = check.read(entry) else { continue };
-        let Ok(file) = sc_properties::PropertyFile::parse(&data) else { continue };
+        let Ok(data) = check.read(entry) else {
+            continue;
+        };
+        let Ok(file) = sc_properties::PropertyFile::parse(&data) else {
+            continue;
+        };
         println!(
-            "  0x{:08X} g=0x{:08X} 分类=0x{:08X} UI=0x{:08X}",
+            "  0x{:08X} g=0x{:08X} 分类=0x{:08X} UI=0x{:08X} 位置={:?}",
             entry.id.instance,
             entry.id.group,
             debug_tools::key_instances(&file, debug_tools::HASH_TOOL_CATEGORY)
@@ -105,7 +161,8 @@ fn main() {
             debug_tools::key_instances(&file, debug_tools::HASH_UI_TOOL_CATEGORY)
                 .first()
                 .copied()
-                .unwrap_or(0)
+                .unwrap_or(0),
+            file.get(HASH_UI_POSITION).map(|p| format!("{:?}", p.kind))
         );
     }
 }
@@ -114,4 +171,10 @@ fn parse_hex(args: &[String], prefix: &str) -> Option<u32> {
     args.iter()
         .find_map(|a| a.strip_prefix(prefix))
         .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok())
+}
+
+fn parse_i32(args: &[String], prefix: &str) -> Option<i32> {
+    args.iter()
+        .find_map(|a| a.strip_prefix(prefix))
+        .and_then(|v| v.parse().ok())
 }

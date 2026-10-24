@@ -175,6 +175,202 @@ where
     Ok(out)
 }
 
+/// 按 Property hash 精确定位 Key 字段，只改该字段中 instance 等于 `old` 的
+/// 项。用于诊断 action 映射，避免在整个负载里扫描同一个 u32 时误改图标或
+/// 其他属性中的相同数值。
+pub fn patch_key_property_instances(
+    data: &[u8],
+    property_hash: u32,
+    old: u32,
+    new: u32,
+) -> Result<Vec<u8>, String> {
+    let file = PropertyFile::parse(data).map_err(|e| format!("原始解析失败 {e}"))?;
+    let values = key_instances(&file, property_hash);
+    if !values.contains(&old) {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 没有 Key instance 0x{old:08X}"
+        ));
+    }
+    let mut out = data.to_vec();
+    let hash_bytes = property_hash.to_be_bytes();
+    let mut starts = Vec::new();
+    for at in out
+        .windows(4)
+        .enumerate()
+        .filter_map(|(i, w)| (w == hash_bytes).then_some(i))
+    {
+        if at + 8 > out.len() {
+            continue;
+        }
+        let ty = u16::from_be_bytes([out[at + 4], out[at + 5]]);
+        let flags = u16::from_be_bytes([out[at + 6], out[at + 7]]);
+        if ty != 32 || (flags & 0x40) != 0 {
+            continue;
+        }
+        if flags & 0x30 == 0 {
+            starts.push(at + 8);
+        } else {
+            if at + 16 > out.len() {
+                continue;
+            }
+            let count = i32::from_be_bytes(out[at + 8..at + 12].try_into().unwrap());
+            let item_size = i32::from_be_bytes(out[at + 12..at + 16].try_into().unwrap());
+            if count < 0 || item_size < 12 {
+                continue;
+            }
+            for i in 0..count as usize {
+                let Some(pos) = (at + 16).checked_add(i.saturating_mul(item_size as usize)) else {
+                    continue;
+                };
+                if pos + 4 <= out.len() {
+                    starts.push(pos);
+                }
+            }
+        }
+    }
+    let mut changed = 0;
+    for pos in starts {
+        if out[pos..pos + 4] == old.to_be_bytes() {
+            out[pos..pos + 4].copy_from_slice(&new.to_be_bytes());
+            changed += 1;
+        }
+    }
+    if changed == 0 {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 的序列化 Key 没有命中 0x{old:08X}"
+        ));
+    }
+    let patched = PropertyFile::parse(&out).map_err(|e| format!("补丁后解析失败 {e}"))?;
+    let remaining = key_instances(&patched, property_hash);
+    if remaining.iter().any(|v| *v == old) || !remaining.iter().any(|v| *v == new) {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 补丁校验失败，实际 {:?}",
+            hex_list(&remaining)
+        ));
+    }
+    Ok(out)
+}
+
+/// 按 Property hash 精确修改标量数值。菜单诊断包用它设置同级菜单位置，
+/// 防止负载中其他字段恰好也出现相同的数值而被误改。
+pub fn patch_property_i32(
+    data: &[u8],
+    property_hash: u32,
+    old: i32,
+    new: i32,
+) -> Result<Vec<u8>, String> {
+    let file = PropertyFile::parse(data).map_err(|e| format!("原始解析失败 {e}"))?;
+    let Some(property) = file.get(property_hash) else {
+        return Err(format!("缺少 Int32 属性 0x{property_hash:08X}"));
+    };
+    let (current, number_kind) = match &property.kind {
+        Kind::Scalar(Value::Int32(value)) => (*value as f32, 9u16),
+        Kind::Scalar(Value::UInt32(value)) => (*value as f32, 10u16),
+        Kind::Scalar(Value::Float(value)) => (*value, 13u16),
+        Kind::Array(values) => match values.first() {
+            Some(Value::Int32(value)) => (*value as f32, 9u16),
+            Some(Value::UInt32(value)) => (*value as f32, 10u16),
+            Some(Value::Float(value)) => (*value, 13u16),
+            _ => return Err(format!("属性 0x{property_hash:08X} 不是数值数组")),
+        },
+        _ => return Err(format!("属性 0x{property_hash:08X} 不是数值")),
+    };
+    if current != old as f32 {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 当前为 {current}，预期 {old}"
+        ));
+    }
+    let needle = property_hash.to_be_bytes();
+    let mut out = data.to_vec();
+    let mut changed = false;
+    let property_offsets: Vec<usize> = out
+        .windows(4)
+        .enumerate()
+        .filter_map(|(i, w)| (w == needle).then_some(i))
+        .collect();
+    for at in property_offsets {
+        if at + 12 > out.len() {
+            continue;
+        }
+        let ty = u16::from_be_bytes([out[at + 4], out[at + 5]]);
+        let flags = u16::from_be_bytes([out[at + 6], out[at + 7]]);
+        let positions: Vec<usize> = if flags & 0x30 == 0 {
+            vec![at + 8]
+        } else {
+            if at + 16 > out.len() {
+                continue;
+            }
+            let count = i32::from_be_bytes(out[at + 8..at + 12].try_into().unwrap());
+            let item_size = i32::from_be_bytes(out[at + 12..at + 16].try_into().unwrap());
+            if count <= 0 || item_size < 4 {
+                continue;
+            }
+            (0..count as usize)
+                .filter_map(|i| at.checked_add(16 + i.saturating_mul(item_size as usize)))
+                .collect()
+        };
+        for value_at in positions {
+            if value_at + 4 > out.len() {
+                continue;
+            }
+            let matches = match number_kind {
+                9 => {
+                    ty == 9
+                        && i32::from_be_bytes(out[value_at..value_at + 4].try_into().unwrap())
+                            == old
+                }
+                10 => {
+                    ty == 10
+                        && u32::from_be_bytes(out[value_at..value_at + 4].try_into().unwrap())
+                            == old as u32
+                }
+                13 => {
+                    ty == 13
+                        && f32::from_be_bytes(out[value_at..value_at + 4].try_into().unwrap())
+                            == old as f32
+                }
+                _ => false,
+            };
+            if matches {
+                let bytes = if number_kind == 13 {
+                    (new as f32).to_be_bytes()
+                } else {
+                    new.to_be_bytes()
+                };
+                out[value_at..value_at + 4].copy_from_slice(&bytes);
+                changed = true;
+            }
+        }
+        if changed {
+            break;
+        }
+    }
+    if !changed {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 的序列化数值未命中 {old}"
+        ));
+    }
+    let patched = PropertyFile::parse(&out).map_err(|e| format!("补丁后解析失败 {e}"))?;
+    match patched.get(property_hash).map(|p| &p.kind) {
+        Some(Kind::Scalar(Value::Int32(value))) if *value == new => Ok(out),
+        Some(Kind::Scalar(Value::UInt32(value))) if *value == new as u32 => Ok(out),
+        Some(Kind::Scalar(Value::Float(value))) if *value == new as f32 => Ok(out),
+        Some(Kind::Array(values))
+            if values.first().is_some_and(|value| match value {
+                Value::Int32(v) => *v == new,
+                Value::UInt32(v) => *v == new as u32,
+                Value::Float(v) => *v == new as f32,
+                _ => false,
+            }) =>
+        {
+            Ok(out)
+        }
+        actual => Err(format!(
+            "属性 0x{property_hash:08X} 补丁校验失败：{actual:?}"
+        )),
+    }
+}
+
 /// 该属性里所有 Key 的 instance（标量或数组皆可），按出现顺序去重。
 pub fn key_instances(file: &PropertyFile, hash: u32) -> Vec<u32> {
     let mut out = Vec::new();
