@@ -100,15 +100,16 @@ A5800DC3  E48FCA6B  B65E1F2E  454041B4
 
 写回命令位于 [src-tauri/src/debug_tools.rs](../../src-tauri/src/debug_tools.rs)。它只生成 overlay，不修改原始游戏包。
 
-## 为什么还不能直接说“地下水 debug 菜单已经找到”
+## 菜单与执行侧的边界（修订）
 
-菜单条目和 Terrain Editor 的连接仍缺三段证据：
+隐藏菜单 `454041B4` 与 Terrain Editor 的直接 action 连接仍缺证据：
 
 1. 哪个 Menu/Menu2 instance 的 action 或 effect 字段真正启动 `runTerrainScript`。
-2. `cTerrainBrushDescription` 的资源定义如何映射到 brush key、半径、强度、随机种子和混合模式。
-3. 编辑后的 typed map 如何写回区域的 341 张 tile，以及区域重新 bootstrap 时是否会覆盖它。
+但 brush effect 自身已经闭合。`terrain_brush_resource_audit` 沿 `0xEA5118B0` 的 export directory 解析出 519 个 typed-map export（173 × 3），并验证每个 export 都包含 `MetaParticle(type 2) -> child(type 32)`；三个质量集合的 type-32 section 均为 version 3、259 个可解码 description。`ReadDescription__2.c` 已明确给出位置、纹理 Key、draw mode、Gaussian slope、生命周期、曲线、侵蚀和 ribbon 字段的字节顺序。
 
-因此，把 `waterTableEcoMapBrushes` 直接移动到普通菜单分类，可能只得到一个无效入口，甚至会暴露只有 Property 没有 factory 实现的占位条目。解锁时必须先验证工具 factory、action/effect 引用和输出资源闭包。
+剩下的实测问题是编辑后的 typed map 如何写回区域的 341 张 tile，以及区域重新 bootstrap 时是否会覆盖它。
+
+因此，把 `waterTableEcoMapBrushes` 直接移动到普通菜单分类，仍可能只得到一个无效入口：`0x2A9AA359` 不在零售 `CreateTool` factory 中。验证应改用 [terrain_water_table_validation.rs](../../probes/terrain/terrain_water_table_validation.rs) 生成的单区域 Property overlay，绕过菜单，直接触发区域刷子更新链。
 
 ## 可行性分级
 
@@ -117,16 +118,15 @@ A5800DC3  E48FCA6B  B65E1F2E  454041B4
 | 显示三个已确认的开发期工具 | 已实现 | `debug_tools_write_overlay`、三个明确 instance | 先在独立 overlay 中实机验收 |
 | 显示 `cToolPathSelector`、`cToolTornado` | 较高 | factory switch 有对应 case | 先补齐分类/标题/动作字段，再单独测试 |
 | 显示其余隐藏 Menu 条目 | 不确定 | 有 Menu 数据，缺少 factory case 或完整属性 | 仅做只读诊断，不默认导出 |
-| 直接编辑地下水 brush 并写回游戏 | 理论可行 | Terrain Editor、RunScriptBrushes、water-table type 和 exporter 均存在 | 先实现 schema/诊断闭环，再实现写回 |
-| 从 Property 单独恢复完整地下水工具 | 尚未证明 | 缺菜单到脚本 action 的闭环 | 不应在 UI 中宣称已支持 |
+| 直接编辑地下水 brush 并写回游戏 | 高度可验证 | Terrain Editor、RunScriptBrushes、519 个 Swarm typed-map export 和 exporter 均存在 | 先运行单区域 round-trip，再实现写回 |
+| 从 Property 单独恢复完整地下水工具 | 不可由菜单证明 | 菜单 action 无 factory case，但区域 Property 链完整 | 不把菜单解锁当作 Terrain Editor 支持 |
 
 ## 下一步
 
-1. 扫描所有 `Menu`/`Menu2` 的 action、effect、`unitEffectParameter` 和 `unitEffectTitle`，与 `runTerrainScript` 的 effect key 做反向匹配。
-2. 读取 `cTerrainBrushDescription` 的资源格式，补齐 brush texture、强度、半径、global/ribbon 模式和随机种子。
-3. 建立只读的 `TerrainBrushDocument`：保留源 TGI、类型、基名、分辨率、变换和原始 Property 字节。
-4. 用一个 water-table 样本验证 `BeginAccumulatingBrushes → EndAccumulatingBrushes → Save341HeightMaps` 的输出命名、tile 数量和 mip 层级。
-5. 只有在 round-trip 和游戏重启后仍可见的情况下，才把“地下水 brush 编辑”接入 Mod Studio 菜单。
+1. 用 `terrain_water_table_validation` 对 `BEAF0510` 生成单资源 overlay，记录 `watertableheightmap`、分辨率 128、map type 2 的保存前后差异。
+2. 对照同一 Property 的 soil/forest/oil/ore 字段，确认替换 water-table child 不会触碰其它层。
+3. 将 export 哈希、type-32 参数和 map-type 枚举整理成只读 `TerrainBrushDocument`，再接入 Mod Studio 地图验证面板。
+4. 只有在 round-trip 和游戏重启后仍可见的情况下，才把“地下水 brush 编辑”接入 Mod Studio 菜单。
 
 ## 证据索引
 
