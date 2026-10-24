@@ -34,3 +34,9 @@ interiorUv = interiorUv * -0.5 + 0.5;
 ## 限制
 
 Property Editor 当前使用 `DecalGeometry` 近似游戏的屏幕深度投影，无法像游戏的 deferred decal 一样在 GPU 中直接读取场景 depth buffer。因此真实建筑必须提供洞口/内部几何，才能通过深度测试表现出和游戏一致的内部结构；纯平立面不会被 shader 凭空变成立体洞口。
+
+## 用户目视验收记录（2026-10-24）
+
+- **已确认**：本轮 `00471ac` 没有影响 sign、clip、sdf、neon-light 等其他 decal 簇的渲染。
+- **未解决**：破洞簇虽然已经按 `decalInteriorMap` 的双 UV 和 `decalClip` 半空间语义对齐，但在 Property Editor 中尚未显著呈现游戏那种随视角变化的立体破洞效果。
+- **后续任务**：继续对拍游戏的 deferred depth、破洞实际内部几何和 decal 盒体深度；优先增强 hole 专用路径，避免修改其他 decal family 的路由或材质链。
