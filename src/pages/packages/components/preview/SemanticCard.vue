@@ -137,6 +137,7 @@ const activeModelIndex = ref(0);
 const modelMenuOpen = ref(false);
 const meshObjs = ref<string[]>([]);
 const texturePngs = ref<string[]>([]);
+const lotModelPayload = ref<ArrayBuffer | null>(null);
 const textured = ref(false);
 const meshState = ref<"idle" | "loading" | "ready" | "error">("idle");
 
@@ -152,6 +153,7 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
   meshState.value = "loading";
   meshObjs.value = [];
   texturePngs.value = [];
+  lotModelPayload.value = null;
   try {
     const tgi = {
       typeId: model.typeId,
@@ -176,15 +178,9 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
       .map((d) => d.mesh?.objBase64)
       .filter((obj): obj is string => !!obj);
     if (textured.value) {
-      const textures = await tauriApi.packages.readRw4MaterialTextures(
+      lotModelPayload.value = await tauriApi.packages.readLotModelMeshes(
         props.packageId,
         tgi,
-      );
-      const byMeshSection = new Map(
-        textures.textures.map((item) => [item.meshSection, item.pngBase64]),
-      );
-      texturePngs.value = meshSections.map(
-        (section) => byMeshSection.get(section.number) ?? "",
       );
     }
     meshState.value = meshObjs.value.length ? "ready" : "error";
@@ -318,6 +314,7 @@ watch(textured, () => { if (show3d.value) void (async () => { const index = acti
           :obj-base64s="meshObjs"
           :texture-png-base64s="texturePngs"
           :textured="textured"
+          :lot-model-payload="lotModelPayload"
           class="vehicle-mesh"
         />
         <FDropdown

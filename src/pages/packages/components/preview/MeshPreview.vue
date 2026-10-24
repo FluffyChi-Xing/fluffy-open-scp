@@ -3,8 +3,17 @@ import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ThreeViewer } from "@/lib/three-viewer";
 import { parseObjModel } from "@/lib/three-obj";
+import { parseLotModelContainer } from "@/lib/three-gltf";
+import { createSunEnv } from "../property-editor/refinedRender";
+import { getPropModelObject } from "../property-editor/propModels";
+import type { LotModelPayload } from "@/api/tauri";
 
-const props = defineProps<{ objBase64s: string[]; texturePngBase64s?: string[]; textured?: boolean }>();
+const props = defineProps<{
+  objBase64s: string[];
+  texturePngBase64s?: string[];
+  textured?: boolean;
+  lotModelPayload?: ArrayBuffer | null;
+}>();
 const { t } = useI18n();
 const container = shallowRef<HTMLElement | null>(null);
 const error = ref("");
@@ -19,6 +28,21 @@ async function rebuild() {
   ready.value = false;
   error.value = "";
   try {
+    if (props.textured && props.lotModelPayload) {
+      const payload = parseLotModelContainer(props.lotModelPayload);
+      const THREE = await import("three");
+      const refined = await getPropModelObject(
+        THREE,
+        payload,
+        createSunEnv(THREE),
+        0,
+      );
+      if (!refined) throw new Error("vehicle material model unavailable");
+      instance.setModel([refined]);
+      instance.setKeyLight(lightAzimuth.value, lightElevation.value);
+      ready.value = true;
+      return;
+    }
     // 多网格（同一模型的多个 MESH 节）并行解析后合并进同一场景
     const objects = await Promise.all(
       props.objBase64s.map((obj, index) => {
@@ -53,7 +77,7 @@ watch([lightAzimuth, lightElevation], () => {
   viewer.value?.setKeyLight(lightAzimuth.value, lightElevation.value);
 });
 watch(
-  () => [props.objBase64s, props.texturePngBase64s, props.textured],
+  () => [props.objBase64s, props.texturePngBase64s, props.textured, props.lotModelPayload],
   () => void rebuild(),
   { deep: true },
 );
