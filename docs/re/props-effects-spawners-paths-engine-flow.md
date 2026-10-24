@@ -391,14 +391,27 @@ source-tree 双重坐实）。PE DTO 的 `count/countRandom/agent` 字段名系�
 示意 Agent，其余锚点保留蓝色 UnitLocation 锚点；同点成员使用不同 seed 选择
 body/head 组合并在局部 XY 地面平面散开（Sim 模型为 Z-up）。这个数量是编辑器可复现的视觉样本，不是
 游戏运行时人数或 ER2 的 `chance` 字段。
-**真小人渲染（2026-10-06 已实现）**：后端 `read_sim_parts` 命令（SIMF
-容器：`SIMF|ver=1|count|{instance|kind|len|LOTM}`，Graphics/Game 包定位
-=已打开同名包→路径上溯 SimCityData→settings game_data_path）→ 前端
-`simAssets.ts` 进程级缓存 → 每个示意 Agent = 身体(3 型随机) + 头(20 型
-随机)挂颈点（body maxZ 对 head minZ 留 0.04 嵌入）+ 衣服色相 tint
-（outfit 调色板近似）。纹理槽位实测：小人部件 tex[0]=法线（蓝紫）、
-tex[1]=漫反射（脸/手套/衣服 UV）——漫反射取 LOTM `normalPng` 通道
-（与 Raw 映射惯例相反，勿改）。资产缺席时回落蓝色 UnitLocation 锚点。
+**真小人渲染（2026-10-24 Sim palette 对拍）**：后端 `read_sim_parts` 命令
+（SIMF 容器：`SIMF|ver=1|count|{instance|kind|len|LOTM}`，Graphics/Game
+包定位 = 已打开同名包→路径上溯 SimCityData→settings game_data_path）→ 前端
+`simAssets.ts` 进程级缓存 → 每个示意 Agent = 身体(3 型随机) + 头(20 型随机)
+挂颈点（body maxZ 对 head minZ 留 0.04 嵌入）。
+
+游戏 `simParticleLightPS` 的真实链路不是把部件纹理直接当漫反射：
+`FindPalEntry(sourceTex)` 读取 `R=aoFactor`、`G=palV`、`A=alpha`，再以实例
+`In.color.x/y` 作为 `bodyPaletteTex` / `clothesPaletteTex` 的 U 坐标查色；
+服装调色板返回值的 alpha 决定 `lerp(bodyColor, clothesColor, mask)`，最后乘
+光照和 AO。`GetSimPaletteData` 则由 `randomBits` 解析 skin、outfit、head、
+body 四个外观选择。
+
+旧 PE 实现按 PNG 字节数猜图并直接绑定 `MeshStandardMaterial.map`，会把法线/占位
+纹理显示成统一黄红色，也绕过了两张全局 Sim palette。现实现优先将 LOTM
+`slot0Png` 作为 sourceTex（`NoColorSpace`），在 `onBeforeCompile` 中按 R/G/A
+执行 AO、palette 行和 alpha；由于 SIMF 目前没有随部件下发全局 palette 纹理，
+编辑器用稳定 seed 选择多组肤色/服装色，并以 `paletteV` 平滑近似服装 mask。
+缺少 slot0 时才回退普通 diffuse。这样身体与头部仍使用游戏的分区调色结构，
+同一建筑中的示意人会稳定呈现不同肤色、衣服色和头部组合；资产缺席时回落蓝色
+UnitLocation 锚点。
 
 ## 4. Paths 全流程
 
