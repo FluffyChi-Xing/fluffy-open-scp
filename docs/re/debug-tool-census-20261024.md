@@ -130,6 +130,36 @@ SHA256 = 2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab
 
 帐篷是可放置 Unit 资产，不是 `cTool*` 实现。它们能帮助研究“debug placement 如何把一个 Unit 放进城市”，但不能直接替代 Lot、Path、Spawner 或 ER2 编辑器。
 
+### Path / Homeless Tent 实机探针
+
+已经新增 `probes/menu/path_debug_overlay.rs`，生成一个只包含 7 条 Menu
+覆盖的测试包：
+
+| 槽位 | 覆盖条目 | 行为闭合 | 测试目的 |
+| --- | --- | --- | --- |
+| 110 | `C741981F` | action `C741981F` → `cToolPathSelector` | 验证路径选择器是否能创建、响应点击并显示路径点 |
+| 111–116 | 六个 Homeless Tent 条目 | `menuUnit` → `40E1C000:EB415C8F` | 验证 Unit plop、预览、放置和删除生命周期 |
+
+生成命令：
+
+```text
+cargo run -p probes --release --example path_debug_overlay -- \
+  "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\SimCity_Game.package" \
+  "D:\\ea-games\\simcity_offline\\SimCity：Cites of Tomorrow\\SimCityData\\000_OpenSCP-path-debug-probe.package" \
+  110
+```
+
+该包已生成到当前安装的 `SimCityData` 目录。帐篷菜单使用完整的可见建筑
+Property 外壳，只替换 `menuUnit`、标题、描述、道路分类和槽位；因此它能
+验证实际 Unit 放置链，但不能证明帐篷自身包含路径或游民 AI 逻辑。路径选择器
+则保留可见道路 Property 的字段，只把 action 改为发行版仍有 factory case 的
+`cToolPathSelector`。
+
+实机记录应分别观察：菜单出现、点击有响应、是否出现预览、是否能提交放置、
+是否能删除、保存重载后是否仍存在。路径选择器如果只显示菜单但无预览，说明
+缺少它所需的运行时输入上下文；帐篷如果能放置但没有游民活动，说明 Unit
+资源存在而其模拟/Spawner 关系仍需另行研究。
+
 ## D. 与地图编辑最相关的突破口
 
 按对资产编辑的直接价值排序：

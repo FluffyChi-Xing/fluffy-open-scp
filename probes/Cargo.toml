@@ -539,6 +539,10 @@ name = "terrain_authoring_census"
 path = "menu/terrain_authoring_census.rs"
 
 [[example]]
+name = "path_debug_overlay"
+path = "menu/path_debug_overlay.rs"
+
+[[example]]
 name = "unit_config_name_scan"
 path = "menu/unit_config_name_scan.rs"
 
