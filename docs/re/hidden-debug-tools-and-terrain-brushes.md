@@ -123,10 +123,11 @@ A5800DC3  E48FCA6B  B65E1F2E  454041B4
 
 ## 下一步
 
-1. 用 `terrain_water_table_validation` 对 `BEAF0510` 生成单资源 overlay，记录 `watertableheightmap`、分辨率 128、map type 2 的保存前后差异。
-2. 对照同一 Property 的 soil/forest/oil/ore 字段，确认替换 water-table child 不会触碰其它层。
-3. 将 export 哈希、type-32 参数和 map-type 枚举整理成只读 `TerrainBrushDocument`，再接入 Mod Studio 地图验证面板。
-4. 只有在 round-trip 和游戏重启后仍可见的情况下，才把“地下水 brush 编辑”接入 Mod Studio 菜单。
+1. 不再把 `waterTableEcoMapBrushes` overlay 当作“新城市无水变有水”的验证包。它验证的是 Terrain Editor 的区域 341 eco-map 刷写链；城市地下水仍由 bootstrap 的 `0F92DC56` typed map 初始化。
+2. 在隔离的全新区域缓存中运行 `terrain_water_table_validation`，直接记录 `0x03E421ED` 的区域地下水通道和 mip4 资源差异。
+3. 对照同一 Property 的 soil/forest/oil/ore 字段，确认替换 water-table child 不会触碰其它层。
+4. 将 export 哈希、type-32 参数和 map-type 枚举整理成只读 `TerrainBrushDocument`，再接入 Mod Studio 地图验证面板。
+5. 若要改变城市资源视图，再单独研究 `0F92DC56` bootstrap/typed-map 覆盖，不与区域 Terrain brush 混用。
 
 ## 证据索引
 

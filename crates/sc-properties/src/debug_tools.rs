@@ -371,6 +371,67 @@ pub fn patch_property_i32(
     }
 }
 
+/// 按 Property hash 精确修改标量 bool。环境 Terrain Authoring 开关使用此
+/// 字段；就地修改只改变 1 个值字节，保留原包的字段顺序和编码。
+pub fn patch_property_bool(
+    data: &[u8],
+    property_hash: u32,
+    old: bool,
+    new: bool,
+) -> Result<Vec<u8>, String> {
+    let file = PropertyFile::parse(data).map_err(|e| format!("原始解析失败 {e}"))?;
+    let Some(property) = file.get(property_hash) else {
+        return Err(format!("缺少 bool 属性 0x{property_hash:08X}"));
+    };
+    match &property.kind {
+        Kind::Scalar(Value::Bool(value)) if *value == old => {}
+        Kind::Scalar(Value::Bool(value)) => {
+            return Err(format!(
+                "属性 0x{property_hash:08X} 当前为 {value}，预期 {old}"
+            ));
+        }
+        _ => return Err(format!("属性 0x{property_hash:08X} 不是标量 bool")),
+    }
+
+    let needle = property_hash.to_be_bytes();
+    let mut out = data.to_vec();
+    let hits: Vec<usize> = out
+        .windows(4)
+        .enumerate()
+        .filter_map(|(i, w)| (w == needle).then_some(i))
+        .collect();
+    if hits.len() != 1 {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 的序列化 hash 命中 {} 次，拒绝修改",
+            hits.len()
+        ));
+    }
+    let at = hits[0];
+    if at + 9 > out.len()
+        || u16::from_be_bytes([out[at + 4], out[at + 5]]) != 1
+        || u16::from_be_bytes([out[at + 6], out[at + 7]]) & 0x30 != 0
+    {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 的序列化头不是标量 bool (ty={:04X}, flags={:04X})",
+            u16::from_be_bytes([out[at + 4], out[at + 5]]),
+            u16::from_be_bytes([out[at + 6], out[at + 7]])
+        ));
+    }
+    if out[at + 8] != u8::from(old) {
+        return Err(format!(
+            "属性 0x{property_hash:08X} 的原始值与解析值不一致"
+        ));
+    }
+    out[at + 8] = u8::from(new);
+    let patched = PropertyFile::parse(&out).map_err(|e| format!("补丁后解析失败 {e}"))?;
+    match patched.get(property_hash).map(|p| &p.kind) {
+        Some(Kind::Scalar(Value::Bool(value))) if *value == new => Ok(out),
+        actual => Err(format!(
+            "属性 0x{property_hash:08X} 补丁校验失败：{actual:?}"
+        )),
+    }
+}
+
 /// 该属性里所有 Key 的 instance（标量或数组皆可），按出现顺序去重。
 pub fn key_instances(file: &PropertyFile, hash: u32) -> Vec<u32> {
     let mut out = Vec::new();
@@ -446,5 +507,20 @@ mod tests {
             .expect_err("应报错");
         assert!(err.contains("未找到工具"), "实际：{err}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn patch_scalar_bool_preserves_flags_and_only_value_byte() {
+        let hash: u32 = 0x0E27_6F5D;
+        let mut data = Vec::new();
+        data.extend_from_slice(&1u32.to_be_bytes());
+        data.extend_from_slice(&hash.to_be_bytes());
+        data.extend_from_slice(&1u16.to_be_bytes());
+        data.extend_from_slice(&0x8000u16.to_be_bytes());
+        data.push(0);
+        let patched = patch_property_bool(&data, hash, false, true).unwrap();
+        assert_eq!(patched.len(), data.len());
+        assert_eq!(&patched[..12], &data[..12]);
+        assert_eq!(patched[12], 1);
     }
 }

@@ -535,6 +535,10 @@ name = "ui_tool_dump"
 path = "menu/ui_tool_dump.rs"
 
 [[example]]
+name = "terrain_authoring_census"
+path = "menu/terrain_authoring_census.rs"
+
+[[example]]
 name = "unit_config_name_scan"
 path = "menu/unit_config_name_scan.rs"
 
@@ -880,6 +884,10 @@ path = "terrain/terrain_brush_resource_audit.rs"
 [[example]]
 name = "terrain_water_table_validation"
 path = "terrain/terrain_water_table_validation.rs"
+
+[[example]]
+name = "terrain_authoring_overlay"
+path = "terrain/terrain_authoring_overlay.rs"
 
 [[example]]
 name = "script_water_scan"
