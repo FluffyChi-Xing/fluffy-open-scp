@@ -122,5 +122,13 @@ UI 子分类     A2A33338 -> AC12C904
 | 通过覆盖包恢复缺失 C++ 实现 | 不可行；package overlay 不能注入 native class |
 | 是否值得保留该覆盖包做实机测试 | 值得；可区分“菜单门控”与“运行时实现缺失” |
 
+## 实机验证补充（2026-10-24）
+
+用户已在重新启动游戏后确认：道路菜单中 100 槽之后的 110、111、112 三个槽位均已显示。该结果确认当前 `000_OpenSCP-debug-authoring-road-action-probe.package` 的目录优先级、Property 外壳字段、道路 UI 分类和 `uiPosition` 设置均已被游戏读取。
+
+截图中显示的是完整道路建筑外壳，三个入口共用建筑图标和普通建筑详情页；标题仍显示为 `***`，说明当前诊断 Property 的本地化标题串尚未正确接入。该验证也没有改变此前的 native factory 结论：菜单出现不等于原生 Unit Prop、Snap Point 或 Unit Connecter 编辑器已经恢复。
+
+后续实机记录应分别点击 110、111、112，按以下四个状态验收：菜单出现、点击有响应、出现对应编辑预览、能够提交并写回资源。只有最后一项闭合后，才能把该入口标记为可执行 authoring 工具。
+
 若菜单可见但点击无反应，下一步应追查开发版/工具 DLL 是否曾注册 `sctoolunitconnecter.h` 相关类，或将现有 `cToolPlop` 的 snap/prop 逻辑在 Mod Studio 内重建。不能把 `CreateTool` 中已有的 `cToolPlop` 强行映射给三个条目后宣称恢复了 authoring 工具，因为它们的输入状态、提交和写回语义不同。
 
