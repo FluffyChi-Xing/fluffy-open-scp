@@ -23,9 +23,7 @@ async function rebuild() {
     const objects = await Promise.all(
       props.objBase64s.map((obj, index) => {
         const textures = props.texturePngBase64s ?? [];
-        const texture = props.textured
-          ? textures[index] ?? textures[0]
-          : undefined;
+        const texture = props.textured ? textures[index] || undefined : undefined;
         return parseObjModel(obj, texture);
       }),
     );

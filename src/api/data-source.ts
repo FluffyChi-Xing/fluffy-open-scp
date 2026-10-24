@@ -577,7 +577,7 @@ function mockDataSource(): OpenScpDataSource {
       return { fileType: "Model", sections: mockRw4Sections };
     },
     async readRw4MaterialTextures() {
-      return { pngBase64s: [] };
+      return { textures: [] };
     },
     async readLotModelMeshes(_packageId, _tgi) {
       // 浏览器 demo 模式：合法空容器 v2（0 网格、0 材质）；GLB 构建在 Rust 导出器侧

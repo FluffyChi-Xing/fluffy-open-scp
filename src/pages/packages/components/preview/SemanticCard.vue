@@ -180,7 +180,12 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
         props.packageId,
         tgi,
       );
-      texturePngs.value = textures.pngBase64s;
+      const byMeshSection = new Map(
+        textures.textures.map((item) => [item.meshSection, item.pngBase64]),
+      );
+      texturePngs.value = meshSections.map(
+        (section) => byMeshSection.get(section.number) ?? "",
+      );
     }
     meshState.value = meshObjs.value.length ? "ready" : "error";
   } catch {

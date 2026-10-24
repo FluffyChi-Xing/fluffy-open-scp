@@ -183,7 +183,7 @@ export interface Rw4ResourceData {
 }
 
 export interface Rw4MaterialTexturesData {
-  pngBase64s: string[];
+  textures: Array<{ meshSection: number; pngBase64: string }>;
 }
 /** ERZ（0x08068AEB 编译规则库）结构摘要（read_erz_preview）。 */
 export interface ErzResourceData {

@@ -2020,7 +2020,14 @@ pub struct Rw4SectionDetail {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Rw4MaterialTexturesDto {
-    pub png_base64s: Vec<String>,
+    pub textures: Vec<Rw4MeshTextureDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4MeshTextureDto {
+    pub mesh_section: u32,
+    pub png_base64: String,
 }
 
 /// property 条目值文本化（code 工作台资源预览共用）。
@@ -5327,7 +5334,7 @@ pub async fn read_rw4_material_textures(
         request.tgi,
         |data, package, manager, _| {
             let file = rw4::Rw4File::parse(data)?;
-            let mut pngs = Vec::new();
+            let mut textures = Vec::new();
             for binding in file.decode_mesh_material_bindings(data) {
                 let resources = resolve_material_resources(
                     &file,
@@ -5338,12 +5345,16 @@ pub async fn read_rw4_material_textures(
                 );
                 if let Some(png) = resources.slot0_png.or(resources.base_color_png) {
                     use base64::{engine::general_purpose::STANDARD, Engine as _};
-                    pngs.push(STANDARD.encode(png));
+                    textures.push(Rw4MeshTextureDto {
+                        mesh_section: binding.mesh_section,
+                        png_base64: STANDARD.encode(png),
+                    });
                 }
             }
             // Some prop materials have no decoded bindings but keep diffuse maps
             // directly in the model file.
-            if pngs.is_empty() {
+            if textures.is_empty() {
+                let fallback_mesh = file.sections_of_type(rw4::SectionType::MESH).next().map(|s| s.number);
                 for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
                     if let Ok(texture) = file.decode_texture(data, section.number) {
                         if let Ok(rgba) = texture.decode_top_mip_rgba() {
@@ -5353,13 +5364,18 @@ pub async fn read_rw4_material_textures(
                                 rgba,
                             ) {
                                 use base64::{engine::general_purpose::STANDARD, Engine as _};
-                                pngs.push(STANDARD.encode(png));
+                                if let Some(mesh_section) = fallback_mesh {
+                                    textures.push(Rw4MeshTextureDto {
+                                        mesh_section,
+                                        png_base64: STANDARD.encode(png),
+                                    });
+                                }
                             }
                         }
                     }
                 }
             }
-            Ok(Rw4MaterialTexturesDto { png_base64s: pngs })
+            Ok(Rw4MaterialTexturesDto { textures })
         },
     )
     .await
