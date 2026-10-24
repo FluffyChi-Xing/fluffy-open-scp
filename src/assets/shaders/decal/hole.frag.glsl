@@ -47,32 +47,10 @@ varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;
 varying vec4 vTexcoord5;
 varying vec2 vUv;
-varying vec3 vObjPos;
 
 vec4 outColor = vec4(0.0);
 uniform float uInteriorGlow;
 #define kInteriorMapSelfLightMax uInteriorGlow
-uniform mat3 uHoleInvRot;
-uniform vec3 uHoleCamLot;
-vec2 holeInteriorUv(vec3 tfp) {
-  // building4 interiorMap() 对应的盒体求交：tc 是入口表面坐标，
-  // tfp.z 是 decalProject 深度重建得到的当前表面进深。视线改变时，
-  // 交点在后墙上的位置随之改变，内部结构不会像平面贴图一样固定。
-  vec3 eyeDir = normalize(uHoleInvRot * (vObjPos - uHoleCamLot));
-  eyeDir.z *= 0.5;
-  // decalInteriorMap[380] 的原始深度收缩先生成入口 UV，再由
-  // building4 interiorMap() 把该入口沿视线投到盒体后墙。
-  vec2 decalTfp = mix(tfp.xy, tfp.xy * 0.5, tfp.z * 0.5 + 0.5);
-  vec2 tc = decalTfp * -0.5 + 0.5;
-  vec3 pos = vec3(tc, 0.0) * -2.0 + 1.0;
-  pos.z = tfp.z;
-  vec3 safeEye = sign(eyeDir + vec3(0.0001)) * max(abs(eyeDir), vec3(0.0001));
-  vec3 k = (sign(eyeDir) - pos) / safeEye;
-  float t = min(k.x, min(k.y, k.z));
-  vec3 target = pos + t * eyeDir;
-  target.xy *= mix(0.9, 0.5, target.z);
-  return target.xy * -0.5 + 0.5;
-}
 void SimCityLighting(vec3 normal, vec3 viewVector, float glossyStrength,
 float reflectance, float specE, float specStrength,
 inout vec3 shColorDiff, inout vec3 shColorSpec,
@@ -99,7 +77,10 @@ outColor.rgb *= shColorDiff + shColorSpec + spec;
 float kSunContributionAmount = decalMaterialData[0].x;
 float kLightAmount = decalMaterialData[0].y;
 vec3 textureFloatPosition = vTexcoord0.xyz;
-vec2 interiorUv = holeInteriorUv(textureFloatPosition);
+// decalClip[375]：只保留投影盒 z >= 0 的半空间。
+if (textureFloatPosition.z < 0.0) discard;
+vec2 interiorUv = mix(textureFloatPosition.xy, textureFloatPosition.xy * 0.5, textureFloatPosition.z * 0.5 + 0.5);
+interiorUv = interiorUv * -0.5 + 0.5;
 interiorUv = interiorUv * texXform.xy + texXform.zw;
 float sunMod = clamp(dot(uSunDir3, bumpNormal.xyz), 0.0, 1.0);
 vec3 sunColor = sunMod * uSunColor3 * shadow;

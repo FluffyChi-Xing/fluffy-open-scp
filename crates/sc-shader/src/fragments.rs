@@ -114,15 +114,19 @@ pub const CORE_FRAGMENTS: &[(&str, &str)] = &[
     // GLSL 适配（2026-10-05 路由修复后首次真正编译此链）：HLSL `static const`
     // 从 uniform 取值在 GLSL ES 非法（const 要求编译期常量）→ 降为 float；
     // 整数字面量 2/1 提升为 2.0/1.0（GLSL ES 无 float×int 隐式转换）。
-    // 内景 UV（2026-10-05 四轮）：decalInteriorMap 使用
+    // 内景 UV（引擎 decalInteriorMap[380] 原文）：
     //   lerp(tfp.xy, tfp.xy*0.5, tfp.z*0.5+0.5) * -0.5 + 0.5
-    // 选取破洞贴图相位；holeInteriorUv 同时复刻 building4 interiorMap()
-    // 的眼睛方向盒体求交，让空壳模型也保留随视角变化的内部结构。
+    // 破洞簇不调用 building4 的 facade interiorMap()；视差由
+    // decalProject 的屏幕深度重建、深度测试和真实内部几何提供。
     ("decalLightInteriorMap",
      "float kSunContributionAmount = decalMaterialData[0].x;\n\
       float kLightAmount = decalMaterialData[0].y;\n\
       float3 textureFloatPosition = In.texcoord<t0>.xyz;\n\
-      float2 interiorUv = holeInteriorUv(textureFloatPosition);\n\
+      // decalClip[375]：只保留投影盒 z >= 0 的半空间，避免前半盒\n\
+      // 把洞周围的外墙也当作内景表面着色。\n\
+      clip(textureFloatPosition.z);\n\
+      float2 interiorUv = mix(textureFloatPosition.xy, textureFloatPosition.xy * 0.5, textureFloatPosition.z * 0.5 + 0.5);\n\
+      interiorUv = interiorUv * -0.5 + 0.5;\n\
       interiorUv = interiorUv * texXform.xy + texXform.zw;\n\
       float sunMod = saturate(dot(sunSky.mSunDir.xyz, bumpNormal.xyz));\n\
       float3 sunColor = sunMod * sunSky.mSunColor.rgb * shadow;\n\

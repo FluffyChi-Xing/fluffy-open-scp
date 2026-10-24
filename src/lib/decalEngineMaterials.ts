@@ -104,12 +104,11 @@ export interface EngineMaterialOptions {
   /** 破洞族盒参数（lot 局部坐标）：origin = 盒前缘（变换原点）、axisZ =
    * 盒进深轴、invDepth = 1/盒深——VS 计算 tfp.z 真实进深；PS 按游戏
    * decalInteriorMap 的双 UV 公式把深部采样收缩到纹理中心，同时按
-   * building4 的 interiorMap 盒体求交产生视角视差。 */
+   * decalProject 的深度坐标和内部几何深度测试产生视角视差。 */
   holeBox?: {
     origin: ThreeNamespace.Vector3;
     axisZ: ThreeNamespace.Vector3;
     invDepth: number;
-    invRot?: ThreeNamespace.Matrix3;
   };
 }
 
@@ -213,16 +212,8 @@ export function createEngineDecalMaterial(
         value: opts.holeBox?.axisZ.clone().normalize() ?? new THREE.Vector3(0, 0, 1),
       },
       uHoleInvDepth: { value: opts.holeBox?.invDepth ?? 0 },
-      // interiorMap() 的 lot→贴花切线空间逆旋转与相机位置；每帧由
-      // PropertyEditorViewport 写入 uHoleCamLot。
-      uHoleInvRot: { value: opts.holeBox?.invRot ?? new THREE.Matrix3() },
-      uHoleCamLot: {
-        value: opts.holeBox
-          ? opts.holeBox.origin
-              .clone()
-              .addScaledVector(opts.holeBox.axisZ, -1000)
-          : new THREE.Vector3(0, 0, -1000),
-      },
+      // 破洞簇不使用建筑 facade interiorMap() 的相机射线；视差由
+      // decalProject 的深度坐标与内部几何的深度测试产生。
       // per-entry raster = 预裁剪 atlas cell → texXform 恒等
       uTexXform: { value: new THREE.Vector4(1, 1, 0, 0) },
       uDecalWorldDirection: { value: opts.worldDirection.clone().normalize() },

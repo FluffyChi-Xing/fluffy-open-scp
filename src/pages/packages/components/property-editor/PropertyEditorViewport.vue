@@ -1849,19 +1849,15 @@ async function assembleScene(
             // 破洞族：盒参数供 VS 计算 tfp.z 真实进深（立面 −1 全尺寸
             // 内景、破洞后深部结构 +1 中心收缩 = 游戏"内部结构"机制）。
             // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）；
-            // PS 按游戏 decalInteriorMap + building4 interiorMap 盒体求交，
-            // 使用 tfp.z 和视线方向生成随相机变化的假内景。
+            // PS 按游戏 decalInteriorMap 的双 UV 公式消费 tfp.z；
+            // 视差来自投影深度和内部几何的深度测试，不额外做 facade
+            // interiorMap() 的相机射线求交。
             holeBox:
               family === "hole" || route.surface === "plane"
                 ? {
                     origin: frame.origin,
                     axisZ: frame.axisZ,
                     invDepth: 1 / Math.max(depthZ, 0.01),
-                    invRot: new THREE.Matrix3().set(
-                      frame.axisX.x, frame.axisX.y, frame.axisX.z,
-                      frame.axisY.x, frame.axisY.y, frame.axisY.z,
-                      frame.axisZ.x, frame.axisZ.y, frame.axisZ.z,
-                    ),
                   }
                 : undefined,
           })
@@ -1882,13 +1878,6 @@ async function assembleScene(
       }
       group.add(container);
       decalStats.projected += 1;
-      if (family === "hole" && ENGINE_SHADER_MATERIALS) {
-        const shaderMat = engineMaterial as ThreeNamespace.ShaderMaterial;
-        container.onBeforeRender = (_renderer, _scene, camera) => {
-          const camLot = container.worldToLocal(camera.position.clone());
-          (shaderMat.uniforms.uHoleCamLot.value as ThreeNamespace.Vector3).copy(camLot);
-        };
-      }
       // decalInteriorMap 光 pass 近似（保留自体积盒时代）：lot 带光参数时，
       // 沿投影轴向墙面投暖色 cookie 光（引擎用贴花贴图作光 cookie、alpha
       // 作衰减）。上限 8 盏防多破洞 lot 光源洪峰。
