@@ -12,6 +12,19 @@
 
 ## 普查范围与结论
 
+### 术语校正（2026-10-25）
+
+本轮实机反馈纠正了一个容易造成误导的分类：`cTool*` 是工具工厂里的
+C++ 类名，不等于“debug 工具”。`cToolPathSelector` 是游戏原有的道路升级/
+路径选择工具，`cToolBulldozer` 是游戏原有的推土机，`cToolSkybridge` 是原有
+的空中桥梁工具，`cToolAddTowerLevel` 是原有的高塔楼层工具。它们应归入
+“正常游戏工具/保留执行侧功能”，只能因为菜单入口被隐藏或测试包使用了
+它们而称为“调研探针”，不能称为 debug-only 工具。
+
+六个 Homeless Tent 则是可放置的 debug placement **资产**。它们能通过
+`cToolPlop` 放进城市并吸引流浪汉，但资源本身不是 `cTool` 类，也不意味着
+游戏为它们提供了完整的拆除生命周期。
+
 本轮交叉检查了：
 
 - `public/game-ui/tools/tools.json`：649 个 `Menu/Menu2` 工具资源；
@@ -159,6 +172,50 @@ Property 外壳，只替换 `menuUnit`、标题、描述、道路分类和槽位
 是否能删除、保存重载后是否仍存在。路径选择器如果只显示菜单但无预览，说明
 缺少它所需的运行时输入上下文；帐篷如果能放置但没有游民活动，说明 Unit
 资源存在而其模拟/Spawner 关系仍需另行研究。
+
+### Homeless Tent 无法铲除：规则链证据与最小覆盖包
+
+用户实测确认帐篷可以正常放置并吸引流浪汉，但放置后不能被 Bulldozer 铲除。
+这不是 `cToolBulldozer` 缺失，而是 Unit 的合并后玩家规则不完整。零售反编译
+代码显示 `DestroyWholeUnit` 固定执行：
+
+```text
+RunUnitPlayerRuleID(unitSlot, 0x0C614161)
+    -> 成功后 WholeUnitValidation
+    -> QueueUnitForDemolition
+```
+
+`RunUnitPlayerRuleID` 还要求 Unit 的 `mPlayerRuleIDs` 中有该 ID，并且对应的
+`mEventRuleIndices[index + 11]` 非空。帐篷 Unit
+`00B1B104:40E1C000:EB415C8F` 原始只有 5 个属性：父级、半径、包围盒、模型和
+一个布尔值；它没有任何 `0x0A0209A2..0x0A0209A5` Bundle 引用，因此
+`AddBundle` 不会把拆除规则挂到这个 Unit 上。
+
+脚本包中存在可复用的拆除 Bundle：
+
+```text
+00B1B104:40E0C700:2A2459B7
+  0x0C614161 -> 0x7140785F
+  0x08327D53 -> 0xBC57A76A
+```
+
+它只提供玩家拆除规则及其事件映射。当前已生成最小覆盖包：
+
+```text
+D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP-tent-bulldozer-probe.package
+```
+
+该包只覆盖 `00B1B104:40E1C000:EB415C8F`，增加一项：
+
+```text
+0x0A0209A3 Key[] = 00000000:00000000:2A2459B7
+```
+
+它不修改菜单、模型、父级或其他 Unit。进入游戏后应在一个新放置的帐篷上
+观察：推土机是否能高亮帐篷、点击后是否消失、保存重载后是否仍能删除，且
+流浪汉吸引行为是否保持。如果仍不能删除，应继续检查当前运行时加载的脚本
+版本是否包含 `40E0C700:2A2459B7`，以及 Bundle 组是否被当前 `SimCity-
+Scripts_*` 版本合并；此时不要把该失败归因于道路工具或菜单分类。
 
 ## D. 与地图编辑最相关的突破口
 

@@ -1153,3 +1153,7 @@ path = "registry/name_lookup.rs"
 [[example]]
 name = "type_lookup"
 path = "registry/type_lookup.rs"
+
+[[example]]
+name = "tent_bulldozer_overlay"
+path = "menu/tent_bulldozer_overlay.rs"
