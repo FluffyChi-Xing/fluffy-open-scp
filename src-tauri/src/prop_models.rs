@@ -265,9 +265,18 @@ fn resolve_one(
         }
     }
 
-    // 包装记录：0x0D897169 直出 / 树标记
+    // 包装记录：0x0D897169 直出 / LOD1 / 树标记
     for (w_inst, _w_type, _w_group) in &wrapper_keys {
         for (_, file, _) in find_records(packages, *w_inst) {
+            // 常规杂件（如屋顶太阳能板）把 RW4 模型直接放在包装记录的
+            // LOD1 字段，而资源记录本身只保存 0x0D8C29C3 包装 key。
+            // 这条链与资源记录自带的 lod1_direct 不同，必须在解包后再查一次。
+            let lod1 = key_list(&file, KEY_LOD1);
+            if !lod1.is_empty() {
+                if let Some(done) = finish(packages, resource_id, lod1, "lod1_wrapper") {
+                    return Some(done);
+                }
+            }
             let models = key_list(&file, KEY_VEHICLE_MODELS);
             if !models.is_empty() {
                 return finish(packages, resource_id, models, source);
