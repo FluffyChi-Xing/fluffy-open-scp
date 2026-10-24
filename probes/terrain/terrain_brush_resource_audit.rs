@@ -20,6 +20,8 @@ const BRUSH_KEYS: u32 = 0x0D79_C8ED;
 const BRUSH_NAMES: u32 = 0x0D79_C8EE;
 const NAME: u32 = 0x00B2_CCCA;
 const RESOURCE_KEY: u32 = 0x02A9_07B5;
+const HEIGHTMAP_NAME: u32 = 0x0DBA_3A9C;
+const HEIGHTMAP_TYPE: u32 = 0x0DE4_3899;
 
 const REGION_BRUSH_NAMES: [&str; 10] = [
     "terrain", "water", "forest", "desire", "soil", "oil", "ore", "coal",
@@ -139,4 +141,37 @@ fn main() {
             println!("  group={:08X} slot={slot:<14} descriptor={:08X} key={:08X} payload={} definition_count={} source={}", entry.id.group, entry.id.instance, key.instance, bytes.len(), resolved.map(|v| v.len()).unwrap_or(0), path.display());
         }
     }
+
+    // Typed-map scripts use the same property hash for their child effect IDs.
+    // Keep a second count so a future development package can be recognized by
+    // the presence of the child effect resources, rather than by menu names.
+    let mut typed_rows = 0usize;
+    let mut child_refs = 0usize;
+    let mut missing_children = 0usize;
+    let mut samples = Vec::new();
+    for (path, package) in &files {
+        for entry in package.entries() {
+            if entry.id.type_id != MENU_TYPE { continue; }
+            let Ok(bytes) = package.read(entry) else { continue };
+            let Ok(file) = PropertyFile::parse(&bytes) else { continue };
+            let Some(basename) = scalar_string(&file, HEIGHTMAP_NAME) else { continue };
+            let Some(Kind::Scalar(Value::UInt32(map_type))) = file.get(HEIGHTMAP_TYPE).map(|p| &p.kind) else { continue };
+            if *map_type == 0 || *map_type > 11 { continue; }
+            let children = key_values(&file, RESOURCE_KEY);
+            if children.is_empty() { continue; }
+            typed_rows += 1;
+            for child in children {
+                child_refs += 1;
+                if !definitions.contains_key(&(entry.id.group, child.instance)) {
+                    missing_children += 1;
+                    if samples.len() < 12 {
+                        samples.push(format!("{}:{:08X}:{:08X}->{:08X}", basename, entry.id.group, entry.id.instance, child.instance));
+                    }
+                }
+            }
+            let _ = path;
+        }
+    }
+    println!("\ntyped-map script child-effect closure: rows={typed_rows} refs={child_refs} missing={missing_children}");
+    for sample in samples { println!("  missing-child {sample}"); }
 }
