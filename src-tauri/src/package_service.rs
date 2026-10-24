@@ -3768,7 +3768,45 @@ fn mesh_uv_kind(mesh: &rw4::DecodedMesh) -> u8 {
             }
         }
     }
+    // A facade mesh must have a usable FLOAT4 on every vertex.  Otherwise the
+    // GLB exporter would have to zero-fill TEXCOORD_2/3 for the missing
+    // vertices, which presents as windows that work only on one part of a
+    // building.  Keep such mixed streams on the ordinary material path.
+    let has_facade = !mesh.vertices.is_empty()
+        && mesh.vertices.iter().all(|v| facade_uv4(v).is_some())
+        && mesh.vertices.iter().any(|v| {
+            facade_uv4(v)
+                .map(|f| f.iter().any(|value| value.abs() > 8.0))
+                .unwrap_or(false)
+        });
+    if !has_facade && kind == 2 {
+        kind = 1;
+    }
     kind
+}
+
+/// Return the facade projection FLOAT4 rather than the first TEXCOORD.  Some
+/// RW4 declarations contain a regular FLOAT2 beside facade data; selecting the
+/// first entry made the exported Top UV point at the ordinary diffuse UV and
+/// caused window relief/glass to vary within one mesh.
+fn facade_uv4(vertex: &rw4::DecodedVertex) -> Option<[f32; 4]> {
+    vertex
+        .components
+        .iter()
+        .filter_map(|(element, value)| {
+            if element.usage != rw4::DeclarationUsage::TexCoord {
+                return None;
+            }
+            match value {
+                rw4::ComponentValue::Float4(f) => {
+                    let score = f.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
+                    Some((score, *f))
+                }
+                _ => None,
+            }
+        })
+        .max_by(|(a, _), (b, _)| a.total_cmp(b))
+        .map(|(_, f)| f)
 }
 
 /// facade 顶点色烘焙（building4 源码逐字，migration.md §27）：
@@ -3803,14 +3841,7 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
                 let Some(pal_origin) = bake.params.get(m).copied() else {
                     return FALLBACK;
                 };
-                let Some(f) = v
-                    .components
-                    .iter()
-                    .find(|(e, _)| e.usage == rw4::DeclarationUsage::TexCoord)
-                    .and_then(|(_, value)| match value {
-                        rw4::ComponentValue::Float4(f) => Some(*f),
-                        _ => None,
-                    })
+                let Some(f) = facade_uv4(v)
                 else {
                     return FALLBACK;
                 };

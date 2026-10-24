@@ -604,7 +604,9 @@ varying vec2 vMatUV;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
-varying vec3 vModelPos;`,
+varying vec3 vModelPos;
+varying vec3 vReliefNormal;
+varying vec3 vReliefTangent;`,
       )
       .replace(
         "#include <uv_vertex>",
@@ -620,6 +622,16 @@ vTopUv = uv3;
 vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + 0.5) / uParamCols, 0.0);
 #else
 vMatUV = vec2(0.0);
+#endif`,
+      )
+      .replace(
+        "#include <defaultnormal_vertex>",
+        `#include <defaultnormal_vertex>
+vReliefNormal = normalize(transformedNormal);
+#ifdef USE_TANGENT
+vReliefTangent = normalize(transformedTangent);
+#else
+vReliefTangent = vec3(0.0, 0.0, 0.0);
 #endif`,
       )
       .replace(
@@ -648,6 +660,8 @@ varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
+varying vec3 vReliefNormal;
+varying vec3 vReliefTangent;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
 // Clamp only the border, without rescaling every brick/window inside a tile.
@@ -741,39 +755,88 @@ uniform float uReliefEnabled;
 vec2 scReliefUv(vec2 src, vec3 eye, sampler2D heightMap, vec4 region, vec2 dx, vec2 dy) {
   if (uReliefEnabled < 0.5) return src;
   float distSq = dot(vViewPosition, vViewPosition);
-  if (distSq > 16000.0) return src;
-  vec2 probe = src * region.xy + region.zw;
-  vec4 control = scSampleAtlas(heightMap, probe, region, dx, dy);
-  float height = control.r;
-  // shaderMap.a is the building4 artist-opacity/window mask: opaque facade
-  // pixels are 1, while windows, doors and grille motifs are below 1. Relief
-  // on an opaque wall only magnifies atlas noise into visible stripes.
-  if (control.a > 0.90) return src;
-  if (height <= (23.0 / 255.0)) return src;
-  float coneRatio = clamp(control.g, 0.08, 1.0);
-  vec2 ray = clamp(eye.xy / max(abs(eye.z), 0.001), vec2(-2.0), vec2(2.0));
-  // kReliefDepth=.16, kConeSteps=8, kBinarySteps=2 (building4).
-  vec2 stepUv = ray * 0.16 * coneRatio / 8.0;
-  vec2 prev = src;
-  vec2 cur = src;
-  float layer = 0.0;
-  for (int i = 0; i < 8; i++) {
-    prev = cur;
-    cur -= stepUv;
-    layer += 1.0 / 8.0;
-    float h = scSampleAtlas(heightMap, cur * region.xy + region.zw, region, dx, dy).r;
-    if (layer >= h) break;
+  // building4's shipped shader uses kCullDistanceSq=160000.  Keeping the
+  // same cutoff matters here because the relief result must still be allowed
+  // to leave the tile before outsideTile disables the Top layer.
+  if (distSq > 160000.0) return src;
+  // This is the game's reliefPS cone-step mapping. The shader does not move
+  // vertices: it walks the authored height/cone field in shaderMap.rg, then
+  // returns a displaced UV used by the Top window/door layer.
+  const float kReliefDepth = 0.16;
+  const float kMaxConeRatio = 0.5;
+  const float kFlatLevel = 23.0 / 255.0;
+  const int kConeSteps = 8;
+  const int kBinarySteps = 2;
+
+  // The game divides the tangent-space XY ray by the Top atlas scale before
+  // calling reliefMap(). Keep that division here so dsRatio below is in the
+  // same texture-space units as the source shader.
+  eye.xy /= max(abs(region.xy), vec2(1e-4));
+  float safeZ = abs(eye.z) < 1e-4 ? (eye.z < 0.0 ? -1e-4 : 1e-4) : eye.z;
+  vec3 ds = eye;
+  // This is the source reliefMap() direction. The authored height field is
+  // traversed from the camera toward the wall; changing this to '+' makes
+  // windows/doors read as an outward bulge.
+  ds.xy = -ds.xy;
+  ds.z = safeZ;
+  ds.z *= 1.0 / kReliefDepth;
+  ds *= 1.0 / ds.z;
+  src -= ds.xy * kFlatLevel;
+  vec3 samplePos = vec3(src, 0.0);
+  float dsRatio = length(ds.xy * region.xy);
+  float finalDistance = 0.0;
+
+  for (int i = 0; i < kConeSteps; i++) {
+    vec2 sampleUv = clamp(samplePos.xy, 0.0, 1.0) * region.xy + region.zw;
+    vec4 control = scSampleAtlas(heightMap, sampleUv, region, dx, dy);
+    float height = control.r;
+    float coneRatio = max(control.g * kMaxConeRatio, 0.0);
+    float stepHeight = clamp(height - samplePos.z, 0.0, 1.0);
+    float stepDistance = (dsRatio + coneRatio) > 1e-5
+      ? (coneRatio * stepHeight) / (dsRatio + coneRatio)
+      : 0.0;
+    if (stepHeight > 0.0) finalDistance = stepDistance;
+    samplePos += ds * stepDistance;
   }
-  vec2 lo = prev;
-  vec2 hi = cur;
-  for (int i = 0; i < 2; i++) {
-    vec2 mid = (lo + hi) * 0.5;
-    float h = scSampleAtlas(heightMap, mid * region.xy + region.zw, region, dx, dy).r;
-    if (layer - (0.5 / 8.0) < h) hi = mid; else lo = mid;
+
+  ds *= finalDistance;
+  samplePos -= ds;
+  for (int i = 0; i < kBinarySteps; i++) {
+    ds *= 0.5;
+    vec2 sampleUv = clamp(samplePos.xy, 0.0, 1.0) * region.xy + region.zw;
+    float height = scSampleAtlas(heightMap, sampleUv, region, dx, dy).r;
+    samplePos += ((height - samplePos.z) >= 0.0) ? ds : -ds;
   }
-  return clamp((lo + hi) * 0.5, 0.0, 1.0);
+
+  // Flat pixels are the game's no-relief path. Keep the authored UV for the
+  // common wall case while allowing window/door heights to pop in and out.
+  vec4 sourceControl = scSampleAtlas(
+    heightMap,
+    clamp(src, 0.0, 1.0) * region.xy + region.zw,
+    region,
+    dx,
+    dy
+  );
+  if (sourceControl.r <= kFlatLevel) return src;
+  // Keep the unbounded result.  The game deliberately tests this coordinate
+  // against [0,1] after reliefMap(); clamping here would make outsideTile
+  // permanently zero and would smear a window/door texel into the surrounding
+  // wall whenever the parallax ray exits the Top tile.
+  return samplePos.xy;
 }
 vec3 scReliefEyeDir() {
+  vec3 tangentU;
+  vec3 tangentV;
+  vec3 normalV;
+#ifdef USE_TANGENT
+  // building4's vertex shader uses the exported mesh tangent and derives the
+  // second axis as cross(tangent, normal). Three exposes the opposite order
+  // for vBitangent, so construct the game-space binormal explicitly.
+  tangentU = normalize(vReliefTangent);
+  normalV = normalize(vReliefNormal);
+  tangentV = normalize(cross(tangentU, normalV));
+#else
+  // Fallback for foreign meshes without an exported tangent attribute.
   vec3 posV = -vViewPosition;
   vec3 dpx = dFdx(posV);
   vec3 dpy = dFdy(posV);
@@ -781,9 +844,12 @@ vec3 scReliefEyeDir() {
   vec2 duy = dFdy(vTopUv);
   float det = dux.x * duy.y - duy.x * dux.y;
   if (abs(det) < 1e-6) return vec3(0.0, 0.0, 1.0);
-  vec3 tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
-  vec3 tangentV = normalize((dpy * dux.x - dpx * duy.x) / det);
-  vec3 normalV = normalize(cross(tangentU, tangentV));
+  tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
+  normalV = normalize(vReliefNormal);
+  tangentV = normalize(cross(tangentU, normalV));
+#endif
+  // Three's vViewPosition is the fragment-to-camera vector, matching the
+  // source eyeDir = -mul(tangentSpace, viewPos).
   vec3 eyeV = normalize(vViewPosition);
   return normalize(vec3(dot(eyeV, tangentU), dot(eyeV, tangentV), dot(eyeV, normalV)));
 }
@@ -844,10 +910,13 @@ float scFastNoise(vec3 seed) {
         // selects coarse mips along material boundaries, even at close range.
         vec2 scTintGradX = dFdx(vTintUv) * xform.xy;
         vec2 scTintGradY = dFdy(vTintUv) * xform.xy;
-        // Close-up preview uses the actual Top footprint, independently of brick
-        // density. Include padding: near-constant UVs can be expanded by 2500x.
-        // Differentiate BEFORE fract/clamp and the discrete parameter lookup.
-        vec2 scTopScale = (1.0 + scRoom.xy) * xform2.xy;
+        // building4SetupPS computes the Top footprint from uv2 * regionXform2
+        // only.  tilePadding belongs to the relief tile-domain transform; it is
+        // deliberately not part of the texture derivatives.  Multiplying the
+        // derivatives by (1 + tilePadding) makes the many window columns with
+        // large padding select a coarse mip (often the whole atlas), which is
+        // why some windows become matte or lose their Top relief entirely.
+        vec2 scTopScale = xform2.xy;
         vec2 scTopGradX = dFdx(vTopUv) * scTopScale;
         vec2 scTopGradY = dFdy(vTopUv) * scTopScale;
         vec4 tintValues = scSampleFacade(tintMap, tUv, xform, scTintGradX, scTintGradY);
@@ -873,14 +942,15 @@ float scFastNoise(vec3 seed) {
           // Top 层保持现行公式（ts2/其倒数在参数表无对应行，v1 乱除已弃）。
           vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
           #ifdef TINT_SHADERMAP
-          // shaderMap.r is the authored facade height/cone channel.  Keep the
-          // original derivatives so mip selection remains stable across tiles.
-          // Very large padding is the engine's "Top disabled/knife-edge" marker;
-          // sampling relief there turns the degenerate UV into visible stripes.
-          if (max(abs(scPad.x), abs(scPad.y)) < 8.0) {
-            reliefSrc = scReliefUv(reliefSrc, scReliefEyeDir(), shaderMapMap, xform2,
-              scTopGradX, scTopGradY);
-          }
+          // shaderMap.r is the authored facade height/cone channel.  The game
+          // calls reliefMap for every Top column, including columns whose
+          // padding is large; outsideTile decides whether the result remains
+          // in the tile.  Skipping those columns made whole window families
+          // appear to have no relief at all.
+          // reliefPS receives the Base-domain derivatives (uv_ddx/uv_ddy),
+          // even though its height samples come from the Top atlas.
+          reliefSrc = scReliefUv(reliefSrc, scReliefEyeDir(), shaderMapMap, xform2,
+            scTintGradX, scTintGradY);
           #endif
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +

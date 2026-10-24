@@ -24,6 +24,31 @@
 
 use rw4::{DecodedAnim, DecodedMesh, DecodedSkeleton, mat4_decompose_trs, mat4_inverse, mat4_mul};
 
+/// Pick the facade projection stream from a RW4 vertex.  Building meshes can
+/// carry both an ordinary FLOAT2 UV and one or more FLOAT4 streams.  The
+/// facade stream is the FLOAT4 with world-sized coordinates; taking the first
+/// TEXCOORD (the old code did that) silently exported the ordinary UV as
+/// TEXCOORD_2/3 and made only part of a building receive Top/relief shading.
+fn facade_uv4(vertex: &rw4::DecodedVertex) -> Option<[f32; 4]> {
+    vertex
+        .components
+        .iter()
+        .filter_map(|(element, value)| {
+            if element.usage != rw4::DeclarationUsage::TexCoord {
+                return None;
+            }
+            match value {
+                rw4::ComponentValue::Float4(f) => {
+                    let score = f.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
+                    Some((score, *f))
+                }
+                _ => None,
+            }
+        })
+        .max_by(|(a, _), (b, _)| a.total_cmp(b))
+        .map(|(_, f)| f)
+}
+
 const GLB_MAGIC: u32 = 0x4654_6C67; // "glTF"
 const GLB_VERSION: u32 = 2;
 const CHUNK_JSON: u32 = 0x4E4F_534A; // "JSON"
@@ -520,30 +545,16 @@ pub fn export_glb_with_colors(
     // TEXCOORD_2/3 = facade 世界投影 UV（FLOAT4 TexCoord：xy=Base 层、
     // zw=Top 层）。原值直出不取反：tint 着色器按游戏公式 frac(uv)*regionXform
     // 采样，与后端 bake 同坐标系。此前被 0,0 占位（2026-09-08 修复）。
-    let has_facade_uv = v_count > 0
-        && mesh.vertices.iter().any(|v| {
-            v.components.iter().any(|(e, val)| {
-                e.usage == rw4::DeclarationUsage::TexCoord
-                    && matches!(val, rw4::ComponentValue::Float4(_))
-            })
-        });
+    // A glTF attribute is mesh-wide.  Do not advertise a facade stream when
+    // even one vertex lacks it: zero-filling that vertex creates a real,
+    // visible subset of windows sampling the atlas origin.
+    let has_facade_uv = v_count > 0 && mesh.vertices.iter().all(|v| facade_uv4(v).is_some());
     let (facade_base_offset, facade_top_offset) = if has_facade_uv {
         let mut facade = |component: usize| -> usize {
             pad4(&mut bin);
             let offset = bin.len();
             for v in &mesh.vertices {
-                let f = v
-                    .components
-                    .iter()
-                    .find_map(|(e, val)| {
-                        (e.usage == rw4::DeclarationUsage::TexCoord)
-                            .then_some(())
-                            .and_then(|_| match val {
-                                rw4::ComponentValue::Float4(f) => Some(*f),
-                                _ => None,
-                            })
-                    })
-                    .unwrap_or([0.0; 4]);
+                let f = facade_uv4(v).unwrap_or([0.0; 4]);
                 put_f32s(&mut bin, &[f[component], f[component + 1]]);
             }
             offset
