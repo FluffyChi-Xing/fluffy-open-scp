@@ -30,7 +30,7 @@ Unit Connecter Tool
 
 ## 引擎侧 action 闭环
 
-开发样本的 `SC::CreateTools` 会从工具脚本组 `0x08F570BD` 枚举 Property，读取 `0x08F672C7`，再调用 `SC::CreateTool(actionInstance)`。`SC::CreateTool` 的 switch 只有以下 10 个 action：
+开发样本的 `SC::CreateTools` 会从工具脚本组 `0x08F570BD` 枚举 Property，读取 `0x08F672C7`，再调用 `SC::CreateTool(actionInstance)`。旧开发样本反编译文本只呈现 10 个 action；本机发售版二进制复核后，factory 实际保留 12 个 action，新增的两个是高塔/空中桥梁工具：
 
 ```text
 134CDAC9 -> cToolPathPlacer
@@ -40,9 +40,11 @@ Unit Connecter Tool
 6FE8D729 -> cToolMetaLotZone
 70930C64 -> cToolDisasterPlop
 9730F3A0 -> cToolBulldozer
-9A2BAEE8 -> cToolTornado
+9A2BAEE8 -> cToolTornado（factory action；隐藏 Menu 的实际 action 是 70930C64）
 C741981F -> cToolPathSelector
 EF089B06 -> cToolRegion
+22D4ACD5 -> cToolAddTowerLevel
+ECC08133 -> cToolSkybridge
 ```
 
 因此当前证据是：
@@ -54,11 +56,11 @@ EF089B06 -> cToolRegion
 
 这解释了为什么“显示在菜单里”和“点击后真的进入 Unit 编辑器”必须分开验收。当前不能把这三个条目标成已恢复的可执行编辑器。
 
-还有一条旁证：开发样本 PDB 路径清单包含 `sctoolunitconnecter.h`，但 `sctool/source` 中没有对应的 `sctoolunitconnecter.cpp`；同样，`sctoolpathedit.h` 与 `sctoolpathgraphicsedit.h` 也只有头文件路径。它更像是曾经保留过接口/实验分支的开发代码，而不是当前样本中已链接的工具实现。这个证据不能证明所有版本都没有实现，但足以说明不能仅凭菜单标题恢复它。
+还有一条旁证：开发样本 PDB 路径清单包含 `sctoolunitconnecter.h`，但 `sctool/source` 中没有对应的 `sctoolunitconnecter.cpp`；同样，`sctoolpathedit.h` 与 `sctoolpathgraphicsedit.h` 也只有头文件路径。发售版 `SimCity.exe` 中三个 authoring action 的原始字节与对应 RTTI 也不存在，因此它们更像是曾经保留过接口/实验分支、发行时移除执行侧的工具。这个证据不能证明所有历史版本都没有实现，但足以说明当前发行版不能仅凭菜单标题恢复它。
 
 ## 对照：同一隐藏 Parent 下的其他条目
 
-`AD947E95`、`A4C5D581`、`EB627DE3`、`A5800DC3`、`E48FCA6B` 等条目的 `ecoGameToolAction` 都是 `0x70930C64`，对应已确认存在的 `cToolDisasterPlop`。它们是灾害放置变体，而不是 authoring 工具。`C741981F` 和 `9A2BAEE8` 则分别闭合到 `cToolPathSelector` 与 `cToolTornado`，是隐藏 Menu → factory 的阳性样本。
+`AD947E95`、`A4C5D581`、`EB627DE3`、`A5800DC3`、`E48FCA6B` 等条目的 `ecoGameToolAction` 都是 `0x70930C64`，对应已确认存在的 `cToolDisasterPlop`。它们是灾害放置变体，而不是 authoring 工具。`C741981F` 的 action 是 `C741981F`，闭合到 `cToolPathSelector`；`9A2BAEE8` 虽然 instance 与 `cToolTornado` 相同，但其 Property action 实际是 `0x70930C64`，仍走 `cToolDisasterPlop`。
 
 ## 覆盖包实验
 

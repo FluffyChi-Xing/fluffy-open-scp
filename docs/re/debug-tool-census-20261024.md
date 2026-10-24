@@ -23,7 +23,7 @@
 当前可以确认：
 
 - 隐藏父对象 `0xBE5744E0` 下有 **14 个 Menu 条目**，另有 1 个 `Menu2` 条目；
-- `CreateTool` factory 仍保留 **10 个有明确构造函数的 C++ 工具实现**；
+- 已安装发售版 `SimCity.exe` 的 `CreateTool` factory 仍保留 **12 个有明确构造函数的 C++ 工具实现**；旧开发样本反编译文本只列出其中 10 个，不能直接代替发售版核验；
 - 目录中有 **3 个明确命名的 debug 工具**；
 - 目录中另有 **6 个 debug placement 住宅帐篷资产**，它们不是工具类；
 - 目前没有证据证明所有隐藏 Menu 都能被 `CreateTool` 实例化。
@@ -42,7 +42,7 @@
 | `BFE9891F` | Menu | 无标题 | 占位条目 |
 | `C741981F` | Menu | 有标题/描述字段，factory 有实现 | **已确认 `cToolPathSelector`** |
 | `53B77423` | Menu | Edit Unit Prop Tool；debug UI 分类 | overlay 可改分类，factory case 未找到 |
-| `9A2BAEE8` | Menu | 有标题、解锁条件和图标 | **已确认 `cToolTornado`** |
+| `9A2BAEE8` | Menu | 有标题、解锁条件和图标；Property action 实际为 `70930C64` | **菜单使用 `cToolDisasterPlop`，不是直接实例化 `cToolTornado`** |
 | `EB627DE3` | Menu | 有标题、解锁条件和图标 | 未找到 factory case，待验证 |
 | `A5800DC3` | Menu | 有标题、解锁条件和图标 | 未找到 factory case，待验证 |
 | `E48FCA6B` | Menu | 有标题、解锁条件和图标 | 未找到 factory case，待验证 |
@@ -65,7 +65,7 @@
 
 ## B. `CreateTool` factory 中仍有实现的工具
 
-开发样本的 `SC::CreateTool(unsigned int toolID)` 明确保留以下 10 个 action ID。`SC::CreateTools` 会从工具脚本组 `0x08F570BD` 枚举 Property，读取 `0x08F672C7`，再把该 instance 传入 factory；factory 不认识的 ID 直接返回空。
+对安装目录中的发售版 `SimCity.exe` 做 PE 静态核验后，`SC::CreateTool(unsigned int toolID)` 位于 `.text` 的 `0x0089BF00`，switch 明确保留以下 12 个 action ID。`SC::CreateTools` 会从工具脚本组 `0x08F570BD` 枚举 Property，读取 `0x08F672C7`，再把该 instance 传入 factory；factory 不认识的 ID 直接返回空。旧开发样本的反编译文本在同一函数中只呈现 10 个分支，发售版二进制是判断当前游戏执行侧的优先证据。
 
 | action ID | C++ 实现 | 主要能力 | 对资产/地图编辑的价值 |
 | --- | --- | --- | --- |
@@ -79,8 +79,33 @@
 | `9A2BAEE8` | `cToolTornado` | 龙卷风特殊工具 | 低：不是地图编译入口 |
 | `C741981F` | `cToolPathSelector` | 选择路径、返回选中的世界坐标点 | **高**：可用于路径审查、选点和 Property 对拍 |
 | `EF089B06` | `cToolRegion` | 区域工具、区域边界/区域单位相关操作 | **高**：可能连接 Region/City 编辑，但需要继续追写回链路 |
+| `22D4ACD5` | `cToolAddTowerLevel` | 添加高塔楼层/楼层单元 | 中高：保留了高塔楼层装配执行侧，但当前对应 `Menu2` 没有标题 |
+| `ECC08133` | `cToolSkybridge` | 空中桥梁放置/连接 | **高**：对应 `Menu2` 条目，标题为“空中桥梁”，可作为跨 Unit 连接语义的阳性样本 |
 
-这里的“有 factory 实现”只表示 C++ 构造和方法存在，不自动表示当前菜单可见、输入绑定已打开或能安全写回 package。`C741981F` 和 `9A2BAEE8` 同时出现在隐藏 Menu 清单中，因此是目前最明确的“隐藏菜单 → 引擎工具”闭合样本。
+这里的“有 factory 实现”只表示 C++ 构造和方法存在，不自动表示当前菜单可见、输入绑定已打开或能安全写回 package。`C741981F` 是隐藏 Menu → `cToolPathSelector` 的直接闭合样本；`22D4ACD5` 与 `ECC08133` 是 `Menu2` → 高塔/空中桥梁工具的直接闭合样本。
+
+这一段需要更正：隐藏 Menu `C741981F` 的 Property action 确实是 `C741981F`，因此闭合到 `cToolPathSelector`；隐藏 Menu `9A2BAEE8` 的 action 是 `70930C64`，它走的是 `cToolDisasterPlop`。`9A2BAEE8` 这个 instance 恰好与 `cToolTornado` 的 factory action 同名，不能据此推断菜单会创建 `cToolTornado`。
+
+### 发售版的直接二进制证据
+
+本机发售版文件：
+
+```text
+D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCity\SimCity.exe
+size   = 10,971,552 bytes
+SHA256 = 2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab
+```
+
+工厂函数的反汇编分支为：
+
+```text
+134CDAC9  1943CB96  22D4ACD5  2EA8FB98  476A98C7  6FE8D729
+70930C64  9730F3A0  9A2BAEE8  C741981F  ECC08133  EF089B06
+```
+
+发售版中 `53B77423`、`A2AA4268`、`B65E1F2E` 的 little-endian 和 big-endian 原始字节出现次数均为 0；同时没有 `cToolUnitConnecter`、`cToolPathEdit` 或 `cToolSnapPoint` 这类对应 RTTI 字符串。结合 `CreateTool` 没有三项分支，可以把三个 authoring 工具判定为“菜单/Property 残留，发行版执行侧未保留”。
+
+同一发售版仍有 `cToolAddTowerLevel` 与 `cToolSkybridge` 的 RTTI。其 factory 分支分别分配 `0xBC8` 和 `0xB40` 字节，并调用对应构造函数；这两个是明确的执行侧残留，而不是只有菜单文本的空壳。全量 SimCityData 的 Menu/Menu2 Property 对拍还确认：`22D4ACD5` 是无标题的 `Menu2`，`ECC08133` 是标题为“空中桥梁”的 `Menu2`，二者的 action 均指向自身并能命中 factory。
 
 ## C. 明确标记为 debug 的工具与资产
 
@@ -121,7 +146,7 @@
 
 | 等级 | 含义 | 工具 |
 | --- | --- | --- |
-| A | factory 有明确 case，可继续做输入和运行时验收 | PathPlacer、Plop、Default、UFO、MetaLotZone、DisasterPlop、Bulldozer、Tornado、PathSelector、Region |
+| A | factory 有明确 case，可继续做输入和运行时验收 | PathPlacer、Plop、Default、AddTowerLevel、Skybridge、UFO、MetaLotZone、DisasterPlop、Bulldozer、Tornado、PathSelector、Region |
 | B | 菜单/Property 和数据 overlay 已确认，但 action 是否可执行尚未闭合 | Edit Unit Prop、Edit Snap Points、Unit Connecter |
 | C | 有菜单记录但无 factory case、标题不完整或只有占位字段 | 其余隐藏 Parent `0xBE5744E0` 条目 |
 | D | debug-only 可放置资产，不是工具实现 | 六个 Homeless Tent |
@@ -129,7 +154,7 @@
 ## 后续验证顺序
 
 1. 从工具脚本组 `0x08F570BD` 导出所有 Property 的完整 TGI、`0x08F672C7` action、Parent、分类和标题，建立 Menu instance 与 action instance 的双向表。
-2. 对 A 级工具做输入绑定和最小运行时记录：创建、预览、提交、撤销/删除、保存/重载。
+2. 对 A 级工具做输入绑定和最小运行时记录：创建、预览、提交、撤销/删除、保存/重载；优先验证 `Skybridge` 与 `AddTowerLevel` 的 Menu2 入口。
 3. 对 B 级工具追查非 `CreateTool` 的注册路径、热加载组和 JS/UI action；在未闭合前不把它们标成“可执行”。
 4. 以 `cToolPathPlacer`、`cToolMetaLotZone` 和 Terrain Editor 为三个独立实验，分别建立 schema 输出：Path/Network、Lot/Zone、typed map/341 tile。
 5. 将 `cToolRegion` 单独作为 Region/EGB 研究，不把区域边界工具与地形资源写回能力混为一谈。
@@ -140,6 +165,7 @@
 - `public/game-ui/tools/costs.json`
 - `tmp/development-menu-survey.json`
 - `tmp/dev-sample-analysis/SimCity.unwrapped.exe.c`：`SC::CreateTool`、`SC::CreateTools`、各 `cTool*` 类
+- 发售版 `D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCity\SimCity.exe`：`CreateTool` 分支、PE 字符串/RTTI 和三个 authoring action 的缺失字节核验
 - [file-types.zh-CN.md](../../src/assets/knowledge/file-types.zh-CN.md)
 - [crates/sc-properties/src/debug_tools.rs](../../crates/sc-properties/src/debug_tools.rs)
 - [hidden-debug-tools-and-terrain-brushes.md](hidden-debug-tools-and-terrain-brushes.md)

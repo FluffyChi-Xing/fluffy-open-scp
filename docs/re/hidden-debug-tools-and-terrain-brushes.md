@@ -75,12 +75,14 @@ BFE9891F  C741981F  53B77423  9A2BAEE8  EB627DE3
 A5800DC3  E48FCA6B  B65E1F2E  454041B4
 ```
 
-其中反编译的工具 factory 明确处理了：
+其中发售版工具 factory 明确处理了：
 
 ```text
-0xC741981F -> cToolPathSelector
-0x9A2BAEE8 -> cToolTornado
+0xC741981F -> cToolPathSelector（该 Menu 的 action 也是 0xC741981F）
+0x9A2BAEE8 -> cToolDisasterPlop（该 Menu 的 action 实际是 0x70930C64）
 ```
+
+`0x9A2BAEE8` 只是 Menu instance 与 `cToolTornado` action 同名，不能据此推断它会创建龙卷风工具。发售版 factory 仍有独立的 `0x9A2BAEE8 -> cToolTornado` 分支，但全量 Menu/Menu2 Property 中没有条目的 action 指向它。
 
 当前代码还确认了三个可通过 overlay 解锁的开发期工具：
 
