@@ -35,6 +35,7 @@ import NotesSheet from "./NotesSheet.vue";
 import ModFlowWorkbench from './mod-flow/ModFlowWorkbench.vue';
 import FlowInitializeSheet from './mod-flow/FlowInitializeSheet.vue';
 import { isEngineManifest } from './mod-flow/contracts';
+import StandardModEditorPanel from './StandardModEditorPanel.vue';
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
@@ -103,6 +104,12 @@ const engineReady = ref(false);
 const initializeOpen = ref(false);
 const flowPanel = ref<InstanceType<typeof ModFlowWorkbench> | null>(null);
 const deployBusy = ref(false);
+const standardModKind = computed(() => {
+  const value = projectManifest.value.mod_type ?? projectManifest.value.modType;
+  if (typeof value === "string") return value.toLowerCase();
+  const workflow = projectManifest.value.workflow;
+  return workflow === "map" || workflow === "whole-region" || workflow === "generated" ? "map" : "assets";
+});
 
 async function buildDeployAndLaunch() {
   if (!engineReady.value || deployBusy.value) return;
@@ -501,9 +508,29 @@ watch(
         :label="$t('studio.code.resizeHint')"
       />
 
-      <!-- 右：按扩展名分流的工作台查看器 -->
+      <!-- 右：社区 Mod 使用文件查看器，标准 Mod 使用上下工作台 -->
       <ResizablePanel id="code-viewer" :default-size="74" :min-size="40">
-        <ModFlowWorkbench v-if="engineEnabled" :key="project.relPath" ref="flowPanel" :project="project.relPath" :selected-path="selected?.relativePath" @status="engineReady = $event" @saved="loadTree(true)" />
+        <Resizable
+          v-if="engineEnabled"
+          direction="vertical"
+          auto-save-id="openscp:code-standard-workbench:v1"
+          class="standard-workbench"
+        >
+          <ResizablePanel id="code-editor-panel" :default-size="58" :min-size="30">
+            <StandardModEditorPanel
+              :project="project.relPath"
+              :kind="standardModKind"
+              :manifest="projectManifest"
+            />
+          </ResizablePanel>
+          <ResizableHandle
+            orientation="vertical"
+            :label="$t('studio.code.resizeVerticalHint')"
+          />
+          <ResizablePanel id="code-blueprint-panel" :default-size="42" :min-size="24">
+            <ModFlowWorkbench :key="project.relPath" ref="flowPanel" :project="project.relPath" :selected-path="selected?.relativePath" @status="engineReady = $event" @saved="loadTree(true)" />
+          </ResizablePanel>
+        </Resizable>
         <div v-else class="viewer" :class="{ empty: !selected }">
           <template v-if="selected">
             <!-- 右上角 toolbar：路径 + 缩放（图片）/ 笔记 / more 浮层 -->
@@ -878,6 +905,13 @@ watch(
 }
 .code-shell {
   flex: 1;
+  min-height: 0;
+}
+.standard-workbench {
+  height: 100%;
+  min-height: 0;
+}
+.standard-workbench :deep(.resizable-panel) {
   min-height: 0;
 }
 .tree-panel {
