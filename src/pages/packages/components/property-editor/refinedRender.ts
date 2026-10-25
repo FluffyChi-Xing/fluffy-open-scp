@@ -1065,12 +1065,17 @@ float scFastNoise(vec3 seed) {
           scTintMul = mix(tintValues.b, facadeTintValues.b, scFacade) * 2.0;
           diffuseColor.rgb *= scPalColor.rgb * scTintMul;
           #ifdef USE_NORMALMAP
-          // artistAO = normalMapSampled.a（Base/Top 双采样 lerp，显式导数同 tint）
-          // Normal and material data use the engine's linear filtering. Cubic
-          // reconstruction is reserved for visible colour/coverage contours.
+          // The Blender six-slot node graph uses slot2 alpha while computing
+          // its packed normal/roughness branches, but that alpha is not a
+          // general-purpose diffuse AO mask. Multiplying the final color by
+          // it creates dense black speckles on external community materials.
+          // Keep slot2 for the actual normal map and leave diffuse lighting to
+          // the material/normal path, matching Blender's final node output.
            scNormalSample = scSampleAtlas(normalMap, tUv, baseRegion, scTintGradX, scTintGradY);
            if (scFacade > 0.001) scNormalSample = mix(scNormalSample, scSampleAtlas(normalMap, topUv, topRegion, scTopGradX, scTopGradY), scFacade);
-          diffuseColor.rgb *= scNormalSample.a;
+#ifndef TINT_BLENDER
+           diffuseColor.rgb *= scNormalSample.a;
+#endif
           #endif
         }
         #ifdef TINT_SHADERMAP
@@ -1296,7 +1301,10 @@ export function makeTintMaterial(
     roughness: 0.9,
     metalness: 0,
     side: THREE.DoubleSide,
-    normalMap: tint.normalTex,
+    // Blender's slot2 is sampled by the custom branch below. Binding it as a
+    // MeshStandardMaterial normalMap as well double-applies the packed atlas
+    // and produces speckled walls on external community assets.
+    normalMap: blenderUvProfile ? undefined : tint.normalTex,
   });
   // 法线观感强度：引擎 ApplyNormalMap 的倍率未知，资产本身是细腻浮雕
   // （窗框/线脚）；1.0 时几乎不可辨（2026-09-18 用户反馈），1.5 为

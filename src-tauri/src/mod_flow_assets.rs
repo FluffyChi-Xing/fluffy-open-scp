@@ -41,64 +41,69 @@ bpy.ops.wm.open_mainfile(filepath=src)
 # glTF material contract.  Bake each material's final node color into a
 # regular image before export.  This intentionally treats an imported blend
 # as an arbitrary external asset: the source node graph is the authority.
-scene = bpy.context.scene
-try:
-    scene.render.engine = 'CYCLES'
-    scene.cycles.samples = 1
-    scene.cycles.use_denoising = False
-    scene.cycles.device = 'CPU'
-    for obj in [o for o in bpy.data.objects if o.type == 'MESH']:
-        mats = list(obj.data.materials)
-        for index, mat in enumerate(mats):
-            if not mat or not mat.use_nodes: continue
+has_semantic_slots = (
+    any("slot1" in (image.name or "").lower() for image in bpy.data.images) and
+    any("slot4" in (image.name or "").lower() for image in bpy.data.images)
+)
+if not has_semantic_slots:
+    scene = bpy.context.scene
+    try:
+        scene.render.engine = 'CYCLES'
+        scene.cycles.samples = 1
+        scene.cycles.use_denoising = False
+        scene.cycles.device = 'CPU'
+        for obj in [o for o in bpy.data.objects if o.type == 'MESH']:
+            mats = list(obj.data.materials)
+            for index, mat in enumerate(mats):
+                if not mat or not mat.use_nodes: continue
+                tree = mat.node_tree
+                group = next((n for n in tree.nodes if n.type == 'GROUP'), None)
+                bsdf = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+                if not group or not bsdf: continue
+                color_output = group.outputs.get('Color')
+                if not color_output: continue
+                bake = tree.nodes.get('__OpenSCP_Bake')
+                if not bake:
+                    bake = tree.nodes.new('ShaderNodeTexImage')
+                    bake.name = '__OpenSCP_Bake'
+                if not bake.image:
+                    bake.image = bpy.data.images.new('__OpenSCP_Bake_' + str(index), width=1024, height=1024, alpha=True)
+                tree.nodes.active = bake
+                for link in list(bsdf.inputs['Emission Color'].links): tree.links.remove(link)
+                tree.links.new(color_output, bsdf.inputs['Emission Color'])
+                bsdf.inputs['Base Color'].default_value = (0.0, 0.0, 0.0, 1.0)
+            for index, mat in enumerate(mats):
+                if not mat or not mat.use_nodes or '__OpenSCP_Bake' not in mat.node_tree.nodes: continue
+                for poly in obj.data.polygons: poly.select = (poly.material_index == index)
+                for selected in bpy.context.selected_objects:
+                    if selected != obj: selected.select_set(False)
+                obj.select_set(True)
+                bpy.context.view_layer.objects.active = obj
+                bpy.ops.object.bake(type='EMIT', margin=8, use_clear=True)
+        # Replace only materials that were baked. Keep ordinary Blender materials
+        # intact and preserve the baked alpha channel for windows/glass.
+        for mat in bpy.data.materials:
+            if not mat.use_nodes: continue
+            bake = mat.node_tree.nodes.get('__OpenSCP_Bake')
+            if not bake or not bake.image: continue
+            image = bake.image
             tree = mat.node_tree
-            group = next((n for n in tree.nodes if n.type == 'GROUP'), None)
-            bsdf = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
-            if not group or not bsdf: continue
-            color_output = group.outputs.get('Color')
-            if not color_output: continue
-            bake = tree.nodes.get('__OpenSCP_Bake')
-            if not bake:
-                bake = tree.nodes.new('ShaderNodeTexImage')
-                bake.name = '__OpenSCP_Bake'
-            if not bake.image:
-                bake.image = bpy.data.images.new('__OpenSCP_Bake_' + str(index), width=1024, height=1024, alpha=True)
-            tree.nodes.active = bake
-            for link in list(bsdf.inputs['Emission Color'].links): tree.links.remove(link)
-            tree.links.new(color_output, bsdf.inputs['Emission Color'])
-            bsdf.inputs['Base Color'].default_value = (0.0, 0.0, 0.0, 1.0)
-        for index, mat in enumerate(mats):
-            if not mat or not mat.use_nodes or '__OpenSCP_Bake' not in mat.node_tree.nodes: continue
-            for poly in obj.data.polygons: poly.select = (poly.material_index == index)
-            for selected in bpy.context.selected_objects:
-                if selected != obj: selected.select_set(False)
-            obj.select_set(True)
-            bpy.context.view_layer.objects.active = obj
-            bpy.ops.object.bake(type='EMIT', margin=8, use_clear=True)
-    # Replace only materials that were baked. Keep ordinary Blender materials
-    # intact and preserve the baked alpha channel for windows/glass.
-    for mat in bpy.data.materials:
-        if not mat.use_nodes: continue
-        bake = mat.node_tree.nodes.get('__OpenSCP_Bake')
-        if not bake or not bake.image: continue
-        image = bake.image
-        tree = mat.node_tree
-        tree.nodes.clear()
-        output = tree.nodes.new('ShaderNodeOutputMaterial')
-        bsdf = tree.nodes.new('ShaderNodeBsdfPrincipled')
-        tex = tree.nodes.new('ShaderNodeTexImage')
-        tex.image = image
-        tree.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
-        if 'Alpha' in tex.outputs and 'Alpha' in bsdf.inputs:
-            tree.links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
-        tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-        bsdf.inputs['Roughness'].default_value = 0.8
-        try: mat.surface_render_method = 'DITHERED'
-        except Exception: pass
-except Exception as error:
-    # A blend may use a renderer that cannot bake in headless mode. Exporting
-    # the original graph is still useful, and the caller receives a valid GLB.
-    print('OpenSCP bake skipped:', repr(error))
+            tree.nodes.clear()
+            output = tree.nodes.new('ShaderNodeOutputMaterial')
+            bsdf = tree.nodes.new('ShaderNodeBsdfPrincipled')
+            tex = tree.nodes.new('ShaderNodeTexImage')
+            tex.image = image
+            tree.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+            if 'Alpha' in tex.outputs and 'Alpha' in bsdf.inputs:
+                tree.links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
+            tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+            bsdf.inputs['Roughness'].default_value = 0.8
+            try: mat.surface_render_method = 'DITHERED'
+            except Exception: pass
+    except Exception as error:
+        # A blend may use a renderer that cannot bake in headless mode. Exporting
+        # the original graph is still useful, and the caller receives a valid GLB.
+        print('OpenSCP bake skipped:', repr(error))
 
 bpy.ops.object.select_all(action='SELECT')
 exporter = getattr(getattr(bpy.ops, 'export_scene', None), 'gltf', None)
@@ -273,7 +278,7 @@ with open(out_map, 'w', encoding='utf-8') as f: json.dump(slots, f)
         }
     }
     let _ = fs::remove_dir_all(&temp);
-    Ok(json!({"asset": relative, "materialSlots": slots, "source": "blend", "baked": true}))
+    Ok(json!({"asset": relative, "materialSlots": slots, "source": "blend"}))
 }
 
 /// Blender's Windows path handling does not accept Rust's extended `\\?\\`

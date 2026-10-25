@@ -1379,9 +1379,10 @@ async function assembleScene(
         // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
         mesh.userData.buildingMaterialIndex = materialIndex;
         try {
-          const importedMaterial = Array.isArray(mesh.material)
-            ? mesh.material[0]
-            : mesh.material;
+          const importedMaterials = Array.isArray(mesh.material)
+            ? mesh.material
+            : [mesh.material];
+          const importedMaterial = importedMaterials[0];
           // 默认渲染始终是白模。外部 GLB 可能自带 glTF 材质，但不能让
           // Blender 导出的临时 baseColor 贴图绕过工作台的显示模式开关。
           if (props.renderMode !== "refined") {
@@ -1398,9 +1399,15 @@ async function assembleScene(
           // 4) 两者皆无（纯白模）→ 白模材质。
           const hasSlotMaterials = (payload?.materials?.length ?? 0) > 0;
           if (props.modelSource === "glb" && !hasSlotMaterials) {
-            const imported =
-              mesh.material as ThreeNamespace.MeshStandardMaterial | null;
-            if (imported?.map || imported?.normalMap || imported?.emissiveMap)
+            const hasImportedTexture = importedMaterials.some(
+              (imported) =>
+                Boolean(
+                  (imported as ThreeNamespace.MeshStandardMaterial | null)?.map ||
+                    (imported as ThreeNamespace.MeshStandardMaterial | null)?.normalMap ||
+                    (imported as ThreeNamespace.MeshStandardMaterial | null)?.emissiveMap,
+                ),
+            );
+            if (hasImportedTexture)
               return;
             if (mesh.geometry.attributes.color) {
               mesh.material = new THREE.MeshStandardMaterial({
@@ -1411,54 +1418,56 @@ async function assembleScene(
               });
               return;
             }
-            if (!imported) mesh.material = whiteMaterial;
+            if (!importedMaterial) mesh.material = whiteMaterial;
             return;
           }
-          const blenderMaterialIndex =
-            uvKind === 3 && importedMaterial?.name
-              ? (payload?.materials ?? []).findIndex(
-                  (entry) => entry.materialName === importedMaterial.name,
-                )
-              : -1;
-          const tint =
-            tintResolved[blenderMaterialIndex >= 0 ? blenderMaterialIndex : materialIndex];
-          if (
-            (uvKind === 2 || uvKind === 3) &&
-            tint?.tintTex &&
-            tint.paletteTex
-          ) {
-            // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-            const [tinted, specUniform] = makeTintMaterial(
-              THREE,
-              tint,
-              env,
-              props.reliefEnabled === true,
-              uvKind === 3,
-              uvKind === 3
-                ? (tint.paletteRowsByMaterial.get(
-                    importedMaterial?.name ?? "",
-                  ) ??
-                    (/whitebox|roof/i.test(importedMaterial?.name ?? "")
-                      ? 9.6
-                      : 0))
-                : 0,
-              uvKind === 3 &&
-                /whitebox|roof/i.test(importedMaterial?.name ?? ""),
-              uvKind === 3 ? importedMaterial?.name : undefined,
-            );
-            specUniformRefs.push(specUniform);
-            mesh.material = tinted;
-            return;
-          }
-          // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
-          const refined = new THREE.MeshStandardMaterial({
-            vertexColors: Boolean(mesh.geometry.attributes.color),
-            roughness: 0.82,
-            metalness: 0,
-            side: THREE.DoubleSide,
+          const resolvedMaterials = importedMaterials.map((imported) => {
+            const materialName = imported?.name ?? "";
+            const blenderMaterialIndex =
+              uvKind === 3 && materialName
+                ? (payload?.materials ?? []).findIndex(
+                    (entry) => entry.materialName === materialName,
+                  )
+                : -1;
+            const tint =
+              tintResolved[
+                blenderMaterialIndex >= 0 ? blenderMaterialIndex : materialIndex
+              ];
+            if (
+              (uvKind === 2 || uvKind === 3) &&
+              tint?.tintTex &&
+              tint.paletteTex
+            ) {
+              // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
+              const [tinted, specUniform] = makeTintMaterial(
+                THREE,
+                tint,
+                env,
+                props.reliefEnabled === true,
+                uvKind === 3,
+                uvKind === 3
+                  ? (tint.paletteRowsByMaterial.get(materialName) ??
+                      (/whitebox|roof/i.test(materialName) ? 9.6 : 0))
+                  : 0,
+                uvKind === 3 && /whitebox|roof/i.test(materialName),
+                uvKind === 3 ? materialName : undefined,
+              );
+              specUniformRefs.push(specUniform);
+              return tinted;
+            }
+            // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
+            const refined = new THREE.MeshStandardMaterial({
+              vertexColors: Boolean(mesh.geometry.attributes.color),
+              roughness: 0.82,
+              metalness: 0,
+              side: THREE.DoubleSide,
+            });
+            if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
+            return refined;
           });
-          mesh.material = refined;
-          if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
+          mesh.material = Array.isArray(mesh.material)
+            ? resolvedMaterials
+            : resolvedMaterials[0];
         } catch (error) {
           // 逐 mesh 兜底（2026-10-08 EP1 乱码取证）：装配异常若逃出 traverse
           // 会中断整个模型线——后续 mesh 留在 GLTFLoader 默认材质（金属灰/
