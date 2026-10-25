@@ -1019,6 +1019,48 @@ pub async fn code_write_text(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+/// 删除项目内单个文件（mod 工作台移除导入资产用）。仅允许常规文件，
+/// 符号链接/目录一律拒绝；文件不存在视为已删除（幂等）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeDeleteFileRequest {
+    pub project: String,
+    pub relative_path: String,
+}
+
+#[tauri::command]
+pub async fn code_delete_file(
+    state: State<'_, AppState>,
+    request: CodeDeleteFileRequest,
+) -> Result<(), CommandError> {
+    let store = Arc::clone(&state.store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        let relative = validate_relative_path(&request.relative_path, false)
+            .map_err(CommandError::from)?;
+        let parent = existing_parent(&root, &relative).map_err(CommandError::from)?;
+        let target = parent.join(
+            relative
+                .file_name()
+                .ok_or_else(|| CommandError::from(WorkspaceError::NotFound))?,
+        );
+        match fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                Err(CommandError::from(WorkspaceError::Symlink))
+            }
+            Ok(metadata) if !metadata.is_file() => {
+                Err(CommandError::from(WorkspaceError::NotFile))
+            }
+            Ok(_) => fs::remove_file(&target)
+                .map_err(|error| CommandError::from(WorkspaceError::Io(error))),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(CommandError::from(WorkspaceError::Io(error))),
+        }
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 /// DBPF 容器独立打开统计（不进 PackageManager）：条目数、解压总量、类型直方图。
 /// registry 缺省时名称回退 verified 实证表 → hex。
 fn code_package_stats(
