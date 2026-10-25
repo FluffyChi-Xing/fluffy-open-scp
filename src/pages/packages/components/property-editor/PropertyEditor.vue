@@ -976,7 +976,7 @@ const treeSheetPinned = ref(true);
       <p v-else-if="loadError" class="editor-error" role="alert">
         {{ $t(loadError) }}
       </p>
-      <div v-else-if="session" class="editor-body">
+      <div v-else-if="session" class="editor-body" :class="{ 'viewer-mode': !canEdit }">
         <!-- 左侧工作台 rail：大纲（组件树 sheet 开关）/物料/源码（禁用）
              + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
         <nav class="editor-rail" :class="{ 'viewer-hidden': !canEdit }" :aria-label="$t('package.inspector')">
@@ -1506,6 +1506,9 @@ const treeSheetPinned = ref(true);
   grid-template-columns: 48px auto minmax(0, 1fr) 384px;
   min-height: 0;
 }
+.editor-body.viewer-mode {
+  grid-template-columns: 0 auto minmax(0, 1fr) 384px;
+}
 .viewport-column,
 .inspector-column {
   min-width: 0;
@@ -1522,6 +1525,9 @@ const treeSheetPinned = ref(true);
 @media (max-width: 960px) {
   .editor-body {
     grid-template-columns: 44px auto minmax(0, 1fr) 320px;
+  }
+  .editor-body.viewer-mode {
+    grid-template-columns: 0 auto minmax(0, 1fr) 320px;
   }
 }
 /* 左侧工作台 rail：图标+微标签竖排，组间留白，底部组贴齐下缘 */
