@@ -1098,8 +1098,9 @@ const treeSheetPinned = ref(true);
             />
           </section>
         </div>
-            <slot name="canvas-before" />
-            <PropertyEditorViewport
+        <div class="viewport-column">
+          <slot name="canvas-before" />
+          <PropertyEditorViewport
           :schema="editEnabled ? sceneDocument : null"
           ref="viewportRef"
           :edit-enabled="editEnabled"
@@ -1156,15 +1157,18 @@ const treeSheetPinned = ref(true);
           @commit-transform="commitTransform"
           @live-transform="onLiveTransform"
         />
-        <PropertyEditorInspector
-          :unit="selectedUnit"
-          :live-transform="liveTransform"
-          :scale-editable="selectedScaleEditable"
-          :edit-enabled="editEnabled"
-          @update-transform="commitTransform"
-          @update-fields="commitFields"
-        />
-        <slot name="tabs" />
+        </div>
+        <div class="inspector-column">
+          <PropertyEditorInspector
+            :unit="selectedUnit"
+            :live-transform="liveTransform"
+            :scale-editable="selectedScaleEditable"
+            :edit-enabled="editEnabled"
+            @update-transform="commitTransform"
+            @update-fields="commitFields"
+          />
+          <slot name="tabs" />
+        </div>
       </div>
       <PropertyEditorStatusBar
         v-if="session"
@@ -1501,6 +1505,19 @@ const treeSheetPinned = ref(true);
      四 tab 溢出——加宽至 384px，tab 栏同时允许换行兜底，2026-10-06） */
   grid-template-columns: 48px auto minmax(0, 1fr) 384px;
   min-height: 0;
+}
+.viewport-column,
+.inspector-column {
+  min-width: 0;
+  min-height: 0;
+}
+.viewport-column {
+  display: grid;
+}
+.inspector-column {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 @media (max-width: 960px) {
   .editor-body {
