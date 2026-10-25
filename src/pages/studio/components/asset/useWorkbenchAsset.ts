@@ -81,6 +81,8 @@ export interface MaterialSlotBinding {
   slot3?: string;
   slot4?: string;
   slot5?: string;
+  /** 外部 .blend 按 GLB 材质名保存的独立槽位。 */
+  byMaterial?: Record<string, Omit<MaterialSlotBinding, "byMaterial">>;
 }
 
 /** 组件库拖放载荷（与 PropertyEditor 放置契约同构）。 */
@@ -258,23 +260,10 @@ export function useWorkbenchAsset(project: string) {
       if (!base) return;
       let materials: LotModelPayload["materials"] = [];
       let meshUvKinds: number[] = [];
-      if (binding.params || binding.slot1) {
-        const [
-          paramsBytes,
-          materialParamsBytes,
-          slot1,
-          slot2,
-          slot3,
-          slot4,
-          slot5,
-        ] = await Promise.all([
+      if (binding.params || binding.slot1 || binding.byMaterial) {
+        const [paramsBytes, materialParamsBytes] = await Promise.all([
           readSlotBytes(binding.params),
           readSlotBytes(binding.materialParams),
-          readSlotBytes(binding.slot1),
-          readSlotBytes(binding.slot2),
-          readSlotBytes(binding.slot3),
-          readSlotBytes(binding.slot4),
-          readSlotBytes(binding.slot5),
         ]);
         let paramsF32: Float32Array | null = null;
         let paramCols = 0;
@@ -340,26 +329,39 @@ export function useWorkbenchAsset(project: string) {
             paramsByMaterial = undefined;
           }
         }
-        if (slot1 && slot4) {
-          materials = [
-            {
-              baseColorPng: null,
-              slot0Png: null,
-              normalPng: slot2,
-              roughnessPng: null,
-              aoPng: null,
-              tintPng: slot1,
-              palettePng: slot4,
-              shaderPng: slot3,
-              interiorPng: slot5,
-              reliefPng: null,
-              paramsF32,
-              paramCols,
-              paramsByMaterial,
-            },
-          ];
+        const materialBindings = Object.entries(binding.byMaterial ?? {});
+        if (materialBindings.length === 0 && (binding.slot1 || binding.slot4)) {
+          materialBindings.push(["", binding]);
+        }
+        for (const [materialName, slotBinding] of materialBindings) {
+          const [slot1, slot2, slot3, slot4, slot5] = await Promise.all([
+            readSlotBytes(slotBinding.slot1),
+            readSlotBytes(slotBinding.slot2),
+            readSlotBytes(slotBinding.slot3),
+            readSlotBytes(slotBinding.slot4),
+            readSlotBytes(slotBinding.slot5),
+          ]);
+          if (!slot1 || !slot4) continue;
+          materials.push({
+            materialName: materialName || undefined,
+            baseColorPng: null,
+            slot0Png: null,
+            normalPng: slot2,
+            roughnessPng: null,
+            aoPng: null,
+            tintPng: slot1,
+            palettePng: slot4,
+            shaderPng: slot3,
+            interiorPng: slot5,
+            reliefPng: null,
+            paramsF32,
+            paramCols,
+            paramsByMaterial,
+          });
+        }
+        if (materials.length) {
           // Blender GLB 的 UV 语义不同于 LOTM：基础域在 TEXCOORD_1，
-          // 立面/Top 域在 TEXCOORD_3，材质列固定使用参数表第 0 列。
+          // 立面/Top 域在 TEXCOORD_3；每个 GLB 材质按名称选择自己的槽位。
           // 用独立 uvKind 让视口选择 Blender shader 变体。
           meshUvKinds = base.glbs.map(() =>
             sourceKind.value === "glb" ? 3 : 2,
@@ -371,7 +373,9 @@ export function useWorkbenchAsset(project: string) {
       draftPayload.value = {
         ...base,
         materials,
-        meshMaterialIndices: materials.length ? base.glbs.map(() => 0) : [],
+        meshMaterialIndices: materials.length
+          ? base.glbs.map((_, index) => index < materials.length ? index : 0)
+          : [],
         meshUvKinds,
         diagnostics: materials.length
           ? `${base.diagnostics}\n六槽材质已绑定：params${binding.params ? "✓" : "✗"} slot1${binding.slot1 ? "✓" : "✗"} slot2${binding.slot2 ? "✓" : "✗"} slot3${binding.slot3 ? "✓" : "✗"} slot4${binding.slot4 ? "✓" : "✗"} slot5${binding.slot5 ? "✓" : "✗"} → tint 着色器`

@@ -1414,7 +1414,14 @@ async function assembleScene(
             if (!imported) mesh.material = whiteMaterial;
             return;
           }
-          const tint = tintResolved[materialIndex];
+          const blenderMaterialIndex =
+            uvKind === 3 && importedMaterial?.name
+              ? (payload?.materials ?? []).findIndex(
+                  (entry) => entry.materialName === importedMaterial.name,
+                )
+              : -1;
+          const tint =
+            tintResolved[blenderMaterialIndex >= 0 ? blenderMaterialIndex : materialIndex];
           if (
             (uvKind === 2 || uvKind === 3) &&
             tint?.tintTex &&

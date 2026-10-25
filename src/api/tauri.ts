@@ -688,6 +688,8 @@ export interface LotEditorSession {
 }
 /** 单个材质的贴图集（官方 Material Set 通道拆分，§27 源码实证语义）。 */
 export interface LotMaterialTextures {
+  /** Blender GLB material name; used to select per-material imported slots. */
+  materialName?: string;
   /** slot1 漫反射贴图（仅无 slot0 参数表的 simple diffuse 材质下发）。 */
   baseColorPng: Uint8Array<ArrayBuffer> | null;
   /** slot0 原始纹理（v10+）：**车辆/prop 槽位语义 = 彩色漫反射**（建筑

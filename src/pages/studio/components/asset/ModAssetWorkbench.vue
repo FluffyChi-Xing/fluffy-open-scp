@@ -241,10 +241,16 @@ async function onBindMaterialSlots(binding: MaterialSlotBinding) {
 }
 async function onBlendImported(result: {
   asset: string;
+  baked?: boolean;
   materialSlots?: Record<string, string>;
+  materialSlotsByMaterial?: Record<string, Record<string, string>>;
 }) {
   try {
     await asset.openDraftAsset(result.asset);
+    if (result.baked) {
+      toast.success(t("studio.assetWorkbench.blendImported"));
+      return;
+    }
     const slots = result.materialSlots ?? {};
     const binding: MaterialSlotBinding = {};
     for (const key of [
@@ -259,6 +265,17 @@ async function onBlendImported(result: {
       const value = slots[key];
       if (typeof value === "string" && value) binding[key] = value;
     }
+    const byMaterial = result.materialSlotsByMaterial ?? {};
+    const materialBindings = Object.fromEntries(
+      Object.entries(byMaterial).flatMap(([name, slots]) => {
+        const entry: Record<string, string> = {};
+        for (const key of ["slot1", "slot2", "slot3", "slot4", "slot5"] as const) {
+          if (typeof slots[key] === "string" && slots[key]) entry[key] = slots[key];
+        }
+        return Object.keys(entry).length ? [[name, entry]] : [];
+      }),
+    );
+    if (Object.keys(materialBindings).length) binding.byMaterial = materialBindings;
     if (Object.keys(binding).length) {
       await asset.composeSlotMaterials(binding);
       toast.success(

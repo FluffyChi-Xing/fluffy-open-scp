@@ -21,7 +21,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   "open-asset": [relativePath: string];
   "open-package": [relativePath: string];
-  "blend-imported": [result: { asset: string; materialSlots?: Record<string, string> }];
+  "blend-imported": [result: {
+    asset: string;
+    materialSlots?: Record<string, string>;
+    materialSlotsByMaterial?: Record<string, Record<string, string>>;
+  }];
   imported: [];
 }>();
 
@@ -154,7 +158,13 @@ async function importFile() {
   if (typeof path !== "string") return;
   importing.value = true;
   try {
-    const value = await command<{ asset: string; source?: string; materialSlots?: Record<string, string> }>("code_flow", {
+    const value = await command<{
+      asset: string;
+      source?: string;
+      baked?: boolean;
+      materialSlots?: Record<string, string>;
+      materialSlotsByMaterial?: Record<string, Record<string, string>>;
+    }>("code_flow", {
       request: { project: props.project, action: "import-asset", payload: { path } },
     });
     await loadTree();
