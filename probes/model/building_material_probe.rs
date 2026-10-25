@@ -137,6 +137,47 @@ fn lerp4(a: [f32; 4], b: [f32; 4], c: [f32; 4], d: [f32; 4], tx: f32, ty: f32) -
     out
 }
 
+fn write_mesh_json(out_dir: &str, mesh: &rw4::mesh::DecodedMesh) -> std::io::Result<()> {
+    let mut s = String::from("{\"vertices\":[");
+    for (i, v) in mesh.vertices.iter().enumerate() {
+        let p = v.position().unwrap_or([0.0; 3]);
+        let uv = v.uv().unwrap_or([0.0; 2]);
+        let zw = v
+            .components
+            .iter()
+            .find_map(|(e, val)| {
+                (e.usage == rw4::DeclarationUsage::TexCoord).then_some(()).and_then(|_| match val {
+                    rw4::ComponentValue::Float4(f) => Some([f[2], f[3]]),
+                    _ => None,
+                })
+            })
+            .unwrap_or([0.0; 2]);
+        let c = v.d3d_color_g().unwrap_or(0);
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!(
+            "{{\"position\":[{:.5},{:.5},{:.5}],\"uv\":[{:.5},{:.5},{:.5},{:.5}],\"column\":{}}}",
+            p[0], p[1], p[2], uv[0], uv[1], zw[0], zw[1], c
+        ));
+    }
+    s.push_str("],\"triangles\":[");
+    for (i, t) in mesh.triangles.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!("[{},{},{}]", t[0], t[1], t[2]));
+    }
+    s.push_str("]}");
+    std::fs::write(format!("{out_dir}/mesh.json"), s)?;
+    println!(
+        "mesh.json: verts={} tris={}",
+        mesh.vertices.len(),
+        mesh.triangles.len()
+    );
+    Ok(())
+}
+
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let positional: Vec<&String> = raw.iter().filter(|arg| !arg.starts_with("--")).collect();
@@ -157,6 +198,9 @@ fn main() {
     let out_dir = flag("out").unwrap_or_else(|| "tmp/building_material".to_owned());
     let column: usize = flag("col")
         .map(|value| value.parse().unwrap_or_else(|e| panic!("bad --col: {e}")))
+        .unwrap_or(0);
+    let binding_index: usize = flag("binding")
+        .map(|value| value.parse().unwrap_or_else(|e| panic!("bad --binding: {e}")))
         .unwrap_or(0);
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|error| panic!("create {out_dir}: {error}"));
 
@@ -184,7 +228,23 @@ fn main() {
             binding.mesh_section, binding.material_section, binding.unknown2
         );
     }
-    let binding = bindings.first().copied().expect("no mesh→material binding");
+    let binding = bindings
+        .get(binding_index)
+        .copied()
+        .unwrap_or_else(|| {
+            panic!(
+                "binding index {binding_index} out of range ({} bindings)",
+                bindings.len()
+            )
+        });
+    match file.decode_mesh(&data, binding.mesh_section) {
+        Ok(mesh) => {
+            if let Err(error) = write_mesh_json(&out_dir, &mesh) {
+                eprintln!("write mesh.json failed: {error}");
+            }
+        }
+        Err(error) => eprintln!("decode mesh#{} failed: {error}", binding.mesh_section),
+    }
     let material = file
         .decode_material(&data, binding.material_section)
         .expect("decode material");
@@ -258,6 +318,23 @@ fn main() {
         println!("\nslot0 不是 paletteF32 参数表，跳过合成预览。");
         return;
     };
+    {
+        let mut js = String::from("{\"width\":");
+        js.push_str(&param_w.to_string());
+        js.push_str(",\"values\":[");
+        for (i, v) in param_values.iter().enumerate() {
+            if i > 0 {
+                js.push(',');
+            }
+            js.push_str(&format!("[{},{},{},{}]", v[0], v[1], v[2], v[3]));
+        }
+        js.push_str("]}");
+        if let Err(error) = std::fs::write(format!("{out_dir}/params.json"), js) {
+            eprintln!("write params.json failed: {error}");
+        } else {
+            println!("params.json: {param_w}x{param_h}");
+        }
+    }
     let col = column.min(param_w.saturating_sub(1));
     let row = |r: usize| -> [f32; 4] {
         param_values
