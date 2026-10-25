@@ -8,7 +8,7 @@ import { tauriApi } from "@/api";
 import { parseLotModelContainer } from "@/lib/three-gltf";
 import { buildBuildingTextureSlotFiles } from "@/lib/building-texture-export";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
-import PropertyEditor from "../property-editor/PropertyEditor.vue";
+import PropertyViewer from "../property-editor/PropertyViewer.vue";
 import DecalDictionaryGallery from "./DecalDictionaryGallery.vue";
 import SemanticCardView from "./SemanticCard.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
@@ -136,7 +136,7 @@ function hashLabel(hash: number) {
         @click="editorOpen = true"
       >
         <FIcon name="SquarePen" :size="13" aria-label="" />{{
-          $t("package.toolbarAdvancedEditors")
+          $t("package.propertyViewer")
         }}
       </button>
       <FDropdown v-if="isBuilding" :width="190">
@@ -188,7 +188,7 @@ function hashLabel(hash: number) {
         }}
       </button>
     </div>
-    <PropertyEditor
+    <PropertyViewer
       v-model:open="editorOpen"
       :package-id="preview.packageId"
       :tgi="preview.tgi"

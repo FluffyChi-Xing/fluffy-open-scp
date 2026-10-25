@@ -1330,6 +1330,7 @@ const messages = {
       },
       toolbarAdvancedEditors: "属性编辑器",
       propertyEditor: "属性编辑器",
+      propertyViewer: "资产预览器",
       propertyEditorReadonly: "只读视图 · 编辑功能将在后续版本提供",
       propertyEditorLoadFailed: "属性编辑会话加载失败",
       propertyEditorModelMissing: "模型不可用，仅显示属性",
@@ -3222,6 +3223,7 @@ const messages = {
       },
       toolbarAdvancedEditors: "Property Editor",
       propertyEditor: "Property Editor",
+      propertyViewer: "Asset Viewer",
       propertyEditorReadonly:
         "Read-only view · editing arrives in a later release",
       propertyEditorLoadFailed: "Failed to load the property editor session",

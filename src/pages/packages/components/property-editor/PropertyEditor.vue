@@ -35,9 +35,11 @@ import { tauriApi } from "@/api";
 
 import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
-const props = defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null }>();
+const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor" }>(), { mode: "viewer" });
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
+const canEdit = computed(() => props.mode === "editor");
+const panelTitle = computed(() => canEdit.value ? t("package.propertyEditor") : t("package.propertyViewer"));
 const open = defineModel<boolean>("open", { default: false });
 const {
   session,
@@ -135,8 +137,9 @@ const selectedScaleEditable = computed(() => {
 // ---- 编辑模式（锁定/解锁）----
 // 锁定 = 只读视图（原"只读视图"pill 的交互化）；解锁后：视口工具栏显示、
 // rail 物料入口可用、组件可拖入画布、name-tag 旁出现删除按钮。
-const editEnabled = ref(false);
+const editEnabled = ref(canEdit.value);
 function toggleEditEnabled() {
+  if (!canEdit.value) return;
   editEnabled.value = !editEnabled.value;
 }
 
@@ -160,7 +163,7 @@ watch(session, current => {
   const editor = props.initialSchema.editor as { groups?: Record<string, boolean>; unitVisibility?: Record<string, boolean> };
   Object.assign(groupVisibility, editor?.groups ?? {});
   hiddenUnits.value = new Set(Object.entries(editor?.unitVisibility ?? {}).filter(([, v]) => !v).map(([id]) => id));
-  editEnabled.value = true;
+  editEnabled.value = canEdit.value;
 });
 
 // ---- 组件库（物料）sheet：从已打开包的命名 RW4 模型目录拖入放置 ----
@@ -707,7 +710,7 @@ watch(open, (value) => {
   } else {
     // 关闭即回锁定态：工具栏/物料面板/拖放/删除随 editEnabled 复位
     // （用户资产编辑——放置记录/变换/字段——按既有口径不在复位范围）
-    editEnabled.value = false;
+    editEnabled.value = canEdit.value;
     materialsOpen.value = false;
   }
 });
@@ -731,9 +734,9 @@ const treeSheetPinned = ref(true);
 </script>
 
 <template>
-  <FSheet
+    <FSheet
     v-model:open="open"
-    :label="$t('package.propertyEditor')"
+    :label="panelTitle"
     width="100vw"
   >
     <div v-if="open" class="editor-root">
@@ -749,8 +752,9 @@ const treeSheetPinned = ref(true);
         {{ diagnostics.join(" · ") }}
       </FAlert>
       <header class="editor-header">
+        <slot name="toolbar" />
         <div class="editor-title">
-          <strong>{{ $t("package.propertyEditor") }}</strong>
+          <strong>{{ panelTitle }}</strong>
           <small>{{ title }}</small>
         </div>
         <div
@@ -874,6 +878,7 @@ const treeSheetPinned = ref(true);
           <span>{{ $t("package.effectRendering") }}</span>
         </label>
         <button
+          v-if="canEdit"
           class="editor-close"
           type="button"
           :disabled="saveEditsBusy || !edit.editCount.value"
@@ -932,6 +937,7 @@ const treeSheetPinned = ref(true);
         <!-- 编辑模式锁定开关（原"只读视图"pill 的交互化）：解锁 = 工具栏/
              物料/拖放放置/删除可用 -->
         <FTooltip
+          v-if="canEdit"
           :text="
             editEnabled ? $t('package.editLock') : $t('package.editUnlock')
           "
@@ -974,6 +980,7 @@ const treeSheetPinned = ref(true);
         <!-- 左侧工作台 rail：大纲（组件树 sheet 开关）/物料/源码（禁用）
              + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
         <nav class="editor-rail" :aria-label="$t('package.inspector')">
+          <slot name="aside" />
           <div class="rail-group">
             <FTooltip :text="$t('package.railOutline')" side="right">
               <template #trigger>
@@ -1091,7 +1098,8 @@ const treeSheetPinned = ref(true);
             />
           </section>
         </div>
-        <PropertyEditorViewport
+            <slot name="canvas-before" />
+            <PropertyEditorViewport
           :schema="editEnabled ? sceneDocument : null"
           ref="viewportRef"
           :edit-enabled="editEnabled"
@@ -1156,6 +1164,7 @@ const treeSheetPinned = ref(true);
           @update-transform="commitTransform"
           @update-fields="commitFields"
         />
+        <slot name="tabs" />
       </div>
       <PropertyEditorStatusBar
         v-if="session"
