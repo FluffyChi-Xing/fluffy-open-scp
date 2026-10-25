@@ -9,7 +9,11 @@ import FSheet from "@/components/ui/FSheet.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
 import MonacoEditor from "@/components/ui/MonacoEditor.vue";
 import { Switch } from "@/components/ui/switch";
-import { Resizable, ResizableHandle, ResizablePanel } from "@/components/ui/resizable";
+import {
+  Resizable,
+  ResizableHandle,
+  ResizablePanel,
+} from "@/components/ui/resizable";
 import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
 import type { Tgi } from "@/api/tauri";
@@ -21,13 +25,21 @@ import PropertyEditorInspector from "@/pages/packages/components/property-editor
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
 import { useEffectPreview } from "@/pages/packages/components/property-editor/effects/useEffectPreview";
 import { useEditorHotkeys } from "@/pages/packages/components/property-editor/useEditorHotkeys";
-import { assetCategory, directModelKey } from "@/pages/packages/components/property-editor/assetCategories";
+import {
+  assetCategory,
+  directModelKey,
+} from "@/pages/packages/components/property-editor/assetCategories";
 import { exportLotModel } from "@/composables/useModelExport";
 import AssetSourceTree from "./AssetSourceTree.vue";
 import AssetComponentLibrary from "./AssetComponentLibrary.vue";
 import AssetLotPanel from "./AssetLotPanel.vue";
 import AssetBlueprintCanvas from "./AssetBlueprintCanvas.vue";
-import { useWorkbenchAsset, type LotPresetRef, type MaterialSlotBinding, type PlacePayload } from "./useWorkbenchAsset";
+import {
+  useWorkbenchAsset,
+  type LotPresetRef,
+  type MaterialSlotBinding,
+  type PlacePayload,
+} from "./useWorkbenchAsset";
 import AssetLotLibrary from "./AssetLotLibrary.vue";
 import AssetMaterialSlotsPanel from "./AssetMaterialSlotsPanel.vue";
 
@@ -65,9 +77,7 @@ const effectsActive = computed(
     effectiveRenderMode.value === "refined" &&
     ui.value !== null,
 );
-const effectUnits = computed(
-  () => ui.value?.grouping.effects ?? [],
-);
+const effectUnits = computed(() => ui.value?.grouping.effects ?? []);
 const effectPreview = useEffectPreview(
   () => asset.nativePackageId.value ?? 0,
   effectsActive,
@@ -120,9 +130,9 @@ function commitFields(id: string, patch: Record<string, unknown>) {
 }
 
 // ---- 视口 props（schema 文档 = 单一数据源；事件显式绑定）----
-const viewportRef = ref<InstanceType<
-  typeof SchemaPropertyViewport
-> | null>(null);
+const viewportRef = ref<InstanceType<typeof SchemaPropertyViewport> | null>(
+  null,
+);
 const viewportBindings = computed(() => {
   const current = ui.value;
   if (!current) return null;
@@ -214,13 +224,51 @@ const RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
   { id: "library", icon: "Boxes", label: "package.materialsPanel" },
   { id: "lot", icon: "LandPlot", label: "studio.assetWorkbench.lotTab" },
   { id: "lotlib", icon: "Map", label: "studio.assetWorkbench.lotLibraryTab" },
-  { id: "slots", icon: "Image", label: "studio.assetWorkbench.materialSlotsTab" },
+  {
+    id: "slots",
+    icon: "Image",
+    label: "studio.assetWorkbench.materialSlotsTab",
+  },
   { id: "schema", icon: "CodeXml", label: "package.schemaSheet" },
 ];
 async function onBindMaterialSlots(binding: MaterialSlotBinding) {
   try {
     await asset.composeSlotMaterials(binding);
     toast.success(t("studio.assetWorkbench.slotApplied"));
+  } catch (cause) {
+    toast.error(String(cause));
+  }
+}
+async function onBlendImported(result: {
+  asset: string;
+  materialSlots?: Record<string, string>;
+}) {
+  try {
+    await asset.openDraftAsset(result.asset);
+    const slots = result.materialSlots ?? {};
+    const binding: MaterialSlotBinding = {};
+    for (const key of [
+      "params",
+      "materialParams",
+      "slot1",
+      "slot2",
+      "slot3",
+      "slot4",
+      "slot5",
+    ] as const) {
+      const value = slots[key];
+      if (typeof value === "string" && value) binding[key] = value;
+    }
+    if (Object.keys(binding).length) {
+      await asset.composeSlotMaterials(binding);
+      toast.success(
+        t("studio.assetWorkbench.blendImported", {
+          count: Object.keys(binding).length,
+        }),
+      );
+    } else {
+      toast.info(t("studio.assetWorkbench.blendImportedNoSlots"));
+    }
   } catch (cause) {
     toast.error(String(cause));
   }
@@ -240,8 +288,7 @@ async function onApplyLotPreset(preset: LotPresetRef) {
         : t("studio.assetWorkbench.lotApplied"),
     );
   } catch (cause) {
-    const message =
-      (cause as { message?: string }).message ?? String(cause);
+    const message = (cause as { message?: string }).message ?? String(cause);
     toast.error(
       message === "lot_apply_native"
         ? t("studio.assetWorkbench.lotApplyNativeHint")
@@ -305,7 +352,9 @@ async function submitTgi() {
   try {
     await asset.openNative(tgiPackagePath.value, tgi);
     tgiSheetOpen.value = false;
-    toast.success(t("studio.assetWorkbench.tgiOpened", { tgi: tgiText.value.trim() }));
+    toast.success(
+      t("studio.assetWorkbench.tgiOpened", { tgi: tgiText.value.trim() }),
+    );
   } catch (cause) {
     toast.error(String(cause));
   } finally {
@@ -345,7 +394,9 @@ async function onSave() {
   try {
     if (await asset.saveDocument()) {
       await treeRef.value?.refresh();
-      toast.success(t("studio.assetWorkbench.saved", { path: asset.documentPath }));
+      toast.success(
+        t("studio.assetWorkbench.saved", { path: asset.documentPath }),
+      );
     }
   } catch (cause) {
     toast.error(String(cause));
@@ -485,18 +536,16 @@ function templateOf(resourceId: number) {
                 : t("studio.assetWorkbench.sourceGlb")
           }}
         </span>
-        <strong>{{ asset.sourceLabel.value || t("studio.assetWorkbench.title") }}</strong>
+        <strong>{{
+          asset.sourceLabel.value || t("studio.assetWorkbench.title")
+        }}</strong>
         <span v-if="asset.savedDirty.value" class="maw-dirty">
           {{ t("studio.assetWorkbench.unsaved") }}
         </span>
       </div>
 
       <div class="maw-actions">
-        <button
-          type="button"
-          class="maw-btn"
-          @click="tgiSheetOpen = true"
-        >
+        <button type="button" class="maw-btn" @click="tgiSheetOpen = true">
           <FIcon name="Hash" :size="13" aria-label="" />
           {{ t("studio.assetWorkbench.tgiParse") }}
         </button>
@@ -567,7 +616,10 @@ function templateOf(resourceId: number) {
             <span>{{ t("package.neonAnim") }}</span>
           </label>
           <label
-            v-if="asset.sourceKind.value === 'native' && effectiveRenderMode === 'refined'"
+            v-if="
+              asset.sourceKind.value === 'native' &&
+              effectiveRenderMode === 'refined'
+            "
             class="maw-switch"
             :title="effectRenderTitle"
           >
@@ -579,10 +631,7 @@ function templateOf(resourceId: number) {
           </label>
 
           <span class="maw-gap" />
-          <FTooltip
-            :text="t('package.undo')"
-            side="bottom"
-          >
+          <FTooltip :text="t('package.undo')" side="bottom">
             <template #trigger>
               <button
                 type="button"
@@ -615,7 +664,11 @@ function templateOf(resourceId: number) {
             :title="t('studio.assetWorkbench.saveHint')"
             @click="onSave"
           >
-            <FIcon :name="saving ? 'Loader2' : 'Save'" :size="13" aria-label="" />
+            <FIcon
+              :name="saving ? 'Loader2' : 'Save'"
+              :size="13"
+              aria-label=""
+            />
             {{ t("studio.assetWorkbench.save") }}
           </button>
           <FDropdown :width="230">
@@ -633,7 +686,11 @@ function templateOf(resourceId: number) {
               {{ t("studio.assetWorkbench.exportSchema") }}
             </button>
             <button type="button" :disabled="shotBusy" @click="exportRender">
-              <FIcon :name="shotBusy ? 'Loader2' : 'Camera'" :size="13" aria-label="" />
+              <FIcon
+                :name="shotBusy ? 'Loader2' : 'Camera'"
+                :size="13"
+                aria-label=""
+              />
               {{ t("package.exportRender") }}
             </button>
             <button
@@ -646,7 +703,10 @@ function templateOf(resourceId: number) {
               {{ t("package.exportMeshWhite") }}
             </button>
             <button
-              v-if="asset.sourceKind.value === 'native' && effectiveRenderMode === 'refined'"
+              v-if="
+                asset.sourceKind.value === 'native' &&
+                effectiveRenderMode === 'refined'
+              "
               type="button"
               :disabled="meshExportBusy"
               @click="exportMesh('textured')"
@@ -656,7 +716,9 @@ function templateOf(resourceId: number) {
             </button>
           </FDropdown>
           <FTooltip
-            :text="editEnabled ? t('package.editLock') : t('package.editUnlock')"
+            :text="
+              editEnabled ? t('package.editLock') : t('package.editUnlock')
+            "
             side="bottom"
           >
             <template #trigger>
@@ -665,15 +727,24 @@ function templateOf(resourceId: number) {
                 class="maw-icon"
                 :class="{ active: editEnabled }"
                 :aria-pressed="editEnabled"
-                :aria-label="editEnabled ? t('package.editLock') : t('package.editUnlock')"
+                :aria-label="
+                  editEnabled ? t('package.editLock') : t('package.editUnlock')
+                "
                 @click="toggleEdit"
               >
-                <FIcon :name="editEnabled ? 'LockOpen' : 'Lock'" :size="14" aria-label="" />
+                <FIcon
+                  :name="editEnabled ? 'LockOpen' : 'Lock'"
+                  :size="14"
+                  aria-label=""
+                />
               </button>
             </template>
           </FTooltip>
           <!-- 移除当前资产：删除文档+导入的模型文件，回到空态可重新导入 -->
-          <FTooltip :text="t('studio.assetWorkbench.removeAsset')" side="bottom">
+          <FTooltip
+            :text="t('studio.assetWorkbench.removeAsset')"
+            side="bottom"
+          >
             <template #trigger>
               <button
                 type="button"
@@ -682,7 +753,11 @@ function templateOf(resourceId: number) {
                 :aria-label="t('studio.assetWorkbench.removeAsset')"
                 @click="onRemoveAsset"
               >
-                <FIcon :name="removing ? 'Loader2' : 'Trash2'" :size="14" aria-label="" />
+                <FIcon
+                  :name="removing ? 'Loader2' : 'Trash2'"
+                  :size="14"
+                  aria-label=""
+                />
               </button>
             </template>
           </FTooltip>
@@ -690,10 +765,7 @@ function templateOf(resourceId: number) {
       </div>
     </header>
 
-    <Resizable
-      direction="horizontal"
-      class="maw-split"
-    >
+    <Resizable direction="horizontal" class="maw-split">
       <ResizablePanel id="maw-tree" :default-size="17" :min-size="10">
         <AssetSourceTree
           ref="treeRef"
@@ -701,19 +773,21 @@ function templateOf(resourceId: number) {
           :active-asset="asset.sourceAssetPath.value"
           @open-asset="asset.openDraftAsset($event)"
           @open-package="onOpenPackage"
+          @blend-imported="onBlendImported"
         />
       </ResizablePanel>
-      <ResizableHandle orientation="horizontal" :label="t('studio.assetWorkbench.resizeTree')" />
+      <ResizableHandle
+        orientation="horizontal"
+        :label="t('studio.assetWorkbench.resizeTree')"
+      />
       <ResizablePanel id="maw-center" :default-size="57" :min-size="30">
         <Resizable direction="vertical" class="maw-center">
           <ResizablePanel id="maw-viewport" :default-size="64" :min-size="22">
             <div class="maw-viewport">
               <template v-if="ui">
-                <p
-                  v-if="ui.loadError"
-                  class="maw-load-error"
-                  role="alert"
-                >{{ t(ui.loadError) }}</p>
+                <p v-if="ui.loadError" class="maw-load-error" role="alert">
+                  {{ t(ui.loadError) }}
+                </p>
                 <SchemaPropertyViewport
                   v-else
                   ref="viewportRef"
@@ -723,7 +797,11 @@ function templateOf(resourceId: number) {
                   @switch-lod="ui.switchLod($event)"
                   @select-tool="tool = $event"
                   @commit-transform="commitTransform"
-                  @live-transform="(id, value) => (liveTransform = id && value ? { id, position: value.position } : null)"
+                  @live-transform="
+                    (id, value) =>
+                      (liveTransform =
+                        id && value ? { id, position: value.position } : null)
+                  "
                   @delete-unit="asset.deleteUnit"
                 />
                 <PropertyEditorStatusBar
@@ -748,16 +826,27 @@ function templateOf(resourceId: number) {
                     <FIcon name="FolderOpen" :size="13" aria-label="" />
                     {{ t("studio.assetWorkbench.emptyPickTree") }}
                   </button>
-                  <button type="button" class="maw-btn" @click="tgiSheetOpen = true">
+                  <button
+                    type="button"
+                    class="maw-btn"
+                    @click="tgiSheetOpen = true"
+                  >
                     <FIcon name="Hash" :size="13" aria-label="" />
                     {{ t("studio.assetWorkbench.tgiParse") }}
                   </button>
                 </div>
-                <FSpinner v-if="asset.restoring.value" size="sm" :label="t('common.loading')" />
+                <FSpinner
+                  v-if="asset.restoring.value"
+                  size="sm"
+                  :label="t('common.loading')"
+                />
               </div>
             </div>
           </ResizablePanel>
-          <ResizableHandle orientation="vertical" :label="t('studio.assetWorkbench.resizeBlueprint')" />
+          <ResizableHandle
+            orientation="vertical"
+            :label="t('studio.assetWorkbench.resizeBlueprint')"
+          />
           <ResizablePanel id="maw-blueprint" :default-size="36" :min-size="14">
             <AssetBlueprintCanvas
               :source-kind="asset.sourceKind.value"
@@ -774,7 +863,10 @@ function templateOf(resourceId: number) {
           </ResizablePanel>
         </Resizable>
       </ResizablePanel>
-      <ResizableHandle orientation="horizontal" :label="t('studio.assetWorkbench.resizeRight')" />
+      <ResizableHandle
+        orientation="horizontal"
+        :label="t('studio.assetWorkbench.resizeRight')"
+      />
       <ResizablePanel id="maw-right" :default-size="26" :min-size="15">
         <Resizable direction="vertical" class="maw-right">
           <ResizablePanel id="maw-right-tabs" :default-size="52" :min-size="18">
@@ -837,7 +929,10 @@ function templateOf(resourceId: number) {
                   />
                   <div v-else class="maw-schema">
                     <MonacoEditor
-                      :value="asset.schemaJson.value || t('studio.assetWorkbench.schemaEmpty')"
+                      :value="
+                        asset.schemaJson.value ||
+                        t('studio.assetWorkbench.schemaEmpty')
+                      "
                       language="json"
                       fill
                     />
@@ -849,8 +944,15 @@ function templateOf(resourceId: number) {
               </div>
             </div>
           </ResizablePanel>
-          <ResizableHandle orientation="vertical" :label="t('studio.assetWorkbench.resizeInspector')" />
-          <ResizablePanel id="maw-right-inspector" :default-size="48" :min-size="18">
+          <ResizableHandle
+            orientation="vertical"
+            :label="t('studio.assetWorkbench.resizeInspector')"
+          />
+          <ResizablePanel
+            id="maw-right-inspector"
+            :default-size="48"
+            :min-size="18"
+          >
             <div class="maw-inspector">
               <template v-if="ui">
                 <PropertyEditorInspector
@@ -911,14 +1013,22 @@ function templateOf(resourceId: number) {
         </label>
         <template v-if="packageCandidates.length">
           <p class="tgi-candidates-title">
-            {{ t("studio.assetWorkbench.tgiCandidates", { count: packageCandidates.length }) }}
+            {{
+              t("studio.assetWorkbench.tgiCandidates", {
+                count: packageCandidates.length,
+              })
+            }}
           </p>
           <button
             v-for="(candidate, index) in packageCandidates"
             :key="index"
             type="button"
             class="tgi-candidate"
-            :class="{ active: tgiText && parseTgiText(tgiText)?.instance === candidate.instance }"
+            :class="{
+              active:
+                tgiText &&
+                parseTgiText(tgiText)?.instance === candidate.instance,
+            }"
             @click="openCandidate(candidate)"
           >
             <FIcon name="FilePen" :size="13" aria-label="" />
@@ -934,7 +1044,11 @@ function templateOf(resourceId: number) {
           :disabled="tgiBusy || !tgiPackagePath || !parseTgiText(tgiText)"
           @click="submitTgi"
         >
-          <FIcon :name="tgiBusy ? 'Loader2' : 'PackageSearch'" :size="13" aria-label="" />
+          <FIcon
+            :name="tgiBusy ? 'Loader2' : 'PackageSearch'"
+            :size="13"
+            aria-label=""
+          />
           {{ t("studio.assetWorkbench.tgiSubmit") }}
         </button>
       </div>
@@ -1143,8 +1257,15 @@ function templateOf(resourceId: number) {
 }
 .maw-empty-art {
   background-image:
-    linear-gradient(color-mix(in srgb, var(--primary) 18%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--primary) 18%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      color-mix(in srgb, var(--primary) 18%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--primary) 18%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 30px 30px;
   inset: 0;
   opacity: 0.6;

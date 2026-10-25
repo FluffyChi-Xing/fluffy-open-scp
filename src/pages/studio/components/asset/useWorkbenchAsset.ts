@@ -13,7 +13,10 @@ import {
   directModelKey,
   placementMatrix,
 } from "@/pages/packages/components/property-editor/assetCategories";
-import { buildSchemaDoc, unitsFromSchema } from "@/pages/packages/components/property-editor/peSchemaDoc";
+import {
+  buildSchemaDoc,
+  unitsFromSchema,
+} from "@/pages/packages/components/property-editor/peSchemaDoc";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import { createUnitEditLayer } from "@/pages/packages/components/property-editor/unitEditLayer";
 import {
@@ -71,6 +74,7 @@ export interface WorkbenchMenuBinding {
 /** 六槽材质绑定：项目内资产相对路径（params.json + slot1..5.png）。 */
 export interface MaterialSlotBinding {
   params?: string;
+  materialParams?: string;
   slot1?: string;
   slot2?: string;
   slot3?: string;
@@ -254,21 +258,33 @@ export function useWorkbenchAsset(project: string) {
       let materials: LotModelPayload["materials"] = [];
       let meshUvKinds: number[] = [];
       if (binding.params || binding.slot1) {
-        const [paramsBytes, slot1, slot2, slot3, slot4, slot5] =
-          await Promise.all([
-            readSlotBytes(binding.params),
-            readSlotBytes(binding.slot1),
-            readSlotBytes(binding.slot2),
-            readSlotBytes(binding.slot3),
-            readSlotBytes(binding.slot4),
-            readSlotBytes(binding.slot5),
-          ]);
+        const [
+          paramsBytes,
+          materialParamsBytes,
+          slot1,
+          slot2,
+          slot3,
+          slot4,
+          slot5,
+        ] = await Promise.all([
+          readSlotBytes(binding.params),
+          readSlotBytes(binding.materialParams),
+          readSlotBytes(binding.slot1),
+          readSlotBytes(binding.slot2),
+          readSlotBytes(binding.slot3),
+          readSlotBytes(binding.slot4),
+          readSlotBytes(binding.slot5),
+        ]);
         let paramsF32: Float32Array | null = null;
         let paramCols = 0;
+        let paramsByMaterial:
+          | Record<
+              string,
+              { width: number; values: number[]; paletteRow?: number }
+            >
+          | undefined;
         if (paramsBytes) {
-          const parsed = JSON.parse(
-            new TextDecoder().decode(paramsBytes),
-          ) as {
+          const parsed = JSON.parse(new TextDecoder().decode(paramsBytes)) as {
             width?: number;
             values?: number[][] | number[];
           };
@@ -287,6 +303,42 @@ export function useWorkbenchAsset(project: string) {
             paramsF32 = new Float32Array(flat);
           }
         }
+        if (materialParamsBytes) {
+          try {
+            const parsed = JSON.parse(
+              new TextDecoder().decode(materialParamsBytes),
+            ) as Record<
+              string,
+              { width?: number; values?: unknown; paletteRow?: number }
+            >;
+            const entries = Object.entries(parsed).flatMap(([name, value]) => {
+              if (
+                !value ||
+                typeof value.width !== "number" ||
+                !Array.isArray(value.values) ||
+                value.values.some((item) => typeof item !== "number")
+              ) {
+                return [];
+              }
+              return [
+                [
+                  name,
+                  {
+                    width: value.width,
+                    values: value.values as number[],
+                    paletteRow:
+                      typeof value.paletteRow === "number"
+                        ? value.paletteRow
+                        : undefined,
+                  },
+                ],
+              ] as const;
+            });
+            if (entries.length) paramsByMaterial = Object.fromEntries(entries);
+          } catch {
+            paramsByMaterial = undefined;
+          }
+        }
         if (slot1 && slot4) {
           materials = [
             {
@@ -302,9 +354,15 @@ export function useWorkbenchAsset(project: string) {
               reliefPng: null,
               paramsF32,
               paramCols,
+              paramsByMaterial,
             },
           ];
-          meshUvKinds = base.glbs.map(() => 2);
+          // Blender GLB 的 UV 语义不同于 LOTM：基础域在 TEXCOORD_1，
+          // 立面/Top 域在 TEXCOORD_3，材质列固定使用参数表第 0 列。
+          // 用独立 uvKind 让视口选择 Blender shader 变体。
+          meshUvKinds = base.glbs.map(() =>
+            sourceKind.value === "glb" ? 3 : 2,
+          );
         }
       }
       if (composing !== slotComposeEpoch) return;
@@ -511,7 +569,8 @@ export function useWorkbenchAsset(project: string) {
 
   // ---- 活体 schema 文档（Monaco/保存/蓝图三方同源）----
   const tgi = computed<Tgi>(() => {
-    if (sourceKind.value === "native" && nativeTgi.value) return nativeTgi.value;
+    if (sourceKind.value === "native" && nativeTgi.value)
+      return nativeTgi.value;
     return draftTgi(sourceLabel.value || "draft");
   });
   const schemaDocument = computed<Record<string, unknown> | null>(() => {
@@ -739,9 +798,9 @@ export function useWorkbenchAsset(project: string) {
         // 加载基线落定：待挂起的文档 watcher 刷过之后清脏
         void nextTick().then(() => {
           if (epoch === loadEpoch) {
-          savedDirty.value = false;
-          savedBaseline.value = schemaJson.value;
-        }
+            savedDirty.value = false;
+            savedBaseline.value = schemaJson.value;
+          }
         });
       }
     }
@@ -752,9 +811,8 @@ export function useWorkbenchAsset(project: string) {
     size: [number, number];
     origin: [number, number, number];
   }> {
-    const { GLTFLoader } = await import(
-      "three/examples/jsm/loaders/GLTFLoader.js"
-    );
+    const { GLTFLoader } =
+      await import("three/examples/jsm/loaders/GLTFLoader.js");
     const { Box3, Vector3 } = await import("three");
     const loader = new GLTFLoader();
     const box = new Box3();
@@ -775,36 +833,17 @@ export function useWorkbenchAsset(project: string) {
     if (!found) return { size: [8, 8], origin: [0, 0, 0] };
     const size = new Vector3();
     box.getSize(size);
-    // 轴向感知（2026-10-25 勘误）：origin 必须在世界空间成立——
-    //  - z-up 数据（契约导出/游戏口径）：世界 Y = 数据 Z（坐地用 minZ），
-    //    世界 Z = -数据 Y（水平居中用 Y 跨度中点）；
-    //  - y-up 数据（规范 glTF，量测前已 +90°X 转换）：世界 Y = 盒 Y。
-    // 此前不分数轴把数据 Y 最小值当高度基准，Z-up 模型被垂直居中
-    // （底面沉到 -H/2），地块矩形切在楼体半高（用户反馈截图）。
+    // 量测和视口使用同一套 Z-up 世界：地面是 XY 平面，Z 是高度。
+    // Y-up glTF 已在上面旋转 +90°X，因此旋转后的 bbox 直接使用
+    // x/y 作为水平尺寸、min.z 作为建筑底面。
     const centerX = -(box.min.x + box.max.x) / 2;
-    const origin: [number, number, number] =
-      payload.upAxis === "z"
-        ? [
-            centerX,
-            Number((-box.min.z).toFixed(2)),
-            Number((-(box.min.y + box.max.y) / 2).toFixed(2)),
-          ]
-        : [
-            centerX,
-            Number((-box.min.y).toFixed(2)),
-            Number((-(box.min.z + box.max.z) / 2).toFixed(2)),
-          ];
+    const origin: [number, number, number] = [
+      Number(centerX.toFixed(2)),
+      Number((-(box.min.y + box.max.y) / 2).toFixed(2)),
+      Number((-box.min.z).toFixed(2)),
+    ];
     return {
-      size:
-        payload.upAxis === "z"
-          ? [
-              Math.max(4, Math.ceil(size.x)),
-              Math.max(4, Math.ceil(size.y)),
-            ]
-          : [
-              Math.max(4, Math.ceil(size.x)),
-              Math.max(4, Math.ceil(size.z)),
-            ],
+      size: [Math.max(4, Math.ceil(size.x)), Math.max(4, Math.ceil(size.y))],
       origin,
     };
   }
@@ -966,7 +1005,10 @@ export function useWorkbenchAsset(project: string) {
       draftLotSize.value = [session.lotSize[0], session.lotSize[1]];
     }
     if (session.lotTilePeriod) {
-      draftStyle.tilePeriod = [session.lotTilePeriod[0], session.lotTilePeriod[1]];
+      draftStyle.tilePeriod = [
+        session.lotTilePeriod[0],
+        session.lotTilePeriod[1],
+      ];
     }
     if (session.lotColors?.length === 4) {
       draftStyle.colors = session.lotColors.map(
@@ -1038,8 +1080,7 @@ export function useWorkbenchAsset(project: string) {
     const restored = unitsFromSchema(document);
     const baseUnits: LotUnitDto[] =
       current.editMode === "native"
-        ? ((nativeSession.value?.session.value?.units ??
-            []) as LotUnitDto[])
+        ? ((nativeSession.value?.session.value?.units ?? []) as LotUnitDto[])
         : [];
     const baseIds = new Set(baseUnits.map((unit) => unitId(unit)));
     const edit = current.edit;
@@ -1066,7 +1107,8 @@ export function useWorkbenchAsset(project: string) {
         .map(([id]) => id),
     );
     if (current.editMode === "draft") draftHiddenUnits.value = hidden;
-    else if (nativeSession.value) nativeSession.value.hiddenUnits.value = hidden;
+    else if (nativeSession.value)
+      nativeSession.value.hiddenUnits.value = hidden;
   }
 
   /** 恢复已放置 prop 的直挂模型载荷（packageId 可能跨运行失效 → 优先按
@@ -1093,10 +1135,7 @@ export function useWorkbenchAsset(project: string) {
               .packageId
           : row.modelPackageId;
         if (pkg == null) continue;
-        const bytes = await tauriApi.packages.readLotModelMeshes(
-          pkg,
-          modelTgi,
-        );
+        const bytes = await tauriApi.packages.readLotModelMeshes(pkg, modelTgi);
         const next = new Map(addedModelPayloads.value);
         next.set(
           directModelKey({ modelTgi, modelPackageId: pkg }),

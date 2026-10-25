@@ -717,6 +717,11 @@ export interface LotMaterialTextures {
    */
   paramsF32: Float32Array | null;
   paramCols: number;
+  /** Blender 导入时按 GLB 材质名保存的独立 slot0 参数表。 */
+  paramsByMaterial?: Record<
+    string,
+    { width: number; values: number[]; paletteRow?: number }
+  >;
 }
 /** PE 精细替换：`resolve_prop_models` 的单条解析结果。 */
 export interface ResolvedPropModel {
@@ -746,7 +751,7 @@ export interface LotModelPayload {
   materials: LotMaterialTextures[];
   /** 每 mesh 的材质下标（与 glbs 同序）。 */
   meshMaterialIndices: number[];
-  /** 每 mesh UV 类型（0 无 / 1 常规贴图 / 2 tint 着色器）。 */
+  /** 每 mesh UV 类型（0 无 / 1 常规贴图 / 2 LOTM tint / 3 Blender tint）。 */
   meshUvKinds: number[];
   /** 模型槽位诊断文本（info 面板展示/复制）。 */
   diagnostics: string;

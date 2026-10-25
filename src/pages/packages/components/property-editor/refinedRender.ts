@@ -240,6 +240,8 @@ export interface TintTextureSet {
   interiorTex: ThreeNamespace.Texture | null;
   paramsTex: ThreeNamespace.DataTexture | null;
   paramCols: number;
+  paramsByMaterial: Map<string, ThreeNamespace.DataTexture>;
+  paletteRowsByMaterial: Map<string, number>;
 }
 
 /**
@@ -275,9 +277,9 @@ export async function loadTintTextures(
   // 原始数据同口径。
   const bitmapLoader = new THREE.ImageBitmapLoader();
   bitmapLoader.setOptions({
-    premultiplyAlpha: 'none',
-    colorSpaceConversion: 'none',
-    imageOrientation: 'none',
+    premultiplyAlpha: "none",
+    colorSpaceConversion: "none",
+    imageOrientation: "none",
   });
   const loadTex = (bytes: Uint8Array<ArrayBuffer>) =>
     new Promise<ThreeNamespace.Texture>((resolve, reject) => {
@@ -340,8 +342,12 @@ export async function loadTintTextures(
                 return t;
               })
             : Promise.resolve(null),
-          material.normalPng ? loadTex(material.normalPng) : Promise.resolve(null),
-          material.shaderPng ? loadTex(material.shaderPng) : Promise.resolve(null),
+          material.normalPng
+            ? loadTex(material.normalPng)
+            : Promise.resolve(null),
+          material.shaderPng
+            ? loadTex(material.shaderPng)
+            : Promise.resolve(null),
           material.interiorPng
             ? loadTex(material.interiorPng).then((t) => {
                 // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
@@ -365,6 +371,33 @@ export async function loadTintTextures(
         // 已回滚——不加载、不上传 GPU。见 Top 层块内回滚记录。
         paramsTex: buildParamsTexture(THREE, material),
         paramCols: material.paramCols,
+        paramsByMaterial: new Map(
+          Object.entries(material.paramsByMaterial ?? {}).flatMap(
+            ([name, value]) => {
+              if (!value.width || !value.values.length) return [];
+              const paramsTex = new THREE.DataTexture(
+                new Float32Array(value.values),
+                value.width,
+                4,
+                THREE.RGBAFormat,
+                THREE.FloatType,
+              );
+              paramsTex.minFilter = THREE.NearestFilter;
+              paramsTex.magFilter = THREE.NearestFilter;
+              paramsTex.generateMipmaps = false;
+              paramsTex.needsUpdate = true;
+              return [[name, paramsTex] as const];
+            },
+          ),
+        ),
+        paletteRowsByMaterial: new Map(
+          Object.entries(material.paramsByMaterial ?? {}).flatMap(
+            ([name, value]) =>
+              typeof value.paletteRow === "number"
+                ? ([[name, value.paletteRow]] as const)
+                : [],
+          ),
+        ),
       };
     }),
   );
@@ -407,6 +440,7 @@ export function releaseRefinedMaterialCache(): void {
     set.shaderTex?.dispose();
     set.interiorTex?.dispose();
     set.paramsTex?.dispose();
+    for (const paramsTex of set.paramsByMaterial.values()) paramsTex.dispose();
   }
   for (const set of cache.deferredMaps) {
     set.map?.dispose();
@@ -582,6 +616,8 @@ export function attachTintShader(
   paramsReady: boolean,
   shaderMapReady: boolean,
   interiorReady: boolean,
+  blenderUvProfile = false,
+  blenderAtlasUv = false,
 ) {
   // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
   // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
@@ -611,14 +647,42 @@ varying vec3 vReliefTangent;`,
       .replace(
         "#include <uv_vertex>",
         `#include <uv_vertex>
+// Blender's exported six-slot materials use NY_UV as the base domain
+// (TEXCOORD_1) and NY_SurfaceUV as the Top/facade domain (TEXCOORD_3).
+// Native LOTM GLBs keep the game contract: TEXCOORD_2/3 are the two facade
+// domains and TEXCOORD_1.x selects the parameter-table column.
+#ifdef TINT_BLENDER
+#ifdef TINT_BLENDER_ATLAS
+// The Blender material nodes bind the base input to NY_UV and the facade
+// input to NY_SurfaceUV.  NY_MaterialUV (TEXCOORD_2) is an auxiliary
+// diagnostic/projection attribute and must not be used for this shader: it
+// spans large world-space values and samples the six-slot atlas as a flat
+// grey wall.  GLTFLoader exposes NY_UV as TEXCOORD_1 and NY_SurfaceUV as
+// TEXCOORD_3, so keep the same two domains as Blender.
+vTintUv = vec2(uv1.x, 1.0 - uv1.y);
+vTopUv = vec2(uv3.x, 1.0 - uv3.y);
+#else
+// NY_Region/NY_Surface use the custom NY_UV and NY_SurfaceUV attributes.
+// They are also V-flipped by the glTF exporter and must be restored before the
+// six-slot atlas transform is applied.
+vTintUv = vec2(uv1.x, 1.0 - uv1.y);
+vTopUv = vec2(uv3.x, 1.0 - uv3.y);
+#endif
+#else
 vTintUv = uv2;
 vTopUv = uv3;
+#endif
 // 参数选列 = 逐顶点 byte1（D3DCOLOR.G，0..paramCols-1 与表宽自洽；消防局
 // 全部像素级对拍建立在其上）。地址 varying（vMatUV）+ PS Nearest 逐像素
 // 采样 = 引擎 building4SetupVS 的数据流结构（跨列三角形原子切换整列参数
 // 不混合值，2026-09-26 定谳；逐 tile 相位/半门问题另案，见 migration.md
 // §49.5——base 除法与逐实例基址两假设均已被实验证伪并回滚）。
-#ifdef TINT_PARAMS
+#ifdef TINT_BLENDER
+// Blender's material nodes use a fixed Mat Index input (column 0); NY_UV is
+// a base-domain coordinate, not the packed byte material selector used by
+// native LOTM exports.
+vMatUV = vec2(0.5 / uParamCols, 0.0);
+#elif defined(TINT_PARAMS)
 vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + 0.5) / uParamCols, 0.0);
 #else
 vMatUV = vec2(0.0);
@@ -900,7 +964,16 @@ float scFastNoise(vec3 seed) {
         // xform）白屏、v2（乘 xform，周期 1/s）砖块放大 3.6×且变糊，双双
         // 证伪回滚（migration.md §49.5）。
         // region.xy 可为负（镜像窗）；采样边界用两端的 min/max，保留镜像。
-        vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
+        // Blender's Image Texture nodes explicitly flip their V input after
+        // the atlas transform. Fold that flip into both the coordinate and
+        // the region passed to the atlas sampler; otherwise the sampler's
+        // clamp would immediately snap every top sample back to the unflipped
+        // atlas rectangle.
+        vec4 baseRegion = xform;
+#ifdef TINT_BLENDER
+        baseRegion = vec4(xform.x, -xform.y, xform.z, 1.0 - xform.w);
+#endif
+        vec2 tUv = fract(vTintUv) * baseRegion.xy + baseRegion.zw;
         // 引擎 tex2Dgrad 同款显式导数（2026-10-05 取证：导数取**未 fract
         // 域** ddx(uv×regionXform)）——平铺边界无 UV 跳变，mip 级别天然
         // 正确。这是 tint/normal/shader 恢复 mip+LINEAR+各向异性的前提；
@@ -908,15 +981,19 @@ float scFastNoise(vec3 seed) {
         // Nearest/禁 mip 的病根。
         // paramsMap is a discrete lookup: differentiating its jumps incorrectly
         // selects coarse mips along material boundaries, even at close range.
-        vec2 scTintGradX = dFdx(vTintUv) * xform.xy;
-        vec2 scTintGradY = dFdy(vTintUv) * xform.xy;
+        vec2 scTintGradX = dFdx(vTintUv) * baseRegion.xy;
+        vec2 scTintGradY = dFdy(vTintUv) * baseRegion.xy;
         // building4SetupPS computes the Top footprint from uv2 * regionXform2
         // only.  tilePadding belongs to the relief tile-domain transform; it is
         // deliberately not part of the texture derivatives.  Multiplying the
         // derivatives by (1 + tilePadding) makes the many window columns with
         // large padding select a coarse mip (often the whole atlas), which is
         // why some windows become matte or lose their Top relief entirely.
-        vec2 scTopScale = xform2.xy;
+        vec4 topRegion = xform2;
+#ifdef TINT_BLENDER
+        topRegion = vec4(xform2.x, -xform2.y, xform2.z, 1.0 - xform2.w);
+#endif
+        vec2 scTopScale = topRegion.xy;
         vec2 scTopGradX = dFdx(vTopUv) * scTopScale;
         vec2 scTopGradY = dFdy(vTopUv) * scTopScale;
         vec4 tintValues = scSampleFacade(tintMap, tUv, xform, scTintGradX, scTintGradY);
@@ -938,9 +1015,13 @@ float scFastNoise(vec3 seed) {
         // 旧判据 xform2.x > 0 把镜像区域（负 scale）整块跳过——对称双窗只
         // 渲染左半的直接病根之一；0 才是「区域禁用」标记，判据改为非零。
         if (abs(xform2.x) > 1e-6 && abs(xform2.y) > 1e-6) {
-          vec2 scPad = scRoom.xy;
-          // Top 层保持现行公式（ts2/其倒数在参数表无对应行，v1 乱除已弃）。
-          vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
+          // The Blender B4 node group applies the row-2 padding exactly as
+          // `fract(uvTop) * (1 + padding) - padding * 0.5` before mapping the
+          // result into the row-2 atlas region.  Row 3 is reserved for the
+          // interior-room transform and must not be used as Top padding.
+          vec2 reliefPadding = xform2.xy;
+          vec2 reliefScale = vec2(1.0) + reliefPadding;
+          vec2 reliefSrc = fract(vTopUv) * reliefScale - reliefPadding * 0.5;
           #ifdef TINT_SHADERMAP
           // shaderMap.r is the authored facade height/cone channel.  The game
           // calls reliefMap for every Top column, including columns whose
@@ -949,15 +1030,15 @@ float scFastNoise(vec3 seed) {
           // appear to have no relief at all.
           // reliefPS receives the Base-domain derivatives (uv_ddx/uv_ddy),
           // even though its height samples come from the Top atlas.
-          reliefSrc = scReliefUv(reliefSrc, scReliefEyeDir(), shaderMapMap, xform2,
+            reliefSrc = scReliefUv(reliefSrc, scReliefEyeDir(), shaderMapMap, topRegion,
             scTintGradX, scTintGradY);
           #endif
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
           // 先定位 Top 图集区域，采样时再按每张图的 texel 尺寸保护边缘。
-          topUv = clamp(reliefSrc, 0.0, 1.0) * xform2.xy + xform2.zw;
-          facadeTintValues = scSampleFacade(tintMap, topUv, xform2, scTopGradX, scTopGradY);
+          topUv = clamp(reliefSrc, 0.0, 1.0) * topRegion.xy + topRegion.zw;
+          facadeTintValues = scSampleFacade(tintMap, topUv, topRegion, scTopGradX, scTopGradY);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
         vec2 scSubTop = facadeTintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
@@ -987,17 +1068,17 @@ float scFastNoise(vec3 seed) {
           // artistAO = normalMapSampled.a（Base/Top 双采样 lerp，显式导数同 tint）
           // Normal and material data use the engine's linear filtering. Cubic
           // reconstruction is reserved for visible colour/coverage contours.
-          scNormalSample = scSampleAtlas(normalMap, tUv, xform, scTintGradX, scTintGradY);
-          if (scFacade > 0.001) scNormalSample = mix(scNormalSample, scSampleAtlas(normalMap, topUv, xform2, scTopGradX, scTopGradY), scFacade);
+           scNormalSample = scSampleAtlas(normalMap, tUv, baseRegion, scTintGradX, scTintGradY);
+           if (scFacade > 0.001) scNormalSample = mix(scNormalSample, scSampleAtlas(normalMap, topUv, topRegion, scTopGradX, scTopGradY), scFacade);
           diffuseColor.rgb *= scNormalSample.a;
           #endif
         }
         #ifdef TINT_SHADERMAP
         {
-          vec4 smBase = scSampleAtlas(shaderMapMap, tUv, xform, scTintGradX, scTintGradY);
+          vec4 smBase = scSampleAtlas(shaderMapMap, tUv, baseRegion, scTintGradX, scTintGradY);
           scShaderMap = smBase;
           if (scFacade > 0.001) {
-            scShaderMap = mix(smBase, scSampleAtlas(shaderMapMap, topUv, xform2, scTopGradX, scTopGradY), scFacade);
+            scShaderMap = mix(smBase, scSampleAtlas(shaderMapMap, topUv, topRegion, scTopGradX, scTopGradY), scFacade);
           }
         }
         #endif
@@ -1190,7 +1271,7 @@ float scFastNoise(vec3 seed) {
       );
   };
   material.customProgramCacheKey = () =>
-    `building4-tint${shaderMapReady ? "+sm" : ""}${paramsReady ? "+pm" : ""}${interiorReady ? "+im" : ""}`;
+    `building4-tint${shaderMapReady ? "+sm" : ""}${paramsReady ? "+pm" : ""}${interiorReady ? "+im" : ""}${blenderUvProfile ? "+blender" : ""}${blenderAtlasUv ? "+atlas" : ""}`;
 }
 
 /**
@@ -1202,7 +1283,15 @@ export function makeTintMaterial(
   tint: TintTextureSet,
   env: SunEnvRefs,
   reliefEnabled = false,
+  blenderUvProfile = false,
+  paletteRow = 0,
+  blenderAtlasUv = false,
+  materialName?: string,
 ): [ThreeNamespace.MeshStandardMaterial, { value: number }] {
+  const materialParams = materialName
+    ? tint.paramsByMaterial.get(materialName)
+    : undefined;
+  const paramsTex = materialParams ?? tint.paramsTex;
   const tinted = new THREE.MeshStandardMaterial({
     roughness: 0.9,
     metalness: 0,
@@ -1214,14 +1303,18 @@ export function makeTintMaterial(
   // 可见但不夸张的折中。normalTex 缺失时该值无副作用。
   tinted.normalScale = new THREE.Vector2(1.5, 1.5);
   tinted.defines = { USE_UV: "" };
-  if (tint.paramsTex) tinted.defines.TINT_PARAMS = "";
+  if (paramsTex) tinted.defines.TINT_PARAMS = "";
+  if (blenderUvProfile) {
+    tinted.defines.TINT_BLENDER = "";
+    if (blenderAtlasUv) tinted.defines.TINT_BLENDER_ATLAS = "";
+  }
   if (tint.shaderTex) tinted.defines.TINT_SHADERMAP = "";
   const interiorReady = Boolean(
-    tint.paramsTex && tint.shaderTex && tint.interiorTex,
+    paramsTex && tint.shaderTex && tint.interiorTex,
   );
   if (interiorReady) tinted.defines.TINT_INTERIOR = "";
   const uSpecGUniform = { value: effectiveSpecMode() };
-  const uPaletteRowUniform = { value: 0 };
+  const uPaletteRowUniform = { value: paletteRow };
   attachTintShader(
     tinted,
     {
@@ -1229,8 +1322,10 @@ export function makeTintMaterial(
       paletteMap: { value: tint.paletteTex! },
       shaderMapMap: { value: tint.shaderTex },
       interiorMapMap: { value: tint.interiorTex },
-      paramsMap: { value: tint.paramsTex },
-      uParamCols: { value: tint.paramCols },
+      paramsMap: { value: paramsTex },
+      uParamCols: {
+        value: materialParams ? materialParams.image.width : tint.paramCols,
+      },
       // 5a/5d：太阳/天空/昼夜/供电为共享 uniform 实例（applySunEnv 热切换）
       uSunDir: env.sunDir,
       uSunColor: env.sunColor,
@@ -1245,12 +1340,13 @@ export function makeTintMaterial(
       uPaletteRow: uPaletteRowUniform,
       uReliefEnabled: { value: reliefEnabled ? 1 : 0 },
     },
-    Boolean(tint.paramsTex),
+    Boolean(paramsTex),
     Boolean(tint.shaderTex),
     interiorReady,
+    blenderUvProfile,
+    blenderAtlasUv,
   );
   // 行 uniform 引用挂 userData（prop 按实例设变体行；建筑保持 0）
   tinted.userData.uPaletteRow = uPaletteRowUniform;
   return [tinted, uSpecGUniform];
 }
-

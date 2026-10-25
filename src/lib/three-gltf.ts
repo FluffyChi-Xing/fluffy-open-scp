@@ -145,9 +145,11 @@ export async function parseLotModelObjects(
   const objects = await Promise.all(
     glbs.map(async (glb) => {
       const gltf = await loader.parseAsync(glb, "");
-      for (const child of gltf.scene.children) {
-        child.rotation.set(baseRotationX, 0, 0);
-      }
+      // 轴向转换必须作用于整个 glTF 场景根节点，而不是逐个子节点。
+      // Blender 导出的对象经常同时带有 translation；逐子节点旋转只会
+      // 旋转几何自身，节点平移仍留在原坐标系，导致量测（按整场景旋转）
+      // 与实际渲染不一致，模型底面和可选中伪单元原点会分离。
+      gltf.scene.rotation.set(baseRotationX, 0, 0);
       return gltf.scene;
     }),
   );

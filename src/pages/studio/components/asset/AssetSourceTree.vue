@@ -6,6 +6,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import { isTauri, tauriApi } from "@/api";
 import { command } from "@/api/tauri";
 import type { CodeTreeNode } from "@/api/tauri";
+import { useToast } from "@/composables/useToast";
 
 /**
  * 工作台左栏：项目文件夹树（Blender 资产浏览口径）。
@@ -20,15 +21,39 @@ const props = defineProps<{
 const emit = defineEmits<{
   "open-asset": [relativePath: string];
   "open-package": [relativePath: string];
+  "blend-imported": [result: { asset: string; materialSlots?: Record<string, string> }];
   imported: [];
 }>();
 
 const { t } = useI18n();
+const toast = useToast();
 const tree = ref<CodeTreeNode[] | null>(null);
 const loading = ref(false);
 const error = ref("");
 const expanded = ref(new Set<string>());
 const importing = ref(false);
+
+function errorMessage(cause: unknown): string {
+  if (cause instanceof Error && cause.message) return cause.message;
+  if (typeof cause === "string") return cause;
+  if (cause && typeof cause === "object") {
+    const value = cause as { message?: unknown; error?: unknown; payload?: { message?: unknown } };
+    const message = value.message ?? value.payload?.message ?? value.error;
+    if (typeof message === "string" && message) return message;
+  }
+  return t("studio.assetWorkbench.importFailed");
+}
+
+function importErrorToast(cause: unknown) {
+  const message = errorMessage(cause).toLowerCase();
+  if (message.includes("blender executable not found")) {
+    toast.error(t("studio.assetWorkbench.blendUnavailable"));
+  } else if (message.includes("blender could not export")) {
+    toast.error(t("studio.assetWorkbench.blendExportFailed"));
+  } else {
+    toast.error(t("studio.assetWorkbench.importFailed"));
+  }
+}
 
 interface TreeRow {
   name: string;
@@ -76,7 +101,8 @@ async function loadTree() {
       );
     }
   } catch (cause) {
-    error.value = String(cause);
+    error.value = "";
+    toast.error(t("studio.assetWorkbench.treeLoadFailed"));
   } finally {
     loading.value = false;
   }
@@ -121,24 +147,26 @@ async function importFile() {
     filters: [
       {
         name: t("studio.assetWorkbench.importFilterName"),
-        extensions: ["glb", "lotm", "package", "png", "jpg", "jpeg", "dds", "json"],
+        extensions: ["blend", "glb", "lotm", "package", "png", "jpg", "jpeg", "dds", "json"],
       },
     ],
   });
   if (typeof path !== "string") return;
   importing.value = true;
   try {
-    const value = await command<{ asset: string }>("code_flow", {
+    const value = await command<{ asset: string; source?: string; materialSlots?: Record<string, string> }>("code_flow", {
       request: { project: props.project, action: "import-asset", payload: { path } },
     });
     await loadTree();
     const lower = value.asset.toLowerCase();
-    if (MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+    if (value.source === "blend") emit("blend-imported", value);
+    if (value.source !== "blend" && MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
       emit("open-asset", value.asset);
     }
     emit("imported");
   } catch (cause) {
-    error.value = String(cause);
+    error.value = "";
+    importErrorToast(cause);
   } finally {
     importing.value = false;
   }
