@@ -18,7 +18,6 @@ import { useMapGraph } from "./useMapGraph";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import type { MapNodeKind } from "@/lib/map-graph";
 import type { FlowSchema } from "./contracts";
-import UiMenuFlowBridge from "./UiMenuFlowBridge.vue";
 const props = defineProps<{ project: string; selectedPath?: string }>();
 const emit = defineEmits<{ status: [ready: boolean]; saved: [] }>();
 const { t } = useI18n();
@@ -319,7 +318,6 @@ defineExpose({
         {{ t("flow.artifact") }}: <code>{{ artifact }}</code>
       </p>
     </footer>
-    <UiMenuFlowBridge />
     <FlowNodeEditor
       v-if="editorOpen"
       v-model:open="editorOpen"

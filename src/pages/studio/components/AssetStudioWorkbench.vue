@@ -9,7 +9,6 @@ const nodes = [
   { id: "building", icon: "Box", label: "studio.assetWorkbench.nodes.building" },
   { id: "materials", icon: "Palette", label: "studio.assetWorkbench.nodes.materials" },
   { id: "lot", icon: "LandPlot", label: "studio.assetWorkbench.nodes.lot" },
-  { id: "menu", icon: "PanelTop", label: "studio.assetWorkbench.nodes.menu" },
 ];
 </script>
 
