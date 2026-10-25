@@ -164,6 +164,22 @@ const props = defineProps<{
    * 视口补一次重建对齐当前渲染模式。
    */
   suspended?: boolean;
+  /**
+   * 模型来源（mod 工作台外部导入）：native = 游戏 LOTM（白模/游戏 tint
+   * 材质管线）；glb = 外部导入 GLB（Blender 六槽烘焙贴图已内嵌在 glTF
+   * 材质中，保留原材质，不做白模替换与 tint/deferred 贴图链）。
+   */
+  modelSource?: "native" | "glb";
+  /**
+   * 草稿伪单元：导入的建筑模型本身可被选中并用手柄做四种变换。
+   * 选中 id 固定为 "model"；变换提交走 commit-transform("model", matrix)。
+   */
+  modelSelectable?: boolean;
+  /** 模型伪单元的变换（行主序 12 floats；rebuild 时应用到包装组）。 */
+  modelTransform?: number[] | null;
+  /** 草稿模型放置原点平移（水平居中 + 底面坐 y=0；世界空间，装配时
+   * 应用到各模型根——地面恒在原点平面）。 */
+  modelOrigin?: [number, number, number] | null;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -204,6 +220,15 @@ const viewport = useEditorViewport({
     hoveredId.value = id;
   },
 });
+// 草稿模型的拾取开关：同步到射线目标组（模型关闭后取消其选中）
+watch(
+  () => props.modelSelectable === true,
+  (pickable) => {
+    viewport.setModelPickable(pickable);
+    if (!pickable && props.selectedId === "model") emit("select", null);
+  },
+  { immediate: true },
+);
 
 // ---------------------------------------------------------------------------
 // 拾取反馈（2026-10-06 二轮）：轮廓壳（viewer 反转壳体，hover 虚线/选中
@@ -243,6 +268,8 @@ const unitById = computed<Map<string, LotUnitDto>>(() => {
   return map;
 });
 function overlayLabel(id: string): string {
+  // 草稿模型伪单元（整栋建筑）：显示语义名而非内部 id
+  if (id === "model") return t("package.modelUnitLabel");
   const unit = unitById.value.get(id);
   return unit ? unitLabel(unit, t) : id;
 }
@@ -1270,7 +1297,9 @@ async function assembleScene(
     refined: props.renderMode === "refined",
   });
   const tintResolved =
-    props.renderMode === "refined" && payload
+    props.renderMode === "refined" &&
+    payload &&
+    (props.modelSource !== "glb" || (payload.materials?.length ?? 0) > 0)
       ? await getTintTextures(THREE, payload, ctx.maxAnisotropy)
       : [];
   tintSpan.end({
@@ -1282,7 +1311,45 @@ async function assembleScene(
   // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
   // 居中（bbox≈0 实证），mask 空腔与其错位另有机制（0x0CCB7FD2/D3
   // UV 字段为头号嫌疑，待取证）。
+  // 草稿伪单元包装组（modelSelectable）：整个建筑模型作为可选中/可变换
+  // 的 "model" 单元——手柄 TRS 直接落在包装组，模型内部轴向烘焙不动。
+  let modelUnit: ThreeNamespace.Group | null = null;
+  if (props.modelSelectable && modelObjects.length) {
+    modelUnit = new THREE.Group();
+    modelUnit.userData.unitId = "model";
+    if (props.modelTransform && props.modelTransform.length === 12) {
+      // WPF 行主序 12 floats（平移在末行）→ three 列向量 Matrix4（平移在
+      // 第 4 列）：three 的 set() 是数学行主序入参，需按列填充 = 转置。
+      // 【2026-10-25 勘误】此前把平移填进第 4 行——decompose 恒读出
+      // (0,0,0)，每次重建把拖拽后的模型摁回原点（用户实测）。
+      const m = props.modelTransform;
+      const matrix = new THREE.Matrix4().set(
+        m[0], m[3], m[6], m[9],
+        m[1], m[4], m[7], m[10],
+        m[2], m[5], m[8], m[11],
+        0, 0, 0, 1,
+      );
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      matrix.decompose(position, quaternion, scale);
+      modelUnit.position.copy(position);
+      modelUnit.quaternion.copy(quaternion);
+      modelUnit.scale.copy(scale);
+    }
+    modelUnit.userData.debugTransform = props.modelTransform
+      ? [...props.modelTransform].map((v) => +v.toFixed(2))
+      : null;
+    ctx.unitObjects.set("model", modelUnit);
+  }
   for (const [index, object] of modelObjects.entries()) {
+    // 放置原点平移（draft：水平居中 + 底面坐 y=0；modelTransform 之外
+    // 的确定性基座平移，保证地面/尺寸与模型永远同心同面）
+    if (props.modelOrigin) {
+      object.position.add(
+        new THREE.Vector3(...props.modelOrigin),
+      );
+    }
     const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
     const uvKind = payload?.meshUvKinds[index] ?? 0;
     object.traverse((child) => {
@@ -1293,6 +1360,30 @@ async function assembleScene(
       // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
       mesh.userData.buildingMaterialIndex = materialIndex;
       try {
+        // 外部导入 GLB 材质分级（2026-10-25 白模修复）：
+        // 1) 已绑定六槽材质（payload.materials 非空）→ 落入下方原生 tint
+        //    链（契约 GLB 的 TEXCOORD_1.x=材质列、TEXCOORD_2/3=facade
+        //    投影 UV 与游戏约定一致，uvKind=2 直接可用）；
+        // 2) glTF 材质带贴图（Blender 烘焙导出）→ 原样保留；
+        // 3) 无贴图但几何带 COLOR_0（探针契约 GLB：游戏调色板顶点色烘焙）
+        //    → 顶点色材质，与原生精细渲染的调色观感一致；
+        // 4) 两者皆无（纯白模）→ 白模材质。
+        const hasSlotMaterials = (payload?.materials?.length ?? 0) > 0;
+        if (props.modelSource === "glb" && !hasSlotMaterials) {
+          const imported = mesh.material as ThreeNamespace.MeshStandardMaterial | null;
+          if (imported?.map || imported?.normalMap || imported?.emissiveMap) return;
+          if (mesh.geometry.attributes.color) {
+            mesh.material = new THREE.MeshStandardMaterial({
+              vertexColors: true,
+              roughness: 0.82,
+              metalness: 0,
+              side: THREE.DoubleSide,
+            });
+            return;
+          }
+          if (!imported) mesh.material = whiteMaterial;
+          return;
+        }
         if (props.renderMode !== "refined") {
           mesh.material = whiteMaterial;
           return;
@@ -1351,9 +1442,15 @@ async function assembleScene(
         console.info(`[building-materials] glb#${index}\n${summaries.join("\n")}`);
       }
     }
-    instance.group("model").add(object);
+    if (modelUnit) modelUnit.add(object);
+    else instance.group("model").add(object);
   }
-  if (props.renderMode === "refined" && payload) {
+  if (modelUnit) instance.group("model").add(modelUnit);
+  if (
+    props.renderMode === "refined" &&
+    payload &&
+    (props.modelSource !== "glb" || (payload.materials?.length ?? 0) > 0)
+  ) {
     const deferredSpan = renderTelemetry.begin("texture_compose", {
       phase: "deferred",
     });
@@ -2291,7 +2388,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       >
         <span class="pick-tag-text" />
         <button
-          v-if="props.editEnabled"
+          v-if="props.editEnabled && props.selectedId !== 'model'"
           type="button"
           class="pick-delete"
           :aria-label="$t('package.deleteUnit')"
@@ -2780,7 +2877,9 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
   display: flex;
   flex-direction: column;
   gap: 2px;
-  left: 10px;
+  /* 左上角是图层列表的地盘——工具栏放右侧垂直居中，避免重叠（用户指令
+   * 2026-10-25：操作栏改到右边） */
+  inset-inline-end: 10px;
   padding: 3px;
   top: 50%;
   transform: translateY(-50%);

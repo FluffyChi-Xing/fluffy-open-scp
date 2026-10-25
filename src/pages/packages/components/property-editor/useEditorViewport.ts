@@ -118,6 +118,21 @@ export function useEditorViewport(options: {
     return best;
   }
 
+  /** 模型组是否参与拾取（mod 工作台草稿：导入的建筑模型可作为伪单元
+   * "model" 选中/变换）。切换时重设 hover 射线目标组。 */
+  let modelPickable = false;
+  function applyHoverTargets() {
+    const instance = viewer.value;
+    if (!instance) return;
+    const targets = PICKABLE_GROUPS.map((name) => instance.group(name));
+    if (modelPickable) targets.push(instance.group("model"));
+    instance.setHoverTargets(targets);
+  }
+  function setModelPickable(pickable: boolean) {
+    modelPickable = pickable;
+    applyHoverTargets();
+  }
+
   onMounted(async () => {
     const element = container.value;
     if (!element) return;
@@ -131,10 +146,9 @@ export function useEditorViewport(options: {
         options.onHoverUnit?.(hit ? resolveUnitId(hit.object, null) : null);
       },
     });
-    // 悬停拾取只对 unit 图层组（建筑/地面命中不属于任何 Unit）
-    viewer.value.setHoverTargets(
-      PICKABLE_GROUPS.map((name) => viewer.value!.group(name)),
-    );
+    // 悬停拾取只对 unit 图层组（建筑/地面命中不属于任何 Unit；
+    // setModelPickable 可把模型组临时纳入）
+    applyHoverTargets();
     readyResolve?.();
   });
   onBeforeUnmount(() => {
@@ -337,6 +351,7 @@ export function useEditorViewport(options: {
     applySelection,
     captureRender,
     resetView,
+    setModelPickable,
     isAssembling,
     rebuildEpoch,
     whenSettled,

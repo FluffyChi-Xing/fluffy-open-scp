@@ -750,6 +750,8 @@ export interface LotModelPayload {
   meshUvKinds: number[];
   /** 模型槽位诊断文本（info 面板展示/复制）。 */
   diagnostics: string;
+  /** 外部导入 GLB 的上轴（glTF 规范 Y-up；缺省 = 原生 Z-up，不旋转）。 */
+  upAxis?: "y" | "z";
 }
 export interface RasterPreviewData {
   rasterType: number;

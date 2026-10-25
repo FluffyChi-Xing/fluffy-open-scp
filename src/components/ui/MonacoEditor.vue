@@ -2,9 +2,10 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as monaco from "monaco-editor";
 
-const props = withDefaults(defineProps<{ value: string; language?: string; readOnly?: boolean }>(), {
+const props = withDefaults(defineProps<{ value: string; language?: string; readOnly?: boolean; fill?: boolean }>(), {
   language: "plaintext",
   readOnly: true,
+  fill: false,
 });
 const host = ref<HTMLElement | null>(null);
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
@@ -93,8 +94,10 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<template><div ref="host" class="monaco-editor-host" /></template>
+<template><div ref="host" class="monaco-editor-host" :class="{ fill: props.fill }" /></template>
 
 <style scoped>
 .monaco-editor-host { min-height: 260px; height: min(65vh, 620px); width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+/* 嵌入侧栏等固定高度容器：撑满宿主而非视口比例（automaticLayout 跟随） */
+.monaco-editor-host.fill { height: 100%; min-height: 0; border: 0; border-radius: 0; }
 </style>
