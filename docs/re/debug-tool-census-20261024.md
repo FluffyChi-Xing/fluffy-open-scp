@@ -173,11 +173,19 @@ Property 外壳，只替换 `menuUnit`、标题、描述、道路分类和槽位
 缺少它所需的运行时输入上下文；帐篷如果能放置但没有游民活动，说明 Unit
 资源存在而其模拟/Spawner 关系仍需另行研究。
 
-### Homeless Tent 无法铲除：规则链证据与最小覆盖包
+### Homeless Tent 铲除闭环：静态假设被实机否定（2026-10-25）
 
-用户实测确认帐篷可以正常放置并吸引流浪汉，但放置后不能被 Bulldozer 铲除。
-这不是 `cToolBulldozer` 缺失，而是 Unit 的合并后玩家规则不完整。零售反编译
-代码显示 `DestroyWholeUnit` 固定执行：
+先前根据静态规则链得出的“帐篷缺少拆除 player rule、因此不能被 Bulldozer
+铲除”结论已经被实机纠正。用户确认帐篷可以正常放置、吸引流浪汉并被原生
+推土机铲除；`cToolBulldozer` 和帐篷 Unit 的拆除生命周期无需通过覆盖包修复。
+
+实际问题是交互命中，而不是资源规则缺失：帐篷体积很小，靠近道路时推土机
+光标会优先拾取道路的拆除目标；道路拆除还可能连带清理沿路建筑，因此看起来
+像帐篷无法单独铲除。应在无道路或远离道路的位置把光标放到帐篷中心，观察
+高亮对象，再与靠近道路的位置对比。
+
+零售反编译代码仍可作为规则链背景，不能覆盖本次实机结论。`DestroyWholeUnit`
+确实固定执行：
 
 ```text
 RunUnitPlayerRuleID(unitSlot, 0x0C614161)
@@ -187,9 +195,10 @@ RunUnitPlayerRuleID(unitSlot, 0x0C614161)
 
 `RunUnitPlayerRuleID` 还要求 Unit 的 `mPlayerRuleIDs` 中有该 ID，并且对应的
 `mEventRuleIndices[index + 11]` 非空。帐篷 Unit
-`00B1B104:40E1C000:EB415C8F` 原始只有 5 个属性：父级、半径、包围盒、模型和
-一个布尔值；它没有任何 `0x0A0209A2..0x0A0209A5` Bundle 引用，因此
-`AddBundle` 不会把拆除规则挂到这个 Unit 上。
+`00B1B104:40E1C000:EB415C8F` 原始只有 5 个属性，静态上看不到
+`0x0A0209A2..0x0A0209A5` Bundle 引用；这曾经支持“规则缺失”的假设，但与实机
+可铲除结果矛盾，说明运行时可能通过父级/合并资源、通用 Unit 规则或交互命中
+路径补齐了拆除能力。不能再仅凭该 Property 的字段数量判断帐篷不可拆除。
 
 脚本包中存在可复用的拆除 Bundle：
 
@@ -199,7 +208,8 @@ RunUnitPlayerRuleID(unitSlot, 0x0C614161)
   0x08327D53 -> 0xBC57A76A
 ```
 
-它只提供玩家拆除规则及其事件映射。当前已生成最小覆盖包：
+它只提供玩家拆除规则及其事件映射。此前生成的最小覆盖包仍保留为规则链
+诊断探针，但不应描述成帐篷铲除修复：
 
 ```text
 D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP-tent-bulldozer-probe.package
@@ -211,11 +221,10 @@ D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\000_OpenSCP-
 0x0A0209A3 Key[] = 00000000:00000000:2A2459B7
 ```
 
-它不修改菜单、模型、父级或其他 Unit。进入游戏后应在一个新放置的帐篷上
-观察：推土机是否能高亮帐篷、点击后是否消失、保存重载后是否仍能删除，且
-流浪汉吸引行为是否保持。如果仍不能删除，应继续检查当前运行时加载的脚本
-版本是否包含 `40E0C700:2A2459B7`，以及 Bundle 组是否被当前 `SimCity-
-Scripts_*` 版本合并；此时不要把该失败归因于道路工具或菜单分类。
+它不修改菜单、模型、父级或其他 Unit。由于原生帐篷已经可以铲除，后续不应
+把该包作为功能修复包继续推广；如需保留，只用于比较“显式拆除 Bundle”对
+规则链日志的影响。实机复测应记录：无道路/远离道路时是否能高亮并删除帐篷，
+靠近道路时是否先高亮道路，以及道路拆除是否连带帐篷或其他沿路建筑。
 
 ## D. 与地图编辑最相关的突破口
 

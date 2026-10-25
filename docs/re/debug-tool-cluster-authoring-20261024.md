@@ -2,19 +2,19 @@
 
 日期：2026-10-24。
 
-## 分类更正与帐篷拆除规则（2026-10-25）
+## 分类更正与帐篷拆除实机结论（2026-10-25）
 
 `cToolPathSelector`、`cToolBulldozer`、`cToolSkybridge` 和
 `cToolAddTowerLevel` 都是游戏原有工具。它们的 factory 残留说明发行版仍有
 执行侧实现，但不说明它们是 debug 工具；本目录中的“debug”只表示某些入口
 被隐藏或被用于验证。
 
-Homeless Tent 是 debug placement 资产。它能正常放置并吸引流浪汉，但原始 Unit
-缺少 `0x0A0209A3` Bundle 引用，因而没有 `0x0C614161` 拆除 player rule。
-`cToolBulldozer::DestroyWholeUnit` 在该规则返回成功前不会调用
-`QueueUnitForDemolition`。已生成只覆盖帐篷 Unit 的验证包
-`000_OpenSCP-tent-bulldozer-probe.package`，通过增加
-`40E0C700:2A2459B7` 拆除 Bundle 来验证这条闭环；包生成代码位于
+Homeless Tent 是 debug placement 资产。它能正常放置并吸引流浪汉，也支持原生
+推土机铲除。此前根据原始 Unit 看不到 `0x0A0209A3` Bundle 引用，推断它缺少
+`0x0C614161` 拆除 player rule；该推断已被实机否定，不能作为当前问题的根因。
+实际原因是帐篷体积很小，推土机命中测试在靠近道路时优先选择道路；道路拆除
+还可能连带沿路建筑。`000_OpenSCP-tent-bulldozer-probe.package` 仅保留为
+规则链诊断探针，不再视为帐篷铲除修复包；包生成代码位于
 `probes/menu/tent_bulldozer_overlay.rs`。
 
 本轮优先分析三个最直接服务于新建筑资产制作的菜单条目：
