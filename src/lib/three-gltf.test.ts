@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLotModelContainer } from "./three-gltf";
+import { parseLotModelContainer, rotationXForUpAxis } from "./three-gltf";
 
 /** 按 Rust 侧 LOTM 容器布局构建字节（小端）——先压入数组再一次性分配。 */
 interface MaterialSpec {
@@ -157,5 +157,13 @@ describe("parseLotModelContainer", () => {
     new DataView(good).setUint32(0, 0x12345678, true);
     expect(() => parseLotModelContainer(good)).toThrow("magic mismatch");
     expect(() => parseLotModelContainer(new ArrayBuffer(4))).toThrow("truncated");
+  });
+});
+
+describe("imported model axis", () => {
+  it("keeps Z-up Blender assets for the shared world transform", () => {
+    expect(rotationXForUpAxis("z")).toBe(0);
+    expect(rotationXForUpAxis("y")).toBeCloseTo(Math.PI / 2);
+    expect(rotationXForUpAxis(undefined)).toBe(0);
   });
 });

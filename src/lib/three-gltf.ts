@@ -127,8 +127,9 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
 
 /**
  * 解析地块模型的全部 GLB 为 Object3D。
- * gltf.rs 根节点自带 Z-up→Y-up 的 -90°X 旋转，而视口 world 组已做同款
- * 旋转（模型须与 Unit gizmo 共享 Z-up 世界），这里剥掉根旋转避免双重旋转。
+ * 原生 LOTM 已按视口的 Y-up 口径导出；外部 Blender GLB 的轴向由
+ * `upAxis` 驱动，在整个 glTF 根节点上统一转换，避免逐节点旋转造成平移
+ * 和选择原点分离。
  *
  * 【2026-10-08】GLB 解析 Worker 实验回滚：EP1 建筑贴图乱码与 Worker 路径
  * 稳定复现相关（用户 A/B 实证：Worker=1 乱/Worker=2 好；transfer/克隆两种
@@ -161,13 +162,12 @@ export async function parseLotModelObjects(
  * 的模型轴向不同，自动转换；同时为白模诊断提供材质/贴图事实）。
  *
  * 上轴三分判定（按观测到的三种导出口径）：
- *  1. 场景根节点带 ±90°X 旋转 → 数据为 Z-up（游戏 gltf.rs 口径：Z-up 数据
- *     + 根旋转拼成 Y-up 文件），渲染剥掉根旋转即可；
+ *  1. 场景根节点带 ±90°X 旋转 → 数据为 Z-up（游戏 gltf.rs 口径）；
  *  2. 根节点无旋转且 POSITION 包围盒 Z 跨度 > Y 跨度 → 数据为 Z-up
  *     （blender_asset_pipeline 契约导出 export_yup=False，Z-up 直出），
- *     渲染原样入组；
- *  3. 其余 → glTF 规范 Y-up（Blender 默认 export_yup=True），渲染 +90°X
- *     搬到 Z-up 世界。
+ *     保持原样交给共享 world；
+ *  3. 其余 → glTF 规范 Y-up（Blender 默认 export_yup=True），先转回共享
+ *     world 的 Z-up。
  * 只读 GLB 容器开头的 JSON chunk，不解码网格。
  */
 export interface GlbInspection {
@@ -182,6 +182,14 @@ export interface GlbInspection {
   hasVertexColors: boolean;
   /** TEXCOORD_N 集合上界（0 = 无 UV）。 */
   texcoordSets: number;
+}
+
+/** Convert imported GLB data into the viewer world's Z-up contract. */
+export function rotationXForUpAxis(upAxis: "y" | "z" | undefined): number {
+  // three-viewer rotates its shared world once from Z-up to Y-up. Keep
+  // Blender export_yup=False and native game assets untouched; only a
+  // glTF-native Y-up file needs the inverse +90° correction here.
+  return upAxis === "y" ? Math.PI / 2 : 0;
 }
 
 export function inspectGlb(bytes: ArrayBuffer): GlbInspection {
@@ -315,11 +323,12 @@ export async function getLotModelObjects(
 ): Promise<ThreeNamespace.Object3D[]> {
   if (cachedPayload !== payload) {
     releaseLotModelCache();
-    // 外部导入 GLB（Blender 管线）按 glTF 规范 Y-up；原生 LOTM 网格已
-    // 在后端烘焙为 Z-up，根旋转剥零。upAxis 驱动统一到视口 Z-up 世界。
+    // three-viewer 的 world 根组已经统一执行 Z-up→Y-up 的 -90°X。
+    // 因此 Blender `export_yup=False` 的 Z-up 数据和原生 LOTM 都保持原样；
+    // 只有 glTF 规范 Y-up 的外部文件在这里先转回 Z-up。
     const roots = await parseLotModelObjects(
       payload.glbs,
-      payload.upAxis === "y" ? Math.PI / 2 : 0,
+      rotationXForUpAxis(payload.upAxis),
     );
     for (const root of roots) {
       root.traverse((child) => {

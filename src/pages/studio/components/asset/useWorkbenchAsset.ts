@@ -6,6 +6,7 @@ import {
   inspectGlb,
   parseLotModelContainer,
   releaseLotModelCache,
+  rotationXForUpAxis,
 } from "@/lib/three-gltf";
 import { createDataSource } from "@/api/data-source";
 import {
@@ -31,7 +32,7 @@ import {
  * 两种资产来源共用同一套编辑契约（视口/组件树/检查器/Schema 消费面完全
  * 一致，与 PropertyEditor 会话层同构）：
  *  - native：TGI 直接解析游戏包（packages.open → readLotEditorSession 全链）；
- *  - draft：外部导入 GLB/LOTM（Blender 六槽烘焙管线产物，glTF Y-up）。
+ *  - draft：外部导入 GLB/LOTM（Blender 六槽烘焙管线产物，自动统一到视口 Y-up）。
  *
  * 文档持久化 = 项目内 `asset.lot.json`（openscp.lot-asset/1 + editor.workbench
  * 来源块）；打开工作台自动恢复，保存按钮写回，导出走系统对话框。
@@ -820,7 +821,9 @@ export function useWorkbenchAsset(project: string) {
     for (const glb of payload.glbs) {
       try {
         const { scene } = await loader.parseAsync(glb, "");
-        if (payload.upAxis === "y") scene.rotation.x = Math.PI / 2;
+        // three-viewer 的 world 根组已经统一执行 Z-up→Y-up 的 -90°X；
+        // 量测必须保持和 getLotModelObjects 相同的原始 Z-up 数据契约。
+        scene.rotation.x = rotationXForUpAxis(payload.upAxis);
         scene.updateMatrixWorld(true);
         const part = new Box3().setFromObject(scene);
         if (!Number.isFinite(part.min.x)) continue;
@@ -833,9 +836,8 @@ export function useWorkbenchAsset(project: string) {
     if (!found) return { size: [8, 8], origin: [0, 0, 0] };
     const size = new Vector3();
     box.getSize(size);
-    // 量测和视口使用同一套 Z-up 世界：地面是 XY 平面，Z 是高度。
-    // Y-up glTF 已在上面旋转 +90°X，因此旋转后的 bbox 直接使用
-    // x/y 作为水平尺寸、min.z 作为建筑底面。
+    // 量测和装配共享 world 的 Z-up 契约：地面是 XY 平面，Z 是高度。
+    // world 根组随后统一绕 X 轴 -90° 显示为 Three.js 的 Y-up。
     const centerX = -(box.min.x + box.max.x) / 2;
     const origin: [number, number, number] = [
       Number(centerX.toFixed(2)),
