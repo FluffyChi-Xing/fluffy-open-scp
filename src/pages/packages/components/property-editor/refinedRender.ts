@@ -1016,7 +1016,7 @@ float scFastNoise(vec3 seed) {
         // 渲染左半的直接病根之一；0 才是「区域禁用」标记，判据改为非零。
         if (abs(xform2.x) > 1e-6 && abs(xform2.y) > 1e-6) {
           // The Blender B4 node group applies the row-2 padding exactly as
-          // `fract(uvTop) * (1 + padding) - padding * 0.5` before mapping the
+          // fract(uvTop) * (1 + padding) - padding * 0.5 before mapping the
           // result into the row-2 atlas region.  Row 3 is reserved for the
           // interior-room transform and must not be used as Top padding.
           vec2 reliefPadding = xform2.xy;
