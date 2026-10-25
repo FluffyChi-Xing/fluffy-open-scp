@@ -104,6 +104,7 @@ const engineReady = ref(false);
 const initializeOpen = ref(false);
 const flowPanel = ref<InstanceType<typeof ModFlowWorkbench> | null>(null);
 const deployBusy = ref(false);
+const editorFocus = ref<"editor" | "flow" | null>(null);
 const standardModKind = computed(() => {
   const value = projectManifest.value.mod_type ?? projectManifest.value.modType;
   if (typeof value === "string") return value.toLowerCase();
@@ -515,20 +516,22 @@ watch(
           direction="vertical"
           auto-save-id="openscp:code-standard-workbench:v1"
           class="standard-workbench"
+          :class="{ 'focus-editor': editorFocus === 'editor', 'focus-flow': editorFocus === 'flow' }"
         >
-          <ResizablePanel id="code-editor-panel" :default-size="58" :min-size="30">
+          <ResizablePanel id="code-editor-panel" :default-size="60" :min-size="12" class="standard-editor-panel">
             <StandardModEditorPanel
               :project="project.relPath"
               :kind="standardModKind"
               :manifest="projectManifest"
+              @focus="editorFocus = editorFocus === 'editor' ? null : 'editor'"
             />
           </ResizablePanel>
           <ResizableHandle
             orientation="vertical"
             :label="$t('studio.code.resizeVerticalHint')"
           />
-          <ResizablePanel id="code-blueprint-panel" :default-size="42" :min-size="24">
-            <ModFlowWorkbench :key="project.relPath" ref="flowPanel" :project="project.relPath" :selected-path="selected?.relativePath" @status="engineReady = $event" @saved="loadTree(true)" />
+          <ResizablePanel id="code-blueprint-panel" :default-size="40" :min-size="12" class="standard-blueprint-panel">
+            <ModFlowWorkbench :key="project.relPath" ref="flowPanel" :project="project.relPath" :selected-path="selected?.relativePath" @focus="editorFocus = editorFocus === 'flow' ? null : 'flow'" @status="engineReady = $event" @saved="loadTree(true)" />
           </ResizablePanel>
         </Resizable>
         <div v-else class="viewer" :class="{ empty: !selected }">
@@ -913,6 +916,20 @@ watch(
 }
 .standard-workbench :deep(.resizable-panel) {
   min-height: 0;
+}
+.standard-workbench.focus-editor :deep(#code-blueprint-panel),
+.standard-workbench.focus-flow :deep(#code-editor-panel) {
+  display: none;
+}
+.standard-workbench.focus-editor :deep(#code-editor-panel),
+.standard-workbench.focus-flow :deep(#code-blueprint-panel) {
+  flex: 1 1 100% !important;
+  height: 100%;
+  max-height: none;
+}
+.standard-workbench.focus-editor :deep(.resizable-handle),
+.standard-workbench.focus-flow :deep(.resizable-handle) {
+  display: none;
 }
 .tree-panel {
   background: var(--surface);

@@ -8,6 +8,7 @@ import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FCode from "@/components/ui/FCode.vue";
+import { Resizable, ResizableHandle, ResizablePanel } from "@/components/ui/resizable";
 import type {
   LotModelPayload,
   LotUnitDto,
@@ -35,7 +36,7 @@ import { tauriApi } from "@/api";
 
 import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
-const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor" }>(), { mode: "viewer" });
+const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean }>(), { mode: "viewer", embedded: false });
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
 const canEdit = computed(() => props.mode === "editor");
@@ -733,15 +734,19 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
  */
 const treeSheetOpen = ref(canEdit.value);
 const treeSheetPinned = ref(true);
+const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
 </script>
 
 <template>
-    <FSheet
-    v-model:open="open"
+    <component
+    :is="embedded ? 'div' : FSheet"
+    :open="embedded ? true : open"
+    @update:open="open = $event"
     :label="panelTitle"
     width="100vw"
+    :class="{ 'embedded-sheet': embedded }"
   >
-    <div v-if="open" class="editor-root">
+    <div v-if="open" class="editor-root" :class="{ 'embedded-root': embedded }">
       <!-- 吸顶诊断横幅：会话诊断一次展示，可关闭（重开会话恢复） -->
       <FAlert
         v-if="diagnostics.length && !diagnosticsDismissed"
@@ -978,7 +983,7 @@ const treeSheetPinned = ref(true);
       <p v-else-if="loadError" class="editor-error" role="alert">
         {{ $t(loadError) }}
       </p>
-      <div v-else-if="session" class="editor-body" :class="{ 'viewer-mode': !canEdit }">
+      <div v-else-if="session" class="editor-body" :class="{ 'viewer-mode': !canEdit, 'embedded-mode': embedded }">
         <!-- 左侧工作台 rail：大纲（组件树 sheet 开关）/物料/源码（禁用）
              + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
         <nav class="editor-rail" :class="{ 'viewer-hidden': !canEdit }" :aria-label="$t('package.inspector')">
@@ -1055,6 +1060,7 @@ const treeSheetPinned = ref(true);
              dock 恒驻（空占位保持 grid 四列对位）——v-if 移除会让后续子元素
              左移错列，检查器落进 auto 列被内容撑爆（真机 bug 2026-10-06）。 -->
         <div
+          v-if="!embedded"
           class="tree-dock"
           :class="{ 'viewer-hidden': !canEdit, float: !treeSheetPinned || !treeSheetOpen }"
         >
@@ -1087,17 +1093,6 @@ const treeSheetPinned = ref(true);
                 </button>
               </div>
             </header>
-            <PropertyEditorOutliner
-              :tree-ids="propTreeIds"
-              :prop-categories="propCategories"
-              :grouping="renderGrouping"
-              :selected-id="selectedId"
-              :hidden-units="hiddenUnits"
-              :group-visibility="groupVisibility"
-              @select="selectedId = $event"
-              @toggle-unit="toggleUnit"
-              @toggle-group="toggleGroup"
-            />
           </section>
         </div>
         <div class="viewport-column">
@@ -1160,7 +1155,7 @@ const treeSheetPinned = ref(true);
           @live-transform="onLiveTransform"
         />
         </div>
-        <div class="inspector-column">
+        <div v-if="!embedded" class="inspector-column">
           <PropertyEditorInspector
             :unit="selectedUnit"
             :live-transform="liveTransform"
@@ -1171,6 +1166,28 @@ const treeSheetPinned = ref(true);
           />
           <slot name="tabs" />
         </div>
+        <Resizable v-if="embedded" direction="vertical" class="embedded-side-panel" auto-save-id="openscp:property-editor-side:v1">
+          <ResizablePanel id="property-editor-side-tree" :default-size="56" :min-size="24">
+            <section class="embedded-side-section">
+              <header class="tree-sheet-head"><strong>{{ $t("package.componentTree") }}</strong></header>
+              <div class="embedded-panel-tabs" role="tablist" :aria-label="$t('package.inspector')">
+                <button type="button" role="tab" :aria-selected="embeddedPanel === 'tree'" :class="{ active: embeddedPanel === 'tree' }" @click="embeddedPanel = 'tree'">{{ $t("package.componentTree") }}</button>
+                <button type="button" role="tab" :aria-selected="embeddedPanel === 'schema'" :class="{ active: embeddedPanel === 'schema' }" @click="embeddedPanel = 'schema'">{{ $t("package.schemaSheet") }}</button>
+                <button type="button" role="tab" :aria-selected="embeddedPanel === 'library'" :class="{ active: embeddedPanel === 'library' }" @click="embeddedPanel = 'library'; openMaterialsPanel()">{{ $t("package.materialsPanel") }}</button>
+              </div>
+              <PropertyEditorOutliner v-if="embeddedPanel === 'tree'" :tree-ids="propTreeIds" :prop-categories="propCategories" :grouping="renderGrouping" :selected-id="selectedId" :hidden-units="hiddenUnits" :group-visibility="groupVisibility" @select="selectedId = $event" @toggle-unit="toggleUnit" @toggle-group="toggleGroup" />
+              <div v-else-if="embeddedPanel === 'schema'" class="embedded-schema"><FCode :code="schemaJson || '{}'" line-numbers lang="json" copy-label="Copy" copied-label="Copied" /></div>
+              <div v-else class="embedded-library"><div v-for="group in catalogGroups" :key="group.name" class="embedded-library-group"><strong>{{ group.name }}</strong><span>{{ group.entries.length }}</span></div><p v-if="!catalogGroups.length" class="embedded-muted">{{ $t("package.materialsEmpty") }}</p></div>
+            </section>
+          </ResizablePanel>
+          <ResizableHandle orientation="vertical" :label="$t('studio.code.resizeVerticalHint')" />
+          <ResizablePanel id="property-editor-side-inspector" :default-size="44" :min-size="24">
+            <div class="embedded-side-section embedded-side-inspector">
+              <PropertyEditorInspector :unit="selectedUnit" :live-transform="liveTransform" :scale-editable="selectedScaleEditable" :edit-enabled="editEnabled" @update-transform="commitTransform" @update-fields="commitFields" />
+              <slot name="tabs" />
+            </div>
+          </ResizablePanel>
+        </Resizable>
       </div>
       <PropertyEditorStatusBar
         v-if="session"
@@ -1347,7 +1364,7 @@ const treeSheetPinned = ref(true);
         </div>
       </FSheet>
     </div>
-  </FSheet>
+    </component>
 </template>
 
 <style scoped>
@@ -1510,6 +1527,96 @@ const treeSheetPinned = ref(true);
 }
 .editor-body.viewer-mode {
   grid-template-columns: 0 auto minmax(0, 1fr) 384px;
+}
+.editor-body.embedded-mode {
+  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+}
+.embedded-mode .editor-rail {
+  display: none;
+}
+.embedded-mode .tree-dock {
+  grid-column: 2;
+  grid-row: 1;
+  width: auto;
+}
+.embedded-mode .tree-sheet {
+  width: 100%;
+}
+.embedded-mode .tree-sheet.overlay {
+  inset-inline-start: auto;
+  position: static;
+}
+.embedded-mode .tree-dock.float {
+  width: auto;
+}
+.embedded-mode .viewport-column {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+.embedded-mode .inspector-column {
+  border-inline-start: 1px solid var(--border);
+  grid-column: 2;
+  grid-row: 2;
+  border-block-start: 1px solid var(--border);
+}
+.embedded-side-panel {
+  border-inline-start: 1px solid var(--border);
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 0;
+  min-width: 0;
+}
+.embedded-side-section {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.embedded-panel-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 5px 8px;
+}
+.embedded-panel-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 6px 7px;
+  white-space: nowrap;
+}
+.embedded-panel-tabs button.active {
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+.embedded-schema,
+.embedded-library {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+}
+.embedded-library-group {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  font-size: 11px;
+  justify-content: space-between;
+  padding: 8px 5px;
+}
+.embedded-muted {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  padding: 8px;
+}
+.embedded-root .editor-header {
+  padding-inline: 12px;
 }
 .viewport-column,
 .inspector-column {

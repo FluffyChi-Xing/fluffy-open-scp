@@ -10,6 +10,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import FDropdownSelect from "@/components/ui/FSelect.vue";
+import FIcon from "@/components/extensions/FIcon.vue";
 import AssetModelPreview from "@/pages/packages/components/property-editor/AssetModelPreview.vue";
 import { tauriApi } from "@/api";
 import type { LotModelPayload, Tgi } from "@/api/tauri";
@@ -32,6 +33,7 @@ const props = defineProps<{
   schema: FlowSchema;
   schemas: FlowSchema[];
   busy: boolean;
+  embedded?: boolean;
 }>();
 const emit = defineEmits<{
   save: [schema: FlowSchema];
@@ -96,6 +98,9 @@ const property = computed(
     (!config.value.property ? properties.value[0] : null) ??
     null,
 );
+watch([property, packageId], ([nextProperty, nextPackage]) => {
+  if (props.embedded && nextProperty && nextPackage != null) editorOpen.value = true;
+});
 const savedDocument = computed(() => {
   try {
     if (!config.value.document) return null;
@@ -311,7 +316,15 @@ function save() {
         "
       />
       <p v-if="config.document">编辑草稿已绑定当前 Property。</p>
-      <AssetModelPreview :payload="payload" :glb="glb" />
+      <AssetModelPreview v-if="payload || glb" :payload="payload" :glb="glb" />
+      <div v-else class="asset-default-canvas" :aria-label="$t('studio.code.defaultAssetCanvas')">
+        <div class="asset-default-grid" aria-hidden="true"></div>
+        <div class="asset-default-copy">
+          <FIcon name="Box" :size="24" aria-label="" />
+          <strong>{{ $t("studio.code.defaultAssetCanvas") }}</strong>
+          <span>{{ $t("flow.assetToolHint") }}</span>
+        </div>
+      </div>
       <p v-if="payload">
         模型预览；地块与组件请在 Property Editor 中查看和编辑。
       </p>
@@ -353,6 +366,8 @@ function save() {
       :tgi="property"
       :initial-schema="savedDocument"
       :preview-payload="payload"
+      mode="editor"
+      :embedded="props.embedded"
       @schema-change="config.document = JSON.stringify($event)"
     />
   </div>
@@ -381,6 +396,11 @@ function save() {
   opacity: 0.5;
   cursor: default;
 }
+.asset-default-canvas { align-items: center; background: #0e1a31; border: 1px solid var(--border); border-radius: 6px; display: flex; height: 300px; justify-content: center; overflow: hidden; position: relative; }
+.asset-default-grid { background-image: linear-gradient(color-mix(in srgb, var(--primary) 22%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--primary) 22%, transparent) 1px, transparent 1px); background-size: 28px 28px; inset: 0; opacity: .7; position: absolute; transform: perspective(420px) rotateX(58deg) scale(1.5); transform-origin: center bottom; }
+.asset-default-copy { align-items: center; color: var(--muted-foreground); display: flex; flex-direction: column; gap: 7px; max-width: 280px; position: relative; text-align: center; }
+.asset-default-copy strong { color: var(--foreground); font-size: 13px; }
+.asset-default-copy span { font-size: 11px; line-height: 1.5; }
 .texture-preview {
   width: 100%;
   height: 110px;
