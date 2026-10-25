@@ -729,7 +729,7 @@ const diagnostics = computed(() => session.value?.diagnostics ?? []);
  * rail 大纲按钮开关；图钉切换 停靠（占布局列）/悬浮（盖在视口上）。
  * 物料/源码与提交 Issue 为后续版本入口，当前禁用置灰。
  */
-const treeSheetOpen = ref(true);
+const treeSheetOpen = ref(canEdit.value);
 const treeSheetPinned = ref(true);
 </script>
 
@@ -979,7 +979,7 @@ const treeSheetPinned = ref(true);
       <div v-else-if="session" class="editor-body">
         <!-- 左侧工作台 rail：大纲（组件树 sheet 开关）/物料/源码（禁用）
              + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
-        <nav class="editor-rail" :aria-label="$t('package.inspector')">
+        <nav v-if="canEdit" class="editor-rail" :aria-label="$t('package.inspector')">
           <slot name="aside" />
           <div class="rail-group">
             <FTooltip :text="$t('package.railOutline')" side="right">
@@ -1053,6 +1053,7 @@ const treeSheetPinned = ref(true);
              dock 恒驻（空占位保持 grid 四列对位）——v-if 移除会让后续子元素
              左移错列，检查器落进 auto 列被内容撑爆（真机 bug 2026-10-06）。 -->
         <div
+          v-if="canEdit"
           class="tree-dock"
           :class="{ float: !treeSheetPinned || !treeSheetOpen }"
         >
@@ -1173,6 +1174,7 @@ const treeSheetPinned = ref(true);
         :selected-unit="selectedUnit"
       />
       <FSheet
+        v-if="canEdit"
         v-model:open="materialsOpen"
         :label="$t('package.materialsPanel')"
         width="min(420px, 92vw)"
@@ -1290,6 +1292,7 @@ const treeSheetPinned = ref(true);
         </div>
       </FSheet>
       <FSheet
+        v-if="canEdit"
         v-model:open="schemaOpen"
         :label="$t('package.schemaSheet')"
         width="72vw"
