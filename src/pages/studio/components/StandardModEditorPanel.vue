@@ -61,7 +61,7 @@ const editorTitle = computed(() => {
 
 <template>
   <section class="standard-editor" :class="{ fullscreen }" :aria-label="editorTitle">
-    <header class="standard-editor-head">
+    <header v-if="kind !== 'assets'" class="standard-editor-head">
       <div>
         <p class="eyebrow">{{ t("studio.code.standardWorkbench") }}</p>
         <h2>{{ editorTitle }}</h2>
@@ -126,7 +126,8 @@ const editorTitle = computed(() => {
 .editor-content { min-height: 0; flex: 1; overflow: auto; padding: 14px; }
 .map-content { padding: 14px; }
 .map-content :deep(.map-source-tool) { min-height: 100%; }
-.asset-content { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.asset-content { align-items: stretch; display: flex; flex-direction: column; gap: 0; overflow: hidden; padding: 0; }
+.asset-content :deep(.asset-tool) { flex: 1; min-height: 0; width: 100%; }
 .editor-description, .editor-empty { margin: 0; color: var(--muted-foreground); font-size: 12px; }
 .editor-action { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised, var(--surface)); color: var(--foreground); padding: 7px 10px; cursor: pointer; }
 .default-asset-canvas { align-items: center; background: #0e1a31; border: 1px solid var(--border); border-radius: 8px; display: flex; flex: 1; justify-content: center; min-height: 260px; overflow: hidden; position: relative; width: 100%; }

@@ -36,7 +36,7 @@ import { tauriApi } from "@/api";
 
 import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
-const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean }>(), { mode: "viewer", embedded: false });
+const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false });
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
 const canEdit = computed(() => props.mode === "editor");
@@ -758,7 +758,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
       >
         {{ diagnostics.join(" · ") }}
       </FAlert>
-      <header class="editor-header">
+      <header v-if="!externalToolbar" class="editor-header">
         <slot name="toolbar" />
         <div class="editor-title">
           <strong>{{ panelTitle }}</strong>
@@ -984,7 +984,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
       <p v-else-if="loadError" class="editor-error" role="alert">
         {{ $t(loadError) }}
       </p>
-      <div v-else-if="session" class="editor-body" :class="{ 'viewer-mode': !canEdit, 'embedded-mode': embedded }">
+      <div v-else-if="session" class="editor-body" :class="{ 'viewer-mode': !canEdit, 'embedded-mode': embedded, 'external-sidebar-mode': externalSidebar }">
         <!-- 左侧工作台 rail：大纲（组件树 sheet 开关）/物料/源码（禁用）
              + 底部提交 Issue（禁用）——布局对齐低代码引擎。 -->
         <nav class="editor-rail" :class="{ 'viewer-hidden': !canEdit }" :aria-label="$t('package.inspector')">
@@ -1167,7 +1167,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
           />
           <slot name="tabs" />
         </div>
-        <Resizable v-if="embedded" direction="vertical" class="embedded-side-panel" auto-save-id="openscp:property-editor-side:v1">
+        <Resizable v-if="embedded && !externalSidebar" direction="vertical" class="embedded-side-panel" auto-save-id="openscp:property-editor-side:v1">
           <ResizablePanel id="property-editor-side-tree" :default-size="56" :min-size="24">
             <section class="embedded-side-section">
               <header class="tree-sheet-head"><strong>{{ $t("package.componentTree") }}</strong></header>
@@ -1554,6 +1554,14 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
 .embedded-mode .viewport-column {
   grid-column: 1;
   grid-row: 1 / span 2;
+}
+.embedded-mode.external-sidebar-mode {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.embedded-mode.external-sidebar-mode .viewport-column {
+  grid-column: 1;
+  grid-row: 1;
 }
 .embedded-mode .inspector-column {
   border-inline-start: 1px solid var(--border);
