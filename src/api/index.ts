@@ -234,6 +234,10 @@ export const tauriApi = {
       command<CodeTextDocument>("code_write_text", {
         request: { project, relativePath, content, expectedRevision },
       }),
+    codeDeleteFile: (project: string, relativePath: string) =>
+      command<void>("code_delete_file", {
+        request: { project, relativePath },
+      }),
     codePackageInfo: (project: string, relativePath: string) =>
       command<CodePackageInfo>("code_package_info", {
         request: { project, relativePath },
