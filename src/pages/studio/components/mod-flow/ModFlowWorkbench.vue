@@ -37,15 +37,6 @@ const graphId = `mod-flow-${useId()}`;
 const generation = useMapGraph(toRef(props, "project"));
 const generationMenu = ref(false);
 const generationKinds: MapNodeKind[] = ["extent", "perlin", "value", "image", "blend", "grass", "trees", "output"];
-const assetMode = computed(() => state.value?.manifest.mod_type === "assets");
-const assetWorkflowSteps = [
-  { id: "import", icon: "Upload", label: "flow.assetSteps.import" },
-  { id: "slots", icon: "Layers", label: "flow.assetSteps.slots" },
-  { id: "property", icon: "SlidersHorizontal", label: "flow.assetSteps.property" },
-  { id: "bindings", icon: "Boxes", label: "flow.assetSteps.bindings" },
-  { id: "menu", icon: "Menu", label: "flow.assetSteps.menu" },
-  { id: "build", icon: "Package", label: "flow.assetSteps.build" },
-] as const;
 function addGeneration(kind: MapNodeKind) { generationMenu.value = false; frameNode(generation.add(kind)); }
 function showGeneration() {
   generation.visible.value = !generation.visible.value;
@@ -247,11 +238,11 @@ defineExpose({
     :aria-label="t('flow.title')"
   >
     <header class="flow-toolbar">
-      <span>{{ t(assetMode ? "flow.assetWorkflowTitle" : "flow.title") }}</span>
+      <span>{{ t("flow.title") }}</span>
       <div>
-        <button v-if="!assetMode" :aria-pressed="generation.visible.value" @click="showGeneration">{{ t("mapGraph.title") }}</button>
+        <button :aria-pressed="generation.visible.value" @click="showGeneration">{{ t("mapGraph.title") }}</button>
         <FDropdown v-if="generation.visible.value" v-model:open="generationMenu"><template #trigger><button>{{ t("mapGraph.add") }}</button></template><button v-for="kind in generationKinds" :key="kind" @click="addGeneration(kind)">{{ t(`mapGraph.nodes.${kind}`) }}</button></FDropdown>
-        <button v-if="!assetMode" :disabled="busy" @click="arrange">
+        <button :disabled="busy" @click="arrange">
           {{ t("flow.arrange") }}
         </button>
         <button :disabled="busy" @click="refresh">{{ t("flow.validate") }}</button>
@@ -265,7 +256,7 @@ defineExpose({
         </button>
       </div>
     </header>
-    <p v-if="!assetMode" class="flow-hint">
+    <p class="flow-hint">
       {{
         t(
           selectedPath && !focused && selectedPath !== "package.json"
@@ -274,22 +265,7 @@ defineExpose({
         )
       }}
     </p>
-    <div v-if="assetMode" class="asset-workflow-canvas" :aria-label="t('flow.assetWorkflowCanvas')">
-      <div class="asset-workflow-track">
-        <template v-for="(step, index) in assetWorkflowSteps" :key="step.id">
-          <button type="button" class="asset-workflow-step" :class="{ active: step.id === 'property' }" @click="step.id === 'property' && state?.schemas.find((schema) => schema.kind === 'building-asset') && edit(state.schemas.find((schema) => schema.kind === 'building-asset')!.id)">
-            <span class="asset-workflow-index">{{ index + 1 }}</span>
-            <FIcon :name="step.icon" :size="17" aria-label="" />
-            <strong>{{ t(step.label) }}</strong>
-            <small>{{ t(`flow.assetSteps.${step.id}Hint`) }}</small>
-          </button>
-          <span v-if="index < assetWorkflowSteps.length - 1" class="asset-workflow-arrow" aria-hidden="true">→</span>
-        </template>
-      </div>
-      <p class="asset-workflow-note">{{ t('flow.assetWorkflowHint') }}</p>
-    </div>
     <VueFlow
-      v-else
       :id="graphId"
       :nodes="[...nodes, ...generation.nodes.value]"
       :edges="[...edges, ...generation.edges.value]"
@@ -403,15 +379,6 @@ defineExpose({
   outline: 2px solid var(--primary, #6095dc);
   outline-offset: 3px;
 }
-.asset-workflow-canvas { background: color-mix(in srgb, var(--surface) 90%, var(--primary)); display: flex; flex: 1; flex-direction: column; justify-content: center; min-height: 220px; overflow: auto; padding: 24px; }
-.asset-workflow-track { align-items: stretch; display: flex; justify-content: center; min-width: 820px; }
-.asset-workflow-step { align-items: flex-start; background: var(--surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; flex: 1 1 140px; flex-direction: column; gap: 6px; min-height: 118px; padding: 12px; position: relative; text-align: start; }
-.asset-workflow-step:hover, .asset-workflow-step.active { border-color: var(--primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent); }
-.asset-workflow-step strong { font-size: 12px; }
-.asset-workflow-step small { color: var(--muted-foreground); font-size: 10px; line-height: 1.4; }
-.asset-workflow-index { align-items: center; background: var(--primary); border-radius: 999px; color: var(--primary-foreground); display: inline-flex; font-size: 10px; height: 19px; justify-content: center; width: 19px; }
-.asset-workflow-arrow { align-self: center; color: var(--primary); flex: 0 0 28px; font-size: 18px; text-align: center; }
-.asset-workflow-note { color: var(--muted-foreground); font-size: 11px; margin: 22px auto 0; max-width: 650px; text-align: center; }
 .flow-workbench button {
   border: 1px solid var(--border);
   background: var(--surface);

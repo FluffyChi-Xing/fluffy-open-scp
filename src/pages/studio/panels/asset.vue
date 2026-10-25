@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import AssetStudioWorkbench from "../components/AssetStudioWorkbench.vue";
+import PanelStub from "../components/PanelStub.vue";
 </script>
 
 <template>
-  <AssetStudioWorkbench />
+  <PanelStub panel="asset" icon="Boxes" status="planned" />
 </template>

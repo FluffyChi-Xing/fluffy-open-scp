@@ -36,6 +36,7 @@ import ModFlowWorkbench from './mod-flow/ModFlowWorkbench.vue';
 import FlowInitializeSheet from './mod-flow/FlowInitializeSheet.vue';
 import { isEngineManifest } from './mod-flow/contracts';
 import StandardModEditorPanel from './StandardModEditorPanel.vue';
+import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
@@ -456,6 +457,14 @@ watch(
       <p>{{ fatalMessage }}</p>
     </div>
 
+    <!-- 资产 Mod：整栏 Blender 式工作台（自带文件树，不套 Code 外壳左右分栏） -->
+    <ModAssetWorkbench
+      v-else-if="engineEnabled && standardModKind === 'assets'"
+      :key="project.relPath"
+      :project="project.relPath"
+      class="asset-workbench-host"
+    />
+
     <Resizable
       v-else
       direction="horizontal"
@@ -509,7 +518,7 @@ watch(
         :label="$t('studio.code.resizeHint')"
       />
 
-      <!-- 右：社区 Mod 使用文件查看器，标准 Mod 使用上下工作台 -->
+      <!-- 右：地图 Mod 编辑器+流程画布上下分 -->
       <ResizablePanel id="code-viewer" :default-size="74" :min-size="40">
         <Resizable
           v-if="engineEnabled"
@@ -908,6 +917,10 @@ watch(
 }
 .code-shell {
   flex: 1;
+  min-height: 0;
+}
+.asset-workbench-host {
+  height: 100%;
   min-height: 0;
 }
 .standard-workbench {
