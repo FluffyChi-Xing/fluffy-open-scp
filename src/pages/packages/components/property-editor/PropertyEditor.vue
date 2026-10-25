@@ -33,7 +33,7 @@ import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 
-import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix } from "./assetCategories";
+import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
 const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor" }>(), { mode: "viewer" });
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
@@ -265,7 +265,9 @@ const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>
     for (const entry of matched) {
       const reference = referencedModels.value.find(r => r.instance === entry.instance && r.group === entry.group && r.packageId === entry.packageId);
       entry.template = grouping.value.props.find(u => u.resourceId === reference?.resourceId);
-      const group = CATEGORY_LABELS[assetCategory(entry.template?.resourceId ?? entry.instance, entry.name, propTreeIds.value)];
+      const category = propSemanticCategory(entry.template?.resourceId ?? null, entry.name, propTreeIds.value);
+      const packageLabel = entry.packagePath?.split(/[\\/]/).pop() || `Package ${entry.packageId}`;
+      const group = `${packageLabel} · ${CATEGORY_LABELS[category]}`;
       if (!groups.has(group)) groups.set(group, []);
       groups.get(group)!.push(entry);
     }

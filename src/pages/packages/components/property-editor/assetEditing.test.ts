@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import {
   assetCategory,
+  propSemanticCategory,
   clonePropForPlacement,
   directModelKey,
   placementMatrix,
@@ -31,6 +32,9 @@ describe("asset editing contract", () => {
     expect(assetCategory(123, "", new Set([123]))).toBe("trees");
     expect(assetCategory(0x85271637)).toBe("waste");
     expect(assetCategory(null, "unrecognized")).toBe("other");
+    expect(propSemanticCategory(null, "bin 4")).toBe("other");
+    expect(propSemanticCategory(0x85271637, "bin 4")).toBe("waste");
+    expect(propSemanticCategory(123, "building tower")).toBe("other");
   });
   it("roundtrips unit fields including distinct spawner identity and reference", () => {
     const units: LotUnitDto[] = [

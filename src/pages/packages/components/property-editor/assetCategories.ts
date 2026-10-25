@@ -42,6 +42,16 @@ export function assetCategory(
   if (/building|house|station|tower|建筑/i.test(name)) return "buildings";
   return "other";
 }
+
+/** A prop bin is an engine slot; resourceId resolves its actual meaning. */
+export function propSemanticCategory(
+  resourceId: number | null | undefined,
+  name = "",
+  trees?: Set<number>,
+): Exclude<AssetCategory, "buildings"> {
+  const category = assetCategory(resourceId ?? null, name, trees);
+  return category === "buildings" ? "other" : category;
+}
 export function unitCategory(
   unit: LotUnitDto,
   trees?: Set<number>,
