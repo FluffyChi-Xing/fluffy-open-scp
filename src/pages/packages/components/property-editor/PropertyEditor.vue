@@ -969,6 +969,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
           {{ $t("package.localEdits", { n: edit.editCount.value }) }}
         </span>
         <button
+          v-if="!embedded"
           class="editor-close"
           type="button"
           :aria-label="$t('shell.close')"
