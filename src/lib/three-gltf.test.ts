@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  inspectGlb,
   parseLotModelContainer,
   rotationXForUpAxis,
   stripRootRotationForUpAxis,
@@ -177,5 +178,39 @@ describe("imported model axis", () => {
     expect(stripRootRotationForUpAxis(undefined)).toBe(true);
     expect(stripRootRotationForUpAxis("z")).toBe(false);
     expect(stripRootRotationForUpAxis("y")).toBe(false);
+  });
+
+  /** 最小 GLB 容器（仅 asset.extras + POSITION 包围盒，供轴向判定）。 */
+  function axisFixture(axis?: unknown): ArrayBuffer {
+    const json = JSON.stringify({
+      asset: { version: "2.0", extras: { openscp: { upAxis: axis } } },
+      scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 } }] }],
+      accessors: [{ min: [0, 0, 0], max: [20, 2, 30] }],
+    });
+    const text = new TextEncoder().encode(json);
+    const length = (text.length + 3) & ~3;
+    const bytes = new Uint8Array(20 + length);
+    bytes.fill(32, 20);
+    const view = new DataView(bytes.buffer);
+    [0x46546c67, 2, bytes.length, length, 0x4e4f534a].forEach((v, i) =>
+      view.setUint32(i * 4, v, true),
+    );
+    bytes.set(text, 20);
+    return bytes.buffer;
+  }
+  // 低矮而纵深大的建筑在合法 Y-up GLB 里也可能 Z 跨度最大；显式声明
+  // （asset.extras.openscp.upAxis，NY Facade 写入 / blend 转换注入）必须
+  // 优先于尺寸猜测，无声明或非法值回退原判定。
+  it("honors a declared Y-up for a low deep building instead of guessing", () => {
+    expect(inspectGlb(axisFixture("y")).upAxis).toBe("y");
+    expect(inspectGlb(axisFixture("y")).upAxisBasis).toBe(
+      "asset.extras.openscp.upAxis=y",
+    );
+    expect(inspectGlb(axisFixture("z")).upAxis).toBe("z");
+  });
+  it("keeps legacy inference for absent or invalid axis metadata", () => {
+    expect(inspectGlb(axisFixture()).upAxis).toBe("z");
+    expect(inspectGlb(axisFixture("invalid")).upAxis).toBe("z");
   });
 });

@@ -772,7 +772,7 @@ export function useWorkbenchAsset(project: string) {
             `TEXCOORD 组: ${inspection.texcoordSets || 0} · 上轴: ${inspection.upAxis.toUpperCase()}（${inspection.upAxisBasis}）`,
             inspection.imageCount === 0
               ? "契约 GLB 未内嵌贴图——六槽贴图需经 RW4 编译或 TGI 解析原生链路；当前按 COLOR_0 调色板渲染"
-              : "内嵌贴图按 glTF 材质直接渲染",
+              : "内嵌贴图按 glTF 材质直接渲染；烘焙 PBR GLB 不含六槽实时数据（假内景/浮雕/昼夜内景灯），需要这些效果请导入 .blend 源文件（自动走六槽 shader）",
           ].join("\n"),
           upAxis: inspection.upAxis,
         };

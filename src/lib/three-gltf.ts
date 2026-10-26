@@ -229,6 +229,7 @@ export function inspectGlb(bytes: ArrayBuffer): GlbInspection {
       new Uint8Array(bytes, 20, Math.min(jsonLength, bytes.byteLength - 20)),
     );
     const json = JSON.parse(text) as {
+      asset?: { extras?: { openscp?: { upAxis?: unknown; unit?: unknown } } };
       scene?: number;
       scenes?: { nodes?: number[] }[];
       nodes?: { rotation?: number[]; mesh?: number }[];
@@ -267,7 +268,15 @@ export function inspectGlb(bytes: ArrayBuffer): GlbInspection {
     }
     let upAxis: "y" | "z";
     let upAxisBasis: string;
-    if (rotatedRoot) {
+    // Authored asset contracts take priority over dimension heuristics: a
+    // low, deep building can have Z > Y even in a perfectly valid Y-up GLB
+    // (NY Facade writes asset.extras.openscp.upAxis; blend conversion
+    // injects the same declaration).
+    const declaredAxis = json.asset?.extras?.openscp?.upAxis;
+    if (declaredAxis === "y" || declaredAxis === "z") {
+      upAxis = declaredAxis;
+      upAxisBasis = `asset.extras.openscp.upAxis=${declaredAxis}`;
+    } else if (rotatedRoot) {
       upAxis = "z";
       upAxisBasis = "根节点 ±90°X 旋转（游戏导出口径，数据 Z-up）";
     } else if (

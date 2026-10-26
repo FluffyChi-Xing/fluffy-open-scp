@@ -34,58 +34,189 @@ fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
     let out_glb = temp.join("model.glb");
     let out_map = temp.join("slots.json");
-let script = r#"import bpy, json, os, sys
+let script = r#"import bpy, json, os, sys, struct
 src, out_glb, out_map, out_dir = sys.argv[-4:]
 bpy.ops.wm.open_mainfile(filepath=src)
-# Blender node groups (including the six-slot shader) are not part of the
-# glTF material contract.  Bake each material's final node color into a
-# regular image before export.  This intentionally treats an imported blend
-# as an arbitrary external asset: the source node graph is the authority.
-has_semantic_slots = (
-    any("slot1" in (image.name or "").lower() for image in bpy.data.images) and
-    any("slot4" in (image.name or "").lower() for image in bpy.data.images)
-)
-if not has_semantic_slots:
+# Community blends (e.g. NY Facade) keep live six-slot engine node groups that
+# reference the slot atlases INSIDE the material graph. Legacy leftovers of the
+# same slot images elsewhere in the file must not disable evaluation, so the
+# decision is per material graph, not per file. Materials without six-slot
+# semantics that the glTF exporter cannot translate are baked to a final
+# color image instead; the source node graph stays the authority either way.
+def tree_images(tree, seen=None):
+    if not tree:
+        return []
+    seen = seen or set()
+    if tree.name in seen:
+        return []
+    seen.add(tree.name)
+    result = []
+    for node in tree.nodes:
+        if node.type == 'TEX_IMAGE' and node.image:
+            result.append(node.image)
+        elif node.type == 'GROUP' and node.node_tree:
+            result.extend(tree_images(node.node_tree, seen))
+    return result
+
+def image_haystack(image):
+    name = (image.name or '').lower()
+    path = os.path.basename(bpy.path.abspath(image.filepath) if image.filepath else '').lower()
+    return name + ' ' + path
+
+def material_slot_keys(mat):
+    keys = set()
+    for image in tree_images(mat.node_tree):
+        haystack = image_haystack(image)
+        for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
+            if key in haystack:
+                keys.add(key)
+    return keys
+
+def principled_of(tree):
+    return next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+
+def is_six_slot_material(mat):
+    return {'slot1', 'slot4'} <= material_slot_keys(mat)
+
+def is_directly_exportable(mat):
+    # The glTF exporter translates a Principled BSDF whose base color is an
+    # unlinked value or a direct image texture; anything else needs a bake.
+    if not mat or not mat.use_nodes or not mat.node_tree:
+        return True
+    bsdf = principled_of(mat.node_tree)
+    output = next((n for n in mat.node_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    if not bsdf or not output or not output.inputs['Surface'].is_linked:
+        return False
+    if output.inputs['Surface'].links[0].from_node != bsdf:
+        return False
+    base = bsdf.inputs['Base Color']
+    if not base.is_linked:
+        return True
+    return base.links[0].from_node.type == 'TEX_IMAGE'
+
+mesh_objects = [o for o in bpy.data.objects if o.type == 'MESH']
+six_slot_materials = {
+    mat.name for mat in bpy.data.materials if is_six_slot_material(mat)
+}
+bake_materials = []
+seen_names = set()
+for obj in mesh_objects:
+    for mat in obj.data.materials:
+        if not mat or not mat.use_nodes or mat.name in seen_names:
+            continue
+        seen_names.add(mat.name)
+        if mat.name in six_slot_materials or is_directly_exportable(mat):
+            continue
+        bake_materials.append(mat)
+
+# --- UV domain normalization (six-slot path) ---------------------------
+# The refined shader reads the base facade domain from TEXCOORD_1 and the
+# Top/facade domain from TEXCOORD_3. The glTF exporter orders TEXCOORD_n by
+# the mesh's UV layer order, so move the two domain layers into place. The
+# domain layers are identified the same way the engine groups consume them:
+# UVMAP nodes feeding the group's base/top facade inputs (the official B4
+# pipeline names them UV Base / UV Top; community facade plugins name them
+# Base UV / Surface UV).
+def find_domain_layer_names():
+    base_name = None
+    surface_name = None
+    for obj in mesh_objects:
+        for mat in obj.data.materials:
+            if not mat or not mat.use_nodes or not mat.node_tree:
+                continue
+            for node in mat.node_tree.nodes:
+                if node.type != 'GROUP':
+                    continue
+                for inp in node.inputs:
+                    if not inp.is_linked:
+                        continue
+                    feed = inp.links[0].from_node
+                    if feed.type != 'UVMAP':
+                        continue
+                    if inp.name in ('Base UV', 'UV Base'):
+                        base_name = feed.uv_map
+                    elif inp.name in ('Surface UV', 'UV Top'):
+                        surface_name = feed.uv_map
+    return base_name or 'NY_UV', surface_name or 'NY_SurfaceUV'
+
+if six_slot_materials:
+    try:
+        import numpy as np
+        base_name, surface_name = find_domain_layer_names()
+        for obj in mesh_objects:
+            me = obj.data
+            names = [ul.name for ul in me.uv_layers]
+            if base_name not in names or surface_name not in names:
+                continue
+            order = [n for n in names if n not in (base_name, surface_name)]
+            order.insert(min(1, len(order)), base_name)
+            order.insert(min(3, len(order)), surface_name)
+            if order == names:
+                continue
+            loop_count = len(me.loops)
+            captured = {}
+            for ul in me.uv_layers:
+                buf = np.empty(loop_count * 2, dtype=np.float32)
+                ul.data.foreach_get('uv', buf)
+                captured[ul.name] = buf
+            for ul in list(me.uv_layers):
+                me.uv_layers.remove(ul)
+            for name in order:
+                layer = me.uv_layers.new(name=name)
+                if name in captured:
+                    layer.data.foreach_set('uv', captured[name])
+            me.update()
+    except Exception as error:
+        print('OpenSCP UV normalization skipped:', repr(error))
+
+# --- bake non-exportable materials (no six-slot semantics) --------------
+if bake_materials:
     scene = bpy.context.scene
     try:
         scene.render.engine = 'CYCLES'
         scene.cycles.samples = 1
         scene.cycles.use_denoising = False
         scene.cycles.device = 'CPU'
-        for obj in [o for o in bpy.data.objects if o.type == 'MESH']:
+        for mat in bake_materials:
+            tree = mat.node_tree
+            bsdf = principled_of(tree)
+            if not bsdf:
+                continue
+            bake = tree.nodes.get('__OpenSCP_Bake')
+            if not bake:
+                bake = tree.nodes.new('ShaderNodeTexImage')
+                bake.name = '__OpenSCP_Bake'
+            if not bake.image:
+                bake.image = bpy.data.images.new(
+                    '__OpenSCP_Bake_' + ''.join(ch if ch.isalnum() else '_' for ch in mat.name)[:60],
+                    width=2048, height=2048, alpha=True)
+            tree.nodes.active = bake
+            emission = bsdf.inputs.get('Emission Color') or bsdf.inputs.get('Emission')
+            base = bsdf.inputs['Base Color']
+            for link in list(emission.links):
+                tree.links.remove(link)
+            if base.is_linked:
+                tree.links.new(base.links[0].from_socket, emission)
+            else:
+                emission.default_value = tuple(base.default_value)
+        for obj in mesh_objects:
             mats = list(obj.data.materials)
-            for index, mat in enumerate(mats):
-                if not mat or not mat.use_nodes: continue
-                tree = mat.node_tree
-                group = next((n for n in tree.nodes if n.type == 'GROUP'), None)
-                bsdf = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
-                if not group or not bsdf: continue
-                color_output = group.outputs.get('Color')
-                if not color_output: continue
-                bake = tree.nodes.get('__OpenSCP_Bake')
-                if not bake:
-                    bake = tree.nodes.new('ShaderNodeTexImage')
-                    bake.name = '__OpenSCP_Bake'
-                if not bake.image:
-                    bake.image = bpy.data.images.new('__OpenSCP_Bake_' + str(index), width=1024, height=1024, alpha=True)
-                tree.nodes.active = bake
-                for link in list(bsdf.inputs['Emission Color'].links): tree.links.remove(link)
-                tree.links.new(color_output, bsdf.inputs['Emission Color'])
-                bsdf.inputs['Base Color'].default_value = (0.0, 0.0, 0.0, 1.0)
-            for index, mat in enumerate(mats):
-                if not mat or not mat.use_nodes or '__OpenSCP_Bake' not in mat.node_tree.nodes: continue
-                for poly in obj.data.polygons: poly.select = (poly.material_index == index)
-                for selected in bpy.context.selected_objects:
-                    if selected != obj: selected.select_set(False)
-                obj.select_set(True)
-                bpy.context.view_layer.objects.active = obj
+            wanted = [(index, mat) for index, mat in enumerate(mats)
+                      if mat in bake_materials and
+                      '__OpenSCP_Bake' in (mat.node_tree.nodes if mat and mat.use_nodes else {})]
+            if not wanted:
+                continue
+            bpy.ops.object.select_all(action='DESELECT')
+            obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+            for index, mat in wanted:
+                for poly in obj.data.polygons:
+                    poly.select = (poly.material_index == index)
                 bpy.ops.object.bake(type='EMIT', margin=8, use_clear=True)
-        # Replace only materials that were baked. Keep ordinary Blender materials
-        # intact and preserve the baked alpha channel for windows/glass.
-        for mat in bpy.data.materials:
-            if not mat.use_nodes: continue
+        for mat in bake_materials:
             bake = mat.node_tree.nodes.get('__OpenSCP_Bake')
-            if not bake or not bake.image: continue
+            if not bake or not bake.image:
+                continue
             image = bake.image
             tree = mat.node_tree
             tree.nodes.clear()
@@ -98,117 +229,172 @@ if not has_semantic_slots:
                 tree.links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
             tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
             bsdf.inputs['Roughness'].default_value = 0.8
-            try: mat.surface_render_method = 'DITHERED'
-            except Exception: pass
+            try:
+                mat.surface_render_method = 'DITHERED'
+            except Exception:
+                pass
     except Exception as error:
-        # A blend may use a renderer that cannot bake in headless mode. Exporting
-        # the original graph is still useful, and the caller receives a valid GLB.
+        # A blend may use a renderer that cannot bake in headless mode.
+        # Exporting the original graph is still useful, and the caller
+        # receives a valid GLB.
         print('OpenSCP bake skipped:', repr(error))
 
+# --- GLB export (standard Y-up glTF convention) -------------------------
 bpy.ops.object.select_all(action='SELECT')
 exporter = getattr(getattr(bpy.ops, 'export_scene', None), 'gltf', None)
 fallback = getattr(getattr(bpy.ops, 'wm', None), 'gltf_export', None)
 if exporter is None and fallback is None:
     raise RuntimeError('This Blender build does not provide a glTF exporter')
 try:
-    result = exporter(filepath=out_glb, export_format='GLB', use_selection=False) if exporter else fallback(filepath=out_glb, export_format='GLB', use_selection=False)
+    result = exporter(filepath=out_glb, export_format='GLB', use_selection=False, export_yup=True) if exporter else fallback(filepath=out_glb, export_format='GLB', use_selection=False, export_yup=True)
 except RuntimeError:
-    if fallback is None: raise
-    result = fallback(filepath=out_glb, export_format='GLB', use_selection=False)
+    if fallback is None:
+        raise
+    result = fallback(filepath=out_glb, export_format='GLB', use_selection=False, export_yup=True)
 if 'FINISHED' not in result:
     raise RuntimeError('The glTF exporter did not finish')
+
+def inject_up_axis(path):
+    # Declare the file's axis contract so the editor does not have to guess
+    # from bounds (a low, deep building would misdetect). export_yup=True
+    # guarantees a spec Y-up file regardless of the source objects' own
+    # rotations, so the declaration is always "y" for blend conversions.
+    try:
+        with open(path, 'rb') as f:
+            data = bytearray(f.read())
+        if len(data) < 20 or struct.unpack_from('<I', data, 0)[0] != 0x46546c67:
+            return
+        json_length = struct.unpack_from('<I', data, 12)[0]
+        doc = json.loads(bytes(data[20:20 + json_length]))
+        openscp = doc.setdefault('asset', {}).setdefault('extras', {}).setdefault('openscp', {})
+        if not isinstance(openscp, dict):
+            openscp = {}
+            doc['asset']['extras']['openscp'] = openscp
+        openscp.setdefault('upAxis', 'y')
+        openscp.setdefault('unit', 'meter')
+        openscp['source'] = 'blend'
+        payload = json.dumps(doc, separators=(',', ':')).encode('utf-8')
+        payload += b' ' * ((4 - (len(payload) % 4)) % 4)
+        bin_start = 20 + json_length
+        total = 12 + 8 + len(payload) + len(data[bin_start:])
+        struct.pack_into('<I', data, 8, total)
+        struct.pack_into('<I', data, 12, len(payload))
+        with open(path, 'wb') as f:
+            f.write(bytes(data[:20] + payload + data[bin_start:]))
+    except Exception as error:
+        print('OpenSCP extras injection skipped:', repr(error))
+
+inject_up_axis(out_glb)
+
+# --- slot extraction (crash-proof: partial results still land) ----------
 slots = {}
 material_slots = {}
-os.makedirs(out_dir, exist_ok=True)
-for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
-    image = bpy.data.images.get(key + '.png')
-    if image:
-        path = os.path.join(out_dir, key + '.png')
-        image.save_render(path)
-        slots[key] = path
-params = bpy.data.images.get('slot0_params.exr')
-if params:
-    path = os.path.join(out_dir, 'params.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump({'width': params.size[0], 'values': [float(value) for value in params.pixels]}, f)
-    slots['params'] = path
-
-def find_parameter_image(tree, seen=None):
-    if not tree:
-        return None
-    seen = seen or set()
-    if tree.name in seen:
-        return None
-    seen.add(tree.name)
-    for node in tree.nodes:
-        if node.type == 'TEX_IMAGE' and node.image and 'Parameters' in node.image.name:
-            return node.image
-        if node.type == 'GROUP':
-            image = find_parameter_image(node.node_tree, seen)
-            if image:
-                return image
-    return None
-
 material_params = {}
-def all_images(tree, seen=None):
-    if not tree: return []
-    seen = seen or set()
-    if tree.name in seen: return []
-    seen.add(tree.name)
-    result = []
-    for node in tree.nodes:
-        if node.type == 'TEX_IMAGE' and node.image:
-            result.append(node.image)
-        if node.type == 'GROUP':
-            result.extend(all_images(node.node_tree, seen))
-    return result
-
-for mat in bpy.data.materials:
-    if not mat.use_nodes: continue
-    parameter_image = find_parameter_image(mat.node_tree)
-    if parameter_image:
-        palette_row = 0.0
-        for node in mat.node_tree.nodes:
-            if node.type == 'GROUP':
-                socket = node.inputs.get('Palette Row')
-                if socket and not socket.is_linked:
-                    try: palette_row = float(socket.default_value)
-                    except: pass
-                    break
-        material_params[mat.name] = {
-            'width': int(parameter_image.size[0]),
-            'values': [float(value) for value in parameter_image.pixels],
-            'paletteRow': palette_row,
-        }
-    for node in mat.node_tree.nodes:
-        if node.type != 'TEX_IMAGE' or not node.image: continue
-        name = (node.label or node.name or node.image.name).lower()
-        path = bpy.path.abspath(node.image.filepath) if node.image.filepath else ''
-        for key in ('params','slot1','slot2','slot3','slot4','slot5'):
-            if key not in slots and (key in name or key in os.path.basename(path).lower()):
-                slots.setdefault(key, path)
-    per_mat = {}
-    for image in all_images(mat.node_tree):
-        image_name = (image.name or '').lower()
-        image_path = bpy.path.abspath(image.filepath) if image.filepath else ''
-        haystack = image_name + ' ' + os.path.basename(image_path).lower()
-        for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
-            if key not in haystack or key in per_mat: continue
-            safe_name = ''.join(ch if ch.isalnum() else '_' for ch in mat.name)[:80]
-            path = os.path.join(out_dir, safe_name + '_' + key + '.png')
+os.makedirs(out_dir, exist_ok=True)
+try:
+    for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
+        image = bpy.data.images.get(key + '.png')
+        if image:
+            path = os.path.join(out_dir, key + '.png')
             try:
                 image.save_render(path)
-                per_mat[key] = path
+                slots[key] = path
             except Exception:
                 pass
-    if per_mat:
-        material_slots[mat.name] = per_mat
-material_params_path = os.path.join(out_dir, 'material_params.json')
-with open(material_params_path, 'w', encoding='utf-8') as f:
-    json.dump(material_params, f)
-slots['materialParams'] = material_params_path
-slots['materialSlotsByMaterial'] = material_slots
-with open(out_map, 'w', encoding='utf-8') as f: json.dump(slots, f)
+    params = bpy.data.images.get('slot0_params.exr')
+    if params:
+        path = os.path.join(out_dir, 'params.json')
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({'width': params.size[0], 'values': [float(value) for value in params.pixels]}, f)
+            slots['params'] = path
+        except Exception:
+            pass
+
+    def find_parameter_image(tree, seen=None):
+        if not tree:
+            return None
+        seen = seen or set()
+        if tree.name in seen:
+            return None
+        seen.add(tree.name)
+        for node in tree.nodes:
+            if node.type == 'TEX_IMAGE' and node.image and 'Parameters' in node.image.name:
+                return node.image
+            if node.type == 'GROUP':
+                image = find_parameter_image(node.node_tree, seen)
+                if image:
+                    return image
+        return None
+
+    def all_images(tree, seen=None):
+        if not tree:
+            return []
+        seen = seen or set()
+        if tree.name in seen:
+            return []
+        seen.add(tree.name)
+        result = []
+        for node in tree.nodes:
+            if node.type == 'TEX_IMAGE' and node.image:
+                result.append(node.image)
+            if node.type == 'GROUP':
+                result.extend(all_images(node.node_tree, seen))
+        return result
+
+    for mat in bpy.data.materials:
+        if not mat.use_nodes:
+            continue
+        parameter_image = find_parameter_image(mat.node_tree)
+        if parameter_image:
+            palette_row = 0.0
+            for node in mat.node_tree.nodes:
+                if node.type == 'GROUP':
+                    socket = node.inputs.get('Palette Row')
+                    if socket and not socket.is_linked:
+                        try:
+                            palette_row = float(socket.default_value)
+                        except Exception:
+                            pass
+                        break
+            try:
+                material_params[mat.name] = {
+                    'width': int(parameter_image.size[0]),
+                    'values': [float(value) for value in parameter_image.pixels],
+                    'paletteRow': palette_row,
+                }
+            except Exception:
+                pass
+        per_mat = {}
+        for image in all_images(mat.node_tree):
+            image_name = (image.name or '').lower()
+            image_path = bpy.path.abspath(image.filepath) if image.filepath else ''
+            haystack = image_name + ' ' + os.path.basename(image_path).lower()
+            for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
+                if key not in haystack or key in per_mat:
+                    continue
+                safe_name = ''.join(ch if ch.isalnum() else '_' for ch in mat.name)[:80]
+                path = os.path.join(out_dir, safe_name + '_' + key + '.png')
+                try:
+                    image.save_render(path)
+                    per_mat[key] = path
+                except Exception:
+                    pass
+        if per_mat:
+            material_slots[mat.name] = per_mat
+except Exception as error:
+    print('OpenSCP slot extraction partial:', repr(error))
+finally:
+    try:
+        material_params_path = os.path.join(out_dir, 'material_params.json')
+        with open(material_params_path, 'w', encoding='utf-8') as f:
+            json.dump(material_params, f)
+        slots['materialParams'] = material_params_path
+    except Exception:
+        pass
+    slots['materialSlotsByMaterial'] = material_slots
+    with open(out_map, 'w', encoding='utf-8') as f:
+        json.dump(slots, f)
 "#;
     let script_path = temp.join("import.py");
     fs::write(&script_path, script).map_err(|e| e.to_string())?;
