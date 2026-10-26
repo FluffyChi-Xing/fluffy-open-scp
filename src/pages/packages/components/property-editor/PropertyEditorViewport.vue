@@ -2325,11 +2325,11 @@ async function assembleScene(
     console.table(rows.filter((row) => row.min !== null));
     console.log(
       "content.position:",
-      instance.content.position.toArray().map((v) => +v.toFixed(2)),
+      instance.contentPosition.toArray().map((v) => +v.toFixed(2)),
       "grid.y:",
       instance.gridY,
       "frameRadius:",
-      instance.frameRadius,
+      instance.framingRadius,
       "ground.matrix:",
       ground?.matrix.elements.map((v) => +v.toFixed(2)),
       "lotPlacement:",

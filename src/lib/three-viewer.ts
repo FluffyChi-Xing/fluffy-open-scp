@@ -111,6 +111,13 @@ export class ThreeViewer {
   private frameRadius = 5;
   /** 取景取证用（DEV 诊断）：当前地面网格的世界 Y。 */
   gridY = 0;
+  /** 取景取证用（DEV 诊断）：content 归中偏移与当前取景半径。 */
+  get contentPosition(): ThreeNamespace.Vector3 {
+    return this.content.position;
+  }
+  get framingRadius(): number {
+    return this.frameRadius;
+  }
   private cameraDistance = 5;
   private orbitTheta = 0.34;
   private orbitPhi = 1.2;
@@ -575,11 +582,12 @@ export class ThreeViewer {
     const sphere = box.getBoundingSphere(new this.THREE.Sphere());
     const radius = Math.max(sphere.radius, 1e-3);
     const center = box.getCenter(new this.THREE.Vector3());
-    const soft = options.soft === true && this.lastFrameCenter !== null;
-    if (soft) {
+    const prevCenter = this.lastFrameCenter;
+    const soft = options.soft === true && prevCenter !== null;
+    if (soft && prevCenter) {
       // content 从 -旧中心 平移到 -新中心，世界位移 = 旧中心 - 新中心；
       // 相机与轨道目标随世界一起平移，渲染内容在屏幕上保持不动。
-      const shift = this.lastFrameCenter.clone().sub(center);
+      const shift = prevCenter.clone().sub(center);
       this.camera.position.add(shift);
       this.orbitTarget.add(shift);
     }

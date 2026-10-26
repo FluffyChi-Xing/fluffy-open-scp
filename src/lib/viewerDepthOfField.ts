@@ -88,9 +88,19 @@ export function createDepthOfFieldController(deps: {
         setSize: (width, height) => instance.setSize(width, height),
         setPixelRatio: (ratio) => instance.setPixelRatio(ratio),
         setParams: (p) => {
-          bokeh.uniforms["focus"].value = p.focus;
-          bokeh.uniforms["aperture"].value = Math.max(1e-6, p.aperture * APERTURE_SCALE);
-          bokeh.uniforms["maxblur"].value = Math.max(0, MAXBLUR_BASE + MAXBLUR_GAIN * p.softness);
+          const uniforms = bokeh.uniforms as unknown as Record<
+            "focus" | "aperture" | "maxblur",
+            { value: number }
+          >;
+          uniforms["focus"].value = p.focus;
+          uniforms["aperture"].value = Math.max(
+            1e-6,
+            p.aperture * APERTURE_SCALE,
+          );
+          uniforms["maxblur"].value = Math.max(
+            0,
+            MAXBLUR_BASE + MAXBLUR_GAIN * p.softness,
+          );
         },
         dispose: () => instance.dispose(),
       };
