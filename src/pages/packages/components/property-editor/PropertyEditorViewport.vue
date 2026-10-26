@@ -37,7 +37,7 @@ import type {
 } from "./imageDecode";
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
 import type { EngineFamily } from "@/lib/decalEngineMaterials";
-import { useEditorViewport } from "./useEditorViewport";
+import { useEditorViewport, VIEWPORT_GROUPS } from "./useEditorViewport";
 import type { CameraPreset } from "@/lib/three-viewer";
 import {
   applyDeferredMaterialMaps,
