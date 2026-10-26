@@ -19,6 +19,39 @@ const MAX_CODE_TREE_DEPTH: usize = 16;
 const MAX_PATH_COMPONENT_BYTES: usize = 128;
 const MAX_RELATIVE_PATH_BYTES: usize = 512;
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraPackageRequest { pub source_path: String, pub output_path: String, pub max_zoom: f32, pub max_pitch: f32, pub dof_strength: f32 }
+
+#[tauri::command]
+pub async fn build_camera_package(request: CameraPackageRequest) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use dbpf::{OverlayEntry, Package, ResourceId, write_uncompressed_overlay};
+        use sc_properties::{Kind, PropertyFile, Value};
+        let source = Package::open(&request.source_path).map_err(|e| CommandError::new("camera_source_invalid", e.to_string()))?;
+        let mut entries = Vec::new();
+        for entry in source.entries().iter().filter(|entry| entry.id.type_id == 0x00B1_B104 && entry.id.group == 0x4041_0100) {
+            let bytes = source.read(entry).map_err(|e| CommandError::new("camera_source_read_failed", e.to_string()))?;
+            let mut file = PropertyFile::parse(&bytes).map_err(|e| CommandError::new("camera_property_invalid", e.to_string()))?;
+            for property in &mut file.values {
+                let value = match property.hash {
+                    0x00C7_C4FB => Some(request.max_zoom.max(100.0)),
+                    0x00C7_C4FC | 0x00C7_C4FD => Some(request.max_pitch.abs().clamp(1.0, 89.0)),
+                    0x0F17_C26D => Some(request.dof_strength.clamp(0.0, 3.0)),
+                    _ => None,
+                };
+                if let Some(number) = value { if let Kind::Scalar(Value::Float(current)) = &mut property.kind { *current = number; } }
+            }
+            let data = file.encode_canonical().map_err(|e| CommandError::new("camera_property_encode_failed", e.to_string()))?;
+            entries.push(OverlayEntry::new(ResourceId { type_id: entry.id.type_id, group: entry.id.group, instance: entry.id.instance }, data));
+        }
+        if entries.is_empty() { return Err(CommandError::new("camera_source_empty", "No Isometric Camera property resources were found")); }
+        let bytes = write_uncompressed_overlay(&entries).map_err(|e| CommandError::new("camera_package_build_failed", e.to_string()))?;
+        fs::write(&request.output_path, bytes).map_err(|e| CommandError::new("camera_package_write_failed", e.to_string()))?;
+        Ok(request.output_path)
+    }).await.map_err(|e| CommandError::internal(e.to_string()))?
+}
+
 #[derive(Debug)]
 pub struct WorkspaceManager {
     lock: Mutex<()>,

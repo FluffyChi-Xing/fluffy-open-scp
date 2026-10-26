@@ -228,6 +228,7 @@ pub fn run() {
             code_resource_preview,
             code_manifest,
             workspace::code_flow,
+            workspace::build_camera_package,
             workspace_create_markdown,
             workspace_rename,
             workspace_move,
