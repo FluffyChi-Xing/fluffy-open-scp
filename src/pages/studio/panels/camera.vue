@@ -23,13 +23,13 @@ const locked = ref(true);
 const motion = reactive({ duration: 4, orbit: 0, dolly: 0, easing: 0.5 });
 const focus = reactive({ distance: 42, aperture: 2.8, softness: 0.45 });
 const cameraFields = computed(() => [
-  ["fov", t("studio.camera.fields.fov"), 20, 110, 1],
+  ["fov", t("studio.camera.fields.fov"), 30, 70, 1],
   ["near", t("studio.camera.fields.near"), 0.001, 20, 0.001],
   ["far", t("studio.camera.fields.far"), 100, 3000, 10],
   ["x", t("studio.camera.fields.x"), -120, 120, 1],
   ["y", t("studio.camera.fields.y"), 1, 2000, 1],
   ["z", t("studio.camera.fields.z"), -120, 120, 1],
-  ["pitch", t("studio.camera.fields.pitch"), -89, 89, 1],
+  ["pitch", t("studio.camera.fields.pitch"), -65, -20, 1],
   ["yaw", t("studio.camera.fields.yaw"), -360, 360, 1],
   ["roll", t("studio.camera.fields.roll"), -180, 180, 1],
 ] as const);
