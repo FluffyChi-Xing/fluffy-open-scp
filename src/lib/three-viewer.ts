@@ -1,5 +1,6 @@
 import type * as ThreeNamespace from "three";
 import { isSharedGeometry } from "@/lib/three-gltf";
+import { createDepthOfFieldController } from "./viewerDepthOfField";
 
 export interface ViewerTapHit {
   /** 命中对象；null = 点在空白处（未命中任何内容）——编辑器据此取消选中。 */
@@ -128,6 +129,8 @@ export class ThreeViewer {
   /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
    * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
   private needsRender = true;
+  /** 摄像机工作台景深(仅 cameraControlled 链路;未启用 = 直渲,零开销)。 */
+  private dof: ReturnType<typeof createDepthOfFieldController>;
   private assemblingScene = false;
 
   /** Do not compile/draw transient material and light combinations during assembly. */
@@ -489,6 +492,13 @@ export class ThreeViewer {
     this.content.add(this.world);
     this.scene.add(this.content);
     this.raycaster = new THREE.Raycaster();
+    this.dof = createDepthOfFieldController({
+      renderer: () => this.renderer,
+      scene: () => this.scene,
+      camera: () => this.camera,
+      getFrameRadius: () => this.frameRadius,
+      isDisposed: () => this.disposed,
+    });
 
     container.addEventListener("pointerdown", this.onPointerDown);
     container.addEventListener("pointermove", this.onPointerMove);
@@ -640,6 +650,21 @@ export class ThreeViewer {
     this.camera.updateProjectionMatrix();
     this.applyCamera();
     this.camera.rotateZ((preset.roll * Math.PI) / 180);
+    this.invalidate();
+  }
+
+  /**
+   * 摄像机工作台景深(仅 cameraControlled 链路;null = 关闭恢复直渲)。
+   * distance 为游戏米,内部按 setCameraPreset 同款 scenePerGame 换算成
+   * 场景单位;rig 懒加载,首启前到达的参数挂 pending,就绪后立即生效。
+   */
+  /**
+   * 摄像机工作台景深(仅 cameraControlled 链路;null = 关闭恢复直渲)。
+   * distance 为游戏米,controller 内部按 setCameraPreset 同款 scenePerGame
+   * 换算成场景单位;rig 懒加载,首启前的参数挂 pending,就绪后立即生效。
+   */
+  setDepthOfField(params: { distance: number; aperture: number; softness: number } | null) {
+    this.dof.setGameParams(params);
     this.invalidate();
   }
 
@@ -882,6 +907,7 @@ export class ThreeViewer {
     this.renderer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.dof.setSize(width, height);
     this.needsRender = true;
   }
 
@@ -905,7 +931,7 @@ export class ThreeViewer {
     this.frame = requestAnimationFrame(this.renderLoop);
     if (this.assemblingScene || !this.needsRender) return;
     this.needsRender = false;
-    this.renderer.render(this.scene, this.camera);
+    this.dof.render(() => this.renderer.render(this.scene, this.camera));
     // 渲染后回调：屏幕空间 overlay（选中/悬停描边框）在此跟随相机
     this.onFrameCb?.();
   };
@@ -956,6 +982,7 @@ export class ThreeViewer {
       this.grid?.geometry.dispose();
       (this.grid?.material as ThreeNamespace.Material | null)?.dispose();
       this.keyLight.dispose();
+      this.dof.dispose();
       this.renderer.dispose();
     };
     if (this.pendingCompilations.size) void Promise.allSettled([...this.pendingCompilations]).then(release);

@@ -37,7 +37,7 @@ import { tauriApi } from "@/api";
 import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
 import type { CameraPreset } from "@/lib/three-viewer";
-const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean; initialRenderMode?: "default" | "refined"; cameraPreset?: CameraPreset | null; cameraControlled?: boolean }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false, initialRenderMode: "default", cameraPreset: null, cameraControlled: false });
+const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean; initialRenderMode?: "default" | "refined"; cameraPreset?: CameraPreset | null; cameraControlled?: boolean; cameraFocus?: { distance: number; aperture: number; softness: number } | null }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false, initialRenderMode: "default", cameraPreset: null, cameraControlled: false, cameraFocus: null });
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
 const canEdit = computed(() => props.mode === "editor");
@@ -1140,6 +1140,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
           :group-visibility="groupVisibility"
           :model-state="modelState"
           :camera-preset="props.cameraPreset"
+          :camera-focus="props.cameraFocus"
           :spec-experiment="specExperiment"
           :spec-mode="specMode"
           :time-of-day="timeOfDay"

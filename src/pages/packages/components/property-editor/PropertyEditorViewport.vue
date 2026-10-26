@@ -180,6 +180,8 @@ const props = defineProps<{
   modelOrigin?: [number, number, number] | null;
   /** Camera workbench values mapped onto the real Three viewer camera. */
   cameraPreset?: CameraPreset | null;
+  /** Camera workbench depth-of-field (game meters / aperture / softness). */
+  cameraFocus?: { distance: number; aperture: number; softness: number } | null;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -227,6 +229,14 @@ function applyCameraPreset() {
 watch(
   [() => props.cameraPreset, viewport.viewer, viewport.revision],
   applyCameraPreset,
+  { deep: true, immediate: true },
+);
+// 摄像机工作台景深(仅 cameraControlled 链路传入;其他场景恒 null 不启用)。
+watch(
+  [() => props.cameraFocus, viewport.viewer],
+  ([focus]) => {
+    viewport.viewer.value?.setDepthOfField(focus ?? null);
+  },
   { deep: true, immediate: true },
 );
 // 草稿模型的拾取开关：同步到射线目标组（模型关闭后取消其选中）
