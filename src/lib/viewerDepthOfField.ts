@@ -61,10 +61,11 @@ export function createDepthOfFieldController(deps: {
   function ensureRig() {
     if (rig || disposed) return;
     void (async () => {
-      const [{ EffectComposer }, { RenderPass }, { BokehPass }] = await Promise.all([
+      const [{ EffectComposer }, { RenderPass }, { BokehPass }, { OutputPass }] = await Promise.all([
         import("three/examples/jsm/postprocessing/EffectComposer.js"),
         import("three/examples/jsm/postprocessing/RenderPass.js"),
         import("three/examples/jsm/postprocessing/BokehPass.js"),
+        import("three/examples/jsm/postprocessing/OutputPass.js"),
       ]);
       const instance = new EffectComposer(deps.renderer());
       instance.addPass(new RenderPass(deps.scene(), deps.camera()));
@@ -74,6 +75,10 @@ export function createDepthOfFieldController(deps: {
         maxblur: MAXBLUR_BASE + MAXBLUR_GAIN * 0.45,
       });
       instance.addPass(bokeh);
+      // composer 内部缓冲是线性空间:链尾必须 OutputPass 补 renderer 的
+      // toneMapping + 线性→sRGB 输出转换,否则整帧发黑(直渲时由
+      // renderer.render 到画布自动完成,composer 不自动做)。
+      instance.addPass(new OutputPass());
       if (disposed || deps.isDisposed()) {
         instance.dispose();
         return;
