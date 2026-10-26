@@ -108,6 +108,8 @@ export class ThreeViewer {
   private observer: ResizeObserver | undefined;
   private frame = 0;
   private frameRadius = 5;
+  /** 取景取证用（DEV 诊断）：当前地面网格的世界 Y。 */
+  gridY = 0;
   private cameraDistance = 5;
   private orbitTheta = 0.34;
   private orbitPhi = 1.2;
@@ -572,6 +574,7 @@ export class ThreeViewer {
     gridMaterial.transparent = true;
     gridMaterial.opacity = 0.32;
     this.grid.position.y = groundY - radius * 0.002;
+    this.gridY = this.grid.position.y;
     this.scene.add(this.grid);
 
     this.frameRadius = radius;

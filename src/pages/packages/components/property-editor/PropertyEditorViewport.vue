@@ -2293,6 +2293,46 @@ async function assembleScene(
   ctx.stats.meshes = payload?.glbs.length ?? 0;
   // 全量装配完成：刷新增量判定快照（与本次装配的 grouping 一致）。
   lastUnitsSnapshot = buildUnitsSnapshot(props.grouping);
+  // 取景取证（DEV）：localStorage.openscpPeDebug=1 时按图层组/单元打印
+  // 世界包围盒与取景锚点——「建筑飘在网格上方」类回归的分诊入口（软跟随
+  // 保证网格=内容最低点，若建筑仍高于网格，此表直接点名拉低包围盒的组）。
+  if (import.meta.env.DEV && localStorage.getItem("openscpPeDebug") === "1") {
+    instance.scene.updateMatrixWorld(true);
+    const rows = VIEWPORT_GROUPS.map((name) => {
+      const group = instance.group(name);
+      const groupBox = new THREE.Box3().setFromObject(group);
+      return {
+        组: name,
+        可见对象: group.children.length,
+        min: groupBox.isEmpty() ? null : groupBox.min.toArray().map((v) => +v.toFixed(2)),
+        max: groupBox.isEmpty() ? null : groupBox.max.toArray().map((v) => +v.toFixed(2)),
+      };
+    });
+    console.group(`[pe-frame] rebuild#${ctx.token} 装配完成取证`);
+    console.table(rows.filter((row) => row.min !== null));
+    console.log(
+      "content.position:",
+      instance.content.position.toArray().map((v) => +v.toFixed(2)),
+      "grid.y:",
+      instance.gridY,
+      "frameRadius:",
+      instance.frameRadius,
+      "ground.matrix:",
+      ground?.matrix.elements.map((v) => +v.toFixed(2)),
+      "lotPlacement:",
+      props.lotPlacement,
+    );
+    for (const [id, unitObject] of ctx.unitObjects) {
+      const unitBox = new THREE.Box3().setFromObject(unitObject);
+      if (unitBox.isEmpty()) continue;
+      const size = unitBox.getSize(new THREE.Vector3());
+      const low = unitBox.min.y < -5;
+      console.log(
+        `${low ? "⚠️低位" : "  "} unit ${id}: min=${unitBox.min.toArray().map((v) => +v.toFixed(1))} size=${size.toArray().map((v) => +v.toFixed(1))}`,
+      );
+    }
+    console.groupEnd();
+  }
 }
 
 /** 日/夜亮度：仅缩放环境四灯；地块真实光源保持常亮（夜间灯依然亮）。 */
