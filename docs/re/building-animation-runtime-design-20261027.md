@@ -374,3 +374,84 @@ PropertyEditorViewport.vue` 仅允许加法式 prop/挂点透传(与 cameraFocus
 - T4 每条投影必须能在 UI 中展示 `because` 因果串,无法给出原因时显示
   unresolved——**没有原因的动画播放视为实现缺陷**。
 
+## 10. RCI 建造动画机制(2026-10-27 第三轮:已从源码完整闭环)
+
+用户问题:RCI 建筑放置后的"脚手架 + 逐层升起"建造动画是怎么实现的?
+
+**答案:不是建筑模型自身的骨骼动画,而是一套独立的 `cConstructionSite`
+状态机,靠"资源 bin 进度 + 分层 cap 模型 + 上升渲染高度"合成。** 全部
+机制已从源码逐行核实。
+
+### 10.1 Property 驱动(`cConstructionSite::FillFromProps`)
+
+| 属性 ID | 含义 | 解析去向 |
+|---|---|---|
+| `0xCD33F38` | **进度资源 ID**(Key) | → `IndexFromResourceID` → `mProgressBinIndex`(资源 bin 下标) |
+| `0xCD33F39` | **卡车资源 ID 数组**(Key[]) | 同上,逐个解析为 bin(送货卡车与进度同源) |
+| `0xD0BEFAA` | 建造完成 Effect ID | 完工时 `SetEffectsRunning` |
+| `0xE5EF383` | 建造地块生成 Effect ID | 施工粒子(尘土等) |
+| `0xDC21CE0` (230825184) | **cap 模型 ID 表**(Key[]) | 每层 cap 是一个独立模型(脚手架/楼板盖) |
+| `0xDC21CE1` (230825185) | cap 变换表(Vector3/Transform[]) | cap 的初始摆放 |
+| `0xE7703C3` (242680771) | **cap 可见百分比阈值表**(Float[]) | `visibleUntilPercent` |
+| `0xE7703C4` (242680772) | cap 动画速度表(Vector4[]) | 每层 cap 的 4 通道动画速率 |
+
+### 10.2 运行时(`cConstructionSite::Update`,605 行)——五步合成
+
+1. **进度 = 资源 bin**:`mTargetPercent = bin.amount / bin.capacity`
+   ——盖楼进度就是"混凝土/材料"这一 bin 的 filled 比例;卡车送货
+   (bin 增加)推动进度,与 RCI 建造的资源物流直接耦合。
+2. **缓动逼近**:`mCurrentPercent = mStartPercent + (target−start)·k`
+   (逐 tick 收敛,跳跃的送货量被平滑成连续升起)。
+3. **上升的渲染高度**:`mRenderHeight = (unitBBox.max.z − unitBBox.min.z)
+   × mCurrentPercent`——**建筑总高 × 百分比**,再沿 UP 轴写入 cap/顶盖
+   变换的平移(`xform.mTranslation += mRenderHeight × up`)。所谓"逐层
+   升起"= 一块(或数块)楼板盖模型随百分比沿建筑高度滑升。
+4. **cap 顺序消耗**:每个 cap 有 `visibleUntilPercent`;`mCurrentPercent
+   <= 阈值` 期间可见,**越过阈值即从 vector 弹出(物理移除)**——脚手架
+   层按阈值从低到高逐层消失;每层 cap 还有 4 通道动画(speeds/data)随
+   进度驱动(脚手架上的细节动画)。
+5. **模型换装与完工**:`SetUnitIsVisible(slot, truckPresent)` 控制
+   建筑本体模型与施工模型的显隐切换;进度到 1 时触发
+   `0xD0BEFAA` 完成 Effect(含 `0xE5EF383` 地块生成粒子),建筑本体
+   换回可见。
+
+### 10.3 对 OpenSCP 复刻的直接推论
+
+- **不需要建筑骨骼动画即可复刻建造**:输入 = 进度 bin 快照(或手动
+  拉杆)+ cap 表(模型/变换/阈值/动画速度)+ 建筑总高;输出 = 每层
+  cap 的显隐与高度、建筑本体的显隐、完成 Effect 触发——全部是
+  **纯函数可解**的投影,与 §5.3 离线解算器同一范式。
+- cap 的可视面(白色脚手架网/楼板)是**随 lot 发布的独立模型资产**,
+  不是程序化网格;OpenSCP 复刻时由同一属性表提供 TGI。
+
+### 10.4 独立解算器契约(用户约束:新逻辑不叠加进旧代码)
+
+新目录 **`src/lib/buildingRuntime/`**(与冻结区平行的全新目录,符合
+FROZEN.md"平行目录"规则),三个文件:
+
+```text
+buildingRuntime/
+  types.ts        # StaticAssetGraph/RuntimeState/Projection 三层数据模型
+  construction.ts # buildConstructionSolver(config) → solve(state) → projection(纯函数)
+  index.ts        # 唯一对外出口(受控接入面)
+```
+
+- **solver 是纯函数**:输入 = `{ bins, controlFlags, tick, manualOverrides }`
+  + 静态绑定(五动画表 + cap 表 + 建筑高度);输出 = 投影对象(每条带
+  `because` 因果串);**不 import three、不 import viewer、无模块态**。
+- **受控接入**:消费方(未来的预览面板/视口)拿投影对象自行应用到自己的
+  对象(mixer 时间、cap 显隐、建筑可见性);冻结区只允许加法式调用点,
+  决策权与副作用永远在消费方。
+- 建造动画 = 该求解器的第一个 preview:输出
+  `{ percent, renderHeight, caps[{visible,consumed}], buildingVisible,
+     completionEffect: fired, because[] }`。
+
+### 10.5 遗留
+
+- cap 模型/脚手架资产的 TGI 由各 RCI lot 的属性表逐 lot 提供(上表),
+  抽样统计放在实现期做;
+- `0xD0BEFAA/0xE5EF383` 两个 Effect 的 Swarm 资产解析走 §3.7/Effect
+  预览既有链路,本节不重复;
+- 进度 bin 的 bin 名称(amount/capacity 的资源语义)随具体 Unit 的
+  bundle 而定,解算器只消费 bin 下标 + 数值,不猜语义。
+
