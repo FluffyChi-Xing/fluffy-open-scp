@@ -612,45 +612,34 @@ export class ThreeViewer {
   }
 
   /**
-   * 摄像机工作台的忠实机位：把游戏相机语义直接映射到预览相机，不做
-   * 轨道收敛、不做钳制——每个滑杆恰好控制一个可见自由度，工作台才具备
-   * 标定能力（此前的"受限映射"把 pitch/x/z 钳到不可感知，参数等于失效）。
-   *
-   * 契约（游戏单位 → 场景单位只有一个比例尺）：
-   * - scenePerGame = 2.5·radius/800：标定常数，原生机位 y=800 ↔ 2.5×radius
- *   （lot 包围球半径 radius 由 frameContent 按内容设定）；
-   * - 位置 = 场景原点（取中后的地块中心）+ (x,y,z)·scale，y 为高度；
-   * - 朝向 = yaw/pitch/roll 按 YXZ 欧拉（先偏航、再俯仰、后滚转的游戏
-   *   语义），不 lookAt——位置与朝向相互独立，与游戏一致；
-   * - fov 直接生效；near/far 按同一比例尺缩放（保持与游戏的裁剪观感）。
-   * 手动轨道交互（拖拽/滚轮）此后接管相机，下次改动滑杆重新套用本机位。
+   * 摄像机工作台的忠实机位：游戏 isometric 相机是「环绕机位」——
+   * x/z 平移观察目标、y = 距离、pitch/yaw = 环绕角（pitch 负值 = 自上方
+   * 俯视，phi = 90+pitch 自竖轴下压），相机恒看向目标，位置与朝向耦合。
+   * 【2026-10-27 勘误】此前把位置与 yaw/pitch 拆成独立自由量，默认参数
+   * (yaw=149) 下相机背对地块、从下缘仰视——「默认俯仰不可能从下往上看」
+   * 的根因。滑杆全量程无钳制（pitch ±89 → phi 1°~179°，极端机位由用户
+   * 主动选择）；fov 直接生效，near/far 按同一比例尺缩放；roll 在 lookAt
+   * 之后绕视线轴叠加。仅摄像机工作台调用，其他场景的默认轨道不受影响。
+   * 比例尺 scenePerGame = 2.5·radius/800：原生机位 y=800 ↔ 2.5×radius。
    */
   setCameraPreset(preset: CameraPreset) {
     const radius = Math.max(this.frameRadius, 1e-3);
     const scenePerGame = (2.5 * radius) / 800;
-    this.camera.position.set(
+    this.cameraDistance = Math.max(radius * 0.05, preset.y * scenePerGame);
+    this.orbitTheta = (preset.yaw * Math.PI) / 180;
+    this.orbitPhi = ((90 + preset.pitch) * Math.PI) / 180;
+    this.orbitTarget.set(
       preset.x * scenePerGame,
-      preset.y * scenePerGame,
+      0,
       preset.z * scenePerGame,
-    );
-    this.camera.rotation.order = "YXZ";
-    this.camera.rotation.set(
-      (preset.pitch * Math.PI) / 180,
-      (preset.yaw * Math.PI) / 180,
-      (preset.roll * Math.PI) / 180,
     );
     this.camera.fov = preset.fov;
     const near = Math.max(1e-4, preset.near * scenePerGame);
     this.camera.near = near;
     this.camera.far = Math.max(near + 1e-2, preset.far * scenePerGame);
     this.camera.updateProjectionMatrix();
-    // 轨道状态同步到本机位（目标=场景原点）：手动拖拽接管时从当前视角
-    // 出发，而不是跳回 frameContent 留下的旧轨道参数。
-    this.orbitTarget.set(0, 0, 0);
-    this.cameraDistance = this.camera.position.length();
-    const direction = this.camera.position.clone().normalize();
-    this.orbitPhi = Math.acos(this.THREE.MathUtils.clamp(direction.y, -1, 1));
-    this.orbitTheta = Math.atan2(direction.x, direction.z);
+    this.applyCamera();
+    this.camera.rotateZ((preset.roll * Math.PI) / 180);
     this.invalidate();
   }
 
