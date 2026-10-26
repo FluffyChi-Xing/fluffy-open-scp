@@ -2,8 +2,13 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import Switch from "@/components/ui/switch/Switch.vue";
+import FButton from "@/components/ui/FButton.vue";
+import { save } from "@tauri-apps/plugin-dialog";
+import { command } from "@/api/tauri";
+import { useToast } from "@/composables/useToast";
 const props = defineProps<{ rows: Record<string, unknown>[]; scope?: "ui" | "building" | "agent"; target?: string }>();
 const { t, locale } = useI18n();
+const toast = useToast();
 const query = ref("");
 const viewport = ref<HTMLElement>();
 const follow = ref(true);
@@ -89,6 +94,27 @@ const lines = computed(() =>
         (!query.value || x.text.toLowerCase().includes(query.value.toLowerCase())),
     ),
 );
+function base64Json(value: unknown) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value, null, 2));
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+async function exportLogs() {
+  if (!lines.value.length) {
+    toast.warning(t("runtimeObserver.noLogsToExport"));
+    return;
+  }
+  try {
+    const path = await save({ defaultPath: "openscp-runtime-log.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (!path) return;
+    await command("write_export_file", { request: { path, dataBase64: base64Json(lines.value.map((line) => line.row)) } });
+    toast.success(t("runtimeObserver.exportSuccess"));
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : t("runtimeObserver.exportFailed"));
+  }
+}
 function scroll() {
   const el = viewport.value;
   if (el) follow.value = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -109,7 +135,7 @@ function timestamp(row: Record<string, unknown>) {
         ><Switch v-model="follow" :aria-label="t('runtimeObserver.follow')" /><span>{{
           t("runtimeObserver.follow")
         }}</span></label
-      ><input
+      ><FButton class="export-button" variant="secondary" @click="exportLogs">{{ t("runtimeObserver.exportLogs") }}</FButton><input
         v-model="query"
         type="search"
         :placeholder="t('runtimeObserver.search')"
@@ -203,6 +229,8 @@ input[type="search"] {
   padding: 0 8px;
   font-size: 12px;
 }
+.export-button { min-height: 28px; height: 28px; padding: 0 9px; border-color: var(--accent); background: transparent; color: var(--foreground); font-size: 11px; font-weight: 600; }
+.export-button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .viewport {
   height: clamp(180px, 36vh, 420px);
   overflow: auto;
