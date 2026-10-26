@@ -103,6 +103,17 @@ export default {
       },
     },
     {
+      name: "studio-camera",
+      path: "studio/camera",
+      component: () => import("@/pages/studio/panels/camera.vue"),
+      meta: {
+        titleKey: "navigation.studioCamera",
+        icon: "image",
+        groupKey: "navigation.modding",
+        order: 52,
+      },
+    },
+    {
       name: "studio-versions",
       path: "studio/versions",
       component: () => import("@/pages/studio/panels/versions.vue"),
