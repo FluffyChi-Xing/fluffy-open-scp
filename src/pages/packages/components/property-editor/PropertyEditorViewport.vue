@@ -38,6 +38,7 @@ import type {
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
 import type { EngineFamily } from "@/lib/decalEngineMaterials";
 import { useEditorViewport } from "./useEditorViewport";
+import type { CameraPreset } from "@/lib/three-viewer";
 import {
   applyDeferredMaterialMaps,
   applySunEnv,
@@ -177,6 +178,8 @@ const props = defineProps<{
   /** 草稿模型放置原点平移（水平居中 + 底面坐 y=0；世界空间，装配时
    * 应用到各模型根——地面恒在原点平面）。 */
   modelOrigin?: [number, number, number] | null;
+  /** Camera workbench values mapped onto the real Three viewer camera. */
+  cameraPreset?: CameraPreset | null;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -217,6 +220,15 @@ const viewport = useEditorViewport({
     hoveredId.value = id;
   },
 });
+function applyCameraPreset() {
+  const preset = props.cameraPreset;
+  if (preset && viewport.viewer.value) viewport.viewer.value.setCameraPreset(preset);
+}
+watch(
+  [() => props.cameraPreset, viewport.viewer, viewport.revision],
+  applyCameraPreset,
+  { deep: true, immediate: true },
+);
 // 草稿模型的拾取开关：同步到射线目标组（模型关闭后取消其选中）
 watch(
   () => props.modelSelectable === true,

@@ -21,6 +21,18 @@ export interface ThreeViewerOptions {
   onFrame?: () => void;
 }
 
+export interface CameraPreset {
+  fov: number;
+  near: number;
+  far: number;
+  x: number;
+  y: number;
+  z: number;
+  pitch: number;
+  yaw: number;
+  roll: number;
+}
+
 type Three = typeof ThreeNamespace;
 
 // 三灯 + 环境光的基准强度；setEnvironmentBrightness 按倍率缩放这些基准值。
@@ -559,6 +571,31 @@ export class ThreeViewer {
     this.orbitTheta = Math.atan2(direction.x, direction.z);
     this.orbitTarget.set(0, 0, 0);
     this.applyCamera();
+  }
+
+  /** Apply the camera workbench controls to the real property viewer camera. */
+  setCameraPreset(preset: CameraPreset) {
+    const radius = Math.max(this.frameRadius, 1e-3);
+    // Game camera coordinates are much larger than the normalized property
+    // viewer scene. Keep the preview inside the game's useful framing envelope
+    // instead of treating those coordinates as world-space positions.
+    const normalizedDistance = Math.max(0.65, Math.min(5, preset.y / 800 * 2.5));
+    this.cameraDistance = radius * normalizedDistance;
+    this.orbitTheta = (preset.yaw * Math.PI) / 180;
+    const gamePitch = Math.max(-65, Math.min(-20, preset.pitch));
+    this.orbitPhi = ((90 + gamePitch) * Math.PI) / 180;
+    this.orbitTarget.set(
+      (preset.x / 120) * radius * 0.08,
+      0,
+      (preset.z / 120) * radius * 0.08,
+    );
+    this.camera.fov = Math.max(30, Math.min(70, preset.fov));
+    this.camera.near = Math.max(0.001, Math.min(preset.near, preset.far - 0.001));
+    this.camera.far = Math.max(this.camera.near + 1, preset.far);
+    this.camera.updateProjectionMatrix();
+    this.applyCamera();
+    this.camera.rotateZ((preset.roll * Math.PI) / 180);
+    this.invalidate();
   }
 
   /** key 光方位（度）；对应 MeshPreview 的方位/仰角双滑杆。 */

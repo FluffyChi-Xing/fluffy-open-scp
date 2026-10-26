@@ -36,7 +36,8 @@ import { tauriApi } from "@/api";
 
 import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
-const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean; initialRenderMode?: "default" | "refined" }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false, initialRenderMode: "default" });
+import type { CameraPreset } from "@/lib/three-viewer";
+const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean; initialRenderMode?: "default" | "refined"; cameraPreset?: CameraPreset | null; cameraControlled?: boolean }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false, initialRenderMode: "default", cameraPreset: null, cameraControlled: false });
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
 const canEdit = computed(() => props.mode === "editor");
@@ -707,7 +708,7 @@ async function exportModel(mode: "white" | "textured") {
 const powered = ref(true);
 
 watch(open, (value) => {
-  if (value || props.embedded) {
+  if (value || props.cameraControlled) {
     diagnosticsDismissed = false;
     void load();
   } else {
@@ -717,7 +718,7 @@ watch(open, (value) => {
     materialsOpen.value = false;
   }
 });
-onMounted(() => { if (open.value || props.embedded) void load(); });
+onMounted(() => { if (open.value || props.cameraControlled) void load(); });
 /** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
 let diagnosticsDismissed = false;
 const title = computed(() => {
@@ -746,7 +747,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
     width="100vw"
     :class="{ 'embedded-sheet': embedded }"
   >
-    <div v-if="embedded || open" class="editor-root" :class="{ 'embedded-root': embedded }">
+    <div v-if="props.cameraControlled || open" class="editor-root" :class="{ 'embedded-root': embedded }">
       <!-- 吸顶诊断横幅：会话诊断一次展示，可关闭（重开会话恢复） -->
       <FAlert
         v-if="diagnostics.length && !diagnosticsDismissed"
@@ -1138,6 +1139,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
           :hidden-units="hiddenUnits"
           :group-visibility="groupVisibility"
           :model-state="modelState"
+          :camera-preset="props.cameraPreset"
           :spec-experiment="specExperiment"
           :spec-mode="specMode"
           :time-of-day="timeOfDay"
