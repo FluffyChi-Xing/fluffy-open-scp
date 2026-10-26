@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-const props = defineProps<{ rows: Record<string, unknown>[] }>();
+import Switch from "@/components/ui/switch/Switch.vue";
+const props = defineProps<{ rows: Record<string, unknown>[]; scope?: "ui" | "building" | "agent"; target?: string }>();
 const { t, locale } = useI18n();
 const query = ref("");
 const viewport = ref<HTMLElement>();
@@ -41,6 +42,8 @@ type LogTone =
   | "unknown";
 function tone(row: Record<string, unknown>): LogTone {
   const channel = String(row.channel ?? "");
+  if (row.semantic === "resource_change") return "resource";
+  if (row.semantic === "dispatch_event") return "event";
   if (channel === "simulation.effect" || channel === "resource.provenance")
     return "resource";
   if (channel === "simulation.rule" || channel === "simulation.condition")
@@ -78,11 +81,12 @@ function compact(value: unknown) {
 }
 const lines = computed(() =>
   history.value
-    .map((row) => ({ row, text: text(row) }))
+    .map((row) => ({ row, text: text(row), serialized: JSON.stringify(row).toLowerCase() }))
     .filter(
       (x) =>
-        !query.value ||
-        x.text.toLowerCase().includes(query.value.toLowerCase()),
+        (props.scope === "ui" || !props.scope || x.row.observationScope === props.scope) &&
+        (!props.target || props.target === "all" || (props.target === "school" ? ["school", "elementary", "小学"].some((value) => x.serialized.includes(value)) : props.target === "omegaco" ? ["omega", "omegaco"].some((value) => x.serialized.includes(value)) : props.target === "police" ? ["police", "cop", "警车"].some((value) => x.serialized.includes(value)) : x.serialized.includes(props.target.toLowerCase()))) &&
+        (!query.value || x.text.toLowerCase().includes(query.value.toLowerCase())),
     ),
 );
 function scroll() {
@@ -101,10 +105,10 @@ function timestamp(row: Record<string, unknown>) {
     <header>
       <strong>{{ t("runtimeObserver.streamTitle") }}</strong
       ><span>{{ lines.length }} {{ t("runtimeObserver.recordsShort") }}</span
-      ><label
-        ><input v-model="follow" type="checkbox" />{{
+      ><label class="follow-toggle"
+        ><Switch v-model="follow" :aria-label="t('runtimeObserver.follow')" /><span>{{
           t("runtimeObserver.follow")
-        }}</label
+        }}</span></label
       ><input
         v-model="query"
         type="search"
@@ -188,6 +192,7 @@ label {
   gap: 5px;
   margin-left: auto;
 }
+.follow-toggle :deep(button) { flex: none; }
 input[type="search"] {
   width: 190px;
   height: 28px;

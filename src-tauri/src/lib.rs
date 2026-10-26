@@ -150,6 +150,7 @@ pub fn run() {
             runtime_observer::observer_stop,
             runtime_observer::observer_status,
             runtime_observer::observer_sync,
+            runtime_observer::observer_frame,
             game_launch::game_processes,
             game_launch::deploy_game_mod,
             game_launch::deploy_ui_overlay,

@@ -13,6 +13,7 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FButton from "@/components/ui/FButton.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FSelect from "@/components/ui/FSelect.vue";
+import Switch from "@/components/ui/switch/Switch.vue";
 import LogStream from "./LogStream.vue";
 import DiagnosticWorkbench from "./DiagnosticWorkbench.vue";
 import {
@@ -34,6 +35,21 @@ const captureEpoch = ref(0);
 const processes = ref<GameProcess[]>([]);
 const selectedPid = ref<number>();
 const profile = ref("balanced");
+const captureScope = ref<"ui" | "building" | "agent">("ui");
+const captureTarget = ref("all");
+const frameUrl = ref("");
+const captureFrames = ref(true);
+const captureScopes = computed(() => [
+  { value: "ui", label: t("runtimeObserver.scope.ui.label"), hint: t("runtimeObserver.scope.ui.hint") },
+  { value: "building", label: t("runtimeObserver.scope.building.label"), hint: t("runtimeObserver.scope.building.hint") },
+  { value: "agent", label: t("runtimeObserver.scope.agent.label"), hint: t("runtimeObserver.scope.agent.hint") },
+] as const);
+const captureTargets = computed(() => captureScope.value === "building"
+  ? [{ value: "school", label: t("runtimeObserver.target.school") }, { value: "omegaco", label: t("runtimeObserver.target.omegaco") }]
+  : captureScope.value === "agent"
+    ? [{ value: "police", label: t("runtimeObserver.target.police") }]
+    : [{ value: "all", label: t("runtimeObserver.target.all") }]);
+const observation = computed(() => `${captureScope.value}:${captureTarget.value}`);
 const error = ref("");
 const displayError = computed(() => {
   try {
@@ -82,6 +98,28 @@ const phase = computed(() =>
 const events = computed(() =>
   Object.values(status.value.eventCounts).reduce((a, b) => a + b, 0),
 );
+const latestDataResult = (requestName: string) => [...status.value.recent].reverse().find((row) => row.requestName === requestName && row.channel === "result");
+const gamePaused = computed<boolean | undefined>(() => {
+  if (typeof status.value.gamePaused === "boolean") return status.value.gamePaused;
+  const row = [...status.value.recent].reverse().find((candidate) => typeof candidate.requestName === "string" && candidate.requestName.startsWith("globalFlags") && candidate.channel === "result");
+  const value = row?.result && typeof row.result === "object" && "value" in row.result ? row.result.value : undefined;
+  return typeof value === "boolean" ? value : undefined;
+});
+const gameTime = computed(() => {
+  const source = typeof status.value.gameClockSeconds === "number"
+    ? status.value.gameClockSeconds
+    : status.value.gameTimeSeconds;
+  if (typeof source === "number") {
+    const total = Math.max(0, Math.floor(source));
+    return `${String(Math.floor(total / 3600)).padStart(2, "0")}:${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  }
+  const row = latestDataResult("totalElapsedGameTime");
+  const value = row?.result && typeof row.result === "object" && "value" in row.result ? Number(row.result.value) : NaN;
+  if (!Number.isFinite(value)) return undefined;
+  const total = Math.max(0, Math.floor(value));
+  return `${String(Math.floor(total / 3600)).padStart(2, "0")}:${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+});
+const gameTimeIsClock = computed(() => typeof status.value.gameClockSeconds === "number");
 function message(e: unknown) {
   return e && typeof e === "object" && "message" in e
     ? String(e.message)
@@ -110,6 +148,14 @@ async function refresh() {
     if (!active || epoch !== captureEpoch.value || version !== pollVersion)
       return;
     status.value = next;
+    if (captureFrames.value && next.pid) {
+      try {
+        const frame = await runtimeObserver.frame(next.pid);
+        frameUrl.value = `data:${frame.mime};base64,${frame.dataBase64}`;
+      } catch {
+        // A minimized or transitioning window can fail one frame; keep the last good frame.
+      }
+    }
     if (!next.running) stopping.value = false;
     if (next.status?.error) error.value = String(next.status.error);
     if (next.directory) await runtimeObserver.sync();
@@ -137,9 +183,10 @@ async function start() {
   pollVersion += 1;
   captureEpoch.value += 1;
   status.value = empty();
+  frameUrl.value = "";
   processMenu.value = false;
   try {
-    const next = await runtimeObserver.start(selectedPid.value, 60, profile.value);
+    const next = await runtimeObserver.start(selectedPid.value, 60, profile.value, observation.value);
     if (active) status.value = next;
     else await runtimeObserver.stop();
   } catch (e) {
@@ -192,6 +239,7 @@ function release() {
   clearTimeout(timer);
   void runtimeObserver.stop().catch(() => {});
   status.value = empty();
+  frameUrl.value = "";
 }
 onMounted(activate);
 onActivated(activate);
@@ -215,104 +263,47 @@ onBeforeUnmount(release);
         <p v-if="error" class="error" role="alert">{{ displayError }}</p>
 
         <section class="summary">
-          <div class="preview">
-            <span>{{ t("runtimeObserver.previewUnavailable") }}</span>
+          <div class="preview" :class="{ ready: frameUrl }">
+            <img v-if="frameUrl" :src="frameUrl" :alt="t('runtimeObserver.frame')" />
+            <span v-else>{{ t("runtimeObserver.previewUnavailable") }}</span>
           </div>
           <div class="session">
+            <div class="runtime-strip">
+              <span class="runtime-strip-title">{{ t("runtimeObserver.runtimeStatus") }}</span>
+              <span class="runtime-pill" :class="{ paused: gamePaused === true, active: gamePaused === false }">
+                <span class="runtime-dot" aria-hidden="true"></span>
+                {{ gamePaused === true ? t("runtimeObserver.paused") : gamePaused === false ? t("runtimeObserver.playing") : t("runtimeObserver.unknownStatus") }}
+              </span>
+              <span class="runtime-time"><span>{{ t(gameTimeIsClock ? "runtimeObserver.gameClock" : "runtimeObserver.gameTime") }}</span><strong>{{ gameTime ?? "—" }}</strong></span>
+              <label class="frame-toggle"><Switch v-model="captureFrames" :aria-label="t('runtimeObserver.captureFrame')" /><span>{{ t("runtimeObserver.captureFrame") }}</span></label>
+              <div class="header-process">
+                <FDropdown v-model:open="processMenuOpen" :width="240">
+                  <template #trigger>
+                    <FButton id="observer-process" class="process-trigger" variant="secondary" :disabled="status.running || busy || !processes.length" :aria-label="t('runtimeObserver.processes')" aria-haspopup="menu" :aria-expanded="processMenuOpen">
+                      {{ selectedProcess ? `${selectedProcess.name} · PID ${selectedProcess.pid}` : t("runtimeObserver.noProcesses") }}
+                      <FIcon class="process-chevron" name="ChevronDown" :size="14" aria-label="" />
+                    </FButton>
+                  </template>
+                  <button v-for="p in processes" :key="p.pid" type="button" role="menuitemradio" :aria-checked="p.pid === selectedPid" @click="selectedPid = p.pid; processMenuOpen = false">
+                    {{ p.name }} · PID {{ p.pid }}
+                  </button>
+                </FDropdown>
+                <FButton variant="secondary" :loading="busy" :disabled="status.running" @click="scan">{{ t("runtimeObserver.scan") }}</FButton>
+              </div>
+            </div>
             <h2 class="capture-title">{{ t("diagnostics.liveTitle") }}</h2>
             <p class="capture-hint">{{ t("diagnostics.liveHint") }}</p>
-            <label for="observer-process">{{
-              t("runtimeObserver.processes")
-            }}</label>
-            <div class="controls">
-              <FDropdown v-model:open="processMenuOpen" :width="240">
-                <template #trigger>
-                  <FButton
-                    id="observer-process"
-                    class="process-trigger"
-                    variant="secondary"
-                    :disabled="status.running || busy || !processes.length"
-                    :aria-label="t('runtimeObserver.processes')"
-                    aria-haspopup="menu"
-                    :aria-expanded="processMenuOpen"
-                  >
-                    {{
-                      selectedProcess
-                        ? `${selectedProcess.name} · PID ${selectedProcess.pid}`
-                        : t("runtimeObserver.noProcesses")
-                    }}
-                    <FIcon
-                      class="process-chevron"
-                      name="ChevronDown"
-                      :size="14"
-                      aria-label=""
-                    />
-                  </FButton>
-                </template>
-                <button
-                  v-for="p in processes"
-                  :key="p.pid"
-                  type="button"
-                  role="menuitemradio"
-                  :aria-checked="p.pid === selectedPid"
-                  @click="
-                    selectedPid = p.pid;
-                    processMenuOpen = false;
-                  "
-                >
-                  {{ p.name }} · PID {{ p.pid }}
-                </button>
-              </FDropdown>
-              <FButton
-                variant="secondary"
-                :loading="busy"
-                :disabled="status.running"
-                @click="scan"
-                >{{ t("runtimeObserver.scan") }}</FButton
-              >
-            </div>
-            <div class="controls">
-              <label class="profile-picker">
-                <span>{{ t("runtimeObserver.profileLabel") }}</span>
-                <FSelect
-                  v-model="profile"
-                  :options="profileOptions"
-                  :disabled="status.running || busy"
-                  :aria-label="t('runtimeObserver.profileLabel')"
-                />
-              </label>
-              <p class="profile-description">
-                {{ t(`runtimeObserver.profile.${profile}.description`) }}
-              </p>
-            </div>
-            <div class="controls">
-              <FButton
-                :disabled="status.running || !selectedPid"
-                :loading="busy"
-                @click="start"
-                >{{ t("runtimeObserver.start") }}</FButton
-              >
-              <FButton
-                variant="secondary"
-                :disabled="!status.running || stopping"
-                @click="stop"
-                >{{ t("runtimeObserver.stop") }}</FButton
-              >
-              <span class="phase" role="status">{{
-                t("runtimeObserver." + phase)
-              }}</span>
-            </div>
           </div>
           <dl class="metrics">
-            <div>
+            <div class="metric-card">
               <dt>{{ t("runtimeObserver.records") }}</dt>
               <dd>{{ status.records }}</dd>
             </div>
-            <div>
+            <div class="metric-card">
               <dt>{{ t("runtimeObserver.eventTotal") }}</dt>
               <dd>{{ events }}</dd>
             </div>
-            <div>
+            <div class="metric-card">
               <dt>{{ t("runtimeObserver.eventCamera") }}</dt>
               <dd>
                 {{
@@ -321,14 +312,35 @@ onBeforeUnmount(release);
                 }}
               </dd>
             </div>
-            <div>
+            <div class="metric-card">
               <dt>{{ t("runtimeObserver.synced") }}</dt>
               <dd>{{ status.synced }}</dd>
             </div>
           </dl>
         </section>
 
-        <LogStream :key="captureEpoch" :rows="status.recent" />
+        <section class="capture-toolbar" :aria-label="t('runtimeObserver.control')">
+          <div class="capture-filter" :aria-label="t('runtimeObserver.captureScope')">
+            <div class="scope-tabs" role="tablist">
+              <button v-for="scope in captureScopes" :key="scope.value" type="button" role="tab" :aria-selected="captureScope === scope.value" :class="{ active: captureScope === scope.value }" @click="captureScope = scope.value; captureTarget = 'all'">{{ scope.label }}</button>
+            </div>
+            <p class="scope-hint">{{ captureScopes.find((scope) => scope.value === captureScope)?.hint }}</p>
+            <div class="target-radios" role="radiogroup" :aria-label="t('runtimeObserver.captureTarget')">
+              <label v-for="target in captureTargets" :key="target.value" class="target-radio"><input v-model="captureTarget" type="radio" name="capture-target" :value="target.value" /><span>{{ target.label }}</span></label>
+            </div>
+          </div>
+          <div class="toolbar-profile">
+            <label class="profile-picker"><span>{{ t("runtimeObserver.profileLabel") }}</span><FSelect v-model="profile" :options="profileOptions" :disabled="status.running || busy" :aria-label="t('runtimeObserver.profileLabel')" /></label>
+            <p class="profile-description">{{ t(`runtimeObserver.profile.${profile}.description`) }}</p>
+          </div>
+          <div class="toolbar-actions">
+            <FButton :disabled="status.running || !selectedPid" :loading="busy" @click="start">{{ t("runtimeObserver.start") }}</FButton>
+            <FButton variant="secondary" :disabled="!status.running || stopping" @click="stop">{{ t("runtimeObserver.stop") }}</FButton>
+            <span class="phase" role="status">{{ t("runtimeObserver." + phase) }}</span>
+          </div>
+        </section>
+
+        <LogStream :key="captureEpoch" :rows="status.recent" :scope="captureScope" :target="captureTarget" />
       </TabsContent>
     </div>
     <div v-show="mode === 'static'">
@@ -399,7 +411,7 @@ dt {
 }
 .summary {
   display: grid;
-  grid-template-columns: 200px minmax(300px, 1fr) 240px;
+  grid-template-columns: 320px minmax(360px, 1fr) 240px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -415,11 +427,13 @@ dt {
   padding: 12px;
   border-right: 1px solid var(--border);
   box-sizing: border-box;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
   width: 100%;
   align-self: center;
   text-align: center;
 }
+.preview.ready { padding: 0; overflow: hidden; background: #050b16; }
+.preview img { display: block; width: 100%; height: 100%; object-fit: contain; outline: 1px solid oklch(1 0 0 / 0.1); }
 .capture-title {
   font-size: 14px;
   margin: 0;
@@ -434,9 +448,30 @@ dt {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
 }
+.runtime-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.runtime-strip-title { color: var(--muted-foreground); font-size: 11px; }
+.runtime-pill, .runtime-time { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); font-size: 11px; }
+.runtime-pill.active { color: var(--success, #72c7a0); border-color: color-mix(in srgb, var(--success, #72c7a0) 45%, var(--border)); }
+.runtime-pill.paused { color: var(--warning, #d6a85e); border-color: color-mix(in srgb, var(--warning, #d6a85e) 45%, var(--border)); }
+.runtime-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-foreground); }
+.runtime-pill.active .runtime-dot { background: var(--success, #72c7a0); }
+.runtime-pill.paused .runtime-dot { background: var(--warning, #d6a85e); }
+.runtime-time span { color: var(--muted-foreground); }
+.runtime-time strong { font: 600 12px ui-monospace, Consolas, monospace; color: var(--foreground); }
+.header-process { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.header-process .process-trigger { min-height: 28px; font-size: 11px; }
+.header-process :deep(button) { white-space: nowrap; }
+.frame-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: 11px; cursor: pointer; }
 .controls {
   display: flex;
   gap: 8px;
@@ -488,15 +523,66 @@ dt {
   font-size: 12px;
   color: var(--muted-foreground);
 }
+.capture-filter { display: grid; gap: 6px; margin-top: 2px; }
+.scope-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.scope-tabs button { min-height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--background); color: var(--muted-foreground); cursor: pointer; font: 12px var(--font-sans); transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease; }
+.scope-tabs button.active { color: var(--foreground); border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); background: color-mix(in srgb, var(--accent) 14%, var(--background)); }
+.scope-hint { margin: 0; color: var(--muted-foreground); font-size: 11px; }
+.capture-notice { margin: 0; color: var(--warning, #d6a85e); font-size: 11px; line-height: 1.35; max-width: 360px; }
+.target-radios { display: flex; gap: 12px; flex-wrap: wrap; }
+.target-radio { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; color: var(--foreground); cursor: pointer; }
+.target-radio input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex: none;
+  border: 1px solid var(--muted-foreground);
+  border-radius: 999px;
+  background: var(--background);
+  box-shadow: inset 0 0 0 3px var(--background);
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+.target-radio input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--background);
+}
+.target-radio input:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.target-radio:hover input { border-color: var(--foreground); }
 .metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 8px;
   padding: 12px;
   align-content: center;
   margin: 0;
   border-left: 1px solid var(--border);
 }
+.metric-card {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-elevated) 70%, var(--surface));
+}
+.metric-card dd { font-size: 18px; }
+.capture-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 10%);
+}
+.toolbar-process, .toolbar-profile, .toolbar-actions { display: grid; gap: 5px; }
+.toolbar-process { min-width: 240px; }
+.toolbar-profile { min-width: 260px; flex: 1 1 280px; }
+.toolbar-actions { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; }
+.capture-toolbar .capture-filter { min-width: 230px; }
 dd {
   font-size: 18px;
   font-variant-numeric: tabular-nums;
@@ -524,7 +610,7 @@ dd {
 }
 @media (max-width: 1000px) {
   .summary {
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: 280px minmax(0, 1fr);
   }
   .metrics {
     grid-column: 1/-1;
@@ -532,6 +618,7 @@ dd {
     border-left: 0;
     border-top: 1px solid var(--border);
   }
+  .toolbar-actions { margin-inline-start: 0; }
 }
 @media (max-width: 600px) {
   .summary {
