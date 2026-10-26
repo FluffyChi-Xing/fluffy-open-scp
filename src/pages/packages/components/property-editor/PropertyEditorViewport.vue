@@ -2293,10 +2293,11 @@ async function assembleScene(
   ctx.stats.meshes = payload?.glbs.length ?? 0;
   // 全量装配完成：刷新增量判定快照（与本次装配的 grouping 一致）。
   lastUnitsSnapshot = buildUnitsSnapshot(props.grouping);
-  // 取景取证（DEV）：localStorage.openscpPeDebug=1 时按图层组/单元打印
-  // 世界包围盒与取景锚点——「建筑飘在网格上方」类回归的分诊入口（软跟随
-  // 保证网格=内容最低点，若建筑仍高于网格，此表直接点名拉低包围盒的组）。
-  if (import.meta.env.DEV && localStorage.getItem("openscpPeDebug") === "1") {
+  // 取景取证（DEV 默认开,定位后收回到 localStorage.openscpPeDebug 门控）：
+  // 按图层组/单元打印世界包围盒与取景锚点——「建筑飘在网格上方」类回归的
+  // 分诊入口（软跟随保证网格=内容最低点,若建筑仍高于网格,此表直接点名
+  // 拉低包围盒的组）。
+  if (import.meta.env.DEV) {
     instance.scene.updateMatrixWorld(true);
     const rows = VIEWPORT_GROUPS.map((name) => {
       const group = instance.group(name);
