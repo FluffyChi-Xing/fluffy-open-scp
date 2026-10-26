@@ -707,7 +707,7 @@ async function exportModel(mode: "white" | "textured") {
 const powered = ref(true);
 
 watch(open, (value) => {
-  if (value) {
+  if (value || props.embedded) {
     diagnosticsDismissed = false;
     void load();
   } else {
@@ -717,7 +717,7 @@ watch(open, (value) => {
     materialsOpen.value = false;
   }
 });
-onMounted(() => { if (open.value) void load(); });
+onMounted(() => { if (open.value || props.embedded) void load(); });
 /** 吸顶诊断横幅（FAlert）的会话内关闭状态：重开会话恢复显示。 */
 let diagnosticsDismissed = false;
 const title = computed(() => {
@@ -746,7 +746,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
     width="100vw"
     :class="{ 'embedded-sheet': embedded }"
   >
-    <div v-if="open" class="editor-root" :class="{ 'embedded-root': embedded }">
+    <div v-if="embedded || open" class="editor-root" :class="{ 'embedded-root': embedded }">
       <!-- 吸顶诊断横幅：会话诊断一次展示，可关闭（重开会话恢复） -->
       <FAlert
         v-if="diagnostics.length && !diagnosticsDismissed"
