@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseLotModelContainer, rotationXForUpAxis } from "./three-gltf";
+import {
+  parseLotModelContainer,
+  rotationXForUpAxis,
+  stripRootRotationForUpAxis,
+} from "./three-gltf";
 
 /** 按 Rust 侧 LOTM 容器布局构建字节（小端）——先压入数组再一次性分配。 */
 interface MaterialSpec {
@@ -165,5 +169,13 @@ describe("imported model axis", () => {
     expect(rotationXForUpAxis("z")).toBe(0);
     expect(rotationXForUpAxis("y")).toBeCloseTo(Math.PI / 2);
     expect(rotationXForUpAxis(undefined)).toBe(0);
+  });
+  // 2026-10-26 property viewer 朝向回归：原生 gltf.rs 文件的根节点自带
+  // ∓90°X，不再剥离时与共享 world 的 -90°X 叠成 -180°X，建筑一半沉入
+  // 地面。原生载荷（无 upAxis 声明）必须恢复剥离。
+  it("strips the root rotation only for undeclared native payloads", () => {
+    expect(stripRootRotationForUpAxis(undefined)).toBe(true);
+    expect(stripRootRotationForUpAxis("z")).toBe(false);
+    expect(stripRootRotationForUpAxis("y")).toBe(false);
   });
 });

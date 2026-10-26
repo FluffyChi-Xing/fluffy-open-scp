@@ -140,12 +140,21 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
 export async function parseLotModelObjects(
   glbs: ArrayBuffer[],
   baseRotationX = 0,
+  /** 原生游戏导出（gltf.rs 口径）：Z-up 数据 + 根节点 ∓90°X，与共享
+   * world 的 -90°X 叠加会双重旋转（2026-10-26 property viewer 朝向回归
+   * 根因），必须剥掉。带 upAxis 声明的外部 GLB 不剥。 */
+  stripRootRotation = true,
 ): Promise<ThreeNamespace.Object3D[]> {
   const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
   const loader = new GLTFLoader();
   const objects = await Promise.all(
     glbs.map(async (glb) => {
       const gltf = await loader.parseAsync(glb, "");
+      if (stripRootRotation) {
+        for (const child of gltf.scene.children) {
+          child.rotation.set(0, 0, 0);
+        }
+      }
       // 轴向转换必须作用于整个 glTF 场景根节点，而不是逐个子节点。
       // Blender 导出的对象经常同时带有 translation；逐子节点旋转只会
       // 旋转几何自身，节点平移仍留在原坐标系，导致量测（按整场景旋转）
@@ -155,6 +164,14 @@ export async function parseLotModelObjects(
     }),
   );
   return objects;
+}
+
+/** 原生载荷（upAxis 未声明，gltf.rs 口径）需要剥根旋转；显式声明的
+ * 外部文件按声明转换，不再剥（声明为 z 的契约导出本就无根旋转）。 */
+export function stripRootRotationForUpAxis(
+  upAxis: "y" | "z" | undefined,
+): boolean {
+  return upAxis === undefined;
 }
 
 /**
@@ -329,6 +346,7 @@ export async function getLotModelObjects(
     const roots = await parseLotModelObjects(
       payload.glbs,
       rotationXForUpAxis(payload.upAxis),
+      stripRootRotationForUpAxis(payload.upAxis),
     );
     for (const root of roots) {
       root.traverse((child) => {
