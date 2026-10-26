@@ -2293,10 +2293,12 @@ async function assembleScene(
   ctx.stats.meshes = payload?.glbs.length ?? 0;
   // 全量装配完成：刷新增量判定快照（与本次装配的 grouping 一致）。
   lastUnitsSnapshot = buildUnitsSnapshot(props.grouping);
-  // 取景取证（DEV）：localStorage.openscpPeDebug=1 时按图层组/单元打印
-  // 世界包围盒与取景锚点——「建筑飘在网格上方」类回归的分诊入口（网格
-  // 恒贴取景内容最低点,若建筑仍高于网格,此表直接点名拉低包围盒的组）。
-  // 2026-10-27 悬浮回归即靠它定位(gizmo 拖动包围盒),定位后收回门控。
+  // 【关键不变量 2026-10-27】装配尾部强制整棵场景矩阵刷新后才能放行
+  // 首帧：渐进装配/软跟随/闭 matrixAutoUpdate(地面/标注) 的组合下,首帧
+  // 若撞上陈旧 matrixWorld,建筑与网格/标注的相对关系整体错乱(2026-10-27
+  // 取证日志的 updateMatrixWorld 曾顺带掩盖此窗口,门控后立刻复现)。
+  // 取证表格本身由 localStorage.openscpPeDebug 门控,与此刷新无关。
+  instance.scene.updateMatrixWorld(true);
   if (import.meta.env.DEV && localStorage.getItem("openscpPeDebug") === "1") {
     instance.scene.updateMatrixWorld(true);
     const rows = VIEWPORT_GROUPS.map((name) => {
