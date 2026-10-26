@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { command } from "@/api/tauri";
@@ -7,87 +8,57 @@ import { tauriApi } from "@/api";
 import { useToast } from "@/composables/useToast";
 import FButton from "@/components/ui/FButton.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FAlert from "@/components/ui/FAlert.vue";
+import PropertyEditor from "@/pages/packages/components/property-editor/PropertyEditor.vue";
+import { useGamePackagesStore } from "@/stores/gamePackages";
 
 const { t } = useI18n();
 const toast = useToast();
-const canvas = ref<HTMLCanvasElement>();
+const packages = useGamePackagesStore();
 const tab = ref("camera");
-const camera = reactive<Record<string, number>>({ fov: 55, near: 0.1, far: 1600, x: 0, y: 24, z: 42, pitch: -18, yaw: 180, roll: 0 });
+const nativeCamera = { fov: 37.5, near: 0.028, far: 2632, x: 60, y: 800, z: 120, pitch: -45, yaw: 149, roll: 0 };
+const camera = reactive<Record<string, number>>({ ...nativeCamera });
+const locked = ref(true);
 const motion = reactive({ duration: 4, orbit: 0, dolly: 0, easing: 0.5 });
 const focus = reactive({ distance: 42, aperture: 2.8, softness: 0.45 });
-let renderer: any;
-let scene: any;
-let previewCamera: any;
-let raf = 0;
-let target: any;
-let controls: any;
-let focusPlane: any;
-const dragging = ref(false);
-let lastPointer = { x: 0, y: 0 };
-
-async function setupPreview() {
-  if (!canvas.value) return;
-  const THREE = await import("three");
-  const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
-  renderer = new THREE.WebGLRenderer({ canvas: canvas.value, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color("#0b1324");
-  previewCamera = new THREE.PerspectiveCamera(camera.fov, 1.6, camera.near, camera.far);
-  const grid = new THREE.GridHelper(120, 24, "#29405d", "#172840");
-  scene.add(grid);
-  target = new THREE.Mesh(new THREE.BoxGeometry(8, 5, 5), new THREE.MeshStandardMaterial({ color: "#4b7db8", roughness: 0.72 }));
-  target.position.set(0, 2.5, 0);
-  scene.add(target);
-  focusPlane = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.9, 32), new THREE.MeshBasicMaterial({ color: "#e7c875", transparent: true, opacity: 0.72, side: THREE.DoubleSide }));
-  focusPlane.rotation.x = -Math.PI / 2;
-  scene.add(focusPlane);
-  controls = new OrbitControls(previewCamera, canvas.value);
-  controls.target.set(0, 2.5, 0);
-  controls.enableDamping = true;
-  scene.add(new THREE.HemisphereLight("#d6e7ff", "#172034", 2));
-  const key = new THREE.DirectionalLight("#fff2d2", 2); key.position.set(10, 20, 12); scene.add(key);
-  const tick = () => { raf = requestAnimationFrame(tick); updatePreview(THREE); renderer.render(scene, previewCamera); };
-  tick();
-  resizePreview();
-}
-function updatePreview(THREE: any) {
-  if (!previewCamera) return;
-  previewCamera.fov = camera.fov; previewCamera.near = camera.near; previewCamera.far = camera.far;
-  previewCamera.position.set(camera.x, camera.y, camera.z);
-  const yaw = THREE.MathUtils.degToRad(camera.yaw - 180);
-  const pitch = THREE.MathUtils.degToRad(camera.pitch);
-  const direction = new THREE.Vector3(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw));
-  previewCamera.lookAt(previewCamera.position.clone().add(direction));
-  previewCamera.rotateZ(THREE.MathUtils.degToRad(camera.roll));
-  if (target) target.rotation.y = THREE.MathUtils.degToRad(motion.orbit);
-  if (focusPlane) { focusPlane.position.set(0, 0.04, Math.min(36, focus.distance / 2)); focusPlane.scale.setScalar(Math.max(0.4, focus.aperture / 3)); focusPlane.material.opacity = Math.min(0.9, 0.2 + focus.softness * 0.7); }
-}
-function resizePreview() { if (!canvas.value || !renderer) return; const box = canvas.value.parentElement?.getBoundingClientRect(); if (!box) return; renderer.setSize(box.width, box.height, false); if (previewCamera) { previewCamera.aspect = box.width / box.height; previewCamera.updateProjectionMatrix(); } }
-function pointerDown(event: PointerEvent) { dragging.value = true; lastPointer = { x: event.clientX, y: event.clientY }; canvas.value?.setPointerCapture(event.pointerId); }
-function pointerMove(event: PointerEvent) { if (!dragging.value) return; camera.yaw += (event.clientX - lastPointer.x) * 0.45; camera.pitch = Math.max(-89, Math.min(89, camera.pitch + (event.clientY - lastPointer.y) * 0.35)); lastPointer = { x: event.clientX, y: event.clientY }; }
-function pointerUp(event: PointerEvent) { dragging.value = false; canvas.value?.releasePointerCapture(event.pointerId); }
+const cameraFields = computed(() => [
+  ["fov", t("studio.camera.fields.fov"), 20, 110, 1],
+  ["near", t("studio.camera.fields.near"), 0.001, 20, 0.001],
+  ["far", t("studio.camera.fields.far"), 100, 3000, 10],
+  ["x", t("studio.camera.fields.x"), -120, 120, 1],
+  ["y", t("studio.camera.fields.y"), 1, 2000, 1],
+  ["z", t("studio.camera.fields.z"), -120, 120, 1],
+  ["pitch", t("studio.camera.fields.pitch"), -89, 89, 1],
+  ["yaw", t("studio.camera.fields.yaw"), -360, 360, 1],
+  ["roll", t("studio.camera.fields.roll"), -180, 180, 1],
+] as const);
+const openedPackagePaths = computed(() => packages.opened.map((item) => item.package.path.toLowerCase()));
+const isNamedPackage = (path: string, name: string) => path.split(/[\\/]/).at(-1)?.replace(/[^a-z]/g, "")?.includes(name) ?? false;
+const hasGamePackage = computed(() => openedPackagePaths.value.some((path) => isNamedPackage(path, "simcitygame")));
+const hasGraphicsPackage = computed(() => openedPackagePaths.value.some((path) => isNamedPackage(path, "simcitygraphics")));
+const packagesReady = computed(() => hasGamePackage.value && hasGraphicsPackage.value);
+const graphicsPackage = computed(() => packages.opened.find((item) => isNamedPackage(item.package.path.toLowerCase(), "simcitygraphics")));
+function resetNative() { Object.assign(camera, nativeCamera); }
 function payload() { return { schema: "openscp.camera-preset.v1", camera: { ...camera }, motion: { ...motion }, focus: { ...focus } }; }
 function base64(text: string) { const bytes = new TextEncoder().encode(text); let binary = ""; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(binary); }
 async function exportPreset() { try { const path = await save({ defaultPath: "openscp-camera-preset.json", filters: [{ name: "JSON", extensions: ["json"] }] }); if (!path) return; await command("write_export_file", { request: { path, dataBase64: base64(JSON.stringify(payload(), null, 2)) } }); toast.success(t("studio.camera.exportSuccess")); } catch (error) { toast.error(error instanceof Error ? error.message : t("studio.camera.exportFailed")); } }
 async function deployPreset() { try { const source = await open({ multiple: false, title: t("studio.camera.pickSource"), filters: [{ name: "Package", extensions: ["package"] }] }); if (typeof source !== "string") return; const root = await tauriApi.workspace.pickDirectory(t("studio.camera.pickFolder")); if (!root) return; const path = `${root.replace(/[\\/]$/, "")}/OpenSCP-Isometric-Camera.package`; await command("build_camera_package", { request: { sourcePath: source, outputPath: path, maxZoom: camera.far, maxPitch: camera.pitch, dofStrength: focus.softness * 3 } }); toast.success(t("studio.camera.deploySuccess")); } catch (error) { toast.error(error instanceof Error ? error.message : t("studio.camera.exportFailed")); } }
-watch(() => [camera.fov, camera.near, camera.far, camera.x, camera.y, camera.z, camera.pitch, camera.yaw, camera.roll, motion.orbit], () => resizePreview());
-onMounted(() => { void setupPreview(); window.addEventListener("resize", resizePreview); });
-onBeforeUnmount(() => { cancelAnimationFrame(raf); window.removeEventListener("resize", resizePreview); renderer?.dispose(); });
+watch(locked, (value) => { if (value) resetNative(); });
 </script>
 <template>
   <section class="camera-page">
-    <header class="page-heading"><div><p class="eyebrow">{{ t("studio.camera.eyebrow") }}</p><h1>{{ t("studio.camera.title") }}</h1><p>{{ t("studio.camera.description") }}</p></div><div class="actions"><FButton variant="secondary" @click="exportPreset"><FIcon name="Download" :size="14" aria-label="" />{{ t("studio.camera.export") }}</FButton><FButton @click="deployPreset"><FIcon name="FolderOpen" :size="14" aria-label="" />{{ t("studio.camera.deploy") }}</FButton></div></header>
-    <div class="camera-layout"><section class="preview-card"><div class="preview-toolbar"><span>{{ t("studio.camera.preview") }}</span><span class="preview-badge">{{ Math.round(camera.fov) }}° FOV</span></div><div class="preview-stage"><canvas ref="canvas" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" /></div><p class="preview-hint">{{ t("studio.camera.previewHint") }}</p></section>
+    <header class="page-heading"><div><p class="eyebrow">{{ t("studio.camera.eyebrow") }}</p><h1>{{ t("studio.camera.title") }}</h1><p>{{ t("studio.camera.description") }}</p></div><div class="actions"><button class="lock-toggle" type="button" :aria-pressed="!locked" @click="locked = !locked"><FIcon :name="locked ? 'Lock' : 'LockOpen'" :size="14" aria-label="" /><span>{{ locked ? t("studio.camera.locked") : t("studio.camera.unlocked") }}</span></button><FButton variant="secondary" @click="exportPreset"><FIcon name="Download" :size="14" aria-label="" />{{ t("studio.camera.export") }}</FButton><FButton @click="deployPreset"><FIcon name="FolderOpen" :size="14" aria-label="" />{{ t("studio.camera.deploy") }}</FButton></div></header>
+    <FAlert v-if="!packagesReady" type="warning"><span><strong>{{ t("studio.camera.packagesRequired") }}</strong> · {{ t("studio.camera.packagesHint", { game: hasGamePackage ? "✓" : "×", graphics: hasGraphicsPackage ? "✓" : "×" }) }}</span><template #action><RouterLink to="/packages">{{ t("studio.camera.openPackages") }}</RouterLink></template></FAlert>
+    <div class="camera-layout"><section class="preview-card"><div class="preview-toolbar"><span>{{ t("studio.camera.preview") }}</span><span class="preview-badge">{{ Math.round(camera.fov) }}° FOV</span></div><div v-if="packagesReady" class="property-stage"><PropertyEditor :package-id="graphicsPackage!.package.packageId" :tgi="{ typeId: 0x00b1b104, group: 0x40e1c000, instance: 0x7a7a2427 }" mode="viewer" embedded :external-sidebar="true" :external-toolbar="true" initial-render-mode="refined" /></div><div v-else class="preview-stage empty-preview"><span>{{ t("studio.camera.previewUnavailable") }}</span></div><p class="preview-hint">{{ t("studio.camera.previewHint") }}</p></section>
       <section class="inspector"><nav class="tabs" role="tablist"><button v-for="item in [{ id: 'camera', label: t('studio.camera.tabs.camera') }, { id: 'motion', label: t('studio.camera.tabs.motion') }, { id: 'focus', label: t('studio.camera.tabs.focus') }]" :key="item.id" type="button" role="tab" :aria-selected="tab === item.id" :class="{ active: tab === item.id }" @click="tab = item.id">{{ item.label }}</button></nav>
-        <div v-if="tab === 'camera'" class="fields"><label v-for="field in [['fov','FOV',20,110,1],['near','Near clip',0.1,20,0.1],['far','Far clip',100,3000,10],['x','Position X',-120,120,1],['y','Position Y',1,120,1],['z','Position Z',-120,120,1],['pitch','Pitch',-89,89,1],['yaw','Yaw',-360,360,1],['roll','Roll',-180,180,1]]" :key="field[0]"><span>{{ field[1] }} <output>{{ camera[field[0]] }}</output></span><input v-model.number="camera[field[0]]" type="range" :min="field[2]" :max="field[3]" :step="field[4]" /></label></div>
-        <div v-else-if="tab === 'motion'" class="fields"><label><span>{{ t("studio.camera.duration") }} <output>{{ motion.duration }}s</output></span><input v-model.number="motion.duration" type="range" min="0.2" max="20" step="0.1" /></label><label><span>{{ t("studio.camera.orbit") }} <output>{{ motion.orbit }}°</output></span><input v-model.number="motion.orbit" type="range" min="-360" max="360" step="1" /></label><label><span>{{ t("studio.camera.dolly") }} <output>{{ motion.dolly }}m</output></span><input v-model.number="motion.dolly" type="range" min="-100" max="100" step="0.5" /></label></div>
-        <div v-else class="fields"><label><span>{{ t("studio.camera.focusDistance") }} <output>{{ focus.distance }}m</output></span><input v-model.number="focus.distance" type="range" min="1" max="300" step="1" /></label><label><span>{{ t("studio.camera.aperture") }} <output>f/{{ focus.aperture }}</output></span><input v-model.number="focus.aperture" type="range" min="0.7" max="16" step="0.1" /></label><label><span>{{ t("studio.camera.softness") }} <output>{{ Math.round(focus.softness * 100) }}%</output></span><input v-model.number="focus.softness" type="range" min="0" max="1" step="0.01" /></label></div>
+        <div v-if="tab === 'camera'" class="fields"><label v-for="field in cameraFields" :key="field[0]"><span>{{ field[1] }} <output>{{ camera[field[0]] }}</output></span><input v-model.number="camera[field[0]]" :disabled="locked" type="range" :min="field[2]" :max="field[3]" :step="field[4]" /></label></div>
+        <div v-else-if="tab === 'motion'" class="fields"><label><span>{{ t("studio.camera.duration") }} <output>{{ motion.duration }}s</output></span><input v-model.number="motion.duration" :disabled="locked" type="range" min="0.2" max="20" step="0.1" /></label><label><span>{{ t("studio.camera.orbit") }} <output>{{ motion.orbit }}°</output></span><input v-model.number="motion.orbit" :disabled="locked" type="range" min="-360" max="360" step="1" /></label><label><span>{{ t("studio.camera.dolly") }} <output>{{ motion.dolly }}m</output></span><input v-model.number="motion.dolly" :disabled="locked" type="range" min="-100" max="100" step="0.5" /></label></div>
+        <div v-else class="fields"><label><span>{{ t("studio.camera.focusDistance") }} <output>{{ focus.distance }}m</output></span><input v-model.number="focus.distance" :disabled="locked" type="range" min="1" max="300" step="1" /></label><label><span>{{ t("studio.camera.aperture") }} <output>f/{{ focus.aperture }}</output></span><input v-model.number="focus.aperture" :disabled="locked" type="range" min="0.7" max="16" step="0.1" /></label><label><span>{{ t("studio.camera.softness") }} <output>{{ Math.round(focus.softness * 100) }}%</output></span><input v-model.number="focus.softness" :disabled="locked" type="range" min="0" max="1" step="0.01" /></label></div>
         <div class="inspector-note"><strong>{{ t("studio.camera.dataTitle") }}</strong><p>{{ t("studio.camera.dataHint") }}</p><code>openscp.camera-preset.v1</code></div>
       </section>
     </div>
   </section>
 </template>
 <style scoped>
-.camera-page { display: grid; gap: 18px; padding-bottom: 40px; }.page-heading { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }.eyebrow { color:var(--accent); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }.page-heading h1 { margin:4px 0 6px; font-size:26px; }.page-heading p { margin:0; color:var(--muted-foreground); max-width:680px; }.actions { display:flex; gap:8px; flex:none; }.camera-layout { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(300px,.75fr); gap:14px; min-height:620px; }.preview-card,.inspector { border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface); overflow:hidden; }.preview-card { display:flex; flex-direction:column; }.preview-toolbar { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border); font-size:12px; font-weight:650; }.preview-badge { color:var(--accent); font:11px var(--font-mono,monospace); }.preview-stage { flex:1; min-height:480px; background:#0b1324; }.preview-stage canvas { width:100%; height:100%; display:block; cursor:grab; }.preview-stage canvas:active { cursor:grabbing; }.preview-hint { padding:10px 14px; font-size:11px; color:var(--muted-foreground); }.inspector { padding:0 16px 16px; }.tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin:0 -16px 18px; padding:0 12px; }.tabs button { border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted-foreground); padding:14px 10px 11px; cursor:pointer; font:12px var(--font-sans); }.tabs button.active { color:var(--foreground); border-color:var(--accent); }.fields { display:grid; gap:18px; }.fields label { display:grid; gap:9px; font-size:12px; color:var(--muted-foreground); }.fields label span { display:flex; justify-content:space-between; }.fields output { color:var(--foreground); font:12px var(--font-mono,monospace); }.fields input { accent-color:var(--accent); width:100%; }.inspector-note { margin-top:28px; padding:12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--background); }.inspector-note strong { font-size:12px; }.inspector-note p { margin:7px 0; color:var(--muted-foreground); font-size:11px; line-height:1.5; }.inspector-note code { color:var(--accent); font-size:10px; }@media(max-width:900px){.camera-layout{grid-template-columns:1fr}.preview-stage{min-height:360px}.page-heading{align-items:flex-start;flex-direction:column}.actions{width:100%}}
+.camera-page { display: grid; gap: 18px; padding-bottom: 40px; }.page-heading { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }.eyebrow { color:var(--accent); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }.page-heading h1 { margin:4px 0 6px; font-size:26px; }.page-heading p { margin:0; color:var(--muted-foreground); max-width:680px; }.actions { display:flex; gap:8px; flex:none; }.lock-toggle { align-items:center; background:var(--surface-elevated); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--foreground); cursor:pointer; display:inline-flex; font:inherit; font-size:12px; gap:7px; min-height:32px; padding:0 10px; transition:background-color 120ms ease, border-color 120ms ease, color 120ms ease; }.lock-toggle:hover { background:var(--surface-hover); border-color:var(--accent); }.lock-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }.camera-layout { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(300px,.75fr); gap:14px; min-height:620px; }.preview-card,.inspector { border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface); overflow:hidden; }.preview-card { display:flex; flex-direction:column; }.preview-toolbar { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border); font-size:12px; font-weight:650; }.preview-badge { color:var(--accent); font:11px var(--font-mono,monospace); }.property-stage,.preview-stage { flex:1; min-height:480px; background:#0b1324; }.property-stage :deep(.embedded-root),.property-stage :deep(.editor-root),.property-stage :deep(.editor-body) { height:100%; min-height:0; }.property-stage :deep(.editor-body) { overflow:hidden; }.preview-stage { display:grid; place-items:center; color:var(--muted-foreground); font-size:12px; padding:24px; text-align:center; }.preview-hint { padding:10px 14px; font-size:11px; color:var(--muted-foreground); }.inspector { padding:0 16px 16px; }.tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin:0 -16px 18px; padding:0 12px; }.tabs button { border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted-foreground); padding:14px 10px 11px; cursor:pointer; font:12px var(--font-sans); }.tabs button.active { color:var(--foreground); border-color:var(--accent); }.fields { display:grid; gap:18px; }.fields label { display:grid; gap:9px; font-size:12px; color:var(--muted-foreground); }.fields label span { display:flex; justify-content:space-between; }.fields output { color:var(--foreground); font:12px var(--font-mono,monospace); }.fields input { accent-color:var(--accent); width:100%; }.fields input:disabled { cursor:not-allowed; opacity:.55; }.inspector-note { margin-top:28px; padding:12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--background); }.inspector-note strong { font-size:12px; }.inspector-note p { margin:7px 0; color:var(--muted-foreground); font-size:11px; line-height:1.5; }.inspector-note code { color:var(--accent); font-size:10px; }@media(max-width:900px){.camera-layout{grid-template-columns:1fr}.property-stage,.preview-stage{min-height:360px}.page-heading{align-items:flex-start;flex-direction:column}.actions{width:100%;flex-wrap:wrap}}
 </style>

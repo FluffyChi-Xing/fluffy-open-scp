@@ -36,7 +36,7 @@ import { tauriApi } from "@/api";
 
 import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
-const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false });
+const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean; initialRenderMode?: "default" | "refined" }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false, initialRenderMode: "default" });
 const emit = defineEmits<{ "schema-change": [document: Record<string, unknown>] }>();
 const { t } = useI18n();
 const canEdit = computed(() => props.mode === "editor");
@@ -594,7 +594,7 @@ useEditorHotkeys(
   ],
 );
 
-const renderMode = ref<"default" | "refined">("default");
+const renderMode = ref<"default" | "refined">(props.initialRenderMode);
 const effectiveRenderMode = computed(() => editEnabled.value ? "refined" : renderMode.value);
 /** 动态招牌开关（2026-10-05 十轮，顶部工具条复选框）：默认关 = 静态
  * 量化合成招牌；开 = dev LED 扫掠动画（viewport prop 直下）。 */
@@ -629,7 +629,7 @@ watch(open, (isOpen, wasOpen) => {
     return;
   }
   peSuspended.value = true;
-  renderMode.value = "default";
+  renderMode.value = props.initialRenderMode;
   neonAnim.value = false;
   effectRendering.value = false;
   reliefEnabled.value = false;
