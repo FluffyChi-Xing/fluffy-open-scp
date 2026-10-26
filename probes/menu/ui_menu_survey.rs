@@ -30,6 +30,8 @@ const EXTRA_FIELDS: &[(&str, u32)] = &[
     ("toolPaletteCategoryOffsets", 0x0C85_D445),
     ("toolPaletteCategoryIsDebug", 0x0D11_5956),
     ("toolMarqueeImage", 0x0DDE_EE56),
+    // 0x0975_695F 即 menuUnit（plop 经济链入口）；historical "hardGate" 只记录存在性
+    ("menuUnit", 0x0975_695F),
     // 菜单条目（8A01）的槽位图标：等轴小模型渲染图（PNG 组 40E02400）。
     // 0x0975_6950..55 的六态图标键在包里按 TGI 找不到资源（见 2026-09 复盘），
     // 真正被 UI 槽位用的是 kPropToolIconKey。

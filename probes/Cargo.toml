@@ -224,6 +224,10 @@ name = "locale_mount_scan"
 path = "locale/locale_mount_scan.rs"
 
 [[example]]
+name = "locale_tables_dump"
+path = "locale/locale_tables_dump.rs"
+
+[[example]]
 name = "locale_names_dump"
 path = "locale/locale_names_dump.rs"
 
