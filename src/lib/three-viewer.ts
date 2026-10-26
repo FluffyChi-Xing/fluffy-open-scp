@@ -543,9 +543,24 @@ export class ThreeViewer {
    * 中心、相机与轨道目标等量反向平移（用户视角与缩放保持不动），并按新
    * 半径重贴网格；内容未变时等价于幂等重建网格，零视角扰动。near/far/
    * fov 属于用户/机位参数，软跟随不触碰。
+   *
+   * framingGroups：取景只统计给定图层组（如 建筑/地块/标注）。单元
+   * gizmo（灯/道具/贴花/特效/生成器/路径的标记锥与垫片）是编辑器
+   * chrome，其数据高度（道具锥沉到地块下数米、贴花垫片浮在上方）不应
+   * 拖动地面网格与取景中心——「网格参照物」与「编辑器标记」在此分离。
    */
-  frameContent(options: { soft?: boolean } = {}) {
-    const box = new this.THREE.Box3().setFromObject(this.content);
+  frameContent(
+    options: { soft?: boolean; framingGroups?: string[] } = {},
+  ) {
+    let box = new this.THREE.Box3().setFromObject(this.content);
+    if (options.framingGroups?.length) {
+      const framing = new this.THREE.Box3();
+      for (const name of options.framingGroups) {
+        const group = this.groups.get(name);
+        if (group?.children.length) framing.expandByObject(group);
+      }
+      if (!framing.isEmpty()) box = framing;
+    }
     if (box.isEmpty()) return;
     const sphere = box.getBoundingSphere(new this.THREE.Sphere());
     const radius = Math.max(sphere.radius, 1e-3);
