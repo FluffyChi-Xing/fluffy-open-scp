@@ -244,6 +244,11 @@ export function useEditorViewport(options: {
       if (options.reframe || !framed) {
         instance.frameContent();
         framed = true;
+      } else {
+        // 软跟随：渐进装配（模型/lotPlacement/草稿载荷异步到达）之后，
+        // 首帧构图不能代表最终内容——不跟随的话地面网格与 content 归零
+        // 停在首帧坐标系，建筑观感上"飘在网格上方"（2026-10-27 回归根因）。
+        instance.frameContent({ soft: true });
       }
       sceneReady.value = true;
       revision.value += 1;

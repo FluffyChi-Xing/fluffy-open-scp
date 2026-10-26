@@ -759,6 +759,9 @@ export interface LotModelPayload {
   diagnostics: string;
   /** 外部导入 GLB 的原始上轴；视口装配时统一转换为 Three.js Y-up。 */
   upAxis?: "y" | "z";
+  /** upAxis 来自文件声明（asset.extras.openscp.upAxis）而非启发式检测。
+   * 未声明 = 原生契约（渲染/量测统一剥根旋转），见 normalizeLotModelScene。 */
+  upAxisDeclared?: boolean;
 }
 export interface RasterPreviewData {
   rasterType: number;

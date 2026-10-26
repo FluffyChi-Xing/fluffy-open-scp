@@ -112,6 +112,8 @@ export class ThreeViewer {
   private orbitTheta = 0.34;
   private orbitPhi = 1.2;
   private readonly orbitTarget: ThreeNamespace.Vector3;
+  /** 上次构图的内容中心（软跟随基准；null = 尚未构图）。 */
+  private lastFrameCenter: ThreeNamespace.Vector3 | null = null;
   private readonly defaultTheta = 0.34;
   private readonly defaultPhi = 1.2;
   private selected: ThreeNamespace.Object3D | null = null;
@@ -531,13 +533,30 @@ export class ThreeViewer {
   /**
    * 以 content 全部内容的包围球取中并构图：内容中心移到原点、地面网格
    * 贴底、相机 near/far 与缩放限幅按半径设定。
+   *
+   * 软跟随（soft）：装配是渐进的（模型/lotPlacement/草稿载荷分线异步
+   * 到达），首帧之后的 bbox 材料变化若不跟随，地面网格与 content 归零
+   * 就永远停在首帧的坐标系里——建筑"飘在网格上方"的观感正是这个一次性
+   * latch 的产物（2026-10-27 回归根因）。软跟随把 content 绝对归零到新
+   * 中心、相机与轨道目标等量反向平移（用户视角与缩放保持不动），并按新
+   * 半径重贴网格；内容未变时等价于幂等重建网格，零视角扰动。near/far/
+   * fov 属于用户/机位参数，软跟随不触碰。
    */
-  frameContent() {
+  frameContent(options: { soft?: boolean } = {}) {
     const box = new this.THREE.Box3().setFromObject(this.content);
     if (box.isEmpty()) return;
     const sphere = box.getBoundingSphere(new this.THREE.Sphere());
     const radius = Math.max(sphere.radius, 1e-3);
     const center = box.getCenter(new this.THREE.Vector3());
+    const soft = options.soft === true && this.lastFrameCenter !== null;
+    if (soft) {
+      // content 从 -旧中心 平移到 -新中心，世界位移 = 旧中心 - 新中心；
+      // 相机与轨道目标随世界一起平移，渲染内容在屏幕上保持不动。
+      const shift = this.lastFrameCenter.clone().sub(center);
+      this.camera.position.add(shift);
+      this.orbitTarget.add(shift);
+    }
+    this.lastFrameCenter = center;
     this.content.position.sub(center);
     // 取中平移后地面（Y 最小值）随内容整体下移。
     const groundY = box.min.y - center.y;
@@ -556,8 +575,9 @@ export class ThreeViewer {
     this.scene.add(this.grid);
 
     this.frameRadius = radius;
-    this.cameraDistance = radius * 3;
     this.needsRender = true;
+    if (soft) return;
+    this.cameraDistance = radius * 3;
     this.camera.near = radius / 100;
     this.camera.far = radius * 40;
     this.camera.updateProjectionMatrix();
@@ -573,28 +593,46 @@ export class ThreeViewer {
     this.applyCamera();
   }
 
-  /** Apply the camera workbench controls to the real property viewer camera. */
+  /**
+   * 摄像机工作台的忠实机位：把游戏相机语义直接映射到预览相机，不做
+   * 轨道收敛、不做钳制——每个滑杆恰好控制一个可见自由度，工作台才具备
+   * 标定能力（此前的"受限映射"把 pitch/x/z 钳到不可感知，参数等于失效）。
+   *
+   * 契约（游戏单位 → 场景单位只有一个比例尺）：
+   * - scenePerGame = 2.5·radius/800：标定常数，原生机位 y=800 ↔ 2.5×radius
+ *   （lot 包围球半径 radius 由 frameContent 按内容设定）；
+   * - 位置 = 场景原点（取中后的地块中心）+ (x,y,z)·scale，y 为高度；
+   * - 朝向 = yaw/pitch/roll 按 YXZ 欧拉（先偏航、再俯仰、后滚转的游戏
+   *   语义），不 lookAt——位置与朝向相互独立，与游戏一致；
+   * - fov 直接生效；near/far 按同一比例尺缩放（保持与游戏的裁剪观感）。
+   * 手动轨道交互（拖拽/滚轮）此后接管相机，下次改动滑杆重新套用本机位。
+   */
   setCameraPreset(preset: CameraPreset) {
     const radius = Math.max(this.frameRadius, 1e-3);
-    // Game camera coordinates are much larger than the normalized property
-    // viewer scene. Keep the preview inside the game's useful framing envelope
-    // instead of treating those coordinates as world-space positions.
-    const normalizedDistance = Math.max(0.65, Math.min(5, preset.y / 800 * 2.5));
-    this.cameraDistance = radius * normalizedDistance;
-    this.orbitTheta = (preset.yaw * Math.PI) / 180;
-    const gamePitch = Math.max(-65, Math.min(-20, preset.pitch));
-    this.orbitPhi = ((90 + gamePitch) * Math.PI) / 180;
-    this.orbitTarget.set(
-      (preset.x / 120) * radius * 0.08,
-      0,
-      (preset.z / 120) * radius * 0.08,
+    const scenePerGame = (2.5 * radius) / 800;
+    this.camera.position.set(
+      preset.x * scenePerGame,
+      preset.y * scenePerGame,
+      preset.z * scenePerGame,
     );
-    this.camera.fov = Math.max(30, Math.min(70, preset.fov));
-    this.camera.near = Math.max(0.001, Math.min(preset.near, preset.far - 0.001));
-    this.camera.far = Math.max(this.camera.near + 1, preset.far);
+    this.camera.rotation.order = "YXZ";
+    this.camera.rotation.set(
+      (preset.pitch * Math.PI) / 180,
+      (preset.yaw * Math.PI) / 180,
+      (preset.roll * Math.PI) / 180,
+    );
+    this.camera.fov = preset.fov;
+    const near = Math.max(1e-4, preset.near * scenePerGame);
+    this.camera.near = near;
+    this.camera.far = Math.max(near + 1e-2, preset.far * scenePerGame);
     this.camera.updateProjectionMatrix();
-    this.applyCamera();
-    this.camera.rotateZ((preset.roll * Math.PI) / 180);
+    // 轨道状态同步到本机位（目标=场景原点）：手动拖拽接管时从当前视角
+    // 出发，而不是跳回 frameContent 留下的旧轨道参数。
+    this.orbitTarget.set(0, 0, 0);
+    this.cameraDistance = this.camera.position.length();
+    const direction = this.camera.position.clone().normalize();
+    this.orbitPhi = Math.acos(this.THREE.MathUtils.clamp(direction.y, -1, 1));
+    this.orbitTheta = Math.atan2(direction.x, direction.z);
     this.invalidate();
   }
 

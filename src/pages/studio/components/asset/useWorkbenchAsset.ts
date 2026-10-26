@@ -4,9 +4,9 @@ import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
 import {
   inspectGlb,
+  normalizeLotModelScene,
   parseLotModelContainer,
   releaseLotModelCache,
-  rotationXForUpAxis,
 } from "@/lib/three-gltf";
 import { createDataSource } from "@/api/data-source";
 import {
@@ -775,6 +775,7 @@ export function useWorkbenchAsset(project: string) {
               : "内嵌贴图按 glTF 材质直接渲染；烘焙 PBR GLB 不含六槽实时数据（假内景/浮雕/昼夜内景灯），需要这些效果请导入 .blend 源文件（自动走六槽 shader）",
           ].join("\n"),
           upAxis: inspection.upAxis,
+          upAxisDeclared: inspection.upAxisDeclared,
         };
       }
       if (!payload.glbs.length) {
@@ -825,9 +826,12 @@ export function useWorkbenchAsset(project: string) {
     for (const glb of payload.glbs) {
       try {
         const { scene } = await loader.parseAsync(glb, "");
-        // three-viewer 的 world 根组已经统一执行 Z-up→Y-up 的 -90°X；
-        // 量测必须保持和 getLotModelObjects 相同的原始 Z-up 数据契约。
-        scene.rotation.x = rotationXForUpAxis(payload.upAxis);
+        // 量测必须与渲染（getLotModelObjects）走同一份轴向规范化——
+        // 帧一旦分离，modelOrigin 就会把建筑垫离地面（2026-10-26
+        // draft 悬空回归根因：量测漏剥根旋转，原点在错误的帧里取值）。
+        normalizeLotModelScene(scene, payload.upAxis, {
+          declared: payload.upAxisDeclared ?? false,
+        });
         scene.updateMatrixWorld(true);
         const part = new Box3().setFromObject(scene);
         if (!Number.isFinite(part.min.x)) continue;

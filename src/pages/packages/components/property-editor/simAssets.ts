@@ -84,7 +84,11 @@ async function simPartTemplate(
   if (cached) return cached;
   let roots: ThreeNamespace.Object3D[];
   try {
-    roots = await parseLotModelObjects(part.payload.glbs);
+    roots = await parseLotModelObjects(
+      part.payload.glbs,
+      part.payload.upAxis,
+      part.payload.upAxisDeclared ?? false,
+    );
   } catch {
     return null;
   }

@@ -327,7 +327,11 @@ export async function getTreeModelObject(
   if (!shape) {
     let roots: ThreeNamespace.Object3D[];
     try {
-      roots = await parseLotModelObjects(payload.glbs);
+      roots = await parseLotModelObjects(
+        payload.glbs,
+        payload.upAxis,
+        payload.upAxisDeclared ?? false,
+      );
     } catch {
       return null;
     }
@@ -412,7 +416,11 @@ export async function getPropModelObject(
   if (!entry) {
     let roots: ThreeNamespace.Object3D[];
     try {
-      roots = await parseLotModelObjects(payload.glbs);
+      roots = await parseLotModelObjects(
+        payload.glbs,
+        payload.upAxis,
+        payload.upAxisDeclared ?? false,
+      );
     } catch {
       return null;
     }

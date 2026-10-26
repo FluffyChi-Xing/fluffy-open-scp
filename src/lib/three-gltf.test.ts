@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   inspectGlb,
+  normalizeLotModelScene,
   parseLotModelContainer,
+  parseLotModelObjects,
   rotationXForUpAxis,
-  stripRootRotationForUpAxis,
 } from "./three-gltf";
 
 /** 按 Rust 侧 LOTM 容器布局构建字节（小端）——先压入数组再一次性分配。 */
@@ -171,14 +172,93 @@ describe("imported model axis", () => {
     expect(rotationXForUpAxis("y")).toBeCloseTo(Math.PI / 2);
     expect(rotationXForUpAxis(undefined)).toBe(0);
   });
-  // 2026-10-26 property viewer 朝向回归：原生 gltf.rs 文件的根节点自带
-  // ∓90°X，不再剥离时与共享 world 的 -90°X 叠成 -180°X，建筑一半沉入
-  // 地面。原生载荷（无 upAxis 声明）必须恢复剥离。
-  it("strips the root rotation only for undeclared native payloads", () => {
-    expect(stripRootRotationForUpAxis(undefined)).toBe(true);
-    expect(stripRootRotationForUpAxis("z")).toBe(false);
-    expect(stripRootRotationForUpAxis("y")).toBe(false);
-  });
+
+  /**
+   * 原生口径 GLB：Z-up 建筑数据（底面 z=0）+ 根节点 ∓90°X（gltf.rs /
+   * LOTM 容器 / PE 导出的口径）。渲染契约 = parseLotModelObjects 的产物
+   * 放进共享 world（-90°X）；量测契约 = measureFootprint 的同源规范化。
+   * 2026-10-26 draft 悬空回归：量测侧漏剥根旋转，modelOrigin 在错误的
+   * 帧里取 -min.z，把建筑垫高了足迹深度的一半。
+   */
+  async function nativeStyleGlb(): Promise<ArrayBuffer> {
+    const THREE = await import("three");
+    const { GLTFExporter } = await import(
+      "three/examples/jsm/exporters/GLTFExporter.js"
+    );
+    const data = new THREE.Group();
+    const geometry = new THREE.BoxGeometry(48, 34, 37);
+    geometry.translate(0, 0, 18.5);
+    data.add(new THREE.Mesh(geometry));
+    const root = new THREE.Group();
+    root.rotation.x = -Math.PI / 2;
+    root.add(data);
+    return await new Promise<ArrayBuffer>((resolve, reject) =>
+      new GLTFExporter().parse(
+        root,
+        (out) => resolve(out as ArrayBuffer),
+        reject,
+        { binary: true },
+      ),
+    );
+  }
+
+  /** 渲染最终视图坐标（parse 契约 + 可选 origin 平移 + world -90°X）。 */
+  async function renderedViewBox(
+    glb: ArrayBuffer,
+    origin?: [number, number, number],
+  ): Promise<{ min: number[]; max: number[] }> {
+    const THREE = await import("three");
+    const objects = await parseLotModelObjects([glb], undefined, false);
+    if (origin) objects[0].position.add(new THREE.Vector3(...origin));
+    const world = new THREE.Group();
+    world.rotation.x = -Math.PI / 2;
+    world.add(objects[0]);
+    world.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(world);
+    return { min: box.min.toArray(), max: box.max.toArray() };
+  }
+
+  /** 量测契约（measureFootprint 的同源规范化 + bbox → origin）。 */
+  async function measuredOrigin(
+    glb: ArrayBuffer,
+  ): Promise<[number, number, number]> {
+    const THREE = await import("three");
+    const { GLTFLoader } = await import(
+      "three/examples/jsm/loaders/GLTFLoader.js"
+    );
+    const { scene } = await new GLTFLoader().parseAsync(glb, "");
+    normalizeLotModelScene(scene, undefined, { declared: false });
+    scene.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(scene);
+    return [
+      -(box.min.x + box.max.x) / 2,
+      -(box.min.y + box.max.y) / 2,
+      -box.min.z,
+    ];
+  }
+
+  it(
+    "grounds a native lotm draft: measure and render share one frame",
+    async () => {
+      const glb = await nativeStyleGlb();
+      const origin = await measuredOrigin(glb);
+      // 原点必须在渲染帧里取值：居中 + 底面坐 z=0（此前错误帧给 [0,-18.5,17]）。
+      expect(origin[0]).toBeCloseTo(0, 1);
+      expect(origin[1]).toBeCloseTo(0, 1);
+      expect(origin[2]).toBeCloseTo(0, 1);
+      const view = await renderedViewBox(glb, origin);
+      // 装配后底面落在地面（y=0），高度 37 保持竖立。
+      expect(view.min[1]).toBeCloseTo(0, 1);
+      expect(view.max[1]).toBeCloseTo(37, 1);
+    },
+    20000,
+  );
+
+  it("keeps the render contract grounded without an origin shift", async () => {
+    const view = await renderedViewBox(await nativeStyleGlb());
+    expect(view.min[1]).toBeCloseTo(0, 1);
+    expect(view.max[1]).toBeCloseTo(37, 1);
+  }, 20000);
 
   /** 最小 GLB 容器（仅 asset.extras + POSITION 包围盒，供轴向判定）。 */
   function axisFixture(axis?: unknown): ArrayBuffer {
@@ -203,14 +283,18 @@ describe("imported model axis", () => {
   // （asset.extras.openscp.upAxis，NY Facade 写入 / blend 转换注入）必须
   // 优先于尺寸猜测，无声明或非法值回退原判定。
   it("honors a declared Y-up for a low deep building instead of guessing", () => {
-    expect(inspectGlb(axisFixture("y")).upAxis).toBe("y");
-    expect(inspectGlb(axisFixture("y")).upAxisBasis).toBe(
+    const declared = inspectGlb(axisFixture("y"));
+    expect(declared.upAxis).toBe("y");
+    expect(declared.upAxisBasis).toBe(
       "asset.extras.openscp.upAxis=y",
     );
+    expect(declared.upAxisDeclared).toBe(true);
     expect(inspectGlb(axisFixture("z")).upAxis).toBe("z");
+    expect(inspectGlb(axisFixture("z")).upAxisDeclared).toBe(true);
   });
   it("keeps legacy inference for absent or invalid axis metadata", () => {
     expect(inspectGlb(axisFixture()).upAxis).toBe("z");
+    expect(inspectGlb(axisFixture()).upAxisDeclared).toBe(false);
     expect(inspectGlb(axisFixture("invalid")).upAxis).toBe("z");
   });
 });

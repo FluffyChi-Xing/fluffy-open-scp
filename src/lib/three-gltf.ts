@@ -126,10 +126,12 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
 }
 
 /**
- * 解析地块模型的全部 GLB 为 Object3D。
- * 原生 LOTM 已按视口的 Y-up 口径导出；外部 Blender GLB 的轴向由
- * `upAxis` 驱动，在整个 glTF 根节点上统一转换，避免逐节点旋转造成平移
- * 和选择原点分离。
+ * 解析地块模型的全部 GLB 为 Object3D。轴向策略统一走
+ * `normalizeLotModelScene`（唯一权威实现）——渲染、量测、导出必须共用
+ * 同一份帧契约，任何一处自行手搓旋转都会在契约演进时掉队
+ * （2026-10-26 draft 悬空回归根因：8dadc93 只改了渲染侧的剥旋转，
+ * measureFootprint 的量测侧没有同步，两帧分离后 modelOrigin 把建筑
+ * 垫高了足迹深度的一半）。
  *
  * 【2026-10-08】GLB 解析 Worker 实验回滚：EP1 建筑贴图乱码与 Worker 路径
  * 稳定复现相关（用户 A/B 实证：Worker=1 乱/Worker=2 好；transfer/克隆两种
@@ -139,39 +141,48 @@ export function pngBlobUrl(bytes: Uint8Array<ArrayBuffer>): string {
  */
 export async function parseLotModelObjects(
   glbs: ArrayBuffer[],
-  baseRotationX = 0,
-  /** 原生游戏导出（gltf.rs 口径）：Z-up 数据 + 根节点 ∓90°X，与共享
-   * world 的 -90°X 叠加会双重旋转（2026-10-26 property viewer 朝向回归
-   * 根因），必须剥掉。带 upAxis 声明的外部 GLB 不剥。 */
-  stripRootRotation = true,
+  upAxis: "y" | "z" | undefined = undefined,
+  /** 文件自带轴向声明（asset.extras.openscp.upAxis）→ 声明为准，不剥
+   * 根旋转；未声明（原生 gltf.rs / LOTM 容器 / 旧导出）→ 按原生契约剥。 */
+  declared = false,
 ): Promise<ThreeNamespace.Object3D[]> {
   const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
   const loader = new GLTFLoader();
   const objects = await Promise.all(
     glbs.map(async (glb) => {
       const gltf = await loader.parseAsync(glb, "");
-      if (stripRootRotation) {
-        for (const child of gltf.scene.children) {
-          child.rotation.set(0, 0, 0);
-        }
-      }
-      // 轴向转换必须作用于整个 glTF 场景根节点，而不是逐个子节点。
-      // Blender 导出的对象经常同时带有 translation；逐子节点旋转只会
-      // 旋转几何自身，节点平移仍留在原坐标系，导致量测（按整场景旋转）
-      // 与实际渲染不一致，模型底面和可选中伪单元原点会分离。
-      gltf.scene.rotation.set(baseRotationX, 0, 0);
+      normalizeLotModelScene(gltf.scene, upAxis, { declared });
       return gltf.scene;
     }),
   );
   return objects;
 }
 
-/** 原生载荷（upAxis 未声明，gltf.rs 口径）需要剥根旋转；显式声明的
- * 外部文件按声明转换，不再剥（声明为 z 的契约导出本就无根旋转）。 */
-export function stripRootRotationForUpAxis(
+/**
+ * 轴向帧规范化的唯一权威实现：把加载后的 gltf.scene 就地转换到共享
+ * world 的 Z-up 数据契约（three-viewer 的 world 根组再做一次 -90°X 显示）。
+ *
+ * - 未声明 upAxis（原生 gltf.rs / LOTM 容器 / PE 导出的 GLB）：数据本就是
+ *   Z-up，但根节点带 ∓90°X 旋转，与 world 的 -90°X 叠加会双重旋转——剥掉。
+ *   对无根旋转的文件剥旋转是无操作，因此「未声明一律剥」是安全的统一策略；
+ * - 显式声明（外部契约 GLB）：声明为准、不剥（声明文件本就无根旋转）；
+ *   声明 y 的规格 Y-up 文件额外 +90°X 转回 Z-up。
+ *
+ * 必须作用于整个场景根节点而不是逐子节点：Blender 导出的对象常带
+ * translation，逐节点旋转会把平移留在原坐标系，导致量测与渲染帧分离、
+ * 模型底面和可选中伪单元原点分离。
+ */
+export function normalizeLotModelScene(
+  scene: ThreeNamespace.Object3D,
   upAxis: "y" | "z" | undefined,
-): boolean {
-  return upAxis === undefined;
+  options: { declared?: boolean } = {},
+): void {
+  if (upAxis === undefined || !options.declared) {
+    for (const child of scene.children) {
+      child.rotation.set(0, 0, 0);
+    }
+  }
+  scene.rotation.set(rotationXForUpAxis(upAxis), 0, 0);
 }
 
 /**
@@ -191,6 +202,9 @@ export interface GlbInspection {
   upAxis: "y" | "z";
   /** 判定依据（诊断面板展示）。 */
   upAxisBasis: string;
+  /** upAxis 来自文件声明（asset.extras.openscp.upAxis）而非启发式检测。
+   * 声明文件按声明帧转换；检测文件按原生契约剥根旋转。 */
+  upAxisDeclared: boolean;
   meshCount: number;
   materialCount: number;
   /** 内嵌贴图数（0 = 契约 GLB，渲染需走 COLOR_0/白模兜底）。 */
@@ -213,6 +227,7 @@ export function inspectGlb(bytes: ArrayBuffer): GlbInspection {
   const fallback: GlbInspection = {
     upAxis: "y",
     upAxisBasis: "默认",
+    upAxisDeclared: false,
     meshCount: 0,
     materialCount: 0,
     imageCount: 0,
@@ -303,6 +318,7 @@ export function inspectGlb(bytes: ArrayBuffer): GlbInspection {
     return {
       upAxis,
       upAxisBasis,
+      upAxisDeclared: declaredAxis === "y" || declaredAxis === "z",
       meshCount: (json.meshes ?? []).length,
       materialCount: (json.materials ?? []).length,
       imageCount: (json.images ?? []).length,
@@ -349,13 +365,11 @@ export async function getLotModelObjects(
 ): Promise<ThreeNamespace.Object3D[]> {
   if (cachedPayload !== payload) {
     releaseLotModelCache();
-    // three-viewer 的 world 根组已经统一执行 Z-up→Y-up 的 -90°X。
-    // 因此 Blender `export_yup=False` 的 Z-up 数据和原生 LOTM 都保持原样；
-    // 只有 glTF 规范 Y-up 的外部文件在这里先转回 Z-up。
+    // 轴向策略全在 normalizeLotModelScene（渲染/量测同源，勿在此手搓）。
     const roots = await parseLotModelObjects(
       payload.glbs,
-      rotationXForUpAxis(payload.upAxis),
-      stripRootRotationForUpAxis(payload.upAxis),
+      payload.upAxis,
+      payload.upAxisDeclared ?? false,
     );
     for (const root of roots) {
       root.traverse((child) => {
