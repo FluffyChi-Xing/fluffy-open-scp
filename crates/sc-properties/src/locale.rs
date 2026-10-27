@@ -14,6 +14,12 @@ use crate::model::Value;
 /// Locale JSON string-table resource type id.
 pub const LOCALE_RESOURCE_TYPE: u32 = 0x0A98_EAF0;
 
+/// OpenSCP 自有 locale 表 id（FNV-1("openscp/strings")，与原版表无冲突）。
+/// 自定义词条一律写进这张新表、Text 引用指向它；重定义原版表 ID
+/// （6C969DEE/50AA0BEA/4B54417A）只在 Locale 目录的包里生效，其他目录
+/// 整表不生效（实机 2026-10-19 验证；先例 SimRollerCompletePack 同款做法）。
+pub const OPENSCP_LOCALE_TABLE: u32 = 0xBF82_F7CE;
+
 /// Name-candidate property hashes (C# `BuildLocaleNameMap`).
 pub const NAME_PROPERTY_HASHES: [u32; 5] = [
     0x09FB_78CB,
@@ -114,26 +120,39 @@ pub fn parse_locale_items(data: &[u8]) -> Result<Vec<LocaleItem>, String> {
     Ok(items)
 }
 
-/// 序列化回 locale JSON 资源（BOM + 紧凑 JSON 对象）。
-/// 条目以 `0x%08X` 规范键输出；注释行保留原键。
+/// 序列化回 locale JSON 资源。排版模仿原版宽松格式（BOM + 换行缩进 +
+/// `"0x……" : "……"`，小写十六进制键）：游戏对单行紧凑 JSON 解析失败并整表
+/// 丢弃（实机 2026-10-19 验证）。注释行保留原键，供编辑器无损往返。
 pub fn serialize_locale_items(items: &[LocaleItem]) -> Result<Vec<u8>, String> {
-    let mut object = serde_json::Map::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut lines = Vec::with_capacity(items.len());
     for item in items {
-        let key = match item.id {
-            Some(id) => format!("0x{id:08X}"),
-            None if item.key == "//" => "//".to_string(),
+        let key_json = match item.id {
+            Some(id) => {
+                // 数据键必须唯一（注释行 `//` 可重复，原版表里本就多条并存）。
+                if !seen.insert(id) {
+                    return Err(format!("duplicate locale key 0x{id:08x} while serializing"));
+                }
+                serde_json::to_string(&format!("0x{id:08x}")).map_err(|e| e.to_string())?
+            }
+            None if item.key == "//" => {
+                serde_json::to_string(&item.key).map_err(|e| e.to_string())?
+            }
             None => return Err(format!("comment row lost its key: {:?}", item.key)),
         };
-        if object
-            .insert(key, serde_json::Value::String(item.text.clone()))
-            .is_some()
-        {
-            return Err("duplicate locale key while serializing".into());
-        }
+        lines.push(format!(
+            "    {}: {}",
+            key_json,
+            serde_json::to_string(&item.text).map_err(|e| e.to_string())?
+        ));
     }
+    let body = if lines.is_empty() {
+        "{}".to_string()
+    } else {
+        format!("{{\r\n{}\r\n}}", lines.join(",\r\n"))
+    };
     let mut out = LOCALE_PREFIX.to_vec();
-    serde_json::to_writer(&mut out, &serde_json::Value::Object(object))
-        .map_err(|e| e.to_string())?;
+    out.extend_from_slice(body.as_bytes());
     Ok(out)
 }
 

@@ -1,0 +1,1167 @@
+# 探针目录册：全部一次性/取证探针的唯一存放处，按领域分类（见 README.md）。
+# 每个探针 = 一个 cargo example；新增探针 = 加文件 + 在对应分类下补一个 [[example]]。
+[package]
+name = "probes"
+description = "SimCity 资源探针集（DBPF/属性/locale/贴花/地块/区域/模型/UI/运行时）"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+dbpf = { path = "../crates/dbpf" }
+rw4 = { path = "../crates/rw4" }
+sc-properties = { path = "../crates/sc-properties" }
+sc-exporter = { path = "../crates/sc-exporter" }
+sc-registry = { path = "../crates/sc-registry" }
+image.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json = "1"
+flate2 = "1"
+
+[[example]]
+name = "building_economy_audit"
+path = "property/building_economy_audit.rs"
+
+# package —— DBPF 容器 / 索引 / TGI 通用查找
+[[example]]
+name = "dbpf_fixture"
+path = "package/dbpf_fixture.rs"
+
+[[example]]
+name = "dump_one"
+path = "package/dump_one.rs"
+
+[[example]]
+name = "er2_collect"
+path = "package/er2_collect.rs"
+
+[[example]]
+name = "erz_check"
+path = "package/erz_check.rs"
+
+[[example]]
+name = "find_by_type"
+path = "package/find_by_type.rs"
+
+[[example]]
+name = "find_group"
+path = "package/find_group.rs"
+
+[[example]]
+name = "find_instance"
+path = "package/find_instance.rs"
+
+[[example]]
+name = "find_instance_all"
+path = "package/find_instance_all.rs"
+
+[[example]]
+name = "find_instance_loc"
+path = "package/find_instance_loc.rs"
+
+[[example]]
+name = "find_raster_all"
+path = "package/find_raster_all.rs"
+
+[[example]]
+name = "find_tgi"
+path = "package/find_tgi.rs"
+
+[[example]]
+name = "group_census"
+path = "package/group_census.rs"
+
+[[example]]
+name = "idx_type_scan"
+path = "package/idx_type_scan.rs"
+
+[[example]]
+name = "inspect"
+path = "package/inspect.rs"
+
+[[example]]
+name = "inst_reuse"
+path = "package/inst_reuse.rs"
+
+[[example]]
+name = "json_grep"
+path = "package/json_grep.rs"
+
+[[example]]
+name = "list_group"
+path = "package/list_group.rs"
+
+[[example]]
+name = "package_dump_all"
+path = "package/package_dump_all.rs"
+
+[[example]]
+name = "payload_grep"
+path = "package/payload_grep.rs"
+
+[[example]]
+name = "payload_bin_grep"
+path = "package/payload_bin_grep.rs"
+
+[[example]]
+name = "pkg_merge"
+path = "package/pkg_merge.rs"
+
+[[example]]
+name = "pixel_sample"
+path = "package/pixel_sample.rs"
+
+[[example]]
+name = "pkg_diff"
+path = "package/pkg_diff.rs"
+
+[[example]]
+name = "pkg_diff_bytes"
+path = "package/pkg_diff_bytes.rs"
+
+[[example]]
+name = "pkg_extract"
+path = "package/pkg_extract.rs"
+
+[[example]]
+name = "pkg_survey"
+path = "package/pkg_survey.rs"
+
+[[example]]
+name = "pkg_toc"
+path = "package/pkg_toc.rs"
+
+[[example]]
+name = "probe_engine"
+path = "package/probe_engine.rs"
+
+[[example]]
+name = "raw_id_scan"
+path = "package/raw_id_scan.rs"
+
+[[example]]
+name = "scan_preview_gaps"
+path = "package/scan_preview_gaps.rs"
+
+[[example]]
+name = "single_tgi_overlay"
+path = "package/single_tgi_overlay.rs"
+
+[[example]]
+name = "slot_compare"
+path = "package/slot_compare.rs"
+
+[[example]]
+name = "slot_compare2"
+path = "package/slot_compare2.rs"
+
+[[example]]
+name = "tgi_peek"
+path = "package/tgi_peek.rs"
+
+# property —— 属性表（0x00B1B104）解析与对比
+[[example]]
+name = "alert_audio_scan"
+path = "property/alert_audio_scan.rs"
+
+[[example]]
+name = "instancetype_probe"
+path = "property/instancetype_probe.rs"
+
+[[example]]
+name = "key_ref_scan"
+path = "property/key_ref_scan.rs"
+
+[[example]]
+name = "kv_survey"
+path = "property/kv_survey.rs"
+
+[[example]]
+name = "prop_diff"
+path = "property/prop_diff.rs"
+
+[[example]]
+name = "prop_dump"
+path = "property/prop_dump.rs"
+
+[[example]]
+name = "prop_fixture"
+path = "property/prop_fixture.rs"
+
+[[example]]
+name = "property_of_model"
+path = "property/property_of_model.rs"
+
+[[example]]
+name = "property_semantics_survey"
+path = "property/property_semantics_survey.rs"
+
+[[example]]
+name = "reverse_key_search"
+path = "property/reverse_key_search.rs"
+
+[[example]]
+name = "semantic_gap_probe"
+path = "property/semantic_gap_probe.rs"
+
+[[example]]
+name = "unit_prop_dump"
+path = "property/unit_prop_dump.rs"
+
+# locale —— 字符串表（0x0A98EAF0）
+[[example]]
+name = "locale_dump"
+path = "locale/locale_dump.rs"
+
+[[example]]
+name = "locale_extract"
+path = "locale/locale_extract.rs"
+
+[[example]]
+name = "locale_lang_probe"
+path = "locale/locale_lang_probe.rs"
+
+[[example]]
+name = "locale_mount_scan"
+path = "locale/locale_mount_scan.rs"
+
+[[example]]
+name = "locale_tables_dump"
+path = "locale/locale_tables_dump.rs"
+
+[[example]]
+name = "locale_names_dump"
+path = "locale/locale_names_dump.rs"
+
+[[example]]
+name = "locale_names_probe"
+path = "locale/locale_names_probe.rs"
+
+[[example]]
+name = "locale_probe"
+path = "locale/locale_probe.rs"
+
+[[example]]
+name = "locale_tgi_full"
+path = "locale/locale_tgi_full.rs"
+
+[[example]]
+name = "locale_companion_build"
+path = "locale/locale_companion_build.rs"
+
+[[example]]
+name = "locale_own_table"
+path = "locale/locale_own_table.rs"
+
+[[example]]
+name = "locale_tgi_scan"
+path = "locale/locale_tgi_scan.rs"
+
+[[example]]
+name = "overlay_locale_diff"
+path = "locale/overlay_locale_diff.rs"
+
+[[example]]
+name = "vanilla_locale_check"
+path = "locale/vanilla_locale_check.rs"
+
+# decal —— 贴花 / 地面覆盖 / 招牌
+[[example]]
+name = "decal_anchor_sweep"
+path = "decal/decal_anchor_sweep.rs"
+
+[[example]]
+name = "decal_chain"
+path = "decal/decal_chain.rs"
+
+[[example]]
+name = "decal_composite"
+path = "decal/decal_composite.rs"
+
+[[example]]
+name = "decal_dict_survey"
+path = "decal/decal_dict_survey.rs"
+
+[[example]]
+name = "decal_extra_fields"
+path = "decal/decal_extra_fields.rs"
+
+[[example]]
+name = "decal_field_survey"
+path = "decal/decal_field_survey.rs"
+
+[[example]]
+name = "decal_find_lots"
+path = "decal/decal_find_lots.rs"
+
+[[example]]
+name = "decal_find_raster"
+path = "decal/decal_find_raster.rs"
+
+[[example]]
+name = "decal_float_scan"
+path = "decal/decal_float_scan.rs"
+
+[[example]]
+name = "decal_material_data"
+path = "decal/decal_material_data.rs"
+
+[[example]]
+name = "decal_material_key"
+path = "decal/decal_material_key.rs"
+
+[[example]]
+name = "decal_material_slots"
+path = "decal/decal_material_slots.rs"
+
+[[example]]
+name = "decal_probe"
+path = "decal/decal_probe.rs"
+
+[[example]]
+name = "decal_projection_probe"
+path = "decal/decal_projection_probe.rs"
+
+[[example]]
+name = "decal_raster_stats"
+path = "decal/decal_raster_stats.rs"
+
+[[example]]
+name = "decal_render_probe"
+path = "decal/decal_render_probe.rs"
+
+[[example]]
+name = "decal_resolve_replay"
+path = "decal/decal_resolve_replay.rs"
+
+[[example]]
+name = "decal_roundtrip_probe"
+path = "decal/decal_roundtrip_probe.rs"
+
+[[example]]
+name = "decal_scan"
+path = "decal/decal_scan.rs"
+
+[[example]]
+name = "decal_sign_thumbs"
+path = "decal/decal_sign_thumbs.rs"
+
+[[example]]
+name = "decal_trace"
+path = "decal/decal_trace.rs"
+
+[[example]]
+name = "decal_unit_dump"
+path = "decal/decal_unit_dump.rs"
+
+[[example]]
+name = "dump_decal_4color"
+path = "decal/dump_decal_4color.rs"
+
+[[example]]
+name = "dump_decal_channels"
+path = "decal/dump_decal_channels.rs"
+
+[[example]]
+name = "graffiti_decal_dump"
+path = "decal/graffiti_decal_dump.rs"
+
+[[example]]
+name = "hole_decal_dump"
+path = "decal/hole_decal_dump.rs"
+
+[[example]]
+name = "scan_decals"
+path = "decal/scan_decals.rs"
+
+# lot —— 地块（LotMask / 合成 / prop 槽位）
+[[example]]
+name = "atlas_dump"
+path = "lot/atlas_dump.rs"
+
+[[example]]
+name = "find_lot_by_model"
+path = "lot/find_lot_by_model.rs"
+
+[[example]]
+name = "footprint_project"
+path = "lot/footprint_project.rs"
+
+[[example]]
+name = "lot_anchor_probe"
+path = "lot/lot_anchor_probe.rs"
+
+[[example]]
+name = "lot_axes"
+path = "lot/lot_axes.rs"
+
+[[example]]
+name = "lot_cavity_stats"
+path = "lot/lot_cavity_stats.rs"
+
+[[example]]
+name = "lot_compose"
+path = "lot/lot_compose.rs"
+
+[[example]]
+name = "lot_composite"
+path = "lot/lot_composite.rs"
+
+[[example]]
+name = "lot_diff_probe"
+path = "lot/lot_diff_probe.rs"
+
+[[example]]
+name = "lot_mask_alignment"
+path = "lot/lot_mask_alignment.rs"
+
+[[example]]
+name = "lot_mask_probe"
+path = "lot/lot_mask_probe.rs"
+
+[[example]]
+name = "lot_prop_offset_probe"
+path = "lot/lot_prop_offset_probe.rs"
+
+[[example]]
+name = "lot_property_scan"
+path = "lot/lot_property_scan.rs"
+
+[[example]]
+name = "lot_render_props"
+path = "lot/lot_render_props.rs"
+
+[[example]]
+name = "lot_sibling_probe"
+path = "lot/lot_sibling_probe.rs"
+
+[[example]]
+name = "lot_size_fallback_probe"
+path = "lot/lot_size_fallback_probe.rs"
+
+[[example]]
+name = "lot_tree_scales"
+path = "lot/lot_tree_scales.rs"
+
+[[example]]
+name = "lot_uv_range"
+path = "lot/lot_uv_range.rs"
+
+[[example]]
+name = "lotmask_probe"
+path = "lot/lotmask_probe.rs"
+
+[[example]]
+name = "mask_weights"
+path = "lot/mask_weights.rs"
+
+[[example]]
+name = "prop_chain_probe"
+path = "lot/prop_chain_probe.rs"
+
+[[example]]
+name = "refined_replay"
+path = "lot/refined_replay.rs"
+
+[[example]]
+name = "spawner_probe"
+path = "lot/spawner_probe.rs"
+
+# menu —— 菜单 / 工具条目 / 分类 / 图标 / 造价
+[[example]]
+name = "cost_group_census"
+path = "menu/cost_group_census.rs"
+
+[[example]]
+name = "eco_unit_cost_scan"
+path = "menu/eco_unit_cost_scan.rs"
+
+[[example]]
+name = "enable_debug_tools"
+path = "menu/enable_debug_tools.rs"
+
+[[example]]
+name = "icon_probe"
+path = "menu/icon_probe.rs"
+
+[[example]]
+name = "menu_asset_extract"
+path = "menu/menu_asset_extract.rs"
+
+[[example]]
+name = "cot_menu_cluster"
+path = "menu/cot_menu_cluster.rs"
+
+[[example]]
+name = "menu_cost_dump"
+path = "menu/menu_cost_dump.rs"
+
+[[example]]
+name = "menu_survey"
+path = "menu/menu_survey.rs"
+
+[[example]]
+name = "path_cost_scan"
+path = "menu/path_cost_scan.rs"
+
+[[example]]
+name = "road_cost_probe"
+path = "menu/road_cost_probe.rs"
+
+[[example]]
+name = "prop_hash_scan"
+path = "property/prop_hash_scan.rs"
+
+[[example]]
+name = "prop_roundtrip"
+path = "property/prop_roundtrip.rs"
+
+[[example]]
+name = "prop_layout"
+path = "property/prop_layout.rs"
+
+[[example]]
+name = "prop_bytes_diff"
+path = "property/prop_bytes_diff.rs"
+
+[[example]]
+name = "text_ref_hunt"
+path = "property/text_ref_hunt.rs"
+
+[[example]]
+name = "tool_info"
+path = "menu/tool_info.rs"
+
+[[example]]
+name = "ui_menu_survey"
+path = "menu/ui_menu_survey.rs"
+
+[[example]]
+name = "ui_tool_dump"
+path = "menu/ui_tool_dump.rs"
+
+[[example]]
+name = "terrain_authoring_census"
+path = "menu/terrain_authoring_census.rs"
+
+[[example]]
+name = "path_debug_overlay"
+path = "menu/path_debug_overlay.rs"
+
+[[example]]
+name = "unit_config_name_scan"
+path = "menu/unit_config_name_scan.rs"
+
+[[example]]
+name = "unit_cost_scan"
+path = "menu/unit_cost_scan.rs"
+
+# region —— 区域 / 城市 / tile 金字塔 / 引导 / 状态
+[[example]]
+name = "cape_bootstrap_probe"
+path = "region/cape_bootstrap_probe.rs"
+
+[[example]]
+name = "city_z_verify"
+path = "region/city_z_verify.rs"
+
+[[example]]
+name = "desc_keys_resolve"
+path = "region/desc_keys_resolve.rs"
+
+[[example]]
+name = "dto_json_check"
+path = "region/dto_json_check.rs"
+
+[[example]]
+name = "ed_align"
+path = "region/ed_align.rs"
+
+[[example]]
+name = "ed_channel_view"
+path = "region/ed_channel_view.rs"
+
+[[example]]
+name = "ed_frame_probe"
+path = "region/ed_frame_probe.rs"
+
+[[example]]
+name = "ed_grid_cross"
+path = "region/ed_grid_cross.rs"
+
+[[example]]
+name = "ed_hist"
+path = "region/ed_hist.rs"
+
+[[example]]
+name = "ed_plot_contrast"
+path = "region/ed_plot_contrast.rs"
+
+[[example]]
+name = "ed_render"
+path = "region/ed_render.rs"
+
+[[example]]
+name = "ed_road_channels"
+path = "region/ed_road_channels.rs"
+
+[[example]]
+name = "ed_road_overlay"
+path = "region/ed_road_overlay.rs"
+
+[[example]]
+name = "ed_road_split"
+path = "region/ed_road_split.rs"
+
+[[example]]
+name = "ed_road_verify"
+path = "region/ed_road_verify.rs"
+
+[[example]]
+name = "ed_road_zoom"
+path = "region/ed_road_zoom.rs"
+
+[[example]]
+name = "ed_stats"
+path = "region/ed_stats.rs"
+
+[[example]]
+name = "final_render"
+path = "region/final_render.rs"
+
+[[example]]
+name = "greatwork_hunt"
+path = "region/greatwork_hunt.rs"
+
+[[example]]
+name = "group_tiles"
+path = "region/group_tiles.rs"
+
+[[example]]
+name = "gw_env_dump"
+path = "region/gw_env_dump.rs"
+
+[[example]]
+name = "mini_thumbs"
+path = "region/mini_thumbs.rs"
+
+[[example]]
+name = "namehash_probe"
+path = "region/namehash_probe.rs"
+
+[[example]]
+name = "offset_check"
+path = "region/offset_check.rs"
+
+[[example]]
+name = "orient_check"
+path = "region/orient_check.rs"
+
+[[example]]
+name = "plot_pair"
+path = "region/plot_pair.rs"
+
+[[example]]
+name = "plot_pos_join"
+path = "region/plot_pos_join.rs"
+
+[[example]]
+name = "precreate_unit_scan"
+path = "region/precreate_unit_scan.rs"
+
+[[example]]
+name = "region_3d_probe"
+path = "region/region_3d_probe.rs"
+
+[[example]]
+name = "region_bind"
+path = "region/region_bind.rs"
+
+[[example]]
+name = "region_bounds_probe"
+path = "region/region_bounds_probe.rs"
+
+[[example]]
+name = "region_color"
+path = "region/region_color.rs"
+
+[[example]]
+name = "region_json_scan"
+path = "region/region_json_scan.rs"
+
+[[example]]
+name = "region_list_probe"
+path = "region/region_list_probe.rs"
+
+[[example]]
+name = "region_name_bridge"
+path = "region/region_name_bridge.rs"
+
+[[example]]
+name = "region_preview"
+path = "region/region_preview.rs"
+
+[[example]]
+name = "region_probe"
+path = "region/region_probe.rs"
+
+[[example]]
+name = "region_ref_scan"
+path = "region/region_ref_scan.rs"
+
+[[example]]
+name = "region_state_maps"
+path = "region/region_state_maps.rs"
+
+[[example]]
+name = "region_state_probe"
+path = "region/region_state_probe.rs"
+
+[[example]]
+name = "region_template_bind"
+path = "region/region_template_bind.rs"
+
+[[example]]
+name = "region_terrain_survey"
+path = "region/region_terrain_survey.rs"
+
+[[example]]
+name = "state_unit_resource_probe"
+path = "region/state_unit_resource_probe.rs"
+
+[[example]]
+name = "strata_env_dump"
+path = "region/strata_env_dump.rs"
+
+[[example]]
+name = "table_dump"
+path = "region/table_dump.rs"
+
+[[example]]
+name = "target1_add_registry_overlay"
+path = "region/target1_add_registry_overlay.rs"
+
+[[example]]
+name = "target1_add_template_overlay"
+path = "region/target1_add_template_overlay.rs"
+
+[[example]]
+name = "target1_build_package"
+path = "region/target1_build_package.rs"
+
+[[example]]
+name = "target1_registry"
+path = "region/target1_registry.rs"
+
+[[example]]
+name = "target1_template_probe"
+path = "region/target1_template_probe.rs"
+
+[[example]]
+name = "target1_verify"
+path = "region/target1_verify.rs"
+
+[[example]]
+name = "tile_anchor"
+path = "region/tile_anchor.rs"
+
+[[example]]
+name = "tile_arrange"
+path = "region/tile_arrange.rs"
+
+[[example]]
+name = "tile_diag"
+path = "region/tile_diag.rs"
+
+[[example]]
+name = "tile_grid"
+path = "region/tile_grid.rs"
+
+[[example]]
+name = "tile_grid_vote"
+path = "region/tile_grid_vote.rs"
+
+[[example]]
+name = "tile_orient"
+path = "region/tile_orient.rs"
+
+[[example]]
+name = "tile_pyramid"
+path = "region/tile_pyramid.rs"
+
+[[example]]
+name = "z_diff_probe"
+path = "region/z_diff_probe.rs"
+
+# road —— 道路 / 路径 / curve
+[[example]]
+name = "path_prop_scan"
+path = "road/path_prop_scan.rs"
+
+[[example]]
+name = "path_reconstruct_probe"
+path = "road/path_reconstruct_probe.rs"
+
+[[example]]
+name = "probe_lane"
+path = "road/probe_lane.rs"
+
+[[example]]
+name = "road_render_probe"
+path = "road/road_render_probe.rs"
+
+[[example]]
+name = "static_path_match_probe"
+path = "road/static_path_match_probe.rs"
+
+[[example]]
+name = "unit_path_dump"
+path = "road/unit_path_dump.rs"
+
+# terrain —— 地形 / 水位 / 画刷 / 地面纹理
+[[example]]
+name = "bay_probe"
+path = "terrain/bay_probe.rs"
+
+[[example]]
+name = "city_map_histo"
+path = "terrain/city_map_histo.rs"
+
+[[example]]
+name = "city_prop_dump"
+path = "terrain/city_prop_dump.rs"
+
+[[example]]
+name = "city_uid_prop"
+path = "terrain/city_uid_prop.rs"
+
+[[example]]
+name = "eco_brush_full"
+path = "terrain/eco_brush_full.rs"
+
+[[example]]
+name = "egb_scan"
+path = "terrain/egb_scan.rs"
+
+[[example]]
+name = "egb_water_hunt"
+path = "terrain/egb_water_hunt.rs"
+
+[[example]]
+name = "find_terrain_ps"
+path = "terrain/find_terrain_ps.rs"
+
+[[example]]
+name = "find_watertable_res"
+path = "terrain/find_watertable_res.rs"
+
+[[example]]
+name = "ground_tex_extract"
+path = "terrain/ground_tex_extract.rs"
+
+[[example]]
+name = "gtex_probe2"
+path = "terrain/gtex_probe2.rs"
+
+[[example]]
+name = "height_hist"
+path = "terrain/height_hist.rs"
+
+[[example]]
+name = "map_layer_assets"
+path = "terrain/map_layer_assets.rs"
+
+[[example]]
+name = "map_native_assets"
+path = "terrain/map_native_assets.rs"
+
+[[example]]
+name = "map_unit_audit"
+path = "terrain/map_unit_audit.rs"
+
+[[example]]
+name = "normal_atlas_probe"
+path = "terrain/normal_atlas_probe.rs"
+
+[[example]]
+name = "resource_brush_probe"
+path = "terrain/resource_brush_probe.rs"
+
+[[example]]
+name = "terrain_brush_resource_audit"
+path = "terrain/terrain_brush_resource_audit.rs"
+
+[[example]]
+name = "terrain_water_table_validation"
+path = "terrain/terrain_water_table_validation.rs"
+
+[[example]]
+name = "terrain_authoring_overlay"
+path = "terrain/terrain_authoring_overlay.rs"
+
+[[example]]
+name = "script_water_scan"
+path = "terrain/script_water_scan.rs"
+
+[[example]]
+name = "stamp_hunt"
+path = "terrain/stamp_hunt.rs"
+
+[[example]]
+name = "subresource_dump"
+path = "terrain/subresource_dump.rs"
+
+[[example]]
+name = "terrain_color_probe"
+path = "terrain/terrain_color_probe.rs"
+
+[[example]]
+name = "verify_static_maps"
+path = "terrain/verify_static_maps.rs"
+
+[[example]]
+name = "watertable_probe"
+path = "terrain/watertable_probe.rs"
+
+# model —— RW4 模型 / 材质 / 栅格 / 着色器
+[[example]]
+name = "building_material_probe"
+path = "model/building_material_probe.rs"
+
+[[example]]
+name = "building_vertex_cols"
+path = "model/building_vertex_cols.rs"
+
+[[example]]
+name = "dump_facade_glbs"
+path = "model/dump_facade_glbs.rs"
+
+[[example]]
+name = "dump_model_glb"
+path = "model/dump_model_glb.rs"
+
+[[example]]
+name = "dump_slot_texture"
+path = "model/dump_slot_texture.rs"
+
+[[example]]
+name = "facade_probe"
+path = "model/facade_probe.rs"
+
+[[example]]
+name = "facade_survey"
+path = "model/facade_survey.rs"
+
+[[example]]
+name = "facade_uv_probe"
+path = "model/facade_uv_probe.rs"
+
+[[example]]
+name = "find_foliage_textures"
+path = "model/find_foliage_textures.rs"
+
+[[example]]
+name = "find_tree_models"
+path = "model/find_tree_models.rs"
+
+[[example]]
+name = "foliage_ref_scan"
+path = "model/foliage_ref_scan.rs"
+
+[[example]]
+name = "glb_attr_check"
+path = "model/glb_attr_check.rs"
+
+[[example]]
+name = "hlsl_dump"
+path = "model/hlsl_dump.rs"
+
+[[example]]
+name = "impostor_config_scan"
+path = "model/impostor_config_scan.rs"
+
+[[example]]
+name = "material_bind_probe"
+path = "model/material_bind_probe.rs"
+
+[[example]]
+name = "material_info_dump"
+path = "model/material_info_dump.rs"
+
+[[example]]
+name = "model_peek"
+path = "model/model_peek.rs"
+
+[[example]]
+name = "palette_probe"
+path = "model/palette_probe.rs"
+
+[[example]]
+name = "raster_bytes"
+path = "model/raster_bytes.rs"
+
+[[example]]
+name = "raster_peek"
+path = "model/raster_peek.rs"
+
+[[example]]
+name = "raster_probe"
+path = "model/raster_probe.rs"
+
+[[example]]
+name = "raster_views"
+path = "model/raster_views.rs"
+
+[[example]]
+name = "shader_container_extract"
+path = "model/shader_container_extract.rs"
+
+[[example]]
+name = "shader_def_scan"
+path = "model/shader_def_scan.rs"
+
+[[example]]
+name = "shader_grep"
+path = "model/shader_grep.rs"
+
+[[example]]
+name = "shader_map_stats"
+path = "model/shader_map_stats.rs"
+
+[[example]]
+name = "shader_name_hash"
+path = "model/shader_name_hash.rs"
+
+[[example]]
+name = "shader_sweep_probe"
+path = "model/shader_sweep_probe.rs"
+
+[[example]]
+name = "shader_verify_probe"
+path = "model/shader_verify_probe.rs"
+
+[[example]]
+name = "simm_material_probe"
+path = "model/simm_material_probe.rs"
+
+[[example]]
+name = "simm_model_probe"
+path = "model/simm_model_probe.rs"
+
+[[example]]
+name = "slot_dump"
+path = "model/slot_dump.rs"
+
+[[example]]
+name = "tangent_scan"
+path = "model/tangent_scan.rs"
+
+[[example]]
+name = "tint_underface_probe"
+path = "model/tint_underface_probe.rs"
+
+[[example]]
+name = "tree_model_check"
+path = "model/tree_model_check.rs"
+
+[[example]]
+name = "tree_model_dump"
+path = "model/tree_model_dump.rs"
+
+[[example]]
+name = "uv_model_scan"
+path = "model/uv_model_scan.rs"
+
+[[example]]
+name = "vehicle_3d_probe"
+path = "model/vehicle_3d_probe.rs"
+
+# ui —— 游戏 UI 脚本 / 布局 / JS
+[[example]]
+name = "js_dump"
+path = "ui/js_dump.rs"
+
+[[example]]
+name = "script_resources_probe"
+path = "ui/script_resources_probe.rs"
+
+[[example]]
+name = "ui_assets"
+path = "ui/ui_assets.rs"
+
+[[example]]
+name = "ui_dump_tgi"
+path = "ui/ui_dump_tgi.rs"
+
+[[example]]
+name = "ui_js_census"
+path = "ui/ui_js_census.rs"
+
+[[example]]
+name = "ui_js_dump"
+path = "ui/ui_js_dump.rs"
+
+[[example]]
+name = "ui_layout_census"
+path = "ui/ui_layout_census.rs"
+
+[[example]]
+name = "ui_observer_package"
+path = "ui/ui_observer_package.rs"
+
+# effect —— Swarm / 特效
+[[example]]
+name = "effect_collection_dump"
+path = "effect/effect_collection_dump.rs"
+
+[[example]]
+name = "effect_collections"
+path = "effect/effect_collections.rs"
+
+[[example]]
+name = "effect_component_stats"
+path = "effect/effect_component_stats.rs"
+
+[[example]]
+name = "effect_resource_find"
+path = "effect/effect_resource_find.rs"
+
+[[example]]
+name = "effect_units"
+path = "effect/effect_units.rs"
+
+# zone —— 分区颜色与图标
+[[example]]
+name = "zone_color_dump"
+path = "zone/zone_color_dump.rs"
+
+[[example]]
+name = "zone_color_dump2"
+path = "zone/zone_color_dump2.rs"
+
+[[example]]
+name = "zone_icon_probe"
+path = "zone/zone_icon_probe.rs"
+
+[[example]]
+name = "zone_ids_probe"
+path = "zone/zone_ids_probe.rs"
+
+# registry —— sc-registry 注册表查询
+[[example]]
+name = "lookup"
+path = "registry/lookup.rs"
+
+[[example]]
+name = "name_lookup"
+path = "registry/name_lookup.rs"
+
+[[example]]
+name = "type_lookup"
+path = "registry/type_lookup.rs"
+
+[[example]]
+name = "tent_bulldozer_overlay"
+path = "menu/tent_bulldozer_overlay.rs"

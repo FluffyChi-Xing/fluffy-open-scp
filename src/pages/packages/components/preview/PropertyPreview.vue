@@ -4,10 +4,15 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import type { PropertyPreview } from "@/api/tauri";
+import { tauriApi } from "@/api";
+import { parseLotModelContainer } from "@/lib/three-gltf";
+import { buildBuildingTextureSlotFiles } from "@/lib/building-texture-export";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
-import PropertyEditor from "../property-editor/PropertyEditor.vue";
+import PropertyViewer from "../property-editor/PropertyViewer.vue";
 import DecalDictionaryGallery from "./DecalDictionaryGallery.vue";
 import SemanticCardView from "./SemanticCard.vue";
+import FDropdown from "@/components/ui/FDropdown.vue";
+import { command } from "@/api/tauri";
 
 const props = defineProps<{ preview: PropertyPreview }>();
 const editorOpen = ref(false);
@@ -23,10 +28,60 @@ const MESH_SEMANTIC_IDS = new Set(["unit", "agent", "agent-vehicle-model"]);
 const hasMesh = computed(() =>
   MESH_SEMANTIC_IDS.has(props.preview.semantic?.id ?? ""),
 );
+const isBuilding = computed(() => props.preview.semantic?.id === "unit");
+const textureExportBusy = ref(false);
+const textureExportOpen = ref(false);
+const textureExportDirectory = ref("");
+const textureExportError = ref("");
+function openTextureExportDialog() {
+  textureExportError.value = "";
+  textureExportOpen.value = true;
+}
+async function chooseTextureExportDirectory() {
+  const path = await tauriApi.workspace.pickDirectory();
+  if (path) textureExportDirectory.value = path;
+}
+function bytesToBase64(bytes: Uint8Array<ArrayBuffer>): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  return btoa(binary);
+}
+async function confirmBuildingTextureExport() {
+  if (textureExportBusy.value || !isBuilding.value || !textureExportDirectory.value) return;
+  textureExportBusy.value = true;
+  textureExportError.value = "";
+  try {
+    const session = await tauriApi.packages.readLotEditorSession(
+      props.preview.packageId,
+      props.preview.tgi,
+    );
+    const lod = session?.modelLods?.find((entry) => entry !== null);
+    if (!lod) return;
+    const buffer = await tauriApi.packages.readLotModelMeshes(lod.packageId, lod.tgi);
+    const payload = parseLotModelContainer(buffer);
+    const files = buildBuildingTextureSlotFiles(
+      payload,
+      `0x${props.preview.tgi.instance.toString(16).padStart(8, "0")}-lod${(session.modelLods?.indexOf(lod) ?? 0) + 1}`,
+    );
+    const separator = /[\\/]$/.test(textureExportDirectory.value) ? "" : "\\";
+    for (const file of files) {
+      await command("write_export_file", {
+        request: { path: `${textureExportDirectory.value}${separator}${file.filename}`, dataBase64: bytesToBase64(file.bytes) },
+      });
+    }
+    textureExportOpen.value = false;
+  } catch (error) {
+    textureExportError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    textureExportBusy.value = false;
+  }
+}
 
 /** Decal Dictionary（贴花图鉴）用相册取代属性表。 */
 const isDecalDictionary = computed(() =>
-  isDecalAtlasGroup(props.preview.tgi.group),
+  isDecalAtlasGroup(props.preview.tgi.group) ||
+  props.preview.semantic?.id === "decal-atlas",
 );
 /** 命中专属预览卡家族（后端 extract_semantic_card）。 */
 const semanticCard = computed(() => props.preview.card ?? null);
@@ -81,13 +136,25 @@ function hashLabel(hash: number) {
         @click="editorOpen = true"
       >
         <FIcon name="SquarePen" :size="13" aria-label="" />{{
-          $t("package.toolbarAdvancedEditors")
+          $t("package.propertyViewer")
         }}
       </button>
-      <button type="button" disabled>
-        <FIcon name="Wrench" :size="13" aria-label="" />{{
-          $t("package.toolbarTools")
-        }}
+      <FDropdown v-if="isBuilding" :width="190">
+        <template #trigger>
+          <button type="button" :disabled="textureExportBusy">
+            <FIcon :name="textureExportBusy ? 'Loader2' : 'Wrench'" :size="13" aria-label="" />{{
+              $t("package.toolbarTools")
+            }}
+            <FIcon name="ChevronDown" :size="11" aria-label="" />
+          </button>
+        </template>
+        <button type="button" :disabled="textureExportBusy" @click="openTextureExportDialog">
+          <FIcon name="Download" :size="13" aria-label="" />
+          {{ $t("package.exportBuildingTextures") }}
+        </button>
+      </FDropdown>
+      <button v-else type="button" disabled>
+        <FIcon name="Wrench" :size="13" aria-label="" />{{ $t("package.toolbarTools") }}
         <FIcon name="ChevronDown" :size="11" aria-label="" />
       </button>
       <button
@@ -121,7 +188,7 @@ function hashLabel(hash: number) {
         }}
       </button>
     </div>
-    <PropertyEditor
+    <PropertyViewer
       v-model:open="editorOpen"
       :package-id="preview.packageId"
       :tgi="preview.tgi"
@@ -134,6 +201,15 @@ function hashLabel(hash: number) {
           :title="$t('package.editSheetPlaceholderTitle')"
           :desc="$t('package.editSheetPlaceholderDesc')"
         />
+      </div>
+    </FSheet>
+    <FSheet v-model:open="textureExportOpen" :label="$t('package.exportBuildingTextures')" width="min(520px, 92vw)">
+      <div class="texture-export-dialog">
+        <div class="texture-export-heading"><FIcon name="Download" :size="20" aria-label="" /><div><h3>{{ $t("package.exportBuildingTextures") }}</h3><p>{{ $t("package.exportBuildingTexturesHint") }}</p></div></div>
+        <label class="texture-export-label" for="texture-export-directory">{{ $t("package.exportDirectory") }}</label>
+        <div class="texture-export-path-row"><input id="texture-export-directory" v-model="textureExportDirectory" type="text" :placeholder="$t('package.exportDirectoryPlaceholder')" /><button type="button" class="texture-export-secondary" @click="chooseTextureExportDirectory">{{ $t("package.chooseDirectory") }}</button></div>
+        <p v-if="textureExportError" class="texture-export-error" role="alert">{{ textureExportError }}</p>
+        <div class="texture-export-actions"><button type="button" class="texture-export-secondary" @click="textureExportOpen = false">{{ $t("common.cancel") }}</button><button type="button" class="texture-export-primary" :disabled="textureExportBusy || !textureExportDirectory" @click="confirmBuildingTextureExport"><FIcon :name="textureExportBusy ? 'Loader2' : 'Download'" :size="14" aria-label="" />{{ textureExportBusy ? $t("common.loading") : $t("package.export") }}</button></div>
       </div>
     </FSheet>
     <DecalDictionaryGallery
@@ -221,6 +297,20 @@ function hashLabel(hash: number) {
   justify-items: center;
   padding: 16px;
 }
+.texture-export-dialog { display: grid; gap: 16px; padding: 22px; }
+.texture-export-heading { align-items: flex-start; display: flex; gap: 12px; }
+.texture-export-heading > svg { color: var(--primary); flex: none; margin-top: 2px; }
+.texture-export-heading h3 { font-size: 16px; margin: 0; }
+.texture-export-heading p { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; margin: 6px 0 0; }
+.texture-export-label { color: var(--muted-foreground); font-size: 12px; }
+.texture-export-path-row { display: flex; gap: 8px; }
+.texture-export-path-row input { background: var(--surface-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--foreground); flex: 1; font: inherit; font-size: 12px; min-width: 0; padding: 9px 10px; }
+.texture-export-secondary, .texture-export-primary { align-items: center; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; display: inline-flex; font: inherit; font-size: 12px; gap: 6px; justify-content: center; min-height: 34px; padding: 0 12px; }
+.texture-export-secondary { background: var(--surface-elevated); color: var(--foreground); }
+.texture-export-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.texture-export-primary:disabled { cursor: not-allowed; opacity: 0.55; }
+.texture-export-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.texture-export-error { color: var(--danger); font-size: 12px; margin: 0; }
 /* compact 变体上图标再缩一圈（52px 圆 → 40px）；FEmpty 内部以
    内联 style 固定 svg 尺寸，需 !important 才能覆盖 */
 .edit-sheet-body :deep(.f-empty-icon) {

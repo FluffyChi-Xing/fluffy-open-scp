@@ -10,6 +10,7 @@
 
 mod activity;
 mod effect_service;
+mod game_assets;
 mod effect_resources;
 mod annotations;
 mod atomic_fs;
@@ -60,12 +61,12 @@ use package_browser::{list_game_tree, list_package_files};
 use pe_schema::build_pe_schema;
 use package_service::{
     close_package, export, export_status, list_resources, open_package, patch_property_overlay,
-    read_decal_dictionary, read_decal_images, read_erz_preview, read_image_preview,
+    read_decal_dictionary, read_decal_images, read_erz_preview, read_ecogame_preview, read_image_preview,
     read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
     read_sim_parts,
-    list_model_catalog,
+    list_model_catalog, list_path_entries, list_prop_bin_catalog,
     read_resource_bytes, read_resource_data, read_resource_text, read_resource_text_range,
-    read_rw4_preview, read_rw4_section_detail,
+    read_rw4_material_textures, read_rw4_preview, read_rw4_section_detail,
     read_wwise_bank, release_prop_model_packages, resolve_name, resolve_names,
     resolve_prop_models, write_export_file,
 };
@@ -78,8 +79,9 @@ use version_service::{
     version_list_changesets, version_list_targets, version_record_changeset, version_rollback,
 };
 use workspace::{
-    code_manifest, code_package_entries, code_package_info, code_read_text, code_resource_preview,
-    code_tree, code_write_text, workspace_create_folder, workspace_create_markdown,
+    code_delete_file, code_manifest, code_package_entries, code_package_info, code_read_text,
+    code_resource_preview, code_tree, code_write_text, workspace_create_folder,
+    workspace_create_markdown,
     workspace_get, workspace_list, workspace_move, workspace_read_markdown, workspace_rename,
     workspace_set_root, workspace_write_markdown,
 };
@@ -148,8 +150,17 @@ pub fn run() {
             runtime_observer::observer_stop,
             runtime_observer::observer_status,
             runtime_observer::observer_sync,
+            runtime_observer::observer_frame,
             game_launch::game_processes,
             game_launch::deploy_game_mod,
+            game_launch::deploy_ui_overlay,
+            game_assets::game_asset,
+            game_assets::game_property_copy,
+            game_assets::game_property_read,
+            game_assets::game_property_patch,
+            game_assets::menu_groups::game_menu_groups_compile,
+            game_assets::count_limits::game_count_limits_read,
+            game_assets::count_limits::game_count_limits_patch,
             game_launch::launch_game,
             version_list_targets,
             version_list_changesets,
@@ -170,7 +181,7 @@ pub fn run() {
             read_lot_editor_session,
             effect_service::read_effect_preview,
             build_pe_schema,
-            list_model_catalog,
+            list_model_catalog, list_path_entries, list_prop_bin_catalog,
             read_lot_model_meshes, read_sim_parts, release_prop_model_packages, resolve_prop_models,
             read_raster_preview,
             read_image_preview,
@@ -189,8 +200,9 @@ pub fn run() {
             create_lot_overlay,
             read_decal_dictionary,
             read_decal_images,
-            read_erz_preview,
+            read_erz_preview, read_ecogame_preview,
             read_rw4_preview,
+            read_rw4_material_textures,
             read_rw4_section_detail,
             read_wwise_bank,
             resolve_name,
@@ -210,11 +222,13 @@ pub fn run() {
             code_tree,
             code_read_text,
             code_write_text,
+            code_delete_file,
             code_package_info,
             code_package_entries,
             code_resource_preview,
             code_manifest,
             workspace::code_flow,
+            workspace::build_camera_package,
             workspace_create_markdown,
             workspace_rename,
             workspace_move,

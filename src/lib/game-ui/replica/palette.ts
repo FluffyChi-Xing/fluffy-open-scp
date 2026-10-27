@@ -12,9 +12,11 @@
  *   - 槽位行工具清单可由调用方覆盖（工作台的编辑覆盖/新增条目）；
  *   - 槽位可挂点击回调与「新增条目」删除角标。
  */
+import { i18n } from "@/locales";
+import { PLACEHOLDER_FALLBACK, SIMOLEON_FALLBACK, SLOT_PAD_FALLBACK } from "@/lib/game-ui/workbench";
 import { designPass, type NodeElementFactory } from "./render";
 import { updatePosition } from "@/lib/game-ui/scrui";
-import type { ReplicaData, ReplicaNode, ReplicaSlotRow, ReplicaTool } from "./types";
+import type { ReplicaData, ReplicaNode, ReplicaSlotRow, ReplicaTool, ReplicaSubtab } from "./types";
 
 export interface SlotTool extends ReplicaTool {
   /** 本条是工作台新增的（未落库）→ 显示删除角标。 */
@@ -22,6 +24,7 @@ export interface SlotTool extends ReplicaTool {
 }
 
 export interface PaletteHooks {
+  getSubtabs?: (categoryId: string) => ReplicaSubtab[];
   /** 槽位被点击（默认无）。 */
   onSlotClick?: (categoryId: string, tool: SlotTool) => void;
   /** 工作台删除新增条目（仅 isNew 槽位的角标触发）。 */
@@ -49,6 +52,7 @@ export interface HudPalette {
  * 锚定 —— 找到背景条（CSS Palette_tab）算出的屏幕 y，再把整个 body 平移，
  * 使它对到参考图实测的 745。 */
 const PANEL = { x: 0, h: 150, barY: 745 };
+
 
 export function createHudPalette(
   data: ReplicaData,
@@ -87,13 +91,16 @@ export function createHudPalette(
     const tree = entry.layout;
     designPass(tree, stageW, PANEL.h);
 
-    const barY = measureBarY(tree, stageW, PANEL.h);
+    const bar = measureBar(tree, stageW, PANEL.h);
+    const barY = bar.y;
     body = document.createElement("div");
     body.className = "hud-palette-body";
     body.style.left = `${PANEL.x}px`;
     body.style.top = `${PANEL.barY - barY}px`;
     body.style.width = `${stageW}px`;
-    body.style.height = `${PANEL.h}px`;
+    // 带 tab 的文件夾佈局條更高：容器隨量得的條高加高，否則 tab 行溢出被
+    // 底部圖標行遮擋。
+    body.style.height = `${Math.max(PANEL.h, bar.h ?? PANEL.h)}px`;
     host.appendChild(body);
 
     const r = updatePosition(tree, stageW, PANEL.h);
@@ -102,7 +109,7 @@ export function createHudPalette(
 
     attachLabel(body, entry.layout, label);
     attachCloseButton(body);
-    attachSlotRow(body, categoryId, entry.slotRow, barY);
+attachSlotRow(body, categoryId, entry.slotRow, barY, bar.h);
     return true;
   }
 
@@ -135,18 +142,22 @@ export function createHudPalette(
     return s;
   }
 
-  /** 先空跑一遍布局，量出背景条（CSS Palette_tab）落在 body 内的 y。 */
-  function measureBarY(tree: ReplicaNode, w: number, h: number): number {
-    let barY: number | null = null;
+  /** 先空跑一遍布局，量出背景条（CSS Palette_tab）在 body 内的 y 与高度。
+   * 带 tab 的菜单（公共運輸/公園等文件夾佈局）背景條比普通菜單高——tab 行
+   * 就在加高的條內，錨定條底才能不被底部圖標行遮擋。 */
+  function measureBar(tree: ReplicaNode, w: number, h: number): { y: number; h: number | null } {
+    let bar: { y: number; h: number | null } | null = null;
     const walk = (n: ReplicaNode, px: number, py: number, pw: number, ph: number): void => {
       const r = updatePosition(n, pw, ph);
       const ay = py + r.y;
       const dr = n.drawable;
-      if (barY === null && dr && (dr.cssStyles || [])[0] === "Palette_tab") barY = ay;
+      if (bar === null && dr && (dr.cssStyles || [])[0] === "Palette_tab") {
+        bar = { y: ay, h: r.h || null };
+      }
       for (const c of n.children || []) walk(c, px + r.x, ay, r.w, r.h);
     };
     walk(tree, 0, 0, w, h);
-    return barY ?? 0;
+    return bar ?? { y: 0, h: null };
   }
 
   /** 面板里布局数据表达不了的部分：分类名与槽位行由运行时填。
@@ -188,9 +199,6 @@ export function createHudPalette(
   /** 布局自带工具按钮的分类（见 build.py 的 SKIP_SLOT_ROW）。 */
   const SKIP_SLOT_ROW = new Set<string>();
 
-  /** 游戏行为：二级槽位一行最多 8 个，超出的用 ◀/▶ 翻页，不换行。 */
-  const PAGE_SIZE = 8;
-
   /* ── hover 信息提示框（游戏里的 BuildingRollover）──
    * 白底圆角窗 + 钢蓝标题 + rollover 大图 + 图底半透明黑条描述 +
    * 锁定项的红色解锁提示。数据全部来自菜单条目 property
@@ -227,7 +235,7 @@ export function createHudPalette(
             `<div class="hud-rollover-stat"><span class="label">${escape(row.label)}</span><span class="value">${escape(row.value ?? "")}</span></div>`,
         )
         .join("");
-      const simoleon = data.assets["icn-simoleon.png"] ?? "/game-ui/replica/assets/icn-simoleon.png";
+      const simoleon = data.assets["icn-simoleon.png"] ?? SIMOLEON_FALLBACK;
       const costCell = (value: string | null | undefined): string =>
         `<div class="cell"><span class="simoleon" style="background-image:url('${simoleon}')"></span>${escape(value || "—")}</div>`;
       rolloverEl.innerHTML = `
@@ -240,11 +248,14 @@ export function createHudPalette(
         ${tool.locked && tool.unlock ? `<div class="hud-rollover-unlock toolRolloverUnlockExplanation">${escape(tool.unlock)}</div>` : ""}
         <div class="hud-rollover-cost">${costCell(tool.cost)}${costCell(tool.upkeep)}</div>
       `;
-      // 定位：槽位的 offsetParent 是槽位行（absolute），先换算到 body 坐标；
-      // 水平跟槽位居中并夹在面板内，竖直贴在槽位行上方。
-      const row = slot.offsetParent as HTMLElement | null;
-      const cx = (row?.offsetLeft ?? 0) + slot.offsetLeft + slot.offsetWidth / 2;
-      const top = (row?.offsetTop ?? 0) + slot.offsetTop;
+      // 定位：槽位 rect → body 坐标（getBoundingClientRect 是缩放后的客户端
+      // 坐标，除以当前缩放比换回布局坐标）。烘焙槽位与动态槽位的
+      // offsetParent 链不同，统一走 rect 换算才不会漂移。
+      const bodyRect = bodyEl.getBoundingClientRect();
+      const scale = bodyRect.width / (bodyEl.clientWidth || bodyRect.width || 1) || 1;
+      const slotRect = slot.getBoundingClientRect();
+      const cx = (slotRect.left - bodyRect.left) / scale + slotRect.width / scale / 2;
+      const top = (slotRect.top - bodyRect.top) / scale;
       const width = rolloverEl.offsetWidth || 320;
       // 游戏弹窗锚定：指针三角（左缘 38px）正对槽位中心，窗体向右延伸；
       // 右缘越界时整体夹回面板内。
@@ -257,19 +268,59 @@ export function createHudPalette(
     }, 80);
   }
 
-  /** 槽位行：把该分类的工具平铺出来做预览。一行最多 8 个，超出的部分由
-   * 面板布局自带的翻页钮（data-comment "page left"/"page right"）翻页查看。
+  /** 槽位行：把该分类的工具平铺出来做预览。
    *
-   * 槽位图标 = 菜单条目 property 的 kPropToolIconKey（0x0977AA8F，组 40E02400
-   * 的等轴模型渲染 PNG，构建期已拷进 assets/）；preview 为空的条目（如公园
-   * 旧数据回填）回退 tool_placeholder.png。 */
-  function attachSlotRow(parentEl: HTMLElement, categoryId: string, cfg: ReplicaSlotRow, barY: number): void {
+   * 每页容量对拍游戏规则（引擎把槽位从左信息块右侧排到右翻页钮为止，
+   * 放得下几个排几个，超出的翻页，不换行）：容量 = ⌊(右箭头左缘 − 行首x) / pitch⌋。
+   * 各分类布局的左块宽度/箭头位置不同 → 每页数量随菜单不同（同一布局拉伸
+   * 后也会随舞台分辨率变化），不写死。
+   *
+   * 文件夹式分类（公共交通/公園）带子分类标签（data.subtabs）：面板底部
+   * 渲染 pill 行（对拍游戏：公車/路面電車/火車/船…），槽位行只显示当前
+   * 子分类的条目。 */
+  function attachSlotRow(
+    parentEl: HTMLElement,
+    categoryId: string,
+    cfg: ReplicaSlotRow,
+    barY: number,
+    barH?: number | null,
+  ): void {
     if (SKIP_SLOT_ROW.has(categoryId)) return; // 布局自带工具按钮的分类不再叠一行
-    const tools = hooks.getTools?.(categoryId) ?? (data.tools[categoryId] as SlotTool[] | undefined) ?? [];
-    if (!tools.length) return;
-    const perRow = Math.min(PAGE_SIZE, tools.length);
-    const pageCount = Math.ceil(tools.length / perRow);
+    const allTools = hooks.getTools?.(categoryId) ?? (data.tools[categoryId] as SlotTool[] | undefined) ?? [];
+    if (!allTools.length && !(hooks.getSubtabs?.(categoryId)?.length)) return;
+    // 布局自带固定槽位的分类（区域调色板：居中、无分页、分割线是背景图）：
+    // 不画通用动态行，把 hover/点击直接绑到烘焙槽位节点上 —— 位置、分割线
+    // 全部保持游戏原样。
+    // 「Dezone Tool」是小写 z，选择器必须忽略大小写才能把取消分区一起命中
+    const bakedSlots = Array.from(
+      parentEl.querySelectorAll<HTMLElement>('[data-comment]'),
+    )
+      .filter((el) => /zone tool$/i.test(el.dataset.comment ?? ''))
+      .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    if (bakedSlots.length > 0) {
+      // allTools 已按 uiPosition 排序（stage 的有效视图），顺序即游戏槽位顺序
+      const tools = allTools;
+      bakedSlots.forEach((slot, index) => {
+        const tool = tools[index];
+        if (!tool) {
+          slot.style.visibility = 'hidden';
+          return;
+        }
+        // .hud-el 默认 pointer-events:none（布局元素不可交互），必须显式打开
+        slot.style.pointerEvents = 'auto';
+        slot.style.cursor = 'pointer';
+        slot.addEventListener('mouseenter', () => showRollover(tool, slot, parentEl));
+        slot.addEventListener('mouseleave', hideRollover);
+        slot.addEventListener('click', () => hooks.onSlotClick?.(categoryId, tool));
+        slot.title = tool.label || tool.instance;
+      });
+      return;
+    }
+    const subtabs = hooks.getSubtabs?.(categoryId) ?? data.subtabs?.[categoryId] ?? [];
+    let activeTab = 0;
     let page = 0;
+    let perRow = 1;
+    let pageCount = 1;
     // 行首锚在 ◀ 翻页钮右侧 —— 各布局条左端的搜索/信息块宽度不同，
     // 用固定值一定会踩到别的元素。注意 getBoundingClientRect 是缩放后的
     // 客户端坐标，舞台几何按布局坐标系（未缩放）算，必须除回当前缩放比。
@@ -282,14 +333,83 @@ export function createHudPalette(
     const leftBtns = Array.from(parentEl.querySelectorAll('[data-comment="page left"]'));
     const rightBtns = Array.from(parentEl.querySelectorAll('[data-comment="page right"]'));
     const leftBtn = leftBtns[0];
+    const rightBtn = rightBtns[0];
     const startX = leftBtn ? Math.max(cfg.startX, rel(leftBtn, "right") + 6) : cfg.startX;
+    const stripEnd = rightBtn
+      ? rel(rightBtn, "left") - 6
+      : parentEl.clientWidth - cfg.pitch * 0.5;
+
+    /** 当前子分类过滤后的条目池。 */
+    function pool(): SlotTool[] {
+      if (subtabs.length === 0) return allTools;
+      const allowed = new Set(subtabs[activeTab]?.instances ?? []);
+      return allTools.filter((tool) => allowed.has(tool.instance) || (tool.isNew && !hooks.getSubtabs));
+    }
+
     const row = document.createElement("div");
     row.className = "hud-palette-row";
+    // 带 tab 的菜单：槽位行整体上移一个 tab 行高，tab 行落在槽位行正下方
+    // （对拍游戏：地標建築上沿探出條頂更多，tab 行在條內下部）。
+    const hasTabs = subtabs.length > 0;
+    const TAB_ROW_H = 34;
+    const slotTop = barY + (cfg.topInBar || 0) - (hasTabs ? TAB_ROW_H : 0);
     row.style.left = `${startX}px`;
-    row.style.top = `${barY + (cfg.topInBar || 0)}px`; // 相对菜单条，各布局通用
-    row.style.width = `${perRow * cfg.pitch}px`;
+    row.style.top = `${slotTop}px`;
     row.style.height = `${cfg.slotH}px`;
     parentEl.appendChild(row);
+
+    function reflow(): void {
+      const count = pool().length;
+      perRow = Math.max(1, Math.min(count, Math.floor((stripEnd - startX) / cfg.pitch)));
+      pageCount = Math.ceil(count / perRow);
+      if (page >= pageCount) page = Math.max(0, pageCount - 1);
+      row.style.width = `${perRow * cfg.pitch}px`;
+    }
+
+    // 子分类 pill 行（对拍游戏：槽位行正下方一整行等宽大按钮，公車/路面
+    // 電車/火車/船/飛機/磁浮列車…），点击切换当前子分类的槽位池。
+    if (subtabs.length > 0) {
+      const pills = document.createElement("div");
+      pills.className = "hud-subtabs";
+      // tab 行紧贴上移后的槽位行下方。
+      const pillsTop = slotTop + cfg.slotH + 6;
+      pills.style.cssText =
+        `align-items:stretch;display:flex;gap:8px;left:${startX}px;position:absolute;` +
+        `top:${pillsTop}px;width:${Math.max(stripEnd - startX, 120)}px;z-index:30;` +
+        // palette 容器链上 pointer-events:none（布局元素不可交互），pill 行
+        // 必须显式恢复，否则点击穿透到舞台（tab 无法切换的直接原因）。
+        "pointer-events:auto;";
+      const paintPills = (): void => {
+        pills.querySelectorAll("button").forEach((el, i) => {
+          const active = i === activeTab;
+          const el2 = el as HTMLElement;
+          el2.style.background = active ? "#2f9bf4" : "linear-gradient(#f2f8fd,#cddff0)";
+          el2.style.color = active ? "#fff" : "#1c3d5a";
+          el2.style.borderColor = active ? "#1f7fd0" : "#8aa5be";
+        });
+      };
+      subtabs.forEach((tab, index) => {
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.textContent = tab.labelKey ? i18n.global.t(tab.labelKey) : tab.label;
+        pill.style.cssText =
+          "background:linear-gradient(#f2f8fd,#cddff0);border:1px solid #8aa5be;" +
+          "border-radius:999px;color:#1c3d5a;cursor:pointer;font:bold 12px/26px sans-serif;" +
+          "flex:0 0 auto;height:26px;max-width:220px;min-width:92px;padding:0 12px;position:relative;text-align:center;";
+        pill.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (activeTab === index) return;
+          activeTab = index;
+          page = 0;
+          paintPills();
+          reflow();
+          paintPage();
+        });
+        pills.appendChild(pill);
+      });
+      paintPills();
+      parentEl.appendChild(pills);
+    }
 
     // 多页时才把布局自带的 ◀/▶ 翻页钮接上（.hud-el 默认 pointer-events:none，
     // 且单页时应与复刻站观感完全一致——装饰态）；端点钮置灰。
@@ -325,6 +445,7 @@ export function createHudPalette(
 
     function paintPage(): void {
       hideRollover();
+      const tools = pool();
       row.textContent = "";
       tools.slice(page * perRow, page * perRow + perRow).forEach((tool, i) => {
         const slot = document.createElement("div");
@@ -335,9 +456,9 @@ export function createHudPalette(
         slot.style.top = "-14px";
         slot.style.width = `${(cfg.pitch - 4).toFixed(2)}px`;
         slot.style.height = "66px";
-        const img = tool.preview || tool.marquee || "/game-ui/replica/assets/tool_placeholder.png";
-        // 双层背景：图标 + 椭圆光垫（palette-tool-select-hl，见 replica.css 注释）
-        const pad = data.assets["palette-tool-select-hl.png"] ?? "/game-ui/replica/assets/palette-tool-select-hl.png";
+        const img = tool.preview || tool.marquee || PLACEHOLDER_FALLBACK;
+        // 双层背景：图标 + 椭圆光垫（自绘光垫，见 SLOT_PAD_FALLBACK）
+        const pad = data.assets["palette-tool-select-hl.png"] ?? SLOT_PAD_FALLBACK;
         slot.style.backgroundImage = `url('${img}'), url('${pad}')`;
         slot.title = tool.label || tool.instance;
         slot.addEventListener("mouseenter", () => showRollover(tool, slot, parentEl));
@@ -364,6 +485,7 @@ export function createHudPalette(
       }
     }
 
+    reflow();
     wirePager();
     paintPage();
   }

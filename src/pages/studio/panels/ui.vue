@@ -7,31 +7,31 @@
  * 落库当前导出 overlay JSON，后端写回走下一轮的
  * patch_property_overlay + 版本记录通道。
  */
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FImageCropper from "@/components/extensions/FImageCropper.vue";
-import MenuFormBasics from "../components/menu-form/MenuFormBasics.vue";
-import MenuFormTip from "../components/menu-form/MenuFormTip.vue";
-import {
-  Stepper,
-  StepperIndicator,
-  StepperItem,
-  StepperSeparator,
-  StepperTitle,
-  StepperTrigger,
-} from "@/components/ui/stepper";
+import MenuSheetBody from "../components/menu-form/MenuSheetBody.vue";
+import type { CopyTargetNode } from "../components/menu-form/MenuTargetTree.vue";
+import type { ReplicaSubmenuItem } from "@/lib/game-ui/replica/types";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FCode from "@/components/ui/FCode.vue";
 import FSheet from "@/components/ui/FSheet.vue";
+import FStartupLoading from "@/components/ui/FStartupLoading.vue";
+import { useToast } from "@/composables/useToast";
 import UiWorkbenchStage from "../components/UiWorkbenchStage.vue";
 import MenuEditorPanel from "../components/MenuEditorPanel.vue";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
+import { tauriApi } from "@/api";
+import { TauriUnavailableError } from "@/api/tauri";
+import { downloadBytes } from "@/lib/game-ui/menu-export";
 import type { ToolEdit } from "@/lib/game-ui/workbench";
+import type { CountLimitDraft } from "@/lib/game-ui/count-limits";
 
 const { t } = useI18n();
+const toast = useToast();
 const store = useUiWorkbenchStore();
 const { loading, editingEntry } = storeToRefs(store);
 
@@ -40,6 +40,57 @@ onMounted(() => {
 });
 
 const showMechanism = ref(false);
+/** 当前覆盖数量（工具条按钮可用性）。 */
+const editedCount = computed(
+  () =>
+    Object.keys(store.edits).length +
+    Object.values(store.added).reduce((count, list) => count + list.length, 0) +
+    store.customCategories.length + store.countLimits.editCount + store.menuGroups.length + Object.keys(store.moves).length,
+);
+/** schema diff 预览 sheet */
+// Schema JSON 预览已下线：全量 JSON + 行级 diff 的渲染压力过大。
+// 功能代码保留（store.schemaDocument / json diff 思路），待改为
+// 视口内分块加载后再回归。
+
+/** bytes → base64（Tauri 命令传输用）。 */
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/** 编译 .package 并注入游戏 Packages 目录；非 Tauri 环境回退为下载。
+ * 反馈全部走 toast（项目禁用原生弹窗）。 */
+async function onBuildInject(): Promise<void> {
+  let result: Awaited<ReturnType<typeof store.buildGameExport>>;
+  try {
+    result = await store.buildGameExport();
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : t(store.menuGroups.length || Object.keys(store.moves).length ? "studio.workbench.organizationWriteFailed" : "studio.workbench.countLimitsWriteFailed"));
+    return;
+  }
+  if (result.entryCount === 0) {
+    toast.warning(t("studio.workbench.buildEmpty"));
+    return;
+  }
+  try {
+    const deployed = await tauriApi.workspace.deployUiOverlay(toBase64(result.bytes));
+    toast.success(t("studio.workbench.injectSuccess", { dest: deployed.destination }));
+    if (deployed.gameRunning) {
+      toast.warning(t("studio.workbench.injectGameRunning"));
+    }
+  } catch (error) {
+    if (error instanceof TauriUnavailableError) {
+      downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
+      toast.info(t("studio.workbench.injectFallback"));
+      return;
+    }
+    toast.error(t("studio.workbench.injectFailed"));
+  }
+}
 
 /** Sheet 的临时编辑态（打开时从条目拷贝，确认才写回 store）。 */
 const draft = ref<{
@@ -53,6 +104,8 @@ const draft = ref<{
   locked: boolean;
   preview: string | null;
   marquee: string | null;
+  stats: { label: string; value: string }[];
+  countLimits: CountLimitDraft | null;
 }>({
   label: "",
   icon: "",
@@ -64,9 +117,12 @@ const draft = ref<{
   locked: false,
   preview: null,
   marquee: null,
+  stats: [],
+  countLimits: null,
 });
 
-/** Sheet 打开时从条目拷贝到临时编辑态。 */
+/** Sheet 打开时从条目**拷贝**到临时编辑态（编辑副本；应用才写回覆盖）。
+ * preview/marquee 带完整值（原资产路径或已裁切 dataURL），移除 = 置 null。 */
 watch(editingEntry, (entry) => {
   if (entry) {
     draft.value = {
@@ -78,50 +134,164 @@ watch(editingEntry, (entry) => {
       upkeep: entry.tool.upkeep ?? "",
       unlock: entry.tool.unlock ?? "",
       locked: entry.tool.locked ?? false,
-      preview: typeof entry.tool.preview === "string" && entry.tool.preview.startsWith("data:") ? entry.tool.preview : null,
-      marquee: typeof entry.tool.marquee === "string" && entry.tool.marquee.startsWith("data:") ? entry.tool.marquee : null,
+      countLimits: null,
+      preview: entry.tool.preview ?? null,
+      marquee: entry.tool.marquee ?? null,
+      stats: (entry.tool.stats ?? []).map((stat) => ({
+        label: stat.label,
+        value: stat.value ?? "",
+      })),
     };
   }
 });
 
-function applyDraft(): void {
+const countSource = computed(() => {
+  const tool = editingEntry.value?.tool;
+  const source = tool?.sourceInstance ?? tool?.id;
+  return source && /^[0-9a-f]{8}$/i.test(source) ? source.toUpperCase() : null;
+});
+
+/** 条目当前归属的菜单（「指哪打哪」：编辑前先看清它挂在哪）。 */
+const memberships = computed(() =>
+  editingEntry.value ? store.membershipsOf(editingEntry.value.tool.id) : [],
+);
+/** 复制目标树：当前视角的一级菜单为根；带子菜单容器的建筑为第二层
+ * （选中建筑 = 复制进该建筑的子菜单容器）。 */
+const copyTargets = computed<CopyTargetNode[]>(() => {
   const entry = editingEntry.value;
-  if (!entry) return;
-  const patch: ToolEdit = {
-    label: draft.value.label,
-    icon: draft.value.icon === "" ? null : draft.value.icon,
-    pos: Number(draft.value.pos) || 0,
-    desc: draft.value.desc,
-    cost: draft.value.cost === "" ? null : draft.value.cost,
-    upkeep: draft.value.upkeep === "" ? null : draft.value.upkeep,
-    unlock: draft.value.unlock,
-    locked: draft.value.locked,
-    // 未裁切时传 undefined（不产生覆盖），避免把基础资产路径抹掉
-    preview: draft.value.preview ?? undefined,
-    marquee: draft.value.marquee ?? undefined,
-  };
-  store.updateItem(entry.menuId, entry.tool.id, patch);
-  editingEntry.value = null;
+  if (!entry) return [];
+  const menuId = entry.menuId;
+  const containers = store.submenuContainerTargets();
+  const byTopMenu = new Map<string, CopyTargetNode[]>();
+  for (const target of containers) {
+    if (target.menuId === entry.tool.id) continue;
+    for (const [catId, tools] of Object.entries(store.replica?.tools ?? {})) {
+      if (!tools.some((tool) => tool.instance === target.menuId)) continue;
+      if (!byTopMenu.has(catId)) byTopMenu.set(catId, []);
+      byTopMenu.get(catId)!.push({
+        id: target.container,
+        label: t("studio.workbench.submenuOf", { name: target.building || target.menuId }),
+        kind: "container",
+      });
+      break;
+    }
+  }
+  return store.categories
+    .filter((category) => category.id !== menuId && !category.id.startsWith("REGION-"))
+    .map((category) => ({
+      id: category.id,
+      label: category.label,
+      kind: "menu" as const,
+      children: byTopMenu.get(category.id),
+    }));
+});
+
+/** 当前条目的建筑子菜单（costs.json 反查产物；无则不显示）。 */
+const submenus = computed(() =>
+  editingEntry.value ? store.replica?.submenus?.[editingEntry.value.tool.id] : undefined,
+);
+
+/** 打开子菜单条目（压栈，形成嵌套 Sheet）。 */
+function onOpenSubmenu(item: ReplicaSubmenuItem): void {
+  store.openSubmenuItem(item);
 }
 
-/* 编辑流程：① 菜单条目（基础信息 + 槽位图标）→ ② 菜单提示（hover 弹窗内容） */
-const step = ref<1 | 2>(1);
+/** 复制到目标（SCP Copy Entry 语义）：一级菜单走分类副本；
+ * 建筑子菜单容器走容器副本（导出为该容器的归属）。 */
+function onMoveTo(target: string): void {
+  const entry = editingEntry.value;
+  if (!entry) return;
+  if (!applyDraft()) return;
+  const moved = store.moveEntry(entry.menuId, entry.tool.id, target);
+  if (moved) {
+    const rootId = store.menuGroups.find(group => group.id === target)?.parentId ?? target;
+    if (!store.categories.some(category => category.id === rootId)) {
+      store.setViewMode(store.replica?.model.categories.some(category => category.id === rootId) ? "city" : "development");
+    }
+    store.enterMenu(target);
+    store.editingEntry = moved;
+  }
+}
+
+function onCopyTo(target: CopyTargetNode): void {
+  const entry = editingEntry.value;
+  if (!entry) return;
+  // 显式快照：子菜单条目不在任何工作台分类里，也能照常复制
+  const created = store.duplicateEntry(target, entry.tool);
+  if (!created) return;
+  if (target.kind === "menu") {
+    // 目标可能属于其他视角（如在发展视角复制到城市一级菜单）：
+    // 当前视图没有该分类时先切视角，再定位目标菜单并打开副本
+    if (!store.categories.some((category) => category.id === target.id)) {
+      store.setViewMode("city");
+    }
+    store.enterMenu(target.id);
+    store.editingEntry = created;
+    return;
+  }
+  // 容器副本不出现在工作台视图（游戏内显示在建筑面板）
+  const label = store.containerLabelOf(target.id) ?? target.label;
+  toast.success(t("studio.workbench.containerCopied", { label }));
+}
+
+/** 应用 = 计算草稿相对条目有效视图的 diff，只把变化的字段写进覆盖。
+ * 图片三态：未动 → 不写键；null → 明确移除；字符串 → 替换。 */
+function applyDraft(): boolean {
+  const entry = editingEntry.value;
+  if (!entry) return false;
+  if (draft.value.countLimits) {
+    try { store.countLimits.apply(draft.value.countLimits); }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t("studio.workbench.countLimitsInvalid"));
+      return false;
+    }
+  }
+  const tool = entry.tool;
+  const patch: ToolEdit = {};
+  if (draft.value.label !== tool.label) patch.label = draft.value.label;
+  const draftIcon = draft.value.icon === "" ? null : draft.value.icon;
+  if (draftIcon !== (tool.icon ?? null)) patch.icon = draftIcon;
+  const draftPos = Number(draft.value.pos) || 0;
+  if (draftPos !== tool.pos) patch.pos = draftPos;
+  if (draft.value.desc !== (tool.desc ?? "")) patch.desc = draft.value.desc;
+  const draftCost = draft.value.cost === "" ? null : draft.value.cost;
+  if (draftCost !== (tool.cost ?? null)) patch.cost = draftCost;
+  const draftUpkeep = draft.value.upkeep === "" ? null : draft.value.upkeep;
+  if (draftUpkeep !== (tool.upkeep ?? null)) patch.upkeep = draftUpkeep;
+  if (draft.value.unlock !== (tool.unlock ?? "")) patch.unlock = draft.value.unlock;
+  if (draft.value.locked !== (tool.locked ?? false)) patch.locked = draft.value.locked;
+  if (draft.value.preview !== (tool.preview ?? null)) patch.preview = draft.value.preview;
+  if (draft.value.marquee !== (tool.marquee ?? null)) patch.marquee = draft.value.marquee;
+  const draftStats = draft.value.stats.map((stat) => ({
+    label: stat.label,
+    value: stat.value === "" ? null : stat.value,
+  }));
+  if (JSON.stringify(draftStats) !== JSON.stringify(tool.stats ?? [])) patch.stats = draftStats;
+  if (Object.keys(patch).length > 0) store.updateItem(entry.menuId, entry.tool.id, patch);
+  store.closeEditor();
+  return true;
+}
+
 /* 裁切器：icon 128×128 PNG、hover 大图 454×263 JPEG（游戏资源实测尺寸） */
 const cropperTarget = ref<"preview" | "marquee" | null>(null);
-const cropperPresets = {
-  preview: { width: 128, height: 128, format: "image/png" as const, title: "槽位图标（128×128 PNG）" },
-  marquee: { width: 454, height: 263, format: "image/jpeg" as const, title: "Hover 大图（454×263 JPEG）" },
-};
+const cropperPresets = computed(() => ({
+  preview: { width: 128, height: 128, format: "image/png" as const, title: t("studio.workbench.cropperPreviewTitle") },
+  marquee: { width: 454, height: 263, format: "image/jpeg" as const, title: t("studio.workbench.cropperMarqueeTitle") },
+}));
+const cropperActive = computed(() =>
+  cropperTarget.value === "marquee" ? cropperPresets.value.marquee : cropperPresets.value.preview,
+);
 function onCropped(dataUrl: string): void {
   if (cropperTarget.value === "preview") draft.value.preview = dataUrl;
   if (cropperTarget.value === "marquee") draft.value.marquee = dataUrl;
+  cropperTarget.value = null;
 }
 
 function removeDraft(): void {
   const entry = editingEntry.value;
-  if (!entry) return;
+  if (!entry || entry.isSubmenu) return;
   store.removeItem(entry.menuId, entry.tool.id);
-  editingEntry.value = null;
+  store.resetEditor();
 }
 
 </script>
@@ -143,8 +313,13 @@ function removeDraft(): void {
       </header>
     </div>
 
-    <p v-if="loading" class="notice" role="status">{{ t("studio.workbench.loading") }}</p>
+    <FStartupLoading
+      v-if="loading"
+      class="workbench-loading"
+      :label="t('studio.workbench.rebuilding')"
+    />
 
+    <template v-else>
     <div class="toolbar">
       <div class="view-switch" role="group" :aria-label="t('studio.workbench.viewMode')">
         <button
@@ -160,6 +335,12 @@ function removeDraft(): void {
         <FIcon :name="showMechanism ? 'ChevronUp' : 'ChevronDown'" :size="13" aria-label="" />
         {{ t("studio.workbench.mechanism") }}
       </button>
+      <div class="toolbar-spacer">
+        <button type="button" class="ghost-btn primary" :disabled="!editedCount" @click="onBuildInject">
+          <FIcon name="Package" :size="13" aria-label="" />
+          {{ t("studio.workbench.buildInject") }}
+        </button>
+      </div>
     </div>
 
     <div v-if="showMechanism" class="mechanism">
@@ -177,58 +358,72 @@ function removeDraft(): void {
       <MenuEditorPanel />
     </div>
 
-    <!-- 单条菜单项编辑 -->
+    <!-- 单条菜单项编辑（子菜单条目嵌套：栈式返回上级） -->
     <FSheet
       :open="!!editingEntry"
       width="420px"
       :label="t('studio.workbench.sheetTitle')"
-      @update:open="!$event && (editingEntry = null)"
+      @update:open="!$event && store.closeEditor()"
     >
       <div v-if="editingEntry" class="sheet-body">
+        <button
+          v-if="store.editorStack.length > 0"
+          type="button"
+          class="back-parent"
+          @click="store.closeEditor()"
+        >
+          <FIcon name="ArrowLeft" :size="13" aria-label="" />
+          {{ t('studio.workbench.backToParent') }}
+        </button>
         <p class="sheet-id">
           {{ t("studio.workbench.sheetId") }}:
           <code>{{ editingEntry.tool.id }}</code>
         </p>
-        <Stepper v-model="step" :linear="false" class="items-center gap-0">
-          <StepperItem :step="1" class="flex-1 gap-0 pr-1">
-            <StepperTrigger class="shrink-0 flex-row gap-2">
-              <StepperIndicator />
-              <StepperTitle class="whitespace-nowrap">{{ t('studio.workbench.stepEntry') }}</StepperTitle>
-            </StepperTrigger>
-            <StepperSeparator class="min-w-4 flex-1" />
-          </StepperItem>
-          <StepperItem :step="2" class="flex-1 gap-0 pl-1">
-            <StepperTrigger class="shrink-0 flex-row gap-2">
-              <StepperIndicator />
-              <StepperTitle class="whitespace-nowrap">{{ t('studio.workbench.stepTip') }}</StepperTitle>
-            </StepperTrigger>
-          </StepperItem>
-        </Stepper>
 
         <div class="sheet-scroll">
-          <MenuFormBasics
-            v-show="step === 1"
+          <MenuSheetBody
             v-model="draft"
-            @crop="cropperTarget = 'preview'"
+            :memberships="memberships"
+            :copy-targets="copyTargets"
+            :move-targets="editingEntry.isSubmenu ? [] : store.moveTargets.filter(target => target.id !== editingEntry?.menuId)"
+            :submenus="submenus"
+            :count-source="countSource"
+            @crop="cropperTarget = $event"
+            @copy="onCopyTo"
+            @move="onMoveTo"
+            @open-submenu="onOpenSubmenu"
           />
-          <MenuFormTip v-show="step === 2" v-model="draft" @crop="cropperTarget = 'marquee'" />
-
-          <div class="step-flow">
-            <button v-if="step === 2" type="button" class="act" @click="step = 1">{{ t('studio.workbench.previous') }}</button>
-            <button v-if="step === 1" type="button" class="act primary" @click="step = 2">
-              {{ t('studio.workbench.nextTip') }}
-            </button>
-          </div>
         </div>
 
         <div class="sheet-actions">
-          <button type="button" class="act danger" @click="removeDraft">
+          <button
+            v-if="!editingEntry.isSubmenu"
+            type="button"
+            class="act danger"
+            @click="removeDraft"
+          >
             {{ editingEntry.isNew ? t("studio.workbench.discard") : t("studio.workbench.removeEntry") }}
+          </button>
+          <button v-else type="button" class="act danger" @click="store.closeEditor()">
+            {{ t('studio.workbench.backToParent') }}
           </button>
           <button type="button" class="act primary" @click="applyDraft">{{ t('studio.workbench.apply') }}</button>
         </div>
       </div>
     </FSheet>
+
+    </template>
+
+    <!-- 图片裁切器：槽位图标 128×128 PNG / hover 大图 454×263 JPEG -->
+    <FImageCropper
+      :open="cropperTarget !== null"
+      :width="cropperActive.width"
+      :height="cropperActive.height"
+      :format="cropperActive.format"
+      :title="cropperActive.title"
+      @update:open="!$event && (cropperTarget = null)"
+      @cropped="onCropped"
+    />
   </section>
 </template>
 
@@ -295,6 +490,24 @@ function removeDraft(): void {
   flex-wrap: wrap;
   gap: 14px;
 }
+.toolbar-spacer {
+  display: inline-flex;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.ghost-btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+}
+.ghost-btn.primary:hover {
+  filter: brightness(1.08);
+}
+.ghost-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 .view-switch {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -336,6 +549,10 @@ function removeDraft(): void {
   border-radius: var(--radius-md);
   padding: 10px 12px;
 }
+.workbench-loading {
+  height: 660px;
+}
+
 .workspace {
   /* 固定高度：重建舞台与面板互不影响（面板内自行滚动） */
   display: grid;
@@ -345,9 +562,22 @@ function removeDraft(): void {
 }
 
 /* Sheet 编辑表单 */
-.step-flow {
-  display: flex;
-  justify-content: flex-end;
+.back-parent {
+  align-items: center;
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11.5px;
+  gap: 5px;
+  padding: 4px 10px;
+}
+.back-parent:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 .sheet-body {
   display: flex;
@@ -375,6 +605,12 @@ function removeDraft(): void {
   padding-top: 12px;
 }
 
+.sheet-head-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
 .sheet-id {
   color: var(--muted-foreground);
   font-size: 11px;

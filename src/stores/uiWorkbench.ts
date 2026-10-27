@@ -9,16 +9,42 @@ import {
   type WorkbenchTool,
 } from "@/lib/game-ui/workbench";
 import {
+  buildLocaleResource,
   buildMenuExport,
   buildMenuPropertyResource,
   dataUrlToBytes,
+  iconInstanceFromAsset,
+  ICON_GROUP,
+  ICON_TYPE,
+  LOCALE_GROUP,
   LOCALE_TABLES,
+  OPENSCP_LOCALE_TABLE,
+  LOCALE_TYPE,
+  marqueeInstanceFromAsset,
+  MARQUEE_TYPE,
+  MENU_GROUP,
+  MENU_PROP_TYPE,
+  writeUncompressedOverlay,
+  type DbpfEntry,
   type LocaleString,
   type MenuExportEntry,
 } from "@/lib/game-ui/menu-export";
+import {
+  gamePropertyCopy,
+  gameMenuGroupsCompile,
+  gamePropertyPatch,
+  gamePropertyRead,
+  type PropertyPatchFloat,
+  type PropertyReadResult,
+} from "@/lib/game-assets";
+import { TauriUnavailableError } from "@/api/tauri";
 import { loadReplicaData } from "@/lib/game-ui/replica/loader";
-import type { ReplicaData, ReplicaTool } from "@/lib/game-ui/replica/types";
+import type { ReplicaData, ReplicaSubmenuItem, ReplicaTool } from "@/lib/game-ui/replica/types";
+import { isTauri } from "@/api";
 import { i18n } from "@/locales";
+
+import developmentMenus from "@/lib/game-ui/development-menus.json";
+import { useCountLimits } from "@/lib/game-ui/count-limits";
 
 export type UiWorkbenchView = "city" | "region" | "development";
 
@@ -35,9 +61,13 @@ interface LegacyWorkbench {
  *
  * 数据源 = ui_replica 复刻数据（public/game-ui/replica/data/*.js，逆向产物生成）：
  * 一级 14 个分类来自 CATEGORY_MODEL（Menu/Menu2 推导），二级槽位来自 HUD_TOOLS，
- * 面板布局来自 HUD_PALETTE；舞台渲染（Shadow DOM）在 UiWorkbenchStage 里完成，
- * store 只维护菜单模型与**纯前端编辑覆盖**（`edits` / `added`），实时反映到
- * 复刻 UI 与右侧面板上；「落库」当前以 overlay JSON 导出，后端写回
+ * 面板布局来自 HUD_PALETTE；舞台渲染（Shadow DOM）在 UiWorkbenchStage 里完成。
+ *
+ * 副本语义：复刻基础数据只读；一切编辑落在 `edits`（逐字段覆盖，三态——
+ * undefined 不改 / null 明确移除 / 字符串替换）、`added`（新增与拷贝条目）、
+ * `removed`（移出菜单）三张覆盖表。面板/舞台/导出共用 effectiveEntries
+ * 的同一有效模型；`duplicateToMenu` 实现条目拷贝（新身份 + 共享原图）。
+ * 「落库」当前以 overlay JSON / buildGameExport 的 .package 导出，后端写回
  * （patch_property_overlay + 版本记录通道）是下一轮接入点。
  */
 
@@ -47,7 +77,18 @@ export interface MenuEntry {
   tool: WorkbenchTool;
   /** 本条是工作台里新加的（尚未有对应的游戏 property）。 */
   isNew?: boolean;
+  /** 本条来自建筑子菜单（costs.json 反查产物），不在任何工作台分类里。 */
+  isSubmenu?: boolean;
 }
+
+/** 菜单容器 instance（0x%08X）：游戏数据里的「归属」由 0x0DB9FC63
+ * （uiCategories）数组决定——条目 property 指向容器 instance，一个条目
+ * 可以同时挂在多个菜单下。工作台三类视图对应的真实容器：
+ * - 城市（city）= 复刻数据的 14 个一级分类（AC12C904 道路…）；
+ * - 城市发展（development）= development-menus.json 中的九类产业菜单；
+ * - 区域（region）= RegionUI 布局的按钮组由运行时填充，静态包无容器
+ *   instance → 保持占位 id，不参与编译导出。 */
+export const UNIVERSITY_MENU_CONTAINER = "9D2EF585";
 
 /** 复刻数据里的一个工具 → 工作台的条目视图。
  * 顺序即 uiPosition（构建期已排序），映射为 10/20/30… 的排序键；
@@ -69,10 +110,14 @@ export function replicaToolToWorkbench(tool: ReplicaTool, index: number): Workbe
     upkeep: tool.upkeep,
     locked: tool.locked,
     source: tool.label ? "locale" : "unresolved",
+    sourceInstance: /^[0-9A-F]{8}$/.test(tool.instance) ? tool.instance : undefined,
+    previewTgi: tool.previewTgi,
+    marqueeTgi: tool.marqueeTgi,
   };
 }
 
 export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
+  const countLimits = useCountLimits();
   /** ui_replica 复刻数据（菜单模型 + 面板布局 + 舞台渲染的输入）。 */
   const replica = shallowRef<ReplicaData | null>(null);
   const loading = shallowRef(false);
@@ -88,8 +133,13 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   const removed = ref<Record<string, string[]>>({});
   /** 正在编辑的条目（打开 Sheet）。 */
   const editingEntry = shallowRef<MenuEntry | null>(null);
+  /** Sheet 嵌套栈：子菜单条目入栈，关闭时弹回上级。 */
+  const editorStack = shallowRef<MenuEntry[]>([]);
   /** 工作台里新建的分类（一级菜单末位「＋」产生）。 */
   const customCategories = ref<WorkbenchCategory[]>([]);
+  const menuGroups = ref<{ id: string; parentId: string; label: string }[]>([]);
+  const moves = ref<Record<string, { from: string; to: string }[]>>({});
+  const stableInstances = ref<Record<string, number>>({});
   const viewMode = ref<UiWorkbenchView>("city");
   const legacyWorkbench = shallowRef<LegacyWorkbench | null>(null);
 
@@ -133,13 +183,29 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
 
   function setViewMode(mode: UiWorkbenchView): void {
     viewMode.value = mode;
-    entered.value = false;
-    selectedMenuId.value = categories.value[0]?.id ?? null;
+    leaveMenu();
   }
 
-  /** 二级返回一级。 */
+  /** 关闭菜单时清除选中项，让右侧详情同步回到空状态。 */
   function leaveMenu(): void {
     entered.value = false;
+    selectedMenuId.value = null;
+  }
+
+  /** 大学容器的条目（真实 instance id；与 tools.json 里 uiCategories=9D2EF585
+   * 的 8 个成员一致）。城市发展视图的 categories 与跨视图拷贝共用。 */
+  const universityItems = computed<WorkbenchTool[]>(() =>
+    (legacyWorkbench.value?.university?.tools ?? []).map((tool) => ({
+      id: tool.id,
+      label: tool.label || tool.id,
+      pos: tool.pos,
+      icon: tool.icon ?? null,
+      source: "locale" as const,
+    })),
+  );
+
+  function universityLabel(): string {
+    return legacyWorkbench.value?.university?.label ?? i18n.global.t("studio.workbench.universityMenu");
   }
 
   /** 全部一级分类（复刻数据 14 分类 + 工作台新建的）。 */
@@ -164,50 +230,214 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
       return [...regionCategories, ...customCategories.value];
     }
     if (viewMode.value === "development") {
-      const tools = legacyWorkbench.value?.university?.tools ?? [];
       return [
-        {
-          id: "DEVELOPMENT",
-          label: legacyWorkbench.value?.university?.label ?? "城市发展",
-          icon: null,
-          items: tools.map((tool) => ({
-            id: tool.id,
-            label: tool.label || tool.id,
-            pos: tool.pos,
-            icon: tool.icon ?? null,
-            source: "locale" as const,
-          })),
-        },
+        ...developmentMenus.map((menu) => ({
+          id: menu.id,
+          label: i18n.global.t(`studio.workbench.developmentMenus.${menu.key}`),
+          icon: `/game-ui/replica/assets/cat_${menu.icon}.png`,
+          items: (data?.tools[menu.id] ?? []).map(replicaToolToWorkbench),
+        })),
         ...customCategories.value,
       ];
     }
     return [...base, ...customCategories.value];
   });
 
+  const rootMenus = computed<WorkbenchCategory[]>(() => [
+    ...(replica.value?.model.categories ?? []).map(cat => ({
+      id: cat.id, label: cat.label, icon: cat.icon,
+      items: (replica.value?.tools[cat.id] ?? []).map(replicaToolToWorkbench),
+    })),
+    ...developmentMenus.map(menu => ({ id: menu.id,
+      label: i18n.global.t(`studio.workbench.developmentMenus.${menu.key}`), icon: null,
+      items: (replica.value?.tools[menu.id] ?? []).map(replicaToolToWorkbench),
+    })),
+  ]);
+
+  function sourceContainers(id: string): string[] {
+    const development = developmentMenus.find(menu => menu.id === id);
+    if (development) return development.via;
+    if (id === "CBC27856") return ["2A99C945", "A63DDC77", "4B277752", "DC8602C9", "6AFE622F", "3E9C273B", "FD631707", "5817C009", "F79888D2"];
+    if (id === "899BEA70") return ["07049250", "D05EB40B", "D91C434F", "F575AD72", "97164E47", "8EC55325", "2A31842A", "1483C8AE", "2982952B", "C2487690"];
+    return [id];
+  }
+
+  const moveTargets = computed(() => rootMenus.value.flatMap(root => [
+    ...(sourceContainers(root.id).length === 1 && sourceContainers(root.id)[0] === root.id
+      ? [{ id: root.id, label: root.label }] : []),
+    ...menuGroups.value.filter(group => group.parentId === root.id)
+      .map(group => ({ id: group.id, label: `${root.label} / ${group.label}` })),
+  ]).filter(target => /^[0-9A-F]{8}$/.test(target.id) && target.id !== "3193C0BE"));
+
+  function createMenuGroup(parentId: string, label: string): string | null {
+    if (!label.trim() || parentId === "3193C0BE" || !/^[0-9A-F]{8}$/.test(parentId) || !rootMenus.value.some(root => root.id === parentId)) return null;
+    let salt = 0;
+    let id: string;
+    const occupied = new Set([...Object.keys(replica.value?.tools ?? {}),
+      ...Object.values(replica.value?.tools ?? {}).flat().map(tool => tool.instance),
+      ...menuGroups.value.map(group => group.id)]);
+    do { id = fnv1Lower(`openscp:subcategory:${parentId}:${label.trim()}:${salt++}`).toString(16).toUpperCase().padStart(8, "0"); }
+    while (occupied.has(id));
+    menuGroups.value = [...menuGroups.value, { id, parentId, label: label.trim() }];
+    return id;
+  }
+
+  function menuEntries(menuId: string): MenuEntry[] {
+    const root = rootMenus.value.find(root => root.id === menuId);
+    const group = menuGroups.value.find(group => group.id === menuId);
+    if (!root && !group) return [];
+    return effectiveEntries(root ?? { id: group!.id, label: group!.label, icon: null, items: [] }).entries;
+  }
+
+  function groupTabs(rootId: string) {
+    const direct = menuEntries(rootId);
+    const base = replica.value?.subtabs?.[rootId] ?? [];
+    const custom = menuGroups.value.filter(group => group.parentId === rootId);
+    if (!custom.length) return base.map((tab, index) => ({ ...tab,
+      instances: [...tab.instances.filter(id => direct.some(entry => entry.tool.id === id)),
+        ...(index === 0 ? direct.filter(entry => !base.some(tab => tab.instances.includes(entry.tool.id))).map(entry => entry.tool.id) : [])],
+    }));
+    const remaining = new Set(direct.map(entry => entry.tool.id));
+    return [
+      ...(base.length ? base.map(tab => ({ ...tab, instances: tab.instances.filter(id => remaining.has(id)) }))
+        : [{ label: i18n.global.t("studio.workbench.ungrouped"), instances: [...remaining] }]),
+      ...custom.map(group => ({ label: group.label, instances: menuEntries(group.id).map(entry => entry.tool.id) })),
+    ];
+  }
+
+  function moveEntry(from: string, itemId: string, to: string): MenuEntry | null {
+    if (from === to || !moveTargets.value.some(target => target.id === to)) return null;
+    const entry = menuEntries(from).find(entry => entry.tool.id === itemId);
+    if (!entry) return null;
+    if (!/^[0-9A-F]{8}$/.test(itemId) && stableInstances.value[itemId] == null) {
+      stableInstances.value = { ...stableInstances.value,
+        [itemId]: fnv1Lower(`menu-item:${from}:${itemId}:${entry.tool.label}`) };
+    }
+    moves.value = { ...moves.value, [itemId]: [...(moves.value[itemId] ?? []), { from, to }] };
+    added.value = { ...added.value,
+      [from]: (added.value[from] ?? []).filter(tool => tool.id !== itemId),
+      [to]: [...(added.value[to] ?? []).filter(tool => tool.id !== itemId), entry.tool],
+    };
+    removed.value = { ...removed.value,
+      [from]: [...new Set([...(removed.value[from] ?? []), itemId])],
+      [to]: (removed.value[to] ?? []).filter(id => id !== itemId),
+    };
+    // Preserve drafts/edits and menu identity; moving is not deleting or copying.
+    const result = { menuId: to, tool: entry.tool, isNew: entry.isNew };
+    if (editingEntry.value?.tool.id === itemId) editingEntry.value = result;
+    return result;
+  }
+
   /** 面板当前展示的菜单（含编辑覆盖与新增项）。 */
   const activeMenu = computed<{ id: string; label: string; entries: MenuEntry[] } | null>(() => {
     if (!replica.value) return null;
-    const category = categories.value.find((candidate) => candidate.id === selectedMenuId.value);
+    const group = menuGroups.value.find(group => group.id === selectedMenuId.value);
+    const category = categories.value.find((candidate) => candidate.id === selectedMenuId.value)
+      ?? (group ? { id: group.id, label: group.label, icon: null, items: [] } : undefined);
     if (!category) return null;
+    return { id: category.id, label: category.label, entries: effectiveEntries(category).entries };
+  });
+
+  /** 一个菜单的**有效视图** = 基础条目 − 已移除 + 已新增，全部应用编辑覆盖。
+   * 面板、舞台、导出共用这一个模型——「编辑器编辑的是副本」：基础复刻数据
+   * 只读，所有修改都落在 `edits` / `added` / `removed` 三张覆盖表里。 */
+  function effectiveEntries(category: WorkbenchCategory): { category: WorkbenchCategory; entries: MenuEntry[] } {
     const menuAdditions = added.value[category.id] ?? [];
+    const dropped = removed.value[category.id] ?? [];
     const entries: MenuEntry[] = sortTools(
       category.items
-        .filter((tool) => !(removed.value[category.id] ?? []).includes(tool.id))
+        .filter((tool) => !dropped.includes(tool.id) && !menuAdditions.some(added => added.id === tool.id))
         .map((tool) => applyEdit(tool, edits.value[tool.id]))
         .concat(menuAdditions.map((tool) => applyEdit(tool, edits.value[tool.id]))),
     ).map((tool) => ({
       menuId: category.id,
       tool,
-      isNew: menuAdditions.some((addedTool) => addedTool.id === tool.id),
+      isNew: menuAdditions.some((addedTool) => addedTool.id === tool.id) && !/^[0-9A-F]{8}$/.test(tool.id),
     }));
-    return { id: category.id, label: category.label, entries };
-  });
+    return { category, entries };
+  }
 
-  /** 面板点击条目 → 打开编辑 Sheet。 */
+  /** 全部菜单的有效视图（导出的唯一数据源）。跨视图容器（大学
+   * 9D2EF585）不在当前视图分类里，但有新增/拷贝条目时同样参与导出。 */
+  function allEffectiveEntries(): { category: WorkbenchCategory; entries: MenuEntry[] }[] {
+    const out = [...rootMenus.value, ...customCategories.value].map((category) => effectiveEntries(category));
+    // Keep edited development entries exportable after switching back to another view.
+    for (const menu of developmentMenus) {
+      if (out.some(({ category }) => category.id === menu.id)) continue;
+      const items = (replica.value?.tools[menu.id] ?? []).map(replicaToolToWorkbench);
+      if (!items.some((tool) => edits.value[tool.id]) && !(added.value[menu.id]?.length)) continue;
+      out.push(effectiveEntries({
+        id: menu.id,
+        label: i18n.global.t(`studio.workbench.developmentMenus.${menu.key}`),
+        icon: null,
+        items,
+      }));
+    }
+    for (const [menuId, additions] of Object.entries(added.value)) {
+      if (additions.length === 0) continue;
+      if (out.some(({ category }) => category.id === menuId)) continue;
+      const items: WorkbenchTool[] =
+        menuId === UNIVERSITY_MENU_CONTAINER ? universityItems.value : [];
+      // 任意 hex 容器（建筑子菜单容器等）都能成为导出行：标签取容器语义名
+      const label =
+        menuId === UNIVERSITY_MENU_CONTAINER
+          ? universityLabel()
+          : (menuGroups.value.find(group => group.id === menuId)?.label ?? containerLabelOf(menuId) ?? additions[0]?.label ?? menuId);
+      out.push(effectiveEntries({ id: menuId, label, icon: null, items }));
+    }
+    return out;
+  }
+
+  /** 面板点击条目 → 打开编辑 Sheet（已有打开中的 Sheet 时压栈，形成嵌套）。 */
   function openEditor(menuId: string, itemId: string): void {
-    const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
-    if (entry) editingEntry.value = entry;
+    const entry = menuEntries(menuId).find((candidate) => candidate.tool.id === itemId)
+      ?? activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
+    if (entry) {
+      if (editingEntry.value) {
+        editorStack.value = [...editorStack.value, editingEntry.value];
+      }
+      editingEntry.value = entry;
+    }
     void menuId;
+  }
+
+  /** 打开建筑子菜单条目（costs.json 反查产物；不挂在任何工作台分类）。 */
+  function openSubmenuItem(item: ReplicaSubmenuItem): void {
+    if (!editingEntry.value) return;
+    editorStack.value = [...editorStack.value, editingEntry.value];
+    editingEntry.value = {
+      menuId: editingEntry.value.menuId,
+      isSubmenu: true,
+      tool: {
+        id: item.instance,
+        label: item.name,
+        pos: 0,
+        icon: null,
+        desc: item.desc || undefined,
+        preview: item.preview ?? null,
+        marquee: item.marquee ?? null,
+        cost: item.cost != null ? String(item.cost) : null,
+        upkeep: item.maintenance != null ? String(item.maintenance) : null,
+        source: "locale",
+      },
+    };
+  }
+
+  /** 关闭当前 Sheet 层：有上级时弹回，否则收起。 */
+  function closeEditor(): void {
+    if (editorStack.value.length > 0) {
+      const stack = [...editorStack.value];
+      editingEntry.value = stack.pop() ?? null;
+      editorStack.value = stack;
+    } else {
+      editingEntry.value = null;
+    }
+  }
+
+  /** 编辑会话整体收起（还原栈）。 */
+  function resetEditor(): void {
+    editingEntry.value = null;
+    editorStack.value = [];
   }
 
   function updateItem(menuId: string, itemId: string, patch: ToolEdit): void {
@@ -254,6 +484,212 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     edits.value = { ...edits.value, [id]: { ...edits.value[id] } };
   }
 
+  /** 将已核对的大学人行道样例挂到道路菜单，作为流程工作台的演示入口。 */
+  function addUniversitySidewalkToRoad(): void {
+    const road = categories.value.find((category) =>
+      category.items.some((tool) => tool.id === "B7D3F194" || tool.id === "7DD8A627"),
+    );
+    if (!road) return;
+    if ([...road.items, ...(added.value[road.id] ?? [])].some((tool) => tool.id === "9A38E382")) {
+      selectedMenuId.value = road.id;
+      entered.value = true;
+      return;
+    }
+    const tool: WorkbenchTool = {
+      id: "9A38E382",
+      label: i18n.global.t("studio.workbench.universitySidewalk"),
+      pos: Math.max(...road.items.map((item) => item.pos), 0) + 10,
+      icon: null,
+      preview: null,
+      marquee: "/game-ui/reference/university.png",
+      desc: i18n.global.t("studio.workbench.universitySidewalkDesc"),
+      unlock: "",
+      stats: [
+        { label: i18n.global.t("studio.workbench.laneCount"), value: "2" },
+        { label: i18n.global.t("studio.workbench.maxDensity"), value: i18n.global.t("studio.workbench.mediumDensity") },
+      ],
+      // The game item is free by default. The copy is immediately edited to
+      // the road-menu sample price below, preserving the preset semantics.
+      cost: null,
+      upkeep: null,
+      locked: false,
+      source: "preset",
+    };
+    added.value = { ...added.value, [road.id]: [...(added.value[road.id] ?? []), tool] };
+    edits.value = { ...edits.value, [tool.id]: { cost: "20", upkeep: null } };
+    selectedMenuId.value = road.id;
+    entered.value = true;
+  }
+
+  /** 把一条菜单项**拷贝**进目标菜单（SCP 教程 Copy Entry 的语义：
+   * 复制完整条目、分配新身份，原图标/大图先共享原资源）。
+   * 副本快照源的当前有效视图（含已有编辑），此后两边互不影响；
+   * 编辑/移除都只落在副本自己的覆盖键上。目标可以是当前视图里的分类，
+   * 也可以是跨视图的真实容器（大学 9D2EF585）。返回副本条目。 */
+  function duplicateToMenu(sourceMenuId: string, itemId: string, targetMenuId: string): MenuEntry | null {
+    const source = categories.value.find((category) => category.id === sourceMenuId);
+    if (!source) return null;
+    const targetInView = categories.value.find((category) => category.id === targetMenuId);
+    if (!targetInView && targetMenuId !== UNIVERSITY_MENU_CONTAINER) return null;
+    const base = source.items.find((tool) => tool.id === itemId)
+      ?? (added.value[sourceMenuId] ?? []).find((tool) => tool.id === itemId);
+    if (!base) return null;
+    const snapshot = applyEdit(base, edits.value[itemId]);
+
+    const targetItems = targetInView?.items ?? universityItems.value;
+    const targetAdditions = added.value[targetMenuId] ?? [];
+    const existing = [...targetItems, ...targetAdditions];
+    let salt = 0;
+    let copyId = copyToolId(itemId, targetMenuId, salt);
+    while (existing.some((tool) => tool.id === copyId)) {
+      copyId = copyToolId(itemId, targetMenuId, ++salt);
+    }
+    const maxPos = existing.reduce((max, tool) => Math.max(max, tool.pos), 0);
+    const copy: WorkbenchTool = {
+      ...snapshot,
+      id: copyId,
+      pos: maxPos + 10,
+      sourceInstance: /^[0-9A-F]{8}$/.test(snapshot.id) ? snapshot.id : undefined,
+    };
+    added.value = { ...added.value, [targetMenuId]: [...targetAdditions, copy] };
+    return { menuId: targetMenuId, tool: copy, isNew: true };
+  }
+
+  /** 副本的工作台 id：可读（COPY-<源id>-<目标>-<n>）；编译时按非游戏
+   * instance 走 FNV 分配新身份，与源条目互不覆盖。 */
+  /** 容器语义名：反查哪栋建筑的子菜单容器是该 instance，取建筑名。 */
+  function containerLabelOf(containerHex: string): string | null {
+    const map = replica.value?.submenuContainers ?? {};
+    const menu = Object.entries(map).find(([, container]) => container === containerHex)?.[0];
+    if (!menu) return null;
+    for (const tools of Object.values(replica.value?.tools ?? {})) {
+      const hit = tools.find((tool) => tool.instance === menu);
+      if (hit?.label) return hit.label;
+    }
+    return null;
+  }
+
+  /** 建筑子菜单容器目标全集（树选择器第二层：建筑 → 容器）。 */
+  function submenuContainerTargets(): { menuId: string; building: string; container: string }[] {
+    const map = replica.value?.submenuContainers ?? {};
+    const out: { menuId: string; building: string; container: string }[] = [];
+    for (const [menu, container] of Object.entries(map)) {
+      let building = "";
+      for (const tools of Object.values(replica.value?.tools ?? {})) {
+        const hit = tools.find((tool) => tool.instance === menu);
+        if (hit?.label) {
+          building = hit.label;
+          break;
+        }
+      }
+      out.push({ menuId: menu, building, container });
+    }
+    return out;
+  }
+
+  /** 拷贝进任意建筑子菜单容器（容器 instance 必须是游戏 hex id）。
+   * 容器不是可浏览分类 —— 副本通过 schema diff / 编译导出体现。 */
+  function duplicateToContainer(sourceMenuId: string, itemId: string, containerHex: string): MenuEntry | null {
+    if (!/^[0-9A-F]{8}$/.test(containerHex)) return null;
+    const source = categories.value.find((category) => category.id === sourceMenuId);
+    if (!source) return null;
+    const base = source.items.find((tool) => tool.id === itemId)
+      ?? (added.value[sourceMenuId] ?? []).find((tool) => tool.id === itemId);
+    if (!base) return null;
+    const snapshot = applyEdit(base, edits.value[itemId]);
+    const targetAdditions = added.value[containerHex] ?? [];
+    let salt = 0;
+    let copyId = copyToolId(itemId, containerHex, salt);
+    while (targetAdditions.some((tool) => tool.id === copyId)) {
+      copyId = copyToolId(itemId, containerHex, ++salt);
+    }
+    const maxPos = targetAdditions.reduce((max, tool) => Math.max(max, tool.pos), 0);
+    const copy: WorkbenchTool = {
+      ...snapshot,
+      id: copyId,
+      pos: maxPos + 10,
+      sourceInstance: /^[0-9A-F]{8}$/.test(snapshot.id) ? snapshot.id : undefined,
+    };
+    added.value = { ...added.value, [containerHex]: [...targetAdditions, copy] };
+    return { menuId: containerHex, tool: copy, isNew: true };
+  }
+
+  /** 通用复制：按显式快照复制到目标（一级菜单或建筑子菜单容器）。
+   * 子菜单条目不在任何分类里，Sheet 内复制必须走快照而非源分类查找。 */
+  function duplicateEntry(
+    target: { id: string; kind: string },
+    snapshot: WorkbenchTool,
+  ): MenuEntry | null {
+    const isHex = /^[0-9A-F]{8}$/.test(target.id);
+    if (!isHex) return null; // 自定义菜单暂不提供复制目标
+    const targetCategory = categories.value.find((category) => category.id === target.id);
+    const targetAdditions = added.value[target.id] ?? [];
+    const targetItems =
+      target.kind === "menu"
+        ? [...(targetCategory?.items ?? []), ...targetAdditions]
+        : targetAdditions;
+    let salt = 0;
+    let copyId = copyToolId(snapshot.id, target.id, salt);
+    while (targetItems.some((tool) => tool.id === copyId)) {
+      copyId = copyToolId(snapshot.id, target.id, ++salt);
+    }
+    const maxPos = targetItems.reduce((max, tool) => Math.max(max, tool.pos), 0);
+    const copy: WorkbenchTool = {
+      ...snapshot,
+      id: copyId,
+      pos: maxPos + 10,
+      sourceInstance: /^[0-9A-F]{8}$/.test(snapshot.id) ? snapshot.id : undefined,
+    };
+    added.value = { ...added.value, [target.id]: [...(added.value[target.id] ?? []), copy] };
+    return { menuId: target.id, tool: copy, isNew: true };
+  }
+
+  function copyToolId(sourceId: string, targetMenuId: string, salt: number): string {
+    const suffix = salt === 0 ? "" : `-${salt}`;
+    return `COPY-${sourceId}-${targetMenuId}${suffix}`;
+  }
+
+  /** 可作为复制目标的菜单全集：当前视图分类（排除区域占位与自身）+
+   * 跨视图的大学容器。区域容器没有游戏 instance，不提供。 */
+  function copyTargetMenus(excludeMenuId: string): { id: string; label: string }[] {
+    const out = new Map<string, string>();
+    for (const category of categories.value) {
+      if (category.id !== excludeMenuId && !category.id.startsWith("REGION-")) {
+        out.set(category.id, category.label);
+      }
+    }
+    if (!out.has(UNIVERSITY_MENU_CONTAINER)) {
+      out.set(UNIVERSITY_MENU_CONTAINER, universityLabel());
+    }
+    return [...out].map(([id, label]) => ({ id, label }));
+  }
+
+  /** 条目当前归属的全部菜单（指哪打哪的依据）：复刻数据里出现该 instance
+   * 的分类 + 工作台把它加进过的分类 + 跨视图的大学容器。 */
+  function membershipsOf(itemId: string): { id: string; label: string }[] {
+    const data = replica.value;
+    const out: { id: string; label: string }[] = [];
+    const seenIds = new Set<string>();
+    const menus: { id: string; label: string; items: WorkbenchTool[] }[] = rootMenus.value.map(
+      (category) => ({ id: category.id, label: category.label, items: category.items }),
+    );
+    if (!menus.some((menu) => menu.id === UNIVERSITY_MENU_CONTAINER)) {
+      menus.push({ id: UNIVERSITY_MENU_CONTAINER, label: universityLabel(), items: universityItems.value });
+    }
+    for (const menu of menus) {
+      if (seenIds.has(menu.id)) continue;
+      seenIds.add(menu.id);
+      const inBase = (data?.tools[menu.id] ?? []).some((tool) => tool.instance === itemId)
+        || menu.items.some((tool) => tool.id === itemId);
+      const inAdded = (added.value[menu.id] ?? []).some((tool) => tool.id === itemId);
+      if ((inBase && !(removed.value[menu.id] ?? []).includes(itemId)) || inAdded) out.push({ id: menu.id, label: menu.label });
+    }
+    for (const group of menuGroups.value) {
+      if ((added.value[group.id] ?? []).some(tool => tool.id === itemId)) out.push({ id: group.id, label: group.label });
+    }
+    return out;
+  }
+
   function removeItem(menuId: string, itemId: string): void {
     if (added.value[menuId]?.some((tool) => tool.id === itemId)) {
       added.value = {
@@ -279,8 +715,56 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
         format: "openscp-ui-workbench-overlay/2",
         viewMode: viewMode.value,
         edits: edits.value,
+        countLimits: countLimits.snapshot(),
         added: added.value,
         customCategories: customCategories.value,
+        menuGroups: menuGroups.value,
+        moves: moves.value,
+        removed: removed.value,
+        stableInstances: stableInstances.value,
+      },
+      null,
+      2,
+    );
+  }
+
+  /** schema JSON 文档：includeOverrides=false = 基础数据（无编辑/新增/移除），
+   * true = 当前有效视图。diff 与导出共用同一序列化器。 */
+  function schemaDocument(includeOverrides: boolean): string {
+    const menus = (includeOverrides
+      ? allEffectiveEntries()
+      : categories.value.map((category) => ({
+          category,
+          entries: category.items.map((tool) => ({ tool, isNew: false })),
+        }))
+    ).map(({ category, entries }) => ({
+      id: category.id,
+      label: category.label,
+      icon: category.icon,
+      items: entries.map(({ tool }) => ({
+        id: tool.id,
+        label: tool.label,
+        position: tool.pos,
+        icon: tool.icon,
+        preview: tool.preview ?? null,
+        marquee: tool.marquee ?? null,
+        description: tool.desc ?? "",
+        unlock: tool.unlock ?? "",
+        stats: tool.stats ?? [],
+        cost: tool.cost ?? null,
+        upkeep: tool.upkeep ?? null,
+        locked: tool.locked ?? false,
+      })),
+    }));
+    return JSON.stringify(
+      {
+        schemaVersion: 1,
+        source: "openscp-ui-workbench",
+        activeView: viewMode.value,
+        countLimits: includeOverrides ? countLimits.snapshot() : { individual: {}, shared: {} },
+        menuGroups: includeOverrides ? menuGroups.value : [],
+        moves: includeOverrides ? moves.value : {},
+        menus,
       },
       null,
       2,
@@ -288,111 +772,407 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   }
 
   function exportSchema(): string {
-    return JSON.stringify(
-      {
-        schemaVersion: 1,
-        source: "openscp-ui-workbench",
-        activeView: viewMode.value,
-        menus: categories.value.map((category) => ({
-          id: category.id,
-          label: category.label,
-          icon: category.icon,
-          items: category.items
-            .filter((tool) => !(removed.value[category.id] ?? []).includes(tool.id))
-            .concat(added.value[category.id] ?? [])
-            .map((tool) => applyEdit(tool, edits.value[tool.id]))
-            .sort((a, b) => a.pos - b.pos)
-            .map((tool) => ({
-              id: tool.id,
-              label: tool.label,
-              position: tool.pos,
-              icon: tool.icon,
-              preview: tool.preview ?? null,
-              marquee: tool.marquee ?? null,
-              description: tool.desc ?? "",
-              unlock: tool.unlock ?? "",
-              stats: tool.stats ?? [],
-              cost: tool.cost ?? null,
-              upkeep: tool.upkeep ?? null,
-              locked: tool.locked ?? false,
-            })),
-        })),
-      },
-      null,
-      2,
-    );
+    return schemaDocument(true);
   }
 
-  /** 装配游戏覆盖包（.package）：内存编辑 → diff 级覆盖资源
-   * （菜单条目 property + locale 表 diff + 裁切图标/大图）。
-   * 造价/预算编辑不在包内（GlassBox 模拟侧，属性覆盖不可达）→ warnings。 */
-  function buildGameExport(): {
+  async function buildGameExport(): Promise<{
     bytes: Uint8Array;
     entryCount: number;
     localeCount: number;
     warnings: string[];
-  } {
+  }> {
     const data = replica.value;
     const entries: MenuExportEntry[] = [];
     const locale: LocaleString[] = [];
     const warnings: string[] = [];
     const seen = new Set<string>();
-    for (const category of categories.value) {
-      for (const tool of category.items) {
-        if (seen.has(tool.id)) continue;
-        seen.add(tool.id);
+    const effective = allEffectiveEntries();
+    const sourceGroups = new Map<number, number>();
+    const unitEconTasks: {
+      label: string;
+      sourceInstance: number;
+      edit: ToolEdit;
+      tool: WorkbenchTool;
+    }[] = [];
+    for (const { category, entries: menuEntries } of effective) {
+      for (const { tool } of menuEntries) {
+        // 最小变更集合：只有被编辑过、新增过、或被移出过菜单的条目才进包。
+        // （同一 instance 挂多个菜单时只在首次出现处导出一条 property。）
         const edit = edits.value[tool.id];
         const isNew = (added.value[category.id] ?? []).some((t) => t.id === tool.id);
-        if (!edit && !isNew) continue;
+        const removedFrom = Object.keys(removed.value).filter((menuId) =>
+          (removed.value[menuId] ?? []).includes(tool.id),
+        );
+        if (!edit && !isNew && removedFrom.length === 0) continue;
+        if (seen.has(tool.id)) continue;
+        seen.add(tool.id);
         const knownInstance = /^[0-9A-F]{8}$/.test(tool.id);
-        const instance = knownInstance
+        const instance = stableInstances.value[tool.id] ?? (knownInstance
           ? Number.parseInt(tool.id, 16)
-          : fnv1Lower(`menu-item:${category.id}:${tool.id}:${tool.label}`);
-        const uiCategories = knownInstance
+          : fnv1Lower(`menu-item:${category.id}:${tool.id}:${tool.label}`));
+        // 归属容器 = 有效归属：真实游戏 instance 在复刻数据中的全部分类，
+        // 减去被移出；新增/拷贝条目落到其所在分类（必须是真实容器 id）。
+        const resolvedCategories = knownInstance
           ? Object.keys(data?.tools ?? {})
               .filter((catId) =>
-                (data?.tools[catId] ?? []).some((t) => t.instance === tool.id),
+                (data?.tools[catId] ?? []).some((t) => t.instance === tool.id)
+                && !(removed.value[catId] ?? []).includes(tool.id),
               )
-              .map((catId) => Number.parseInt(catId, 16))
-          : [Number.parseInt(category.id, 16)];
-        const titleStringId = fnv1Lower(`str:title:${tool.id}:${tool.label}`);
-        locale.push({ table: LOCALE_TABLES.toolName, id: titleStringId, text: tool.label });
+              .flatMap((catId) => (
+                data?.tools[catId]?.find((t) => t.instance === tool.id)?.uiCategories ?? [catId]
+              ).map((id) => Number.parseInt(id, 16)))
+          : [];
+        const ownContainer = !knownInstance && /^[0-9A-F]{8}$/.test(category.id)
+          ? [Number.parseInt(category.id, 16)]
+          : [];
+        let uiCategories = [...new Set([...resolvedCategories, ...ownContainer])];
+        const operations = moves.value[tool.id];
+        if (operations?.length) {
+          if (!isTauri()) throw new Error(i18n.global.t("studio.workbench.organizationNativeRequired"));
+          let initial: number[];
+          if (knownInstance) {
+            const source = await gamePropertyRead({ instance });
+            if (source) sourceGroups.set(instance, source.group);
+            const membership = source?.keys.find(key => key.hash === 0x0db9fc63);
+            if (!source || !membership) throw new Error(i18n.global.t("studio.workbench.organizationReadFailed"));
+            initial = membership.values.flatMap(value => value.key ? [value.key[2]] : []);
+          } else initial = [Number.parseInt(operations[0].from, 16)];
+          for (const operation of operations) {
+            const remove = [...sourceContainers(operation.from), operation.from].map(id => Number.parseInt(id, 16));
+            if (!initial.some(id => remove.includes(id))) {
+              throw new Error(i18n.global.t("studio.workbench.organizationReadFailed"));
+            }
+            initial = initial.filter(id => !remove.includes(id));
+            initial.push(Number.parseInt(operation.to, 16));
+          }
+          uiCategories = [...new Set(initial)];
+        }
+        if (uiCategories.length === 0) {
+          warnings.push(
+            knownInstance
+              ? `${tool.label || tool.id}：已从所有菜单移除；覆盖包无法表达整删除，本次不写入`
+              : `${tool.label || tool.id}：所在菜单「${category.label}」(${category.id}) 不是游戏容器 instance，无法编译`,
+          );
+          continue;
+        }
+        // ref-first 语义：拷贝条目的文案与源一致 → 不铸新 ID、不写词条，
+        // 由后端全量拷贝保留源引用（源串在原版/自有表里必然可得）；编辑过
+        // 才铸新 ID 进自有表。不变式是「引用 ↔ 资源对得上」，ID 新旧无关。
+        const copyOfSource = /^[0-9A-F]{8}$/.test(tool.sourceInstance ?? "");
+        const sourceInstanceHex = copyOfSource ? tool.sourceInstance!.toLowerCase() : undefined;
+        const sourceTool = sourceInstanceHex
+          ? Object.values(data?.tools ?? {})
+              .flat()
+              .find((candidate) => candidate.instance.toLowerCase() === sourceInstanceHex)
+          : undefined;
+        // 副本快照与源原文的差异（拷贝时源已被编辑）同样视为「有改动」：
+        // 所见即所得，副本要显示拷贝时的文案就必须有自己的词条。
+        const snapDiffTitle = sourceTool != null && tool.label !== sourceTool.label;
+        const snapDiffDesc = sourceTool != null && (tool.desc ?? "") !== (sourceTool.desc ?? "");
+        const snapDiffUnlock = sourceTool != null && (tool.unlock ?? "") !== (sourceTool.unlock ?? "");
+        const titleEdited = !copyOfSource || snapDiffTitle || edit?.label != null;
+        const descEdited = !copyOfSource || snapDiffDesc || edit?.desc != null;
+        const unlockEdited = !copyOfSource || snapDiffUnlock || edit?.unlock != null;
+        const titleStringId = titleEdited ? fnv1Lower(`str:title:${tool.id}:${tool.label}`) : undefined;
+        if (titleStringId != null) {
+          locale.push({ table: OPENSCP_LOCALE_TABLE, id: titleStringId, text: tool.label });
+        }
         let descStringId: number | undefined;
-        let unlockStringId: number | undefined;
-        if (tool.desc) {
+        if (descEdited && tool.desc) {
           descStringId = fnv1Lower(`str:desc:${tool.id}:${tool.desc}`);
-          locale.push({ table: LOCALE_TABLES.toolDesc, id: descStringId, text: tool.desc });
+          locale.push({ table: OPENSCP_LOCALE_TABLE, id: descStringId, text: tool.desc });
         }
-        if (tool.unlock) {
+        let unlockStringId: number | undefined;
+        if (unlockEdited && tool.unlock) {
           unlockStringId = fnv1Lower(`str:unlock:${tool.id}:${tool.unlock}`);
-          locale.push({ table: LOCALE_TABLES.toolUnlock, id: unlockStringId, text: tool.unlock });
+          locale.push({ table: OPENSCP_LOCALE_TABLE, id: unlockStringId, text: tool.unlock });
         }
+        // 解锁文案被显式清空（源有、副本无）→ 后端删除解锁键；未改动则保留源引用。
+        const removeUnlockString = copyOfSource && edit?.unlock != null && !tool.unlock;
+        // 统计行模板重写：label 被编辑 → 全量引用写自有表（未改行也换新 ID，
+        // 文本不变——「引用 ↔ 词条对得上」不变式优先于 ID 复用）。
+        let statTitleRefs: { table: number; instance: number }[] | undefined;
+        if (edit?.stats != null) {
+          statTitleRefs = edit.stats.map((s) => {
+            const id = fnv1Lower(`str:stat:${tool.id}:${s.label}`);
+            locale.push({ table: OPENSCP_LOCALE_TABLE, id, text: s.label });
+            return { table: OPENSCP_LOCALE_TABLE, instance: id };
+          });
+        }
+        // 图片三态：dataURL = 新图（随包写入 + 新 instance）；资产路径 =
+        // 引用基础原图（只写键，instance 从文件名反推）；null = 已移除（不写键）。
         const croppedIcon =
           typeof tool.preview === "string" && tool.preview.startsWith("data:") ? tool.preview : undefined;
         const croppedMarquee =
           typeof tool.marquee === "string" && tool.marquee.startsWith("data:") ? tool.marquee : undefined;
-        if (edit?.cost != null || edit?.upkeep != null) {
-          warnings.push(`${tool.label || tool.id}：造价/预算编辑在 GlassBox 模拟侧，属性覆盖不含`);
+        const preservedIcon = typeof tool.preview === "string" && !tool.preview.startsWith("data:")
+          ? iconInstanceFromAsset(tool.preview)
+          : null;
+        const preservedMarquee = typeof tool.marquee === "string" && !tool.marquee.startsWith("data:")
+          ? marqueeInstanceFromAsset(tool.marquee)
+          : null;
+        const iconInstance = croppedIcon
+          ? fnv1Lower(`icon:${tool.id}`)
+          : preservedIcon ?? undefined;
+        const marqueeInstance = croppedMarquee ? instance : preservedMarquee ?? undefined;
+        // Unit 经济/统计值补丁任务：造价/维护/统计数值写在 EcoGame Unit 上
+        // （menuUnit 链），编译时读取源 property 定位 Unit 后按原 TGI 补丁。
+        const econTouched =
+          edit?.cost != null || edit?.upkeep != null || edit?.stats != null;
+        const tauriUnavailable = !isTauri();
+        if (econTouched && !tauriUnavailable) {
+          const econSource = /^[0-9A-F]{8}$/.test(tool.sourceInstance ?? "")
+            ? Number.parseInt(tool.sourceInstance!, 16)
+            : knownInstance
+              ? Number.parseInt(tool.id, 16)
+              : undefined;
+          if (econSource != null) {
+            unitEconTasks.push({
+              label: tool.label || tool.id,
+              sourceInstance: econSource,
+              edit,
+              tool,
+            });
+          } else {
+            warnings.push(
+              `${tool.label || tool.id}：新条目无 menuUnit 链，造价/维护/统计编辑暂不支持`,
+            );
+          }
         }
         entries.push({
           instance,
+          sourceInstance: /^[0-9A-F]{8}$/.test(tool.sourceInstance ?? "")
+            ? Number.parseInt(tool.sourceInstance!, 16)
+            : undefined,
           uiCategories,
           uiPosition: tool.pos,
           titleStringId,
           descStringId,
           unlockStringId,
-          iconInstance: croppedIcon ? fnv1Lower(`icon:${tool.id}`) : undefined,
+          removeUnlockString,
+          statTitleRefs,
+          iconInstance,
+          iconTgi: iconInstance != null && croppedIcon == null
+            ? { type: 0x2f7d0004, group: 0x40e02400, instance: iconInstance }
+            : undefined,
+          marqueeTgi: preservedMarquee != null
+            ? { type: 0x3f8662ea, group: 0, instance: preservedMarquee }
+            : undefined,
           iconPng: croppedIcon ? dataUrlToBytes(croppedIcon) : undefined,
+          marqueeInstance,
           marqueeJpg: croppedMarquee ? dataUrlToBytes(croppedMarquee) : undefined,
           locked: tool.locked ?? false,
         });
       }
     }
-    const result = buildMenuExport({ entries, locale });
-    return { bytes: result.package, entryCount: entries.length, localeCount: locale.length, warnings };
+    // 从唯一菜单里被移除的条目不会出现在任何有效视图 → 主循环看不见。
+    // 覆盖包无法表达「整删除」（不写 = 游戏保留原条目），显式告知而不是静默。
+    for (const [menuId, ids] of Object.entries(removed.value)) {
+      for (const id of ids) {
+        if (seen.has(id)) continue;
+        const label = categories.value.find((category) => category.id === menuId)?.label ?? menuId;
+        warnings.push(`「${label}」中移除的 ${id}：覆盖包无法表达整删除，游戏内将保留原条目`);
+      }
+    }
+    // 全量 property 复制：有源 instance 的条目走后端深拷贝（家族键随源条目
+    // 保留），失败/不可用时回退合成 property。先发全部请求（并行），再按
+    // instance 归位 property 资源条目。
+    const copyRequests = entries.filter((entry) => entry.sourceInstance != null);
+    const copiedProperties = new Map<number, Uint8Array>();
+    const copiedGroups = new Map<number, number>();
+    const tauriUnavailable = !isTauri();
+    if (copyRequests.length > 0 && !tauriUnavailable) {
+      const results = await Promise.allSettled(
+        copyRequests.map((entry) =>
+          gamePropertyCopy({
+            sourceInstance: entry.sourceInstance!,
+            sourceGroup: sourceGroups.get(entry.instance),
+            newInstance: entry.instance,
+            uiCategories: entry.uiCategories,
+            titleStringId: entry.titleStringId,
+            descStringId: entry.descStringId,
+            unlockStringId: entry.unlockStringId,
+            removeUnlockString: entry.removeUnlockString,
+            statTitleRefs: entry.statTitleRefs,
+            position: entry.uiPosition,
+            iconTgi: entry.iconTgi,
+            marqueeTgi: entry.marqueeTgi,
+          }),
+        ),
+      );
+      for (const [index, result] of results.entries()) {
+        const entry = copyRequests[index];
+        if (result.status === "fulfilled" && result.value) {
+          copiedGroups.set(entry.instance, result.value.sourceGroup);
+          copiedProperties.set(
+            entry.instance,
+            Uint8Array.from(atob(result.value.dataBase64), (c) => c.charCodeAt(0)),
+          );
+        } else {
+          const reason = result.status === "rejected"
+            ? result.reason instanceof Error
+              ? result.reason.message
+              : typeof result.reason === "object" && result.reason != null
+                ? JSON.stringify(result.reason)
+                : String(result.reason)
+            : "返回空";
+          if (Object.keys(moves.value).some(id => (stableInstances.value[id] ?? Number.parseInt(id, 16)) === entry.instance)) {
+            throw new Error(i18n.global.t("studio.workbench.organizationReadFailed"));
+          }
+          warnings.push(`全量 property 复制失败(${reason})，回退合成条目`);
+        }
+      }
+    }
+
+    // 合成 property 仅用于没有源 property 的条目（新 FNV 条目/复制失败回退）
+    const overlayEntries: DbpfEntry[] = [];
+    for (const entry of entries) {
+      const copiedBytes = copiedProperties.get(entry.instance);
+      if (copiedBytes) {
+        overlayEntries.push({
+          type: MENU_PROP_TYPE,
+          group: copiedGroups.get(entry.instance) ?? MENU_GROUP,
+          instance: entry.instance,
+          data: copiedBytes,
+        });
+        continue;
+      }
+      overlayEntries.push({
+        type: MENU_PROP_TYPE,
+        group: MENU_GROUP,
+        instance: entry.instance,
+        data: buildMenuPropertyResource(entry),
+      });
+    }
+    // Unit 经济/统计值补丁：造价(0x0A8A41DA)/维护(0x09AE19D7)/统计参数
+    // (unitEffectParameter hash) 写在 EcoGame Unit 上。按源 property 的
+    // menuUnit 定位；直接 Unit 无造价键时沿 parent 找真身（V博士大樓式占位）。
+    // 覆盖按 Unit 原分组放置（回显 TGI），与游戏读取路径一致。
+    for (const task of unitEconTasks) {
+      const parseNum = (raw: string): number =>
+        Number.parseFloat(String(raw).replace(/[,，§\s]/g, ""));
+      const menu = await gamePropertyRead({ instance: task.sourceInstance });
+      if (!menu) {
+        warnings.push(`${task.label}：读取菜单 property 失败，跳过经济补丁`);
+        continue;
+      }
+      const menuUnitEntry = menu.keys.find((k) => k.hash === 0x0975695f);
+      const menuUnit = menuUnitEntry?.values[0]?.key?.[2];
+      if (menuUnit == null) {
+        warnings.push(`${task.label}：条目无 menuUnit（道路类不走 Unit 链），跳过经济补丁`);
+        continue;
+      }
+      let unit = await gamePropertyRead({ instance: menuUnit });
+      if (!unit) {
+        warnings.push(`${task.label}：读取 Unit 0x${menuUnit.toString(16)} 失败，跳过经济补丁`);
+        continue;
+      }
+      const hasEconKeys = (r: PropertyReadResult): boolean =>
+        r.keys.some((k) => k.hash === 0x0a8a41da) ||
+        r.keys.some((k) => k.hash === 0x09ae19d7);
+      if (!hasEconKeys(unit)) {
+        const parentEntry = unit.keys.find((k) => k.hash === 0x00b2cccb);
+        const parent = parentEntry?.values[0]?.key?.[2];
+        const parentRead = parent != null ? await gamePropertyRead({ instance: parent }) : null;
+        if (parentRead && hasEconKeys(parentRead)) unit = parentRead;
+      }
+
+      const setFloats: PropertyPatchFloat[] = [];
+      if (task.edit.cost != null) {
+        const value = parseNum(task.edit.cost);
+        if (!Number.isNaN(value)) setFloats.push({ hash: 0x0a8a41da, value });
+      }
+      if (task.edit.upkeep != null) {
+        const value = Math.abs(parseNum(task.edit.upkeep));
+        if (!Number.isNaN(value)) setFloats.push({ hash: 0x09ae19d7, value });
+      }
+      const params = menu.keys.find((k) => k.hash === 0x0eb1fc22)?.values ?? [];
+      if (task.edit.stats) {
+        for (const [index, stat] of task.edit.stats.entries()) {
+          const param = params[index]?.int;
+          if (param == null || param <= 0 || stat.value == null) continue;
+          const value = parseNum(stat.value);
+          if (!Number.isNaN(value)) setFloats.push({ hash: param >>> 0, value });
+        }
+      }
+      if (setFloats.length === 0) continue;
+
+      const patched = await gamePropertyPatch({
+        instance: unit.instance,
+        group: unit.group,
+        setFloats,
+      });
+      if (patched) {
+        overlayEntries.push({
+          type: patched.typeId,
+          group: patched.group,
+          instance: patched.instance,
+          data: Uint8Array.from(atob(patched.dataBase64), (c) => c.charCodeAt(0)),
+        });
+      } else {
+        warnings.push(`${task.label}：Unit 经济补丁失败（后端不可用）`);
+      }
+    }
+
+    // 图标/大图资源：仅用户替换过图（无源 TGI 的 dataURL）才随包
+    for (const entry of entries) {
+      if (entry.iconPng && entry.iconInstance != null) {
+        overlayEntries.push({
+          type: ICON_TYPE,
+          group: ICON_GROUP,
+          instance: entry.iconInstance,
+          data: entry.iconPng,
+        });
+      }
+      if (entry.marqueeJpg && entry.marqueeInstance != null) {
+        overlayEntries.push({
+          type: MARQUEE_TYPE,
+          group: 0,
+          instance: entry.marqueeInstance,
+          data: entry.marqueeJpg,
+        });
+      }
+    }
+    let groupResourceCount = 0;
+    if (menuGroups.value.length && !isTauri()) throw new Error(i18n.global.t("studio.workbench.organizationNativeRequired"));
+    for (const parentId of new Set(menuGroups.value.map(group => group.parentId))) {
+      const defaultTitleStringId = fnv1Lower(`openscp:ungrouped:${parentId}`);
+      locale.push({ table: OPENSCP_LOCALE_TABLE, id: defaultTitleStringId, text: i18n.global.t("studio.workbench.ungrouped") });
+      const children = menuGroups.value.filter(group => group.parentId === parentId).map(group => {
+        const titleStringId = fnv1Lower(`openscp:group-title:${group.id}`);
+        locale.push({ table: OPENSCP_LOCALE_TABLE, id: titleStringId, text: group.label });
+        return { instance: Number.parseInt(group.id, 16), titleStringId };
+      });
+      const resources = await gameMenuGroupsCompile({ parentInstance: Number.parseInt(parentId, 16),
+        parentGroup: developmentMenus.some(menu => menu.id === parentId) ? 0x0c298bdd : 0x09a4ba03,
+        newGroup: fnv1Lower(`openscp:subcategory-group:${parentId}`), localeTable: OPENSCP_LOCALE_TABLE,
+        defaultTitleStringId, children });
+      for (const resource of resources) overlayEntries.push({ type: resource.typeId, group: resource.group,
+        instance: resource.instance, data: Uint8Array.from(atob(resource.dataBase64), c => c.charCodeAt(0)) });
+      groupResourceCount += resources.length;
+    }
+    for (const tableId of new Set(locale.map((s) => s.table))) {
+      overlayEntries.push({
+        type: LOCALE_TYPE,
+        group: LOCALE_GROUP,
+        instance: tableId,
+        data: buildLocaleResource(
+          locale.filter((s) => s.table === tableId),
+          tableId,
+        ),
+      });
+    }
+    const countResources = await countLimits.compile(overlayEntries);
+    for (const resource of countResources) {
+      const index = overlayEntries.findIndex((r) => r.type === resource.type && r.group === resource.group && r.instance === resource.instance);
+      if (index < 0) overlayEntries.push(resource);
+      else overlayEntries[index] = resource;
+    }
+    const bytes = writeUncompressedOverlay(overlayEntries);
+    return { bytes, entryCount: entries.length + countResources.length + groupResourceCount, localeCount: locale.length, warnings };
   }
 
-  /** 单条菜单条目 → .property 资源字节（Sheet 内按条目导出）。 */
+
   function buildEntryProperty(itemId: string): Uint8Array | null {
     const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === itemId);
     const data = replica.value;
@@ -414,13 +1194,21 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
   }
 
   function resetAll(): void {
+    countLimits.reset();
+    if (menuGroups.value.some(group => group.id === selectedMenuId.value) || customCategories.value.some(group => group.id === selectedMenuId.value)) leaveMenu();
+    menuGroups.value = [];
+    moves.value = {};
+    stableInstances.value = {};
+    customCategories.value = [];
     edits.value = {};
     added.value = {};
     removed.value = {};
-    editingEntry.value = null;
+    resetEditor();
   }
 
   return {
+    menuGroups, moves, rootMenus, moveTargets, createMenuGroup, menuEntries, moveEntry, groupTabs,
+    countLimits,
     replica,
     loading,
     loadError,
@@ -430,6 +1218,7 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     added,
     removed,
     editingEntry,
+    editorStack,
     customCategories,
     viewMode,
     categories,
@@ -440,13 +1229,25 @@ export const useUiWorkbenchStore = defineStore("uiWorkbench", () => {
     setViewMode,
     leaveMenu,
     openEditor,
+    openSubmenuItem,
+    closeEditor,
+    resetEditor,
     addCategory,
     removeCategory,
     updateItem,
     addItem,
+    addUniversitySidewalkToRoad,
+    duplicateToMenu,
+    duplicateToContainer,
+    duplicateEntry,
+    submenuContainerTargets,
+    containerLabelOf,
+    membershipsOf,
+    copyTargetMenus,
     removeItem,
     exportOverlay,
     exportSchema,
+    schemaDocument,
     buildGameExport,
     buildEntryProperty,
     resetAll,

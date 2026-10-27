@@ -52,7 +52,9 @@ import {
   type DecalDictionaryData,
   type DecalImageData,
   type Rw4ResourceData,
+  type Rw4MaterialTexturesData,
   type ErzResourceData,
+  type EcoGameResourceData,
   type Rw4SectionDetail,
   type CaptureBaselineResponse,
   type ChangesetDetailResponse,
@@ -74,6 +76,8 @@ import {
   type WorkspaceEntry,
   type WorkspaceStatus,
   type ResolvedPropModel,
+  type PropBinCatalogEntry,
+  type PathEntrySummary,
 } from "./tauri";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -232,6 +236,10 @@ export const tauriApi = {
       command<CodeTextDocument>("code_write_text", {
         request: { project, relativePath, content, expectedRevision },
       }),
+    codeDeleteFile: (project: string, relativePath: string) =>
+      command<void>("code_delete_file", {
+        request: { project, relativePath },
+      }),
     codePackageInfo: (project: string, relativePath: string) =>
       command<CodePackageInfo>("code_package_info", {
         request: { project, relativePath },
@@ -257,6 +265,8 @@ export const tauriApi = {
       command<CodeManifestResponse>("code_manifest", { request: { project } }),
     deployGameMod: (project: string, artifact: string) =>
       command<DeployGameModResult>("deploy_game_mod", { request: { project, artifact } }),
+    deployUiOverlay: (dataBase64: string) =>
+      command<DeployGameModResult>("deploy_ui_overlay", { request: { dataBase64 } }),
     gameProcesses: () => command<GameProcessInfo[]>("game_processes"),
     launchGame: () => command<GameProcessInfo>("launch_game"),
   },
@@ -411,6 +421,10 @@ export const tauriApi = {
       command<
         { packageId: number; packagePath: string; instance: number; group: number; name: string; size: number }[]
       >("list_model_catalog", {}),
+    listPropBinCatalog: () =>
+      command<PropBinCatalogEntry[]>("list_prop_bin_catalog", {}),
+    listPathEntries: () =>
+      command<PathEntrySummary[]>("list_path_entries", {}),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },
@@ -423,8 +437,16 @@ export const tauriApi = {
       command<Rw4ResourceData>("read_rw4_preview", {
         request: { packageId, tgi },
       }),
+    readRw4MaterialTextures: (packageId: number, tgi: Tgi) =>
+      command<Rw4MaterialTexturesData>("read_rw4_material_textures", {
+        request: { packageId, tgi },
+      }),
     readErzPreview: (packageId: number, tgi: Tgi) =>
       command<ErzResourceData>("read_erz_preview", {
+        request: { packageId, tgi },
+      }),
+    readEcoGamePreview: (packageId: number, tgi: Tgi) =>
+      command<EcoGameResourceData>("read_ecogame_preview", {
         request: { packageId, tgi },
       }),
     readRw4Section: (packageId: number, tgi: Tgi, number: number) =>

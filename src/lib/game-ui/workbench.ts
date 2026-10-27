@@ -11,8 +11,37 @@
  * - 图片资源按 **instance = FNV-1(小写去扩展名)** 命名存储，与提取目录
  *   `public/game-ui/<ext>/<group>_<instance>.<ext>` 一一对应。
  *
- * preview 为 null 的条目（如公园回填的旧数据）：槽位/缩略图回退 tool_placeholder.png。
+ * preview 为 null 的条目：槽位/缩略图回退 PLACEHOLDER_FALLBACK（OpenSCP 自绘）。
  */
+
+/** 无图条目的自绘占位（灰底问号，data URI）——替代游戏提取的占位图。 */
+export const PLACEHOLDER_FALLBACK =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">' +
+      '<rect width="128" height="128" rx="10" fill="#2a2f3a"/>' +
+      '<text x="64" y="82" font-family="sans-serif" font-size="56" fill="#8b93a3" text-anchor="middle">?</text>' +
+    "</svg>",
+  );
+
+/** rollover 底部的模拟币图标（自绘 § 圆形，data URI）。 */
+export const SIMOLEON_FALLBACK =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">' +
+      '<circle cx="10" cy="10" r="9" fill="#3b82d6"/>' +
+      '<text x="10" y="15" font-family="sans-serif" font-size="13" fill="#fff" text-anchor="middle">§</text>' +
+    "</svg>",
+  );
+
+/** 动态槽位的椭圆光垫（自绘径向渐变，data URI）。 */
+export const SLOT_PAD_FALLBACK =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="121" height="50">' +
+      '<ellipse cx="60" cy="25" rx="52" ry="18" fill="#dfe7ee" opacity="0.85"/>' +
+    "</svg>",
+  );
 
 export interface WorkbenchTool {
   /** 工具 property 的 instance（0x%08X 大写十六进制）。 */
@@ -40,7 +69,12 @@ export interface WorkbenchTool {
   /** hardGate（0x0975695F）标记的锁定项。 */
   locked?: boolean;
   /** 名称来源：locale = 游戏字符串表；unresolved = 尚无译名。 */
-  source: "locale" | "unresolved";
+  source: "locale" | "unresolved" | "preset";
+  /** 源条目的游戏 instance（真实条目才有）——导出时用于全量 property 复制。 */
+  sourceInstance?: string;
+  /** 图标/大图在玩家安装包中的 TGI（运行时解析产物；用户替换图片后清除）。 */
+  previewTgi?: { type: number; group: number; instance: number };
+  marqueeTgi?: { type: number; group: number; instance: number };
 }
 
 export interface WorkbenchCategory {
@@ -133,7 +167,12 @@ export function assetPathForRef(ref: string): string | null {
 
 /** 单条菜单项的编辑覆盖（保存在工作台内存；导出时装配成覆盖资源）。
  * `icon` 是 FIcon 名覆盖；`preview`/`marquee` 是裁切组件产出的 dataURL
- * （或资产路径），未提供时回落基础数据。 */
+ * 或基础资产路径。
+ *
+ * 三态语义（所有编辑器编辑的是副本 = 原始数据 + 覆盖，绝不改基础数据）：
+ * - `undefined` = 不修改（回落基础值）；
+ * - `null` = 明确移除（大图/槽位图不回落，展示与导出都视为无图）；
+ * - 字符串 = 替换。 */
 export interface ToolEdit {
   label?: string;
   icon?: string | null;
@@ -145,6 +184,9 @@ export interface ToolEdit {
   locked?: boolean;
   preview?: string | null;
   marquee?: string | null;
+  /** 统计行覆盖（undefined 不改 / 数组替换，[] = 清空）。只作用于工作台
+   * 展示与 schema 导出 —— 游戏侧统计行由 Unit 条目派生，property 覆盖不含。 */
+  stats?: { label: string; value: string | null }[];
 }
 
 /** 应用编辑后的展示视图。 */
@@ -164,7 +206,8 @@ export function applyEdit(
     upkeep: edit.upkeep ?? tool.upkeep,
     locked: edit.locked ?? tool.locked,
     preview: edit.preview !== undefined ? edit.preview : tool.preview,
-    marquee: edit.marquee ?? tool.marquee,
+    marquee: edit.marquee !== undefined ? edit.marquee : tool.marquee,
+    stats: edit.stats !== undefined ? edit.stats : tool.stats,
   };
 }
 

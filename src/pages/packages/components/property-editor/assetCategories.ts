@@ -10,6 +10,16 @@ export const CATEGORY_LABELS: Record<AssetCategory, string> = {
   buildings: "建筑",
   other: "其他模型",
 };
+/** i18n 键版类别标签（EN 模式翻译不完全修正，2026-10-27）。新增导出，
+ * 既有 CATEGORY_LABELS 保留兼容；消费方用 $t(key) 渲染。 */
+export const CATEGORY_LABEL_KEYS: Record<AssetCategory, string> = {
+  trees: "package.category.trees",
+  vehicles: "package.category.vehicles",
+  waste: "package.category.waste",
+  furniture: "package.category.furniture",
+  buildings: "package.category.buildings",
+  other: "package.category.other",
+};
 // Resource identities verified in props-effects-spawners-paths-engine-flow.md.
 const KNOWN: Record<number, AssetCategory> = {
   0x0ab4dfe1: "vehicles",
@@ -42,6 +52,16 @@ export function assetCategory(
   if (/building|house|station|tower|建筑/i.test(name)) return "buildings";
   return "other";
 }
+
+/** A prop bin is an engine slot; resourceId resolves its actual meaning. */
+export function propSemanticCategory(
+  resourceId: number | null | undefined,
+  name = "",
+  trees?: Set<number>,
+): Exclude<AssetCategory, "buildings"> {
+  const category = assetCategory(resourceId ?? null, name, trees);
+  return category === "buildings" ? "other" : category;
+}
 export function unitCategory(
   unit: LotUnitDto,
   trees?: Set<number>,
@@ -64,6 +84,41 @@ export function unitCategory(
     : unit.kind === "pathPoint"
       ? "路径点"
       : "特效";
+}
+
+/** unitCategory 的 i18n 键版：返回 locale 键（decal 附带 {n} 参数），
+ * 消费方 $t(key, params) 渲染；分组归类逻辑与 unitCategory 逐字一致。 */
+export function unitCategoryKey(
+  unit: LotUnitDto,
+  trees?: Set<number>,
+  categories?: Map<number, AssetCategory>,
+): { key: string; params?: Record<string, number> } {
+  if (unit.kind === "prop")
+    return {
+      key: CATEGORY_LABEL_KEYS[
+        (unit.resourceId != null && categories?.get(unit.resourceId)) ||
+          assetCategory(unit.resourceId, unit.displayName, trees)
+      ],
+    };
+  if (unit.kind === "light")
+    return {
+      key:
+        {
+          Point: "package.unitCategory.lightPoint",
+          Spot: "package.unitCategory.lightSpot",
+          Line: "package.unitCategory.lightLine",
+        }[unit.lightType ?? "Point"] ?? "package.unitCategory.lightOther",
+    };
+  if (unit.kind === "decal")
+    return {
+      key: "package.unitCategory.decalCategory",
+      params: { n: unit.category + 1 },
+    };
+  return unit.kind === "spawner"
+    ? { key: "package.unitCategory.spawner" }
+    : unit.kind === "pathPoint"
+      ? { key: "package.unitCategory.pathPoint" }
+      : { key: "package.unitCategory.effect" };
 }
 export function placementMatrix(
   position: [number, number, number],

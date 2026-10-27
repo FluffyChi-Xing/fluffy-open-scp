@@ -90,6 +90,8 @@ export interface ReplicaStatRow {
 
 /** 二级槽位的一个工具条目。 */
 export interface ReplicaTool {
+  /** Actual game membership; aggregated palettes must preserve these on export. */
+  uiCategories?: string[];
   /** 工具 property 的 instance（0x%08X 大写十六进制）。 */
   instance: string;
   /** locale 解析后的显示名；可能为空串。 */
@@ -108,6 +110,10 @@ export interface ReplicaTool {
   preview: string | null;
   marquee: string | null;
   locked: boolean;
+  /** 预览图在玩家安装包中的 TGI（运行时解析产物；用户替换图片后清除）。 */
+  previewTgi?: { type: number; group: number; instance: number };
+  /** 大图在玩家安装包中的 TGI。 */
+  marqueeTgi?: { type: number; group: number; instance: number };
 }
 
 export interface ReplicaModel {
@@ -126,6 +132,28 @@ export interface ReplicaPalette {
   row: ReplicaSlotRow;
 }
 
+/** 建筑子菜单条目（menuUnit 的子单位反查出的模块菜单，costs.json 产物）。 */
+export interface ReplicaSubmenuItem {
+  instance: string;
+  name: string;
+  desc?: string;
+  preview?: string | null;
+  marquee?: string | null;
+  previewTgi?: { type: number; group: number; instance: number };
+  marqueeTgi?: { type: number; group: number; instance: number };
+  cost?: number | null;
+  maintenance?: number | null;
+}
+
+/** 文件夹式分类（公共交通/公園）的子分类标签：palette 内按 instance 过滤。 */
+export interface ReplicaSubtab {
+  labelKey?: string;
+  /** 游戏标签文案（公車/路面電車/火車/船…，来自提取产物）。 */
+  label: string;
+  /** 该子分类包含的条目 instance。 */
+  instances: string[];
+}
+
 /** data/*.js 六个全局的聚合。 */
 export interface ReplicaData {
   layout: ReplicaNode;
@@ -134,4 +162,10 @@ export interface ReplicaData {
   model: ReplicaModel;
   tools: Record<string, ReplicaTool[]>;
   palette: ReplicaPalette;
+  /** 文件夹分类的子分类（extra-containers 产物；缺省无）。 */
+  subtabs?: Record<string, ReplicaSubtab[]>;
+  /** 建筑子菜单（costs.json 产物；缺省无）。 */
+  submenus?: Record<string, ReplicaSubmenuItem[]>;
+  /** 建筑子菜单容器（菜单条目 instance → 容器 instance；复制目标用）。 */
+  submenuContainers?: Record<string, string>;
 }

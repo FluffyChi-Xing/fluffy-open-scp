@@ -28,14 +28,8 @@ import {
   unitMatrix,
 } from "./unitGizmos";
 import { loadSimParts, type SimPart } from "./simAssets";
-import {
-  renderRefinedAssetUnit,
-  type UnitRenderContext,
-} from "./renderers";
-import {
-  decalFrame,
-  decalHalfThickness,
-} from "@/lib/decalProject";
+import { renderRefinedAssetUnit, type UnitRenderContext } from "./renderers";
+import { decalFrame, decalHalfThickness } from "@/lib/decalProject";
 import type {
   ImageDecodeRequest,
   ImageDecodeResponse,
@@ -43,7 +37,8 @@ import type {
 } from "./imageDecode";
 import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
 import type { EngineFamily } from "@/lib/decalEngineMaterials";
-import { useEditorViewport } from "./useEditorViewport";
+import { useEditorViewport, VIEWPORT_GROUPS } from "./useEditorViewport";
+import type { CameraPreset } from "@/lib/three-viewer";
 import {
   applyDeferredMaterialMaps,
   applySunEnv,
@@ -56,7 +51,10 @@ import {
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
 import { installHejlToneMapping } from "@/lib/hejlTonemapping";
-import { createParticleEffect, type ParticleEffectView } from "./effects/particleRenderer";
+import {
+  createParticleEffect,
+  type ParticleEffectView,
+} from "./effects/particleRenderer";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   applyGroundMask,
@@ -164,6 +162,26 @@ const props = defineProps<{
    * 视口补一次重建对齐当前渲染模式。
    */
   suspended?: boolean;
+  /**
+   * 模型来源（mod 工作台外部导入）：native = 游戏 LOTM（白模/游戏 tint
+   * 材质管线）；glb = 外部导入 GLB（Blender 六槽烘焙贴图已内嵌在 glTF
+   * 材质中，保留原材质，不做白模替换与 tint/deferred 贴图链）。
+   */
+  modelSource?: "native" | "glb";
+  /**
+   * 草稿伪单元：导入的建筑模型本身可被选中并用手柄做四种变换。
+   * 选中 id 固定为 "model"；变换提交走 commit-transform("model", matrix)。
+   */
+  modelSelectable?: boolean;
+  /** 模型伪单元的变换（行主序 12 floats；rebuild 时应用到包装组）。 */
+  modelTransform?: number[] | null;
+  /** 草稿模型放置原点平移（水平居中 + 底面坐 y=0；世界空间，装配时
+   * 应用到各模型根——地面恒在原点平面）。 */
+  modelOrigin?: [number, number, number] | null;
+  /** Camera workbench values mapped onto the real Three viewer camera. */
+  cameraPreset?: CameraPreset | null;
+  /** Camera workbench depth-of-field (game meters / aperture / softness). */
+  cameraFocus?: { distance: number; aperture: number; softness: number } | null;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -204,6 +222,32 @@ const viewport = useEditorViewport({
     hoveredId.value = id;
   },
 });
+function applyCameraPreset() {
+  const preset = props.cameraPreset;
+  if (preset && viewport.viewer.value) viewport.viewer.value.setCameraPreset(preset);
+}
+watch(
+  [() => props.cameraPreset, viewport.viewer, viewport.revision],
+  applyCameraPreset,
+  { deep: true, immediate: true },
+);
+// 摄像机工作台景深(仅 cameraControlled 链路传入;其他场景恒 null 不启用)。
+watch(
+  [() => props.cameraFocus, viewport.viewer],
+  ([focus]) => {
+    viewport.viewer.value?.setDepthOfField(focus ?? null);
+  },
+  { deep: true, immediate: true },
+);
+// 草稿模型的拾取开关：同步到射线目标组（模型关闭后取消其选中）
+watch(
+  () => props.modelSelectable === true,
+  (pickable) => {
+    viewport.setModelPickable(pickable);
+    if (!pickable && props.selectedId === "model") emit("select", null);
+  },
+  { immediate: true },
+);
 
 // ---------------------------------------------------------------------------
 // 拾取反馈（2026-10-06 二轮）：轮廓壳（viewer 反转壳体，hover 虚线/选中
@@ -243,6 +287,8 @@ const unitById = computed<Map<string, LotUnitDto>>(() => {
   return map;
 });
 function overlayLabel(id: string): string {
+  // 草稿模型伪单元（整栋建筑）：显示语义名而非内部 id
+  if (id === "model") return t("package.modelUnitLabel");
   const unit = unitById.value.get(id);
   return unit ? unitLabel(unit, t) : id;
 }
@@ -336,12 +382,12 @@ function applyOutlines() {
   const hover = hoveredId.value;
   const hoverObject =
     hover && hover !== props.selectedId
-      ? viewport.unitObjects.get(hover) ?? null
+      ? (viewport.unitObjects.get(hover) ?? null)
       : null;
   instance.setHoverOutline(hoverObject);
   const selected = props.selectedId;
   instance.setSelected(
-    selected ? viewport.unitObjects.get(selected) ?? null : null,
+    selected ? (viewport.unitObjects.get(selected) ?? null) : null,
   );
 }
 watch(viewport.viewer, (instance) => {
@@ -406,7 +452,10 @@ let envRefs: SunEnvRefs | null = null;
 const imageDataCache = new Map<string, Promise<ImageData | null>>();
 const IMAGE_DATA_CACHE_CAP = 16;
 /** 尺寸探测缓存（mask 图宽高，同键空间）。 */
-const imageDimsCache = new Map<string, Promise<{ width: number; height: number } | null>>();
+const imageDimsCache = new Map<
+  string,
+  Promise<{ width: number; height: number } | null>
+>();
 
 function cacheGetOrLoad<V>(
   cache: Map<string, Promise<V>>,
@@ -527,12 +576,16 @@ async function getDecalTexture(
     // png 是**裸 base64 字符串**（四色解码 PNG），必须走 data URL——
     // 不能 new Blob([png])：那会把 base64 文本当字节，解码必然失败
     //（2026-09-26 回归：全部贴花回退绿色占位 gizmo 的根因）。
-    const decoded = await new THREE.TextureLoader().loadAsync(
-      `data:image/png;base64,${texture.png}`,
-    ).catch((error: unknown) => {
-      console.warn("[decal] 纹理 data URL 解码失败", texture.idInstance, error);
-      return null;
-    });
+    const decoded = await new THREE.TextureLoader()
+      .loadAsync(`data:image/png;base64,${texture.png}`)
+      .catch((error: unknown) => {
+        console.warn(
+          "[decal] 纹理 data URL 解码失败",
+          texture.idInstance,
+          error,
+        );
+        return null;
+      });
     if (!decoded) return null;
     // sign/graffiti raw 掩码纹理 = 数据通道（阈值 0.5 作用于线性值），
     // 必须线性采样；破洞内景图 = 颜色纹理保持 sRGB。注意破洞条目**也带
@@ -585,9 +638,7 @@ const ENGINE_SHADER_MATERIALS = true;
  */
 let lastUnitsSnapshot = new Map<string, LotUnitDto>();
 
-function buildUnitsSnapshot(
-  grouping: UnitGrouping,
-): Map<string, LotUnitDto> {
+function buildUnitsSnapshot(grouping: UnitGrouping): Map<string, LotUnitDto> {
   const map = new Map<string, LotUnitDto>();
   for (const unit of [
     ...grouping.lights,
@@ -603,10 +654,7 @@ function buildUnitsSnapshot(
 }
 
 /** 除 transform 外的 DTO 等价判定（非 transform 字段变化必须走全量重建）。 */
-function unitEqualsIgnoringTransform(
-  a: LotUnitDto,
-  b: LotUnitDto,
-): boolean {
+function unitEqualsIgnoringTransform(a: LotUnitDto, b: LotUnitDto): boolean {
   if (a.kind !== b.kind) return false;
   const restA: Record<string, unknown> = { ...a };
   const restB: Record<string, unknown> = { ...b };
@@ -853,10 +901,23 @@ function clearParticleViews() {
 }
 
 function startParticleClock() {
-  if (particleFrame || !particleViews.length || props.suspended || props.renderMode !== "refined" || !props.renderEffects || props.groupVisibility.effects === false) return;
+  if (
+    particleFrame ||
+    !particleViews.length ||
+    props.suspended ||
+    props.renderMode !== "refined" ||
+    !props.renderEffects ||
+    props.groupVisibility.effects === false
+  )
+    return;
   particleLast = performance.now();
   const tick = (now: number) => {
-    if (props.suspended || props.renderMode !== "refined" || !props.renderEffects || props.groupVisibility.effects === false) {
+    if (
+      props.suspended ||
+      props.renderMode !== "refined" ||
+      !props.renderEffects ||
+      props.groupVisibility.effects === false
+    ) {
       stopParticleClock();
       return;
     }
@@ -1031,9 +1092,7 @@ function tryIncrementalGrouping(grouping: UnitGrouping): boolean {
     const object = viewport.unitObjects.get(id);
     if (!object) continue;
     const incrementalScale = object.userData.incrementalScale as
-      | number
-      | "keepScale"
-      | undefined;
+      number | "keepScale" | undefined;
     unitMatrix(THREE, unit.transform).decompose(
       object.position,
       object.quaternion,
@@ -1094,9 +1153,7 @@ function loadRawMaskPixels(width: number, height: number): ImageData | null {
 }
 
 /** "Lot Textures" 地表纹理 → 像素数据（compose v2 输入，按源 URL 缓存）。 */
-function loadImageDataFromUrl(
-  url: string | null,
-): Promise<ImageData | null> {
+function loadImageDataFromUrl(url: string | null): Promise<ImageData | null> {
   if (!url) return Promise.resolve(null);
   return cacheGetOrLoad(imageDataCache, url, () => decodeImageData(url));
 }
@@ -1186,7 +1243,8 @@ async function refreshAssetUnits(kinds: AssetRefreshKind[]) {
   });
   try {
     for (const kind of kinds) {
-      const family = kind === "prop" ? props.grouping.props : props.grouping.spawners;
+      const family =
+        kind === "prop" ? props.grouping.props : props.grouping.spawners;
       for (const unit of family) {
         if (viewport.rebuildEpoch() !== epoch) return; // 新一代已开跑
         const id = unitId(unit);
@@ -1249,129 +1307,254 @@ async function assembleScene(
 
   // 模型线：GLB 解析 → 材质/tint → 延迟贴图 → 阴影。
   const modelStage = (async () => {
-  // payload 级缓存：命中时返回 clone（共享几何），跳过 GLB parse。
-  const modelObjects = payload ? await getLotModelObjects(payload) : [];
-  if (ctx.isStale()) {
-    for (const object of modelObjects) disposeObject(object);
-    return;
-  }
-  const whiteMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb8c2cc,
-    roughness: 0.55,
-    metalness: 0.12,
-    side: THREE.DoubleSide,
-  });
-  // 逐 mesh 材质下标（与 glbs 同序）；材质分组的下标 → 该组 mesh 的材质列表
-  const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
-    payload?.materials ?? []
-  ).map(() => []);
-  const tintSpan = renderTelemetry.begin("texture_compose", {
-    phase: "tint",
-    refined: props.renderMode === "refined",
-  });
-  const tintResolved =
-    props.renderMode === "refined" && payload
-      ? await getTintTextures(THREE, payload, ctx.maxAnisotropy)
-      : [];
-  tintSpan.end({
-    materials: payload?.materials?.length ?? 0,
-    tinted: tintResolved.filter((entry) => entry?.tintTex).length,
-  });
-  if (ctx.isStale()) return;
-  // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
-  // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
-  // 居中（bbox≈0 实证），mask 空腔与其错位另有机制（0x0CCB7FD2/D3
-  // UV 字段为头号嫌疑，待取证）。
-  for (const [index, object] of modelObjects.entries()) {
-    const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
-    const uvKind = payload?.meshUvKinds[index] ?? 0;
-    object.traverse((child) => {
-      const mesh = child as ThreeNamespace.Mesh;
-      if (!mesh.isMesh) return;
-      // 贴花投影的候选面（精细模式才用；建筑网格在 lot 局部空间为单位变换）
-      buildingMeshes.push(mesh);
-      // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
-      mesh.userData.buildingMaterialIndex = materialIndex;
-      try {
-        if (props.renderMode !== "refined") {
-          mesh.material = whiteMaterial;
-          return;
-        }
-        const tint = tintResolved[materialIndex];
-        if (uvKind === 2 && tint?.tintTex && tint.paletteTex) {
-          // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-          const [tinted, specUniform] = makeTintMaterial(
-            THREE,
-            tint,
-            env,
-            props.reliefEnabled === true,
-          );
-          specUniformRefs.push(specUniform);
-          mesh.material = tinted;
-          return;
-        }
-        // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
-        const refined = new THREE.MeshStandardMaterial({
-          vertexColors: Boolean(mesh.geometry.attributes.color),
-          roughness: 0.82,
-          metalness: 0,
-          side: THREE.DoubleSide,
-        });
-        mesh.material = refined;
-        if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
-      } catch (error) {
-        // 逐 mesh 兜底（2026-10-08 EP1 乱码取证）：装配异常若逃出 traverse
-        // 会中断整个模型线——后续 mesh 留在 GLTFLoader 默认材质（金属灰/
-        // 环境乱码观感），且异常吞掉真实断点。此处打印异常并退白模。
-        console.error(
-          `[building-materials] glb#${index} mesh 材质装配异常:`,
-          error,
-        );
-        mesh.material = whiteMaterial;
-      }
+    // payload 级缓存：命中时返回 clone（共享几何），跳过 GLB parse。
+    const modelObjects = payload ? await getLotModelObjects(payload) : [];
+    if (ctx.isStale()) {
+      for (const object of modelObjects) disposeObject(object);
+      return;
+    }
+    const whiteMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb8c2cc,
+      roughness: 0.55,
+      metalness: 0.12,
+      side: THREE.DoubleSide,
     });
-    // DEV 诊断（2026-10-08 EP1 贴图乱码取证）：逐 mesh 材质分派摘要——
-    // uvKind/材质列/属性表/tint 是否命中/最终材质类型与 map 绑定。乱码时
-    // 控制台按行暴露 tint 链断点（tint 纹理缺失→退通用材质？deferred
-    // 未绑定？）。生产构建零成本。
-    if (import.meta.env.DEV) {
-      const summaries: string[] = [];
+    // 逐 mesh 材质下标（与 glbs 同序）；材质分组的下标 → 该组 mesh 的材质列表
+    const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
+      payload?.materials ?? []
+    ).map(() => []);
+    const tintSpan = renderTelemetry.begin("texture_compose", {
+      phase: "tint",
+      refined: props.renderMode === "refined",
+    });
+    const tintResolved =
+      props.renderMode === "refined" &&
+      payload &&
+      (props.modelSource !== "glb" || (payload.materials?.length ?? 0) > 0)
+        ? await getTintTextures(THREE, payload, ctx.maxAnisotropy)
+        : [];
+    tintSpan.end({
+      materials: payload?.materials?.length ?? 0,
+      tinted: tintResolved.filter((entry) => entry?.tintTex).length,
+    });
+    if (ctx.isStale()) return;
+    // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
+    // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
+    // 居中（bbox≈0 实证），mask 空腔与其错位另有机制（0x0CCB7FD2/D3
+    // UV 字段为头号嫌疑，待取证）。
+    // 草稿伪单元包装组（modelSelectable）：整个建筑模型作为可选中/可变换
+    // 的 "model" 单元——手柄 TRS 直接落在包装组，模型内部轴向烘焙不动。
+    let modelUnit: ThreeNamespace.Group | null = null;
+    if (props.modelSelectable && modelObjects.length) {
+      modelUnit = new THREE.Group();
+      modelUnit.userData.unitId = "model";
+      if (props.modelTransform && props.modelTransform.length === 12) {
+        // WPF 行主序 12 floats（平移在末行）→ three 列向量 Matrix4（平移在
+        // 第 4 列）：three 的 set() 是数学行主序入参，需按列填充 = 转置。
+        // 【2026-10-25 勘误】此前把平移填进第 4 行——decompose 恒读出
+        // (0,0,0)，每次重建把拖拽后的模型摁回原点（用户实测）。
+        const m = props.modelTransform;
+        const matrix = new THREE.Matrix4().set(
+          m[0],
+          m[3],
+          m[6],
+          m[9],
+          m[1],
+          m[4],
+          m[7],
+          m[10],
+          m[2],
+          m[5],
+          m[8],
+          m[11],
+          0,
+          0,
+          0,
+          1,
+        );
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        matrix.decompose(position, quaternion, scale);
+        modelUnit.position.copy(position);
+        modelUnit.quaternion.copy(quaternion);
+        modelUnit.scale.copy(scale);
+      }
+      modelUnit.userData.debugTransform = props.modelTransform
+        ? [...props.modelTransform].map((v) => +v.toFixed(2))
+        : null;
+      ctx.unitObjects.set("model", modelUnit);
+    }
+    for (const [index, object] of modelObjects.entries()) {
+      // 放置原点平移（draft：水平居中 + 底面坐 y=0；modelTransform 之外
+      // 的确定性基座平移，保证地面/尺寸与模型永远同心同面）
+      if (props.modelOrigin) {
+        object.position.add(new THREE.Vector3(...props.modelOrigin));
+      }
+      const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
+      const uvKind = payload?.meshUvKinds[index] ?? 0;
       object.traverse((child) => {
         const mesh = child as ThreeNamespace.Mesh;
         if (!mesh.isMesh) return;
-        const material = mesh.material as ThreeNamespace.MeshStandardMaterial;
-        const attributes = Object.keys(mesh.geometry.attributes).join(",");
-        summaries.push(
-          `m${index} uvKind=${payload?.meshUvKinds[index] ?? 0} mat=${materialIndex} ` +
-            `attrs=[${attributes}] type=${material?.type} ` +
-            `map=${material?.map ? "Y" : "N"} vc=${material?.vertexColors ? "Y" : "N"}`,
-        );
+        // 贴花投影的候选面（精细模式才用；建筑网格在 lot 局部空间为单位变换）
+        buildingMeshes.push(mesh);
+        // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
+        mesh.userData.buildingMaterialIndex = materialIndex;
+        try {
+          const importedMaterials = Array.isArray(mesh.material)
+            ? mesh.material
+            : [mesh.material];
+          const importedMaterial = importedMaterials[0];
+          // 默认渲染始终是白模。外部 GLB 可能自带 glTF 材质，但不能让
+          // Blender 导出的临时 baseColor 贴图绕过工作台的显示模式开关。
+          if (props.renderMode !== "refined") {
+            mesh.material = whiteMaterial;
+            return;
+          }
+          // 外部导入 GLB 材质分级（2026-10-25 白模修复）：
+          // 1) 已绑定六槽材质（payload.materials 非空）→ 落入下方原生 tint
+          //    链（契约 GLB 的 TEXCOORD_1.x=材质列、TEXCOORD_2/3=facade
+          //    投影 UV 与游戏约定一致，uvKind=2 直接可用）；
+          // 2) glTF 材质带贴图（Blender 烘焙导出）→ 原样保留；
+          // 3) 无贴图但几何带 COLOR_0（探针契约 GLB：游戏调色板顶点色烘焙）
+          //    → 顶点色材质，与原生精细渲染的调色观感一致；
+          // 4) 两者皆无（纯白模）→ 白模材质。
+          const hasSlotMaterials = (payload?.materials?.length ?? 0) > 0;
+          if (props.modelSource === "glb" && !hasSlotMaterials) {
+            const hasImportedTexture = importedMaterials.some(
+              (imported) =>
+                Boolean(
+                  (imported as ThreeNamespace.MeshStandardMaterial | null)?.map ||
+                    (imported as ThreeNamespace.MeshStandardMaterial | null)?.normalMap ||
+                    (imported as ThreeNamespace.MeshStandardMaterial | null)?.emissiveMap,
+                ),
+            );
+            if (hasImportedTexture)
+              return;
+            if (mesh.geometry.attributes.color) {
+              mesh.material = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                roughness: 0.82,
+                metalness: 0,
+                side: THREE.DoubleSide,
+              });
+              return;
+            }
+            if (!importedMaterial) mesh.material = whiteMaterial;
+            return;
+          }
+          const resolvedMaterials = importedMaterials.map((imported) => {
+            const materialName = imported?.name ?? "";
+            const blenderMaterialIndex =
+              uvKind === 3 && materialName
+                ? (payload?.materials ?? []).findIndex(
+                    (entry) => entry.materialName === materialName,
+                  )
+                : -1;
+            const tint =
+              tintResolved[
+                blenderMaterialIndex >= 0 ? blenderMaterialIndex : materialIndex
+              ];
+            if (
+              (uvKind === 2 || uvKind === 3) &&
+              tint?.tintTex &&
+              tint.paletteTex
+            ) {
+              // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
+              const [tinted, specUniform] = makeTintMaterial(
+                THREE,
+                tint,
+                env,
+                props.reliefEnabled === true,
+                uvKind === 3,
+                uvKind === 3
+                  ? (tint.paletteRowsByMaterial.get(materialName) ??
+                      (/whitebox|roof/i.test(materialName) ? 9.6 : 0))
+                  : 0,
+                uvKind === 3 && /whitebox|roof/i.test(materialName),
+                uvKind === 3 ? materialName : undefined,
+              );
+              specUniformRefs.push(specUniform);
+              return tinted;
+            }
+            // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
+            const refined = new THREE.MeshStandardMaterial({
+              vertexColors: Boolean(mesh.geometry.attributes.color),
+              roughness: 0.82,
+              metalness: 0,
+              side: THREE.DoubleSide,
+            });
+            if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
+            return refined;
+          });
+          mesh.material = Array.isArray(mesh.material)
+            ? resolvedMaterials
+            : resolvedMaterials[0];
+        } catch (error) {
+          // 逐 mesh 兜底（2026-10-08 EP1 乱码取证）：装配异常若逃出 traverse
+          // 会中断整个模型线——后续 mesh 留在 GLTFLoader 默认材质（金属灰/
+          // 环境乱码观感），且异常吞掉真实断点。此处打印异常并退白模。
+          console.error(
+            `[building-materials] glb#${index} mesh 材质装配异常:`,
+            error,
+          );
+          mesh.material = whiteMaterial;
+        }
       });
-      if (summaries.length) {
-        console.info(`[building-materials] glb#${index}\n${summaries.join("\n")}`);
+      // DEV 诊断（2026-10-08 EP1 贴图乱码取证）：逐 mesh 材质分派摘要——
+      // uvKind/材质列/属性表/tint 是否命中/最终材质类型与 map 绑定。乱码时
+      // 控制台按行暴露 tint 链断点（tint 纹理缺失→退通用材质？deferred
+      // 未绑定？）。生产构建零成本。
+      if (import.meta.env.DEV) {
+        const summaries: string[] = [];
+        object.traverse((child) => {
+          const mesh = child as ThreeNamespace.Mesh;
+          if (!mesh.isMesh) return;
+          const material = mesh.material as ThreeNamespace.MeshStandardMaterial;
+          const attributes = Object.keys(mesh.geometry.attributes).join(",");
+          summaries.push(
+            `m${index} uvKind=${payload?.meshUvKinds[index] ?? 0} mat=${materialIndex} ` +
+              `attrs=[${attributes}] type=${material?.type} ` +
+              `map=${material?.map ? "Y" : "N"} vc=${material?.vertexColors ? "Y" : "N"}`,
+          );
+        });
+        if (summaries.length) {
+          console.info(
+            `[building-materials] glb#${index}\n${summaries.join("\n")}`,
+          );
+        }
       }
+      if (modelUnit) modelUnit.add(object);
+      else instance.group("model").add(object);
     }
-    instance.group("model").add(object);
-  }
-  if (props.renderMode === "refined" && payload) {
-    const deferredSpan = renderTelemetry.begin("texture_compose", {
-      phase: "deferred",
-    });
-    // await 全部解码完成再应用：真实成本进 span（此前只覆盖同步签发）；
-    // 缓存命中时 await 即时返回。
-    const deferredMaps = await getDeferredMaps(THREE, payload, ctx.maxAnisotropy);
-    if (!ctx.isStale()) {
-      applyDeferredMaterialMaps(deferredMaps, materialGroups);
-      instance.invalidate();
+    if (modelUnit) instance.group("model").add(modelUnit);
+    if (
+      props.renderMode === "refined" &&
+      payload &&
+      (props.modelSource !== "glb" || (payload.materials?.length ?? 0) > 0)
+    ) {
+      const deferredSpan = renderTelemetry.begin("texture_compose", {
+        phase: "deferred",
+      });
+      // await 全部解码完成再应用：真实成本进 span（此前只覆盖同步签发）；
+      // 缓存命中时 await 即时返回。
+      const deferredMaps = await getDeferredMaps(
+        THREE,
+        payload,
+        ctx.maxAnisotropy,
+      );
+      if (!ctx.isStale()) {
+        applyDeferredMaterialMaps(deferredMaps, materialGroups);
+        instance.invalidate();
+      }
+      deferredSpan.end({ groups: materialGroups.length });
     }
-    deferredSpan.end({ groups: materialGroups.length });
-  }
-  // 阴影链（精细模式）：key 光投影 + 内容网格 castShadow（幂等，重建后
-  // 新网格也补标）。太阳方向/色由 applySun 的 setSunFromEnv 持续驱动；
-  // 此处重放一次 applySun 保证切换渲染模式后 env 太阳立即生效。
-  const shadowsRefined = props.renderMode === "refined";
-  viewport.viewer.value?.setShadowsEnabled(shadowsRefined);
-  if (shadowsRefined) applySun();
+    // 阴影链（精细模式）：key 光投影 + 内容网格 castShadow（幂等，重建后
+    // 新网格也补标）。太阳方向/色由 applySun 的 setSunFromEnv 持续驱动；
+    // 此处重放一次 applySun 保证切换渲染模式后 env 太阳立即生效。
+    const shadowsRefined = props.renderMode === "refined";
+    viewport.viewer.value?.setShadowsEnabled(shadowsRefined);
+    if (shadowsRefined) applySun();
   })();
 
   // 地面线：LotSize 矩形 + placement 逆 + mask 合成（与模型零依赖）。
@@ -1394,7 +1577,8 @@ async function assembleScene(
     // (0x86DCB0) use the authored offset, including an explicit zero; only a
     // missing property falls back to the declared unit bounding-box centre.
     // Apply it in lot coordinates, before inverse placement: P^-1 * T(c).
-    const centerLocal = props.lotOverlayBoxOffset ?? props.lotModelBboxCenter ?? [0, 0];
+    const centerLocal = props.lotOverlayBoxOffset ??
+      props.lotModelBboxCenter ?? [0, 0];
     if (Math.abs(centerLocal[0]) > 1e-4 || Math.abs(centerLocal[1]) > 1e-4) {
       ground.matrix.multiply(
         new THREE.Matrix4().makeTranslation(centerLocal[0], centerLocal[1], 0),
@@ -1709,9 +1893,8 @@ async function assembleScene(
         unit.depth !== null && Number.isFinite(unit.depth) && unit.depth > 0
           ? unit.depth * halfScale
           : null;
-      const { DecalGeometry } = await import(
-        "three/examples/jsm/geometries/DecalGeometry.js"
-      );
+      const { DecalGeometry } =
+        await import("three/examples/jsm/geometries/DecalGeometry.js");
       if (ctx.isStale()) return null;
       const route = decalRoute(texture.materialInstance);
       const family: EngineFamily = route.family;
@@ -1732,8 +1915,7 @@ async function assembleScene(
               materialInfo: unit.materialData ?? undefined,
               powered: props.powered,
               nus: [frame.sizeX, frame.sizeY, frame.sizeY],
-              graffiti:
-                ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
+              graffiti: (texture.materialInstance ?? 0) >>> 0 === 0xe5390a98,
               depthTest: true,
               depthWrite: true,
               alphaTest: 0.01,
@@ -1750,7 +1932,8 @@ async function assembleScene(
             });
         const quadGeometry = new THREE.PlaneGeometry(frame.sizeX, frame.sizeY);
         const quadUv = quadGeometry.attributes.uv;
-        for (let i = 0; i < quadUv.count; i += 1) quadUv.setX(i, 1 - quadUv.getX(i));
+        for (let i = 0; i < quadUv.count; i += 1)
+          quadUv.setX(i, 1 - quadUv.getX(i));
         quadUv.needsUpdate = true;
         const quad = new THREE.Mesh(quadGeometry, floatMaterial);
         // decalBaseCenter collapses the volume onto texturePosition.z = 0.
@@ -1765,9 +1948,7 @@ async function assembleScene(
       // Empty volumes stay empty; graffiti must never turn into floating quads.
       const depthZ = dataDepth ?? halfScale * 2.5;
       const projector = {
-        position: frame.origin
-          .clone()
-          .addScaledVector(frame.axisZ, depthZ / 2),
+        position: frame.origin.clone().addScaledVector(frame.axisZ, depthZ / 2),
         orientation: new THREE.Euler().setFromRotationMatrix(frame.matrix),
         size: new THREE.Vector3(frame.sizeX, frame.sizeY, depthZ),
       };
@@ -1775,6 +1956,23 @@ async function assembleScene(
         Math.hypot(projector.size.x, projector.size.y, projector.size.z) / 2;
       const geometries: ThreeNamespace.BufferGeometry[] = [];
       for (const proxy of proxies) {
+        const position = proxy.geometry.getAttribute("position");
+        // Malformed community TGI data can contain NaN/Infinity vertices. Three's
+        // bounding sphere then becomes NaN and breaks the whole render pass.
+        if (
+          !position ||
+          !Number.isFinite(position.count) ||
+          position.count === 0
+        )
+          continue;
+        let validPosition = true;
+        for (let i = 0; i < position.count && validPosition; i += 1) {
+          validPosition =
+            Number.isFinite(position.getX(i)) &&
+            Number.isFinite(position.getY(i)) &&
+            Number.isFinite(position.getZ(i));
+        }
+        if (!validPosition) continue;
         // 包围球粗筛：盒外建筑网格跳过逐三角形裁剪
         if (!proxy.geometry.boundingSphere) {
           proxy.geometry.computeBoundingSphere();
@@ -1793,6 +1991,20 @@ async function assembleScene(
           projector.orientation,
           projector.size,
         );
+        const clippedPosition = clipped.getAttribute("position");
+        if (clippedPosition) {
+          let finite = true;
+          for (let i = 0; i < clippedPosition.count && finite; i += 1) {
+            finite =
+              Number.isFinite(clippedPosition.getX(i)) &&
+              Number.isFinite(clippedPosition.getY(i)) &&
+              Number.isFinite(clippedPosition.getZ(i));
+          }
+          if (!finite) {
+            clipped.dispose();
+            continue;
+          }
+        }
         if ((clipped.attributes.position?.count ?? 0) === 0) continue;
         // 破洞族不按法线过滤：引擎延迟投影对体积盒内**所有**表面逐像素
         // 落贴花——破洞后露出的楼板/内墙/远侧内壁正是游戏"内部结构"的
@@ -1813,44 +2025,41 @@ async function assembleScene(
         uv.needsUpdate = true;
       }
       const engineMaterial = ENGINE_SHADER_MATERIALS
-        ? createEngineDecalMaterial(THREE, route.surface === "plane" ? "neon-light" : family, {
-            map: decoded,
-            layerColors: texture.colors,
-            decalData: props.decalLight ?? null,
-            worldDirection: frame.axisZ,
-            env,
-            materialInfo: unit.materialData ?? undefined,
-            powered: props.powered,
-            nus: [2 / frame.sizeX, 2 / frame.sizeY, 2 / depthZ],
-            // 涂鸦（0xE5390A98）：喷漆连续厚度 alpha + 无灯箱增益/夜间
-            // 豁免（rt0 编译状态定谳：标准 alpha 混合，无自发光项）
-            graffiti: ((texture.materialInstance ?? 0) >>> 0) === 0xe5390a98,
-            // 投影网格只画正面：薄板/单面墙从背后看时，decal 三角形是
-            // 背面 → 剔除，杜绝"隔着建筑看到镜像字"（五轮图1；法线过滤
-            // 已保证留下的面都朝原点，正面即被投面）。
-            side: THREE.FrontSide,
-            // 破洞族：盒参数供 VS 计算 tfp.z 真实进深（立面 −1 全尺寸
-            // 内景、破洞后深部结构 +1 中心收缩 = 游戏"内部结构"机制）。
-            // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）。
-            // halfXY/depthM/invRot 供 PS 视线视差（holeParallaxUv）。
-            holeBox:
-              family === "hole" || route.surface === "plane"
-                ? {
-                    origin: frame.origin,
-                    axisZ: frame.axisZ,
-                    invDepth: 1 / Math.max(depthZ, 0.01),
-                    halfXY: [frame.sizeX / 2, frame.sizeY / 2],
-                    depthM: depthZ,
-                    // lot→贴花系旋转 = 基矩阵转置（行主序 set：行 = 各基
-                    // 向量，正交基下转置即逆）
-                    invRot: new THREE.Matrix3().set(
-                      frame.axisX.x, frame.axisX.y, frame.axisX.z,
-                      frame.axisY.x, frame.axisY.y, frame.axisY.z,
-                      frame.axisZ.x, frame.axisZ.y, frame.axisZ.z,
-                    ),
-                  }
-                : undefined,
-          })
+        ? createEngineDecalMaterial(
+            THREE,
+            route.surface === "plane" ? "neon-light" : family,
+            {
+              map: decoded,
+              layerColors: texture.colors,
+              decalData: props.decalLight ?? null,
+              worldDirection: frame.axisZ,
+              env,
+              materialInfo: unit.materialData ?? undefined,
+              powered: props.powered,
+              nus: [2 / frame.sizeX, 2 / frame.sizeY, 2 / depthZ],
+              // 涂鸦（0xE5390A98）：喷漆连续厚度 alpha + 无灯箱增益/夜间
+              // 豁免（rt0 编译状态定谳：标准 alpha 混合，无自发光项）
+              graffiti: (texture.materialInstance ?? 0) >>> 0 === 0xe5390a98,
+              // 投影网格只画正面：薄板/单面墙从背后看时，decal 三角形是
+              // 背面 → 剔除，杜绝"隔着建筑看到镜像字"（五轮图1；法线过滤
+              // 已保证留下的面都朝原点，正面即被投面）。
+              side: THREE.FrontSide,
+              // 破洞族：盒参数供 VS 计算 tfp.z 真实进深（立面 −1 全尺寸
+              // 内景、破洞后深部结构 +1 中心收缩 = 游戏"内部结构"机制）。
+              // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）；
+              // PS 按游戏 decalInteriorMap 的双 UV 公式消费 tfp.z；
+              // 视差来自投影深度和内部几何的深度测试，不额外做 facade
+              // interiorMap() 的相机射线求交。
+              holeBox:
+                family === "hole" || route.surface === "plane"
+                  ? {
+                      origin: frame.origin,
+                      axisZ: frame.axisZ,
+                      invDepth: 1 / Math.max(depthZ, 0.01),
+                    }
+                  : undefined,
+            },
+          )
         : buildDecalMaterial(THREE, texture, decoded, {
             env,
             halfDepth: decalHalfThickness(unit.depth),
@@ -1868,20 +2077,14 @@ async function assembleScene(
       }
       group.add(container);
       decalStats.projected += 1;
-      // 破洞视线视差：每帧把相机位置变换到 mesh 局部（= lot 局部）空间写
-      // 入 uHoleCamLot（container 的 matrixWorld = lot 世界矩阵 × 组链上
-      // 相消的 unit 变换；onBeforeRender 在 updateMatrixWorld 之后触发）。
-      if (family === "hole" && ENGINE_SHADER_MATERIALS) {
-        const shaderMat = engineMaterial as ThreeNamespace.ShaderMaterial;
-        container.onBeforeRender = (_renderer, _scene, camera) => {
-          const camLot = container.worldToLocal(camera.position.clone());
-          (shaderMat.uniforms.uHoleCamLot.value as ThreeNamespace.Vector3).copy(camLot);
-        };
-      }
       // decalInteriorMap 光 pass 近似（保留自体积盒时代）：lot 带光参数时，
       // 沿投影轴向墙面投暖色 cookie 光（引擎用贴花贴图作光 cookie、alpha
       // 作衰减）。上限 8 盏防多破洞 lot 光源洪峰。
-      if (family === "hole" && props.decalLight && holeLightCount < HOLE_LIGHT_MAX) {
+      if (
+        family === "hole" &&
+        props.decalLight &&
+        holeLightCount < HOLE_LIGHT_MAX
+      ) {
         const [scaleFactor, radiusFactor] = props.decalLight;
         const spot = new THREE.SpotLight(
           0xffdca0,
@@ -1948,14 +2151,28 @@ async function assembleScene(
     // 精细模式：光源用真实 three.js 光源；道具/spawner 走资产渲染分发
     //（tree/prop/spawner 独立渲染器，互不回归——2026-10-06 拆分）。
     // 失败统一退标记锥。
-    const effectDefinition = unit.kind === "effect" && unit.effectId
-      ? props.effectDefinitions?.get(unit.effectId.instance) : undefined;
-    const particleView = props.renderMode === "refined" && props.renderEffects
-      && unit.kind === "effect" && effectDefinition?.emitters.length
-      ? createParticleEffect(
-          THREE, unit, effectDefinition.emitters,
-          Math.max(32, Math.min(320, Math.floor(2400 / Math.max(1, props.grouping.effects.length)))),
-        ) : null;
+    const effectDefinition =
+      unit.kind === "effect" && unit.effectId
+        ? props.effectDefinitions?.get(unit.effectId.instance)
+        : undefined;
+    const particleView =
+      props.renderMode === "refined" &&
+      props.renderEffects &&
+      unit.kind === "effect" &&
+      effectDefinition?.emitters.length
+        ? createParticleEffect(
+            THREE,
+            unit,
+            effectDefinition.emitters,
+            Math.max(
+              32,
+              Math.min(
+                320,
+                Math.floor(2400 / Math.max(1, props.grouping.effects.length)),
+              ),
+            ),
+          )
+        : null;
     if (particleView) particleViews.push(particleView);
     const object =
       particleView?.object ??
@@ -2086,6 +2303,49 @@ async function assembleScene(
   ctx.stats.meshes = payload?.glbs.length ?? 0;
   // 全量装配完成：刷新增量判定快照（与本次装配的 grouping 一致）。
   lastUnitsSnapshot = buildUnitsSnapshot(props.grouping);
+  // 【关键不变量 2026-10-27】装配尾部强制整棵场景矩阵刷新后才能放行
+  // 首帧：渐进装配/软跟随/闭 matrixAutoUpdate(地面/标注) 的组合下,首帧
+  // 若撞上陈旧 matrixWorld,建筑与网格/标注的相对关系整体错乱(2026-10-27
+  // 取证日志的 updateMatrixWorld 曾顺带掩盖此窗口,门控后立刻复现)。
+  // 取证表格本身由 localStorage.openscpPeDebug 门控,与此刷新无关。
+  instance.scene.updateMatrixWorld(true);
+  if (import.meta.env.DEV && localStorage.getItem("openscpPeDebug") === "1") {
+    instance.scene.updateMatrixWorld(true);
+    const rows = VIEWPORT_GROUPS.map((name) => {
+      const group = instance.group(name);
+      const groupBox = new THREE.Box3().setFromObject(group);
+      return {
+        组: name,
+        可见对象: group.children.length,
+        min: groupBox.isEmpty() ? null : groupBox.min.toArray().map((v) => +v.toFixed(2)),
+        max: groupBox.isEmpty() ? null : groupBox.max.toArray().map((v) => +v.toFixed(2)),
+      };
+    });
+    console.group(`[pe-frame] rebuild#${ctx.token} 装配完成取证`);
+    console.table(rows.filter((row) => row.min !== null));
+    console.log(
+      "content.position:",
+      instance.contentPosition.toArray().map((v) => +v.toFixed(2)),
+      "grid.y:",
+      instance.gridY,
+      "frameRadius:",
+      instance.framingRadius,
+      "ground.matrix:",
+      ground?.matrix.elements.map((v) => +v.toFixed(2)),
+      "lotPlacement:",
+      props.lotPlacement,
+    );
+    for (const [id, unitObject] of ctx.unitObjects) {
+      const unitBox = new THREE.Box3().setFromObject(unitObject);
+      if (unitBox.isEmpty()) continue;
+      const size = unitBox.getSize(new THREE.Vector3());
+      const low = unitBox.min.y < -5;
+      console.log(
+        `${low ? "⚠️低位" : "  "} unit ${id}: min=${unitBox.min.toArray().map((v) => +v.toFixed(1))} size=${size.toArray().map((v) => +v.toFixed(1))}`,
+      );
+    }
+    console.groupEnd();
+  }
 }
 
 /** 日/夜亮度：仅缩放环境四灯；地块真实光源保持常亮（夜间灯依然亮）。 */
@@ -2188,21 +2448,32 @@ watch(
     }
   },
 );
-watch(() => props.suspended, (suspended) => {
-  if (suspended) stopParticleClock();
-  else startParticleClock();
-});
+watch(
+  () => props.suspended,
+  (suspended) => {
+    if (suspended) stopParticleClock();
+    else startParticleClock();
+  },
+);
 watch(
   () => props.grouping,
   (grouping) => {
-    if (props.renderEffects && props.effectDefinitions?.size) scheduleRebuild("grouping");
+    if (props.renderEffects && props.effectDefinitions?.size)
+      scheduleRebuild("grouping");
     else if (!tryIncrementalGrouping(grouping)) scheduleRebuild("grouping");
   },
 );
 // Raster editing updates the ground independently of models and units.
 watch(
-  () => [props.lotMaskPng, props.lotMaskRawRgba, props.lotSurfacePng,
-    props.lotNormalAtlasPng, props.lotColors, props.lotSize, props.lotTilePeriod],
+  () => [
+    props.lotMaskPng,
+    props.lotMaskRawRgba,
+    props.lotSurfacePng,
+    props.lotNormalAtlasPng,
+    props.lotColors,
+    props.lotSize,
+    props.lotTilePeriod,
+  ],
   () => scheduleRebuild("grouping"),
   { deep: true },
 );
@@ -2220,12 +2491,13 @@ watch(
 // 贴花全部白跑——遥测 2154 重建/682 加载 ≈ 3.2× 的主要成分）。初始重建
 // 未就绪时 unitObjects 为空，刷新自然 no-op，由重建本身消费新载荷。
 watch(
-  () => [
-    props.propModels,
-    props.treeModelPayloads,
-    props.addedModelPayloads,
-    simParts.value,
-  ] as const,
+  () =>
+    [
+      props.propModels,
+      props.treeModelPayloads,
+      props.addedModelPayloads,
+      simParts.value,
+    ] as const,
   (next, previous) => {
     const kinds: AssetRefreshKind[] = [];
     if (
@@ -2283,7 +2555,8 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
         :ref="(el) => (dimLabelEls[index] = el as HTMLElement | null)"
         class="pick-label dim-label"
         aria-hidden="true"
-      >{{ dimAxisLabel[dim.axis] }} {{ dim.text }}</span>
+        >{{ dimAxisLabel[dim.axis] }} {{ dim.text }}</span
+      >
       <span
         :ref="(el) => (selectTagEl = el as HTMLElement | null)"
         class="pick-label pick-tag"
@@ -2291,7 +2564,7 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       >
         <span class="pick-tag-text" />
         <button
-          v-if="props.editEnabled"
+          v-if="props.editEnabled && props.selectedId !== 'model'"
           type="button"
           class="pick-delete"
           :aria-label="$t('package.deleteUnit')"
@@ -2308,7 +2581,9 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
       <FSpinner size="sm" :label="$t('common.loading')" />
     </div>
     <p
-      v-else-if="!groundOnly && (modelState === 'missing' || modelState === 'error')"
+      v-else-if="
+        !groundOnly && (modelState === 'missing' || modelState === 'error')
+      "
       class="viewport-overlay viewport-status"
       role="status"
     >
@@ -2780,7 +3055,9 @@ watch([() => props.tool, () => props.selectedId, viewport.revision], () =>
   display: flex;
   flex-direction: column;
   gap: 2px;
-  left: 10px;
+  /* 左上角是图层列表的地盘——工具栏放右侧垂直居中，避免重叠（用户指令
+   * 2026-10-25：操作栏改到右边） */
+  inset-inline-end: 10px;
   padding: 3px;
   top: 50%;
   transform: translateY(-50%);

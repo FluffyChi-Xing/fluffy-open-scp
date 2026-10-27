@@ -3,7 +3,6 @@ import { computed, shallowRef } from "vue";
 import { Handle, Position } from "@vue-flow/core";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
-import AssetFlowTool from "./AssetFlowTool.vue";
 import RasterFlowTool from './RasterFlowTool.vue';
 import { BUILDING_SLOTS } from "./assetFlow";
 import NodeConfigForm from "./NodeConfigForm.vue";
@@ -89,7 +88,6 @@ function setDirty(value: boolean) {
     </div>
     <div v-show="!collapsed">
       <RasterFlowTool v-if="schema && kind === 'texture-input'" :project="project" :schema="schema" :busy="busy" @save="emit('save', $event)" @dirty="setDirty" @resize="emit('resize')" />
-      <AssetFlowTool v-else-if="schema && kind === 'building-asset'" :project="project" :schema="schema" :schemas="schemas" :busy="busy" @save="emit('save', $event)" @dirty="setDirty" @resize="emit('resize')" />
       <div v-else-if="complex" class="complex-tool nodrag">
         <p>{{ t("flow.assetToolHint") }}</p>
         <button :disabled="busy" @click="emit('edit')">

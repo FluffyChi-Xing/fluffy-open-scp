@@ -95,6 +95,38 @@ html, body {
     filter: brightness(0) invert(1);
 }
 
+/* The original toggle animation brings category_tab from top=-50 to 0.
+ * Its two shoulders sit behind the selected disc; this is not an alert badge. */
+.cat-btn.layer-selected [data-comment="tab"] {
+    top: 0 !important;
+}
+
+.cat-btn.layer-selected [data-comment="shadow"] {
+    opacity: 0;
+}
+
+.hud-mode-button {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.hud-mode-button.layer-selected > [data-comment="icon"],
+.hud-mode-button.layer-selected > [data-comment="region camera icon"] {
+    filter: brightness(0) invert(1);
+}
+
+/* The city icon is authored white; give its unselected state the same navy
+ * silhouette as the other two view buttons. */
+.hud-mode-button[data-mode="city"]:not(.layer-selected) > [data-comment="icon"] {
+    filter: brightness(0) saturate(100%) invert(27%) sepia(20%) saturate(1000%) hue-rotate(173deg);
+}
+
+.hud-mode-button:focus-visible {
+    outline: 2px solid #2fc2ff;
+    outline-offset: 2px;
+    border-radius: 50%;
+}
+
 /* 一级圆钮 hover：游戏动画 "norm rollover plump" —— 白色底盘 scale 1 → 1.3 → 1.2。
  * 用带过冲的缓动近似那个「弹一下」的手感。 */
 .hud-catmain {

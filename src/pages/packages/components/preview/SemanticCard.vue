@@ -3,6 +3,8 @@ import { computed, ref, watch } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
+import FEmpty from "@/components/extensions/FEmpty.vue";
+import { Switch } from "@/components/ui/switch";
 import { isTauri, tauriApi } from "@/api";
 import type { SemanticCard } from "@/api/tauri";
 import {
@@ -134,6 +136,9 @@ const show3d = ref(false);
 const activeModelIndex = ref(0);
 const modelMenuOpen = ref(false);
 const meshObjs = ref<string[]>([]);
+const texturePngs = ref<string[]>([]);
+const lotModelPayload = ref<ArrayBuffer | null>(null);
+const textured = ref(false);
 const meshState = ref<"idle" | "loading" | "ready" | "error">("idle");
 
 watch([show3d, activeModelIndex], async ([on, index]) => {
@@ -147,6 +152,8 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
   }
   meshState.value = "loading";
   meshObjs.value = [];
+  texturePngs.value = [];
+  lotModelPayload.value = null;
   try {
     const tgi = {
       typeId: model.typeId,
@@ -170,6 +177,12 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
     meshObjs.value = details
       .map((d) => d.mesh?.objBase64)
       .filter((obj): obj is string => !!obj);
+    if (textured.value) {
+      lotModelPayload.value = await tauriApi.packages.readLotModelMeshes(
+        props.packageId,
+        tgi,
+      );
+    }
     meshState.value = meshObjs.value.length ? "ready" : "error";
   } catch {
     meshObjs.value = [];
@@ -180,6 +193,8 @@ watch([show3d, activeModelIndex], async ([on, index]) => {
 function selectModel(index: number) {
   activeModelIndex.value = index;
 }
+
+watch(textured, () => { if (show3d.value) void (async () => { const index = activeModelIndex.value; show3d.value = false; await Promise.resolve(); show3d.value = true; activeModelIndex.value = index; })(); });
 </script>
 
 <template>
@@ -261,6 +276,15 @@ function selectModel(index: number) {
 
     <!-- 载具/小人卡：列表 / 3D 切换 -->
     <template v-else-if="card.kind === 'vehicle'">
+      <FEmpty
+        v-if="!card.models.length"
+        variant="compact"
+        icon-name="CarFront"
+        status="warning"
+        :title="$t('package.card.vehicleEmptyTitle')"
+        :desc="$t('package.card.vehicleEmptyDesc')"
+      />
+      <template v-else>
       <div class="view-toggle">
         <button
           type="button"
@@ -273,16 +297,24 @@ function selectModel(index: number) {
           :disabled="!card.models.length"
           @click="show3d = true"
         >{{ $t("package.card.view3d") }}</button>
+        <label class="texture-toggle"><Switch v-model="textured" :aria-label="$t('package.card.vehicleTextures')" />{{ $t("package.card.vehicleTextures") }}</label>
       </div>
-
       <div v-if="show3d" class="vehicle-3d">
         <FSpinner v-if="meshState === 'loading'" size="sm" :label="$t('common.loading')" />
-        <p v-else-if="meshState === 'error' || !meshObjs.length" class="card-empty">
-          {{ $t("package.card.meshUnavailable") }}
-        </p>
+        <FEmpty
+          v-else-if="meshState === 'error' || !meshObjs.length"
+          variant="compact"
+          icon-name="CarFront"
+          status="warning"
+          :title="$t('package.card.meshUnavailableTitle')"
+          :desc="$t('package.card.meshUnavailable')"
+        />
         <MeshPreviewView
           v-else-if="meshObjs.length"
           :obj-base64s="meshObjs"
+          :texture-png-base64s="texturePngs"
+          :textured="textured"
+          :lot-model-payload="lotModelPayload"
           class="vehicle-mesh"
         />
         <FDropdown
@@ -339,6 +371,7 @@ function selectModel(index: number) {
           </ul>
         </section>
       </div>
+      </template>
     </template>
 
     <!-- 道路卡 -->
@@ -407,10 +440,11 @@ function selectModel(index: number) {
     <template v-else-if="card.kind === 'resource-entry'">
       <section class="card-section">
         <h4>{{ $t("package.card.slots") }}</h4>
+        <p class="semantic-hint">{{ $t("package.card.resourceEntryHint") }}</p>
         <table v-if="card.slots.length" class="slot-table">
           <thead>
             <tr>
-              <th>#</th>
+              <th>{{ $t("package.card.slotIndex") }}</th>
               <th>{{ $t("package.card.resource") }}</th>
               <th v-for="p in 4" :key="p">{{ $t("package.card.paramN", { n: p }) }}</th>
             </tr>
@@ -419,10 +453,15 @@ function selectModel(index: number) {
             <tr v-for="(slot, i) in card.slots" :key="i">
               <td>{{ i + 1 }}</td>
               <td :title="keyText(slot.resource)">
-                {{ slotNames.get(i) ?? keyText(slot.resource) }}
+                <strong class="slot-resource-name">
+                  {{ slotNames.get(i) ?? $t("package.card.unnamedResource") }}
+                </strong>
+                <code class="slot-resource-tgi">{{ keyText(slot.resource) }}</code>
               </td>
-              <td v-for="(v, j) in slot.values" :key="j">
-                {{ v ?? "—" }}
+              <td v-for="(v, j) in slot.values" :key="j" class="slot-value">
+                <span :class="{ 'slot-value-empty': v == null }">
+                  {{ v ?? $t("package.card.unsetValue") }}
+                </span>
               </td>
             </tr>
           </tbody>
@@ -434,10 +473,10 @@ function selectModel(index: number) {
           {{ $t(card.enabled ? "package.card.enabled" : "package.card.disabled") }}
         </span>
         <span v-if="card.floatA != null" class="duration-badge">
-          <code class="ref-code">0x0D560650</code> = {{ card.floatA }}
+          {{ $t("package.card.scalarA") }} <code class="ref-code">{{ card.floatA }}</code>
         </span>
         <span v-if="card.floatB != null" class="duration-badge">
-          <code class="ref-code">0x0D6F3BE1</code> = {{ card.floatB }}
+          {{ $t("package.card.scalarB") }} <code class="ref-code">{{ card.floatB }}</code>
         </span>
       </div>
     </template>
@@ -567,8 +606,10 @@ function selectModel(index: number) {
   font-size: 11px;
 }
 .view-toggle {
+  align-items: center;
   display: flex;
-  gap: 4px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .view-toggle button {
   background: var(--surface-elevated);
@@ -586,6 +627,14 @@ function selectModel(index: number) {
 .view-toggle button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+.texture-toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  line-height: 1;
+  margin-left: 4px;
+  white-space: nowrap;
 }
 .vehicle-3d {
   display: flex;
@@ -635,6 +684,37 @@ function selectModel(index: number) {
 .slot-table th {
   color: var(--muted-foreground);
   font-weight: 600;
+}
+.semantic-hint {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+  margin: 0 0 8px;
+}
+.slot-resource-name,
+.slot-resource-tgi {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slot-resource-name {
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.slot-resource-tgi {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  margin-top: 2px;
+}
+.slot-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right !important;
+}
+.slot-value-empty {
+  color: var(--muted-foreground);
 }
 .menu-description {
   font-size: 13px;

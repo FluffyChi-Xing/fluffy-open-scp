@@ -48,6 +48,24 @@ describe("applyEdit / sortTools", () => {
     );
   });
 
+  it("图片三态：undefined 回落基础值，null = 明确移除不回落", () => {
+    const withImages = {
+      ...base,
+      preview: "/game-ui/replica/assets/tool_icon_AAAA0001.png",
+      marquee: "/game-ui/replica/assets/tool_AAAA0001.jpg",
+    };
+    // undefined = 不修改
+    expect(applyEdit(withImages, { label: "x" }).marquee).toBe(withImages.marquee);
+    expect(applyEdit(withImages, { label: "x" }).preview).toBe(withImages.preview);
+    // null = 移除（不回落基础资产）
+    const removed = applyEdit(withImages, { marquee: null, preview: null });
+    expect(removed.marquee).toBeNull();
+    expect(removed.preview).toBeNull();
+    // 替换
+    const replaced = applyEdit(withImages, { marquee: "data:image/jpeg;base64,AA" });
+    expect(replaced.marquee).toBe("data:image/jpeg;base64,AA");
+  });
+
   it("sortTools 按 pos 稳定排序", () => {
     const tools = [
       { ...base, id: "B", pos: 20 },

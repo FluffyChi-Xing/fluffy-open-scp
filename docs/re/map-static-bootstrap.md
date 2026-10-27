@@ -89,7 +89,7 @@
 运行生产解析器的全图检查（只需本机合法安装的数据，不读取任何存档）：
 
 ```powershell
-cargo run -p sc-properties --example verify_static_maps -- "<SimCityData>" "tmp/map-static-analysis/app-integration"
+cargo run -p probes --example verify_static_maps -- "<SimCityData>" "tmp/map-static-analysis/app-integration"
 npm test -- src/components/map
 npm run check
 cargo test -p sc-properties --lib

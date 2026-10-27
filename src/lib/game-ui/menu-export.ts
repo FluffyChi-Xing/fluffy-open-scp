@@ -17,6 +17,9 @@
 import { encodePropertyFile, type PropEntry } from "./prop-format";
 import { writeUncompressedOverlay, type DbpfEntry } from "./dbpf-writer";
 
+export { writeUncompressedOverlay };
+export type { DbpfEntry };
+
 export const MENU_PROP_TYPE = 0x00b1b104;
 export const MENU_GROUP = 0x09878a01;
 export const ICON_TYPE = 0x2f7d0004;
@@ -44,7 +47,17 @@ export const HASH = {
   unitEffectParameter: 0x0eb1fc22,
 } as const;
 
-/** 文案表 id（游戏原表，diff 覆盖）。 */
+/**
+ * OpenSCP 自有 locale 表 id（FNV-1("openscp/strings")，与原版 356 张表无冲突）。
+ *
+ * 自定义词条一律写进这张新表、Text 引用指向它——不要重定义原版表
+ * （6C969DEE/50AA0BEA/4B54417A）：原版表 ID 被游戏 Locale 数据先注册，
+ * 其他目录里的重定义整表不生效（实机 2026-10-19 验证）；新表 ID 则任意
+ * 目录可用（社区先例 SimRollerCompletePack 同款做法）。
+ */
+export const OPENSCP_LOCALE_TABLE = 0xbf82f7ce;
+
+/** 原版文案表 id（只用于读取/对照原版字符串，不再作为写入目标）。 */
 export const LOCALE_TABLES = {
   toolName: 0x6c969dee,
   toolDesc: 0x50aa0bea,
@@ -55,19 +68,35 @@ export const LOCALE_TABLES = {
 export interface MenuExportEntry {
   /** 菜单条目 instance（u32）。新条目由工作台生成。 */
   instance: number;
+  /** 源条目 instance（真实条目复制时用于后端全量 property 复制）。 */
+  sourceInstance?: number;
+  /** 用户替换图标时随包的图标资源 TGI（写入 toolIconKey/iconNormal）。 */
+  iconTgi?: { type: number; group: number; instance: number };
+  /** 用户替换大图时随包的大图资源 TGI（写入 marquee 键）。 */
+  marqueeTgi?: { type: number; group: number; instance: number };
   /** 归属的一级分类 instance 列表（0x0DB9FC63）。 */
   uiCategories: number[];
   uiPosition: number;
-  /** locale 引用（新字符串 id 由工作台分配）。 */
+  /** locale 引用（新字符串 id 由工作台分配）。未编辑文案的拷贝不铸 ID，
+   * 由后端全量拷贝保留源引用。 */
   titleStringId?: number;
   descStringId?: number;
   unlockStringId?: number;
-  /** 槽位图标 instance（ICON_TYPE/ICON_GROUP 资源）；缺省不写图标键。 */
+  /** 源有解锁文案而副本被清空 → 后端删除解锁键；缺省保留源引用。 */
+  removeUnlockString?: boolean;
+  /** 统计行模板重写（全量 Text 引用，写自有表）。 */
+  statTitleRefs?: { table: number; instance: number }[];
+  /** 槽位图标资源 instance（ICON_TYPE/ICON_GROUP）；缺省不写图标键。
+   * 新图随 iconPng 落在同 instance；引用基础游戏原图时不带 iconPng。 */
   iconInstance?: number;
   /** locked → 写 hardGate 键（值沿用观察到的形态）。 */
   locked?: boolean;
   /** 原始图片字节（PNG / JPEG），缺省跳过对应资源。 */
   iconPng?: Uint8Array;
+  /** rollover 大图资源 instance；缺省 = 本次不写 marquee 键
+   * （条目从未有过大图、或用户明确移除大图）。 */
+  marqueeInstance?: number;
+  /** 大图字节（与新图一起写入；引用原图时缺省）。 */
   marqueeJpg?: Uint8Array;
 }
 
@@ -86,11 +115,6 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
       values: [{ kind: "key", instance: PLOP_MENU_PARENT, typeId: MENU_PROP_TYPE, group: 0x48e1eb00 }],
     },
     {
-      hash: HASH.title,
-      valueType: "text",
-      values: [{ kind: "text", tableId: LOCALE_TABLES.toolName, instanceId: entry.titleStringId ?? 0 }],
-    },
-    {
       hash: HASH.uiCategory,
       valueType: "key",
       array: true,
@@ -101,17 +125,29 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
       valueType: "int32",
       values: [{ kind: "int32", value: entry.uiPosition }],
     },
-    {
+  ];
+  // 标题键只在铸了新 ID 时写：未编辑文案的拷贝不写键，后端保留源引用。
+  if (entry.titleStringId != null) {
+    values.push({
+      hash: HASH.title,
+      valueType: "text",
+      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.titleStringId }],
+    });
+  }
+  // marquee 键只在确有大图时写：instance 指向大图资源（引用原图 = 原
+  // instance；新图 = 新 instance）。无条件写键会产生指向不存在资源的悬空引用。
+  if (entry.marqueeInstance != null) {
+    values.push({
       hash: HASH.marquee,
       valueType: "key",
-      values: [{ kind: "key", instance: entry.instance, typeId: MARQUEE_TYPE, group: 0 }],
-    },
-  ];
+      values: [{ kind: "key", instance: entry.marqueeInstance, typeId: MARQUEE_TYPE, group: 0 }],
+    });
+  }
   if (entry.descStringId != null) {
     values.push({
       hash: HASH.desc,
       valueType: "text",
-      values: [{ kind: "text", tableId: LOCALE_TABLES.toolDesc, instanceId: entry.descStringId }],
+      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.descStringId }],
     });
   }
   if (entry.iconInstance != null) {
@@ -126,19 +162,27 @@ export function buildMenuPropertyResource(entry: MenuExportEntry): Uint8Array {
     values.push({
       hash: HASH.unlockString,
       valueType: "text",
-      values: [{ kind: "text", tableId: LOCALE_TABLES.toolUnlock, instanceId: entry.unlockStringId }],
+      values: [{ kind: "text", tableId: OPENSCP_LOCALE_TABLE, instanceId: entry.unlockStringId }],
     });
     values.push({ hash: HASH.unlockTargetAmount, valueType: "int32", values: [{ kind: "int32", value: 1 }] });
   }
   return encodePropertyFile(values);
 }
 
-/** locale 表覆盖资源（BOM + 紧凑 JSON，只含本次改动的字符串）。 */
+/**
+ * locale 表覆盖资源（BOM + 仿原版宽松排版 JSON，只含本次改动的字符串）。
+ *
+ * 排版必须模仿原版（换行 + 缩进 + `"键" : "值"`）：游戏对单行紧凑 JSON
+ * 解析失败并整表丢弃（实机 2026-10-19 验证，菜单统计行/名称渲染 ***）；
+ * 社区先例 SimRollerCompletePack 的裸包 locale 表同样是宽松排版。
+ */
 export function buildLocaleResource(strings: LocaleString[], tableId: number): Uint8Array {
   const table = strings.filter((s) => s.table === tableId);
   const ordered = [...table].sort((a, b) => a.id - b.id);
-  const parts = ordered.map((s) => `${JSON.stringify(sprintf32(s.id))}:${JSON.stringify(s.text)}`);
-  const json = `{${parts.join(",")}}`;
+  const lines = ordered.map(
+    (s) => `    ${JSON.stringify(sprintf32(s.id))} : ${JSON.stringify(s.text)}`,
+  );
+  const json = lines.length > 0 ? `{\r\n${lines.join(",\r\n")}\r\n}` : "{}";
   // UTF-8 BOM 前缀（SimCity locale 资源固定 3 字节）
   return Uint8Array.from([0xef, 0xbb, 0xbf, ...new TextEncoder().encode(json)]);
 }
@@ -156,6 +200,12 @@ export interface MenuExportResult {
 }
 
 export function buildMenuExport(input: MenuExportInput): MenuExportResult {
+  if (input.entries.length === 0) {
+    return {
+      package: writeUncompressedOverlay([]),
+      property: new Uint8Array(),
+    };
+  }
   const entries: DbpfEntry[] = [];
   for (const entry of input.entries) {
     entries.push({
@@ -167,8 +217,8 @@ export function buildMenuExport(input: MenuExportInput): MenuExportResult {
     if (entry.iconPng && entry.iconInstance != null) {
       entries.push({ type: ICON_TYPE, group: ICON_GROUP, instance: entry.iconInstance, data: entry.iconPng });
     }
-    if (entry.marqueeJpg) {
-      entries.push({ type: MARQUEE_TYPE, group: 0, instance: entry.instance, data: entry.marqueeJpg });
+    if (entry.marqueeJpg && entry.marqueeInstance != null) {
+      entries.push({ type: MARQUEE_TYPE, group: 0, instance: entry.marqueeInstance, data: entry.marqueeJpg });
     }
   }
   for (const tableId of new Set(input.locale.map((s) => s.table))) {
@@ -192,6 +242,26 @@ export function dataUrlToBytes(dataUrl: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** 复刻资产命名约定（build.py 产物）：rollover 大图 `tool_<instance>.jpg`、
+ * 槽位图标 `tool_icon_<instance>.png`，instance 即游戏内对应资源的
+ * instance（大图 0x3F8662EA / 图标 PNG 0x2F7D0004 组 0x40E02400）。
+ * 拷贝条目引用共享原图时，用这里反推出「键要指向的原资源 instance」。 */
+export function marqueeInstanceFromAsset(path: string): number | null {
+  return instanceFromAsset(path, /^tool_([0-9A-F]{8})\.jpg$/);
+}
+
+export function iconInstanceFromAsset(path: string): number | null {
+  return instanceFromAsset(path, /^tool_icon_([0-9A-F]{8})\.png$/);
+}
+
+function instanceFromAsset(path: string, pattern: RegExp): number | null {
+  const base = path.split(/[\\/]/).pop() ?? "";
+  const match = pattern.exec(base);
+  if (!match) return null;
+  const value = Number.parseInt(match[1], 16);
+  return Number.isFinite(value) ? value : null;
 }
 
 export function sprintf32(value: number): string {

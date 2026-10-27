@@ -6,6 +6,9 @@ use super::*;
 fn export_property_render_fixture() {
     let base = PathBuf::from(std::env::var("SC_GAME_DATA").expect("SC_GAME_DATA"));
     let instance = u32::from_str_radix(&std::env::var("SC_LOT_INSTANCE").unwrap_or("1A7490A1".into()), 16).unwrap();
+    let group = std::env::var("SC_LOT_GROUP")
+        .ok()
+        .and_then(|value| u32::from_str_radix(value.trim_start_matches("0x"), 16).ok());
     let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tmp/property-render").join(format!("{instance:08X}"));
     std::fs::create_dir_all(&out).unwrap();
     let manager = PackageManager::new();
@@ -22,7 +25,11 @@ fn export_property_render_fixture() {
             model_package_id = Some(id);
         }
         if target.is_none() {
-            if let Some(entry) = package.entries().iter().find(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.instance == instance) {
+            if let Some(entry) = package.entries().iter().find(|e| {
+                e.id.type_id == PROPERTY_RESOURCE_TYPE
+                    && e.id.instance == instance
+                    && group.is_none_or(|expected| e.id.group == expected)
+            }) {
                 target = Some((id, Arc::clone(&package), entry.id));
             }
         }

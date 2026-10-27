@@ -15,3 +15,13 @@ Use `ctx import` to preview existing agent memories, and `ctx import --apply` to
 All user-facing interface text must use i18n, including labels, hints, errors,
 empty states, dialog titles, and accessibility labels. Maintain both zh-CN and
 en-US messages and verify that switching languages updates the active UI.
+
+## Code standards (user directive, 2026-10-27)
+New `.ts` files must stay under 1000 lines (enforced by ESLint `max-lines`;
+legacy oversize files are grandfathered in `eslint.config.js
+legacyOversizeFiles` — that list may only shrink). Keep files semantically
+coherent and write pure functions wherever possible: explicit inputs/outputs,
+no hidden module state, side effects isolated at the edges. Frozen zones
+(e.g. `src/pages/packages/components/property-editor`, see its `FROZEN.md`)
+must not be modified in place; rework happens in a new parallel directory.
+

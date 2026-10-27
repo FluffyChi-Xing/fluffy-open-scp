@@ -1,7 +1,7 @@
 /**
  * 二进制写出器对拍测试：期望字节由 Rust 侧权威实现生成 ——
- *   property: crates/sc-properties/examples/prop_fixture.rs（encode_canonical）
- *   dbpf:     crates/dbpf/examples/dbpf_fixture.rs（write_uncompressed_overlay）
+ *   property: probes/property/prop_fixture.rs（encode_canonical）
+ *   dbpf:     probes/package/dbpf_fixture.rs（write_uncompressed_overlay）
  * Rust 实现或字段布局变更时，重新运行对应示例并更新 fixture 十六进制。
  */
 import { describe, expect, it } from "vitest";

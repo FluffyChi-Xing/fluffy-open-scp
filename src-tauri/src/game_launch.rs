@@ -102,6 +102,55 @@ pub async fn deploy_game_mod(state: State<'_, AppState>, request: DeployGameModR
     }).await.map_err(|e| CommandError::internal(e.to_string()))?
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployUiOverlayRequest { pub data_base64: String }
+
+/// UI 工作台的内存编译产物直接注入：写入
+/// `<游戏根>/SimCityUserData/Packages/OpenSCP-ui-overlay.package`（原子替换）。
+#[tauri::command]
+pub async fn deploy_ui_overlay(
+    state: State<'_, AppState>,
+    request: DeployUiOverlayRequest,
+) -> Result<DeployGameModResult, CommandError> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        use base64::Engine;
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(&request.data_base64)
+            .map_err(|e| CommandError::new("deploy_invalid_payload", e.to_string()))?;
+        if data.is_empty() {
+            return Err(CommandError::new("deploy_invalid_payload", "Overlay package is empty"));
+        }
+        let game_data = store.app_settings().map_err(CommandError::from)?.and_then(|s| s.game_data_path)
+            .ok_or_else(|| CommandError::new("game_directory_not_configured", "Game data directory is not configured"))?;
+        let game_data = PathBuf::from(game_data);
+        if !game_data.is_dir() { return Err(CommandError::new("game_directory_unavailable", "Game data directory is unavailable")); }
+        let packages = game_data.parent().unwrap_or(&game_data).join("SimCityUserData").join("Packages");
+        fs::create_dir_all(&packages).map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
+        let destination = packages.join("OpenSCP-ui-overlay.package");
+        let temp = destination.with_extension("package.tmp");
+        fs::write(&temp, &data).map_err(|e| CommandError::new("deploy_failed", e.to_string()))?;
+        if destination.exists() {
+            fs::remove_file(&destination).map_err(|e| {
+                let _ = fs::remove_file(&temp);
+                CommandError::new("deploy_failed", e.to_string())
+            })?;
+        }
+        if let Err(error) = fs::rename(&temp, &destination) {
+            let _ = fs::remove_file(&temp);
+            return Err(CommandError::new("deploy_failed", error.to_string()));
+        }
+        let found = processes()?;
+        Ok(DeployGameModResult {
+            artifact: format!("in-memory ({} bytes)", data.len()),
+            destination: destination.to_string_lossy().into_owned(),
+            game_running: !found.is_empty(),
+            processes: found,
+        })
+    }).await.map_err(|e| CommandError::internal(e.to_string()))?
+}
+
 #[tauri::command]
 pub async fn launch_game(state: State<'_, AppState>) -> Result<GameProcessInfo, CommandError> {
     let store = state.store.clone();

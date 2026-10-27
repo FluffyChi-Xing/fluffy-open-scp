@@ -1,5 +1,6 @@
 import type * as ThreeNamespace from "three";
 import { isSharedGeometry } from "@/lib/three-gltf";
+import { createDepthOfFieldController } from "./viewerDepthOfField";
 
 export interface ViewerTapHit {
   /** 命中对象；null = 点在空白处（未命中任何内容）——编辑器据此取消选中。 */
@@ -19,6 +20,18 @@ export interface ThreeViewerOptions {
   onHover?: (hit: { object: ThreeNamespace.Object3D } | null) => void;
   /** 每次真实渲染后的回调（选中框等屏幕空间 overlay 的跟随时机）。 */
   onFrame?: () => void;
+}
+
+export interface CameraPreset {
+  fov: number;
+  near: number;
+  far: number;
+  x: number;
+  y: number;
+  z: number;
+  pitch: number;
+  yaw: number;
+  roll: number;
 }
 
 type Three = typeof ThreeNamespace;
@@ -96,10 +109,21 @@ export class ThreeViewer {
   private observer: ResizeObserver | undefined;
   private frame = 0;
   private frameRadius = 5;
+  /** 取景取证用（DEV 诊断）：当前地面网格的世界 Y。 */
+  gridY = 0;
+  /** 取景取证用（DEV 诊断）：content 归中偏移与当前取景半径。 */
+  get contentPosition(): ThreeNamespace.Vector3 {
+    return this.content.position;
+  }
+  get framingRadius(): number {
+    return this.frameRadius;
+  }
   private cameraDistance = 5;
   private orbitTheta = 0.34;
   private orbitPhi = 1.2;
   private readonly orbitTarget: ThreeNamespace.Vector3;
+  /** 上次构图的内容中心（软跟随基准；null = 尚未构图）。 */
+  private lastFrameCenter: ThreeNamespace.Vector3 | null = null;
   private readonly defaultTheta = 0.34;
   private readonly defaultPhi = 1.2;
   private selected: ThreeNamespace.Object3D | null = null;
@@ -112,6 +136,8 @@ export class ThreeViewer {
   /** 按需渲染脏标记：无变化不进 GPU（编辑器形态天然低频，rebuild 期间
    * 也不再与装配争抢主线程/GPU）。任何视觉变更都必须走 invalidate()。 */
   private needsRender = true;
+  /** 摄像机工作台景深(仅 cameraControlled 链路;未启用 = 直渲,零开销)。 */
+  private dof: ReturnType<typeof createDepthOfFieldController>;
   private assemblingScene = false;
 
   /** Do not compile/draw transient material and light combinations during assembly. */
@@ -188,7 +214,14 @@ export class ThreeViewer {
     objects: ThreeNamespace.Object3D = this.scene,
   ): Promise<void> {
     if (this.disposed || isStale()) return;
-    const compilation = this.renderer.compileAsync(objects, this.camera, this.scene).catch(() => {});
+    // compileAsync in recent Three versions keeps an internal promise polling
+    // materialProperties.currentProgram. Rebuilding a Property Editor scene can
+    // dispose that material during the poll, producing an uncaught `isReady` read.
+    // The synchronous compiler is safe across scene generations; the watchdog and
+    // timeout still keep the rebuild responsive on slow drivers.
+    const compilation = Promise.resolve().then(() => {
+      if (!this.disposed && !isStale()) this.renderer.compile(objects, this.camera, this.scene);
+    }).catch(() => {});
     this.pendingCompilations.add(compilation);
     void compilation.finally(() => this.pendingCompilations.delete(compilation));
     let settled = false;
@@ -466,6 +499,13 @@ export class ThreeViewer {
     this.content.add(this.world);
     this.scene.add(this.content);
     this.raycaster = new THREE.Raycaster();
+    this.dof = createDepthOfFieldController({
+      renderer: () => this.renderer,
+      scene: () => this.scene,
+      camera: () => this.camera,
+      getFrameRadius: () => this.frameRadius,
+      isDisposed: () => this.disposed,
+    });
 
     container.addEventListener("pointerdown", this.onPointerDown);
     container.addEventListener("pointermove", this.onPointerMove);
@@ -512,13 +552,46 @@ export class ThreeViewer {
   /**
    * 以 content 全部内容的包围球取中并构图：内容中心移到原点、地面网格
    * 贴底、相机 near/far 与缩放限幅按半径设定。
+   *
+   * 软跟随（soft）：装配是渐进的（模型/lotPlacement/草稿载荷分线异步
+   * 到达），首帧之后的 bbox 材料变化若不跟随，地面网格与 content 归零
+   * 就永远停在首帧的坐标系里——建筑"飘在网格上方"的观感正是这个一次性
+   * latch 的产物（2026-10-27 回归根因）。软跟随把 content 绝对归零到新
+   * 中心、相机与轨道目标等量反向平移（用户视角与缩放保持不动），并按新
+   * 半径重贴网格；内容未变时等价于幂等重建网格，零视角扰动。near/far/
+   * fov 属于用户/机位参数，软跟随不触碰。
+   *
+   * framingGroups：取景只统计给定图层组（如 建筑/地块/标注）。单元
+   * gizmo（灯/道具/贴花/特效/生成器/路径的标记锥与垫片）是编辑器
+   * chrome，其数据高度（道具锥沉到地块下数米、贴花垫片浮在上方）不应
+   * 拖动地面网格与取景中心——「网格参照物」与「编辑器标记」在此分离。
    */
-  frameContent() {
-    const box = new this.THREE.Box3().setFromObject(this.content);
+  frameContent(
+    options: { soft?: boolean; framingGroups?: string[] } = {},
+  ) {
+    let box = new this.THREE.Box3().setFromObject(this.content);
+    if (options.framingGroups?.length) {
+      const framing = new this.THREE.Box3();
+      for (const name of options.framingGroups) {
+        const group = this.groups.get(name);
+        if (group?.children.length) framing.expandByObject(group);
+      }
+      if (!framing.isEmpty()) box = framing;
+    }
     if (box.isEmpty()) return;
     const sphere = box.getBoundingSphere(new this.THREE.Sphere());
     const radius = Math.max(sphere.radius, 1e-3);
     const center = box.getCenter(new this.THREE.Vector3());
+    const prevCenter = this.lastFrameCenter;
+    const soft = options.soft === true && prevCenter !== null;
+    if (soft && prevCenter) {
+      // content 从 -旧中心 平移到 -新中心，世界位移 = 旧中心 - 新中心；
+      // 相机与轨道目标随世界一起平移，渲染内容在屏幕上保持不动。
+      const shift = prevCenter.clone().sub(center);
+      this.camera.position.add(shift);
+      this.orbitTarget.add(shift);
+    }
+    this.lastFrameCenter = center;
     this.content.position.sub(center);
     // 取中平移后地面（Y 最小值）随内容整体下移。
     const groundY = box.min.y - center.y;
@@ -534,11 +607,13 @@ export class ThreeViewer {
     gridMaterial.transparent = true;
     gridMaterial.opacity = 0.32;
     this.grid.position.y = groundY - radius * 0.002;
+    this.gridY = this.grid.position.y;
     this.scene.add(this.grid);
 
     this.frameRadius = radius;
-    this.cameraDistance = radius * 3;
     this.needsRender = true;
+    if (soft) return;
+    this.cameraDistance = radius * 3;
     this.camera.near = radius / 100;
     this.camera.far = radius * 40;
     this.camera.updateProjectionMatrix();
@@ -552,6 +627,53 @@ export class ThreeViewer {
     this.orbitTheta = Math.atan2(direction.x, direction.z);
     this.orbitTarget.set(0, 0, 0);
     this.applyCamera();
+  }
+
+  /**
+   * 摄像机工作台的忠实机位：游戏 isometric 相机是「环绕机位」——
+   * x/z 平移观察目标、y = 距离、pitch/yaw = 环绕角（pitch 负值 = 自上方
+   * 俯视，phi = 90+pitch 自竖轴下压），相机恒看向目标，位置与朝向耦合。
+   * 【2026-10-27 勘误】此前把位置与 yaw/pitch 拆成独立自由量，默认参数
+   * (yaw=149) 下相机背对地块、从下缘仰视——「默认俯仰不可能从下往上看」
+   * 的根因。滑杆全量程无钳制（pitch ±89 → phi 1°~179°，极端机位由用户
+   * 主动选择）；fov 直接生效，near/far 按同一比例尺缩放；roll 在 lookAt
+   * 之后绕视线轴叠加。仅摄像机工作台调用，其他场景的默认轨道不受影响。
+   * 比例尺 scenePerGame = 2.5·radius/800：原生机位 y=800 ↔ 2.5×radius。
+   */
+  setCameraPreset(preset: CameraPreset) {
+    const radius = Math.max(this.frameRadius, 1e-3);
+    const scenePerGame = (2.5 * radius) / 800;
+    this.cameraDistance = Math.max(radius * 0.05, preset.y * scenePerGame);
+    this.orbitTheta = (preset.yaw * Math.PI) / 180;
+    this.orbitPhi = ((90 + preset.pitch) * Math.PI) / 180;
+    this.orbitTarget.set(
+      preset.x * scenePerGame,
+      0,
+      preset.z * scenePerGame,
+    );
+    this.camera.fov = preset.fov;
+    const near = Math.max(1e-4, preset.near * scenePerGame);
+    this.camera.near = near;
+    this.camera.far = Math.max(near + 1e-2, preset.far * scenePerGame);
+    this.camera.updateProjectionMatrix();
+    this.applyCamera();
+    this.camera.rotateZ((preset.roll * Math.PI) / 180);
+    this.invalidate();
+  }
+
+  /**
+   * 摄像机工作台景深(仅 cameraControlled 链路;null = 关闭恢复直渲)。
+   * distance 为游戏米,内部按 setCameraPreset 同款 scenePerGame 换算成
+   * 场景单位;rig 懒加载,首启前到达的参数挂 pending,就绪后立即生效。
+   */
+  /**
+   * 摄像机工作台景深(仅 cameraControlled 链路;null = 关闭恢复直渲)。
+   * distance 为游戏米,controller 内部按 setCameraPreset 同款 scenePerGame
+   * 换算成场景单位;rig 懒加载,首启前的参数挂 pending,就绪后立即生效。
+   */
+  setDepthOfField(params: { distance: number; aperture: number; softness: number } | null) {
+    this.dof.setGameParams(params);
+    this.invalidate();
   }
 
   /** key 光方位（度）；对应 MeshPreview 的方位/仰角双滑杆。 */
@@ -793,6 +915,7 @@ export class ThreeViewer {
     this.renderer.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.dof.setSize(width, height);
     this.needsRender = true;
   }
 
@@ -816,7 +939,7 @@ export class ThreeViewer {
     this.frame = requestAnimationFrame(this.renderLoop);
     if (this.assemblingScene || !this.needsRender) return;
     this.needsRender = false;
-    this.renderer.render(this.scene, this.camera);
+    this.dof.render(() => this.renderer.render(this.scene, this.camera));
     // 渲染后回调：屏幕空间 overlay（选中/悬停描边框）在此跟随相机
     this.onFrameCb?.();
   };
@@ -867,6 +990,7 @@ export class ThreeViewer {
       this.grid?.geometry.dispose();
       (this.grid?.material as ThreeNamespace.Material | null)?.dispose();
       this.keyLight.dispose();
+      this.dof.dispose();
       this.renderer.dispose();
     };
     if (this.pendingCompilations.size) void Promise.allSettled([...this.pendingCompilations]).then(release);

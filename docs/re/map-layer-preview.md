@@ -157,7 +157,7 @@ types. `SC/cDistributeSampleState/Init.c` uses HaltonSequence3; density/LOD tile
 selection and sample updates need further tracing. Current preview placement and
 geometry remain procedural; locating the real assets does not reproduce placement.
 Reproduce the resource audit with:
-`cargo run -p sc-properties --example map_layer_assets -- <game-data>`.
+`cargo run -p probes --example map_layer_assets -- <game-data>`.
 
 ## Validation
 

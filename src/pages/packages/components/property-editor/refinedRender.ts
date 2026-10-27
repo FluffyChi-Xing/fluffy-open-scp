@@ -240,6 +240,8 @@ export interface TintTextureSet {
   interiorTex: ThreeNamespace.Texture | null;
   paramsTex: ThreeNamespace.DataTexture | null;
   paramCols: number;
+  paramsByMaterial: Map<string, ThreeNamespace.DataTexture>;
+  paletteRowsByMaterial: Map<string, number>;
 }
 
 /**
@@ -275,9 +277,9 @@ export async function loadTintTextures(
   // 原始数据同口径。
   const bitmapLoader = new THREE.ImageBitmapLoader();
   bitmapLoader.setOptions({
-    premultiplyAlpha: 'none',
-    colorSpaceConversion: 'none',
-    imageOrientation: 'none',
+    premultiplyAlpha: "none",
+    colorSpaceConversion: "none",
+    imageOrientation: "none",
   });
   const loadTex = (bytes: Uint8Array<ArrayBuffer>) =>
     new Promise<ThreeNamespace.Texture>((resolve, reject) => {
@@ -340,8 +342,12 @@ export async function loadTintTextures(
                 return t;
               })
             : Promise.resolve(null),
-          material.normalPng ? loadTex(material.normalPng) : Promise.resolve(null),
-          material.shaderPng ? loadTex(material.shaderPng) : Promise.resolve(null),
+          material.normalPng
+            ? loadTex(material.normalPng)
+            : Promise.resolve(null),
+          material.shaderPng
+            ? loadTex(material.shaderPng)
+            : Promise.resolve(null),
           material.interiorPng
             ? loadTex(material.interiorPng).then((t) => {
                 // 游戏 interiorMapSampler 为 REPEAT 包装：房间选择偏移（可能为整数倍
@@ -365,6 +371,33 @@ export async function loadTintTextures(
         // 已回滚——不加载、不上传 GPU。见 Top 层块内回滚记录。
         paramsTex: buildParamsTexture(THREE, material),
         paramCols: material.paramCols,
+        paramsByMaterial: new Map(
+          Object.entries(material.paramsByMaterial ?? {}).flatMap(
+            ([name, value]) => {
+              if (!value.width || !value.values.length) return [];
+              const paramsTex = new THREE.DataTexture(
+                new Float32Array(value.values),
+                value.width,
+                4,
+                THREE.RGBAFormat,
+                THREE.FloatType,
+              );
+              paramsTex.minFilter = THREE.NearestFilter;
+              paramsTex.magFilter = THREE.NearestFilter;
+              paramsTex.generateMipmaps = false;
+              paramsTex.needsUpdate = true;
+              return [[name, paramsTex] as const];
+            },
+          ),
+        ),
+        paletteRowsByMaterial: new Map(
+          Object.entries(material.paramsByMaterial ?? {}).flatMap(
+            ([name, value]) =>
+              typeof value.paletteRow === "number"
+                ? ([[name, value.paletteRow]] as const)
+                : [],
+          ),
+        ),
       };
     }),
   );
@@ -407,6 +440,7 @@ export function releaseRefinedMaterialCache(): void {
     set.shaderTex?.dispose();
     set.interiorTex?.dispose();
     set.paramsTex?.dispose();
+    for (const paramsTex of set.paramsByMaterial.values()) paramsTex.dispose();
   }
   for (const set of cache.deferredMaps) {
     set.map?.dispose();
@@ -582,6 +616,8 @@ export function attachTintShader(
   paramsReady: boolean,
   shaderMapReady: boolean,
   interiorReady: boolean,
+  blenderUvProfile = false,
+  blenderAtlasUv = false,
 ) {
   // 注意：three 默认编译为 GLSL ES 1.00——texelFetch/ivec2 不可用，
   // 参数表用 texture2D + 预计算 V 寻址（Nearest 采样取整行）。
@@ -604,22 +640,62 @@ varying vec2 vMatUV;
 varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
-varying vec3 vModelPos;`,
+varying vec3 vModelPos;
+varying vec3 vReliefNormal;
+varying vec3 vReliefTangent;`,
       )
       .replace(
         "#include <uv_vertex>",
         `#include <uv_vertex>
+// Blender's exported six-slot materials use NY_UV as the base domain
+// (TEXCOORD_1) and NY_SurfaceUV as the Top/facade domain (TEXCOORD_3).
+// Native LOTM GLBs keep the game contract: TEXCOORD_2/3 are the two facade
+// domains and TEXCOORD_1.x selects the parameter-table column.
+#ifdef TINT_BLENDER
+#ifdef TINT_BLENDER_ATLAS
+// The Blender material nodes bind the base input to NY_UV and the facade
+// input to NY_SurfaceUV.  NY_MaterialUV (TEXCOORD_2) is an auxiliary
+// diagnostic/projection attribute and must not be used for this shader: it
+// spans large world-space values and samples the six-slot atlas as a flat
+// grey wall.  GLTFLoader exposes NY_UV as TEXCOORD_1 and NY_SurfaceUV as
+// TEXCOORD_3, so keep the same two domains as Blender.
+vTintUv = vec2(uv1.x, 1.0 - uv1.y);
+vTopUv = vec2(uv3.x, 1.0 - uv3.y);
+#else
+// NY_Region/NY_Surface use the custom NY_UV and NY_SurfaceUV attributes.
+// They are also V-flipped by the glTF exporter and must be restored before the
+// six-slot atlas transform is applied.
+vTintUv = vec2(uv1.x, 1.0 - uv1.y);
+vTopUv = vec2(uv3.x, 1.0 - uv3.y);
+#endif
+#else
 vTintUv = uv2;
 vTopUv = uv3;
+#endif
 // 参数选列 = 逐顶点 byte1（D3DCOLOR.G，0..paramCols-1 与表宽自洽；消防局
 // 全部像素级对拍建立在其上）。地址 varying（vMatUV）+ PS Nearest 逐像素
 // 采样 = 引擎 building4SetupVS 的数据流结构（跨列三角形原子切换整列参数
 // 不混合值，2026-09-26 定谳；逐 tile 相位/半门问题另案，见 migration.md
 // §49.5——base 除法与逐实例基址两假设均已被实验证伪并回滚）。
-#ifdef TINT_PARAMS
+#ifdef TINT_BLENDER
+// Blender's material nodes use a fixed Mat Index input (column 0); NY_UV is
+// a base-domain coordinate, not the packed byte material selector used by
+// native LOTM exports.
+vMatUV = vec2(0.5 / uParamCols, 0.0);
+#elif defined(TINT_PARAMS)
 vMatUV = vec2((floor(uv1.x * 255.0 + 0.1) + 0.5) / uParamCols, 0.0);
 #else
 vMatUV = vec2(0.0);
+#endif`,
+      )
+      .replace(
+        "#include <defaultnormal_vertex>",
+        `#include <defaultnormal_vertex>
+vReliefNormal = normalize(transformedNormal);
+#ifdef USE_TANGENT
+vReliefTangent = normalize(transformedTangent);
+#else
+vReliefTangent = vec3(0.0, 0.0, 0.0);
 #endif`,
       )
       .replace(
@@ -648,6 +724,8 @@ varying float vObjUp;
 varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
+varying vec3 vReliefNormal;
+varying vec3 vReliefTangent;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
 // Clamp only the border, without rescaling every brick/window inside a tile.
@@ -741,39 +819,88 @@ uniform float uReliefEnabled;
 vec2 scReliefUv(vec2 src, vec3 eye, sampler2D heightMap, vec4 region, vec2 dx, vec2 dy) {
   if (uReliefEnabled < 0.5) return src;
   float distSq = dot(vViewPosition, vViewPosition);
-  if (distSq > 16000.0) return src;
-  vec2 probe = src * region.xy + region.zw;
-  vec4 control = scSampleAtlas(heightMap, probe, region, dx, dy);
-  float height = control.r;
-  // shaderMap.a is the building4 artist-opacity/window mask: opaque facade
-  // pixels are 1, while windows, doors and grille motifs are below 1. Relief
-  // on an opaque wall only magnifies atlas noise into visible stripes.
-  if (control.a > 0.90) return src;
-  if (height <= (23.0 / 255.0)) return src;
-  float coneRatio = clamp(control.g, 0.08, 1.0);
-  vec2 ray = clamp(eye.xy / max(abs(eye.z), 0.001), vec2(-2.0), vec2(2.0));
-  // kReliefDepth=.16, kConeSteps=8, kBinarySteps=2 (building4).
-  vec2 stepUv = ray * 0.16 * coneRatio / 8.0;
-  vec2 prev = src;
-  vec2 cur = src;
-  float layer = 0.0;
-  for (int i = 0; i < 8; i++) {
-    prev = cur;
-    cur -= stepUv;
-    layer += 1.0 / 8.0;
-    float h = scSampleAtlas(heightMap, cur * region.xy + region.zw, region, dx, dy).r;
-    if (layer >= h) break;
+  // building4's shipped shader uses kCullDistanceSq=160000.  Keeping the
+  // same cutoff matters here because the relief result must still be allowed
+  // to leave the tile before outsideTile disables the Top layer.
+  if (distSq > 160000.0) return src;
+  // This is the game's reliefPS cone-step mapping. The shader does not move
+  // vertices: it walks the authored height/cone field in shaderMap.rg, then
+  // returns a displaced UV used by the Top window/door layer.
+  const float kReliefDepth = 0.16;
+  const float kMaxConeRatio = 0.5;
+  const float kFlatLevel = 23.0 / 255.0;
+  const int kConeSteps = 8;
+  const int kBinarySteps = 2;
+
+  // The game divides the tangent-space XY ray by the Top atlas scale before
+  // calling reliefMap(). Keep that division here so dsRatio below is in the
+  // same texture-space units as the source shader.
+  eye.xy /= max(abs(region.xy), vec2(1e-4));
+  float safeZ = abs(eye.z) < 1e-4 ? (eye.z < 0.0 ? -1e-4 : 1e-4) : eye.z;
+  vec3 ds = eye;
+  // This is the source reliefMap() direction. The authored height field is
+  // traversed from the camera toward the wall; changing this to '+' makes
+  // windows/doors read as an outward bulge.
+  ds.xy = -ds.xy;
+  ds.z = safeZ;
+  ds.z *= 1.0 / kReliefDepth;
+  ds *= 1.0 / ds.z;
+  src -= ds.xy * kFlatLevel;
+  vec3 samplePos = vec3(src, 0.0);
+  float dsRatio = length(ds.xy * region.xy);
+  float finalDistance = 0.0;
+
+  for (int i = 0; i < kConeSteps; i++) {
+    vec2 sampleUv = clamp(samplePos.xy, 0.0, 1.0) * region.xy + region.zw;
+    vec4 control = scSampleAtlas(heightMap, sampleUv, region, dx, dy);
+    float height = control.r;
+    float coneRatio = max(control.g * kMaxConeRatio, 0.0);
+    float stepHeight = clamp(height - samplePos.z, 0.0, 1.0);
+    float stepDistance = (dsRatio + coneRatio) > 1e-5
+      ? (coneRatio * stepHeight) / (dsRatio + coneRatio)
+      : 0.0;
+    if (stepHeight > 0.0) finalDistance = stepDistance;
+    samplePos += ds * stepDistance;
   }
-  vec2 lo = prev;
-  vec2 hi = cur;
-  for (int i = 0; i < 2; i++) {
-    vec2 mid = (lo + hi) * 0.5;
-    float h = scSampleAtlas(heightMap, mid * region.xy + region.zw, region, dx, dy).r;
-    if (layer - (0.5 / 8.0) < h) hi = mid; else lo = mid;
+
+  ds *= finalDistance;
+  samplePos -= ds;
+  for (int i = 0; i < kBinarySteps; i++) {
+    ds *= 0.5;
+    vec2 sampleUv = clamp(samplePos.xy, 0.0, 1.0) * region.xy + region.zw;
+    float height = scSampleAtlas(heightMap, sampleUv, region, dx, dy).r;
+    samplePos += ((height - samplePos.z) >= 0.0) ? ds : -ds;
   }
-  return clamp((lo + hi) * 0.5, 0.0, 1.0);
+
+  // Flat pixels are the game's no-relief path. Keep the authored UV for the
+  // common wall case while allowing window/door heights to pop in and out.
+  vec4 sourceControl = scSampleAtlas(
+    heightMap,
+    clamp(src, 0.0, 1.0) * region.xy + region.zw,
+    region,
+    dx,
+    dy
+  );
+  if (sourceControl.r <= kFlatLevel) return src;
+  // Keep the unbounded result.  The game deliberately tests this coordinate
+  // against [0,1] after reliefMap(); clamping here would make outsideTile
+  // permanently zero and would smear a window/door texel into the surrounding
+  // wall whenever the parallax ray exits the Top tile.
+  return samplePos.xy;
 }
 vec3 scReliefEyeDir() {
+  vec3 tangentU;
+  vec3 tangentV;
+  vec3 normalV;
+#ifdef USE_TANGENT
+  // building4's vertex shader uses the exported mesh tangent and derives the
+  // second axis as cross(tangent, normal). Three exposes the opposite order
+  // for vBitangent, so construct the game-space binormal explicitly.
+  tangentU = normalize(vReliefTangent);
+  normalV = normalize(vReliefNormal);
+  tangentV = normalize(cross(tangentU, normalV));
+#else
+  // Fallback for foreign meshes without an exported tangent attribute.
   vec3 posV = -vViewPosition;
   vec3 dpx = dFdx(posV);
   vec3 dpy = dFdy(posV);
@@ -781,9 +908,12 @@ vec3 scReliefEyeDir() {
   vec2 duy = dFdy(vTopUv);
   float det = dux.x * duy.y - duy.x * dux.y;
   if (abs(det) < 1e-6) return vec3(0.0, 0.0, 1.0);
-  vec3 tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
-  vec3 tangentV = normalize((dpy * dux.x - dpx * duy.x) / det);
-  vec3 normalV = normalize(cross(tangentU, tangentV));
+  tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
+  normalV = normalize(vReliefNormal);
+  tangentV = normalize(cross(tangentU, normalV));
+#endif
+  // Three's vViewPosition is the fragment-to-camera vector, matching the
+  // source eyeDir = -mul(tangentSpace, viewPos).
   vec3 eyeV = normalize(vViewPosition);
   return normalize(vec3(dot(eyeV, tangentU), dot(eyeV, tangentV), dot(eyeV, normalV)));
 }
@@ -834,7 +964,16 @@ float scFastNoise(vec3 seed) {
         // xform）白屏、v2（乘 xform，周期 1/s）砖块放大 3.6×且变糊，双双
         // 证伪回滚（migration.md §49.5）。
         // region.xy 可为负（镜像窗）；采样边界用两端的 min/max，保留镜像。
-        vec2 tUv = fract(vTintUv) * xform.xy + xform.zw;
+        // Blender's Image Texture nodes explicitly flip their V input after
+        // the atlas transform. Fold that flip into both the coordinate and
+        // the region passed to the atlas sampler; otherwise the sampler's
+        // clamp would immediately snap every top sample back to the unflipped
+        // atlas rectangle.
+        vec4 baseRegion = xform;
+#ifdef TINT_BLENDER
+        baseRegion = vec4(xform.x, -xform.y, xform.z, 1.0 - xform.w);
+#endif
+        vec2 tUv = fract(vTintUv) * baseRegion.xy + baseRegion.zw;
         // 引擎 tex2Dgrad 同款显式导数（2026-10-05 取证：导数取**未 fract
         // 域** ddx(uv×regionXform)）——平铺边界无 UV 跳变，mip 级别天然
         // 正确。这是 tint/normal/shader 恢复 mip+LINEAR+各向异性的前提；
@@ -842,12 +981,19 @@ float scFastNoise(vec3 seed) {
         // Nearest/禁 mip 的病根。
         // paramsMap is a discrete lookup: differentiating its jumps incorrectly
         // selects coarse mips along material boundaries, even at close range.
-        vec2 scTintGradX = dFdx(vTintUv) * xform.xy;
-        vec2 scTintGradY = dFdy(vTintUv) * xform.xy;
-        // Close-up preview uses the actual Top footprint, independently of brick
-        // density. Include padding: near-constant UVs can be expanded by 2500x.
-        // Differentiate BEFORE fract/clamp and the discrete parameter lookup.
-        vec2 scTopScale = (1.0 + scRoom.xy) * xform2.xy;
+        vec2 scTintGradX = dFdx(vTintUv) * baseRegion.xy;
+        vec2 scTintGradY = dFdy(vTintUv) * baseRegion.xy;
+        // building4SetupPS computes the Top footprint from uv2 * regionXform2
+        // only.  tilePadding belongs to the relief tile-domain transform; it is
+        // deliberately not part of the texture derivatives.  Multiplying the
+        // derivatives by (1 + tilePadding) makes the many window columns with
+        // large padding select a coarse mip (often the whole atlas), which is
+        // why some windows become matte or lose their Top relief entirely.
+        vec4 topRegion = xform2;
+#ifdef TINT_BLENDER
+        topRegion = vec4(xform2.x, -xform2.y, xform2.z, 1.0 - xform2.w);
+#endif
+        vec2 scTopScale = topRegion.xy;
         vec2 scTopGradX = dFdx(vTopUv) * scTopScale;
         vec2 scTopGradY = dFdy(vTopUv) * scTopScale;
         vec4 tintValues = scSampleFacade(tintMap, tUv, xform, scTintGradX, scTintGradY);
@@ -869,25 +1015,30 @@ float scFastNoise(vec3 seed) {
         // 旧判据 xform2.x > 0 把镜像区域（负 scale）整块跳过——对称双窗只
         // 渲染左半的直接病根之一；0 才是「区域禁用」标记，判据改为非零。
         if (abs(xform2.x) > 1e-6 && abs(xform2.y) > 1e-6) {
-          vec2 scPad = scRoom.xy;
-          // Top 层保持现行公式（ts2/其倒数在参数表无对应行，v1 乱除已弃）。
-          vec2 reliefSrc = fract(vTopUv) * (1.0 + scPad) - scPad * 0.5;
+          // The Blender B4 node group stores Top atlas scale/offset in row 2
+          // and the relief tile padding in row 3.  Using row 2 as padding
+          // collapses the facade domain into a dense grid, especially on the
+          // window materials; keep the two parameter rows separate.
+          vec2 reliefPadding = scRoom.xy;
+          vec2 reliefScale = vec2(1.0) + reliefPadding;
+          vec2 reliefSrc = fract(vTopUv) * reliefScale - reliefPadding * 0.5;
           #ifdef TINT_SHADERMAP
-          // shaderMap.r is the authored facade height/cone channel.  Keep the
-          // original derivatives so mip selection remains stable across tiles.
-          // Very large padding is the engine's "Top disabled/knife-edge" marker;
-          // sampling relief there turns the degenerate UV into visible stripes.
-          if (max(abs(scPad.x), abs(scPad.y)) < 8.0) {
-            reliefSrc = scReliefUv(reliefSrc, scReliefEyeDir(), shaderMapMap, xform2,
-              scTopGradX, scTopGradY);
-          }
+          // shaderMap.r is the authored facade height/cone channel.  The game
+          // calls reliefMap for every Top column, including columns whose
+          // padding is large; outsideTile decides whether the result remains
+          // in the tile.  Skipping those columns made whole window families
+          // appear to have no relief at all.
+          // reliefPS receives the Base-domain derivatives (uv_ddx/uv_ddy),
+          // even though its height samples come from the Top atlas.
+            reliefSrc = scReliefUv(reliefSrc, scReliefEyeDir(), shaderMapMap, topRegion,
+            scTintGradX, scTintGradY);
           #endif
           float outsideTile =
             max(-reliefSrc.x, 0.0) + max(-reliefSrc.y, 0.0) +
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
           // 先定位 Top 图集区域，采样时再按每张图的 texel 尺寸保护边缘。
-          topUv = clamp(reliefSrc, 0.0, 1.0) * xform2.xy + xform2.zw;
-          facadeTintValues = scSampleFacade(tintMap, topUv, xform2, scTopGradX, scTopGradY);
+          topUv = clamp(reliefSrc, 0.0, 1.0) * topRegion.xy + topRegion.zw;
+          facadeTintValues = scSampleFacade(tintMap, topUv, topRegion, scTopGradX, scTopGradY);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
         vec2 scSubTop = facadeTintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);
@@ -914,20 +1065,25 @@ float scFastNoise(vec3 seed) {
           scTintMul = mix(tintValues.b, facadeTintValues.b, scFacade) * 2.0;
           diffuseColor.rgb *= scPalColor.rgb * scTintMul;
           #ifdef USE_NORMALMAP
-          // artistAO = normalMapSampled.a（Base/Top 双采样 lerp，显式导数同 tint）
-          // Normal and material data use the engine's linear filtering. Cubic
-          // reconstruction is reserved for visible colour/coverage contours.
-          scNormalSample = scSampleAtlas(normalMap, tUv, xform, scTintGradX, scTintGradY);
-          if (scFacade > 0.001) scNormalSample = mix(scNormalSample, scSampleAtlas(normalMap, topUv, xform2, scTopGradX, scTopGradY), scFacade);
-          diffuseColor.rgb *= scNormalSample.a;
+          // The Blender six-slot node graph uses slot2 alpha while computing
+          // its packed normal/roughness branches, but that alpha is not a
+          // general-purpose diffuse AO mask. Multiplying the final color by
+          // it creates dense black speckles on external community materials.
+          // Keep slot2 for the actual normal map and leave diffuse lighting to
+          // the material/normal path, matching Blender's final node output.
+           scNormalSample = scSampleAtlas(normalMap, tUv, baseRegion, scTintGradX, scTintGradY);
+           if (scFacade > 0.001) scNormalSample = mix(scNormalSample, scSampleAtlas(normalMap, topUv, topRegion, scTopGradX, scTopGradY), scFacade);
+#ifndef TINT_BLENDER
+           diffuseColor.rgb *= scNormalSample.a;
+#endif
           #endif
         }
         #ifdef TINT_SHADERMAP
         {
-          vec4 smBase = scSampleAtlas(shaderMapMap, tUv, xform, scTintGradX, scTintGradY);
+          vec4 smBase = scSampleAtlas(shaderMapMap, tUv, baseRegion, scTintGradX, scTintGradY);
           scShaderMap = smBase;
           if (scFacade > 0.001) {
-            scShaderMap = mix(smBase, scSampleAtlas(shaderMapMap, topUv, xform2, scTopGradX, scTopGradY), scFacade);
+            scShaderMap = mix(smBase, scSampleAtlas(shaderMapMap, topUv, topRegion, scTopGradX, scTopGradY), scFacade);
           }
         }
         #endif
@@ -1120,7 +1276,7 @@ float scFastNoise(vec3 seed) {
       );
   };
   material.customProgramCacheKey = () =>
-    `building4-tint${shaderMapReady ? "+sm" : ""}${paramsReady ? "+pm" : ""}${interiorReady ? "+im" : ""}`;
+    `building4-tint${shaderMapReady ? "+sm" : ""}${paramsReady ? "+pm" : ""}${interiorReady ? "+im" : ""}${blenderUvProfile ? "+blender" : ""}${blenderAtlasUv ? "+atlas" : ""}`;
 }
 
 /**
@@ -1132,26 +1288,41 @@ export function makeTintMaterial(
   tint: TintTextureSet,
   env: SunEnvRefs,
   reliefEnabled = false,
+  blenderUvProfile = false,
+  paletteRow = 0,
+  blenderAtlasUv = false,
+  materialName?: string,
 ): [ThreeNamespace.MeshStandardMaterial, { value: number }] {
+  const materialParams = materialName
+    ? tint.paramsByMaterial.get(materialName)
+    : undefined;
+  const paramsTex = materialParams ?? tint.paramsTex;
   const tinted = new THREE.MeshStandardMaterial({
     roughness: 0.9,
     metalness: 0,
     side: THREE.DoubleSide,
-    normalMap: tint.normalTex,
+    // Blender's slot2 is sampled by the custom branch below. Binding it as a
+    // MeshStandardMaterial normalMap as well double-applies the packed atlas
+    // and produces speckled walls on external community assets.
+    normalMap: blenderUvProfile ? undefined : tint.normalTex,
   });
   // 法线观感强度：引擎 ApplyNormalMap 的倍率未知，资产本身是细腻浮雕
   // （窗框/线脚）；1.0 时几乎不可辨（2026-09-18 用户反馈），1.5 为
   // 可见但不夸张的折中。normalTex 缺失时该值无副作用。
   tinted.normalScale = new THREE.Vector2(1.5, 1.5);
   tinted.defines = { USE_UV: "" };
-  if (tint.paramsTex) tinted.defines.TINT_PARAMS = "";
+  if (paramsTex) tinted.defines.TINT_PARAMS = "";
+  if (blenderUvProfile) {
+    tinted.defines.TINT_BLENDER = "";
+    if (blenderAtlasUv) tinted.defines.TINT_BLENDER_ATLAS = "";
+  }
   if (tint.shaderTex) tinted.defines.TINT_SHADERMAP = "";
   const interiorReady = Boolean(
-    tint.paramsTex && tint.shaderTex && tint.interiorTex,
+    paramsTex && tint.shaderTex && tint.interiorTex,
   );
   if (interiorReady) tinted.defines.TINT_INTERIOR = "";
   const uSpecGUniform = { value: effectiveSpecMode() };
-  const uPaletteRowUniform = { value: 0 };
+  const uPaletteRowUniform = { value: paletteRow };
   attachTintShader(
     tinted,
     {
@@ -1159,8 +1330,10 @@ export function makeTintMaterial(
       paletteMap: { value: tint.paletteTex! },
       shaderMapMap: { value: tint.shaderTex },
       interiorMapMap: { value: tint.interiorTex },
-      paramsMap: { value: tint.paramsTex },
-      uParamCols: { value: tint.paramCols },
+      paramsMap: { value: paramsTex },
+      uParamCols: {
+        value: materialParams ? materialParams.image.width : tint.paramCols,
+      },
       // 5a/5d：太阳/天空/昼夜/供电为共享 uniform 实例（applySunEnv 热切换）
       uSunDir: env.sunDir,
       uSunColor: env.sunColor,
@@ -1175,12 +1348,13 @@ export function makeTintMaterial(
       uPaletteRow: uPaletteRowUniform,
       uReliefEnabled: { value: reliefEnabled ? 1 : 0 },
     },
-    Boolean(tint.paramsTex),
+    Boolean(paramsTex),
     Boolean(tint.shaderTex),
     interiorReady,
+    blenderUvProfile,
+    blenderAtlasUv,
   );
   // 行 uniform 引用挂 userData（prop 按实例设变体行；建筑保持 0）
   tinted.userData.uPaletteRow = uPaletteRowUniform;
   return [tinted, uSpecGUniform];
 }
-

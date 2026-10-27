@@ -18,8 +18,9 @@ import { useMapGraph } from "./useMapGraph";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import type { MapNodeKind } from "@/lib/map-graph";
 import type { FlowSchema } from "./contracts";
+import FIcon from "@/components/extensions/FIcon.vue";
 const props = defineProps<{ project: string; selectedPath?: string }>();
-const emit = defineEmits<{ status: [ready: boolean]; saved: [] }>();
+const emit = defineEmits<{ status: [ready: boolean]; saved: []; focus: [] }>();
 const { t } = useI18n();
 const {
   state,
@@ -244,10 +245,14 @@ defineExpose({
         <button :disabled="busy" @click="arrange">
           {{ t("flow.arrange") }}
         </button>
-        <button :disabled="busy" @click="refresh">
-          {{ t("flow.validate") }}</button
-        ><button :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
-          {{ t("flow.fullscreen") }}
+        <button :disabled="busy" @click="refresh">{{ t("flow.validate") }}</button>
+        <button :title="t('flow.focus')" @click="emit('focus')">
+          <FIcon name="PanelBottom" :size="14" aria-label="" />
+          <span class="sr-only">{{ t("flow.focus") }}</span>
+        </button>
+        <button :aria-pressed="fullscreen" :title="t('flow.fullscreen')" @click="fullscreen = !fullscreen">
+          <FIcon :name="fullscreen ? 'Minimize2' : 'Maximize2'" :size="14" aria-label="" />
+          <span class="sr-only">{{ t("flow.fullscreen") }}</span>
         </button>
       </div>
     </header>
@@ -363,6 +368,9 @@ defineExpose({
   color: var(--muted-foreground);
   margin: 10px 16px;
 }
+.asset-flow-strip { align-items: center; background: color-mix(in srgb, var(--primary) 7%, var(--surface)); border-bottom: 1px solid var(--border); color: var(--muted-foreground); display: flex; flex-wrap: wrap; font-size: 11px; gap: 7px; padding: 7px 16px; }
+.asset-flow-strip span { color: var(--foreground); }
+.asset-flow-strip b { color: var(--primary); font-weight: 600; }
 .flow-workbench :deep(.vue-flow) {
   flex: 1;
   min-height: 220px;

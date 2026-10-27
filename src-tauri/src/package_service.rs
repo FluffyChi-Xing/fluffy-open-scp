@@ -992,6 +992,8 @@ fn resource_page(
 /// （"Greyscale Map (16-bit)"），且不含 EP1 类型。
 pub(crate) fn verified_type_name(type_id: u32) -> Option<&'static str> {
     Some(match type_id {
+        0x0806_8AEB => "ER2 Binary Rule File",
+        0x0806_8AEC => "ER2 Rule File",
         // 内容实证：游戏状态机脚本纯文本（官方 viewer=viewText）
         0x024A_0E52 => "State Script",
         // 官方注释：grey/color field maps (terrain)
@@ -1681,6 +1683,23 @@ fn key_refs(file: &sc_properties::PropertyFile, hash: u32) -> Vec<SemanticKeyRef
     refs
 }
 
+fn key_refs_of_type(file: &sc_properties::PropertyFile, type_id: u32) -> Vec<SemanticKeyRef> {
+    let mut out = Vec::new();
+    for property in &file.values {
+        let mut scan = |value: &sc_properties::Value| {
+            if let sc_properties::Value::Key(key) = value {
+                if key.type_id == type_id { out.push(SemanticKeyRef { type_id: key.type_id, group_id: key.group, instance_id: key.instance }); }
+            }
+        };
+        match &property.kind {
+            sc_properties::Kind::Scalar(value) => scan(value),
+            sc_properties::Kind::Array(values) => values.iter().for_each(&mut scan),
+            sc_properties::Kind::Empty => {}
+        }
+    }
+    out
+}
+
 fn scalar_of<T>(
     file: &sc_properties::PropertyFile,
     hash: u32,
@@ -1820,7 +1839,10 @@ fn extract_semantic_card(
             SemanticCardData::Vehicle {
                 parent: first_key_ref(file, KEY_PARENT),
                 name: resolved_texts(file, AGENT_NAME, locale),
-                models: key_refs(file, AGENT_VEHICLE_MODELS),
+                models: {
+                    let declared = key_refs(file, AGENT_VEHICLE_MODELS);
+                    if declared.is_empty() { key_refs_of_type(file, RW4_MODEL_TYPE) } else { declared }
+                },
                 light_count: file
                     .get(AGENT_LIGHT_IDS)
                     .map(|p| match &p.kind {
@@ -1930,6 +1952,23 @@ pub struct ErzPreviewData {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EcoGamePreviewData {
+    pub type_name: String,
+    pub total_length: usize,
+    pub compressed: bool,
+    pub decompressed_length: Option<usize>,
+    pub version: Option<u32>,
+    pub environment: Option<u32>,
+    pub map_count: Option<usize>,
+    pub unit_count: Option<usize>,
+    pub curve_count: Option<usize>,
+    pub table_words: Vec<u32>,
+    pub exact: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ErzConstantDto {
     pub hash: u32,
     pub value: u32,
@@ -1976,6 +2015,19 @@ pub struct Rw4SectionDetail {
     pub mesh: Option<Rw4MeshDetail>,
     pub texture: Option<Rw4TextureDetail>,
     pub hex_dump: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4MaterialTexturesDto {
+    pub textures: Vec<Rw4MeshTextureDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rw4MeshTextureDto {
+    pub mesh_section: u32,
+    pub png_base64: String,
 }
 
 /// property 条目值文本化（code 工作台资源预览共用）。
@@ -3716,7 +3768,45 @@ fn mesh_uv_kind(mesh: &rw4::DecodedMesh) -> u8 {
             }
         }
     }
+    // A facade mesh must have a usable FLOAT4 on every vertex.  Otherwise the
+    // GLB exporter would have to zero-fill TEXCOORD_2/3 for the missing
+    // vertices, which presents as windows that work only on one part of a
+    // building.  Keep such mixed streams on the ordinary material path.
+    let has_facade = !mesh.vertices.is_empty()
+        && mesh.vertices.iter().all(|v| facade_uv4(v).is_some())
+        && mesh.vertices.iter().any(|v| {
+            facade_uv4(v)
+                .map(|f| f.iter().any(|value| value.abs() > 8.0))
+                .unwrap_or(false)
+        });
+    if !has_facade && kind == 2 {
+        kind = 1;
+    }
     kind
+}
+
+/// Return the facade projection FLOAT4 rather than the first TEXCOORD.  Some
+/// RW4 declarations contain a regular FLOAT2 beside facade data; selecting the
+/// first entry made the exported Top UV point at the ordinary diffuse UV and
+/// caused window relief/glass to vary within one mesh.
+fn facade_uv4(vertex: &rw4::DecodedVertex) -> Option<[f32; 4]> {
+    vertex
+        .components
+        .iter()
+        .filter_map(|(element, value)| {
+            if element.usage != rw4::DeclarationUsage::TexCoord {
+                return None;
+            }
+            match value {
+                rw4::ComponentValue::Float4(f) => {
+                    let score = f.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
+                    Some((score, *f))
+                }
+                _ => None,
+            }
+        })
+        .max_by(|(a, _), (b, _)| a.total_cmp(b))
+        .map(|(_, f)| f)
 }
 
 /// facade 顶点色烘焙（building4 源码逐字，migration.md §27）：
@@ -3751,14 +3841,7 @@ fn bake_vertex_colors(mesh: &rw4::DecodedMesh, bake: &MaterialBake) -> Option<Ve
                 let Some(pal_origin) = bake.params.get(m).copied() else {
                     return FALLBACK;
                 };
-                let Some(f) = v
-                    .components
-                    .iter()
-                    .find(|(e, _)| e.usage == rw4::DeclarationUsage::TexCoord)
-                    .and_then(|(_, value)| match value {
-                        rw4::ComponentValue::Float4(f) => Some(*f),
-                        _ => None,
-                    })
+                let Some(f) = facade_uv4(v)
                 else {
                     return FALLBACK;
                 };
@@ -4703,6 +4786,12 @@ fn decode_decal_entry_rgba(
             Err(message) => DecalImageData::failed(index, message, None),
         };
     };
+    if type_id == RW4_MODEL_TYPE {
+        return match decode_lot_surface_png(package, manager, raster_key) {
+            Ok((png_base64, _)) => DecalImageData { index, error: None, width: None, height: None, png_base64: Some(png_base64) },
+            Err(message) => DecalImageData::failed(index, message, None),
+        };
+    }
     if type_id != RASTER_IMAGE_TYPE {
         return DecalImageData::failed(
             index,
@@ -4912,7 +5001,14 @@ fn find_decal_raster(
     key: Option<sc_properties::Key>,
 ) -> Option<(Vec<u8>, u32, String)> {
     let key = key?;
-    find_resource_across_packages_named(package, manager, key.instance, &[RASTER_IMAGE_TYPE])
+    // Decal dictionaries contain both raw Raster resources and RW4 texture
+    // wrappers (the latter are used by the hole/interior atlas family).
+    find_resource_across_packages_named(
+        package,
+        manager,
+        key.instance,
+        &[RASTER_IMAGE_TYPE, RW4_MODEL_TYPE],
+    )
 }
 
 fn decal_raster_status(
@@ -4931,9 +5027,32 @@ fn decal_raster_status(
         reason: Some(reason),
     };
 
+    let rw4_key = key.clone();
     let Some((bytes, type_id, source)) = find_decal_raster(package, manager, key) else {
         return missing("raster resource not found".into());
     };
+    if type_id == RW4_MODEL_TYPE {
+        return match rw4_key.and_then(|k| decode_lot_surface_png(package, manager, k).ok()) {
+            Some(_) => DecalRasterStatus {
+                found: true,
+                width: None,
+                height: None,
+                pixel_format: None,
+                decodable: true,
+                source_package: Some(source),
+                reason: None,
+            },
+            None => DecalRasterStatus {
+                found: true,
+                width: None,
+                height: None,
+                pixel_format: None,
+                decodable: false,
+                source_package: Some(source),
+                reason: Some("RW4 decal texture could not be decoded".into()),
+            },
+        };
+    }
     let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
         return DecalRasterStatus {
             found: true,
@@ -5163,13 +5282,11 @@ pub async fn read_decal_dictionary(
                     "decal dictionary requires a property resource".into(),
                 ));
             }
-            if !sc_properties::is_decal_dictionary_group(tgi.group) {
-                return Err(PackageError::InvalidArgument(format!(
-                    "group {:08X} is not a decal atlas instance type",
-                    tgi.group
-                )));
-            }
             let dictionary = sc_properties::DecalDictionary::parse(data)?;
+            let property_file = sc_properties::PropertyFile::parse(data)?;
+            if !sc_properties::decal::looks_like_dictionary(&property_file) {
+                return Err(PackageError::InvalidArgument("property has no decal dictionary columns".into()));
+            }
             Ok(decal_dictionary_data(dictionary, package, manager))
         },
     )
@@ -5232,6 +5349,69 @@ pub async fn read_rw4_preview(
     .await
 }
 
+/// Resolve vehicle/prop material diffuse textures, including textures referenced
+/// by material slots in other loaded packages.
+#[tauri::command]
+pub async fn read_rw4_material_textures(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<Rw4MaterialTexturesDto, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        request.tgi,
+        |data, package, manager, _| {
+            let file = rw4::Rw4File::parse(data)?;
+            let mut textures = Vec::new();
+            for binding in file.decode_mesh_material_bindings(data) {
+                let resources = resolve_material_resources(
+                    &file,
+                    data,
+                    package,
+                    manager,
+                    binding.material_section,
+                );
+                if let Some(png) = resources.slot0_png.or(resources.base_color_png) {
+                    use base64::{engine::general_purpose::STANDARD, Engine as _};
+                    textures.push(Rw4MeshTextureDto {
+                        mesh_section: binding.mesh_section,
+                        png_base64: STANDARD.encode(png),
+                    });
+                }
+            }
+            // Some prop materials have no decoded bindings but keep diffuse maps
+            // directly in the model file.
+            if textures.is_empty() {
+                let fallback_mesh = file.sections_of_type(rw4::SectionType::MESH).next().map(|s| s.number);
+                for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
+                    if let Ok(texture) = file.decode_texture(data, section.number) {
+                        if let Ok(rgba) = texture.decode_top_mip_rgba() {
+                            if let Ok(png) = encode_rgba_png_bytes(
+                                u32::from(texture.width),
+                                u32::from(texture.height),
+                                rgba,
+                            ) {
+                                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                                if let Some(mesh_section) = fallback_mesh {
+                                    textures.push(Rw4MeshTextureDto {
+                                        mesh_section,
+                                        png_base64: STANDARD.encode(png),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Rw4MaterialTexturesDto { textures })
+        },
+    )
+    .await
+}
+
 /// ERZ（0x08068AEB）结构预览：走完整布局校验（精确消耗到文件尾），
 /// 旧补丁布局（record != 14）返回 UnsupportedLayout 由前端回退 hex。
 #[tauri::command]
@@ -5278,6 +5458,50 @@ pub async fn read_erz_preview(
         },
     )
     .await
+}
+
+/// EcoGame state resources are gzip-wrapped region snapshots. The state table
+/// companion is currently undocumented; expose a bounded big-endian word view
+/// so it is useful for inspection without pretending unknown fields are known.
+#[tauri::command]
+pub async fn read_ecogame_preview(
+    state: State<'_, AppState>,
+    request: ReadResourceDataRequest,
+) -> Result<EcoGamePreviewData, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    read_resource_with(manager, store, request.package_id, request.tgi.clone(), move |data, _, _, _| {
+        let is_state = request.tgi.type_id == 0x0806_8AED;
+        let mut decompressed = Vec::new();
+        let compressed = data.starts_with(&[0x1f, 0x8b]);
+        if is_state && compressed {
+            flate2::read::GzDecoder::new(data).take(128 * 1024 * 1024 + 1)
+                .read_to_end(&mut decompressed).map_err(|e| PackageError::InvalidArgument(e.to_string()))?;
+        } else if is_state {
+            decompressed.extend_from_slice(data);
+        }
+        let mut out = EcoGamePreviewData {
+            type_name: if is_state { "EcoGame State Data".into() } else { "EcoGame State Table".into() },
+            total_length: data.len(), compressed, decompressed_length: None, version: None,
+            environment: None, map_count: None, unit_count: None, curve_count: None,
+            table_words: Vec::new(), exact: false, error: None,
+        };
+        if is_state {
+            out.decompressed_length = Some(decompressed.len());
+            match sc_properties::region_state::read_state(&decompressed) {
+                Ok(parsed) => {
+                    out.version = Some(parsed.version); out.environment = Some(parsed.environment);
+                    out.map_count = Some(parsed.maps.len()); out.unit_count = Some(parsed.units.len());
+                    out.curve_count = Some(parsed.curves.len()); out.exact = true;
+                }
+                Err(error) => out.error = Some(error),
+            }
+        } else {
+            out.table_words = data.chunks_exact(4).take(256).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])).collect();
+            out.exact = data.len() % 4 == 0;
+        }
+        Ok(out)
+    }).await
 }
 
 #[tauri::command]
@@ -5364,6 +5588,37 @@ pub(crate) fn bundled_registry_path(app: &AppHandle) -> Option<PathBuf> {
         )
         .ok()
         .filter(|path| path.is_file())
+}
+
+/// 组件库 prop bin 语义目录：树/车辆/垃圾桶/代售牌子四类全量条目
+/// （resourceID + 分类 + 可放置 RW4 模型）。机制见 crate::prop_models。
+#[tauri::command]
+pub async fn list_prop_bin_catalog(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::prop_models::PropBinCatalogEntry>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::prop_models::prop_bin_catalog(&manager, bundled_registry.as_deref())
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
+}
+
+/// 路径条目目录（工作台 entry 选择器数据源；机制见 crate::prop_models）。
+#[tauri::command]
+pub async fn list_path_entries(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::prop_models::PathEntrySummary>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::prop_models::path_entry_catalog(&manager, bundled_registry.as_deref())
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
 }
 
 pub(crate) fn package_registry(

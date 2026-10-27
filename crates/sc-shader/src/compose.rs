@@ -96,13 +96,11 @@ varying vec3 vTexcoord0;
 varying vec4 vTexcoord4;
 varying vec4 vTexcoord5;
 varying vec2 vUv;
-varying vec3 vObjPos;
 uniform vec3 uHoleOrigin;
 uniform vec3 uHoleAxisZ;
 uniform float uHoleInvDepth;
 void main() {
   vUv = uv;
-  vObjPos = position;
   // tfp.z = 几何在贴花盒内的真实进深（position = lot 局部坐标，与
   // uHoleOrigin/uHoleAxisZ 同空间）：[0, depth] → [-1, 1]
   float holeDepth = clamp(dot(position - uHoleOrigin, uHoleAxisZ) * uHoleInvDepth, 0.0, 1.0);
@@ -280,31 +278,9 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
         // 以 #define 覆盖片段内的引擎常量名，保持 decalLightInteriorMap
         // 片段逐字。
         ps.push_str("uniform float uInteriorGlow;\n#define kInteriorMapSelfLightMax uInteriorGlow\n");
-        // 视线视差（2026-10-05 四轮，用户"破洞各角度完全一样"对拍）：引擎
-        // 原版靠**场景内真实几何**（破洞后露出的楼板）让 tfp.z 逐像素变化
-        // 产生纵深；PE 建筑模型是空壳（无内部几何）→ z 恒为立面深度 →
-        // 内景全尺寸平贴。此处改用与窗户 interior mapping 同族的
-        // **视线射线-盒底平面求交**：从立面像素沿视线射到盒内虚拟后墙
-        // （z=depth），采样命中点——直视时与原版公式完全一致，斜视时内景
-        // 随视角移动（= 游戏窗户假内景的观感）。
-        // vObjPos/uHoleCamLot 同为 mesh 局部（= lot 局部）空间；
-        // uHoleInvRot = 贴花基矩阵转置（lot 局部 → 贴花系）。
-        ps.push_str(
-            "varying vec3 vObjPos;\n\
-             uniform vec2 uHoleHalfXY;\n\
-             uniform float uHoleDepthM;\n\
-             uniform mat3 uHoleInvRot;\n\
-             uniform vec3 uHoleCamLot;\n\
-             vec2 holeParallaxUv(vec3 tfp) {\n\
-             \x20 vec3 dirLot = normalize(vObjPos - uHoleCamLot);\n\
-             \x20 vec3 dir = uHoleInvRot * dirLot;\n\
-             \x20 float zm = (tfp.z * 0.5 + 0.5) * uHoleDepthM;\n\
-             \x20 float s = max((uHoleDepthM - zm) / max(dir.z, 0.05), 0.0);\n\
-             \x20 vec2 hit = tfp.xy * uHoleHalfXY + dir.xy * s;\n\
-             \x20 vec2 norm = hit / uHoleHalfXY;\n\
-             \x20 return norm * -0.5 + 0.5;\n\
-             }\n",
-        );
+        // building4 的 interiorMap() 是建筑立面窗户的独立 shader 链，
+        // 不能叠加到 decalInteriorMap。破洞的视差来自 decalProject 的
+        // 屏幕深度重建、深度测试和内部几何，而不是额外的相机射线。
     }
     if family.needs_lighting() {
         ps.push_str(&translate(fragments::get("SimCityLighting").ok_or_else(|| anyhow::anyhow!("缺 SimCityLighting"))?));
@@ -384,10 +360,11 @@ mod tests {
         assert!(ps.contains("interiorUv"));
         // 自发光峰值挂 env.glow（白天 2.5 / 夜间 16），不硬编码引擎 HDR 常量
         assert!(ps.contains("#define kInteriorMapSelfLightMax uInteriorGlow"));
-        // 视线视差（空壳建筑的纵深来源）：射线-盒底平面求交函数已注入
-        assert!(ps.contains("holeParallaxUv(textureFloatPosition)"));
-        assert!(ps.contains("uniform mat3 uHoleInvRot;"));
-        assert!(ps.contains("varying vec3 vObjPos;"));
+        // 游戏 decalInteriorMap[380] 的双 UV 公式；building4 的 facade
+        // interiorMap() 视线盒体求交不属于破洞簇。
+        assert!(ps.contains("vec2 interiorUv = mix(textureFloatPosition.xy"));
+        assert!(ps.contains("if ((textureFloatPosition.z) < 0.0) discard"));
+        assert!(!ps.contains("uHoleCamLot"));
     }
 
     #[test]

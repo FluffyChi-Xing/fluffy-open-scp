@@ -51,20 +51,6 @@ varying vec2 vUv;
 vec4 outColor = vec4(0.0);
 uniform float uInteriorGlow;
 #define kInteriorMapSelfLightMax uInteriorGlow
-varying vec3 vObjPos;
-uniform vec2 uHoleHalfXY;
-uniform float uHoleDepthM;
-uniform mat3 uHoleInvRot;
-uniform vec3 uHoleCamLot;
-vec2 holeParallaxUv(vec3 tfp) {
-  vec3 dirLot = normalize(vObjPos - uHoleCamLot);
-  vec3 dir = uHoleInvRot * dirLot;
-  float zm = (tfp.z * 0.5 + 0.5) * uHoleDepthM;
-  float s = max((uHoleDepthM - zm) / max(dir.z, 0.05), 0.0);
-  vec2 hit = tfp.xy * uHoleHalfXY + dir.xy * s;
-  vec2 norm = hit / uHoleHalfXY;
-  return norm * -0.5 + 0.5;
-}
 void SimCityLighting(vec3 normal, vec3 viewVector, float glossyStrength,
 float reflectance, float specE, float specStrength,
 inout vec3 shColorDiff, inout vec3 shColorSpec,
@@ -91,7 +77,10 @@ outColor.rgb *= shColorDiff + shColorSpec + spec;
 float kSunContributionAmount = decalMaterialData[0].x;
 float kLightAmount = decalMaterialData[0].y;
 vec3 textureFloatPosition = vTexcoord0.xyz;
-vec2 interiorUv = holeParallaxUv(textureFloatPosition);
+// decalClip[375]：只保留投影盒 z >= 0 的半空间。
+if (textureFloatPosition.z < 0.0) discard;
+vec2 interiorUv = mix(textureFloatPosition.xy, textureFloatPosition.xy * 0.5, textureFloatPosition.z * 0.5 + 0.5);
+interiorUv = interiorUv * -0.5 + 0.5;
 interiorUv = interiorUv * texXform.xy + texXform.zw;
 float sunMod = clamp(dot(uSunDir3, bumpNormal.xyz), 0.0, 1.0);
 vec3 sunColor = sunMod * uSunColor3 * shadow;

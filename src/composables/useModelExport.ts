@@ -63,7 +63,11 @@ async function buildExportScene(
   payload: LotModelPayload,
   mode: ModelExportMode,
 ): Promise<THREE.Group> {
-  const objects = await parseLotModelObjects(payload.glbs);
+  const objects = await parseLotModelObjects(
+    payload.glbs,
+    payload.upAxis,
+    payload.upAxisDeclared ?? false,
+  );
   const root = new THREE.Group();
   root.name = "openscp-export";
 

@@ -10,10 +10,11 @@ members = [
     "crates/sc-shader",
     "crates/sc-format",
     "crates/sc-store",
+    "probes",
 ]
 
 [workspace.package]
-version = "0.10.1"
+version = "0.10.2"
 edition = "2024"
 license = "MIT"
 

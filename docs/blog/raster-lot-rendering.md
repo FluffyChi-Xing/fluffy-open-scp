@@ -194,14 +194,14 @@ Lot Textures 图集格的 U 轴与 mask 的列序相反（采样 u = 1 − x/W�
 
 ```bash
 # 批量：120 lot 原生分辨率 albedo/selector + contact sheet
-cargo run -p sc-exporter --release --example lot_composite
+cargo run -p probes --release --example lot_composite
 
 # 单 lot 游戏级尺度高清合成（pattern=引擎口径 / tile=对照口径）
-cargo run -p sc-exporter --release --example lot_composite -- \
+cargo run -p probes --release --example lot_composite -- \
   --lot=457ea9db --out=output/lot_hires
 
 # 单 lot 多假设对照（底图格推导、通道统计、图集格均色）
-cargo run -p sc-exporter --release --example lot_compose -- \
+cargo run -p probes --release --example lot_compose -- \
   "D:/ea-games/SimCity/SimCityData/SimCity_Game.package" 0x457ea9db \
   --out=D:/tmp/lot_compose "D:/ea-games/SimCity/SimCityData/SimCity_Graphics.package"
 ```

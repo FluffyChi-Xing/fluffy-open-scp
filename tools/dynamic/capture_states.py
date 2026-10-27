@@ -53,28 +53,11 @@ def log(*a):
 
 
 def acquire_capture_lock():
-    import ctypes
-    import os
-    if LOCK_PATH.exists():
-        old = 0
-        try:
-            old = int(LOCK_PATH.read_text(encoding="utf-8").strip())
-        except (ValueError, OSError):
-            old = 0
-        if old and old != os.getpid():
-            alive = False
-            try:
-                h = ctypes.windll.kernel32.OpenProcess(0x1000, False, old)
-                if h:
-                    alive = True
-                    ctypes.windll.kernel32.CloseHandle(h)
-            except Exception:
-                alive = False
-            if alive:
-                raise SystemExit(
-                    f"已有捕获会话在运行（PID {old}）——单会话铁律：先停止它再启动。")
-    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+    # Share the OS mutex with rule and inventory captures.
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "probes" / "runtime"))
+    from capture_lock import acquire_capture_lock as acquire
+    return acquire()
 
 
 def find_pids_by_name(name: str):

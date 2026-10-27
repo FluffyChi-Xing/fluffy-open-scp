@@ -26,4 +26,29 @@ describe("neon pass weights", () => {
     tube.dispose();
     options.map.dispose();
   });
+
+  it("uses the engine interior-map depth phase for hole decals", () => {
+    const map = new THREE.Texture();
+    const material = createEngineDecalMaterial(THREE, "hole", {
+      map,
+      decalData: null,
+      worldDirection: new THREE.Vector3(0, 0, 1),
+      env: {
+        sunDir: { value: new THREE.Vector3(0, 0, 1) },
+        sunColor: { value: new THREE.Color(1, 1, 1) },
+        dayLight: { value: 1 },
+        nightBoost: { value: 1 },
+      },
+      holeBox: {
+        origin: new THREE.Vector3(),
+        axisZ: new THREE.Vector3(0, 0, 1),
+        invDepth: 1,
+      },
+    });
+    expect(material.fragmentShader).toContain("textureFloatPosition.z < 0.0");
+    expect(material.fragmentShader).toContain("textureFloatPosition.xy * 0.5");
+    expect(material.fragmentShader).not.toContain("uHoleCamLot");
+    material.dispose();
+    map.dispose();
+  });
 });

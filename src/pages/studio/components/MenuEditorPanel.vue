@@ -13,30 +13,91 @@ import { storeToRefs } from "pinia";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import { toolIconName, toolPreview } from "@/lib/game-ui/workbench";
+import { downloadBytes } from "@/lib/game-ui/menu-export";
+import { tauriApi } from "@/api";
+import { command } from "@/api/tauri";
 import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
 import { useI18n } from "vue-i18n";
+import { useToast } from "@/composables/useToast";
+import MenuGroupingPanel from "./menu-form/MenuGroupingPanel.vue";
 
 const { t } = useI18n();
 const store = useUiWorkbenchStore();
 const { activeMenu, edits, added, customCategories } = storeToRefs(store);
 
 const editedCount = computed(() => Object.keys(edits.value).length +
-  Object.values(added.value).reduce((count, entries) => count + entries.length, 0) + customCategories.value.length);
+  Object.values(added.value).reduce((count, entries) => count + entries.length, 0) + customCategories.value.length + store.countLimits.editCount + store.menuGroups.length + Object.keys(store.moves).length);
 
 /** 加载失败的槽位图（如运行时资产落后于数据）→ 回退 FIcon 占位。 */
 const brokenThumbs = ref<Record<string, boolean>>({});
+/** 最近一次编译的覆盖警告（toast 之外常驻显示）。 */
+const buildWarnings = ref<string[]>([]);
 
 function emitEdit(id: string): void {
   const entry = activeMenu.value?.entries.find((candidate) => candidate.tool.id === id);
   if (entry) store.editingEntry = entry;
 }
 
-function onExport(): void {
+/** 导出 schema JSON（菜单配置过长，写文件而非剪贴板）。
+ * Tauri 走保存对话框；浏览器回退为下载。 */
+async function onExport(): Promise<void> {
   const json = store.exportSchema();
-  void navigator.clipboard?.writeText(json).then(
-    () => window.alert(t("studio.workbench.exportCopied")),
-    () => window.alert(json),
+  try {
+    const path = await tauriApi.packages.saveFile("openscp-ui-workbench.schema.json", "json");
+    if (path) {
+      let base64 = "";
+      for (const byte of new TextEncoder().encode(json)) base64 += String.fromCharCode(byte);
+      await command("write_export_file", {
+        request: { path, dataBase64: btoa(base64) },
+      });
+      return;
+    }
+  } catch {
+    // 非 Tauri 环境 → 下载回退
+  }
+  downloadBytes(
+    new TextEncoder().encode(json),
+    "openscp-ui-workbench.schema.json",
+    "application/json",
   );
+}
+
+/** 编译 .package 并让用户选择保存位置（与导出 JSON 同一套交互）。
+ * 非 Tauri 环境回退为下载。结果用 toast 通知（不用系统弹窗）。 */
+const toast = useToast();
+
+async function onBuild(): Promise<void> {
+  let result: Awaited<ReturnType<typeof store.buildGameExport>>;
+  try { result = await store.buildGameExport(); }
+  catch (error) {
+    toast.error(error instanceof Error ? error.message : t(store.menuGroups.length || Object.keys(store.moves).length ? "studio.workbench.organizationWriteFailed" : "studio.workbench.countLimitsWriteFailed"));
+    return;
+  }
+  if (result.entryCount === 0) {
+    toast.warning(t("studio.workbench.buildEmpty"));
+    return;
+  }
+  buildWarnings.value = result.warnings;
+  const summary = t("studio.workbench.buildComplete", {
+    entries: result.entryCount,
+    locales: result.localeCount,
+  });
+  try {
+    const path = await tauriApi.packages.saveFile("OpenSCP-ui-overlay.package", "package");
+    if (path) {
+      let base64 = "";
+      for (const byte of result.bytes) base64 += String.fromCharCode(byte);
+      await command("write_export_file", {
+        request: { path, dataBase64: btoa(base64) },
+      });
+      toast.success(summary, { title: path });
+      return;
+    }
+  } catch {
+    // 非 Tauri 环境 → 下载回退
+  }
+  downloadBytes(result.bytes, "OpenSCP-ui-overlay.package", "application/octet-stream");
+  toast.success(summary);
 }
 
 function onAdd(): void {
@@ -63,6 +124,7 @@ function onAdd(): void {
       <span v-if="editedCount" class="edit-badge">{{ editedCount }} Δ</span>
     </header>
 
+    <MenuGroupingPanel v-if="activeMenu" :menu-id="activeMenu.id" />
     <FEmpty
       v-if="!activeMenu"
       class="empty-body"
@@ -102,7 +164,18 @@ function onAdd(): void {
           <span class="item-meta">
             <span class="tabnum">pos {{ entry.tool.pos }}</span>
             <span class="dot">·</span>
-            <span>{{ entry.tool.source === "locale" ? t("studio.workbench.srcLocale") : t("studio.workbench.srcUnresolved") }}</span>
+            <span>{{
+              entry.tool.source === "locale"
+                ? t("studio.workbench.srcLocale")
+                : entry.tool.source === "preset"
+                  ? t("studio.workbench.srcPreset")
+                  : t("studio.workbench.srcUnresolved")
+            }}</span>
+          </span>
+          <span v-if="entry.tool.cost !== null && entry.tool.cost !== undefined || entry.tool.upkeep !== null && entry.tool.upkeep !== undefined" class="item-meta item-finance">
+            <span>{{ t("studio.workbench.costShort") }} {{ entry.tool.cost ?? "—" }}</span>
+            <span class="dot">·</span>
+            <span>{{ t("studio.workbench.upkeepShort") }} {{ entry.tool.upkeep ?? "—" }}</span>
           </span>
         </span>
         <FIcon class="item-chev" name="ChevronRight" :size="14" aria-label="" />
@@ -116,7 +189,14 @@ function onAdd(): void {
     </div>
 
 
+    <ul v-if="buildWarnings.length > 0" class="build-warnings">
+      <li v-for="(warning, index) in buildWarnings" :key="index">{{ warning }}</li>
+    </ul>
+
     <footer class="panel-foot">
+      <button type="button" class="foot-btn primary" :disabled="!editedCount" @click="onBuild">
+        {{ t("studio.workbench.buildPackage") }}
+      </button>
       <button type="button" class="foot-btn primary" @click="onExport">
         {{ t("studio.workbench.export") }}
       </button>
@@ -303,9 +383,21 @@ function onAdd(): void {
 .add-plus {
   font-size: 15px;
 }
+.build-warnings {
+  color: var(--warning, #d9a03f);
+  font-size: 11px;
+  line-height: 1.5;
+  list-style: none;
+  margin: 0;
+  padding: 0 12px;
+}
+.build-warnings li::before {
+  content: "⚠ ";
+}
 .panel-foot {
   border-top: 1px solid var(--border);
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 10px 12px;
 }
@@ -322,9 +414,18 @@ function onAdd(): void {
   transition: border-color 120ms ease, color 120ms ease;
   white-space: nowrap;
 }
+.panel-foot .foot-btn:first-child {
+  flex-basis: 100%;
+}
 .foot-btn:hover:not(:disabled) {
   border-color: var(--primary);
   color: var(--primary);
+}
+/* primary 实底按钮 hover 只提亮，不能把文字染成同底色（否则字消失） */
+.foot-btn.primary:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary-foreground, #fff);
+  filter: brightness(1.1);
 }
 .foot-btn.primary {
   background: var(--primary, #0b78fe);

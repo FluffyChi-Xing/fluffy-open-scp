@@ -9,6 +9,7 @@ import {
   watch,
 } from "vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FEmpty from "@/components/extensions/FEmpty.vue";
 import { createDataSource } from "@/api/data-source";
 import type {
   DecalDictionaryData,
@@ -120,6 +121,18 @@ function vector(value: [number, number] | null | undefined) {
   return value ? `${value[0]} × ${value[1]}` : "—";
 }
 
+function errorMessage(cause: unknown): string {
+  if (cause instanceof Error && cause.message) return cause.message;
+  if (typeof cause === "string" && cause.trim()) return cause;
+  if (cause && typeof cause === "object") {
+    const value = cause as Record<string, unknown>;
+    for (const key of ["message", "error", "reason"]) {
+      if (typeof value[key] === "string" && value[key]) return value[key] as string;
+    }
+  }
+  return "";
+}
+
 async function load() {
   loading.value = true;
   error.value = null;
@@ -135,7 +148,7 @@ async function load() {
     );
   } catch (cause) {
     dictionary.value = null;
-    error.value = cause instanceof Error ? cause.message : String(cause);
+    error.value = errorMessage(cause);
   } finally {
     loading.value = false;
     await nextTick();
@@ -167,7 +180,7 @@ async function flush() {
     );
     for (const result of results) images.set(result.index, result);
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = errorMessage(cause) || "decal preview request failed";
     for (const index of batch) {
       images.set(index, {
         index,
@@ -298,13 +311,22 @@ watch(filtered, async () => {
     <div v-if="loading" class="decal-skeleton-grid" aria-hidden="true">
       <span v-for="slot in 8" :key="slot" class="decal-skeleton" />
     </div>
-    <p v-else-if="error" class="decal-empty" role="alert">{{ error }}</p>
-    <p v-else-if="!entries.length" class="decal-empty">
-      {{ $t("decal.empty") }}
-    </p>
-    <p v-else-if="!filtered.length" class="decal-empty">
-      {{ $t("decal.noResults") }}
-    </p>
+    <FEmpty
+      v-else-if="error"
+      variant="compact"
+      status="warning"
+      icon-name="FileQuestion"
+      :title="$t('decal.previewUnavailable')"
+      :desc="error"
+    />
+    <FEmpty
+      v-else-if="!entries.length"
+      variant="compact"
+      icon-name="FileText"
+      :title="$t('decal.emptyTitle')"
+      :desc="$t('decal.empty')"
+    />
+    <FEmpty v-else-if="!filtered.length" variant="compact" icon-name="SearchX" :title="$t('decal.noResults')" />
 
     <div v-else class="decal-grid-wrap">
       <div ref="gridRef" class="decal-grid" role="list">

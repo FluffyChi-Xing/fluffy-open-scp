@@ -28,6 +28,9 @@ const SKIP_SUBTREE = new Set<number>([100, 18, 28, 1394, 1908, 301, 973, 1061, 1
 
 /** 模式切换器：三张模式图叠放，游戏只显示当前模式。城市视图默认城市模式。 */
 const MODE_IIDS = { city: 1114, region: 1019, development: 1451 } as const;
+const MODE_BUTTONS: Record<string, keyof typeof MODE_IIDS> = {
+  "787": "city", "83": "region", "1458": "development",
+};
 
 /** 默认隐藏（与 reference/city.png 未展开态比对得出）：
  *  点开面板后才出现的大底衬（743/1065/254）、RCI 外圈内凹底板（839）、
@@ -44,9 +47,9 @@ const S_DOWN = 2;
 /** 状态层：游戏里这些子层由运行时按「悬停/选中/告警」切换可见性，
  * 静态布局里没有 opacity 标记，必须按语义先隐掉，否则选中态美术会盖住常态。 */
 const HOVER_LAYERS = new Set(["ring", "ring2", "highlight"]);
-const SELECT_LAYERS = new Set(["ring on", "frame on", "toggle button2", "icon on (white)"]);
+const SELECT_LAYERS = new Set(["tab", "frame on", "toggle button2", "icon on (white)"]);
 const ALERT_LAYERS = new Set([
-  "tab",
+  "ring on", // 菜单消息提示，不随普通选中态显示。
   "tool unlocked",
   "critical red frame",
   "caution alert triggered",
@@ -226,11 +229,19 @@ export function createHudRender(data: ReplicaData, options?: {
     const imgs = imageStates(node);
     const classes = cssStates(node);
     const isButton = node.buttonType != null || node.buttonGroup != null;
+    const mode = MODE_BUTTONS[String(node.instanceID)];
+    const selected = mode ? mode === (options?.mode ?? "city") : node.isSelected === true;
+    if (mode) {
+      el.dataset.mode = mode;
+      el.classList.add("hud-mode-button");
+      el.classList.toggle("layer-selected", selected);
+      el.setAttribute("aria-pressed", String(selected));
+    }
 
     if (imgs) {
       if (imgs.length > 1 && isButton) {
         el.classList.add("hud-img");
-        makeStateful(el, "image", imgs, node.isSelected === true);
+        makeStateful(el, "image", imgs, selected);
       } else {
         el.classList.add("hud-img");
         el.style.backgroundImage = imgs[0] ? `url('${imgs[0].url}')` : "none";
@@ -239,7 +250,7 @@ export function createHudRender(data: ReplicaData, options?: {
       if (classes.length === 1 || !isButton) {
         el.classList.add(classes[0]);
       } else {
-        makeStateful(el, "css", classes, node.isSelected === true);
+        makeStateful(el, "css", classes, selected);
       }
     }
 
@@ -284,6 +295,8 @@ export function createHudRender(data: ReplicaData, options?: {
       clone.top = 0;
       clone.width = 43;
       clone.height = 62;
+      // Offsets live in a WeakMap: cloning the template loses its design pass.
+      designPass(clone, 43, 62);
       const holder = document.createElement("div");
       holder.className = "hud-el cat-btn";
       holder.dataset.category = cat.id;

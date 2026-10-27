@@ -13,7 +13,7 @@
 生成单 TGI 对照包复用现有 writer，不修改资源内容，输出采用独占创建：
 
 ```powershell
-cargo run -p dbpf --example single_tgi_overlay -- <source.package> <new-output.package> 00B1B104 00000000 4483E856
+cargo run -p probes --example single_tgi_overlay -- <source.package> <new-output.package> 00B1B104 00000000 4483E856
 ```
 
 参见 [实机报告](../../../docs/re/package-runtime-verification-20261017.md)。测试包仅用于复制不变 payload 的对照，任意修改仍需资源语义检查。脚本停止观察后保留游戏进程，后续实验前正常退出自己启动的实例，再核对哈希清理自己的 fixture；不要删除现有 mod。

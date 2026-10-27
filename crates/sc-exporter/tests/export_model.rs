@@ -75,7 +75,7 @@ fn obj_matches_csharp_layout() {
     assert!(obj.contains("vn  "));
     assert!(obj.contains("vt  0.250000000000 0.750000000000\r\n"));
     // 面为 1-based；退化面 (5,5,2) 被跳过
-    assert!(obj.contains("f  1 2 3\r\n"));
+    assert!(obj.contains("f  1/1/1 2/2/2 3/3/3\r\n"));
     assert!(!obj.contains("f  6 6 3"));
     assert!(obj.contains("# 1 faces\r\n"));
     assert!(obj.contains("# 3 vertices\r\n"));

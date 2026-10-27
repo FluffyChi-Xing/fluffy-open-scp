@@ -327,7 +327,11 @@ export async function getTreeModelObject(
   if (!shape) {
     let roots: ThreeNamespace.Object3D[];
     try {
-      roots = await parseLotModelObjects(payload.glbs);
+      roots = await parseLotModelObjects(
+        payload.glbs,
+        payload.upAxis,
+        payload.upAxisDeclared ?? false,
+      );
     } catch {
       return null;
     }
@@ -412,7 +416,11 @@ export async function getPropModelObject(
   if (!entry) {
     let roots: ThreeNamespace.Object3D[];
     try {
-      roots = await parseLotModelObjects(payload.glbs);
+      roots = await parseLotModelObjects(
+        payload.glbs,
+        payload.upAxis,
+        payload.upAxisDeclared ?? false,
+      );
     } catch {
       return null;
     }
@@ -492,14 +500,21 @@ export async function getPropModelObject(
     }
   }
   const clone = entry.roots.map((root) => root.clone());
-  if (clone.length !== 1) return null;
+  if (clone.length === 0) return null;
+  // RW4/GLB 资源可以包含多个顶层节点（太阳能板的支架与面板就是
+  // 常见形态）。把它们合并到一个 Group，避免多根模型被误判为无效 prop；
+  // 单根时保留原对象，确保既有局部变换和材质路径不变。
+  const object = clone.length === 1 ? clone[0] : new THREE.Group();
+  if (clone.length > 1) {
+    for (const root of clone) object.add(root);
+  }
   // 逐 mesh 配材质：tint 材质每实例新鲜建（行 uniform 独立），baseColor
   // 材质每实例新鲜建（paint lerp 的 uPaintColor 独立）；贴图/着色器编译
   // 均按载荷/缓存键共享。
   const paintColor =
     PAINT_STRIP[Math.floor(variantSeed * 0.618) % PAINT_STRIP.length];
   let meshIndex = 0;
-  clone[0].traverse((child) => {
+  object.traverse((child) => {
     const mesh = child as ThreeNamespace.Mesh;
     if (!mesh.isMesh) return;
     const materialIndex = entry.meshMaterialIndices[meshIndex] ?? 0;
@@ -542,5 +557,5 @@ uniform vec3 uPaintColor;`,
     mesh.receiveShadow = true;
     meshIndex += 1;
   });
-  return clone[0];
+  return object;
 }

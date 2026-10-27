@@ -181,6 +181,10 @@ export interface Rw4ResourceData {
   fileType: string;
   sections: Rw4Section[];
 }
+
+export interface Rw4MaterialTexturesData {
+  textures: Array<{ meshSection: number; pngBase64: string }>;
+}
 /** ERZ（0x08068AEB 编译规则库）结构摘要（read_erz_preview）。 */
 export interface ErzResourceData {
   totalLength: number;
@@ -204,6 +208,20 @@ export interface ErzResourceData {
   exact: boolean;
   /** 规则记录布局是否受支持（false = 旧补丁布局，仅文件头）。 */
   layoutSupported: boolean;
+}
+export interface EcoGameResourceData {
+  typeName: string;
+  totalLength: number;
+  compressed: boolean;
+  decompressedLength: number | null;
+  version: number | null;
+  environment: number | null;
+  mapCount: number | null;
+  unitCount: number | null;
+  curveCount: number | null;
+  tableWords: number[];
+  exact: boolean;
+  error: string | null;
 }
 export interface ResolvedResourceName {
   tgi: Tgi;
@@ -670,6 +688,8 @@ export interface LotEditorSession {
 }
 /** 单个材质的贴图集（官方 Material Set 通道拆分，§27 源码实证语义）。 */
 export interface LotMaterialTextures {
+  /** Blender GLB material name; used to select per-material imported slots. */
+  materialName?: string;
   /** slot1 漫反射贴图（仅无 slot0 参数表的 simple diffuse 材质下发）。 */
   baseColorPng: Uint8Array<ArrayBuffer> | null;
   /** slot0 原始纹理（v10+）：**车辆/prop 槽位语义 = 彩色漫反射**（建筑
@@ -699,6 +719,11 @@ export interface LotMaterialTextures {
    */
   paramsF32: Float32Array | null;
   paramCols: number;
+  /** Blender 导入时按 GLB 材质名保存的独立 slot0 参数表。 */
+  paramsByMaterial?: Record<
+    string,
+    { width: number; values: number[]; paletteRow?: number }
+  >;
 }
 /** PE 精细替换：`resolve_prop_models` 的单条解析结果。 */
 export interface ResolvedPropModel {
@@ -710,6 +735,27 @@ export interface ResolvedPropModel {
   source: string;
   /** 树公告板图集 PNG（base64，source=tree 时下发，2×2 四树格 256×256）。 */
   treeAtlasPng: string | null;
+}
+/** 组件库 prop bin 语义目录条目（list_prop_bin_catalog；机制见 prop_models.rs）。 */
+export interface PropBinCatalogEntry {
+  resourceId: number;
+  name: string;
+  category: "trees" | "vehicles" | "waste" | "signs" | "misc";
+  /** 首选 RW4 模型（最高细节）。 */
+  model: Tgi;
+  modelPackageId: number;
+  source: string;
+}
+/** 路径条目摘要（list_path_entries；工作台 entry 选择器数据源）。 */
+export interface PathEntrySummary {
+  instance: number;
+  group: number;
+  packageId: number;
+  /** 允许通行类型解析名（如 "Pedestrians"）。 */
+  transports: string[];
+  transportIds: number[];
+  parent: number | null;
+  hasGeometry: boolean;
 }
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。
@@ -728,10 +774,15 @@ export interface LotModelPayload {
   materials: LotMaterialTextures[];
   /** 每 mesh 的材质下标（与 glbs 同序）。 */
   meshMaterialIndices: number[];
-  /** 每 mesh UV 类型（0 无 / 1 常规贴图 / 2 tint 着色器）。 */
+  /** 每 mesh UV 类型（0 无 / 1 常规贴图 / 2 LOTM tint / 3 Blender tint）。 */
   meshUvKinds: number[];
   /** 模型槽位诊断文本（info 面板展示/复制）。 */
   diagnostics: string;
+  /** 外部导入 GLB 的原始上轴；视口装配时统一转换为 Three.js Y-up。 */
+  upAxis?: "y" | "z";
+  /** upAxis 来自文件声明（asset.extras.openscp.upAxis）而非启发式检测。
+   * 未声明 = 原生契约（渲染/量测统一剥根旋转），见 normalizeLotModelScene。 */
+  upAxisDeclared?: boolean;
 }
 export interface RasterPreviewData {
   rasterType: number;
@@ -789,6 +840,12 @@ export interface ErzPreview extends PreviewData {
   tgi?: Tgi;
   data: ErzResourceData;
 }
+export interface EcoGamePreview extends PreviewData {
+  kind: "ecogame";
+  packageId: number;
+  tgi: Tgi;
+  data: EcoGameResourceData;
+}
 export interface FontPreview extends PreviewData {
   kind: "font";
   packageId?: number;
@@ -807,6 +864,7 @@ export type ResourcePreview =
   | PropertyPreview
   | Rw4Preview
   | ErzPreview
+  | EcoGamePreview
   | FontPreview;
 export interface ResourceAnnotation {
   id: number;

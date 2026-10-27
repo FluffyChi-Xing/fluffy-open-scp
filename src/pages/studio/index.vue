@@ -307,9 +307,12 @@ function statusLabel(status: string): string {
         @remove="store.deleteGroup"
       />
 
-      <!-- 开发：全屏 Code 工作台（项目文件夹的文件树 + 解析预览） -->
+      <!-- 开发：全屏 Code 工作台（项目文件夹的文件树 + 解析预览）。
+           v-if 含 developOpen：关闭即卸载整棵子树——工作台持有 three.js
+           视口/选中态/渲染模式等重状态，残留会导致重进带着旧状态且泄漏
+           显存（用户反馈 2026-10-25）。 -->
       <FSheet
-        v-if="developingProject"
+        v-if="developingProject && developOpen"
         v-model:open="developOpen"
         width="100vw"
         :label="$t('studio.code.sheetTitle')"

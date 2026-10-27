@@ -65,7 +65,7 @@ OpenSCP 是经典 C#/WPF 工具 [SimCityPak](https://github.com/altinctrl/SimCit
 | **UI 预览** | 预览版 | 54 个游戏屏幕全局轮播；`assembleGameUiHtml` 装配方法用真实 locale 文案（FNV-1 屏名映射）+ 游戏 CSS + 采样图在 iframe 沙箱中重建游戏 UI 窗口；编辑 Sheet 占位待 WP3 |
 | Property 编辑 / Raster 绘制 / 资产面板 | 排期中 | 见 `docs/roadmap/workspace-panels.md` |
 
-游戏 UI 静态资产（CSS/locale 表/清单）已解包至 `public/game-ui/`（图片体积原因 gitignore，`cargo run -p dbpf --example ui_assets -- <SimCityData> --extract public/game-ui` 可再生）。
+游戏 UI 静态资产（CSS/locale 表/清单）已解包至 `public/game-ui/`（图片体积原因 gitignore，`cargo run -p probes --example ui_assets -- <SimCityData> --extract public/game-ui` 可再生）。
 
 ### ⚠️ 音视频转码需要手动安装外部工具
 

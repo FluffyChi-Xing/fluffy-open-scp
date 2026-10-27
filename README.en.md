@@ -65,7 +65,7 @@ Under the "Modding / Asset Creation" nav group, entry `/studio` — panels organ
 | **UI preview** | Preview | Global carousel of 54 in-game screens; the `assembleGameUiHtml` pipeline rebuilds game UI windows inside an iframe sandbox using real locale strings (FNV-1 screen-name mapping) + game CSS + sampled images; the editing sheet lands in WP3 |
 | Property editor / Raster paint / Asset panel | Scheduled | See `docs/roadmap/workspace-panels.md` |
 
-Static game-UI assets (CSS/locale tables/manifests) are unpacked to `public/game-ui/` (images are gitignored for size; regenerate with `cargo run -p dbpf --example ui_assets -- <SimCityData> --extract public/game-ui`).
+Static game-UI assets (CSS/locale tables/manifests) are unpacked to `public/game-ui/` (images are gitignored for size; regenerate with `cargo run -p probes --example ui_assets -- <SimCityData> --extract public/game-ui`).
 
 ### ⚠️ Audio/Video Transcoding Requires Manual External Tools
 

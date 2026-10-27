@@ -148,7 +148,7 @@ flowchart TB
 flowchart LR
     A["EcoGame 脚本包<br/>SimCityUserData\EcoGame\*.package<br/>（标准 DBPF）"] --> B["9733 条 Property<br/>（SCUnit 单位数据）"]
     A --> C["ER2 文本规则 0x08068AEC<br/>unitRule / globalRule / define /<br/>create / set / rate / applyCount /<br/>onSuccess / onFail / chain"]
-    C -->|"编译"| D["ERZ 编译规则库 0x08068AED<br/>全大端 u32 流，头 (5,2,14)"]
+    C -->|"编译"| D["ERZ 编译规则库 0x08068AEB<br/>规则记录大端、数据池按引擎原样读取，头 (5,2,14)"]
     D --> E["主规则库 instance 622B9CD7<br/>5.95 MB · rules=28441 · 常量 1716"]
     E -.->|"状态投影"| F["离线存档 .egb<br/>gzip 解压头含 622B9CD7"]
 ```

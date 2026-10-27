@@ -1,0 +1,11 @@
+[
+  { "id": "AFA8707D", "key": "mining", "icon": "66BD3846", "via": ["AFA8707D"] },
+  { "id": "3A798ED7", "key": "drilling", "icon": "75B30A1B", "via": ["3A798ED7"] },
+  { "id": "74CD2EB0", "key": "trade", "icon": "D2E5F42C", "via": ["74CD2EB0"] },
+  { "id": "BEE1C73E", "key": "electronics", "icon": "1D7BC467", "via": ["BEE1C73E"] },
+  { "id": "0BFA0784", "key": "gambling", "icon": "4ADE5A53", "via": ["0BFA0784"] },
+  { "id": "94E412ED", "key": "culture", "icon": "B3C5D9ED", "via": ["3F43E038", "546FD9CE", "0653C631", "E286FFA5"], "tabs": ["landmarks", "stadiums", "attractions", "worship"] },
+  { "id": "895E329B", "key": "megaTowers", "icon": "00ED5694", "via": ["E996DFCF", "41E4831D"], "tabs": ["standardTowers", "eliteTowers"] },
+  { "id": "1D23D2FD", "key": "academy", "icon": "B2E042D8", "via": ["1D23D2FD"] },
+  { "id": "692D1886", "key": "omega", "icon": "B051352F", "via": ["692D1886"] }
+]

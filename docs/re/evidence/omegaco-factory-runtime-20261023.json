@@ -1,0 +1,2444 @@
+{
+  "capture": {
+    "pid": 28160,
+    "game": "0x264c47c0",
+    "unitEntryId": "0x71d31e5",
+    "mode": "external-read-only",
+    "intervalSeconds": 0.5,
+    "requestedSeconds": 300,
+    "requestedTicks": 360,
+    "samples": 279,
+    "errors": [],
+    "limitations": [
+      "non-atomic snapshots",
+      "net changes not rule attribution",
+      "resource IDs require semantic mapping"
+    ],
+    "exeSha256": "2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab",
+    "scripts": "0x26ec7d38",
+    "firstTick": 48440,
+    "lastTick": 48801,
+    "stopReason": "tick_target_reached",
+    "finishedUtc": "2026-10-23T12:23:00.954108+00:00"
+  },
+  "resourceMap": {
+    "tracked": {
+      "raw_ore": "0x96cf3b07",
+      "crude_oil": "0xbf75dc04",
+      "processor": "0xbee1c73e",
+      "power": "0x8e8b4e10",
+      "water": "0x9e3c3dfa",
+      "sewage": "0xce461a05",
+      "garbage": "0x7cb23a4e",
+      "total_workers": "0x1fd156b6",
+      "worker_w1": "0x6ccc3a0f",
+      "workers_needed": "0x5378d6f9",
+      "jobs_w1": "0xd3a424b9",
+      "jobs_w2": "0xd3a424ba",
+      "jobs_w3": "0xd3a424bb"
+    },
+    "indices": {
+      "raw_ore": 500,
+      "crude_oil": 4582,
+      "processor": 2460,
+      "power": 3573,
+      "water": 1117,
+      "sewage": 650,
+      "garbage": 675,
+      "total_workers": 2293,
+      "worker_w1": 1910,
+      "workers_needed": 4512,
+      "jobs_w1": 3829,
+      "jobs_w2": 3830,
+      "jobs_w3": 3832
+    }
+  },
+  "slots": [
+    63,
+    70,
+    170,
+    418,
+    485,
+    561
+  ],
+  "snapshotSummary": {
+    "63": {
+      "0x8e8b4e10": {
+        "first": 28485,
+        "last": 28485,
+        "min": 18990,
+        "max": 28485,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 47475,
+        "sumNegativeDelta": -47475
+      },
+      "0x9e3c3dfa": {
+        "first": 3024,
+        "last": 3024,
+        "min": 2016,
+        "max": 3024,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 5040,
+        "sumNegativeDelta": -5040
+      },
+      "0xcb9e50b7": {
+        "first": 0,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 2,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": 0
+      },
+      "0x2afeaa77": {
+        "first": 0,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 2,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": 0
+      },
+      "0x7b5637c5": {
+        "first": 28,
+        "last": 69,
+        "min": 28,
+        "max": 69,
+        "net": 41,
+        "increaseEvents": 2,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 41,
+        "sumNegativeDelta": 0
+      },
+      "0xe719c4a6": {
+        "first": 80,
+        "last": 40,
+        "min": 40,
+        "max": 80,
+        "net": -40,
+        "increaseEvents": 0,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -40
+      },
+      "0xb31c6979": {
+        "first": 34,
+        "last": 28,
+        "min": 28,
+        "max": 34,
+        "net": -6,
+        "increaseEvents": 0,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -6
+      },
+      "0xaecac2db": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 1,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": 0
+      },
+      "0x6106b1cb": {
+        "first": 3,
+        "last": 3,
+        "min": 3,
+        "max": 5,
+        "net": 0,
+        "increaseEvents": 2,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0xb1731656": {
+        "first": 254,
+        "last": 252,
+        "min": 252,
+        "max": 254,
+        "net": -2,
+        "increaseEvents": 0,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -2
+      },
+      "0x1fd156b6": {
+        "first": 95,
+        "last": 97,
+        "min": 95,
+        "max": 97,
+        "net": 2,
+        "increaseEvents": 2,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": 0
+      },
+      "0xe33cf2d2": {
+        "first": 1,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 2,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x2260ed7b": {
+        "first": 1,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": -1,
+        "increaseEvents": 1,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -2
+      },
+      "0xd65fb842": {
+        "first": 4,
+        "last": 4,
+        "min": 0,
+        "max": 4,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 4,
+        "sumNegativeDelta": -4
+      },
+      "0xfb67f948": {
+        "first": 2,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x415586b3": {
+        "first": 2000,
+        "last": 3500,
+        "min": 2000,
+        "max": 3500,
+        "net": 1500,
+        "increaseEvents": 10,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 1500,
+        "sumNegativeDelta": 0
+      },
+      "0xd3c17458": {
+        "first": 12000,
+        "last": 3500,
+        "min": 3500,
+        "max": 13500,
+        "net": -8500,
+        "increaseEvents": 10,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1500,
+        "sumNegativeDelta": -10000
+      },
+      "0x96cf3b07": {
+        "first": 58000,
+        "last": 56500,
+        "min": 56500,
+        "max": 58000,
+        "net": -1500,
+        "increaseEvents": 0,
+        "decreaseEvents": 10,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -1500
+      },
+      "0xb7401c68": {
+        "first": 2000,
+        "last": 3500,
+        "min": 2000,
+        "max": 3500,
+        "net": 1500,
+        "increaseEvents": 5,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 1500,
+        "sumNegativeDelta": 0
+      },
+      "0xbf75dc04": {
+        "first": 48000,
+        "last": 56500,
+        "min": 46500,
+        "max": 56500,
+        "net": 8500,
+        "increaseEvents": 1,
+        "decreaseEvents": 10,
+        "sumPositiveDelta": 10000,
+        "sumNegativeDelta": -1500
+      },
+      "0x77f787d7": {
+        "first": 12000,
+        "last": 3500,
+        "min": 3500,
+        "max": 13500,
+        "net": -8500,
+        "increaseEvents": 5,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1500,
+        "sumNegativeDelta": -10000
+      },
+      "0x61ffd1b5": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 10000,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 10000,
+        "sumNegativeDelta": -10000
+      },
+      "0xc8120d0a": {
+        "first": 2000,
+        "last": 3500,
+        "min": 2000,
+        "max": 3500,
+        "net": 1500,
+        "increaseEvents": 5,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 1500,
+        "sumNegativeDelta": 0
+      },
+      "0xae6ddfed": {
+        "first": 12000,
+        "last": 3500,
+        "min": 3500,
+        "max": 13500,
+        "net": -8500,
+        "increaseEvents": 5,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1500,
+        "sumNegativeDelta": -10000
+      },
+      "0x8e25d7fb": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 199680,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 1198080,
+        "sumNegativeDelta": -1198080
+      },
+      "0xce415e6a": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 8320,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 49920,
+        "sumNegativeDelta": -49920
+      }
+    },
+    "70": {
+      "0x8e8b4e10": {
+        "first": 28485,
+        "last": 28485,
+        "min": 18990,
+        "max": 28485,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 47475,
+        "sumNegativeDelta": -47475
+      },
+      "0x9e3c3dfa": {
+        "first": 3024,
+        "last": 3024,
+        "min": 2016,
+        "max": 3024,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 5040,
+        "sumNegativeDelta": -5040
+      },
+      "0xcb9e50b7": {
+        "first": 0,
+        "last": 3,
+        "min": 0,
+        "max": 3,
+        "net": 3,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": 0
+      },
+      "0x2afeaa77": {
+        "first": 0,
+        "last": 3,
+        "min": 0,
+        "max": 3,
+        "net": 3,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": 0
+      },
+      "0xe719c4a6": {
+        "first": 60,
+        "last": 20,
+        "min": 20,
+        "max": 60,
+        "net": -40,
+        "increaseEvents": 0,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -40
+      },
+      "0x6106b1cb": {
+        "first": 2,
+        "last": 2,
+        "min": 2,
+        "max": 5,
+        "net": 0,
+        "increaseEvents": 3,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": -3
+      },
+      "0xb1731656": {
+        "first": 260,
+        "last": 257,
+        "min": 257,
+        "max": 260,
+        "net": -3,
+        "increaseEvents": 0,
+        "decreaseEvents": 3,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -3
+      },
+      "0x1fd156b6": {
+        "first": 93,
+        "last": 96,
+        "min": 93,
+        "max": 96,
+        "net": 3,
+        "increaseEvents": 3,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": 0
+      },
+      "0x0ab4dfe1": {
+        "first": 0,
+        "last": 3,
+        "min": 0,
+        "max": 3,
+        "net": 3,
+        "increaseEvents": 3,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": 0
+      },
+      "0x5aaca8cc": {
+        "first": 0,
+        "last": 3,
+        "min": 0,
+        "max": 3,
+        "net": 3,
+        "increaseEvents": 3,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": 0
+      },
+      "0xe33cf2d2": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 1,
+        "increaseEvents": 2,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -1
+      },
+      "0x41b4c16f": {
+        "first": 3,
+        "last": 3,
+        "min": 0,
+        "max": 3,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": -3
+      },
+      "0xd65fb842": {
+        "first": 1,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0xfb67f948": {
+        "first": 2,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x415586b3": {
+        "first": 9000,
+        "last": 12000,
+        "min": 9000,
+        "max": 12000,
+        "net": 3000,
+        "increaseEvents": 20,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3000,
+        "sumNegativeDelta": 0
+      },
+      "0xd3c17458": {
+        "first": 9000,
+        "last": 2000,
+        "min": 1100,
+        "max": 10950,
+        "net": -7000,
+        "increaseEvents": 19,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2850,
+        "sumNegativeDelta": -9850
+      },
+      "0x96cf3b07": {
+        "first": 51000,
+        "last": 48000,
+        "min": 48000,
+        "max": 51000,
+        "net": -3000,
+        "increaseEvents": 0,
+        "decreaseEvents": 20,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -3000
+      },
+      "0xb7401c68": {
+        "first": 9000,
+        "last": 12000,
+        "min": 9000,
+        "max": 12000,
+        "net": 3000,
+        "increaseEvents": 9,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3000,
+        "sumNegativeDelta": 0
+      },
+      "0xbf75dc04": {
+        "first": 51000,
+        "last": 58000,
+        "min": 49350,
+        "max": 59350,
+        "net": 7000,
+        "increaseEvents": 1,
+        "decreaseEvents": 20,
+        "sumPositiveDelta": 10000,
+        "sumNegativeDelta": -3000
+      },
+      "0x77f787d7": {
+        "first": 9000,
+        "last": 2000,
+        "min": 950,
+        "max": 10650,
+        "net": -7000,
+        "increaseEvents": 8,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2700,
+        "sumNegativeDelta": -9700
+      },
+      "0xbee1c73e": {
+        "first": 55020,
+        "last": 54480,
+        "min": 54480,
+        "max": 55020,
+        "net": -540,
+        "increaseEvents": 0,
+        "decreaseEvents": 12,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -540
+      },
+      "0x2cfe923b": {
+        "first": 4980,
+        "last": 5520,
+        "min": 4980,
+        "max": 5520,
+        "net": 540,
+        "increaseEvents": 15,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 540,
+        "sumNegativeDelta": 0
+      },
+      "0x61ffd1b5": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 10000,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 10000,
+        "sumNegativeDelta": -10000
+      },
+      "0x25973b51": {
+        "first": 4980,
+        "last": 5520,
+        "min": 4980,
+        "max": 5520,
+        "net": 540,
+        "increaseEvents": 15,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 540,
+        "sumNegativeDelta": 0
+      },
+      "0xc8120d0a": {
+        "first": 9000,
+        "last": 12000,
+        "min": 9000,
+        "max": 12000,
+        "net": 3000,
+        "increaseEvents": 9,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3000,
+        "sumNegativeDelta": 0
+      },
+      "0xae6ddfed": {
+        "first": 9000,
+        "last": 2000,
+        "min": 200,
+        "max": 10200,
+        "net": -7000,
+        "increaseEvents": 9,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 3000,
+        "sumNegativeDelta": -10000
+      },
+      "0x8e25d7fb": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 199680,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 1198080,
+        "sumNegativeDelta": -1198080
+      },
+      "0xce415e6a": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 8320,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 49920,
+        "sumNegativeDelta": -49920
+      }
+    },
+    "170": {
+      "0x8e8b4e10": {
+        "first": 28485,
+        "last": 28485,
+        "min": 18990,
+        "max": 28485,
+        "net": 0,
+        "increaseEvents": 4,
+        "decreaseEvents": 4,
+        "sumPositiveDelta": 37980,
+        "sumNegativeDelta": -37980
+      },
+      "0x9e3c3dfa": {
+        "first": 3024,
+        "last": 3024,
+        "min": 2016,
+        "max": 3024,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 5040,
+        "sumNegativeDelta": -5040
+      },
+      "0xcb9e50b7": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 3,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": -3
+      },
+      "0x2afeaa77": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 3,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": -3
+      },
+      "0x7b5637c5": {
+        "first": 0,
+        "last": 100,
+        "min": 0,
+        "max": 100,
+        "net": 100,
+        "increaseEvents": 2,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 100,
+        "sumNegativeDelta": 0
+      },
+      "0xe719c4a6": {
+        "first": 100,
+        "last": 60,
+        "min": 60,
+        "max": 100,
+        "net": -40,
+        "increaseEvents": 0,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -40
+      },
+      "0xaecac2db": {
+        "first": 0,
+        "last": 3,
+        "min": 0,
+        "max": 3,
+        "net": 3,
+        "increaseEvents": 2,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": 0
+      },
+      "0x6106b1cb": {
+        "first": 14,
+        "last": 35,
+        "min": 14,
+        "max": 35,
+        "net": 21,
+        "increaseEvents": 11,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 24,
+        "sumNegativeDelta": -3
+      },
+      "0xb1731656": {
+        "first": 256,
+        "last": 232,
+        "min": 232,
+        "max": 256,
+        "net": -24,
+        "increaseEvents": 0,
+        "decreaseEvents": 11,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -24
+      },
+      "0x1fd156b6": {
+        "first": 104,
+        "last": 125,
+        "min": 104,
+        "max": 128,
+        "net": 21,
+        "increaseEvents": 11,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 24,
+        "sumNegativeDelta": -3
+      },
+      "0x0ab4dfe1": {
+        "first": 9,
+        "last": 28,
+        "min": 9,
+        "max": 31,
+        "net": 19,
+        "increaseEvents": 10,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 22,
+        "sumNegativeDelta": -3
+      },
+      "0x5aaca8cc": {
+        "first": 9,
+        "last": 28,
+        "min": 9,
+        "max": 31,
+        "net": 19,
+        "increaseEvents": 10,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 22,
+        "sumNegativeDelta": -3
+      },
+      "0xe33cf2d2": {
+        "first": 1,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": -1,
+        "increaseEvents": 1,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -2
+      },
+      "0x2260ed7b": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0x41b4c16f": {
+        "first": 3,
+        "last": 3,
+        "min": 0,
+        "max": 3,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 3,
+        "sumNegativeDelta": -3
+      },
+      "0xd65fb842": {
+        "first": 1,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0xfb67f948": {
+        "first": 2,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x415586b3": {
+        "first": 10400,
+        "last": 9400,
+        "min": 1600,
+        "max": 11600,
+        "net": -1000,
+        "increaseEvents": 60,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 9000,
+        "sumNegativeDelta": -10000
+      },
+      "0xd3c17458": {
+        "first": 750,
+        "last": 4800,
+        "min": 0,
+        "max": 4800,
+        "net": 4050,
+        "increaseEvents": 54,
+        "decreaseEvents": 11,
+        "sumPositiveDelta": 8100,
+        "sumNegativeDelta": -4050
+      },
+      "0x96cf3b07": {
+        "first": 49600,
+        "last": 50600,
+        "min": 48700,
+        "max": 58700,
+        "net": 1000,
+        "increaseEvents": 1,
+        "decreaseEvents": 60,
+        "sumPositiveDelta": 10000,
+        "sumNegativeDelta": -9000
+      },
+      "0xb7401c68": {
+        "first": 10100,
+        "last": 9100,
+        "min": 1600,
+        "max": 11150,
+        "net": -1000,
+        "increaseEvents": 23,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 8550,
+        "sumNegativeDelta": -9550
+      },
+      "0xbf75dc04": {
+        "first": 59700,
+        "last": 55200,
+        "min": 55200,
+        "max": 60000,
+        "net": -4500,
+        "increaseEvents": 12,
+        "decreaseEvents": 55,
+        "sumPositiveDelta": 3750,
+        "sumNegativeDelta": -8250
+      },
+      "0x77f787d7": {
+        "first": 450,
+        "last": 4500,
+        "min": 0,
+        "max": 4500,
+        "net": 4050,
+        "increaseEvents": 16,
+        "decreaseEvents": 7,
+        "sumPositiveDelta": 5550,
+        "sumNegativeDelta": -1500
+      },
+      "0xbee1c73e": {
+        "first": 52675,
+        "last": 52135,
+        "min": 52135,
+        "max": 52675,
+        "net": -540,
+        "increaseEvents": 0,
+        "decreaseEvents": 23,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -540
+      },
+      "0x2cfe923b": {
+        "first": 7325,
+        "last": 7865,
+        "min": 7325,
+        "max": 7865,
+        "net": 540,
+        "increaseEvents": 12,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 540,
+        "sumNegativeDelta": 0
+      },
+      "0x61ffd1b5": {
+        "first": 4500,
+        "last": 0,
+        "min": 0,
+        "max": 4500,
+        "net": -4500,
+        "increaseEvents": 0,
+        "decreaseEvents": 12,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -4500
+      },
+      "0x25973b51": {
+        "first": 7325,
+        "last": 7865,
+        "min": 7325,
+        "max": 7865,
+        "net": 540,
+        "increaseEvents": 12,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 540,
+        "sumNegativeDelta": 0
+      },
+      "0xc8120d0a": {
+        "first": 10100,
+        "last": 9100,
+        "min": 1600,
+        "max": 11150,
+        "net": -1000,
+        "increaseEvents": 23,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 8550,
+        "sumNegativeDelta": -9550
+      },
+      "0xae6ddfed": {
+        "first": 0,
+        "last": 4500,
+        "min": 0,
+        "max": 4500,
+        "net": 4500,
+        "increaseEvents": 12,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 4500,
+        "sumNegativeDelta": 0
+      },
+      "0x8e25d7fb": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 199680,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 1198080,
+        "sumNegativeDelta": -1198080
+      },
+      "0xce415e6a": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 8320,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 49920,
+        "sumNegativeDelta": -49920
+      }
+    },
+    "418": {
+      "0x8e8b4e10": {
+        "first": 28485,
+        "last": 28485,
+        "min": 18990,
+        "max": 28485,
+        "net": 0,
+        "increaseEvents": 4,
+        "decreaseEvents": 4,
+        "sumPositiveDelta": 37980,
+        "sumNegativeDelta": -37980
+      },
+      "0x9e3c3dfa": {
+        "first": 3024,
+        "last": 3024,
+        "min": 2016,
+        "max": 3024,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 5040,
+        "sumNegativeDelta": -5040
+      },
+      "0xcb9e50b7": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 2,
+        "net": 1,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -1
+      },
+      "0x2afeaa77": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 2,
+        "net": 1,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -1
+      },
+      "0x7b5637c5": {
+        "first": 93,
+        "last": 100,
+        "min": 93,
+        "max": 100,
+        "net": 7,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 7,
+        "sumNegativeDelta": 0
+      },
+      "0xe719c4a6": {
+        "first": 80,
+        "last": 40,
+        "min": 40,
+        "max": 80,
+        "net": -40,
+        "increaseEvents": 0,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -40
+      },
+      "0xb31c6979": {
+        "first": 35,
+        "last": 29,
+        "min": 29,
+        "max": 35,
+        "net": -6,
+        "increaseEvents": 0,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -6
+      },
+      "0x6106b1cb": {
+        "first": 7,
+        "last": 5,
+        "min": 5,
+        "max": 8,
+        "net": -2,
+        "increaseEvents": 1,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -3
+      },
+      "0xb1731656": {
+        "first": 263,
+        "last": 262,
+        "min": 262,
+        "max": 263,
+        "net": -1,
+        "increaseEvents": 0,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -1
+      },
+      "0x1fd156b6": {
+        "first": 97,
+        "last": 96,
+        "min": 96,
+        "max": 98,
+        "net": -1,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -2
+      },
+      "0x0ab4dfe1": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0x5aaca8cc": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0xe33cf2d2": {
+        "first": 1,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": -1,
+        "increaseEvents": 1,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -2
+      },
+      "0x2260ed7b": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 1,
+        "increaseEvents": 2,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -1
+      },
+      "0xd65fb842": {
+        "first": 4,
+        "last": 4,
+        "min": 0,
+        "max": 4,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 4,
+        "sumNegativeDelta": -4
+      },
+      "0xfb67f948": {
+        "first": 2,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x415586b3": {
+        "first": 4400,
+        "last": 35600,
+        "min": 4400,
+        "max": 35600,
+        "net": 31200,
+        "increaseEvents": 175,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 31200,
+        "sumNegativeDelta": 0
+      },
+      "0xd3c17458": {
+        "first": 9550,
+        "last": 1050,
+        "min": 150,
+        "max": 20950,
+        "net": -8500,
+        "increaseEvents": 170,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 30000,
+        "sumNegativeDelta": -38500
+      },
+      "0x96cf3b07": {
+        "first": 55600,
+        "last": 24400,
+        "min": 24400,
+        "max": 55600,
+        "net": -31200,
+        "increaseEvents": 0,
+        "decreaseEvents": 175,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -31200
+      },
+      "0xb7401c68": {
+        "first": 3650,
+        "last": 35450,
+        "min": 3650,
+        "max": 35450,
+        "net": 31800,
+        "increaseEvents": 24,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 31800,
+        "sumNegativeDelta": 0
+      },
+      "0xbf75dc04": {
+        "first": 50450,
+        "last": 59250,
+        "min": 39050,
+        "max": 60000,
+        "net": 8800,
+        "increaseEvents": 9,
+        "decreaseEvents": 168,
+        "sumPositiveDelta": 38500,
+        "sumNegativeDelta": -29700
+      },
+      "0x77f787d7": {
+        "first": 8800,
+        "last": 900,
+        "min": 0,
+        "max": 19450,
+        "net": -7900,
+        "increaseEvents": 18,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 23400,
+        "sumNegativeDelta": -31300
+      },
+      "0x61ffd1b5": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 10000,
+        "net": 0,
+        "increaseEvents": 2,
+        "decreaseEvents": 7,
+        "sumPositiveDelta": 20000,
+        "sumNegativeDelta": -20000
+      },
+      "0xc8120d0a": {
+        "first": 3650,
+        "last": 35450,
+        "min": 3650,
+        "max": 35450,
+        "net": 31800,
+        "increaseEvents": 24,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 31800,
+        "sumNegativeDelta": 0
+      },
+      "0xae6ddfed": {
+        "first": 8800,
+        "last": 600,
+        "min": 0,
+        "max": 19450,
+        "net": -8200,
+        "increaseEvents": 18,
+        "decreaseEvents": 4,
+        "sumPositiveDelta": 23100,
+        "sumNegativeDelta": -31300
+      },
+      "0x8e25d7fb": {
+        "first": 199680,
+        "last": 0,
+        "min": 0,
+        "max": 199680,
+        "net": -199680,
+        "increaseEvents": 5,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 998400,
+        "sumNegativeDelta": -1198080
+      },
+      "0x11a2434e": {
+        "first": 0,
+        "last": 199680,
+        "min": 0,
+        "max": 199680,
+        "net": 199680,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 199680,
+        "sumNegativeDelta": 0
+      },
+      "0xce415e6a": {
+        "first": 8320,
+        "last": 0,
+        "min": 0,
+        "max": 8320,
+        "net": -8320,
+        "increaseEvents": 5,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 41600,
+        "sumNegativeDelta": -49920
+      },
+      "0xf40144d9": {
+        "first": 0,
+        "last": 8320,
+        "min": 0,
+        "max": 8320,
+        "net": 8320,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 8320,
+        "sumNegativeDelta": 0
+      }
+    },
+    "485": {
+      "0x8e8b4e10": {
+        "first": 28485,
+        "last": 28485,
+        "min": 18990,
+        "max": 28485,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 4,
+        "sumPositiveDelta": 37980,
+        "sumNegativeDelta": -37980
+      },
+      "0x9e3c3dfa": {
+        "first": 3024,
+        "last": 3024,
+        "min": 2016,
+        "max": 3024,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 5040,
+        "sumNegativeDelta": -5040
+      },
+      "0xcb9e50b4": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0x2afeaa77": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0x7b5637c5": {
+        "first": 100,
+        "last": 0,
+        "min": 0,
+        "max": 100,
+        "net": -100,
+        "increaseEvents": 0,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -100
+      },
+      "0xe719c4a6": {
+        "first": 40,
+        "last": 100,
+        "min": 0,
+        "max": 100,
+        "net": 60,
+        "increaseEvents": 1,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 100,
+        "sumNegativeDelta": -40
+      },
+      "0xaecac2d8": {
+        "first": 10,
+        "last": 9,
+        "min": 9,
+        "max": 10,
+        "net": -1,
+        "increaseEvents": 0,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -1
+      },
+      "0x6106b1c8": {
+        "first": 75,
+        "last": 74,
+        "min": 74,
+        "max": 75,
+        "net": -1,
+        "increaseEvents": 0,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -1
+      },
+      "0x1fd156b6": {
+        "first": 91,
+        "last": 90,
+        "min": 90,
+        "max": 91,
+        "net": -1,
+        "increaseEvents": 0,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -1
+      },
+      "0xe33cf2d2": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 1,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": 0
+      },
+      "0x2260ed7b": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0xd65fb842": {
+        "first": 4,
+        "last": 4,
+        "min": 0,
+        "max": 4,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 4,
+        "sumNegativeDelta": -4
+      },
+      "0xfb67f948": {
+        "first": 2,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x415586b3": {
+        "first": 8450,
+        "last": 12500,
+        "min": 8450,
+        "max": 12500,
+        "net": 4050,
+        "increaseEvents": 27,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 4050,
+        "sumNegativeDelta": 0
+      },
+      "0xd3c17458": {
+        "first": 8450,
+        "last": 2500,
+        "min": 2500,
+        "max": 12500,
+        "net": -5950,
+        "increaseEvents": 27,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 4050,
+        "sumNegativeDelta": -10000
+      },
+      "0x96cf3b07": {
+        "first": 51550,
+        "last": 47500,
+        "min": 47500,
+        "max": 51550,
+        "net": -4050,
+        "increaseEvents": 0,
+        "decreaseEvents": 27,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -4050
+      },
+      "0xb7401c68": {
+        "first": 8150,
+        "last": 12500,
+        "min": 8150,
+        "max": 12500,
+        "net": 4350,
+        "increaseEvents": 12,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 4350,
+        "sumNegativeDelta": 0
+      },
+      "0xbf75dc04": {
+        "first": 51550,
+        "last": 57500,
+        "min": 47800,
+        "max": 57650,
+        "net": 5950,
+        "increaseEvents": 1,
+        "decreaseEvents": 26,
+        "sumPositiveDelta": 9850,
+        "sumNegativeDelta": -3900
+      },
+      "0x77f787d7": {
+        "first": 8150,
+        "last": 2500,
+        "min": 2500,
+        "max": 12200,
+        "net": -5650,
+        "increaseEvents": 11,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 4050,
+        "sumNegativeDelta": -9700
+      },
+      "0xc8120d0a": {
+        "first": 8150,
+        "last": 12500,
+        "min": 8150,
+        "max": 12500,
+        "net": 4350,
+        "increaseEvents": 12,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 4350,
+        "sumNegativeDelta": 0
+      },
+      "0xae6ddfed": {
+        "first": 8150,
+        "last": 2500,
+        "min": 2500,
+        "max": 12200,
+        "net": -5650,
+        "increaseEvents": 11,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 4050,
+        "sumNegativeDelta": -9700
+      },
+      "0x8e25d7fb": {
+        "first": 0,
+        "last": 199680,
+        "min": 0,
+        "max": 199680,
+        "net": 199680,
+        "increaseEvents": 5,
+        "decreaseEvents": 4,
+        "sumPositiveDelta": 998400,
+        "sumNegativeDelta": -798720
+      },
+      "0x11a2434e": {
+        "first": 199680,
+        "last": 199680,
+        "min": 0,
+        "max": 199680,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 199680,
+        "sumNegativeDelta": -199680
+      },
+      "0xce415e6a": {
+        "first": 0,
+        "last": 8320,
+        "min": 0,
+        "max": 8320,
+        "net": 8320,
+        "increaseEvents": 5,
+        "decreaseEvents": 4,
+        "sumPositiveDelta": 41600,
+        "sumNegativeDelta": -33280
+      },
+      "0xf40144d9": {
+        "first": 8320,
+        "last": 8320,
+        "min": 0,
+        "max": 8320,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 8320,
+        "sumNegativeDelta": -8320
+      }
+    },
+    "561": {
+      "0x8e8b4e10": {
+        "first": 28485,
+        "last": 28485,
+        "min": 18990,
+        "max": 28485,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 47475,
+        "sumNegativeDelta": -47475
+      },
+      "0x9e3c3dfa": {
+        "first": 3024,
+        "last": 3024,
+        "min": 2016,
+        "max": 3024,
+        "net": 0,
+        "increaseEvents": 5,
+        "decreaseEvents": 5,
+        "sumPositiveDelta": 5040,
+        "sumNegativeDelta": -5040
+      },
+      "0xcb9e50b7": {
+        "first": 0,
+        "last": 4,
+        "min": 0,
+        "max": 4,
+        "net": 4,
+        "increaseEvents": 2,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 7,
+        "sumNegativeDelta": -3
+      },
+      "0xcb9e50b4": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 1,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": 0
+      },
+      "0x2afeaa77": {
+        "first": 0,
+        "last": 5,
+        "min": 0,
+        "max": 5,
+        "net": 5,
+        "increaseEvents": 2,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 8,
+        "sumNegativeDelta": -3
+      },
+      "0x7b5637c5": {
+        "first": 93,
+        "last": 100,
+        "min": 93,
+        "max": 100,
+        "net": 7,
+        "increaseEvents": 1,
+        "decreaseEvents": 0,
+        "sumPositiveDelta": 7,
+        "sumNegativeDelta": 0
+      },
+      "0xe719c4a6": {
+        "first": 80,
+        "last": 40,
+        "min": 40,
+        "max": 80,
+        "net": -40,
+        "increaseEvents": 0,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -40
+      },
+      "0xb31c6979": {
+        "first": 34,
+        "last": 28,
+        "min": 28,
+        "max": 34,
+        "net": -6,
+        "increaseEvents": 0,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -6
+      },
+      "0x6106b1cb": {
+        "first": 6,
+        "last": 0,
+        "min": 0,
+        "max": 6,
+        "net": -6,
+        "increaseEvents": 1,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -7
+      },
+      "0x6106b1c8": {
+        "first": 73,
+        "last": 72,
+        "min": 72,
+        "max": 73,
+        "net": -1,
+        "increaseEvents": 0,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -1
+      },
+      "0xb1731656": {
+        "first": 263,
+        "last": 262,
+        "min": 262,
+        "max": 263,
+        "net": -1,
+        "increaseEvents": 0,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 0,
+        "sumNegativeDelta": -1
+      },
+      "0x1fd156b6": {
+        "first": 94,
+        "last": 92,
+        "min": 92,
+        "max": 95,
+        "net": -2,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -3
+      },
+      "0x1e14b6c2": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0x7528ccd9": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 2,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x1c28703c": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0x1c4571ef": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0xe33cf2d2": {
+        "first": 0,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 1,
+        "increaseEvents": 2,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -1
+      },
+      "0xf5cc9dcc": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0x2260ed7b": {
+        "first": 1,
+        "last": 1,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 2,
+        "decreaseEvents": 2,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x3462b642": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 1,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 1,
+        "sumNegativeDelta": -1
+      },
+      "0xd65fb842": {
+        "first": 4,
+        "last": 4,
+        "min": 0,
+        "max": 4,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 4,
+        "sumNegativeDelta": -4
+      },
+      "0xfb67f948": {
+        "first": 2,
+        "last": 2,
+        "min": 0,
+        "max": 2,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 2,
+        "sumNegativeDelta": -2
+      },
+      "0x415586b3": {
+        "first": 12700,
+        "last": 15400,
+        "min": 6000,
+        "max": 18000,
+        "net": 2700,
+        "increaseEvents": 145,
+        "decreaseEvents": 3,
+        "sumPositiveDelta": 32100,
+        "sumNegativeDelta": -29400
+      },
+      "0xd3c17458": {
+        "first": 17050,
+        "last": 19750,
+        "min": 4850,
+        "max": 21400,
+        "net": 2700,
+        "increaseEvents": 145,
+        "decreaseEvents": 3,
+        "sumPositiveDelta": 32250,
+        "sumNegativeDelta": -29550
+      },
+      "0x96cf3b07": {
+        "first": 47300,
+        "last": 54600,
+        "min": 42900,
+        "max": 54900,
+        "net": 7300,
+        "increaseEvents": 4,
+        "decreaseEvents": 145,
+        "sumPositiveDelta": 39400,
+        "sumNegativeDelta": -32100
+      },
+      "0xb7401c68": {
+        "first": 12100,
+        "last": 15250,
+        "min": 6000,
+        "max": 16500,
+        "net": 3150,
+        "increaseEvents": 21,
+        "decreaseEvents": 3,
+        "sumPositiveDelta": 28950,
+        "sumNegativeDelta": -25800
+      },
+      "0xbf75dc04": {
+        "first": 42950,
+        "last": 50250,
+        "min": 39500,
+        "max": 55450,
+        "net": 7300,
+        "increaseEvents": 4,
+        "decreaseEvents": 146,
+        "sumPositiveDelta": 39850,
+        "sumNegativeDelta": -32550
+      },
+      "0x77f787d7": {
+        "first": 16450,
+        "last": 19600,
+        "min": 4850,
+        "max": 20350,
+        "net": 3150,
+        "increaseEvents": 21,
+        "decreaseEvents": 3,
+        "sumPositiveDelta": 29400,
+        "sumNegativeDelta": -26250
+      },
+      "0x950d6372": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 10000,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 10000,
+        "sumNegativeDelta": -10000
+      },
+      "0x61ffd1b5": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 10000,
+        "net": 0,
+        "increaseEvents": 1,
+        "decreaseEvents": 1,
+        "sumPositiveDelta": 10000,
+        "sumNegativeDelta": -10000
+      },
+      "0xc8120d0a": {
+        "first": 12100,
+        "last": 15250,
+        "min": 3600,
+        "max": 16500,
+        "net": 3150,
+        "increaseEvents": 22,
+        "decreaseEvents": 3,
+        "sumPositiveDelta": 30150,
+        "sumNegativeDelta": -27000
+      },
+      "0xae6ddfed": {
+        "first": 16450,
+        "last": 19600,
+        "min": 4850,
+        "max": 20350,
+        "net": 3150,
+        "increaseEvents": 22,
+        "decreaseEvents": 3,
+        "sumPositiveDelta": 30900,
+        "sumNegativeDelta": -27750
+      },
+      "0x8e25d7fb": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 199680,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 1198080,
+        "sumNegativeDelta": -1198080
+      },
+      "0xce415e6a": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 8320,
+        "net": 0,
+        "increaseEvents": 6,
+        "decreaseEvents": 6,
+        "sumPositiveDelta": 49920,
+        "sumNegativeDelta": -49920
+      }
+    }
+  },
+  "effectSummaryTop25": {
+    "0xbf75dc04": {
+      "observations": 238,
+      "sumDelta": 53750,
+      "sumInput": 417,
+      "sumOutput": 495,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x645b10e4",
+        "0xe16fd9a2",
+        "0xed7cb6ea",
+        "0xf2c1a0fd"
+      ]
+    },
+    "0x96cf3b07": {
+      "observations": 227,
+      "sumDelta": 20000,
+      "sumInput": 415,
+      "sumOutput": 482,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x645b10e4",
+        "0xae642c49",
+        "0xbcfc4767"
+      ]
+    },
+    "0xbb6a484f": {
+      "observations": 172,
+      "sumDelta": 0,
+      "sumInput": 110,
+      "sumOutput": 62,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x1c05b490",
+        "0x69d5415f",
+        "0xad7b0dde"
+      ]
+    },
+    "0x450b19c9": {
+      "observations": 156,
+      "sumDelta": 0,
+      "sumInput": 99,
+      "sumOutput": 57,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6657ff32",
+        "0xa0117a75",
+        "0xdc785750"
+      ]
+    },
+    "0x25973b51": {
+      "observations": 132,
+      "sumDelta": 495,
+      "sumInput": 2778415,
+      "sumOutput": 2778910,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x697c4112",
+        "0xde7f2c2f"
+      ]
+    },
+    "0xc8120d0a": {
+      "observations": 132,
+      "sumDelta": 15100,
+      "sumInput": 526500,
+      "sumOutput": 541600,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6c96bc34",
+        "0x883a10ab"
+      ]
+    },
+    "0xb7401c68": {
+      "observations": 130,
+      "sumDelta": 3600,
+      "sumInput": 65,
+      "sumOutput": 65,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x478b4e70",
+        "0xae642c49"
+      ]
+    },
+    "0x415586b3": {
+      "observations": 130,
+      "sumDelta": -30000,
+      "sumInput": 562100,
+      "sumOutput": 532100,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6001451b",
+        "0xded740d2"
+      ]
+    },
+    "0xd3c17458": {
+      "observations": 130,
+      "sumDelta": -54200,
+      "sumInput": 646100,
+      "sumOutput": 591900,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x6001451b",
+        "0xded740d2"
+      ]
+    },
+    "0x77f787d7": {
+      "observations": 127,
+      "sumDelta": -32950,
+      "sumInput": 64,
+      "sumOutput": 63,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x4858795f",
+        "0xe16fd9a2"
+      ]
+    },
+    "0x14116eef": {
+      "observations": 124,
+      "sumDelta": 0,
+      "sumInput": 62,
+      "sumOutput": 62,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x1c05b490",
+        "0x25752918"
+      ]
+    },
+    "0x7a19a243": {
+      "observations": 122,
+      "sumDelta": 0,
+      "sumInput": 122,
+      "sumOutput": 122,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xeed48efb"
+      ]
+    },
+    "0xae6ddfed": {
+      "observations": 111,
+      "sumDelta": 1350,
+      "sumInput": 591400,
+      "sumOutput": 592750,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x5eb21683",
+        "0x9015b798"
+      ]
+    },
+    "0x7359d065": {
+      "observations": 108,
+      "sumDelta": 0,
+      "sumInput": 54,
+      "sumOutput": 54,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xdc785750",
+        "0xe8ddc8da"
+      ]
+    },
+    "0x1fd156b6": {
+      "observations": 61,
+      "sumDelta": 31,
+      "sumInput": 30,
+      "sumOutput": 61,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x758a7319",
+        "0x938552f2",
+        "0xdb745613"
+      ]
+    },
+    "0x2cfe923b": {
+      "observations": 44,
+      "sumDelta": 495,
+      "sumInput": 22,
+      "sumOutput": 22,
+      "slots": [
+        70,
+        170
+      ],
+      "rules": [
+        "0x2b6a230b",
+        "0x3de494cc"
+      ]
+    },
+    "0x9e3c3dfa": {
+      "observations": 36,
+      "sumDelta": -1008,
+      "sumInput": 15120,
+      "sumOutput": 21,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xd54f8b18",
+        "0xe68c5704"
+      ]
+    },
+    "0x6d39bbca": {
+      "observations": 36,
+      "sumDelta": 0,
+      "sumInput": 446894,
+      "sumOutput": 78612,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x007f9af1",
+        "0x090b674e",
+        "0x50b9377a",
+        "0x9de84a67",
+        "0xa77279d8",
+        "0xe7f0b545"
+      ]
+    },
+    "0x67344592": {
+      "observations": 35,
+      "sumDelta": 0,
+      "sumInput": 47,
+      "sumOutput": 12,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x474c0a4a",
+        "0x89f6cf5f",
+        "0x8a4df07d",
+        "0x9117bbe5",
+        "0xa88b0d6c",
+        "0xc55275e0"
+      ]
+    },
+    "0x6106b1cb": {
+      "observations": 34,
+      "sumDelta": 23,
+      "sumInput": 3,
+      "sumOutput": 31,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        561
+      ],
+      "rules": [
+        "0x938552f2",
+        "0x99a66118"
+      ]
+    },
+    "0x8e8b4e10": {
+      "observations": 32,
+      "sumDelta": -9495,
+      "sumInput": 142425,
+      "sumOutput": 17,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0xd51cb94c",
+        "0xffd3003e"
+      ]
+    },
+    "0xce415e6a": {
+      "observations": 32,
+      "sumDelta": -33280,
+      "sumInput": 149760,
+      "sumOutput": 14,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x5e403840",
+        "0x821f5a5f"
+      ]
+    },
+    "0x8e25d7fb": {
+      "observations": 32,
+      "sumDelta": -798720,
+      "sumInput": 3594240,
+      "sumOutput": 14,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        485,
+        561
+      ],
+      "rules": [
+        "0x0fbc02ca",
+        "0x95ba3aa1"
+      ]
+    },
+    "0xb1731656": {
+      "observations": 31,
+      "sumDelta": -31,
+      "sumInput": 31,
+      "sumOutput": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        561
+      ],
+      "rules": [
+        "0x549d25c3",
+        "0x5ba3eddb"
+      ]
+    },
+    "0x7dce3191": {
+      "observations": 31,
+      "sumDelta": 0,
+      "sumInput": 0,
+      "sumOutput": 0,
+      "slots": [
+        63,
+        70,
+        170,
+        418,
+        561
+      ],
+      "rules": [
+        "0x938552f2"
+      ]
+    }
+  },
+  "limitations": [
+    "snapshot reads are non-atomic",
+    "snapshot net deltas do not equal total throughput",
+    "effect trace capped at 2000 records with 2272 dropped",
+    "Omega product hash not statically closed in this capture"
+  ]
+}

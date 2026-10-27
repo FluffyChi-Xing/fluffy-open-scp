@@ -2,13 +2,19 @@ import { mount } from '@vue/test-utils'
 import { CalendarDays } from 'lucide-vue-next'
 import { describe, expect, it } from 'vitest'
 import FIcon from './FIcon.vue'
-import { registerIcons } from '@/lib/icons'
+import { registerIcons, resolveIcon } from '@/lib/icons'
 
 describe('FIcon', () => {
   it('resolves Lucide names, kebab-case names, and Fluffy aliases', () => {
     expect(mount(FIcon, { props: { name: 'FolderOpen' } }).find('svg').exists()).toBe(true)
     expect(mount(FIcon, { props: { name: 'chart-no-axes-combined' } }).find('svg').exists()).toBe(true)
     expect(mount(FIcon, { props: { name: 'dashboard' } }).find('svg').exists()).toBe(true)
+  })
+
+  it('resolves workbench focus and fullscreen controls from the built-in registry', () => {
+    for (const name of ['PanelTop', 'PanelBottom', 'Maximize2', 'Minimize2']) {
+      expect(resolveIcon(name)).toBeDefined()
+    }
   })
 
   it('applies visual props and labels semantic icons', () => {

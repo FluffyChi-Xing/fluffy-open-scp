@@ -12,13 +12,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
-import { useUiWorkbenchStore } from "@/stores/uiWorkbench";
+import { useUiWorkbenchStore, type UiWorkbenchView } from "@/stores/uiWorkbench";
 import { injectReplicaStyles } from "@/lib/game-ui/replica/styles";
 import { createHudRender } from "@/lib/game-ui/replica/render";
 import { createHudPalette, type HudPalette, type SlotTool } from "@/lib/game-ui/replica/palette";
 import type { ReplicaData } from "@/lib/game-ui/replica/types";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const store = useUiWorkbenchStore();
 const { customCategories, viewMode } = storeToRefs(store);
 
@@ -46,7 +46,7 @@ let palette: HudPalette | null = null;
 /** 分类圆钮行锚点（拊件定位用）。 */
 const rowGeom = ref<{ absY: number; count: number } | null>(null);
 
-const builtinCount = computed(() => viewMode.value === "city" ? (store.replica?.model.categories.length ?? 0) : viewMode.value === "development" ? 1 : 6);
+const builtinCount = computed(() => store.categories.length - customCategories.value.length);
 
 // 复刻数据是进程内缓存的同一对象引用：store 已 hydrate 过（二次进入本页/
 // HMR）时 watch 不会再触发，必须在挂载时补一次装配，否则舞台空白且无报错。
@@ -68,13 +68,17 @@ watch(
     if (store.replica) await boot(store.replica);
   },
 );
-watch(viewMode, async () => {
+watch(() => store.menuGroups.length, async () => {
+  if (store.replica) await boot(store.replica);
+});
+watch([viewMode, locale], async () => {
   if (store.replica) await boot(store.replica);
 });
 watch(
   () => store.activeMenu?.entries.map((entry) => `${entry.tool.id}:${entry.tool.label}`).join("|"),
   () => palette?.repaint(),
 );
+watch(() => [store.selectedMenuId, store.entered], syncCategorySelection);
 
 async function boot(data: ReplicaData): Promise<void> {
   if (!stageInner.value || booting.value) return;
@@ -122,12 +126,17 @@ async function boot(data: ReplicaData): Promise<void> {
             .filter((category) => !data.palette.byCategory[category.id])
             .map((category) => [category.id, fallbackPalette])),
           ...Object.fromEntries(customCategories.value.map((category) => [category.id, fallbackPalette])),
+          ...Object.fromEntries(store.menuGroups.map(group => [group.id, fallbackPalette])),
         },
       },
     };
     palette = createHudPalette(paletteData, hud.createNodeElement, {
       getTools: (categoryId) => effectiveTools(data, categoryId),
-      onSlotClick: (categoryId, tool) => store.openEditor(categoryId, tool.instance),
+      getSubtabs: categoryId => store.groupTabs(categoryId),
+      onSlotClick: (categoryId, tool) => {
+        const group = store.menuGroups.find(group => group.parentId === categoryId && store.menuEntries(group.id).some(entry => entry.tool.id === tool.instance));
+        store.openEditor(group?.id ?? categoryId, tool.instance);
+      },
       onRemoveItem: (categoryId, tool) => store.removeItem(categoryId, tool.instance),
       onClose: () => {
         clearSelection();
@@ -136,6 +145,9 @@ async function boot(data: ReplicaData): Promise<void> {
     });
     palette.init(stageEl);
     wireCategoryButtons();
+    wireModeButtons();
+    syncCategorySelection();
+    if (store.entered && store.selectedMenuId) palette.open(store.selectedMenuId, store.activeMenu?.label ?? "");
   } catch (cause) {
     bootFailed.value = true;
     console.warn("[uiWorkbench] 复刻舞台装配失败", cause);
@@ -150,19 +162,21 @@ function effectiveTools(data: ReplicaData, categoryId: string): SlotTool[] | und
   const activeMenu = store.activeMenu;
   if (!activeMenu || activeMenu.id !== categoryId) return undefined;
   const base = data.tools[categoryId] ?? [];
-  return activeMenu.entries.map((entry) => {
+  const entries = [...activeMenu.entries, ...store.menuGroups.filter(group => group.parentId === categoryId)
+    .flatMap(group => store.menuEntries(group.id))];
+  return entries.map((entry) => {
     const source = base.find((tool) => tool.instance === entry.tool.id);
-    // 编辑覆盖（activeMenu 的 tool 已应用 edits）优先于基础数据：
-    // 舞台槽位与弹窗实时反映名称/描述/造价/图片的修改。
+    // entry.tool 已经是应用过覆盖的完整有效视图（store.effectiveEntries），
+    // 三态编辑（null = 移除）在这里不能回退基础值，直接取最终值。
     const edited = entry.tool;
     return {
       instance: entry.tool.id,
       label: edited.label || source?.label || "",
-      preview: edited.preview ?? source?.preview ?? null,
-      marquee: edited.marquee ?? source?.marquee ?? null,
+      preview: edited.preview ?? null,
+      marquee: edited.marquee ?? null,
       desc: edited.desc ?? source?.desc,
       unlock: edited.unlock ?? source?.unlock,
-      stats: source?.stats,
+      stats: edited.stats ?? source?.stats,
       cost: edited.cost ?? source?.cost ?? null,
       upkeep: edited.upkeep ?? source?.upkeep ?? null,
       locked: edited.locked ?? source?.locked ?? false,
@@ -187,8 +201,8 @@ function wireCategoryButtons(): void {
         store.leaveMenu();
       } else {
         btn.classList.add("layer-selected");
-        palette.open(id, btn.title);
         store.enterMenu(id);
+        palette.open(id, btn.title);
       }
     });
   });
@@ -196,6 +210,36 @@ function wireCategoryButtons(): void {
 
 function clearSelection(): void {
   shadow?.querySelectorAll(".cat-btn.layer-selected").forEach((b) => b.classList.remove("layer-selected"));
+}
+
+function syncCategorySelection(): void {
+  if (store.entered && store.selectedMenuId && palette && !palette.isOpen(store.selectedMenuId)) {
+    palette.open(store.selectedMenuId, store.activeMenu?.label ?? "");
+  }
+  shadow?.querySelectorAll<HTMLElement>(".cat-btn").forEach((button) => {
+    button.classList.toggle("layer-selected", store.entered && button.dataset.category === (store.menuGroups.find(group => group.id === store.selectedMenuId)?.parentId ?? store.selectedMenuId));
+  });
+}
+
+/** The native view controls and the toolbar share the same store state. */
+function wireModeButtons(): void {
+  const keys = { city: "dimCity", region: "dimRegion", development: "dimDevelopment" };
+  shadow?.querySelectorAll<HTMLElement>(".hud-mode-button").forEach((button) => {
+    const mode = button.dataset.mode as UiWorkbenchView;
+    button.setAttribute("role", "button");
+    button.setAttribute("aria-label", t(`studio.workbench.${keys[mode]}`));
+    button.tabIndex = 0;
+    const select = () => {
+      if (viewMode.value !== mode) store.setViewMode(mode);
+    };
+    button.addEventListener("click", select);
+    button.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        select();
+      }
+    });
+  });
 }
 
 /** 工作台拊件的补充样式（注入 ShadowRoot；只作用于拊件，不碰游戏 UI）。 */

@@ -122,7 +122,7 @@ describe("SemanticCard 语义预览卡", () => {
     expect(wrapper.text()).toContain("kResourceIDOreRaw");
   });
 
-  it("装载条目卡：槽位表格化，-1 哨兵显示为 —", () => {
+  it("装载条目卡：槽位表格化并区分未设置参数", () => {
     const wrapper = mountCard({
       kind: "resource-entry",
       parent: null,
@@ -141,8 +141,9 @@ describe("SemanticCard 语义预览卡", () => {
     expect(table.text()).toContain("0x00000000:0x00000000:0xCAC2A973");
     expect(table.text()).toContain("42");
     expect(table.text()).toContain("7");
-    expect(table.text()).toContain("—");
-    expect(wrapper.text()).toContain("0x0D560650");
+    expect(table.text()).toContain("未设置");
+    expect(wrapper.text()).toContain("标量 A");
+    expect(wrapper.text()).toContain("标量 B");
   });
 
   it("图层卡：色带按 RGBA 序列渲染为 CSS 渐变", () => {

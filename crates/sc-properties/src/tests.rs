@@ -642,3 +642,48 @@ fn serialize_locale_items_rejects_duplicates() {
     ];
     assert!(serialize_locale_items(&items).is_err());
 }
+
+#[test]
+fn text_array_roundtrips_with_game_stride() {
+    // 原版 Text 数组（如 0xEB1FC05 统计行模板）：flags=0x801C、item_size=520、
+    // 实际每项 8 字节。解析→编码必须逐字节还原，防止再次规范化掉游戏步长。
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&be32(2));
+    payload.extend_from_slice(&be32(520));
+    payload.extend_from_slice(&be32(0x50AA_0BEA));
+    payload.extend_from_slice(&be32(0x0EA1_FFF1));
+    payload.extend_from_slice(&be32(0x50AA_0BEA));
+    payload.extend_from_slice(&be32(0x0EBC_E055));
+    let data = file(&[entry(0x0EB1_FC05, 34, 0x801C, &payload)]);
+    let parsed = PropertyFile::parse(&data).unwrap();
+    assert_eq!(parsed.get(0x0EB1_FC05).unwrap().encoding.array_item_size, Some(520));
+    assert_eq!(parsed.encode_canonical().unwrap(), data);
+}
+
+#[test]
+fn text_arrays_default_to_the_game_stride_when_encoding() {
+    // 来源缺失/错误步长（含之前误规范化出的 8）都要自愈成游戏惯例 520。
+    let property = Property {
+        hash: 1,
+        prop_type: PropType::Text,
+        kind: Kind::Array(vec![Value::Text(Text {
+            table_id: 0x6C96_9DEE,
+            instance_id: 0x0494_EEC2,
+        })]),
+        encoding: PropertyEncoding {
+            flags: 0x30,
+            array_item_size: Some(8),
+        },
+    };
+    let encoded = PropertyFile {
+        values: vec![property],
+        claimed_count: 1,
+    }
+    .encode_canonical()
+    .unwrap();
+    let reparsed = PropertyFile::parse(&encoded).unwrap();
+    assert_eq!(
+        reparsed.get(1).unwrap().encoding.array_item_size,
+        Some(TEXT_ARRAY_ITEM_SIZE)
+    );
+}

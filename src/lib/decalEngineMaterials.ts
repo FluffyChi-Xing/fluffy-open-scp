@@ -102,17 +102,13 @@ export interface EngineMaterialOptions {
    * （In.texcoord<t0> 顶点流语义；sphereHeight 暂取 sizeY 近似，待对拍校准）。 */
   nus?: [number, number, number];
   /** 破洞族盒参数（lot 局部坐标）：origin = 盒前缘（变换原点）、axisZ =
-   * 盒进深轴、invDepth = 1/盒深——VS 计算 tfp.z 真实进深（引擎延迟路径
-   * 深度重建的 CPU 同构：立面 −1 全尺寸内景、深部 +1 中心收缩）。
-   * halfXY/depthM/invRot 供 PS 视线视差（holeParallaxUv：射线-盒底平面
-   * 求交，空壳建筑的纵深来源）；camLot 每帧由 onBeforeRender 更新。 */
+   * 盒进深轴、invDepth = 1/盒深——VS 计算 tfp.z 真实进深；PS 按游戏
+   * decalInteriorMap 的双 UV 公式把深部采样收缩到纹理中心，同时按
+   * decalProject 的深度坐标和内部几何深度测试产生视角视差。 */
   holeBox?: {
     origin: ThreeNamespace.Vector3;
     axisZ: ThreeNamespace.Vector3;
     invDepth: number;
-    halfXY?: [number, number];
-    depthM?: number;
-    invRot?: ThreeNamespace.Matrix3;
   };
 }
 
@@ -216,21 +212,8 @@ export function createEngineDecalMaterial(
         value: opts.holeBox?.axisZ.clone().normalize() ?? new THREE.Vector3(0, 0, 1),
       },
       uHoleInvDepth: { value: opts.holeBox?.invDepth ?? 0 },
-      // 破洞视线视差（holeParallaxUv）：盒半宽/半高、盒深（米）、lot→贴花
-      // 系旋转（基矩阵转置）；uHoleCamLot 每帧 onBeforeRender 写入（初值 =
-      // 盒前缘正前方 1000m，未更新时不产生错误视差）
-      uHoleHalfXY: {
-        value: new THREE.Vector2(...(opts.holeBox?.halfXY ?? [1, 1])),
-      },
-      uHoleDepthM: { value: opts.holeBox?.depthM ?? 1 },
-      uHoleInvRot: { value: opts.holeBox?.invRot ?? new THREE.Matrix3() },
-      uHoleCamLot: {
-        value: opts.holeBox
-          ? opts.holeBox.origin
-              .clone()
-              .addScaledVector(opts.holeBox.axisZ, -1000)
-          : new THREE.Vector3(0, 0, -1000),
-      },
+      // 破洞簇不使用建筑 facade interiorMap() 的相机射线；视差由
+      // decalProject 的深度坐标与内部几何的深度测试产生。
       // per-entry raster = 预裁剪 atlas cell → texXform 恒等
       uTexXform: { value: new THREE.Vector4(1, 1, 0, 0) },
       uDecalWorldDirection: { value: opts.worldDirection.clone().normalize() },

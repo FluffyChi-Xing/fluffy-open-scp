@@ -9,6 +9,8 @@ python tools/dynamic/rule-logs/capture.py --pid <当前游戏PID> --scope unit -
 
 示例索引来自测试城市，其他城市不保证命中。省略索引时，每个 scope 固定选择第一个匹配的 game/slot/stateIndex，后续只采集同一目标。`both` 同时选择两类目标。限制：1–120 秒、最多 1–2000 条（默认 250）、队列 256 条。输出目录必须不存在。
 
+规则模式 `unit/global/both` 现在也支持 `--all-targets`，取消首个目标锁定，但仍保留显式过滤和记录上限。它用于短时发现目标，不代表完整城市日志；达到上限后的命中计入 dropped。2026-10-22 的 30 秒实测命中 25020 次，保存 1000 条、丢弃 24020 条，不能将这些全城命中归为某所学校。`targets` 在该模式仅保留首个匹配目标，完整身份以各行记录为准。
+
 先读取目标进程实际模块路径并校验完整 SHA-256（仅支持 `2b0aff527baa3aa536aca6c68332c208d1dbd904695f0f985d17d56b128d48ab`），再校验全部入口的内存字节，然后安装 hook。异常、手动中断与正常结束均进入清理流程。主机错误或字段读取错误使退出码非零；零条记录不能证明游戏没有执行规则。
 
 在 OpenSCP 诊断工作台导入 `trace.jsonl`，再导入同目录 `status.json` 查看采集质量。`hits` 是入口总命中，`filtered` 是主动筛除，`dropped` 是超过容量/队列限制；三者不能混淆。字段读取失败保留部分记录和 `readErrors`。
@@ -28,6 +30,8 @@ python tools/dynamic/rule-logs/capture.py --pid <当前游戏PID> --scope unit -
 全局日志新增 `ruleDefinition`：基础资源操作（最多 16 项）、fromBinOps 引用与应用次数约束。离线工具对 global 候选输出同形定义，已与实机 59 条记录逐项对拍。`input/output` 是规则配置，不是实测资源变化；负 output 为范围条件，fromBinOps 可动态替换数量。单位定义暂未展开。详见 `docs/re/rule-definition-fields-20261017.md`。
 
 ## 资源更新前后快照
+
+`--resource-id` 筛选包含该资源的整条更新，保留所有配套操作及原顺序，以正确对应原生 bin lookup；输出可能包含其他资源。2026-10-23 之前的实现会提前删除非目标操作，多操作规则可能出现 `extra_lookup` 或错配。见 [垃圾观测与修复](../../../docs/re/garbage-observation-20261023.md)。
 
 `--scope effects --rule-id 0xc2181f55` 定向捕获全局 RunRule 内实际资源更新及其 bin lookup，记录操作前后 amount/capacity、实测差值和原函数返回值。省略 rule-id 则固定首个符合条件的 game/rule。最多 16 项操作，超限主动筛除；不接受 state-index、unit-slot 或 launch-exe。
 
@@ -83,3 +87,6 @@ python tools/dynamic/rule-logs/capture.py --launch-exe 'D:/ea-games/simcity_offl
 使用 `python tools/dynamic/rule-logs/verify_provenance.py <采集目录>` 独立复核来源链。校验器要求同请求的成功 Record → Create → 最终返回事件完整且指针、键和数据库一致；探针自身的 `created-from-record` 标签不能替代完整日志证据。
 
 2026-10-17 进城实测曾因定时发送来不及执行而丢失 186 条事件，仍保留 21 条可验证完整链。来源探针现改为 256 条满队列立即发送，保留总数硬上限；已通过同步突发模拟测试，尚未重新实机冷启动复测。详见 `docs/re/rule-resource-provenance-20261017.md`。规则日志探针的队列策略未在本次修改。
+## 2026-10-23 采集器并发事故修复
+
+规则采集与量级/UnitEntry/渲染采集共用 `probes/runtime/capture_lock.py` 的 Windows 命名互斥量，在 attach 前拒绝第二个宿主，锁覆盖卸载与 detach。不要并行启动多个采集进程；其他未迁移的注入工具仍须手动串行。入口 `entry_mismatch` 只阻止业务 hook 安装，不能阻止此前已发生的 Frida agent 加载。详见 [崩溃取证](../../../docs/re/simcity-frida-crash-20261023.md)。

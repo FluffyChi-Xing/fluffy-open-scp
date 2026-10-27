@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import FCode from "@/components/ui/FCode.vue";
+import MonacoEditor from "@/components/ui/MonacoEditor.vue";
 import FPopover from "@/components/ui/FPopover.vue";
 import {
   Resizable,
@@ -35,6 +35,8 @@ import NotesSheet from "./NotesSheet.vue";
 import ModFlowWorkbench from './mod-flow/ModFlowWorkbench.vue';
 import FlowInitializeSheet from './mod-flow/FlowInitializeSheet.vue';
 import { isEngineManifest } from './mod-flow/contracts';
+import StandardModEditorPanel from './StandardModEditorPanel.vue';
+import ModAssetWorkbench from './asset/ModAssetWorkbench.vue';
 
 /**
  * Code 工作台（M-CM1 文件浏览 + M-CM2 解析预览）：
@@ -103,6 +105,13 @@ const engineReady = ref(false);
 const initializeOpen = ref(false);
 const flowPanel = ref<InstanceType<typeof ModFlowWorkbench> | null>(null);
 const deployBusy = ref(false);
+const editorFocus = ref<"editor" | "flow" | null>(null);
+const standardModKind = computed(() => {
+  const value = projectManifest.value.mod_type ?? projectManifest.value.modType;
+  if (typeof value === "string") return value.toLowerCase();
+  const workflow = projectManifest.value.workflow;
+  return workflow === "map" || workflow === "whole-region" || workflow === "generated" ? "map" : "assets";
+});
 
 async function buildDeployAndLaunch() {
   if (!engineReady.value || deployBusy.value) return;
@@ -448,6 +457,14 @@ watch(
       <p>{{ fatalMessage }}</p>
     </div>
 
+    <!-- 资产 Mod：整栏 Blender 式工作台（自带文件树，不套 Code 外壳左右分栏） -->
+    <ModAssetWorkbench
+      v-else-if="engineEnabled && standardModKind === 'assets'"
+      :key="project.relPath"
+      :project="project.relPath"
+      class="asset-workbench-host"
+    />
+
     <Resizable
       v-else
       direction="horizontal"
@@ -501,9 +518,31 @@ watch(
         :label="$t('studio.code.resizeHint')"
       />
 
-      <!-- 右：按扩展名分流的工作台查看器 -->
+      <!-- 右：地图 Mod 编辑器+流程画布上下分 -->
       <ResizablePanel id="code-viewer" :default-size="74" :min-size="40">
-        <ModFlowWorkbench v-if="engineEnabled" :key="project.relPath" ref="flowPanel" :project="project.relPath" :selected-path="selected?.relativePath" @status="engineReady = $event" @saved="loadTree(true)" />
+        <Resizable
+          v-if="engineEnabled"
+          direction="vertical"
+          auto-save-id="openscp:code-standard-workbench:v1"
+          class="standard-workbench"
+          :class="{ 'focus-editor': editorFocus === 'editor', 'focus-flow': editorFocus === 'flow' }"
+        >
+          <ResizablePanel id="code-editor-panel" :default-size="60" :min-size="12" class="standard-editor-panel">
+            <StandardModEditorPanel
+              :project="project.relPath"
+              :kind="standardModKind"
+              :manifest="projectManifest"
+              @focus="editorFocus = editorFocus === 'editor' ? null : 'editor'"
+            />
+          </ResizablePanel>
+          <ResizableHandle
+            orientation="vertical"
+            :label="$t('studio.code.resizeVerticalHint')"
+          />
+          <ResizablePanel id="code-blueprint-panel" :default-size="40" :min-size="12" class="standard-blueprint-panel">
+            <ModFlowWorkbench :key="project.relPath" ref="flowPanel" :project="project.relPath" :selected-path="selected?.relativePath" @focus="editorFocus = editorFocus === 'flow' ? null : 'flow'" @status="engineReady = $event" @saved="loadTree(true)" />
+          </ResizablePanel>
+        </Resizable>
         <div v-else class="viewer" :class="{ empty: !selected }">
           <template v-if="selected">
             <!-- 右上角 toolbar：路径 + 缩放（图片）/ 笔记 / more 浮层 -->
@@ -605,12 +644,12 @@ watch(
               {{ viewerError }}
             </p>
 
-            <!-- 文本族：FCode 高亮（shiki 语法映射，txt 纯文本） -->
+            <!-- 文本族：Monaco 语义高亮（ER2 关键字由自定义语言注册） -->
             <div
               v-else-if="viewerKind === 'text' && textDoc"
               class="text-viewer"
             >
-              <FCode :code="textContent" :lang="textLanguage" />
+              <MonacoEditor :value="textContent" :language="textLanguage" />
             </div>
 
             <!-- 图片：棋盘底 + 缩放 -->
@@ -879,6 +918,31 @@ watch(
 .code-shell {
   flex: 1;
   min-height: 0;
+}
+.asset-workbench-host {
+  height: 100%;
+  min-height: 0;
+}
+.standard-workbench {
+  height: 100%;
+  min-height: 0;
+}
+.standard-workbench :deep(.resizable-panel) {
+  min-height: 0;
+}
+.standard-workbench.focus-editor :deep(#code-blueprint-panel),
+.standard-workbench.focus-flow :deep(#code-editor-panel) {
+  display: none;
+}
+.standard-workbench.focus-editor :deep(#code-editor-panel),
+.standard-workbench.focus-flow :deep(#code-blueprint-panel) {
+  flex: 1 1 100% !important;
+  height: 100%;
+  max-height: none;
+}
+.standard-workbench.focus-editor :deep(.resizable-handle),
+.standard-workbench.focus-flow :deep(.resizable-handle) {
+  display: none;
 }
 .tree-panel {
   background: var(--surface);

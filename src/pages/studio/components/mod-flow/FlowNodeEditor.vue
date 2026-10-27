@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import FSheet from "@/components/ui/FSheet.vue";
-import AssetFlowTool from "./AssetFlowTool.vue";
 import RasterFlowTool from './RasterFlowTool.vue';
 import NodeConfigForm from "./NodeConfigForm.vue";
 import { useI18n } from "vue-i18n";
@@ -22,13 +21,6 @@ const { t } = useI18n();
       <button @click="open = false">{{ t("flow.close") }}</button>
     </header>
     <RasterFlowTool v-if="schema && schema.kind === 'texture-input'" :schema="schema" :project="project" :busy="busy" @save="emit('save', $event)" />
-    <AssetFlowTool
-      v-else-if="schema && schema.kind === 'building-asset'"
-      :schema="schema"
-      :schemas="schemas"
-      :project="project"
-      :busy="busy"
-      @save="emit('save', $event)" />
     <NodeConfigForm
       v-else
       :schema="schema"

@@ -17,7 +17,7 @@
 在仓库根目录运行：
 
 ```powershell
-cargo build -p dbpf --example ui_observer_package
+cargo build -p probes --example ui_observer_package
 python tools/dynamic/ui-observer/trace.py prepare tmp/my-ui-trace --exe "D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCity\SimCity.exe"
 # 默认 baseline 只用于隔离“资源重打包”和“追加脚本”两类变量。
 # 当前不安装到游戏；baseline / marker 均不发送日志。

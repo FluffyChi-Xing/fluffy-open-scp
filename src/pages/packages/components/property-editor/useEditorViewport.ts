@@ -18,6 +18,15 @@ export const VIEWPORT_GROUPS = [
 export type ViewportGroupName = (typeof VIEWPORT_GROUPS)[number];
 
 /**
+ * 取景内容组：建筑/地块/尺度标注。单元 gizmo 组（lights/props/decals/
+ * effects/spawners/paths 的标记锥与垫片）是编辑器 chrome——其数据高度
+ * （道具锚点沉到地块下数米、贴花垫片浮在上方）不参与取景与地面网格
+ * 锚定，「网格参照物」与「编辑器标记」在此分离（2026-10-27 取景取证
+ * 结论：网格贴全内容最低点时，编辑器标记把地面拖离建筑底面）。
+ */
+export const FRAMING_GROUPS = ["model", "lot", "dimensions"] as const;
+
+/**
  * 单次 rebuild 的装配上下文：装配层（scene contributor）在回调内完成
  * 业务场景搭建，底座负责前后清理、防竞态与收尾。
  */
@@ -118,6 +127,21 @@ export function useEditorViewport(options: {
     return best;
   }
 
+  /** 模型组是否参与拾取（mod 工作台草稿：导入的建筑模型可作为伪单元
+   * "model" 选中/变换）。切换时重设 hover 射线目标组。 */
+  let modelPickable = false;
+  function applyHoverTargets() {
+    const instance = viewer.value;
+    if (!instance) return;
+    const targets = PICKABLE_GROUPS.map((name) => instance.group(name));
+    if (modelPickable) targets.push(instance.group("model"));
+    instance.setHoverTargets(targets);
+  }
+  function setModelPickable(pickable: boolean) {
+    modelPickable = pickable;
+    applyHoverTargets();
+  }
+
   onMounted(async () => {
     const element = container.value;
     if (!element) return;
@@ -131,10 +155,9 @@ export function useEditorViewport(options: {
         options.onHoverUnit?.(hit ? resolveUnitId(hit.object, null) : null);
       },
     });
-    // 悬停拾取只对 unit 图层组（建筑/地面命中不属于任何 Unit）
-    viewer.value.setHoverTargets(
-      PICKABLE_GROUPS.map((name) => viewer.value!.group(name)),
-    );
+    // 悬停拾取只对 unit 图层组（建筑/地面命中不属于任何 Unit；
+    // setModelPickable 可把模型组临时纳入）
+    applyHoverTargets();
     readyResolve?.();
   });
   onBeforeUnmount(() => {
@@ -228,8 +251,16 @@ export function useEditorViewport(options: {
       if (token !== rebuildToken) return;
       pruneExcessLights();
       if (options.reframe || !framed) {
-        instance.frameContent();
+        instance.frameContent({ framingGroups: [...FRAMING_GROUPS] });
         framed = true;
+      } else {
+        // 软跟随：渐进装配（模型/lotPlacement/草稿载荷异步到达）之后，
+        // 首帧构图不能代表最终内容——不跟随的话地面网格与 content 归零
+        // 停在首帧坐标系，建筑观感上"飘在网格上方"（2026-10-27 回归根因）。
+        instance.frameContent({
+          soft: true,
+          framingGroups: [...FRAMING_GROUPS],
+        });
       }
       sceneReady.value = true;
       revision.value += 1;
@@ -337,6 +368,7 @@ export function useEditorViewport(options: {
     applySelection,
     captureRender,
     resetView,
+    setModelPickable,
     isAssembling,
     rebuildEpoch,
     whenSettled,
