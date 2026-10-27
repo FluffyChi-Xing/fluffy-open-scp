@@ -34,7 +34,7 @@ import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 
-import { assetCategory, CATEGORY_LABELS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
+import { assetCategory, CATEGORY_LABEL_KEYS, clonePropForPlacement, directModelKey, placementMatrix, propSemanticCategory } from "./assetCategories";
 import type { PropUnit } from "@/api/tauri";
 import type { CameraPreset } from "@/lib/three-viewer";
 const props = withDefaults(defineProps<{ packageId: number; tgi: Tgi; initialSchema?: Record<string, unknown> | null; previewPayload?: LotModelPayload | null; mode?: "viewer" | "editor"; embedded?: boolean; externalSidebar?: boolean; externalToolbar?: boolean; initialRenderMode?: "default" | "refined"; cameraPreset?: CameraPreset | null; cameraControlled?: boolean; cameraFocus?: { distance: number; aperture: number; softness: number } | null }>(), { mode: "viewer", embedded: false, externalSidebar: false, externalToolbar: false, initialRenderMode: "default", cameraPreset: null, cameraControlled: false, cameraFocus: null });
@@ -269,7 +269,7 @@ const catalogGroups = computed<{ name: string; entries: ModelCatalogEntry[] }[]>
       entry.template = grouping.value.props.find(u => u.resourceId === reference?.resourceId);
       const category = propSemanticCategory(entry.template?.resourceId ?? null, entry.name, propTreeIds.value);
       const packageLabel = entry.packagePath?.split(/[\\/]/).pop() || `Package ${entry.packageId}`;
-      const group = `${packageLabel} · ${CATEGORY_LABELS[category]}`;
+      const group = `${packageLabel} · ${t(CATEGORY_LABEL_KEYS[category])}`;
       if (!groups.has(group)) groups.set(group, []);
       groups.get(group)!.push(entry);
     }

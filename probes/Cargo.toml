@@ -102,6 +102,10 @@ name = "payload_grep"
 path = "package/payload_grep.rs"
 
 [[example]]
+name = "payload_bin_grep"
+path = "package/payload_bin_grep.rs"
+
+[[example]]
 name = "pkg_merge"
 path = "package/pkg_merge.rs"
 

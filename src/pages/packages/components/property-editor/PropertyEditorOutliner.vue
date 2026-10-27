@@ -6,7 +6,7 @@ import type { LotUnitDto } from "@/api/tauri";
 import { unitLabel } from "./usePropertyEditorSession";
 import type { UnitGrouping } from "./usePropertyEditorSession";
 import { unitId } from "./unitGizmos";
-import { unitCategory, type AssetCategory } from "./assetCategories";
+import { unitCategoryKey, type AssetCategory } from "./assetCategories";
 
 const props = defineProps<{
   grouping: UnitGrouping;
@@ -71,14 +71,22 @@ function onToggleUnit(section: OutlinerSection, unit: LotUnitDto) {
   emit("toggle-unit", unit, section.key);
 }
 function categories(section: OutlinerSection) {
-  const groups = new Map<string, LotUnitDto[]>();
+  const groups = new Map<
+    string,
+    { name: string; params?: Record<string, number>; items: LotUnitDto[] }
+  >();
   for (const unit of section.items) {
-    const name = unitCategory(unit, props.treeIds, props.propCategories);
-    const items = groups.get(name) ?? [];
-    items.push(unit);
-    groups.set(name, items);
+    // i18n 键版分组（EN 模式翻译不完全修正，2026-10-27）；键即去重 id
+    const { key, params } = unitCategoryKey(
+      unit,
+      props.treeIds,
+      props.propCategories,
+    );
+    const group = groups.get(key);
+    if (group) group.items.push(unit);
+    else groups.set(key, { name: key, params, items: [unit] });
   }
-  return [...groups].map(([name, items]) => ({ name, items }));
+  return [...groups].map(([, entry]) => entry);
 }
 </script>
 
@@ -128,7 +136,7 @@ function categories(section: OutlinerSection) {
         <small>{{ section.items.length }}</small>
       </div>
       <details v-for="category in categories(section)" :key="category.name" open class="outliner-category">
-        <summary>{{ category.name }} <small>{{ category.items.length }}</small></summary>
+        <summary>{{ $t(category.name, category.params ?? {}) }} <small>{{ category.items.length }}</small></summary>
       <ul>
         <li
           v-for="unit in category.items"

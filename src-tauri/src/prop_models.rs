@@ -39,6 +39,8 @@ const KEY_TREE_STATE: u32 = 0x0C36_D30D;
 const KEY_PARENT: u32 = 0x00B2_CCCB;
 /// 树种 descriptor 的变体模型 key 数组（App 包 G 40002D00 记录）。
 const KEY_TREE_VARIANTS: u32 = 0x0E0B_99FD;
+/// 引擎类别绑定 Key（prop 资源自带；7CB23A4E=Garbage、8E8B4E10=Power 等）。
+const KEY_CATEGORY_BINDING: u32 = 0x08A1_6042;
 /// 树 impostor 源 3D 模型（descriptor C602CD31 → Parent 5F804D7E 配置表
 /// 0BD62577 列，App 包 G 40002D00；模型实体在 Graphics 包 T 2F4E681B）。
 /// 引擎 RenderOffscreenForModel 把它们离屏渲染成 128×128 公告板——本地
@@ -480,6 +482,276 @@ pub fn resolve_all(
     Ok(resource_ids.iter().filter_map(|id| resolve_one(&packages, *id)).collect())
 }
 
+// ---------------------------------------------------------------------------
+// prop bin 语义目录（组件库「树/车辆/垃圾桶/代售牌子」全量筛选，2026-10-27）。
+// 数据源 = 已打开包 + 自动注册 EcoGame 包的资源组记录（group 低 16 位 ∈
+// RESOURCE_GROUP_LOW）；树以树种 descriptor（G 40002D00，0x0E0B99FD 变体
+// 数组）为权威信号，其余按注册表名分类；模型 TGI 复用 resolve_one 全链。
+// ---------------------------------------------------------------------------
+
+/// prop bin 语义类别（trees/vehicles/waste/signs = 组件库四个明确目标；
+/// misc = 已解析出模型但名称不可判的杂件桶——6673 lot 普查证明全游戏
+/// prop ≈ 车辆+树+杂件三族，无招牌大类，牌子类道具只能在此桶目视挑选）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PropBinCategory {
+    Trees,
+    Vehicles,
+    Waste,
+    Signs,
+    Misc,
+}
+
+/// prop bin 目录条目：resourceID + 分类 + 可放置的首选 RW4 模型。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropBinCatalogEntry {
+    pub resource_id: u32,
+    pub name: String,
+    pub category: PropBinCategory,
+    /// 首选 RW4 模型（models[0]，最高细节）。
+    pub model: TgiDto,
+    /// 模型所在已打开包 id。
+    pub model_package_id: u64,
+    /// 解析路径（同 [`ResolvedPropModel::source`]）。
+    pub source: String,
+}
+
+/// 噪声注册表名（UI 键/图标/教程气泡/告警等非 prop 记录）。空名**不算**
+/// 噪声——多数 prop 资源/模型在注册表中无名，靠种子映射与解析签名分类。
+fn is_noise_name(name: &str) -> bool {
+    let n = name.trim();
+    n.starts_with("kResourceUIKeys")
+        || n.starts_with("icn_")
+        || n.starts_with("datavis_")
+        || n.starts_with("MSTutorial")
+        || n.starts_with("speech_")
+        || n.starts_with("ThoughtBalloon")
+        || n.starts_with("Alert")
+}
+
+/// 多词任一词边界命中：`word` 在 `hay` 中出现且两侧非 ASCII 字母
+/// （"bush" 不含词 "bus"、"design" 不含词 "sign"、"Bus_Stop" 含词 "bus"）。
+fn contains_any_word(hay: &str, words: &[&str]) -> bool {
+    let h = hay.as_bytes();
+    words.iter().any(|word| {
+        let w = word.as_bytes();
+        if w.is_empty() || h.len() < w.len() {
+            return false;
+        }
+        let mut start = 0;
+        while start + w.len() <= h.len() {
+            if let Some(pos) = hay[start..].find(word) {
+                let at = start + pos;
+                let left_ok = at == 0 || !h[at - 1].is_ascii_alphabetic();
+                let end = at + w.len();
+                let right_ok = end == h.len() || !h[end].is_ascii_alphabetic();
+                if left_ok && right_ok {
+                    return true;
+                }
+                start = at + 1;
+            } else {
+                break;
+            }
+        }
+        false
+    })
+}
+
+fn contains_any(hay: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|n| hay.contains(n))
+}
+
+/// 已验证种子映射（人工指认，2026-10-27）。键同时匹配 resourceID 与首选
+/// 模型 instance——同模型变体自动跟随。仅用于无任何自动信号的 prop。
+fn seed_category(instance: u32) -> Option<PropBinCategory> {
+    Some(match instance {
+        // 出租告示牌 "HARSH REALTY / PROPERTY FOR LEASE"（用户指认，
+        // C_Gen_W1D2_Store_02_01_N 屋顶；CAF1511E→LOD1→0D4DBEA7，
+        // Graphics RW4 64KB，贴图即牌面文字。资源/模型均无注册表名；
+        // 同族三变体 40731424/4E15EC0E 经模型实例自动跟随）
+        0xCAF1_511E | 0x0D4D_BEA7 => PropBinCategory::Signs,
+        _ => return None,
+    })
+}
+
+/// 引擎类别绑定（prop 资源上的 `0x08A16042` Key，威利斯研究 §4.3 同族：
+/// 模板类别绑定属性）→ prop bin 类别。这是引擎自带语义，优先级最高。
+/// 已核实：46FF72C0/41FA6F69/D15E6C57/2F207D6B（垃圾桶/大型垃圾箱）→
+/// 7CB23A4E kCategoryIDGarbage；solarpanel BDB7A53A → 8E8B4E10 kCategoryIDPower。
+fn binding_category(category_id: u32) -> Option<PropBinCategory> {
+    Some(match category_id {
+        0x7CB2_3A4E => PropBinCategory::Waste, // kCategoryIDGarbage
+        _ => return None,
+    })
+}
+
+/// 分类顺序即优先级：引擎类别绑定 > 权威树(descriptor/变体) > 种子映射 >
+/// 解析签名 > 树名（"bush" 含 "bus" 前缀，必须先判）> 车辆（"garbagetruck"
+/// 同时含 garbage+truck，归车辆）> 垃圾 > 招牌。
+fn classify_bin(
+    source: &str,
+    name: &str,
+    authoritative_tree: bool,
+    seed: Option<PropBinCategory>,
+    binding: Option<PropBinCategory>,
+) -> Option<PropBinCategory> {
+    if let Some(category) = binding {
+        return Some(category);
+    }
+    if authoritative_tree || matches!(source, "tree" | "tree_model" | "descriptor") {
+        return Some(PropBinCategory::Trees);
+    }
+    if let Some(category) = seed {
+        return Some(category);
+    }
+    let n = name.to_lowercase();
+    if contains_any_word(
+        &n,
+        &[
+            "tree", "palm", "oak", "pine", "bush", "hedge", "shrub", "foliage", "cypress",
+            "willow", "maple", "birch", "spruce", "plant", "vegetation", "flower",
+        ],
+    ) {
+        return Some(PropBinCategory::Trees);
+    }
+    if contains_any_word(
+        &n,
+        &[
+            "truck", "train", "tram", "trolley", "vehicle", "taxi", "boat", "ferry", "ship",
+            "moped", "scooter", "motorcycle", "ambulance", "limo", "helicopter", "car", "bus",
+            "van",
+        ],
+    ) {
+        return Some(PropBinCategory::Vehicles);
+    }
+    if contains_any_word(&n, &["garbage", "trash", "dumpster", "litter", "recycle", "bin"]) {
+        return Some(PropBinCategory::Waste);
+    }
+    if contains_any_word(&n, &["sign", "billboard", "banner", "flag"]) {
+        return Some(PropBinCategory::Signs);
+    }
+    None
+}
+
+/// 树种 descriptor 权威集：G 40002D00 记录（0x0E0B99FD 变体数组）→
+/// （descriptor instance 集，变体模型 instance 集）。
+fn tree_authority(packages: &[(u64, Arc<Package>)]) -> (std::collections::HashSet<u32>, std::collections::HashSet<u32>) {
+    let mut descriptors = std::collections::HashSet::new();
+    let mut variants = std::collections::HashSet::new();
+    for (_, pkg) in packages {
+        for entry in pkg.entries().iter().filter(|e| {
+            e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.group == 0x4000_2D00
+        }) {
+            let Some(file) = parse_record(pkg, entry) else {
+                continue;
+            };
+            if !has_prop(&file, KEY_TREE_VARIANTS) {
+                continue;
+            }
+            descriptors.insert(entry.id.instance);
+            for (inst, _, _) in key_list(&file, KEY_TREE_VARIANTS) {
+                variants.insert(inst);
+            }
+        }
+    }
+    (descriptors, variants)
+}
+
+/// 全量 prop bin 语义目录（四个目标类别；模型解析失败者不计入）。
+pub fn prop_bin_catalog(
+    manager: &PackageManager,
+    bundled_registry: Option<&Path>,
+) -> Result<Vec<PropBinCatalogEntry>, PackageError> {
+    let base = manager.all_packages_with_ids()?;
+    let dirs = ecogame_dirs(&base);
+    let eco = ensure_ecogame_registered(manager, &dirs)?;
+    let eco_ids: Vec<u64> = eco.iter().map(|(id, _)| *id).collect();
+    let mut packages = base;
+    packages.extend(eco);
+    if let Ok(mut reg) = REGISTERED_ECOGAME.lock() {
+        reg.extend(eco_ids);
+        reg.sort_unstable();
+        reg.dedup();
+    }
+    let registry = bundled_registry.and_then(|path| sc_registry::Registry::open(path).ok());
+    let instance_name = |instance: u32| -> Option<String> {
+        registry
+            .as_ref()
+            .and_then(|r| r.instances().get(&instance))
+            .map(|record| record.name.trim().to_string())
+            .filter(|n| !n.is_empty())
+    };
+
+    // 1) 资源记录枚举（按 instance 去重；EcoGame 与安装包副本同 id 时
+    //    resolve_one 自带资源组形态优先）
+    let (tree_desc, tree_variants) = tree_authority(&packages);
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut entries: Vec<PropBinCatalogEntry> = Vec::new();
+    for (_, pkg) in &packages {
+        for entry in pkg.entries().iter().filter(|e| {
+            e.id.type_id == PROPERTY_RESOURCE_TYPE
+                && RESOURCE_GROUP_LOW.contains(&(e.id.group as u16))
+        }) {
+            if !seen.insert(entry.id.instance) {
+                continue;
+            }
+            let resource_id = entry.id.instance;
+            let raw_name = instance_name(resource_id).unwrap_or_default();
+            if is_noise_name(&raw_name) {
+                continue;
+            }
+            // 1.5) 引擎类别绑定（0x08A16042 Key，垃圾桶/垃圾箱等自带）
+            let binding = parse_record(pkg, entry)
+                .and_then(|file| first_key(&file, KEY_CATEGORY_BINDING))
+                .and_then(|(instance, _, _)| binding_category(instance));
+            // 2) 先解析模型（复用全链；无模型即不可放置，直接排除）
+            let Some(resolved) = resolve_one(&packages, resource_id) else {
+                continue;
+            };
+            // 3) 分类：引擎类别绑定 > descriptor 权威集 > 种子映射 > 解析签名 >
+            //    注册表名 > 兜底杂件桶（模型可放置即可入选，名字后续目视定）
+            let model_instance = resolved
+                .models
+                .first()
+                .map(|m| m.instance)
+                .unwrap_or(resource_id);
+            let name = instance_name(model_instance).unwrap_or_else(|| raw_name.clone());
+            let display_name = if name.is_empty() {
+                format!("0x{resource_id:08X}")
+            } else {
+                name.clone()
+            };
+            let authoritative_tree = tree_desc.contains(&resource_id)
+                || tree_variants.contains(&model_instance);
+            let seed = seed_category(resource_id).or_else(|| seed_category(model_instance));
+            let category =
+                classify_bin(&resolved.source, &name, authoritative_tree, seed, binding)
+                    .unwrap_or(PropBinCategory::Misc);
+            let Some(model) = resolved.models.first() else {
+                continue;
+            };
+            let Some(model_package_id) = resolved.package_id else {
+                continue;
+            };
+            entries.push(PropBinCatalogEntry {
+                resource_id,
+                name: display_name,
+                category,
+                model: model.clone(),
+                model_package_id,
+                source: resolved.source,
+            });
+        }
+    }
+    entries.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+    });
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,6 +796,59 @@ mod tests {
         assert_eq!(tree.models.len(), 4, "树应有 4 个 impostor 源模型");
         assert!(tree.package_id.is_some(), "树模型应定位到所在包");
         assert!(tree.tree_atlas_png.is_some(), "树应随发公告板图集（回落用）");
+    }
+
+    /// prop bin 语义目录冒烟（需本机游戏包 + EcoGame 目录 + 注册表资源）：
+    /// cargo test -p fluffy-open-scp --release prop_bin_catalog -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn prop_bin_catalog_smoke() {
+        let manager = PackageManager::new();
+        for path in [
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Game.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_App.package",
+        ] {
+            let package = Package::open(path).expect("open");
+            manager.insert(package).expect("insert");
+        }
+        let registry = Path::new("resources/database_main.s3db");
+        let entries = prop_bin_catalog(&manager, Some(registry)).expect("catalog");
+        let count = |c: PropBinCategory| {
+            entries
+                .iter()
+                .filter(|e| e.category == c)
+                .count()
+        };
+        println!(
+            "catalog: trees={} vehicles={} waste={} signs={} total={}",
+            count(PropBinCategory::Trees),
+            count(PropBinCategory::Vehicles),
+            count(PropBinCategory::Waste),
+            count(PropBinCategory::Signs),
+            entries.len()
+        );
+        for e in entries.iter().take(12) {
+            println!(
+                "  {:?} {:08X} {} -> {} (source={})",
+                e.category, e.resource_id, e.name, e.model.instance, e.source
+            );
+        }
+        // 小类别全量打印（便于种子维护与目视核对）
+        for e in entries
+            .iter()
+            .filter(|e| !matches!(e.category, PropBinCategory::Misc | PropBinCategory::Vehicles))
+        {
+            println!(
+                "  [{:?}] {:08X} {} -> model {:08X}",
+                e.category, e.resource_id, e.name, e.model.instance
+            );
+        }
+        // 威利斯/消防局研究实证过的锚点：垃圾桶与车辆必须非空
+        assert!(count(PropBinCategory::Vehicles) > 0, "车辆类不能为空");
+        assert!(count(PropBinCategory::Waste) > 0, "垃圾桶类不能为空");
+        // 树链（descriptor/impostor 源模型）至少一条
+        assert!(count(PropBinCategory::Trees) > 0, "树木类不能为空");
     }
 }
 

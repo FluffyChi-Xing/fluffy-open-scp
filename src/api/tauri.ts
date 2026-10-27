@@ -736,6 +736,16 @@ export interface ResolvedPropModel {
   /** 树公告板图集 PNG（base64，source=tree 时下发，2×2 四树格 256×256）。 */
   treeAtlasPng: string | null;
 }
+/** 组件库 prop bin 语义目录条目（list_prop_bin_catalog；机制见 prop_models.rs）。 */
+export interface PropBinCatalogEntry {
+  resourceId: number;
+  name: string;
+  category: "trees" | "vehicles" | "waste" | "signs" | "misc";
+  /** 首选 RW4 模型（最高细节）。 */
+  model: Tgi;
+  modelPackageId: number;
+  source: string;
+}
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。
  * 容器（小端）：`magic("LOTM") | version=8 | mesh_count`，每 mesh

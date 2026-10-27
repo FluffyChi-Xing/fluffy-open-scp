@@ -5590,6 +5590,22 @@ pub(crate) fn bundled_registry_path(app: &AppHandle) -> Option<PathBuf> {
         .filter(|path| path.is_file())
 }
 
+/// 组件库 prop bin 语义目录：树/车辆/垃圾桶/代售牌子四类全量条目
+/// （resourceID + 分类 + 可放置 RW4 模型）。机制见 crate::prop_models。
+#[tauri::command]
+pub async fn list_prop_bin_catalog(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::prop_models::PropBinCatalogEntry>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::prop_models::prop_bin_catalog(&manager, bundled_registry.as_deref())
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
+}
+
 pub(crate) fn package_registry(
     store: &sc_store::Store,
     manager: &PackageManager,

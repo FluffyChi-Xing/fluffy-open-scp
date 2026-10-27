@@ -4,18 +4,19 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { tauriApi } from "@/api";
-import type { PropUnit, Tgi } from "@/api/tauri";
+import type { PropBinCatalogEntry, PropUnit, Tgi } from "@/api/tauri";
 import {
-  CATEGORY_LABELS,
+  CATEGORY_LABEL_KEYS,
   propSemanticCategory,
   type AssetCategory,
 } from "@/pages/packages/components/property-editor/assetCategories";
 import type { PlacePayload } from "./useWorkbenchAsset";
 
 /**
- * 右栏"组件库"：从已打开包的命名模型目录 + 当前资产引用的 prop 兜底
- * 合并出可放置组件；lights/spawners/effects/paths 为参数化预设。
- * 条目 pointerdown 拾起 → 工作台壳跟踪指针 → 视口地面落点放置。
+ * 右栏"组件库"：prop bin 语义目录（后端 list_prop_bin_catalog：树/车辆/
+ * 垃圾桶/代售牌子/杂件，resourceID→模型全链解析）优先分组，命名模型目录
+ * （list_model_catalog）排除已覆盖模型后按包兜底。lights/spawners/effects/
+ * paths 为参数化预设。条目 pointerdown 拾起 → 视口地面落点放置。
  */
 const props = defineProps<{
   editEnabled: boolean;
@@ -62,7 +63,14 @@ async function loadCatalog() {
   if (catalog.value.length || loading.value) return;
   loading.value = true;
   try {
-    catalog.value = await tauriApi.packages.listModelCatalog();
+    const [models, bins] = await Promise.all([
+      tauriApi.packages.listModelCatalog(),
+      tauriApi.packages
+        .listPropBinCatalog()
+        .catch(() => [] as PropBinCatalogEntry[]),
+    ]);
+    catalog.value = models;
+    binCatalog.value = bins;
   } catch {
     catalog.value = [];
   } finally {
@@ -85,14 +93,51 @@ interface CatalogEntry {
   name: string;
   size: number;
   template?: PropUnit;
+  /** prop bin 语义类别（语义目录条目携带；旧命名目录条目为空）。 */
+  binCategory?: PropBinCatalogEntry["category"];
+  /** 语义目录 resourceId（放置继承引擎参数）。 */
+  binResourceId?: number;
 }
+
+/** 语义目录固定组序：四个明确目标在前，杂件桶次之。 */
+const BIN_CATEGORY_ORDER: PropBinCatalogEntry["category"][] = [
+  "trees",
+  "vehicles",
+  "waste",
+  "signs",
+  "misc",
+];
+const binCatalog = ref<PropBinCatalogEntry[]>([]);
 
 const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
   const keyword = search.value.trim().toLowerCase();
-  const matched: CatalogEntry[] = catalog.value
-    .map((entry) => ({ ...entry }))
+
+  // 1) prop bin 语义目录：类别优先、跨包聚合（树/车辆/垃圾桶/代售牌子/杂件）
+  const binEntries: CatalogEntry[] = binCatalog.value
+    .map((bin): CatalogEntry => ({
+      packageId: bin.modelPackageId,
+      instance: bin.model.instance,
+      group: bin.model.group,
+      name: bin.name,
+      size: 0,
+      template: props.templateOf(bin.resourceId),
+      binCategory: bin.category,
+      binResourceId: bin.resourceId,
+    }))
     .filter((entry) =>
       keyword ? entry.name.toLowerCase().includes(keyword) : true,
+    );
+  const binModelKeys = new Set(
+    binEntries.map((entry) => `${entry.packageId}:${entry.instance}`),
+  );
+
+  // 2) 旧命名模型目录：排除已被语义目录覆盖的模型（按 包:实例 去重）
+  const matched: CatalogEntry[] = catalog.value
+    .map((entry) => ({ ...entry }))
+    .filter(
+      (entry) =>
+        !binModelKeys.has(`${entry.packageId}:${entry.instance}`) &&
+        (keyword ? entry.name.toLowerCase().includes(keyword) : true),
     );
   // 引用了但目录缺席的模型（纯 hex 名被目录噪声过滤排除）→ 兜底补入
   for (const reference of props.referencedModels) {
@@ -117,7 +162,7 @@ const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
       size: 0,
     });
   }
-  const groups = new Map<string, CatalogEntry[]>();
+  const legacyGroups = new Map<string, CatalogEntry[]>();
   for (const entry of matched) {
     const reference = props.referencedModels.find(
       (item) =>
@@ -133,13 +178,29 @@ const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
     );
     const packageLabel =
       entry.packagePath?.split(/[\\/]/).pop() || `Package ${entry.packageId}`;
-    const group = `${packageLabel} · ${CATEGORY_LABELS[category]}`;
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group)!.push(entry);
+    const group = `${packageLabel} · ${t(CATEGORY_LABEL_KEYS[category])}`;
+    if (!legacyGroups.has(group)) legacyGroups.set(group, []);
+    legacyGroups.get(group)!.push(entry);
   }
-  return [...groups.entries()]
-    .map(([name, entries]) => ({ name, entries }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // 3) 语义目录固定组在前，旧命名目录按包·类别在后
+  const groups: { name: string; entries: CatalogEntry[] }[] = [];
+  for (const category of BIN_CATEGORY_ORDER) {
+    const entries = binEntries.filter((entry) => entry.binCategory === category);
+    if (!entries.length) continue;
+    groups.push({
+      name: t(`studio.assetWorkbench.binCategory.${category}`, {
+        count: entries.length,
+      }),
+      entries,
+    });
+  }
+  for (const [name, entries] of [...legacyGroups.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  )) {
+    groups.push({ name, entries });
+  }
+  return groups;
 });
 
 const LIGHT_PRESETS: {

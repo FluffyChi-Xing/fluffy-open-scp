@@ -19,7 +19,7 @@ import {
   unitsFromSchema,
 } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
-import { createUnitEditLayer } from "@/pages/packages/components/property-editor/unitEditLayer";
+import { createUnitEditLayer, mergeUnitOverrides } from "@/pages/packages/components/property-editor/unitEditLayer";
 import {
   usePropertyEditorSession,
   type ModelState,
@@ -449,12 +449,18 @@ export function useWorkbenchAsset(project: string) {
   /** 六槽组装代数：连续绑定/解绑时旧组装不得覆盖新 payload。 */
   let slotComposeEpoch = 0;
 
-  /** draft 生效单元集 = edit 层新增（滤软删除）。 */
-  const draftEffectiveUnits = computed<LotUnitDto[]>(() => [
-    ...draftEdit.addedUnits.filter(
-      (unit) => !draftEdit.deletedIds.has(unitId(unit)),
+  /** draft 生效单元集 = edit 层新增（滤软删除），并应用变换/字段 override。
+   * 不合并 overrides 时：元数据 scale 等字段编辑与拖动 transform 提交只进
+   * 编辑层 override 表，画布永远读不到（2026-10-27 缩放不生效/拖动回原点根因）。 */
+  const draftEffectiveUnits = computed<LotUnitDto[]>(() =>
+    mergeUnitOverrides(
+      draftEdit.addedUnits.filter(
+        (unit) => !draftEdit.deletedIds.has(unitId(unit)),
+      ),
+      draftEdit.overrides,
+      draftEdit.fieldOverrides,
     ),
-  ]);
+  );
 
   /** 当前激活的编辑面：模板/子组件统一从这里取数。 */
   const ui = computed(() => {
