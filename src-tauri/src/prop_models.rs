@@ -752,6 +752,94 @@ pub fn prop_bin_catalog(
     Ok(entries)
 }
 
+// ---------------------------------------------------------------------------
+// 路径条目目录（path entry 选择器，2026-10-27 路径规划研究落地）。
+// 枚举已打开包（含自动注册 EcoGame）G 低 16 位 0xC400 的 B1B104 记录，
+// 解析允许通行类型 allowlist（0x0D6498E8 → 注册表名，如 "Pedestrians"）
+// 与父模板链。威利斯实证：门口短线 entry 418A18B1 allowlist=Pedestrians。
+// ---------------------------------------------------------------------------
+
+/// 路径条目摘要。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathEntrySummary {
+    pub instance: u32,
+    pub group: u32,
+    pub package_id: u64,
+    /// 允许通行类型解析名（注册表有名者；无名条目以 hex 补充）。
+    pub transports: Vec<String>,
+    /// allowlist 原始实例（注册表无名时前端显示 hex）。
+    pub transport_ids: Vec<u32>,
+    /// 父模板 instance（0x00B2CCCB 首环，诊断用）。
+    pub parent: Option<u32>,
+    /// 道路几何参数族是否在场（0x0BD81A2D）。
+    pub has_geometry: bool,
+}
+
+const PATH_ENTRY_GROUP_LOW: u16 = 0xC400;
+const KEY_TRANSPORT_ALLOWLIST: u32 = 0x0D64_98E8;
+
+/// 全量路径条目目录（entry 选择器数据源）。
+pub fn path_entry_catalog(
+    manager: &PackageManager,
+    bundled_registry: Option<&Path>,
+) -> Result<Vec<PathEntrySummary>, PackageError> {
+    let base = manager.all_packages_with_ids()?;
+    let dirs = ecogame_dirs(&base);
+    let eco = ensure_ecogame_registered(manager, &dirs)?;
+    let eco_ids: Vec<u64> = eco.iter().map(|(id, _)| *id).collect();
+    let mut packages = base;
+    packages.extend(eco);
+    if let Ok(mut reg) = REGISTERED_ECOGAME.lock() {
+        reg.extend(eco_ids);
+        reg.sort_unstable();
+        reg.dedup();
+    }
+    let registry = bundled_registry.and_then(|path| sc_registry::Registry::open(path).ok());
+    let instance_name = |instance: u32| -> Option<String> {
+        registry
+            .as_ref()
+            .and_then(|r| r.instances().get(&instance))
+            .map(|record| record.name.trim().to_string())
+            .filter(|n| !n.is_empty())
+    };
+
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut entries: Vec<PathEntrySummary> = Vec::new();
+    for (package_id, pkg) in &packages {
+        for entry in pkg.entries().iter().filter(|e| {
+            e.id.type_id == PROPERTY_RESOURCE_TYPE
+                && (e.id.group as u16) == PATH_ENTRY_GROUP_LOW
+        }) {
+            if !seen.insert(entry.id.instance) {
+                continue;
+            }
+            let Some(file) = parse_record(pkg, entry) else {
+                continue;
+            };
+            let mut transports = Vec::new();
+            let mut transport_ids = Vec::new();
+            for (instance, _, _) in key_list(&file, KEY_TRANSPORT_ALLOWLIST) {
+                transport_ids.push(instance);
+                transports.push(
+                    instance_name(instance).unwrap_or_else(|| format!("0x{instance:08X}")),
+                );
+            }
+            entries.push(PathEntrySummary {
+                instance: entry.id.instance,
+                group: entry.id.group,
+                package_id: *package_id,
+                transports,
+                transport_ids,
+                parent: first_key(&file, KEY_PARENT).map(|(instance, _, _)| instance),
+                has_geometry: has_prop(&file, 0x0BD8_1A2D),
+            });
+        }
+    }
+    entries.sort_by_key(|e| e.instance);
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

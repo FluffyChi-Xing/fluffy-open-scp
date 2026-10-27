@@ -335,6 +335,21 @@ function beginPresetDrag(event: PointerEvent, tab: TabId) {
         </div>
       </div>
 
+      <div v-else-if="activeTab === 'paths'" class="library-groups">
+        <!-- 路径页签：规划面板由工作台壳注入（路径实体状态在 useWorkbenchAsset） -->
+        <slot name="paths">
+          <div class="library-grid">
+            <div
+              class="library-entry"
+              @pointerdown.stop.prevent="beginPresetDrag($event, 'paths')"
+            >
+              <FIcon name="Spline" :size="18" aria-label="" />
+              <span>{{ t("package.groupPaths") }}</span>
+            </div>
+          </div>
+        </slot>
+      </div>
+
       <div v-else class="library-groups">
         <div class="library-grid">
           <div

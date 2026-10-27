@@ -16,17 +16,17 @@ import {
 } from "@/components/ui/resizable";
 import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
-import type { Tgi } from "@/api/tauri";
+import type { PathEntrySummary, Tgi } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import SchemaPropertyViewport from "@/pages/packages/components/property-editor/SchemaPropertyViewport.vue";
 import PropertyEditorOutliner from "@/pages/packages/components/property-editor/PropertyEditorOutliner.vue";
 import PropertyEditorInspector from "@/pages/packages/components/property-editor/PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
+import AssetPathPanel from "./AssetPathPanel.vue";
 import { useEffectPreview } from "@/pages/packages/components/property-editor/effects/useEffectPreview";
 import { useEditorHotkeys } from "@/pages/packages/components/property-editor/useEditorHotkeys";
 import {
-  assetCategory,
   directModelKey,
 } from "@/pages/packages/components/property-editor/assetCategories";
 import { exportLotModel } from "@/composables/useModelExport";
@@ -111,6 +111,14 @@ const selectedScaleEditable = computed(() => {
     asset.addedModelPayloads.value.has(directModelKey(unit))
   );
 });
+const pathPointUnits = computed(
+  () =>
+    (ui.value?.flatUnits ?? []).filter(
+      (unit): unit is import("@/api/tauri").PathPointUnit =>
+        unit.kind === "pathPoint",
+    ),
+);
+
 function commitTransform(id: string, matrix: number[]) {
   // "model" = 草稿导入模型的伪单元：变换存模型通道（随文档持久化）
   if (id === "model") {
@@ -195,7 +203,63 @@ useEventListener(window, "pointerup", (event: PointerEvent) => {
   );
   if (!position) return; // 落点不在地面平面（视线朝天）→ 取消
   pendingSelectId.value = asset.placeUnit(payload, position);
+  // pathPoint 预设 = 进入路径 Draw 模式：首个落点即首点，后续点击续画
+  if (payload.kind === "pathPoint") {
+    startPathDraw();
+    asset.addPathPoint(position);
+    return;
+  }
 });
+
+  // ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
+  const pathDrawing = ref(false);
+  const pathEntries = ref<PathEntrySummary[]>([]);
+  const pathEntriesLoading = ref(false);
+  let viewportDownAt: { x: number; y: number } | null = null;
+
+  async function loadPathEntries(): Promise<void> {
+    if (pathEntries.value.length || pathEntriesLoading.value) return;
+    pathEntriesLoading.value = true;
+    try {
+      pathEntries.value = await tauriApi.packages.listPathEntries();
+    } catch {
+      pathEntries.value = [];
+    } finally {
+      pathEntriesLoading.value = false;
+    }
+  }
+
+  function startPathDraw(): void {
+    if (!editEnabled.value) return;
+    if (!asset.activePathId.value) asset.createPath();
+    pathDrawing.value = true;
+    void loadPathEntries();
+  }
+
+  function finishPathDraw(): void {
+    asset.finishPath();
+    pathDrawing.value = false;
+  }
+
+  /** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */
+  function onViewportPointerDown(event: PointerEvent): void {
+    if (!pathDrawing.value || event.button !== 0) return;
+    viewportDownAt = { x: event.clientX, y: event.clientY };
+  }
+  function onViewportPointerUp(event: PointerEvent): void {
+    if (!pathDrawing.value || event.button !== 0 || !viewportDownAt) return;
+    const moved = Math.hypot(
+      event.clientX - viewportDownAt.x,
+      event.clientY - viewportDownAt.y,
+    );
+    viewportDownAt = null;
+    if (moved > 6) return;
+    const position = viewportRef.value?.groundPointAt(
+      event.clientX,
+      event.clientY,
+    );
+    if (position) asset.addPathPoint(position);
+  }
 
 // ---- 热键（sheet 级作用域同 PE）----
 useEditorHotkeys(
@@ -207,6 +271,10 @@ useEditorHotkeys(
     {
       combo: "escape",
       handler: () => {
+        if (pathDrawing.value) {
+          finishPathDraw();
+          return;
+        }
         if (tool.value !== "select") tool.value = "select";
         else asset.selectUnit(null);
       },
@@ -800,7 +868,14 @@ function templateOf(resourceId: number) {
       <ResizablePanel id="maw-center" :default-size="57" :min-size="30">
         <Resizable direction="vertical" class="maw-center">
           <ResizablePanel id="maw-viewport" :default-size="64" :min-size="22">
-            <div class="maw-viewport">
+            <div
+                   class="maw-viewport"
+                   @pointerdown="onViewportPointerDown"
+                   @pointerup="onViewportPointerUp"
+                 >
+                <p v-if="pathDrawing" class="maw-draw-hint" role="status">
+                  {{ t("studio.assetWorkbench.pathDrawHint") }}
+                </p>
               <template v-if="ui">
                 <p v-if="ui.loadError" class="maw-load-error" role="alert">
                   {{ t(ui.loadError) }}
@@ -923,7 +998,26 @@ function templateOf(resourceId: number) {
                     :prop-tree-ids="ui.propTreeIds"
                     :template-of="templateOf"
                     @place="placementPayload = $event"
-                  />
+                  >
+                    <template #paths>
+                      <AssetPathPanel
+                        :paths="asset.draftPaths.value"
+                        :active-path-id="asset.activePathId.value"
+                        :focused-path-id="asset.focusedPathId.value"
+                        :drawing="pathDrawing"
+                        :edit-enabled="editEnabled"
+                        :path-points="pathPointUnits"
+                        :entries="pathEntries"
+                        :entries-loading="pathEntriesLoading"
+                        @begin-draw="startPathDraw"
+                        @finish-draw="finishPathDraw"
+                        @undo-point="asset.removeLastPathPoint"
+                        @focus="asset.setFocusedPath($event)"
+                        @update="(id, patch) => asset.updatePath(id, patch)"
+                        @remove="asset.deletePath"
+                      />
+                    </template>
+                  </AssetComponentLibrary>
                   <AssetLotPanel
                     v-else-if="rightTab === 'lot'"
                     :lot-size="ui.lotSize"
@@ -1440,5 +1534,19 @@ function templateOf(resourceId: number) {
 .tgi-submit {
   justify-content: center;
   margin-top: 2px;
+}
+
+.maw-draw-hint {
+  background: var(--surface-elevated);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 11px;
+  margin: 8px;
+  padding: 4px 10px;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  z-index: 5;
 }
 </style>

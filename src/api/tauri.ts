@@ -746,6 +746,17 @@ export interface PropBinCatalogEntry {
   modelPackageId: number;
   source: string;
 }
+/** 路径条目摘要（list_path_entries；工作台 entry 选择器数据源）。 */
+export interface PathEntrySummary {
+  instance: number;
+  group: number;
+  packageId: number;
+  /** 允许通行类型解析名（如 "Pedestrians"）。 */
+  transports: string[];
+  transportIds: number[];
+  parent: number | null;
+  hasGeometry: boolean;
+}
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。
  * 容器（小端）：`magic("LOTM") | version=8 | mesh_count`，每 mesh

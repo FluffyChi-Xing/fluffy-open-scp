@@ -5606,6 +5606,21 @@ pub async fn list_prop_bin_catalog(
     .map_err(CommandError::from)
 }
 
+/// 路径条目目录（工作台 entry 选择器数据源；机制见 crate::prop_models）。
+#[tauri::command]
+pub async fn list_path_entries(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::prop_models::PathEntrySummary>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::prop_models::path_entry_catalog(&manager, bundled_registry.as_deref())
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
+}
+
 pub(crate) fn package_registry(
     store: &sc_store::Store,
     manager: &PackageManager,

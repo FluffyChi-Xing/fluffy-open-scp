@@ -21,6 +21,12 @@ import {
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import { createUnitEditLayer, mergeUnitOverrides } from "@/pages/packages/components/property-editor/unitEditLayer";
 import {
+  nextPathId,
+  recomputePathTangents,
+  type Vec3,
+  type WorkbenchPath,
+} from "./pathPlanning";
+import {
   usePropertyEditorSession,
   type ModelState,
   type UnitGrouping,
@@ -48,6 +54,8 @@ interface WorkbenchSourceBlock {
   tgi?: Tgi;
   lotSize?: [number, number] | null;
   menu?: WorkbenchMenuBinding;
+  /** 路径实体（entry/scope/roadConnect + 有序点引用；几何在 pathPoint 单元）。 */
+  paths?: WorkbenchPath[];
   /** 草稿模型伪单元变换（行主序 12 floats）。 */
   modelTransform?: number[] | null;
   /** 六槽材质绑定（项目内相对路径）。 */
@@ -523,7 +531,7 @@ export function useWorkbenchAsset(project: string) {
         modelLods: [],
         activeLod: 0,
         modelState: draftModelState.value,
-        grouping: groupUnits(units),
+        grouping: groupUnits(viewUnits(units)),
         flatUnits: units,
         selectedUnit:
           units.find((unit) => unitId(unit) === draftSelectedId.value) ?? null,
@@ -643,6 +651,9 @@ export function useWorkbenchAsset(project: string) {
               sourceLot: appliedLot.value ? { ...appliedLot.value } : null,
             },
       menu: { ...menu },
+      // 路径实体（2026-10-27 路径规划）：几何在 pathPoint 单元，这里存
+      // entry/scope/roadConnect 与有序点引用；恢复见 restoreUnits。
+      paths: draftPaths.value.map((path) => ({ ...path })),
     } satisfies WorkbenchSourceBlock;
     return document;
   });
@@ -871,6 +882,123 @@ export function useWorkbenchAsset(project: string) {
       if (unit.kind === kind && unit.index > max) max = unit.index;
     }
     return max + 1;
+  }
+
+  // ---- 路径规划（2026-10-27）：路径为一等实体，几何挂在 pathPoint 单元 ----
+  const draftPaths = ref<WorkbenchPath[]>([]);
+  /** 绘制中的路径（Draw 模式点击落点追加到它）。 */
+  const activePathId = ref<string | null>(null);
+  /** 聚焦路径：视口折线只画它（多路径防串线；冻结区视口改造前的前离方案）。 */
+  const focusedPathId = ref<string | null>(null);
+
+  function pathById(id: string): WorkbenchPath | null {
+    return draftPaths.value.find((path) => path.id === id) ?? null;
+  }
+
+  function unitPosition(id: string): Vec3 | null {
+    const unit = ui.value?.flatUnits.find((candidate) => unitId(candidate) === id);
+    return unit && unit.kind === "pathPoint" ? unit.point : null;
+  }
+
+  /** 重算路径全点切线与 pointIndex（引擎要求点/切线等长；经字段 override 走
+   * 可撤销编辑层）。 */
+  function refreshPathGeometry(path: WorkbenchPath): void {
+    const edit = ui.value?.edit;
+    if (!edit) return;
+    const positions = path.pointIds.map((id) => unitPosition(id));
+    const tangents = recomputePathTangents(positions);
+    path.pointIds.forEach((id, index) => {
+      edit.setUnitFields(id, {
+        tangent: tangents[index] ?? null,
+        pointIndex: index,
+      });
+    });
+  }
+
+  function createPath(label?: string): string {
+    const id = nextPathId(draftPaths.value.map((path) => path.id));
+    const count = draftPaths.value.length + 1;
+    draftPaths.value = [
+      ...draftPaths.value,
+      {
+        id,
+        label: label ?? `#${count}`,
+        entry: null,
+        scope: "local",
+        roadConnect: false,
+        pointIds: [],
+      },
+    ];
+    activePathId.value = id;
+    focusedPathId.value = id;
+    return id;
+  }
+
+  /** Draw 模式点击落点：把点追加进当前路径（无激活路径则先建一条）。 */
+  function addPathPoint(position: [number, number, number]): string | null {
+    const edit = ui.value?.edit;
+    if (!edit) return null;
+    let path = activePathId.value ? pathById(activePathId.value) : null;
+    if (!path) {
+      const id = createPath();
+      path = pathById(id);
+    }
+    if (!path) return null;
+    const unit: LotUnitDto = {
+      kind: "pathPoint",
+      index: nextIndexOf("pathPoint"),
+      point: position,
+      tangent: null,
+      pointIndex: path.pointIds.length,
+      fields: [],
+    } as unknown as LotUnitDto;
+    edit.addUnit(unit);
+    const id = unitId(unit);
+    path.pointIds.push(id);
+    refreshPathGeometry(path);
+    selectUnit(id);
+    return id;
+  }
+
+  function removeLastPathPoint(): void {
+    const path = activePathId.value ? pathById(activePathId.value) : null;
+    const edit = ui.value?.edit;
+    if (!path || !edit || !path.pointIds.length) return;
+    const id = path.pointIds.pop()!;
+    edit.removeUnit(id);
+    refreshPathGeometry(path);
+  }
+
+  function finishPath(): void {
+    activePathId.value = null;
+  }
+
+  function updatePath(id: string, patch: Partial<WorkbenchPath>): void {
+    const path = pathById(id);
+    if (!path) return;
+    draftPaths.value = draftPaths.value.map((candidate) =>
+      candidate.id === id ? { ...candidate, ...patch } : candidate,
+    );
+  }
+
+  function deletePath(id: string): void {
+    const path = pathById(id);
+    const edit = ui.value?.edit;
+    if (path && edit) for (const pointId of path.pointIds) edit.removeUnit(pointId);
+    draftPaths.value = draftPaths.value.filter((candidate) => candidate.id !== id);
+    if (activePathId.value === id) activePathId.value = null;
+    if (focusedPathId.value === id) focusedPathId.value = null;
+  }
+
+  /** 视口分组聚焦：聚焦路径时只画该路径的折线（其余 pathPoint 隐藏出折线，
+   * 单元本身仍在 flatUnits/文档里）。 */
+  function viewUnits(units: LotUnitDto[]): LotUnitDto[] {
+    const focus = focusedPathId.value ? pathById(focusedPathId.value) : null;
+    if (!focus) return units;
+    const visible = new Set(focus.pointIds);
+    return units.filter(
+      (unit) => unit.kind !== "pathPoint" || visible.has(unitId(unit)),
+    );
   }
 
   function selectUnit(id: string | null) {
@@ -1115,8 +1243,17 @@ export function useWorkbenchAsset(project: string) {
     const editor = document.editor as {
       groups?: Record<string, boolean>;
       unitVisibility?: Record<string, boolean>;
+      paths?: WorkbenchPath[];
     };
     Object.assign(current.groupVisibility, editor?.groups ?? {});
+    if (current.editMode === "draft") {
+      draftPaths.value = (editor?.paths ?? []).map((path) => ({
+        ...path,
+        pointIds: [...path.pointIds],
+      }));
+      focusedPathId.value = null;
+      activePathId.value = null;
+    }
     const hidden = new Set(
       Object.entries(editor?.unitVisibility ?? {})
         .filter(([, visible]) => !visible)
@@ -1314,6 +1451,18 @@ export function useWorkbenchAsset(project: string) {
     placeUnit,
     deleteUnit,
     selectUnit,
+    draftPaths,
+    activePathId,
+    focusedPathId,
+    createPath,
+    addPathPoint,
+    removeLastPathPoint,
+    finishPath,
+    updatePath,
+    deletePath,
+    setFocusedPath: (id: string | null) => {
+      focusedPathId.value = id;
+    },
     setDraftLotSize,
     applyLotPreset,
     setModelTransform,
