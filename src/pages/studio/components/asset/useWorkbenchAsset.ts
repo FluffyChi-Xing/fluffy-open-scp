@@ -21,6 +21,7 @@ import {
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import { createUnitEditLayer, mergeUnitOverrides } from "@/pages/packages/components/property-editor/unitEditLayer";
 import {
+  adoptOrphanPaths,
   nextPathId,
   recomputePathTangents,
   type Vec3,
@@ -1252,6 +1253,10 @@ export function useWorkbenchAsset(project: string) {
         ...path,
         pointIds: [...path.pointIds],
       }));
+      // 孤儿点收养：只有点没有路径实体的历史文档，按 pointIndex
+      // 自动建一条路径承接（幂等——已被引用的点不会再收）
+      const adopted = adoptOrphanPaths(draftPaths.value, restored);
+      if (adopted) draftPaths.value = adopted;
       focusedPathId.value = null;
       activePathId.value = null;
     }

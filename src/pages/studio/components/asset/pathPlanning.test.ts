@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LotUnitDto } from "@/api/tauri";
 import {
+  adoptOrphanPaths,
   nextPathId,
   pathAutoTangent,
   pathPointPositions,
@@ -112,5 +113,30 @@ describe("pathPointPositions", () => {
       point(1, 2, 3),
       null,
     ]);
+  });
+});
+
+describe("adoptOrphanPaths", () => {
+  it("adopts unreferenced pathPoints sorted by pointIndex", () => {
+    const units = [
+      pathPointUnit(3, point(3, 0), null),
+      pathPointUnit(1, point(1, 0), null),
+    ];
+    const result = adoptOrphanPaths([], units);
+    expect(result).not.toBeNull();
+    expect(result![0].pointIds).toEqual(["pathPoint:1", "pathPoint:3"]);
+    expect(result![0].entry).toBeNull();
+  });
+  it("skips points already referenced by an existing path", () => {
+    const path: WorkbenchPath = { ...base, pointIds: ["pathPoint:0"] };
+    const units = [pathPointUnit(0, point(0, 0)), pathPointUnit(2, point(2, 0))];
+    const result = adoptOrphanPaths([path], units);
+    expect(result![0].pointIds).toEqual(["pathPoint:0"]);
+    expect(result![1].pointIds).toEqual(["pathPoint:2"]);
+    expect(result![1].id).toBe("path:2");
+  });
+  it("returns null when no orphans exist (idempotent)", () => {
+    const path: WorkbenchPath = { ...base, pointIds: ["pathPoint:0"] };
+    expect(adoptOrphanPaths([path], [pathPointUnit(0, point(0, 0))])).toBeNull();
   });
 });

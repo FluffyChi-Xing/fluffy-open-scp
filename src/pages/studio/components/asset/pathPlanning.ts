@@ -96,3 +96,39 @@ export function pathPointPositions(
     return null;
   });
 }
+
+/**
+ * 孤儿点收养：文档里存在 pathPoint 单元但没有任何路径实体引用它们时
+ * （历史会话只落了点、实体通道丢失），按 pointIndex 排序收养进一条
+ * 新路径。无孤儿返回 null。恢复链每次重建文档时调用，幂等。
+ */
+export function adoptOrphanPaths(
+  paths: WorkbenchPath[],
+  units: LotUnitDto[],
+): WorkbenchPath[] | null {
+  const referenced = new Set(paths.flatMap((path) => path.pointIds));
+  const orphans = units
+    .filter(
+      (unit): unit is LotUnitDto & { pointIndex: number | null } =>
+        unit.kind === "pathPoint" && !referenced.has(`pathPoint:${unit.index}`),
+    )
+    .sort((a, b) => (a.pointIndex ?? a.index) - (b.pointIndex ?? b.index));
+  if (!orphans.length) return null;
+  let max = 0;
+  const count = paths.length;
+  for (const path of paths) {
+    const match = /^path:(\d+)$/.exec(path.id);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return [
+    ...paths,
+    {
+      id: `path:${max + 1}`,
+      label: `#${count + 1}`,
+      entry: null,
+      scope: "local",
+      roadConnect: false,
+      pointIds: orphans.map((unit) => `pathPoint:${unit.index}`),
+    },
+  ];
+}
