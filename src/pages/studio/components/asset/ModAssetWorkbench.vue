@@ -204,12 +204,7 @@ useEventListener(window, "pointerup", (event: PointerEvent) => {
   );
   if (!position) return; // 落点不在地面平面（视线朝天）→ 取消
   pendingSelectId.value = asset.placeUnit(payload, position);
-  // pathPoint 预设 = 进入路径 Draw 模式：首个落点即首点，后续点击续画
-  if (payload.kind === "pathPoint") {
-    startPathDraw();
-    asset.addPathPoint(position);
-    return;
-  }
+
 });
 
   // ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----

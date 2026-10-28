@@ -295,7 +295,7 @@ const SCOPES = ["local", "regional"] as const;
             :disabled="!selectedSource"
             @click="bindTarget"
           >
-            <FIcon name="CheckCheck" :size="12" aria-label="" />
+            <FIcon name="Check" :size="12" aria-label="" />
             {{ t("studio.assetWorkbench.pathSelectTarget") }}
           </button>
           <button

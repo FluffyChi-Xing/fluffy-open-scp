@@ -23,6 +23,7 @@ import { createUnitEditLayer, mergeUnitOverrides } from "@/pages/packages/compon
 import {
   adoptOrphanPaths,
   nextPathId,
+  pathAutoTangent,
   recomputePathTangents,
   type Vec3,
   type WorkbenchPath,
@@ -902,18 +903,24 @@ export function useWorkbenchAsset(project: string) {
     return unit && unit.kind === "pathPoint" ? unit.point : null;
   }
 
-  /** 重算路径全点切线与 pointIndex（引擎要求点/切线等长；经字段 override 走
-   * 可撤销编辑层）。 */
-  function refreshPathGeometry(path: WorkbenchPath): void {
+  /** 追加式路径的派生几何（切线/pointIndex）直接写单元，不走命令栈——
+   * 否则每点 N 条字段命令会让 ctrl+z 第一下毫无视觉变化（"撤不掉"）。
+   * add/remove 各自只有一条 undo 命令（单元增删本身）。 */
+  function syncPathTails(path: WorkbenchPath): void {
     const edit = ui.value?.edit;
     if (!edit) return;
     const positions = path.pointIds.map((id) => unitPosition(id));
     const tangents = recomputePathTangents(positions);
-    path.pointIds.forEach((id, index) => {
-      edit.setUnitFields(id, {
-        tangent: tangents[index] ?? null,
-        pointIndex: index,
-      });
+    const touched = path.pointIds.slice(-2);
+    touched.forEach((id, offset) => {
+      const index = path.pointIds.length - touched.length + offset;
+      const unit = edit.addedUnits.find(
+        (candidate) => unitId(candidate) === id,
+      );
+      if (unit && unit.kind === "pathPoint") {
+        unit.tangent = tangents[index] ?? null;
+        unit.pointIndex = index;
+      }
     });
   }
 
@@ -951,18 +958,21 @@ export function useWorkbenchAsset(project: string) {
       path = pathById(id);
     }
     if (!path) return null;
+    const prev = path.pointIds.length
+      ? unitPosition(path.pointIds[path.pointIds.length - 1])
+      : null;
     const unit: LotUnitDto = {
       kind: "pathPoint",
       index: nextIndexOf("pathPoint"),
       point: position,
-      tangent: null,
+      tangent: pathAutoTangent(prev, position, null),
       pointIndex: path.pointIds.length,
       fields: [],
     } as unknown as LotUnitDto;
     edit.addUnit(unit);
     const id = unitId(unit);
     path.pointIds.push(id);
-    refreshPathGeometry(path);
+    syncPathTails(path);
     selectUnit(id);
     return id;
   }
@@ -973,7 +983,7 @@ export function useWorkbenchAsset(project: string) {
     if (!path || !edit || !path.pointIds.length) return;
     const id = path.pointIds.pop()!;
     edit.removeUnit(id);
-    refreshPathGeometry(path);
+    syncPathTails(path);
   }
 
   function finishPath(): void {
@@ -1127,6 +1137,13 @@ export function useWorkbenchAsset(project: string) {
     const edit = ui.value?.edit;
     if (!edit) return;
     edit.removeUnit(id);
+    // 路径实体同步摘除悬空点引用（否则校验/折线残留幽灵点）
+    for (const path of draftPaths.value) {
+      if (path.pointIds.includes(id)) {
+        path.pointIds = path.pointIds.filter((pointId) => pointId !== id);
+        syncPathTails(path);
+      }
+    }
     if (ui.value?.selectedId.value === id) selectUnit(null);
   }
 
