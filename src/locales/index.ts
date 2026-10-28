@@ -1029,6 +1029,10 @@ const messages = {
         pathScope: "Scope",
         pathRoadConnect: "道路连接",
         pathEmpty: "尚无路径。点「开始绘制」后在地面点击加点。",
+        clipboardCopied: "已复制选中组件，Ctrl+V 粘贴副本",
+        clipboardPasted: "已粘贴组件副本",
+        clipboardPathPointBlocked:
+          "路径点不支持复制粘贴——路径点只能随路径绘制创建",
         pathIssue: {
           "entry-missing": "未绑定 Path Entry —— 引擎会整条跳过这条路径",
           "points-too-few": "有效点位不足 2 个",
@@ -3134,6 +3138,10 @@ const messages = {
         pathScope: "Scope",
         pathRoadConnect: "Road connect",
         pathEmpty: "No paths yet. Click Start drawing, then click the ground to add points.",
+        clipboardCopied: "Component copied — press Ctrl+V to paste a duplicate",
+        clipboardPasted: "Duplicate pasted",
+        clipboardPathPointBlocked:
+          "Path points can't be copied or pasted — they are created only while drawing a path",
         pathIssue: {
           "entry-missing": "No Path Entry bound — the engine skips this path entirely",
           "points-too-few": "Fewer than 2 valid points",

@@ -29,6 +29,7 @@ import {
   type WorkbenchPath,
   type WorkbenchPathSource,
 } from "./path-planning/pathModel";
+import { nextIndexOfKind } from "./clipboard/unitClipboard";
 import {
   usePropertyEditorSession,
   type ModelState,
@@ -880,11 +881,7 @@ export function useWorkbenchAsset(project: string) {
 
   // ---- 组件放置（组件库 pointer 拖拽 → 视口落点）----
   function nextIndexOf(kind: string): number {
-    let max = -1;
-    for (const unit of ui.value?.flatUnits ?? []) {
-      if (unit.kind === kind && unit.index > max) max = unit.index;
-    }
-    return max + 1;
+    return nextIndexOfKind(ui.value?.flatUnits ?? [], kind);
   }
 
   // ---- 路径规划（2026-10-27）：路径为一等实体，几何挂在 pathPoint 单元 ----

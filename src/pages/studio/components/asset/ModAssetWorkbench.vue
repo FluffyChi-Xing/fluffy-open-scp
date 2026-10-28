@@ -27,11 +27,10 @@ import AssetPathPanel from "./AssetPathPanel.vue";
 import type { WorkbenchPathSource } from "./path-planning/pathModel";
 import { useEffectPreview } from "@/pages/packages/components/property-editor/effects/useEffectPreview";
 import { useEditorHotkeys } from "@/pages/packages/components/property-editor/useEditorHotkeys";
-import {
-  directModelKey,
-} from "@/pages/packages/components/property-editor/assetCategories";
+import { directModelKey } from "@/pages/packages/components/property-editor/assetCategories";
 import { exportLotModel } from "@/composables/useModelExport";
 import AssetSourceTree from "./AssetSourceTree.vue";
+import { useUnitClipboard } from "./clipboard/useUnitClipboard";
 import AssetComponentLibrary from "./AssetComponentLibrary.vue";
 import AssetLotPanel from "./AssetLotPanel.vue";
 import AssetBlueprintCanvas from "./AssetBlueprintCanvas.vue";
@@ -112,12 +111,11 @@ const selectedScaleEditable = computed(() => {
     asset.addedModelPayloads.value.has(directModelKey(unit))
   );
 });
-const pathPointUnits = computed(
-  () =>
-    (ui.value?.flatUnits ?? []).filter(
-      (unit): unit is import("@/api/tauri").PathPointUnit =>
-        unit.kind === "pathPoint",
-    ),
+const pathPointUnits = computed(() =>
+  (ui.value?.flatUnits ?? []).filter(
+    (unit): unit is import("@/api/tauri").PathPointUnit =>
+      unit.kind === "pathPoint",
+  ),
 );
 
 function commitTransform(id: string, matrix: number[]) {
@@ -204,58 +202,69 @@ useEventListener(window, "pointerup", (event: PointerEvent) => {
   );
   if (!position) return; // 落点不在地面平面（视线朝天）→ 取消
   pendingSelectId.value = asset.placeUnit(payload, position);
-
 });
 
-  // ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
-  const pathDrawing = ref(false);
-  let viewportDownAt: { x: number; y: number } | null = null;
+// ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
+const pathDrawing = ref(false);
+let viewportDownAt: { x: number; y: number } | null = null;
 
-  function startPathDraw(target?: {
-    entry: string | null;
-    source: WorkbenchPathSource;
-  }): void {
-    if (!editEnabled.value) return;
-    if (!target) {
-      toast.warning(t("studio.assetWorkbench.pathTargetRequired"));
-      return;
-    }
-    if (!asset.activePathId.value) {
-      asset.createPath({ entry: target.entry, source: target.source });
-    } else {
-      // 已有激活路径：目标变更时补绑（entry/来源回填）
-      asset.updatePath(asset.activePathId.value, {
-        entry: target.entry,
-        source: target.source,
-      });
-    }
-    pathDrawing.value = true;
+function startPathDraw(target?: {
+  entry: string | null;
+  source: WorkbenchPathSource;
+}): void {
+  if (!editEnabled.value) return;
+  if (!target) {
+    toast.warning(t("studio.assetWorkbench.pathTargetRequired"));
+    return;
   }
+  if (!asset.activePathId.value) {
+    asset.createPath({ entry: target.entry, source: target.source });
+  } else {
+    // 已有激活路径：目标变更时补绑（entry/来源回填）
+    asset.updatePath(asset.activePathId.value, {
+      entry: target.entry,
+      source: target.source,
+    });
+  }
+  pathDrawing.value = true;
+}
 
-  function finishPathDraw(): void {
-    asset.finishPath();
-    pathDrawing.value = false;
-  }
+function finishPathDraw(): void {
+  asset.finishPath();
+  pathDrawing.value = false;
+}
 
-  /** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */
-  function onViewportPointerDown(event: PointerEvent): void {
-    if (!pathDrawing.value || event.button !== 0) return;
-    viewportDownAt = { x: event.clientX, y: event.clientY };
-  }
-  function onViewportPointerUp(event: PointerEvent): void {
-    if (!pathDrawing.value || event.button !== 0 || !viewportDownAt) return;
-    const moved = Math.hypot(
-      event.clientX - viewportDownAt.x,
-      event.clientY - viewportDownAt.y,
-    );
-    viewportDownAt = null;
-    if (moved > 6) return;
-    const position = viewportRef.value?.groundPointAt(
-      event.clientX,
-      event.clientY,
-    );
-    if (position) asset.addPathPoint(position);
-  }
+/** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */
+function onViewportPointerDown(event: PointerEvent): void {
+  if (!pathDrawing.value || event.button !== 0) return;
+  viewportDownAt = { x: event.clientX, y: event.clientY };
+}
+function onViewportPointerUp(event: PointerEvent): void {
+  if (!pathDrawing.value || event.button !== 0 || !viewportDownAt) return;
+  const moved = Math.hypot(
+    event.clientX - viewportDownAt.x,
+    event.clientY - viewportDownAt.y,
+  );
+  viewportDownAt = null;
+  if (moved > 6) return;
+  const position = viewportRef.value?.groundPointAt(
+    event.clientX,
+    event.clientY,
+  );
+  if (position) asset.addPathPoint(position);
+}
+
+// ---- 单元剪贴板（逻辑层见 clipboard/；组件只做热键与 toast 映射）----
+const unitClipboard = useUnitClipboard({
+  get selectedUnit() {
+    return ui.value?.selectedUnit ?? null;
+  },
+  get units() {
+    return ui.value?.flatUnits ?? [];
+  },
+  addUnit: (unit) => ui.value?.edit.addUnit(unit),
+  selectUnit: (id) => asset.selectUnit(id),
+});
 
 // ---- 热键（sheet 级作用域同 PE）----
 useEditorHotkeys(
@@ -273,6 +282,25 @@ useEditorHotkeys(
         }
         if (tool.value !== "select") tool.value = "select";
         else asset.selectUnit(null);
+      },
+    },
+    {
+      combo: "ctrl+c",
+      handler: () => {
+        const status = unitClipboard.copy();
+        if (status === "copied")
+          toast.success(t("studio.assetWorkbench.clipboardCopied"));
+        else if (status === "blocked-path-point")
+          toast.info(t("studio.assetWorkbench.clipboardPathPointBlocked"));
+      },
+    },
+    {
+      combo: "ctrl+v",
+      handler: () => {
+        // 编辑锁下粘贴是写操作，与组件库放置一并拒绝
+        if (!editEnabled.value) return;
+        if (unitClipboard.paste() === "pasted")
+          toast.success(t("studio.assetWorkbench.clipboardPasted"));
       },
     },
     { combo: "ctrl+z", handler: () => ui.value?.edit.undo() },
@@ -333,13 +361,21 @@ async function onBlendImported(result: {
     const materialBindings = Object.fromEntries(
       Object.entries(byMaterial).flatMap(([name, slots]) => {
         const entry: Record<string, string> = {};
-        for (const key of ["slot1", "slot2", "slot3", "slot4", "slot5"] as const) {
-          if (typeof slots[key] === "string" && slots[key]) entry[key] = slots[key];
+        for (const key of [
+          "slot1",
+          "slot2",
+          "slot3",
+          "slot4",
+          "slot5",
+        ] as const) {
+          if (typeof slots[key] === "string" && slots[key])
+            entry[key] = slots[key];
         }
         return Object.keys(entry).length ? [[name, entry]] : [];
       }),
     );
-    if (Object.keys(materialBindings).length) binding.byMaterial = materialBindings;
+    if (Object.keys(materialBindings).length)
+      binding.byMaterial = materialBindings;
     if (Object.keys(binding).length) {
       await asset.composeSlotMaterials(binding);
       toast.success(
@@ -865,13 +901,13 @@ function templateOf(resourceId: number) {
         <Resizable direction="vertical" class="maw-center">
           <ResizablePanel id="maw-viewport" :default-size="64" :min-size="22">
             <div
-                   class="maw-viewport"
-                   @pointerdown="onViewportPointerDown"
-                   @pointerup="onViewportPointerUp"
-                 >
-                <p v-if="pathDrawing" class="maw-draw-hint" role="status">
-                  {{ t("studio.assetWorkbench.pathDrawHint") }}
-                </p>
+              class="maw-viewport"
+              @pointerdown="onViewportPointerDown"
+              @pointerup="onViewportPointerUp"
+            >
+              <p v-if="pathDrawing" class="maw-draw-hint" role="status">
+                {{ t("studio.assetWorkbench.pathDrawHint") }}
+              </p>
               <template v-if="ui">
                 <p v-if="ui.loadError" class="maw-load-error" role="alert">
                   {{ t(ui.loadError) }}
