@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSelect from "@/components/ui/FSelect.vue";
+import { Switch } from "@/components/ui/switch";
 import type { PathEntrySummary, PathPointUnit } from "@/api/tauri";
 import {
   pathPointPositions,
@@ -182,18 +183,19 @@ const SCOPES = ["local", "regional"] as const;
               "
             />
           </label>
-          <label class="path-check">
-            <input
-              type="checkbox"
-              :checked="row.path.roadConnect"
-              @change="
+          <div class="path-check">
+            <Switch
+              :model-value="row.path.roadConnect"
+              :disabled="!editEnabled"
+              :aria-label="t('studio.assetWorkbench.pathRoadConnect')"
+              @update:model-value="
                 emit('update', row.path.id, {
-                  roadConnect: ($event.target as HTMLInputElement).checked,
+                  roadConnect: Boolean($event),
                 })
               "
             />
             <span>{{ t("studio.assetWorkbench.pathRoadConnect") }}</span>
-          </label>
+          </div>
         </div>
         <ul v-if="row.issues.length" class="path-issues">
           <li v-for="issue in row.issues" :key="issue" class="path-issue">
@@ -327,15 +329,25 @@ const SCOPES = ["local", "regional"] as const;
   padding: 0 6px;
 }
 .path-row {
+  align-items: flex-end;
   display: flex;
+
+/* FSelect 默认 38px 高（表单级），路径卡内对齐 24px 输入的紧凑档 */
+.path-field :deep(.f-select) {
+  background: var(--surface);
+  font-size: 11px;
+  min-height: 24px;
+  padding: 0 6px;
+}
   gap: 8px;
 }
 .path-check {
   align-items: center;
   display: flex;
   font-size: 10.5px;
-  gap: 4px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-bottom: 1px;
+  white-space: nowrap;
 }
 .path-entry-label {
   color: var(--muted-foreground);

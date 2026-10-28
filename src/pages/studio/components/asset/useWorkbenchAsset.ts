@@ -1243,11 +1243,12 @@ export function useWorkbenchAsset(project: string) {
     const editor = document.editor as {
       groups?: Record<string, boolean>;
       unitVisibility?: Record<string, boolean>;
-      paths?: WorkbenchPath[];
+      workbench?: { paths?: WorkbenchPath[] };
     };
     Object.assign(current.groupVisibility, editor?.groups ?? {});
     if (current.editMode === "draft") {
-      draftPaths.value = (editor?.paths ?? []).map((path) => ({
+      // 键位与 schemaDocument 写出侧一致：editor.workbench.paths
+      draftPaths.value = (editor?.workbench?.paths ?? []).map((path) => ({
         ...path,
         pointIds: [...path.pointIds],
       }));
