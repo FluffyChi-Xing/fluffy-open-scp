@@ -4,16 +4,26 @@ import { useI18n } from "vue-i18n";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import { isTauri, tauriApi } from "@/api";
+import { isTauri } from "@/api";
+import { useToast } from "@/composables/useToast";
 import WorkspaceDocument from "./components/WorkspaceDocument.vue";
 import WorkspaceTree, { type TreeAction } from "./components/WorkspaceTree.vue";
 import { useWorkspace } from "@/composables/useWorkspace";
 
 const { t } = useI18n();
+const toast = useToast();
 const workspace = useWorkspace();
-const { status, entries, selectedPath, document, saving, error, isConfigured } =
-  workspace;
-const rootInput = shallowRef("");
+const {
+  status,
+  entries,
+  selectedPath,
+  document,
+  saving,
+  error,
+  isConfigured,
+  legacyStatus,
+  syncing,
+} = workspace;
 const pending = shallowRef<TreeAction | null>(null);
 const nameInput = shallowRef("");
 const moveTarget = shallowRef("");
@@ -41,18 +51,15 @@ const moveTargets = computed(() => {
 onMounted(async () => {
   await workspace.loadStatus();
   if (workspace.isConfigured.value) await workspace.loadEntries();
+  await workspace.loadLegacyStatus();
 });
-async function configureRoot() {
-  if (!rootInput.value.trim()) return;
-  await workspace.setRoot(rootInput.value.trim());
-  await workspace.loadEntries();
-}
-async function chooseRoot() {
-  if (!isTauri()) return;
-  const path = await tauriApi.workspace.pickDirectory();
-  if (!path) return;
-  rootInput.value = path;
-  await configureRoot();
+/** 历史目录一次性迁移（2026-10-29 目录治理）：拷入安装目录 docs/ 后
+ * 切换配置；无待同步内容时按钮置灰（legacyStatus.canSync=false）。 */
+async function syncLegacy() {
+  const copied = await workspace.syncLegacy();
+  if (copied > 0) {
+    toast.success(t("workspace.synced", { count: copied }));
+  }
 }
 function openFile(path: string) {
   void workspace.select(path);
@@ -132,36 +139,12 @@ async function confirmAction() {
       </div>
       <div>
         <FTypography :header="3" spacing="none">{{
-          $t("workspace.chooseTitle")
+          $t("workspace.internalMissingTitle")
         }}</FTypography
         ><FTypography paragraphy type="secondary">{{
-          $t("workspace.chooseDescription")
+          $t("workspace.internalMissingDescription")
         }}</FTypography>
       </div>
-      <form class="root-form" @submit.prevent="configureRoot">
-        <label for="workspace-root">{{ $t("workspace.rootLabel") }}</label>
-        <div class="form-row">
-          <input
-            id="workspace-root"
-            v-model="rootInput"
-            :placeholder="$t('workspace.rootPlaceholder')"
-            autocomplete="off"
-          /><button
-            v-if="isTauri()"
-            class="secondary-button"
-            type="button"
-            @click="chooseRoot"
-          >
-            <FIcon name="FolderOpen" :size="16" aria-label="" />{{
-              $t("workspace.chooseFolder")
-            }}</button
-          ><button class="primary-button" type="submit">
-            <FIcon name="FolderOpen" :size="16" aria-label="" />{{
-              $t("workspace.openRoot")
-            }}
-          </button>
-        </div>
-      </form>
       <p v-if="error" class="error-message" role="alert">{{ error }}</p>
     </article>
     <template v-else
@@ -175,6 +158,26 @@ async function confirmAction() {
           }}</FTypography>
         </div>
         <p class="toolbar-hint">{{ $t("workspace.contextHint") }}</p>
+        <button
+          v-if="legacyStatus?.legacyDir"
+          class="secondary-button sync-button"
+          type="button"
+          :disabled="!legacyStatus.canSync || syncing"
+          :title="
+            $t('workspace.syncHint', { count: legacyStatus.pendingCount })
+          "
+          @click="syncLegacy"
+        >
+          <FIcon
+            :name="syncing ? 'Loader2' : 'FolderSync'"
+            :size="16"
+            aria-label=""
+          />{{
+            syncing
+              ? $t("workspace.syncing")
+              : $t("workspace.syncLegacy", { count: legacyStatus.pendingCount })
+          }}
+        </button>
       </div>
       <div class="workspace-grid">
         <WorkspaceTree
@@ -452,6 +455,10 @@ async function confirmAction() {
   gap: 24px;
   justify-content: space-between;
   padding: 18px 20px;
+}
+/* 同步按钮锚定工具栏最右（与项目管理根栏一致的动作区位置） */
+.sync-button {
+  margin-left: auto;
 }
 .folder-form {
   max-width: 430px;

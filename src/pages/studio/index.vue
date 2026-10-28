@@ -4,7 +4,8 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
 import FSheet from "@/components/ui/FSheet.vue";
-import { isTauri, tauriApi } from "@/api";
+import { useToast } from "@/composables/useToast";
+import { isTauri } from "@/api";
 import { useModProjectsStore } from "@/stores/modProjects";
 import ProjectDashboard from "./components/dashboard/ProjectDashboard.vue";
 import ProjectFormSheet from "./components/ProjectFormSheet.vue";
@@ -18,6 +19,7 @@ import type { ModProjectView } from "@/api/tauri";
  * 原多工具卡片页在 /studio/overview（头部"面板总览"进入）。
  */
 const { t } = useI18n();
+const toast = useToast();
 const store = useModProjectsStore();
 
 const formOpen = ref(false);
@@ -72,18 +74,12 @@ async function submitDelete(project: ModProjectView) {
   await store.deleteProject(project.id);
 }
 
-async function pickDevRoot() {
-  const path = await tauriApi.workspace.pickDirectory(
-    t("studio.projects.pickDevRootTitle"),
-  );
-  if (!path) return;
-  try {
-    await store.setDevRoot(path);
-  } catch (cause) {
-    store.error =
-      cause && typeof cause === "object" && "message" in cause
-        ? String(cause.message)
-        : String(cause);
+/** 历史目录一次性迁移（2026-10-29 目录治理）：旧 mod_root 的项目
+ * 文件夹合并拷入安装目录 mods/ 后切换配置；无待同步内容时置灰。 */
+async function syncLegacy() {
+  const copied = await store.syncLegacy();
+  if (copied > 0) {
+    toast.success(t("workspace.synced", { count: copied }));
   }
 }
 
@@ -131,11 +127,29 @@ function statusLabel(status: string): string {
         <code class="root-path" :class="{ missing: !store.devRoot }">{{
           store.devRoot || $t("studio.projects.devRootMissing")
         }}</code>
-        <button class="toolbar-button" type="button" @click="pickDevRoot">
-          <FIcon name="FolderOpen" :size="13" aria-label="" />
-          {{ $t("studio.projects.pickDevRoot") }}
-        </button>
         <span class="spacer"></span>
+        <button
+          v-if="store.legacyStatus?.legacyDir"
+          class="toolbar-button"
+          type="button"
+          :disabled="!store.legacyStatus.canSync || store.syncing"
+          :title="
+            $t('workspace.syncHint', { count: store.legacyStatus.pendingCount })
+          "
+          @click="syncLegacy"
+        >
+          <FIcon
+            :name="store.syncing ? 'Loader2' : 'FolderSync'"
+            :size="13"
+            aria-label=""
+          />{{
+            store.syncing
+              ? $t("workspace.syncing")
+              : $t("workspace.syncLegacy", {
+                  count: store.legacyStatus.pendingCount,
+                })
+          }}
+        </button>
         <button class="toolbar-button" type="button" @click="groupsOpen = true">
           <FIcon name="Tag" :size="13" aria-label="" />
           {{ $t("studio.projects.groups.manage") }}

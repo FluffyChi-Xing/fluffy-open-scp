@@ -273,6 +273,84 @@ pub async fn studio_complete_onboarding(
     .map_err(|error| CommandError::internal(error.to_string()))?
 }
 
+// ── 内部目录迁移（2026-10-29 目录治理）：模组根历史数据同步 ──
+//
+// 与文档工作区（workspace.rs）同语义：旧 mod_root 的项目文件夹合并拷入
+// 内部 mods/ 后切换配置；mod_projects 表记录的 rel_path 不变，切换后
+// folder_path 自动指向新根。遍历预算耗尽报错，不静默截断。
+
+const LEGACY_MODS_SYNC_BUDGET: usize = 50_000;
+
+#[tauri::command]
+pub async fn studio_legacy_status(
+    state: State<'_, AppState>,
+) -> Result<crate::workspace::LegacySyncStatus, CommandError> {
+    let store = Arc::clone(&state.store);
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let internal = crate::internal_dirs::mods_dir(&app)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let configured = store
+            .studio_config()
+            .map_err(ModProjectError::from)?
+            .mod_root;
+        Ok(crate::workspace::legacy_status(&internal, configured, |legacy| {
+            // 口径：全部顶层条目（项目即文件夹；杂散文件也一并计）
+            crate::workspace::legacy_pending_count(legacy, |_entry, _is_dir| true)
+        }))
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[tauri::command]
+pub async fn studio_sync_legacy(
+    state: State<'_, AppState>,
+) -> Result<crate::workspace::LegacySyncOutcome, CommandError> {
+    let store = Arc::clone(&state.store);
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _flow_guard = crate::mod_flow::FLOW_LOCK
+            .lock()
+            .map_err(|_| CommandError::internal("Workflow lock failed"))?;
+        let internal = crate::internal_dirs::mods_dir(&app)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let studio = store.studio_config().map_err(ModProjectError::from)?;
+        let legacy = studio
+            .mod_root
+            .ok_or_else(|| CommandError::new("not_configured", "mod root is not configured"))?;
+        let canonical_legacy = fs::canonicalize(&legacy)
+            .map_err(|error| ModProjectError::Io(error))?;
+        if canonical_legacy == internal || internal.starts_with(&canonical_legacy) {
+            return Err(CommandError::new(
+                "invalid_path",
+                "refusing to sync the internal folder into itself",
+            ));
+        }
+        let mut budget = LEGACY_MODS_SYNC_BUDGET;
+        let copied_count = crate::workspace::copy_tree_merge(
+            &canonical_legacy,
+            &internal,
+            &mut budget,
+        )
+        .map_err(|error| CommandError::new("mod_project_error", error.to_string()))?;
+        store
+            .set_studio_config(Some(&internal.to_string_lossy()), studio.onboarding_completed)
+            .map_err(ModProjectError::from)?;
+        Ok(crate::workspace::LegacySyncOutcome {
+            copied_count,
+            status: crate::workspace::LegacySyncStatus {
+                internal_dir: internal.to_string_lossy().into_owned(),
+                legacy_dir: Some(legacy),
+                can_sync: false,
+                pending_count: 0,
+            },
+        })
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
 // ── 命令：项目 CRUD ──
 
 #[derive(Debug, Clone, Serialize)]

@@ -135,7 +135,7 @@ pub struct MoveRequest {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum WorkspaceError {
+pub(crate) enum WorkspaceError {
     #[error("workspace has not been configured")]
     NotConfigured,
     #[error("studio mod root has not been configured")]
@@ -720,6 +720,214 @@ pub async fn workspace_move(
         fs::rename(&source, &target)
             .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
         refresh_cache(&store, &root).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+// ── 内部目录迁移（2026-10-29 目录治理）：历史数据同步 ──
+//
+// 启动时未配置的工作区根自动落到 exe 目录 docs/（internal_dirs）。历史
+// 用户配置的旧根目录保持不动，由「同步历史数据」按钮一次性把内容拷入
+// 内部目录后再切换配置——拷贝为合并语义（目标已存在条目跳过），符号
+// 链接一律跳过，与工作区其余安全口径一致。
+
+/// 同步遍历预算（文件+目录总数），超出即报错（宁可失败不可静默截断）。
+const LEGACY_SYNC_BUDGET: usize = 20_000;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacySyncStatus {
+    /// 新内部目录。
+    pub internal_dir: String,
+    /// 当前配置指向的旧目录；等于内部目录 = 无历史（前端隐藏按钮）。
+    pub legacy_dir: Option<String>,
+    /// 旧目录存在且有待同步条目（按钮置灰依据）。
+    pub can_sync: bool,
+    /// 待同步条目数（顶层可见条目）。
+    pub pending_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacySyncOutcome {
+    pub copied_count: u64,
+    /// 同步后的最新状态（配置已切到内部目录，can_sync 恒为 false）。
+    pub status: LegacySyncStatus,
+}
+
+/// 递归拷贝目录（合并语义）：目标已存在条目跳过，符号链接跳过；
+/// 返回拷贝的条目数（文件+目录）。预算耗尽报错，不静默截断。
+pub fn copy_tree_merge(
+    source: &Path,
+    target: &Path,
+    budget: &mut usize,
+) -> Result<u64, WorkspaceError> {
+    if *budget == 0 {
+        return Err(WorkspaceError::InvalidPath(
+            "sync budget exhausted".into(),
+        ));
+    }
+    *budget -= 1;
+    let mut copied = 0u64;
+    if !target.is_dir() {
+        fs::create_dir(target)?;
+        copied += 1;
+    }
+    let mut children = fs::read_dir(source)?.collect::<Result<Vec<_>, _>>()?;
+    children.sort_by_key(|entry| entry.file_name());
+    for child in children {
+        if *budget == 0 {
+            return Err(WorkspaceError::InvalidPath(
+                "sync budget exhausted".into(),
+            ));
+        }
+        *budget -= 1;
+        let path = child.path();
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        let dest = target.join(child.file_name());
+        if metadata.is_dir() {
+            copied += copy_tree_merge(&path, &dest, budget)?;
+        } else if metadata.is_file() && !dest.exists() {
+            fs::copy(&path, &dest)?;
+            copied += 1;
+        }
+    }
+    Ok(copied)
+}
+
+/// 目录内容计数：跳过符号链接；`count` 决定条目口径（文档工作区只数
+/// 文件夹与 .md，与 scan_entries 一致；模组根数全部顶层条目）。
+pub fn legacy_pending_count(
+    root: &Path,
+    count: impl Fn(&fs::DirEntry, bool) -> bool,
+) -> u64 {
+    let Ok(children) = fs::read_dir(root) else {
+        return 0;
+    };
+    children
+        .flatten()
+        .filter(|entry| {
+            fs::symlink_metadata(entry.path())
+                .map(|metadata| {
+                    !metadata.file_type().is_symlink()
+                        && count(
+                            entry,
+                            metadata.is_dir(),
+                        )
+                })
+                .unwrap_or(false)
+        })
+        .count() as u64
+}
+
+pub fn legacy_status(
+    internal: &Path,
+    configured: Option<String>,
+    pending_of: impl Fn(&Path) -> u64,
+) -> LegacySyncStatus {    let internal_dir = internal.to_string_lossy().into_owned();
+    let Some(legacy) = configured else {
+        return LegacySyncStatus {
+            internal_dir,
+            legacy_dir: None,
+            can_sync: false,
+            pending_count: 0,
+        };
+    };
+    let legacy_path = PathBuf::from(&legacy);
+    // 同目录（已迁移/全新安装）或内部目录嵌在旧目录内（无法安全拷贝）
+    // 时都视为无历史；canonical 比对跨大小写/分隔符稳定。
+    let same = fs::canonicalize(&legacy_path)
+        .map(|canonical| canonical == internal)
+        .unwrap_or(false);
+    let nested = internal.starts_with(&legacy_path);
+    let (can_sync, pending_count) = if same || nested || !legacy_path.is_dir() {
+        (false, 0)
+    } else {
+        let pending = pending_of(&legacy_path);
+        (pending > 0, pending)
+    };
+    LegacySyncStatus {
+        internal_dir,
+        legacy_dir: Some(legacy),
+        can_sync,
+        pending_count,
+    }
+}
+
+#[command]
+pub async fn workspace_legacy_status(
+    state: State<'_, AppState>,
+) -> Result<LegacySyncStatus, CommandError> {
+    let store = Arc::clone(&state.store);
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let internal = crate::internal_dirs::docs_dir(&app)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let configured = store
+            .workspace_config()
+            .map_err(CommandError::from)?
+            .map(|config| config.root_path);
+        Ok(legacy_status(&internal, configured, |legacy| {
+            // 口径与 scan_entries 一致：文件夹 + .md 文件
+            let mut entries = Vec::new();
+            if fs::canonicalize(legacy)
+                .ok()
+                .and_then(|canonical| scan_entries(&canonical, &canonical, "", &mut entries).ok())
+                .is_some()
+            {
+                entries.len() as u64
+            } else {
+                0
+            }
+        }))
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+}
+
+#[command]
+pub async fn workspace_sync_legacy(
+    state: State<'_, AppState>,
+) -> Result<LegacySyncOutcome, CommandError> {
+    let manager = Arc::clone(&state.workspace);
+    let store = Arc::clone(&state.store);
+    let app = state.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = manager.lock().map_err(CommandError::from)?;
+        let internal = crate::internal_dirs::docs_dir(&app)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let legacy = store
+            .workspace_config()
+            .map_err(CommandError::from)?
+            .ok_or(CommandError::from(WorkspaceError::NotConfigured))?
+            .root_path;
+        let canonical_legacy = fs::canonicalize(&legacy)
+            .map_err(|error| CommandError::from(WorkspaceError::Io(error)))?;
+        if canonical_legacy == internal || internal.starts_with(&canonical_legacy) {
+            return Err(CommandError::from(WorkspaceError::InvalidPath(
+                "refusing to sync the internal folder into itself".into(),
+            )));
+        }
+        let mut budget = LEGACY_SYNC_BUDGET;
+        let copied_count =
+            copy_tree_merge(&canonical_legacy, &internal, &mut budget).map_err(CommandError::from)?;
+        store
+            .set_workspace_config(&internal.to_string_lossy())
+            .map_err(CommandError::from)?;
+        refresh_cache(&store, &internal).map_err(CommandError::from)?;
+        Ok(LegacySyncOutcome {
+            copied_count,
+            status: LegacySyncStatus {
+                internal_dir: internal.to_string_lossy().into_owned(),
+                legacy_dir: Some(legacy),
+                can_sync: false,
+                pending_count: 0,
+            },
+        })
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
@@ -1610,6 +1818,78 @@ pub async fn code_flow(state:State<'_,AppState>,request:FlowRequest)->Result<ser
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copy_tree_merge_skips_existing_and_counts() {
+        let base = std::env::temp_dir().join(format!("openscp-sync-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let source = base.join("legacy");
+        let target = base.join("internal");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("a.md"), b"a").unwrap();
+        fs::write(source.join("nested/b.md"), b"b").unwrap();
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("a.md"), b"existing").unwrap();
+        let mut budget = LEGACY_SYNC_BUDGET;
+        let copied = copy_tree_merge(&source, &target, &mut budget).unwrap();
+        // a.md 已存在跳过；nested/ 目录 + nested/b.md 计 2 条
+        assert_eq!(copied, 2);
+        assert_eq!(fs::read(target.join("a.md")).unwrap(), b"existing");
+        assert_eq!(fs::read(target.join("nested/b.md")).unwrap(), b"b");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn copy_tree_merge_errors_when_budget_exhausted() {
+        let base = std::env::temp_dir().join(format!("openscp-sync-cap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let source = base.join("legacy");
+        fs::create_dir_all(&source).unwrap();
+        for index in 0..5 {
+            fs::write(source.join(format!("f{index}.md")), b"x").unwrap();
+        }
+        let target = base.join("internal");
+        let mut budget = 3;
+        assert!(copy_tree_merge(&source, &target, &mut budget).is_err());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn legacy_status_flags_only_syncable_history() {
+        let base =
+            std::env::temp_dir().join(format!("openscp-legacy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let internal = base.join("internal");
+        fs::create_dir_all(&internal).unwrap();
+        let empty_legacy = base.join("empty-legacy");
+        fs::create_dir_all(&empty_legacy).unwrap();
+        let ready_legacy = base.join("ready-legacy");
+        fs::create_dir_all(ready_legacy.join("nested")).unwrap();
+        fs::write(ready_legacy.join("nested/a.md"), b"a").unwrap();
+        // 未配置 = 无历史
+        let none = legacy_status(&internal, None, |_| 7);
+        assert!(none.legacy_dir.is_none() && !none.can_sync);
+        // 同目录 = 已迁移/全新安装
+        let same =
+            legacy_status(&internal, Some(internal.to_string_lossy().into_owned()), |_| 7);
+        assert!(!same.can_sync && same.pending_count == 0);
+        // 内部目录嵌在旧目录内 = 无法安全拷贝
+        let nested = legacy_status(&internal, Some(base.to_string_lossy().into_owned()), |_| 7);
+        assert!(!nested.can_sync);
+        // 正常历史：有待同步条目
+        let ready =
+            legacy_status(&internal, Some(ready_legacy.to_string_lossy().into_owned()), |_| 2);
+        assert!(ready.can_sync && ready.pending_count == 2);
+        // 有目录但无条目 = 置灰
+        let empty =
+            legacy_status(&internal, Some(empty_legacy.to_string_lossy().into_owned()), |_| 0);
+        assert!(!empty.can_sync && empty.pending_count == 0);
+        // 目录不存在 = 置灰
+        let missing =
+            legacy_status(&internal, Some(base.join("gone").to_string_lossy().into_owned()), |_| 9);
+        assert!(!missing.can_sync);
+        let _ = fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn rejects_traversal_and_non_markdown_paths() {

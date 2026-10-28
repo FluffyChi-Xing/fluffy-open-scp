@@ -75,6 +75,8 @@ import {
   type Tgi,
   type WorkspaceEntry,
   type WorkspaceStatus,
+  type LegacySyncOutcome,
+  type LegacySyncStatus,
   type ResolvedPropModel,
   type PropBinCatalogEntry,
   type PathEntrySummary,
@@ -121,6 +123,8 @@ export type {
   Tgi,
   WorkspaceEntry,
   WorkspaceStatus,
+  LegacySyncOutcome,
+  LegacySyncStatus,
 } from "./tauri";
 export const $request = axios.create({ baseURL: "/api/v1", timeout: 15_000 });
 registerInterceptors($request);
@@ -141,11 +145,19 @@ export const tauriApi = {
       command<StudioConfigStatus>("studio_set_mod_root", {
         request: { path },
       }),
+    legacyStatus: () => command<LegacySyncStatus>("studio_legacy_status"),
+    syncLegacy: () => command<LegacySyncOutcome>("studio_sync_legacy"),
     completeOnboarding: () =>
       command<StudioConfigStatus>("studio_complete_onboarding"),
     projects: {
       list: () => command<ModProjectView[]>("mod_project_list"),
-      create: (name: string, groupId?: number, description?: string, author?: string, modType?: string) =>
+      create: (
+        name: string,
+        groupId?: number,
+        description?: string,
+        author?: string,
+        modType?: string,
+      ) =>
         command<ModProjectView>("mod_project_create", {
           request: { name, groupId, description, author, modType },
         }),
@@ -192,6 +204,8 @@ export const tauriApi = {
       ),
     setRoot: (path: string) =>
       command<WorkspaceStatus>("workspace_set_root", { request: { path } }),
+    legacyStatus: () => command<LegacySyncStatus>("workspace_legacy_status"),
+    syncLegacy: () => command<LegacySyncOutcome>("workspace_sync_legacy"),
     list: () => command<WorkspaceEntry[]>("workspace_list"),
     createFolder: (relativePath: string) =>
       command<WorkspaceEntry[]>("workspace_create_folder", {
@@ -265,16 +279,34 @@ export const tauriApi = {
     codeManifest: (project: string) =>
       command<CodeManifestResponse>("code_manifest", { request: { project } }),
     deployGameMod: (project: string, artifact: string) =>
-      command<DeployGameModResult>("deploy_game_mod", { request: { project, artifact } }),
+      command<DeployGameModResult>("deploy_game_mod", {
+        request: { project, artifact },
+      }),
     deployUiOverlay: (dataBase64: string) =>
-      command<DeployGameModResult>("deploy_ui_overlay", { request: { dataBase64 } }),
+      command<DeployGameModResult>("deploy_ui_overlay", {
+        request: { dataBase64 },
+      }),
     gameProcesses: () => command<GameProcessInfo[]>("game_processes"),
     launchGame: () => command<GameProcessInfo>("launch_game"),
   },
   raster: {
-    readLotPreviewAtlases: () => command<{lotSurfacePng: string; lotNormalAtlasPng: string | null} | null>("read_lot_preview_atlases"),
-    catalog: (packageId: number, profile: string) => command<import("@/lib/raster-editor/catalog").RasterCatalogEntry[]>("list_raster_catalog", { packageId, profile }),
-    readSource: (packageId: number, tgi: Tgi, parameters = false) => command<{width:number; height:number; rgbaBase64:string|null; parameters: {cols:number; values:number[]}|null}>("read_raster_source", {packageId, tgi, parameters}),
+    readLotPreviewAtlases: () =>
+      command<{
+        lotSurfacePng: string;
+        lotNormalAtlasPng: string | null;
+      } | null>("read_lot_preview_atlases"),
+    catalog: (packageId: number, profile: string) =>
+      command<import("@/lib/raster-editor/catalog").RasterCatalogEntry[]>(
+        "list_raster_catalog",
+        { packageId, profile },
+      ),
+    readSource: (packageId: number, tgi: Tgi, parameters = false) =>
+      command<{
+        width: number;
+        height: number;
+        rgbaBase64: string | null;
+        parameters: { cols: number; values: number[] } | null;
+      }>("read_raster_source", { packageId, tgi, parameters }),
     readImageRgba: (path: string) =>
       command<ImageRgbaResponse>("read_image_rgba", { request: { path } }),
     readRgba: (packageId: number, tgi: Tgi) =>
@@ -290,8 +322,7 @@ export const tauriApi = {
       generateMips: boolean;
       /** 覆盖现有 lot 时填源 lot property，同包写入整份副本。 */
       companionProperty?: CompanionPropertyRef;
-    }) =>
-      command<SaveRasterOverlayResult>("save_raster_overlay", { request }),
+    }) => command<SaveRasterOverlayResult>("save_raster_overlay", { request }),
     listPropertyDocuments: (packageId: number, kind: "lot" | "decal") =>
       // 后端是裸参数（package_id, kind），不是 request 结构体——参数必须平铺。
       command<PropertyDocumentSummary[]>("list_property_documents", {
@@ -420,12 +451,18 @@ export const tauriApi = {
       command<{ schemaJson: string }>("build_pe_schema", { request }),
     listModelCatalog: () =>
       command<
-        { packageId: number; packagePath: string; instance: number; group: number; name: string; size: number }[]
+        {
+          packageId: number;
+          packagePath: string;
+          instance: number;
+          group: number;
+          name: string;
+          size: number;
+        }[]
       >("list_model_catalog", {}),
     listPropBinCatalog: () =>
       command<PropBinCatalogEntry[]>("list_prop_bin_catalog", {}),
-    listPathEntries: () =>
-      command<PathEntrySummary[]>("list_path_entries", {}),
+    listPathEntries: () => command<PathEntrySummary[]>("list_path_entries", {}),
     listPathSources: (packageId: number) =>
       command<PathSourceSummary[]>("list_path_sources", { packageId }),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>

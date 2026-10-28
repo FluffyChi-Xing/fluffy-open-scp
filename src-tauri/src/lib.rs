@@ -17,6 +17,7 @@ mod effect_resources;
 mod annotations;
 mod atomic_fs;
 mod debug_tools;
+mod internal_dirs;
 mod locale_service;
 mod map_panel;
 mod media_tools;
@@ -52,7 +53,7 @@ use media_tools::{MediaTools, application_dir, resolve_tools};
 use mod_project::{
     mod_group_create, mod_group_delete, mod_group_list, mod_group_rename, mod_project_create,
     mod_project_delete, mod_project_list, mod_project_stats, mod_project_update, setup_status,
-    studio_complete_onboarding, studio_set_mod_root,
+    studio_complete_onboarding, studio_legacy_status, studio_set_mod_root, studio_sync_legacy,
 };
 use overrides::override_scan;
 use raster_edit::{
@@ -85,8 +86,9 @@ use workspace::{
     code_delete_file, code_manifest, code_package_entries, code_package_info, code_read_text,
     code_resource_preview, code_tree, code_write_text, workspace_create_folder,
     workspace_create_markdown,
-    workspace_get, workspace_list, workspace_move, workspace_read_markdown, workspace_rename,
-    workspace_set_root, workspace_write_markdown,
+    workspace_get, workspace_legacy_status, workspace_list, workspace_move,
+    workspace_read_markdown, workspace_rename, workspace_set_root, workspace_sync_legacy,
+    workspace_write_markdown,
 };
 
 #[tauri::command]
@@ -108,6 +110,9 @@ pub fn run() {
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("openscp.db");
             let store = sc_store::Store::open(database_path)?;
+            // 目录治理（2026-10-29）：docs/mods 自动落在安装目录下，
+            // 未配置的工作区/模组根自动指向内部目录，无需手动指定。
+            internal_dirs::ensure_internal_roots(app.handle(), &store)?;
             app.manage(AppState::new(app.handle().clone(), store));
             if let Some(window) = app.get_webview_window("main")
                 && let Some(monitor) = window.primary_monitor()?
@@ -221,6 +226,8 @@ pub fn run() {
             workspace_get,
             workspace_set_root,
             workspace_list,
+            workspace_legacy_status,
+            workspace_sync_legacy,
             workspace_create_folder,
             workspace_read_markdown,
             workspace_write_markdown,
@@ -240,6 +247,8 @@ pub fn run() {
             setup_status,
             studio_set_mod_root,
             studio_complete_onboarding,
+            studio_legacy_status,
+            studio_sync_legacy,
             mod_project_list,
             mod_project_create,
             mod_project_update,

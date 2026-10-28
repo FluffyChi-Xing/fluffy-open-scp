@@ -538,7 +538,11 @@ export interface SwarmParticle {
   drag: number;
 }
 export interface EffectEmitterData {
-  transform: { scale: number; rotation: number[]; offset: [number, number, number] };
+  transform: {
+    scale: number;
+    rotation: number[];
+    offset: [number, number, number];
+  };
   particle: SwarmParticle;
   emission: SwarmParticle | null;
   texturePngBase64: string | null;
@@ -954,8 +958,16 @@ export interface SettingsStatus {
   gameDirectory?: GameDirectoryStatus;
 }
 
-export interface GameProcessInfo { pid: number; name: string }
-export interface DeployGameModResult { artifact: string; destination: string; gameRunning: boolean; processes: GameProcessInfo[] }
+export interface GameProcessInfo {
+  pid: number;
+  name: string;
+}
+export interface DeployGameModResult {
+  artifact: string;
+  destination: string;
+  gameRunning: boolean;
+  processes: GameProcessInfo[];
+}
 export interface GameDirectoryDetection {
   candidates: GameDirectoryStatus[];
 }
@@ -1123,6 +1135,21 @@ export interface SetupStatusResponse {
 export interface StudioConfigStatus {
   modRoot?: string;
   onboardingCompleted: boolean;
+}
+/**
+ * 内部目录迁移（2026-10-29 目录治理）：docs/mods 自动落在安装目录下，
+ * 历史手动配置的旧目录由「同步历史数据」按钮一次性拷入。legacyDir 与
+ * internalDir 相同（已迁移/全新安装）时前端隐藏按钮；canSync=false 置灰。
+ */
+export interface LegacySyncStatus {
+  internalDir: string;
+  legacyDir?: string | null;
+  canSync: boolean;
+  pendingCount: number;
+}
+export interface LegacySyncOutcome {
+  copiedCount: number;
+  status: LegacySyncStatus;
 }
 /** 模组项目：磁盘上是项目管理根下的子文件夹。 */
 export interface ModProject {

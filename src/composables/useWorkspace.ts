@@ -1,6 +1,8 @@
 import { computed, shallowRef } from "vue";
 import {
   tauriApi,
+  type LegacySyncOutcome,
+  type LegacySyncStatus,
   type MarkdownDocument,
   type WorkspaceEntry,
   type WorkspaceStatus,
@@ -26,6 +28,11 @@ interface WorkspaceBackend {
     targetDirectory: string,
   ): Promise<WorkspaceEntry[]>;
   setRoot(path: string): Promise<WorkspaceStatus>;
+  /** 历史目录迁移状态（2026-10-29 目录治理）：legacyDir ≠ internalDir
+   * 且有待同步条目时 canSync=true。 */
+  legacyStatus(): Promise<LegacySyncStatus>;
+  /** 旧目录内容合并拷入内部目录并切换配置（不可逆的一次性迁移）。 */
+  syncLegacy(): Promise<LegacySyncOutcome>;
 }
 
 function browserBackend(): WorkspaceBackend {
@@ -79,6 +86,25 @@ function browserBackend(): WorkspaceBackend {
     },
     async setRoot() {
       return status;
+    },
+    async legacyStatus() {
+      return {
+        internalDir: "D:/demo/workspace",
+        legacyDir: null,
+        canSync: false,
+        pendingCount: 0,
+      };
+    },
+    async syncLegacy() {
+      return {
+        copiedCount: 0,
+        status: {
+          internalDir: "D:/demo/workspace",
+          legacyDir: null,
+          canSync: false,
+          pendingCount: 0,
+        },
+      };
     },
     async createFolder(relativePath) {
       if (!entries.some((entry) => entry.relativePath === relativePath)) {
@@ -140,6 +166,33 @@ export function useWorkspace() {
   const isConfigured = computed(
     () => status.value?.configured === true && status.value.available,
   );
+  /** 历史目录迁移状态：legacyDir 存在时页面显示同步按钮，canSync 置灰。 */
+  const legacyStatus = shallowRef<LegacySyncStatus | null>(null);
+  const syncing = shallowRef(false);
+
+  async function loadLegacyStatus() {
+    try {
+      legacyStatus.value = await backend.legacyStatus();
+    } catch {
+      legacyStatus.value = null;
+    }
+  }
+  /** 一次性迁移：拷入内部目录后切换配置，返回拷贝条目数。 */
+  async function syncLegacy(): Promise<number> {
+    syncing.value = true;
+    error.value = "";
+    try {
+      const outcome = await backend.syncLegacy();
+      legacyStatus.value = outcome.status;
+      entries.value = await backend.list();
+      return outcome.copiedCount;
+    } catch (cause) {
+      error.value = messageOf(cause);
+      return 0;
+    } finally {
+      syncing.value = false;
+    }
+  }
 
   async function loadStatus() {
     loading.value = true;
@@ -219,8 +272,12 @@ export function useWorkspace() {
     saving,
     error,
     isConfigured,
+    legacyStatus,
+    syncing,
     loadStatus,
     loadEntries,
+    loadLegacyStatus,
+    syncLegacy,
     select,
     setRoot,
     createFolderIn,

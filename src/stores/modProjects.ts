@@ -2,6 +2,7 @@ import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
 import { isTauri, tauriApi } from "@/api";
 import type {
+  LegacySyncStatus,
   ModProjectGroup,
   ModProjectStats,
   ModProjectView,
@@ -19,10 +20,14 @@ function messageOf(cause: unknown): string {
 /**
  * 开发工作台（项目管理面板）全局状态：开发目录、项目/分组列表、
  * 统计数据与配置状态（启动缺失检测、引导页共用同一份数据源）。
+ * 开发目录自 2026-10-29 起为安装目录下自动创建的 mods/，不再手动指定；
+ * 历史手动配置的目录经 legacySync 一次性迁入。
  */
 export const useModProjectsStore = defineStore("modProjects", () => {
   const devRoot = ref(localStorage.getItem(DEV_ROOT_KEY) ?? "");
   const setupStatus = shallowRef<SetupStatusResponse | null>(null);
+  const legacyStatus = shallowRef<LegacySyncStatus | null>(null);
+  const syncing = ref(false);
   const projects = shallowRef<ModProjectView[]>([]);
   const groups = shallowRef<ModProjectGroup[]>([]);
   const stats = shallowRef<ModProjectStats | null>(null);
@@ -58,7 +63,37 @@ export const useModProjectsStore = defineStore("modProjects", () => {
     } catch {
       setupStatus.value = null;
     }
+    await loadLegacyStatus();
     return setupStatus.value;
+  }
+
+  /** 历史目录迁移状态：legacyDir 存在且 ≠ 内部 mods/ 时显示同步按钮。 */
+  async function loadLegacyStatus() {
+    if (!isTauri()) return;
+    try {
+      legacyStatus.value = await tauriApi.studio.legacyStatus();
+    } catch {
+      legacyStatus.value = null;
+    }
+  }
+
+  /** 一次性迁移：旧 mod_root 项目文件夹合并拷入内部 mods/ 后切换配置。 */
+  async function syncLegacy(): Promise<number> {
+    syncing.value = true;
+    error.value = "";
+    try {
+      const outcome = await tauriApi.studio.syncLegacy();
+      legacyStatus.value = outcome.status;
+      devRoot.value = outcome.status.internalDir;
+      localStorage.setItem(DEV_ROOT_KEY, devRoot.value);
+      await loadAll();
+      return outcome.copiedCount;
+    } catch (cause) {
+      error.value = messageOf(cause);
+      return 0;
+    } finally {
+      syncing.value = false;
+    }
   }
 
   async function loadAll() {
@@ -79,14 +114,8 @@ export const useModProjectsStore = defineStore("modProjects", () => {
     } finally {
       loading.value = false;
     }
-  }
-
-  async function setDevRoot(path: string) {
-    const config = await tauriApi.studio.setModRoot(path);
-    devRoot.value = config.modRoot ?? path;
-    localStorage.setItem(DEV_ROOT_KEY, devRoot.value);
-    await loadSetupStatus();
-    await loadAll();
+    // 同步按钮状态随每次进入页面刷新（引导时的首次查询可能失败）
+    void loadLegacyStatus();
   }
 
   async function createProject(
@@ -96,7 +125,13 @@ export const useModProjectsStore = defineStore("modProjects", () => {
     author?: string,
     modType?: string,
   ) {
-    await tauriApi.studio.projects.create(name, groupId, description, author, modType);
+    await tauriApi.studio.projects.create(
+      name,
+      groupId,
+      description,
+      author,
+      modType,
+    );
     await loadAll();
   }
 
@@ -137,6 +172,8 @@ export const useModProjectsStore = defineStore("modProjects", () => {
   return {
     devRoot,
     setupStatus,
+    legacyStatus,
+    syncing,
     projects,
     groups,
     stats,
@@ -147,7 +184,8 @@ export const useModProjectsStore = defineStore("modProjects", () => {
     groupName,
     loadSetupStatus,
     loadAll,
-    setDevRoot,
+    loadLegacyStatus,
+    syncLegacy,
     createProject,
     updateProject,
     deleteProject,

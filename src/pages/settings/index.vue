@@ -15,34 +15,22 @@ import { useModProjectsStore } from "@/stores/modProjects";
 const modStore = useModProjectsStore();
 const { t } = useI18n();
 
-type AddressKey = "workspace" | "game" | "modRoot";
+type AddressKey = "game";
 const addressBusy = shallowRef<AddressKey | null>(null);
 const addressError = shallowRef("");
 const addressSaved = shallowRef(false);
 
+// 地址管理（2026-10-29 目录治理）：文档工作区与模组根已自动落在安装
+// 目录下（internal_dirs），不再支持手动指定，仅保留游戏数据目录。
 const addresses = computed(() => {
   const status = modStore.setupStatus;
   return [
-    {
-      key: "workspace" as AddressKey,
-      label: t("settings.addressWorkspace"),
-      hint: t("settings.addressWorkspaceHint"),
-      path: status?.workspace.path ?? "",
-      ok: Boolean(status?.workspace.path && status?.workspace.isDirectory),
-    },
     {
       key: "game" as AddressKey,
       label: t("settings.addressGame"),
       hint: t("settings.addressGameHint"),
       path: status?.game.path ?? "",
       ok: Boolean(status?.game.path && status?.game.isDirectory),
-    },
-    {
-      key: "modRoot" as AddressKey,
-      label: t("settings.addressModRoot"),
-      hint: t("settings.addressModRootHint"),
-      path: status?.modRoot.path ?? "",
-      ok: Boolean(status?.modRoot.path && status?.modRoot.isDirectory),
     },
   ];
 });
@@ -56,11 +44,9 @@ async function pickAddress(key: AddressKey) {
       t("settings.addressPickTitle"),
     );
     if (!path) return;
-    if (key === "workspace") await tauriApi.workspace.setRoot(path);
-    else if (key === "game") await tauriApi.settings.setGameDirectory(path);
-    else await modStore.setDevRoot(path);
+    await tauriApi.settings.setGameDirectory(path);
     await modStore.loadSetupStatus();
-    if (key === "game") await load();
+    await load();
     addressSaved.value = true;
   } catch (cause) {
     addressError.value = messageOf(cause);
