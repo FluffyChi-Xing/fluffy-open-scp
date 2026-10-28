@@ -9,6 +9,8 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+pub(crate) mod asset_build_m0;
+mod asset_build_m1;
 mod effect_service;
 mod game_assets;
 mod effect_resources;
@@ -123,6 +125,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            asset_build_m1::commands::asset_build_m1_build,
             map_panel::map_panel_list_regions,
             map_panel::map_panel_render_region,
             map_panel::map_panel_write_heightmap,
