@@ -831,7 +831,9 @@ pub fn path_source_catalog(
         let Some(file) = parse_record(pkg, entry) else {
             continue;
         };
-        let points = key_list(&file, KEY_PATH_POINTS);
+        // 0x0CAA680D 是 vector3 数组（非 Key），必须按值提取——
+        // key_list 只匹配 Key 变体，会把所有路径记录误判为无
+        let points = values_of(&file, KEY_PATH_POINTS);
         if points.is_empty() {
             continue;
         }
@@ -916,6 +918,41 @@ pub fn path_entry_catalog(
     }
     entries.sort_by_key(|e| e.instance);
     Ok(entries)
+}
+
+/// path_source_catalog 冒烟（需本机游戏包，用户报告的漏检回归钉）：
+/// cargo test -p fluffy-open-scp --release path_source_catalog -- --ignored --nocapture
+#[test]
+#[ignore]
+fn path_source_catalog_finds_user_cited_records() {
+    let manager = PackageManager::new();
+    for path in [
+        r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package",
+        r"D:\ea-games\SimCity\SimCityData\SimCityDataEP1.package",
+    ] {
+        let package = Package::open(path).expect("open");
+        manager.insert(package).expect("insert");
+    }
+    let registry = Path::new("resources/database_main.s3db");
+    let graphics = path_source_catalog(&manager, 1, Some(registry)).expect("graphics");
+    assert!(
+        graphics
+            .iter()
+            .any(|e| e.instance == 0x10DA_F7BF && e.group == 0x40A2_A151),
+        "Graphics 应命中用户指出的 40A2A151:10DAF7BF"
+    );
+    let ep1 = path_source_catalog(&manager, 2, Some(registry)).expect("ep1");
+    assert!(
+        ep1.iter()
+            .any(|e| e.instance == 0x1A74_90A1 && e.group == 0x42E1_C000),
+        "EP1 应命中用户指出的 42E1C000:1A7490A1"
+    );
+    for e in graphics.iter().take(5) {
+        println!(
+            "{:08X}:{:08X} {} pts={} paths={}",
+            e.group, e.instance, e.name, e.point_count, e.path_count
+        );
+    }
 }
 
 #[cfg(test)]
