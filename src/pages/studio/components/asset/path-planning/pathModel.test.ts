@@ -8,7 +8,7 @@ import {
   recomputePathTangents,
   validateWorkbenchPath,
   type WorkbenchPath,
-} from "./pathPlanning";
+} from "./pathModel";
 
 const point = (x: number, y: number, z = 0): [number, number, number] => [x, y, z];
 

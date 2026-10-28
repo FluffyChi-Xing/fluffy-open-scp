@@ -15,10 +15,21 @@ import type { LotUnitDto } from "@/api/tauri";
 
 export type Vec3 = [number, number, number];
 
+/** 路径来源：entry 由选中的目标 property 自动回填（用户无需理解 entry）。 */
+export interface WorkbenchPathSource {
+  packageId: number;
+  typeId: number;
+  group: number;
+  instance: number;
+  /** 目标 property 的注册表名（无名 = 空）。 */
+  label?: string;
+}
 /** 编辑态路径实体：几何在 pathPoint 单元上，这里只持有序 unitId 与语义。 */
 export interface WorkbenchPath {
   id: string;
   label: string;
+  /** 目标 property 来源（entry 的出处；重开时回显）。 */
+  source?: WorkbenchPathSource;
   /** path entry instance 的 hex（无 0x 前缀）；null = 未绑定（引擎跳过整条）。 */
   entry: string | null;
   scope: string;

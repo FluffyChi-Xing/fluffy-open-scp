@@ -5607,6 +5607,25 @@ pub async fn list_prop_bin_catalog(
 }
 
 /// 路径条目目录（工作台 entry 选择器数据源；机制见 crate::prop_models）。
+/// 带路径的 property 目录（工作台"目标建筑选择"数据源）。
+#[tauri::command]
+pub async fn list_path_sources(
+    state: State<'_, AppState>,
+    package_id: u64,
+) -> Result<Vec<crate::prop_models::PathSourceSummary>, CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let bundled_registry = bundled_registry_path(&state.app);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::prop_models::path_source_catalog(
+            &manager,
+            package_id,
+            bundled_registry.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::from)
+}
 #[tauri::command]
 pub async fn list_path_entries(
     state: State<'_, AppState>,

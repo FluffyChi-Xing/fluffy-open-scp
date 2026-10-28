@@ -757,6 +757,18 @@ export interface PathEntrySummary {
   parent: number | null;
   hasGeometry: boolean;
 }
+
+/** 带路径的 property 摘要（list_path_sources；目标建筑选择数据源）。 */
+export interface PathSourceSummary {
+  packageId: number;
+  typeId: number;
+  group: number;
+  instance: number;
+  name: string;
+  pathCount: number;
+  pointCount: number;
+  entryIds: number[];
+}
 /**
  * PE 精细渲染：`read_lot_model_meshes` 原始字节容器解析结果（v7）。
  * 容器（小端）：`magic("LOTM") | version=8 | mesh_count`，每 mesh

@@ -78,6 +78,7 @@ import {
   type ResolvedPropModel,
   type PropBinCatalogEntry,
   type PathEntrySummary,
+  type PathSourceSummary,
 } from "./tauri";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -425,6 +426,8 @@ export const tauriApi = {
       command<PropBinCatalogEntry[]>("list_prop_bin_catalog", {}),
     listPathEntries: () =>
       command<PathEntrySummary[]>("list_path_entries", {}),
+    listPathSources: (packageId: number) =>
+      command<PathSourceSummary[]>("list_path_sources", { packageId }),
     readRasterPreview: (packageId: number, tgi: Tgi, channel?: RasterChannel) =>
       command<RasterPreviewData>("read_raster_preview", {
         request: { packageId, tgi, channel },

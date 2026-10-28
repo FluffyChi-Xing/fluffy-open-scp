@@ -780,6 +780,84 @@ const PATH_ENTRY_GROUP_LOW: u16 = 0xC400;
 const KEY_TRANSPORT_ALLOWLIST: u32 = 0x0D64_98E8;
 
 /// 全量路径条目目录（entry 选择器数据源）。
+/// 带路径的 property 摘要（工作台"目标建筑选择"数据源，2026-10-28）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathSourceSummary {
+    pub package_id: u64,
+    pub type_id: u32,
+    pub group: u32,
+    pub instance: u32,
+    /// 注册表名（无名时为空，前端回退 hex）。
+    pub name: String,
+    /// 路径条数（pairs 对数）。
+    pub path_count: usize,
+    /// 采样点总数。
+    pub point_count: usize,
+    /// 该 property 各路径引用的 path entry（去重）。
+    pub entry_ids: Vec<u32>,
+}
+
+const KEY_PATH_POINTS: u32 = 0x0CAA_680D;
+const KEY_PATH_PAIRS: u32 = 0x0CAA_6841;
+const KEY_PATH_ENTRY: u32 = 0x0CC8_FE7A;
+
+/// 枚举一个包内带路径点列的 property（"目标建筑"候选列表）。
+/// 判定 = B1B104 记录含非空 0x0CAA680D 点数组；entry 取 0x0CC8FE7A 去重。
+pub fn path_source_catalog(
+    manager: &PackageManager,
+    package_id: u64,
+    bundled_registry: Option<&Path>,
+) -> Result<Vec<PathSourceSummary>, PackageError> {
+    let packages = manager.all_packages_with_ids()?;
+    let Some((_, pkg)) = packages.iter().find(|(id, _)| *id == package_id) else {
+        return Err(PackageError::StatePoisoned);
+    };
+    let registry = bundled_registry.and_then(|path| sc_registry::Registry::open(path).ok());
+    let name_of = |instance: u32| -> String {
+        registry
+            .as_ref()
+            .and_then(|r| r.instances().get(&instance))
+            .map(|record| record.name.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_default()
+    };
+    let mut entries: Vec<PathSourceSummary> = Vec::new();
+    for entry in pkg
+        .entries()
+        .iter()
+        .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE)
+    {
+        let Some(file) = parse_record(pkg, entry) else {
+            continue;
+        };
+        let points = key_list(&file, KEY_PATH_POINTS);
+        if points.is_empty() {
+            continue;
+        }
+        let pairs = values_of(&file, KEY_PATH_PAIRS).len();
+        let mut entry_ids: Vec<u32> = Vec::new();
+        for (instance, _, _) in key_list(&file, KEY_PATH_ENTRY) {
+            if !entry_ids.contains(&instance) {
+                entry_ids.push(instance);
+            }
+        }
+        let instance = entry.id.instance;
+        entries.push(PathSourceSummary {
+            package_id,
+            type_id: entry.id.type_id,
+            group: entry.id.group,
+            instance,
+            name: name_of(instance),
+            path_count: pairs / 2,
+            point_count: points.len(),
+            entry_ids,
+        });
+    }
+    entries.sort_by(|a, b| b.path_count.cmp(&a.path_count));
+    Ok(entries)
+}
+
 pub fn path_entry_catalog(
     manager: &PackageManager,
     bundled_registry: Option<&Path>,

@@ -26,7 +26,8 @@ import {
   recomputePathTangents,
   type Vec3,
   type WorkbenchPath,
-} from "./pathPlanning";
+  type WorkbenchPathSource,
+} from "./path-planning/pathModel";
 import {
   usePropertyEditorSession,
   type ModelState,
@@ -916,18 +917,23 @@ export function useWorkbenchAsset(project: string) {
     });
   }
 
-  function createPath(label?: string): string {
+  function createPath(options?: {
+    label?: string;
+    entry?: string | null;
+    source?: WorkbenchPathSource;
+  }): string {
     const id = nextPathId(draftPaths.value.map((path) => path.id));
     const count = draftPaths.value.length + 1;
     draftPaths.value = [
       ...draftPaths.value,
       {
         id,
-        label: label ?? `#${count}`,
-        entry: null,
+        label: options?.label ?? `#${count}`,
+        entry: options?.entry ?? null,
         scope: "local",
         roadConnect: false,
         pointIds: [],
+        source: options?.source,
       },
     ];
     activePathId.value = id;

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/resizable";
 import { tauriApi } from "@/api";
 import { command } from "@/api/tauri";
-import type { PathEntrySummary, Tgi } from "@/api/tauri";
+import type { Tgi } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import SchemaPropertyViewport from "@/pages/packages/components/property-editor/SchemaPropertyViewport.vue";
@@ -24,6 +24,7 @@ import PropertyEditorOutliner from "@/pages/packages/components/property-editor/
 import PropertyEditorInspector from "@/pages/packages/components/property-editor/PropertyEditorInspector.vue";
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
 import AssetPathPanel from "./AssetPathPanel.vue";
+import type { WorkbenchPathSource } from "./path-planning/pathModel";
 import { useEffectPreview } from "@/pages/packages/components/property-editor/effects/useEffectPreview";
 import { useEditorHotkeys } from "@/pages/packages/components/property-editor/useEditorHotkeys";
 import {
@@ -213,27 +214,27 @@ useEventListener(window, "pointerup", (event: PointerEvent) => {
 
   // ---- 路径绘制（2026-10-27 路径规划 P1/P2）：Draw 模式点击续画 ----
   const pathDrawing = ref(false);
-  const pathEntries = ref<PathEntrySummary[]>([]);
-  const pathEntriesLoading = ref(false);
   let viewportDownAt: { x: number; y: number } | null = null;
 
-  async function loadPathEntries(): Promise<void> {
-    if (pathEntries.value.length || pathEntriesLoading.value) return;
-    pathEntriesLoading.value = true;
-    try {
-      pathEntries.value = await tauriApi.packages.listPathEntries();
-    } catch {
-      pathEntries.value = [];
-    } finally {
-      pathEntriesLoading.value = false;
-    }
-  }
-
-  function startPathDraw(): void {
+  function startPathDraw(target?: {
+    entry: string | null;
+    source: WorkbenchPathSource;
+  }): void {
     if (!editEnabled.value) return;
-    if (!asset.activePathId.value) asset.createPath();
+    if (!target) {
+      toast.warning(t("studio.assetWorkbench.pathTargetRequired"));
+      return;
+    }
+    if (!asset.activePathId.value) {
+      asset.createPath({ entry: target.entry, source: target.source });
+    } else {
+      // 已有激活路径：目标变更时补绑（entry/来源回填）
+      asset.updatePath(asset.activePathId.value, {
+        entry: target.entry,
+        source: target.source,
+      });
+    }
     pathDrawing.value = true;
-    void loadPathEntries();
   }
 
   function finishPathDraw(): void {
@@ -1007,8 +1008,6 @@ function templateOf(resourceId: number) {
                         :drawing="pathDrawing"
                         :edit-enabled="editEnabled"
                         :path-points="pathPointUnits"
-                        :entries="pathEntries"
-                        :entries-loading="pathEntriesLoading"
                         @begin-draw="startPathDraw"
                         @finish-draw="finishPathDraw"
                         @undo-point="asset.removeLastPathPoint"
