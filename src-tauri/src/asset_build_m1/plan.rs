@@ -26,13 +26,12 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     if im.references.package.is_none() {
         return Err("M1 requires reference.package".into());
     }
-    if im.scene.model.is_some()
-        || !im.scene.slots.is_empty()
+    if !im.scene.slots.is_empty()
         || !im.semantics.unit_overrides.is_empty()
         || !im.semantics.lot_bindings.is_empty()
         || !im.semantics.menu.is_empty()
     {
-        return Err("M1 supports explicit semantics.properties only; model, raster and semantic lowering are not implemented".into());
+        return Err("M1 supports native model lowering and explicit semantics.properties; raster and semantic lowering are not implemented".into());
     }
     // Portable output names: avoid Windows devices, streams and trailing-dot aliases.
     let name = &im.output.package;

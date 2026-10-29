@@ -1,7 +1,7 @@
 //! Application orchestration; processors and the connector own their formats.
 use super::{
     connector,
-    filesystem::{project_file, Staging},
+    filesystem::{Staging, project_file},
     plan::plan_from_schema,
     processor::defer_property,
 };
@@ -49,6 +49,29 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
             .ok_or("missing source package")?,
     )?;
     let mut resources = connector::read_source(&source_path)?;
+    let native_model = if let Some(model_path) = &plan.intermediate.scene.model {
+        let model_path = project_file(&root, model_path)?;
+        let bytes = std::fs::read(&model_path).map_err(|e| format!("scene model: {e}"))?;
+        let compiled = super::native_model::compile_lotm_static(&bytes)?;
+        let mut instance_bytes = Sha256::digest(&compiled.rw4);
+        let mut instance = u32::from_be_bytes(instance_bytes[..4].try_into().unwrap());
+        while resources.contains_key(&ResourceId {
+            type_id: 0x2F4E_681B,
+            group: 0,
+            instance,
+        }) {
+            instance = instance.wrapping_add(1);
+        }
+        let id = ResourceId {
+            type_id: 0x2F4E_681B,
+            group: 0,
+            instance,
+        };
+        resources.insert(id, compiled.rw4);
+        Some(id)
+    } else {
+        None
+    };
     let scene =
         validate_scene_path_semantics(&root, &plan.intermediate.scene.document, &resources)?;
     // Hash the decompressed snapshot actually consumed by the processors, not a
@@ -83,6 +106,43 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
     for task in tasks {
         let bytes = (task.materialize)().map_err(|e| format!("{}: {e}", task.target))?;
         resources.insert(task.target, bytes);
+    }
+    if let Some(model_id) = native_model {
+        for target in [
+            plan.intermediate.references.unit,
+            plan.intermediate.references.lot,
+        ]
+        .into_iter()
+        .flatten()
+        .map(|tgi| ResourceId {
+            type_id: tgi.type_id,
+            group: tgi.group,
+            instance: tgi.instance,
+        }) {
+            if let Some(bytes) = resources.get(&target).cloned() {
+                let mut file = PropertyFile::parse(&bytes)
+                    .map_err(|e| format!("model property {target}: {e}"))?;
+                for hash in [
+                    sc_properties::LOD1_MODEL_HASH,
+                    0x00F9_EFBC,
+                    0x00F9_EFBD,
+                    0x00F9_EFBE,
+                ] {
+                    if let Some(property) = file.values.iter_mut().find(|p| p.hash == hash) {
+                        if let Kind::Scalar(Value::Key(key)) = &mut property.kind {
+                            key.type_id = model_id.type_id;
+                            key.group = model_id.group;
+                            key.instance = model_id.instance;
+                        }
+                    }
+                }
+                resources.insert(
+                    target,
+                    file.encode_canonical()
+                        .map_err(|e| format!("model property encode {target}: {e}"))?,
+                );
+            }
+        }
     }
     let output = connector::link(&resources)?;
     let mut staging = Staging::create(&root, &build_hash)?;
@@ -249,7 +309,10 @@ fn materialize_scene_resources(
             manifest.missing.push(format!("{kind}:{key}"));
             continue;
         };
-        let resolved_key = format!("{:08X}-{:08X}-{:08X}", resolved_id.type_id, resolved_id.group, resolved_id.instance);
+        let resolved_key = format!(
+            "{:08X}-{:08X}-{:08X}",
+            resolved_id.type_id, resolved_id.group, resolved_id.instance
+        );
         staging.write(&format!("artifacts/{kind}/{resolved_key}.resource"), bytes)?;
         match kind {
             "lot" => manifest.lot.push(resolved_key),
@@ -272,10 +335,17 @@ fn find_resource<'a>(
     resources: &'a connector::Resources,
     id: ResourceId,
 ) -> Option<(ResourceId, &'a Vec<u8>)> {
-    resources.get_key_value(&id).map(|(resolved, bytes)| (*resolved, bytes)).or_else(|| {
-        resources.iter().find(|(candidate, _)| candidate.type_id == id.type_id && candidate.instance == id.instance)
-            .map(|(resolved, bytes)| (*resolved, bytes))
-    })
+    resources
+        .get_key_value(&id)
+        .map(|(resolved, bytes)| (*resolved, bytes))
+        .or_else(|| {
+            resources
+                .iter()
+                .find(|(candidate, _)| {
+                    candidate.type_id == id.type_id && candidate.instance == id.instance
+                })
+                .map(|(resolved, bytes)| (*resolved, bytes))
+        })
 }
 
 fn property_key(property: &sc_properties::Property) -> Option<Key> {
