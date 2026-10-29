@@ -49,10 +49,32 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
             .ok_or("missing source package")?,
     )?;
     let mut resources = connector::read_source(&source_path)?;
+    let mut texture_instances = [0u32; 6];
+    for (slot, path) in &plan.intermediate.scene.slots {
+        let index = slot
+            .strip_prefix("slot")
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or_else(|| format!("invalid raster slot {slot}"))?;
+        if index >= texture_instances.len() {
+            return Err(format!("raster slot out of range: {slot}"));
+        }
+        let path = project_file(&root, path)?;
+        let bytes = std::fs::read(&path).map_err(|e| format!("raster slot {slot}: {e}"))?;
+        let digest = Sha256::digest(&bytes);
+        let instance = u32::from_be_bytes(digest[..4].try_into().unwrap());
+        let id = ResourceId {
+            type_id: 0x2F4E_681C,
+            group: 0,
+            instance,
+        };
+        resources.insert(id, bytes);
+        texture_instances[index] = instance;
+    }
     let native_model = if let Some(model_path) = &plan.intermediate.scene.model {
         let model_path = project_file(&root, model_path)?;
         let bytes = std::fs::read(&model_path).map_err(|e| format!("scene model: {e}"))?;
-        let compiled = super::native_model::compile_lotm_static(&bytes)?;
+        let compiled =
+            super::native_model::compile_lotm_static_with_textures(&bytes, &texture_instances)?;
         let mut instance_bytes = Sha256::digest(&compiled.rw4);
         let mut instance = u32::from_be_bytes(instance_bytes[..4].try_into().unwrap());
         while resources.contains_key(&ResourceId {

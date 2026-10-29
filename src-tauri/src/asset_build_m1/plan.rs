@@ -26,8 +26,7 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     if im.references.package.is_none() {
         return Err("M1 requires reference.package".into());
     }
-    if !im.scene.slots.is_empty()
-        || !im.semantics.unit_overrides.is_empty()
+    if !im.semantics.unit_overrides.is_empty()
         || !im.semantics.lot_bindings.is_empty()
         || !im.semantics.menu.is_empty()
     {

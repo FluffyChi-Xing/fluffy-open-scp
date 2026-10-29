@@ -16,6 +16,7 @@ pub struct GlbPrimitive {
     pub normals: Vec<[f32; 3]>,
     pub uvs: Vec<[f32; 2]>,
     pub indices: Vec<u32>,
+    pub material_index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,7 +30,16 @@ pub struct CompiledNativeModel {
 pub fn compile_lotm_static(bytes: &[u8]) -> Result<CompiledNativeModel, String> {
     let glb = parse_lotm(bytes)?.glb;
     let primitives = parse_glb_primitives(&glb)?;
-    compile_primitives(&primitives)
+    compile_primitives_with_textures(&primitives, &[0; 6])
+}
+
+pub fn compile_lotm_static_with_textures(
+    bytes: &[u8],
+    texture_instances: &[u32; 6],
+) -> Result<CompiledNativeModel, String> {
+    let glb = parse_lotm(bytes)?.glb;
+    let primitives = parse_glb_primitives(&glb)?;
+    compile_primitives_with_textures(&primitives, texture_instances)
 }
 
 pub fn parse_glb_primitives(glb: &[u8]) -> Result<Vec<GlbPrimitive>, String> {
@@ -135,6 +145,10 @@ pub fn parse_glb_primitives(glb: &[u8]) -> Result<Vec<GlbPrimitive>, String> {
                 normals,
                 uvs,
                 indices,
+                material_index: primitive
+                    .get("material")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize,
             });
         }
     }
@@ -283,76 +297,94 @@ fn read_indices(
 }
 
 pub fn compile_primitives(primitives: &[GlbPrimitive]) -> Result<CompiledNativeModel, String> {
+    compile_primitives_with_textures(primitives, &[0; 6])
+}
+
+pub fn compile_primitives_with_textures(
+    primitives: &[GlbPrimitive],
+    texture_instances: &[u32; 6],
+) -> Result<CompiledNativeModel, String> {
     if primitives.is_empty() {
         return Err("no primitive".into());
     }
     let vertex_count: usize = primitives.iter().map(|p| p.positions.len()).sum();
     let index_count: usize = primitives.iter().map(|p| p.indices.len()).sum();
-    let mut vertices = Vec::with_capacity(vertex_count * 32);
-    let mut indices = Vec::with_capacity(index_count * 2);
-    let mut vertex_base = 0u32;
-    for primitive in primitives {
+    let fmt = vertex_format_payload();
+    let mut specs = vec![writer_section(SectionType::VERTEX_FORMAT, fmt.clone())];
+    let mut mesh_numbers = Vec::new();
+    let mut material_numbers = Vec::new();
+    for (primitive_index, primitive) in primitives.iter().enumerate() {
+        let mut vertices = Vec::with_capacity(primitive.positions.len() * 32);
         for i in 0..primitive.positions.len() {
             for value in primitive.positions[i] {
-            vertices.extend_from_slice(&value.to_le_bytes());
+                vertices.extend_from_slice(&value.to_le_bytes());
             }
             for value in primitive.normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]) {
-            vertices.extend_from_slice(&value.to_le_bytes());
+                vertices.extend_from_slice(&value.to_le_bytes());
             }
             for value in primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]) {
-            vertices.extend_from_slice(&value.to_le_bytes());
+                vertices.extend_from_slice(&value.to_le_bytes());
             }
         }
+        let mut indices = Vec::with_capacity(primitive.indices.len() * 2);
         for &index in &primitive.indices {
-            let value = u16::try_from(index + vertex_base)
+            let value = u16::try_from(index)
                 .map_err(|_| "RW4 static mesh supports at most 65535 vertices")?;
             indices.extend_from_slice(&value.to_le_bytes());
         }
-        vertex_base = vertex_base
-            .checked_add(primitive.positions.len() as u32)
-            .ok_or("vertex count overflow")?;
-    }
-    let fmt = vertex_format_payload();
-    let specs = vec![
-        writer_section(SectionType::VERTEX_FORMAT, fmt.clone()),
-        writer_section(
+        let va = specs.len() as u32;
+        specs.push(writer_section(
             SectionType::VERTEX_ARRAY,
-            vertex_array_payload(0, 2, vertex_count as u32, 32),
-        ),
-        writer_section(SectionType::BLOB, vertices),
-        writer_section(SectionType::BLOB, indices),
-        writer_section(
+            vertex_array_payload(0, va + 1, primitive.positions.len() as u32, 32),
+        ));
+        specs.push(writer_section(SectionType::BLOB, vertices));
+        let index_blob = specs.len() as u32;
+        specs.push(writer_section(SectionType::BLOB, indices));
+        let ta = specs.len() as u32;
+        specs.push(writer_section(
             SectionType::TRIANGLE_ARRAY,
-            triangle_array_payload(3, index_count as u32),
-        ),
-        writer_section(
+            triangle_array_payload(index_blob, primitive.indices.len() as u32),
+        ));
+        let mesh = specs.len() as u32;
+        specs.push(writer_section(
             SectionType::MESH,
             mesh_payload(
-                4,
-                (index_count / 3) as u32,
-                vertex_count as u32,
-                1,
+                ta,
+                (primitive.indices.len() / 3) as u32,
+                primitive.positions.len() as u32,
+                va,
             ),
-        ),
-        writer_section(SectionType::MATERIAL, material_payload(&fmt)),
-        writer_section(
+        ));
+        let mat = specs.len() as u32;
+        specs.push(writer_section(
+            SectionType::MATERIAL,
+            material_payload(&fmt, texture_instances),
+        ));
+        specs.push(writer_section(
             SectionType::MESH_MATERIAL_ASSIGNMENT,
-            assignment_payload(5, 6),
-        ),
-    ];
+            assignment_payload(mesh, mat),
+        ));
+        mesh_numbers.push(mesh);
+        material_numbers.push((primitive_index, mat));
+    }
     let rw4 = build_file(1, &specs, &[]);
     let file = Rw4File::parse(&rw4).map_err(|e| format!("compiled RW4 parse failed: {e}"))?;
-    let decoded = file
-        .decode_mesh(&rw4, 5)
-        .map_err(|e| format!("compiled RW4 mesh failed: {e}"))?;
-    if decoded.vertices.len() != vertex_count || decoded.triangles.len() * 3 != index_count
-    {
+    let mut decoded_vertices = 0;
+    let mut decoded_indices = 0;
+    for mesh in mesh_numbers {
+        let decoded = file
+            .decode_mesh(&rw4, mesh)
+            .map_err(|e| format!("compiled RW4 mesh failed: {e}"))?;
+        decoded_vertices += decoded.vertices.len();
+        decoded_indices += decoded.triangles.len() * 3;
+    }
+    if decoded_vertices != vertex_count || decoded_indices != index_count {
         return Err("compiled RW4 round-trip count mismatch".into());
     }
     Ok(CompiledNativeModel {
         rw4,
         primitive_count: primitives.len(),
-        vertex_count: decoded.vertices.len(),
+        vertex_count: decoded_vertices,
         index_count,
     })
 }
@@ -406,16 +438,26 @@ fn mesh_payload(tri: u32, count: u32, verts: u32, vertex: u32) -> Vec<u8> {
     p.extend_from_slice(&(vertex as i32).to_le_bytes());
     p
 }
-fn material_payload(fmt: &[u8]) -> Vec<u8> {
+fn material_payload(fmt: &[u8], texture_instances: &[u32; 6]) -> Vec<u8> {
     let size = 4 + 28 + 24 + fmt.len() + 7 * 24;
     let mut p = Vec::new();
     p.extend_from_slice(&(size as u32).to_le_bytes());
     p.extend_from_slice(&[0; 28]);
     p.extend_from_slice(fmt);
     p.extend_from_slice(&[0; 24]);
-    for slot in [0x2d, 0, 1, 2, 3, 4, 5] {
+    for (slot, texture) in [
+        (0x2d, 0),
+        (0, texture_instances[0]),
+        (1, texture_instances[1]),
+        (2, texture_instances[2]),
+        (3, texture_instances[3]),
+        (4, texture_instances[4]),
+        (5, texture_instances[5]),
+    ] {
         p.extend_from_slice(&(slot as u32).to_le_bytes());
-        p.extend_from_slice(&[0; 20]);
+        p.extend_from_slice(&[0; 8]);
+        p.extend_from_slice(&texture.to_le_bytes());
+        p.extend_from_slice(&[0; 8]);
     }
     p
 }
@@ -437,14 +479,21 @@ mod tests {
             normals: vec![[0.0, 0.0, 1.0]; 3],
             uvs: vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
             indices: vec![0, 1, 2],
+            material_index: 0,
         };
-        let model = compile_primitives(&[primitive.clone(), primitive])
-        .unwrap();
+        let model = compile_primitives(&[primitive.clone(), primitive]).unwrap();
         let file = Rw4File::parse(&model.rw4).unwrap();
         assert_eq!(
             file.decode_mesh(&model.rw4, 5).unwrap().triangles,
-            vec![[0, 1, 2], [3, 4, 5]]
+            vec![[0, 1, 2]]
         );
-        assert_eq!(file.decode_mesh(&model.rw4, 5).unwrap().vertices.len(), 6);
+        assert_eq!(
+            file.decode_mesh(&model.rw4, 12).unwrap().triangles,
+            vec![[0, 1, 2]]
+        );
+        assert_eq!(file.decode_mesh(&model.rw4, 5).unwrap().vertices.len(), 3);
+        assert_eq!(file.decode_mesh(&model.rw4, 12).unwrap().vertices.len(), 3);
+        let material = file.decode_material(&model.rw4, 6).unwrap();
+        assert_eq!(material.texture_refs()[1].texture_instance, 0);
     }
 }
