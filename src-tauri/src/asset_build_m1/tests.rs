@@ -390,7 +390,7 @@ fn real_asset_sample_property_fixture_readback() {
     for sample in ["university", "commercial"] {
         let root = PathBuf::from(&fixture).join(sample);
         let raw = fs::read_to_string(root.join("schema.json")).unwrap();
-        let result = build_from_schema(&root, &raw).unwrap();
+        let result = build_from_schema(&root, &raw).unwrap_or_else(|error| panic!("{sample}: {error}"));
         assert_eq!(result.patched_resources, 1);
         assert!(result.path.is_file());
         let report = fs::read(
@@ -401,6 +401,16 @@ fn real_asset_sample_property_fixture_readback() {
         .unwrap();
         assert!(serde_json::from_slice::<serde_json::Value>(&report).is_ok());
     }
+}
+
+#[test]
+#[ignore = "requires local asset-build fixtures"]
+fn real_commercial_property_fixture_builds_for_manual_package_export() {
+    let fixture = PathBuf::from(std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"));
+    let root = fixture.join("commercial");
+    let raw = fs::read_to_string(root.join("schema.json")).unwrap();
+    let result = build_from_schema(&root, &raw).unwrap();
+    assert!(result.path.is_file());
 }
 
 #[test]

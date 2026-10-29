@@ -156,8 +156,9 @@ fn materialize_scene_resources(
             },
         ));
     }
-    let scene_path = project_file(root, &intermediate.scene.document)?;
-    if scene_path.is_file() {
+    let candidate = root.join(&intermediate.scene.document);
+    if candidate.is_file() {
+        let scene_path = project_file(root, &intermediate.scene.document)?;
         let value: serde_json::Value = serde_json::from_slice(
             &std::fs::read(&scene_path).map_err(|error| format!("scene document: {error}"))?,
         )
