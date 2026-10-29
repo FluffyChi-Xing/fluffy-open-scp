@@ -39,6 +39,7 @@ mod reader;
 mod section;
 mod skeleton;
 pub mod texture;
+pub mod writer;
 mod vertex;
 
 #[cfg(test)]
@@ -68,3 +69,4 @@ pub use texture::{
     TEXTURE_TYPE_RAW_BGRA, TextureFormat, decode_dxt1, decode_dxt5,
 };
 pub use vertex::{ComponentValue, DeclarationType, DeclarationUsage, VertexElement, VertexFormat};
+pub use writer::{build as build_file, section as writer_section, SectionSpec};

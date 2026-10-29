@@ -1,5 +1,6 @@
 //! Isolated M1 Property writeback pipeline. No automatic workbench integration.
 pub mod commands;
+pub mod lotm;
 mod connector;
 mod filesystem;
 mod package;
