@@ -455,9 +455,9 @@ fn material_payload(fmt: &[u8], texture_instances: &[u32; 6]) -> Vec<u8> {
         (5, texture_instances[5]),
     ] {
         p.extend_from_slice(&(slot as u32).to_le_bytes());
-        p.extend_from_slice(&[0; 8]);
+        p.extend_from_slice(&[0; 4]);
         p.extend_from_slice(&texture.to_le_bytes());
-        p.extend_from_slice(&[0; 8]);
+        p.extend_from_slice(&[0; 12]);
     }
     p
 }
@@ -481,7 +481,11 @@ mod tests {
             indices: vec![0, 1, 2],
             material_index: 0,
         };
-        let model = compile_primitives(&[primitive.clone(), primitive]).unwrap();
+        let model = compile_primitives_with_textures(
+            &[primitive.clone(), primitive],
+            &[11, 22, 33, 44, 55, 66],
+        )
+        .unwrap();
         let file = Rw4File::parse(&model.rw4).unwrap();
         assert_eq!(
             file.decode_mesh(&model.rw4, 5).unwrap().triangles,
@@ -494,6 +498,6 @@ mod tests {
         assert_eq!(file.decode_mesh(&model.rw4, 5).unwrap().vertices.len(), 3);
         assert_eq!(file.decode_mesh(&model.rw4, 12).unwrap().vertices.len(), 3);
         let material = file.decode_material(&model.rw4, 6).unwrap();
-        assert_eq!(material.texture_refs()[1].texture_instance, 0);
+        assert_eq!(material.texture_refs()[1].texture_instance, 11);
     }
 }
