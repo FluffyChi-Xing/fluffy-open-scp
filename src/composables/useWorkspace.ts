@@ -8,7 +8,7 @@ import {
   type WorkspaceStatus,
 } from "@/api";
 
-interface WorkspaceBackend {
+export interface WorkspaceBackend {
   get(): Promise<WorkspaceStatus>;
   list(): Promise<WorkspaceEntry[]>;
   createFolder(relativePath: string): Promise<WorkspaceEntry[]>;
@@ -151,17 +151,18 @@ function browserBackend(): WorkspaceBackend {
   };
 }
 
+/** 桌面端走 Tauri 文件能力，浏览器预览走内存 mock。 */
+export function resolveWorkspaceBackend(): WorkspaceBackend {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+    ? tauriApi.workspace
+    : browserBackend();
+}
+
 export function useWorkspace() {
-  const backend: WorkspaceBackend =
-    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
-      ? tauriApi.workspace
-      : browserBackend();
+  const backend = resolveWorkspaceBackend();
   const status = shallowRef<WorkspaceStatus | null>(null);
   const entries = shallowRef<WorkspaceEntry[]>([]);
-  const selectedPath = shallowRef("");
-  const document = shallowRef<MarkdownDocument | null>(null);
   const loading = shallowRef(false);
-  const saving = shallowRef(false);
   const error = shallowRef("");
   const isConfigured = computed(
     () => status.value?.configured === true && status.value.available,
@@ -216,22 +217,6 @@ export function useWorkspace() {
       loading.value = false;
     }
   }
-  async function select(path: string) {
-    selectedPath.value = path;
-    document.value = null;
-    error.value = "";
-    try {
-      document.value = await backend.readMarkdown(path);
-    } catch (cause) {
-      error.value = messageOf(cause);
-    }
-  }
-  async function setRoot(path: string) {
-    status.value = await backend.setRoot(path);
-    entries.value = [];
-    document.value = null;
-    selectedPath.value = "";
-  }
   async function createFolderIn(parent: string, name: string) {
     entries.value = await backend.createFolder(
       parent ? `${parent}/${name}` : name,
@@ -247,29 +232,10 @@ export function useWorkspace() {
   async function moveEntry(path: string, targetDirectory: string) {
     entries.value = await backend.move(path, targetDirectory);
   }
-  async function save(content: string) {
-    if (!document.value) return;
-    saving.value = true;
-    error.value = "";
-    try {
-      document.value = await backend.writeMarkdown(
-        document.value.relativePath,
-        content,
-        document.value.revision,
-      );
-    } catch (cause) {
-      error.value = messageOf(cause);
-    } finally {
-      saving.value = false;
-    }
-  }
   return {
     status,
     entries,
-    selectedPath,
-    document,
     loading,
-    saving,
     error,
     isConfigured,
     legacyStatus,
@@ -278,17 +244,14 @@ export function useWorkspace() {
     loadEntries,
     loadLegacyStatus,
     syncLegacy,
-    select,
-    setRoot,
     createFolderIn,
     createMarkdownIn,
     renameEntry,
     moveEntry,
-    save,
   };
 }
 
-function messageOf(cause: unknown) {
+export function messageOf(cause: unknown) {
   if (cause && typeof cause === "object" && "message" in cause)
     return String(cause.message);
   return cause instanceof Error ? cause.message : String(cause);

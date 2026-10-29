@@ -3,27 +3,46 @@ import { computed, onMounted, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FSpinner from "@/components/ui/FSpinner.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
+import FMarkdown from "@/components/markdown/FMarkdown.vue";
 import { isTauri } from "@/api";
 import { useToast } from "@/composables/useToast";
-import WorkspaceDocument from "./components/WorkspaceDocument.vue";
-import WorkspaceTree, { type TreeAction } from "./components/WorkspaceTree.vue";
 import { useWorkspace } from "@/composables/useWorkspace";
+import DocumentStatusBar from "./components/DocumentStatusBar.vue";
+import DocumentTabs from "./components/DocumentTabs.vue";
+import MarkdownEditor from "./components/MarkdownEditor.vue";
+import WorkspaceTree, { type TreeAction } from "./components/WorkspaceTree.vue";
+import { tabTitle } from "./editor-tabs";
+import { documentStats } from "./document-stats";
+import { useDocumentTabs } from "./use-document-tabs";
 
+/**
+ * 文档工作区（2026-10-29 Obsidian 化重构）：去页面大标题，工作区
+ * 撑满内容容器——左侧扁平文档树，右侧多页签编辑区（打开/切换/关闭、
+ * 脏标记、localStorage 恢复）+ 格式工具栏 + 底部字数状态栏。
+ * 页签与编辑变换的纯逻辑在 editor-tabs.ts / markdown-input.ts。
+ */
 const { t } = useI18n();
 const toast = useToast();
 const workspace = useWorkspace();
-const {
-  status,
-  entries,
-  selectedPath,
-  document,
-  saving,
-  error,
-  isConfigured,
-  legacyStatus,
-  syncing,
-} = workspace;
+const { status, entries, error, isConfigured, legacyStatus, syncing } =
+  workspace;
+const tabs = useDocumentTabs({
+  confirmCloseDirty: () =>
+    window.confirm(
+      t("workspace.tabDirtyConfirm", {
+        name: tabTitle(tabs.active.value?.path ?? ""),
+      }),
+    ),
+});
+const { state: tabState, active: activeTab, savingPath } = tabs;
+
+const isSaving = computed(
+  () => savingPath.value !== "" && savingPath.value === activeTab.value?.path,
+);
+const stats = computed(() => documentStats(activeTab.value?.draft ?? ""));
+
 const pending = shallowRef<TreeAction | null>(null);
 const nameInput = shallowRef("");
 const moveTarget = shallowRef("");
@@ -62,7 +81,7 @@ async function syncLegacy() {
   }
 }
 function openFile(path: string) {
-  void workspace.select(path);
+  tabs.open(path);
 }
 function handleAction(action: TreeAction) {
   actionError.value = "";
@@ -83,6 +102,9 @@ function closeDialog() {
 function markdownName(value: string) {
   return value.toLowerCase().endsWith(".md") ? value : `${value}.md`;
 }
+function joinedPath(parent: string, name: string) {
+  return parent ? `${parent}/${name}` : name;
+}
 async function confirmAction() {
   const action = pending.value;
   if (!action) return;
@@ -93,20 +115,25 @@ async function confirmAction() {
       await workspace.createFolderIn(action.parent, name);
     } else if (action.type === "create-markdown") {
       if (!name) return;
+      const path = joinedPath(action.parent, markdownName(name));
       await workspace.createMarkdownIn(action.parent, markdownName(name));
+      openFile(path);
     } else if (action.type === "rename") {
       if (!name) return;
+      const parent = action.path.includes("/")
+        ? action.path.slice(0, action.path.lastIndexOf("/"))
+        : "";
       await workspace.renameEntry(action.path, name);
-      if (action.isFile) {
-        const parent = action.path.includes("/")
-          ? action.path.slice(0, action.path.lastIndexOf("/"))
-          : "";
-        await workspace.select(
-          `${parent ? `${parent}/` : ""}${markdownName(name)}`,
-        );
-      }
+      tabs.rebase(
+        action.path,
+        action.isFile
+          ? joinedPath(parent, markdownName(name))
+          : joinedPath(parent, name),
+      );
     } else if (action.type === "move") {
+      const name2 = action.path.split("/").pop() ?? "";
       await workspace.moveEntry(action.path, moveTarget.value);
+      tabs.rebase(action.path, joinedPath(moveTarget.value, name2));
     }
     closeDialog();
   } catch (cause) {
@@ -117,17 +144,6 @@ async function confirmAction() {
 
 <template>
   <section class="workspace-page">
-    <header class="page-heading">
-      <div>
-        <p class="eyebrow">{{ $t("workspace.eyebrow") }}</p>
-        <FTypography :header="1" spacing="none">{{
-          $t("workspace.title")
-        }}</FTypography
-        ><FTypography paragraphy type="secondary">{{
-          $t("workspace.description")
-        }}</FTypography>
-      </div>
-    </header>
     <p v-if="!isTauri()" class="runtime-note" role="status">
       <FIcon name="Info" :size="16" aria-label="" />{{
         $t("runtime.browserNotice")
@@ -147,55 +163,128 @@ async function confirmAction() {
       </div>
       <p v-if="error" class="error-message" role="alert">{{ error }}</p>
     </article>
-    <template v-else
-      ><div class="workspace-toolbar">
-        <div>
-          <FTypography :header="3" spacing="none">{{
-            $t("workspace.rootLabel")
-          }}</FTypography
-          ><FTypography paragraphy type="secondary" spacing="none">{{
-            status?.rootPath
-          }}</FTypography>
-        </div>
-        <p class="toolbar-hint">{{ $t("workspace.contextHint") }}</p>
-        <button
-          v-if="legacyStatus?.legacyDir"
-          class="secondary-button sync-button"
-          type="button"
-          :disabled="!legacyStatus.canSync || syncing"
-          :title="
-            $t('workspace.syncHint', { count: legacyStatus.pendingCount })
-          "
-          @click="syncLegacy"
+    <div v-else class="workspace-shell">
+      <WorkspaceTree
+        :entries="entries"
+        :title="$t('workspace.folders')"
+        :empty-hint="$t('workspace.empty')"
+        :selected-path="tabState.activePath"
+        @open="openFile"
+        @action="handleAction"
+      >
+        <template #actions>
+          <button
+            v-if="legacyStatus?.legacyDir"
+            class="sync-button"
+            type="button"
+            :disabled="!legacyStatus.canSync || syncing"
+            :title="
+              $t('workspace.syncHint', { count: legacyStatus.pendingCount })
+            "
+            @click="syncLegacy"
+          >
+            <FIcon
+              :name="syncing ? 'Loader2' : 'FolderSync'"
+              :size="14"
+              aria-label=""
+            />{{
+              syncing
+                ? $t("workspace.syncing")
+                : $t("workspace.syncLegacy", {
+                    count: legacyStatus.pendingCount,
+                  })
+            }}
+          </button>
+        </template>
+      </WorkspaceTree>
+      <section class="editor-pane">
+        <DocumentTabs
+          :tabs="tabState.tabs"
+          :active-path="tabState.activePath"
+          @activate="tabs.activate"
+          @close="tabs.close"
         >
-          <FIcon
-            :name="syncing ? 'Loader2' : 'FolderSync'"
-            :size="16"
-            aria-label=""
-          />{{
-            syncing
-              ? $t("workspace.syncing")
-              : $t("workspace.syncLegacy", { count: legacyStatus.pendingCount })
-          }}
-        </button>
-      </div>
-      <div class="workspace-grid">
-        <WorkspaceTree
-          :entries="entries"
-          :title="$t('workspace.folders')"
-          :empty-hint="$t('workspace.empty')"
-          :selected-path="selectedPath"
-          @open="openFile"
-          @action="handleAction"
-        /><WorkspaceDocument
-          :document="document"
-          :saving="saving"
-          :error="error"
-          :select-title="$t('workspace.selectTitle')"
-          :select-description="$t('workspace.selectDescription')"
-          @save="workspace.save"
-        /></div
-    ></template>
+          <template #actions>
+            <template v-if="activeTab">
+              <div
+                class="mode-toggle"
+                role="group"
+                :aria-label="$t('workspace.modeLabel')"
+              >
+                <button
+                  type="button"
+                  :class="{ on: activeTab.mode === 'edit' }"
+                  @click="tabs.setMode(activeTab.path, 'edit')"
+                >
+                  <FIcon name="Pencil" :size="13" aria-label="" />{{
+                    $t("workspace.edit")
+                  }}
+                </button>
+                <button
+                  type="button"
+                  :class="{ on: activeTab.mode === 'preview' }"
+                  @click="tabs.setMode(activeTab.path, 'preview')"
+                >
+                  <FIcon name="Eye" :size="13" aria-label="" />{{
+                    $t("workspace.preview")
+                  }}
+                </button>
+              </div>
+              <button
+                class="save-button"
+                type="button"
+                :disabled="!activeTab.dirty || isSaving"
+                :title="$t('workspace.saveShortcut')"
+                @click="tabs.save()"
+              >
+                <FIcon
+                  :name="isSaving ? 'Loader2' : 'Save'"
+                  :size="13"
+                  aria-label=""
+                />{{ $t("workspace.save") }}
+              </button>
+            </template>
+          </template>
+        </DocumentTabs>
+        <div class="editor-body">
+          <div v-if="!activeTab" class="editor-empty">
+            <FIcon name="FileText" :size="26" aria-label="" />
+            <FTypography :header="3">{{
+              $t("workspace.emptyTitle")
+            }}</FTypography>
+            <FTypography paragraphy type="secondary">{{
+              $t("workspace.emptyHint")
+            }}</FTypography>
+          </div>
+          <template v-else>
+            <p v-if="activeTab.error" class="error-message" role="alert">
+              {{ activeTab.error }}
+            </p>
+            <FSpinner
+              v-if="activeTab.loading"
+              size="sm"
+              :label="$t('common.loading')"
+            />
+            <MarkdownEditor
+              v-else-if="activeTab.mode === 'edit'"
+              :draft="activeTab.draft"
+              @update:draft="tabs.setDraft(activeTab.path, $event)"
+              @save="tabs.save()"
+            />
+            <div v-else class="editor-preview">
+              <FMarkdown :source="activeTab.draft" />
+            </div>
+          </template>
+        </div>
+        <DocumentStatusBar
+          :path="activeTab?.path ?? ''"
+          :root-path="status?.rootPath ?? ''"
+          :words="stats.words"
+          :characters="stats.characters"
+          :dirty="activeTab?.dirty ?? false"
+        />
+      </section>
+    </div>
     <Teleport to="body">
       <div v-if="pending" class="dialog-overlay" @mousedown.self="closeDialog">
         <div
@@ -284,43 +373,35 @@ async function confirmAction() {
 </template>
 
 <style scoped>
+/* 撑满内容容器（配合路由 meta.fullbleed：外层去内边距、隐藏页脚） */
 .workspace-page {
-  display: grid;
-  gap: 24px;
-}
-.page-heading {
-  align-items: flex-start;
   display: flex;
-  justify-content: space-between;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
 }
-.eyebrow {
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  margin: 0 0 10px;
-  text-transform: uppercase;
+.runtime-note {
+  align-items: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  display: flex;
+  flex: none;
+  font-size: 12px;
+  gap: 8px;
+  padding: 8px 14px;
 }
-.runtime-note,
-.setup-card,
-.workspace-toolbar {
+.setup-card {
+  align-items: start;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-}
-.runtime-note {
-  align-items: center;
-  color: var(--muted-foreground);
-  display: flex;
-  font-size: 12px;
-  gap: 8px;
-  padding: 12px 14px;
-}
-.setup-card {
   display: grid;
   gap: 12px;
   grid-template-columns: auto 1fr;
+  margin: auto;
   max-width: 760px;
   padding: 24px;
 }
@@ -334,19 +415,120 @@ async function confirmAction() {
   justify-content: center;
   width: 42px;
 }
-.root-form {
-  grid-column: 1/-1;
+.workspace-shell {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  min-height: 0;
 }
-.root-form label {
-  color: var(--muted-foreground);
-  display: block;
-  font-size: 12px;
-  margin-bottom: 7px;
+.editor-pane {
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
 }
-.toolbar-hint {
+.editor-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.editor-empty {
+  align-items: center;
   color: var(--subtle-foreground);
-  font-size: 11px;
-  margin: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+}
+.editor-preview {
+  margin: 0 auto;
+  padding: 18px 18px 40px;
+  width: min(100%, 880px);
+}
+.error-message {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 10px 14px 0;
+}
+/* 页签条右侧动作：编辑/预览切换 + 保存 */
+.mode-toggle {
+  align-items: center;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  overflow: hidden;
+}
+.mode-toggle button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 9px;
+}
+.mode-toggle button.on {
+  background: var(--surface-elevated);
+  color: var(--foreground);
+}
+.save-button {
+  align-items: center;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  color: var(--primary-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.save-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+/* 树面板头部的同步按钮（小尺寸紧凑形态） */
+.sync-button {
+  align-items: center;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 650;
+  gap: 4px;
+  min-height: 22px;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+.sync-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.sync-button:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--foreground);
 }
 .dialog-overlay {
   align-items: center;
@@ -400,24 +582,6 @@ async function confirmAction() {
   gap: 8px;
   justify-content: flex-end;
 }
-.form-row {
-  display: flex;
-  gap: 8px;
-}
-.form-row input {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
-  font: inherit;
-  min-width: 0;
-  padding: 10px 11px;
-  width: 100%;
-}
-.form-row input:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 .primary-button,
 .secondary-button {
   align-items: center;
@@ -443,55 +607,6 @@ async function confirmAction() {
   border: 1px solid var(--border);
   color: var(--foreground);
 }
-.error-message {
-  color: var(--danger);
-  font-size: 12px;
-  grid-column: 1/-1;
-  margin: 0;
-}
-.workspace-toolbar {
-  align-items: end;
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
-  padding: 18px 20px;
-}
-/* 同步按钮锚定工具栏最右（与项目管理根栏一致的动作区位置） */
-.sync-button {
-  margin-left: auto;
-}
-.folder-form {
-  max-width: 430px;
-}
-.workspace-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(210px, 0.35fr) minmax(0, 1fr);
-  min-height: 500px;
-}
-@media (max-width: 780px) {
-  .workspace-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .folder-form {
-    max-width: none;
-  }
-  .workspace-grid {
-    grid-template-columns: 1fr;
-  }
-  .setup-card {
-    grid-template-columns: auto 1fr;
-  }
-  .form-row {
-    flex-direction: column;
-  }
-  .form-row button {
-    width: 100%;
-  }
-}
-
 .target-trigger {
   align-items: center;
   background: var(--surface-elevated);
@@ -516,5 +631,19 @@ async function confirmAction() {
 .select-label {
   color: var(--muted-foreground);
   font-size: 12px;
+}
+@media (max-width: 780px) {
+  .workspace-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(150px, 32%) minmax(0, 1fr);
+  }
+  .workspace-tree {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .setup-card {
+    grid-template-columns: auto 1fr;
+    margin: 16px auto;
+  }
 }
 </style>

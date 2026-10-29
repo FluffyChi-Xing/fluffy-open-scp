@@ -14,7 +14,8 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: false, typograph
 md.renderer.rules.fence = (tokens, idx) => {
   const token = tokens[idx]
   const lang = (token.info || '').trim().split(/\s+/)[0] || ''
-  return `<div class="f-md-code" data-lang="${escapeAttr(lang)}">${escapeHtml(token.content)}</div>`
+  // markdown-it 围栏内容恒以单个 \n 结尾，去掉避免 FCode 渲染幻影空行
+  return `<div class="f-md-code" data-lang="${escapeAttr(lang)}">${escapeHtml(token.content.replace(/\n$/, ''))}</div>`
 }
 const html = computed(() => md.render(props.source))
 

@@ -35,6 +35,8 @@ export type RouteMeta = RouteRecordRaw['meta'] & {
   activeMenu?: string
   noAffix?: boolean
   external?: boolean
+  /** 沉浸式页面：内容区去内边距并撑满视口（页内自管滚动），隐藏页脚。 */
+  fullbleed?: boolean
 }
 
 export interface TemplateRoute {

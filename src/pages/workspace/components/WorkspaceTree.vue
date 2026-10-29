@@ -85,7 +85,14 @@ function openFile(row: TreeRow) {
     :aria-label="props.title"
     data-allow-context-menu
   >
-    <p class="panel-label">{{ props.title }}</p>
+    <div class="panel-head">
+      <p class="panel-label" :title="$t('workspace.contextHint')">
+        {{ props.title }}
+      </p>
+      <div class="panel-actions">
+        <slot name="actions" />
+      </div>
+    </div>
     <ContextMenuRoot>
       <ContextMenuTrigger as-child>
         <div class="tree-canvas">
@@ -94,7 +101,10 @@ function openFile(row: TreeRow) {
               <ContextMenuTrigger as-child>
                 <button
                   class="tree-row"
-                  :class="[row.type, { selected: row.path === props.selectedPath }]"
+                  :class="[
+                    row.type,
+                    { selected: row.path === props.selectedPath },
+                  ]"
                   :style="{ paddingInlineStart: `${row.depth * 14 + 10}px` }"
                   type="button"
                   @click="openFile(row)"
@@ -110,9 +120,6 @@ function openFile(row: TreeRow) {
                     </template>
                   </svg>
                   <span class="row-name">{{ row.label }}</span>
-                  <small v-if="row.type === 'folder'" class="row-kind">
-                    {{ $t("workspace.folderKind") }}
-                  </small>
                 </button>
               </ContextMenuTrigger>
               <ContextMenuPortal>
@@ -193,29 +200,44 @@ function openFile(row: TreeRow) {
 </template>
 
 <style scoped>
+/* 扁平文档树（Obsidian 风格）：无卡片边框，仅一条右侧分隔线，行高收紧 */
 .workspace-tree {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-inline-end: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  min-height: 0;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
+}
+.panel-head {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 6px;
+  justify-content: space-between;
+  padding: 10px 12px 6px;
 }
 .panel-label {
   color: var(--subtle-foreground);
-  flex: none;
+  cursor: help;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   margin: 0;
-  padding: 12px 14px 6px;
   text-transform: uppercase;
+}
+.panel-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
 }
 .tree-canvas {
   flex: 1;
-  min-height: 220px;
+  min-height: 0;
+  overflow: auto;
   padding-bottom: 10px;
+  scrollbar-width: thin;
 }
 .tree-row {
   align-items: center;
@@ -227,7 +249,7 @@ function openFile(row: TreeRow) {
   font: inherit;
   font-size: 12px;
   gap: 7px;
-  min-height: 30px;
+  min-height: 28px;
   padding-inline-end: 10px;
   text-align: start;
   width: 100%;
@@ -242,7 +264,7 @@ function openFile(row: TreeRow) {
 }
 .tree-row.selected {
   background: var(--accent);
-  box-shadow: inset 3px 0 0 var(--primary);
+  box-shadow: inset 2px 0 0 var(--primary);
   color: var(--foreground);
   font-weight: 700;
 }
@@ -260,11 +282,6 @@ function openFile(row: TreeRow) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.row-kind {
-  color: var(--subtle-foreground);
-  font-size: 10px;
-  margin-inline-start: auto;
 }
 .tree-empty {
   color: var(--subtle-foreground);
