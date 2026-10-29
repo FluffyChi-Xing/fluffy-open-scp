@@ -9,31 +9,32 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod annotations;
 pub(crate) mod asset_build_m0;
 mod asset_build_m1;
-mod effect_service;
-mod game_assets;
-mod effect_resources;
-mod annotations;
+pub(crate) mod asset_build_samples;
 mod atomic_fs;
 mod debug_tools;
+mod effect_resources;
+mod effect_service;
+mod game_assets;
+mod game_launch;
 mod internal_dirs;
 mod locale_service;
 mod map_panel;
 mod media_tools;
-mod mod_project;
 mod mod_flow;
+mod mod_project;
 mod overrides;
+mod package_browser;
+mod package_service;
 mod pe_schema;
 mod prop_models;
 mod prop_models_section_dump;
-mod package_browser;
-mod package_service;
-mod raster_edit;
 mod raster_catalog;
+mod raster_edit;
 mod render_telemetry;
 mod runtime_observer;
-mod game_launch;
 mod settings;
 mod stats;
 mod version_service;
@@ -56,23 +57,21 @@ use mod_project::{
     studio_complete_onboarding, studio_legacy_status, studio_set_mod_root, studio_sync_legacy,
 };
 use overrides::override_scan;
+use package_browser::{list_game_tree, list_package_files};
+use package_service::{
+    close_package, export, export_status, list_model_catalog, list_path_entries, list_path_sources,
+    list_prop_bin_catalog, list_resources, open_package, patch_property_overlay,
+    read_decal_dictionary, read_decal_images, read_ecogame_preview, read_erz_preview,
+    read_image_preview, read_lot_editor_session, read_lot_model_meshes, read_property_preview,
+    read_raster_preview, read_resource_bytes, read_resource_data, read_resource_text,
+    read_resource_text_range, read_rw4_material_textures, read_rw4_preview,
+    read_rw4_section_detail, read_sim_parts, read_wwise_bank, release_prop_model_packages,
+    resolve_name, resolve_names, resolve_prop_models, write_export_file,
+};
+use pe_schema::build_pe_schema;
 use raster_edit::{
     create_lot_overlay, list_property_documents, read_image_rgba, read_lot_material,
     read_raster_rgba, register_decal_entry, save_raster_overlay,
-};
-use package_browser::{list_game_tree, list_package_files};
-use pe_schema::build_pe_schema;
-use package_service::{
-    close_package, export, export_status, list_resources, open_package, patch_property_overlay,
-    read_decal_dictionary, read_decal_images, read_erz_preview, read_ecogame_preview, read_image_preview,
-    read_lot_editor_session, read_lot_model_meshes, read_property_preview, read_raster_preview,
-    read_sim_parts,
-    list_model_catalog, list_path_entries, list_path_sources,
-    list_prop_bin_catalog,
-    read_resource_bytes, read_resource_data, read_resource_text, read_resource_text_range,
-    read_rw4_material_textures, read_rw4_preview, read_rw4_section_detail,
-    read_wwise_bank, release_prop_model_packages, resolve_name, resolve_names,
-    resolve_prop_models, write_export_file,
 };
 use render_telemetry::{render_telemetry_clear, render_telemetry_record, render_telemetry_summary};
 use settings::{game_directory_detect, settings_get, settings_set_game_directory};
@@ -85,10 +84,9 @@ use version_service::{
 use workspace::{
     code_delete_file, code_manifest, code_package_entries, code_package_info, code_read_text,
     code_resource_preview, code_tree, code_write_text, workspace_create_folder,
-    workspace_create_markdown,
-    workspace_get, workspace_legacy_status, workspace_list, workspace_move,
-    workspace_read_markdown, workspace_rename, workspace_set_root, workspace_sync_legacy,
-    workspace_write_markdown,
+    workspace_create_markdown, workspace_get, workspace_legacy_status, workspace_list,
+    workspace_move, workspace_read_markdown, workspace_rename, workspace_set_root,
+    workspace_sync_legacy, workspace_write_markdown,
 };
 
 #[tauri::command]
@@ -190,9 +188,14 @@ pub fn run() {
             read_lot_editor_session,
             effect_service::read_effect_preview,
             build_pe_schema,
-            list_model_catalog, list_path_entries, list_path_sources,
-    list_prop_bin_catalog,
-            read_lot_model_meshes, read_sim_parts, release_prop_model_packages, resolve_prop_models,
+            list_model_catalog,
+            list_path_entries,
+            list_path_sources,
+            list_prop_bin_catalog,
+            read_lot_model_meshes,
+            read_sim_parts,
+            release_prop_model_packages,
+            resolve_prop_models,
             read_raster_preview,
             read_image_preview,
             write_export_file,
@@ -210,7 +213,8 @@ pub fn run() {
             create_lot_overlay,
             read_decal_dictionary,
             read_decal_images,
-            read_erz_preview, read_ecogame_preview,
+            read_erz_preview,
+            read_ecogame_preview,
             read_rw4_preview,
             read_rw4_material_textures,
             read_rw4_section_detail,

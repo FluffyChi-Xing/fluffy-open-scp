@@ -1,5 +1,5 @@
 use super::*;
-use dbpf::{OverlayEntry, Package, ResourceId, write_uncompressed_overlay};
+use dbpf::{write_uncompressed_overlay, OverlayEntry, Package, ResourceId};
 use sc_properties::PropertyFile;
 use std::{
     fs,
@@ -60,6 +60,11 @@ fn source_package(root: &Path) -> PathBuf {
 fn clones_source_and_writes_property_overlay_with_readback() {
     let root = temp_root();
     source_package(&root);
+    fs::write(
+        root.join("asset.lot.json"),
+        r#"{"units":[{"kind":"pathPoint"}],"editor":{"workbench":{"paths":[]}}}"#,
+    )
+    .unwrap();
     let schema = serde_json::json!({
         "$schema": "openscp.asset", "schema_version": 2,
         "id": "willis", "kind": "building-asset",
@@ -150,12 +155,12 @@ fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
     );
     let build = root.join(".build").join(first.build_hash);
     assert!(build.join("plan/im.json").is_file());
-    assert!(
-        build
-            .join("artifacts/property/00B1B104-40E0C000-8D007745.property")
-            .is_file()
-    );
+    assert!(build
+        .join("artifacts/property/00B1B104-40E0C000-8D007745.property")
+        .is_file());
     assert!(build.join("reports/m1-build.json").is_file());
+    assert!(build.join("artifacts/scene/asset.lot.json").is_file());
+    assert!(build.join("artifacts/resource-manifest.json").is_file());
     assert!(!root.join("build").exists());
     assert_eq!(fs::read_dir(root.join(".build")).unwrap().count(), 1);
     resources.insert(opaque, vec![42]);
@@ -173,11 +178,9 @@ fn failed_patch_creates_no_build_and_does_not_change_source() {
     let bytes = fs::read(&source).unwrap();
     let mut raw = schema();
     raw["semantics"]["properties"][0]["expected"] = serde_json::json!(999);
-    assert!(
-        build_from_schema(&root, &raw.to_string())
-            .unwrap_err()
-            .contains("expected")
-    );
+    assert!(build_from_schema(&root, &raw.to_string())
+        .unwrap_err()
+        .contains("expected"));
     assert_eq!(bytes, fs::read(source).unwrap());
     assert!(!root.join(".build").exists());
     fs::remove_dir_all(root).unwrap();
@@ -203,12 +206,10 @@ fn unsupported_writers_and_malformed_patches_fail_in_pure_plan() {
 fn guards_omitted_landmark_template_and_source_parent_targets() {
     let mut raw = schema();
     raw["semantics"]["properties"][0]["tgi"] = serde_json::json!("00B1B104:40E1C000:4E01E311");
-    assert!(
-        plan::plan_from_schema(&raw.to_string())
-            .err()
-            .unwrap()
-            .contains("shared template")
-    );
+    assert!(plan::plan_from_schema(&raw.to_string())
+        .err()
+        .unwrap()
+        .contains("shared template"));
     raw["semantics"]["allowSharedTemplate"] = serde_json::json!(true);
     assert!(plan::plan_from_schema(&raw.to_string()).is_ok());
     let root = temp_root();
@@ -234,11 +235,9 @@ fn guards_omitted_landmark_template_and_source_parent_targets() {
     fs::write(source, connector::link(&resources).unwrap()).unwrap();
     raw = schema();
     raw["semantics"]["properties"][0]["tgi"] = serde_json::json!("00B1B104:40E0C000:000003E7");
-    assert!(
-        build_from_schema(&root, &raw.to_string())
-            .unwrap_err()
-            .contains("shared template")
-    );
+    assert!(build_from_schema(&root, &raw.to_string())
+        .unwrap_err()
+        .contains("shared template"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -300,6 +299,21 @@ fn malformed_property_with_trailing_data_is_rejected_before_write() {
     let mut bytes = PropertyFile::default().encode_canonical().unwrap();
     bytes.extend_from_slice(&[1, 2, 3]);
     assert!(processor::process_property(&bytes, &[]).is_err());
+}
+
+#[test]
+fn rejects_scene_path_without_path_entry_before_staging() {
+    let root = temp_root();
+    source_package(&root);
+    fs::write(
+        root.join("asset.lot.json"),
+        r#"{"editor":{"workbench":{"paths":[{"id":"path:1","pointIds":[]}]}}}"#,
+    )
+    .unwrap();
+    let error = build_from_schema(&root, &schema().to_string()).unwrap_err();
+    assert!(error.contains("missing path entry"));
+    assert!(!root.join(".build").exists());
+    fs::remove_dir_all(root).unwrap();
 }
 
 /// Opt-in fixture: clones the entire supplied package to a disposable project.
@@ -365,4 +379,85 @@ fn real_willis_property_package_readback() {
         result.resource_count, cost, next, result.sha256
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+/// Opt-in fixture: uses the real DLC0 package as a read-only reference and
+/// applies one guarded LotSize patch for each workbench sample.
+#[test]
+#[ignore = "requires the local asset-build fixture package"]
+fn real_asset_sample_property_fixture_readback() {
+    let fixture = std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT");
+    for sample in ["university", "commercial"] {
+        let root = PathBuf::from(&fixture).join(sample);
+        let raw = fs::read_to_string(root.join("schema.json")).unwrap();
+        let result = build_from_schema(&root, &raw).unwrap();
+        assert_eq!(result.patched_resources, 1);
+        assert!(result.path.is_file());
+        let report = fs::read(
+            root.join(".build")
+                .join(&result.build_hash)
+                .join("reports/m1-build.json"),
+        )
+        .unwrap();
+        assert!(serde_json::from_slice::<serde_json::Value>(&report).is_ok());
+    }
+}
+
+#[test]
+#[ignore = "requires local DLC0 and Graphics packages"]
+fn real_university_path_entry_fixture_builds_and_reads_back() {
+    let fixture =
+        PathBuf::from(std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"));
+    let graphics_path = PathBuf::from(
+        std::env::var("SC_ASSET_GRAPHICS_PACKAGE").expect("set SC_ASSET_GRAPHICS_PACKAGE"),
+    );
+    let root = fixture.join("university");
+    let source_path = root.join("SimCity_DLC0.package");
+    let original_source = fs::read(&source_path).unwrap();
+    let scene = r#"{"version":1,"editor":{"workbench":{"paths":[{"id":"path:1","entry":"675b61b1","pointIds":[],"source":{"typeId":11645188,"group":1374732288,"instance":2639719421}}]}}}"#;
+    fs::write(root.join("asset.lot.json"), scene).unwrap();
+    let mut resources = connector::read_source(&source_path).unwrap();
+    let graphics = Package::open(&graphics_path).unwrap();
+    let path_entry = ResourceId {
+        type_id: 0x00B1_B104,
+        group: 0x40E1_C400,
+        instance: 0x675B_61B1,
+    };
+    let entry = graphics
+        .entry(path_entry)
+        .expect("university PathEntry in Graphics package");
+    resources.insert(path_entry, graphics.read(entry).unwrap());
+    fs::write(&source_path, connector::link(&resources).unwrap()).unwrap();
+    let raw = fs::read_to_string(root.join("schema.json")).unwrap();
+    let result = build_from_schema(&root, &raw).unwrap();
+    let output = connector::read_source(&result.path).unwrap();
+    assert!(output.contains_key(&path_entry));
+    let build_root = result.path.parent().unwrap().parent().unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &fs::read(build_root.join("artifacts/resource-manifest.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(manifest["path_entry"].as_array().unwrap().iter().any(|value| {
+        value.as_str() == Some("00B1B104-40E1C400-675B61B1")
+    }));
+    assert!(build_root
+        .join("artifacts/path_entry/00B1B104-40E1C400-675B61B1.resource")
+        .is_file());
+    assert!(result.path.is_file());
+    fs::write(&source_path, original_source).unwrap();
+    let _ = fs::remove_file(root.join("asset.lot.json"));
+}
+
+#[test]
+#[ignore = "requires AppData commercial sample and local fixture package"]
+fn real_commercial_sample_rejects_unclosed_path_before_staging() {
+    let mods_root = PathBuf::from(std::env::var("OPEN_SCP_MODS_ROOT").expect("set OPEN_SCP_MODS_ROOT"));
+    let fixture = PathBuf::from(std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"));
+    let root = fixture.join("commercial");
+    let _ = fs::remove_dir_all(root.join(".build"));
+    fs::copy(mods_root.join("商业地标资产开发/asset.lot.json"), root.join("asset.lot.json")).unwrap();
+    let raw = fs::read_to_string(root.join("schema.json")).unwrap();
+    let error = build_from_schema(&root, &raw).unwrap_err();
+    assert!(error.contains("path semantic validation failed"));
+    assert!(!root.join(".build").exists());
 }
