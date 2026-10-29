@@ -66,6 +66,42 @@
 
 城市域的来源掩码区分“有效零值”和“没有城市数据”：森林/土壤合成中零值也必须覆盖区域 ED；城市地下水的零值保持为零，不借用区域值。煤、油、矿的城市域外没有已确认的最终分布，不使用笔刷扩散生成圆形矿藏。资源纹理采用最近邻采样，防止跨城市边界插值污染。
 
+## 2026-10-30 新样本：地图资源不是一张图，而是三层注册链
+
+新的 PDB/source-tree 样本把“添加地图资源”落到了可编译的接口顺序：
+
+```text
+EcoGame scripts
+  → cEcoGame::InitGame
+  → cEcoMapEntry::FillFromProps
+  → cEcoMap::FillFromProps + cEcoMap::Create
+  → cEcoMap::InitFromImage / EGB Read-Write
+  → cGraphicsMap::Create / Update
+```
+
+- `cEcoGame::InitGame`（RVA `0x60BDC0`）按 `NumMapEntries()` 创建每个模拟地图。地图
+  条目从 Property 的 `0x07E0AE01` 取得 `maxValue`，`0x07E0AE05` 提供初值，
+  `0x07E0AE06` 提供图像 Key；`cEcoMap::InitFromImage`（RVA `0x63E820`）先尝试
+  `0x03E421F0` 的 16-bit 图像，失败再尝试 `0x03E421EC` 的 8-bit 图像，并按
+  `maxValue` 缩放到 `mCellsX×mCellsY`。
+- `cEcoMap::FillFromProps`（RVA `0x63F1F0`）把 `MapBounds()` 直接作为 `mCellsX/Y`，
+  并从 `0x0839470B`、`0x0839470C` 分别读取模拟开关和 debug 开关。地图网格大小因此
+  由脚本 MapBounds 与地图资源共同决定，不能只换一张 PNG。
+- 图形侧 `cGraphicsMap::Create`（RVA `0x7CBC00`）从条目 Property `0x0AF3DAC7`
+  读取纹理 Key，用同一 `cellsX/cellsY` 创建格式 24、用途 81 的 GPU 纹理；
+  `Update`（RVA `0x7CBA10`）按 `mModCount` 将模拟值归一化写入纹理。模拟 EcoMap、
+  图形纹理和区域 ED 是不同资源，编辑器必须分别记录 TGI、尺寸和来源。
+
+这条链带来一个可执行的最小地图资源实验：先新增一个 map-entry Property 与一张
+`0x03E421F0`/`0x03E421EC` 图像，再让脚本 `NumMapEntries` 能枚举它；随后验证 EcoMap
+读回、`mMapSum`、GraphicsMap 纹理和 UI `BuildMapsJSValue` 可查询性。缺任何一层都应
+报告“资源存在但未注册”，不能把预览纹理当作游戏地图已添加。
+
+地图写回也已有原生对照：`cTerrainSystem::RegisterPackage`（RVA `0x405520`）通过
+`CreatePackageSave` 建立保存包并注册 save area；`cTerrainEditor::WriteHeightMapToFile`
+（RVA `0x40A850`）将 `cImageData16` 通过 `SaveNamedResource` 写入该区域。OpenSCP 的
+overlay writer 应沿这条顺序写入并立即重读资源，而不是直接替换原始 package。
+
 此前独立批处理对 130 城的煤/油/矿/地下水 PNG 逐值回读一致；129 城高度在八种方向候选中原生方向最吻合。CaspianLake 的 1027 城高度过平（标准差约 5.6 cm），另用地下水、森林、土壤与 ED 对比，三场均支持原生方向。方向证据不能简化为“全部高度都证明同一方向”。
 
 ## 道路与状态版本

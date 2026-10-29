@@ -31,6 +31,9 @@
 
 ## 待闭合
 
+新样本已进一步闭合交通实现层：`cGameAppMode::Init` 实际注册 12 个 transport handler；道路车辆和警车进入 `cartraffic`/`SC::cTransportVehicle`，而车型身份仍由 TransportEntry index 与 `mID` 表示。完整表和规则解析影响见 [交通 handler 与车辆规则类型闭合](traffic-handler-types-and-police-correlation-20261030.md)。这修正了“车辆规则类型”与“车型资源”可能被混为一谈的问题。
+
+
 从零售构造/池分配/更新调用关系确认对象所有权和活动槽，再恢复移动字段及 tick。当前已取得正确类型锚点和可复查对象候选，仍未闭合车辆移动入口或位置/路径采集。Bullet 物理世界与道路交通代理的关系也未证明，不把 updateVehicles 名称直接等同于全城交通更新。
 
 ## 用户解除暂停后的再次采样

@@ -90,6 +90,27 @@ OpenSCP 的地图/城市编辑流程应把坐标字段分为三类，避免误�
 - 计算修改前后的锚点差值（城市槽位、道路端点、建筑 lot 中心），若出现统一非零平移则拒绝导出；
 - 将 PlayArea、RegionSize、VisibleArea 分开显示并分别写入完整性摘要。
 
+## 2026-10-30 新样本勘误：PlayArea、Eco 网格与高度 tile 是三条链
+
+新的 retail PDB/source-tree 样本把“扩大 citybox 后坐标是否会漂移”拆成了三个可以分别验收的量：
+
+1. `GB::cEcoGame::InitGame`（RVA `0x60BDC0`）从 `SimProperties` 的 `0x07E0AC05`
+   读取 `mPlayArea`，随后用脚本 `MapBounds()` 计算 `mPlayCell`。这说明 citybox 的逻辑
+   范围不是渲染网格推导出来的；边界扩展的首个写入点是 EcoGame 属性。
+2. `SC::cTerrainMapSet::WorldToEco`（RVA `0x42A910`）只用
+   `smScalars.mFlatScale` 把连续世界坐标映射到 `ecoSize×ecoSize` 网格，并把整数格索引
+   夹到 `0..ecoSize-1`，再返回格内 `s/t`。因此“盒外”首先表现为采样网格的边缘夹取，
+   不是另一套世界原点。
+3. `SC::cTerrainEditor::Save341HeightMaps`（RVA `0x40D350`）导出时以
+   `4096 - regionDimension/2` 为起点、每块 `8192` 世界单位，按
+   `base_xNN_yNN_mipN` 生成资源名；`MakeHeightMapFileKey` 再把名字映射为
+   `0x03E421F0` 高度资源 Key。高度场分块不能复用 citybox 的 PlayArea 尺寸，也不能在
+   每个 tile 内重复应用 `mPosInRegion`。
+
+编辑器应在导出前显示并校验 `PlayArea`、`mFlatScale/ecoSize`、`RegionDimension` 三组
+   数值；任何统一平移只允许出现在显式的城市槽位变换中。这样可以把“边框扩大后道路/建筑
+   偏移”快速归因到重复平移、PlayArea 合法性或高度 tile 分块，而不再把三种问题混为一谈。
+
 ## 仍需运行时验证的边界
 
 源码已确认静态坐标链，但以下行为仍需用可解析样本或运行时对照确认：

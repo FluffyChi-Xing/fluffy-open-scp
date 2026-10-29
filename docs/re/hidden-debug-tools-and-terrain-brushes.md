@@ -121,7 +121,35 @@ A5800DC3  E48FCA6B  B65E1F2E  454041B4
 | 直接编辑地下水 brush 并写回游戏 | 高度可验证 | Terrain Editor、RunScriptBrushes、519 个 Swarm typed-map export 和 exporter 均存在 | 先运行单区域 round-trip，再实现写回 |
 | 从 Property 单独恢复完整地下水工具 | 不可由菜单证明 | 菜单 action 无 factory case，但区域 Property 链完整 | 不把菜单解锁当作 Terrain Editor 支持 |
 
-## 下一步
+## 2026-10-30 新样本：Terrain Editor 已具备可复用的调试闭环
+
+PDB/source-tree 样本把此前“工具存在但入口不明”的判断推进到函数级：
+
+1. `cTerrainSystem::Init`（RVA `0x4052E0`）实例化 `cTerrainEditor`，调用 `Init`，
+   注册 Terrain Editor layer（ID `0x0A20698B`），并创建 shader data。它不是只在
+   菜单层留下的死类型。
+2. `SetTerrainAuthoringToolActive`（RVA `0x405210`）直接切换 authoring gate；
+   `cTerrainLayer::TerrainEditorSpecialDraw`（RVA `0x432860`）在该 gate 打开时绘制
+   ground plane 和区域层。`SetRegionAuthoringActive`（RVA `0x405140`）还会切换
+   `kRegionEditCameraID` 并关闭 `dof`/`motionBlur`，说明区域编辑视图有独立相机契约。
+3. `cTerrainEditor::ApplyBrush`（RVA `0x40D830`）把位置、旋转、尺寸、纹理和
+   `cTerrainBrushDescription` 放入当前 layer 的 brush queue；尺寸等于
+   `mRegionDimension` 时位置被归零，表示整场操作必须走“全区域”语义，不能当成普通
+   局部笔刷。
+4. `Save341HeightMaps`、`FinalizeGameHeightMap` 和 `WriteHeightMapToFile` 组成真实
+   导出链：341 张高度 tile、GPU→CPU 读回、命名 Key、save area 写入。authoring active
+   且命中 `heightmap_x00_y00_mip4` 时，`FinalizeGameHeightMap` 还会在
+   `GetDebugDir()/Textures/dump/` 创建调试输出路径。
+5. PDB 提取的 `tLogActionID` 中 `42 = DebugModifyMap`。因此地图修改可以纳入已有
+   delta action 解码器；编辑器应记录 action、map ID、tick 增量和资源哈希，形成可重放
+   的 debug session，而不是只保存最终 PNG。
+
+由此建议把地图 debug 工具拆成三层：`authoring gate`（开关/相机）、`brush document`
+（位置/纹理/描述/目标 map）和 `export session`（341 tile、Key、save area、delta）。
+先做只读诊断与 debug dump，再开放 overlay 写回；菜单解锁只负责显示入口，不能替代
+Terrain Editor 的导出和资源注册链。
+
+## 原有验证下一步
 
 1. 不再把 `waterTableEcoMapBrushes` overlay 当作“新城市无水变有水”的验证包。它验证的是 Terrain Editor 的区域 341 eco-map 刷写链；城市地下水仍由 bootstrap 的 `0F92DC56` typed map 初始化。
 2. 在隔离的全新区域缓存中运行 `terrain_water_table_validation`，直接记录 `0x03E421ED` 的区域地下水通道和 mip4 资源差异。

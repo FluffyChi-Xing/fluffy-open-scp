@@ -125,6 +125,43 @@ RVA `0x25B6E0` 是当前相机 glide/update 候选；它在不同状态分支更
 
 目前没有写入补丁或运行时修改；已有样本中用户操作期间相机移动事件正常产生，观察器注入几乎无感且无明显卡顿。
 
+### 2026-10-30 新样本：`regionedit` 只改变相机模式，不解除边界
+
+新样本的 source-tree/PDB 把“区域编辑相机是否天然自由”回答得更具体：
+
+1. `kRegionEditCameraID` 的初始化函数（RVA `0x79D030`）只是对字符串
+   `regionedit` 做 FNV1 hash。`cTerrainSystem::SetRegionAuthoringActive`（RVA
+   `0x405140`）激活时调用 CameraManager 的切换接口，并关闭 `SCMain` renderer 的
+   `dof` 与 `motionBlur`。函数没有清空 bounds、替换 controller 或跳过约束。
+2. `cToolRegion::FillFromProps`（RVA `0x47C580`）从 Property `0x08E48E67` 读取
+   `mRegionCameraID`，缺省值是 `0x2D89FF4A`；`Activate`（RVA `0x47AF30`）保存
+   原相机、切到这个 ID，并在退出时恢复。也就是说这是一个可配置的 controller 选择，
+   不是“解除限制”开关。
+3. 基类 `cCameraControllerBase::Update`（RVA `0x395B90`）在每帧更新末尾调用
+   虚函数 `ConstrainTarget`。基类实现（RVA `0x391830`）从 `Game()->PlayArea()`
+   取得六个边界值，对 `mLerpSubject.mTarget` 的 x/y/z 做 min/max 夹取；切换到
+   `regionedit` 并不会绕过这条调用。
+4. `Update` 的 `mRelativeMove` 分支在调用 `ConstrainTarget` 前已经做了一次 Game
+   bounds 夹取，随后对 x/y 再执行 `[-1024,1024]` 检查，越界值改为 `±1020`。因此只
+   放宽 `ConstrainTarget` 仍可能在键盘、拖拽或边缘滚动时卡在第二道限制。
+5. `CameraEyeConstraints`（RVA `0x393530`）使用 `PlayArea` 判断视线采样点是否在
+   城市盒内；界外改用 `PointSampleHeightInRegion`，并据此调整相机高度/俯仰。这是防
+   穿地逻辑，不能为了越界而整段禁用。
+
+这带来一个可操作的解除方案分层：
+
+| 层 | 解除动作 | 必须保留 |
+| --- | --- | --- |
+| 活动相机 | 只验证/选择 `regionedit` 或自定义 controller | CameraDirector 的切换、恢复和过渡 |
+| XY 目标约束 | 将 `ConstrainTarget` 的 bounds 源换成相机专用有效区域 | z 约束、插值、跟随和事件状态 |
+| 相对移动 | 将 `mRelativeMove` 的 ±1024/±1020 改为同一 bounds 契约 | 高度检测和 `CheckForGroundFromPoint` |
+| 视线/地面 | 允许 `CameraEyeConstraints` 继续采样区域地形 | `PointSampleHeightInRegion`、pitch 修正 |
+| 视觉参数 | 通过 camera Property 调整 zoom/FOV/near/far/pitch 数组 | 不把 zoom/far clip 当作 XY 解锁 |
+
+最小验证应在同一城市内记录每帧 `targetBeforeClamp`、`bounds`、`targetAfterClamp`、
+`relativeMove` 和地面采样结果。四种输入（拖拽、键盘、边缘滚动、跟随/过渡）都必须
+通过相同 bounds；否则只能称为“部分解锁”。
+
 ## 接下来优先抓取的最小证据
 
 1. 模板选择：`RegionTemplates` 响应里的模板 key、name、`map.cities[].uid`、boxes 数量和对应关系。
