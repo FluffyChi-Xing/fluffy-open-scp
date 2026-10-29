@@ -283,44 +283,54 @@ fn read_indices(
 }
 
 pub fn compile_primitives(primitives: &[GlbPrimitive]) -> Result<CompiledNativeModel, String> {
-    let primitive = primitives.first().ok_or("no primitive")?;
-    let mut vertices = Vec::with_capacity(primitive.positions.len() * 32);
-    for i in 0..primitive.positions.len() {
-        for value in primitive.positions[i] {
-            vertices.extend_from_slice(&value.to_le_bytes());
-        }
-        for value in primitive.normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]) {
-            vertices.extend_from_slice(&value.to_le_bytes());
-        }
-        for value in primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]) {
-            vertices.extend_from_slice(&value.to_le_bytes());
-        }
+    if primitives.is_empty() {
+        return Err("no primitive".into());
     }
-    let mut indices = Vec::with_capacity(primitive.indices.len() * 2);
-    for &index in &primitive.indices {
-        let value =
-            u16::try_from(index).map_err(|_| "RW4 static mesh supports at most 65535 vertices")?;
-        indices.extend_from_slice(&value.to_le_bytes());
+    let vertex_count: usize = primitives.iter().map(|p| p.positions.len()).sum();
+    let index_count: usize = primitives.iter().map(|p| p.indices.len()).sum();
+    let mut vertices = Vec::with_capacity(vertex_count * 32);
+    let mut indices = Vec::with_capacity(index_count * 2);
+    let mut vertex_base = 0u32;
+    for primitive in primitives {
+        for i in 0..primitive.positions.len() {
+            for value in primitive.positions[i] {
+            vertices.extend_from_slice(&value.to_le_bytes());
+            }
+            for value in primitive.normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]) {
+            vertices.extend_from_slice(&value.to_le_bytes());
+            }
+            for value in primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]) {
+            vertices.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for &index in &primitive.indices {
+            let value = u16::try_from(index + vertex_base)
+                .map_err(|_| "RW4 static mesh supports at most 65535 vertices")?;
+            indices.extend_from_slice(&value.to_le_bytes());
+        }
+        vertex_base = vertex_base
+            .checked_add(primitive.positions.len() as u32)
+            .ok_or("vertex count overflow")?;
     }
     let fmt = vertex_format_payload();
     let specs = vec![
         writer_section(SectionType::VERTEX_FORMAT, fmt.clone()),
         writer_section(
             SectionType::VERTEX_ARRAY,
-            vertex_array_payload(0, 2, primitive.positions.len() as u32, 32),
+            vertex_array_payload(0, 2, vertex_count as u32, 32),
         ),
         writer_section(SectionType::BLOB, vertices),
         writer_section(SectionType::BLOB, indices),
         writer_section(
             SectionType::TRIANGLE_ARRAY,
-            triangle_array_payload(3, primitive.indices.len() as u32),
+            triangle_array_payload(3, index_count as u32),
         ),
         writer_section(
             SectionType::MESH,
             mesh_payload(
                 4,
-                (primitive.indices.len() / 3) as u32,
-                primitive.positions.len() as u32,
+                (index_count / 3) as u32,
+                vertex_count as u32,
                 1,
             ),
         ),
@@ -335,8 +345,7 @@ pub fn compile_primitives(primitives: &[GlbPrimitive]) -> Result<CompiledNativeM
     let decoded = file
         .decode_mesh(&rw4, 5)
         .map_err(|e| format!("compiled RW4 mesh failed: {e}"))?;
-    if decoded.vertices.len() != primitive.positions.len()
-        || decoded.triangles.len() * 3 != primitive.indices.len()
+    if decoded.vertices.len() != vertex_count || decoded.triangles.len() * 3 != index_count
     {
         return Err("compiled RW4 round-trip count mismatch".into());
     }
@@ -344,7 +353,7 @@ pub fn compile_primitives(primitives: &[GlbPrimitive]) -> Result<CompiledNativeM
         rw4,
         primitive_count: primitives.len(),
         vertex_count: decoded.vertices.len(),
-        index_count: primitive.indices.len(),
+        index_count,
     })
 }
 
@@ -423,18 +432,19 @@ mod tests {
     use super::*;
     #[test]
     fn compiles_static_triangle_to_parseable_rw4() {
-        let model = compile_primitives(&[GlbPrimitive {
+        let primitive = GlbPrimitive {
             positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             normals: vec![[0.0, 0.0, 1.0]; 3],
             uvs: vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
             indices: vec![0, 1, 2],
-        }])
+        };
+        let model = compile_primitives(&[primitive.clone(), primitive])
         .unwrap();
         let file = Rw4File::parse(&model.rw4).unwrap();
         assert_eq!(
             file.decode_mesh(&model.rw4, 5).unwrap().triangles,
-            vec![[0, 1, 2]]
+            vec![[0, 1, 2], [3, 4, 5]]
         );
-        assert_eq!(file.decode_mesh(&model.rw4, 5).unwrap().vertices.len(), 3);
+        assert_eq!(file.decode_mesh(&model.rw4, 5).unwrap().vertices.len(), 6);
     }
 }
