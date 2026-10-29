@@ -1,5 +1,17 @@
 # Retail Delta Stream Analysis
 
+## 2026-10-30 update: inner action layer fully specified
+
+Dev-beta PDB gives the authoritative inner-layer spec: `GB::DecodeActionHeader`
+(4-byte LE header: data1:u16 | data2:u8 | actionID:6 bits | sentinel 0b11;
+escapes data1 0xFFFE/0xFFFF, data2 62/63) and the complete 47-value
+`GB::tLogActionID` enum with `Log*` payload semantics (SimTicks flush is a
+tick **delta**; GlobalRule payload = applyCount; UnitRule = applyCount/
+maxApply/maxPossibleMapApply + ID list; UnitMove = cSPTransform). Action
+numbering is now authoritative — the "dev Unused2 must not be applied"
+caveat below narrows to "numbering per the PDB table". See
+[pdb-sample-four-questions-20261029.md](pdb-sample-four-questions-20261029.md) §4.
+
 ## 2026-10-17 correction: retail action semantics
 
 The actual retail encoder at VA `0x5CC130` uses data2 extension/sentinel
