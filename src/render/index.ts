@@ -7,7 +7,6 @@
  *   plan/      纯计划（DTO + 事实 → 可执行描述符）
  *   exec/      three 执行器（唯一副作用层）
  *   session/   阶段编排（单元/贴花/地面）
- *   adapters/  迁移期与旧视口的桥（单元分发）
  */
 export type {
   AssetRef,
