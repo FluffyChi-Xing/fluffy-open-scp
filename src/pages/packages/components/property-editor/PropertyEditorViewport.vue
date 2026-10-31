@@ -890,18 +890,123 @@ let neonAnimated = false;
 let neonFrame = 0;
 let neonLast = 0;
 const particleViews: ParticleEffectView[] = [];
+const effectMarkers = new Map<string, ThreeNamespace.Object3D>();
 let particleFrame = 0;
 let particleLast = 0;
+let effectSyncToken = 0;
 
 function stopParticleClock() {
   if (particleFrame) cancelAnimationFrame(particleFrame);
   particleFrame = 0;
 }
 
+function clearEffectMarkers() {
+  for (const marker of effectMarkers.values()) disposeObject(marker);
+  effectMarkers.clear();
+}
+
 function clearParticleViews() {
+  effectSyncToken += 1;
   stopParticleClock();
   for (const view of particleViews) view.dispose();
   particleViews.length = 0;
+  clearEffectMarkers();
+}
+
+function findParticleView(unitIdValue: string): ParticleEffectView | undefined {
+  return particleViews.find((view) => view.object.userData.unitId === unitIdValue);
+}
+
+function effectBudget(): number {
+  return Math.max(
+    32,
+    Math.min(320, Math.floor(2400 / Math.max(1, props.grouping.effects.length))),
+  );
+}
+
+/**
+ * 增量切换 effect 单元：只替换 effects 组里的 cone/粒子对象，不重建整个场景。
+ * 关闭时把 cone 暂存到 effectMarkers，下一次开启/关闭无需重新装配资产。
+ */
+async function syncEffectUnits(enabled: boolean) {
+  const instance = viewport.viewer.value;
+  if (!instance || props.suspended || props.renderMode !== "refined") return;
+  if (enabled && !props.effectDefinitions?.size) return;
+
+  const token = ++effectSyncToken;
+  const assetCtx = buildAssetCtx();
+  const budget = effectBudget();
+  let processed = 0;
+
+  for (const unit of props.grouping.effects) {
+    if (token !== effectSyncToken) return;
+    const id = unitId(unit);
+    const previous = viewport.unitObjects.get(id);
+    const existing = findParticleView(id);
+    let next: ThreeNamespace.Object3D | null;
+    let previousHandled = false;
+
+    if (enabled) {
+      if (existing) continue;
+      const definition = unit.effectId
+        ? props.effectDefinitions?.get(unit.effectId.instance)
+        : undefined;
+      if (!definition?.emitters.length) continue;
+      const view = createParticleEffect(assetCtx.THREE, unit, definition.emitters, budget);
+      if (!view) continue;
+      particleViews.push(view);
+      next = view.object;
+      if (previous) {
+        instance.group(kindGroup(unit.kind)).remove(previous);
+        effectMarkers.set(id, previous);
+        previousHandled = true;
+      }
+    } else {
+      if (!existing) continue;
+      particleViews.splice(particleViews.indexOf(existing), 1);
+      existing.dispose();
+      if (previous) {
+        // 先摘掉已释放的粒子对象，避免 await 期间继续渲染已 dispose 的几何。
+        instance.group(kindGroup(unit.kind)).remove(previous);
+        previousHandled = true;
+      }
+      next = effectMarkers.get(id)
+        ?? (await renderRefinedAssetUnit(assetCtx, unit))
+        ?? buildUnitObject(assetCtx.THREE, unit);
+      effectMarkers.delete(id);
+      if (token !== effectSyncToken) {
+        if (next) disposeObject(next);
+        return;
+      }
+      if (next) {
+        next.userData.unitId = id;
+        next.userData.unitKind = unit.kind;
+      }
+    }
+
+    if (!next) continue;
+    if (next !== previous) {
+      if (previous && !previousHandled) {
+        instance.group(kindGroup(unit.kind)).remove(previous);
+        disposeObject(previous);
+      }
+      instance.group(kindGroup(unit.kind)).add(next);
+      viewport.unitObjects.set(id, next);
+    }
+
+    if (enabled && ++processed >= 2) {
+      processed = 0;
+      await yieldToBrowser();
+      if (token !== effectSyncToken) return;
+    }
+  }
+
+  if (enabled) startParticleClock();
+  else stopParticleClock();
+  applyOutlines();
+  updatePickOverlay();
+  if (props.selectedId) updateGizmo();
+  instance.invalidate();
 }
 
 function startParticleClock() {
@@ -1718,14 +1823,17 @@ watch(
   },
 );
 watch(
-  () => [props.renderEffects, props.effectDefinitions] as const,
+  () => props.renderEffects,
+  (on) => {
+    // 只做 effects 组的增量替换；不再 scheduleRebuild("grouping")，
+    // 否则开关一次就要 dispose/重装配整场景（模型/地面/贴花全部重来）。
+    void syncEffectUnits(on === true);
+  },
+);
+watch(
+  () => props.effectDefinitions,
   () => {
-    if (!props.renderEffects) {
-      stopParticleClock();
-      if (particleViews.length) scheduleRebuild("grouping");
-    } else if (props.effectDefinitions?.size) {
-      scheduleRebuild("grouping");
-    }
+    if (props.renderEffects && props.effectDefinitions?.size) void syncEffectUnits(true);
   },
 );
 watch(

@@ -1132,6 +1132,14 @@ path = "effect/effect_resource_find.rs"
 name = "effect_units"
 path = "effect/effect_units.rs"
 
+[[example]]
+name = "effect_swarm_dump"
+path = "effect/effect_swarm_dump.rs"
+
+[[example]]
+name = "effect_texture_dump"
+path = "effect/effect_texture_dump.rs"
+
 # zone —— 分区颜色与图标
 [[example]]
 name = "zone_color_dump"

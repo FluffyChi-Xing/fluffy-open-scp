@@ -234,6 +234,17 @@ fn fast_particle_fallback() -> ParticleComponent {
     }
 }
 
+fn ordered_texture_refs(material: &EffectMaterial) -> Vec<(u32, u32)> {
+    let mut refs = material.textures.clone();
+    // Swarm stores the sprite atlas in material parameter slot 2; other slots
+    // may hold normal/soft-particle maps. Prefer slot 2 so the preview does not
+    // pick a decodable but visually unrelated texture.
+    refs.sort_by_key(|(slot, _)| if *slot == 2 { 0 } else { 1 + *slot });
+    refs.into_iter()
+        .map(|(_, texture)| (texture.group, texture.instance))
+        .collect()
+}
+
 fn materialize_emitter(
     candidate: EmitterCandidate<'_>,
     packages: &[Arc<dbpf::Package>],
@@ -256,13 +267,7 @@ fn materialize_emitter(
     let texture_refs: Vec<_> = if particle.texture.draw_mode == 15 {
         materials
             .get(&(particle.texture.group, particle.texture.instance))
-            .map(|material| {
-                let mut refs = material.textures.clone();
-                refs.sort_by_key(|(slot, _)| *slot);
-                refs.into_iter()
-                    .map(|(_, texture)| (texture.group, texture.instance))
-                    .collect()
-            })
+            .map(ordered_texture_refs)
             .unwrap_or_default()
     } else if particle.texture.instance != u32::MAX {
         vec![(particle.texture.group, particle.texture.instance)]
@@ -437,6 +442,27 @@ mod tests {
             rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             offset,
         }
+    }
+
+    #[test]
+    fn material_texture_prefers_slot_two_atlas() {
+        use sc_properties::swarm_material::MaterialTexture;
+        let material = EffectMaterial {
+            group: 0,
+            instance: 1,
+            shader_group: 0,
+            shader_instance: 0,
+            format: 16,
+            textures: vec![
+                (0, MaterialTexture { group: 0, instance: 0xA0 }),
+                (1, MaterialTexture { group: 0, instance: 0xB0 }),
+                (2, MaterialTexture { group: 0, instance: 0xC0 }),
+            ],
+        };
+        assert_eq!(
+            ordered_texture_refs(&material),
+            vec![(0, 0xC0), (0, 0xA0), (0, 0xB0)]
+        );
     }
 
     #[test]

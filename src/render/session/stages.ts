@@ -16,7 +16,7 @@ import type {
 import type { UnitRenderContext } from "@/pages/packages/components/property-editor/renderers/types";
 import type {
   ParticleEffectView,
-} from "@/pages/packages/components/property-editor/effects/particleRenderer";
+} from "@/pages/packages/components/property-editor-next/effects";
 
 export type KindGroup = "model" | "lot" | "dimensions" | "lights" | "props" | "decals" | "effects" | "spawners" | "paths";
 
