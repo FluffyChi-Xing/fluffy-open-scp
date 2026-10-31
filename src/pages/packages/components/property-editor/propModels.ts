@@ -85,7 +85,10 @@ async function loadTexture(
   if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
   texture.flipY = false;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.anisotropy = 4;
+  // Matches the game's sampler setup: MAXANISOTROPY=8 when anisotropic is
+  // enabled (Update.c / D3D9SamplerStateDispatch). Vehicles/boats use plain
+  // UV diffuse maps, so this path must not inherit a lower hardcoded value.
+  texture.anisotropy = 8;
   return texture;
 }
 
@@ -441,7 +444,7 @@ export async function getPropModelObject(
     const tintSets = await loadTintTextures(
       THREE,
       payload.materials ?? [],
-      4,
+      8,
       urls,
     );
     // 该材质是否有 mesh 以 uvKind=2 使用（与建筑装配同判据）
