@@ -681,7 +681,7 @@ varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
 varying vec3 vReliefNormal;
-varying vec3 vReliefTangent;`,
+varying float vReliefTangentW;`,
       )
       .replace(
         "#include <uv_vertex>",
@@ -732,9 +732,9 @@ vMatUV = vec2(0.0);
         `#include <defaultnormal_vertex>
 vReliefNormal = normalize(transformedNormal);
 #ifdef USE_TANGENT
-vReliefTangent = normalize(transformedTangent);
+vReliefTangentW = tangent.w;
 #else
-vReliefTangent = vec3(0.0, 0.0, 0.0);
+vReliefTangentW = 1.0;
 #endif`,
       )
       .replace(
@@ -764,7 +764,7 @@ varying float vSeed;
 varying vec3 vObjEyeDir;
 varying vec3 vModelPos;
 varying vec3 vReliefNormal;
-varying vec3 vReliefTangent;
+varying float vReliefTangentW;
 uniform sampler2D tintMap;
 uniform sampler2D paletteMap;
 // Clamp only the border, without rescaling every brick/window inside a tile.
@@ -1139,7 +1139,7 @@ float scFastNoise(vec3 seed) {
           // Missing tangents must use the facade UV, not the baked color UV.
           #ifdef USE_TANGENT
             vec3 scNormalN = normalize(vNormal);
-            vec3 scNormalB = normalize(cross(scNormalN, vTangent));
+            vec3 scNormalB = normalize(cross(scNormalN, vTangent) * vReliefTangentW);
             vec3 scNormalT = cross(scNormalB, scNormalN);
             mat3 scNormalFrame = mat3(scNormalT, scNormalB, scNormalN);
             #ifdef DOUBLE_SIDED

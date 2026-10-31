@@ -69,27 +69,24 @@ vec2 scReliefUv(vec2 src, vec3 eye, sampler2D heightMap, vec4 region, vec2 dx, v
   return samplePos.xy;
 }
 vec3 scReliefEyeDir() {
-  vec3 tangentU;
-  vec3 tangentV;
-  vec3 normalV;
-#ifdef USE_TANGENT
-  // building4 VS uses the exported tangent and derives cross(tangent, normal).
-  tangentU = normalize(vReliefTangent);
-  normalV = normalize(vReliefNormal);
-  tangentV = normalize(cross(tangentU, normalV));
-#else
-  // Foreign meshes without TANGENT.
+  // Derive the relief frame from the **Top/facade UV derivatives**, not from
+  // the glTF TANGENT (which is authored for the base UV). Mirrored window
+  // islands and per-triangle UV orientation then stay consistent; using the
+  // base-UV tangent made some windows pop inward and others outward on the
+  // same wall. V axis = cross(N, dP/du), matching dP/dv.
   vec3 posV = -vViewPosition;
   vec3 dpx = dFdx(posV);
   vec3 dpy = dFdy(posV);
   vec2 dux = dFdx(vTopUv);
   vec2 duy = dFdy(vTopUv);
   float det = dux.x * duy.y - duy.x * dux.y;
-  if (abs(det) < 1e-6) return vec3(0.0, 0.0, 1.0);
-  tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
-  normalV = normalize(vReliefNormal);
-  tangentV = normalize(cross(tangentU, normalV));
+  vec3 normalV = normalize(vReliefNormal);
+#ifdef DOUBLE_SIDED
+  if (!gl_FrontFacing) normalV = -normalV;
 #endif
+  if (abs(det) < 1e-6) return vec3(0.0, 0.0, 1.0);
+  vec3 tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
+  vec3 tangentV = normalize(cross(normalV, tangentU));
   vec3 eyeV = normalize(vViewPosition);
   return normalize(vec3(dot(eyeV, tangentU), dot(eyeV, tangentV), dot(eyeV, normalV)));
 }
