@@ -4,6 +4,11 @@ description = "OpenSCP — SimCity (2013) package explorer, Tauri app shell"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+autobins = false
+
+[[bin]]
+name = "fluffy-open-scp"
+path = "src/main.rs"
 
 [lib]
 name = "fluffy_open_scp_lib"
