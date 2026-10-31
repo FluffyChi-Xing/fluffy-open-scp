@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type * as ThreeNamespace from "three";
-import { buildRealLightUnit, unitId, unitMatrix } from "./unitGizmos";
+import { buildRealLightUnit } from "@/render/exec/three/overlays";
+import { unitId, unitMatrix } from "./unitGizmos";
 import type { DecalUnit, LightUnit, PropUnit, SpawnerUnit } from "@/api/tauri";
 
 const THREE = (await import("three")) as typeof ThreeNamespace;

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { decalRoute } from "./decalRouting";
-import { prepareGroundComposer } from "./refinedGround";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
@@ -20,33 +18,27 @@ import type {
 } from "@/api/tauri";
 import type { ModelState, UnitGrouping } from "./usePropertyEditorSession";
 import { unitLabel } from "./usePropertyEditorSession";
+import { unitId, unitMatrix } from "./unitGizmos";
 import {
   buildPathLine,
   buildRealLightUnit,
   buildUnitObject,
-  unitId,
-  unitMatrix,
-} from "./unitGizmos";
+} from "@/render/exec/three/overlays";
+import { kindGroup, stageDecals, stageUnits } from "@/render/session/stages";
+import { stageGround } from "@/render/session/groundStage";
 import { loadSimParts, type SimPart } from "./simAssets";
 import { renderRefinedAssetUnit, type UnitRenderContext } from "./renderers";
-import { decalFrame, decalHalfThickness } from "@/lib/decalProject";
 import type {
   ImageDecodeRequest,
   ImageDecodeResponse,
   Pixels,
 } from "./imageDecode";
-import { createEngineDecalMaterial } from "@/lib/decalEngineMaterials";
-import type { EngineFamily } from "@/lib/decalEngineMaterials";
 import { useEditorViewport, VIEWPORT_GROUPS } from "./useEditorViewport";
 import type { CameraPreset } from "@/lib/three-viewer";
 import {
-  applyDeferredMaterialMaps,
   applySunEnv,
   createSunEnv,
   dayFactor,
-  getDeferredMaps,
-  getTintTextures,
-  makeTintMaterial,
   type SunEnvRefs,
 } from "./refinedRender";
 import { threeToRowMajor } from "./unitEditLayer";
@@ -57,13 +49,12 @@ import {
 } from "./effects/particleRenderer";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
-  applyGroundMask,
-  buildLotDimensions,
-  buildLotRect,
-  groundFillMesh,
-  placementInverse,
-  type LotDimensionAnchor,
-} from "./editorGround";
+  lotDimensionPlan,
+  type DimensionAnchor,
+} from "@/render/plan/ground";
+import { createLotDimensions } from "@/render/exec/three/ground";
+import { executeModel } from "@/render/exec/three/model";
+import { buildDecalBody } from "@/render/exec/three/decalBody";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
 
@@ -263,7 +254,7 @@ const selectTagEl = ref<HTMLElement | null>(null);
 // 文字标签随帧投影（同 pick-tag 通道）。game = lot 局部锚点经地面矩阵
 // 换算后的游戏系坐标（world.localToWorld 后投影）。
 const dimLabels = ref<
-  (LotDimensionAnchor & { game: [number, number, number] })[]
+  (DimensionAnchor & { game: [number, number, number] })[]
 >([]);
 const dimLabelEls = ref<(HTMLElement | null)[]>([]);
 const dimAxisLabel = computed(() => ({
@@ -626,13 +617,6 @@ async function getDecalTexture(
 }
 
 /**
- * A/B 开关：true = decal 材质走引擎 GLSL 管线（sc-shader 产物，
- * crates/sc-shader 组合器生成，逐字对齐引擎片段公式）；false = 手写材质。
- * 对拍结论留任一方后删除另一方。
- */
-const ENGINE_SHADER_MATERIALS = true;
-
-/**
  * 上一次装配/增量应用的 unit DTO 快照（id → unit）：增量更新判定的对照物。
  * 全量 rebuild 收尾与增量应用成功后都会刷新。
  */
@@ -733,9 +717,6 @@ async function copyDiagnostics() {
   }, 1600);
 }
 
-function kindGroup(kind: LotUnitDto["kind"]) {
-  return kind === "pathPoint" ? "paths" : `${kind}s`;
-}
 
 /** TransformControls 手柄（PE-重构-3）：拖拽期间挂起轨道相机，
  * 抬手提交一次行主序矩阵命令。helper 加入 scene 根（相机空间朝向）。 */
@@ -867,9 +848,6 @@ let pendingTrigger: RenderTelemetryTrigger = "first_load";
 /** 贴花投影命中/回退计数（每次装配前重置），供 decal_render 遥测。 */
 const decalStats = { projected: 0, fallback: 0, skipped: 0 };
 
-/** 破洞假内景光单次装配上限（防多破洞 lot 光源洪峰）。 */
-const HOLE_LIGHT_MAX = 8;
-let holeLightCount = 0;
 
 /** 破洞族材质实例（2026-10-05 探针 hole_decal_dump 全量扫描定谳）：
  * 字典 0x1813DA18 的 material = 0x4491DE3A（decalInteriorMap /
@@ -1313,522 +1291,70 @@ async function assembleScene(
       for (const object of modelObjects) disposeObject(object);
       return;
     }
-    const whiteMaterial = new THREE.MeshStandardMaterial({
-      color: 0xb8c2cc,
-      roughness: 0.55,
-      metalness: 0.12,
-      side: THREE.DoubleSide,
+    await executeModel({
+      THREE,
+      env,
+      payload,
+      modelObjects,
+      renderMode: props.renderMode,
+      modelSource: props.modelSource ?? "native",
+      reliefEnabled: props.reliefEnabled === true,
+      modelSelectable: props.modelSelectable === true,
+      modelTransform: props.modelTransform ?? null,
+      modelOrigin: props.modelOrigin ?? null,
+      maxAnisotropy: ctx.maxAnisotropy,
+      isStale: ctx.isStale,
+      specUniforms: specUniformRefs,
+      buildingMeshes,
+      unitObjects: ctx.unitObjects,
+      modelGroup: instance.group("model"),
+      setShadowsEnabled: (enabled) => instance.setShadowsEnabled(enabled),
+      applySun,
+      invalidate: () => instance.invalidate(),
     });
-    // 逐 mesh 材质下标（与 glbs 同序）；材质分组的下标 → 该组 mesh 的材质列表
-    const materialGroups: ThreeNamespace.MeshStandardMaterial[][] = (
-      payload?.materials ?? []
-    ).map(() => []);
-    const tintSpan = renderTelemetry.begin("texture_compose", {
-      phase: "tint",
-      refined: props.renderMode === "refined",
-    });
-    const tintResolved =
-      props.renderMode === "refined" &&
-      payload &&
-      (props.modelSource !== "glb" || (payload.materials?.length ?? 0) > 0)
-        ? await getTintTextures(THREE, payload, ctx.maxAnisotropy)
-        : [];
-    tintSpan.end({
-      materials: payload?.materials?.length ?? 0,
-      tinted: tintResolved.filter((entry) => entry?.tintTex).length,
-    });
-    if (ctx.isStale()) return;
-    // 注：空腔质心锚定已被统计检验否定（lot_cavity_stats 400 样本，
-    // d0-d1 配对 t=-5.15：bbox 中心到空腔质心反而更远）——建筑保持
-    // 居中（bbox≈0 实证），mask 空腔与其错位另有机制（0x0CCB7FD2/D3
-    // UV 字段为头号嫌疑，待取证）。
-    // 草稿伪单元包装组（modelSelectable）：整个建筑模型作为可选中/可变换
-    // 的 "model" 单元——手柄 TRS 直接落在包装组，模型内部轴向烘焙不动。
-    let modelUnit: ThreeNamespace.Group | null = null;
-    if (props.modelSelectable && modelObjects.length) {
-      modelUnit = new THREE.Group();
-      modelUnit.userData.unitId = "model";
-      if (props.modelTransform && props.modelTransform.length === 12) {
-        // WPF 行主序 12 floats（平移在末行）→ three 列向量 Matrix4（平移在
-        // 第 4 列）：three 的 set() 是数学行主序入参，需按列填充 = 转置。
-        // 【2026-10-25 勘误】此前把平移填进第 4 行——decompose 恒读出
-        // (0,0,0)，每次重建把拖拽后的模型摁回原点（用户实测）。
-        const m = props.modelTransform;
-        const matrix = new THREE.Matrix4().set(
-          m[0],
-          m[3],
-          m[6],
-          m[9],
-          m[1],
-          m[4],
-          m[7],
-          m[10],
-          m[2],
-          m[5],
-          m[8],
-          m[11],
-          0,
-          0,
-          0,
-          1,
-        );
-        const position = new THREE.Vector3();
-        const quaternion = new THREE.Quaternion();
-        const scale = new THREE.Vector3();
-        matrix.decompose(position, quaternion, scale);
-        modelUnit.position.copy(position);
-        modelUnit.quaternion.copy(quaternion);
-        modelUnit.scale.copy(scale);
-      }
-      modelUnit.userData.debugTransform = props.modelTransform
-        ? [...props.modelTransform].map((v) => +v.toFixed(2))
-        : null;
-      ctx.unitObjects.set("model", modelUnit);
-    }
-    for (const [index, object] of modelObjects.entries()) {
-      // 放置原点平移（draft：水平居中 + 底面坐 y=0；modelTransform 之外
-      // 的确定性基座平移，保证地面/尺寸与模型永远同心同面）
-      if (props.modelOrigin) {
-        object.position.add(new THREE.Vector3(...props.modelOrigin));
-      }
-      const materialIndex = payload?.meshMaterialIndices[index] ?? 0;
-      const uvKind = payload?.meshUvKinds[index] ?? 0;
-      object.traverse((child) => {
-        const mesh = child as ThreeNamespace.Mesh;
-        if (!mesh.isMesh) return;
-        // 贴花投影的候选面（精细模式才用；建筑网格在 lot 局部空间为单位变换）
-        buildingMeshes.push(mesh);
-        // 记录 mesh 所属材质列：破洞内景需取同材质的 slot5 房间图集
-        mesh.userData.buildingMaterialIndex = materialIndex;
-        try {
-          const importedMaterials = Array.isArray(mesh.material)
-            ? mesh.material
-            : [mesh.material];
-          const importedMaterial = importedMaterials[0];
-          // 默认渲染始终是白模。外部 GLB 可能自带 glTF 材质，但不能让
-          // Blender 导出的临时 baseColor 贴图绕过工作台的显示模式开关。
-          if (props.renderMode !== "refined") {
-            mesh.material = whiteMaterial;
-            return;
-          }
-          // 外部导入 GLB 材质分级（2026-10-25 白模修复）：
-          // 1) 已绑定六槽材质（payload.materials 非空）→ 落入下方原生 tint
-          //    链（契约 GLB 的 TEXCOORD_1.x=材质列、TEXCOORD_2/3=facade
-          //    投影 UV 与游戏约定一致，uvKind=2 直接可用）；
-          // 2) glTF 材质带贴图（Blender 烘焙导出）→ 原样保留；
-          // 3) 无贴图但几何带 COLOR_0（探针契约 GLB：游戏调色板顶点色烘焙）
-          //    → 顶点色材质，与原生精细渲染的调色观感一致；
-          // 4) 两者皆无（纯白模）→ 白模材质。
-          const hasSlotMaterials = (payload?.materials?.length ?? 0) > 0;
-          if (props.modelSource === "glb" && !hasSlotMaterials) {
-            const hasImportedTexture = importedMaterials.some(
-              (imported) =>
-                Boolean(
-                  (imported as ThreeNamespace.MeshStandardMaterial | null)?.map ||
-                    (imported as ThreeNamespace.MeshStandardMaterial | null)?.normalMap ||
-                    (imported as ThreeNamespace.MeshStandardMaterial | null)?.emissiveMap,
-                ),
-            );
-            if (hasImportedTexture)
-              return;
-            if (mesh.geometry.attributes.color) {
-              mesh.material = new THREE.MeshStandardMaterial({
-                vertexColors: true,
-                roughness: 0.82,
-                metalness: 0,
-                side: THREE.DoubleSide,
-              });
-              return;
-            }
-            if (!importedMaterial) mesh.material = whiteMaterial;
-            return;
-          }
-          const resolvedMaterials = importedMaterials.map((imported) => {
-            const materialName = imported?.name ?? "";
-            const blenderMaterialIndex =
-              uvKind === 3 && materialName
-                ? (payload?.materials ?? []).findIndex(
-                    (entry) => entry.materialName === materialName,
-                  )
-                : -1;
-            const tint =
-              tintResolved[
-                blenderMaterialIndex >= 0 ? blenderMaterialIndex : materialIndex
-              ];
-            if (
-              (uvKind === 2 || uvKind === 3) &&
-              tint?.tintTex &&
-              tint.paletteTex
-            ) {
-              // facade tint 着色器：逐像素复刻 building4 链（tint 查表 → palette 查色）
-              const [tinted, specUniform] = makeTintMaterial(
-                THREE,
-                tint,
-                env,
-                props.reliefEnabled === true,
-                uvKind === 3,
-                uvKind === 3
-                  ? (tint.paletteRowsByMaterial.get(materialName) ??
-                      (/whitebox|roof/i.test(materialName) ? 9.6 : 0))
-                  : 0,
-                uvKind === 3 && /whitebox|roof/i.test(materialName),
-                uvKind === 3 ? materialName : undefined,
-              );
-              specUniformRefs.push(specUniform);
-              return tinted;
-            }
-            // GLB 的 COLOR_0（该 mesh 材质调色板的顶点色）→ GLTFLoader 的 color 属性
-            const refined = new THREE.MeshStandardMaterial({
-              vertexColors: Boolean(mesh.geometry.attributes.color),
-              roughness: 0.82,
-              metalness: 0,
-              side: THREE.DoubleSide,
-            });
-            if (uvKind === 1) materialGroups[materialIndex]?.push(refined);
-            return refined;
-          });
-          mesh.material = Array.isArray(mesh.material)
-            ? resolvedMaterials
-            : resolvedMaterials[0];
-        } catch (error) {
-          // 逐 mesh 兜底（2026-10-08 EP1 乱码取证）：装配异常若逃出 traverse
-          // 会中断整个模型线——后续 mesh 留在 GLTFLoader 默认材质（金属灰/
-          // 环境乱码观感），且异常吞掉真实断点。此处打印异常并退白模。
-          console.error(
-            `[building-materials] glb#${index} mesh 材质装配异常:`,
-            error,
-          );
-          mesh.material = whiteMaterial;
-        }
-      });
-      // DEV 诊断（2026-10-08 EP1 贴图乱码取证）：逐 mesh 材质分派摘要——
-      // uvKind/材质列/属性表/tint 是否命中/最终材质类型与 map 绑定。乱码时
-      // 控制台按行暴露 tint 链断点（tint 纹理缺失→退通用材质？deferred
-      // 未绑定？）。生产构建零成本。
-      if (import.meta.env.DEV) {
-        const summaries: string[] = [];
-        object.traverse((child) => {
-          const mesh = child as ThreeNamespace.Mesh;
-          if (!mesh.isMesh) return;
-          const material = mesh.material as ThreeNamespace.MeshStandardMaterial;
-          const attributes = Object.keys(mesh.geometry.attributes).join(",");
-          summaries.push(
-            `m${index} uvKind=${payload?.meshUvKinds[index] ?? 0} mat=${materialIndex} ` +
-              `attrs=[${attributes}] type=${material?.type} ` +
-              `map=${material?.map ? "Y" : "N"} vc=${material?.vertexColors ? "Y" : "N"}`,
-          );
-        });
-        if (summaries.length) {
-          console.info(
-            `[building-materials] glb#${index}\n${summaries.join("\n")}`,
-          );
-        }
-      }
-      if (modelUnit) modelUnit.add(object);
-      else instance.group("model").add(object);
-    }
-    if (modelUnit) instance.group("model").add(modelUnit);
-    if (
-      props.renderMode === "refined" &&
-      payload &&
-      (props.modelSource !== "glb" || (payload.materials?.length ?? 0) > 0)
-    ) {
-      const deferredSpan = renderTelemetry.begin("texture_compose", {
-        phase: "deferred",
-      });
-      // await 全部解码完成再应用：真实成本进 span（此前只覆盖同步签发）；
-      // 缓存命中时 await 即时返回。
-      const deferredMaps = await getDeferredMaps(
-        THREE,
-        payload,
-        ctx.maxAnisotropy,
-      );
-      if (!ctx.isStale()) {
-        applyDeferredMaterialMaps(deferredMaps, materialGroups);
-        instance.invalidate();
-      }
-      deferredSpan.end({ groups: materialGroups.length });
-    }
-    // 阴影链（精细模式）：key 光投影 + 内容网格 castShadow（幂等，重建后
-    // 新网格也补标）。太阳方向/色由 applySun 的 setSunFromEnv 持续驱动；
-    // 此处重放一次 applySun 保证切换渲染模式后 env 太阳立即生效。
-    const shadowsRefined = props.renderMode === "refined";
-    viewport.viewer.value?.setShadowsEnabled(shadowsRefined);
-    if (shadowsRefined) applySun();
   })();
 
   // 地面线：LotSize 矩形 + placement 逆 + mask 合成（与模型零依赖）。
   // 尺度标注依赖模型 bbox（模型线产物）→ 汇合点后再建。
-  const groundStage = (async () => {
-    if (!props.lotSize) {
-      dimLabels.value = [];
-      return null;
-    }
-    if (props.renderMode === "refined") prepareGroundComposer();
-    const groundSpan = renderTelemetry.begin("lot_render", {
-      refined: props.renderMode === "refined",
-    });
-    const ground = buildLotRect(THREE, props.lotSize);
-    // 关闭自动更新：矩阵完全由 placement 逆决定，防止渲染循环覆盖。
-    if (props.lotPlacement) {
-      ground.matrix.copy(placementInverse(THREE, props.lotPlacement));
-    }
-    // cZoningGame::CreateUnitLotGraphics (0x8BA1C0) and cRegionCityLots
-    // (0x86DCB0) use the authored offset, including an explicit zero; only a
-    // missing property falls back to the declared unit bounding-box centre.
-    // Apply it in lot coordinates, before inverse placement: P^-1 * T(c).
-    const centerLocal = props.lotOverlayBoxOffset ??
-      props.lotModelBboxCenter ?? [0, 0];
-    if (Math.abs(centerLocal[0]) > 1e-4 || Math.abs(centerLocal[1]) > 1e-4) {
-      ground.matrix.multiply(
-        new THREE.Matrix4().makeTranslation(centerLocal[0], centerLocal[1], 0),
-      );
-    }
-    ground.matrixAutoUpdate = false;
-    // 独立 lot 组：与建筑模型分开控制可见性（关模型不连地面一起隐藏，
-    // 2026-09-13 用户对拍需求）。
-    instance.group("lot").add(ground);
-    if (props.lotMaskPng || props.lotAlbedoPng) {
-      // v2：先加载地表纹理像素，失败/缺失时 compose 回退 v1。
-      // applyGroundMask 已 await（compose 成本进 scene_rebuild 遥测；
-      // 解码结果按源字符串缓存，编辑操作的全量重建零重复解码）。
-      const [surface, maskDims, normalAtlas] = await Promise.all([
-        loadSurfacePixels(),
-        loadMaskImageDims(),
-        loadImageDataFromUrl(props.lotNormalAtlasPng),
-      ]);
-      if (!surface) {
-        // 精细渲染的底图格依赖真实图集；静默回退占位 tile 会把沥青画成
-        // 亮灰（2026-09-13 对拍教训），必须让用户看到原因。
-        console.warn(
-          "[lot-ground] 'Lot Textures' surface unavailable — refined ground will use placeholder tiles. Open SimCity_Graphics.package (and the lot's own package) for the real atlas.",
-        );
-      }
-      const rawMask = maskDims
-        ? loadRawMaskPixels(maskDims.width, maskDims.height)
-        : null;
-      await applyGroundMask({
-        rawMask,
-        surface,
-        normalAtlas,
+  const groundStage = props.lotSize
+    ? stageGround({
         THREE,
-        ground,
-        maskPng: props.lotMaskPng,
-        albedoPng: props.lotAlbedoPng,
         lotSize: props.lotSize,
-        tilePeriod: props.lotTilePeriod,
-        refined: props.renderMode === "refined",
+        lotPlacement: props.lotPlacement,
+        lotOverlayBoxOffset: props.lotOverlayBoxOffset,
+        lotModelBboxCenter: props.lotModelBboxCenter,
+        renderMode: props.renderMode,
+        lotMaskPng: props.lotMaskPng,
+        lotAlbedoPng: props.lotAlbedoPng,
+        lotNormalAtlasPng: props.lotNormalAtlasPng,
+        lotSurfacePng: props.lotSurfacePng,
+        lotMaskRawRgba: props.lotMaskRawRgba,
+        lotTilePeriod: props.lotTilePeriod,
         lotColors: props.lotColors,
         lotBorderColors: props.lotBorderColors,
         lotBorderPatternIndices: props.lotBorderPatternIndices,
         lotBorderWidths: props.lotBorderWidths,
         lotColorHeights: props.lotColorHeights,
         lotBorderHeights: props.lotBorderHeights,
-        baseTileIndex: props.lotBaseTile,
-        lotOverlayBoxOffset: props.lotOverlayBoxOffset,
-        rawMaskKey: props.lotMaskRawRgba,
-        surfaceKey: props.lotSurfacePng,
-        normalAtlasKey: props.lotNormalAtlasPng,
+        lotBaseTile: props.lotBaseTile,
+        groupLot: instance.group("lot"),
+        primeTexture: (texture) => instance.primeTexture(texture),
+        loadSurfacePixels,
+        loadMaskImageDims,
+        loadImageDataFromUrl,
+        loadRawMaskPixels,
         isStale: ctx.isStale,
-      });
-    }
-    groundSpan.end({ masked: Boolean(props.lotMaskPng || props.lotAlbedoPng) });
-    // 地面合成产物提前上传 GPU：2048² +mipmap 的上传是首帧大冻结源，
-    // 放在地面线内 = 与模型/单元线并发吸收（不占汇合后的首帧）。
-    const fill = groundFillMesh(ground);
-    const fillMap = (fill?.material as ThreeNamespace.Material | undefined)
-      ? ((fill!.material as ThreeNamespace.MeshLambertMaterial).map ?? null)
-      : null;
-    if (fillMap) instance.primeTexture(fillMap);
-    return ground;
-  })();
+      })
+    : ((dimLabels.value = []), Promise.resolve(null));
 
-  /**
-   * 贴花材质变体（migration.md §52.5 聚类映射）：招牌 = 霓虹自发光
-   * （decalNeonBrighten 证据：Current.color.rgb ×2，无光照、夜间自亮）；
-   * 涂鸦/废墟 = 受光材质——MeshBasic 不受光导致贴花与墙面的光照/明暗完全
-   * 脱节（"不在一个图层"观感的根因），MeshStandard 融入场景光照。
-   */
-  /**
-   * Decal 材质子类型（migration.md §56-59）：引擎 decal PS 全家族都是
-   * **直采 raster + 标准 alpha 混合**（`Current.color = tex2D(s0, uv)`），
-   * 子类型差异只在增亮/光照/动画分支。raw 纹理的 alpha 本身就是美术授权
-   * 的低不透明度（字母 0.7-0.86、底色 <0.2）——「涂鸦刷进墙里」的效果
-   * = 低 alpha 叠加 + 共享光照，不是屏幕域乘法（§58 的 DstColor 调制
-   * 让暗底 texel 把整块墙压暗、字也没了，已回退）。
-   * - sign（0x73684EFC）：霓虹自发光，×2 增亮（decalFloatQuadNoClip）；
-   * - graffiti（0xE5390A98，cGraphicsUnitVandalism）：×1 直采 alpha 混合；
-   * - 其余（未知材质兜底）：受光 MeshStandard。
-   */
-  /**
-   * 混合分派（2026-10-01 二次修正）：
-   * - alpha 有梯度（喷漆/柔边）：引擎混合态 (SRCALPHA, DESTALPHA)——
-   *   out = 贴图RGB×A + 底色，字母 a≈0.7 → 30% 透墙（游戏观测一致）；
-   * - alpha 全零实心图（海报式，自带背景色）：**不透明渲染**——它们没有
-   *   裁剪信息，叠加混合会把背景色与墙色双份叠加成半透洗白（上轮教训）。
-   */
-  function applyEngineBlend(
-    material: ThreeNamespace.Material,
-    dto: DecalUnitTexture,
-  ): void {
-    // 量化合成产物 = 硬 alpha 裁剪（层内 255/层外 0）——标准混合即正确
-    material.blending = THREE.NormalBlending;
-    material.transparent = true;
-    void dto;
-  }
-
-  const DECAL_MATERIAL_VARIANTS: Record<number, "sign" | "graffiti"> = {
-    0x73684efc: "sign", // 招牌聚类（POWER ELECTRIC/太阳 burst/OMEGACO 等）
-    0xe5390a98: "graffiti", // 涂鸦/贴纸聚类（CRIME/词组拼贴等）
+  /** 贴花装配状态（跨 decal 调用累计；每次 rebuild 前重置）。 */
+  const decalExecState = {
+    projected: 0,
+    fallback: 0,
+    holeLightCount: 0,
+    neonAnimated: false,
   };
 
-  /** 投影面法线 cutoff：只保留 **N·axisZ ≤ -0.5** 的三角形——即面朝贴花
-   * 原点（投影来向）的面。两个裁剪目标：
-   * 1) |N·axisZ| < 0.5 的切向面被盒体裁剪后 UV 极度拉伸 = 立面"线性涂抹"
-   *    （三轮图2）；
-   * 2) N·axisZ > 0 的**远侧面**（薄板结构背坡、建筑背面外墙——外向法线
-   *    背对原点）= "穿透到另一侧"镜像字（五轮图1~2）。引擎延迟投影逐像素
-   *    取最近深度、天然只画最近面，CPU 几何投影必须同时满足这两个条件
-   *    才能同构（60° 以内朝向原点的曲面绕折仍保留）。 */
-  const DECAL_PROJECTION_NORMAL_CUTOFF = 0;
-
-  /**
-   * 按面法线过滤投影几何：只保留面朝贴花原点的三角形。返回 null = 整盒
-   * 无保留面（按未命中处理）。
-   */
-  function filterDecalProjectionByNormal(
-    THREE: typeof ThreeNamespace,
-    geometry: ThreeNamespace.BufferGeometry,
-    axisZ: ThreeNamespace.Vector3,
-  ): ThreeNamespace.BufferGeometry | null {
-    const pos = geometry.attributes.position;
-    const nrm = geometry.attributes.normal;
-    const uv = geometry.attributes.uv;
-    if (!pos || !nrm || !uv) return geometry; // 无法线不可判，原样保留
-    const positions: number[] = [];
-    const normals: number[] = [];
-    const uvs: number[] = [];
-    for (let i = 0; i < pos.count; i += 3) {
-      const dot =
-        ((nrm.getX(i) + nrm.getX(i + 1) + nrm.getX(i + 2)) / 3) * axisZ.x +
-        ((nrm.getY(i) + nrm.getY(i + 1) + nrm.getY(i + 2)) / 3) * axisZ.y +
-        ((nrm.getZ(i) + nrm.getZ(i + 1) + nrm.getZ(i + 2)) / 3) * axisZ.z;
-      // 单向：只留面朝原点的面（远侧面 = 穿透镜像，切向面 = 拉丝）
-      if (dot > -DECAL_PROJECTION_NORMAL_CUTOFF) continue;
-      for (let k = 0; k < 3; k += 1) {
-        positions.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
-        normals.push(nrm.getX(i + k), nrm.getY(i + k), nrm.getZ(i + k));
-        uvs.push(uv.getX(i + k), uv.getY(i + k));
-      }
-    }
-    if (!positions.length) return null;
-    const filtered = new THREE.BufferGeometry();
-    filtered.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions, 3),
-    );
-    filtered.setAttribute(
-      "normal",
-      new THREE.Float32BufferAttribute(normals, 3),
-    );
-    filtered.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-    return filtered;
-  }
-
-  function buildDecalMaterial(
-    THREE: typeof ThreeNamespace,
-    dto: DecalUnitTexture,
-    map: ThreeNamespace.Texture,
-    opts: {
-      halfDepth?: number;
-      boxHalfX?: number;
-      boxHalfY?: number;
-      decalData: [number, number] | null;
-      env: SunEnvRefs;
-      depthTest?: boolean;
-      depthWrite?: boolean;
-      alphaTest?: number;
-    },
-  ): ThreeNamespace.Material {
-    const base = {
-      map,
-      side: THREE.DoubleSide,
-      // raw RGBA 直采（引擎 decal PS：`Current.color = tex2D(s0, uv)`）；
-      // 纹理 alpha 是柔和衰减/掩码：sign 连续混合（光晕）、graffiti 阈值
-      // 裁切（锐利边缘），见下方 switch。
-      transparent: true,
-      depthTest: opts.depthTest ?? true,
-      depthWrite: opts.depthWrite ?? false,
-      alphaTest: opts.alphaTest ?? 0,
-      // 投影贴花与墙面共面，必须靠 polygonOffset 压过 z-fighting
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-      polygonOffsetUnits: -4,
-    };
-    // 破洞族已由引擎材质链（createEngineDecalMaterial "hole"）接管，
-    // buildDecalMaterial 不再处理 hole（手写回退路径 2026-10-05 退役）。
-    switch (DECAL_MATERIAL_VARIANTS[(dto.materialInstance ?? 0) >>> 0]) {
-      case "sign": {
-        // decalNeonBrighten 逐字：`color.rgb *= shColorDiff + shColorSpec + spec`
-        // ——招牌**响应场景光**（太阳/天空/lot 霓虹点灯，Lambert 即该响应的
-        // PE 等价物：key 光随 env 昼夜驱动、夜间被 lot 真实点灯点亮）；
-        // ×2 = decalFloatQuadNoClip 的增亮，过 hejl tonemap 保持亮度。
-        const material = new THREE.MeshLambertMaterial({
-          ...base,
-          color: new THREE.Color(2, 2, 2),
-        });
-        applyEngineBlend(material, dto);
-        return material;
-      }
-      case "graffiti": {
-        // 涂鸦 = **连续 alpha 混合 + 受光**（引擎 decal PS 逐字：直采
-        // raster + 标准 alpha 混合；raw alpha 字母 0.7-0.86 = 喷漆半透明、
-        // 软边 = 抗锯齿，正是游戏观感）。此前 alphaTest 裁切会把 soft-alpha
-        // 内容（涂鸦内部的房间/色块）整体裁掉——用户对拍"涂鸦不可辨认/
-        // 破洞无内景"的根因（2026-09-30）。受光（MeshStandard）= 引擎
-        // G-buffer 链的等价物（贴花写入 albedo 后统一光照）。
-        const material = new THREE.MeshStandardMaterial({
-          ...base,
-          transparent: true,
-          roughness: 1,
-          metalness: 0,
-        });
-        applyEngineBlend(material, dto);
-        return material;
-      }
-      default:
-        // 未识别材质兜底同涂鸦口径（直采 + alpha 混合 + 受光）。
-        return new THREE.MeshStandardMaterial({
-          ...base,
-          transparent: true,
-          roughness: 1,
-          metalness: 0,
-        });
-    }
-  }
-
-  /** 取贴花在 lot 局部的变换矩阵（无变换时为 None）。 */
-  function applyDecalTransform(
-    THREE: typeof ThreeNamespace,
-    unit: DecalUnit,
-    object: ThreeNamespace.Object3D,
-  ) {
-    if (!unit.transform) return;
-    const matrix = unitMatrix(THREE, unit.transform);
-    matrix.decompose(object.position, object.quaternion, object.scale);
-  }
-
-  /**
-   * 精细模式贴花：所有族统一走引擎体积盒语义的 DecalGeometry 盒裁剪投影
-   * （建筑三角形 → 贴面网格，曲面/阶梯立面自然贴合；破洞族 2026-10-05
-   * 并入此路径，体积盒 BackSide 方案退役）。盒内无建筑面：破洞族按
-   * decalClip 语义不渲染，其余族 = 引擎浮空分支（decalFloatQuad）：
-   * 数据位姿的浮空 quad（holo 广告/远抛实例）。
-   *
-   * 返回的顶层对象是**位于贴花原点的 Group**，使 TransformControls 挂在原点、
-   * `unitObjects` 选中与 `userData.unitId` 注册照旧；投影几何子节点用
-   * 逆矩阵抵消父变换，因此几何本身保持 lot 局部坐标。
-   */
   async function buildDecalObject(
     THREE: typeof ThreeNamespace,
     unit: DecalUnit,
@@ -1844,265 +1370,31 @@ async function assembleScene(
       );
       return null;
     }
-    const aspect =
-      texture.aspectRatio && texture.aspectRatio > 0 ? texture.aspectRatio : 1;
     const decoded = await getDecalTexture(THREE, texture);
     if (!decoded) return null;
-    const frame = decalFrame(THREE, unit, aspect);
-    if (!frame) {
-      console.warn(
-        "[decal] 无有效 transform/scale，无法构建投影帧：",
-        unitId(unit),
-        "transform=",
-        unit.transform
-          ? `matrixLen=${unit.transform.matrix?.length ?? 0}`
-          : "null",
-        "scale=",
-        unit.scale,
-      );
-      return null;
-    }
-    // 地面贴花特例已删除（2026-09-30 用户裁定）：引擎 decal 18 族源码无任何
-    // 向地面/地形投影的设计（grep ground/terrain 仅命中同容器的地形着色器
-    // 常量）——decal = 变换矩阵摆位的四边形，朝向完全由 transform 决定。
-    // 地面平行贴花照常走下方统一投影路径（盒体可命中建筑檐口/基座等结构，
-    // 未命中则回退浮空 quad，姿态仍由 transform 给出）。
-    const group = new THREE.Group();
-    applyDecalTransform(THREE, unit, group);
-
-    // 路由（2026-10-01 引擎对齐重分析，docs/re/decal-engine-alignment.md）：
-    // Ghidra SC_cVolumeDecalManager FUN_006fdce0 证明 decal 体积盒由变换数据
-    // 直接构造，**无射线/无距离判定**——早前的 ≤10m 投影路由是发明物，删除。
-    // 现行分派：所有族统一走 DecalGeometry 投影（破洞族 2026-10-05 起并入，
-    // 体积盒 BackSide 路径退役——盒内壁不随建筑曲面走 = 破洞不贴合/漂浮根因；
-    // 引擎投影/浮空由 shader 选择固化，破洞 shader decalInteriorMap 内含
-    // decalClip 体积裁剪，几何上就是投影贴面网格）。
-    if (frame) {
-      // 引擎体积盒的 CPU 同构（2026-10-05 四轮定稿，casino 探针实锤）：
-      // **盒深 = unit.depth × scale**——lot 0x457EA9DB 全部 7 个 decal：
-      // 两招牌 scale 13.27/5.63 而 depth×scale 恒 = 1.327m，五涂鸦恒
-      // ≈17.95m → depth 是按 scale 归一化的盒进深。盒 = xy 居中于原点、
-      // z∈[0, depth×scale] 沿 **+axisZ**（63/63 足迹射线全部命中 +局部Z；
-      // 引擎 decal 面向约定 -z 朝街 ⇒ 墙恒在 +axisZ），与 RL
-      // `SC::cDecalData::SpawnDecalInstance` 的 model→texture z∈[0,depth]
-      // 映射同一语义。招牌盒仅 1.33m 深 ⇒ 背墙/对侧玻璃天然在盒外
-      // （四轮图1 回归根因 = 此前 ~2.5×scale 深盒吞背墙 + "最近命中侧"
-      // 把原点偏玻璃侧的招牌定错侧——两者皆删，不再选侧）。
-      const halfScale = frame.sizeY / 2;
-      const dataDepth =
-        unit.depth !== null && Number.isFinite(unit.depth) && unit.depth > 0
-          ? unit.depth * halfScale
-          : null;
-      const { DecalGeometry } =
-        await import("three/examples/jsm/geometries/DecalGeometry.js");
-      if (ctx.isStale()) return null;
-      const route = decalRoute(texture.materialInstance);
-      const family: EngineFamily = route.family;
-      if (family === "sdf") neonAnimated = true;
-      // 引擎浮空分支（decalFloatQuad，holo 广告/远抛实例）：在**数据
-      // 位置**画浮空 quad，姿态由 transform 给出——不是"不渲染"（四轮
-      // 图3/4 的 holo 被错误贴上墙 = 此前缺失浮空分支、万物皆投影的
-      // 回归根因）。组已带 unit transform，quad 在组局部恒等姿态即
-      // 数据位姿；材质 DoubleSide 双面可见。
-      const addFloatQuad = () => {
-        const floatMaterial = ENGINE_SHADER_MATERIALS
-          ? createEngineDecalMaterial(THREE, family, {
-              map: decoded,
-              layerColors: texture.colors,
-              decalData: props.decalLight ?? null,
-              worldDirection: frame.axisZ,
-              env,
-              materialInfo: unit.materialData ?? undefined,
-              powered: props.powered,
-              nus: [frame.sizeX, frame.sizeY, frame.sizeY],
-              graffiti: (texture.materialInstance ?? 0) >>> 0 === 0xe5390a98,
-              depthTest: true,
-              depthWrite: true,
-              alphaTest: 0.01,
-            })
-          : buildDecalMaterial(THREE, texture, decoded, {
-              env,
-              halfDepth: decalHalfThickness(unit.depth),
-              boxHalfX: frame.sizeX / 2,
-              boxHalfY: frame.sizeY / 2,
-              decalData: props.decalLight ?? null,
-              depthTest: true,
-              depthWrite: true,
-              alphaTest: 0.01,
-            });
-        const quadGeometry = new THREE.PlaneGeometry(frame.sizeX, frame.sizeY);
-        const quadUv = quadGeometry.attributes.uv;
-        for (let i = 0; i < quadUv.count; i += 1)
-          quadUv.setX(i, 1 - quadUv.getX(i));
-        quadUv.needsUpdate = true;
-        const quad = new THREE.Mesh(quadGeometry, floatMaterial);
-        // decalBaseCenter collapses the volume onto texturePosition.z = 0.
-        quad.position.z = (dataDepth ?? 0) / 2;
-        group.add(quad);
-        decalStats.fallback += 1;
-      };
-      if (route.surface === "plane") {
-        addFloatQuad();
-      }
-      // A projected volume can intersect a wall even when its centre ray misses.
-      // Empty volumes stay empty; graffiti must never turn into floating quads.
-      const depthZ = dataDepth ?? halfScale * 2.5;
-      const projector = {
-        position: frame.origin.clone().addScaledVector(frame.axisZ, depthZ / 2),
-        orientation: new THREE.Euler().setFromRotationMatrix(frame.matrix),
-        size: new THREE.Vector3(frame.sizeX, frame.sizeY, depthZ),
-      };
-      const boxRadius =
-        Math.hypot(projector.size.x, projector.size.y, projector.size.z) / 2;
-      const geometries: ThreeNamespace.BufferGeometry[] = [];
-      for (const proxy of proxies) {
-        const position = proxy.geometry.getAttribute("position");
-        // Malformed community TGI data can contain NaN/Infinity vertices. Three's
-        // bounding sphere then becomes NaN and breaks the whole render pass.
-        if (
-          !position ||
-          !Number.isFinite(position.count) ||
-          position.count === 0
-        )
-          continue;
-        let validPosition = true;
-        for (let i = 0; i < position.count && validPosition; i += 1) {
-          validPosition =
-            Number.isFinite(position.getX(i)) &&
-            Number.isFinite(position.getY(i)) &&
-            Number.isFinite(position.getZ(i));
-        }
-        if (!validPosition) continue;
-        // 包围球粗筛：盒外建筑网格跳过逐三角形裁剪
-        if (!proxy.geometry.boundingSphere) {
-          proxy.geometry.computeBoundingSphere();
-        }
-        const sphere = proxy.geometry.boundingSphere;
-        if (
-          sphere &&
-          sphere.center.distanceTo(projector.position) >
-            sphere.radius + boxRadius
-        ) {
-          continue;
-        }
-        const clipped = new DecalGeometry(
-          proxy,
-          projector.position,
-          projector.orientation,
-          projector.size,
-        );
-        const clippedPosition = clipped.getAttribute("position");
-        if (clippedPosition) {
-          let finite = true;
-          for (let i = 0; i < clippedPosition.count && finite; i += 1) {
-            finite =
-              Number.isFinite(clippedPosition.getX(i)) &&
-              Number.isFinite(clippedPosition.getY(i)) &&
-              Number.isFinite(clippedPosition.getZ(i));
-          }
-          if (!finite) {
-            clipped.dispose();
-            continue;
-          }
-        }
-        if ((clipped.attributes.position?.count ?? 0) === 0) continue;
-        // 破洞族不按法线过滤：引擎延迟投影对体积盒内**所有**表面逐像素
-        // 落贴花——破洞后露出的楼板/内墙/远侧内壁正是游戏"内部结构"的
-        // 来源（N·axisZ≤−0.5 过滤会把水平楼板全部滤掉 = 平斑）。FrontSide
-        // 背面剔除 + 建筑实体不透明深度遮挡已防外侧面穿透。
-        const filtered =
-          family === "hole" || route.surface === "plane"
-            ? clipped
-            : filterDecalProjectionByNormal(THREE, clipped, frame.axisZ);
-        if (filtered !== clipped) clipped.dispose();
-        if (filtered) geometries.push(filtered);
-      }
-      if (!geometries.length) return group;
-      // U 镜像（与 quad 路径同口径：引擎 uv = texpos × -0.5 + 0.5，文字正读）
-      for (const geometry of geometries) {
-        const uv = geometry.attributes.uv;
-        for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
-        uv.needsUpdate = true;
-      }
-      const engineMaterial = ENGINE_SHADER_MATERIALS
-        ? createEngineDecalMaterial(
-            THREE,
-            route.surface === "plane" ? "neon-light" : family,
-            {
-              map: decoded,
-              layerColors: texture.colors,
-              decalData: props.decalLight ?? null,
-              worldDirection: frame.axisZ,
-              env,
-              materialInfo: unit.materialData ?? undefined,
-              powered: props.powered,
-              nus: [2 / frame.sizeX, 2 / frame.sizeY, 2 / depthZ],
-              // 涂鸦（0xE5390A98）：喷漆连续厚度 alpha + 无灯箱增益/夜间
-              // 豁免（rt0 编译状态定谳：标准 alpha 混合，无自发光项）
-              graffiti: (texture.materialInstance ?? 0) >>> 0 === 0xe5390a98,
-              // 投影网格只画正面：薄板/单面墙从背后看时，decal 三角形是
-              // 背面 → 剔除，杜绝"隔着建筑看到镜像字"（五轮图1；法线过滤
-              // 已保证留下的面都朝原点，正面即被投面）。
-              side: THREE.FrontSide,
-              // 破洞族：盒参数供 VS 计算 tfp.z 真实进深（立面 −1 全尺寸
-              // 内景、破洞后深部结构 +1 中心收缩 = 游戏"内部结构"机制）。
-              // 盒前缘 = 变换原点、沿 +axisZ 延伸 depthZ（与投影盒同口径）；
-              // PS 按游戏 decalInteriorMap 的双 UV 公式消费 tfp.z；
-              // 视差来自投影深度和内部几何的深度测试，不额外做 facade
-              // interiorMap() 的相机射线求交。
-              holeBox:
-                family === "hole" || route.surface === "plane"
-                  ? {
-                      origin: frame.origin,
-                      axisZ: frame.axisZ,
-                      invDepth: 1 / Math.max(depthZ, 0.01),
-                    }
-                  : undefined,
-            },
-          )
-        : buildDecalMaterial(THREE, texture, decoded, {
-            env,
-            halfDepth: decalHalfThickness(unit.depth),
-            boxHalfX: frame.sizeX / 2,
-            boxHalfY: frame.sizeY / 2,
-            decalData: props.decalLight ?? null,
-          });
-      // 投影几何 = lot 局部坐标（代理网格矩阵为恒等）；容器带组局部逆
-      // 变换抵消组上的 unit transform（与旧 quad 的位置逆变换同机制）。
-      const container = new THREE.Group();
-      container.matrix.copy(frame.matrix).invert();
-      container.matrixAutoUpdate = false;
-      for (const geometry of geometries) {
-        container.add(new THREE.Mesh(geometry, engineMaterial));
-      }
-      group.add(container);
-      decalStats.projected += 1;
-      // decalInteriorMap 光 pass 近似（保留自体积盒时代）：lot 带光参数时，
-      // 沿投影轴向墙面投暖色 cookie 光（引擎用贴花贴图作光 cookie、alpha
-      // 作衰减）。上限 8 盏防多破洞 lot 光源洪峰。
-      if (
-        family === "hole" &&
-        props.decalLight &&
-        holeLightCount < HOLE_LIGHT_MAX
-      ) {
-        const [scaleFactor, radiusFactor] = props.decalLight;
-        const spot = new THREE.SpotLight(
-          0xffdca0,
-          (scaleFactor * 16 + 1) * 3,
-          radiusFactor * 8,
-          0.9,
-          0.6,
-          1,
-        );
-        spot.map = decoded;
-        spot.position.set(0, 0, -0.5);
-        spot.target.position.set(0, 0, 1);
-        group.add(spot, spot.target);
-        holeLightCount += 1;
-      }
-      return group;
-    }
-    return group;
+    // 执行器自持一份状态，调用后回写到视口既有计数/时钟变量（保持旧语义）
+    const state = { ...decalExecState };
+    const object = await buildDecalBody({
+      THREE,
+      unit,
+      texture,
+      decoded,
+      proxies,
+      env,
+      engineMaterials: true,
+      decalLight: props.decalLight ?? null,
+      powered: props.powered,
+      isStale: ctx.isStale,
+      state,
+    });
+    decalExecState.projected = state.projected;
+    decalExecState.fallback = state.fallback;
+    decalExecState.holeLightCount = state.holeLightCount;
+    decalExecState.neonAnimated = state.neonAnimated;
+    decalStats.projected = state.projected;
+    decalStats.fallback = state.fallback;
+    neonAnimated = state.neonAnimated;
+    return object;
   }
 
   const units: LotUnitDto[] = [
@@ -2134,62 +1426,30 @@ async function assembleScene(
   const assetCtx = buildAssetCtx();
   // 单元线：非贴花单元先行（灯光/道具/spawner/路径点，与模型/地面并发）；
   // 贴花收集到汇合点后投影（依赖建筑网格 = 模型线产物）。
-  const decalUnits: DecalUnit[] = [];
-  let unitSliceStart = performance.now();
-  for (const unit of units) {
-    if (unit.kind === "decal") {
-      decalUnits.push(unit);
-      continue;
-    }
-    // Yield by elapsed work, not object count: cached units must not each pay
-    // a fixed animation-frame delay, while expensive batches stay interruptible.
-    if (performance.now() - unitSliceStart >= 8) {
-      await yieldToBrowser();
-      unitSliceStart = performance.now();
-      if (ctx.isStale()) return;
-    }
-    // 精细模式：光源用真实 three.js 光源；道具/spawner 走资产渲染分发
-    //（tree/prop/spawner 独立渲染器，互不回归——2026-10-06 拆分）。
-    // 失败统一退标记锥。
-    const effectDefinition =
-      unit.kind === "effect" && unit.effectId
-        ? props.effectDefinitions?.get(unit.effectId.instance)
-        : undefined;
-    const particleView =
-      props.renderMode === "refined" &&
-      props.renderEffects &&
-      unit.kind === "effect" &&
-      effectDefinition?.emitters.length
-        ? createParticleEffect(
-            THREE,
-            unit,
-            effectDefinition.emitters,
-            Math.max(
-              32,
-              Math.min(
-                320,
-                Math.floor(2400 / Math.max(1, props.grouping.effects.length)),
-              ),
-            ),
-          )
-        : null;
-    if (particleView) particleViews.push(particleView);
-    const object =
-      particleView?.object ??
-      (props.renderMode === "refined" && unit.kind === "light"
-        ? buildRealLightUnit(THREE, unit)
-        : null) ??
-      (await renderRefinedAssetUnit(assetCtx, unit)) ??
-      buildUnitObject(THREE, unit);
-    if (!object) continue;
-    // 统一在此登记：精细模式的道具/spawner 不走 buildUnitObject 时其
-    // userData 由此补齐（此前精细模式光源因此点不中）。
-    object.userData.unitId = unitId(unit);
-    object.userData.unitKind = unit.kind;
-    instance.group(kindGroup(unit.kind)).add(object);
-    ctx.unitObjects.set(unitId(unit), object);
-    if (ctx.isStale()) return;
-  }
+  const decalUnits = units.filter(
+    (unit): unit is DecalUnit => unit.kind === "decal",
+  );
+  const nonDecalUnits = units.filter((unit) => unit.kind !== "decal");
+  await stageUnits({
+    THREE,
+    units: nonDecalUnits,
+    renderMode: props.renderMode,
+    renderEffects: props.renderEffects === true,
+    effectDefinitions: props.effectDefinitions,
+    effectsCount: props.grouping.effects.length,
+    assetCtx,
+    particleViews,
+    createParticleEffect,
+    renderAssetUnit: renderRefinedAssetUnit,
+    buildFallback: buildUnitObject,
+    buildLightUnit: buildRealLightUnit,
+    groupFor: (name) => instance.group(name),
+    unitObjects: ctx.unitObjects,
+    unitIdOf: unitId,
+    isStale: ctx.isStale,
+    yieldToBrowser,
+  });
+  if (ctx.isStale()) return;
 
   // ---- 汇合点：三线全部落地（或已因过期自行退出）----
   await modelStage;
@@ -2211,7 +1471,8 @@ async function assembleScene(
     const lotHeight = modelBox.isEmpty()
       ? 0
       : Math.max(0, modelBox.max.y - modelBox.min.y);
-    const dims = buildLotDimensions(THREE, props.lotSize, lotHeight);
+    const dimsPlan = lotDimensionPlan(props.lotSize, lotHeight);
+    const dims = dimsPlan ? createLotDimensions(THREE, dimsPlan) : null;
     if (dims) {
       // 与地面矩形同一矩阵（placement 逆 + overlay 中心偏移），标注贴地边
       dims.object.matrix.copy(ground.matrix);
@@ -2234,44 +1495,37 @@ async function assembleScene(
   });
   decalStats.projected = 0;
   decalStats.fallback = 0;
-  holeLightCount = 0;
   neonAnimated = false;
+  decalExecState.projected = 0;
+  decalExecState.fallback = 0;
+  decalExecState.holeLightCount = 0;
+  decalExecState.neonAnimated = false;
   // 吸附射线目标：建筑网格代理（quad 摆放用）
   const decalProxies =
     props.renderMode === "refined" && buildingMeshes.length
       ? buildingMeshes.map((mesh) => new THREE.Mesh(mesh.geometry))
       : [];
-  for (const unit of decalUnits) {
-    const decalTexture = decalTextureByKey.get(
-      `${unit.category}:${unit.index}`,
-    );
-    if (props.renderMode === "refined" && !decalTexture) {
+  await stageDecals({
+    THREE,
+    renderMode: props.renderMode,
+    decalUnits,
+    decalTextureByKey,
+    buildingMeshes,
+    proxies: decalProxies,
+    buildDecalObject,
+    buildFallback: buildUnitObject,
+    groupFor: (name) => instance.group(name),
+    unitObjects: ctx.unitObjects,
+    unitIdOf: unitId,
+    isStale: ctx.isStale,
+    onMissingTexture: (unit, keys) => {
       console.warn(
         `[decal] 配对失败 cat${unit.category}:idx${unit.index}，已注册键：`,
-        [...decalTextureByKey.keys()],
+        keys,
       );
-    }
-    let object: ThreeNamespace.Object3D | null;
-    if (props.renderMode === "refined" && decalTexture) {
-      // 贴图解码失败（无 png）→ 退回 gizmo，保证仍可见可选
-      object =
-        (await buildDecalObject(
-          THREE,
-          unit,
-          decalTexture,
-          buildingMeshes,
-          decalProxies,
-        )) ?? buildUnitObject(THREE, unit);
-    } else {
-      object = buildUnitObject(THREE, unit);
-    }
-    if (!object) continue;
-    object.userData.unitId = unitId(unit);
-    object.userData.unitKind = unit.kind;
-    instance.group(kindGroup(unit.kind)).add(object);
-    ctx.unitObjects.set(unitId(unit), object);
-    if (ctx.isStale()) return;
-  }
+    },
+  });
+
   decalSpan.end({
     projected: decalStats.projected,
     fallback: decalStats.fallback,
@@ -2393,7 +1647,7 @@ defineExpose({
       context.fillStyle = "#0878fe";
       context.shadowColor = "rgba(0, 0, 0, 0.6)";
       context.shadowBlur = 2 * ratio;
-      const axisLabels: Record<LotDimensionAnchor["axis"], string> = {
+      const axisLabels: Record<DimensionAnchor["axis"], string> = {
         length: t("package.dimLength"),
         width: t("package.dimWidth"),
         height: t("package.dimHeight"),
