@@ -11,16 +11,12 @@ import type { SunEnvRefs } from "@/pages/packages/components/property-editor/ref
 import type { SimPart } from "@/pages/packages/components/property-editor/simAssets";
 import { getSimPopulation } from "@/pages/packages/components/property-editor/simAssets";
 import {
-  getPropModelObject,
   getTreeBillboard,
   getTreeModelObject,
 } from "@/pages/packages/components/property-editor/propModels";
-import type {
-  AssetRef,
-  TransformSpec,
-  TreeUnitPlan,
-  UnitPlan,
-} from "../../contract/types";
+import { executePropBySemantic } from "./props";
+import type { AssetRef, TreeUnitPlan, UnitPlan } from "../../contract/types";
+import { applyTransform } from "./transform";
 
 export interface UnitExecutionResources {
   readonly THREE: typeof ThreeNamespace;
@@ -42,23 +38,6 @@ export function resolveAssetPayload(
   return resources.addedModelPayloads?.get(asset.key) ?? null;
 }
 
-function applyTransform(
-  THREE: typeof ThreeNamespace,
-  transform: TransformSpec | null,
-  position: ThreeNamespace.Vector3,
-  quaternion: ThreeNamespace.Quaternion,
-  scale: ThreeNamespace.Vector3,
-): void {
-  if (!transform) return;
-  position.set(transform.position[0], transform.position[1], transform.position[2]);
-  quaternion.set(
-    transform.quaternion[0],
-    transform.quaternion[1],
-    transform.quaternion[2],
-    transform.quaternion[3],
-  );
-  scale.set(transform.scale[0], transform.scale[1], transform.scale[2]);
-}
 
 async function executeTree(
   plan: TreeUnitPlan,
@@ -83,6 +62,7 @@ async function executeTree(
     if (!tree) return null;
     tree.quaternion.copy(quaternion);
     tree.userData.incrementalScale = scalar;
+    tree.userData.propSemantic = "tree";
     return tree;
   }
 
@@ -106,6 +86,7 @@ async function executeTree(
   if (!object) return null;
   // 模型树 scale 含 DTO 烘焙；公告板尺寸自持（只跟位置/朝向）
   object.userData.incrementalScale = model ? (plan.dtoScale ?? 1) : "keepScale";
+  object.userData.propSemantic = "tree";
   return object;
 }
 
@@ -113,27 +94,12 @@ async function executeProp(
   plan: Extract<UnitPlan, { kind: "prop" }>,
   resources: UnitExecutionResources,
 ): Promise<ThreeNamespace.Object3D | null> {
-  const { THREE } = resources;
   const payload = resolveAssetPayload(plan.asset, resources);
   if (!payload) return null;
-  const propModel = await getPropModelObject(
-    THREE,
-    payload,
-    resources.envRefs ?? undefined,
-    plan.unitIndex,
-  );
-  if (!propModel) return null;
-  const position = new THREE.Vector3();
-  const quaternion = new THREE.Quaternion();
-  const scale = new THREE.Vector3(1, 1, 1);
-  applyTransform(THREE, plan.transform, position, quaternion, scale);
-  propModel.position.copy(position);
-  propModel.quaternion.copy(quaternion);
-  propModel.scale.copy(scale);
-  // 缩放倍率烘焙标记（增量更新契约，显式化为 ScaleSemantics）
-  propModel.userData.incrementalScale = plan.dtoScale ?? 1;
-  if (plan.dtoScale !== null) propModel.scale.multiplyScalar(plan.dtoScale);
-  return propModel;
+  return executePropBySemantic(plan, payload, {
+    THREE: resources.THREE,
+    envRefs: resources.envRefs,
+  });
 }
 
 async function executeSpawner(

@@ -1162,6 +1162,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
         <div v-if="!embedded" class="inspector-column">
           <PropertyEditorInspector
             :unit="selectedUnit"
+            :units="flatUnits"
             :live-transform="liveTransform"
             :scale-editable="selectedScaleEditable"
             :edit-enabled="editEnabled"
@@ -1187,7 +1188,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
           <ResizableHandle orientation="vertical" :label="$t('studio.code.resizeVerticalHint')" />
           <ResizablePanel id="property-editor-side-inspector" :default-size="44" :min-size="24">
             <div class="embedded-side-section embedded-side-inspector">
-              <PropertyEditorInspector :unit="selectedUnit" :live-transform="liveTransform" :scale-editable="selectedScaleEditable" :edit-enabled="editEnabled" @update-transform="commitTransform" @update-fields="commitFields" />
+              <PropertyEditorInspector :unit="selectedUnit" :units="flatUnits" :live-transform="liveTransform" :scale-editable="selectedScaleEditable" :edit-enabled="editEnabled" @update-transform="commitTransform" @update-fields="commitFields" />
               <slot name="tabs" />
             </div>
           </ResizablePanel>

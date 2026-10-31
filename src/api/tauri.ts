@@ -601,6 +601,10 @@ export interface PropUnit {
   slot: number | null;
   /** 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。 */
   scale: number | null;
+  /** 0x0C12EF50：槽位随机化（cUnitBinDrawSet::mRandomizeSlot）。 */
+  randomizeSlot?: boolean | null;
+  /** 0x0C12EF60：按资源百分比填充（cUnitBinDrawSet::mUseBinPercent）。 */
+  percentFill?: boolean | null;
   fields: UnitFieldDto[];
   /**
    * 放置的直挂模型扩展位（= pe_schema prop 白名单同名键）：拖拽放置的

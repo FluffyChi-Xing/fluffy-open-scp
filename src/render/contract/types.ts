@@ -11,6 +11,15 @@ export type Vec3 = readonly [number, number, number];
 /** 与 three 同序：[x, y, z, w] */
 export type Quat = readonly [number, number, number, number];
 
+/** Prop 脚本/资源语义（bin 只是绘制组，不带类型）。 */
+export type PropSemantic =
+  | "tree"
+  | "vehicle"
+  | "waste"
+  | "sign"
+  | "product"
+  | "static";
+
 /** 单元变换（WPF 行主序 12 floats 分解结果；语义与 three decompose 一致）。 */
 export interface TransformSpec {
   readonly position: Vec3;
@@ -47,6 +56,8 @@ interface UnitPlanBase {
 export interface PropUnitPlan extends UnitPlanBase {
   readonly kind: "prop";
   readonly asset: AssetRef;
+  /** 脚本/资源语义（tree/vehicle/waste/sign/product/static）。 */
+  readonly semantic: PropSemantic;
 }
 
 /** 树：resolved = treeIds 命中；direct = 拖入的直挂树模型。 */

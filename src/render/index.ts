@@ -88,3 +88,8 @@ export {
   type ReliefPlanInput,
 } from "./plan/relief";
 export { RELIEF_GLSL } from "./exec/three/reliefShader";
+export {
+  classifyAssetRef,
+  classifyProp,
+  type PropSemanticFacts,
+} from "./plan/propSemantic";

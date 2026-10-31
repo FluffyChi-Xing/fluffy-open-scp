@@ -162,6 +162,10 @@ pub enum LotUnit {
         slot: Option<i32>,
         /// 同贴花：flags == 15 时 Transform.Unknown 即 Scale（半宽语义）。
         scale: Option<f32>,
+        /// Bool：槽位随机化（0x0C12EF50，cUnitBinDrawSet::mRandomizeSlot）。
+        randomize_slot: Option<bool>,
+        /// Bool：按资源百分比填充（0x0C12EF60，cUnitBinDrawSet::mUseBinPercent）。
+        percent_fill: Option<bool>,
         fields: Vec<UnitField>,
     },
     #[serde(rename_all = "camelCase")]
@@ -540,6 +544,8 @@ fn assemble_props(file: &PropertyFile, out: &mut LotUnits) {
                 transform: unit_transform(file, transform_hash, index, &mut out.diagnostics),
                 slot: unit_i32(file, slot_hash, index),
                 scale: unit_transform_scale(file, transform_hash, index),
+                randomize_slot: unit_bool(file, randomize_hash, index),
+                percent_fill: unit_bool(file, percent_hash, index),
                 fields: collect_fields(file, &hashes, index),
             });
         }

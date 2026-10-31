@@ -19,6 +19,7 @@ import type {
   UnitPlanContext,
 } from "../contract/types";
 import { rowMajor12ToTrs } from "../resolve/transform";
+import { classifyProp } from "./propSemantic";
 
 /** Unit 稳定 id（与旧 `unitGizmos.unitId` 同规则）。 */
 export function unitPlanId(unit: LotUnitDto): string {
@@ -122,6 +123,9 @@ export function planUnit(unit: LotUnitDto, ctx: UnitPlanContext): UnitPlan | nul
     };
   }
 
+  const asset: AssetRef = hasDirectPayload
+    ? { kind: "instance", key: directKey }
+    : { kind: "resource", resourceId: resourceId as number };
   return {
     kind: "prop",
     id,
@@ -129,8 +133,11 @@ export function planUnit(unit: LotUnitDto, ctx: UnitPlanContext): UnitPlan | nul
     dtoScale: scaleOf(unit),
     transform,
     scale: bakedSemantics(unit),
-    asset: hasDirectPayload
-      ? { kind: "instance", key: directKey }
-      : { kind: "resource", resourceId: resourceId as number },
+    asset,
+    semantic: classifyProp({
+      resourceId,
+      name: unit.displayName,
+      treeIds: ctx.treeIds,
+    }),
   };
 }

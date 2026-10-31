@@ -2,8 +2,13 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { LotUnitDto, UnitKeyDto } from "@/api/tauri";
+import { propSemanticCategory } from "./assetCategories";
 
-const props = defineProps<{ unit: LotUnitDto | null }>();
+const props = defineProps<{
+  unit: LotUnitDto | null;
+  /** 当前 lot 的全部 unit（用于统计同 bin 的槽位/资源）。 */
+  units?: readonly LotUnitDto[];
+}>();
 const { t } = useI18n();
 
 interface SummaryRow {
@@ -11,6 +16,11 @@ interface SummaryRow {
   value: string;
   swatch?: string;
 }
+
+/** 已定谳的资源 bin 名称（probe/school/garbage 文档）；其余只显示 ID。 */
+const RESOURCE_BIN_NAMES: Record<number, string> = {
+  0x54ca89f0: "GarbageDisplayCount",
+};
 
 function formatKey(key: UnitKeyDto) {
   const hex = (value: number) => value.toString(16).padStart(8, "0").toUpperCase();
@@ -81,6 +91,54 @@ const summary = computed<SummaryRow[]>(() => {
         rows.push({ label: t("package.propSlot"), value: String(unit.slot) });
       if (unit.scale !== null)
         rows.push({ label: t("package.propScale"), value: String(unit.scale) });
+      const binSiblings = (props.units ?? []).filter(
+        (candidate): candidate is Extract<LotUnitDto, { kind: "prop" }> =>
+          candidate.kind === "prop" && candidate.bin === unit.bin,
+      );
+      const resourceIds = [
+        ...new Set(
+          binSiblings
+            .map((candidate) => candidate.resourceId)
+            .filter((value): value is number => typeof value === "number"),
+        ),
+      ];
+      const semantic = propSemanticCategory(
+        unit.resourceId,
+        unit.displayName ?? "",
+      );
+      rows.push({
+        label: t("package.propSemantic"),
+        value: t(`package.propSemanticKinds.${semantic}`),
+      });
+      // EcoResourceBin：bin 的可见槽位由资源的 amount/capacity 驱动；
+      // 离线 property 只有资源引用，没有运行时存量，因此这里标注推断来源。
+      rows.push({
+        label: t("package.propEcoResourceBin"),
+        value: resourceIds.length
+          ? resourceIds
+              .map((id) => {
+                const hex = `0x${(id >>> 0).toString(16).padStart(8, "0").toUpperCase()}`;
+                const name = RESOURCE_BIN_NAMES[id >>> 0];
+                return name ? `${name} (${hex})` : hex;
+              })
+              .join(", ")
+          : t("package.propUnresolved"),
+        swatch: undefined,
+      });
+      rows.push({
+        label: t("package.propBinSlots"),
+        value: String(binSiblings.length),
+      });
+      if (unit.percentFill !== null && unit.percentFill !== undefined)
+        rows.push({
+          label: t("package.propPercentFill"),
+          value: unit.percentFill ? t("package.yes") : t("package.no"),
+        });
+      if (unit.randomizeSlot !== null && unit.randomizeSlot !== undefined)
+        rows.push({
+          label: t("package.propRandomizeSlot"),
+          value: unit.randomizeSlot ? t("package.yes") : t("package.no"),
+        });
       break;
     }
     case "pathPoint": {

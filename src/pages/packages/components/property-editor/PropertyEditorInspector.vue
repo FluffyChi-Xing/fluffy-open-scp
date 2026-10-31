@@ -16,6 +16,8 @@ import { unitId } from "./unitGizmos";
  */
 const props = defineProps<{
   unit: LotUnitDto | null;
+  /** 当前 lot 全部 unit（属性面板统计同 bin 的槽位/资源）。 */
+  units?: readonly LotUnitDto[];
   /** 手柄拖拽中的实时变换（坐标 tab 即时显示）。 */
   liveTransform?: { id: string; position: [number, number, number] } | null;
   /** 选中 prop 是否显示「缩放倍率」编辑（真实模型渲染分支才消费）。 */
@@ -69,6 +71,7 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
       <PropertyEditorProperties
         v-if="activeTab === 'properties'"
         :unit="unit"
+        :units="units"
       />
       <PropertyEditorTransformPanel
         v-else-if="activeTab === 'transform'"
