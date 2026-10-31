@@ -104,6 +104,11 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
   async function openFile(file: PackageFile) {
     loadingPackage.value = true;
     try {
+      // EcoGame auto-registration shares the 32-package pool with user-opened
+      // packages. Release it before opening so a prop-heavy property cannot
+      // leave the manager full and make the next package fail with a generic
+      // "Package 无法解析" toast.
+      await source.releasePropModelPackages().catch(() => {});
       const result = await source.openPackage(file.path);
       const existing = opened.value.find(
         (item) => item.package.path === file.path,
@@ -119,7 +124,8 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
       typeFilter.value = null;
       selected.value = null;
       void loadNames(activePackageId.value, activePage.value);
-    } catch {
+    } catch (error) {
+      console.warn("[packages] open failed:", error);
       toast.error("Package 无法解析");
     } finally {
       loadingPackage.value = false;

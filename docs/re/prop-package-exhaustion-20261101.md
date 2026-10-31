@@ -37,6 +37,13 @@ if registered.len() >= budget { return Ok(registered); }
    也会打印 unresolved；`resolvePropModels` 整体抛错时 DEV 打印
    `[prop-models] resolve failed`。
 
+## 另一个可观测症状
+
+prop 解析失败后再打开普通包，UI 只显示 “Package 无法解析”。真实原因通常是
+`PackageManager` 已满（`PackageLimitExceeded`），但 `gamePackages.openFile`
+把所有失败都映射成同一句 toast。打开包前也会先释放自动注册的 EcoGame 包，
+并保留 `console.warn("[packages] open failed:", error)` 便于确认。
+
 ## 验证
 
 - `cargo check -p fluffy-open-scp --lib` 通过；
