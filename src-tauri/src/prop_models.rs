@@ -467,7 +467,16 @@ pub fn resolve_all(
     manager: &PackageManager,
     resource_ids: &[u32],
 ) -> Result<Vec<ResolvedPropModel>, PackageError> {
-    let base = manager.all_packages_with_ids()?;
+    // Auto-registered EcoGame packages are only needed for the current batch;
+    // keeping them open across properties exhausts MAX_OPEN_PACKAGES and makes
+    // every later property resolve zero props. Release the previous batch when
+    // the pool is near the cap (frontend already holds the LOTM bytes it needs).
+    // Do it only near the cap so normal prop reads are not racing a close.
+    let mut base = manager.all_packages_with_ids()?;
+    if base.len() + 2 >= crate::package_service::MAX_OPEN_PACKAGES {
+        release_registered(manager)?;
+        base = manager.all_packages_with_ids()?;
+    }
     let dirs = ecogame_dirs(&base);
     let eco = ensure_ecogame_registered(manager, &dirs)?;
     // 登记进会话注册表（PE 关闭时 release_prop_model_packages 统一卸载）

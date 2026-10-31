@@ -123,10 +123,20 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
 
   async function load() {
     const token = ++requestToken;
+    // 新 property = 新 prop 解析批次：先释放上一栋自动注册的 EcoGame 包，
+    // 否则它们会占满 PackageManager 的 32 包上限，后续所有 lot 的 prop
+    // 都解析为 0（表现为“只有重启软件才恢复”）。
+    await source.releasePropModelPackages().catch(() => {});
     loading.value = true;
     loadError.value = "";
     session.value = null;
     modelPayload.value = null;
+    // 换 property 时清空上一栋的 prop 解析结果；否则 resourceId 跨包碰撞 /
+    // 旧 treeIds 会把新 lot 的 prop 误判成树或复用错误载荷。
+    propModels.value = new Map();
+    propTreeIds.value = new Set();
+    treeModelPayloads.value = [];
+    treeAtlasPng.value = null;
     modelLods.value = [];
     activeLod.value = 0;
     modelState.value = "pending";
@@ -224,6 +234,8 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     try {
       const { resolutions } = await source.resolvePropModels(ids);
       if (token !== requestToken) return;
+      const resolvedIds = new Set(resolutions.map((entry) => entry.resourceId));
+      const missingIds = ids.filter((id) => !resolvedIds.has(id));
       const trees = new Set(
         resolutions
           .filter((r) => r.source === "tree" || r.source === "tree_model")
@@ -298,15 +310,20 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
           }),
       );
       if (token !== requestToken) return;
-      if (unresolved.length && import.meta.env.DEV) {
+      const allUnresolved = [...new Set([...missingIds, ...unresolved])];
+      if (allUnresolved.length && import.meta.env.DEV) {
         console.warn(
           "[prop-models] unresolved resource ids:",
-          unresolved.map((id) => `0x${(id >>> 0).toString(16).padStart(8, "0")}`),
+          allUnresolved.map((id) => `0x${(id >>> 0).toString(16).padStart(8, "0")}`),
         );
       }
       propModels.value = next;
-    } catch {
-      // 解析整体失败：prop 全部保持标记锥
+    } catch (error) {
+      // 解析整体失败：prop 全部保持标记锥；DEV 下必须可见，否则只剩
+      // “概率不渲染”的观感而没有任何线索。
+      if (import.meta.env.DEV) {
+        console.warn("[prop-models] resolve failed:", error);
+      }
     }
   }
 
