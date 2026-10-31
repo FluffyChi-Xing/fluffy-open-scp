@@ -269,23 +269,41 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       }
       referencedModels.value = [...referenced.values()];
       const next = new Map(propModels.value);
+      const unresolved: number[] = [];
       await Promise.all(
         resolutions
           .filter((r) => r.source !== "tree" && r.source !== "tree_model")
           .map(async (resolution) => {
-            const tgi = resolution.models[0];
             const pkg = resolution.packageId;
-            if (!tgi || pkg == null) return;
-            try {
-              const buffer = await source.readLotModelMeshes(pkg, tgi);
-              if (token !== requestToken) return;
-              next.set(resolution.resourceId, parseLotModelContainer(buffer));
-            } catch {
-              // 单模型失败不影响其余 prop
+            if (pkg == null || !resolution.models.length) {
+              unresolved.push(resolution.resourceId);
+              return;
             }
+            // LOD0 读取失败（包未就绪/单文件坏）时继续尝试候选 LOD；只取
+            // models[0] 会让这一步偶发缺模型，进而退化成标记锥。
+            for (const tgi of resolution.models) {
+              try {
+                const buffer = await source.readLotModelMeshes(pkg, tgi);
+                if (token !== requestToken) return;
+                const payload = parseLotModelContainer(buffer);
+                if (payload.glbs.length) {
+                  next.set(resolution.resourceId, payload);
+                  return;
+                }
+              } catch {
+                // try next candidate
+              }
+            }
+            unresolved.push(resolution.resourceId);
           }),
       );
       if (token !== requestToken) return;
+      if (unresolved.length && import.meta.env.DEV) {
+        console.warn(
+          "[prop-models] unresolved resource ids:",
+          unresolved.map((id) => `0x${(id >>> 0).toString(16).padStart(8, "0")}`),
+        );
+      }
       propModels.value = next;
     } catch {
       // 解析整体失败：prop 全部保持标记锥
