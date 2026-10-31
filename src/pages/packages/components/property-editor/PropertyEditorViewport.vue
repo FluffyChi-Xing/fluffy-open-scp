@@ -46,7 +46,7 @@ import { installHejlToneMapping } from "@/lib/hejlTonemapping";
 import {
   createParticleEffect,
   type ParticleEffectView,
-} from "./effects/particleRenderer";
+} from "../property-editor-next/effects";
 import type { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import {
   lotDimensionPlan,
@@ -690,6 +690,32 @@ watch([() => props.specExperiment, () => props.specMode], () => {
   for (const uniform of specUniformRefs) uniform.value = 2;
   viewport.viewer.value?.invalidate();
 });
+
+/**
+ * 浮雕开关热切换：只改每材质的 uReliefEnabled uniform，不重建场景/
+ * 材质/贴图。平面建筑（reliefAvailable=false）保持关闭。
+ */
+function applyReliefSwitch(enabled: boolean) {
+  const viewer = viewport.viewer.value;
+  if (!viewer) return;
+  let changed = false;
+  viewer.group("model").traverse((child) => {
+    const mesh = child as ThreeNamespace.Mesh;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      const uniform = material?.userData?.uReliefEnabled as
+        | { value: number }
+        | undefined;
+      if (!uniform) continue;
+      const available = material.userData.reliefAvailable !== false;
+      uniform.value = enabled && available ? 1 : 0;
+      changed = true;
+    }
+  });
+  if (changed) viewer.invalidate();
+}
+watch(() => props.reliefEnabled, (enabled) => applyReliefSwitch(enabled === true));
 watch([() => props.timeOfDay, () => props.powered], () => {
   applySun();
   applyBrightness();
@@ -1679,7 +1705,7 @@ defineExpose({
 // （如会话加载），rebuildToken 保证后到者胜出。全部触发走 scheduleRebuild
 // 合并（2026-10-07：原始实现各通道独立重建，3.2× 重复，见调度器注释）。
 watch(
-  () => [props.modelPayload, props.renderMode, props.reliefEnabled] as const,
+  () => [props.modelPayload, props.renderMode] as const,
   ([payload], previous) => {
     // 按变化项判定触发来源（首次拿到 payload 记 first_load，换级记 lod_switch）。
     const trigger: RenderTelemetryTrigger =

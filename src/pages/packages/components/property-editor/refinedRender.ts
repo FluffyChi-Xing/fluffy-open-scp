@@ -1262,6 +1262,7 @@ export function makeTintMaterial(
     toggle: reliefEnabled,
     hasHeight: tint.reliefAvailable,
   });
+  const uReliefUniform = { value: relief.enabled ? 1 : 0 };
   const uSpecGUniform = { value: effectiveSpecMode() };
   const uPaletteRowUniform = { value: paletteRow };
   attachTintShader(
@@ -1287,7 +1288,7 @@ export function makeTintMaterial(
       uDayLight: env.dayLight,
       uPowered: env.powered,
       uPaletteRow: uPaletteRowUniform,
-      uReliefEnabled: { value: relief.enabled ? 1 : 0 },
+      uReliefEnabled: uReliefUniform,
     },
     Boolean(paramsTex),
     Boolean(tint.shaderTex),
@@ -1297,5 +1298,8 @@ export function makeTintMaterial(
   );
   // 行 uniform 引用挂 userData（prop 按实例设变体行；建筑保持 0）
   tinted.userData.uPaletteRow = uPaletteRowUniform;
+  // 浮雕开关热更新：切换时只改这个 uniform，不重建场景/材质。
+  tinted.userData.uReliefEnabled = uReliefUniform;
+  tinted.userData.reliefAvailable = tint.reliefAvailable;
   return [tinted, uSpecGUniform];
 }
