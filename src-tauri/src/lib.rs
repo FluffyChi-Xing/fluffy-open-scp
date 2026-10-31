@@ -103,10 +103,26 @@ fn detect_media_tools() -> MediaTools {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Keep the development WebView2 profile beside target/debug.  The
+    // installed build has its own profile, so running the installed app and
+    // `tauri dev` cannot contend for the same WebView2 lock/cache.
+    #[cfg(debug_assertions)]
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+    {
+        let webview_data_dir = exe_dir.join(".webview2");
+        let _ = std::fs::create_dir_all(&webview_data_dir);
+        // `run` executes before Tauri starts its worker threads.
+        unsafe { std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", webview_data_dir) };
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let database_path = app.path().app_data_dir()?.join("openscp.db");
+            let data_root = internal_dirs::persistent_root(app.handle())?;
+            let database_path = data_root.join("openscp.db");
+            migrate_legacy_database(app, &database_path)?;
             let store = sc_store::Store::open(database_path)?;
             // 目录治理（2026-10-29）：docs/mods 自动落在安装目录下，
             // 未配置的工作区/模组根自动指向内部目录，无需手动指定。
@@ -265,4 +281,26 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn migrate_legacy_database<R: tauri::Runtime>(
+    app: &tauri::App<R>,
+    target: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if target.exists() {
+        return Ok(());
+    }
+    let legacy = app.path().app_data_dir()?.join("openscp.db");
+    if !legacy.is_file() {
+        return Ok(());
+    }
+    std::fs::copy(&legacy, target)?;
+    for suffix in ["-wal", "-shm"] {
+        let source = legacy.with_file_name(format!("openscp.db{suffix}"));
+        let destination = target.with_file_name(format!("openscp.db{suffix}"));
+        if source.is_file() {
+            let _ = std::fs::copy(source, destination);
+        }
+    }
+    Ok(())
 }

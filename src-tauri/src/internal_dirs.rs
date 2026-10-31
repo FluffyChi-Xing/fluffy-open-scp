@@ -27,11 +27,13 @@ fn dir_is_writable(dir: &Path) -> bool {
 
 /// 内部根目录：exe 目录优先（需可写），否则退回应用数据目录。目录会被创建。
 fn internal_base<R: Runtime>(app: &AppHandle<R>) -> io::Result<PathBuf> {
-    if let Ok(exe_dir) = app.path().executable_dir()
-        && exe_dir.is_dir()
-        && dir_is_writable(&exe_dir)
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
     {
-        return Ok(exe_dir);
+        if exe_dir.is_dir() && dir_is_writable(&exe_dir) {
+            return Ok(exe_dir);
+        }
     }
     let data_dir = app
         .path()
@@ -41,6 +43,14 @@ fn internal_base<R: Runtime>(app: &AppHandle<R>) -> io::Result<PathBuf> {
     Ok(data_dir)
 }
 
+/// Persistent application root. Prefer the directory beside the executable so
+/// portable/installed copies keep their database and workspaces together.
+/// Fall back to Tauri's app-data directory only when the executable directory
+/// is not writable (for example, an installation under Program Files).
+pub fn persistent_root<R: Runtime>(app: &AppHandle<R>) -> io::Result<PathBuf> {
+    internal_base(app)
+}
+
 fn ensure_subdir<R: Runtime>(
     app: &AppHandle<R>,
     name: &str,
@@ -48,6 +58,31 @@ fn ensure_subdir<R: Runtime>(
     let dir = internal_base(app)?.join(name);
     fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+fn copy_directory_contents(source: &Path, destination: &Path) -> io::Result<()> {
+    if !source.is_dir() {
+        return Ok(());
+    }
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if destination_path.exists() {
+            continue;
+        }
+        if source_path.is_dir() {
+            copy_directory_contents(&source_path, &destination_path)?;
+        } else {
+            // Copy instead of moving.  The legacy app-data directory may be
+            // protected by Windows ACLs that allow reads but deny deletion.
+            // Keeping the source also makes migration recoverable if startup
+            // is interrupted halfway through.
+            fs::copy(&source_path, &destination_path)?;
+        }
+    }
+    Ok(())
 }
 
 /// 内部文档工作区目录（不存在则创建）。
@@ -66,11 +101,26 @@ pub fn mods_dir(app: &AppHandle) -> io::Result<PathBuf> {
 pub fn ensure_internal_roots(app: &AppHandle, store: &Store) -> Result<(), sc_store::StoreError> {
     let docs = docs_dir(app)?;
     let mods = mods_dir(app)?;
+    let legacy_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    let legacy_docs = legacy_root.join(DOCS_DIR_NAME);
+    let legacy_mods = legacy_root.join(MODS_DIR_NAME);
     if store.workspace_config()?.is_none() {
+        store.set_workspace_config(&docs.to_string_lossy())?;
+    } else if store
+        .workspace_config()?
+        .is_some_and(|config| config.root_path == legacy_docs.to_string_lossy())
+    {
+        copy_directory_contents(&legacy_docs, &docs)?;
         store.set_workspace_config(&docs.to_string_lossy())?;
     }
     let studio = store.studio_config()?;
     if studio.mod_root.is_none() {
+        store.set_studio_config(Some(&mods.to_string_lossy()), studio.onboarding_completed)?;
+    } else if studio.mod_root.as_deref() == Some(legacy_mods.to_string_lossy().as_ref()) {
+        copy_directory_contents(&legacy_mods, &mods)?;
         store.set_studio_config(Some(&mods.to_string_lossy()), studio.onboarding_completed)?;
     }
     Ok(())
