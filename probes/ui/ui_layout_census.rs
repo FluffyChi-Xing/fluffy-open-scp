@@ -8,12 +8,10 @@ fn main() -> dbpf::Result<()> {
     let out_dir = PathBuf::from(args.remove(0));
     std::fs::create_dir_all(&out_dir).expect("create out dir");
     for path in &args {
-        let Ok(package) = dbpf::Package::open(path) else { continue };
-        let package_name = path
-            .rsplit(['/', '\\'])
-            .next()
-            .unwrap_or(path)
-            .to_string();
+        let Ok(package) = dbpf::Package::open(path) else {
+            continue;
+        };
+        let package_name = path.rsplit(['/', '\\']).next().unwrap_or(path).to_string();
         for entry in package.entries() {
             if entry.id.type_id != 0x6777_1F5C {
                 continue;
@@ -32,7 +30,10 @@ fn main() -> dbpf::Result<()> {
                 data.len(),
                 comment
             );
-            std::fs::write(out_dir.join(format!("{:08X}.json", entry.id.instance)), &data)?;
+            std::fs::write(
+                out_dir.join(format!("{:08X}.json", entry.id.instance)),
+                &data,
+            )?;
         }
     }
     Ok(())

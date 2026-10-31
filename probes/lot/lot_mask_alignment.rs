@@ -8,7 +8,7 @@
 //! 同时输出建筑原点（placement 平移）在 mask 上的落点供人工比对。
 
 use dbpf::Package;
-use sc_properties::{assemble_units, LotEditorDocument, LotUnit, PropertyFile};
+use sc_properties::{LotEditorDocument, LotUnit, PropertyFile, assemble_units};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const RASTER_TYPE: u32 = 0x2F4E_681C;
@@ -20,8 +20,7 @@ fn main() {
         .expect("usage: lot_mask_alignment <package> <model_instance> [extra...]");
     let model = rest.first().expect("need model instance");
     let extras = &rest[1..];
-    let model_instance =
-        u32::from_str_radix(model.trim_start_matches("0x"), 16).expect("instance");
+    let model_instance = u32::from_str_radix(model.trim_start_matches("0x"), 16).expect("instance");
 
     let package = Package::open(path).expect("open package");
     // 找到 LOD1 指向该模型的 property
@@ -32,9 +31,16 @@ fn main() {
             continue;
         }
         let raw = package.read(entry).expect("read property");
-        let Ok(file) = PropertyFile::parse(&raw) else { continue };
+        let Ok(file) = PropertyFile::parse(&raw) else {
+            continue;
+        };
         let doc = LotEditorDocument::from_property_file(file);
-        if doc.model_lods.iter().flatten().any(|k| k.instance == model_instance) {
+        if doc
+            .model_lods
+            .iter()
+            .flatten()
+            .any(|k| k.instance == model_instance)
+        {
             // 同一模型可有多个 property 引用（含空壳变体），优先取带 mask 的
             if doc.lot_mask.is_some() || fallback.is_none() {
                 if doc.lot_mask.is_some() {
@@ -61,8 +67,8 @@ fn main() {
         .iter()
         .filter_map(|path| Package::open(path).ok())
         .collect();
-    let raw_file = PropertyFile::parse(&package.read(&entry).expect("read property"))
-        .expect("parse property");
+    let raw_file =
+        PropertyFile::parse(&package.read(&entry).expect("read property")).expect("parse property");
     let resolve = |key: &sc_properties::Key| -> Option<PropertyFile> {
         for source in std::iter::once(&package).chain(extra_pkgs.iter()) {
             let mut hit = None;
@@ -75,7 +81,9 @@ fn main() {
                 }
             }
             let Some(hit) = hit else { continue };
-            let Ok(bytes) = source.read(&hit) else { continue };
+            let Ok(bytes) = source.read(&hit) else {
+                continue;
+            };
             if let Ok(file) = PropertyFile::parse(&bytes) {
                 return Some(file);
             }
@@ -109,7 +117,10 @@ fn main() {
         let hit = source
             .entries()
             .iter()
-            .find(|e| e.id.instance == mask_key.instance && (mask_key.type_id == 0 || e.id.type_id == mask_key.type_id))
+            .find(|e| {
+                e.id.instance == mask_key.instance
+                    && (mask_key.type_id == 0 || e.id.type_id == mask_key.type_id)
+            })
             .cloned()?;
         let raw = source.read(&hit).expect("read mask");
         let raster = rw4::RasterImage::parse(&raw).expect("parse mask raster");
@@ -119,7 +130,10 @@ fn main() {
         }
         let pixels = raster.decode_top_mip_rgba().expect("decode mask");
         let (w, h) = (raster.width as usize, raster.height as usize);
-        println!("mask 0x{:08x} in {label}: {w}×{h} raw rgba", mask_key.instance);
+        println!(
+            "mask 0x{:08x} in {label}: {w}×{h} raw rgba",
+            mask_key.instance
+        );
         Some((pixels, w.max(h)))
     };
     mask = search(&package, "self");
@@ -138,7 +152,10 @@ fn main() {
     };
     if size.is_none() {
         // EP1 系 lot 无 LotSize：mask 尺寸 × 0.75 m/px 回退（同后端逻辑）
-        size = Some([dims as f32 * 0.75, mask.len() as f32 / 4.0 / dims as f32 * 0.75]);
+        size = Some([
+            dims as f32 * 0.75,
+            mask.len() as f32 / 4.0 / dims as f32 * 0.75,
+        ]);
         println!("lot_size fallback from mask: {:?}", size);
     }
     let size = size.unwrap();
@@ -148,7 +165,9 @@ fn main() {
         .units
         .iter()
         .filter_map(|unit| match unit {
-            LotUnit::Prop { transform: Some(t), .. } => Some((t.matrix[9], t.matrix[10])),
+            LotUnit::Prop {
+                transform: Some(t), ..
+            } => Some((t.matrix[9], t.matrix[10])),
             _ => None,
         })
         .collect();
@@ -226,7 +245,10 @@ fn main() {
             top as f32 / inside.max(1) as f32 * 100.0
         );
     };
-    println!("== unitOffset 客观判据（lot_offset = {:?}）", doc.lot_offset);
+    println!(
+        "== unitOffset 客观判据（lot_offset = {:?}）",
+        doc.lot_offset
+    );
     report("H0 居中（现状）", 0.0, 0.0, size[0], size[1]);
     if let Some(off) = doc.lot_offset {
         report("H1 引擎 (pos - off)", off[0], off[1], size[0], size[1]);
@@ -234,13 +256,7 @@ fn main() {
     }
     // H4：地面尺度改用 mask 原生分辨率（1 m/px）而非 LotSize。若 LotSize 只是
     // UV 缩放遗产而真实地面取自更大的 overlay box，1 m/px 是它的常见近似。
-    report(
-        "H4 尺度=1 m/px",
-        0.0,
-        0.0,
-        mask_w as f32,
-        mask_h as f32,
-    );
+    report("H4 尺度=1 m/px", 0.0, 0.0, mask_w as f32, mask_h as f32);
 
     // ---- 决定性数据：mask 覆盖区映射回模型空间 vs prop 实际范围 ----
     // 两者质心之差 = 要让 prop 落进覆盖区所需的平移量，同时直接给出「地面矩形该
@@ -309,8 +325,12 @@ fn main() {
                     }
                 }
                 let Some(hit) = hit else { continue };
-                let Ok(bytes) = source.read(&hit) else { continue };
-                let Ok(rw) = rw4::Rw4File::parse(&bytes) else { continue };
+                let Ok(bytes) = source.read(&hit) else {
+                    continue;
+                };
+                let Ok(rw) = rw4::Rw4File::parse(&bytes) else {
+                    continue;
+                };
                 let (mut minx, mut maxx, mut miny, mut maxy) =
                     (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
                 let mut verts = 0usize;
@@ -444,7 +464,11 @@ fn main() {
                 .join(" ")
         };
         println!("[{name}] spread={spread:4}  head={:?}", preview);
-        println!("         west(col0-14) [{}]  east(col55+) [{}]", dominant(&west), dominant(&east));
+        println!(
+            "         west(col0-14) [{}]  east(col55+) [{}]",
+            dominant(&west),
+            dominant(&east)
+        );
     }
 
     // 建筑原点在 mask 上的落点（4 种朝向）
@@ -458,7 +482,10 @@ fn main() {
             ("flipXY", -1, -1),
         ] {
             let s = sample(fx as f32 * px, fy as f32 * py);
-            println!("  [{name}] mask at building = {:02x}{:02x}{:02x}{:02x}", s[0], s[1], s[2], s[3]);
+            println!(
+                "  [{name}] mask at building = {:02x}{:02x}{:02x}{:02x}",
+                s[0], s[1], s[2], s[3]
+            );
         }
     }
 }

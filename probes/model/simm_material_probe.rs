@@ -22,9 +22,17 @@ fn main() {
         for mat in file.sections_of_type(rw4::SectionType::MATERIAL) {
             match file.decode_material(&data, mat.number) {
                 Ok(rw4::MaterialSection::Decoded(m)) => {
-                    println!("  MATERIAL #{} Decoded: {} texrefs", mat.number, m.texture_refs.len());
+                    println!(
+                        "  MATERIAL #{} Decoded: {} texrefs",
+                        mat.number,
+                        m.texture_refs.len()
+                    );
                     for r in &m.texture_refs {
-                        println!("    slot {:#04x} -> {:#010x}", r.slot_byte(), r.texture_instance);
+                        println!(
+                            "    slot {:#04x} -> {:#010x}",
+                            r.slot_byte(),
+                            r.texture_instance
+                        );
                     }
                 }
                 Ok(rw4::MaterialSection::Raw(m)) => {
@@ -38,10 +46,7 @@ fn main() {
         }
         for (i, tex) in file.sections_of_type(rw4::SectionType::TEXTURE).enumerate() {
             match file.decode_texture(&data, tex.number) {
-                Ok(t) => println!(
-                    "  TEXTURE #{} {}x{} mips",
-                    i, t.width, t.height
-                ),
+                Ok(t) => println!("  TEXTURE #{} {}x{} mips", i, t.width, t.height),
                 Err(e) => println!("  TEXTURE #{} decode err {e}", i),
             }
         }

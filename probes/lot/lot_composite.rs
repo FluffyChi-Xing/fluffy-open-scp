@@ -36,7 +36,7 @@
 //! 图案平铺密度 = LotSize / 0x0CCB7FD0（米/格，默认 8.0，uv1 世界锚定细节层）。
 use dbpf::{IndexEntry, Package};
 use image::RgbaImage;
-use sc_properties::{Kind, Key, ParseLimits, PropertyFile, Value};
+use sc_properties::{Key, Kind, ParseLimits, PropertyFile, Value};
 use std::collections::HashMap;
 
 const RASTER_TYPE: u32 = 0x2F4E_681C;
@@ -101,7 +101,11 @@ struct Atlas {
 
 impl Atlas {
     fn new(width: usize, rgba: Vec<u8>) -> Self {
-        let height = if width == 0 { 0 } else { rgba.len() / 4 / width };
+        let height = if width == 0 {
+            0
+        } else {
+            rgba.len() / 4 / width
+        };
         let cells = (0..ATLAS_CELLS)
             .map(|index| extract_cell(&rgba, width, height, index))
             .collect();
@@ -153,12 +157,10 @@ fn extract_lot_data(file: &PropertyFile) -> LotData {
         .iter()
         .map(|h| color_at(file, *h))
         .collect();
-    let colors8: [[u8; 4]; 4] = std::array::from_fn(|i| {
-        colors_lin[i].map_or(to_rgba8(DEFAULT_PALETTE[i]), to_rgba8)
-    });
-    let borders8: [[u8; 4]; 4] = std::array::from_fn(|i| {
-        border_lin[i].map_or(to_rgba8(DEFAULT_PALETTE[i]), to_rgba8)
-    });
+    let colors8: [[u8; 4]; 4] =
+        std::array::from_fn(|i| colors_lin[i].map_or(to_rgba8(DEFAULT_PALETTE[i]), to_rgba8));
+    let borders8: [[u8; 4]; 4] =
+        std::array::from_fn(|i| border_lin[i].map_or(to_rgba8(DEFAULT_PALETTE[i]), to_rgba8));
     let mut border_widths = [0.0f32; 4];
     for (c, h) in H_BORDER_WIDTHS.iter().enumerate() {
         if let Some(Value::Float(v)) = scalar(file, *h) {
@@ -166,9 +168,8 @@ fn extract_lot_data(file: &PropertyFile) -> LotData {
         }
     }
     // LotColor.A 是整数索引本体（实测 3/1/8/3），不是 0..1 颜色分量。
-    let index_of = |c: &Option<[f32; 4]>| {
-        c.map_or(0, |c| (c[3].max(0.0).round() as usize) % ATLAS_CELLS)
-    };
+    let index_of =
+        |c: &Option<[f32; 4]>| c.map_or(0, |c| (c[3].max(0.0).round() as usize) % ATLAS_CELLS);
     let (base_tile, base_src) = base_tile_of(file);
     let lot_size = vector2_at(file, H_LOT_SIZE);
     let detail = vector2_at(file, H_DETAIL_METERS);
@@ -244,7 +245,17 @@ fn main() -> dbpf::Result<()> {
     let mut atlas_cache: HashMap<u32, Option<Vec<Atlas>>> = HashMap::new();
 
     if let Some(lot_id) = lot_arg {
-        return run_hires(lot_id, ppm, &out_dir, &packages, &prop_index, &raster_index, &rw4_index, &mut mask_cache, &mut atlas_cache);
+        return run_hires(
+            lot_id,
+            ppm,
+            &out_dir,
+            &packages,
+            &prop_index,
+            &raster_index,
+            &rw4_index,
+            &mut mask_cache,
+            &mut atlas_cache,
+        );
     }
 
     // ---- 逐 lot property 合成（批量、原生分辨率）----
@@ -259,7 +270,9 @@ fn main() -> dbpf::Result<()> {
             break;
         }
         let entry = entry.clone();
-        let Ok(data) = ep1_pkg.read(&entry) else { continue };
+        let Ok(data) = ep1_pkg.read(&entry) else {
+            continue;
+        };
         let Ok(pf) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else {
             continue;
         };
@@ -268,7 +281,9 @@ fn main() -> dbpf::Result<()> {
         if !chain.is_empty() {
             inherit_count += 1;
         }
-        let Some(mask_key) = key_at(&file, H_LOT_MASK) else { continue };
+        let Some(mask_key) = key_at(&file, H_LOT_MASK) else {
+            continue;
+        };
         let Some(mask) = load_mask(&packages, &raster_index, &mut mask_cache, mask_key.instance)
         else {
             continue;
@@ -295,9 +310,7 @@ fn main() -> dbpf::Result<()> {
             let (masks, borders) = overlay_waterfall(value, data.border_widths);
             let winner = WATERFALL
                 .into_iter()
-                .find(|(c, is_border)| {
-                    (if *is_border { borders[*c] } else { masks[*c] }) > 0.0
-                });
+                .find(|(c, is_border)| (if *is_border { borders[*c] } else { masks[*c] }) > 0.0);
 
             let x = i % w;
             let y = i / w;
@@ -343,8 +356,7 @@ fn main() -> dbpf::Result<()> {
             h,
             data.base_tile,
             data.base_src,
-            data
-                .textures_key
+            data.textures_key
                 .map(|k| format!("{:08x}/{}", k.instance, diffuse.is_some()))
                 .unwrap_or_else(|| "none".to_owned()),
             data.border_widths,
@@ -383,9 +395,7 @@ fn main() -> dbpf::Result<()> {
         count += 1;
     }
 
-    println!(
-        "\n合成 {count} 个 lot（Parent 继承链命中 {inherit_count}）→ {OUT_DIR}"
-    );
+    println!("\n合成 {count} 个 lot（Parent 继承链命中 {inherit_count}）→ {OUT_DIR}");
 
     // ---- contact sheet（每格 132px，12 列）----
     if !sheets.is_empty() {
@@ -440,11 +450,7 @@ fn run_hires(
         return Ok(());
     };
     let (file, chain) = flatten(pf, packages, prop_index);
-    println!(
-        "lot {:08x}（Parent 继承 {} 级）",
-        lot_id,
-        chain.len()
-    );
+    println!("lot {:08x}（Parent 继承 {} 级）", lot_id, chain.len());
     let Some(mask_key) = key_at(&file, H_LOT_MASK) else {
         println!("该 property 无 LotMask");
         return Ok(());
@@ -465,7 +471,9 @@ fn run_hires(
     const MAX_SIDE: usize = 4096;
     let raw_w = (lot.lot_size.0 * ppm).round().max(1.0) as usize;
     let raw_h = (lot.lot_size.1 * ppm).round().max(1.0) as usize;
-    let shrink = (MAX_SIDE as f32 / raw_w as f32).min(MAX_SIDE as f32 / raw_h as f32).min(1.0);
+    let shrink = (MAX_SIDE as f32 / raw_w as f32)
+        .min(MAX_SIDE as f32 / raw_h as f32)
+        .min(1.0);
     let out_w = ((raw_w as f32 * shrink) as usize).clamp(64, MAX_SIDE);
     let out_h = ((raw_h as f32 * shrink) as usize).clamp(64, MAX_SIDE);
     // 图案平铺密度（米/格 → 地块内重复次数；uv1 世界锚定，相位对单 lot 图无意义）。
@@ -491,7 +499,8 @@ fn run_hires(
         },
         lot.base_tile,
         lot.base_src,
-        lot.textures_key.map_or("none".to_owned(), |k| format!("{:08x}", k.instance)),
+        lot.textures_key
+            .map_or("none".to_owned(), |k| format!("{:08x}", k.instance)),
         H_NORMAL_ATLAS,
         normal_atlas.is_some(),
         lot.normal_index,
@@ -503,12 +512,17 @@ fn run_hires(
     );
 
     let oriented = orient_mask(&mask.rgba, mask.w, mask.h);
-    for (name, mode) in [
-        ("pattern", ShadeMode::Pattern),
-        ("tile", ShadeMode::Tile),
-    ] {
+    for (name, mode) in [("pattern", ShadeMode::Pattern), ("tile", ShadeMode::Tile)] {
         let image = compose_hires(
-            &oriented, &mask, out_w, out_h, &lot, diffuse, normal_atlas, reps, mode,
+            &oriented,
+            &mask,
+            out_w,
+            out_h,
+            &lot,
+            diffuse,
+            normal_atlas,
+            reps,
+            mode,
         );
         let path = format!("{out_dir}/lot_{lot_id:08x}_hires_{name}.png");
         RgbaImage::from_raw(out_w as u32, out_h as u32, image)
@@ -555,9 +569,7 @@ fn compose_hires(
             let (masks, borders) = overlay_waterfall(value, lot.border_widths);
             let winner = WATERFALL
                 .into_iter()
-                .find(|(c, is_border)| {
-                    (if *is_border { borders[*c] } else { masks[*c] }) > 0.0
-                });
+                .find(|(c, is_border)| (if *is_border { borders[*c] } else { masks[*c] }) > 0.0);
             let coverage = masks.iter().sum::<f32>().min(1.0);
 
             // 线性空间合成再编码（颜色与纹理都在 sRGB 编码端输出）。
@@ -570,7 +582,9 @@ fn compose_hires(
                         ),
                         1.0,
                     ),
-                    ShadeMode::Tile => tiled_linear(diffuse, lot.border_normal_index[c], pu, pv, lot.borders8[c]),
+                    ShadeMode::Tile => {
+                        tiled_linear(diffuse, lot.border_normal_index[c], pu, pv, lot.borders8[c])
+                    }
                 },
                 Some((c, false)) => match mode {
                     ShadeMode::Pattern => (
@@ -580,7 +594,9 @@ fn compose_hires(
                         ),
                         1.0,
                     ),
-                    ShadeMode::Tile => tiled_linear(diffuse, lot.normal_index[c], pu, pv, lot.colors8[c]),
+                    ShadeMode::Tile => {
+                        tiled_linear(diffuse, lot.normal_index[c], pu, pv, lot.colors8[c])
+                    }
                 },
                 None => (
                     diffuse
@@ -775,22 +791,24 @@ fn normal_likeness_of(atlas: &Atlas) -> f32 {
             }
         }
     }
-    if total == 0 { 0.0 } else { hits as f32 / total as f32 }
+    if total == 0 {
+        0.0
+    } else {
+        hits as f32 / total as f32
+    }
 }
 
 /// 从容器多张纹理里挑一张：`want_normal=false` 取最不像法线图（漫反射），
 /// `true` 取最像法线图（图案/法线图集）。
 fn pick(atlases: &[Atlas], want_normal: bool) -> Option<&Atlas> {
-    atlases
-        .iter()
-        .min_by(|a, b| {
-            let (ka, kb) = (normal_likeness_of(a), normal_likeness_of(b));
-            if want_normal {
-                ka.total_cmp(&kb)
-            } else {
-                kb.total_cmp(&ka)
-            }
-        })
+    atlases.iter().min_by(|a, b| {
+        let (ka, kb) = (normal_likeness_of(a), normal_likeness_of(b));
+        if want_normal {
+            ka.total_cmp(&kb)
+        } else {
+            kb.total_cmp(&ka)
+        }
+    })
 }
 
 /// 兼容批量路径的便捷封装。
@@ -903,7 +921,9 @@ fn to_rgba8(color: [f32; 4]) -> [u8; 4] {
 }
 
 fn linear_to_srgb_u8(linear: f32) -> u8 {
-    (linear_to_srgb_f32(linear) * 255.0).round().clamp(0.0, 255.0) as u8
+    (linear_to_srgb_f32(linear) * 255.0)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 fn linear_to_srgb_f32(linear: f32) -> f32 {

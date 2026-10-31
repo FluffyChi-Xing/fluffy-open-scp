@@ -11,7 +11,7 @@
 //!   <lot package> <model instance hex> [--out dir] [lookup package...]
 use dbpf::Package;
 use rw4::{Rw4File, SectionType};
-use sc_properties::{assemble_units, LotEditorDocument};
+use sc_properties::{LotEditorDocument, assemble_units};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const MODEL_TYPE: u32 = 0x2F4E_681B;
@@ -33,8 +33,7 @@ fn main() {
     std::fs::create_dir_all(&out_dir).unwrap();
     let (lot_path, model_hex) = (
         args[0].clone(),
-        u32::from_str_radix(args[1].trim_start_matches("0x"), 16)
-            .expect("model instance hex"),
+        u32::from_str_radix(args[1].trim_start_matches("0x"), 16).expect("model instance hex"),
     );
     let mut paths = vec![lot_path.clone()];
     paths.extend(args[2..].iter().cloned());
@@ -51,10 +50,10 @@ fn main() {
                 continue;
             }
             let entry = entry.clone();
-            let Ok(data) = package.read(&entry) else { continue };
-            let Ok(properties) =
-                sc_properties::PropertyFile::parse(&data)
-            else {
+            let Ok(data) = package.read(&entry) else {
+                continue;
+            };
+            let Ok(properties) = sc_properties::PropertyFile::parse(&data) else {
                 continue;
             };
             let document = LotEditorDocument::from_property_file(properties);
@@ -84,12 +83,13 @@ fn main() {
         .unwrap_or_else(|| vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]);
     let overlay_offset = doc.lot_offset.unwrap_or([0.0, 0.0]);
     let mask_key = doc.lot_mask.expect("lot has no LotMask");
-    println!(
-        "LotSize = {lot_size:?}  LotOverlayBoxOffset = {overlay_offset:?}"
-    );
+    println!("LotSize = {lot_size:?}  LotOverlayBoxOffset = {overlay_offset:?}");
     println!(
         "LotPlacementTransform = {:?}",
-        placement.iter().map(|v| (*v * 1000.0).round() / 1000.0).collect::<Vec<_>>()
+        placement
+            .iter()
+            .map(|v| (*v * 1000.0).round() / 1000.0)
+            .collect::<Vec<_>>()
     );
 
     // 0xF9EFBA Model Bounding Box（属性授权的建筑包围盒）+ xy 中心
@@ -116,9 +116,7 @@ fn main() {
         .find_map(|p| {
             p.entries()
                 .iter()
-                .find(|e| {
-                    e.id.type_id == RASTER_TYPE && e.id.instance == mask_key.instance
-                })
+                .find(|e| e.id.type_id == RASTER_TYPE && e.id.instance == mask_key.instance)
                 .cloned()
         })
         .expect("LotMask raster not found");
@@ -154,11 +152,7 @@ fn main() {
         let Ok(mesh) = file.decode_mesh(&model_bytes, section.number) else {
             continue;
         };
-        let verts: Vec<[f32; 3]> = mesh
-            .vertices
-            .iter()
-            .filter_map(|v| v.position())
-            .collect();
+        let verts: Vec<[f32; 3]> = mesh.vertices.iter().filter_map(|v| v.position()).collect();
         if verts.is_empty() {
             continue;
         }
@@ -168,7 +162,11 @@ fn main() {
             positions.push(*v);
         }
         for t in &mesh.triangles {
-            let (ia, ib, ic) = (base + u32::from(t[0]), base + u32::from(t[1]), base + u32::from(t[2]));
+            let (ia, ib, ic) = (
+                base + u32::from(t[0]),
+                base + u32::from(t[1]),
+                base + u32::from(t[2]),
+            );
             let (Some(a), Some(b), Some(c)) = (
                 positions.get(ia as usize),
                 positions.get(ib as usize),
@@ -258,11 +256,21 @@ fn main() {
         writeln!(uout, "kind,x,y").unwrap();
         for unit in &lot_units.units {
             let (kind, m) = match unit {
-                sc_properties::LotUnit::Light { transform, .. } => ("light", transform.as_ref().map(|t| t.matrix)),
-                sc_properties::LotUnit::Effect { transform, .. } => ("effect", transform.as_ref().map(|t| t.matrix)),
-                sc_properties::LotUnit::Decal { transform, .. } => ("decal", transform.as_ref().map(|t| t.matrix)),
-                sc_properties::LotUnit::Prop { transform, .. } => ("prop", transform.as_ref().map(|t| t.matrix)),
-                sc_properties::LotUnit::Spawner { transform, .. } => ("spawner", transform.as_ref().map(|t| t.matrix)),
+                sc_properties::LotUnit::Light { transform, .. } => {
+                    ("light", transform.as_ref().map(|t| t.matrix))
+                }
+                sc_properties::LotUnit::Effect { transform, .. } => {
+                    ("effect", transform.as_ref().map(|t| t.matrix))
+                }
+                sc_properties::LotUnit::Decal { transform, .. } => {
+                    ("decal", transform.as_ref().map(|t| t.matrix))
+                }
+                sc_properties::LotUnit::Prop { transform, .. } => {
+                    ("prop", transform.as_ref().map(|t| t.matrix))
+                }
+                sc_properties::LotUnit::Spawner { transform, .. } => {
+                    ("spawner", transform.as_ref().map(|t| t.matrix))
+                }
                 sc_properties::LotUnit::PathPoint { .. } => ("path", None),
             };
             if let Some(m) = m {
@@ -322,10 +330,7 @@ fn main() {
         engine_ground[0] - app_legacy[0],
         engine_ground[1] - app_legacy[1],
     ];
-    println!(
-        "  app 旧误差 = ({:.2}, {:.2}) m",
-        err[0], err[1]
-    );
+    println!("  app 旧误差 = ({:.2}, {:.2}) m", err[0], err[1]);
     if let Some(c) = units_center {
         println!(
             "  app 新误差 = ({:.2}, {:.2}) m",
@@ -339,10 +344,10 @@ fn main() {
     let mut img = vec![255u8; rw * rh * 3];
     // lot 平色底：按 0.5 阈值的四色平涂（R/G/B/A = LotColor1-4 sRGB 近似）
     let palette: [[u8; 3]; 4] = [
-        [96, 106, 130],   // R 沥青 蓝灰
-        [166, 150, 120],  // G 铺装 棕
-        [96, 148, 84],    // B 草坪 绿
-        [226, 214, 96],   // A 标线 黄
+        [96, 106, 130],  // R 沥青 蓝灰
+        [166, 150, 120], // G 铺装 棕
+        [96, 148, 84],   // B 草坪 绿
+        [226, 214, 96],  // A 标线 黄
     ];
     for py in 0..rh {
         for px in 0..rw {
@@ -418,8 +423,7 @@ fn main() {
         let gcy = (uy0 + uy1) / 2.0 + overlay_offset[1];
         let (gx0, gy0) = to_px(gcx - lot_size[0] / 2.0, gcy - lot_size[1] / 2.0);
         let (gx1, gy1) = to_px(gcx + lot_size[0] / 2.0, gcy + lot_size[1] / 2.0);
-        let (gx0, gy0, gx1, gy1) =
-            (gx0 as i32, gy0 as i32, gx1 as i32, gy1 as i32);
+        let (gx0, gy0, gx1, gy1) = (gx0 as i32, gy0 as i32, gx1 as i32, gy1 as i32);
         for t in 0..3 {
             for x in (gx0 + t)..=(gx1 - t) {
                 for y in [gy0 + t, gy1 - t] {

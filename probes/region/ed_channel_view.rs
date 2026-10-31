@@ -1,7 +1,8 @@
 //! 探针：ED b0/b1/b2 通道灰度渲染 + b0 值直方图（找路网/铁路编码）。仅开发用。
 use std::collections::HashMap;
 fn main() {
-    let p = dbpf::Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package").unwrap();
+    let p = dbpf::Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package")
+        .unwrap();
     let group = 0xBEAF_0510u32;
     let grid = &sc_properties::region_map::SHARED_ED_GRID;
     let mut ed: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -9,7 +10,13 @@ fn main() {
         if e.id.type_id == 0x03E4_21ED && e.id.group == group {
             if let Ok(d) = p.read(e) {
                 if d.len() == 65556 {
-                    ed.insert(e.id.instance, d[20..].chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect());
+                    ed.insert(
+                        e.id.instance,
+                        d[20..]
+                            .chunks_exact(4)
+                            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                            .collect(),
+                    );
                 }
             }
         }
@@ -32,9 +39,15 @@ fn main() {
             }
         }
     }
-    for (name, data) in ["b0_veg_road", "b1_grass", "b2_material"].iter().zip(ch.iter()) {
-        let img = image::GrayImage::from_fn(wm as u32, wm as u32, |x, y| image::Luma([data[y as usize * wm + x as usize]]));
-        img.save(format!("tmp/region_preview/ed_{name}_BEAF0510.png")).unwrap();
+    for (name, data) in ["b0_veg_road", "b1_grass", "b2_material"]
+        .iter()
+        .zip(ch.iter())
+    {
+        let img = image::GrayImage::from_fn(wm as u32, wm as u32, |x, y| {
+            image::Luma([data[y as usize * wm + x as usize]])
+        });
+        img.save(format!("tmp/region_preview/ed_{name}_BEAF0510.png"))
+            .unwrap();
         println!("-> ed_{name}_BEAF0510.png");
     }
     let mut hv: Vec<(u8, usize)> = hist.into_iter().collect();

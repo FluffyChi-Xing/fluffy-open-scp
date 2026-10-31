@@ -25,14 +25,20 @@ fn decode_entry_raster(
 ) -> Option<(u32, u32, Vec<u8>)> {
     for package in packages {
         for type_id in [RASTER_IMAGE_TYPE, RW4_TEXTURE_TYPE] {
-            let Some(entry) = package.entries().iter().find(|entry| {
-                entry.id.type_id == type_id && entry.id.instance == key.instance
-            }) else {
+            let Some(entry) = package
+                .entries()
+                .iter()
+                .find(|entry| entry.id.type_id == type_id && entry.id.instance == key.instance)
+            else {
                 continue;
             };
-            let Ok(bytes) = package.read(entry) else { continue };
+            let Ok(bytes) = package.read(entry) else {
+                continue;
+            };
             if type_id == RASTER_IMAGE_TYPE {
-                let Ok(raster) = rw4::RasterImage::parse(&bytes) else { continue };
+                let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
+                    continue;
+                };
                 if !raster.is_raw_rgba() {
                     continue;
                 }
@@ -42,17 +48,17 @@ fn decode_entry_raster(
                 };
                 return Some((u32::from(raster.width), u32::from(raster.height), rgba));
             }
-            let Ok(file) = rw4::Rw4File::parse(&bytes) else { continue };
+            let Ok(file) = rw4::Rw4File::parse(&bytes) else {
+                continue;
+            };
             for section in file.sections_of_type(rw4::SectionType::TEXTURE) {
                 let Ok(texture) = file.decode_texture(&bytes, section.number) else {
                     continue;
                 };
-                let Ok(rgba) = texture.decode_top_mip_rgba() else { continue };
-                return Some((
-                    u32::from(texture.width),
-                    u32::from(texture.height),
-                    rgba,
-                ));
+                let Ok(rgba) = texture.decode_top_mip_rgba() else {
+                    continue;
+                };
+                return Some((u32::from(texture.width), u32::from(texture.height), rgba));
             }
         }
     }
@@ -88,8 +94,12 @@ fn main() {
             {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(dictionary) = DecalDictionary::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(dictionary) = DecalDictionary::parse(&data) else {
+                continue;
+            };
             for decal in &dictionary.entries {
                 let colors = decal.colors_rgba8();
                 // 有 colors → 四色映射（招牌/涂鸦）；无 colors → RW4 自彩
@@ -106,9 +116,8 @@ fn main() {
                 if width < 16 || height < 16 {
                     continue;
                 }
-                let bitmap =
-                    image::RgbaImage::from_raw(width as u32, height as u32, rgba.clone())
-                        .expect("decal buf");
+                let bitmap = image::RgbaImage::from_raw(width as u32, height as u32, rgba.clone())
+                    .expect("decal buf");
                 scanned += 1;
                 // 缩略图上板（棋盘底显透明）——全量条目。
                 let tx = (thumb_count % THUMB_COLS) * 56 + 4;
@@ -123,12 +132,8 @@ fn main() {
                         );
                     }
                 }
-                let thumb = image::imageops::resize(
-                    &bitmap,
-                    48,
-                    48,
-                    image::imageops::FilterType::Nearest,
-                );
+                let thumb =
+                    image::imageops::resize(&bitmap, 48, 48, image::imageops::FilterType::Nearest);
                 image::imageops::overlay(&mut thumb_sheet, &thumb, tx as i64, ty as i64);
                 tsv.push_str(&format!(
                     "{}\t{}\t{:08x}\t{:08x}\t{}\t{:08x}\t{}\t{}\n",
@@ -158,7 +163,9 @@ fn main() {
                     entry.id.group as u16,
                     decal.index
                 );
-                bitmap.save(&name).unwrap_or_else(|e| panic!("save {name}: {e}"));
+                bitmap
+                    .save(&name)
+                    .unwrap_or_else(|e| panic!("save {name}: {e}"));
                 println!(
                     "HIT 字典 0x{:08x} group {:08x} entry[{}] id=0x{:08x} {}x{} -> {name}",
                     entry.id.instance,
@@ -173,8 +180,7 @@ fn main() {
     }
     // 裁掉多余高度并存盘。
     let rows = thumb_count.div_ceil(THUMB_COLS);
-    let cropped =
-        image::imageops::crop(&mut thumb_sheet, 0, 0, 24 * 56 + 8, rows as u32 * 56 + 8);
+    let cropped = image::imageops::crop(&mut thumb_sheet, 0, 0, 24 * 56 + 8, rows as u32 * 56 + 8);
     let mut cropped = cropped.to_image();
     // 行标：每行左缘写行号点阵（简单色条区分行组）。
     for r in 0..rows {
@@ -210,7 +216,12 @@ fn matches_labs(rgba: &[u8], w: usize, h: usize) -> bool {
     for y in 0..h {
         for x in 0..w {
             let at = (y * w + x) * 4;
-            let (r, g, b, a) = (rgba[at] as i32, rgba[at + 1] as i32, rgba[at + 2] as i32, rgba[at + 3]);
+            let (r, g, b, a) = (
+                rgba[at] as i32,
+                rgba[at + 1] as i32,
+                rgba[at + 2] as i32,
+                rgba[at + 3],
+            );
             total += 1;
             if a == 0 {
                 transparent += 1;
@@ -219,8 +230,7 @@ fn matches_labs(rgba: &[u8], w: usize, h: usize) -> bool {
             if g > 55 && g > r + 12 && g > b + 12 && r < 110 {
                 green += 1;
             }
-            if r >= 85 && r <= 175 && g >= 75 && g <= 165 && b <= 95 && r > b + 25 && (r - b) > 25
-            {
+            if r >= 85 && r <= 175 && g >= 75 && g <= 165 && b <= 95 && r > b + 25 && (r - b) > 25 {
                 olive += 1;
             }
         }
@@ -229,7 +239,10 @@ fn matches_labs(rgba: &[u8], w: usize, h: usize) -> bool {
     f(transparent) > 0.12 && f(green) > 0.08 && f(olive) > 0.03 && f(green) < 0.6
 }
 
-fn resolve_raster(packages: &[Package], instance: Option<u32>) -> Option<(rw4::RasterImage, String)> {
+fn resolve_raster(
+    packages: &[Package],
+    instance: Option<u32>,
+) -> Option<(rw4::RasterImage, String)> {
     let instance = instance?;
     for package in packages {
         let Some(entry) = package
@@ -239,8 +252,12 @@ fn resolve_raster(packages: &[Package], instance: Option<u32>) -> Option<(rw4::R
         else {
             continue;
         };
-        let Ok(bytes) = package.read(entry) else { continue };
-        let Ok(raster) = rw4::RasterImage::parse(&bytes) else { continue };
+        let Ok(bytes) = package.read(entry) else {
+            continue;
+        };
+        let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
+            continue;
+        };
         return Some((raster, String::new()));
     }
     None

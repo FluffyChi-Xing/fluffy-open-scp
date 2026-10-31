@@ -24,7 +24,9 @@ fn main() {
         if e.id.type_id != 0x0A98_EAF0 {
             continue;
         }
-        let Ok(data) = locale_pkg.read(e) else { continue };
+        let Ok(data) = locale_pkg.read(e) else {
+            continue;
+        };
         let text = String::from_utf8_lossy(&data);
         let text = text.trim_start_matches('\u{feff}');
         if let Ok(map) = serde_json::from_str::<BTreeMap<String, String>>(text) {
@@ -32,10 +34,7 @@ fn main() {
         }
     }
     let resolve = |t: u32, i: u32| -> Option<String> {
-        tables
-            .get(&t)?
-            .get(&format!("0x{:08x}", i))
-            .cloned()
+        tables.get(&t)?.get(&format!("0x{:08x}", i)).cloned()
     };
 
     // 聚类：容器 → 成员 (instance, title)
@@ -51,15 +50,14 @@ fn main() {
                 continue;
             }
             let Ok(data) = p.read(e) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             let title = file
                 .get(HASH_TITLE)
                 .map(|prop| match &prop.kind {
-                    Kind::Scalar(Value::Text(t)) => {
-                        resolve(t.table_id, t.instance_id).unwrap_or_else(|| {
-                            format!("?{:08X}:{:08X}", t.table_id, t.instance_id)
-                        })
-                    }
+                    Kind::Scalar(Value::Text(t)) => resolve(t.table_id, t.instance_id)
+                        .unwrap_or_else(|| format!("?{:08X}:{:08X}", t.table_id, t.instance_id)),
                     Kind::Array(vs) => vs
                         .iter()
                         .filter_map(|v| match v {

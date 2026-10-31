@@ -1,6 +1,8 @@
 //! 探针：城市 egb 中找非零 u16 常量跑（水位候选）+ 地图块结构盘点。仅开发用。
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: egb_water_hunt <file>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: egb_water_hunt <file>");
     let d = std::fs::read(&path).unwrap();
     println!("{path}: {} B", d.len());
     let n16 = d.len() / 2;
@@ -27,7 +29,10 @@ fn main() {
     println!("-- 头 64 B --");
     for row in 0..4 {
         let off = row * 16;
-        let hex: Vec<String> = d[off..off + 16].iter().map(|b| format!("{b:02x}")).collect();
+        let hex: Vec<String> = d[off..off + 16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         println!("  {off:08x}: {}", hex.join(" "));
     }
 }

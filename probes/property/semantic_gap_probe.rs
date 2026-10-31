@@ -29,9 +29,27 @@ const FOCUS_TGIS: &[(u32, u32, u32)] = &[
 fn known_low16(low: u16) -> bool {
     matches!(
         low,
-        0xC000 | 0xC600 | 0x2D00 | 0xC100 | 0xE800 | 0xC500 | 0xC400 | 0x8B7E | 0xE000
-            | 0x44F2 | 0xC300 | 0x8A01 | 0xC900 | 0xBA03 | 0xEB00 | 0xE900 | 0x2043
-            | 0xB185 | 0x1651 | 0x1652 | 0x0000
+        0xC000
+            | 0xC600
+            | 0x2D00
+            | 0xC100
+            | 0xE800
+            | 0xC500
+            | 0xC400
+            | 0x8B7E
+            | 0xE000
+            | 0x44F2
+            | 0xC300
+            | 0x8A01
+            | 0xC900
+            | 0xBA03
+            | 0xEB00
+            | 0xE900
+            | 0x2043
+            | 0xB185
+            | 0x1651
+            | 0x1652
+            | 0x0000
     )
 }
 
@@ -78,7 +96,10 @@ fn parent_group(file: &PropertyFile) -> Option<u32> {
 
 fn value_summary(v: &Value) -> String {
     match v {
-        Value::Key(k) => format!("key(T={:08X} G={:08X} I={:08X})", k.type_id, k.group, k.instance),
+        Value::Key(k) => format!(
+            "key(T={:08X} G={:08X} I={:08X})",
+            k.type_id, k.group, k.instance
+        ),
         Value::Bool(b) => format!("bool({b})"),
         Value::Int32(n) => format!("i32({n})"),
         Value::UInt32(n) => format!("u32({n})"),
@@ -128,7 +149,9 @@ const EXTRA_SAMPLES: &[(u32, u32, &str)] = &[
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
-        eprintln!("usage: semantic_gap_probe <s3db> <out_report> <package...> [--locale <package>]");
+        eprintln!(
+            "usage: semantic_gap_probe <s3db> <out_report> <package...> [--locale <package>]"
+        );
         std::process::exit(2);
     }
     let registry = Registry::open(&args[1]).expect("open s3db");
@@ -201,9 +224,9 @@ fn main() {
             let brush_group = known_low16(low);
 
             // ---- 焦点 / 辨识样品 dump（不论桶） ----
-            let focus = FOCUS_TGIS.iter().find(|(_, g, i)| {
-                *g == entry.id.group && *i == entry.id.instance
-            });
+            let focus = FOCUS_TGIS
+                .iter()
+                .find(|(_, g, i)| *g == entry.id.group && *i == entry.id.instance);
             let extra = EXTRA_SAMPLES.iter().find(|(g, i, _)| {
                 (*g == 0 && *i == entry.id.instance) || (*g != 0 && *g == entry.id.group)
             });
@@ -226,7 +249,9 @@ fn main() {
                     entry.id.type_id,
                     entry.id.group,
                     entry.id.instance,
-                    PropertyFile::parse(&data).map(|f| f.values.len()).unwrap_or(0),
+                    PropertyFile::parse(&data)
+                        .map(|f| f.values.len())
+                        .unwrap_or(0),
                     pkg_name,
                     registry.instance_name(entry.id.instance),
                 );
@@ -276,11 +301,16 @@ fn main() {
             }
 
             // ---- Other 桶画像 ----
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             let hashes = key_hashes(&file);
             other.count += 1;
-            other.instance_groups
+            other
+                .instance_groups
                 .entry(entry.id.instance)
                 .or_default()
                 .insert(entry.id.group);
@@ -332,14 +362,14 @@ fn main() {
                 None => {
                     other.no_parent += 1;
                     if named && other.orphan_samples.len() < 25 {
-                        let keylist: Vec<String> = hashes
-                            .iter()
-                            .take(12)
-                            .map(|h| format!("{h:08X}"))
-                            .collect();
-                        other
-                            .orphan_samples
-                            .push((entry.id.instance, name, entry.id.group, keylist));
+                        let keylist: Vec<String> =
+                            hashes.iter().take(12).map(|h| format!("{h:08X}")).collect();
+                        other.orphan_samples.push((
+                            entry.id.instance,
+                            name,
+                            entry.id.group,
+                            keylist,
+                        ));
                     }
                 }
             }
@@ -369,7 +399,10 @@ fn main() {
         "\n## Other 桶特征：has_bbox {} has_lod1 {} has_brush {} ref_model {} no_parent {}",
         other.has_bbox, other.has_lod1, other.has_brush, other.ref_model, other.no_parent
     );
-    let _ = writeln!(out, "\n## 同实例多 group 复制（Other 桶，group 数 ≥3 的实例，top 30）：");
+    let _ = writeln!(
+        out,
+        "\n## 同实例多 group 复制（Other 桶，group 数 ≥3 的实例，top 30）："
+    );
     let mut multi: Vec<_> = other
         .instance_groups
         .iter()

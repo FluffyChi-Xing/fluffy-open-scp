@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: locale_tables_dump <locale.package> <out.json>");
+    let path = args
+        .next()
+        .expect("usage: locale_tables_dump <locale.package> <out.json>");
     let out = args.next().expect("out.json");
     let p = dbpf::Package::open(&path).expect("open locale package");
     let mut tables: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();

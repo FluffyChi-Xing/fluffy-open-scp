@@ -26,9 +26,21 @@ fn main() {
     // ResourceManager does, instead of only within the script bundle.
     let wanted = [3916467622u32, 1213099590u32];
     for path in &package_paths {
-        let Ok(pkg) = dbpf::Package::open(path) else { continue };
-        for e in pkg.entries().iter().filter(|e| wanted.contains(&e.id.instance) && e.id.type_id == 0x00B1_B104) {
-            println!("cross-package {} T{:08X} G{:08X} I{:08X}", path.display(), e.id.type_id, e.id.group, e.id.instance);
+        let Ok(pkg) = dbpf::Package::open(path) else {
+            continue;
+        };
+        for e in pkg
+            .entries()
+            .iter()
+            .filter(|e| wanted.contains(&e.id.instance) && e.id.type_id == 0x00B1_B104)
+        {
+            println!(
+                "cross-package {} T{:08X} G{:08X} I{:08X}",
+                path.display(),
+                e.id.type_id,
+                e.id.group,
+                e.id.instance
+            );
         }
     }
     for path in package_paths {

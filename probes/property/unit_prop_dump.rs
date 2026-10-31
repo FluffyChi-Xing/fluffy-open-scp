@@ -2,7 +2,7 @@
 //! （hash/kind/值），并与原版包同 TGI 逐属性比对。
 //! 用法：cargo run -p probes --release --example prop_dump -- <mod_pkg> [vanilla_pkg]
 use dbpf::Package;
-use sc_properties::{property_semantic, Kind, PropertyFile, Value};
+use sc_properties::{Kind, PropertyFile, Value, property_semantic};
 
 const PROP_TYPE: u32 = 0x00B1_B104;
 
@@ -72,11 +72,7 @@ fn dump_file(pkg: &Package, group: u32, instance: u32, vanilla: Option<&Package>
         let tag = match vanilla_map.get(&p.hash) {
             None => {
                 added += 1;
-                if vanilla_count > 0 {
-                    "[新增]"
-                } else {
-                    ""
-                }
+                if vanilla_count > 0 { "[新增]" } else { "" }
             }
             Some(old) if *old != cur => {
                 changed += 1;
@@ -84,7 +80,11 @@ fn dump_file(pkg: &Package, group: u32, instance: u32, vanilla: Option<&Package>
             }
             _ => "",
         };
-        let mark: String = if tag.is_empty() { String::new() } else { format!("{tag} ") };
+        let mark: String = if tag.is_empty() {
+            String::new()
+        } else {
+            format!("{tag} ")
+        };
         println!("    {}{:#010x} = {}", mark, p.hash, cur);
     }
     if vanilla_count > 0 {

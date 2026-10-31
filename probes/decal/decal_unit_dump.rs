@@ -7,16 +7,21 @@
 //!       <package> <lot_instance> [extra_package...]
 
 use dbpf::Package;
-use sc_properties::decal::{DecalDictionary, DECAL_ATLAS_INSTANCE_TYPES};
-use sc_properties::{assemble_units, inherit, Key, PropertyFile};
+use sc_properties::decal::{DECAL_ATLAS_INSTANCE_TYPES, DecalDictionary};
+use sc_properties::{Key, PropertyFile, assemble_units, inherit};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: decal_unit_dump <package> <lot> [extra...]").clone();
+    let path = args
+        .first()
+        .expect("usage: decal_unit_dump <package> <lot> [extra...]")
+        .clone();
     let target = u32::from_str_radix(
-        args.get(1).expect("missing lot instance").trim_start_matches("0x"),
+        args.get(1)
+            .expect("missing lot instance")
+            .trim_start_matches("0x"),
         16,
     )
     .expect("bad lot instance");
@@ -40,7 +45,9 @@ fn main() {
             {
                 continue;
             }
-            let Ok(bytes) = package.read(entry) else { continue };
+            let Ok(bytes) = package.read(entry) else {
+                continue;
+            };
             if let Ok(dict) = DecalDictionary::parse(&bytes) {
                 dict_material.insert(entry.id.instance, dict.material);
                 dicts.push(dict);
@@ -54,15 +61,21 @@ fn main() {
             continue;
         }
         found = true;
-        let Ok(raw) = packages[0].read(entry) else { continue };
-        let Ok(raw_file) = PropertyFile::parse(&raw) else { continue };
+        let Ok(raw) = packages[0].read(entry) else {
+            continue;
+        };
+        let Ok(raw_file) = PropertyFile::parse(&raw) else {
+            continue;
+        };
         let resolve = |key: &Key| -> Option<PropertyFile> {
             for source in &packages {
                 for candidate in source.entries() {
                     if candidate.id.instance == key.instance
                         && (key.type_id == 0 || candidate.id.type_id == key.type_id)
                     {
-                        let Ok(bytes) = source.read(candidate) else { continue };
+                        let Ok(bytes) = source.read(candidate) else {
+                            continue;
+                        };
                         if let Ok(file) = PropertyFile::parse(&bytes) {
                             return Some(file);
                         }
@@ -91,9 +104,11 @@ fn main() {
                     for v in arr {
                         if let sc_properties::Value::Key(k) = v {
                             for dict in &dicts {
-                                if dict.entries.iter().any(|e| {
-                                    e.id.map(|ek| ek.instance) == Some(k.instance)
-                                }) {
+                                if dict
+                                    .entries
+                                    .iter()
+                                    .any(|e| e.id.map(|ek| ek.instance) == Some(k.instance))
+                                {
                                     println!(
                                         "    0x{:08X} ∈ 字典(material={})",
                                         k.instance,

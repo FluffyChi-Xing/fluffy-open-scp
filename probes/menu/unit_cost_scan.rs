@@ -49,9 +49,13 @@ fn main() {
     let mut model: Option<u32> = None;
     while let Some(arg) = args.next() {
         if arg == "--instance" {
-            instance = args.next().and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+            instance = args
+                .next()
+                .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
         } else if arg == "--model" {
-            model = args.next().and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+            model = args
+                .next()
+                .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
         } else {
             want = arg.parse().ok();
         }
@@ -62,12 +66,20 @@ fn main() {
         if entry.id.type_id != TYPE_PROPERTY {
             continue;
         }
-        if let Some(instance) = instance && entry.id.instance != instance {
+        if let Some(instance) = instance
+            && entry.id.instance != instance
+        {
             continue;
         }
-        let Ok(data) = package.read(&entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
-        if let Some(model) = model && key_instance(&file, HASH_MODEL) != Some(model) {
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
+        if let Some(model) = model
+            && key_instance(&file, HASH_MODEL) != Some(model)
+        {
             continue;
         }
         let cost = i32_of(&file, HASH_COST);

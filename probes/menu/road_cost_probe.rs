@@ -28,7 +28,9 @@ fn scalar_text(file: &PropertyFile, hash: u32) -> String {
 }
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: road_cost_probe <package>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: road_cost_probe <package>");
     let package = dbpf::Package::open(&path).expect("open package");
     // 收集 piece 定义
     let mut pieces: BTreeMap<u32, PropertyFile> = BTreeMap::new();
@@ -36,7 +38,9 @@ fn main() {
         if entry.id.type_id != TYPE_PROPERTY || entry.id.group != 0x40E1_C400 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
         if let Ok(file) = PropertyFile::parse(&data) {
             pieces.insert(entry.id.instance, file);
         }
@@ -47,7 +51,9 @@ fn main() {
         if entry.id.type_id != TYPE_PROPERTY || entry.id.group & 0xFFFF != 0x8A01 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
         if let Ok(file) = PropertyFile::parse(&data) {
             menus.insert(entry.id.instance, file);
         }

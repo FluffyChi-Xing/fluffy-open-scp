@@ -15,12 +15,20 @@ fn main() -> dbpf::Result<()> {
         let name = root.rsplit(std::path::MAIN_SEPARATOR).next().unwrap();
         let pkg = match Package::open(root) {
             Ok(p) => p,
-            Err(e) => { eprintln!("{name}: {e:?}"); continue; }
+            Err(e) => {
+                eprintln!("{name}: {e:?}");
+                continue;
+            }
         };
         for e in pkg.entries() {
             if e.id.type_id == TARGET_TYPE {
                 let body = pkg.read(e)?;
-                println!("{name}: inst={:08x} grp={:08x} size={}", e.id.instance, e.id.group, body.len());
+                println!(
+                    "{name}: inst={:08x} grp={:08x} size={}",
+                    e.id.instance,
+                    e.id.group,
+                    body.len()
+                );
                 let out = format!(
                     r"D:\rust\packages\fluffy-open-scp\tmp\dynamic\shader_container_{}_g{:08x}_{}.bin",
                     name.trim_end_matches(".package"),

@@ -8,8 +8,13 @@ use sc_properties::{Kind, PropertyFile, Value};
 use std::collections::BTreeMap;
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: instancetype_probe <package> [dump_n]");
-    let dump_n: usize = std::env::args().nth(2).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: instancetype_probe <package> [dump_n]");
+    let dump_n: usize = std::env::args()
+        .nth(2)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let package = Package::open(&path).expect("open package");
 
     let mut counts: BTreeMap<u16, usize> = BTreeMap::new();
@@ -28,17 +33,25 @@ fn main() {
         }
         if dump_n > 0 {
             let d = dumped.entry(it).or_default();
-            if *d < dump_n && let Ok(data) = package.read(entry) && let Ok(file) = PropertyFile::parse(&data) {
+            if *d < dump_n
+                && let Ok(data) = package.read(entry)
+                && let Ok(file) = PropertyFile::parse(&data)
+            {
                 *d += 1;
-                println!("\n=== InstanceType 0x{it:04X} instance 0x{:08X} group 0x{:08X} ({} props)",
-                    entry.id.instance, entry.id.group, file.values.len());
+                println!(
+                    "\n=== InstanceType 0x{it:04X} instance 0x{:08X} group 0x{:08X} ({} props)",
+                    entry.id.instance,
+                    entry.id.group,
+                    file.values.len()
+                );
                 let mut v: Vec<_> = file.values.iter().collect();
                 v.sort_by_key(|p| p.hash);
                 for p in v.iter().take(40) {
                     let summary = match &p.kind {
                         Kind::Scalar(sv) => format!("{sv}"),
                         Kind::Array(vals) => {
-                            let head: Vec<String> = vals.iter().take(3).map(|x| x.to_string()).collect();
+                            let head: Vec<String> =
+                                vals.iter().take(3).map(|x| x.to_string()).collect();
                             format!("array[{}] {}", vals.len(), head.join(", "))
                         }
                         Kind::Empty => "empty".into(),

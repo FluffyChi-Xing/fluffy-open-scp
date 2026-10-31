@@ -19,11 +19,20 @@ fn main() {
     let data = package.read(&entry).expect("read");
     let file = rw4::Rw4File::parse(&data).expect("parse");
     for section in file.sections_of_type(rw4::SectionType::MESH) {
-        let Ok(mesh) = file.decode_mesh(&data, section.number) else { continue };
-        if !mesh.is_exportable() { continue; }
+        let Ok(mesh) = file.decode_mesh(&data, section.number) else {
+            continue;
+        };
+        if !mesh.is_exportable() {
+            continue;
+        }
         let out = sc_exporter::export_glb(&mesh, None, &[]);
         let path = format!("{out_dir}/mesh_{}.glb", section.number);
         std::fs::write(&path, &out.bytes).expect("write");
-        println!("mesh #{} verts={} → {}", section.number, mesh.vertices.len(), path);
+        println!(
+            "mesh #{} verts={} → {}",
+            section.number,
+            mesh.vertices.len(),
+            path
+        );
     }
 }

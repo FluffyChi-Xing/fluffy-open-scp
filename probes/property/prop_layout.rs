@@ -81,9 +81,7 @@ fn main() {
             let table = be32(&d, o + 16);
             let inst2 = be32(&d, o + 20);
             size = 16;
-            note = format!(
-                "text a={a:#06x} b={b:#06x} -> {table:08X}:{inst2:08X}"
-            );
+            note = format!("text a={a:#06x} b={b:#06x} -> {table:08X}:{inst2:08X}");
         } else {
             size = scalar(ftype);
         }

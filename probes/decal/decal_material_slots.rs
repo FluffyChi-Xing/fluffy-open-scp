@@ -18,10 +18,15 @@ fn main() {
             .iter()
             .find(|e| e.id.type_id == RW4_TYPE && e.id.instance == material)
             .cloned()
-        else { continue };
+        else {
+            continue;
+        };
         let data = package.read(&entry).expect("read");
         let file = rw4::Rw4File::parse(&data).expect("parse");
-        println!("material {material:08X} in {}", args.iter().skip(1).find(|_| true).unwrap());
+        println!(
+            "material {material:08X} in {}",
+            args.iter().skip(1).find(|_| true).unwrap()
+        );
         for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
             match file.decode_material(&data, section.number) {
                 Ok(rw4::MaterialSection::Decoded(m)) => {

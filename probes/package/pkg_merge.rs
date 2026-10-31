@@ -20,7 +20,10 @@ fn main() {
                 .insert(key, (path.clone(), OverlayEntry::new(e.id, data)))
                 .is_some()
             {
-                println!("覆盖 TGI {:08X}:{:08X}:{:08X} <- {path}", key.0, key.1, key.2);
+                println!(
+                    "覆盖 TGI {:08X}:{:08X}:{:08X} <- {path}",
+                    key.0, key.1, key.2
+                );
             }
             n += 1;
         }

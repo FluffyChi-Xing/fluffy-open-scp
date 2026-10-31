@@ -49,7 +49,11 @@ fn main() {
         entry.id.type_id, entry.id.group, entry.id.instance
     );
     let raw = package.read(&entry).expect("read resource");
-    println!("tgi={tgi} stored={} decompressed={}", entry.stored_len(), raw.len());
+    println!(
+        "tgi={tgi} stored={} decompressed={}",
+        entry.stored_len(),
+        raw.len()
+    );
     let data: Vec<u8> = if raw.starts_with(&[0x1f, 0x8b]) {
         let mut decoder = flate2::read::GzDecoder::new(&raw[..]);
         let mut out = Vec::new();
@@ -78,7 +82,11 @@ fn main() {
         let tail = &data[data.len() - len..];
         for (offset, chunk) in tail.chunks(16).enumerate() {
             let hex: Vec<String> = chunk.iter().map(|b| format!("{b:02x}")).collect();
-            println!("tail {:08x}  {:<47}", data.len() - len + offset * 16, hex.join(" "));
+            println!(
+                "tail {:08x}  {:<47}",
+                data.len() - len + offset * 16,
+                hex.join(" ")
+            );
         }
     }
     let head = &data[..data.len().min(len)];

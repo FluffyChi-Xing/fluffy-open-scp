@@ -7,7 +7,9 @@ use sc_properties::{Kind, PropertyFile, Value};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: tool_info <package> <instance>...");
+    let path = args
+        .first()
+        .expect("usage: tool_info <package> <instance>...");
     let wants: Vec<u32> = args[1..]
         .iter()
         .map(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).unwrap())
@@ -34,14 +36,20 @@ fn main() {
             entry.offset,
             entry.compressed_size,
             entry.decompressed_size,
-            if entry.compressed { "REFPOMP" } else { "stored" }
+            if entry.compressed {
+                "REFPOMP"
+            } else {
+                "stored"
+            }
         );
         let mut props: Vec<_> = file.values.iter().collect();
         props.sort_by_key(|p| p.hash);
         for p in props {
             let body = match &p.kind {
                 Kind::Scalar(v) => render(v),
-                Kind::Array(vs) => format!("[{}]", vs.iter().map(render).collect::<Vec<_>>().join(", ")),
+                Kind::Array(vs) => {
+                    format!("[{}]", vs.iter().map(render).collect::<Vec<_>>().join(", "))
+                }
                 Kind::Empty => "<empty>".to_string(),
             };
             println!("  0x{:08X}  {body}", p.hash);

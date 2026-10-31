@@ -7,7 +7,9 @@ use std::collections::BTreeMap;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: raw_id_scan <package> 0xID[,0xID...]");
+    let path = args
+        .next()
+        .expect("usage: raw_id_scan <package> 0xID[,0xID...]");
     let ids: Vec<u32> = args
         .next()
         .expect("need ids")
@@ -19,7 +21,9 @@ fn main() {
     let mut hits_by_type: BTreeMap<u32, usize> = BTreeMap::new();
     let mut total = 0usize;
     for entry in package.entries() {
-        let Ok(data) = package.read(entry) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
         for id in &ids {
             let le = id.to_le_bytes();
             let be = id.to_be_bytes();

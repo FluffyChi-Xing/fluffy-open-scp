@@ -9,7 +9,9 @@ const RW4_IMAGE: u32 = 0x2F4E_681B;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (material_pkg, candidates) = args.split_first().expect("usage: shader_def_scan <pkg> [pkg...]");
+    let (material_pkg, candidates) = args
+        .split_first()
+        .expect("usage: shader_def_scan <pkg> [pkg...]");
     let package = dbpf::Package::open(material_pkg).expect("open material package");
 
     let mut shader_defs: BTreeSet<u32> = BTreeSet::new();
@@ -21,8 +23,12 @@ fn main() {
             continue;
         }
         let entry = entry.clone();
-        let Ok(data) = package.read(&entry) else { continue };
-        let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
+        let Ok(file) = rw4::Rw4File::parse(&data) else {
+            continue;
+        };
         let mesh_sections = file.sections_of_type(rw4::SectionType::MESH).count();
         let mut material_sections = 0usize;
         for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
@@ -46,7 +52,10 @@ fn main() {
     for ((meshes, mats, variant), count) in &variant_by_shape {
         println!("    {meshes} mesh / {mats} material -> 0x{variant:08X}: {count}");
     }
-    println!("unique shader-def instances referenced: {}", shader_defs.len());
+    println!(
+        "unique shader-def instances referenced: {}",
+        shader_defs.len()
+    );
     for id in &shader_defs {
         println!("    0x{id:08X}");
     }

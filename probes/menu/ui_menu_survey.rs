@@ -91,7 +91,10 @@ fn i32_at(file: &PropertyFile, hash: u32) -> Option<i32> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let out_json = PathBuf::from(args.first().expect("usage: ui_menu_survey <out.json> <package...>"));
+    let out_json = PathBuf::from(
+        args.first()
+            .expect("usage: ui_menu_survey <out.json> <package...>"),
+    );
     let mut packages: Vec<String> = Vec::new();
     // `--dump <typehex>[:<n>]` 只打印该 InstanceType 前 n 条的完整属性，用来摸字段 schema。
     let mut dump_type: Option<(u32, usize)> = None;
@@ -139,8 +142,12 @@ fn main() {
             if entry.id.type_id != TYPE_PROPERTY {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             let instance_type = (entry.id.group & 0xFFFF) as u32;
             *groups.entry(instance_type).or_default() += 1;
 
@@ -198,7 +205,9 @@ fn main() {
             for (name, hash) in EXTRA_FIELDS {
                 if let Some(entry) = file.get(*hash) {
                     let v = match &entry.kind {
-                        Kind::Scalar(Value::Key(k)) => format!("{:08X}-{:08X}-{:08X}", k.type_id, k.group, k.instance),
+                        Kind::Scalar(Value::Key(k)) => {
+                            format!("{:08X}-{:08X}-{:08X}", k.type_id, k.group, k.instance)
+                        }
                         Kind::Scalar(Value::Int32(n)) => n.to_string(),
                         Kind::Scalar(Value::Float(f)) => f.to_string(),
                         Kind::Scalar(Value::Text(t)) => format!("text:{:08X}", t.instance_id),
@@ -235,7 +244,10 @@ fn main() {
     let body: Vec<String> = rows
         .iter()
         .map(|row| {
-            let fields: Vec<String> = row.iter().map(|(k, v)| format!("\"{k}\": \"{v}\"")).collect();
+            let fields: Vec<String> = row
+                .iter()
+                .map(|(k, v)| format!("\"{k}\": \"{v}\""))
+                .collect();
             format!("    {{{}}}", fields.join(", "))
         })
         .collect();
@@ -250,7 +262,8 @@ fn main() {
     if let Some(dir) = extract_dir {
         std::fs::create_dir_all(&dir).expect("create extract dir");
         // 收集条目里引用的图片 TGI（iconNormal 六态键多数不落地，toolIconKey 才是槽位图）
-        let mut wanted: std::collections::HashSet<(u32, u32, u32)> = std::collections::HashSet::new();
+        let mut wanted: std::collections::HashSet<(u32, u32, u32)> =
+            std::collections::HashSet::new();
         for row in &rows {
             for key in ["toolMarqueeImage", "iconNormal", "toolIconKey"] {
                 let Some(v) = row.get(key) else { continue };
@@ -269,7 +282,9 @@ fn main() {
         }
         let mut n = 0usize;
         for path in &packages {
-            let Ok(package) = dbpf::Package::open(path) else { continue };
+            let Ok(package) = dbpf::Package::open(path) else {
+                continue;
+            };
             for entry in package.entries() {
                 if entry.id.type_id != TYPE_PNG && entry.id.type_id != TYPE_JPG {
                     continue;
@@ -278,7 +293,11 @@ fn main() {
                 if !wanted.contains(&tgi) {
                     continue;
                 }
-                let ext = if entry.id.type_id == TYPE_PNG { "png" } else { "jpg" };
+                let ext = if entry.id.type_id == TYPE_PNG {
+                    "png"
+                } else {
+                    "jpg"
+                };
                 let out = dir.join(format!("{:08X}-{:08X}-{:08X}.{}", tgi.0, tgi.1, tgi.2, ext));
                 if out.exists() {
                     continue;

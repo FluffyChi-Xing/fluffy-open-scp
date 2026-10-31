@@ -26,24 +26,36 @@ fn find_props(body: &[u8], key: u32) -> Vec<Vec<u8>> {
 }
 
 fn main() -> dbpf::Result<()> {
-    let pkg = Package::open(r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\SimCityDataEP1.package")?;
+    let pkg = Package::open(
+        r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\SimCityDataEP1.package",
+    )?;
     let want: Vec<u32> = vec![0x03d690930, 0x03d690937, 0x0410308c0];
     for e in pkg.entries() {
         if want.contains(&e.id.instance) {
             let body = pkg.read(e)?;
             let lo = find_props(&body, PROP_LO);
             let hi = find_props(&body, PROP_HI);
-            println!("== inst={:08x} grp={:08x} size={} ==", e.id.instance, e.id.group, body.len());
+            println!(
+                "== inst={:08x} grp={:08x} size={} ==",
+                e.id.instance,
+                e.id.group,
+                body.len()
+            );
             for (tag, vals) in [("0xdca011d(颜色A)", &lo), ("0xdca012d(颜色B)", &hi)] {
                 for v in vals {
                     println!("  {tag}: {:02x?}", v);
                     if v.len() >= 16 {
-                        let f: Vec<f32> = v.chunks_exact(4).take(4)
-                            .map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+                        let f: Vec<f32> = v
+                            .chunks_exact(4)
+                            .take(4)
+                            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                            .collect();
                         println!("      as f32×4: {:?}", f);
                     }
                 }
-                if vals.is_empty() { println!("  {tag}: 无"); }
+                if vals.is_empty() {
+                    println!("  {tag}: 无");
+                }
             }
         }
     }

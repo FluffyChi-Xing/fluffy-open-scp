@@ -47,7 +47,13 @@ fn preview(data: &[u8], n: usize) -> String {
     let s: String = data
         .iter()
         .take(n)
-        .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+        .map(|&b| {
+            if (0x20..0x7f).contains(&b) {
+                b as char
+            } else {
+                '.'
+            }
+        })
         .collect();
     s
 }
@@ -99,7 +105,10 @@ fn text_refs(p: &Package, label: &str) -> BTreeMap<(u32, u32), Vec<String>> {
             Err(_) => continue,
         };
         let Ok(file) = PropertyFile::parse(&data) else {
-            println!("[{label}] prop {:08X}:{:08X}:{:08X} PARSE FAIL", e.id.type_id, e.id.group, e.id.instance);
+            println!(
+                "[{label}] prop {:08X}:{:08X}:{:08X} PARSE FAIL",
+                e.id.type_id, e.id.group, e.id.instance
+            );
             continue;
         };
         for prop in &file.values {
@@ -108,10 +117,12 @@ fn text_refs(p: &Package, label: &str) -> BTreeMap<(u32, u32), Vec<String>> {
                 sc_properties::Kind::Array(vs) => {
                     for v in vs {
                         if let Value::Text(t) = v {
-                            refs.entry((t.table_id, t.instance_id)).or_default().push(format!(
-                                "{:08X}:{:08X}#{:08X}",
-                                e.id.type_id, e.id.group, e.id.instance
-                            ));
+                            refs.entry((t.table_id, t.instance_id))
+                                .or_default()
+                                .push(format!(
+                                    "{:08X}:{:08X}#{:08X}",
+                                    e.id.type_id, e.id.group, e.id.instance
+                                ));
                         }
                     }
                     None
@@ -119,10 +130,12 @@ fn text_refs(p: &Package, label: &str) -> BTreeMap<(u32, u32), Vec<String>> {
                 sc_properties::Kind::Empty => None,
             };
             if let Some(Value::Text(t)) = single {
-                refs.entry((t.table_id, t.instance_id)).or_default().push(format!(
-                    "{:08X}:{:08X}#{:08X}",
-                    e.id.type_id, e.id.group, e.id.instance
-                ));
+                refs.entry((t.table_id, t.instance_id))
+                    .or_default()
+                    .push(format!(
+                        "{:08X}:{:08X}#{:08X}",
+                        e.id.type_id, e.id.group, e.id.instance
+                    ));
             }
         }
     }
@@ -162,7 +175,11 @@ fn main() {
                 if b_data == o_data {
                     println!("table {inst:08X}: identical bytes");
                 } else {
-                    println!("table {inst:08X}: DIFFERS ({}B vs {}B)", b_data.len(), o_data.len());
+                    println!(
+                        "table {inst:08X}: DIFFERS ({}B vs {}B)",
+                        b_data.len(),
+                        o_data.len()
+                    );
                     let bi = raw_items(b_data);
                     let oi = raw_items(o_data);
                     for (k, bv) in &bi {
@@ -187,7 +204,9 @@ fn main() {
                         let lk = k.to_lowercase();
                         if !bi.contains_key(k) {
                             if let Some(bk) = lower_b.get(&lk) {
-                                println!("    CASE-ONLY DIFF: overlay key {k} vs baseline key {bk}");
+                                println!(
+                                    "    CASE-ONLY DIFF: overlay key {k} vs baseline key {bk}"
+                                );
                             }
                         }
                     }

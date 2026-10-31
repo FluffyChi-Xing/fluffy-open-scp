@@ -98,8 +98,12 @@ fn main() {
     let mut processed = 0usize;
     for (pkg_idx, entry) in &found {
         let package = &packages[*pkg_idx];
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(dictionary) = DecalDictionary::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(dictionary) = DecalDictionary::parse(&data) else {
+            continue;
+        };
         // 可解码条目；--entry= 指定时精确取该条目号，否则均匀取样。
         let decodable: Vec<_> = dictionary
             .entries
@@ -109,16 +113,18 @@ fn main() {
                     && resolve_raster(&packages, decal.raster.map(|k| k.instance))
                         .is_some_and(|(image, _)| image.is_raw_rgba())
             })
-            .filter(|decal| {
-                entries.is_empty() || entries.contains(&decal.index)
-            })
+            .filter(|decal| entries.is_empty() || entries.contains(&decal.index))
             .collect();
         if decodable.is_empty() {
             continue;
         }
         let picked: Vec<_> = if entries.is_empty() {
             let step = decodable.len().div_ceil(ENTRIES_PER_DICT).max(1);
-            decodable.into_iter().step_by(step).take(ENTRIES_PER_DICT).collect()
+            decodable
+                .into_iter()
+                .step_by(step)
+                .take(ENTRIES_PER_DICT)
+                .collect()
         } else {
             decodable
         };
@@ -132,10 +138,11 @@ fn main() {
         let sheet = compose_dictionary(&packages, &dictionary, &picked);
         let name = format!(
             "{out_dir}/dict_{:08x}_g{:04x}_sheet.png",
-            entry.id.instance,
-            entry.id.group as u16
+            entry.id.instance, entry.id.group as u16
         );
-        sheet.save(&name).unwrap_or_else(|e| panic!("save {name}: {e}"));
+        sheet
+            .save(&name)
+            .unwrap_or_else(|e| panic!("save {name}: {e}"));
         println!("  -> {name}");
         processed += 1;
         if processed >= 6 {
@@ -164,13 +171,12 @@ fn compose_dictionary(
 
     for (row, decal) in picked.iter().enumerate() {
         let colors = decal.colors_rgba8().expect("picked decodable");
-        let (image, _) = resolve_raster(packages, decal.raster.map(|k| k.instance))
-            .expect("picked decodable");
+        let (image, _) =
+            resolve_raster(packages, decal.raster.map(|k| k.instance)).expect("picked decodable");
         let rgba = image
             .decode_lot_mask_rgba(&colors)
             .expect("raw rgba decode");
-        let src = image::RgbaImage::from_raw(image.width, image.height, rgba)
-            .expect("decal buf");
+        let src = image::RgbaImage::from_raw(image.width, image.height, rgba).expect("decal buf");
         // 自适应缩放：最长边 ≤ CELL−10，保证不溢出单元格。
         let max_side = (image.width as usize).max(image.height as usize);
         let fit = ((CELL - 10) as f32 / max_side as f32).floor().max(1.0) as usize;
@@ -199,13 +205,7 @@ fn compose_dictionary(
 }
 
 /// 混合假设（在 (ox,oy) 处单次合成；src a=0 处保持墙面）。
-fn blend_onto(
-    wall: &mut image::RgbaImage,
-    src: &image::RgbaImage,
-    blend: Blend,
-    ox: i64,
-    oy: i64,
-) {
+fn blend_onto(wall: &mut image::RgbaImage, src: &image::RgbaImage, blend: Blend, ox: i64, oy: i64) {
     for (sx, sy, s_px) in src.enumerate_pixels() {
         let a = s_px[3] as f32 / 255.0;
         if a <= 0.0 {
@@ -228,7 +228,11 @@ fn blend_onto(
             ),
             Blend::Modulate => (sr * dr / 255.0, sg * dg / 255.0, sb * db / 255.0),
             Blend::Additive => (dr + sr * a, dg + sg * a, db + sb * a),
-            Blend::Premul => (sr + dr * (1.0 - a), sg + dg * (1.0 - a), sb + db * (1.0 - a)),
+            Blend::Premul => (
+                sr + dr * (1.0 - a),
+                sg + dg * (1.0 - a),
+                sb + db * (1.0 - a),
+            ),
         };
         let out = wall.get_pixel_mut(dx, dy);
         out[0] = nr.round().clamp(0.0, 255.0) as u8;
@@ -291,7 +295,10 @@ fn wall_dark() -> image::RgbaImage {
     img
 }
 
-fn resolve_raster(packages: &[Package], instance: Option<u32>) -> Option<(rw4::RasterImage, String)> {
+fn resolve_raster(
+    packages: &[Package],
+    instance: Option<u32>,
+) -> Option<(rw4::RasterImage, String)> {
     let instance = instance?;
     for package in packages {
         let Some(entry) = package
@@ -301,8 +308,12 @@ fn resolve_raster(packages: &[Package], instance: Option<u32>) -> Option<(rw4::R
         else {
             continue;
         };
-        let Ok(bytes) = package.read(entry) else { continue };
-        let Ok(raster) = rw4::RasterImage::parse(&bytes) else { continue };
+        let Ok(bytes) = package.read(entry) else {
+            continue;
+        };
+        let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
+            continue;
+        };
         let name = package
             .path()
             .file_name()

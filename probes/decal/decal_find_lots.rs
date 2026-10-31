@@ -5,13 +5,16 @@
 //!       <package> <entry_instance_hex> [more_ids...]
 
 use dbpf::Package;
-use sc_properties::{inherit, Key, PropertyFile};
+use sc_properties::{Key, PropertyFile, inherit};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: decal_find_lots <package> <id...>").clone();
+    let path = args
+        .first()
+        .expect("usage: decal_find_lots <package> <id...>")
+        .clone();
     let targets: Vec<u32> = args[1..]
         .iter()
         .filter_map(|s| u32::from_str_radix(s.trim_start_matches("0x"), 16).ok())
@@ -24,12 +27,18 @@ fn main() {
         if entry.id.type_id != PROPERTY_TYPE {
             continue;
         }
-        let Ok(bytes) = package.read(entry) else { continue };
+        let Ok(bytes) = package.read(entry) else {
+            continue;
+        };
         if let Ok(dict) = sc_properties::DecalDictionary::parse(&bytes) {
-            let Some(material) = dict.material else { continue };
+            let Some(material) = dict.material else {
+                continue;
+            };
             for e in &dict.entries {
                 if let Some(id) = e.id {
-                    entry_material.entry(id.instance).or_insert(material.instance);
+                    entry_material
+                        .entry(id.instance)
+                        .or_insert(material.instance);
                 }
             }
         }
@@ -50,18 +59,22 @@ fn main() {
             }
         }
     }
-    let resolve = |key: &Key| -> Option<PropertyFile> {
-        prop_cache.get(&key.instance).cloned()
-    };
+    let resolve = |key: &Key| -> Option<PropertyFile> { prop_cache.get(&key.instance).cloned() };
     for entry in package.entries() {
         if entry.id.type_id != PROPERTY_TYPE {
             continue;
         }
-        let Ok(raw) = package.read(entry) else { continue };
-        let Ok(raw_file) = PropertyFile::parse(&raw) else { continue };
+        let Ok(raw) = package.read(entry) else {
+            continue;
+        };
+        let Ok(raw_file) = PropertyFile::parse(&raw) else {
+            continue;
+        };
         let flattened = inherit::flatten_parent_inheritance(raw_file, resolve);
         for cat in 0..3u32 {
-            let Some(value) = flattened.get(0x0D10_9050 + cat) else { continue };
+            let Some(value) = flattened.get(0x0D10_9050 + cat) else {
+                continue;
+            };
             let Some(arr) = value.array() else { continue };
             for (index, v) in arr.iter().enumerate() {
                 if let sc_properties::Value::Key(k) = v {

@@ -6,7 +6,7 @@
 //! ```
 
 use dbpf::Package;
-use sc_properties::{LotEditorDocument, PropertyFile, ParseLimits};
+use sc_properties::{LotEditorDocument, ParseLimits, PropertyFile};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 
@@ -26,8 +26,14 @@ fn main() {
 
     for (index, package) in packages.iter().enumerate() {
         let path = &args[index + 1];
-        for entry in package.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
-            let Ok(data) = package.read(entry) else { continue };
+        for entry in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
             let Ok(file) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else {
                 continue;
             };
@@ -45,7 +51,9 @@ fn main() {
                     document
                         .model_lods
                         .iter()
-                        .map(|k| k.map(|v| format!("{:08X}", v.instance)).unwrap_or_else(|| "-".into()))
+                        .map(|k| k
+                            .map(|v| format!("{:08X}", v.instance))
+                            .unwrap_or_else(|| "-".into()))
                         .collect::<Vec<_>>()
                 );
             }

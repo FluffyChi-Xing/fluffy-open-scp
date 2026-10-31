@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use dbpf::Package;
-use sc_properties::region_map::{ed_grid_for_region, SHARED_TILE_GRID};
+use sc_properties::region_map::{SHARED_TILE_GRID, ed_grid_for_region};
 
 fn plot_positions(p: &dbpf::Package, region: u32) -> Vec<(f32, f32)> {
     let mut city_ids: Vec<u32> = Vec::new();
@@ -13,7 +13,9 @@ fn plot_positions(p: &dbpf::Package, region: u32) -> Vec<(f32, f32)> {
             continue;
         }
         let Ok(data) = p.read(e) else { continue };
-        let Ok(pf) = sc_properties::PropertyFile::parse(&data) else { continue };
+        let Ok(pf) = sc_properties::PropertyFile::parse(&data) else {
+            continue;
+        };
         if let Some(sc_properties::Property {
             kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(k)),
             ..
@@ -31,15 +33,20 @@ fn plot_positions(p: &dbpf::Package, region: u32) -> Vec<(f32, f32)> {
             continue;
         }
         let Ok(data) = p.read(e) else { continue };
-        let Ok(pt) = sc_properties::PropertyFile::parse(&data) else { continue };
+        let Ok(pt) = sc_properties::PropertyFile::parse(&data) else {
+            continue;
+        };
         let ids: Vec<u32> = match pt.get(0x16B7_B1EF) {
             Some(sc_properties::Property {
                 kind: sc_properties::Kind::Array(vs),
                 ..
-            }) => vs.iter().filter_map(|v| match v {
-                sc_properties::Value::UInt32(x) => Some(*x),
-                _ => None,
-            }).collect(),
+            }) => vs
+                .iter()
+                .filter_map(|v| match v {
+                    sc_properties::Value::UInt32(x) => Some(*x),
+                    _ => None,
+                })
+                .collect(),
             _ => continue,
         };
         let ov = ids.iter().filter(|i| set.contains(i)).count();
@@ -49,10 +56,13 @@ fn plot_positions(p: &dbpf::Package, region: u32) -> Vec<(f32, f32)> {
                 ..
             }) = pt.get(0xF01D_E4B1)
             {
-                let pos: Vec<(f32, f32)> = vs.iter().filter_map(|v| match v {
-                    sc_properties::Value::Vector2(v) => Some((v[0], v[1])),
-                    _ => None,
-                }).collect();
+                let pos: Vec<(f32, f32)> = vs
+                    .iter()
+                    .filter_map(|v| match v {
+                        sc_properties::Value::Vector2(v) => Some((v[0], v[1])),
+                        _ => None,
+                    })
+                    .collect();
                 best = Some((ov, pos));
             }
         }
@@ -78,14 +88,26 @@ fn main() {
                 0x03E4_21F0 => {
                     if let Ok(d) = p.read(e) {
                         if d.len() == 131092 {
-                            f0.insert(e.id.instance, d[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+                            f0.insert(
+                                e.id.instance,
+                                d[20..]
+                                    .chunks_exact(2)
+                                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                                    .collect(),
+                            );
                         }
                     }
                 }
                 0x03E4_21ED => {
                     if let Ok(d) = p.read(e) {
                         if d.len() == 65556 {
-                            ed.insert(e.id.instance, d[20..].chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect());
+                            ed.insert(
+                                e.id.instance,
+                                d[20..]
+                                    .chunks_exact(4)
+                                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                                    .collect(),
+                            );
                         }
                     }
                 }
@@ -112,8 +134,11 @@ fn main() {
                 for y in 0..128 {
                     for x in 0..128 {
                         let v = px[y * 128 + x];
-                        chans[(ty * 128 + y) * wm + tx * 128 + x] =
-                            [(v & 0xFF) as u8, ((v >> 8) & 0xFF) as u8, ((v >> 16) & 0xFF) as u8];
+                        chans[(ty * 128 + y) * wm + tx * 128 + x] = [
+                            (v & 0xFF) as u8,
+                            ((v >> 8) & 0xFF) as u8,
+                            ((v >> 16) & 0xFF) as u8,
+                        ];
                     }
                 }
             }

@@ -21,9 +21,15 @@ fn main() {
     for path in &args {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
         let mut scanned = 0usize;
-        for e in package.entries().iter().filter(|e| e.id.type_id == RW4_MODEL) {
+        for e in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == RW4_MODEL)
+        {
             let Ok(data) = package.read(e) else { continue };
-            let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+            let Ok(file) = rw4::Rw4File::parse(&data) else {
+                continue;
+            };
             let mut tex_refs: BTreeSet<u32> = BTreeSet::new();
             for mat in file.sections_of_type(rw4::SectionType::MATERIAL) {
                 if let Ok(rw4::MaterialSection::Decoded(m)) =

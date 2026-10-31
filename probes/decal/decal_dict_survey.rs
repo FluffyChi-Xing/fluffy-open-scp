@@ -31,7 +31,9 @@ fn main() {
                 continue;
             }
             let Ok(data) = pkg.read(e) else { continue };
-            let Ok(dict) = sc_properties::DecalDictionary::parse(&data) else { continue };
+            let Ok(dict) = sc_properties::DecalDictionary::parse(&data) else {
+                continue;
+            };
             let total = dict.entries.len();
             let colored = dict
                 .entries
@@ -64,8 +66,14 @@ fn main() {
             group & 0xffff,
             instance,
             total,
-            if *total > 0 { colored * 100 / *total } else { 0 },
-            material.map(|m| format!("{m:08X}")).unwrap_or_else(|| "-".into()),
+            if *total > 0 {
+                colored * 100 / *total
+            } else {
+                0
+            },
+            material
+                .map(|m| format!("{m:08X}"))
+                .unwrap_or_else(|| "-".into()),
             sd.map(|s| format!("{s:08X}")).unwrap_or_else(|| "-".into()),
         );
         let _ = name;
@@ -114,7 +122,10 @@ fn resolve_shader_def(material: u32, packages: &[(String, Package)]) -> Option<u
         };
         let data = pkg.read(&entry).ok()?;
         let file = rw4::Rw4File::parse(&data).ok()?;
-        let section = file.sections_of_type(rw4::SectionType::MATERIAL).next()?.number;
+        let section = file
+            .sections_of_type(rw4::SectionType::MATERIAL)
+            .next()?
+            .number;
         if let rw4::MaterialSection::Decoded(m) = file.decode_material(&data, section).ok()? {
             return m
                 .texture_refs

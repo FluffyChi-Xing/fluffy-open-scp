@@ -144,7 +144,9 @@ impl LocaleTables {
                 if entry.id.type_id != TYPE_LOCALE {
                     continue;
                 }
-                let Ok(data) = package.read(entry) else { continue };
+                let Ok(data) = package.read(entry) else {
+                    continue;
+                };
                 let text = String::from_utf8_lossy(&data);
                 let text = text.trim_start_matches('\u{feff}');
                 let Ok(parsed) = serde_json::from_str::<BTreeMap<String, String>>(text) else {
@@ -200,7 +202,11 @@ fn split_template(t: &str) -> StatRow {
     if let Some(start) = clean.find('~') {
         if let Some(rel) = clean[start + 1..].find('~') {
             let end = start + 1 + rel;
-            let label = clean[..start].trim().trim_end_matches(['：', ':']).trim().to_string();
+            let label = clean[..start]
+                .trim()
+                .trim_end_matches(['：', ':'])
+                .trim()
+                .to_string();
             let mut suffix = clean[end + 1..].to_string();
             while let Some(s) = suffix.find('~') {
                 if let Some(rel) = suffix[s + 1..].find('~') {
@@ -238,7 +244,9 @@ fn text_ref(file: &PropertyFile, hash: u32) -> Option<(u32, u32)> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let out_json = args.next().expect("usage: menu_cost_dump <out.json> <package...>");
+    let out_json = args
+        .next()
+        .expect("usage: menu_cost_dump <out.json> <package...>");
     let packages: Vec<String> = args.collect();
     assert!(!packages.is_empty(), "need at least one package");
 
@@ -264,8 +272,12 @@ fn main() {
             if entry.id.type_id != TYPE_PROPERTY {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             if let Some(parent) = key_instance(&file, HASH_PARENT) {
                 prop_parents.insert(entry.id.instance, parent);
             }
@@ -274,10 +286,12 @@ fn main() {
                 menus.insert(
                     entry.id.instance,
                     MenuRow {
-                        name: values_of(&file, HASH_TITLE).into_iter().find_map(|v| match v {
-                            Value::Text(t) if t.table_id == LOCALE_NAMES => Some(t.instance_id),
-                            _ => None,
-                        }),
+                        name: values_of(&file, HASH_TITLE)
+                            .into_iter()
+                            .find_map(|v| match v {
+                                Value::Text(t) if t.table_id == LOCALE_NAMES => Some(t.instance_id),
+                                _ => None,
+                            }),
                         title: text_ref(&file, HASH_TITLE),
                         desc: text_ref(&file, HASH_DESC),
                         unlock: values_of(&file, HASH_UNLOCK_STRING)
@@ -338,10 +352,11 @@ fn main() {
                 names.dedup();
                 if let Some(cost) = num_of(&file, HASH_CONFIG_COST) {
                     for name in &names {
-                        config_by_name
-                            .entry(*name)
-                            .or_default()
-                            .push((package_index, entry.id.instance, cost));
+                        config_by_name.entry(*name).or_default().push((
+                            package_index,
+                            entry.id.instance,
+                            cost,
+                        ));
                     }
                 }
             } else if is_unit_entry(&file) {
@@ -468,7 +483,9 @@ fn main() {
     let mut submenus: BTreeMap<u32, Vec<serde_json::Value>> = BTreeMap::new();
     for (menu, row) in &menus {
         let Some(unit) = row.menu_unit else { continue };
-        let Some(unit) = units.get(&unit) else { continue };
+        let Some(unit) = units.get(&unit) else {
+            continue;
+        };
         let children = &unit.children;
         let addon_container = unit.addon_container;
         // 两种机制取并集：
@@ -491,12 +508,13 @@ fn main() {
             }
         }
         // 按 uiPosition 排序输出
-        candidate_menus.sort_by_key(|candidate| {
-            menus.get(candidate).and_then(|r| r.pos).unwrap_or(i32::MAX)
-        });
+        candidate_menus
+            .sort_by_key(|candidate| menus.get(candidate).and_then(|r| r.pos).unwrap_or(i32::MAX));
         let mut items = Vec::new();
         for child_menu in candidate_menus {
-            let Some(child_row) = menus.get(&child_menu) else { continue };
+            let Some(child_row) = menus.get(&child_menu) else {
+                continue;
+            };
             // 名称用全表 locale（DLC 条目在独立表）；无名的跳过
             let Some(name) = child_row.title.and_then(|(t, i)| locales.resolve(t, i)) else {
                 continue;
@@ -509,10 +527,11 @@ fn main() {
                 .and_then(|(t, i)| locales.resolve(t, i))
                 .unwrap_or_default();
             let (cost, maintenance) = child_row.menu_unit.map(plop_cost).unwrap_or((None, None));
-            let preview = child_row
-                .icon_key
-                .and_then(|icon| extract_asset(TYPE_PNG, icon, format!("tool_icon_{icon:08X}.png")));
-            let marquee = extract_asset(TYPE_JPG, child_menu, format!("tool_{:08X}.jpg", child_menu));
+            let preview = child_row.icon_key.and_then(|icon| {
+                extract_asset(TYPE_PNG, icon, format!("tool_icon_{icon:08X}.png"))
+            });
+            let marquee =
+                extract_asset(TYPE_JPG, child_menu, format!("tool_{:08X}.jpg", child_menu));
             items.push(json!({
                 "instance": format!("{child_menu:08X}"),
                 "name": name,
@@ -643,7 +662,8 @@ fn main() {
     let submenu_containers: serde_json::Map<String, serde_json::Value> = menus
         .iter()
         .filter_map(|(menu, row)| {
-            row.addon_container.map(|c| (format!("{menu:08X}"), json!(format!("{c:08X}"))))
+            row.addon_container
+                .map(|c| (format!("{menu:08X}"), json!(format!("{c:08X}"))))
         })
         .collect();
     let payload = json!({
@@ -653,9 +673,13 @@ fn main() {
         "submenus": submenus_json,
         "submenuContainers": submenu_containers,
     });
-    std::fs::write(&out_json, serde_json::to_string_pretty(&payload).unwrap() + "
-")
-        .expect("write out.json");
+    std::fs::write(
+        &out_json,
+        serde_json::to_string_pretty(&payload).unwrap()
+            + "
+",
+    )
+    .expect("write out.json");
     eprintln!(
         "菜单 {} 条，经济字段 {} 条，子菜单 {} 组 → {}",
         menus.len(),

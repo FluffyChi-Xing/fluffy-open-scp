@@ -49,7 +49,9 @@ fn name_ids(file: &PropertyFile) -> Vec<u32> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: eco_unit_cost_scan <package> [name-text-id]");
+    let path = args
+        .next()
+        .expect("usage: eco_unit_cost_scan <package> [name-text-id]");
     let want: Option<u32> = args
         .next()
         .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
@@ -59,8 +61,12 @@ fn main() {
         if entry.id.type_id != TYPE_PROPERTY || !UNIT_GROUPS.contains(&entry.id.group) {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let c = num_of(&file, HASH_CONSTRUCTION);
         let m = num_of(&file, HASH_MAINT);
         if c.is_none() && m.is_none() {
@@ -75,8 +81,15 @@ fn main() {
         rows.insert(entry.id.instance, (ids, c, m));
     }
     for (instance, (ids, c, m)) in &rows {
-        let ids = ids.iter().map(|i| format!("{i:08X}")).collect::<Vec<_>>().join(",");
-        println!("{:08X}  constr={:?} maint={:?}  names=[{}]", instance, c, m, ids);
+        let ids = ids
+            .iter()
+            .map(|i| format!("{i:08X}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "{:08X}  constr={:?} maint={:?}  names=[{}]",
+            instance, c, m, ids
+        );
     }
     println!("-- 共 {} 条", rows.len());
 }

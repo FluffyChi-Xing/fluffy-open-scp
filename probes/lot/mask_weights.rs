@@ -49,9 +49,7 @@ fn main() {
             raw.swap(top + i, bottom + i);
         }
     }
-    println!(
-        "lot 0x{lot_instance:08X} mask {w}x{h}  region ({x0},{y0})-({x1},{y1})"
-    );
+    println!("lot 0x{lot_instance:08X} mask {w}x{h}  region ({x0},{y0})-({x1},{y1})");
     println!("  x\\ch      R=LC1        G=LC2        B=LC3        A=LC4");
     for y in y0..=y1.min(h - 1) {
         for x in x0..=x1.min(w - 1) {

@@ -50,15 +50,14 @@ fn main() {
     let action = parse_hex(&args, "--action=");
     let start = parse_i32(&args, "--start=").unwrap_or(110);
     let shell = args.iter().any(|a| a == "--shell");
-    let shell_package_path = args
-        .iter()
-        .find_map(|a| a.strip_prefix("--shell-package="));
+    let shell_package_path = args.iter().find_map(|a| a.strip_prefix("--shell-package="));
     if !dry && out_path.is_none() {
         panic!("需要输出路径，或加 --dry");
     }
 
     let package = Package::open(base_path).expect("open base package");
-    let shell_package = shell_package_path.map(|path| Package::open(path).expect("open shell package"));
+    let shell_package =
+        shell_package_path.map(|path| Package::open(path).expect("open shell package"));
     let (entries, patches) =
         debug_tools::build_debug_tools_overlay(&package, cat, ui).expect("build overlay");
     for p in &patches {
@@ -119,13 +118,9 @@ fn main() {
                 |f, h| debug_tools::text_instances(f, h),
             )
             .expect("patch shell description");
-            entry.data = debug_tools::patch_property_i32(
-                &patched,
-                HASH_UI_POSITION,
-                100,
-                start + index,
-            )
-            .expect("patch shell menu position");
+            entry.data =
+                debug_tools::patch_property_i32(&patched, HASH_UI_POSITION, 100, start + index)
+                    .expect("patch shell menu position");
         }
     } else if let Some(action) = action {
         for entry in entries.iter_mut() {

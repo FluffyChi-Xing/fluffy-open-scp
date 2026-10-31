@@ -9,8 +9,8 @@
 
 use dbpf::Package;
 use rw4::RasterImage;
-use sc_properties::{Kind, PropertyFile, ParseLimits, Value};
 use sc_properties::PROPERTY_RESOURCE_TYPE;
+use sc_properties::{Kind, ParseLimits, PropertyFile, Value};
 
 fn values_of<'a>(file: &'a PropertyFile, hash: u32) -> Vec<&'a Value> {
     file.values
@@ -42,7 +42,9 @@ fn props_of(file: &PropertyFile) -> Vec<(usize, f32, f32)> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 3 {
-        eprintln!("usage: lot_prop_offset_probe <instance_hex> <group_hex> <package> [extra_package...]");
+        eprintln!(
+            "usage: lot_prop_offset_probe <instance_hex> <group_hex> <package> [extra_package...]"
+        );
         std::process::exit(2);
     }
     let instance = u32::from_str_radix(args[0].trim_start_matches("0x"), 16).expect("instance");
@@ -139,7 +141,8 @@ fn main() {
             // PNG 可视化：绿通道对比拉伸灰度 ×4，prop 红点=0.75 映射、蓝点=1.0 映射
             {
                 let scale = 4usize;
-                let mut img = image::RgbImage::new(w as u32 * scale as u32, h as u32 * scale as u32);
+                let mut img =
+                    image::RgbImage::new(w as u32 * scale as u32, h as u32 * scale as u32);
                 for y in 0..h {
                     for x in 0..w {
                         let g = px[(x + y * w) * 4 + 1];
@@ -199,7 +202,8 @@ fn main() {
                             for (_, x, y) in &props {
                                 let u = (((x + dx) / half + 1.0) * 0.5).clamp(0.0, 0.999);
                                 let v = (((y + dy) / half_y + 1.0) * 0.5).clamp(0.0, 0.999);
-                                let at = ((u * w as f32) as usize + (v * h as f32) as usize * w) * 4;
+                                let at =
+                                    ((u * w as f32) as usize + (v * h as f32) as usize * w) * 4;
                                 score += px[at + 2] as f32;
                             }
                             if score > best.0 {
@@ -222,7 +226,9 @@ fn main() {
                 println!("（现状口径: 尺度=0.75 偏移=(0,0)；H4: 尺度=1.0 偏移=(0,0)）");
             }
 
-            println!("绿通道连通域 top10（px 质心 → 两尺度世界坐标；bin12 prop y≈-36..-38, x=-31.8..+27.2）:");
+            println!(
+                "绿通道连通域 top10（px 质心 → 两尺度世界坐标；bin12 prop y≈-36..-38, x=-31.8..+27.2）:"
+            );
             for (area, sx, sy) in blobs.iter().take(10) {
                 let cx = *sx as f32 / *area as f32;
                 let cy = *sy as f32 / *area as f32;
@@ -239,7 +245,12 @@ fn main() {
         }
 
         // CCB7 家族属性全览（找 raster 范围/overlay box 尺寸）
-        let mut fam: Vec<_> = file.values.iter().filter(|p| (p.hash >> 8) == (0x0CCB_7F00 >> 8)).map(|p| p.hash).collect();
+        let mut fam: Vec<_> = file
+            .values
+            .iter()
+            .filter(|p| (p.hash >> 8) == (0x0CCB_7F00 >> 8))
+            .map(|p| p.hash)
+            .collect();
         fam.sort();
         fam.dedup();
         for h in fam {

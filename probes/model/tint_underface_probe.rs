@@ -11,7 +11,9 @@ const RASTER_IMAGE: u32 = 0x2F4E_681C;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (path, rest) = args.split_first().expect("usage: <package> 0xMODEL [extra...]");
+    let (path, rest) = args
+        .split_first()
+        .expect("usage: <package> 0xMODEL [extra...]");
     let (model, extra) = rest.split_first().expect("missing 0xMODEL");
     let instance = u32::from_str_radix(model.trim_start_matches("0x"), 16).expect("instance");
 
@@ -35,7 +37,10 @@ fn main() {
             let Some(e) = pkg
                 .entries()
                 .iter()
-                .find(|e| e.id.instance == inst && (e.id.type_id == RASTER_IMAGE || e.id.type_id == RW4_IMAGE))
+                .find(|e| {
+                    e.id.instance == inst
+                        && (e.id.type_id == RASTER_IMAGE || e.id.type_id == RW4_IMAGE)
+                })
                 .cloned()
             else {
                 continue;
@@ -47,7 +52,10 @@ fn main() {
                 return Some((rgba, raster.width, raster.height));
             }
             let tex_file = rw4::Rw4File::parse(&bytes).ok()?;
-            let sec = tex_file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+            let sec = tex_file
+                .sections_of_type(rw4::SectionType::TEXTURE)
+                .next()?
+                .number;
             let tex = tex_file.decode_texture(&bytes, sec).ok()?;
             let rgba = tex.decode_top_mip_rgba().ok()?;
             return Some((rgba, u32::from(tex.width), u32::from(tex.height)));
@@ -88,7 +96,9 @@ fn main() {
         }
         let mut xform = [1.0f32, 1.0, 0.0, 0.0];
         let mut tint = None;
-        if let Ok(rw4::MaterialSection::Decoded(mat)) = file.decode_material(&data, b.material_section) {
+        if let Ok(rw4::MaterialSection::Decoded(mat)) =
+            file.decode_material(&data, b.material_section)
+        {
             if let Some(inst) = mat.slot_texture(0) {
                 if let Some(rows) = find_params(inst) {
                     // 源码 row1=regionXform（row0=palU/palU2/intScale/intOffset）
@@ -125,7 +135,9 @@ fn main() {
     {
         let mut any_tex = false;
         for mat in mats.values() {
-            let Some((rgba, w, h)) = mat.tint.as_ref() else { continue };
+            let Some((rgba, w, h)) = mat.tint.as_ref() else {
+                continue;
+            };
             let (w, h) = (*w as usize, *h as usize);
             let mut op = 0usize;
             for iy in 0..h {
@@ -137,8 +149,14 @@ fn main() {
             }
             tex_alpha_cov = op as f32 / (w * h) as f32;
             // 窗口矩形 [zw, zw+xy]
-            let (x0, y0) = ((mat.xform[2].clamp(0.0, 1.0) * (w - 1) as f32) as usize, (mat.xform[3].clamp(0.0, 1.0) * (h - 1) as f32) as usize);
-            let (x1, y1) = ((mat.xform[2] + mat.xform[0]).clamp(0.0, 1.0) * (w - 1) as f32, (mat.xform[3] + mat.xform[1]).clamp(0.0, 1.0) * (h - 1) as f32);
+            let (x0, y0) = (
+                (mat.xform[2].clamp(0.0, 1.0) * (w - 1) as f32) as usize,
+                (mat.xform[3].clamp(0.0, 1.0) * (h - 1) as f32) as usize,
+            );
+            let (x1, y1) = (
+                (mat.xform[2] + mat.xform[0]).clamp(0.0, 1.0) * (w - 1) as f32,
+                (mat.xform[3] + mat.xform[1]).clamp(0.0, 1.0) * (h - 1) as f32,
+            );
             let (x1, y1) = ((x1 as usize).min(w - 1), (y1 as usize).min(h - 1));
             let mut opw = 0usize;
             for iy in y0..=y1 {
@@ -157,13 +175,19 @@ fn main() {
         }
     }
 
-    println!("model 0x{instance:08X}  meshes={} bindings={}", {
-        file.sections_of_type(rw4::SectionType::MESH).count()
-    }, bindings.len());
+    println!(
+        "model 0x{instance:08X}  meshes={} bindings={}",
+        { file.sections_of_type(rw4::SectionType::MESH).count() },
+        bindings.len()
+    );
 
     for b in &bindings {
-        let Some(mat) = mats.get(&b.material_section) else { continue };
-        let Some(mesh) = file.decode_mesh(&data, b.mesh_section).ok() else { continue };
+        let Some(mat) = mats.get(&b.material_section) else {
+            continue;
+        };
+        let Some(mesh) = file.decode_mesh(&data, b.mesh_section).ok() else {
+            continue;
+        };
         if !mesh.is_exportable() {
             continue;
         }
@@ -192,8 +216,11 @@ fn main() {
         };
 
         for tri in &mesh.triangles {
-            let (Some(p0), Some(p1), Some(p2)) = (pos(tri[0] as usize), pos(tri[1] as usize), pos(tri[2] as usize))
-            else {
+            let (Some(p0), Some(p1), Some(p2)) = (
+                pos(tri[0] as usize),
+                pos(tri[1] as usize),
+                pos(tri[2] as usize),
+            ) else {
                 continue;
             };
             let e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
@@ -289,7 +316,11 @@ fn main() {
     );
     println!("\n=== 顶点级 tint alpha<0.5 丢弃率（按面朝向）===");
     for (i, b) in buckets.iter().enumerate() {
-        let pct = if b.verts > 0 { b.discarded as f32 / b.verts as f32 * 100.0 } else { 0.0 };
+        let pct = if b.verts > 0 {
+            b.discarded as f32 / b.verts as f32 * 100.0
+        } else {
+            0.0
+        };
         println!(
             "{}: 顶点 {}/{} ({pct:.1}%)  三角 {}（全丢弃 {}，内部>80%丢弃 {}）",
             names[i], b.discarded, b.verts, b.tris, b.tris_full_discard, b.tris_vanished
@@ -298,6 +329,9 @@ fn main() {
     println!("\n=== 被丢弃的 down 顶点样例（uv.xy | xform.xy | baseUv）===");
     for (i, uv) in uv_discarded_down.iter().enumerate() {
         let s = sample_discarded_down[i];
-        println!("  uv=({:>9.3},{:>9.3})  xform=({:.3},{:.3})  base=({:.3},{:.3})", uv[0], uv[1], uv[2], uv[3], s[0], s[1]);
+        println!(
+            "  uv=({:>9.3},{:>9.3})  xform=({:.3},{:.3})  base=({:.3},{:.3})",
+            uv[0], uv[1], uv[2], uv[3], s[0], s[1]
+        );
     }
 }

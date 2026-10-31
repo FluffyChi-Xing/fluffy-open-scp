@@ -42,8 +42,7 @@ fn main() {
     for package in &packages {
         for entry_ref in package.entries().iter() {
             let id = entry_ref.id;
-            if id.type_id != PROPERTY_TYPE || !sc_properties::is_decal_dictionary_group(id.group)
-            {
+            if id.type_id != PROPERTY_TYPE || !sc_properties::is_decal_dictionary_group(id.group) {
                 continue;
             }
             let Ok(data) = package.read(entry_ref) else {
@@ -70,7 +69,9 @@ fn main() {
                 dict.entries.len()
             );
             for entry in dict.entries.iter().take(max_entries) {
-                let Some(raster_key) = &entry.raster else { continue };
+                let Some(raster_key) = &entry.raster else {
+                    continue;
+                };
                 let mut found: Option<Vec<u8>> = None;
                 'pkgs: for p in &packages {
                     for e in p.entries() {
@@ -85,7 +86,10 @@ fn main() {
                     }
                 }
                 let Some(bytes) = found else {
-                    println!("  条目[{}] raster 0x{:08X}: 资源未找到", entry.index, raster_key.instance);
+                    println!(
+                        "  条目[{}] raster 0x{:08X}: 资源未找到",
+                        entry.index, raster_key.instance
+                    );
                     continue;
                 };
                 // 两种容器都试：RW4 文件（TEXTURE 节）或裸 RasterImage；
@@ -109,7 +113,10 @@ fn main() {
                     Some((u32::from(r.width), u32::from(r.height), rgba))
                 })();
                 let Some((w, h, rgba)) = decoded_px else {
-                    println!("  条目[{}] raster 0x{:08X}: 纹理解码失败", entry.index, raster_key.instance);
+                    println!(
+                        "  条目[{}] raster 0x{:08X}: 纹理解码失败",
+                        entry.index, raster_key.instance
+                    );
                     continue;
                 };
                 let total = (w * h) as usize;
@@ -137,9 +144,17 @@ fn main() {
                 let pct = |n: usize| n as f64 / total as f64 * 100.0;
                 println!(
                     "  条目[{}] raster 0x{:08X} {}x{}: A≥128 {:.0}% A中间值 {:.0}% | ≥128通道数 0:{:.0}% 1:{:.0}% 2:{:.0}% 3:{:.0}% 4:{:.0}%",
-                    entry.index, raster_key.instance, w, h,
-                    pct(a_hi), pct(a_mid),
-                    pct(on_count[0]), pct(on_count[1]), pct(on_count[2]), pct(on_count[3]), pct(on_count[4]),
+                    entry.index,
+                    raster_key.instance,
+                    w,
+                    h,
+                    pct(a_hi),
+                    pct(a_mid),
+                    pct(on_count[0]),
+                    pct(on_count[1]),
+                    pct(on_count[2]),
+                    pct(on_count[3]),
+                    pct(on_count[4]),
                 );
                 for (ch, name) in ['R', 'G', 'B', 'A'].iter().enumerate() {
                     let dist: Vec<String> = hist[ch]
@@ -163,7 +178,10 @@ fn main() {
                     println!("    colors: {}", cs.join(" "));
                 }
 
-                let base = format!("{outdir}/graffiti_{:08X}_idx{}", raster_key.instance, entry.index);
+                let base = format!(
+                    "{outdir}/graffiti_{:08X}_idx{}",
+                    raster_key.instance, entry.index
+                );
                 let img: image::RgbaImage =
                     image::ImageBuffer::from_raw(w, h, rgba.clone()).expect("rgba buffer");
                 let _ = img.save(format!("{base}.png"));

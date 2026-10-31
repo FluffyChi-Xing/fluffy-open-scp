@@ -38,9 +38,7 @@ fn main() {
         });
     let paths: Vec<&String> = args.iter().filter(|arg| !arg.starts_with("--")).collect();
     if paths.is_empty() {
-        eprintln!(
-            "usage: decal_probe [--out=<dir>] <package> [lookup_package...]"
-        );
+        eprintln!("usage: decal_probe [--out=<dir>] <package> [lookup_package...]");
         std::process::exit(2);
     }
     if let Some(dir) = &out_dir {

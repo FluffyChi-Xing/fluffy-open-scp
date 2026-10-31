@@ -3,10 +3,19 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let gid = u32::from_str_radix(args.next().unwrap().trim_start_matches("0x"), 16).unwrap();
     for path in args {
-        let Ok(package) = dbpf::Package::open(&path) else { continue };
+        let Ok(package) = dbpf::Package::open(&path) else {
+            continue;
+        };
         for entry in package.entries() {
             if entry.id.group == gid {
-                println!("{}: type=0x{:08X} group=0x{:08X} inst=0x{:08X} stored={}", path, entry.id.type_id, entry.id.group, entry.id.instance, entry.compressed_size);
+                println!(
+                    "{}: type=0x{:08X} group=0x{:08X} inst=0x{:08X} stored={}",
+                    path,
+                    entry.id.type_id,
+                    entry.id.group,
+                    entry.id.instance,
+                    entry.compressed_size
+                );
             }
         }
     }

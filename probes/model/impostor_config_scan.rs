@@ -7,8 +7,17 @@ use sc_properties::{Kind, PropertyFile, Value};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const IMPOSTOR_KEYS: [u32; 11] = [
-    0x0BD6_2576, 0x0BD6_2577, 0x0BD6_2578, 0x0BD6_2579, 0x0BD6_257A, 0x0BD6_257B, 0x0BD6_257C,
-    0x0BD6_257E, 0x0BD6_2580, 0x0BD6_2581, 0x0DDE_0508,
+    0x0BD6_2576,
+    0x0BD6_2577,
+    0x0BD6_2578,
+    0x0BD6_2579,
+    0x0BD6_257A,
+    0x0BD6_257B,
+    0x0BD6_257C,
+    0x0BD6_257E,
+    0x0BD6_2580,
+    0x0BD6_2581,
+    0x0DDE_0508,
 ];
 
 fn summarize(v: &Value) -> String {
@@ -30,22 +39,29 @@ fn main() {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         if a == "dump" {
-            dump_inst =
-                it.next().map(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).unwrap());
+            dump_inst = it
+                .next()
+                .map(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).unwrap());
         } else {
             packages.push(a.clone());
         }
     }
     for path in &packages {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
-        for e in package.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for e in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             if let Some(inst) = dump_inst {
                 if e.id.instance != inst {
                     continue;
                 }
             }
             let Ok(data) = package.read(e) else { continue };
-            let Ok(doc) = PropertyFile::parse(&data) else { continue };
+            let Ok(doc) = PropertyFile::parse(&data) else {
+                continue;
+            };
             let hits: Vec<u32> = doc
                 .values
                 .iter()
@@ -53,7 +69,11 @@ fn main() {
                 .map(|p| p.hash)
                 .collect();
             if let Some(inst) = dump_inst {
-                println!("== I {inst:08X} G {:08X} ({} keys)", e.id.group, doc.values.len());
+                println!(
+                    "== I {inst:08X} G {:08X} ({} keys)",
+                    e.id.group,
+                    doc.values.len()
+                );
                 for p in &doc.values {
                     match &p.kind {
                         Kind::Scalar(v) => println!("   {:08X}: {}", p.hash, summarize(v)),
@@ -72,7 +92,10 @@ fn main() {
                     e.id.instance,
                     e.id.group,
                     data.len(),
-                    hits.iter().map(|h| format!("{h:08X}")).collect::<Vec<_>>().join(",")
+                    hits.iter()
+                        .map(|h| format!("{h:08X}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
                 );
             }
         }

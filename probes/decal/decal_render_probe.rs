@@ -15,8 +15,8 @@
 //!     <pkg> [pkg...] [--dict group:inst ...] [--max N]
 
 use dbpf::Package;
-use sc_properties::decal::{DecalDictionary, DECAL_ATLAS_INSTANCE_TYPES};
 use sc_properties::PROPERTY_RESOURCE_TYPE;
+use sc_properties::decal::{DECAL_ATLAS_INSTANCE_TYPES, DecalDictionary};
 use std::collections::BTreeMap;
 
 const RASTER_TYPE: u32 = 0x2F4E_681C;
@@ -66,11 +66,19 @@ fn main() {
         }
         i += 1;
     }
-    assert!(!paths.is_empty(), "用法: decal_render_probe <pkg> [...] [--dict g:i] [--max N] [--random N] [--out dir]");
-    let packages: Vec<Package> = paths.iter().map(|p| Package::open(p).expect("open")).collect();
+    assert!(
+        !paths.is_empty(),
+        "用法: decal_render_probe <pkg> [...] [--dict g:i] [--max N] [--random N] [--out dir]"
+    );
+    let packages: Vec<Package> = paths
+        .iter()
+        .map(|p| Package::open(p).expect("open"))
+        .collect();
 
     let out_dir = std::path::Path::new(
-        out_dir_override.as_deref().unwrap_or("tmp/dynamic/decal_render"),
+        out_dir_override
+            .as_deref()
+            .unwrap_or("tmp/dynamic/decal_render"),
     );
     std::fs::create_dir_all(out_dir).unwrap();
 
@@ -114,7 +122,9 @@ fn main() {
             .subsec_nanos() as u64
             | 1;
         let mut next = move || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as usize
         };
         for i in (1..pool.len()).rev() {
@@ -130,12 +140,26 @@ fn main() {
                 break;
             }
             let entry = &dict.entries[idx];
-            let Some(raster_key) = entry.raster.clone() else { continue };
-            let Some((bytes, _)) = find_raster(&packages, raster_key.instance) else { continue };
-            let Ok(raster) = rw4::RasterImage::parse(&bytes) else { continue };
-            let Ok(src) = raster.decode_top_mip_rgba() else { continue };
-            let img = Rgba { w: raster.width, h: raster.height, px: src };
-            let Some(colors) = &entry.colors_rgba8() else { continue };
+            let Some(raster_key) = entry.raster.clone() else {
+                continue;
+            };
+            let Some((bytes, _)) = find_raster(&packages, raster_key.instance) else {
+                continue;
+            };
+            let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
+                continue;
+            };
+            let Ok(src) = raster.decode_top_mip_rgba() else {
+                continue;
+            };
+            let img = Rgba {
+                w: raster.width,
+                h: raster.height,
+                px: src,
+            };
+            let Some(colors) = &entry.colors_rgba8() else {
+                continue;
+            };
             let mut rows = [[0f32; 4]; 4];
             for (ri, c) in colors.iter().enumerate() {
                 rows[ri] = [
@@ -155,8 +179,18 @@ fn main() {
             let ss = ss_override.unwrap_or(SS);
             let day = render_composite_ss(&img, &rows, false, ss);
             let night = render_composite_ss(&img, &rows, true, ss);
-            save_png(&sample_dir.join(format!("{id}_day.png")), img.w * ss, img.h * ss, &day);
-            save_png(&sample_dir.join(format!("{id}_night.png")), img.w * ss, img.h * ss, &night);
+            save_png(
+                &sample_dir.join(format!("{id}_day.png")),
+                img.w * ss,
+                img.h * ss,
+                &day,
+            );
+            save_png(
+                &sample_dir.join(format!("{id}_night.png")),
+                img.w * ss,
+                img.h * ss,
+                &night,
+            );
             println!("sample {rendered}: {id} {}x{}", img.w, img.h);
             rendered += 1;
         }
@@ -174,13 +208,23 @@ fn main() {
             if done >= max_entries {
                 break;
             }
-            let Some(raster_key) = entry.raster.clone() else { continue };
+            let Some(raster_key) = entry.raster.clone() else {
+                continue;
+            };
             let Some((bytes, _)) = find_raster(&packages, raster_key.instance) else {
                 continue;
             };
-            let Ok(raster) = rw4::RasterImage::parse(&bytes) else { continue };
-            let Ok(src) = raster.decode_top_mip_rgba() else { continue };
-            let img = Rgba { w: raster.width, h: raster.height, px: src };
+            let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
+                continue;
+            };
+            let Ok(src) = raster.decode_top_mip_rgba() else {
+                continue;
+            };
+            let img = Rgba {
+                w: raster.width,
+                h: raster.height,
+                px: src,
+            };
             let tgi = entry
                 .id
                 .map(|k| format!("{:08x}_{}_{}", k.type_id, k.group, k.instance))
@@ -235,7 +279,11 @@ fn main() {
             }
             tsv.push_str(&format!(
                 "{}\t{}\t{}\t{}\t{}\n",
-                entry.index, id, img.w, img.h, names.join(",")
+                entry.index,
+                id,
+                img.w,
+                img.h,
+                names.join(",")
             ));
             done += 1;
         }
@@ -421,8 +469,8 @@ fn render_sdf(img: &Rgba, rows: &[[f32; 4]; 4], power: f32) -> Vec<u8> {
             rgb[ci] = material_light_scale * dot * power;
         }
         // 光晕区域加 alpha 轮廓（sdf 通道最大值）：便于在白底上判读
-        let glow = (1.0 - sdf.iter().map(|v| (v - 0.5).abs()).fold(f32::MAX, f32::min))
-            .clamp(0.0, 1.0);
+        let glow =
+            (1.0 - sdf.iter().map(|v| (v - 0.5).abs()).fold(f32::MAX, f32::min)).clamp(0.0, 1.0);
         let a = (glow * 255.0) as u8;
         out.extend_from_slice(&[
             rgb[0].clamp(0.0, 255.0) as u8,

@@ -15,7 +15,11 @@ fn main() {
     );
     let package = Package::open(package_path).unwrap();
     let mut tiles: Vec<(u32, Vec<u16>)> = Vec::new();
-    for entry in package.entries().iter().filter(|e| e.id.group == group && e.id.type_id == type_hex) {
+    for entry in package
+        .entries()
+        .iter()
+        .filter(|e| e.id.group == group && e.id.type_id == type_hex)
+    {
         let data = package.read(entry).unwrap();
         let hdr = 20usize;
         let cells: Vec<u16> = data[hdr..]
@@ -64,7 +68,9 @@ fn main() {
             let v = (((canvas[y * w + x] - minv) as f32 / span) * 255.0) as u8;
             bmp.extend_from_slice(&[v, v, v]);
         }
-        for _ in 0..row_pad { bmp.push(0); }
+        for _ in 0..row_pad {
+            bmp.push(0);
+        }
     }
     std::fs::write(out, &bmp).unwrap();
     println!("grid {width}x{height} written -> {out}");

@@ -13,8 +13,13 @@ fn main() {
         r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\SimCity_App.package",
     ];
     for p in paths {
-        let Ok(package) = Package::open(p) else { continue };
-        let name = std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p);
+        let Ok(package) = Package::open(p) else {
+            continue;
+        };
+        let name = std::path::Path::new(p)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(p);
         for (label, inst) in targets {
             let hits: Vec<_> = package
                 .entries()

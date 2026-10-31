@@ -19,7 +19,9 @@ fn main() {
         "terrain_pollution",
     ];
     for p in paths {
-        let Ok(g) = dbpf::Package::open(p) else { continue };
+        let Ok(g) = dbpf::Package::open(p) else {
+            continue;
+        };
         let mut found = 0;
         for n in names {
             let group = sc_properties::region_3d::fnv1_lower(n);

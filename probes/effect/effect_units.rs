@@ -31,8 +31,7 @@ fn main() {
             ) else {
                 continue;
             };
-            let units = sc_properties::LotEditorDocument::from_property_file(file)
-                .assemble_units();
+            let units = sc_properties::LotEditorDocument::from_property_file(file).assemble_units();
             for unit in &units.units {
                 let LotUnit::Effect {
                     effect_id,

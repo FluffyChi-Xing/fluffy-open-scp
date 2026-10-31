@@ -19,26 +19,42 @@ fn main() {
                 }
             }
         }
-        println!("== {}（raster {} 张）", path.rsplit('/').next().unwrap(), raster_sizes.len());
+        println!(
+            "== {}（raster {} 张）",
+            path.rsplit('/').next().unwrap(),
+            raster_sizes.len()
+        );
         let mut shown = 0;
         for e in &entries {
-            if e.id.type_id != 0x00B1_B104 { continue; }
+            if e.id.type_id != 0x00B1_B104 {
+                continue;
+            }
             let Ok(data) = package.read(e) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             let size = file.get(LOT_SIZE).and_then(|p| match &p.kind {
                 sc_properties::Kind::Scalar(sc_properties::Value::Vector2(v)) => Some((v[0], v[1])),
                 _ => None,
             });
             let mask: Option<Key> = file.get(LOT_MASK).and_then(|p| match &p.kind {
                 sc_properties::Kind::Scalar(sc_properties::Value::Key(k)) => Some(*k),
-                sc_properties::Kind::Array(v) => v.first().and_then(|x| match x { sc_properties::Value::Key(k) => Some(*k), _ => None }),
+                sc_properties::Kind::Array(v) => v.first().and_then(|x| match x {
+                    sc_properties::Value::Key(k) => Some(*k),
+                    _ => None,
+                }),
                 _ => None,
             });
             if let (Some((sx, sy)), Some(k)) = (size, mask) {
                 let dim = raster_sizes.get(&k.instance);
-                println!("  lot 0x{:08X}: size=({sx},{sy}) mask=0x{:08X} raster={dim:?}", e.id.instance, k.instance);
+                println!(
+                    "  lot 0x{:08X}: size=({sx},{sy}) mask=0x{:08X} raster={dim:?}",
+                    e.id.instance, k.instance
+                );
                 shown += 1;
-                if shown >= 10 { break; }
+                if shown >= 10 {
+                    break;
+                }
             }
         }
     }

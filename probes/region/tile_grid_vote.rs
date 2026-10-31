@@ -14,7 +14,10 @@ fn load_tiles(path: &str, group: u32) -> HashMap<u32, Vec<u16>> {
         if e.id.type_id == 0x03E4_21F0 && e.id.group == group {
             let data = package.read(e).expect("read");
             if data.len() >= 20 {
-                let px: Vec<u16> = data[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                let px: Vec<u16> = data[20..]
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
                 if px.len() == 65536 {
                     tiles.insert(e.id.instance, px);
                 }
@@ -25,7 +28,10 @@ fn load_tiles(path: &str, group: u32) -> HashMap<u32, Vec<u16>> {
 }
 
 fn zero_ratio(tiles: &HashMap<u32, Vec<u16>>) -> f64 {
-    let n = tiles.values().filter(|px| px.iter().all(|v| *v == 0)).count();
+    let n = tiles
+        .values()
+        .filter(|px| px.iter().all(|v| *v == 0))
+        .count();
     n as f64 / tiles.len().max(1) as f64
 }
 
@@ -34,7 +40,11 @@ fn downsample(px: &[u16]) -> Vec<u32> {
     for y in 0..128 {
         for x in 0..128 {
             let i = (2 * y) * 256 + 2 * x;
-            b[y * 128 + x] = (u32::from(px[i]) + u32::from(px[i + 1]) + u32::from(px[i + 256]) + u32::from(px[i + 257])) / 4;
+            b[y * 128 + x] = (u32::from(px[i])
+                + u32::from(px[i + 1])
+                + u32::from(px[i + 256])
+                + u32::from(px[i + 257]))
+                / 4;
         }
     }
     b
@@ -48,7 +58,11 @@ fn region_groups(path: &str) -> Vec<u32> {
             *count.entry(e.id.group).or_default() += 1;
         }
     }
-    let mut gs: Vec<u32> = count.into_iter().filter(|(_, n)| *n == 341).map(|(g, _)| g).collect();
+    let mut gs: Vec<u32> = count
+        .into_iter()
+        .filter(|(_, n)| *n == 341)
+        .map(|(g, _)| g)
+        .collect();
     gs.sort();
     gs
 }
@@ -90,7 +104,9 @@ fn main() {
             let cb = &ds[&child];
             let mut best = (0u32, 0usize, f64::INFINITY);
             for &parent in &slots {
-                if parent == child { continue; }
+                if parent == child {
+                    continue;
+                }
                 let px = &tiles[&parent];
                 for q in 0..4usize {
                     let (qx, qy) = ((q % 2) * 128, (q / 2) * 128);
@@ -103,10 +119,16 @@ fn main() {
                         }
                     }
                     e /= 16384.0;
-                    if e < best.2 { best = (parent, q, e); }
+                    if e < best.2 {
+                        best = (parent, q, e);
+                    }
                 }
             }
-            let slot = votes.entry(child).or_default().entry((best.0, best.1)).or_insert(0);
+            let slot = votes
+                .entry(child)
+                .or_default()
+                .entry((best.0, best.1))
+                .or_insert(0);
             *slot += 1;
         }
         println!("voted region {g:08X}");
@@ -122,20 +144,35 @@ fn main() {
     }
 
     // 全局重构树：quad 冲突按票数解决
-    let mut pairs: Vec<(u32, u32, usize, usize)> = final_assign.iter().map(|(c, (p, q, n))| (*c, *p, *q, *n)).collect();
+    let mut pairs: Vec<(u32, u32, usize, usize)> = final_assign
+        .iter()
+        .map(|(c, (p, q, n))| (*c, *p, *q, *n))
+        .collect();
     pairs.sort_by_key(|(_, _, _, n)| std::cmp::Reverse(*n));
     let mut tree: HashMap<u32, [Option<u32>; 4]> = HashMap::new();
     let mut used_child: HashSet<u32> = HashSet::new();
     let mut used_quad: HashSet<(u32, usize)> = HashSet::new();
     for (child, parent, quad, n) in &pairs {
-        if used_child.contains(child) || used_quad.contains(&(*parent, *quad)) { continue; }
+        if used_child.contains(child) || used_quad.contains(&(*parent, *quad)) {
+            continue;
+        }
         tree.entry(*parent).or_default()[*quad] = Some(*child);
         used_child.insert(*child);
         used_quad.insert((*parent, *quad));
     }
-    let child_of: HashMap<u32, (u32, usize)> = used_child.iter().map(|c| { let (p, q, _) = final_assign[c]; (*c, (p, q)) }).collect();
+    let child_of: HashMap<u32, (u32, usize)> = used_child
+        .iter()
+        .map(|c| {
+            let (p, q, _) = final_assign[c];
+            (*c, (p, q))
+        })
+        .collect();
     let is_parent: HashSet<u32> = tree.keys().copied().collect();
-    let roots: Vec<u32> = is_parent.iter().copied().filter(|p| !child_of.contains_key(p)).collect();
+    let roots: Vec<u32> = is_parent
+        .iter()
+        .copied()
+        .filter(|p| !child_of.contains_key(p))
+        .collect();
     let mut level_counts = [0usize; 8];
     if let Some(root) = roots.first() {
         let mut pos: HashMap<u32, (usize, usize, usize)> = HashMap::new();
@@ -154,9 +191,21 @@ fn main() {
             }
         }
     }
-    println!("roots={} levels={:?} (expect [1,4,16,64,256,0..])", roots.len(), level_counts);
-    let unplaced: Vec<u32> = slots.iter().copied().filter(|s| !child_of.contains_key(s) && !is_parent.contains(s)).collect();
-    println!("unplaced tiles: {} {:?}", unplaced.len(), &unplaced[..unplaced.len().min(8)]);
+    println!(
+        "roots={} levels={:?} (expect [1,4,16,64,256,0..])",
+        roots.len(),
+        level_counts
+    );
+    let unplaced: Vec<u32> = slots
+        .iter()
+        .copied()
+        .filter(|s| !child_of.contains_key(s) && !is_parent.contains(s))
+        .collect();
+    println!(
+        "unplaced tiles: {} {:?}",
+        unplaced.len(),
+        &unplaced[..unplaced.len().min(8)]
+    );
 
     // 输出 16×16 网格（child_of 里 level4 的才能落格；由根遍历更稳）
     println!("== GRID (16 rows) ==");
@@ -177,10 +226,18 @@ fn main() {
         }
         let mut grid = [[0u32; 16]; 16];
         for (i, (x, y, l)) in &pos {
-            if *l == 4 { grid[*y][*x] = *i; }
+            if *l == 4 {
+                grid[*y][*x] = *i;
+            }
         }
         for row in &grid {
-            println!("{}", row.iter().map(|v| format!("{v:08X}")).collect::<Vec<_>>().join(","));
+            println!(
+                "{}",
+                row.iter()
+                    .map(|v| format!("{v:08X}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
         }
     }
 }

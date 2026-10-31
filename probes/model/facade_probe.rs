@@ -7,7 +7,9 @@ const RASTER_IMAGE: u32 = 0x2F4E_681C;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (path, model) = args.split_first().expect("usage: facade_probe <package> 0xMODEL");
+    let (path, model) = args
+        .split_first()
+        .expect("usage: facade_probe <package> 0xMODEL");
     let instance = u32::from_str_radix(model[0].trim_start_matches("0x"), 16).expect("instance");
     let package = dbpf::Package::open(path).expect("open package");
     let entry = package
@@ -64,13 +66,11 @@ fn main() {
     }
 
     // ---- 求解器：材质参数表 + tint map + palette + 顶点样本 ----
-    let mesh = file
-        .sections_of_type(rw4::SectionType::MESH)
-        .find_map(|s| {
-            file.decode_mesh(&data, s.number)
-                .ok()
-                .filter(|m| m.vertices.iter().any(|v| v.d3d_color_g().is_some()))
-        });
+    let mesh = file.sections_of_type(rw4::SectionType::MESH).find_map(|s| {
+        file.decode_mesh(&data, s.number)
+            .ok()
+            .filter(|m| m.vertices.iter().any(|v| v.d3d_color_g().is_some()))
+    });
     let Some(mesh) = mesh else {
         println!("no mesh with D3DCOLOR");
         return;
@@ -276,8 +276,12 @@ fn main() {
                     continue;
                 };
                 // kSubsampleScale = kPaletteInvSize*0.5（半物理纹素）、offset=×0.25
-                let pu = pal_origin[0] + f32::from(t[0]) / 255.0 * (0.5 / pal_w as f32) + (0.25 / pal_w as f32);
-                let pv = pal_origin[1] + f32::from(t[1]) / 255.0 * (0.5 / pal_h as f32) + (0.25 / pal_h as f32);
+                let pu = pal_origin[0]
+                    + f32::from(t[0]) / 255.0 * (0.5 / pal_w as f32)
+                    + (0.25 / pal_w as f32);
+                let pv = pal_origin[1]
+                    + f32::from(t[1]) / 255.0 * (0.5 / pal_h as f32)
+                    + (0.25 / pal_h as f32);
                 let x = ((pu - pu.floor()).clamp(0.0, 0.999) * pal_w as f32) as usize;
                 let y = ((pv - pv.floor()).clamp(0.0, 0.999) * pal_h as f32) as usize;
                 let Some(px) = pal_rgba.get((y * pal_w + x) * 4..) else {

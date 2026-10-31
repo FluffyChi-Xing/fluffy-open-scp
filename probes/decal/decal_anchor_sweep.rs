@@ -10,8 +10,8 @@
 //!     <lot_package> [max_lots] [extra_package...]
 
 use dbpf::Package;
-use sc_properties::decal::{DecalDictionary, DECAL_ATLAS_INSTANCE_TYPES};
-use sc_properties::{assemble_units, inherit, Key, LotEditorDocument, PropertyFile};
+use sc_properties::decal::{DECAL_ATLAS_INSTANCE_TYPES, DecalDictionary};
+use sc_properties::{Key, LotEditorDocument, PropertyFile, assemble_units, inherit};
 use std::collections::HashMap;
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
@@ -25,7 +25,10 @@ struct Geometry {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: decal_anchor_sweep <package> [max] [extra...]").clone();
+    let path = args
+        .first()
+        .expect("usage: decal_anchor_sweep <package> [max] [extra...]")
+        .clone();
     let max_lots: usize = args.get(1).and_then(|v| v.parse().ok()).unwrap_or(40);
     let mut packages: Vec<Package> = vec![Package::open(&path).expect("open lot package")];
     for extra in &args.iter().skip(2).cloned().collect::<Vec<_>>() {
@@ -38,13 +41,21 @@ fn main() {
     let mut id_to_family: HashMap<u32, (u32, f32)> = HashMap::new();
     for pkg in &packages {
         for e in pkg.entries() {
-            if e.id.type_id != PROPERTY_TYPE || !DECAL_ATLAS_INSTANCE_TYPES.contains(&(e.id.group as u16)) {
+            if e.id.type_id != PROPERTY_TYPE
+                || !DECAL_ATLAS_INSTANCE_TYPES.contains(&(e.id.group as u16))
+            {
                 continue;
             }
             let Ok(bytes) = pkg.read(e) else { continue };
-            let Ok(dict) = DecalDictionary::parse(&bytes) else { continue };
+            let Ok(dict) = DecalDictionary::parse(&bytes) else {
+                continue;
+            };
             let family = dict.material.as_ref().map(|k| k.instance).unwrap_or(0);
-            let aspect = dict.entries.iter().find_map(|en| en.aspect_ratio).unwrap_or(1.0);
+            let aspect = dict
+                .entries
+                .iter()
+                .find_map(|en| en.aspect_ratio)
+                .unwrap_or(1.0);
             for en in &dict.entries {
                 if let Some(k) = en.id {
                     id_to_family.entry(k.instance).or_insert((family, aspect));
@@ -62,8 +73,12 @@ fn main() {
         if entry.id.type_id != PROPERTY_TYPE || lots_with_decals >= max_lots {
             continue;
         }
-        let Ok(raw) = packages[0].read(entry) else { continue };
-        let Ok(raw_file) = PropertyFile::parse(&raw) else { continue };
+        let Ok(raw) = packages[0].read(entry) else {
+            continue;
+        };
+        let Ok(raw_file) = PropertyFile::parse(&raw) else {
+            continue;
+        };
         let resolve = |key: &Key| -> Option<PropertyFile> {
             for source in &packages {
                 for candidate in source.entries() {
@@ -101,7 +116,9 @@ fn main() {
             continue;
         }
         let doc = LotEditorDocument::from_property_file(flattened.clone());
-        let Some(model) = doc.model.as_ref() else { continue };
+        let Some(model) = doc.model.as_ref() else {
+            continue;
+        };
         let geometry = if let Some(g) = geometry_cache.get(&model.instance) {
             g.clone()
         } else {
@@ -130,9 +147,8 @@ fn main() {
                 bbmax[i] = bbmax[i].max(v[i]);
             }
         }
-        let inside_bbox = |o: [f32; 3]| {
-            (0..3).all(|i| o[i] >= bbmin[i] - 0.5 && o[i] <= bbmax[i] + 0.5)
-        };
+        let inside_bbox =
+            |o: [f32; 3]| (0..3).all(|i| o[i] >= bbmin[i] - 0.5 && o[i] <= bbmax[i] + 0.5);
         for (index, category, transform, scale, depth) in decals {
             let m = transform.matrix;
             if m.len() != 12 {
@@ -158,10 +174,12 @@ fn main() {
                 .and_then(|id| id_to_family.get(&id).copied())
                 .unwrap_or((0, 1.0));
             let in_bb = inside_bbox(origin);
-            by_family
-                .entry(family)
-                .or_default()
-                .push((nearest, depth.unwrap_or(f32::NAN), entry.id.instance, in_bb as u32));
+            by_family.entry(family).or_default().push((
+                nearest,
+                depth.unwrap_or(f32::NAN),
+                entry.id.instance,
+                in_bb as u32,
+            ));
         }
     }
 
@@ -186,10 +204,19 @@ fn main() {
         };
         println!(
             "family 0x{fam:08X}: n={n}  dist min={:.3} med={:.3} max={:.3}  | depth med={dmed:.3}",
-            rows[0].0, med, rows[n - 1].0
+            rows[0].0,
+            med,
+            rows[n - 1].0
         );
-        let buckets: [(f32, f32); 7] =
-            [(0.0, 0.1), (0.1, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, 5.0), (5.0, 15.0), (15.0, f32::MAX)];
+        let buckets: [(f32, f32); 7] = [
+            (0.0, 0.1),
+            (0.1, 0.5),
+            (0.5, 1.0),
+            (1.0, 2.0),
+            (2.0, 5.0),
+            (5.0, 15.0),
+            (15.0, f32::MAX),
+        ];
         let hist: Vec<String> = buckets
             .iter()
             .map(|(lo, hi)| {
@@ -211,9 +238,14 @@ fn load_geometry(packages: &[Package], instance: u32) -> Option<Geometry> {
             }
             let bytes = package.read(entry).ok()?;
             let file = rw4::Rw4File::parse(&bytes).ok()?;
-            let mut geometry = Geometry { verts: Vec::new(), tris: Vec::new() };
+            let mut geometry = Geometry {
+                verts: Vec::new(),
+                tris: Vec::new(),
+            };
             for section in file.sections_of_type(rw4::SectionType::MESH) {
-                let Ok(mesh) = file.decode_mesh(&bytes, section.number) else { continue };
+                let Ok(mesh) = file.decode_mesh(&bytes, section.number) else {
+                    continue;
+                };
                 let base = geometry.verts.len();
                 for vertex in &mesh.vertices {
                     if let Some(position) = vertex.position() {
@@ -275,7 +307,11 @@ fn point_tri_distance(p: [f32; 3], a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> f32
     let va = d3 * d6 - d5 * d4;
     if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
         let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        let q = [b[0] + (c[0] - b[0]) * w, b[1] + (c[1] - b[1]) * w, b[2] + (c[2] - b[2]) * w];
+        let q = [
+            b[0] + (c[0] - b[0]) * w,
+            b[1] + (c[1] - b[1]) * w,
+            b[2] + (c[2] - b[2]) * w,
+        ];
         return length3(sub(p, q));
     }
     let denom = 1.0 / (va + vb + vc);

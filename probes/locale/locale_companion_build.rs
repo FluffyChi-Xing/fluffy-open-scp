@@ -142,11 +142,7 @@ fn main() {
         let data = overlay.read(e).unwrap();
         let t = parse_ordered(&data)
             .unwrap_or_else(|err| panic!("overlay table {:08X}: {err}", e.id.instance));
-        println!(
-            "overlay 表 {:08X}: {} 词条",
-            e.id.instance,
-            t.len()
-        );
+        println!("overlay 表 {:08X}: {} 词条", e.id.instance, t.len());
         custom.push((e.id.instance, t));
     }
 
@@ -185,7 +181,11 @@ fn main() {
             } else {
                 add.clone()
             };
-            let data = if pretty { serialize_pretty(&table) } else { serialize_compact(&table) };
+            let data = if pretty {
+                serialize_pretty(&table)
+            } else {
+                serialize_compact(&table)
+            };
             println!(
                 "{name}: 表 {:08X} -> {} 词条 {}B",
                 inst,
@@ -193,7 +193,11 @@ fn main() {
                 data.len()
             );
             entries.push(OverlayEntry::new(
-                ResourceId { type_id: LOCALE_RESOURCE_TYPE, group: GROUP, instance: *inst },
+                ResourceId {
+                    type_id: LOCALE_RESOURCE_TYPE,
+                    group: GROUP,
+                    instance: *inst,
+                },
                 data,
             ));
         }

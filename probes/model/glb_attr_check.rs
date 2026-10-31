@@ -32,7 +32,11 @@ fn main() {
             .iter()
             .filter_map(|v| v.normal())
             .any(|n| n[0].abs() > 1e-3 || n[1].abs() > 1e-3 || n[2].abs() > 1e-3);
-        let tangents_present = mesh.vertices.iter().filter(|v| v.tangent().is_some()).count();
+        let tangents_present = mesh
+            .vertices
+            .iter()
+            .filter(|v| v.tangent().is_some())
+            .count();
         // 切线健全性：单位长度 + 与法线正交（资产自带的 TBN 约定）。
         let mut max_len_err = 0f32;
         let mut max_dot = 0f32;

@@ -23,11 +23,24 @@ fn main() {
         })
         .collect();
     let (reference, layers) = if args.get(4).is_some_and(|a| a == "--discover") {
-        sc_properties::region_state::discover_save(std::path::Path::new(&args[1]),0xC04182E4,&plots).expect("matching region reference")
+        sc_properties::region_state::discover_save(
+            std::path::Path::new(&args[1]),
+            0xC04182E4,
+            &plots,
+        )
+        .expect("matching region reference")
     } else {
-        (std::path::PathBuf::from(&args[1]),sc_properties::region_state::load_save(std::path::Path::new(&args[1]), 0xC04182E4, &plots).unwrap())
+        (
+            std::path::PathBuf::from(&args[1]),
+            sc_properties::region_state::load_save(
+                std::path::Path::new(&args[1]),
+                0xC04182E4,
+                &plots,
+            )
+            .unwrap(),
+        )
     };
-    println!("Reference: {}",reference.display());
+    println!("Reference: {}", reference.display());
     let ids: std::collections::BTreeSet<_> = layers
         .sources
         .iter()

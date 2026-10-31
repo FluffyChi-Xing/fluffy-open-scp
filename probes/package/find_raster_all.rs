@@ -11,8 +11,12 @@ fn main() {
     for path in &args[1..] {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
         for e in package.entries() {
-            if e.id.instance != instance { continue; }
-            if e.id.type_id != RASTER_TYPE && e.id.type_id != RW4_TYPE { continue; }
+            if e.id.instance != instance {
+                continue;
+            }
+            if e.id.type_id != RASTER_TYPE && e.id.type_id != RW4_TYPE {
+                continue;
+            }
             let data = package.read(e).unwrap_or_default();
             let desc = if e.id.type_id == RASTER_TYPE {
                 rw4::RasterImage::parse(&data)

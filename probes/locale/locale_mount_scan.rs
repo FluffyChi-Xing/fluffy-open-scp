@@ -17,9 +17,10 @@ fn main() {
         for e in p.entries() {
             if e.id.type_id == LOCALE_RESOURCE_TYPE {
                 ids.push(e.id.instance);
-                global.entry(e.id.instance).or_default().push(
-                    path.rsplit(['\\', '/']).next().unwrap().to_string(),
-                );
+                global
+                    .entry(e.id.instance)
+                    .or_default()
+                    .push(path.rsplit(['\\', '/']).next().unwrap().to_string());
             }
         }
         let name = path.rsplit(['\\', '/']).next().unwrap();
@@ -27,8 +28,13 @@ fn main() {
             if ids.is_empty() {
                 String::new()
             } else {
-                format!("，样本 {:?}",
-                    ids.iter().take(6).map(|i| format!("{i:08X}")).collect::<Vec<_>>())
+                format!(
+                    "，样本 {:?}",
+                    ids.iter()
+                        .take(6)
+                        .map(|i| format!("{i:08X}"))
+                        .collect::<Vec<_>>()
+                )
             }
         });
     }

@@ -72,7 +72,14 @@ impl SlotContent {
                         f32::from(pixels[at + 3]) / 255.0,
                     ]
                 };
-                Some(lerp4(read(x, y), read(x + 1, y), read(x, y + 1), read(x + 1, y + 1), tx, ty))
+                Some(lerp4(
+                    read(x, y),
+                    read(x + 1, y),
+                    read(x, y + 1),
+                    read(x + 1, y + 1),
+                    tx,
+                    ty,
+                ))
             }
             SlotContent::F32 {
                 width,
@@ -81,7 +88,14 @@ impl SlotContent {
             } => {
                 let (x, y, tx, ty) = bilinear_coords(*width, *height, u, v)?;
                 let read = |px: usize, py: usize| values[py * *width + px];
-                Some(lerp4(read(x, y), read(x + 1, y), read(x, y + 1), read(x + 1, y + 1), tx, ty))
+                Some(lerp4(
+                    read(x, y),
+                    read(x + 1, y),
+                    read(x, y + 1),
+                    read(x + 1, y + 1),
+                    tx,
+                    ty,
+                ))
             }
             SlotContent::Failed(_) => None,
         }
@@ -146,10 +160,12 @@ fn write_mesh_json(out_dir: &str, mesh: &rw4::mesh::DecodedMesh) -> std::io::Res
             .components
             .iter()
             .find_map(|(e, val)| {
-                (e.usage == rw4::DeclarationUsage::TexCoord).then_some(()).and_then(|_| match val {
-                    rw4::ComponentValue::Float4(f) => Some([f[2], f[3]]),
-                    _ => None,
-                })
+                (e.usage == rw4::DeclarationUsage::TexCoord)
+                    .then_some(())
+                    .and_then(|_| match val {
+                        rw4::ComponentValue::Float4(f) => Some([f[2], f[3]]),
+                        _ => None,
+                    })
             })
             .unwrap_or([0.0; 2]);
         let c = v.d3d_color_g().unwrap_or(0);
@@ -200,7 +216,11 @@ fn main() {
         .map(|value| value.parse().unwrap_or_else(|e| panic!("bad --col: {e}")))
         .unwrap_or(0);
     let binding_index: usize = flag("binding")
-        .map(|value| value.parse().unwrap_or_else(|e| panic!("bad --binding: {e}")))
+        .map(|value| {
+            value
+                .parse()
+                .unwrap_or_else(|e| panic!("bad --binding: {e}"))
+        })
         .unwrap_or(0);
     std::fs::create_dir_all(&out_dir).unwrap_or_else(|error| panic!("create {out_dir}: {error}"));
 
@@ -228,15 +248,12 @@ fn main() {
             binding.mesh_section, binding.material_section, binding.unknown2
         );
     }
-    let binding = bindings
-        .get(binding_index)
-        .copied()
-        .unwrap_or_else(|| {
-            panic!(
-                "binding index {binding_index} out of range ({} bindings)",
-                bindings.len()
-            )
-        });
+    let binding = bindings.get(binding_index).copied().unwrap_or_else(|| {
+        panic!(
+            "binding index {binding_index} out of range ({} bindings)",
+            bindings.len()
+        )
+    });
     match file.decode_mesh(&data, binding.mesh_section) {
         Ok(mesh) => {
             if let Err(error) = write_mesh_json(&out_dir, &mesh) {
@@ -253,7 +270,11 @@ fn main() {
         .iter()
         .map(|r| (r.slot, r.texture_instance))
         .collect();
-    println!("\nmaterial#{}：{} 个槽", binding.material_section, refs.len());
+    println!(
+        "\nmaterial#{}：{} 个槽",
+        binding.material_section,
+        refs.len()
+    );
 
     // ---- 逐槽解析 ----
     let mut slots: Vec<(u32, SlotContent)> = Vec::new();
@@ -264,12 +285,12 @@ fn main() {
         let content = resolve_slot(&packages, &paths, texture_instance);
         let (width, height) = content.size();
         match &content {
-            SlotContent::Rgba { .. } => println!(
-                "  slot{slot:<2} 0x{texture_instance:08X}  RGBA {width}x{height}"
-            ),
-            SlotContent::F32 { .. } => println!(
-                "  slot{slot:<2} 0x{texture_instance:08X}  F32  {width}x{height}"
-            ),
+            SlotContent::Rgba { .. } => {
+                println!("  slot{slot:<2} 0x{texture_instance:08X}  RGBA {width}x{height}")
+            }
+            SlotContent::F32 { .. } => {
+                println!("  slot{slot:<2} 0x{texture_instance:08X}  F32  {width}x{height}")
+            }
             SlotContent::Failed(reason) => {
                 println!("  slot{slot:<2} 0x{texture_instance:08X}  失败: {reason}")
             }
@@ -280,7 +301,13 @@ fn main() {
                 width,
                 height,
                 pixels,
-            } => save_png(&out_dir, &format!("slot{slot}.png"), *width, *height, pixels),
+            } => save_png(
+                &out_dir,
+                &format!("slot{slot}.png"),
+                *width,
+                *height,
+                pixels,
+            ),
             SlotContent::F32 {
                 width,
                 height,
@@ -297,7 +324,13 @@ fn main() {
                         ]
                     })
                     .collect();
-                save_png(&out_dir, &format!("slot{slot}_f32.png"), *width, *height, &pixels);
+                save_png(
+                    &out_dir,
+                    &format!("slot{slot}_f32.png"),
+                    *width,
+                    *height,
+                    &pixels,
+                );
             }
             SlotContent::Failed(_) => {}
         }
@@ -352,10 +385,7 @@ fn main() {
     // 全列 row1：每顶点经 uv1.x 选列（col 只是预览列），门窗分布要看全部区域
     println!("\n全列 row1(regionXform)：");
     for c in 0..param_w {
-        let r1 = param_values
-            .get(param_w + c)
-            .copied()
-            .unwrap_or([0.0; 4]);
+        let r1 = param_values.get(param_w + c).copied().unwrap_or([0.0; 4]);
         println!(
             "  col{c:>3}: scale=({:.5},{:.5}) off=({:.5},{:.5})",
             r1[0], r1[1], r1[2], r1[3]
@@ -416,8 +446,14 @@ fn main() {
             let at = (y * OUT_SIZE + x) * 4;
             let u = (x as f32 + 0.5) / OUT_SIZE as f32;
             let v = (y as f32 + 0.5) / OUT_SIZE as f32;
-            let base_uv = [fract(u) * xform[0] + xform[2], fract(v) * xform[1] + xform[3]];
-            let top_uv = [fract(u) * xform2[0] + xform2[2], fract(v) * xform2[1] + xform2[3]];
+            let base_uv = [
+                fract(u) * xform[0] + xform[2],
+                fract(v) * xform[1] + xform[3],
+            ];
+            let top_uv = [
+                fract(u) * xform2[0] + xform2[2],
+                fract(v) * xform2[1] + xform2[3],
+            ];
 
             let tint_base = tint
                 .and_then(|c| c.sample(base_uv[0], base_uv[1]))
@@ -432,8 +468,14 @@ fn main() {
             let sc_facade = if has_top { tint_top[3] } else { 0.0 };
 
             // 调色板查表：U 以 palU/palU2 为基列，V 为色行（+子采样偏移）。
-            let sub_base = [tint_base[0] / 512.0 + 1.0 / 1024.0, tint_base[1] / 16.0 + 1.0 / 32.0];
-            let sub_top = [tint_top[0] / 512.0 + 1.0 / 1024.0, tint_top[1] / 16.0 + 1.0 / 32.0];
+            let sub_base = [
+                tint_base[0] / 512.0 + 1.0 / 1024.0,
+                tint_base[1] / 16.0 + 1.0 / 32.0,
+            ];
+            let sub_top = [
+                tint_top[0] / 512.0 + 1.0 / 1024.0,
+                tint_top[1] / 16.0 + 1.0 / 32.0,
+            ];
             let pal_color = match palette {
                 Some(pal) => {
                     let base = pal.fetch(pal_origin[0] + sub_base[0], sub_base[1]);
@@ -491,8 +533,20 @@ fn main() {
     }
     save_png(&out_dir, "compose_albedo.png", OUT_SIZE, OUT_SIZE, &albedo);
     save_png(&out_dir, "compose_ao.png", OUT_SIZE, OUT_SIZE, &ao_out);
-    save_png(&out_dir, "compose_windows_a.png", OUT_SIZE, OUT_SIZE, &win_out);
-    save_png(&out_dir, "compose_tint_b.png", OUT_SIZE, OUT_SIZE, &tint_b_out);
+    save_png(
+        &out_dir,
+        "compose_windows_a.png",
+        OUT_SIZE,
+        OUT_SIZE,
+        &win_out,
+    );
+    save_png(
+        &out_dir,
+        "compose_tint_b.png",
+        OUT_SIZE,
+        OUT_SIZE,
+        &tint_b_out,
+    );
 
     println!("\n输出目录 {out_dir}：");
     println!("  slot*.png            逐槽原图（slot0 为参数表，slot4 为调色板）");

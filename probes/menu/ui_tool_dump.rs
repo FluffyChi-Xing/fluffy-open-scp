@@ -64,7 +64,10 @@ fn i32_at(file: &PropertyFile, hash: u32) -> Option<i32> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let out_json = PathBuf::from(args.first().expect("usage: ui_tool_dump <out.json> <icon-dir> <package...>"));
+    let out_json = PathBuf::from(
+        args.first()
+            .expect("usage: ui_tool_dump <out.json> <icon-dir> <package...>"),
+    );
     let icon_dir = PathBuf::from(args.get(1).expect("missing icon-dir"));
     std::fs::create_dir_all(&icon_dir).expect("create icon dir");
     let packages = &args[2..];
@@ -80,7 +83,9 @@ fn main() {
             for cap in existing.split("iconStates\": \"").skip(1) {
                 let field = cap.split('"').next().unwrap_or("");
                 for kv in field.split(',') {
-                    let Some((_, tgi)) = kv.split_once(':') else { continue };
+                    let Some((_, tgi)) = kv.split_once(':') else {
+                        continue;
+                    };
                     let mut parts = tgi.split('-');
                     let (Some(t), Some(g), Some(i)) = (parts.next(), parts.next(), parts.next())
                     else {
@@ -111,8 +116,12 @@ fn main() {
             if instance_type != 0x8A01 && instance_type != 0xC900 {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             let mut row: BTreeMap<String, String> = BTreeMap::new();
             row.insert("instance".into(), format!("{:08X}", entry.id.instance));
             row.insert("menuType".into(), format!("{instance_type:04X}"));
@@ -156,7 +165,9 @@ fn main() {
     // 提取图标：按完整 TGI 精确匹配
     let mut extracted = 0usize;
     for path in packages {
-        let Ok(package) = dbpf::Package::open(path) else { continue };
+        let Ok(package) = dbpf::Package::open(path) else {
+            continue;
+        };
         for entry in package.entries() {
             if entry.id.type_id != TYPE_PNG && entry.id.type_id != TYPE_JPG {
                 continue;
@@ -165,7 +176,11 @@ fn main() {
             if !wanted_icons.contains(&tgi) {
                 continue;
             }
-            let ext = if entry.id.type_id == TYPE_PNG { "png" } else { "jpg" };
+            let ext = if entry.id.type_id == TYPE_PNG {
+                "png"
+            } else {
+                "jpg"
+            };
             let out = icon_dir.join(format!("{:08X}-{ext}", entry.id.instance));
             if out.exists() {
                 continue;
@@ -183,7 +198,11 @@ fn main() {
         a.get("uiPosition")
             .and_then(|v| v.parse::<i32>().ok())
             .unwrap_or(i32::MAX)
-            .cmp(&b.get("uiPosition").and_then(|v| v.parse::<i32>().ok()).unwrap_or(i32::MAX))
+            .cmp(
+                &b.get("uiPosition")
+                    .and_then(|v| v.parse::<i32>().ok())
+                    .unwrap_or(i32::MAX),
+            )
             .then_with(|| a.get("instance").cmp(&b.get("instance")))
     });
 

@@ -19,30 +19,62 @@ struct Brush {
     stamps: Vec<(f32, f32)>,
 }
 
-
 // ---- 正确选表：城市单条组显式引用区域；表按城市 id 交集选择 ----
 fn find_plot_positions(p: &dbpf::Package, region: u32) -> Option<Vec<(f32, f32)>> {
     let mut city_ids: Vec<u32> = Vec::new();
     for e in p.entries() {
-        if e.id.type_id != 0x00B1_B104 || e.compressed_size > 60 { continue; }
-        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
-        if let Some(sc_properties::Property { kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(k)), .. }) = pf.get(0xC194_9C4D) {
-            if k.instance == 0x51E7_A18D && k.group == region { city_ids.push(e.id.group); }
+        if e.id.type_id != 0x00B1_B104 || e.compressed_size > 60 {
+            continue;
+        }
+        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else {
+            continue;
+        };
+        if let Some(sc_properties::Property {
+            kind: sc_properties::Kind::Scalar(sc_properties::Value::Key(k)),
+            ..
+        }) = pf.get(0xC194_9C4D)
+        {
+            if k.instance == 0x51E7_A18D && k.group == region {
+                city_ids.push(e.id.group);
+            }
         }
     }
     let set: std::collections::HashSet<u32> = city_ids.iter().copied().collect();
     let mut best: Option<(usize, Vec<(f32, f32)>)> = None;
     for e in p.entries() {
-        if e.id.type_id != 0x00B1_B104 || e.id.instance != 0x2B9C_480C { continue; }
-        let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
+        if e.id.type_id != 0x00B1_B104 || e.id.instance != 0x2B9C_480C {
+            continue;
+        }
+        let Ok(pt) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else {
+            continue;
+        };
         let ids: Vec<u32> = match pt.get(0x16B7_B1EF) {
-            Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) => vs.iter().filter_map(|v| match v { sc_properties::Value::UInt32(x) => Some(*x), _ => None }).collect(),
+            Some(sc_properties::Property {
+                kind: sc_properties::Kind::Array(vs),
+                ..
+            }) => vs
+                .iter()
+                .filter_map(|v| match v {
+                    sc_properties::Value::UInt32(x) => Some(*x),
+                    _ => None,
+                })
+                .collect(),
             _ => continue,
         };
         let ov = ids.iter().filter(|i| set.contains(i)).count();
         if best.as_ref().map(|(b, _)| ov > *b).unwrap_or(true) {
-            if let Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) = pt.get(0xF01D_E4B1) {
-                let pos: Vec<(f32, f32)> = vs.iter().filter_map(|v| match v { sc_properties::Value::Vector2(v) => Some((v[0], v[1])), _ => None }).collect();
+            if let Some(sc_properties::Property {
+                kind: sc_properties::Kind::Array(vs),
+                ..
+            }) = pt.get(0xF01D_E4B1)
+            {
+                let pos: Vec<(f32, f32)> = vs
+                    .iter()
+                    .filter_map(|v| match v {
+                        sc_properties::Value::Vector2(v) => Some((v[0], v[1])),
+                        _ => None,
+                    })
+                    .collect();
                 best = Some((ov, pos));
             }
         }
@@ -66,7 +98,10 @@ fn main() {
             "--gw" => {
                 let wx = args.next().unwrap_or_default();
                 let wy = args.next().unwrap_or_default();
-                gw = Some((wx.trim().parse().unwrap_or(0.0), wy.trim().parse().unwrap_or(0.0)));
+                gw = Some((
+                    wx.trim().parse().unwrap_or(0.0),
+                    wy.trim().parse().unwrap_or(0.0),
+                ));
             }
             _ => {}
         }
@@ -79,20 +114,37 @@ fn main() {
         if e.id.type_id == 0x03E4_21F0 && e.id.group == group {
             let d = p.read(e).unwrap();
             if d.len() == 131092 {
-                f0.insert(e.id.instance, d[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+                f0.insert(
+                    e.id.instance,
+                    d[20..]
+                        .chunks_exact(2)
+                        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                        .collect(),
+                );
             }
         }
     }
     let mut f0g = [[0u32; 16]; 16];
-    for (y, line) in std::fs::read_to_string(&f0_grid_file).unwrap().lines().filter(|l| !l.trim().is_empty()).take(16).enumerate() {
-        for (x, v) in line.split(',').take(16).enumerate() { f0g[y][x] = u32::from_str_radix(v.trim(), 16).unwrap_or(0); }
+    for (y, line) in std::fs::read_to_string(&f0_grid_file)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .take(16)
+        .enumerate()
+    {
+        for (x, v) in line.split(',').take(16).enumerate() {
+            f0g[y][x] = u32::from_str_radix(v.trim(), 16).unwrap_or(0);
+        }
     }
     let w = 4096usize;
     let mut hgt = vec![0u16; w * w];
     for (ty, row) in f0g.iter().enumerate() {
         for (tx, i) in row.iter().enumerate() {
             if let Some(px) = f0.get(i) {
-                for y in 0..256 { hgt[(ty * 256 + y) * w + tx * 256..(ty * 256 + y) * w + tx * 256 + 256].copy_from_slice(&px[y * 256..(y + 1) * 256]); }
+                for y in 0..256 {
+                    hgt[(ty * 256 + y) * w + tx * 256..(ty * 256 + y) * w + tx * 256 + 256]
+                        .copy_from_slice(&px[y * 256..(y + 1) * 256]);
+                }
             }
         }
     }
@@ -103,13 +155,27 @@ fn main() {
         if e.id.type_id == 0x03E4_21ED && e.id.group == group {
             let d = p.read(e).unwrap();
             if d.len() == 65556 {
-                ed.insert(e.id.instance, d[20..].chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect());
+                ed.insert(
+                    e.id.instance,
+                    d[20..]
+                        .chunks_exact(4)
+                        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                        .collect(),
+                );
             }
         }
     }
     let mut edg = [[0u32; 16]; 16];
-    for (y, line) in std::fs::read_to_string(&ed_grid_file).unwrap().lines().filter(|l| !l.trim().is_empty()).take(16).enumerate() {
-        for (x, v) in line.split(',').take(16).enumerate() { edg[y][x] = u32::from_str_radix(v.trim(), 16).unwrap_or(0); }
+    for (y, line) in std::fs::read_to_string(&ed_grid_file)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .take(16)
+        .enumerate()
+    {
+        for (x, v) in line.split(',').take(16).enumerate() {
+            edg[y][x] = u32::from_str_radix(v.trim(), 16).unwrap_or(0);
+        }
     }
     let wm = 2048usize;
     let mut ed0 = vec![0u8; wm * wm]; // forest/road
@@ -132,12 +198,18 @@ fn main() {
     }
     let ed_at = |x: usize, y: usize| -> (u8, u8, u8) {
         let e = ed1[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)];
-        (ed0[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)], e, ed2[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)])
+        (
+            ed0[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)],
+            e,
+            ed2[(y / 2).min(wm - 1) * wm + (x / 2).min(wm - 1)],
+        )
     };
 
     // ---- 水位面：全游戏统一常量 ≈3336（三区域交叉实证，2026-09-23）----
     let mut sea = 3336i32;
-    if let Some(w) = water_override { sea = w; }
+    if let Some(w) = water_override {
+        sea = w;
+    }
 
     // ---- 地块（城市 id 交集选表）----
     let plots: Vec<(f32, f32)> = find_plot_positions(&p, group).unwrap_or_default();
@@ -146,57 +218,107 @@ fn main() {
     // ---- 画刷（本组内 00B2CCCA 名含 brushes/Brushes 的属性）----
     let mut brushes: Vec<Brush> = Vec::new();
     for e in p.entries() {
-        if e.id.type_id != 0x00B1_B104 || e.id.group != group { continue; }
-        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else { continue };
-        let Some(name_prop) = pf.get(0x00B2_CCCA) else { continue };
-        let sc_properties::Kind::Scalar(sc_properties::Value::String8(name)) = &name_prop.kind else { continue };
-        if !(name.ends_with("brushes") || name.ends_with("Brushes")) { continue; }
+        if e.id.type_id != 0x00B1_B104 || e.id.group != group {
+            continue;
+        }
+        let Ok(pf) = sc_properties::PropertyFile::parse(&p.read(e).unwrap()) else {
+            continue;
+        };
+        let Some(name_prop) = pf.get(0x00B2_CCCA) else {
+            continue;
+        };
+        let sc_properties::Kind::Scalar(sc_properties::Value::String8(name)) = &name_prop.kind
+        else {
+            continue;
+        };
+        if !(name.ends_with("brushes") || name.ends_with("Brushes")) {
+            continue;
+        }
         let mut stamps = Vec::new();
-        if let Some(sc_properties::Property { kind: sc_properties::Kind::Array(vs), .. }) = pf.get(0x02A9_07B6) {
+        if let Some(sc_properties::Property {
+            kind: sc_properties::Kind::Array(vs),
+            ..
+        }) = pf.get(0x02A9_07B6)
+        {
             for v in vs {
                 if let sc_properties::Value::Transform(t) = v {
                     stamps.push((t.matrix[9], t.matrix[10]));
                 }
             }
         }
-        let mapidx = pf.get(0x0DE4_3899).map(|pp| match &pp.kind {
-            sc_properties::Kind::Scalar(sc_properties::Value::UInt32(x)) => *x as i32, _ => -1 }).unwrap_or(-1);
-        println!("brush {} (mapidx {mapidx}): {} stamps at {:?}", name, stamps.len(), stamps);
-        brushes.push(Brush { target: name.clone(), mapidx, stamps });
+        let mapidx = pf
+            .get(0x0DE4_3899)
+            .map(|pp| match &pp.kind {
+                sc_properties::Kind::Scalar(sc_properties::Value::UInt32(x)) => *x as i32,
+                _ => -1,
+            })
+            .unwrap_or(-1);
+        println!(
+            "brush {} (mapidx {mapidx}): {} stamps at {:?}",
+            name,
+            stamps.len(),
+            stamps
+        );
+        brushes.push(Brush {
+            target: name.clone(),
+            mapidx,
+            stamps,
+        });
     }
 
     // ---- 区域整体荒漠度（land 上 b1 均值 < 20 → 沙漠：无草无树全沙色）----
-    let mut b1_sum = 0f64; let mut b1_n = 0f64;
+    let mut b1_sum = 0f64;
+    let mut b1_n = 0f64;
     {
         let bs = w / 64;
         let mut b1acc = vec![0f64; 64 * 64];
-        for y in (0..w).step_by(4) { for x in (0..w).step_by(4) {
-            let h = hgt[y * w + x];
-            if h > (sea + 100) as u16 && h != 0 {
-                b1acc[(y / bs) * 64 + (x / bs)] += f64::from(ed_at(x, y).1);
-                b1_n += 1.0;
+        for y in (0..w).step_by(4) {
+            for x in (0..w).step_by(4) {
+                let h = hgt[y * w + x];
+                if h > (sea + 100) as u16 && h != 0 {
+                    b1acc[(y / bs) * 64 + (x / bs)] += f64::from(ed_at(x, y).1);
+                    b1_n += 1.0;
+                }
             }
-        }}
-        for k in 0..64 * 64 { if b1acc[k] > 0.0 { b1_sum += b1acc[k]; } }
+        }
+        for k in 0..64 * 64 {
+            if b1acc[k] > 0.0 {
+                b1_sum += b1acc[k];
+            }
+        }
     }
-    let mean_b1 = if b1_n > 0.0 { b1_sum / b1_n.max(1.0) } else { 0.0 };
+    let mean_b1 = if b1_n > 0.0 {
+        b1_sum / b1_n.max(1.0)
+    } else {
+        0.0
+    };
     let desert = mean_b1 < 20.0;
     println!("region mean b1 = {mean_b1:.1} → desert mode: {desert}");
 
     // ---- 裁剪：地块包围盒 + 2560m 边距 ----
-    let mut x0c = w; let mut x1c = 0usize; let mut y0c = w; let mut y1c = 0usize;
+    let mut x0c = w;
+    let mut x1c = 0usize;
+    let mut y0c = w;
+    let mut y1c = 0usize;
     if !plots.is_empty() {
         for (wx, wy) in &plots {
             let cx = ((wx + 16384.0) / 8.0) as usize;
             let cy = ((wy + 16384.0) / 8.0) as usize;
-            x0c = x0c.min(cx.saturating_sub(320)); x1c = x1c.max(cx + 320);
-            y0c = y0c.min(cy.saturating_sub(320)); y1c = y1c.max(cy + 320);
+            x0c = x0c.min(cx.saturating_sub(320));
+            x1c = x1c.max(cx + 320);
+            y0c = y0c.min(cy.saturating_sub(320));
+            y1c = y1c.max(cy + 320);
         }
         let m = 320usize; // 2560m 边距
-        x0c = x0c.saturating_sub(m); x1c = (x1c + m).min(w);
-        y0c = y0c.saturating_sub(m); y1c = (y1c + m).min(w);
+        x0c = x0c.saturating_sub(m);
+        x1c = (x1c + m).min(w);
+        y0c = y0c.saturating_sub(m);
+        y1c = (y1c + m).min(w);
     } else {
-        x0c = 0; x1c = w; y0c = 0; y1c = w;
+        x0c = 0;
+        x1c = w;
+        y0c = 0;
+        y1c = w;
     }
 
     // ---- 上色渲染 ----
@@ -206,11 +328,15 @@ fn main() {
     {
         let bs = w / 64;
         let mut acc = vec![0u64; 64 * 64];
-        for y in 0..w { for x in 0..w {
-            acc[(y / bs) * 64 + (x / bs)] += u64::from(hgt[y * w + x]);
-        }}
+        for y in 0..w {
+            for x in 0..w {
+                acc[(y / bs) * 64 + (x / bs)] += u64::from(hgt[y * w + x]);
+            }
+        }
         let per = (bs * bs) as u64;
-        for k in 0..64 * 64 { blk[k] = (acc[k] / per) as i32; }
+        for k in 0..64 * 64 {
+            blk[k] = (acc[k] / per) as i32;
+        }
     }
     let mut img = image::RgbImage::new((x1c - x0c) as u32, (y1c - y0c) as u32);
     for y in y0c..y1c {
@@ -232,13 +358,19 @@ fn main() {
                 b = (190.0 - 60.0 * d) * (0.6 + 0.4 * light);
             } else {
                 // 陆地：草量 = 湿度(b1) × 平缓度（陡坡露岩石，山上平地也是草）
-                let grass_k = if desert { 0.0 } else { (grass as f32 / 120.0).clamp(0.0, 1.0) };
+                let grass_k = if desert {
+                    0.0
+                } else {
+                    (grass as f32 / 120.0).clamp(0.0, 1.0)
+                };
                 let slope = ((dx * dx + dy * dy) as f32).sqrt() / 60.0;
                 let slope_k = (slope / 1.6).clamp(0.0, 1.0);
                 let g_amt = (grass_k * (1.0 - slope_k * 0.85)).clamp(0.0, 1.0);
                 if rel < 350 {
                     // 沙岸
-                    r = 190.0; g = 175.0; b = 130.0;
+                    r = 190.0;
+                    g = 175.0;
+                    b = 130.0;
                 } else {
                     // 草绿 ↔ 岩棕 按草量混合
                     let t = ((rel - 350) as f32 / 6000.0).clamp(0.0, 1.0);
@@ -252,28 +384,52 @@ fn main() {
                 // 森林斑点（荒漠模式禁用）
                 if !desert && (100..=120).contains(&f) {
                     let d = 1.0 - (f as f32 - 100.0) / 20.0;
-                    r *= 1.0 - 0.5 * d; g *= 1.0 - 0.1 * d; b *= 1.0 - 0.5 * d;
+                    r *= 1.0 - 0.5 * d;
+                    g *= 1.0 - 0.1 * d;
+                    b *= 1.0 - 0.5 * d;
                 }
                 // 道路
-                if f == 15 { r = 130.0; g = 122.0; b = 112.0; }
+                if f == 15 {
+                    r = 130.0;
+                    g = 122.0;
+                    b = 112.0;
+                }
             }
             let shade = 0.45 + 0.55 * light;
-            r *= shade; g *= shade; b *= shade;
-            img.put_pixel((x - x0c) as u32, (y - y0c) as u32, image::Rgb([r as u8, g as u8, b as u8]));
+            r *= shade;
+            g *= shade;
+            b *= shade;
+            img.put_pixel(
+                (x - x0c) as u32,
+                (y - y0c) as u32,
+                image::Rgb([r as u8, g as u8, b as u8]),
+            );
         }
     }
 
     // ---- 资源画刷环 + 地块框（裁剪坐标系）----
     let colors: [(&str, [u8; 3]); 8] = [
-        ("coal", [40, 40, 40]), ("oil", [20, 20, 20]), ("ore", [200, 150, 0]),
-        ("watertable", [0, 120, 255]), ("radiation", [0, 220, 60]),
-        ("soil", [150, 100, 50]), ("forest", [0, 150, 0]), ("groundpollution", [160, 60, 200]),
+        ("coal", [40, 40, 40]),
+        ("oil", [20, 20, 20]),
+        ("ore", [200, 150, 0]),
+        ("watertable", [0, 120, 255]),
+        ("radiation", [0, 220, 60]),
+        ("soil", [150, 100, 50]),
+        ("forest", [0, 150, 0]),
+        ("groundpollution", [160, 60, 200]),
     ];
     let ring_color = |target: &str| -> [u8; 3] {
-        colors.iter().find(|(n, _)| target.starts_with(n)).map(|(_, c)| *c).unwrap_or([255, 0, 255])
+        colors
+            .iter()
+            .find(|(n, _)| target.starts_with(n))
+            .map(|(_, c)| *c)
+            .unwrap_or([255, 0, 255])
     };
     let world_to_px = |wx: f32, wy: f32| -> (usize, usize) {
-        (((wx + 16384.0) / 8.0) as usize, ((wy + 16384.0) / 8.0) as usize)
+        (
+            ((wx + 16384.0) / 8.0) as usize,
+            ((wy + 16384.0) / 8.0) as usize,
+        )
     };
     for br in &brushes {
         let c = ring_color(&br.target);
@@ -286,7 +442,8 @@ fn main() {
                 for t in [rad, rad + 2] {
                     let px = (cx as f32 + dx * t as f32) as isize;
                     let py = (cy as f32 + dy * t as f32) as isize;
-                    if px >= 0 && py >= 0 && (px as usize) < x1c - x0c && (py as usize) < y1c - y0c {
+                    if px >= 0 && py >= 0 && (px as usize) < x1c - x0c && (py as usize) < y1c - y0c
+                    {
                         img.put_pixel(px as u32, py as u32, image::Rgb(c));
                     }
                 }
@@ -312,9 +469,17 @@ fn main() {
     }
     for (wx, wy) in &plots {
         let (cx, cy) = world_to_px(*wx, *wy);
-        let (x0, y0) = (cx as isize - x0c as isize - 128, cy as isize - y0c as isize - 128);
+        let (x0, y0) = (
+            cx as isize - x0c as isize - 128,
+            cy as isize - y0c as isize - 128,
+        );
         for t in 0..256isize {
-            for &(xx, yy) in &[(x0 + t, y0), (x0 + t, y0 + 255), (x0, y0 + t), (x0 + 255, y0 + t)] {
+            for &(xx, yy) in &[
+                (x0 + t, y0),
+                (x0 + t, y0 + 255),
+                (x0, y0 + t),
+                (x0 + 255, y0 + t),
+            ] {
                 if xx >= 0 && yy >= 0 && (xx as usize) < x1c - x0c && (yy as usize) < y1c - y0c {
                     img.put_pixel(xx as u32, yy as u32, image::Rgb([255, 210, 0]));
                 }
@@ -325,7 +490,10 @@ fn main() {
         for br in &brushes {
             for (bx, by) in &br.stamps {
                 let d = ((bx - wx).powi(2) + (by - wy).powi(2)).sqrt();
-                if d < 1024.0 { got.push(br.target.trim_end_matches("heightmap")); break; }
+                if d < 1024.0 {
+                    got.push(br.target.trim_end_matches("heightmap"));
+                    break;
+                }
             }
         }
         println!("plot ({wx:.0},{wy:.0}): resources = {:?}", got);

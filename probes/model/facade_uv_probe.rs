@@ -141,7 +141,12 @@ fn main() {
                         _ => {}
                     }
                 }
-                writeln!(out, "{px},{py},{pz},{col},{},{},{},{}", tc0[0], tc0[1], tc0[2], tc0[3]).unwrap();
+                writeln!(
+                    out,
+                    "{px},{py},{pz},{col},{},{},{},{}",
+                    tc0[0], tc0[1], tc0[2], tc0[3]
+                )
+                .unwrap();
             }
             println!("  vertex dump -> {path}");
             // 退化三角形诊断：真填充应为 (a,a,a)；若大量 (x,x,y) 形态
@@ -205,9 +210,7 @@ fn main() {
                 }
                 writeln!(tout, "{},{},{},{},{},{}", t[0], t[1], t[2], ca, cb, cc).unwrap();
             }
-            println!(
-                "  triangles: {total} ({mixed} mixed-column) -> {tris_path}"
-            );
+            println!("  triangles: {total} ({mixed} mixed-column) -> {tris_path}");
             // 参数表全量 CSV（col,row0..row3）：软渲染复现用
             let params_path = path.replace(".csv", "_params.csv");
             let params = file
@@ -218,9 +221,8 @@ fn main() {
                 .and_then(|t| t.decode_palette_f32().ok());
             if let Some(values) = params {
                 let pw = values.len() / 4;
-                let mut pout = std::io::BufWriter::new(
-                    std::fs::File::create(&params_path).expect("create"),
-                );
+                let mut pout =
+                    std::io::BufWriter::new(std::fs::File::create(&params_path).expect("create"));
                 writeln!(pout, "col,row,row0,row1,row2,row3").unwrap();
                 for c in 0..pw {
                     for r in 0..4 {

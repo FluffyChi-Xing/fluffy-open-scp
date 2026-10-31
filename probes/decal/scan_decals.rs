@@ -80,15 +80,23 @@ fn main() {
                 hits += 1;
                 println!(
                     "[HIT] {} T{:08X} G{:08X} I{:08X} size={} script={} group1={} decalset={}",
-                    pkg_name, id.type_id, id.group, id.instance,
-                    data.len(), has_script, has_group1, has_decalset
+                    pkg_name,
+                    id.type_id,
+                    id.group,
+                    id.instance,
+                    data.len(),
+                    has_script,
+                    has_group1,
+                    has_decalset
                 );
                 if has_script {
                     let fname = format!(
                         "{}/{}_{:08X}_{:08X}_{:08X}.bin",
                         out_dir.display(),
                         pkg_name.trim_end_matches(".package"),
-                        id.type_id, id.group, id.instance
+                        id.type_id,
+                        id.group,
+                        id.instance
                     );
                     fs::write(&fname, data).ok();
                     println!("  dumped -> {fname}");

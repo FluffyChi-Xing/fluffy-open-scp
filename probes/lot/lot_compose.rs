@@ -84,8 +84,9 @@ fn main() {
     let file = PropertyFile::parse(&data).expect("parse lot property");
     let file = if args.inherit {
         let (merged, chain) = sc_properties::flatten_parent_inheritance_traced(file, |key| {
-            let (owner, parent_entry) = find_entry(&packages, LOT_TYPE, key.instance, Some(key.group))
-                .or_else(|| find_entry(&packages, LOT_TYPE, key.instance, None))?;
+            let (owner, parent_entry) =
+                find_entry(&packages, LOT_TYPE, key.instance, Some(key.group))
+                    .or_else(|| find_entry(&packages, LOT_TYPE, key.instance, None))?;
             let data = packages[owner].read(&parent_entry).ok()?;
             PropertyFile::parse(&data).ok()
         });
@@ -106,8 +107,10 @@ fn main() {
     let mask_key = key_at(&file, H_LOT_MASK);
     let textures_key = key_at(&file, H_LOT_TEXTURES);
     let colors: Vec<Option<[f32; 4]>> = H_LOT_COLORS.iter().map(|h| color_at(&file, *h)).collect();
-    let border_colors: Vec<Option<[f32; 4]>> =
-        H_LOT_BORDER_COLORS.iter().map(|h| color_at(&file, *h)).collect();
+    let border_colors: Vec<Option<[f32; 4]>> = H_LOT_BORDER_COLORS
+        .iter()
+        .map(|h| color_at(&file, *h))
+        .collect();
 
     println!("  LotMask        = {}", fmt_key(mask_key));
     println!("  Lot Textures   = {}", fmt_key(textures_key));
@@ -131,7 +134,14 @@ fn main() {
         "\nLotMask raster {}x{} pixFmt={} via {}",
         mask_w, mask_h, raster.pixel_format, paths[mask_owner]
     );
-    save_png(&args.out_dir, "mask_native.png", mask_w, mask_h, &raw_mask, 2);
+    save_png(
+        &args.out_dir,
+        "mask_native.png",
+        mask_w,
+        mask_h,
+        &raw_mask,
+        2,
+    );
     print_channel_stats("LotMask 原始 RGBA", &raw_mask);
     // 朝向对齐后的 mask（= 原始栅格旋转 180°），与游戏内方位一致。
     let mask = orient_mask(&raw_mask, mask_w, mask_h);
@@ -181,7 +191,10 @@ fn main() {
                         ),
                     },
                     Err(error) => {
-                        println!("  texture section {} decode failed: {error}", section.number)
+                        println!(
+                            "  texture section {} decode failed: {error}",
+                            section.number
+                        )
                     }
                 }
             }
@@ -235,10 +248,7 @@ fn main() {
     let normal_idx = atlases
         .iter()
         .enumerate()
-        .max_by(|a, b| {
-            normal_likeness(&a.1.rgba)
-                .total_cmp(&normal_likeness(&b.1.rgba))
-        })
+        .max_by(|a, b| normal_likeness(&a.1.rgba).total_cmp(&normal_likeness(&b.1.rgba)))
         .map(|(index, atlas)| {
             if normal_likeness(&atlas.rgba) > 0.35 {
                 Some(index)
@@ -289,9 +299,7 @@ fn main() {
         .map(|index| colors[index].map_or(to_rgba8(DEFAULT_PALETTE[index]), to_rgba8))
         .collect();
     let borders8: Vec<[u8; 4]> = (0..4)
-        .map(|index| {
-            border_colors[index].map_or(to_rgba8(DEFAULT_PALETTE[index]), to_rgba8)
-        })
+        .map(|index| border_colors[index].map_or(to_rgba8(DEFAULT_PALETTE[index]), to_rgba8))
         .collect();
     // LotColor.A 是**整数索引本体**（实测 3/1/8/3），不是 0..1 的颜色分量，故不走 to_rgba8。
     let normal_index: Vec<usize> = colors
@@ -308,7 +316,10 @@ fn main() {
     );
     println!("colorNormalsIdx (= floor(LotColor.A)) = {normal_index:?}");
     println!("精细模式每通道贴图格 = {normal_index:?}（缺失 LotColor 时全为 0 → 全塌成同一格）");
-    println!("base tile index (--base-tile)  = {}", args.base_tile % ATLAS_CELLS);
+    println!(
+        "base tile index (--base-tile)  = {}",
+        args.base_tile % ATLAS_CELLS
+    );
     println!("borderWidth (--border-width)   = {}", args.border_width);
 
     // 逐通道 borderWidth（属性 0xD7AF046-49；缺失回退 --border-width）。
@@ -406,7 +417,10 @@ fn main() {
     }
 
     let masks = mask_one_hot(&mask, args.border_width);
-    let coverage: Vec<f32> = masks.iter().map(|(m, _)| m.iter().sum::<f32>().min(1.0)).collect();
+    let coverage: Vec<f32> = masks
+        .iter()
+        .map(|(m, _)| m.iter().sum::<f32>().min(1.0))
+        .collect();
 
     let diffuse = diffuse_idx.and_then(|index| atlases.get(index));
     let normal = normal_idx.and_then(|index| atlases.get(index));
@@ -425,7 +439,14 @@ fn main() {
         &masks,
         &coverage,
     );
-    save_png(&args.out_dir, "compose_albedo.png", mask_w, mask_h, &albedo, 4);
+    save_png(
+        &args.out_dir,
+        "compose_albedo.png",
+        mask_w,
+        mask_h,
+        &albedo,
+        4,
+    );
 
     // (a2) 用 Lot Textures 图集做替换（= 当前渲染器语义 tile_{LotColor.A} × LotColor.RGB，
     //      但叠加已定案的朝向/配对/优先级链），用于与平色版本目视对照。
@@ -451,10 +472,24 @@ fn main() {
         println!("各通道采用的图集格: {normal_index:?}（未覆盖用底图格 {base_tile}）");
     }
     let tiled = compose_tiles(
-        mask_w, mask_h, diffuse, base_tile, &normal_index, &colors8, &masks, &coverage,
+        mask_w,
+        mask_h,
+        diffuse,
+        base_tile,
+        &normal_index,
+        &colors8,
+        &masks,
+        &coverage,
         args.tiles,
     );
-    save_png(&args.out_dir, "compose_tiles.png", mask_w, mask_h, &tiled.0, 4);
+    save_png(
+        &args.out_dir,
+        "compose_tiles.png",
+        mask_w,
+        mask_h,
+        &tiled.0,
+        4,
+    );
 
     // 抗级完整合成（4× 超采样 + 双线性 mask + 边框带）：对齐前端 refinedGround
     // 的曲线平滑渲染，并叠加 LotBorderColor/borderWidth 边框带。
@@ -485,8 +520,22 @@ fn main() {
     // 原始数据诊断图（不引入任何替换色）：
     //   diag_selector  灰阶 = 胜出通道（0 未覆盖 / 64 R / 128 G / 192 B / 255 A）
     //   diag_tileindex 灰阶 = 采用的图集格号 × 17
-    save_png(&args.out_dir, "diag_selector.png", mask_w, mask_h, &tiled.1, 4);
-    save_png(&args.out_dir, "diag_tileindex.png", mask_w, mask_h, &tiled.2, 4);
+    save_png(
+        &args.out_dir,
+        "diag_selector.png",
+        mask_w,
+        mask_h,
+        &tiled.1,
+        4,
+    );
+    save_png(
+        &args.out_dir,
+        "diag_tileindex.png",
+        mask_w,
+        mask_h,
+        &tiled.2,
+        4,
+    );
 
     let mut colors8_rev = colors8.clone();
     colors8_rev.reverse();
@@ -557,7 +606,14 @@ fn main() {
     // (d) v5 预览：复刻前端新逻辑——未覆盖区 alpha=0（此处用洋红标出以便观察），
     //     仅 mask 有内容的区域被替换。用于确认"只填充有颜色的区域"。
     let v5 = compose_v5_preview(mask_w, mask_h, &colors8, &masks);
-    save_png(&args.out_dir, "compose_v5_preview.png", mask_w, mask_h, &v5, 4);
+    save_png(
+        &args.out_dir,
+        "compose_v5_preview.png",
+        mask_w,
+        mask_h,
+        &v5,
+        4,
+    );
 
     println!("\n输出目录 {}：", args.out_dir);
     println!("  mask_*.png            四通道灰度 + 原图（看 mask 形态）");
@@ -578,7 +634,11 @@ struct Atlas {
 
 impl Atlas {
     fn new(width: usize, rgba: Vec<u8>) -> Self {
-        let height = if width == 0 { 0 } else { rgba.len() / 4 / width };
+        let height = if width == 0 {
+            0
+        } else {
+            rgba.len() / 4 / width
+        };
         let cells = (0..ATLAS_CELLS)
             .map(|index| extract_cell(&rgba, width, height, index))
             .collect();
@@ -665,13 +725,7 @@ fn extract_cell(rgba: &[u8], width: usize, height: usize, index: usize) -> (usiz
 /// `greaterThan(mask, 0.5 - borderWidth)`，并按 shader 的优先级链消除重叠：
 /// 返回 (masks, borderMask)，两者各自至多一个通道为 1。
 /// mask 双线性采样（半 texel 中心 + clamp-to-edge，= 前端/引擎 GPU 口径）。
-fn sample_mask_bilinear(
-    raw: &[u8],
-    w: usize,
-    h: usize,
-    u: f32,
-    v: f32,
-) -> [f32; 4] {
+fn sample_mask_bilinear(raw: &[u8], w: usize, h: usize, u: f32, v: f32) -> [f32; 4] {
     let fx = (u * w as f32 - 0.5).clamp(0.0, (w - 1) as f32);
     let fy = (v * h as f32 - 0.5).clamp(0.0, (h - 1) as f32);
     let x0 = fx.floor() as usize;
@@ -680,9 +734,7 @@ fn sample_mask_bilinear(
     let y1 = (y0 + 1).min(h - 1);
     let tx = fx - x0 as f32;
     let ty = fy - y0 as f32;
-    let at = |x: usize, y: usize, c: usize| {
-        raw[((y * w + x) * 4 + c) as usize] as f32 / 255.0
-    };
+    let at = |x: usize, y: usize, c: usize| raw[((y * w + x) * 4 + c) as usize] as f32 / 255.0;
     let mut out = [0.0f32; 4];
     for c in 0..4 {
         let top = at(x0, y0, c) * (1.0 - tx) + at(x1, y0, c) * tx;
@@ -695,10 +747,7 @@ fn sample_mask_bilinear(
 /// addOverlay 精确语义（tmp/shaders cpp 转储逐字）：
 /// 8 级优先瀑布 A边框 > A主色 > B边框 > B主色 > G边框 > G主色 > R边框 > R主色，
 /// overlayMask = 瀑布前各通道 masks 之和（任一通道 > 0.5−bw 即覆盖）。
-fn overlay_waterfall(
-    value: [f32; 4],
-    border_widths: [f32; 4],
-) -> ([f32; 4], [f32; 4], f32) {
+fn overlay_waterfall(value: [f32; 4], border_widths: [f32; 4]) -> ([f32; 4], [f32; 4], f32) {
     let mut masks = [0.0f32; 4];
     let mut borders = [0.0f32; 4];
     for c in 0..4 {
@@ -784,9 +833,7 @@ fn compose_tiles_aa(
                 (0, false),
             ]
             .into_iter()
-            .find(|(ch, is_border)| {
-                (if *is_border { borders[*ch] } else { masks[*ch] }) > 0.0
-            });
+            .find(|(ch, is_border)| (if *is_border { borders[*ch] } else { masks[*ch] }) > 0.0);
 
             let rgb = match winner {
                 // 边框带 = LotBorderColor 平色（引擎里图案进法线不进反照率）。
@@ -816,7 +863,8 @@ fn compose_tiles_aa(
     out
 }
 
-fn mask_one_hot(rgba: &[u8], border_width: f32) -> Vec<([f32; 4], [f32; 4])> {    let mut out = Vec::with_capacity(rgba.len() / 4);
+fn mask_one_hot(rgba: &[u8], border_width: f32) -> Vec<([f32; 4], [f32; 4])> {
+    let mut out = Vec::with_capacity(rgba.len() / 4);
     for px in rgba.as_chunks::<4>().0 {
         let value = [
             px[0] as f32 / 255.0,
@@ -893,8 +941,7 @@ fn compose(
             if let Some(ch) = PRIORITY.iter().copied().find(|ch| mask[*ch] > 0.0)
                 && let Some(px) = pattern(u, v, ch)
             {
-                let luma =
-                    (px[0] as f32 + px[1] as f32 + px[2] as f32) / (3.0 * 255.0);
+                let luma = (px[0] as f32 + px[1] as f32 + px[2] as f32) / (3.0 * 255.0);
                 for component in rgb.iter_mut() {
                     *component *= 0.35 + 0.65 * luma;
                 }
@@ -1075,7 +1122,11 @@ fn parse_args() -> Args {
             .map(|value| value.parse().unwrap_or_else(|e| panic!("bad --tiles: {e}")))
             .unwrap_or(1.0),
         base_tile: flag("base-tile")
-            .map(|value| value.parse().unwrap_or_else(|error| panic!("bad --base-tile: {error}")))
+            .map(|value| {
+                value
+                    .parse()
+                    .unwrap_or_else(|error| panic!("bad --base-tile: {error}"))
+            })
             .unwrap_or(0),
         border_width: flag("border-width")
             .map(|value| {
@@ -1086,7 +1137,10 @@ fn parse_args() -> Args {
             .unwrap_or(0.0),
         placeholder: flag("placeholder"),
         inherit: raw.iter().any(|arg| arg == "--inherit"),
-        lookups: positional[2..].iter().map(|value| (*value).clone()).collect(),
+        lookups: positional[2..]
+            .iter()
+            .map(|value| (*value).clone())
+            .collect(),
     }
 }
 

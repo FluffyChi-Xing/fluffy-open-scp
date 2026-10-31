@@ -41,7 +41,9 @@ fn main() {
             if id.type_id != PROPERTY_TYPE || !sc_properties::is_decal_dictionary_group(id.group) {
                 continue;
             }
-            let Ok(data) = package.read(entry_ref) else { continue };
+            let Ok(data) = package.read(entry_ref) else {
+                continue;
+            };
             let Ok(file) = sc_properties::PropertyFile::parse_with_limits(
                 &data,
                 sc_properties::ParseLimits::default(),
@@ -56,7 +58,9 @@ fn main() {
             let mat = dict.material.as_ref().map(|k| k.instance).unwrap_or(0);
             println!(
                 "字典 0x{:08X}: material=0x{:08X} 条目 {}",
-                id.instance, mat, dict.entries.len()
+                id.instance,
+                mat,
+                dict.entries.len()
             );
             // 破洞族判定（2026-10-05 §11 定谳）：字典材质 = 0x4491DE3A
             // （decalInteriorMap / shader 0x700000D2）。早前"无 Color1-4"
@@ -67,7 +71,9 @@ fn main() {
             for entry in &dict.entries {
                 entries_total += 1;
                 entries_hole += 1;
-                let Some(raster_key) = &entry.raster else { continue };
+                let Some(raster_key) = &entry.raster else {
+                    continue;
+                };
                 // 跨包按 instance 找 RW4 纹理资源
                 let mut found: Option<Vec<u8>> = None;
                 for p in &packages {
@@ -91,7 +97,10 @@ fn main() {
                     continue;
                 };
                 let Ok(rw4file) = rw4::Rw4File::parse(&bytes) else {
-                    println!("条目[{}] raster 0x{:08X}: RW4 解析失败", entry.index, raster_key.instance);
+                    println!(
+                        "条目[{}] raster 0x{:08X}: RW4 解析失败",
+                        entry.index, raster_key.instance
+                    );
                     continue;
                 };
                 let Some(section) = rw4file
@@ -99,15 +108,24 @@ fn main() {
                     .next()
                     .map(|s| s.number)
                 else {
-                    println!("条目[{}] raster 0x{:08X}: 无 TEXTURE 节", entry.index, raster_key.instance);
+                    println!(
+                        "条目[{}] raster 0x{:08X}: 无 TEXTURE 节",
+                        entry.index, raster_key.instance
+                    );
                     continue;
                 };
                 let Ok(texture) = rw4file.decode_texture(&bytes, section) else {
-                    println!("条目[{}] raster 0x{:08X}: 纹理解码失败", entry.index, raster_key.instance);
+                    println!(
+                        "条目[{}] raster 0x{:08X}: 纹理解码失败",
+                        entry.index, raster_key.instance
+                    );
                     continue;
                 };
                 let Ok(rgba) = texture.decode_top_mip_rgba() else {
-                    println!("条目[{}] raster 0x{:08X}: 像素解码失败", entry.index, raster_key.instance);
+                    println!(
+                        "条目[{}] raster 0x{:08X}: 像素解码失败",
+                        entry.index, raster_key.instance
+                    );
                     continue;
                 };
                 let w = u32::from(texture.width);
@@ -173,7 +191,10 @@ fn main() {
                 );
 
                 // 导出 RGBA PNG + alpha 灰度图
-                let base = format!("{outdir}/hole_{:08X}_idx{}", raster_key.instance, entry.index);
+                let base = format!(
+                    "{outdir}/hole_{:08X}_idx{}",
+                    raster_key.instance, entry.index
+                );
                 let rgba_img: image::RgbaImage =
                     image::ImageBuffer::from_raw(w, h, rgba.clone()).expect("rgba buffer");
                 if let Err(e) = rgba_img.save(format!("{base}.png")) {
@@ -190,5 +211,7 @@ fn main() {
             }
         }
     }
-    println!("字典 {dicts} 个 / 条目 {entries_total} / 破洞族 {entries_hole} / 导出 {dumped} → {outdir}");
+    println!(
+        "字典 {dicts} 个 / 条目 {entries_total} / 破洞族 {entries_hole} / 导出 {dumped} → {outdir}"
+    );
 }

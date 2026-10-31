@@ -12,8 +12,10 @@ fn main() {
     let package = dbpf::Package::open(path).expect("open package");
 
     // instance → 调色板纹理（RW4 包裹 textureType 116），懒解析缓存
-    let mut palette_cache: std::collections::HashMap<u32, Option<(u32, u32, usize, Vec<[f32; 4]>)>> =
-        std::collections::HashMap::new();
+    let mut palette_cache: std::collections::HashMap<
+        u32,
+        Option<(u32, u32, usize, Vec<[f32; 4]>)>,
+    > = std::collections::HashMap::new();
     let mut size_hist: BTreeMap<(u32, u32), usize> = BTreeMap::new();
     let mut palettes = 0usize;
     let mut columns_total = 0usize;
@@ -25,8 +27,12 @@ fn main() {
             continue;
         }
         let entry = entry.clone();
-        let Ok(data) = package.read(&entry) else { continue };
-        let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+        let Ok(data) = package.read(&entry) else {
+            continue;
+        };
+        let Ok(file) = rw4::Rw4File::parse(&data) else {
+            continue;
+        };
         let Some(mat_sec) = file
             .sections_of_type(rw4::SectionType::MATERIAL)
             .next()
@@ -54,8 +60,12 @@ fn main() {
             else {
                 return None;
             };
-            let Ok(tex_data) = package.read(&tex_entry) else { return None };
-            let Ok(tex_file) = rw4::Rw4File::parse(&tex_data) else { return None };
+            let Ok(tex_data) = package.read(&tex_entry) else {
+                return None;
+            };
+            let Ok(tex_file) = rw4::Rw4File::parse(&tex_data) else {
+                return None;
+            };
             let Some(tex_sec) = tex_file
                 .sections_of_type(rw4::SectionType::TEXTURE)
                 .next()
@@ -63,16 +73,22 @@ fn main() {
             else {
                 return None;
             };
-            let Ok(tex) = tex_file.decode_texture(&tex_data, tex_sec) else { return None };
+            let Ok(tex) = tex_file.decode_texture(&tex_data, tex_sec) else {
+                return None;
+            };
             if tex.texture_type != rw4::TEXTURE_TYPE_PALETTE_F32 {
                 return None;
             }
             let w = u32::from(tex.width);
             let h = u32::from(tex.height);
-            let Ok(pixels) = tex.decode_palette_f32() else { return None };
+            let Ok(pixels) = tex.decode_palette_f32() else {
+                return None;
+            };
             Some((w, h, pixels.len(), pixels))
         });
-        let Some((w, h, _len, pixels)) = cached else { continue };
+        let Some((w, h, _len, pixels)) = cached else {
+            continue;
+        };
         palettes += 1;
         *size_hist.entry((*w, *h)).or_insert(0) += 1;
         columns_total += *w as usize;
@@ -89,7 +105,9 @@ fn main() {
         }
     }
 
-    println!("palettes={palettes} columns_total={columns_total} columns_row0_ne_row1={columns_distinct} columns_height_gt2={columns_multi_row}");
+    println!(
+        "palettes={palettes} columns_total={columns_total} columns_row0_ne_row1={columns_distinct} columns_height_gt2={columns_multi_row}"
+    );
     println!("size histogram (w x h -> count):");
     for ((w, h), count) in &size_hist {
         println!("  {w}x{h}: {count}");

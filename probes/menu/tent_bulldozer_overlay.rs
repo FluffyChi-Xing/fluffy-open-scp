@@ -72,11 +72,8 @@ fn main() {
     if let Some(parent) = std::path::Path::new(&args[1]).parent() {
         std::fs::create_dir_all(parent).expect("create output directory");
     }
-    dbpf::write_uncompressed_overlay_to_path(
-        &args[1],
-        &[OverlayEntry::new(id, patched.clone())],
-    )
-    .expect("write overlay");
+    dbpf::write_uncompressed_overlay_to_path(&args[1], &[OverlayEntry::new(id, patched.clone())])
+        .expect("write overlay");
     println!(
         "wrote {id} {} -> {} bytes; bundle 0x{DEMOLISH_BUNDLE:08X} added; verified=true",
         original.len(),

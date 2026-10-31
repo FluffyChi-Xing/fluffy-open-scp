@@ -39,13 +39,17 @@ fn main() {
         pkgs.push(root.clone());
     }
     for path in &pkgs {
-        let Ok(pkg) = Package::open(path) else { continue };
+        let Ok(pkg) = Package::open(path) else {
+            continue;
+        };
         for e in pkg.entries() {
             if e.id.type_id != 0x00B1_B104 {
                 continue;
             }
             let Ok(data) = pkg.read(e) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
             let mut hits: Vec<u32> = Vec::new();
             for prop in &file.values {
                 let vals: Vec<&Value> = match &prop.kind {
@@ -68,7 +72,10 @@ fn main() {
                     e.id.type_id,
                     e.id.group,
                     e.id.instance,
-                    hits.iter().map(|h| format!("{h:08X}")).collect::<Vec<_>>().join(",")
+                    hits.iter()
+                        .map(|h| format!("{h:08X}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
                 );
             }
         }

@@ -13,7 +13,14 @@ fn main() {
         let out = format!("tmp/js/{:08X}_{}.js", e.id.group, e.id.instance);
         std::fs::create_dir_all("tmp/js").unwrap();
         std::fs::write(Path::new(&out), &d).ok();
-        println!("TGI {:08X}:{:08X}:{:08X} {} B -> {}", e.id.type_id, e.id.group, e.id.instance, d.len(), out);
+        println!(
+            "TGI {:08X}:{:08X}:{:08X} {} B -> {}",
+            e.id.type_id,
+            e.id.group,
+            e.id.instance,
+            d.len(),
+            out
+        );
     }
     println!("共 {n} 条 JS 资源");
 }

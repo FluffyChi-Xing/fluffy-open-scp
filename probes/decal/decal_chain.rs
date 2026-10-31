@@ -4,7 +4,7 @@
 //! 用法：decal_chain <lot_package> <lot_instance> --out=<dir> [lookup...]
 
 use dbpf::{IndexEntry, Package};
-use sc_properties::decal::{DecalDictionary, DECAL_ATLAS_INSTANCE_TYPES};
+use sc_properties::decal::{DECAL_ATLAS_INSTANCE_TYPES, DecalDictionary};
 use sc_properties::{Kind, PropertyFile, Value};
 
 fn main() {
@@ -18,8 +18,7 @@ fn main() {
 
     let mut paths: Vec<String> = vec![positional[0].clone()];
     paths.extend(positional.iter().skip(2).map(|s| (*s).clone()));
-    let lot_instance =
-        u32::from_str_radix(positional[1].trim_start_matches("0x"), 16).unwrap();
+    let lot_instance = u32::from_str_radix(positional[1].trim_start_matches("0x"), 16).unwrap();
     let packages: Vec<Package> = paths.iter().map(|p| open(p)).collect();
 
     // ---- 1. lot property 的 decal 单元 ----
@@ -34,8 +33,12 @@ fn main() {
 
     for category in 0..3usize {
         let id_hash = ID_BASE + category as u32;
-        let Some(id_property) = file.get(id_hash) else { continue };
-        let Some(Kind::Array(ids)) = Some(&id_property.kind) else { continue };
+        let Some(id_property) = file.get(id_hash) else {
+            continue;
+        };
+        let Some(Kind::Array(ids)) = Some(&id_property.kind) else {
+            continue;
+        };
         println!(
             "== category {category}：{} 个 decal（hash 0x{ID_HASH:08X}）",
             ids.len(),
@@ -55,12 +58,23 @@ fn main() {
             .unwrap_or_default();
         for (index, value) in ids.iter().enumerate() {
             let id = match value {
-                Value::Key(k) => format!("T {:08X} G {:08X} I {:08X}", k.type_id, k.group, k.instance),
+                Value::Key(k) => {
+                    format!("T {:08X} G {:08X} I {:08X}", k.type_id, k.group, k.instance)
+                }
                 other => format!("{other:?}"),
             };
-            let transform = transforms.get(index).map(|v| format!("{v:?}")).unwrap_or_default();
-            let depth = depths.get(index).map(|v| format!("{v:?}")).unwrap_or_default();
-            let material = mats.get(index).map(|v| format!("{v:?}")).unwrap_or_default();
+            let transform = transforms
+                .get(index)
+                .map(|v| format!("{v:?}"))
+                .unwrap_or_default();
+            let depth = depths
+                .get(index)
+                .map(|v| format!("{v:?}"))
+                .unwrap_or_default();
+            let material = mats
+                .get(index)
+                .map(|v| format!("{v:?}"))
+                .unwrap_or_default();
             println!("  [{index}] ID = {id}");
             println!("        transform = {transform}");
             println!("        depth = {depth}  material_data = {material}");
@@ -78,7 +92,9 @@ fn main() {
                 continue;
             }
             let Ok(bytes) = package.read(e) else { continue };
-            let Ok(dict) = DecalDictionary::parse(&bytes) else { continue };
+            let Ok(dict) = DecalDictionary::parse(&bytes) else {
+                continue;
+            };
             atlases.push((index, e.clone(), dict));
         }
     }
@@ -119,12 +135,11 @@ fn main() {
     for id in &lot_ids {
         let mut hit = None;
         for (index, e, dict) in &atlases {
-            if let Some(entry) = dict.entries.iter().find(|entry| {
-                entry
-                    .id
-                    .map(|k| k.instance == id.instance)
-                    .unwrap_or(false)
-            }) {
+            if let Some(entry) = dict
+                .entries
+                .iter()
+                .find(|entry| entry.id.map(|k| k.instance == id.instance).unwrap_or(false))
+            {
                 hit = Some((index, e, entry));
                 break;
             }
@@ -159,17 +174,16 @@ fn decode_raster(packages: &[Package], instance: u32, out_dir: &str) {
             if e.id.type_id == 0x2F4E_681C && e.id.instance == instance {
                 let bytes = package.read(e).unwrap();
                 let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
-                    println!("      raster {instance:08X}: 解码失败（pixFmt {}）", raster_px(&bytes));
+                    println!(
+                        "      raster {instance:08X}: 解码失败（pixFmt {}）",
+                        raster_px(&bytes)
+                    );
                     return;
                 };
                 match raster.decode_top_mip_rgba() {
                     Ok(rgba) => {
-                        let img = image::RgbaImage::from_raw(
-                            raster.width,
-                            raster.height,
-                            rgba,
-                        )
-                        .unwrap();
+                        let img =
+                            image::RgbaImage::from_raw(raster.width, raster.height, rgba).unwrap();
                         let path = format!("{out_dir}/decal_{instance:08X}.png");
                         img.save(&path).unwrap();
                         println!(

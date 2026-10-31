@@ -2,14 +2,21 @@
 use sc_properties::region_map::{SHARED_ED_GRID, SHARED_TILE_GRID};
 
 fn main() {
-    let rt0 = dbpf::Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package").unwrap();
+    let rt0 = dbpf::Package::open("D:/ea-games/SimCity/SimCityData/SimCity_RegionTerrain0.package")
+        .unwrap();
     let group = 0xBEAF_0510u32; // 白水谷
     let mut tiles: std::collections::HashMap<u32, Vec<u16>> = Default::default();
     for e in rt0.entries() {
         if e.id.type_id == 0x03E4_21F0 && e.id.group == group {
             if let Ok(d) = rt0.read(e) {
                 if d.len() == 131092 {
-                    tiles.insert(e.id.instance, d[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+                    tiles.insert(
+                        e.id.instance,
+                        d[20..]
+                            .chunks_exact(2)
+                            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                            .collect(),
+                    );
                 }
             }
         }
@@ -28,7 +35,11 @@ fn main() {
     let mut ed = vec![0u32; 2048 * 2048];
     for (ty, row) in SHARED_ED_GRID.iter().enumerate() {
         for (tx, inst) in row.iter().enumerate() {
-            let Some(e) = rt0.entries().iter().find(|e| e.id.type_id == 0x03E4_21ED && e.id.group == group && e.id.instance == *inst) else { continue };
+            let Some(e) = rt0.entries().iter().find(|e| {
+                e.id.type_id == 0x03E4_21ED && e.id.group == group && e.id.instance == *inst
+            }) else {
+                continue;
+            };
             let d = rt0.read(e).unwrap();
             for y in 0..128 {
                 for x in 0..128 {
@@ -45,7 +56,12 @@ fn main() {
         for &v in ed.iter() {
             hist[((v >> (ch * 8)) & 0xFF) as usize] += 1;
         }
-        let mut rows: Vec<(usize, u32)> = hist.iter().enumerate().filter(|p| *p.1 > 2000).map(|(v, n)| (v, *n)).collect();
+        let mut rows: Vec<(usize, u32)> = hist
+            .iter()
+            .enumerate()
+            .filter(|p| *p.1 > 2000)
+            .map(|(v, n)| (v, *n))
+            .collect();
         rows.sort_by(|a, b| b.1.cmp(&a.1));
         println!("b{ch} 直方图（>2000）: {:?}", &rows[..rows.len().min(12)]);
         let mut img = image::GrayImage::new(2048, 2048);
@@ -56,7 +72,9 @@ fn main() {
                 img.put_pixel(x as u32, y as u32, image::Luma([b]));
             }
         }
-        image::DynamicImage::ImageLuma8(img).save(format!("tmp/ed_ch{ch}.png")).unwrap();
+        image::DynamicImage::ImageLuma8(img)
+            .save(format!("tmp/ed_ch{ch}.png"))
+            .unwrap();
     }
     for cand in [0u8, 15u8] {
         let mut n = 0u64;
@@ -68,12 +86,18 @@ fn main() {
                     let h = hgt[(y * 2) * 4096 + x * 2] as i32;
                     n += 1;
                     h_sum += f64::from(h);
-                    if h < SEA { below += 1; }
+                    if h < SEA {
+                        below += 1;
+                    }
                 }
             }
         }
         if n > 0 {
-            println!("b0=={cand}: {n} 格, 水下 {below} ({:.1}%), 平均 {:.0} m", below as f64 / n as f64 * 100.0, h_sum / n as f64 / 32.0 - 1024.0);
+            println!(
+                "b0=={cand}: {n} 格, 水下 {below} ({:.1}%), 平均 {:.0} m",
+                below as f64 / n as f64 * 100.0,
+                h_sum / n as f64 / 32.0 - 1024.0
+            );
         }
     }
     let mut img = image::RgbImage::new(2048, 2048);
@@ -96,6 +120,8 @@ fn main() {
             img.put_pixel(x as u32, y as u32, image::Rgb(c));
         }
     }
-    image::DynamicImage::ImageRgb8(img).save("tmp/ed_road_channels.png").unwrap();
+    image::DynamicImage::ImageRgb8(img)
+        .save("tmp/ed_road_channels.png")
+        .unwrap();
     println!("渲染 -> tmp/ed_road_channels.png + ed_ch0/1/2.png");
 }

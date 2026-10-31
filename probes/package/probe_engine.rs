@@ -50,8 +50,7 @@ fn main() -> dbpf::Result<()> {
         .iter()
         .enumerate()
         .filter(|(_, e)| {
-            types.contains(&e.id.type_id)
-                && group_filter.is_none_or(|g| e.id.group == g)
+            types.contains(&e.id.type_id) && group_filter.is_none_or(|g| e.id.group == g)
         })
         .collect();
     println!(
@@ -179,9 +178,8 @@ fn scan_text(path: &str, type_id: u32, keywords: &[String]) -> dbpf::Result<()> 
         .iter()
         .map(|(_, _, hits)| hits.iter().map(|(_, n)| n).sum::<usize>())
         .sum();
-    results.sort_by_key(|(_, _, hits)| {
-        std::cmp::Reverse(hits.iter().map(|(_, n)| n).sum::<usize>())
-    });
+    results
+        .sort_by_key(|(_, _, hits)| std::cmp::Reverse(hits.iter().map(|(_, n)| n).sum::<usize>()));
     println!(
         "scanned {scanned} resources of type {type_id:08X} — {} with hits, {total} total hits",
         results.len()

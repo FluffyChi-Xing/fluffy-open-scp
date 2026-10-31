@@ -12,11 +12,19 @@ fn main() {
         let data = p.read(e).unwrap_or_default();
         let head: String = String::from_utf8_lossy(&data[..data.len().min(150)])
             .chars()
-            .map(|c| if c == '\n' || c == '\r' || c == '\t' { ' ' } else { c })
+            .map(|c| {
+                if c == '\n' || c == '\r' || c == '\t' {
+                    ' '
+                } else {
+                    c
+                }
+            })
             .collect();
         println!(
             "{:08X}:{:08X}:{:08X} raw={}B head={head:?}",
-            e.id.type_id, e.id.group, e.id.instance,
+            e.id.type_id,
+            e.id.group,
+            e.id.instance,
             data.len()
         );
     }

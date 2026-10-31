@@ -71,7 +71,14 @@ fn main() -> dbpf::Result<()> {
     let mut extracted = 0usize;
 
     for path in &packages {
-        scan_package(path, &mut buckets, &mut layouts_with_names, &extract, &mut extracted, true)?;
+        scan_package(
+            path,
+            &mut buckets,
+            &mut layouts_with_names,
+            &extract,
+            &mut extracted,
+            true,
+        )?;
     }
 
     println!("=== UI asset census ===");
@@ -85,7 +92,11 @@ fn main() -> dbpf::Result<()> {
     }
     println!("\n=== layout JSON windows (top groups) ===");
     for (package, names) in layouts_with_names.iter().take(60) {
-        println!("{package}: {} layouts, e.g. {}", names.len(), names.first().map(String::as_str).unwrap_or("-"));
+        println!(
+            "{package}: {} layouts, e.g. {}",
+            names.len(),
+            names.first().map(String::as_str).unwrap_or("-")
+        );
     }
     println!("\nextracted {extracted} files to {}", extract.display());
     Ok(())
@@ -207,10 +218,7 @@ fn describe(kind: &str, id: dbpf::ResourceId, text: &str) -> String {
                 .unwrap_or_else(|| format!("{:08X}_{:08X}", id.group, id.instance));
             format!("css/{name}")
         }
-        other => format!(
-            "{other}/{:08X}_{:08X}.{other}",
-            id.group, id.instance
-        ),
+        other => format!("{other}/{:08X}_{:08X}.{other}", id.group, id.instance),
     }
 }
 

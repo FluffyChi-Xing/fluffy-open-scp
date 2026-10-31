@@ -10,10 +10,7 @@ const RW4_IMAGE: u32 = 0x2F4E_681B;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let min_tris: u32 = args
-        .first()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(300);
+    let min_tris: u32 = args.first().and_then(|v| v.parse().ok()).unwrap_or(300);
     let mut found: Vec<(u32, String, u32, u32, u32)> = Vec::new(); // instance, pkg, tris, verts, masks
     for path in &args[1..] {
         let package = dbpf::Package::open(path).expect("open package");
@@ -26,15 +23,21 @@ fn main() {
                 continue;
             }
             let entry = entry.clone();
-            let Ok(data) = package.read(&entry) else { continue };
-            let Ok(file) = rw4::Rw4File::parse(&data) else { continue };
+            let Ok(data) = package.read(&entry) else {
+                continue;
+            };
+            let Ok(file) = rw4::Rw4File::parse(&data) else {
+                continue;
+            };
             let mut total_tris = 0u32;
             let mut total_verts = 0u32;
             let mut has_uv = false;
             let mut has_float2 = false;
             let mut has_d3dcolor = false;
             for section in file.sections_of_type(rw4::SectionType::MESH) {
-                let Ok(mesh) = file.decode_mesh(&data, section.number) else { continue };
+                let Ok(mesh) = file.decode_mesh(&data, section.number) else {
+                    continue;
+                };
                 if !mesh.is_exportable() {
                     continue;
                 }

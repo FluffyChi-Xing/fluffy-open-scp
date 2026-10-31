@@ -10,20 +10,30 @@ fn main() {
     let (uids, _pos, ids) = plot_table(&rt0, 0xA0B6_0DDE).unwrap();
     let mut means: HashMap<String, f64> = HashMap::new();
     for (i, uid) in uids.iter().enumerate() {
-        if let Some(z) = city_site_z(&rt0, ids[i]) { means.insert(uid.clone(), z); }
+        if let Some(z) = city_site_z(&rt0, ids[i]) {
+            means.insert(uid.clone(), z);
+        }
     }
     for t in &tpls {
-        if t.cities.len() != 7 { continue; }
+        if t.cities.len() != 7 {
+            continue;
+        }
         let mut diffs: Vec<String> = Vec::new();
         let mut sum = 0f64;
         let mut n = 0;
         for (uid, _, _, tz) in &t.cities {
             if let (Some(tz), Some(mz)) = (tz, means.get(uid)) {
                 let d = mz - tz;
-                sum += d.abs(); n += 1;
+                sum += d.abs();
+                n += 1;
                 diffs.push(format!("{d:+.0}"));
             }
         }
-        println!("{:14} 平均|Δ|={:5.1}  Δ=[{}]", t.name, sum / n as f64, diffs.join(","));
+        println!(
+            "{:14} 平均|Δ|={:5.1}  Δ=[{}]",
+            t.name,
+            sum / n as f64,
+            diffs.join(",")
+        );
     }
 }

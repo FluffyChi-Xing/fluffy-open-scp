@@ -13,8 +13,8 @@
 //!       <package> <lot_instance|-> [max_lots] [extra_package...]
 
 use dbpf::Package;
-use sc_properties::decal::{DecalDictionary, DECAL_ATLAS_INSTANCE_TYPES};
-use sc_properties::{assemble_units, inherit, Key, LotEditorDocument, PropertyFile, UnitTransform};
+use sc_properties::decal::{DECAL_ATLAS_INSTANCE_TYPES, DecalDictionary};
+use sc_properties::{Key, LotEditorDocument, PropertyFile, UnitTransform, assemble_units, inherit};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const RW4_MODEL_TYPE: u32 = 0x2F4E_681B;
@@ -27,7 +27,10 @@ struct Geometry {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args.first().expect("usage: decal_projection_probe <package> <lot|-> [max] [extra...]").clone();
+    let path = args
+        .first()
+        .expect("usage: decal_projection_probe <package> <lot|-> [max] [extra...]")
+        .clone();
     let target = args.get(1).cloned().unwrap_or_else(|| "-".into());
     let max_lots: usize = args.get(2).and_then(|v| v.parse().ok()).unwrap_or(4);
     let extras: Vec<String> = args.iter().skip(3).cloned().collect();
@@ -54,15 +57,21 @@ fn main() {
         {
             continue;
         }
-        let Ok(raw) = packages[0].read(entry) else { continue };
-        let Ok(raw_file) = PropertyFile::parse(&raw) else { continue };
+        let Ok(raw) = packages[0].read(entry) else {
+            continue;
+        };
+        let Ok(raw_file) = PropertyFile::parse(&raw) else {
+            continue;
+        };
         let resolve = |key: &Key| -> Option<PropertyFile> {
             for source in &packages {
                 for candidate in source.entries() {
                     if candidate.id.instance == key.instance
                         && (key.type_id == 0 || candidate.id.type_id == key.type_id)
                     {
-                        let Ok(bytes) = source.read(candidate) else { continue };
+                        let Ok(bytes) = source.read(candidate) else {
+                            continue;
+                        };
                         if let Ok(file) = PropertyFile::parse(&bytes) {
                             return Some(file);
                         }
@@ -101,7 +110,11 @@ fn main() {
         for key in doc.model_lods.iter().flatten() {
             candidates.push(key.instance);
         }
-        println!("\n==== lot 0x{:08X}  decals={} ====", entry.id.instance, decals.len());
+        println!(
+            "\n==== lot 0x{:08X}  decals={} ====",
+            entry.id.instance,
+            decals.len()
+        );
         let mut best: Option<(u32, Geometry)> = None;
         for instance in &candidates {
             let Some(geometry) = load_geometry(&packages, *instance) else {
@@ -113,9 +126,17 @@ fn main() {
                 "     model 0x{instance:08X}: verts={} tris={} bbox=({:.1},{:.1},{:.1})–({:.1},{:.1},{:.1})",
                 geometry.verts.len(),
                 geometry.tris.len(),
-                min[0], min[1], min[2], max[0], max[1], max[2]
+                min[0],
+                min[1],
+                min[2],
+                max[0],
+                max[1],
+                max[2]
             );
-            if best.as_ref().is_none_or(|(_, b)| geometry.verts.len() > b.verts.len()) {
+            if best
+                .as_ref()
+                .is_none_or(|(_, b)| geometry.verts.len() > b.verts.len())
+            {
                 best = Some((*instance, geometry));
             }
         }
@@ -131,14 +152,7 @@ fn main() {
 
         for (index, category, transform, scale, depth) in &decals {
             report_decal(
-                &geometry,
-                &atlases,
-                &flattened,
-                *index,
-                *category,
-                transform,
-                *scale,
-                *depth,
+                &geometry, &atlases, &flattened, *index, *category, transform, *scale, *depth,
             );
         }
         handled += 1;
@@ -162,20 +176,21 @@ fn report_decal(
 ) {
     let m = transform.matrix;
     if m.len() != 12 {
-        println!("  [{category}:{index}] transform 长度 {} ≠ 12，跳过", m.len());
+        println!(
+            "  [{category}:{index}] transform 长度 {} ≠ 12，跳过",
+            m.len()
+        );
         return;
     }
     let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let basis = [
-        [m[0], m[1], m[2]],
-        [m[3], m[4], m[5]],
-        [m[6], m[7], m[8]],
-    ];
+    let basis = [[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]];
     let origin = [m[9], m[10], m[11]];
     let length = |v: [f32; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
     let norms = [length(basis[0]), length(basis[1]), length(basis[2])];
     let scale = scale.unwrap_or(1.0).abs().max(1e-3);
-    let aspect = decal_aspect(atlases, file, category, index).unwrap_or(1.0).max(1e-3);
+    let aspect = decal_aspect(atlases, file, category, index)
+        .unwrap_or(1.0)
+        .max(1e-3);
     let half_y = scale / aspect;
     let depth = depth.unwrap_or(0.0);
 
@@ -249,14 +264,26 @@ fn report_decal(
             let u = (ix as f32 - 1.0) * 0.6 * scale;
             let v = (iy as f32 - 1.0) * 0.6 * half_y;
             let sample = [
-                origin[0] + basis[0][0] * (u / norms[0].max(1e-9)) + basis[1][0] * (v / norms[1].max(1e-9)),
-                origin[1] + basis[0][1] * (u / norms[0].max(1e-9)) + basis[1][1] * (v / norms[1].max(1e-9)),
-                origin[2] + basis[0][2] * (u / norms[0].max(1e-9)) + basis[1][2] * (v / norms[1].max(1e-9)),
+                origin[0]
+                    + basis[0][0] * (u / norms[0].max(1e-9))
+                    + basis[1][0] * (v / norms[1].max(1e-9)),
+                origin[1]
+                    + basis[0][1] * (u / norms[0].max(1e-9))
+                    + basis[1][1] * (v / norms[1].max(1e-9)),
+                origin[2]
+                    + basis[0][2] * (u / norms[0].max(1e-9))
+                    + basis[1][2] * (v / norms[1].max(1e-9)),
             ];
             let axis = basis[2];
             let mut best: Option<f32> = None;
             for tri in &geometry.tris {
-                if let Some(t) = ray_tri(sample, axis, geometry.verts[tri[0]], geometry.verts[tri[1]], geometry.verts[tri[2]]) {
+                if let Some(t) = ray_tri(
+                    sample,
+                    axis,
+                    geometry.verts[tri[0]],
+                    geometry.verts[tri[1]],
+                    geometry.verts[tri[2]],
+                ) {
                     if best.is_none_or(|b| t.abs() < b.abs()) {
                         best = Some(t);
                     }
@@ -284,7 +311,11 @@ fn report_decal(
         q(&hits, 0.0).abs(),
         q(&hits, 0.5).abs(),
         q(&hits, 1.0).abs(),
-        if hits.is_empty() { f32::NAN } else { q(&hits, 1.0) - q(&hits, 0.0) }
+        if hits.is_empty() {
+            f32::NAN
+        } else {
+            q(&hits, 1.0) - q(&hits, 0.0)
+        }
     );
     let _ = miss;
 }
@@ -361,7 +392,11 @@ fn point_tri_distance(p: [f32; 3], a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> f32
     let va = d3 * d6 - d5 * d4;
     if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
         let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        let q = [b[0] + (c[0] - b[0]) * w, b[1] + (c[1] - b[1]) * w, b[2] + (c[2] - b[2]) * w];
+        let q = [
+            b[0] + (c[0] - b[0]) * w,
+            b[1] + (c[1] - b[1]) * w,
+            b[2] + (c[2] - b[2]) * w,
+        ];
         return length3(sub(p, q));
     }
     let denom = 1.0 / (va + vb + vc);
@@ -411,7 +446,9 @@ fn collect_atlases(packages: &[Package]) -> Vec<DecalDictionary> {
             if !seen.insert((entry.id.group, entry.id.instance)) {
                 continue;
             }
-            let Ok(bytes) = package.read(entry) else { continue };
+            let Ok(bytes) = package.read(entry) else {
+                continue;
+            };
             if let Ok(dict) = DecalDictionary::parse(&bytes) {
                 out.push(dict);
             }
@@ -441,9 +478,14 @@ fn load_geometry(packages: &[Package], instance: u32) -> Option<Geometry> {
             }
             let bytes = package.read(entry).ok()?;
             let file = rw4::Rw4File::parse(&bytes).ok()?;
-            let mut geometry = Geometry { verts: Vec::new(), tris: Vec::new() };
+            let mut geometry = Geometry {
+                verts: Vec::new(),
+                tris: Vec::new(),
+            };
             for section in file.sections_of_type(rw4::SectionType::MESH) {
-                let Ok(mesh) = file.decode_mesh(&bytes, section.number) else { continue };
+                let Ok(mesh) = file.decode_mesh(&bytes, section.number) else {
+                    continue;
+                };
                 let base = geometry.verts.len();
                 for vertex in &mesh.vertices {
                     if let Some(position) = vertex.position() {

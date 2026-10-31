@@ -90,12 +90,14 @@ fn main() {
             if entry.id.type_id != PROPERTY {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&data) else {
+                continue;
+            };
 
-            if entry.id.group == MENU_GROUP
-                || entry.id.group & MENU2_MASK == 0xC900
-            {
+            if entry.id.group == MENU_GROUP || entry.id.group & MENU2_MASK == 0xC900 {
                 let title = text_prop(&file, TITLE);
                 let desc = text_prop(&file, DESC);
                 let interesting = title.is_some_and(|(table, instance)| {

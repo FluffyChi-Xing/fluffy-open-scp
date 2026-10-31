@@ -339,7 +339,10 @@ fn dump_arena_overview(data: &[u8]) {
             println!(
                 "  arena: {} sections, 类型表 {:?}",
                 sections.len(),
-                types.iter().map(|t| format!("0x{t:05X}")).collect::<Vec<_>>()
+                types
+                    .iter()
+                    .map(|t| format!("0x{t:05X}"))
+                    .collect::<Vec<_>>()
             );
             let mut hist: BTreeMap<u32, usize> = Default::default();
             for s in &sections {
@@ -382,11 +385,17 @@ fn cross_reference(info: &[u8], arena: &[u8], label: &str) {
             let sec = sections.get(*export_idx);
             println!(
                 "[{label}] {id:08X} ({name}) rt{rt} -> 导出#{export_idx}: {}",
-                sec.map(|s| format!("pos=0x{:x} size={} type=0x{:05X}", s.pos, s.size, s.type_code))
-                    .unwrap_or_else(|| "越界".into())
+                sec.map(|s| format!(
+                    "pos=0x{:x} size={} type=0x{:05X}",
+                    s.pos, s.size, s.type_code
+                ))
+                .unwrap_or_else(|| "越界".into())
             );
             if let Some(s) = sec {
-                out.push_str(&format!("{id:08X}\t{name}\trt{rt}\t{export_idx}\t0x{:x}\t{}\n", s.pos, s.size));
+                out.push_str(&format!(
+                    "{id:08X}\t{name}\trt{rt}\t{export_idx}\t0x{:x}\t{}\n",
+                    s.pos, s.size
+                ));
                 // dump 该 section 原文
                 let start = s.pos as usize;
                 if let Some(bytes) = arena.get(start..start + s.size as usize) {
@@ -400,4 +409,3 @@ fn cross_reference(info: &[u8], arena: &[u8], label: &str) {
     }
     std::fs::write(format!("tmp/decal_cstate_map_{label}.txt"), out).ok();
 }
-

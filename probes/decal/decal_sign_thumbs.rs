@@ -12,7 +12,10 @@ const SIGN_MATERIAL: u32 = 0x7368_4EFC;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let out_dir = args.first().expect("usage: decal_sign_thumbs <out> <package> [lookup...]").clone();
+    let out_dir = args
+        .first()
+        .expect("usage: decal_sign_thumbs <out> <package> [lookup...]")
+        .clone();
     let packages: Vec<Package> = args[1..]
         .iter()
         .map(|p| Package::open(p).unwrap_or_else(|e| panic!("open {p}: {e}")))
@@ -28,17 +31,25 @@ fn main() {
             {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(dictionary) = DecalDictionary::parse(&data) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(dictionary) = DecalDictionary::parse(&data) else {
+                continue;
+            };
             if dictionary.material.map(|k| k.instance) != Some(SIGN_MATERIAL) {
                 continue;
             }
             for decal in &dictionary.entries {
-                let Some(id) = decal.id.map(|k| k.instance) else { continue };
+                let Some(id) = decal.id.map(|k| k.instance) else {
+                    continue;
+                };
                 if !seen.insert(id) {
                     continue;
                 }
-                let Some(colors) = decal.colors_rgba8() else { continue };
+                let Some(colors) = decal.colors_rgba8() else {
+                    continue;
+                };
                 let Some((image, _)) = resolve_raster(&packages, decal.raster.map(|k| k.instance))
                 else {
                     continue;
@@ -46,9 +57,10 @@ fn main() {
                 if !image.is_raw_rgba() {
                     continue;
                 }
-                let Ok(rgba) = image.decode_lot_mask_rgba(&colors) else { continue };
-                let Some(buf) = image::RgbaImage::from_raw(image.width, image.height, rgba)
-                else {
+                let Ok(rgba) = image.decode_lot_mask_rgba(&colors) else {
+                    continue;
+                };
+                let Some(buf) = image::RgbaImage::from_raw(image.width, image.height, rgba) else {
                     continue;
                 };
                 let path = format!("{out_dir}/sign_{id:08X}.png");
@@ -61,15 +73,22 @@ fn main() {
     println!("导出 {saved} 张唯一招牌条目贴图 → {out_dir}");
 }
 
-fn resolve_raster(packages: &[Package], instance: Option<u32>) -> Option<(rw4::RasterImage, String)> {
+fn resolve_raster(
+    packages: &[Package],
+    instance: Option<u32>,
+) -> Option<(rw4::RasterImage, String)> {
     let target = instance?;
     for package in packages {
         for entry in package.entries() {
             if entry.id.instance != target {
                 continue;
             }
-            let Ok(bytes) = package.read(entry) else { continue };
-            let Ok(raster) = rw4::RasterImage::parse(&bytes) else { continue };
+            let Ok(bytes) = package.read(entry) else {
+                continue;
+            };
+            let Ok(raster) = rw4::RasterImage::parse(&bytes) else {
+                continue;
+            };
             return Some((raster, format!("{:08x}", entry.id.instance)));
         }
     }

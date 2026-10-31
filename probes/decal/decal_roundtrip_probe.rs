@@ -9,8 +9,9 @@
 //! ```
 
 use dbpf::Package;
-use sc_properties::{DecalEntryUpsert, Key, upsert_entry, PROPERTY_RESOURCE_TYPE,
-    is_decal_dictionary_group};
+use sc_properties::{
+    DecalEntryUpsert, Key, PROPERTY_RESOURCE_TYPE, is_decal_dictionary_group, upsert_entry,
+};
 
 fn main() {
     let path = std::env::args()
@@ -20,8 +21,7 @@ fn main() {
 
     let mut checked = 0usize;
     for entry in package.entries().iter() {
-        if entry.id.type_id != PROPERTY_RESOURCE_TYPE
-            || !is_decal_dictionary_group(entry.id.group)
+        if entry.id.type_id != PROPERTY_RESOURCE_TYPE || !is_decal_dictionary_group(entry.id.group)
         {
             continue;
         }
@@ -66,8 +66,7 @@ fn main() {
                 [0.5, 0.5, 0.5, 0.0],
             ],
         };
-        let appended =
-            upsert_entry(&mut file, &upsert, None).expect("upsert append");
+        let appended = upsert_entry(&mut file, &upsert, None).expect("upsert append");
         let encoded = file.encode_canonical().expect("encode after append");
         let reparsed =
             sc_properties::DecalDictionary::parse(&encoded).expect("reparse after append");
@@ -80,7 +79,10 @@ fn main() {
         for (index, original) in before.entries.iter().enumerate() {
             assert_eq!(reparsed.entries[index], *original, "entry {index} changed");
         }
-        println!("  append OK: index {appended}, {} entries", reparsed.entries.len());
+        println!(
+            "  append OK: index {appended}, {} entries",
+            reparsed.entries.len()
+        );
 
         // 2) 按 ID 替换刚写入的条目。
         let mut replaced = upsert.clone();
@@ -94,8 +96,7 @@ fn main() {
         println!("  replace OK: index {at}");
 
         // 3) 二次编码稳定性：canonical 产物再编码应逐字节一致。
-        let file2 =
-            sc_properties::PropertyFile::parse(&encoded).expect("parse canonical");
+        let file2 = sc_properties::PropertyFile::parse(&encoded).expect("parse canonical");
         let encoded2 = file2.encode_canonical().expect("re-encode");
         assert_eq!(encoded, encoded2, "canonical encoding not stable");
         println!("  canonical-stable OK ({} bytes)", encoded.len());

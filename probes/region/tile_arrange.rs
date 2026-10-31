@@ -10,13 +10,17 @@ use std::collections::HashMap;
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("package");
-    let group = u32::from_str_radix(&args.next().expect("group").trim_start_matches("0x"), 16).unwrap();
+    let group =
+        u32::from_str_radix(&args.next().expect("group").trim_start_matches("0x"), 16).unwrap();
     let package = dbpf::Package::open(&path).expect("open");
     let mut tiles: HashMap<u32, Vec<u16>> = HashMap::new();
     for e in package.entries() {
         if e.id.type_id == 0x03E4_21F0 && e.id.group == group {
             let data = package.read(e).expect("read");
-            let px: Vec<u16> = data[20..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let px: Vec<u16> = data[20..]
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
             if px.len() == 65536 {
                 tiles.insert(e.id.instance, px);
             }
@@ -73,8 +77,10 @@ fn main() {
     }
 
     // 贪心构建 parent -> [quad] = child（按误差升序，误差阈值截断）
-    let mut children: Vec<(u32, u32, usize, f64)> =
-        assign.iter().map(|(c, (p, q, e))| (*c, *p, *q, *e)).collect();
+    let mut children: Vec<(u32, u32, usize, f64)> = assign
+        .iter()
+        .map(|(c, (p, q, e))| (*c, *p, *q, *e))
+        .collect();
     children.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap());
     let mut tree: HashMap<u32, [Option<u32>; 4]> = HashMap::new();
     let mut used_child: std::collections::HashSet<u32> = Default::default();
@@ -135,7 +141,11 @@ fn main() {
         .collect();
     println!(
         "roots: {}",
-        roots.iter().map(|r| format!("0x{r:08X}")).collect::<Vec<_>>().join(" ")
+        roots
+            .iter()
+            .map(|r| format!("0x{r:08X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
     );
 
     // 自根向下赋 (x,y,level)
@@ -181,14 +191,20 @@ fn main() {
     for row in &grid {
         println!(
             "{}",
-            row.iter().map(|v| format!("{:5.0}", v / 100.0)).collect::<Vec<_>>().join(" ")
+            row.iter()
+                .map(|v| format!("{:5.0}", v / 100.0))
+                .collect::<Vec<_>>()
+                .join(" ")
         );
     }
     println!("== instance ids ==");
     for row in &gridi {
         println!(
             "{}",
-            row.iter().map(|v| format!("{v:08X}")).collect::<Vec<_>>().join(",")
+            row.iter()
+                .map(|v| format!("{v:08X}"))
+                .collect::<Vec<_>>()
+                .join(",")
         );
     }
 }
