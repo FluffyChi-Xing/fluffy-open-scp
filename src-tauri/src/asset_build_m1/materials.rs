@@ -145,10 +145,104 @@ pub fn encode_png_raster(png: &[u8]) -> Result<Vec<u8>, String> {
     let image = image::load_from_memory(png)
         .map_err(|e| format!("slot PNG decode failed: {e}"))?
         .to_rgba8();
+    // Match authored_materials.raster_rgba: independent-channel floor
+    // averaging, BGRA byte order, pixFmt 21, big-endian header.
     let (width, height) = (image.width(), image.height());
-    let raster = RasterImage::build_raw_bgra(width, height, image.as_raw(), true)
-        .map_err(|e| format!("raster encode failed: {e}"))?;
-    Ok(raster.to_bytes())
+    let mut current: Vec<[u8; 4]> = image
+        .pixels()
+        .map(|pixel| [pixel[0], pixel[1], pixel[2], pixel[3]])
+        .collect();
+    let mut mips = Vec::new();
+    let (mut w, mut h) = (width, height);
+    loop {
+        let mut bgra = Vec::with_capacity((w * h * 4) as usize);
+        for pixel in &current {
+            bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+        }
+        mips.push(bgra);
+        if w == 1 && h == 1 {
+            break;
+        }
+        let nw = (w / 2).max(1) as usize;
+        let nh = (h / 2).max(1) as usize;
+        let mut next = vec![[0u8; 4]; nw * nh];
+        for y in 0..nh {
+            for x in 0..nw {
+                let mut sum = [0u32; 4];
+                let mut count = 0u32;
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let sx = (x * 2 + dx).min(w as usize - 1);
+                        let sy = (y * 2 + dy).min(h as usize - 1);
+                        let pixel = current[sy * w as usize + sx];
+                        for channel in 0..4 {
+                            sum[channel] += pixel[channel] as u32;
+                        }
+                        count += 1;
+                    }
+                }
+                next[y * nw + x] = [
+                    (sum[0] / count) as u8,
+                    (sum[1] / count) as u8,
+                    (sum[2] / count) as u8,
+                    (sum[3] / count) as u8,
+                ];
+            }
+        }
+        current = next;
+        w = nw as u32;
+        h = nh as u32;
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(&2u32.to_be_bytes());
+    out.extend_from_slice(&width.to_be_bytes());
+    out.extend_from_slice(&height.to_be_bytes());
+    out.extend_from_slice(&(mips.len() as u32).to_be_bytes());
+    out.extend_from_slice(&8u32.to_be_bytes());
+    out.extend_from_slice(&21u32.to_be_bytes());
+    for mip in mips {
+        out.extend_from_slice(&(mip.len() as u32).to_be_bytes());
+        out.extend_from_slice(&mip);
+    }
+    Ok(out)
+}
+
+/// Wrap a palette/interior PNG in the author's RGBA texture template.
+/// The author stores these two slots as `texture_rw4(fmt=21)` wrappers with a
+/// raw BGRA top mip, not as standalone Raster resources.
+pub fn encode_png_texture(png: &[u8]) -> Result<Vec<u8>, String> {
+    let image = image::load_from_memory(png)
+        .map_err(|error| format!("texture PNG decode failed: {error}"))?
+        .to_rgba8();
+    let (width, height) = (image.width(), image.height());
+    let mut bgra = Vec::with_capacity((width * height * 4) as usize);
+    for pixel in image.pixels() {
+        bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+    }
+    const TEMPLATE: &[u8] =
+        include_bytes!("../../resources/sc5/2EF7D20A.texture-template.rw4");
+    let file = Rw4File::parse(TEMPLATE).map_err(|error| error.to_string())?;
+    let texture = file
+        .sections_of_type(SectionType::TEXTURE)
+        .next()
+        .ok_or("texture template has no TEXTURE section")?;
+    let mut texture_payload = file
+        .payload(TEMPLATE, texture.number)
+        .map_err(|error| error.to_string())?
+        .to_vec();
+    if texture_payload.len() < 32 {
+        return Err("texture template header is truncated".into());
+    }
+    texture_payload[0..4].copy_from_slice(&21u32.to_le_bytes());
+    texture_payload[12..14].copy_from_slice(&(width as u16).to_le_bytes());
+    texture_payload[14..16].copy_from_slice(&(height as u16).to_le_bytes());
+    texture_payload[16..20].copy_from_slice(&0x120u32.to_le_bytes());
+    let blob = u32::from_le_bytes(texture_payload[28..32].try_into().unwrap());
+    let mut replacements = std::collections::HashMap::new();
+    replacements.insert(texture.number, texture_payload);
+    replacements.insert(blob, bgra);
+    rw4::writer::replace_template_sections(TEMPLATE, &replacements)
+        .map_err(|error| format!("texture wrapper: {error}"))
 }
 
 /// Wrap an f32 parameter table (row-major `cols × 4` floats) into a minimal
@@ -174,7 +268,7 @@ pub fn encode_params_rw4(params_f32: &[u8], cols: u32) -> Result<Vec<u8>, String
     texture.extend_from_slice(&0u32.to_le_bytes());
     texture.extend_from_slice(&cols.to_le_bytes());
     texture.extend_from_slice(&rows.to_le_bytes());
-    texture.extend_from_slice(&(1u32 << 8).to_le_bytes());
+    texture.extend_from_slice(&0x180u32.to_le_bytes());
     texture.extend_from_slice(&0u32.to_le_bytes());
     texture.extend_from_slice(&0u32.to_le_bytes());
     texture.extend_from_slice(&0i32.to_le_bytes()); // data section number (Blob #0)
@@ -235,7 +329,8 @@ where
             let is_png = *is_png;
             // slot0 non-PNG payloads are the wrapped f32 parameter tables;
             // every other slot is a raster.
-            let type_id = if slot == 0 && !is_png {
+            let texture_slot = slot == 4 || slot == 5;
+            let type_id = if (slot == 0 && !is_png) || (texture_slot && is_png) {
                 rw4_model_type()
             } else {
                 raster_type()
@@ -244,7 +339,9 @@ where
             let instance = if let Some(instance) = instance_of.get(&encoded_key) {
                 *instance
             } else {
-                let prepared = if type_id == raster_type() && is_png {
+                let prepared = if texture_slot && is_png {
+                    encode_png_texture(bytes)?
+                } else if type_id == raster_type() && is_png {
                     encode_png_raster(bytes)?
                 } else {
                     bytes.clone()

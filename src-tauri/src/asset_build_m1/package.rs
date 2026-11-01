@@ -457,6 +457,12 @@ fn insert_scene_model(
             .map(std::fs::read)
             .transpose()
             .map_err(|error| format!("read native template: {error}"))?
+            .or_else(|| {
+                Some(
+                    include_bytes!("../../resources/sc5/175EFB4E.research-template.rw4")
+                        .to_vec(),
+                )
+            })
             .or_else(|| resources
             .iter()
             .filter(|(id, bytes)| {
