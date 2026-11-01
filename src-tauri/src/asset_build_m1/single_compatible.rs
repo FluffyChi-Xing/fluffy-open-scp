@@ -6,6 +6,7 @@
 //! combination, and remap every mesh reference. It deliberately does not touch
 //! pixels or parameters yet; that is the next stage of the port.
 
+use image::{imageops::FilterType, RgbaImage};
 use sha2::{Digest, Sha256};
 
 use super::lotm::{LotmDocument, LotmMaterial, MeshMaterialRef};
@@ -231,6 +232,120 @@ pub fn deduplicate(document: &LotmDocument) -> Result<LotmDocument, String> {
         materials: rows,
         mesh_material,
         diagnostics: document.diagnostics.clone(),
+    })
+}
+
+/// Rendered PNG payloads for the single material's six slots.
+pub struct SurfaceAtlases {
+    pub tint: RgbaImage,
+    pub normal: RgbaImage,
+    pub shader: RgbaImage,
+    pub palette: RgbaImage,
+    pub interior: RgbaImage,
+}
+
+fn decode_png(material: &LotmMaterial, index: usize) -> Result<RgbaImage, String> {
+    let bytes = material
+        .pngs
+        .get(index)
+        .and_then(Option::as_ref)
+        .ok_or_else(|| format!("single-compatible: material is missing PNG slot {index}"))?;
+    image::load_from_memory(bytes)
+        .map(|image| image.to_rgba8())
+        .map_err(|error| format!("single-compatible: decode slot {index}: {error}"))
+}
+
+/// Render the exact 512-cell layout planned by [`plan_surfaces`].
+pub fn render_atlases(
+    document: &LotmDocument,
+    plan: &SurfacePlan,
+) -> Result<SurfaceAtlases, String> {
+    let size = plan.atlas;
+    let mut tint = RgbaImage::new(size, size);
+    let mut normal = RgbaImage::new(size, size);
+    let mut shader = RgbaImage::new(size, size);
+    let surface_count = plan.surface_of_row.iter().max().copied().unwrap_or(0) + 1;
+    for surface in 0..surface_count {
+        let Some(row) = plan.surface_of_row.iter().position(|item| *item == surface) else {
+            continue;
+        };
+        let material = &document.materials[row];
+        let x = ((surface as u32 % plan.grid) * plan.cell) as i64;
+        let y = ((surface as u32 / plan.grid) * plan.cell) as i64;
+        for (target, slot) in [
+            (&mut tint, LotmMaterial::PNG_TINT),
+            (&mut normal, LotmMaterial::PNG_NORMAL),
+            (&mut shader, LotmMaterial::PNG_SHADER),
+        ] {
+            let source = decode_png(material, slot)?;
+            let resized = image::imageops::resize(
+                &source,
+                plan.cell,
+                plan.cell,
+                FilterType::Nearest,
+            );
+            image::imageops::overlay(target, &resized, x, y);
+        }
+    }
+
+    let mut palette = RgbaImage::new(512, 16);
+    for (row, material) in document.materials.iter().enumerate() {
+        let source = decode_png(material, LotmMaterial::PNG_PALETTE)?;
+        let source = image::imageops::resize(&source, 512, 16, FilterType::Nearest);
+        for layer in 0..2usize {
+            let source_column = plan.palette_source[row][layer] as u32;
+            let destination = (row * 4 + layer * 2) as u32;
+            for column in 0..2u32 {
+                for y in 0..16u32 {
+                    let pixel = *source.get_pixel((source_column + column) % 512, y);
+                    palette.put_pixel((destination + column) % 512, y, pixel);
+                }
+            }
+        }
+    }
+
+    let mut interior = RgbaImage::new(plan.room_atlas, plan.room_atlas);
+    for (room, parameters) in plan.room_params.iter().enumerate() {
+        let row = plan
+            .room_of_row
+            .iter()
+            .position(|item| item == &room)
+            .ok_or("single-compatible: room has no material row")?;
+        let source = decode_png(&document.materials[row], LotmMaterial::PNG_INTERIOR)?;
+        let source = image::imageops::resize(
+            &source,
+            plan.cell,
+            plan.cell,
+            FilterType::Nearest,
+        );
+        let tile = |step: u32| (step as f32 + 0.5) / 64.0;
+        for state in 0..16u32 {
+            let x = (room as u32 % (plan.room_atlas / 64)) * 64;
+            let y = (room as u32 / (plan.room_atlas / 64)) * 64;
+            for ty in 0..64u32 {
+                for tx in 0..64u32 {
+                    let xx = (((tile(tx) + state as f32) * parameters[0]).rem_euclid(1.0)
+                        * plan.cell as f32) as u32
+                        % plan.cell;
+                    let yy = ((tile(ty) * parameters[0] + parameters[1]).rem_euclid(1.0)
+                        * plan.cell as f32) as u32
+                        % plan.cell;
+                    interior.put_pixel(
+                        x + state * 64 + tx,
+                        y + ty,
+                        *source.get_pixel(xx.min(plan.cell - 1), yy.min(plan.cell - 1)),
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(SurfaceAtlases {
+        tint,
+        normal,
+        shader,
+        palette,
+        interior,
     })
 }
 
