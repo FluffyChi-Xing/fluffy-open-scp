@@ -116,8 +116,8 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
             room_params.push([params[2], params[3]]);
         }
         palette_source.push([
-            (params[0] * 511.0).round() as u32 % 512,
-            (params[1] * 511.0).round() as u32 % 512,
+            (params[0] * 512.0).round() as u32 % 512,
+            (params[1] * 512.0).round() as u32 % 512,
         ]);
         rows.push(params);
     }
