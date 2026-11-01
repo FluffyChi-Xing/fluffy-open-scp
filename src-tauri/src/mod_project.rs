@@ -294,10 +294,14 @@ pub async fn studio_legacy_status(
             .studio_config()
             .map_err(ModProjectError::from)?
             .mod_root;
-        Ok(crate::workspace::legacy_status(&internal, configured, |legacy| {
-            // 口径：全部顶层条目（项目即文件夹；杂散文件也一并计）
-            crate::workspace::legacy_pending_count(legacy, |_entry, _is_dir| true)
-        }))
+        Ok(crate::workspace::legacy_status(
+            &internal,
+            configured,
+            |legacy| {
+                // 口径：全部顶层条目（项目即文件夹；杂散文件也一并计）
+                crate::workspace::legacy_pending_count(legacy, |_entry, _is_dir| true)
+            },
+        ))
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
@@ -319,8 +323,8 @@ pub async fn studio_sync_legacy(
         let legacy = studio
             .mod_root
             .ok_or_else(|| CommandError::new("not_configured", "mod root is not configured"))?;
-        let canonical_legacy = fs::canonicalize(&legacy)
-            .map_err(|error| ModProjectError::Io(error))?;
+        let canonical_legacy =
+            fs::canonicalize(&legacy).map_err(|error| ModProjectError::Io(error))?;
         if canonical_legacy == internal || internal.starts_with(&canonical_legacy) {
             return Err(CommandError::new(
                 "invalid_path",
@@ -328,14 +332,14 @@ pub async fn studio_sync_legacy(
             ));
         }
         let mut budget = LEGACY_MODS_SYNC_BUDGET;
-        let copied_count = crate::workspace::copy_tree_merge(
-            &canonical_legacy,
-            &internal,
-            &mut budget,
-        )
-        .map_err(|error| CommandError::new("mod_project_error", error.to_string()))?;
+        let copied_count =
+            crate::workspace::copy_tree_merge(&canonical_legacy, &internal, &mut budget)
+                .map_err(|error| CommandError::new("mod_project_error", error.to_string()))?;
         store
-            .set_studio_config(Some(&internal.to_string_lossy()), studio.onboarding_completed)
+            .set_studio_config(
+                Some(&internal.to_string_lossy()),
+                studio.onboarding_completed,
+            )
             .map_err(ModProjectError::from)?;
         Ok(crate::workspace::LegacySyncOutcome {
             copied_count,

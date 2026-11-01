@@ -11,9 +11,10 @@
 mod activity;
 mod annotations;
 pub(crate) mod asset_build_m0;
-mod asset_build_m1;
+pub mod asset_build_m1;
 pub(crate) mod asset_build_samples;
 mod atomic_fs;
+mod blender_service;
 mod debug_tools;
 mod effect_resources;
 mod effect_service;

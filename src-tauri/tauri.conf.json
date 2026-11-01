@@ -33,7 +33,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": ["resources/database_main.s3db"],
+    "resources": [
+      "resources/database_main.s3db",
+      "resources/blender/**/*"
+    ],
     "icon": ["icons/icon.png", "icons/icon.ico"]
   }
 }

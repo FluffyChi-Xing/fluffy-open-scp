@@ -67,14 +67,19 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
     unsafe extern "system" {
         fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
     }
-    let flags = if replace { MOVEFILE_REPLACE_EXISTING } else { 0 };
+    let flags = if replace {
+        MOVEFILE_REPLACE_EXISTING
+    } else {
+        0
+    };
     for attempt in 0..=RETRY_DELAYS_MS.len() {
         let ok = unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), flags) };
         if ok != 0 {
             return Ok(());
         }
         let error = io::Error::last_os_error();
-        if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION) || attempt == RETRY_DELAYS_MS.len() {
+        if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION) || attempt == RETRY_DELAYS_MS.len()
+        {
             return Err(error);
         }
         std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAYS_MS[attempt]));
@@ -98,7 +103,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("openscp-atomic-{label}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("openscp-atomic-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

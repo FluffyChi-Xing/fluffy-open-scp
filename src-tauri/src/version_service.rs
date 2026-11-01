@@ -10,7 +10,7 @@ use std::sync::Arc;
 use base64::Engine as _;
 use dbpf::ResourceId;
 use sc_store::{
-    ChangeItemInput, ChangesetInput, ChangesetSummary, ChangeItemRecord, Store, StoreError,
+    ChangeItemInput, ChangeItemRecord, ChangesetInput, ChangesetSummary, Store, StoreError,
     VersionTargetSummary,
 };
 use serde::{Deserialize, Serialize};
@@ -162,7 +162,12 @@ fn decode_payload(value: &Option<String>, label: &str) -> Result<Option<Vec<u8>>
     };
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(encoded)
-        .map_err(|error| CommandError::new("invalid_argument", format!("{label} 不是合法 base64：{error}")))?;
+        .map_err(|error| {
+            CommandError::new(
+                "invalid_argument",
+                format!("{label} 不是合法 base64：{error}"),
+            )
+        })?;
     if bytes.len() > MAX_PAYLOAD_BYTES {
         return Err(CommandError::new(
             "limit_exceeded",
@@ -232,7 +237,10 @@ pub async fn version_record_changeset(
     request: RecordChangesetRequest,
 ) -> Result<ChangesetSummary, CommandError> {
     if request.resources.is_empty() {
-        return Err(CommandError::new("invalid_argument", "no resources to record"));
+        return Err(CommandError::new(
+            "invalid_argument",
+            "no resources to record",
+        ));
     }
     if request.resources.len() > MAX_BATCH_RESOURCES {
         return Err(CommandError::new(
@@ -258,7 +266,16 @@ pub async fn version_record_changeset(
     let detail = request.detail.clone();
     let file_digest = request.file_digest.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        record_written(&store, &target_path, &writer, label, note, detail, file_digest, items)
+        record_written(
+            &store,
+            &target_path,
+            &writer,
+            label,
+            note,
+            detail,
+            file_digest,
+            items,
+        )
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
@@ -506,7 +523,8 @@ mod tests {
     use super::*;
 
     fn scratch(label: &str) -> (std::path::PathBuf, Store, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("openscp-version-{label}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("openscp-version-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(dir.join("openscp.db")).unwrap();
@@ -587,7 +605,10 @@ mod tests {
         let target_path = target.to_string_lossy().into_owned();
         // 增 -> 改 -> 删 -> 再加
         let history: Vec<(i64, Vec<ChangeItemInput>)> = vec![
-            (1, vec![item(1, None, Some(b"v1-1")), item(2, None, Some(b"v1-2"))]),
+            (
+                1,
+                vec![item(1, None, Some(b"v1-1")), item(2, None, Some(b"v1-2"))],
+            ),
             (2, vec![item(1, Some(b"v1-1"), Some(b"v2-1"))]),
             (3, vec![item(2, Some(b"v1-2"), None)]),
             (4, vec![item(2, None, Some(b"v4-2"))]),
@@ -668,7 +689,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(forced.target_revision, 1);
-        assert_eq!(std::fs::read(&target).unwrap(), expected_overlay(&fold_at(&[(1, vec![item(1, None, Some(b"v1"))])], 1)));
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            expected_overlay(&fold_at(&[(1, vec![item(1, None, Some(b"v1"))])], 1))
+        );
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -677,11 +701,7 @@ mod tests {
     fn rollback_recreates_deleted_target() {
         let (dir, store, target) = scratch("rollback-recreate");
         let target_path = target.to_string_lossy().into_owned();
-        let first = record(
-            &store,
-            &target_path,
-            vec![item(7, None, Some(b"payload"))],
-        );
+        let first = record(&store, &target_path, vec![item(7, None, Some(b"payload"))]);
         assert!(!target.exists());
         let result = rollback_inner(
             &store,
@@ -705,12 +725,20 @@ mod tests {
         let (dir, store, target) = scratch("rollback-delete");
         let target_path = target.to_string_lossy().into_owned();
         let first = record(&store, &target_path, vec![item(1, None, Some(b"v1"))]);
-        record(&store, &target_path, vec![item(1, Some(b"v1"), Some(b"v2"))]);
+        record(
+            &store,
+            &target_path,
+            vec![item(1, Some(b"v1"), Some(b"v2"))],
+        );
         std::fs::write(&target, b"on-disk").unwrap();
 
         let removed = store.delete_changeset(first.id).unwrap();
         assert_eq!(removed.changesets, 1);
-        assert_eq!(std::fs::read(&target).unwrap(), b"on-disk", "删版本不得动文件");
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            b"on-disk",
+            "删版本不得动文件"
+        );
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -753,7 +781,11 @@ mod tests {
 
         // 回滚不应新增 blob：新版本记录的 after 全部复用既有 digest
         let (_, detail_items) = store.changeset_detail(result.new_changeset.id).unwrap();
-        assert!(detail_items.iter().all(|entry| entry.after_digest.is_some()));
+        assert!(
+            detail_items
+                .iter()
+                .all(|entry| entry.after_digest.is_some())
+        );
         let _ = first;
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);

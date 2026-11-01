@@ -1,4 +1,4 @@
-//! Pure validation and lowering. No package reads or artifact evaluation.
+﻿//! Pure validation and lowering. No package reads or artifact evaluation.
 use super::patch::{PropertyPatch, PropertyPatchSpec, parse_patch};
 use crate::asset_build_m0::{IntermediateModel, lower_schema, parse_schema};
 use dbpf::ResourceId;
@@ -12,6 +12,9 @@ pub struct PropertyBuildPlan {
     pub intermediate: IntermediateModel,
     pub patches: Vec<PropertyPatchSpec>,
     pub order: [&'static str; 3],
+    /// `semantics.menu`: register the built building as a NEW menu entry
+    /// (new property identity) instead of overriding the reference lot.
+    pub menu: Option<super::menu::MenuRegistrationSpec>,
     #[serde(skip)]
     pub(crate) typed_patches: Vec<PropertyPatch>,
     #[serde(skip)]
@@ -26,12 +29,20 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     if im.references.package.is_none() {
         return Err("M1 requires reference.package".into());
     }
-    if !im.semantics.unit_overrides.is_empty()
-        || !im.semantics.lot_bindings.is_empty()
-        || !im.semantics.menu.is_empty()
-    {
-        return Err("M1 supports native model lowering and explicit semantics.properties; raster and semantic lowering are not implemented".into());
+    if !im.semantics.unit_overrides.is_empty() || !im.semantics.lot_bindings.is_empty() {
+        return Err("M1 supports native model lowering, raster slots, scene unit lowering and menu registration; semantics.unitOverrides/lotBindings are not implemented".into());
     }
+    let menu = if im.semantics.menu.is_empty() {
+        None
+    } else {
+        let spec = super::menu::MenuRegistrationSpec::from_values(&im.semantics.menu)?;
+        if im.references.lot.is_none() {
+            return Err(
+                "semantics.menu requires reference.lot to clone the lot identity from".into(),
+            );
+        }
+        Some(spec)
+    };
     // Portable output names: avoid Windows devices, streams and trailing-dot aliases.
     let name = &im.output.package;
     let stem = name.trim_end_matches(".package");
@@ -99,12 +110,15 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
     }
     Ok(PropertyBuildPlan {
-        processor_version: "openscp.property.m1/1",
-        scope: "property-only",
+        processor_version: "openscp.property.m1/13",
+        scope: "property+scene-model",
         intermediate: im,
         patches: specs,
         typed_patches: patches,
         protected,
+        menu,
         order: ["property", "dbpf", "readback"],
     })
 }
+
+

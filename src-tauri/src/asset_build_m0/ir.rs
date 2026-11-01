@@ -39,6 +39,7 @@ pub struct ReferenceIr {
 pub struct SceneIr {
     pub document: String,
     pub model: Option<String>,
+    pub model_shape: Option<String>,
     pub slots: BTreeMap<String, String>,
 }
 
@@ -55,6 +56,18 @@ pub struct SemanticsIr {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputIr {
     pub package: String,
+    #[serde(default)]
+    pub mode: OutputMode,
+}
+
+/// Package write strategy. `Delta` (default) writes only the resources the
+/// build created or rewrote; `Full` re-serializes the whole reference
+/// snapshot (legacy overlay contract).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OutputMode {
+    #[default]
+    Delta,
+    Full,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +99,7 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
         scene: SceneIr {
             document: schema.scene.document.clone(),
             model: schema.scene.model.clone(),
+            model_shape: schema.scene.model_shape.clone(),
             slots: schema.scene.slots.clone(),
         },
         semantics: SemanticsIr {
@@ -98,6 +112,10 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
         },
         output: OutputIr {
             package: schema.outputs.package.clone(),
+            mode: match schema.outputs.mode.as_deref() {
+                Some("full") => OutputMode::Full,
+                _ => OutputMode::Delta,
+            },
         },
         slots: processor_slots(schema),
     })

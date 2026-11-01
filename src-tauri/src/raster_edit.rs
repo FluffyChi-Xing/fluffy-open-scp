@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::activity::{AppState, CommandError};
-use crate::package_service::{find_raster_entry, write_export, TgiDto};
+use crate::package_service::{TgiDto, find_raster_entry, write_export};
 
 const RASTER_TYPE_ID: u32 = 0x2F4E_681C;
 const PROPERTY_TYPE_ID: u32 = 0x00B1_B104;
@@ -110,9 +110,7 @@ pub struct ImageRgbaResponse {
 }
 
 #[tauri::command]
-pub async fn read_image_rgba(
-    request: ImageFileRequest,
-) -> Result<ImageRgbaResponse, CommandError> {
+pub async fn read_image_rgba(request: ImageFileRequest) -> Result<ImageRgbaResponse, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         if request.path.is_empty() {
             return Err(RasterEditError::InvalidPath);
@@ -161,27 +159,23 @@ pub async fn read_raster_rgba(
 ) -> Result<RasterRgbaResponse, CommandError> {
     let manager = Arc::clone(&state.packages);
     tauri::async_runtime::spawn_blocking(move || {
-    let package = manager.get(request.package_id)?;
-    let tgi: ResourceId = request.tgi.into();
-    // SCP 定位语义（= find_raster_entry）：精确 TGI 须 raster 类型，失败时按
-    // instance+RASTER_TYPE 扫描——LotMask key 的 type/group 惯例为 0，
-    // 拿 key 原样精确查找必失配（Graphics lot 覆盖目标载入失败的根因）。
-    let mask_key = sc_properties::Key {
-        instance: tgi.instance,
-        type_id: tgi.type_id,
-        group: tgi.group,
-    };
-    let entry_id = find_raster_entry(&package, mask_key).ok_or(RasterEditError::NotFound)?;
-    let entry = package
-        .entry(entry_id)
-        .ok_or(RasterEditError::NotFound)?;
-    let data = package.read(entry)?;
+        let package = manager.get(request.package_id)?;
+        let tgi: ResourceId = request.tgi.into();
+        // SCP 定位语义（= find_raster_entry）：精确 TGI 须 raster 类型，失败时按
+        // instance+RASTER_TYPE 扫描——LotMask key 的 type/group 惯例为 0，
+        // 拿 key 原样精确查找必失配（Graphics lot 覆盖目标载入失败的根因）。
+        let mask_key = sc_properties::Key {
+            instance: tgi.instance,
+            type_id: tgi.type_id,
+            group: tgi.group,
+        };
+        let entry_id = find_raster_entry(&package, mask_key).ok_or(RasterEditError::NotFound)?;
+        let entry = package.entry(entry_id).ok_or(RasterEditError::NotFound)?;
+        let data = package.read(entry)?;
         let image = RasterImage::parse(&data)?;
         let decodable = image.is_raw_rgba();
         let rgba_base64 = if decodable {
-            Some(base64::engine::general_purpose::STANDARD.encode(
-                image.decode_top_mip_rgba()?,
-            ))
+            Some(base64::engine::general_purpose::STANDARD.encode(image.decode_top_mip_rgba()?))
         } else {
             None
         };
@@ -283,9 +277,7 @@ pub async fn save_raster_overlay(
             let entry = package
                 .entry(companion_id)
                 .ok_or(RasterEditError::NotFound)?;
-            if u64::from(entry.decompressed_size)
-                > crate::package_service::RESOURCE_DATA_MAX
-            {
+            if u64::from(entry.decompressed_size) > crate::package_service::RESOURCE_DATA_MAX {
                 return Err(RasterEditError::CompanionTooLarge);
             }
             let data = package.read(entry)?;
@@ -375,16 +367,16 @@ fn summarize_property_document(
             let document = sc_properties::LotEditorDocument::from_property_file(file);
             // 无 LotMask 的 property 没有 raster 可覆盖，不作为目标列出。
             let lot_mask = document.lot_mask.clone()?;
-                Some(PropertyDocumentSummary {
-                    tgi,
-                    lot_mask: Some(key_to_tgi(&lot_mask)),
-                    // 跨包解析在命令层做（此处拿不到 manager）。
-                    lot_mask_package_id: None,
-                    lot_mask_resolved: None,
-                    lot_size: document.lot_size,
-                    entry_count: None,
-                    material_instance: None,
-                })
+            Some(PropertyDocumentSummary {
+                tgi,
+                lot_mask: Some(key_to_tgi(&lot_mask)),
+                // 跨包解析在命令层做（此处拿不到 manager）。
+                lot_mask_package_id: None,
+                lot_mask_resolved: None,
+                lot_size: document.lot_size,
+                entry_count: None,
+                material_instance: None,
+            })
         }
         DocumentKind::Decal => {
             if !sc_properties::is_decal_dictionary_group(tgi.group) {
@@ -537,9 +529,7 @@ pub async fn read_lot_material(
             ));
         }
         let entry = package.entry(id).ok_or(RasterEditError::NotFound)?;
-        if u64::from(entry.decompressed_size)
-            > crate::package_service::RESOURCE_DATA_MAX
-        {
+        if u64::from(entry.decompressed_size) > crate::package_service::RESOURCE_DATA_MAX {
             return Err(RasterEditError::CompanionTooLarge);
         }
         let data = package.read(entry)?;
@@ -587,9 +577,7 @@ pub async fn read_lot_material(
                 sc_properties::Value::Vector2(values) => Some(*values),
                 _ => None,
             })
-            .map(|values| {
-                values.map(|value| if value.abs() < 0.1 { 0.1 } else { value })
-            })
+            .map(|values| values.map(|value| if value.abs() < 0.1 { 0.1 } else { value }))
             .or(Some([8.0, 8.0]));
         Ok::<LotMaterialResponse, RasterEditError>(LotMaterialResponse {
             colors,
@@ -664,9 +652,7 @@ pub async fn register_decal_entry(
             ));
         }
         if request.atlas.tgi.type_id != PROPERTY_TYPE_ID {
-            return Err(RasterEditError::InvalidCompanion(
-                request.atlas.tgi.type_id,
-            ));
+            return Err(RasterEditError::InvalidCompanion(request.atlas.tgi.type_id));
         }
         if !sc_properties::is_decal_dictionary_group(request.atlas.tgi.group) {
             return Err(RasterEditError::NotDecalDictionary);
@@ -713,19 +699,17 @@ pub async fn register_decal_entry(
             aspect_ratio: request.aspect_ratio,
             colors: request.colors,
         };
-        let entry_index = sc_properties::upsert_entry(
-            &mut file,
-            &upsert,
-            request.replace_instance,
-        )
-        .map_err(|error| match error {
-            sc_properties::Error::DecalEntryNotFound(_) => RasterEditError::EntryNotFound,
-            other => RasterEditError::InvalidArgument(other.to_string()),
-        })?;
+        let entry_index = sc_properties::upsert_entry(&mut file, &upsert, request.replace_instance)
+            .map_err(|error| match error {
+                sc_properties::Error::DecalEntryNotFound(_) => RasterEditError::EntryNotFound,
+                other => RasterEditError::InvalidArgument(other.to_string()),
+            })?;
         let property_data = file.encode_canonical().map_err(|error| {
             RasterEditError::InvalidArgument(format!("atlas encode failed: {error}"))
         })?;
-        let entry_count = sc_properties::DecalDictionary::from_file(&file).entries.len();
+        let entry_count = sc_properties::DecalDictionary::from_file(&file)
+            .entries
+            .len();
 
         // 两资源同包导出（raster + atlas property，副本语义）。
         let raster_id = ResourceId {
@@ -1090,16 +1074,23 @@ mod tests {
             type_id: RASTER_TYPE_ID,
             group: 0,
         };
-        let colors = [[10, 20, 30, 0], [255, 0, 0, 1], [0, 128, 0, 8], [0, 0, 255, 15]];
+        let colors = [
+            [10, 20, 30, 0],
+            [255, 0, 0, 1],
+            [0, 128, 0, 8],
+            [0, 0, 255, 15],
+        ];
         let file = build_new_lot_property([48.0, 96.0], mask, colors);
 
         // 编码必须可逆，且 LotEditorDocument 能读回语义字段。
         let encoded = file.encode_canonical().unwrap();
         let reparsed = sc_properties::PropertyFile::parse(&encoded).unwrap();
-        let document =
-            sc_properties::LotEditorDocument::from_property_file(reparsed);
+        let document = sc_properties::LotEditorDocument::from_property_file(reparsed);
         assert_eq!(document.lot_size, Some([48.0, 96.0]));
-        assert_eq!(document.lot_mask.as_ref().map(|key| key.instance), Some(0xabcd));
+        assert_eq!(
+            document.lot_mask.as_ref().map(|key| key.instance),
+            Some(0xabcd)
+        );
 
         // LotColor1-4：读取侧的口径 = scalar/array 的 ColorRgba，RGB 线性、A = 索引。
         for (index, expected) in colors.iter().enumerate() {
@@ -1150,10 +1141,14 @@ mod tests {
                 group: 0,
             }),
         )]);
-        let raster_path = std::env::temp_dir()
-            .join(format!("openscp-mask-raster-{}.package", std::process::id()));
-        let property_path = std::env::temp_dir()
-            .join(format!("openscp-mask-property-{}.package", std::process::id()));
+        let raster_path = std::env::temp_dir().join(format!(
+            "openscp-mask-raster-{}.package",
+            std::process::id()
+        ));
+        let property_path = std::env::temp_dir().join(format!(
+            "openscp-mask-property-{}.package",
+            std::process::id()
+        ));
         fs::write(
             &raster_path,
             dbpf::write_uncompressed_overlay(&[OverlayEntry::new(raster_id, image.to_bytes())])

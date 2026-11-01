@@ -18,6 +18,7 @@
 //!   the caller (rasters are allocated by the package orchestrator).
 
 use super::lotm::LotmDocument;
+use super::template_material;
 use rw4::{Rw4File, SectionType, build_file, writer_section};
 use std::collections::HashMap;
 use serde_json::Value;
@@ -742,6 +743,13 @@ pub fn compile_lotm_nh_template(
         *index += 1;
     }
     let rw4 = rw4::writer::replace_template_sections(template, &replacements)?;
+    // Keep the template MATERIAL header/shader but point its six texture
+    // instances at this asset's material slots.
+    let head_slots = unique_instances
+        .first()
+        .copied()
+        .ok_or("template compile: head material slots missing")?;
+    let rw4 = template_material::rewrite_texture_instances(&rw4, &head_slots)?;
     let file = Rw4File::parse(&rw4).map_err(|e| format!("template replacement parse: {e}"))?;
     let mesh_count = file.sections_of_type(SectionType::MESH).count();
     if mesh_count == 0 || mesh_count > 4 {

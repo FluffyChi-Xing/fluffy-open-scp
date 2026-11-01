@@ -51,10 +51,7 @@ pub fn persistent_root<R: Runtime>(app: &AppHandle<R>) -> io::Result<PathBuf> {
     internal_base(app)
 }
 
-fn ensure_subdir<R: Runtime>(
-    app: &AppHandle<R>,
-    name: &str,
-) -> io::Result<PathBuf> {
+fn ensure_subdir<R: Runtime>(app: &AppHandle<R>, name: &str) -> io::Result<PathBuf> {
     let dir = internal_base(app)?.join(name);
     fs::create_dir_all(&dir)?;
     Ok(dir)

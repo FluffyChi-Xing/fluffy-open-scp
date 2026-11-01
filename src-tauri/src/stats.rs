@@ -100,13 +100,8 @@ pub struct PackageStatisticsResponse {
     pub failed: Vec<String>,
 }
 
-fn extension_label(
-    type_id: u32,
-    registry: Option<&sc_registry::Registry>,
-) -> (String, bool) {
-    if let Some((_, ext, _)) =
-        KNOWN_EXTENSIONS.iter().find(|(id, _, _)| *id == type_id)
-    {
+fn extension_label(type_id: u32, registry: Option<&sc_registry::Registry>) -> (String, bool) {
+    if let Some((_, ext, _)) = KNOWN_EXTENSIONS.iter().find(|(id, _, _)| *id == type_id) {
         return ((*ext).to_string(), true);
     }
     if let Some(registry) = registry
@@ -141,8 +136,7 @@ fn analyze_packages(
     paths: &[String],
     registry_path: Option<&Path>,
 ) -> Result<PackageStatisticsResponse, CommandError> {
-    let registry = registry_path
-        .and_then(|path| sc_registry::Registry::open(path).ok());
+    let registry = registry_path.and_then(|path| sc_registry::Registry::open(path).ok());
     let mut packages = Vec::with_capacity(paths.len());
     let mut failed = Vec::new();
     // (ext, type_id, known) -> 聚合计数
@@ -167,8 +161,7 @@ fn analyze_packages(
             }
         };
         let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
-        let mut package_exts: HashMap<(String, u32, bool), [u64; 3]> =
-            HashMap::new();
+        let mut package_exts: HashMap<(String, u32, bool), [u64; 3]> = HashMap::new();
         let mut package_known = 0u64;
         let mut package_unknown = 0u64;
         let mut entry_count = 0u64;
@@ -219,21 +212,19 @@ fn analyze_packages(
     })
 }
 
-fn finalize_stats(
-    map: HashMap<(String, u32, bool), [u64; 3]>,
-) -> Vec<ExtensionStat> {
+fn finalize_stats(map: HashMap<(String, u32, bool), [u64; 3]>) -> Vec<ExtensionStat> {
     let mut stats: Vec<ExtensionStat> = map
         .into_iter()
-        .map(|((ext, type_id, known), [count, stored, decompressed])| {
-            ExtensionStat {
+        .map(
+            |((ext, type_id, known), [count, stored, decompressed])| ExtensionStat {
                 ext,
                 type_id,
                 known,
                 count,
                 stored_size: stored,
                 decompressed_size: decompressed,
-            }
-        })
+            },
+        )
         .collect();
     stats.sort_by(|a, b| b.decompressed_size.cmp(&a.decompressed_size));
     stats
@@ -303,7 +294,11 @@ mod tests {
         println!("packages analyzed: {}", response.packages.len());
         println!(
             "failed: {:?}",
-            response.failed.iter().map(String::as_str).collect::<Vec<_>>()
+            response
+                .failed
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
         );
         let totals = &response.totals;
         let ratio = if totals.decompressed_size > 0 {
@@ -314,9 +309,20 @@ mod tests {
         println!("=== coverage probe (decompressed size) ===");
         println!("file size:            {}", totals.file_size);
         println!("total decompressed:   {}", totals.decompressed_size);
-        println!("known decompressed:   {} ({:.2}%)", totals.known_decompressed, ratio * 100.0);
-        println!("unknown decompressed: {} ({:.2}%)", totals.unknown_decompressed, (1.0 - ratio) * 100.0);
-        println!("entries: {} (known {} / unknown {})", totals.entry_count, totals.known_count, totals.unknown_count);
+        println!(
+            "known decompressed:   {} ({:.2}%)",
+            totals.known_decompressed,
+            ratio * 100.0
+        );
+        println!(
+            "unknown decompressed: {} ({:.2}%)",
+            totals.unknown_decompressed,
+            (1.0 - ratio) * 100.0
+        );
+        println!(
+            "entries: {} (known {} / unknown {})",
+            totals.entry_count, totals.known_count, totals.unknown_count
+        );
         println!("=== per-extension (top 30 by decompressed) ===");
         for ext in response.extensions.iter().take(30) {
             println!(

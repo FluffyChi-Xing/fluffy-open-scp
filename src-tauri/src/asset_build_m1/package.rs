@@ -2,9 +2,10 @@
 use super::{
     connector,
     filesystem::{Staging, project_file},
-    lotm, materials, native_model,
+    atlas_prepare, lotm, material_atlas, materials, native_model,
     plan::plan_from_schema,
     processor::defer_property,
+    resource_closure,
     scene::{self, SceneDocument},
 };
 use dbpf::ResourceId;
@@ -19,6 +20,8 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
+
+pub(crate) type LodModelIds = [ResourceId; 4];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct M1BuildResult {
@@ -82,6 +85,12 @@ impl BuildResources {
         self.all.insert(id, bytes);
     }
 
+    /// The full reference snapshot, used to resolve dependencies that were
+    /// left in a cloned Property/RW4 but were not rewritten themselves.
+    fn all(&self) -> &connector::Resources {
+        &self.all
+    }
+
     /// The delta slice: only entries this build created or rewrote.
     fn delta(&self) -> connector::Resources {
         self.touched
@@ -106,6 +115,14 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
             .ok_or("missing source package")?,
     )?;
     let mut resources = BuildResources::from_source(connector::read_source(&source_path)?);
+    let identity_resources = match plan
+        .menu
+        .as_ref()
+        .and_then(|menu| menu.identity_package.as_deref())
+    {
+        Some(path) => Some(connector::read_source(&project_file(&root, path)?)?),
+        None => None,
+    };
     let scene_document = read_scene_document(&root, &plan.intermediate.scene.document)?;
     // Hash the decompressed snapshot actually consumed by the processors, not a
     // second file read. Container compression differences do not change identity.
@@ -121,7 +138,7 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
         let instance = insert_slot_raster(&root, &mut resources, path)?;
         texture_instances[index] = instance;
     }
-    let (model_id, material_resource_count) = insert_scene_model(
+    let (model_ids, material_resource_count) = insert_scene_model(
         &root,
         &plan.intermediate.scene.model,
         plan.intermediate.scene.model_shape.as_deref(),
@@ -141,7 +158,14 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
                 .into(),
         );
     }
-    let source_hash = connector::fingerprint(&resources);
+    let source_hash = match &identity_resources {
+        Some(identity) => format!(
+            "{}:{}",
+            connector::fingerprint(&resources),
+            connector::fingerprint(identity)
+        ),
+        None => connector::fingerprint(&resources),
+    };
     let plan_bytes = serde_json::to_vec_pretty(&plan).map_err(|e| e.to_string())?;
     let build_hash = digest(
         &serde_json::to_vec(&(plan.processor_version, &source_hash, &plan_bytes))
@@ -191,7 +215,7 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
             &mut resources,
             target,
             None,
-            if menu_mode { None } else { model_id },
+            if menu_mode { None } else { model_ids },
             &mut lowered_units,
         )?;
     }
@@ -204,7 +228,7 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
             } else {
                 scene_document.as_ref()
             },
-            if menu_mode { None } else { model_id },
+            if menu_mode { None } else { model_ids },
             &mut lowered_units,
         )?;
     }
@@ -217,7 +241,8 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
                 &resources,
                 lot_source,
                 scene_document.as_ref(),
-                model_id,
+                model_ids,
+                identity_resources.as_ref(),
             )?;
             for (id, bytes) in generated.entries {
                 resources.insert(id, bytes);
@@ -248,11 +273,18 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
     // rewrote — the game resolves everything else from the base packages.
     // Full output re-serializes the whole reference snapshot (legacy
     // same-TGI overlay contract).
-    let written: connector::Resources = if delta_mode {
+    let mut written: connector::Resources = if delta_mode {
         resources.delta()
     } else {
         std::mem::take(&mut resources.all)
     };
+    if delta_mode {
+        // A cloned Lot Property and a template-based RW4 can still point at
+        // reference-package bytes.  Promote those bytes into the delta before
+        // linking, and fail closed if a required reference is unresolved.
+        let deps = resource_closure::discover(&written, menu_mode)?;
+        resource_closure::complete(&mut written, resources.all(), &deps)?;
+    }
     let output = connector::link(&written)?;
     staging.write(&package_relative_name(&plan), &output)?;
     connector::verify(&staging.path.join(&package_relative_name(&plan)), &written)?;
@@ -374,7 +406,7 @@ fn insert_scene_model(
     resources: &mut BuildResources,
     slot_instances: &[u32; 6],
     scene_document: Option<&SceneDocument>,
-) -> Result<(Option<ResourceId>, usize), String> {
+) -> Result<(Option<LodModelIds>, usize), String> {
     let Some(model_path) = model else {
         return Ok((None, 0));
     };
@@ -384,7 +416,21 @@ fn insert_scene_model(
     let merged = model_shape == Some("merged-single");
     if lotm::is_container(&bytes) {
         let doc = lotm::parse(&bytes)?;
-        let material_plan = materials::resolve_materials(&doc)?;
+        let mut material_plan = materials::resolve_materials(&doc)?;
+        let mut atlas_cells: Option<Vec<[f32; 4]>> = None;
+        if model_shape == Some("nh-atlas") {
+            let atlas = material_atlas::build_tint_atlas(&material_plan)?;
+            let head = material_plan
+                .unique
+                .first_mut()
+                .ok_or("atlas compile: material plan empty")?;
+            let source_params = head.slots[0].as_ref().map(|(bytes, _)| bytes.as_slice());
+            let identity = material_atlas::identity_params(source_params);
+            let identity_rw4 = materials::encode_params_rw4(&identity, 1)?;
+            head.slots[0] = Some((identity_rw4, false));
+            head.slots[1] = Some((atlas.png, true));
+            atlas_cells = Some(atlas.cells);
+        }
         let material_resources =
             materials::build_resources(&material_plan, |type_id, prepared| {
                 Ok(alloc_free_instance(resources, type_id, prepared))
@@ -436,17 +482,73 @@ fn insert_scene_model(
                 std::slice::from_ref(&head_slots),
                 transform,
             )?
+        } else if model_shape == Some("native-multi") {
+            // Plugin-native multi-material export: keep one RW4 mesh per
+            // unique LOTM material. This is the structure the SC5 exporter
+            // writes for assets with many window/decal recipes; it must not
+            // be flattened into the four-mesh/one-material safe shape.
+            native_model::compile_lotm_nh_partitioned(
+                &doc,
+                &material_plan.mesh_material,
+                &material_resources.unique_instances,
+                transform,
+            )?
+        } else if model_shape == Some("nh-atlas") {
+            let cells = atlas_cells.ok_or("atlas compile: cells missing")?;
+            let mesh_cells: Vec<[f32; 4]> = material_plan
+                .mesh_material
+                .iter()
+                .map(|material| {
+                    cells
+                        .get(*material as usize)
+                        .copied()
+                        .unwrap_or([1.0, 1.0, 0.0, 0.0])
+                })
+                .collect();
+            let atlas_doc = atlas_prepare::remap_facade_uvs(&doc, &mesh_cells)?;
+            let zeroed = vec![0u32; doc.meshes.len()];
+            let head_slots = material_resources
+                .unique_instances
+                .first()
+                .copied()
+                .ok_or("atlas compile: head material slots missing")?;
+            match native_template.as_deref() {
+                Some(template) => native_model::compile_lotm_nh_template(
+                    &atlas_doc,
+                    &zeroed,
+                    std::slice::from_ref(&head_slots),
+                    transform,
+                    template,
+                )?,
+                None => native_model::compile_lotm_nh_partitioned(
+                    &atlas_doc,
+                    &zeroed,
+                    std::slice::from_ref(&head_slots),
+                    transform,
+                )?,
+            }
+        } else if model_shape == Some("nh-multimaterial") {
+            // Preserve the four largest facade material groups instead of
+            // collapsing every mesh to material 0.  The game's native census
+            // allows up to four meshes per model; this keeps the main facade
+            // regions while staying inside that envelope.
+            let (top, mapped) = select_material_groups(&doc, &material_plan, 4)?;
+            let instances: Vec<[u32; 6]> = top
+                .iter()
+                .map(|index| material_resources.unique_instances[*index])
+                .collect();
+            native_model::compile_lotm_nh_partitioned(&doc, &mapped, &instances, transform)?
         } else if use_nh_partitioned {
             // NH 顶点布局（stride 40 压缩法线/切线 + facade F4 单 UV 流）
             // 的单形状：全部几何合入一个 mesh，材质取头部材质的六槽；组
             // 顶点 >65536 时 u32 索引（TA 标志 102）。2026-10-31 R9 上游戏
             // 验证：该形态塔楼完整渲染。逐 GLB mesh 一 RW4 mesh 的形状
             // （98-105 mesh）是 census 实证会令加载存档崩溃的孤儿形状。
-            let head = material_plan
-                .mesh_material
+            let (dominant, _) = select_material_groups(&doc, &material_plan, 1)?;
+            let head = dominant
                 .first()
                 .copied()
-                .ok_or("nh-partitioned compile: material plan empty")?;
+                .ok_or("nh-partitioned compile: material plan empty")? as u32;
             let head_slots = material_resources
                 .unique_instances
                 .get(head as usize)
@@ -479,15 +581,27 @@ fn insert_scene_model(
         let compiled_file = Rw4File::parse(&compiled.rw4)
             .map_err(|error| format!("compiled model parse: {error}"))?;
         let mesh_count = compiled_file.sections_of_type(SectionType::MESH).count();
-        if mesh_count > 4 {
+        let max_meshes = if model_shape == Some("native-multi") {
+            128
+        } else {
+            4
+        };
+        if mesh_count > max_meshes {
             return Err(format!(
-                "compiled LOTM model has {mesh_count} RW4 meshes; maximum supported is 4"
+                "compiled LOTM model has {mesh_count} RW4 meshes; maximum supported is {max_meshes}"
             ));
         }
-        let model_id = insert_compiled_model(resources, &compiled.rw4);
+        let model_ids = if model_shape == Some("native-multi") {
+            // Reuse one multi-material model for all four LOD keys. The four
+            // copies were byte-identical; keeping one keeps the package below
+            // the loader's practical size limit for a 98-material model.
+            insert_compiled_model_single(resources, &compiled.rw4)
+        } else {
+            insert_compiled_model(resources, &compiled.rw4)
+        };
         materials::validate_model_resource_closure(&compiled.rw4, resources)
             .map_err(|error| format!("compiled model resource closure: {error}"))?;
-        Ok((Some(model_id), material_resources.payloads.len()))
+        Ok((Some(model_ids), material_resources.payloads.len()))
     } else {
         // Plain GLB: single material bound to the schema raster slots.
         let doc = lotm::LotmDocument {
@@ -506,18 +620,94 @@ fn insert_scene_model(
             std::slice::from_ref(slot_instances),
             transform,
         )?;
-        let model_id = insert_compiled_model(resources, &compiled.rw4);
+        let model_ids = insert_compiled_model(resources, &compiled.rw4);
         materials::validate_model_resource_closure(&compiled.rw4, resources)
             .map_err(|error| format!("compiled model resource closure: {error}"))?;
-        Ok((Some(model_id), 0))
+        Ok((Some(model_ids), 0))
     }
+}
+
+/// Rank materials by triangle area and remap every mesh into one of the top
+/// groups.  This is the bridge between the LOTM's many per-facade materials
+/// and the game's four-mesh budget.
+fn select_material_groups(
+    doc: &lotm::LotmDocument,
+    plan: &materials::MaterialPlan,
+    max_groups: usize,
+) -> Result<(Vec<usize>, Vec<u32>), String> {
+    let mut area = vec![0f64; plan.unique.len()];
+    for (mesh_index, glb) in doc.meshes.iter().enumerate() {
+        let primitives = native_model::parse_glb_primitives(glb)?;
+        let material = plan
+            .mesh_material
+            .get(mesh_index)
+            .copied()
+            .unwrap_or(0) as usize;
+        if material >= area.len() {
+            continue;
+        }
+        for primitive in primitives {
+            for triangle in primitive.indices.chunks_exact(3) {
+                let a = primitive.positions[triangle[0] as usize];
+                let b = primitive.positions[triangle[1] as usize];
+                let c = primitive.positions[triangle[2] as usize];
+                let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                let cross = [
+                    ab[1] * ac[2] - ab[2] * ac[1],
+                    ab[2] * ac[0] - ab[0] * ac[2],
+                    ab[0] * ac[1] - ab[1] * ac[0],
+                ];
+                area[material] += 0.5
+                    * ((cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]) as f64)
+                        .sqrt();
+            }
+        }
+    }
+    let mut order: Vec<usize> = (0..area.len()).collect();
+    order.sort_by(|a, b| area[*b].partial_cmp(&area[*a]).unwrap_or(std::cmp::Ordering::Equal));
+    let top: Vec<usize> = order.into_iter().take(max_groups.max(1)).collect();
+    if top.is_empty() {
+        return Err("multi-material compile: no material groups".into());
+    }
+    let mut rank = vec![0u32; area.len()];
+    for (index, material) in top.iter().enumerate() {
+        rank[*material] = index as u32;
+    }
+    let mapped: Vec<u32> = plan
+        .mesh_material
+        .iter()
+        .map(|material| rank.get(*material as usize).copied().unwrap_or(0))
+        .collect();
+    Ok((top, mapped))
 }
 
 fn scene_model_transform(document: Option<&SceneDocument>) -> Option<[f32; 12]> {
     document.and_then(|document| document.model_transform)
 }
 
-fn insert_compiled_model(resources: &mut BuildResources, rw4: &[u8]) -> ResourceId {
+/// Native building assets carry four independent LOD resources, even when
+/// their bytes are identical. Reuse the same bytes but allocate four
+/// instances so the game's LOD ownership matches NightHouse/retail.
+fn insert_compiled_model(resources: &mut BuildResources, rw4: &[u8]) -> LodModelIds {
+    let mut ids = [ResourceId {
+        type_id: materials::rw4_model_type(),
+        group: 0,
+        instance: 0,
+    }; 4];
+    for id in &mut ids {
+        let instance = alloc_free_instance(resources, materials::rw4_model_type(), rw4);
+        *id = ResourceId {
+            type_id: materials::rw4_model_type(),
+            group: 0,
+            instance,
+        };
+        resources.insert(*id, rw4.to_vec());
+    }
+    ids
+}
+
+fn insert_compiled_model_single(resources: &mut BuildResources, rw4: &[u8]) -> LodModelIds {
     let instance = alloc_free_instance(resources, materials::rw4_model_type(), rw4);
     let id = ResourceId {
         type_id: materials::rw4_model_type(),
@@ -525,7 +715,7 @@ fn insert_compiled_model(resources: &mut BuildResources, rw4: &[u8]) -> Resource
         instance,
     };
     resources.insert(id, rw4.to_vec());
-    id
+    [id; 4]
 }
 
 /// Deterministic instance allocation: content hash, linearly probed on
@@ -548,13 +738,13 @@ fn apply_property_semantics(
     resources: &mut BuildResources,
     target: ResourceId,
     document: Option<&SceneDocument>,
-    model_id: Option<ResourceId>,
+    model_ids: Option<LodModelIds>,
     lowered_units: &mut usize,
 ) -> Result<(), String> {
     let Some(bytes) = resources.get(&target).cloned() else {
         return Ok(());
     };
-    if let Some((encoded, units)) = apply_scene_lot_semantics(&bytes, document, model_id)? {
+    if let Some((encoded, units)) = apply_scene_lot_semantics(&bytes, document, model_ids)? {
         *lowered_units = (*lowered_units).max(units);
         resources.insert(target, encoded);
     }
@@ -568,7 +758,7 @@ fn apply_property_semantics(
 pub(crate) fn apply_scene_lot_semantics(
     bytes: &[u8],
     document: Option<&SceneDocument>,
-    model_id: Option<ResourceId>,
+    model_ids: Option<LodModelIds>,
 ) -> Result<Option<(Vec<u8>, usize)>, String> {
     let mut file = PropertyFile::parse(bytes).map_err(|e| e.to_string())?;
     let mut touched = false;
@@ -602,8 +792,8 @@ pub(crate) fn apply_scene_lot_semantics(
             }
         }
     }
-    if let Some(model_id) = model_id {
-        touched |= retarget_lod_models(&mut file, model_id);
+    if let Some(model_ids) = model_ids {
+        touched |= retarget_lod_models(&mut file, model_ids);
     }
     if !touched {
         return Ok(None);
@@ -621,34 +811,31 @@ pub(crate) fn apply_scene_lot_semantics(
     Ok(Some((encoded, lowered_units)))
 }
 
-/// Point every present LOD model hash (LOD1..4) at the compiled model.  A
-/// property without any LOD key gains LOD1 — otherwise the built lot would
-/// keep rendering its referenced building (问题3's "模型丢失").
-fn retarget_lod_models(file: &mut PropertyFile, model_id: ResourceId) -> bool {
-    let mut found = false;
-    for hash in LOD_MODEL_HASHES {
-        if let Some(property) = file.values.iter_mut().find(|p| p.hash == hash) {
-            if let Kind::Scalar(Value::Key(key)) = &mut property.kind {
-                key.type_id = model_id.type_id;
-                key.group = model_id.group;
-                key.instance = model_id.instance;
-                found = true;
+/// Point LOD1..LOD4 at four distinct compiled model resources, matching the
+/// native NightHouse asset graph.  Missing LOD keys are created.
+fn retarget_lod_models(file: &mut PropertyFile, model_ids: LodModelIds) -> bool {
+    for (index, hash) in LOD_MODEL_HASHES.into_iter().enumerate() {
+        let model_id = model_ids[index];
+        match file.values.iter_mut().find(|property| property.hash == hash) {
+            Some(property) => {
+                property.kind = Kind::Scalar(Value::Key(Key {
+                    type_id: model_id.type_id,
+                    group: model_id.group,
+                    instance: model_id.instance,
+                }));
             }
+            None => file.values.push(sc_properties::Property {
+                hash,
+                prop_type: sc_properties::PropType::Key,
+                kind: Kind::Scalar(Value::Key(Key {
+                    type_id: model_id.type_id,
+                    group: model_id.group,
+                    instance: model_id.instance,
+                })),
+                encoding: sc_properties::PropertyEncoding::default(),
+            }),
         }
     }
-    if found {
-        return true;
-    }
-    file.values.push(sc_properties::Property {
-        hash: sc_properties::LOD1_MODEL_HASH,
-        prop_type: sc_properties::PropType::Key,
-        kind: Kind::Scalar(Value::Key(Key {
-            type_id: model_id.type_id,
-            group: model_id.group,
-            instance: model_id.instance,
-        })),
-        encoding: sc_properties::PropertyEncoding::default(),
-    });
     true
 }
 

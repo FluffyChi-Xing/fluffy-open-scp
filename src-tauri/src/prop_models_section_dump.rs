@@ -59,7 +59,11 @@ mod tests {
                 else {
                     // Raw 材质 = 内嵌 RW4 子文件（RW4w32 签名，textures
                     // 打包进材质段——prop/杂件模型的贴图分发方式）
-                    println!("  material #{}: Raw——尝试按内嵌 RW4 解析（{} 字节）", section.number, data.len());
+                    println!(
+                        "  material #{}: Raw——尝试按内嵌 RW4 解析（{} 字节）",
+                        section.number,
+                        data.len()
+                    );
                     if let Ok(embedded) = rw4::Rw4File::parse(&data) {
                         for sec in embedded.sections() {
                             println!(
@@ -107,10 +111,9 @@ mod tests {
             }
         }
         // 文件级 TEXTURE 段解码（杂件/树模型贴图位置实证）
-        let graphics_package = dbpf::Package::open(
-            r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package",
-        )
-        .expect("open graphics pkg");
+        let graphics_package =
+            dbpf::Package::open(r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package")
+                .expect("open graphics pkg");
         for inst in [0x903A_704Cu32, 0xAD64_CB3D, 0x8A0D_18F7, 0xBB27_60C9] {
             let Some(entry) = graphics_package
                 .entries()

@@ -19,10 +19,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use dbpf::{IndexEntry, Package};
-use sc_properties::{Kind, PropertyFile, ParseLimits, Value};
+use rw4::Rw4File;
+use sc_properties::{Kind, ParseLimits, PropertyFile, Value};
 use serde::Serialize;
 
-use crate::package_service::{PackageManager, PackageError, TgiDto};
+use crate::package_service::{PackageError, PackageManager, TgiDto};
 
 const PROPERTY_RESOURCE_TYPE: u32 = 0x00B1_B104;
 const RW4_MODEL_TYPE: u32 = 0x2F4E_681B;
@@ -110,10 +111,15 @@ fn ecogame_dirs(packages: &[(u64, Arc<Package>)]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     for (_, pkg) in packages {
         let path = pkg.path();
-        let Some(data_dir) = path.parent() else { continue };
+        let Some(data_dir) = path.parent() else {
+            continue;
+        };
         for root in [
             data_dir.parent().map(|p| p.to_path_buf()),
-            data_dir.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()),
+            data_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.to_path_buf()),
         ]
         .into_iter()
         .flatten()
@@ -202,9 +208,11 @@ fn find_records<'a>(
 ) -> Vec<(u64, PropertyFile, u32)> {
     let mut hits: Vec<(u64, PropertyFile, u32)> = Vec::new();
     for (id, pkg) in packages {
-        for entry in pkg.entries().iter().filter(|e| {
-            e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.instance == instance
-        }) {
+        for entry in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.instance == instance)
+        {
             let Some(file) = parse_record(pkg, entry) else {
                 continue;
             };
@@ -212,17 +220,12 @@ fn find_records<'a>(
         }
     }
     // 资源组形态的记录排前（同 instance 多 group 复制时取语义正确者）
-    hits.sort_by_key(|(_, _, group)| {
-        (RESOURCE_GROUP_LOW.contains(&(*group as u16)), *group)
-    });
+    hits.sort_by_key(|(_, _, group)| (RESOURCE_GROUP_LOW.contains(&(*group as u16)), *group));
     hits
 }
 
 /// 单个 resourceID 的解析（两分支 + 载具定义 + 树 descriptor）。
-fn resolve_one(
-    packages: &[(u64, Arc<Package>)],
-    resource_id: u32,
-) -> Option<ResolvedPropModel> {
+fn resolve_one(packages: &[(u64, Arc<Package>)], resource_id: u32) -> Option<ResolvedPropModel> {
     let records = find_records(packages, resource_id);
     if records.is_empty() {
         return None;
@@ -293,7 +296,10 @@ fn resolve_one(
                 if let Some(mut done) = finish(
                     packages,
                     resource_id,
-                    TREE_PART_MODELS.iter().map(|i| (*i, RW4_MODEL_TYPE, 0)).collect(),
+                    TREE_PART_MODELS
+                        .iter()
+                        .map(|i| (*i, RW4_MODEL_TYPE, 0))
+                        .collect(),
                     "tree_model",
                 ) {
                     done.tree_atlas_png = tree_atlas_png;
@@ -345,7 +351,10 @@ fn decode_tree_atlas_base64(packages: &[(u64, Arc<Package>)]) -> Option<String> 
         let Ok(file) = rw4::Rw4File::parse(&data) else {
             continue;
         };
-        let Some(sec) = file.sections_of_type(rw4::SectionType::TEXTURE).next().map(|s| s.number)
+        let Some(sec) = file
+            .sections_of_type(rw4::SectionType::TEXTURE)
+            .next()
+            .map(|s| s.number)
         else {
             continue;
         };
@@ -365,7 +374,12 @@ fn decode_tree_atlas_base64(packages: &[(u64, Arc<Package>)]) -> Option<String> 
         }
         let img = image::RgbaImage::from_fn(w as u32, top_h as u32, |x, y| {
             let at = (x as usize + y as usize * w) * 4;
-            image::Rgba([cropped[at], cropped[at + 1], cropped[at + 2], cropped[at + 3]])
+            image::Rgba([
+                cropped[at],
+                cropped[at + 1],
+                cropped[at + 2],
+                cropped[at + 3],
+            ])
         });
         let mut png = std::io::Cursor::new(Vec::new());
         image::DynamicImage::ImageRgba8(img)
@@ -442,8 +456,7 @@ fn finish(
 }
 
 /// 本进程内由 prop 解析自动注册的 EcoGame 包 id（PE 关闭时统一卸载）。
-static REGISTERED_ECOGAME: LazyLock<Mutex<Vec<u64>>> =
-    LazyLock::new(|| Mutex::new(Vec::new()));
+static REGISTERED_ECOGAME: LazyLock<Mutex<Vec<u64>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// 卸载全部自动注册的 EcoGame 包，返回卸载数。
 pub fn release_registered(manager: &PackageManager) -> Result<usize, PackageError> {
@@ -463,8 +476,7 @@ pub fn release_registered(manager: &PackageManager) -> Result<usize, PackageErro
 }
 
 /// 打开 property 前预注册 EcoGame 包：decal 的 Lot Textures / 树图集在
-/// 
-ead_lot_editor_session 阶段就要从已打开包里取，不能等到 prop 解析。
+/// `read_lot_editor_session` 阶段就要从已打开包里取，不能等到 prop 解析。
 pub fn ensure_for_session(manager: &PackageManager) -> Result<(), PackageError> {
     let base = manager.all_packages_with_ids()?;
     let dirs = ecogame_dirs(&base);
@@ -504,7 +516,42 @@ pub fn resolve_all(
         reg.sort_unstable();
         reg.dedup();
     }
-    Ok(resource_ids.iter().filter_map(|id| resolve_one(&packages, *id)).collect())
+    Ok(resource_ids
+        .iter()
+        .filter_map(|id| {
+            resolve_one(&packages, *id).or_else(|| resolve_direct_model(&packages, *id))
+        })
+        .collect())
+}
+
+/// 工作台「直挂模型」prop 兜底：构建器把 modelTgi.instance 写进 PROP_ID 列，
+/// 该 id 是 RW4 模型实例、不在脚本资源表内（resolve_one 必失败）。脚本表
+/// 解析失败时按 0x2F4E681B:0:<id> 跨已打开包直查模型（2026-10-30 用户
+/// 对拍：构建包 prop 全部只剩锥标记的根因）。
+fn resolve_direct_model(
+    packages: &[(u64, Arc<Package>)],
+    resource_id: u32,
+) -> Option<ResolvedPropModel> {
+    packages.iter().find_map(|(id, package)| {
+        let entry = package.entries().iter().find(|e| {
+            e.id.type_id == RW4_MODEL_TYPE && e.id.group == 0 && e.id.instance == resource_id
+        })?;
+        // 拒绝非模型载荷（能按 RW4 解析且带 MESH 段才认）。
+        let bytes = package.read(entry).ok()?;
+        let file = Rw4File::parse(&bytes).ok()?;
+        file.sections_of_type(rw4::SectionType::MESH).next()?;
+        Some(ResolvedPropModel {
+            resource_id,
+            models: vec![TgiDto {
+                type_id: RW4_MODEL_TYPE,
+                group: 0,
+                instance: resource_id,
+            }],
+            package_id: Some(*id),
+            source: "direct_model".into(),
+            tree_atlas_png: None,
+        })
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -634,8 +681,22 @@ fn classify_bin(
     if contains_any_word(
         &n,
         &[
-            "tree", "palm", "oak", "pine", "bush", "hedge", "shrub", "foliage", "cypress",
-            "willow", "maple", "birch", "spruce", "plant", "vegetation", "flower",
+            "tree",
+            "palm",
+            "oak",
+            "pine",
+            "bush",
+            "hedge",
+            "shrub",
+            "foliage",
+            "cypress",
+            "willow",
+            "maple",
+            "birch",
+            "spruce",
+            "plant",
+            "vegetation",
+            "flower",
         ],
     ) {
         return Some(PropBinCategory::Trees);
@@ -643,14 +704,32 @@ fn classify_bin(
     if contains_any_word(
         &n,
         &[
-            "truck", "train", "tram", "trolley", "vehicle", "taxi", "boat", "ferry", "ship",
-            "moped", "scooter", "motorcycle", "ambulance", "limo", "helicopter", "car", "bus",
+            "truck",
+            "train",
+            "tram",
+            "trolley",
+            "vehicle",
+            "taxi",
+            "boat",
+            "ferry",
+            "ship",
+            "moped",
+            "scooter",
+            "motorcycle",
+            "ambulance",
+            "limo",
+            "helicopter",
+            "car",
+            "bus",
             "van",
         ],
     ) {
         return Some(PropBinCategory::Vehicles);
     }
-    if contains_any_word(&n, &["garbage", "trash", "dumpster", "litter", "recycle", "bin"]) {
+    if contains_any_word(
+        &n,
+        &["garbage", "trash", "dumpster", "litter", "recycle", "bin"],
+    ) {
         return Some(PropBinCategory::Waste);
     }
     if contains_any_word(&n, &["sign", "billboard", "banner", "flag"]) {
@@ -661,13 +740,20 @@ fn classify_bin(
 
 /// 树种 descriptor 权威集：G 40002D00 记录（0x0E0B99FD 变体数组）→
 /// （descriptor instance 集，变体模型 instance 集）。
-fn tree_authority(packages: &[(u64, Arc<Package>)]) -> (std::collections::HashSet<u32>, std::collections::HashSet<u32>) {
+fn tree_authority(
+    packages: &[(u64, Arc<Package>)],
+) -> (
+    std::collections::HashSet<u32>,
+    std::collections::HashSet<u32>,
+) {
     let mut descriptors = std::collections::HashSet::new();
     let mut variants = std::collections::HashSet::new();
     for (_, pkg) in packages {
-        for entry in pkg.entries().iter().filter(|e| {
-            e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.group == 0x4000_2D00
-        }) {
+        for entry in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.group == 0x4000_2D00)
+        {
             let Some(file) = parse_record(pkg, entry) else {
                 continue;
             };
@@ -747,12 +833,11 @@ pub fn prop_bin_catalog(
             } else {
                 name.clone()
             };
-            let authoritative_tree = tree_desc.contains(&resource_id)
-                || tree_variants.contains(&model_instance);
+            let authoritative_tree =
+                tree_desc.contains(&resource_id) || tree_variants.contains(&model_instance);
             let seed = seed_category(resource_id).or_else(|| seed_category(model_instance));
-            let category =
-                classify_bin(&resolved.source, &name, authoritative_tree, seed, binding)
-                    .unwrap_or(PropBinCategory::Misc);
+            let category = classify_bin(&resolved.source, &name, authoritative_tree, seed, binding)
+                .unwrap_or(PropBinCategory::Misc);
             let Some(model) = resolved.models.first() else {
                 continue;
             };
@@ -769,11 +854,7 @@ pub fn prop_bin_catalog(
             });
         }
     }
-    entries.sort_by(|a, b| {
-        a.name
-            .to_lowercase()
-            .cmp(&b.name.to_lowercase())
-    });
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(entries)
 }
 
@@ -913,8 +994,7 @@ pub fn path_entry_catalog(
     let mut entries: Vec<PathEntrySummary> = Vec::new();
     for (package_id, pkg) in &packages {
         for entry in pkg.entries().iter().filter(|e| {
-            e.id.type_id == PROPERTY_RESOURCE_TYPE
-                && (e.id.group as u16) == PATH_ENTRY_GROUP_LOW
+            e.id.type_id == PROPERTY_RESOURCE_TYPE && (e.id.group as u16) == PATH_ENTRY_GROUP_LOW
         }) {
             if !seen.insert(entry.id.instance) {
                 continue;
@@ -926,9 +1006,8 @@ pub fn path_entry_catalog(
             let mut transport_ids = Vec::new();
             for (instance, _, _) in key_list(&file, KEY_TRANSPORT_ALLOWLIST) {
                 transport_ids.push(instance);
-                transports.push(
-                    instance_name(instance).unwrap_or_else(|| format!("0x{instance:08X}")),
-                );
+                transports
+                    .push(instance_name(instance).unwrap_or_else(|| format!("0x{instance:08X}")));
             }
             entries.push(PathEntrySummary {
                 instance: entry.id.instance,
@@ -983,6 +1062,8 @@ fn path_source_catalog_finds_user_cited_records() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
     /// 手动集成测试（需本机游戏包 + EcoGame 目录）：
     /// cargo test -p fluffy-open-scp --release prop_models -- --ignored
@@ -998,8 +1079,16 @@ mod tests {
             manager.insert(package).expect("insert");
         }
         let ids: [u32; 10] = [
-            0x0AB4_DFE1, 0x0AB4_DFE2, 0x0AB4_DFE3, 0xBF2C_1022, 0x54CA_89F0,
-            0x92BE_E95F, 0x1498_4C6B, 0x1498_4C6A, 0x1498_4C69, 0x1498_4C68,
+            0x0AB4_DFE1,
+            0x0AB4_DFE2,
+            0x0AB4_DFE3,
+            0xBF2C_1022,
+            0x54CA_89F0,
+            0x92BE_E95F,
+            0x1498_4C6B,
+            0x1498_4C6A,
+            0x1498_4C69,
+            0x1498_4C68,
         ];
         let out = resolve_all(&manager, &ids).expect("resolve");
         for r in &out {
@@ -1013,7 +1102,8 @@ mod tests {
         }
         // 车辆链（显式 key → 0x0D897169）必须命中
         assert!(
-            out.iter().any(|r| matches!(r.source.as_str(), "explicit" | "vehicle_models")),
+            out.iter()
+                .any(|r| matches!(r.source.as_str(), "explicit" | "vehicle_models")),
             "至少一个 prop 解析出 RW4 模型"
         );
         // 树链（乔木 14984C68-6B）必须走 tree_model（4 个 impostor 源 3D 模型）
@@ -1023,7 +1113,82 @@ mod tests {
             .expect("树 prop 应解析出 tree_model");
         assert_eq!(tree.models.len(), 4, "树应有 4 个 impostor 源模型");
         assert!(tree.package_id.is_some(), "树模型应定位到所在包");
-        assert!(tree.tree_atlas_png.is_some(), "树应随发公告板图集（回落用）");
+        assert!(
+            tree.tree_atlas_png.is_some(),
+            "树应随发公告板图集（回落用）"
+        );
+    }
+
+    /// 引擎类别绑定（0x08A16042）全量普查：EcoGame 脚本 prop 资源上该 Key
+    /// 的全部去重取值 + 计数 + 每值 prop 注册表名样本——「prop 到底有哪些
+    /// 引擎自带语义」的证据底表。
+    /// cargo test -p fluffy-open-scp --release prop_category_binding_census -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn prop_category_binding_census() {
+        let manager = PackageManager::new();
+        for path in [
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Game.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_Graphics.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCity_App.package",
+            r"D:\ea-games\SimCity\SimCityData\SimCityDataEP1.package",
+        ] {
+            if let Ok(package) = Package::open(path) {
+                manager.insert(package).expect("insert");
+            }
+        }
+        let registry = sc_registry::Registry::open(Path::new("resources/database_main.s3db")).ok();
+        let instance_name = |instance: u32| -> String {
+            registry
+                .as_ref()
+                .and_then(|r| r.instances().get(&instance))
+                .map(|record| record.name.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("{instance:08X}"))
+        };
+        let base = manager.all_packages_with_ids().expect("packages");
+        let dirs = ecogame_dirs(&base);
+        let eco = ensure_ecogame_registered(&manager, &dirs).expect("eco");
+        let mut packages = base;
+        packages.extend(eco);
+
+        let mut census: std::collections::BTreeMap<u32, (usize, Vec<String>)> =
+            std::collections::BTreeMap::new();
+        let mut no_binding = 0usize;
+        let mut seen = std::collections::HashSet::new();
+        for (_, pkg) in &packages {
+            for entry in pkg.entries().iter().filter(|e| {
+                e.id.type_id == PROPERTY_RESOURCE_TYPE
+                    && RESOURCE_GROUP_LOW.contains(&(e.id.group as u16))
+            }) {
+                if !seen.insert(entry.id.instance) {
+                    continue;
+                }
+                let Some(file) = parse_record(pkg, entry) else {
+                    continue;
+                };
+                let Some((_, _, category)) = first_key(&file, KEY_CATEGORY_BINDING) else {
+                    no_binding += 1;
+                    continue;
+                };
+                let slot = census.entry(category).or_default();
+                slot.0 += 1;
+                if slot.1.len() < 5 {
+                    let name = instance_name(entry.id.instance);
+                    if !slot.1.contains(&name) {
+                        slot.1.push(name);
+                    }
+                }
+            }
+        }
+        println!(
+            "引擎类别绑定: {} 个不同类别; 无绑定 prop: {}",
+            census.len(),
+            no_binding
+        );
+        for (id, (count, names)) in &census {
+            println!("  {id:08X}: {count} props  样本 {names:?}");
+        }
     }
 
     /// prop bin 语义目录冒烟（需本机游戏包 + EcoGame 目录 + 注册表资源）：
@@ -1042,12 +1207,7 @@ mod tests {
         }
         let registry = Path::new("resources/database_main.s3db");
         let entries = prop_bin_catalog(&manager, Some(registry)).expect("catalog");
-        let count = |c: PropBinCategory| {
-            entries
-                .iter()
-                .filter(|e| e.category == c)
-                .count()
-        };
+        let count = |c: PropBinCategory| entries.iter().filter(|e| e.category == c).count();
         println!(
             "catalog: trees={} vehicles={} waste={} signs={} total={}",
             count(PropBinCategory::Trees),
@@ -1063,10 +1223,12 @@ mod tests {
             );
         }
         // 小类别全量打印（便于种子维护与目视核对）
-        for e in entries
-            .iter()
-            .filter(|e| !matches!(e.category, PropBinCategory::Misc | PropBinCategory::Vehicles))
-        {
+        for e in entries.iter().filter(|e| {
+            !matches!(
+                e.category,
+                PropBinCategory::Misc | PropBinCategory::Vehicles
+            )
+        }) {
             println!(
                 "  [{:?}] {:08X} {} -> model {:08X}",
                 e.category, e.resource_id, e.name, e.model.instance
@@ -1077,6 +1239,50 @@ mod tests {
         assert!(count(PropBinCategory::Waste) > 0, "垃圾桶类不能为空");
         // 树链（descriptor/impostor 源模型）至少一条
         assert!(count(PropBinCategory::Trees) > 0, "树木类不能为空");
+    }
+    /// 直挂模型兜底：PROP_ID 是 RW4 模型实例（脚本资源表查不到）时，按
+    /// 0x2F4E681B:0:<id> 跨已打开包直查并验证载荷确为模型（含 MESH 段）。
+    #[test]
+    fn direct_model_fallback_resolves_rw4_instance() {
+        let mut mesh_payload = Vec::new();
+        for value in [40u32, 4, 0, 0, 1, 0, 0, 0, 0, 0] {
+            mesh_payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let specs = [rw4::writer_section(rw4::SectionType::MESH, mesh_payload)];
+        let model_bytes = rw4::build_file(1, &specs, &[]);
+        let entries = [dbpf::OverlayEntry::new(
+            dbpf::ResourceId {
+                type_id: RW4_MODEL_TYPE,
+                group: 0,
+                instance: 0x1234_5678,
+            },
+            model_bytes,
+        )];
+        let dir = std::env::temp_dir().join(format!(
+            "prop-models-direct-{}-{}",
+            std::process::id(),
+            TEST_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let package_path = dir.join("direct.package");
+        std::fs::write(
+            &package_path,
+            dbpf::write_uncompressed_overlay(&entries).unwrap(),
+        )
+        .unwrap();
+        let package = Arc::new(Package::open(&package_path).unwrap());
+        let packages = vec![(7u64, package)];
+
+        assert!(resolve_one(&packages, 0x1234_5678).is_none());
+        let resolved = resolve_direct_model(&packages, 0x1234_5678).expect("direct model");
+        assert_eq!(resolved.source, "direct_model");
+        assert_eq!(resolved.models.len(), 1);
+        assert_eq!(resolved.models[0].type_id, RW4_MODEL_TYPE);
+        assert_eq!(resolved.models[0].instance, 0x1234_5678);
+        assert_eq!(resolved.package_id, Some(7));
+        assert!(resolve_direct_model(&packages, 0xDEAD_BEEF).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

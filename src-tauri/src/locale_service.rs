@@ -9,9 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use dbpf::{OverlayEntry, ResourceId, write_uncompressed_overlay};
-use sc_properties::locale::{
-    LocaleItem, parse_locale_items, serialize_locale_items,
-};
+use sc_properties::locale::{LocaleItem, parse_locale_items, serialize_locale_items};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -116,7 +114,9 @@ fn locale_tables_inner(
         if entry.id.type_id != LOCALE_RESOURCE_TYPE {
             continue;
         }
-        let data = package.read(entry).map_err(|e| CommandError::internal(e.to_string()))?;
+        let data = package
+            .read(entry)
+            .map_err(|e| CommandError::internal(e.to_string()))?;
         let items = match parse_locale_items(&data) {
             Ok(items) => items,
             // 解析失败的表也列出，但计 0 并给错误采样，编辑器可看到坏表
@@ -180,10 +180,15 @@ pub async fn locale_items(
         let entry = package
             .entry(request.tgi.resource_id())
             .ok_or_else(|| CommandError::new("not_found", "locale resource not found"))?;
-        let data = package.read(entry).map_err(|e| CommandError::internal(e.to_string()))?;
-        let items = parse_locale_items(&data)
-            .map_err(|error| CommandError::new("parse_failed", error))?;
-        Ok(LocaleItemsResponse { tgi: request.tgi, items })
+        let data = package
+            .read(entry)
+            .map_err(|e| CommandError::internal(e.to_string()))?;
+        let items =
+            parse_locale_items(&data).map_err(|error| CommandError::new("parse_failed", error))?;
+        Ok(LocaleItemsResponse {
+            tgi: request.tgi,
+            items,
+        })
     })
     .await
     .map_err(|error| CommandError::internal(error.to_string()))?
@@ -226,7 +231,9 @@ fn package_is_cjk(package: &dbpf::Package) -> bool {
         if entry.id.type_id != LOCALE_RESOURCE_TYPE {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
         if let Ok(items) = parse_locale_items(&data) {
             for item in items {
                 if item.id.is_none() {
@@ -285,10 +292,13 @@ pub(crate) fn game_locale(
                     });
                     let locale = Arc::new(sc_properties::Locale::from_resources(resources).ok()?);
                     let cjk = package_is_cjk(&package);
-                    cache.insert(path.clone(), CachedLocale {
-                        locale: Arc::clone(&locale),
-                        cjk,
-                    });
+                    cache.insert(
+                        path.clone(),
+                        CachedLocale {
+                            locale: Arc::clone(&locale),
+                            cjk,
+                        },
+                    );
                     Some((locale, cjk))
                 }
             }
@@ -362,7 +372,14 @@ fn write_locale_overlay_inner(
     let entries: Vec<OverlayEntry> = merged
         .into_iter()
         .map(|((type_id, group, instance), data)| {
-            OverlayEntry::new(ResourceId { type_id, group, instance }, data)
+            OverlayEntry::new(
+                ResourceId {
+                    type_id,
+                    group,
+                    instance,
+                },
+                data,
+            )
         })
         .collect();
     let overlay = write_uncompressed_overlay(&entries)
@@ -423,18 +440,34 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("overlay.package");
         let items = vec![
-            LocaleItem { key: "//".into(), id: None, text: "note".into() },
-            LocaleItem { key: "0x00000001".into(), id: Some(1), text: "你好".into() },
+            LocaleItem {
+                key: "//".into(),
+                id: None,
+                text: "note".into(),
+            },
+            LocaleItem {
+                key: "0x00000001".into(),
+                id: Some(1),
+                text: "你好".into(),
+            },
         ];
         let data = serialize_locale_items(&items).unwrap();
         let entries = vec![OverlayEntry::new(
-            ResourceId { type_id: LOCALE_RESOURCE_TYPE, group: 0x9E14D920, instance: 0x00000001 },
+            ResourceId {
+                type_id: LOCALE_RESOURCE_TYPE,
+                group: 0x9E14D920,
+                instance: 0x00000001,
+            },
             data,
         )];
         std::fs::write(&out, write_uncompressed_overlay(&entries).unwrap()).unwrap();
         let package = dbpf::Package::open(&out).unwrap();
         let entry = package
-            .entry(ResourceId { type_id: LOCALE_RESOURCE_TYPE, group: 0x9E14D920, instance: 0x00000001 })
+            .entry(ResourceId {
+                type_id: LOCALE_RESOURCE_TYPE,
+                group: 0x9E14D920,
+                instance: 0x00000001,
+            })
             .unwrap();
         let read_back = package.read(entry).unwrap();
         assert_eq!(parse_locale_items(&read_back).unwrap(), items);
@@ -478,7 +511,8 @@ mod tests {
         // 目标里预先存在一条与本次编辑无关的资源。
         std::fs::write(
             &out,
-            write_uncompressed_overlay(&[OverlayEntry::new(untouched, b"keep-me".to_vec())]).unwrap(),
+            write_uncompressed_overlay(&[OverlayEntry::new(untouched, b"keep-me".to_vec())])
+                .unwrap(),
         )
         .unwrap();
 
@@ -500,7 +534,9 @@ mod tests {
         assert_eq!(package.read(entry).unwrap(), b"keep-me");
 
         // 第二条版本记录里，0x01 的 before 应等于第一次保存的字节。
-        let (_, items) = store.changeset_detail(second.changeset_id.unwrap()).unwrap();
+        let (_, items) = store
+            .changeset_detail(second.changeset_id.unwrap())
+            .unwrap();
         assert_eq!(items.len(), 1);
         let before = store
             .load_blob(items[0].before_digest.as_ref().unwrap())

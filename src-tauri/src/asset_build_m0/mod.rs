@@ -14,8 +14,8 @@ mod schema;
 
 #[allow(unused_imports)]
 pub use ir::{
-    IntermediateModel, OutputIr, ProcessorKind, ProcessorSlot, ReferenceIr, SceneIr, SemanticsIr,
-    Tgi, lower_schema,
+    IntermediateModel, OutputIr, OutputMode, ProcessorKind, ProcessorSlot, ReferenceIr, SceneIr,
+    SemanticsIr, Tgi, lower_schema,
 };
 #[allow(unused_imports)]
 pub use layout::{BuildLayout, BuildRecord};

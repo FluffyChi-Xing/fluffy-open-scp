@@ -49,8 +49,8 @@ pub struct RegionRenderDto {
 
 #[tauri::command]
 pub fn map_panel_list_regions(package_path: String) -> Result<Vec<RegionSummaryDto>, String> {
-    let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
-        .map_err(|e| e.to_string())?;
+    let package =
+        dbpf::Package::open(std::path::PathBuf::from(&package_path)).map_err(|e| e.to_string())?;
     // 真名链：区域模板 join → 注册表 → zh locale（旁包缺失时回退内置表）
     let parent = std::path::Path::new(&package_path)
         .parent()
@@ -82,9 +82,10 @@ pub fn map_panel_render_region(
     package_path: String,
     group: String,
 ) -> Result<RegionRenderDto, String> {
-    let group = u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
-    let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
-        .map_err(|e| e.to_string())?;
+    let group =
+        u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
+    let package =
+        dbpf::Package::open(std::path::PathBuf::from(&package_path)).map_err(|e| e.to_string())?;
 
     let out = region_map::render_region_png(&package, group, None).map_err(|e| e.to_string())?;
     // 世界坐标 → PNG 像素：前端零换算直接绘制（避免 originWorld 断链导致整体偏移）。
@@ -168,21 +169,17 @@ pub struct Region3DDto {
 pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region3DDto, String> {
     let group =
         u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
-    let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
-        .map_err(|e| e.to_string())?;
+    let package =
+        dbpf::Package::open(std::path::PathBuf::from(&package_path)).map_err(|e| e.to_string())?;
     let parent = std::path::Path::new(&package_path)
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_default();
-    let sibling = |name: &str| -> Option<dbpf::Package> {
-        dbpf::Package::open(parent.join(name)).ok()
-    };
+    let sibling =
+        |name: &str| -> Option<dbpf::Package> { dbpf::Package::open(parent.join(name)).ok() };
     let ep1 = sibling("SimCityDataEP1.package");
     let game = sibling("SimCity_Game.package");
-    let locale = parent
-        .join("Locale")
-        .join("zh-tw")
-        .join("Data.package");
+    let locale = parent.join("Locale").join("zh-tw").join("Data.package");
     let locale = dbpf::Package::open(locale).ok();
     let mut out = sc_properties::region_3d::region_3d(
         &package,
@@ -199,7 +196,9 @@ pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region
         for plot in &mut out.plots {
             if let Some(info) = &mut plot.info {
                 if let Ok(id) = u32::from_str_radix(&info.name_entry, 16) {
-                    if let Some(entry) = entries.get(&id) { *info = entry.clone(); }
+                    if let Some(entry) = entries.get(&id) {
+                        *info = entry.clone();
+                    }
                 }
             }
         }
@@ -215,14 +214,33 @@ pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region
     };
     let road_assets = static_layers.as_ref().and_then(|layers| {
         let game = game.as_ref()?;
-        let ids: std::collections::BTreeSet<_> = layers.sources.iter().flat_map(|s| s.curves.iter().map(|c| c.entry_id)).collect();
-        let textures: Vec<_> = [graphics.as_ref(), app.as_ref(), ep1.as_ref()].into_iter().flatten().collect();
-        let mut roads=sc_properties::map_assets::road_assets(game, &textures, &ids.into_iter().collect::<Vec<_>>());
-        sc_properties::map_assets::append_road_instances(&mut roads,game,&textures,&layers.regional_units);
+        let ids: std::collections::BTreeSet<_> = layers
+            .sources
+            .iter()
+            .flat_map(|s| s.curves.iter().map(|c| c.entry_id))
+            .collect();
+        let textures: Vec<_> = [graphics.as_ref(), app.as_ref(), ep1.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect();
+        let mut roads = sc_properties::map_assets::road_assets(
+            game,
+            &textures,
+            &ids.into_iter().collect::<Vec<_>>(),
+        );
+        sc_properties::map_assets::append_road_instances(
+            &mut roads,
+            game,
+            &textures,
+            &layers.regional_units,
+        );
         Some(roads)
     });
     Ok(Region3DDto {
-        forest_models: graphics.as_ref().map(sc_properties::map_assets::forest_models).unwrap_or_default(),
+        forest_models: graphics
+            .as_ref()
+            .map(sc_properties::map_assets::forest_models)
+            .unwrap_or_default(),
         static_layers,
         static_status,
         static_error,
@@ -233,8 +251,10 @@ pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region
             .map(|png| base64::engine::general_purpose::STANDARD.encode(png)),
         terrain_textures: sibling("SimCity_App.package")
             .map(|p| sc_properties::region_3d::terrain_detail_pngs(&p))
-            .unwrap_or_default().into_iter().map(|(name, png)|
-                (name, base64::engine::general_purpose::STANDARD.encode(png))).collect(),
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(name, png)| (name, base64::engine::general_purpose::STANDARD.encode(png)))
+            .collect(),
         height_png_base64: base64::engine::general_purpose::STANDARD.encode(&out.height_png),
         ground_png_base64: base64::engine::general_purpose::STANDARD.encode(&out.ground_png),
         size: out.size,
@@ -254,17 +274,26 @@ pub fn map_panel_region_3d(package_path: String, group: String) -> Result<Region
 /// cWaterTextureSet::Init binds beach_foam (FNV-1 A8EAF18E), group zero.
 /// Water height/normal/choppy textures are generated by the runtime FFT.
 fn water_foam_png(package: &dbpf::Package) -> Option<Vec<u8>> {
-    let entry = package.entries().iter().find(|e|
-        e.id.type_id == 0x2F4E_681B && e.id.group == 0 && e.id.instance == 0xA8EA_F18E)?;
+    let entry = package
+        .entries()
+        .iter()
+        .find(|e| e.id.type_id == 0x2F4E_681B && e.id.group == 0 && e.id.instance == 0xA8EA_F18E)?;
     let bytes = package.read(entry).ok()?;
     let file = rw4::Rw4File::parse(&bytes).ok()?;
-    let section = file.sections_of_type(rw4::SectionType::TEXTURE).next()?.number;
+    let section = file
+        .sections_of_type(rw4::SectionType::TEXTURE)
+        .next()?
+        .number;
     let texture = file.decode_texture(&bytes, section).ok()?;
-    let image = image::RgbaImage::from_raw(u32::from(texture.width), u32::from(texture.height),
-        texture.decode_top_mip_rgba().ok()?)?;
+    let image = image::RgbaImage::from_raw(
+        u32::from(texture.width),
+        u32::from(texture.height),
+        texture.decode_top_mip_rgba().ok()?,
+    )?;
     let mut png = Vec::new();
-    image::DynamicImage::ImageRgba8(image).write_to(
-        &mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .ok()?;
     Some(png)
 }
 
@@ -294,8 +323,8 @@ pub fn map_panel_write_heightmap(
 ) -> Result<HeightmapWriteDto, String> {
     let group =
         u32::from_str_radix(group.trim_start_matches("0x"), 16).map_err(|e| e.to_string())?;
-    let package = dbpf::Package::open(std::path::PathBuf::from(&package_path))
-        .map_err(|e| e.to_string())?;
+    let package =
+        dbpf::Package::open(std::path::PathBuf::from(&package_path)).map_err(|e| e.to_string())?;
     let img = image::open(&heights_png_path).map_err(|e| format!("读取高度图 PNG 失败：{e}"))?;
     let (width, height) = (img.width(), img.height());
     if width != region_write::REGION_FIELD_PX as u32

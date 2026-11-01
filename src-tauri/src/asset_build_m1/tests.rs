@@ -1,5 +1,5 @@
 use super::*;
-use dbpf::{write_uncompressed_overlay, OverlayEntry, Package, ResourceId};
+use dbpf::{OverlayEntry, Package, ResourceId, write_uncompressed_overlay};
 use sc_properties::PropertyFile;
 use std::{
     fs,
@@ -9,7 +9,7 @@ use std::{
 static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 use sc_properties::{Kind, PropType, Property, PropertyEncoding, Value};
 
-fn temp_root() -> PathBuf {
+pub(super) fn temp_root() -> PathBuf {
     let root = std::env::temp_dir().join(format!(
         "openscp-m1-{}-{}",
         std::process::id(),
@@ -62,7 +62,7 @@ fn clones_source_and_writes_property_overlay_with_readback() {
     source_package(&root);
     fs::write(
         root.join("asset.lot.json"),
-        r#"{"units":[{"kind":"pathPoint"}],"editor":{"workbench":{"paths":[]}}}"#,
+        r#"{"units":[{"kind":"pathPoint","point":[0,0,0],"pointIndex":0}],"editor":{"workbench":{"paths":[]}}}"#,
     )
     .unwrap();
     let schema = serde_json::json!({
@@ -135,6 +135,7 @@ fn schema() -> serde_json::Value {
 fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
     let root = temp_root();
     let source = source_package(&root);
+    fs::write(root.join("asset.lot.json"), "{}").unwrap();
     let mut resources = connector::read_source(&source).unwrap();
     let opaque = ResourceId {
         type_id: 0x2F4E681B,
@@ -149,15 +150,26 @@ fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
     assert_eq!(first.build_hash, second.build_hash);
     assert_eq!(first.sha256, second.sha256);
     assert_eq!(original, fs::read(&source).unwrap());
-    assert_eq!(
-        connector::read_source(&first.path).unwrap()[&opaque],
-        resources[&opaque]
+    // Delta contract: the output carries only touched resources; the opaque
+    // reference resource resolves from the base package at game load time.
+    let output = connector::read_source(&first.path).unwrap();
+    assert!(
+        !output.contains_key(&opaque),
+        "untouched opaque resource stays out"
     );
+    let patched = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E0C000,
+        instance: 0x8D007745,
+    };
+    assert!(output.contains_key(&patched), "patched property is written");
     let build = root.join(".build").join(first.build_hash);
     assert!(build.join("plan/im.json").is_file());
-    assert!(build
-        .join("artifacts/property/00B1B104-40E0C000-8D007745.property")
-        .is_file());
+    assert!(
+        build
+            .join("artifacts/property/00B1B104-40E0C000-8D007745.property")
+            .is_file()
+    );
     assert!(build.join("reports/m1-build.json").is_file());
     assert!(build.join("artifacts/scene/asset.lot.json").is_file());
     assert!(build.join("artifacts/resource-manifest.json").is_file());
@@ -178,9 +190,11 @@ fn failed_patch_creates_no_build_and_does_not_change_source() {
     let bytes = fs::read(&source).unwrap();
     let mut raw = schema();
     raw["semantics"]["properties"][0]["expected"] = serde_json::json!(999);
-    assert!(build_from_schema(&root, &raw.to_string())
-        .unwrap_err()
-        .contains("expected"));
+    assert!(
+        build_from_schema(&root, &raw.to_string())
+            .unwrap_err()
+            .contains("expected")
+    );
     assert_eq!(bytes, fs::read(source).unwrap());
     assert!(!root.join(".build").exists());
     fs::remove_dir_all(root).unwrap();
@@ -188,10 +202,9 @@ fn failed_patch_creates_no_build_and_does_not_change_source() {
 
 #[test]
 fn unsupported_writers_and_malformed_patches_fail_in_pure_plan() {
+    // scene.model (RW4 lowering) plans fine since the model compiler landed;
+    // non-Property patch targets and malformed patches still fail the plan.
     let mut raw = schema();
-    raw["scene"]["model"] = serde_json::json!("model.lotm");
-    assert!(plan::plan_from_schema(&raw.to_string()).is_err());
-    raw["scene"].as_object_mut().unwrap().remove("model");
     raw["semantics"]["properties"][0]["tgi"] = serde_json::json!("2F4E681B:40E0C000:8D007745");
     assert!(plan::plan_from_schema(&raw.to_string()).is_err());
     raw = schema();
@@ -206,10 +219,12 @@ fn unsupported_writers_and_malformed_patches_fail_in_pure_plan() {
 fn guards_omitted_landmark_template_and_source_parent_targets() {
     let mut raw = schema();
     raw["semantics"]["properties"][0]["tgi"] = serde_json::json!("00B1B104:40E1C000:4E01E311");
-    assert!(plan::plan_from_schema(&raw.to_string())
-        .err()
-        .unwrap()
-        .contains("shared template"));
+    assert!(
+        plan::plan_from_schema(&raw.to_string())
+            .err()
+            .unwrap()
+            .contains("shared template")
+    );
     raw["semantics"]["allowSharedTemplate"] = serde_json::json!(true);
     assert!(plan::plan_from_schema(&raw.to_string()).is_ok());
     let root = temp_root();
@@ -235,9 +250,11 @@ fn guards_omitted_landmark_template_and_source_parent_targets() {
     fs::write(source, connector::link(&resources).unwrap()).unwrap();
     raw = schema();
     raw["semantics"]["properties"][0]["tgi"] = serde_json::json!("00B1B104:40E0C000:000003E7");
-    assert!(build_from_schema(&root, &raw.to_string())
-        .unwrap_err()
-        .contains("shared template"));
+    assert!(
+        build_from_schema(&root, &raw.to_string())
+            .unwrap_err()
+            .contains("shared template")
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -390,7 +407,8 @@ fn real_asset_sample_property_fixture_readback() {
     for sample in ["university", "commercial"] {
         let root = PathBuf::from(&fixture).join(sample);
         let raw = fs::read_to_string(root.join("schema.json")).unwrap();
-        let result = build_from_schema(&root, &raw).unwrap_or_else(|error| panic!("{sample}: {error}"));
+        let result =
+            build_from_schema(&root, &raw).unwrap_or_else(|error| panic!("{sample}: {error}"));
         assert_eq!(result.patched_resources, 1);
         assert!(result.path.is_file());
         let report = fs::read(
@@ -406,7 +424,8 @@ fn real_asset_sample_property_fixture_readback() {
 #[test]
 #[ignore = "requires local asset-build fixtures"]
 fn real_commercial_property_fixture_builds_for_manual_package_export() {
-    let fixture = PathBuf::from(std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"));
+    let fixture =
+        PathBuf::from(std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"));
     let root = fixture.join("commercial");
     let raw = fs::read_to_string(root.join("schema.json")).unwrap();
     let result = build_from_schema(&root, &raw).unwrap();
@@ -447,12 +466,18 @@ fn real_university_path_entry_fixture_builds_and_reads_back() {
         &fs::read(build_root.join("artifacts/resource-manifest.json")).unwrap(),
     )
     .unwrap();
-    assert!(manifest["path_entry"].as_array().unwrap().iter().any(|value| {
-        value.as_str() == Some("00B1B104-40E1C400-675B61B1")
-    }));
-    assert!(build_root
-        .join("artifacts/path_entry/00B1B104-40E1C400-675B61B1.resource")
-        .is_file());
+    assert!(
+        manifest["path_entry"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| { value.as_str() == Some("00B1B104-40E1C400-675B61B1") })
+    );
+    assert!(
+        build_root
+            .join("artifacts/path_entry/00B1B104-40E1C400-675B61B1.resource")
+            .is_file()
+    );
     assert!(result.path.is_file());
     fs::write(&source_path, original_source).unwrap();
     let _ = fs::remove_file(root.join("asset.lot.json"));
@@ -461,13 +486,312 @@ fn real_university_path_entry_fixture_builds_and_reads_back() {
 #[test]
 #[ignore = "requires AppData commercial sample and local fixture package"]
 fn real_commercial_sample_rejects_unclosed_path_before_staging() {
-    let mods_root = PathBuf::from(std::env::var("OPEN_SCP_MODS_ROOT").expect("set OPEN_SCP_MODS_ROOT"));
-    let fixture = PathBuf::from(std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"));
+    let mods_root =
+        PathBuf::from(std::env::var("OPEN_SCP_MODS_ROOT").expect("set OPEN_SCP_MODS_ROOT"));
+    let fixture =
+        PathBuf::from(std::env::var("SC_ASSET_FIXTURE_ROOT").expect("set SC_ASSET_FIXTURE_ROOT"));
     let root = fixture.join("commercial");
     let _ = fs::remove_dir_all(root.join(".build"));
-    fs::copy(mods_root.join("商业地标资产开发/asset.lot.json"), root.join("asset.lot.json")).unwrap();
+    fs::copy(
+        mods_root.join("商业地标资产开发/asset.lot.json"),
+        root.join("asset.lot.json"),
+    )
+    .unwrap();
     let raw = fs::read_to_string(root.join("schema.json")).unwrap();
     let error = build_from_schema(&root, &raw).unwrap_err();
     assert!(error.contains("path semantic validation failed"));
     assert!(!root.join(".build").exists());
+}
+
+#[test]
+fn delta_output_writes_only_touched_resources() {
+    let root = temp_root();
+    let property = |hash, value| {
+        PropertyFile {
+            claimed_count: 1,
+            values: vec![Property {
+                hash,
+                prop_type: PropType::Int32,
+                kind: Kind::Scalar(Value::Int32(value)),
+                encoding: PropertyEncoding::default(),
+            }],
+        }
+        .encode_canonical()
+        .unwrap()
+    };
+    let entries = [
+        OverlayEntry::new(
+            ResourceId {
+                type_id: 0x00B1B104,
+                group: 0x40E0C000,
+                instance: 0x11111111,
+            },
+            property(0x0A8A41DA, 100),
+        ),
+        OverlayEntry::new(
+            ResourceId {
+                type_id: 0x00B1B104,
+                group: 0x40E1C000,
+                instance: 0x11111111,
+            },
+            property(0x0A8A41DA, 200),
+        ),
+        OverlayEntry::new(
+            ResourceId {
+                type_id: 0x00B1B104,
+                group: 0x11110000,
+                instance: 0x33333333,
+            },
+            property(0x0AAAAAAA, 7),
+        ),
+    ];
+    fs::write(
+        root.join("source.package"),
+        write_uncompressed_overlay(&entries).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.join("asset.lot.json"), "{}").unwrap();
+    let schema = serde_json::json!({
+        "$schema": "openscp.asset", "schema_version": 2,
+        "id": "delta", "kind": "building-asset",
+        "reference": { "package": "source.package", "unit": "00B1B104:40E0C000:11111111" },
+        "scene": { "document": "asset.lot.json" },
+        "semantics": { "properties": [
+            {"tgi": "00B1B104:40E0C000:11111111", "hash": "0x0A8A41DA", "value": 140, "expected": 100}
+        ]},
+        "outputs": { "package": "delta.package" }
+    });
+    let result = build_from_schema(&root, &schema.to_string()).unwrap();
+    assert!(result.delta_mode, "delta is the default output mode");
+    assert_eq!(
+        result.resource_count, 1,
+        "only the patched property is written"
+    );
+    let output = Package::open(&result.path).unwrap();
+    assert_eq!(output.entries().len(), 1);
+    assert!(
+        output
+            .entry(ResourceId {
+                type_id: 0x00B1B104,
+                group: 0x11110000,
+                instance: 0x33333333
+            })
+            .is_none(),
+        "untouched reference resources stay out of the delta package"
+    );
+    drop(output);
+
+    // Explicit full mode keeps the legacy reference-clone contract.
+    let schema = serde_json::json!({
+        "$schema": "openscp.asset", "schema_version": 2,
+        "id": "delta", "kind": "building-asset",
+        "reference": { "package": "source.package", "unit": "00B1B104:40E0C000:11111111" },
+        "scene": { "document": "asset.lot.json" },
+        "semantics": { "properties": [
+            {"tgi": "00B1B104:40E0C000:11111111", "hash": "0x0A8A41DA", "value": 140, "expected": 100}
+        ]},
+        "outputs": { "package": "delta.package", "mode": "full" }
+    });
+    let result = build_from_schema(&root, &schema.to_string()).unwrap();
+    assert!(!result.delta_mode);
+    assert_eq!(
+        result.resource_count, 3,
+        "full mode re-serializes the reference clone"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn menu_registration_creates_new_identity_resources() {
+    let root = temp_root();
+    let lot = PropertyFile {
+        claimed_count: 1,
+        values: vec![Property {
+            hash: 0x0BBBCDED,
+            prop_type: PropType::Int32,
+            kind: Kind::Scalar(Value::Int32(219)),
+            encoding: PropertyEncoding::default(),
+        }],
+    }
+    .encode_canonical()
+    .unwrap();
+    let entries = [OverlayEntry::new(
+        ResourceId {
+            type_id: 0x00B1B104,
+            group: 0x40E1C000,
+            instance: 0x8D007745,
+        },
+        lot,
+    )];
+    fs::write(
+        root.join("source.package"),
+        write_uncompressed_overlay(&entries).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.join("asset.lot.json"), "{}").unwrap();
+    let schema = serde_json::json!({
+        "$schema": "openscp.asset", "schema_version": 2,
+        "id": "menu-test", "kind": "building-asset",
+        "reference": { "package": "source.package", "lot": "00B1B104:40E1C000:8D007745" },
+        "scene": { "document": "asset.lot.json" },
+        "semantics": { "menu": {
+            "title": "OpenSCP 测试公园",
+            "description": "菜单录入机制测试",
+            "menuParentInstance": "0xF970A822",
+            "categoryInstance": "0x07049250",
+            "unitTemplateInstance": "0x565B72B9",
+            "lotTemplateInstance": "0x34CE7E14",
+            "constructionCost": 1234
+        }},
+        "outputs": { "package": "menu-test.package" }
+    });
+    let result = build_from_schema(&root, &schema.to_string()).unwrap();
+    let x = result.menu_instance.expect("menu instance allocated");
+    assert!(result.delta_mode);
+    // menu2 + unit leaf + lot leaf + locale + icon png + marquee jpg；
+    // 参照 lot 本身不被覆盖（新身份，不是 same-TGI 覆盖）。
+    assert_eq!(result.resource_count, 6);
+    let output = Package::open(&result.path).unwrap();
+    assert_eq!(output.entries().len(), 6);
+    assert!(
+        output
+            .entry(ResourceId {
+                type_id: 0x00B1B104,
+                group: 0x40E1C000,
+                instance: 0x8D007745
+            })
+            .is_none(),
+        "reference lot must stay untouched"
+    );
+    let read = |id: ResourceId| -> PropertyFile {
+        PropertyFile::parse(&output.read(output.entry(id).unwrap()).unwrap()).unwrap()
+    };
+    let menu2 = read(ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x09878A01,
+        instance: x,
+    });
+    // 游戏加载器要求 0x8000 有效位（2026-10-30 实证：flags=0 整条不可见）
+    for p in &menu2.values {
+        assert!(
+            p.encoding.flags & 0x8000 != 0,
+            "hash {:08X} missing 0x8000",
+            p.hash
+        );
+    }
+    assert_eq!(
+        menu2.get(0x0DB9FC63).map(|p| p.encoding.flags),
+        Some(0x809c),
+        "key array carries the canonical array flags"
+    );
+    assert_eq!(
+        menu2.get(0x0A09F5FA).map(|p| p.encoding.flags),
+        Some(0x801c),
+        "text array carries the canonical text-array flags"
+    );
+    assert!(
+        menu2.get(0x0C65D729).is_some(),
+        "background icon reference present"
+    );
+    assert!(
+        menu2.get(0x09756955).is_some(),
+        "six-state icon block present"
+    );
+    assert!(
+        matches!(menu2.get(0x0DB9FC63).map(|p| &p.kind),
+            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Key(k) if k.type_id == 0 && k.group == 0 && k.instance == 0x07049250)),
+        "uiCategories targets the park container"
+    );
+    assert!(
+        matches!(menu2.get(0x0975695F).map(|p| &p.kind),
+            Some(Kind::Scalar(Value::Key(k))) if k.type_id == 0 && k.group == 0 && k.instance == x),
+        "menuUnit points at the unit leaf with T/G=0 (NightHouse convention)"
+    );
+    assert!(
+        matches!(menu2.get(0x00B2CCCB).map(|p| &p.kind),
+            Some(Kind::Scalar(Value::Key(k))) if k.group == 0x48E1EB00 && k.instance == 0xF970A822),
+        "menu parent is the park submenu root"
+    );
+    assert!(
+        matches!(menu2.get(0x0A09F5FA).map(|p| &p.kind),
+            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == 0xBF82F7CE && t.instance_id == x)),
+        "title references the OpenSCP locale table"
+    );
+    let unit = read(ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E0C000,
+        instance: x,
+    });
+    assert!(
+        matches!(unit.get(0x00B2CCCB).map(|p| &p.kind),
+            Some(Kind::Scalar(Value::Key(k))) if k.group == 0x48E0C000 && k.instance == 0x565B72B9),
+        "unit leaf inherits the configured cUnit template"
+    );
+    assert!(
+        matches!(unit.get(0x08E17ED7).map(|p| &p.kind),
+            Some(Kind::Scalar(Value::Key(k))) if k.group == 0x40E1C000 && k.instance == x),
+        "unit leaf links its lot"
+    );
+    assert_eq!(
+        unit.get(0x0A8A41DA).and_then(|p| p.scalar()),
+        Some(&Value::Int32(1234)),
+        "construction cost override landed"
+    );
+    let lot_leaf = read(ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E1C000,
+        instance: x,
+    });
+    assert!(
+        matches!(lot_leaf.get(0x00B2CCCB).map(|p| &p.kind),
+            Some(Kind::Scalar(Value::Key(k))) if k.group == 0x40E1C000 && k.instance == 0x34CE7E14),
+        "lot leaf inherits the configured lot template"
+    );
+    assert_eq!(
+        lot_leaf.get(0x0BBBCDED).and_then(|p| p.scalar()),
+        Some(&Value::Int32(219)),
+        "cloned reference lot fields survive"
+    );
+    let locale = output
+        .read(
+            output
+                .entry(ResourceId {
+                    type_id: 0x0A98EAF0,
+                    group: 0x02FABF01,
+                    instance: 0xBF82F7CE,
+                })
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        &locale[..3],
+        &[0xEF, 0xBB, 0xBF],
+        "locale table carries the BOM"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&locale[3..]).unwrap()).unwrap();
+    assert_eq!(
+        parsed.get(format!("0x{x:08x}")).and_then(|v| v.as_str()),
+        Some("OpenSCP 测试公园")
+    );
+    assert!(
+        output
+            .entry(ResourceId {
+                type_id: 0x2F7D0004,
+                group: 0x40E02400,
+                instance: x
+            })
+            .is_some()
+    );
+    assert!(
+        output
+            .entry(ResourceId {
+                type_id: 0x3F8662EA,
+                group: 0,
+                instance: x
+            })
+            .is_some()
+    );
+    drop(output);
+    let _ = fs::remove_dir_all(root);
 }

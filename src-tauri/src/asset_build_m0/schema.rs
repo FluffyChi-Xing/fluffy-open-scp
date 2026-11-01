@@ -42,6 +42,11 @@ pub struct ReferenceSchema {
 pub struct SceneSchema {
     pub document: String,
     pub model: Option<String>,
+    /// RW4 编译形状：缺省 = 逐源 mesh 分区（v3 契约）；
+    /// `"merged-single"` = 全部几何合并为最少 mesh + 单材质 + BBox +
+    /// 占位 Raster（原版形状克隆，2026-10-30 崩溃排查）。
+    #[serde(default, rename = "modelShape")]
+    pub model_shape: Option<String>,
     #[serde(default)]
     pub slots: BTreeMap<String, String>,
 }
@@ -70,6 +75,11 @@ pub struct SemanticsSchema {
 #[serde(deny_unknown_fields)]
 pub struct OutputSchema {
     pub package: String,
+    /// Package write strategy: `"delta"` (default — only the resources this
+    /// build creates or rewrites) or `"full"` (clone of the reference
+    /// package; legacy overlay contract).
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +192,29 @@ pub fn validate_schema(schema: &AssetSchemaV2, diagnostics: &mut DiagnosticSet) 
             Some("outputs.package".into()),
             "package must be a filename ending in .package",
         ));
+    }
+    if let Some(shape) = &schema.scene.model_shape {
+        if shape != "merged-single"
+            && shape != "nh-partitioned"
+            && shape != "nh-multimaterial"
+            && shape != "nh-atlas"
+            && shape != "native-multi"
+        {
+            diagnostics.push(Diagnostic::error(
+                "schema.invalid_model_shape",
+                Some("scene.modelShape".into()),
+                r#"modelShape must be "merged-single" (native single-shape clone), "nh-partitioned" (NH vertex layout, u32 indices above 65536 verts), "nh-atlas" (single mesh with baked tint atlas), "native-multi" (one RW4 mesh per unique plugin material), or "nh-multimaterial" (up to four largest facade material groups)"#,
+            ));
+        }
+    }
+    if let Some(mode) = &schema.outputs.mode {
+        if mode != "delta" && mode != "full" {
+            diagnostics.push(Diagnostic::error(
+                "schema.invalid_output_mode",
+                Some("outputs.mode".into()),
+                r#"mode must be "delta" (only resources this build creates or rewrites) or "full" (reference package clone)"#,
+            ));
+        }
     }
     for (field, value) in [
         ("reference.menu", &schema.reference.menu),

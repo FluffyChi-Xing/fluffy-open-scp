@@ -1,28 +1,44 @@
 //! Project-local asset inputs. Native package passthrough preserves every TGI;
 //! edited/foreign geometry stays a draft until the RW4 compiler is available.
 use super::*;
+use crate::blender_service;
 use base64::Engine;
-use std::process::Command;
 
 pub(super) fn import(root: &Path, payload: &Value) -> Result<Value, String> {
     let source = PathBuf::from(payload["path"].as_str().ok_or("Missing source path")?);
     if fs::metadata(&source).map_err(|e| e.to_string())?.len() > 128 * 1024 * 1024 {
         return Err("Asset exceeds 128 MiB".into());
     }
-    let extension = source.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+    let extension = source
+        .extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if extension == "blend" {
         return import_blend(root, &source);
     }
-    if !["package", "glb", "lotm", "png", "jpg", "jpeg", "json", "rw4", "dds"].contains(&extension.as_str()) {
+    if ![
+        "package", "glb", "lotm", "png", "jpg", "jpeg", "json", "rw4", "dds",
+    ]
+    .contains(&extension.as_str())
+    {
         return Err("Unsupported asset format".into());
     }
     let bytes = fs::read(&source).map_err(|e| e.to_string())?;
-    if extension == "package" { dbpf::Package::open(&source).map_err(|e| e.to_string())?; }
-    let folder = if ["png", "jpg", "jpeg", "dds", "json"].contains(&extension.as_str()) { "textures" } else { "models" };
+    if extension == "package" {
+        dbpf::Package::open(&source).map_err(|e| e.to_string())?;
+    }
+    let folder = if ["png", "jpg", "jpeg", "dds", "json"].contains(&extension.as_str()) {
+        "textures"
+    } else {
+        "models"
+    };
     let relative = format!("assets/{folder}/{}.{}", digest(&bytes), extension);
     let target = safe_path(root, &relative)?;
     fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
-    if !target.exists() { crate::atomic_fs::write_atomic(&target, &bytes, false).map_err(|e| e.to_string())?; }
+    if !target.exists() {
+        crate::atomic_fs::write_atomic(&target, &bytes, false).map_err(|e| e.to_string())?;
+    }
     describe(root, &relative)
 }
 
@@ -30,11 +46,35 @@ pub(super) fn import(root: &Path, payload: &Value) -> Result<Value, String> {
 /// recover the six-slot image mapping from material node names. Blender is an
 /// optional runtime dependency; the error is explicit when it is unavailable.
 fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
+    let cache_key = blend_cache_key(source)?;
+    if let Some(mut cached) = read_blend_cache(root, &cache_key) {
+        cached["cache"] = json!("hit");
+        return Ok(cached);
+    }
     let temp = root.join(".openscp-blend-import");
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
+    let mut native_adapter = json!({"status": "unavailable"});
+    if let Some(addon) = blender_service::addon_parent() {
+        match blender_service::export_native(&addon, source, &temp) {
+            Ok(native) => {
+                let result = import_native_bundle(root, native)?;
+                write_blend_cache(root, &cache_key, &result)?;
+                return Ok(result);
+            }
+            Err(blender_service::NativeExportError::UnsupportedB4(_)) => {
+                native_adapter = json!({"status": "unsupported-b4"});
+            }
+            Err(blender_service::NativeExportError::Failed(detail)) => {
+                native_adapter = json!({"status": "failed", "detail": detail});
+            }
+            Err(blender_service::NativeExportError::Unavailable(detail)) => {
+                native_adapter = json!({"status": "unavailable", "detail": detail});
+            }
+        }
+    }
     let out_glb = temp.join("model.glb");
     let out_map = temp.join("slots.json");
-let script = r#"import bpy, json, os, sys, struct
+    let script = r#"import bpy, json, os, sys, struct
 src, out_glb, out_map, out_dir = sys.argv[-4:]
 bpy.ops.wm.open_mainfile(filepath=src)
 # Community blends (e.g. NY Facade) keep live six-slot engine node groups that
@@ -94,7 +134,22 @@ def is_directly_exportable(mat):
         return True
     return base.links[0].from_node.type == 'TEX_IMAGE'
 
-mesh_objects = [o for o in bpy.data.objects if o.type == 'MESH']
+mesh_objects = [
+    o for o in bpy.data.objects
+    if o.type == 'MESH' and not o.get('ny_lot_regions') and not o.hide_render
+]
+if not mesh_objects:
+    raise RuntimeError('Blend file contains no renderable building mesh')
+bpy.ops.object.select_all(action='DESELECT')
+for o in mesh_objects:
+    o.hide_set(False)
+    o.select_set(True)
+bpy.context.view_layer.objects.active = mesh_objects[0]
+if len(mesh_objects) > 1:
+    bpy.ops.object.join()
+building = bpy.context.view_layer.objects.active
+bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+mesh_objects = [building]
 six_slot_materials = {
     mat.name for mat in bpy.data.materials if is_six_slot_material(mat)
 }
@@ -398,24 +453,22 @@ finally:
 "#;
     let script_path = temp.join("import.py");
     fs::write(&script_path, script).map_err(|e| e.to_string())?;
-    let blender = blender_executable();
-    let args = [
-        "--background".to_owned(),
-        "--python".to_owned(),
-        blender_path_arg(&script_path),
-        "--".to_owned(),
-        blender_path_arg(source),
-        blender_path_arg(&out_glb),
-        blender_path_arg(&out_map),
-        blender_path_arg(&temp),
-    ];
-    let status = Command::new(&blender).args(&args).status().map_err(|_| format!("Blender executable not found: {}", blender.display()))?;
+    let output = blender_service::run_script(
+        &script_path,
+        &[
+            blender_service::path_arg(source),
+            blender_service::path_arg(&out_glb),
+            blender_service::path_arg(&out_map),
+            blender_service::path_arg(&temp),
+        ],
+    )?;
     // Some Blender builds return a non-zero code after writing a valid GLB
     // (for example when an optional image codec warns). The artifact is the
     // authoritative result; only fail when it was not created.
-    if !status.success() && !out_glb.is_file() {
+    if !output.status.success() && !out_glb.is_file() {
+        let tail = blender_service::stderr_tail(&output, 12);
         let _ = fs::remove_dir_all(&temp);
-        return Err("Blender could not export this file".into());
+        return Err(format!("Blender could not export this file: {tail}"));
     }
     if !out_glb.is_file() {
         let _ = fs::remove_dir_all(&temp);
@@ -426,7 +479,10 @@ finally:
     let target = safe_path(root, &relative)?;
     fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
     crate::atomic_fs::write_atomic(&target, &bytes, false).map_err(|e| e.to_string())?;
-    let raw_slots: Value = fs::read_to_string(&out_map).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_else(|| json!({}));
+    let raw_slots: Value = fs::read_to_string(&out_map)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| json!({}));
     let mut slots = serde_json::Map::new();
     if let Some(object) = raw_slots.as_object() {
         for (key, value) in object {
@@ -437,71 +493,148 @@ finally:
                         let mut copied = serde_json::Map::new();
                         if let Some(material_object) = material_value.as_object() {
                             for (slot, slot_path) in material_object {
-                                let Some(path) = slot_path.as_str() else { continue };
-                                let Ok(image_bytes) = fs::read(path) else { continue };
-                                let ext = Path::new(path).extension().and_then(|s| s.to_str()).unwrap_or("png").to_ascii_lowercase();
-                                let image_relative = format!("assets/textures/{}.{}", digest(&image_bytes), ext);
+                                let Some(path) = slot_path.as_str() else {
+                                    continue;
+                                };
+                                let Ok(image_bytes) = fs::read(path) else {
+                                    continue;
+                                };
+                                let ext = Path::new(path)
+                                    .extension()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("png")
+                                    .to_ascii_lowercase();
+                                let image_relative =
+                                    format!("assets/textures/{}.{}", digest(&image_bytes), ext);
                                 let image_target = safe_path(root, &image_relative)?;
-                                fs::create_dir_all(image_target.parent().unwrap()).map_err(|e| e.to_string())?;
-                                if !image_target.exists() { crate::atomic_fs::write_atomic(&image_target, &image_bytes, false).map_err(|e| e.to_string())?; }
+                                fs::create_dir_all(image_target.parent().unwrap())
+                                    .map_err(|e| e.to_string())?;
+                                if !image_target.exists() {
+                                    crate::atomic_fs::write_atomic(
+                                        &image_target,
+                                        &image_bytes,
+                                        false,
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                }
                                 copied.insert(slot.clone(), json!(image_relative));
                             }
                         }
-                        if !copied.is_empty() { by_material.insert(material_name.clone(), Value::Object(copied)); }
+                        if !copied.is_empty() {
+                            by_material.insert(material_name.clone(), Value::Object(copied));
+                        }
                     }
                 }
                 slots.insert(key.clone(), Value::Object(by_material));
                 continue;
             }
             let Some(path) = value.as_str() else { continue };
-            let Ok(image_bytes) = fs::read(path) else { continue };
-            let ext = Path::new(path).extension().and_then(|x| x.to_str()).unwrap_or("png").to_ascii_lowercase();
+            let Ok(image_bytes) = fs::read(path) else {
+                continue;
+            };
+            let ext = Path::new(path)
+                .extension()
+                .and_then(|x| x.to_str())
+                .unwrap_or("png")
+                .to_ascii_lowercase();
             let image_relative = format!("assets/textures/{}.{}", digest(&image_bytes), ext);
             let image_target = safe_path(root, &image_relative)?;
             fs::create_dir_all(image_target.parent().unwrap()).map_err(|e| e.to_string())?;
-            if !image_target.exists() { crate::atomic_fs::write_atomic(&image_target, &image_bytes, false).map_err(|e| e.to_string())?; }
+            if !image_target.exists() {
+                crate::atomic_fs::write_atomic(&image_target, &image_bytes, false)
+                    .map_err(|e| e.to_string())?;
+            }
             slots.insert(key.clone(), json!(image_relative));
         }
     }
     let _ = fs::remove_dir_all(&temp);
-    Ok(json!({"asset": relative, "materialSlots": slots, "source": "blend"}))
+    let result = json!({
+        "asset": relative,
+        "materialSlots": slots,
+        "source": "blend",
+        "nativeAdapter": native_adapter
+    });
+    write_blend_cache(root, &cache_key, &result)?;
+    Ok(result)
 }
 
-/// Blender's Windows path handling does not accept Rust's extended `\\?\\`
-/// prefix, while the workspace uses it to support long project paths.
-fn blender_path_arg(path: &Path) -> String {
-    let value = path.to_string_lossy();
-    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
-        return format!(r"\\{rest}");
-    }
-    value.strip_prefix(r"\\?\").unwrap_or(&value).to_owned()
+const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-01.1";
+
+fn blend_cache_key(source: &Path) -> Result<String, String> {
+    let bytes = fs::read(source).map_err(|error| error.to_string())?;
+    Ok(format!("{}-{}", BLEND_CACHE_VERSION, digest(&bytes)))
 }
 
-fn blender_executable() -> PathBuf {
-    if let Ok(value) = std::env::var("BLENDER_PATH") {
-        let path = PathBuf::from(value.trim_matches('"'));
-        if path.is_file() { return path; }
+fn blend_cache_dir(root: &Path, key: &str) -> PathBuf {
+    root.join(".openscp-blend-cache").join(key)
+}
+
+fn read_blend_cache(root: &Path, key: &str) -> Option<Value> {
+    let path = blend_cache_dir(root, key).join("result.json");
+    let result: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    let asset = result.get("asset")?.as_str()?;
+    if !safe_path(root, asset).ok()?.is_file() {
+        return None;
     }
-    let candidates = [
-        PathBuf::from(r"D:\blender\blender.exe"),
-        PathBuf::from(r"C:\Program Files\Blender Foundation\Blender\blender.exe"),
-    ];
-    candidates.into_iter().find(|path| path.is_file()).unwrap_or_else(|| PathBuf::from("blender"))
+    Some(result)
+}
+
+fn write_blend_cache(root: &Path, key: &str, result: &Value) -> Result<(), String> {
+    let dir = blend_cache_dir(root, key);
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let bytes = serde_json::to_vec_pretty(result).map_err(|error| error.to_string())?;
+    crate::atomic_fs::write_atomic(&dir.join("result.json"), &bytes, false)
+        .map_err(|error| error.to_string())
+}
+
+/// Persist the plug-in's native GLB/LOTM pair.  The workbench previews the GLB;
+/// the native LOTM is the package input, so no Rust texture composition runs.
+fn import_native_bundle(
+    root: &Path,
+    native: blender_service::NativeExport,
+) -> Result<Value, String> {
+    let glb_bytes = fs::read(&native.glb).map_err(|e| e.to_string())?;
+    let lotm_bytes = fs::read(&native.lotm).map_err(|e| e.to_string())?;
+    let glb_relative = format!("assets/models/{}.glb", digest(&glb_bytes));
+    let lotm_relative = format!("assets/models/{}.lotm", digest(&lotm_bytes));
+    for (relative, bytes) in [(&glb_relative, &glb_bytes), (&lotm_relative, &lotm_bytes)] {
+        let target = safe_path(root, relative)?;
+        fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+        if !target.exists() {
+            crate::atomic_fs::write_atomic(&target, bytes, false).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(json!({
+        "asset": glb_relative,
+        "lotm": lotm_relative,
+        "source": "blend-native",
+        "nativeAdapter": {"status": "native"}
+    }))
 }
 
 pub(super) fn describe(root: &Path, relative: &str) -> Result<Value, String> {
     let path = safe_path(root, relative)?;
     let size = fs::metadata(&path).map_err(|e| e.to_string())?.len();
-    if size > 128 * 1024 * 1024 { return Err("Asset exceeds 128 MiB".into()); }
+    if size > 128 * 1024 * 1024 {
+        return Err("Asset exceeds 128 MiB".into());
+    }
     if path.extension().is_some_and(|s| s == "package") {
         let package = dbpf::Package::open(&path).map_err(|e| e.to_string())?;
-        let resources: Vec<_> = package.entries().iter().map(|e| json!({
-            "typeId":e.id.type_id,"group":e.id.group,"instance":e.id.instance
-        })).collect();
+        let resources: Vec<_> = package
+            .entries()
+            .iter()
+            .map(|e| {
+                json!({
+                    "typeId":e.id.type_id,"group":e.id.group,"instance":e.id.instance
+                })
+            })
+            .collect();
         return Ok(json!({"asset":relative,"path":path,"size":size,"resources":resources}));
     }
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-    Ok(json!({"asset":relative,"path":path,"size":size,"base64":base64::engine::general_purpose::STANDARD.encode(bytes)}))
+    Ok(
+        json!({"asset":relative,"path":path,"size":size,"base64":base64::engine::general_purpose::STANDARD.encode(bytes)}),
+    )
 }
 
 pub(super) fn validate(root: &Path, schema: &Schema) -> Option<&'static str> {
@@ -510,33 +643,105 @@ pub(super) fn validate(root: &Path, schema: &Schema) -> Option<&'static str> {
         if !schema.config["document"].as_str().unwrap_or("").is_empty() {
             return Some("rasterEditor.buildUnsupported");
         }
-        return if file.is_empty() || safe_path(root, file).is_ok_and(|p| p.is_file()) { None }
-        else { Some("Texture input is missing") };
+        return if file.is_empty() || safe_path(root, file).is_ok_and(|p| p.is_file()) {
+            None
+        } else {
+            Some("Texture input is missing")
+        };
     }
     if !file.ends_with(".package") {
         return Some("模型草稿可预览；构建目前需要原生 .package，GLB/LOTM → RW4 编译尚未接入");
     }
     if !schema.config["document"].as_str().unwrap_or("").is_empty() {
-        return Some("Property schema 已保存；编辑后的 Property/RW4 编译尚未接入，不能按未编辑原包构建");
+        return Some(
+            "Property schema 已保存；编辑后的 Property/RW4 编译尚未接入，不能按未编辑原包构建",
+        );
     }
-    if safe_path(root, file).ok().and_then(|p| dbpf::Package::open(p).ok()).is_none() {
+    if safe_path(root, file)
+        .ok()
+        .and_then(|p| dbpf::Package::open(p).ok())
+        .is_none()
+    {
         return Some("Select a valid native asset package");
     }
     None
 }
 
-pub(super) fn validate_links(schemas: &[Schema], deps: &BTreeMap<String, Vec<String>>, out: &mut Vec<Diagnostic>) {
+pub(super) fn validate_links(
+    schemas: &[Schema],
+    deps: &BTreeMap<String, Vec<String>>,
+    out: &mut Vec<Diagnostic>,
+) {
     for building in schemas.iter().filter(|s| s.kind == "building-asset") {
         for slot in 0..6 {
             let key = format!("slot{slot}");
             let source = building.config[&key].as_str().unwrap_or("");
-            let input = schemas.iter().find(|s| s.id == source && s.kind == "texture-input");
-            if input.is_none() || !deps.get(&building.id).is_some_and(|v| v.iter().any(|id| id == source)) {
-                diagnostic(out, Some(&building.id), "slot", &format!("{key} must connect to a texture input"));
-            } else if !input.unwrap().config["asset"].as_str().unwrap_or("").is_empty() {
-                diagnostic(out, Some(&building.id), "compile", "贴图预览已绑定；替换材质槽的 RW4 写回尚未接入，禁止静默忽略贴图构建");
+            let input = schemas
+                .iter()
+                .find(|s| s.id == source && s.kind == "texture-input");
+            if input.is_none()
+                || !deps
+                    .get(&building.id)
+                    .is_some_and(|v| v.iter().any(|id| id == source))
+            {
+                diagnostic(
+                    out,
+                    Some(&building.id),
+                    "slot",
+                    &format!("{key} must connect to a texture input"),
+                );
+            } else if !input.unwrap().config["asset"]
+                .as_str()
+                .unwrap_or("")
+                .is_empty()
+            {
+                diagnostic(
+                    out,
+                    Some(&building.id),
+                    "compile",
+                    "贴图预览已绑定；替换材质槽的 RW4 写回尚未接入，禁止静默忽略贴图构建",
+                );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod blender_import_tests {
+    use super::*;
+
+    /// Manual gate: set `OPENSCP_BLENDER_SAMPLE` to a .blend with one building.
+    /// The test proves the built-in headless path joins the meshes and still
+    /// extracts the six-slot images without an installed add-on.
+    #[test]
+    #[ignore = "requires local Blender and OPENSCP_BLENDER_SAMPLE"]
+    fn headless_blend_import_joins_and_extracts_slots() {
+        let Ok(sample) = std::env::var("OPENSCP_BLENDER_SAMPLE") else {
+            return;
+        };
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("tmp")
+            .join(format!("openscp-blend-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let result = import(&root, &json!({"path": sample})).unwrap();
+        assert!(result["asset"]
+            .as_str()
+            .unwrap_or_default()
+            .ends_with(".glb"));
+        assert_eq!(result["source"], "blend");
+        let glb = root.join(result["asset"].as_str().unwrap());
+        let bytes = fs::read(glb).unwrap();
+        let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        let doc: Value = serde_json::from_slice(&bytes[20..20 + json_len]).unwrap();
+        assert_eq!(
+            doc["meshes"].as_array().map(Vec::len),
+            Some(1),
+            "the Blender service must join the building into one mesh"
+        );
+        let cached = import(&root, &json!({"path": sample})).unwrap();
+        assert_eq!(cached["cache"], "hit");
+        let _ = fs::remove_dir_all(&root);
     }
 }
 
@@ -549,8 +754,12 @@ mod raster_draft_tests {
         let mut schema: Schema = serde_json::from_value(json!({
             "schema_version": 1, "id": "texture-input-1", "kind": "texture-input",
             "config": { "asset": "", "slot": 0, "document": "{\"format\":\"openscp.raster\"}" }
-        })).unwrap();
-        assert_eq!(validate(Path::new("."), &schema), Some("rasterEditor.buildUnsupported"));
+        }))
+        .unwrap();
+        assert_eq!(
+            validate(Path::new("."), &schema),
+            Some("rasterEditor.buildUnsupported")
+        );
         schema.config["document"] = json!("");
         assert!(validate(Path::new("."), &schema).is_none());
     }
