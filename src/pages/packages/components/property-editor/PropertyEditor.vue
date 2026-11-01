@@ -1166,6 +1166,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
             :live-transform="liveTransform"
             :scale-editable="selectedScaleEditable"
             :edit-enabled="editEnabled"
+            :package-id="packageId"
             @update-transform="commitTransform"
             @update-fields="commitFields"
           />

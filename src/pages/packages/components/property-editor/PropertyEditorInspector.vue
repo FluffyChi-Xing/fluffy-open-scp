@@ -24,6 +24,8 @@ const props = defineProps<{
   scaleEditable?: boolean;
   /** 编辑模式解锁态（透传给元数据面板的编辑门控）。 */
   editEnabled?: boolean;
+  /** 当前包；属性栏按选中 effect 解析 Swarm 详情。 */
+  packageId?: number | null;
 }>();
 const emit = defineEmits<{
   "update-transform": [id: string, matrix: number[]];
@@ -72,6 +74,7 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
         v-if="activeTab === 'properties'"
         :unit="unit"
         :units="units"
+        :package-id="packageId"
       />
       <PropertyEditorTransformPanel
         v-else-if="activeTab === 'transform'"

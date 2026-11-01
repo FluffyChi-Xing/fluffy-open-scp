@@ -203,6 +203,7 @@ pub fn run() {
             read_resource_text_range,
             read_lot_editor_session,
             effect_service::read_effect_preview,
+            effect_service::read_effect_detail,
             build_pe_schema,
             list_model_catalog,
             list_path_entries,

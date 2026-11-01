@@ -553,6 +553,22 @@ export interface EffectDefinitionData {
   emitters: EffectEmitterData[];
   unsupportedBlocks: number;
 }
+export interface EffectBlockData {
+  blockType: number;
+  componentIndex: number;
+  offset: [number, number, number];
+  scale: number;
+}
+export interface EffectDetailData {
+  effectId: number;
+  collectionInstance: number;
+  collectionGroup: number;
+  visualIndex: number;
+  blocks: EffectBlockData[];
+  emitters: EffectEmitterData[];
+  unsupportedBlocks: number;
+  diagnostics: string[];
+}
 export interface EffectPreviewResponse {
   effects: EffectDefinitionData[];
   diagnostics: string[];

@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { LotUnitDto, UnitKeyDto } from "@/api/tauri";
+import type { EffectDetailData, LotUnitDto, UnitKeyDto } from "@/api/tauri";
+import { createDataSource } from "@/api/data-source";
 import { propSemanticCategory } from "./assetCategories";
 
 const props = defineProps<{
   unit: LotUnitDto | null;
   /** 当前 lot 的全部 unit（用于统计同 bin 的槽位/资源）。 */
   units?: readonly LotUnitDto[];
+  /** 当前包；选中 effect 时用于按需解析 Swarm 详情。 */
+  packageId?: number | null;
 }>();
 const { t } = useI18n();
+const source = createDataSource();
 
 interface SummaryRow {
   label: string;
@@ -171,6 +175,99 @@ const summary = computed<SummaryRow[]>(() => {
 
 const fields = computed(() => props.unit?.fields ?? []);
 const empty = computed(() => !props.unit);
+
+/** 选中 effect 时按名字哈希解析 Swarm 集合；与粒子渲染开关无关。 */
+const effectHash = computed(() =>
+  props.unit?.kind === "effect" ? (props.unit.effectId?.instance ?? null) : null,
+);
+const detail = shallowRef<EffectDetailData | null>(null);
+const detailLoading = ref(false);
+const detailFailed = ref(false);
+let detailGeneration = 0;
+
+watch(
+  [effectHash, () => props.packageId ?? null],
+  async ([hash, packageId]) => {
+    const generation = ++detailGeneration;
+    detail.value = null;
+    detailFailed.value = false;
+    detailLoading.value = false;
+    if (hash === null || packageId === null) return;
+    detailLoading.value = true;
+    try {
+      const resolved = await source.readEffectDetail(packageId, hash);
+      if (generation !== detailGeneration) return;
+      detail.value = resolved;
+    } catch (error) {
+      if (generation !== detailGeneration) return;
+      console.error("[effect] detail failed", error);
+      detailFailed.value = true;
+    } finally {
+      if (generation === detailGeneration) detailLoading.value = false;
+    }
+  },
+  { immediate: true },
+);
+
+const BLOCK_TYPE_NAMES: Record<number, string> = {
+  0: "VisualEffect",
+  1: "Particles",
+  2: "MetaParticles",
+  3: "Decal",
+  4: "Sequence",
+  5: "Sound",
+  6: "Shake",
+  7: "Camera",
+  8: "Model",
+  9: "Screen",
+  10: "Light",
+  11: "Game",
+  12: "FastParticles",
+  13: "Distribute",
+  14: "Ribbon",
+  15: "Animate",
+  16: "Beam",
+};
+
+function blockName(type: number): string {
+  return BLOCK_TYPE_NAMES[type] ?? `External ${type}`;
+}
+
+function formatCurve(values: readonly number[]): string {
+  if (!values.length) return "—";
+  if (values.length === 1) return String(values[0]);
+  return `${values[0]} → ${values[values.length - 1]}`;
+}
+
+const atlasEmitter = computed(
+  () => detail.value?.emitters.find((emitter) => emitter.texturePngBase64) ?? null,
+);
+const atlasPng = computed(() => atlasEmitter.value?.texturePngBase64 ?? null);
+const atlasTiles = computed(() => {
+  const particle = atlasEmitter.value?.particle;
+  return particle ? `${particle.tileCount[0]}×${particle.tileCount[1]}` : "";
+});
+const atlasFrame = computed(() => {
+  const particle = atlasEmitter.value?.particle;
+  return particle ? `${particle.frameStart} + ${particle.frameCount}` : "";
+});
+const atlasFrameStyle = computed(() => {
+  const emitter = atlasEmitter.value;
+  if (!emitter || !emitter.texturePngBase64) return {};
+  const { tileCount, frameStart } = emitter.particle;
+  const columns = Math.max(1, tileCount[0]);
+  const rows = Math.max(1, tileCount[1]);
+  const frame = Math.max(0, frameStart);
+  const column = columns > 1 ? (frame % columns) / (columns - 1) : 0;
+  const row = rows > 1 ? Math.floor(frame / columns) / (rows - 1) : 0;
+  return {
+    backgroundImage: `url(data:image/png;base64,${emitter.texturePngBase64})`,
+    backgroundSize: `${columns * 100}% ${rows * 100}%`,
+    backgroundPosition: `${column * 100}% ${row * 100}%`,
+  };
+});
+
+
 </script>
 
 <template>
@@ -194,6 +291,104 @@ const empty = computed(() => !props.unit);
           </dd>
         </div>
       </dl>
+      <section v-if="effectHash !== null" class="effect-detail">
+        <h4 class="fields-title">{{ t("package.effectDetailTitle") }}</h4>
+        <p v-if="detailLoading" class="effect-note">
+          {{ t("package.effectDetailLoading") }}
+        </p>
+        <p v-else-if="detailFailed" class="effect-note error">
+          {{ t("package.effectDetailError") }}
+        </p>
+        <p v-else-if="!detail" class="effect-note">
+          {{ t("package.effectDetailEmpty") }}
+        </p>
+        <div v-else class="effect-detail-scroll">
+          <dl class="summary-list">
+            <div>
+              <dt>{{ t("package.effectDetailCollection") }}</dt>
+              <dd>
+                {{ detail.collectionInstance.toString(16).padStart(8, "0").toUpperCase() }}
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t("package.effectDetailVisual") }}</dt>
+              <dd>#{{ detail.visualIndex }} · {{ detail.blocks.length }} blocks</dd>
+            </div>
+            <div v-if="detail.unsupportedBlocks">
+              <dt>{{ t("package.effectDetailUnsupported") }}</dt>
+              <dd>{{ detail.unsupportedBlocks }}</dd>
+            </div>
+          </dl>
+
+          <h5 class="effect-subtitle">{{ t("package.effectDetailStructure") }}</h5>
+          <ul class="effect-blocks">
+            <li v-for="(block, index) in detail.blocks" :key="index">
+              <span class="block-name">{{ blockName(block.blockType) }}</span>
+              <span class="block-meta">
+                #{{ block.componentIndex }} · {{ formatVector(block.offset) }} · ×{{ block.scale.toFixed(2) }}
+              </span>
+            </li>
+          </ul>
+
+          <template v-if="detail.emitters.length">
+            <h5 class="effect-subtitle">{{ t("package.effectDetailParticle") }}</h5>
+            <div
+              v-for="(emitter, index) in detail.emitters"
+              :key="index"
+              class="emitter-card"
+            >
+              <div class="emitter-title">
+                #{{ index }} · component {{ emitter.particle.index }}
+              </div>
+              <dl class="summary-list">
+                <div>
+                  <dt>{{ t("package.effectDetailLife") }}</dt>
+                  <dd>{{ emitter.particle.life[0] }} – {{ emitter.particle.life[1] }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("package.effectDetailRate") }}</dt>
+                  <dd>{{ emitter.particle.rate.slice(0, 4).join(" ") || "—" }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("package.effectDetailSize") }}</dt>
+                  <dd>{{ formatCurve(emitter.particle.size) }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("package.effectDetailAlpha") }}</dt>
+                  <dd>{{ formatCurve(emitter.particle.alpha) }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("package.effectDetailTiles") }}</dt>
+                  <dd>
+                    {{ emitter.particle.tileCount[0] }}×{{ emitter.particle.tileCount[1] }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t("package.effectDetailFrame") }}</dt>
+                  <dd>
+                    {{ emitter.particle.frameStart }} + {{ emitter.particle.frameCount }} @
+                    {{ emitter.particle.frameSpeed }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t("package.effectDetailDrawMode") }}</dt>
+                  <dd>{{ emitter.particle.texture.drawMode }}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <h5 class="effect-subtitle">{{ t("package.effectDetailAtlas") }}</h5>
+            <div v-if="atlasPng" class="atlas-preview">
+              <div class="atlas-frame" :style="atlasFrameStyle" />
+              <div class="atlas-caption">
+                {{ atlasTiles }} · {{ t("package.effectDetailFrame") }} {{ atlasFrame }}
+              </div>
+            </div>
+            <p v-else class="effect-note">{{ t("package.effectDetailNoAtlas") }}</p>
+          </template>
+          <p v-else class="effect-note">{{ t("package.effectDetailEmpty") }}</p>
+        </div>
+      </section>
       <h4 v-if="fields.length" class="fields-title">
         {{ $t("package.unitFields") }}
       </h4>
@@ -320,5 +515,88 @@ const empty = computed(() => !props.unit);
 .fields-table td small {
   color: var(--subtle-foreground);
   font-size: 9px;
+}
+.effect-detail {
+  margin-top: 14px;
+}
+.effect-detail-scroll {
+  /* 属性栏本身可滚动；详情内容再限高，长 block/emitter 列表不会把面板撑爆。 */
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.effect-note {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  margin: 4px 0 8px;
+}
+.effect-note.error {
+  color: var(--destructive, #ff6b5e);
+}
+.effect-subtitle {
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  margin: 12px 0 6px;
+  padding-top: 8px;
+  text-transform: uppercase;
+}
+.effect-blocks {
+  display: grid;
+  gap: 3px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.effect-blocks li {
+  border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  display: flex;
+  font-size: 10px;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+.block-name {
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  flex: none;
+}
+.block-meta {
+  color: var(--subtle-foreground);
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+.emitter-card {
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 4px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+}
+.emitter-title {
+  color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+.atlas-preview {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+}
+.atlas-frame {
+  background-color: #000;
+  background-repeat: no-repeat;
+  border: 1px solid var(--border);
+  flex: none;
+  height: 96px;
+  image-rendering: pixelated;
+  width: 96px;
+}
+.atlas-caption {
+  color: var(--subtle-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
 }
 </style>
