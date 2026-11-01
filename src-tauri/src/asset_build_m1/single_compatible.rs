@@ -11,6 +11,141 @@ use sha2::{Digest, Sha256};
 use super::lotm::{LotmDocument, LotmMaterial, MeshMaterialRef};
 
 pub const MAX_MATERIAL_ROWS: usize = 64;
+pub const CELL: u32 = 512;
+
+/// Layout of the author's single-mesh surface/palette/room tables.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfacePlan {
+    pub cell: u32,
+    /// Power-of-two cell grid edge, matching `2**ceil(log2(ceil(sqrt(n))))`.
+    pub grid: u32,
+    pub atlas: u32,
+    /// Unique (tint, normal, shader) group selected for each material row.
+    pub surface_of_row: Vec<usize>,
+    /// Per-row 4x4 Float32 block after palette/region rewriting.
+    pub rows: Vec<[f32; 16]>,
+    pub room_keys: Vec<String>,
+    pub room_atlas: u32,
+    pub room_of_row: Vec<usize>,
+}
+
+fn f32_params(material: &LotmMaterial) -> Result<[f32; 16], String> {
+    let bytes = material
+        .params_f32
+        .as_deref()
+        .ok_or("single-compatible: material has no Float32 params")?;
+    if bytes.len() < 64 {
+        return Err(format!(
+            "single-compatible: params are {} bytes, expected at least 64",
+            bytes.len()
+        ));
+    }
+    let mut values = [0f32; 16];
+    for (index, value) in values.iter_mut().enumerate() {
+        *value = f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
+    }
+    Ok(values)
+}
+
+fn surface_key(material: &LotmMaterial) -> String {
+    let png = |index: usize| material.pngs.get(index).and_then(Option::as_ref);
+    format!(
+        "{}:{}:{}",
+        digest(png(LotmMaterial::PNG_TINT)),
+        digest(png(LotmMaterial::PNG_NORMAL)),
+        digest(png(LotmMaterial::PNG_SHADER)),
+    )
+}
+
+fn room_key(material: &LotmMaterial, params: &[f32; 16]) -> String {
+    format!(
+        "{}:{:.8}:{:.8}",
+        digest(material.pngs.get(LotmMaterial::PNG_INTERIOR).and_then(Option::as_ref)),
+        params[2],
+        params[3],
+    )
+}
+
+fn power_of_two_grid(unique: usize) -> u32 {
+    let root = (unique as f64).sqrt().ceil().max(1.0) as u32;
+    let mut grid = 1u32;
+    while grid < root {
+        grid *= 2;
+    }
+    grid
+}
+
+/// Reproduce the author's surface/palette/room parameter layout.
+pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
+    if document.materials.is_empty() {
+        return Err("single-compatible: no materials to plan".into());
+    }
+    let mut surface_keys: Vec<String> = Vec::new();
+    let mut room_keys: Vec<String> = Vec::new();
+    let mut surface_of_row = Vec::with_capacity(document.materials.len());
+    let mut room_of_row = Vec::with_capacity(document.materials.len());
+    let mut rows = Vec::with_capacity(document.materials.len());
+    for (index, material) in document.materials.iter().enumerate() {
+        let params = f32_params(material)?;
+        let surface = surface_key(material);
+        let surface_index = surface_keys
+            .iter()
+            .position(|key| key == &surface)
+            .unwrap_or_else(|| {
+                surface_keys.push(surface);
+                surface_keys.len() - 1
+            });
+        let room = room_key(material, &params);
+        let room_index = room_keys
+            .iter()
+            .position(|key| key == &room)
+            .unwrap_or_else(|| {
+                room_keys.push(room);
+                room_keys.len() - 1
+            });
+        surface_of_row.push(surface_index);
+        room_of_row.push(room_index);
+        rows.push(params);
+    }
+    let grid = power_of_two_grid(surface_keys.len());
+    let atlas = grid * CELL;
+    let room_states = 64u32
+        * 2u32.pow((room_keys.len().max(1) as f64).log2().ceil() as u32);
+    let room_atlas = room_states.max(1024);
+    let grid_f = grid as f32;
+    let atlas_f = atlas as f32;
+    for (row, params) in rows.iter_mut().enumerate() {
+        let x = ((surface_of_row[row] as u32 % grid) * CELL) as f32;
+        let y = ((surface_of_row[row] as u32 / grid) * CELL) as f32;
+        // palette: row0[0]/row0[1] select Base/Top 2px column blocks.
+        for layer in 0..2 {
+            params[layer] = ((row * 4 + layer * 2) as f32) / 512.0;
+        }
+        for line in [1usize, 2] {
+            let offset = line * 4;
+            params[offset] /= grid_f;
+            params[offset + 1] /= grid_f;
+            params[offset + 2] = params[offset + 2] / grid_f + x / atlas_f;
+            params[offset + 3] = params[offset + 3] / grid_f + y / atlas_f;
+        }
+        if params[2] != 0.0 {
+            params[2] = 64.0 / room_atlas as f32;
+            params[3] = room_of_row[row] as f32 * 64.0 / room_atlas as f32;
+        }
+        params[14] *= grid_f;
+        params[15] *= grid_f;
+    }
+    Ok(SurfacePlan {
+        cell: CELL,
+        grid,
+        atlas,
+        surface_of_row,
+        rows,
+        room_keys,
+        room_atlas,
+        room_of_row,
+    })
+}
 
 fn digest(bytes: Option<&Vec<u8>>) -> String {
     let mut hasher = Sha256::new();
