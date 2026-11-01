@@ -36,8 +36,8 @@ mod writer;
 
 pub use error::{Error, Result};
 pub use erz::{
-    parse_summary as erz_parse_summary, ErzError, ErzSummary, ERZ_BINARY_RULE_TYPE,
-    ERZ_TEXT_RULE_TYPE,
+    ERZ_BINARY_RULE_TYPE, ERZ_TEXT_RULE_TYPE, ErzError, ErzSummary,
+    parse_summary as erz_parse_summary,
 };
 pub use header::{Header, PackageKind};
 pub use index::{IndexEntry, ResourceId};

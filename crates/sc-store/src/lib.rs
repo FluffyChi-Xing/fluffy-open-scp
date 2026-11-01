@@ -494,8 +494,14 @@ impl Store {
             Some((root, flag, created_at)) => (root, flag != 0, created_at),
             None => (None, false, now),
         };
-        let mod_root = mod_root.map_or(current_root.as_deref(), Some).map(str::to_owned);
-        let onboarding = if onboarding_completed { true } else { current_onboarding };
+        let mod_root = mod_root
+            .map_or(current_root.as_deref(), Some)
+            .map(str::to_owned);
+        let onboarding = if onboarding_completed {
+            true
+        } else {
+            current_onboarding
+        };
         connection.execute(
             "INSERT INTO studio_config (id, mod_root, onboarding_completed, created_at, updated_at) VALUES (1, ?1, ?2, ?3, ?4)
              ON CONFLICT(id) DO UPDATE SET mod_root = excluded.mod_root, onboarding_completed = excluded.onboarding_completed, updated_at = excluded.updated_at",
@@ -661,9 +667,8 @@ impl Store {
     pub fn mod_project_aggregates(&self) -> Result<ModProjectAggregates> {
         let connection = self.connection.lock().expect("store mutex poisoned");
         let mut group_counts = {
-            let mut statement = connection.prepare(
-                "SELECT group_id, COUNT(*) FROM mod_projects GROUP BY group_id",
-            )?;
+            let mut statement = connection
+                .prepare("SELECT group_id, COUNT(*) FROM mod_projects GROUP BY group_id")?;
             let rows = statement.query_map([], |row| {
                 Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -680,8 +685,9 @@ impl Store {
             group_counts.push((None, 0));
         }
         let mut status_counts = {
-            let mut statement = connection
-                .prepare("SELECT status, COUNT(*) FROM mod_projects GROUP BY status ORDER BY status")?;
+            let mut statement = connection.prepare(
+                "SELECT status, COUNT(*) FROM mod_projects GROUP BY status ORDER BY status",
+            )?;
             let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
@@ -689,8 +695,8 @@ impl Store {
             status_counts.push(("active".into(), 0));
         }
         let timestamps = {
-            let mut statement = connection
-                .prepare("SELECT created_at, updated_at FROM mod_projects")?;
+            let mut statement =
+                connection.prepare("SELECT created_at, updated_at FROM mod_projects")?;
             let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
@@ -1351,7 +1357,11 @@ impl Store {
                 after_size,
             });
         }
-        let detail = input.detail.as_ref().map(serde_json::to_string).transpose()?;
+        let detail = input
+            .detail
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         transaction.execute(
             "INSERT INTO changesets \
              (target_path, writer, label, note, revision, resource_count, bytes_before, bytes_after, \
@@ -1540,7 +1550,10 @@ impl Store {
             "DELETE FROM change_items WHERE changeset_id = ?1",
             params![changeset_id],
         )?;
-        transaction.execute("DELETE FROM changesets WHERE id = ?1", params![changeset_id])?;
+        transaction.execute(
+            "DELETE FROM changesets WHERE id = ?1",
+            params![changeset_id],
+        )?;
         transaction.commit()?;
         let blobs_reclaimed = Self::gc_unreferenced_blobs(&connection)?;
         Ok(VersionDeleteResult {
@@ -1593,7 +1606,11 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?;
             for entry in entries {
-                let metadata = entry.metadata.as_ref().map(serde_json::to_string).transpose()?;
+                let metadata = entry
+                    .metadata
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?;
                 statement.execute(params![
                     entry.session_key,
                     entry.stage,
@@ -2204,14 +2221,14 @@ mod tests {
             .unwrap();
         assert_eq!(renamed.name, "地铁Mod2");
         assert_eq!(renamed.rel_path, "metro-mod-2");
-        let moved = store.mod_project_set_group(created.id, Some(group2.id)).unwrap();
+        let moved = store
+            .mod_project_set_group(created.id, Some(group2.id))
+            .unwrap();
         assert_eq!(moved.group_id, Some(group2.id));
         store
             .mod_project_set_status(created.id, "released")
             .unwrap();
-        let described = store
-            .mod_project_set_description(created.id, None)
-            .unwrap();
+        let described = store.mod_project_set_description(created.id, None).unwrap();
         assert_eq!(described.description, None);
         assert_eq!(store.mod_project_list().unwrap().len(), 1);
 
@@ -2241,7 +2258,10 @@ mod tests {
         clean(&path);
         let store = Store::open(&path).unwrap();
         let first = store
-            .record_changeset(&changeset_input("C:/a.package", vec![change_item(1, None, Some(b"one"))]))
+            .record_changeset(&changeset_input(
+                "C:/a.package",
+                vec![change_item(1, None, Some(b"one"))],
+            ))
             .unwrap();
         let second = store
             .record_changeset(&changeset_input(
@@ -2250,7 +2270,10 @@ mod tests {
             ))
             .unwrap();
         let other = store
-            .record_changeset(&changeset_input("C:/b.package", vec![change_item(9, None, Some(b"x"))]))
+            .record_changeset(&changeset_input(
+                "C:/b.package",
+                vec![change_item(9, None, Some(b"x"))],
+            ))
             .unwrap();
         assert_eq!(first.revision, 1);
         assert_eq!(second.revision, 2);
@@ -2263,7 +2286,10 @@ mod tests {
 
         let targets = store.list_version_targets().unwrap();
         assert_eq!(targets.len(), 2);
-        let a = targets.iter().find(|t| t.target_path == "C:/a.package").unwrap();
+        let a = targets
+            .iter()
+            .find(|t| t.target_path == "C:/a.package")
+            .unwrap();
         assert_eq!(a.latest_revision, 2);
         assert_eq!(a.changeset_count, 2);
 
@@ -2309,7 +2335,10 @@ mod tests {
         clean(&path);
         let store = Store::open(&path).unwrap();
         let first = store
-            .record_changeset(&changeset_input("C:/a.package", vec![change_item(1, None, Some(b"one"))]))
+            .record_changeset(&changeset_input(
+                "C:/a.package",
+                vec![change_item(1, None, Some(b"one"))],
+            ))
             .unwrap();
         let second = store
             .record_changeset(&changeset_input(
@@ -2355,7 +2384,13 @@ mod tests {
         let store = Store::open(&path).unwrap();
         // rev1 新增 1、2；rev2 改 1；rev3 删 2；rev4 再加 2
         let history: Vec<(i64, Vec<ChangeItemInput>)> = vec![
-            (1, vec![change_item(1, None, Some(b"v1-1")), change_item(2, None, Some(b"v1-2"))]),
+            (
+                1,
+                vec![
+                    change_item(1, None, Some(b"v1-1")),
+                    change_item(2, None, Some(b"v1-2")),
+                ],
+            ),
             (2, vec![change_item(1, Some(b"v1-1"), Some(b"v2-1"))]),
             (3, vec![change_item(2, Some(b"v1-2"), None)]),
             (4, vec![change_item(2, None, Some(b"v4-2"))]),
@@ -2366,24 +2401,28 @@ mod tests {
                 .unwrap();
         }
         for revision in 1..=4 {
-            let rows = store.resource_states_at_revision("C:/a.package", revision).unwrap();
+            let rows = store
+                .resource_states_at_revision("C:/a.package", revision)
+                .unwrap();
             let actual: std::collections::BTreeMap<_, _> = rows
                 .iter()
-                .map(|r| {
-                    (
-                        (r.type_id, r.group_id, r.instance),
-                        r.bytes.clone(),
-                    )
-                })
+                .map(|r| ((r.type_id, r.group_id, r.instance), r.bytes.clone()))
                 .collect();
             let expected = fold_at(&history, revision);
-            assert_eq!(actual, expected, "revision {revision} 的 SQL 重建必须与 fold 一致");
+            assert_eq!(
+                actual, expected,
+                "revision {revision} 的 SQL 重建必须与 fold 一致"
+            );
         }
         // rev2 期望：1 -> v2-1，2 -> v1-2
-        let at_two = store.resource_states_at_revision("C:/a.package", 2).unwrap();
+        let at_two = store
+            .resource_states_at_revision("C:/a.package", 2)
+            .unwrap();
         assert_eq!(at_two.len(), 2);
         // rev3：2 被删
-        let at_three = store.resource_states_at_revision("C:/a.package", 3).unwrap();
+        let at_three = store
+            .resource_states_at_revision("C:/a.package", 3)
+            .unwrap();
         assert_eq!(at_three.len(), 1);
         assert_eq!(at_three[0].instance, 1);
         drop(store);
@@ -2486,7 +2525,9 @@ mod tests {
         assert_eq!(removed, 50);
         let connection = store.connection.lock().unwrap();
         let rows: i64 = connection
-            .query_row("SELECT COUNT(*) FROM render_telemetry", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM render_telemetry", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(rows, RENDER_TELEMETRY_MAX_ROWS);
         drop(connection);

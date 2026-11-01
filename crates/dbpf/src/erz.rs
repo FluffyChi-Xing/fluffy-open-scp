@@ -59,7 +59,11 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ErzError {
     #[error("data too short: need {needed} bytes at offset {at}, have {have}")]
-    TooShort { needed: usize, at: usize, have: usize },
+    TooShort {
+        needed: usize,
+        at: usize,
+        have: usize,
+    },
 }
 
 struct Reader<'a> {
@@ -84,7 +88,12 @@ impl<'a> Reader<'a> {
     }
     fn u32(&mut self) -> Result<u32, ErzError> {
         self.need(4)?;
-        let v = u32::from_be_bytes([self.d[self.o], self.d[self.o + 1], self.d[self.o + 2], self.d[self.o + 3]]);
+        let v = u32::from_be_bytes([
+            self.d[self.o],
+            self.d[self.o + 1],
+            self.d[self.o + 2],
+            self.d[self.o + 3],
+        ]);
         self.o += 4;
         Ok(v)
     }
@@ -229,10 +238,22 @@ struct LayoutSpec {
     t: usize,
 }
 
-const RETAIL_LAYOUT_SPEC: LayoutSpec =
-    LayoutSpec { fields: 36, sid: 19, fid: 23, min: 15, max: 16, t: 33 };
-const LEGACY_LAYOUT_SPEC: LayoutSpec =
-    LayoutSpec { fields: 40, sid: 21, fid: 26, min: 17, max: 18, t: 37 };
+const RETAIL_LAYOUT_SPEC: LayoutSpec = LayoutSpec {
+    fields: 36,
+    sid: 19,
+    fid: 23,
+    min: 15,
+    max: 16,
+    t: 33,
+};
+const LEGACY_LAYOUT_SPEC: LayoutSpec = LayoutSpec {
+    fields: 40,
+    sid: 21,
+    fid: 26,
+    min: 17,
+    max: 18,
+    t: 37,
+};
 
 fn parse_rule_record(r: &mut Reader, spec: &LayoutSpec) -> Result<ErzRuleRecord, ErzError> {
     r.need(spec.fields * 4)?;
@@ -271,69 +292,68 @@ fn parse_rule_record(r: &mut Reader, spec: &LayoutSpec) -> Result<ErzRuleRecord,
 }
 
 fn parse_sections(s: &mut ErzSummary, r: &mut Reader) -> Result<(), ErzError> {
-        // 段 A：mapRules，tag=mapRulesVersion(5)，定长 72B/条（主库实证）
-        let _tag = r.u32()?;
-        let n_a = r.u32()?;
-        r.skip(n_a as usize * 18 * 4)?;
-        s.rec_a_count = n_a;
-        // 段 B：binsetRules/globalRules，tag=8，定长 104B/条（主库实证）
-        let _tag = r.u32()?;
-        let n_b = r.u32()?;
-        r.skip(n_b as usize * (10 * 4 + 4 * 8 + 8 * 4))?;
-        s.rec_b_count = n_b;
-        // 段 C：zoneRules，tag=2，变长记录
-        let _tag = r.u32()?;
-        let n_c = r.u32()?;
-        for _ in 0..n_c {
-            r.skip(3 * 4 + 1 + 2 * 4)?;
-            let n1 = r.u32()?;
-            r.skip(n1 as usize * 12)?;
-            let n2 = r.u32()?;
-            r.skip(n2 as usize * 12)?;
-            let n3 = r.u32()?;
-            r.skip(n3 as usize * 8)?;
+    // 段 A：mapRules，tag=mapRulesVersion(5)，定长 72B/条（主库实证）
+    let _tag = r.u32()?;
+    let n_a = r.u32()?;
+    r.skip(n_a as usize * 18 * 4)?;
+    s.rec_a_count = n_a;
+    // 段 B：binsetRules/globalRules，tag=8，定长 104B/条（主库实证）
+    let _tag = r.u32()?;
+    let n_b = r.u32()?;
+    r.skip(n_b as usize * (10 * 4 + 4 * 8 + 8 * 4))?;
+    s.rec_b_count = n_b;
+    // 段 C：zoneRules，tag=2，变长记录
+    let _tag = r.u32()?;
+    let n_c = r.u32()?;
+    for _ in 0..n_c {
+        r.skip(3 * 4 + 1 + 2 * 4)?;
+        let n1 = r.u32()?;
+        r.skip(n1 as usize * 12)?;
+        let n2 = r.u32()?;
+        r.skip(n2 as usize * 12)?;
+        let n3 = r.u32()?;
+        r.skip(n3 as usize * 8)?;
+    }
+    s.rec_c_count = n_c;
+    // 常量表：语义未定名（key 严格升序、非规则名 FNV-1）。
+    let pair_count = r.u32()?;
+    s.constant_count = pair_count as usize;
+    for i in 0..pair_count {
+        let h = r.u32()?;
+        let v = r.u32()?;
+        if (i as usize) < 256 {
+            s.constants.push((h, v));
         }
-        s.rec_c_count = n_c;
-        // 常量表：语义未定名（key 严格升序、非规则名 FNV-1）。
-        let pair_count = r.u32()?;
-        s.constant_count = pair_count as usize;
-        for i in 0..pair_count {
-            let h = r.u32()?;
-            let v = r.u32()?;
-            if (i as usize) < 256 {
-                s.constants.push((h, v));
-            }
-        }
-        // D/E 段：外层对象数 × (内层条目数 × 20B)
-        let d_outer = r.u32()?;
-        s.d_objects = d_outer;
-        let mut d_entries = 0u32;
-        for _ in 0..d_outer {
-            let inner = r.u32()?;
-            d_entries = d_entries.saturating_add(inner);
-            r.skip(inner as usize * 20)?;
-        }
-        s.d_entries = d_entries;
-        let e_outer = r.u32()?;
-        s.e_objects = e_outer;
-        let mut e_entries = 0u32;
-        for _ in 0..e_outer {
-            let inner = r.u32()?;
-            e_entries = e_entries.saturating_add(inner);
-            r.skip(inner as usize * 20)?;
-        }
-        s.e_entries = e_entries;
-        // 尾部池
-        let blob_len = r.u32()? as usize;
-        r.need(blob_len)?;
-        s.blob_length = blob_len;
-        let blob = &r.d[r.o..r.o + blob_len];
-        r.o += blob_len;
-        s.strings = extract_strings(blob, 200);
-        s.exact = r.remaining() == 0;
-        Ok(())
+    }
+    // D/E 段：外层对象数 × (内层条目数 × 20B)
+    let d_outer = r.u32()?;
+    s.d_objects = d_outer;
+    let mut d_entries = 0u32;
+    for _ in 0..d_outer {
+        let inner = r.u32()?;
+        d_entries = d_entries.saturating_add(inner);
+        r.skip(inner as usize * 20)?;
+    }
+    s.d_entries = d_entries;
+    let e_outer = r.u32()?;
+    s.e_objects = e_outer;
+    let mut e_entries = 0u32;
+    for _ in 0..e_outer {
+        let inner = r.u32()?;
+        e_entries = e_entries.saturating_add(inner);
+        r.skip(inner as usize * 20)?;
+    }
+    s.e_entries = e_entries;
+    // 尾部池
+    let blob_len = r.u32()? as usize;
+    r.need(blob_len)?;
+    s.blob_length = blob_len;
+    let blob = &r.d[r.o..r.o + blob_len];
+    r.o += blob_len;
+    s.strings = extract_strings(blob, 200);
+    s.exact = r.remaining() == 0;
+    Ok(())
 }
-
 
 /// 从池字节中提取可打印 ASCII 字符串（作为符号名候选）。
 fn extract_strings(blob: &[u8], cap: usize) -> Vec<String> {
@@ -344,7 +364,9 @@ fn extract_strings(blob: &[u8], cap: usize) -> Vec<String> {
         if printable && start.is_none() {
             start = Some(i);
         }
-        if (!printable || i + 1 == blob.len()) && let Some(s) = start {
+        if (!printable || i + 1 == blob.len())
+            && let Some(s) = start
+        {
             let end = if printable { i + 1 } else { i };
             if end - s >= 6 {
                 out.push(String::from_utf8_lossy(&blob[s..end]).into_owned());

@@ -123,7 +123,8 @@ impl DecodedTexture {
 
     /// 写出标准 DDS（magic + 128B 头 + 原始块压缩数据；C# `SaveDds` 同构）。
     /// raw 位图（textureType 21/116）不支持。
-    pub fn write_dds(&self) -> Result<Vec<u8>> {        if self.format() == TextureFormat::Raw || matches!(self.format(), TextureFormat::Unknown(_))
+    pub fn write_dds(&self) -> Result<Vec<u8>> {
+        if self.format() == TextureFormat::Raw || matches!(self.format(), TextureFormat::Unknown(_))
         {
             return Err(Error::UnsupportedTextureType(self.texture_type));
         }

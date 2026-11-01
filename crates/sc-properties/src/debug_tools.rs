@@ -418,9 +418,7 @@ pub fn patch_property_bool(
         ));
     }
     if out[at + 8] != u8::from(old) {
-        return Err(format!(
-            "属性 0x{property_hash:08X} 的原始值与解析值不一致"
-        ));
+        return Err(format!("属性 0x{property_hash:08X} 的原始值与解析值不一致"));
     }
     out[at + 8] = u8::from(new);
     let patched = PropertyFile::parse(&out).map_err(|e| format!("补丁后解析失败 {e}"))?;

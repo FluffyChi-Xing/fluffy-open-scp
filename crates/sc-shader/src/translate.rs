@@ -73,7 +73,9 @@ pub fn translate(hlsl: &str) -> String {
 
     // 3. clip(x) → discard
     // 源片段的 clip 均带尾分号——替换体不再加分号避免双写
-    out = replace_call(&out, "clip", &|args| format!("if (({}) < 0.0) discard", args));
+    out = replace_call(&out, "clip", &|args| {
+        format!("if (({}) < 0.0) discard", args)
+    });
 
     // 4. saturate/frac
     out = replace_call(&out, "saturate", &|a| format!("clamp({}, 0.0, 1.0)", a));
@@ -96,7 +98,9 @@ pub fn translate(hlsl: &str) -> String {
     for n in 0..8 {
         out = out.replace(&format!("In.texcoord<t{n}>"), &format!("vTexcoord{n}"));
     }
-    out = out.replace("In.texcoord4", "vTexcoord4").replace("In.texcoord5", "vTexcoord5");
+    out = out
+        .replace("In.texcoord4", "vTexcoord4")
+        .replace("In.texcoord5", "vTexcoord5");
 
     // 8. Current.color → outColor
     out = replace_word(&out, "Current.color", "outColor");
@@ -124,7 +128,8 @@ fn replace_word(s: &str, from: &str, to: &str) -> String {
         if s[i..].starts_with(from) {
             let before_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_';
             let after = i + from.len();
-            let after_ok = after >= s.len() || !(bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_');
+            let after_ok =
+                after >= s.len() || !(bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_');
             if before_ok && after_ok {
                 out.push_str(to);
                 i = after;

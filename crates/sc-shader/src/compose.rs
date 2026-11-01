@@ -185,7 +185,8 @@ impl Family {
             //    bumpNormal/decalTexture 在此备齐；textureFloatPosition 由
             //    VS_HOLE_PROJECTED 经 vTexcoord0 供给（z = 盒内真实进深：
             //    立面 −1 全尺寸内景、深部结构 +1 中心收缩 = 纵深）。
-            Family::Hole => r#"
+            Family::Hole => {
+                r#"
 vec3 shColorDiff = vec3(0.0);
 vec3 shColorSpec = vec3(0.0);
 vec3 spec = vec3(0.0);
@@ -194,23 +195,28 @@ SimCityLighting(bumpNormal, worldCameraDirection, gloss, gloss, specE, specStren
 vec4 decalTexture = texture2D(uSampler0, vUv);
 outColor = decalTexture;
 outColor.rgb *= shColorDiff + shColorSpec + spec;
-"#,
+"#
+            }
             // SDF 链：Current.color 初值 = SDF 距离场四通道（addOverlay 的
             // sdfDists 来源）；uvOrig 供 decalLightBackground 选轴比较。
             // 场景光变量（shColorDiff/bumpNormal 等）由 decalLightSDF 片段
             // 自声明，前奏不得重复声明（GLSL 重复定义即编译失败）。
             // The native overlayBlend4Chan thresholds linearly sampled data.
             // Share the static sign's sampling, including its mip/anisotropy.
-            Family::Sdf => r#"
+            Family::Sdf => {
+                r#"
 vec2 uvOrig = vTexcoord0.xy * 0.5 + 0.5;
 outColor = texture2D(uSampler0, uvOrig);
 float texturePositionZ = 0.0;
 #define texturePosition vec3(vTexcoord0.xy, texturePositionZ)
-"#,
-            Family::NeonLight => r#"
+"#
+            }
+            Family::NeonLight => {
+                r#"
 vec2 uvOrig = vUv;
 outColor = texture2D(uSampler0, uvOrig);
-"#,
+"#
+            }
         }
     }
 
@@ -277,13 +283,18 @@ pub fn compose(family: Family) -> anyhow::Result<(String, String)> {
         // emissive 拆分回收，贴花无该链不能跟）。
         // 以 #define 覆盖片段内的引擎常量名，保持 decalLightInteriorMap
         // 片段逐字。
-        ps.push_str("uniform float uInteriorGlow;\n#define kInteriorMapSelfLightMax uInteriorGlow\n");
+        ps.push_str(
+            "uniform float uInteriorGlow;\n#define kInteriorMapSelfLightMax uInteriorGlow\n",
+        );
         // building4 的 interiorMap() 是建筑立面窗户的独立 shader 链，
         // 不能叠加到 decalInteriorMap。破洞的视差来自 decalProject 的
         // 屏幕深度重建、深度测试和内部几何，而不是额外的相机射线。
     }
     if family.needs_lighting() {
-        ps.push_str(&translate(fragments::get("SimCityLighting").ok_or_else(|| anyhow::anyhow!("缺 SimCityLighting"))?));
+        ps.push_str(&translate(
+            fragments::get("SimCityLighting")
+                .ok_or_else(|| anyhow::anyhow!("缺 SimCityLighting"))?,
+        ));
         ps.push('\n');
     }
     ps.push_str("void main() {\n");

@@ -25,7 +25,7 @@
 //!   0x0CE5EF5F  Color4        Vector4
 //! ```
 
-use crate::{Error, Key, Kind, Property, PropertyFile, PropType, Result, Value, PropertyEncoding};
+use crate::{Error, Key, Kind, PropType, Property, PropertyEncoding, PropertyFile, Result, Value};
 
 /// 三种 Decal Atlas 的 GroupContainer 低 16 位值。
 pub const DECAL_ATLAS_INSTANCE_TYPES: [u16; 3] = [0xb185, 0x1651, 0x1652];
@@ -37,8 +37,7 @@ pub const DECAL_ATLAS_SIZE_HASH: u32 = 0x0ce5_ef60;
 pub const DECAL_ENTRY_ID_HASH: u32 = 0x0ce5_ef50;
 pub const DECAL_ENTRY_ASPECT_RATIO_HASH: u32 = 0x0ce5_ef53;
 pub const DECAL_ENTRY_RASTER_HASH: u32 = 0x0ce5_ef58;
-pub const DECAL_ENTRY_COLOR_HASHES: [u32; 4] =
-    [0x0ce5_ef5c, 0x0ce5_ef5d, 0x0ce5_ef5e, 0x0ce5_ef5f];
+pub const DECAL_ENTRY_COLOR_HASHES: [u32; 4] = [0x0ce5_ef5c, 0x0ce5_ef5d, 0x0ce5_ef5e, 0x0ce5_ef5f];
 
 /// 7 个条目级数组，顺序即 UI 展示顺序。
 pub const DECAL_ENTRY_ARRAY_HASHES: [u32; 7] = [
@@ -104,7 +103,11 @@ impl DecalEntry {
 
 /// 线性分量 → sRGB 8bit（IEC 61966-2-1 传递函数）。
 fn linear_to_srgb_u8(linear: f32) -> u8 {
-    let linear = if linear.is_finite() { linear.clamp(0.0, 1.0) } else { 0.0 };
+    let linear = if linear.is_finite() {
+        linear.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     let srgb = if linear <= 0.003_130_8 {
         12.92 * linear
     } else {
@@ -263,8 +266,8 @@ pub fn upsert_entry(
 ) -> Result<usize> {
     let target = match replace_id_instance {
         Some(instance) => {
-            let ids = array(file, DECAL_ENTRY_ID_HASH)
-                .ok_or(Error::DecalEntryNotFound(instance))?;
+            let ids =
+                array(file, DECAL_ENTRY_ID_HASH).ok_or(Error::DecalEntryNotFound(instance))?;
             ids.iter()
                 .enumerate()
                 .find_map(|(index, value)| match value {
@@ -302,7 +305,11 @@ pub fn upsert_entry(
 
 /// 取出（或补建）条目数组属性的可写值列表。
 fn ensure_entry_array(file: &mut PropertyFile, hash: u32, prop_type: PropType) -> &mut Vec<Value> {
-    let index = match file.values.iter().position(|property| property.hash == hash) {
+    let index = match file
+        .values
+        .iter()
+        .position(|property| property.hash == hash)
+    {
         Some(index) => index,
         None => {
             file.values.push(Property {
@@ -398,11 +405,7 @@ mod tests {
             array_property(
                 DECAL_ENTRY_ASPECT_RATIO_HASH,
                 PropType::Float,
-                vec![
-                    Value::Float(1.0),
-                    Value::Float(0.5),
-                    Value::Float(1.5),
-                ],
+                vec![Value::Float(1.0), Value::Float(0.5), Value::Float(1.5)],
             ),
             array_property(
                 DECAL_ENTRY_RASTER_HASH,
@@ -453,14 +456,25 @@ mod tests {
         assert_eq!(dictionary.texture_size, Some([32.0, 32.0]));
         assert_eq!(dictionary.atlas_size, Some([512.0, 512.0]));
 
-        assert_eq!(dictionary.entries[0].id.map(|key| key.instance), Some(0xb059_45fb));
-        assert_eq!(dictionary.entries[1].id.map(|key| key.instance), Some(0x224a_5eba));
+        assert_eq!(
+            dictionary.entries[0].id.map(|key| key.instance),
+            Some(0xb059_45fb)
+        );
+        assert_eq!(
+            dictionary.entries[1].id.map(|key| key.instance),
+            Some(0x224a_5eba)
+        );
         assert_eq!(dictionary.entries[2].aspect_ratio, Some(1.5));
         assert_eq!(
             dictionary.entries[2].raster.map(|key| key.instance),
             Some(0x3333_3333)
         );
-        assert!(dictionary.entries.iter().all(|entry| entry.colors_rgba8().is_some()));
+        assert!(
+            dictionary
+                .entries
+                .iter()
+                .all(|entry| entry.colors_rgba8().is_some())
+        );
     }
 
     #[test]
@@ -539,7 +553,12 @@ mod tests {
         };
         assert_eq!(
             entry.colors_rgba8(),
-            Some([[188, 0, 0, 255], [0, 188, 0, 255], [0, 0, 188, 255], [188, 188, 188, 255]])
+            Some([
+                [188, 0, 0, 255],
+                [0, 188, 0, 255],
+                [0, 0, 188, 255],
+                [188, 188, 188, 255]
+            ])
         );
     }
 
@@ -603,15 +622,15 @@ mod tests {
         assert!(dictionary.uniform_arrays);
 
         // 旧条目原样保留。
-        assert_eq!(dictionary.entries[0].id.map(|key| key.instance), Some(0xb059_45fb));
+        assert_eq!(
+            dictionary.entries[0].id.map(|key| key.instance),
+            Some(0xb059_45fb)
+        );
         assert_eq!(dictionary.entries[2].aspect_ratio, Some(1.5));
         // 新条目完整落位。
         let added = &dictionary.entries[3];
         assert_eq!(added.id.map(|key| key.instance), Some(0xdead_beef));
-        assert_eq!(
-            added.raster.map(|key| key.instance),
-            Some(0x4444_4444)
-        );
+        assert_eq!(added.raster.map(|key| key.instance), Some(0x4444_4444));
         assert_eq!(added.aspect_ratio, Some(2.0));
         assert_eq!(added.colors[0], Some([0.5, 0.25, 0.0, 0.0]));
         assert_eq!(added.colors[3], Some([0.5, 0.5, 0.5, 0.0]));
@@ -665,9 +684,6 @@ mod tests {
         // 补位槽为零值（等长矩形，C# 装配可读），新条目完整。
         assert_eq!(dictionary.entries[0].aspect_ratio, Some(0.0));
         assert_eq!(dictionary.entries[1].aspect_ratio, Some(2.0));
-        assert_eq!(
-            dictionary.entries[1].colors[0],
-            Some([0.5, 0.25, 0.0, 0.0])
-        );
+        assert_eq!(dictionary.entries[1].colors[0], Some([0.5, 0.25, 0.0, 0.0]));
     }
 }

@@ -31,7 +31,7 @@ mod error;
 pub mod inherit;
 pub mod locale;
 mod lot;
-mod lot_unit;
+pub mod lot_unit;
 pub mod map_assets;
 mod model;
 pub mod region_3d;
@@ -58,8 +58,8 @@ pub use locale::{
     parse_string_table,
 };
 pub use lot::{
-    LOD1_MODEL_HASH, LOT_MASK_HASH, LOT_PLACEMENT_HASH, LOT_SIZE_HASH, LotEditorDocument,
-    PROPERTY_RESOURCE_TYPE,
+    LOD_MODEL_HASHES, LOD1_MODEL_HASH, LOT_MASK_HASH, LOT_OVERLAY_OFFSET_HASH, LOT_PLACEMENT_HASH,
+    LOT_SIZE_HASH, LotEditorDocument, PROPERTY_RESOURCE_TYPE,
 };
 pub use lot_unit::{LotUnit, LotUnits, UnitField, UnitKey, UnitTransform, assemble_units};
 pub use model::{Key, Kind, PropType, Property, PropertyEncoding, Text, Transform, Value};
@@ -258,10 +258,21 @@ impl fmt::Display for PropertyFile {
 }
 
 fn canonical_flags(property: &Property) -> Result<u16> {
+    // 游戏加载器要求每个条目带 0x8000 有效位；数组为 0x10 位，定长元素
+    // 数组再带 0x80（原版实测：Key/数值/Transform/Vector 数组 0x809c，
+    // Text/BoundingBox 数组 0x801c；标量一律 0x8000）。输入 flags==0
+    // （程序新建的属性）按此合成；非 0 输入逐位透传（保持对既有文件的
+    // 字节级兼容）。2026-10-30 实证：flags=0 的 Menu2 在游戏里整条不可见。
     let flags = match &property.kind {
-        Kind::Scalar(_) if property.encoding.flags == 0 => 0,
-        Kind::Array(_) if property.encoding.flags == 0 => 0x30,
-        Kind::Empty if property.encoding.flags == 0 => 0x70,
+        Kind::Scalar(_) if property.encoding.flags == 0 => 0x8000,
+        Kind::Array(_) if property.encoding.flags == 0 => {
+            let class = match property.prop_type {
+                PropType::Text | PropType::BoundingBox => 0x001c,
+                _ => 0x009c,
+            };
+            0x8000 | class
+        }
+        Kind::Empty if property.encoding.flags == 0 => 0x8000 | 0x70,
         _ => property.encoding.flags,
     };
     let valid = match &property.kind {

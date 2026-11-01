@@ -51,29 +51,43 @@ fn state_file(directory: &std::path::Path) -> Result<Option<RegionState>, String
 }
 
 fn save_template_name(directory: &std::path::Path) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(directory.join("misc/MetaData")).ok()?).ok()?;
+    let v: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.join("misc/MetaData")).ok()?).ok()?;
     v.get("template")?.get("name")?.as_str().map(str::to_owned)
 }
 
 /// Discover saves by the template identity in `misc/MetaData`.
-pub fn discover_save(root: &std::path::Path, group: u32, plots: &[crate::region_3d::Region3DPlot]) -> Option<(std::path::PathBuf, SaveLayers)> {
+pub fn discover_save(
+    root: &std::path::Path,
+    group: u32,
+    plots: &[crate::region_3d::Region3DPlot],
+) -> Option<(std::path::PathBuf, SaveLayers)> {
     let mut candidates = Vec::new();
     for account in std::fs::read_dir(root).ok()?.flatten() {
-        let Ok(regions)=std::fs::read_dir(account.path()) else {continue};
+        let Ok(regions) = std::fs::read_dir(account.path()) else {
+            continue;
+        };
         for region in regions.flatten() {
-            let path=region.path();
-            let zero=path.join("0");
-            if !zero.is_dir() {continue;}
-            let modified=std::fs::read_dir(&zero).ok().into_iter().flatten().flatten()
-                .filter(|e|e.path().extension().is_some_and(|x|x=="egb"))
-                .filter_map(|e|e.metadata().ok()?.modified().ok()).max();
-            candidates.push((modified,path));
+            let path = region.path();
+            let zero = path.join("0");
+            if !zero.is_dir() {
+                continue;
+            }
+            let modified = std::fs::read_dir(&zero)
+                .ok()
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "egb"))
+                .filter_map(|e| e.metadata().ok()?.modified().ok())
+                .max();
+            candidates.push((modified, path));
         }
     }
-    candidates.sort_by(|a,b|b.0.cmp(&a.0).then_with(||a.1.cmp(&b.1)));
+    candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let expected = crate::region_3d::template_name_for_group(group);
-    for (_,path) in candidates {
-        if let Ok(Some(state))=state_file(&path.join("0")) {
+    for (_, path) in candidates {
+        if let Ok(Some(state)) = state_file(&path.join("0")) {
             let matches = state.environment == group
                 && match (expected, save_template_name(&path)) {
                     (Some(e), Some(a)) => a.eq_ignore_ascii_case(e),
@@ -83,7 +97,9 @@ pub fn discover_save(root: &std::path::Path, group: u32, plots: &[crate::region_
                     (None, Some(_)) => true,
                 };
             if matches {
-                if let Ok(layers)=load_save(&path,group,plots) {return Some((path,layers));}
+                if let Ok(layers) = load_save(&path, group, plots) {
+                    return Some((path, layers));
+                }
             }
         }
     }
@@ -197,36 +213,77 @@ pub fn curves_from_static_unit(prop: &crate::PropertyFile, unit: &StateUnit) -> 
             .and_then(|p| p.array())
             .into_iter()
             .flatten()
-            .filter_map(|v| match v { crate::Value::Vector3(x) => Some(*x), _ => None })
+            .filter_map(|v| match v {
+                crate::Value::Vector3(x) => Some(*x),
+                _ => None,
+            })
             .collect()
     };
-    let ints: Vec<usize> = prop.get(0x0CAA_6841).and_then(|p| p.array()).into_iter()
-        .flatten().filter_map(|v| match v { crate::Value::Int32(x) if *x >= 0 => Some(*x as usize), _ => None }).collect();
-    let entries: Vec<u32> = prop.get(0x0CC8_FE7A).and_then(|p| p.array()).into_iter()
-        .flatten().filter_map(|v| match v { crate::Value::Key(k) => Some(k.instance), _ => None }).collect();
+    let ints: Vec<usize> = prop
+        .get(0x0CAA_6841)
+        .and_then(|p| p.array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| match v {
+            crate::Value::Int32(x) if *x >= 0 => Some(*x as usize),
+            _ => None,
+        })
+        .collect();
+    let entries: Vec<u32> = prop
+        .get(0x0CC8_FE7A)
+        .and_then(|p| p.array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| match v {
+            crate::Value::Key(k) => Some(k.instance),
+            _ => None,
+        })
+        .collect();
     let points = vecs(0x0CAA_680D);
     let tangents = vecs(0x0CB0_0ED8);
     let transform = |v: [f32; 3]| -> [f32; 3] {
         let r = &unit.rotation;
-        [unit.position[0] + r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
-         unit.position[1] + r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
-         unit.position[2]]
+        [
+            unit.position[0] + r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
+            unit.position[1] + r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
+            unit.position[2],
+        ]
     };
     let tangent = |v: [f32; 3]| -> [f32; 3] {
         let r = &unit.rotation;
-        [r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
-         r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
-         r[6] * v[0] + r[7] * v[1] + r[8] * v[2]]
+        [
+            r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
+            r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
+            r[6] * v[0] + r[7] * v[1] + r[8] * v[2],
+        ]
     };
     let mut out = Vec::new();
     for i in 0..entries.len() {
-        let (Some(&a), Some(&b)) = (ints.get(i * 2), ints.get(i * 2 + 1)) else { break };
-        let (Some(&pa), Some(&pb), Some(&ta), Some(&tb)) = (points.get(a), points.get(b), tangents.get(a), tangents.get(b)) else { continue };
-        let p0 = transform(pa); let p3 = transform(pb);
-        let t0 = tangent(ta); let t1 = tangent(tb);
-        out.push(StateCurve { entry_id: entries[i], path: i, controls: [p0,
-            [p0[0] + t0[0], p0[1] + t0[1], p0[2] + t0[2]],
-            [p3[0] - t1[0], p3[1] - t1[1], p3[2] - t1[2]], p3] });
+        let (Some(&a), Some(&b)) = (ints.get(i * 2), ints.get(i * 2 + 1)) else {
+            break;
+        };
+        let (Some(&pa), Some(&pb), Some(&ta), Some(&tb)) = (
+            points.get(a),
+            points.get(b),
+            tangents.get(a),
+            tangents.get(b),
+        ) else {
+            continue;
+        };
+        let p0 = transform(pa);
+        let p3 = transform(pb);
+        let t0 = tangent(ta);
+        let t1 = tangent(tb);
+        out.push(StateCurve {
+            entry_id: entries[i],
+            path: i,
+            controls: [
+                p0,
+                [p0[0] + t0[0], p0[1] + t0[1], p0[2] + t0[2]],
+                [p3[0] - t1[0], p3[1] - t1[1], p3[2] - t1[2]],
+                p3,
+            ],
+        });
     }
     out
 }
@@ -234,17 +291,145 @@ pub fn curves_from_static_unit(prop: &crate::PropertyFile, unit: &StateUnit) -> 
 /// Write the supported v20 subset. Runtime-only fields are emitted empty;
 /// this is intended for bootstrap candidates and round-trip verification.
 pub fn write_state(state: &RegionState) -> Result<Vec<u8>, String> {
-    let mut w=Vec::new(); let u=|w:&mut Vec<u8>,v:u32|w.extend(v.to_be_bytes());
-    let i=|w:&mut Vec<u8>,v:i32|u(w,v as u32); let f=|w:&mut Vec<u8>,v:f32|u(w,v.to_bits());
-    u(&mut w,20); u(&mut w,0);u(&mut w,0);u(&mut w,0);u(&mut w,state.environment);u(&mut w,0);u(&mut w,0);u(&mut w,0);
-    u(&mut w,state.maps.len() as u32);u(&mut w,4);
-    for m in &state.maps { let n=m.size.checked_mul(m.size).ok_or("map size overflow")?; if m.values.len()!=n{return Err("map size mismatch".into())}; u(&mut w,m.id);u(&mut w,n as u32);let mut s=0i64;for &v in &m.values{i(&mut w,v);s+=v as i64}w.extend((s as u64).to_be_bytes()); }
-    u(&mut w,state.units.len() as u32);u(&mut w,state.units.len() as u32);u(&mut w,13);
-    for (slot,x) in state.units.iter().enumerate(){u(&mut w,slot as u32);u(&mut w,x.id);u(&mut w,0);u(&mut w,x.graphics_group);u(&mut w,x.graphics_state);u(&mut w,0);u(&mut w,0);let mut fl=0u16;if x.scale!=1.0{fl|=1};if x.rotation!=[1.,0.,0.,0.,1.,0.,0.,0.,1.]{fl|=2};if x.position!=[0.;3]{fl|=4};w.extend(fl.to_be_bytes());if fl&1!=0{f(&mut w,x.scale)}if fl&2!=0{for &v in &x.rotation{f(&mut w,v)}}if fl&4!=0{for &v in &x.position{f(&mut w,v)}}w.extend([0;16]);u(&mut w,0);u(&mut w,0);}
-    u(&mut w,6); let pc=state.curves.len()*2; slots(&mut w,pc);for c in &state.curves{for p in [c.controls[0],c.controls[3]]{for v in p{f(&mut w,v)}}} slots(&mut w,pc);for c in &state.curves{for t in [0,1]{for k in 0..3{let v=if t==0{3.*(c.controls[1][k]-c.controls[0][k])}else{3.*(c.controls[3][k]-c.controls[2][k])};f(&mut w,v)}}} slots(&mut w,state.curves.len());for (n,c) in state.curves.iter().enumerate(){for v in [2*n as i32,2*n as i32+1,2*n as i32,2*n as i32+1,-1,-1,c.path as i32]{i(&mut w,v)}}u(&mut w,pc as u32);w.extend(std::iter::repeat_n(0,pc*16));let pn=state.curves.iter().map(|c|c.path).max().map_or(0,|x|x+1);slots(&mut w,pn);for p in 0..pn{u(&mut w,state.curves.iter().find(|c|c.path==p).map_or(0,|c|c.entry_id));w.extend([0;20]);}slots(&mut w,0);Ok(w)
+    let mut w = Vec::new();
+    let u = |w: &mut Vec<u8>, v: u32| w.extend(v.to_be_bytes());
+    let i = |w: &mut Vec<u8>, v: i32| u(w, v as u32);
+    let f = |w: &mut Vec<u8>, v: f32| u(w, v.to_bits());
+    u(&mut w, 20);
+    u(&mut w, 0);
+    u(&mut w, 0);
+    u(&mut w, 0);
+    u(&mut w, state.environment);
+    u(&mut w, 0);
+    u(&mut w, 0);
+    u(&mut w, 0);
+    u(&mut w, state.maps.len() as u32);
+    u(&mut w, 4);
+    for m in &state.maps {
+        let n = m.size.checked_mul(m.size).ok_or("map size overflow")?;
+        if m.values.len() != n {
+            return Err("map size mismatch".into());
+        };
+        u(&mut w, m.id);
+        u(&mut w, n as u32);
+        let mut s = 0i64;
+        for &v in &m.values {
+            i(&mut w, v);
+            s += v as i64
+        }
+        w.extend((s as u64).to_be_bytes());
+    }
+    u(&mut w, state.units.len() as u32);
+    u(&mut w, state.units.len() as u32);
+    u(&mut w, 13);
+    for (slot, x) in state.units.iter().enumerate() {
+        u(&mut w, slot as u32);
+        u(&mut w, x.id);
+        u(&mut w, 0);
+        u(&mut w, x.graphics_group);
+        u(&mut w, x.graphics_state);
+        u(&mut w, 0);
+        u(&mut w, 0);
+        let mut fl = 0u16;
+        if x.scale != 1.0 {
+            fl |= 1
+        };
+        if x.rotation != [1., 0., 0., 0., 1., 0., 0., 0., 1.] {
+            fl |= 2
+        };
+        if x.position != [0.; 3] {
+            fl |= 4
+        };
+        w.extend(fl.to_be_bytes());
+        if fl & 1 != 0 {
+            f(&mut w, x.scale)
+        }
+        if fl & 2 != 0 {
+            for &v in &x.rotation {
+                f(&mut w, v)
+            }
+        }
+        if fl & 4 != 0 {
+            for &v in &x.position {
+                f(&mut w, v)
+            }
+        }
+        w.extend([0; 16]);
+        u(&mut w, 0);
+        u(&mut w, 0);
+    }
+    u(&mut w, 6);
+    let pc = state.curves.len() * 2;
+    slots(&mut w, pc);
+    for c in &state.curves {
+        for p in [c.controls[0], c.controls[3]] {
+            for v in p {
+                f(&mut w, v)
+            }
+        }
+    }
+    slots(&mut w, pc);
+    for c in &state.curves {
+        for t in [0, 1] {
+            for k in 0..3 {
+                let v = if t == 0 {
+                    3. * (c.controls[1][k] - c.controls[0][k])
+                } else {
+                    3. * (c.controls[3][k] - c.controls[2][k])
+                };
+                f(&mut w, v)
+            }
+        }
+    }
+    slots(&mut w, state.curves.len());
+    for (n, c) in state.curves.iter().enumerate() {
+        for v in [
+            2 * n as i32,
+            2 * n as i32 + 1,
+            2 * n as i32,
+            2 * n as i32 + 1,
+            -1,
+            -1,
+            c.path as i32,
+        ] {
+            i(&mut w, v)
+        }
+    }
+    u(&mut w, pc as u32);
+    w.extend(std::iter::repeat_n(0, pc * 16));
+    let pn = state
+        .curves
+        .iter()
+        .map(|c| c.path)
+        .max()
+        .map_or(0, |x| x + 1);
+    slots(&mut w, pn);
+    for p in 0..pn {
+        u(
+            &mut w,
+            state
+                .curves
+                .iter()
+                .find(|c| c.path == p)
+                .map_or(0, |c| c.entry_id),
+        );
+        w.extend([0; 20]);
+    }
+    slots(&mut w, 0);
+    Ok(w)
 }
-fn slots(w:&mut Vec<u8>,n:usize){w.extend((n as u32).to_be_bytes());w.extend(0u32.to_be_bytes());}
-pub fn write_state_gzip(state:&RegionState)->Result<Vec<u8>,String>{let b=write_state(state)?;let mut o=Vec::new();let mut z=flate2::write::GzEncoder::new(&mut o,flate2::Compression::default());z.write_all(&b).map_err(|e|e.to_string())?;z.finish().map_err(|e|e.to_string())?;Ok(o)}
+fn slots(w: &mut Vec<u8>, n: usize) {
+    w.extend((n as u32).to_be_bytes());
+    w.extend(0u32.to_be_bytes());
+}
+pub fn write_state_gzip(state: &RegionState) -> Result<Vec<u8>, String> {
+    let b = write_state(state)?;
+    let mut o = Vec::new();
+    let mut z = flate2::write::GzEncoder::new(&mut o, flate2::Compression::default());
+    z.write_all(&b).map_err(|e| e.to_string())?;
+    z.finish().map_err(|e| e.to_string())?;
+    Ok(o)
+}
 
 struct Reader<'a> {
     bytes: &'a [u8],

@@ -322,9 +322,11 @@ fn parse_encode_parse_preserves_values_and_encoding_metadata() {
         push_f32(&mut transform, value);
     }
     let data = file(&[
-        entry(0x20, 10, 0, &be32(42)),
+        // 0x8000：游戏加载器的标量有效位（真实文件不存在 flags=0 的条目；
+        // 编码器对 flags=0 输入合成 0x8000，见 canonical_flags）。
+        entry(0x20, 10, 0x8000, &be32(42)),
         entry(0x10, 10, 0x8090, &array),
-        entry(0x30, 56, 0, &transform),
+        entry(0x30, 56, 0x8000, &transform),
     ]);
     let first = PropertyFile::parse(&data).unwrap();
     assert_eq!(first.get(0x10).unwrap().encoding.flags, 0x8090);
@@ -656,7 +658,10 @@ fn text_array_roundtrips_with_game_stride() {
     payload.extend_from_slice(&be32(0x0EBC_E055));
     let data = file(&[entry(0x0EB1_FC05, 34, 0x801C, &payload)]);
     let parsed = PropertyFile::parse(&data).unwrap();
-    assert_eq!(parsed.get(0x0EB1_FC05).unwrap().encoding.array_item_size, Some(520));
+    assert_eq!(
+        parsed.get(0x0EB1_FC05).unwrap().encoding.array_item_size,
+        Some(520)
+    );
     assert_eq!(parsed.encode_canonical().unwrap(), data);
 }
 

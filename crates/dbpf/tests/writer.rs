@@ -37,14 +37,22 @@ fn header_matches_retail_conventions() {
         "major version（零售包全部为 3）"
     );
     assert_eq!(i32::from_le_bytes(bytes[8..12].try_into().unwrap()), 0);
-    assert_eq!(u32::from_le_bytes(bytes[0x24..0x28].try_into().unwrap()), 1, "索引条数");
+    assert_eq!(
+        u32::from_le_bytes(bytes[0x24..0x28].try_into().unwrap()),
+        1,
+        "索引条数"
+    );
     assert_eq!(u32::from_le_bytes(bytes[0x28..0x2C].try_into().unwrap()), 0);
     assert_eq!(
         u32::from_le_bytes(bytes[0x2C..0x30].try_into().unwrap()),
         8 + 28,
         "索引长度"
     );
-    assert_eq!(u32::from_le_bytes(bytes[0x3C..0x40].try_into().unwrap()), 3, "保留值");
+    assert_eq!(
+        u32::from_le_bytes(bytes[0x3C..0x40].try_into().unwrap()),
+        3,
+        "保留值"
+    );
     assert_eq!(
         u32::from_le_bytes(bytes[0x40..0x44].try_into().unwrap()),
         96,
@@ -80,7 +88,10 @@ fn retail_cursor_consumes_multiple_entries_and_empty_payload() {
     let word = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
     let mut cursor = 104;
     for expected in [&input[1], &input[0], &input[2]] {
-        assert_eq!(id(word(cursor), word(cursor + 4), word(cursor + 8)), expected.id);
+        assert_eq!(
+            id(word(cursor), word(cursor + 4), word(cursor + 8)),
+            expected.id
+        );
         let offset = word(cursor + 12) as usize;
         let size_field = word(cursor + 16);
         let size = (size_field & 0x7fff_ffff) as usize;
