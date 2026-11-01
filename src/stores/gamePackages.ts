@@ -104,12 +104,20 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
   async function openFile(file: PackageFile) {
     loadingPackage.value = true;
     try {
-      // EcoGame auto-registration shares the 32-package pool with user-opened
-      // packages. Release it before opening so a prop-heavy property cannot
-      // leave the manager full and make the next package fail with a generic
-      // "Package 无法解析" toast.
-      await source.releasePropModelPackages().catch(() => {});
-      const result = await source.openPackage(file.path);
+      const result = await source.openPackage(file.path).catch(async (error) => {
+        // EcoGame auto-registration shares the 32-package pool. Only evict it
+        // when the open actually hits the cap; releasing on every open would
+        // invalidate a property editor that is still using those packages.
+        if (
+          !/too many open packages|package limit|PackageLimitExceeded/i.test(
+            String(error),
+          )
+        ) {
+          throw error;
+        }
+        await source.releasePropModelPackages().catch(() => {});
+        return source.openPackage(file.path);
+      });
       const existing = opened.value.find(
         (item) => item.package.path === file.path,
       );

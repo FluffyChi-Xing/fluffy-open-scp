@@ -37,6 +37,17 @@ if registered.len() >= budget { return Ok(registered); }
    也会打印 unresolved；`resolvePropModels` 整体抛错时 DEV 打印
    `[prop-models] resolve failed`。
 
+## 更深一层：26 个 EcoGame 家族本来就接近旧上限
+
+当前安装的 EcoGame 目录有 82 个 `.package`，按家族取最新后是 **26 个**。
+旧上限 32、且要为手动包预留 2 个，一旦用户已经开了几个包，预算就会低于
+26，晚注册的 DLC 脚本包缺失——表现为“以前能渲染的某些 prop bin 又出不来”，
+而不是整批失败。
+
+因此把 `MAX_OPEN_PACKAGES` 提到 **64**，并只在**关闭 property**时释放自动包
+（不再每次 load 后释放，避免反复开关 26 个包和读取竞态）。打开普通包只在
+真正命中包上限时重试一次。
+
 ## 另一个可观测症状
 
 prop 解析失败后再打开普通包，UI 只显示 “Package 无法解析”。真实原因通常是

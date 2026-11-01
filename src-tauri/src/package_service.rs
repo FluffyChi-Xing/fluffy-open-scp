@@ -27,7 +27,7 @@ pub const PROPERTY_PATCH_MAX: usize = 256;
 pub const PROPERTY_OVERLAY_MAX: u64 = 64 * 1024 * 1024;
 const PROPERTY_RESOURCE_TYPE: u32 = sc_properties::PROPERTY_RESOURCE_TYPE;
 pub const EXPORT_PROGRESS_EVENT: &str = "export:progress";
-pub const MAX_OPEN_PACKAGES: usize = 32;
+pub const MAX_OPEN_PACKAGES: usize = 64;
 pub const MAX_EXPORT_JOBS: usize = 128;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

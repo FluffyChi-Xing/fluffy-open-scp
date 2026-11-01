@@ -123,10 +123,6 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
 
   async function load() {
     const token = ++requestToken;
-    // 新 property = 新 prop 解析批次：先释放上一栋自动注册的 EcoGame 包，
-    // 否则它们会占满 PackageManager 的 32 包上限，后续所有 lot 的 prop
-    // 都解析为 0（表现为“只有重启软件才恢复”）。
-    await source.releasePropModelPackages().catch(() => {});
     loading.value = true;
     loadError.value = "";
     session.value = null;
@@ -330,6 +326,12 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
   /** PE 关闭：卸载 prop 解析自动注册的 EcoGame 包——注册范围=会话范围，
    * 不卸载会污染全局资源查找池（同实例跨包碰撞 → lot 渲染概率异常）。 */
   function releasePropPackages() {
+    // Drop the in-memory payloads too: closing a property should release both
+    // the backend package handles and the frontend model/texture references.
+    propModels.value = new Map();
+    propTreeIds.value = new Set();
+    treeModelPayloads.value = [];
+    treeAtlasPng.value = null;
     void source.releasePropModelPackages().catch(() => {});
   }
 
