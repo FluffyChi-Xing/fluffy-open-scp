@@ -6,7 +6,7 @@
 //! combination, and remap every mesh reference. It deliberately does not touch
 //! pixels or parameters yet; that is the next stage of the port.
 
-use image::{imageops::FilterType, RgbaImage};
+use image::RgbaImage;
 use sha2::{Digest, Sha256};
 
 use super::lotm::{LotmDocument, LotmMaterial, MeshMaterialRef};
@@ -255,6 +255,24 @@ fn decode_png(material: &LotmMaterial, index: usize) -> Result<RgbaImage, String
         .map_err(|error| format!("single-compatible: decode slot {index}: {error}"))
 }
 
+/// Nearest-neighbour resize without alpha premultiplication. The `image`
+/// crate's resize path premultiplies alpha, which changes index/relief RGB
+/// values and makes the native shader render pale green surfaces.
+fn nearest_resize(source: &RgbaImage, width: u32, height: u32) -> RgbaImage {
+    let mut output = RgbaImage::new(width, height);
+    if source.width() == 0 || source.height() == 0 {
+        return output;
+    }
+    for y in 0..height {
+        let sy = (y as u64 * source.height() as u64 / height as u64) as u32;
+        for x in 0..width {
+            let sx = (x as u64 * source.width() as u64 / width as u64) as u32;
+            output.put_pixel(x, y, *source.get_pixel(sx, sy));
+        }
+    }
+    output
+}
+
 /// Render the exact 512-cell layout planned by [`plan_surfaces`].
 pub fn render_atlases(
     document: &LotmDocument,
@@ -278,20 +296,26 @@ pub fn render_atlases(
             (&mut shader, LotmMaterial::PNG_SHADER),
         ] {
             let source = decode_png(material, slot)?;
-            let resized = image::imageops::resize(
-                &source,
-                plan.cell,
-                plan.cell,
-                FilterType::Nearest,
-            );
-            image::imageops::overlay(target, &resized, x, y);
+            let resized = nearest_resize(&source, plan.cell, plan.cell);
+            // Direct pixel copy: `imageops::overlay` alpha-blends into the
+            // transparent atlas, which darkens RGB while leaving alpha equal.
+            // The author's compiler assigns the source array verbatim.
+            for cy in 0..plan.cell {
+                for cx in 0..plan.cell {
+                    target.put_pixel(
+                        x as u32 + cx,
+                        y as u32 + cy,
+                        *resized.get_pixel(cx, cy),
+                    );
+                }
+            }
         }
     }
 
     let mut palette = RgbaImage::new(512, 16);
     for (row, material) in document.materials.iter().enumerate() {
         let source = decode_png(material, LotmMaterial::PNG_PALETTE)?;
-        let source = image::imageops::resize(&source, 512, 16, FilterType::Nearest);
+        let source = nearest_resize(&source, 512, 16);
         for layer in 0..2usize {
             let source_column = plan.palette_source[row][layer] as u32;
             let destination = (row * 4 + layer * 2) as u32;
@@ -312,16 +336,11 @@ pub fn render_atlases(
             .position(|item| item == &room)
             .ok_or("single-compatible: room has no material row")?;
         let source = decode_png(&document.materials[row], LotmMaterial::PNG_INTERIOR)?;
-        let source = image::imageops::resize(
-            &source,
-            plan.cell,
-            plan.cell,
-            FilterType::Nearest,
-        );
+        let source = nearest_resize(&source, plan.cell, plan.cell);
         let tile = |step: u32| (step as f32 + 0.5) / 64.0;
         for state in 0..16u32 {
-            let x = (room as u32 % (plan.room_atlas / 64)) * 64;
-            let y = (room as u32 / (plan.room_atlas / 64)) * 64;
+            let x = state * 64;
+            let y = room as u32 * 64;
             for ty in 0..64u32 {
                 for tx in 0..64u32 {
                     let xx = (((tile(tx) + state as f32) * parameters[0]).rem_euclid(1.0)
@@ -331,7 +350,7 @@ pub fn render_atlases(
                         * plan.cell as f32) as u32
                         % plan.cell;
                     interior.put_pixel(
-                        x + state * 64 + tx,
+                        x + tx,
                         y + ty,
                         *source.get_pixel(xx.min(plan.cell - 1), yy.min(plan.cell - 1)),
                     );
@@ -347,6 +366,150 @@ pub fn render_atlases(
         palette,
         interior,
     })
+}
+
+fn patch_tint_column(glb: &[u8], column: u8) -> Vec<u8> {
+    let mut bytes = glb.to_vec();
+    let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes[20..20 + json_len]) else {
+        return bytes;
+    };
+    let bin_start = 20 + json_len + 8;
+    let Some(meshes) = json["meshes"].as_array() else {
+        return bytes;
+    };
+    for mesh in meshes {
+        let Some(primitives) = mesh["primitives"].as_array() else {
+            continue;
+        };
+        for primitive in primitives {
+            let Some(index) = primitive["attributes"]["TEXCOORD_1"].as_u64() else {
+                continue;
+            };
+            let Some(accessor) = json["accessors"].get(index as usize) else {
+                continue;
+            };
+            if accessor["type"] != "VEC2" || accessor["componentType"] != 5126 {
+                continue;
+            }
+            let Some(view_index) = accessor["bufferView"].as_u64() else {
+                continue;
+            };
+            let Some(view) = json["bufferViews"].get(view_index as usize) else {
+                continue;
+            };
+            let stride = view["byteStride"].as_u64().unwrap_or(8) as usize;
+            let start = bin_start
+                + view["byteOffset"].as_u64().unwrap_or(0) as usize
+                + accessor["byteOffset"].as_u64().unwrap_or(0) as usize;
+            let count = accessor["count"].as_u64().unwrap_or(0) as usize;
+            for vertex in 0..count {
+                let at = start + vertex * stride;
+                if at + 4 <= bytes.len() {
+                    bytes[at..at + 4]
+                        .copy_from_slice(&(column as f32 / 255.0).to_le_bytes());
+                }
+            }
+        }
+    }
+    bytes
+}
+
+fn png_bytes(image: &RgbaImage) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image
+        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .expect("PNG encoding cannot fail for a valid RgbaImage");
+    bytes
+}
+
+/// Serialize the rendered single material as a LOTM v9 document that the
+/// existing Rust RW4/property pipeline can consume.
+pub fn compose_lotm(
+    document: &LotmDocument,
+    plan: &SurfacePlan,
+    atlases: &SurfaceAtlases,
+) -> LotmDocument {
+    let mut table = vec![0f32; 4 * 64 * 4];
+    for (row, values) in plan.rows.iter().enumerate() {
+        for line in 0..4 {
+            for column in 0..4 {
+                table[(line * 64 + row) * 4 + column] = values[line * 4 + column];
+            }
+        }
+    }
+    let params: Vec<u8> = table.iter().flat_map(|value| value.to_le_bytes()).collect();
+    LotmDocument {
+        version: 9,
+        meshes: document
+            .meshes
+            .iter()
+            .enumerate()
+            .map(|(mesh, glb)| {
+                let column = document
+                    .mesh_material
+                    .get(mesh)
+                    .map(|reference| reference.material as u8)
+                    .unwrap_or(0);
+                patch_tint_column(glb, column)
+            })
+            .collect(),
+        materials: vec![LotmMaterial {
+            pngs: vec![
+                None,
+                Some(png_bytes(&atlases.normal)),
+                None,
+                None,
+                Some(png_bytes(&atlases.tint)),
+                Some(png_bytes(&atlases.palette)),
+                Some(png_bytes(&atlases.shader)),
+                Some(png_bytes(&atlases.interior)),
+            ],
+            params_f32: Some(params),
+            param_cols: 64,
+        }],
+        mesh_material: vec![
+            MeshMaterialRef {
+                material: 0,
+                uv_kind: 0,
+            };
+            document.meshes.len()
+        ],
+        diagnostics: document.diagnostics.clone(),
+    }
+}
+
+/// Encode a LOTM v9 document in the container order consumed by the builder.
+pub fn write_lotm(document: &LotmDocument) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"LOTM");
+    out.extend_from_slice(&9u32.to_le_bytes());
+    out.extend_from_slice(&(document.meshes.len() as u32).to_le_bytes());
+    for mesh in &document.meshes {
+        out.extend_from_slice(&(mesh.len() as u32).to_le_bytes());
+        out.extend_from_slice(mesh);
+    }
+    out.extend_from_slice(&(document.materials.len() as u32).to_le_bytes());
+    for material in &document.materials {
+        for index in 0..8 {
+            let png = material.pngs.get(index).and_then(Option::as_ref);
+            let bytes = png.map(Vec::as_slice).unwrap_or(&[]);
+            out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+            out.extend_from_slice(bytes);
+        }
+        let params = material.params_f32.as_deref().unwrap_or(&[]);
+        out.extend_from_slice(&(params.len() as u32).to_le_bytes());
+        out.extend_from_slice(params);
+        out.extend_from_slice(&material.param_cols.to_le_bytes());
+    }
+    for reference in &document.mesh_material {
+        out.extend_from_slice(&reference.material.to_le_bytes());
+        out.push(reference.uv_kind);
+    }
+    let diagnostic = document.diagnostics.as_bytes();
+    out.extend_from_slice(&(diagnostic.len() as u32).to_le_bytes());
+    out.extend_from_slice(diagnostic);
+    out
 }
 
 #[cfg(test)]
