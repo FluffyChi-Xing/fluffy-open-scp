@@ -199,6 +199,7 @@ pub fn validate_schema(schema: &AssetSchemaV2, diagnostics: &mut DiagnosticSet) 
             && shape != "nh-multimaterial"
             && shape != "nh-atlas"
             && shape != "native-multi"
+            && shape != "building40"
         {
             diagnostics.push(Diagnostic::error(
                 "schema.invalid_model_shape",

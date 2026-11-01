@@ -6,10 +6,10 @@
 //! through the same facade/tint chain as native ones:
 //!
 //! - every mesh GLB in the container becomes one RW4 mesh (the v1 compiler
-//!   took only the first one — user report 2026-10-30);
+//!   took only the first one 閳?user report 2026-10-30);
 //! - node transforms are applied when flattening each GLB scene (matching the
-//!   viewport's `normalizeLotModelScene`: undeclared roots lose their ∓90°X
-//!   strip rotation, declared `y`-up files gain the +90°X correction);
+//!   viewport's `normalizeLotModelScene`: undeclared roots lose their 閳?0鎺砐
+//!   strip rotation, declared `y`-up files gain the +90鎺砐 correction);
 //! - the vertex format is POSITION FLOAT3 + NORMAL FLOAT3 + COLOR D3DCOLOR
 //!   (G = tint parameter column) + TEXCOORD0 FLOAT2 (base UV) + TEXCOORD1
 //!   FLOAT4 (facade world projection: base.xy + top.zw);
@@ -32,13 +32,13 @@ pub struct GlbPrimitive {
     /// Facade projection UV per vertex: (base.xy from TEXCOORD_2,
     /// top.zw from TEXCOORD_3); zeros when the streams are absent.
     pub facade_uvs: Vec<[f32; 4]>,
-    /// Tint parameter column per vertex (TEXCOORD_1.x × 255; 0 when absent).
+    /// Tint parameter column per vertex (TEXCOORD_1.x 鑴?255; 0 when absent).
     pub tint_column: Vec<u8>,
-    /// Interior room seed per vertex (TEXCOORD_1.y × 255; lands in
+    /// Interior room seed per vertex (TEXCOORD_1.y 鑴?255; lands in
     /// D3DCOLOR.B, which the GLB re-export maps to TEXCOORD_1.y).
     pub seeds: Vec<u8>,
     /// Tangent per vertex (source TANGENT xyz, node-transformed; the GLB
-    /// re-export maps it to TANGENT:VEC4 with w=1 — native models carry
+    /// re-export maps it to TANGENT:VEC4 with w=1 閳?native models carry
     /// TANGENT0 on 2267/2267 meshes and the tint shader's window interior /
     /// relief chain builds its frame from it).
     pub tangents: Vec<[f32; 3]>,
@@ -48,7 +48,7 @@ pub struct GlbPrimitive {
 /// Placement baked into the compiled vertices: `origin` reproduces the
 /// viewport's deterministic base translation (horizontal center + base on the
 /// ground plane), `transform` is the workbench pseudo-unit WPF row-major
-/// matrix applied on top (row-vector convention: p' = p·M + t).
+/// matrix applied on top (row-vector convention: p' = p璺疢 + t).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ModelPlacement {
     pub origin: [f32; 3],
@@ -118,9 +118,9 @@ pub struct CompiledNativeModel {
 /// plane) is derived from the geometry; `transform` is the workbench
 /// pseudo-unit WPF row-major matrix baked on top.
 
-/// 2×2 占位 Raster section（NightHouse 0x2F4E681B:06C5470C 内嵌逐字节副本；
-/// 原版 10960/11348 个模型文件都带一个 0x20003 Raster，模型加载器的
-/// TextureManager 收编路径预期它的存在）。
+/// 2鑴? 閸楃姳缍?Raster section閿涘湤ightHouse 0x2F4E681B:06C5470C 閸愬懎绁甸柅鎰摟閼哄倸澹囬張顒婄幢
+/// 閸樼喓澧?10960/11348 娑擃亝膩閸ㄥ鏋冩禒鍫曞厴鐢缚绔存稉?0x20003 Raster閿涘本膩閸ㄥ濮炴潪钘夋珤閻?
+/// TextureManager 閺€鍓佺椽鐠侯垰绶炴０鍕埂鐎瑰啰娈戠€涙ê婀敍澶堚偓?
 const PLACEHOLDER_RASTER: [u8; 32] = [
     0x15, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0xc0, 0xff, 0x38, 0x01, 0x02, 0x00, 0x02, 0x00,
     0x20, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
@@ -131,18 +131,18 @@ const PLACEHOLDER_RASTER: [u8; 32] = [
 // parses offline but crashes during lot loading.
 const NH_COLLISION_MESH: &[u8] = include_bytes!("nh_collision.bin");
 
-/// 头部字节 0x64（word 25）的 NightHouse 实测值。语义未破译（原版 mesh 类
-/// 文件呈 0xC0xxxx 形态，非 mesh 类为 0x1B8；加载路径 ReadResourceArena_1 /
-/// FixupStart 均不读取）——形状克隆，随同构 section 布局一起照抄。
+/// 婢舵挳鍎寸€涙濡?0x64閿涘澋ord 25閿涘娈?NightHouse 鐎圭偞绁撮崐绗衡偓鍌濐嚔娑斿婀惍纾嬬槯閿涘牆甯悧?mesh 缁?
+/// 閺傚洣娆㈤崨?0xC0xxxx 瑜般垺鈧緤绱濋棃?mesh 缁璐?0x1B8閿涙稑濮炴潪鍊熺熅瀵?ReadResourceArena_1 /
+/// FixupStart 閸у洣绗夌拠璇插絿閿涘鈧柡鈧柨鑸伴悩璺哄帬闂呭棴绱濋梾蹇撴倱閺?section 鐢啫鐪稉鈧挧椋庡弾閹跺嫨鈧?
 pub const MERGED_HEADER_W25: u32 = 0xC003_F8;
 
-/// 原版单形状编译：全部源网格合并为最少 mesh（每 mesh ≤65535 顶点，u16
-/// 索引约束），只绑定材质 0 的六槽；附 BBox（32B = 2×vec4，引擎缺省回退
-/// ±1 盒）与占位 Raster；头 word25 照抄 NightHouse。
-/// 普查依据（2026-10-30，11348 个原版模型）：mesh 数 {0:3333,1:6132,2:1877,
-/// 3:2,4:4}，材质与 mesh 严格 1:1，p99 尺寸 991KiB / 上限 5.3MB——逐 GLB
-/// mesh 一 RW4 mesh 的 v3 形状（商业 105 mesh / 14MB）是孤儿形状，实测
-/// 令加载存档崩溃。
+/// 閸樼喓澧楅崡鏇炶埌閻樺墎绱拠鎴窗閸忋劑鍎村┃鎰秹閺嶇厧鎮庨獮鏈佃礋閺堚偓鐏?mesh閿涘牊鐦?mesh 閳?5535 妞ゅ墎鍋ｉ敍瀵€16
+/// 缁便垹绱╃痪锔芥将閿涘绱濋崣顏嗙拨鐎规碍娼楃拹?0 閻ㄥ嫬鍙氬Σ鏂ょ幢闂?BBox閿?2B = 2鑴硋ec4閿涘苯绱╅幙搴ｅ繁閻礁娲栭柅鈧?
+/// 鍗? 閻╂帪绱氭稉搴″窗娴?Raster閿涙稑銇?word25 閻撗勫Ρ NightHouse閵?
+/// 閺咁喗鐓℃笟婵囧祦閿?026-10-30閿?1348 娑擃亜甯悧鍫熌侀崹瀣剁礆閿涙esh 閺?{0:3333,1:6132,2:1877,
+/// 3:2,4:4}閿涘本娼楃拹銊ょ瑢 mesh 娑撱儲鐗?1:1閿涘99 鐏忓搫顕?991KiB / 娑撳﹪妾?5.3MB閳ユ柡鈧棃鈧?GLB
+/// mesh 娑撯偓 RW4 mesh 閻?v3 瑜般垻濮搁敍鍫濇櫌娑?105 mesh / 14MB閿涘妲哥€涖倕鍔硅ぐ銏㈠Ц閿涘苯鐤勫ù?
+/// 娴犮倕濮炴潪钘夌摠濡楋絽绌垮┃鍐︹偓?
 pub fn compile_lotm_merged(
     doc: &LotmDocument,
     mesh_material: &[u32],
@@ -160,7 +160,7 @@ pub fn compile_lotm_merged(
     compile_merged_primitives(per_mesh_primitives, head_slots, transform)
 }
 
-/// [`compile_lotm_merged`] 的 primitives 层入口（可测试）。
+/// [`compile_lotm_merged`] 閻?primitives 鐏炲倸鍙嗛崣锝忕礄閸欘垱绁寸拠鏇礆閵?
 pub fn compile_merged_primitives(
     per_mesh_primitives: Vec<Vec<GlbPrimitive>>,
     head_slots: [u32; 6],
@@ -169,7 +169,7 @@ pub fn compile_merged_primitives(
     let mut placement = placement_from_bounds(per_mesh_primitives.iter().flatten());
     placement.transform = transform;
 
-    // 合并分区：贪心装箱，源网格不拆分；单网格超限才报错。
+    // 閸氬牆鑻熼崚鍡楀隘閿涙俺妞借箛鍐棅缁犳唻绱濆┃鎰秹閺嶉棿绗夐幏鍡楀瀻閿涙稑宕熺純鎴炵壐鐡掑懘妾洪幍宥嗗Г闁挎瑣鈧?
     let mut chunks: Vec<Vec<&GlbPrimitive>> = vec![Vec::new()];
     let mut chunk_verts = 0usize;
     for prims in &per_mesh_primitives {
@@ -195,9 +195,9 @@ pub fn compile_merged_primitives(
     Ok(compiled)
 }
 
-/// 在已编译 RW4 上追加 BBox 与占位 Raster section，并写头 word25。
-/// 直接在字节层补 section 会破坏偏移——这里经 writer 重建：解析现有
-/// section（payload 抽出），追加 BBox/Raster spec 后整体重排。
+/// 閸︺劌鍑＄紓鏍槯 RW4 娑撳﹨鎷烽崝?BBox 娑撳骸宕版担?Raster section閿涘苯鑻熼崘娆忋仈 word25閵?
+/// 閻╁瓨甯撮崷銊ョ摟閼哄倸鐪扮悰?section 娴兼氨鐗崸蹇撲焊缁夌儵鈧柡鈧棁绻栭柌宀€绮?writer 闁插秴缂撻敍姘承掗弸鎰箛閺?
+/// section閿涘潷ayload 閹惰棄鍤敍澶涚礉鏉╄棄濮?BBox/Raster spec 閸氬孩鏆ｆ担鎾诲櫢閹烘帇鈧?
 fn append_native_shape_sections(
     rw4: &mut Vec<u8>,
     placement: ModelPlacement,
@@ -219,7 +219,7 @@ fn append_native_shape_sections(
         });
         numbers.push(section.number);
     }
-    // BBox：placement 后几何的全局 min/max（2×vec4，32B）。
+    // BBox閿涙lacement 閸氬骸鍤戞担鏇犳畱閸忋劌鐪?min/max閿?鑴硋ec4閿?2B閿涘鈧?
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
     for chunk in chunks {
@@ -239,8 +239,8 @@ fn append_native_shape_sections(
     }
     let mut bbox_spec = rw4::writer::section(SectionType::BBOX, bbox);
     bbox_spec.alignment = 16;
-    // 只追加、不重排：mesh/VA/TA/MMA payload 内部按 section 编号互引，
-    // 前插会让全部编号移位（引擎 IdToObject 与 payload 引用双双失配）。
+    // 閸欘亣鎷烽崝鐘偓浣风瑝闁插秵甯撻敍姝甧sh/VA/TA/MMA payload 閸愬懘鍎撮幐?section 缂傛牕褰挎禍鎺戠穿閿?
+    // 閸撳秵褰冩导姘愁唨閸忋劑鍎寸紓鏍у娇缁夎缍呴敍鍫濈穿閹?IdToObject 娑?payload 瀵洜鏁ら崣灞藉蓟婢堕亶鍘ら敍澶堚偓?
     let mut all = specs;
     all.push(bbox_spec);
     all.push(rw4::writer::section(
@@ -248,17 +248,17 @@ fn append_native_shape_sections(
         PLACEHOLDER_RASTER.to_vec(),
     ));
     *rw4 = rw4::writer::build(1, &all, &[]);
-    // writer 的 BLOB pos 以 sie 为基准；0x20003 占位 Raster 非 BLOB，
-    // 走绝对 pos——与 NightHouse 的非 blob Raster 同位。
+    // writer 閻?BLOB pos 娴?sie 娑撳搫鐔€閸戝棴绱?x20003 閸楃姳缍?Raster 闂?BLOB閿?
+    // 鐠ф壆绮风€?pos閳ユ柡鈧柧绗?NightHouse 閻ㄥ嫰娼?blob Raster 閸氬奔缍呴妴?
     let w25 = MERGED_HEADER_W25.to_le_bytes();
     rw4[0x64..0x68].copy_from_slice(&w25);
     Ok(())
 }
 
-/// NH（NightHouse/原版主位）顶点布局：stride 40。
+/// NH閿涘湤ightHouse/閸樼喓澧楁稉璁崇秴閿涘銆婇悙鐟扮鐏炩偓閿涙tride 40閵?
 /// POSITION F3(12) + NORMAL UBYTE4(4) + TANGENT UBYTE4(4) + COLOR D3DCOLOR(4)
-/// + TEXCOORD0 FLOAT4(16, facade base.xy+top.zw)。与原版模型 VF 逐字段同构
-/// （压缩法线/切线解包 = (b-127.5)/127.5；census: 2037/2267 原生模型此布局）。
+/// + TEXCOORD0 FLOAT4(16, facade base.xy+top.zw)閵嗗倷绗岄崢鐔哄濡€崇€?VF 闁劕鐡у▓闈涙倱閺?
+/// 閿涘牆甯囩紓鈺傜《缁?閸掑洨鍤庣憴锝呭瘶 = (b-127.5)/127.5閿涙矞ensus: 2037/2267 閸樼喓鏁撳Ο鈥崇€峰銈呯鐏炩偓閿涘鈧?
 const NH_VERTEX_STRIDE: usize = 40;
 const NH_VERTEX_ELEMENTS: usize = 5;
 
@@ -288,7 +288,7 @@ fn nh_vertex_payload(
             v.push(compress(c));
         }
         v.push(255);
-        // D3DCOLOR 内存序 (b,g,r,a)：B=seed、G=tint 列（NH 同位）
+        // D3DCOLOR 閸愬懎鐡ㄦ惔?(b,g,r,a)閿涙=seed閵嗕笩=tint 閸掓绱橬H 閸氬奔缍呴敍?
         v.push(seeds.get(i).copied().unwrap_or(0));
         v.push(0);
         v.push(columns.get(i).copied().unwrap_or(0));
@@ -324,9 +324,9 @@ fn nh_vertex_format_payload() -> Vec<u8> {
     p
 }
 
-/// NH 布局 + NH 材质原文的合并编译：几何合并 ≤65535 顶点/mesh，
-/// 顶点用原生主位格式（压缩法线/切线 + facade F4 单 UV 流），
-/// 材质 section 使用调用方提供的原文字节（例如 NH 的真实 CompiledState）。
+/// NH 鐢啫鐪?+ NH 閺夋劘宸濋崢鐔告瀮閻ㄥ嫬鎮庨獮鍓佺椽鐠囨埊绱伴崙鐘辩秿閸氬牆鑻?閳?5535 妞ゅ墎鍋?mesh閿?
+/// 妞ゅ墎鍋ｉ悽銊ュ斧閻㈢喍瀵屾担宥嗙壐瀵骏绱欓崢瀣級濞夋洜鍤?閸掑洨鍤?+ facade F4 閸?UV 濞翠緤绱氶敍?
+/// 閺夋劘宸?section 娴ｈ法鏁ょ拫鍐暏閺傝褰佹笟娑氭畱閸樼喐鏋冪€涙濡敍鍫滅伐婵?NH 閻ㄥ嫮婀＄€?CompiledState閿涘鈧?
 pub fn compile_merged_primitives_nh(
     per_mesh_primitives: Vec<Vec<GlbPrimitive>>,
     material_payload: Vec<u8>,
@@ -367,7 +367,7 @@ pub fn compile_merged_primitives_nh(
                 for c in normal {
                     vertices.push((c * 127.5 + 127.5).round().clamp(0.0, 255.0) as u8);
                 }
-                vertices.push(255); // UBYTE4 第 4 字节填充（NH: 255）
+                vertices.push(255); // UBYTE4 缁?4 鐎涙濡繅顐㈠帠閿涘湤H: 255閿?
                 let tangent = primitive
                     .tangents
                     .get(i)
@@ -377,7 +377,7 @@ pub fn compile_merged_primitives_nh(
                     vertices.push((c * 127.5 + 127.5).round().clamp(0.0, 255.0) as u8);
                 }
                 vertices.push(255);
-                // D3DCOLOR 内存序 (b,g,r,a)：B=seed、G=tint 列
+                // D3DCOLOR 閸愬懎鐡ㄦ惔?(b,g,r,a)閿涙=seed閵嗕笩=tint 閸?
                 vertices.push(primitive.seeds.get(i).copied().unwrap_or(0));
                 vertices.push(0);
                 vertices.push(primitive.tint_column.get(i).copied().unwrap_or(0));
@@ -418,7 +418,7 @@ pub fn compile_merged_primitives_nh(
         vertex_count += total_vertices;
         index_count += total_indices;
     }
-    // 材质 section：调用方原文（NH 的真实 CompiledState）
+    // 閺夋劘宸?section閿涙俺鐨熼悽銊︽煙閸樼喐鏋冮敍鍦 閻ㄥ嫮婀＄€?CompiledState閿?
     let material_base = specs.len() as u32;
     specs.push(rw4::writer::SectionSpec {
         type_code: SectionType::MATERIAL,
@@ -432,7 +432,7 @@ pub fn compile_merged_primitives_nh(
             assignment_payload(mesh, material_base),
         ));
     }
-    // BBox + 占位 Raster（R2/R3 同款追加语义）
+    // BBox + 閸楃姳缍?Raster閿涘湩2/R3 閸氬本顑欐潻钘夊鐠囶厺绠熼敍?
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
     for prims in per_mesh_primitives.iter().flatten() {
@@ -483,9 +483,9 @@ pub fn compile_merged_primitives_nh(
     })
 }
 
-/// 分材质分区的 NH 布局编译：每个唯一材质一组 mesh（组内按 65535 顶点帽
-/// 拆分），每组一个 MATERIAL section（NH 顶点布局 stride 40：压缩法线/
-/// 切线 + facade F4 单 UV 流）。R7 真实内容包用。
+/// 閸掑棙娼楃拹銊ュ瀻閸栬櫣娈?NH 鐢啫鐪紓鏍槯閿涙碍鐦℃稉顏勬暜娑撯偓閺夋劘宸濇稉鈧紒?mesh閿涘牏绮嶉崘鍛瘻 65535 妞ゅ墎鍋ｇ敮?
+/// 閹峰棗鍨庨敍澶涚礉濮ｅ繒绮嶆稉鈧稉?MATERIAL section閿涘湤H 妞ゅ墎鍋ｇ敮鍐ㄧ湰 stride 40閿涙艾甯囩紓鈺傜《缁?
+/// 閸掑洨鍤?+ facade F4 閸?UV 濞翠緤绱氶妴淇? 閻喎鐤勯崘鍛啇閸栧懐鏁ら妴?
 pub fn compile_lotm_nh_partitioned(
     doc: &LotmDocument,
     mesh_material: &[u32],
@@ -506,9 +506,9 @@ pub fn compile_lotm_nh_partitioned(
     let mut placement = placement_from_bounds(per_mesh.iter().flatten());
     placement.transform = transform;
 
-    // 按唯一材质分组（保持首现顺序）。组顶点数 ≤65536 时按 u16 帽拆 chunk
-    // （TA 标志 101）；超出则整组单 chunk + u32 索引（TA 标志 102，原版
-    // Dalian 塔 105414 顶点先例，2026-10-31 R9 上游戏已验证可渲染）。
+    // 閹稿鏁稉鈧弶鎰窛閸掑棛绮嶉敍鍫滅箽閹镐線顩婚悳浼淬€庢惔蹇ョ礆閵嗗倻绮嶆い鍓佸仯閺?閳?5536 閺冭埖瀵?u16 鐢姤濯?chunk
+    // 閿涘湵A 閺嶅洤绻?101閿涘绱辩搾鍛毉閸掓瑦鏆ｇ紒鍕礋 chunk + u32 缁便垹绱╅敍鍦盇 閺嶅洤绻?102閿涘苯甯悧?
+    // Dalian 婵?105414 妞ゅ墎鍋ｉ崗鍫滅伐閿?026-10-31 R9 娑撳﹥鐖堕幋蹇撳嚒妤犲矁鐦夐崣顖涜閺屾搫绱氶妴?
     let mut group_totals = vec![0usize; unique_instances.len()];
     for (mesh_index, prims) in per_mesh.iter().enumerate() {
         let m = mesh_material.get(mesh_index).copied().unwrap_or(0) as usize;
@@ -730,12 +730,41 @@ pub fn compile_lotm_nh_template(
         }
         *ordinal += 1;
     }
+    // The template's two geometry BLOBs are ordered index-then-vertex,
+    // while the NH compiler emits vertex-then-index. Pair them by size so the
+    // mesh keeps pointing at the large vertex blob and the small index blob.
+    let mut source_blobs: Vec<(u32, u32)> = source
+        .sections()
+        .iter()
+        .filter(|section| section.type_code == SectionType::BLOB)
+        .map(|section| (section.size, section.number))
+        .collect();
+    let mut target_blobs: Vec<(u32, u32)> = target
+        .sections()
+        .iter()
+        .filter(|section| section.type_code == SectionType::BLOB)
+        .map(|section| (section.size, section.number))
+        .collect();
+    source_blobs.sort_unstable();
+    target_blobs.sort_unstable();
+    let mut blob_payloads: HashMap<u32, Vec<u8>> = HashMap::new();
+    for ((_, source_number), (_, target_number)) in source_blobs.iter().zip(target_blobs.iter()) {
+        source_to_target.insert(*source_number, *target_number);
+        if let Ok(payload) = source.payload(&generic.rw4, *source_number) {
+            blob_payloads.insert(*target_number, payload.to_vec());
+        }
+    }
+
     let mut ordinal = HashMap::<u32, usize>::new();
     for section in target.sections() {
         if !by_type.contains_key(&section.type_code) { continue; }
         let index = ordinal.entry(section.type_code).or_insert(0);
-        let Some(payload) = by_type.get(&section.type_code).and_then(|v| v.get(*index)) else { continue; };
-        let mut payload = payload.clone();
+        let payload = if section.type_code == SectionType::BLOB {
+            blob_payloads.get(&section.number).cloned()
+        } else {
+            by_type.get(&section.type_code).and_then(|v| v.get(*index)).cloned()
+        };
+        let Some(mut payload) = payload else { continue; };
         if source_by_type.get(&section.type_code).and_then(|v| v.get(*index)).is_some() {
             remap_geometry_refs(section.type_code, &mut payload, &source_to_target);
             replacements.insert(section.number, payload);
@@ -772,6 +801,248 @@ fn remap_geometry_refs(type_code: u32, payload: &mut [u8], map: &HashMap<u32, u3
         let old = u32::from_le_bytes(payload[at..at + 4].try_into().unwrap());
         if let Some(new) = map.get(&old) { payload[at..at + 4].copy_from_slice(&new.to_le_bytes()); }
     }
+}
+
+/// Compile the author's exact Building40 profile into a native template.
+///
+/// Unlike `compile_lotm_nh_template`, this builds the 40-byte vertex stream
+/// directly in the author's layout instead of swapping NH payload ordinals:
+/// position F32x3, packed normal/tangent, D3DCOLOR (material row, seed), and
+/// Float4 Base/Top UV. Every unique vertex key and every triangle index is
+/// preserved, so the result has the same vertex/index counts as
+/// `compile_geometry_contract.py`.
+pub fn compile_building40_template(
+    doc: &LotmDocument,
+    mesh_material: &[u32],
+    transform: Option<[f32; 12]>,
+    template: &[u8],
+) -> Result<CompiledNativeModel, String> {
+    let mut vertices: Vec<[u8; 40]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let mut lookup: HashMap<[u32; 24], u32> = HashMap::new();
+    let mut primitive_count = 0usize;
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    let pack_direction = |value: [f32; 3]| -> Result<[u8; 4], String> {
+        let length = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
+        if length <= 1e-9 {
+            return Err("building40: zero direction".into());
+        }
+        let mut out = [255u8; 4];
+        for axis in 0..3 {
+            let normalized = (value[axis] / length) * 127.5 + 127.5;
+            out[axis] = normalized.round().clamp(0.0, 255.0) as u8;
+        }
+        Ok(out)
+    };
+    for (mesh, glb) in doc.meshes.iter().enumerate() {
+        for primitive in parse_glb_primitives(glb)? {
+            let material_row = primitive
+                .tint_column
+                .first()
+                .copied()
+                .unwrap_or_else(|| {
+                    mesh_material
+                        .get(mesh)
+                        .copied()
+                        .or_else(|| doc.mesh_material.get(mesh).map(|reference| reference.material))
+                        .unwrap_or(0)
+                        .min(255) as u8
+                });
+            primitive_count += 1;
+            for i in 0..primitive.positions.len() {
+                let mut position = primitive.positions[i];
+                let mut normal = primitive.normals.get(i).copied().unwrap_or([0.0, 0.0, 1.0]);
+                let mut tangent = primitive.tangents.get(i).copied().unwrap_or([1.0, 0.0, 0.0]);
+                if let Some(matrix) = transform {
+                    let p = [
+                        position[0] * matrix[0] + position[1] * matrix[3] + position[2] * matrix[6] + matrix[9],
+                        position[0] * matrix[1] + position[1] * matrix[4] + position[2] * matrix[7] + matrix[10],
+                        position[0] * matrix[2] + position[1] * matrix[5] + position[2] * matrix[8] + matrix[11],
+                    ];
+                    position = p;
+                }
+                let base = primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
+                let top = primitive
+                    .facade_uvs
+                    .get(i)
+                    .map(|uv| [uv[2], uv[3]])
+                    .unwrap_or([0.0, 0.0]);
+                let base = [base[0], 1.0 - base[1]];
+                let top = [top[0], 1.0 - top[1]];
+                let seed = primitive.seeds.get(i).copied().unwrap_or(84);
+                let bits = |values: &[f32]| -> Vec<u32> {
+                    values.iter().map(|value| value.to_bits()).collect()
+                };
+                let mut key = [0u32; 24];
+                key[0..3].copy_from_slice(&bits(&position));
+                key[3..6].copy_from_slice(&bits(&normal));
+                key[6..9].copy_from_slice(&bits(&tangent));
+                key[9..11].copy_from_slice(&bits(&base));
+                key[11..13].copy_from_slice(&bits(&top));
+                key[13] = material_row as u32;
+                key[14] = seed as u32;
+                let vertex = *lookup.entry(key).or_insert_with(|| {
+                    let mut bytes = [0u8; 40];
+                    bytes[0..12].copy_from_slice(&[
+                        position[0].to_le_bytes(),
+                        position[1].to_le_bytes(),
+                        position[2].to_le_bytes(),
+                    ]
+                    .concat());
+                    let packed_normal = pack_direction(normal).unwrap_or([0, 0, 255, 255]);
+                    let packed_tangent = pack_direction(tangent).unwrap_or([255, 0, 0, 255]);
+                    bytes[12..16].copy_from_slice(&packed_normal);
+                    bytes[16..20].copy_from_slice(&packed_tangent);
+                    bytes[20..24].copy_from_slice(&[0, 0, material_row, seed]);
+                    for (slot, uv) in [base, top].iter().enumerate() {
+                        let offset = 24 + slot * 8;
+                        bytes[offset..offset + 4].copy_from_slice(&uv[0].to_le_bytes());
+                        bytes[offset + 4..offset + 8].copy_from_slice(&uv[1].to_le_bytes());
+                    }
+                    for axis in 0..3 {
+                        min[axis] = min[axis].min(position[axis]);
+                        max[axis] = max[axis].max(position[axis]);
+                    }
+                    let index = vertices.len() as u32;
+                    vertices.push(bytes);
+                    index
+                });
+                let _ = vertex;
+            }
+            // map primitive-local indices through the deduped table
+            let mut local_map = Vec::with_capacity(primitive.positions.len());
+            for i in 0..primitive.positions.len() {
+                let mut position = primitive.positions[i];
+                let mut normal = primitive.normals.get(i).copied().unwrap_or([0.0, 0.0, 1.0]);
+                let mut tangent = primitive.tangents.get(i).copied().unwrap_or([1.0, 0.0, 0.0]);
+                if let Some(matrix) = transform {
+                    position = [
+                        position[0] * matrix[0] + position[1] * matrix[3] + position[2] * matrix[6] + matrix[9],
+                        position[0] * matrix[1] + position[1] * matrix[4] + position[2] * matrix[7] + matrix[10],
+                        position[0] * matrix[2] + position[1] * matrix[5] + position[2] * matrix[8] + matrix[11],
+                    ];
+                }
+                let base = primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
+                let top = primitive.facade_uvs.get(i).map(|uv| [uv[2], uv[3]]).unwrap_or([0.0, 0.0]);
+                let base = [base[0], 1.0 - base[1]];
+                let top = [top[0], 1.0 - top[1]];
+                let seed = primitive.seeds.get(i).copied().unwrap_or(84);
+                let bits = |values: &[f32]| -> Vec<u32> { values.iter().map(|value| value.to_bits()).collect() };
+                let mut key = [0u32; 24];
+                key[0..3].copy_from_slice(&bits(&position));
+                key[3..6].copy_from_slice(&bits(&normal));
+                key[6..9].copy_from_slice(&bits(&tangent));
+                key[9..11].copy_from_slice(&bits(&base));
+                key[11..13].copy_from_slice(&bits(&top));
+                key[13] = material_row as u32;
+                key[14] = seed as u32;
+                local_map.push(*lookup.get(&key).unwrap_or(&0));
+            }
+            for triangle in primitive.indices.chunks_exact(3) {
+                indices.push(local_map[triangle[0] as usize]);
+                indices.push(local_map[triangle[1] as usize]);
+                indices.push(local_map[triangle[2] as usize]);
+            }
+        }
+    }
+    if vertices.len() < 3 || indices.is_empty() {
+        return Err("building40: no geometry".into());
+    }
+    let index32 = vertices.len() > 65535;
+    let mut vertex_blob = Vec::with_capacity(vertices.len() * 40);
+    for vertex in &vertices {
+        vertex_blob.extend_from_slice(vertex);
+    }
+    let mut index_blob = Vec::with_capacity(indices.len() * if index32 { 4 } else { 2 });
+    for index in &indices {
+        if index32 {
+            index_blob.extend_from_slice(&index.to_le_bytes());
+        } else {
+            index_blob.extend_from_slice(&(*index as u16).to_le_bytes());
+        }
+    }
+    let file = Rw4File::parse(template).map_err(|error| format!("building40 template: {error}"))?;
+    let mut blobs: Vec<(u32, u32)> = file
+        .sections()
+        .iter()
+        .filter(|section| section.type_code == SectionType::BLOB)
+        .map(|section| (section.size, section.number))
+        .collect();
+    blobs.sort_unstable();
+    let (_, vertex_section) = blobs.last().ok_or("building40: template has no vertex BLOB")?;
+    let (_, index_section) = blobs
+        .get(blobs.len().saturating_sub(2))
+        .ok_or("building40: template has no index BLOB")?;
+    let mut replacements = HashMap::new();
+    replacements.insert(*index_section, index_blob);
+    replacements.insert(*vertex_section, vertex_blob);
+    for section in file.sections() {
+        let mut payload = file
+            .payload(template, section.number)
+            .map_err(|error| error.to_string())?
+            .to_vec();
+        match section.type_code {
+            SectionType::MESH if payload.len() >= 40 => {
+                let mut words: Vec<u32> = payload
+                    .chunks_exact(4)
+                    .take(10)
+                    .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect();
+                words[3] = (indices.len() / 3) as u32;
+                words[6] = indices.len() as u32;
+                words[7] = *indices.iter().min().unwrap_or(&0);
+                words[8] = vertices.len() as u32;
+                for (i, word) in words.iter().enumerate() {
+                    payload[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+                }
+                replacements.insert(section.number, payload);
+            }
+            SectionType::TRIANGLE_ARRAY if payload.len() >= 20 => {
+                let mut words: Vec<u32> = payload
+                    .chunks_exact(4)
+                    .take(5)
+                    .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect();
+                words[2] = indices.len() as u32;
+                words[4] = if index32 { 102 } else { 101 };
+                for (i, word) in words.iter().enumerate() {
+                    payload[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+                }
+                replacements.insert(section.number, payload);
+            }
+            SectionType::VERTEX_ARRAY if payload.len() >= 16 => {
+                let mut words: Vec<u32> = payload
+                    .chunks_exact(4)
+                    .take(4)
+                    .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect();
+                words[3] = vertices.len() as u32;
+                for (i, word) in words.iter().enumerate() {
+                    payload[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+                }
+                replacements.insert(section.number, payload);
+            }
+            SectionType::BBOX if payload.len() >= 32 => {
+                payload[0..4].copy_from_slice(&min[0].to_le_bytes());
+                payload[4..8].copy_from_slice(&min[1].to_le_bytes());
+                payload[8..12].copy_from_slice(&min[2].to_le_bytes());
+                payload[16..20].copy_from_slice(&max[0].to_le_bytes());
+                payload[20..24].copy_from_slice(&max[1].to_le_bytes());
+                payload[24..28].copy_from_slice(&max[2].to_le_bytes());
+                replacements.insert(section.number, payload);
+            }
+            _ => {}
+        }
+    }
+    let rw4 = rw4::writer::replace_template_sections(template, &replacements)?;
+    Ok(CompiledNativeModel {
+        rw4,
+        primitive_count,
+        vertex_count: vertices.len(),
+        index_count: indices.len(),
+        material_count: 1,
+    })
 }
 
 pub fn compile_lotm(
@@ -857,7 +1128,7 @@ fn triangle_array_payload(data: u32, count: u32, index_format: u32) -> Vec<u8> {
     let mut p = vec![0; 8];
     p.extend_from_slice(&count.to_le_bytes());
     p.extend_from_slice(&8u32.to_le_bytes());
-    // 索引宽度标志（原版 Dalian 塔 105414 顶点先例）：101 = u16，102 = u32。
+    // 缁便垹绱╃€硅棄瀹抽弽鍥х箶閿涘牆甯悧?Dalian 婵?105414 妞ゅ墎鍋ｉ崗鍫滅伐閿涘绱?01 = u16閿?02 = u32閵?
     p.extend_from_slice(&index_format.to_le_bytes());
     p.extend_from_slice(&4u32.to_le_bytes());
     p.extend_from_slice(&(data as i32).to_le_bytes());
@@ -1070,9 +1341,9 @@ fn verify_round_trip(
 ///
 /// Frame rules mirror the shared viewport contract (`normalizeLotModelScene`):
 /// files that declare `asset.extras.openscp.upAxis` are trusted (declared
-/// `y` gains the +90°X correction, declared `z` is kept); undeclared files
+/// `y` gains the +90鎺砐 correction, declared `z` is kept); undeclared files
 /// lose the strip rotation on direct scene children (game gltf.rs exports
-/// carry a redundant ∓90°X root rotation on otherwise Z-up data).
+/// carry a redundant 閳?0鎺砐 root rotation on otherwise Z-up data).
 pub fn parse_glb_primitives(glb: &[u8]) -> Result<Vec<GlbPrimitive>, String> {
     let (document, bin) = parse_glb_container(glb)?;
     let declared = document
@@ -1101,8 +1372,8 @@ pub fn parse_glb_primitives(glb: &[u8]) -> Result<Vec<GlbPrimitive>, String> {
     Ok(out)
 }
 
-/// 3×3 linear part + translation; column-vector convention with row-major
-/// storage (`p' = lin·p + t`).
+/// 3鑴? linear part + translation; column-vector convention with row-major
+/// storage (`p' = lin璺痯 + t`).
 #[derive(Debug, Clone, Copy)]
 struct LinXform {
     lin: [[f32; 3]; 3],
@@ -1170,7 +1441,7 @@ fn flatten_node(
     let node = nodes.get(node_index).ok_or("GLB node out of range")?;
     let mut local = node_xform(node, strip_rotation)?;
     if y_up_declared && parent_translates_only(parent) {
-        // Declared Y-up contract: rotate the whole file +90°X once, at the
+        // Declared Y-up contract: rotate the whole file +90鎺砐 once, at the
         // scene roots (same point where the viewport applies its correction).
         local = ROT_X_90.compose(&local);
     }
@@ -1194,14 +1465,14 @@ fn flatten_node(
     Ok(())
 }
 
-/// The +90°X correction applies once per root; roots compose from IDENTITY so
+/// The +90鎺砐 correction applies once per root; roots compose from IDENTITY so
 /// a pure-translation parent is the identity sentinel.
 fn parent_translates_only(parent: &LinXform) -> bool {
     parent.lin == LinXform::IDENTITY.lin
 }
 
 const ROT_X_90: LinXform = LinXform {
-    // +90°X: (x, y, z) → (x, -z, y)
+    // +90鎺砐: (x, y, z) 閳?(x, -z, y)
     lin: [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],
     trans: [0.0; 3],
 };
@@ -1215,7 +1486,7 @@ fn node_xform(node: &Value, strip_rotation: bool) -> Result<LinXform, String> {
         if values.len() != 16 {
             return Err("GLB node matrix must have 16 floats".into());
         }
-        // glTF matrices are column-major 4×4.
+        // glTF matrices are column-major 4鑴?.
         let lin = [
             [values[0], values[4], values[8]],
             [values[1], values[5], values[9]],
@@ -1270,7 +1541,7 @@ fn read_vec3_field(node: &Value, key: &str) -> Option<[f32; 3]> {
     ])
 }
 
-/// Quaternion (x, y, z, w) → 3×3 rotation matrix.
+/// Quaternion (x, y, z, w) 閳?3鑴? rotation matrix.
 fn quaternion_matrix(q: &[f32]) -> [[f32; 3]; 3] {
     let [x, y, z, w] = [
         q.first().copied().unwrap_or(0.0),
@@ -1437,10 +1708,10 @@ fn read_mesh_primitives(
             }
             _ => vec![[0.0, 0.0]; count],
         };
-        // Tint column + interior seed: TEXCOORD_1.xy × 255.  Contract GLBs
+        // Tint column + interior seed: TEXCOORD_1.xy 鑴?255.  Contract GLBs
         // carry a VEC4 stream; plugin-authored containers use VEC2 with the
         // same meaning once TEXCOORD_0 is the base UV.  (When TEXCOORD_0 is
-        // absent the VEC2 stream IS the base UV — Blender layout — and there
+        // absent the VEC2 stream IS the base UV 閳?Blender layout 閳?and there
         // is no column/seed payload.)
         let uv1_is_base = uv1_is_vec2(accessors, &attr) && uv0.is_none();
         let (tint_column, seeds): (Vec<u8>, Vec<u8>) = match (&uv1, uv1_is_base) {
@@ -1660,7 +1931,7 @@ mod tests {
             vec![triangle_primitive()],
         ];
         let model = compile_merged_primitives(prims, [11, 22, 33, 44, 55, 66], None).unwrap();
-        // 9 顶点 ≤ 65535 → 单 mesh；材质 1；BBox + 占位 Raster 齐备。
+        // 9 妞ゅ墎鍋?閳?65535 閳?閸?mesh閿涙稒娼楃拹?1閿涙雹Box + 閸楃姳缍?Raster 姒绘劕顦妴?
         assert_eq!(model.vertex_count, 12);
         assert_eq!(model.material_count, 1);
         let file = Rw4File::parse(&model.rw4).unwrap();
@@ -1671,14 +1942,14 @@ mod tests {
         assert_eq!(
             count(SectionType::BBOX),
             1,
-            "BBox present (engine ±1 fallback otherwise)"
+            "BBox present (engine 鍗? fallback otherwise)"
         );
         assert_eq!(
             count(SectionType::TEXTURE),
             1,
             "2x2 placeholder raster present"
         );
-        // 头 word25（字节 0x64）= NightHouse 形状克隆值。
+        // 婢?word25閿涘牆鐡ч懞?0x64閿? NightHouse 瑜般垻濮搁崗瀣畷閸婄鈧?
         assert_eq!(
             &model.rw4[0x64..0x68],
             &MERGED_HEADER_W25.to_le_bytes(),
@@ -1694,7 +1965,7 @@ mod tests {
         let decoded = file.decode_mesh(&model.rw4, mesh.number).unwrap();
         assert_eq!(decoded.vertices.len(), 12);
         assert_eq!(decoded.triangles.len(), 4);
-        // BBox 32B = 2×vec4，覆盖 placement 后几何（z 0..1）。
+        // BBox 32B = 2鑴硋ec4閿涘矁顩惄?placement 閸氬骸鍤戞担鏇礄z 0..1閿涘鈧?
         let bbox = file.sections_of_type(SectionType::BBOX).next().unwrap();
         let payload = file.payload(&model.rw4, bbox.number).unwrap();
         assert_eq!(payload.len(), 32);
@@ -1710,7 +1981,7 @@ mod tests {
 
     #[test]
     fn merged_compile_splits_at_u16_vertex_cap() {
-        // 单 primitive 顶点数超 65535 → 拆两个 chunk（两个 mesh，同一材质）。
+        // 閸?primitive 妞ゅ墎鍋ｉ弫鎷岀Т 65535 閳?閹峰棔琚辨稉?chunk閿涘牅琚辨稉?mesh閿涘苯鎮撴稉鈧弶鎰窛閿涘鈧?
         let mut big = triangle_primitive();
         big.positions = vec![[0.0, 0.0, 0.0]; 70000];
         big.normals = vec![[0.0, 0.0, 1.0]; 70000];
@@ -1721,7 +1992,7 @@ mod tests {
         big.tangents = vec![[1.0, 0.0, 0.0]; 70000];
         big.indices = vec![0, 1, 2];
         let model = compile_merged_primitives(vec![vec![big]], [11, 22, 33, 44, 55, 66], None);
-        // 单 primitive 无法在 primitive 边界拆分 → 当前策略报错而非静默碎裂。
+        // 閸?primitive 閺冪姵纭堕崷?primitive 鏉堝湱鏅幏鍡楀瀻 閳?瑜版挸澧犵粵鏍殣閹躲儵鏁婇懓宀勬姜闂堟瑩绮喊搴ゎ棁閵?
         assert!(
             model.is_err(),
             "single oversized primitive must fail loudly"
@@ -1808,7 +2079,7 @@ mod tests {
             .unwrap()
             .number;
         let decoded = file.decode_mesh(&compiled.rw4, mesh).unwrap();
-        // ((10,0,4) + (-10,0,-4)) = origin, then scaled ×2 on x and shifted +5.
+        // ((10,0,4) + (-10,0,-4)) = origin, then scaled 鑴? on x and shifted +5.
         assert_eq!(decoded.vertices[0].position(), Some([5.0, 0.0, 0.0]));
     }
 
@@ -1820,7 +2091,7 @@ mod tests {
     fn vec2_texcoord1_column_and_seed_survive() {
         let positions: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let uv0: [f32; 6] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
-        // column 0.2 → 51, seed 0.75 → 191
+        // column 0.2 閳?51, seed 0.75 閳?191
         let uv1: [f32; 6] = [0.2, 0.75, 0.2, 0.75, 0.2, 0.75];
         let indices: [u16; 3] = [0, 1, 2];
         let mut bin = Vec::new();

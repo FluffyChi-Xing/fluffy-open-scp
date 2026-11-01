@@ -137,6 +137,11 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
         }
         for line in [1usize, 2] {
             let offset = line * 4;
+            // Author code only rewrites a Base/Top region when its scale is
+            // non-zero; a disabled Top must stay 0,0,0,0.
+            if params[offset] == 0.0 && params[offset + 1] == 0.0 {
+                continue;
+            }
             params[offset] /= grid_f;
             params[offset + 1] /= grid_f;
             params[offset + 2] = params[offset + 2] / grid_f + x / atlas_f;

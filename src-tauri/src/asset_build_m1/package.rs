@@ -206,7 +206,7 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
     };
     // Unit columns belong on the Lot property; the Unit property (building
     // definition) only gets the LOD model retarget.  In menu-registration
-    // mode the reference identity stays untouched — the scene lowers into
+    // mode the reference identity stays untouched 鈥?the scene lowers into
     // the cloned lot leaf instead.
     let menu_mode = plan.menu.is_some();
     let lot_target = to_id(plan.intermediate.references.lot);
@@ -270,7 +270,7 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
         staging.write(&name, &resources[target])?;
     }
     // Delta output (default): only the resources this build created or
-    // rewrote — the game resolves everything else from the base packages.
+    // rewrote 鈥?the game resolves everything else from the base packages.
     // Full output re-serializes the whole reference snapshot (legacy
     // same-TGI overlay contract).
     let mut written: connector::Resources = if delta_mode {
@@ -445,15 +445,19 @@ fn insert_scene_model(
                 payload.clone(),
             );
         }
-        // 商业 LOTM 常见为几十到上百个编辑器 mesh。游戏模型加载器只接受
-        // 少量形状；默认路径必须自动收敛到 NH 单形状，避免 schema 漏写
-        // modelShape 时重新生成“孤儿形状”RW4（历史上曾出现 105 mesh）。
+        // 鍟嗕笟 LOTM 甯歌涓哄嚑鍗佸埌涓婄櫨涓紪杈戝櫒 mesh銆傛父鎴忔ā鍨嬪姞杞藉櫒鍙帴鍙?        // 灏戦噺褰㈢姸锛涢粯璁よ矾寰勫繀椤昏嚜鍔ㄦ敹鏁涘埌 NH 鍗曞舰鐘讹紝閬垮厤 schema 婕忓啓
+        // modelShape 鏃堕噸鏂扮敓鎴愨€滃鍎垮舰鐘垛€漅W4锛堝巻鍙蹭笂鏇惧嚭鐜?105 mesh锛夈€?
         let safe_nh = doc.meshes.len() > 4;
         let use_nh_partitioned = model_shape == Some("nh-partitioned") || safe_nh;
         // Select a real game RW4 from the reference package as the container
         // skeleton. Geometry is replaced later; its header/material/collision
         // sections remain byte-compatible with the game.
-        let native_template = resources
+        let native_template = std::env::var("OPENSCP_NATIVE_TEMPLATE")
+            .ok()
+            .map(std::fs::read)
+            .transpose()
+            .map_err(|error| format!("read native template: {error}"))?
+            .or_else(|| resources
             .iter()
             .filter(|(id, bytes)| {
                 id.type_id == materials::rw4_model_type()
@@ -462,10 +466,10 @@ fn insert_scene_model(
                         .unwrap_or(false)
             })
             .min_by_key(|(id, _)| (id.group, id.instance))
-            .map(|(_, bytes)| bytes.clone());
+            .map(|(_, bytes)| bytes.clone()));
         let compiled = if merged {
-            // 原版单形状：全部几何合并 + 只引用材质 0 的六槽（其余材质
-            // raster 资源照常入库，模型不引用）。
+            // 鍘熺増鍗曞舰鐘讹細鍏ㄩ儴鍑犱綍鍚堝苟 + 鍙紩鐢ㄦ潗璐?0 鐨勫叚妲斤紙鍏朵綑鏉愯川
+            // raster 璧勬簮鐓у父鍏ュ簱锛屾ā鍨嬩笉寮曠敤锛夈€?
             let head = material_plan
                 .mesh_material
                 .first()
@@ -538,12 +542,26 @@ fn insert_scene_model(
                 .map(|index| material_resources.unique_instances[*index])
                 .collect();
             native_model::compile_lotm_nh_partitioned(&doc, &mapped, &instances, transform)?
+        } else if model_shape == Some("building40") {
+            let template = native_template
+                .as_deref()
+                .ok_or("building40 compile: native template missing")?;
+            let compiled = native_model::compile_building40_template(
+                &doc,
+                &material_plan.mesh_material,
+                transform,
+                template,
+            )?;
+            let head_slots = material_resources
+                .unique_instances
+                .first()
+                .copied()
+                .ok_or("building40 compile: head material slots missing")?;
+            let rw4 = super::template_material::rewrite_texture_instances(&compiled.rw4, &head_slots)?;
+            native_model::CompiledNativeModel { rw4, ..compiled }
         } else if use_nh_partitioned {
-            // NH 顶点布局（stride 40 压缩法线/切线 + facade F4 单 UV 流）
-            // 的单形状：全部几何合入一个 mesh，材质取头部材质的六槽；组
-            // 顶点 >65536 时 u32 索引（TA 标志 102）。2026-10-31 R9 上游戏
-            // 验证：该形态塔楼完整渲染。逐 GLB mesh 一 RW4 mesh 的形状
-            // （98-105 mesh）是 census 实证会令加载存档崩溃的孤儿形状。
+            // NH 椤剁偣甯冨眬锛坰tride 40 鍘嬬缉娉曠嚎/鍒囩嚎 + facade F4 鍗?UV 娴侊級
+            // 鐨勫崟褰㈢姸锛氬叏閮ㄥ嚑浣曞悎鍏ヤ竴涓?mesh锛屾潗璐ㄥ彇澶撮儴鏉愯川鐨勫叚妲斤紱缁?            // 椤剁偣 >65536 鏃?u32 绱㈠紩锛圱A 鏍囧織 102锛夈€?026-10-31 R9 涓婃父鎴?            // 楠岃瘉锛氳褰㈡€佸妤煎畬鏁存覆鏌撱€傞€?GLB mesh 涓€ RW4 mesh 鐨勫舰鐘?            // 锛?8-105 mesh锛夋槸 census 瀹炶瘉浼氫护鍔犺浇瀛樻。宕╂簝鐨勫鍎垮舰鐘躲€?
             let (dominant, _) = select_material_groups(&doc, &material_plan, 1)?;
             let head = dominant
                 .first()
