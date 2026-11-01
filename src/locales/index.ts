@@ -5,6 +5,7 @@ import { mapGraphZh, mapGraphEn } from './map-graph';
 
 import { rasterZh, rasterEn } from "./raster-editor";
 import { diagnosticsZh, diagnosticsEn } from './diagnostics';
+import { spawnerPanelZh, spawnerPanelEn } from './spawner-panel';
 
 const messages = {
   "zh-CN": {
@@ -12,6 +13,7 @@ const messages = {
     mapGraph: mapGraphZh,
     rasterEditor: rasterZh,
     diagnostics: diagnosticsZh,
+    spawnerPanel: spawnerPanelZh,
     navigation: {
       workspace: "工作区",
       workspaceHome: "文档工作区",
@@ -954,6 +956,8 @@ const messages = {
         importFilterName: "模型 / 资产文件",
         blendImported: "Blender 已导入，自动绑定 {count} 个材质槽",
         blendImportedNoSlots: "Blender 模型已导入，但未识别到六槽贴图映射",
+        blendNativeImported: "Blender 原生资产已导入，贴图由 Blender 绑定",
+        blendCacheHit: "Blender 导入缓存命中，已跳过重复处理",
         importFailed: "导入失败，请检查文件格式和 Blender 配置",
         blendUnavailable: "未找到 Blender。请确认 D:\\blender 已加入 PATH 后重启 OpenSCP",
         blendExportFailed: "Blender 无法导出该文件，请确认文件可以正常打开",
@@ -2139,6 +2143,7 @@ const messages = {
     mapGraph: mapGraphEn,
     rasterEditor: rasterEn,
     diagnostics: diagnosticsEn,
+    spawnerPanel: spawnerPanelEn,
     navigation: {
       workspace: "Workspace",
       workspaceHome: "Docs workspace",
@@ -3106,6 +3111,8 @@ const messages = {
         importFilterName: "Models / asset files",
         blendImported: "Blender imported; {count} material slots mapped automatically",
         blendImportedNoSlots: "Blender model imported, but no six-slot texture mapping was detected",
+        blendNativeImported: "Blender native asset imported; textures are bound by Blender",
+        blendCacheHit: "Blender import cache hit; skipped duplicate processing",
         importFailed: "Import failed. Check the file format and Blender configuration.",
         blendUnavailable: "Blender was not found. Add D:\\blender to PATH and restart OpenSCP.",
         blendExportFailed: "Blender could not export this file. Check that it opens correctly.",

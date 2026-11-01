@@ -608,6 +608,51 @@ casino baron / drVu / maxisman / resident（群众，多套）。
 * 新增后端命令 `resolve_unit_cast`：`lot TGI → {spawners[], cast[], crowd?}`（供 inspector + 预览）。
 * 单测：`GetSimData` 采样等价性、名字唯一性、引用可解析性。
 
+### 7.9 已落地（2026-11-01 实现记录）
+
+本节 7.1–7.5 的设计里，**不依赖引擎新写入能力**的部分已实现；Cast / Crowd 待定义体闭合。
+
+**新目录（平行实现，不改冻结区）**
+`src/pages/packages/components/unit-inspector/`
+
+| 文件 | 职责 |
+| --- | --- |
+| `spawnerAnchor.ts` | 纯函数层：FNV-1(lower) 名字换算、锚点语义分类（ui/camera/custom/unnamed）、位置读取、三类写入前校验（未命名 / 重名 / 缺变换）、名字建议与重名检测 |
+| `SpawnerUnitPanel.vue` | 生成器属性面板：名字编辑（写回 `{typeId:0,group:0,instance}`）、两种硬编码锚点快切、校验内联提示、历史误标列只读披露、角色/外观说明 |
+| `SpawnerLibraryPanel.vue` | 组件库「生成器」页签重做：三预设（标准 / UI 气泡 / 镜头）拖入放置 + 锚点清单（语义徽章、重名告警、点选定位）+ 统计 |
+| `UnitInspector.vue` | 检查器平行外壳：四个页签复刻（**不新增页签**），**仅当选中单元是 spawner 时**在「属性」页签顶部插入生成器属性区，其余页签复用冻结目录里的原组件实例（只读引用） |
+
+**接线**
+* `ModAssetWorkbench.vue`（资产编辑器）：检查器换成 `UnitInspector`（多传 `units`）；组件库多传 `units` / `selectedUnitId` 并接 `@select`。
+* `AssetComponentLibrary.vue`：**生成器页签重做**为 `SpawnerLibraryPanel`；放置载荷新增 `spawnerId`。
+* `useWorkbenchAsset.ts`：`PlacePayload.spawnerId`；生成器落点若没有预设名字，用 `suggestAnchorName` 自动生成不重名名字（配合"无名字拒绝写"）。
+* `clipboard/useUnitClipboard.ts`：Ctrl+V 粘贴锚点时自动改名（引擎按名字建表，直接复制会撞 id）。
+* `property-editor/PropertyEditor.vue`（Property Viewer）：**唯一一处最小改动**——两处
+  `<PropertyEditorInspector>` 换成 `<UnitInspector>`（等价 drop-in），使 Viewer 的「属性」
+  页签同样在选中 spawner 时显示生成器属性区。选中态只能从编辑器内部拿到，
+  旁路插槽方案会退化成"整份锚点清单常驻"，已废弃。
+
+**写入收紧（Rust，权威校验）**
+* `pe_schema.rs`：`spawnerId` 输出规范化——**只保留 instance，type/group 恒 0**，instance 为 0 视为未命名。
+* `asset_build_m1/scene.rs`：
+  * 锚点**必须**带非零 `spawnerId` 与非空 `transform`（否则解析期直接报错，附单元 id）；
+  * 文档级**重名检测**（引擎按名字建 `vector_map`，同名互相覆盖）；
+  * 只写 `SPAWNER_IDS` / `SPAWNER_TRANSFORMS` 两列——**停止写 count/countRandom/agent**
+    （实测属建筑变体系统，且三列缺值会让并行数组错位）；
+  * `verify_units` 增加生成器数量回读校验（写回后读回数量不符即失败）。
+
+**测试**
+`cargo test -p fluffy-open-scp --lib asset_build_m1::scene`（8 例，含 4 个新锚点契约用例）、
+`pe_schema`（3 例，含名字规范化与 schema 输出用例）、
+`vitest` 新增 15 例（`spawnerAnchor` 纯函数 10 + `UnitInspector` 属性区 4 + 粘贴改名 1）。
+
+**冻结区例外说明（用户 2026-11-01 指令）**：Property Viewer 的 spawner 属性区必须
+「只在选中 spawner 时」出现，而选中单元只存在于 `PropertyEditor.vue` 内部状态，
+其 `#tabs` 插槽无作用域、拿不到选中态。因此本目录做了**唯一一处最小改动**：
+`PropertyEditor.vue` 的两处 `<PropertyEditorInspector>` 换成 `<UnitInspector>`
+（同 props / 同事件，drop-in），视觉与行为不变，仅多出"选中 spawner 时的属性区"。
+`PropertyEditorInspector.vue` 本体**未改动**。视口/装配/取景链路零改动。
+
 ---
 
 ## 8. 与旧结论的差异（勘误表）

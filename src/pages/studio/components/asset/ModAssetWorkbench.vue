@@ -21,7 +21,8 @@ import { useToast } from "@/composables/useToast";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import SchemaPropertyViewport from "@/pages/packages/components/property-editor/SchemaPropertyViewport.vue";
 import PropertyEditorOutliner from "@/pages/packages/components/property-editor/PropertyEditorOutliner.vue";
-import PropertyEditorInspector from "@/pages/packages/components/property-editor/PropertyEditorInspector.vue";
+import UnitInspector from "@/pages/packages/components/unit-inspector/UnitInspector.vue";
+import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
 import AssetPathPanel from "./AssetPathPanel.vue";
 import type { WorkbenchPathSource } from "./path-planning/pathModel";
@@ -311,7 +312,7 @@ useEditorHotkeys(
 // ---- 右栏页签 ----
 type RightTab = "tree" | "library" | "lot" | "lotlib" | "slots" | "schema";
 const rightTab = ref<RightTab>("tree");
-const RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
+const ALL_RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
   { id: "tree", icon: "ListTree", label: "package.componentTree" },
   { id: "library", icon: "Boxes", label: "package.materialsPanel" },
   { id: "lot", icon: "LandPlot", label: "studio.assetWorkbench.lotTab" },
@@ -323,6 +324,17 @@ const RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
   },
   { id: "schema", icon: "CodeXml", label: "package.schemaSheet" },
 ];
+const rightTabs = computed(() =>
+  asset.nativeBlender.value
+    ? ALL_RIGHT_TABS.filter((tab) => tab.id !== "slots")
+    : ALL_RIGHT_TABS,
+);
+watch(
+  () => asset.nativeBlender.value,
+  (native) => {
+    if (native && rightTab.value === "slots") rightTab.value = "tree";
+  },
+);
 async function onBindMaterialSlots(binding: MaterialSlotBinding) {
   try {
     await asset.composeSlotMaterials(binding);
@@ -333,12 +345,22 @@ async function onBindMaterialSlots(binding: MaterialSlotBinding) {
 }
 async function onBlendImported(result: {
   asset: string;
+  source?: "blend" | "blend-native";
+  lotm?: string;
   baked?: boolean;
   materialSlots?: Record<string, string>;
   materialSlotsByMaterial?: Record<string, Record<string, string>>;
+  nativeAdapter?: { status: string; detail?: string };
 }) {
   try {
-    await asset.openDraftAsset(result.asset);
+    await asset.openDraftAsset(result.asset, {
+      nativeBlender: result.source === "blend-native",
+      nativeLotm: result.lotm,
+    });
+    if (result.source === "blend-native") {
+      toast.success(t("studio.assetWorkbench.blendNativeImported"));
+      return;
+    }
     if (result.baked) {
       toast.success(t("studio.assetWorkbench.blendImported"));
       return;
@@ -997,7 +1019,7 @@ function templateOf(resourceId: number) {
             <div class="maw-right-panel">
               <div class="maw-tabs" role="tablist">
                 <button
-                  v-for="tab in RIGHT_TABS"
+                  v-for="tab in rightTabs"
                   :key="tab.id"
                   type="button"
                   role="tab"
@@ -1029,7 +1051,12 @@ function templateOf(resourceId: number) {
                     :referenced-models="ui.referencedModels"
                     :prop-tree-ids="ui.propTreeIds"
                     :template-of="templateOf"
+                    :units="ui.flatUnits"
+                    :selected-unit-id="
+                      ui.selectedUnit ? unitId(ui.selectedUnit) : null
+                    "
                     @place="placementPayload = $event"
+                    @select="asset.selectUnit"
                   >
                     <template #paths>
                       <AssetPathPanel
@@ -1096,8 +1123,9 @@ function templateOf(resourceId: number) {
           >
             <div class="maw-inspector">
               <template v-if="ui">
-                <PropertyEditorInspector
+                <UnitInspector
                   :unit="ui.selectedUnit"
+                  :units="ui.flatUnits"
                   :live-transform="liveTransform"
                   :scale-editable="selectedScaleEditable"
                   :edit-enabled="editEnabled"

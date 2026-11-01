@@ -21,7 +21,9 @@ import { createDataSource } from "@/api/data-source";
 import PropertyEditorOutliner from "./PropertyEditorOutliner.vue";
 import type { EditorTool } from "./PropertyEditorViewport.vue";
 import PropertyEditorViewport from "./SchemaPropertyViewport.vue";
-import PropertyEditorInspector from "./PropertyEditorInspector.vue";
+// 检查器外壳已平移到平行目录 unit-inspector：同一套页签，选中 spawner 时在
+// 「属性」页签顶部多一块生成器属性区（其余三个页签仍是本目录的原组件实例）。
+import UnitInspector from "../unit-inspector/UnitInspector.vue";
 import PropertyEditorStatusBar from "./PropertyEditorStatusBar.vue";
 import { unitId } from "./unitGizmos";
 import { buildSchemaDoc, unitsFromSchema } from "./peSchemaDoc";
@@ -1160,7 +1162,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
         />
         </div>
         <div v-if="!embedded" class="inspector-column">
-          <PropertyEditorInspector
+          <UnitInspector
             :unit="selectedUnit"
             :units="flatUnits"
             :live-transform="liveTransform"
@@ -1189,7 +1191,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
           <ResizableHandle orientation="vertical" :label="$t('studio.code.resizeVerticalHint')" />
           <ResizablePanel id="property-editor-side-inspector" :default-size="44" :min-size="24">
             <div class="embedded-side-section embedded-side-inspector">
-              <PropertyEditorInspector :unit="selectedUnit" :units="flatUnits" :live-transform="liveTransform" :scale-editable="selectedScaleEditable" :edit-enabled="editEnabled" @update-transform="commitTransform" @update-fields="commitFields" />
+              <UnitInspector :unit="selectedUnit" :units="flatUnits" :live-transform="liveTransform" :scale-editable="selectedScaleEditable" :edit-enabled="editEnabled" @update-transform="commitTransform" @update-fields="commitFields" />
               <slot name="tabs" />
             </div>
           </ResizablePanel>
