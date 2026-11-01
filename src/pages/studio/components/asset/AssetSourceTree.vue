@@ -23,8 +23,11 @@ const emit = defineEmits<{
   "open-package": [relativePath: string];
   "blend-imported": [result: {
     asset: string;
+    source?: "blend" | "blend-native";
+    lotm?: string;
     materialSlots?: Record<string, string>;
     materialSlotsByMaterial?: Record<string, Record<string, string>>;
+    nativeAdapter?: { status: string; detail?: string };
   }];
   imported: [];
 }>();
@@ -104,7 +107,7 @@ async function loadTree() {
           .map((node) => node.relativePath),
       );
     }
-  } catch (cause) {
+  } catch {
     error.value = "";
     toast.error(t("studio.assetWorkbench.treeLoadFailed"));
   } finally {
@@ -160,16 +163,22 @@ async function importFile() {
   try {
     const value = await command<{
       asset: string;
-      source?: string;
+      source?: "blend" | "blend-native";
+      lotm?: string;
       baked?: boolean;
+      cache?: "hit";
       materialSlots?: Record<string, string>;
       materialSlotsByMaterial?: Record<string, Record<string, string>>;
+      nativeAdapter?: { status: string; detail?: string };
     }>("code_flow", {
       request: { project: props.project, action: "import-asset", payload: { path } },
     });
     await loadTree();
+    if (value.cache === "hit")
+      toast.info(t("studio.assetWorkbench.blendCacheHit"));
     const lower = value.asset.toLowerCase();
-    if (value.source === "blend") emit("blend-imported", value);
+    if (value.source === "blend" || value.source === "blend-native")
+      emit("blend-imported", value);
     if (value.source !== "blend" && MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
       emit("open-asset", value.asset);
     }

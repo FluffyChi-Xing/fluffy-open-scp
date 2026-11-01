@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LightUnit, LotUnitDto } from "@/api/tauri";
+import { fnv1NameId } from "@/pages/packages/components/unit-inspector/spawnerAnchor";
 import { useUnitClipboard, type UnitClipboardHost } from "./useUnitClipboard";
 
 const lightUnit = (index: number): LightUnit => ({
@@ -96,5 +97,32 @@ describe("useUnitClipboard", () => {
     expect(clipboard.copy()).toBe("no-selection");
     expect(clipboard.paste()).toBe("empty-clipboard");
     expect(host.added).toHaveLength(0);
+  });
+
+  it("粘贴生成器锚点时改名为不重复的新名字（引擎按名字建表）", () => {
+    const original = {
+      kind: "spawner",
+      index: 0,
+      transform: { matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1] },
+      id: { typeId: 0, group: 0, instance: fnv1NameId("anchor") },
+      count: null,
+      countRandom: null,
+      agent: null,
+      fields: [],
+    } as unknown as LotUnitDto;
+    const host = fakeHost([original]);
+    host.selectUnit("spawner:0");
+    const clipboard = useUnitClipboard(host);
+    expect(clipboard.copy()).toBe("copied");
+    expect(clipboard.paste()).toBe("pasted");
+
+    const clone = host.added[0] as unknown as {
+      index: number;
+      id: { typeId: number; group: number; instance: number };
+    };
+    expect(clone.index).toBe(1);
+    expect(clone.id.instance).not.toBe(fnv1NameId("anchor"));
+    expect(clone.id).toMatchObject({ typeId: 0, group: 0 });
+    expect(clone.id.instance).toBe(fnv1NameId("anchor2"));
   });
 });

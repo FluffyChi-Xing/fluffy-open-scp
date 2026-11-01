@@ -10,6 +10,7 @@ import {
   propSemanticCategory,
   type AssetCategory,
 } from "@/pages/packages/components/property-editor/assetCategories";
+import SpawnerLibraryPanel from "@/pages/packages/components/unit-inspector/SpawnerLibraryPanel.vue";
 import type { PlacePayload } from "./useWorkbenchAsset";
 
 /**
@@ -31,8 +32,15 @@ const props = defineProps<{
   propTreeIds: Set<number>;
   /** 按 resourceId 查引用 prop 模板（放置继承引擎参数）。 */
   templateOf: (resourceId: number) => PropUnit | undefined;
+  /** 当前 lot 全部单元（生成器页签列出锚点并做重名统计）。 */
+  units?: readonly import("@/api/tauri").LotUnitDto[];
+  /** 当前选中单元 id（生成器页签高亮）。 */
+  selectedUnitId?: string | null;
 }>();
-const emit = defineEmits<{ place: [payload: PlacePayload] }>();
+const emit = defineEmits<{
+  place: [payload: PlacePayload];
+  select: [unitId: string];
+}>();
 
 const { t } = useI18n();
 const loading = ref(false);
@@ -215,7 +223,6 @@ const LIGHT_PRESETS: {
 
 /** 非 prop 类预设（页面/载荷 kind 分离）。 */
 const PLACE_PRESETS: { tab: TabId; icon: string; label: string }[] = [
-  { tab: "spawners", icon: "MapPin", label: "package.groupSpawners" },
   { tab: "effects", icon: "Zap", label: "package.groupEffects" },
   { tab: "paths", icon: "Spline", label: "package.groupPaths" },
 ];
@@ -254,8 +261,13 @@ function beginPresetDrag(event: PointerEvent, tab: TabId) {
   if (!props.editEnabled) return;
   event.preventDefault();
   const kind =
-    tab === "spawners" ? "spawner" : tab === "effects" ? "effect" : "pathPoint";
+    tab === "effects" ? "effect" : "pathPoint";
   emit("place", { kind });
+}
+
+/** 生成器页签：预设拖入即放置（可带预设名字 id）。 */
+function onSpawnerPlace(spawnerId: number | null) {
+  emit("place", { kind: "spawner", spawnerId });
 }
 </script>
 
@@ -333,6 +345,16 @@ function beginPresetDrag(event: PointerEvent, tab: TabId) {
             <span>{{ t(preset.label) }}</span>
           </div>
         </div>
+      </div>
+
+      <div v-else-if="activeTab === 'spawners'" class="library-groups">
+        <SpawnerLibraryPanel
+          :units="units ?? []"
+          :edit-enabled="editEnabled"
+          :selected-unit-id="selectedUnitId ?? null"
+          @place="onSpawnerPlace"
+          @select="(id) => emit('select', id)"
+        />
       </div>
 
       <div v-else-if="activeTab === 'paths'" class="library-groups">

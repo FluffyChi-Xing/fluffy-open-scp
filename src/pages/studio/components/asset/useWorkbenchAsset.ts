@@ -19,6 +19,10 @@ import {
   unitsFromSchema,
 } from "@/pages/packages/components/property-editor/peSchemaDoc";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
+import {
+  fnv1NameId,
+  suggestAnchorName,
+} from "@/pages/packages/components/unit-inspector/spawnerAnchor";
 import { createUnitEditLayer, mergeUnitOverrides } from "@/pages/packages/components/property-editor/unitEditLayer";
 import {
   adoptOrphanPaths,
@@ -64,6 +68,10 @@ interface WorkbenchSourceBlock {
   modelTransform?: number[] | null;
   /** 六槽材质绑定（项目内相对路径）。 */
   materialSlots?: MaterialSlotBinding | null;
+  /** Blender 原生导出：贴图由 Blender 绑定，工作台不再暴露六槽页。 */
+  nativeBlender?: boolean;
+  /** Blender 原生适配器产出的 LOTM（项目内相对路径），供打包器使用。 */
+  nativeLotm?: string;
   lotStyle?: {
     colors: [number, number, number, number][];
     colorsAuthored: boolean[];
@@ -106,6 +114,8 @@ export interface PlacePayload {
   tgi?: Tgi;
   name?: string;
   template?: PropUnit;
+  /** 生成器预设名字 id（引擎 FNV-1 哈希；null/缺省 = 未命名锚点）。 */
+  spawnerId?: number | null;
 }
 
 /** Lot 库应用载荷：Lot 资源位置。 */
@@ -193,6 +203,9 @@ function groupUnits(units: LotUnitDto[]): UnitGrouping {
 export function useWorkbenchAsset(project: string) {
   // ---- 会话状态（native / draft 二选一激活）----
   const sourceKind = ref<WorkbenchSourceKind>("none");
+  /** True when the last draft came from the native Blender adapter. */
+  const nativeBlender = ref(false);
+  const nativeLotmPath = ref("");
   const sourceLabel = ref("");
   const documentRevision = ref<string | undefined>(undefined);
   const savedDirty = ref(false);
@@ -270,7 +283,7 @@ export function useWorkbenchAsset(project: string) {
     try {
       const base = draftPayload.value;
       if (!base) return;
-      let materials: LotModelPayload["materials"] = [];
+      const materials: LotModelPayload["materials"] = [];
       let meshUvKinds: number[] = [];
       if (binding.params || binding.slot1 || binding.byMaterial) {
         const [paramsBytes, materialParamsBytes] = await Promise.all([
@@ -621,6 +634,8 @@ export function useWorkbenchAsset(project: string) {
     const editor = document.editor as Record<string, unknown>;
     editor.workbench = {
       source: sourceKind.value as WorkbenchSourceBlock["source"],
+      nativeBlender: nativeBlender.value || undefined,
+      nativeLotm: nativeLotmPath.value || undefined,
       assetPath: sourceAssetPath.value || undefined,
       packagePath: sourcePackagePath.value || undefined,
       tgi:
@@ -714,6 +729,8 @@ export function useWorkbenchAsset(project: string) {
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
+    nativeBlender.value = false;
+    nativeLotmPath.value = "";
     // 树里来的相对路径 → 项目根绝对路径
     const absolute = /^[A-Za-z]:[\\/]|^[\\/]/.test(packagePath)
       ? packagePath
@@ -741,12 +758,17 @@ export function useWorkbenchAsset(project: string) {
   }
 
   // ---- draft 打开：项目内模型资产（import-asset 已落盘）----
-  async function openDraftAsset(assetRelativePath: string) {
+  async function openDraftAsset(
+    assetRelativePath: string,
+    options?: { nativeBlender?: boolean; nativeLotm?: string },
+  ) {
     const epoch = ++loadEpoch;
     nativeSession.value = null;
     nativeTgi.value = null;
     resetEditState();
     sourceKind.value = "none";
+    nativeBlender.value = options?.nativeBlender === true;
+    nativeLotmPath.value = options?.nativeLotm ?? "";
     draftLoading.value = true;
     draftError.value = "";
     draftPayload.value = null;
@@ -1073,11 +1095,19 @@ export function useWorkbenchAsset(project: string) {
         fields: [],
       } as unknown as LotUnitDto;
     } else if (payload.kind === "spawner") {
+      // 预设锚点带名字 id；未给预设时按当前 lot 生成不重复的可读名字，
+      // 保证「放下即有名字」——写入端已收紧为「无名字拒绝写」。
+      const presetId =
+        payload.spawnerId && payload.spawnerId > 0 ? payload.spawnerId : null;
+      const fallbackId = presetId
+        ? null
+        : fnv1NameId(suggestAnchorName(ui.value?.flatUnits ?? []));
+      const anchorId = presetId ?? fallbackId;
       unit = {
         kind: "spawner",
         index: nextIndexOf("spawner"),
         transform,
-        id: null,
+        id: anchorId ? { typeId: 0, group: 0, instance: anchorId } : null,
         count: null,
         countRandom: null,
         agent: null,
@@ -1373,7 +1403,10 @@ export function useWorkbenchAsset(project: string) {
         (workbench.source === "glb" || workbench.source === "lotm") &&
         workbench.assetPath
       ) {
-        await openDraftAsset(workbench.assetPath);
+        await openDraftAsset(workbench.assetPath, {
+          nativeBlender: workbench.nativeBlender === true,
+          nativeLotm: workbench.nativeLotm,
+        });
         if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
         draftModelTransform.value =
           workbench.modelTransform && workbench.modelTransform.length === 12
@@ -1436,6 +1469,8 @@ export function useWorkbenchAsset(project: string) {
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
+    nativeBlender.value = false;
+    nativeLotmPath.value = "";
     sourceLabel.value = "";
     sourceAssetPath.value = "";
     sourcePackagePath.value = "";
@@ -1459,6 +1494,8 @@ export function useWorkbenchAsset(project: string) {
 
   return {
     sourceKind,
+    nativeBlender,
+    nativeLotmPath,
     sourceLabel,
     sourceAssetPath,
     sourcePackagePath,

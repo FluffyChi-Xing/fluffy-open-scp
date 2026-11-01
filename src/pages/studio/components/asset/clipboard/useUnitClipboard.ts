@@ -1,6 +1,11 @@
 import type { LotUnitDto } from "@/api/tauri";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import {
+  fnv1NameId,
+  anchorKey,
+  suggestAnchorName,
+} from "@/pages/packages/components/unit-inspector/spawnerAnchor";
+import {
   captureUnitSpec,
   nextIndexOfKind,
   specToUnit,
@@ -45,10 +50,17 @@ export function useUnitClipboard(host: UnitClipboardHost) {
 
   /** Ctrl+V：按规格原位重建副本（同位置、选中副本，可连续粘贴堆叠）。
    * 直挂 prop 副本与原件共享 directModelKey 载荷缓存（放置/会话恢复时
-   * 已入缓存），无需重新拉取模型。 */
+   * 已入缓存），无需重新拉取模型。
+   *
+   * 生成器锚点是「按名字建表」的实体，直接复制会撞名字 id（引擎互相覆盖，
+   * 写入端也会拒绝），因此粘贴时给副本分配一个不重复的新名字。 */
   function paste(): UnitPasteStatus {
     if (!spec) return "empty-clipboard";
     const unit = specToUnit(spec, nextIndexOfKind(host.units, spec.kind));
+    if (unit.kind === "spawner") {
+      const name = suggestAnchorName(host.units);
+      (unit as { id: unknown }).id = anchorKey(fnv1NameId(name));
+    }
     host.addUnit(unit);
     host.selectUnit(unitId(unit));
     return "pasted";
