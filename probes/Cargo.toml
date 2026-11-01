@@ -1173,3 +1173,37 @@ path = "registry/type_lookup.rs"
 [[example]]
 name = "tent_bulldozer_overlay"
 path = "menu/tent_bulldozer_overlay.rs"
+
+
+# spawner / sim 外观取证（2026-11-01）
+[[example]]
+name = "spawner_names"
+path = "lot/spawner_names.rs"
+
+[[example]]
+name = "spawner_refscan"
+path = "lot/spawner_refscan.rs"
+
+[[example]]
+name = "vignette_bind_probe"
+path = "lot/vignette_bind_probe.rs"
+
+[[example]]
+name = "vignette_resolve_probe"
+path = "lot/vignette_resolve_probe.rs"
+
+[[example]]
+name = "simm_transport_probe"
+path = "property/simm_transport_probe.rs"
+
+[[example]]
+name = "simm_transport_dump"
+path = "property/simm_transport_dump.rs"
+
+[[example]]
+name = "simm_appearance_dump"
+path = "property/simm_appearance_dump.rs"
+
+[[example]]
+name = "locale_lookup"
+path = "locale/locale_lookup.rs"
