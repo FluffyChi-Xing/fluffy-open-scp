@@ -970,7 +970,6 @@ export class ThreeViewer {
       this.invalidate();
     }
   }
-
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
@@ -983,8 +982,7 @@ export class ThreeViewer {
     this.container.removeEventListener("pointercancel", this.onPointerUp);
     this.container.removeEventListener("wheel", this.onWheel);
     this.container.removeEventListener("mousedown", this.onMouseDown);
-    // Three's async shader poll still references material properties. Detach UI
-    // now, but release GPU/material objects only once those polls have settled.
+    // Detach UI now; release GPU/material objects after async shader polls settle.
     const release = () => {
       disposeObject(this.scene);
       this.grid?.geometry.dispose();
@@ -992,6 +990,8 @@ export class ThreeViewer {
       this.keyLight.dispose();
       this.dof.dispose();
       this.renderer.dispose();
+      // Force-drop the context so repeated previews cannot exhaust Chromium's limit.
+      this.renderer.forceContextLoss();
     };
     if (this.pendingCompilations.size) void Promise.allSettled([...this.pendingCompilations]).then(release);
     else release();

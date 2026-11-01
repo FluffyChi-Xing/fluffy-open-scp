@@ -2404,6 +2404,9 @@ fn build_lot_editor_session(
     request: LotEditorSessionRequest, bundled_registry: Option<&Path>,
 ) -> Result<LotEditorSession, PackageError> {
 let backend_started = std::time::Instant::now();
+// decal 的 Lot Textures 查找只扫已打开包；先注册 EcoGame，否则第一次
+// 打开 property 时 decal DTO 会全部缺 png。
+let _ = crate::prop_models::ensure_for_session(manager);
 let tgi = request.tgi;
 if tgi.type_id != PROPERTY_RESOURCE_TYPE {
     return Err(PackageError::InvalidArgument(

@@ -686,6 +686,7 @@ function disposeScene() {
   controls?.dispose();
   controls = null;
   renderer?.dispose();
+  renderer?.forceContextLoss();
   renderer?.domElement.remove();
   renderer = null;
   setResource = null;

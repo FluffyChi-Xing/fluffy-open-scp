@@ -462,6 +462,22 @@ pub fn release_registered(manager: &PackageManager) -> Result<usize, PackageErro
     Ok(released)
 }
 
+/// 打开 property 前预注册 EcoGame 包：decal 的 Lot Textures / 树图集在
+/// 
+ead_lot_editor_session 阶段就要从已打开包里取，不能等到 prop 解析。
+pub fn ensure_for_session(manager: &PackageManager) -> Result<(), PackageError> {
+    let base = manager.all_packages_with_ids()?;
+    let dirs = ecogame_dirs(&base);
+    let eco = ensure_ecogame_registered(manager, &dirs)?;
+    let eco_ids: Vec<u64> = eco.iter().map(|(id, _)| *id).collect();
+    if let Ok(mut reg) = REGISTERED_ECOGAME.lock() {
+        reg.extend(eco_ids);
+        reg.sort_unstable();
+        reg.dedup();
+    }
+    Ok(())
+}
+
 /// 命令入口：解析一批 prop resourceID。
 pub fn resolve_all(
     manager: &PackageManager,

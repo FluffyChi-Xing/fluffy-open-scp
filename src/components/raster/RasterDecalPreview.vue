@@ -121,6 +121,8 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   release?.();
   renderer?.dispose();
+  renderer?.forceContextLoss();
+  renderer?.domElement.remove();
 });
 </script>
 <template>
