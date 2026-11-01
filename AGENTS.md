@@ -25,3 +25,16 @@ no hidden module state, side effects isolated at the edges. Frozen zones
 (e.g. `src/pages/packages/components/property-editor`, see its `FROZEN.md`)
 must not be modified in place; rework happens in a new parallel directory.
 
+## Game-verification rules (user directive, 2026-10-31)
+In-game verification of built assets must NEVER overwrite an existing
+building's resources (same-TGI overlay of a reference lot/model). A building
+can own several properties — overwriting one is invisible at best and can
+corrupt saves at worst. Always verify by registering a NEW menu entry
+(`semantics.menu` → `menu::generate`, the R1-proven park-menu recipe) so the
+test asset appears as its own named, obvious menu item. Before deploying,
+clean the previous test packages out of the game's SimCityData directory
+(archive them, e.g. to `D:/ea-games/simcity_offline/test-archive/`). The live
+game install is `D:/ea-games/simcity_offline/SimCity：Cites of Tomorrow/` —
+not `D:/ea-games/SimCity`.
+
+
