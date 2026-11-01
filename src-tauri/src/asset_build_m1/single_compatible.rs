@@ -27,6 +27,10 @@ pub struct SurfacePlan {
     pub room_keys: Vec<String>,
     pub room_atlas: u32,
     pub room_of_row: Vec<usize>,
+    /// Source palette columns [Base, Top] per material row.
+    pub palette_source: Vec<[u32; 2]>,
+    /// Original room projection parameters (x scale, y offset) per room.
+    pub room_params: Vec<[f32; 2]>,
 }
 
 fn f32_params(material: &LotmMaterial) -> Result<[f32; 16], String> {
@@ -85,6 +89,8 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
     let mut surface_of_row = Vec::with_capacity(document.materials.len());
     let mut room_of_row = Vec::with_capacity(document.materials.len());
     let mut rows = Vec::with_capacity(document.materials.len());
+    let mut palette_source = Vec::with_capacity(document.materials.len());
+    let mut room_params: Vec<[f32; 2]> = Vec::new();
     for (index, material) in document.materials.iter().enumerate() {
         let params = f32_params(material)?;
         let surface = surface_key(material);
@@ -105,6 +111,13 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
             });
         surface_of_row.push(surface_index);
         room_of_row.push(room_index);
+        if room_params.len() <= room_index {
+            room_params.push([params[2], params[3]]);
+        }
+        palette_source.push([
+            (params[0] * 511.0).round() as u32 % 512,
+            (params[1] * 511.0).round() as u32 % 512,
+        ]);
         rows.push(params);
     }
     let grid = power_of_two_grid(surface_keys.len());
@@ -144,6 +157,8 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
         room_keys,
         room_atlas,
         room_of_row,
+        palette_source,
+        room_params,
     })
 }
 
