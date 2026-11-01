@@ -16,6 +16,7 @@ mod processor;
 pub mod raster;
 pub mod resource_closure;
 pub mod scene;
+pub mod single_compatible;
 pub mod template_material;
 mod value;
 
