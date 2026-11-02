@@ -50,3 +50,9 @@ tmp/
 __pycache__/
 /terrain_instances.json
 /water_objs/
+
+# SC5 Asset Packager 解包参考材料（作者二进制，禁止入库）
+/SC5 Asset Packager.exe_extracted/
+
+# 0.8.0 反汇编工作区（PYZ 解包 + .dis 转储）
+/tmp_re/
