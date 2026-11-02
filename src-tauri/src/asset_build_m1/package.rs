@@ -123,7 +123,11 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
         Some(path) => Some(connector::read_source(&project_file(&root, path)?)?),
         None => None,
     };
-    let scene_document = read_scene_document(&root, &plan.intermediate.scene.document)?;
+    let scene_document = read_scene_document(
+        &root,
+        &plan.intermediate.scene.document,
+        plan.intermediate.scene.model.as_deref(),
+    )?;
     // Hash the decompressed snapshot actually consumed by the processors, not a
     // second file read. Container compression differences do not change identity.
     let mut texture_instances = [0u32; 6];
@@ -145,6 +149,13 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
         &mut resources,
         &texture_instances,
         scene_document.as_ref(),
+        // Author orientation (backend settings.rotationDegrees, default 180);
+        // parent-free builds carry it on the menu spec so geometry, ground
+        // and prop/light matrices all share one value.
+        plan.menu
+            .as_ref()
+            .and_then(|menu| menu.rotation_degrees)
+            .unwrap_or(180),
     )?;
     let scene =
         validate_scene_path_semantics(&root, &plan.intermediate.scene.document, &resources)?;
@@ -319,13 +330,21 @@ fn package_relative_name(plan: &super::plan::PropertyBuildPlan) -> String {
     format!("packages/{}", plan.intermediate.output.package)
 }
 
-fn read_scene_document(root: &Path, document: &str) -> Result<Option<SceneDocument>, String> {
+fn read_scene_document(
+    root: &Path,
+    document: &str,
+    model: Option<&str>,
+) -> Result<Option<SceneDocument>, String> {
     let Some(bytes) = read_scene_bytes(root, document)? else {
         return Ok(None);
     };
     let value: serde_json::Value = serde_json::from_slice(&bytes)
         .map_err(|error| format!("scene document is not valid JSON: {error}"))?;
-    Ok(Some(scene::parse_document(&value)?))
+    let mut parsed = scene::parse_document(&value)?;
+    if let Some(model) = model {
+        scene::merge_sidecar_manifests(root, model, &mut parsed)?;
+    }
+    Ok(Some(parsed))
 }
 
 fn read_scene_bytes(root: &Path, document: &str) -> Result<Option<Vec<u8>>, String> {
@@ -406,6 +425,7 @@ fn insert_scene_model(
     resources: &mut BuildResources,
     slot_instances: &[u32; 6],
     scene_document: Option<&SceneDocument>,
+    rotation_degrees: u32,
 ) -> Result<(Option<LodModelIds>, usize), String> {
     let Some(model_path) = model else {
         return Ok((None, 0));
@@ -552,11 +572,26 @@ fn insert_scene_model(
             let template = native_template
                 .as_deref()
                 .ok_or("building40 compile: native template missing")?;
+            // Author semantics (compile_tower_asset/compile_geometry_contract):
+            // materialRow = the mesh's material group — the author's LOTM
+            // format pairs chunk i with material i, so this equals the group
+            // order for native exports; honoring the container's own mapping
+            // keeps third-party containers correct too.
+            let rows: Vec<u32> = (0..doc.meshes.len())
+                .map(|mesh| {
+                    doc.mesh_material
+                        .get(mesh)
+                        .map(|reference| reference.material)
+                        .unwrap_or(mesh as u32)
+                })
+                .collect();
             let compiled = native_model::compile_building40_template(
                 &doc,
-                &material_plan.mesh_material,
+                &rows,
                 transform,
+                rotation_degrees,
                 template,
+                include_bytes!("../../resources/sc5/collision-source.rw4"),
             )?;
             let head_slots = material_resources
                 .unique_instances

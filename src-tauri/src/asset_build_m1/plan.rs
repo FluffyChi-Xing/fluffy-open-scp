@@ -110,7 +110,7 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
     }
     Ok(PropertyBuildPlan {
-        processor_version: "openscp.property.m1/13",
+        processor_version: "openscp.property.m1/20",
         scope: "property+scene-model",
         intermediate: im,
         patches: specs,
@@ -120,5 +120,12 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         order: ["property", "dbpf", "readback"],
     })
 }
+
+
+
+
+
+
+
 
 

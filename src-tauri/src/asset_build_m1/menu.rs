@@ -33,7 +33,12 @@ pub const PROPERTY_TYPE: u32 = 0x00B1_B104;
 pub const MENU_GROUP: u32 = 0x09878_A01;
 /// cUnit 叶子组 / Lot 资产配置组 / 模板组（Unit 模板在 48E0C000）。
 pub const UNIT_GROUP: u32 = 0x40E0_C000;
-pub const LOT_GROUP: u32 = 0x40E1_C000;
+pub fn lot_group() -> u32 {
+    std::env::var("OPENSCP_LOT_GROUP")
+        .ok()
+        .and_then(|value| u32::from_str_radix(value.trim_start_matches("0x"), 16).ok())
+        .unwrap_or(0x40E1_C000)
+}
 pub const UNIT_TEMPLATE_GROUP: u32 = 0x48E0_C000;
 /// 地标 cUnit 模板对（TemplateToyBase_landmark；plan.rs 保护表同源）。
 pub const LANDMARK_UNIT_TEMPLATE: u32 = 0x565B_72B9;
@@ -127,6 +132,15 @@ pub struct MenuRegistrationSpec {
     /// `4E01E311`。公园测试可用 NightHouse 实证对 `34CE7E14`。
     #[serde(default, deserialize_with = "de_hash")]
     pub lot_template_instance: Option<u32>,
+    /// 0.8.0 parent-free 身份路线：Asset 字典 = 通用链 40E1C000:9EC474FF
+    /// 物化 + 地面 Lot 数字字段 + prop/light 列；Unit = tested-unit.bin
+    /// 克隆；不再克隆参照 lot。`reference.lot` 此时充当 ground 来源。
+    #[serde(default)]
+    pub parent_free: bool,
+    /// 作者朝向（asset_transforms.rotation_degrees，默认 180）。parent-free
+    /// 路线同时作用于几何旋转、地面 raster/盒与 prop/light 矩阵。
+    #[serde(default)]
+    pub rotation_degrees: Option<u32>,
 }
 
 /// instance 字段同时接受 JSON 数字与 `"0xXXXXXXXX"` 十六进制字符串。
@@ -193,6 +207,18 @@ pub fn generate(
     identity: Option<&connector::Resources>,
 ) -> Result<MenuResources, String> {
     let instance = alloc_menu_instance(spec, resources);
+    // 0.8.0 parent-free route: generic Asset dictionary + tested-unit.bin
+    // cUnit; props/lights land in the Asset dictionary (author semantics).
+    if spec.parent_free {
+        return generate_parent_free(
+            spec,
+            resources,
+            lot_source,
+            instance,
+            scene_document,
+            model_ids,
+        );
+    }
     let lot_bytes = resources.get(&lot_source).ok_or_else(|| {
         format!("menu registration: reference lot {lot_source} missing from source package")
     })?;
@@ -251,7 +277,7 @@ pub fn generate(
         (
             ResourceId {
                 type_id: PROPERTY_TYPE,
-                group: LOT_GROUP,
+                group: lot_group(),
                 instance,
             },
             lot_leaf,
@@ -287,6 +313,93 @@ pub fn generate(
     Ok(MenuResources { instance, entries })
 }
 
+/// 0.8.0 parent-free identity route: Menu2/icon/locale from the verified
+/// minimal shape, Unit from `tested-unit.bin`, Asset dictionary materialized
+/// from the generic chain (`native_profile::build`).
+fn generate_parent_free(
+    spec: &MenuRegistrationSpec,
+    resources: &connector::Resources,
+    ground_lot: ResourceId,
+    instance: u32,
+    scene_document: Option<&SceneDocument>,
+    model_ids: Option<LodModelIds>,
+) -> Result<MenuResources, String> {
+    let rotation = spec.rotation_degrees.unwrap_or(180);
+    // Menu2 = the FULLY materialized generic menu chain (author parent-free
+    // shape; the reference package carries F970A822 + AF042E9A layers — the
+    // walk must cover both or the tool entry loses its presentation fields
+    // and the game drops it from the menu).
+    let menu2 = match super::native_profile::flat_chain(resources, super::native_profile::GENERIC_MENU) {
+        Ok((mut file, _)) => {
+            apply_menu_overrides(&mut file, spec, instance)?;
+            encode(&file)?
+        }
+        Err(_) => build_menu2(spec, instance)?,
+    };
+    let native = super::native_profile::build(
+        spec,
+        resources,
+        ground_lot,
+        instance,
+        scene_document,
+        model_ids.as_ref(),
+        rotation,
+    )?;
+    let asset_id = ResourceId {
+        type_id: PROPERTY_TYPE,
+        group: super::native_profile::ASSET_GROUP,
+        instance,
+    };
+    let unit_id = ResourceId {
+        type_id: PROPERTY_TYPE,
+        group: UNIT_GROUP,
+        instance,
+    };
+    let locale = build_locale(spec, instance);
+    let icon_png = build_icon_png(spec, instance);
+    let marquee_jpg = build_marquee_jpg(instance);
+    let mut entries = vec![
+        (
+            ResourceId {
+                type_id: PROPERTY_TYPE,
+                group: MENU_GROUP,
+                instance,
+            },
+            menu2,
+        ),
+        (unit_id, encode(&native.unit)?),
+        (asset_id, encode(&native.asset)?),
+        (
+            ResourceId {
+                type_id: LOCALE_TYPE,
+                group: LOCALE_GROUP,
+                instance: LOCALE_TABLE,
+            },
+            locale,
+        ),
+        (
+            ResourceId {
+                type_id: ICON_TYPE,
+                group: ICON_GROUP,
+                instance,
+            },
+            icon_png,
+        ),
+        (
+            ResourceId {
+                type_id: MARQUEE_TYPE,
+                group: 0,
+                instance,
+            },
+            marquee_jpg,
+        ),
+    ];
+    if let Some((mask_id, mask_bytes)) = native.mask {
+        entries.push((mask_id, mask_bytes));
+    }
+    Ok(MenuResources { instance, entries })
+}
+
 /// Clone a proven identity (Dalian) and only replace the per-asset links.
 fn clone_donor_identity(
     spec: &MenuRegistrationSpec,
@@ -317,12 +430,27 @@ fn clone_donor_identity(
         .map_err(|error| format!("identity donor Menu2 parse: {error}"))?;
     let mut unit = PropertyFile::parse(donor_property(UNIT_GROUP)?)
         .map_err(|error| format!("identity donor Unit parse: {error}"))?;
-    let mut lot = PropertyFile::parse(donor_property(LOT_GROUP)?)
+    let mut lot = PropertyFile::parse(donor_property(lot_group())?)
         .map_err(|error| format!("identity donor Lot parse: {error}"))?;
 
     patch_instance_refs(&mut menu, donor_instance, instance);
     patch_instance_refs(&mut unit, donor_instance, instance);
     patch_instance_refs(&mut lot, donor_instance, instance);
+
+    // The external SC5 Asset Packager uses the cUnit -> Asset edge here.
+    // Dalian's donor is a legacy identity whose field happens to point at
+    // the Unit group; retaining that value leaves the menu placeable but
+    // gives the renderer no Asset/LOD chain to follow.
+    set_scalar(
+        &mut unit,
+        HASH_UNIT_LOT_LINK,
+        PropType::Key,
+        Value::Key(sc_properties::Key {
+            type_id: PROPERTY_TYPE,
+            group: lot_group(),
+            instance,
+        }),
+    );
 
     // Park category: the donor is education; the caller asked for a park.
     set_array(
@@ -409,20 +537,23 @@ fn clone_donor_identity(
             }
         }
     }
-    // Authored lights are safe Lot columns; direct prop/path model ids are not
-    // and stay out of the menu leaf.
-    let lights = scene_document
-        .map(|document| SceneDocument {
-            units: document
-                .units
-                .iter()
-                .filter(|unit| matches!(unit, super::scene::SceneUnit::Light { .. }))
-                .cloned()
-                .collect(),
-            ..SceneDocument::default()
-        })
-        .unwrap_or_default();
-    super::scene::apply_units(&mut lot, &lights)?;
+    if let Some(document) = scene_document {
+        super::scene::apply_units(&mut lot, document)?;
+    }
+    // Do not synthesize parent/self-map fields here.  The external packager
+    // preserves those fields from the Asset/Lot donor; Dalian and the known
+    // working reference both omit them.  Inventing them changes the runtime
+    // inheritance graph and can leave only a placement marker visible.
+    set_array(
+        &mut lot,
+        0x0CA5_CF4A,
+        PropType::Key,
+        vec![Value::Key(sc_properties::Key {
+            type_id: PROPERTY_TYPE,
+            group: lot_group(),
+            instance,
+        })],
+    );
     if let Some([width, height]) = scene_document.and_then(|document| document.lot_size) {
         set_scalar(
             &mut lot,
@@ -622,7 +753,7 @@ fn build_lot_leaf(
         PropType::Key,
         Value::Key(sc_properties::Key {
             type_id: PROPERTY_TYPE,
-            group: LOT_GROUP,
+            group: lot_group(),
             instance: spec.lot_template_instance.unwrap_or(LANDMARK_LOT_TEMPLATE),
         }),
     );
@@ -638,15 +769,18 @@ fn build_lot_leaf(
             }),
         );
     }
-    // 只保留作者编排的灯光单元。prop/path 的直挂模型 id 需要脚本资源表，
-    // 原样携带会在加载存档时崩（2026-10-31 实测）；灯光列不涉及该表，
-    // 因此可以安全地随新 Lot 一起进入游戏。
+    // 保留作者编排的灯光与 prop 单元。prop 的 id 列由引擎脚本资源表解析，
+    // 因此必须和新 Lot 一起写入；省略它会让树木等资产静默消失。
     let lights = scene_document
         .map(|document| SceneDocument {
             units: document
                 .units
                 .iter()
-                .filter(|unit| matches!(unit, super::scene::SceneUnit::Light { .. }))
+                .filter(|unit| matches!(
+                    unit,
+                    super::scene::SceneUnit::Light { .. }
+                        | super::scene::SceneUnit::Prop { .. }
+                ))
                 .cloned()
                 .collect(),
             ..SceneDocument::default()
@@ -683,7 +817,7 @@ fn build_unit_leaf(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>
         PropType::Key,
         Value::Key(sc_properties::Key {
             type_id: PROPERTY_TYPE,
-            group: LOT_GROUP,
+            group: lot_group(),
             instance,
         }),
     );
@@ -882,14 +1016,18 @@ fn build_menu2(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>, St
 
 /// locale 表资源：BOM + 宽松排版 JSON（实机验证：紧凑单行 JSON 会被整表丢弃）。
 fn build_locale(spec: &MenuRegistrationSpec, instance: u32) -> Vec<u8> {
+    // Author convention: the table carries fixed rows 0x00000001 (title) and
+    // 0x00000002 (description) and every text edge points at those ids.
+    // Keying rows by the menu instance (old workbench convention) makes the
+    // game's lookup miss and render `***` placeholders.
+    let _ = instance;
     let mut lines = vec![format!(
-        "    \"0x{instance:08x}\" : {}",
+        "    \"0x00000001\" : {}",
         serde_json::to_string(spec.title.trim()).unwrap_or_default()
     )];
     if let Some(description) = &spec.description {
         lines.push(format!(
-            "    \"0x{:08x}\" : {}",
-            description_id(instance),
+            "    \"0x00000002\" : {}",
             serde_json::to_string(description.trim()).unwrap_or_default()
         ));
     }
@@ -898,6 +1036,77 @@ fn build_locale(spec: &MenuRegistrationSpec, instance: u32) -> Vec<u8> {
     bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
     bytes.extend_from_slice(json.as_bytes());
     bytes
+}
+
+/// Overwrite the materialized generic menu with this asset's identity:
+/// category/position (schema), texts (own locale table), icons/marquee
+/// (own instances) and the type-less menuUnit edge — the same fields the
+/// author's `menu_record` + `build_candidate` overwrite after materializing.
+fn apply_menu_overrides(
+    file: &mut PropertyFile,
+    spec: &MenuRegistrationSpec,
+    instance: u32,
+) -> Result<(), String> {
+    set_array(
+        file,
+        HASH_UI_CATEGORY,
+        PropType::Key,
+        vec![Value::Key(sc_properties::Key {
+            type_id: 0,
+            group: 0,
+            instance: spec.category_instance.unwrap_or(LANDMARK_CATEGORY),
+        })],
+    );
+    set_array(
+        file,
+        HASH_UI_POSITION,
+        PropType::Int32,
+        vec![Value::Int32(spec.ui_position.unwrap_or(11500))],
+    );
+    set_text_table(file, HASH_TITLE, LOCALE_TABLE, 1);
+    set_text_table(file, HASH_DESC, LOCALE_TABLE, 2);
+    // menuUnit: type-less key to the new Unit leaf (author `key(0x0975695f,(0,0,main_id))`).
+    set_scalar(
+        file,
+        HASH_MENU_UNIT,
+        PropType::Key,
+        Value::Key(sc_properties::Key {
+            type_id: 0,
+            group: 0,
+            instance,
+        }),
+    );
+    let icon_key = Value::Key(sc_properties::Key {
+        type_id: ICON_TYPE,
+        group: ICON_GROUP,
+        instance,
+    });
+    set_scalar(file, HASH_TOOL_ICON, PropType::Key, icon_key.clone());
+    for hash in [
+        0x0975_6955u32,
+        0x0975_6956,
+        0x0975_6957,
+        0x0975_6958,
+        0x0975_6959,
+        0x0975_695A,
+        0x0C65_D729,
+    ] {
+        set_scalar(file, hash, PropType::Key, icon_key.clone());
+    }
+    set_scalar(
+        file,
+        HASH_MARQUEE,
+        PropType::Key,
+        Value::Key(sc_properties::Key {
+            type_id: MARQUEE_TYPE,
+            group: 0,
+            instance,
+        }),
+    );
+    // Keep every other materialized chain field verbatim — the park flag
+    // (0EC480DF) and presentation rows are part of the proven-visible
+    // golden menu shape; stripping them makes the entry invisible.
+    Ok(())
 }
 
 fn description_id(instance: u32) -> u32 {
@@ -1062,6 +1271,20 @@ fn set_array_with_flags(
 }
 
 fn encode(file: &PropertyFile) -> Result<Vec<u8>, String> {
-    file.encode_canonical()
+    // The game rejects a property list containing the same hash twice.  The
+    // workbench can legitimately set a field that the donor already carried
+    // (for example 0DC1E3E0), so keep the last write per hash.
+    let mut values: Vec<Property> = Vec::with_capacity(file.values.len());
+    for property in &file.values {
+        if let Some(existing) = values.iter_mut().find(|item| item.hash == property.hash) {
+            *existing = property.clone();
+        } else {
+            values.push(property.clone());
+        }
+    }
+    let mut deduped = file.clone();
+    deduped.values = values;
+    deduped
+        .encode_canonical()
         .map_err(|error| format!("menu property encode: {error}"))
 }

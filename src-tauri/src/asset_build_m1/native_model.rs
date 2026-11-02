@@ -803,6 +803,28 @@ fn remap_geometry_refs(type_code: u32, payload: &mut [u8], map: &HashMap<u32, u3
     }
 }
 
+/// Author orientation matrices (asset_transforms.rotate_xyz): applied as
+/// `points @ matrix.T`, i.e. row vectors on the right.
+/// - 0°: identity; 90°: (x,y,z)→(y,−x,z); 180°: (−x,−y,z); 270°: (−y,x,z).
+pub fn rotate_xyz_matrix(degrees: u32) -> Result<[[f32; 3]; 3], String> {
+    match degrees {
+        0 => Ok([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        90 => Ok([[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        180 => Ok([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]]),
+        270 => Ok([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        other => Err(format!("朝向仅支持 0、90、180、270 度（收到 {other}）")),
+    }
+}
+
+/// `points @ matrix.T` for one row vector (row-major storage).
+pub fn rotate_point(matrix: &[[f32; 3]; 3], point: [f32; 3]) -> [f32; 3] {
+    let mut out = [0f32; 3];
+    for (j, slot) in out.iter_mut().enumerate() {
+        *slot = (0..3).map(|i| point[i] * matrix[i][j]).sum();
+    }
+    out
+}
+
 /// Compile the author's exact Building40 profile into a native template.
 ///
 /// Unlike `compile_lotm_nh_template`, this builds the 40-byte vertex stream
@@ -810,16 +832,23 @@ fn remap_geometry_refs(type_code: u32, payload: &mut [u8], map: &HashMap<u32, u3
 /// position F32x3, packed normal/tangent, D3DCOLOR (material row, seed), and
 /// Float4 Base/Top UV. Every unique vertex key and every triangle index is
 /// preserved, so the result has the same vertex/index counts as
-/// `compile_geometry_contract.py`.
+/// `compile_geometry_contract.py`. `mesh_material[m]` is group m's parameter
+/// row (author: the raw LOTM group order — deduplication happens per group
+/// on vertices only). `rotation_degrees` is the author orientation applied
+/// to positions/normals/tangents BEFORE deduplication (`rotate_xyz`, the
+/// default export uses 180°). The template's collision box is rescaled to
+/// the compiled bounds exactly like `compile_contract → replace_box_collision`.
 pub fn compile_building40_template(
     doc: &LotmDocument,
     mesh_material: &[u32],
     transform: Option<[f32; 12]>,
+    rotation_degrees: u32,
     template: &[u8],
+    collision_source: &[u8],
 ) -> Result<CompiledNativeModel, String> {
+    let rotation = rotate_xyz_matrix(rotation_degrees)?;
     let mut vertices: Vec<[u8; 40]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
-    let mut lookup: HashMap<[u32; 24], u32> = HashMap::new();
     let mut primitive_count = 0usize;
     let mut min = [f32::INFINITY; 3];
     let mut max = [f32::NEG_INFINITY; 3];
@@ -836,19 +865,28 @@ pub fn compile_building40_template(
         Ok(out)
     };
     for (mesh, glb) in doc.meshes.iter().enumerate() {
-        for primitive in parse_glb_primitives(glb)? {
+        for primitive in parse_glb_primitives(glb)?.into_iter().take(1) {
+            // The author reads exactly meshes[0].primitives[0] for each
+            // material group; extra primitives are not part of this profile.
+            // prepare_asset deduplicates within one source material group, not
+            // across materials.  Keep the lookup per primitive to match it.
+            let mut lookup: HashMap<[u32; 24], u32> = HashMap::new();
+            // The parameter-table column: for single-mesh compose pipelines the
+            // group index rides on the vertex TEXCOORD_1.x column byte; for
+            // native 1:1 containers the mesh's own material index is the same
+            // value. Prefer the authored column, fall back to the container
+            // mapping, then the mesh order.
             let material_row = primitive
                 .tint_column
                 .first()
                 .copied()
-                .unwrap_or_else(|| {
-                    mesh_material
+                .or_else(|| mesh_material.get(mesh).copied().map(|v| v.min(255) as u8))
+                .or_else(|| {
+                    doc.mesh_material
                         .get(mesh)
-                        .copied()
-                        .or_else(|| doc.mesh_material.get(mesh).map(|reference| reference.material))
-                        .unwrap_or(0)
-                        .min(255) as u8
-                });
+                        .map(|reference| reference.material.min(255) as u8)
+                })
+                .unwrap_or((mesh as u32).min(255) as u8);
             primitive_count += 1;
             for i in 0..primitive.positions.len() {
                 let mut position = primitive.positions[i];
@@ -862,6 +900,11 @@ pub fn compile_building40_template(
                     ];
                     position = p;
                 }
+                // Author orientation (rotate_xyz): applied before the vertex
+                // dedup key so shared vertices collapse consistently.
+                position = rotate_point(&rotation, position);
+                normal = rotate_point(&rotation, normal);
+                tangent = rotate_point(&rotation, tangent);
                 let base = primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
                 let top = primitive
                     .facade_uvs
@@ -880,7 +923,6 @@ pub fn compile_building40_template(
                 key[6..9].copy_from_slice(&bits(&tangent));
                 key[9..11].copy_from_slice(&bits(&base));
                 key[11..13].copy_from_slice(&bits(&top));
-                key[13] = material_row as u32;
                 key[14] = seed as u32;
                 let vertex = *lookup.entry(key).or_insert_with(|| {
                     let mut bytes = [0u8; 40];
@@ -923,6 +965,9 @@ pub fn compile_building40_template(
                         position[0] * matrix[2] + position[1] * matrix[5] + position[2] * matrix[8] + matrix[11],
                     ];
                 }
+                position = rotate_point(&rotation, position);
+                normal = rotate_point(&rotation, normal);
+                tangent = rotate_point(&rotation, tangent);
                 let base = primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
                 let top = primitive.facade_uvs.get(i).map(|uv| [uv[2], uv[3]]).unwrap_or([0.0, 0.0]);
                 let base = [base[0], 1.0 - base[1]];
@@ -935,7 +980,6 @@ pub fn compile_building40_template(
                 key[6..9].copy_from_slice(&bits(&tangent));
                 key[9..11].copy_from_slice(&bits(&base));
                 key[11..13].copy_from_slice(&bits(&top));
-                key[13] = material_row as u32;
                 key[14] = seed as u32;
                 local_map.push(*lookup.get(&key).unwrap_or(&0));
             }
@@ -1036,6 +1080,13 @@ pub fn compile_building40_template(
         }
     }
     let rw4 = rw4::writer::replace_template_sections(template, &replacements)?;
+    // compile_contract tail: the template's collision box proxy is rescaled
+    // to the compiled bounds (`replace_box_collision(model, collision_source,
+    // *info['bounds'])`). A wrong collision box makes the lot unloadable even
+    // when the visible geometry is perfect.
+    let bounds = [min, max];
+    let rw4 = super::collision::replace_box_collision(&rw4, collision_source, bounds[0], bounds[1])
+        .map_err(|error| format!("building40 collision proxy: {error}"))?;
     Ok(CompiledNativeModel {
         rw4,
         primitive_count,

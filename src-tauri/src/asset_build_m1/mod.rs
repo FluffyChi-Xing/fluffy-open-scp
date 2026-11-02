@@ -1,6 +1,7 @@
 //! Isolated M1 Property writeback pipeline. No automatic workbench integration.
 pub mod commands;
 mod connector;
+pub mod collision;
 mod filesystem;
 pub mod lotm;
 pub mod atlas_prepare;
@@ -9,6 +10,7 @@ pub mod materials;
 pub mod menu;
 pub mod native_model;
 pub mod native_lot;
+pub mod native_profile;
 mod package;
 pub mod patch;
 pub mod plan;

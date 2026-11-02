@@ -108,9 +108,12 @@ pub enum SceneUnit {
         outer_radius: Option<f32>,
         inner_radius: Option<f32>,
         diffuse: Option<f32>,
+        specular: Option<f32>,
         length: Option<f32>,
         cull_distance: Option<u32>,
+        falloff_start: Option<f32>,
         is_volumetric: Option<bool>,
+        volumetric_strength: Option<f32>,
         debug_name: Option<String>,
     },
     Effect {
@@ -132,6 +135,8 @@ pub enum SceneUnit {
         transform: Option<Transform>,
         slot: Option<i32>,
         scale: Option<f32>,
+        randomize_slot: Option<bool>,
+        percent_fill: Option<bool>,
     },
     PathPoint {
         point: Option<[f32; 3]>,
@@ -209,6 +214,99 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
     Ok(document)
 }
 
+/// Import the 0.8.x packager sidecars when a project was exported from the
+/// Blender plug-in.  The sidecars deliberately use the same meter/+Z/local
+/// contract as the in-editor unit document, so they lower into the exact same
+/// native parallel columns and receive the same validation/readback checks.
+pub fn merge_sidecar_manifests(
+    root: &std::path::Path,
+    model: &str,
+    document: &mut SceneDocument,
+) -> Result<(), String> {
+    let model_path = root.join(model);
+    let props_path = model_path.with_extension("props.json");
+    if props_path.is_file() {
+        let value: Json = serde_json::from_slice(
+            &std::fs::read(&props_path).map_err(|e| format!("prop manifest: {e}"))?,
+        )
+        .map_err(|e| format!("prop manifest JSON: {e}"))?;
+        let instances = value
+            .get("instances")
+            .and_then(Json::as_array)
+            .ok_or("prop manifest: instances must be an array")?;
+        for (index, item) in instances.iter().enumerate() {
+            let preset = item.get("preset").and_then(Json::as_str).unwrap_or("");
+            let resource_id = item
+                .get("resourceId")
+                .and_then(parse_json_u32)
+                .or_else(|| native_prop_resource_id(preset));
+            let matrix = matrix_field(item.get("matrix"))?;
+            document.units.push(SceneUnit::Prop {
+                bin: native_prop_bin(preset).unwrap_or(0),
+                resource_id,
+                transform: Some(Transform { flags: 15, unknown: None, matrix: matrix.to_vec() }),
+                slot: Some(index as i32),
+                scale: f32_field(item.get("scale")),
+                randomize_slot: Some(false),
+                percent_fill: Some(false),
+            });
+        }
+    }
+    let lights_path = model_path.with_extension("lights.json");
+    if lights_path.is_file() {
+        let value: Json = serde_json::from_slice(
+            &std::fs::read(&lights_path).map_err(|e| format!("light manifest: {e}"))?,
+        )
+        .map_err(|e| format!("light manifest JSON: {e}"))?;
+        let instances = value
+            .get("instances")
+            .and_then(Json::as_array)
+            .ok_or("light manifest: instances must be an array")?;
+        for item in instances {
+            let matrix = matrix_field(item.get("matrix"))?;
+            let color = vec3_field(item.get("color"));
+            document.units.push(SceneUnit::Light {
+                transform: Some(Transform { flags: 14, unknown: None, matrix: matrix.to_vec() }),
+                light_type: match item.get("type").and_then(Json::as_str) {
+                    Some("SPOT") => Some(unit_hash::LIGHT_TYPE_SPOT),
+                    Some("LINE") => Some(unit_hash::LIGHT_TYPE_LINE),
+                    _ => Some(unit_hash::LIGHT_TYPE_POINT),
+                },
+                color,
+                outer_radius: f32_field(item.get("radius")),
+                inner_radius: f32_field(item.get("innerRadius")),
+                diffuse: f32_field(item.get("intensity")),
+                specular: f32_field(item.get("specular")),
+                length: f32_field(item.get("length")),
+                cull_distance: Some(unit_hash::CULL_MAX),
+                falloff_start: Some(0.0),
+                is_volumetric: Some(false),
+                volumetric_strength: Some(0.0),
+                debug_name: item.get("id").and_then(Json::as_str).map(|id| format!("SC5_{id}")),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn matrix_field(value: Option<&Json>) -> Result<[f32; 12], String> {
+    let values = value.and_then(Json::as_array).ok_or("manifest matrix missing")?;
+    if values.len() != 12 || values.iter().any(|v| !v.is_number()) {
+        return Err("manifest matrix must contain 12 numbers".into());
+    }
+    let mut out = [0.0; 12];
+    for (dst, src) in out.iter_mut().zip(values) { *dst = f32_of(src); }
+    Ok(out)
+}
+
+fn native_prop_resource_id(preset: &str) -> Option<u32> {
+    match preset { "tree_a" => Some(0x1498_4C68), "tree_b" => Some(0x1498_4C69), "tree_c" => Some(0x1498_4C6A), "tree_conifer" => Some(0x1498_4C6B), "street_furniture" => Some(0x9375_C65E), _ => None }
+}
+
+fn native_prop_bin(preset: &str) -> Option<usize> {
+    match preset { "tree_a" => Some(12), "tree_b" => Some(11), "tree_c" => Some(10), "tree_conifer" => Some(9), "street_furniture" => Some(0), _ => None }
+}
+
 fn parse_unit(unit: &Json) -> Result<SceneUnit, String> {
     let kind = unit
         .get("kind")
@@ -253,12 +351,15 @@ fn parse_unit(unit: &Json) -> Result<SceneUnit, String> {
             outer_radius: f32_field(unit.get("outerRadius")),
             inner_radius: f32_field(unit.get("innerRadius")),
             diffuse: f32_field(unit.get("diffuse")),
+            specular: f32_field(unit.get("specular")),
             length: f32_field(unit.get("length")),
             cull_distance: unit
                 .get("cullDistance")
                 .and_then(Json::as_str)
                 .and_then(cull_distance_instance),
+            falloff_start: f32_field(unit.get("falloffStart")),
             is_volumetric: unit.get("isVolumetric").and_then(Json::as_bool),
+            volumetric_strength: f32_field(unit.get("volumetricStrength")),
             debug_name: unit
                 .get("debugName")
                 .and_then(Json::as_str)
@@ -287,6 +388,8 @@ fn parse_unit(unit: &Json) -> Result<SceneUnit, String> {
             transform: transform()?,
             slot: unit.get("slot").and_then(parse_json_u32).map(|v| v as i32),
             scale: f32_field(unit.get("scale")),
+            randomize_slot: unit.get("randomizeSlot").and_then(Json::as_bool),
+            percent_fill: unit.get("percentFill").and_then(Json::as_bool),
         }),
         "pathPoint" => Ok(SceneUnit::PathPoint {
             point: vec3_field(unit.get("point")),
@@ -436,6 +539,7 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
     let mut path_point_indices: Vec<Option<i32>> = Vec::new();
     let mut prop_bins: std::collections::BTreeMap<usize, ColumnSet> = Default::default();
     let mut decals: std::collections::BTreeMap<usize, ColumnSet> = Default::default();
+    const LIGHT_GROUP: u32 = 0x8E43_F125;
 
     for unit in &document.units {
         match unit {
@@ -446,20 +550,27 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
                 outer_radius,
                 inner_radius,
                 diffuse,
+                specular,
                 length,
                 cull_distance,
+                falloff_start,
                 is_volumetric,
                 debug_name,
+                volumetric_strength,
             } => lights.push([
+                ("ids", Some(key_of(LIGHT_GROUP))),
                 ("types", light_type.map(key_of)),
                 ("transforms", transform_value(None, transform)),
                 ("colors", color.map(|[r, g, b]| Value::ColorRgb { r, g, b })),
                 ("radii", outer_radius.map(Value::Float)),
                 ("inner_radii", inner_radius.map(Value::Float)),
                 ("diffuse", diffuse.map(Value::Float)),
+                ("specular", specular.map(Value::Float)),
                 ("lengths", length.map(Value::Float)),
                 ("cull", cull_distance.map(key_of)),
+                ("falloff", falloff_start.map(Value::Float)),
                 ("volumetric", is_volumetric.map(Value::Bool)),
+                ("vol_strength", volumetric_strength.map(Value::Float)),
                 ("names", debug_name.clone().map(Value::String8)),
             ]),
             SceneUnit::Effect {
@@ -490,10 +601,14 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
                 transform,
                 slot,
                 scale,
+                randomize_slot,
+                percent_fill,
             } => prop_bins.entry(*bin).or_default().push([
                 ("ids", resource_id.map(key_of)),
                 ("transforms", transform_value(*scale, transform)),
                 ("slots", slot.map(Value::Int32)),
+                ("randomize", randomize_slot.map(Value::Bool)),
+                ("percent_fill", percent_fill.map(Value::Bool)),
             ]),
             SceneUnit::PathPoint {
                 point,
@@ -519,6 +634,7 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
     lights.finish(
         &mut columns,
         &[
+            (unit_hash::LIGHT_IDS, "ids", PropType::Key),
             (unit_hash::LIGHT_TYPES, "types", PropType::Key),
             (
                 unit_hash::LIGHT_TRANSFORMS,
@@ -529,12 +645,37 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             (unit_hash::LIGHT_RADII, "radii", PropType::Float),
             (unit_hash::LIGHT_INNER_RADII, "inner_radii", PropType::Float),
             (unit_hash::LIGHT_DIFFUSE_LEVELS, "diffuse", PropType::Float),
+            (unit_hash::LIGHT_SPEC_LEVELS, "specular", PropType::Float),
             (unit_hash::LIGHT_LENGTHS, "lengths", PropType::Float),
             (unit_hash::LIGHT_CULL_DISTANCES, "cull", PropType::Key),
+            (unit_hash::LIGHT_FALLOFF_STARTS, "falloff", PropType::Float),
             (unit_hash::LIGHT_IS_VOLUMETRIC, "volumetric", PropType::Bool),
+            (unit_hash::LIGHT_VOL_STRENGTHS, "vol_strength", PropType::Float),
             (unit_hash::LIGHT_DEBUG_NAMES, "names", PropType::String8),
         ],
     );
+    if document.units.iter().any(|u| matches!(u, SceneUnit::Light { .. })) {
+        columns.push(array_property(
+            0x0CE7_1B10,
+            PropType::Key,
+            vec![key_of(LIGHT_GROUP)],
+        ));
+        columns.push(array_property(
+            0x0CE7_1B11,
+            PropType::Key,
+            vec![key_of(0x128D_8F19)],
+        ));
+        columns.push(array_property(
+            0x0CE7_1B12,
+            PropType::Vector2,
+            vec![Value::Vector2([0.875, 0.21527299])],
+        ));
+        columns.push(array_property(
+            0x0CE7_1B13,
+            PropType::Vector2,
+            vec![Value::Vector2([0.0, 0.0])],
+        ));
+    }
     effects.finish(
         &mut columns,
         &[
@@ -586,6 +727,16 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
                     PropType::Transform,
                 ),
                 (unit_hash::PROP_SLOT_BASE + bin, "slots", PropType::Int32),
+                (
+                    unit_hash::PROP_RANDOMIZE_SLOT_BASE + bin,
+                    "randomize",
+                    PropType::Bool,
+                ),
+                (
+                    unit_hash::PROP_PERCENT_FILL_BASE + bin,
+                    "percent_fill",
+                    PropType::Bool,
+                ),
             ],
         );
     }
@@ -668,6 +819,7 @@ fn array_property(hash: u32, prop_type: PropType, values: Vec<Value>) -> Propert
         PropType::Bool => Some(1),
         PropType::Int32 | PropType::UInt32 | PropType::Float => Some(4),
         PropType::Key | PropType::Vector3 | PropType::ColorRgb => Some(12),
+        PropType::Vector2 => Some(8),
         _ => None,
     };
     Property {

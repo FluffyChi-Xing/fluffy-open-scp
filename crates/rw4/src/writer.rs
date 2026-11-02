@@ -110,6 +110,7 @@ pub fn build_template(
     }
     let after_10006 = (out.len() - blocks_begin as usize) as u32;
     out.extend(0x10_007u32.to_le_bytes());
+    let fixup_slot = out.len();
     for v in block10007 {
         out.extend(v.to_le_bytes());
     }
@@ -243,6 +244,22 @@ pub fn build_template(
     out[sie_slot..sie_slot + 4].copy_from_slice(&section_index_end.to_le_bytes());
     let blob_total = out.len() as u32 - section_index_end;
     out[blob_slot..blob_slot + 4].copy_from_slice(&blob_total.to_le_bytes());
+    // 0x10007 块的 H173/H174/H176 是指向 index/fixup 区的绝对偏移与
+    // fixup 数量（C# H300 读取路径严格校验）。布局随替换 payload 尺寸
+    // 变化后必须按新布局重算，原样复制模板值会产生陈旧偏移。
+    // 词序：[fixup_count, H171, H172, H173(index_and_fixups), H174(index_only), H176(count)]。
+    let fixup_total_u32 = fixup_total as u32;
+    let index_only = section_index_begin + 24 * count;
+    for (slot, value) in [
+        (0usize, fixup_total_u32),
+        (12, section_index_end),
+        (16, index_only),
+        (20, fixup_total_u32),
+    ] {
+        out[fixup_slot + slot..fixup_slot + slot + 4]
+            .copy_from_slice(&value.to_le_bytes());
+    }
+    let _ = block10007;
     out
 }
 
@@ -284,7 +301,12 @@ pub fn replace_template_sections(
     let w25 = u32::from_le_bytes(source[0x64..0x68].try_into().map_err(|_| "RW4 header truncated")?);
     let block = find_10007(source).ok_or("RW4 0x10007 block missing")?;
     let block10007 = read_words(source, block + 4, 6).ok_or("RW4 0x10007 block truncated")?;
-    Ok(build_template(1, &pieces, &type_table, w25, block10007))
+    // Preserve the source container type (Model 1 vs Texture 0x04000000):
+    // texture wrappers rebuilt as Model files fail the game's TextureManager
+    // lookup and the author's own verify (`r.file_type==0x04000000`).
+    let file_type_code =
+        u32::from_le_bytes(source.get(28..32).ok_or("RW4 header truncated")?.try_into().unwrap());
+    Ok(build_template(file_type_code, &pieces, &type_table, w25, block10007))
 }
 
 fn read_words(bytes: &[u8], offset: usize, count: usize) -> Option<[u32; 6]> {

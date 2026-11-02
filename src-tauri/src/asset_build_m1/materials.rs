@@ -129,6 +129,10 @@ fn resolve_one(material: &LotmMaterial) -> Result<ResolvedMaterial, String> {
     slots[1] = png(LotmMaterial::PNG_TINT).or_else(|| png(LotmMaterial::PNG_BASE));
     slots[2] = png(LotmMaterial::PNG_NORMAL);
     slots[3] = png(LotmMaterial::PNG_SHADER).or_else(|| png(LotmMaterial::PNG_ROUGHNESS));
+    // slot4 = tint palette (512×16), slot5 = interior room atlas — the
+    // game-verified contract from building-texture-export.ts and the HLSL
+    // note (slot4 512×16 = 256×8 tint palette). Author model refs confirmed:
+    // slot4 → the 512×16 wrapper, slot5 → the 2048² room atlas.
     slots[4] = png(LotmMaterial::PNG_PALETTE);
     slots[5] = png(LotmMaterial::PNG_INTERIOR);
     // Nothing decoded as PNG keeps legacy opaque payloads (schema slots).
@@ -145,13 +149,28 @@ pub fn encode_png_raster(png: &[u8]) -> Result<Vec<u8>, String> {
     let image = image::load_from_memory(png)
         .map_err(|e| format!("slot PNG decode failed: {e}"))?
         .to_rgba8();
-    // Match authored_materials.raster_rgba: independent-channel floor
-    // averaging, BGRA byte order, pixFmt 21, big-endian header.
     let (width, height) = (image.width(), image.height());
-    let mut current: Vec<[u8; 4]> = image
+    let pixels: Vec<[u8; 4]> = image
         .pixels()
         .map(|pixel| [pixel[0], pixel[1], pixel[2], pixel[3]])
         .collect();
+    encode_rgba_raster(width, height, &pixels)
+}
+
+/// Encode raw RGBA pixels as an uncompressed game raster — the in-memory
+/// form of `encode_png_raster`, used for the rotation-transformed ground
+/// mask (`raster_rgba(rotated_mask)` in the author chain).
+pub fn encode_rgba_raster(
+    width: u32,
+    height: u32,
+    pixels: &[[u8; 4]],
+) -> Result<Vec<u8>, String> {
+    if pixels.len() != (width as usize) * (height as usize) {
+        return Err("raster pixel buffer size mismatch".into());
+    }
+    // Match authored_materials.raster_rgba: independent-channel floor
+    // averaging, BGRA byte order, pixFmt 21, big-endian header.
+    let mut current: Vec<[u8; 4]> = pixels.to_vec();
     let mut mips = Vec::new();
     let (mut w, mut h) = (width, height);
     loop {
