@@ -25,6 +25,9 @@ use std::path::PathBuf;
 
 /// 责任链共享上下文:一次性构建,阶段按序消费/填充。
 pub(crate) struct BuildContext {
+    /// 可选进度通道(P2 构建队列):run_chain 在每个阶段边界把事件克隆
+    /// 发出,Actions 页实时行消费;None 时零开销。
+    pub progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
     pub root: PathBuf,
     pub plan: PropertyBuildPlan,
     pub resources: BuildResources,
@@ -69,9 +72,18 @@ impl BuildContext {
             delta_mode: true,
             written_count: 0,
             events: Vec::new(),
+            progress: None,
             result: None,
         }
     }
+}
+
+/// 边界广播:本地 events 追加 + 可选通道转发(队列实时行)。
+fn emit(ctx: &mut BuildContext, event: StageEvent) {
+    if let Some(tx) = &ctx.progress {
+        let _ = tx.send(event.clone());
+    }
+    ctx.events.push(event);
 }
 
 pub(crate) const CHAIN: [&str; 8] = [
@@ -88,7 +100,7 @@ pub(crate) const CHAIN: [&str; 8] = [
 /// 按序执行责任链;任一阶段失败即终止(错误文本携带阶段名)。
 pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
     for stage in CHAIN {
-        ctx.events.push(started(stage, serde_json::Value::Null));
+        emit(ctx, started(stage, serde_json::Value::Null));
         let outcome = match stage {
             "load-inputs" => load_inputs(ctx),
             "insert-textures" => insert_textures(ctx),
@@ -101,10 +113,9 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             _ => unreachable!("unknown chain stage {stage}"),
         };
         match outcome {
-            Ok(detail) => ctx.events.push(finished(stage, detail)),
+            Ok(detail) => emit(ctx, finished(stage, detail)),
             Err(error) => {
-                ctx.events
-                    .push(super::events::failed(stage, &error));
+                emit(ctx, super::events::failed(stage, &error));
                 return Err(format!("[{stage}] {error}"));
             }
         }

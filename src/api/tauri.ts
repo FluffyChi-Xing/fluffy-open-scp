@@ -1402,3 +1402,35 @@ export interface VersionDeleteResult {
 
 export const activityEventName = "activity:event";
 export const exportProgressEventName = "export:progress";
+
+export const buildQueueEventName = "build-queue:event";
+
+export type BuildJobStatus = "queued" | "running" | "finished" | "failed";
+
+export interface StageEventDto {
+  stage: string;
+  kind: { type: "started" | "finished" | "failed" };
+  detail: unknown;
+}
+
+export interface BuildJobDto {
+  id: string;
+  projectRoot: string;
+  schema: string;
+  status: BuildJobStatus;
+  submittedAtMs: number;
+  finishedAtMs: number | null;
+  label: string | null;
+  error: string | null;
+  events: StageEventDto[];
+  result: Record<string, unknown> | null;
+}
+
+export interface BuildQueueEventPayload {
+  jobId: string;
+  status?: BuildJobStatus;
+  label?: string | null;
+  error?: string | null;
+  finishedAtMs?: number | null;
+  event?: StageEventDto;
+}

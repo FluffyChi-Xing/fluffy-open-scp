@@ -121,19 +121,33 @@ impl BuildResources {
 /// 调度与结果回收。缺节由阶段函数自身短路(无 slots/无模型/无 patches 均
 /// 合法)。行为不变量 = golden_full_chain_asset_dict_columns +
 /// deterministic_output_two_fresh_builds_identical(拆分前基线 331ab75)。
-pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult, String> {
+fn build_from_schema_inner(
+    root: &Path,
+    raw_schema: &str,
+    progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
+) -> Result<M1BuildResult, String> {
     let plan = plan_from_schema(raw_schema)?;
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("project root must be a directory".into());
     }
     let mut ctx = stages::BuildContext::new(root, plan);
+    ctx.progress = progress;
     stages::run_chain(&mut ctx)?;
     // 链尾补 materialize 的 finished 事件后回填,保证 Actions 页拿到全量
     // 步骤;失败路径的事件随 Err 文本携带阶段名(P2 队列改结构化错误)。
     let mut result = ctx.result.take().expect("chain completed without result");
     result.events = ctx.events.clone();
     Ok(result)
+}
+
+/// 带进度通道的构建(P2 构建队列):每个阶段边界经通道流出 StageEvent。
+pub fn build_from_schema_with_progress(
+    root: &Path,
+    raw_schema: &str,
+    progress: Option<std::sync::mpsc::Sender<super::events::StageEvent>>,
+) -> Result<M1BuildResult, String> {
+    build_from_schema_inner(root, raw_schema, progress)
 }
 
 pub(crate) fn package_relative_name(plan: &super::plan::PropertyBuildPlan) -> String {
@@ -1040,4 +1054,9 @@ pub(crate) fn protected_templates(
         }
     }
     result
+}
+
+/// 无进度包装(命令行/黄金用例入口,行为与带进度版完全一致)。
+pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult, String> {
+    build_from_schema_inner(root, raw_schema, None)
 }

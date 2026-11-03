@@ -9,6 +9,7 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod build_queue;
 mod annotations;
 pub(crate) mod asset_build_m0;
 pub mod asset_build_m1;
@@ -133,6 +134,9 @@ pub fn run() {
             // 目录治理（2026-10-29）：docs/mods 自动落在安装目录下，
             // 未配置的工作区/模组根自动指向内部目录，无需手动指定。
             internal_dirs::ensure_internal_roots(app.handle(), &store)?;
+            let build_queue = std::sync::Arc::new(build_queue::BuildQueueManager::new());
+            build_queue.start(app.handle().clone());
+            app.manage(build_queue);
             app.manage(AppState::new(app.handle().clone(), store));
             if let Some(window) = app.get_webview_window("main")
                 && let Some(monitor) = window.primary_monitor()?
@@ -151,6 +155,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             asset_build_m1::commands::asset_build_m1_build,
+            build_queue::build_queue_enqueue,
+            build_queue::build_queue_list,
+            build_queue::build_queue_detail,
             map_panel::map_panel_list_regions,
             map_panel::map_panel_render_region,
             map_panel::map_panel_write_heightmap,

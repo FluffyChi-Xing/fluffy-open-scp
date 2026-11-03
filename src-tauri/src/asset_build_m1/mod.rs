@@ -30,3 +30,5 @@ pub use package::{M1BuildResult, build_from_schema};
 mod e2e_tests;
 #[cfg(test)]
 mod tests;
+
+pub use package::build_from_schema_with_progress;

@@ -190,6 +190,18 @@ export const tauriApi = {
     },
     stats: () => command<ModProjectStats>("mod_project_stats"),
   },
+  // ── P2 构建队列(OpenSCP Actions 页) ──
+  buildQueue: {
+    enqueue: (project: string, schema: string, label?: string) =>
+      command<string>("build_queue_enqueue", { root: project, schema, label }),
+    list: (project: string) =>
+      command<import("@/api/tauri").BuildJobDto[]>("build_queue_list", { root: project }),
+    detail: (project: string, jobId: string) =>
+      command<import("@/api/tauri").BuildJobDto | null>("build_queue_detail", {
+        root: project,
+        jobId,
+      }),
+  },
   workspace: {
     get: () => command<WorkspaceStatus>("workspace_get"),
     pickImageFile: (title = "选择图片") =>

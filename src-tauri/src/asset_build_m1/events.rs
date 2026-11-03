@@ -5,19 +5,19 @@
 //! emit 走 activity.rs 的 ACTIVITY_EVENT 同款模式)。事件不参与 build_hash
 //! 与产物字节——纯观测面。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StageEvent {
     /// 阶段名(= 责任链节点名,Actions 页的"步骤"行)。
-    pub stage: &'static str,
+    pub stage: String,
     pub kind: StageEventKind,
     /// 阶段专属详情(计数/路径/错误文本),JSON 透传。
     pub detail: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum StageEventKind {
     Started,
@@ -25,17 +25,17 @@ pub enum StageEventKind {
     Failed,
 }
 
-pub fn started(stage: &'static str, detail: serde_json::Value) -> StageEvent {
-    StageEvent { stage, kind: StageEventKind::Started, detail }
+pub fn started(stage: impl Into<String>, detail: serde_json::Value) -> StageEvent {
+    StageEvent { stage: stage.into(), kind: StageEventKind::Started, detail }
 }
 
-pub fn finished(stage: &'static str, detail: serde_json::Value) -> StageEvent {
-    StageEvent { stage, kind: StageEventKind::Finished, detail }
+pub fn finished(stage: impl Into<String>, detail: serde_json::Value) -> StageEvent {
+    StageEvent { stage: stage.into(), kind: StageEventKind::Finished, detail }
 }
 
-pub fn failed(stage: &'static str, error: &str) -> StageEvent {
+pub fn failed(stage: impl Into<String>, error: &str) -> StageEvent {
     StageEvent {
-        stage,
+        stage: stage.into(),
         kind: StageEventKind::Failed,
         detail: serde_json::Value::String(error.to_string()),
     }
