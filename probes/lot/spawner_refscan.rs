@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: spawner_refscan <package> <ids-csv>");
+    let path = args
+        .next()
+        .expect("usage: spawner_refscan <package> <ids-csv>");
     let ids: Vec<u32> = args
         .next()
         .expect("ids")
@@ -27,8 +29,12 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         for prop in &file.values {
             let mut hits: Vec<(usize, u32)> = Vec::new();
             match &prop.kind {

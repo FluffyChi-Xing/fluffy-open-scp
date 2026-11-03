@@ -8,10 +8,10 @@ use std::io::Write;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: simm_transport_dump <package> [out.json]");
-    let out = args
+    let path = args
         .next()
-        .unwrap_or_else(|| "transport_dump.json".into());
+        .expect("usage: simm_transport_dump <package> [out.json]");
+    let out = args.next().unwrap_or_else(|| "transport_dump.json".into());
     let package = Package::open(&path).expect("open package");
 
     // 1) master 的 transport group 列表
@@ -20,8 +20,12 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         if let Some(prop) = file.get(0x0A30_A558) {
             if let Kind::Array(items) = &prop.kind {
                 for v in items {
@@ -38,8 +42,12 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 || !groups.contains(&entry.id.group) {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let mut cols: Vec<String> = Vec::new();
         for prop in &file.values {
             let desc = match &prop.kind {
@@ -83,7 +91,10 @@ fn main() {
     writeln!(f, "[{}]", rows.join(",\n")).unwrap();
     println!(
         "groups={:?} entries={} -> {out}",
-        groups.iter().map(|g| format!("0x{g:08X}")).collect::<Vec<_>>(),
+        groups
+            .iter()
+            .map(|g| format!("0x{g:08X}"))
+            .collect::<Vec<_>>(),
         rows.len()
     );
 }

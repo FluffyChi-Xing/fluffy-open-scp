@@ -24,16 +24,21 @@
 //! }
 //! ```
 
+pub mod camera_bounds;
 mod combine;
 pub mod debug_tools;
 pub mod decal;
 mod error;
 pub mod inherit;
+pub mod light_alignment;
 pub mod locale;
 mod lot;
 pub mod lot_unit;
 pub mod map_assets;
+pub mod map_contract;
+pub mod map_frames;
 mod model;
+pub mod play_area;
 pub mod region_3d;
 pub mod region_bootstrap;
 pub mod region_city;

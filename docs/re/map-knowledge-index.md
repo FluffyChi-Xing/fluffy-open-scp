@@ -22,6 +22,10 @@
 
 | 新样本地图编辑器突破 | [map-editor-pdb-breakthrough-20261030.md](map-editor-pdb-breakthrough-20261030.md) | PDB/source-tree 已拆出 PlayArea、三类坐标、地图资源闭包和 Terrain Editor 调试会话；运行时验收矩阵待执行 |
 
+| 地图契约落地（CityBox/相机/盒外灯） | [map-contract-citybox-camera-light-20261102.md](map-contract-citybox-camera-light-20261102.md) | `flatScale=1024` 实测 = 城市盒半边；相机第二层 ±1024/±1020 已对拍（扩盒零收益且短 4 m）；灯光表列结构与三假设坐标系判定已实现，含 4 个可跑探针 |
+
+| 工作台三场景可行性 | [map-mod-workbench-scenario-feasibility-20261102.md](map-mod-workbench-scenario-feasibility-20261102.md) | 原地图编辑可做（槽位=五数组同步+模板+注册表）；单一大地图受 `flatScale`/`0x0D4AE7FE`/相机常量三重约束；新地图仅高度可用；含文件×资源目标清单与 P0-P2 顺序 |
+
 | 零售 EAWebKit 运行时 | [retail-eawebkit-runtime.md](retail-eawebkit-runtime.md) | 确认 JSC；实机读出两个页面及 Client 注册表；DebugLog 空处理、Inspector 工厂返回空；已捕获原生调用元数据；参数与事件待解码 |
 
 ## 证据等级与文件约定

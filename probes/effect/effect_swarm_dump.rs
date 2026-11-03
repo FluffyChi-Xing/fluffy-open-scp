@@ -161,8 +161,11 @@ fn main() {
         "materials": material_values,
         "particleError": particle_error.map(|error| format!("{error}")),
     });
-    std::fs::write(&args[3], serde_json::to_vec_pretty(&document).expect("json"))
-        .expect("write json");
+    std::fs::write(
+        &args[3],
+        serde_json::to_vec_pretty(&document).expect("json"),
+    )
+    .expect("write json");
     println!(
         "wrote {} ({} bytes, {} visuals, {} particles, {} materials) -> {}",
         args[3],

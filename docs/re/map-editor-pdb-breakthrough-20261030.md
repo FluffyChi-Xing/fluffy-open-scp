@@ -52,6 +52,11 @@ mPlayArea
 | `EcoGridFrame` | `ecoSize × ecoSize` 的整数格与格内 `s/t` | `WorldToEco` RVA `0x42A910` | 只在采样边界夹取一次；记录 clamp 标志 |
 | `RegionTileFrame` | 341 高度资源，起点 `4096 - regionDimension/2`，tile 边长 8192 | `Save341HeightMaps` RVA `0x40D350` | tile 内只做局部索引；不得再次叠加 `mPosInRegion` |
 
+> **2026-11-02 修正**：零售实测的 341 金字塔是 4096² 场、1 px = 8 m、tile 256² px
+> = **2048 m**（`crates/sc-properties/src/region_write.rs` 已用真实 tile 校验）。
+> 上表“tile 边长 8192”应以此为准；`RegionTileFrame` 已按 2048 m 实现，见
+> [地图契约落地](map-contract-citybox-camera-light-20261102.md)。
+
 `WorldToEco` 使用 `smScalars.mFlatScale`，将连续坐标映射到 eco 网格，并把整数索引限制在 `0..ecoSize-1`。因此“盒外”首先是采样夹取，不是存在另一套世界原点。341 导出则按固定世界单位分块，并用 `xNN_yNN_mipN` 生成资源名；它和 PlayArea 的大小不是同一个量。
 
 ### 可逆测试

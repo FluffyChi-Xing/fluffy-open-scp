@@ -7,7 +7,9 @@ use sc_properties::locale;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: locale_lookup <Data.package> <ids>");
+    let path = args
+        .next()
+        .expect("usage: locale_lookup <Data.package> <ids>");
     let ids: Vec<u32> = args
         .next()
         .expect("ids")

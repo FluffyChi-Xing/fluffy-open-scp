@@ -19,8 +19,12 @@ struct Stats {
 }
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: spawner_names <package> [out.json]");
-    let out = std::env::args().nth(2).unwrap_or_else(|| "spawner_names.json".into());
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: spawner_names <package> [out.json]");
+    let out = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "spawner_names.json".into());
     let package = Package::open(&path).expect("open package");
     let mut stats = Stats::default();
     let mut lots: Vec<String> = Vec::new();
@@ -29,8 +33,12 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         let Some(ids) = file.get(SPAWNER_IDS).and_then(|p| p.array()) else {
             continue;
         };
@@ -56,7 +64,10 @@ fn main() {
                 "{{\"i\":{i},\"id\":{},\"id_hex\":\"0x{:08X}\",\"t\":[{}]}}",
                 k.instance,
                 k.instance,
-                pos.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(",")
+                pos.iter()
+                    .map(|v| format!("{v}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
             ));
         }
         lots.push(format!(

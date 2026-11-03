@@ -29,7 +29,9 @@ fn keys_with_group(file: &PropertyFile, col: u32) -> Vec<(u32, u32, u32)> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: vignette_resolve_probe <package> [max-lots]");
+    let path = args
+        .next()
+        .expect("usage: vignette_resolve_probe <package> [max-lots]");
     let max_lots: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(6);
     let pkg = Package::open(&path).expect("open package");
 
@@ -40,7 +42,9 @@ fn main() {
             continue;
         }
         let Ok(data) = pkg.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         if file.get(ACTOR_START).is_some() {
             defs.push(format!(
                 "{{\"t\":{},\"g\":{},\"i\":{}}}",

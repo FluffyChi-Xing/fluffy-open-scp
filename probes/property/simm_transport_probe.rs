@@ -10,7 +10,9 @@ use std::collections::BTreeMap;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: simm_transport_probe <package> [s3db]");
+    let path = args
+        .next()
+        .expect("usage: simm_transport_probe <package> [s3db]");
     let s3db = args.next();
     let package = Package::open(&path).expect("open package");
 
@@ -26,8 +28,12 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         if let Some(prop) = file.get(0x0A30_A558) {
             if let Kind::Array(items) = &prop.kind {
                 for v in items {
@@ -60,8 +66,12 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 || !set.contains(&entry.id.group) {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         shown += 1;
         let gfx: Option<u32> = file.get(0x0D8C_29C3).and_then(|p| key_instance(p));
         let name = names
@@ -125,8 +135,18 @@ fn float_of(p: &sc_properties::Property) -> Option<f32> {
 fn describe(p: &sc_properties::Property, names: &BTreeMap<u32, String>) -> String {
     fn one(v: &Value, names: &BTreeMap<u32, String>) -> String {
         match v {
-            Value::Key(k) => format!("Key(0x{:08X} {})", k.instance, names.get(&k.instance).cloned().unwrap_or_else(|| "?".into())),
-            Value::UInt32(u) => format!("U32(0x{u:08X} {})", names.get(u).cloned().unwrap_or_else(|| "?".into())),
+            Value::Key(k) => format!(
+                "Key(0x{:08X} {})",
+                k.instance,
+                names
+                    .get(&k.instance)
+                    .cloned()
+                    .unwrap_or_else(|| "?".into())
+            ),
+            Value::UInt32(u) => format!(
+                "U32(0x{u:08X} {})",
+                names.get(u).cloned().unwrap_or_else(|| "?".into())
+            ),
             Value::Text(t) => format!("Text(t=0x{:08X} i=0x{:08X})", t.table_id, t.instance_id),
             Value::String8(s) | Value::String16(s) => format!("Str({s})"),
             Value::Float(f) => format!("f32({f})"),

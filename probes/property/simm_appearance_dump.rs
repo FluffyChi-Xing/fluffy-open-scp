@@ -20,7 +20,9 @@ const C_SCALE_MAX: u32 = 0x0CBD_25CB;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: simm_appearance_dump <package> [s3db] [out.json]");
+    let path = args
+        .next()
+        .expect("usage: simm_appearance_dump <package> [s3db] [out.json]");
     let s3db = args.next();
     let out = args.next();
     let package = Package::open(&path).expect("open package");
@@ -43,8 +45,12 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 {
             continue;
         }
-        let Ok(data) = package.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(data) = package.read(entry) else {
+            continue;
+        };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         if file.get(C_BODIES_MIN).is_none() {
             continue;
         }
@@ -146,7 +152,10 @@ fn u8_at(file: &PropertyFile, col: u32, i: usize) -> (Option<u8>, Option<u8>) {
         return (None, None);
     };
     match at(p, i) {
-        Some(Value::Key(k)) => (Some((k.instance & 0xFF) as u8), Some((k.instance & 0xFF) as u8)),
+        Some(Value::Key(k)) => (
+            Some((k.instance & 0xFF) as u8),
+            Some((k.instance & 0xFF) as u8),
+        ),
         Some(Value::Int32(v)) => (Some(*v as u8), Some(*v as u8)),
         Some(Value::UInt32(v)) => (Some(*v as u8), Some(*v as u8)),
         _ => (None, None),

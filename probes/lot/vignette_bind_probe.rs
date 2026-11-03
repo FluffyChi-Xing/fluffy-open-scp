@@ -50,7 +50,9 @@ fn main() {
             continue;
         }
         let Ok(data) = pkg.read(entry) else { continue };
-        let Ok(file) = PropertyFile::parse(&data) else { continue };
+        let Ok(file) = PropertyFile::parse(&data) else {
+            continue;
+        };
         if file.get(SPAWNER_IDS).is_some() {
             let ids: BTreeSet<u32> = keys_of(&file, SPAWNER_IDS).into_iter().collect();
             if !ids.is_empty() {
@@ -62,13 +64,19 @@ fn main() {
         }
         by_instance.insert(entry.id.instance, (entry.id.group, file));
     }
-    println!("lots with spawners: {}  vig_defs(g=0x40E1E800): {}", lots.len(), vig_defs.len());
+    println!(
+        "lots with spawners: {}  vig_defs(g=0x40E1E800): {}",
+        lots.len(),
+        vig_defs.len()
+    );
 
     let mut total_lots_with_vignette = 0usize;
     let mut total_lots_with_hit = 0usize;
     let mut shown = 0usize;
     for (lot, spawners) in &lots {
-        let Some((_g, file)) = by_instance.get(lot) else { continue };
+        let Some((_g, file)) = by_instance.get(lot) else {
+            continue;
+        };
         let vigs = keys_of(file, VIGNETTE_IDS);
         if vigs.is_empty() {
             continue;
@@ -79,7 +87,12 @@ fn main() {
         let mut actors: BTreeSet<u32> = BTreeSet::new();
         let mut models: BTreeSet<u32> = BTreeSet::new();
         for v in &vigs {
-            let Some(vf) = vig_defs.get(v).or_else(|| by_instance.get(v).map(|(_, f)| f)) else { continue };
+            let Some(vf) = vig_defs
+                .get(v)
+                .or_else(|| by_instance.get(v).map(|(_, f)| f))
+            else {
+                continue;
+            };
             starts.extend(keys_of(vf, START_POINT));
             ends.extend(keys_of(vf, END_POINT));
             actors.extend(keys_of(vf, ACTOR_IDS));
@@ -101,13 +114,26 @@ fn main() {
             );
             println!(
                 "   startPoint ids={:?}\n   endPoint ids={:?}",
-                starts.iter().take(8).map(|v| format!("0x{v:08X}")).collect::<Vec<_>>(),
-                ends.iter().take(8).map(|v| format!("0x{v:08X}")).collect::<Vec<_>>()
+                starts
+                    .iter()
+                    .take(8)
+                    .map(|v| format!("0x{v:08X}"))
+                    .collect::<Vec<_>>(),
+                ends.iter()
+                    .take(8)
+                    .map(|v| format!("0x{v:08X}"))
+                    .collect::<Vec<_>>()
             );
             println!(
                 "   ∩ spawner(start)={:?}  ∩ spawner(end)={:?}",
-                hit_start.iter().map(|v| format!("0x{v:08X}")).collect::<Vec<_>>(),
-                hit_end.iter().map(|v| format!("0x{v:08X}")).collect::<Vec<_>>()
+                hit_start
+                    .iter()
+                    .map(|v| format!("0x{v:08X}"))
+                    .collect::<Vec<_>>(),
+                hit_end
+                    .iter()
+                    .map(|v| format!("0x{v:08X}"))
+                    .collect::<Vec<_>>()
             );
         }
     }
