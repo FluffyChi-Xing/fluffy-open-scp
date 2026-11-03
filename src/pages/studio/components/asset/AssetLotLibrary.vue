@@ -12,6 +12,8 @@ import AssetLotDiagram from "./AssetLotDiagram.vue";
 export interface LotPresetRef {
   packageId: number;
   tgi: Tgi;
+  /** 来源包全路径：packageId 跨运行失效时按此重开（见 useWorkbenchAsset）。 */
+  packagePath?: string;
 }
 
 /**
@@ -130,7 +132,16 @@ function lotKey(entry: LotEntry) {
 
 const appliedKey = ref("");
 function apply(entry: LotEntry) {
-  emit("apply", { packageId: entry.packageId, tgi: entry.tgi });
+  // 带上来源包全路径：持久化后 packageId 跨运行失效时可按路径重开
+  // （PackageManager 每次启动重新编号，冷启动恢复必 miss——2026-11-03）。
+  const source = packages.opened.find(
+    (opened) => opened.package.packageId === entry.packageId,
+  );
+  emit("apply", {
+    packageId: entry.packageId,
+    tgi: entry.tgi,
+    packagePath: source?.package.path,
+  });
   appliedKey.value = lotKey(entry);
 }
 </script>

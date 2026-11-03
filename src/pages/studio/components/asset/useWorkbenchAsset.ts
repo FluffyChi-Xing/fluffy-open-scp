@@ -122,6 +122,10 @@ export interface PlacePayload {
 export interface LotPresetRef {
   packageId: number;
   tgi: Tgi;
+  /** 来源包路径——packageId 跨运行失效（PackageManager 每次启动重新编号，
+   * 持久化在 asset.lot.json 里的 id 冷启动必 miss）时按此重开重试；
+   * 缺省（旧文档）时套用失败仅丢 mask/albedo 贴图（fail-soft）。 */
+  packagePath?: string;
 }
 
 const DOCUMENT_PATH = "asset.lot.json";
@@ -1192,10 +1196,24 @@ export function useWorkbenchAsset(project: string) {
     if (sourceKind.value !== "glb" && sourceKind.value !== "lotm") {
       throw new Error("lot_apply_native");
     }
-    const session = await tauriApi.packages.readLotEditorSession(
-      preset.packageId,
-      preset.tgi,
-    );
+    let packageId = preset.packageId;
+    let session;
+    try {
+      session = await tauriApi.packages.readLotEditorSession(
+        packageId,
+        preset.tgi,
+      );
+    } catch (cause) {
+      // PackageManager 每次启动重新编号——持久化的 packageId 在冷启动后必
+      // miss。带路径时按路径重开重试；无路径（旧文档）原样抛给调用方。
+      if (!preset.packagePath) throw cause;
+      packageId = (await tauriApi.packages.open(preset.packagePath)).package
+        .packageId;
+      session = await tauriApi.packages.readLotEditorSession(
+        packageId,
+        preset.tgi,
+      );
+    }
     if (session.lotSize) {
       draftLotSize.value = [session.lotSize[0], session.lotSize[1]];
     }
@@ -1240,7 +1258,11 @@ export function useWorkbenchAsset(project: string) {
     draftStyle.normalAtlasPng = session.lotNormalAtlasPng
       ? `data:image/png;base64,${session.lotNormalAtlasPng}`
       : null;
-    appliedLot.value = { packageId: preset.packageId, tgi: preset.tgi };
+    appliedLot.value = {
+      packageId,
+      tgi: preset.tgi,
+      packagePath: preset.packagePath,
+    };
     return session.lotSize ?? null;
   }
 
@@ -1436,9 +1458,21 @@ export function useWorkbenchAsset(project: string) {
           // （贴图 base64 不入文档，见 lotStyle 持久化口径）
           if (style.sourceLot) {
             appliedLot.value = { ...style.sourceLot };
-            await applyLotPreset({ ...style.sourceLot });
-            // 手动调过的尺寸以文档为准
-            if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+            // 【2026-11-03 修复】sourceLot.packageId 跨运行失效曾让
+            // applyLotPreset 抛错，被外层 catch 吞掉后 restoreUnits 直接被
+            // 跳过——首开只剩模型，lot/props/灯/生成器/路径全部丢失，
+            // 关闭项目重开（包管理器已被其它流程焐热）才恢复。贴图拉取是
+            // 装饰性步骤：失败仅丢 mask/albedo，绝不阻断单元重放。
+            try {
+              await applyLotPreset({ ...style.sourceLot });
+              // 手动调过的尺寸以文档为准
+              if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+            } catch (cause) {
+              console.warn(
+                "[workbench] lot preset textures skipped (stale packageId?):",
+                cause,
+              );
+            }
           }
         }
         restoreUnits(parsed);
