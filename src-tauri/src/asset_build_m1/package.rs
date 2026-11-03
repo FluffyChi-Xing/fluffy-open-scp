@@ -1,5 +1,6 @@
 //! Application orchestration; processors and the connector own their formats.
 use super::{
+    stages,
     connector,
     filesystem::{Staging, project_file},
     atlas_prepare, lotm, material_atlas, materials, native_model,
@@ -39,6 +40,8 @@ pub struct M1BuildResult {
     pub patched_resources: usize,
     pub scope: &'static str,
     pub scene: SceneSemanticSummary,
+    /// 责任链阶段事件(Actions 页数据源;不参与 build_hash/产物字节)。
+    pub events: Vec<super::events::StageEvent>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -70,7 +73,15 @@ impl std::ops::Deref for BuildResources {
 }
 
 impl BuildResources {
-    fn from_source(resources: connector::Resources) -> Self {
+    /// 空集(stages.rs 的 BuildContext 初始化用;真实内容在 load_inputs 装载)。
+    pub(crate) fn empty() -> Self {
+        Self {
+            all: Default::default(),
+            touched: Default::default(),
+        }
+    }
+
+    pub(crate) fn from_source(resources: connector::Resources) -> Self {
         Self {
             all: resources,
             touched: Default::default(),
@@ -80,19 +91,24 @@ impl BuildResources {
     /// Record a created/rewritten resource. Inherent method wins over the
     /// `HashMap::insert` reachable through `Deref`, so every write site that
     /// goes through this is tracked for the delta package.
-    fn insert(&mut self, id: ResourceId, bytes: Vec<u8>) {
+    pub(crate) fn insert(&mut self, id: ResourceId, bytes: Vec<u8>) {
         self.touched.insert(id);
         self.all.insert(id, bytes);
     }
 
     /// The full reference snapshot, used to resolve dependencies that were
     /// left in a cloned Property/RW4 but were not rewritten themselves.
-    fn all(&self) -> &connector::Resources {
+    pub(crate) fn all(&self) -> &connector::Resources {
         &self.all
     }
 
+    /// Full-snapshot swap for the legacy full-output mode (stages.rs).
+    pub(crate) fn take_all(&mut self) -> connector::Resources {
+        std::mem::take(&mut self.all)
+    }
+
     /// The delta slice: only entries this build created or rewrote.
-    fn delta(&self) -> connector::Resources {
+    pub(crate) fn delta(&self) -> connector::Resources {
         self.touched
             .iter()
             .map(|id| (*id, self.all[id].clone()))
@@ -100,252 +116,31 @@ impl BuildResources {
     }
 }
 
+/// 薄编排器(P1 责任链,2026-11-04):格式校验/降级(plan_from_schema)之后,
+/// 各 schema section 交由 stages.rs 的责任链处理器按序消费;本函数只做
+/// 调度与结果回收。缺节由阶段函数自身短路(无 slots/无模型/无 patches 均
+/// 合法)。行为不变量 = golden_full_chain_asset_dict_columns +
+/// deterministic_output_two_fresh_builds_identical(拆分前基线 331ab75)。
 pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult, String> {
     let plan = plan_from_schema(raw_schema)?;
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("project root must be a directory".into());
     }
-    let source_path = project_file(
-        &root,
-        plan.intermediate
-            .references
-            .package
-            .as_deref()
-            .ok_or("missing source package")?,
-    )?;
-    let mut resources = BuildResources::from_source(connector::read_source(&source_path)?);
-    let identity_resources = match plan
-        .menu
-        .as_ref()
-        .and_then(|menu| menu.identity_package.as_deref())
-    {
-        Some(path) => Some(connector::read_source(&project_file(&root, path)?)?),
-        None => None,
-    };
-    let scene_document = read_scene_document(
-        &root,
-        &plan.intermediate.scene.document,
-        plan.intermediate.scene.model.as_deref(),
-    )?;
-    // The scene document is an input to the built bytes (unit columns, menu
-    // ground numerics, light/prop matrices) but the schema only references it
-    // by filename. Fold its bytes into the build hash so a scene-only edit
-    // gets a fresh destination instead of colliding with the previous tree
-    // (publish() then refuses to overwrite and the stale package silently
-    // "wins" — University s4 shipped 5 of 8 lights this way on 2026-11-03).
-    // Model/sidecar/texture bytes are already covered: they are inserted into
-    // `resources` above hashing and captured by the source fingerprint.
-    let scene_document_bytes_hash = read_scene_bytes(&root, &plan.intermediate.scene.document)?
-        .map(|bytes| digest(&bytes));
-    // Hash the decompressed snapshot actually consumed by the processors, not a
-    // second file read. Container compression differences do not change identity.
-    let mut texture_instances = [0u32; 6];
-    for (slot, path) in &plan.intermediate.scene.slots {
-        let index = slot
-            .strip_prefix("slot")
-            .and_then(|v| v.parse::<usize>().ok())
-            .ok_or_else(|| format!("invalid raster slot {slot}"))?;
-        if index >= texture_instances.len() {
-            return Err(format!("raster slot out of range: {slot}"));
-        }
-        let instance = insert_slot_raster(&root, &mut resources, path)?;
-        texture_instances[index] = instance;
-    }
-    let (model_ids, material_resource_count) = insert_scene_model(
-        &root,
-        &plan.intermediate.scene.model,
-        plan.intermediate.scene.model_shape.as_deref(),
-        &mut resources,
-        &texture_instances,
-        scene_document.as_ref(),
-        // Author orientation (backend settings.rotationDegrees, default 180);
-        // parent-free builds carry it on the menu spec so geometry, ground
-        // and prop/light matrices all share one value.
-        plan.menu
-            .as_ref()
-            .and_then(|menu| menu.rotation_degrees)
-            .unwrap_or(180),
-    )?;
-    let scene =
-        validate_scene_path_semantics(&root, &plan.intermediate.scene.document, &resources)?;
-    if scene_document
-        .as_ref()
-        .is_some_and(SceneDocument::has_semantics)
-        && plan.intermediate.references.lot.is_none()
-    {
-        return Err(
-            "scene document carries units/paths; reference.lot must name the Lot property to lower them into"
-                .into(),
-        );
-    }
-    let source_hash = match &identity_resources {
-        Some(identity) => format!(
-            "{}:{}",
-            connector::fingerprint(&resources),
-            connector::fingerprint(identity)
-        ),
-        None => connector::fingerprint(&resources),
-    };
-    let plan_bytes = serde_json::to_vec_pretty(&plan).map_err(|e| e.to_string())?;
-    let build_hash = digest(
-        &serde_json::to_vec(&(
-            plan.processor_version,
-            &source_hash,
-            &plan_bytes,
-            &scene_document_bytes_hash,
-        ))
-        .map_err(|e| e.to_string())?,
-    );
-    let protected = protected_templates(&resources, &plan.protected);
-    let mut targets: Vec<_> = plan.typed_patches.iter().map(|p| p.target).collect();
-    targets.sort_by_key(|id| (id.type_id, id.group, id.instance));
-    targets.dedup();
-    let mut tasks = Vec::new();
-    for target in &targets {
-        if !plan.intermediate.semantics.allow_shared_template && protected.contains(target) {
-            return Err(format!("refusing to patch shared template {target}"));
-        }
-        let source = resources
-            .get(target)
-            .ok_or_else(|| format!("missing Property target {target}"))?;
-        let patches = plan
-            .typed_patches
-            .iter()
-            .filter(|p| p.target == *target)
-            .cloned()
-            .collect();
-        tasks.push(defer_property(*target, source.clone(), patches));
-    }
-    // No output directories are created until every Property processor succeeds.
-    for task in tasks {
-        let bytes = (task.materialize)().map_err(|e| format!("{}: {e}", task.target))?;
-        resources.insert(task.target, bytes);
-    }
-    let mut lowered_units = 0usize;
-    let to_id = |tgi: Option<crate::asset_build_m0::Tgi>| {
-        tgi.map(|tgi| ResourceId {
-            type_id: tgi.type_id,
-            group: tgi.group,
-            instance: tgi.instance,
-        })
-    };
-    // Unit columns belong on the Lot property; the Unit property (building
-    // definition) only gets the LOD model retarget.  In menu-registration
-    // mode the reference identity stays untouched 鈥?the scene lowers into
-    // the cloned lot leaf instead.
-    let menu_mode = plan.menu.is_some();
-    let lot_target = to_id(plan.intermediate.references.lot);
-    if let Some(target) = to_id(plan.intermediate.references.unit) {
-        apply_property_semantics(
-            &mut resources,
-            target,
-            None,
-            if menu_mode { None } else { model_ids },
-            &mut lowered_units,
-        )?;
-    }
-    if let Some(target) = lot_target {
-        apply_property_semantics(
-            &mut resources,
-            target,
-            if menu_mode {
-                None
-            } else {
-                scene_document.as_ref()
-            },
-            if menu_mode { None } else { model_ids },
-            &mut lowered_units,
-        )?;
-    }
-    let menu_instance = match &plan.menu {
-        Some(menu) => {
-            let lot_source = lot_target
-                .ok_or("menu registration requires reference.lot to clone the lot identity")?;
-            let generated = super::menu::generate(
-                menu,
-                &resources,
-                lot_source,
-                scene_document.as_ref(),
-                model_ids,
-                identity_resources.as_ref(),
-            )?;
-            for (id, bytes) in generated.entries {
-                resources.insert(id, bytes);
-            }
-            Some(generated.instance)
-        }
-        None => None,
-    };
-    let delta_mode = plan.intermediate.output.mode != crate::asset_build_m0::OutputMode::Full;
-    let mut staging = Staging::create(&root, &build_hash)?;
-    staging.write("plan/plan.json", &plan_bytes)?;
-    staging.write(
-        "plan/im.json",
-        &serde_json::to_vec_pretty(&plan.intermediate).map_err(|e| e.to_string())?,
-    )?;
-    if let Some(document) = read_scene_bytes(&root, &plan.intermediate.scene.document)? {
-        staging.write("artifacts/scene/asset.lot.json", &document)?;
-    }
-    materialize_scene_resources(&root, &plan.intermediate, &resources, &mut staging)?;
-    for target in &targets {
-        let name = format!(
-            "artifacts/property/{:08X}-{:08X}-{:08X}.property",
-            target.type_id, target.group, target.instance
-        );
-        staging.write(&name, &resources[target])?;
-    }
-    // Delta output (default): only the resources this build created or
-    // rewrote 鈥?the game resolves everything else from the base packages.
-    // Full output re-serializes the whole reference snapshot (legacy
-    // same-TGI overlay contract).
-    let mut written: connector::Resources = if delta_mode {
-        resources.delta()
-    } else {
-        std::mem::take(&mut resources.all)
-    };
-    if delta_mode {
-        // A cloned Lot Property and a template-based RW4 can still point at
-        // reference-package bytes.  Promote those bytes into the delta before
-        // linking, and fail closed if a required reference is unresolved.
-        let deps = resource_closure::discover(&written, menu_mode)?;
-        resource_closure::complete(&mut written, resources.all(), &deps)?;
-    }
-    let output = connector::link(&written)?;
-    staging.write(&package_relative_name(&plan), &output)?;
-    connector::verify(&staging.path.join(&package_relative_name(&plan)), &written)?;
-    let result = M1BuildResult {
-        path: staging.destination.join(&package_relative_name(&plan)),
-        schema_hash: plan.intermediate.schema_hash,
-        build_hash,
-        source_hash,
-        sha256: digest(&output),
-        resource_count: written.len(),
-        delta_mode,
-        menu_instance,
-        patched_resources: targets.len(),
-        scope: "property+scene-model",
-        scene: SceneSemanticSummary {
-            unit_count: scene.unit_count,
-            path_count: scene.path_count,
-            path_entry_count: scene.path_entry_count,
-            lowered_units,
-            material_resources: material_resource_count,
-        },
-    };
-    staging.write(
-        "reports/m1-build.json",
-        &serde_json::to_vec_pretty(&result).map_err(|e| e.to_string())?,
-    )?;
-    staging.publish()?;
+    let mut ctx = stages::BuildContext::new(root, plan);
+    stages::run_chain(&mut ctx)?;
+    // 链尾补 materialize 的 finished 事件后回填,保证 Actions 页拿到全量
+    // 步骤;失败路径的事件随 Err 文本携带阶段名(P2 队列改结构化错误)。
+    let mut result = ctx.result.take().expect("chain completed without result");
+    result.events = ctx.events.clone();
     Ok(result)
 }
 
-fn package_relative_name(plan: &super::plan::PropertyBuildPlan) -> String {
+pub(crate) fn package_relative_name(plan: &super::plan::PropertyBuildPlan) -> String {
     format!("packages/{}", plan.intermediate.output.package)
 }
 
-fn read_scene_document(
+pub(crate) fn read_scene_document(
     root: &Path,
     document: &str,
     model: Option<&str>,
@@ -362,7 +157,7 @@ fn read_scene_document(
     Ok(Some(parsed))
 }
 
-fn read_scene_bytes(root: &Path, document: &str) -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn read_scene_bytes(root: &Path, document: &str) -> Result<Option<Vec<u8>>, String> {
     let candidate = root.join(document);
     if !candidate.is_file() {
         return Ok(None);
@@ -375,7 +170,7 @@ fn read_scene_bytes(root: &Path, document: &str) -> Result<Option<Vec<u8>>, Stri
 
 /// Insert one schema raster slot; PNG payloads are encoded as native rasters,
 /// anything else is preserved verbatim (already a game raster).
-fn insert_slot_raster(
+pub(crate) fn insert_slot_raster(
     root: &Path,
     resources: &mut BuildResources,
     path: &str,
@@ -433,7 +228,7 @@ fn insert_slot_raster(
 /// model, inserting its material rasters/parameter tables into the package.
 /// Returns the compiled model's resource id and the number of produced
 /// material resources.
-fn insert_scene_model(
+pub(crate) fn insert_scene_model(
     root: &Path,
     model: &Option<String>,
     model_shape: Option<&str>,
@@ -808,7 +603,7 @@ fn alloc_free_instance(resources: &connector::Resources, type_id: u32, bytes: &[
 
 /// Fetch the target property, apply scene semantics + LOD retarget, and store
 /// the re-encoded bytes when anything changed.
-fn apply_property_semantics(
+pub(crate) fn apply_property_semantics(
     resources: &mut BuildResources,
     target: ResourceId,
     document: Option<&SceneDocument>,
@@ -948,7 +743,7 @@ struct SceneResourceManifest {
     missing: Vec<String>,
 }
 
-fn materialize_scene_resources(
+pub(crate) fn materialize_scene_resources(
     root: &Path,
     intermediate: &crate::asset_build_m0::IntermediateModel,
     resources: &connector::Resources,
@@ -1105,7 +900,7 @@ fn property_key(property: &sc_properties::Property) -> Option<Key> {
     }
 }
 
-fn validate_scene_path_semantics(
+pub(crate) fn validate_scene_path_semantics(
     root: &Path,
     document: &str,
     resources: &connector::Resources,
@@ -1210,11 +1005,11 @@ fn validate_scene_path_semantics(
     }
 }
 
-fn digest(bytes: &[u8]) -> String {
+pub(crate) fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn protected_templates(
+pub(crate) fn protected_templates(
     resources: &connector::Resources,
     declared: &HashSet<ResourceId>,
 ) -> HashSet<ResourceId> {
