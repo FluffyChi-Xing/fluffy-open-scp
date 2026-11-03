@@ -185,6 +185,32 @@ const LIGHT_FIXED_NIGHT_PERIOD: (u32, PropType) = (0x0CE7_1B11, PropType::Key);
 const LIGHT_FIXED_NIGHT_RANGE: (u32, PropType) = (0x0CE7_1B12, PropType::Vector2);
 const LIGHT_FIXED_ZEROS: (u32, PropType) = (0x0CE7_1B13, PropType::Vector2);
 
+// -- path columns (SC::CreatePathsFromProps contract, unit-props doc §4;
+//    wire format byte-checked against vanilla fire station E917279C and a
+//    Game.package-wide column scan, 2026-11-03). The author packager has no
+//    path support — this is derived from vanilla + decompiled engine source.
+const PATH_POINTS: u32 = 0x0CAA_680D;
+const PATH_TANGENTS: u32 = 0x0CB0_0ED8;
+const PATH_POINT_INDICES: u32 = 0x0CAA_6832;
+const PATH_PAIRS: u32 = 0x0CAA_6841;
+const PATH_ENTRIES: u32 = 0x0CC8_FE7A;
+const PATH_SCOPES: u32 = 0x0D9A_4E54;
+const PATH_ROAD_CONNECTS: u32 = 0x0D9A_A2BB;
+/// Engine symbolic scope "local" — the only scope value observed across
+/// every path-carrying asset dict in Game.package (hundreds of buildings).
+pub(crate) const PATH_SCOPE_LOCAL: u32 = 0xF44F_784A;
+/// Road-connect enum encoded as a key instance — the universal vanilla
+/// value for "this path connects to the road" (same scan). Engine enum
+/// kRoadConnect{None,First,Last,FirstAndLast}; a mixed connected/none
+/// building needs the none encoding which is not yet captured, so compile
+/// is all-or-nothing per asset.
+pub(crate) const PATH_ROAD_CONNECT_YES: u32 = 0xC186_DA37;
+/// Path-entry property groups seen in vanilla asset dicts: fire-station
+/// family 40E0C400, university door entry 675B61B1 ships in 40E1C400
+/// (both verified present in Game.package). The engine resolves entries by
+/// instance through the script table; the group in the key is informational.
+pub(crate) const PATH_ENTRY_GROUP: u32 = 0x40E1_C400;
+
 /// Parent-free identity output.
 pub struct ParentFreeIdentity {
     /// Asset dictionary (40E1C000, new instance) with ground numerics,
@@ -726,6 +752,116 @@ fn compile_light_fields(
     Ok(out)
 }
 
+/// Rotate a lot-local vector with the author's quantized rotation — same
+/// transform math as props/lights: identity basis with the vector as
+/// translation comes back with the translation rotated about lot origin.
+fn rotate_vector(vector: &[f32; 3], degrees: u32) -> Result<[f32; 3], String> {
+    let matrix = rotate_matrix(
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, vector[0], vector[1], vector[2]],
+        degrees,
+    )?;
+    Ok([matrix[9], matrix[10], matrix[11]])
+}
+
+/// Path entity columns for the Asset dictionary: points/tangents/indices
+/// (per pathPoint, authored order) and start-end pairs + entry/scope/
+/// road-connect keys (per authored path). Tangents must stay point-count
+/// equal (engine returns 1 otherwise) and pairs are inclusive (start,end).
+fn compile_path_fields(
+    scene: Option<&SceneDocument>,
+    degrees: u32,
+) -> Result<Vec<Property>, String> {
+    let Some(scene) = scene else {
+        return Ok(Vec::new());
+    };
+    if scene.paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut points_by_id: std::collections::HashMap<
+        &str,
+        (&[f32; 3], &[f32; 3], Option<i32>),
+    > = Default::default();
+    for unit in &scene.units {
+        if let SceneUnit::PathPoint { point, tangent, point_index, id } = unit {
+            if let (Some(point), Some(tangent)) = (point, tangent) {
+                points_by_id.insert(id.as_str(), (point, tangent, *point_index));
+            }
+        }
+    }
+    let mut points: Vec<Value> = Vec::new();
+    let mut tangents: Vec<Value> = Vec::new();
+    let mut indices: Vec<Value> = Vec::new();
+    let mut pairs: Vec<Value> = Vec::new();
+    let mut entries: Vec<Value> = Vec::new();
+    let mut scopes: Vec<Value> = Vec::new();
+    let mut connects: Vec<Value> = Vec::new();
+    let mut connect_all = true;
+    let mut connect_any = false;
+    for (path_index, path) in scene.paths.iter().enumerate() {
+        let start = points.len() as i32;
+        let mut count = 0i32;
+        for id in &path.point_ids {
+            let Some((point, tangent, point_index)) = points_by_id.get(id.as_str()) else {
+                return Err(format!(
+                    "path #{path_index} references missing pathPoint {id}"
+                ));
+            };
+            points.push(Value::Vector3(rotate_vector(point, degrees)?));
+            tangents.push(Value::Vector3(rotate_vector(tangent, degrees)?));
+            indices.push(Value::Int32(
+                point_index.unwrap_or(points.len() as i32 - 1),
+            ));
+            count += 1;
+        }
+        if count == 0 {
+            continue;
+        }
+        pairs.push(Value::Int32(start));
+        pairs.push(Value::Int32(start + count - 1));
+        let Some(entry) = &path.entry else {
+            return Err(format!(
+                "path #{path_index} has no pathEntry instance — the engine \
+                 resolves path semantics through script-side entries"
+            ));
+        };
+        let instance = u32::from_str_radix(entry.trim().trim_start_matches("0x"), 16)
+            .map_err(|error| format!("path #{path_index} entry '{entry}': {error}"))?;
+        entries.push(Value::Key(Key {
+            type_id: 0x00B1_B104,
+            group: PATH_ENTRY_GROUP,
+            instance,
+        }));
+        scopes.push(zero_key(PATH_SCOPE_LOCAL));
+        connect_any |= path.road_connect;
+        connect_all &= path.road_connect;
+    }
+    if connect_any && !connect_all {
+        return Err(
+            "mixed roadConnect across paths needs the engine's none-encoding, \
+             which no vanilla asset dict carries — make roadConnect uniform"
+                .into(),
+        );
+    }
+    if connect_any {
+        for _ in 0..scene.paths.len() {
+            connects.push(zero_key(PATH_ROAD_CONNECT_YES));
+        }
+    }
+    let mut out = Vec::new();
+    if !points.is_empty() {
+        out.push(array(PATH_POINTS, PropType::Vector3, points));
+        out.push(array(PATH_TANGENTS, PropType::Vector3, tangents));
+        out.push(array(PATH_POINT_INDICES, PropType::Int32, indices));
+        out.push(array(PATH_PAIRS, PropType::Int32, pairs));
+        out.push(array(PATH_ENTRIES, PropType::Key, entries));
+        out.push(array(PATH_SCOPES, PropType::Key, scopes));
+        if !connects.is_empty() {
+            out.push(array(PATH_ROAD_CONNECTS, PropType::Key, connects));
+        }
+    }
+    Ok(out)
+}
+
 /// Build the parent-free Unit + Asset identities from the reference package.
 ///
 /// `ground_lot` names the ground/lot property the numeric parcel fields and
@@ -907,12 +1043,17 @@ pub fn build(
         ),
     );
     // Props and lights → Asset dictionary columns (author compile_fields
-    // wire format, byte-verified against prepare_asset.py output). Spawner
-    // and path columns deferred until the base display is confirmed.
+    // wire format, byte-verified against prepare_asset.py output). Path
+    // columns follow the vanilla CreatePathsFromProps contract (fire station
+    // E917279C + Game.package scan). Spawner columns remain deferred until
+    // their assembly is game-verified.
     for property in compile_prop_fields(scene, rotation_degrees)? {
         upsert(&mut asset, property);
     }
     for property in compile_light_fields(scene, rotation_degrees)? {
+        upsert(&mut asset, property);
+    }
+    for property in compile_path_fields(scene, rotation_degrees)? {
         upsert(&mut asset, property);
     }
     // Unit/Asset locale title edge (author `unit/asset[0x09fb78cb]=text(t,1)`).
@@ -1142,6 +1283,70 @@ mod tests {
         assert_eq!(first(0x0E98_D445), Value::Bool(true));
         assert_eq!(first(0x0EC4_567E), Value::Float(2.5));
         assert_eq!(first(0x0E4D_F244), Value::Float(0.25));
+    }
+
+    /// Path columns follow the vanilla fire-station wire: points/tangents/
+    /// indices per pathPoint (rotated with the author orientation), one
+    /// inclusive (start,end) pair + entry/scope keys per path, road-connect
+    /// key per path when toggled. Entry/scope/connect encodings were
+    /// captured from E917279C and a Game.package-wide column scan.
+    #[test]
+    fn path_fields_match_vanilla_wire() {
+        let value = json!({
+            "units": [
+                {"id": "pathPoint:0", "kind": "pathPoint", "index": 0,
+                 "point": [1.0, 2.0, 0.0], "tangent": [3.0, -4.0, 0.0], "pointIndex": 0},
+                {"id": "pathPoint:1", "kind": "pathPoint", "index": 1,
+                 "point": [5.0, 6.0, 0.0], "tangent": [7.0, -8.0, 0.0], "pointIndex": 1}
+            ],
+            "editor": {"workbench": {"paths": [
+                {"id": "path:1", "entry": "675b61b1", "scope": "local",
+                 "roadConnect": true,
+                 "pointIds": ["pathPoint:0", "pathPoint:1"]}
+            ]}}
+        });
+        let scene = parse_scene(&value).expect("scene");
+        let fields = compile_path_fields(Some(&scene), 180).expect("path fields");
+        let column = |hash: u32| -> Vec<Value> {
+            fields
+                .iter()
+                .find(|p| p.hash == hash)
+                .map(|p| match &p.kind {
+                    Kind::Array(values) => values.clone(),
+                    _ => panic!("column must be an array"),
+                })
+                .unwrap_or_else(|| panic!("missing column {hash:08X}"))
+        };
+        // 180° flips x/y about lot origin for points and tangents alike.
+        assert_eq!(column(0x0CAA_680D)[0], Value::Vector3([-1.0, -2.0, 0.0]));
+        assert_eq!(column(0x0CB0_0ED8)[1], Value::Vector3([-7.0, 8.0, 0.0]));
+        assert_eq!(column(0x0CAA_6832), vec![Value::Int32(0), Value::Int32(1)]);
+        // One path over two points = single inclusive pair.
+        assert_eq!(column(0x0CAA_6841), vec![Value::Int32(0), Value::Int32(1)]);
+        assert_eq!(
+            column(0x0CC8_FE7A),
+            vec![Value::Key(Key {
+                type_id: 0x00B1_B104,
+                group: 0x40E1_C400,
+                instance: 0x675B_61B1,
+            })]
+        );
+        assert_eq!(
+            column(0x0D9A_4E54),
+            vec![Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: 0xF44F_784A,
+            })]
+        );
+        assert_eq!(
+            column(0x0D9A_A2BB),
+            vec![Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: 0xC186_DA37,
+            })]
+        );
     }
 
     /// Author wire: record header `>IHHII` with flags 0x809C, and the

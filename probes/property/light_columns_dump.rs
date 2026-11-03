@@ -37,6 +37,8 @@ const OTHER_COLS: &[(u32, &str)] = &[
     (0x0CAA_6832, "path_indices"),
     (0x0CC8_FE7A, "path_entries"),
     (0x0F16_9C46, "interior_ctrl"),
+    (0x0D9A_4E54, "path_scope"),
+    (0x0D9A_A2BB, "path_road_connect"),
 ];
 
 fn vals(kind: &Kind) -> &[Value] {

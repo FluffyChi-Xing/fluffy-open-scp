@@ -97,6 +97,10 @@ pub struct ScenePath {
     pub entry: Option<String>,
     /// Ordered pathPoint unit ids (document order defines the path).
     pub point_ids: Vec<String>,
+    /// Workbench scope string; "local" is the engine default (missing = local).
+    pub scope_local: bool,
+    /// Workbench roadConnect toggle — writes the vanilla road-connect key.
+    pub road_connect: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -208,6 +212,15 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
                             .collect()
                     })
                     .unwrap_or_default(),
+                scope_local: path
+                    .get("scope")
+                    .and_then(Json::as_str)
+                    .map(|scope| scope == "local")
+                    .unwrap_or(true),
+                road_connect: path
+                    .get("roadConnect")
+                    .and_then(Json::as_bool)
+                    .unwrap_or(false),
             });
         }
     }
@@ -778,10 +791,11 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
     }
     finish_path_pairs(document, &path_point_ids, &path_point_indices, &mut columns);
 
-    // Path-entry bindings (0CC8FE7A): full TGI keys on the Asset dictionary
-    // linking the lot to its road PathEntry resources — vanilla asset dicts
-    // carry exactly this column (E917279C binds three, e.g.
-    // [instance, 00B1B104, 40E0C400]); without it the path never links.
+    // Path-entry bindings (0CC8FE7A): full TGI keys linking the lot to its
+    // script-side PathEntry resources — vanilla asset dicts carry exactly
+    // this column (E917279C binds three, e.g. [instance, 00B1B104,
+    // 40E0C400]); without it the path never links. The university door
+    // entry 675B61B1 lives in 40E1C400 — both groups exist in vanilla.
     let entries: Vec<Value> = document
         .paths
         .iter()
@@ -805,6 +819,49 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             PropType::Key,
             entries,
         ));
+    }
+    // Scope + road-connect keys, one per path (vanilla encodings verified by
+    // a Game.package-wide column scan; see native_profile PATH_* constants).
+    if !document.paths.is_empty() {
+        let mut scopes = Vec::with_capacity(document.paths.len());
+        for path in &document.paths {
+            // Only "local" is evidenced so far; non-local scope stays
+            // unsupported rather than guessed.
+            if !path.scope_local {
+                return Err(
+                    "non-local path scope has no verified vanilla encoding".into(),
+                );
+            }
+            scopes.push(Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: super::native_profile::PATH_SCOPE_LOCAL,
+            }));
+        }
+        columns.push(array_property(0x0D9A_4E54, PropType::Key, scopes));
+        let connect_all = document.paths.iter().all(|path| path.road_connect);
+        let connect_any = document.paths.iter().any(|path| path.road_connect);
+        if connect_any && !connect_all {
+            return Err(
+                "mixed roadConnect across paths needs the engine's none-encoding, \
+                 which no vanilla asset dict carries"
+                    .into(),
+            );
+        }
+        if connect_any {
+            columns.push(array_property(
+                0x0D9A_A2BB,
+                PropType::Key,
+                vec![
+                    Value::Key(Key {
+                        type_id: 0,
+                        group: 0,
+                        instance: super::native_profile::PATH_ROAD_CONNECT_YES,
+                    });
+                    document.paths.len()
+                ],
+            ));
+        }
     }
 
     file.values.extend(columns);
