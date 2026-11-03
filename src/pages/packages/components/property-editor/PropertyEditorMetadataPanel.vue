@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FColorPicker from "@/components/ui/FColorPicker.vue";
+import { Switch } from "@/components/ui/switch";
 import type { LightUnit, LotUnitDto, PropUnit } from "@/api/tauri";
 import { unitId } from "./unitGizmos";
 
@@ -94,11 +95,9 @@ function setCullDistance(distance: string) {
   cullOpen.value = false;
 }
 
-function setVolumetric(event: Event) {
+function setVolumetric(value: boolean) {
   if (locked.value || !light.value) return;
-  emit("update-fields", unitId(light.value), {
-    isVolumetric: (event.target as HTMLInputElement).checked,
-  });
+  emit("update-fields", unitId(light.value), { isVolumetric: value });
 }
 
 function setNumberField(key: NumberField["key"], event: Event) {
@@ -256,19 +255,17 @@ function setColor(hex: string) {
         </div>
       </section>
       <section class="panel-section">
-        <label class="scale-row volumetric-row">
+        <div class="scale-row volumetric-row">
           <div class="scale-label">
             <span>{{ $t("package.lightVolumetric") }}</span>
           </div>
-          <input
-            class="volumetric-input"
-            type="checkbox"
-            :checked="light.isVolumetric ?? false"
+          <Switch
+            :model-value="light.isVolumetric ?? false"
             :disabled="locked"
             :aria-label="$t('package.lightVolumetric')"
-            @change="setVolumetric"
+            @update:model-value="setVolumetric"
           />
-        </label>
+        </div>
       </section>
     </template>
     <p v-else class="panel-empty">{{ $t("package.metadataUnsupported") }}</p>
@@ -387,18 +384,9 @@ function setColor(hex: string) {
   cursor: not-allowed;
   opacity: 0.55;
 }
-/* 体积光开关行：右侧原位 checkbox（label 包裹保证点击热区） */
+/* 体积光开关行：右侧 Switch（组件库统一布尔控件，非 checkbox——用户指令 2026-11-03） */
 .volumetric-row {
-  cursor: pointer;
-}
-.volumetric-input {
-  accent-color: var(--accent, #3b82f6);
-  height: 16px;
-  width: 16px;
-}
-.volumetric-input:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+  cursor: default;
 }
 .metadata-panel.locked .type-trigger,
 .metadata-panel.locked .axis-row input,
