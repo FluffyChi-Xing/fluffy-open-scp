@@ -951,6 +951,7 @@ const messages = {
       assetWorkbench: {
       actionsCardTitle: "OpenSCP Actions",
       actionsCardHint: "后台构建任务列表:提交打包后可关闭编辑器,在此查看进度与详情",
+      actionsCardHintWith: "正在查看 {project} 的后台构建任务",
       actionsCardNoProjects: "尚无项目——先创建项目并完成一次打包",
       actionsCardProject: "项目",
       actionsCardPick: "选择项目…",
@@ -3153,6 +3154,7 @@ const messages = {
       assetWorkbench: {
       actionsCardTitle: "OpenSCP Actions",
       actionsCardHint: "Background build runs: close the editor after submitting, watch progress here",
+      actionsCardHintWith: "Background build runs for {project}",
       actionsCardNoProjects: "No projects yet — create one and run a build first",
       actionsCardProject: "Project",
       actionsCardPick: "Pick a project…",

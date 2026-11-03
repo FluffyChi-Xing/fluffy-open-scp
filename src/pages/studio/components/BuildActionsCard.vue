@@ -22,6 +22,11 @@ const options = computed(() =>
     })),
 );
 const selectedRoot = ref("");
+const selectedLabel = computed(
+  () =>
+    options.value.find((option) => option.value === selectedRoot.value)?.label ??
+    t("studio.assetWorkbench.actionsCardPick"),
+);
 
 
 </script>
@@ -29,14 +34,13 @@ const selectedRoot = ref("");
 <template>
   <section class="actions-card">
     <div class="card-head">
-      <h3>{{ $t("studio.assetWorkbench.actionsCardTitle") }}</h3>
-      <small>{{ $t("studio.assetWorkbench.actionsCardHint") }}</small>
-    </div>
-    <p v-if="!options.length" class="card-note">
-      {{ t("studio.assetWorkbench.actionsCardNoProjects") }}
-    </p>
-    <template v-else>
-      <label class="project-row">
+      <div class="card-head-text">
+        <h3>{{ $t("studio.assetWorkbench.actionsCardTitle") }}</h3>
+        <small>{{ selectedRoot
+          ? t("studio.assetWorkbench.actionsCardHintWith", { project: selectedLabel })
+          : t("studio.assetWorkbench.actionsCardHint") }}</small>
+      </div>
+      <label v-if="options.length" class="project-row">
         <span>{{ t("studio.assetWorkbench.actionsCardProject") }}</span>
         <FSelect
           v-model="selectedRoot"
@@ -45,48 +49,54 @@ const selectedRoot = ref("");
           :aria-label="t('studio.assetWorkbench.actionsCardProject')"
         />
       </label>
-      <BuildActionsPanel v-if="selectedRoot" :project="selectedRoot" />
-    </template>
+    </div>
+    <p v-if="!options.length" class="card-note">
+      {{ t("studio.assetWorkbench.actionsCardNoProjects") }}
+    </p>
+    <BuildActionsPanel v-else-if="selectedRoot" :project="selectedRoot" />
   </section>
 </template>
 
 <style scoped>
 .actions-card {
-  background: var(--surface, transparent);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 10px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   margin-top: 16px;
-  padding: 14px;
+  padding: 16px 18px;
 }
-.card-head h3 {
-  font-size: 14px;
-  margin: 0;
+.card-head {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
 }
-.card-head small {
+.card-head-text h3 {
+  font-size: 15px;
+  margin: 0 0 2px;
+}
+.card-head-text small {
   color: var(--muted-foreground);
-}
-.card-note {
-  color: var(--subtle-foreground);
   font-size: 12px;
-  margin: 4px 0;
 }
 .project-row {
   align-items: center;
+  color: var(--muted-foreground);
   display: flex;
   font-size: 12px;
   gap: 8px;
 }
 .project-select {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
-  font: inherit;
-  min-height: 28px;
-  min-width: 220px;
-  padding: 0 8px;
+  min-width: 260px;
+}
+.card-note {
+  color: var(--subtle-foreground);
+  font-size: 12px;
+  margin: 0;
 }
 </style>
