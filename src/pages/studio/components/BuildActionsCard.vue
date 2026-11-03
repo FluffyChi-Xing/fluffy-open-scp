@@ -88,8 +88,14 @@ const selectedLabel = computed(
   align-items: center;
   color: var(--muted-foreground);
   display: flex;
+  flex-shrink: 0;
   font-size: 12px;
   gap: 8px;
+  white-space: nowrap;
+}
+.project-row > span {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .project-select {
   min-width: 260px;
