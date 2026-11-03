@@ -764,8 +764,39 @@ fn compile_light_fields(
     Ok(out)
 }
 
-/// Spawner entity columns for the Asset dictionary: the authored residual
-/// TGI keys and flags-14 transforms, rotated with the author orientation.
+/// 教育系锚点基础包:理工学院(96×96)asset dict 的 spawner 列 =
+/// 共享 9 锚点 + 市政层 4(3B8ADFE0/E3/E2/E5,对拍理工/法学院一致)。
+/// 教育系脚本按这 13 个 id 查询 mUnitLocations——缺了就没有小人。
+const EDU_ANCHOR_PACK: &[u8] = include_bytes!("../../resources/sc5/edu-institute-anchors.package");
+
+/// 基础包解析:(ids, transforms) 等长对;包损坏返回 None(fail-soft,
+/// 作者 spawner 仍然生效)。
+fn education_anchor_pack() -> Option<(Vec<Value>, Vec<Value>)> {
+    let file = PropertyFile::parse(EDU_ANCHOR_PACK).ok()?;
+    let mut ids = Vec::new();
+    let mut transforms = Vec::new();
+    for property in &file.values {
+        match property.hash {
+            0x0E1B_AC61 => {
+                if let Kind::Array(values) = &property.kind {
+                    ids.extend(values.iter().cloned());
+                }
+            }
+            0x0E1B_AC62 => {
+                if let Kind::Array(values) = &property.kind {
+                    transforms.extend(values.iter().cloned());
+                }
+            }
+            _ => {}
+        }
+    }
+    (ids.len() == transforms.len() && !ids.is_empty()).then_some((ids, transforms))
+}
+
+/// Spawner entity columns for the Asset dictionary: the education anchor
+/// pack (13 vanilla anchors the education script queries) comes first,
+/// authored spawners append after — same id = authored transform wins.
+/// Transforms carry flags 14 and rotate with the author orientation.
 /// Count/randomization columns are deliberately absent (vanilla asset dicts
 /// never carry them; see the module comment above).
 fn compile_spawner_fields(
@@ -777,28 +808,147 @@ fn compile_spawner_fields(
     };
     let mut ids: Vec<Value> = Vec::new();
     let mut transforms: Vec<Value> = Vec::new();
+    // 教育系基础包(原版 lot-local transforms 随作者朝向旋转)
+    if let Some((pack_ids, pack_transforms)) = education_anchor_pack() {
+        for value in pack_transforms {
+            if let Value::Transform(t) = value {
+                let matrix = rotate_matrix(&t.matrix, degrees)?;
+                transforms.push(Value::Transform(Transform {
+                    flags: 14,
+                    unknown: None,
+                    matrix: matrix.to_vec(),
+                }));
+            }
+        }
+        ids.extend(pack_ids);
+    }
+    // 作者 spawner:同 id 覆盖基础包 transform(作者摆放优先)
+    let mut authored: std::collections::BTreeMap<u32, (Value, Value)> = Default::default();
     for unit in &scene.units {
         let SceneUnit::Spawner { transform, id } = unit else {
             continue;
         };
         let matrix = rotate_matrix(&transform.matrix, degrees)?;
-        ids.push(Value::Key(Key {
-            type_id: id.type_id,
-            group: id.group,
-            instance: id.instance,
-        }));
+        authored.insert(
+            id.instance,
+            (
+                Value::Key(Key {
+                    type_id: id.type_id,
+                    group: id.group,
+                    instance: id.instance,
+                }),
+                Value::Transform(Transform {
+                    flags: 14,
+                    unknown: None,
+                    matrix: matrix.to_vec(),
+                }),
+            ),
+        );
+    }
+    let mut final_ids: Vec<Value> = Vec::new();
+    let mut final_transforms: Vec<Value> = Vec::new();
+    for (id_value, transform_value) in ids.iter().zip(transforms.iter()) {
+        let instance = match id_value {
+            Value::Key(key) => key.instance,
+            _ => continue,
+        };
+        match authored.remove(&instance) {
+            Some((override_id, override_transform)) => {
+                final_ids.push(override_id);
+                final_transforms.push(override_transform);
+            }
+            None => {
+                final_ids.push(id_value.clone());
+                final_transforms.push(transform_value.clone());
+            }
+        }
+    }
+    for (id_value, transform_value) in authored.values() {
+        final_ids.push(id_value.clone());
+        final_transforms.push(transform_value.clone());
+    }
+    if final_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(vec![
+        array(SPAWNER_IDS, PropType::Key, final_ids),
+        array(SPAWNER_TRANSFORMS, PropType::Transform, final_transforms),
+    ])
+}
+
+// -- effect columns (SP::cModelWorld::AddAttachments contract): five
+//    parallel arrays. Vanilla presence is OPTIONAL per building (fire
+//    station 1 / water pump 1 / institute 2 / law school + skate park 0 —
+//    all-or-nothing). effectWorlds (0x02A907B9, misnamed EFFECT_ALWAYS_ZERO
+//    in older notes) is the all-zero key constant on every vanilla row;
+//    refs (external control id) may differ from the effect id (pump:
+//    A4C827FA→B97AD80A; institute: two effects share ref 4C11EF2B).
+//    Institute effect #1 ships a flags-15 transform with scale 0.3 —
+//    authored scale flows through the same flags-15 slot as props.
+const EFFECT_IDS: u32 = 0x02A9_07B5;
+const EFFECT_TRANSFORMS: u32 = 0x02A9_07B6;
+const EFFECT_WORLDS: u32 = 0x02A9_07B9;
+const EFFECT_REFS: u32 = 0x02A9_07BB;
+const EFFECT_ENABLED: u32 = 0x02A9_07BC;
+
+/// Effect attachment columns: authored effect ids + rotated transforms +
+/// zero worlds + external control refs (fallback = the effect id, the fire
+/// station convention) + enabled flags.
+fn compile_effect_fields(
+    scene: Option<&SceneDocument>,
+    degrees: u32,
+) -> Result<Vec<Property>, String> {
+    let Some(scene) = scene else {
+        return Ok(Vec::new());
+    };
+    let mut ids: Vec<Value> = Vec::new();
+    let mut transforms: Vec<Value> = Vec::new();
+    let mut worlds: Vec<Value> = Vec::new();
+    let mut refs: Vec<Value> = Vec::new();
+    let mut enableds: Vec<Value> = Vec::new();
+    for unit in &scene.units {
+        let SceneUnit::Effect {
+            transform,
+            effect_id,
+            external_id,
+            enabled,
+        } = unit
+        else {
+            continue;
+        };
+        let Some(effect_id) = effect_id else {
+            return Err("effect unit is missing effectId".into());
+        };
+        let matrix = match transform {
+            Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
+            None => IDENTITY_12,
+        };
+        ids.push(key_value(*effect_id));
+        // Encoder invariant: flags 15 ⇔ unknown.is_some()。工作台场景文档
+        // 的 effect transform 可能是 flags 15 但无 scale payload——规范化为
+        // 14(原版惯例;institute #1 的 flags15+scale 形态经由 unknown 保留)。
+        let (flags, unknown) = match transform.as_ref() {
+            Some(t) if t.unknown.is_some() => (15u16, t.unknown),
+            _ => (14u16, None),
+        };
         transforms.push(Value::Transform(Transform {
-            flags: 14,
-            unknown: None,
+            flags,
+            unknown,
             matrix: matrix.to_vec(),
         }));
+        worlds.push(Value::Key(Key { type_id: 0, group: 0, instance: 0 }));
+        refs.push(key_value(external_id.unwrap_or(*effect_id)));
+        enableds.push(Value::Bool(enabled.unwrap_or(false)));
     }
     if ids.is_empty() {
         return Ok(Vec::new());
     }
     Ok(vec![
-        array(SPAWNER_IDS, PropType::Key, ids),
-        array(SPAWNER_TRANSFORMS, PropType::Transform, transforms),
+        array(EFFECT_IDS, PropType::Key, ids),
+        array(EFFECT_TRANSFORMS, PropType::Transform, transforms),
+        array(EFFECT_WORLDS, PropType::Key, worlds),
+        array(EFFECT_REFS, PropType::Key, refs),
+        array(EFFECT_ENABLED, PropType::Bool, enableds),
     ])
 }
 
@@ -1108,6 +1258,9 @@ pub fn build(
         upsert(&mut asset, property);
     }
     for property in compile_spawner_fields(scene, rotation_degrees)? {
+        upsert(&mut asset, property);
+    }
+    for property in compile_effect_fields(scene, rotation_degrees)? {
         upsert(&mut asset, property);
     }
     // Unit/Asset locale title edge (author `unit/asset[0x09fb78cb]=text(t,1)`).
@@ -1432,18 +1585,33 @@ mod tests {
                 })
                 .unwrap_or_else(|| panic!("missing column {hash:08X}"))
         };
-        assert_eq!(column(0x0E1B_AC61).len(), 2);
+        // 教育系基础包前置(理工学院 13 锚点,首 id=125D19FA)+ 作者追加;
+        let ids = column(0x0E1B_AC61);
+        assert_eq!(ids.len(), 15, "13 education base + 2 authored");
         assert_eq!(
-            column(0x0E1B_AC61)[0].clone(),
+            ids[0],
+            Value::Key(Key { type_id: 0, group: 0, instance: 0x125D_19FA }),
+            "base pack first = the universal shared anchor"
+        );
+        // 作者 spawner 按 instance 升序追加(BTreeMap 确定性顺序;id↔transform
+        // 配对经同一 map 保持对齐)
+        assert_eq!(
+            ids[13],
+            Value::Key(Key { type_id: 0, group: 0, instance: 379778996 }),
+            "authored spawners append after the base pack"
+        );
+        assert_eq!(
+            ids[14],
             Value::Key(Key { type_id: 0, group: 0, instance: 2450748962 })
         );
-        match column(0x0E1B_AC62)[0].clone() {
+        // transforms[13] ↔ ids[13](379778996, authored, 平移 (5,6,7))
+        match column(0x0E1B_AC62)[13].clone() {
             Value::Transform(t) => {
                 assert_eq!(t.flags, 14, "vanilla spawner transforms carry flags 14");
                 assert_eq!(
                     t.matrix[9..],
-                    [-2.0, -3.0, 4.0],
-                    "180° flips the translation"
+                    [-5.0, -6.0, 7.0],
+                    "180° flips the translation (BTreeMap order: 379778996 first)"
                 );
             }
             other => panic!("spawner transform: {other:?}"),

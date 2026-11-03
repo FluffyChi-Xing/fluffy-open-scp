@@ -21,7 +21,6 @@ import { useToast } from "@/composables/useToast";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import SchemaPropertyViewport from "@/pages/packages/components/property-editor/SchemaPropertyViewport.vue";
 import PropertyEditorOutliner from "@/pages/packages/components/property-editor/PropertyEditorOutliner.vue";
-import BuildActionsPanel from "./BuildActionsPanel.vue";
 import UnitInspector from "@/pages/packages/components/unit-inspector/UnitInspector.vue";
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
@@ -311,7 +310,7 @@ useEditorHotkeys(
 );
 
 // ---- 右栏页签 ----
-type RightTab = "tree" | "library" | "lot" | "lotlib" | "slots" | "schema" | "actions";
+type RightTab = "tree" | "library" | "lot" | "lotlib" | "slots" | "schema";
 const rightTab = ref<RightTab>("tree");
 const ALL_RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
   { id: "tree", icon: "ListTree", label: "package.componentTree" },
@@ -324,7 +323,6 @@ const ALL_RIGHT_TABS: { id: RightTab; icon: string; label: string }[] = [
     label: "studio.assetWorkbench.materialSlotsTab",
   },
   { id: "schema", icon: "CodeXml", label: "package.schemaSheet" },
-  { id: "actions", icon: "Workflow", label: "studio.assetWorkbench.actionsTab" },
 ];
 const rightTabs = computed(() =>
   asset.nativeBlender.value

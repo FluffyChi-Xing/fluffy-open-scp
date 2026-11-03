@@ -8,6 +8,7 @@ import { useToast } from "@/composables/useToast";
 import { isTauri } from "@/api";
 import { useModProjectsStore } from "@/stores/modProjects";
 import ProjectDashboard from "./components/dashboard/ProjectDashboard.vue";
+import BuildActionsCard from "./components/BuildActionsCard.vue";
 import ProjectFormSheet from "./components/ProjectFormSheet.vue";
 import GroupManagerSheet from "./components/GroupManagerSheet.vue";
 import CodeWorkbench from "./components/CodeWorkbench.vue";
@@ -170,6 +171,8 @@ function statusLabel(status: string): string {
       </p>
 
       <ProjectDashboard :stats="store.stats" />
+
+      <BuildActionsCard />
 
       <div v-if="store.devRoot" class="project-pane">
         <div class="pane-head">

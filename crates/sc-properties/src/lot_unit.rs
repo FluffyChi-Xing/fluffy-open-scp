@@ -41,7 +41,11 @@ pub const CULL_MAX: u32 = 0x3E7E_124D;
 // ---- Effect ----
 pub const EFFECT_IDS: u32 = 0x02A9_07B5;
 pub const EFFECT_TRANSFORMS: u32 = 0x02A9_07B6;
-pub const EFFECT_ALWAYS_ZERO: u32 = 0x02A9_07B9;
+/// effectWorlds(效果所属 world 键数组)——旧名 EFFECT_ALWAYS_ZERO 为
+/// 误名(dev 源码 AddAttachments 实证,unit-props 文档 §2)。
+pub const EFFECT_WORLDS: u32 = 0x02A9_07B9;
+/// 兼容旧名。
+pub const EFFECT_ALWAYS_ZERO: u32 = EFFECT_WORLDS;
 pub const EFFECT_REF_IDS: u32 = 0x02A9_07BB;
 pub const EFFECT_ENABLED: u32 = 0x02A9_07BC;
 

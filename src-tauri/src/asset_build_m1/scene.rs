@@ -600,6 +600,9 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             } => effects.push([
                 ("ids", effect_id.map(key_value)),
                 ("transforms", transform_value(None, transform)),
+                // effectWorlds(0x02A907B9):原版恒零键(消防局/水泵/理工
+                // 实证);EFFECT_ALWAYS_ZERO 是历史误名。
+                ("worlds", Some(Value::Key(Key { type_id: 0, group: 0, instance: 0 }))),
                 ("refs", external_id.map(key_value)),
                 ("enabled", enabled.map(Value::Bool)),
             ]),
@@ -708,6 +711,7 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
                 "transforms",
                 PropType::Transform,
             ),
+            (unit_hash::EFFECT_WORLDS, "worlds", PropType::Key),
             (unit_hash::EFFECT_REF_IDS, "refs", PropType::Key),
             (unit_hash::EFFECT_ENABLED, "enabled", PropType::Bool),
         ],
