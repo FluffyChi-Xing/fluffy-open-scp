@@ -10,13 +10,23 @@ static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 use sc_properties::{Kind, PropType, Property, PropertyEncoding, Value};
 
 pub(super) fn temp_root() -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "openscp-m1-{}-{}",
-        std::process::id(),
-        TEST_SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&root).unwrap();
-    root.canonicalize().unwrap()
+    // 沙箱环境常拒绝 $TMP 的 canonicalize;优先用工作区 target 目录(cargo
+    // 本就写它),系统临时目录兜底。build_from_schema 自身会对 root 再
+    // canonicalize,这里非规范路径也能跑。
+    let workspace_target =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("test-tmp");
+    let candidates = [workspace_target, std::env::temp_dir()];
+    for base in candidates {
+        let root = base.join(format!(
+            "openscp-m1-{}-{}",
+            std::process::id(),
+            TEST_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        if fs::create_dir_all(&root).is_ok() {
+            return root.canonicalize().unwrap_or(root);
+        }
+    }
+    panic!("cannot allocate test temp root");
 }
 
 fn source_package(root: &Path) -> PathBuf {
@@ -770,9 +780,15 @@ fn menu_registration_creates_new_identity_resources() {
     );
     let parsed: serde_json::Value =
         serde_json::from_str(std::str::from_utf8(&locale[3..]).unwrap()).unwrap();
+    // 作者约定:locale 表用固定行键(0x00000001=标题,0x00000002=简介),
+    // 与菜单实例无关(build_donor_locale)。
     assert_eq!(
-        parsed.get(format!("0x{x:08x}")).and_then(|v| v.as_str()),
+        parsed.get("0x00000001").and_then(|v| v.as_str()),
         Some("OpenSCP 测试公园")
+    );
+    assert_eq!(
+        parsed.get("0x00000002").and_then(|v| v.as_str()),
+        Some("菜单录入机制测试")
     );
     assert!(
         output
@@ -794,4 +810,218 @@ fn menu_registration_creates_new_identity_resources() {
     );
     drop(output);
     let _ = fs::remove_dir_all(root);
+}
+
+// ---- P0 黄金基线(2026-11-04,构建器拆分前的字节级行为锚) ----
+//
+// 写入场景文档 fixture(灯/prop/path 全家族)与 menu schema,供
+// 黄金用例与确定性用例共用。
+fn golden_fixture(root: &Path) -> String {
+    // 自包含 donor 链源包(GENERIC_ASSET/INTERACTION_CHAIN/菜单链/donor
+    // lot/PathEntry 675B61B1 + fixture donor lot 8D007745),由
+    // examples/make_golden_fixture.rs 从真实参考包生成;模板链成员或
+    // PathEntry 变更时重新生成即可。
+    let source = include_bytes!("../../resources/sc5/golden-source.package");
+    fs::write(root.join("source.package"), source).unwrap();
+    fs::write(root.join("asset.lot.json"), r#"{
+      "$schema": "openscp.lot-asset/1",
+      "units": [
+        {"id":"light:0","kind":"light","index":0,
+         "transform":{"flags":15,"matrix":[1,0,0, 0,1,0, 0,0,1, 4,5,6]},
+         "lightType":"Spot","color":[1.0,0.5,0.25],
+         "outerRadius":12,"innerRadius":1.5,"diffuse":3,"specular":0.5,
+         "length":20,"cullDistance":"Near","falloffStart":0.25,
+         "isVolumetric":true,"volumetricStrength":2.5,"debugName":"Golden"},
+        {"id":"prop:0","kind":"prop","index":0,"bin":9,
+         "resourceId":305419896,"slot":0,"scale":1.5,
+         "transform":{"flags":15,"matrix":[1,0,0, 0,1,0, 0,0,1, 2,0,4]}},
+        {"id":"pathPoint:0","kind":"pathPoint","index":0,
+         "point":[1,2,0],"tangent":[3,-4,0],"pointIndex":0},
+        {"id":"pathPoint:1","kind":"pathPoint","index":1,
+         "point":[5,6,0],"tangent":[7,-8,0],"pointIndex":1}
+      ],
+      "editor":{"workbench":{"paths":[
+        {"id":"path:1","entry":"675b61b1","scope":"local","roadConnect":true,
+         "pointIds":["pathPoint:0","pathPoint:1"],
+         "source":{"packageId":1,"typeId":"0x00B1B104","group":"0x51F0C000","instance":"0x9D56EBFD"}}
+      ]}}
+    }"#).unwrap();
+    serde_json::to_string(&serde_json::json!({
+        "$schema": "openscp.asset", "schema_version": 2,
+        "id": "golden", "kind": "building-asset",
+        "reference": { "package": "source.package", "lot": "00B1B104:40E1C000:8D007745" },
+        "scene": { "document": "asset.lot.json" },
+        "semantics": { "menu": {
+            "title": "OpenSCP 黄金用例",
+            "description": "P0 全链路基线",
+            "menuParentInstance": "0xF970A822",
+            "categoryInstance": "0x07049250",
+            "unitTemplateInstance": "0x565B72B9",
+            "lotTemplateInstance": "0x34CE7E14",
+            "constructionCost": 1234,
+            "rotationDegrees": 0,
+            "parentFree": true
+        }},
+        "outputs": { "package": "golden.package" }
+    }))
+    .unwrap()
+}
+
+fn column_first(file: &PropertyFile, hash: u32) -> Value {
+    file.values
+        .iter()
+        .find(|p| p.hash == hash)
+        .and_then(|p| match &p.kind {
+            Kind::Array(values) => values.first().cloned(),
+            Kind::Scalar(value) => Some(value.clone()),
+            Kind::Empty => None,
+        })
+        .unwrap_or_else(|| panic!("missing column {hash:08X}"))
+}
+
+/// P0 黄金用例:menu(parent-free)模式下,场景文档全部 unit 家族
+/// (灯/prop/path)在 Asset dict 的落点。四个历史雷区钉位:
+/// 夜时段 key(0x1295_2639)、cull/体积光透传、transform flags 14、
+/// path entry 组(40E1C400)。拆分/重构以本用例为行为基线。
+#[test]
+fn golden_full_chain_asset_dict_columns() {
+    let root = temp_root();
+    let schema = golden_fixture(&root);
+    let result = build_from_schema(&root, &schema).unwrap();
+    let x = result.menu_instance.expect("menu instance allocated");
+    let output = Package::open(&result.path).unwrap();
+    let asset = PropertyFile::parse(
+        &output
+            .read(
+                output
+                    .entry(ResourceId {
+                        type_id: 0x00B1B104,
+                        group: 0x40E1C000,
+                        instance: x,
+                    })
+                    .unwrap(),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+
+    let key = |t: u32, g: u32, i: u32| {
+        Value::Key(sc_properties::Key { type_id: t, group: g, instance: i })
+    };
+    // -- 灯:14 列逐值(作者 packager 契约) --
+    assert_eq!(column_first(&asset, 0x0CAA_8F10), key(0, 0, 0x8E43_F125));
+    assert_eq!(column_first(&asset, 0x0CAA_8F11), key(0, 0, 0x2F0F_F9FD));
+    match column_first(&asset, 0x0CAA_8F12) {
+        Value::Transform(t) => {
+            assert_eq!(t.flags, 14, "scale-less light transform uses flags 14");
+            assert_eq!(t.unknown, None);
+            assert_eq!(
+                t.matrix,
+                vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0]
+            );
+        }
+        other => panic!("light transform: {other:?}"),
+    }
+    assert_eq!(
+        column_first(&asset, 0x0CAA_8F13),
+        Value::ColorRgb { r: 1.0, g: 0.5, b: 0.25 }
+    );
+    assert_eq!(column_first(&asset, 0x0CAA_8F14), Value::Float(12.0));
+    assert_eq!(column_first(&asset, 0x0CAA_8F15), Value::Float(1.5));
+    assert_eq!(column_first(&asset, 0x0CAA_8F16), Value::Float(3.0));
+    assert_eq!(
+        column_first(&asset, 0x0CAA_8F17),
+        Value::String8("SC5_Golden".into())
+    );
+    assert_eq!(column_first(&asset, 0x0D4C_96B4), Value::Float(0.5));
+    assert_eq!(column_first(&asset, 0x0D4C_AD23), Value::Float(20.0));
+    assert_eq!(
+        column_first(&asset, 0x0E01_200F),
+        key(0, 0, 0x4394_551B),
+        "authored Near cull tier"
+    );
+    assert_eq!(column_first(&asset, 0x0E4D_F244), Value::Float(0.25));
+    assert_eq!(column_first(&asset, 0x0E98_D445), Value::Bool(true));
+    assert_eq!(column_first(&asset, 0x0EC4_567E), Value::Float(2.5));
+    // -- 夜时段绑定(历史 typo 雷区) --
+    assert_eq!(column_first(&asset, 0x0CE7_1B10), key(0, 0, 0x8E43_F125));
+    assert_eq!(
+        column_first(&asset, 0x0CE7_1B11),
+        key(0, 0, 0x1295_2639),
+        "night period 311764537 — 0x1295_6239 was the dark-lights typo"
+    );
+    assert_eq!(
+        column_first(&asset, 0x0CE7_1B12),
+        Value::Vector2([0.875, 0.215_273_01])
+    );
+    assert_eq!(column_first(&asset, 0x0CE7_1B13), Value::Vector2([0.0, 0.0]));
+    assert_eq!(
+        column_first(&asset, 0x0F16_9C46),
+        Value::Bool(true),
+        "interior controller enabler"
+    );
+    // -- prop bin 9:资源键/带 scale 变换/索引 --
+    assert_eq!(column_first(&asset, 0x0C12_EF20 + 9), key(0, 0, 0x1234_5678));
+    match column_first(&asset, 0x0C12_EF30 + 9) {
+        Value::Transform(t) => {
+            assert_eq!(t.flags, 15, "prop scale lives in the flags-15 slot");
+            assert_eq!(t.unknown, Some(1.5));
+        }
+        other => panic!("prop transform: {other:?}"),
+    }
+    assert_eq!(column_first(&asset, 0x0C12_EF40 + 9), Value::Int32(0));
+    // -- path:七列(entry 组/通用 scope/roadConnect 编码) --
+    assert_eq!(
+        column_first(&asset, 0x0CAA_680D),
+        Value::Vector3([1.0, 2.0, 0.0])
+    );
+    assert_eq!(
+        column_first(&asset, 0x0CB0_0ED8),
+        Value::Vector3([3.0, -4.0, 0.0])
+    );
+    assert_eq!(column_first(&asset, 0x0CAA_6832), Value::Int32(0));
+    let pairs: Vec<_> = asset
+        .values
+        .iter()
+        .find(|p| p.hash == 0x0CAA_6841)
+        .map(|p| match &p.kind {
+            Kind::Array(v) => v.clone(),
+            _ => unreachable!(),
+        })
+        .unwrap();
+    assert_eq!(pairs, vec![Value::Int32(0), Value::Int32(1)]);
+    assert_eq!(
+        column_first(&asset, 0x0CC8_FE7A),
+        key(0x00B1_B104, 0x40E1_C400, 0x675B_61B1)
+    );
+    assert_eq!(column_first(&asset, 0x0D9A_4E54), key(0, 0, 0xF44F_784A));
+    assert_eq!(column_first(&asset, 0x0D9A_A2BB), key(0, 0, 0xC186_DA37));
+    // -- 资源清单:menu 基线 6(menu2/unit/asset/locale/icon/marquee)
+    //    + 场景语义 Asset dict + 旋转重编码后的 ground mask raster
+    //    + closure 提升 1 项。数量变化 = 行为变化,P1 拆分必须保持。 --
+    assert_eq!(output.entries().len(), 9, "menu baseline + asset dict + mask raster + promoted dep");
+    drop(output);
+    let _ = fs::remove_dir_all(root);
+}
+
+/// P0 确定性:同一 schema 在两个独立根目录各构建一次 → 产物 byte 一致
+/// (实例内容哈希/遍历顺序/容器写入全链确定性;P1 拆分的字节级不变量)。
+#[test]
+fn deterministic_output_two_fresh_builds_identical() {
+    let mut outputs = Vec::new();
+    for _ in 0..2 {
+        let root = temp_root();
+        let schema = golden_fixture(&root);
+        let result = build_from_schema(&root, &schema).unwrap();
+        outputs.push((result.menu_instance, fs::read(&result.path).unwrap()));
+        let _ = fs::remove_dir_all(root);
+    }
+    assert_eq!(
+        outputs[0].0, outputs[1].0,
+        "menu instance derives from content"
+    );
+    assert_eq!(
+        outputs[0].1, outputs[1].1,
+        "fresh builds of identical inputs must be byte-identical"
+    );
 }
