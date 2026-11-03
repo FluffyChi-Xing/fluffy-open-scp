@@ -516,9 +516,12 @@ fn key_value(key: Key) -> Value {
 fn transform_value(scale: Option<f32>, transform: &Option<Transform>) -> Option<Value> {
     let mut transform = transform.clone()?;
     // The encoder requires (flags == 15) ⇔ unknown.is_some(); flags 15 carries
-    // the prop/decal Scale in `unknown`, everything else is a plain matrix.
+    // the prop/decal Scale in `unknown`. Scale-less transforms (lights,
+    // spawners, path-side props) use flags 14 — the vanilla convention
+    // (E917279C: every transform is 14 or 15, never 0; flags 0 poisons the
+    // property parse and the whole lot/model disappears).
     transform.unknown = scale;
-    transform.flags = if transform.unknown.is_some() { 15 } else { 0 };
+    transform.flags = if transform.unknown.is_some() { 15 } else { 14 };
     Some(Value::Transform(transform))
 }
 
@@ -539,7 +542,10 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
     let mut path_point_indices: Vec<Option<i32>> = Vec::new();
     let mut prop_bins: std::collections::BTreeMap<usize, ColumnSet> = Default::default();
     let mut decals: std::collections::BTreeMap<usize, ColumnSet> = Default::default();
-    const LIGHT_GROUP: u32 = 0x8E43_F125;
+    // Light group / night period come from native_profile's author-aligned
+    // constants (single source of truth; the decimal-pinned copy is tested
+    // in native_profile::tests::light_profile_constants_match_author_json).
+    const LIGHT_GROUP: u32 = super::native_profile::LIGHT_GROUP;
 
     for unit in &document.units {
         match unit {
@@ -663,7 +669,11 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
         columns.push(array_property(
             0x0CE7_1B11,
             PropType::Key,
-            vec![key_of(0x128D_8F19)],
+            // Night period instance — author light_native_profile.json
+            // nightPeriod 311764537 == 0x1295_2639 (golden package byte-
+            // verified). 0x1295_6239 was a transcription error that kept
+            // University v9-v11 lights dark.
+            vec![key_of(super::native_profile::NIGHT_PERIOD)],
         ));
         columns.push(array_property(
             0x0CE7_1B12,
@@ -767,6 +777,35 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
         );
     }
     finish_path_pairs(document, &path_point_ids, &path_point_indices, &mut columns);
+
+    // Path-entry bindings (0CC8FE7A): full TGI keys on the Asset dictionary
+    // linking the lot to its road PathEntry resources — vanilla asset dicts
+    // carry exactly this column (E917279C binds three, e.g.
+    // [instance, 00B1B104, 40E0C400]); without it the path never links.
+    let entries: Vec<Value> = document
+        .paths
+        .iter()
+        .filter_map(|path| {
+            path.entry.as_deref().and_then(|entry| {
+                u32::from_str_radix(entry.trim_start_matches("0x"), 16)
+                    .ok()
+                    .map(|instance| {
+                        Value::Key(sc_properties::Key {
+                            type_id: 0x00B1_B104,
+                            group: 0x40E1_C400,
+                            instance,
+                        })
+                    })
+            })
+        })
+        .collect();
+    if !entries.is_empty() {
+        columns.push(array_property(
+            0x0CC8_FE7A,
+            PropType::Key,
+            entries,
+        ));
+    }
 
     file.values.extend(columns);
     file.claimed_count = file.values.len() as u32;

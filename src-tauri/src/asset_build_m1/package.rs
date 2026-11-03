@@ -128,6 +128,16 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
         &plan.intermediate.scene.document,
         plan.intermediate.scene.model.as_deref(),
     )?;
+    // The scene document is an input to the built bytes (unit columns, menu
+    // ground numerics, light/prop matrices) but the schema only references it
+    // by filename. Fold its bytes into the build hash so a scene-only edit
+    // gets a fresh destination instead of colliding with the previous tree
+    // (publish() then refuses to overwrite and the stale package silently
+    // "wins" — University s4 shipped 5 of 8 lights this way on 2026-11-03).
+    // Model/sidecar/texture bytes are already covered: they are inserted into
+    // `resources` above hashing and captured by the source fingerprint.
+    let scene_document_bytes_hash = read_scene_bytes(&root, &plan.intermediate.scene.document)?
+        .map(|bytes| digest(&bytes));
     // Hash the decompressed snapshot actually consumed by the processors, not a
     // second file read. Container compression differences do not change identity.
     let mut texture_instances = [0u32; 6];
@@ -179,8 +189,13 @@ pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult,
     };
     let plan_bytes = serde_json::to_vec_pretty(&plan).map_err(|e| e.to_string())?;
     let build_hash = digest(
-        &serde_json::to_vec(&(plan.processor_version, &source_hash, &plan_bytes))
-            .map_err(|e| e.to_string())?,
+        &serde_json::to_vec(&(
+            plan.processor_version,
+            &source_hash,
+            &plan_bytes,
+            &scene_document_bytes_hash,
+        ))
+        .map_err(|e| e.to_string())?,
     );
     let protected = protected_templates(&resources, &plan.protected);
     let mut targets: Vec<_> = plan.typed_patches.iter().map(|p| p.target).collect();

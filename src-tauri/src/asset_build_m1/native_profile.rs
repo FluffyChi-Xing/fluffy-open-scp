@@ -146,13 +146,22 @@ const PROP_MARKERS: [u32; 2] = [0x0C12_EF50, 0x0C12_EF60];
 // -- light_contract.compile_fields -----------------------------------------
 
 /// Light resource group / night profile constants (`light_contract.GROUP`,
-/// `light_native_profile.json`).
-const LIGHT_GROUP: u32 = 0x8E43_F125;
-const NIGHT_PERIOD: u32 = 0x1295_6239;
+/// `light_native_profile.json`). `pub(crate)`: scene.rs reuses these instead
+/// of hand-copying — a transcribed copy (0x1295_6239 for 0x1295_2639) kept
+/// every light dark in University v9-v11. The decimal pins live in the
+/// `light_profile_constants_match_author_json` test.
+pub(crate) const LIGHT_GROUP: u32 = 0x8E43_F125;
+pub(crate) const NIGHT_PERIOD: u32 = 0x1295_2639;
 const NIGHT_RANGE: [f32; 2] = [0.875, 0.215_273_01];
 const CULL_TIER: u32 = 0x3E7E_124D;
 const LIGHT_POINT_TYPE: u32 = 0x75D4_C8CD;
 const LIGHT_SPOT_TYPE: u32 = 0x2F0F_F9FD;
+/// Line lights are vanilla-proven (fire station asset dict E917279C light #3:
+/// type 0x0820ABAF, radius 5 / inner 1 / diffuse 0.5 / length 35) — the
+/// author packager only validates POINT/SPOT, but coercing schema LINE to
+/// POINT (pre-s2 behavior) turned authored 60 m facade strips into two faint
+/// blobs. Pass LINE through verbatim.
+const LIGHT_LINE_TYPE: u32 = 0x0820_ABAF;
 /// Per-instance light columns: `(hash, prop_type)`.
 const LIGHT_COLUMNS: [(u32, PropType); 14] = [
     (0x0CAA_8F10, PropType::Key),       // [0,0,GROUP]
@@ -620,11 +629,11 @@ fn compile_light_fields(
             Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
             None => IDENTITY_12,
         };
-        // Author row: SPOT only when the instance equals the spot type hash.
-        let kind = if *light_type == Some(LIGHT_SPOT_TYPE) {
-            LIGHT_SPOT_TYPE
-        } else {
-            LIGHT_POINT_TYPE
+        // Author rows carry POINT/SPOT; LINE passes through verbatim (see
+        // LIGHT_LINE_TYPE). Anything unrecognized falls back to POINT.
+        let kind = match *light_type {
+            Some(hash) if hash == LIGHT_SPOT_TYPE || hash == LIGHT_LINE_TYPE => hash,
+            _ => LIGHT_POINT_TYPE,
         };
         let name = format!(
             "SC5_{}",
@@ -873,7 +882,9 @@ pub fn build(
             }],
         ),
     );
-    // Props and lights → Asset dictionary columns (author compile_fields).
+    // Props and lights → Asset dictionary columns (author compile_fields
+    // wire format, byte-verified against prepare_asset.py output). Spawner
+    // and path columns deferred until the base display is confirmed.
     for property in compile_prop_fields(scene, rotation_degrees)? {
         upsert(&mut asset, property);
     }
@@ -967,6 +978,37 @@ mod tests {
     use crate::asset_build_m1::scene::{parse_document as parse_scene, SceneDocument};
     use serde_json::json;
 
+    /// Decimal pins against the author's `light_native_profile.json` (the
+    /// packager's measured native profile). NIGHT_PERIOD was once hand-
+    /// transcribed as 0x1295_6239 — a digit swap of 0x1295_2639 — and every
+    /// light in University v9-v11 stayed dark because the light→night-period
+    /// binding never resolved. Asserting the decimal values makes any hex
+    /// transcription error a loud test failure instead of a dark building.
+    #[test]
+    fn light_profile_constants_match_author_json() {
+        assert_eq!(LIGHT_GROUP, 0x8E43_F125, "light_contract.GROUP");
+        assert_eq!(
+            NIGHT_PERIOD, 311_764_537,
+            "light_native_profile.json nightPeriod == 0x1295_2639"
+        );
+        assert_eq!(
+            CULL_TIER, 1_048_449_613,
+            "light_native_profile.json cullTier == 0x3E7E_124D"
+        );
+        assert_eq!(
+            LIGHT_POINT_TYPE, 0x75D4_C8CD,
+            "light_contract LightTypes Point"
+        );
+        assert_eq!(
+            LIGHT_SPOT_TYPE, 0x2F0F_F9FD,
+            "light_contract LightTypes Spot"
+        );
+        assert_eq!(
+            LIGHT_LINE_TYPE, 0x0820_ABAF,
+            "vanilla fire station E917279C light #3 type (Line)"
+        );
+    }
+
     fn scene_with_prop() -> SceneDocument {
         let value = json!({
             "units": [{
@@ -983,11 +1025,11 @@ mod tests {
         parse_scene(&value).expect("scene")
     }
 
-    fn scene_with_light(spot: bool) -> SceneDocument {
+    fn scene_with_light(kind: &str) -> SceneDocument {
         let value = json!({
             "units": [{
                 "kind": "light",
-                "lightType": if spot { "Spot" } else { "Point" },
+                "lightType": kind,
                 "color": [1.0, 0.5, 0.25],
                 "outerRadius": 12.0,
                 "innerRadius": 1.5,
@@ -1002,6 +1044,36 @@ mod tests {
             }]
         });
         parse_scene(&value).expect("scene")
+    }
+
+    /// Light type column carries the authored type hash verbatim: LINE stays
+    /// LINE (vanilla fire station E917279C light #3 uses 0x0820ABAF); it must
+    /// not be coerced to POINT — that coercion was s1's "5 strips → 2 faint
+    /// blobs" regression.
+    #[test]
+    fn light_fields_pass_authored_type_through() {
+        let kind_of = |scene: &SceneDocument| {
+            compile_light_fields(Some(scene), 0)
+                .expect("light fields")
+                .iter()
+                .find(|p| p.hash == 0x0CAA_8F11)
+                .and_then(|p| match &p.kind {
+                    Kind::Array(values) => values.first(),
+                    _ => None,
+                })
+                .cloned()
+                .expect("light type column")
+        };
+        for (name, expected) in [
+            ("Point", LIGHT_POINT_TYPE),
+            ("Spot", LIGHT_SPOT_TYPE),
+            ("Line", LIGHT_LINE_TYPE),
+        ] {
+            match kind_of(&scene_with_light(name)) {
+                Value::Key(key) => assert_eq!(key.instance, expected, "lightType {name}"),
+                other => panic!("light type must be a key, got {other:?}"),
+            }
+        }
     }
 
     /// Author wire: record header `>IHHII` with flags 0x809C, and the
@@ -1032,7 +1104,7 @@ mod tests {
     /// fields alongside; the point/spot split follows the type hash.
     #[test]
     fn light_fields_match_author_wire() {
-        let scene = scene_with_light(false);
+        let scene = scene_with_light("Point");
         let fields = compile_light_fields(Some(&scene), 0).expect("light fields");
         let by_hash: std::collections::HashMap<u32, &Property> =
             fields.iter().map(|p| (p.hash, p)).collect();
@@ -1050,7 +1122,7 @@ mod tests {
             Value::Key(key) => assert_eq!(key.instance, LIGHT_POINT_TYPE),
             _ => panic!("light type must be a key"),
         }
-        let spot = compile_light_fields(Some(&scene_with_light(true)), 0).expect("spot fields");
+        let spot = compile_light_fields(Some(&scene_with_light("Spot")), 0).expect("spot fields");
         let spot_kind = spot
             .iter()
             .find(|p| p.hash == 0x0CAA_8F11)

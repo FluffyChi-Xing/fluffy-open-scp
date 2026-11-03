@@ -210,6 +210,10 @@ path = "property/semantic_gap_probe.rs"
 name = "unit_prop_dump"
 path = "property/unit_prop_dump.rs"
 
+[[example]]
+name = "light_columns_dump"
+path = "property/light_columns_dump.rs"
+
 # locale —— 字符串表（0x0A98EAF0）
 [[example]]
 name = "locale_dump"
@@ -1207,3 +1211,21 @@ path = "property/simm_appearance_dump.rs"
 [[example]]
 name = "locale_lookup"
 path = "locale/locale_lookup.rs"
+
+
+# map - map contracts: PlayArea / coordinate frames / camera bounds / light alignment
+[[example]]
+name = "map_scalars_probe"
+path = "map/map_scalars_probe.rs"
+
+[[example]]
+name = "light_table_dump"
+path = "map/light_table_dump.rs"
+
+[[example]]
+name = "map_contract_probe"
+path = "map/map_contract_probe.rs"
+
+[[example]]
+name = "light_align_probe"
+path = "map/light_align_probe.rs"
