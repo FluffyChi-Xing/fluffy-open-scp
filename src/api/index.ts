@@ -48,6 +48,9 @@ import {
   type ResourceAnnotation,
   type ResourceAnnotationInput,
   type AnnotationTopicStat,
+  type EffectAnnotation,
+  type EffectAnnotationInput,
+  type EffectTagStat,
   type PropertyResourceData,
   type DecalDictionaryData,
   type DecalImageData,
@@ -536,6 +539,30 @@ export const tauriApi = {
     list: (limit = 1000) =>
       command<ResourceAnnotation[]>("annotations_list", { limit }),
     topicStats: () => command<AnnotationTopicStat[]>("annotation_topic_stats"),
+  },
+  effectAnnotations: {
+    create: (input: EffectAnnotationInput) =>
+      command<EffectAnnotation>("effect_annotation_create", { input }),
+    remove: (id: number) => command<void>("effect_annotation_delete", { id }),
+    list: (limit = 1000) =>
+      command<EffectAnnotation[]>("effect_annotations_list", { limit }),
+    forEffect: (tgi: Tgi) =>
+      command<EffectAnnotation[]>("effect_annotations_for_effect", {
+        request: {
+          typeId: tgi.typeId,
+          groupId: tgi.group,
+          instance: tgi.instance,
+        },
+      }),
+    forSource: (tgi: Tgi) =>
+      command<EffectAnnotation[]>("effect_annotations_for_source", {
+        request: {
+          typeId: tgi.typeId,
+          groupId: tgi.group,
+          instance: tgi.instance,
+        },
+      }),
+    tagStats: () => command<EffectTagStat[]>("effect_annotation_tag_stats"),
   },
   activity: {
     operations: (limit = 100) =>

@@ -16,6 +16,7 @@ pub(crate) mod asset_build_samples;
 mod atomic_fs;
 mod blender_service;
 mod debug_tools;
+mod effect_annotations;
 mod effect_resources;
 mod effect_service;
 mod game_assets;
@@ -49,6 +50,10 @@ use activity::{
 use annotations::{
     annotation_create, annotation_delete, annotation_topic_stats, annotation_update,
     annotations_for_tgi, annotations_list,
+};
+use effect_annotations::{
+    effect_annotation_create, effect_annotation_delete, effect_annotation_tag_stats,
+    effect_annotations_for_effect, effect_annotations_for_source, effect_annotations_list,
 };
 use locale_service::{locale_items, locale_tables, write_locale_overlay};
 use media_tools::{MediaTools, application_dir, resolve_tools};
@@ -157,6 +162,12 @@ pub fn run() {
             annotations_for_tgi,
             annotations_list,
             annotation_topic_stats,
+            effect_annotation_create,
+            effect_annotation_delete,
+            effect_annotations_for_effect,
+            effect_annotations_for_source,
+            effect_annotations_list,
+            effect_annotation_tag_stats,
             package_statistics,
             override_scan,
             locale_tables,

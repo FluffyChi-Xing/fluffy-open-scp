@@ -116,6 +116,8 @@ export interface PlacePayload {
   template?: PropUnit;
   /** 生成器预设名字 id（引擎 FNV-1 哈希；null/缺省 = 未命名锚点）。 */
   spawnerId?: number | null;
+  /** 效果目录卡携带的 effect TGI（语义 tag 目录）；缺省 = 空白效果。 */
+  effectId?: Tgi;
 }
 
 /** Lot 库应用载荷：Lot 资源位置。 */
@@ -1122,7 +1124,7 @@ export function useWorkbenchAsset(project: string) {
         kind: "effect",
         index: nextIndexOf("effect"),
         transform,
-        effectId: null,
+        effectId: payload.effectId ?? null,
         externalId: null,
         enabled: true,
         fields: [],

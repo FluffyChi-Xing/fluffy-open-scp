@@ -928,6 +928,35 @@ export interface AnnotationTopicStat {
   annotationCount: number;
   resourceCount: number;
 }
+/** Effect 语义批注：按 effect 资源 TGI 全局键控；source* 记录创建时的来源 lot 资源（可空）。 */
+export interface EffectAnnotation {
+  id: number;
+  typeId: number;
+  groupId: number;
+  instance: number;
+  tag: string;
+  note: string;
+  sourceTypeId: number | null;
+  sourceGroupId: number | null;
+  sourceInstanceId: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface EffectAnnotationInput {
+  typeId: number;
+  groupId: number;
+  instance: number;
+  tag: string;
+  note: string;
+  sourceTypeId: number | null;
+  sourceGroupId: number | null;
+  sourceInstanceId: number | null;
+}
+export interface EffectTagStat {
+  tag: string;
+  annotationCount: number;
+  effectCount: number;
+}
 export interface MediaTool {
   available: boolean;
   path?: string;

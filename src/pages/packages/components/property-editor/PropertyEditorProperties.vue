@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { EffectDetailData, LotUnitDto, UnitKeyDto } from "@/api/tauri";
+import type { EffectDetailData, LotUnitDto, Tgi, UnitKeyDto } from "@/api/tauri";
 import { createDataSource } from "@/api/data-source";
+import EffectTagSection from "../unit-inspector/EffectTagSection.vue";
 import { propSemanticCategory } from "./assetCategories";
 
 const props = defineProps<{
@@ -11,6 +12,8 @@ const props = defineProps<{
   units?: readonly LotUnitDto[];
   /** 当前包；选中 effect 时用于按需解析 Swarm 详情。 */
   packageId?: number | null;
+  /** 当前 lot 资源 TGI；effect 语义标签创建时记录来源。 */
+  sourceTgi?: Tgi | null;
 }>();
 const { t } = useI18n();
 const source = createDataSource();
@@ -175,6 +178,11 @@ const summary = computed<SummaryRow[]>(() => {
 
 const fields = computed(() => props.unit?.fields ?? []);
 const empty = computed(() => !props.unit);
+
+/** 选中的 effect 单元（非 effect 或未选中时为 null）；语义标签 section 挂它。 */
+const effectUnit = computed(() =>
+  props.unit?.kind === "effect" ? props.unit : null,
+);
 
 /** 选中 effect 时按名字哈希解析 Swarm 集合；与粒子渲染开关无关。 */
 const effectHash = computed(() =>
@@ -389,6 +397,11 @@ const atlasFrameStyle = computed(() => {
           <p v-else class="effect-note">{{ t("package.effectDetailEmpty") }}</p>
         </div>
       </section>
+      <EffectTagSection
+        v-if="effectUnit"
+        :effect-id="effectUnit.effectId"
+        :source-tgi="sourceTgi ?? null"
+      />
       <h4 v-if="fields.length" class="fields-title">
         {{ $t("package.unitFields") }}
       </h4>

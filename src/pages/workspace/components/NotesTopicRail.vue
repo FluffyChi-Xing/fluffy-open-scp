@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import type { TopicGroup } from "../notes-model";
 
 /**
  * 分类导航栏（2026-10-28 重构）：统计图与导航合一——每行内嵌一条
  * 长度∝批注数的微型条（lieflat Tick Rows 语法：实心、明度即数据、
  * 不断轴），排名即排序。取代独立的 TopicBars 卡片：图表信息变成
  * 常驻可见的结构，不再占用首屏独立版面。支持 ↑↓/Home/End 键盘换选。
+ * （2026-11-04 泛化 items：资源批注与 effect 语义批注共用同一 rail。）
  */
 const props = defineProps<{
-  groups: TopicGroup[];
+  groups: { topic: string; items: unknown[] }[];
   selected: string | null;
 }>();
 
@@ -22,7 +22,7 @@ const listRef = ref<HTMLUListElement | null>(null);
 const maxCount = computed(() =>
   Math.max(1, ...props.groups.map((group) => group.items.length)),
 );
-function barWidth(group: TopicGroup): number {
+function barWidth(group: { items: unknown[] }): number {
   return (group.items.length / maxCount.value) * 100;
 }
 

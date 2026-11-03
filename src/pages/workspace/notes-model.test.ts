@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { ResourceAnnotation } from "@/api/tauri";
+import type { EffectAnnotation, ResourceAnnotation } from "@/api/tauri";
 import {
+  countEffects,
   countResources,
+  effectTgiInstanceOf,
+  effectTgiTextOf,
+  filterEffectGroups,
   filterGroups,
   groupByTopic,
+  groupEffectAnnotationsByTag,
   matchAnnotation,
+  matchEffectAnnotation,
   tgiInstanceOf,
   tgiTextOf,
   uniformPackageName,
@@ -113,5 +119,67 @@ describe("matchAnnotation", () => {
     expect(matchAnnotation(note({ title: "Drone Line" }), "drone")).toBe(true);
     expect(matchAnnotation(note({}), "nope")).toBe(false);
     expect(matchAnnotation(note({}), "")).toBe(true);
+  });
+});
+
+describe("effect tag grouping", () => {
+  function effect(overrides: Partial<EffectAnnotation>): EffectAnnotation {
+    return {
+      id: 1,
+      typeId: 0,
+      groupId: 0,
+      instance: 0x622b9cd7,
+      tag: "烟雾",
+      note: "烟囱烟雾",
+      sourceTypeId: null,
+      sourceGroupId: null,
+      sourceInstanceId: null,
+      createdAt: 0,
+      updatedAt: 0,
+      ...overrides,
+    };
+  }
+
+  it("groupEffectAnnotationsByTag groups by tag, largest first", () => {
+    const groups = groupEffectAnnotationsByTag([
+      effect({ id: 1, tag: "烟雾" }),
+      effect({ id: 2, tag: "火焰", instance: 0xfa3782d1 }),
+      effect({ id: 3, tag: "烟雾", instance: 0x11223344 }),
+      effect({ id: 4, tag: "烟雾", instance: 0x55667788 }),
+    ]);
+    expect(groups.map((group) => group.topic)).toEqual(["烟雾", "火焰"]);
+    expect(groups[0].items).toHaveLength(3);
+  });
+
+  it("filterEffectGroups filters items and drops empty groups by tag/note/TGI", () => {
+    const groups = groupEffectAnnotationsByTag([
+      effect({ id: 1, tag: "烟雾", note: "烟囱" }),
+      effect({ id: 2, tag: "火焰", instance: 0xdeadbeef, note: "" }),
+    ]);
+    expect(filterEffectGroups(groups, "烟囱").map((g) => g.topic)).toEqual([
+      "烟雾",
+    ]);
+    expect(filterEffectGroups(groups, "deadbeef").map((g) => g.topic)).toEqual([
+      "火焰",
+    ]);
+    expect(filterEffectGroups(groups, "火焰").map((g) => g.topic)).toEqual([
+      "火焰",
+    ]);
+    expect(filterEffectGroups(groups, "  ")).toBe(groups);
+  });
+
+  it("matchEffectAnnotation is case-insensitive and blank-query-true", () => {
+    expect(matchEffectAnnotation(effect({ tag: "Smoke" }), "smoke")).toBe(true);
+    expect(matchEffectAnnotation(effect({}), "nope")).toBe(false);
+    expect(matchEffectAnnotation(effect({}), "")).toBe(true);
+  });
+
+  it("effectTgi text helpers and countEffects dedupe by TGI", () => {
+    const item = effect({});
+    expect(effectTgiTextOf(item)).toBe("00000000:00000000:622b9cd7");
+    expect(effectTgiInstanceOf(item)).toBe("622b9cd7");
+    expect(
+      countEffects([item, effect({ id: 2 }), effect({ id: 3, instance: 9 })]),
+    ).toBe(2);
   });
 });

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 6;
+pub const CURRENT_SCHEMA_VERSION: i32 = 7;
 pub const DEFAULT_LIST_LIMIT: usize = 100;
 pub const MAX_LIST_LIMIT: usize = 1_000;
 
@@ -967,6 +967,32 @@ fn migrate(connection: &Connection) -> Result<()> {
              COMMIT;",
         )?;
     }
+    if version <= 6 {
+        connection.execute_batch(
+            "BEGIN;
+             CREATE TABLE effect_annotations (
+                 id INTEGER PRIMARY KEY,
+                 type_id INTEGER NOT NULL,
+                 group_id INTEGER NOT NULL,
+                 instance INTEGER NOT NULL,
+                 tag TEXT NOT NULL,
+                 note TEXT NOT NULL DEFAULT '',
+                 source_type_id INTEGER,
+                 source_group_id INTEGER,
+                 source_instance INTEGER,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX effect_annotations_tgi_idx
+                 ON effect_annotations(type_id, group_id, instance);
+             CREATE INDEX effect_annotations_tag_idx
+                 ON effect_annotations(tag);
+             CREATE INDEX effect_annotations_source_idx
+                 ON effect_annotations(source_type_id, source_group_id, source_instance);
+             PRAGMA user_version = 7;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -1003,6 +1029,46 @@ pub struct AnnotationTopicStat {
     pub topic: String,
     pub annotation_count: i64,
     pub resource_count: i64,
+}
+
+/// Effect 语义批注：按 effect 资源 TGI 全局键控（跨资产复用，组件库按
+/// tag 分类），`source_*` 记录创建时的来源 lot 资源（批注 sheet 区域用，
+/// 在 draft 工作台创建时为空）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectAnnotation {
+    pub id: i64,
+    pub type_id: u32,
+    pub group_id: u32,
+    pub instance: u32,
+    pub tag: String,
+    pub note: String,
+    pub source_type_id: Option<u32>,
+    pub source_group_id: Option<u32>,
+    pub source_instance: Option<u32>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectAnnotationInput {
+    pub type_id: u32,
+    pub group_id: u32,
+    pub instance: u32,
+    pub tag: String,
+    pub note: String,
+    pub source_type_id: Option<u32>,
+    pub source_group_id: Option<u32>,
+    pub source_instance: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectTagStat {
+    pub tag: String,
+    pub annotation_count: i64,
+    pub effect_count: i64,
 }
 
 // ---------- 编辑版本管理 ----------
@@ -1275,6 +1341,156 @@ impl Store {
                     topic: row.get(0)?,
                     annotation_count: row.get(1)?,
                     resource_count: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+}
+
+impl Store {
+    // ---------- effect 语义批注 ----------
+
+    fn row_to_effect_annotation(row: &rusqlite::Row<'_>) -> rusqlite::Result<EffectAnnotation> {
+        Ok(EffectAnnotation {
+            id: row.get(0)?,
+            type_id: row.get::<_, i64>(1)? as u32,
+            group_id: row.get::<_, i64>(2)? as u32,
+            instance: row.get::<_, i64>(3)? as u32,
+            tag: row.get(4)?,
+            note: row.get(5)?,
+            source_type_id: row.get::<_, Option<i64>>(6)?.map(|value| value as u32),
+            source_group_id: row.get::<_, Option<i64>>(7)?.map(|value| value as u32),
+            source_instance: row.get::<_, Option<i64>>(8)?.map(|value| value as u32),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        })
+    }
+
+    pub fn create_effect_annotation(
+        &self,
+        input: &EffectAnnotationInput,
+    ) -> Result<EffectAnnotation> {
+        let now = now_millis();
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        connection.execute(
+            "INSERT INTO effect_annotations
+                 (type_id, group_id, instance, tag, note, source_type_id,
+                  source_group_id, source_instance, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            params![
+                input.type_id as i64,
+                input.group_id as i64,
+                input.instance as i64,
+                input.tag.trim(),
+                input.note,
+                input.source_type_id.map(|value| value as i64),
+                input.source_group_id.map(|value| value as i64),
+                input.source_instance.map(|value| value as i64),
+                now
+            ],
+        )?;
+        let id = connection.last_insert_rowid();
+        Ok(EffectAnnotation {
+            id,
+            type_id: input.type_id,
+            group_id: input.group_id,
+            instance: input.instance,
+            tag: input.tag.trim().to_string(),
+            note: input.note.clone(),
+            source_type_id: input.source_type_id,
+            source_group_id: input.source_group_id,
+            source_instance: input.source_instance,
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    pub fn delete_effect_annotation(&self, id: i64) -> Result<()> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let changed = connection.execute(
+            "DELETE FROM effect_annotations WHERE id = ?1",
+            params![id],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::OperationNotFound(id));
+        }
+        Ok(())
+    }
+
+    pub fn list_effect_annotations(&self, limit: usize) -> Result<Vec<EffectAnnotation>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, type_id, group_id, instance, tag, note, source_type_id, \
+                    source_group_id, source_instance, created_at, updated_at
+             FROM effect_annotations ORDER BY updated_at DESC LIMIT ?1",
+        )?;
+        let rows = statement
+            .query_map(params![bounded_limit(limit) as i64], Self::row_to_effect_annotation)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn list_effect_annotations_for_effect(
+        &self,
+        type_id: u32,
+        group_id: u32,
+        instance: u32,
+    ) -> Result<Vec<EffectAnnotation>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, type_id, group_id, instance, tag, note, source_type_id, \
+                    source_group_id, source_instance, created_at, updated_at
+             FROM effect_annotations
+             WHERE type_id = ?1 AND group_id = ?2 AND instance = ?3
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = statement
+            .query_map(
+                params![type_id as i64, group_id as i64, instance as i64],
+                Self::row_to_effect_annotation,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn list_effect_annotations_for_source(
+        &self,
+        type_id: u32,
+        group_id: u32,
+        instance: u32,
+    ) -> Result<Vec<EffectAnnotation>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT id, type_id, group_id, instance, tag, note, source_type_id, \
+                    source_group_id, source_instance, created_at, updated_at
+             FROM effect_annotations
+             WHERE source_type_id = ?1 AND source_group_id = ?2 AND source_instance = ?3
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = statement
+            .query_map(
+                params![type_id as i64, group_id as i64, instance as i64],
+                Self::row_to_effect_annotation,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn effect_annotation_tag_stats(&self) -> Result<Vec<EffectTagStat>> {
+        let connection = self.connection.lock().expect("store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT tag,
+                    COUNT(*) AS annotation_count,
+                    COUNT(DISTINCT type_id || ':' || group_id || ':' || instance) AS effect_count
+             FROM effect_annotations GROUP BY tag ORDER BY annotation_count DESC",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(EffectTagStat {
+                    tag: row.get(0)?,
+                    annotation_count: row.get(1)?,
+                    effect_count: row.get(2)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -2103,12 +2319,13 @@ mod tests {
                     content: "c".into(),
                 })
                 .unwrap();
-            // 人为降级到 v4：删掉 v5/v6 的表并回写 user_version
+            // 人为降级到 v4：删掉 v5/v6/v7 的表并回写 user_version
             {
                 let connection = store.connection.lock().unwrap();
                 connection
                     .execute_batch(
                         "BEGIN;
+                         DROP TABLE effect_annotations;
                          DROP TABLE studio_config;
                          DROP TABLE mod_projects;
                          DROP TABLE mod_project_groups;
@@ -2140,6 +2357,93 @@ mod tests {
     }
 
     #[test]
+    fn effect_annotations_crud_tag_stats_and_source_query() {
+        let path = temp_path("effect-annotations");
+        clean(&path);
+        let store = Store::open(&path).unwrap();
+        let first = store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0x622b_9cd7,
+                tag: "烟雾".into(),
+                note: "烟囱烟雾".into(),
+                source_type_id: Some(0x00b1_b104),
+                source_group_id: Some(0x43e1_c090),
+                source_instance: Some(0x9a3d_1c76),
+            })
+            .unwrap();
+        store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0xfa37_82d1,
+                tag: "烟雾".into(),
+                note: String::new(),
+                source_type_id: None,
+                source_group_id: None,
+                source_instance: None,
+            })
+            .unwrap();
+        store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0x1122_3344,
+                tag: "火焰".into(),
+                note: String::new(),
+                source_type_id: None,
+                source_group_id: None,
+                source_instance: None,
+            })
+            .unwrap();
+
+        // 同一 effect 再标一个 tag：多对多，全局键控
+        store
+            .create_effect_annotation(&EffectAnnotationInput {
+                type_id: 0,
+                group_id: 0,
+                instance: 0x622b_9cd7,
+                tag: "工业".into(),
+                note: String::new(),
+                source_type_id: None,
+                source_group_id: None,
+                source_instance: None,
+            })
+            .unwrap();
+
+        let all = store.list_effect_annotations(100).unwrap();
+        assert_eq!(all.len(), 4);
+
+        let per_effect = store
+            .list_effect_annotations_for_effect(0, 0, 0x622b_9cd7)
+            .unwrap();
+        assert_eq!(per_effect.len(), 2);
+
+        let per_source = store
+            .list_effect_annotations_for_source(0x00b1_b104, 0x43e1_c090, 0x9a3d_1c76)
+            .unwrap();
+        assert_eq!(per_source.len(), 1);
+        assert_eq!(per_source[0].tag, "烟雾");
+
+        let mut stats = store.effect_annotation_tag_stats().unwrap();
+        stats.sort_by(|a, b| a.tag.cmp(&b.tag));
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[2].tag, "烟雾"); // annotation_count=2, 排序后最后
+        assert_eq!(stats[2].annotation_count, 2);
+        assert_eq!(stats[2].effect_count, 2);
+
+        store.delete_effect_annotation(first.id).unwrap();
+        assert!(store
+            .list_effect_annotations_for_effect(0, 0, 0x622b_9cd7)
+            .unwrap()
+            .iter()
+            .all(|item| item.tag != "烟雾"));
+        drop(store);
+        clean(&path);
+    }
+
+    #[test]
     fn v5_database_migrates_to_v6_keeping_changesets() {
         let path = temp_path("v5-to-v6");
         clean(&path);
@@ -2151,12 +2455,13 @@ mod tests {
                     vec![change_item(1, None, Some(b"one"))],
                 ))
                 .unwrap();
-            // 人为降级到 v5：删掉 v6 的表并回写 user_version
+            // 人为降级到 v5：删掉 v6/v7 的表并回写 user_version
             {
                 let connection = store.connection.lock().unwrap();
                 connection
                     .execute_batch(
                         "BEGIN;
+                         DROP TABLE effect_annotations;
                          DROP TABLE studio_config;
                          DROP TABLE mod_projects;
                          DROP TABLE mod_project_groups;
@@ -2174,6 +2479,54 @@ mod tests {
         let config = store.studio_config().unwrap();
         assert!(!config.onboarding_completed);
         assert_eq!(config.mod_root, None);
+        drop(store);
+        clean(&path);
+    }
+
+    #[test]
+    fn v6_database_migrates_to_v7_keeping_annotations() {
+        let path = temp_path("v6-to-v7");
+        clean(&path);
+        {
+            let store = Store::open(&path).unwrap();
+            store
+                .create_annotation(&ResourceAnnotationInput {
+                    package_path: "C:/p.package".into(),
+                    type_id: 1,
+                    group_id: 2,
+                    instance: 3,
+                    topic: "t".into(),
+                    title: "T".into(),
+                    content: "c".into(),
+                })
+                .unwrap();
+            // 人为降级到 v6：删掉 v7 的表并回写 user_version
+            {
+                let connection = store.connection.lock().unwrap();
+                connection
+                    .execute_batch(
+                        "BEGIN;
+                         DROP TABLE effect_annotations;
+                         PRAGMA user_version = 6;
+                         COMMIT;",
+                    )
+                    .unwrap();
+            }
+        }
+        let store = Store::open(&path).unwrap();
+        {
+            let connection = store.connection.lock().unwrap();
+            let version: i32 = connection
+                .query_row("PRAGMA user_version", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        }
+        assert_eq!(store.list_annotations(100).unwrap().len(), 1);
+        // v7 表当场可用
+        assert_eq!(
+            store.list_effect_annotations(100).unwrap(),
+            Vec::<EffectAnnotation>::new()
+        );
         drop(store);
         clean(&path);
     }

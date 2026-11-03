@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
-import type { LotUnitDto } from "@/api/tauri";
+import type { LotUnitDto, Tgi } from "@/api/tauri";
 import PropertyEditorProperties from "@/pages/packages/components/property-editor/PropertyEditorProperties.vue";
 import PropertyEditorTransformPanel from "@/pages/packages/components/property-editor/PropertyEditorTransformPanel.vue";
 import PropertyEditorMetadataPanel from "@/pages/packages/components/property-editor/PropertyEditorMetadataPanel.vue";
@@ -30,6 +30,8 @@ const props = defineProps<{
   editEnabled?: boolean;
   /** 当前包；属性栏按选中 effect 解析 Swarm 详情。 */
   packageId?: number | null;
+  /** 当前 lot 资源 TGI；effect 语义标签创建时记录来源。 */
+  sourceTgi?: Tgi | null;
 }>();
 const emit = defineEmits<{
   "update-transform": [id: string, matrix: number[]];
@@ -95,6 +97,7 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
           :unit="unit"
           :units="allUnits"
           :package-id="packageId"
+          :source-tgi="sourceTgi ?? null"
         />
       </template>
       <PropertyEditorTransformPanel

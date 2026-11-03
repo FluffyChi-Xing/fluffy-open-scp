@@ -4,13 +4,18 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import { isTauri, tauriApi } from "@/api";
-import type { ResourceAnnotation } from "@/api/tauri";
+import type { EffectAnnotation, ResourceAnnotation } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
 import NotesTopicRail from "./components/NotesTopicRail.vue";
 import {
+  countEffects,
   countResources,
+  effectTgiInstanceOf,
+  effectTgiTextOf,
+  filterEffectGroups,
   filterGroups,
   groupByTopic,
+  groupEffectAnnotationsByTag,
   packageName,
   tgiInstanceOf,
   tgiKeyOf,
@@ -23,23 +28,36 @@ import {
  * 导航（行内迷你条即统计图，sticky 常驻），右栏只渲染选中分类的批注
  * 表。页面长度不再随分类数膨胀；正文预览/展开、关键词筛选、悬停操作
  * 与删除确认补齐可用性。纯逻辑见 notes-model.ts。
+ * （2026-11-04 增补：左栏顶部 Property / Effect 双页签——Effect 页签
+ * 按语义 tag 分组展示 effect 批注及其 TGI 信息。）
  */
 const { t, locale } = useI18n();
 const toast = useToast();
 
+type ViewMode = "property" | "effect";
+const viewMode = ref<ViewMode>("property");
+
 const annotations = ref<ResourceAnnotation[]>([]);
+const effectItems = ref<EffectAnnotation[]>([]);
 const loading = ref(false);
 const query = ref("");
 const selectedTopic = ref<string | null>(null);
+const selectedTag = ref<string | null>(null);
 const expandedId = ref<number | null>(null);
 
 async function load() {
   if (!isTauri()) return;
   loading.value = true;
   try {
-    annotations.value = await tauriApi.annotations.list();
+    const [list, effectList] = await Promise.all([
+      tauriApi.annotations.list(),
+      tauriApi.effectAnnotations.list(),
+    ]);
+    annotations.value = list;
+    effectItems.value = effectList;
   } catch {
     annotations.value = [];
+    effectItems.value = [];
   } finally {
     loading.value = false;
   }
@@ -47,33 +65,69 @@ async function load() {
 onMounted(load);
 
 const groups = computed(() => groupByTopic(annotations.value));
+const effectGroups = computed(() => groupEffectAnnotationsByTag(effectItems.value));
 const filteredGroups = computed(() => filterGroups(groups.value, query.value));
-const selectedGroup = computed(
-  () =>
-    filteredGroups.value.find((group) => group.topic === selectedTopic.value) ??
-    null,
+const filteredEffectGroups = computed(() =>
+  filterEffectGroups(effectGroups.value, query.value),
 );
-/** 包名去重按全量组判定（筛选子集不应改变表头口径）。 */
-const uniformPkg = computed(() => {
-  const full = groups.value.find(
-    (group) => group.topic === selectedTopic.value,
-  );
-  return full ? uniformPackageName(full.items) : null;
-});
-const selectedResourceCount = computed(() =>
-  selectedGroup.value ? countResources(selectedGroup.value.items) : 0,
+/** 当前页签的 rail 数据源与选中键（模板统一消费）。 */
+const railGroups = computed(() =>
+  viewMode.value === "property" ? filteredGroups.value : filteredEffectGroups.value,
+);
+const selectedKey = computed(() =>
+  viewMode.value === "property" ? selectedTopic.value : selectedTag.value,
+);
+function setSelection(topic: string) {
+  if (viewMode.value === "property") selectedTopic.value = topic;
+  else selectedTag.value = topic;
+}
+const selectedGroup = computed(
+  () => railGroups.value.find((group) => group.topic === selectedKey.value) ?? null,
 );
 
-/** 筛选后保序：选中分类被过滤掉时自动落到首个命中分类。 */
-watch(filteredGroups, (list) => {
-  if (!list.some((group) => group.topic === selectedTopic.value)) {
-    selectedTopic.value = list[0]?.topic ?? null;
+/** 空态文案：数据源为空（按页签区分引导语）或筛选无命中。 */
+const emptyText = computed(() => {
+  const sourceEmpty =
+    viewMode.value === "property"
+      ? !groups.value.length
+      : !effectGroups.value.length;
+  if (sourceEmpty) {
+    return viewMode.value === "property"
+      ? t("notes.workspaceEmpty")
+      : t("effectTags.workspaceEmptyEffects");
+  }
+  return t("notes.noMatches");
+});
+
+/** 筛选后保序：选中分类被过滤掉（或切换页签）时自动落到首个分类。 */
+watch(railGroups, (list) => {
+  if (!list.some((group) => group.topic === selectedKey.value)) {
+    setSelection(list[0]?.topic ?? null);
   }
 });
 
 const totalAnnotations = computed(() => annotations.value.length);
 const totalResources = computed(
   () => new Set(annotations.value.map(tgiKeyOf)).size,
+);
+const totalEffectTags = computed(() => effectGroups.value.length);
+const totalEffects = computed(() => countEffects(effectItems.value));
+
+/** 包名去重按全量组判定（筛选子集不应改变表头口径）。 */
+const uniformPkg = computed(() => {
+  if (viewMode.value !== "property") return null;
+  const full = groups.value.find((group) => group.topic === selectedKey.value);
+  return full ? uniformPackageName(full.items) : null;
+});
+const selectedResourceCount = computed(() =>
+  viewMode.value === "property" && selectedGroup.value
+    ? countResources(selectedGroup.value.items as ResourceAnnotation[])
+    : 0,
+);
+const selectedEffectCount = computed(() =>
+  viewMode.value === "effect" && selectedGroup.value
+    ? countEffects(selectedGroup.value.items as EffectAnnotation[])
+    : 0,
 );
 
 async function copy(text: string) {
@@ -84,14 +138,21 @@ async function copy(text: string) {
     toast.error(t("package.commandCopyFailed"));
   }
 }
-/** 复制整个分类的 TGI（全量口径，与筛选无关）。 */
-function copyTopicTgi() {
-  const full = groups.value.find(
-    (group) => group.topic === selectedTopic.value,
-  );
-  const lines = (full?.items ?? []).map(
-    (item) => `${item.title}  ${tgiTextOf(item)}`,
-  );
+/** 复制整个分类/标签的 TGI（全量口径，与筛选无关）。 */
+function copySelectedTgi() {
+  const source =
+    viewMode.value === "property"
+      ? groups.value.find((group) => group.topic === selectedKey.value)?.items
+      : effectGroups.value.find((group) => group.topic === selectedKey.value)
+          ?.items;
+  if (!source) return;
+  const lines = viewMode.value === "property"
+    ? (source as ResourceAnnotation[]).map(
+        (item) => `${item.title}  ${tgiTextOf(item)}`,
+      )
+    : (source as EffectAnnotation[]).map(
+        (item) => `${item.tag}  ${effectTgiTextOf(item)}`,
+      );
   void copy(lines.join("\n"));
 }
 async function remove(item: ResourceAnnotation) {
@@ -103,6 +164,15 @@ async function remove(item: ResourceAnnotation) {
     toast.error(t("notes.deleteFailed"));
   }
 }
+async function removeEffect(item: EffectAnnotation) {
+  if (!window.confirm(t("notes.deleteConfirm"))) return;
+  try {
+    await tauriApi.effectAnnotations.remove(item.id);
+    await load();
+  } catch {
+    toast.error(t("effectTags.deleteFailed"));
+  }
+}
 function toggleExpanded(id: number) {
   expandedId.value = expandedId.value === id ? null : id;
 }
@@ -111,6 +181,13 @@ function formatTime(ts: number): string {
     dateStyle: "short",
     timeStyle: "medium",
   }).format(new Date(ts));
+}
+function sourceTgiTextOf(item: EffectAnnotation): string {
+  if (item.sourceTypeId === null) return "";
+  const hex = (value: number) => value.toString(16).padStart(8, "0");
+  return `${hex(item.sourceTypeId)}:${hex(item.sourceGroupId ?? 0)}:${hex(
+    item.sourceInstanceId ?? 0,
+  )}`;
 }
 </script>
 
@@ -121,11 +198,17 @@ function formatTime(ts: number): string {
         <h1>{{ $t("notes.workspaceTitle") }}</h1>
         <p class="notes-subtitle">
           {{
-            $t("notes.workspaceSubtitle", {
-              topics: groups.length,
-              annotations: totalAnnotations,
-              resources: totalResources,
-            })
+            viewMode === "property"
+              ? $t("notes.workspaceSubtitle", {
+                  topics: groups.length,
+                  annotations: totalAnnotations,
+                  resources: totalResources,
+                })
+              : $t("effectTags.workspaceSubtitleEffects", {
+                  tags: totalEffectTags,
+                  annotations: effectItems.length,
+                  effects: totalEffects,
+                })
           }}
         </p>
       </div>
@@ -157,44 +240,145 @@ function formatTime(ts: number): string {
 
     <FSpinner v-if="loading" size="sm" :label="$t('common.loading')" />
 
-    <p v-else-if="!groups.length" class="notes-empty">
-      {{ $t("notes.workspaceEmpty") }}
-    </p>
-
-    <p v-else-if="!filteredGroups.length" class="notes-empty">
-      {{ $t("notes.noMatches") }}
-    </p>
-
+    <!-- 双页签常驻：空态/无命中只占右栏内容区，切换入口永不消失 -->
     <div v-else class="notes-layout">
-      <NotesTopicRail
-        class="notes-rail"
-        :groups="filteredGroups"
-        :selected="selectedTopic"
-        @select="selectedTopic = $event"
-      />
+      <div class="notes-side">
+        <div class="mode-tabs" role="tablist" :aria-label="$t('notes.railLabel')">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="viewMode === 'property'"
+            :class="{ active: viewMode === 'property' }"
+            @click="viewMode = 'property'"
+          >
+            {{ $t("effectTags.workspaceTabProperty") }}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="viewMode === 'effect'"
+            :class="{ active: viewMode === 'effect' }"
+            @click="viewMode = 'effect'"
+          >
+            {{ $t("effectTags.workspaceTabEffect") }}
+          </button>
+        </div>
+        <NotesTopicRail
+          v-if="railGroups.length"
+          class="notes-rail"
+          :groups="railGroups"
+          :selected="selectedKey"
+          @select="setSelection"
+        />
+        <p v-else class="rail-empty">{{ emptyText }}</p>
+      </div>
 
       <section v-if="selectedGroup" class="topic-pane">
         <header class="pane-head">
           <span class="pane-chip">{{ selectedGroup.topic }}</span>
           <span class="pane-meta">
             {{
-              $t("notes.topicMeta", {
-                annotations: selectedGroup.items.length,
-                resources: selectedResourceCount,
-              })
+              viewMode === "property"
+                ? $t("notes.topicMeta", {
+                    annotations: selectedGroup.items.length,
+                    resources: selectedResourceCount,
+                  })
+                : $t("effectTags.countMeta", {
+                    annotations: selectedGroup.items.length,
+                    effects: selectedEffectCount,
+                  })
             }}
           </span>
           <span v-if="uniformPkg" class="pane-pkg" :title="uniformPkg">{{
             uniformPkg
           }}</span>
-          <button class="pane-copy" type="button" @click="copyTopicTgi">
+          <button class="pane-copy" type="button" @click="copySelectedTgi">
             <FIcon name="Copy" :size="13" aria-label="" />
             {{ $t("notes.copyTopicTgi") }}
           </button>
         </header>
-        <ul class="note-list">
+
+        <ul v-if="viewMode === 'effect'" class="note-list">
           <li
-            v-for="item in selectedGroup.items"
+            v-for="item in (selectedGroup.items as EffectAnnotation[])"
+            :key="item.id"
+            class="note-row"
+            :class="{ expanded: expandedId === item.id }"
+          >
+            <div
+              class="note-row-main"
+              role="button"
+              tabindex="0"
+              :aria-expanded="expandedId === item.id"
+              @click="toggleExpanded(item.id)"
+              @keydown.enter.prevent
+              @keydown.space.prevent
+            >
+              <div class="note-title-line">
+                <FIcon
+                  name="ChevronDown"
+                  :size="12"
+                  class="note-chevron"
+                  aria-label=""
+                />
+                <FIcon name="Zap" :size="12" class="note-zap" aria-label="" />
+                <code
+                  class="note-tgi"
+                  :title="`${effectTgiTextOf(item)} · ${t('notes.copyTgi')}`"
+                  @click.stop="copy(effectTgiTextOf(item))"
+                >
+                  {{ effectTgiInstanceOf(item) }}
+                </code>
+                <code
+                  v-if="item.sourceTypeId !== null"
+                  class="note-tgi note-src"
+                  :title="`${t('effectTags.sourceTgiLabel')} ${sourceTgiTextOf(item)}`"
+                >
+                  {{ sourceTgiTextOf(item).split(":")[2] }}
+                </code>
+              </div>
+              <p v-if="item.note && expandedId !== item.id" class="note-preview">
+                {{ item.note }}
+              </p>
+            </div>
+            <div class="note-actions">
+              <button
+                type="button"
+                :title="t('notes.copyTgi')"
+                @click.stop="copy(effectTgiTextOf(item))"
+              >
+                <FIcon name="Copy" :size="13" aria-label="" />
+              </button>
+              <button
+                type="button"
+                :title="t('common.delete')"
+                @click.stop="removeEffect(item)"
+              >
+                <FIcon name="Trash2" :size="13" aria-label="" />
+              </button>
+            </div>
+            <div v-if="expandedId === item.id" class="note-body">
+              <pre class="note-content">{{
+                item.note || $t("notes.noContent")
+              }}</pre>
+              <p class="note-time">
+                <template v-if="item.sourceTypeId !== null">
+                  {{ $t("effectTags.sourceTgiLabel") }}
+                  {{ sourceTgiTextOf(item) }} ·
+                </template>
+                {{
+                  $t("notes.updatedAt", {
+                    time: formatTime(item.updatedAt || item.createdAt),
+                  })
+                }}
+              </p>
+            </div>
+          </li>
+        </ul>
+
+        <ul v-else class="note-list">
+          <li
+            v-for="item in (selectedGroup.items as ResourceAnnotation[])"
             :key="item.id"
             class="note-row"
             :class="{ expanded: expandedId === item.id }"
@@ -265,6 +449,8 @@ function formatTime(ts: number): string {
           </li>
         </ul>
       </section>
+
+      <p v-else class="notes-empty notes-empty-pane">{{ emptyText }}</p>
     </div>
   </section>
 </template>
@@ -340,6 +526,17 @@ function formatTime(ts: number): string {
   padding: 40px 0;
   text-align: center;
 }
+/* 空态占据右栏内容位（左栏页签常驻，切换入口不消失） */
+.notes-empty-pane {
+  align-self: start;
+}
+.rail-empty {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 10px 6px 14px;
+}
 
 /* ---- 主从两栏：左栏 sticky 常驻，右栏单分类，页面高度有界 ---- */
 .notes-layout {
@@ -348,10 +545,48 @@ function formatTime(ts: number): string {
   gap: 14px;
   grid-template-columns: minmax(196px, 236px) minmax(0, 1fr);
 }
-.notes-rail {
+.notes-side {
+  display: grid;
+  gap: 8px;
   max-height: calc(100dvh - 108px);
+  min-height: 0;
   position: sticky;
   top: 68px;
+}
+/* Property / Effect 双页签（segmented control） */
+.mode-tabs {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 3px;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+}
+.mode-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 11.5px;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 8px;
+}
+.mode-tabs button:hover {
+  color: var(--foreground);
+}
+.mode-tabs button.active {
+  background: var(--accent);
+  color: var(--foreground);
+  font-weight: 650;
+}
+.notes-rail {
+  min-height: 0;
 }
 
 .topic-pane {
@@ -450,6 +685,13 @@ function formatTime(ts: number): string {
 .note-row.expanded .note-chevron {
   transform: rotate(180deg);
 }
+.note-zap {
+  color: var(--primary);
+  flex: none;
+}
+.note-src {
+  background: var(--surface-hover);
+}
 .note-title {
   flex: 0 1 auto;
   font-size: 12px;
@@ -545,7 +787,7 @@ function formatTime(ts: number): string {
   .notes-layout {
     grid-template-columns: 1fr;
   }
-  .notes-rail {
+  .notes-side {
     max-height: 38vh;
     position: static;
   }
