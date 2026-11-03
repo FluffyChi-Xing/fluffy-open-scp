@@ -80,7 +80,7 @@ const effectsActive = computed(
 );
 const effectUnits = computed(() => ui.value?.grouping.effects ?? []);
 const effectPreview = useEffectPreview(
-  () => asset.nativePackageId.value ?? 0,
+  () => asset.effectPreviewPackageId.value,
   effectsActive,
   effectUnits,
 );
@@ -755,10 +755,7 @@ function templateOf(resourceId: number) {
             <span>{{ t("package.neonAnim") }}</span>
           </label>
           <label
-            v-if="
-              asset.sourceKind.value === 'native' &&
-              effectiveRenderMode === 'refined'
-            "
+            v-if="effectiveRenderMode === 'refined'"
             class="maw-switch"
             :title="effectRenderTitle"
           >
@@ -1105,10 +1102,6 @@ function templateOf(resourceId: number) {
                       fill
                     />
                   </div>
-                  <BuildActionsPanel
-                    v-else
-                    :project="props.project"
-                  />
                 </template>
                 <p v-else class="maw-tab-empty">
                   {{ t("studio.assetWorkbench.noAssetRight") }}

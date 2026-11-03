@@ -39,6 +39,7 @@ import {
   type ModelState,
   type UnitGrouping,
 } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
+import { useGamePackagesStore } from "@/stores/gamePackages";
 
 /**
  * Mod 资产工作台统一会话（Blender 式重构 2026-10-25）。
@@ -457,6 +458,16 @@ export function useWorkbenchAsset(project: string) {
   const sourcePackagePath = ref("");
   /** native 会话的包 id（特效预览等需要）。 */
   const nativePackageId = ref<number | null>(null);
+  // effect 预览的包锚点:draft(lotm/GLB)模式无 nativePackageId——回退到
+  // 任一已打开游戏包(read_effect_preview 的 locate_effect_packages 会从
+  // 锚点出发定位真正的效果定义包,Game/App 均可作锚点)。
+  const gamePackages = useGamePackagesStore();
+  const effectPreviewPackageId = computed(() => {
+    if (sourceKind.value === "native" && nativePackageId.value != null) {
+      return nativePackageId.value;
+    }
+    return gamePackages.opened[0]?.package.packageId ?? 0;
+  });
   /** 项目根绝对路径（.package 树项 → packages.open 需要绝对路径）。 */
   let projectRootPath = "";
   async function resolveProjectRoot(): Promise<string> {
@@ -1543,6 +1554,7 @@ export function useWorkbenchAsset(project: string) {
     addedModelPayloads,
     savedDirty,
     restoring,
+    effectPreviewPackageId,
     documentPath: DOCUMENT_PATH,
     draftLotSize,
     openNative,
