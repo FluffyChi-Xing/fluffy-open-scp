@@ -211,6 +211,18 @@ pub(crate) const PATH_ROAD_CONNECT_YES: u32 = 0xC186_DA37;
 /// instance through the script table; the group in the key is informational.
 pub(crate) const PATH_ENTRY_GROUP: u32 = 0x40E1_C400;
 
+// -- spawner columns (SC::cUnitModel::mUnitLocations contract): vanilla
+//    asset dicts fire station E917279C (16 anchors) and water pump
+//    CEAA14AE (24 anchors) both carry PURE ids+transforms parallel arrays
+//    (equal length, flags 14, ids as residual-TGI keys {0,0,instance}).
+//    The first nine anchors are shared across every building family — the
+//    universal walk-in/parking/service anchor library; tails are
+//    per-family. No count/variation columns on the asset dict: the
+//    building-variation trio (0x0E715928/29/0x0F0E2BF1) lives on the unit
+//    property side only.
+const SPAWNER_IDS: u32 = 0x0E1B_AC61;
+const SPAWNER_TRANSFORMS: u32 = 0x0E1B_AC62;
+
 /// Parent-free identity output.
 pub struct ParentFreeIdentity {
     /// Asset dictionary (40E1C000, new instance) with ground numerics,
@@ -752,6 +764,44 @@ fn compile_light_fields(
     Ok(out)
 }
 
+/// Spawner entity columns for the Asset dictionary: the authored residual
+/// TGI keys and flags-14 transforms, rotated with the author orientation.
+/// Count/randomization columns are deliberately absent (vanilla asset dicts
+/// never carry them; see the module comment above).
+fn compile_spawner_fields(
+    scene: Option<&SceneDocument>,
+    degrees: u32,
+) -> Result<Vec<Property>, String> {
+    let Some(scene) = scene else {
+        return Ok(Vec::new());
+    };
+    let mut ids: Vec<Value> = Vec::new();
+    let mut transforms: Vec<Value> = Vec::new();
+    for unit in &scene.units {
+        let SceneUnit::Spawner { transform, id } = unit else {
+            continue;
+        };
+        let matrix = rotate_matrix(&transform.matrix, degrees)?;
+        ids.push(Value::Key(Key {
+            type_id: id.type_id,
+            group: id.group,
+            instance: id.instance,
+        }));
+        transforms.push(Value::Transform(Transform {
+            flags: 14,
+            unknown: None,
+            matrix: matrix.to_vec(),
+        }));
+    }
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(vec![
+        array(SPAWNER_IDS, PropType::Key, ids),
+        array(SPAWNER_TRANSFORMS, PropType::Transform, transforms),
+    ])
+}
+
 /// Rotate a lot-local vector with the author's quantized rotation — same
 /// transform math as props/lights: identity basis with the vector as
 /// translation comes back with the translation rotated about lot origin.
@@ -1045,8 +1095,9 @@ pub fn build(
     // Props and lights → Asset dictionary columns (author compile_fields
     // wire format, byte-verified against prepare_asset.py output). Path
     // columns follow the vanilla CreatePathsFromProps contract (fire station
-    // E917279C + Game.package scan). Spawner columns remain deferred until
-    // their assembly is game-verified.
+    // E917279C + Game.package scan); spawner columns follow
+    // cUnitModel::mUnitLocations (fire station 16 anchors / water pump
+    // CEAA14AE 24 anchors, shared nine-anchor library in front).
     for property in compile_prop_fields(scene, rotation_degrees)? {
         upsert(&mut asset, property);
     }
@@ -1054,6 +1105,9 @@ pub fn build(
         upsert(&mut asset, property);
     }
     for property in compile_path_fields(scene, rotation_degrees)? {
+        upsert(&mut asset, property);
+    }
+    for property in compile_spawner_fields(scene, rotation_degrees)? {
         upsert(&mut asset, property);
     }
     // Unit/Asset locale title edge (author `unit/asset[0x09fb78cb]=text(t,1)`).
@@ -1347,6 +1401,58 @@ mod tests {
                 instance: 0xC186_DA37,
             })]
         );
+    }
+
+    /// Spawner columns = pure ids+transforms parallel arrays (vanilla fire
+    /// station 16 / water pump 24): flags-14 rotated transforms, residual
+    /// TGI keys verbatim, and NO count/variation columns (unit-side only).
+    #[test]
+    fn spawner_fields_match_vanilla_wire() {
+        let value = json!({
+            "units": [
+                {"id": "spawner:0", "kind": "spawner", "index": 0,
+                 "spawnerId": {"typeId": 0, "group": 0, "instance": 2450748962u64},
+                 "transform": {"flags": 15,
+                               "matrix": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0]}},
+                {"id": "spawner:1", "kind": "spawner", "index": 1,
+                 "spawnerId": {"typeId": 0, "group": 0, "instance": 379778996u64},
+                 "transform": {"flags": 15,
+                               "matrix": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 7.0]}}
+            ]
+        });
+        let scene = parse_scene(&value).expect("scene");
+        let fields = compile_spawner_fields(Some(&scene), 180).expect("spawner fields");
+        let column = |hash: u32| -> Vec<Value> {
+            fields
+                .iter()
+                .find(|p| p.hash == hash)
+                .map(|p| match &p.kind {
+                    Kind::Array(values) => values.clone(),
+                    _ => panic!("column must be an array"),
+                })
+                .unwrap_or_else(|| panic!("missing column {hash:08X}"))
+        };
+        assert_eq!(column(0x0E1B_AC61).len(), 2);
+        assert_eq!(
+            column(0x0E1B_AC61)[0].clone(),
+            Value::Key(Key { type_id: 0, group: 0, instance: 2450748962 })
+        );
+        match column(0x0E1B_AC62)[0].clone() {
+            Value::Transform(t) => {
+                assert_eq!(t.flags, 14, "vanilla spawner transforms carry flags 14");
+                assert_eq!(
+                    t.matrix[9..],
+                    [-2.0, -3.0, 4.0],
+                    "180° flips the translation"
+                );
+            }
+            other => panic!("spawner transform: {other:?}"),
+        }
+        // Vanilla asset dicts never carry the variation trio — the builder
+        // must not invent them.
+        assert!(fields.iter().all(|p| {
+            !matches!(p.hash, 0x0E71_5928 | 0x0E71_5929 | 0x0F0E_2BF1)
+        }));
     }
 
     /// Author wire: record header `>IHHII` with flags 0x809C, and the

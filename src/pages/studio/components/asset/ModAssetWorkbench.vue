@@ -1097,7 +1097,7 @@ function templateOf(resourceId: number) {
                     :disabled="ui.editMode !== 'draft'"
                     @bind="onBindMaterialSlots"
                   />
-                  <div v-else class="maw-schema">
+                  <div v-else-if="rightTab === 'schema'" class="maw-schema">
                     <MonacoEditor
                       :value="
                         asset.schemaJson.value ||
@@ -1108,7 +1108,7 @@ function templateOf(resourceId: number) {
                     />
                   </div>
                   <BuildActionsPanel
-                    v-else-if="rightTab === 'actions'"
+                    v-else
                     :project="props.project"
                   />
                 </template>
