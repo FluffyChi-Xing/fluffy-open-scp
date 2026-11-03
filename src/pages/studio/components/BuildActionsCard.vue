@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useModProjectsStore } from "@/stores/modProjects";
+import FSelect from "@/components/ui/FSelect.vue";
 import BuildActionsPanel from "./asset/BuildActionsPanel.vue";
 
 /**
@@ -22,9 +23,7 @@ const options = computed(() =>
 );
 const selectedRoot = ref("");
 
-function onProjectChange(event: Event) {
-  selectedRoot.value = (event.target as HTMLSelectElement).value;
-}
+
 </script>
 
 <template>
@@ -39,12 +38,12 @@ function onProjectChange(event: Event) {
     <template v-else>
       <label class="project-row">
         <span>{{ t("studio.assetWorkbench.actionsCardProject") }}</span>
-        <select class="project-select" :value="selectedRoot" @change="onProjectChange">
-          <option value="">{{ t("studio.assetWorkbench.actionsCardPick") }}</option>
-          <option v-for="option in options" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
+        <FSelect
+          v-model="selectedRoot"
+          class="project-select"
+          :options="options"
+          :aria-label="t('studio.assetWorkbench.actionsCardProject')"
+        />
       </label>
       <BuildActionsPanel v-if="selectedRoot" :project="selectedRoot" />
     </template>
