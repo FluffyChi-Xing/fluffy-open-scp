@@ -600,6 +600,25 @@ fn compile_prop_fields(
     Ok(out)
 }
 
+/// One authored light row, schema fields already defaulted to the author
+/// packager's contract. Struct over tuple: the metadata panel now edits
+/// cull/volumetric too, so a 13-tuple stopped being readable.
+struct LightRow {
+    kind: u32,
+    matrix: [f32; 12],
+    color: [f32; 3],
+    radius: f32,
+    inner: f32,
+    intensity: f32,
+    specular: f32,
+    length: f32,
+    cull: u32,
+    falloff: f32,
+    volumetric: bool,
+    vol_strength: f32,
+    name: String,
+}
+
 /// `light_contract.compile_fields` driven by the workbench light units.
 fn compile_light_fields(
     scene: Option<&SceneDocument>,
@@ -608,7 +627,7 @@ fn compile_light_fields(
     let Some(scene) = scene else {
         return Ok(Vec::new());
     };
-    let mut lights: Vec<(u32, [f32; 12], [f32; 3], f32, f32, f32, f32, f32, String)> = Vec::new();
+    let mut lights: Vec<LightRow> = Vec::new();
     for unit in &scene.units {
         let SceneUnit::Light {
             transform,
@@ -619,8 +638,11 @@ fn compile_light_fields(
             diffuse,
             specular,
             length,
+            cull_distance,
+            falloff_start,
+            is_volumetric,
+            volumetric_strength,
             debug_name,
-            ..
         } = unit
         else {
             continue;
@@ -639,17 +661,23 @@ fn compile_light_fields(
             "SC5_{}",
             debug_name.as_deref().unwrap_or("Light").chars().take(24).collect::<String>()
         );
-        lights.push((
+        lights.push(LightRow {
             kind,
             matrix,
-            color.unwrap_or([1.0, 1.0, 1.0]),
-            outer_radius.unwrap_or(10.0),
-            inner_radius.unwrap_or(0.0),
-            diffuse.unwrap_or(1.0),
-            specular.unwrap_or(0.0),
-            length.unwrap_or(0.1),
+            color: color.unwrap_or([1.0, 1.0, 1.0]),
+            radius: outer_radius.unwrap_or(10.0),
+            inner: inner_radius.unwrap_or(0.0),
+            intensity: diffuse.unwrap_or(1.0),
+            specular: specular.unwrap_or(0.0),
+            length: length.unwrap_or(0.1),
+            // Cull tier instance straight from the authored Near/Mid/Far/Max
+            // enum (scene.rs maps it); author profile default = Max tier.
+            cull: cull_distance.unwrap_or(CULL_TIER),
+            falloff: falloff_start.unwrap_or(0.0),
+            volumetric: is_volumetric.unwrap_or(false),
+            vol_strength: volumetric_strength.unwrap_or(0.0),
             name,
-        ));
+        });
     }
     if lights.is_empty() {
         return Ok(Vec::new());
@@ -658,36 +686,32 @@ fn compile_light_fields(
     for (hash, prop_type) in LIGHT_COLUMNS {
         let values = lights
             .iter()
-            .map(
-                |(kind, matrix, color, radius, inner, intensity, specular, length, name)| {
-                    match (hash, prop_type) {
-                        (0x0CAA_8F10, _) => zero_key(LIGHT_GROUP),
-                        (0x0CAA_8F11, _) => zero_key(*kind),
-                        (0x0CAA_8F12, _) => Value::Transform(Transform {
-                            // Author '>H12f' with [14, *m].
-                            flags: 14,
-                            unknown: None,
-                            matrix: matrix.to_vec(),
-                        }),
-                        (0x0CAA_8F13, _) => Value::ColorRgb {
-                            r: color[0],
-                            g: color[1],
-                            b: color[2],
-                        },
-                        (0x0CAA_8F14, _) => Value::Float(*radius),
-                        (0x0CAA_8F15, _) => Value::Float(*inner),
-                        (0x0CAA_8F16, _) => Value::Float(*intensity),
-                        (0x0CAA_8F17, _) => Value::String8(name.clone()),
-                        (0x0D4C_96B4, _) => Value::Float(*specular),
-                        (0x0D4C_AD23, _) => Value::Float(*length),
-                        (0x0E01_200F, _) => zero_key(CULL_TIER),
-                        (0x0E4D_F244, _) => Value::Float(0.0),
-                        (0x0E98_D445, _) => Value::Bool(false),
-                        (0x0EC4_567E, _) => Value::Float(0.0),
-                        _ => unreachable!("light column table is exhaustive"),
-                    }
+            .map(|row| match (hash, prop_type) {
+                (0x0CAA_8F10, _) => zero_key(LIGHT_GROUP),
+                (0x0CAA_8F11, _) => zero_key(row.kind),
+                (0x0CAA_8F12, _) => Value::Transform(Transform {
+                    // Author '>H12f' with [14, *m].
+                    flags: 14,
+                    unknown: None,
+                    matrix: row.matrix.to_vec(),
+                }),
+                (0x0CAA_8F13, _) => Value::ColorRgb {
+                    r: row.color[0],
+                    g: row.color[1],
+                    b: row.color[2],
                 },
-            )
+                (0x0CAA_8F14, _) => Value::Float(row.radius),
+                (0x0CAA_8F15, _) => Value::Float(row.inner),
+                (0x0CAA_8F16, _) => Value::Float(row.intensity),
+                (0x0CAA_8F17, _) => Value::String8(row.name.clone()),
+                (0x0D4C_96B4, _) => Value::Float(row.specular),
+                (0x0D4C_AD23, _) => Value::Float(row.length),
+                (0x0E01_200F, _) => zero_key(row.cull),
+                (0x0E4D_F244, _) => Value::Float(row.falloff),
+                (0x0E98_D445, _) => Value::Bool(row.volumetric),
+                (0x0EC4_567E, _) => Value::Float(row.vol_strength),
+                _ => unreachable!("light column table is exhaustive"),
+            })
             .collect();
         out.push(array(hash, prop_type, values));
     }
@@ -1074,6 +1098,50 @@ mod tests {
                 other => panic!("light type must be a key, got {other:?}"),
             }
         }
+    }
+
+    /// Cull tier and volumetric fields flow from the scene doc into the wire
+    /// columns instead of the static profile defaults — the metadata panel
+    /// edits these since 2026-11-03 (user report: visible in the read-only
+    /// 属性 tab, missing from the 元数据 editor; the builder also used to
+    /// hardwire cull=CULL_TIER/volumetric=false, so panel edits never
+    /// reached the package).
+    #[test]
+    fn light_fields_carry_cull_and_volumetric() {
+        let value = json!({
+            "units": [{
+                "kind": "light",
+                "lightType": "Spot",
+                "cullDistance": "Near",
+                "isVolumetric": true,
+                "volumetricStrength": 2.5,
+                "falloffStart": 0.25,
+                "transform": {
+                    "flags": 15,
+                    "matrix": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 3.0]
+                }
+            }]
+        });
+        let scene = parse_scene(&value).expect("scene");
+        let fields = compile_light_fields(Some(&scene), 0).expect("light fields");
+        let first = |hash: u32| -> Value {
+            fields
+                .iter()
+                .find(|p| p.hash == hash)
+                .and_then(|p| match &p.kind {
+                    Kind::Array(values) => values.first().cloned(),
+                    _ => None,
+                })
+                .expect("column with one row")
+        };
+        match first(0x0E01_200F) {
+            // CULL_NEAR 0x4394_551B (lot_unit.rs), not the Max-tier default.
+            Value::Key(key) => assert_eq!(key.instance, 0x4394_551B),
+            other => panic!("cull must be a key, got {other:?}"),
+        }
+        assert_eq!(first(0x0E98_D445), Value::Bool(true));
+        assert_eq!(first(0x0EC4_567E), Value::Float(2.5));
+        assert_eq!(first(0x0E4D_F244), Value::Float(0.25));
     }
 
     /// Author wire: record header `>IHHII` with flags 0x809C, and the

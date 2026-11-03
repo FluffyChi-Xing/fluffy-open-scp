@@ -9,8 +9,9 @@ import { unitId } from "./unitGizmos";
 
 /**
  * 元数据 tab：按 Unit 类型给出语义字段编辑（写本地字段 override，可撤销）。
- * 覆盖 light（类型/颜色/半径/漫射/长度）与 prop（缩放倍率）；其余类型只读
- * 提示（decal 按用户裁决暂缓）。新组件族按节追加（divider 语义）。
+ * 覆盖 light（类型/颜色/半径/漫射/长度/裁切距离/体积光——2026-11-03 用户
+ * 指令补齐，长度仅 Spot/Line 显示，Point 不消费该字段）与 prop（缩放倍率）；
+ * 其余类型只读提示（decal 按用户裁决暂缓）。新组件族按节追加（divider 语义）。
  */
 const props = defineProps<{
   unit: LotUnitDto | null;
@@ -59,22 +60,45 @@ function commitScale() {
 const LIGHT_TYPES = ["Point", "Spot", "Line"] as const;
 const typeOpen = ref(false);
 
+/** 裁切距离档位 = scene.rs cull_distance_instance 的解析枚举。 */
+const CULL_DISTANCES = ["Near", "Mid", "Far", "Max"] as const;
+const cullOpen = ref(false);
+
 interface NumberField {
   key: "outerRadius" | "innerRadius" | "diffuse" | "length";
   label: string;
   step: number;
+  /** 字段适用的灯型；省略 = 全类型。Point 不消费 length（引擎侧仅 Spot 锥长/Line 条长）。 */
+  types?: readonly (typeof LIGHT_TYPES)[number][];
 }
 const NUMBER_FIELDS: NumberField[] = [
   { key: "outerRadius", label: "package.lightRadius", step: 0.5 },
   { key: "innerRadius", label: "package.lightInnerRadius", step: 0.5 },
   { key: "diffuse", label: "package.lightDiffuse", step: 0.05 },
-  { key: "length", label: "package.lightLength", step: 0.5 },
+  { key: "length", label: "package.lightLength", step: 0.5, types: ["Spot", "Line"] },
 ];
+const numberFields = computed(() => {
+  const type = light.value?.lightType ?? "Point";
+  return NUMBER_FIELDS.filter((field) => !field.types || field.types.includes(type));
+});
 
 function setLightType(type: string) {
   if (locked.value || !light.value) return;
   emit("update-fields", unitId(light.value), { lightType: type });
   typeOpen.value = false;
+}
+
+function setCullDistance(distance: string) {
+  if (locked.value || !light.value) return;
+  emit("update-fields", unitId(light.value), { cullDistance: distance });
+  cullOpen.value = false;
+}
+
+function setVolumetric(event: Event) {
+  if (locked.value || !light.value) return;
+  emit("update-fields", unitId(light.value), {
+    isVolumetric: (event.target as HTMLInputElement).checked,
+  });
 }
 
 function setNumberField(key: NumberField["key"], event: Event) {
@@ -189,7 +213,7 @@ function setColor(hex: string) {
       </section>
       <section class="panel-section">
         <div class="axis-rows">
-          <label v-for="field in NUMBER_FIELDS" :key="field.key" class="axis-row">
+          <label v-for="field in numberFields" :key="field.key" class="axis-row">
             <span class="field-label">{{ t(field.label) }}</span>
             <input
               type="number"
@@ -201,6 +225,50 @@ function setColor(hex: string) {
             />
           </label>
         </div>
+      </section>
+      <section class="panel-section">
+        <div class="scale-row">
+          <div class="scale-label">
+            <span>{{ $t("package.lightCullDistance") }}</span>
+          </div>
+          <FDropdown v-model:open="cullOpen" :width="150">
+            <template #trigger>
+              <button type="button" class="type-trigger" :disabled="locked">
+                <span>{{ light.cullDistance ?? "Max" }}</span>
+                <FIcon name="ChevronDown" :size="14" aria-label="" />
+              </button>
+            </template>
+            <button
+              v-for="distance in CULL_DISTANCES"
+              :key="distance"
+              type="button"
+              :class="{ selected: (light.cullDistance ?? 'Max') === distance }"
+              @click="setCullDistance(distance)"
+            >
+              <FIcon
+                :name="(light.cullDistance ?? 'Max') === distance ? 'Check' : 'CircleDot'"
+                :size="14"
+                aria-label=""
+              />
+              {{ distance }}
+            </button>
+          </FDropdown>
+        </div>
+      </section>
+      <section class="panel-section">
+        <label class="scale-row volumetric-row">
+          <div class="scale-label">
+            <span>{{ $t("package.lightVolumetric") }}</span>
+          </div>
+          <input
+            class="volumetric-input"
+            type="checkbox"
+            :checked="light.isVolumetric ?? false"
+            :disabled="locked"
+            :aria-label="$t('package.lightVolumetric')"
+            @change="setVolumetric"
+          />
+        </label>
       </section>
     </template>
     <p v-else class="panel-empty">{{ $t("package.metadataUnsupported") }}</p>
@@ -316,6 +384,19 @@ function setColor(hex: string) {
   width: 96px;
 }
 .scale-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* 体积光开关行：右侧原位 checkbox（label 包裹保证点击热区） */
+.volumetric-row {
+  cursor: pointer;
+}
+.volumetric-input {
+  accent-color: var(--accent, #3b82f6);
+  height: 16px;
+  width: 16px;
+}
+.volumetric-input:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
