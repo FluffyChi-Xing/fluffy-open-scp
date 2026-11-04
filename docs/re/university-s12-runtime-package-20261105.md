@@ -25,3 +25,6 @@ s11 已归档到 `D:/ea-games/simcity_offline/test-archive/000_OpenSCP_Universit
 并从 live `SimCityData` 移除。当前 live 目录只部署：
 
 `D:/ea-games/simcity_offline/SimCity：Cites of Tomorrow/SimCityData/000_OpenSCP_University_s12.package`
+
+## s13 correction
+The park menu category is now kept separate from Unit behavior. s13 uses menu category 07049250/F970A822, Unit category 95A9D6FD, and parent 7E4B99E5. s12 was archived before deployment.
