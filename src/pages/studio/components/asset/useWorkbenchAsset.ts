@@ -462,6 +462,8 @@ export function useWorkbenchAsset(project: string) {
   // 任一已打开游戏包(read_effect_preview 的 locate_effect_packages 会从
   // 锚点出发定位真正的效果定义包,Game/App 均可作锚点)。
   const gamePackages = useGamePackagesStore();
+  /** 地面贴图相对上次快照是否有变化(套用 preset 置脏,保存快照后清)。 */
+  const groundSnapshotDirty = ref(false);
   const effectPreviewPackageId = computed(() => {
     if (sourceKind.value === "native" && nativePackageId.value != null) {
       return nativePackageId.value;
@@ -1276,10 +1278,9 @@ export function useWorkbenchAsset(project: string) {
       tgi: preset.tgi,
       packagePath: preset.packagePath,
     };
-    // 地面贴图持久化到项目(冷启动离线恢复;写失败不影响套用)
-    void persistGroundTextures().catch((cause) => {
-      console.warn("[workbench] ground texture persistence skipped:", cause);
-    });
+    // 地面贴图标记为待快照:用户点击「保存」时才写入项目
+    // (2026-11-04 用户指令:套用不落盘,保存才快照且仅变化时)。
+    groundSnapshotDirty.value = true;
     return session.lotSize ?? null;
   }
 
@@ -1409,6 +1410,16 @@ export function useWorkbenchAsset(project: string) {
     documentRevision.value = written.revision;
     savedBaseline.value = JSON.stringify(document);
     savedDirty.value = false;
+    // 地面贴图快照跟随文档保存:仅变化时写 assets/lot/*(fail-soft,
+    // 快照失败不影响文档保存结果)。
+    if (groundSnapshotDirty.value) {
+      try {
+        await persistGroundTextures();
+        groundSnapshotDirty.value = false;
+      } catch (cause) {
+        console.warn("[workbench] ground texture snapshot skipped:", cause);
+      }
+    }
     return true;
   }
 
@@ -1465,7 +1476,7 @@ export function useWorkbenchAsset(project: string) {
     return out;
   }
 
-  /** applyLotPreset 成功后把地面贴图写入项目(下次冷启动离线恢复)。 */
+  /** 把当前地面贴图快照写入项目 assets/lot/*(冷启动离线恢复用)。 */
   async function persistGroundTextures(): Promise<void> {
     const strip = (dataUrl: string | null) =>
       dataUrl?.includes(",") ? dataUrl.split(",")[1] : dataUrl;
@@ -1560,6 +1571,8 @@ export function useWorkbenchAsset(project: string) {
             draftStyle.albedoPng = projectTextures.albedoPng ?? null;
             draftStyle.surfacePng = projectTextures.surfacePng ?? null;
             draftStyle.normalAtlasPng = projectTextures.normalAtlasPng ?? null;
+            // 项目文件 = 已持久化状态,恢复不置脏
+            groundSnapshotDirty.value = false;
           }
           if (style.sourceLot) {
             appliedLot.value = { ...style.sourceLot };
@@ -1647,6 +1660,8 @@ export function useWorkbenchAsset(project: string) {
     savedDirty,
     restoring,
     effectPreviewPackageId,
+    groundSnapshotDirty,
+    persistGroundTextures,
     documentPath: DOCUMENT_PATH,
     draftLotSize,
     openNative,
