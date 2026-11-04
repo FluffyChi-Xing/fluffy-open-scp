@@ -69,6 +69,7 @@ pub const GENERIC_MENU: ResourceId = ResourceId {
 };
 /// Asset dictionary property group (the author's `asset_key` group).
 pub const ASSET_GROUP: u32 = 0x40E1_C000;
+const UNIT_GROUP: u32 = 0x40E0_C000;
 /// Parent edge hash (00B2CCCB) — dropped when materializing a chain.
 const HASH_PARENT: u32 = 0x00B2_CCCB;
 /// cUnit → Asset dictionary edge (author `unit[0x08e17ed7]=key(asset_key)`).
@@ -633,6 +634,22 @@ fn compile_prop_fields(
         // workbench bin through verbatim.
         let bin = bin as u32;
         // Resource key: wire order instance,type,group (author pack('>III')).
+        let vehicle_bin = bin == 0
+            && resources
+                .iter()
+                .any(|resource| (0x0AB4_DFE1..=0x0AB4_DFE3).contains(resource));
+        let mut resources = resources;
+        // Vehicle slots are a script resource family, not three unrelated
+        // static models. Vanilla balloon park and school Assets always expose
+        // the complete E1/E2/E3 family; the runtime chooses the variant per
+        // slot. Emitting only E1 leaves the bin present but unresolvable.
+        if vehicle_bin {
+            for resource in 0x0AB4_DFE1..=0x0AB4_DFE3 {
+                if !resources.contains(&resource) {
+                    resources.push(resource);
+                }
+            }
+        }
         out.push(array(
             PROP_RESOURCE_KEY + bin,
             PropType::Key,
@@ -654,9 +671,14 @@ fn compile_prop_fields(
             PropType::Int32,
             (0..records.len() as i32).map(Value::Int32).collect(),
         ));
-        for field in PROP_MARKERS {
-            out.push(scalar(field + bin, PropType::Bool, Value::Bool(false)));
-        }
+        out.push(scalar(PROP_MARKERS[0] + bin, PropType::Bool, Value::Bool(false)));
+        // 0x0C12EF60 is mUseBinPercent. Dynamic vehicle bins use the
+        // simulation resource amount/capacity and vanilla sets this marker.
+        out.push(scalar(
+            PROP_MARKERS[1] + bin,
+            PropType::Bool,
+            Value::Bool(vehicle_bin),
+        ));
     }
     Ok(out)
 }
@@ -1101,6 +1123,20 @@ pub fn build(
     rotation_degrees: u32,
 ) -> Result<ParentFreeIdentity, String> {
     let (mut asset, sources) = flat_chain(resources, GENERIC_ASSET)?;
+    if let Some(template) = spec.simulation_template_instance {
+        upsert(
+            &mut asset,
+            scalar(
+                HASH_PARENT,
+                PropType::Key,
+                Value::Key(Key {
+                    type_id: 0x00B1_B104,
+                    group: ASSET_GROUP,
+                    instance: template,
+                }),
+            ),
+        );
+    }
     // Restore the author-selected interaction/query fields from the deeper
     // 34CE7E14 chain (first occurrence wins, like the author's setdefault).
     let (interaction, interaction_sources) = flat_chain(resources, INTERACTION_CHAIN)?;
@@ -1320,6 +1356,20 @@ pub fn build(
             zero_key(spec.category_instance.unwrap_or(0x95A9_D6FD)),
         ),
     );
+    if let Some(template) = spec.simulation_template_instance {
+        upsert(
+            &mut unit,
+            scalar(
+                HASH_PARENT,
+                PropType::Key,
+                Value::Key(Key {
+                    type_id: 0x00B1_B104,
+                    group: UNIT_GROUP,
+                    instance: template,
+                }),
+            ),
+        );
+    }
     upsert(&mut unit, scalar(HASH_UNIT_ASSET, PropType::Key, key_value(Key {
         type_id: 0x00B1_B104,
         group: ASSET_GROUP,
@@ -1358,6 +1408,9 @@ pub fn build(
                 "categoryInstance": format!("0x{category:08X}"),
                 "authoredPathOrVehicleOrSpawner": authored_behavior,
                 "simulationTemplate": category == EDUCATION_CATEGORY,
+                "simulationTemplateInstance": spec
+                    .simulation_template_instance
+                    .map(|value| format!("0x{value:08X}")),
             },
         }),
     })

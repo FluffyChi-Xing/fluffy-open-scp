@@ -128,6 +128,11 @@ pub struct MenuRegistrationSpec {
     /// `4E01E311`。公园测试可用 NightHouse 实证对 `565B72B9`。
     #[serde(default, deserialize_with = "de_hash")]
     pub unit_template_instance: Option<u32>,
+    /// Optional runtime behavior template parent. This is independent from
+    /// menu category: e.g. a diagnostic item may live under the park menu
+    /// while inheriting the elementary-school cUnit behavior chain.
+    #[serde(default, deserialize_with = "de_hash")]
+    pub simulation_template_instance: Option<u32>,
     /// Lot 叶子的 Lot 模板 instance（组 40E1C000）；默认地标模板
     /// `4E01E311`。公园测试可用 NightHouse 实证对 `34CE7E14`。
     #[serde(default, deserialize_with = "de_hash")]

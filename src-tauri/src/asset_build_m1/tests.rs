@@ -1113,11 +1113,12 @@ fn university_s10_headless_build_and_wire_check() {
     );
     assert_eq!(count(uh::PROP_TRANSFORM_BASE + 12), 10, "bin12 车位/树位 transforms");
     assert_eq!(int_values(uh::PROP_ID_BASE + 12 + 0x20), (0..10).collect::<Vec<_>>(), "bin12 slot 填充序 0..10");
-    // bin0 车：ids=[0AB4DFE1]，transforms 9，indices 0..9
+    // bin0 车：原版车辆资源族 E1/E2/E3 + 百分比填充标记，transforms 9
     let car_ids = key_instances(uh::PROP_ID_BASE);
-    assert_eq!(car_ids, vec![0x0AB4_DFE1], "bin0 车原型 CarW1");
+    assert_eq!(car_ids, vec![0x0AB4_DFE1, 0x0AB4_DFE2, 0x0AB4_DFE3], "bin0 车原型族");
     assert_eq!(count(uh::PROP_TRANSFORM_BASE), 9, "bin0 transforms");
     assert_eq!(int_values(uh::PROP_SLOT_BASE), (0..9).collect::<Vec<_>>(), "bin0 slot 填充序 0..9");
+    assert!(file.values.iter().any(|p| p.hash == uh::PROP_PERCENT_FILL_BASE && matches!(p.kind, Kind::Scalar(Value::Bool(true)))), "bin0 车辆必须启用 mUseBinPercent");
     // 灯源 11（本轮调整项）
     assert_eq!(count(uh::LIGHT_IDS), 11, "灯源 11 盏");
     // spawners：场景 9 个 spawner 经锚点库展开（s8 契约），只断言非空并打印
