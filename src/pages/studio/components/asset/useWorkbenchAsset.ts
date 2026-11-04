@@ -1276,6 +1276,10 @@ export function useWorkbenchAsset(project: string) {
       tgi: preset.tgi,
       packagePath: preset.packagePath,
     };
+    // 地面贴图持久化到项目(冷启动离线恢复;写失败不影响套用)
+    void persistGroundTextures().catch((cause) => {
+      console.warn("[workbench] ground texture persistence skipped:", cause);
+    });
     return session.lotSize ?? null;
   }
 
@@ -1408,6 +1412,82 @@ export function useWorkbenchAsset(project: string) {
     return true;
   }
 
+  const GROUND_TEXTURE_FILES: { file: string; styleKey: "maskPng" | "albedoPng" | "surfacePng" | "normalAtlasPng"; mime: string }[] = [
+    { file: "assets/lot/mask.png", styleKey: "maskPng", mime: "image/png" },
+    { file: "assets/lot/albedo.png", styleKey: "albedoPng", mime: "image/png" },
+    { file: "assets/lot/surface.png", styleKey: "surfacePng", mime: "image/png" },
+    { file: "assets/lot/normal.png", styleKey: "normalAtlasPng", mime: "image/png" },
+  ];
+  const GROUND_RGBA_FILE = "assets/lot/mask.rgba";
+
+  /** 从项目内读取持久化的地面贴图(离线;read-asset 缺文件即 null)。 */
+  async function loadProjectGroundTextures(): Promise<Partial<{
+    maskPng: string;
+    maskRawRgba: string | null;
+    albedoPng: string | null;
+    surfacePng: string | null;
+    normalAtlasPng: string | null;
+  }>> {
+    const out: Partial<{ maskPng: string; maskRawRgba: string | null; albedoPng: string | null; surfacePng: string | null; normalAtlasPng: string | null }> = {};
+    for (const item of GROUND_TEXTURE_FILES) {
+      try {
+        const value = await command("code_flow", {
+          request: {
+            project,
+            action: "read-asset",
+            payload: { asset: item.file },
+          },
+        });
+        const base64 =
+          (value as { base64?: string }).base64 ??
+          (value as { dataBase64?: string }).dataBase64;
+        if (!base64) continue;
+        out[item.styleKey] = `data:${item.mime};base64,${base64}`;
+      } catch {
+        // 缺文件 → 跳过
+      }
+    }
+    try {
+      const value = await command("code_flow", {
+        request: {
+          project,
+          action: "read-asset",
+          payload: { asset: GROUND_RGBA_FILE },
+        },
+      });
+      const base64 =
+        (value as { base64?: string }).base64 ??
+        (value as { dataBase64?: string }).dataBase64;
+      if (base64) out.maskRawRgba = base64;
+    } catch {
+      // 缺文件 → 跳过
+    }
+    return out;
+  }
+
+  /** applyLotPreset 成功后把地面贴图写入项目(下次冷启动离线恢复)。 */
+  async function persistGroundTextures(): Promise<void> {
+    const strip = (dataUrl: string | null) =>
+      dataUrl?.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+    const items: [string, string | null][] = [
+      ["assets/lot/mask.png", strip(draftStyle.maskPng)],
+      ["assets/lot/albedo.png", strip(draftStyle.albedoPng)],
+      ["assets/lot/surface.png", strip(draftStyle.surfacePng)],
+      ["assets/lot/normal.png", strip(draftStyle.normalAtlasPng)],
+      ["assets/lot/mask.rgba", draftStyle.maskRawRgba],
+    ];
+    for (const [asset, data] of items) {
+      if (!data) continue;
+      await command("code_flow", {
+        request: {
+          project,
+          action: "write-asset",
+          payload: { asset, data },
+        },
+      });
+    }
+  }
+
   /** 打开工作台时恢复上次会话（文档存在则按来源块重放）。 */
   async function restoreFromProject(): Promise<boolean> {
     restoring.value = true;
@@ -1469,6 +1549,18 @@ export function useWorkbenchAsset(project: string) {
             : null;
           // 来源 Lot 引用 → 重新拉取会话取回 mask/albedo/surface 等贴图
           // （贴图 base64 不入文档，见 lotStyle 持久化口径）
+          // 【2026-11-04 修复】地面贴图离线优先：项目内 assets/lot/* 的
+          // 持久化副本先恢复地面渲染（否则冷启动首开地面消失——
+          // applyLotPreset 依赖的 sourceLot.packageId 跨运行失效）；成功
+          // 后仍尝试 preset 刷新为权威版本（fail-soft）。
+          const projectTextures = await loadProjectGroundTextures();
+          if (projectTextures.maskPng) {
+            draftStyle.maskPng = projectTextures.maskPng;
+            draftStyle.maskRawRgba = projectTextures.maskRawRgba ?? null;
+            draftStyle.albedoPng = projectTextures.albedoPng ?? null;
+            draftStyle.surfacePng = projectTextures.surfacePng ?? null;
+            draftStyle.normalAtlasPng = projectTextures.normalAtlasPng ?? null;
+          }
           if (style.sourceLot) {
             appliedLot.value = { ...style.sourceLot };
             // 【2026-11-03 修复】sourceLot.packageId 跨运行失效曾让

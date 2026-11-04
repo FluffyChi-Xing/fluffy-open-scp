@@ -4,6 +4,35 @@ use super::*;
 use crate::blender_service;
 use base64::Engine;
 
+/// P2 地面贴图持久化:前端 base64 → 项目内文件(与 read-asset 对称)。
+/// 资产编辑器的 lot 地面 = mask raster 驱动;贴图此前只活在会话里,
+/// sourceLot.packageId 跨运行失效后冷启动首开地面即消失(2026-11-04
+/// 用户实测)。白名单扩展名 + 8 MiB 上限 + safe_path 防穿越。
+pub(super) fn write_asset(root: &Path, payload: &Value) -> Result<Value, String> {
+    let relative = payload["asset"].as_str().ok_or("Missing asset path")?;
+    let data = payload["data"].as_str().ok_or("Missing asset data")?;
+    let lower = relative.to_ascii_lowercase();
+    if !lower.ends_with(".png") && !lower.ends_with(".jpg") && !lower.ends_with(".rgba") {
+        return Err("Only png/jpg/rgba assets are writable".into());
+    }
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.trim())
+        .map_err(|e| format!("invalid base64: {e}"))?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("Asset exceeds 8 MiB".into());
+    }
+    let path = super::safe_path(root, relative)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "asset": relative,
+        "bytes": bytes.len(),
+    }))
+}
+
 pub(super) fn import(root: &Path, payload: &Value) -> Result<Value, String> {
     let source = PathBuf::from(payload["path"].as_str().ok_or("Missing source path")?);
     if fs::metadata(&source).map_err(|e| e.to_string())?.len() > 128 * 1024 * 1024 {

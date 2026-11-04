@@ -47,6 +47,7 @@ pub fn dispatch(root: &Path, name: &str, action: &str, payload: Value) -> Result
     match action {
         "import-asset" => asset_inputs::import(root, &payload),
         "read-asset" => asset_inputs::describe(root, string("asset")),
+        "write-asset" => asset_inputs::write_asset(root, &payload),
         "inspect" => serde_json::to_value(inspect(root)?).map_err(|e| e.to_string()),
         "initialize" => serde_json::to_value(initialize(
             root,
