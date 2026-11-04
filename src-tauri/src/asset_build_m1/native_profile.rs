@@ -205,11 +205,20 @@ pub(crate) const PATH_SCOPE_LOCAL: u32 = 0xF44F_784A;
 /// building needs the none encoding which is not yet captured, so compile
 /// is all-or-nothing per asset.
 pub(crate) const PATH_ROAD_CONNECT_YES: u32 = 0xC186_DA37;
-/// Path-entry property groups seen in vanilla asset dicts: fire-station
-/// family 40E0C400, university door entry 675B61B1 ships in 40E1C400
-/// (both verified present in Game.package). The engine resolves entries by
-/// instance through the script table; the group in the key is informational.
-pub(crate) const PATH_ENTRY_GROUP: u32 = 0x40E1_C400;
+/// Default PathEntry property group used by the pedestrian/road path family.
+pub(crate) const PATH_ENTRY_GROUP: u32 = 0x40E0_C400;
+/// The university door PathEntry is the known shipped exception: its resource
+/// is in 40E1C400. Keep the group coupled to the resource closure so the lot
+/// key and staged dependency always name the same property.
+pub(crate) const PATH_ENTRY_UNIVERSITY_DOOR: u32 = 0x40E1_C400;
+
+pub(crate) fn path_entry_group(instance: u32) -> u32 {
+    if instance == 0x675B_61B1 {
+        PATH_ENTRY_UNIVERSITY_DOOR
+    } else {
+        PATH_ENTRY_GROUP
+    }
+}
 
 // -- spawner columns (SC::cUnitModel::mUnitLocations contract): vanilla
 //    asset dicts fire station E917279C (16 anchors) and water pump
@@ -557,8 +566,12 @@ const IDENTITY_12: [f32; 12] = [
 ];
 
 /// `prop_contract.compile_fields` driven by the workbench prop units.
-/// Instances group by (bin, resource id) exactly like the author groups by
-/// preset; every group writes the five `0x0C12EF{20,30,40,50,60}+bin` fields.
+/// Instances group by bin (the field offset); a bin holding several resource
+/// ids writes one merged prototype set — ids = distinct resources in
+/// first-appearance order, transforms = instances concatenated in scene
+/// order, indices = 0..total（vanilla wire 同构：热气球公园 3 原型/17 车位
+/// 一个 bin；2026-11-05 修：同 bin 多组各自写一份同 hash 字段会互相覆盖
+/// 且 slot 序重复——混合停车场/多树 bin 必触发）。
 fn compile_prop_fields(
     scene: Option<&SceneDocument>,
     degrees: u32,
@@ -566,7 +579,7 @@ fn compile_prop_fields(
     let Some(scene) = scene else {
         return Ok(Vec::new());
     };
-    let mut groups: Vec<(usize, u32, Vec<Transform>)> = Vec::new();
+    let mut bins: Vec<(usize, Vec<u32>, Vec<Transform>)> = Vec::new();
     for unit in &scene.units {
         let SceneUnit::Prop {
             bin,
@@ -597,16 +610,18 @@ fn compile_prop_fields(
             matrix: matrix.to_vec(),
         };
         let bin = *bin;
-        match groups
-            .iter_mut()
-            .find(|(group_bin, group_resource, _)| *group_bin == bin && *group_resource == *resource)
-        {
-            Some(group) => group.2.push(record),
-            None => groups.push((bin, *resource, vec![record])),
+        match bins.iter_mut().find(|(group_bin, _, _)| *group_bin == bin) {
+            Some((_, resources, records)) => {
+                if !resources.contains(resource) {
+                    resources.push(*resource);
+                }
+                records.push(record);
+            }
+            None => bins.push((bin, vec![*resource], vec![record])),
         }
     }
     let mut out = Vec::new();
-    for (bin, resource, records) in groups {
+    for (bin, resources, records) in bins {
         // Author semantics: the bin value IS the field offset
         // (`fields[202567456+bin]`); the author catalog uses 9..=12 (their
         // trees) and commercial777's control package used 10/11. Pass the
@@ -616,7 +631,10 @@ fn compile_prop_fields(
         out.push(array(
             PROP_RESOURCE_KEY + bin,
             PropType::Key,
-            vec![zero_key(resource)],
+            resources
+                .iter()
+                .map(|resource| zero_key(*resource))
+                .collect(),
         ));
         out.push(array(
             PROP_TRANSFORMS + bin,
@@ -1028,7 +1046,7 @@ fn compile_path_fields(
             .map_err(|error| format!("path #{path_index} entry '{entry}': {error}"))?;
         entries.push(Value::Key(Key {
             type_id: 0x00B1_B104,
-            group: PATH_ENTRY_GROUP,
+            group: path_entry_group(instance),
             instance,
         }));
         scopes.push(zero_key(PATH_SCOPE_LOCAL));

@@ -196,6 +196,22 @@ const BIN_CATEGORY_ORDER: PropBinCatalogEntry["category"][] = [
 ];
 const binCatalog = ref<PropBinCatalogEntry[]>([]);
 
+/** 普查权威清单的 vanilla bin（2026-11-05 tree_hunt/car_census 锚点）：
+ * 树按树种 lod 9..12（双路同 bin）、车辆全 0。缺省条目回落放置默认 bin。 */
+const CENSUS_PROP_BINS: Record<number, number> = {
+  0x14984c6b: 9,
+  0x41c2d443: 9,
+  0x14984c6a: 10,
+  0xc8b42548: 10,
+  0x14984c69: 11,
+  0xc8b4254b: 11,
+  0x14984c68: 12,
+  0xc8b4254a: 12,
+  0x0ab4dfe1: 0,
+  0x0ab4dfe2: 0,
+  0x0ab4dfe3: 0,
+};
+
 const propGroups = computed<{ name: string; entries: CatalogEntry[] }[]>(() => {
   const keyword = search.value.trim().toLowerCase();
 
@@ -319,6 +335,14 @@ function beginPropDrag(event: PointerEvent, entry: CatalogEntry) {
       group: entry.group,
       instance: entry.instance,
     } satisfies Tgi,
+    // 语义目录条目直写脚本 resourceID（游戏可解析）；旧命名目录条目无此
+    // 字段，走直挂模型兜底。bin 取普查清单的 vanilla bin（树按树种 9..12、
+    // 车辆 0——2026-11-05 car_census 锚点口径），其余类别沿用默认。
+    resourceId: entry.binResourceId,
+    bin:
+      entry.binResourceId != null
+        ? CENSUS_PROP_BINS[entry.binResourceId]
+        : undefined,
     name: entry.name,
     template: entry.template,
   });
@@ -333,8 +357,9 @@ function beginLightDrag(event: PointerEvent, lightType: "Point" | "Spot" | "Line
 function beginPresetDrag(event: PointerEvent, tab: TabId) {
   if (!props.editEnabled) return;
   event.preventDefault();
-  // 效果页签已改为语义 tag 目录；此兜底仅服务路径页签。
-  emit("place", { kind: tab === "effects" ? "effect" : "pathPoint" });
+  // 路径点必须通过 Path 面板的 Draw 模式追加到 activePath；
+  // 不再把路径页签的兜底卡片接入通用组件放置管线。
+  if (tab === "effects") emit("place", { kind: "effect" });
 }
 
 /** 效果目录卡：拖出即放置带 TGI 的 effect 单元（语义 tag 目录）。 */

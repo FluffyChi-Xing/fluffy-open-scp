@@ -115,6 +115,11 @@ export interface PlacePayload {
   tgi?: Tgi;
   name?: string;
   template?: PropUnit;
+  /** prop bin 目录条目的脚本 resourceID（树/车等普查清单 id）——放置直写
+   * PROP_ID，缺省回落 modelTgi.instance（直挂模型，游戏不解析）。 */
+  resourceId?: number;
+  /** prop bin 目录条目的原生 bin（vanilla 车辆 0 / 树 9..12）。 */
+  bin?: number;
   /** 生成器预设名字 id（引擎 FNV-1 哈希；null/缺省 = 未命名锚点）。 */
   spawnerId?: number | null;
   /** 效果目录卡携带的 effect TGI（语义 tag 目录）；缺省 = 空白效果。 */
@@ -1067,6 +1072,9 @@ export function useWorkbenchAsset(project: string) {
   ): string | null {
     const edit = ui.value?.edit;
     if (!edit) return null;
+    // 路径点只能由 addPathPoint 在 Draw 模式下创建。通用组件拖放
+    // 会绕过 activePathId，留下没有路径引用的孤立点。
+    if (payload.kind === "pathPoint") return null;
     const transform = {
       matrix: placementMatrix(position, 1),
     };
@@ -1102,8 +1110,12 @@ export function useWorkbenchAsset(project: string) {
       unit = {
         kind: "prop",
         index: nextIndexOf("prop"),
-        bin: 1,
-        resourceId: payload.tgi.instance,
+        // 目录条目带脚本 resourceID 时直写 PROP_ID（游戏按脚本资源表解析）；
+        // 缺省回落模型实例（直挂模型路径）。bin 同步取目录原生 bin
+        // （vanilla：车辆 0 / 树 9..12）——全塞 bin1 会被宿主建筑脚本的
+        // 资源 bin 数量语义误门控。
+        bin: payload.bin ?? 1,
+        resourceId: payload.resourceId ?? payload.tgi.instance,
         transform,
         slot: null,
         scale: null,
@@ -1143,14 +1155,7 @@ export function useWorkbenchAsset(project: string) {
         fields: [],
       } as LotUnitDto;
     } else {
-      unit = {
-        kind: "pathPoint",
-        index: nextIndexOf("pathPoint"),
-        point: position,
-        tangent: null,
-        pointIndex: null,
-        fields: [],
-      } as LotUnitDto;
+      return null;
     }
     edit.addUnit(unit);
     selectUnit(unitId(unit));

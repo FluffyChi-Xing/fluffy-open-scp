@@ -1025,3 +1025,104 @@ fn deterministic_output_two_fresh_builds_identical() {
         "fresh builds of identical inputs must be byte-identical"
     );
 }
+
+/// s10 无头构建 + 包内复核（手动，需本机项目与游戏包）：
+/// cargo test -p fluffy-open-scp --release university_s10 -- --ignored --nocapture
+/// 2026-11-05 大学项目迭代：10 树（bin12：14984C68×9 + C8B4254A×1）+
+/// 9 车（bin0：0AB4DFE1）+ 11 灯。断言 PROP_ID 是脚本 resourceID（工作台
+/// 直挂模型 id 已在场景侧治愈），bins/transforms/indices 长度按 vanilla
+/// wire（ids 原型表×transforms 车位×indices 填充序 0..n）。
+#[test]
+#[ignore]
+fn university_s10_headless_build_and_wire_check() {
+    use sc_properties::lot_unit as uh;
+    let root = Path::new(r"D:\rust\packages\fluffy-open-scp\tmp\s10-staging\university");
+    let schema = fs::read_to_string(root.join("schemas/assets/m1.json")).expect("read m1.json");
+    let result = build_from_schema(root, &schema).expect("build s10");
+    println!(
+        "output {} ({} resources, {} patched, menu {})",
+        result.path.display(),
+        result.resource_count,
+        result.patched_resources,
+        result.menu_instance.map(|m| format!("{m:08X}")).unwrap_or_else(|| "-".into())
+    );
+    let package = Package::open(&result.path).expect("open output");
+    let lot_tgi: Vec<(u32, u32)> = package
+        .entries()
+        .iter()
+        .filter(|e| e.id.type_id == 0x00B1_B104)
+        .map(|e| (e.id.group, e.id.instance))
+        .collect();
+    println!("B1B104 entries in output: {lot_tgi:02X?}");
+    let lot = package
+        .entries()
+        .iter()
+        .find(|e| e.id.type_id == 0x00B1_B104 && e.id.group == 0x40E1_C000)
+        .expect("lot property in output");
+    let data = package.read(lot).expect("read lot");
+    let file = PropertyFile::parse_with_limits(&data, Default::default()).expect("parse lot");
+
+    let key_instances = |hash: u32| -> Vec<u32> {
+        file.values
+            .iter()
+            .filter(|p| p.hash == hash)
+            .flat_map(|p| match &p.kind {
+                Kind::Array(vs) => vs.iter().cloned().collect::<Vec<_>>(),
+                Kind::Scalar(v) => vec![v.clone()],
+                Kind::Empty => vec![],
+            })
+            .filter_map(|v| match v {
+                Value::Key(k) => Some(k.instance),
+                _ => None,
+            })
+            .collect()
+    };
+    let int_values = |hash: u32| -> Vec<i32> {
+        file.values
+            .iter()
+            .filter(|p| p.hash == hash)
+            .flat_map(|p| match &p.kind {
+                Kind::Array(vs) => vs.iter().cloned().collect::<Vec<_>>(),
+                Kind::Scalar(v) => vec![v.clone()],
+                Kind::Empty => vec![],
+            })
+            .filter_map(|v| match v {
+                Value::Int32(n) => Some(n),
+                Value::UInt32(n) => Some(n as i32),
+                _ => None,
+            })
+            .collect()
+    };
+    let count = |hash: u32| -> usize {
+        file.values
+            .iter()
+            .filter(|p| p.hash == hash)
+            .map(|p| match &p.kind {
+                Kind::Array(vs) => vs.len(),
+                Kind::Scalar(_) => 1,
+                Kind::Empty => 0,
+            })
+            .sum()
+    };
+
+    // bin12 树：ids = [14984C68, C8B4254A]，transforms 10，indices 0..10
+    let tree_ids = key_instances(uh::PROP_ID_BASE + 12);
+    assert!(
+        tree_ids.contains(&0x1498_4C68) && tree_ids.contains(&0xC8B4_254A),
+        "bin12 树原型应含 14984C68+C8B4254A，实得 {tree_ids:08X?}"
+    );
+    assert_eq!(count(uh::PROP_TRANSFORM_BASE + 12), 10, "bin12 车位/树位 transforms");
+    assert_eq!(int_values(uh::PROP_ID_BASE + 12 + 0x20), (0..10).collect::<Vec<_>>(), "bin12 slot 填充序 0..10");
+    // bin0 车：ids=[0AB4DFE1]，transforms 9，indices 0..9
+    let car_ids = key_instances(uh::PROP_ID_BASE);
+    assert_eq!(car_ids, vec![0x0AB4_DFE1], "bin0 车原型 CarW1");
+    assert_eq!(count(uh::PROP_TRANSFORM_BASE), 9, "bin0 transforms");
+    assert_eq!(int_values(uh::PROP_SLOT_BASE), (0..9).collect::<Vec<_>>(), "bin0 slot 填充序 0..9");
+    // 灯源 11（本轮调整项）
+    assert_eq!(count(uh::LIGHT_IDS), 11, "灯源 11 盏");
+    // spawners：场景 9 个 spawner 经锚点库展开（s8 契约），只断言非空并打印
+    let spawner_ids = key_instances(uh::SPAWNER_IDS);
+    assert!(!spawner_ids.is_empty(), "spawner 锚点不能为空");
+    assert_eq!(count(uh::SPAWNER_TRANSFORMS), count(uh::SPAWNER_IDS), "spawner ids/transforms 等长");
+    println!("wire check OK: trees(bin12)={tree_ids:08X?} x10, cars(bin0)=[0AB4DFE1] x9, lights=11, spawner anchors={} ({:08X?})", spawner_ids.len(), spawner_ids);
+}
