@@ -211,6 +211,10 @@ name = "unit_prop_dump"
 path = "property/unit_prop_dump.rs"
 
 [[example]]
+name = "ref_add_entries"
+path = "package/ref_add_entries.rs"
+
+[[example]]
 name = "light_columns_dump"
 path = "property/light_columns_dump.rs"
 

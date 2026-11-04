@@ -949,6 +949,7 @@ const messages = {
         },
       },
       assetWorkbench: {
+      buildQueued: "构建已在后台执行({jobId}),可关闭工作台,进度见 OpenSCP Actions",
       actionsCardTitle: "OpenSCP Actions",
       actionsCardHint: "后台构建任务列表:提交打包后可关闭编辑器,在此查看进度与详情",
       actionsCardHintWith: "正在查看 {project} 的后台构建任务",
@@ -3152,6 +3153,7 @@ const messages = {
         },
       },
       assetWorkbench: {
+      buildQueued: "Build queued in background ({jobId}) — the workbench can be closed; see OpenSCP Actions",
       actionsCardTitle: "OpenSCP Actions",
       actionsCardHint: "Background build runs: close the editor after submitting, watch progress here",
       actionsCardHintWith: "Background build runs for {project}",

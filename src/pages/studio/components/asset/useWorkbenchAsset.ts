@@ -1339,9 +1339,12 @@ export function useWorkbenchAsset(project: string) {
     Object.assign(current.groupVisibility, editor?.groups ?? {});
     if (current.editMode === "draft") {
       // 键位与 schemaDocument 写出侧一致：editor.workbench.paths
+      // 陈旧引用自愈 GC:坏会话保存的 pointIds(点已不存在)会永久卡死
+      // 构建校验——文档以可见单元为准(2026-11-04 s10 实证)
+      const restoredIds = new Set(restored.map((unit) => unitId(unit)));
       draftPaths.value = (editor?.workbench?.paths ?? []).map((path) => ({
         ...path,
-        pointIds: [...path.pointIds],
+        pointIds: path.pointIds.filter((pointId) => restoredIds.has(pointId)),
       }));
       // 孤儿点收养：只有点没有路径实体的历史文档，按 pointIndex
       // 自动建一条路径承接（幂等——已被引用的点不会再收）
