@@ -80,6 +80,11 @@ const HASH_COST: u32 = 0x0A8A_41DA;
 const HASH_MAINTENANCE: u32 = 0x09AE_19D7;
 /// Unit simulation classification (author: category instance, type-less).
 const HASH_UNIT_CATEGORY: u32 = 0x0AFE_27B1;
+/// The category is a runtime behavior selector, not just a menu placement.
+/// 07049250 is the park/diagnostic family; it does not attach education and
+/// transport rules, so vehicle resource bins and UnitLocation anchors remain
+/// inert even when the Asset columns are byte-correct.
+pub(crate) const EDUCATION_CATEGORY: u32 = 0x95A9_D6FD;
 /// LOD model references on the Asset dictionary.
 pub const LOD_HASHES: [u32; 4] = [0x00F9_EFBB, 0x00F9_EFBC, 0x00F9_EFBD, 0x00F9_EFBE];
 /// Asset model bounds (author `array(0x00f9efba, 57, [6f], 24, 0x801c)`).
@@ -1323,6 +1328,21 @@ pub fn build(
     upsert(&mut unit, array(HASH_TITLE_LINK, PropType::Text, vec![text_value()]));
     unit.claimed_count = unit.values.len() as u32;
 
+    let authored_behavior = scene.is_some_and(|document| {
+        document.paths.iter().any(|path| path.entry.is_some())
+            || document.units.iter().any(|unit| {
+                matches!(
+                    unit,
+                    SceneUnit::Spawner { .. }
+                        | SceneUnit::Prop {
+                            resource_id: Some(0x0AB4_DFE1..=0x0AB4_DFE3),
+                            ..
+                        }
+                )
+            })
+    });
+    let category = spec.category_instance.unwrap_or(EDUCATION_CATEGORY);
+
     Ok(ParentFreeIdentity {
         asset,
         unit,
@@ -1334,6 +1354,11 @@ pub fn build(
             "rotationDegrees": rotation_degrees,
             "props": compile_prop_count(scene),
             "lights": compile_light_count(scene),
+            "behavior": {
+                "categoryInstance": format!("0x{category:08X}"),
+                "authoredPathOrVehicleOrSpawner": authored_behavior,
+                "simulationTemplate": category == EDUCATION_CATEGORY,
+            },
         }),
     })
 }
