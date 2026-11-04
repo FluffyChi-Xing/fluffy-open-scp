@@ -22,6 +22,7 @@ use super::processor::defer_property;
 use super::scene::SceneDocument;
 use super::package::LodModelIds;
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// 责任链共享上下文:一次性构建,阶段按序消费/填充。
 pub(crate) struct BuildContext {
@@ -48,6 +49,7 @@ pub(crate) struct BuildContext {
     pub written_count: usize,
     pub events: Vec<StageEvent>,
     pub result: Option<M1BuildResult>,
+    pub started_at_ms: u64,
 }
 
 impl BuildContext {
@@ -74,6 +76,7 @@ impl BuildContext {
             events: Vec::new(),
             progress: None,
             result: None,
+            started_at_ms: super::events::now_ms(),
         }
     }
 }
@@ -100,6 +103,7 @@ pub(crate) const CHAIN: [&str; 8] = [
 /// 按序执行责任链;任一阶段失败即终止(错误文本携带阶段名)。
 pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
     for stage in CHAIN {
+        let started_at = Instant::now();
         emit(ctx, started(stage, serde_json::Value::Null));
         let outcome = match stage {
             "load-inputs" => load_inputs(ctx),
@@ -113,9 +117,9 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             _ => unreachable!("unknown chain stage {stage}"),
         };
         match outcome {
-            Ok(detail) => emit(ctx, finished(stage, detail)),
+            Ok(detail) => emit(ctx, finished(stage, detail, started_at.elapsed().as_millis() as u64)),
             Err(error) => {
-                emit(ctx, super::events::failed(stage, &error));
+                emit(ctx, super::events::failed(stage, &error, started_at.elapsed().as_millis() as u64));
                 return Err(format!("[{stage}] {error}"));
             }
         }
@@ -196,6 +200,24 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         // parent-free builds carry it on the menu spec so geometry, ground
         // and prop/light matrices all share one value.
         .unwrap_or(180);
+    // Capture the source contract in the stage event before lowering.  This
+    // makes a material regression attributable to this processor from the
+    // build report, without comparing entire DBPF files by hand.
+    let material_contract = ctx
+        .plan
+        .intermediate
+        .scene
+        .model
+        .as_deref()
+        .and_then(|path| project_file(&ctx.root, path).ok())
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| super::lotm::is_container(&bytes).then(|| super::lotm::parse(&bytes).ok()).flatten())
+        .map(|doc| serde_json::json!({
+            "materialGroups": doc.materials.len(),
+            "parameterColumns": doc.materials.iter().map(|m| m.param_cols).collect::<Vec<_>>(),
+            "meshCount": doc.meshes.len(),
+        }))
+        .unwrap_or(serde_json::Value::Null);
     let (model_ids, material_resource_count) = insert_scene_model(
         &ctx.root,
         &ctx.plan.intermediate.scene.model,
@@ -207,7 +229,10 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     )?;
     ctx.model_ids = model_ids;
     ctx.material_resource_count = material_resource_count;
-    Ok(serde_json::json!({ "materialResources": material_resource_count }))
+    Ok(serde_json::json!({
+        "materialResources": material_resource_count,
+        "materialContract": material_contract,
+    }))
 }
 
 /// path 语义校验(entry 绑定 + PathEntry 资源存在性)。
@@ -420,13 +445,26 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             material_resources: ctx.material_resource_count,
         },
         events: ctx.events.clone(),
+        started_at_ms: ctx.started_at_ms,
+        finished_at_ms: super::events::now_ms(),
+        duration_ms: super::events::now_ms().saturating_sub(ctx.started_at_ms),
     };
     staging.write(
         "reports/m1-build.json",
         &serde_json::to_vec_pretty(&result).map_err(|e| e.to_string())?,
     )?;
-    staging.publish()?;
     ctx.result = Some(result);
+    let ledger_dir = ctx.root.join(".build").join("ledger");
+    std::fs::create_dir_all(&ledger_dir)
+        .map_err(|error| format!("ledger directory: {error}"))?;
+    let ledger_path = ledger_dir.join(format!("{}.json", ctx.build_hash));
+    let ledger = serde_json::to_vec_pretty(ctx.result.as_ref().expect("result set"))
+        .map_err(|error| format!("ledger encode: {error}"))?;
+    crate::atomic_fs::write_atomic(&ledger_path, &ledger, false)
+        .map_err(|error| format!("ledger write: {error}"))?;
+    // Publish only after the task evidence is durable. A failed ledger write
+    // therefore cannot leave a package that has no reviewable provenance.
+    staging.publish()?;
     Ok(serde_json::json!({
         "resources": ctx.written_count,
         "delta": ctx.delta_mode,

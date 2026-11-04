@@ -1410,6 +1410,8 @@ export type BuildJobStatus = "queued" | "running" | "finished" | "failed";
 export interface StageEventDto {
   stage: string;
   kind: { type: "started" | "finished" | "failed" };
+  timestampMs: number;
+  durationMs: number | null;
   detail: unknown;
 }
 
@@ -1419,7 +1421,9 @@ export interface BuildJobDto {
   schema: string;
   status: BuildJobStatus;
   submittedAtMs: number;
+  startedAtMs: number | null;
   finishedAtMs: number | null;
+  durationMs: number | null;
   label: string | null;
   error: string | null;
   events: StageEventDto[];

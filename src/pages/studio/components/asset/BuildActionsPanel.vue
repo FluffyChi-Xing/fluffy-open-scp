@@ -70,9 +70,18 @@ const statusLabel = (status: BuildJobDto["status"]) =>
   t(`studio.assetWorkbench.actionsStatus.${status}`);
 
 function duration(job: BuildJobDto): string {
-  const end = job.finishedAtMs ?? Date.now();
-  const seconds = Math.max(0, Math.round((end - job.submittedAtMs) / 1000));
-  return `${seconds}s`;
+  const elapsed = job.durationMs ?? Math.max(0, Date.now() - (job.startedAtMs ?? job.submittedAtMs));
+  return formatDuration(elapsed);
+}
+
+function formatDuration(milliseconds: number | null): string {
+  if (milliseconds === null) return "—";
+  if (milliseconds < 1000) return String(milliseconds) + "ms";
+  return (milliseconds / 1000).toFixed(2) + "s";
+}
+
+function eventTime(event: StageEventDto): string {
+  return new Date(event.timestampMs).toLocaleTimeString();
 }
 
 function select(job: BuildJobDto) {
@@ -160,6 +169,10 @@ const stageKindIcon = (event: StageEventDto) =>
             <FIcon :name="stageKindIcon(event)" :size="12" aria-label="" />
             <span class="stage-name">{{ event.stage }}</span>
             <span class="stage-kind">{{ event.kind.type }}</span>
+            <span class="stage-time">{{ eventTime(event) }}</span>
+            <span v-if="event.durationMs !== null" class="stage-duration">
+              {{ formatDuration(event.durationMs) }}
+            </span>
           </li>
           <li v-if="job.error" class="stage-error">{{ job.error }}</li>
           <li v-else-if="job.result" class="stage-result">
@@ -284,6 +297,18 @@ const stageKindIcon = (event: StageEventDto) =>
 }
 .stage-kind {
   color: var(--muted-foreground);
+}
+.stage-time,
+.stage-duration {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  margin-left: auto;
+}
+.stage-duration {
+  margin-left: 4px;
+  min-width: 42px;
+  text-align: end;
 }
 .stage-error {
   color: var(--danger, #ef4444);

@@ -42,7 +42,11 @@ pub struct BuildJob {
     pub schema: String,
     pub status: BuildJobStatus,
     pub submitted_at_ms: u64,
+    #[serde(default)]
+    pub started_at_ms: Option<u64>,
     pub finished_at_ms: Option<u64>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
     /// 迭代号(s 计数)由提交方解析写入;队列只记录展示名。
     pub label: Option<String>,
     pub error: Option<String>,
@@ -66,7 +70,9 @@ impl BuildJob {
             schema,
             status: BuildJobStatus::Queued,
             submitted_at_ms: now_ms(),
+            started_at_ms: None,
             finished_at_ms: None,
+            duration_ms: None,
             label,
             error: None,
             events: Vec::new(),
@@ -177,6 +183,7 @@ impl BuildQueueManager {
                 return;
             };
             job.status = BuildJobStatus::Running;
+            job.started_at_ms = Some(now_ms());
             job.clone()
         };
         self.emit_status(&job);
@@ -206,6 +213,9 @@ impl BuildQueueManager {
             let mut jobs = self.jobs.lock().expect("build queue jobs poisoned");
             if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
                 job.finished_at_ms = Some(now_ms());
+                job.duration_ms = job
+                    .started_at_ms
+                    .map(|started| now_ms().saturating_sub(started));
                 match outcome {
                     Ok(result) => {
                         job.status = BuildJobStatus::Finished;
@@ -243,7 +253,9 @@ impl BuildQueueManager {
                 "status": job.status,
                 "label": job.label,
                 "error": job.error,
+                "startedAtMs": job.started_at_ms,
                 "finishedAtMs": job.finished_at_ms,
+                "durationMs": job.duration_ms,
             });
             let _ = app.emit(BUILD_QUEUE_EVENT, payload);
         }
@@ -289,6 +301,9 @@ fn result_summary(result: &crate::asset_build_m1::M1BuildResult) -> Json {
         "deltaMode": result.delta_mode,
         "menuInstance": result.menu_instance,
         "scene": result.scene,
+        "startedAtMs": result.started_at_ms,
+        "finishedAtMs": result.finished_at_ms,
+        "durationMs": result.duration_ms,
     })
 }
 
