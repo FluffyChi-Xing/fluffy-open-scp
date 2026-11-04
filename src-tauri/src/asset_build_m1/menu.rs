@@ -378,7 +378,7 @@ fn generate_parent_free(
             ResourceId {
                 type_id: LOCALE_TYPE,
                 group: LOCALE_GROUP,
-                instance: LOCALE_TABLE,
+                instance,
             },
             locale,
         ),
@@ -1068,8 +1068,8 @@ fn apply_menu_overrides(
         PropType::Int32,
         vec![Value::Int32(spec.ui_position.unwrap_or(11500))],
     );
-    set_text_table(file, HASH_TITLE, LOCALE_TABLE, 1);
-    set_text_table(file, HASH_DESC, LOCALE_TABLE, 2);
+    set_text_table(file, HASH_TITLE, instance, 1);
+    set_text_table(file, HASH_DESC, instance, 2);
     // menuUnit: type-less key to the new Unit leaf (author `key(0x0975695f,(0,0,main_id))`).
     set_scalar(
         file,

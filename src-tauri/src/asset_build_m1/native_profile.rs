@@ -354,9 +354,9 @@ fn zero_key(instance: u32) -> Value {
     })
 }
 
-fn text_value() -> Value {
+fn text_value(table_id: u32) -> Value {
     Value::Text(Text {
-        table_id: super::menu::LOCALE_TABLE,
+        table_id,
         instance_id: 1,
     })
 }
@@ -1323,7 +1323,7 @@ pub fn build(
         upsert(&mut asset, property);
     }
     // Unit/Asset locale title edge (author `unit/asset[0x09fb78cb]=text(t,1)`).
-    upsert(&mut asset, array(HASH_TITLE_LINK, PropType::Text, vec![text_value()]));
+    upsert(&mut asset, array(HASH_TITLE_LINK, PropType::Text, vec![text_value(instance)]));
     // Interior controller enabler (report §5.3): without 0F169C46=true the
     // game never creates the per-building interior controller and the model
     // uploads fixed thresholds (1,1,1) — windows stay in one state forever
@@ -1380,7 +1380,7 @@ pub fn build(
         group: ASSET_GROUP,
         instance,
     })));
-    upsert(&mut unit, array(HASH_TITLE_LINK, PropType::Text, vec![text_value()]));
+    upsert(&mut unit, array(HASH_TITLE_LINK, PropType::Text, vec![text_value(instance)]));
     unit.claimed_count = unit.values.len() as u32;
 
     let authored_behavior = scene.is_some_and(|document| {
