@@ -42,6 +42,9 @@ pub struct M1BuildResult {
     pub scene: SceneSemanticSummary,
     /// 责任链阶段事件(Actions 页数据源;不参与 build_hash/产物字节)。
     pub events: Vec<super::events::StageEvent>,
+    pub started_at_ms: u64,
+    pub finished_at_ms: u64,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -260,6 +263,20 @@ pub(crate) fn insert_scene_model(
     let merged = model_shape == Some("merged-single");
     if lotm::is_container(&bytes) {
         let doc = lotm::parse(&bytes)?;
+        // `building40` has one native MATERIAL section whose six texture
+        // slots point at the compiled atlas.  A multi-material LOTM cannot
+        // be passed through this path: the old code emitted every raster but
+        // rewrote the RW4 to the first material, silently leaving the other
+        // meshes with unresolved texture rows (the s10 flat-colour
+        // regression).  Fail at the responsible processor with actionable
+        // provenance instead of publishing a package that only passes a
+        // resource-count/readback check.
+        if model_shape == Some("building40") && doc.materials.len() != 1 {
+            return Err(format!(
+                "building40 material contract: model has {} material groups; expected one atlas material (run the atlas preparation processor before building)",
+                doc.materials.len()
+            ));
+        }
         let mut material_plan = materials::resolve_materials(&doc)?;
         let mut atlas_cells: Option<Vec<[f32; 4]>> = None;
         if model_shape == Some("nh-atlas") {
@@ -811,7 +828,7 @@ pub(crate) fn materialize_scene_resources(
                         "path_entry",
                         ResourceId {
                             type_id: 0x00B1_B104,
-                            group: 0x40E0_C400,
+                            group: super::native_profile::path_entry_group(entry),
                             instance: entry,
                         },
                     ));

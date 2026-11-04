@@ -19,7 +19,9 @@ ny_facade.register()
 from ny_facade import native_asset  # noqa: E402
 
 bpy.ops.wm.open_mainfile(filepath=source)
-meshes = [o for o in bpy.data.objects if o.type == 'MESH']
+# bpy.data.objects includes orphan data-blocks linked into no collection;
+# select_set on them raises because they are not in the active view layer.
+meshes = [o for o in bpy.context.view_layer.objects if o.type == 'MESH']
 if not meshes:
     raise RuntimeError('Blend file contains no building mesh')
 bpy.ops.object.select_all(action='DESELECT')

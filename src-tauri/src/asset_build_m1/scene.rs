@@ -852,7 +852,7 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
     // script-side PathEntry resources — vanilla asset dicts carry exactly
     // this column (E917279C binds three, e.g. [instance, 00B1B104,
     // 40E0C400]); without it the path never links. The university door
-    // entry 675B61B1 lives in 40E1C400 — both groups exist in vanilla.
+    // entry 675B61B1 is the known 40E1C400 resource exception.
     let entries: Vec<Value> = document
         .paths
         .iter()
@@ -863,7 +863,7 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
                     .map(|instance| {
                         Value::Key(sc_properties::Key {
                             type_id: 0x00B1_B104,
-                            group: 0x40E1_C400,
+                            group: super::native_profile::path_entry_group(instance),
                             instance,
                         })
                     })

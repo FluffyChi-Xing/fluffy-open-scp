@@ -164,9 +164,15 @@ def is_directly_exportable(mat):
     return base.links[0].from_node.type == 'TEX_IMAGE'
 
 mesh_objects = [
-    o for o in bpy.data.objects
+    o for o in bpy.context.view_layer.objects
     if o.type == 'MESH' and not o.get('ny_lot_regions') and not o.hide_render
 ]
+# bpy.data.objects also lists orphan data-blocks that are linked into no
+# collection (zero-user leftovers after an artist unlinks a mesh). Those
+# objects are not part of the active view layer, and select_set/hide_set on
+# them raises RuntimeError — which killed the whole import for e.g.
+# tall_office.blend (Box001.002). The scene's own view layer is the authority
+# for what the file actually renders.
 if not mesh_objects:
     raise RuntimeError('Blend file contains no renderable building mesh')
 bpy.ops.object.select_all(action='DESELECT')
@@ -493,15 +499,16 @@ finally:
     )?;
     // Some Blender builds return a non-zero code after writing a valid GLB
     // (for example when an optional image codec warns). The artifact is the
-    // authoritative result; only fail when it was not created.
-    if !output.status.success() && !out_glb.is_file() {
+    // authoritative result; only fail when it was not created. Blender also
+    // exits 0 in background mode after an uncaught script exception, so the
+    // stderr tail is the only diagnostic for a missing artifact.
+    if !out_glb.is_file() {
         let tail = blender_service::stderr_tail(&output, 12);
         let _ = fs::remove_dir_all(&temp);
+        if tail.is_empty() {
+            return Err("Blender could not export this file".into());
+        }
         return Err(format!("Blender could not export this file: {tail}"));
-    }
-    if !out_glb.is_file() {
-        let _ = fs::remove_dir_all(&temp);
-        return Err("Blender could not export this file".into());
     }
     let bytes = fs::read(&out_glb).map_err(|e| e.to_string())?;
     let relative = format!("assets/models/{}.glb", digest(&bytes));
