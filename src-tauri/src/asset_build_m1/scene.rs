@@ -313,11 +313,60 @@ fn matrix_field(value: Option<&Json>) -> Result<[f32; 12], String> {
 }
 
 fn native_prop_resource_id(preset: &str) -> Option<u32> {
-    match preset { "tree_a" => Some(0x1498_4C68), "tree_b" => Some(0x1498_4C69), "tree_c" => Some(0x1498_4C6A), "tree_conifer" => Some(0x1498_4C6B), "street_furniture" => Some(0x9375_C65E), _ => None }
+    match preset {
+        "tree_a" => Some(0x1498_4C68),
+        "tree_b" => Some(0x1498_4C69),
+        "tree_c" => Some(0x1498_4C6A),
+        "tree_conifer" => Some(0x1498_4C6B),
+        "street_furniture" => Some(0x9375_C65E),
+        // 普通建筑车辆（2026-11-04 普查 crates/sc-properties/examples/
+        // car_census.rs：普适车辆原型有且仅有 CarW1/W2/W3 三档，建筑财富
+        // 对角线零反例；原版车辆 bin = 0，热气球公园与 R_Gen_W2D2 锚点一致）
+        "car_w1" => Some(0x0AB4_DFE1),
+        "car_w2" => Some(0x0AB4_DFE2),
+        "car_w3" => Some(0x0AB4_DFE3),
+        _ => None,
+    }
 }
 
 fn native_prop_bin(preset: &str) -> Option<usize> {
-    match preset { "tree_a" => Some(12), "tree_b" => Some(11), "tree_c" => Some(10), "tree_conifer" => Some(9), "street_furniture" => Some(0), _ => None }
+    match preset {
+        "tree_a" => Some(12),
+        "tree_b" => Some(11),
+        "tree_c" => Some(10),
+        "tree_conifer" => Some(9),
+        "street_furniture" | "car_w1" | "car_w2" | "car_w3" => Some(0),
+        _ => None,
+    }
+}
+
+/// 车辆等资源驱动 bin 的填充序规范化（engine cUnitBinDraw：可见槽位数 =
+/// EcoResourceBin 的 mAmount，按 slot 序逐位填充；PercentFill 置位时 =
+/// ceil(Amount/Capacity × 槽位总数)）。原版数据 slot 恒为 bin 内 0..n-1
+/// 连号（car_census 实证：公园 17 车位 slot 0..16、R_Gen_W2D2 镇屋 bin0
+/// 0..9）。作者显式给出的连号排列保持原样；其余情况（放置克隆继承同一
+/// 模板槽号、manifest 全局 enumerate 序号跨 bin 断层）按场景顺序重编号
+/// 0..n-1——否则按序填充会出现「槽号 5..7 永不显示」的静默丢车位。
+fn canonicalize_prop_slots(slots: &mut [Option<Value>]) {
+    let explicit: Vec<Option<i32>> = slots
+        .iter()
+        .map(|value| match value {
+            Some(Value::Int32(slot)) => Some(*slot),
+            _ => None,
+        })
+        .collect();
+    let all_set = explicit.iter().all(Option::is_some);
+    let is_permutation = explicit
+        .iter()
+        .filter_map(|slot| *slot)
+        .collect::<std::collections::BTreeSet<i32>>()
+        == (0..slots.len() as i32).collect::<std::collections::BTreeSet<i32>>();
+    if all_set && is_permutation {
+        return;
+    }
+    for (index, slot) in slots.iter_mut().enumerate() {
+        *slot = Some(Value::Int32(index as i32));
+    }
 }
 
 fn parse_unit(unit: &Json) -> Result<SceneUnit, String> {
@@ -744,6 +793,10 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             return Err(format!("prop bin {bin} is outside the 14 supported bins"));
         }
         let bin = bin as u32;
+        let mut column = column;
+        if let Some(slots) = column.fields.get_mut("slots") {
+            canonicalize_prop_slots(slots);
+        }
         column.finish(
             &mut columns,
             &[
@@ -1193,6 +1246,94 @@ mod tests {
         }))
         .unwrap();
         assert!(apply_units(&mut file, &document).is_err());
+    }
+
+    // ---- 车辆 bin slot 填充序规范化（2026-11-04 car_census 契约）----
+
+    fn slots_of(file: &PropertyFile) -> Vec<i32> {
+        file.values
+            .iter()
+            .find(|p| p.hash == unit_hash::PROP_SLOT_BASE)
+            .map(|p| match &p.kind {
+                Kind::Array(vs) => vs
+                    .iter()
+                    .map(|v| match v {
+                        Value::Int32(i) => *i,
+                        _ => panic!("slot must be Int32"),
+                    })
+                    .collect(),
+                Kind::Scalar(v) => match v {
+                    Value::Int32(i) => vec![*i],
+                    _ => panic!("slot must be Int32"),
+                },
+                Kind::Empty => vec![],
+            })
+            .unwrap_or_else(|| panic!("slots column must exist"))
+    }
+
+    /// 放置克隆继承同一模板槽号（如三辆车都带模板 slot=3）→ 重编号 0..n-1。
+    #[test]
+    fn duplicated_template_slots_are_renumbered() {
+        let mut file = property_file();
+        let document = parse_document(&json!({
+            "units": [
+                {"id": "prop:0", "kind": "prop", "index": 0, "bin": 0,
+                 "resourceId": {"typeId": 0, "group": 0, "instance": 1},
+                 "slot": 3,
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 0,0,0], "flags": 15}},
+                {"id": "prop:1", "kind": "prop", "index": 1, "bin": 0,
+                 "resourceId": {"typeId": 0, "group": 0, "instance": 1},
+                 "slot": 3,
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 1,0,0], "flags": 15}},
+                {"id": "prop:2", "kind": "prop", "index": 2, "bin": 0,
+                 "resourceId": {"typeId": 0, "group": 0, "instance": 1},
+                 "slot": 3,
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 2,0,0], "flags": 15}}
+            ]
+        }))
+        .unwrap();
+        apply_units(&mut file, &document).unwrap();
+        assert_eq!(slots_of(&file), [0, 1, 2], "重复模板槽号 → 填充序连号");
+    }
+
+    /// 作者显式给出的连号排列（填充顺序有意调换）保持原样。
+    #[test]
+    fn explicit_slot_permutation_is_preserved() {
+        let mut file = property_file();
+        let document = parse_document(&json!({
+            "units": [
+                {"id": "prop:0", "kind": "prop", "index": 0, "bin": 0,
+                 "resourceId": {"typeId": 0, "group": 0, "instance": 1},
+                 "slot": 1,
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 0,0,0], "flags": 15}},
+                {"id": "prop:1", "kind": "prop", "index": 1, "bin": 0,
+                 "resourceId": {"typeId": 0, "group": 0, "instance": 1},
+                 "slot": 0,
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 1,0,0], "flags": 15}}
+            ]
+        }))
+        .unwrap();
+        apply_units(&mut file, &document).unwrap();
+        assert_eq!(slots_of(&file), [1, 0], "显式连号排列 = 作者意图，不改");
+    }
+
+    /// 缺席 slot（旧场景无槽位列）→ 补齐为 0..n-1（原版形态）。
+    #[test]
+    fn missing_slots_are_filled_sequentially() {
+        let mut file = property_file();
+        let document = parse_document(&json!({
+            "units": [
+                {"id": "prop:0", "kind": "prop", "index": 0, "bin": 0,
+                 "resourceId": {"typeId": 0, "group": 0, "instance": 1},
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 0,0,0], "flags": 15}},
+                {"id": "prop:1", "kind": "prop", "index": 1, "bin": 0,
+                 "resourceId": {"typeId": 0, "group": 0, "instance": 1},
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 1,0,0], "flags": 15}}
+            ]
+        }))
+        .unwrap();
+        apply_units(&mut file, &document).unwrap();
+        assert_eq!(slots_of(&file), [0, 1], "缺席 slot → 补齐填充序");
     }
 
     // ---- 生成器锚点写入契约（2026-11-01）----

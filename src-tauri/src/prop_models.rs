@@ -555,11 +555,62 @@ fn resolve_direct_model(
 }
 
 // ---------------------------------------------------------------------------
-// prop bin 语义目录（组件库「树/车辆/垃圾桶/代售牌子」全量筛选，2026-10-27）。
+// prop bin 语义目录（组件库「树/车辆/垃圾桶/代售牌子」全量筛选，2026-10-27；
+// 2026-11-04 树类别改为普查权威清单 TREE_SPECIES——名称启发式不再判树）。
 // 数据源 = 已打开包 + 自动注册 EcoGame 包的资源组记录（group 低 16 位 ∈
-// RESOURCE_GROUP_LOW）；树以树种 descriptor（G 40002D00，0x0E0B99FD 变体
-// 数组）为权威信号，其余按注册表名分类；模型 TGI 复用 resolve_one 全链。
+// RESOURCE_GROUP_LOW）；模型 TGI 复用 resolve_one 全链。
 // ---------------------------------------------------------------------------
+
+/// 树 prop 权威清单（2026-11-04 全盘普查，crates/sc-properties/examples/
+/// tree_hunt.rs 实证；两套安装、12 个 EcoGame 历史版本一致）：可被 prop
+/// 系统放置的树有且仅有 8 个 resourceID = 4 树种。树种 = 引擎 impostor
+/// lod 序号 0-3 ↔ 公告板图集 2×2 象限；每树种双路 resourceID（R/C/I 建筑
+/// 14984C68-6B / 公园-森林工具 41C2D443、C8B4254x）指向同一 wrapper，
+/// 同种同外观。resource 记录 B1B104 G 40E0C100（EcoGame），wrapper
+/// B1B104 G 40E02D00（SimCity_Game），descriptor C602CD31 G 40002D00
+/// （SimCity_App，仅作引擎链一环）。海边棕榈/沙漠仙人掌不在 prop 系统
+/// （地形装饰内容），故无对应条目。
+const TREE_SPECIES: [(&[u32], u32, u32); 4] = [
+    // (resourceID 双路, lod 序号, wrapper instance)
+    (&[0x1498_4C6B, 0x41C2_D443], 0, 0xADA2_724C),
+    (&[0x1498_4C6A, 0xC8B4_2548], 1, 0xADA2_724D),
+    (&[0x1498_4C69, 0xC8B4_254B], 2, 0xADA2_724E),
+    (&[0x1498_4C68, 0xC8B4_254A], 3, 0xADA2_724F),
+];
+
+/// resourceID → (树种序号 0-3，同种双路中的路序)。普查外 id 返回 None。
+fn census_tree_species(resource_id: u32) -> Option<(usize, usize)> {
+    TREE_SPECIES
+        .iter()
+        .enumerate()
+        .find_map(|(species, (ids, _, _))| {
+            ids.iter()
+                .position(|id| *id == resource_id)
+                .map(|dup| (species, dup))
+        })
+}
+
+/// 普通建筑车辆权威清单（2026-11-04 普查，crates/sc-properties/examples/
+/// car_census.rs 实证）：可被普通建筑（R/C/I/公园）停车场绑定的车辆原型
+/// 有且仅有 CarW1/W2/W3 三档（Game+EP1 543/546/479 lots；Graphics R/C/I
+/// 建筑记录 226 条财富×车辆列联对角线零反例：W1 建筑只绑 CarW1、W2→
+/// CarW2、W3→CarW3，mix=公园/混合类绑多档）。特殊车辆（ConstructionTruck/
+/// Ambulance/GarbageTruck/kResourceIDFreight 等，绑定量个位数十）由专用
+/// 建筑刷出，名称启发式不再判车辆。bin 语义：ids=原型表、transforms=车位、
+/// slots=填充序（原版恒 0..n-1）；运行时可见车数 = EcoResourceBin 的
+/// mAmount（随入住/上班人数涨落），PercentFill 置位时 = ceil(Amount/
+/// Capacity × 车位数)（engine cUnitBinDraw）。
+const NORMAL_VEHICLES: [(u32, u32); 3] = [
+    // (resourceID, 财富档位)
+    (0x0AB4_DFE1, 1),
+    (0x0AB4_DFE2, 2),
+    (0x0AB4_DFE3, 3),
+];
+
+/// resourceID → 车辆清单序号。普查外 id 返回 None。
+fn census_vehicle(resource_id: u32) -> Option<usize> {
+    NORMAL_VEHICLES.iter().position(|(id, _)| *id == resource_id)
+}
 
 /// prop bin 语义类别（trees/vehicles/waste/signs = 组件库四个明确目标；
 /// misc = 已解析出模型但名称不可判的杂件桶——6673 lot 普查证明全游戏
@@ -630,9 +681,6 @@ fn contains_any_word(hay: &str, words: &[&str]) -> bool {
     })
 }
 
-fn contains_any(hay: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|n| hay.contains(n))
-}
 
 /// 已验证种子映射（人工指认，2026-10-27）。键同时匹配 resourceID 与首选
 /// 模型 instance——同模型变体自动跟随。仅用于无任何自动信号的 prop。
@@ -658,74 +706,30 @@ fn binding_category(category_id: u32) -> Option<PropBinCategory> {
     })
 }
 
-/// 分类顺序即优先级：引擎类别绑定 > 权威树(descriptor/变体) > 种子映射 >
-/// 解析签名 > 树名（"bush" 含 "bus" 前缀，必须先判）> 车辆（"garbagetruck"
-/// 同时含 garbage+truck，归车辆）> 垃圾 > 招牌。
+/// 分类顺序即优先级：引擎类别绑定 > 树普查权威清单（TREE_SPECIES）>
+/// 车辆普查权威清单（NORMAL_VEHICLES）> 种子映射 > 垃圾/招牌注册表名 >
+/// 杂件桶。名称启发式不再判树/车（"bush" 含 "bus"、"garbagetruck" 同时含
+/// garbage+truck 的历史教训；特殊车辆归入垃圾桶/杂件桶目视挑选）。
 fn classify_bin(
-    source: &str,
     name: &str,
-    authoritative_tree: bool,
+    census_tree: bool,
+    census_car: bool,
     seed: Option<PropBinCategory>,
     binding: Option<PropBinCategory>,
 ) -> Option<PropBinCategory> {
     if let Some(category) = binding {
         return Some(category);
     }
-    if authoritative_tree || matches!(source, "tree" | "tree_model" | "descriptor") {
+    if census_tree {
         return Some(PropBinCategory::Trees);
+    }
+    if census_car {
+        return Some(PropBinCategory::Vehicles);
     }
     if let Some(category) = seed {
         return Some(category);
     }
     let n = name.to_lowercase();
-    if contains_any_word(
-        &n,
-        &[
-            "tree",
-            "palm",
-            "oak",
-            "pine",
-            "bush",
-            "hedge",
-            "shrub",
-            "foliage",
-            "cypress",
-            "willow",
-            "maple",
-            "birch",
-            "spruce",
-            "plant",
-            "vegetation",
-            "flower",
-        ],
-    ) {
-        return Some(PropBinCategory::Trees);
-    }
-    if contains_any_word(
-        &n,
-        &[
-            "truck",
-            "train",
-            "tram",
-            "trolley",
-            "vehicle",
-            "taxi",
-            "boat",
-            "ferry",
-            "ship",
-            "moped",
-            "scooter",
-            "motorcycle",
-            "ambulance",
-            "limo",
-            "helicopter",
-            "car",
-            "bus",
-            "van",
-        ],
-    ) {
-        return Some(PropBinCategory::Vehicles);
-    }
     if contains_any_word(
         &n,
         &["garbage", "trash", "dumpster", "litter", "recycle", "bin"],
@@ -736,37 +740,6 @@ fn classify_bin(
         return Some(PropBinCategory::Signs);
     }
     None
-}
-
-/// 树种 descriptor 权威集：G 40002D00 记录（0x0E0B99FD 变体数组）→
-/// （descriptor instance 集，变体模型 instance 集）。
-fn tree_authority(
-    packages: &[(u64, Arc<Package>)],
-) -> (
-    std::collections::HashSet<u32>,
-    std::collections::HashSet<u32>,
-) {
-    let mut descriptors = std::collections::HashSet::new();
-    let mut variants = std::collections::HashSet::new();
-    for (_, pkg) in packages {
-        for entry in pkg
-            .entries()
-            .iter()
-            .filter(|e| e.id.type_id == PROPERTY_RESOURCE_TYPE && e.id.group == 0x4000_2D00)
-        {
-            let Some(file) = parse_record(pkg, entry) else {
-                continue;
-            };
-            if !has_prop(&file, KEY_TREE_VARIANTS) {
-                continue;
-            }
-            descriptors.insert(entry.id.instance);
-            for (inst, _, _) in key_list(&file, KEY_TREE_VARIANTS) {
-                variants.insert(inst);
-            }
-        }
-    }
-    (descriptors, variants)
 }
 
 /// 全量 prop bin 语义目录（四个目标类别；模型解析失败者不计入）。
@@ -796,9 +769,64 @@ pub fn prop_bin_catalog(
 
     // 1) 资源记录枚举（按 instance 去重；EcoGame 与安装包副本同 id 时
     //    resolve_one 自带资源组形态优先）
-    let (tree_desc, tree_variants) = tree_authority(&packages);
     let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
     let mut entries: Vec<PropBinCatalogEntry> = Vec::new();
+    // 1.0) 普查树直入（封闭权威清单）：第二路 resourceID（41C2D443、
+    //      C8B4254x）的记录 group 不落在 RESOURCE_GROUP_LOW，主循环枚举
+    //      不到——树清单必须全量出现（tree_hunt 普查实证），故先行解析。
+    for species in &TREE_SPECIES {
+        let (ids, lod, _wrapper) = *species;
+        for (dup, resource_id) in ids.iter().enumerate() {
+            if !seen.insert(*resource_id) {
+                continue;
+            }
+            let Some(resolved) = resolve_one(&packages, *resource_id) else {
+                continue;
+            };
+            let Some(model) = resolved.models.first() else {
+                continue;
+            };
+            let Some(model_package_id) = resolved.package_id else {
+                continue;
+            };
+            entries.push(PropBinCatalogEntry {
+                resource_id: *resource_id,
+                name: format!(
+                    "Tree {}{} · 0x{resource_id:08X}",
+                    (b'A' + lod as u8) as char,
+                    if dup == 0 { "" } else { " alt" }
+                ),
+                category: PropBinCategory::Trees,
+                model: model.clone(),
+                model_package_id,
+                source: resolved.source,
+            });
+        }
+    }
+    // 1.1) 普通建筑车辆直入（封闭权威清单 NORMAL_VEHICLES；EcoGame G
+    //      40E0C100 主循环可枚举，但封闭集直入保证缺一即知——与树同构）。
+    for (resource_id, wealth) in &NORMAL_VEHICLES {
+        if !seen.insert(*resource_id) {
+            continue;
+        }
+        let Some(resolved) = resolve_one(&packages, *resource_id) else {
+            continue;
+        };
+        let Some(model) = resolved.models.first() else {
+            continue;
+        };
+        let Some(model_package_id) = resolved.package_id else {
+            continue;
+        };
+        entries.push(PropBinCatalogEntry {
+            resource_id: *resource_id,
+            name: format!("Car W{wealth} · 0x{resource_id:08X}"),
+            category: PropBinCategory::Vehicles,
+            model: model.clone(),
+            model_package_id,
+            source: resolved.source,
+        });
+    }
     for (_, pkg) in &packages {
         for entry in pkg.entries().iter().filter(|e| {
             e.id.type_id == PROPERTY_RESOURCE_TYPE
@@ -820,24 +848,43 @@ pub fn prop_bin_catalog(
             let Some(resolved) = resolve_one(&packages, resource_id) else {
                 continue;
             };
-            // 3) 分类：引擎类别绑定 > descriptor 权威集 > 种子映射 > 解析签名 >
-            //    注册表名 > 兜底杂件桶（模型可放置即可入选，名字后续目视定）
+            // 3) 分类：引擎类别绑定 > 树普查权威清单（TREE_SPECIES）> 种子
+            //    映射 > 注册表名（车辆/垃圾/招牌）> 兜底杂件桶。普查树注册表
+            //    无名——显示树种字母 + 本体 id（同种双路同外观，见清单注释）。
+            let census = census_tree_species(resource_id);
+            let car = census_vehicle(resource_id);
             let model_instance = resolved
                 .models
                 .first()
                 .map(|m| m.instance)
                 .unwrap_or(resource_id);
-            let name = instance_name(model_instance).unwrap_or_else(|| raw_name.clone());
-            let display_name = if name.is_empty() {
-                format!("0x{resource_id:08X}")
+            let display_name = if let Some((species, _)) = census {
+                format!(
+                    "Tree {} · 0x{resource_id:08X}",
+                    (b'A' + species as u8) as char
+                )
+            } else if let Some(index) = car {
+                format!(
+                    "Car W{} · 0x{resource_id:08X}",
+                    NORMAL_VEHICLES[index].1
+                )
             } else {
-                name.clone()
+                let name = instance_name(model_instance).unwrap_or_else(|| raw_name.clone());
+                if name.is_empty() {
+                    format!("0x{resource_id:08X}")
+                } else {
+                    name
+                }
             };
-            let authoritative_tree =
-                tree_desc.contains(&resource_id) || tree_variants.contains(&model_instance);
             let seed = seed_category(resource_id).or_else(|| seed_category(model_instance));
-            let category = classify_bin(&resolved.source, &name, authoritative_tree, seed, binding)
-                .unwrap_or(PropBinCategory::Misc);
+            let category = classify_bin(
+                &display_name,
+                census.is_some(),
+                car.is_some(),
+                seed,
+                binding,
+            )
+            .unwrap_or(PropBinCategory::Misc);
             let Some(model) = resolved.models.first() else {
                 continue;
             };
@@ -1283,6 +1330,54 @@ mod tests {
         assert_eq!(resolved.package_id, Some(7));
         assert!(resolve_direct_model(&packages, 0xDEAD_BEEF).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 普查权威树清单（纯函数）：8 个 resourceID 全部命中且 4 树种齐全；
+    /// 普查外 id（车辆/垃圾桶/直挂模型/相邻未收录 id）不误判。
+    /// 清单锚定：crates/sc-properties/examples/tree_hunt.rs 2026-11-04 全盘
+    /// 普查输出（两套安装、12 个 EcoGame 历史版本一致）。
+    #[test]
+    fn census_tree_species_maps_eight_resources_to_four_species() {
+        let all: [u32; 8] = [
+            0x1498_4C6B, 0x1498_4C6A, 0x1498_4C69, 0x1498_4C68,
+            0x41C2_D443, 0xC8B4_2548, 0xC8B4_254B, 0xC8B4_254A,
+        ];
+        let mut species_seen = std::collections::BTreeSet::new();
+        for id in all {
+            let (species, dup) =
+                census_tree_species(id).unwrap_or_else(|| panic!("{id:08X} 应命中普查清单"));
+            assert!(dup < 2, "每树种最多双路");
+            species_seen.insert(species);
+        }
+        assert_eq!(species_seen, [0, 1, 2, 3].into_iter().collect(), "4 树种齐全");
+        for id in [0x0AB4_DFE1, 0x54CA_89F0, 0x0D4D_BEA7, 0x1498_4C6C] {
+            assert!(
+                census_tree_species(id).is_none(),
+                "{id:08X} 不在普查清单，不应判树"
+            );
+        }
+    }
+
+    /// 普通建筑车辆权威清单（纯函数）：CarW1/W2/W3 三档全命中且财富号
+    /// 与序号一致；特殊车辆/垃圾桶/树不误判（2026-11-04 car_census 普查
+    /// 锚定：财富对角线零反例）。
+    #[test]
+    fn census_vehicle_maps_three_car_tiers() {
+        let tiers: [(u32, u32); 3] = [
+            (0x0AB4_DFE1, 1),
+            (0x0AB4_DFE2, 2),
+            (0x0AB4_DFE3, 3),
+        ];
+        for (id, wealth) in tiers {
+            let index = census_vehicle(id).unwrap_or_else(|| panic!("{id:08X} 应命中车辆清单"));
+            assert_eq!(NORMAL_VEHICLES[index].1, wealth, "财富档位对齐");
+        }
+        for id in [0x87AA_975D, 0xE310_1F25, 0xBDC7_1042, 0x1498_4C69] {
+            assert!(
+                census_vehicle(id).is_none(),
+                "{id:08X} 特殊车辆/树不在普通车辆清单"
+            );
+        }
     }
 }
 
