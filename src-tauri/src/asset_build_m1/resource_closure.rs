@@ -124,9 +124,19 @@ fn property_dependencies(bytes: &[u8], require_lot_mask: bool) -> Result<Vec<Dep
                 ));
                 continue;
             }
-            // Structural Property keys (parent/unit/lot links) must resolve
-            // from the asset graph itself, not be copied as opaque resources.
+            // Structural Property keys (parent/unit/lot links) resolve from
+            // the asset graph itself. PathEntry properties are the exception:
+            // the game script table is addressed through a B1 property in a
+            // C400 group and must be shipped in the delta. Dropping it leaves
+            // the path columns present but makes the runtime skip the path.
             if key.type_id == PROPERTY_TYPE {
+                if (key.group & 0xFFFF) == 0xC400 {
+                    deps.push(Dependency::new(
+                        format!("path-entry:0x{:08X}", key.instance),
+                        vec![exact],
+                        true,
+                    ));
+                }
                 continue;
             }
             // For graphic Key properties (Lot textures, icons, marquee) a
@@ -309,5 +319,26 @@ mod tests {
 
         let mut empty = HashMap::new();
         assert!(complete(&mut empty, &HashMap::new(), &deps).is_err());
+    }
+
+    #[test]
+    fn path_entry_property_is_required_dependency() {
+        let entry = ResourceId {
+            type_id: PROPERTY_TYPE,
+            group: 0x40E0_C400,
+            instance: 0x0310_6C2E,
+        };
+        let bytes = encoded(vec![property(
+            0x0CC8_FE7A,
+            Key {
+                type_id: entry.type_id,
+                group: entry.group,
+                instance: entry.instance,
+            },
+        )]);
+        let deps = property_dependencies(&bytes, true).unwrap();
+        assert!(deps.iter().any(|dep| {
+            dep.label == "path-entry:0x03106C2E" && dep.required && dep.candidates == vec![entry]
+        }));
     }
 }
