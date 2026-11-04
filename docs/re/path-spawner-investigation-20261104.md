@@ -79,7 +79,9 @@ Lot Property
 
 ## 对当前构建器的具体核验
 
-`src-tauri/src/asset_build_m1/native_profile.rs` 已正确使用几何列哈希，并定义 `PATH_ENTRY_GROUP = 0x40E1_C400`；`scene.rs` 也按该常量生成 `0x0CC8FE7A`。这与对拍样本形成明显差异：样本均为 `0x40E0C400`。因此应把它视为第一嫌疑点。
+`src-tauri/src/asset_build_m1/native_profile.rs` 使用几何列哈希，并按 entry 选择
+`40E0C400`（大学门口例外 `675B61B1` 使用 `40E1C400`）；`scene.rs` 按该常量生成
+`0x0CC8FE7A`。此前 s11 的问题并非组值，而是 PathEntry 没有进入最终 delta。
 
 另一个闭合问题是资源清单：路径 entry 必须是一个真实的 `0x00B1B104` PathEntry property，而不是只在 lot 列中出现的 instance。现有构建器的校验注释声称会把 PathEntry 加入包，但最终包需要逐 TGI 验证，尤其要验证 `03106C2E` 在 `00B1B104:40E0C400` 下存在。
 
@@ -93,5 +95,10 @@ Spawner 方面，大学资产的三个 ID 是自定义位置名。它们可以�
 4. 若目标是“指定位置出现指定小人”，应继续追 Agent/Transport/ER2 或 vignette actor 绑定；仅增加 spawner 位置不能实现这一目标。
 
 ## 证据边界
+
+2026-11-05 s11 复核确认：`03106C2E` 的生成组值已改为 `40E0C400`，
+实际回归点是资源闭包把所有 `00B1B104` 结构 Key 一律跳过，导致 PathEntry
+没有进入 delta。现已对低 16 位为 `0xC400` 的 Property Key 建立必需依赖；
+缺失时构建直接失败，存在时随 delta 写入。
 
 本报告的反编译结论来自开发版带 PDB/IDA 资料及仓库中已保存的函数级取证文档；静态分析没有声称观察到一次真实运行时调用。包对拍是实际读取的 DBPF/property 字节。当前没有对最终大学包做游戏内运行验证，因此“`40E1C400` 导致路径跳过”是高置信根因假设，需用最终包的 TGI 清单或游戏日志再闭合一次。
