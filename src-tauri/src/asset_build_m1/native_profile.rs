@@ -1348,12 +1348,17 @@ pub fn build(
             scalar(HASH_MAINTENANCE, PropType::Float, Value::Float(maintenance as f32)),
         );
     }
+    let category = if spec.simulation_template_instance == Some(0x7E4B_99E5) {
+        EDUCATION_CATEGORY
+    } else {
+        spec.category_instance.unwrap_or(EDUCATION_CATEGORY)
+    };
     upsert(
         &mut unit,
         scalar(
             HASH_UNIT_CATEGORY,
             PropType::Key,
-            zero_key(spec.category_instance.unwrap_or(0x95A9_D6FD)),
+            zero_key(category),
         ),
     );
     if let Some(template) = spec.simulation_template_instance {
@@ -1391,8 +1396,6 @@ pub fn build(
                 )
             })
     });
-    let category = spec.category_instance.unwrap_or(EDUCATION_CATEGORY);
-
     Ok(ParentFreeIdentity {
         asset,
         unit,
