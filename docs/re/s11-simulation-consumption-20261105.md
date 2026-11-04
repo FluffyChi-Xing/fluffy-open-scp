@@ -3,36 +3,40 @@
 ## 结论
 
 s11 的 `Asset` 属性确实包含 `0x0C12EF20` 车辆资源列和
-`0x0E1BAC61/62` UnitLocation 列，但 Unit 被构建成了公园/诊断类别：
+`0x0E1BAC61/62` UnitLocation 列，但与原版功能资产有两个关键差异：
 
 ```text
 0x0AFE27B1 = 0x07049250
 0x099B4C1F = 0x5FFA86B9
 ```
 
-`0x07049250` 是公园工具类别。它只足以让自定义模型出现在菜单和场景中，
-不会挂载大学的教育、交通和 ER2 规则。因此车辆 bin 没有 resident/vehicle
-resource-bin 数量可供 `cUnitBinDraw::Update` 消费，UnitLocation 也没有教育
-transport transaction 的引用方。静态字节对拍无法证明运行时消费链闭合。
+1. parent-free flatten 丢掉了 Asset/Unit 的 cUnit 功能 parent。原版小学使用
+   `40E1C000:7E4B99E5` + `40E0C000:7E4B99E5`，热气球公园使用
+   `40E1C000:34CE7E17`；菜单类别不决定这条继承链。
+2. s11 车辆 bin 只有 `0AB4DFE1` 且 `0x0C12EF60=false`；原版小学和热气球
+   公园都写入完整 `0AB4DFE1/E2/E3` 车辆族，并将 `mUseBinPercent` 设为 true。
+
+因此车辆 bin 没有按原版方式解析，UnitLocation 也没有通过功能 parent 接入
+教育/交通规则。静态列存在不能证明运行时消费链闭合。
 
 原版学校 Unit 的类别是 `0x95A9D6FD`，并且 Unit 侧还带教育 bundle/规则引用；
 仅把 Asset 的 spawner 列或车辆列补齐不能替代这些 Unit 语义。
 
 ## 修正
 
-大学测试 schema 应使用：
+大学测试 schema 应保持公园菜单，但显式指定小学功能 parent：
 
 ```json
 {
-  "categoryInstance": "0x95A9D6FD",
-  "menuParentInstance": "0x9D2EF585"
+  "categoryInstance": "0x07049250",
+  "menuParentInstance": "0xF970A822",
+  "simulationTemplateInstance": "0x7E4B99E5"
 }
 ```
 
-构建器现在在 ledger evidence 中记录 `behavior.categoryInstance`、是否存在
-path/vehicle/spawner，以及该类别是否为教育 simulation template，避免把“列已写入”
-误报为“运行时会消费”。后续若要让自定义大学真正参与教育模拟，还需要选择并保留
-原版教育 Unit 的 bundle/ER2 引用；公园模板不能作为行为模板。
+构建器现在在 ledger evidence 中记录行为类别、行为 parent、是否存在
+path/vehicle/spawner；车辆 bin 自动补齐 E1/E2/E3 并启用 `mUseBinPercent`，避免把
+“列已写入”误报为“运行时会消费”。
 
 ## 证据
 
