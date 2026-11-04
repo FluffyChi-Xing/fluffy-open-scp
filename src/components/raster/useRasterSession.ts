@@ -35,6 +35,15 @@ export function useRasterSession(initial?: RasterSchema) {
       [0, 255, 0, 0],
       [0, 0, 255, 0],
     ],
+    baseTile: 8,
+    borderColors: [
+      [156, 156, 156],
+      [156, 156, 156],
+      [156, 156, 156],
+      [156, 156, 156],
+    ],
+    borderPatternIndices: [0, 0, 0, 0],
+    borderWidths: [0, 0, 0, 0],
     target: null,
   });
   const decal = ref<RasterSchema["decal"]>({

@@ -178,7 +178,9 @@ function changeProfile(value: RasterProfile) {
   }
 }
 const profileOptions = computed(() =>
-  RASTER_PROFILES.map((item) => ({ value: item.id, label: item.label })),
+  RASTER_PROFILES
+    .filter((item) => item.id !== "lot-texture")
+    .map((item) => ({ value: item.id, label: item.label })),
 );
 function toggleLotBaseVisible() {
   if (!doc.value || !baseLotPixels.value || !lotOverlayPixels.value) return;
@@ -299,7 +301,7 @@ async function loadLot(
       value.source,
       value.source.name,
     );
-    lot.value = { colors: value.material.colors, target: value.target };
+    lot.value = { ...value.material, target: value.target };
     baseLotPixels.value = value.image.pixels.slice();
     lotOverlayPixels.value = new Uint8ClampedArray(value.image.pixels.length);
     lotOverlayTouched.value = new Uint8Array(value.image.width * value.image.height);
@@ -510,6 +512,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               :channel="channel"
               display-channel="rgba"
               :lot-layer="profile === 'lot-mask' ? layer : null"
+              :lot-border-widths="lot.borderWidths"
               :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
               :meters-per-pixel="profile === 'lot-mask' ? sampling.metersPerPixel : null"
               @change="onCanvasChange"
@@ -605,6 +608,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           :version="version"
           :profile="profile"
           :colors="lot.colors"
+          :material="lot"
           :decal-colors="decal.colors"
           :decal-aspect-ratio="decal.aspectRatio"
           :target="lot.target"

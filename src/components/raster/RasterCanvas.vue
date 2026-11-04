@@ -27,6 +27,8 @@ import {
 } from "@/lib/raster-editor/tools";
 import type { RasterTool } from "@/lib/raster-editor/schema";
 import { pickedLayer } from "@/lib/raster-editor/profileBehavior";
+import { lotRegion } from "@/lib/raster-editor/lotPaint";
+import { viewportToPixel } from "@/lib/raster-editor/viewport";
 
 /**
  * Raster 绘制画布：原生 canvas 按 1:1 像素持有文档，CSS transform 缩放平移
@@ -53,6 +55,7 @@ const props = defineProps<{
   /** Display channel is independent from the channel being painted. */
   displayChannel?: Channel;
   lotLayer?: number | null;
+  lotBorderWidths?: number[];
   dataChannels?: boolean;
 }>();
 const emit = defineEmits<{
@@ -225,12 +228,15 @@ function preserveErasedLotLayers(before: Uint8ClampedArray, dirty: Rect | null) 
 }
 
 function toPixel(event: PointerEvent): { x: number; y: number } {
-  const element = canvas.value!;
+  const element = wrap.value!;
   const rect = element.getBoundingClientRect();
-  return {
-    x: Math.floor((event.clientX - rect.left) / zoom.value),
-    y: Math.floor((event.clientY - rect.top) / zoom.value),
-  };
+  // Wrapper border is outside the plane coordinate system.
+  return viewportToPixel(
+    { x: event.clientX, y: event.clientY },
+    { left: rect.left + element.clientLeft, top: rect.top + element.clientTop },
+    pan.value,
+    zoom.value,
+  );
 }
 
 function constrainedEnd(from: { x: number; y: number }, to: { x: number; y: number }, shift: boolean) {
@@ -405,6 +411,9 @@ function onPointerDown(event: PointerEvent) {
       activeColor(),
       () => {},
       props.fillTolerance ?? 0,
+      props.lotLayer != null && (props.channel ?? "rgba") === "rgba"
+        ? (pixel) => lotRegion(pixel, props.lotBorderWidths)
+        : undefined,
     );
     preserveErasedLotLayers(before, dirty);
     pushEdit(dirty, before);

@@ -125,6 +125,18 @@ function commitTransform(id: string, matrix: number[]) {
     asset.setModelTransform(matrix);
     return;
   }
+  // pathPoint 没有 UnitTransformDto；它的世界坐标由 point 字段承载。
+  // 如果把 gizmo 矩阵写入 transform，mergeUnitOverrides 会有意跳过它，
+  // 下一次重建时就会回到原 point。
+  const unit = ui.value?.flatUnits.find((candidate) => unitId(candidate) === id);
+  if (unit?.kind === "pathPoint") {
+    if (matrix.length === 12) {
+      ui.value?.edit.setUnitFields(id, {
+        point: [matrix[9], matrix[10], matrix[11]],
+      });
+    }
+    return;
+  }
   ui.value?.edit.setUnitTransform(id, matrix);
 }
 
@@ -233,6 +245,12 @@ function startPathDraw(target?: {
 function finishPathDraw(): void {
   asset.finishPath();
   pathDrawing.value = false;
+  // 结束绘制时丢弃尚未落点的路径拖放载荷，避免完成后 pointerup
+  // 通过通用放置管线再创建一个孤立 pathPoint。
+  if (placementPayload.value?.kind === "pathPoint") {
+    placementPayload.value = null;
+    document.body.style.cursor = "";
+  }
 }
 
 /** Draw 模式视口点击加点：按下/抬起位移 <6px 才算点击（相机轨道拖拽排除）。 */

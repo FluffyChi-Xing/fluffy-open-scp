@@ -5,7 +5,7 @@ import { isTauri } from "@/api";
 import { loadLotPreviewSession } from "./lotPreviewSession";
 import type { LotEditorSession } from "@/api/tauri";
 import { useGamePackagesStore } from "@/stores/gamePackages";
-import type { RasterSource } from "@/lib/raster-editor/schema";
+import type { RasterSource, RasterSchema } from "@/lib/raster-editor/schema";
 import PropertyEditorViewport from "@/pages/packages/components/property-editor/PropertyEditorViewport.vue";
 const props = defineProps<{
   raw: string;
@@ -15,6 +15,7 @@ const props = defineProps<{
   metersPerPixel: number;
   colors: [number, number, number, number][];
   target: RasterSource | null;
+  material?: RasterSchema["lot"];
   texture: boolean;
   renderMode?: "default" | "refined";
   albedoPng?: string | null;
@@ -110,23 +111,23 @@ const treeIds = new Set<number>();
       :render-mode="renderMode"
       :grouping="grouping"
       :lot-size="
-        (texture ? session?.lotSize : bound?.lotSize) ?? [
+        material?.size ?? (texture ? session?.lotSize : bound?.lotSize) ?? [
           width * metersPerPixel,
           height * metersPerPixel,
         ]
       "
-      :lot-tile-period="bound?.lotTilePeriod ?? [6, 6]"
+      :lot-tile-period="material?.tilePeriod ?? bound?.lotTilePeriod ?? [8, 8]"
       :lot-placement="null"
       :lot-colors="colors"
       :lot-colors-authored="[true, true, true, true]"
-      :lot-border-colors="bound?.lotBorderColors ?? []"
-      :lot-border-widths="bound?.lotBorderWidths ?? [0, 0, 0, 0]"
+      :lot-border-colors="material?.borderColors ?? bound?.lotBorderColors ?? []"
+      :lot-border-widths="material?.borderWidths ?? bound?.lotBorderWidths ?? [0, 0, 0, 0]"
       :lot-border-pattern-indices="
-        bound?.lotBorderPatternIndices ?? [0, 0, 0, 0]
+        material?.borderPatternIndices ?? bound?.lotBorderPatternIndices ?? [0, 0, 0, 0]
       "
-      :lot-color-heights="bound?.lotColorHeights"
-      :lot-border-heights="bound?.lotBorderHeights"
-      :lot-base-tile="bound?.lotBaseTile ?? 8"
+      :lot-color-heights="material?.colorHeights ?? bound?.lotColorHeights"
+      :lot-border-heights="material?.borderHeights ?? bound?.lotBorderHeights"
+      :lot-base-tile="material?.baseTile ?? bound?.lotBaseTile ?? 8"
       :lot-overlay-box-offset="null"
       :lot-model-bbox-center="null"
       :lot-mask-png="texture ? pngUrl(session?.lotMaskPng) : png"

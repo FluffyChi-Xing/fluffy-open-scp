@@ -114,6 +114,10 @@ export async function saveRasterCopy(
       rasterTgi: resource(0x2f4e681c),
       lotTgi: resource(0x00b1b104),
       colors: s.lot.colors,
+      baseTile: s.lot.baseTile,
+      borderColors: s.lot.borderColors,
+      borderPatternIndices: s.lot.borderPatternIndices,
+      borderWidths: s.lot.borderWidths,
     });
   } else if (kind === "decal") {
     await tauriApi.raster.registerDecalEntry({
@@ -167,7 +171,17 @@ export async function loadLotCopy(
     );
     if (!materialSession.lotColorsAuthored?.some(Boolean))
       throw new Error(t("rasterEditor.missingLotMaterial"));
-    const material = { colors: materialSession.lotColors };
+    const material = {
+      colors: materialSession.lotColors,
+      baseTile: materialSession.lotBaseTile,
+      tilePeriod: materialSession.lotTilePeriod ?? undefined,
+      size: materialSession.lotSize ?? undefined,
+      colorHeights: materialSession.lotColorHeights,
+      borderHeights: materialSession.lotBorderHeights,
+      borderColors: materialSession.lotBorderColors,
+      borderPatternIndices: materialSession.lotBorderPatternIndices,
+      borderWidths: materialSession.lotBorderWidths,
+    };
     return {
       image: {
         width: image.width,

@@ -179,68 +179,51 @@ export function floodFill(
   rgba: Rgba,
   plot: PlotFn,
   tolerance = 0,
+  regionKey?: (pixel: Rgba) => number,
 ): Rect | null {
   if (!doc.inside(x, y)) return null;
-  const target = doc.getPixel(x, y);
-  if (
-    target[0] === rgba[0] &&
-    target[1] === rgba[1] &&
-    target[2] === rgba[2] &&
-    target[3] === rgba[3]
-  ) {
-    return null;
-  }
-  const limit = tolerance * tolerance;
-  const match = (px: readonly [number, number, number, number]) => {
-    if (limit === 0) {
-      return (
-        px[0] === target[0] &&
-        px[1] === target[1] &&
-        px[2] === target[2] &&
-        px[3] === target[3]
-      );
-    }
-    const dr = px[0] - target[0];
-    const dg = px[1] - target[1];
-    const db = px[2] - target[2];
-    const da = px[3] - target[3];
-    return dr * dr + dg * dg + db * db + da * da <= limit;
+  const source = doc.pixels.slice();
+  const pixelAt = (px: number, py: number): Rgba => {
+    const at = (py * doc.width + px) * 4;
+    return [source[at], source[at + 1], source[at + 2], source[at + 3]];
   };
-  let dirty: Rect | null = null;
+  const target = pixelAt(x, y);
+  const region = regionKey?.(target);
+  const limit = tolerance * tolerance;
+  const visited = new Uint8Array(doc.width * doc.height);
+  const matches = (px: number, py: number) => {
+    if (px < 0 || py < 0 || px >= doc.width || py >= doc.height || visited[py * doc.width + px]) return false;
+    const pixel = pixelAt(px, py);
+    return regionKey ? regionKey(pixel) === region
+      : pixel.reduce((sum, value, i) => sum + (value - target[i]) ** 2, 0) <= limit;
+  };
   const stack: [number, number][] = [[x, y]];
-  const visited = new Set<number>();
+  let dirty: Rect | null = null;
   while (stack.length) {
     const [cx, cy] = stack.pop()!;
+    if (!matches(cx, cy)) continue;
     let west = cx;
     let east = cx;
-    while (west > 0 && match(doc.getPixel(west - 1, cy))) west -= 1;
-    while (east < doc.width - 1 && match(doc.getPixel(east + 1, cy))) east += 1;
-    for (let px = west; px <= east; px += 1) {
-      const key = cy * doc.width + px;
-      if (visited.has(key)) continue;
-      visited.add(key);
-      doc.setPixel(px, cy, rgba);
-      plot(px, cy);
-      dirty = unionRect(dirty, { x: px, y: cy, w: 1, h: 1 });
-      const north = cy - 1;
-      const south = cy + 1;
-      if (
-        north >= 0 &&
-        match(doc.getPixel(px, north)) &&
-        !visited.has(north * doc.width + px)
-      ) {
-        stack.push([px, north]);
+    while (matches(west - 1, cy)) west--;
+    while (matches(east + 1, cy)) east++;
+    let northRun = false;
+    let southRun = false;
+    for (let px = west; px <= east; px++) {
+      visited[cy * doc.width + px] = 1;
+      if (pixelAt(px, cy).some((value, i) => value !== rgba[i])) {
+        doc.setPixel(px, cy, rgba);
+        plot(px, cy);
+        dirty = unionRect(dirty, { x: px, y: cy, w: 1, h: 1 });
       }
-      if (
-        south < doc.height &&
-        match(doc.getPixel(px, south)) &&
-        !visited.has(south * doc.width + px)
-      ) {
-        stack.push([px, south]);
-      }
+      const north = matches(px, cy - 1);
+      const south = matches(px, cy + 1);
+      if (north && !northRun) stack.push([px, cy - 1]);
+      if (south && !southRun) stack.push([px, cy + 1]);
+      northRun = north;
+      southRun = south;
     }
   }
-  return dirty ?? { x: 0, y: 0, w: 0, h: 0 };
+  return dirty;
 }
 
 export interface ParkingRowOptions {

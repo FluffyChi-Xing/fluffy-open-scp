@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 import { matchesDecalProfile } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
+import LotPatternGrid from "./LotPatternGrid.vue";
 import { Switch } from "@/components/ui/switch";
 import { computed, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
@@ -33,6 +34,8 @@ const busy = ref(false),
 const entries = ref<DecalEntryMeta[]>([]),
   selectedEntry = ref<number | null>(null);
 const isDecal = computed(() => props.profile.startsWith("decal-"));
+const activeMaterial = ref(0);
+const activeColor = computed(() => lot.value.colors[activeMaterial.value] ?? lot.value.colors[0]);
 let generation = 0;
 const key = (id: number, tgi: Tgi) => `${id}:${tgi.group}:${tgi.instance}`;
 const documentQuery = ref(""),
@@ -180,48 +183,61 @@ function setTile(i: number, tile: number) {
   lot.value = { ...lot.value, colors };
   emit("changed");
 }
+function setBaseTile(tile: number) {
+  lot.value = { ...lot.value, baseTile: tile };
+  emit("changed");
+}
 </script>
 <template>
   <section class="material-panel">
     <h3>{{ t("rasterEditor.text049") }}</h3>
     <fieldset :disabled="disabled" @change="emit('changed')">
       <label
+        v-if="isDecal"
         ><Switch v-model="sampling.generateMips" :aria-label="t('rasterEditor.text050')" />
         {{ t("rasterEditor.text050") }}
       </label>
-      <p>{{ t("rasterEditor.text051") }}</p>
       <template v-if="profile === 'lot-mask'">
-        <label>
-          {{ t("rasterEditor.text052") }}
-          <input
-            v-model.number="sampling.metersPerPixel"
-            type="number"
-            min="0.001"
-            step="0.01"
-        /></label>
-        <div v-for="(c, i) in lot.colors" :key="i" class="color-row">
-          <label
-            >LC{{ i + 1
-            }}<input
-              :disabled="!!lot.target"
-              :value="colorHex(c)"
-              type="color"
-              @input="
-                setLotColor(i, ($event.target as HTMLInputElement).value)
-              " /></label
-          ><label>
-            {{ t("rasterEditor.text053") }}
+        <div class="material-tabs" role="tablist" :aria-label="t('rasterEditor.text117')">
+          <button
+            v-for="(c, i) in lot.colors"
+            :key="i"
+            type="button"
+            role="tab"
+            :aria-selected="activeMaterial === i"
+            @click="activeMaterial = i"
+          >
+            <span class="material-swatch" :style="{ backgroundColor: colorHex(c) }" />
+            {{ t(`rasterEditor.materialNames.${i}`) }}
+          </button>
+        </div>
+        <div class="active-material">
+          <label>
+            {{ t("rasterEditor.materialColor") }}
             <input
               :disabled="!!lot.target"
-              :value="c[3]"
-              type="number"
-              min="0"
-              max="15"
-              @change="
-                setTile(i, Number(($event.target as HTMLInputElement).value))
-              "
-          /></label>
+              :value="colorHex(activeColor)"
+              type="color"
+              @input="setLotColor(activeMaterial, ($event.target as HTMLInputElement).value)"
+            />
+          </label>
+          <label>
+            {{ t("rasterEditor.materialPattern") }}
+          </label>
+          <LotPatternGrid
+            :model-value="activeColor[3]"
+            :disabled="!!lot.target"
+            @update:model-value="setTile(activeMaterial, $event)"
+          />
         </div>
+        <details class="base-pattern">
+          <summary>{{ t("rasterEditor.basePattern") }}</summary>
+          <LotPatternGrid
+            :model-value="lot.baseTile ?? 8"
+            :disabled="!!lot.target"
+            @update:model-value="setBaseTile"
+          />
+        </details>
         <p v-if="lot.target">{{ t("rasterEditor.text054") }}</p>
         <p>{{ t("rasterEditor.text055") }} {{ label(lot.target) }}</p>
         <button
@@ -367,6 +383,43 @@ input[type="color"] {
   display: flex;
   gap: 10px;
 }
+.material-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.material-tabs button {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-height: 30px;
+  overflow: hidden;
+  text-align: start;
+  white-space: nowrap;
+}
+.material-tabs button[aria-selected="true"] {
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+.material-swatch {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  flex: none;
+  height: 14px;
+  width: 20px;
+}
+.active-material {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+}
+.base-pattern {
+  display: block;
+  padding-top: 4px;
+}
+.base-pattern summary { cursor: pointer; }
 .color-row label {
   flex: 1;
 }

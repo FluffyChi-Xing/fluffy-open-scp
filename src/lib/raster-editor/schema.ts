@@ -201,6 +201,16 @@ export interface RasterSchema {
   sampling: { generateMips: boolean; metersPerPixel: number };
   lot: {
     colors: [number, number, number, number][];
+    /** Uncovered base material texture index in the shared 4×4 atlas. */
+    baseTile?: number;
+    tilePeriod?: [number, number];
+    size?: [number, number];
+    colorHeights?: number[];
+    borderHeights?: number[];
+    /** Optional border paint settings; kept in schema for native Lot parity. */
+    borderColors?: [number, number, number][];
+    borderPatternIndices?: number[];
+    borderWidths?: number[];
     target: RasterSource | null;
   };
   decal: {
@@ -289,6 +299,23 @@ export function parseRasterSchema(input: unknown): RasterSchema {
         ),
     )
   )
+    throw new Error(t("rasterEditor.text160"));
+  if (
+    s.lot.baseTile != null &&
+    (!Number.isInteger(s.lot.baseTile) || s.lot.baseTile < 0 || s.lot.baseTile > 15)
+  )
+    throw new Error(t("rasterEditor.text160"));
+  const numberArray = (value: unknown, count: number, valid: (n: number) => boolean) =>
+    value == null || (Array.isArray(value) && value.length === count &&
+      value.every((n) => typeof n === "number" && Number.isFinite(n) && valid(n)));
+  if (!numberArray(s.lot.borderPatternIndices, 4, n => Number.isInteger(n) && n >= 0 && n <= 15) ||
+      !numberArray(s.lot.borderWidths, 4, n => n >= 0 && n <= 0.5) ||
+      !numberArray(s.lot.tilePeriod, 2, n => n > 0) ||
+      !numberArray(s.lot.size, 2, n => n > 0) ||
+      !numberArray(s.lot.colorHeights, 4, () => true) ||
+      !numberArray(s.lot.borderHeights, 4, () => true) ||
+      (s.lot.borderColors != null && (!Array.isArray(s.lot.borderColors) || s.lot.borderColors.length !== 4 ||
+       !s.lot.borderColors.every((c: unknown) => c != null && numberArray(c, 3, n => Number.isInteger(n) && n >= 0 && n <= 255)))))
     throw new Error(t("rasterEditor.text160"));
   if (
     !Array.isArray(s.decal?.colors) ||

@@ -20,7 +20,9 @@ const groups = computed(() => [
     <section v-for="group in groups" :key="group">
       <h3>{{ group }}</h3>
       <button
-        v-for="item in RASTER_PROFILES.filter((p) => p.group === group)"
+        v-for="item in RASTER_PROFILES.filter(
+          (p) => p.group === group && p.id !== 'lot-texture',
+        )"
         :key="item.id"
         :disabled="locked"
         :aria-pressed="modelValue === item.id"

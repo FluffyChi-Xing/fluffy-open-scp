@@ -772,6 +772,14 @@ pub struct CreateLotOverlayRequest {
     pub lot_size: Option<[f32; 2]>,
     /// LotColor1-4：sRGB RGB + 地面图集 tile 索引 0-15（存储时换算线性）。
     pub colors: [[u8; 4]; 4],
+    #[serde(default)]
+    pub base_tile: Option<u8>,
+    #[serde(default)]
+    pub border_colors: Option<[[u8; 3]; 4]>,
+    #[serde(default)]
+    pub border_pattern_indices: Option<[u8; 4]>,
+    #[serde(default)]
+    pub border_widths: Option<[f32; 4]>,
     pub output_path: String,
 }
 
@@ -802,6 +810,10 @@ fn build_new_lot_property(
     lot_size: [f32; 2],
     mask: sc_properties::Key,
     colors: [[u8; 4]; 4],
+    base_tile: u8,
+    border_colors: [[u8; 3]; 4],
+    border_pattern_indices: [u8; 4],
+    border_widths: [f32; 4],
 ) -> sc_properties::PropertyFile {
     use sc_properties::{Kind, PropType, Property, PropertyEncoding, Value};
 
@@ -829,6 +841,31 @@ fn build_new_lot_property(
                 b: srgb_byte_to_linear(*b),
                 a: f32::from(*tile),
             }),
+            encoding: PropertyEncoding::default(),
+        });
+    }
+    values.push(Property {
+        hash: 0x0CCB_7FD6,
+        prop_type: PropType::Int32,
+        kind: Kind::Scalar(Value::Int32(i32::from(base_tile))),
+        encoding: PropertyEncoding::default(),
+    });
+    for index in 0..4 {
+        values.push(Property {
+            hash: 0x0D7A_F042 + index as u32,
+            prop_type: PropType::ColorRgba,
+            kind: Kind::Scalar(Value::ColorRgba {
+                r: srgb_byte_to_linear(border_colors[index][0]),
+                g: srgb_byte_to_linear(border_colors[index][1]),
+                b: srgb_byte_to_linear(border_colors[index][2]),
+                a: f32::from(border_pattern_indices[index]),
+            }),
+            encoding: PropertyEncoding::default(),
+        });
+        values.push(Property {
+            hash: 0x0D7A_F046 + index as u32,
+            prop_type: PropType::Float,
+            kind: Kind::Scalar(Value::Float(border_widths[index])),
             encoding: PropertyEncoding::default(),
         });
     }
@@ -892,8 +929,15 @@ pub async fn create_lot_overlay(
             f32::from(request.width as u16) * 0.75,
             f32::from(request.height as u16) * 0.75,
         ]);
-        let property =
-            build_new_lot_property(lot_size, dbpf_key(&request.raster_tgi), request.colors);
+        let property = build_new_lot_property(
+            lot_size,
+            dbpf_key(&request.raster_tgi),
+            request.colors,
+            request.base_tile.unwrap_or(8).min(15),
+            request.border_colors.unwrap_or([[156; 3]; 4]),
+            request.border_pattern_indices.unwrap_or([0; 4]),
+            request.border_widths.unwrap_or([0.0; 4]),
+        );
         let property_data = property.encode_canonical().map_err(|error| {
             RasterEditError::InvalidArgument(format!("lot property encode failed: {error}"))
         })?;
@@ -1080,7 +1124,15 @@ mod tests {
             [0, 128, 0, 8],
             [0, 0, 255, 15],
         ];
-        let file = build_new_lot_property([48.0, 96.0], mask, colors);
+        let file = build_new_lot_property(
+            [48.0, 96.0],
+            mask,
+            colors,
+            8,
+            [[156; 3]; 4],
+            [0; 4],
+            [0.0; 4],
+        );
 
         // 编码必须可逆，且 LotEditorDocument 能读回语义字段。
         let encoded = file.encode_canonical().unwrap();
