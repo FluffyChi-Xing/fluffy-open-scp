@@ -818,10 +818,50 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
 </template>
 
 <style scoped>
+/* 页面锁定在视口剩余高度（用户口径 2026-11-05）：整页不产生纵向滚动，
+   资源列表与详情列各自内部滚动。layout 的 shell-body 只有 min-height，
+   这里用 :has() 给祖先链补上确定高度，避免分页/切换 package 时高度漂移。 */
+:global(.shell-body:has(.packages-page)) {
+  height: calc(100vh - 56px);
+  min-height: 0;
+  overflow: hidden;
+}
+/* 侧栏导航条目多于视口高度；锁定页面后由侧栏自己滚动，避免它把
+   shell-body 撑高、进而给整页带出纵向滚动条。 */
+:global(.shell-body:has(.packages-page) > .sidebar) {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+:global(.no-navbar .shell-body:has(.packages-page)) {
+  height: 100vh;
+}
+:global(.shell-body:has(.packages-page) > .page-content) {
+  min-height: 0;
+}
+:global(.shell-body:has(.packages-page) .content-frame) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+:global(.shell-body:has(.packages-page) .route-page) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
 .packages-page {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 18px;
   min-height: 0;
+}
+.page-heading,
+.explorer-toolbar {
+  flex: none;
 }
 .page-heading {
   align-items: flex-start;
@@ -905,11 +945,22 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   display: flex;
-  height: min(720px, calc(100vh - 300px));
-  max-height: 720px;
-  min-height: 520px;
+  /* 撑满剩余视口而不是取固定值：移除 min-height 520px（小视口下它会
+     撑破页面造成纵向溢出），也不再用 calc 猜页头高度。 */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   width: 100%;
+  /* 兜底：不支持 :has() 的旧 WebView 里祖先没有确定高度，按视口估算
+     一个上限，行为与改动前一致。 */
+  height: min(720px, calc(100vh - 300px));
+  max-height: 720px;
+}
+@supports selector(:has(*)) {
+  .ide-shell {
+    height: auto;
+    max-height: none;
+  }
 }
 .tree-column,
 .work-column,
@@ -925,8 +976,11 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   overflow: hidden;
 }
 .detail-column {
+  /* 稳定滚动槽：选中 property 时内容高度变化会让滚动条出现/消失，
+     没有 gutter 时整列宽度抖动，观感就是"闪一下"。 */
   overflow: auto;
   padding: 14px;
+  scrollbar-gutter: stable;
 }
 .tabs-hint {
   align-items: center;
@@ -1140,6 +1194,8 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   min-height: 0;
   overflow: auto;
   padding: 0 14px 14px;
+  /* 翻页时行数变化会切换滚动条；固定 gutter 保持列宽不动。 */
+  scrollbar-gutter: stable;
 }
 .resource-table {
   border-collapse: collapse;
