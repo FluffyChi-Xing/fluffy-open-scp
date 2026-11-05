@@ -732,7 +732,10 @@ finally:
     Ok(result)
 }
 
-const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-01.1";
+// 2026-11-06.1：导入脚本 UV 契约重做（native/blender 双契约 + 域层布局
+// 修复，0449a96/d293893），旧缓存里是修复前的错误 GLB/slots，键换版本
+// 强制全量重新导入。
+const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-06.1";
 
 fn blend_cache_key(source: &Path) -> Result<String, String> {
     let bytes = fs::read(source).map_err(|error| error.to_string())?;
