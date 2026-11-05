@@ -165,6 +165,8 @@ function save() {
   </form>
 </template>
 <style scoped>
+/* Fixed dark palette to sit on Blender-style nodes; shared tokens live in
+   styles/flow-presentation.css. */
 .node-config {
   display: flex;
   flex-direction: column;
@@ -175,7 +177,7 @@ function save() {
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
 }
 .node-config label {
   display: grid;
@@ -190,10 +192,10 @@ function save() {
   box-sizing: border-box;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--foreground);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
+  background: var(--flow-field, #1a1a1a);
+  color: var(--flow-text, #e6e6e6);
   font-size: 12px;
 }
 .node-config :deep(.f-select) {
@@ -206,18 +208,22 @@ function save() {
   min-height: 26px;
   padding: 0 8px;
   font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface-hover);
-  color: var(--foreground);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
+  background: var(--flow-field, #1a1a1a);
+  color: var(--flow-text, #e6e6e6);
   cursor: pointer;
+}
+.node-config > button:hover:not(:disabled) {
+  background: #333333;
+  border-color: #6a6a6a;
 }
 .node-config > button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 .node-config input:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--flow-select, rgba(255, 255, 255, 0.92));
   outline-offset: 1px;
 }
 </style>

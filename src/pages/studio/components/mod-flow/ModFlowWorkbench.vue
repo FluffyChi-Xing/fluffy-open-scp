@@ -277,7 +277,7 @@ defineExpose({
       @node-drag-stop="move"
       @edge-double-click="({ edge }) => removeEdge(edge.id)"
     >
-      <Background :gap="20" pattern-color="var(--border)" />
+      <Background :gap="20" pattern-color="#333333" />
       <template #node-map-generation="{ data }"><MapGenerationNode :node="data.node" :field="data.field" :error="data.error" @update="generation.update" @remove="generation.remove(data.node.id)" /></template>
       <template #node-workflow="{ id, data }">
         <WorkflowNode
@@ -374,10 +374,6 @@ defineExpose({
 .flow-workbench :deep(.vue-flow) {
   flex: 1;
   min-height: 220px;
-}
-.flow-workbench :deep(.selected .workflow-node) {
-  outline: 2px solid var(--primary, #6095dc);
-  outline-offset: 3px;
 }
 .flow-workbench button {
   border: 1px solid var(--border);

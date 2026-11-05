@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { VueFlow, type Node, type Edge } from "@vue-flow/core";
+import { VueFlow, Handle, Position, type Node, type Edge } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
@@ -165,9 +165,11 @@ function nodeTone(data: unknown): "warn" | "ok" {
       :min-zoom="0.3"
       class="blueprint-flow"
     >
-      <Background :gap="18" pattern-color="color-mix(in srgb, var(--primary) 16%, transparent)" />
+      <Background :gap="20" pattern-color="#333333" />
       <template #node-wb="node">
-        <div class="wb-node" :data-tone="nodeTone(node.data)">
+        <div class="wb-node" :data-role="node.id" :data-tone="nodeTone(node.data)">
+          <Handle type="target" :position="Position.Left" />
+          <Handle type="source" :position="Position.Right" />
           <header class="wb-node-head">
             <FIcon :name="node.data.icon" :size="13" aria-label="" />
             <strong>{{ node.data.title }}</strong>
@@ -219,8 +221,10 @@ function nodeTone(data: unknown): "warn" | "ok" {
 </template>
 
 <style scoped>
+/* Blender node-editor look: fixed gray-black palette, independent of the
+   app theme. Shared tokens live in styles/flow-presentation.css. */
 .blueprint {
-  background: var(--surface);
+  background: var(--flow-bg, #1d1d1d);
   height: 100%;
   min-height: 0;
   position: relative;
@@ -232,32 +236,44 @@ function nodeTone(data: unknown): "warn" | "ok" {
 .blueprint :deep(.vue-flow__node) {
   cursor: default;
 }
-.blueprint :deep(.vue-flow__edge-path) {
-  stroke: color-mix(in srgb, var(--primary) 55%, var(--border));
-  stroke-width: 1.6;
-}
 .wb-node {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  background: var(--flow-node, #282828);
+  border: 1px solid var(--flow-border, #141414);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  color: var(--flow-text, #e6e6e6);
   display: grid;
   gap: 5px;
   font-size: 10.5px;
   min-width: 190px;
-  padding: 9px 11px;
+  padding: 8px 11px;
 }
 .wb-node[data-tone="warn"] {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  border-color: #8a6a2a;
 }
 .wb-node-head {
   align-items: center;
-  color: var(--primary);
+  background: var(--flow-head-process, #2e6b2e);
+  border-radius: 7px 7px 0 0;
+  color: #f2f2f2;
   display: flex;
   gap: 6px;
+  margin: -8px -11px 1px;
+  padding: 6px 10px;
+}
+.wb-node[data-role="source"] .wb-node-head {
+  background: var(--flow-head-input, #6e4a2b);
+}
+.wb-node[data-role="lot"] .wb-node-head {
+  background: var(--flow-head-lot, #3d5a6b);
+}
+.wb-node[data-role="menu"] .wb-node-head {
+  background: var(--flow-head-menu, #6b5b2e);
+}
+.wb-node[data-role="build"] .wb-node-head {
+  background: var(--flow-head-output, #7f3030);
 }
 .wb-node-head strong {
-  color: var(--foreground);
   font-size: 11.5px;
 }
 .wb-line {
@@ -267,7 +283,7 @@ function nodeTone(data: unknown): "warn" | "ok" {
   justify-content: space-between;
 }
 .wb-line span {
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
 }
 .wb-line em {
   font-style: normal;
@@ -278,50 +294,48 @@ function nodeTone(data: unknown): "warn" | "ok" {
   white-space: nowrap;
 }
 .wb-line em[data-tone="ok"] {
-  color: var(--success);
+  color: #58a05e;
 }
 .wb-line em[data-tone="warn"] {
-  color: var(--warning);
+  color: #d9a53d;
 }
 .wb-line em[data-tone="muted"] {
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
 }
 .wb-menu {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--flow-field-border, #3a3a3a);
   display: grid;
   gap: 6px;
   padding-top: 7px;
 }
 .wb-menu-row {
   align-items: center;
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
   cursor: pointer;
   display: flex;
   font-size: 10.5px;
   gap: 6px;
 }
 .wb-menu-input {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
   font: inherit;
   font-size: 10.5px;
   min-height: 24px;
   padding: 0 7px;
 }
 .wb-actions {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--flow-field-border, #3a3a3a);
   display: flex;
   gap: 5px;
   padding-top: 7px;
 }
 .wb-actions button {
   align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
+  background: var(--flow-field, #1a1a1a);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
+  color: var(--flow-text, #e6e6e6);
   cursor: pointer;
   display: inline-flex;
   flex: 1;
@@ -333,8 +347,7 @@ function nodeTone(data: unknown): "warn" | "ok" {
   padding: 0 7px;
 }
 .wb-actions button:hover {
-  background: var(--surface-hover);
-  border-color: var(--primary);
-  color: var(--primary);
+  background: #333333;
+  border-color: #6a6a6a;
 }
 </style>

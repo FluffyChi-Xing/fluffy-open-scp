@@ -120,16 +120,16 @@ async function render() {
   padding: 0 8px;
   font-size: 11px;
   cursor: pointer;
-  color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  color: var(--flow-text, #e6e6e6);
+  background: var(--flow-field, #1a1a1a);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
 }
 .map-preview {
   height: 260px;
   min-height: 260px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 6px;
   overflow: hidden;
 }
 .map-preview :deep(.viewer3d) {

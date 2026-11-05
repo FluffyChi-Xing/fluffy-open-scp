@@ -167,19 +167,19 @@ function close(value: boolean) {
 }
 p {
   font-size: 11px;
-  color: var(--muted-foreground);
+  color: var(--flow-text-dim, #9b9b9b);
   margin: 0;
   overflow-wrap: anywhere;
 }
 button {
   padding: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--foreground);
-  border-radius: 5px;
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  background: var(--flow-field, #1a1a1a);
+  color: var(--flow-text, #e6e6e6);
+  border-radius: 4px;
   cursor: pointer;
 }
 [role="alert"] {
-  color: var(--destructive);
+  color: #e06a5a;
 }
 </style>
