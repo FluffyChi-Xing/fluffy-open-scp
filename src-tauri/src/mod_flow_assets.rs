@@ -233,14 +233,36 @@ if six_slot_materials:
     try:
         import numpy as np
         base_name, surface_name = find_domain_layer_names()
+
+        def pick(names, name, candidates, fallback):
+            for candidate in (name, *candidates):
+                if candidate in names:
+                    return candidate
+            return fallback
+
         for obj in mesh_objects:
             me = obj.data
             names = [ul.name for ul in me.uv_layers]
-            if base_name not in names or surface_name not in names:
+            if not names:
                 continue
-            order = [n for n in names if n not in (base_name, surface_name)]
-            order.insert(min(1, len(order)), base_name)
-            order.insert(min(3, len(order)), surface_name)
+            base = pick(names, base_name, ('UVBase', 'NY_UV'), names[0])
+            surface = pick(names, surface_name, ('UVTop', 'NY_SurfaceUV'), names[-1])
+            # The workbench's Blender tint shader samples the base facade
+            # domain from TEXCOORD_1 and the facade/Top domain from
+            # TEXCOORD_3 (see refinedRender.ts TINT_BLENDER), so the exporter
+            # must emit at least four layers with base at 1 and top at 3.
+            # Four-layer blends already satisfy this and keep their spare
+            # layers in place; two-layer blends (UVBase/UVTop only, e.g. the
+            # dsh exports) are padded with extra base copies, otherwise the
+            # base domain lands on TEXCOORD_0/1 and every facade sample is
+            # wrong (grey noise instead of the tinted facade).
+            extras = [n for n in names if n not in (base, surface)]
+            order = [
+                extras[0] if extras else base,
+                base,
+                extras[1] if len(extras) > 1 else base,
+                surface,
+            ] + extras[2:]
             if order == names:
                 continue
             loop_count = len(me.loops)
