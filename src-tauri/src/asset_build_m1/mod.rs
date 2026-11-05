@@ -8,6 +8,7 @@ pub mod atlas_prepare;
 pub mod material_atlas;
 pub mod materials;
 pub mod material_gate;
+pub mod build_cache;
 pub mod menu;
 pub mod native_model;
 pub mod native_lot;

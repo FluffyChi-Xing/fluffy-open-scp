@@ -15,7 +15,7 @@ use sc_properties::{
     Key, Kind, LOD_MODEL_HASHES, LOT_MASK_HASH, LOT_OVERLAY_OFFSET_HASH, LOT_PLACEMENT_HASH,
     LOT_SIZE_HASH, PropertyFile, Value,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
@@ -47,7 +47,7 @@ pub struct M1BuildResult {
     pub duration_ms: u64,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SceneSemanticSummary {
     pub unit_count: usize,
     pub path_count: usize,
@@ -134,6 +134,46 @@ fn build_from_schema_inner(
     if !root.is_dir() {
         return Err("project root must be a directory".into());
     }
+    // G3a 全链复用（用户指令 2026-11-05）："已确认的无变更流程，跑通
+    // 构建器自检就能保证结果正确"。输入指纹命中 + 产物包 sha256 自检
+    // 通过 → 直接回放上次结果；任何不一致都走全量链重建缓存。
+    let fingerprint = super::build_cache::input_fingerprint(
+        &root,
+        &plan,
+        &plan.intermediate.scene.document,
+    );
+    if let Some(entry) = super::build_cache::lookup_run(&root, &fingerprint) {
+        let reuse_detail = serde_json::json!({
+            "buildHash": entry.build_hash,
+            "sha256": entry.sha256,
+            "resourceCount": entry.resource_count,
+        });
+        if let Some(event) = progress.as_ref() {
+            let _ = event.send(super::events::finished(
+                "cache-reuse",
+                reuse_detail.clone(),
+                0,
+            ));
+        }
+        return Ok(M1BuildResult {
+            path: root.join(".build").join(&entry.build_hash).join(&entry.package_relative),
+            schema_hash: entry.schema_hash,
+            build_hash: entry.build_hash.clone(),
+            source_hash: entry.source_hash,
+            sha256: entry.sha256,
+            resource_count: entry.resource_count,
+            delta_mode: entry.delta_mode,
+            menu_instance: entry.menu_instance,
+            patched_resources: entry.patched_resources,
+            scope: "property+scene-model",
+            scene: serde_json::from_value(entry.scene).map_err(|e| format!("run cache scene: {e}"))?,
+            events: vec![super::events::finished("cache-reuse", reuse_detail, 0)],
+            started_at_ms: entry.submitted_at_ms,
+            finished_at_ms: entry.submitted_at_ms,
+            duration_ms: 0,
+        });
+    }
+    let package_relative = package_relative_name(&plan);
     let mut ctx = stages::BuildContext::new(root, plan);
     ctx.progress = progress;
     stages::run_chain(&mut ctx)?;
@@ -141,6 +181,23 @@ fn build_from_schema_inner(
     // 步骤;失败路径的事件随 Err 文本携带阶段名(P2 队列改结构化错误)。
     let mut result = ctx.result.take().expect("chain completed without result");
     result.events = ctx.events.clone();
+    super::build_cache::store_run(
+        &ctx.root,
+        &fingerprint,
+        &super::build_cache::RunCacheEntry {
+            build_hash: result.build_hash.clone(),
+            schema_hash: result.schema_hash.clone(),
+            source_hash: result.source_hash.clone(),
+            package_relative,
+            sha256: result.sha256.clone(),
+            resource_count: result.resource_count,
+            delta_mode: result.delta_mode,
+            menu_instance: result.menu_instance,
+            scene: serde_json::to_value(&result.scene).unwrap_or(serde_json::Value::Null),
+            patched_resources: result.patched_resources,
+            submitted_at_ms: super::events::now_ms(),
+        },
+    );
     Ok(result)
 }
 
@@ -582,7 +639,7 @@ fn select_material_groups(
     Ok((top, mapped))
 }
 
-fn scene_model_transform(document: Option<&SceneDocument>) -> Option<[f32; 12]> {
+pub(crate) fn scene_model_transform(document: Option<&SceneDocument>) -> Option<[f32; 12]> {
     document.and_then(|document| document.model_transform)
 }
 

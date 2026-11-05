@@ -519,11 +519,9 @@ fn material_gate_blocks_silent_model_changes_only() {
 
     // 3) 纯场景变更（材质输入未动）：放行，基线不受影响。
     let scene = fs::read_to_string(root.join("asset.lot.json")).unwrap();
-    fs::write(
-        root.join("asset.lot.json"),
-        scene.replace("[12, 0, 0]", "[24, 0, 0]"),
-    )
-    .unwrap();
+    let mut document: serde_json::Value = serde_json::from_str(&scene).unwrap();
+    document["units"][1]["point"][0] = serde_json::json!(24);
+    fs::write(root.join("asset.lot.json"), document.to_string()).unwrap();
     build_from_schema(&root, &schema(false)).unwrap();
 
     // 4) 模型静默变更（2 mesh -> 1 mesh）：insert-model 即失败，错误逐字段。
@@ -535,6 +533,105 @@ fn material_gate_blocks_silent_model_changes_only() {
     // 5) 声明 materialChange=true：放行并刷新基线；此后不声明也放行。
     build_from_schema(&root, &schema(true)).unwrap();
     build_from_schema(&root, &schema(false)).unwrap();
+
+    let _ = fs::remove_dir_all(root);
+}
+
+/// G3 增量构建（用户指令 2026-11-05）：
+/// - 同输入二次构建 = 全链复用（事件流单条 cache-reuse，sha256 与首建一致）；
+/// - 场景变更构建 = 全链重跑但 insert-model 材质缓存命中（免重编译），
+///   材质资源数与首建一致。
+#[test]
+fn incremental_builds_reuse_run_and_material_cache() {
+    let root = temp_root();
+    let lot = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E1C000,
+        instance: 0x8D007745,
+    };
+    let entries = [OverlayEntry::new(lot, source_lot_property())];
+    fs::write(
+        root.join("source.package"),
+        write_uncompressed_overlay(&entries).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.join("model.lotm"), workbench_lotm()).unwrap();
+    fs::write(
+        root.join("asset.lot.json"),
+        serde_json::json!({
+            "lot": {"size": [96, 96]},
+            "units": [
+                {"id": "pathPoint:0", "kind": "pathPoint", "index": 0,
+                 "point": [0, 0, 0], "tangent": [1, 0, 0], "pointIndex": 0},
+                {"id": "pathPoint:1", "kind": "pathPoint", "index": 1,
+                 "point": [12, 0, 0], "tangent": [1, 0, 0], "pointIndex": 1}
+            ],
+            "editor": {"workbench": {"paths": []}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let schema = serde_json::json!({
+        "$schema": "openscp.asset", "schema_version": 2,
+        "id": "incremental-tower", "kind": "building-asset",
+        "reference": {"package": "source.package", "lot": "00B1B104:40E1C000:8D007745"},
+        "scene": {"document": "asset.lot.json", "model": "model.lotm"},
+        "outputs": {"package": "incremental-tower.package"}
+    })
+    .to_string();
+
+    // 1) 首建：全量链，材质缓存 miss。
+    let first = build_from_schema(&root, &schema).unwrap();
+    let first_model_detail = first
+        .events
+        .iter()
+        .find(|event| {
+            event.stage == "insert-model" && matches!(event.kind, StageEventKind::Finished)
+        })
+        .unwrap();
+    assert_eq!(
+        first_model_detail.detail.pointer("/materialCache"),
+        Some(&serde_json::json!("miss")),
+        "first build compiles and stores the material cache"
+    );
+
+    // 2) 同输入二次构建：全链复用。
+    let second = build_from_schema(&root, &schema).unwrap();
+    assert_eq!(second.sha256, first.sha256, "reused package bytes identical");
+    assert_eq!(second.build_hash, first.build_hash);
+    assert_eq!(second.events.len(), 1, "single cache-reuse event: {:?}", second.events);
+    assert_eq!(second.events[0].stage, "cache-reuse");
+
+    // 3) 场景变更：全链重跑（事件为 8 阶段），材质缓存命中。
+    let scene = fs::read_to_string(root.join("asset.lot.json")).unwrap();
+    let mut document: serde_json::Value = serde_json::from_str(&scene).unwrap();
+    document["units"][1]["point"][0] = serde_json::json!(24);
+    fs::write(root.join("asset.lot.json"), document.to_string()).unwrap();
+    let third = build_from_schema(&root, &schema).unwrap();
+    assert_ne!(third.build_hash, first.build_hash, "scene edit is a new identity");
+    let finished_stages = third
+        .events
+        .iter()
+        .filter(|event| matches!(event.kind, StageEventKind::Finished))
+        .count();
+    assert_eq!(finished_stages, 8, "full chain reruns on input change");
+    let third_model_detail = third
+        .events
+        .iter()
+        .find(|event| {
+            event.stage == "insert-model" && matches!(event.kind, StageEventKind::Finished)
+        })
+        .unwrap();
+    assert_eq!(
+        third_model_detail.detail.pointer("/materialCache"),
+        Some(&serde_json::json!("hit")),
+        "material compile skipped via cache on scene-only change"
+    );
+    assert_eq!(
+        third_model_detail.detail.pointer("/materialResources"),
+        first_model_detail.detail.pointer("/materialResources"),
+        "cached material resources match the compiled count"
+    );
 
     let _ = fs::remove_dir_all(root);
 }

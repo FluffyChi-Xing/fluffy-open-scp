@@ -344,14 +344,13 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         }
         _ => None,
     };
-    let (model_ids, material_resource_count) = insert_scene_model(
-        &ctx.root,
-        &ctx.plan.intermediate.scene.model,
-        ctx.plan.intermediate.scene.model_shape.as_deref(),
-        &mut ctx.resources,
-        &ctx.texture_instances,
-        ctx.scene_document.as_ref(),
+    let (model_ids, material_resource_count, cache_state) = insert_model_with_cache(
+        ctx,
         rotation,
+        model_bytes.as_deref(),
+        gate
+            .as_ref()
+            .map(|(key, fingerprint)| (key.clone(), fingerprint.model_sha256.clone(), fingerprint.slot_payload_sha256.clone())),
     )?;
     ctx.model_ids = model_ids;
     ctx.material_resource_count = material_resource_count;
@@ -374,7 +373,89 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         "materialResources": material_resource_count,
         "materialContract": material_contract,
         "materialGate": gate_json,
+        "materialCache": cache_state,
     }))
+}
+
+/// G3b 材质缓存：指纹命中时跳过模型编译/图集编码，直接恢复材质与 RW4
+/// 资源入池（alloc_free_instance 内容寻址 ⇒ 实例号与重编译一致）。
+/// 返回 (model_ids, material_resource_count, "hit"|"miss"|"off")。
+fn insert_model_with_cache(
+    ctx: &mut BuildContext,
+    rotation: u32,
+    model_bytes: Option<&[u8]>,
+    gate_key: Option<(String, String, String)>,
+) -> Result<(Option<super::package::LodModelIds>, usize, &'static str), String> {
+    let transform = super::package::scene_model_transform(ctx.scene_document.as_ref());
+    let transform_repr = format!("{transform:?}");
+    let fingerprint_key = gate_key.as_ref().map(|(key, model_sha, slot_sha)| {
+        super::build_cache::material_fingerprint(
+            &ctx.root,
+            &ctx.plan,
+            model_sha,
+            slot_sha,
+            rotation,
+            &transform_repr,
+        )
+    });
+    if let (Some(key), Some(_)) = (&fingerprint_key, model_bytes) {
+        if let Some(entry) = super::build_cache::lookup_material(&ctx.root, key) {
+            for (type_id, instance, file) in &entry.entries {
+                let payload = super::build_cache::read_material_payload(&ctx.root, key, file)
+                    .ok_or_else(|| format!("material cache payload missing: {file}"))?;
+                ctx.resources.insert(
+                    dbpf::ResourceId {
+                        type_id: *type_id,
+                        group: 0,
+                        instance: *instance,
+                    },
+                    payload,
+                );
+            }
+            let model_ids = entry.model_ids.map(|ids| {
+                ids.map(|[type_id, group, instance]| dbpf::ResourceId {
+                    type_id,
+                    group,
+                    instance,
+                })
+            });
+            return Ok((model_ids, entry.material_resource_count, "hit"));
+        }
+    }
+    // miss：编译，并把 insert-model 新增的资源写入缓存。
+    let before: std::collections::HashSet<dbpf::ResourceId> =
+        ctx.resources.all().keys().cloned().collect();
+    let (model_ids, material_resource_count) = insert_scene_model(
+        &ctx.root,
+        &ctx.plan.intermediate.scene.model,
+        ctx.plan.intermediate.scene.model_shape.as_deref(),
+        &mut ctx.resources,
+        &ctx.texture_instances,
+        ctx.scene_document.as_ref(),
+        rotation,
+    )?;
+    if let Some(key) = &fingerprint_key {
+        let mut entries = Vec::new();
+        let mut payloads = Vec::new();
+        for (index, (id, bytes)) in ctx
+            .resources
+            .all()
+            .iter()
+            .filter(|(id, _)| !before.contains(*id))
+            .enumerate()
+        {
+            let file = format!("{index:04}.bin");
+            entries.push((id.type_id, id.instance, file.clone()));
+            payloads.push((id.type_id, id.instance, bytes.clone()));
+        }
+        let entry = super::build_cache::MaterialCacheEntry {
+            model_ids: model_ids.map(|ids| ids.map(|id| [id.type_id, id.group, id.instance])),
+            material_resource_count,
+            entries,
+        };
+        super::build_cache::store_material(&ctx.root, key, &entry, &payloads);
+    }
+    Ok((model_ids, material_resource_count, if fingerprint_key.is_some() { "miss" } else { "off" }))
 }
 
 /// 六槽源文件字节串联摘要：槽实例号受池内分配影响，载荷指纹不受。

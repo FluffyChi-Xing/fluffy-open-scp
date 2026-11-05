@@ -184,13 +184,14 @@ fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
     assert!(build.join("artifacts/scene/asset.lot.json").is_file());
     assert!(build.join("artifacts/resource-manifest.json").is_file());
     assert!(!root.join("build").exists());
-    // .build holds exactly one build directory plus the shared ledger dir.
+    // .build holds exactly one build directory plus the shared ledger/cache dirs.
     let build_entries: Vec<_> = fs::read_dir(root.join(".build"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(build_entries.len(), 2, "build dir + ledger dir: {build_entries:?}");
+    assert_eq!(build_entries.len(), 3, "build dir + ledger dir + cache dir: {build_entries:?}");
     assert!(build_entries.contains(&"ledger".to_string()));
+    assert!(build_entries.contains(&"cache".to_string()));
     resources.insert(opaque, vec![42]);
     fs::write(&source, connector::link(&resources).unwrap()).unwrap();
     let third = build_from_schema(&root, &schema().to_string()).unwrap();
@@ -285,13 +286,14 @@ fn rejects_traversal_and_preserves_existing_build_on_corruption() {
     fs::write(&result.path, b"do not overwrite").unwrap();
     assert!(build_from_schema(&root, &schema().to_string()).is_err());
     assert_eq!(fs::read(result.path).unwrap(), b"do not overwrite");
-    // One build directory survived the corruption; the shared ledger dir is
-    // its sibling (stages.rs writes .build/ledger/<build_hash>.json).
+    // One build directory survived the corruption; the shared ledger/cache
+    // dirs are its siblings (stages.rs writes .build/ledger, G3 writes
+    // .build/cache).
     let build_entries: Vec<_> = fs::read_dir(root.join(".build"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(build_entries.len(), 2, "build dir + ledger dir: {build_entries:?}");
+    assert_eq!(build_entries.len(), 3, "build dir + ledger dir + cache dir: {build_entries:?}");
     fs::remove_dir_all(root).unwrap();
 }
 
