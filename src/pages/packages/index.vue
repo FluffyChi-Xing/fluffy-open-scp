@@ -2,6 +2,7 @@
 import { computed, onMounted, shallowRef, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
+import { motion } from "motion-v";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSkeleton from "@/components/ui/FSkeleton.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
@@ -512,6 +513,11 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 >
                   <span>{{ item.label }}</span>
                   <span>{{ item.count }}</span>
+                  <motion.span
+                    v-if="category === item.key"
+                    class="category-indicator"
+                    layout-id="package-category-tab"
+                  />
                 </button>
               </div>
               <button
@@ -1129,6 +1135,7 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   font: inherit;
   font-size: 11px;
   padding: 10px 8px;
+  position: relative;
   white-space: nowrap;
 }
 .category-tab:hover,
@@ -1136,8 +1143,17 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   color: var(--foreground);
 }
 .category-tab.active {
-  border-bottom-color: var(--primary);
   font-weight: 700;
+}
+/* 选中下划线由 motion-v 的 layout-id 在标签间滑动（见模板）。 */
+.category-indicator {
+  background: var(--primary);
+  border-radius: 2px;
+  bottom: 0;
+  height: 2px;
+  left: 4px;
+  position: absolute;
+  right: 4px;
 }
 .category-tab span:last-child {
   background: var(--surface-hover);
