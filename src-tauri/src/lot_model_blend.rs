@@ -18,6 +18,12 @@ use std::path::{Path, PathBuf};
 
 const EXPORT_SCRIPT: &str = include_str!("blender_scripts/export_lotm_blend.py");
 
+/// The B4 six-slot shader group builder (repo tool, shared with the pipeline
+/// addon).  The exported .blend wires slots through the same group the
+/// authoring pipeline uses, so the file matches a dsh-workflow export instead
+/// of carrying an ad-hoc Principled preview.
+const B4_SHADER: &str = include_str!("../../tools/blender_asset_pipeline/b4_shader.py");
+
 /// Container PNG index → game slot number.
 const SLOT_SOURCES: [(u8, usize); 5] = [
     (1, lotm::LotmMaterial::PNG_TINT),
@@ -148,21 +154,21 @@ fn readme_text(source: &str, asset_name: &str, document: &LotmDocument) -> Strin
          source:   {source}\n\
          payload:  LOTM v{} / {} meshes / {} materials\n\
          \n\
-         Materials are named OpenSCP_<index>_<asset>. Each carries the game's\n\
-         six texture slots as labelled image nodes:\n\
+         Materials are B4_Lit / B4_Data driven by the B4_SixSlots node group\n\
+         (same builder the authoring pipeline uses). Inputs:\n\
          \n\
-           slot1_tint      tint / colour-control map        -> Base Color\n\
-           slot2_normal    normal map                       -> Normal (via Normal Map)\n\
-           slot3_shader    relief + specular + interior mask   (unconnected)\n\
-           slot4_palette   16x512 palette lookup table         (unconnected)\n\
-           slot5_interior  interior / night emissive map    -> Emission Color\n\
+           UV Base / UV Top   facade domains (glTF-convention UVs)\n\
+           Mat Index          per-vertex attribute (TEXCOORD_1.x)\n\
+           slot0_params.exr   114x4 RGBA float parameter table\n\
+           slot1 tint -> slot5 interior: the game's six texture slots\n\
          \n\
-         slot0 parameter tables are embedded as text blocks\n\
+         When a material lacks any slot or its parameter table does not match\n\
+         the 4-row contract, it falls back to a Principled preview material\n\
+         with labelled slot image nodes.\n\
+         \n\
+         Parameter tables are also embedded as text blocks\n\
          (params_matNN.json: {{ paramCols, values }}).\n\
-         \n\
-         UV layers: UVMap = TEXCOORD_0, TEXCOORD_1_material = material\n\
-         index/seed, TEXCOORD_2 = spare, TEXCOORD_3_facade = facade world\n\
-         projection. All textures are packed into this .blend.\n",
+         All textures are packed into this .blend.\n",
         document.version,
         document.meshes.len(),
         document.materials.len(),
@@ -173,6 +179,9 @@ fn readme_text(source: &str, asset_name: &str, document: &LotmDocument) -> Strin
 pub(crate) fn run_blender(bundle: &Path, target: &Path) -> Result<(), String> {
     let script = bundle.join("export_lotm_blend.py");
     std::fs::write(&script, EXPORT_SCRIPT).map_err(|error| format!("export script: {error}"))?;
+    // The shader builder is imported by the export script; keep it beside it.
+    std::fs::write(bundle.join("b4_shader.py"), B4_SHADER)
+        .map_err(|error| format!("shader builder: {error}"))?;
     let output = crate::blender_service::run_script(
         &script,
         &[
@@ -339,6 +348,60 @@ mod tests {
             println!("kept at {keep}");
         }
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Real game resource → payload → .blend.
+    ///
+    /// `SC_GAME_PACKAGE` = package holding the RW4 model (usually
+    /// SimCity_Graphics.package), `SC_MODEL_INSTANCE` = hex instance,
+    /// `SC_BLEND_TARGET` = where to write the .blend.
+    #[test]
+    #[ignore = "requires a game package and Blender"]
+    fn real_game_model_exports_blend() {
+        use crate::package_service::{build_lot_model_payload_for_test, PackageManager};
+        let package_path = std::env::var("SC_GAME_PACKAGE").expect("set SC_GAME_PACKAGE");
+        let instance = u32::from_str_radix(
+            std::env::var("SC_MODEL_INSTANCE")
+                .expect("set SC_MODEL_INSTANCE")
+                .trim_start_matches("0x"),
+            16,
+        )
+        .expect("hex instance");
+        let target = std::path::PathBuf::from(
+            std::env::var("SC_BLEND_TARGET").expect("set SC_BLEND_TARGET"),
+        );
+
+        let source = dbpf::Package::open(&package_path).expect("open game package");
+        let manager = PackageManager::new();
+        let (_id, package) = manager.insert(source).expect("insert package");
+        let entry = package
+            .entries()
+            .iter()
+            .find(|entry| {
+                entry.id.type_id == 0x2F4E_681B && entry.id.instance == instance
+            })
+            .cloned()
+            .expect("model resource in package");
+        let data = package.read(&entry).expect("read model");
+        let file = rw4::Rw4File::parse(&data).expect("parse RW4");
+        let payload = build_lot_model_payload_for_test(&file, &data, &package, &manager, instance);
+        let document = lotm::parse(&payload).expect("payload parses");
+        println!(
+            "payload: meshes={} materials={} bytes={}",
+            document.meshes.len(),
+            document.materials.len(),
+            payload.len()
+        );
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        export_to(&payload, &target, &format!("{instance:08X}"), "copan")
+            .expect("blend export");
+        println!(
+            "blend: {} bytes -> {}",
+            std::fs::metadata(&target).unwrap().len(),
+            target.display()
+        );
     }
 
     #[test]

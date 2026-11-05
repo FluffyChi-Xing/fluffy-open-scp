@@ -15,6 +15,7 @@ Design notes
   (source TGI, parameter tables, slot legend) is embedded as text blocks.
 """
 
+import importlib.util
 import json
 import os
 import struct
@@ -25,6 +26,21 @@ import bpy
 
 def log(message):
     print(f"[lotm-blend] {message}", flush=True)
+
+
+def load_b4_shader(bundle_dir):
+    """Import the repo's B4 six-slot shader builder from the bundle."""
+    path = os.path.join(bundle_dir, "b4_shader.py")
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location("openscp_b4_shader", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as error:  # missing numpy etc. -> preview fallback
+        log(f"b4 shader unavailable: {error!r}")
+        return None
+    return module
 
 
 # ---------------------------------------------------------------- GLB rewrite
@@ -114,12 +130,59 @@ def _rewrite_vec4_uvs(path, temp_dir):
 
 SLOT_SPECS = (
     # slot, node label, colour space, packed into Base Color / Normal / Emission
-    (1, "slot1_tint", "sRGB", "base"),
+    (1, "slot1_tint", "Non-Color", "base"),
     (2, "slot2_normal", "Non-Color", "normal"),
     (3, "slot3_shader", "Non-Color", None),
     (4, "slot4_palette", "sRGB", None),
     (5, "slot5_interior", "sRGB", "emission"),
 )
+
+SLOT_FILENAMES = {
+    1: "slot1.png",
+    2: "slot2.png",
+    3: "slot3.png",
+    4: "slot4.png",
+    5: "slot5.png",
+}
+
+
+def material_dir_of(entry, bundle_dir):
+    slots = entry.get("slots") or {}
+    first = next(iter(slots.values()), None)
+    if not first:
+        return None
+    return os.path.dirname(os.path.join(bundle_dir, first))
+
+
+def build_b4_materials(entry, shader, bundle_dir, suffix=""):
+    """Wire the payload material through the pipeline's B4_SixSlots group.
+
+    Returns (lit, data) or None when any slot/param table is missing — the
+    caller then falls back to the preview material.
+    """
+    directory = material_dir_of(entry, bundle_dir)
+    params = entry.get("paramsF32")
+    param_cols = int(entry.get("paramCols") or 0)
+    if not directory or not params or param_cols <= 0:
+        return None
+    # The group samples a 4-row RGBA table; anything else would reshape wrong.
+    if len(params) != param_cols * 16:
+        log(
+            f"material {entry.get('index')}: param table is {len(params)} floats, "
+            f"expected {param_cols * 16}; falling back to preview material"
+        )
+        return None
+    if not all(os.path.isfile(os.path.join(directory, name))
+               for name in SLOT_FILENAMES.values()):
+        return None
+    shader.load_images(directory)
+    shader.build_params_image(list(params), param_cols, out_dir=directory)
+    group = shader.build_group(bpy.data)
+    lit = shader.make_material(f"B4_Lit{suffix}", group, mode="LIT")
+    data = shader.make_material(f"B4_Data{suffix}", group, mode="DATA")
+    shader.set_uniforms(lit, Param_Cols=float(param_cols))
+    shader.set_uniforms(data, Param_Cols=float(param_cols))
+    return lit
 
 
 def build_material(entry, source_label, bundle_dir):
@@ -170,6 +233,64 @@ def build_material(entry, source_label, bundle_dir):
 
 # ---------------------------------------------------------------------- scene
 
+# The B4 shader group samples with its own v -> 1-v flip, and the pipeline's
+# assets store glTF-convention UVs (the dsh export stores them that way too).
+# Blender's glTF importer converts to Blender convention, so restore the source
+# convention on the two contract layers.
+# glTF TEXCOORD order → pipeline domain names (b4_shader.py's data contract).
+CONTRACT_UV_BY_INDEX = {2: "UVBase", 3: "UVTop"}
+
+
+def contract_uv_layers(mesh):
+    layers = list(mesh.uv_layers)
+    loops = len(mesh.loops)
+    for index, target in CONTRACT_UV_BY_INDEX.items():
+        if index >= len(layers):
+            continue
+        layer = layers[index]
+        buf = [0.0] * (loops * 2)
+        layer.data.foreach_get("uv", buf)
+        for slot in range(1, len(buf), 2):
+            buf[slot] = 1.0 - buf[slot]
+        layer.data.foreach_set("uv", buf)
+        layer.name = target
+    # Constant layers carry no information; drop them so the file matches the
+    # pipeline export shape. Data-bearing extras (material index/seed) stay.
+    for layer in list(mesh.uv_layers):
+        if layer.name in ("UVBase", "UVTop"):
+            continue
+        buf = [0.0] * (loops * 2)
+        layer.data.foreach_get("uv", buf)
+        us = buf[0::2]
+        vs = buf[1::2]
+        if max(us) - min(us) < 1e-9 and max(vs) - min(vs) < 1e-9:
+            mesh.uv_layers.remove(layer)
+
+
+def mat_index_attribute(mesh):
+    """Per-vertex material index (TEXCOORD_1.x = D3DCOLOR.G/255)."""
+    layer = mesh.uv_layers.get("TEXCOORD_1_material") or mesh.uv_layers.get(
+        "TEXCOORD_1"
+    )
+    if layer is None:
+        return
+    loop_count = len(mesh.loops)
+    uvs = [0.0] * (loop_count * 2)
+    layer.data.foreach_get("uv", uvs)
+    vertex_of = [0] * loop_count
+    mesh.loops.foreach_get("vertex_index", vertex_of)
+    values = [0.0] * len(mesh.vertices)
+    filled = [False] * len(mesh.vertices)
+    for loop, vertex in enumerate(vertex_of):
+        if not filled[vertex]:
+            values[vertex] = uvs[loop * 2]
+            filled[vertex] = True
+    attribute = mesh.attributes.get("matIndex")
+    if attribute is None:
+        attribute = mesh.attributes.new("matIndex", "FLOAT", "POINT")
+    attribute.data.foreach_set("value", values)
+
+
 def uv_layer_rename(mesh, names):
     for index, layer in enumerate(mesh.uv_layers):
         if index == 0:
@@ -189,9 +310,19 @@ def main():
     scene.unit_settings.system = "METRIC"
     scene.unit_settings.scale_length = 1.0
 
+    shader = load_b4_shader(bundle_dir)
     materials = {}
-    for entry in manifest.get("materials", []):
-        materials[entry["index"]] = build_material(
+    material_entries = manifest.get("materials", [])
+    single = len(material_entries) == 1
+    for entry in material_entries:
+        built = (
+            build_b4_materials(
+                entry, shader, bundle_dir, suffix="" if single else f"_{entry['index']:02d}"
+            )
+            if shader is not None
+            else None
+        )
+        materials[entry["index"]] = built or build_material(
             entry, manifest.get("assetName") or "asset", bundle_dir
         )
 
@@ -214,6 +345,43 @@ def main():
             if material is not None:
                 obj.data.materials.append(material)
             uv_layer_rename(obj.data, names)
+            # Contract UVs and the per-vertex material index are what the B4
+            # group consumes; set them after the importer's own naming.
+            mat_index_attribute(obj.data)
+            contract_uv_layers(obj.data)
+        # The glTF importer keeps the Y-up -> Z-up conversion on the object.
+        # Bake it so the mesh data matches the pipeline export (identity
+        # object transform, Z-up vertex coordinates).
+        mesh_added = [obj for obj in added if obj.type == "MESH"]
+        if mesh_added:
+            bpy.ops.object.select_all(action="DESELECT")
+            for obj in mesh_added:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = mesh_added[0]
+            bpy.ops.object.transform_apply(
+                location=True, rotation=True, scale=True
+            )
+
+    # Preview rig matching the pipeline's original-asset files: dark world and
+    # two suns so the file shows the asset correctly right after opening.
+    world = bpy.data.worlds.new("OpenSCP_World")
+    world.use_nodes = True
+    background = next(
+        node for node in world.node_tree.nodes if node.type == "BACKGROUND"
+    )
+    background.inputs[0].default_value = (0.012, 0.03, 0.07, 1.0)
+    background.inputs[1].default_value = 1.0
+    scene.world = world
+    for name, energy, rotation, angle in (
+        ("Sun", 5.0, (1.086, 0.0, -0.322), 0.03490658476948738),
+        ("Fill", 1.6, (1.113, 0.0, 2.257), 0.009180432185530663),
+    ):
+        data = bpy.data.lights.new(name, type="SUN")
+        data.energy = energy
+        data.angle = angle
+        light = bpy.data.objects.new(name, data)
+        light.rotation_euler = rotation
+        scene.collection.objects.link(light)
 
     # Self-contained documentation and payload data inside the file.
     readme = bpy.data.texts.new("OpenSCP_README")
