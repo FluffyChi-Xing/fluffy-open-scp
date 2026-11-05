@@ -89,7 +89,8 @@ mod tests {
 
     #[test]
     fn writes_m0_artifacts_under_dot_build_without_touching_build() {
-        let root = std::env::temp_dir().join(format!("openscp-m0-layout-{}", std::process::id()));
+        let root = crate::test_scratch::scratch_base()
+            .join(format!("openscp-m0-layout-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         let raw = serde_json::json!({

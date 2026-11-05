@@ -75,6 +75,8 @@ const HASH_UNLOCK_STRING: u32 = 0x0DE8_4DDC;
 const HASH_EFFECT_TITLE: u32 = 0x0EB1_FC05;
 const HASH_EFFECT_PARAM: u32 = 0x0EB1_FC22;
 const HASH_PARK_FLAG: u32 = 0x0EC4_80DF;
+const EDUCATION_BEHAVIOR_CATEGORY: u32 = 0x95A9_D6FD;
+const ELEMENTARY_TEMPLATE: u32 = 0x7E4B_99E5;
 /// kResourceIDHQ_CityHall_IsOn（市政厅启用；NightHouse/威利斯同款解锁位）。
 const UNLOCK_CITY_HALL: u32 = 0xC93F_D4B5;
 // Unit 叶子哈希。
@@ -133,6 +135,21 @@ pub struct MenuRegistrationSpec {
     /// while inheriting the elementary-school cUnit behavior chain.
     #[serde(default, deserialize_with = "de_hash")]
     pub simulation_template_instance: Option<u32>,
+    /// Explicit runtime behavior category written to the Unit leaf. This is
+    /// deliberately independent from `category_instance`, which only controls
+    /// the visible Menu2 category. When omitted, the native profile derives a
+    /// safe default from the selected Unit donor.
+    #[serde(default, deserialize_with = "de_hash")]
+    pub behavior_category_instance: Option<u32>,
+    /// Built-in Unit property donor. The donor preserves the complete
+    /// simulation/education field chain while the builder rewrites identity
+    /// links. Supported values are `elementary-school` and `generic-park`.
+    #[serde(default)]
+    pub unit_donor: Option<String>,
+    /// Optional elementary-school desk/student capacity override. This maps to
+    /// the verified `0x0AD7FAC9` Unit field; it is not a worker/job count.
+    #[serde(default)]
+    pub student_capacity: Option<i32>,
     /// Lot 叶子的 Lot 模板 instance（组 40E1C000）；默认地标模板
     /// `4E01E311`。公园测试可用 NightHouse 实证对 `34CE7E14`。
     #[serde(default, deserialize_with = "de_hash")]
@@ -903,25 +920,12 @@ fn build_menu2(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>, St
         PropType::Int32,
         vec![Value::Int32(spec.ui_position.unwrap_or(11500))],
     );
-    set_array(
-        &mut file,
-        HASH_TITLE,
-        PropType::Text,
-        vec![Value::Text(Text {
-            table_id: LOCALE_TABLE,
-            instance_id: instance,
-        })],
-    );
+    // The companion locale resource uses fixed rows 1 (title) and 2
+    // (description).  The old legacy route used the asset instance as the
+    // text id, which left a valid-looking but unresolvable Text edge.
+    set_text_table(&mut file, HASH_TITLE, LOCALE_TABLE, 1);
     if spec.description.is_some() {
-        set_array(
-            &mut file,
-            HASH_DESC,
-            PropType::Text,
-            vec![Value::Text(Text {
-                table_id: LOCALE_TABLE,
-                instance_id: description_id(instance),
-            })],
-        );
+        set_text_table(&mut file, HASH_DESC, LOCALE_TABLE, 2);
     }
     let icon_key = Value::Key(sc_properties::Key {
         type_id: ICON_TYPE,
@@ -1052,6 +1056,19 @@ fn apply_menu_overrides(
     spec: &MenuRegistrationSpec,
     instance: u32,
 ) -> Result<(), String> {
+    // The flattened generic menu loses its parent edge. Restore it so the
+    // tool remains a real ploppable entry and can participate in bulldoze/
+    // lifecycle cleanup. The parent controls menu nesting only.
+    set_scalar(
+        file,
+        HASH_PARENT,
+        PropType::Key,
+        Value::Key(sc_properties::Key {
+            type_id: PROPERTY_TYPE,
+            group: 0x48E1_EB00,
+            instance: spec.menu_parent_instance.unwrap_or(PLOP_MENU_PARENT),
+        }),
+    );
     set_array(
         file,
         HASH_UI_CATEGORY,
@@ -1070,6 +1087,39 @@ fn apply_menu_overrides(
     );
     set_text_table(file, HASH_TITLE, instance, 1);
     set_text_table(file, HASH_DESC, instance, 2);
+    let education_behavior = spec.behavior_category_instance == Some(EDUCATION_BEHAVIOR_CATEGORY)
+        || spec.unit_donor.as_deref() == Some("elementary-school")
+        || spec.simulation_template_instance == Some(ELEMENTARY_TEMPLATE);
+    if education_behavior {
+        // These are the school tooltip/effect rows. Leaving the generic park
+        // rows in place produces literal `~population_amount~` and
+        // `~maintenance_cost~` placeholders even though the title resolves.
+        set_array_with_flags(
+            file,
+            HASH_EFFECT_TITLE,
+            PropType::Text,
+            vec![
+                Value::Text(Text {
+                    table_id: 0x50AA_0BEA,
+                    instance_id: 0x0D9A_B016,
+                }),
+                Value::Text(Text {
+                    table_id: 0x50AA_0BEA,
+                    instance_id: 0x0EBC_E055,
+                }),
+            ],
+            0x809C,
+        );
+        set_array(
+            file,
+            HASH_EFFECT_PARAM,
+            PropType::UInt32,
+            vec![Value::UInt32(181_926_601), Value::UInt32(240_671_456)],
+        );
+        // Menu placement remains the park category above; this flag controls
+        // the runtime presentation family and must not remain the park value.
+        set_scalar(file, HASH_PARK_FLAG, PropType::Bool, Value::Bool(false));
+    }
     // menuUnit: type-less key to the new Unit leaf (author `key(0x0975695f,(0,0,main_id))`).
     set_scalar(
         file,
@@ -1114,10 +1164,6 @@ fn apply_menu_overrides(
     Ok(())
 }
 
-fn description_id(instance: u32) -> u32 {
-    instance.wrapping_add(1)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1155,6 +1201,21 @@ mod tests {
         assert_ne!(key.instance, old, "new identity must not reuse the source mask TGI");
         assert_eq!(key, id);
         assert_eq!(bytes, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn menu_category_and_behavior_category_are_independent() {
+        let mut values = std::collections::BTreeMap::new();
+        values.insert("title".into(), serde_json::json!("school"));
+        values.insert("categoryInstance".into(), serde_json::json!("0x07049250"));
+        values.insert(
+            "behaviorCategoryInstance".into(),
+            serde_json::json!("0x95A9D6FD"),
+        );
+        let spec = MenuRegistrationSpec::from_values(&values).unwrap();
+        assert_eq!(spec.category_instance, Some(0x0704_9250));
+        assert_eq!(spec.behavior_category_instance, Some(0x95A9_D6FD));
+        assert_ne!(spec.category_instance, spec.behavior_category_instance);
     }
 }
 

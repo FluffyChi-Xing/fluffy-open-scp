@@ -184,7 +184,13 @@ fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
     assert!(build.join("artifacts/scene/asset.lot.json").is_file());
     assert!(build.join("artifacts/resource-manifest.json").is_file());
     assert!(!root.join("build").exists());
-    assert_eq!(fs::read_dir(root.join(".build")).unwrap().count(), 1);
+    // .build holds exactly one build directory plus the shared ledger dir.
+    let build_entries: Vec<_> = fs::read_dir(root.join(".build"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(build_entries.len(), 2, "build dir + ledger dir: {build_entries:?}");
+    assert!(build_entries.contains(&"ledger".to_string()));
     resources.insert(opaque, vec![42]);
     fs::write(&source, connector::link(&resources).unwrap()).unwrap();
     let third = build_from_schema(&root, &schema().to_string()).unwrap();
@@ -279,7 +285,13 @@ fn rejects_traversal_and_preserves_existing_build_on_corruption() {
     fs::write(&result.path, b"do not overwrite").unwrap();
     assert!(build_from_schema(&root, &schema().to_string()).is_err());
     assert_eq!(fs::read(result.path).unwrap(), b"do not overwrite");
-    assert_eq!(fs::read_dir(root.join(".build")).unwrap().count(), 1);
+    // One build directory survived the corruption; the shared ledger dir is
+    // its sibling (stages.rs writes .build/ledger/<build_hash>.json).
+    let build_entries: Vec<_> = fs::read_dir(root.join(".build"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(build_entries.len(), 2, "build dir + ledger dir: {build_entries:?}");
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -724,8 +736,13 @@ fn menu_registration_creates_new_identity_resources() {
     );
     assert!(
         matches!(menu2.get(0x0A09F5FA).map(|p| &p.kind),
-            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == 0xBF82F7CE && t.instance_id == x)),
-        "title references the OpenSCP locale table"
+            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == 0xBF82F7CE && t.instance_id == 1)),
+        "title references locale row 1"
+    );
+    assert!(
+        matches!(menu2.get(0x0A09F5FB).map(|p| &p.kind),
+            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == 0xBF82F7CE && t.instance_id == 2)),
+        "description references locale row 2"
     );
     let unit = read(ResourceId {
         type_id: 0x00B1B104,
@@ -997,9 +1014,20 @@ fn golden_full_chain_asset_dict_columns() {
     assert_eq!(column_first(&asset, 0x0D9A_4E54), key(0, 0, 0xF44F_784A));
     assert_eq!(column_first(&asset, 0x0D9A_A2BB), key(0, 0, 0xC186_DA37));
     // -- 资源清单:menu 基线 6(menu2/unit/asset/locale/icon/marquee)
-    //    + 场景语义 Asset dict + 旋转重编码后的 ground mask raster
-    //    + closure 提升 1 项。数量变化 = 行为变化,P1 拆分必须保持。 --
-    assert_eq!(output.entries().len(), 9, "menu baseline + asset dict + mask raster + promoted dep");
+    //    + 旋转重编码后的 ground mask raster + donor 模型 RW4 + 材质 raster
+    //    + PathEntry 675B61B1 闭包提升(993e7a3 起保留,s10 路径事故修复)。
+    //    数量变化 = 行为变化,P1 拆分必须保持。 --
+    assert!(
+        output
+            .entry(ResourceId {
+                type_id: 0x00B1_B104,
+                group: 0x40E1_C400,
+                instance: 0x675B_61B1
+            })
+            .is_some(),
+        "PathEntry 675B61B1 stays in the delta (993e7a3)"
+    );
+    assert_eq!(output.entries().len(), 10, "menu baseline + mask raster + model RW4 + material raster + promoted PathEntry");
     drop(output);
     let _ = fs::remove_dir_all(root);
 }

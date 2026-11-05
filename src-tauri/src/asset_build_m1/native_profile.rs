@@ -34,6 +34,11 @@ pub const GENERIC_ASSET: ResourceId = ResourceId {
     group: 0x40E1_C000,
     instance: 0x9EC4_74FF,
 };
+const ELEMENTARY_ASSET_DONOR: ResourceId = ResourceId {
+    type_id: 0x00B1_B104,
+    group: 0x40E1_C000,
+    instance: 0xC264_A268,
+};
 /// The lot-group twin of the generic unit template: the top of the
 /// interaction chain that converges through `9EC474FF`.
 pub const INTERACTION_CHAIN: ResourceId = ResourceId {
@@ -69,7 +74,10 @@ pub const GENERIC_MENU: ResourceId = ResourceId {
 };
 /// Asset dictionary property group (the author's `asset_key` group).
 pub const ASSET_GROUP: u32 = 0x40E1_C000;
-const UNIT_GROUP: u32 = 0x40E0_C000;
+/// cUnit behavior templates live in the 48E0C000 template group. Concrete
+/// Unit leaves use 40E0C000; using that group for the parent keeps the leaf
+/// on the generic park profile instead of inheriting education behavior.
+const UNIT_TEMPLATE_GROUP: u32 = 0x48E0_C000;
 /// Parent edge hash (00B2CCCB) — dropped when materializing a chain.
 const HASH_PARENT: u32 = 0x00B2_CCCB;
 /// cUnit → Asset dictionary edge (author `unit[0x08e17ed7]=key(asset_key)`).
@@ -81,11 +89,16 @@ const HASH_COST: u32 = 0x0A8A_41DA;
 const HASH_MAINTENANCE: u32 = 0x09AE_19D7;
 /// Unit simulation classification (author: category instance, type-less).
 const HASH_UNIT_CATEGORY: u32 = 0x0AFE_27B1;
+/// Elementary-school desk/student capacity (`kPropUnitEducationCapacity`).
+/// This is a Unit property, separate from Work_TotalJobs (0x0A7917C3).
+const HASH_STUDENT_CAPACITY: u32 = 0x0AD7_FAC9;
 /// The category is a runtime behavior selector, not just a menu placement.
 /// 07049250 is the park/diagnostic family; it does not attach education and
 /// transport rules, so vehicle resource bins and UnitLocation anchors remain
 /// inert even when the Asset columns are byte-correct.
 pub(crate) const EDUCATION_CATEGORY: u32 = 0x95A9_D6FD;
+const PARK_BEHAVIOR_CATEGORY: u32 = 0x0704_9250;
+const ELEMENTARY_TEMPLATE: u32 = 0x7E4B_99E5;
 /// LOD model references on the Asset dictionary.
 pub const LOD_HASHES: [u32; 4] = [0x00F9_EFBB, 0x00F9_EFBC, 0x00F9_EFBD, 0x00F9_EFBE];
 /// Asset model bounds (author `array(0x00f9efba, 57, [6f], 24, 0x801c)`).
@@ -1122,7 +1135,43 @@ pub fn build(
     model_ids: Option<&LodModelIds>,
     rotation_degrees: u32,
 ) -> Result<ParentFreeIdentity, String> {
-    let (mut asset, sources) = flat_chain(resources, GENERIC_ASSET)?;
+    let donor = spec.unit_donor.as_deref().unwrap_or_else(|| {
+        if spec.simulation_template_instance == Some(ELEMENTARY_TEMPLATE) {
+            "elementary-school"
+        } else {
+            "generic-park"
+        }
+    });
+    // A school cannot be represented by the generic park Asset chain alone.
+    // The vanilla school Asset carries connected-unit, rollover and
+    // interaction fields that make the education Unit consumable and
+    // removable. Start from that donor, then add any generic fields that are
+    // absent and overlay authored geometry/props below.
+    let (mut asset, sources) = if donor == "elementary-school" {
+        let bytes = include_bytes!("../../resources/sc5/elementary-school-asset.bin");
+        let mut school = PropertyFile::parse(bytes)
+            .map_err(|e| format!("elementary-school-asset.bin parse: {e}"))?;
+        patch_donor_instance_refs(&mut school, ELEMENTARY_ASSET_DONOR.instance, instance);
+        let (generic, generic_sources) = flat_chain(resources, GENERIC_ASSET)?;
+        for property in generic.values {
+            if school.get(property.hash).is_none() {
+                school.values.push(property);
+            }
+        }
+        school.claimed_count = school.values.len() as u32;
+        let mut sources = vec![format!(
+            "{:08X}:{:08X}:{:08X}",
+            ELEMENTARY_ASSET_DONOR.type_id,
+            ELEMENTARY_ASSET_DONOR.group,
+            ELEMENTARY_ASSET_DONOR.instance
+        )];
+        sources.extend(generic_sources);
+        (school, sources)
+    } else if donor == "generic-park" {
+        flat_chain(resources, GENERIC_ASSET)?
+    } else {
+        return Err(format!("unsupported unit donor {donor:?}"));
+    };
     if let Some(template) = spec.simulation_template_instance {
         upsert(
             &mut asset,
@@ -1335,10 +1384,21 @@ pub fn build(
     );
     asset.claimed_count = asset.values.len() as u32;
 
-    // Unit = the author's generic tested-unit.bin + overrides
-    // (`backend_compile.profile`: cost, maintenance, category instance).
-    let mut unit = PropertyFile::parse(include_bytes!("../../resources/sc5/tested-unit.bin"))
-        .map_err(|e| format!("tested-unit.bin parse: {e}"))?;
+    // Keep the full Unit donor. A simulation template alone is not enough:
+    // the elementary Unit carries the education bundles, UnitLocations,
+    // utility fields and vehicle/path dependencies on the leaf itself. The
+    // previous empty-Unit route silently shadowed all of those fields.
+    let mut unit = match donor {
+        "elementary-school" => PropertyFile::parse(include_bytes!(
+            "../../resources/sc5/elementary-school-unit.bin"
+        ))
+        .map_err(|e| format!("elementary-school-unit.bin parse: {e}"))?,
+        "generic-park" => PropertyFile::parse(include_bytes!(
+            "../../resources/sc5/tested-unit.bin"
+        ))
+        .map_err(|e| format!("tested-unit.bin parse: {e}"))?,
+        other => return Err(format!("unsupported unit donor {other:?}")),
+    };
     if let Some(cost) = spec.construction_cost {
         upsert(&mut unit, scalar(HASH_COST, PropType::Float, Value::Float(cost as f32)));
     }
@@ -1348,11 +1408,16 @@ pub fn build(
             scalar(HASH_MAINTENANCE, PropType::Float, Value::Float(maintenance as f32)),
         );
     }
-    let category = if spec.simulation_template_instance == Some(0x7E4B_99E5) {
-        EDUCATION_CATEGORY
-    } else {
-        spec.category_instance.unwrap_or(EDUCATION_CATEGORY)
-    };
+    // Menu placement and runtime behavior are separate axes. The former is
+    // `category_instance` in Menu2; this value is written only to the Unit's
+    // simulation category field. Never infer it from the visible menu.
+    let category = spec.behavior_category_instance.unwrap_or_else(|| {
+        if donor == "elementary-school" {
+            EDUCATION_CATEGORY
+        } else {
+            PARK_BEHAVIOR_CATEGORY
+        }
+    });
     upsert(
         &mut unit,
         scalar(
@@ -1369,14 +1434,29 @@ pub fn build(
                 PropType::Key,
                 Value::Key(Key {
                     type_id: 0x00B1_B104,
-                    group: UNIT_GROUP,
+                    group: UNIT_TEMPLATE_GROUP,
                     instance: template,
                 }),
             ),
         );
     }
+    if let Some(capacity) = spec.student_capacity {
+        if capacity < 0 {
+            return Err(format!("student capacity must be finite and non-negative, got {capacity}"));
+        }
+        upsert(
+            &mut unit,
+            scalar(
+                HASH_STUDENT_CAPACITY,
+                PropType::Float,
+                Value::Float(capacity as f32),
+            ),
+        );
+    }
     upsert(&mut unit, scalar(HASH_UNIT_ASSET, PropType::Key, key_value(Key {
-        type_id: 0x00B1_B104,
+        // Vanilla cUnit→Asset keys are type-less. Using the Property type here
+        // breaks the lookup even when group/instance are otherwise correct.
+        type_id: 0,
         group: ASSET_GROUP,
         instance,
     })));
@@ -1409,14 +1489,44 @@ pub fn build(
             "lights": compile_light_count(scene),
             "behavior": {
                 "categoryInstance": format!("0x{category:08X}"),
+                "menuCategoryInstance": spec
+                    .category_instance
+                    .map(|value| format!("0x{value:08X}")),
+                "unitDonor": donor,
+                "studentCapacity": spec.student_capacity,
                 "authoredPathOrVehicleOrSpawner": authored_behavior,
-                "simulationTemplate": category == EDUCATION_CATEGORY,
+                "simulationTemplate": donor == "elementary-school",
                 "simulationTemplateInstance": spec
                     .simulation_template_instance
                     .map(|value| format!("0x{value:08X}")),
             },
         }),
     })
+}
+
+/// Rebind type-less/property keys in an embedded vanilla donor to the new
+/// asset identity. Keeping the original C264A268 references would make the
+/// new building's connected-unit/removal graph point back at the base school.
+fn patch_donor_instance_refs(file: &mut PropertyFile, old: u32, new: u32) {
+    for property in &mut file.values {
+        match &mut property.kind {
+            Kind::Scalar(Value::Key(key)) => patch_donor_key(key, old, new),
+            Kind::Array(values) => {
+                for value in values {
+                    if let Value::Key(key) = value {
+                        patch_donor_key(key, old, new);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn patch_donor_key(key: &mut Key, old: u32, new: u32) {
+    if key.instance == old && (key.type_id == 0 || key.type_id == 0x00B1_B104) {
+        key.instance = new;
+    }
 }
 
 fn compile_prop_count(scene: Option<&SceneDocument>) -> usize {

@@ -70,31 +70,70 @@ impl Staging {
 
     pub fn publish(&self) -> Result<(), String> {
         if self.destination.exists() {
-            // A deterministic repeated build may reuse a byte-identical tree.
-            return compare_tree(&self.path, &self.destination);
+            // A deterministic repeated build may reuse a byte-identical tree
+            // (run-evidence files excepted; they carry wall-clock data and are
+            // refreshed from the latest run below).
+            compare_tree(&self.path, &self.destination, "")?;
+            return refresh_evidence(&self.path, &self.destination, "");
         }
         match fs::rename(&self.path, &self.destination) {
             Ok(()) => Ok(()),
-            Err(_) if self.destination.exists() => compare_tree(&self.path, &self.destination),
+            Err(_) if self.destination.exists() => {
+                compare_tree(&self.path, &self.destination, "")?;
+                refresh_evidence(&self.path, &self.destination, "")
+            }
             Err(e) => Err(e.to_string()),
         }
     }
 }
 
-fn compare_tree(staging: &Path, existing: &Path) -> Result<(), String> {
+/// Files whose bytes legitimately vary between runs of the same build_hash
+/// (timestamps/durations). They are excluded from the reuse comparison and
+/// overwritten with the latest run's evidence on publish.
+const EVIDENCE_FILES: [&str; 1] = ["reports/m1-build.json"];
+
+fn compare_tree(staging: &Path, existing: &Path, prefix: &str) -> Result<(), String> {
     if existing.canonicalize().map_err(|e| e.to_string())? != existing {
         return Err("existing build contains a link".into());
     }
     for entry in fs::read_dir(staging).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
-        let target = existing.join(entry.file_name());
+        let name = entry.file_name();
+        let relative = if prefix.is_empty() {
+            name.to_string_lossy().into_owned()
+        } else {
+            format!("{prefix}/{}", name.to_string_lossy())
+        };
+        let target = existing.join(&name);
         if entry.path().is_dir() {
-            compare_tree(&entry.path(), &target)?;
+            compare_tree(&entry.path(), &target, &relative)?;
+        } else if EVIDENCE_FILES.contains(&relative.as_str()) {
+            continue;
         } else if target.canonicalize().map_err(|e| e.to_string())? != target
             || fs::read(entry.path()).map_err(|e| e.to_string())?
                 != fs::read(target).map_err(|e| e.to_string())?
         {
             return Err("existing build differs; refusing to overwrite".into());
+        }
+    }
+    Ok(())
+}
+
+fn refresh_evidence(staging: &Path, existing: &Path, prefix: &str) -> Result<(), String> {
+    for entry in fs::read_dir(staging).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        let relative = if prefix.is_empty() {
+            name.to_string_lossy().into_owned()
+        } else {
+            format!("{prefix}/{}", name.to_string_lossy())
+        };
+        if entry.path().is_dir() {
+            refresh_evidence(&entry.path(), &existing.join(&name), &relative)?;
+        } else if EVIDENCE_FILES.contains(&relative.as_str()) {
+            let bytes = fs::read(entry.path()).map_err(|e| e.to_string())?;
+            crate::atomic_fs::write_atomic(&existing.join(&name), &bytes, true)
+                .map_err(|e| e.to_string())?;
         }
     }
     Ok(())

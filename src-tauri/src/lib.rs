@@ -40,6 +40,8 @@ mod render_telemetry;
 mod runtime_observer;
 mod settings;
 mod stats;
+#[cfg(test)]
+mod test_scratch;
 mod version_service;
 mod workspace;
 mod wwise;

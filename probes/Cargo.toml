@@ -187,6 +187,10 @@ name = "prop_dump"
 path = "property/prop_dump.rs"
 
 [[example]]
+name = "rci_building_census"
+path = "property/rci_building_census.rs"
+
+[[example]]
 name = "prop_fixture"
 path = "property/prop_fixture.rs"
 

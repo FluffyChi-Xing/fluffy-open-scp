@@ -720,7 +720,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("openscp-sample-{name}-{id}"));
+        let root = crate::test_scratch::scratch_base().join(format!("openscp-sample-{name}-{id}"));
         fs::create_dir_all(root.join("schemas/assets")).unwrap();
         fs::write(root.join("package.json"), r#"{"name":"sample","format":"openscp.mod","manifest_version":2,"nodes":[{"id":"building-asset-7","kind":"building-asset","schema":"schemas/assets/building-asset-7.json"}]}"#).unwrap();
         fs::write(

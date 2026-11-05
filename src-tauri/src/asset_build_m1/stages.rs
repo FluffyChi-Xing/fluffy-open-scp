@@ -460,7 +460,11 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     let ledger_path = ledger_dir.join(format!("{}.json", ctx.build_hash));
     let ledger = serde_json::to_vec_pretty(ctx.result.as_ref().expect("result set"))
         .map_err(|error| format!("ledger encode: {error}"))?;
-    crate::atomic_fs::write_atomic(&ledger_path, &ledger, false)
+    // The ledger carries wall-clock run evidence (timestamps/durations), so a
+    // repeat build with the same build_hash produces different bytes by
+    // design: atomically replace it with the latest run's evidence instead of
+    // failing create-new (os error 183 on the second identical build).
+    crate::atomic_fs::write_atomic(&ledger_path, &ledger, true)
         .map_err(|error| format!("ledger write: {error}"))?;
     // Publish only after the task evidence is durable. A failed ledger write
     // therefore cannot leave a package that has no reviewable provenance.
