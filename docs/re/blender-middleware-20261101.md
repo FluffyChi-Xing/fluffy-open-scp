@@ -75,3 +75,56 @@ At build/package time this is a bundled dependency; at development time
 `OPENSCP_BLENDER_ADDON` points at the same package. The staging script is
 explicit because the exporter and atlas library are third-party assets.
 
+
+## Throughput: where external .blend import time actually goes (2026-11-05)
+
+Profiled `entity/tall_office.blend` (2145 faces, 276 six-slot materials) with
+Blender 5.1 headless, timing each stage of the embedded import script:
+
+| stage | before | after |
+| --- | --- | --- |
+| `open_mainfile` | 1.75 s | 1.65 s |
+| join + `transform_apply` | 0.00 s | 0.00 s |
+| material classification | 0.08 s | 0.06 s |
+| UV domain normalization | 0.01 s | 0.01 s |
+| **glTF export** | **1336.6 s** | **0.98 s** |
+| slot extraction | 10.6 s | 0.68 s |
+| **total** | **~22.5 min** | **~4.9 s** |
+
+Mesh processing was never the problem. The glTF exporter walked every
+six-slot node group per material (~4.8 s each, one
+`More than one shader node tex image` warning per material). Slot extraction
+re-rendered the same atlas once per material: 1385 PNGs for 21 unique images.
+
+Fix, in the embedded script:
+
+1. Capture each material's slot binding (image datablocks) before touching
+   any node tree, then replace every six-slot graph with a minimal
+   Principled + tint texture. Material names and mesh/material indices are
+   untouched, so `materialSlotsByMaterial` binding and TEXCOORD_0..7 survive;
+   the GLB is only the coarse preview, the extracted six-slot payload stays
+   authoritative. GLB embedded images drop 85 → 4, size 2.2 MB → 1.0 MB.
+2. Render each unique atlas image once and share the file path across every
+   material that references it (31 files instead of 1385).
+
+Equivalence checked byte-for-byte against the pre-change output: 276/276
+materials, 0 slot-set differences, 1380/1380 slot bindings byte-identical,
+identical `material_params.json`, identical GLB material names and attribute
+sets.
+
+### Why the plug-in is fast (SC5 Asset Editor 1.23.5)
+
+`ny_facade/native_asset.py` never calls `bpy.ops.export_scene.gltf`. It
+assembles the GLB itself (`GLB` class: numpy arrays → bufferViews/accessors,
+SHA-256 image dedupe), reads atlases once per `(pack, slot)` into numpy via
+`pixels.foreach_get`, and dedupes materials by a recipe key
+(`groups[json.dumps([kind, entry, palette_row, color, ...])]`). `channels.face_state`
+caches per material index, and `material_state.recover` is only run once per
+material index. Its LOTM payload is written directly (LOTM v9 header, per-group
+GLB chunks + five texture maps + params), so no Blender exporter is involved
+at any point.
+
+The normalization path cannot reuse the plug-in's LOTM writer (it rejects
+original B4 meshes by design), but the two throughput techniques that matter
+for it — flatten before export, one atlas write per unique image — are now in
+place.
