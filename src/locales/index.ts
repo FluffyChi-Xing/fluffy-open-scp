@@ -959,7 +959,7 @@ const messages = {
       actionsTab: "构建任务",
       actionsEmpty: "暂无构建任务——从打包按钮或上方手动入队",
       actionsEnqueueTitle: "手动入队(粘贴 schema JSON)",
-      actionsEnqueueHint: '{ "$schema": "openscp.asset", ... }',
+      actionsEnqueueHint: "{'{ \"$schema\": \"openscp.asset\", ... }'}",
       actionsEnqueueButton: "入队构建",
       actionsStatus: {
         queued: "排队中",
@@ -3165,7 +3165,7 @@ const messages = {
       actionsTab: "Build runs",
       actionsEmpty: "No build runs yet — use the package button or enqueue above",
       actionsEnqueueTitle: "Manual enqueue (paste schema JSON)",
-      actionsEnqueueHint: '{ "$schema": "openscp.asset", ... }',
+      actionsEnqueueHint: "{'{ \"$schema\": \"openscp.asset\", ... }'}",
       actionsEnqueueButton: "Enqueue build",
       actionsStatus: {
         queued: "Queued",
