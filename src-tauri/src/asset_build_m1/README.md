@@ -92,3 +92,43 @@ pnpm check
 $env:SC_M1_PACKAGE = 'D:\ea-games\SimCity\SimCityUserData\EcoGame\SimCity-Scripts_287520926.package'
 cargo test -p fluffy-open-scp real_willis_property_package_readback --lib -- --ignored --nocapture
 ```
+
+## 排查协议（G0-G3 后的固定流程，2026-11-05）
+
+事故定位从"整链复盘 + 健康包字节对拍"改为机械三步，**禁止再对整包做
+人工字节对拍**：
+
+1. **看台账**（`.build/ledger/<build_hash>.json` 或 Actions 页阶段事件）：
+   - `insert-model.materialContract.parameterColumns`——参数列数（s10 事故
+     里 128 塌缩成 74×1 就在这里一行可见）；
+   - `insert-model.materialGate.fingerprint`——源模型 SHA/材质组/六槽
+     实例与载荷/材质资源数；
+   - `materialCache`——hit/miss/off；
+   - 各阶段 `durationMs` 与关键计数。
+2. **看责任阶段**：错误文本自带 `[<step>]`（阶段失败）或
+   `[<step>] invariant <CODE> violated`（不变量）。定位到唯一处理器后，
+   只跑它的处理器级测试（`stage_tests`，毫秒级）复现。
+3. **材质/贴图类问题先查指纹基线**（`.build/material-baseline.json`）：
+   未声明的漂移在构建期就该红掉；若构建放行而游戏内异常，比对本次
+   fingerprint 与基线，差异字段即输入侧变更点。
+
+维护规则：
+- 材质合成/RW4 转换是保护区：`texture_instances`/`model_ids`/
+  `material_resource_count` 及池内 2F4E681B/2F4E681C 资源只允许
+  insert-textures/insert-model 写入（契约见 stages.rs `StepContract`）。
+- 触碰保护区的改动必须先过 golden/deterministic 双基线与真模型
+  冒烟（SC_ASSET_FIXTURE_ROOT 下的 real_commercial 测试），且输出
+  sha256 不得变化（除非显式声明 materialChange）。
+- 缓存布局或指纹语义变化时递增 `build_cache::CACHE_VERSION`。
+
+### 已知 backlog（ignored real 测试的 fixture 过时，非回归）
+
+- `real_university_workbench_export_builds_package`：fixture 缺 authored
+  PathEntry 物化（03106C2E@40E0C400 在 s12-s17 包内由工作台写入动作生成，
+  fixture 源包没有；418A18B1 引用无任何包来源）。需从当前工作台输入
+  重新导出 fixture。
+- `real_commercial_workbench_lotm_builds_full_model`：`lowered_units >= 17`
+  断言来自旧管线；当前构建 lowered_units=0（场景降写契约已变）。需按
+  现契约重写断言并重导 fixture。
+- 构建输入入库（F1/M5）落地后，real fixture 应改为由持久化输入重放
+  生成，杜绝此类过时。
