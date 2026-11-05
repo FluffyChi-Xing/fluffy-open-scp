@@ -6,13 +6,24 @@ import { Background } from "@vue-flow/background";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FDropdownSelect from "@/components/ui/FSelect.vue";
 import { Switch } from "@/components/ui/switch";
-import type { WorkbenchMenuBinding, WorkbenchSourceKind } from "./useWorkbenchAsset";
+import {
+  menuBindingIssues,
+  menuTargetsFor,
+  newMenuEntry,
+  type MenuDimension,
+  type WorkbenchMenuBinding,
+  type WorkbenchMenuEntry,
+} from "./menuBinding";
+import type { WorkbenchSourceKind } from "./useWorkbenchAsset";
 
 /**
  * 中栏底部蓝图画布：资产 → 地块 → 游戏组件 → 菜单绑定 → 打包 的真实
  * 状态管线图。节点数据全部来自工作台活体 schema 文档（非演示数据）；
- * 菜单绑定节点可就地编辑（启用开关用项目 Switch 组件）。
+ * 菜单绑定节点可就地编辑（启用开关用项目 Switch 组件）。启用后按
+ * menu.entries 派生一列菜单编辑节点（每个目标菜单容器一个，只决定
+ * 「放在哪儿」），并从菜单绑定节点的 source 端口连线。
  */
 const props = defineProps<{
   sourceKind: WorkbenchSourceKind;
@@ -37,8 +48,11 @@ interface WbNodeData {
   lines: { label: string; value: string; tone?: "ok" | "warn" | "muted" }[];
   slot?: "menu";
 }
+interface WbEntryNodeData {
+  entry: WorkbenchMenuEntry;
+}
 
-const nodes = computed<Node<WbNodeData>[]>(() => {
+const nodes = computed<Node[]>(() => {
   const sourceReady = props.sourceKind !== "none";
   const sourceValue =
     props.sourceKind === "native"
@@ -52,7 +66,17 @@ const nodes = computed<Node<WbNodeData>[]>(() => {
     props.unitCounts.effects +
     props.unitCounts.spawners +
     props.unitCounts.paths;
-  return [
+  const menuIssues = menuBindingIssues(props.menu);
+  const menuStateLine: WbNodeData["lines"][number] = !props.menu.enabled
+    ? { label: t("studio.assetWorkbench.pipelineMenuState"), value: t("studio.assetWorkbench.menuStateOff"), tone: "muted" }
+    : menuIssues.length
+      ? { label: t("studio.assetWorkbench.pipelineMenuState"), value: t("studio.assetWorkbench.menuStateIncomplete"), tone: "warn" }
+      : {
+          label: t("studio.assetWorkbench.pipelineMenuState"),
+          value: t("studio.assetWorkbench.menuStateEntries", { n: props.menu.entries.length }),
+          tone: "ok",
+        };
+  const pipelineNodes: Node<WbNodeData>[] = [
     {
       id: "source",
       type: "wb",
@@ -127,6 +151,7 @@ const nodes = computed<Node<WbNodeData>[]>(() => {
                 : t("studio.assetWorkbench.pipelineNoDoc"),
             tone: props.savedDirty || !props.documentSaved ? "warn" : "ok",
           },
+          menuStateLine,
           {
             label: t("studio.assetWorkbench.pipelineCompile"),
             value: t("studio.assetWorkbench.pipelineCompileNote"),
@@ -136,6 +161,16 @@ const nodes = computed<Node<WbNodeData>[]>(() => {
       },
     },
   ];
+  // 菜单编辑节点组：每个目标菜单容器一个节点，排在菜单绑定节点下方一列。
+  const entryNodes: Node<WbEntryNodeData>[] = props.menu.enabled
+    ? props.menu.entries.map((entry, index) => ({
+        id: `entry-${entry.id}`,
+        type: "menu-entry",
+        position: { x: 750, y: 340 + index * 210 },
+        data: { entry },
+      }))
+    : [];
+  return [...pipelineNodes, ...entryNodes];
 });
 
 const edges = computed<Edge[]>(() => [
@@ -143,7 +178,62 @@ const edges = computed<Edge[]>(() => [
   { id: "e-lot-units", source: "lot", target: "units" },
   { id: "e-units-menu", source: "units", target: "menu" },
   { id: "e-menu-build", source: "menu", target: "build" },
+  ...(props.menu.enabled
+    ? props.menu.entries.map((entry) => ({
+        id: `e-menu-${entry.id}`,
+        source: "menu",
+        target: `entry-${entry.id}`,
+      }))
+    : []),
 ]);
+
+/** 启用开关：打开且无条目时自动创建第一个菜单编辑节点（连线随之出现）。 */
+function onMenuEnabled(enabled: boolean) {
+  if (enabled && props.menu.entries.length === 0)
+    emit("update:menu", { enabled: true, entries: [newMenuEntry([])] });
+  else emit("update:menu", { enabled });
+}
+
+function emitAddEntry() {
+  emit("update:menu", { entries: [...props.menu.entries, newMenuEntry(props.menu.entries)] });
+}
+
+function emitRemoveEntry(id: string) {
+  emit("update:menu", { entries: props.menu.entries.filter((entry) => entry.id !== id) });
+}
+
+function emitEntryPatch(id: string, patch: Partial<WorkbenchMenuEntry>) {
+  emit("update:menu", {
+    entries: props.menu.entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)),
+  });
+}
+
+/** 切维度时重置分类（两个维度的目标目录不同）。 */
+function onEntryDimension(entry: WorkbenchMenuEntry, dimension: string) {
+  if (dimension === entry.dimension) return;
+  emitEntryPatch(entry.id, { dimension: dimension as MenuDimension, categoryInstance: "" });
+}
+
+const dimensionOptions = computed(() => [
+  { value: "city", label: t("studio.workbench.dimCity") },
+  { value: "development", label: t("studio.workbench.dimDevelopment") },
+]);
+
+function entryTargetOptions(dimension: MenuDimension) {
+  return [
+    { value: "", label: t("studio.assetWorkbench.menuCategoryRequired") },
+    ...menuTargetsFor(dimension).map((option) => ({
+      value: option.id,
+      label: t(option.labelKey),
+    })),
+  ];
+}
+
+function onMenuPosition(event: Event) {
+  const raw = (event.target as HTMLInputElement).value.trim();
+  const position = raw === "" ? null : Number(raw);
+  emit("update:menu", { uiPosition: position !== null && Number.isFinite(position) ? position : null });
+}
 
 /** VueFlow 插槽入参无类型：节点警示 tone 由行数据推导。 */
 function nodeTone(data: unknown): "warn" | "ok" {
@@ -158,6 +248,7 @@ function nodeTone(data: unknown): "warn" | "ok" {
       :nodes="nodes"
       :edges="edges"
       :nodes-connectable="false"
+      :nodes-draggable="false"
       :edges-updatable="false"
       :delete-key-code="null"
       fit-view-on-init
@@ -183,26 +274,40 @@ function nodeTone(data: unknown): "warn" | "ok" {
               <Switch
                 :model-value="menu.enabled"
                 :aria-label="t('studio.assetWorkbench.menuEnabled')"
-                @update:model-value="emit('update:menu', { enabled: Boolean($event) })"
+                @update:model-value="onMenuEnabled(Boolean($event))"
               />
               <span>{{ t("studio.assetWorkbench.menuEnabled") }}</span>
             </label>
-            <input
-              :value="menu.label"
-              type="text"
-              class="wb-menu-input"
-              :placeholder="t('studio.assetWorkbench.menuLabelPlaceholder')"
-              :aria-label="t('studio.assetWorkbench.menuLabel')"
-              @input="emit('update:menu', { label: ($event.target as HTMLInputElement).value })"
-            />
-            <input
-              :value="menu.category"
-              type="text"
-              class="wb-menu-input"
-              :placeholder="t('studio.assetWorkbench.menuCategoryPlaceholder')"
-              :aria-label="t('studio.assetWorkbench.menuCategory')"
-              @input="emit('update:menu', { category: ($event.target as HTMLInputElement).value })"
-            />
+            <template v-if="menu.enabled">
+              <input
+                :value="menu.label"
+                type="text"
+                class="wb-menu-input"
+                :placeholder="t('studio.assetWorkbench.menuLabelPlaceholder')"
+                :aria-label="t('studio.assetWorkbench.menuLabel')"
+                @input="emit('update:menu', { label: ($event.target as HTMLInputElement).value })"
+              />
+              <input
+                :value="menu.description"
+                type="text"
+                class="wb-menu-input"
+                :placeholder="t('studio.assetWorkbench.menuDescriptionPlaceholder')"
+                :aria-label="t('studio.assetWorkbench.menuDescription')"
+                @input="emit('update:menu', { description: ($event.target as HTMLInputElement).value })"
+              />
+              <input
+                :value="menu.uiPosition ?? ''"
+                type="number"
+                class="wb-menu-input"
+                :placeholder="t('studio.assetWorkbench.menuPositionPlaceholder')"
+                :aria-label="t('studio.assetWorkbench.menuPosition')"
+                @input="onMenuPosition"
+              />
+              <button type="button" class="wb-menu-add" @click="emitAddEntry">
+                <FIcon name="Plus" :size="11" aria-label="" />
+                {{ t("studio.assetWorkbench.menuAddEntry") }}
+              </button>
+            </template>
           </div>
           <div v-if="node.id === 'source' && sourceKind === 'none'" class="wb-actions">
             <button type="button" @click="emit('import-model')">
@@ -214,6 +319,40 @@ function nodeTone(data: unknown): "warn" | "ok" {
               {{ t("studio.assetWorkbench.tgiParse") }}
             </button>
           </div>
+        </div>
+      </template>
+      <template #node-menu-entry="node">
+        <div class="wb-entry">
+          <Handle type="target" :position="Position.Left" />
+          <header class="wb-entry-head">
+            <FIcon name="Menu" :size="12" aria-label="" />
+            <strong>{{ t("studio.assetWorkbench.menuEntryTitle") }}</strong>
+            <button
+              type="button"
+              class="wb-entry-remove"
+              :aria-label="t('studio.assetWorkbench.menuRemoveEntry')"
+              @click="emitRemoveEntry(node.data.entry.id)"
+            >
+              ×
+            </button>
+          </header>
+          <label class="wb-entry-field">
+            <span>{{ t("studio.assetWorkbench.menuDimension") }}</span>
+            <FDropdownSelect
+              :model-value="node.data.entry.dimension"
+              :options="dimensionOptions"
+              @update:model-value="onEntryDimension(node.data.entry, $event)"
+            />
+          </label>
+          <label class="wb-entry-field">
+            <span>{{ t("studio.assetWorkbench.menuTargetCategory") }}</span>
+            <FDropdownSelect
+              :model-value="node.data.entry.categoryInstance"
+              :options="entryTargetOptions(node.data.entry.dimension)"
+              :invalid="!node.data.entry.categoryInstance"
+              @update:model-value="emitEntryPatch(node.data.entry.id, { categoryInstance: $event })"
+            />
+          </label>
         </div>
       </template>
     </VueFlow>
@@ -349,5 +488,93 @@ function nodeTone(data: unknown): "warn" | "ok" {
 .wb-actions button:hover {
   background: #333333;
   border-color: #6a6a6a;
+}
+.wb-menu-add {
+  align-items: center;
+  background: var(--flow-field, #1a1a1a);
+  border: 1px solid var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
+  color: var(--flow-text, #e6e6e6);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 10.5px;
+  gap: 4px;
+  justify-content: center;
+  min-height: 25px;
+  padding: 0 7px;
+}
+.wb-menu-add:hover {
+  background: #333333;
+  border-color: #6a6a6a;
+}
+/* 菜单编辑节点：每个目标菜单容器一个，只决定「放在哪儿」。 */
+.wb-entry {
+  background: var(--flow-node, #282828);
+  border: 1px solid var(--flow-border, #141414);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  color: var(--flow-text, #e6e6e6);
+  display: grid;
+  gap: 6px;
+  font-size: 10.5px;
+  min-width: 200px;
+  padding: 8px 11px;
+}
+.wb-entry-head {
+  align-items: center;
+  background: var(--flow-head-menu, #6b5b2e);
+  border-radius: 7px 7px 0 0;
+  color: #f2f2f2;
+  display: flex;
+  gap: 6px;
+  margin: -8px -11px 1px;
+  padding: 6px 8px 6px 10px;
+}
+.wb-entry-head strong {
+  flex: 1;
+  font-size: 11.5px;
+}
+.wb-entry-remove {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  min-height: 20px;
+  padding: 0 5px;
+}
+.wb-entry-remove:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+.wb-entry-field {
+  align-items: center;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+}
+.wb-entry-field > span {
+  color: var(--flow-text-dim, #9b9b9b);
+}
+/* FSelect 落在 Blender 暗色节点内：覆盖其浅色默认（下拉面板保持应用主题）。 */
+.wb-entry :deep(.f-select) {
+  background: var(--flow-field, #1a1a1a);
+  border-color: var(--flow-field-border, #3a3a3a);
+  border-radius: 4px;
+  color: var(--flow-text, #e6e6e6);
+  font-size: 10.5px;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 5px;
+}
+.wb-entry :deep(.f-select:focus) {
+  border-color: #6a6a6a;
+  box-shadow: none;
+}
+.wb-entry :deep(.f-select-label.placeholder) {
+  color: var(--flow-text-dim, #9b9b9b);
 }
 </style>

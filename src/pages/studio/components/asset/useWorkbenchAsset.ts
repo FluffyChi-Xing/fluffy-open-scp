@@ -40,6 +40,11 @@ import {
   type UnitGrouping,
 } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
 import { useGamePackagesStore } from "@/stores/gamePackages";
+import {
+  emptyMenuBinding,
+  normalizeMenuBinding,
+  type WorkbenchMenuBinding,
+} from "./menuBinding";
 
 /**
  * Mod 资产工作台统一会话（Blender 式重构 2026-10-25）。
@@ -87,11 +92,8 @@ interface WorkbenchSourceBlock {
   };
 }
 
-export interface WorkbenchMenuBinding {
-  enabled: boolean;
-  label: string;
-  category: string;
-}
+/** 菜单绑定 v2 形态、迁移与 semantics.menu 推导见 menuBinding.ts（2026-11-06 菜单编辑节点组）。 */
+export type { WorkbenchMenuBinding };
 
 /** 六槽材质绑定：项目内资产相对路径（params.json + slot1..5.png）。 */
 export interface MaterialSlotBinding {
@@ -232,11 +234,7 @@ export function useWorkbenchAsset(project: string) {
   const savedDirty = ref(false);
   const restoring = ref(false);
 
-  const menu = reactive<WorkbenchMenuBinding>({
-    enabled: false,
-    label: "",
-    category: "",
-  });
+  const menu = reactive<WorkbenchMenuBinding>(emptyMenuBinding());
 
   // draft：GLB/LOTM 载荷 + bbox 推导的地块尺寸（用户可在"地块"页签改）
   const draftPayload = shallowRef<LotModelPayload | null>(null);
@@ -706,7 +704,10 @@ export function useWorkbenchAsset(project: string) {
               // 持久化来源 Lot 引用，恢复时重新拉取会话数据。
               sourceLot: appliedLot.value ? { ...appliedLot.value } : null,
             },
-      menu: { ...menu },
+      menu: {
+        ...menu,
+        entries: menu.entries.map((entry) => ({ ...entry })),
+      },
       // 路径实体（2026-10-27 路径规划）：几何在 pathPoint 单元，这里存
       // entry/scope/roadConnect 与有序点引用；恢复见 restoreUnits。
       paths: draftPaths.value.map((path) => ({ ...path })),
@@ -1533,9 +1534,8 @@ export function useWorkbenchAsset(project: string) {
       const workbench = (parsed.editor as Record<string, unknown> | undefined)
         ?.workbench as WorkbenchSourceBlock | undefined;
       if (!workbench) return false;
-      menu.enabled = workbench.menu?.enabled ?? false;
-      menu.label = workbench.menu?.label ?? "";
-      menu.category = workbench.menu?.category ?? "";
+      // 菜单绑定 v2（含旧 {enabled,label,category} 形态迁移）。
+      Object.assign(menu, normalizeMenuBinding(workbench.menu));
       if (
         workbench.source === "native" &&
         workbench.packagePath &&

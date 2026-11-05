@@ -99,6 +99,12 @@ pub struct MenuRegistrationSpec {
     /// 公园面板用 `0x07049250`（原版 tools.json 公园工具同款）。
     #[serde(default, deserialize_with = "de_hash")]
     pub category_instance: Option<u32>,
+    /// uiCategories 多容器数组（2026-11-06 菜单编辑节点组）：同一建筑身份
+    /// 挂到多个菜单容器。0x0DB9FC63 本就是 Key 数组，非空时整体替代
+    /// `category_instance`；placement 与建筑功能（behavior_category_instance）
+    /// 保持正交。
+    #[serde(default, deserialize_with = "de_hash_vec")]
+    pub category_instances: Vec<u32>,
     /// 面板内排序（原版地标 ~11500）。
     #[serde(default)]
     pub ui_position: Option<i32>,
@@ -191,6 +197,54 @@ where
             "expected u32 or hex string, got {other}"
         ))),
     }
+}
+
+/// instance 字段数组版：接受 JSON 数字与 `"0x…"` 十六进制字符串的混排。
+fn de_hash_vec<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let values = <Vec<serde_json::Value> as Deserialize>::deserialize(deserializer)?;
+    values
+        .into_iter()
+        .map(|value| match value {
+            serde_json::Value::Number(number) => number
+                .as_u64()
+                .and_then(|v| u32::try_from(v).ok())
+                .ok_or_else(|| serde::de::Error::custom("instance out of u32 range")),
+            serde_json::Value::String(text) => u32::from_str_radix(
+                text.trim()
+                    .trim_start_matches("0x")
+                    .trim_start_matches("0X"),
+                16,
+            )
+            .map_err(|_| serde::de::Error::custom(format!("invalid hex instance {text:?}"))),
+            other => Err(serde::de::Error::custom(format!(
+                "expected u32 or hex string, got {other}"
+            ))),
+        })
+        .collect()
+}
+
+/// uiCategories Key 数组：`category_instances` 非空时整体展开（多容器挂载），
+/// 否则回退单 `category_instance`（再回退 `default_instance`）。
+fn ui_category_values(spec: &MenuRegistrationSpec, default_instance: u32) -> Vec<Value> {
+    let instances: Vec<u32> = if spec.category_instances.is_empty() {
+        vec![spec.category_instance.unwrap_or(default_instance)]
+    } else {
+        spec.category_instances.clone()
+    };
+    instances
+        .into_iter()
+        .map(|instance| {
+            Value::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0,
+                instance,
+            })
+        })
+        .collect()
 }
 
 impl MenuRegistrationSpec {
@@ -479,11 +533,7 @@ fn clone_donor_identity(
         &mut menu,
         HASH_UI_CATEGORY,
         PropType::Key,
-        vec![Value::Key(sc_properties::Key {
-            type_id: 0,
-            group: 0,
-            instance: spec.category_instance.unwrap_or(0x0704_9250),
-        })],
+        ui_category_values(spec, 0x0704_9250),
     );
     set_text_table(&mut menu, HASH_TITLE, locale_table, 1);
     set_text_table(&mut menu, HASH_DESC, locale_table, 2);
@@ -908,11 +958,7 @@ fn build_menu2(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>, St
         &mut file,
         HASH_UI_CATEGORY,
         PropType::Key,
-        vec![Value::Key(sc_properties::Key {
-            type_id: 0,
-            group: 0,
-            instance: spec.category_instance.unwrap_or(LANDMARK_CATEGORY),
-        })],
+        ui_category_values(spec, LANDMARK_CATEGORY),
     );
     set_array(
         &mut file,
@@ -1073,11 +1119,7 @@ fn apply_menu_overrides(
         file,
         HASH_UI_CATEGORY,
         PropType::Key,
-        vec![Value::Key(sc_properties::Key {
-            type_id: 0,
-            group: 0,
-            instance: spec.category_instance.unwrap_or(LANDMARK_CATEGORY),
-        })],
+        ui_category_values(spec, LANDMARK_CATEGORY),
     );
     set_array(
         file,
@@ -1216,6 +1258,58 @@ mod tests {
         assert_eq!(spec.category_instance, Some(0x0704_9250));
         assert_eq!(spec.behavior_category_instance, Some(0x95A9_D6FD));
         assert_ne!(spec.category_instance, spec.behavior_category_instance);
+    }
+
+    #[test]
+    fn menu_category_instances_expand_the_ui_category_array() {
+        // 多容器挂载：categoryInstances 非空时整体写进 0x0DB9FC63 Key 数组
+        // （菜单编辑节点组 = 同一建筑身份的多个目标容器）。
+        let mut values = std::collections::BTreeMap::new();
+        values.insert("title".into(), serde_json::json!("campus"));
+        values.insert(
+            "categoryInstances".into(),
+            serde_json::json!(["0x899BEA70", "94E412ED"]),
+        );
+        let spec = MenuRegistrationSpec::from_values(&values).unwrap();
+        assert_eq!(spec.category_instances, vec![0x899B_EA70, 0x94E4_12ED]);
+        let bytes = build_menu2(&spec, 0x1234_5678).unwrap();
+        let file = PropertyFile::parse(&bytes).unwrap();
+        let category = file
+            .values
+            .iter()
+            .find(|property| property.hash == HASH_UI_CATEGORY)
+            .expect("uiCategories entry");
+        match &category.kind {
+            Kind::Array(items) => {
+                let instances: Vec<u32> = items
+                    .iter()
+                    .map(|value| match value {
+                        Value::Key(key) => key.instance,
+                        other => panic!("unexpected uiCategories value {other:?}"),
+                    })
+                    .collect();
+                assert_eq!(instances, vec![0x899B_EA70, 0x94E4_12ED]);
+            }
+            other => panic!("uiCategories must be an array, got {other:?}"),
+        }
+
+        // 单字段路径保持兼容：categoryInstances 缺省为空，回退 categoryInstance。
+        let mut single = std::collections::BTreeMap::new();
+        single.insert("title".into(), serde_json::json!("school"));
+        single.insert("categoryInstance".into(), serde_json::json!("0x07049250"));
+        let spec = MenuRegistrationSpec::from_values(&single).unwrap();
+        assert!(spec.category_instances.is_empty());
+        let bytes = build_menu2(&spec, 0x1234_5678).unwrap();
+        let file = PropertyFile::parse(&bytes).unwrap();
+        let category = file
+            .values
+            .iter()
+            .find(|property| property.hash == HASH_UI_CATEGORY)
+            .expect("uiCategories entry");
+        match &category.kind {
+            Kind::Array(items) => assert_eq!(items.len(), 1),
+            other => panic!("uiCategories must be an array, got {other:?}"),
+        }
     }
 }
 

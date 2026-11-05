@@ -59,7 +59,7 @@
 }
 
 /* Selection outline: bright ring hugging the node, Blender-style. */
-.app-shell :is(.flow-workbench, .blueprint) .selected :is(.workflow-node, .generation-node, .wb-node) {
+.app-shell :is(.flow-workbench, .blueprint) .selected :is(.workflow-node, .generation-node, .wb-node, .wb-entry) {
   border-color: #454545;
   outline: 2px solid var(--flow-select);
   outline-offset: 0;
