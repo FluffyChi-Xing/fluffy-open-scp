@@ -1,3 +1,4 @@
+use super::events::StageEventKind;
 use super::{build_from_schema, connector, tests::temp_root};
 use dbpf::{
     OverlayEntry, Package, ResourceId, write_uncompressed_overlay,
@@ -115,11 +116,16 @@ fn tiny_png_bytes() -> Vec<u8> {
 }
 
 fn workbench_lotm() -> Vec<u8> {
+    workbench_lotm_with_meshes(2)
+}
+
+/// 参数化网格数的 LOTM：G1 材质指纹闸门测试用它制造受控模型变更。
+fn workbench_lotm_with_meshes(meshes: u32) -> Vec<u8> {
     let mut bytes = b"LOTM".to_vec();
     bytes.extend_from_slice(&9u32.to_le_bytes());
-    bytes.extend_from_slice(&2u32.to_le_bytes()); // mesh_count
-    for offset in [0.0f32, 8.0] {
-        let glb = facade_mesh_glb(offset);
+    bytes.extend_from_slice(&meshes.to_le_bytes()); // mesh_count
+    for index in 0..meshes {
+        let glb = facade_mesh_glb(index as f32 * 8.0);
         bytes.extend_from_slice(&(glb.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&glb);
     }
@@ -143,7 +149,7 @@ fn workbench_lotm() -> Vec<u8> {
     bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
     bytes.extend_from_slice(&params);
     bytes.extend_from_slice(&1u32.to_le_bytes()); // param_cols
-    for _ in 0..2 {
+    for _ in 0..meshes {
         bytes.extend_from_slice(&0u32.to_le_bytes()); // material index
         bytes.push(2); // uv kind
     }
@@ -430,6 +436,106 @@ fn workbench_lotm_builds_all_meshes_with_materials_and_replaces_reference_units(
         "LOD1 retargeted to the compiled model"
     );
     drop(output);
+    let _ = fs::remove_dir_all(root);
+}
+
+/// G1 材质指纹闸门（s10 贴图回归的构建期拦截点，2026-11-05 用户指令）：
+/// 首建记录基线 → 重复构建/纯场景变更放行 → 未声明的模型变更在
+/// insert-model 即失败（错误带逐字段 old→new）→ 声明 materialChange 后
+/// 放行并刷新基线。关键数字随 insert-model 事件入台账。
+#[test]
+fn material_gate_blocks_silent_model_changes_only() {
+    let root = temp_root();
+    let lot = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E1C000,
+        instance: 0x8D007745,
+    };
+    let entries = [OverlayEntry::new(lot, source_lot_property())];
+    fs::write(
+        root.join("source.package"),
+        write_uncompressed_overlay(&entries).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.join("model.lotm"), workbench_lotm()).unwrap();
+    fs::write(
+        root.join("asset.lot.json"),
+        serde_json::json!({
+            "lot": {"size": [96, 96]},
+            "units": [
+                {"id": "pathPoint:0", "kind": "pathPoint", "index": 0,
+                 "point": [0, 0, 0], "tangent": [1, 0, 0], "pointIndex": 0},
+                {"id": "pathPoint:1", "kind": "pathPoint", "index": 1,
+                 "point": [12, 0, 0], "tangent": [1, 0, 0], "pointIndex": 1}
+            ],
+            "editor": {"workbench": {"paths": []}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let schema = |material_change: bool| {
+        let mut semantics = serde_json::json!({});
+        if material_change {
+            semantics["materialChange"] = serde_json::json!(true);
+        }
+        serde_json::json!({
+            "$schema": "openscp.asset", "schema_version": 2,
+            "id": "gate-tower", "kind": "building-asset",
+            "reference": {"package": "source.package", "lot": "00B1B104:40E1C000:8D007745"},
+            "scene": {"document": "asset.lot.json", "model": "model.lotm"},
+            "semantics": semantics,
+            "outputs": {"package": "gate-tower.package"}
+        })
+        .to_string()
+    };
+
+    // 1) 首建：记录基线，insert-model 事件携带指纹与关键数字。
+    let first = build_from_schema(&root, &schema(false)).unwrap();
+    let baseline_path = root.join(".build").join("material-baseline.json");
+    assert!(baseline_path.is_file(), "baseline recorded on first build");
+    let insert_model_detail = first
+        .events
+        .iter()
+        .find(|event| {
+            event.stage == "insert-model" && matches!(event.kind, StageEventKind::Finished)
+        })
+        .expect("insert-model finished event present");
+    let gate = insert_model_detail
+        .detail
+        .pointer("/materialGate/fingerprint")
+        .expect("material fingerprint in stage event");
+    assert_eq!(
+        gate.pointer("/parameterColumns"),
+        Some(&serde_json::json!([1])),
+        "parameter column count is logged key evidence"
+    );
+    assert_eq!(
+        gate.pointer("/meshCount"),
+        Some(&serde_json::json!(2))
+    );
+
+    // 2) 重复构建：指纹一致，放行。
+    build_from_schema(&root, &schema(false)).unwrap();
+
+    // 3) 纯场景变更（材质输入未动）：放行，基线不受影响。
+    let scene = fs::read_to_string(root.join("asset.lot.json")).unwrap();
+    fs::write(
+        root.join("asset.lot.json"),
+        scene.replace("[12, 0, 0]", "[24, 0, 0]"),
+    )
+    .unwrap();
+    build_from_schema(&root, &schema(false)).unwrap();
+
+    // 4) 模型静默变更（2 mesh -> 1 mesh）：insert-model 即失败，错误逐字段。
+    fs::write(root.join("model.lotm"), workbench_lotm_with_meshes(1)).unwrap();
+    let error = build_from_schema(&root, &schema(false)).unwrap_err();
+    assert!(error.contains("[insert-model]"), "{error}");
+    assert!(error.contains("meshCount 2 -> 1"), "{error}");
+
+    // 5) 声明 materialChange=true：放行并刷新基线；此后不声明也放行。
+    build_from_schema(&root, &schema(true)).unwrap();
+    build_from_schema(&root, &schema(false)).unwrap();
+
     let _ = fs::remove_dir_all(root);
 }
 

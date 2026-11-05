@@ -50,10 +50,14 @@ pub(crate) struct BuildContext {
     pub events: Vec<StageEvent>,
     pub result: Option<M1BuildResult>,
     pub started_at_ms: u64,
+    /// schema 声明 `semantics.materialChange: true`（G1 材质指纹闸门）：
+    /// 显式声明材质输入有意变更，漂移放行并刷新基线。
+    pub material_change_declared: bool,
 }
 
 impl BuildContext {
     pub fn new(root: PathBuf, plan: PropertyBuildPlan) -> Self {
+        let material_change_declared = plan.intermediate.semantics.material_change;
         Self {
             root,
             plan,
@@ -77,6 +81,7 @@ impl BuildContext {
             progress: None,
             result: None,
             started_at_ms: super::events::now_ms(),
+            material_change_declared,
         }
     }
 }
@@ -203,21 +208,46 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     // Capture the source contract in the stage event before lowering.  This
     // makes a material regression attributable to this processor from the
     // build report, without comparing entire DBPF files by hand.
-    let material_contract = ctx
+    let model_bytes = ctx
         .plan
         .intermediate
         .scene
         .model
         .as_deref()
         .and_then(|path| project_file(&ctx.root, path).ok())
-        .and_then(|path| std::fs::read(path).ok())
-        .and_then(|bytes| super::lotm::is_container(&bytes).then(|| super::lotm::parse(&bytes).ok()).flatten())
+        .and_then(|path| std::fs::read(path).ok());
+    let material_contract = model_bytes
+        .as_deref()
+        .and_then(|bytes| super::lotm::is_container(bytes).then(|| super::lotm::parse(bytes).ok()).flatten())
         .map(|doc| serde_json::json!({
             "materialGroups": doc.materials.len(),
             "parameterColumns": doc.materials.iter().map(|m| m.param_cols).collect::<Vec<_>>(),
             "meshCount": doc.meshes.len(),
         }))
         .unwrap_or(serde_json::Value::Null);
+    // G1 材质指纹闸门：源模型 hash + 材质组/参数列/网格 + 六槽实例与载荷
+    // + 材质资源数。与 .build/material-baseline.json 对拍；未声明的漂移在
+    // 本处理器即失败（s10 贴图回归的构建期拦截点）。
+    let gate = match (&model_bytes, ctx.plan.intermediate.scene.model.as_deref()) {
+        (Some(bytes), Some(model_key)) => {
+            let contract = super::lotm::parse(bytes).ok();
+            let fingerprint = super::material_gate::MaterialFingerprint {
+                model_sha256: digest(bytes),
+                model_shape: ctx.plan.intermediate.scene.model_shape.clone(),
+                material_groups: contract.as_ref().map_or(0, |doc| doc.materials.len()),
+                parameter_columns: contract
+                    .as_ref()
+                    .map(|doc| doc.materials.iter().map(|m| m.param_cols).collect())
+                    .unwrap_or_default(),
+                mesh_count: contract.as_ref().map_or(0, |doc| doc.meshes.len()),
+                texture_slot_instances: ctx.texture_instances,
+                slot_payload_sha256: slot_payload_digest(&ctx.root, &ctx.plan.intermediate.scene.slots),
+                material_resources: 0, // 在 insert_scene_model 之后回填
+            };
+            Some((model_key.to_string(), fingerprint))
+        }
+        _ => None,
+    };
     let (model_ids, material_resource_count) = insert_scene_model(
         &ctx.root,
         &ctx.plan.intermediate.scene.model,
@@ -229,10 +259,40 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     )?;
     ctx.model_ids = model_ids;
     ctx.material_resource_count = material_resource_count;
+    let mut gate_json = serde_json::Value::Null;
+    if let Some((model_key, mut fingerprint)) = gate {
+        fingerprint.material_resources = material_resource_count;
+        let outcome = super::material_gate::enforce(
+            &ctx.root,
+            &model_key,
+            &fingerprint,
+            ctx.material_change_declared,
+        )?;
+        gate_json = serde_json::json!({
+            "verdict": outcome.label(),
+            "model": model_key,
+            "fingerprint": fingerprint,
+        });
+    }
     Ok(serde_json::json!({
         "materialResources": material_resource_count,
         "materialContract": material_contract,
+        "materialGate": gate_json,
     }))
+}
+
+/// 六槽源文件字节串联摘要：槽实例号受池内分配影响，载荷指纹不受。
+fn slot_payload_digest(
+    root: &std::path::Path,
+    slots: &std::collections::BTreeMap<String, String>,
+) -> String {
+    let mut combined = Vec::new();
+    for path in slots.values() {
+        if let Ok(bytes) = std::fs::read(root.join(path)) {
+            combined.extend_from_slice(&bytes);
+        }
+    }
+    digest(&combined)
 }
 
 /// path 语义校验(entry 绑定 + PathEntry 资源存在性)。

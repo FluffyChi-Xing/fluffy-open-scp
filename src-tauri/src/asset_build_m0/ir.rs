@@ -51,6 +51,9 @@ pub struct SemanticsIr {
     pub menu: BTreeMap<String, Value>,
     pub properties: Vec<Value>,
     pub allow_shared_template: bool,
+    /// G1 材质指纹闸门声明位：模型/六槽输入有意变更（见 SemanticsSchema）。
+    #[serde(default, rename = "materialChange")]
+    pub material_change: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +112,7 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
             menu: schema.semantics.menu.clone(),
             properties: schema.semantics.properties.clone(),
             allow_shared_template: schema.semantics.allow_shared_template,
+            material_change: schema.semantics.material_change,
         },
         output: OutputIr {
             package: schema.outputs.package.clone(),

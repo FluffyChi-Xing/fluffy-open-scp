@@ -69,6 +69,11 @@ pub struct SemanticsSchema {
     pub properties: Vec<Value>,
     #[serde(default, rename = "allowSharedTemplate")]
     pub allow_shared_template: bool,
+    /// G1 材质指纹闸门声明位（2026-11-05）：模型/六槽输入有意变更时置
+    /// true，指纹漂移放行并刷新 `.build/material-baseline.json`；缺省
+    /// false 时任何未声明的材质指纹漂移都会在 insert-model 失败。
+    #[serde(default, rename = "materialChange")]
+    pub material_change: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

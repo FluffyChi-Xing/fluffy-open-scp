@@ -7,6 +7,7 @@ pub mod lotm;
 pub mod atlas_prepare;
 pub mod material_atlas;
 pub mod materials;
+pub mod material_gate;
 pub mod menu;
 pub mod native_model;
 pub mod native_lot;
