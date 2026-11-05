@@ -4,7 +4,6 @@ import FIcon from "@/components/extensions/FIcon.vue";
 import FAlert from "@/components/ui/FAlert.vue";
 import FTooltip from "@/components/ui/FTooltip.vue";
 import { Switch } from "@/components/ui/switch";
-import FDropdown from "@/components/ui/FDropdown.vue";
 import FSpinner from "@/components/ui/FSpinner.vue";
 import FSheet from "@/components/ui/FSheet.vue";
 import FCode from "@/components/ui/FCode.vue";
@@ -30,7 +29,6 @@ import { buildSchemaDoc, unitsFromSchema } from "./peSchemaDoc";
 import { usePropertyEditorSession } from "./usePropertyEditorSession";
 import { useEditorHotkeys } from "./useEditorHotkeys";
 import { useEffectPreview } from "./effects/useEffectPreview";
-import { exportLotModel } from "@/composables/useModelExport";
 import { useEventListener } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { command } from "@/api/tauri";
@@ -686,22 +684,29 @@ async function exportRenderImage() {
   }
 }
 
-/** 模型导出（GLB）：默认模式仅白模；精细模式可选带贴图。 */
+/**
+ * 模型导出（用户指令 2026-11-05）：工具栏只提供 `.blend`——后端把 LOD
+ * 模型连六槽贴图一起交给 Blender 组装成可编辑场景。白模 / 带贴图 GLB
+ * 两个导出入口已下线。
+ */
 const meshExportBusy = ref(false);
-async function exportModel(mode: "white" | "textured") {
+async function exportModelBlend() {
   if (meshExportBusy.value) return;
   const lod = modelLods.value[activeLod.value];
   if (!lod) return;
+  const assetName =
+    session.value?.assetName ??
+    `0x${lod.tgi.instance.toString(16).padStart(8, "0")}`;
+  const path = await tauriApi.packages.saveFile(`${assetName}.blend`, "blend");
+  if (!path) return;
   meshExportBusy.value = true;
   try {
-    await exportLotModel({
-      packageId: lod.packageId,
-      modelTgi: lod.tgi,
-      mode,
-      defaultName:
-        session.value?.assetName ??
-        `0x${lod.tgi.instance.toString(16).padStart(8, "0")}`,
-    });
+    await tauriApi.packages.exportLotModelBlend(
+      lod.packageId,
+      lod.tgi,
+      path,
+      assetName,
+    );
   } finally {
     meshExportBusy.value = false;
   }
@@ -916,34 +921,20 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
             aria-label=""
           />
         </button>
-        <FDropdown :width="200">
-          <template #trigger>
-            <button
-              class="editor-close"
-              type="button"
-              :disabled="meshExportBusy"
-              :aria-label="$t('package.exportMesh')"
-            >
-              <FIcon
-                :name="meshExportBusy ? 'Loader2' : 'Download'"
-                :size="15"
-                aria-label=""
-              />
-            </button>
-          </template>
-          <button type="button" @click="exportModel('white')">
-            <FIcon name="Box" :size="14" aria-label="" />
-            {{ $t("package.exportMeshWhite") }}
-          </button>
-          <button
-            v-if="effectiveRenderMode === 'refined'"
-            type="button"
-            @click="exportModel('textured')"
-          >
-            <FIcon name="Image" :size="14" aria-label="" />
-            {{ $t("package.exportMeshTextured") }}
-          </button>
-        </FDropdown>
+        <button
+          class="editor-close"
+          type="button"
+          :disabled="meshExportBusy"
+          :aria-label="$t('package.exportBlendFile')"
+          :title="$t('package.exportBlendFile')"
+          @click="exportModelBlend()"
+        >
+          <FIcon
+            :name="meshExportBusy ? 'Loader2' : 'Box'"
+            :size="15"
+            aria-label=""
+          />
+        </button>
         <!-- 编辑模式锁定开关（原"只读视图"pill 的交互化）：解锁 = 工具栏/
              物料/拖放放置/删除可用 -->
         <FTooltip

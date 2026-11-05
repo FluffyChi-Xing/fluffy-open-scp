@@ -24,6 +24,7 @@ mod game_assets;
 mod game_launch;
 mod internal_dirs;
 mod locale_service;
+mod lot_model_blend;
 mod map_panel;
 mod media_tools;
 mod mod_flow;
@@ -71,7 +72,8 @@ use package_service::{
     close_package, export, export_status, list_model_catalog, list_path_entries, list_path_sources,
     list_prop_bin_catalog, list_resources, open_package, patch_property_overlay,
     read_decal_dictionary, read_decal_images, read_ecogame_preview, read_erz_preview,
-    read_image_preview, read_lot_editor_session, read_lot_model_meshes, read_property_preview,
+    export_lot_model_blend, read_image_preview, read_lot_editor_session, read_lot_model_meshes,
+    read_property_preview,
     read_raster_preview, read_resource_bytes, read_resource_data, read_resource_text,
     read_resource_text_range, read_rw4_material_textures, read_rw4_preview,
     read_rw4_section_detail, read_sim_parts, read_wwise_bank, release_prop_model_packages,
@@ -231,6 +233,7 @@ pub fn run() {
             list_path_sources,
             list_prop_bin_catalog,
             read_lot_model_meshes,
+            export_lot_model_blend,
             read_sim_parts,
             release_prop_model_packages,
             resolve_prop_models,

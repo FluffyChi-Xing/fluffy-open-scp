@@ -4088,6 +4088,69 @@ pub async fn read_lot_model_meshes(
     Ok(tauri::ipc::Response::new(payload))
 }
 
+/// Export one LOD model as an editable `.blend` (mesh + six-slot materials).
+///
+/// The payload is the same LOTM the source-file page's six-slot export uses,
+/// so both entry points describe the asset identically. Blender runs in
+/// background mode on a staged copy; `path` is the user-chosen destination.
+#[tauri::command]
+pub async fn export_lot_model_blend(
+    state: State<'_, AppState>,
+    request: ExportLotModelBlendRequest,
+) -> Result<(), CommandError> {
+    let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
+    let target = std::path::PathBuf::from(&request.path);
+    let asset_name = request
+        .asset_name
+        .clone()
+        .unwrap_or_else(|| format!("0x{:08X}", request.tgi.instance));
+    let tgi = request.tgi.clone();
+    let label = format!(
+        "{:08X}:{:08X}:{:08X}",
+        tgi.type_id, tgi.group, tgi.instance
+    );
+    let payload = read_resource_with(
+        manager,
+        store,
+        request.package_id,
+        tgi.clone(),
+        move |data, package, manager, _store| {
+            if tgi.type_id != RW4_MODEL_TYPE {
+                return Err(PackageError::InvalidArgument(
+                    "lot model blend export requires an RW4 model resource".into(),
+                ));
+            }
+            let file = rw4::Rw4File::parse(data)?;
+            Ok(build_lot_model_payload_for_test(
+                &file,
+                data,
+                package,
+                manager,
+                tgi.instance,
+            ))
+        },
+    )
+    .await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::lot_model_blend::export_to(&payload, &target, &label, &asset_name)
+    })
+    .await
+    .map_err(|error| CommandError::internal(error.to_string()))?
+    .map_err(CommandError::internal)
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportLotModelBlendRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    /// Absolute destination path ending in `.blend`.
+    pub path: String,
+    #[serde(default)]
+    pub asset_name: Option<String>,
+}
+
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PropModelsResponse {

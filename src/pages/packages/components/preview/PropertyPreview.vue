@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FEmpty from "@/components/extensions/FEmpty.vue";
 import FSheet from "@/components/ui/FSheet.vue";
-import type { PropertyPreview } from "@/api/tauri";
+import type { PropertyPreview, Tgi } from "@/api/tauri";
 import { tauriApi } from "@/api";
+import { useToast } from "@/composables/useToast";
 import { parseLotModelContainer } from "@/lib/three-gltf";
 import { buildBuildingTextureSlotFiles } from "@/lib/building-texture-export";
 import { isDecalAtlasGroup } from "@/lib/resource-types";
@@ -15,6 +17,7 @@ import FDropdown from "@/components/ui/FDropdown.vue";
 import { command } from "@/api/tauri";
 
 const props = defineProps<{ preview: PropertyPreview }>();
+const { t } = useI18n();
 const editorOpen = ref(false);
 /** 通用编辑占位 sheet（非 3D 资源用）。 */
 const editOpen = ref(false);
@@ -28,7 +31,57 @@ const MESH_SEMANTIC_IDS = new Set(["unit", "agent", "agent-vehicle-model"]);
 const hasMesh = computed(() =>
   MESH_SEMANTIC_IDS.has(props.preview.semantic?.id ?? ""),
 );
-const isBuilding = computed(() => props.preview.semantic?.id === "unit");
+/**
+ * 六槽贴图探测（用户指令 2026-11-05）：`unit` 分类并不等于建筑资产，部分
+ * unit 没有六槽贴图。工具下拉只在这个 property 的 LOD 模型真的带六槽
+ * （slot1 tint + slot4 palette）时显影；探测同时缓存解析好的 LOD 身份，
+ * 导出时不再二次读包。探测失败一律视为"无六槽"，不影响 unit 标签本身
+ * （分类标签由 `preview.semantic` 渲染，与本探测无关）。
+ */
+type SixSlotProbe = {
+  state: "probing" | "ready" | "absent";
+  lod?: { packageId: number; tgi: Tgi };
+};
+const sixSlotProbe = ref<SixSlotProbe>({ state: "probing" });
+const hasSixSlotTextures = computed(() => sixSlotProbe.value.state === "ready");
+const probeKey = computed(
+  () =>
+    `${props.preview.packageId}:${props.preview.tgi.typeId}:${props.preview.tgi.group}:${props.preview.tgi.instance}`,
+);
+let probeRequest = 0;
+async function probeSixSlotTextures() {
+  const request = ++probeRequest;
+  sixSlotProbe.value = { state: "probing" };
+  try {
+    const session = await tauriApi.packages.readLotEditorSession(
+      props.preview.packageId,
+      props.preview.tgi,
+    );
+    const lod = session?.modelLods?.find((entry) => entry !== null);
+    if (!lod) {
+      if (request === probeRequest) sixSlotProbe.value = { state: "absent" };
+      return;
+    }
+    const buffer = await tauriApi.packages.readLotModelMeshes(
+      lod.packageId,
+      lod.tgi,
+    );
+    const payload = parseLotModelContainer(buffer);
+    const hasSlots = payload.materials.some(
+      (material) =>
+        (material.tintPng?.byteLength ?? 0) > 0 &&
+        (material.palettePng?.byteLength ?? 0) > 0,
+    );
+    if (request !== probeRequest) return;
+    sixSlotProbe.value = hasSlots
+      ? { state: "ready", lod: { packageId: lod.packageId, tgi: lod.tgi } }
+      : { state: "absent" };
+  } catch {
+    if (request === probeRequest) sixSlotProbe.value = { state: "absent" };
+  }
+}
+watch(probeKey, () => void probeSixSlotTextures(), { immediate: true });
+
 const textureExportBusy = ref(false);
 const textureExportOpen = ref(false);
 const textureExportDirectory = ref("");
@@ -48,21 +101,21 @@ function bytesToBase64(bytes: Uint8Array<ArrayBuffer>): string {
   return btoa(binary);
 }
 async function confirmBuildingTextureExport() {
-  if (textureExportBusy.value || !isBuilding.value || !textureExportDirectory.value) return;
+  if (textureExportBusy.value || !hasSixSlotTextures.value || !textureExportDirectory.value)
+    return;
+  const probed = sixSlotProbe.value.lod;
+  if (!probed) return;
   textureExportBusy.value = true;
   textureExportError.value = "";
   try {
-    const session = await tauriApi.packages.readLotEditorSession(
-      props.preview.packageId,
-      props.preview.tgi,
+    const buffer = await tauriApi.packages.readLotModelMeshes(
+      probed.packageId,
+      probed.tgi,
     );
-    const lod = session?.modelLods?.find((entry) => entry !== null);
-    if (!lod) return;
-    const buffer = await tauriApi.packages.readLotModelMeshes(lod.packageId, lod.tgi);
     const payload = parseLotModelContainer(buffer);
     const files = buildBuildingTextureSlotFiles(
       payload,
-      `0x${props.preview.tgi.instance.toString(16).padStart(8, "0")}-lod${(session.modelLods?.indexOf(lod) ?? 0) + 1}`,
+      `0x${props.preview.tgi.instance.toString(16).padStart(8, "0")}`,
     );
     const separator = /[\\/]$/.test(textureExportDirectory.value) ? "" : "\\";
     for (const file of files) {
@@ -75,6 +128,37 @@ async function confirmBuildingTextureExport() {
     textureExportError.value = error instanceof Error ? error.message : String(error);
   } finally {
     textureExportBusy.value = false;
+  }
+}
+
+/**
+ * 导出 .blend：后端把同一份 LOTM 载荷（网格 + 六槽贴图）交给 Blender
+ * 组装成可编辑场景。与六槽导出并行放在同一个工具下拉里。
+ */
+const blendExportBusy = ref(false);
+const toast = useToast();
+async function exportBlendFile() {
+  if (blendExportBusy.value) return;
+  const probed = sixSlotProbe.value.lod;
+  if (!probed) return;
+  const assetName = `0x${props.preview.tgi.instance
+    .toString(16)
+    .padStart(8, "0")}`;
+  const path = await tauriApi.packages.saveFile(`${assetName}.blend`, "blend");
+  if (!path) return;
+  blendExportBusy.value = true;
+  try {
+    await tauriApi.packages.exportLotModelBlend(
+      probed.packageId,
+      probed.tgi,
+      path,
+      assetName,
+    );
+    toast.success(t("package.exportBlendDone", { path }));
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
+  } finally {
+    blendExportBusy.value = false;
   }
 }
 
@@ -139,18 +223,26 @@ function hashLabel(hash: number) {
           $t("package.propertyViewer")
         }}
       </button>
-      <FDropdown v-if="isBuilding" :width="190">
+      <!-- 工具下拉按"确有六槽贴图"显影（探测见 probeSixSlotTextures）；
+           unit 分类标签本身不受影响。 -->
+      <FDropdown v-if="hasSixSlotTextures" :width="210">
         <template #trigger>
-          <button type="button" :disabled="textureExportBusy">
-            <FIcon :name="textureExportBusy ? 'Loader2' : 'Wrench'" :size="13" aria-label="" />{{
-              $t("package.toolbarTools")
-            }}
+          <button type="button" :disabled="textureExportBusy || blendExportBusy">
+            <FIcon
+              :name="textureExportBusy || blendExportBusy ? 'Loader2' : 'Wrench'"
+              :size="13"
+              aria-label=""
+            />{{ $t("package.toolbarTools") }}
             <FIcon name="ChevronDown" :size="11" aria-label="" />
           </button>
         </template>
         <button type="button" :disabled="textureExportBusy" @click="openTextureExportDialog">
           <FIcon name="Download" :size="13" aria-label="" />
           {{ $t("package.exportBuildingTextures") }}
+        </button>
+        <button type="button" :disabled="blendExportBusy" @click="exportBlendFile">
+          <FIcon :name="blendExportBusy ? 'Loader2' : 'Box'" :size="13" aria-label="" />
+          {{ $t("package.exportBlendFile") }}
         </button>
       </FDropdown>
       <button v-else type="button" disabled>

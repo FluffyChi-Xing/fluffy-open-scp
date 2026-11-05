@@ -467,6 +467,16 @@ export const tauriApi = {
       command<ArrayBuffer>("read_lot_model_meshes", {
         request: { packageId, tgi },
       }),
+    /** 导出 LOD 模型为可编辑 .blend（网格 + 六槽材质，贴图打包进文件）。 */
+    exportLotModelBlend: (
+      packageId: number,
+      tgi: Tgi,
+      path: string,
+      assetName?: string,
+    ) =>
+      command<void>("export_lot_model_blend", {
+        request: { packageId, tgi, path, assetName },
+      }),
     resolvePropModels: (resourceIds: number[]) =>
       command<{ resolutions: ResolvedPropModel[] }>("resolve_prop_models", {
         request: { resourceIds },
