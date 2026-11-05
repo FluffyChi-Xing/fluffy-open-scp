@@ -120,7 +120,7 @@ fn workbench_lotm() -> Vec<u8> {
 }
 
 /// 参数化网格数的 LOTM：G1 材质指纹闸门测试用它制造受控模型变更。
-fn workbench_lotm_with_meshes(meshes: u32) -> Vec<u8> {
+pub(crate) fn workbench_lotm_with_meshes(meshes: u32) -> Vec<u8> {
     let mut bytes = b"LOTM".to_vec();
     bytes.extend_from_slice(&9u32.to_le_bytes());
     bytes.extend_from_slice(&meshes.to_le_bytes()); // mesh_count

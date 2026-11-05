@@ -122,11 +122,107 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             _ => unreachable!("unknown chain stage {stage}"),
         };
         match outcome {
-            Ok(detail) => emit(ctx, finished(stage, detail, started_at.elapsed().as_millis() as u64)),
+            Ok(detail) => {
+                // G2 不变量：阶段"成功"后校验产出契约；违例等同阶段失败，
+                // 错误固定格式 `[<step>] invariant <CODE> violated: <事实>`
+                // —— 责任处理器名自带，不再整链复盘。
+                if let Err(violation) = check_invariants(stage, ctx) {
+                    emit(
+                        ctx,
+                        super::events::failed(stage, &violation, started_at.elapsed().as_millis() as u64),
+                    );
+                    return Err(format!("[{stage}] {violation}"));
+                }
+                emit(ctx, finished(stage, detail, started_at.elapsed().as_millis() as u64));
+            }
             Err(error) => {
                 emit(ctx, super::events::failed(stage, &error, started_at.elapsed().as_millis() as u64));
                 return Err(format!("[{stage}] {error}"));
             }
+        }
+    }
+    Ok(())
+}
+
+// ---- G2 Step 契约（设计文档 4.1，用户指令 2026-11-05） ----
+//
+// 处理器声明读写面与编译期不变量；reads/writes 是审计面（Actions 页/台账
+// 可展示），invariants 由编排器强制执行。
+//
+// 保护区（"材质合成 / RW4 模型转换是基本能力，任何回归不允许"）：
+// `texture_instances` / `model_ids` / `material_resource_count` 以及池内
+// 2F4E681B / 2F4E681C 资源只允许 insert-textures / insert-model 写入；
+// 其它处理器触碰即视为破坏风险隔离的 bug，评审直接拒绝。
+
+/// 违例事实（Some = 违反）。
+pub(crate) type InvariantCheck = fn(&BuildContext) -> Option<String>;
+
+pub(crate) struct Invariant {
+    pub code: &'static str,
+    pub check: InvariantCheck,
+}
+
+pub(crate) struct StepContract {
+    pub name: &'static str,
+    pub reads: &'static [&'static str],
+    pub writes: &'static [&'static str],
+    pub invariants: &'static [Invariant],
+}
+
+/// s10 形态的就地拦截：模型编译产出存在 ⇒ 材质资源必须非空。
+/// 0 材质静默通过就是立面贴图全丢的起点。
+fn material_non_empty_when_model(ctx: &BuildContext) -> Option<String> {
+    (ctx.model_ids.is_some() && ctx.material_resource_count == 0).then(|| {
+        format!(
+            "model compiled with {} material resources (model_ids present)",
+            ctx.material_resource_count
+        )
+    })
+}
+
+/// 声明了纹理槽 ⇒ 六槽必须全部落位（槽计数漂移=贴图丢失前置信号）。
+fn slots_declared_all_inserted(ctx: &BuildContext) -> Option<String> {
+    let declared = ctx.plan.intermediate.scene.slots.len();
+    let inserted = ctx.texture_instances.iter().filter(|i| **i != 0).count();
+    (declared > 0 && inserted != declared)
+        .then(|| format!("{declared} texture slots declared, {inserted} inserted"))
+}
+
+pub(crate) const INSERT_TEXTURES_CONTRACT: StepContract = StepContract {
+    name: "insert-textures",
+    reads: &["plan.scene.slots"],
+    writes: &["texture_instances", "resources(raster)"],
+    invariants: &[Invariant {
+        code: "SLOTS_DECLARED_ALL_INSERTED",
+        check: slots_declared_all_inserted,
+    }],
+};
+
+pub(crate) const INSERT_MODEL_CONTRACT: StepContract = StepContract {
+    name: "insert-model",
+    reads: &["plan.scene.model", "plan.scene.modelShape", "texture_instances", "sceneDocument"],
+    writes: &["model_ids", "material_resource_count", "resources(RW4/raster)", "material-baseline"],
+    invariants: &[Invariant {
+        code: "MATERIAL_NON_EMPTY_WHEN_MODEL",
+        check: material_non_empty_when_model,
+    }],
+};
+
+fn check_invariants(stage: &str, ctx: &BuildContext) -> Result<(), String> {
+    let contract = match stage {
+        "insert-textures" => Some(&INSERT_TEXTURES_CONTRACT),
+        "insert-model" => Some(&INSERT_MODEL_CONTRACT),
+        _ => None,
+    };
+    let Some(contract) = contract else {
+        return Ok(());
+    };
+    for invariant in contract.invariants {
+        if let Some(fact) = (invariant.check)(ctx) {
+            return Err(format!(
+                "invariant {} violated: {fact}",
+                invariant.code
+            ));
         }
     }
     Ok(())
@@ -533,4 +629,94 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         "resources": ctx.written_count,
         "delta": ctx.delta_mode,
     }))
+}
+
+// ---- G2 处理器级测试（设计文档 4.6：单处理器毫秒级驱动，不拉全链） ----
+#[cfg(test)]
+mod stage_tests {
+    use super::*;
+    use crate::asset_build_m1::plan::plan_from_schema;
+
+    fn stage_root(label: &str) -> PathBuf {
+        let root = crate::test_scratch::scratch_base()
+            .join(format!("openscp-stage-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn model_schema() -> String {
+        serde_json::json!({
+            "$schema": "openscp.asset", "schema_version": 2,
+            "id": "stage-tower", "kind": "building-asset",
+            "reference": {"package": "source.package"},
+            "scene": {"document": "asset.lot.json", "model": "model.lotm"},
+            "outputs": {"package": "stage-tower.package"}
+        })
+        .to_string()
+    }
+
+    /// insert-model 独立驱动：不经过 load-inputs/闭包/发布，毫秒级钉住
+    /// "模型编译 ⇒ 模型身份 + 材质资源 + 闸门事件"这一保护区契约。
+    #[test]
+    fn insert_model_compiles_in_isolation() {
+        let root = stage_root("insert-model");
+        std::fs::write(root.join("model.lotm"), super::super::e2e_tests::workbench_lotm_with_meshes(2)).unwrap();
+        let plan = plan_from_schema(&model_schema()).unwrap();
+        let mut ctx = BuildContext::new(root.canonicalize().unwrap(), plan);
+        let detail = insert_model(&mut ctx).unwrap();
+        assert!(ctx.model_ids.is_some(), "compiled model identity produced");
+        assert!(
+            ctx.material_resource_count >= 2,
+            "tint + params material resources produced"
+        );
+        assert_eq!(
+            detail.pointer("/materialGate/verdict"),
+            Some(&serde_json::json!("recorded")),
+            "gate verdict in stage detail: {detail}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invariant_material_non_empty_fires_on_zero_resources() {
+        let root = stage_root("invariant-material");
+        let plan = plan_from_schema(&model_schema()).unwrap();
+        let mut ctx = BuildContext::new(root.clone(), plan);
+        ctx.model_ids = Some([dbpf::ResourceId {
+            type_id: 0x2F4E_681B,
+            group: 0,
+            instance: 1,
+        }; 4]);
+        ctx.material_resource_count = 0;
+        let error = check_invariants("insert-model", &ctx).unwrap_err();
+        assert!(error.contains("MATERIAL_NON_EMPTY_WHEN_MODEL"), "{error}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invariant_slots_count_fires_on_missing_slots() {
+        let root = stage_root("invariant-slots");
+        let mut schema: serde_json::Value =
+            serde_json::from_str(&model_schema()).unwrap();
+        schema["scene"]["slots"] = serde_json::json!({
+            "slot0": "slot0.raster", "slot1": "slot1.raster"
+        });
+        let plan = plan_from_schema(&schema.to_string()).unwrap();
+        let mut ctx = BuildContext::new(root.clone(), plan);
+        ctx.texture_instances = [0; 6];
+        let error = check_invariants("insert-textures", &ctx).unwrap_err();
+        assert!(error.contains("SLOTS_DECLARED_ALL_INSERTED"), "{error}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invariants_silent_without_model_and_slots() {
+        let root = stage_root("invariant-silent");
+        let plan = plan_from_schema(&model_schema()).unwrap();
+        let ctx = BuildContext::new(root.clone(), plan);
+        check_invariants("insert-model", &ctx).unwrap();
+        check_invariants("insert-textures", &ctx).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
