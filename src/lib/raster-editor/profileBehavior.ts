@@ -126,7 +126,5 @@ export function pickedLayer(
   const order = [3, 2, 1, 0];
   const channel = order.find((index) => pixel[index] >= 128);
   if (channel == null) return null;
-  return PROFILE_BEHAVIOR[profile].layers === "lot"
-    ? [3, 0, 1, 2].indexOf(channel)
-    : channel;
+  return channel;
 }

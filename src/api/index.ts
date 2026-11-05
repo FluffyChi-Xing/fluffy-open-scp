@@ -375,6 +375,14 @@ export const tauriApi = {
       lotSize?: [number, number];
       /** LotColor1-4：sRGB RGB + 图集 tile 索引 0-15。 */
       colors: [number, number, number, number][];
+      /** 底图格索引（缺省由后端使用默认值）。 */
+      baseTile?: number;
+      /** LotBorderColor1-4。 */
+      borderColors?: [number, number, number][];
+      /** 边框带图案索引。 */
+      borderPatternIndices?: number[];
+      /** 边框带半宽。 */
+      borderWidths?: number[];
       outputPath: string;
     }) => command<CreateLotOverlayResult>("create_lot_overlay", { request }),
   },

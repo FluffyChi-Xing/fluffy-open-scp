@@ -22,7 +22,14 @@ export function lotPaintDisplay(
 ): Uint8ClampedArray {
   const output = new Uint8ClampedArray(pixels.length);
   for (let at = 0; at < pixels.length; at += 4) {
-    const region = lotRegion(Array.from(pixels.subarray(at, at + 4)) as Rgba, widths);
+    const sample = pixels.subarray(at, at + 4);
+    const rgba: Rgba = [
+      sample[0] ?? 0,
+      sample[1] ?? 0,
+      sample[2] ?? 0,
+      sample[3] ?? 0,
+    ];
+    const region = lotRegion(rgba, widths);
     const channel = Math.floor(region / 2);
     const color = region < 0 ? [90, 90, 90]
       : region % 2 ? borders[channel] ?? [156, 156, 156]
