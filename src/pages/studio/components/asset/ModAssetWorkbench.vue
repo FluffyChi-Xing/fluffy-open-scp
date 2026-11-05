@@ -383,7 +383,9 @@ async function onBlendImported(result: {
       toast.success(t("studio.assetWorkbench.blendImported"));
       return;
     }
-    const slots = result.materialSlots ?? {};
+    const slots = result.materialSlots as Record<string, unknown> & {
+      uvContract?: unknown;
+    };
     const binding: MaterialSlotBinding = {};
     for (const key of [
       "params",
@@ -396,6 +398,10 @@ async function onBlendImported(result: {
     ] as const) {
       const value = slots[key];
       if (typeof value === "string" && value) binding[key] = value;
+    }
+    // 导入脚本探测的 UV 契约：游戏资产（带 matIndex）走原生 tint 链。
+    if (slots.uvContract === "native" || slots.uvContract === "blender") {
+      binding.uvContract = slots.uvContract;
     }
     const byMaterial = result.materialSlotsByMaterial ?? {};
     const materialBindings = Object.fromEntries(

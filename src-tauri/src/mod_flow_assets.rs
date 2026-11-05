@@ -229,6 +229,27 @@ def find_domain_layer_names():
                         surface_name = feed.uv_map
     return base_name or 'NY_UV', surface_name or 'NY_SurfaceUV'
 
+def has_mat_index(me):
+    """Game-probe exports carry a per-vertex material-column selector."""
+    attr = me.attributes.get('matIndex')
+    if attr is None or attr.domain != 'POINT':
+        return False
+    values = [0.0] * len(attr.data)
+    attr.data.foreach_get('value', values)
+    return min(values) != max(values)
+
+# Two export contracts (mirror blender_asset_pipeline/addon.py _contract_uv
+# and the workbench tint shader variants):
+# - native: the mesh has a matIndex attribute (game-probe/dsh exports). The
+#   GLB follows the game contract — TEXCOORD_1 = [matIndex, 0.5] selects the
+#   parameter column per vertex, TEXCOORD_2/3 = base/Top facade domains — so
+#   the workbench renders it through the game-verified native tint chain
+#   (uvKind 2).
+# - blender: plugin-authored blends without matIndex. TEXCOORD_1 = base
+#   domain, TEXCOORD_3 = Top domain, parameter column fixed at 0
+#   (TINT_BLENDER shader, uvKind 3).
+uv_contract = 'blender'
+
 if six_slot_materials:
     try:
         import numpy as np
@@ -240,6 +261,9 @@ if six_slot_materials:
                     return candidate
             return fallback
 
+        use_native = all(has_mat_index(obj.data) for obj in mesh_objects)
+        uv_contract = 'native' if use_native else 'blender'
+
         for obj in mesh_objects:
             me = obj.data
             names = [ul.name for ul in me.uv_layers]
@@ -247,24 +271,6 @@ if six_slot_materials:
                 continue
             base = pick(names, base_name, ('UVBase', 'NY_UV'), names[0])
             surface = pick(names, surface_name, ('UVTop', 'NY_SurfaceUV'), names[-1])
-            # The workbench's Blender tint shader samples the base facade
-            # domain from TEXCOORD_1 and the facade/Top domain from
-            # TEXCOORD_3 (see refinedRender.ts TINT_BLENDER), so the exporter
-            # must emit at least four layers with base at 1 and top at 3.
-            # Four-layer blends already satisfy this and keep their spare
-            # layers in place; two-layer blends (UVBase/UVTop only, e.g. the
-            # dsh exports) are padded with extra base copies, otherwise the
-            # base domain lands on TEXCOORD_0/1 and every facade sample is
-            # wrong (grey noise instead of the tinted facade).
-            extras = [n for n in names if n not in (base, surface)]
-            order = [
-                extras[0] if extras else base,
-                base,
-                extras[1] if len(extras) > 1 else base,
-                surface,
-            ] + extras[2:]
-            if order == names:
-                continue
             loop_count = len(me.loops)
             captured = {}
             for ul in me.uv_layers:
@@ -273,13 +279,53 @@ if six_slot_materials:
                 captured[ul.name] = buf
             for ul in list(me.uv_layers):
                 me.uv_layers.remove(ul)
-            for name in order:
-                layer = me.uv_layers.new(name=name)
-                if name in captured:
-                    layer.data.foreach_set('uv', captured[name])
+            if use_native:
+                attr = me.attributes.get('matIndex')
+                mat_values = [0.0] * len(attr.data)
+                attr.data.foreach_get('value', mat_values)
+                vertex_of = [0] * loop_count
+                me.loops.foreach_get('vertex_index', vertex_of)
+                base_buf = captured.get(base)
+                if base_buf is None:
+                    base_buf = np.zeros(loop_count * 2, dtype=np.float32)
+                layer = me.uv_layers.new(name='UV0')
+                layer.data.foreach_set('uv', base_buf)
+                layer = me.uv_layers.new(name='UV1')
+                mat_uv = np.empty(loop_count * 2, dtype=np.float32)
+                mat_uv[0::2] = np.array(
+                    [mat_values[vi] for vi in vertex_of], dtype=np.float32
+                )
+                mat_uv[1::2] = 0.5
+                layer.data.foreach_set('uv', mat_uv)
+                layer = me.uv_layers.new(name='UVBase')
+                if base in captured:
+                    layer.data.foreach_set('uv', captured[base])
+                layer = me.uv_layers.new(name='UVTop')
+                if surface in captured:
+                    layer.data.foreach_set('uv', captured[surface])
+            else:
+                # The workbench's Blender tint shader samples the base facade
+                # domain from TEXCOORD_1 and the facade/Top domain from
+                # TEXCOORD_3, so the exporter must emit at least four layers
+                # with base at 1 and top at 3. Two-layer blends (UVBase/UVTop
+                # only) are padded with extra base copies, otherwise the base
+                # domain lands on TEXCOORD_0/1 and every facade sample is
+                # wrong.
+                extras = [n for n in names if n not in (base, surface)]
+                order = [
+                    extras[0] if extras else base,
+                    base,
+                    extras[1] if len(extras) > 1 else base,
+                    surface,
+                ] + extras[2:]
+                for name in order:
+                    layer = me.uv_layers.new(name=name)
+                    if name in captured:
+                        layer.data.foreach_set('uv', captured[name])
             me.update()
     except Exception as error:
         print('OpenSCP UV normalization skipped:', repr(error))
+        uv_contract = 'blender'
 
 # --- bake non-exportable materials (no six-slot semantics) --------------
 if bake_materials:
@@ -574,6 +620,7 @@ finally:
     except Exception:
         pass
     slots['materialSlotsByMaterial'] = material_slots
+    slots['uvContract'] = uv_contract
     with open(out_map, 'w', encoding='utf-8') as f:
         json.dump(slots, f)
 "#;

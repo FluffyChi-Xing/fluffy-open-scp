@@ -102,6 +102,15 @@ export interface MaterialSlotBinding {
   slot3?: string;
   slot4?: string;
   slot5?: string;
+  /**
+   * GLB 的 UV 契约（.blend 导入时由导入脚本探测写入）：
+   * - `native`：网格带逐顶点 matIndex（游戏资产导出），TEXCOORD_1 =
+   *   [matIndex, 0.5] 选参数列、TEXCOORD_2/3 = 基础/Top 立面域，走
+   *   游戏验证过的原生 tint 链（uvKind 2）；
+   * - `blender`：插件作者资产，TEXCOORD_1 = 基础域、TEXCOORD_3 = Top
+   *   域、参数列固定 0（TINT_BLENDER，uvKind 3）。
+   */
+  uvContract?: "native" | "blender";
   /** 外部 .blend 按 GLB 材质名保存的独立槽位。 */
   byMaterial?: Record<string, Omit<MaterialSlotBinding, "byMaterial">>;
 }
@@ -397,11 +406,15 @@ export function useWorkbenchAsset(project: string) {
           });
         }
         if (materials.length) {
-          // Blender GLB 的 UV 语义不同于 LOTM：基础域在 TEXCOORD_1，
-          // 立面/Top 域在 TEXCOORD_3；每个 GLB 材质按名称选择自己的槽位。
-          // 用独立 uvKind 让视口选择 Blender shader 变体。
+          // UV 契约决定着色器变体：native（游戏资产导出，TEXCOORD_1 =
+          // [matIndex,.5] 选参数列、2/3 = 立面域）走游戏验证过的原生
+          // tint 链（uvKind 2）；blender（插件作者资产，TEXCOORD_1 =
+          // 基础域、3 = Top 域、列固定 0）走 TINT_BLENDER 变体（uvKind 3）。
+          // 每个 GLB 材质按名称选择自己的槽位。
           meshUvKinds = base.glbs.map(() =>
-            sourceKind.value === "glb" ? 3 : 2,
+            binding.uvContract === "native" || sourceKind.value === "lotm"
+              ? 2
+              : 3,
           );
         }
       }
