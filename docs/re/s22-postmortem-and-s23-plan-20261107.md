@@ -186,3 +186,51 @@ s23 是“静态树表现 + 最小教育行为 + 新菜单身份”的隔离实�
 - 存档备份：`Games-backup-20261106-s24r5`。
 - 验收流程（用户）：冷启动菜单 oracle（挂起即停）→ disposable city 放置 →
   教育面板/人口地图（容量 250）、树与 s14 一致、标题"大学建筑测试包 s24"。
+
+## s24-r6：表现层教育化 + 通勤修复（2026-11-07）
+
+r5 实测结论（用户多游戏日观察）：教育规则层已通——"4 學生"注册、已受教育
+毕业离校、18:00 放学；但**通勤未通**——对面未注册学生从不选择本建筑，只有
+中午 4 人（邻近转化规则的产物）。文档定案（elementary-school-rule-schedule
+/5am-7am 观测）：**没有"6AM 开学触发器"**，入学是逐个 sink 到达事件
+（原版首个学生 07:18 到达；06:00 规则只是 TotalStudents 清零）。零通勤
+= 到达许可缺失。
+
+### 根因（静态定案）
+
+r5 Lot 的 path 网络只有一条 path（9 点，段 [0,8]），PathEntry 表
+= `[03106C2E]`——**Cars And Crap 类型且被脚本库同名克隆遮蔽**（s14 已知
+缺陷的承继）。行人过滤器 `E0CD3122` 下没有一条可走路径 → 学生到达许可
+为零。小学走读最小配方（census §12）："仅 Pedestrians 路"（`418A18B1`）。
+
+### r6 变更（全部为 behavior spec 声明项，闸门字段级校验）
+
+| 层 | 字段 | 变更 |
+| --- | --- | --- |
+| Lot | `0x0CC8FE7A` PathEntry 表 | `[03106C2E]` → `[418A18B1]`（Pedestrians；六件套计数一致性 fail-closed，scope Local/roadConnect None 保持） |
+| Unit | `0x0A0209A5` | 追加至原版教育四 bundle：`6C042367+29D4B82E+95573B5D+9A1BFB2F`（对照容量 800 的原版教育 Unit 64F750E2；E7690450 树 bundle 在 A2 保留） |
+| Unit | `0x0DA69D6F` | 无 → `2C7C7986`（原版学校携带的内部 path entry 引用；GetUnitInternalPathEntries.c） |
+| Menu2 | `0x0DB9FC63` uiCategories | `[07049250]` → `[07049250, 6A1785B4, 95A9D6FD]`（公园入口保留 + 教育看板/类别双挂，取自原版教育菜单 AF3EAA80） |
+| Menu2 | `0x0EB1FC05/0x0EB1FC22` | 无 → 原版学校统计行（上课时间/学生容量两行 + 参数，逐字节克隆；公园"每日遊客"行不再显示） |
+| 图标 | `2F7D0004:40E02400:BE18DA2D` | 1111 B（树）→ 20325 B（原版教育图标，字节克隆） |
+| locale | 标题行 | 保持"大学建筑测试包 s24"（r5 已声明） |
+
+实现：`behavior.rs` 新增 `ensureWalkPath`/`ensureInternalPathRef`/
+`presentationPackage`+`presentationUnitInstance`+`adoptUiCategories/
+adoptStatRows/adoptIcon`；Menu2 冻结改为**字段级**（声明外字段漂移硬失败）；
+表现层供体包（SimCity_Game.package，SHA `79a80449…`）复制入项目
+`build/presentation-donor.package` 并入 compute_identity 指纹（防缓存陈旧）。
+
+### 静态对拍（r6 vs s14 GOLDEN）
+
+TGI 20/20 相等；15 条字节相同（全部模型/marquee/03106C2E 资源本体）；
+5 条变化 = 上表声明项，字段级 diff 与声明表零偏差。两轮构建 SHA 一致
+`f6e8f21fd9a4aee6…`。
+
+### 部署态与验收边界
+
+- SimCityData：仅 `000_OpenSCP_University_s24.package`（`f6e8f21f…`）；
+  r5 归档为 `…_s24-r5-91921832.package`；存档备份 `Games-backup-20261107-s24r6`。
+- 已知边界：校车道（`7C9C4FFF` Global+First 接路网）未加——几何需对实际
+  道路坐标，先验走读最小配方；若走读仍不通，下一轮加校车道与门口锚点。
+  未解之谜（文档边界）：TransportOps/校车调度未反编译；锚点是否服务停靠未知。
