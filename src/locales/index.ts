@@ -982,6 +982,10 @@ const messages = {
         importFailed: "导入失败，请检查文件格式和 Blender 配置",
         blendUnavailable: "未找到 Blender。请确认 D:\\blender 已加入 PATH 后重启 OpenSCP",
         blendExportFailed: "Blender 无法导出该文件，请确认文件可以正常打开",
+        blendAddonMissing:
+          "未找到 SC5 Asset Editor 导出器（ny_facade）。请运行 scripts/stage-blender-addon.ps1 或设置 OPENSCP_BLENDER_ADDON 后重启",
+        blendNativeFailed:
+          "Asset Editor 导出失败：.blend 必须能由插件导出为 LOTM（请检查修改器与材质）",
         treeLoadFailed: "项目文件加载失败，请稍后重试",
         sourceNative: "游戏包 TGI",
         sourceGlb: "外部模型",
@@ -3216,6 +3220,10 @@ const messages = {
         importFailed: "Import failed. Check the file format and Blender configuration.",
         blendUnavailable: "Blender was not found. Add D:\\blender to PATH and restart OpenSCP.",
         blendExportFailed: "Blender could not export this file. Check that it opens correctly.",
+        blendAddonMissing:
+          "The SC5 Asset Editor exporter (ny_facade) was not found. Stage it with scripts/stage-blender-addon.ps1 or set OPENSCP_BLENDER_ADDON, then restart OpenSCP.",
+        blendNativeFailed:
+          "The Asset Editor export failed. The .blend must export to LOTM (check modifiers and materials).",
         treeLoadFailed: "Project files could not be loaded. Try again.",
         sourceNative: "Game package TGI",
         sourceGlb: "External model",

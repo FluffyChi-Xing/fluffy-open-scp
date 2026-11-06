@@ -19,6 +19,35 @@ ny_facade.register()
 from ny_facade import native_asset  # noqa: E402
 
 bpy.ops.wm.open_mainfile(filepath=source)
+
+
+def apply_modifiers():
+    """Apply modifiers on a private copy before the native export.
+
+    The Asset Editor refuses objects with unapplied modifiers
+    ("原生导出暂不支持未应用修改器").  Authoring files routinely carry a
+    "Smooth by Angle" geometry-nodes modifier, so apply every modifier on a
+    single-user data-block.  The source .blend is never saved, so this only
+    changes the in-memory export scene.
+    """
+    for obj in list(bpy.context.view_layer.objects):
+        if obj.type != 'MESH' or not obj.modifiers:
+            continue
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        if obj.data.users > 1:
+            obj.data = obj.data.copy()
+        for modifier in list(obj.modifiers):
+            try:
+                bpy.ops.object.modifier_apply(modifier=modifier.name)
+            except Exception as error:  # keep the original message actionable
+                raise RuntimeError(
+                    f'Cannot apply modifier {modifier.name!r} on {obj.name!r}: {error}'
+                ) from error
+
+
+apply_modifiers()
 # bpy.data.objects includes orphan data-blocks linked into no collection;
 # select_set on them raises because they are not in the active view layer.
 meshes = [o for o in bpy.context.view_layer.objects if o.type == 'MESH']

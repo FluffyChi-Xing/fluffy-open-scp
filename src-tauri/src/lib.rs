@@ -15,6 +15,7 @@ pub(crate) mod asset_build_m0;
 pub mod asset_build_m1;
 pub(crate) mod asset_build_samples;
 mod atomic_fs;
+pub mod blend_native;
 mod blender_service;
 mod debug_tools;
 mod effect_annotations;

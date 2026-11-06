@@ -1,5 +1,9 @@
 # Blender middleware boundary (2026-11-01)
 
+> **2026-11-06 已被取代。** 本文的“GLB 归一化回退”不再是 `.blend` 导入路径。
+> `.blend` 导入现在只允许 SC5 Asset Editor 原生导出并只保存 LOTM；
+> 见 `docs/re/blender-native-export-migration-20261106.md`。
+
 ## Decision
 
 OpenSCP does not reimplement model or facade-texture composition. Blender is

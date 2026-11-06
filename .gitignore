@@ -56,3 +56,6 @@ __pycache__/
 
 # 0.8.0 反汇编工作区（PYZ 解包 + .dis 转储）
 /tmp_re/
+
+# SC5 Asset Editor 导出器（第三方资源，stage 后本地打包用；发布前确认再分发条款）
+/src-tauri/resources/blender/ny_facade/

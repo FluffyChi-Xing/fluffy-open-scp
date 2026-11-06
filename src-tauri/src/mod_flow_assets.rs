@@ -78,664 +78,65 @@ fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
     let cache_key = blend_cache_key(source)?;
     if let Some(mut cached) = read_blend_cache(root, &cache_key) {
         cached["cache"] = json!("hit");
+        crate::blend_native::trace::emit(
+            "cache_hit",
+            json!({
+                "asset": cached.get("asset").cloned().unwrap_or(Value::Null),
+                "source": cached.get("source").cloned().unwrap_or(Value::Null),
+            }),
+        );
         return Ok(cached);
     }
+    crate::blend_native::trace::emit(
+        "import_start",
+        json!({
+            "source": source.display().to_string(),
+            "blend_bytes": fs::metadata(source).map(|meta| meta.len()).unwrap_or(0),
+            "cache_key": cache_key,
+        }),
+    );
+    // A .blend import is a native LOTM conversion, never a GLB preview.
+    // Blender only reads the file (extract_blend.py); the export itself runs
+    // in Rust (blend_native::export).  Missing atlas data is an explicit
+    // error instead of silently producing a different asset.
+    let atlas = match blender_service::atlas_dir() {
+        Some(atlas) => atlas,
+        None => {
+            crate::blend_native::trace::emit("addon_missing", json!({}));
+            return Err(blender_service::MISSING_ADDON_HINT.to_string());
+        }
+    };
+    crate::blend_native::trace::emit(
+        "addon_found",
+        json!({ "path": atlas.display().to_string() }),
+    );
     let temp = root.join(".openscp-blend-import");
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
-    let mut native_adapter = json!({"status": "unavailable"});
-    if let Some(addon) = blender_service::addon_parent() {
-        match blender_service::export_native(&addon, source, &temp) {
-            Ok(native) => {
-                let result = import_native_bundle(root, native)?;
-                write_blend_cache(root, &cache_key, &result)?;
-                return Ok(result);
-            }
-            Err(blender_service::NativeExportError::UnsupportedB4(_)) => {
-                native_adapter = json!({"status": "unsupported-b4"});
-            }
-            Err(blender_service::NativeExportError::Failed(detail)) => {
-                native_adapter = json!({"status": "failed", "detail": detail});
-            }
-            Err(blender_service::NativeExportError::Unavailable(detail)) => {
-                native_adapter = json!({"status": "unavailable", "detail": detail});
-            }
+    let lotm_bytes = match blender_service::export_native_rust(&atlas, source, &temp) {
+        Ok(bytes) => {
+            crate::blend_native::trace::emit(
+                "native_ok",
+                json!({ "lotm_bytes": bytes.len() }),
+            );
+            bytes
         }
-    }
-    let out_glb = temp.join("model.glb");
-    let out_map = temp.join("slots.json");
-    let script = r#"import bpy, json, os, sys, struct
-src, out_glb, out_map, out_dir = sys.argv[-4:]
-bpy.ops.wm.open_mainfile(filepath=src)
-# Community blends (e.g. NY Facade) keep live six-slot engine node groups that
-# reference the slot atlases INSIDE the material graph. Legacy leftovers of the
-# same slot images elsewhere in the file must not disable evaluation, so the
-# decision is per material graph, not per file. Materials without six-slot
-# semantics that the glTF exporter cannot translate are baked to a final
-# color image instead; the source node graph stays the authority either way.
-def tree_images(tree, seen=None):
-    if not tree:
-        return []
-    seen = seen or set()
-    if tree.name in seen:
-        return []
-    seen.add(tree.name)
-    result = []
-    for node in tree.nodes:
-        if node.type == 'TEX_IMAGE' and node.image:
-            result.append(node.image)
-        elif node.type == 'GROUP' and node.node_tree:
-            result.extend(tree_images(node.node_tree, seen))
-    return result
-
-def image_haystack(image):
-    name = (image.name or '').lower()
-    path = os.path.basename(bpy.path.abspath(image.filepath) if image.filepath else '').lower()
-    return name + ' ' + path
-
-def material_slot_keys(mat):
-    keys = set()
-    for image in tree_images(mat.node_tree):
-        haystack = image_haystack(image)
-        for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
-            if key in haystack:
-                keys.add(key)
-    return keys
-
-def principled_of(tree):
-    return next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
-
-def is_six_slot_material(mat):
-    return {'slot1', 'slot4'} <= material_slot_keys(mat)
-
-def is_directly_exportable(mat):
-    # The glTF exporter translates a Principled BSDF whose base color is an
-    # unlinked value or a direct image texture; anything else needs a bake.
-    if not mat or not mat.use_nodes or not mat.node_tree:
-        return True
-    bsdf = principled_of(mat.node_tree)
-    output = next((n for n in mat.node_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
-    if not bsdf or not output or not output.inputs['Surface'].is_linked:
-        return False
-    if output.inputs['Surface'].links[0].from_node != bsdf:
-        return False
-    base = bsdf.inputs['Base Color']
-    if not base.is_linked:
-        return True
-    return base.links[0].from_node.type == 'TEX_IMAGE'
-
-mesh_objects = [
-    o for o in bpy.context.view_layer.objects
-    if o.type == 'MESH' and not o.get('ny_lot_regions') and not o.hide_render
-]
-# bpy.data.objects also lists orphan data-blocks that are linked into no
-# collection (zero-user leftovers after an artist unlinks a mesh). Those
-# objects are not part of the active view layer, and select_set/hide_set on
-# them raises RuntimeError — which killed the whole import for e.g.
-# tall_office.blend (Box001.002). The scene's own view layer is the authority
-# for what the file actually renders.
-if not mesh_objects:
-    raise RuntimeError('Blend file contains no renderable building mesh')
-bpy.ops.object.select_all(action='DESELECT')
-for o in mesh_objects:
-    o.hide_set(False)
-    o.select_set(True)
-bpy.context.view_layer.objects.active = mesh_objects[0]
-if len(mesh_objects) > 1:
-    bpy.ops.object.join()
-building = bpy.context.view_layer.objects.active
-bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-mesh_objects = [building]
-six_slot_materials = {
-    mat.name for mat in bpy.data.materials if is_six_slot_material(mat)
-}
-bake_materials = []
-seen_names = set()
-for obj in mesh_objects:
-    for mat in obj.data.materials:
-        if not mat or not mat.use_nodes or mat.name in seen_names:
-            continue
-        seen_names.add(mat.name)
-        if mat.name in six_slot_materials or is_directly_exportable(mat):
-            continue
-        bake_materials.append(mat)
-
-# --- UV domain normalization (six-slot path) ---------------------------
-# The refined shader reads the base facade domain from TEXCOORD_1 and the
-# Top/facade domain from TEXCOORD_3. The glTF exporter orders TEXCOORD_n by
-# the mesh's UV layer order, so move the two domain layers into place. The
-# domain layers are identified the same way the engine groups consume them:
-# UVMAP nodes feeding the group's base/top facade inputs (the official B4
-# pipeline names them UV Base / UV Top; community facade plugins name them
-# Base UV / Surface UV).
-def find_domain_layer_names():
-    base_name = None
-    surface_name = None
-    for obj in mesh_objects:
-        for mat in obj.data.materials:
-            if not mat or not mat.use_nodes or not mat.node_tree:
-                continue
-            for node in mat.node_tree.nodes:
-                if node.type != 'GROUP':
-                    continue
-                for inp in node.inputs:
-                    if not inp.is_linked:
-                        continue
-                    feed = inp.links[0].from_node
-                    if feed.type != 'UVMAP':
-                        continue
-                    if inp.name in ('Base UV', 'UV Base'):
-                        base_name = feed.uv_map
-                    elif inp.name in ('Surface UV', 'UV Top'):
-                        surface_name = feed.uv_map
-    return base_name or 'NY_UV', surface_name or 'NY_SurfaceUV'
-
-def has_mat_index(me):
-    """Game-probe exports carry a per-vertex material-column selector."""
-    attr = me.attributes.get('matIndex')
-    if attr is None or attr.domain != 'POINT':
-        return False
-    values = [0.0] * len(attr.data)
-    attr.data.foreach_get('value', values)
-    return min(values) != max(values)
-
-# Two export contracts (mirror blender_asset_pipeline/addon.py _contract_uv
-# and the workbench tint shader variants):
-# - native: the mesh has a matIndex attribute (game-probe/dsh exports). The
-#   GLB follows the game contract — TEXCOORD_1 = [matIndex, 0.5] selects the
-#   parameter column per vertex, TEXCOORD_2/3 = base/Top facade domains — so
-#   the workbench renders it through the game-verified native tint chain
-#   (uvKind 2).
-# - blender: plugin-authored blends without matIndex. TEXCOORD_1 = base
-#   domain, TEXCOORD_3 = Top domain, parameter column fixed at 0
-#   (TINT_BLENDER shader, uvKind 3).
-uv_contract = 'blender'
-
-if six_slot_materials:
-    try:
-        import numpy as np
-        base_name, surface_name = find_domain_layer_names()
-
-        def pick(names, name, candidates, fallback):
-            for candidate in (name, *candidates):
-                if candidate in names:
-                    return candidate
-            return fallback
-
-        use_native = all(has_mat_index(obj.data) for obj in mesh_objects)
-        uv_contract = 'native' if use_native else 'blender'
-
-        for obj in mesh_objects:
-            me = obj.data
-            names = [ul.name for ul in me.uv_layers]
-            if not names:
-                continue
-            base = pick(names, base_name, ('UVBase', 'NY_UV'), names[0])
-            surface = pick(names, surface_name, ('UVTop', 'NY_SurfaceUV'), names[-1])
-            loop_count = len(me.loops)
-            captured = {}
-            for ul in me.uv_layers:
-                buf = np.empty(loop_count * 2, dtype=np.float32)
-                ul.data.foreach_get('uv', buf)
-                captured[ul.name] = buf
-            for ul in list(me.uv_layers):
-                me.uv_layers.remove(ul)
-            if use_native:
-                attr = me.attributes.get('matIndex')
-                mat_values = [0.0] * len(attr.data)
-                attr.data.foreach_get('value', mat_values)
-                vertex_of = [0] * loop_count
-                me.loops.foreach_get('vertex_index', vertex_of)
-                base_buf = captured.get(base)
-                if base_buf is None:
-                    base_buf = np.zeros(loop_count * 2, dtype=np.float32)
-                layer = me.uv_layers.new(name='UV0')
-                layer.data.foreach_set('uv', base_buf)
-                layer = me.uv_layers.new(name='UV1')
-                mat_uv = np.empty(loop_count * 2, dtype=np.float32)
-                mat_uv[0::2] = np.array(
-                    [mat_values[vi] for vi in vertex_of], dtype=np.float32
-                )
-                mat_uv[1::2] = 0.5
-                layer.data.foreach_set('uv', mat_uv)
-                layer = me.uv_layers.new(name='UVBase')
-                if base in captured:
-                    layer.data.foreach_set('uv', captured[base])
-                layer = me.uv_layers.new(name='UVTop')
-                if surface in captured:
-                    layer.data.foreach_set('uv', captured[surface])
-            else:
-                # The workbench's Blender tint shader samples the base facade
-                # domain from TEXCOORD_1 and the facade/Top domain from
-                # TEXCOORD_3, so the exporter must emit at least four layers
-                # with base at 1 and top at 3. Two-layer blends (UVBase/UVTop
-                # only) are padded with extra base copies, otherwise the base
-                # domain lands on TEXCOORD_0/1 and every facade sample is
-                # wrong.
-                extras = [n for n in names if n not in (base, surface)]
-                order = [
-                    extras[0] if extras else base,
-                    base,
-                    extras[1] if len(extras) > 1 else base,
-                    surface,
-                ] + extras[2:]
-                for name in order:
-                    layer = me.uv_layers.new(name=name)
-                    if name in captured:
-                        layer.data.foreach_set('uv', captured[name])
-            me.update()
-    except Exception as error:
-        print('OpenSCP UV normalization skipped:', repr(error))
-        uv_contract = 'blender'
-
-# --- bake non-exportable materials (no six-slot semantics) --------------
-if bake_materials:
-    scene = bpy.context.scene
-    try:
-        scene.render.engine = 'CYCLES'
-        scene.cycles.samples = 1
-        scene.cycles.use_denoising = False
-        scene.cycles.device = 'CPU'
-        for mat in bake_materials:
-            tree = mat.node_tree
-            bsdf = principled_of(tree)
-            if not bsdf:
-                continue
-            bake = tree.nodes.get('__OpenSCP_Bake')
-            if not bake:
-                bake = tree.nodes.new('ShaderNodeTexImage')
-                bake.name = '__OpenSCP_Bake'
-            if not bake.image:
-                bake.image = bpy.data.images.new(
-                    '__OpenSCP_Bake_' + ''.join(ch if ch.isalnum() else '_' for ch in mat.name)[:60],
-                    width=2048, height=2048, alpha=True)
-            tree.nodes.active = bake
-            emission = bsdf.inputs.get('Emission Color') or bsdf.inputs.get('Emission')
-            base = bsdf.inputs['Base Color']
-            for link in list(emission.links):
-                tree.links.remove(link)
-            if base.is_linked:
-                tree.links.new(base.links[0].from_socket, emission)
-            else:
-                emission.default_value = tuple(base.default_value)
-        for obj in mesh_objects:
-            mats = list(obj.data.materials)
-            wanted = [(index, mat) for index, mat in enumerate(mats)
-                      if mat in bake_materials and
-                      '__OpenSCP_Bake' in (mat.node_tree.nodes if mat and mat.use_nodes else {})]
-            if not wanted:
-                continue
-            bpy.ops.object.select_all(action='DESELECT')
-            obj.select_set(True)
-            bpy.context.view_layer.objects.active = obj
-            for index, mat in wanted:
-                for poly in obj.data.polygons:
-                    poly.select = (poly.material_index == index)
-                bpy.ops.object.bake(type='EMIT', margin=8, use_clear=True)
-        for mat in bake_materials:
-            bake = mat.node_tree.nodes.get('__OpenSCP_Bake')
-            if not bake or not bake.image:
-                continue
-            image = bake.image
-            tree = mat.node_tree
-            tree.nodes.clear()
-            output = tree.nodes.new('ShaderNodeOutputMaterial')
-            bsdf = tree.nodes.new('ShaderNodeBsdfPrincipled')
-            tex = tree.nodes.new('ShaderNodeTexImage')
-            tex.image = image
-            tree.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
-            if 'Alpha' in tex.outputs and 'Alpha' in bsdf.inputs:
-                tree.links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
-            tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-            bsdf.inputs['Roughness'].default_value = 0.8
-            try:
-                mat.surface_render_method = 'DITHERED'
-            except Exception:
-                pass
-    except Exception as error:
-        # A blend may use a renderer that cannot bake in headless mode.
-        # Exporting the original graph is still useful, and the caller
-        # receives a valid GLB.
-        print('OpenSCP bake skipped:', repr(error))
-
-# --- throughput: capture six-slot bindings, then flatten graphs ---------
-# Two costs dominated external .blend import (tall_office.blend: 276
-# six-slot materials, 2145 faces): the glTF exporter walked every six-slot
-# node graph (~1336 s of a ~1350 s import) and slot extraction re-rendered
-# the same atlas once per material (1385 files for 21 unique images).
-#
-# Capture the bindings first, then replace each six-slot graph with a single
-# tint texture for export. Material names and mesh assignments are untouched:
-# they are the binding key the workbench uses (`materialSlotsByMaterial`),
-# so the extracted six-slot payload stays authoritative and the GLB is only
-# a coarse preview. Measured on tall_office.blend: export 1336 s -> 1 s,
-# slot extraction 10.6 s -> 0.7 s, byte-identical slot payload.
-def _walk_images(tree, seen=None):
-    if not tree:
-        return []
-    seen = seen if seen is not None else set()
-    if tree.name in seen:
-        return []
-    seen.add(tree.name)
-    result = []
-    for node in tree.nodes:
-        if node.type == 'TEX_IMAGE' and node.image:
-            result.append(node.image)
-        elif node.type == 'GROUP' and node.node_tree:
-            result.extend(_walk_images(node.node_tree, seen))
-    return result
-
-def _find_param_image(tree, seen=None):
-    if not tree:
-        return None
-    seen = seen if seen is not None else set()
-    if tree.name in seen:
-        return None
-    seen.add(tree.name)
-    for node in tree.nodes:
-        if node.type == 'TEX_IMAGE' and node.image and 'Parameters' in node.image.name:
-            return node.image
-        if node.type == 'GROUP':
-            found = _find_param_image(node.node_tree, seen)
-            if found:
-                return found
-    return None
-
-slot_sources = {}
-param_sources = {}
-palette_rows = {}
-for mat in bpy.data.materials:
-    if not mat.use_nodes or not mat.node_tree:
-        continue
-    per_mat = {}
-    for image in _walk_images(mat.node_tree):
-        haystack = image_haystack(image)
-        for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
-            if key in haystack and key not in per_mat:
-                per_mat[key] = image
-    if per_mat:
-        slot_sources[mat.name] = per_mat
-    parameter_image = _find_param_image(mat.node_tree)
-    if parameter_image:
-        palette_row = 0.0
-        for node in mat.node_tree.nodes:
-            if node.type == 'GROUP':
-                socket = node.inputs.get('Palette Row')
-                if socket and not socket.is_linked:
-                    try:
-                        palette_row = float(socket.default_value)
-                    except Exception:
-                        pass
-                    break
-        param_sources[mat.name] = parameter_image
-        palette_rows[mat.name] = palette_row
-
-# Flatten only graphs that were classified as six-slot: other materials were
-# already reduced to one baked image above, and non-node materials need no
-# work. The graph is dropped, not the material, so indices stay stable.
-for mat in bpy.data.materials:
-    if not mat.use_nodes or not mat.node_tree or mat.name not in six_slot_materials:
-        continue
-    tree = mat.node_tree
-    tint = None
-    for image in _walk_images(tree):
-        if 'slot1' in image_haystack(image):
-            tint = image
-            break
-    tree.nodes.clear()
-    output = tree.nodes.new('ShaderNodeOutputMaterial')
-    bsdf = tree.nodes.new('ShaderNodeBsdfPrincipled')
-    bsdf.inputs['Roughness'].default_value = 0.8
-    if tint is not None:
-        tex = tree.nodes.new('ShaderNodeTexImage')
-        tex.image = tint
-        tree.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
-        if 'Alpha' in tex.outputs and 'Alpha' in bsdf.inputs:
-            tree.links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
-    tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-    try:
-        mat.surface_render_method = 'DITHERED'
-    except Exception:
-        pass
-
-# --- GLB export (standard Y-up glTF convention) -------------------------
-bpy.ops.object.select_all(action='SELECT')
-exporter = getattr(getattr(bpy.ops, 'export_scene', None), 'gltf', None)
-fallback = getattr(getattr(bpy.ops, 'wm', None), 'gltf_export', None)
-if exporter is None and fallback is None:
-    raise RuntimeError('This Blender build does not provide a glTF exporter')
-try:
-    result = exporter(filepath=out_glb, export_format='GLB', use_selection=False, export_yup=True) if exporter else fallback(filepath=out_glb, export_format='GLB', use_selection=False, export_yup=True)
-except RuntimeError:
-    if fallback is None:
-        raise
-    result = fallback(filepath=out_glb, export_format='GLB', use_selection=False, export_yup=True)
-if 'FINISHED' not in result:
-    raise RuntimeError('The glTF exporter did not finish')
-
-def inject_up_axis(path):
-    # Declare the file's axis contract so the editor does not have to guess
-    # from bounds (a low, deep building would misdetect). export_yup=True
-    # guarantees a spec Y-up file regardless of the source objects' own
-    # rotations, so the declaration is always "y" for blend conversions.
-    try:
-        with open(path, 'rb') as f:
-            data = bytearray(f.read())
-        if len(data) < 20 or struct.unpack_from('<I', data, 0)[0] != 0x46546c67:
-            return
-        json_length = struct.unpack_from('<I', data, 12)[0]
-        doc = json.loads(bytes(data[20:20 + json_length]))
-        openscp = doc.setdefault('asset', {}).setdefault('extras', {}).setdefault('openscp', {})
-        if not isinstance(openscp, dict):
-            openscp = {}
-            doc['asset']['extras']['openscp'] = openscp
-        openscp.setdefault('upAxis', 'y')
-        openscp.setdefault('unit', 'meter')
-        openscp['source'] = 'blend'
-        payload = json.dumps(doc, separators=(',', ':')).encode('utf-8')
-        payload += b' ' * ((4 - (len(payload) % 4)) % 4)
-        bin_start = 20 + json_length
-        total = 12 + 8 + len(payload) + len(data[bin_start:])
-        struct.pack_into('<I', data, 8, total)
-        struct.pack_into('<I', data, 12, len(payload))
-        with open(path, 'wb') as f:
-            f.write(bytes(data[:20] + payload + data[bin_start:]))
-    except Exception as error:
-        print('OpenSCP extras injection skipped:', repr(error))
-
-inject_up_axis(out_glb)
-
-# --- slot extraction (crash-proof: partial results still land) ----------
-slots = {}
-material_slots = {}
-material_params = {}
-os.makedirs(out_dir, exist_ok=True)
-try:
-    for key in ('slot1', 'slot2', 'slot3', 'slot4', 'slot5'):
-        image = bpy.data.images.get(key + '.png')
-        if image:
-            path = os.path.join(out_dir, key + '.png')
-            try:
-                image.save_render(path)
-                slots[key] = path
-            except Exception:
-                pass
-    params = bpy.data.images.get('slot0_params.exr')
-    if params:
-        path = os.path.join(out_dir, 'params.json')
-        try:
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump({'width': params.size[0], 'values': [float(value) for value in params.pixels]}, f)
-            slots['params'] = path
-        except Exception:
-            pass
-
-    # Bindings were captured before flattening; each unique atlas image is
-    # rendered once and shared by every material that references it.
-    written_atlases = {}
-
-    def atlas_path(image):
-        atlas_key = (image.name, image.size[0], image.size[1])
-        if atlas_key in written_atlases:
-            return written_atlases[atlas_key]
-        safe_image = ''.join(ch if ch.isalnum() else '_' for ch in image.name)[:80]
-        if not safe_image:
-            safe_image = 'atlas'
-        path = os.path.join(out_dir, safe_image + '.png')
-        try:
-            image.save_render(path)
-        except Exception:
-            return None
-        written_atlases[atlas_key] = path
-        return path
-
-    for mat in bpy.data.materials:
-        if not mat.use_nodes:
-            continue
-        parameter_image = param_sources.get(mat.name)
-        if parameter_image:
-            try:
-                material_params[mat.name] = {
-                    'width': int(parameter_image.size[0]),
-                    'values': [float(value) for value in parameter_image.pixels],
-                    'paletteRow': palette_rows.get(mat.name, 0.0),
-                }
-            except Exception:
-                pass
-        per_mat = {}
-        for key, image in (slot_sources.get(mat.name) or {}).items():
-            path = atlas_path(image)
-            if path:
-                per_mat[key] = path
-        if per_mat:
-            material_slots[mat.name] = per_mat
-    print('OpenSCP atlases written once each:', len(written_atlases))
-except Exception as error:
-    print('OpenSCP slot extraction partial:', repr(error))
-finally:
-    try:
-        material_params_path = os.path.join(out_dir, 'material_params.json')
-        with open(material_params_path, 'w', encoding='utf-8') as f:
-            json.dump(material_params, f)
-        slots['materialParams'] = material_params_path
-    except Exception:
-        pass
-    slots['materialSlotsByMaterial'] = material_slots
-    slots['uvContract'] = uv_contract
-    with open(out_map, 'w', encoding='utf-8') as f:
-        json.dump(slots, f)
-"#;
-    let script_path = temp.join("import.py");
-    fs::write(&script_path, script).map_err(|e| e.to_string())?;
-    let output = blender_service::run_script(
-        &script_path,
-        &[
-            blender_service::path_arg(source),
-            blender_service::path_arg(&out_glb),
-            blender_service::path_arg(&out_map),
-            blender_service::path_arg(&temp),
-        ],
-    )?;
-    // Some Blender builds return a non-zero code after writing a valid GLB
-    // (for example when an optional image codec warns). The artifact is the
-    // authoritative result; only fail when it was not created. Blender also
-    // exits 0 in background mode after an uncaught script exception, so the
-    // stderr tail is the only diagnostic for a missing artifact.
-    if !out_glb.is_file() {
-        let tail = blender_service::stderr_tail(&output, 12);
-        let _ = fs::remove_dir_all(&temp);
-        if tail.is_empty() {
-            return Err("Blender could not export this file".into());
+        Err(detail) => {
+            crate::blend_native::trace::emit(
+                "native_failed",
+                json!({ "kind": "native-rust", "detail": detail }),
+            );
+            return Err(format!("原生导出失败：{detail}"));
         }
-        return Err(format!("Blender could not export this file: {tail}"));
-    }
-    let bytes = fs::read(&out_glb).map_err(|e| e.to_string())?;
-    let relative = format!("assets/models/{}.glb", digest(&bytes));
-    let target = safe_path(root, &relative)?;
-    fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
-    crate::atomic_fs::write_atomic(&target, &bytes, false).map_err(|e| e.to_string())?;
-    let raw_slots: Value = fs::read_to_string(&out_map)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| json!({}));
-    let mut slots = serde_json::Map::new();
-    if let Some(object) = raw_slots.as_object() {
-        for (key, value) in object {
-            if key == "materialSlotsByMaterial" {
-                let mut by_material = serde_json::Map::new();
-                if let Some(materials) = value.as_object() {
-                    for (material_name, material_value) in materials {
-                        let mut copied = serde_json::Map::new();
-                        if let Some(material_object) = material_value.as_object() {
-                            for (slot, slot_path) in material_object {
-                                let Some(path) = slot_path.as_str() else {
-                                    continue;
-                                };
-                                let Ok(image_bytes) = fs::read(path) else {
-                                    continue;
-                                };
-                                let ext = Path::new(path)
-                                    .extension()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("png")
-                                    .to_ascii_lowercase();
-                                let image_relative =
-                                    format!("assets/textures/{}.{}", digest(&image_bytes), ext);
-                                let image_target = safe_path(root, &image_relative)?;
-                                fs::create_dir_all(image_target.parent().unwrap())
-                                    .map_err(|e| e.to_string())?;
-                                if !image_target.exists() {
-                                    crate::atomic_fs::write_atomic(
-                                        &image_target,
-                                        &image_bytes,
-                                        false,
-                                    )
-                                    .map_err(|e| e.to_string())?;
-                                }
-                                copied.insert(slot.clone(), json!(image_relative));
-                            }
-                        }
-                        if !copied.is_empty() {
-                            by_material.insert(material_name.clone(), Value::Object(copied));
-                        }
-                    }
-                }
-                slots.insert(key.clone(), Value::Object(by_material));
-                continue;
-            }
-            let Some(path) = value.as_str() else { continue };
-            let Ok(image_bytes) = fs::read(path) else {
-                continue;
-            };
-            let ext = Path::new(path)
-                .extension()
-                .and_then(|x| x.to_str())
-                .unwrap_or("png")
-                .to_ascii_lowercase();
-            let image_relative = format!("assets/textures/{}.{}", digest(&image_bytes), ext);
-            let image_target = safe_path(root, &image_relative)?;
-            fs::create_dir_all(image_target.parent().unwrap()).map_err(|e| e.to_string())?;
-            if !image_target.exists() {
-                crate::atomic_fs::write_atomic(&image_target, &image_bytes, false)
-                    .map_err(|e| e.to_string())?;
-            }
-            slots.insert(key.clone(), json!(image_relative));
-        }
-    }
+    };
+    let result = import_native_bundle(root, lotm_bytes)?;
     let _ = fs::remove_dir_all(&temp);
-    let result = json!({
-        "asset": relative,
-        "materialSlots": slots,
-        "source": "blend",
-        "nativeAdapter": native_adapter
-    });
     write_blend_cache(root, &cache_key, &result)?;
     Ok(result)
 }
 
-// 2026-11-06.1：导入脚本 UV 契约重做（native/blender 双契约 + 域层布局
-// 修复，0449a96/d293893），旧缓存里是修复前的错误 GLB/slots，键换版本
-// 强制全量重新导入。
-const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-06.1";
+// 2026-11-06.3：.blend 导入切换到原生 Rust 管线（extract_blend.py 仅读取
+// 数据，blend_native::export 产出 LOTM）；缓存键换版本强制重新导入。
+const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-06.3";
 
 fn blend_cache_key(source: &Path) -> Result<String, String> {
     let bytes = fs::read(source).map_err(|error| error.to_string())?;
@@ -764,28 +165,48 @@ fn write_blend_cache(root: &Path, key: &str, result: &Value) -> Result<(), Strin
         .map_err(|error| error.to_string())
 }
 
-/// Persist the plug-in's native GLB/LOTM pair.  The workbench previews the GLB;
-/// the native LOTM is the package input, so no Rust texture composition runs.
-fn import_native_bundle(
-    root: &Path,
-    native: blender_service::NativeExport,
-) -> Result<Value, String> {
-    let glb_bytes = fs::read(&native.glb).map_err(|e| e.to_string())?;
-    let lotm_bytes = fs::read(&native.lotm).map_err(|e| e.to_string())?;
-    let glb_relative = format!("assets/models/{}.glb", digest(&glb_bytes));
+/// Persist the plug-in's LOTM as the project model.  The exporter also writes
+/// a GLB preview next to it; the project stores only the LOTM so every
+/// imported building uses the same container format as the game assets.
+fn import_native_bundle(root: &Path, lotm_bytes: Vec<u8>) -> Result<Value, String> {
+    let lotm_bytes = lotm_bytes;
+    let document = crate::asset_build_m1::lotm::parse(&lotm_bytes).map_err(|error| {
+        crate::blend_native::trace::emit(
+            "lotm_invalid",
+            json!({ "bytes": lotm_bytes.len(), "detail": error }),
+        );
+        format!("导出器产出的 LOTM 无效：{error}")
+    })?;
     let lotm_relative = format!("assets/models/{}.lotm", digest(&lotm_bytes));
-    for (relative, bytes) in [(&glb_relative, &glb_bytes), (&lotm_relative, &lotm_bytes)] {
-        let target = safe_path(root, relative)?;
-        fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
-        if !target.exists() {
-            crate::atomic_fs::write_atomic(&target, bytes, false).map_err(|e| e.to_string())?;
-        }
+    let target = safe_path(root, &lotm_relative)?;
+    fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+    if !target.exists() {
+        crate::atomic_fs::write_atomic(&target, &lotm_bytes, false)
+            .map_err(|e| e.to_string())?;
     }
+    let mut uv_kinds: Vec<u8> = document
+        .mesh_material
+        .iter()
+        .map(|item| item.uv_kind)
+        .collect();
+    uv_kinds.sort_unstable();
+    uv_kinds.dedup();
+    crate::blend_native::trace::emit(
+        "lotm_persisted",
+        json!({
+            "asset": lotm_relative,
+            "bytes": lotm_bytes.len(),
+            "sha256": digest(&lotm_bytes),
+            "meshes": document.meshes.len(),
+            "materials": document.materials.len(),
+            "uv_kinds": uv_kinds,
+        }),
+    );
     Ok(json!({
-        "asset": glb_relative,
+        "asset": lotm_relative,
         "lotm": lotm_relative,
         "source": "blend-native",
-        "nativeAdapter": {"status": "native"}
+        "nativeAdapter": {"status": "native-rust"}
     }))
 }
 
@@ -939,5 +360,54 @@ mod raster_draft_tests {
         );
         schema.config["document"] = json!("");
         assert!(validate(Path::new("."), &schema).is_none());
+    }
+}
+
+#[cfg(test)]
+mod native_import_tests {
+    use super::*;
+
+    /// Manual end-to-end check of the .blend → LOTM path.  Requires Blender
+    /// and the SC5 Asset Editor exporter:
+    ///
+    /// ```text
+    /// OPENSCP_BLENDER_ADDON=<dir containing ny_facade> \
+    /// OPENSCP_TEST_BLEND=<file.blend> \
+    /// cargo test -p fluffy-open-scp native_blend_import_writes_lotm_only -- --ignored
+    /// ```
+    #[test]
+    #[ignore = "requires Blender and the SC5 Asset Editor exporter"]
+    fn native_blend_import_writes_lotm_only() {
+        let source = std::env::var("OPENSCP_TEST_BLEND")
+            .expect("set OPENSCP_TEST_BLEND to a .blend file");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!(
+                "native-import-test-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+        fs::create_dir_all(&root).unwrap();
+        let result = import(&root, &json!({ "path": source })).expect("native import");
+        let asset = result["asset"].as_str().expect("asset");
+        assert!(asset.ends_with(".lotm"), "asset must be LOTM: {asset}");
+        assert_eq!(result["source"], "blend-native");
+        assert_eq!(result["nativeAdapter"]["status"], "native-rust");
+        let bytes = fs::read(root.join(asset)).unwrap();
+        crate::asset_build_m1::lotm::parse(&bytes).expect("valid LOTM container");
+        // Byte hashes intentionally not compared: the native pipeline's PNG
+        // compression level differs from the plug-in's zlib-6.  Structure is
+        // verified above; visual parity is covered by tmp/final samples.
+        let models = fs::read_dir(root.join("assets/models")).unwrap();
+        assert!(
+            models
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().ends_with(".glb")),
+            "the project must not contain a GLB model"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 }

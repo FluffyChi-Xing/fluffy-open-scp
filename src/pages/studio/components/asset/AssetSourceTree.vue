@@ -57,6 +57,17 @@ function importErrorToast(cause: unknown) {
     toast.error(t("studio.assetWorkbench.blendUnavailable"));
   } else if (message.includes("blender could not export")) {
     toast.error(t("studio.assetWorkbench.blendExportFailed"));
+  } else if (
+    message.includes("ny_facade") ||
+    message.includes("openscp_blender_addon")
+  ) {
+    toast.error(t("studio.assetWorkbench.blendAddonMissing"));
+  } else if (
+    message.includes("asset editor 导出失败") ||
+    message.includes("lotm 无效") ||
+    message.includes("blender/asset editor")
+  ) {
+    toast.error(t("studio.assetWorkbench.blendNativeFailed"));
   } else {
     toast.error(t("studio.assetWorkbench.importFailed"));
   }
@@ -179,7 +190,14 @@ async function importFile() {
     const lower = value.asset.toLowerCase();
     if (value.source === "blend" || value.source === "blend-native")
       emit("blend-imported", value);
-    if (value.source !== "blend" && MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+    // `blend-native` already opens the produced .lotm through the
+    // blend-imported handler; emitting open-asset as well would reload the
+    // same file twice and reset the session.
+    if (
+      value.source !== "blend" &&
+      value.source !== "blend-native" &&
+      MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))
+    ) {
       emit("open-asset", value.asset);
     }
     emit("imported");
