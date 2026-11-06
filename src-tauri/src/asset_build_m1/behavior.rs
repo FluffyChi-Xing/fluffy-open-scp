@@ -76,6 +76,15 @@ pub struct BehaviorSpec {
     /// Bundle-enable union additions (default: the education signature bundle).
     #[serde(default, deserialize_with = "super::menu::de_hash_vec")]
     pub ensure_bundles: Vec<u32>,
+    /// Bundles to REMOVE from the enable union (all four rows).  Identity
+    /// swaps need this: the community-college signature bundle is 6C042366,
+    /// the grade-school one 6C042367 must come off or both sink sets attach.
+    #[serde(default, deserialize_with = "super::menu::de_hash_vec")]
+    pub remove_bundles: Vec<u32>,
+    /// Unit leaf fields to remove entirely (e.g. the seat-capacity UI value
+    /// 0x0AD7FAC9, which vanilla colleges do not carry).
+    #[serde(default, deserialize_with = "super::menu::de_hash_vec")]
+    pub remove_fields: Vec<u32>,
     /// Lot board instance; defaults to the education board.
     #[serde(default, deserialize_with = "super::menu::de_hash")]
     pub lot_board_instance: Option<u32>,
@@ -687,6 +696,45 @@ fn patch_unit(
         "value": format!("{category:08X}"),
     }));
 
+    // Identity swap removals run FIRST: drop whole leaf fields and pull the
+    // named bundles out of all four enable rows before anything is added.
+    if !spec.remove_fields.is_empty() {
+        let removed: Vec<String> = spec
+            .remove_fields
+            .iter()
+            .map(|hash| format!("{hash:08X}"))
+            .collect();
+        unit.values
+            .retain(|property| !spec.remove_fields.contains(&property.hash));
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "field": "remove-fields",
+            "value": removed,
+        }));
+    }
+    for bundle in &spec.remove_bundles {
+        let mut removed_from = Vec::new();
+        for hash in [HASH_BUNDLE_ENABLE_A2, 0x0A02_09A3, 0x0A02_09A4, HASH_BUNDLE_ENABLE_A5] {
+            if let Some(property) = unit.values.iter_mut().find(|p| p.hash == hash) {
+                if let Kind::Array(values) = &mut property.kind {
+                    let before = values.len();
+                    values.retain(|v| !matches!(v, Value::Key(k) if k.instance == *bundle));
+                    if values.len() != before {
+                        removed_from.push(format!("{hash:08X}"));
+                    }
+                }
+            }
+        }
+        if !removed_from.is_empty() {
+            changed.push(serde_json::json!({
+                "resource": unit_id.to_string(),
+                "field": "remove-bundles",
+                "value": format!("{bundle:08X}"),
+                "rows": removed_from,
+            }));
+        }
+    }
+
     // Bundle-enable union: add the signature education bundle without touching
     // the donor's existing entries (E7690450 park trees stay = frozen look).
     for bundle in spec.bundles() {
@@ -917,6 +965,22 @@ fn ensure_education_invariants(
             "invariant EDUCATION_BUNDLE violated: signature bundle missing from the enable union"
                 .into(),
         );
+    }
+    // Removed bundles must be gone from every row, or both sink sets attach.
+    for bundle in &spec.remove_bundles {
+        if bundle_enabled(*bundle) {
+            return Err(format!(
+                "invariant BUNDLE_REMOVAL violated: {bundle:08X} still enabled after removal"
+            ));
+        }
+    }
+    // Removed leaf fields must not survive the swap.
+    for hash in &spec.remove_fields {
+        if unit.get(*hash).is_some() {
+            return Err(format!(
+                "invariant FIELD_REMOVAL violated: {hash:08X} still present after removal"
+            ));
+        }
     }
     // The donor tree bundle must survive: losing it loses the frozen look.
     if !bundle_enabled(DONOR_TREE_BUNDLE) {
