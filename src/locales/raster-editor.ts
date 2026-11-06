@@ -6,6 +6,7 @@ export const rasterZh = {
   multiPointHint: "单击添加点，双击或 Enter 完成，Esc 取消",
   curveHint: "拖出起止点，移动鼠标调整弧度，单击完成",
   dataRgb: "RGB 数据（不透明显示）",
+  lotMaskPreview: "Lot 材质层编码（诊断）",
   dataAlpha: "A 通道数据（灰度）",
   channelStrength: "A / 覆盖强度",
   channelValue: "{channel} 通道数值",
@@ -80,6 +81,7 @@ export const rasterZh = {
   ],
   lotGuide:
     "把地面当成四种可叠加的材质来画：先在右侧给每种材质设置颜色和图案，再选择一种材质，用画笔、矩形或油漆桶铺到地面上。擦除会恢复到底层地面；油漆桶只填充当前封闭区域。保存和导出会自动处理游戏需要的 Lot 遮罩与通道，3D 预览显示最终效果。",
+  lotSemanticNote: "Lot 模式由材质层驱动画布；RGB/A 是内部存储通道，不需要手动编辑。",
 
   buildUnsupported:
     "Raster 编辑 Schema 已保存；材质 Raster/RW4 编译尚未接入，无法构建含此草稿的流程。",
@@ -287,6 +289,7 @@ export const rasterEn = {
   multiPointHint: "Click to add points; double-click or Enter to finish; Esc to cancel",
   curveHint: "Drag between endpoints, move to bend, then click to finish",
   dataRgb: "RGB data (opaque display)",
+  lotMaskPreview: "Lot material-layer encoding (diagnostic)",
   dataAlpha: "A channel data (grayscale)",
   channelStrength: "A / coverage strength",
   channelValue: "{channel} channel value",
@@ -364,6 +367,7 @@ export const rasterEn = {
   ],
   lotGuide:
     "Think of the ground as four paintable materials. Set each material's color and pattern on the right, select one, then use the brush, rectangle, or fill tool. Erasing reveals the base ground; fill stays inside the clicked closed region. Saving and export handle the Lot mask channels automatically, and the 3D preview shows the final result.",
+  lotSemanticNote: "Lot mode paints material layers; RGB/A are internal storage channels and do not need manual editing.",
 
   buildUnsupported:
     "Raster editing schema is saved. Raster/RW4 material compilation is not connected yet; workflows containing this draft cannot be built.",

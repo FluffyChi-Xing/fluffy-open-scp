@@ -129,6 +129,8 @@ pub enum LotUnit {
         length: Option<f32>,
         cull_distance: Option<&'static str>,
         is_volumetric: Option<bool>,
+        /// 体积光强度（0x0EC4567E）；None = 引擎/编辑器默认 1。
+        volumetric_strength: Option<f32>,
         debug_name: Option<String>,
         fields: Vec<UnitField>,
     },
@@ -438,6 +440,7 @@ fn assemble_lights(file: &PropertyFile, out: &mut LotUnits) {
             length: unit_float(file, LIGHT_LENGTHS, index),
             cull_distance,
             is_volumetric: unit_bool(file, LIGHT_IS_VOLUMETRIC, index),
+            volumetric_strength: unit_float(file, LIGHT_VOL_STRENGTHS, index),
             debug_name,
             fields: collect_fields(file, &LIGHT_COLUMN_HASHES, index),
         });

@@ -6,7 +6,7 @@ import { matchesDecalProfile } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
 import LotPatternGrid from "./LotPatternGrid.vue";
 import { Switch } from "@/components/ui/switch";
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import type { DecalEntryMeta, PropertyDocumentSummary, Tgi } from "@/api/tauri";
@@ -15,8 +15,10 @@ import type {
   RasterSchema,
   RasterSource,
 } from "@/lib/raster-editor/schema";
+import { LOT_PAINT_CHANNELS } from "@/lib/raster-editor/lotPaint";
 const props = defineProps<{ profile: RasterProfile; disabled?: boolean }>();
 const lot = defineModel<RasterSchema["lot"]>("lot", { required: true });
+const layer = defineModel<number>("layer", { default: 0 });
 const decal = defineModel<RasterSchema["decal"]>("decal", { required: true });
 const sampling = defineModel<RasterSchema["sampling"]>("sampling", {
   required: true,
@@ -35,7 +37,20 @@ const entries = ref<DecalEntryMeta[]>([]),
   selectedEntry = ref<number | null>(null);
 const isDecal = computed(() => props.profile.startsWith("decal-"));
 const activeMaterial = ref(0);
-const activeColor = computed(() => lot.value.colors[activeMaterial.value] ?? lot.value.colors[0]);
+watch(activeMaterial, (value) => { layer.value = value; });
+watch(layer, (value) => { activeMaterial.value = Math.max(0, Math.min(3, value)); });
+const lotAtlasPng = ref<string | null>(null);
+const activeChannel = computed(() => LOT_PAINT_CHANNELS[activeMaterial.value] ?? 3);
+const activeColor = computed(() => lot.value.colors[activeChannel.value] ?? lot.value.colors[0]);
+async function loadLotAtlas() {
+  if (!isTauri() || typeof tauriApi.raster.readLotPreviewAtlases !== "function") return;
+  try {
+    lotAtlasPng.value = (await tauriApi.raster.readLotPreviewAtlases())?.lotSurfacePng ?? null;
+  } catch {
+    lotAtlasPng.value = null;
+  }
+}
+onMounted(loadLotAtlas);
 let generation = 0;
 const key = (id: number, tgi: Tgi) => `${id}:${tgi.group}:${tgi.instance}`;
 const documentQuery = ref(""),
@@ -166,11 +181,12 @@ function setLotColor(i: number, hex: string) {
   const colors = lot.value.colors.map(
     (c) => [...c] as [number, number, number, number],
   );
-  colors[i] = [
+  const channel = LOT_PAINT_CHANNELS[i] ?? 3;
+  colors[channel] = [
     parseInt(hex.slice(1, 3), 16),
     parseInt(hex.slice(3, 5), 16),
     parseInt(hex.slice(5, 7), 16),
-    colors[i][3],
+    colors[channel][3],
   ];
   lot.value = { ...lot.value, colors };
   emit("changed");
@@ -179,7 +195,8 @@ function setTile(i: number, tile: number) {
   const colors = lot.value.colors.map(
     (c) => [...c] as [number, number, number, number],
   );
-  colors[i][3] = tile;
+  const channel = LOT_PAINT_CHANNELS[i] ?? 3;
+  colors[channel][3] = tile;
   lot.value = { ...lot.value, colors };
   emit("changed");
 }
@@ -226,6 +243,7 @@ function setBaseTile(tile: number) {
           </label>
           <LotPatternGrid
             :model-value="activeColor[3]"
+            :atlas-png="lotAtlasPng"
             :disabled="!!lot.target"
             @update:model-value="setTile(activeMaterial, $event)"
           />
@@ -234,6 +252,7 @@ function setBaseTile(tile: number) {
           <summary>{{ t("rasterEditor.basePattern") }}</summary>
           <LotPatternGrid
             :model-value="lot.baseTile ?? 8"
+            :atlas-png="lotAtlasPng"
             :disabled="!!lot.target"
             @update:model-value="setBaseTile"
           />

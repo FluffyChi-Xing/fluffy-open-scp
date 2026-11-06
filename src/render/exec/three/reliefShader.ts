@@ -70,24 +70,45 @@ vec2 scReliefUv(vec2 src, vec3 eye, sampler2D heightMap, vec4 region, vec2 dx, v
 }
 vec3 scReliefEyeDir() {
   // Derive the relief frame from the **Top/facade UV derivatives**, not from
-  // the glTF TANGENT (which is authored for the base UV). Mirrored window
-  // islands and per-triangle UV orientation then stay consistent; using the
-  // base-UV tangent made some windows pop inward and others outward on the
-  // same wall. V axis = cross(N, dP/du), matching dP/dv.
+  // the glTF TANGENT (which is authored for the base UV): the same wall can
+  // mix several Top-UV islands with different orientation.
   vec3 posV = -vViewPosition;
   vec3 dpx = dFdx(posV);
   vec3 dpy = dFdy(posV);
   vec2 dux = dFdx(vTopUv);
   vec2 duy = dFdy(vTopUv);
+  // det < 0 = the Top-UV island is mirrored (U or V). This sign is part of
+  // the parameterisation and MUST reach the V axis; otherwise mirrored
+  // window columns pop out while their neighbours pop in.
   float det = dux.x * duy.y - duy.x * dux.y;
+  vec3 eyeV = normalize(vViewPosition);
+
+  // Anchor the relief depth axis to the rasterized face: cross(dPdx, dPdy)
+  // always points toward the camera for a visible fragment. This normalises
+  // flipped imported normals AND DoubleSide back faces to one side, so ds.z
+  // never changes sign (a negative ds.z inverts the whole relief).
+  // An extra front-facing flip here used to cancel this alignment on back
+  // faces, making the relief direction depend on which side was visible.
   vec3 normalV = normalize(vReliefNormal);
-#ifdef DOUBLE_SIDED
-  if (!gl_FrontFacing) normalV = -normalV;
-#endif
+  vec3 geomCross = cross(dpx, dpy);
+  float geomLen = length(geomCross);
+  if (geomLen > 1e-8) {
+    vec3 geometryNormal = geomCross / geomLen;
+    if (dot(normalV, geometryNormal) < 0.0) normalV = -normalV;
+  } else if (dot(normalV, eyeV) < 0.0) {
+    normalV = -normalV;
+  }
+
   if (abs(det) < 1e-6) return vec3(0.0, 0.0, 1.0);
   vec3 tangentU = normalize((dpx * duy.y - dpy * dux.y) / det);
-  vec3 tangentV = normalize(cross(normalV, tangentU));
-  vec3 eyeV = normalize(vViewPosition);
+  // Keep the frame orthonormal like building4 (exported T/N are orthonormal);
+  // guard the degenerate case so a bad normal cannot produce NaN.
+  vec3 tangentOrtho = tangentU - normalV * dot(tangentU, normalV);
+  if (length(tangentOrtho) > 1e-6) tangentU = normalize(tangentOrtho);
+  // dP/dv = cross(N, dP/du) for det > 0, and its negation for a mirrored
+  // island. The game gets this handedness from the exported tangent; we have
+  // to take it from the UV determinant (same formula as the interior frame).
+  vec3 tangentV = cross(normalV, tangentU) * (det < 0.0 ? -1.0 : 1.0);
   return normalize(vec3(dot(eyeV, tangentU), dot(eyeV, tangentV), dot(eyeV, normalV)));
 }
 `;

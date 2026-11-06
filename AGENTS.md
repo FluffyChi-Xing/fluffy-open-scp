@@ -37,4 +37,54 @@ clean the previous test packages out of the game's SimCityData directory
 game install is `D:/ea-games/simcity_offline/SimCity：Cites of Tomorrow/` —
 not `D:/ea-games/SimCity`.
 
+## Test-package reference & archive discipline (user directive, 2026-11-06, 死命令)
+These rules exist because the working baseline (s14, confirmed by the user
+in-game on 2026-11-06) was buried among broken iterations, the wrong s17
+(staging build, itself broken) was used as the comparison reference for an
+entire investigation, and the mistake was only discovered by the user. Violations of this section are treated as build regressions.
 
+1. **参照必先验哈希。** Before comparing a deployed/tested package against
+   any build artifact or doc dump, run SHA-256 on BOTH files. A staging
+   `.build` artifact and the package actually deployed in SimCityData are
+   different files by default; never assume they match.
+2. **known-working 包是 GOLDEN 基线。** A package the user confirms working
+   in-game must be marked `GOLDEN-known-working` in
+   `test-archive/MANIFEST.md` at archive time. GOLDEN packages are never
+   overwritten, never same-TGI rewritten, never silently mixed with broken
+   iterations. Before any in-game comparison, confirm the GOLDEN's hash.
+3. **归档/部署必须登记台账。** Every archive/deploy appends to
+   `test-archive/MANIFEST.md` (filename, SHA-256, date, working/broken,
+   reason). Use `scripts/archive_test_package.py archive|deploy|status` —
+   manual `mv`/`cp` without a manifest entry is a process violation.
+4. **行为等价 ≠ 数据等价。** Proven in the s17/s21 case: identical property
+   columns but different in-game behavior (save-state restored vs freshly
+   placed). Never report "等价" beyond the layer actually compared; name the
+   layer (property data / package bytes / runtime behavior) in every claim.
+5. **诊断顺序固定**：build ledger → MANIFEST/哈希核对参照身份 → 字节对拍
+   (last resort). Byte-diffing before confirming the reference identity is
+   how an hour gets wasted on the wrong package.
+
+
+
+
+## Save-city isolation (user directive, 2026-11-06, 死命令补充)
+1. NEVER change the test-package set (add/remove/replace ANY 000_*.package in
+   SimCityData) while a save containing healthy test buildings exists — unit
+   entry indices shift on every package-set change and the save's unit
+   bindings corrupt (all placed test buildings break on reload). New packages
+   are tested in DISPOSABLE cities only (new/另存为 city), never in a city
+   that holds a working sample.
+2. Before ANY experiment session: back up `Documents/SimCity/Games/` (the
+   real save root) — e.g. `Games-backup-<ts>/`. Saves are EGB snapshots
+   under `Games/<regionId>/<slot>/<subdir>/state_file_<tick>_<ts>.egb`.
+3. `SimCityUserData/GraphicsCache.package` is a persistent cross-session
+   cache; if rendered output is broken while package data is verified
+   correct, quarantine it (rename .bak) to force a rebuild before touching
+   anything else.
+
+## Menu-load oracle (user directive, 2026-11-06)
+A known-good package loads the main menu instantly. Any broken package makes
+the menu hang for a long time. Verification order for a rebuilt package is
+therefore: deploy → cold-start → measure menu load — a hanging menu means the
+package is broken; do NOT enter a city, do NOT place buildings, do NOT save.
+This is the cheap acceptance test that avoids save pollution entirely.

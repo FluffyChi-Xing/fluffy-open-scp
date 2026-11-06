@@ -199,6 +199,20 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
         .and_then(Json::as_array)
     {
         for path in paths {
+            let scope = match path.get("scope") {
+                None | Some(Json::Null) => "local",
+                Some(Json::String(scope)) => match scope.as_str() {
+                    "local" | "global" => scope.as_str(),
+                    other => {
+                        return Err(format!(
+                            "path scope must be \"local\" or \"global\", got {other:?}"
+                        ))
+                    }
+                },
+                Some(other) => {
+                    return Err(format!("path scope must be a string, got {other:?}"))
+                }
+            };
             document.paths.push(ScenePath {
                 entry: path.get("entry").and_then(Json::as_str).map(str::to_string),
                 point_ids: path
@@ -212,11 +226,7 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
                             .collect()
                     })
                     .unwrap_or_default(),
-                scope_local: path
-                    .get("scope")
-                    .and_then(Json::as_str)
-                    .map(|scope| scope == "local")
-                    .unwrap_or(true),
+                scope_local: scope == "local",
                 road_connect: path
                     .get("roadConnect")
                     .and_then(Json::as_bool)
@@ -877,48 +887,34 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             entries,
         ));
     }
-    // Scope + road-connect keys, one per path (vanilla encodings verified by
-    // a Game.package-wide column scan; see native_profile PATH_* constants).
+    // Scope + road-connect keys, one per path — per-path engine enums
+    // (SC::tPathScope / SC::tRoadConnect, PDB 值见 native_profile 常量)：
+    // 原版小学三组 = [Global+First, Local+None, Local+None]；connect 列恒写。
     if !document.paths.is_empty() {
         let mut scopes = Vec::with_capacity(document.paths.len());
+        let mut connects = Vec::with_capacity(document.paths.len());
         for path in &document.paths {
-            // Only "local" is evidenced so far; non-local scope stays
-            // unsupported rather than guessed.
-            if !path.scope_local {
-                return Err(
-                    "non-local path scope has no verified vanilla encoding".into(),
-                );
-            }
             scopes.push(Value::Key(Key {
                 type_id: 0,
                 group: 0,
-                instance: super::native_profile::PATH_SCOPE_LOCAL,
+                instance: if path.scope_local {
+                    super::native_profile::PATH_SCOPE_LOCAL
+                } else {
+                    super::native_profile::PATH_SCOPE_GLOBAL
+                },
+            }));
+            connects.push(Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: if path.road_connect {
+                    super::native_profile::PATH_ROAD_CONNECT_FIRST
+                } else {
+                    super::native_profile::PATH_ROAD_CONNECT_NONE
+                },
             }));
         }
         columns.push(array_property(0x0D9A_4E54, PropType::Key, scopes));
-        let connect_all = document.paths.iter().all(|path| path.road_connect);
-        let connect_any = document.paths.iter().any(|path| path.road_connect);
-        if connect_any && !connect_all {
-            return Err(
-                "mixed roadConnect across paths needs the engine's none-encoding, \
-                 which no vanilla asset dict carries"
-                    .into(),
-            );
-        }
-        if connect_any {
-            columns.push(array_property(
-                0x0D9A_A2BB,
-                PropType::Key,
-                vec![
-                    Value::Key(Key {
-                        type_id: 0,
-                        group: 0,
-                        instance: super::native_profile::PATH_ROAD_CONNECT_YES,
-                    });
-                    document.paths.len()
-                ],
-            ));
-        }
+        columns.push(array_property(0x0D9A_A2BB, PropType::Key, connects));
     }
 
     file.values.extend(columns);

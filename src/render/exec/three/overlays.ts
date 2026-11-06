@@ -15,6 +15,7 @@ import type {
 } from "@/api/tauri";
 import { unitPlanId } from "../../plan/units";
 import { rowMajor12ToTrs } from "../../resolve/transform";
+import { createLightVolumeMesh, lightVolumeIntensity } from "./lightVolume";
 
 type Three = typeof ThreeNamespace;
 
@@ -117,27 +118,76 @@ export function buildSpawnerPlaceholder(
   return figure;
 }
 
+/** 灯位几何兜底：length 缺失时退回外半径（此前 0.05 m 的锥体 = 看不见，
+ *  放置灯在 default 模式"偶尔渲染不出来"的直接原因）。 */
+function lightLength(unit: LightUnit): number {
+  return Math.max(unit.length ?? unit.outerRadius ?? 4, 0.5);
+}
+
+function lightRadius(unit: LightUnit): number {
+  return Math.max(unit.outerRadius ?? lightLength(unit) * 0.5, 0.1);
+}
+
+/** 灯位本体（小而亮的球），保证在夜景/白模下都能看见并可拾取。 */
+function buildLightBulb(
+  THREE: Three,
+  rgb: ThreeNamespace.Color,
+  radius: number,
+): ThreeNamespace.Mesh {
+  const bulb = new THREE.Mesh(
+    new THREE.SphereGeometry(Math.max(radius * 0.07, 0.22), 16, 12),
+    new THREE.MeshBasicMaterial({ color: rgb, toneMapped: false }),
+  );
+  bulb.name = "__lightBulb";
+  return bulb;
+}
+
 function buildLight(THREE: Three, unit: LightUnit): ThreeNamespace.Object3D {
   const color = unit.color ?? [1, 1, 1];
   const rgb = new THREE.Color(color[0], color[1], color[2]);
-  let geometry: ThreeNamespace.BufferGeometry;
-  let opacity = 1;
+  const group = new THREE.Group();
   if (unit.lightType === "Spot") {
-    const length = Math.max(unit.length ?? 0, 0.05);
-    const radius = Math.max(unit.outerRadius ?? 1, 0.05);
-    geometry = new THREE.CylinderGeometry(radius, 0.001, length, 24, 1, false);
-    geometry.translate(0, length / 2, 0);
-    opacity = 0.6;
+    const length = lightLength(unit);
+    const radius = lightRadius(unit);
+    // Spot beams are volumetric by default (game light volumes are cones);
+    // an explicit isVolumetric=false keeps a thin marker instead.
+    if (unit.isVolumetric !== false) {
+      const beam = createLightVolumeMesh(THREE, {
+        color: rgb,
+        length,
+        radius,
+        intensity: lightVolumeIntensity(unit.diffuse, unit.volumetricStrength),
+      });
+      group.add(beam.mesh);
+    } else {
+      const geometry = new THREE.CylinderGeometry(radius, 0.001, length, 24, 1, true);
+      geometry.translate(0, length / 2, 0);
+      const marker = new THREE.Mesh(
+        geometry,
+        new THREE.MeshBasicMaterial({
+          color: rgb,
+          transparent: true,
+          opacity: 0.16,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        }),
+      );
+      marker.raycast = () => {};
+      marker.userData.pickOnly = true;
+      group.add(marker);
+    }
+    group.add(buildLightBulb(THREE, rgb, radius));
   } else if (unit.lightType === "Line") {
-    const length = Math.max(unit.length ?? 0, 0.05);
-    geometry = new THREE.BoxGeometry(1, length, 1);
+    const length = lightLength(unit);
+    const geometry = new THREE.BoxGeometry(1, length, 1);
     geometry.translate(0, length / 2, 0);
+    group.add(new THREE.Mesh(geometry, standardMaterial(THREE, rgb.getHex())));
   } else {
-    geometry = new THREE.SphereGeometry(1, 24, 16);
+    group.add(buildLightBulb(THREE, rgb, lightRadius(unit)));
   }
-  const mesh = new THREE.Mesh(geometry, standardMaterial(THREE, rgb.getHex(), opacity));
-  applyTransform(THREE, mesh, unit.transform);
-  return mesh;
+  applyTransform(THREE, group, unit.transform);
+  return group;
 }
 
 function buildMarkerCone(
@@ -203,7 +253,7 @@ export function buildRealLightUnit(
   const color = unit.color ?? [1, 1, 1];
   const rgb = new THREE.Color(color[0], color[1], color[2]);
   const radius = Math.max(unit.outerRadius ?? 4, 1);
-  const length = Math.max(unit.length ?? radius, 0.5);
+  const length = lightLength(unit);
   const intensity = Math.max(unit.diffuse ?? 1, 0.05) * 16;
 
   if (unit.lightType === "Spot") {
@@ -245,6 +295,19 @@ export function buildRealLightUnit(
   );
   proxy.userData.pickOnly = true;
   group.add(proxy);
+  // Game parity: a spot light with a volumetric flag owns a visible cone of
+  // light, not just an invisible Three.SpotLight. Keep it after the proxy so
+  // the proxy stays the preferred pick target; the beam itself never picks or
+  // casts shadows (userData.pickOnly + raycast no-op).
+  if (unit.lightType === "Spot" && unit.isVolumetric !== false) {
+    const beam = createLightVolumeMesh(THREE, {
+      color: rgb,
+      length,
+      radius: lightRadius(unit),
+      intensity: lightVolumeIntensity(unit.diffuse, unit.volumetricStrength),
+    });
+    group.add(beam.mesh);
+  }
   applyTransform(THREE, group, unit.transform);
   return group;
 }

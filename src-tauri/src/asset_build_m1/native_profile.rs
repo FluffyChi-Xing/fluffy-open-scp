@@ -215,15 +215,19 @@ const PATH_PAIRS: u32 = 0x0CAA_6841;
 const PATH_ENTRIES: u32 = 0x0CC8_FE7A;
 const PATH_SCOPES: u32 = 0x0D9A_4E54;
 const PATH_ROAD_CONNECTS: u32 = 0x0D9A_A2BB;
-/// Engine symbolic scope "local" — the only scope value observed across
-/// every path-carrying asset dict in Game.package (hundreds of buildings).
+/// Engine symbolic scopes (`SC::tPathScope` PDB 枚举，值即实例编码)：
+/// kPathScopeLocal=0xF44F784A、kPathScopeGlobal=0x57572DAC。原版小学三组 =
+/// [Global, Local, Local]（组1 是接入马路的车道）。
 pub(crate) const PATH_SCOPE_LOCAL: u32 = 0xF44F_784A;
-/// Road-connect enum encoded as a key instance — the universal vanilla
-/// value for "this path connects to the road" (same scan). Engine enum
-/// kRoadConnect{None,First,Last,FirstAndLast}; a mixed connected/none
-/// building needs the none encoding which is not yet captured, so compile
-/// is all-or-nothing per asset.
-pub(crate) const PATH_ROAD_CONNECT_YES: u32 = 0xC186_DA37;
+pub(crate) const PATH_SCOPE_GLOBAL: u32 = 0x5757_2DAC;
+/// Engine road-connect enum（`SC::tRoadConnect` PDB 枚举）：
+/// kRoadConnectNone=0xC186DA37、kRoadConnectFirst=0xF0F61CED。
+/// 2026-11-06 s18 实机诊断修正：旧代码把 None（列扫描的高频值——因为多数
+/// 原版路径是内部走道）误当"连接马路"的 YES 编码，导致 roadConnect:true
+/// 被写成"不连接"，建筑永远接不进水电网（见
+/// docs/re/building-eco-chain-and-s17-diagnosis-20261106.md §12）。
+pub(crate) const PATH_ROAD_CONNECT_FIRST: u32 = 0xF0F6_1CED;
+pub(crate) const PATH_ROAD_CONNECT_NONE: u32 = 0xC186_DA37;
 /// Default PathEntry property group used by the pedestrian/road path family.
 pub(crate) const PATH_ENTRY_GROUP: u32 = 0x40E0_C400;
 /// The university door PathEntry is the known shipped exception: its resource
@@ -1053,8 +1057,6 @@ fn compile_path_fields(
     let mut entries: Vec<Value> = Vec::new();
     let mut scopes: Vec<Value> = Vec::new();
     let mut connects: Vec<Value> = Vec::new();
-    let mut connect_all = true;
-    let mut connect_any = false;
     for (path_index, path) in scene.paths.iter().enumerate() {
         let start = points.len() as i32;
         let mut count = 0i32;
@@ -1089,21 +1091,18 @@ fn compile_path_fields(
             group: path_entry_group(instance),
             instance,
         }));
-        scopes.push(zero_key(PATH_SCOPE_LOCAL));
-        connect_any |= path.road_connect;
-        connect_all &= path.road_connect;
-    }
-    if connect_any && !connect_all {
-        return Err(
-            "mixed roadConnect across paths needs the engine's none-encoding, \
-             which no vanilla asset dict carries — make roadConnect uniform"
-                .into(),
-        );
-    }
-    if connect_any {
-        for _ in 0..scene.paths.len() {
-            connects.push(zero_key(PATH_ROAD_CONNECT_YES));
-        }
+        // scope/connect 逐路径编码（原版小学三组 = Global+First / Local+None /
+        // Local+None）：scope 跟随作者声明，connect 列恒写（缺省 None）。
+        scopes.push(zero_key(if path.scope_local {
+            PATH_SCOPE_LOCAL
+        } else {
+            PATH_SCOPE_GLOBAL
+        }));
+        connects.push(zero_key(if path.road_connect {
+            PATH_ROAD_CONNECT_FIRST
+        } else {
+            PATH_ROAD_CONNECT_NONE
+        }));
     }
     let mut out = Vec::new();
     if !points.is_empty() {
@@ -1201,6 +1200,22 @@ pub fn build(
                 "generic interaction flag profile changed: expected 0AD90138=true, got {flag:?}"
             ));
         }
+    }
+    // 城市看板绑定（0x0D7970ED）必须跟随建筑的功能家族：交互链会把公园的
+    // 看板残留值覆盖上来，教育/服务类建筑由 schema 显式声明正确看板。
+    if let Some(board) = spec.lot_board_instance {
+        upsert(
+            &mut asset,
+            scalar(
+                0x0D79_70ED,
+                PropType::Key,
+                Value::Key(Key {
+                    type_id: 0,
+                    group: 0,
+                    instance: board,
+                }),
+            ),
+        );
     }
     if resources
         .get(&ResourceId {
@@ -1461,6 +1476,47 @@ pub fn build(
         instance,
     })));
     upsert(&mut unit, array(HASH_TITLE_LINK, PropType::Text, vec![text_value(instance)]));
+    // Tree-decoration 行为绑定（tree-regression-analysis-20261106.md §2b）：
+    // 树 bin 来自共享原版 bundle E7690450（0x07E0AD23=[14984C6B,6A,69,68]、
+    // 0x07E0AD24=[10,10,10,10]、填充规则 26D4942C/2D/2E/2F）。教育模板链不
+    // 激活它（s14 的树来自 tested-unit 公园字段，s15 剥公园字段时被连坐剥
+    // 掉）。Lot 侧 BinDraw 渲染端（0x0C12EF2C=[14984C68,C8B4254A]+10
+    // transforms+percent-fill）已随 donor lot 到位——缺的只有这一项引用。
+    // 单字段变更、可独立验收（菜单加载时长 + 一次性城市看树）。
+    const TREE_BUNDLE: u32 = 0xE769_0450;
+    if spec.tree_decoration {
+        let bundles_property = unit.values.iter().position(|p| p.hash == 0x0A02_09A5);
+        match bundles_property {
+            Some(index) => {
+                if let Kind::Array(values) = &mut unit.values[index].kind {
+                    if !values
+                        .iter()
+                        .any(|v| matches!(v, Value::Key(k) if k.instance == TREE_BUNDLE))
+                    {
+                        values.push(Value::Key(Key {
+                            type_id: 0,
+                            group: 0,
+                            instance: TREE_BUNDLE,
+                        }));
+                    }
+                }
+            }
+            None => {
+                upsert(
+                    &mut unit,
+                    array(
+                        0x0A02_09A5,
+                        PropType::Key,
+                        vec![Value::Key(Key {
+                            type_id: 0,
+                            group: 0,
+                            instance: TREE_BUNDLE,
+                        })],
+                    ),
+                );
+            }
+        }
+    }
     unit.claimed_count = unit.values.len() as u32;
 
     let authored_behavior = scene.is_some_and(|document| {
@@ -1499,6 +1555,18 @@ pub fn build(
                 "simulationTemplateInstance": spec
                     .simulation_template_instance
                     .map(|value| format!("0x{value:08X}")),
+                // tree-decoration 闭环台账（tree-regression-analysis §1 链路
+                // 五环：bundle 引用 + BinDraw 列 + percent-fill + 填充规则
+                // ID。缺任何一环树不可见）。
+                "treeDecoration": {
+                    "enabled": spec.tree_decoration,
+                    "treeBundle": "E7690450",
+                    "treeBinResource": "14984C68",
+                    "treeBinCapacity": 10,
+                    "fillRules": ["26D4942C", "26D4942D", "26D4942E", "26D4942F"],
+                    "lotBinDrawSet3": "0x0C12EF2C=[14984C68,C8B4254A]",
+                    "lotPercentFill": "0x0C12EF60=true",
+                },
             },
         }),
     })
@@ -1703,9 +1771,9 @@ mod tests {
 
     /// Path columns follow the vanilla fire-station wire: points/tangents/
     /// indices per pathPoint (rotated with the author orientation), one
-    /// inclusive (start,end) pair + entry/scope keys per path, road-connect
-    /// key per path when toggled. Entry/scope/connect encodings were
-    /// captured from E917279C and a Game.package-wide column scan.
+    /// inclusive (start,end) pair + entry/scope/connect keys per path.
+    /// scope/connect 是 SC::tPathScope / SC::tRoadConnect 引擎枚举（PDB 值）；
+    /// 2026-11-06 s18 实机诊断修正 roadConnect:true = kRoadConnectFirst。
     #[test]
     fn path_fields_match_vanilla_wire() {
         let value = json!({
@@ -1760,7 +1828,9 @@ mod tests {
             vec![Value::Key(Key {
                 type_id: 0,
                 group: 0,
-                instance: 0xC186_DA37,
+                // roadConnect:true = kRoadConnectFirst（s18 实机诊断修正，
+                // 旧编码误用 kRoadConnectNone=0xC186DA37）。
+                instance: 0xF0F6_1CED,
             })]
         );
     }

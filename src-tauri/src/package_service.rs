@@ -2417,14 +2417,25 @@ fn build_lot_editor_session(
             "lot editor requires a property resource".into(),
         ));
     }
-    let properties = sc_properties::PropertyFile::parse_with_limits(
+    let raw_properties = sc_properties::PropertyFile::parse_with_limits(
         data,
         sc_properties::ParseLimits::default(),
     )?;
     // Parent(0x00B2CCCB) 继承展平：78% 的 property 带继承链，lot 变体常把
     // LotColors / Lot Textures / LotSize 挂在父级，本级只覆盖 LotMask 与 LOD。
     // 不展平会读到"空壳"地表授权（四通道全落格 0 → 整块砖纹）。
-    let properties = flatten_lot_parents(properties, package, manager);
+    let mut properties = flatten_lot_parents(raw_properties.clone(), package, manager);
+    // 派生 lot 的父级授权可能落在 SimCity_Game.package，而会话只打开了当前
+    // （如 Graphics）包——父链断裂时 manager 查不到，四通道回退黑/红/绿/蓝、
+    // 图集回退本地占位 tile（用户实证 0xDBF54200：黑色停车坪 + 蓝色车位线 +
+    // 占位草皮）。仅当授权 key 全缺时用源包句柄重试，正常 lot 不付这个代价。
+    if !lot_chain_resolved(&properties) {
+        let sources = locate_sim_source_packages(manager, store).unwrap_or_default();
+        if !sources.is_empty() {
+            properties =
+                flatten_lot_parents_with_sources(raw_properties, package, manager, &sources);
+        }
+    }
     // 精细渲染贴花纹理：decal ID → atlas 条目 → 四色解码 PNG；
     // 附带 materialData 三元组存在性与 material/shader-def 引用
     // 诊断（P4-D1 证据链）。
@@ -2990,6 +3001,24 @@ pub(crate) fn flatten_lot_parents(
     current: &Package,
     manager: &PackageManager,
 ) -> sc_properties::PropertyFile {
+    flatten_lot_parents_with_sources(root, current, manager, &[])
+}
+
+/// 同 `flatten_lot_parents`，额外用 `sources`（通常是 SimCity_Graphics/Game
+/// 的独立句柄）兜底父级查找。
+///
+/// 派生 lot（如 `0xDBF54200` @ SimCity_Graphics）的 `LotColor1-4` /
+/// `Lot Textures` 常常只存在于 **SimCity_Game.package** 的父级链里；会话
+/// 打开时 Game 不在 manager 的已打开包集合中，父链就会断在中间——四通道
+/// 落到引擎回退色（黑/红/绿/蓝）、图集回退本地占位 tile，表现为"部分地面
+/// 死黑 + 部分占位草皮"。`locate_sim_source_packages` 能在不注册进包池的
+/// 前提下按路径打开这两个源包，供 resolver 只读查找。
+pub(crate) fn flatten_lot_parents_with_sources(
+    root: sc_properties::PropertyFile,
+    current: &Package,
+    manager: &PackageManager,
+    sources: &[(String, Package)],
+) -> sc_properties::PropertyFile {
     let lookup = |package: &Package, key: &sc_properties::Key| {
         let entry = package
             .entries()
@@ -3001,14 +3030,86 @@ pub(crate) fn flatten_lot_parents(
         sc_properties::PropertyFile::parse(&package.read(&entry).ok()?).ok()
     };
     sc_properties::flatten_parent_inheritance(root, |key| {
-        lookup(current, key).or_else(|| {
-            manager
-                .all_packages()
-                .ok()?
-                .iter()
-                .find_map(|package| lookup(package, key))
-        })
+        lookup(current, key)
+            .or_else(|| {
+                manager
+                    .all_packages()
+                    .ok()?
+                    .iter()
+                    .find_map(|package| lookup(package, key))
+            })
+            .or_else(|| sources.iter().find_map(|(_, package)| lookup(package, key)))
     })
+}
+
+/// 父链是否已经提供地表授权。派生 lot 的 mask/size 在本级、颜色与图集在
+/// 父级——若一个授权 key 都没解析到，基本可判定父链没打通（值得用源包重试）。
+pub(crate) fn lot_chain_resolved(properties: &sc_properties::PropertyFile) -> bool {
+    const AUTHORIZATION_KEYS: [u32; 5] = [
+        0x0D02_D586,
+        0x0D02_D587,
+        0x0D02_D588,
+        0x0D02_D589,
+        0x0CCB_7FD4, // Lot Textures
+    ];
+    AUTHORIZATION_KEYS
+        .iter()
+        .any(|hash| properties.get(*hash).is_some())
+}
+
+#[cfg(test)]
+mod derived_lot_parent_chain {
+    use super::*;
+
+    /// 回归（2026-11-06 用户实证 0xDBF54200）：派生 lot 位于 Graphics，父级
+    /// 授权（LotColor1-4 / Lot Textures）只在 Game。会话只打开 Graphics 时
+    /// 父链断裂 → 四通道回退黑/红/绿/蓝 + 占位草皮；用源包句柄重试后必须
+    /// 全部 authored，且 Lot Textures 可见。
+    ///
+    /// 需要真实游戏包：设置 SC_DERIVED_LOT_GRAPHICS / SC_DERIVED_LOT_GAME。
+    #[test]
+    fn game_source_fallback_resolves_inherited_lot_authorization() {
+        let (Ok(graphics), Ok(game)) = (
+            std::env::var("SC_DERIVED_LOT_GRAPHICS"),
+            std::env::var("SC_DERIVED_LOT_GAME"),
+        ) else {
+            eprintln!("skipping: SC_DERIVED_LOT_GRAPHICS / SC_DERIVED_LOT_GAME unset");
+            return;
+        };
+        const INSTANCE: u32 = 0xDBF5_4200;
+        let graphics = Package::open(&graphics).expect("open graphics");
+        let game = Package::open(&game).expect("open game");
+        let entry = graphics
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == 0x00B1_B104 && entry.id.instance == INSTANCE)
+            .cloned()
+            .expect("derived lot property");
+        let raw = sc_properties::PropertyFile::parse_with_limits(
+            &graphics.read(&entry).unwrap(),
+            sc_properties::ParseLimits::default(),
+        )
+        .unwrap();
+
+        // 只打开 Graphics（父级所在的 Game 不在 manager 里）。
+        let manager = PackageManager::new();
+        let broken = flatten_lot_parents(raw.clone(), &graphics, &manager);
+        assert!(
+            !lot_chain_resolved(&broken),
+            "without Game the inherited authorization must be missing"
+        );
+        let (_, authored) =
+            lot_colors(&sc_properties::LotEditorDocument::from_property_file(broken));
+        assert!(!authored.iter().any(|value| *value));
+
+        let sources = vec![("SimCity_Game.package".to_string(), game)];
+        let fixed = flatten_lot_parents_with_sources(raw, &graphics, &manager, &sources);
+        let document = sc_properties::LotEditorDocument::from_property_file(fixed);
+        let (colors, authored) = lot_colors(&document);
+        assert_eq!(authored, [true, true, true, true]);
+        assert_eq!(colors[0][3], 7, "LotColor1.A = pattern index 7");
+        assert!(document.lot_textures.is_some(), "Lot Textures inherited");
+    }
 }
 
 /// LotColor1-4 提取（raster 工作台 read_lot_material 共用）。
@@ -3933,7 +4034,7 @@ const SIM_PARTS_MAGIC: u32 = 0x464D_4953;
 /// 定位小人模型所在的 Graphics/Game 包：优先已打开的同名包，否则从
 /// 已打开包路径向上找 `SimCityData/`（ecogame_dirs 同款推导），再退
 /// 用户设置的 game_data_path。
-fn locate_sim_source_packages(
+pub(crate) fn locate_sim_source_packages(
     manager: &PackageManager,
     store: &sc_store::Store,
 ) -> Result<Vec<(String, Package)>, PackageError> {
@@ -4167,6 +4268,12 @@ pub async fn resolve_prop_models(
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
     let resolutions = tauri::async_runtime::spawn_blocking(move || {
+        // Prop resolution may be requested repeatedly while several property
+        // editors are opened.  EcoGame packages are session helpers; release
+        // the previous helper batch before reserving the two game source
+        // packages below, otherwise the 64-package pool can reject those
+        // inserts and later props silently fall back to marker cones.
+        let _ = crate::prop_models::release_registered(&manager);
         // 直挂模型 prop 的模型实体可能位于游戏源包（Graphics/Game），
         // ensure they are open so the direct-model fallback can find them
         //（脚本表链路原本只依赖 EcoGame 注册，不受影响）。

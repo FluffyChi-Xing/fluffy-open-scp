@@ -39,6 +39,14 @@ incremental = false
 [profile.dev.package."*"]
 opt-level = 2
 
+# libsqlite3-sys builds the bundled sqlite3.c through cc-rs.  With any Rust
+# debug level enabled cc-rs adds MSVC /Z7, which can fail with D8050 when the
+# compiler cannot create its C debug record (often mistaken for an ACL error).
+# Keep Rust line tables for our crates, but never ask this C dependency to emit
+# a debug record.  This makes clean and incremental Windows builds deterministic.
+[profile.dev.package.libsqlite3-sys]
+debug = false
+
 [profile.release]
 strip = true
 lto = true

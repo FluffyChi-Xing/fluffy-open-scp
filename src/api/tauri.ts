@@ -495,6 +495,8 @@ export interface LightUnit {
   length: number | null;
   cullDistance: "Near" | "Mid" | "Far" | "Max" | null;
   isVolumetric: boolean | null;
+  /** 体积光强度（0x0EC4567E）；null = 用默认 1。 */
+  volumetricStrength?: number | null;
   debugName: string | null;
   fields: UnitFieldDto[];
 }

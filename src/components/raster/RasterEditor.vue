@@ -521,8 +521,6 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             />
             <RasterToolbar
               v-model:tool="tool"
-              v-model:layer="layer"
-              :profile="profile"
               :lot="profile === 'lot-mask'"
               :can-undo="canUndo"
               :can-redo="canRedo"
@@ -586,14 +584,20 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             <label>{{ t("rasterEditor.text115") }}<input v-model.number="parkingLength" type="number" min="1" max="256" /></label>
             <label>{{ t("rasterEditor.text116") }}<input v-model.number="parkingSpacing" type="number" min="1" max="256" /></label>
           </template>
-          <label v-if="!mask && channel === 'rgba'">RGB <input v-model="color" type="color" /></label>
-          <label v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')">{{ t("rasterEditor.channelStrength") }}<input v-model.number="alpha" type="number" min="0" max="255" /></label>
-          <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
-          <label>{{ t("rasterEditor.text122") }}<FSelect :model-value="channel" :options="['rgba','r','g','b','a'].map((value) => ({ value, label: profile === 'lot-mask' ? t(`rasterEditor.channels.${value}`) : value.toUpperCase() }))" @update:model-value="channel = $event as Channel" /></label>
+          <p v-if="profile === 'lot-mask'" class="lot-semantic-note">
+            {{ t("rasterEditor.lotSemanticNote") }}
+          </p>
+          <template v-else>
+            <label v-if="!mask && channel === 'rgba'">RGB <input v-model="color" type="color" /></label>
+            <label v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')">{{ t("rasterEditor.channelStrength") }}<input v-model.number="alpha" type="number" min="0" max="255" /></label>
+            <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
+            <label>{{ t("rasterEditor.text122") }}<FSelect :model-value="channel" :options="['rgba','r','g','b','a'].map((value) => ({ value, label: value.toUpperCase() }))" @update:model-value="channel = $event as Channel" /></label>
+          </template>
         </section>
         <RasterMaterialPanel
           v-if="editorStarted && profile !== 'slot0'"
           v-model:lot="lot"
+          v-model:layer="layer"
           v-model:decal="decal"
           v-model:sampling="sampling"
           :profile="profile"

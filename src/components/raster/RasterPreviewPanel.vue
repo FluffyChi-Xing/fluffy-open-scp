@@ -131,7 +131,9 @@ const currentLotAlbedoPng = computed(() => {
     <RasterPreviewCard
       :title="
         t(
-          PROFILE_BEHAVIOR[profile].dataChannels
+          profile === 'lot-mask'
+            ? 'rasterEditor.lotMaskPreview'
+            : PROFILE_BEHAVIOR[profile].dataChannels
             ? 'rasterEditor.dataRgb'
             : 'rasterEditor.raw',
         )

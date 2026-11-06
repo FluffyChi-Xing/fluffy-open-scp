@@ -206,12 +206,15 @@ onMounted(() => {
   });
 });
 const viewport = useEditorViewport({
-  maxPixelRatio: 2,
+  maxPixelRatio: 1.5,
   interactionPixelRatio: 1,
   onTapUnit: (id) => emit("select", id),
   onHoverUnit: (id) => {
     hoveredId.value = id;
   },
+  // 清场前摘手柄：旧选中对象即将被移除，TransformControls 继续持有它会让
+  // 每次 updateMatrixWorld 报 "must be a part of the scene graph"。
+  onBeforeClear: () => gizmo?.detach(),
 });
 function applyCameraPreset() {
   const preset = props.cameraPreset;
@@ -699,20 +702,23 @@ function applyReliefSwitch(enabled: boolean) {
   const viewer = viewport.viewer.value;
   if (!viewer) return;
   let changed = false;
-  viewer.group("model").traverse((child) => {
-    const mesh = child as ThreeNamespace.Mesh;
-    if (!mesh.isMesh) return;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const material of materials) {
-      const uniform = material?.userData?.uReliefEnabled as
-        | { value: number }
-        | undefined;
-      if (!uniform) continue;
-      const available = material.userData.reliefAvailable !== false;
-      uniform.value = enabled && available ? 1 : 0;
-      changed = true;
-    }
-  });
+  // 建筑与真实 prop（树/车辆）共用 tint 着色链；拖拽降级时两族都要关。
+  for (const groupName of ["model", "props"]) {
+    viewer.group(groupName).traverse((child) => {
+      const mesh = child as ThreeNamespace.Mesh;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of materials) {
+        const uniform = material?.userData?.uReliefEnabled as
+          | { value: number }
+          | undefined;
+        if (!uniform) continue;
+        const available = material.userData.reliefAvailable !== false;
+        uniform.value = enabled && available ? 1 : 0;
+        changed = true;
+      }
+    });
+  }
   if (changed) viewer.invalidate();
 }
 watch(() => props.reliefEnabled, (enabled) => applyReliefSwitch(enabled === true));
@@ -862,7 +868,9 @@ function updateGizmo() {
     return;
   }
   const object = viewport.unitObjects.get(props.selectedId);
-  if (!object) return;
+  // parent=null = 对象已脱离场景图（清场/刷新窗口期）：此时 attach 只会让
+  // TransformControls 在每帧 updateMatrixWorld 里报“不在场景图”告警。
+  if (!object || !object.parent) return;
   controls.setMode(tool);
   controls.attach(object);
   viewport.viewer.value?.invalidate();
@@ -931,6 +939,9 @@ function effectBudget(): number {
 async function syncEffectUnits(enabled: boolean) {
   const instance = viewport.viewer.value;
   if (!instance || props.suspended || props.renderMode !== "refined") return;
+  // 本轮会 remove/替换选中对象：先摘手柄，避免 await 间隙里 three 对
+  // 已脱离场景图的 attached object 逐帧告警（末尾 updateGizmo 会重挂）。
+  gizmo?.detach();
   if (enabled && !props.effectDefinitions?.size) return;
 
   const token = ++effectSyncToken;
@@ -1020,6 +1031,9 @@ function startParticleClock() {
   )
     return;
   particleLast = performance.now();
+  // 粒子动画限 30fps：编辑器视口里已足够顺滑，而 60fps 常驻 invalidate 会让
+  // 整个场景每帧重新出画（用户观测的"静止也一直掉帧"）。
+  let lastDraw = 0;
   const tick = (now: number) => {
     if (
       props.suspended ||
@@ -1030,11 +1044,13 @@ function startParticleClock() {
       stopParticleClock();
       return;
     }
+    particleFrame = requestAnimationFrame(tick);
+    if (now - lastDraw < 30) return;
+    lastDraw = now;
     const delta = Math.min(0.1, (now - particleLast) / 1000);
     particleLast = now;
     for (const view of particleViews) view.tick(delta);
     viewport.viewer.value?.invalidate();
-    particleFrame = requestAnimationFrame(tick);
   };
   particleFrame = requestAnimationFrame(tick);
 }
@@ -1064,10 +1080,14 @@ watch(
 function startNeonClock() {
   if (neonFrame || !envRefs) return;
   neonLast = performance.now();
+  // 招牌动画同样限 30fps（SDF 扫掠肉眼几乎无差别，但常驻重绘减半）。
+  let lastDraw = 0;
   const tick = (now: number) => {
     neonFrame = requestAnimationFrame(tick);
     if (envRefs) envRefs.time.value += (now - neonLast) / 1000;
     neonLast = now;
+    if (now - lastDraw < 30) return;
+    lastDraw = now;
     viewport.viewer.value?.invalidate();
   };
   neonFrame = requestAnimationFrame(tick);
@@ -1089,7 +1109,11 @@ function rebuildScene() {
   // 动画 decal 标志在装配期间由 buildDecalObject 置位；重建完成后按本轮
   // 结果启停霓虹时钟（新一代取代旧装配时同样以最新一轮为准）。
   return viewport
-    .rebuild(assembleScene, { reframe })
+    .rebuild(assembleScene, {
+      reframe,
+      // 默认白模 + Lot 首帧不等待 GPU 预热；精细模式后台预热。
+      prepareGpu: props.renderMode === "refined",
+    })
     .then(() => {
       // env 每轮重建新建（animEnabled 归 0）→ 按开关状态重新应用；时钟
       // 只在"场景有 SDF 动画 decal 且开关开启"时运转。
@@ -1345,6 +1369,8 @@ function scheduleAssetRefresh(kinds: AssetRefreshKind[]) {
 async function refreshAssetUnits(kinds: AssetRefreshKind[]) {
   const instance = viewport.viewer.value;
   if (!instance || props.suspended || !kinds.length) return;
+  // 原位换对象期间旧选中对象会被 remove：先摘手柄（末尾按新对象重挂）。
+  gizmo?.detach();
   const epoch = viewport.rebuildEpoch();
   const assetCtx = buildAssetCtx();
   const span = renderTelemetry.begin("scene_rebuild", {
@@ -1588,10 +1614,14 @@ async function assembleScene(
   // Unit lighting is now complete and pruned. Compile stable model materials
   // concurrently with the independent ground worker; never compile a ground
   // placeholder that applyGroundMask is about to replace and dispose.
-  const stableShaders = ctx.prepareStableShaders();
+  //
+  // NOT awaited: prepareShaders now compiles on requestIdleCallback, so
+  // awaiting it makes rebuild completion (sceneReady/revision/首帧) wait for
+  // a GPU-idle slot — up to the 5 s fallback. Compilation is best-effort;
+  // the first draw links whatever is still missing.
+  void ctx.prepareStableShaders();
   const ground = await groundStage;
   await decalPrefetch;
-  await stableShaders;
   if (ctx.isStale()) return;
 
   // Lot 三维尺度标注（用户需求 2026-10-06）：长/宽取地面矩形两邻边，

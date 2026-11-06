@@ -53,7 +53,7 @@ describe("overlays 构建器行为", () => {
     }
   });
 
-  it("灯位代理：Spot 用截锥且半透明", () => {
+  it("灯位代理：Spot 默认体积光锥，显式 isVolumetric=false 才退回半透明截锥", () => {
     const light = prop({
       kind: "light",
       lightType: "Spot",
@@ -63,9 +63,31 @@ describe("overlays 构建器行为", () => {
       diffuse: 6,
       length: 2,
     });
-    const object = buildUnitObject(THREE, light) as THREE.Mesh;
-    expect((object.geometry as THREE.CylinderGeometry).type).toBe("CylinderGeometry");
-    expect((object.material as THREE.MeshStandardMaterial).opacity).toBeCloseTo(0.6);
+    const group = buildUnitObject(THREE, light) as THREE.Group;
+    const beam = group.getObjectByName("__lightVolume") as THREE.Mesh;
+    expect(beam).toBeInstanceOf(THREE.Mesh);
+    expect((beam.geometry as THREE.CylinderGeometry).type).toBe("CylinderGeometry");
+    expect(beam.material).toMatchObject({
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+    });
+    expect(group.getObjectByName("__lightBulb")).toBeInstanceOf(THREE.Mesh);
+
+    const flat = buildUnitObject(
+      THREE,
+      prop({
+        kind: "light",
+        lightType: "Spot",
+        outerRadius: 3,
+        length: 2,
+        isVolumetric: false,
+      }),
+    ) as THREE.Group;
+    expect(flat.getObjectByName("__lightVolume")).toBeUndefined();
+    const marker = flat.children.find(
+      (child) => child.name !== "__lightBulb" && (child as THREE.Mesh).isMesh,
+    ) as THREE.Mesh;
+    expect((marker.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.16);
   });
 
   it("贴花矩形：前后两片、背面使用提示色", () => {
@@ -102,6 +124,47 @@ describe("overlays 构建器行为", () => {
       expect(new THREE.Box3().setFromObject(proxy).getSize(new THREE.Vector3()).length()).toBeLessThan(4);
       expect((object.children[0] as THREE.PointLight).distance).toBe(160);
     }
+  });
+
+  it("放置的 Spot 灯：length 缺失时仍有可见体积光锥", () => {
+    // 旧实现 length=null → max(0, 0.05) = 5 cm 锥体，放置后直接看不见。
+    const unit = prop({
+      kind: "light",
+      lightType: "Spot",
+      outerRadius: 8,
+      length: null,
+      isVolumetric: true,
+      transform: null,
+    });
+    const object = buildUnitObject(THREE, unit)!;
+    object.updateMatrixWorld(true);
+    const size = new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());
+    expect(size.y).toBeGreaterThan(1);
+    const beam = object.getObjectByName("__lightVolume") as THREE.Mesh | undefined;
+    expect(beam).toBeInstanceOf(THREE.Mesh);
+    expect(beam!.material).toMatchObject({
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+    });
+  });
+
+  it("放置的 Spot 灯：体积光锥不参与拾取，拾取落到灯球", () => {
+    const unit = prop({
+      kind: "light",
+      lightType: "Spot",
+      outerRadius: 8,
+      length: 12,
+      isVolumetric: true,
+      transform: null,
+    });
+    const object = buildUnitObject(THREE, unit)!;
+    object.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster(
+      new THREE.Vector3(0, 6, 40),
+      new THREE.Vector3(0, 0, -1),
+    );
+    // 射线穿过光锥中段；锥体 raycast 置空，只有灯球/可拾取件参与。
+    expect(ray.intersectObject(object, true)).toHaveLength(0);
   });
 
   it("路径折线：少于两点返回 null", () => {

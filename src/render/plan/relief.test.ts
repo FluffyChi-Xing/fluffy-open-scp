@@ -30,6 +30,18 @@ describe("relief 计划", () => {
     expect(RELIEF_GLSL).toContain("kBinarySteps = 2");
     // 发行版没有“高度 <= 23 提前返回”的分支，只有 flatDepth 偏移。
     expect(RELIEF_GLSL).not.toContain("sourceControl");
+    // 发行版对 126m 内所有距离都用完整 cone 步数。
+    expect(RELIEF_GLSL).not.toContain("coneLimit");
+    expect(RELIEF_GLSL).toContain("for (int i = 0; i < kConeSteps; i++)");
+  });
+
+  it("浮雕 V 轴跟随 Top UV 的镜像行列式，且不会在背面二次翻转", () => {
+    // det<0 的镜像窗列必须翻转 V 轴：cross(N,T) 只在 det>0 时等于 dP/dv。
+    expect(RELIEF_GLSL).toContain("det < 0.0 ? -1.0 : 1.0");
+    const eyeDir = RELIEF_GLSL.slice(RELIEF_GLSL.indexOf("vec3 scReliefEyeDir()"));
+    // 几何锚定已把法线归一到可见面；再按 gl_FrontFacing 翻一次会在背面
+    // 抵消锚定，使 ds.z 变号、整片浮雕反向。
+    expect(eyeDir).not.toContain("gl_FrontFacing");
   });
 });
 

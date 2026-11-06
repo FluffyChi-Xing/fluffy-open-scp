@@ -65,7 +65,7 @@ pub const DALIAN_IDENTITY_INSTANCE: u32 = 0xF922_1FCF;
 pub const DALIAN_LOCALE_TABLE: u32 = 0x284C_6727;
 pub(crate) const HASH_TITLE: u32 = 0x0A09_F5FA;
 const HASH_DESC: u32 = 0x0A09_F5FB;
-const HASH_MENU_UNIT: u32 = 0x0975_695F;
+pub(crate) const HASH_MENU_UNIT: u32 = 0x0975_695F;
 /// Menu2 工具对象类别（原版 plop 建筑统一 `C710B6E9` kCategoryIDBuilding；
 /// 见 docs/re/building-eco-chain-and-s17-diagnosis-20261106.md §5.3 R1）。
 const HASH_BUILDING_CATEGORY: u32 = 0x0975_695E;

@@ -975,7 +975,11 @@ float scFastNoise(vec3 seed) {
             max(reliefSrc.x - 1.0, 0.0) + max(reliefSrc.y - 1.0, 0.0);
           // 先定位 Top 图集区域，采样时再按每张图的 texel 尺寸保护边缘。
           topUv = clamp(reliefSrc, 0.0, 1.0) * topRegion.xy + topRegion.zw;
-          facadeTintValues = scSampleFacade(tintMap, topUv, topRegion, scTopGradX, scTopGradY);
+          // 发行版此处是 tex2Dgrad（LINEAR + mip）：Top tint 是离散的调色板/
+          // 覆盖率选择器。Catmull-Rom 会把 0→1 的 alpha 过渡拉宽到约 2 texel，
+          // 且在窗户 tile 边界会把外侧 3×3 tap 钳回边界 texel——这份重复采样
+          // 正是门窗边缘发糊的直接来源。双三次只保留给 Base 砖墙层。
+          facadeTintValues = scSampleAtlas(tintMap, topUv, topRegion, scTopGradX, scTopGradY);
           scFacade = (outsideTile > 0.0) ? 0.0 : facadeTintValues.a;
         }
         vec2 scSubTop = facadeTintValues.rg * vec2(1.0 / 512.0, 1.0 / 16.0) + vec2(1.0 / 1024.0, 1.0 / 32.0);

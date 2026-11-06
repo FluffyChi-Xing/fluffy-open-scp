@@ -821,14 +821,14 @@ fn make_scalar_property(hash: u32, value: Value) -> sc_properties::Property {
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
-struct SceneResourceManifest {
-    lot: Vec<String>,
-    prop: Vec<String>,
-    bin: Vec<String>,
-    path: Vec<String>,
-    path_entry: Vec<String>,
-    raster: Vec<String>,
-    missing: Vec<String>,
+pub(crate) struct SceneResourceManifest {
+    pub(crate) lot: Vec<String>,
+    pub(crate) prop: Vec<String>,
+    pub(crate) bin: Vec<String>,
+    pub(crate) path: Vec<String>,
+    pub(crate) path_entry: Vec<String>,
+    pub(crate) raster: Vec<String>,
+    pub(crate) missing: Vec<String>,
 }
 
 pub(crate) fn materialize_scene_resources(
@@ -836,7 +836,7 @@ pub(crate) fn materialize_scene_resources(
     intermediate: &crate::asset_build_m0::IntermediateModel,
     resources: &connector::Resources,
     staging: &mut Staging,
-) -> Result<(), String> {
+) -> Result<SceneResourceManifest, String> {
     let mut manifest = SceneResourceManifest::default();
     let mut requested: Vec<(&str, ResourceId)> = Vec::new();
     if let Some(lot) = intermediate.references.lot {
@@ -952,7 +952,7 @@ pub(crate) fn materialize_scene_resources(
         "artifacts/resource-manifest.json",
         &serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?,
     )?;
-    Ok(())
+    Ok(manifest)
 }
 
 fn read_scene_json(root: &Path, document: &str) -> Result<Option<serde_json::Value>, String> {

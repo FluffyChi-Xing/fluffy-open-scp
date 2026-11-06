@@ -5,10 +5,17 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 autobins = false
+default-run = "fluffy-open-scp"
 
 [[bin]]
 name = "fluffy-open-scp"
 path = "src/main.rs"
+
+# M5 无头构建 CLI（build-pipeline-observability-20261105.md §5）：绕开 app
+# 外壳，以 schema 文件直接驱动 asset_build_m1 责任链；结果 JSON 打到 stdout。
+[[bin]]
+name = "openscp-build"
+path = "src/bin/openscp_build.rs"
 
 [lib]
 name = "fluffy_open_scp_lib"

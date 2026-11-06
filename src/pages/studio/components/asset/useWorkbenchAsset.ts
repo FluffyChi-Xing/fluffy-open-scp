@@ -1101,18 +1101,24 @@ export function useWorkbenchAsset(project: string) {
       );
       unit.displayName = payload.name;
     } else if (payload.kind === "light") {
+      const lightType = payload.lightType ?? "Point";
       unit = {
         kind: "light",
         index: nextIndexOf("light"),
         transform,
-        lightType: payload.lightType ?? "Point",
+        lightType,
         color: [1, 1, 1],
-        outerRadius: 8,
+        // 8 m 灯具半径对 Spot 是 34° 的宽锥；圆柱段用 12 m，和游戏展馆
+        // 聚光灯的投射距离同量级。Length 缺失会让标记锥退化成 5 cm
+        // （旧实现 = 放置后看不见）。
+        outerRadius: lightType === "Point" ? 8 : 6,
         innerRadius: null,
         diffuse: null,
-        length: null,
+        length: lightType === "Point" ? null : 12,
         cullDistance: "Far",
-        isVolumetric: false,
+        // 聚光灯默认带体积光锥；点/线光源保持无体积。
+        isVolumetric: lightType === "Spot",
+        volumetricStrength: lightType === "Spot" ? 1 : 0,
         debugName: null,
         fields: [],
       } as LotUnitDto;

@@ -10,11 +10,11 @@
 //! (models, materials, ground, trees, paths) is bit-identical to the donor.
 
 use super::menu::{
-    lot_group, ELEMENTARY_TEMPLATE, EDUCATION_BEHAVIOR_CATEGORY, HASH_PARENT, HASH_STUDENT_CAPACITY,
-    HASH_TITLE, HASH_UNIT_CATEGORY, ICON_GROUP, ICON_TYPE, LOCALE_GROUP, LOCALE_TYPE, MARQUEE_TYPE,
-    MENU_GROUP, UNIT_GROUP, UNIT_TEMPLATE_GROUP,
+    lot_group, ELEMENTARY_TEMPLATE, EDUCATION_BEHAVIOR_CATEGORY, HASH_MENU_UNIT, HASH_PARENT,
+    HASH_STUDENT_CAPACITY, HASH_TITLE, HASH_UNIT_CATEGORY, ICON_GROUP, ICON_TYPE, LOCALE_GROUP,
+    LOCALE_TYPE, MARQUEE_TYPE, MENU_GROUP, UNIT_GROUP, UNIT_TEMPLATE_GROUP,
 };
-use super::property_edit::{encode, set_array, set_scalar};
+use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
 use super::stages::BuildContext;
 use dbpf::ResourceId;
 use sc_properties::{Key, Kind, PropertyFile, PropType, Value};
@@ -22,6 +22,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub(crate) const PROPERTY_TYPE: u32 = 0x00B1_B104;
+/// Menu2 info-panel stat rows (school schedule/capacity vs park visitors).
+const HASH_STAT_TEMPLATE: u32 = 0x0EB1_FC05;
+const HASH_STAT_PARAMS: u32 = 0x0EB1_FC22;
+/// Menu2 uiCategories: the container membership edges (park + education).
+const HASH_UI_CATEGORIES: u32 = 0x0DB9_FC63;
 /// Unit bundle-enable union rows (cEcoUnitEntry::FillFromProps reads all four,
 /// then subtracts the exclude table 0x0A0209B2).
 const HASH_BUNDLE_ENABLE_A2: u32 = 0x0A02_09A2;
@@ -37,6 +42,20 @@ const EDUCATION_SIGNATURE_BUNDLE: u32 = 0x6C04_2367;
 /// (dynamic park trees) survives the behavior overlay (s22 double-planting
 /// lesson: never append it when the scene already carries static tree bins).
 const DONOR_TREE_BUNDLE: u32 = 0xE769_0450;
+/// Vanilla Pedestrians PathEntry (filter E0CD3122): the walking-department
+/// path type.  The park-donor lot ships ONE walkway typed 03106C2E (Cars And
+/// Crap, shadowed by the scripts copy), so student agents have no walkable
+/// route - the exact "zero arrivals" defect.
+const PEDESTRIAN_PATH_ENTRY: u32 = 0x418A_18B1;
+/// Lot path six-piece hashes (CreatePathsFromProps.c).
+const HASH_PATH_ENTRIES: u32 = 0x0CC8_FE7A;
+const HASH_PATH_SEGMENTS: u32 = 0x0CAA_6841;
+const HASH_PATH_SCOPE: u32 = 0x0D9A_4E54;
+const HASH_PATH_ROAD_CONNECT: u32 = 0x0D9A_A2BB;
+/// Unit leaf: internal path-entry reference (SC/GetUnitInternalPathEntries.c);
+/// the vanilla school carries Key 2C7C7986, the park donor does not.
+const HASH_INTERNAL_PATH_REF: u32 = 0x0DA6_9D6F;
+const VANILLA_INTERNAL_PATH_REF: u32 = 0x2C7C_7986;
 
 /// `semantics.behavior` document: bind a minimal education loop onto the
 /// donor identity without touching menu placement.
@@ -60,9 +79,38 @@ pub struct BehaviorSpec {
     /// Lot board instance; defaults to the education board.
     #[serde(default, deserialize_with = "super::menu::de_hash")]
     pub lot_board_instance: Option<u32>,
-    /// Locale title row override — the single declared menu-layer drift.
+    /// Locale title row override — a declared menu-layer drift.
     #[serde(default)]
     pub title_override: Option<String>,
+    /// Presentation donor package (project-relative): a vanilla education
+    /// menu/unit whose stat rows, uiCategories and tool icon are cloned onto
+    /// the frozen identity so the building presents as education.
+    #[serde(default)]
+    pub presentation_package: Option<String>,
+    /// The donor unit instance; its menu is found via the menuUnit edge.
+    #[serde(default, deserialize_with = "super::menu::de_hash")]
+    pub presentation_unit_instance: Option<u32>,
+    /// Extend uiCategories (0x0DB9FC63) with the donor's entries (union; the
+    /// existing park container entry stays — the park menu remains the entry).
+    #[serde(default)]
+    pub adopt_ui_categories: bool,
+    /// Replace the info-panel stat rows (0x0EB1FC05/0x0EB1FC22) with the
+    /// donor's (school schedule + student capacity instead of park visitors).
+    #[serde(default)]
+    pub adopt_stat_rows: bool,
+    /// Replace the tool icon bytes with the donor unit's icon.
+    #[serde(default)]
+    pub adopt_icon: bool,
+    /// Retype every lot path segment to the vanilla Pedestrians PathEntry so
+    /// student agents gain a walkable route onto the lot (walking-department
+    /// minimal recipe: "仅 Pedestrians 路").  Fails closed when the lot's
+    /// path six-piece structure is not internally consistent.
+    #[serde(default)]
+    pub ensure_walk_path: bool,
+    /// Ensure the Unit leaf's internal path-entry reference (0x0DA69D6F =
+    /// 2C7C7986), present on vanilla schools and absent on the park donor.
+    #[serde(default)]
+    pub ensure_internal_path_ref: bool,
 }
 
 impl BehaviorSpec {
@@ -126,7 +174,13 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
 
     let mut changed = Vec::new();
     let unit = patch_unit(ctx, &unit_id, &spec, &mut changed)?;
-    let lot = patch_lot(ctx, &lot_id, spec.lot_board_instance, &mut changed)?;
+    let lot = patch_lot(
+        ctx,
+        &lot_id,
+        spec.lot_board_instance,
+        spec.ensure_walk_path,
+        &mut changed,
+    )?;
     let locale = match (&spec.title_override, &frozen.locale) {
         (Some(title), Some((locale_id, _))) => {
             let (id, row) = override_locale_title(ctx, locale_id, title)?;
@@ -142,8 +196,22 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         (None, _) => None,
     };
 
-    // Invariants, fail-closed: everything outside Unit/Lot/locale is frozen.
-    frozen.verify(ctx.resources.all(), &locale)?;
+    // Presentation layer: clone donor stat rows / uiCategories / icon so the
+    // building presents as education.  These are DECLARED menu-layer drifts;
+    // the freeze below enforces that nothing beyond them moved.
+    let menu2_patched = if presentation_requested(&spec) {
+        let presentation = ctx.presentation_resources.clone().ok_or(
+            "behavior presentation fields require presentation_package to be loadable",
+        )?;
+        let (menu2_declared, icon_override) =
+            apply_presentation(ctx, &presentation, &spec, instance, &mut changed)?;
+        Some((menu2_declared, icon_override))
+    } else {
+        None
+    };
+
+    // Invariants, fail-closed: everything outside the declared set is frozen.
+    frozen.verify(ctx.resources.all(), &locale, menu2_patched.as_ref())?;
     ensure_education_invariants(ctx, &unit_id, &spec)?;
 
     Ok(serde_json::json!({
@@ -162,6 +230,160 @@ struct FreezeBaseline {
     extras: Vec<(ResourceId, Vec<u8>)>,
     /// `(resource, original bytes)` of the locale table reachable from Menu2.
     locale: Option<(ResourceId, Vec<u8>)>,
+}
+
+fn presentation_requested(spec: &BehaviorSpec) -> bool {
+    spec.presentation_package.is_some()
+        && (spec.adopt_ui_categories || spec.adopt_stat_rows || spec.adopt_icon)
+}
+
+/// Clone the declared presentation pieces from the vanilla education donor.
+/// Returns the set of Menu2 hashes allowed to drift plus whether the icon
+/// resource may differ.
+fn apply_presentation(
+    ctx: &mut BuildContext,
+    presentation: &super::connector::Resources,
+    spec: &BehaviorSpec,
+    instance: u32,
+    changed: &mut Vec<serde_json::Value>,
+) -> Result<(Vec<u32>, bool), String> {
+    let unit_instance = spec.presentation_unit_instance.ok_or(
+        "presentation_package requires presentationUnitInstance",
+    )?;
+    // Find the donor menu whose menuUnit edge points at the donor unit.
+    let donor_menu = presentation
+        .iter()
+        .find(|(id, bytes)| {
+            id.type_id == PROPERTY_TYPE
+                && id.group == MENU_GROUP
+                && PropertyFile::parse(bytes).ok().is_some_and(|menu| {
+                    matches!(
+                        menu.get(HASH_MENU_UNIT).map(|p| &p.kind),
+                        Some(Kind::Scalar(Value::Key(k))) if k.instance == unit_instance
+                    )
+                })
+        })
+        .ok_or_else(|| {
+            format!(
+                "presentation donor has no menu pointing at unit {unit_instance:08X}"
+            )
+        })?;
+    let donor = PropertyFile::parse(donor_menu.1)
+        .map_err(|error| format!("donor menu parse: {error}"))?;
+    let mut declared = Vec::new();
+    let mut icon_override = false;
+
+    let menu_id = ResourceId {
+        type_id: PROPERTY_TYPE,
+        group: MENU_GROUP,
+        instance,
+    };
+    let bytes = ctx
+        .resources
+        .get(&menu_id)
+        .ok_or_else(|| format!("donor Menu2 {menu_id} missing from the snapshot"))?
+        .to_vec();
+    let mut menu = PropertyFile::parse(&bytes)
+        .map_err(|error| format!("Menu2 parse: {error}"))?;
+
+    // a) stat rows: school schedule + capacity panel replaces park visitors.
+    if spec.adopt_stat_rows {
+        for hash in [HASH_STAT_TEMPLATE, HASH_STAT_PARAMS] {
+            let Some(donor_property) = donor.get(hash) else {
+                return Err(format!(
+                    "donor menu has no stat field {hash:08X} to adopt"
+                ));
+            };
+            if let Kind::Array(values) = &donor_property.kind {
+                set_array_with_flags(
+                    &mut menu,
+                    hash,
+                    donor_property.prop_type,
+                    values.clone(),
+                    donor_property.encoding.flags,
+                );
+                declared.push(hash);
+                changed.push(serde_json::json!({
+                    "resource": menu_id.to_string(),
+                    "field": format!("{hash:08X}"),
+                    "value": "donor stat rows",
+                }));
+            }
+        }
+    }
+
+    // b) uiCategories union: education board + category join; the park
+    // container entry stays so the park menu remains the entry.
+    if spec.adopt_ui_categories {
+        let Some(Kind::Array(donor_values)) =
+            donor.get(HASH_UI_CATEGORIES).map(|p| &p.kind)
+        else {
+            return Err("donor menu has no uiCategories".into());
+        };
+        let existing = menu.get(HASH_UI_CATEGORIES).map(|p| &p.kind);
+        let mut values = match existing {
+            Some(Kind::Array(values)) => values.clone(),
+            _ => Vec::new(),
+        };
+        let mut added = Vec::new();
+        for value in donor_values {
+            if !values.contains(value) {
+                added.push(render_key(value));
+                values.push(value.clone());
+            }
+        }
+        let flags = menu
+            .get(HASH_UI_CATEGORIES)
+            .map(|p| p.encoding.flags)
+            .unwrap_or(0x809C);
+        set_array_with_flags(&mut menu, HASH_UI_CATEGORIES, PropType::Key, values, flags);
+        declared.push(HASH_UI_CATEGORIES);
+        changed.push(serde_json::json!({
+            "resource": menu_id.to_string(),
+            "field": format!("{HASH_UI_CATEGORIES:08X}"),
+            "value": format!("+{}", added.join("+")),
+        }));
+    }
+
+    menu.claimed_count = menu.values.len() as u32;
+    let encoded = encode(&menu)?;
+    ctx.resources.insert(menu_id, encoded);
+
+    // c) icon bytes: donor keeps its icon at instance == unit instance.
+    if spec.adopt_icon {
+        let donor_icon_id = ResourceId {
+            type_id: ICON_TYPE,
+            group: ICON_GROUP,
+            instance: unit_instance,
+        };
+        let icon_bytes = presentation
+            .get(&donor_icon_id)
+            .ok_or_else(|| format!("donor icon {donor_icon_id} missing"))?
+            .to_vec();
+        let our_icon = ResourceId {
+            type_id: ICON_TYPE,
+            group: ICON_GROUP,
+            instance,
+        };
+        if ctx.resources.get(&our_icon).is_none() {
+            return Err(format!("our icon {our_icon} missing from the snapshot"));
+        }
+        ctx.resources.insert(our_icon, icon_bytes);
+        icon_override = true;
+        changed.push(serde_json::json!({
+            "resource": our_icon.to_string(),
+            "field": "icon-bytes",
+            "value": format!("donor {donor_icon_id}"),
+        }));
+    }
+    Ok((declared, icon_override))
+}
+
+fn render_key(value: &Value) -> String {
+    match value {
+        Value::Key(key) => format!("{:08X}", key.instance),
+        other => format!("{other:?}"),
+    }
 }
 
 fn freeze_baseline(
@@ -202,12 +424,16 @@ fn freeze_baseline(
 }
 
 impl FreezeBaseline {
-    /// Fail if any menu-layer resource drifted.  The locale table is the one
-    /// resource allowed to change, and only on the title row.
+    /// Fail if any menu-layer resource drifted beyond the declared set.  The
+    /// locale table may change on the title row only; Menu2 only on the
+    /// declared stat/uiCategories fields (field-level, canonical re-encoding
+    /// of untouched fields must stay value-identical); the icon only when
+    /// `adopt_icon` cloned donor bytes onto it.
     fn verify(
         &self,
         resources: &super::connector::Resources,
         patched_locale: &Option<ResourceId>,
+        menu2_drift: Option<&(Vec<u32>, bool)>,
     ) -> Result<(), String> {
         let byte_equal = |id: &ResourceId, frozen: &[u8]| -> Result<(), String> {
             let current = resources
@@ -215,13 +441,29 @@ impl FreezeBaseline {
                 .ok_or_else(|| format!("frozen resource {id} disappeared during behavior bind"))?;
             if current.as_slice() != frozen {
                 return Err(format!(
-                    "invariant MENU_FREEZE violated: {id} changed bytes (only Unit/Lot/locale title may drift)"
+                    "invariant MENU_FREEZE violated: {id} changed bytes (only declared drift may touch it)"
                 ));
             }
             Ok(())
         };
-        byte_equal(&self.menu_id, &self.menu_bytes)?;
+        match menu2_drift {
+            Some((declared_fields, _)) => {
+                let baseline =
+                    PropertyFile::parse(&self.menu_bytes).map_err(|e| e.to_string())?;
+                let current = resources
+                    .get(&self.menu_id)
+                    .ok_or_else(|| format!("frozen resource {} disappeared", self.menu_id))?;
+                let current = PropertyFile::parse(current).map_err(|e| e.to_string())?;
+                menu_fields_undeclared_drift(&baseline, &current, declared_fields)?;
+            }
+            None => byte_equal(&self.menu_id, &self.menu_bytes)?,
+        }
+        let icon_exempt =
+            menu2_drift.map(|(_, icon)| *icon).unwrap_or(false);
         for (id, bytes) in &self.extras {
+            if icon_exempt && id.type_id == ICON_TYPE {
+                continue;
+            }
             byte_equal(id, bytes)?;
         }
         if let Some((locale_id, original)) = &self.locale {
@@ -261,6 +503,43 @@ impl FreezeBaseline {
             "frozenResources": 1 + self.extras.len() + usize::from(self.locale.is_some()),
         })
     }
+}
+
+/// Field-level menu freeze: every property outside `declared` must keep its
+/// type, encoding and values (canonical encoding may move bytes, not values).
+fn menu_fields_undeclared_drift(
+    baseline: &PropertyFile,
+    current: &PropertyFile,
+    declared: &[u32],
+) -> Result<(), String> {
+    let render = |file: &PropertyFile, hash: u32| -> Option<String> {
+        let property = file.get(hash)?;
+        Some(format!(
+            "{:?}|{:?}|{:?}",
+            property.prop_type, property.encoding, property.kind
+        ))
+    };
+    let mut hashes: Vec<u32> = baseline
+        .values
+        .iter()
+        .map(|p| p.hash)
+        .chain(current.values.iter().map(|p| p.hash))
+        .collect();
+    hashes.sort_unstable();
+    hashes.dedup();
+    for hash in hashes {
+        if declared.contains(&hash) {
+            continue;
+        }
+        let before = render(baseline, hash);
+        let after = render(current, hash);
+        if before != after {
+            return Err(format!(
+                "invariant MENU_FREEZE violated: Menu2 field {hash:08X} drifted outside the declared set"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The locale table the donor Menu2 title Text points at (`table_id` carries
@@ -471,6 +750,24 @@ fn patch_unit(
             "value": capacity,
         }));
     }
+    // Internal path-entry reference: vanilla schools carry it (door finding).
+    if spec.ensure_internal_path_ref {
+        set_scalar(
+            &mut unit,
+            HASH_INTERNAL_PATH_REF,
+            PropType::Key,
+            Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: VANILLA_INTERNAL_PATH_REF,
+            }),
+        );
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "field": format!("{HASH_INTERNAL_PATH_REF:08X}"),
+            "value": format!("{VANILLA_INTERNAL_PATH_REF:08X}"),
+        }));
+    }
     unit.claimed_count = unit.values.len() as u32;
     let encoded = encode(&unit)?;
     ctx.resources.insert(*unit_id, encoded);
@@ -481,6 +778,7 @@ fn patch_lot(
     ctx: &mut BuildContext,
     lot_id: &ResourceId,
     board: Option<u32>,
+    ensure_walk_path: bool,
     changed: &mut Vec<serde_json::Value>,
 ) -> Result<(), String> {
     let bytes = ctx.resources.get(lot_id).ok_or_else(|| {
@@ -504,6 +802,59 @@ fn patch_lot(
         "value": format!("{board:08X}"),
     }));
     lot.claimed_count = lot.values.len() as u32;
+    // Walking department: every path segment must be typed Pedestrians or
+    // student agents have no arrival route.  Fail closed unless the six-piece
+    // path structure is internally consistent (counts must line up:
+    // entries == segments/2 == scope == roadConnect, at least one path).
+    if ensure_walk_path {
+        let count = |hash: u32| match lot.get(hash).map(|p| &p.kind) {
+            Some(Kind::Array(values)) => values.len(),
+            _ => 0,
+        };
+        let (entries, segments, scope, connect) = (
+            count(HASH_PATH_ENTRIES),
+            count(HASH_PATH_SEGMENTS),
+            count(HASH_PATH_SCOPE),
+            count(HASH_PATH_ROAD_CONNECT),
+        );
+        let paths = if segments % 2 == 0
+            && entries == segments / 2
+            && scope == entries
+            && connect == entries
+            && entries > 0
+        {
+            entries
+        } else {
+            return Err(
+                "invariant WALK_PATH violated: lot path six-piece counts are inconsistent \
+                 (entries/segments/scope/connect do not line up)"
+                    .into(),
+            );
+        };
+        let flags = lot
+            .get(HASH_PATH_ENTRIES)
+            .map(|p| p.encoding.flags)
+            .unwrap_or(0x809C);
+        set_array_with_flags(
+            &mut lot,
+            HASH_PATH_ENTRIES,
+            PropType::Key,
+            vec![
+                Value::Key(Key {
+                    type_id: PROPERTY_TYPE,
+                    group: 0x40E0_C400,
+                    instance: PEDESTRIAN_PATH_ENTRY,
+                });
+                paths
+            ],
+            flags,
+        );
+        changed.push(serde_json::json!({
+            "resource": lot_id.to_string(),
+            "field": format!("{HASH_PATH_ENTRIES:08X}"),
+            "value": format!("{paths} path(s) -> Pedestrians {PEDESTRIAN_PATH_ENTRY:08X}"),
+        }));
+    }
     let encoded = encode(&lot)?;
     ctx.resources.insert(*lot_id, encoded);
     Ok(())
@@ -573,6 +924,30 @@ fn ensure_education_invariants(
             "invariant DONOR_TREE_BUNDLE violated: E7690450 disappeared from the enable union"
                 .into(),
         );
+    }
+    // Walking department: the walkway must be Pedestrians-typed or students
+    // cannot arrive (the park donor ships a Cars-typed, scripts-shadowed path).
+    if spec.ensure_walk_path {
+        let lot_id = ResourceId {
+            type_id: PROPERTY_TYPE,
+            group: lot_group(),
+            instance: unit_id.instance,
+        };
+        let walk_ok = ctx.resources.get(&lot_id).is_some_and(|bytes| {
+            PropertyFile::parse(bytes).is_ok_and(|lot| {
+                matches!(
+                    lot.get(HASH_PATH_ENTRIES).map(|p| &p.kind),
+                    Some(Kind::Array(values)) if values.iter().any(|v| matches!(v,
+                        Value::Key(k) if k.instance == PEDESTRIAN_PATH_ENTRY
+                    ))
+                )
+            })
+        });
+        if !walk_ok {
+            return Err(
+                "invariant WALK_PATH violated: lot path entries are not Pedestrians-typed".into(),
+            );
+        }
     }
     Ok(())
 }

@@ -99,11 +99,11 @@ const treeIds = new Set<number>();
     <p v-else-if="error" role="alert">
       {{ t("rasterEditor.previewError") }} {{ error }}
     </p>
-    <p v-else-if="!session?.lotSurfacePng" role="status">
+    <p v-else-if="!session?.lotSurfacePng && !albedoPng" role="status">
       {{ t("rasterEditor.missingAtlas") }}
     </p>
     <PropertyEditorViewport
-      v-if="visible && session?.lotSurfacePng"
+      v-if="visible && (session?.lotSurfacePng || albedoPng)"
       ground-only
       :model-payload="null"
       :model-lods="[]"
@@ -132,7 +132,7 @@ const treeIds = new Set<number>();
       :lot-model-bbox-center="null"
       :lot-mask-png="texture ? pngUrl(session?.lotMaskPng) : png"
       :lot-mask-raw-rgba="texture ? (session?.lotMaskRawRgba ?? null) : raw"
-      :lot-albedo-png="renderMode === 'default' ? (albedoPng ?? pngUrl(session?.lotAlbedoPng)) : null"
+      :lot-albedo-png="albedoPng ?? pngUrl(session?.lotAlbedoPng)"
       :lot-surface-png="texture ? png : pngUrl(session?.lotSurfacePng)"
       :lot-normal-atlas-png="pngUrl(session?.lotNormalAtlasPng)"
       :prop-models="emptyMap"

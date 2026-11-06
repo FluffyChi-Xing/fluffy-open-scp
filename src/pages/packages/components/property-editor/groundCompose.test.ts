@@ -123,6 +123,18 @@ describe("groundCompose 引擎语义（generic_lot 直译）", () => {
     }
   });
 
+  it("回归：覆盖区不得再乘地表图集（tile×tint 双重变暗 → 死黑）", () => {
+    // 2026-11-06 用户截图回归的守卫：无论 baseTile/图集内容多暗，覆盖区
+    // 输出必须逐字节等于胜者通道的 LotColor 平色，不能被二次压暗。
+    const out = composeGroundPixels(input({
+      rawMask: pixels(1, 1, () => [255, 0, 0, 0]),
+      baseTile: pixels(4, 4, () => [8, 8, 8, 255]),
+      lotColors: [[128, 255, 128, 0], [40, 50, 60, 1], [70, 80, 90, 2], [100, 110, 120, 3]],
+      outSize: { width: 1, height: 1 },
+    }));
+    expect([...out.albedo.slice(0, 4)]).toEqual([128, 255, 128, 255]);
+  });
+
   it("优先级瀑布：A 边框带 > A 主色 > 低优先通道", () => {
     const lotBorderColors = input({}).lotBorderColors;
     // 像素 0：A=0.549、bw=0.1 → A 边框带（0.4 < 0.549 ≤ 0.6）；

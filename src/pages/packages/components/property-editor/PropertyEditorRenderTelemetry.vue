@@ -12,9 +12,12 @@ import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { isTauri, tauriApi } from "@/api";
 import { renderTelemetry } from "@/lib/renderTelemetry";
+import { framePerf, type FramePerfSnapshot } from "@/lib/framePerf";
 import type { RenderTelemetryEntry, RenderTelemetrySummary } from "@/api/tauri";
 
 const { t } = useI18n();
+/** 帧级快照（近 120 个真实出画帧）：相机拖拽后判定 GPU/CPU 瓶颈用。 */
+const perf = ref<FramePerfSnapshot | null>(null);
 const summary = ref<RenderTelemetrySummary | null>(null);
 const loading = ref(false);
 const error = ref("");
@@ -85,6 +88,7 @@ async function loadSummary(): Promise<void> {
 
 function refreshRecent(): void {
   recent.value = [...renderTelemetry.recent()].reverse();
+  perf.value = framePerf.snapshot();
 }
 
 onMounted(() => {
@@ -102,6 +106,49 @@ onBeforeUnmount(() => {
 <template>
   <div class="render-telemetry">
     <p class="hint">{{ t("package.renderTelemetryHint") }}</p>
+
+    <section class="block">
+      <header class="block-head">
+        <span>{{ t("package.renderPerf") }}</span>
+        <span class="chip">{{ perf?.frames ?? 0 }}</span>
+      </header>
+      <p v-if="!perf || !perf.frames" class="muted">{{ t("package.renderPerfEmpty") }}</p>
+      <ul v-else class="perf-list">
+        <li>
+          <span class="stage-name">{{ t("package.renderPerfFps") }}</span>
+          <span class="stage-value">{{ perf.fps.toFixed(1) }}</span>
+        </li>
+        <li>
+          <span class="stage-name">{{ t("package.renderPerfFrame") }}</span>
+          <span class="stage-value">
+            {{ formatMs(perf.intervalP50) }} / {{ formatMs(perf.intervalP95) }}
+          </span>
+        </li>
+        <li>
+          <span class="stage-name">{{ t("package.renderPerfCpu") }}</span>
+          <span class="stage-value">
+            {{ formatMs(perf.cpuP50) }} / {{ formatMs(perf.cpuP95) }}
+          </span>
+        </li>
+        <li>
+          <span class="stage-name">{{ t("package.renderPerfCalls") }}</span>
+          <span class="stage-value">
+            {{ perf.calls }} / {{ perf.triangles.toLocaleString() }}
+          </span>
+        </li>
+        <li>
+          <span class="stage-name">{{ t("package.renderPerfGpuRes") }}</span>
+          <span class="stage-value">
+            {{ perf.programs }} / {{ perf.textures }} / {{ perf.geometries }}
+          </span>
+        </li>
+        <li>
+          <span class="stage-name">{{ t("package.renderPerfDpr") }}</span>
+          <span class="stage-value">{{ perf.dpr.toFixed(2) }} / {{ perf.lights }}</span>
+        </li>
+      </ul>
+      <p v-if="perf?.gpu" class="muted perf-gpu">{{ perf.gpu }}</p>
+    </section>
 
     <section class="block">
       <header class="block-head">
@@ -242,6 +289,31 @@ onBeforeUnmount(() => {
   font-size: 10px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+.perf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.perf-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 11px;
+}
+
+.perf-gpu {
+  word-break: break-all;
+  font-size: 10px;
 }
 
 .muted {

@@ -325,6 +325,11 @@ export function composeGroundPixels(input: GroundComposeInput<ArrayBufferLike>):
         normalCell = patternCell(
           channelIsBorder ? borderIndices[channel] : input.lotColors[channel][3],
         );
+        // 覆盖区 = 胜者通道平色直出。引擎覆盖区**不采样漫反射图集**：
+        // "图集 × tint" 会把两个已经偏暗的反照率相乘，整片地面压成死黑
+        // （用户 2026-11-06 截图回归；后端 compose_lot_albedo_rgba 已按
+        // 「tile×tint 双重变暗旧语义已证伪」注释定谳）。质感由法线图案 +
+        // 动态光照承担，图集只用于未覆盖区的 baseTile。
         composed[at] = flat[0];
         composed[at + 1] = flat[1];
         composed[at + 2] = flat[2];

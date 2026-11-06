@@ -33,6 +33,10 @@ pub(crate) struct BuildContext {
     pub plan: PropertyBuildPlan,
     pub resources: BuildResources,
     pub identity_resources: Option<connector::Resources>,
+    /// `semantics.behavior.presentationPackage`: 原版教育菜单/Unit 供体，
+    /// behavior-bind 从中克隆统计行/uiCategories/图标（菜单/行为拆分的表现
+    /// 层供体；参与 compute_identity 指纹，防缓存陈旧）。
+    pub presentation_resources: Option<connector::Resources>,
     pub scene_document: Option<SceneDocument>,
     pub scene_document_bytes_hash: Option<String>,
     pub texture_instances: [u32; 6],
@@ -72,6 +76,7 @@ impl BuildContext {
             plan,
             resources: BuildResources::empty(),
             identity_resources: None,
+            presentation_resources: None,
             scene_document: None,
             scene_document_bytes_hash: None,
             texture_instances: [0u32; 6],
@@ -269,6 +274,15 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         .menu
         .as_ref()
         .and_then(|menu| menu.identity_package.as_deref())
+    {
+        Some(path) => Some(connector::read_source(&project_file(&ctx.root, path)?)?),
+        None => None,
+    };
+    ctx.presentation_resources = match ctx
+        .plan
+        .behavior
+        .as_ref()
+        .and_then(|behavior| behavior.presentation_package.as_deref())
     {
         Some(path) => Some(connector::read_source(&project_file(&ctx.root, path)?)?),
         None => None,
@@ -578,13 +592,27 @@ fn validate_paths(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
 
 /// source/plan/scene → source_hash + build_hash(确定性身份)。
 fn compute_identity(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
-    ctx.source_hash = match &ctx.identity_resources {
-        Some(identity) => format!(
+    ctx.source_hash = match (
+        &ctx.identity_resources,
+        &ctx.presentation_resources,
+    ) {
+        (Some(identity), Some(presentation)) => format!(
+            "{}:{}:{}",
+            connector::fingerprint(&ctx.resources),
+            connector::fingerprint(identity),
+            connector::fingerprint(presentation)
+        ),
+        (Some(identity), None) => format!(
             "{}:{}",
             connector::fingerprint(&ctx.resources),
             connector::fingerprint(identity)
         ),
-        None => connector::fingerprint(&ctx.resources),
+        (None, Some(presentation)) => format!(
+            "{}:{}",
+            connector::fingerprint(&ctx.resources),
+            connector::fingerprint(presentation)
+        ),
+        (None, None) => connector::fingerprint(&ctx.resources),
     };
     let plan_bytes = serde_json::to_vec_pretty(&ctx.plan).map_err(|e| e.to_string())?;
     ctx.build_hash = digest(&serde_json::to_vec(&(

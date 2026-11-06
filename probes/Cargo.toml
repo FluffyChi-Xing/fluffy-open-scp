@@ -191,6 +191,10 @@ name = "rci_building_census"
 path = "property/rci_building_census.rs"
 
 [[example]]
+name = "behavior_census"
+path = "property/behavior_census.rs"
+
+[[example]]
 name = "prop_fixture"
 path = "property/prop_fixture.rs"
 
@@ -811,6 +815,18 @@ path = "region/z_diff_probe.rs"
 [[example]]
 name = "path_prop_scan"
 path = "road/path_prop_scan.rs"
+
+[[example]]
+name = "path_census"
+path = "path/path_census.rs"
+
+[[example]]
+name = "plop_behavior_map"
+path = "menu/plop_behavior_map.rs"
+
+[[example]]
+name = "family_loop_census"
+path = "menu/family_loop_census.rs"
 
 [[example]]
 name = "path_reconstruct_probe"

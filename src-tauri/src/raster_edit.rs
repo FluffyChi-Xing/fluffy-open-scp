@@ -520,6 +520,7 @@ pub async fn read_lot_material(
     tgi: TgiDto,
 ) -> Result<LotMaterialResponse, CommandError> {
     let manager = Arc::clone(&state.packages);
+    let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let package = manager.get(package_id)?;
         let id: ResourceId = tgi.into();
@@ -533,15 +534,32 @@ pub async fn read_lot_material(
             return Err(RasterEditError::CompanionTooLarge);
         }
         let data = package.read(entry)?;
-        let properties = sc_properties::PropertyFile::parse_with_limits(
+        let raw_properties = sc_properties::PropertyFile::parse_with_limits(
             &data,
             sc_properties::ParseLimits::default(),
         )
         .map_err(|error| RasterEditError::Properties(error.to_string()))?;
         // Parent(0x00B2CCCB) 继承展平：lot 变体常把 LotColors 挂在父级
         //（本级只有 LotMask/LOD），不展平会全部落到回退色。
-        let properties =
-            crate::package_service::flatten_lot_parents(properties, &package, &manager);
+        let mut properties = crate::package_service::flatten_lot_parents(
+            raw_properties.clone(),
+            &package,
+            &manager,
+        );
+        // 父级在 SimCity_Game.package 而会话未打开 Game 时，父链会断在中间：
+        // 用同目录源包句柄重试（仅授权 key 全缺时，避免无谓打开大包）。
+        if !crate::package_service::lot_chain_resolved(&properties) {
+            let sources = crate::package_service::locate_sim_source_packages(&manager, &store)
+                .unwrap_or_default();
+            if !sources.is_empty() {
+                properties = crate::package_service::flatten_lot_parents_with_sources(
+                    raw_properties,
+                    &package,
+                    &manager,
+                    &sources,
+                );
+            }
+        }
         let document = sc_properties::LotEditorDocument::from_property_file(properties);
         let (colors, colors_authored) = crate::package_service::lot_colors(&document);
         let (border_colors, border_widths, border_pattern_indices) =
