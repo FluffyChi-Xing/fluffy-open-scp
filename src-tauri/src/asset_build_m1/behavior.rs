@@ -50,8 +50,15 @@ const PEDESTRIAN_PATH_ENTRY: u32 = 0x418A_18B1;
 /// Lot path six-piece hashes (CreatePathsFromProps.c).
 const HASH_PATH_ENTRIES: u32 = 0x0CC8_FE7A;
 const HASH_PATH_SEGMENTS: u32 = 0x0CAA_6841;
+const HASH_PATH_INDICES: u32 = 0x0CAA_6832;
 const HASH_PATH_SCOPE: u32 = 0x0D9A_4E54;
 const HASH_PATH_ROAD_CONNECT: u32 = 0x0D9A_A2BB;
+/// Vanilla Cars-And-Crap PathEntry: the garbage/sewage service network
+/// (carriers EB91A84C et al. declare filter 979CC22E).  The vanilla college
+/// pairs it with a Pedestrians path on the same lot.
+const SERVICE_PATH_ENTRY: u32 = 0x0310_6C2E;
+const PATH_SCOPE_LOCAL: u32 = 0xF44F_784A;
+const PATH_ROAD_CONNECT_NONE: u32 = 0xC186_DA37;
 /// Unit leaf: internal path-entry reference (SC/GetUnitInternalPathEntries.c);
 /// the vanilla school carries Key 2C7C7986, the park donor does not.
 const HASH_INTERNAL_PATH_REF: u32 = 0x0DA6_9D6F;
@@ -123,6 +130,13 @@ pub struct BehaviorSpec {
     /// 2C7C7986), present on vanilla schools and absent on the park donor.
     #[serde(default)]
     pub ensure_internal_path_ref: bool,
+    /// Append a second lot path typed Cars-And-Crap (03106C2E, the garbage/
+    /// sewage service network) over the walkway's endpoints.  The vanilla
+    /// college ships exactly this pair: a short service path + a pedestrian
+    /// path.  Without it, garbage trucks have no route onto the lot even
+    /// though trash props and garbage production exist.
+    #[serde(default)]
+    pub ensure_service_path: bool,
     /// Bundle ids to remove from the leaf exclude table (0x0A0209B2).  The
     /// park donor excludes the economy bundle 30645625, which carries the
     /// commuter-car bins (0AB4DFE1/E2/E3) that drive the percent-fill parking
@@ -202,6 +216,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         &lot_id,
         spec.lot_board_instance,
         spec.ensure_walk_path,
+        spec.ensure_service_path,
         &mut changed,
     )?;
     let locale = match (&spec.title_override, &frozen.locale) {
@@ -866,6 +881,7 @@ fn patch_lot(
     lot_id: &ResourceId,
     board: Option<u32>,
     ensure_walk_path: bool,
+    ensure_service_path: bool,
     changed: &mut Vec<serde_json::Value>,
 ) -> Result<(), String> {
     let bytes = ctx.resources.get(lot_id).ok_or_else(|| {
@@ -942,6 +958,77 @@ fn patch_lot(
             "value": format!("{paths} path(s) -> Pedestrians {PEDESTRIAN_PATH_ENTRY:08X}"),
         }));
     }
+    // Service department: append a Cars-And-Crap path over the walkway's
+    // endpoints (the vanilla-college pattern: short service path + pedestrian
+    // path) so garbage/sewage trucks gain a route onto the lot.
+    if ensure_service_path {
+        let array = |hash: u32| -> Option<Vec<Value>> {
+            match lot.get(hash).map(|p| &p.kind) {
+                Some(Kind::Array(values)) => Some(values.clone()),
+                _ => None,
+            }
+        };
+        let (indices, segments, mut entries, mut scope, mut connect) = (
+            array(HASH_PATH_INDICES).ok_or("invariant SERVICE_PATH violated: no path indices")?,
+            array(HASH_PATH_SEGMENTS).ok_or("invariant SERVICE_PATH violated: no path segments")?,
+            array(HASH_PATH_ENTRIES).ok_or("invariant SERVICE_PATH violated: no path entries")?,
+            array(HASH_PATH_SCOPE).ok_or("invariant SERVICE_PATH violated: no path scope")?,
+            array(HASH_PATH_ROAD_CONNECT)
+                .ok_or("invariant SERVICE_PATH violated: no path road connect")?,
+        );
+        let walk_points = match (indices.first(), indices.last()) {
+            (Some(first), Some(last)) => (first.clone(), last.clone()),
+            _ => return Err("invariant SERVICE_PATH violated: empty path indices".into()),
+        };
+        let paths = segments.len() / 2;
+        if entries.len() != paths || scope.len() != paths || connect.len() != paths {
+            return Err(
+                "invariant SERVICE_PATH violated: path counts do not line up before appending"
+                    .into(),
+            );
+        }
+        // New path = points[0] -> points[last]: two fresh index slots reuse the
+        // existing point pool, so no new geometry is authored.
+        let first_slot = indices.len() as i32;
+        let service_indices = [walk_points.0, walk_points.1];
+        let mut next_indices = indices;
+        next_indices.extend(service_indices.iter().cloned());
+        let mut next_segments = segments;
+        next_segments.push(Value::Int32(first_slot));
+        next_segments.push(Value::Int32(first_slot + 1));
+        entries.push(Value::Key(Key {
+            type_id: PROPERTY_TYPE,
+            group: 0x40E0_C400,
+            instance: SERVICE_PATH_ENTRY,
+        }));
+        scope.push(Value::Key(Key {
+            type_id: 0,
+            group: 0,
+            instance: PATH_SCOPE_LOCAL,
+        }));
+        connect.push(Value::Key(Key {
+            type_id: 0,
+            group: 0,
+            instance: PATH_ROAD_CONNECT_NONE,
+        }));
+        // Precompute flags before the mutable passes (borrow-order hygiene).
+        let flags_indices = lot.get(HASH_PATH_INDICES).map(|p| p.encoding.flags).unwrap_or(0x809C);
+        let flags_segments = lot.get(HASH_PATH_SEGMENTS).map(|p| p.encoding.flags).unwrap_or(0x809C);
+        let flags_entries = lot.get(HASH_PATH_ENTRIES).map(|p| p.encoding.flags).unwrap_or(0x809C);
+        let flags_scope = lot.get(HASH_PATH_SCOPE).map(|p| p.encoding.flags).unwrap_or(0x809C);
+        let flags_connect = lot.get(HASH_PATH_ROAD_CONNECT).map(|p| p.encoding.flags).unwrap_or(0x809C);
+        set_array_with_flags(&mut lot, HASH_PATH_INDICES, PropType::Int32, next_indices, flags_indices);
+        set_array_with_flags(&mut lot, HASH_PATH_SEGMENTS, PropType::Int32, next_segments, flags_segments);
+        set_array_with_flags(&mut lot, HASH_PATH_ENTRIES, PropType::Key, entries, flags_entries);
+        set_array_with_flags(&mut lot, HASH_PATH_SCOPE, PropType::Key, scope, flags_scope);
+        set_array_with_flags(&mut lot, HASH_PATH_ROAD_CONNECT, PropType::Key, connect, flags_connect);
+        changed.push(serde_json::json!({
+            "resource": lot_id.to_string(),
+            "field": "service-path",
+            "value": format!("+Cars-And-Crap {SERVICE_PATH_ENTRY:08X} (points {first_slot}->{})", first_slot + 1),
+        }));
+    }
+    lot.claimed_count = lot.values.len() as u32;
     let encoded = encode(&lot)?;
     ctx.resources.insert(*lot_id, encoded);
     Ok(())

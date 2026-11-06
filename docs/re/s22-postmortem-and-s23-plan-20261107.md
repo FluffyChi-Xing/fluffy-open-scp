@@ -331,3 +331,19 @@ EXCLUDE_REMOVAL / SET_FIELD 不变量）：
 - 观察点：停车场是否出现 percent-fill 车辆、Lot 看板换族后面板/地图聚合、
   注册峰值是否上移。校园 props 组（14984C6A/69 等）与校车道留待下一轮
   （几何需按 192×96 地块重排，不能照抄 88.7×69.9 的原版坐标）。
+
+### r9 实施（2026-11-07，用户加垃圾桶 props 后的服务车观测版）
+
+用户放置垃圾桶 props 观测垃圾回收。静态定案：垃圾/污水车载体
+（EB91A84C 等）声明 filter `979CC22E`（Cars And Crap），而 r6 把 lot 唯一
+path 重打成了 Pedestrians——服务车无路可达。原版社區大學配方 = 双 path
+（短 Cars-And-Crap 服务道 + 行人道，均 Local/None）。
+
+r9：`ensureServicePath` —— 在步道端点（points 0→8，复用点池不造新几何）
+追加第二条 Cars-And-Crap path；垃圾产量 0x0C216562 1→20（对齐原版大学，
+加快观测节奏）。产物：entries `[418A18B1, 03106C2E]`、segments
+`[0,8,9,10]`、indices `[0..8,0,8]`，与原版同构。两轮 SHA 一致
+`5df848607beeca1c`，已部署。r8 归档 `…_s24-r8-7ee01dc5.package`。
+
+观测点：垃圾车是否沿服务道进 lot 收垃圾桶、停车 percent-fill（r8 解封的
+经济 bundle 通勤 bin）、垃圾产量 20 下垃圾桶满溢节奏。
