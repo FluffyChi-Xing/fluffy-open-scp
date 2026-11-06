@@ -54,11 +54,15 @@ pub fn decode_png(bytes: &[u8], srgb: bool) -> Result<ImageF32, String> {
     let (width, height) = image.dimensions();
     let mut pixels = Vec::with_capacity((width as usize) * (height as usize));
     for pixel in image.pixels() {
+        // Blender maps bytes to floats with `b * (1/255)`, not `b / 255`;
+        // the two differ by one ULP for about half of all byte values, which
+        // is enough to flip the odd 8-bit rounding tie in the normal remap.
+        const SCALE: f32 = 1.0 / 255.0;
         let mut value = [
-            pixel[0] as f32 / 255.0,
-            pixel[1] as f32 / 255.0,
-            pixel[2] as f32 / 255.0,
-            pixel[3] as f32 / 255.0,
+            pixel[0] as f32 * SCALE,
+            pixel[1] as f32 * SCALE,
+            pixel[2] as f32 * SCALE,
+            pixel[3] as f32 * SCALE,
         ];
         if srgb {
             for channel in &mut value[..3] {
@@ -96,7 +100,9 @@ pub fn encode_png(image: &ImageF32, srgb: bool) -> Result<Vec<u8>, String> {
             } else {
                 *value
             };
-            bytes.push((value.clamp(0.0, 1.0) * 255.0).round() as u8);
+            // numpy's `np.round` is half-to-even; matching it keeps the last
+            // bit of every generated map identical to the plug-in oracle.
+            bytes.push((value.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8);
         }
     }
     let buffer = image::RgbaImage::from_raw(image.width, image.height, bytes)
@@ -106,6 +112,38 @@ pub fn encode_png(image: &ImageF32, srgb: bool) -> Result<Vec<u8>, String> {
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         .map_err(|error| format!("PNG encode failed: {error}"))?;
     Ok(png)
+}
+
+/// Port of `native_controls.office_room_sheet`.
+///
+/// Rebuilds the Office interior atlas: 4 room variants × 4 day/night states are
+/// cut from 32×32 tiles of the source and laid out as a 16×16 grid of tiles.
+/// Only one state keeps its alpha; the others are fully transparent.
+fn office_room_sheet(source: &ImageF32) -> Result<ImageF32, String> {
+    if source.height < 64 || source.width < 256 {
+        return Err("Office room source is too small".into());
+    }
+    let width = source.width as usize;
+    let mut pixels = vec![[0.0f32; 4]; 512 * 512];
+    for row in 0..16usize {
+        for variant in 0..4usize {
+            for state in 0..4usize {
+                let x = ((variant % 2) * 4 + state) * 32;
+                let y = (variant / 2) * 32;
+                for dy in 0..32 {
+                    let source_row = y + dy;
+                    for dx in 0..32 {
+                        let mut pixel = source.pixels[source_row * width + x + dx];
+                        if state != 1 {
+                            pixel[3] = 0.0;
+                        }
+                        pixels[(row * 32 + dy) * 512 + (variant * 4 + state) * 32 + dx] = pixel;
+                    }
+                }
+            }
+        }
+    }
+    Ok(ImageF32::new(512, 512, pixels))
 }
 
 /// Filesystem-backed pack store (`assets/packs/<pack>/slotN.png`).
@@ -124,7 +162,14 @@ impl PackStore {
     }
 
     pub fn slot_is_srgb(slot: u8) -> bool {
-        slot == SLOT_PALETTE || slot == SLOT_INTERIOR
+        // The plug-in reads pack images through `bpy.types.Image.pixels`,
+        // which returns the **raw 8-bit buffer** for byte images (colour
+        // management only applies at shader/render sampling).  Its `srgb()`
+        // helper therefore encodes those raw values as if they were linear.
+        // Decoding PNGs to linear here would darken every palette/interior
+        // map, so all slots stay raw.
+        let _ = slot;
+        false
     }
 
     pub fn load(&self, pack: &str, slot: u8) -> Result<ImageF32, String> {
@@ -136,6 +181,15 @@ impl PackStore {
         let bytes = std::fs::read(&path)
             .map_err(|error| format!("pack image {}: {error}", path.display()))?;
         let image = decode_png(&bytes, Self::slot_is_srgb(slot))?;
+        // `resources.image()` rebuilds the Office room sheet in memory so the
+        // 4 variants × 4 day/night states land in the layout the native room
+        // shader expects.  The plug-in keys this off a custom property on the
+        // packed image; a fresh load from disk always migrates.
+        let image = if pack == "Office" && slot == SLOT_INTERIOR {
+            office_room_sheet(&image)?
+        } else {
+            image
+        };
         self.cache.borrow_mut().insert(key, image.clone());
         Ok(image)
     }

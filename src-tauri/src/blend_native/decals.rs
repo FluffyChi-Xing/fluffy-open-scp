@@ -57,10 +57,13 @@ fn normal_matrix(matrix: &[f64]) -> Option<[[f64; 3]; 3]> {
         cross(a, b),
     ];
     let inv = 1.0 / det;
+    // Normals transform with the inverse transpose: n' = (M^-1)^T n.  The
+    // adjugate rows above are det*M^-1, so read them row-wise (not column-wise,
+    // which would apply M^-1 itself and mis-rotate normals on rotated objects).
     Some([
-        [cofactor[0][0] * inv, cofactor[1][0] * inv, cofactor[2][0] * inv],
-        [cofactor[0][1] * inv, cofactor[1][1] * inv, cofactor[2][1] * inv],
-        [cofactor[0][2] * inv, cofactor[1][2] * inv, cofactor[2][2] * inv],
+        [cofactor[0][0] * inv, cofactor[0][1] * inv, cofactor[0][2] * inv],
+        [cofactor[1][0] * inv, cofactor[1][1] * inv, cofactor[1][2] * inv],
+        [cofactor[2][0] * inv, cofactor[2][1] * inv, cofactor[2][2] * inv],
     ])
 }
 
@@ -218,4 +221,64 @@ pub fn cells(state: &SurfaceState, width: f64, height: f64) -> Result<Vec<[f64; 
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blend_native::dump::{BundleMesh, BundlePolygon};
+
+    fn rotated_quad() -> BundleObject {
+        // tall_office's "051": a scale+axis-permutation matrix.  Normals need
+        // (M^-1)^T here; using M^-1 instead rotates them onto the wrong axis and
+        // the planarity test rejects every decal face on the building.
+        BundleObject {
+            name: "051".into(),
+            props: Default::default(),
+            layers: Vec::new(),
+            matrix: vec![
+                0.0, 0.0, 0.0103554, 217.01507568,
+                0.0103554, 0.0, 0.0, 0.0,
+                0.0, 0.0103554, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ],
+            mesh: Some(BundleMesh {
+                vertices: vec![
+                    [3347.52099609, 3279.53588867, 614.51556396],
+                    [3347.52075195, 3279.53588867, 1063.65026855],
+                    [3796.6550293, 3279.53588867, 1063.65026855],
+                    [3796.6550293, 3279.53588867, 614.51556396],
+                ],
+                polygons: vec![BundlePolygon {
+                    vertices: vec![0, 1, 2, 3],
+                    loops: vec![0, 1, 2, 3],
+                    normal: [0.0, 1.0, 0.0],
+                    material: 0,
+                    area: 0.0,
+                }],
+                uv_layers: Default::default(),
+                face_attributes: Default::default(),
+                corner_attributes: Default::default(),
+                materials: vec![None],
+            }),
+        }
+    }
+
+    #[test]
+    fn frame_transforms_normals_with_inverse_transpose() {
+        let object = rotated_quad();
+        let frame = frame(&object, 0).expect("rotated planar face must project");
+        assert!((frame.width - 4.65097).abs() < 1e-3, "width {}", frame.width);
+        assert!((frame.height - 4.65097).abs() < 1e-3, "height {}", frame.height);
+    }
+
+    #[test]
+    fn frame_rejects_non_planar_faces() {
+        let mut object = rotated_quad();
+        // Local Y is the face normal axis under this matrix, so this bends the
+        // quad by 0.41 m in world space.
+        object.mesh.as_mut().unwrap().vertices[1][1] += 40.0;
+        let error = frame(&object, 0).unwrap_err();
+        assert!(error.contains("平面"), "{error}");
+    }
 }

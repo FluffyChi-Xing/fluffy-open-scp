@@ -134,9 +134,9 @@ fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
     Ok(result)
 }
 
-// 2026-11-06.3：.blend 导入切换到原生 Rust 管线（extract_blend.py 仅读取
-// 数据，blend_native::export 产出 LOTM）；缓存键换版本强制重新导入。
-const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-06.3";
+// 2026-11-06.4：抽取器补回 CORNER 属性（NY_DecalCoord）、法线改用
+// (M^-1)^T、贴花/调色板/浮雕/Office 内饰与插件对齐；旧缓存一律失效重导。
+const BLEND_CACHE_VERSION: &str = "openscp.blender.2026-11-06.4";
 
 fn blend_cache_key(source: &Path) -> Result<String, String> {
     let bytes = fs::read(source).map_err(|error| error.to_string())?;

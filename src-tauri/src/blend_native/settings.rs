@@ -137,8 +137,10 @@ impl Default for SurfaceState {
             base_roughness: 0.65,
             base_role: "WALL".into(),
             palette_row: -1.0,
-            wall_color: [0.62, 0.57, 0.47, 1.0],
-            roof_color: [0.13, 0.17, 0.18, 1.0],
+            // `channels.defaults()` overrides the UI property defaults
+            // (.62/.57/.47 and .13/.17/.18) with neutral grey.
+            wall_color: [0.8, 0.8, 0.8, 1.0],
+            roof_color: [0.8, 0.8, 0.8, 1.0],
             wall_normal: 0.5,
             roof_angle: 0.65,
             roof_style: "FLAT".into(),
@@ -254,7 +256,7 @@ mod tests {
         assert_eq!(state.base_uv_mode, "MATERIAL");
         assert_eq!(state.base_role, "WALL");
         assert!((state.row_pitch - 3.8).abs() < 1e-12);
-        assert_eq!(state.wall_color, [0.62, 0.57, 0.47, 1.0]);
+        assert_eq!(state.wall_color, [0.8, 0.8, 0.8, 1.0]);
     }
 
     #[test]

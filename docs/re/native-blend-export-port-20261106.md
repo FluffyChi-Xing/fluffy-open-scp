@@ -119,3 +119,61 @@ PNG 压缩字节可能因 zlib 实现不同而不同，因此 Rust 侧按层比�
 在 Rust 管线通过上述对拍前，`.blend` 导入仍使用 vendored 插件的原生导出
 （golden 已逐字节验证）。Rust 导出通过验收后再删除插件路径；不会在管线
 未完成时提前切换，避免再次出现“能导入但结果是错的”。
+
+## 2026-11-06 复查：导入失败根因与逐层对齐
+
+症状：`tall_office.blend`（以及 `Office.blend`）导入报
+`原生导出失败：装饰贴花需要平面，请先把弯曲面拆成平面`，整包无法导入。
+
+三条根因（都只在带旋转矩阵 / schema≥2 贴花的文件上暴露）：
+
+1. **抽取器丢掉了全部 CORNER 域属性。** `extract_blend.py` 用
+   `foreach_get("vector", [None]*N)`；Blender 要求扁平的 `N*dim` 浮点缓冲，
+   实际抛 `RuntimeError: internal error setting the array`，又被
+   `except (RuntimeError, TypeError)` 静默吞掉。于是 `NY_DecalCoord`
+   （schema≥2 面保存的逐 loop 贴花坐标）从未进入 bundle，导出只能回落到
+   `decals.frame()` 重投影；面一旦非平面就中止。修复：扁平缓冲 + 按维度
+   拆分（`FLOAT_VECTOR`=3、`FLOAT2`=2）。
+2. **法线矩阵少了一次转置。** `decals::normal_matrix` 与
+   `export::world_normal` 实际返回的是 `M⁻¹`，而法线需要 `(M⁻¹)ᵀ`。物体矩阵
+   含轴置换旋转时（tall_office `051`、Office 的所有对象），世界法线被转到
+   错误轴：平面校验误判、写进 LOTM 的法线也错。修复后法线多重集与插件
+   100% 一致（修复前 74%）。
+3. **贴图颜色链路把原始字节当成了线性值。** 插件通过
+   `bpy.types.Image.pixels` 读取 pack 图，对 8-bit 图返回的是**原始缓冲**
+   （色彩管理只在着色时生效），所以它的 `srgb()` 是把原始值当线性再编码
+   一次。我们此前 `decode_png(srgb=true)` 先把 palette/interior 解码成线性，
+   导致这两张图整体偏暗（palette 第 14 行源字节 68，插件输出 141，我们 68）。
+   修复：所有槽位保持原始值；字节→浮点用 `b * (1/255)`（与 Blender 位级
+   一致）；编码取整改为 numpy 的 half-to-even。
+
+同一轮修正并已逐像素对齐的细节：
+
+- palette 非激活行仍要乘材质色；窗口分支把第 14、15 行的 red 清零；
+  `np.roll` 的移位要从快照读源行（回绕时不能读已改写的行）。
+- 浮雕 gain = `strength * min(|rect.w|*0.5, |rect.h|) / 0.16`，R 通道全量
+  重映射并 clamp（此前直接用 strength、且只处理 R>FLAT 的像素）。
+- 窗框色取**面状态**的 `frame_color`（会被 `NY_Tint` 覆盖），不是场景设置。
+- 窗户预设按 256 像素矩形 `/256` 现算（`0.1640625`），不能预舍入为 `0.1641`。
+- Office 内饰：`office_room_sheet` 重建 4 变体 × 4 状态（仅 `state==1` 保留
+  alpha），512×512 输出。
+- 默认墙/顶色取 `channels.defaults()` 的 0.8 灰，而不是 UI 属性默认值
+  `(.62,.57,.47)` / `(.13,.18,.18)`。
+
+对拍结果（Rust 原生 vs SC5 Asset Editor 1.23.7，同一 `.blend`）：
+
+| 资产 | 插件 SHA-256 | 原生 SHA-256 | 分组 | 8 槽像素 |
+| --- | --- | --- | --- | --- |
+| Institute | `1dbbc4f3…` | `a7118dc1…` | 74 / 74 | 61/62 对逐像素一致；1 对 tint 差 1/255（81 px） |
+| Commercial | `2e52a463…` | `6633f762…` | 111 vs 109 | 69/69 对逐像素一致 |
+| Office | `9cee4ad8…` | `876d7c56…` | 66 / 66 | 40/40 对逐像素一致 |
+| tall_office | `185412dd…` | `0fd7fd3a…` | 112 / 112 | 68/68 对逐像素一致 |
+
+几何层：tall_office 顶点法线多重集 100% 一致；三角形总数一致，个别多边形
+只差三角化对角线（单组面积差 ≤0.12 m²，视觉不可见）。Commercial 多 2 个
+分组（两组状态只在 `night_variation` 的 f64 精度上不同，导致 key 分裂），
+两组的 8 张图与插件完全一致，渲染结果相同。
+
+5 轮确定性：`Institute a7118dc1…`、`tall_office 0fd7fd3a…` 各 5/5 一致。
+导入缓存键升至 `openscp.blender.2026-11-06.4`，旧缓存（用旧抽取器生成）
+一律失效重导。

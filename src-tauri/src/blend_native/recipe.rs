@@ -96,22 +96,27 @@ pub fn build(
     } else {
         0
     };
+    // `np.roll` shifts from a snapshot, so wrapped source rows must not read
+    // values this loop has already overwritten.
+    let palette_source = rgb.clone();
     for row in 0..14 {
         for column in 0..palette.width as usize {
             let target = row * palette.width as usize + column;
-            rgb[target] = if active {
+            let shifted = if active {
                 let source = ((row as i64 + offset).rem_euclid(16)) as usize
                     * palette.width as usize
                     + column;
-                let shifted = rgb[source];
-                [
-                    shifted[0] * input.color[0],
-                    shifted[1] * input.color[1],
-                    shifted[2] * input.color[2],
-                ]
+                palette_source[source]
             } else {
+                // Inactive palettes still get the material colour: the plug-in
+                // writes a constant 1.0 row and then multiplies by `color`.
                 [1.0, 1.0, 1.0]
             };
+            rgb[target] = [
+                shifted[0] * input.color[0],
+                shifted[1] * input.color[1],
+                shifted[2] * input.color[2],
+            ];
         }
     }
     if input.kind == Kind::Decor {
@@ -122,14 +127,16 @@ pub fn build(
         }
     }
 
-    // Relief/specular remap on the shader map.
+    // Relief/specular remap on the shader map (ports `relief_field`).
     if matches!(input.kind, Kind::Window | Kind::Decor | Kind::Motif) {
-        let relief = input.relief.max(0.001) as f32;
+        // Height is an atlas-domain distance: the plug-in scales the UI depth by
+        // the tile's shorter side, so the same slider looks equal on every pack.
+        let strength = input.relief.max(0.0) as f32;
+        let scale = ((rect[0].abs() as f32) * 0.5).min(rect[1].abs() as f32);
+        let gain = strength * scale / 0.16;
         for pixel in &mut shader.pixels {
-            if pixel[0] > FLAT_SHADER {
-                pixel[0] = FLAT_SHADER + (pixel[0] - FLAT_SHADER) * input.relief as f32;
-            }
-            pixel[1] = (pixel[1] / relief).clamp(0.0, 1.0);
+            pixel[0] = (FLAT_SHADER + (pixel[0] - FLAT_SHADER) * gain).clamp(0.0, 1.0);
+            pixel[1] = (pixel[1] / gain.max(1e-6)).clamp(0.0, 1.0);
         }
     }
     match input.kind {
@@ -272,8 +279,11 @@ pub fn build(
 
     if input.kind == Kind::Window {
         // Source palette self-light must not bypass per-window occupancy.
-        for column in 0..palette.width as usize {
-            rgb[14 * palette.width as usize + column][0] = 0.0;
+        // numpy's `rgb[14:]` covers both remaining rows.
+        for row in 14..16 {
+            for column in 0..palette.width as usize {
+                rgb[row * palette.width as usize + column][0] = 0.0;
+            }
         }
         match input.variant {
             Some(0) => {

@@ -156,17 +156,28 @@ def dump_mesh(mesh):
         if attribute.data_type not in {"FLOAT_VECTOR", "FLOAT2"}:
             continue
         try:
-            values = [None] * len(attribute.data)
-            if attribute.data_type == "FLOAT_VECTOR":
-                attribute.data.foreach_get("vector", values)
+            # foreach_get("vector", ...) fills ONE flat buffer of count*dim
+            # floats.  A list of per-element vectors raises RuntimeError
+            # ("internal error setting the array"), which silently dropped every
+            # corner attribute - including NY_DecalCoord, the saved decal
+            # coordinates the exporter must reuse instead of re-projecting.
+            dimension = 3 if attribute.data_type == "FLOAT_VECTOR" else 2
+            count = len(attribute.data)
+            values = [0.0] * (count * dimension)
+            attribute.data.foreach_get("vector", values)
+            if dimension == 2:
                 corner_attributes[attribute.name] = [
-                    [round(value[0], 8), round(value[1], 8), round(value[2], 8)]
-                    for value in values
+                    [round(values[index], 8), round(values[index + 1], 8), 0.0]
+                    for index in range(0, count * 2, 2)
                 ]
             else:
-                attribute.data.foreach_get("vector", values)
                 corner_attributes[attribute.name] = [
-                    [round(value[0], 8), round(value[1], 8), 0.0] for value in values
+                    [
+                        round(values[index], 8),
+                        round(values[index + 1], 8),
+                        round(values[index + 2], 8),
+                    ]
+                    for index in range(0, count * 3, 3)
                 ]
         except (RuntimeError, TypeError):
             continue

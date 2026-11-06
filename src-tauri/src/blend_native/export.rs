@@ -76,12 +76,6 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             source_faces += 1;
             let resolved = resolver.resolve(input.bundle, Some(input.catalog), object, face_index)?;
             let mut state = resolved.state.clone();
-            let scene_frame_color = input
-                .bundle
-                .frame_color
-                .filter(|color| color.iter().any(|value| *value != 0.0))
-                .map(|color| [color[0] as f32, color[1] as f32, color[2] as f32, color[3] as f32])
-                .unwrap_or(state.frame_color);
             let role = resolved.role.clone();
             let material = mesh
                 .materials
@@ -246,8 +240,10 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
 
             if state.decal_enabled {
                 if let Some(decal_entry) = input.index.get(&state.decal_style) {
-                    let duv = decals::coordinates(object, face_index)?;
-                    let frame = decals::frame(object, face_index)?;
+                    let duv = decals::coordinates(object, face_index)
+                        .map_err(|error| decal_error(error, object, face_index, &role, &state, mesh))?;
+                    let frame = decals::frame(object, face_index)
+                        .map_err(|error| decal_error(error, object, face_index, &role, &state, mesh))?;
                     let mut width = frame.width;
                     let mut height = frame.height;
                     if let (Some(values), Some(heights)) = (
@@ -467,7 +463,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                         let window_input = RecipeInput {
                             kind: Kind::Window,
                             entry: Some(&style_entry),
-                            color: scene_frame_color,
+                            color: state.frame_color,
                             normal: state.normal,
                             palette_row: window_palette_row,
                             variant,
@@ -486,7 +482,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                             Kind::Window,
                             Some(&style_entry),
                             &window_state,
-                            scene_frame_color,
+                            state.frame_color,
                             state.normal,
                             variant,
                             group_mode,
@@ -917,6 +913,49 @@ fn overlay(
     found
 }
 
+/// Adds the face context the plug-in never shows, so a rejected decal face can
+/// be found in Blender without guessing.  The stored coordinates matter: a
+/// schema-2 face carries its own decal UVs and only needs the planarity check
+/// when `NY_DecalCoord` is missing (e.g. an extractor that drops corner
+/// attributes).
+fn decal_error(
+    error: String,
+    object: &BundleObject,
+    face_index: usize,
+    role: &str,
+    state: &SurfaceState,
+    mesh: &super::dump::BundleMesh,
+) -> String {
+    let schema = mesh
+        .face_attributes
+        .get("NY_Decal_schema")
+        .and_then(|values| values.get(face_index))
+        .and_then(|value| value.as_f64());
+    let stored = mesh.corner_attributes.contains_key("NY_DecalCoord");
+    super::trace::emit(
+        "decal_failed",
+        serde_json::json!({
+            "object": object.name,
+            "face": face_index,
+            "role": role,
+            "style": state.decal_style,
+            "vertices": mesh.polygons[face_index].vertices.len(),
+            "schema": schema,
+            "stored_coordinates": stored,
+        }),
+    );
+    format!(
+        "{error}（对象 {} 面 {}，{} 顶点，角色 {role}，贴花样式 {}，schema {}，已存坐标 {stored}）",
+        object.name,
+        face_index,
+        mesh.polygons[face_index].vertices.len(),
+        state.decal_style,
+        schema
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "无".into()),
+    )
+}
+
 fn recipe_key(
     kind: Kind,
     entry: Option<&Entry>,
@@ -965,10 +1004,11 @@ fn world_normal(object: &BundleObject, normal: [f64; 3]) -> [f64; 3] {
     }
     let cofactor = [cross(b, c), cross(c, a), cross(a, b)];
     let inv = 1.0 / det;
+    // (M^-1)^T n: the adjugate rows are det*M^-1, so combine them row-wise.
     let n = [
-        (cofactor[0][0] * normal[0] + cofactor[1][0] * normal[1] + cofactor[2][0] * normal[2]) * inv,
-        (cofactor[0][1] * normal[0] + cofactor[1][1] * normal[1] + cofactor[2][1] * normal[2]) * inv,
-        (cofactor[0][2] * normal[0] + cofactor[1][2] * normal[1] + cofactor[2][2] * normal[2]) * inv,
+        (cofactor[0][0] * normal[0] + cofactor[0][1] * normal[1] + cofactor[0][2] * normal[2]) * inv,
+        (cofactor[1][0] * normal[0] + cofactor[1][1] * normal[1] + cofactor[1][2] * normal[2]) * inv,
+        (cofactor[2][0] * normal[0] + cofactor[2][1] * normal[1] + cofactor[2][2] * normal[2]) * inv,
     ];
     normalize(n).unwrap_or(normal)
 }
@@ -1023,44 +1063,60 @@ fn style_entry(index: &CatalogIndex, style: &str) -> Option<Entry> {
     if let Some(entry) = index.get(style) {
         return Some(entry.clone());
     }
-    const PRESETS: [(&str, [f64; 4]); 20] = [
-        ("CLASSIC", [0.125, 0.199, 0.449, 0.371]),
-        ("PANEL", [0.187, 0.187, 0.012, 0.383]),
-        ("TALL", [0.145, 0.265, 0.582, 0.367]),
-        ("SQUARE", [0.1953, 0.1953, 0.0117, 0.3867]),
-        ("SASH_EQUAL", [0.1406, 0.1406, 0.2969, 0.3672]),
-        ("TRANSOM_MEDIUM", [0.1406, 0.2070, 0.4414, 0.3672]),
-        ("TRANSOM_TALL", [0.1406, 0.2695, 0.5859, 0.3672]),
-        ("FIVE_LIGHT", [0.1953, 0.0820, 0.0117, 0.6016]),
-        ("HORIZONTAL_SASH", [0.1953, 0.0898, 0.0117, 0.6758]),
-        ("NARROW_TRANSOM", [0.1406, 0.2656, 0.2109, 0.6016]),
-        ("STACKED_PAIR", [0.1367, 0.2422, 0.3711, 0.6055]),
-        ("SINGLE_UPPER", [0.1367, 0.1211, 0.3711, 0.6055]),
-        ("SINGLE_LOWER", [0.1367, 0.1289, 0.3711, 0.7188]),
-        ("TRIPLE_LEFT", [0.1055, 0.3164, 0.5273, 0.6719]),
-        ("TRIPLE_RIGHT", [0.1055, 0.3164, 0.6172, 0.6719]),
-        ("BAY_GRID", [0.2031, 0.2109, 0.7305, 0.5000]),
-        ("BAY_TRANSOM", [0.2031, 0.2734, 0.7305, 0.7148]),
-        ("FRENCH_PAIR", [0.1641, 0.2227, 0.0273, 0.7578]),
-        ("FRENCH_LEFT", [0.0820, 0.2227, 0.0273, 0.7578]),
-        ("FRENCH_RIGHT", [0.0820, 0.2227, 0.1094, 0.7578]),
-    ];
-    PRESETS
-        .iter()
-        .find(|(id, _)| *id == style)
-        .map(|(id, rect)| Entry {
-            id: (*id).to_string(),
-            name: (*id).to_string(),
-            pack: "Commercial".into(),
-            rect: *rect,
-            recipe: 19,
-            recipe_layer: Some("上层".into()),
-            size: None,
-            rotation: None,
-            shade_mean: None,
-            room_tile: None,
-        })
+    // First three presets are authored as normalized rects, the rest as pixel
+    // rectangles in the shared 256×256 window sheet (`ATLAS_WINDOWS` in the
+    // plug-in).  Keep the pixel form so the derived rects stay bit-identical
+    // (rounding 0.1640625 to 0.1641 shifts every texture transform).
+    let rect = match style {
+        "CLASSIC" => Some([0.125, 0.199, 0.449, 0.371]),
+        "PANEL" => Some([0.187, 0.187, 0.012, 0.383]),
+        "TALL" => Some([0.145, 0.265, 0.582, 0.367]),
+        _ => ATLAS_WINDOWS
+            .iter()
+            .find(|(id, _)| *id == style)
+            .map(|(_, [x0, y0, x1, y1])| {
+                [
+                    (x1 - x0) / 256.0,
+                    (y1 - y0) / 256.0,
+                    x0 / 256.0,
+                    y0 / 256.0,
+                ]
+            }),
+    };
+    rect.map(|rect| Entry {
+        id: style.to_string(),
+        name: style.to_string(),
+        pack: "Commercial".into(),
+        rect,
+        recipe: 19,
+        recipe_layer: Some("上层".into()),
+        size: None,
+        rotation: None,
+        shade_mean: None,
+        room_tile: None,
+    })
 }
+
+/// Pixel rectangles of the shared 256×256 window sheet (plug-in `ATLAS_WINDOWS`).
+const ATLAS_WINDOWS: [(&str, [f64; 4]); 17] = [
+    ("SQUARE", [3.0, 99.0, 53.0, 149.0]),
+    ("SASH_EQUAL", [76.0, 94.0, 112.0, 130.0]),
+    ("TRANSOM_MEDIUM", [113.0, 94.0, 149.0, 147.0]),
+    ("TRANSOM_TALL", [150.0, 94.0, 186.0, 163.0]),
+    ("FIVE_LIGHT", [3.0, 154.0, 53.0, 175.0]),
+    ("HORIZONTAL_SASH", [3.0, 173.0, 53.0, 196.0]),
+    ("NARROW_TRANSOM", [54.0, 154.0, 90.0, 222.0]),
+    ("STACKED_PAIR", [95.0, 155.0, 130.0, 217.0]),
+    ("SINGLE_UPPER", [95.0, 155.0, 130.0, 186.0]),
+    ("SINGLE_LOWER", [95.0, 184.0, 130.0, 217.0]),
+    ("TRIPLE_LEFT", [135.0, 172.0, 162.0, 253.0]),
+    ("TRIPLE_RIGHT", [158.0, 172.0, 185.0, 253.0]),
+    ("BAY_GRID", [187.0, 128.0, 239.0, 182.0]),
+    ("BAY_TRANSOM", [187.0, 183.0, 239.0, 253.0]),
+    ("FRENCH_PAIR", [7.0, 194.0, 49.0, 251.0]),
+    ("FRENCH_LEFT", [7.0, 194.0, 28.0, 251.0]),
+    ("FRENCH_RIGHT", [28.0, 194.0, 49.0, 251.0]),
+];
 
 fn legacy_decor_entry(style: &str) -> Option<Entry> {
     matches!(style, "RECESSED" | "TWIN" | "BRICKS").then(|| Entry {
@@ -1133,6 +1189,22 @@ fn normalize(a: [f64; 3]) -> Option<[f64; 3]> {
 mod export_tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn window_presets_derive_rects_from_pixel_rectangles() {
+        // Rounding these to 4 decimals (0.1641 instead of 0.1640625) shifts
+        // every texture transform and splits window groups the plug-in merges.
+        let catalog = Catalog::parse(br#"{"packs":{},"windows":[],"decor":[],"surfaces":[],"modules":[]}"#)
+            .unwrap();
+        let index = catalog.index();
+        let french = style_entry(&index, "FRENCH_PAIR").expect("preset");
+        assert_eq!(
+            french.rect,
+            [0.1640625, 0.22265625, 0.02734375, 0.7578125]
+        );
+        let square = style_entry(&index, "SQUARE").expect("preset");
+        assert_eq!(square.rect, [50.0 / 256.0, 50.0 / 256.0, 3.0 / 256.0, 99.0 / 256.0]);
+    }
 
     /// End-to-end native export of an extracted bundle.
     ///
