@@ -56,6 +56,9 @@ const HASH_PATH_ROAD_CONNECT: u32 = 0x0D9A_A2BB;
 /// the vanilla school carries Key 2C7C7986, the park donor does not.
 const HASH_INTERNAL_PATH_REF: u32 = 0x0DA6_9D6F;
 const VANILLA_INTERNAL_PATH_REF: u32 = 0x2C7C_7986;
+/// Unit leaf bundle-exclude table (cEcoUnitEntry::FillFromProps subtracts it
+/// from the enable union; the park donor excludes the economy bundle).
+const HASH_EXCLUDE_TABLE: u32 = 0x0A02_09B2;
 
 /// `semantics.behavior` document: bind a minimal education loop onto the
 /// donor identity without touching menu placement.
@@ -120,6 +123,17 @@ pub struct BehaviorSpec {
     /// 2C7C7986), present on vanilla schools and absent on the park donor.
     #[serde(default)]
     pub ensure_internal_path_ref: bool,
+    /// Bundle ids to remove from the leaf exclude table (0x0A0209B2).  The
+    /// park donor excludes the economy bundle 30645625, which carries the
+    /// commuter-car bins (0AB4DFE1/E2/E3) that drive the percent-fill parking
+    /// draw — excluding it keeps the parking lot permanently empty.
+    #[serde(default, deserialize_with = "super::menu::de_hash_vec")]
+    pub remove_excluded_bundles: Vec<u32>,
+    /// Unit leaf float fields to set (hex hash → value).  Carries the college
+    /// leaf's per-bin initial amounts (0x0B9880C6 family) and sink capacity
+    /// (0x0AD93A77) that vanilla colleges ship and park donors lack.
+    #[serde(default)]
+    pub set_float_fields: BTreeMap<String, f64>,
 }
 
 impl BehaviorSpec {
@@ -712,6 +726,31 @@ fn patch_unit(
             "value": removed,
         }));
     }
+    if !spec.remove_excluded_bundles.is_empty() {
+        let excluded = unit.values.iter_mut().find(|p| p.hash == HASH_EXCLUDE_TABLE);
+        if let Some(property) = excluded {
+            if let Kind::Array(values) = &mut property.kind {
+                let before = values.len();
+                values.retain(|v| !matches!(v, Value::Key(k) if spec.remove_excluded_bundles.contains(&k.instance)));
+                changed.push(serde_json::json!({
+                    "resource": unit_id.to_string(),
+                    "field": format!("{HASH_EXCLUDE_TABLE:08X}"),
+                    "value": format!("{} -> {}", before, values.len()),
+                }));
+            }
+        }
+    }
+    for (hash_text, value) in &spec.set_float_fields {
+        let Ok(hash) = u32::from_str_radix(hash_text.trim_start_matches("0x"), 16) else {
+            return Err(format!("setFloatFields key {hash_text:?} is not hex"));
+        };
+        set_scalar(&mut unit, hash, PropType::Float, Value::Float(*value as f32));
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "field": format!("{hash:08X}"),
+            "value": value,
+        }));
+    }
     for bundle in &spec.remove_bundles {
         let mut removed_from = Vec::new();
         for hash in [HASH_BUNDLE_ENABLE_A2, 0x0A02_09A3, 0x0A02_09A4, HASH_BUNDLE_ENABLE_A5] {
@@ -979,6 +1018,38 @@ fn ensure_education_invariants(
         if unit.get(*hash).is_some() {
             return Err(format!(
                 "invariant FIELD_REMOVAL violated: {hash:08X} still present after removal"
+            ));
+        }
+    }
+    // Excluded bundles must actually leave the exclude table (the commuter-car
+    // bins live behind this gate).
+    for bundle in &spec.remove_excluded_bundles {
+        let still_excluded = unit.get(HASH_EXCLUDE_TABLE).is_some_and(|property| {
+            matches!(
+                &property.kind,
+                Kind::Array(values) if values.iter().any(|v| matches!(v,
+                    Value::Key(k) if k.instance == *bundle
+                ))
+            )
+        });
+        if still_excluded {
+            return Err(format!(
+                "invariant EXCLUDE_REMOVAL violated: {bundle:08X} still excluded"
+            ));
+        }
+    }
+    // Set fields must exist with the requested value (fail on silent drops).
+    for (hash_text, value) in &spec.set_float_fields {
+        let hash = u32::from_str_radix(hash_text.trim_start_matches("0x"), 16).unwrap();
+        let ok = unit.get(hash).is_some_and(|property| {
+            matches!(
+                &property.kind,
+                Kind::Scalar(Value::Float(v)) if (*v - *value as f32).abs() < 1e-4
+            )
+        });
+        if !ok {
+            return Err(format!(
+                "invariant SET_FIELD violated: {hash:08X} is not {value}"
             ));
         }
     }
