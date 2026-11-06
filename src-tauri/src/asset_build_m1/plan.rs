@@ -15,6 +15,9 @@ pub struct PropertyBuildPlan {
     /// `semantics.menu`: register the built building as a NEW menu entry
     /// (new property identity) instead of overriding the reference lot.
     pub menu: Option<super::menu::MenuRegistrationSpec>,
+    /// `semantics.behavior`: bind behavior fields onto the FROZEN donor
+    /// identity (full-mode standalone package; menu stays byte-identical).
+    pub behavior: Option<super::behavior::BehaviorSpec>,
     #[serde(skip)]
     pub(crate) typed_patches: Vec<PropertyPatch>,
     #[serde(skip)]
@@ -39,6 +42,30 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         if im.references.lot.is_none() {
             return Err(
                 "semantics.menu requires reference.lot to clone the lot identity from".into(),
+            );
+        }
+        Some(spec)
+    };
+    let behavior = if im.semantics.behavior.is_empty() {
+        None
+    } else {
+        let spec = super::behavior::BehaviorSpec::from_values(&im.semantics.behavior)?;
+        if menu.is_some() {
+            return Err(
+                "semantics.behavior and semantics.menu are mutually exclusive: behavior binds the frozen donor identity, menu allocates a new one".into(),
+            );
+        }
+        if im.references.lot.is_none() {
+            return Err(
+                "semantics.behavior requires reference.lot to bind the donor identity".into()
+            );
+        }
+        // 行为声明必须搭配 full 输出：delta 包依赖 donor 在场， donor 下架
+        // 即重演 s24 菜单 ***/模型/树丢失。full 模式把参考快照整体重打包，
+        // 保证包独立可工作。
+        if im.output.mode != crate::asset_build_m0::OutputMode::Full {
+            return Err(
+                "semantics.behavior requires outputs.mode \"full\" (a standalone package must not depend on the donor at runtime)".into(),
             );
         }
         Some(spec)
@@ -110,13 +137,16 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
     }
     Ok(PropertyBuildPlan {
-        processor_version: "openscp.property.m1/20",
+        // /21: behavior-bind 阶段上线（菜单/行为拆分）+ parent 修复为原版
+        // type-ful 编码 `00B1B104:48E0C000:<tpl>`（fire-station 解剖定案）。
+        processor_version: "openscp.property.m1/21",
         scope: "property+scene-model",
         intermediate: im,
         patches: specs,
         typed_patches: patches,
         protected,
         menu,
+        behavior,
         order: ["property", "dbpf", "readback"],
     })
 }

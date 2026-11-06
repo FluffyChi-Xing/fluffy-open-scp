@@ -189,7 +189,7 @@ fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(build_entries.len(), 3, "build dir + ledger dir + cache dir: {build_entries:?}");
+    assert_eq!(build_entries.len(), 4, "build dir + ledger dir + cache dir + pool-last.json: {build_entries:?}");
     assert!(build_entries.contains(&"ledger".to_string()));
     assert!(build_entries.contains(&"cache".to_string()));
     resources.insert(opaque, vec![42]);
@@ -293,7 +293,7 @@ fn rejects_traversal_and_preserves_existing_build_on_corruption() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(build_entries.len(), 3, "build dir + ledger dir + cache dir: {build_entries:?}");
+    assert_eq!(build_entries.len(), 4, "build dir + ledger dir + cache dir + pool-last.json: {build_entries:?}");
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1014,7 +1014,9 @@ fn golden_full_chain_asset_dict_columns() {
         key(0x00B1_B104, 0x40E1_C400, 0x675B_61B1)
     );
     assert_eq!(column_first(&asset, 0x0D9A_4E54), key(0, 0, 0xF44F_784A));
-    assert_eq!(column_first(&asset, 0x0D9A_A2BB), key(0, 0, 0xC186_DA37));
+    // roadConnect:true = kRoadConnectFirst（s18 实机诊断修正；旧断言误钉
+    // kRoadConnectNone=0xC186DA37）。
+    assert_eq!(column_first(&asset, 0x0D9A_A2BB), key(0, 0, 0xF0F6_1CED));
     // -- 资源清单:menu 基线 6(menu2/unit/asset/locale/icon/marquee)
     //    + 旋转重编码后的 ground mask raster + donor 模型 RW4 + 材质 raster
     //    + PathEntry 675B61B1 闭包提升(993e7a3 起保留,s10 路径事故修复)。
@@ -1156,4 +1158,250 @@ fn university_s10_headless_build_and_wire_check() {
     assert!(!spawner_ids.is_empty(), "spawner 锚点不能为空");
     assert_eq!(count(uh::SPAWNER_TRANSFORMS), count(uh::SPAWNER_IDS), "spawner ids/transforms 等长");
     println!("wire check OK: trees(bin12)={tree_ids:08X?} x10, cars(bin0)=[0AB4DFE1] x9, lights=11, spawner anchors={} ({:08X?})", spawner_ids.len(), spawner_ids);
+}
+
+// ---- behavior-bind（菜单/行为拆分）----
+
+/// 合成 donor：Menu2/Unit/Lot/locale/图标共用一个身份 instance，locale 按
+/// 插件作者约定携带标题/描述/哨兵三行。
+fn behavior_donor_entries(instance: u32) -> Vec<(ResourceId, Vec<u8>)> {
+    let locale_json = "{\r\n    \"0x00000001\" : \"原版大学\",\r\n    \"0x00000002\" : \"原始描述\",\r\n    \"0xffffffff\" : \"0xffffffff\"\r\n}";
+    let mut locale = vec![0xEF, 0xBB, 0xBF];
+    locale.extend_from_slice(locale_json.as_bytes());
+    let menu2 = PropertyFile {
+        claimed_count: 1,
+        values: vec![Property {
+            hash: 0x0A09F5FA,
+            prop_type: PropType::Text,
+            kind: Kind::Array(vec![Value::Text(sc_properties::Text {
+                table_id: instance,
+                instance_id: 1,
+            })]),
+            encoding: PropertyEncoding {
+                flags: 0x801C,
+                array_item_size: Some(sc_properties::TEXT_ARRAY_ITEM_SIZE),
+            },
+        }],
+    }
+    .encode_canonical()
+    .unwrap();
+    let key = |group: u32, instance: u32| {
+        Value::Key(sc_properties::Key {
+            type_id: 0,
+            group,
+            instance,
+        })
+    };
+    let unit = PropertyFile {
+        claimed_count: 3,
+        values: vec![
+            Property {
+                hash: 0x00B2CCCB,
+                prop_type: PropType::Key,
+                kind: Kind::Scalar(key(0x48E0C000, 0x7E4B99E5)),
+                encoding: PropertyEncoding::default(),
+            },
+            Property {
+                hash: 0x0AFE27B1,
+                prop_type: PropType::Key,
+                kind: Kind::Scalar(key(0, 0x95A9D6FD)),
+                encoding: PropertyEncoding::default(),
+            },
+            Property {
+                hash: 0x0A0209A5,
+                prop_type: PropType::Key,
+                kind: Kind::Array(vec![key(0, 0xE7690450)]),
+                encoding: PropertyEncoding {
+                    flags: 0x809C,
+                    array_item_size: Some(12),
+                },
+            },
+        ],
+    }
+    .encode_canonical()
+    .unwrap();
+    let lot = PropertyFile {
+        claimed_count: 1,
+        values: vec![Property {
+            hash: 0x0BBBCDED,
+            prop_type: PropType::Int32,
+            kind: Kind::Scalar(Value::Int32(219)),
+            encoding: PropertyEncoding::default(),
+        }],
+    }
+    .encode_canonical()
+    .unwrap();
+    let at = |type_id: u32, group: u32, bytes: Vec<u8>| {
+        (
+            ResourceId {
+                type_id,
+                group,
+                instance,
+            },
+            bytes,
+        )
+    };
+    vec![
+        at(0x00B1B104, 0x09878A01, menu2),
+        at(0x00B1B104, 0x40E0C000, unit),
+        at(0x00B1B104, 0x40E1C000, lot),
+        at(0x0A98EAF0, 0x02FABF01, locale),
+        // 冻结面：任一非属性资源（图标位）必须原样穿透。
+        at(0x2F7D0004, 0x40E02400, vec![1, 2, 3, 4, 5]),
+    ]
+}
+
+fn behavior_schema(mode: &str) -> serde_json::Value {
+    serde_json::json!({
+        "$schema": "openscp.asset", "schema_version": 2,
+        "id": "behavior-test", "kind": "building-asset",
+        "reference": { "package": "source.package", "lot": "00B1B104:40E1C000:8D007745" },
+        "scene": { "document": "asset.lot.json" },
+        "semantics": {
+            "lotChange": true,
+            "behavior": {
+                "kind": "education-minimal",
+                "titleOverride": "大学建筑测试包 s24",
+                "studentCapacity": 250
+            }
+        },
+        "outputs": { "package": "behavior-test.package", "mode": mode }
+    })
+}
+
+fn behavior_donor(root: &Path) {
+    let entries = behavior_donor_entries(0x8D007745)
+        .into_iter()
+        .map(|(id, bytes)| OverlayEntry::new(id, bytes))
+        .collect::<Vec<_>>();
+    fs::write(
+        root.join("source.package"),
+        write_uncompressed_overlay(&entries).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.join("asset.lot.json"), "{}").unwrap();
+}
+
+#[test]
+fn behavior_full_clone_patches_unit_and_freezes_menu() {
+    let root = temp_root();
+    behavior_donor(&root);
+    let schema = behavior_schema("full").to_string();
+    let first = build_from_schema(&root, &schema).unwrap();
+
+    // 1) 全克隆：输出 TGI 集与 donor 完全一致。
+    let donor = connector::read_source(&root.join("source.package")).unwrap();
+    let output_package = Package::open(&first.path).unwrap();
+    let output_ids: Vec<ResourceId> = output_package
+        .entries()
+        .iter()
+        .map(|entry| entry.id)
+        .collect();
+    let mut donor_ids: Vec<ResourceId> = donor.keys().copied().collect();
+    donor_ids.sort_by_key(|id| (id.type_id, id.group, id.instance));
+    let mut sorted_ids = output_ids.clone();
+    sorted_ids.sort_by_key(|id| (id.type_id, id.group, id.instance));
+    assert_eq!(sorted_ids, donor_ids, "full mode must carry every donor TGI and nothing else");
+
+    let read = |id: ResourceId| -> Vec<u8> {
+        output_package
+            .read(output_package.entry(id).unwrap())
+            .unwrap()
+    };
+    let at = |type_id: u32, group: u32| ResourceId {
+        type_id,
+        group,
+        instance: 0x8D007745,
+    };
+
+    // 2) 菜单冻结：Menu2 与图标字节不变。
+    assert_eq!(
+        read(at(0x00B1B104, 0x09878A01)),
+        donor[&at(0x00B1B104, 0x09878A01)],
+        "Menu2 must stay byte-identical"
+    );
+    assert_eq!(
+        read(at(0x2F7D0004, 0x40E02400)),
+        donor[&at(0x2F7D0004, 0x40E02400)],
+        "icon bytes must stay identical"
+    );
+
+    // 3) locale 仅标题行变化。
+    let locale_after = read(at(0x0A98EAF0, 0x02FABF01));
+    let locale_text = String::from_utf8(locale_after).unwrap();
+    assert!(locale_text.contains("\"大学建筑测试包 s24\""), "title overridden");
+    assert!(locale_text.contains("\"0x00000002\" : \"原始描述\""), "description row frozen");
+    assert!(locale_text.contains("\"0xffffffff\" : \"0xffffffff\""), "sentinel row frozen");
+
+    // 4) Unit 增量字段：parent/category/容量/教育 bundle 并入，树 bundle 保留。
+    let unit = PropertyFile::parse(&read(at(0x00B1B104, 0x40E0C000))).unwrap();
+    let key_instance = |file: &PropertyFile, hash: u32| match file.get(hash).map(|p| &p.kind) {
+        Some(Kind::Scalar(Value::Key(k))) => Some((k.group, k.instance)),
+        _ => None,
+    };
+    assert_eq!(
+        key_instance(&unit, 0x00B2CCCB),
+        Some((0x48E0C000, 0x7E4B99E5)),
+        "unit parent stays on the education template"
+    );
+    assert_eq!(
+        key_instance(&unit, 0x0AFE27B1),
+        Some((0, 0x95A9D6FD)),
+        "unit category stays education"
+    );
+    assert!(
+        matches!(unit.get(0x0AD7FAC9).map(|p| &p.kind),
+            Some(Kind::Scalar(Value::Float(v))) if (*v - 250.0).abs() < 1e-6),
+        "student capacity written"
+    );
+    let bundles = |file: &PropertyFile, hash: u32| match file.get(hash).map(|p| &p.kind) {
+        Some(Kind::Array(vs)) => vs
+            .iter()
+            .filter_map(|v| match v {
+                Value::Key(k) => Some(k.instance),
+                _ => None,
+            })
+            .collect::<Vec<u32>>(),
+        _ => Vec::new(),
+    };
+    let union: Vec<u32> = [0x0A0209A2usize, 0x0A0209A5]
+        .iter()
+        .flat_map(|hash| bundles(&unit, *hash as u32))
+        .collect();
+    assert!(union.contains(&0x6C042367), "education bundle enabled: {union:08X?}");
+    assert!(union.contains(&0xE7690450), "donor tree bundle preserved: {union:08X?}");
+
+    // 5) Lot 看板字段落到教育看板。
+    let lot = PropertyFile::parse(&read(at(0x00B1B104, 0x40E1C000))).unwrap();
+    assert_eq!(
+        key_instance(&lot, 0x0D7970ED),
+        Some((0, 0x6A1785B4)),
+        "lot board switched to education"
+    );
+
+    // 6) 确定性：同输入两次构建字节一致。
+    let second = build_from_schema(&root, &schema).unwrap();
+    assert_eq!(first.sha256, second.sha256, "deterministic output");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn behavior_requires_full_mode_and_rejects_menu_mixing() {
+    let root = temp_root();
+    behavior_donor(&root);
+    let delta = build_from_schema(&root, &behavior_schema("delta").to_string())
+        .err()
+        .expect("behavior + delta must fail");
+    assert!(delta.contains("full"), "error names the required mode: {delta}");
+    let mut mixed = behavior_schema("full");
+    mixed["semantics"]["menu"] = serde_json::json!({ "title": "x" });
+    let mixed_error = build_from_schema(&root, &mixed.to_string())
+        .err()
+        .expect("behavior + menu must fail");
+    assert!(
+        mixed_error.contains("mutually exclusive"),
+        "error explains the conflict: {mixed_error}"
+    );
+    let _ = fs::remove_dir_all(root);
 }

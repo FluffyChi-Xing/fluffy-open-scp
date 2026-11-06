@@ -62,6 +62,10 @@ pub struct SemanticsSchema {
     pub lot_bindings: BTreeMap<String, Value>,
     #[serde(default)]
     pub menu: BTreeMap<String, Value>,
+    /// `semantics.behavior`: 行为处理器声明（behavior.rs）。菜单/行为拆分：
+    /// 行为绑定冻结 donor 身份，仅 Unit/Lot/locale(title) 增量。
+    #[serde(default)]
+    pub behavior: BTreeMap<String, Value>,
     /// Property patch documents are intentionally kept as JSON at M0. The
     /// typed Property writer owns their domain validation in M1, while M0
     /// still includes them in the schema hash and intermediate contract.
@@ -74,6 +78,12 @@ pub struct SemanticsSchema {
     /// false 时任何未声明的材质指纹漂移都会在 insert-model 失败。
     #[serde(default, rename = "materialChange")]
     pub material_change: bool,
+    /// P3 属性验收闸门声明位（2026-11-06）：Asset/Unit 已验证列（材质/
+    /// 地面/树/灯/效果/道具/路网/锚点）有意变更时置 true，属性闸门放行并
+    /// 刷新 `.build/property-baseline.json`；缺省 false 时任何未声明的列
+    /// 漂移都在 scene-semantics 失败并点名责任列。
+    #[serde(default, rename = "lotChange")]
+    pub lot_change: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

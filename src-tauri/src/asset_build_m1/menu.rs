@@ -25,6 +25,7 @@ use sc_properties::{
     Kind, LOD_MODEL_HASHES, LOT_MASK_HASH, LOT_SIZE_HASH, PropType, Property, PropertyEncoding,
     PropertyFile, Text, Value,
 };
+use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -57,14 +58,17 @@ pub const LOCALE_TYPE: u32 = 0x0A98_EAF0;
 pub const LOCALE_GROUP: u32 = 0x02FA_BF01;
 
 // Menu2 property 哈希（menu-export.ts HASH 表同源）。
-const HASH_PARENT: u32 = 0x00B2_CCCB;
+pub(crate) const HASH_PARENT: u32 = 0x00B2_CCCB;
 /// Dalian’s proven full identity instance (Menu2/Unit/Lot share it).
 pub const DALIAN_IDENTITY_INSTANCE: u32 = 0xF922_1FCF;
 /// Dalian’s locale table id (existing game table, safe to override).
 pub const DALIAN_LOCALE_TABLE: u32 = 0x284C_6727;
-const HASH_TITLE: u32 = 0x0A09_F5FA;
+pub(crate) const HASH_TITLE: u32 = 0x0A09_F5FA;
 const HASH_DESC: u32 = 0x0A09_F5FB;
 const HASH_MENU_UNIT: u32 = 0x0975_695F;
+/// Menu2 工具对象类别（原版 plop 建筑统一 `C710B6E9` kCategoryIDBuilding；
+/// 见 docs/re/building-eco-chain-and-s17-diagnosis-20261106.md §5.3 R1）。
+const HASH_BUILDING_CATEGORY: u32 = 0x0975_695E;
 const HASH_TOOL_ICON: u32 = 0x0977_AA8F;
 const HASH_UI_CATEGORY: u32 = 0x0DB9_FC63;
 const HASH_UI_POSITION: u32 = 0x0DC1_E3E0;
@@ -75,8 +79,8 @@ const HASH_UNLOCK_STRING: u32 = 0x0DE8_4DDC;
 const HASH_EFFECT_TITLE: u32 = 0x0EB1_FC05;
 const HASH_EFFECT_PARAM: u32 = 0x0EB1_FC22;
 const HASH_PARK_FLAG: u32 = 0x0EC4_80DF;
-const EDUCATION_BEHAVIOR_CATEGORY: u32 = 0x95A9_D6FD;
-const ELEMENTARY_TEMPLATE: u32 = 0x7E4B_99E5;
+pub(crate) const EDUCATION_BEHAVIOR_CATEGORY: u32 = 0x95A9_D6FD;
+pub(crate) const ELEMENTARY_TEMPLATE: u32 = 0x7E4B_99E5;
 /// kResourceIDHQ_CityHall_IsOn（市政厅启用；NightHouse/威利斯同款解锁位）。
 const UNLOCK_CITY_HALL: u32 = 0xC93F_D4B5;
 // Unit 叶子哈希。
@@ -86,6 +90,8 @@ const HASH_UNIT_UNLOCK_BIN: u32 = 0x0BF5_D2E3;
 const HASH_UNIT_UNLOCK_AMOUNT: u32 = 0x0BF5_D2E4;
 const HASH_CONSTRUCTION_COST: u32 = 0x0A8A_41DA;
 const HASH_MAINTENANCE_COST: u32 = 0x09AE_19D7;
+pub(crate) const HASH_UNIT_CATEGORY: u32 = 0x0AFE_27B1;
+pub(crate) const HASH_STUDENT_CAPACITY: u32 = 0x0AD7_FAC9;
 
 /// `semantics.menu` 文档：新建筑身份 + 菜单归属。字段全部可选除标题。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +138,18 @@ pub struct MenuRegistrationSpec {
     /// 公园类条目用公园子根（如 `F970A822`，原版 tools.json 同款）。
     #[serde(default, deserialize_with = "de_hash")]
     pub menu_parent_instance: Option<u32>,
+    /// Menu2 工具对象类别（0x0975695E）。原版一切 plop 建筑工具都带
+    /// `C710B6E9`（kCategoryIDBuilding）；缺省不写（与旧行为兼容）。s17 诊断
+    /// 的 R1 判别实验要求公园菜单 + plop 家族时显式携带该字段。
+    #[serde(default, deserialize_with = "de_hash")]
+    pub building_category_instance: Option<u32>,
+    /// Lot 城市看板绑定（Asset 0x0D7970ED，Key）。游戏在 UnitCreate 时读取
+    /// 该值把单元槽位挂进 `mGameUI->mCachedUnitSlotHashMap`（UnitDestroy 对称
+    /// 注销）——人口地图/面板聚合按看板查询。原版小学 = 教育容器
+    /// `6A1785B4`；交互链恢复会把公园残留值（D0621548）覆盖上来，教育类
+    /// 建筑必须显式声明。缺省不写（与旧行为兼容）。
+    #[serde(default, deserialize_with = "de_hash")]
+    pub lot_board_instance: Option<u32>,
     /// Unit 叶子的 cUnit 模板 instance（组 48E0C000）；默认地标模板
     /// `4E01E311`。公园测试可用 NightHouse 实证对 `565B72B9`。
     #[serde(default, deserialize_with = "de_hash")]
@@ -156,6 +174,11 @@ pub struct MenuRegistrationSpec {
     /// the verified `0x0AD7FAC9` Unit field; it is not a worker/job count.
     #[serde(default)]
     pub student_capacity: Option<i32>,
+    /// Whether to activate the shared dynamic tree-bin bundle. Static scene
+    /// tree props already occupy the Lot BinDraw columns, so this must be
+    /// false when the asset intentionally owns a fixed tree count.
+    #[serde(default = "default_tree_decoration")]
+    pub tree_decoration: bool,
     /// Lot 叶子的 Lot 模板 instance（组 40E1C000）；默认地标模板
     /// `4E01E311`。公园测试可用 NightHouse 实证对 `34CE7E14`。
     #[serde(default, deserialize_with = "de_hash")]
@@ -171,8 +194,12 @@ pub struct MenuRegistrationSpec {
     pub rotation_degrees: Option<u32>,
 }
 
+fn default_tree_decoration() -> bool {
+    true
+}
+
 /// instance 字段同时接受 JSON 数字与 `"0xXXXXXXXX"` 十六进制字符串。
-fn de_hash<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+pub(crate) fn de_hash<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -200,7 +227,7 @@ where
 }
 
 /// instance 字段数组版：接受 JSON 数字与 `"0x…"` 十六进制字符串的混排。
-fn de_hash_vec<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
+pub(crate) fn de_hash_vec<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -386,6 +413,19 @@ pub fn generate(
     if let Some(entry) = mask_entry {
         entries.push(entry);
     }
+    // A donor identity may live in a package that the user intentionally
+    // removes after deployment. Carry its graphical closure into the new
+    // package so the Lot remains renderable without the donor package.
+    if let Some(identity) = identity {
+        for (id, bytes) in identity {
+            if id.type_id == 0x2F4E_681B
+                || (id.type_id == 0x2F4E_681C && id.instance == 0x0186_1E39)
+                && !entries.iter().any(|(entry_id, _)| entry_id == id)
+            {
+                entries.push((*id, bytes.clone()));
+            }
+        }
+    }
     Ok(MenuResources { instance, entries })
 }
 
@@ -513,6 +553,24 @@ fn clone_donor_identity(
     patch_instance_refs(&mut unit, donor_instance, instance);
     patch_instance_refs(&mut lot, donor_instance, instance);
 
+    // A static-tree asset must not inherit the shared dynamic tree-bin bundle
+    // from a previous donor. The scene document already owns its fixed tree
+    // prop instances; retaining this bundle would draw a second population.
+    if !spec.tree_decoration {
+        // Donors use both the legacy 0x0A0209A5 bundle list and the
+        // repeated 0x0A0209A2 form. Remove the dynamic tree bundle from
+        // either encoding; the authored lot owns its fixed tree count.
+        for property in unit.values.iter_mut().filter(|p| {
+            matches!(p.hash, 0x0A02_09A2 | 0x0A02_09A5)
+        }) {
+            if let Kind::Array(values) = &mut property.kind {
+                values.retain(|value| {
+                    !matches!(value, Value::Key(key) if key.instance == 0xE769_0450)
+                });
+            }
+        }
+    }
+
     // The external SC5 Asset Packager uses the cUnit -> Asset edge here.
     // Dalian's donor is a legacy identity whose field happens to point at
     // the Unit group; retaining that value leaves the menu placeable but
@@ -538,6 +596,32 @@ fn clone_donor_identity(
     set_text_table(&mut menu, HASH_TITLE, locale_table, 1);
     set_text_table(&mut menu, HASH_DESC, locale_table, 2);
 
+    // The donor menu is park-shaped even though the Unit already carries the
+    // education category. Rewrite the presentation family on the new Menu2;
+    // otherwise the game displays the item and its detail panel as a park.
+    if spec.behavior_category_instance == Some(EDUCATION_BEHAVIOR_CATEGORY)
+        || spec.unit_donor.as_deref() == Some("elementary-school")
+        || spec.simulation_template_instance == Some(ELEMENTARY_TEMPLATE)
+    {
+        set_scalar(&mut menu, HASH_PARK_FLAG, PropType::Bool, Value::Bool(false));
+        set_array_with_flags(
+            &mut menu,
+            HASH_EFFECT_TITLE,
+            PropType::Text,
+            vec![
+                Value::Text(Text { table_id: 0x50AA_0BEA, instance_id: 0x0D9A_B016 }),
+                Value::Text(Text { table_id: 0x50AA_0BEA, instance_id: 0x0EBC_E055 }),
+            ],
+            0x809C,
+        );
+        set_array(
+            &mut menu,
+            HASH_EFFECT_PARAM,
+            PropType::UInt32,
+            vec![Value::UInt32(181_926_601), Value::UInt32(240_671_456)],
+        );
+    }
+
     if let Some(cost) = spec.construction_cost {
         set_scalar(
             &mut unit,
@@ -552,6 +636,48 @@ fn clone_donor_identity(
             HASH_MAINTENANCE_COST,
             PropType::Float,
             Value::Float(cost as f32),
+        );
+    }
+
+    // Behavior binding is an explicit overlay on the frozen donor identity.
+    // Keep menu placement and all scene resources untouched; only the Unit
+    // runtime selector/template/capacity are allowed to change here.
+    let behavior_category = spec
+        .behavior_category_instance
+        .or_else(|| (spec.unit_donor.as_deref() == Some("elementary-school")).then_some(EDUCATION_BEHAVIOR_CATEGORY));
+    if let Some(category) = behavior_category {
+        set_scalar(
+            &mut unit,
+            HASH_UNIT_CATEGORY,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0,
+                instance: category,
+            }),
+        );
+    }
+    if let Some(template) = spec.simulation_template_instance {
+        set_scalar(
+            &mut unit,
+            HASH_PARENT,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                type_id: PROPERTY_TYPE,
+                group: UNIT_TEMPLATE_GROUP,
+                instance: template,
+            }),
+        );
+    }
+    if let Some(capacity) = spec.student_capacity {
+        if capacity < 0 {
+            return Err(format!("student capacity must be finite and non-negative, got {capacity}"));
+        }
+        set_scalar(
+            &mut unit,
+            HASH_STUDENT_CAPACITY,
+            PropType::Float,
+            Value::Float(capacity as f32),
         );
     }
 
@@ -648,10 +774,17 @@ fn patch_instance_refs(file: &mut PropertyFile, old: u32, new: u32) {
     for property in &mut file.values {
         match &mut property.kind {
             Kind::Scalar(Value::Key(key)) => patch_key(key, old, new),
+            Kind::Scalar(Value::Text(text)) => {
+                if text.instance_id == old {
+                    text.instance_id = new;
+                }
+            }
             Kind::Array(values) => {
                 for value in values {
-                    if let Value::Key(key) = value {
-                        patch_key(key, old, new);
+                    match value {
+                        Value::Key(key) => patch_key(key, old, new),
+                        Value::Text(text) if text.instance_id == old => text.instance_id = new,
+                        _ => {}
                     }
                 }
             }
@@ -960,6 +1093,19 @@ fn build_menu2(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>, St
         PropType::Key,
         ui_category_values(spec, LANDMARK_CATEGORY),
     );
+    // 与 parent-free 路径同款：可选工具对象类别（0x0975695E）。
+    if let Some(building_category) = spec.building_category_instance {
+        set_scalar(
+            &mut file,
+            HASH_BUILDING_CATEGORY,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0,
+                instance: building_category,
+            }),
+        );
+    }
     set_array(
         &mut file,
         HASH_UI_POSITION,
@@ -1121,6 +1267,20 @@ fn apply_menu_overrides(
         PropType::Key,
         ui_category_values(spec, LANDMARK_CATEGORY),
     );
+    // R1（s17 诊断）：plop 家族工具对象类别。原版小学 Menu2 带
+    // 0x0975695E=C710B6E9；公园子根 parent 的 s17 缺失该字段。
+    if let Some(building_category) = spec.building_category_instance {
+        set_scalar(
+            file,
+            HASH_BUILDING_CATEGORY,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0,
+                instance: building_category,
+            }),
+        );
+    }
     set_array(
         file,
         HASH_UI_POSITION,
@@ -1261,6 +1421,39 @@ mod tests {
     }
 
     #[test]
+    fn menu_building_category_writes_the_plop_object_class() {
+        // R1 判别实验（s17 诊断 §5.3）：Menu2 0x0975695E = C710B6E9
+        // kCategoryIDBuilding；原版小学 Menu2 携带，s17 缺失。
+        let mut values = std::collections::BTreeMap::new();
+        values.insert("title".into(), serde_json::json!("school"));
+        values.insert("buildingCategoryInstance".into(), serde_json::json!("0xC710B6E9"));
+        let spec = MenuRegistrationSpec::from_values(&values).unwrap();
+        assert_eq!(spec.building_category_instance, Some(0xC710_B6E9));
+        let bytes = build_menu2(&spec, 0x1234_5678).unwrap();
+        let file = PropertyFile::parse(&bytes).unwrap();
+        let category = file
+            .values
+            .iter()
+            .find(|property| property.hash == HASH_BUILDING_CATEGORY)
+            .expect("building category entry");
+        match &category.kind {
+            Kind::Scalar(Value::Key(key)) => assert_eq!(key.instance, 0xC710_B6E9),
+            other => panic!("unexpected building category value {other:?}"),
+        }
+
+        // 缺省不写：与旧行为兼容。
+        let mut minimal = std::collections::BTreeMap::new();
+        minimal.insert("title".into(), serde_json::json!("school"));
+        let spec = MenuRegistrationSpec::from_values(&minimal).unwrap();
+        let bytes = build_menu2(&spec, 0x1234_5678).unwrap();
+        let file = PropertyFile::parse(&bytes).unwrap();
+        assert!(
+            file.values.iter().all(|property| property.hash != HASH_BUILDING_CATEGORY),
+            "building category must be absent by default"
+        );
+    }
+
+    #[test]
     fn menu_category_instances_expand_the_ui_category_array() {
         // 多容器挂载：categoryInstances 非空时整体写进 0x0DB9FC63 Key 数组
         // （菜单编辑节点组 = 同一建筑身份的多个目标容器）。
@@ -1369,82 +1562,4 @@ fn palette(seed: u32) -> ([u8; 4], [u8; 4]) {
     )
 }
 
-fn set_scalar(file: &mut PropertyFile, hash: u32, prop_type: PropType, value: Value) {
-    match file
-        .values
-        .iter_mut()
-        .find(|property| property.hash == hash)
-    {
-        Some(property) => {
-            property.kind = Kind::Scalar(value);
-            property.prop_type = prop_type;
-        }
-        None => file.values.push(Property {
-            hash,
-            prop_type,
-            kind: Kind::Scalar(value),
-            encoding: PropertyEncoding::default(),
-        }),
-    }
-}
 
-fn set_array(file: &mut PropertyFile, hash: u32, prop_type: PropType, values: Vec<Value>) {
-    let item_size = match prop_type {
-        PropType::Key => Some(12),
-        PropType::Text => Some(sc_properties::TEXT_ARRAY_ITEM_SIZE),
-        PropType::Int32 | PropType::UInt32 | PropType::Float => Some(4),
-        _ => None,
-    };
-    match file
-        .values
-        .iter_mut()
-        .find(|property| property.hash == hash)
-    {
-        Some(property) => {
-            property.kind = Kind::Array(values);
-            property.prop_type = prop_type;
-            property.encoding.array_item_size = item_size;
-        }
-        None => file.values.push(Property {
-            hash,
-            prop_type,
-            kind: Kind::Array(values),
-            encoding: PropertyEncoding {
-                flags: 0,
-                array_item_size: item_size,
-            },
-        }),
-    }
-}
-
-fn set_array_with_flags(
-    file: &mut PropertyFile,
-    hash: u32,
-    prop_type: PropType,
-    values: Vec<Value>,
-    flags: u16,
-) {
-    set_array(file, hash, prop_type, values);
-    if let Some(property) = file.values.iter_mut().find(|property| property.hash == hash) {
-        property.encoding.flags = flags;
-    }
-}
-
-fn encode(file: &PropertyFile) -> Result<Vec<u8>, String> {
-    // The game rejects a property list containing the same hash twice.  The
-    // workbench can legitimately set a field that the donor already carried
-    // (for example 0DC1E3E0), so keep the last write per hash.
-    let mut values: Vec<Property> = Vec::with_capacity(file.values.len());
-    for property in &file.values {
-        if let Some(existing) = values.iter_mut().find(|item| item.hash == property.hash) {
-            *existing = property.clone();
-        } else {
-            values.push(property.clone());
-        }
-    }
-    let mut deduped = file.clone();
-    deduped.values = values;
-    deduped
-        .encode_canonical()
-        .map_err(|error| format!("menu property encode: {error}"))
-}

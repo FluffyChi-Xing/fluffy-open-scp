@@ -49,11 +49,15 @@ pub struct SemanticsIr {
     pub unit_overrides: BTreeMap<String, Value>,
     pub lot_bindings: BTreeMap<String, Value>,
     pub menu: BTreeMap<String, Value>,
+    pub behavior: BTreeMap<String, Value>,
     pub properties: Vec<Value>,
     pub allow_shared_template: bool,
     /// G1 材质指纹闸门声明位：模型/六槽输入有意变更（见 SemanticsSchema）。
     #[serde(default, rename = "materialChange")]
     pub material_change: bool,
+    /// P3 属性验收闸门声明位：已验证 Asset/Unit 列有意变更（见 SemanticsSchema）。
+    #[serde(default, rename = "lotChange")]
+    pub lot_change: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,9 +114,11 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
             unit_overrides: schema.semantics.unit_overrides.clone(),
             lot_bindings: schema.semantics.lot_bindings.clone(),
             menu: schema.semantics.menu.clone(),
+            behavior: schema.semantics.behavior.clone(),
             properties: schema.semantics.properties.clone(),
             allow_shared_template: schema.semantics.allow_shared_template,
             material_change: schema.semantics.material_change,
+            lot_change: schema.semantics.lot_change,
         },
         output: OutputIr {
             package: schema.outputs.package.clone(),

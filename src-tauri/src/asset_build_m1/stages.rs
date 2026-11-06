@@ -53,11 +53,20 @@ pub(crate) struct BuildContext {
     /// schema 声明 `semantics.materialChange: true`（G1 材质指纹闸门）：
     /// 显式声明材质输入有意变更，漂移放行并刷新基线。
     pub material_change_declared: bool,
+    /// P3 属性验收闸门声明位（`semantics.lotChange`）：已验证 Asset/Unit
+    /// 列有意变更时放行并刷新属性基线。
+    pub lot_change_declared: bool,
+    /// P3 池基线漂移：load-inputs 时的 reference 包库存（逐 TGI+字节），
+    /// 成功构建后写 `.build/pool-last.json` 供下次对拍。
+    pub pool_inventory: serde_json::Value,
+    /// 本次构建相对上次成功构建的池漂移（added/removed/changed）。
+    pub pool_drift: serde_json::Value,
 }
 
 impl BuildContext {
     pub fn new(root: PathBuf, plan: PropertyBuildPlan) -> Self {
         let material_change_declared = plan.intermediate.semantics.material_change;
+        let lot_change_declared = plan.intermediate.semantics.lot_change;
         Self {
             root,
             plan,
@@ -82,6 +91,9 @@ impl BuildContext {
             result: None,
             started_at_ms: super::events::now_ms(),
             material_change_declared,
+            lot_change_declared,
+            pool_inventory: serde_json::Value::Null,
+            pool_drift: serde_json::Value::Null,
         }
     }
 }
@@ -94,7 +106,7 @@ fn emit(ctx: &mut BuildContext, event: StageEvent) {
     ctx.events.push(event);
 }
 
-pub(crate) const CHAIN: [&str; 8] = [
+pub(crate) const CHAIN: [&str; 9] = [
     "load-inputs",
     "insert-textures",
     "insert-model",
@@ -102,6 +114,7 @@ pub(crate) const CHAIN: [&str; 8] = [
     "compute-identity",
     "property-patches",
     "scene-semantics",
+    "behavior-bind",
     "materialize-and-link",
 ];
 
@@ -118,6 +131,7 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             "compute-identity" => compute_identity(ctx),
             "property-patches" => apply_property_patches(ctx),
             "scene-semantics" => apply_scene_semantics(ctx),
+            "behavior-bind" => super::behavior::apply(ctx),
             "materialize-and-link" => materialize_and_link(ctx),
             _ => unreachable!("unknown chain stage {stage}"),
         };
@@ -208,10 +222,20 @@ pub(crate) const INSERT_MODEL_CONTRACT: StepContract = StepContract {
     }],
 };
 
+/// behavior-bind 契约：只有 Unit/Lot/locale(title 行)允许被写；菜单冻结与
+/// 教育链不变量在 super::behavior::apply 内 fail-closed，这里声明审计面。
+pub(crate) const BEHAVIOR_BIND_CONTRACT: StepContract = StepContract {
+    name: "behavior-bind",
+    reads: &["plan.behavior", "resources(Unit/Lot/Menu2/locale)"],
+    writes: &["resources(Unit/Lot/locale title)"],
+    invariants: &[],
+};
+
 fn check_invariants(stage: &str, ctx: &BuildContext) -> Result<(), String> {
     let contract = match stage {
         "insert-textures" => Some(&INSERT_TEXTURES_CONTRACT),
         "insert-model" => Some(&INSERT_MODEL_CONTRACT),
+        "behavior-bind" => Some(&BEHAVIOR_BIND_CONTRACT),
         _ => None,
     };
     let Some(contract) = contract else {
@@ -265,9 +289,64 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     ctx.scene_document_bytes_hash =
         read_scene_bytes(&ctx.root, &ctx.plan.intermediate.scene.document)?
             .map(|bytes| digest(&bytes));
+    // P3 池基线漂移（死命令：已验证输入不允许无声变化）：reference 包
+    // 库存全量入台账，并与上次成功构建的池库存对拍；added/removed/changed
+    // 直接进 load-inputs detail——reference 被外部工具改写（如手工并条目、
+    // 坏覆盖）当场可见，不再事后排查。
+    let inventory: Vec<serde_json::Value> = {
+        let mut rows: Vec<((u32, u32, u32), usize)> = ctx
+            .resources
+            .all()
+            .iter()
+            .map(|(id, bytes)| ((id.type_id, id.group, id.instance), bytes.len()))
+            .collect();
+        rows.sort();
+        rows.iter()
+            .map(|((t, g, i), size)| {
+                serde_json::json!({"tgi": format!("{t:08X}:{g:08X}:{i:08X}"), "bytes": size})
+            })
+            .collect()
+    };
+    let baseline_path = ctx.root.join(".build").join("pool-last.json");
+    let previous: Option<std::collections::BTreeMap<String, usize>> = std::fs::read(&baseline_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let current: std::collections::BTreeMap<String, usize> = inventory
+        .iter()
+        .filter_map(|row| {
+            let tgi = row.get("tgi")?.as_str()?.to_string();
+            Some((tgi, row.get("bytes")?.as_u64()? as usize))
+        })
+        .collect();
+    let mut added = Vec::new();
+    let mut removed = Vec::new();
+    let mut changed = Vec::new();
+    if let Some(previous) = &previous {
+        for (tgi, size) in &current {
+            match previous.get(tgi) {
+                None => added.push(tgi.clone()),
+                Some(prev) if prev != size => changed.push(format!("{tgi} {prev}B -> {size}B")),
+                Some(_) => {}
+            }
+        }
+        for tgi in previous.keys() {
+            if !current.contains_key(tgi) {
+                removed.push(tgi.clone());
+            }
+        }
+    }
+    let pool_drift = serde_json::json!({"added": added, "removed": removed, "changed": changed});
+    ctx.pool_inventory = serde_json::Value::Object(
+        current
+            .iter()
+            .map(|(tgi, size)| (tgi.clone(), serde_json::json!(size)))
+            .collect(),
+    );
+    ctx.pool_drift = pool_drift.clone();
     Ok(serde_json::json!({
         "identityPackage": ctx.identity_resources.is_some(),
         "sceneDocument": ctx.scene_document.is_some(),
+        "pool": {"count": current.len(), "bytes": current.values().sum::<usize>(), "drift": pool_drift},
     }))
 }
 
@@ -608,11 +687,58 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
         }
         None => None,
     };
-    Ok(serde_json::json!({
+    // 菜单家族字段入台账（可观测性设计 §4.2：不开包即可回答"入口挂在哪、
+    // 工具家族是什么"——s17 诊断 R1 的直接判别证据）。
+    let menu_detail = ctx.plan.menu.as_ref().map(|menu| {
+        serde_json::json!({
+            "parentInstance": menu.menu_parent_instance
+                .map(|value| format!("{value:#010X}")),
+            "buildingCategoryInstance": menu.building_category_instance
+                .map(|value| format!("{value:#010X}")),
+            "categoryInstances": menu
+                .category_instances
+                .iter()
+                .map(|value| format!("{value:#010X}"))
+                .collect::<Vec<_>>(),
+            "categoryInstance": menu
+                .category_instance
+                .map(|value| format!("{value:#010X}")),
+        })
+    });
+    // P3 属性验收闸门：Asset/Unit 逐列指纹 vs 验收基线。材质/地面/树/灯/
+    // 效果/道具/路网/锚点任一未声明漂移 = 构建失败并点名责任列（错误自带
+    // [scene-semantics] 与分类）；有意变更须 schema 声明 lotChange。
+    let mut detail = serde_json::json!({
         "menuMode": menu_mode,
         "menuInstance": ctx.menu_instance,
         "loweredUnits": ctx.lowered_units,
-    }))
+        "menu": menu_detail,
+    });
+    if let Some(instance) = ctx.menu_instance {
+        let asset_id = dbpf::ResourceId {
+            type_id: 0x00B1_B104,
+            group: super::native_profile::ASSET_GROUP,
+            instance,
+        };
+        let unit_id = dbpf::ResourceId {
+            type_id: 0x00B1_B104,
+            group: super::menu::UNIT_GROUP,
+            instance,
+        };
+        let asset_file = sc_properties::PropertyFile::parse(&ctx.resources[&asset_id])
+            .map_err(|error| format!("property gate: asset parse: {error}"))?;
+        let unit_file = sc_properties::PropertyFile::parse(&ctx.resources[&unit_id])
+            .map_err(|error| format!("property gate: unit parse: {error}"))?;
+        let gate_report = super::property_gate::gate(
+            &ctx.root,
+            &asset_file,
+            &unit_file,
+            instance,
+            ctx.lot_change_declared,
+        )?;
+        detail["propertyGate"] = gate_report;
+    }
+    Ok(detail)
 }
 
 /// 唯一副作用阶段:staging 写盘 → delta/全量 → 闭包补全 → 链接 → 读回校验。
@@ -627,7 +753,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     if let Some(document) = read_scene_bytes(&ctx.root, &ctx.plan.intermediate.scene.document)? {
         staging.write("artifacts/scene/asset.lot.json", &document)?;
     }
-    super::package::materialize_scene_resources(
+    let manifest = super::package::materialize_scene_resources(
         &ctx.root,
         &ctx.plan.intermediate,
         &ctx.resources,
@@ -703,12 +829,57 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     // failing create-new (os error 183 on the second identical build).
     crate::atomic_fs::write_atomic(&ledger_path, &ledger, true)
         .map_err(|error| format!("ledger write: {error}"))?;
+    // P3：构建成功才刷新池基线——下次构建的 load-inputs 漂移即"相对本次
+    // 已验收的输入池"的变化（reference 被外部改写当场可见）。
+    let pool_last = ctx.root.join(".build").join("pool-last.json");
+    std::fs::create_dir_all(pool_last.parent().expect("pool baseline parent"))
+        .map_err(|error| format!("pool baseline dir: {error}"))?;
+    std::fs::write(
+        &pool_last,
+        serde_json::to_vec_pretty(&ctx.pool_inventory)
+            .map_err(|error| format!("pool baseline encode: {error}"))?,
+    )
+    .map_err(|error| format!("pool baseline write: {error}"))?;
     // Publish only after the task evidence is durable. A failed ledger write
     // therefore cannot leave a package that has no reviewable provenance.
     staging.publish()?;
+    // P3 出货溯源：逐资源 TGI+字节进台账（按 TGI 排序，稳定可 diff）。
+    let mut outputs: Vec<serde_json::Value> = written
+        .iter()
+        .map(|(id, bytes)| {
+            serde_json::json!({
+                "tgi": format!("{:08X}:{:08X}:{:08X}", id.type_id, id.group, id.instance),
+                "bytes": bytes.len(),
+            })
+        })
+        .collect();
+    outputs.sort_by(|a, b| a["tgi"].as_str().cmp(&b["tgi"].as_str()));
+    // P3 闭包 missing 升级为台账告警：场景 prop/贴图引用本地缺失不再只
+    // 躺在 staging 的 manifest 文件里（树的模型缺失曾因此静默数周）。
+    let closure_warnings = if manifest.missing.is_empty() {
+        Vec::new()
+    } else {
+        vec![format!(
+            "closure missing {} resource(s): {}",
+            manifest.missing.len(),
+            manifest.missing.join(", ")
+        )]
+    };
     Ok(serde_json::json!({
         "resources": ctx.written_count,
         "delta": ctx.delta_mode,
+        "outputs": outputs,
+        "closureManifest": {
+            "lot": manifest.lot.len(),
+            "prop": manifest.prop.len(),
+            "bin": manifest.bin.len(),
+            "path": manifest.path.len(),
+            "pathEntry": manifest.path_entry.len(),
+            "raster": manifest.raster.len(),
+            "missing": manifest.missing,
+        },
+        "warnings": closure_warnings,
+        "poolDrift": ctx.pool_drift,
     }))
 }
 

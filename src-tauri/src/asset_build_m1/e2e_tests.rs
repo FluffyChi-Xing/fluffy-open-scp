@@ -614,7 +614,7 @@ fn incremental_builds_reuse_run_and_material_cache() {
         .iter()
         .filter(|event| matches!(event.kind, StageEventKind::Finished))
         .count();
-    assert_eq!(finished_stages, 8, "full chain reruns on input change");
+    assert_eq!(finished_stages, 9, "full chain reruns on input change (9-stage chain incl. behavior-bind)");
     let third_model_detail = third
         .events
         .iter()
