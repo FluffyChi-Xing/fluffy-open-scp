@@ -227,6 +227,55 @@ impl PropertyFile {
     pub fn get(&self, hash: u32) -> Option<&Property> {
         self.values.iter().find(|p| p.hash == hash)
     }
+
+    /// Fail-closed layout gate: every array property must declare the legal
+    /// stride for its type. The game loader trusts the declared step — a wrong
+    /// stride poisons the whole property file (2026-10-19 Text=8 实证菜单 ***；
+    /// 2026-11-07 Transform=0 实证整个 lot 拒载 s25/s26/s27)。
+    ///
+    /// 合法表来自本体全量标定（examples/scan_strides.rs，2385 文件、
+    /// 31653 个 Transform 数组，每个类型恰好一个合法步长、零例外）。
+    pub fn validate_declared_strides(&self) -> Result<()> {
+        for property in &self.values {
+            let Kind::Array(values) = &property.kind else {
+                continue;
+            };
+            if values.is_empty() {
+                return Err(Error::EmptyArrayProperty { hash: property.hash });
+            }
+            let Some(legal) = legal_declared_stride(property.prop_type) else {
+                continue;
+            };
+            let declared = property.encoding.array_item_size.unwrap_or(0);
+            if declared != legal {
+                return Err(Error::InvalidDeclaredStride {
+                    hash: property.hash,
+                    prop_type: property.prop_type,
+                    declared,
+                    expected: legal,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// 全游戏标定的合法声明步长（scan_strides.rs 2026-11-07）。
+/// `None` = 类型从未以数组形态出现在 vanilla 属性文件中（暂不设限）。
+pub fn legal_declared_stride(prop_type: PropType) -> Option<i32> {
+    Some(match prop_type {
+        PropType::Bool => 1,
+        PropType::Int32 | PropType::UInt32 | PropType::Float => 4,
+        PropType::Key | PropType::Vector3 | PropType::ColorRgb => 12,
+        PropType::Vector2 => 8,
+        PropType::Vector4 | PropType::ColorRgba => 16,
+        PropType::String8 => 16,
+        // String16 数组在 vanilla 属性文件中不存在，暂不设限
+        PropType::Text => TEXT_ARRAY_ITEM_SIZE,
+        PropType::Transform => 56,
+        PropType::BoundingBox => 24,
+        PropType::String16 => return None,
+    })
 }
 
 impl fmt::Display for PropertyFile {

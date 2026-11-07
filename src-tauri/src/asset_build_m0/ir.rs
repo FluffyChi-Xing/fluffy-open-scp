@@ -38,6 +38,7 @@ pub struct ReferenceIr {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneIr {
     pub document: String,
+    pub writes: Vec<String>,
     pub model: Option<String>,
     pub model_shape: Option<String>,
     pub slots: BTreeMap<String, String>,
@@ -50,6 +51,10 @@ pub struct SemanticsIr {
     pub lot_bindings: BTreeMap<String, Value>,
     pub menu: BTreeMap<String, Value>,
     pub behavior: BTreeMap<String, Value>,
+    /// 逻辑编排图编译产物（见 SemanticsSchema::labor）。
+    pub labor: Option<Value>,
+    /// 逻辑编排图行为节点数组（见 SemanticsSchema::behaviors）。
+    pub behaviors: Vec<Value>,
     pub properties: Vec<Value>,
     pub allow_shared_template: bool,
     /// G1 材质指纹闸门声明位：模型/六槽输入有意变更（见 SemanticsSchema）。
@@ -105,6 +110,7 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
         references: lower_references(schema)?,
         scene: SceneIr {
             document: schema.scene.document.clone(),
+            writes: schema.scene.writes.clone(),
             model: schema.scene.model.clone(),
             model_shape: schema.scene.model_shape.clone(),
             slots: schema.scene.slots.clone(),
@@ -115,6 +121,8 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
             lot_bindings: schema.semantics.lot_bindings.clone(),
             menu: schema.semantics.menu.clone(),
             behavior: schema.semantics.behavior.clone(),
+            labor: schema.semantics.labor.clone(),
+            behaviors: schema.semantics.behaviors.clone(),
             properties: schema.semantics.properties.clone(),
             allow_shared_template: schema.semantics.allow_shared_template,
             material_change: schema.semantics.material_change,

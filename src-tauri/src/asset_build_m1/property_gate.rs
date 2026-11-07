@@ -18,10 +18,10 @@ use std::path::Path;
 const BASELINE_FILE: &str = ".build/property-baseline.json";
 
 /// 列签名：属性类型、元素总数、归一化值摘要。
-type ColSig = (String, usize, u64);
+pub(crate) type ColSig = (String, usize, u64);
 
 /// 已验证特征分类（错误消息可读性；未知列归 other，不改变闸门语义）。
-fn category_of(hash: u32) -> &'static str {
+pub(crate) fn category_of(hash: u32) -> &'static str {
     match hash {
         0x0CAA_680D | 0x0CB0_0ED8 | 0x0CAA_6832 | 0x0CAA_6841 | 0x0CC8_FE7A | 0x0D9A_4E54
         | 0x0D9A_A2BB => "path(路网)",
@@ -99,7 +99,7 @@ fn kind_name(kind: &Kind) -> String {
     }
 }
 
-fn fingerprint(file: &PropertyFile, self_instance: u32) -> BTreeMap<u32, ColSig> {
+pub(crate) fn fingerprint(file: &PropertyFile, self_instance: u32) -> BTreeMap<u32, ColSig> {
     let mut out: BTreeMap<u32, ColSig> = BTreeMap::new();
     for property in &file.values {
         let mut state = 0x811C_9DC5u64;
@@ -129,7 +129,7 @@ fn fingerprint(file: &PropertyFile, self_instance: u32) -> BTreeMap<u32, ColSig>
     out
 }
 
-fn fingerprint_to_json(fp: &BTreeMap<u32, ColSig>) -> serde_json::Value {
+pub(crate) fn fingerprint_to_json(fp: &BTreeMap<u32, ColSig>) -> serde_json::Value {
     serde_json::Value::Object(
         fp.iter()
             .map(|(hash, (t, n, d))| {

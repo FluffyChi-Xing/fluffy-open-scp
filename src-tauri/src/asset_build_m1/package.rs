@@ -696,12 +696,13 @@ pub(crate) fn apply_property_semantics(
     target: ResourceId,
     document: Option<&SceneDocument>,
     model_ids: Option<LodModelIds>,
+    writes: &scene::SceneWrites,
     lowered_units: &mut usize,
 ) -> Result<(), String> {
     let Some(bytes) = resources.get(&target).cloned() else {
         return Ok(());
     };
-    if let Some((encoded, units)) = apply_scene_lot_semantics(&bytes, document, model_ids)? {
+    if let Some((encoded, units)) = apply_scene_lot_semantics(&bytes, document, model_ids, writes)? {
         *lowered_units = (*lowered_units).max(units);
         resources.insert(target, encoded);
     }
@@ -716,13 +717,16 @@ pub(crate) fn apply_scene_lot_semantics(
     bytes: &[u8],
     document: Option<&SceneDocument>,
     model_ids: Option<LodModelIds>,
+    writes: &scene::SceneWrites,
 ) -> Result<Option<(Vec<u8>, usize)>, String> {
     let mut file = PropertyFile::parse(bytes).map_err(|e| e.to_string())?;
     let mut touched = false;
     let mut lowered_units = 0usize;
     if let Some(document) = document {
-        if document.has_semantics() {
-            scene::apply_units(&mut file, document)?;
+        // delta 模式即使文档没有单元（用户删光了某族），只要声明了列族
+        // 也必须执行写回——空的声明族 = "清空这些列"。
+        if document.has_semantics() || !writes.is_empty() {
+            scene::apply_units(&mut file, document, writes)?;
             lowered_units = document.units.len();
             touched = true;
         }
@@ -762,7 +766,7 @@ pub(crate) fn apply_scene_lot_semantics(
         PropertyFile::parse(&encoded).map_err(|e| format!("lot semantics readback: {e}"))?;
     if let Some(document) = document {
         if document.has_semantics() {
-            scene::verify_units(&readback, document)?;
+            scene::verify_units(&readback, document, writes)?;
         }
     }
     Ok(Some((encoded, lowered_units)))
@@ -1016,66 +1020,82 @@ pub(crate) fn validate_scene_path_semantics(
     let mut path_entry_count = 0;
     for (index, path) in paths.iter().enumerate() {
         let location = format!("editor.workbench.paths[{index}]");
-        let Some(entry_text) = path.get("entry").and_then(serde_json::Value::as_str) else {
-            errors.push(format!("{location}.entry: missing path entry"));
-            continue;
+        // 类型驱动（2026-11-07）：作者只选 type（pedestrian/driveway）；
+        // 高级模式才用显式 entry。解析失败 = 构建失败（引擎会整条跳过）。
+        let kind = path
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|kind| !kind.is_empty());
+        let entry_text = path
+            .get("entry")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty());
+        let scope_local = path
+            .get("scope")
+            .and_then(serde_json::Value::as_str)
+            .map(|scope| scope != "global")
+            .unwrap_or(true);
+        let road_connect = path
+            .get("roadConnect")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let recipe = match super::path_catalog::resolve(
+            kind,
+            entry_text,
+            scope_local,
+            road_connect,
+        ) {
+            Ok(recipe) => recipe,
+            Err(error) => {
+                errors.push(format!("{location}: {error}"));
+                continue;
+            }
         };
         path_entry_count += 1;
-        let Some(entry_instance) = scene::parse_hex_u32(entry_text) else {
-            errors.push(format!("{location}.entry: invalid path entry {entry_text}"));
-            continue;
-        };
-        let Some(tgi) = path
-            .get("source")
-            .and_then(|source| source.get("tgi"))
-            .or_else(|| path.get("source"))
-        else {
-            errors.push(format!("{location}.source.tgi: missing path source"));
-            continue;
-        };
-        let Some(source_tgi) = scene::parse_json_tgi(tgi) else {
-            errors.push(format!("{location}.source.tgi: invalid path source"));
-            continue;
-        };
-        let source = resources.get(&source_tgi).or_else(|| {
-            resources
-                .iter()
-                .find(|(id, _)| {
-                    id.type_id == source_tgi.type_id && id.instance == source_tgi.instance
-                })
-                .map(|(_, bytes)| bytes)
-        });
-        let bound = source.and_then(|source| {
-            sc_properties::PropertyFile::parse(source)
-                .ok()
-                .map(|file| {
-                    file.get(0x0CC8_FE7A).is_some_and(|property| match &property.kind {
-                        sc_properties::Kind::Scalar(sc_properties::Value::Key(key)) => {
-                            key.instance == entry_instance
-                        }
-                        sc_properties::Kind::Array(values) => values.iter().any(|value| matches!(value, sc_properties::Value::Key(key) if key.instance == entry_instance)),
-                        _ => false,
-                    })
-                })
-        });
-        // 语义化授权（path-semantic-authoring §3.3）：作者只声明 entry，不再
-        // 依赖"来源属性绑定"。绑定存在 → 沿用旧信号；绑定缺失（来源未解析
-        // 或未绑定）→ 只要 PathEntry 资源在构建输入中就放行——运行期由
-        // 游戏按 instance 解析（大学 lot 把 40E1C400 的门写成 40E0C400 key
-        // 仍然工作的同一机制）。
-        let resource_exists = resources.keys().any(|id| {
-            id.type_id == 0x00B1_B104
-                && id.instance == entry_instance
-                && (id.group & 0xFFFF) == 0xC400
-        });
-        if bound == Some(false) && !resource_exists {
-            errors.push(format!(
-                "{location}.entry: {entry_text} is not bound by source property 0x0CC8FE7A"
-            ));
-        }
+        // PathEntry 资源必须在构建输入池中（P009：缺失 = 引擎静默跳过该路径）。
+        // 例外（2026-11-07）：目录类型是引擎内部语义 id——原版大学 lot
+        // 41E1C000:D7A06E31 引用 418A18B1 时，任何游戏包都不存在该资源
+        // （find_instance 全包扫描实证），引擎按 instance 解析、group 仅名义。
+        // 自建/未知 entry 仍要求池内资源。
+        let resource_exists = recipe.from_catalog
+            || resources.keys().any(|id| {
+                id.type_id == 0x00B1_B104
+                    && id.instance == recipe.entry_instance
+                    && (id.group & 0xFFFF) == 0xC400
+            });
         if !resource_exists {
+            let origin = if recipe.from_catalog {
+                // 目录类型缺资源时给出可行动的替代：列出参照包里实际存在的
+                // 目录 entry（作者不必猜哪个类型能用于当前 donor）。
+                let available: Vec<&str> = super::path_catalog::PATH_TYPES
+                    .iter()
+                    .filter(|spec| {
+                        resources.keys().any(|id| {
+                            id.type_id == 0x00B1_B104
+                                && id.instance == spec.entry
+                                && (id.group & 0xFFFF) == 0xC400
+                        })
+                    })
+                    .map(|spec| spec.id)
+                    .collect();
+                format!(
+                    "path type '{}'; path entries present in the pool: {}",
+                    recipe.type_id,
+                    if available.is_empty() {
+                        "none".to_string()
+                    } else {
+                        available.join(", ")
+                    }
+                )
+            } else {
+                "explicit entry".to_string()
+            };
             errors.push(format!(
-                "{location}.entry: PathEntry resource instance 0x{entry_instance:08X} is missing"
+                "{location}: PathEntry resource instance 0x{:08X} ({origin}) is missing \
+                 from the build input pool",
+                recipe.entry_instance
             ));
         }
     }

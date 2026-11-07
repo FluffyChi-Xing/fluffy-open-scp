@@ -204,7 +204,12 @@ fn source_lot_property() -> Vec<u8> {
                 hash: 0x0C12_EF30, // PROP_TRANSFORM_BASE (bin 0)
                 prop_type: PropType::Transform,
                 kind: Kind::Array(vec![transform(5.0)]),
-                encoding: PropertyEncoding::default(),
+                // 加载器信任声明步长：Transform 数组必须声明 56（vanilla 约定），
+                // 声明 0 会被 layout-contract 门禁拒绝（2026-11-07 s25/s26/s27 根因）。
+                encoding: PropertyEncoding {
+                    flags: 0,
+                    array_item_size: Some(56),
+                },
             },
             Property {
                 hash: 0x0CAA_680D, // PATH_POINT_POINTS
@@ -280,6 +285,20 @@ fn workbench_lotm_builds_all_meshes_with_materials_and_replaces_reference_units(
         result.scene.material_resources >= 2,
         "tint + params inserted"
     );
+    // delta-audit 闸门必须在本构建内执行，且声明来源 = 文档实际编辑族
+    // （paths + props:1）——这是 r10 事故后的自动回归拦截点。
+    let audit = result
+        .events
+        .iter()
+        .find(|event| {
+            event.stage == "delta-audit" && matches!(event.kind, StageEventKind::Finished)
+        })
+        .expect("delta-audit stage ran");
+    assert_ne!(audit.detail["status"], "skipped", "{:?}", audit.detail);
+    let declared = audit.detail["declared"].as_array().unwrap();
+    let declared: Vec<&str> = declared.iter().filter_map(|v| v.as_str()).collect();
+    assert!(declared.contains(&"paths"), "{declared:?}");
+    assert!(declared.contains(&"props:1"), "{declared:?}");
 
     let output = Package::open(&result.path).unwrap();
     // 1) 模型：全部 mesh 进 RW4，材质引用解析到包内 raster。0x2F4E681B
@@ -396,13 +415,20 @@ fn workbench_lotm_builds_all_meshes_with_materials_and_replaces_reference_units(
     let count = |predicate: &dyn Fn(&sc_properties::LotUnit) -> bool| {
         assembled.units.iter().filter(|u| predicate(u)).count()
     };
+    // delta 语义（2026-11-07）：文档没有建模灯光族 → 参照 lot 的灯列
+    // 原样保留。这是 r10 事故后的硬契约：未声明的族不得被清空。
     assert_eq!(
         count(&|u| matches!(u, sc_properties::LotUnit::Light { .. })),
-        0,
-        "reference lot's lights must not survive"
+        1,
+        "undeclared light columns are preserved from the reference lot"
     );
     assert_eq!(
-        count(&|u| matches!(u, sc_properties::LotUnit::Prop { .. })),
+        count(&|u| matches!(u, sc_properties::LotUnit::Prop { bin: 0, .. })),
+        1,
+        "undeclared prop bin 0 is preserved from the reference lot"
+    );
+    assert_eq!(
+        count(&|u| matches!(u, sc_properties::LotUnit::Prop { bin: 1, .. })),
         1,
         "authored prop (bin 1) written"
     );
@@ -614,7 +640,7 @@ fn incremental_builds_reuse_run_and_material_cache() {
         .iter()
         .filter(|event| matches!(event.kind, StageEventKind::Finished))
         .count();
-    assert_eq!(finished_stages, 9, "full chain reruns on input change (9-stage chain incl. behavior-bind)");
+    assert_eq!(finished_stages, 12, "full chain reruns on input change (12-stage chain incl. layout-contract + menu-contract + delta-audit)");
     let third_model_detail = third
         .events
         .iter()

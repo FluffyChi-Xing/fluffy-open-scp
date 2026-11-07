@@ -37,6 +37,11 @@ pub fn unit_column_hashes() -> Vec<u32> {
         unit_hash::LIGHT_FALLOFF_STARTS,
         unit_hash::LIGHT_IS_VOLUMETRIC,
         unit_hash::LIGHT_VOL_STRENGTHS,
+        // 灯光族头列（group / night period / 色调 / 环境）。
+        0x0CE7_1B10,
+        0x0CE7_1B11,
+        0x0CE7_1B12,
+        0x0CE7_1B13,
         unit_hash::EFFECT_IDS,
         unit_hash::EFFECT_TRANSFORMS,
         unit_hash::EFFECT_ALWAYS_ZERO,
@@ -80,6 +85,10 @@ pub struct SceneDocument {
     /// Model pseudo-unit transform (`editor.workbench.modelTransform`,
     /// WPF row-major 12 floats) baked into the compiled model vertices.
     pub model_transform: Option<[f32; 12]>,
+    /// 工作台文档自己记录的编辑族（`editor.workbench.writes`）：用户在
+    /// 编辑器里画了 path / 放了 bin1 prop，编辑器就把族名写进文档。
+    /// 构建器把它与 schema.scene.writes 取并集——作者不需要手写 schema。
+    pub writes: Vec<String>,
     pub units: Vec<SceneUnit>,
     pub paths: Vec<ScenePath>,
 }
@@ -88,18 +97,24 @@ impl SceneDocument {
     /// True when the document carries any unit or path entity the builder
     /// must lower into the Lot property.
     pub fn has_semantics(&self) -> bool {
-        !self.units.is_empty() || !self.paths.is_empty()
+        !self.units.is_empty() || !self.paths.is_empty() || !self.writes.is_empty()
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScenePath {
+    /// 路径类型 id（`pedestrian` / `driveway` / `custom`）。类型驱动语义：
+    /// entry/scope/connect 全部由 `path_catalog` 换算，作者不填。
+    pub kind: Option<String>,
+    /// 高级模式：显式 entry instance（hex）。目录类型存在时忽略。
     pub entry: Option<String>,
     /// Ordered pathPoint unit ids (document order defines the path).
     pub point_ids: Vec<String>,
     /// Workbench scope string; "local" is the engine default (missing = local).
+    /// 仅高级模式（custom entry）生效；目录类型以类型配方为准。
     pub scope_local: bool,
     /// Workbench roadConnect toggle — writes the vanilla road-connect key.
+    /// 同上：仅高级模式生效。
     pub road_connect: bool,
 }
 
@@ -178,8 +193,7 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
             .map(|values| values.iter().map(f32_of).collect());
     }
     document.model_transform = json
-        .pointer("/editor/workbench/modelTransform")
-        .and_then(Json::as_array)
+        .pointer("/editor/workbench/modelTransform")        .and_then(Json::as_array)
         .filter(|values| values.len() == 12 && values.iter().all(Json::is_number))
         .map(|values| values.iter().map(f32_of).collect::<Vec<f32>>())
         .and_then(|matrix| Some(matrix).filter(|m| m.len() == 12))
@@ -188,6 +202,18 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
             out.copy_from_slice(&matrix);
             out
         });
+    // 编辑器自述的编辑族（delta 写回的意图来源；与 schema 声明取并集）。
+    document.writes = json
+        .pointer("/editor/workbench/writes")
+        .and_then(Json::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Json::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     if let Some(units) = json.get("units").and_then(Json::as_array) {
         for unit in units {
             document.units.push(parse_unit(unit)?);
@@ -214,6 +240,11 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
                 }
             };
             document.paths.push(ScenePath {
+                kind: path
+                    .get("type")
+                    .and_then(Json::as_str)
+                    .map(str::to_string)
+                    .filter(|kind| !kind.trim().is_empty()),
                 entry: path.get("entry").and_then(Json::as_str).map(str::to_string),
                 point_ids: path
                     .get("pointIds")
@@ -600,19 +631,231 @@ fn transform_value(scale: Option<f32>, transform: &Option<Transform>) -> Option<
 /// Replace the property's unit columns with the scene document's units.
 /// Every original unit column is removed first — this is what keeps a
 /// referenced lot's own props/lights/paths from resurfacing in the build.
-pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<(), String> {
-    let mut stripped = unit_column_hashes();
-    // The path binding trio (entry/scope/road-connect) is rewritten whenever
-    // the document defines paths; strip the referenced lot's originals in that
-    // case or the writeback duplicates the hash (s14's [03106C2E] vs authored).
-    // A document without paths keeps the referenced columns untouched.
-    if !document.paths.is_empty() {
-        stripped.extend([
+/// 场景写回的列族声明（schema.scene.writes）。delta 模式下只有列出的族会
+/// 被写回覆盖；未声明族从参照 lot 原样保留。
+#[derive(Clone, Default, serde::Serialize)]
+pub struct SceneWrites {
+    /// true = 权威模式（整体重写，native profile 从零构建专用）。
+    pub authoritative: bool,
+    pub paths: bool,
+    pub lights: bool,
+    pub spawners: bool,
+    pub effects: bool,
+    pub decals: bool,
+    /// 声明了 props 的 bin 下标（"props:<bin>"）。
+    pub prop_bins: Vec<usize>,
+}
+
+impl SceneWrites {
+    pub fn parse(writes: &[String]) -> Self {
+        let mut out = Self::default();
+        for family in writes {
+            match family.as_str() {
+                "paths" => out.paths = true,
+                "lights" => out.lights = true,
+                "spawners" => out.spawners = true,
+                "effects" => out.effects = true,
+                "decals" => out.decals = true,
+                other => {
+                    if let Some(bin) = other
+                        .strip_prefix("props:")
+                        .and_then(|b| b.parse::<usize>().ok())
+                    {
+                        out.prop_bins.push(bin);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// 没有任何列族声明：场景写回不触碰 lot 的任何单元列。
+    pub fn is_empty(&self) -> bool {
+        !self.authoritative
+            && !self.paths
+            && !self.lights
+            && !self.spawners
+            && !self.effects
+            && !self.decals
+            && self.prop_bins.is_empty()
+    }
+
+    /// 并集：schema 声明 ∪ 文档自述声明（两者都是"作者意图"，取并集更安全：
+    /// 多声明只会让审计允许更多列，不会让未声明的列被改）。
+    pub fn merge(mut self, other: Self) -> Self {
+        self.authoritative |= other.authoritative;
+        self.paths |= other.paths;
+        self.lights |= other.lights;
+        self.spawners |= other.spawners;
+        self.effects |= other.effects;
+        self.decals |= other.decals;
+        for bin in other.prop_bins {
+            if !self.prop_bins.contains(&bin) {
+                self.prop_bins.push(bin);
+            }
+        }
+        self.prop_bins.sort_unstable();
+        self
+    }
+
+    /// 从文档内容派生声明族（无显式 `scene.writes` 时的安全默认）。
+    ///
+    /// 语义：文档**实际携带**的族 = 作者意图覆盖的族；文档没建模的列
+    /// 一律从参照 lot 原样保留。r10 的文档只有 paths + 少量 props，
+    /// 这条默认本身就会保住灯/锚点列。删除某族全部内容仍需显式声明。
+    pub fn from_document(document: &SceneDocument) -> Self {
+        let mut out = Self::default();
+        for unit in &document.units {
+            match unit {
+                SceneUnit::Light { .. } => out.lights = true,
+                SceneUnit::Effect { .. } => out.effects = true,
+                SceneUnit::Spawner { .. } => out.spawners = true,
+                SceneUnit::PathPoint { .. } => out.paths = true,
+                SceneUnit::Decal { .. } => out.decals = true,
+                SceneUnit::Prop { bin, .. } => {
+                    if !out.prop_bins.contains(bin) {
+                        out.prop_bins.push(*bin);
+                    }
+                }
+            }
+        }
+        if !document.paths.is_empty() {
+            out.paths = true;
+        }
+        out.prop_bins.sort_unstable();
+        out
+    }
+
+    pub fn prop_bin_declared(&self, bin: usize) -> bool {
+        self.prop_bins.contains(&bin)
+    }
+
+    /// 声明位 → 规整文本（台账/诊断用，顺序稳定）。
+    pub fn describe(&self) -> Vec<String> {
+        if self.authoritative {
+            return vec!["*".into()];
+        }
+        let mut out = Vec::new();
+        for (declared, name) in [
+            (self.paths, "paths"),
+            (self.lights, "lights"),
+            (self.spawners, "spawners"),
+            (self.effects, "effects"),
+            (self.decals, "decals"),
+        ] {
+            if declared {
+                out.push(name.to_string());
+            }
+        }
+        for bin in &self.prop_bins {
+            out.push(format!("props:{bin}"));
+        }
+        out
+    }
+}
+
+/// 声明位对应的 Lot 单元列 hash 集合——**只含声明族**。
+///
+/// 这是 delta 写回的唯一真相源：`apply_units` 用它决定剥离哪些列，
+/// `delta_audit` 用它决定哪些列漂移是被允许的。两者共用同一张表，
+/// 因此"声明了却没写"和"没声明却变了"都不可能悄悄发生。
+pub fn declared_column_hashes(writes: &SceneWrites) -> Vec<u32> {
+    if writes.authoritative {
+        return unit_column_hashes();
+    }
+    let mut out = Vec::new();
+    if writes.paths {
+        out.extend([
+            unit_hash::PATH_POINT_POINTS,
+            unit_hash::PATH_POINT_TANGENTS,
+            unit_hash::PATH_POINT_INDICES,
+            unit_hash::PATH_PAIRS,
             0x0CC8_FE7A, // path entry keys
             0x0D9A_4E54, // scope
             0x0D9A_A2BB, // road connect
         ]);
     }
+    if writes.lights {
+        out.extend([
+            unit_hash::LIGHT_IDS,
+            unit_hash::LIGHT_TYPES,
+            unit_hash::LIGHT_TRANSFORMS,
+            unit_hash::LIGHT_COLORS,
+            unit_hash::LIGHT_RADII,
+            unit_hash::LIGHT_INNER_RADII,
+            unit_hash::LIGHT_DIFFUSE_LEVELS,
+            unit_hash::LIGHT_DEBUG_NAMES,
+            unit_hash::LIGHT_SPEC_LEVELS,
+            unit_hash::LIGHT_LENGTHS,
+            unit_hash::LIGHT_CULL_DISTANCES,
+            unit_hash::LIGHT_FALLOFF_STARTS,
+            unit_hash::LIGHT_IS_VOLUMETRIC,
+            unit_hash::LIGHT_VOL_STRENGTHS,
+            // 灯光族头列（group / night period / 色调 / 环境）：与灯单元列
+            // 同生共死，声明 lights 时必须一起处理，否则"删光所有灯"会留下
+            // 一个悬空的灯光族头。
+            0x0CE7_1B10,
+            0x0CE7_1B11,
+            0x0CE7_1B12,
+            0x0CE7_1B13,
+        ]);
+    }
+    if writes.spawners {
+        out.extend([
+            unit_hash::SPAWNER_IDS,
+            unit_hash::SPAWNER_TRANSFORMS,
+            unit_hash::SPAWNER_COUNT,
+            unit_hash::SPAWNER_COUNT_RANDOM,
+            unit_hash::SPAWNER_AGENT,
+        ]);
+    }
+    if writes.effects {
+        out.extend([
+            unit_hash::EFFECT_IDS,
+            unit_hash::EFFECT_TRANSFORMS,
+            unit_hash::EFFECT_ALWAYS_ZERO,
+            unit_hash::EFFECT_REF_IDS,
+            unit_hash::EFFECT_ENABLED,
+        ]);
+    }
+    if writes.decals {
+        for category in 0..unit_hash::DECAL_CATEGORIES as u32 {
+            out.extend([
+                unit_hash::DECAL_ID_BASE + category,
+                unit_hash::DECAL_TRANSFORM_BASE + category,
+                unit_hash::DECAL_DEPTH_BASE + category,
+                unit_hash::DECAL_MATERIAL_BASE + category,
+            ]);
+        }
+    }
+    for bin in &writes.prop_bins {
+        if *bin >= unit_hash::PROP_BINS {
+            continue;
+        }
+        let bin = *bin as u32;
+        out.extend([
+            unit_hash::PROP_ID_BASE + bin,
+            unit_hash::PROP_TRANSFORM_BASE + bin,
+            unit_hash::PROP_SLOT_BASE + bin,
+            unit_hash::PROP_RANDOMIZE_SLOT_BASE + bin,
+            unit_hash::PROP_PERCENT_FILL_BASE + bin,
+        ]);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+pub fn apply_units(
+    file: &mut PropertyFile,
+    document: &SceneDocument,
+    writes: &SceneWrites,
+) -> Result<(), String> {
+    let authoritative = writes.authoritative;
+    // delta 语义：只剥离**声明族**的列；未声明族（锚点/灯光附属/其他
+    // prop bin…）从参照 lot 原样保留。r10 事故的根因就是这里曾经无条件
+    // 剥离全部单元列（"少写"但没"少删"）。
+    let mut stripped = declared_column_hashes(writes);
     let mut columns: Vec<Property> = Vec::new();
     let mut lights: ColumnSet = ColumnSet::default();
     let mut effects: ColumnSet = ColumnSet::default();
@@ -628,6 +871,37 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
     const LIGHT_GROUP: u32 = super::native_profile::LIGHT_GROUP;
 
     for unit in &document.units {
+        // delta 模式：未声明族的 unit 直接跳过（列原样保留，不进入写回）。
+        let family_declared = |family: &str| authoritative || match family {
+            "paths" => writes.paths,
+            "lights" => writes.lights,
+            "spawners" => writes.spawners,
+            "effects" => writes.effects,
+            "decals" => writes.decals,
+            _ => false,
+        };
+        let prop_bin_declared =
+            |bin: usize| authoritative || writes.prop_bin_declared(bin);
+        enum Family {
+            Named(&'static str),
+            PropBin(usize),
+        }
+        let family_of = |unit: &SceneUnit| match unit {
+            SceneUnit::Light { .. } => Some(Family::Named("lights")),
+            SceneUnit::Effect { .. } => Some(Family::Named("effects")),
+            SceneUnit::Spawner { .. } => Some(Family::Named("spawners")),
+            SceneUnit::PathPoint { .. } => Some(Family::Named("paths")),
+            SceneUnit::Prop { bin, .. } => Some(Family::PropBin(*bin)),
+            SceneUnit::Decal { .. } => Some(Family::Named("decals")),
+        };
+        let declared = match family_of(unit) {
+            Some(Family::PropBin(bin)) => prop_bin_declared(bin),
+            Some(Family::Named(name)) => family_declared(name),
+            None => true,
+        };
+        if !declared {
+            continue;
+        }
         match unit {
             SceneUnit::Light {
                 transform,
@@ -702,16 +976,22 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             SceneUnit::PathPoint {
                 point,
                 tangent,
-                point_index,
+                point_index: _,
                 id,
             } => {
+                // 点池索引 = pathPoint 在文档里的出现序（0CAA680D 按同一顺序
+                // 构建，两者必须一致）。编辑器会给 pointIndex 按 path 局部
+                // 重编号（s29 实证：第二条 path 从 0 重新计数），直接透传会
+                // 让后续 path 的索引列指向错误几何——一律按文档序重编号。
+                let pool_index =
+                    path_points.fields.get("points").map(Vec::len).unwrap_or(0) as i32;
                 path_points.push([
                     ("points", point.map(Value::Vector3)),
                     ("tangents", tangent.map(Value::Vector3)),
-                    ("indices", point_index.map(Value::Int32)),
+                    ("indices", Some(Value::Int32(pool_index))),
                 ]);
                 path_point_ids.push(id.clone());
-                path_point_indices.push(*point_index);
+                path_point_indices.push(Some(pool_index));
             }
             SceneUnit::Spawner { transform, id } => spawners.push([
                 ("ids", Some(key_value(*id))),
@@ -743,7 +1023,9 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             (unit_hash::LIGHT_DEBUG_NAMES, "names", PropType::String8),
         ],
     );
-    if document.units.iter().any(|u| matches!(u, SceneUnit::Light { .. })) {
+    if (authoritative || writes.lights)
+        && document.units.iter().any(|u| matches!(u, SceneUnit::Light { .. }))
+    {
         columns.push(array_property(
             0x0CE7_1B10,
             PropType::Key,
@@ -864,48 +1146,39 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             ],
         );
     }
-    finish_path_pairs(document, &path_point_ids, &path_point_indices, &mut columns);
+    if authoritative || writes.paths {
+        finish_path_pairs(document, &path_point_ids, &path_point_indices, &mut columns);
+    }
 
     // Path-entry bindings (0CC8FE7A): full TGI keys linking the lot to its
     // script-side PathEntry resources — vanilla asset dicts carry exactly
     // this column (E917279C binds three, e.g. [instance, 00B1B104,
-    // 40E0C400]); without it the path never links. The university door
-    // entry 675B61B1 is the known 40E1C400 resource exception.
-    let entries: Vec<Value> = document
-        .paths
-        .iter()
-        .filter_map(|path| {
-            path.entry.as_deref().and_then(|entry| {
-                u32::from_str_radix(entry.trim_start_matches("0x"), 16)
-                    .ok()
-                    .map(|instance| {
-                        Value::Key(sc_properties::Key {
-                            type_id: 0x00B1_B104,
-                            group: super::native_profile::path_entry_group(instance),
-                            instance,
-                        })
-                    })
-            })
-        })
-        .collect();
-    if !entries.is_empty() {
-        columns.push(array_property(
-            0x0CC8_FE7A,
-            PropType::Key,
-            entries,
-        ));
-    }
-    // Scope + road-connect keys, one per path — per-path engine enums
-    // (SC::tPathScope / SC::tRoadConnect, PDB 值见 native_profile 常量)：
-    // 原版小学三组 = [Global+First, Local+None, Local+None]；connect 列恒写。
-    if !document.paths.is_empty() {
+    // 40E0C400]); without it the path never links.
+    //
+    // 语义由类型处理器换算（path_catalog::resolve）：作者只选"人行道/车辆
+    // 引道"，entry/scope/connect 三列**严格等长**——每条 path 必须解析成功
+    // 或整条构建失败（引擎对无 entry 的路径整条跳过，静默丢路比报错更糟）。
+    if (authoritative || writes.paths) && !document.paths.is_empty() {
+        let mut entries = Vec::with_capacity(document.paths.len());
         let mut scopes = Vec::with_capacity(document.paths.len());
         let mut connects = Vec::with_capacity(document.paths.len());
-        for path in &document.paths {
+        for (index, path) in document.paths.iter().enumerate() {
+            let recipe = super::path_catalog::resolve(
+                path.kind.as_deref(),
+                path.entry.as_deref(),
+                path.scope_local,
+                path.road_connect,
+            )
+            .map_err(|error| format!("path #{index}: {error}"))?;
+            entries.push(Value::Key(Key {
+                type_id: 0x00B1_B104,
+                group: recipe.entry_group,
+                instance: recipe.entry_instance,
+            }));
             scopes.push(Value::Key(Key {
                 type_id: 0,
                 group: 0,
-                instance: if path.scope_local {
+                instance: if recipe.scope_local {
                     super::native_profile::PATH_SCOPE_LOCAL
                 } else {
                     super::native_profile::PATH_SCOPE_GLOBAL
@@ -914,13 +1187,14 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
             connects.push(Value::Key(Key {
                 type_id: 0,
                 group: 0,
-                instance: if path.road_connect {
+                instance: if recipe.road_connect {
                     super::native_profile::PATH_ROAD_CONNECT_FIRST
                 } else {
                     super::native_profile::PATH_ROAD_CONNECT_NONE
                 },
             }));
         }
+        columns.push(array_property(0x0CC8_FE7A, PropType::Key, entries));
         columns.push(array_property(0x0D9A_4E54, PropType::Key, scopes));
         columns.push(array_property(0x0D9A_A2BB, PropType::Key, connects));
     }
@@ -982,12 +1256,17 @@ fn finish_path_pairs(
 
 fn array_property(hash: u32, prop_type: PropType, values: Vec<Value>) -> Property {
     // Fixed-size columns must declare their stride (the canonical encoder
-    // validates it); Transform/String8 are variable-size and declare none.
+    // validates it). The game loader trusts the declared stride — a wrong
+    // stride poisons the whole property file (2026-10-19 Text 实证；2026-11-07
+    // Transform 实证：新建 Transform 列声明 0 → 整个 lot 加载失败 s25/s26/s27)。
+    // 原版 Transform 数组一律声明 56（364C2CEE bin 列、s24 灯光 0CAA8F12 实测），
+    // 与本编码器每项 56 字节输出一致。
     let array_item_size = match prop_type {
         PropType::Bool => Some(1),
         PropType::Int32 | PropType::UInt32 | PropType::Float => Some(4),
         PropType::Key | PropType::Vector3 | PropType::ColorRgb => Some(12),
         PropType::Vector2 => Some(8),
+        PropType::Transform => Some(56),
         _ => None,
     };
     Property {
@@ -1065,41 +1344,106 @@ fn validate_spawner_anchors(document: &SceneDocument) -> Result<(), String> {
 }
 
 /// Verify the lowered property reassembles to the scene's unit counts.
-pub fn verify_units(file: &PropertyFile, document: &SceneDocument) -> Result<(), String> {
-    let expected_props = document
-        .units
-        .iter()
-        .filter(|unit| matches!(unit, SceneUnit::Prop { .. }))
-        .count();
-    let expected_points = document
-        .units
-        .iter()
-        .filter(|unit| matches!(unit, SceneUnit::PathPoint { .. }))
-        .count();
-    let expected_spawners = document
-        .units
-        .iter()
-        .filter(|unit| matches!(unit, SceneUnit::Spawner { .. }))
-        .count();
+pub fn verify_units(
+    file: &PropertyFile,
+    document: &SceneDocument,
+    writes: &SceneWrites,
+) -> Result<(), String> {
     let assembled = LotEditorDocument::from_property_file(file.clone()).assemble_units();
-    let props = assembled
-        .units
+    let count_units = |pred: &dyn Fn(&sc_properties::LotUnit) -> bool| {
+        assembled.units.iter().filter(|unit| pred(unit)).count()
+    };
+    let count_document = |pred: &dyn Fn(&SceneUnit) -> bool| {
+        document.units.iter().filter(|unit| pred(unit)).count()
+    };
+    let is_prop_bin = |unit: &sc_properties::LotUnit, bin: usize| {
+        matches!(unit, sc_properties::LotUnit::Prop { bin: b, .. } if *b == bin)
+    };
+    let doc_prop_bin = |unit: &SceneUnit, bin: usize| {
+        matches!(unit, SceneUnit::Prop { bin: b, .. } if *b == bin)
+    };
+
+    let mut checks: Vec<(String, usize, usize)> = Vec::new();
+    if writes.authoritative {
+        // 权威模式（从零构建）：整表替换，全族对拍。
+        checks.push((
+            "props".into(),
+            count_units(&|u| matches!(u, sc_properties::LotUnit::Prop { .. })),
+            count_document(&|u| matches!(u, SceneUnit::Prop { .. })),
+        ));
+        checks.push((
+            "path points".into(),
+            count_units(&|u| matches!(u, sc_properties::LotUnit::PathPoint { .. })),
+            count_document(&|u| matches!(u, SceneUnit::PathPoint { .. })),
+        ));
+        checks.push((
+            "spawners".into(),
+            count_units(&|u| matches!(u, sc_properties::LotUnit::Spawner { .. })),
+            count_document(&|u| matches!(u, SceneUnit::Spawner { .. })),
+        ));
+    } else {
+        // delta 模式：只校验**声明族**；未声明族由 delta-audit 保证原样保留。
+        if writes.paths {
+            checks.push((
+                "path points".into(),
+                count_units(&|u| matches!(u, sc_properties::LotUnit::PathPoint { .. })),
+                count_document(&|u| matches!(u, SceneUnit::PathPoint { .. })),
+            ));
+        }
+        for bin in &writes.prop_bins {
+            let bin = *bin;
+            checks.push((
+                format!("props[{bin}]"),
+                count_units(&|u| is_prop_bin(u, bin)),
+                count_document(&|u| doc_prop_bin(u, bin)),
+            ));
+        }
+        for (declared, label, unit_pred, doc_pred) in [
+            (
+                writes.lights,
+                "lights",
+                (|u: &sc_properties::LotUnit| matches!(u, sc_properties::LotUnit::Light { .. }))
+                    as fn(&sc_properties::LotUnit) -> bool,
+                (|u: &SceneUnit| matches!(u, SceneUnit::Light { .. })) as fn(&SceneUnit) -> bool,
+            ),
+            (
+                writes.spawners,
+                "spawners",
+                |u: &sc_properties::LotUnit| matches!(u, sc_properties::LotUnit::Spawner { .. }),
+                |u: &SceneUnit| matches!(u, SceneUnit::Spawner { .. }),
+            ),
+            (
+                writes.effects,
+                "effects",
+                |u: &sc_properties::LotUnit| matches!(u, sc_properties::LotUnit::Effect { .. }),
+                |u: &SceneUnit| matches!(u, SceneUnit::Effect { .. }),
+            ),
+            (
+                writes.decals,
+                "decals",
+                |u: &sc_properties::LotUnit| matches!(u, sc_properties::LotUnit::Decal { .. }),
+                |u: &SceneUnit| matches!(u, SceneUnit::Decal { .. }),
+            ),
+        ] {
+            if declared {
+                checks.push((
+                    label.into(),
+                    count_units(&unit_pred),
+                    count_document(&doc_pred),
+                ));
+            }
+        }
+    }
+
+    let mismatches: Vec<String> = checks
         .iter()
-        .filter(|unit| matches!(unit, sc_properties::LotUnit::Prop { .. }))
-        .count();
-    let points = assembled
-        .units
-        .iter()
-        .filter(|unit| matches!(unit, sc_properties::LotUnit::PathPoint { .. }))
-        .count();
-    let spawners = assembled
-        .units
-        .iter()
-        .filter(|unit| matches!(unit, sc_properties::LotUnit::Spawner { .. }))
-        .count();
-    if props != expected_props || points != expected_points || spawners != expected_spawners {
+        .filter(|(_, actual, expected)| actual != expected)
+        .map(|(label, actual, expected)| format!("{label} {actual} != {expected}"))
+        .collect();
+    if !mismatches.is_empty() {
         return Err(format!(
-            "unit writeback readback mismatch: props {props} != {expected_props}, path points {points} != {expected_points}, spawners {spawners} != {expected_spawners}"
+            "unit writeback readback mismatch: {}",
+            mismatches.join(", ")
         ));
     }
     Ok(())
@@ -1190,12 +1534,13 @@ mod tests {
                  "lightType": "Point", "outerRadius": 6}
             ],
             "editor": {"workbench": {"paths": [
-                {"id": "path:1", "pointIds": ["pathPoint:0", "pathPoint:1"]}
+                {"id": "path:1", "type": "pedestrian",
+                 "pointIds": ["pathPoint:0", "pathPoint:1"]}
             ]}}
         }))
         .unwrap();
-        apply_units(&mut file, &document).unwrap();
-        verify_units(&file, &document).unwrap();
+        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        verify_units(&file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
 
         let hashes: std::collections::HashSet<u32> = file.values.iter().map(|p| p.hash).collect();
         assert!(hashes.contains(&0x0CCB_7FC8), "non-unit column preserved");
@@ -1230,7 +1575,7 @@ mod tests {
         // Round-trip through the canonical encoder.
         let encoded = file.encode_canonical().unwrap();
         let parsed = PropertyFile::parse(&encoded).unwrap();
-        verify_units(&parsed, &document).unwrap();
+        verify_units(&parsed, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
         let reassembled = LotEditorDocument::from_property_file(parsed).assemble_units();
         assert_eq!(
             reassembled.units.len(),
@@ -1249,7 +1594,7 @@ mod tests {
             encoding: PropertyEncoding::default(),
         });
         let document = SceneDocument::default();
-        apply_units(&mut file, &document).unwrap();
+        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
         assert_eq!(file.values.len(), 0, "empty scene = no unit columns at all");
     }
 
@@ -1260,7 +1605,7 @@ mod tests {
             "units": [{"id": "prop:99:0", "kind": "prop", "index": 0, "bin": 99}]
         }))
         .unwrap();
-        assert!(apply_units(&mut file, &document).is_err());
+        assert!(apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).is_err());
     }
 
     // ---- 车辆 bin slot 填充序规范化（2026-11-04 car_census 契约）----
@@ -1307,7 +1652,7 @@ mod tests {
             ]
         }))
         .unwrap();
-        apply_units(&mut file, &document).unwrap();
+        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
         assert_eq!(slots_of(&file), [0, 1, 2], "重复模板槽号 → 填充序连号");
     }
 
@@ -1328,7 +1673,7 @@ mod tests {
             ]
         }))
         .unwrap();
-        apply_units(&mut file, &document).unwrap();
+        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
         assert_eq!(slots_of(&file), [1, 0], "显式连号排列 = 作者意图，不改");
     }
 
@@ -1347,7 +1692,7 @@ mod tests {
             ]
         }))
         .unwrap();
-        apply_units(&mut file, &document).unwrap();
+        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
         assert_eq!(slots_of(&file), [0, 1], "缺席 slot → 补齐填充序");
     }
 
@@ -1412,8 +1757,8 @@ mod tests {
         let document =
             parse_document(&json!({"units": [spawner_unit(0x141EED53, 1.5), spawner_unit(0xABCDEF, 3.0)]}))
                 .unwrap();
-        apply_units(&mut file, &document).unwrap();
-        verify_units(&file, &document).unwrap();
+        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        verify_units(&file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
 
         // 名字 key 规范化：type/group 恒 0。
         let ids = file.get(unit_hash::SPAWNER_IDS).unwrap();
@@ -1434,6 +1779,96 @@ mod tests {
         // canonical 编码往返后仍然对齐。
         let encoded = file.encode_canonical().unwrap();
         let parsed = PropertyFile::parse(&encoded).unwrap();
-        verify_units(&parsed, &document).unwrap();
+        verify_units(&parsed, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+    }
+
+    // ---- delta 语义（2026-11-07，r10 事故后） ----
+
+    fn delta_document() -> SceneDocument {
+        parse_document(&json!({
+            "units": [
+                {"id": "prop:1:0", "kind": "prop", "index": 0, "bin": 1,
+                 "resourceId": 3271283064u64, "slot": 0,
+                 "transform": {"matrix": [1,0,0, 0,1,0, 0,0,1, 2,0,4], "flags": 0}},
+                {"id": "pathPoint:0", "kind": "pathPoint", "index": 0,
+                 "point": [0, 0, 0], "tangent": [1, 0, 0], "pointIndex": 0},
+                {"id": "pathPoint:1", "kind": "pathPoint", "index": 1,
+                 "point": [12, 0, 0], "tangent": [1, 0, 0], "pointIndex": 1}
+            ],
+            "editor": {"workbench": {"paths": [], "writes": ["paths"]}}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn document_writes_are_parsed_and_merged() {
+        let document = delta_document();
+        assert_eq!(document.writes, vec!["paths".to_string()]);
+        // 编辑器自述（paths）∪ schema 声明（props:1）。
+        let effective = SceneWrites::parse(&document.writes)
+            .merge(SceneWrites::parse(&["props:1".to_string()]));
+        assert!(effective.paths);
+        assert_eq!(effective.prop_bins, vec![1]);
+    }
+
+    #[test]
+    fn delta_without_explicit_writes_derives_from_content() {
+        let document = delta_document();
+        let writes = SceneWrites::from_document(&document);
+        assert!(writes.paths);
+        assert_eq!(writes.prop_bins, vec![1]);
+        assert!(!writes.lights, "document carries no lights");
+    }
+
+    #[test]
+    fn delta_writeback_preserves_undeclared_columns() {
+        // 参照 lot：灯 + prop bin0 + 1 个路径点（r10 被清空的那类列）。
+        let transform = Value::Transform(sc_properties::Transform {
+            flags: 0,
+            unknown: None,
+            matrix: vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 0.0, 0.0],
+        });
+        let key = |instance: u32| Value::Key(Key { type_id: 0, group: 0, instance });
+        let mut file = PropertyFile {
+            claimed_count: 5,
+            values: vec![
+                Property { hash: unit_hash::LIGHT_TYPES, prop_type: PropType::Key, kind: Kind::Array(vec![key(0x2F0F_F9FD)]), encoding: PropertyEncoding::default() },
+                Property { hash: unit_hash::LIGHT_TRANSFORMS, prop_type: PropType::Transform, kind: Kind::Array(vec![transform.clone()]), encoding: PropertyEncoding::default() },
+                Property { hash: unit_hash::PROP_ID_BASE, prop_type: PropType::Key, kind: Kind::Array(vec![key(777)]), encoding: PropertyEncoding::default() },
+                Property { hash: unit_hash::PROP_TRANSFORM_BASE, prop_type: PropType::Transform, kind: Kind::Array(vec![transform]), encoding: PropertyEncoding::default() },
+                Property { hash: unit_hash::PATH_POINT_POINTS, prop_type: PropType::Vector3, kind: Kind::Array(vec![Value::Vector3([9.0, 9.0, 9.0])]), encoding: PropertyEncoding::default() },
+            ],
+        };
+        let document = delta_document();
+        let writes = SceneWrites::from_document(&document);
+        apply_units(&mut file, &document, &writes).unwrap();
+
+        // 未声明族原样保留。
+        assert!(file.get(unit_hash::LIGHT_TYPES).is_some(), "lights preserved");
+        assert!(file.get(unit_hash::LIGHT_TRANSFORMS).is_some(), "light transforms preserved");
+        assert!(file.get(unit_hash::PROP_ID_BASE).is_some(), "undeclared prop bin 0 preserved");
+        // 声明族被替换为文档内容。
+        let points = file.get(unit_hash::PATH_POINT_POINTS).unwrap().array().unwrap();
+        assert_eq!(points.len(), 2, "declared path points rewritten");
+        let bin1 = file.get(unit_hash::PROP_ID_BASE + 1).unwrap().array().unwrap();
+        assert_eq!(bin1.len(), 1, "declared prop bin 1 written");
+    }
+
+    #[test]
+    fn delta_declared_empty_family_clears_columns() {
+        // 显式声明 paths 但文档没有路径 = 清空路径列（删除意图必须显式）。
+        let mut file = PropertyFile {
+            claimed_count: 1,
+            values: vec![Property {
+                hash: unit_hash::PATH_POINT_POINTS,
+                prop_type: PropType::Vector3,
+                kind: Kind::Array(vec![Value::Vector3([9.0, 9.0, 9.0])]),
+                encoding: PropertyEncoding::default(),
+            }],
+        };
+        let document = SceneDocument::default();
+        let writes = SceneWrites::parse(&["paths".to_string()]);
+        apply_units(&mut file, &document, &writes).unwrap();
+        assert!(file.get(unit_hash::PATH_POINT_POINTS).is_none(), "declared family cleared");
     }
 }

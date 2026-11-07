@@ -321,6 +321,79 @@ pub async fn build_queue_enqueue(
         .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))
 }
 
+/// 一键构建：从项目内唯一的 `openscp.asset` schema 自动入队（不再粘贴）。
+#[tauri::command]
+pub async fn build_queue_enqueue_project(
+    queue: tauri::State<'_, Arc<BuildQueueManager>>,
+    root: String,
+    label: Option<String>,
+) -> Result<Json, crate::activity::CommandError> {
+    let root_path = Path::new(&root);
+    let candidate = crate::asset_build_m1::schema_discovery::discover(root_path)
+        .map_err(|e| crate::activity::CommandError::new("asset_schema_missing", e))?;
+    // 工作台逻辑图 → schema 语义覆盖（菜单/建筑信息/行为）。文档是权威输入：
+    // 编译诊断在入队前 fail-closed，错误点名节点 id，不进入构建队列。
+    let mut schema: Json = serde_json::from_str(&candidate.raw).map_err(|error| {
+        crate::activity::CommandError::new(
+            "asset_schema_invalid",
+            format!("{}: {error}", candidate.path),
+        )
+    })?;
+    let mut logic_summary = Json::Null;
+    let document_path = root_path.join(&candidate.document);
+    if document_path.is_file() {
+        let bytes = std::fs::read(&document_path).map_err(|error| {
+            crate::activity::CommandError::new(
+                "asset_document_invalid",
+                format!("{}: {error}", candidate.document),
+            )
+        })?;
+        let document: Json = serde_json::from_slice(&bytes).map_err(|error| {
+            crate::activity::CommandError::new(
+                "asset_document_invalid",
+                format!("{}: {error}", candidate.document),
+            )
+        })?;
+        let compiled = crate::asset_build_m1::workbench_logic::compile(&document, &|path| {
+            root_path.join(path).is_file()
+        })
+        .map_err(|errors| {
+            crate::activity::CommandError::new(
+                "asset_logic_invalid",
+                format!(
+                    "{}: {}",
+                    candidate.document,
+                    errors.join("; ")
+                ),
+            )
+        })?;
+        crate::asset_build_m1::workbench_logic::apply_to_schema(&mut schema, &compiled)
+            .map_err(|errors| {
+                crate::activity::CommandError::new(
+                    "asset_logic_invalid",
+                    format!("{}: {}", candidate.path, errors.join("; ")),
+                )
+            })?;
+        logic_summary = serde_json::json!({
+            "menu": compiled.menu.is_some(),
+            "labor": compiled.labor.is_some(),
+            "behaviors": compiled.behaviors.len(),
+            "warnings": compiled.warnings,
+        });
+    }
+    let composed = serde_json::to_string(&schema).map_err(|error| {
+        crate::activity::CommandError::new("asset_schema_invalid", error.to_string())
+    })?;
+    let job = queue
+        .enqueue(&root, composed, label)
+        .map_err(|e| crate::activity::CommandError::new("build_queue_enqueue_failed", e))?;
+    Ok(serde_json::json!({
+        "jobId": job,
+        "schema": candidate.path,
+        "logic": logic_summary,
+    }))
+}
+
 #[tauri::command]
 pub async fn build_queue_list(
     queue: tauri::State<'_, Arc<BuildQueueManager>>,

@@ -15,9 +15,14 @@ pub struct PropertyBuildPlan {
     /// `semantics.menu`: register the built building as a NEW menu entry
     /// (new property identity) instead of overriding the reference lot.
     pub menu: Option<super::menu::MenuRegistrationSpec>,
-    /// `semantics.behavior`: bind behavior fields onto the FROZEN donor
-    /// identity (full-mode standalone package; menu stays byte-identical).
+    /// `semantics.behavior`: legacy single-spec behavior (education-minimal).
+    /// Kept for byte-compatible r7-r10 projects.
     pub behavior: Option<super::behavior::BehaviorSpec>,
+    /// 逻辑编排图编译后的行为指令集（`semantics.labor` + `semantics.behaviors`）。
+    /// 与 legacy `behavior` 互斥；menu + behaviors 允许组合（行为绑定到新菜单身份）。
+    pub behavior_program: Option<super::behavior_nodes::ResolvedBehavior>,
+    /// `scene.writes`（delta 模式声明）：只有列出的列族会被场景写回覆盖。
+    pub scene_writes: super::scene::SceneWrites,
     #[serde(skip)]
     pub(crate) typed_patches: Vec<PropertyPatch>,
     #[serde(skip)]
@@ -46,29 +51,64 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
         Some(spec)
     };
+    let scene_writes = super::scene::SceneWrites::parse(&im.scene.writes);
+    // 声明位拼写错误必须 fail-closed：`"path"` 会被 parse 静默忽略，构建
+    // 看起来"成功"但什么都没写——这正是 r10 类事故的温床。
+    for family in &im.scene.writes {
+        let valid = matches!(
+            family.as_str(),
+            "paths" | "lights" | "spawners" | "effects" | "decals"
+        ) || family
+            .strip_prefix("props:")
+            .and_then(|bin| bin.parse::<usize>().ok())
+            .is_some_and(|bin| bin < sc_properties::lot_unit::PROP_BINS);
+        if !valid {
+            return Err(format!(
+                "scene.writes: unknown column family {family:?}; expected \
+                 \"paths\", \"lights\", \"spawners\", \"effects\", \"decals\" or \
+                 \"props:<0..{}>\"",
+                sc_properties::lot_unit::PROP_BINS.saturating_sub(1)
+            ));
+        }
+    }
+    let has_composed = im.semantics.labor.is_some() || !im.semantics.behaviors.is_empty();
+    if has_composed && !im.semantics.behavior.is_empty() {
+        return Err(
+            "semantics.behavior and semantics.behaviors/labor are mutually exclusive; \
+             migrate the legacy binding to logic nodes"
+                .into(),
+        );
+    }
+    if has_composed && im.references.lot.is_none() {
+        return Err(
+            "semantics.behaviors/labor require reference.lot to bind the donor identity".into(),
+        );
+    }
+    // 行为声明必须搭配 full 输出：delta 包依赖 donor 在场， donor 下架
+    // 即重演 s24 菜单 ***/模型/树丢失。full 模式把参考快照整体重打包，
+    // 保证包独立可工作。
+    if (has_composed || !im.semantics.behavior.is_empty())
+        && im.output.mode != crate::asset_build_m0::OutputMode::Full
+    {
+        return Err(
+            "behavior bindings require outputs.mode \"full\" (a standalone package must not \
+             depend on the donor at runtime)"
+                .into(),
+        );
+    }
     let behavior = if im.semantics.behavior.is_empty() {
         None
     } else {
-        let spec = super::behavior::BehaviorSpec::from_values(&im.semantics.behavior)?;
-        if menu.is_some() {
-            return Err(
-                "semantics.behavior and semantics.menu are mutually exclusive: behavior binds the frozen donor identity, menu allocates a new one".into(),
-            );
-        }
-        if im.references.lot.is_none() {
-            return Err(
-                "semantics.behavior requires reference.lot to bind the donor identity".into()
-            );
-        }
-        // 行为声明必须搭配 full 输出：delta 包依赖 donor 在场， donor 下架
-        // 即重演 s24 菜单 ***/模型/树丢失。full 模式把参考快照整体重打包，
-        // 保证包独立可工作。
-        if im.output.mode != crate::asset_build_m0::OutputMode::Full {
-            return Err(
-                "semantics.behavior requires outputs.mode \"full\" (a standalone package must not depend on the donor at runtime)".into(),
-            );
-        }
-        Some(spec)
+        Some(super::behavior::BehaviorSpec::from_values(
+            &im.semantics.behavior,
+        )?)
+    };
+    let behavior_program = if has_composed {
+        let labor = super::behavior_nodes::parse_labor(im.semantics.labor.as_ref())?;
+        let nodes = super::behavior_nodes::parse_nodes(&im.semantics.behaviors)?;
+        Some(super::behavior_nodes::compile(labor, &nodes)?)
+    } else {
+        None
     };
     // Portable output names: avoid Windows devices, streams and trailing-dot aliases.
     let name = &im.output.package;
@@ -137,9 +177,9 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
     }
     Ok(PropertyBuildPlan {
-        // /22：编辑器权威场景（scene.document 消费工作台文档）+
-        // ensurePedestrianPath 镜像范围修复（段对终点）+ W1 岗位字段。
-        processor_version: "openscp.property.m1/22",
+        // /25：新增 menu-contract 闸门（锚点/乱码/不加载/模型丢失四类前置校验），
+        // 且菜单身份不再合成 0x0CA5CF4A 自映射。
+        processor_version: "openscp.property.m1/33",
         scope: "property+scene-model",
         intermediate: im,
         patches: specs,
@@ -147,6 +187,8 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         protected,
         menu,
         behavior,
+        behavior_program,
+        scene_writes,
         order: ["property", "dbpf", "readback"],
     })
 }

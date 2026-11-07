@@ -123,6 +123,9 @@ pub struct MenuRegistrationSpec {
     /// 工具图标 PNG 的项目内路径；缺省自动生成 128×128 占位图。
     #[serde(default)]
     pub icon_png: Option<String>,
+    /// 菜单背景图（rollover 454×263 JPG）的项目内路径；缺省自动生成占位图。
+    #[serde(default)]
+    pub marquee_png: Option<String>,
     /// Optional proven identity donor package (relative to project root).
     /// When present, Menu2/Unit/Lot are cloned from this package instead of
     /// being rebuilt from the NightHouse minimal shape.
@@ -306,8 +309,10 @@ pub fn generate(
     resources: &connector::Resources,
     lot_source: ResourceId,
     scene_document: Option<&SceneDocument>,
+    scene_writes: &super::scene::SceneWrites,
     model_ids: Option<LodModelIds>,
     identity: Option<&connector::Resources>,
+    root: &std::path::Path,
 ) -> Result<MenuResources, String> {
     let instance = alloc_menu_instance(spec, resources);
     // 0.8.0 parent-free route: generic Asset dictionary + tested-unit.bin
@@ -320,6 +325,7 @@ pub fn generate(
             instance,
             scene_document,
             model_ids,
+            root,
         );
     }
     let lot_bytes = resources.get(&lot_source).ok_or_else(|| {
@@ -335,6 +341,7 @@ pub fn generate(
             mask_key,
             model_ids,
             scene_document,
+            scene_writes,
         )?
     } else {
         let lot_leaf = build_lot_leaf(
@@ -357,8 +364,8 @@ pub fn generate(
     } else {
         build_locale(spec, instance)
     };
-    let icon_png = build_icon_png(spec, instance);
-    let marquee_jpg = build_marquee_jpg(instance);
+    let icon_png = build_icon_png(spec, instance, root)?;
+    let marquee_jpg = build_marquee_jpg(spec, instance, root)?;
 
     let mut entries = vec![
         (
@@ -439,6 +446,7 @@ fn generate_parent_free(
     instance: u32,
     scene_document: Option<&SceneDocument>,
     model_ids: Option<LodModelIds>,
+    root: &std::path::Path,
 ) -> Result<MenuResources, String> {
     let rotation = spec.rotation_degrees.unwrap_or(180);
     // Menu2 = the FULLY materialized generic menu chain (author parent-free
@@ -472,8 +480,8 @@ fn generate_parent_free(
         instance,
     };
     let locale = build_locale(spec, instance);
-    let icon_png = build_icon_png(spec, instance);
-    let marquee_jpg = build_marquee_jpg(instance);
+    let icon_png = build_icon_png(spec, instance, root)?;
+    let marquee_jpg = build_marquee_jpg(spec, instance, root)?;
     let mut entries = vec![
         (
             ResourceId {
@@ -525,6 +533,7 @@ fn clone_donor_identity(
     mask_key: Option<ResourceId>,
     model_ids: Option<LodModelIds>,
     scene_document: Option<&SceneDocument>,
+    scene_writes: &super::scene::SceneWrites,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, u32), String> {
     let donor_instance = spec.identity_instance.unwrap_or(DALIAN_IDENTITY_INSTANCE);
     let locale_table = spec.locale_table.unwrap_or(DALIAN_LOCALE_TABLE);
@@ -593,6 +602,32 @@ fn clone_donor_identity(
         PropType::Key,
         ui_category_values(spec, 0x0704_9250),
     );
+    // 身份路线的菜单嵌套/工具家族：显式声明时覆盖 donor 的 parent 与
+    // 工具对象类别（s12/s13 公园入口配方：F970A822 + C710B6E9）。
+    if let Some(parent) = spec.menu_parent_instance {
+        set_scalar(
+            &mut menu,
+            HASH_PARENT,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                type_id: PROPERTY_TYPE,
+                group: 0x48E1_EB00,
+                instance: parent,
+            }),
+        );
+    }
+    if let Some(building_category) = spec.building_category_instance {
+        set_scalar(
+            &mut menu,
+            HASH_BUILDING_CATEGORY,
+            PropType::Key,
+            Value::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0,
+                instance: building_category,
+            }),
+        );
+    }
     set_text_table(&mut menu, HASH_TITLE, locale_table, 1);
     set_text_table(&mut menu, HASH_DESC, locale_table, 2);
 
@@ -736,22 +771,15 @@ fn clone_donor_identity(
         }
     }
     if let Some(document) = scene_document {
-        super::scene::apply_units(&mut lot, document)?;
+        // 菜单身份与普通场景共用 delta 语义：只写 scene.writes 声明的列族，
+        // 未声明族从 donor 身份原样保留。r10 的"整体重写"曾把锚点/灯光附属
+        // 全部清空——菜单路线同样不能用 authoritative。
+        super::scene::apply_units(&mut lot, document, scene_writes)?;
     }
     // Do not synthesize parent/self-map fields here.  The external packager
     // preserves those fields from the Asset/Lot donor; Dalian and the known
     // working reference both omit them.  Inventing them changes the runtime
     // inheritance graph and can leave only a placement marker visible.
-    set_array(
-        &mut lot,
-        0x0CA5_CF4A,
-        PropType::Key,
-        vec![Value::Key(sc_properties::Key {
-            type_id: PROPERTY_TYPE,
-            group: lot_group(),
-            instance,
-        })],
-    );
     if let Some([width, height]) = scene_document.and_then(|document| document.lot_size) {
         set_scalar(
             &mut lot,
@@ -991,9 +1019,17 @@ fn build_lot_leaf(
             ..SceneDocument::default()
         })
         .unwrap_or_default();
-    super::scene::apply_units(&mut file, &lights)?;
+    super::scene::apply_units(&mut file, &lights, &super::scene::SceneWrites {
+        lights: true,
+        ..Default::default()
+    })?;
     // LOD 重定向到编译模型；场景 LotSize/Placement 不降入（引用 lot 原值）。
-    let lowered = super::package::apply_scene_lot_semantics(&encode(&file)?, None, model_ids)?;
+    let lowered = super::package::apply_scene_lot_semantics(
+        &encode(&file)?,
+        None,
+        model_ids,
+        &super::scene::SceneWrites { lights: true, ..Default::default() },
+    )?;
     match lowered {
         Some((encoded, _)) => Ok(encoded),
         None => encode(&file),
@@ -1506,13 +1542,22 @@ mod tests {
     }
 }
 
-/// 128×128 工具图标 PNG：instance 决定的双色棋盘（测试用占位，可换
-/// `iconPng` 真图）。
-fn build_icon_png(spec: &MenuRegistrationSpec, instance: u32) -> Vec<u8> {
-    if let Some(path) = &spec.icon_png {
-        if let Ok(bytes) = std::fs::read(path) {
-            return bytes;
+/// 128×128 工具图标 PNG：`iconPng` 指向项目内真实 PNG 时原样使用；
+/// 缺失/非法文件 fail-closed（不再静默回退占位图——r10 类"图没换也没人
+/// 知道"的静默失败必须消失）。空串 = 生成占位棋盘。
+fn build_icon_png(
+    spec: &MenuRegistrationSpec,
+    instance: u32,
+    root: &std::path::Path,
+) -> Result<Vec<u8>, String> {
+    if let Some(path) = spec.icon_png.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        let file = root.join(path);
+        let bytes = std::fs::read(&file)
+            .map_err(|error| format!("menu.iconPng: {path}: {error}"))?;
+        if !bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+            return Err(format!("menu.iconPng: {path} is not a PNG file"));
         }
+        return Ok(bytes);
     }
     let (a, b) = palette(instance);
     let mut rgba = Vec::with_capacity(128 * 128 * 4);
@@ -1528,11 +1573,35 @@ fn build_icon_png(spec: &MenuRegistrationSpec, instance: u32) -> Vec<u8> {
     let encoder = image::codecs::png::PngEncoder::new(std::io::Cursor::new(&mut png));
     image::ImageEncoder::write_image(encoder, &rgba, 128, 128, image::ExtendedColorType::Rgba8)
         .expect("icon png encode");
-    png
+    Ok(png)
 }
 
-/// 454×263 rollover 大图 JPG：同色系横幅（测试占位）。
-fn build_marquee_jpg(instance: u32) -> Vec<u8> {
+/// 454×263 rollover 大图 JPG：`marqueePng` 指向项目内真实 JPG 时原样使用；
+/// 缺失/非 JPG 时 fail-closed。空串 = 生成占位横幅。
+fn build_marquee_jpg(
+    spec: &MenuRegistrationSpec,
+    instance: u32,
+    root: &std::path::Path,
+) -> Result<Vec<u8>, String> {
+    if let Some(path) = spec
+        .marquee_png
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        let lower = path.to_ascii_lowercase();
+        if !(lower.ends_with(".jpg") || lower.ends_with(".jpeg")) {
+            return Err(format!(
+                "menu.marqueePng: {path} must be a .jpg/.jpeg rollover image"
+            ));
+        }
+        let bytes = std::fs::read(root.join(path))
+            .map_err(|error| format!("menu.marqueePng: {path}: {error}"))?;
+        if !bytes.starts_with(&[0xFF, 0xD8]) {
+            return Err(format!("menu.marqueePng: {path} is not a JPEG file"));
+        }
+        return Ok(bytes);
+    }
     let (a, b) = palette(instance);
     let mut rgb = Vec::with_capacity(454 * 263 * 3);
     for y in 0..263u32 {
@@ -1550,7 +1619,7 @@ fn build_marquee_jpg(instance: u32) -> Vec<u8> {
         image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::Cursor::new(&mut jpg), 88);
     image::ImageEncoder::write_image(encoder, &rgb, 454, 263, image::ExtendedColorType::Rgb8)
         .expect("marquee jpg encode");
-    jpg
+    Ok(jpg)
 }
 
 fn palette(seed: u32) -> ([u8; 4], [u8; 4]) {

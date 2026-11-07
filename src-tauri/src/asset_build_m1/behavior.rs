@@ -155,6 +155,11 @@ pub struct BehaviorSpec {
     /// (0x0AD93A77) that vanilla colleges ship and park donors lack.
     #[serde(default)]
     pub set_float_fields: BTreeMap<String, f64>,
+    /// Unit leaf Int32 fields to set (hex hash → value).  The vanilla school
+    /// carries its worker shift schedule here (0x0D00853A..41, eight Int32
+    /// values) — writing these as Float would corrupt the type byte.
+    #[serde(default)]
+    pub set_int_fields: BTreeMap<String, i64>,
 }
 
 impl BehaviorSpec {
@@ -185,10 +190,16 @@ impl BehaviorSpec {
 /// Behavior-declared build stage: patch Unit/Lot education fields and the
 /// optional locale title row, then prove the menu layer is frozen.
 pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
-    let Some(spec) = ctx.plan.behavior.clone() else {
-        return Ok(serde_json::Value::Null);
+    let program = match (ctx.plan.behavior_program.clone(), ctx.plan.behavior.clone()) {
+        (Some(program), _) => program,
+        (None, Some(spec)) => {
+            super::behavior_nodes::from_legacy(&spec, ctx.menu_instance.is_some())
+        }
+        (None, None) => return Ok(serde_json::Value::Null),
     };
-    // Dalian identity convention: Menu2/Unit/Lot share the reference instance.
+    // Identity: menu mode patches the NEW menu identity (menu::generate has
+    // already inserted Menu2/Unit/Lot under ctx.menu_instance); otherwise the
+    // behavior stays on the frozen reference identity (r7-r10 mode).
     let lot_ref = ctx
         .plan
         .intermediate
@@ -196,7 +207,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         .lot
         .as_ref()
         .ok_or("behavior binding requires reference.lot")?;
-    let instance = lot_ref.instance;
+    let instance = ctx.menu_instance.unwrap_or(lot_ref.instance);
     let unit_id = ResourceId {
         type_id: PROPERTY_TYPE,
         group: UNIT_GROUP,
@@ -217,17 +228,9 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     let frozen = freeze_baseline(ctx.resources.all(), &menu_id, instance)?;
 
     let mut changed = Vec::new();
-    let unit = patch_unit(ctx, &unit_id, &spec, &mut changed)?;
-    let lot = patch_lot(
-        ctx,
-        &lot_id,
-        spec.lot_board_instance,
-        spec.ensure_walk_path,
-        spec.ensure_service_path,
-        spec.ensure_pedestrian_path,
-        &mut changed,
-    )?;
-    let locale = match (&spec.title_override, &frozen.locale) {
+    let unit = patch_unit(ctx, &unit_id, &program, &mut changed)?;
+    let lot = patch_lot(ctx, &lot_id, &program, &mut changed)?;
+    let locale = match (&program.title_override, &frozen.locale) {
         (Some(title), Some((locale_id, _))) => {
             let (id, row) = override_locale_title(ctx, locale_id, title)?;
             changed.push(row);
@@ -245,12 +248,12 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     // Presentation layer: clone donor stat rows / uiCategories / icon so the
     // building presents as education.  These are DECLARED menu-layer drifts;
     // the freeze below enforces that nothing beyond them moved.
-    let menu2_patched = if presentation_requested(&spec) {
+    let menu2_patched = if presentation_requested(&program) {
         let presentation = ctx.presentation_resources.clone().ok_or(
             "behavior presentation fields require presentation_package to be loadable",
         )?;
         let (menu2_declared, icon_override) =
-            apply_presentation(ctx, &presentation, &spec, instance, &mut changed)?;
+            apply_presentation(ctx, &presentation, &program, instance, &mut changed)?;
         Some((menu2_declared, icon_override))
     } else {
         None
@@ -258,14 +261,20 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
 
     // Invariants, fail-closed: everything outside the declared set is frozen.
     frozen.verify(ctx.resources.all(), &locale, menu2_patched.as_ref())?;
-    ensure_education_invariants(ctx, &unit_id, &spec)?;
+    ensure_behavior_invariants(ctx, &unit_id, &program)?;
 
     Ok(serde_json::json!({
-        "kind": spec.kind,
         "instance": format!("{instance:08X}"),
+        "menuIdentity": ctx.menu_instance.is_some(),
         "changed": changed,
         "frozen": frozen.summary(),
-        "bundles": spec.bundles().iter().map(|b| format!("{b:08X}")).collect::<Vec<_>>(),
+        "bundles": program
+            .ensure_bundles
+            .iter()
+            .map(|b| format!("{b:08X}"))
+            .collect::<Vec<_>>(),
+        "education": program.education,
+        "notes": program.notes,
     }))
 }
 
@@ -278,9 +287,12 @@ struct FreezeBaseline {
     locale: Option<(ResourceId, Vec<u8>)>,
 }
 
-fn presentation_requested(spec: &BehaviorSpec) -> bool {
-    spec.presentation_package.is_some()
-        && (spec.adopt_ui_categories || spec.adopt_stat_rows || spec.adopt_icon)
+fn presentation_requested(spec: &super::behavior_nodes::ResolvedBehavior) -> bool {
+    spec.presentation
+        .as_ref()
+        .is_some_and(|request| {
+            request.adopt_ui_categories || request.adopt_stat_rows || request.adopt_icon
+        })
 }
 
 /// Clone the declared presentation pieces from the vanilla education donor.
@@ -289,12 +301,16 @@ fn presentation_requested(spec: &BehaviorSpec) -> bool {
 fn apply_presentation(
     ctx: &mut BuildContext,
     presentation: &super::connector::Resources,
-    spec: &BehaviorSpec,
+    spec: &super::behavior_nodes::ResolvedBehavior,
     instance: u32,
     changed: &mut Vec<serde_json::Value>,
 ) -> Result<(Vec<u32>, bool), String> {
-    let unit_instance = spec.presentation_unit_instance.ok_or(
-        "presentation_package requires presentationUnitInstance",
+    let request = spec
+        .presentation
+        .as_ref()
+        .ok_or("presentation_requested called without a presentation request")?;
+    let unit_instance = request.unit_instance.ok_or(
+        "presentationPackage requires presentationUnit",
     )?;
     // Find the donor menu whose menuUnit edge points at the donor unit.
     let donor_menu = presentation
@@ -333,7 +349,7 @@ fn apply_presentation(
         .map_err(|error| format!("Menu2 parse: {error}"))?;
 
     // a) stat rows: school schedule + capacity panel replaces park visitors.
-    if spec.adopt_stat_rows {
+    if request.adopt_stat_rows {
         for hash in [HASH_STAT_TEMPLATE, HASH_STAT_PARAMS] {
             let Some(donor_property) = donor.get(hash) else {
                 return Err(format!(
@@ -360,7 +376,7 @@ fn apply_presentation(
 
     // b) uiCategories union: education board + category join; the park
     // container entry stays so the park menu remains the entry.
-    if spec.adopt_ui_categories {
+    if request.adopt_ui_categories {
         let Some(Kind::Array(donor_values)) =
             donor.get(HASH_UI_CATEGORIES).map(|p| &p.kind)
         else {
@@ -396,7 +412,7 @@ fn apply_presentation(
     ctx.resources.insert(menu_id, encoded);
 
     // c) icon bytes: donor keeps its icon at instance == unit instance.
-    if spec.adopt_icon {
+    if request.adopt_icon {
         let donor_icon_id = ResourceId {
             type_id: ICON_TYPE,
             group: ICON_GROUP,
@@ -684,7 +700,7 @@ fn override_locale_title(
 fn patch_unit(
     ctx: &mut BuildContext,
     unit_id: &ResourceId,
-    spec: &BehaviorSpec,
+    spec: &super::behavior_nodes::ResolvedBehavior,
     changed: &mut Vec<serde_json::Value>,
 ) -> Result<(), String> {
     let bytes = ctx.resources.get(unit_id).ok_or_else(|| {
@@ -692,46 +708,46 @@ fn patch_unit(
     })?;
     let mut unit = PropertyFile::parse(bytes).map_err(|error| format!("donor Unit parse: {error}"))?;
 
-    // Parent template (0x00B2CCCB): the education template chain supplies the
-    // utility bundles.  Vanilla encoding is TYPE-FUL (`00B1B104:48E0C000:<tpl>`,
-    // fire-station dissection 2026-10-20); s14 carried group 40E0C000, which
-    // the template walker cannot resolve — this overlay repairs it.
-    let template = spec.simulation_template_instance.unwrap_or(ELEMENTARY_TEMPLATE);
-    set_scalar(
-        &mut unit,
-        HASH_PARENT,
-        PropType::Key,
-        Value::Key(Key {
-            type_id: PROPERTY_TYPE,
-            group: UNIT_TEMPLATE_GROUP,
-            instance: template,
-        }),
-    );
-    changed.push(serde_json::json!({
-        "resource": unit_id.to_string(),
-        "field": format!("{HASH_PARENT:08X}"),
-        "value": format!("{template:08X}"),
-    }));
+    // Parent template (0x00B2CCCB): only when a behavior node declared one
+    // (legacy education always does; tourism/park/tree/landvalue leave the
+    // donor template untouched).  Vanilla encoding is TYPE-FUL
+    // (`00B1B104:48E0C000:<tpl>`, fire-station dissection 2026-10-20).
+    if let Some(template) = spec.parent_template {
+        set_scalar(
+            &mut unit,
+            HASH_PARENT,
+            PropType::Key,
+            Value::Key(Key {
+                type_id: PROPERTY_TYPE,
+                group: UNIT_TEMPLATE_GROUP,
+                instance: template,
+            }),
+        );
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "field": format!("{HASH_PARENT:08X}"),
+            "value": format!("{template:08X}"),
+        }));
+    }
 
-    // Behavior category (0x0AFE27B1): engine-read education selector.
-    let category = spec
-        .behavior_category_instance
-        .unwrap_or(EDUCATION_BEHAVIOR_CATEGORY);
-    set_scalar(
-        &mut unit,
-        HASH_UNIT_CATEGORY,
-        PropType::Key,
-        Value::Key(Key {
-            type_id: 0,
-            group: 0,
-            instance: category,
-        }),
-    );
-    changed.push(serde_json::json!({
-        "resource": unit_id.to_string(),
-        "field": format!("{HASH_UNIT_CATEGORY:08X}"),
-        "value": format!("{category:08X}"),
-    }));
+    // Behavior category (0x0AFE27B1): only when declared (education default).
+    if let Some(category) = spec.behavior_category {
+        set_scalar(
+            &mut unit,
+            HASH_UNIT_CATEGORY,
+            PropType::Key,
+            Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: category,
+            }),
+        );
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "field": format!("{HASH_UNIT_CATEGORY:08X}"),
+            "value": format!("{category:08X}"),
+        }));
+    }
 
     // Identity swap removals run FIRST: drop whole leaf fields and pull the
     // named bundles out of all four enable rows before anything is added.
@@ -763,11 +779,16 @@ fn patch_unit(
             }
         }
     }
-    for (hash_text, value) in &spec.set_float_fields {
-        let Ok(hash) = u32::from_str_radix(hash_text.trim_start_matches("0x"), 16) else {
-            return Err(format!("setFloatFields key {hash_text:?} is not hex"));
-        };
-        set_scalar(&mut unit, hash, PropType::Float, Value::Float(*value as f32));
+    for (hash, value) in &spec.set_float_fields {
+        set_scalar(&mut unit, *hash, PropType::Float, Value::Float(*value as f32));
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "field": format!("{hash:08X}"),
+            "value": value,
+        }));
+    }
+    for (hash, value) in &spec.set_int_fields {
+        set_scalar(&mut unit, *hash, PropType::Int32, Value::Int32(*value as i32));
         changed.push(serde_json::json!({
             "resource": unit_id.to_string(),
             "field": format!("{hash:08X}"),
@@ -797,15 +818,15 @@ fn patch_unit(
         }
     }
 
-    // Bundle-enable union: add the signature education bundle without touching
-    // the donor's existing entries (E7690450 park trees stay = frozen look).
-    for bundle in spec.bundles() {
+    // Bundle-enable union: add declared bundles without touching the donor's
+    // existing entries (E7690450 park trees stay = frozen look).
+    for bundle in &spec.ensure_bundles {
         let already = [HASH_BUNDLE_ENABLE_A2, HASH_BUNDLE_ENABLE_A5].into_iter().any(|hash| {
             unit.get(hash).is_some_and(|property| {
                 matches!(
                     &property.kind,
                     Kind::Array(values) if values.iter().any(|v| matches!(v,
-                        Value::Key(k) if k.instance == bundle
+                        Value::Key(k) if k.instance == *bundle
                     ))
                 )
             })
@@ -825,7 +846,7 @@ fn patch_unit(
                     values.push(Value::Key(Key {
                         type_id: 0,
                         group: 0,
-                        instance: bundle,
+                        instance: *bundle,
                     }));
                 }
             }
@@ -836,7 +857,7 @@ fn patch_unit(
                 vec![Value::Key(Key {
                     type_id: 0,
                     group: 0,
-                    instance: bundle,
+                    instance: *bundle,
                 })],
             ),
         }
@@ -888,32 +909,33 @@ fn patch_unit(
 fn patch_lot(
     ctx: &mut BuildContext,
     lot_id: &ResourceId,
-    board: Option<u32>,
-    ensure_walk_path: bool,
-    ensure_service_path: bool,
-    ensure_pedestrian_path: bool,
+    spec: &super::behavior_nodes::ResolvedBehavior,
     changed: &mut Vec<serde_json::Value>,
 ) -> Result<(), String> {
+    let ensure_walk_path = spec.ensure_walk_path;
+    let ensure_service_path = spec.ensure_service_path;
+    let ensure_pedestrian_path = spec.ensure_pedestrian_path;
     let bytes = ctx.resources.get(lot_id).ok_or_else(|| {
         format!("behavior binding requires donor Lot {lot_id} in the reference snapshot")
     })?;
     let mut lot = PropertyFile::parse(bytes).map_err(|error| format!("donor Lot parse: {error}"))?;
-    let board = board.unwrap_or(EDUCATION_LOT_BOARD);
-    set_scalar(
-        &mut lot,
-        HASH_LOT_BOARD,
-        PropType::Key,
-        Value::Key(Key {
-            type_id: 0,
-            group: 0,
-            instance: board,
-        }),
-    );
-    changed.push(serde_json::json!({
-        "resource": lot_id.to_string(),
-        "field": format!("{HASH_LOT_BOARD:08X}"),
-        "value": format!("{board:08X}"),
-    }));
+    if let Some(board) = spec.lot_board {
+        set_scalar(
+            &mut lot,
+            HASH_LOT_BOARD,
+            PropType::Key,
+            Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: board,
+            }),
+        );
+        changed.push(serde_json::json!({
+            "resource": lot_id.to_string(),
+            "field": format!("{HASH_LOT_BOARD:08X}"),
+            "value": format!("{board:08X}"),
+        }));
+    }
     lot.claimed_count = lot.values.len() as u32;
     // Walking department: every path segment must be typed Pedestrians or
     // student agents have no arrival route.  Fail closed unless the six-piece
@@ -1125,21 +1147,17 @@ fn patch_lot(
     Ok(())
 }
 
-/// Post-patch invariants: the education chain must resolve, fail-closed.
-fn ensure_education_invariants(
+/// Post-patch invariants: declared behavior must resolve, fail-closed.
+fn ensure_behavior_invariants(
     ctx: &BuildContext,
     unit_id: &ResourceId,
-    spec: &BehaviorSpec,
+    spec: &super::behavior_nodes::ResolvedBehavior,
 ) -> Result<(), String> {
     let bytes = ctx
         .resources
         .get(unit_id)
         .ok_or("unit vanished during behavior bind")?;
     let unit = PropertyFile::parse(bytes).map_err(|error| format!("unit reparse: {error}"))?;
-    let template = spec.simulation_template_instance.unwrap_or(ELEMENTARY_TEMPLATE);
-    let category = spec
-        .behavior_category_instance
-        .unwrap_or(EDUCATION_BEHAVIOR_CATEGORY);
     let bundle_enabled = |bundle: u32| {
         [HASH_BUNDLE_ENABLE_A2, HASH_BUNDLE_ENABLE_A5].into_iter().any(|hash| {
             unit.get(hash).is_some_and(|property| {
@@ -1152,34 +1170,38 @@ fn ensure_education_invariants(
             })
         })
     };
-    let parent_ok = unit.get(HASH_PARENT).is_some_and(|property| {
-        matches!(
-            &property.kind,
-            Kind::Scalar(Value::Key(key))
-                if key.type_id == PROPERTY_TYPE
-                    && key.group == UNIT_TEMPLATE_GROUP
-                    && key.instance == template
-        )
-    });
-    if !parent_ok {
-        return Err(format!(
-            "invariant EDUCATION_PARENT violated: Unit {HASH_PARENT:08X} is not {template:08X}"
-        ));
+    if let Some(template) = spec.parent_template {
+        let parent_ok = unit.get(HASH_PARENT).is_some_and(|property| {
+            matches!(
+                &property.kind,
+                Kind::Scalar(Value::Key(key))
+                    if key.type_id == PROPERTY_TYPE
+                        && key.group == UNIT_TEMPLATE_GROUP
+                        && key.instance == template
+            )
+        });
+        if !parent_ok {
+            return Err(format!(
+                "invariant BEHAVIOR_PARENT violated: Unit {HASH_PARENT:08X} is not {template:08X}"
+            ));
+        }
     }
-    let category_ok = unit.get(HASH_UNIT_CATEGORY).is_some_and(|property| {
-        matches!(
-            &property.kind,
-            Kind::Scalar(Value::Key(key)) if key.instance == category
-        )
-    });
-    if !category_ok {
-        return Err(format!(
-            "invariant EDUCATION_CATEGORY violated: Unit {HASH_UNIT_CATEGORY:08X} is not {category:08X}"
-        ));
+    if let Some(category) = spec.behavior_category {
+        let category_ok = unit.get(HASH_UNIT_CATEGORY).is_some_and(|property| {
+            matches!(
+                &property.kind,
+                Kind::Scalar(Value::Key(key)) if key.instance == category
+            )
+        });
+        if !category_ok {
+            return Err(format!(
+                "invariant BEHAVIOR_CATEGORY violated: Unit {HASH_UNIT_CATEGORY:08X} is not {category:08X}"
+            ));
+        }
     }
-    if !spec.bundles().iter().all(|bundle| bundle_enabled(*bundle)) {
+    if !spec.ensure_bundles.iter().all(|bundle| bundle_enabled(*bundle)) {
         return Err(
-            "invariant EDUCATION_BUNDLE violated: signature bundle missing from the enable union"
+            "invariant BEHAVIOR_BUNDLE violated: declared bundle missing from the enable union"
                 .into(),
         );
     }
@@ -1217,8 +1239,8 @@ fn ensure_education_invariants(
         }
     }
     // Set fields must exist with the requested value (fail on silent drops).
-    for (hash_text, value) in &spec.set_float_fields {
-        let hash = u32::from_str_radix(hash_text.trim_start_matches("0x"), 16).unwrap();
+    for (hash, value) in &spec.set_float_fields {
+        let hash = *hash;
         let ok = unit.get(hash).is_some_and(|property| {
             matches!(
                 &property.kind,
@@ -1231,8 +1253,22 @@ fn ensure_education_invariants(
             ));
         }
     }
-    // The donor tree bundle must survive: losing it loses the frozen look.
-    if !bundle_enabled(DONOR_TREE_BUNDLE) {
+    for (hash, value) in &spec.set_int_fields {
+        let hash = *hash;
+        let ok = unit.get(hash).is_some_and(|property| {
+            matches!(
+                &property.kind,
+                Kind::Scalar(Value::Int32(v)) if *v == *value as i32
+            )
+        });
+        if !ok {
+            return Err(format!(
+                "invariant SET_INT_FIELD violated: {hash:08X} is not {value}"
+            ));
+        }
+    }
+    // Tree leaf: the shared tree bundle must actually be enabled.
+    if spec.tree_bundle && !bundle_enabled(DONOR_TREE_BUNDLE) {
         return Err(
             "invariant DONOR_TREE_BUNDLE violated: E7690450 disappeared from the enable union"
                 .into(),

@@ -41,6 +41,12 @@ pub struct ReferenceSchema {
 #[serde(deny_unknown_fields)]
 pub struct SceneSchema {
     pub document: String,
+    /// delta 模式声明（schema v3，2026-11-07 事故后定案）：列出的列族才会
+    /// 被场景写回覆盖（"paths" / "props:<bin>" / "lights" / "spawners" /
+    /// "effects" / "decals"）；未声明的列从参照 lot **原样保留**。
+    /// 缺省 = 权威模式（整体重写，仅限从零构建的 native profile）。
+    #[serde(default)]
+    pub writes: Vec<String>,
     pub model: Option<String>,
     /// RW4 编译形状：缺省 = 逐源 mesh 分区（v3 契约）；
     /// `"merged-single"` = 全部几何合并为最少 mesh + 单材质 + BBox +
@@ -66,6 +72,14 @@ pub struct SemanticsSchema {
     /// 行为绑定冻结 donor 身份，仅 Unit/Lot/locale(title) 增量。
     #[serde(default)]
     pub behavior: BTreeMap<String, Value>,
+    /// `semantics.labor`: 建筑基本信息（W1/W2/W3 岗位 + 最低生产人数）。
+    /// 逻辑编排图编译产物；字段缺失时保持旧 schema 的规范哈希不变。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labor: Option<Value>,
+    /// `semantics.behaviors`: 逻辑编排图的行为节点数组（基础聚合 + 叶子）。
+    /// 与 legacy `behavior` 互斥；两者并存时 plan 阶段拒绝。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub behaviors: Vec<Value>,
     /// Property patch documents are intentionally kept as JSON at M0. The
     /// typed Property writer owns their domain validation in M1, while M0
     /// still includes them in the schema hash and intermediate contract.

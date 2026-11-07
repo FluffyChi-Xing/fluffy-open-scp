@@ -343,7 +343,7 @@ fn malformed_property_with_trailing_data_is_rejected_before_write() {
 }
 
 #[test]
-fn rejects_scene_path_without_path_entry_before_staging() {
+fn rejects_scene_path_without_type_before_staging() {
     let root = temp_root();
     source_package(&root);
     fs::write(
@@ -352,7 +352,7 @@ fn rejects_scene_path_without_path_entry_before_staging() {
     )
     .unwrap();
     let error = build_from_schema(&root, &schema().to_string()).unwrap_err();
-    assert!(error.contains("missing path entry"));
+    assert!(error.contains("path has no type"), "{error}");
     assert!(!root.join(".build").exists());
     fs::remove_dir_all(root).unwrap();
 }
@@ -1387,21 +1387,135 @@ fn behavior_full_clone_patches_unit_and_freezes_menu() {
 }
 
 #[test]
-fn behavior_requires_full_mode_and_rejects_menu_mixing() {
+fn behavior_requires_full_mode_and_allows_menu_combination() {
     let root = temp_root();
     behavior_donor(&root);
     let delta = build_from_schema(&root, &behavior_schema("delta").to_string())
         .err()
         .expect("behavior + delta must fail");
     assert!(delta.contains("full"), "error names the required mode: {delta}");
+    // 2026-11-07：menu + behavior 组合解禁——行为绑定到菜单阶段新分配的
+    // Unit/Lot 身份（Menu2 冻结校验仍然生效），产出独立菜单入口 + 行为。
     let mut mixed = behavior_schema("full");
-    mixed["semantics"]["menu"] = serde_json::json!({ "title": "x" });
-    let mixed_error = build_from_schema(&root, &mixed.to_string())
-        .err()
-        .expect("behavior + menu must fail");
+    mixed["semantics"]["menu"] = serde_json::json!({ "title": "combo-test" });
+    let result = build_from_schema(&root, &mixed.to_string())
+        .expect("behavior + menu combination must build");
+    let output = Package::open(&result.path).unwrap();
+    let menu_ids: Vec<u32> = output
+        .entries()
+        .iter()
+        .filter(|entry| entry.id.type_id == 0x00B1B104 && entry.id.group == 0x09878A01)
+        .map(|entry| entry.id.instance)
+        .collect();
     assert!(
-        mixed_error.contains("mutually exclusive"),
-        "error explains the conflict: {mixed_error}"
+        menu_ids.iter().any(|instance| *instance != 0x8D007745),
+        "menu combination allocates a new identity: {menu_ids:08X?}"
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rejects_unknown_scene_write_family_before_staging() {
+    let root = temp_root();
+    source_package(&root);
+    let mut schema = schema();
+    schema["scene"]["writes"] = serde_json::json!(["path"]);
+    let error = build_from_schema(&root, &schema.to_string()).unwrap_err();
+    assert!(error.contains("scene.writes"), "{error}");
+    assert!(error.contains("props:<0..13>"), "{error}");
+    assert!(!root.join(".build").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// 2026-11-07 逻辑编排图端到端：document(menu+logic) → workbench_logic 编译
+/// → schema 覆盖 → 构建。断言行为绑定到**新菜单身份**的 Unit 叶子上，
+/// labor/core/education 的节点参数真实落到列。
+#[test]
+fn composed_logic_graph_binds_labor_and_education_to_new_menu_identity() {
+    let root = temp_root();
+    behavior_donor(&root);
+    let document = serde_json::json!({
+        "editor": {"workbench": {
+            "menu": {
+                "enabled": true,
+                "label": "逻辑编排测试楼",
+                "description": "菜单+行为组合",
+                "uiPosition": 12000,
+                "iconPng": "",
+                "marqueePng": "",
+                "constructionCost": null,
+                "maintenanceCost": null,
+                "entries": [
+                    {"id": "menu-1", "dimension": "city", "categoryInstance": "899BEA70"}
+                ]
+            },
+            "logic": {
+                "nodes": [
+                    {"id": "info-1", "kind": "building-info", "position": [0, 0]},
+                    {"id": "core-1", "kind": "behavior-core", "position": [0, 120]},
+                    {"id": "leaf-education-1", "kind": "behavior-leaf", "position": [0, 240]}
+                ],
+                "edges": [
+                    {"id": "e1", "source": "info-1", "target": "asset", "targetHandle": "info"},
+                    {"id": "e2", "source": "core-1", "target": "asset", "targetHandle": "behavior"},
+                    {"id": "e3", "source": "leaf-education-1", "target": "core-1", "targetHandle": "leaf"}
+                ],
+                "params": {
+                    "info-1": {"w1": 20, "w2": 5, "w3": 0, "minWorkers": 5},
+                    "core-1": {
+                        "power": {"mode": "explicit", "rate": 72, "amount": 90},
+                        "water": {"mode": "inherit", "rate": null, "amount": null},
+                        "garbage": {"mode": "inherit", "rate": null, "amount": null}
+                    },
+                    "leaf-education-1": {"type": "education", "capacity": 250}
+                }
+            }
+        }}
+    });
+    fs::write(
+        root.join("asset.lot.json"),
+        document.to_string(),
+    )
+    .unwrap();
+    let compiled = crate::asset_build_m1::workbench_logic::compile(&document, &|_| true).unwrap();
+    assert!(compiled.menu.is_some());
+    assert_eq!(compiled.behaviors.len(), 2);
+    let mut schema = behavior_schema("full");
+    // 逻辑图取代 legacy behavior：先移除旧绑定（两者并存是显式冲突）。
+    schema["semantics"]
+        .as_object_mut()
+        .unwrap()
+        .remove("behavior");
+    crate::asset_build_m1::workbench_logic::apply_to_schema(&mut schema, &compiled).unwrap();
+    let result = build_from_schema(&root, &schema.to_string()).unwrap();
+    let instance = result.menu_instance.expect("menu identity allocated");
+    assert_ne!(instance, 0x8D007745, "behavior must target the NEW identity");
+
+    let output = Package::open(&result.path).unwrap();
+    let unit_id = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E0C000,
+        instance,
+    };
+    let entry = output.entry(unit_id).expect("new Unit identity in output");
+    let unit = PropertyFile::parse(&output.read(entry).unwrap()).unwrap();
+    let float = |hash: u32| match unit.get(hash).map(|p| &p.kind) {
+        Some(Kind::Scalar(Value::Float(value))) => Some(*value),
+        _ => None,
+    };
+    assert_eq!(float(0x0A79_17C5), Some(20.0), "W1 jobs written");
+    assert_eq!(float(0x0A79_17C6), Some(5.0), "W2 jobs written");
+    assert_eq!(float(0x0A79_17C8), Some(5.0), "minimum workers written");
+    assert_eq!(float(0x0AD7_FAC9), Some(250.0), "student capacity written");
+    assert_eq!(float(0x0B88_904E), Some(90.0), "power amount written");
+    assert_eq!(float(0x0C09_DAA0), Some(270.0), "power capacity derived 3x");
+
+    // 菜单身份：新 Menu2 + locale 标题来自文档菜单绑定。
+    let menu_id = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x09878A01,
+        instance,
+    };
+    assert!(output.entry(menu_id).is_some(), "new Menu2 present");
     let _ = fs::remove_dir_all(root);
 }

@@ -1078,27 +1078,27 @@ fn compile_path_fields(
         }
         pairs.push(Value::Int32(start));
         pairs.push(Value::Int32(start + count - 1));
-        let Some(entry) = &path.entry else {
-            return Err(format!(
-                "path #{path_index} has no pathEntry instance — the engine \
-                 resolves path semantics through script-side entries"
-            ));
-        };
-        let instance = u32::from_str_radix(entry.trim().trim_start_matches("0x"), 16)
-            .map_err(|error| format!("path #{path_index} entry '{entry}': {error}"))?;
+        // 类型 → 配方由 path_catalog 统一换算（与 scene 写回同一条链）。
+        let recipe = super::path_catalog::resolve(
+            path.kind.as_deref(),
+            path.entry.as_deref(),
+            path.scope_local,
+            path.road_connect,
+        )
+        .map_err(|error| format!("path #{path_index}: {error}"))?;
         entries.push(Value::Key(Key {
             type_id: 0x00B1_B104,
-            group: path_entry_group(instance),
-            instance,
+            group: recipe.entry_group,
+            instance: recipe.entry_instance,
         }));
         // scope/connect 逐路径编码（原版小学三组 = Global+First / Local+None /
-        // Local+None）：scope 跟随作者声明，connect 列恒写（缺省 None）。
-        scopes.push(zero_key(if path.scope_local {
+        // Local+None）：目录类型以配方为准，高级模式保留作者声明。
+        scopes.push(zero_key(if recipe.scope_local {
             PATH_SCOPE_LOCAL
         } else {
             PATH_SCOPE_GLOBAL
         }));
-        connects.push(zero_key(if path.road_connect {
+        connects.push(zero_key(if recipe.road_connect {
             PATH_ROAD_CONNECT_FIRST
         } else {
             PATH_ROAD_CONNECT_NONE
@@ -1520,7 +1520,10 @@ pub fn build(
     unit.claimed_count = unit.values.len() as u32;
 
     let authored_behavior = scene.is_some_and(|document| {
-        document.paths.iter().any(|path| path.entry.is_some())
+        document
+            .paths
+            .iter()
+            .any(|path| path.kind.is_some() || path.entry.is_some())
             || document.units.iter().any(|unit| {
                 matches!(
                     unit,

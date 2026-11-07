@@ -65,6 +65,9 @@ pub(crate) struct BuildContext {
     pub pool_inventory: serde_json::Value,
     /// 本次构建相对上次成功构建的池漂移（added/removed/changed）。
     pub pool_drift: serde_json::Value,
+    /// 参照 Lot 的**原始字节**（load-inputs 时快照）。delta-audit 用它做
+    /// "最终 lot vs 参照 lot" 的逐列对拍——这是 r10 事故的直接拦截点。
+    pub reference_lot: Option<(ResourceId, Vec<u8>)>,
 }
 
 impl BuildContext {
@@ -99,6 +102,7 @@ impl BuildContext {
             lot_change_declared,
             pool_inventory: serde_json::Value::Null,
             pool_drift: serde_json::Value::Null,
+            reference_lot: None,
         }
     }
 }
@@ -111,7 +115,7 @@ fn emit(ctx: &mut BuildContext, event: StageEvent) {
     ctx.events.push(event);
 }
 
-pub(crate) const CHAIN: [&str; 9] = [
+pub(crate) const CHAIN: [&str; 12] = [
     "load-inputs",
     "insert-textures",
     "insert-model",
@@ -120,6 +124,9 @@ pub(crate) const CHAIN: [&str; 9] = [
     "property-patches",
     "scene-semantics",
     "behavior-bind",
+    "layout-contract",
+    "menu-contract",
+    "delta-audit",
     "materialize-and-link",
 ];
 
@@ -137,6 +144,9 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             "property-patches" => apply_property_patches(ctx),
             "scene-semantics" => apply_scene_semantics(ctx),
             "behavior-bind" => super::behavior::apply(ctx),
+            "layout-contract" => layout_contract(ctx),
+            "menu-contract" => menu_contract(ctx),
+            "delta-audit" => delta_audit(ctx),
             "materialize-and-link" => materialize_and_link(ctx),
             _ => unreachable!("unknown chain stage {stage}"),
         };
@@ -269,6 +279,19 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             .ok_or("missing source package")?,
     )?;
     ctx.resources = BuildResources::from_source(connector::read_source(&source_path)?);
+    // 参照 Lot 原始字节快照（delta-audit 的对照面）。必须在任何处理器改写
+    // 池资源之前捕获；后续阶段只写不读这份快照。
+    let lot_target = ctx.plan.intermediate.references.lot.map(|tgi| ResourceId {
+        type_id: tgi.type_id,
+        group: tgi.group,
+        instance: tgi.instance,
+    });
+    ctx.reference_lot = lot_target.and_then(|id| {
+        ctx.resources
+            .get(&id)
+            .cloned()
+            .map(|bytes| (id, bytes))
+    });
     ctx.identity_resources = match ctx
         .plan
         .menu
@@ -292,6 +315,27 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         &ctx.plan.intermediate.scene.document,
         ctx.plan.intermediate.scene.model.as_deref(),
     )?;
+    // 显式 scene.writes 优先；缺省时按文档实际携带的列族派生（安全默认：
+    // 没建模的列一律保留）。派生结果进入 plan → 参与 build_hash，可复现。
+    if !ctx.plan.scene_writes.authoritative {
+        let declared = ctx
+            .scene_document
+            .as_ref()
+            .map(|document| {
+                super::scene::SceneWrites::parse(&document.writes)
+            })
+            .unwrap_or_default();
+        let effective = ctx.plan.scene_writes.clone().merge(declared);
+        ctx.plan.scene_writes = if effective.is_empty() {
+            ctx
+                .scene_document
+                .as_ref()
+                .map(super::scene::SceneWrites::from_document)
+                .unwrap_or_default()
+        } else {
+            effective
+        };
+    }
     // The scene document is an input to the built bytes (unit columns, menu
     // ground numerics, light/prop matrices) but the schema only references it
     // by filename. Fold its bytes into the build hash so a scene-only edit
@@ -680,6 +724,7 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
             target,
             None,
             if menu_mode { None } else { ctx.model_ids },
+            &ctx.plan.scene_writes,
             &mut ctx.lowered_units,
         )?;
     }
@@ -693,6 +738,7 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 ctx.scene_document.as_ref()
             },
             if menu_mode { None } else { ctx.model_ids },
+            &ctx.plan.scene_writes,
             &mut ctx.lowered_units,
         )?;
     }
@@ -705,8 +751,10 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 &ctx.resources,
                 lot_source,
                 ctx.scene_document.as_ref(),
+                &ctx.plan.scene_writes,
                 ctx.model_ids,
                 ctx.identity_resources.as_ref(),
+                &ctx.root,
             )?;
             for (id, bytes) in generated.entries {
                 ctx.resources.insert(id, bytes);
@@ -765,6 +813,266 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
             ctx.lot_change_declared,
         )?;
         detail["propertyGate"] = gate_report;
+    }
+    Ok(detail)
+}
+
+/// layout-contract（s25/s26/s27 事故后新增）：属性文件布局契约闸门。
+///
+/// 游戏加载器信任属性数组声明的 item_size 步长（2026-10-19 Text=8 实证菜单
+/// ***；2026-11-07 Transform=0 实证整个 lot 拒载）。delta-audit/列 diff 都
+/// 工作在解析值层，看不见声明元数据——本阶段在编码产物上 fail-closed 校验
+/// 每个数组列的声明步长 ∈ vanilla 全量标定合法表（scan_strides.rs：2385
+/// 文件、每类型恰好一个合法步长、零例外），空数组（vanilla 从不存在）同拒。
+fn layout_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
+    let mut checked = 0usize;
+    let mut arrays = 0usize;
+    let mut violations: Vec<String> = Vec::new();
+    for (id, bytes) in ctx.resources.iter() {
+        if id.type_id != 0x00B1_B104 {
+            continue;
+        }
+        let file = match sc_properties::PropertyFile::parse(bytes) {
+            Ok(file) => file,
+            Err(error) => {
+                violations.push(format!(
+                    "{:08X}:{:08X}:{:08X} parse: {error}",
+                    id.type_id, id.group, id.instance
+                ));
+                continue;
+            }
+        };
+        checked += 1;
+        if let Err(error) = file.validate_declared_strides() {
+            violations.push(format!(
+                "{:08X}:{:08X}:{:08X} {error}",
+                id.type_id, id.group, id.instance
+            ));
+        }
+        arrays += file
+            .values
+            .iter()
+            .filter(|property| matches!(property.kind, sc_properties::Kind::Array(_)))
+            .count();
+    }
+    if !violations.is_empty() {
+        return Err(format!(
+            "[layout-contract] property layout violations ({}): {}",
+            violations.len(),
+            violations.join("; ")
+        ));
+    }
+    Ok(serde_json::json!({
+        "status": "ok",
+        "property_files": checked,
+        "array_columns": arrays,
+    }))
+}
+
+/// menu-contract（s25 事故后新增）：菜单/渲染契约闸门。
+///
+/// 覆盖四类历史事故：菜单条目出现但只有锚点（公园容器/模型引用/自映射）、
+/// 标题 ***/乱码（locale 表/行）、菜单不加载（menuUnit/身份链/类别）、
+/// lot/模型丢失（BoundingBox/LotMask/模型引用）。fail-closed，staging 之前。
+fn menu_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
+    let Some(lot) = ctx.plan.intermediate.references.lot else {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": "no reference lot (not a building asset)",
+        }));
+    };
+    let instance = ctx.menu_instance.unwrap_or(lot.instance);
+    let donor = ctx.menu_instance.and_then(|_| {
+        ctx.identity_resources.as_ref().map(|resources| {
+            let donor_instance = ctx
+                .plan
+                .menu
+                .as_ref()
+                .and_then(|menu| menu.identity_instance)
+                .unwrap_or(super::menu::DALIAN_IDENTITY_INSTANCE);
+            (resources, donor_instance)
+        })
+    });
+    let report = super::menu_contract::validate(
+        &ctx.resources,
+        instance,
+        lot.group,
+        donor.map(|(resources, donor_instance)| (resources, donor_instance)),
+        ctx.menu_instance.is_some(),
+    )?;
+    Ok(report.to_json())
+}
+
+/// delta-audit（r10 事故后新增）：最终 Lot vs 参照 Lot 逐列对拍。
+///
+/// 允许变化的列 = `scene.writes` 声明族的列（与写回共用
+/// `scene::declared_column_hashes` 同一张表）+ 文档显式 lot 字段 +
+/// LOD 模型引用列 + 显式 property patch 列 + behavior 声明的路网/看板列。
+/// 其它任何 changed/added/removed = 阶段失败，**发生在 staging 之前**，
+/// 因此上一次成功产物不会被覆盖（风险隔离）。
+fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
+    use sc_properties::{LOD_MODEL_HASHES, LOT_OVERLAY_OFFSET_HASH, LOT_PLACEMENT_HASH, LOT_SIZE_HASH};
+
+    let writes = &ctx.plan.scene_writes;
+    let declared = writes.describe();
+    if writes.authoritative {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": "authoritative scene writes (from-zero build)",
+            "declared": declared,
+        }));
+    }
+    let Some((lot_target, reference_bytes)) = ctx.reference_lot.clone() else {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": "no reference lot",
+            "declared": declared,
+        }));
+    };
+    let Some(document) = ctx.scene_document.as_ref() else {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": "no scene document",
+            "declared": declared,
+        }));
+    };
+    let Some(built_bytes) = ctx.resources.get(&lot_target) else {
+        return Err(format!(
+            "lot property {}:{}:{} missing from build pool",
+            lot_target.type_id, lot_target.group, lot_target.instance
+        ));
+    };
+    let reference = sc_properties::PropertyFile::parse(&reference_bytes)
+        .map_err(|error| format!("reference lot parse: {error}"))?;
+    let built = sc_properties::PropertyFile::parse(built_bytes)
+        .map_err(|error| format!("built lot parse: {error}"))?;
+
+    // 声明族列（与写回同表）+ 显式输入列。
+    let mut allowed = super::scene::declared_column_hashes(writes);
+    if document.lot_size.is_some() {
+        allowed.push(LOT_SIZE_HASH);
+    }
+    if document.lot_offset.is_some() {
+        allowed.push(LOT_OVERLAY_OFFSET_HASH);
+    }
+    if document.placement.as_ref().is_some_and(|matrix| matrix.len() == 12) {
+        allowed.push(LOT_PLACEMENT_HASH);
+    }
+    // LOD 引用按确定性身份重定向；模型存在性由 insert-model 不变量兜底。
+    allowed.extend(LOD_MODEL_HASHES);
+    if ctx.plan.behavior.is_some() {
+        // legacy behavior 原语显式声明路网重写与看板族。
+        allowed.extend([
+            0x0CAA_680D,
+            0x0CB0_0ED8,
+            0x0CAA_6832,
+            0x0CAA_6841,
+            0x0CC8_FE7A,
+            0x0D9A_4E54,
+            0x0D9A_A2BB,
+            0x0D79_70ED,
+        ]);
+    }
+    if let Some(program) = &ctx.plan.behavior_program {
+        // 逻辑编排：允许列从节点声明派生（不再"有行为就放行全部路网列"）。
+        allowed.extend(program.declared_lot_columns.iter().copied());
+    }
+    for patch in &ctx.plan.typed_patches {
+        if patch.target == lot_target {
+            allowed.push(patch.hash);
+        }
+    }
+
+    let mut detail = match super::delta_audit::audit(
+        &reference,
+        &built,
+        lot_target.instance,
+        lot_target.instance,
+        &allowed,
+        &declared,
+    )? {
+        None => serde_json::json!({
+            "status": "pass",
+            "declared": declared,
+            "referenceColumns": reference.values.len(),
+            "builtColumns": built.values.len(),
+        }),
+        Some(report) => serde_json::json!({
+            "status": "declared",
+            "declared": declared,
+            "report": report.to_json(),
+        }),
+    };
+
+    // 菜单身份路线（新 Unit/Lot/Menu2）逐列对拍：对照面是 **identity donor
+    // lot**（不是参照 lot——新身份按设计从 identity donor 克隆）。未声明列
+    // 必须与 donor 一致；r10 的"新身份整体重写"事故在这里会被点名。
+    // 父无 donor 的 from-zero 路线没有可比基线，记录 skipped。
+    if let Some(instance) = ctx.menu_instance {
+        let donor_instance = ctx
+            .plan
+            .menu
+            .as_ref()
+            .and_then(|menu| menu.identity_instance)
+            .unwrap_or(super::menu::DALIAN_IDENTITY_INSTANCE);
+        let identity_lot = ResourceId {
+            type_id: lot_target.type_id,
+            group: lot_target.group,
+            instance,
+        };
+        let donor_lot = ResourceId {
+            type_id: lot_target.type_id,
+            group: lot_target.group,
+            instance: donor_instance,
+        };
+        let donor_bytes = ctx
+            .identity_resources
+            .as_ref()
+            .and_then(|identity| identity.get(&donor_lot))
+            .cloned();
+        let Some(donor_bytes) = donor_bytes else {
+            detail["menuIdentity"] = serde_json::json!({
+                "status": "skipped",
+                "reason": "no identity donor lot (from-zero menu route)",
+                "instance": format!("{instance:08X}"),
+            });
+            return Ok(detail);
+        };
+        let Some(bytes) = ctx.resources.get(&identity_lot) else {
+            return Err(format!(
+                "menu identity lot {identity_lot} missing from build pool"
+            ));
+        };
+        let identity_file = sc_properties::PropertyFile::parse(bytes)
+            .map_err(|error| format!("menu identity lot parse: {error}"))?;
+        let donor_file = sc_properties::PropertyFile::parse(&donor_bytes)
+            .map_err(|error| format!("identity donor lot parse: {error}"))?;
+        // 身份重定向列（clone_donor_identity 的固定副作用）：自映射表与
+        // 标题链接必须指向新身份/新 locale，不能要求与 donor 字节一致。
+        let mut identity_allowed = allowed.clone();
+        identity_allowed.extend([0x0CA5_CF4A, 0x09FB_78CB]);
+        let report = super::delta_audit::audit(
+            &donor_file,
+            &identity_file,
+            donor_instance,
+            instance,
+            &identity_allowed,
+            &declared,
+        )
+        .map_err(|error| format!("menu identity {instance:08X} vs donor {donor_instance:08X}: {error}"))?;
+        detail["menuIdentity"] = match report {
+            None => serde_json::json!({
+                "status": "pass",
+                "instance": format!("{instance:08X}"),
+                "donor": format!("{donor_instance:08X}"),
+            }),
+            Some(report) => serde_json::json!({
+                "status": "declared",
+                "instance": format!("{instance:08X}"),
+                "donor": format!("{donor_instance:08X}"),
+                "report": report.to_json(),
+            }),
+        };
     }
     Ok(detail)
 }

@@ -9,6 +9,7 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
+mod asset_dependencies;
 mod build_queue;
 mod annotations;
 pub(crate) mod asset_build_m0;
@@ -160,7 +161,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             asset_build_m1::commands::asset_build_m1_build,
+            asset_dependencies::sync_asset_dependencies,
             build_queue::build_queue_enqueue,
+            build_queue::build_queue_enqueue_project,
             build_queue::build_queue_list,
             build_queue::build_queue_detail,
             map_panel::map_panel_list_regions,
