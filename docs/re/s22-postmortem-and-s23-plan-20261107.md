@@ -376,3 +376,21 @@ roadConnect First；bin1 加两个垃圾桶 props
   两轮 SHA 一致 `07b40d7ae3f123ae`；已部署；r9 归档。
 - 后续：工作台→构建的直通仍是手工快照（每次编辑需重新快照+构建）；
   BuildActionsPanel 过渡入口的半自动化是下一站。
+
+### r10 回滚事故（2026-11-07）：编辑器权威场景的隐性前提
+
+r10 按方案 A 消费工作台 document 作为权威场景，结果**模型+地块消失**，
+已回滚 r9（重新部署 `5df84860…`，模型/地块恢复）。r10 归档为
+`…_s24-r10-BROKEN-07b40d7a.package`（BROKEN 标记）。
+
+**根因**：工作台 document 是 lot 的**有损投影**——整体重写丢失：
+- bin-draw 布尔开关（0C12EF50/5C/60/6C，percent-fill 语义）
+- 13 个通用锚点（0E1BAC61/62 22→9，只剩 prop 族 16A2F7Bx）
+- 灯光附属列（0CAA8F15/16/17、0D4C96B4、0E4DF244、0EC4567E、0E715928/29）
+- effect 引用键（02A907BB）
+- per-prop 资源塌缩（[CarW1,CarW2,CarW3] → 9×CarW1）与 transform scale
+
+**定案**：在"无损往返门禁"（property_diff 对拍参照，仅声明编辑可差异）
+或"v3 全量投影场景格式"（未知列原样携带）完成前，禁止 document 整体重写
+lot 的构建路径。此事故 = 工作台成熟化总设计（§7，assets-workbench
+orchestration plan）中 dependencies/v3 格式的动机案例。
