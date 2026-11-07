@@ -17,8 +17,12 @@ const props = defineProps<{
   project: string;
   /** 当前激活的模型资产相对路径（高亮）。 */
   activeAsset: string;
+  /** 当前在右侧配置区打开的文件（package.json 等），单独高亮。 */
+  selectedPath?: string | null;
 }>();
 const emit = defineEmits<{
+  /** 任意文件点击（package.json 等配置入口）。 */
+  select: [relativePath: string];
   "open-asset": [relativePath: string];
   "open-package": [relativePath: string];
   "blend-imported": [result: {
@@ -140,6 +144,7 @@ function onRowClick(row: TreeRow) {
     toggleFolder(row);
     return;
   }
+  emit("select", row.relativePath);
   const lower = row.name.toLowerCase();
   if (MODEL_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
     emit("open-asset", row.relativePath);
@@ -245,6 +250,7 @@ onMounted(loadTree);
         active:
           !row.isFolder &&
           (row.relativePath === activeAsset || activeAsset.endsWith(`/${row.relativePath}`) || activeAsset.endsWith(`\\${row.relativePath}`)),
+        selected: !row.isFolder && row.relativePath === selectedPath,
       }"
       :style="{ paddingInlineStart: `${8 + row.depth * 13}px` }"
       :title="row.relativePath"
@@ -345,6 +351,10 @@ onMounted(loadTree);
 .tree-row.folder {
   color: var(--muted-foreground);
   font-weight: 600;
+}
+.tree-row.selected {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
 }
 .tree-row.active {
   background: color-mix(in srgb, var(--primary) 14%, transparent);

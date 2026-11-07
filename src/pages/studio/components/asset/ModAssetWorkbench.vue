@@ -25,7 +25,7 @@ import UnitInspector from "@/pages/packages/components/unit-inspector/UnitInspec
 import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
 import AssetPathPanel from "./AssetPathPanel.vue";
-import type { WorkbenchPathSource } from "./path-planning/pathModel";
+import type { PathTypeId } from "./path-planning/pathTypes";
 import { useEffectPreview } from "@/pages/packages/components/property-editor/effects/useEffectPreview";
 import { useEditorHotkeys } from "@/pages/packages/components/property-editor/useEditorHotkeys";
 import { directModelKey } from "@/pages/packages/components/property-editor/assetCategories";
@@ -43,6 +43,7 @@ import {
 } from "./useWorkbenchAsset";
 import AssetLotLibrary from "./AssetLotLibrary.vue";
 import AssetMaterialSlotsPanel from "./AssetMaterialSlotsPanel.vue";
+import PackageProjectForm from "./PackageProjectForm.vue";
 
 /**
  * Assets Mod 工作台（Blender 式三栏，2026-10-25 彻底重构）：
@@ -134,10 +135,12 @@ function commitTransform(id: string, matrix: number[]) {
       ui.value?.edit.setUnitFields(id, {
         point: [matrix[9], matrix[10], matrix[11]],
       });
+      asset.markUnitTouched(id);
     }
     return;
   }
   ui.value?.edit.setUnitTransform(id, matrix);
+  asset.markUnitTouched(id);
 }
 
 /** 编辑锁：解锁进入编辑时渲染模式默认落在"默认渲染"（可自由切精细）。 */
@@ -147,6 +150,7 @@ function toggleEdit() {
 }
 function commitFields(id: string, patch: Record<string, unknown>) {
   ui.value?.edit.setUnitFields(id, patch);
+  asset.markUnitTouched(id);
 }
 
 // ---- 视口 props（schema 文档 = 单一数据源；事件显式绑定）----
@@ -221,23 +225,13 @@ useEventListener(window, "pointerup", (event: PointerEvent) => {
 const pathDrawing = ref(false);
 let viewportDownAt: { x: number; y: number } | null = null;
 
-function startPathDraw(target?: {
-  entry: string | null;
-  source: WorkbenchPathSource;
-}): void {
+function startPathDraw(type: PathTypeId): void {
   if (!editEnabled.value) return;
-  if (!target) {
-    toast.warning(t("studio.assetWorkbench.pathTargetRequired"));
-    return;
-  }
   if (!asset.activePathId.value) {
-    asset.createPath({ entry: target.entry, source: target.source });
+    asset.createPath({ type });
   } else {
-    // 已有激活路径：目标变更时补绑（entry/来源回填）
-    asset.updatePath(asset.activePathId.value, {
-      entry: target.entry,
-      source: target.source,
-    });
+    // 已有激活路径：切换类型 = 换语义配方（entry/scope/connect 由构建器换算）
+    asset.updatePath(asset.activePathId.value, { type });
   }
   pathDrawing.value = true;
 }
@@ -281,7 +275,10 @@ const unitClipboard = useUnitClipboard({
   get units() {
     return ui.value?.flatUnits ?? [];
   },
-  addUnit: (unit) => ui.value?.edit.addUnit(unit),
+  addUnit: (unit) => {
+    ui.value?.edit.addUnit(unit);
+    asset.markUnitTouched(unitId(unit));
+  },
   selectUnit: (id) => asset.selectUnit(id),
 });
 
@@ -464,6 +461,19 @@ async function onApplyLotPreset(preset: LotPresetRef) {
 
 // ---- 导入：模型文件 / TGI 解析 ----
 const treeRef = ref<InstanceType<typeof AssetSourceTree> | null>(null);
+/**
+ * 左栏当前选中的文件：点击 package.json 时中栏切换成项目配置表单
+ * （HBuilderX manifest.json 式分类表单）；打开模型/包时自动回到场景。
+ */
+const selectedFile = ref<string | null>(null);
+const isProjectConfig = computed(() => selectedFile.value === "package.json");
+function onTreeSelect(relativePath: string): void {
+  selectedFile.value = relativePath;
+}
+function onOpenAsset(relativePath: string): void {
+  selectedFile.value = null;
+  void asset.openDraftAsset(relativePath);
+}
 const tgiSheetOpen = ref(false);
 const tgiPackagePath = ref("");
 const tgiText = ref("");
@@ -471,6 +481,7 @@ const tgiBusy = ref(false);
 const packageCandidates = ref<Tgi[]>([]);
 /** 树 .package 点击 → 读资源表 → 列出 Lot property 候选并打开选择页。 */
 async function onOpenPackage(relativePath: string) {
+  selectedFile.value = null;
   packageCandidates.value = [];
   tgiPackagePath.value = relativePath;
   tgiText.value = "";
@@ -560,6 +571,13 @@ async function onSave() {
       toast.success(
         t("studio.assetWorkbench.saved", { path: asset.documentPath }),
       );
+      if (asset.dependencySyncError.value) {
+        toast.warning(
+          t("studio.assetWorkbench.dependencySyncFailed", {
+            error: asset.dependencySyncError.value,
+          }),
+        );
+      }
     }
   } catch (cause) {
     toast.error(String(cause));
@@ -931,7 +949,9 @@ function templateOf(resourceId: number) {
           ref="treeRef"
           :project="props.project"
           :active-asset="asset.sourceAssetPath.value"
-          @open-asset="asset.openDraftAsset($event)"
+          :selected-path="selectedFile"
+          @select="onTreeSelect"
+          @open-asset="onOpenAsset"
           @open-package="onOpenPackage"
           @blend-imported="onBlendImported"
         />
@@ -941,7 +961,19 @@ function templateOf(resourceId: number) {
         :label="t('studio.assetWorkbench.resizeTree')"
       />
       <ResizablePanel id="maw-center" :default-size="57" :min-size="30">
-        <Resizable direction="vertical" class="maw-center">
+        <PackageProjectForm
+          v-if="isProjectConfig"
+          :project="props.project"
+          :menu="asset.menu"
+          :logic="asset.draftLogic.value"
+          :saved-dirty="asset.savedDirty.value"
+          :save-document="asset.saveDocument"
+          :document-path="asset.documentPath"
+          @update:menu="asset.setMenuBinding($event)"
+          @update:logic="asset.setLogicGraph($event)"
+          @close="selectedFile = null"
+        />
+        <Resizable v-else direction="vertical" class="maw-center">
           <ResizablePanel id="maw-viewport" :default-size="64" :min-size="22">
             <div
               class="maw-viewport"
@@ -1020,10 +1052,14 @@ function templateOf(resourceId: number) {
               :source-label="asset.sourceLabel.value"
               :unit-counts="unitCounts"
               :lot-size="ui?.lotSize ?? null"
+              :project="props.project"
+              :project-root="asset.projectRoot.value"
               :menu="asset.menu"
+              :logic="asset.draftLogic.value"
               :saved-dirty="asset.savedDirty.value"
               :document-saved="Boolean(asset.schemaDocument.value)"
               @update:menu="asset.setMenuBinding($event)"
+              @update:logic="asset.setLogicGraph($event)"
               @import-model="treeRef?.refresh()"
               @open-tgi="tgiSheetOpen = true"
             />

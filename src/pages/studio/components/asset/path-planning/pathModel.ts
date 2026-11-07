@@ -1,4 +1,9 @@
 import type { LotUnitDto } from "@/api/tauri";
+import {
+  DEFAULT_PATH_TYPE,
+  isPathTypeId,
+  type PathTypeId,
+} from "./pathTypes";
 
 /**
  * 工作台路径规划纯函数（2026-10-27 path 研究落地，见
@@ -28,14 +33,38 @@ export interface WorkbenchPathSource {
 export interface WorkbenchPath {
   id: string;
   label: string;
-  /** 目标 property 来源（entry 的出处；重开时回显）。 */
-  source?: WorkbenchPathSource;
-  /** path entry instance 的 hex（无 0x 前缀）；null = 未绑定（引擎跳过整条）。 */
+  /** 路径类型：语义（entry/scope/connect）由构建器按类型配方换算。 */
+  type: PathTypeId;
+  /** 高级模式（type=custom）的显式 entry instance hex；目录类型忽略。 */
   entry: string | null;
+  /** 旧文档遗留：entry 的出处（只做回显/诊断，不参与构建）。 */
+  source?: WorkbenchPathSource;
+  /** 旧字段：仅 type=custom 时生效（目录类型以配方为准）。 */
   scope: string;
   roadConnect: boolean;
   /** 有序 pathPoint unitId（pathPoint:{index}）。 */
   pointIds: string[];
+}
+
+/** 旧文档 → 当前契约的迁移（恢复路径时调用；纯函数、幂等）。 */
+export function normalizeWorkbenchPath(
+  raw: Partial<WorkbenchPath> & { entry?: string | null },
+): WorkbenchPath {
+  const type: PathTypeId = isPathTypeId(raw.type)
+    ? raw.type
+    : raw.entry?.trim()
+      ? "custom"
+      : DEFAULT_PATH_TYPE;
+  return {
+    id: raw.id ?? "path:1",
+    label: raw.label ?? "",
+    type,
+    entry: raw.entry ?? null,
+    source: raw.source,
+    scope: raw.scope === "global" ? "global" : "local",
+    roadConnect: Boolean(raw.roadConnect),
+    pointIds: raw.pointIds ?? [],
+  };
 }
 
 export function nextPathId(existing: string[]): string {
@@ -86,7 +115,10 @@ export function validateWorkbenchPath(
   points: (LotUnitDto | null)[],
 ): PathIssue[] {
   const issues: PathIssue[] = [];
-  if (!path.entry) issues.push("entry-missing");
+  // 目录类型由构建器换算 entry；只有高级模式需要作者给 entry。
+  if (path.type === "custom" && !path.entry?.trim()) {
+    issues.push("entry-missing");
+  }
   if (points.filter(Boolean).length < 2) issues.push("points-too-few");
   for (const point of points) {
     if (!point) issues.push("point-missing");
@@ -136,6 +168,7 @@ export function adoptOrphanPaths(
     {
       id: `path:${max + 1}`,
       label: `#${count + 1}`,
+      type: DEFAULT_PATH_TYPE,
       entry: null,
       scope: "local",
       roadConnect: false,

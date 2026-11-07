@@ -15,7 +15,8 @@ const point = (x: number, y: number, z = 0): [number, number, number] => [x, y, 
 const base: WorkbenchPath = {
   id: "path:1",
   label: "前门",
-  entry: "418A18B1",
+  type: "pedestrian",
+  entry: null,
   scope: "local",
   roadConnect: false,
   pointIds: ["pathPoint:0", "pathPoint:1"],
@@ -82,9 +83,16 @@ describe("validateWorkbenchPath", () => {
     ];
     expect(validateWorkbenchPath(base, points)).toEqual([]);
   });
-  it("flags missing entry as engine-level issue", () => {
+  it("catalog type needs no explicit entry (processor resolves it)", () => {
+    const points = [
+      pathPointUnit(0, point(0, 0), point(1, 0, 0)),
+      pathPointUnit(1, point(4, 0), point(1, 0, 0)),
+    ];
+    expect(validateWorkbenchPath({ ...base, type: "pedestrian", entry: null }, points)).toEqual([]);
+  });
+  it("custom type without entry is an engine-level issue", () => {
     const issues = validateWorkbenchPath(
-      { ...base, entry: null },
+      { ...base, type: "custom", entry: null },
       [pathPointUnit(0, point(0, 0), point(1, 0, 0)), pathPointUnit(1, point(4, 0), point(1, 0, 0))],
     );
     expect(issues).toContain("entry-missing");
@@ -125,6 +133,7 @@ describe("adoptOrphanPaths", () => {
     const result = adoptOrphanPaths([], units);
     expect(result).not.toBeNull();
     expect(result![0].pointIds).toEqual(["pathPoint:1", "pathPoint:3"]);
+    expect(result![0].type).toBe("pedestrian");
     expect(result![0].entry).toBeNull();
   });
   it("skips points already referenced by an existing path", () => {

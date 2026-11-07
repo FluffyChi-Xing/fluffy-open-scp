@@ -39,6 +39,14 @@ export interface WorkbenchMenuBinding {
   description: string;
   /** 面板内排序（对齐原版地标 ~11500）；null = 自动。 */
   uiPosition: number | null;
+  /** 工具图标 PNG 的项目内相对路径；空 = 构建器生成占位图。 */
+  iconPng: string;
+  /** 菜单背景/rollover 大图的项目内相对路径；空 = 构建器生成占位图。 */
+  marqueePng: string;
+  /** 建造成本（0x0A8A41DA）；null = 继承模板。 */
+  constructionCost: number | null;
+  /** 维护成本（0x09AE19D7）；null = 继承模板。 */
+  maintenanceCost: number | null;
   entries: WorkbenchMenuEntry[];
 }
 
@@ -106,7 +114,23 @@ export function menuTargetLabelKey(
 }
 
 export function emptyMenuBinding(): WorkbenchMenuBinding {
-  return { enabled: false, label: "", description: "", uiPosition: null, entries: [] };
+  return {
+    enabled: false,
+    label: "",
+    description: "",
+    uiPosition: null,
+    iconPng: "",
+    marqueePng: "",
+    constructionCost: null,
+    maintenanceCost: null,
+    entries: [],
+  };
+}
+
+/** 项目内相对路径校验（绝对路径/盘符/回溯一律拒绝；空串合法 = 用占位图）。 */
+export function menuAssetPathOk(path: string): boolean {
+  const value = path.trim();
+  return value === "" || (!/^[A-Za-z]:|^[/\\]/.test(value) && !value.includes(".."));
 }
 
 /** menu-N 递增 id（取现有后缀最大值 +1，与数组顺序无关）。 */
@@ -150,6 +174,17 @@ export function normalizeMenuBinding(raw: unknown): WorkbenchMenuBinding {
   if (typeof record.description === "string") binding.description = record.description;
   if (typeof record.uiPosition === "number" && Number.isFinite(record.uiPosition))
     binding.uiPosition = record.uiPosition;
+  if (typeof record.iconPng === "string") binding.iconPng = record.iconPng.trim();
+  if (typeof record.marqueePng === "string")
+    binding.marqueePng = record.marqueePng.trim();
+  for (const [key, field] of [
+    ["constructionCost", "constructionCost"],
+    ["maintenanceCost", "maintenanceCost"],
+  ] as const) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value))
+      binding[field] = value;
+  }
   if (Array.isArray(record.entries)) {
     const seen = new Set<string>();
     for (const rawEntry of record.entries) {
@@ -173,6 +208,9 @@ export function menuBindingIssues(binding: WorkbenchMenuBinding): string[] {
   if (binding.entries.length === 0) issues.push("menuEntryRequired");
   for (const entry of binding.entries)
     if (!entry.categoryInstance) issues.push(`menuCategoryRequired:${entry.id}`);
+  if (!menuAssetPathOk(binding.iconPng)) issues.push("menuIconPathInvalid");
+  if (!menuAssetPathOk(binding.marqueePng))
+    issues.push("menuMarqueePathInvalid");
   return issues;
 }
 
@@ -201,5 +239,11 @@ export function deriveSemanticsMenu(
   const description = binding.description.trim();
   if (description) values.description = description;
   if (typeof binding.uiPosition === "number") values.uiPosition = binding.uiPosition;
+  if (binding.iconPng.trim()) values.iconPng = binding.iconPng.trim();
+  if (binding.marqueePng.trim()) values.marqueePng = binding.marqueePng.trim();
+  if (binding.constructionCost !== null)
+    values.constructionCost = binding.constructionCost;
+  if (binding.maintenanceCost !== null)
+    values.maintenanceCost = binding.maintenanceCost;
   return { values, reasons: [] };
 }

@@ -194,6 +194,18 @@ export const tauriApi = {
   buildQueue: {
     enqueue: (project: string, schema: string, label?: string) =>
       command<string>("build_queue_enqueue", { root: project, schema, label }),
+    /** 一键构建：自动发现 schema，并把工作台逻辑图编译进 semantics 后入队。 */
+    enqueueProject: (project: string, label?: string) =>
+      command<{
+        jobId: string;
+        schema: string;
+        logic?: {
+          menu: boolean;
+          labor: boolean;
+          behaviors: number;
+          warnings: string[];
+        } | null;
+      }>("build_queue_enqueue_project", { root: project, label }),
     list: (project: string) =>
       command<import("@/api/tauri").BuildJobDto[]>("build_queue_list", { root: project }),
     detail: (project: string, jobId: string) =>
@@ -273,6 +285,12 @@ export const tauriApi = {
     codePackageInfo: (project: string, relativePath: string) =>
       command<CodePackageInfo>("code_package_info", {
         request: { project, relativePath },
+      }),
+    /** 工作台文档 → package.json dependencies 同步（pathEntries 等）。 */
+    syncAssetDependencies: (project: string, document: string) =>
+      command<Record<string, unknown>>("sync_asset_dependencies", {
+        project,
+        document,
       }),
     codePackageEntries: (project: string, relativePath: string) =>
       command<CodePackageEntry[]>("code_package_entries", {

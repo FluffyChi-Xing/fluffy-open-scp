@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from "vue";
+import { onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { tauriApi } from "@/api";
@@ -26,10 +26,17 @@ const loading = ref(false);
 const schemaText = ref("");
 const enqueueBusy = ref(false);
 const enqueueError = ref("");
-
-const selected = computed(
-  () => jobs.value.find((job) => job.id === selectedId.value) ?? null,
-);
+/** 一键构建：构建器自动发现项目内唯一的 openscp.asset schema。 */
+const projectBuildBusy = ref(false);
+const projectBuildError = ref("");
+const projectSchema = ref("");
+/** 本次一键构建的逻辑编译摘要（菜单/岗位/行为节点数 + 警告）。 */
+const projectLogic = ref<{
+  menu: boolean;
+  labor: boolean;
+  behaviors: number;
+  warnings: string[];
+} | null>(null);
 
 async function refresh() {
   loading.value = true;
@@ -88,6 +95,22 @@ function select(job: BuildJobDto) {
   selectedId.value = selectedId.value === job.id ? null : job.id;
 }
 
+async function enqueueProject() {
+  if (projectBuildBusy.value) return;
+  projectBuildBusy.value = true;
+  projectBuildError.value = "";
+  try {
+    const submitted = await tauriApi.buildQueue.enqueueProject(props.project);
+    projectSchema.value = submitted.schema;
+    projectLogic.value = submitted.logic ?? null;
+    await refresh();
+  } catch (cause) {
+    projectBuildError.value = String(cause);
+  } finally {
+    projectBuildBusy.value = false;
+  }
+}
+
 async function enqueueSchema() {
   enqueueError.value = "";
   const schema = schemaText.value.trim();
@@ -120,6 +143,46 @@ const stageKindIcon = (event: StageEventDto) =>
 
 <template>
   <div class="actions-panel">
+    <!-- 一键构建:自动发现项目内 schema;不再需要粘贴/人工比对 -->
+    <div class="project-build">
+      <button
+        type="button"
+        class="enqueue-button project-build-button"
+        :disabled="projectBuildBusy"
+        @click="enqueueProject"
+      >
+        <FIcon name="Hammer" :size="12" aria-label="" />
+        {{ t("studio.assetWorkbench.actionsBuildProject") }}
+      </button>
+      <p class="project-build-note">
+        {{
+          projectSchema
+            ? t("studio.assetWorkbench.actionsBuildProjectSchema", {
+                path: projectSchema,
+              })
+            : t("studio.assetWorkbench.actionsBuildProjectHint")
+        }}
+      </p>
+      <p v-if="projectLogic" class="project-build-note">
+        {{
+          t("studio.assetWorkbench.actionsBuildLogic", {
+            menu: projectLogic.menu ? "✓" : "—",
+            labor: projectLogic.labor ? "✓" : "—",
+            behaviors: projectLogic.behaviors,
+          })
+        }}
+      </p>
+      <p
+        v-for="warning in projectLogic?.warnings ?? []"
+        :key="warning"
+        class="project-build-note"
+      >
+        {{ warning }}
+      </p>
+      <p v-if="projectBuildError" class="enqueue-error">
+        {{ projectBuildError }}
+      </p>
+    </div>
     <!-- 手动入队(P3 前的过渡入口:粘贴 schema JSON) -->
     <details class="enqueue-box">
       <summary>{{ t("studio.assetWorkbench.actionsEnqueueTitle") }}</summary>
@@ -193,6 +256,24 @@ const stageKindIcon = (event: StageEventDto) =>
   gap: 8px;
   overflow: auto;
   padding: 10px;
+}
+.project-build {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+.project-build-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 5px;
+  justify-content: center;
+  margin-top: 0;
+}
+.project-build-note {
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+  margin: 6px 0 0;
+  word-break: break-all;
 }
 .enqueue-box {
   border: 1px solid var(--border);

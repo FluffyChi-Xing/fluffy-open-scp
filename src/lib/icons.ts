@@ -161,6 +161,18 @@ import {
   Heading2,
   Folder,
   File,
+  Gauge,
+  Network,
+  // 工作台/资产面板补充（2026-11-07）：未注册名会渲染为 "?" 占位。
+  Building2,
+  Car,
+  FileJson,
+  Footprints,
+  GraduationCap,
+  Hammer,
+  MousePointerClick,
+  TreePine,
+  Trees,
   type LucideIcon,
 } from "lucide-vue-next";
 
@@ -210,6 +222,8 @@ const iconRegistry: Record<string, LucideIcon> = {
   Heading1,
   Heading2,
   Activity,
+  Gauge,
+  Network,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -356,6 +370,15 @@ const iconRegistry: Record<string, LucideIcon> = {
   Maximize2,
   Minimize2,
   Ruler,
+  Building2,
+  Car,
+  FileJson,
+  Footprints,
+  GraduationCap,
+  Hammer,
+  MousePointerClick,
+  TreePine,
+  Trees,
 };
 
 export const builtinIconNames: readonly string[] = Object.keys(iconRegistry);

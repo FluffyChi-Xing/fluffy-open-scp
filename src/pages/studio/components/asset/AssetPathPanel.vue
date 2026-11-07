@@ -3,29 +3,28 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FSelect from "@/components/ui/FSelect.vue";
-import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/composables/useToast";
-import { tauriApi } from "@/api";
-import type { PathPointUnit, PathSourceSummary } from "@/api/tauri";
-import { useGamePackagesStore } from "@/stores/gamePackages";
+import type { PathPointUnit } from "@/api/tauri";
 import {
   pathPointPositions,
   validateWorkbenchPath,
   type WorkbenchPath,
-  type WorkbenchPathSource,
 } from "./path-planning/pathModel";
 import {
-  entryDisplayLabel,
-  selectPathSourcePage,
-  sourceDisplayLabel,
-} from "./path-planning/sources";
+  DEFAULT_PATH_TYPE,
+  PATH_TYPES,
+  entryHexLabel,
+  pathSemantics,
+  pathTypeSpec,
+  type PathTypeId,
+} from "./path-planning/pathTypes";
 
 /**
- * 路径规划面板（2026-10-28 重设计）：目标卡（选包 → 筛选带路径的
- * property → 看参数 → 选中/开始绘制）+ 已有路径列表。
- * 用户不接触 path entry 概念：entry 由选中目标的 property 自动回填，
- * WorkbenchPath.source 记录出处（重开回显）。筛选/分页纯函数在
- * path-planning/sources.ts。
+ * 路径规划面板（2026-11-07 类型化重设计）：作者只选"是什么路"
+ * （人行道/车辆引道/自定义 entry），entry/scope/roadConnect 由构建器的
+ * path_catalog 处理器换算写列。不再要求选包/选 property。
+ *
+ * 纯函数边界：类型配方在 path-planning/pathTypes.ts，校验在 pathModel.ts，
+ * 本组件只做展示与事件转发。
  */
 defineOptions({ name: "AssetPathPanel" });
 const props = defineProps<{
@@ -38,7 +37,7 @@ const props = defineProps<{
   pathPoints: PathPointUnit[];
 }>();
 const emit = defineEmits<{
-  "begin-draw": [target: { entry: string | null; source: WorkbenchPathSource }];
+  "begin-draw": [type: PathTypeId];
   "finish-draw": [];
   "undo-point": [];
   focus: [id: string | null];
@@ -47,103 +46,20 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const toast = useToast();
-const packages = useGamePackagesStore();
 
-// ---- 目标卡状态 ----
-const packageOptions = computed(() =>
-  packages.opened.map((opened) => {
-    const label =
-      opened.package.path.split(/[\\/]/).pop() ?? opened.package.path;
-    return { label, value: String(opened.package.packageId) };
-  }),
+/** 绘制类型：开始绘制时随路径实体一起落库（引擎语义由类型决定）。 */
+const selectedType = ref<PathTypeId>(DEFAULT_PATH_TYPE);
+/** 只有这两类是"常规"选择；custom 在路径行内作为高级项出现。 */
+const drawTypes = computed(() =>
+  PATH_TYPES.filter((spec) => spec.id !== "custom"),
 );
-const packageId = ref("");
-const sources = ref<PathSourceSummary[]>([]);
-const sourcesLoading = ref(false);
-const sourceFilter = ref("");
-const sourcePage = ref(1);
-const PAGE_SIZE = 5;
-const selectedSource = ref<PathSourceSummary | null>(null);
-
-const sourcePageView = computed(() =>
-  selectPathSourcePage(
-    sources.value,
-    sourceFilter.value,
-    sourcePage.value,
-    PAGE_SIZE,
-  ),
+const typeOptions = computed(() =>
+  PATH_TYPES.map((spec) => ({ label: t(spec.labelKey), value: spec.id })),
 );
-
-async function onPackageChange(value: string | number): Promise<void> {
-  packageId.value = String(value);
-  selectedSource.value = null;
-  sources.value = [];
-  sourcePage.value = 1;
-  const id = Number(value);
-  if (!Number.isFinite(id)) return;
-  sourcesLoading.value = true;
-  try {
-    sources.value = await tauriApi.packages.listPathSources(id);
-  } catch {
-    sources.value = [];
-  } finally {
-    sourcesLoading.value = false;
-  }
-}
-
-function selectSource(row: PathSourceSummary): void {
-  selectedSource.value = row;
-  sourcePage.value = sourcePageView.value.page;
-}
-
-function sourceTitle(row: PathSourceSummary): string {
-  return row.name || `0x${row.instance.toString(16).toUpperCase()}`;
-}
-
-function sourceHex(row: PathSourceSummary): string {
-  return `G${row.group.toString(16).toUpperCase()} I${row.instance
-    .toString(16)
-    .toUpperCase()}`;
-}
-
-function sourceMatches(row: PathSourceSummary): boolean {
-  return (
-    !!selectedSource.value &&
-    selectedSource.value.packageId === row.packageId &&
-    selectedSource.value.instance === row.instance &&
-    selectedSource.value.group === row.group
-  );
-}
-
-// ---- 目标绑定与绘制 ----
-const boundTarget = ref<{
-  entry: string | null;
-  source: WorkbenchPathSource;
-} | null>(null);
-
-function bindTarget(): void {
-  const row = selectedSource.value;
-  if (!row) return;
-  const source: WorkbenchPathSource = {
-    packageId: row.packageId,
-    typeId: row.typeId,
-    group: row.group,
-    instance: row.instance,
-    label: row.name || undefined,
-  };
-  boundTarget.value = { entry: row.entryIds[0]?.toString(16) ?? null, source };
-  toast.success(
-    t("studio.assetWorkbench.pathTargetBound", { name: sourceTitle(row) }),
-  );
-}
 
 function onBeginDraw(): void {
-  if (!boundTarget.value) {
-    toast.warning(t("studio.assetWorkbench.pathTargetRequired"));
-    return;
-  }
-  emit("begin-draw", boundTarget.value);
+  if (!props.editEnabled) return;
+  emit("begin-draw", selectedType.value);
 }
 
 // ---- 已有路径列表 ----
@@ -157,8 +73,10 @@ interface PathRow {
   path: WorkbenchPath;
   points: number;
   issues: string[];
-  sourceLabel: string;
+  typeLabel: string;
   entryLabel: string;
+  scopeLabel: string;
+  roadConnect: boolean;
 }
 
 const rows = computed<PathRow[]>(() =>
@@ -168,24 +86,23 @@ const rows = computed<PathRow[]>(() =>
     const issues = validateWorkbenchPath(path, units).map((code) =>
       t(`studio.assetWorkbench.pathIssue.${code}`),
     );
-    const sourceLabel = path.source
-      ? `${sourceDisplayLabel(path.source)} · G${path.source.group
-          .toString(16)
-          .toUpperCase()} I${path.source.instance
-          .toString(16)
-          .toUpperCase()}`
-      : "";
+    const spec = pathTypeSpec(path.type);
+    const semantics = pathSemantics(path.type, path.entry);
     return {
       path,
       points: positions.filter(Boolean).length,
       issues,
-      sourceLabel,
-      entryLabel: entryDisplayLabel(path.entry),
+      typeLabel: t(spec.labelKey),
+      entryLabel: entryHexLabel(semantics.entry),
+      scopeLabel: t(
+        semantics.scope === "global"
+          ? "studio.assetWorkbench.pathScopeGlobal"
+          : "studio.assetWorkbench.pathScopeLocal",
+      ),
+      roadConnect: semantics.roadConnect,
     };
   }),
 );
-
-const SCOPES = ["local", "regional"] as const;
 </script>
 
 <template>
@@ -194,115 +111,39 @@ const SCOPES = ["local", "regional"] as const;
       {{ t("studio.assetWorkbench.unlockFirst") }}
     </p>
     <template v-else>
-      <!-- 目标卡：选包 → 筛选带路径的 property → 参数 → 选中/开始绘制 -->
-      <section class="target-card">
-        <FSelect
-          class="package-select"
-          :model-value="packageId"
-          :options="packageOptions"
-          :placeholder="t('studio.assetWorkbench.pathPickPackage')"
-          :aria-label="t('studio.assetWorkbench.pathPickPackage')"
-          @update:model-value="onPackageChange"
-        />
-        <input
-          v-model="sourceFilter"
-          class="path-input source-filter"
-          type="search"
-          :placeholder="t('studio.assetWorkbench.pathSourceFilter')"
-          :aria-label="t('studio.assetWorkbench.pathSourceFilter')"
-        />
-        <p v-if="sourcesLoading" class="path-note">
-          {{ t("common.loading") }}
-        </p>
-        <p v-else-if="packageId && !sourcePageView.total" class="path-note">
-          {{ t("studio.assetWorkbench.pathSourceEmpty") }}
-        </p>
-        <div v-else class="source-list">
+      <!-- 类型卡：选"是什么路" → 开始绘制 -->
+      <section class="type-card">
+        <div class="type-head">
+          <span>{{ t("studio.assetWorkbench.pathTypeTitle") }}</span>
+        </div>
+        <div class="type-grid" role="radiogroup">
           <button
-            v-for="row in sourcePageView.items"
-            :key="`${row.packageId}:${row.group}:${row.instance}`"
+            v-for="spec in drawTypes"
+            :key="spec.id"
             type="button"
-            class="source-row"
-            :class="{ selected: sourceMatches(row) }"
-            @click="selectSource(row)"
+            role="radio"
+            class="type-row"
+            :class="{ selected: selectedType === spec.id }"
+            :aria-checked="selectedType === spec.id"
+            @click="selectedType = spec.id"
           >
-            <span class="source-name">{{ sourceTitle(row) }}</span>
-            <span class="source-meta">
-              {{ row.pathCount }}
-              {{ t("studio.assetWorkbench.pathCountNoun") }}
-              ·
-              {{ row.pointCount }}
-              {{ t("studio.assetWorkbench.pathPointNoun") }}
+            <FIcon :name="spec.icon" :size="14" aria-label="" />
+            <span class="type-text">
+              <span class="type-name">{{ t(spec.labelKey) }}</span>
+              <span class="type-hint">{{ t(spec.hintKey) }}</span>
             </span>
+            <span class="type-entry">{{ entryHexLabel(spec.entry) }}</span>
           </button>
         </div>
-        <div
-          v-if="sourcePageView.pageCount > 1"
-          class="source-pager"
-          role="navigation"
-        >
-          <button
-            type="button"
-            class="path-eye"
-            :disabled="sourcePageView.page <= 1"
-            aria-label=""
-            @click="sourcePage -= 1"
-          >
-            <FIcon name="ChevronLeft" :size="12" aria-label="" />
-          </button>
-          <span class="path-note">
-            {{ sourcePageView.page }} / {{ sourcePageView.pageCount }}
-          </span>
-          <button
-            type="button"
-            class="path-eye"
-            :disabled="sourcePageView.page >= sourcePageView.pageCount"
-            aria-label=""
-            @click="sourcePage += 1"
-          >
-            <FIcon name="ChevronRight" :size="12" aria-label="" />
-          </button>
-        </div>
-        <div v-if="selectedSource" class="source-params">
-          <div class="param-row">
-            <span>{{ t("studio.assetWorkbench.pathParamTgi") }}</span>
-            <code>{{ sourceHex(selectedSource) }}</code>
-          </div>
-          <div class="param-row">
-            <span>{{ t("studio.assetWorkbench.pathParamGeometry") }}</span>
-            <span>
-              {{ selectedSource.pathCount }}
-              {{ t("studio.assetWorkbench.pathCountNoun") }} ·
-              {{ selectedSource.pointCount }}
-              {{ t("studio.assetWorkbench.pathPointNoun") }}
-            </span>
-          </div>
-          <div class="param-row">
-            <span>{{ t("studio.assetWorkbench.pathEntry") }}</span>
-            <code>
-              {{
-                selectedSource.entryIds
-                  .map((id) => id.toString(16).toUpperCase())
-                  .join(" / ") || "—"
-              }}
-            </code>
-          </div>
-        </div>
+        <p class="path-hint type-note">
+          {{ t("studio.assetWorkbench.pathTypeHint") }}
+        </p>
         <div class="path-actions">
-          <button
-            type="button"
-            class="path-btn"
-            :disabled="!selectedSource"
-            @click="bindTarget"
-          >
-            <FIcon name="Check" :size="12" aria-label="" />
-            {{ t("studio.assetWorkbench.pathSelectTarget") }}
-          </button>
           <button
             type="button"
             class="path-btn primary draw"
             :class="{ drawing }"
-            @click="onBeginDraw"
+            @click="drawing ? emit('finish-draw') : onBeginDraw()"
           >
             <FIcon
               :name="drawing ? 'Square' : 'Spline'"
@@ -330,7 +171,7 @@ const SCOPES = ["local", "regional"] as const;
         </p>
       </section>
 
-      <!-- 已有路径：回显来源 property 与 entry -->
+      <!-- 已有路径：类型 + 派生语义（只读展示） -->
       <div v-for="row in rows" :key="row.path.id" class="path-card">
         <div class="path-head">
           <button
@@ -368,41 +209,43 @@ const SCOPES = ["local", "regional"] as const;
             <FIcon name="Trash2" :size="12" aria-label="" />
           </button>
         </div>
-        <p v-if="row.sourceLabel" class="path-source">
-          <FIcon name="Box" :size="11" aria-label="" />
-          {{ row.sourceLabel }}
-          <template v-if="row.entryLabel">
-            · Entry {{ row.entryLabel }}
-          </template>
-        </p>
-        <div class="path-row">
-          <label class="path-field">
-            <span>{{ t("studio.assetWorkbench.pathScope") }}</span>
-            <FSelect
-              class="path-input"
-              :model-value="row.path.scope"
-              :options="SCOPES.map((scope) => ({ label: scope, value: scope }))"
-              @update:model-value="
-                emit('update', row.path.id, {
-                  scope: String($event),
-                })
-              "
-            />
-          </label>
-          <div class="path-check">
-            <Switch
-              :model-value="row.path.roadConnect"
-              :disabled="!editEnabled"
-              :aria-label="t('studio.assetWorkbench.pathRoadConnect')"
-              @update:model-value="
-                emit('update', row.path.id, {
-                  roadConnect: Boolean($event),
-                })
-              "
-            />
-            <span>{{ t("studio.assetWorkbench.pathRoadConnect") }}</span>
-          </div>
+        <label class="path-field">
+          <span>{{ t("studio.assetWorkbench.pathTypeTitle") }}</span>
+          <FSelect
+            class="path-input"
+            :model-value="row.path.type"
+            :options="typeOptions"
+            @update:model-value="
+              emit('update', row.path.id, {
+                type: String($event) as PathTypeId,
+              })
+            "
+          />
+        </label>
+        <div v-if="row.path.type === 'custom'" class="path-field">
+          <span>{{ t("studio.assetWorkbench.pathEntry") }}</span>
+          <input
+            class="path-input"
+            :value="row.path.entry ?? ''"
+            :placeholder="t('studio.assetWorkbench.pathEntryPlaceholder')"
+            :aria-label="t('studio.assetWorkbench.pathEntry')"
+            @change="
+              emit('update', row.path.id, {
+                entry: ($event.target as HTMLInputElement).value.trim() || null,
+              })
+            "
+          />
         </div>
+        <p class="path-semantics">
+          <FIcon name="Cpu" :size="11" aria-label="" />
+          <span>{{ t("studio.assetWorkbench.pathSemantics") }}</span>
+          <code>{{ row.typeLabel }}</code>
+          <code>{{ row.entryLabel }}</code>
+          <span class="path-badge">{{ row.scopeLabel }}</span>
+          <span v-if="row.roadConnect" class="path-badge">
+            {{ t("studio.assetWorkbench.pathRoadConnect") }}
+          </span>
+        </p>
         <ul v-if="row.issues.length" class="path-issues">
           <li v-for="issue in row.issues" :key="issue" class="path-issue">
             {{ issue }}
@@ -423,7 +266,7 @@ const SCOPES = ["local", "regional"] as const;
   gap: 8px;
   padding: 8px;
 }
-.target-card {
+.type-card {
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -432,82 +275,57 @@ const SCOPES = ["local", "regional"] as const;
   gap: 7px;
   padding: 8px;
 }
-.package-select {
-  width: 100%;
+.type-head {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
-.package-select :deep(.f-select) {
-  background: var(--surface);
-  font-size: 11px;
-  min-height: 26px;
-  padding: 0 6px;
-}
-.source-filter {
-  width: 100%;
-}
-.source-list {
+.type-grid {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-height: 168px;
-  overflow-y: auto;
+  gap: 4px;
 }
-.source-row {
-  align-items: flex-start;
+.type-row {
+  align-items: center;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--foreground);
   cursor: pointer;
   display: flex;
-  flex-direction: column;
   font: inherit;
-  gap: 1px;
-  padding: 5px 7px;
+  gap: 8px;
+  padding: 7px 8px;
   text-align: left;
 }
-.source-row:hover {
+.type-row:hover {
   border-color: var(--border-strong);
 }
-.source-row.selected {
+.type-row.selected {
   border-color: var(--primary);
 }
-.source-name {
-  font-size: 11px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.type-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
-.source-meta {
+.type-name {
+  font-size: 11.5px;
+}
+.type-hint {
   color: var(--muted-foreground);
   font-size: 10px;
 }
-.source-pager {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-.source-params {
-  background: var(--surface);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 7px;
-}
-.param-row {
-  display: flex;
-  font-size: 10.5px;
-  gap: 6px;
-  justify-content: space-between;
-}
-.param-row > span:first-child {
+.type-entry {
   color: var(--muted-foreground);
-}
-.param-row code {
   font-family: var(--font-mono, monospace);
+  font-size: 10px;
+}
+.type-note {
+  color: var(--muted-foreground);
 }
 .path-actions {
   display: flex;
@@ -596,17 +414,6 @@ const SCOPES = ["local", "regional"] as const;
   font-size: 10px;
   padding: 0 7px;
 }
-.path-source {
-  align-items: center;
-  color: var(--muted-foreground);
-  display: flex;
-  font-size: 10px;
-  gap: 4px;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .path-field {
   display: flex;
   flex-direction: column;
@@ -634,18 +441,23 @@ const SCOPES = ["local", "regional"] as const;
   min-height: 24px;
   padding: 0 6px;
 }
-.path-row {
-  align-items: flex-end;
-  display: flex;
-  gap: 8px;
-}
-.path-check {
+.path-semantics {
   align-items: center;
+  color: var(--muted-foreground);
   display: flex;
-  font-size: 10.5px;
-  gap: 6px;
-  margin-bottom: 1px;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  font-size: 10px;
+  gap: 5px;
+  margin: 0;
+}
+.path-semantics code {
+  color: var(--foreground);
+  font-family: var(--font-mono, monospace);
+}
+.path-badge {
+  background: var(--surface-hover);
+  border-radius: 999px;
+  padding: 0 6px;
 }
 .path-issues {
   display: flex;

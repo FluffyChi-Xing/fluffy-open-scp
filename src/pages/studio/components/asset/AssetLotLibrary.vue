@@ -43,16 +43,6 @@ interface LotEntry {
 const groups = shallowRef<{ name: string; entries: LotEntry[] }[]>([]);
 const PER_GROUP_CAP = 48;
 
-const packageNames = computed(() => {
-  const names = new Map<number, string>();
-  for (const opened of packages.opened)
-    names.set(
-      opened.package.packageId,
-      opened.package.path.split(/[\\/]/).pop() ?? opened.package.path,
-    );
-  return names;
-});
-
 async function scan() {
   if (busy.value) return;
   busy.value = true;

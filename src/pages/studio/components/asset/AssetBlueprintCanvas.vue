@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { VueFlow, Handle, Position, type Node, type Edge } from "@vue-flow/core";
+import { command } from "@/api/tauri";
+import { tauriApi } from "@/api";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import {
+  VueFlow,
+  Handle,
+  Position,
+  useVueFlow,
+  type Connection,
+  type Edge,
+  type Node,
+  type NodeDragEvent,
+  type NodeMouseEvent,
+} from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FDropdownSelect from "@/components/ui/FSelect.vue";
-import { Switch } from "@/components/ui/switch";
 import {
   menuBindingIssues,
   menuTargetsFor,
@@ -17,6 +29,22 @@ import {
   type WorkbenchMenuEntry,
 } from "./menuBinding";
 import type { WorkbenchSourceKind } from "./useWorkbenchAsset";
+import LogicNodeCard from "./LogicNodeCard.vue";
+import { useToast } from "@/composables/useToast";
+import {
+  LOGIC_NODE_SPECS,
+  addLogicNode,
+  connectLogic,
+  duplicateLogicNode,
+  ensureCoreNode,
+  leafSpec,
+  logicIssues,
+  removeLogicNode,
+  updateLogicParams,
+  type BehaviorLeafType,
+  type LogicGraph,
+  type LogicNodeSpec,
+} from "./logicGraph";
 
 /**
  * 中栏底部蓝图画布：资产 → 地块 → 游戏组件 → 菜单绑定 → 打包 的真实
@@ -31,16 +59,26 @@ const props = defineProps<{
   unitCounts: { lights: number; props: number; effects: number; spawners: number; paths: number };
   lotSize: [number, number] | null;
   menu: WorkbenchMenuBinding;
+  /** 逻辑编排图（建筑信息/行为聚合/行为叶子）；画布是唯一编辑器。 */
+  logic: LogicGraph;
   savedDirty: boolean;
   documentSaved: boolean;
+  /** 项目根绝对路径：菜单图标/背景图预览用（convertFileSrc 拼接）。 */
+  projectRoot?: string;
+  /** 项目（code_flow 导入用）。 */
+  project?: string;
 }>();
 const emit = defineEmits<{
   "update:menu": [patch: Partial<WorkbenchMenuBinding>];
+  /** 整图回写（纯函数结果）；工作台负责持久化到 editor.workbench.logic。 */
+  "update:logic": [graph: LogicGraph];
   "import-model": [];
   "open-tgi": [];
 }>();
 
 const { t } = useI18n();
+const toast = useToast();
+const { screenToFlowCoordinate } = useVueFlow();
 
 interface WbNodeData {
   icon: string;
@@ -170,7 +208,18 @@ const nodes = computed<Node[]>(() => {
         data: { entry },
       }))
     : [];
-  return [...pipelineNodes, ...entryNodes];
+  const logicNodes: Node[] = props.logic.nodes.map((node) => ({
+    id: node.id,
+    type: "logic",
+    position: { x: node.position[0], y: node.position[1] },
+    draggable: true,
+    data: { node, params: props.logic.params[node.id] },
+  }));
+  return [
+    ...pipelineNodes,
+    ...entryNodes,
+    ...logicNodes,
+  ];
 });
 
 const edges = computed<Edge[]>(() => [
@@ -185,14 +234,16 @@ const edges = computed<Edge[]>(() => [
         target: `entry-${entry.id}`,
       }))
     : []),
+  ...props.logic.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    // 文档以 "asset" 作为逻辑锚点；画布上的资产节点 id 是 "units"。
+    target: edge.target === "asset" ? "units" : edge.target,
+    targetHandle: edge.targetHandle,
+    sourceHandle: "out",
+  })),
 ]);
 
-/** 启用开关：打开且无条目时自动创建第一个菜单编辑节点（连线随之出现）。 */
-function onMenuEnabled(enabled: boolean) {
-  if (enabled && props.menu.entries.length === 0)
-    emit("update:menu", { enabled: true, entries: [newMenuEntry([])] });
-  else emit("update:menu", { enabled });
-}
 
 function emitAddEntry() {
   emit("update:menu", { entries: [...props.menu.entries, newMenuEntry(props.menu.entries)] });
@@ -229,10 +280,222 @@ function entryTargetOptions(dimension: MenuDimension) {
   ];
 }
 
+async function uploadMenuImage(kind: "icon" | "marquee"): Promise<void> {
+  const path = await tauriApi.workspace.pickImageFile(
+    t(kind === "icon" ? "studio.assetWorkbench.menuIcon" : "studio.assetWorkbench.menuMarquee"),
+  );
+  if (typeof path !== "string") return;
+  const imported = await command<{ asset: string }>("code_flow", {
+    request: { project: props.project, action: "import-menu-image", payload: { path, kind } },
+  });
+  emit("update:menu", { [kind === "icon" ? "iconPng" : "marqueePng"]: imported.asset });
+}
+const menuImageData = reactive<Record<string, string>>({});
+const menuImagePreview = (relative: string): string => {
+  if (!relative) return "";
+  return menuImageData[relative] ?? "";
+};
+watch(
+  () => [props.menu.iconPng, props.menu.marqueePng, props.project] as const,
+  async () => {
+    if (!props.project) return;
+    for (const kind of ["icon", "marquee"] as const) {
+      const relative = kind === "icon" ? props.menu.iconPng : props.menu.marqueePng;
+      if (!relative || menuImageData[relative]) continue;
+      try {
+        const result = await command<{ data: string | null }>("code_flow", {
+          request: {
+            project: props.project,
+            action: "read-menu-image",
+            payload: { kind },
+          },
+        });
+        if (result.data) menuImageData[relative] = result.data;
+      } catch (cause) {
+        console.warn("[menu] image preview failed:", cause);
+      }
+    }
+  },
+  { immediate: true },
+);
 function onMenuPosition(event: Event) {
   const raw = (event.target as HTMLInputElement).value.trim();
   const position = raw === "" ? null : Number(raw);
   emit("update:menu", { uiPosition: position !== null && Number.isFinite(position) ? position : null });
+}
+function onMenuCost(
+  field: "constructionCost" | "maintenanceCost",
+  event: Event,
+) {
+  const raw = (event.target as HTMLInputElement).value.trim();
+  const value = raw === "" ? null : Number(raw);
+  emit("update:menu", {
+    [field]: value !== null && Number.isFinite(value) ? value : null,
+  });
+}
+
+// ---- 逻辑编排图：右键添加、连线、删除、参数回写（纯函数在 logicGraph.ts）----
+
+const issuesByNode = computed(() => {
+  const map = new Map<string, string[]>();
+  for (const issue of logicIssues(props.logic)) {
+    if (!issue.nodeId) continue;
+    const list = map.get(issue.nodeId) ?? [];
+    list.push(issue.code);
+    map.set(issue.nodeId, list);
+  }
+  return map;
+});
+function issuesFor(id: string): string[] {
+  return issuesByNode.value.get(id) ?? [];
+}
+
+/** 右键菜单（pane = 画布空白；node = 具体节点）。 */
+interface CanvasMenu {
+  x: number;
+  y: number;
+  flow: { x: number; y: number };
+  nodeId?: string;
+}
+const canvasMenu = ref<CanvasMenu | null>(null);
+
+function onPaneContextMenu(event: MouseEvent): void {
+  if (event.defaultPrevented) return;
+  event.preventDefault();
+  canvasMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    flow: screenToFlowCoordinate({ x: event.clientX, y: event.clientY }),
+  };
+}
+/** 鼠标/触摸事件统一取坐标（VueFlow 的 NodeMouseEvent 是联合类型）。 */
+function eventPoint(event: MouseEvent | TouchEvent): { x: number; y: number } {
+  if ("clientX" in event) return { x: event.clientX, y: event.clientY };
+  const touch = event.touches[0] ?? event.changedTouches[0];
+  return { x: touch?.clientX ?? 0, y: touch?.clientY ?? 0 };
+}
+function onNodeContextMenu(payload: NodeMouseEvent): void {
+  if (!props.logic.nodes.some((node) => node.id === payload.node.id)) return;
+  payload.event.preventDefault();
+  const point = eventPoint(payload.event);
+  canvasMenu.value = {
+    x: point.x,
+    y: point.y,
+    flow: screenToFlowCoordinate(point),
+    nodeId: payload.node.id,
+  };
+}
+function closeCanvasMenu(): void {
+  canvasMenu.value = null;
+}
+
+/** 新增节点：info/core 自动挂到资产锚点；leaf 自动补聚合节点并连线。 */
+function addNode(spec: LogicNodeSpec, position: [number, number]): void {
+  let graph = props.logic;
+  if (spec.kind === "behavior-leaf") {
+    const core = ensureCoreNode(graph, [position[0] - 360, position[1]]);
+    graph = core.graph;
+    const added = addLogicNode(graph, spec, position);
+    graph = added.graph;
+    graph = connectLogic(graph, added.node.id, core.node.id, "leaf").graph;
+    if (
+      !graph.edges.some(
+        (edge) => edge.source === core.node.id && edge.target === "asset",
+      )
+    ) {
+      graph = connectLogic(graph, core.node.id, "asset", "behavior").graph;
+    }
+  } else {
+    const added = addLogicNode(graph, spec, position);
+    graph = added.graph;
+    graph = connectLogic(
+      graph,
+      added.node.id,
+      "asset",
+      spec.kind === "building-info" ? "info" : "behavior",
+    ).graph;
+  }
+  emit("update:logic", graph);
+}
+function addNodeFromMenu(spec: LogicNodeSpec): void {
+  const menu = canvasMenu.value;
+  if (!menu) return;
+  addNode(spec, [menu.flow.x, menu.flow.y]);
+  closeCanvasMenu();
+}
+
+/** 聚合节点上的「添加行为」：叶子建在右侧并自动连线。 */
+function onAddLeaf(coreId: string, type: BehaviorLeafType): void {
+  const core = props.logic.nodes.find((node) => node.id === coreId);
+  const spec = leafSpec(type);
+  const siblings = props.logic.edges.filter(
+    (edge) => edge.target === coreId,
+  ).length;
+  const position: [number, number] = core
+    ? [core.position[0] + 390, core.position[1] + siblings * 220]
+    : [0, 0];
+  let graph = addLogicNode(props.logic, spec, position).graph;
+  const added = graph.nodes[graph.nodes.length - 1];
+  graph = connectLogic(graph, added.id, coreId, "leaf").graph;
+  emit("update:logic", graph);
+}
+
+function onRemoveNode(id: string): void {
+  const result = removeLogicNode(props.logic, id);
+  if (result.blocked) {
+    toast.warning(
+      t(`studio.assetWorkbench.logicIssue.${result.blocked}`),
+    );
+    return;
+  }
+  emit("update:logic", result.graph);
+}
+function onDuplicateNode(id: string): void {
+  const result = duplicateLogicNode(props.logic, id);
+  if (result.node) emit("update:logic", result.graph);
+}
+function onUpdateParams(id: string, patch: Record<string, unknown>): void {
+  emit("update:logic", updateLogicParams(props.logic, id, patch));
+}
+function onNodeDragStop(event: NodeDragEvent): void {
+  const node = props.logic.nodes.find((item) => item.id === event.node.id);
+  if (!node) return;
+  emit("update:logic", {
+    ...props.logic,
+    nodes: props.logic.nodes.map((item) =>
+      item.id === node.id
+        ? {
+            ...item,
+            position: [event.node.position.x, event.node.position.y],
+          }
+        : item,
+    ),
+  });
+}
+
+/** 画布连线：只接受逻辑节点发起的合法连线，其余静默拒绝并提示。 */
+function onConnect(connection: Connection): void {
+  const source = connection.source;
+  if (!source || !props.logic.nodes.some((node) => node.id === source)) return;
+  const target =
+    connection.target === "units" ? "asset" : connection.target ?? "";
+  const handle = connection.targetHandle;
+  if (handle !== "info" && handle !== "behavior" && handle !== "leaf") return;
+  const result = connectLogic(props.logic, source, target, handle);
+  if (result.error) {
+    toast.warning(t(`studio.assetWorkbench.logicIssue.${result.error}`));
+    return;
+  }
+  emit("update:logic", result.graph);
+}
+
+/** 双击删除只对逻辑边生效；固定管线边不可删。 */
+function onEdgeDoubleClick(payload: { edge: Edge }): void {
+  if (!props.logic.edges.some((edge) => edge.id === payload.edge.id)) return;
+  emit("update:logic", {
+    ...props.logic,
+    edges: props.logic.edges.filter((edge) => edge.id !== payload.edge.id),
+  });
 }
 
 /** VueFlow 插槽入参无类型：节点警示 tone 由行数据推导。 */
@@ -247,20 +510,41 @@ function nodeTone(data: unknown): "warn" | "ok" {
     <VueFlow
       :nodes="nodes"
       :edges="edges"
-      :nodes-connectable="false"
-      :nodes-draggable="false"
+      :nodes-connectable="true"
+      :nodes-draggable="true"
       :edges-updatable="false"
       :delete-key-code="null"
       fit-view-on-init
       :max-zoom="1.4"
       :min-zoom="0.3"
       class="blueprint-flow"
+      @connect="onConnect"
+      @node-drag-stop="onNodeDragStop"
+      @edge-double-click="onEdgeDoubleClick"
+      @pane-context-menu="onPaneContextMenu"
+      @node-context-menu="onNodeContextMenu"
     >
       <Background :gap="20" pattern-color="#333333" />
       <template #node-wb="node">
         <div class="wb-node" :data-role="node.id" :data-tone="nodeTone(node.data)">
           <Handle type="target" :position="Position.Left" />
           <Handle type="source" :position="Position.Right" />
+          <template v-if="node.id === 'units'">
+            <Handle
+              id="info"
+              type="target"
+              :position="Position.Left"
+              :style="{ top: '78px', background: '#c9a227' }"
+            />
+            <Handle
+              id="behavior"
+              type="target"
+              :position="Position.Left"
+              :style="{ top: '104px', background: '#58a05e' }"
+            />
+            <span class="wb-port-hint" :style="{ top: '70px' }">info</span>
+            <span class="wb-port-hint" :style="{ top: '96px' }">behavior</span>
+          </template>
           <header class="wb-node-head">
             <FIcon :name="node.data.icon" :size="13" aria-label="" />
             <strong>{{ node.data.title }}</strong>
@@ -270,15 +554,6 @@ function nodeTone(data: unknown): "warn" | "ok" {
             <em :data-tone="line.tone ?? 'muted'">{{ line.value }}</em>
           </div>
           <div v-if="node.data.slot === 'menu'" class="wb-menu">
-            <label class="wb-menu-row">
-              <Switch
-                :model-value="menu.enabled"
-                :aria-label="t('studio.assetWorkbench.menuEnabled')"
-                @update:model-value="onMenuEnabled(Boolean($event))"
-              />
-              <span>{{ t("studio.assetWorkbench.menuEnabled") }}</span>
-            </label>
-            <template v-if="menu.enabled">
               <input
                 :value="menu.label"
                 type="text"
@@ -303,11 +578,58 @@ function nodeTone(data: unknown): "warn" | "ok" {
                 :aria-label="t('studio.assetWorkbench.menuPosition')"
                 @input="onMenuPosition"
               />
+              <div class="wb-menu-images">
+                <button
+                  type="button"
+                  class="wb-menu-image nodrag"
+                  :class="{ filled: menu.iconPng }"
+                  :title="t('studio.assetWorkbench.menuIconUpload')"
+                  @click="uploadMenuImage('icon')"
+                >
+                  <img
+                    v-if="menuImagePreview(menu.iconPng)"
+                    :src="menuImagePreview(menu.iconPng)"
+                    :alt="t('studio.assetWorkbench.menuIconPreview')"
+                  />
+                  <span v-else>{{ t("studio.assetWorkbench.menuIconUpload") }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="wb-menu-image marquee nodrag"
+                  :class="{ filled: menu.marqueePng }"
+                  :title="t('studio.assetWorkbench.menuMarqueeUpload')"
+                  @click="uploadMenuImage('marquee')"
+                >
+                  <img
+                    v-if="menuImagePreview(menu.marqueePng)"
+                    :src="menuImagePreview(menu.marqueePng)"
+                    :alt="t('studio.assetWorkbench.menuMarqueePreview')"
+                  />
+                  <span v-else>{{ t("studio.assetWorkbench.menuMarqueeUpload") }}</span>
+                </button>
+              </div>
+              <div class="wb-menu-costs">
+                <input
+                  :value="menu.constructionCost ?? ''"
+                  type="number"
+                  class="wb-menu-input"
+                  :placeholder="t('studio.assetWorkbench.menuCostPlaceholder')"
+                  :aria-label="t('studio.assetWorkbench.menuCost')"
+                  @input="onMenuCost('constructionCost', $event)"
+                />
+                <input
+                  :value="menu.maintenanceCost ?? ''"
+                  type="number"
+                  class="wb-menu-input"
+                  :placeholder="t('studio.assetWorkbench.menuUpkeepPlaceholder')"
+                  :aria-label="t('studio.assetWorkbench.menuUpkeep')"
+                  @input="onMenuCost('maintenanceCost', $event)"
+                />
+              </div>
               <button type="button" class="wb-menu-add" @click="emitAddEntry">
                 <FIcon name="Plus" :size="11" aria-label="" />
                 {{ t("studio.assetWorkbench.menuAddEntry") }}
               </button>
-            </template>
           </div>
           <div v-if="node.id === 'source' && sourceKind === 'none'" class="wb-actions">
             <button type="button" @click="emit('import-model')">
@@ -320,6 +642,18 @@ function nodeTone(data: unknown): "warn" | "ok" {
             </button>
           </div>
         </div>
+      </template>
+      <template #node-logic="node">
+        <LogicNodeCard
+          :node="node.data.node"
+          :params="node.data.params"
+          :issues="issuesFor(node.id)"
+          :disabled="false"
+          @update-params="onUpdateParams(node.id, $event)"
+          @remove="onRemoveNode(node.id)"
+          @duplicate="onDuplicateNode(node.id)"
+          @add-leaf="onAddLeaf(node.id, $event)"
+        />
       </template>
       <template #node-menu-entry="node">
         <div class="wb-entry">
@@ -356,6 +690,50 @@ function nodeTone(data: unknown): "warn" | "ok" {
         </div>
       </template>
     </VueFlow>
+    <div v-if="canvasMenu" class="ctx-backdrop" @pointerdown.self="closeCanvasMenu">
+      <div
+        class="ctx-menu"
+        :style="{ left: `${canvasMenu.x}px`, top: `${canvasMenu.y}px` }"
+        role="menu"
+      >
+        <template v-if="canvasMenu.nodeId">
+          <button
+            type="button"
+            role="menuitem"
+            @click="
+              onDuplicateNode(canvasMenu.nodeId!);
+              closeCanvasMenu();
+            "
+          >
+            {{ t("studio.assetWorkbench.logicDuplicate") }}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="danger"
+            @click="
+              onRemoveNode(canvasMenu.nodeId!);
+              closeCanvasMenu();
+            "
+          >
+            {{ t("studio.assetWorkbench.logicRemove") }}
+          </button>
+        </template>
+        <template v-else>
+          <p class="ctx-title">{{ t("studio.assetWorkbench.logicAddNode") }}</p>
+          <button
+            v-for="spec in LOGIC_NODE_SPECS"
+            :key="`${spec.kind}:${spec.leafType ?? ''}`"
+            type="button"
+            role="menuitem"
+            :class="{ 'ctx-group-start': spec.kind === 'behavior-leaf' && spec.leafType === 'education' }"
+            @click="addNodeFromMenu(spec)"
+          >
+            <span>{{ t(spec.labelKey) }}</span>
+          </button>
+        </template>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -576,5 +954,65 @@ function nodeTone(data: unknown): "warn" | "ok" {
 }
 .wb-entry :deep(.f-select-label.placeholder) {
   color: var(--flow-text-dim, #9b9b9b);
+}
+.wb-port-hint {
+  color: var(--flow-text-dim, #9b9b9b);
+  font-family: var(--font-mono, monospace);
+  font-size: 8px;
+  left: -38px;
+  position: absolute;
+  width: 34px;
+}
+.wb-menu-costs {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: 1fr 1fr;
+}
+.ctx-backdrop {
+  inset: 0;
+  position: fixed;
+  z-index: 80;
+}
+.ctx-menu {
+  background: var(--flow-node, #282828);
+  border: 1px solid var(--flow-border, #141414);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  color: var(--flow-text, #e6e6e6);
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  position: fixed;
+}
+.ctx-title {
+  color: var(--flow-text-dim, #9b9b9b);
+  font-size: 10px;
+  margin: 2px 6px 4px;
+}
+.ctx-menu button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 11px;
+  gap: 6px;
+  padding: 5px 7px;
+  text-align: left;
+}
+.ctx-menu button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.ctx-menu button.danger:hover {
+  background: rgba(211, 60, 60, 0.35);
+}
+.ctx-menu button.ctx-group-start {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 3px;
+  padding-top: 7px;
 }
 </style>

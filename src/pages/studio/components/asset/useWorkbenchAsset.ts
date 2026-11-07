@@ -27,12 +27,20 @@ import { createUnitEditLayer, mergeUnitOverrides } from "@/pages/packages/compon
 import {
   adoptOrphanPaths,
   nextPathId,
+  normalizeWorkbenchPath,
   pathAutoTangent,
   recomputePathTangents,
   type Vec3,
   type WorkbenchPath,
   type WorkbenchPathSource,
 } from "./path-planning/pathModel";
+import { DEFAULT_PATH_TYPE, type PathTypeId } from "./path-planning/pathTypes";
+import {
+  cloneLogicParams,
+  emptyLogicGraph,
+  normalizeLogicGraph,
+  type LogicGraph,
+} from "./logicGraph";
 import { nextIndexOfKind } from "./clipboard/unitClipboard";
 import {
   usePropertyEditorSession,
@@ -70,6 +78,10 @@ interface WorkbenchSourceBlock {
   menu?: WorkbenchMenuBinding;
   /** 路径实体（entry/scope/roadConnect + 有序点引用；几何在 pathPoint 单元）。 */
   paths?: WorkbenchPath[];
+  /** 本次会话编辑过的列族（delta 写回声明；与 schema.scene.writes 取并集）。 */
+  writes?: string[];
+  /** 逻辑编排图（建筑信息/行为聚合/行为叶子）；构建时编译成 semantics。 */
+  logic?: LogicGraph;
   /** 草稿模型伪单元变换（行主序 12 floats）。 */
   modelTransform?: number[] | null;
   /** 六槽材质绑定（项目内相对路径）。 */
@@ -488,10 +500,13 @@ export function useWorkbenchAsset(project: string) {
   });
   /** 项目根绝对路径（.package 树项 → packages.open 需要绝对路径）。 */
   let projectRootPath = "";
+  /** 响应式镜像（画布菜单图片预览用）。 */
+  const projectRoot = ref("");
   async function resolveProjectRoot(): Promise<string> {
     if (projectRootPath) return projectRootPath;
     const tree = await tauriApi.workspace.codeTree(project);
     projectRootPath = tree.rootPath;
+    projectRoot.value = tree.rootPath;
     return projectRootPath;
   }
 
@@ -708,9 +723,19 @@ export function useWorkbenchAsset(project: string) {
         ...menu,
         entries: menu.entries.map((entry) => ({ ...entry })),
       },
-      // 路径实体（2026-10-27 路径规划）：几何在 pathPoint 单元，这里存
-      // entry/scope/roadConnect 与有序点引用；恢复见 restoreUnits。
+      // 路径实体（2026-11-07 类型化）：几何在 pathPoint 单元，这里存
+      // type/entry/scope/roadConnect 与有序点引用；entry 由构建器按 type
+      // 换算，作者不接触。恢复见 restoreUnits。
       paths: draftPaths.value.map((path) => ({ ...path })),
+      // 编辑族声明（delta 写回 + delta-audit 的意图来源）。
+      writes: [...draftWrites.value].sort(),
+      // 逻辑编排图（构建时编译成 semantics.labor/behaviors）。
+      logic: {
+        nodes: draftLogic.value.nodes.map((node) => ({ ...node })),
+        edges: draftLogic.value.edges.map((edge) => ({ ...edge })),
+        // reactive proxy 不能进 structuredClone；参数是纯 JSON。
+        params: cloneLogicParams(draftLogic.value.params),
+      },
     } satisfies WorkbenchSourceBlock;
     return document;
   });
@@ -736,6 +761,8 @@ export function useWorkbenchAsset(project: string) {
   function resetEditState() {
     releaseLotModelCache();
     draftEdit.reset();
+    draftWrites.value = new Set();
+    draftLogic.value = emptyLogicGraph();
     addedModelPayloads.value = new Map();
     draftSelectedId.value = null;
     draftModelTransform.value = null;
@@ -951,6 +978,56 @@ export function useWorkbenchAsset(project: string) {
   /** 聚焦路径：视口折线只画它（多路径防串线；冻结区视口改造前的前离方案）。 */
   const focusedPathId = ref<string | null>(null);
 
+  /** 逻辑编排图（2026-11-07）：画布唯一数据源，保存进文档 editor.workbench.logic。 */
+  const draftLogic = ref<LogicGraph>(emptyLogicGraph());
+  function setLogicGraph(graph: LogicGraph): void {
+    draftLogic.value = graph;
+  }
+
+  /**
+   * 本次会话实际编辑过的列族（`editor.workbench.writes`）：
+   * - 编辑器自己知道"用户只动了什么"，把它写进文档；
+   * - 构建器据此做 delta 写回（只碰这些列）并做 delta-audit（其它列必须
+   *   与参照 lot 逐列一致）——r10 事故的机制性修复：作者不再需要手写
+   *   `scene.writes`，构建器也不再整体重写 lot。
+   */
+  const draftWrites = ref<Set<string>>(new Set());
+  function markWrite(family: string): void {
+    if (draftWrites.value.has(family)) return;
+    draftWrites.value = new Set(draftWrites.value).add(family);
+  }
+  /** 就地编辑（变换/字段）→ 标记该单元所属列族（构建 delta 写回依据）。 */
+  function markUnitTouched(id: string): void {
+    const unit = ui.value?.flatUnits.find((candidate) => unitId(candidate) === id);
+    if (unit) markUnitFamily(unit);
+  }
+  /** 单元 → 列族（delta 写回的粒度单位）。 */
+  function markUnitFamily(unit: LotUnitDto): void {
+    const bin = (unit as unknown as { bin?: number }).bin ?? 0;
+    switch (unit.kind) {
+      case "light":
+        markWrite("lights");
+        break;
+      case "spawner":
+        markWrite("spawners");
+        break;
+      case "effect":
+        markWrite("effects");
+        break;
+      case "decal":
+        markWrite("decals");
+        break;
+      case "pathPoint":
+        markWrite("paths");
+        break;
+      case "prop":
+        markWrite(`props:${bin}`);
+        break;
+      default:
+        break;
+    }
+  }
+
   function pathById(id: string): WorkbenchPath | null {
     return draftPaths.value.find((path) => path.id === id) ?? null;
   }
@@ -983,6 +1060,7 @@ export function useWorkbenchAsset(project: string) {
 
   function createPath(options?: {
     label?: string;
+    type?: PathTypeId;
     entry?: string | null;
     source?: WorkbenchPathSource;
   }): string {
@@ -993,6 +1071,7 @@ export function useWorkbenchAsset(project: string) {
       {
         id,
         label: options?.label ?? `#${count}`,
+        type: options?.type ?? DEFAULT_PATH_TYPE,
         entry: options?.entry ?? null,
         scope: "local",
         roadConnect: false,
@@ -1000,6 +1079,7 @@ export function useWorkbenchAsset(project: string) {
         source: options?.source,
       },
     ];
+    markWrite("paths");
     activePathId.value = id;
     focusedPathId.value = id;
     return id;
@@ -1030,6 +1110,7 @@ export function useWorkbenchAsset(project: string) {
     const id = unitId(unit);
     path.pointIds.push(id);
     syncPathTails(path);
+    markWrite("paths");
     selectUnit(id);
     return id;
   }
@@ -1041,6 +1122,7 @@ export function useWorkbenchAsset(project: string) {
     const id = path.pointIds.pop()!;
     edit.removeUnit(id);
     syncPathTails(path);
+    markWrite("paths");
   }
 
   function finishPath(): void {
@@ -1053,12 +1135,23 @@ export function useWorkbenchAsset(project: string) {
     draftPaths.value = draftPaths.value.map((candidate) =>
       candidate.id === id ? { ...candidate, ...patch } : candidate,
     );
+    // 只有语义字段变化才写 lot 列（label 只是编辑器展示）。
+    if (
+      "type" in patch ||
+      "entry" in patch ||
+      "scope" in patch ||
+      "roadConnect" in patch ||
+      "pointIds" in patch
+    ) {
+      markWrite("paths");
+    }
   }
 
   function deletePath(id: string): void {
     const path = pathById(id);
     const edit = ui.value?.edit;
     if (path && edit) for (const pointId of path.pointIds) edit.removeUnit(pointId);
+    if (path) markWrite("paths");
     draftPaths.value = draftPaths.value.filter((candidate) => candidate.id !== id);
     if (activePathId.value === id) activePathId.value = null;
     if (focusedPathId.value === id) focusedPathId.value = null;
@@ -1178,6 +1271,7 @@ export function useWorkbenchAsset(project: string) {
       return null;
     }
     edit.addUnit(unit);
+    markUnitFamily(unit);
     selectUnit(unitId(unit));
     // 直挂 prop：异步取 LOTM 载荷入缓存（渲染器从此读取）
     if (
@@ -1207,6 +1301,8 @@ export function useWorkbenchAsset(project: string) {
   function deleteUnit(id: string) {
     const edit = ui.value?.edit;
     if (!edit) return;
+    const removed = ui.value?.flatUnits.find((unit) => unitId(unit) === id);
+    if (removed) markUnitFamily(removed);
     edit.removeUnit(id);
     // 路径实体同步摘除悬空点引用（否则校验/折线残留幽灵点）
     for (const path of draftPaths.value) {
@@ -1359,7 +1455,11 @@ export function useWorkbenchAsset(project: string) {
     const editor = document.editor as {
       groups?: Record<string, boolean>;
       unitVisibility?: Record<string, boolean>;
-      workbench?: { paths?: WorkbenchPath[] };
+      workbench?: {
+        paths?: WorkbenchPath[];
+        writes?: string[];
+        logic?: unknown;
+      };
     };
     Object.assign(current.groupVisibility, editor?.groups ?? {});
     if (current.editMode === "draft") {
@@ -1367,14 +1467,24 @@ export function useWorkbenchAsset(project: string) {
       // 陈旧引用自愈 GC:坏会话保存的 pointIds(点已不存在)会永久卡死
       // 构建校验——文档以可见单元为准(2026-11-04 s10 实证)
       const restoredIds = new Set(restored.map((unit) => unitId(unit)));
-      draftPaths.value = (editor?.workbench?.paths ?? []).map((path) => ({
-        ...path,
-        pointIds: path.pointIds.filter((pointId) => restoredIds.has(pointId)),
-      }));
+      draftPaths.value = (editor?.workbench?.paths ?? []).map((path) => {
+        const normalized = normalizeWorkbenchPath(path);
+        return {
+          ...normalized,
+          pointIds: normalized.pointIds.filter((pointId) =>
+            restoredIds.has(pointId),
+          ),
+        };
+      });
       // 孤儿点收养：只有点没有路径实体的历史文档，按 pointIndex
       // 自动建一条路径承接（幂等——已被引用的点不会再收）
       const adopted = adoptOrphanPaths(draftPaths.value, restored);
       if (adopted) draftPaths.value = adopted;
+      // 编辑族声明随文档恢复（旧文档没有该字段 → 由构建器按内容派生）。
+      draftWrites.value = new Set(editor?.workbench?.writes ?? []);
+      // 逻辑编排图随文档恢复（旧文档无 logic → 空图，构建行为不变）。
+      draftLogic.value = normalizeLogicGraph(editor?.workbench?.logic);
+      void resolveProjectRoot();
       focusedPathId.value = null;
       activePathId.value = null;
     }
@@ -1426,6 +1536,8 @@ export function useWorkbenchAsset(project: string) {
   }
 
   // ---- 文档持久化（项目内 asset.lot.json）----
+  /** 依赖清单同步失败（账本与文档不一致时由 UI 明确提示；不影响文档已保存）。 */
+  const dependencySyncError = ref<string | null>(null);
   async function saveDocument(): Promise<boolean> {
     const document = schemaDocument.value;
     if (!document) return false;
@@ -1438,6 +1550,18 @@ export function useWorkbenchAsset(project: string) {
     documentRevision.value = written.revision;
     savedBaseline.value = JSON.stringify(document);
     savedDirty.value = false;
+    // package.json dependencies 同步（设计文档 §2.2/§6：画人行道即登记
+    // pathEntries）。文档是权威输入，账本同步失败不回滚文档，但必须可见。
+    dependencySyncError.value = null;
+    try {
+      await tauriApi.workspace.syncAssetDependencies(
+        project,
+        JSON.stringify(document),
+      );
+    } catch (cause) {
+      dependencySyncError.value = String(cause);
+      console.warn("[workbench] asset dependency sync failed:", cause);
+    }
     // 地面贴图快照跟随文档保存:仅变化时写 assets/lot/*(fail-soft,
     // 快照失败不影响文档保存结果)。
     if (groundSnapshotDirty.value) {
@@ -1716,11 +1840,16 @@ export function useWorkbenchAsset(project: string) {
     draftMaterialSlots,
     setMenuBinding,
     saveDocument,
+    dependencySyncError,
+    markUnitTouched,
+    draftLogic,
+    setLogicGraph,
     restoreFromProject,
     closeAsset,
     removeAsset,
     resolveProjectRoot,
     joinProjectPath,
+    projectRoot,
   };
 }
 

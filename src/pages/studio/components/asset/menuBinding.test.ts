@@ -116,6 +116,10 @@ describe("deriveSemanticsMenu", () => {
       label: "  科洛大厦  ",
       description: " 测试建筑 ",
       uiPosition: 12000,
+      iconPng: "",
+      marqueePng: "",
+      constructionCost: null,
+      maintenanceCost: null,
       entries: [
         { id: "menu-1", dimension: "city", categoryInstance: "899BEA70" },
         { id: "menu-2", dimension: "development", categoryInstance: "94E412ED" },
@@ -138,6 +142,10 @@ describe("deriveSemanticsMenu", () => {
       label: "科洛大厦",
       description: "",
       uiPosition: null,
+      iconPng: "",
+      marqueePng: "",
+      constructionCost: null,
+      maintenanceCost: null,
       entries: [{ id: "menu-1", dimension: "city", categoryInstance: "899BEA70" }],
     };
     const { values } = deriveSemanticsMenu(binding);
