@@ -73,15 +73,25 @@ pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, S
         .to_ascii_lowercase();
     let relative = match (kind, extension.as_str()) {
         ("icon", "png") => "assets/images/menu-icon.png".to_string(),
-        ("marquee", "png") => "assets/images/menu-marquee.png".to_string(),
-        ("marquee", "jpg") | ("marquee", "jpeg") => "assets/images/menu-marquee.jpg".to_string(),
+        ("marquee", "png") | ("marquee", "jpg") | ("marquee", "jpeg") => {
+            "assets/images/menu-marquee.jpg".to_string()
+        }
         _ => {
             return Err(
                 "Menu icon must be PNG; marquee must be PNG or JPG".into(),
             )
         }
     };
-    let bytes = fs::read(&source).map_err(|e| e.to_string())?;
+    let mut bytes = fs::read(&source).map_err(|e| e.to_string())?;
+    // rollover 要求 JPG：任意格式读入 → RGB 重编码（85 质量）。图标保持 PNG 原样。
+    if kind == "marquee" {
+        let image = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+        let mut jpg: Vec<u8> = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg, 85)
+            .encode_image(&image::DynamicImage::ImageRgb8(image.to_rgb8()))
+            .map_err(|e| e.to_string())?;
+        bytes = jpg;
+    }
     let target = safe_path(root, &relative)?;
     fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
     crate::atomic_fs::write_atomic(&target, &bytes, true).map_err(|e| e.to_string())?;
