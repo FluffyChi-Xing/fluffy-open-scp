@@ -49,10 +49,13 @@ fn main() {
         else {
             continue;
         };
-        let education = matches!(
-            unit.get(HASH_UNIT_CATEGORY).map(|p| &p.kind),
-            Some(Kind::Scalar(Value::Key(k))) if k.instance == EDUCATION_CATEGORY
-        );
+        // Capacity-only mode (EDU_ANY=1): find units by capacity regardless
+        // of category, so inherited-category schools also show up.
+        let education = std::env::var("EDU_ANY").is_ok()
+            || matches!(
+                unit.get(HASH_UNIT_CATEGORY).map(|p| &p.kind),
+                Some(Kind::Scalar(Value::Key(k))) if k.instance == EDUCATION_CATEGORY
+            );
         if !education {
             continue;
         }

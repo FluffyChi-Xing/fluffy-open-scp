@@ -115,6 +115,40 @@ fn main() {
         let Ok(menu) = PropertyFile::parse(&bytes) else {
             continue;
         };
+        // Mode: EDU_MENUS=1 dumps menus mounted on education containers.
+        if std::env::var("EDU_MENUS").is_ok() {
+            let edu = matches!(
+                menu.get(0x0DB9_FC63).map(|p| &p.kind),
+                Some(Kind::Array(values)) if values.iter().any(|v| matches!(v,
+                    Value::Key(k) if k.instance == 0x6A17_85B4 || k.instance == 0x1E67_365A || k.instance == 0x95A9_D6FD
+                ))
+            );
+            if edu {
+                println!("=== EDU-MENU {:08X}", id.instance);
+                describe(&menu, &[
+                    HASH_MENU_UNIT, 0x0DB9_FC63, HASH_STAT_TEMPLATE, HASH_STAT_PARAMS,
+                ]);
+                if let Some(Kind::Scalar(Value::Key(unit_key))) =
+                    menu.get(HASH_MENU_UNIT).map(|p| &p.kind)
+                {
+                    let unit_id = ResourceId {
+                        type_id: PROPERTY,
+                        group: UNIT_GROUP,
+                        instance: unit_key.instance,
+                    };
+                    if let Some(entry) = package.entry(unit_id) {
+                        if let Ok(unit) =
+                            PropertyFile::parse(&package.read(entry).expect("read"))
+                        {
+                            describe(&unit, &[
+                                HASH_PARENT, HASH_UNIT_CATEGORY, HASH_CAPACITY, 0x0A02_09A5,
+                            ]);
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         // Mode: DUMP_MENUUNIT=<hex> filters menus by their menuUnit target.
         if let Ok(target) = std::env::var("DUMP_MENUUNIT") {
             let target = u32::from_str_radix(target.trim_start_matches("0x"), 16).unwrap();
