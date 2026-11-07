@@ -1045,33 +1045,34 @@ pub(crate) fn validate_scene_path_semantics(
                 })
                 .map(|(_, bytes)| bytes)
         });
-        let Some(source) = source else {
-            errors.push(format!(
-                "{location}.source.tgi: source property {source_tgi} is missing"
-            ));
-            continue;
-        };
-        let Ok(file) = sc_properties::PropertyFile::parse(source) else {
-            errors.push(format!("{location}.source.tgi: source property is invalid"));
-            continue;
-        };
-        // Per-path Key property (0x0CC8FE7A) on the path source property must
-        // bind this entry instance.
-        let bound = file.get(0x0CC8_FE7A).is_some_and(|property| match &property.kind {
-            sc_properties::Kind::Scalar(sc_properties::Value::Key(key)) => key.instance == entry_instance,
-            sc_properties::Kind::Array(values) => values.iter().any(|value| matches!(value, sc_properties::Value::Key(key) if key.instance == entry_instance)),
-            _ => false,
+        let bound = source.and_then(|source| {
+            sc_properties::PropertyFile::parse(source)
+                .ok()
+                .map(|file| {
+                    file.get(0x0CC8_FE7A).is_some_and(|property| match &property.kind {
+                        sc_properties::Kind::Scalar(sc_properties::Value::Key(key)) => {
+                            key.instance == entry_instance
+                        }
+                        sc_properties::Kind::Array(values) => values.iter().any(|value| matches!(value, sc_properties::Value::Key(key) if key.instance == entry_instance)),
+                        _ => false,
+                    })
+                })
         });
-        if !bound {
-            errors.push(format!(
-                "{location}.entry: {entry_text} is not bound by source property 0x0CC8FE7A"
-            ));
-        }
+        // 语义化授权（path-semantic-authoring §3.3）：作者只声明 entry，不再
+        // 依赖"来源属性绑定"。绑定存在 → 沿用旧信号；绑定缺失（来源未解析
+        // 或未绑定）→ 只要 PathEntry 资源在构建输入中就放行——运行期由
+        // 游戏按 instance 解析（大学 lot 把 40E1C400 的门写成 40E0C400 key
+        // 仍然工作的同一机制）。
         let resource_exists = resources.keys().any(|id| {
             id.type_id == 0x00B1_B104
                 && id.instance == entry_instance
                 && (id.group & 0xFFFF) == 0xC400
         });
+        if bound == Some(false) && !resource_exists {
+            errors.push(format!(
+                "{location}.entry: {entry_text} is not bound by source property 0x0CC8FE7A"
+            ));
+        }
         if !resource_exists {
             errors.push(format!(
                 "{location}.entry: PathEntry resource instance 0x{entry_instance:08X} is missing"

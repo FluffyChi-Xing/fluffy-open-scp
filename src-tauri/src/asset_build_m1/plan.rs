@@ -137,9 +137,9 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         }
     }
     Ok(PropertyBuildPlan {
-        // /21: behavior-bind 阶段上线（菜单/行为拆分）+ parent 修复为原版
-        // type-ful 编码 `00B1B104:48E0C000:<tpl>`（fire-station 解剖定案）。
-        processor_version: "openscp.property.m1/21",
+        // /22：编辑器权威场景（scene.document 消费工作台文档）+
+        // ensurePedestrianPath 镜像范围修复（段对终点）+ W1 岗位字段。
+        processor_version: "openscp.property.m1/22",
         scope: "property+scene-model",
         intermediate: im,
         patches: specs,

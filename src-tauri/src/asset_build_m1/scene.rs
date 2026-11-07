@@ -601,10 +601,18 @@ fn transform_value(scale: Option<f32>, transform: &Option<Transform>) -> Option<
 /// Every original unit column is removed first — this is what keeps a
 /// referenced lot's own props/lights/paths from resurfacing in the build.
 pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<(), String> {
-    let stripped = unit_column_hashes();
-    file.values
-        .retain(|property| !stripped.contains(&property.hash));
-
+    let mut stripped = unit_column_hashes();
+    // The path binding trio (entry/scope/road-connect) is rewritten whenever
+    // the document defines paths; strip the referenced lot's originals in that
+    // case or the writeback duplicates the hash (s14's [03106C2E] vs authored).
+    // A document without paths keeps the referenced columns untouched.
+    if !document.paths.is_empty() {
+        stripped.extend([
+            0x0CC8_FE7A, // path entry keys
+            0x0D9A_4E54, // scope
+            0x0D9A_A2BB, // road connect
+        ]);
+    }
     let mut columns: Vec<Property> = Vec::new();
     let mut lights: ColumnSet = ColumnSet::default();
     let mut effects: ColumnSet = ColumnSet::default();
@@ -917,6 +925,17 @@ pub fn apply_units(file: &mut PropertyFile, document: &SceneDocument) -> Result<
         columns.push(array_property(0x0D9A_A2BB, PropType::Key, connects));
     }
 
+    // The writer's own output must replace any referenced originals: strip
+    // every column hash we are about to write (or already stripped above)
+    // before extending, otherwise a referenced lot's surviving column with
+    // the same hash turns the writeback into a duplicate-hash property file.
+    for column in &columns {
+        stripped.push(column.hash);
+    }
+    stripped.sort_unstable();
+    stripped.dedup();
+    file.values
+        .retain(|property| !stripped.contains(&property.hash));
     file.values.extend(columns);
     file.claimed_count = file.values.len() as u32;
     Ok(())

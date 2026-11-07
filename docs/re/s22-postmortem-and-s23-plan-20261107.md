@@ -347,3 +347,32 @@ r9：`ensureServicePath` —— 在步道端点（points 0→8，复用点池不
 
 观测点：垃圾车是否沿服务道进 lot 收垃圾桶、停车 percent-fill（r8 解封的
 经济 bundle 通勤 bin）、垃圾产量 20 下垃圾桶满溢节奏。
+
+### r10 实施（2026-11-07，方案 A：编辑器权威场景）
+
+用户裁决按方案 A 走：s24 构建改为消费**工作台会话文档**
+（`D:/openscp/mods/大学-综合实验楼-资产项目/asset.lot.json`，快照
+`tmp/s24-project/scene/authoritative.lot.json`，SHA `b3d7fbd6…` 入账）。
+该文档正是 s14 大学 lot 的授权来源（props/lights/spawners transforms 与
+s14 列完全对应），用户在其中：path 改 4 点 + entry `03106C2E` +
+roadConnect First；bin1 加两个垃圾桶 props
+（resourceId `1422559728` = kResourceIDGarbageDisplay）。
+
+- **管线修复**：`apply_units` 的 strip 改为"unit 列表 + 三 path 绑定列
+  （文档有 paths 时）+ 写入器自产列哈希"——参照 lot 的旧列不再与写入列
+  重复（先修 0CC8FE7A、再修 0CE71B10 灯族的同类重复）。
+- **`ensurePedestrianPath`**：文档只有服务道（roadConnect First）时，行为
+  层按第一段 range 追加 Pedestrians 镜像道（修过镜像范围 bug：段对终点
+  而非起点）。学生步行道 + 服务道 = 原版双 path 模式。
+- **validate_paths 放宽**（path-semantic-authoring §3.3）：entry 不再要求
+  来源属性 0x0CC8FE7A 绑定；PathEntry 资源在构建输入中存在即放行。
+- **W1 岗位 20**：叶子 0x0A7917C5 5→20（原版小学/大学同值）。
+  文档定案（eco-chain §46）：W1/W2/W3 = 居民教育三档，W1 = 最低教育档
+  劳工；停车 bin 由通勤规则填充——"博览中心车=观光客"是同一机制不同
+  agent 族。W1 不够的讽刺解释：社區大學把无学历成人转成有学历，W1 池
+  正被大学抽干。
+- r10 产物：path 表 `[03106C2E(4点,First), 418A18B1(镜像4点,None)]`、
+  bin1 垃圾桶列进入 Lot、W1=20。对拍：TGI 20/20、15 条字节同、5 条变化。
+  两轮 SHA 一致 `07b40d7ae3f123ae`；已部署；r9 归档。
+- 后续：工作台→构建的直通仍是手工快照（每次编辑需重新快照+构建）；
+  BuildActionsPanel 过渡入口的半自动化是下一站。

@@ -137,6 +137,13 @@ pub struct BehaviorSpec {
     /// though trash props and garbage production exist.
     #[serde(default)]
     pub ensure_service_path: bool,
+    /// Append a Pedestrians path (418A18B1) when the lot has none — the
+    /// student walking route.  Used with editor-authoritative scenes whose
+    /// paths are service-typed (road-connected driveways); the appended path
+    /// mirrors the existing path's index range so students walk the same
+    /// route the author drew.
+    #[serde(default)]
+    pub ensure_pedestrian_path: bool,
     /// Bundle ids to remove from the leaf exclude table (0x0A0209B2).  The
     /// park donor excludes the economy bundle 30645625, which carries the
     /// commuter-car bins (0AB4DFE1/E2/E3) that drive the percent-fill parking
@@ -217,6 +224,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         spec.lot_board_instance,
         spec.ensure_walk_path,
         spec.ensure_service_path,
+        spec.ensure_pedestrian_path,
         &mut changed,
     )?;
     let locale = match (&spec.title_override, &frozen.locale) {
@@ -876,12 +884,14 @@ fn patch_unit(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn patch_lot(
     ctx: &mut BuildContext,
     lot_id: &ResourceId,
     board: Option<u32>,
     ensure_walk_path: bool,
     ensure_service_path: bool,
+    ensure_pedestrian_path: bool,
     changed: &mut Vec<serde_json::Value>,
 ) -> Result<(), String> {
     let bytes = ctx.resources.get(lot_id).ok_or_else(|| {
@@ -1027,6 +1037,87 @@ fn patch_lot(
             "field": "service-path",
             "value": format!("+Cars-And-Crap {SERVICE_PATH_ENTRY:08X} (points {first_slot}->{})", first_slot + 1),
         }));
+    }
+    // Editor-authoritative scenes: the author draws the service driveway; the
+    // student walking route is the behavior layer's responsibility.  Append a
+    // Pedestrians path mirroring the existing path's index range when the lot
+    // has none.
+    if ensure_pedestrian_path {
+        let has_pedestrian = lot.get(HASH_PATH_ENTRIES).is_some_and(|property| {
+            matches!(
+                &property.kind,
+                Kind::Array(values) if values.iter().any(|v| matches!(v,
+                    Value::Key(k) if k.instance == PEDESTRIAN_PATH_ENTRY
+                ))
+            )
+        });
+        if !has_pedestrian {
+            let pull = |hash: u32| -> Result<Vec<Value>, String> {
+                lot.get(hash)
+                    .map(|p| match &p.kind {
+                        Kind::Array(values) => values.clone(),
+                        _ => Vec::new(),
+                    })
+                    .ok_or_else(|| format!("invariant WALK_PATH violated: path column {hash:08X} missing"))
+            };
+            let mut indices = pull(HASH_PATH_INDICES)?;
+            let mut segments = pull(HASH_PATH_SEGMENTS)?;
+            let mut entries = pull(HASH_PATH_ENTRIES)?;
+            let mut scope = pull(HASH_PATH_SCOPE)?;
+            let mut connect = pull(HASH_PATH_ROAD_CONNECT)?;
+            let paths = segments.len() / 2;
+            if entries.len() != paths || scope.len() != paths || connect.len() != paths {
+                return Err(
+                    "invariant WALK_PATH violated: path counts do not line up before appending"
+                        .into(),
+                );
+            }
+            // Mirror the FIRST path's index range (indices[0..=last_of_first]).
+            // Segments are (start, end) pairs into the indices array; mirror
+            // the FIRST path's full range, i.e. up to the pair's END value.
+            let first_path_end = match segments.get(1) {
+                Some(Value::Int32(end)) => *end,
+                _ => return Err("invariant WALK_PATH violated: segments are not int32 pairs".into()),
+            };
+            let mirrored: Vec<Value> = indices
+                .get(0..=first_path_end as usize)
+                .ok_or("invariant WALK_PATH violated: segment range exceeds indices")?
+                .to_vec();
+            let first_slot = indices.len() as i32;
+            indices.extend(mirrored.iter().cloned());
+            segments.push(Value::Int32(first_slot));
+            segments.push(Value::Int32(first_slot + mirrored.len() as i32 - 1));
+            entries.push(Value::Key(Key {
+                type_id: PROPERTY_TYPE,
+                group: 0x40E0_C400,
+                instance: PEDESTRIAN_PATH_ENTRY,
+            }));
+            scope.push(Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: PATH_SCOPE_LOCAL,
+            }));
+            connect.push(Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: PATH_ROAD_CONNECT_NONE,
+            }));
+            let flags_entries = lot.get(HASH_PATH_ENTRIES).map(|p| p.encoding.flags).unwrap_or(0x809C);
+            let flags_scope = lot.get(HASH_PATH_SCOPE).map(|p| p.encoding.flags).unwrap_or(0x809C);
+            let flags_connect = lot.get(HASH_PATH_ROAD_CONNECT).map(|p| p.encoding.flags).unwrap_or(0x809C);
+            let flags_indices = lot.get(HASH_PATH_INDICES).map(|p| p.encoding.flags).unwrap_or(0x809C);
+            let flags_segments = lot.get(HASH_PATH_SEGMENTS).map(|p| p.encoding.flags).unwrap_or(0x809C);
+            set_array_with_flags(&mut lot, HASH_PATH_INDICES, PropType::Int32, indices, flags_indices);
+            set_array_with_flags(&mut lot, HASH_PATH_SEGMENTS, PropType::Int32, segments, flags_segments);
+            set_array_with_flags(&mut lot, HASH_PATH_ENTRIES, PropType::Key, entries, flags_entries);
+            set_array_with_flags(&mut lot, HASH_PATH_SCOPE, PropType::Key, scope, flags_scope);
+            set_array_with_flags(&mut lot, HASH_PATH_ROAD_CONNECT, PropType::Key, connect, flags_connect);
+            changed.push(serde_json::json!({
+                "resource": lot_id.to_string(),
+                "field": "pedestrian-path",
+                "value": format!("+Pedestrians {PEDESTRIAN_PATH_ENTRY:08X} mirroring {} points", mirrored.len()),
+            }));
+        }
     }
     lot.claimed_count = lot.values.len() as u32;
     let encoded = encode(&lot)?;
