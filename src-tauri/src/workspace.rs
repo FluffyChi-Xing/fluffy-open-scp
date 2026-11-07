@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use sc_store::{FolderCacheEntry, Store, StoreError, WorkspaceConfig};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{State, command};
+use tauri::{AppHandle, Manager, State, command};
 
 use crate::activity::{AppState, CommandError};
 
@@ -966,8 +966,20 @@ pub async fn workspace_sync_legacy(
 // `existing_path` 逐级校验符号链接并 canonicalize 归属，写入走 `write_atomic`。
 
 /// 项目 root 解析：modRoot（存在、非符号链接、canonicalize）→ 项目相对路径
-/// （同一套逐级防护）且必须是目录。
-fn code_root(store: &Store, project: &str) -> Result<PathBuf, WorkspaceError> {
+/// （同一套逐级防护）且必须是目录。供 `code_*` 命令与
+/// `asset_dependencies` 同步共用。
+/// Windows canonicalize 会带 \\?\ 前缀（UNC 为 \\?\UNC\）；还原常规形式。
+fn strip_extended_prefix(text: &str) -> String {
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    text
+        .strip_prefix(r"\\?\")
+        .map(str::to_string)
+        .unwrap_or_else(|| text.to_string())
+}
+
+pub(crate) fn code_root(store: &Store, project: &str) -> Result<PathBuf, WorkspaceError> {
     let config = store.studio_config()?;
     let Some(mod_root) = config.mod_root else {
         return Err(WorkspaceError::ModRootNotConfigured);
@@ -1158,12 +1170,16 @@ fn count_code_entries(nodes: &[CodeTreeNode]) -> (usize, usize) {
 
 #[command]
 pub async fn code_tree(
+    app: AppHandle,
     state: State<'_, AppState>,
     request: CodeProjectRequest,
 ) -> Result<CodeTreeResponse, CommandError> {
     let store = Arc::clone(&state.store);
     tauri::async_runtime::spawn_blocking(move || {
         let root = code_root(&store, &request.project).map_err(CommandError::from)?;
+        // asset 协议 scope 是运行时白名单（tauri.conf 仅 $TEMP）：项目目录
+        // 动态放行，否则前端 convertFileSrc 预览一律 403（2026-11-07 实证）。
+        let _ = app.asset_protocol_scope().allow_directory(&root, true);
         let mut budget = CodeScanBudget {
             remaining: MAX_CODE_TREE_ENTRIES,
             truncated: false,
@@ -1172,7 +1188,8 @@ pub async fn code_tree(
             scan_code_dir(&root, &root, "", 0, &mut budget).map_err(CommandError::from)?;
         let (file_count, folder_count) = count_code_entries(&entries);
         Ok(CodeTreeResponse {
-            root_path: root.to_string_lossy().into_owned(),
+            root_path: strip_extended_prefix(&root.to_string_lossy())
+                .replace('\\', "/"),
             file_count,
             folder_count,
             truncated: budget.truncated,

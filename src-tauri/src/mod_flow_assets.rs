@@ -33,6 +33,61 @@ pub(super) fn write_asset(root: &Path, payload: &Value) -> Result<Value, String>
     }))
 }
 
+/// 菜单图片上传：源文件直接落到固定默认路径（打包只认这个名字，原图文件名
+/// 不参与）。icon = assets/images/menu-icon.png（必须 PNG）；marquee =
+/// assets/images/menu-marquee.png|.jpg（PNG/JPG）。重传覆盖。
+/// 菜单图片预览读取：固定路径 → base64 data URL。预览不走 asset 协议
+/// （tauri.conf 的 assetProtocol.scope 仅 $TEMP，项目目录图片必 403），
+/// 与 upload 对称、无 scope 依赖。
+pub(super) fn read_menu_image(root: &Path, payload: &Value) -> Result<Value, String> {
+    let kind = payload["kind"].as_str().unwrap_or("icon");
+    let relative = match kind {
+        "icon" => "assets/images/menu-icon.png",
+        "marquee" => "assets/images/menu-marquee.png",
+        _ => return Err("Unknown menu image kind".into()),
+    };
+    let path = safe_path(root, relative)?;
+    if !path.is_file() {
+        return Ok(json!({ "asset": relative, "data": serde_json::Value::Null }));
+    }
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    use base64::Engine as _;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let mime = "image/png";
+    Ok(json!({
+        "asset": relative,
+        "data": format!("data:{mime};base64,{encoded}"),
+    }))
+}
+
+pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, String> {
+    let source = PathBuf::from(payload["path"].as_str().ok_or("Missing source path")?);
+    let kind = payload["kind"].as_str().unwrap_or("icon");
+    if fs::metadata(&source).map_err(|e| e.to_string())?.len() > 32 * 1024 * 1024 {
+        return Err("Menu image exceeds 32 MiB".into());
+    }
+    let extension = source
+        .extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let relative = match (kind, extension.as_str()) {
+        ("icon", "png") => "assets/images/menu-icon.png".to_string(),
+        ("marquee", "png") => "assets/images/menu-marquee.png".to_string(),
+        ("marquee", "jpg") | ("marquee", "jpeg") => "assets/images/menu-marquee.jpg".to_string(),
+        _ => {
+            return Err(
+                "Menu icon must be PNG; marquee must be PNG or JPG".into(),
+            )
+        }
+    };
+    let bytes = fs::read(&source).map_err(|e| e.to_string())?;
+    let target = safe_path(root, &relative)?;
+    fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+    crate::atomic_fs::write_atomic(&target, &bytes, true).map_err(|e| e.to_string())?;
+    describe(root, &relative)
+}
+
 pub(super) fn import(root: &Path, payload: &Value) -> Result<Value, String> {
     let source = PathBuf::from(payload["path"].as_str().ok_or("Missing source path")?);
     if fs::metadata(&source).map_err(|e| e.to_string())?.len() > 128 * 1024 * 1024 {
