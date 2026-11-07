@@ -944,13 +944,37 @@ fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resou
             .try_into()
             .unwrap(),
     );
-    while resources
-        .keys()
-        .any(|id| id.type_id == PROPERTY_TYPE && id.instance == instance)
-    {
+    // 游戏原生 unit/lot 实例集（部署安全：新身份不得撞游戏既有 TGI，
+    // 否则我们的内容会顶替真实游戏单位——2026-11-08 HopeTower 事故）。
+    let mut vanilla: std::collections::HashSet<(u32, u32)> = Default::default();
+    if let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") {
+        for path in crate::game_assets::package_paths(std::path::Path::new(&game_data)) {
+            let Ok(package) = dbpf::Package::open(&path) else { continue };
+            for entry in package.entries() {
+                if entry.id.type_id != 0x00B1_B104 {
+                    continue;
+                }
+                if matches!(
+                    entry.id.group,
+                    0x40E0_C000 | 0x40E1_C000 | 0x48E0_C000 | 0x41E0_C000 | 0x41E1_C000
+                ) {
+                    vanilla.insert((entry.id.group, entry.id.instance));
+                }
+            }
+        }
+    }
+    loop {
+        let taken = resources
+            .keys()
+            .any(|id| id.type_id == PROPERTY_TYPE && id.instance == instance)
+            || vanilla.contains(&(0x40E0_C000, instance))
+            || vanilla.contains(&(0x40E1_C000, instance))
+            || vanilla.contains(&(0x48E0_C000, instance));
+        if !taken {
+            return instance;
+        }
         instance = instance.wrapping_add(1);
     }
-    instance
 }
 
 /// Lot 叶子 = 参照 lot property 克隆 + parent 改挂地标模板 + 与同 TGI

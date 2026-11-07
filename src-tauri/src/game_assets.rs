@@ -56,7 +56,7 @@ fn stem_of(path: &str) -> &str {
 
 /// 玩家安装的全部 package：SimCityData 根 + Locale 子目录 +
 /// SimCityUserData 的 EcoGame 与 Packages（与游戏扫描范围一致）。
-fn package_paths(game_data: &Path) -> Vec<PathBuf> {
+pub(crate) fn package_paths(game_data: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let root = game_data.parent().unwrap_or(game_data).to_path_buf();
     let mut push_dir = |dir: PathBuf| {

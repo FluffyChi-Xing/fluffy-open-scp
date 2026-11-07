@@ -179,7 +179,7 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     Ok(PropertyBuildPlan {
         // /25：新增 menu-contract 闸门（锚点/乱码/不加载/模型丢失四类前置校验），
         // 且菜单身份不再合成 0x0CA5CF4A 自映射。
-        processor_version: "openscp.property.m1/33",
+        processor_version: "openscp.property.m1/35",
         scope: "property+scene-model",
         intermediate: im,
         patches: specs,

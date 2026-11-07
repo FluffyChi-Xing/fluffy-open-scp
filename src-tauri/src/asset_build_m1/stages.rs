@@ -115,7 +115,7 @@ fn emit(ctx: &mut BuildContext, event: StageEvent) {
     ctx.events.push(event);
 }
 
-pub(crate) const CHAIN: [&str; 12] = [
+pub(crate) const CHAIN: [&str; 13] = [
     "load-inputs",
     "insert-textures",
     "insert-model",
@@ -127,6 +127,7 @@ pub(crate) const CHAIN: [&str; 12] = [
     "layout-contract",
     "menu-contract",
     "delta-audit",
+    "vanilla-shadow-strip",
     "materialize-and-link",
 ];
 
@@ -144,6 +145,7 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             "property-patches" => apply_property_patches(ctx),
             "scene-semantics" => apply_scene_semantics(ctx),
             "behavior-bind" => super::behavior::apply(ctx),
+            "vanilla-shadow-strip" => vanilla_shadow_strip(ctx),
             "layout-contract" => layout_contract(ctx),
             "menu-contract" => menu_contract(ctx),
             "delta-audit" => delta_audit(ctx),
@@ -866,6 +868,76 @@ fn layout_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
         "status": "ok",
         "property_files": checked,
         "array_columns": arrays,
+    }))
+}
+
+/// vanilla-shadow-strip（2026-11-08 HopeTower 事故后新增）：部署包
+/// 基类遮蔽自动剥离 + 复核。
+///
+/// 事故：golden fixture（E2E 测试夹具）被用作部署参照，其携带的
+/// 游戏基类模板链（9EC474FF Unit 基类等 40E1C000 组 6 件）随包出货，
+/// 遮蔽游戏原版基类 → 全城建筑 transform 错乱（东倒西歪）+ 存档污染。
+///
+/// 机制：unit/lot/template 组（40E0C000/40E1C000/48E0C000/41E0C000/
+/// 41E1C000/40E0C400/40E1C400）中，instance 已存在于游戏包（游戏会
+/// 自行提供）的资源一律从部署包剥离；剥离后仍有残留 = 构建失败。
+/// 游戏数据路径缺省（测试构建）时记录 warning 跳过。
+fn vanilla_shadow_strip(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
+    // 游戏数据路径由应用启动时注入（lib.rs setup → OPENSCP_GAME_DATA）；
+    // 测试构建未注入 = 非部署构建，跳过影子检查。
+    let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") else {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": "OPENSCP_GAME_DATA unset (non-deployment build); shadow check skipped",
+        }));
+    };
+    let shadow_groups = [
+        0x40E0_C000u32,
+        0x40E1_C000,
+        0x40E0_C400,
+        0x40E1_C400,
+        0x48E0_C000,
+        0x41E0_C000,
+        0x41E1_C000,
+    ];
+    // 游戏侧 instance 集（元数据枚举，不解压内容）
+    let mut vanilla: std::collections::HashSet<(u32, u32)> = Default::default();
+    for path in crate::game_assets::package_paths(std::path::Path::new(game_data.as_str())) {
+        let Ok(package) = dbpf::Package::open(&path) else { continue };
+        for entry in package.entries() {
+            if entry.id.type_id != 0x00B1_B104 || !shadow_groups.contains(&entry.id.group) {
+                continue;
+            }
+            vanilla.insert((entry.id.group, entry.id.instance));
+        }
+    }
+    let dropped = ctx
+        .resources
+        .strip_vanilla_shadows(&shadow_groups, &vanilla);
+    // 复核：剥离后不允许残留"与 vanilla 撞车"的条目（防御未来回归）。
+    // 非撞车的新身份（我们自己的建筑）不受影响。
+    let mut remaining: Vec<String> = Vec::new();
+    for (id, _bytes) in ctx.resources.iter() {
+        if id.type_id == 0x00B1_B104
+            && shadow_groups.contains(&id.group)
+            && vanilla.contains(&(id.group, id.instance))
+        {
+            remaining.push(format!(
+                "{:08X}:{:08X}:{:08X}",
+                id.type_id, id.group, id.instance
+            ));
+        }
+    }
+    if !remaining.is_empty() {
+        return Err(format!(
+            "[vanilla-shadow-strip] residual vanilla-shadowing entries after strip: {}",
+            remaining.join("; ")
+        ));
+    }
+    Ok(serde_json::json!({
+        "status": "ok",
+        "stripped": dropped.len(),
+        "dropped": dropped,
     }))
 }
 

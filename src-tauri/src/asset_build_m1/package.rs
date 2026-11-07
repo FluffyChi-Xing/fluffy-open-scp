@@ -84,6 +84,31 @@ impl BuildResources {
         }
     }
 
+    /// vanilla 影子剥离（2026-11-08 HopeTower 事故后新增）：移除
+    /// shadow_groups 中 instance 已存在于游戏包的资源（游戏运行时自行
+    /// 提供），返回被剥离清单。防止参照闭包把游戏基类模板带进部署包
+    /// 遮蔽原版（东倒西歪事故根因）。
+    pub(crate) fn strip_vanilla_shadows(
+        &mut self,
+        shadow_groups: &[u32],
+        vanilla: &std::collections::HashSet<(u32, u32)>,
+    ) -> Vec<String> {
+        let mut dropped: Vec<String> = Vec::new();
+        self.all.retain(|id, bytes| {
+            let keep = !(id.type_id == 0x00B1_B104
+                && shadow_groups.contains(&id.group)
+                && vanilla.contains(&(id.group, id.instance)));
+            if !keep {
+                dropped.push(format!(
+                    "{:08X}:{:08X}:{:08X} ({}B)",
+                    id.type_id, id.group, id.instance, bytes.len()
+                ));
+            }
+            keep
+        });
+        dropped
+    }
+
     pub(crate) fn from_source(resources: connector::Resources) -> Self {
         Self {
             all: resources,

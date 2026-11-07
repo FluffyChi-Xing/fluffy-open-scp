@@ -35,6 +35,11 @@ pub struct ReferenceSchema {
     pub unit_template: Option<String>,
     #[serde(rename = "lotTemplate")]
     pub lot_template: Option<String>,
+    /// Lot 来源预留接口（2026-11-08）：`"donor"`（缺省，克隆参照 lot）或
+    /// `"drawn"`（自有绘制流）。绘制流未闭环前显式声明 "drawn" 会被
+    /// fail-closed 拒绝——接口先占位，绘制流落地后在此分发。
+    #[serde(default, rename = "lotSource")]
+    pub lot_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +198,13 @@ pub fn validate_schema(schema: &AssetSchemaV2, diagnostics: &mut DiagnosticSet) 
             "schema.unsupported_kind",
             Some("kind".into()),
             "M0 accepts kind building-asset",
+        ));
+    }
+    if schema.reference.lot_source.as_deref() == Some("drawn") {
+        diagnostics.push(Diagnostic::warning(
+            "schema.lotSourceDrawnReserved",
+            Some("reference.lotSource".into()),
+            "自有绘制流接口已预留、尚未实现；当前请使用 donor 参照（缺省）",
         ));
     }
     if let Some(package) = &schema.reference.package {
