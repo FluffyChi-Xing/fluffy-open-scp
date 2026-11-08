@@ -114,29 +114,26 @@ const standardModKind = computed(() => {
 });
 
 /**
- * M1 资产打包后台构建(P2 接线,2026-11-04):项目携带
- * schemas/assets/m1.json(构建 schema)+ 模式需要的参考件时,「构建」
- * 按钮将其入队后台串行执行——提交后可关闭工作台,进度见项目管理页
- * OpenSCP Actions 卡片。无 m1.json 的项目回退原 flow 构建。
+ * M1 资产打包后台构建：资产项目统一进入 build_queue_enqueue_project，
+ * 由后端选择已有 openscp.asset schema 或 Asset Editor workbench adapter。
+ * Flow 项目仍使用独立的构建/部署按钮。
  */
 async function buildM1InBackground(): Promise<boolean> {
   try {
-    const doc = await tauriApi.workspace.codeReadText(
-      props.project.relPath,
-      "schemas/assets/m1.json",
-    );
-    const jobId = await tauriApi.buildQueue.enqueue(
+    const submitted = await tauriApi.buildQueue.enqueueProject(
       props.project.folderPath ?? "",
-      doc.content,
       props.project.name,
     );
-    toast.info(t("studio.assetWorkbench.buildQueued", { jobId }));
+    toast.info(t("studio.assetWorkbench.buildQueued", { jobId: submitted.jobId }));
     return true;
   } catch {
-    // 无 m1.json(或包未就绪)→ 回退原流程
     return false;
   }
 }
+
+const projectBuildAvailable = computed(
+  () => standardModKind.value === "assets" && Boolean(props.project.folderPath),
+);
 
 async function buildDeployAndLaunch() {
   if (!engineReady.value || deployBusy.value) return;
@@ -437,7 +434,7 @@ watch(
       </div>
       <div class="heading-actions">
         <span v-if="projectManifest.origin" class="tree-stats">{{ t(projectManifest.origin === 'openscp' ? 'flow.standard' : 'flow.community') }}</span>
-        <button v-if="engineEnabled" class="refresh-button" :disabled="!engineReady || deployBusy" :title="t(engineReady ? 'flow.ready' : 'flow.blocked')" @click="async () => { if (!(await buildM1InBackground())) flowPanel?.build(); }">{{ t('flow.build') }}</button>
+        <button v-if="projectBuildAvailable" class="refresh-button" :disabled="deployBusy" :title="t('flow.ready')" @click="buildM1InBackground">{{ t('flow.build') }}</button>
         <button v-if="engineEnabled" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
           <FIcon :name="deployBusy ? 'Loader2' : 'Play'" :size="13" aria-label="" />
           {{ t(deployBusy ? 'flow.buildDeploying' : 'flow.buildDeploy') }}

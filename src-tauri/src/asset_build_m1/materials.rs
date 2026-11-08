@@ -160,11 +160,7 @@ pub fn encode_png_raster(png: &[u8]) -> Result<Vec<u8>, String> {
 /// Encode raw RGBA pixels as an uncompressed game raster — the in-memory
 /// form of `encode_png_raster`, used for the rotation-transformed ground
 /// mask (`raster_rgba(rotated_mask)` in the author chain).
-pub fn encode_rgba_raster(
-    width: u32,
-    height: u32,
-    pixels: &[[u8; 4]],
-) -> Result<Vec<u8>, String> {
+pub fn encode_rgba_raster(width: u32, height: u32, pixels: &[[u8; 4]]) -> Result<Vec<u8>, String> {
     if pixels.len() != (width as usize) * (height as usize) {
         return Err("raster pixel buffer size mismatch".into());
     }
@@ -238,8 +234,7 @@ pub fn encode_png_texture(png: &[u8]) -> Result<Vec<u8>, String> {
     for pixel in image.pixels() {
         bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
     }
-    const TEMPLATE: &[u8] =
-        include_bytes!("../../resources/sc5/2EF7D20A.texture-template.rw4");
+    const TEMPLATE: &[u8] = include_bytes!("../../resources/sc5/2EF7D20A.texture-template.rw4");
     let file = Rw4File::parse(TEMPLATE).map_err(|error| error.to_string())?;
     let texture = file
         .sections_of_type(SectionType::TEXTURE)
@@ -528,7 +523,10 @@ mod tests {
         let file = Rw4File::parse(&rw4).unwrap();
         assert_eq!(file.file_type(), rw4::FileType::Texture);
         assert_eq!(
-            file.sections().iter().map(|s| s.type_code).collect::<Vec<_>>(),
+            file.sections()
+                .iter()
+                .map(|s| s.type_code)
+                .collect::<Vec<_>>(),
             vec![SectionType::BLOB, SectionType::TEXTURE]
         );
         let section = file

@@ -39,7 +39,10 @@ pub fn encode(mesh: &GlbMesh) -> Vec<u8> {
     }
 
     let float_bytes = |values: &[f32]| -> Vec<u8> {
-        values.iter().flat_map(|value| value.to_le_bytes()).collect()
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
     };
     let mut attribute = |values: &[f32], kind: &str, count: usize, components: usize| -> usize {
         let view = push_view(&mut bin, &float_bytes(values));
@@ -78,7 +81,11 @@ pub fn encode(mesh: &GlbMesh) -> Vec<u8> {
         uv_accessors.push(attribute(&values, "VEC2", set.len(), 2));
     }
 
-    let index_bytes: Vec<u8> = mesh.indices.iter().flat_map(|value| value.to_le_bytes()).collect();
+    let index_bytes: Vec<u8> = mesh
+        .indices
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect();
     let index_view = push_view(&mut bin, &index_bytes);
     accessors.push(json!({
         "bufferView": index_view,

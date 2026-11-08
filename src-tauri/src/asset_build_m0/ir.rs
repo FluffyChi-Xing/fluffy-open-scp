@@ -112,6 +112,9 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
             document: schema.scene.document.clone(),
             writes: schema.scene.writes.clone(),
             model: schema.scene.model.clone(),
+            // The author IR does not choose a game geometry route.  M1 derives
+            // it from the LOTM material census; an explicit value remains a
+            // compatibility escape hatch for already-authored schemas.
             model_shape: schema.scene.model_shape.clone(),
             slots: schema.scene.slots.clone(),
         },
@@ -140,11 +143,33 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
 }
 
 fn lower_references(schema: &AssetSchemaV2) -> Result<ReferenceIr, String> {
+    let lot = parse_optional(schema.reference.lot.as_deref())?;
+    // ground 输入类型化（2026-11-08 事故链）：**新身份路线**（注册新菜单，
+    // schema.semantics.menu 非空）的参照 lot 只允许 **lot-config** 形态
+    // （组 58F0C000——地面配方）。40E1C000 是 **Asset 字典**（某栋建筑的
+    // 运行时身份），克隆它会连身份/统计列一起搬——实机表现为"地面是别的
+    // 建筑、tooltip 打格式串、不可铲除"。
+    // 例外：donor 身份克隆路线（无 semantics.menu，behavior/property 直接
+    // 同 TGI 覆盖 donor，s24 配方）本来就该指向 donor 的 Asset lot——
+    // 那不是"克隆别人的地面"，是继承整个身份，类型合法。
+    let registers_new_identity = !schema.semantics.menu.is_empty();
+    if let Some(resource) = &lot {
+        if registers_new_identity && resource.group != 0x58F0_C000 {
+            return Err(format!(
+                "reference.lot must be a lot-config (group 0x58F0C000, e.g. \
+                 00B1B104:58F0C000:2063CCDD); got group {:08X} — that is an asset-dictionary \
+                 lot from another building and cloning it imports its identity (wrong ground, \
+                 foreign tooltips, invalid-for-bulldoze). Put a lot-config into the reference \
+                 package instead",
+                resource.group
+            ));
+        }
+    }
     Ok(ReferenceIr {
         package: schema.reference.package.clone(),
         menu: parse_optional(schema.reference.menu.as_deref())?,
         unit: parse_optional(schema.reference.unit.as_deref())?,
-        lot: parse_optional(schema.reference.lot.as_deref())?,
+        lot,
         unit_template: parse_optional(schema.reference.unit_template.as_deref())?,
         lot_template: parse_optional(schema.reference.lot_template.as_deref())?,
     })
@@ -235,7 +260,7 @@ mod tests {
         let raw = serde_json::json!({
             "$schema": "openscp.asset", "schema_version": 2,
             "id": "willis", "kind": "building-asset",
-            "reference": {"unit": "00B1B104:40E0C000:8D007745", "lot": "00B1B104:40E1C000:8D007745", "menu": "00B1B104:09878A01:74168A83"},
+            "reference": {"unit": "00B1B104:40E0C000:8D007745", "lot": "00B1B104:58F0C000:8D007745", "menu": "00B1B104:09878A01:74168A83"},
             "scene": {"document": "asset.lot.json", "slots": {"slot0": "slot0.json", "slot1": "slot1.png"}},
             "outputs": {"package": "willis.package"}
         });

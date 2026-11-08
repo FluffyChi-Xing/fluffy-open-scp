@@ -36,8 +36,8 @@ pub fn emit(event: &str, fields: Value) {
             object.insert("detail".into(), other);
         }
     }
-    let line = serde_json::to_string(&object)
-        .unwrap_or_else(|_| format!("{{\"event\":\"{event}\"}}"));
+    let line =
+        serde_json::to_string(&object).unwrap_or_else(|_| format!("{{\"event\":\"{event}\"}}"));
     eprintln!("[openscp.blend-import] {line}");
 }
 

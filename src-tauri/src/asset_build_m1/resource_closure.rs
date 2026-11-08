@@ -12,7 +12,7 @@
 
 use dbpf::ResourceId;
 use rw4::{Rw4File, SectionType};
-use sc_properties::{Kind, PropertyFile, Value, LOT_MASK_HASH};
+use sc_properties::{Kind, LOT_MASK_HASH, PropertyFile, Value};
 use std::collections::{HashMap, HashSet};
 
 use super::materials::{raster_type, rw4_model_type};
@@ -125,16 +125,19 @@ fn property_dependencies(bytes: &[u8], require_lot_mask: bool) -> Result<Vec<Dep
                 continue;
             }
             // Structural Property keys (parent/unit/lot links) resolve from
-            // the asset graph itself. PathEntry properties are the exception:
-            // the game script table is addressed through a B1 property in a
-            // C400 group and must be shipped in the delta. Dropping it leaves
-            // the path columns present but makes the runtime skip the path.
+            // the asset graph itself. Catalog PathEntry ids are script-side
+            // built-ins and need no local B1 resource (the vanilla university
+            // references 418A18B1 without shipping one). Custom C400 entries
+            // remain mandatory: dropping one makes the runtime skip the path.
             if key.type_id == PROPERTY_TYPE {
                 if (key.group & 0xFFFF) == 0xC400 {
+                    let builtin = super::path_catalog::PATH_TYPES
+                        .iter()
+                        .any(|spec| spec.entry == key.instance);
                     deps.push(Dependency::new(
                         format!("path-entry:0x{:08X}", key.instance),
                         vec![exact],
-                        true,
+                        !builtin,
                     ));
                 }
                 continue;

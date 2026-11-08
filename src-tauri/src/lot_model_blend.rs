@@ -314,7 +314,10 @@ mod tests {
         );
         assert_eq!(manifest["materials"][0]["paramCols"], 2);
         assert_eq!(
-            manifest["materials"][0]["paramsF32"].as_array().unwrap().len(),
+            manifest["materials"][0]["paramsF32"]
+                .as_array()
+                .unwrap()
+                .len(),
             8
         );
         let _ = std::fs::remove_dir_all(root);
@@ -334,11 +337,12 @@ mod tests {
         let size = std::fs::metadata(&target).unwrap().len();
         assert!(size > 4096, "blend file looks empty: {size} bytes");
         assert!(
-            !dir.read_dir()
-                .unwrap()
-                .any(|entry| entry
-                    .map(|entry| entry.file_name().to_string_lossy().starts_with(".openscp-blend-export-"))
-                    .unwrap_or(false)),
+            !dir.read_dir().unwrap().any(|entry| entry
+                .map(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".openscp-blend-export-"))
+                .unwrap_or(false)),
             "staging directory must not survive the call"
         );
         println!("blend bytes: {size}");
@@ -358,7 +362,7 @@ mod tests {
     #[test]
     #[ignore = "requires a game package and Blender"]
     fn real_game_model_exports_blend() {
-        use crate::package_service::{build_lot_model_payload_for_test, PackageManager};
+        use crate::package_service::{PackageManager, build_lot_model_payload_for_test};
         let package_path = std::env::var("SC_GAME_PACKAGE").expect("set SC_GAME_PACKAGE");
         let instance = u32::from_str_radix(
             std::env::var("SC_MODEL_INSTANCE")
@@ -377,9 +381,7 @@ mod tests {
         let entry = package
             .entries()
             .iter()
-            .find(|entry| {
-                entry.id.type_id == 0x2F4E_681B && entry.id.instance == instance
-            })
+            .find(|entry| entry.id.type_id == 0x2F4E_681B && entry.id.instance == instance)
             .cloned()
             .expect("model resource in package");
         let data = package.read(&entry).expect("read model");
@@ -395,8 +397,7 @@ mod tests {
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
-        export_to(&payload, &target, &format!("{instance:08X}"), "copan")
-            .expect("blend export");
+        export_to(&payload, &target, &format!("{instance:08X}"), "copan").expect("blend export");
         println!(
             "blend: {} bytes -> {}",
             std::fs::metadata(&target).unwrap().len(),

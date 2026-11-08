@@ -41,7 +41,11 @@ pub fn started(stage: impl Into<String>, detail: serde_json::Value) -> StageEven
     }
 }
 
-pub fn finished(stage: impl Into<String>, detail: serde_json::Value, duration_ms: u64) -> StageEvent {
+pub fn finished(
+    stage: impl Into<String>,
+    detail: serde_json::Value,
+    duration_ms: u64,
+) -> StageEvent {
     StageEvent {
         stage: stage.into(),
         kind: StageEventKind::Finished,

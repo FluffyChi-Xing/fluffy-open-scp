@@ -23,6 +23,25 @@ pub fn project_file(root: &Path, relative: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Scene-authored package paths may be absolute (including Windows `\\?\`
+/// paths). Ordinary project references still use the traversal-safe resolver.
+pub fn input_file(root: &Path, path: &str) -> Result<PathBuf, String> {
+    let candidate = Path::new(path);
+    if !candidate.is_absolute() {
+        return project_file(root, path);
+    }
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|error| format!("ground source package {}: {error}", candidate.display()))?;
+    if !canonical.is_file() {
+        return Err(format!(
+            "ground source package {} is not a file",
+            canonical.display()
+        ));
+    }
+    Ok(canonical)
+}
+
 pub struct Staging {
     pub path: PathBuf,
     pub destination: PathBuf,

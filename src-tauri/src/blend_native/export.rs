@@ -9,7 +9,7 @@ use super::decals;
 use super::dump::{Bundle, BundleMaterial, BundleObject};
 use super::geometry;
 use super::glb::{self, GlbMesh};
-use super::layout::{layout_values, LayoutValues};
+use super::layout::{LayoutValues, layout_values};
 use super::lotm::{self, LotmDocument, LotmMaterial};
 use super::material_state::{self, actual_layout};
 use super::recipe::{self, Kind, RecipeInput};
@@ -74,7 +74,8 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
         let mut rendered: HashMap<u32, SurfaceState> = HashMap::new();
         for face_index in 0..mesh.polygons.len() {
             source_faces += 1;
-            let resolved = resolver.resolve(input.bundle, Some(input.catalog), object, face_index)?;
+            let resolved =
+                resolver.resolve(input.bundle, Some(input.catalog), object, face_index)?;
             let mut state = resolved.state.clone();
             let role = resolved.role.clone();
             let material = mesh
@@ -110,10 +111,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                                 let mut log = FAILURES.lock().unwrap();
                                 *log.entry(format!("{error}")).or_insert(0) += 1;
                                 if log.len() <= 8 {
-                                    eprintln!(
-                                        "[recover-failed] {} -> {}",
-                                        material.name, error
-                                    );
+                                    eprintln!("[recover-failed] {} -> {}", material.name, error);
                                 }
                             }
                         }
@@ -159,7 +157,15 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                 wall_color: state.wall_color,
                 roof_color: state.roof_color,
             };
-            let body_key = recipe_key(Kind::Body, entry, &body_state, color, state.texture_normal, None, false);
+            let body_key = recipe_key(
+                Kind::Body,
+                entry,
+                &body_state,
+                color,
+                state.texture_normal,
+                None,
+                false,
+            );
             let body_group = if let Some(index) = by_key.get(&body_key) {
                 *index
             } else {
@@ -167,8 +173,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                 ensure_group(&mut groups, &mut by_key, body_key, "NY_Native", output)
             };
 
-            let world: Vec<[f64; 3]> = mesh
-                .polygons[face_index]
+            let world: Vec<[f64; 3]> = mesh.polygons[face_index]
                 .vertices
                 .iter()
                 .map(|index| world_point(object, *index))
@@ -180,7 +185,8 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             }
             if entry.is_some() {
                 if let Some(material) = material {
-                    let layer = material_state::base_uv_name(input.bundle, material, "NY_MaterialUV");
+                    let layer =
+                        material_state::base_uv_name(input.bundle, material, "NY_MaterialUV");
                     body_uv = mapped_uv(mesh, face_index, &layer);
                 }
             }
@@ -240,10 +246,12 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
 
             if state.decal_enabled {
                 if let Some(decal_entry) = input.index.get(&state.decal_style) {
-                    let duv = decals::coordinates(object, face_index)
-                        .map_err(|error| decal_error(error, object, face_index, &role, &state, mesh))?;
-                    let frame = decals::frame(object, face_index)
-                        .map_err(|error| decal_error(error, object, face_index, &role, &state, mesh))?;
+                    let duv = decals::coordinates(object, face_index).map_err(|error| {
+                        decal_error(error, object, face_index, &role, &state, mesh)
+                    })?;
+                    let frame = decals::frame(object, face_index).map_err(|error| {
+                        decal_error(error, object, face_index, &role, &state, mesh)
+                    })?;
                     let mut width = frame.width;
                     let mut height = frame.height;
                     if let (Some(values), Some(heights)) = (
@@ -302,15 +310,11 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                     if matrix_determinant(&object.matrix) < 0.0 {
                         duv.reverse();
                     }
-                    for [x, y, cell_width, cell_height] in
-                        decals::cells(&state, width, height)?
-                    {
+                    for [x, y, cell_width, cell_height] in decals::cells(&state, width, height)? {
                         for triangle in &triangles {
                             let polygon: Vec<([f64; 3], [f64; 2])> = triangle
                                 .iter()
-                                .map(|index| {
-                                    (world[*index], [duv[*index][0], duv[*index][1]])
-                                })
+                                .map(|index| (world[*index], [duv[*index][0], duv[*index][1]]))
                                 .collect();
                             let clipped = geometry::clip_polygon(
                                 &polygon,
@@ -380,12 +384,8 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             if matrix_determinant(&object.matrix) < 0.0 {
                 surface.reverse();
             }
-            let (mut width, mut height) = material_state::face_span(
-                input.bundle,
-                object,
-                face_index,
-                material,
-            );
+            let (mut width, mut height) =
+                material_state::face_span(input.bundle, object, face_index, material);
             if material.prop_bool("ny_dynamic_layout") {
                 if let (Some(values), Some(heights)) = (
                     mesh.face_attributes.get("NY_Facade_width"),
@@ -400,7 +400,12 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                     }
                 }
             }
-            let computed = layout_values(width, height, &state, input.index.contains(&state.decor_style));
+            let computed = layout_values(
+                width,
+                height,
+                &state,
+                input.index.contains(&state.decor_style),
+            );
             let layout = actual_layout(input.bundle, object, face_index, material, computed);
             let style_entry = style_entry(input.index, &state.style)
                 .ok_or_else(|| format!("unknown window style {}", state.style))?;
@@ -424,9 +429,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
             let group_mode = state.night_room_mode == "GROUP";
             for row in 0..layout.nr {
                 let y = layout.start_y + row as f64 * layout.row_pitch;
-                if y < layout.y_min - 1e-5
-                    || y + layout.height > layout.y_max + 1e-5
-                {
+                if y < layout.y_min - 1e-5 || y + layout.height > layout.y_max + 1e-5 {
                     continue;
                 }
                 for group in 0..layout.ng {
@@ -447,19 +450,16 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                         let variant = if lit { Some(hue + 1) } else { Some(0) };
                         // recipe(): window palrow = _source_window_palette,
                         // falling back to the pack row when negative.
-                        let window_palette_row = if state
-                            .source_window_palette
-                            .unwrap_or(state.palette_row)
-                            >= 0.0
-                        {
-                            state.source_window_palette.unwrap_or(state.palette_row)
-                        } else {
-                            input
-                                .catalog
-                                .pack(&style_entry.pack)
-                                .map(|pack| pack.palette_row)
-                                .unwrap_or(0.0)
-                        };
+                        let window_palette_row =
+                            if state.source_window_palette.unwrap_or(state.palette_row) >= 0.0 {
+                                state.source_window_palette.unwrap_or(state.palette_row)
+                            } else {
+                                input
+                                    .catalog
+                                    .pack(&style_entry.pack)
+                                    .map(|pack| pack.palette_row)
+                                    .unwrap_or(0.0)
+                            };
                         let window_input = RecipeInput {
                             kind: Kind::Window,
                             entry: Some(&style_entry),
@@ -494,9 +494,11 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                             ensure_group(&mut groups, &mut by_key, window_key, "NY_Native", output)
                         };
                         let seed = 0.5
-                            + ((window_seed + row * 101 + group * 37
+                            + ((window_seed
+                                + row * 101
+                                + group * 37
                                 + if group_mode { 0 } else { column * 17 })
-                                .rem_euclid(2039)) as f64
+                            .rem_euclid(2039)) as f64
                                 / 4078.0;
                         let room = group_mode.then(|| {
                             [
@@ -564,14 +566,20 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
                                 let panel_group = if let Some(index) = by_key.get(&panel_key) {
                                     *index
                                 } else {
-                                    let output = recipe::build(input.store, input.catalog, &panel_input)?;
-                                    ensure_group(&mut groups, &mut by_key, panel_key, "NY_Native", output)
+                                    let output =
+                                        recipe::build(input.store, input.catalog, &panel_input)?;
+                                    ensure_group(
+                                        &mut groups,
+                                        &mut by_key,
+                                        panel_key,
+                                        "NY_Native",
+                                        output,
+                                    )
                                 };
                                 for decor_column in 0..layout.decor_cols {
                                     for decor_row in 0..layout.decor_rows {
-                                        let panel_x = x
-                                            + decor_column as f64 * layout.width
-                                                / layout.decor_cols as f64;
+                                        let panel_x = x + decor_column as f64 * layout.width
+                                            / layout.decor_cols as f64;
                                         let panel_y = y - layout.panel_height
                                             + decor_row as f64 * layout.panel_height
                                                 / layout.decor_rows as f64;
@@ -638,12 +646,7 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
     let group_stats: Vec<(String, usize)> = groups
         .iter()
         .filter(|group| !group.indices.is_empty())
-        .map(|group| {
-            (
-                group.key.clone(),
-                group.indices.len() / 3,
-            )
-        })
+        .map(|group| (group.key.clone(), group.indices.len() / 3))
         .collect();
     let report = ExportReport {
         meshes: meshes.len(),
@@ -750,16 +753,12 @@ fn add_polygon(
             (point[1] - origin[1]) * unit + normal[1] * offset * unit,
             (point[2] - origin[2]) * unit + normal[2] * offset * unit,
         ];
-        group.positions.push([
-            shifted[0] as f32,
-            shifted[1] as f32,
-            shifted[2] as f32,
-        ]);
-        group.normals.push([
-            normal[0] as f32,
-            normal[1] as f32,
-            normal[2] as f32,
-        ]);
+        group
+            .positions
+            .push([shifted[0] as f32, shifted[1] as f32, shifted[2] as f32]);
+        group
+            .normals
+            .push([normal[0] as f32, normal[1] as f32, normal[2] as f32]);
         group.tangents.push([
             tangent[0] as f32,
             tangent[1] as f32,
@@ -767,10 +766,7 @@ fn add_polygon(
             hand as f32,
         ]);
         group.uv0.push([uv[index][0] as f32, uv[index][1] as f32]);
-        group.uv1.push([
-            material_index as f32 / 255.0,
-            seed as f32,
-        ]);
+        group.uv1.push([material_index as f32 / 255.0, seed as f32]);
         group.uv2.push([uv[index][0] as f32, uv[index][1] as f32]);
         group.uv3.push([top[index][0] as f32, top[index][1] as f32]);
     }
@@ -782,7 +778,9 @@ fn add_polygon(
         let c = positions[index as usize + 1];
         let cross = cross(sub(b, a), sub(c, a));
         if dot(cross, cross) > 1e-16 {
-            group.indices.extend([start, start + index, start + index + 1]);
+            group
+                .indices
+                .extend([start, start + index, start + index + 1]);
         }
     }
 }
@@ -848,13 +846,8 @@ fn overlay(
     for xa in 0..xs.len() - 1 {
         for ya in 0..ys.len() - 1 {
             for triangle in triangles {
-                let clipped = geometry::clip_polygon(
-                    triangle,
-                    xs[xa],
-                    xs[xa + 1],
-                    ys[ya],
-                    ys[ya + 1],
-                );
+                let clipped =
+                    geometry::clip_polygon(triangle, xs[xa], xs[xa + 1], ys[ya], ys[ya + 1]);
                 if clipped.len() < 3 {
                     continue;
                 }
@@ -883,8 +876,7 @@ fn overlay(
                 let positions: Vec<[f64; 3]> =
                     clipped.iter().map(|(position, _)| *position).collect();
                 add_polygon(
-                    group, &positions, normal, &base, &coords, seed, 0, offset, origin, unit,
-                    false,
+                    group, &positions, normal, &base, &coords, seed, 0, offset, origin, unit, false,
                 );
                 let mut reversed_positions = positions.clone();
                 reversed_positions.reverse();
@@ -1006,9 +998,12 @@ fn world_normal(object: &BundleObject, normal: [f64; 3]) -> [f64; 3] {
     let inv = 1.0 / det;
     // (M^-1)^T n: the adjugate rows are det*M^-1, so combine them row-wise.
     let n = [
-        (cofactor[0][0] * normal[0] + cofactor[0][1] * normal[1] + cofactor[0][2] * normal[2]) * inv,
-        (cofactor[1][0] * normal[0] + cofactor[1][1] * normal[1] + cofactor[1][2] * normal[2]) * inv,
-        (cofactor[2][0] * normal[0] + cofactor[2][1] * normal[1] + cofactor[2][2] * normal[2]) * inv,
+        (cofactor[0][0] * normal[0] + cofactor[0][1] * normal[1] + cofactor[0][2] * normal[2])
+            * inv,
+        (cofactor[1][0] * normal[0] + cofactor[1][1] * normal[1] + cofactor[1][2] * normal[2])
+            * inv,
+        (cofactor[2][0] * normal[0] + cofactor[2][1] * normal[1] + cofactor[2][2] * normal[2])
+            * inv,
     ];
     normalize(n).unwrap_or(normal)
 }
@@ -1047,8 +1042,7 @@ fn world_frame_uv(world: &[[f64; 3]], normal: [f64; 3]) -> Vec<[f64; 2]> {
 
 fn apply_texture_transform(uv: &mut [[f64; 2]], entry: &Entry, state: &SurfaceState) {
     let [sx, sy] = entry.size.unwrap_or([2.0, 2.0]);
-    let angle = state.texture_rotation
-        + entry.rotation.unwrap_or(0.0).to_radians();
+    let angle = state.texture_rotation + entry.rotation.unwrap_or(0.0).to_radians();
     let (sin, cos) = angle.sin_cos();
     let scale = state.texture_scale.max(0.01);
     for value in uv {
@@ -1075,12 +1069,7 @@ fn style_entry(index: &CatalogIndex, style: &str) -> Option<Entry> {
             .iter()
             .find(|(id, _)| *id == style)
             .map(|(_, [x0, y0, x1, y1])| {
-                [
-                    (x1 - x0) / 256.0,
-                    (y1 - y0) / 256.0,
-                    x0 / 256.0,
-                    y0 / 256.0,
-                ]
+                [(x1 - x0) / 256.0, (y1 - y0) / 256.0, x0 / 256.0, y0 / 256.0]
             }),
     };
     rect.map(|rect| Entry {
@@ -1152,11 +1141,7 @@ fn bounds_origin(bundle: &Bundle) -> [f64; 3] {
     if !found {
         return [0.0, 0.0, 0.0];
     }
-    [
-        (min[0] + max[0]) / 2.0,
-        (min[1] + max[1]) / 2.0,
-        min[2],
-    ]
+    [(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0, min[2]]
 }
 
 fn matrix_determinant(matrix: &[f64]) -> f64 {
@@ -1184,7 +1169,6 @@ fn normalize(a: [f64; 3]) -> Option<[f64; 3]> {
     (length > 1e-12).then(|| [a[0] / length, a[1] / length, a[2] / length])
 }
 
-
 #[cfg(test)]
 mod export_tests {
     use super::*;
@@ -1194,16 +1178,17 @@ mod export_tests {
     fn window_presets_derive_rects_from_pixel_rectangles() {
         // Rounding these to 4 decimals (0.1641 instead of 0.1640625) shifts
         // every texture transform and splits window groups the plug-in merges.
-        let catalog = Catalog::parse(br#"{"packs":{},"windows":[],"decor":[],"surfaces":[],"modules":[]}"#)
-            .unwrap();
+        let catalog =
+            Catalog::parse(br#"{"packs":{},"windows":[],"decor":[],"surfaces":[],"modules":[]}"#)
+                .unwrap();
         let index = catalog.index();
         let french = style_entry(&index, "FRENCH_PAIR").expect("preset");
-        assert_eq!(
-            french.rect,
-            [0.1640625, 0.22265625, 0.02734375, 0.7578125]
-        );
+        assert_eq!(french.rect, [0.1640625, 0.22265625, 0.02734375, 0.7578125]);
         let square = style_entry(&index, "SQUARE").expect("preset");
-        assert_eq!(square.rect, [50.0 / 256.0, 50.0 / 256.0, 3.0 / 256.0, 99.0 / 256.0]);
+        assert_eq!(
+            square.rect,
+            [50.0 / 256.0, 50.0 / 256.0, 3.0 / 256.0, 99.0 / 256.0]
+        );
     }
 
     /// End-to-end native export of an extracted bundle.
@@ -1229,12 +1214,14 @@ mod export_tests {
         })
         .expect("native export");
         fs::write(out_path, &report.lotm).unwrap();
-        let mut kinds: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut kinds: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
         for (key, triangles) in &report.group_stats {
             let kind = key.split('|').next().unwrap_or("?");
             *kinds.entry(kind.to_string()).or_insert(0) += triangles;
         }
-        let mut group_counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        let mut group_counts: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
         for (key, _) in &report.group_stats {
             let kind = key.split('|').next().unwrap_or("?");
             *group_counts.entry(kind.to_string()).or_insert(0) += 1;

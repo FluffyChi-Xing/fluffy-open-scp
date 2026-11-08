@@ -42,11 +42,7 @@ fn patch_glb(glb: &mut [u8], cell: [f32; 4]) -> Result<(), String> {
         return Err("atlas UV remap: BIN chunk missing".into());
     }
     let bin_len = u32::from_le_bytes(glb[bin_header..bin_header + 4].try_into().unwrap()) as usize;
-    let bin_type = u32::from_le_bytes(
-        glb[bin_header + 4..bin_header + 8]
-            .try_into()
-            .unwrap(),
-    );
+    let bin_type = u32::from_le_bytes(glb[bin_header + 4..bin_header + 8].try_into().unwrap());
     if bin_type != GLB_BIN || bin_header + 8 + bin_len > glb.len() {
         return Err("atlas UV remap: BIN chunk malformed".into());
     }
@@ -75,14 +71,7 @@ fn patch_glb(glb: &mut [u8], cell: [f32; 4]) -> Result<(), String> {
                 .ok_or("atlas UV remap: attributes missing")?;
             for semantic in ["TEXCOORD_2", "TEXCOORD_3"] {
                 if let Some(index) = attributes.get(semantic).and_then(Value::as_u64) {
-                    patch_accessor(
-                        glb,
-                        bin_start,
-                        views,
-                        accessors,
-                        index as usize,
-                        cell,
-                    )?;
+                    patch_accessor(glb, bin_start, views, accessors, index as usize, cell)?;
                 }
             }
         }
@@ -114,11 +103,11 @@ fn patch_accessor(
         .get(view_index)
         .ok_or("atlas UV remap: bufferView missing")?;
     let view_offset = view.get("byteOffset").and_then(Value::as_u64).unwrap_or(0) as usize;
-    let stride = view
-        .get("byteStride")
+    let stride = view.get("byteStride").and_then(Value::as_u64).unwrap_or(8) as usize;
+    let accessor_offset = accessor
+        .get("byteOffset")
         .and_then(Value::as_u64)
-        .unwrap_or(8) as usize;
-    let accessor_offset = accessor.get("byteOffset").and_then(Value::as_u64).unwrap_or(0) as usize;
+        .unwrap_or(0) as usize;
     let count = accessor
         .get("count")
         .and_then(Value::as_u64)

@@ -973,8 +973,7 @@ fn strip_extended_prefix(text: &str) -> String {
     if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
         return format!(r"\\{rest}");
     }
-    text
-        .strip_prefix(r"\\?\")
+    text.strip_prefix(r"\\?\")
         .map(str::to_string)
         .unwrap_or_else(|| text.to_string())
 }
@@ -1188,8 +1187,7 @@ pub async fn code_tree(
             scan_code_dir(&root, &root, "", 0, &mut budget).map_err(CommandError::from)?;
         let (file_count, folder_count) = count_code_entries(&entries);
         Ok(CodeTreeResponse {
-            root_path: strip_extended_prefix(&root.to_string_lossy())
-                .replace('\\', "/"),
+            root_path: strip_extended_prefix(&root.to_string_lossy()).replace('\\', "/"),
             file_count,
             folder_count,
             truncated: budget.truncated,

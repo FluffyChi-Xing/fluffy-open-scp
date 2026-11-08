@@ -20,7 +20,7 @@ use sha2::Digest as _;
 use std::path::{Path, PathBuf};
 
 /// 缓存布局版本：语义变化时递增（旧缓存自然失效）。
-const CACHE_VERSION: &str = "g3-1";
+const CACHE_VERSION: &str = "g3-3";
 
 fn digest_bytes(bytes: &[u8]) -> String {
     let digest = sha2::Sha256::digest(bytes);
@@ -84,17 +84,38 @@ pub(crate) fn input_fingerprint(
     if let Some(package) = plan.intermediate.references.package.as_deref() {
         parts.push(digest_file(&root.join(package)).unwrap_or_default());
     }
-    if let Some(identity) = plan.menu.as_ref().and_then(|menu| menu.identity_package.as_deref()) {
+    if let Some(identity) = plan
+        .menu
+        .as_ref()
+        .and_then(|menu| menu.identity_package.as_deref())
+    {
         parts.push(digest_file(&root.join(identity)).unwrap_or_default());
     }
     if let Some(hash) = digest_file(&root.join(scene_document)) {
         parts.push(hash);
     }
+    if let Ok(bytes) = std::fs::read(root.join(scene_document)) {
+        if let Ok(document) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(path) = document
+                .pointer("/editor/workbench/lotStyle/sourceLot/packagePath")
+                .and_then(serde_json::Value::as_str)
+            {
+                let digest = super::filesystem::input_file(root, path)
+                    .ok()
+                    .and_then(|path| digest_file(&path))
+                    .unwrap_or_default();
+                parts.push(format!("groundSource={digest}"));
+            }
+        }
+    }
     if let Some(model) = plan.intermediate.scene.model.as_deref() {
         parts.push(digest_file(&root.join(model)).unwrap_or_default());
     }
     for (slot, path) in &plan.intermediate.scene.slots {
-        parts.push(format!("{slot}={}", digest_file(&root.join(path)).unwrap_or_default()));
+        parts.push(format!(
+            "{slot}={}",
+            digest_file(&root.join(path)).unwrap_or_default()
+        ));
     }
     let refs: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
     mix(&refs)
@@ -105,7 +126,10 @@ pub(crate) fn lookup_run(root: &Path, fingerprint: &str) -> Option<RunCacheEntry
     let path = runs_dir(root).join(format!("{fingerprint}.json"));
     let bytes = std::fs::read(&path).ok()?;
     let entry: RunCacheEntry = serde_json::from_slice(&bytes).ok()?;
-    let package = root.join(".build").join(&entry.build_hash).join(&entry.package_relative);
+    let package = root
+        .join(".build")
+        .join(&entry.build_hash)
+        .join(&entry.package_relative);
     let actual = digest_file(&package)?;
     (actual == entry.sha256).then_some(entry)
 }
@@ -167,7 +191,10 @@ pub(crate) struct MaterialCacheEntry {
 }
 
 fn material_cache_dir(root: &Path, fingerprint: &str) -> PathBuf {
-    root.join(".build").join("cache").join("insert-model").join(fingerprint)
+    root.join(".build")
+        .join("cache")
+        .join("insert-model")
+        .join(fingerprint)
 }
 
 pub(crate) fn lookup_material(root: &Path, fingerprint: &str) -> Option<MaterialCacheEntry> {
@@ -183,11 +210,7 @@ pub(crate) fn lookup_material(root: &Path, fingerprint: &str) -> Option<Material
     Some(manifest)
 }
 
-pub(crate) fn read_material_payload(
-    root: &Path,
-    fingerprint: &str,
-    file: &str,
-) -> Option<Vec<u8>> {
+pub(crate) fn read_material_payload(root: &Path, fingerprint: &str, file: &str) -> Option<Vec<u8>> {
     std::fs::read(material_cache_dir(root, fingerprint).join("r").join(file)).ok()
 }
 
@@ -216,8 +239,10 @@ mod tests {
     use super::*;
 
     fn temp_root(label: &str) -> PathBuf {
-        let root = crate::test_scratch::scratch_base()
-            .join(format!("openscp-build-cache-{label}-{}", std::process::id()));
+        let root = crate::test_scratch::scratch_base().join(format!(
+            "openscp-build-cache-{label}-{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
@@ -246,7 +271,10 @@ mod tests {
         assert!(lookup_run(&root, "fp1").is_some(), "roundtrip hit");
         // 产物被改动 → 自检失败 → miss。
         std::fs::write(build.join("out.package"), b"tampered").unwrap();
-        assert!(lookup_run(&root, "fp1").is_none(), "tampered output is a miss");
+        assert!(
+            lookup_run(&root, "fp1").is_none(),
+            "tampered output is a miss"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -255,7 +283,12 @@ mod tests {
         let root = temp_root("material");
         let payloads = vec![(0x2F4E_681Bu32, 42u32, vec![1u8, 2, 3])];
         let entry = MaterialCacheEntry {
-            model_ids: Some([[0x2F4E_681B, 0, 11], [0x2F4E_681B, 0, 12], [0x2F4E_681B, 0, 13], [0x2F4E_681B, 0, 14]]),
+            model_ids: Some([
+                [0x2F4E_681B, 0, 11],
+                [0x2F4E_681B, 0, 12],
+                [0x2F4E_681B, 0, 13],
+                [0x2F4E_681B, 0, 14],
+            ]),
             material_resource_count: 1,
             entries: vec![(0x2F4E_681B, 42, "a.bin".into())],
         };
@@ -267,10 +300,7 @@ mod tests {
             Some(vec![1, 2, 3])
         );
         // 载荷丢失 → miss。
-        std::fs::remove_file(
-            material_cache_dir(&root, "fp").join("r").join("a.bin"),
-        )
-        .unwrap();
+        std::fs::remove_file(material_cache_dir(&root, "fp").join("r").join("a.bin")).unwrap();
         assert!(lookup_material(&root, "fp").is_none());
         let _ = std::fs::remove_dir_all(root);
     }

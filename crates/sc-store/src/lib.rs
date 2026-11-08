@@ -1408,10 +1408,8 @@ impl Store {
 
     pub fn delete_effect_annotation(&self, id: i64) -> Result<()> {
         let connection = self.connection.lock().expect("store mutex poisoned");
-        let changed = connection.execute(
-            "DELETE FROM effect_annotations WHERE id = ?1",
-            params![id],
-        )?;
+        let changed =
+            connection.execute("DELETE FROM effect_annotations WHERE id = ?1", params![id])?;
         if changed == 0 {
             return Err(StoreError::OperationNotFound(id));
         }
@@ -1426,7 +1424,10 @@ impl Store {
              FROM effect_annotations ORDER BY updated_at DESC LIMIT ?1",
         )?;
         let rows = statement
-            .query_map(params![bounded_limit(limit) as i64], Self::row_to_effect_annotation)?
+            .query_map(
+                params![bounded_limit(limit) as i64],
+                Self::row_to_effect_annotation,
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -2434,11 +2435,13 @@ mod tests {
         assert_eq!(stats[2].effect_count, 2);
 
         store.delete_effect_annotation(first.id).unwrap();
-        assert!(store
-            .list_effect_annotations_for_effect(0, 0, 0x622b_9cd7)
-            .unwrap()
-            .iter()
-            .all(|item| item.tag != "烟雾"));
+        assert!(
+            store
+                .list_effect_annotations_for_effect(0, 0, 0x622b_9cd7)
+                .unwrap()
+                .iter()
+                .all(|item| item.tag != "烟雾")
+        );
         drop(store);
         clean(&path);
     }

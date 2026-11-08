@@ -67,10 +67,7 @@ pub(crate) fn audit(
             None => Some(format!("{hash:08X} added {}", signature.0)),
             Some(previous) if previous != signature => Some(format!(
                 "{hash:08X} changed {}x{} -> {}x{}",
-                previous.0,
-                previous.1,
-                signature.0,
-                signature.1
+                previous.0, previous.1, signature.0, signature.1
             )),
             Some(_) => None,
         };
@@ -157,7 +154,15 @@ mod tests {
     fn preserves_undeclared_columns_green() {
         // 只声明 paths：灯/道具列原样保留 → 无漂移。
         let built = reference();
-        let report = audit(&reference(), &built, 0, 0, &[PATH_POINTS], &["paths".into()]).unwrap();
+        let report = audit(
+            &reference(),
+            &built,
+            0,
+            0,
+            &[PATH_POINTS],
+            &["paths".into()],
+        )
+        .unwrap();
         assert!(report.is_none());
     }
 
@@ -165,7 +170,15 @@ mod tests {
     fn flags_removed_light_and_names_category() {
         // r10 形态：整体重写丢掉了灯列。
         let built = file(vec![column(PATH_POINTS, vec![point(3.0)])]);
-        let error = audit(&reference(), &built, 0, 0, &[PATH_POINTS], &["paths".into()]).unwrap_err();
+        let error = audit(
+            &reference(),
+            &built,
+            0,
+            0,
+            &[PATH_POINTS],
+            &["paths".into()],
+        )
+        .unwrap_err();
         assert!(error.contains("light(灯)"), "{error}");
         assert!(error.contains("0CAA8F10"), "{error}");
         assert!(error.contains("removed"), "{error}");
@@ -179,7 +192,15 @@ mod tests {
             column(PROP_ID_1, vec![point(9.0)]),
             column(PATH_POINTS, vec![point(3.0)]),
         ]);
-        let error = audit(&reference(), &built, 0, 0, &[PATH_POINTS], &["paths".into()]).unwrap_err();
+        let error = audit(
+            &reference(),
+            &built,
+            0,
+            0,
+            &[PATH_POINTS],
+            &["paths".into()],
+        )
+        .unwrap_err();
         assert!(error.contains("prop-bin"), "{error}");
     }
 
@@ -190,9 +211,16 @@ mod tests {
             column(PROP_ID_1, vec![point(2.0)]),
             column(PATH_POINTS, vec![point(7.0)]),
         ]);
-        let report = audit(&reference(), &built, 0, 0, &[PATH_POINTS], &["paths".into()])
-            .unwrap()
-            .expect("declared drift must be reported, not rejected");
+        let report = audit(
+            &reference(),
+            &built,
+            0,
+            0,
+            &[PATH_POINTS],
+            &["paths".into()],
+        )
+        .unwrap()
+        .expect("declared drift must be reported, not rejected");
         assert_eq!(report.changed, 1);
         assert_eq!(report.by_category["path(路网)"].len(), 1);
     }

@@ -26,13 +26,24 @@ pub(crate) fn category_of(hash: u32) -> &'static str {
         0x0CAA_680D | 0x0CB0_0ED8 | 0x0CAA_6832 | 0x0CAA_6841 | 0x0CC8_FE7A | 0x0D9A_4E54
         | 0x0D9A_A2BB => "path(路网)",
         0x0E1B_AC61 | 0x0E1B_AC62 => "location(锚点)",
-        0x0CCB_7FC8..=0x0CCB_7FD6 | 0x0FE0_1484 | 0x00F9_EFBA | 0x0A14_EDB3..=0x0A14_EDB7
-        | 0x0EC7_4232 | 0x0BC5_051B => "ground(地面)",
+        0x0CCB_7FC8..=0x0CCB_7FD6
+        | 0x0FE0_1484
+        | 0x00F9_EFBA
+        | 0x0A14_EDB3..=0x0A14_EDB7
+        | 0x0EC7_4232
+        | 0x0BC5_051B => "ground(地面)",
         0x0C12_EF20..=0x0C12_EF6C | 0x0DA7_CAD4..=0x0DA7_CB07 => "prop-bin(道具/树/车)",
-        0x0CAA_8F10..=0x0CAA_8F17 | 0x0E01_200F | 0x0D4C_96B4 | 0x0D4C_AD23 | 0x0E4D_F244
-        | 0x0EC4_567E | 0x0E98_D445 => "light(灯)",
+        0x0CAA_8F10..=0x0CAA_8F17
+        | 0x0E01_200F
+        | 0x0D4C_96B4
+        | 0x0D4C_AD23
+        | 0x0E4D_F244
+        | 0x0EC4_567E
+        | 0x0E98_D445 => "light(灯)",
         0x0D79_70ED => "board(城市看板)",
-        0x00F9_EFBB..=0x00F9_EFBE | 0x0D00_82F1 | 0x0D00_82F3 | 0x0CAB_B2CF => "model-refs(模型引用)",
+        0x00F9_EFBB..=0x00F9_EFBE | 0x0D00_82F1 | 0x0D00_82F3 | 0x0CAB_B2CF => {
+            "model-refs(模型引用)"
+        }
         _ => "other",
     }
 }
@@ -52,18 +63,32 @@ fn hash_value(value: &Value, self_instance: u32, state: &mut u64) {
         Value::UInt32(v) => mix(state, &v.to_le_bytes()),
         Value::Float(v) => mix(state, &v.to_bits().to_le_bytes()),
         Value::Key(k) => {
-            let instance = if k.instance == self_instance { 0 } else { k.instance };
+            let instance = if k.instance == self_instance {
+                0
+            } else {
+                k.instance
+            };
             mix(state, &k.type_id.to_le_bytes());
             mix(state, &k.group.to_le_bytes());
             mix(state, &instance.to_le_bytes());
         }
         Value::Text(t) => {
-            let table = if t.table_id == self_instance { 0 } else { t.table_id };
+            let table = if t.table_id == self_instance {
+                0
+            } else {
+                t.table_id
+            };
             mix(state, &table.to_le_bytes());
             mix(state, &t.instance_id.to_le_bytes());
         }
         Value::String8(s) => mix(state, s.as_bytes()),
-        Value::String16(s) => mix(state, s.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<u8>>().as_slice()),
+        Value::String16(s) => mix(
+            state,
+            s.encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<u8>>()
+                .as_slice(),
+        ),
         Value::ColorRgb { r, g, b } => {
             mix(state, &r.to_bits().to_le_bytes());
             mix(state, &g.to_bits().to_le_bytes());
@@ -75,12 +100,20 @@ fn hash_value(value: &Value, self_instance: u32, state: &mut u64) {
             mix(state, &b.to_bits().to_le_bytes());
             mix(state, &a.to_bits().to_le_bytes());
         }
-        Value::Vector2(v) => v.iter().for_each(|f| mix(state, &f.to_bits().to_le_bytes())),
-        Value::Vector3(v) => v.iter().for_each(|f| mix(state, &f.to_bits().to_le_bytes())),
-        Value::Vector4(v) => v.iter().for_each(|f| mix(state, &f.to_bits().to_le_bytes())),
+        Value::Vector2(v) => v
+            .iter()
+            .for_each(|f| mix(state, &f.to_bits().to_le_bytes())),
+        Value::Vector3(v) => v
+            .iter()
+            .for_each(|f| mix(state, &f.to_bits().to_le_bytes())),
+        Value::Vector4(v) => v
+            .iter()
+            .for_each(|f| mix(state, &f.to_bits().to_le_bytes())),
         Value::BoundingBox { min, max } => {
-            min.iter().for_each(|f| mix(state, &f.to_bits().to_le_bytes()));
-            max.iter().for_each(|f| mix(state, &f.to_bits().to_le_bytes()));
+            min.iter()
+                .for_each(|f| mix(state, &f.to_bits().to_le_bytes()));
+            max.iter()
+                .for_each(|f| mix(state, &f.to_bits().to_le_bytes()));
         }
         Value::Transform(t) => {
             for f in &t.matrix {
@@ -118,8 +151,7 @@ pub(crate) fn fingerprint(file: &PropertyFile, self_instance: u32) -> BTreeMap<u
             }
         }
         let entry = (kind_name(&property.kind), count, state);
-        out
-            .entry(property.hash)
+        out.entry(property.hash)
             .and_modify(|existing| {
                 existing.1 += entry.1;
                 existing.2 = existing.2.wrapping_add(entry.2).rotate_left(17);
@@ -188,14 +220,17 @@ pub fn gate(
         store_baseline(&baseline_path, &established)?;
         return Ok(serde_json::json!({"baseline": "established"}));
     };
-    let baseline_asset = fingerprint_from_json(baseline.get("asset").unwrap_or(&serde_json::Value::Null));
-    let baseline_unit = fingerprint_from_json(baseline.get("unit").unwrap_or(&serde_json::Value::Null));
+    let baseline_asset =
+        fingerprint_from_json(baseline.get("asset").unwrap_or(&serde_json::Value::Null));
+    let baseline_unit =
+        fingerprint_from_json(baseline.get("unit").unwrap_or(&serde_json::Value::Null));
 
     let mut report = serde_json::json!({"baseline": "compared"});
     let mut drift_total = 0usize;
-    for (side, built, old) in
-        [("asset", &asset_fp, &baseline_asset), ("unit", &unit_fp, &baseline_unit)]
-    {
+    for (side, built, old) in [
+        ("asset", &asset_fp, &baseline_asset),
+        ("unit", &unit_fp, &baseline_unit),
+    ] {
         let mut changed = Vec::new();
         let mut added = Vec::new();
         let mut removed = Vec::new();
@@ -221,7 +256,8 @@ pub fn gate(
         }
         drift_total += changed.len() + added.len() + removed.len();
         if !changed.is_empty() || !added.is_empty() || !removed.is_empty() {
-            report[side] = serde_json::json!({"changed": changed, "added": added, "removed": removed});
+            report[side] =
+                serde_json::json!({"changed": changed, "added": added, "removed": removed});
         }
     }
     if drift_total == 0 {
@@ -252,7 +288,8 @@ fn store_baseline(path: &Path, baseline: &serde_json::Value) -> Result<(), Strin
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| format!("property gate dir: {error}"))?;
     }
-    let bytes = serde_json::to_vec_pretty(baseline).map_err(|error| format!("property gate encode: {error}"))?;
+    let bytes = serde_json::to_vec_pretty(baseline)
+        .map_err(|error| format!("property gate encode: {error}"))?;
     std::fs::write(path, bytes).map_err(|error| format!("property gate write: {error}"))
 }
 
@@ -275,13 +312,33 @@ mod tests {
 
     #[test]
     fn self_instance_normalization_keeps_identity_stable() {
-        let a = file_with(0x08E1_7ED7, Value::Key(sc_properties::Key { type_id: 0, group: 0x40E1_C000, instance: 0xAAAA }));
-        let b = file_with(0x08E1_7ED7, Value::Key(sc_properties::Key { type_id: 0, group: 0x40E1_C000, instance: 0xBBBB }));
+        let a = file_with(
+            0x08E1_7ED7,
+            Value::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0x40E1_C000,
+                instance: 0xAAAA,
+            }),
+        );
+        let b = file_with(
+            0x08E1_7ED7,
+            Value::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0x40E1_C000,
+                instance: 0xBBBB,
+            }),
+        );
         let fa = fingerprint(&a, 0xAAAA);
         let fb = fingerprint(&b, 0xBBBB);
-        assert_eq!(fa[&0x08E1_7ED7].2, fb[&0x08E1_7ED7].2, "self-ref must normalize");
+        assert_eq!(
+            fa[&0x08E1_7ED7].2, fb[&0x08E1_7ED7].2,
+            "self-ref must normalize"
+        );
         let fc = fingerprint(&b, 0xCCCC);
-        assert_ne!(fb[&0x08E1_7ED7].2, fc[&0x08E1_7ED7].2, "non-self ref must count as drift");
+        assert_ne!(
+            fb[&0x08E1_7ED7].2, fc[&0x08E1_7ED7].2,
+            "non-self ref must count as drift"
+        );
     }
 
     #[test]
@@ -316,8 +373,14 @@ mod tests {
         // 未声明漂移：树列被改 → 失败并点名分类。
         let drifted = file_with(0x0C12_EF2C, Value::Bool(false));
         let error = gate(&root, &drifted, &unit, 0x1, false).unwrap_err();
-        assert!(error.contains("prop-bin"), "error must name the category: {error}");
-        assert!(error.contains("0C12EF2C"), "error must name the column: {error}");
+        assert!(
+            error.contains("prop-bin"),
+            "error must name the category: {error}"
+        );
+        assert!(
+            error.contains("0C12EF2C"),
+            "error must name the column: {error}"
+        );
         // 声明漂移：放行并刷新基线。
         gate(&root, &drifted, &unit, 0x1, true).unwrap();
         let after = gate(&root, &drifted, &unit, 0x1, false).unwrap();

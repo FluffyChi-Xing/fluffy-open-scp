@@ -47,16 +47,19 @@ fn f32_params(material: &LotmMaterial) -> Result<[f32; 16], String> {
     let bytes = material
         .params_f32
         .as_deref()
-        .ok_or("single-compatible: material has no Float32 params")?;
-    if bytes.len() < 64 {
+        .ok_or("author materials: material has no Float32 params")?;
+    if bytes.len() != 64 {
         return Err(format!(
-            "single-compatible: params are {} bytes, expected at least 64",
+            "author materials: params are {} bytes, expected exactly 64 for param_cols=1",
             bytes.len()
         ));
     }
     let mut values = [0f32; 16];
     for (index, value) in values.iter_mut().enumerate() {
         *value = f32::from_le_bytes(bytes[index * 4..index * 4 + 4].try_into().unwrap());
+        if !value.is_finite() {
+            return Err("author materials: non-finite source parameter".into());
+        }
     }
     Ok(values)
 }
@@ -72,11 +75,20 @@ fn surface_key(material: &LotmMaterial) -> String {
 }
 
 fn room_key(material: &LotmMaterial, params: &[f32; 16]) -> String {
+    // Python converts these Float32 values to float and uses exact numeric
+    // equality. Decimal formatting can merge distinct values; normalized bits
+    // cannot, while still unifying -0.0 and +0.0 like Python.
+    let key = |value: f32| if value == 0.0 { 0 } else { value.to_bits() };
     format!(
-        "{}:{:.8}:{:.8}",
-        digest(material.pngs.get(LotmMaterial::PNG_INTERIOR).and_then(Option::as_ref)),
-        params[2],
-        params[3],
+        "{}:{:08x}:{:08x}",
+        digest(
+            material
+                .pngs
+                .get(LotmMaterial::PNG_INTERIOR)
+                .and_then(Option::as_ref)
+        ),
+        key(params[2]),
+        key(params[3]),
     )
 }
 
@@ -91,58 +103,53 @@ fn power_of_two_grid(unique: usize) -> u32 {
 
 /// Reproduce the author's surface/palette/room parameter layout.
 pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
-    if document.materials.is_empty() {
-        return Err("single-compatible: no materials to plan".into());
+    let count = document.materials.len();
+    if count == 0 || count > MAX_MATERIAL_ROWS || document.meshes.len() != count {
+        return Err(format!(
+            "author materials: require 1..=128 groups and one material per mesh ({} meshes, {count} materials)",
+            document.meshes.len()
+        ));
     }
     let mut surface_keys: Vec<String> = Vec::new();
     let mut room_keys: Vec<String> = Vec::new();
-    let mut surface_of_row = Vec::with_capacity(document.materials.len());
-    let mut room_of_row = Vec::with_capacity(document.materials.len());
-    let mut rows = Vec::with_capacity(document.materials.len());
-    let mut palette_source = Vec::with_capacity(document.materials.len());
+    let mut surface_of_row = Vec::with_capacity(count);
+    let mut room_of_row = Vec::with_capacity(count);
+    let mut rows = Vec::with_capacity(count);
+    let mut palette_source = Vec::with_capacity(count);
     let mut room_params: Vec<[f32; 2]> = Vec::new();
-    for material in &document.materials {
+    for (group, material) in document.materials.iter().enumerate() {
+        if material.param_cols != 1 {
+            return Err(format!("author materials: group {group} has param_cols={}, expected 1", material.param_cols));
+        }
         let params = f32_params(material)?;
         let surface = surface_key(material);
-        let surface_index = surface_keys
-            .iter()
-            .position(|key| key == &surface)
-            .unwrap_or_else(|| {
-                surface_keys.push(surface);
-                surface_keys.len() - 1
-            });
+        let surface_index = surface_keys.iter().position(|key| key == &surface).unwrap_or_else(|| {
+            surface_keys.push(surface);
+            surface_keys.len() - 1
+        });
         let room = room_key(material, &params);
-        let room_index = room_keys
-            .iter()
-            .position(|key| key == &room)
-            .unwrap_or_else(|| {
-                room_keys.push(room);
-                room_keys.len() - 1
-            });
+        let room_index = room_keys.iter().position(|key| key == &room).unwrap_or_else(|| {
+            room_keys.push(room);
+            room_keys.len() - 1
+        });
         surface_of_row.push(surface_index);
         room_of_row.push(room_index);
         if room_params.len() <= room_index {
             room_params.push([params[2], params[3]]);
         }
-        palette_source.push([
-            (params[0] * 512.0).round() as u32 % 512,
-            (params[1] * 512.0).round() as u32 % 512,
-        ]);
+        palette_source.push([0, 1].map(|layer| {
+            let selected = (params[layer] as f64 * 512.0).round_ties_even() as i64;
+            selected.rem_euclid(512) as u32
+        }));
         rows.push(params);
     }
-    let grid = power_of_two_grid(surface_keys.len());
+    // The extra cell is the mandatory flat-normal/zero-height Top fallback.
+    let grid = power_of_two_grid(surface_keys.len() + 1);
     let atlas = grid * CELL;
-    let room_states = 64u32
-        * 2u32.pow((room_keys.len().max(1) as f64).log2().ceil() as u32);
-    let room_atlas = room_states.max(1024);
+    let room_atlas = (64 * room_keys.len().next_power_of_two() as u32).max(1024);
     let grid_f = grid as f32;
     let atlas_f = atlas as f32;
-    // Author parameter width: next power of two of the source group count
-    // (compile_tower_asset uses 64; prepare_asset 0.8.6 scales with groups).
-    let width = 2u32.pow((rows.len().max(1) as f64).log2().ceil() as u32);
-    // Capture the SOURCE Top-region presence before the fallback rewrite —
-    // the relief gain in render_atlases must key on this (author applies the
-    // gain only when the material's source row2 is non-empty).
+    let width = count.next_power_of_two() as u32;
     let top_enabled_by_row: Vec<bool> = rows
         .iter()
         .map(|params| params[8] != 0.0 || params[9] != 0.0)
@@ -150,14 +157,11 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
     for (row, params) in rows.iter_mut().enumerate() {
         let x = ((surface_of_row[row] as u32 % grid) * CELL) as f32;
         let y = ((surface_of_row[row] as u32 / grid) * CELL) as f32;
-        // palette: row0[0]/row0[1] select Base/Top 2px column blocks.
         for layer in 0..2 {
-            params[layer] = ((row * 4 + layer * 2) as f32) / 512.0;
+            params[layer] = (row * 4 + layer * 2) as f32 / 512.0;
         }
         for line in [1usize, 2] {
             let offset = line * 4;
-            // Author code only rewrites a Base/Top region when its scale is
-            // non-zero; a disabled Base (row 1) stays 0,0,0,0.
             if params[offset] == 0.0 && params[offset + 1] == 0.0 {
                 continue;
             }
@@ -172,9 +176,6 @@ pub fn plan_surfaces(document: &LotmDocument) -> Result<SurfacePlan, String> {
         }
         params[14] *= grid_f;
         params[15] *= grid_f;
-        // Disabled Top (row 2) still receives a fallback region pointing at
-        // the atlas' reserved bottom-right cell (prepare_asset: `if not
-        // np.any(p[2,:2]): p[2]=[1/sg,1/sg,(sg-1)/sg,(sg-1)/sg]`).
         if params[8] == 0.0 && params[9] == 0.0 {
             params[8] = 1.0 / grid_f;
             params[9] = 1.0 / grid_f;
@@ -224,8 +225,7 @@ pub fn deduplicate(document: &LotmDocument) -> Result<LotmDocument, String> {
         return Err("single-compatible: input has no materials".into());
     }
     let mut rows: Vec<LotmMaterial> = Vec::new();
-    let mut row_by_key: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
+    let mut row_by_key: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut material_row = Vec::with_capacity(document.materials.len());
     for material in &document.materials {
         let key = material_key(material);
@@ -271,6 +271,7 @@ pub fn deduplicate(document: &LotmDocument) -> Result<LotmDocument, String> {
 }
 
 /// Rendered PNG payloads for the single material's six slots.
+#[derive(Debug)]
 pub struct SurfaceAtlases {
     pub tint: RgbaImage,
     pub normal: RgbaImage,
@@ -315,6 +316,7 @@ fn nearest_resize(source: &RgbaImage, width: u32, height: u32) -> RgbaImage {
 pub fn render_atlases(
     document: &LotmDocument,
     plan: &SurfacePlan,
+    night_only: bool,
 ) -> Result<SurfaceAtlases, String> {
     let size = plan.atlas;
     let mut tint = RgbaImage::new(size, size);
@@ -326,49 +328,35 @@ pub fn render_atlases(
             continue;
         };
         let material = &document.materials[row];
-        let x = ((surface as u32 % plan.grid) * plan.cell) as i64;
-        let y = ((surface as u32 / plan.grid) * plan.cell) as i64;
+        let x = (surface as u32 % plan.grid) * plan.cell;
+        let y = (surface as u32 / plan.grid) * plan.cell;
         for (target, slot) in [
             (&mut tint, LotmMaterial::PNG_TINT),
             (&mut normal, LotmMaterial::PNG_NORMAL),
             (&mut shader, LotmMaterial::PNG_SHADER),
         ] {
             let mut source = decode_png(material, slot)?;
-            // prepare_asset 0.8.6 applies the atlas relief gain to the ORIGINAL
-            // image, then resizes. Doing it the other way round amplifies the
-            // gain error for commercial facades whose source cells are not
-            // 512×512 (R-column drift scales with the resize factor). The gain
-            // condition keys on the SOURCE Top region (before the fallback
-            // rewrite), matching `if j==2 and np.any(p[2,:2])`.
-            if slot == LotmMaterial::PNG_SHADER {
-                let top_enabled = plan.top_enabled_by_row[row];
-                if top_enabled {
-                    let grid = plan.grid as f32;
-                    for pixel in source.pixels_mut() {
-                        let height = 23.0 + (pixel[0] as f32 - 23.0) / grid;
-                        pixel[0] = height.round().clamp(0.0, 255.0) as u8;
-                        pixel[1] = (pixel[1] as f32 * grid).round().clamp(0.0, 255.0) as u8;
-                    }
+            if slot == LotmMaterial::PNG_SHADER && plan.top_enabled_by_row[row] {
+                let grid = plan.grid as f64;
+                for pixel in source.pixels_mut() {
+                    let height = 23.0 + (pixel[0] as f64 - 23.0) / grid;
+                    pixel[0] = height.round_ties_even().clamp(0.0, 255.0) as u8;
+                    // NumPy's float64 -> uint8 cast truncates; it does not round.
+                    pixel[1] = (pixel[1] as f64 * grid).clamp(0.0, 255.0) as u8;
                 }
             }
-            let resized = nearest_resize(&source, plan.cell, plan.cell);
-            // Direct pixel copy: `imageops::overlay` alpha-blends into the
-            // transparent atlas, which darkens RGB while leaving alpha equal.
-            // The author's compiler assigns the source array verbatim.
+            let resized = if source.width() == plan.cell && source.height() == plan.cell {
+                source
+            } else {
+                nearest_resize(&source, plan.cell, plan.cell)
+            };
             for cy in 0..plan.cell {
                 for cx in 0..plan.cell {
-                    target.put_pixel(
-                        x as u32 + cx,
-                        y as u32 + cy,
-                        *resized.get_pixel(cx, cy),
-                    );
+                    target.put_pixel(x + cx, y + cy, *resized.get_pixel(cx, cy));
                 }
             }
         }
     }
-    // The atlas reserves its bottom-right 512 cell for the disabled-Top
-    // fallback region: flat normal, zero-height surface (prepare_asset
-    // `maps[1][-512:,-512:]=[128,128,255,255]; maps[2][-512:,-512:]=[23,255,0,255]`).
     let fallback_origin = size - plan.cell;
     for y in fallback_origin..size {
         for x in fallback_origin..size {
@@ -380,36 +368,52 @@ pub fn render_atlases(
     let mut palette = RgbaImage::new(512, 16);
     for (row, material) in document.materials.iter().enumerate() {
         let source = decode_png(material, LotmMaterial::PNG_PALETTE)?;
-        let source = nearest_resize(&source, 512, 16);
+        if source.width() < 512 || source.height() != 16 {
+            return Err(format!(
+                "author materials: group {row} palette is {}x{}, expected width>=512 and height=16",
+                source.width(), source.height()
+            ));
+        }
         for layer in 0..2usize {
-            let source_column = plan.palette_source[row][layer] as u32;
+            let source_column = plan.palette_source[row][layer];
             let destination = (row * 4 + layer * 2) as u32;
             for column in 0..2u32 {
                 for y in 0..16u32 {
                     let pixel = *source.get_pixel((source_column + column) % 512, y);
-                    palette.put_pixel((destination + column) % 512, y, pixel);
+                    palette.put_pixel(destination + column, y, pixel);
                 }
             }
         }
     }
 
+    let diagnostic: serde_json::Value = serde_json::from_str(&document.diagnostics)
+        .map_err(|error| format!("author materials: invalid diagnostics JSON: {error}"))?;
+    let profile = diagnostic.get("nativeControlProfile").and_then(serde_json::Value::as_str);
+    let migrate_room_rgb = profile == Some("native-room-states-transparent-top-v3");
+    let office_recipe = profile == Some("window-relative-relief-hdr-room-v2");
     let mut interior = RgbaImage::new(plan.room_atlas, plan.room_atlas);
     for (room, parameters) in plan.room_params.iter().enumerate() {
-        let row = plan
-            .room_of_row
-            .iter()
-            .position(|item| item == &room)
-            .ok_or("single-compatible: room has no material row")?;
+        let row = plan.room_of_row.iter().position(|item| item == &room)
+            .ok_or("author materials: room has no material row")?;
         let mut source = decode_png(&document.materials[row], LotmMaterial::PNG_INTERIOR)?;
-        if source.width() == 512
-            && source.height() == 512
-            && (parameters[0] - 1.0 / 16.0).abs() < 1e-6
+        if migrate_room_rgb {
+            for pixel in source.pixels_mut() {
+                for channel in 0..3 {
+                    let value = pixel[channel] as f64 / 255.0;
+                    let linear = if value <= 0.04045 {
+                        value / 12.92
+                    } else {
+                        ((value + 0.055) / 1.055).powf(2.4)
+                    };
+                    pixel[channel] = (linear * 255.0).round_ties_even().clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+        if parameters[0] > 0.0 && office_recipe && source.width() == 512
+            && source.height() == 512 && parameters[0] == 1.0 / 16.0
         {
-            let sheet = image::load_from_memory(include_bytes!(
-                "../../resources/sc5/office-room.png"
-            ))
-            .map_err(|error| format!("office room source: {error}"))?
-            .to_rgba8();
+            let sheet = image::load_from_memory(include_bytes!("../../resources/sc5/office-room.png"))
+                .map_err(|error| format!("office room source: {error}"))?.to_rgba8();
             let source_has_alpha = source.pixels().any(|pixel| pixel[3] != 0);
             let mut corrected = RgbaImage::new(512, 512);
             for row_index in 0..16u32 {
@@ -422,71 +426,103 @@ pub fn render_atlases(
                         for y in 0..32u32 {
                             for x in 0..32u32 {
                                 let mut pixel = *sheet.get_pixel(sx + x, sy + y);
-                                if state != 1 {
-                                    pixel[3] = 0;
-                                }
+                                if state != 1 { pixel[3] = 0; }
                                 corrected.put_pixel(dx + x, dy + y, pixel);
                             }
                         }
                     }
                 }
             }
-            // prepare_asset: a room image authored with no alpha at all keeps
-            // the corrected sheet fully transparent (`if not room[:,:,3].any():
-            // corrected[:,:,3]=0`).
             if !source_has_alpha {
-                for pixel in corrected.pixels_mut() {
-                    pixel[3] = 0;
-                }
+                for pixel in corrected.pixels_mut() { pixel[3] = 0; }
             }
             source = corrected;
         }
-        // asset_transforms.room_strip samples the ORIGINAL room image size
-        // (`h, w = room.shape[:2]`); the state column depends on source width,
-        // so resizing first stretches/misaligns commercial glass states.
-        let room_h = source.height() as f64;
-        let room_w = source.width() as f64;
-        let scale = parameters[0] as f64;
-        let offset = parameters[1] as f64;
-        let tile = |step: u32| ((step as f64) + 0.5) / 64.0;
-        let yy: Vec<u32> = (0..64u32)
-            .map(|row_index| {
-                (tile(row_index)
-                    .mul_add(scale, offset)
-                    .rem_euclid(1.0)
-                    * room_h)
-                    .floor() as u32
-            })
-            .collect();
-        for state in 0..16u32 {
-            let x = state * 64;
-            let y = room as u32 * 64;
-            for ty in 0..64u32 {
-                for tx in 0..64u32 {
-                    let xx = (((tile(tx) + state as f64) * scale).rem_euclid(1.0) * room_w)
-                        .floor() as u32;
-                    let mut pixel = *source.get_pixel(
-                        xx.min(source.width() - 1),
-                        yy[ty as usize].min(source.height() - 1),
-                    );
-                    // asset_transforms.room_strip(night_only=True): only the
-                    // night state of each variation keeps emission alpha.
-                    if state % 4 != 1 {
-                        pixel[3] = 0;
-                    }
-                    interior.put_pixel(x + tx, y + ty, pixel);
-                }
+        let strip = render_room_strip(&source, parameters, night_only, room)?;
+        for y in 0..64u32 {
+            for x in 0..1024u32 {
+                interior.put_pixel(x, room as u32 * 64 + y, *strip.get_pixel(x, y));
             }
         }
     }
 
-    Ok(SurfaceAtlases {
-        tint,
-        normal,
-        shader,
-        palette,
-        interior,
-    })
+    Ok(SurfaceAtlases { tint, normal, shader, palette, interior })
+}
+
+/// Render one source room into the native 4 variants × 4 occupancy states.
+///
+/// Most source atlases already keep emission in state 1 of each variant. A
+/// second layout seen in native Rust exports stores the same emission in the
+/// preceding (even) column and leaves every native night cell empty. Detect
+/// that layout from the actual sampled room, not from a pack name, and copy
+/// the preceding cell into each night state. Normal atlases keep their exact
+/// original sampling and therefore retain byte-for-byte output.
+fn render_room_strip(
+    source: &RgbaImage,
+    parameters: &[f32; 2],
+    night_only: bool,
+    room: usize,
+) -> Result<RgbaImage, String> {
+    let room_h = source.height() as f64;
+    let room_w = source.width() as f64;
+    let scale = parameters[0] as f64;
+    let offset = parameters[1] as f64;
+    let tile = |step: u32| (step as f64 + 0.5) / 64.0;
+    let yy: Vec<u32> = (0..64u32)
+        .map(|row| ((tile(row) * scale + offset).rem_euclid(1.0) * room_h).floor() as u32)
+        .collect();
+    let pixel = |state: u32, tx: u32, ty: u32| {
+        let xx = (((tile(tx) + state as f64) * scale).rem_euclid(1.0) * room_w).floor() as u32;
+        *source.get_pixel(xx, yy[ty as usize])
+    };
+    let alpha = |state: u32| -> u64 {
+        (0..64u32)
+            .flat_map(|ty| (0..64u32).map(move |tx| (tx, ty)))
+            .map(|(tx, ty)| pixel(state, tx, ty)[3] as u64)
+            .sum()
+    };
+    let apply_night_only = night_only && parameters[0] > 0.0;
+    let night_states = [1u32, 5, 9, 13];
+    let night_alpha: Vec<u64> = night_states.iter().map(|state| alpha(*state)).collect();
+    let paired_alpha: Vec<u64> = night_states.iter().map(|state| alpha(state - 1)).collect();
+    let paired_night_layout = apply_night_only
+        && night_alpha.iter().all(|value| *value == 0)
+        && paired_alpha.iter().any(|value| *value > 0);
+    if paired_night_layout {
+        eprintln!(
+            "author materials: room {room} uses paired source cells; migrating emission into native night states 1/5/9/13"
+        );
+    }
+
+    let mut strip = RgbaImage::new(1024, 64);
+    let mut sampled_alpha = 0u64;
+    let mut output_night_alpha = 0u64;
+    for state in 0..16u32 {
+        let source_state = if paired_night_layout && state % 4 == 1 {
+            state - 1
+        } else {
+            state
+        };
+        for ty in 0..64u32 {
+            for tx in 0..64u32 {
+                sampled_alpha += pixel(state, tx, ty)[3] as u64;
+                let mut value = pixel(source_state, tx, ty);
+                if apply_night_only && state % 4 != 1 {
+                    value[3] = 0;
+                }
+                if state % 4 == 1 {
+                    output_night_alpha += value[3] as u64;
+                }
+                strip.put_pixel(state * 64 + tx, ty, value);
+            }
+        }
+    }
+    if apply_night_only && sampled_alpha > 0 && output_night_alpha == 0 {
+        return Err(format!(
+            "author materials: room {room} has sampled source emission but all native night states are empty; refusing to build a black-night model"
+        ));
+    }
+    Ok(strip)
 }
 
 fn patch_tint_column(glb: &[u8], column: u8) -> Vec<u8> {
@@ -527,8 +563,7 @@ fn patch_tint_column(glb: &[u8], column: u8) -> Vec<u8> {
             for vertex in 0..count {
                 let at = start + vertex * stride;
                 if at + 4 <= bytes.len() {
-                    bytes[at..at + 4]
-                        .copy_from_slice(&(column as f32 / 255.0).to_le_bytes());
+                    bytes[at..at + 4].copy_from_slice(&(column as f32 / 255.0).to_le_bytes());
                 }
             }
         }
@@ -539,7 +574,10 @@ fn patch_tint_column(glb: &[u8], column: u8) -> Vec<u8> {
 fn png_bytes(image: &RgbaImage) -> Vec<u8> {
     let mut bytes = Vec::new();
     image
-        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
         .expect("PNG encoding cannot fail for a valid RgbaImage");
     bytes
 }
@@ -697,24 +735,63 @@ mod tests {
         assert!(deduplicate(&document).is_err());
     }
 
-    /// room_strip semantics: sampling happens at the ORIGINAL room size and
-    /// only state%4==1 keeps emission alpha.
-    #[test]
-    fn room_strip_samples_original_size_and_night_only() {
-        let source = nearest_resize(
-            &{
-                let mut image = RgbaImage::new(8, 4);
-                for y in 0..4u32 {
-                    for x in 0..8u32 {
-                        image.put_pixel(x, y, image::Rgba([x as u8 * 20, y as u8 * 40, 0, 255]));
-                    }
+    fn room_source(emission_states: &[u32]) -> RgbaImage {
+        let mut source = RgbaImage::new(512, 512);
+        for state in 0..8u32 {
+            let alpha = if emission_states.contains(&state) { 200 } else { 0 };
+            for y in 0..64u32 {
+                for x in 0..64u32 {
+                    source.put_pixel(
+                        state * 64 + x,
+                        y,
+                        image::Rgba([(state * 20) as u8, 80, 120, alpha]),
+                    );
                 }
-                image
-            },
-            512,
-            512,
-        );
-        assert_eq!(source.width(), 512);
+            }
+        }
+        source
+    }
+
+    #[test]
+    fn paired_room_columns_migrate_emission_into_every_native_night_state() {
+        let source = room_source(&[0, 2, 4, 6]);
+        let strip = render_room_strip(&source, &[0.125, 0.0], true, 7).unwrap();
+        for state in 0..16u32 {
+            let pixel = strip.get_pixel(state * 64 + 32, 32);
+            if state % 4 == 1 {
+                let source_state = (state - 1) % 8;
+                assert_eq!(pixel[0], (source_state * 20) as u8, "state {state}");
+                assert_eq!(pixel[3], 200, "state {state}");
+            } else {
+                assert_eq!(pixel[3], 0, "state {state}");
+            }
+        }
+    }
+
+    #[test]
+    fn native_room_columns_keep_their_original_night_sampling() {
+        let source = room_source(&(0..8).collect::<Vec<_>>());
+        let strip = render_room_strip(&source, &[0.125, 0.0], true, 0).unwrap();
+        for state in [1u32, 5, 9, 13] {
+            let pixel = strip.get_pixel(state * 64 + 32, 32);
+            assert_eq!(pixel[0], ((state % 8) * 20) as u8, "state {state}");
+            assert_eq!(pixel[3], 200, "state {state}");
+        }
+    }
+
+    #[test]
+    fn dark_room_stays_dark_without_triggering_the_emission_gate() {
+        let source = room_source(&[]);
+        let strip = render_room_strip(&source, &[0.125, 0.0], true, 0).unwrap();
+        assert!(strip.pixels().all(|pixel| pixel[3] == 0));
+    }
+
+    #[test]
+    fn room_with_emission_but_no_native_night_output_is_rejected() {
+        let source = room_source(&[2]);
+        let error = render_room_strip(&source, &[0.125, 0.0], true, 11).unwrap_err();
+        assert!(error.contains("room 11"), "{error}");
+        assert!(error.contains("all native night states are empty"), "{error}");
     }
 
     /// Disabled Top regions receive the atlas' bottom-right fallback cell

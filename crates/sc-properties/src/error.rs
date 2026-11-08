@@ -32,7 +32,9 @@ pub enum Error {
         actual: i32,
     },
 
-    #[error("array property declares stride {declared} for hash {hash:#010x}; the game loader trusts this step, legal {prop_type:?} stride is {expected} (vanilla calibration 2026-11-07: 2385 files, zero exceptions)")]
+    #[error(
+        "array property declares stride {declared} for hash {hash:#010x}; the game loader trusts this step, legal {prop_type:?} stride is {expected} (vanilla calibration 2026-11-07: 2385 files, zero exceptions)"
+    )]
     InvalidDeclaredStride {
         hash: u32,
         prop_type: PropType,
@@ -40,7 +42,9 @@ pub enum Error {
         expected: i32,
     },
 
-    #[error("empty array property for hash {hash:#010x}; vanilla property files never carry count=0 arrays")]
+    #[error(
+        "empty array property for hash {hash:#010x}; vanilla property files never carry count=0 arrays"
+    )]
     EmptyArrayProperty { hash: u32 },
 
     #[error("property string is too long for hash {hash:#010x}")]

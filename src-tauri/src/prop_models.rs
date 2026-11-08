@@ -609,7 +609,9 @@ const NORMAL_VEHICLES: [(u32, u32); 3] = [
 
 /// resourceID → 车辆清单序号。普查外 id 返回 None。
 fn census_vehicle(resource_id: u32) -> Option<usize> {
-    NORMAL_VEHICLES.iter().position(|(id, _)| *id == resource_id)
+    NORMAL_VEHICLES
+        .iter()
+        .position(|(id, _)| *id == resource_id)
 }
 
 /// prop bin 语义类别（trees/vehicles/waste/signs = 组件库四个明确目标；
@@ -680,7 +682,6 @@ fn contains_any_word(hay: &str, words: &[&str]) -> bool {
         false
     })
 }
-
 
 /// 已验证种子映射（人工指认，2026-10-27）。键同时匹配 resourceID 与首选
 /// 模型 instance——同模型变体自动跟随。仅用于无任何自动信号的 prop。
@@ -864,10 +865,7 @@ pub fn prop_bin_catalog(
                     (b'A' + species as u8) as char
                 )
             } else if let Some(index) = car {
-                format!(
-                    "Car W{} · 0x{resource_id:08X}",
-                    NORMAL_VEHICLES[index].1
-                )
+                format!("Car W{} · 0x{resource_id:08X}", NORMAL_VEHICLES[index].1)
             } else {
                 let name = instance_name(model_instance).unwrap_or_else(|| raw_name.clone());
                 if name.is_empty() {
@@ -1339,8 +1337,14 @@ mod tests {
     #[test]
     fn census_tree_species_maps_eight_resources_to_four_species() {
         let all: [u32; 8] = [
-            0x1498_4C6B, 0x1498_4C6A, 0x1498_4C69, 0x1498_4C68,
-            0x41C2_D443, 0xC8B4_2548, 0xC8B4_254B, 0xC8B4_254A,
+            0x1498_4C6B,
+            0x1498_4C6A,
+            0x1498_4C69,
+            0x1498_4C68,
+            0x41C2_D443,
+            0xC8B4_2548,
+            0xC8B4_254B,
+            0xC8B4_254A,
         ];
         let mut species_seen = std::collections::BTreeSet::new();
         for id in all {
@@ -1349,7 +1353,11 @@ mod tests {
             assert!(dup < 2, "每树种最多双路");
             species_seen.insert(species);
         }
-        assert_eq!(species_seen, [0, 1, 2, 3].into_iter().collect(), "4 树种齐全");
+        assert_eq!(
+            species_seen,
+            [0, 1, 2, 3].into_iter().collect(),
+            "4 树种齐全"
+        );
         for id in [0x0AB4_DFE1, 0x54CA_89F0, 0x0D4D_BEA7, 0x1498_4C6C] {
             assert!(
                 census_tree_species(id).is_none(),
@@ -1363,11 +1371,7 @@ mod tests {
     /// 锚定：财富对角线零反例）。
     #[test]
     fn census_vehicle_maps_three_car_tiers() {
-        let tiers: [(u32, u32); 3] = [
-            (0x0AB4_DFE1, 1),
-            (0x0AB4_DFE2, 2),
-            (0x0AB4_DFE3, 3),
-        ];
+        let tiers: [(u32, u32); 3] = [(0x0AB4_DFE1, 1), (0x0AB4_DFE2, 2), (0x0AB4_DFE3, 3)];
         for (id, wealth) in tiers {
             let index = census_vehicle(id).unwrap_or_else(|| panic!("{id:08X} 应命中车辆清单"));
             assert_eq!(NORMAL_VEHICLES[index].1, wealth, "财富档位对齐");

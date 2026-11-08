@@ -97,11 +97,10 @@ impl StateResolver {
                 apply_roof_defaults(&mut state);
             }
             layer_uid = Some(layer.uid.clone());
-        } else if let Some(material) = material.filter(|material| material.prop_str("ny_kind").is_some()) {
-            role = material
-                .prop_str("ny_kind")
-                .unwrap_or("WALL")
-                .to_string();
+        } else if let Some(material) =
+            material.filter(|material| material.prop_str("ny_kind").is_some())
+        {
+            role = material.prop_str("ny_kind").unwrap_or("WALL").to_string();
             let face_state = material
                 .prop_str("ny_face_state")
                 .filter(|text| !text.is_empty());
@@ -119,7 +118,9 @@ impl StateResolver {
                 state = recovered;
                 role = recovered_role;
             }
-        } else if let Some(material) = material.filter(|material| !material.prop_bool("ny_unpainted")) {
+        } else if let Some(material) =
+            material.filter(|material| !material.prop_bool("ny_unpainted"))
+        {
             if let Some(color) = material_color(bundle, material) {
                 state.wall_color = color;
             }
@@ -128,8 +129,7 @@ impl StateResolver {
         if role == "WINDOW" {
             if let Some(material) = material {
                 if let Some(group) = night_room_mode(bundle, material) {
-                    state.night_room_mode =
-                        if group { "GROUP" } else { "WINDOW" }.to_string();
+                    state.night_room_mode = if group { "GROUP" } else { "WINDOW" }.to_string();
                 }
             }
         }
@@ -139,8 +139,7 @@ impl StateResolver {
             role,
             layer: layer_uid,
         };
-        self.by_material
-            .insert(material_index, resolved.clone());
+        self.by_material.insert(material_index, resolved.clone());
         Ok(resolved)
     }
 }
@@ -151,10 +150,7 @@ fn apply_roof_defaults(state: &mut SurfaceState) {
     state.base_roughness = if metal { 0.32 } else { 0.85 };
 }
 
-fn material_tree<'a>(
-    bundle: &'a Bundle,
-    material: &BundleMaterial,
-) -> Option<&'a NodeTree> {
+fn material_tree<'a>(bundle: &'a Bundle, material: &BundleMaterial) -> Option<&'a NodeTree> {
     bundle.tree(material.tree.as_deref()?)
 }
 

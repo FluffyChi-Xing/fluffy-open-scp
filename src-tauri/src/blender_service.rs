@@ -27,7 +27,13 @@ pub(crate) fn atlas_dir() -> Option<PathBuf> {
         std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(Path::to_path_buf))
-            .map(|dir| dir.join("resources").join("blender").join("ny_facade").join("assets").join("packs")),
+            .map(|dir| {
+                dir.join("resources")
+                    .join("blender")
+                    .join("ny_facade")
+                    .join("assets")
+                    .join("packs")
+            }),
     );
     if let Ok(appdata) = std::env::var("APPDATA") {
         let blender = PathBuf::from(appdata)
@@ -116,8 +122,7 @@ pub(crate) fn run_script(script: &Path, script_args: &[String]) -> Result<Output
 }
 
 /// User-facing hint when the native exporter is not available.
-pub(crate) const MISSING_ADDON_HINT: &str =
-    "未找到 SC5 Asset Editor 导出器 ny_facade：请运行 scripts/stage-blender-addon.ps1，或设置 OPENSCP_BLENDER_ADDON 指向插件目录";
+pub(crate) const MISSING_ADDON_HINT: &str = "未找到 SC5 Asset Editor 导出器 ny_facade：请运行 scripts/stage-blender-addon.ps1，或设置 OPENSCP_BLENDER_ADDON 指向插件目录";
 
 /// Locate the plug-in package.  `OPENSCP_BLENDER_ADDON` may point at either
 /// the `ny_facade` directory or its parent.  A shipped build looks in
@@ -179,10 +184,7 @@ pub(crate) fn export_native_rust(
             "output": path_arg(&bundle_path),
         }),
     );
-    let output = run_script(
-        &script,
-        &[path_arg(source), path_arg(&bundle_path)],
-    )?;
+    let output = run_script(&script, &[path_arg(source), path_arg(&bundle_path)])?;
     crate::blend_native::trace::emit(
         "blender_done",
         serde_json::json!({

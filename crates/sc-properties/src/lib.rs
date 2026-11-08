@@ -241,7 +241,9 @@ impl PropertyFile {
                 continue;
             };
             if values.is_empty() {
-                return Err(Error::EmptyArrayProperty { hash: property.hash });
+                return Err(Error::EmptyArrayProperty {
+                    hash: property.hash,
+                });
             }
             let Some(legal) = legal_declared_stride(property.prop_type) else {
                 continue;

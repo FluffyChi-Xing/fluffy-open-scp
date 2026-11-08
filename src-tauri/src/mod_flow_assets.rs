@@ -76,11 +76,7 @@ pub(super) fn import_menu_image(root: &Path, payload: &Value) -> Result<Value, S
         ("marquee", "png") | ("marquee", "jpg") | ("marquee", "jpeg") => {
             "assets/images/menu-marquee.jpg".to_string()
         }
-        _ => {
-            return Err(
-                "Menu icon must be PNG; marquee must be PNG or JPG".into(),
-            )
-        }
+        _ => return Err("Menu icon must be PNG; marquee must be PNG or JPG".into()),
     };
     let mut bytes = fs::read(&source).map_err(|e| e.to_string())?;
     // rollover 要求 JPG：任意格式读入 → RGB 重编码（85 质量）。图标保持 PNG 原样。
@@ -179,10 +175,7 @@ fn import_blend(root: &Path, source: &Path) -> Result<Value, String> {
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
     let lotm_bytes = match blender_service::export_native_rust(&atlas, source, &temp) {
         Ok(bytes) => {
-            crate::blend_native::trace::emit(
-                "native_ok",
-                json!({ "lotm_bytes": bytes.len() }),
-            );
+            crate::blend_native::trace::emit("native_ok", json!({ "lotm_bytes": bytes.len() }));
             bytes
         }
         Err(detail) => {
@@ -246,8 +239,7 @@ fn import_native_bundle(root: &Path, lotm_bytes: Vec<u8>) -> Result<Value, Strin
     let target = safe_path(root, &lotm_relative)?;
     fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
     if !target.exists() {
-        crate::atomic_fs::write_atomic(&target, &lotm_bytes, false)
-            .map_err(|e| e.to_string())?;
+        crate::atomic_fs::write_atomic(&target, &lotm_bytes, false).map_err(|e| e.to_string())?;
     }
     let mut uv_kinds: Vec<u8> = document
         .mesh_material
@@ -388,10 +380,12 @@ mod blender_import_tests {
             .join(format!("openscp-blend-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let result = import(&root, &json!({"path": sample})).unwrap();
-        assert!(result["asset"]
-            .as_str()
-            .unwrap_or_default()
-            .ends_with(".glb"));
+        assert!(
+            result["asset"]
+                .as_str()
+                .unwrap_or_default()
+                .ends_with(".glb")
+        );
         assert_eq!(result["source"], "blend");
         let glb = root.join(result["asset"].as_str().unwrap());
         let bytes = fs::read(glb).unwrap();
@@ -443,8 +437,8 @@ mod native_import_tests {
     #[test]
     #[ignore = "requires Blender and the SC5 Asset Editor exporter"]
     fn native_blend_import_writes_lotm_only() {
-        let source = std::env::var("OPENSCP_TEST_BLEND")
-            .expect("set OPENSCP_TEST_BLEND to a .blend file");
+        let source =
+            std::env::var("OPENSCP_TEST_BLEND").expect("set OPENSCP_TEST_BLEND to a .blend file");
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
             .join(format!(

@@ -39,7 +39,7 @@ mod tests {
             "reference": {
                 "menu": "00B1B104:09878A01:74168A83",
                 "unit": "00B1B104:40E0C000:8D007745",
-                "lot": "00B1B104:40E1C000:8D007745",
+                "lot": "00B1B104:58F0C000:8D007745",
                 "unitTemplate": "00B1B104:48E0C000:4E01E311",
                 "lotTemplate": "00B1B104:40E1C000:4E01E311"
             },

@@ -110,7 +110,12 @@ pub fn clip_polygon(
     y1: f64,
 ) -> Vec<(Point3, Uv2)> {
     let mut poly = polygon.to_vec();
-    for (axis, edge, greater) in [(0usize, x0, true), (0, x1, false), (1, y0, true), (1, y1, false)] {
+    for (axis, edge, greater) in [
+        (0usize, x0, true),
+        (0, x1, false),
+        (1, y0, true),
+        (1, y1, false),
+    ] {
         if poly.is_empty() {
             return poly;
         }
@@ -156,11 +161,7 @@ pub fn clip_polygon(
 }
 
 /// Tangent + handedness from the first non-degenerate triangle.
-pub fn tangent(
-    points: &[Point3],
-    uvs: &[Uv2],
-    normal: Point3,
-) -> (Point3, f64) {
+pub fn tangent(points: &[Point3], uvs: &[Uv2], normal: Point3) -> (Point3, f64) {
     for k in 1..points.len() {
         let e1 = sub(points[k], points[0]);
         let d1 = [uvs[k][0] - uvs[0][0], uvs[k][1] - uvs[0][1]];
@@ -177,7 +178,11 @@ pub fn tangent(
                 (e1[2] * d2[1] - e2[2] * d1[1]) / det,
             ];
             let projection = dot(value, normal);
-            value = [value[0] - normal[0] * projection, value[1] - normal[1] * projection, value[2] - normal[2] * projection];
+            value = [
+                value[0] - normal[0] * projection,
+                value[1] - normal[1] * projection,
+                value[2] - normal[2] * projection,
+            ];
             if dot(value, value) < 1e-16 {
                 continue;
             }

@@ -13,8 +13,9 @@ pub(super) fn temp_root() -> PathBuf {
     // 沙箱环境常拒绝 $TMP 的 canonicalize;优先用工作区 target 目录(cargo
     // 本就写它),系统临时目录兜底。build_from_schema 自身会对 root 再
     // canonicalize,这里非规范路径也能跑。
-    let workspace_target =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("test-tmp");
+    let workspace_target = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("test-tmp");
     let candidates = [workspace_target, std::env::temp_dir()];
     for base in candidates {
         let root = base.join(format!(
@@ -27,6 +28,48 @@ pub(super) fn temp_root() -> PathBuf {
         }
     }
     panic!("cannot allocate test temp root");
+}
+
+/// 给夹具 lot 补主体三要件（2026-11-08 /37 参照 lot 主体契约：缺
+/// BoundingBox/LotSize/LotMask 的夹具会被 load-inputs 以 DERIVED variant
+/// 拒绝）。已有列不覆盖。
+pub(crate) fn with_master_lot_columns(mut values: Vec<Property>) -> Vec<Property> {
+    // 类型必须按 vanilla 语义给（BoundingBox/Vector2/Key），否则
+    // menu 注册读遮罩时会报 "lot mask is not a Key"。
+    let extra = [
+        Property {
+            hash: 0x00F9EFBA,
+            prop_type: PropType::BoundingBox,
+            kind: Kind::Scalar(Value::BoundingBox {
+                min: [-32.0, -32.0, 0.0],
+                max: [32.0, 32.0, 32.0],
+            }),
+            encoding: PropertyEncoding::default(),
+        },
+        Property {
+            hash: 0x0CCB7FC8,
+            prop_type: PropType::Vector2,
+            kind: Kind::Scalar(Value::Vector2([64.0, 64.0])),
+            encoding: PropertyEncoding::default(),
+        },
+        Property {
+            hash: 0x0CCB7FD5,
+            prop_type: PropType::Key,
+            kind: Kind::Scalar(Value::Key(sc_properties::Key {
+                type_id: 0x2F4E681C,
+                group: 0,
+                instance: 0x1111,
+            })),
+            encoding: PropertyEncoding::default(),
+        },
+    ];
+    for property in extra {
+        if values.iter().any(|existing| existing.hash == property.hash) {
+            continue;
+        }
+        values.push(property);
+    }
+    values
 }
 
 fn source_package(root: &Path) -> PathBuf {
@@ -52,13 +95,63 @@ fn source_package(root: &Path) -> PathBuf {
             },
             property(0x0A8A41DA, 100),
         ),
+        // lot 夹具必须是主体形态（2026-11-08 /37 参照 lot 主体契约）：
+        // 0x0BBBCDED 数据列 + 主体三要件（BoundingBox/LotSize/LotMask），
+        // 否则 load-inputs 会以 DERIVED variant 拒绝。
         OverlayEntry::new(
             ResourceId {
                 type_id: 0x00B1B104,
                 group: 0x40E1C000,
                 instance: 0x8D007745,
             },
-            property(0x0BBBCDED, 80),
+            PropertyFile {
+                claimed_count: 4,
+                values: vec![
+                    Property {
+                        hash: 0x0BBBCDED,
+                        prop_type: PropType::Int32,
+                        kind: Kind::Scalar(Value::Int32(80)),
+                        encoding: PropertyEncoding::default(),
+                    },
+                    Property {
+                        hash: 0x00F9EFBA,
+                        prop_type: PropType::BoundingBox,
+                        kind: Kind::Scalar(Value::BoundingBox {
+                            min: [-32.0, -32.0, 0.0],
+                            max: [32.0, 32.0, 32.0],
+                        }),
+                        encoding: PropertyEncoding::default(),
+                    },
+                    Property {
+                        hash: 0x0CCB7FC8,
+                        prop_type: PropType::Vector2,
+                        kind: Kind::Scalar(Value::Vector2([64.0, 64.0])),
+                        encoding: PropertyEncoding::default(),
+                    },
+                    Property {
+                        hash: 0x0CCB7FD5,
+                        prop_type: PropType::Key,
+                        kind: Kind::Scalar(Value::Key(sc_properties::Key {
+                            type_id: 0x2F4E681C,
+                            group: 0,
+                            instance: 0x1111,
+                        })),
+                        encoding: PropertyEncoding::default(),
+                    },
+                ],
+            }
+            .encode_canonical()
+            .unwrap(),
+        ),
+        // The lot's LotMask must resolve to an actual raster in strict menu
+        // tests; a key-only placeholder is intentionally rejected.
+        OverlayEntry::new(
+            ResourceId {
+                type_id: 0x2F4E681C,
+                group: 0,
+                instance: 0x1111,
+            },
+            super::materials::encode_rgba_raster(1, 1, &[[255, 255, 255, 255]]).unwrap(),
         ),
     ];
     let path = root.join("source.package");
@@ -81,7 +174,7 @@ fn clones_source_and_writes_property_overlay_with_readback() {
         "reference": {
             "package": "source.package",
             "unit": "00B1B104:40E0C000:8D007745",
-            "lot": "00B1B104:40E1C000:8D007745",
+            "lot": "00B1B104:58F0C000:8D007745",
             "unitTemplate": "00B1B104:48E0C000:4E01E311"
         },
         "scene": {"document": "asset.lot.json"},
@@ -92,7 +185,7 @@ fn clones_source_and_writes_property_overlay_with_readback() {
         "outputs": {"package": "willis.package"}
     });
     let result = build_from_schema(&root, &schema.to_string()).unwrap();
-    assert_eq!(result.resource_count, 2);
+    assert_eq!(result.resource_count, 3);
     assert_eq!(result.patched_resources, 2);
     let output = Package::open(&result.path).unwrap();
     let unit = output
@@ -189,7 +282,11 @@ fn repeat_build_preserves_source_opaque_resources_and_artifacts() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(build_entries.len(), 4, "build dir + ledger dir + cache dir + pool-last.json: {build_entries:?}");
+    assert_eq!(
+        build_entries.len(),
+        4,
+        "build dir + ledger dir + cache dir + pool-last.json: {build_entries:?}"
+    );
     assert!(build_entries.contains(&"ledger".to_string()));
     assert!(build_entries.contains(&"cache".to_string()));
     resources.insert(opaque, vec![42]);
@@ -293,7 +390,11 @@ fn rejects_traversal_and_preserves_existing_build_on_corruption() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(build_entries.len(), 4, "build dir + ledger dir + cache dir + pool-last.json: {build_entries:?}");
+    assert_eq!(
+        build_entries.len(),
+        4,
+        "build dir + ledger dir + cache dir + pool-last.json: {build_entries:?}"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -629,24 +730,36 @@ fn delta_output_writes_only_touched_resources() {
 fn menu_registration_creates_new_identity_resources() {
     let root = temp_root();
     let lot = PropertyFile {
-        claimed_count: 1,
-        values: vec![Property {
+        claimed_count: 4,
+        values: with_master_lot_columns(vec![Property {
             hash: 0x0BBBCDED,
             prop_type: PropType::Int32,
             kind: Kind::Scalar(Value::Int32(219)),
             encoding: PropertyEncoding::default(),
-        }],
+        }]),
     }
     .encode_canonical()
     .unwrap();
-    let entries = [OverlayEntry::new(
-        ResourceId {
-            type_id: 0x00B1B104,
-            group: 0x40E1C000,
-            instance: 0x8D007745,
-        },
-        lot,
-    )];
+    let entries = [
+        OverlayEntry::new(
+            ResourceId {
+                type_id: 0x00B1B104,
+                group: 0x58F0C000,
+                instance: 0x8D007745,
+            },
+            lot,
+        ),
+        // The lot-config declares a mask key; keep the fixture's dependency
+        // closure honest with a minimal decodable 1x1 raster.
+        OverlayEntry::new(
+            ResourceId {
+                type_id: 0x2F4E681C,
+                group: 0,
+                instance: 0x1111,
+            },
+            super::materials::encode_rgba_raster(1, 1, &[[255, 255, 255, 255]]).unwrap(),
+        ),
+    ];
     fs::write(
         root.join("source.package"),
         write_uncompressed_overlay(&entries).unwrap(),
@@ -656,7 +769,7 @@ fn menu_registration_creates_new_identity_resources() {
     let schema = serde_json::json!({
         "$schema": "openscp.asset", "schema_version": 2,
         "id": "menu-test", "kind": "building-asset",
-        "reference": { "package": "source.package", "lot": "00B1B104:40E1C000:8D007745" },
+        "reference": { "package": "source.package", "lot": "00B1B104:58F0C000:8D007745" },
         "scene": { "document": "asset.lot.json" },
         "semantics": { "menu": {
             "title": "OpenSCP 测试公园",
@@ -672,11 +785,11 @@ fn menu_registration_creates_new_identity_resources() {
     let result = build_from_schema(&root, &schema.to_string()).unwrap();
     let x = result.menu_instance.expect("menu instance allocated");
     assert!(result.delta_mode);
-    // menu2 + unit leaf + lot leaf + locale + icon png + marquee jpg；
+    // menu2 + unit leaf + lot leaf + locale + icon png + marquee jpg + lot mask；
     // 参照 lot 本身不被覆盖（新身份，不是 same-TGI 覆盖）。
-    assert_eq!(result.resource_count, 6);
+    assert_eq!(result.resource_count, 7);
     let output = Package::open(&result.path).unwrap();
-    assert_eq!(output.entries().len(), 6);
+    assert_eq!(output.entries().len(), 7);
     assert!(
         output
             .entry(ResourceId {
@@ -738,13 +851,13 @@ fn menu_registration_creates_new_identity_resources() {
     );
     assert!(
         matches!(menu2.get(0x0A09F5FA).map(|p| &p.kind),
-            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == 0xBF82F7CE && t.instance_id == 1)),
-        "title references locale row 1"
+            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == x && t.instance_id == 1)),
+        "title references the per-identity locale table, row 1 (19a1b3a)"
     );
     assert!(
         matches!(menu2.get(0x0A09F5FB).map(|p| &p.kind),
-            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == 0xBF82F7CE && t.instance_id == 2)),
-        "description references locale row 2"
+            Some(Kind::Array(vs)) if matches!(&vs[0], Value::Text(t) if t.table_id == x && t.instance_id == 2)),
+        "description references the per-identity locale table, row 2"
     );
     let unit = read(ResourceId {
         type_id: 0x00B1B104,
@@ -763,8 +876,8 @@ fn menu_registration_creates_new_identity_resources() {
     );
     assert_eq!(
         unit.get(0x0A8A41DA).and_then(|p| p.scalar()),
-        Some(&Value::Int32(1234)),
-        "construction cost override landed"
+        Some(&Value::Float(1234.0)),
+        "construction cost override landed (Float32 — vanilla SCUnit type; Int32 renders as free)"
     );
     let lot_leaf = read(ResourceId {
         type_id: 0x00B1B104,
@@ -787,7 +900,8 @@ fn menu_registration_creates_new_identity_resources() {
                 .entry(ResourceId {
                     type_id: 0x0A98EAF0,
                     group: 0x02FABF01,
-                    instance: 0xBF82F7CE,
+                    // locale 表随身份实例（per-identity，19a1b3a）。
+                    instance: x,
                 })
                 .unwrap(),
         )
@@ -842,6 +956,42 @@ fn golden_fixture(root: &Path) -> String {
     // PathEntry 变更时重新生成即可。
     let source = include_bytes!("../../resources/sc5/golden-source.package");
     fs::write(root.join("source.package"), source).unwrap();
+    // The historical golden package carried the generic cUnit template
+    // 593B61D2 under the Asset-dictionary group.  The game resolves cUnit
+    // templates from 48E0C000, so normalize the fixture at its boundary
+    // instead of weakening the production closure validator.
+    let source_path = root.join("source.package");
+    let mut resources = connector::read_source(&source_path).unwrap();
+    let legacy = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E1C000,
+        instance: 0x593B61D2,
+    };
+    let canonical = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x48E0C000,
+        instance: 0x593B61D2,
+    };
+    if let Some(bytes) = resources.get(&legacy).cloned() {
+        resources.insert(canonical, bytes);
+    }
+    // The same historical package stores the donor lot only in the Asset
+    // dictionary group.  Golden schemas intentionally exercise the typed
+    // lot-config route, so provide the equivalent canonical donor TGI.
+    let legacy_lot = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x40E1C000,
+        instance: 0x8D007745,
+    };
+    let canonical_lot = ResourceId {
+        type_id: 0x00B1B104,
+        group: 0x58F0C000,
+        instance: 0x8D007745,
+    };
+    if let Some(bytes) = resources.get(&legacy_lot).cloned() {
+        resources.insert(canonical_lot, bytes);
+    }
+    fs::write(&source_path, connector::link(&resources).unwrap()).unwrap();
     fs::write(root.join("asset.lot.json"), r#"{
       "$schema": "openscp.lot-asset/1",
       "units": [
@@ -868,7 +1018,7 @@ fn golden_fixture(root: &Path) -> String {
     serde_json::to_string(&serde_json::json!({
         "$schema": "openscp.asset", "schema_version": 2,
         "id": "golden", "kind": "building-asset",
-        "reference": { "package": "source.package", "lot": "00B1B104:40E1C000:8D007745" },
+        "reference": { "package": "source.package", "lot": "00B1B104:58F0C000:8D007745" },
         "scene": { "document": "asset.lot.json" },
         "semantics": { "menu": {
             "title": "OpenSCP 黄金用例",
@@ -925,7 +1075,11 @@ fn golden_full_chain_asset_dict_columns() {
     .unwrap();
 
     let key = |t: u32, g: u32, i: u32| {
-        Value::Key(sc_properties::Key { type_id: t, group: g, instance: i })
+        Value::Key(sc_properties::Key {
+            type_id: t,
+            group: g,
+            instance: i,
+        })
     };
     // -- 灯:14 列逐值(作者 packager 契约) --
     assert_eq!(column_first(&asset, 0x0CAA_8F10), key(0, 0, 0x8E43_F125));
@@ -943,7 +1097,11 @@ fn golden_full_chain_asset_dict_columns() {
     }
     assert_eq!(
         column_first(&asset, 0x0CAA_8F13),
-        Value::ColorRgb { r: 1.0, g: 0.5, b: 0.25 }
+        Value::ColorRgb {
+            r: 1.0,
+            g: 0.5,
+            b: 0.25
+        }
     );
     assert_eq!(column_first(&asset, 0x0CAA_8F14), Value::Float(12.0));
     assert_eq!(column_first(&asset, 0x0CAA_8F15), Value::Float(1.5));
@@ -973,14 +1131,20 @@ fn golden_full_chain_asset_dict_columns() {
         column_first(&asset, 0x0CE7_1B12),
         Value::Vector2([0.875, 0.215_273_01])
     );
-    assert_eq!(column_first(&asset, 0x0CE7_1B13), Value::Vector2([0.0, 0.0]));
+    assert_eq!(
+        column_first(&asset, 0x0CE7_1B13),
+        Value::Vector2([0.0, 0.0])
+    );
     assert_eq!(
         column_first(&asset, 0x0F16_9C46),
         Value::Bool(true),
         "interior controller enabler"
     );
     // -- prop bin 9:资源键/带 scale 变换/索引 --
-    assert_eq!(column_first(&asset, 0x0C12_EF20 + 9), key(0, 0, 0x1234_5678));
+    assert_eq!(
+        column_first(&asset, 0x0C12_EF20 + 9),
+        key(0, 0, 0x1234_5678)
+    );
     match column_first(&asset, 0x0C12_EF30 + 9) {
         Value::Transform(t) => {
             assert_eq!(t.flags, 15, "prop scale lives in the flags-15 slot");
@@ -1031,7 +1195,11 @@ fn golden_full_chain_asset_dict_columns() {
             .is_some(),
         "PathEntry 675B61B1 stays in the delta (993e7a3)"
     );
-    assert_eq!(output.entries().len(), 10, "menu baseline + mask raster + model RW4 + material raster + promoted PathEntry");
+    assert_eq!(
+        output.entries().len(),
+        10,
+        "menu baseline + mask raster + model RW4 + material raster + promoted PathEntry"
+    );
     drop(output);
     let _ = fs::remove_dir_all(root);
 }
@@ -1076,7 +1244,10 @@ fn university_s10_headless_build_and_wire_check() {
         result.path.display(),
         result.resource_count,
         result.patched_resources,
-        result.menu_instance.map(|m| format!("{m:08X}")).unwrap_or_else(|| "-".into())
+        result
+            .menu_instance
+            .map(|m| format!("{m:08X}"))
+            .unwrap_or_else(|| "-".into())
     );
     let package = Package::open(&result.path).expect("open output");
     let lot_tgi: Vec<(u32, u32)> = package
@@ -1143,21 +1314,51 @@ fn university_s10_headless_build_and_wire_check() {
         tree_ids.contains(&0x1498_4C68) && tree_ids.contains(&0xC8B4_254A),
         "bin12 树原型应含 14984C68+C8B4254A，实得 {tree_ids:08X?}"
     );
-    assert_eq!(count(uh::PROP_TRANSFORM_BASE + 12), 10, "bin12 车位/树位 transforms");
-    assert_eq!(int_values(uh::PROP_ID_BASE + 12 + 0x20), (0..10).collect::<Vec<_>>(), "bin12 slot 填充序 0..10");
+    assert_eq!(
+        count(uh::PROP_TRANSFORM_BASE + 12),
+        10,
+        "bin12 车位/树位 transforms"
+    );
+    assert_eq!(
+        int_values(uh::PROP_ID_BASE + 12 + 0x20),
+        (0..10).collect::<Vec<_>>(),
+        "bin12 slot 填充序 0..10"
+    );
     // bin0 车：原版车辆资源族 E1/E2/E3 + 百分比填充标记，transforms 9
     let car_ids = key_instances(uh::PROP_ID_BASE);
-    assert_eq!(car_ids, vec![0x0AB4_DFE1, 0x0AB4_DFE2, 0x0AB4_DFE3], "bin0 车原型族");
+    assert_eq!(
+        car_ids,
+        vec![0x0AB4_DFE1, 0x0AB4_DFE2, 0x0AB4_DFE3],
+        "bin0 车原型族"
+    );
     assert_eq!(count(uh::PROP_TRANSFORM_BASE), 9, "bin0 transforms");
-    assert_eq!(int_values(uh::PROP_SLOT_BASE), (0..9).collect::<Vec<_>>(), "bin0 slot 填充序 0..9");
-    assert!(file.values.iter().any(|p| p.hash == uh::PROP_PERCENT_FILL_BASE && matches!(p.kind, Kind::Scalar(Value::Bool(true)))), "bin0 车辆必须启用 mUseBinPercent");
+    assert_eq!(
+        int_values(uh::PROP_SLOT_BASE),
+        (0..9).collect::<Vec<_>>(),
+        "bin0 slot 填充序 0..9"
+    );
+    assert!(
+        file.values
+            .iter()
+            .any(|p| p.hash == uh::PROP_PERCENT_FILL_BASE
+                && matches!(p.kind, Kind::Scalar(Value::Bool(true)))),
+        "bin0 车辆必须启用 mUseBinPercent"
+    );
     // 灯源 11（本轮调整项）
     assert_eq!(count(uh::LIGHT_IDS), 11, "灯源 11 盏");
     // spawners：场景 9 个 spawner 经锚点库展开（s8 契约），只断言非空并打印
     let spawner_ids = key_instances(uh::SPAWNER_IDS);
     assert!(!spawner_ids.is_empty(), "spawner 锚点不能为空");
-    assert_eq!(count(uh::SPAWNER_TRANSFORMS), count(uh::SPAWNER_IDS), "spawner ids/transforms 等长");
-    println!("wire check OK: trees(bin12)={tree_ids:08X?} x10, cars(bin0)=[0AB4DFE1] x9, lights=11, spawner anchors={} ({:08X?})", spawner_ids.len(), spawner_ids);
+    assert_eq!(
+        count(uh::SPAWNER_TRANSFORMS),
+        count(uh::SPAWNER_IDS),
+        "spawner ids/transforms 等长"
+    );
+    println!(
+        "wire check OK: trees(bin12)={tree_ids:08X?} x10, cars(bin0)=[0AB4DFE1] x9, lights=11, spawner anchors={} ({:08X?})",
+        spawner_ids.len(),
+        spawner_ids
+    );
 }
 
 // ---- behavior-bind（菜单/行为拆分）----
@@ -1221,13 +1422,13 @@ fn behavior_donor_entries(instance: u32) -> Vec<(ResourceId, Vec<u8>)> {
     .encode_canonical()
     .unwrap();
     let lot = PropertyFile {
-        claimed_count: 1,
-        values: vec![Property {
+        claimed_count: 4,
+        values: with_master_lot_columns(vec![Property {
             hash: 0x0BBBCDED,
             prop_type: PropType::Int32,
             kind: Kind::Scalar(Value::Int32(219)),
             encoding: PropertyEncoding::default(),
-        }],
+        }]),
     }
     .encode_canonical()
     .unwrap();
@@ -1245,9 +1446,33 @@ fn behavior_donor_entries(instance: u32) -> Vec<(ResourceId, Vec<u8>)> {
         at(0x00B1B104, 0x09878A01, menu2),
         at(0x00B1B104, 0x40E0C000, unit),
         at(0x00B1B104, 0x40E1C000, lot),
+        // lot-config 形态（新身份路线的参照）：含主体三要件。
+        at(
+            0x00B1B104,
+            0x58F0C000,
+            PropertyFile {
+                claimed_count: 4,
+                values: with_master_lot_columns(vec![Property {
+                    hash: 0x0BBBCDED,
+                    prop_type: PropType::Int32,
+                    kind: Kind::Scalar(Value::Int32(219)),
+                    encoding: PropertyEncoding::default(),
+                }]),
+            }
+            .encode_canonical()
+            .unwrap(),
+        ),
         at(0x0A98EAF0, 0x02FABF01, locale),
         // 冻结面：任一非属性资源（图标位）必须原样穿透。
         at(0x2F7D0004, 0x40E02400, vec![1, 2, 3, 4, 5]),
+        (
+            ResourceId {
+                type_id: 0x2F4E681C,
+                group: 0,
+                instance: 0x1111,
+            },
+            super::materials::encode_rgba_raster(1, 1, &[[255, 255, 255, 255]]).unwrap(),
+        ),
     ]
 }
 
@@ -1255,7 +1480,7 @@ fn behavior_schema(mode: &str) -> serde_json::Value {
     serde_json::json!({
         "$schema": "openscp.asset", "schema_version": 2,
         "id": "behavior-test", "kind": "building-asset",
-        "reference": { "package": "source.package", "lot": "00B1B104:40E1C000:8D007745" },
+        "reference": { "package": "source.package", "lot": "00B1B104:58F0C000:8D007745" },
         "scene": { "document": "asset.lot.json" },
         "semantics": {
             "lotChange": true,
@@ -1301,7 +1526,10 @@ fn behavior_full_clone_patches_unit_and_freezes_menu() {
     donor_ids.sort_by_key(|id| (id.type_id, id.group, id.instance));
     let mut sorted_ids = output_ids.clone();
     sorted_ids.sort_by_key(|id| (id.type_id, id.group, id.instance));
-    assert_eq!(sorted_ids, donor_ids, "full mode must carry every donor TGI and nothing else");
+    assert_eq!(
+        sorted_ids, donor_ids,
+        "full mode must carry every donor TGI and nothing else"
+    );
 
     let read = |id: ResourceId| -> Vec<u8> {
         output_package
@@ -1329,9 +1557,18 @@ fn behavior_full_clone_patches_unit_and_freezes_menu() {
     // 3) locale 仅标题行变化。
     let locale_after = read(at(0x0A98EAF0, 0x02FABF01));
     let locale_text = String::from_utf8(locale_after).unwrap();
-    assert!(locale_text.contains("\"大学建筑测试包 s24\""), "title overridden");
-    assert!(locale_text.contains("\"0x00000002\" : \"原始描述\""), "description row frozen");
-    assert!(locale_text.contains("\"0xffffffff\" : \"0xffffffff\""), "sentinel row frozen");
+    assert!(
+        locale_text.contains("\"大学建筑测试包 s24\""),
+        "title overridden"
+    );
+    assert!(
+        locale_text.contains("\"0x00000002\" : \"原始描述\""),
+        "description row frozen"
+    );
+    assert!(
+        locale_text.contains("\"0xffffffff\" : \"0xffffffff\""),
+        "sentinel row frozen"
+    );
 
     // 4) Unit 增量字段：parent/category/容量/教育 bundle 并入，树 bundle 保留。
     let unit = PropertyFile::parse(&read(at(0x00B1B104, 0x40E0C000))).unwrap();
@@ -1368,8 +1605,14 @@ fn behavior_full_clone_patches_unit_and_freezes_menu() {
         .iter()
         .flat_map(|hash| bundles(&unit, *hash as u32))
         .collect();
-    assert!(union.contains(&0x6C042367), "education bundle enabled: {union:08X?}");
-    assert!(union.contains(&0xE7690450), "donor tree bundle preserved: {union:08X?}");
+    assert!(
+        union.contains(&0x6C042367),
+        "education bundle enabled: {union:08X?}"
+    );
+    assert!(
+        union.contains(&0xE7690450),
+        "donor tree bundle preserved: {union:08X?}"
+    );
 
     // 5) Lot 看板字段落到教育看板。
     let lot = PropertyFile::parse(&read(at(0x00B1B104, 0x40E1C000))).unwrap();
@@ -1393,11 +1636,16 @@ fn behavior_requires_full_mode_and_allows_menu_combination() {
     let delta = build_from_schema(&root, &behavior_schema("delta").to_string())
         .err()
         .expect("behavior + delta must fail");
-    assert!(delta.contains("full"), "error names the required mode: {delta}");
+    assert!(
+        delta.contains("full"),
+        "error names the required mode: {delta}"
+    );
     // 2026-11-07：menu + behavior 组合解禁——行为绑定到菜单阶段新分配的
     // Unit/Lot 身份（Menu2 冻结校验仍然生效），产出独立菜单入口 + 行为。
     let mut mixed = behavior_schema("full");
     mixed["semantics"]["menu"] = serde_json::json!({ "title": "combo-test" });
+    // 新身份路线的参照必须是 lot-config（ground 输入类型化）。
+    mixed["reference"]["lot"] = serde_json::json!("00B1B104:58F0C000:8D007745");
     let result = build_from_schema(&root, &mixed.to_string())
         .expect("behavior + menu combination must build");
     let output = Package::open(&result.path).unwrap();
@@ -1472,11 +1720,7 @@ fn composed_logic_graph_binds_labor_and_education_to_new_menu_identity() {
             }
         }}
     });
-    fs::write(
-        root.join("asset.lot.json"),
-        document.to_string(),
-    )
-    .unwrap();
+    fs::write(root.join("asset.lot.json"), document.to_string()).unwrap();
     let compiled = crate::asset_build_m1::workbench_logic::compile(&document, &|_| true).unwrap();
     assert!(compiled.menu.is_some());
     assert_eq!(compiled.behaviors.len(), 2);
@@ -1489,7 +1733,10 @@ fn composed_logic_graph_binds_labor_and_education_to_new_menu_identity() {
     crate::asset_build_m1::workbench_logic::apply_to_schema(&mut schema, &compiled).unwrap();
     let result = build_from_schema(&root, &schema.to_string()).unwrap();
     let instance = result.menu_instance.expect("menu identity allocated");
-    assert_ne!(instance, 0x8D007745, "behavior must target the NEW identity");
+    assert_ne!(
+        instance, 0x8D007745,
+        "behavior must target the NEW identity"
+    );
 
     let output = Package::open(&result.path).unwrap();
     let unit_id = ResourceId {

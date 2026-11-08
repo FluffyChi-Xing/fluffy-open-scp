@@ -3,12 +3,16 @@
 //! encoding semantics: upsert-by-hash, declared item sizes, last-write dedup).
 
 use sc_properties::{
-    Kind, Property, PropertyEncoding, PropertyFile, PropType, TEXT_ARRAY_ITEM_SIZE, Value,
+    Kind, PropType, Property, PropertyEncoding, PropertyFile, TEXT_ARRAY_ITEM_SIZE, Value,
 };
 
 /// Upsert a scalar property by hash (append when missing).
 pub(crate) fn set_scalar(file: &mut PropertyFile, hash: u32, prop_type: PropType, value: Value) {
-    match file.values.iter_mut().find(|property| property.hash == hash) {
+    match file
+        .values
+        .iter_mut()
+        .find(|property| property.hash == hash)
+    {
         Some(property) => {
             property.kind = Kind::Scalar(value);
             property.prop_type = prop_type;
@@ -24,11 +28,22 @@ pub(crate) fn set_scalar(file: &mut PropertyFile, hash: u32, prop_type: PropType
 
 /// Upsert an array property by hash, deriving the declared item size from the
 /// property type (Keys 12 B, Text 520 B, 32-bit scalars 4 B).
-pub(crate) fn set_array(file: &mut PropertyFile, hash: u32, prop_type: PropType, values: Vec<Value>) {
+pub(crate) fn set_array(
+    file: &mut PropertyFile,
+    hash: u32,
+    prop_type: PropType,
+    values: Vec<Value>,
+) {
     let item_size = match prop_type {
         PropType::Key => Some(12),
         PropType::Text => Some(TEXT_ARRAY_ITEM_SIZE),
         PropType::Int32 | PropType::UInt32 | PropType::Float => Some(4),
+        // vanilla 全量标定（scan_strides）每个类型恰好一个合法步长：
+        // BoundingBox 24 / Vector2 8 / Vector3·ColorRgb 12。缺声明会被游戏
+        // 按步长 0 整文件丢弃（layout-contract 会拦），故必须显式给出。
+        PropType::BoundingBox => Some(24),
+        PropType::Vector2 => Some(8),
+        PropType::Vector3 | PropType::ColorRgb => Some(12),
         _ => None,
     };
     match file
@@ -63,7 +78,11 @@ pub(crate) fn set_array_with_flags(
     flags: u16,
 ) {
     set_array(file, hash, prop_type, values);
-    if let Some(property) = file.values.iter_mut().find(|property| property.hash == hash) {
+    if let Some(property) = file
+        .values
+        .iter_mut()
+        .find(|property| property.hash == hash)
+    {
         property.encoding.flags = flags;
     }
 }

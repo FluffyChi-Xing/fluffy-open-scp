@@ -17,15 +17,13 @@
 //!   模型/单元，parent → `40E1C000:4E01E311`）
 //! - 图标 PNG   `2F7D0004:40E02400:<X>`、rollover JPG `3F8662EA:0:<X>`
 //! - locale 表  `0A98EAF0:02FABF01:BF82F7CE`（自有表，键 `"0x%08x"`）
-use super::{
-    connector, materials::raster_type, package::LodModelIds, scene::SceneDocument,
-};
+use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
+use super::{connector, materials::raster_type, package::LodModelIds, scene::SceneDocument};
 use dbpf::ResourceId;
 use sc_properties::{
-    Kind, LOD_MODEL_HASHES, LOT_MASK_HASH, LOT_SIZE_HASH, PropType, Property, PropertyEncoding,
-    PropertyFile, Text, Value,
+    Kind, PropType, Property, PropertyEncoding, PropertyFile, Text, Value, LOD_MODEL_HASHES,
+    LOT_MASK_HASH, LOT_SIZE_HASH,
 };
-use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -52,7 +50,9 @@ pub const LANDMARK_CATEGORY: u32 = 0x3F43_E038;
 pub const ICON_GROUP: u32 = 0x40E0_2400;
 pub const ICON_TYPE: u32 = 0x2F7D_0004;
 pub const MARQUEE_TYPE: u32 = 0x3F86_62EA;
-/// OpenSCP 自有 locale 表（FNV-1("openscp/strings")，与原版 356 张表无冲突）。
+/// 遗留共享 locale 表（FNV-1("openscp/strings")）。2026-11-08 起各路由一律
+/// 改写身份自有表（instance=身份实例）；该常量仅描述已部署旧包（如
+/// Commercial_v7）占用的表，新代码不得再写入。
 pub const LOCALE_TABLE: u32 = 0xBF82_F7CE;
 pub const LOCALE_TYPE: u32 = 0x0A98_EAF0;
 pub const LOCALE_GROUP: u32 = 0x02FA_BF01;
@@ -80,6 +80,7 @@ const HASH_EFFECT_TITLE: u32 = 0x0EB1_FC05;
 const HASH_EFFECT_PARAM: u32 = 0x0EB1_FC22;
 const HASH_PARK_FLAG: u32 = 0x0EC4_80DF;
 pub(crate) const EDUCATION_BEHAVIOR_CATEGORY: u32 = 0x95A9_D6FD;
+const PARK_BEHAVIOR_CATEGORY: u32 = 0x0704_9250;
 pub(crate) const ELEMENTARY_TEMPLATE: u32 = 0x7E4B_99E5;
 /// kResourceIDHQ_CityHall_IsOn（市政厅启用；NightHouse/威利斯同款解锁位）。
 const UNLOCK_CITY_HALL: u32 = 0xC93F_D4B5;
@@ -311,6 +312,7 @@ pub fn generate(
     scene_document: Option<&SceneDocument>,
     scene_writes: &super::scene::SceneWrites,
     model_ids: Option<LodModelIds>,
+    ground_source: Option<(&connector::Resources, ResourceId)>,
     identity: Option<&connector::Resources>,
     root: &std::path::Path,
 ) -> Result<MenuResources, String> {
@@ -331,7 +333,13 @@ pub fn generate(
     let lot_bytes = resources.get(&lot_source).ok_or_else(|| {
         format!("menu registration: reference lot {lot_source} missing from source package")
     })?;
-    let (mask_entry, mask_key) = clone_lot_mask(resources, lot_bytes, instance)?;
+    let (mask_entry, mask_key) = lot_mask_for_scene(
+        resources,
+        lot_bytes,
+        scene_document,
+        instance,
+        ground_source,
+    )?;
     let (menu2, unit_leaf, lot_leaf, locale_table) = if let Some(identity) = identity {
         clone_donor_identity(
             spec,
@@ -349,14 +357,19 @@ pub fn generate(
             lot_bytes,
             instance,
             scene_document,
+            scene_writes,
             model_ids,
             mask_key,
+            model_bounds(resources, model_ids),
         )?;
         (
             build_menu2(spec, instance)?,
             build_unit_leaf(spec, instance)?,
             lot_leaf,
-            LOCALE_TABLE,
+            // Locale resource rides the identity instance (per-identity
+            // table, 19a1b3a) so two packages can never shadow each other's
+            // title/description via one shared table TGI.
+            instance,
         )
     };
     let locale = if identity.is_some() {
@@ -427,7 +440,7 @@ pub fn generate(
         for (id, bytes) in identity {
             if id.type_id == 0x2F4E_681B
                 || (id.type_id == 0x2F4E_681C && id.instance == 0x0186_1E39)
-                && !entries.iter().any(|(entry_id, _)| entry_id == id)
+                    && !entries.iter().any(|(entry_id, _)| entry_id == id)
             {
                 entries.push((*id, bytes.clone()));
             }
@@ -453,13 +466,14 @@ fn generate_parent_free(
     // shape; the reference package carries F970A822 + AF042E9A layers — the
     // walk must cover both or the tool entry loses its presentation fields
     // and the game drops it from the menu).
-    let menu2 = match super::native_profile::flat_chain(resources, super::native_profile::GENERIC_MENU) {
-        Ok((mut file, _)) => {
-            apply_menu_overrides(&mut file, spec, instance)?;
-            encode(&file)?
-        }
-        Err(_) => build_menu2(spec, instance)?,
-    };
+    let menu2 =
+        match super::native_profile::flat_chain(resources, super::native_profile::GENERIC_MENU) {
+            Ok((mut file, _)) => {
+                apply_menu_overrides(&mut file, spec, instance)?;
+                encode(&file)?
+            }
+            Err(_) => build_menu2(spec, instance)?,
+        };
     let native = super::native_profile::build(
         spec,
         resources,
@@ -569,13 +583,15 @@ fn clone_donor_identity(
         // Donors use both the legacy 0x0A0209A5 bundle list and the
         // repeated 0x0A0209A2 form. Remove the dynamic tree bundle from
         // either encoding; the authored lot owns its fixed tree count.
-        for property in unit.values.iter_mut().filter(|p| {
-            matches!(p.hash, 0x0A02_09A2 | 0x0A02_09A5)
-        }) {
+        for property in unit
+            .values
+            .iter_mut()
+            .filter(|p| matches!(p.hash, 0x0A02_09A2 | 0x0A02_09A5))
+        {
             if let Kind::Array(values) = &mut property.kind {
-                values.retain(|value| {
-                    !matches!(value, Value::Key(key) if key.instance == 0xE769_0450)
-                });
+                values.retain(
+                    |value| !matches!(value, Value::Key(key) if key.instance == 0xE769_0450),
+                );
             }
         }
     }
@@ -638,25 +654,17 @@ fn clone_donor_identity(
         || spec.unit_donor.as_deref() == Some("elementary-school")
         || spec.simulation_template_instance == Some(ELEMENTARY_TEMPLATE)
     {
-        set_scalar(&mut menu, HASH_PARK_FLAG, PropType::Bool, Value::Bool(false));
-        set_array_with_flags(
+        set_scalar(
             &mut menu,
-            HASH_EFFECT_TITLE,
-            PropType::Text,
-            vec![
-                Value::Text(Text { table_id: 0x50AA_0BEA, instance_id: 0x0D9A_B016 }),
-                Value::Text(Text { table_id: 0x50AA_0BEA, instance_id: 0x0EBC_E055 }),
-            ],
-            0x809C,
+            HASH_PARK_FLAG,
+            PropType::Bool,
+            Value::Bool(false),
         );
-        set_array(
-            &mut menu,
-            HASH_EFFECT_PARAM,
-            PropType::UInt32,
-            vec![Value::UInt32(181_926_601), Value::UInt32(240_671_456)],
-        );
+        // 统计行必须与 s31 GOLDEN 同形（3 文本 + 3 参数）：公园模板的 2 行
+        // 含需参数替换的格式串行（0EBCE055），缺参数时游戏原样打印
+        // `~population_amount:number~`（2026-11-08 菜单乱码事故）。
+        set_effect_stat_rows(&mut menu);
     }
-
     if let Some(cost) = spec.construction_cost {
         set_scalar(
             &mut unit,
@@ -677,9 +685,10 @@ fn clone_donor_identity(
     // Behavior binding is an explicit overlay on the frozen donor identity.
     // Keep menu placement and all scene resources untouched; only the Unit
     // runtime selector/template/capacity are allowed to change here.
-    let behavior_category = spec
-        .behavior_category_instance
-        .or_else(|| (spec.unit_donor.as_deref() == Some("elementary-school")).then_some(EDUCATION_BEHAVIOR_CATEGORY));
+    let behavior_category = spec.behavior_category_instance.or_else(|| {
+        (spec.unit_donor.as_deref() == Some("elementary-school"))
+            .then_some(EDUCATION_BEHAVIOR_CATEGORY)
+    });
     if let Some(category) = behavior_category {
         set_scalar(
             &mut unit,
@@ -706,7 +715,9 @@ fn clone_donor_identity(
     }
     if let Some(capacity) = spec.student_capacity {
         if capacity < 0 {
-            return Err(format!("student capacity must be finite and non-negative, got {capacity}"));
+            return Err(format!(
+                "student capacity must be finite and non-negative, got {capacity}"
+            ));
         }
         set_scalar(
             &mut unit,
@@ -790,12 +801,7 @@ fn clone_donor_identity(
     }
     lot.claimed_count = lot.values.len() as u32;
 
-    Ok((
-        encode(&menu)?,
-        encode(&unit)?,
-        encode(&lot)?,
-        locale_table,
-    ))
+    Ok((encode(&menu)?, encode(&unit)?, encode(&lot)?, locale_table))
 }
 
 fn patch_instance_refs(file: &mut PropertyFile, old: u32, new: u32) {
@@ -840,11 +846,7 @@ fn set_text_table(file: &mut PropertyFile, hash: u32, table: u32, instance: u32)
     set_array_with_flags(file, hash, PropType::Text, values, 0x801C);
 }
 
-fn build_donor_locale(
-    spec: &MenuRegistrationSpec,
-    instance: u32,
-    table: u32,
-) -> Vec<u8> {
+fn build_donor_locale(spec: &MenuRegistrationSpec, instance: u32, table: u32) -> Vec<u8> {
     let _ = (instance, table);
     let mut lines = vec![format!(
         "    \"0x00000001\" : {}",
@@ -868,19 +870,113 @@ fn build_donor_locale(
 /// both the new resource and its Key.  A new menu identity must not reuse the
 /// reference lot's mask TGI: that would overwrite the original building's
 /// mask (or collide with an official DLC entry).
-fn clone_lot_mask(
+
+/// 编译后模型的真实包围盒（LOD0 顶点位置并集）。失败 = None（保留 donor
+/// 盒子并保持构建继续；menu-contract 仍会校验 BoundingBox 是否存在）。
+fn model_bounds(
     resources: &connector::Resources,
-    lot_bytes: &[u8],
+    model_ids: Option<LodModelIds>,
+) -> Option<([f32; 3], [f32; 3])> {
+    let model_ids = model_ids?;
+    let bytes = resources.get(&model_ids[0])?;
+    let file = rw4::Rw4File::parse(bytes).ok()?;
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    let mut found = false;
+    for section in file.sections_of_type(rw4::SectionType::MESH) {
+        let Ok(mesh) = file.decode_mesh(bytes, section.number) else {
+            continue;
+        };
+        for vertex in &mesh.vertices {
+            let Some(p) = vertex.position() else { continue };
+            found = true;
+            for axis in 0..3 {
+                min[axis] = min[axis].min(p[axis]);
+                max[axis] = max[axis].max(p[axis]);
+            }
+        }
+    }
+    found.then_some((min, max))
+}
+
+/// 按工作台文档的地块尺寸生成纯色满覆盖遮罩（正方形 80×80 就是 80×80）。
+/// 2026-11-08 事故：克隆 donor 遮罩（88×120 长方形）再拉成 80×80，地面
+/// 既不是自己的形状也不是自己的纹样。地面以用户编排为准。
+fn synthetic_lot_mask(
+    resources: &connector::Resources,
     menu_instance: u32,
+    size: [f32; 2],
+) -> Result<(ResourceId, Vec<u8>), String> {
+    let width = size[0].round().max(1.0) as u32;
+    let height = size[1].round().max(1.0) as u32;
+    let pixels = vec![[255u8, 255, 255, 255]; (width as usize) * (height as usize)];
+    let bytes = super::materials::encode_rgba_raster(width, height, &pixels)?;
+    let instance = alloc_raster_instance(resources, menu_instance, &bytes);
+    Ok((
+        ResourceId {
+            type_id: raster_type(),
+            group: 0,
+            instance,
+        },
+        bytes,
+    ))
+}
+
+fn lot_mask_for_scene(
+    resources: &connector::Resources,
+    donor_lot: &[u8],
+    document: Option<&SceneDocument>,
+    menu_instance: u32,
+    ground_source: Option<(&connector::Resources, ResourceId)>,
 ) -> Result<(Option<(ResourceId, Vec<u8>)>, Option<ResourceId>), String> {
-    let file = PropertyFile::parse(lot_bytes)
-        .map_err(|error| format!("menu registration: reference lot is not a property: {error}"))?;
+    match document.and_then(|document| document.lot_mask) {
+        Some(super::scene::SceneLotMaskKind::Source) => {
+            let (source_resources, source_lot) = ground_source
+                .ok_or("lot.mask.kind=source requires a resolved source Lot and raster snapshot")?;
+            let source_lot_bytes = source_resources.get(&source_lot).ok_or_else(|| {
+                format!("ground source Lot {source_lot} is missing from its snapshot")
+            })?;
+            clone_lot_mask(
+                source_resources,
+                resources,
+                source_lot_bytes,
+                menu_instance,
+                true,
+            )
+        }
+        Some(super::scene::SceneLotMaskKind::Synthetic) => {
+            let size = document
+                .and_then(|document| document.lot_size)
+                .ok_or("lot.mask.kind=synthetic requires lot.size")?;
+            let (id, bytes) = synthetic_lot_mask(resources, menu_instance, size)?;
+            Ok((Some((id, bytes)), Some(id)))
+        }
+        // Legacy documents have no mask metadata. Preserve their old behavior;
+        // new explicit source/synthetic documents never take this branch.
+        None => match document.and_then(|document| document.lot_size) {
+            Some(size) => {
+                let (id, bytes) = synthetic_lot_mask(resources, menu_instance, size)?;
+                Ok((Some((id, bytes)), Some(id)))
+            }
+            None => clone_lot_mask(resources, resources, donor_lot, menu_instance, false),
+        },
+    }
+}
+
+fn mask_key(file: &PropertyFile) -> Result<Option<sc_properties::Key>, String> {
     let Some(property) = file.get(LOT_MASK_HASH) else {
-        return Ok((None, None));
+        return Ok(None);
     };
     let Kind::Scalar(Value::Key(key)) = &property.kind else {
         return Err("menu registration: lot mask is not a Key".into());
     };
+    Ok(Some(*key))
+}
+
+pub(crate) fn find_lot_mask(
+    resources: &connector::Resources,
+    key: sc_properties::Key,
+) -> Option<(ResourceId, &[u8])> {
     let candidates = [
         ResourceId {
             type_id: key.type_id,
@@ -898,22 +994,69 @@ fn clone_lot_mask(
             instance: key.instance,
         },
     ];
-    let (_, bytes) = candidates
-        .iter()
-        .find_map(|id| resources.get_key_value(id))
-        .ok_or_else(|| {
-            format!(
-                "menu registration: reference lot mask 0x{:08X} is not in the source package",
-                key.instance
-            )
-        })?;
-    let instance = alloc_raster_instance(resources, menu_instance, bytes);
+    candidates.into_iter().find_map(|id| {
+        (id.type_id == raster_type())
+            .then(|| resources.get(&id).map(|bytes| (id, bytes.as_slice())))
+            .flatten()
+    })
+}
+
+/// Keep only the independent ground Lot and its mask. The source package may
+/// be hundreds of megabytes; none of its unrelated resources enter the output.
+pub(crate) fn ground_source_snapshot(
+    resources: &connector::Resources,
+    lot_id: ResourceId,
+) -> Result<connector::Resources, String> {
+    let lot_bytes = resources
+        .get(&lot_id)
+        .ok_or_else(|| format!("ground source Lot {lot_id} is missing"))?;
+    let file = PropertyFile::parse(lot_bytes)
+        .map_err(|error| format!("ground source Lot {lot_id} is not a property: {error}"))?;
+    let key =
+        mask_key(&file)?.ok_or_else(|| format!("ground source Lot {lot_id} has no LotMask"))?;
+    let (mask_id, mask_bytes) = find_lot_mask(resources, key).ok_or_else(|| {
+        format!(
+            "ground source LotMask {:08X}:{:08X}:{:08X} raster is missing",
+            key.type_id, key.group, key.instance
+        )
+    })?;
+    Ok(connector::Resources::from([
+        (lot_id, lot_bytes.clone()),
+        (mask_id, mask_bytes.to_vec()),
+    ]))
+}
+
+fn clone_lot_mask(
+    source_resources: &connector::Resources,
+    target_resources: &connector::Resources,
+    lot_bytes: &[u8],
+    menu_instance: u32,
+    required: bool,
+) -> Result<(Option<(ResourceId, Vec<u8>)>, Option<ResourceId>), String> {
+    let file = PropertyFile::parse(lot_bytes)
+        .map_err(|error| format!("menu registration: reference lot is not a property: {error}"))?;
+    let Some(key) = mask_key(&file)? else {
+        if required {
+            return Err("lot.mask.kind=source: source Lot has no LotMask".into());
+        }
+        return Ok((None, None));
+    };
+    let Some((_, bytes)) = find_lot_mask(source_resources, key) else {
+        if required {
+            return Err(format!(
+                "lot.mask.kind=source: source LotMask {:08X}:{:08X}:{:08X} raster is missing",
+                key.type_id, key.group, key.instance
+            ));
+        }
+        return Ok((None, None));
+    };
+    let instance = alloc_raster_instance(target_resources, menu_instance, bytes);
     let id = ResourceId {
         type_id: raster_type(),
         group: 0,
         instance,
     };
-    Ok((Some((id, bytes.clone())), Some(id)))
+    Ok((Some((id, bytes.to_vec())), Some(id)))
 }
 
 fn alloc_raster_instance(
@@ -949,7 +1092,9 @@ fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resou
     let mut vanilla: std::collections::HashSet<(u32, u32)> = Default::default();
     if let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") {
         for path in crate::game_assets::package_paths(std::path::Path::new(&game_data)) {
-            let Ok(package) = dbpf::Package::open(&path) else { continue };
+            let Ok(package) = dbpf::Package::open(&path) else {
+                continue;
+            };
             for entry in package.entries() {
                 if entry.id.type_id != 0x00B1_B104 {
                     continue;
@@ -977,6 +1122,62 @@ fn alloc_menu_instance(spec: &MenuRegistrationSpec, resources: &connector::Resou
     }
 }
 
+/// 观光/默认资产的统计行（实证组合）：text 0EBCE29A ↔ param 0x0DA3EE15。
+fn set_scalar_kind_single_row(file: &mut PropertyFile) {
+    set_array_with_flags(
+        file,
+        HASH_EFFECT_TITLE,
+        PropType::Text,
+        vec![Value::Text(Text {
+            table_id: 0x50AA_0BEA,
+            instance_id: 0x0EBC_E29A,
+        })],
+        0x809C,
+    );
+    set_array(
+        file,
+        HASH_EFFECT_PARAM,
+        PropType::UInt32,
+        vec![Value::UInt32(0x0DA3_EE15)],
+    );
+}
+
+/// Tooltip 统计行：s31 GOLDEN 实证的三对 text↔param（必须成对对齐）。
+/// 2026-11-08 菜单乱码事故：公园模板只给两行且错位，`0EBCE055` 是需参数
+/// 替换的格式串行，缺对应参数时游戏原样打印 `~population_amount:number~`。
+fn set_effect_stat_rows(file: &mut PropertyFile) {
+    set_array_with_flags(
+        file,
+        HASH_EFFECT_TITLE,
+        PropType::Text,
+        vec![
+            Value::Text(Text {
+                table_id: 0x50AA_0BEA,
+                instance_id: 0x0D9A_B016,
+            }),
+            Value::Text(Text {
+                table_id: 0x50AA_0BEA,
+                instance_id: 0x0D9A_B027,
+            }),
+            Value::Text(Text {
+                table_id: 0x50AA_0BEA,
+                instance_id: 0x0EBC_E055,
+            }),
+        ],
+        0x809C,
+    );
+    set_array(
+        file,
+        HASH_EFFECT_PARAM,
+        PropType::UInt32,
+        vec![
+            Value::UInt32(0x0AD9_3A77),
+            Value::UInt32(0x0C3E_9F99),
+            Value::UInt32(0x0E58_5AE0),
+        ],
+    );
+}
+
 /// Lot 叶子 = 参照 lot property 克隆 + parent 改挂地标模板 + 与同 TGI
 /// 覆盖一致的场景 lowering（单元列/LotSize/Placement/LOD 重定向）。
 fn build_lot_leaf(
@@ -984,8 +1185,10 @@ fn build_lot_leaf(
     lot_bytes: &[u8],
     instance: u32,
     scene_document: Option<&SceneDocument>,
+    scene_writes: &super::scene::SceneWrites,
     model_ids: Option<LodModelIds>,
     mask_key: Option<ResourceId>,
+    bounds: Option<([f32; 3], [f32; 3])>,
 ) -> Result<Vec<u8>, String> {
     let _ = instance;
     let mut file = PropertyFile::parse(lot_bytes)
@@ -993,17 +1196,49 @@ fn build_lot_leaf(
     // Keep the proven clean landmark Lot skeleton (R11/Blender comparison).
     // Reference lots may carry dozens of building-specific prop/path fields;
     // carrying those into a new menu leaf causes save-load crashes.
+    // 2026-11-08 事故：`09FB78CB` 是 donor 的**名字文本边**
+    //（Text → locale 表），克隆后建筑在游戏里显示 donor 的名字
+    //（实机：大连希望大厦显示「高级煤矿坑」）。身份/文本列一律不得随
+    // 地面克隆——lot 只负责地面与数值。
     const SAFE_LOT_HASHES: &[u32] = &[
-        HASH_PARENT, 0x00F9EFBA, 0x00F9EFBB, 0x00F9EFBC, 0x00F9EFBD, 0x00F9EFBE,
-        0x02E33A81, 0x09FB78CB, 0x0AFE2FEB, 0x0BBBCDED, 0x0BBBCE2A,
-        0x0BBD5875, 0x0BF76A2A,
-        0x0CCB7FC8, 0x0CCB7FC9, 0x0CCB7FD0, 0x0CCB7FD2, 0x0CCB7FD3,
-        0x0CCB7FD4, 0x0CCB7FD5, 0x0CCB7FD6, 0x0D0082F1,
-        0x0D02D586, 0x0D02D587, 0x0D02D588, 0x0D02D589, 0x0D02D58A, 0x0D02D58B,
-        0x0D7AF042, 0x0D7AF043, 0x0D7AF044, 0x0D7AF045, 0x0D7AF046, 0x0D7AF047,
-        0x0D7AF048, 0x0D7AF049,
+        HASH_PARENT,
+        0x00F9EFBA,
+        0x00F9EFBB,
+        0x00F9EFBC,
+        0x00F9EFBD,
+        0x00F9EFBE,
+        0x02E33A81,
+        0x0AFE2FEB,
+        0x0BBBCDED,
+        0x0BBBCE2A,
+        0x0BBD5875,
+        0x0BF76A2A,
+        0x0CCB7FC8,
+        0x0CCB7FC9,
+        0x0CCB7FD0,
+        0x0CCB7FD2,
+        0x0CCB7FD3,
+        0x0CCB7FD4,
+        0x0CCB7FD5,
+        0x0CCB7FD6,
+        0x0D0082F1,
+        0x0D02D586,
+        0x0D02D587,
+        0x0D02D588,
+        0x0D02D589,
+        0x0D02D58A,
+        0x0D02D58B,
+        0x0D7AF042,
+        0x0D7AF043,
+        0x0D7AF044,
+        0x0D7AF045,
+        0x0D7AF046,
+        0x0D7AF047,
+        0x0D7AF048,
+        0x0D7AF049,
     ];
-    file.values.retain(|property| SAFE_LOT_HASHES.contains(&property.hash));
+    file.values
+        .retain(|property| SAFE_LOT_HASHES.contains(&property.hash));
     set_scalar(
         &mut file,
         HASH_PARENT,
@@ -1026,33 +1261,29 @@ fn build_lot_leaf(
             }),
         );
     }
-    // 保留作者编排的灯光与 prop 单元。prop 的 id 列由引擎脚本资源表解析，
-    // 因此必须和新 Lot 一起写入；省略它会让树木等资产静默消失。
-    let lights = scene_document
-        .map(|document| SceneDocument {
-            units: document
-                .units
-                .iter()
-                .filter(|unit| matches!(
-                    unit,
-                    super::scene::SceneUnit::Light { .. }
-                        | super::scene::SceneUnit::Prop { .. }
-                ))
-                .cloned()
-                .collect(),
-            ..SceneDocument::default()
-        })
-        .unwrap_or_default();
-    super::scene::apply_units(&mut file, &lights, &super::scene::SceneWrites {
-        lights: true,
-        ..Default::default()
-    })?;
-    // LOD 重定向到编译模型；场景 LotSize/Placement 不降入（引用 lot 原值）。
+    // BoundingBox 以**编译模型的真实包围盒**为准：克隆自 donor 的盒子是
+    // donor 建筑的尺寸（煤矿坑 88×120），与实际塔楼不符（2026-11-08 事故）。
+    if let Some(bounds) = bounds {
+        set_array_with_flags(
+            &mut file,
+            0x00F9_EFBA,
+            PropType::BoundingBox,
+            vec![Value::BoundingBox {
+                min: bounds.0,
+                max: bounds.1,
+            }],
+            0x801C,
+        );
+    }
+    // LOD 重定向与场景写回必须共享同一份完整文档和真实 writes 声明。
+    // 旧实现先过滤成 Light/Prop，又把两次写入都硬编码为 lights-only，
+    // 导致 paths、effects 和声明的 props 通过源文档校验后仍在最终包消失。
+    // 未声明族仍由 delta 语义保留 donor 原值，不能在这里改成全量覆盖。
     let lowered = super::package::apply_scene_lot_semantics(
         &encode(&file)?,
-        None,
+        scene_document,
         model_ids,
-        &super::scene::SceneWrites { lights: true, ..Default::default() },
+        scene_writes,
     )?;
     match lowered {
         Some((encoded, _)) => Ok(encoded),
@@ -1086,6 +1317,21 @@ fn build_unit_leaf(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>
             instance,
         }),
     );
+    // The normal menu route emits a fresh Unit leaf instead of passing through
+    // native_profile.  Carry the runtime placement family here as well;
+    // without it the menu identity is visible but has no ploppable behavior.
+    set_scalar(
+        &mut file,
+        HASH_UNIT_CATEGORY,
+        PropType::Key,
+        Value::Key(sc_properties::Key {
+            type_id: 0,
+            group: 0,
+            instance: spec
+                .behavior_category_instance
+                .unwrap_or(PARK_BEHAVIOR_CATEGORY),
+        }),
+    );
     // NightHouse-capable cUnit leaf: effect/unlock chain.  The menu tooltip
     // and the simulation entry expect these alongside the lot link.
     set_scalar(
@@ -1114,20 +1360,23 @@ fn build_unit_leaf(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>
         PropType::Float,
         Value::Float(1.0),
     );
+    // 原版 SCUnit 两项成本均为 Float32（s31/v7/vanilla 实测一致）。Int32 的
+    // 位型会被游戏按 f32 读出 ~0 —— 建造面板显示「免费」（2026-11-08
+    // HopeTower 事故）。
     if let Some(cost) = spec.construction_cost {
         set_scalar(
             &mut file,
             HASH_CONSTRUCTION_COST,
-            PropType::Int32,
-            Value::Int32(cost),
+            PropType::Float,
+            Value::Float(cost as f32),
         );
     }
     if let Some(cost) = spec.maintenance_cost {
         set_scalar(
             &mut file,
             HASH_MAINTENANCE_COST,
-            PropType::Int32,
-            Value::Int32(cost),
+            PropType::Float,
+            Value::Float(cost as f32),
         );
     }
     encode(&file)
@@ -1173,11 +1422,14 @@ fn build_menu2(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>, St
         vec![Value::Int32(spec.ui_position.unwrap_or(11500))],
     );
     // The companion locale resource uses fixed rows 1 (title) and 2
-    // (description).  The old legacy route used the asset instance as the
-    // text id, which left a valid-looking but unresolvable Text edge.
-    set_text_table(&mut file, HASH_TITLE, LOCALE_TABLE, 1);
+    // (description), written at the identity instance (19a1b3a).  Pointing at
+    // the shared LOCALE_TABLE constant here made two packages shadow each
+    // other's title/description (2026-11-08: v7 "OpenSCP Commercial Tower"
+    // masked 大连希望大厦) — and in the fallback path the shared table was
+    // never written at all, leaving a dangling Text edge.
+    set_text_table(&mut file, HASH_TITLE, instance, 1);
     if spec.description.is_some() {
-        set_text_table(&mut file, HASH_DESC, LOCALE_TABLE, 2);
+        set_text_table(&mut file, HASH_DESC, instance, 2);
     }
     let icon_key = Value::Key(sc_properties::Key {
         type_id: ICON_TYPE,
@@ -1227,24 +1479,10 @@ fn build_menu2(spec: &MenuRegistrationSpec, instance: u32) -> Result<Vec<u8>, St
         })],
         0x809C,
     );
-    // NightHouse-shaped statistics row and park flag.  These are not cosmetic:
-    // the tooltip builder reads both fields while constructing the tool entry.
-    set_array_with_flags(
-        &mut file,
-        HASH_EFFECT_TITLE,
-        PropType::Text,
-        vec![Value::Text(Text {
-            table_id: 0x50AA_0BEA,
-            instance_id: 0x0EBC_E29A,
-        })],
-        0x809C,
-    );
-    set_array(
-        &mut file,
-        HASH_EFFECT_PARAM,
-        PropType::UInt32,
-        vec![Value::UInt32(0x0DA3_EE15)],
-    );
+    // 统计行：0EBCE29A（Visitors per day）+ 0x0DA3EE15 是 a42cf63e 实机
+    // 验证过的组合（显示"每日旅客量 51"）。text 与 param 必须成对，换行
+    // 不换参数 = 打印未替换格式串。
+    set_scalar_kind_single_row(&mut file);
     set_scalar(
         &mut file,
         HASH_PARK_FLAG,
@@ -1356,31 +1594,16 @@ fn apply_menu_overrides(
         // These are the school tooltip/effect rows. Leaving the generic park
         // rows in place produces literal `~population_amount~` and
         // `~maintenance_cost~` placeholders even though the title resolves.
-        set_array_with_flags(
-            file,
-            HASH_EFFECT_TITLE,
-            PropType::Text,
-            vec![
-                Value::Text(Text {
-                    table_id: 0x50AA_0BEA,
-                    instance_id: 0x0D9A_B016,
-                }),
-                Value::Text(Text {
-                    table_id: 0x50AA_0BEA,
-                    instance_id: 0x0EBC_E055,
-                }),
-            ],
-            0x809C,
-        );
-        set_array(
-            file,
-            HASH_EFFECT_PARAM,
-            PropType::UInt32,
-            vec![Value::UInt32(181_926_601), Value::UInt32(240_671_456)],
-        );
+        set_effect_stat_rows(file);
         // Menu placement remains the park category above; this flag controls
         // the runtime presentation family and must not remain the park value.
         set_scalar(file, HASH_PARK_FLAG, PropType::Bool, Value::Bool(false));
+    } else {
+        // 观光/非教育资产：**实证过的单行**（a42cf63e 实机截图：
+        // 每日旅客量 51 + -1,500/小时）。0EBCE29A 是 "Visitors per day:
+        // ~amount:number~"，必须配 0x0DA3EE15 才能替换；配错参数就会原样
+        // 打印 `~amount:number~`（2026-11-08 乱码事故的真实原因）。
+        set_scalar_kind_single_row(file);
     }
     // menuUnit: type-less key to the new Unit leaf (author `key(0x0975695f,(0,0,main_id))`).
     set_scalar(
@@ -1457,12 +1680,103 @@ mod tests {
             },
             vec![1, 2, 3, 4],
         );
-        let (entry, key) = clone_lot_mask(&resources, &lot, 0x1234_5678).unwrap();
+        let (entry, key) = clone_lot_mask(&resources, &resources, &lot, 0x1234_5678, true).unwrap();
         let (id, bytes) = entry.expect("mask entry");
         let key = key.expect("mask key");
-        assert_ne!(key.instance, old, "new identity must not reuse the source mask TGI");
+        assert_ne!(
+            key.instance, old,
+            "new identity must not reuse the source mask TGI"
+        );
         assert_eq!(key, id);
         assert_eq!(bytes, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn explicit_source_mask_survives_lot_size_pixel_for_pixel() {
+        let source_lot = ResourceId {
+            type_id: PROPERTY_TYPE,
+            group: 0x41F0_C000,
+            instance: 0x0483_239E,
+        };
+        let source_mask = ResourceId {
+            type_id: raster_type(),
+            group: 0,
+            instance: 0xDEDC_4095,
+        };
+        let lot = PropertyFile {
+            values: vec![Property {
+                hash: LOT_MASK_HASH,
+                prop_type: PropType::Key,
+                kind: Kind::Scalar(Value::Key(sc_properties::Key {
+                    type_id: 0,
+                    group: 0,
+                    instance: source_mask.instance,
+                })),
+                encoding: PropertyEncoding::default(),
+            }],
+            claimed_count: 1,
+        }
+        .encode_canonical()
+        .unwrap();
+        let pixels = (0..12)
+            .map(|index| [index as u8, 255 - index as u8, index as u8 * 3, 0])
+            .collect::<Vec<_>>();
+        let raster = super::super::materials::encode_rgba_raster(4, 3, &pixels).unwrap();
+        let source = connector::Resources::from([(source_lot, lot), (source_mask, raster.clone())]);
+        let snapshot = ground_source_snapshot(&source, source_lot).unwrap();
+        assert_eq!(snapshot.len(), 2, "only the Lot and mask are retained");
+        let document = super::super::scene::parse_document(&serde_json::json!({
+            "lot": {"size": [80, 80], "mask": {"kind": "source"}}
+        }))
+        .unwrap();
+        let target = connector::Resources::new();
+        let (entry, _) = lot_mask_for_scene(
+            &target,
+            &source[&source_lot],
+            Some(&document),
+            0x1234_5678,
+            Some((&snapshot, source_lot)),
+        )
+        .unwrap();
+        let (new_id, bytes) = entry.unwrap();
+        assert_ne!(new_id, source_mask);
+        assert_eq!(bytes, raster);
+        let decoded = rw4::RasterImage::parse(&bytes)
+            .unwrap()
+            .decode_top_mip_rgba()
+            .unwrap();
+        let expected = pixels
+            .iter()
+            .flat_map(|pixel| pixel.into_iter().copied())
+            .collect::<Vec<_>>();
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn source_snapshot_fails_closed_without_its_raster() {
+        let source_lot = ResourceId {
+            type_id: PROPERTY_TYPE,
+            group: 0x41F0_C000,
+            instance: 0x0483_239E,
+        };
+        let lot = PropertyFile {
+            values: vec![Property {
+                hash: LOT_MASK_HASH,
+                prop_type: PropType::Key,
+                kind: Kind::Scalar(Value::Key(sc_properties::Key {
+                    type_id: 0,
+                    group: 0,
+                    instance: 0xDEDC_4095,
+                })),
+                encoding: PropertyEncoding::default(),
+            }],
+            claimed_count: 1,
+        }
+        .encode_canonical()
+        .unwrap();
+        let source = connector::Resources::from([(source_lot, lot)]);
+        let error = ground_source_snapshot(&source, source_lot).unwrap_err();
+        assert!(error.contains("raster is missing"), "{error}");
     }
 
     #[test]
@@ -1486,7 +1800,10 @@ mod tests {
         // kCategoryIDBuilding；原版小学 Menu2 携带，s17 缺失。
         let mut values = std::collections::BTreeMap::new();
         values.insert("title".into(), serde_json::json!("school"));
-        values.insert("buildingCategoryInstance".into(), serde_json::json!("0xC710B6E9"));
+        values.insert(
+            "buildingCategoryInstance".into(),
+            serde_json::json!("0xC710B6E9"),
+        );
         let spec = MenuRegistrationSpec::from_values(&values).unwrap();
         assert_eq!(spec.building_category_instance, Some(0xC710_B6E9));
         let bytes = build_menu2(&spec, 0x1234_5678).unwrap();
@@ -1508,7 +1825,9 @@ mod tests {
         let bytes = build_menu2(&spec, 0x1234_5678).unwrap();
         let file = PropertyFile::parse(&bytes).unwrap();
         assert!(
-            file.values.iter().all(|property| property.hash != HASH_BUILDING_CATEGORY),
+            file.values
+                .iter()
+                .all(|property| property.hash != HASH_BUILDING_CATEGORY),
             "building category must be absent by default"
         );
     }
@@ -1574,12 +1893,28 @@ fn build_icon_png(
     instance: u32,
     root: &std::path::Path,
 ) -> Result<Vec<u8>, String> {
-    if let Some(path) = spec.icon_png.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+    if let Some(path) = spec
+        .icon_png
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
         let file = root.join(path);
-        let bytes = std::fs::read(&file)
-            .map_err(|error| format!("menu.iconPng: {path}: {error}"))?;
+        let bytes =
+            std::fs::read(&file).map_err(|error| format!("menu.iconPng: {path}: {error}"))?;
         if !bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-            return Err(format!("menu.iconPng: {path} is not a PNG file"));
+            // Asset Editor exports some icons with a `.png` label while the
+            // payload is JPEG. Decode and normalize in memory; never rewrite
+            // the authoring file, and keep the package contract as PNG.
+            let image = image::load_from_memory(&bytes)
+                .map_err(|_| format!("menu.iconPng: {path} is not a PNG file"))?;
+            let mut normalized = std::io::Cursor::new(Vec::new());
+            image
+                .write_to(&mut normalized, image::ImageFormat::Png)
+                .map_err(|error| {
+                    format!("menu.iconPng: {path} image conversion failed: {error}")
+                })?;
+            return Ok(normalized.into_inner());
         }
         return Ok(bytes);
     }
@@ -1654,5 +1989,3 @@ fn palette(seed: u32) -> ([u8; 4], [u8; 4]) {
         [mix(3, 20), mix(4, 30), mix(5, 50), 255],
     )
 }
-
-

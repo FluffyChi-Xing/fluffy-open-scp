@@ -10,14 +10,14 @@
 //! (models, materials, ground, trees, paths) is bit-identical to the donor.
 
 use super::menu::{
-    lot_group, ELEMENTARY_TEMPLATE, EDUCATION_BEHAVIOR_CATEGORY, HASH_MENU_UNIT, HASH_PARENT,
+    EDUCATION_BEHAVIOR_CATEGORY, ELEMENTARY_TEMPLATE, HASH_MENU_UNIT, HASH_PARENT,
     HASH_STUDENT_CAPACITY, HASH_TITLE, HASH_UNIT_CATEGORY, ICON_GROUP, ICON_TYPE, LOCALE_GROUP,
-    LOCALE_TYPE, MARQUEE_TYPE, MENU_GROUP, UNIT_GROUP, UNIT_TEMPLATE_GROUP,
+    LOCALE_TYPE, MARQUEE_TYPE, MENU_GROUP, UNIT_GROUP, UNIT_TEMPLATE_GROUP, lot_group,
 };
 use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
 use super::stages::BuildContext;
 use dbpf::ResourceId;
-use sc_properties::{Key, Kind, PropertyFile, PropType, Value};
+use sc_properties::{Key, Kind, PropType, PropertyFile, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -240,7 +240,7 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
             return Err(
                 "behavior titleOverride requires a locale table reachable from the donor Menu2"
                     .into(),
-            )
+            );
         }
         (None, _) => None,
     };
@@ -249,9 +249,10 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     // building presents as education.  These are DECLARED menu-layer drifts;
     // the freeze below enforces that nothing beyond them moved.
     let menu2_patched = if presentation_requested(&program) {
-        let presentation = ctx.presentation_resources.clone().ok_or(
-            "behavior presentation fields require presentation_package to be loadable",
-        )?;
+        let presentation = ctx
+            .presentation_resources
+            .clone()
+            .ok_or("behavior presentation fields require presentation_package to be loadable")?;
         let (menu2_declared, icon_override) =
             apply_presentation(ctx, &presentation, &program, instance, &mut changed)?;
         Some((menu2_declared, icon_override))
@@ -288,11 +289,9 @@ struct FreezeBaseline {
 }
 
 fn presentation_requested(spec: &super::behavior_nodes::ResolvedBehavior) -> bool {
-    spec.presentation
-        .as_ref()
-        .is_some_and(|request| {
-            request.adopt_ui_categories || request.adopt_stat_rows || request.adopt_icon
-        })
+    spec.presentation.as_ref().is_some_and(|request| {
+        request.adopt_ui_categories || request.adopt_stat_rows || request.adopt_icon
+    })
 }
 
 /// Clone the declared presentation pieces from the vanilla education donor.
@@ -309,9 +308,9 @@ fn apply_presentation(
         .presentation
         .as_ref()
         .ok_or("presentation_requested called without a presentation request")?;
-    let unit_instance = request.unit_instance.ok_or(
-        "presentationPackage requires presentationUnit",
-    )?;
+    let unit_instance = request
+        .unit_instance
+        .ok_or("presentationPackage requires presentationUnit")?;
     // Find the donor menu whose menuUnit edge points at the donor unit.
     let donor_menu = presentation
         .iter()
@@ -326,12 +325,10 @@ fn apply_presentation(
                 })
         })
         .ok_or_else(|| {
-            format!(
-                "presentation donor has no menu pointing at unit {unit_instance:08X}"
-            )
+            format!("presentation donor has no menu pointing at unit {unit_instance:08X}")
         })?;
-    let donor = PropertyFile::parse(donor_menu.1)
-        .map_err(|error| format!("donor menu parse: {error}"))?;
+    let donor =
+        PropertyFile::parse(donor_menu.1).map_err(|error| format!("donor menu parse: {error}"))?;
     let mut declared = Vec::new();
     let mut icon_override = false;
 
@@ -345,16 +342,13 @@ fn apply_presentation(
         .get(&menu_id)
         .ok_or_else(|| format!("donor Menu2 {menu_id} missing from the snapshot"))?
         .to_vec();
-    let mut menu = PropertyFile::parse(&bytes)
-        .map_err(|error| format!("Menu2 parse: {error}"))?;
+    let mut menu = PropertyFile::parse(&bytes).map_err(|error| format!("Menu2 parse: {error}"))?;
 
     // a) stat rows: school schedule + capacity panel replaces park visitors.
     if request.adopt_stat_rows {
         for hash in [HASH_STAT_TEMPLATE, HASH_STAT_PARAMS] {
             let Some(donor_property) = donor.get(hash) else {
-                return Err(format!(
-                    "donor menu has no stat field {hash:08X} to adopt"
-                ));
+                return Err(format!("donor menu has no stat field {hash:08X} to adopt"));
             };
             if let Kind::Array(values) = &donor_property.kind {
                 set_array_with_flags(
@@ -377,9 +371,7 @@ fn apply_presentation(
     // b) uiCategories union: education board + category join; the park
     // container entry stays so the park menu remains the entry.
     if request.adopt_ui_categories {
-        let Some(Kind::Array(donor_values)) =
-            donor.get(HASH_UI_CATEGORIES).map(|p| &p.kind)
-        else {
+        let Some(Kind::Array(donor_values)) = donor.get(HASH_UI_CATEGORIES).map(|p| &p.kind) else {
             return Err("donor menu has no uiCategories".into());
         };
         let existing = menu.get(HASH_UI_CATEGORIES).map(|p| &p.kind);
@@ -455,7 +447,9 @@ fn freeze_baseline(
 ) -> Result<FreezeBaseline, String> {
     let menu_bytes = resources
         .get(menu_id)
-        .ok_or_else(|| format!("behavior binding requires donor Menu2 {menu_id} in the reference snapshot"))?
+        .ok_or_else(|| {
+            format!("behavior binding requires donor Menu2 {menu_id} in the reference snapshot")
+        })?
         .to_vec();
     let mut extras = Vec::new();
     for (type_id, group) in [(ICON_TYPE, ICON_GROUP), (MARQUEE_TYPE, ICON_GROUP)] {
@@ -510,8 +504,7 @@ impl FreezeBaseline {
         };
         match menu2_drift {
             Some((declared_fields, _)) => {
-                let baseline =
-                    PropertyFile::parse(&self.menu_bytes).map_err(|e| e.to_string())?;
+                let baseline = PropertyFile::parse(&self.menu_bytes).map_err(|e| e.to_string())?;
                 let current = resources
                     .get(&self.menu_id)
                     .ok_or_else(|| format!("frozen resource {} disappeared", self.menu_id))?;
@@ -520,8 +513,7 @@ impl FreezeBaseline {
             }
             None => byte_equal(&self.menu_id, &self.menu_bytes)?,
         }
-        let icon_exempt =
-            menu2_drift.map(|(_, icon)| *icon).unwrap_or(false);
+        let icon_exempt = menu2_drift.map(|(_, icon)| *icon).unwrap_or(false);
         for (id, bytes) in &self.extras {
             if icon_exempt && id.type_id == ICON_TYPE {
                 continue;
@@ -529,9 +521,9 @@ impl FreezeBaseline {
             byte_equal(id, bytes)?;
         }
         if let Some((locale_id, original)) = &self.locale {
-            let current = resources
-                .get(locale_id)
-                .ok_or_else(|| format!("locale table {locale_id} disappeared during behavior bind"))?;
+            let current = resources.get(locale_id).ok_or_else(|| {
+                format!("locale table {locale_id} disappeared during behavior bind")
+            })?;
             if Some(locale_id) != patched_locale.as_ref() {
                 if current.as_slice() != original.as_slice() {
                     return Err(format!(
@@ -606,7 +598,10 @@ fn menu_fields_undeclared_drift(
 
 /// The locale table the donor Menu2 title Text points at (`table_id` carries
 /// the table instance; `instance_id` is the row).
-fn donor_locale_id(resources: &super::connector::Resources, menu_bytes: &[u8]) -> Option<ResourceId> {
+fn donor_locale_id(
+    resources: &super::connector::Resources,
+    menu_bytes: &[u8],
+) -> Option<ResourceId> {
     let menu = PropertyFile::parse(menu_bytes).ok()?;
     let text = menu.get(HASH_TITLE)?;
     let Kind::Array(values) = &text.kind else {
@@ -635,7 +630,12 @@ fn locale_rows(bytes: &[u8]) -> Result<BTreeMap<String, String>, String> {
         .ok_or("locale table is not a JSON object")?;
     Ok(object
         .iter()
-        .map(|(k, v)| (k.clone(), v.as_str().map(str::to_string).unwrap_or_default()))
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                v.as_str().map(str::to_string).unwrap_or_default(),
+            )
+        })
         .collect())
 }
 
@@ -706,7 +706,8 @@ fn patch_unit(
     let bytes = ctx.resources.get(unit_id).ok_or_else(|| {
         format!("behavior binding requires donor Unit {unit_id} in the reference snapshot")
     })?;
-    let mut unit = PropertyFile::parse(bytes).map_err(|error| format!("donor Unit parse: {error}"))?;
+    let mut unit =
+        PropertyFile::parse(bytes).map_err(|error| format!("donor Unit parse: {error}"))?;
 
     // Parent template (0x00B2CCCB): only when a behavior node declared one
     // (legacy education always does; tourism/park/tree/landvalue leave the
@@ -766,7 +767,10 @@ fn patch_unit(
         }));
     }
     if !spec.remove_excluded_bundles.is_empty() {
-        let excluded = unit.values.iter_mut().find(|p| p.hash == HASH_EXCLUDE_TABLE);
+        let excluded = unit
+            .values
+            .iter_mut()
+            .find(|p| p.hash == HASH_EXCLUDE_TABLE);
         if let Some(property) = excluded {
             if let Kind::Array(values) = &mut property.kind {
                 let before = values.len();
@@ -780,7 +784,12 @@ fn patch_unit(
         }
     }
     for (hash, value) in &spec.set_float_fields {
-        set_scalar(&mut unit, *hash, PropType::Float, Value::Float(*value as f32));
+        set_scalar(
+            &mut unit,
+            *hash,
+            PropType::Float,
+            Value::Float(*value as f32),
+        );
         changed.push(serde_json::json!({
             "resource": unit_id.to_string(),
             "field": format!("{hash:08X}"),
@@ -788,7 +797,12 @@ fn patch_unit(
         }));
     }
     for (hash, value) in &spec.set_int_fields {
-        set_scalar(&mut unit, *hash, PropType::Int32, Value::Int32(*value as i32));
+        set_scalar(
+            &mut unit,
+            *hash,
+            PropType::Int32,
+            Value::Int32(*value as i32),
+        );
         changed.push(serde_json::json!({
             "resource": unit_id.to_string(),
             "field": format!("{hash:08X}"),
@@ -797,7 +811,12 @@ fn patch_unit(
     }
     for bundle in &spec.remove_bundles {
         let mut removed_from = Vec::new();
-        for hash in [HASH_BUNDLE_ENABLE_A2, 0x0A02_09A3, 0x0A02_09A4, HASH_BUNDLE_ENABLE_A5] {
+        for hash in [
+            HASH_BUNDLE_ENABLE_A2,
+            0x0A02_09A3,
+            0x0A02_09A4,
+            HASH_BUNDLE_ENABLE_A5,
+        ] {
             if let Some(property) = unit.values.iter_mut().find(|p| p.hash == hash) {
                 if let Kind::Array(values) = &mut property.kind {
                     let before = values.len();
@@ -821,16 +840,18 @@ fn patch_unit(
     // Bundle-enable union: add declared bundles without touching the donor's
     // existing entries (E7690450 park trees stay = frozen look).
     for bundle in &spec.ensure_bundles {
-        let already = [HASH_BUNDLE_ENABLE_A2, HASH_BUNDLE_ENABLE_A5].into_iter().any(|hash| {
-            unit.get(hash).is_some_and(|property| {
-                matches!(
-                    &property.kind,
-                    Kind::Array(values) if values.iter().any(|v| matches!(v,
-                        Value::Key(k) if k.instance == *bundle
-                    ))
-                )
-            })
-        });
+        let already = [HASH_BUNDLE_ENABLE_A2, HASH_BUNDLE_ENABLE_A5]
+            .into_iter()
+            .any(|hash| {
+                unit.get(hash).is_some_and(|property| {
+                    matches!(
+                        &property.kind,
+                        Kind::Array(values) if values.iter().any(|v| matches!(v,
+                            Value::Key(k) if k.instance == *bundle
+                        ))
+                    )
+                })
+            });
         if already {
             changed.push(serde_json::json!({
                 "resource": unit_id.to_string(),
@@ -840,7 +861,11 @@ fn patch_unit(
             }));
             continue;
         }
-        match unit.values.iter_mut().find(|p| p.hash == HASH_BUNDLE_ENABLE_A5) {
+        match unit
+            .values
+            .iter_mut()
+            .find(|p| p.hash == HASH_BUNDLE_ENABLE_A5)
+        {
             Some(property) => {
                 if let Kind::Array(values) = &mut property.kind {
                     values.push(Value::Key(Key {
@@ -918,7 +943,8 @@ fn patch_lot(
     let bytes = ctx.resources.get(lot_id).ok_or_else(|| {
         format!("behavior binding requires donor Lot {lot_id} in the reference snapshot")
     })?;
-    let mut lot = PropertyFile::parse(bytes).map_err(|error| format!("donor Lot parse: {error}"))?;
+    let mut lot =
+        PropertyFile::parse(bytes).map_err(|error| format!("donor Lot parse: {error}"))?;
     if let Some(board) = spec.lot_board {
         set_scalar(
             &mut lot,
@@ -1044,16 +1070,55 @@ fn patch_lot(
             instance: PATH_ROAD_CONNECT_NONE,
         }));
         // Precompute flags before the mutable passes (borrow-order hygiene).
-        let flags_indices = lot.get(HASH_PATH_INDICES).map(|p| p.encoding.flags).unwrap_or(0x809C);
-        let flags_segments = lot.get(HASH_PATH_SEGMENTS).map(|p| p.encoding.flags).unwrap_or(0x809C);
-        let flags_entries = lot.get(HASH_PATH_ENTRIES).map(|p| p.encoding.flags).unwrap_or(0x809C);
-        let flags_scope = lot.get(HASH_PATH_SCOPE).map(|p| p.encoding.flags).unwrap_or(0x809C);
-        let flags_connect = lot.get(HASH_PATH_ROAD_CONNECT).map(|p| p.encoding.flags).unwrap_or(0x809C);
-        set_array_with_flags(&mut lot, HASH_PATH_INDICES, PropType::Int32, next_indices, flags_indices);
-        set_array_with_flags(&mut lot, HASH_PATH_SEGMENTS, PropType::Int32, next_segments, flags_segments);
-        set_array_with_flags(&mut lot, HASH_PATH_ENTRIES, PropType::Key, entries, flags_entries);
+        let flags_indices = lot
+            .get(HASH_PATH_INDICES)
+            .map(|p| p.encoding.flags)
+            .unwrap_or(0x809C);
+        let flags_segments = lot
+            .get(HASH_PATH_SEGMENTS)
+            .map(|p| p.encoding.flags)
+            .unwrap_or(0x809C);
+        let flags_entries = lot
+            .get(HASH_PATH_ENTRIES)
+            .map(|p| p.encoding.flags)
+            .unwrap_or(0x809C);
+        let flags_scope = lot
+            .get(HASH_PATH_SCOPE)
+            .map(|p| p.encoding.flags)
+            .unwrap_or(0x809C);
+        let flags_connect = lot
+            .get(HASH_PATH_ROAD_CONNECT)
+            .map(|p| p.encoding.flags)
+            .unwrap_or(0x809C);
+        set_array_with_flags(
+            &mut lot,
+            HASH_PATH_INDICES,
+            PropType::Int32,
+            next_indices,
+            flags_indices,
+        );
+        set_array_with_flags(
+            &mut lot,
+            HASH_PATH_SEGMENTS,
+            PropType::Int32,
+            next_segments,
+            flags_segments,
+        );
+        set_array_with_flags(
+            &mut lot,
+            HASH_PATH_ENTRIES,
+            PropType::Key,
+            entries,
+            flags_entries,
+        );
         set_array_with_flags(&mut lot, HASH_PATH_SCOPE, PropType::Key, scope, flags_scope);
-        set_array_with_flags(&mut lot, HASH_PATH_ROAD_CONNECT, PropType::Key, connect, flags_connect);
+        set_array_with_flags(
+            &mut lot,
+            HASH_PATH_ROAD_CONNECT,
+            PropType::Key,
+            connect,
+            flags_connect,
+        );
         changed.push(serde_json::json!({
             "resource": lot_id.to_string(),
             "field": "service-path",
@@ -1080,7 +1145,9 @@ fn patch_lot(
                         Kind::Array(values) => values.clone(),
                         _ => Vec::new(),
                     })
-                    .ok_or_else(|| format!("invariant WALK_PATH violated: path column {hash:08X} missing"))
+                    .ok_or_else(|| {
+                        format!("invariant WALK_PATH violated: path column {hash:08X} missing")
+                    })
             };
             let mut indices = pull(HASH_PATH_INDICES)?;
             let mut segments = pull(HASH_PATH_SEGMENTS)?;
@@ -1099,7 +1166,9 @@ fn patch_lot(
             // the FIRST path's full range, i.e. up to the pair's END value.
             let first_path_end = match segments.get(1) {
                 Some(Value::Int32(end)) => *end,
-                _ => return Err("invariant WALK_PATH violated: segments are not int32 pairs".into()),
+                _ => {
+                    return Err("invariant WALK_PATH violated: segments are not int32 pairs".into());
+                }
             };
             let mirrored: Vec<Value> = indices
                 .get(0..=first_path_end as usize)
@@ -1124,16 +1193,55 @@ fn patch_lot(
                 group: 0,
                 instance: PATH_ROAD_CONNECT_NONE,
             }));
-            let flags_entries = lot.get(HASH_PATH_ENTRIES).map(|p| p.encoding.flags).unwrap_or(0x809C);
-            let flags_scope = lot.get(HASH_PATH_SCOPE).map(|p| p.encoding.flags).unwrap_or(0x809C);
-            let flags_connect = lot.get(HASH_PATH_ROAD_CONNECT).map(|p| p.encoding.flags).unwrap_or(0x809C);
-            let flags_indices = lot.get(HASH_PATH_INDICES).map(|p| p.encoding.flags).unwrap_or(0x809C);
-            let flags_segments = lot.get(HASH_PATH_SEGMENTS).map(|p| p.encoding.flags).unwrap_or(0x809C);
-            set_array_with_flags(&mut lot, HASH_PATH_INDICES, PropType::Int32, indices, flags_indices);
-            set_array_with_flags(&mut lot, HASH_PATH_SEGMENTS, PropType::Int32, segments, flags_segments);
-            set_array_with_flags(&mut lot, HASH_PATH_ENTRIES, PropType::Key, entries, flags_entries);
+            let flags_entries = lot
+                .get(HASH_PATH_ENTRIES)
+                .map(|p| p.encoding.flags)
+                .unwrap_or(0x809C);
+            let flags_scope = lot
+                .get(HASH_PATH_SCOPE)
+                .map(|p| p.encoding.flags)
+                .unwrap_or(0x809C);
+            let flags_connect = lot
+                .get(HASH_PATH_ROAD_CONNECT)
+                .map(|p| p.encoding.flags)
+                .unwrap_or(0x809C);
+            let flags_indices = lot
+                .get(HASH_PATH_INDICES)
+                .map(|p| p.encoding.flags)
+                .unwrap_or(0x809C);
+            let flags_segments = lot
+                .get(HASH_PATH_SEGMENTS)
+                .map(|p| p.encoding.flags)
+                .unwrap_or(0x809C);
+            set_array_with_flags(
+                &mut lot,
+                HASH_PATH_INDICES,
+                PropType::Int32,
+                indices,
+                flags_indices,
+            );
+            set_array_with_flags(
+                &mut lot,
+                HASH_PATH_SEGMENTS,
+                PropType::Int32,
+                segments,
+                flags_segments,
+            );
+            set_array_with_flags(
+                &mut lot,
+                HASH_PATH_ENTRIES,
+                PropType::Key,
+                entries,
+                flags_entries,
+            );
             set_array_with_flags(&mut lot, HASH_PATH_SCOPE, PropType::Key, scope, flags_scope);
-            set_array_with_flags(&mut lot, HASH_PATH_ROAD_CONNECT, PropType::Key, connect, flags_connect);
+            set_array_with_flags(
+                &mut lot,
+                HASH_PATH_ROAD_CONNECT,
+                PropType::Key,
+                connect,
+                flags_connect,
+            );
             changed.push(serde_json::json!({
                 "resource": lot_id.to_string(),
                 "field": "pedestrian-path",
@@ -1159,16 +1267,18 @@ fn ensure_behavior_invariants(
         .ok_or("unit vanished during behavior bind")?;
     let unit = PropertyFile::parse(bytes).map_err(|error| format!("unit reparse: {error}"))?;
     let bundle_enabled = |bundle: u32| {
-        [HASH_BUNDLE_ENABLE_A2, HASH_BUNDLE_ENABLE_A5].into_iter().any(|hash| {
-            unit.get(hash).is_some_and(|property| {
-                matches!(
-                    &property.kind,
-                    Kind::Array(values) if values.iter().any(|v| matches!(v,
-                        Value::Key(k) if k.instance == bundle
-                    ))
-                )
+        [HASH_BUNDLE_ENABLE_A2, HASH_BUNDLE_ENABLE_A5]
+            .into_iter()
+            .any(|hash| {
+                unit.get(hash).is_some_and(|property| {
+                    matches!(
+                        &property.kind,
+                        Kind::Array(values) if values.iter().any(|v| matches!(v,
+                            Value::Key(k) if k.instance == bundle
+                        ))
+                    )
+                })
             })
-        })
     };
     if let Some(template) = spec.parent_template {
         let parent_ok = unit.get(HASH_PARENT).is_some_and(|property| {
@@ -1199,7 +1309,11 @@ fn ensure_behavior_invariants(
             ));
         }
     }
-    if !spec.ensure_bundles.iter().all(|bundle| bundle_enabled(*bundle)) {
+    if !spec
+        .ensure_bundles
+        .iter()
+        .all(|bundle| bundle_enabled(*bundle))
+    {
         return Err(
             "invariant BEHAVIOR_BUNDLE violated: declared bundle missing from the enable union"
                 .into(),
@@ -1334,10 +1448,12 @@ mod tests {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         assert!(BehaviorSpec::from_values(&map).is_err());
-        assert!(serde_json::from_value::<BehaviorSpec>(serde_json::json!({
-            "kind": "education-minimal",
-            "unknownField": 1
-        }))
-        .is_err());
+        assert!(
+            serde_json::from_value::<BehaviorSpec>(serde_json::json!({
+                "kind": "education-minimal",
+                "unknownField": 1
+            }))
+            .is_err()
+        );
     }
 }

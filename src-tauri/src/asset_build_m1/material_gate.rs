@@ -70,22 +70,42 @@ fn store_baseline(root: &Path, baseline: &Baseline) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("material baseline dir: {e}"))?;
     }
-    let bytes = serde_json::to_vec_pretty(baseline).map_err(|e| format!("material baseline encode: {e}"))?;
-    crate::atomic_fs::write_atomic(&path, &bytes, true)
-        .map_err(|e| format!("material baseline write: {e}"))
+    let bytes = serde_json::to_vec_pretty(baseline)
+        .map_err(|e| format!("material baseline encode: {e}"))?;
+    match crate::atomic_fs::write_atomic(&path, &bytes, true) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(5) => {
+            // Windows managed project folders can reject the atomic rename
+            // while allowing a direct create/replace of this derived ledger.
+            std::fs::write(&path, &bytes).map_err(|e| format!("material baseline write: {e}"))
+        }
+        Err(error) => Err(format!("material baseline write: {error}")),
+    }
 }
 
 /// 字段级差异（顺序即输出顺序）。128→1 这类塌缩在第一行即可读出。
-pub(crate) fn diff_fingerprint(old: &MaterialFingerprint, new: &MaterialFingerprint) -> Vec<String> {
+pub(crate) fn diff_fingerprint(
+    old: &MaterialFingerprint,
+    new: &MaterialFingerprint,
+) -> Vec<String> {
     let mut lines = Vec::new();
     if old.model_sha256 != new.model_sha256 {
-        lines.push(format!("modelSha256 {} -> {}", old.model_sha256, new.model_sha256));
+        lines.push(format!(
+            "modelSha256 {} -> {}",
+            old.model_sha256, new.model_sha256
+        ));
     }
     if old.model_shape != new.model_shape {
-        lines.push(format!("modelShape {:?} -> {:?}", old.model_shape, new.model_shape));
+        lines.push(format!(
+            "modelShape {:?} -> {:?}",
+            old.model_shape, new.model_shape
+        ));
     }
     if old.material_groups != new.material_groups {
-        lines.push(format!("materialGroups {} -> {}", old.material_groups, new.material_groups));
+        lines.push(format!(
+            "materialGroups {} -> {}",
+            old.material_groups, new.material_groups
+        ));
     }
     if old.parameter_columns != new.parameter_columns {
         lines.push(format!(
@@ -94,7 +114,10 @@ pub(crate) fn diff_fingerprint(old: &MaterialFingerprint, new: &MaterialFingerpr
         ));
     }
     if old.mesh_count != new.mesh_count {
-        lines.push(format!("meshCount {} -> {}", old.mesh_count, new.mesh_count));
+        lines.push(format!(
+            "meshCount {} -> {}",
+            old.mesh_count, new.mesh_count
+        ));
     }
     if old.texture_slot_instances != new.texture_slot_instances {
         lines.push(format!(
@@ -166,8 +189,10 @@ mod tests {
     }
 
     fn temp_root(label: &str) -> std::path::PathBuf {
-        let root = crate::test_scratch::scratch_base()
-            .join(format!("openscp-material-gate-{label}-{}", std::process::id()));
+        let root = crate::test_scratch::scratch_base().join(format!(
+            "openscp-material-gate-{label}-{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
@@ -177,8 +202,14 @@ mod tests {
     fn first_build_records_then_unchanged_passes() {
         let root = temp_root("record");
         let fp = fingerprint(vec![128]);
-        assert!(matches!(enforce(&root, "model.lotm", &fp, false).unwrap(), GateOutcome::Recorded));
-        assert!(matches!(enforce(&root, "model.lotm", &fp, false).unwrap(), GateOutcome::Unchanged));
+        assert!(matches!(
+            enforce(&root, "model.lotm", &fp, false).unwrap(),
+            GateOutcome::Recorded
+        ));
+        assert!(matches!(
+            enforce(&root, "model.lotm", &fp, false).unwrap(),
+            GateOutcome::Unchanged
+        ));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -207,7 +238,10 @@ mod tests {
         let outcome = enforce(&root, "model.lotm", &drifted, true).unwrap();
         assert!(matches!(outcome, GateOutcome::DeclaredChange(_)));
         // 基线已刷新：再次构建（不声明）按新指纹放行。
-        assert!(matches!(enforce(&root, "model.lotm", &drifted, false).unwrap(), GateOutcome::Unchanged));
+        assert!(matches!(
+            enforce(&root, "model.lotm", &drifted, false).unwrap(),
+            GateOutcome::Unchanged
+        ));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

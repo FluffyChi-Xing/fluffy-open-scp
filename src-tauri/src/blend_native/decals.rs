@@ -51,19 +51,27 @@ fn normal_matrix(matrix: &[f64]) -> Option<[[f64; 3]; 3]> {
     if det.abs() < 1e-12 {
         return None;
     }
-    let cofactor = [
-        cross(b, c),
-        cross(c, a),
-        cross(a, b),
-    ];
+    let cofactor = [cross(b, c), cross(c, a), cross(a, b)];
     let inv = 1.0 / det;
     // Normals transform with the inverse transpose: n' = (M^-1)^T n.  The
     // adjugate rows above are det*M^-1, so read them row-wise (not column-wise,
     // which would apply M^-1 itself and mis-rotate normals on rotated objects).
     Some([
-        [cofactor[0][0] * inv, cofactor[0][1] * inv, cofactor[0][2] * inv],
-        [cofactor[1][0] * inv, cofactor[1][1] * inv, cofactor[1][2] * inv],
-        [cofactor[2][0] * inv, cofactor[2][1] * inv, cofactor[2][2] * inv],
+        [
+            cofactor[0][0] * inv,
+            cofactor[0][1] * inv,
+            cofactor[0][2] * inv,
+        ],
+        [
+            cofactor[1][0] * inv,
+            cofactor[1][1] * inv,
+            cofactor[1][2] * inv,
+        ],
+        [
+            cofactor[2][0] * inv,
+            cofactor[2][1] * inv,
+            cofactor[2][2] * inv,
+        ],
     ])
 }
 
@@ -111,8 +119,14 @@ pub fn frame(object: &BundleObject, face_index: usize) -> Result<DecalFrame, Str
             [dot(delta, right), dot(delta, up)]
         })
         .collect();
-    let min_x = uv.iter().map(|value| value[0]).fold(f64::INFINITY, f64::min);
-    let min_y = uv.iter().map(|value| value[1]).fold(f64::INFINITY, f64::min);
+    let min_x = uv
+        .iter()
+        .map(|value| value[0])
+        .fold(f64::INFINITY, f64::min);
+    let min_y = uv
+        .iter()
+        .map(|value| value[1])
+        .fold(f64::INFINITY, f64::min);
     for value in &mut uv {
         value[0] -= min_x;
         value[1] -= min_y;
@@ -171,8 +185,7 @@ pub fn cells(state: &SurfaceState, width: f64, height: f64) -> Result<Vec<[f64; 
     if state.decal_layout == "ROW" {
         nr = 1;
     }
-    let group_width =
-        nc as f64 * state.decal_width + (nc - 1) as f64 * state.decal_col_gap;
+    let group_width = nc as f64 * state.decal_width + (nc - 1) as f64 * state.decal_col_gap;
     let group_pitch = group_width + state.decal_group_gap;
     let row_pitch = state.decal_height + state.decal_row_gap;
     if state.decal_layout == "FILL" {
@@ -183,10 +196,9 @@ pub fn cells(state: &SurfaceState, width: f64, height: f64) -> Result<Vec<[f64; 
             .floor()
             .max(0.0) as i32;
     }
-    let start_x = (width
-        - (ng as f64 * group_width + (ng - 1).max(0) as f64 * state.decal_group_gap))
-        / 2.0
-        + state.decal_shift_x;
+    let start_x =
+        (width - (ng as f64 * group_width + (ng - 1).max(0) as f64 * state.decal_group_gap)) / 2.0
+            + state.decal_shift_x;
     let start_y = (height
         - (nr as f64 * state.decal_height + (nr - 1).max(0) as f64 * state.decal_row_gap))
         / 2.0
@@ -210,12 +222,7 @@ pub fn cells(state: &SurfaceState, width: f64, height: f64) -> Result<Vec<[f64; 
                 if x >= state.decal_margin - 1e-5
                     && x + state.decal_width <= width - state.decal_margin + 1e-5
                 {
-                    result.push([
-                        x,
-                        y,
-                        state.decal_width,
-                        state.decal_height,
-                    ]);
+                    result.push([x, y, state.decal_width, state.decal_height]);
                 }
             }
         }
@@ -237,10 +244,22 @@ mod tests {
             props: Default::default(),
             layers: Vec::new(),
             matrix: vec![
-                0.0, 0.0, 0.0103554, 217.01507568,
-                0.0103554, 0.0, 0.0, 0.0,
-                0.0, 0.0103554, 0.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
+                0.0,
+                0.0,
+                0.0103554,
+                217.01507568,
+                0.0103554,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0103554,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
             ],
             mesh: Some(BundleMesh {
                 vertices: vec![
@@ -268,8 +287,16 @@ mod tests {
     fn frame_transforms_normals_with_inverse_transpose() {
         let object = rotated_quad();
         let frame = frame(&object, 0).expect("rotated planar face must project");
-        assert!((frame.width - 4.65097).abs() < 1e-3, "width {}", frame.width);
-        assert!((frame.height - 4.65097).abs() < 1e-3, "height {}", frame.height);
+        assert!(
+            (frame.width - 4.65097).abs() < 1e-3,
+            "width {}",
+            frame.width
+        );
+        assert!(
+            (frame.height - 4.65097).abs() < 1e-3,
+            "height {}",
+            frame.height
+        );
     }
 
     #[test]

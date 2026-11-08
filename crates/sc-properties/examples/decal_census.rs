@@ -162,9 +162,11 @@ fn main() {
             });
             for e in &dict.entries {
                 if let Some(raster) = &e.raster {
-                    raster_owner
-                        .entry(raster.instance)
-                        .or_insert((rel.clone(), name_of(e.id.map(|k| k.instance).unwrap_or(0)), 0));
+                    raster_owner.entry(raster.instance).or_insert((
+                        rel.clone(),
+                        name_of(e.id.map(|k| k.instance).unwrap_or(0)),
+                        0,
+                    ));
                 }
             }
         }
@@ -272,7 +274,11 @@ fn main() {
     let mut hole_light_params: BTreeMap<(u64, u64), usize> = BTreeMap::new();
     let mut material_samples: Vec<String> = Vec::new();
     for (rel, pkg) in &joint {
-        for entry in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for entry in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             let Some(file) = parse_record(&pkg, entry) else {
                 continue;
             };
@@ -307,17 +313,12 @@ fn main() {
                 }
                 // MaterialData Vector3 样本（处理器默认值依据）
                 for p in file.values.iter().filter(|p| {
-                    (u::DECAL_MATERIAL_BASE..u::DECAL_MATERIAL_BASE + 3)
-                        .contains(&p.hash)
+                    (u::DECAL_MATERIAL_BASE..u::DECAL_MATERIAL_BASE + 3).contains(&p.hash)
                 }) {
                     if material_samples.len() < 12 {
                         if let Kind::Array(vs) = &p.kind {
                             let xyz: Vec<String> = vs.iter().map(|v| v.to_string()).collect();
-                            material_samples.push(format!(
-                                "{:08X}:[{}]",
-                                p.hash,
-                                xyz.join(",")
-                            ));
+                            material_samples.push(format!("{:08X}:[{}]", p.hash, xyz.join(",")));
                         }
                     }
                 }
@@ -336,9 +337,7 @@ fn main() {
     println!("  含 decal 的 lot {lots_with_decal} 个（四包合计）");
     println!("  列存在 lot 数: {column_presence:?}");
     println!("  类别使用（ID 条目数）: {category_usage:?}");
-    println!(
-        "  RenderGroup lot {render_group_lots} / MachineSpec lot {machine_spec_lots}"
-    );
+    println!("  RenderGroup lot {render_group_lots} / MachineSpec lot {machine_spec_lots}");
     if depth_min.is_finite() {
         println!("  Depth 范围 {depth_min:.3}..{depth_max:.3} m");
     }

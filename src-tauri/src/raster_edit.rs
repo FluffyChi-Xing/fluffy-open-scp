@@ -541,11 +541,8 @@ pub async fn read_lot_material(
         .map_err(|error| RasterEditError::Properties(error.to_string()))?;
         // Parent(0x00B2CCCB) 继承展平：lot 变体常把 LotColors 挂在父级
         //（本级只有 LotMask/LOD），不展平会全部落到回退色。
-        let mut properties = crate::package_service::flatten_lot_parents(
-            raw_properties.clone(),
-            &package,
-            &manager,
-        );
+        let mut properties =
+            crate::package_service::flatten_lot_parents(raw_properties.clone(), &package, &manager);
         // 父级在 SimCity_Game.package 而会话未打开 Game 时，父链会断在中间：
         // 用同目录源包句柄重试（仅授权 key 全缺时，避免无谓打开大包）。
         if !crate::package_service::lot_chain_resolved(&properties) {

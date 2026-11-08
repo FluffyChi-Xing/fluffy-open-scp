@@ -78,7 +78,13 @@ mod tests {
         let document = LotmDocument {
             meshes: vec![b"glTF".to_vec()],
             materials: vec![LotmMaterial::from_recipe(
-                [b"t".to_vec(), b"n".to_vec(), b"s".to_vec(), b"p".to_vec(), b"i".to_vec()],
+                [
+                    b"t".to_vec(),
+                    b"n".to_vec(),
+                    b"s".to_vec(),
+                    b"p".to_vec(),
+                    b"i".to_vec(),
+                ],
                 [0.0; 16],
                 1,
             )],

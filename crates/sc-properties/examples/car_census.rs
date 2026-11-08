@@ -155,7 +155,11 @@ fn main() {
             continue;
         };
         let mut n = 0usize;
-        for entry in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for entry in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             if let Some(file) = parse_record(&pkg, entry) {
                 lots.push((rel.to_string(), entry.id.group, entry.id.instance, file));
                 n += 1;
@@ -180,8 +184,7 @@ fn main() {
                 let Ok(pkg) = Package::open(&path) else {
                     continue;
                 };
-                let Some(entry) = pkg.entries().iter().find(|e| e.id.instance == instance)
-                else {
+                let Some(entry) = pkg.entries().iter().find(|e| e.id.instance == instance) else {
                     continue;
                 };
                 let rel = path
@@ -268,7 +271,10 @@ fn main() {
         }
         let _ = (rel, instance);
     }
-    println!("  有 prop bin 的 lot {lots_with_bins} 个；被绑定 resourceID {} 个\n", stats.len());
+    println!(
+        "  有 prop bin 的 lot {lots_with_bins} 个；被绑定 resourceID {} 个\n",
+        stats.len()
+    );
     let mut rows: Vec<(&u32, &IdStat)> = stats.iter().collect();
     rows.sort_by_key(|(id, s)| (std::cmp::Reverse(s.lots), **id));
     for (id, s) in rows.iter().take(40) {
@@ -354,13 +360,7 @@ fn main() {
                 };
                 car_set.contains(&id)
             })
-            .map(|w| {
-                if car_set.len() > 1 {
-                    "mix"
-                } else {
-                    *w
-                }
-            })
+            .map(|w| if car_set.len() > 1 { "mix" } else { *w })
             .collect();
         let car_key = if cars.len() > 1 {
             "mix".to_string()
@@ -395,7 +395,11 @@ fn main() {
         "W2" => 0x0AB4_DFE2,
         _ => 0x0AB4_DFE3,
     };
-    for entry in gfx.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+    for entry in gfx
+        .entries()
+        .iter()
+        .filter(|e| e.id.type_id == PROPERTY_TYPE)
+    {
         let Some(rec) = registry.instances().get(&entry.id.instance) else {
             continue;
         };
@@ -432,10 +436,7 @@ fn main() {
         };
         if car_set.len() > 1 {
             let lower0 = name.to_lowercase();
-            mix_samples
-                .entry(car_key.clone())
-                .or_default()
-                .push(lower0);
+            mix_samples.entry(car_key.clone()).or_default().push(lower0);
         }
         let lower = name.to_lowercase();
         let wealth = ["w1d", "w2d", "w3d", "wl0", "wl1", "wl2", "wl3"]
@@ -561,7 +562,9 @@ fn main() {
                     .save_with_format(&path, image::ImageFormat::Png);
                 println!(
                     "    slot{slot} → tex {instance:08X} {}x{} 去重色档 {} → {path}",
-                    tex.width, tex.height, colors.len()
+                    tex.width,
+                    tex.height,
+                    colors.len()
                 );
             }
             break; // 只看第一个材质（车壳）

@@ -22,7 +22,7 @@ use super::package::LodModelIds;
 use super::scene::{SceneDocument, SceneUnit};
 use dbpf::ResourceId;
 use sc_properties::{
-    Key, Kind, Property, PropertyEncoding, PropertyFile, PropType, Text, Transform, Value,
+    Key, Kind, PropType, Property, PropertyEncoding, PropertyFile, Text, Transform, Value,
 };
 use sha2::{Digest, Sha256};
 
@@ -289,7 +289,10 @@ pub(crate) fn flat_chain(
             )
         })?;
         let file = PropertyFile::parse(bytes).map_err(|e| format!("generic schema {key}: {e}"))?;
-        sources.push(format!("{:08X}:{:08X}:{:08X}", key.type_id, key.group, key.instance));
+        sources.push(format!(
+            "{:08X}:{:08X}:{:08X}",
+            key.type_id, key.group, key.instance
+        ));
         cursor = None;
         for property in file.values {
             if property.hash == HASH_PARENT {
@@ -434,7 +437,12 @@ fn rotate_lot(
     for _ in 0..quarters {
         out = rot90_ccw(&out);
     }
-    Ok((out, new_size, [rotated_offset[0], rotated_offset[1]], new_period))
+    Ok((
+        out,
+        new_size,
+        [rotated_offset[0], rotated_offset[1]],
+        new_period,
+    ))
 }
 
 /// `np.rot90` counter-clockwise: `out[i][j] = in[j][rows-1-i]`.
@@ -485,7 +493,11 @@ fn decode_ground_raster(raw: &[u8]) -> Result<image::RgbaImage, String> {
     for y in 0..height {
         for x in 0..width {
             let at = 28 + ((y * width + x) * 4) as usize;
-            out.put_pixel(x, y, image::Rgba([raw[at + 2], raw[at + 1], raw[at], raw[at + 3]]));
+            out.put_pixel(
+                x,
+                y,
+                image::Rgba([raw[at + 2], raw[at + 1], raw[at], raw[at + 3]]),
+            );
         }
     }
     Ok(out)
@@ -584,9 +596,7 @@ fn rotate_matrix(matrix: &[f32], degrees: u32) -> Result<[f32; 12], String> {
     Ok(out)
 }
 
-const IDENTITY_12: [f32; 12] = [
-    1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-];
+const IDENTITY_12: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
 
 /// `prop_contract.compile_fields` driven by the workbench prop units.
 /// Instances group by bin (the field offset); a bin holding several resource
@@ -688,7 +698,11 @@ fn compile_prop_fields(
             PropType::Int32,
             (0..records.len() as i32).map(Value::Int32).collect(),
         ));
-        out.push(scalar(PROP_MARKERS[0] + bin, PropType::Bool, Value::Bool(false)));
+        out.push(scalar(
+            PROP_MARKERS[0] + bin,
+            PropType::Bool,
+            Value::Bool(false),
+        ));
         // 0x0C12EF60 is mUseBinPercent. Dynamic vehicle bins use the
         // simulation resource amount/capacity and vanilla sets this marker.
         out.push(scalar(
@@ -759,7 +773,12 @@ fn compile_light_fields(
         };
         let name = format!(
             "SC5_{}",
-            debug_name.as_deref().unwrap_or("Light").chars().take(24).collect::<String>()
+            debug_name
+                .as_deref()
+                .unwrap_or("Light")
+                .chars()
+                .take(24)
+                .collect::<String>()
         );
         lights.push(LightRow {
             kind,
@@ -818,11 +837,23 @@ fn compile_light_fields(
     let (group_hash, group_type) = LIGHT_FIXED_GROUP;
     out.push(array(group_hash, group_type, vec![zero_key(LIGHT_GROUP)]));
     let (period_hash, period_type) = LIGHT_FIXED_NIGHT_PERIOD;
-    out.push(array(period_hash, period_type, vec![zero_key(NIGHT_PERIOD)]));
+    out.push(array(
+        period_hash,
+        period_type,
+        vec![zero_key(NIGHT_PERIOD)],
+    ));
     let (range_hash, range_type) = LIGHT_FIXED_NIGHT_RANGE;
-    out.push(array(range_hash, range_type, vec![Value::Vector2(NIGHT_RANGE)]));
+    out.push(array(
+        range_hash,
+        range_type,
+        vec![Value::Vector2(NIGHT_RANGE)],
+    ));
     let (zeros_hash, zeros_type) = LIGHT_FIXED_ZEROS;
-    out.push(array(zeros_hash, zeros_type, vec![Value::Vector2([0.0, 0.0])]));
+    out.push(array(
+        zeros_hash,
+        zeros_type,
+        vec![Value::Vector2([0.0, 0.0])],
+    ));
     Ok(out)
 }
 
@@ -998,7 +1029,11 @@ fn compile_effect_fields(
             unknown,
             matrix: matrix.to_vec(),
         }));
-        worlds.push(Value::Key(Key { type_id: 0, group: 0, instance: 0 }));
+        worlds.push(Value::Key(Key {
+            type_id: 0,
+            group: 0,
+            instance: 0,
+        }));
         refs.push(key_value(external_id.unwrap_or(*effect_id)));
         enableds.push(Value::Bool(enabled.unwrap_or(false)));
     }
@@ -1019,7 +1054,9 @@ fn compile_effect_fields(
 /// translation comes back with the translation rotated about lot origin.
 fn rotate_vector(vector: &[f32; 3], degrees: u32) -> Result<[f32; 3], String> {
     let matrix = rotate_matrix(
-        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, vector[0], vector[1], vector[2]],
+        &[
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, vector[0], vector[1], vector[2],
+        ],
         degrees,
     )?;
     Ok([matrix[9], matrix[10], matrix[11]])
@@ -1039,45 +1076,58 @@ fn compile_path_fields(
     if scene.paths.is_empty() {
         return Ok(Vec::new());
     }
-    let mut points_by_id: std::collections::HashMap<
-        &str,
-        (&[f32; 3], &[f32; 3], Option<i32>),
-    > = Default::default();
-    for unit in &scene.units {
-        if let SceneUnit::PathPoint { point, tangent, point_index, id } = unit {
-            if let (Some(point), Some(tangent)) = (point, tangent) {
-                points_by_id.insert(id.as_str(), (point, tangent, *point_index));
-            }
-        }
-    }
+    // One global point pool, exactly like scene::apply_units. A point shared by
+    // two paths is emitted once and both pairs address its global row. The
+    // editor's per-path pointIndex is deliberately ignored: accepting it made
+    // the second path point back at the first path's geometry.
+    let mut point_indices: std::collections::HashMap<&str, i32> = Default::default();
     let mut points: Vec<Value> = Vec::new();
     let mut tangents: Vec<Value> = Vec::new();
     let mut indices: Vec<Value> = Vec::new();
+    for unit in &scene.units {
+        let SceneUnit::PathPoint {
+            point,
+            tangent,
+            id,
+            ..
+        } = unit
+        else {
+            continue;
+        };
+        let (Some(point), Some(tangent)) = (point, tangent) else {
+            return Err(format!("pathPoint {id} needs both point and tangent"));
+        };
+        let pool_index = points.len() as i32;
+        if point_indices.insert(id.as_str(), pool_index).is_some() {
+            return Err(format!("duplicate pathPoint id {id}"));
+        }
+        points.push(Value::Vector3(rotate_vector(point, degrees)?));
+        tangents.push(Value::Vector3(rotate_vector(tangent, degrees)?));
+        indices.push(Value::Int32(pool_index));
+    }
     let mut pairs: Vec<Value> = Vec::new();
     let mut entries: Vec<Value> = Vec::new();
     let mut scopes: Vec<Value> = Vec::new();
     let mut connects: Vec<Value> = Vec::new();
     for (path_index, path) in scene.paths.iter().enumerate() {
-        let start = points.len() as i32;
-        let mut count = 0i32;
+        if path.point_ids.len() < 2 {
+            return Err(format!(
+                "path #{path_index} has {} point(s); at least two are required",
+                path.point_ids.len()
+            ));
+        }
+        let mut path_indices = Vec::with_capacity(path.point_ids.len());
         for id in &path.point_ids {
-            let Some((point, tangent, point_index)) = points_by_id.get(id.as_str()) else {
+            let Some(index) = point_indices.get(id.as_str()) else {
                 return Err(format!(
                     "path #{path_index} references missing pathPoint {id}"
                 ));
             };
-            points.push(Value::Vector3(rotate_vector(point, degrees)?));
-            tangents.push(Value::Vector3(rotate_vector(tangent, degrees)?));
-            indices.push(Value::Int32(
-                point_index.unwrap_or(points.len() as i32 - 1),
-            ));
-            count += 1;
+            path_indices.push(*index);
         }
-        if count == 0 {
-            continue;
-        }
-        pairs.push(Value::Int32(start));
-        pairs.push(Value::Int32(start + count - 1));
+        path_indices.sort_unstable();
+        pairs.push(Value::Int32(path_indices[0]));
+        pairs.push(Value::Int32(*path_indices.last().expect("path has points")));
         // 类型 → 配方由 path_catalog 统一换算（与 scene 写回同一条链）。
         let recipe = super::path_catalog::resolve(
             path.kind.as_deref(),
@@ -1234,8 +1284,7 @@ pub fn build(
     let ground_bytes = resources
         .get(&ground_lot)
         .ok_or_else(|| format!("ground lot {ground_lot} missing from the reference package"))?;
-    let ground =
-        PropertyFile::parse(ground_bytes).map_err(|e| format!("ground lot parse: {e}"))?;
+    let ground = PropertyFile::parse(ground_bytes).map_err(|e| format!("ground lot parse: {e}"))?;
     for property in &ground.values {
         if LOT_TYPES.iter().any(|(hash, _)| *hash == property.hash) {
             upsert(&mut asset, encode_lot_numeric(property)?);
@@ -1255,7 +1304,8 @@ pub fn build(
     }
     // Parcel geometry, rotated to the asset orientation (author order:
     // size > offset > period > baseTile > width/depth > ground box).
-    let size = vector2(ground.get(HASH_LOT_SIZE)).ok_or("ground lot is missing LotSize (0x0CCB7FC8)")?;
+    let size =
+        vector2(ground.get(HASH_LOT_SIZE)).ok_or("ground lot is missing LotSize (0x0CCB7FC8)")?;
     if size[0] <= 0.0 || size[1] <= 0.0 {
         return Err("invalid parcel dimensions".into());
     }
@@ -1287,29 +1337,61 @@ pub fn build(
             instance,
         };
         mask = Some((mask_id, encoded));
-        upsert(&mut asset, scalar(GROUND_MASK_HASH, PropType::Key, key_value(Key {
-            type_id: mask_id.type_id,
-            group: mask_id.group,
-            instance: mask_id.instance,
-        })));
+        upsert(
+            &mut asset,
+            scalar(
+                GROUND_MASK_HASH,
+                PropType::Key,
+                key_value(Key {
+                    type_id: mask_id.type_id,
+                    group: mask_id.group,
+                    instance: mask_id.instance,
+                }),
+            ),
+        );
         new_size = rotated_size;
         new_offset = rotated_offset;
         new_period = rotated_period;
     }
-    upsert(&mut asset, scalar(HASH_LOT_SIZE, PropType::Vector2, Value::Vector2(new_size)));
-    upsert(&mut asset, scalar(HASH_LOT_OFFSET, PropType::Vector2, Value::Vector2(new_offset)));
-    upsert(&mut asset, scalar(HASH_LOT_PERIOD, PropType::Vector2, Value::Vector2(new_period)));
+    upsert(
+        &mut asset,
+        scalar(HASH_LOT_SIZE, PropType::Vector2, Value::Vector2(new_size)),
+    );
+    upsert(
+        &mut asset,
+        scalar(
+            HASH_LOT_OFFSET,
+            PropType::Vector2,
+            Value::Vector2(new_offset),
+        ),
+    );
+    upsert(
+        &mut asset,
+        scalar(
+            HASH_LOT_PERIOD,
+            PropType::Vector2,
+            Value::Vector2(new_period),
+        ),
+    );
     upsert(
         &mut asset,
         scalar(HASH_BASE_TILE, PropType::Int32, Value::Int32(base_tile)),
     );
     upsert(
         &mut asset,
-        scalar(HASH_GROUND_WIDTH, PropType::Float, Value::Float(new_size[0])),
+        scalar(
+            HASH_GROUND_WIDTH,
+            PropType::Float,
+            Value::Float(new_size[0]),
+        ),
     );
     upsert(
         &mut asset,
-        scalar(HASH_GROUND_DEPTH, PropType::Float, Value::Float(new_size[1])),
+        scalar(
+            HASH_GROUND_DEPTH,
+            PropType::Float,
+            Value::Float(new_size[1]),
+        ),
     );
     // Ground box + native ground atlases.
     let bounds = match model_ids {
@@ -1322,8 +1404,16 @@ pub fn build(
             HASH_GROUND_BOX,
             PropType::BoundingBox,
             vec![Value::BoundingBox {
-                min: [new_offset[0] - new_size[0] / 2.0, new_offset[1] - new_size[1] / 2.0, 0.0],
-                max: [new_offset[0] + new_size[0] / 2.0, new_offset[1] + new_size[1] / 2.0, bounds[5]],
+                min: [
+                    new_offset[0] - new_size[0] / 2.0,
+                    new_offset[1] - new_size[1] / 2.0,
+                    0.0,
+                ],
+                max: [
+                    new_offset[0] + new_size[0] / 2.0,
+                    new_offset[1] + new_size[1] / 2.0,
+                    bounds[5],
+                ],
             }],
         ),
     );
@@ -1334,24 +1424,45 @@ pub fn build(
             ));
         }
     }
-    upsert(&mut asset, scalar(GROUND_MODEL_KEY, PropType::Key, key_value(Key {
-        type_id: GROUND_ATLAS_A.type_id,
-        group: GROUND_ATLAS_A.group,
-        instance: GROUND_ATLAS_A.instance,
-    })));
-    upsert(&mut asset, scalar(GROUND_ATLAS_KEY, PropType::Key, key_value(Key {
-        type_id: GROUND_ATLAS_B.type_id,
-        group: GROUND_ATLAS_B.group,
-        instance: GROUND_ATLAS_B.instance,
-    })));
+    upsert(
+        &mut asset,
+        scalar(
+            GROUND_MODEL_KEY,
+            PropType::Key,
+            key_value(Key {
+                type_id: GROUND_ATLAS_A.type_id,
+                group: GROUND_ATLAS_A.group,
+                instance: GROUND_ATLAS_A.instance,
+            }),
+        ),
+    );
+    upsert(
+        &mut asset,
+        scalar(
+            GROUND_ATLAS_KEY,
+            PropType::Key,
+            key_value(Key {
+                type_id: GROUND_ATLAS_B.type_id,
+                group: GROUND_ATLAS_B.group,
+                instance: GROUND_ATLAS_B.instance,
+            }),
+        ),
+    );
     // LOD chain + model bounds (author `for i,h in enumerate(range(0x00f9efbb,…))`).
     if let Some(model_ids) = model_ids {
         for (hash, model) in LOD_HASHES.iter().zip(model_ids.iter()) {
-            upsert(&mut asset, scalar(*hash, PropType::Key, key_value(Key {
-                type_id: model.type_id,
-                group: model.group,
-                instance: model.instance,
-            })));
+            upsert(
+                &mut asset,
+                scalar(
+                    *hash,
+                    PropType::Key,
+                    key_value(Key {
+                        type_id: model.type_id,
+                        group: model.group,
+                        instance: model.instance,
+                    }),
+                ),
+            );
         }
     }
     upsert(
@@ -1387,7 +1498,10 @@ pub fn build(
         upsert(&mut asset, property);
     }
     // Unit/Asset locale title edge (author `unit/asset[0x09fb78cb]=text(t,1)`).
-    upsert(&mut asset, array(HASH_TITLE_LINK, PropType::Text, vec![text_value(instance)]));
+    upsert(
+        &mut asset,
+        array(HASH_TITLE_LINK, PropType::Text, vec![text_value(instance)]),
+    );
     // Interior controller enabler (report §5.3): without 0F169C46=true the
     // game never creates the per-building interior controller and the model
     // uploads fixed thresholds (1,1,1) — windows stay in one state forever
@@ -1408,19 +1522,26 @@ pub fn build(
             "../../resources/sc5/elementary-school-unit.bin"
         ))
         .map_err(|e| format!("elementary-school-unit.bin parse: {e}"))?,
-        "generic-park" => PropertyFile::parse(include_bytes!(
-            "../../resources/sc5/tested-unit.bin"
-        ))
-        .map_err(|e| format!("tested-unit.bin parse: {e}"))?,
+        "generic-park" => {
+            PropertyFile::parse(include_bytes!("../../resources/sc5/tested-unit.bin"))
+                .map_err(|e| format!("tested-unit.bin parse: {e}"))?
+        }
         other => return Err(format!("unsupported unit donor {other:?}")),
     };
     if let Some(cost) = spec.construction_cost {
-        upsert(&mut unit, scalar(HASH_COST, PropType::Float, Value::Float(cost as f32)));
+        upsert(
+            &mut unit,
+            scalar(HASH_COST, PropType::Float, Value::Float(cost as f32)),
+        );
     }
     if let Some(maintenance) = spec.maintenance_cost {
         upsert(
             &mut unit,
-            scalar(HASH_MAINTENANCE, PropType::Float, Value::Float(maintenance as f32)),
+            scalar(
+                HASH_MAINTENANCE,
+                PropType::Float,
+                Value::Float(maintenance as f32),
+            ),
         );
     }
     // Menu placement and runtime behavior are separate axes. The former is
@@ -1435,11 +1556,7 @@ pub fn build(
     });
     upsert(
         &mut unit,
-        scalar(
-            HASH_UNIT_CATEGORY,
-            PropType::Key,
-            zero_key(category),
-        ),
+        scalar(HASH_UNIT_CATEGORY, PropType::Key, zero_key(category)),
     );
     if let Some(template) = spec.simulation_template_instance {
         upsert(
@@ -1457,7 +1574,9 @@ pub fn build(
     }
     if let Some(capacity) = spec.student_capacity {
         if capacity < 0 {
-            return Err(format!("student capacity must be finite and non-negative, got {capacity}"));
+            return Err(format!(
+                "student capacity must be finite and non-negative, got {capacity}"
+            ));
         }
         upsert(
             &mut unit,
@@ -1468,14 +1587,24 @@ pub fn build(
             ),
         );
     }
-    upsert(&mut unit, scalar(HASH_UNIT_ASSET, PropType::Key, key_value(Key {
-        // Vanilla cUnit→Asset keys are type-less. Using the Property type here
-        // breaks the lookup even when group/instance are otherwise correct.
-        type_id: 0,
-        group: ASSET_GROUP,
-        instance,
-    })));
-    upsert(&mut unit, array(HASH_TITLE_LINK, PropType::Text, vec![text_value(instance)]));
+    upsert(
+        &mut unit,
+        scalar(
+            HASH_UNIT_ASSET,
+            PropType::Key,
+            key_value(Key {
+                // Vanilla cUnit→Asset keys are type-less. Using the Property type here
+                // breaks the lookup even when group/instance are otherwise correct.
+                type_id: 0,
+                group: ASSET_GROUP,
+                instance,
+            }),
+        ),
+    );
+    upsert(
+        &mut unit,
+        array(HASH_TITLE_LINK, PropType::Text, vec![text_value(instance)]),
+    );
     // Tree-decoration 行为绑定（tree-regression-analysis-20261106.md §2b）：
     // 树 bin 来自共享原版 bundle E7690450（0x07E0AD23=[14984C6B,6A,69,68]、
     // 0x07E0AD24=[10,10,10,10]、填充规则 26D4942C/2D/2E/2F）。教育模板链不
@@ -1627,7 +1756,7 @@ fn compile_light_count(scene: Option<&SceneDocument>) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asset_build_m1::scene::{parse_document as parse_scene, SceneDocument};
+    use crate::asset_build_m1::scene::{SceneDocument, parse_document as parse_scene};
     use serde_json::json;
 
     /// Decimal pins against the author's `light_native_profile.json` (the
@@ -1872,19 +2001,31 @@ mod tests {
         assert_eq!(ids.len(), 15, "13 education base + 2 authored");
         assert_eq!(
             ids[0],
-            Value::Key(Key { type_id: 0, group: 0, instance: 0x125D_19FA }),
+            Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: 0x125D_19FA
+            }),
             "base pack first = the universal shared anchor"
         );
         // 作者 spawner 按 instance 升序追加(BTreeMap 确定性顺序;id↔transform
         // 配对经同一 map 保持对齐)
         assert_eq!(
             ids[13],
-            Value::Key(Key { type_id: 0, group: 0, instance: 379778996 }),
+            Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: 379778996
+            }),
             "authored spawners append after the base pack"
         );
         assert_eq!(
             ids[14],
-            Value::Key(Key { type_id: 0, group: 0, instance: 2450748962 })
+            Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance: 2450748962
+            })
         );
         // transforms[13] ↔ ids[13](379778996, authored, 平移 (5,6,7))
         match column(0x0E1B_AC62)[13].clone() {
@@ -1900,9 +2041,11 @@ mod tests {
         }
         // Vanilla asset dicts never carry the variation trio — the builder
         // must not invent them.
-        assert!(fields.iter().all(|p| {
-            !matches!(p.hash, 0x0E71_5928 | 0x0E71_5929 | 0x0F0E_2BF1)
-        }));
+        assert!(
+            fields
+                .iter()
+                .all(|p| { !matches!(p.hash, 0x0E71_5928 | 0x0E71_5929 | 0x0F0E_2BF1) })
+        );
     }
 
     /// Author wire: record header `>IHHII` with flags 0x809C, and the
@@ -1975,8 +2118,11 @@ mod tests {
         assert_eq!(matrix[4], -1.0);
         assert_eq!(matrix[8], 1.0);
         // Translation row flips too (author applies the same row transform).
-        let translated = rotate_matrix(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0], 270)
-            .expect("rotate");
+        let translated = rotate_matrix(
+            &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0],
+            270,
+        )
+        .expect("rotate");
         assert!((translated[9] - 5.0).abs() < 1e-6);
         assert!((translated[10] + 4.0).abs() < 1e-6);
     }
@@ -2025,7 +2171,8 @@ mod tests {
                 pos += scalar_size(prop_type);
             } else {
                 let items = u32::from_be_bytes(encoded[pos..pos + 4].try_into().unwrap()) as usize;
-                let item = u32::from_be_bytes(encoded[pos + 4..pos + 8].try_into().unwrap()) as usize;
+                let item =
+                    u32::from_be_bytes(encoded[pos + 4..pos + 8].try_into().unwrap()) as usize;
                 pos += 8 + items * item;
             }
             if record_hash == hash {

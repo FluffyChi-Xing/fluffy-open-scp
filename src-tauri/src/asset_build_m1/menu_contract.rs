@@ -15,7 +15,7 @@
 
 use super::connector::Resources;
 use dbpf::ResourceId;
-use sc_properties::{Kind, PropertyFile, Value};
+use sc_properties::{Kind, PropType, PropertyFile, Value};
 
 const PROPERTY_TYPE: u32 = 0x00B1_B104;
 const MENU_GROUP: u32 = 0x0987_8A01;
@@ -29,12 +29,23 @@ const HASH_UI_CATEGORY: u32 = 0x0DB9_FC63;
 const HASH_MENU_UNIT: u32 = 0x0975_695F;
 const HASH_UNIT_ASSET_LINK: u32 = 0x08E1_7ED7;
 const HASH_UNIT_CATEGORY: u32 = 0x0AFE_27B1;
+const HASH_CONSTRUCTION_COST: u32 = 0x0A8A_41DA;
+const HASH_MAINTENANCE_COST: u32 = 0x09AE_19D7;
+/// 遗留共享 locale 表（menu.rs LOCALE_TABLE；已部署旧包如 Commercial_v7
+/// 占用）。新构建一律不得再写入。
+const LEGACY_SHARED_LOCALE_TABLE: u32 = 0xBF82_F7CE;
 const HASH_TITLE: u32 = 0x0A09_F5FA;
 const HASH_DESC: u32 = 0x0A09_F5FB;
 const HASH_BOUNDING_BOX: u32 = 0x00F9_EFBA;
 const HASH_LOT_MASK: u32 = 0x0CCB_7FD5;
 const HASH_SELF_MAP: u32 = 0x0CA5_CF4A;
-const MODEL_REF_HASHES: [u32; 5] = [0x00F9_EFBB, 0x00F9_EFBC, 0x00F9_EFBD, 0x00F9_EFBE, 0x0D00_82F1];
+const MODEL_REF_HASHES: [u32; 5] = [
+    0x00F9_EFBB,
+    0x00F9_EFBC,
+    0x00F9_EFBD,
+    0x00F9_EFBE,
+    0x0D00_82F1,
+];
 const PARK_CATEGORY: u32 = 0x0704_9250;
 
 /// 身份/donor 的 lot 组（Asset 字典）。
@@ -100,16 +111,14 @@ fn array_keys(file: &PropertyFile, hash: u32) -> Vec<sc_properties::Key> {
 }
 
 fn has_resource(resources: &Resources, type_id: u32, instance: u32) -> bool {
-    resources.keys().any(|id| id.type_id == type_id && id.instance == instance)
+    resources
+        .keys()
+        .any(|id| id.type_id == type_id && id.instance == instance)
 }
 
 /// locale 行查询：`Ok(None)` = 表不在包内（基础游戏全局表，跳过内容校验）；
 /// `Ok(Some(text))` = 行存在；`Err` = 表在包内但格式坏/行缺失/为空。
-fn locale_row(
-    resources: &Resources,
-    table_id: u32,
-    row: u32,
-) -> Result<Option<String>, String> {
+fn locale_row(resources: &Resources, table_id: u32, row: u32) -> Result<Option<String>, String> {
     let Some(bytes) = resources.get(&ResourceId {
         type_id: LOCALE_TYPE,
         group: LOCALE_GROUP,
@@ -117,9 +126,7 @@ fn locale_row(
     }) else {
         return Ok(None);
     };
-    let bytes = bytes
-        .strip_prefix(&[0xEF, 0xBB, 0xBF])
-        .unwrap_or(bytes);
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     let value: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|error| format!("locale table {table_id:08X} is not valid JSON: {error}"))?;
     let object = value
@@ -130,7 +137,9 @@ fn locale_row(
         .or_else(|| object.get(&format!("0x{row:x}")))
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| {
-            format!("locale table {table_id:08X} has no row 0x{row:08X} (title would render as ***)")
+            format!(
+                "locale table {table_id:08X} has no row 0x{row:08X} (title would render as ***)"
+            )
         })?;
     if text.trim().is_empty() {
         return Err(format!(
@@ -227,6 +236,11 @@ pub fn validate(
         if has_bbox {
             checks.push("BoundingBox".into());
         } else {
+            if strict {
+                return Err(format!(
+                    "asset {instance:08X}: 00F9EFBA BoundingBox is missing — strict menu identities need a concrete lot bound for placement and rendering"
+                ));
+            }
             checks.push("warning: 00F9EFBA BoundingBox missing (lot bounds)".into());
         }
         for hash in MODEL_REF_HASHES {
@@ -236,8 +250,11 @@ pub fn validate(
                 }
             }
         }
+        // 只有"本次构建确实编译了模型"时，缺模型引用才是致命错误；纯属性
+        // 夹具/无模型构建（单测、行为验证）降级为告警，不误杀。
+        let any_model = resources.keys().any(|id| id.type_id == MODEL_TYPE);
         if model_refs == 0 {
-            if strict && has_bbox {
+            if strict && has_bbox && any_model {
                 return Err(format!(
                     "asset {instance:08X}: no resolvable RW4 model reference (00F9EFBB..BE / 0D0082F1) — \
                      the building would render as a placement marker only"
@@ -250,11 +267,26 @@ pub fn validate(
             Some(key) if has_resource(resources, RASTER_TYPE, key.instance) => {
                 checks.push("LotMask".into())
             }
-            Some(key) => checks.push(format!(
-                "warning: LotMask raster 0x{:08X} not in package (ground/lot resolution)",
-                key.instance
-            )),
-            None => checks.push("warning: 0CCB7FD5 LotMask missing".into()),
+            Some(key) => {
+                if strict {
+                    return Err(format!(
+                        "asset {instance:08X}: LotMask raster 0x{:08X} is not resolvable — strict menu identities need a concrete ground mask",
+                        key.instance
+                    ));
+                }
+                checks.push(format!(
+                    "warning: LotMask raster 0x{:08X} not in package (ground/lot resolution)",
+                    key.instance
+                ));
+            }
+            None => {
+                if strict {
+                    return Err(format!(
+                        "asset {instance:08X}: 0CCB7FD5 LotMask is missing — strict menu identities need a ground mask"
+                    ));
+                }
+                checks.push("warning: 0CCB7FD5 LotMask missing".into());
+            }
         }
     } else {
         checks.push("warning: Asset resource missing (render fields unchecked)".into());
@@ -264,7 +296,9 @@ pub fn validate(
     //    包内表缺行/空串 = *** 占位。
     if menu_unit.is_some() {
         let title = scalar_text(&menu, HASH_TITLE).ok_or_else(|| {
-            format!("menu {instance:08X}: title Text 0x0A09F5FA is missing — the entry renders as ***")
+            format!(
+                "menu {instance:08X}: title Text 0x0A09F5FA is missing — the entry renders as ***"
+            )
         })?;
         if let Some(text) = locale_row(resources, title.table_id, title.instance_id)? {
             checks.push(format!("title={text}"));
@@ -288,6 +322,11 @@ pub fn validate(
                     ));
                 }
                 Some(_) => {}
+                None if strict => {
+                    return Err(format!(
+                        "unit {instance:08X}: behavior category is missing — menu identity has no placement family"
+                    ));
+                }
                 None => checks.push(
                     "warning: Unit behavior category missing; park placement unverified".into(),
                 ),
@@ -309,6 +348,43 @@ pub fn validate(
                          inheritance graph and leave only a placement marker visible"
                     ));
                 }
+            }
+        }
+    }
+
+    // 7) 成本类型：原版 SCUnit 的建造/维护成本全部 Float32。Int32 位型会被
+    //    游戏按 f32 读出 ~0 —— 建造面板显示「免费」（2026-11-08 HopeTower
+    //    事故：schema 50000 写成 i32，实机 免费+维护费正常 的双面症状）。
+    for (hash, label) in [
+        (HASH_CONSTRUCTION_COST, "construction cost"),
+        (HASH_MAINTENANCE_COST, "maintenance cost"),
+    ] {
+        if let Some(property) = unit.get(hash) {
+            if property.prop_type != PropType::Float {
+                return Err(format!(
+                    "unit {instance:08X}: {label} 0x{hash:08X} is encoded as {:?} — \
+                     the game reads SCUnit costs as Float32; an Int32 bit pattern renders as ~0 \
+                     (placement shows the building as free)",
+                    property.prop_type
+                ));
+            }
+            checks.push(format!("{label}=f32"));
+        }
+    }
+
+    // 8) 遗留共享 locale 表：所有构建路由已改写身份自有表（19a1b3a / 本次
+    //    收口）。标题/描述仍指向 0xBF82F7CE 意味着回归到了共享表路线——
+    //    任何两个这样的包会同 TGI 互踩（v7 "OpenSCP Commercial Tower" 遮蔽
+    //    大连希望大厦的 2026-11-08 事故）。donor 覆写原版真表（如 Dalian
+    //    284C6727）不受影响。
+    if menu_unit.is_some() {
+        if let Some(title) = scalar_text(&menu, HASH_TITLE) {
+            if title.table_id == LEGACY_SHARED_LOCALE_TABLE {
+                return Err(format!(
+                    "menu {instance:08X}: title Text targets the legacy shared locale table \
+                     0xBF82F7CE — every package built on the shared table shadows every other \
+                     one's title/description; write the per-identity table instead"
+                ));
             }
         }
     }
@@ -381,11 +457,7 @@ mod tests {
                 PropType::Key,
                 Kind::Array(categories.iter().map(|id| key(*id)).collect()),
             ),
-            prop(
-                HASH_MENU_UNIT,
-                PropType::Key,
-                Kind::Scalar(key(INSTANCE)),
-            ),
+            prop(HASH_MENU_UNIT, PropType::Key, Kind::Scalar(key(INSTANCE))),
             prop(
                 HASH_TITLE,
                 PropType::Text,
@@ -504,14 +576,92 @@ mod tests {
     }
 
     #[test]
+    fn rejects_int32_cost_bit_patterns() {
+        // 2026-11-08 HopeTower：schema 50000 走 Int32，实机按 f32 读 ~0 →
+        // 建造面板「免费」。门禁必须在字节编码层钉住 Float32。
+        let mut resources = base_resources(&[EDUCATION], EDUCATION);
+        let unit = encoded(vec![
+            prop(
+                HASH_UNIT_ASSET_LINK,
+                PropType::Key,
+                Kind::Scalar(Value::Key(Key {
+                    type_id: PROPERTY_TYPE,
+                    group: LOT_GROUP,
+                    instance: INSTANCE,
+                })),
+            ),
+            prop(
+                HASH_UNIT_CATEGORY,
+                PropType::Key,
+                Kind::Scalar(key(EDUCATION)),
+            ),
+            prop(
+                HASH_CONSTRUCTION_COST,
+                PropType::Int32,
+                Kind::Scalar(Value::Int32(50_000)),
+            ),
+            prop(
+                HASH_MAINTENANCE_COST,
+                PropType::Float,
+                Kind::Scalar(Value::Float(1500.0)),
+            ),
+        ]);
+        resources.insert(
+            ResourceId {
+                type_id: PROPERTY_TYPE,
+                group: UNIT_GROUP,
+                instance: INSTANCE,
+            },
+            unit,
+        );
+        let error = validate(&resources, INSTANCE, LOT_GROUP, None, true).unwrap_err();
+        assert!(error.contains("Float32"), "{error}");
+    }
+
+    #[test]
+    fn rejects_legacy_shared_locale_table() {
+        // 2026-11-08 HopeTower：v7 与本包同写 0xBF82F7CE，v7 的
+        // "OpenSCP Commercial Tower" 遮蔽「大连希望大厦」。共享表禁写。
+        let mut resources = base_resources(&[EDUCATION], EDUCATION);
+        let menu = encoded(vec![
+            prop(
+                HASH_UI_CATEGORY,
+                PropType::Key,
+                Kind::Array(vec![key(EDUCATION)]),
+            ),
+            prop(HASH_MENU_UNIT, PropType::Key, Kind::Scalar(key(INSTANCE))),
+            prop(
+                HASH_TITLE,
+                PropType::Text,
+                Kind::Scalar(Value::Text(Text {
+                    table_id: 0xBF82_F7CE,
+                    instance_id: 1,
+                })),
+            ),
+        ]);
+        resources.insert(
+            ResourceId {
+                type_id: PROPERTY_TYPE,
+                group: MENU_GROUP,
+                instance: INSTANCE,
+            },
+            menu,
+        );
+        let error = validate(&resources, INSTANCE, LOT_GROUP, None, true).unwrap_err();
+        assert!(error.contains("legacy shared locale table"), "{error}");
+    }
+
+    #[test]
     fn park_container_on_a_building_unit_is_a_warning() {
         // 公园入口 + 教育行为是 s24 验证过的"菜单/行为解耦"配方，只提示不拦截。
         let resources = base_resources(&[PARK_CATEGORY], EDUCATION);
         let report = validate(&resources, INSTANCE, LOT_GROUP, None, true).unwrap();
-        assert!(report
-            .checks
-            .iter()
-            .any(|check| check.contains("park panel entry with non-park Unit")));
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.contains("park panel entry with non-park Unit"))
+        );
     }
 
     #[test]
@@ -568,10 +718,12 @@ mod tests {
             asset,
         );
         let report = validate(&resources, INSTANCE, LOT_GROUP, None, false).unwrap();
-        assert!(report
-            .checks
-            .iter()
-            .any(|check| check.contains("no resolvable model refs")));
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.contains("no resolvable model refs"))
+        );
     }
 
     #[test]
@@ -623,7 +775,14 @@ mod tests {
             asset,
         );
         let donor = base_resources(&[EDUCATION], EDUCATION);
-        let error = validate(&resources, INSTANCE, LOT_GROUP, Some((&donor, INSTANCE)), true).unwrap_err();
+        let error = validate(
+            &resources,
+            INSTANCE,
+            LOT_GROUP,
+            Some((&donor, INSTANCE)),
+            true,
+        )
+        .unwrap_err();
         assert!(error.contains("self-map"), "{error}");
     }
 }

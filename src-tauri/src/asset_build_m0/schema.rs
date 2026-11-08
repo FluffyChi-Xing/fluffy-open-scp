@@ -235,17 +235,12 @@ pub fn validate_schema(schema: &AssetSchemaV2, diagnostics: &mut DiagnosticSet) 
         ));
     }
     if let Some(shape) = &schema.scene.model_shape {
-        if shape != "merged-single"
-            && shape != "nh-partitioned"
-            && shape != "nh-multimaterial"
-            && shape != "nh-atlas"
-            && shape != "native-multi"
-            && shape != "building40"
-        {
+        // 2026-11-08：拆 mesh 系路线移除（孤儿形状回归，见 geometry_route.rs）。
+        if shape != "merged-single" && shape != "nh-atlas" && shape != "building40" {
             diagnostics.push(Diagnostic::error(
                 "schema.invalid_model_shape",
                 Some("scene.modelShape".into()),
-                r#"modelShape must be "merged-single" (native single-shape clone), "nh-partitioned" (NH vertex layout, u32 indices above 65536 verts), "nh-atlas" (single mesh with baked tint atlas), "native-multi" (one RW4 mesh per unique plugin material), or "nh-multimaterial" (up to four largest facade material groups)"#,
+                r#"modelShape must be "nh-atlas" (single mesh per LOD with baked tint atlas — the university GOLDEN shape), "merged-single", or "building40". Mesh-splitting routes (nh-partitioned/native-multi/nh-multimaterial) are removed: game census allows ≤4 meshes per model"#,
             ));
         }
     }
@@ -339,7 +334,7 @@ mod tests {
             "reference": {
                 "menu": "00B1B104:09878A01:74168A83",
                 "unit": "00B1B104:40E0C000:8D007745",
-                "lot": "00B1B104:40E1C000:8D007745"
+                "lot": "00B1B104:58F0C000:8D007745"
             },
             "scene": {
                 "document": "asset.lot.json",

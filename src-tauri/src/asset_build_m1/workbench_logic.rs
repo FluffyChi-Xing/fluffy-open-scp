@@ -10,7 +10,7 @@
 //!
 //! 纯函数（文件存在性由调用方以闭包注入），可单测。
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
 /// 编译结果（只含要覆盖的 semantics 段；None = 保持基础 schema 原值）。
@@ -59,9 +59,8 @@ fn compile_menu(
     errors: &mut Vec<String>,
 ) -> Option<Value> {
     let menu = workbench?.get("menu")?;
-    if menu.get("enabled").and_then(Value::as_bool) != Some(true) {
-        return None;
-    }
+    // `enabled` is a historical editor artifact, not a build input. The
+    // presence and validity of authored menu fields determine compilation.
     let mut values = Map::new();
     let title = menu
         .get("label")
@@ -109,7 +108,24 @@ fn compile_menu(
     if categories.is_empty() && !errors.iter().any(|e| e.starts_with("menu.entries")) {
         errors.push("menu.entries: at least one target menu container is required".into());
     }
+    // Asset Editor's generic `dimension: city` entry is not the game's park
+    // menu identity.  A workbench graph with a park leaf is the authoring
+    // evidence for the runtime family, so complete the proven park recipe at
+    // the interpreter boundary instead of requiring hidden game fields in UI.
+    let has_park_behavior = workbench
+        .and_then(|value| value.pointer("/logic/params"))
+        .and_then(Value::as_object)
+        .is_some_and(|params| {
+            params.values().any(|value| {
+                value.get("type").and_then(Value::as_str) == Some("park")
+            })
+        });
     values.insert("categoryInstances".into(), json!(categories));
+    if has_park_behavior {
+        values.insert("categoryInstances".into(), json!(["0x07049250"]));
+        values.insert("menuParentInstance".into(), json!("0xF970A822"));
+        values.insert("buildingCategoryInstance".into(), json!("0xC710B6E9"));
+    }
 
     if let Some(position) = menu.get("uiPosition").and_then(Value::as_i64) {
         values.insert("uiPosition".into(), json!(position));
@@ -123,19 +139,33 @@ fn compile_menu(
             continue;
         }
         if !project_relative(path) {
-            errors.push(format!(
-                "{label}: {path:?} must be a project-relative file"
-            ));
+            errors.push(format!("{label}: {path:?} must be a project-relative file"));
             continue;
         }
         if !path_exists(path) {
             errors.push(format!("{label}: file {path:?} does not exist"));
             continue;
         }
-        values.insert(field.into(), json!(path));
+        let normalized = if field == "marqueePng"
+            && path.to_ascii_lowercase().ends_with(".png")
+        {
+            let sibling = format!("{}jpg", &path[..path.len() - 3]);
+            if path_exists(&sibling) {
+                sibling
+            } else {
+                path.to_string()
+            }
+        } else {
+            path.to_string()
+        };
+        values.insert(field.into(), json!(normalized));
     }
     for (key, field, label) in [
-        ("constructionCost", "constructionCost", "menu.constructionCost"),
+        (
+            "constructionCost",
+            "constructionCost",
+            "menu.constructionCost",
+        ),
         ("maintenanceCost", "maintenanceCost", "menu.maintenanceCost"),
     ] {
         if let Some(value) = menu.get(key).and_then(Value::as_i64) {
@@ -167,7 +197,9 @@ fn param_of(
         .cloned()
         .unwrap_or(Value::Null);
     if value.is_null() || !value.is_object() {
-        errors.push(format!("logic node {id}: parameters are missing or invalid"));
+        errors.push(format!(
+            "logic node {id}: parameters are missing or invalid"
+        ));
         None
     } else {
         Some(value)
@@ -296,12 +328,7 @@ fn compile_logic(
                     .and_then(Value::as_i64)
                     .filter(|v| *v >= 0)
             };
-            match (
-                field("w1"),
-                field("w2"),
-                field("w3"),
-                field("minWorkers"),
-            ) {
+            match (field("w1"), field("w2"), field("w3"), field("minWorkers")) {
                 (Some(w1), Some(w2), Some(w3), Some(min_workers)) => {
                     let mut labor_value = json!({
                         "w1": w1,
@@ -360,22 +387,50 @@ fn compile_logic(
             .get("type")
             .and_then(Value::as_str)
             .unwrap_or("");
-        if !matches!(kind, "education" | "tourism" | "park" | "tree" | "landvalue") {
+        if !matches!(
+            kind,
+            "education" | "tourism" | "park" | "tree" | "landvalue"
+        ) {
             errors.push(format!("logic leaf {leaf}: unknown behavior type {kind:?}"));
             continue;
         }
         behaviors.push(json!({"id": leaf, "type": kind, "params": node_params}));
     }
 
+    // Asset Editor permits both tourism and park leaves to author the same
+    // attraction field.  In the game this is one Unit property, not two
+    // additive channels.  Tourism is the requested landmark behavior and is
+    // therefore authoritative; retain the park node's land-value semantics
+    // while dropping only its duplicate attraction write.
+    let tourism_writes_attraction = behaviors.iter().any(|behavior| {
+        behavior.get("type").and_then(Value::as_str) == Some("tourism")
+            && behavior
+                .pointer("/params/attraction")
+                .is_some_and(|value| !value.is_null())
+    });
+    if tourism_writes_attraction {
+        for behavior in &mut behaviors {
+            if behavior.get("type").and_then(Value::as_str) != Some("park") {
+                continue;
+            }
+            if behavior.pointer("/params/attraction").is_some() {
+                if let Some(params) = behavior.get_mut("params").and_then(Value::as_object_mut) {
+                    params.remove("attraction");
+                    let id = behavior.get("id").and_then(Value::as_str).unwrap_or("park");
+                    warnings.push(format!(
+                        "behavior node {id}: park.attraction ignored because tourism.attraction is authoritative"
+                    ));
+                }
+            }
+        }
+    }
+
     // 提前跑一遍行为编译：参数冲突/非法值在入队前点名节点。
     if errors.is_empty() {
-        match crate::asset_build_m1::behavior_nodes::parse_labor(labor.as_ref())
-            .and_then(|labor| {
-                crate::asset_build_m1::behavior_nodes::parse_nodes(&behaviors)
-                    .and_then(|nodes| {
-                        crate::asset_build_m1::behavior_nodes::compile(labor, &nodes)
-                    })
-            }) {
+        match crate::asset_build_m1::behavior_nodes::parse_labor(labor.as_ref()).and_then(|labor| {
+            crate::asset_build_m1::behavior_nodes::parse_nodes(&behaviors)
+                .and_then(|nodes| crate::asset_build_m1::behavior_nodes::compile(labor, &nodes))
+        }) {
             Ok(resolved) => warnings.extend(resolved.notes),
             Err(error) => errors.push(error),
         }
@@ -388,9 +443,7 @@ pub fn apply_to_schema(base: &mut Value, compiled: &CompiledLogic) -> Result<(),
     let Some(root) = base.as_object_mut() else {
         return Err(vec!["base schema must be a JSON object".into()]);
     };
-    let semantics = root
-        .entry("semantics")
-        .or_insert_with(|| json!({}));
+    let semantics = root.entry("semantics").or_insert_with(|| json!({}));
     let Some(semantics) = semantics.as_object_mut() else {
         return Err(vec!["base schema semantics must be an object".into()]);
     };
@@ -431,7 +484,7 @@ mod tests {
     }
 
     fn menu(on: bool) -> Value {
-        json!({
+        let binding = json!({
             "enabled": on,
             "label": "科洛大厦",
             "description": "测试",
@@ -444,7 +497,18 @@ mod tests {
                 {"id": "menu-1", "dimension": "city", "categoryInstance": "899BEA70"},
                 {"id": "menu-2", "dimension": "development", "categoryInstance": "94E412ED"}
             ]
-        })
+        });
+        if !on {
+            // Legacy helper for an empty menu object; `enabled` itself is not
+            // interpreted by the production compiler.
+            let mut empty = binding;
+            empty["label"] = json!("");
+            empty["description"] = json!("");
+            empty["uiPosition"] = json!(null);
+            empty["entries"] = json!([]);
+            return empty;
+        }
+        binding
     }
 
     fn empty_logic() -> Value {
@@ -465,11 +529,25 @@ mod tests {
     }
 
     #[test]
-    fn disabled_menu_leaves_the_base_schema_untouched() {
-        let doc = document(menu(false), empty_logic());
+    fn absent_menu_leaves_the_base_schema_untouched() {
+        let doc = json!({"editor": {"workbench": {"logic": empty_logic()}}});
         let compiled = compile(&doc, &|_| true).unwrap();
         assert!(compiled.menu.is_none());
         assert!(!compiled.logic_present);
+    }
+
+    #[test]
+    fn menu_configuration_is_preserved_without_an_enable_switch() {
+        // `enabled` is ignored; authored menu data remains authoritative.
+        let mut binding = menu(true);
+        binding["enabled"] = json!(false);
+        let compiled = compile(&document(binding, empty_logic()), &|_| true).unwrap();
+        let menu = compiled.menu.expect("authored menu preserved");
+        assert!(
+            menu["categoryInstances"]
+                .as_array()
+                .is_some_and(|values| values.iter().any(|value| value == "0x899BEA70"))
+        );
     }
 
     #[test]
@@ -479,7 +557,10 @@ mod tests {
         binding["entries"] = json!([]);
         let errors = compile(&document(binding, empty_logic()), &|_| true).unwrap_err();
         assert!(errors.iter().any(|e| e.contains("title")), "{errors:?}");
-        assert!(errors.iter().any(|e| e.contains("menu container")), "{errors:?}");
+        assert!(
+            errors.iter().any(|e| e.contains("menu container")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -487,7 +568,10 @@ mod tests {
         let mut binding = menu(true);
         binding["iconPng"] = json!("assets/menu/icon.png");
         let errors = compile(&document(binding, empty_logic()), &|_| false).unwrap_err();
-        assert!(errors.iter().any(|e| e.contains("does not exist")), "{errors:?}");
+        assert!(
+            errors.iter().any(|e| e.contains("does not exist")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -513,7 +597,10 @@ mod tests {
                 "leaf-education-1": {"type": "education", "capacity": 250, "walkPath": true}
             }
         });
-        let compiled = compile(&document(menu(false), logic), &|_| true).unwrap();
+        let compiled = compile(&json!({"editor": {"workbench": {"logic": logic}}}), &|_| {
+            true
+        })
+        .unwrap();
         assert!(compiled.logic_present);
         assert_eq!(compiled.labor.unwrap()["w1"], 20);
         assert_eq!(compiled.behaviors.len(), 2);
@@ -539,7 +626,10 @@ mod tests {
                 "leaf-1": {"type": "education", "capacity": 100}
             }
         });
-        let errors = compile(&document(menu(false), logic), &|_| true).unwrap_err();
+        let errors = compile(&json!({"editor": {"workbench": {"logic": logic}}}), &|_| {
+            true
+        })
+        .unwrap_err();
         assert!(errors.iter().any(|e| e.contains("leaf-1")), "{errors:?}");
     }
 
@@ -566,7 +656,10 @@ mod tests {
             "edges": [{"id": "e1", "source": "info-1", "target": "asset", "targetHandle": "info"}],
             "params": {"info-1": {"w1": 1, "w2": 0, "w3": 0, "minWorkers": 0}}
         });
-        let compiled = compile(&document(menu(false), logic), &|_| true).unwrap();
+        let compiled = compile(&json!({"editor": {"workbench": {"logic": logic}}}), &|_| {
+            true
+        })
+        .unwrap();
         let mut base = json!({"semantics": {"behavior": {"kind": "education-minimal"}}});
         let errors = apply_to_schema(&mut base, &compiled).unwrap_err();
         assert!(errors[0].contains("conflicts"), "{errors:?}");

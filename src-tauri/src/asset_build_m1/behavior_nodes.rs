@@ -255,7 +255,10 @@ fn hex_list(value: &Value, field: &str) -> Result<Vec<u32>, String> {
         return Err(format!("{field} must be a comma-separated hex string"));
     };
     let mut out = Vec::new();
-    for part in text.split([',', ' ']).filter(|part| !part.trim().is_empty()) {
+    for part in text
+        .split([',', ' '])
+        .filter(|part| !part.trim().is_empty())
+    {
         let part = part.trim().trim_start_matches("0x");
         let id = u32::from_str_radix(part, 16)
             .map_err(|error| format!("{field}: invalid hex {part}: {error}"))?;
@@ -347,10 +350,7 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
     }
 }
 
-pub fn compile(
-    labor: Option<LaborSpec>,
-    nodes: &[Value],
-) -> Result<ResolvedBehavior, String> {
+pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBehavior, String> {
     let mut resolved = ResolvedBehavior::default();
 
     if let Some(labor) = labor {
@@ -413,7 +413,9 @@ pub fn compile(
     if let Some((template, node)) = parent_template {
         resolved.parent_template = Some(template);
         resolved.declared_unit_columns.push(PARENT_TEMPLATE);
-        resolved.notes.push(format!("parent template 0x{template:08X} ({node})"));
+        resolved
+            .notes
+            .push(format!("parent template 0x{template:08X} ({node})"));
     }
     apply_labor_auto_wiring(&mut resolved);
     resolved.declared_lot_columns = lot_columns(
@@ -425,11 +427,7 @@ pub fn compile(
     Ok(resolved)
 }
 
-fn set_template(
-    slot: &mut Option<(u32, String)>,
-    template: u32,
-    node: &str,
-) -> Result<(), String> {
+fn set_template(slot: &mut Option<(u32, String)>, template: u32, node: &str) -> Result<(), String> {
     match slot {
         Some((existing, owner)) if *existing != template => Err(format!(
             "behavior conflict: nodes {owner} and {node} require different parent templates \
@@ -449,15 +447,33 @@ fn compile_utilities(
     params: &Value,
 ) -> Result<(), String> {
     let Some(object) = params.as_object() else {
-        return Err(format!("behaviors node {node}: utilities params must be an object"));
+        return Err(format!(
+            "behaviors node {node}: utilities params must be an object"
+        ));
     };
     let mut any_explicit = false;
     for (name, bundle, rate, amount, capacity, companion) in [
-        ("power", POWER_BUNDLE, Some(POWER_RATE), POWER_AMOUNT, POWER_CAPACITY, POWER_CAPACITY_COMPANION),
-        ("water", WATER_BUNDLE, Some(WATER_RATE), WATER_AMOUNT, WATER_CAPACITY, WATER_CAPACITY_COMPANION),
+        (
+            "power",
+            POWER_BUNDLE,
+            Some(POWER_RATE),
+            POWER_AMOUNT,
+            POWER_CAPACITY,
+            POWER_CAPACITY_COMPANION,
+        ),
+        (
+            "water",
+            WATER_BUNDLE,
+            Some(WATER_RATE),
+            WATER_AMOUNT,
+            WATER_CAPACITY,
+            WATER_CAPACITY_COMPANION,
+        ),
         ("garbage", GARBAGE_BUNDLE, None, GARBAGE_AMOUNT, 0, 0),
     ] {
-        let Some(utility) = object.get(name) else { continue };
+        let Some(utility) = object.get(name) else {
+            continue;
+        };
         let mode = utility
             .get("mode")
             .and_then(Value::as_str)
@@ -515,7 +531,12 @@ fn compile_education(
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| hex(&Value::String(value.to_string()), "education.signatureBundle"))
+        .map(|value| {
+            hex(
+                &Value::String(value.to_string()),
+                "education.signatureBundle",
+            )
+        })
         .transpose()?
         .unwrap_or(EDUCATION_BUNDLE);
     resolved.ensure_bundle(signature_bundle, node)?;
@@ -526,7 +547,9 @@ fn compile_education(
     if let Some(capacity) = params.get("capacity").filter(|value| !value.is_null()) {
         let capacity = number(capacity, "education.capacity")?;
         if capacity <= 0.0 {
-            return Err(format!("behaviors node {node}: education.capacity must be > 0"));
+            return Err(format!(
+                "behaviors node {node}: education.capacity must be > 0"
+            ));
         }
         resolved.student_capacity = Some(capacity as u32);
         resolved.declared_unit_columns.push(STUDENT_CAPACITY);
@@ -542,7 +565,10 @@ fn compile_education(
         .map(str::trim)
         .filter(|board| !board.is_empty())
     {
-        resolved.lot_board = Some(hex(&Value::String(board.to_string()), "education.boardInstance")?);
+        resolved.lot_board = Some(hex(
+            &Value::String(board.to_string()),
+            "education.boardInstance",
+        )?);
     }
 
     for bundle in hex_list(
@@ -575,13 +601,11 @@ fn compile_education(
     let package = text(params.get("presentationPackage").unwrap_or(&Value::Null));
     if !package.is_empty() {
         let unit = hex(
-            params
-                .get("presentationUnit")
-                .ok_or_else(|| {
-                    format!(
-                        "behaviors node {node}: presentationUnit is required with presentationPackage"
-                    )
-                })?,
+            params.get("presentationUnit").ok_or_else(|| {
+                format!(
+                    "behaviors node {node}: presentationUnit is required with presentationPackage"
+                )
+            })?,
             "education.presentationUnit",
         )?;
         resolved.presentation = Some(PresentationRequest {
@@ -648,10 +672,7 @@ fn compile_land_values(
 /// `menu_mode`：目标身份是菜单阶段新分配的 Unit/Lot（Menu2/Unit/Lot 由
 /// `menu::generate` 生成）。树的 "frozen look" 不变量只对全克隆 donor 身份
 /// 成立，菜单身份由菜单生成器负责其 bundle 集，因此此处不再强制 E7690450。
-pub fn from_legacy(
-    spec: &super::behavior::BehaviorSpec,
-    menu_mode: bool,
-) -> ResolvedBehavior {
+pub fn from_legacy(spec: &super::behavior::BehaviorSpec, menu_mode: bool) -> ResolvedBehavior {
     let mut resolved = ResolvedBehavior {
         ensure_bundles: if spec.ensure_bundles.is_empty() {
             vec![EDUCATION_BUNDLE]
@@ -722,7 +743,9 @@ pub fn from_legacy(
     }
     resolved.declared_lot_columns = lot_columns(
         resolved.lot_board.is_some(),
-        resolved.ensure_walk_path || resolved.ensure_service_path || resolved.ensure_pedestrian_path,
+        resolved.ensure_walk_path
+            || resolved.ensure_service_path
+            || resolved.ensure_pedestrian_path,
     );
     resolved
 }
@@ -838,7 +861,11 @@ mod tests {
     fn conflicting_parent_templates_are_rejected() {
         let nodes = vec![
             node("leaf-1", "education", json!({"capacity": 100})),
-            node("leaf-2", "tourism", json!({"templateInstance": "0x565B72B9"})),
+            node(
+                "leaf-2",
+                "tourism",
+                json!({"templateInstance": "0x565B72B9"}),
+            ),
         ];
         let error = compile(None, &nodes).unwrap_err();
         assert!(error.contains("different parent templates"), "{error}");

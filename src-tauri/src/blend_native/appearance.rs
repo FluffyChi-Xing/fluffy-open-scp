@@ -28,8 +28,8 @@ pub fn choices(face: i32, row: i32, column: i32, seed: i32, ratio: f64) -> (bool
     let t = (column * 37 + row * 101 + face * 17 + seed * 53).rem_euclid(HASH_MODULUS);
     let h = (t * t + 19 * t + 23).rem_euclid(HASH_MODULUS);
     let lit = (h as f64) / (HASH_MODULUS as f64) < ratio;
-    let hue = (((h * 109 + 1021).rem_euclid(HASH_MODULUS)) as f64 * 4.0
-        / HASH_MODULUS as f64) as usize;
+    let hue =
+        (((h * 109 + 1021).rem_euclid(HASH_MODULUS)) as f64 * 4.0 / HASH_MODULUS as f64) as usize;
     (lit, hue.min(3))
 }
 

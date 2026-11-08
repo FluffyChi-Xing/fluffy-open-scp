@@ -50,7 +50,9 @@ fn property(hash: u32, kind: u16, payload: &[u8], out: &mut Vec<u8>) {
 
 fn vec2(hash: u32, value: [f32; 2], out: &mut Vec<u8>) {
     let mut p = Vec::with_capacity(8);
-    for v in value { p.extend_from_slice(&v.to_be_bytes()); }
+    for v in value {
+        p.extend_from_slice(&v.to_be_bytes());
+    }
     property(hash, 48, &p, out);
 }
 
@@ -64,7 +66,9 @@ fn key(hash: u32, id: ResourceId, out: &mut Vec<u8>) {
 
 fn vec4(hash: u32, value: [f32; 4], out: &mut Vec<u8>) {
     let mut p = Vec::with_capacity(16);
-    for v in value { p.extend_from_slice(&v.to_be_bytes()); }
+    for v in value {
+        p.extend_from_slice(&v.to_be_bytes());
+    }
     property(hash, 51, &p, out);
 }
 
@@ -75,14 +79,27 @@ pub fn encode_property(spec: &NativeLotSpec, mask: ResourceId) -> Vec<u8> {
     vec2(0x0CCB_7FC9, spec.offset, &mut values);
     vec2(0x0CCB_7FD0, spec.period, &mut values);
     key(0x0CCB_7FD5, mask, &mut values);
-    key(0x0CCB_7FD4, ResourceId { type_id: MODEL_TYPE, group: 0, instance: SURFACE_MODEL }, &mut values);
+    key(
+        0x0CCB_7FD4,
+        ResourceId {
+            type_id: MODEL_TYPE,
+            group: 0,
+            instance: SURFACE_MODEL,
+        },
+        &mut values,
+    );
     property(0x0CCB_7FD6, 9, &spec.base_tile.to_be_bytes(), &mut values);
     vec4(0x0D02_D58A, spec.color_heights, &mut values);
     vec4(0x0D02_D58B, spec.border_heights, &mut values);
     for i in 0..4 {
         vec4(0x0D02_D586 + i as u32, spec.colors[i], &mut values);
         vec4(0x0D7A_F042 + i as u32, spec.border_colors[i], &mut values);
-        property(0x0D7A_F046 + i as u32, 13, &spec.border_widths[i].to_be_bytes(), &mut values);
+        property(
+            0x0D7A_F046 + i as u32,
+            13,
+            &spec.border_widths[i].to_be_bytes(),
+            &mut values,
+        );
     }
     let count = 3 + 2 + 1 + 2 + 12;
     let mut out = Vec::with_capacity(4 + values.len());
@@ -92,7 +109,11 @@ pub fn encode_property(spec: &NativeLotSpec, mask: ResourceId) -> Vec<u8> {
 }
 
 pub fn mask_id(instance: u32) -> ResourceId {
-    ResourceId { type_id: RASTER_TYPE, group: 0, instance }
+    ResourceId {
+        type_id: RASTER_TYPE,
+        group: 0,
+        instance,
+    }
 }
 
 #[cfg(test)]

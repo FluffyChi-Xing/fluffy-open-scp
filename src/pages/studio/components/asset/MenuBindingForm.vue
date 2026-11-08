@@ -5,6 +5,7 @@ import { command } from "@/api/tauri";
 import { tauriApi } from "@/api";
 import { useToast } from "@/composables/useToast";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FCheckbox from "@/components/ui/FCheckbox.vue";
 import FSelect from "@/components/ui/FSelect.vue";
 import {
   menuBindingIssues,
@@ -168,6 +169,18 @@ function issueLabel(code: string): string {
 
 <template>
   <div class="menu-form" :class="{ compact }">
+
+    <label class="mf-enable">
+      <FCheckbox
+        :model-value="menu.enabled"
+        :disabled="disabled"
+        @change="emit('update:menu', { enabled: $event })"
+      />
+      <span class="mf-enable-text">
+        <span>{{ t("studio.assetWorkbench.menuEnabled") }}</span>
+        <small>{{ t("studio.assetWorkbench.menuEnabledHint") }}</small>
+      </span>
+    </label>
 
     <div class="mf-grid">
         <label class="mf-field">
@@ -355,6 +368,21 @@ function issueLabel(code: string): string {
   display: flex;
   font-size: 12px;
   gap: 7px;
+}
+.mf-enable {
+  align-items: flex-start;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+}
+.mf-enable-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 2px;
+}
+.mf-enable-text small {
+  color: rgba(255, 255, 255, 0.45);
 }
 .mf-grid {
   display: grid;

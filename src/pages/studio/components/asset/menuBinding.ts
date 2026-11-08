@@ -202,7 +202,16 @@ export function normalizeMenuBinding(raw: unknown): WorkbenchMenuBinding {
 
 /** 启用状态下阻碍生成 semantics.menu 的原因列表（fail-closed）。 */
 export function menuBindingIssues(binding: WorkbenchMenuBinding): string[] {
-  if (!binding.enabled) return [];
+  if (!binding.enabled) {
+    // 填了内容但未启用：后端编译器会拒绝构建（workbench_logic 同款门槛），
+    // 表单同步点名，避免"编辑了却没生效"的静默丢数据。
+    const touched =
+      binding.label.trim() !== "" ||
+      binding.entries.length > 0 ||
+      binding.constructionCost != null ||
+      binding.maintenanceCost != null;
+    return touched ? ["menuDisabledWithContent"] : [];
+  }
   const issues: string[] = [];
   if (!binding.label.trim()) issues.push("menuLabelRequired");
   if (binding.entries.length === 0) issues.push("menuEntryRequired");

@@ -13,25 +13,37 @@ const BOX_TRIANGLES: u32 = 12;
 const BOX_VERTICES: u32 = 24;
 
 fn align(n: u32, a: u32) -> Option<u32> {
-    debug_assert!(a > 0 && a & (a - 1) == 0, "alignment must be a power of two");
+    debug_assert!(
+        a > 0 && a & (a - 1) == 0,
+        "alignment must be a power of two"
+    );
     Some(n.checked_add(a - 1)? & !(a - 1))
 }
 
 fn read_u32(payload: &[u8], at: usize) -> Option<u32> {
-    payload.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+    payload
+        .get(at..at + 4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
 }
 
 fn read_f32(payload: &[u8], at: usize) -> Option<f32> {
-    payload.get(at..at + 4).map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+    payload
+        .get(at..at + 4)
+        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
 }
 
 fn read_i32(payload: &[u8], at: usize) -> Option<i32> {
-    payload.get(at..at + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()))
+    payload
+        .get(at..at + 4)
+        .map(|b| i32::from_le_bytes(b.try_into().unwrap()))
 }
 
 /// One parsed native collision section (six-face box with its KD tree).
 #[derive(Debug, Clone)]
 pub struct Collision {
+    /// Original section bytes. The author patches this buffer in place so
+    /// vertex padding, triangle flags, attributes and tree tags survive.
+    payload: Vec<u8>,
     pub low: [f32; 3],
     pub high: [f32; 3],
     /// Opaque header words carried through verbatim (magic, depth).
@@ -92,7 +104,9 @@ impl Collision {
         let p3 = p3_abs
             .checked_sub(base)
             .ok_or("unsupported collision layout")?;
-        let pv_expect = align(base + 68, 16).and_then(|v| v.checked_sub(base)).ok_or("layout")?;
+        let pv_expect = align(base + 68, 16)
+            .and_then(|v| v.checked_sub(base))
+            .ok_or("layout")?;
         if pv != pv_expect || pt != pv + nv * 16 || p3 != pt + nt * 16 {
             return Err("unsupported collision layout".into());
         }
@@ -124,8 +138,8 @@ impl Collision {
             let at = pv as usize + i as usize * 16;
             let mut vertex = [0f32; 3];
             for axis in 0..3 {
-                vertex[axis] = read_f32(payload, at + axis * FLAT)
-                    .ok_or("truncated collision vertex")?;
+                vertex[axis] =
+                    read_f32(payload, at + axis * FLAT).ok_or("truncated collision vertex")?;
             }
             vertices.push(vertex);
         }
@@ -152,8 +166,7 @@ impl Collision {
             let at = p4 as usize + 48 + i as usize * 32;
             let mut node = [0i32; 6];
             for (index, slot) in node.iter_mut().enumerate() {
-                *slot = read_i32(payload, at + index * FLAT)
-                    .ok_or("truncated collision tree")?;
+                *slot = read_i32(payload, at + index * FLAT).ok_or("truncated collision tree")?;
             }
             let split_lo = read_f32(payload, at + 24).ok_or("truncated collision tree")?;
             let split_hi = read_f32(payload, at + 28).ok_or("truncated collision tree")?;
@@ -169,6 +182,7 @@ impl Collision {
             ));
         }
         Ok(Self {
+            payload: payload.to_vec(),
             low,
             high,
             magic,
@@ -209,9 +223,9 @@ impl Collision {
                 }
                 if count <= 0
                     || start < 0
-                    || start.checked_add(count).is_none_or(|end| {
-                        end < 0 || end as usize > self.triangles.len()
-                    })
+                    || start
+                        .checked_add(count)
+                        .is_none_or(|end| end < 0 || end as usize > self.triangles.len())
                 {
                     return Err("invalid leaf range".into());
                 }
@@ -342,7 +356,7 @@ impl Collision {
         let write_f32 = |payload: &mut [u8], at: usize, value: f32| {
             payload[at..at + 4].copy_from_slice(&value.to_le_bytes());
         };
-        let mut payload = vec![0u8; self.payload_len()];
+        let mut payload = self.payload.clone();
         // Bounds copies: header (offset 0, xyz + pad each) and tail mirror.
         let mut bounds = Vec::with_capacity(32);
         for value in low {
@@ -370,7 +384,11 @@ impl Collision {
         for (index, vertex) in self.vertices.iter().enumerate() {
             let at = self.pv as usize + index * 16;
             for axis in 0..3 {
-                write_f32(&mut payload, at + axis * FLAT, transform(vertex[axis], axis));
+                write_f32(
+                    &mut payload,
+                    at + axis * FLAT,
+                    transform(vertex[axis], axis),
+                );
             }
         }
         // Triangle indices unchanged; flag word (offset +12) stays zero.
@@ -383,7 +401,11 @@ impl Collision {
         // Tail header + transformed tree splits.
         write_u32(&mut payload, self.p4 as usize, destination + self.pv - 32);
         write_u32(&mut payload, self.p4 as usize + 4, self.tree.len() as u32);
-        write_u32(&mut payload, self.p4 as usize + 8, self.triangles.len() as u32);
+        write_u32(
+            &mut payload,
+            self.p4 as usize + 8,
+            self.triangles.len() as u32,
+        );
         write_u32(&mut payload, self.p4 as usize + 12, 0);
         for (index, node) in self.tree.iter().enumerate() {
             let (_, axis, nl, il, nr, ir, split_lo, split_hi) = *node;
@@ -391,8 +413,7 @@ impl Collision {
             write_u32(&mut payload, at, 0); // tag
             write_u32(&mut payload, at + 4, axis);
             for (offset, value) in [(8usize, nl), (12, il), (16, nr), (20, ir)] {
-                payload[at + offset..at + offset + 4]
-                    .copy_from_slice(&value.to_le_bytes());
+                payload[at + offset..at + offset + 4].copy_from_slice(&value.to_le_bytes());
             }
             write_f32(&mut payload, at + 24, transform(split_lo, axis as usize));
             write_f32(&mut payload, at + 28, transform(split_hi, axis as usize));
@@ -416,7 +437,8 @@ pub fn replace_box_collision(
     high: [f32; 3],
 ) -> Result<Vec<u8>, String> {
     let model_file = Rw4File::parse(model).map_err(|e| format!("model RW4 parse: {e}"))?;
-    let source_file = Rw4File::parse(source_bytes).map_err(|e| format!("collision source parse: {e}"))?;
+    let source_file =
+        Rw4File::parse(source_bytes).map_err(|e| format!("collision source parse: {e}"))?;
     let mut dst = model_file.sections_of_type(SectionType::COLLISION_MESH);
     let dst_number = match (dst.next(), dst.next()) {
         (Some(section), None) => section.number,
@@ -431,7 +453,10 @@ pub fn replace_box_collision(
     };
     // The source RW4 is a standalone container; parse it with its own section
     // base, then transplant against the target's destination position.
-    let proxy = Collision::parse(src_payload, src_pos(&source_file, SectionType::COLLISION_MESH))?;
+    let proxy = Collision::parse(
+        src_payload,
+        src_pos(&source_file, SectionType::COLLISION_MESH),
+    )?;
     // First pass with a placeholder of the final size fixes the section
     // layout; the transformed payload keeps the source length, so the second
     // pass lands at the same position and the embedded references match it.
@@ -547,13 +572,8 @@ mod tests {
     #[test]
     fn replace_box_collision_swaps_the_model_section() {
         let template = include_bytes!("../../resources/sc5/175EFB4E.research-template.rw4");
-        let rebuilt = replace_box_collision(
-            template,
-            SOURCE,
-            [-6.0, -8.0, 0.0],
-            [6.0, 8.0, 24.0],
-        )
-        .expect("replace");
+        let rebuilt = replace_box_collision(template, SOURCE, [-6.0, -8.0, 0.0], [6.0, 8.0, 24.0])
+            .expect("replace");
         let file = Rw4File::parse(&rebuilt).expect("rebuilt parses");
         let section = file
             .sections_of_type(SectionType::COLLISION_MESH)

@@ -628,8 +628,10 @@ pub struct ResolveNamesRequest {
 /// `u32 material_index + u8 uv_kind(0无/1贴图/2tint)`。解析见 `three-gltf.ts`。
 pub const LOT_MODEL_PAYLOAD_MAGIC: u32 = 0x4D54_4F4C;
 
-/// 单个网格 GLB 的体积上限（异常模型防御，对齐原 OBJ 8MB 量级）。
-const MESH_GLB_MAX_BYTES: usize = 8 * 1024 * 1024;
+/// 单个网格 GLB 的体积上限（异常模型防御）。作者 Building40 路线必须把
+/// 全部材质组保留在一个完整网格中；88k 顶点的希望大厦已超过旧 8MB 上限。
+/// 64MiB 能覆盖当前真实样本，同时仍拒绝失控输入；不得为迎合上限拆网格。
+const MESH_GLB_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 /// 文本预览全量字节上限（虚拟滚动渲染下超大文本的内存护栏）。
 const TEXT_PREVIEW_MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -3098,8 +3100,9 @@ mod derived_lot_parent_chain {
             !lot_chain_resolved(&broken),
             "without Game the inherited authorization must be missing"
         );
-        let (_, authored) =
-            lot_colors(&sc_properties::LotEditorDocument::from_property_file(broken));
+        let (_, authored) = lot_colors(&sc_properties::LotEditorDocument::from_property_file(
+            broken,
+        ));
         assert!(!authored.iter().any(|value| *value));
 
         let sources = vec![("SimCity_Game.package".to_string(), game)];
@@ -4207,10 +4210,7 @@ pub async fn export_lot_model_blend(
         .clone()
         .unwrap_or_else(|| format!("0x{:08X}", request.tgi.instance));
     let tgi = request.tgi.clone();
-    let label = format!(
-        "{:08X}:{:08X}:{:08X}",
-        tgi.type_id, tgi.group, tgi.instance
-    );
+    let label = format!("{:08X}:{:08X}:{:08X}", tgi.type_id, tgi.group, tgi.instance);
     let payload = read_resource_with(
         manager,
         store,
@@ -4362,11 +4362,11 @@ pub(crate) fn build_lot_model_payload_for_test(
             .map(|b| b.material_section)
             .or(fallback_material)
             .unwrap_or(u32::MAX);
-        let material_index = match material_sections
+        let (material_index, added_material) = match material_sections
             .iter()
             .position(|number| *number == bound_section)
         {
-            Some(index) => index as u32,
+            Some(index) => (index as u32, false),
             None => {
                 material_resources.push(resolve_material_resources(
                     file,
@@ -4376,7 +4376,7 @@ pub(crate) fn build_lot_model_payload_for_test(
                     bound_section,
                 ));
                 material_sections.push(bound_section);
-                (material_resources.len() - 1) as u32
+                ((material_resources.len() - 1) as u32, true)
             }
         };
         let colors = material_resources[material_index as usize]
@@ -4430,8 +4430,15 @@ pub(crate) fn build_lot_model_payload_for_test(
             Some(&mat_indices),
         );
         if glb.bytes.len() > MESH_GLB_MAX_BYTES {
-            diag_line.push_str("  [GLB 超限跳过]");
+            diag_line.push_str(&format!("  [GLB {} B 超限跳过]", glb.bytes.len()));
             mesh_diag_truncated += 1;
+            if added_material {
+                // Do not serialize a material that no exported mesh references.
+                // The old order produced the exact meshes=0/materials=1 orphan
+                // payload that made a valid package look like an orphan shape.
+                material_resources.pop();
+                material_sections.pop();
+            }
         } else {
             glbs.push(glb.bytes);
             mesh_material.push(material_index);
@@ -6651,6 +6658,99 @@ mod lot_payload_tests {
         assert_eq!(mesh0_material, 0, "single mesh binds material 0");
         assert!(diag.contains("mesh #"), "diagnostics list meshes");
         assert!(diag.contains("slot0"), "diagnostics list slot0 params");
+    }
+
+    /// Run the exact backend payload chain consumed by Property Viewer over a
+    /// final written package. This deliberately starts at DBPF bytes rather
+    /// than at the builder's intermediate LOTM or resource pool.
+    #[test]
+    #[ignore = "requires SC_LOT_MODEL_PACKAGE and SC_LOT_MODEL_INSTANCE"]
+    fn written_building40_property_viewer_payload() {
+        let path = std::env::var("SC_LOT_MODEL_PACKAGE").expect("final package path");
+        let instance = std::env::var("SC_LOT_MODEL_INSTANCE").expect("LOD1 model instance");
+        let instance = u32::from_str_radix(instance.trim_start_matches("0x"), 16).unwrap();
+        let out_dir = std::env::var("SC_LOT_MODEL_OUT").expect("payload output directory");
+        let package = Package::open(&path).unwrap();
+        let manager = PackageManager::new();
+        let entry = package
+            .entries()
+            .iter()
+            .find(|entry| entry.id.type_id == RW4_MODEL_TYPE && entry.id.instance == instance)
+            .cloned()
+            .expect("LOD1 model in final package");
+        let data = package.read(&entry).unwrap();
+        let file = rw4::Rw4File::parse(&data).unwrap();
+        let payload = build_lot_model_payload_for_test(&file, &data, &package, &manager, instance);
+        let read_u32 =
+            |offset: usize| u32::from_le_bytes(payload[offset..offset + 4].try_into().unwrap());
+        assert_eq!(read_u32(0), LOT_MODEL_PAYLOAD_MAGIC);
+        assert_eq!(read_u32(4), 10, "Property Viewer container version");
+        let mesh_count = read_u32(8) as usize;
+        if mesh_count == 0 {
+            let material_count = read_u32(12) as usize;
+            let mut dropped_offset = 16usize;
+            for _ in 0..material_count {
+                for _ in 0..9 {
+                    dropped_offset += 4 + read_u32(dropped_offset) as usize;
+                }
+                dropped_offset += 4 + read_u32(dropped_offset) as usize;
+                dropped_offset += 4;
+            }
+            let diag_len = read_u32(dropped_offset) as usize;
+            dropped_offset += 4;
+            let diag = std::str::from_utf8(&payload[dropped_offset..dropped_offset + diag_len])
+                .unwrap();
+            panic!(
+                "Property Viewer dropped the Building40 mesh but retained {material_count} orphan material(s):\n{diag}"
+            );
+        }
+        assert_eq!(mesh_count, 1, "one complete Building40 GLB must export");
+        let mut offset = 12usize;
+        let glb_len = read_u32(offset) as usize;
+        offset += 4;
+        assert!(glb_len > 20 && glb_len <= MESH_GLB_MAX_BYTES);
+        assert_eq!(&payload[offset..offset + 4], b"glTF");
+        let glb = payload[offset..offset + glb_len].to_vec();
+        offset += glb_len;
+        let material_count = read_u32(offset) as usize;
+        offset += 4;
+        assert_eq!(material_count, 1, "Building40 has one material");
+        let mut png_lengths = [0usize; 9];
+        for length in &mut png_lengths {
+            *length = read_u32(offset) as usize;
+            offset += 4 + *length;
+        }
+        // Building40's parameter-table path has no simple diffuse or vehicle
+        // slot0 PNG. All seven other payload images must decode from slots 1-5.
+        for (index, length) in png_lengths.iter().enumerate() {
+            if matches!(index, 0 | 8) {
+                assert_eq!(*length, 0, "payload image {index} must stay unused");
+            } else {
+                assert!(*length > 0, "payload image {index} is empty");
+            }
+        }
+        let params_len = read_u32(offset) as usize;
+        offset += 4 + params_len;
+        let param_cols = read_u32(offset) as usize;
+        offset += 4;
+        assert!(params_len > 0 && param_cols > 0, "slot0 parameter table");
+        assert_eq!(read_u32(offset), 0, "mesh binds material zero");
+        assert!(payload[offset + 4] > 0, "mesh has usable UVs");
+        offset += 5;
+        let diag_len = read_u32(offset) as usize;
+        offset += 4;
+        let diag = std::str::from_utf8(&payload[offset..offset + diag_len]).unwrap();
+        for slot in 0..=5 {
+            assert!(diag.contains(&format!("slot{slot}")), "slot{slot} diagnostic");
+        }
+        assert!(!diag.contains("跳过"), "viewer must not drop the mesh");
+        std::fs::create_dir_all(&out_dir).unwrap();
+        std::fs::write(format!("{out_dir}/model.glb"), glb).unwrap();
+        std::fs::write(format!("{out_dir}/model.lotm"), &payload).unwrap();
+        std::fs::write(format!("{out_dir}/diagnostics.txt"), diag).unwrap();
+        eprintln!(
+            "Property Viewer payload: {mesh_count} GLB ({glb_len} B), {material_count} material, PNG lengths {png_lengths:?}, params {params_len} B x {param_cols} cols\n{diag}"
+        );
     }
 
     /// LOTM v9 落盘：市政厅族模型 0x01532F56（SimCity_Game；lot 0x457EA9DB /

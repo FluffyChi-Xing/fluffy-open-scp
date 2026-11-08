@@ -77,11 +77,39 @@ pub fn unit_column_hashes() -> Vec<u32> {
     hashes
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneLotMaskKind {
+    Source,
+    Synthetic,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneGroundSource {
+    pub lot: ResourceId,
+    pub package_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SceneGroundStyle {
+    pub tile_period: Option<[f32; 2]>,
+    pub base_tile: Option<u8>,
+    /// Unauthored color slots remain inherited from the Lot donor.
+    pub colors: Option<[Option<[u8; 4]>; 4]>,
+    pub border_colors: Option<[[u8; 3]; 4]>,
+    pub border_widths: Option<[f32; 4]>,
+    pub color_heights: Option<[f32; 4]>,
+    pub border_heights: Option<[f32; 4]>,
+    pub border_patterns: Option<[u8; 4]>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneDocument {
     pub lot_size: Option<[f32; 2]>,
     pub lot_offset: Option<[f32; 2]>,
     pub placement: Option<Vec<f32>>,
+    pub lot_mask: Option<SceneLotMaskKind>,
+    pub ground_source: Option<SceneGroundSource>,
+    pub ground_style: SceneGroundStyle,
     /// Model pseudo-unit transform (`editor.workbench.modelTransform`,
     /// WPF row-major 12 floats) baked into the compiled model vertices.
     pub model_transform: Option<[f32; 12]>,
@@ -191,9 +219,33 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
             .and_then(Json::as_array)
             .filter(|values| values.iter().all(Json::is_number))
             .map(|values| values.iter().map(f32_of).collect());
+        document.lot_mask = match lot.get("mask") {
+            None | Some(Json::Null) => None,
+            Some(mask) => match mask.get("kind").and_then(Json::as_str) {
+                Some("source") => Some(SceneLotMaskKind::Source),
+                Some("synthetic") => Some(SceneLotMaskKind::Synthetic),
+                Some(other) => return Err(format!("unsupported lot.mask.kind {other:?}")),
+                None => return Err("lot.mask.kind must be \"source\" or \"synthetic\"".into()),
+            },
+        };
+        document.ground_style = parse_ground_style(lot)?;
+    }
+    if let Some(source) = json.pointer("/editor/workbench/lotStyle/sourceLot") {
+        let lot = source
+            .get("tgi")
+            .and_then(parse_json_tgi)
+            .ok_or("editor.workbench.lotStyle.sourceLot.tgi is missing or invalid")?;
+        let package_path = source
+            .get("packagePath")
+            .and_then(Json::as_str)
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(str::to_string);
+        document.ground_source = Some(SceneGroundSource { lot, package_path });
     }
     document.model_transform = json
-        .pointer("/editor/workbench/modelTransform")        .and_then(Json::as_array)
+        .pointer("/editor/workbench/modelTransform")
+        .and_then(Json::as_array)
         .filter(|values| values.len() == 12 && values.iter().all(Json::is_number))
         .map(|values| values.iter().map(f32_of).collect::<Vec<f32>>())
         .and_then(|matrix| Some(matrix).filter(|m| m.len() == 12))
@@ -232,12 +284,10 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
                     other => {
                         return Err(format!(
                             "path scope must be \"local\" or \"global\", got {other:?}"
-                        ))
+                        ));
                     }
                 },
-                Some(other) => {
-                    return Err(format!("path scope must be a string, got {other:?}"))
-                }
+                Some(other) => return Err(format!("path scope must be a string, got {other:?}")),
             };
             document.paths.push(ScenePath {
                 kind: path
@@ -298,7 +348,11 @@ pub fn merge_sidecar_manifests(
             document.units.push(SceneUnit::Prop {
                 bin: native_prop_bin(preset).unwrap_or(0),
                 resource_id,
-                transform: Some(Transform { flags: 15, unknown: None, matrix: matrix.to_vec() }),
+                transform: Some(Transform {
+                    flags: 15,
+                    unknown: None,
+                    matrix: matrix.to_vec(),
+                }),
                 slot: Some(index as i32),
                 scale: f32_field(item.get("scale")),
                 randomize_slot: Some(false),
@@ -320,7 +374,11 @@ pub fn merge_sidecar_manifests(
             let matrix = matrix_field(item.get("matrix"))?;
             let color = vec3_field(item.get("color"));
             document.units.push(SceneUnit::Light {
-                transform: Some(Transform { flags: 14, unknown: None, matrix: matrix.to_vec() }),
+                transform: Some(Transform {
+                    flags: 14,
+                    unknown: None,
+                    matrix: matrix.to_vec(),
+                }),
                 light_type: match item.get("type").and_then(Json::as_str) {
                     Some("SPOT") => Some(unit_hash::LIGHT_TYPE_SPOT),
                     Some("LINE") => Some(unit_hash::LIGHT_TYPE_LINE),
@@ -336,7 +394,10 @@ pub fn merge_sidecar_manifests(
                 falloff_start: Some(0.0),
                 is_volumetric: Some(false),
                 volumetric_strength: Some(0.0),
-                debug_name: item.get("id").and_then(Json::as_str).map(|id| format!("SC5_{id}")),
+                debug_name: item
+                    .get("id")
+                    .and_then(Json::as_str)
+                    .map(|id| format!("SC5_{id}")),
             });
         }
     }
@@ -344,12 +405,16 @@ pub fn merge_sidecar_manifests(
 }
 
 fn matrix_field(value: Option<&Json>) -> Result<[f32; 12], String> {
-    let values = value.and_then(Json::as_array).ok_or("manifest matrix missing")?;
+    let values = value
+        .and_then(Json::as_array)
+        .ok_or("manifest matrix missing")?;
     if values.len() != 12 || values.iter().any(|v| !v.is_number()) {
         return Err("manifest matrix must contain 12 numbers".into());
     }
     let mut out = [0.0; 12];
-    for (dst, src) in out.iter_mut().zip(values) { *dst = f32_of(src); }
+    for (dst, src) in out.iter_mut().zip(values) {
+        *dst = f32_of(src);
+    }
     Ok(out)
 }
 
@@ -512,10 +577,7 @@ fn parse_unit(unit: &Json) -> Result<SceneUnit, String> {
             // ① 名字 id 必填且非零——引擎按名字建 mUnitLocations，缺名即无法取点；
             // ② 名字 key 的 type/group 恒 0（残缺 TGI 约定）；
             // ③ 局部变换必填——ids / transforms 是并行数组，缺一行会让整列错位。
-            let label = unit
-                .get("id")
-                .and_then(Json::as_str)
-                .unwrap_or("spawner");
+            let label = unit.get("id").and_then(Json::as_str).unwrap_or("spawner");
             let id = key_field("spawnerId")
                 .map(|key| Key {
                     type_id: 0,
@@ -523,12 +585,9 @@ fn parse_unit(unit: &Json) -> Result<SceneUnit, String> {
                     instance: key.instance,
                 })
                 .filter(|key| key.instance != 0)
-                .ok_or_else(|| {
-                    format!("{label}: spawnerId 缺失或为 0（锚点必须带名字 id）")
-                })?;
-            let transform = transform()?.ok_or_else(|| {
-                format!("{label}: 缺少 transform（锚点写入需要局部变换）")
-            })?;
+                .ok_or_else(|| format!("{label}: spawnerId 缺失或为 0（锚点必须带名字 id）"))?;
+            let transform = transform()?
+                .ok_or_else(|| format!("{label}: 缺少 transform（锚点写入需要局部变换）"))?;
             Ok(SceneUnit::Spawner { transform, id })
         }
         other => Err(format!("unsupported unit kind {other}")),
@@ -552,6 +611,197 @@ fn cull_distance_instance(name: &str) -> Option<u32> {
         "Max" => Some(unit_hash::CULL_MAX),
         _ => None,
     }
+}
+
+fn parse_f32_array<const N: usize>(
+    value: Option<&Json>,
+    label: &str,
+) -> Result<Option<[f32; N]>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let values = value
+        .as_array()
+        .ok_or_else(|| format!("{label} must be an array of {N} numbers"))?;
+    if values.len() != N {
+        return Err(format!("{label} must contain exactly {N} numbers"));
+    }
+    let mut out = [0.0; N];
+    for (dst, value) in out.iter_mut().zip(values) {
+        let number = value
+            .as_f64()
+            .ok_or_else(|| format!("{label} contains a non-number"))?;
+        *dst = number as f32;
+        if !number.is_finite() || !dst.is_finite() {
+            return Err(format!("{label} contains a non-finite number"));
+        }
+    }
+    Ok(Some(out))
+}
+
+fn parse_u8_array<const N: usize>(value: Option<&Json>, label: &str) -> Result<[u8; N], String> {
+    let values = value
+        .and_then(Json::as_array)
+        .ok_or_else(|| format!("{label} must be an array of {N} byte values"))?;
+    if values.len() != N {
+        return Err(format!("{label} must contain exactly {N} byte values"));
+    }
+    let mut out = [0u8; N];
+    for (dst, value) in out.iter_mut().zip(values) {
+        let number = value
+            .as_u64()
+            .ok_or_else(|| format!("{label} contains a non-integer"))?;
+        *dst = u8::try_from(number).map_err(|_| format!("{label} contains a value above 255"))?;
+    }
+    Ok(out)
+}
+
+fn parse_ground_style(lot: &Json) -> Result<SceneGroundStyle, String> {
+    let tile_period = parse_f32_array(lot.get("tilePeriod"), "lot.tilePeriod")?;
+    if let Some(period) = tile_period {
+        if period.iter().any(|value| *value < 0.1) {
+            return Err("lot.tilePeriod components must be finite and at least 0.1".into());
+        }
+    }
+    let base_tile = lot
+        .get("baseTile")
+        .map(|value| -> Result<u8, String> {
+            let value = value
+                .as_u64()
+                .ok_or("lot.baseTile must be an integer from 0 through 15")?;
+            if value > 15 {
+                return Err("lot.baseTile must be an integer from 0 through 15".into());
+            }
+            Ok(value as u8)
+        })
+        .transpose()?;
+    let colors = lot
+        .get("colors")
+        .map(|value| -> Result<[Option<[u8; 4]>; 4], String> {
+            let rows = value
+                .as_array()
+                .ok_or("lot.colors must contain four color rows")?;
+            if rows.len() != 4 {
+                return Err("lot.colors must contain four color rows".into());
+            }
+            let mut colors = [None; 4];
+            for (index, row) in rows.iter().enumerate() {
+                let rgba = parse_u8_array(row.get("rgba"), &format!("lot.colors[{index}].rgba"))?;
+                if rgba[3] > 15 {
+                    return Err(format!("lot.colors[{index}].rgba alpha tile exceeds 15").into());
+                }
+                if row.get("authored").and_then(Json::as_bool).unwrap_or(true) {
+                    colors[index] = Some(rgba);
+                }
+            }
+            Ok(colors)
+        })
+        .transpose()?;
+    let border_colors = lot
+        .get("borderColors")
+        .map(|value| -> Result<[[u8; 3]; 4], String> {
+            let rows = value
+                .as_array()
+                .ok_or("lot.borderColors must contain four RGB rows")?;
+            if rows.len() != 4 {
+                return Err("lot.borderColors must contain four RGB rows".into());
+            }
+            let mut colors = [[0u8; 3]; 4];
+            for (index, row) in rows.iter().enumerate() {
+                colors[index] = parse_u8_array(Some(row), &format!("lot.borderColors[{index}]"))?;
+            }
+            Ok(colors)
+        })
+        .transpose()?;
+    let border_widths = parse_f32_array(lot.get("borderWidths"), "lot.borderWidths")?;
+    if border_widths.is_some_and(|values| values.iter().any(|value| *value < 0.0)) {
+        return Err("lot.borderWidths must be non-negative".into());
+    }
+    let border_patterns = lot
+        .get("borderPatterns")
+        .map(|value| parse_u8_array::<4>(Some(value), "lot.borderPatterns"))
+        .transpose()?;
+    if border_patterns.is_some_and(|values| values.iter().any(|value| *value > 15)) {
+        return Err("lot.borderPatterns entries must be from 0 through 15".into());
+    }
+    if border_colors.is_some() != border_patterns.is_some() {
+        return Err(
+            "lot.borderColors and lot.borderPatterns must be provided together (pattern is stored in ColorRgba.a)"
+                .into(),
+        );
+    }
+    Ok(SceneGroundStyle {
+        tile_period,
+        base_tile,
+        colors,
+        border_colors,
+        border_widths,
+        color_heights: parse_f32_array(lot.get("colorHeights"), "lot.colorHeights")?,
+        border_heights: parse_f32_array(lot.get("borderHeights"), "lot.borderHeights")?,
+        border_patterns,
+    })
+}
+
+fn srgb_byte_to_linear(byte: u8) -> f32 {
+    let srgb = f32::from(byte) / 255.0;
+    if srgb <= 0.04045 {
+        srgb / 12.92
+    } else {
+        ((srgb + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Authored ground fields as final Lot values. This is the single source for
+/// writeback, delta declarations and final-package validation.
+pub fn ground_values(document: &SceneDocument) -> Vec<(u32, Value)> {
+    let style = &document.ground_style;
+    let mut values = Vec::new();
+    if let Some(period) = style.tile_period {
+        values.push((0x0CCB_7FD0, Value::Vector2(period)));
+    }
+    if let Some(base_tile) = style.base_tile {
+        values.push((0x0CCB_7FD6, Value::Int32(i32::from(base_tile))));
+    }
+    if let Some(colors) = style.colors {
+        for (index, rgba) in colors.into_iter().enumerate() {
+            if let Some([r, g, b, tile]) = rgba {
+                values.push((
+                    0x0D02_D586 + index as u32,
+                    Value::ColorRgba {
+                        r: srgb_byte_to_linear(r),
+                        g: srgb_byte_to_linear(g),
+                        b: srgb_byte_to_linear(b),
+                        a: f32::from(tile),
+                    },
+                ));
+            }
+        }
+    }
+    if let Some(heights) = style.color_heights {
+        values.push((0x0D02_D58A, Value::Vector4(heights)));
+    }
+    if let Some(heights) = style.border_heights {
+        values.push((0x0D02_D58B, Value::Vector4(heights)));
+    }
+    if let (Some(colors), Some(patterns)) = (style.border_colors, style.border_patterns) {
+        for (index, ([r, g, b], pattern)) in colors.into_iter().zip(patterns).enumerate() {
+            values.push((
+                0x0D7A_F042 + index as u32,
+                Value::ColorRgba {
+                    r: srgb_byte_to_linear(r),
+                    g: srgb_byte_to_linear(g),
+                    b: srgb_byte_to_linear(b),
+                    a: f32::from(pattern),
+                },
+            ));
+        }
+    }
+    if let Some(widths) = style.border_widths {
+        for (index, width) in widths.into_iter().enumerate() {
+            values.push((0x0D7A_F046 + index as u32, Value::Float(width)));
+        }
+    }
+    values
 }
 
 fn f32_of(value: &Json) -> f32 {
@@ -872,16 +1122,18 @@ pub fn apply_units(
 
     for unit in &document.units {
         // delta 模式：未声明族的 unit 直接跳过（列原样保留，不进入写回）。
-        let family_declared = |family: &str| authoritative || match family {
-            "paths" => writes.paths,
-            "lights" => writes.lights,
-            "spawners" => writes.spawners,
-            "effects" => writes.effects,
-            "decals" => writes.decals,
-            _ => false,
+        let family_declared = |family: &str| {
+            authoritative
+                || match family {
+                    "paths" => writes.paths,
+                    "lights" => writes.lights,
+                    "spawners" => writes.spawners,
+                    "effects" => writes.effects,
+                    "decals" => writes.decals,
+                    _ => false,
+                }
         };
-        let prop_bin_declared =
-            |bin: usize| authoritative || writes.prop_bin_declared(bin);
+        let prop_bin_declared = |bin: usize| authoritative || writes.prop_bin_declared(bin);
         enum Family {
             Named(&'static str),
             PropBin(usize),
@@ -943,7 +1195,14 @@ pub fn apply_units(
                 ("transforms", transform_value(None, transform)),
                 // effectWorlds(0x02A907B9):原版恒零键(消防局/水泵/理工
                 // 实证);EFFECT_ALWAYS_ZERO 是历史误名。
-                ("worlds", Some(Value::Key(Key { type_id: 0, group: 0, instance: 0 }))),
+                (
+                    "worlds",
+                    Some(Value::Key(Key {
+                        type_id: 0,
+                        group: 0,
+                        instance: 0,
+                    })),
+                ),
                 ("refs", external_id.map(key_value)),
                 ("enabled", enabled.map(Value::Bool)),
             ]),
@@ -983,8 +1242,7 @@ pub fn apply_units(
                 // 构建，两者必须一致）。编辑器会给 pointIndex 按 path 局部
                 // 重编号（s29 实证：第二条 path 从 0 重新计数），直接透传会
                 // 让后续 path 的索引列指向错误几何——一律按文档序重编号。
-                let pool_index =
-                    path_points.fields.get("points").map(Vec::len).unwrap_or(0) as i32;
+                let pool_index = path_points.fields.get("points").map(Vec::len).unwrap_or(0) as i32;
                 path_points.push([
                     ("points", point.map(Value::Vector3)),
                     ("tangents", tangent.map(Value::Vector3)),
@@ -995,7 +1253,10 @@ pub fn apply_units(
             }
             SceneUnit::Spawner { transform, id } => spawners.push([
                 ("ids", Some(key_value(*id))),
-                ("transforms", transform_value(None, &Some(transform.clone()))),
+                (
+                    "transforms",
+                    transform_value(None, &Some(transform.clone())),
+                ),
             ]),
         }
     }
@@ -1019,12 +1280,19 @@ pub fn apply_units(
             (unit_hash::LIGHT_CULL_DISTANCES, "cull", PropType::Key),
             (unit_hash::LIGHT_FALLOFF_STARTS, "falloff", PropType::Float),
             (unit_hash::LIGHT_IS_VOLUMETRIC, "volumetric", PropType::Bool),
-            (unit_hash::LIGHT_VOL_STRENGTHS, "vol_strength", PropType::Float),
+            (
+                unit_hash::LIGHT_VOL_STRENGTHS,
+                "vol_strength",
+                PropType::Float,
+            ),
             (unit_hash::LIGHT_DEBUG_NAMES, "names", PropType::String8),
         ],
     );
     if (authoritative || writes.lights)
-        && document.units.iter().any(|u| matches!(u, SceneUnit::Light { .. }))
+        && document
+            .units
+            .iter()
+            .any(|u| matches!(u, SceneUnit::Light { .. }))
     {
         columns.push(array_property(
             0x0CE7_1B10,
@@ -1353,15 +1621,11 @@ pub fn verify_units(
     let count_units = |pred: &dyn Fn(&sc_properties::LotUnit) -> bool| {
         assembled.units.iter().filter(|unit| pred(unit)).count()
     };
-    let count_document = |pred: &dyn Fn(&SceneUnit) -> bool| {
-        document.units.iter().filter(|unit| pred(unit)).count()
-    };
-    let is_prop_bin = |unit: &sc_properties::LotUnit, bin: usize| {
-        matches!(unit, sc_properties::LotUnit::Prop { bin: b, .. } if *b == bin)
-    };
-    let doc_prop_bin = |unit: &SceneUnit, bin: usize| {
-        matches!(unit, SceneUnit::Prop { bin: b, .. } if *b == bin)
-    };
+    let count_document =
+        |pred: &dyn Fn(&SceneUnit) -> bool| document.units.iter().filter(|unit| pred(unit)).count();
+    let is_prop_bin = |unit: &sc_properties::LotUnit, bin: usize| matches!(unit, sc_properties::LotUnit::Prop { bin: b, .. } if *b == bin);
+    let doc_prop_bin =
+        |unit: &SceneUnit, bin: usize| matches!(unit, SceneUnit::Prop { bin: b, .. } if *b == bin);
 
     let mut checks: Vec<(String, usize, usize)> = Vec::new();
     if writes.authoritative {
@@ -1498,6 +1762,91 @@ mod tests {
     }
 
     #[test]
+    fn parses_editor_ground_source_and_authored_style() {
+        let document = parse_document(&json!({
+            "lot": {
+                "size": [80, 80],
+                "tilePeriod": [15, 15],
+                "baseTile": 2,
+                "colors": [{"rgba": [78, 79, 80, 3], "authored": true}],
+                "borderColors": [[147, 147, 148], [131, 131, 131], [133, 134, 136], [189, 189, 189]],
+                "borderWidths": [0.01, 0.01, 0.01, 0],
+                "colorHeights": [0, 0, 0, 0],
+                "borderHeights": [0, 0, 0, 0],
+                "borderPatterns": [2, 2, 2, 0],
+                "mask": {"kind": "source"}
+            },
+            "editor": {"workbench": {"lotStyle": {"sourceLot": {
+                "tgi": {"typeId": 11645188, "group": 1106296832, "instance": 75703198},
+                "packagePath": "ground.package"
+            }}}}
+        }));
+        let error = document.unwrap_err();
+        assert!(error.contains("four color rows"), "{error}");
+
+        let document = parse_document(&json!({
+            "lot": {
+                "size": [80, 80],
+                "tilePeriod": [15, 15],
+                "baseTile": 2,
+                "colors": [
+                    {"rgba": [78, 79, 80, 3], "authored": true},
+                    {"rgba": [99, 100, 101, 0], "authored": true},
+                    {"rgba": [88, 89, 91, 1], "authored": true},
+                    {"rgba": [200, 200, 200, 2], "authored": false}
+                ],
+                "borderColors": [[147, 147, 148], [131, 131, 131], [133, 134, 136], [189, 189, 189]],
+                "borderWidths": [0.01, 0.01, 0.01, 0],
+                "colorHeights": [0, 0, 0, 0],
+                "borderHeights": [0, 0, 0, 0],
+                "borderPatterns": [2, 2, 2, 0],
+                "mask": {"kind": "source"}
+            },
+            "editor": {"workbench": {"lotStyle": {"sourceLot": {
+                "tgi": {"typeId": 11645188, "group": 1106296832, "instance": 75703198},
+                "packagePath": "ground.package"
+            }}}}
+        }))
+        .unwrap();
+        assert_eq!(document.lot_mask, Some(SceneLotMaskKind::Source));
+        let source = document.ground_source.as_ref().unwrap();
+        assert_eq!(source.lot.type_id, 0x00B1_B104);
+        assert_eq!(source.lot.group, 0x41F0_C000);
+        assert_eq!(source.lot.instance, 0x0483_239E);
+        assert_eq!(source.package_path.as_deref(), Some("ground.package"));
+        let values = ground_values(&document);
+        assert_eq!(values.len(), 15, "unauthored color slot remains inherited");
+        assert!(values.contains(&(0x0CCB_7FD0, Value::Vector2([15.0, 15.0]))));
+        assert!(values.contains(&(0x0CCB_7FD6, Value::Int32(2))));
+        assert!(values.contains(&(
+            0x0D02_D586,
+            Value::ColorRgba {
+                r: srgb_byte_to_linear(78),
+                g: srgb_byte_to_linear(79),
+                b: srgb_byte_to_linear(80),
+                a: 3.0,
+            }
+        )));
+        assert!(!values.iter().any(|(hash, _)| *hash == 0x0D02_D589));
+    }
+
+    #[test]
+    fn rejects_unknown_or_malformed_ground_metadata() {
+        let unknown = parse_document(&json!({"lot": {"mask": {"kind": "guess"}}}));
+        assert!(unknown.unwrap_err().contains("unsupported lot.mask.kind"));
+        let bad_period = parse_document(&json!({"lot": {"tilePeriod": [15]}}));
+        assert!(bad_period.unwrap_err().contains("exactly 2"));
+        let bad_tile = parse_document(&json!({"lot": {"baseTile": 16}}));
+        assert!(bad_tile.unwrap_err().contains("0 through 15"));
+        let bad_pattern = parse_document(&json!({"lot": {"borderPatterns": [2, 2, 2, 16]}}));
+        assert!(bad_pattern.unwrap_err().contains("0 through 15"));
+        let unpaired = parse_document(
+            &json!({"lot": {"borderColors": [[1, 2, 3], [1, 2, 3], [1, 2, 3], [1, 2, 3]]}}),
+        );
+        assert!(unpaired.unwrap_err().contains("provided together"));
+    }
+
+    #[test]
     fn applies_units_and_strips_reference_columns() {
         let mut file = property_file();
         // Referenced lot's original units — must not survive the writeback.
@@ -1539,8 +1888,24 @@ mod tests {
             ]}}
         }))
         .unwrap();
-        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
-        verify_units(&file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        apply_units(
+            &mut file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        verify_units(
+            &file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let hashes: std::collections::HashSet<u32> = file.values.iter().map(|p| p.hash).collect();
         assert!(hashes.contains(&0x0CCB_7FC8), "non-unit column preserved");
@@ -1575,7 +1940,15 @@ mod tests {
         // Round-trip through the canonical encoder.
         let encoded = file.encode_canonical().unwrap();
         let parsed = PropertyFile::parse(&encoded).unwrap();
-        verify_units(&parsed, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        verify_units(
+            &parsed,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let reassembled = LotEditorDocument::from_property_file(parsed).assemble_units();
         assert_eq!(
             reassembled.units.len(),
@@ -1594,7 +1967,15 @@ mod tests {
             encoding: PropertyEncoding::default(),
         });
         let document = SceneDocument::default();
-        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        apply_units(
+            &mut file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(file.values.len(), 0, "empty scene = no unit columns at all");
     }
 
@@ -1605,7 +1986,15 @@ mod tests {
             "units": [{"id": "prop:99:0", "kind": "prop", "index": 0, "bin": 99}]
         }))
         .unwrap();
-        assert!(apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).is_err());
+        assert!(apply_units(
+            &mut file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            }
+        )
+        .is_err());
     }
 
     // ---- 车辆 bin slot 填充序规范化（2026-11-04 car_census 契约）----
@@ -1652,7 +2041,15 @@ mod tests {
             ]
         }))
         .unwrap();
-        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        apply_units(
+            &mut file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(slots_of(&file), [0, 1, 2], "重复模板槽号 → 填充序连号");
     }
 
@@ -1673,7 +2070,15 @@ mod tests {
             ]
         }))
         .unwrap();
-        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        apply_units(
+            &mut file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(slots_of(&file), [1, 0], "显式连号排列 = 作者意图，不改");
     }
 
@@ -1692,7 +2097,15 @@ mod tests {
             ]
         }))
         .unwrap();
-        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        apply_units(
+            &mut file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(slots_of(&file), [0, 1], "缺席 slot → 补齐填充序");
     }
 
@@ -1754,19 +2167,44 @@ mod tests {
     #[test]
     fn spawner_writes_only_ids_and_transforms() {
         let mut file = property_file();
-        let document =
-            parse_document(&json!({"units": [spawner_unit(0x141EED53, 1.5), spawner_unit(0xABCDEF, 3.0)]}))
-                .unwrap();
-        apply_units(&mut file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
-        verify_units(&file, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        let document = parse_document(
+            &json!({"units": [spawner_unit(0x141EED53, 1.5), spawner_unit(0xABCDEF, 3.0)]}),
+        )
+        .unwrap();
+        apply_units(
+            &mut file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        verify_units(
+            &file,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         // 名字 key 规范化：type/group 恒 0。
         let ids = file.get(unit_hash::SPAWNER_IDS).unwrap();
         assert_eq!(
             ids.array().unwrap(),
             &[
-                Value::Key(Key { type_id: 0, group: 0, instance: 0x141E_ED53 }),
-                Value::Key(Key { type_id: 0, group: 0, instance: 0xABCD_EF }),
+                Value::Key(Key {
+                    type_id: 0,
+                    group: 0,
+                    instance: 0x141E_ED53
+                }),
+                Value::Key(Key {
+                    type_id: 0,
+                    group: 0,
+                    instance: 0xABCD_EF
+                }),
             ]
         );
         let transforms = file.get(unit_hash::SPAWNER_TRANSFORMS).unwrap();
@@ -1779,7 +2217,15 @@ mod tests {
         // canonical 编码往返后仍然对齐。
         let encoded = file.encode_canonical().unwrap();
         let parsed = PropertyFile::parse(&encoded).unwrap();
-        verify_units(&parsed, &document, &SceneWrites { authoritative: true, ..Default::default() }).unwrap();
+        verify_units(
+            &parsed,
+            &document,
+            &SceneWrites {
+                authoritative: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
     }
 
     // ---- delta 语义（2026-11-07，r10 事故后） ----
@@ -1828,15 +2274,46 @@ mod tests {
             unknown: None,
             matrix: vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 0.0, 0.0],
         });
-        let key = |instance: u32| Value::Key(Key { type_id: 0, group: 0, instance });
+        let key = |instance: u32| {
+            Value::Key(Key {
+                type_id: 0,
+                group: 0,
+                instance,
+            })
+        };
         let mut file = PropertyFile {
             claimed_count: 5,
             values: vec![
-                Property { hash: unit_hash::LIGHT_TYPES, prop_type: PropType::Key, kind: Kind::Array(vec![key(0x2F0F_F9FD)]), encoding: PropertyEncoding::default() },
-                Property { hash: unit_hash::LIGHT_TRANSFORMS, prop_type: PropType::Transform, kind: Kind::Array(vec![transform.clone()]), encoding: PropertyEncoding::default() },
-                Property { hash: unit_hash::PROP_ID_BASE, prop_type: PropType::Key, kind: Kind::Array(vec![key(777)]), encoding: PropertyEncoding::default() },
-                Property { hash: unit_hash::PROP_TRANSFORM_BASE, prop_type: PropType::Transform, kind: Kind::Array(vec![transform]), encoding: PropertyEncoding::default() },
-                Property { hash: unit_hash::PATH_POINT_POINTS, prop_type: PropType::Vector3, kind: Kind::Array(vec![Value::Vector3([9.0, 9.0, 9.0])]), encoding: PropertyEncoding::default() },
+                Property {
+                    hash: unit_hash::LIGHT_TYPES,
+                    prop_type: PropType::Key,
+                    kind: Kind::Array(vec![key(0x2F0F_F9FD)]),
+                    encoding: PropertyEncoding::default(),
+                },
+                Property {
+                    hash: unit_hash::LIGHT_TRANSFORMS,
+                    prop_type: PropType::Transform,
+                    kind: Kind::Array(vec![transform.clone()]),
+                    encoding: PropertyEncoding::default(),
+                },
+                Property {
+                    hash: unit_hash::PROP_ID_BASE,
+                    prop_type: PropType::Key,
+                    kind: Kind::Array(vec![key(777)]),
+                    encoding: PropertyEncoding::default(),
+                },
+                Property {
+                    hash: unit_hash::PROP_TRANSFORM_BASE,
+                    prop_type: PropType::Transform,
+                    kind: Kind::Array(vec![transform]),
+                    encoding: PropertyEncoding::default(),
+                },
+                Property {
+                    hash: unit_hash::PATH_POINT_POINTS,
+                    prop_type: PropType::Vector3,
+                    kind: Kind::Array(vec![Value::Vector3([9.0, 9.0, 9.0])]),
+                    encoding: PropertyEncoding::default(),
+                },
             ],
         };
         let document = delta_document();
@@ -1844,13 +2321,30 @@ mod tests {
         apply_units(&mut file, &document, &writes).unwrap();
 
         // 未声明族原样保留。
-        assert!(file.get(unit_hash::LIGHT_TYPES).is_some(), "lights preserved");
-        assert!(file.get(unit_hash::LIGHT_TRANSFORMS).is_some(), "light transforms preserved");
-        assert!(file.get(unit_hash::PROP_ID_BASE).is_some(), "undeclared prop bin 0 preserved");
+        assert!(
+            file.get(unit_hash::LIGHT_TYPES).is_some(),
+            "lights preserved"
+        );
+        assert!(
+            file.get(unit_hash::LIGHT_TRANSFORMS).is_some(),
+            "light transforms preserved"
+        );
+        assert!(
+            file.get(unit_hash::PROP_ID_BASE).is_some(),
+            "undeclared prop bin 0 preserved"
+        );
         // 声明族被替换为文档内容。
-        let points = file.get(unit_hash::PATH_POINT_POINTS).unwrap().array().unwrap();
+        let points = file
+            .get(unit_hash::PATH_POINT_POINTS)
+            .unwrap()
+            .array()
+            .unwrap();
         assert_eq!(points.len(), 2, "declared path points rewritten");
-        let bin1 = file.get(unit_hash::PROP_ID_BASE + 1).unwrap().array().unwrap();
+        let bin1 = file
+            .get(unit_hash::PROP_ID_BASE + 1)
+            .unwrap()
+            .array()
+            .unwrap();
         assert_eq!(bin1.len(), 1, "declared prop bin 1 written");
     }
 
@@ -1869,6 +2363,9 @@ mod tests {
         let document = SceneDocument::default();
         let writes = SceneWrites::parse(&["paths".to_string()]);
         apply_units(&mut file, &document, &writes).unwrap();
-        assert!(file.get(unit_hash::PATH_POINT_POINTS).is_none(), "declared family cleared");
+        assert!(
+            file.get(unit_hash::PATH_POINT_POINTS).is_none(),
+            "declared family cleared"
+        );
     }
 }

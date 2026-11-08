@@ -37,8 +37,16 @@ pub fn layout_values(
     state: &SurfaceState,
     decor_is_catalog_id: bool,
 ) -> LayoutValues {
-    let nc = if state.layout == "COLUMN" { 1 } else { state.columns };
-    let mut ng = if state.layout == "COLUMN" { 1 } else { state.groups };
+    let nc = if state.layout == "COLUMN" {
+        1
+    } else {
+        state.columns
+    };
+    let mut ng = if state.layout == "COLUMN" {
+        1
+    } else {
+        state.groups
+    };
     let mut nr = if state.layout == "ROW" { 1 } else { state.rows };
     let group_width = nc as f64 * state.width + (nc - 1) as f64 * state.col_gap;
     let fixed = state.vertical_mode == "FIXED";
@@ -53,8 +61,7 @@ pub fn layout_values(
         state.height + state.row_gap
     };
     if state.layout == "FILL" {
-        ng = (((width - 2.0 * state.margin + state.group_gap)
-            / (group_width + state.group_gap))
+        ng = (((width - 2.0 * state.margin + state.group_gap) / (group_width + state.group_gap))
             .floor()) as i32;
         ng = ng.max(0);
         let rows = if fixed {
@@ -64,8 +71,7 @@ pub fn layout_values(
         };
         nr = (rows.floor() as i32).max(0);
     }
-    let total_width =
-        ng as f64 * group_width + (ng - 1).max(0) as f64 * state.group_gap;
+    let total_width = ng as f64 * group_width + (ng - 1).max(0) as f64 * state.group_gap;
     let total_height = if fixed {
         nr as f64 * pitch
     } else {
@@ -108,10 +114,8 @@ pub fn layout_values(
         },
         decor_rows: if state.decor_style == "BRICKS" { 2 } else { 1 },
         decor_inset: i32::from(
-            matches!(
-                state.decor_style.as_str(),
-                "RECESSED" | "TWIN" | "BRICKS"
-            ) || decor_is_catalog_id,
+            matches!(state.decor_style.as_str(), "RECESSED" | "TWIN" | "BRICKS")
+                || decor_is_catalog_id,
         ),
     }
 }

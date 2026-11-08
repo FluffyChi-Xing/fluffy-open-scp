@@ -6,7 +6,7 @@
 //! authored for a material/layer.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -280,9 +280,8 @@ mod tests {
 
     #[test]
     fn authored_values_overlay_defaults() {
-        let state = SurfaceState::overlay(
-            r#"{"style":"TALL","width":1.2,"wall_color":[0.1,0.2,0.3,1.0]}"#,
-        );
+        let state =
+            SurfaceState::overlay(r#"{"style":"TALL","width":1.2,"wall_color":[0.1,0.2,0.3,1.0]}"#);
         assert_eq!(state.style, "TALL");
         assert!((state.width - 1.2).abs() < 1e-12);
         assert_eq!(state.wall_color, [0.1, 0.2, 0.3, 1.0]);

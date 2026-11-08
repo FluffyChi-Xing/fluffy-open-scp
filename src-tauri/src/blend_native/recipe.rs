@@ -6,8 +6,8 @@
 
 use super::catalog::{Catalog, Entry};
 use super::resources::{
-    encode_png, linear_to_srgb, srgb_to_linear, ImageF32, PackStore, SLOT_INTERIOR,
-    SLOT_NORMAL, SLOT_PALETTE, SLOT_SHADER, SLOT_TINT,
+    ImageF32, PackStore, SLOT_INTERIOR, SLOT_NORMAL, SLOT_PALETTE, SLOT_SHADER, SLOT_TINT,
+    encode_png, linear_to_srgb, srgb_to_linear,
 };
 use super::settings::SurfaceState;
 
@@ -208,10 +208,7 @@ pub fn build(
         })
     }
     .ok_or_else(|| format!("pack {pack} has no recipe row for this material"))?;
-    let pal_offset = if entry
-        .and_then(|entry| entry.recipe_layer.as_deref())
-        == Some("上层")
-    {
+    let pal_offset = if entry.and_then(|entry| entry.recipe_layer.as_deref()) == Some("上层") {
         source_row[1]
     } else {
         source_row[0]
@@ -339,11 +336,7 @@ fn no_pack(input: &RecipeInput<'_>, rect: [f64; 4]) -> Result<RecipeOutput, Stri
     })
 }
 
-fn params_table(
-    pal_origin: [f64; 4],
-    base_rect: [f64; 4],
-    top_rect: [f64; 4],
-) -> [f32; 16] {
+fn params_table(pal_origin: [f64; 4], base_rect: [f64; 4], top_rect: [f64; 4]) -> [f32; 16] {
     let mut out = [0.0f32; 16];
     for (index, value) in pal_origin.iter().enumerate() {
         out[index] = *value as f32;
@@ -404,11 +397,7 @@ fn flat_palette(color: [f32; 4]) -> Result<Vec<u8>, String> {
     ];
     for row in 0..16 {
         for column in 0..512 {
-            pixels[row * 512 + column] = if row < 14 {
-                srgb
-            } else {
-                [0.0, 0.0, 0.0, 1.0]
-            };
+            pixels[row * 512 + column] = if row < 14 { srgb } else { [0.0, 0.0, 0.0, 1.0] };
         }
     }
     encode_png(&ImageF32::new(512, 16, pixels), false)
@@ -434,9 +423,7 @@ pub fn effective_palette_row(
 ) -> f64 {
     match kind {
         Kind::Window => source_window_palette.unwrap_or(state.palette_row),
-        Kind::Body if source_body_enabled => {
-            source_body_palette.unwrap_or(state.palette_row)
-        }
+        Kind::Body if source_body_enabled => source_body_palette.unwrap_or(state.palette_row),
         _ => state.palette_row,
     }
 }

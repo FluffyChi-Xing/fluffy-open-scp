@@ -9,9 +9,9 @@
 //! + deterministic_output_two_fresh_builds_identical 守卫)。
 
 use super::connector;
-use dbpf::ResourceId;
 use super::events::{finished, started, StageEvent};
 use super::filesystem::{project_file, Staging};
+use super::package::LodModelIds;
 use super::package::{
     apply_property_semantics, digest, insert_scene_model, insert_slot_raster, protected_templates,
     read_scene_bytes, read_scene_document, validate_scene_path_semantics, BuildResources,
@@ -20,7 +20,7 @@ use super::package::{
 use super::plan::PropertyBuildPlan;
 use super::processor::defer_property;
 use super::scene::SceneDocument;
-use super::package::LodModelIds;
+use dbpf::ResourceId;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -37,10 +37,16 @@ pub(crate) struct BuildContext {
     /// behavior-bind 从中克隆统计行/uiCategories/图标（菜单/行为拆分的表现
     /// 层供体；参与 compute_identity 指纹，防缓存陈旧）。
     pub presentation_resources: Option<connector::Resources>,
+    /// Independent editor ground Lot plus exactly its mask raster. This is not
+    /// merged into the output package; it is evidence for cloning and readback.
+    pub ground_source: Option<(connector::Resources, ResourceId)>,
     pub scene_document: Option<SceneDocument>,
     pub scene_document_bytes_hash: Option<String>,
     pub texture_instances: [u32; 6],
     pub model_ids: Option<LodModelIds>,
+    /// The active compiler is the strict author Building40 route. This survives
+    /// material-cache hits so the final DBPF gate checks the same geometry shape.
+    pub author_building40: bool,
     pub material_resource_count: usize,
     pub scene: SceneSemanticSummary,
     pub source_hash: String,
@@ -80,10 +86,12 @@ impl BuildContext {
             resources: BuildResources::empty(),
             identity_resources: None,
             presentation_resources: None,
+            ground_source: None,
             scene_document: None,
             scene_document_bytes_hash: None,
             texture_instances: [0u32; 6],
             model_ids: None,
+            author_building40: false,
             material_resource_count: 0,
             scene: SceneSemanticSummary::default(),
             source_hash: String::new(),
@@ -115,7 +123,7 @@ fn emit(ctx: &mut BuildContext, event: StageEvent) {
     ctx.events.push(event);
 }
 
-pub(crate) const CHAIN: [&str; 13] = [
+pub(crate) const CHAIN: [&str; 16] = [
     "load-inputs",
     "insert-textures",
     "insert-model",
@@ -128,6 +136,9 @@ pub(crate) const CHAIN: [&str; 13] = [
     "menu-contract",
     "delta-audit",
     "vanilla-shadow-strip",
+    "material-binding-contract",
+    "identity-closure",
+    "golden-shape",
     "materialize-and-link",
 ];
 
@@ -146,6 +157,9 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
             "scene-semantics" => apply_scene_semantics(ctx),
             "behavior-bind" => super::behavior::apply(ctx),
             "vanilla-shadow-strip" => vanilla_shadow_strip(ctx),
+            "material-binding-contract" => material_binding_contract(ctx),
+            "identity-closure" => identity_closure(ctx),
+            "golden-shape" => golden_shape(ctx),
             "layout-contract" => layout_contract(ctx),
             "menu-contract" => menu_contract(ctx),
             "delta-audit" => delta_audit(ctx),
@@ -160,14 +174,24 @@ pub(crate) fn run_chain(ctx: &mut BuildContext) -> Result<(), String> {
                 if let Err(violation) = check_invariants(stage, ctx) {
                     emit(
                         ctx,
-                        super::events::failed(stage, &violation, started_at.elapsed().as_millis() as u64),
+                        super::events::failed(
+                            stage,
+                            &violation,
+                            started_at.elapsed().as_millis() as u64,
+                        ),
                     );
                     return Err(format!("[{stage}] {violation}"));
                 }
-                emit(ctx, finished(stage, detail, started_at.elapsed().as_millis() as u64));
+                emit(
+                    ctx,
+                    finished(stage, detail, started_at.elapsed().as_millis() as u64),
+                );
             }
             Err(error) => {
-                emit(ctx, super::events::failed(stage, &error, started_at.elapsed().as_millis() as u64));
+                emit(
+                    ctx,
+                    super::events::failed(stage, &error, started_at.elapsed().as_millis() as u64),
+                );
                 return Err(format!("[{stage}] {error}"));
             }
         }
@@ -231,8 +255,18 @@ pub(crate) const INSERT_TEXTURES_CONTRACT: StepContract = StepContract {
 
 pub(crate) const INSERT_MODEL_CONTRACT: StepContract = StepContract {
     name: "insert-model",
-    reads: &["plan.scene.model", "plan.scene.modelShape", "texture_instances", "sceneDocument"],
-    writes: &["model_ids", "material_resource_count", "resources(RW4/raster)", "material-baseline"],
+    reads: &[
+        "plan.scene.model",
+        "plan.scene.modelShape",
+        "texture_instances",
+        "sceneDocument",
+    ],
+    writes: &[
+        "model_ids",
+        "material_resource_count",
+        "resources(RW4/raster)",
+        "material-baseline",
+    ],
     invariants: &[Invariant {
         code: "MATERIAL_NON_EMPTY_WHEN_MODEL",
         check: material_non_empty_when_model,
@@ -260,13 +294,39 @@ fn check_invariants(stage: &str, ctx: &BuildContext) -> Result<(), String> {
     };
     for invariant in contract.invariants {
         if let Some(fact) = (invariant.check)(ctx) {
-            return Err(format!(
-                "invariant {} violated: {fact}",
-                invariant.code
-            ));
+            return Err(format!("invariant {} violated: {fact}", invariant.code));
         }
     }
     Ok(())
+}
+
+fn select_ground_source_lot(
+    document: &SceneDocument,
+    resources: &connector::Resources,
+    reference_lot: Option<ResourceId>,
+    menu_registered: bool,
+) -> Result<ResourceId, String> {
+    match document.ground_source.as_ref() {
+        Some(source)
+            if source.package_path.is_some() || resources.get(&source.lot).is_some() =>
+        {
+            Ok(source.lot)
+        }
+        // A full, non-menu build edits the reference Lot in place. Older editor
+        // documents can retain an unresolved imported sourceLot; the schema's
+        // present reference Lot is the only complete source. Menu builds stay
+        // strict: an unavailable explicit source cannot select the schema donor.
+        Some(source) if !menu_registered => reference_lot
+            .filter(|lot| resources.get(lot).is_some())
+            .ok_or_else(|| {
+                format!(
+                    "lot.mask.kind=source: editor source Lot {} is unavailable and reference.lot is missing",
+                    source.lot
+                )
+            }),
+        Some(source) => Ok(source.lot),
+        None => reference_lot.ok_or("lot.mask.kind=source requires sourceLot or reference.lot".into()),
+    }
 }
 
 /// 参考包/身份包/场景文档装载。
@@ -288,12 +348,16 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         group: tgi.group,
         instance: tgi.instance,
     });
-    ctx.reference_lot = lot_target.and_then(|id| {
-        ctx.resources
-            .get(&id)
-            .cloned()
-            .map(|bytes| (id, bytes))
-    });
+    ctx.reference_lot =
+        lot_target.and_then(|id| ctx.resources.get(&id).cloned().map(|bytes| (id, bytes)));
+    // donor lot 主体验证（2026-11-08 §7.1：参照 lot=40 字节 fixture → 克隆出
+    // 20 列白板。游戏建筑常有变体，只有主体带全地面列；派生变体靠继承链
+    // 补数据，克隆它 = 白板）。40E1C000（Asset 字典 lot）走 fail-closed
+    // 契约；58F0C000 等 lot-config 形态不适用，跳过。继承链逐跳进台账。
+    let master_report = match &ctx.reference_lot {
+        Some((id, bytes)) => reference_lot_master_contract(id, bytes, &ctx.resources)?,
+        None => serde_json::Value::Null,
+    };
     ctx.identity_resources = match ctx
         .plan
         .menu
@@ -317,20 +381,45 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         &ctx.plan.intermediate.scene.document,
         ctx.plan.intermediate.scene.model.as_deref(),
     )?;
+    ctx.ground_source = match ctx.scene_document.as_ref() {
+        Some(document) if document.lot_mask == Some(super::scene::SceneLotMaskKind::Source) => {
+            let source_lot = select_ground_source_lot(
+                document,
+                ctx.resources.all(),
+                lot_target,
+                ctx.plan.menu.is_some(),
+            )?;
+            let snapshot = if ctx.resources.get(&source_lot).is_some() {
+                super::menu::ground_source_snapshot(ctx.resources.all(), source_lot)?
+            } else {
+                let package_path = document
+                    .ground_source
+                    .as_ref()
+                    .and_then(|source| source.package_path.as_deref())
+                    .ok_or_else(|| {
+                        format!(
+                            "ground source Lot {source_lot} is absent from reference.package and sourceLot.packagePath is missing"
+                        )
+                    })?;
+                let package_path = super::filesystem::input_file(&ctx.root, package_path)?;
+                let source_resources = connector::read_source(&package_path)?;
+                super::menu::ground_source_snapshot(&source_resources, source_lot)?
+            };
+            Some((snapshot, source_lot))
+        }
+        _ => None,
+    };
     // 显式 scene.writes 优先；缺省时按文档实际携带的列族派生（安全默认：
     // 没建模的列一律保留）。派生结果进入 plan → 参与 build_hash，可复现。
     if !ctx.plan.scene_writes.authoritative {
         let declared = ctx
             .scene_document
             .as_ref()
-            .map(|document| {
-                super::scene::SceneWrites::parse(&document.writes)
-            })
+            .map(|document| super::scene::SceneWrites::parse(&document.writes))
             .unwrap_or_default();
         let effective = ctx.plan.scene_writes.clone().merge(declared);
         ctx.plan.scene_writes = if effective.is_empty() {
-            ctx
-                .scene_document
+            ctx.scene_document
                 .as_ref()
                 .map(super::scene::SceneWrites::from_document)
                 .unwrap_or_default()
@@ -406,7 +495,120 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "identityPackage": ctx.identity_resources.is_some(),
         "sceneDocument": ctx.scene_document.is_some(),
+        "referenceLotMaster": master_report,
+        "groundSource": ctx.ground_source.as_ref().map(|(resources, source_lot)| serde_json::json!({
+            "sourceLot": source_lot.to_string(),
+            "snapshotResources": resources.len(),
+            "fingerprint": connector::fingerprint(resources),
+        })),
         "pool": {"count": current.len(), "bytes": current.values().sum::<usize>(), "drift": pool_drift},
+    }))
+}
+
+/// donor lot 主体契约：只接受带全地面列的主体变体，拒绝靠继承链补数据的
+/// 派生变体；继承链（00B2CCCB 逐跳）写入台账日志。
+///
+/// 主体三要件 = 游戏渲染 lot 地面的最小本地列集：
+/// - `00F9EFBA` BoundingBox（放置边界；缺它 menu-contract 只能告警）
+/// - `0CCB7FC8` LotSize（地块尺寸向量）
+/// - `0CCB7FD5` LotMask（地面掩码 raster 键）
+///
+/// 返回进台账的日志值；主体要件缺失 = Err（fail-closed，错误里指认"换主体
+/// 变体"而非"调参数"）。
+fn reference_lot_master_contract(
+    lot_id: &ResourceId,
+    bytes: &[u8],
+    resources: &BuildResources,
+) -> Result<serde_json::Value, String> {
+    if lot_id.group != 0x40E1_C000 {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": format!("lot group {:08X} is not an asset-dictionary lot; master contract not applied", lot_id.group),
+        }));
+    }
+    let file = sc_properties::PropertyFile::parse(bytes)
+        .map_err(|error| format!("reference lot {:08X} parse: {error}", lot_id.instance))?;
+    let column_count = file.values.len();
+    let required: [(&str, u32); 3] = [
+        ("00F9EFBA BoundingBox", 0x00F9_EFBA),
+        ("0CCB7FC8 LotSize", 0x0CCB_7FC8),
+        ("0CCB7FD5 LotMask", 0x0CCB_7FD5),
+    ];
+    let missing: Vec<String> = required
+        .iter()
+        .filter(|(_, hash)| file.get(*hash).is_none())
+        .map(|(label, _)| label.to_string())
+        .collect();
+    // 继承链逐跳日志：主体判定证据（列数随跳递增 = 当前是派生变体）。
+    let mut chain: Vec<serde_json::Value> = Vec::new();
+    let mut cursor = file
+        .get(0x00B2_CCCB)
+        .and_then(|property| match &property.kind {
+            sc_properties::Kind::Scalar(sc_properties::Value::Key(key)) => Some(key.instance),
+            _ => None,
+        });
+    for _ in 0..4 {
+        let Some(instance) = cursor else { break };
+        let parent_id = ResourceId {
+            type_id: lot_id.type_id,
+            group: lot_id.group,
+            instance,
+        };
+        let (parent_columns, next) = match resources.get(&parent_id) {
+            Some(bytes) => match sc_properties::PropertyFile::parse(bytes) {
+                Ok(parent) => {
+                    let next = parent
+                        .get(0x00B2_CCCB)
+                        .and_then(|property| match &property.kind {
+                            sc_properties::Kind::Scalar(sc_properties::Value::Key(key)) => {
+                                Some(key.instance)
+                            }
+                            _ => None,
+                        });
+                    (parent.values.len() as i64, next)
+                }
+                Err(_) => (0, None),
+            },
+            None => (-1, None),
+        };
+        chain.push(serde_json::json!({
+            "instance": format!("{instance:08X}"),
+            "columns": parent_columns,
+            "inPackage": parent_columns >= 0,
+        }));
+        cursor = next;
+    }
+    if !missing.is_empty() {
+        let chain_text = chain
+            .iter()
+            .map(|hop| {
+                format!(
+                    "{}({}列{})",
+                    hop["instance"].as_str().unwrap_or("?"),
+                    hop["columns"],
+                    if hop["inPackage"].as_bool().unwrap_or(false) {
+                        ""
+                    } else {
+                        ",不在包内"
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        return Err(format!(
+            "[load-inputs] reference lot 40E1C000:{:08X} is a DERIVED variant ({} columns, missing {}); \
+             cloning it yields a white-slab lot. Use the MASTER variant (carries the full ground column set) — \
+             scan candidates with `scan_big_lots` and pick one with BoundingBox+LotSize+LotMask. \
+             继承链: {chain_text}",
+            lot_id.instance,
+            column_count,
+            missing.join(", ")
+        ));
+    }
+    Ok(serde_json::json!({
+        "status": "master-ok",
+        "columns": column_count,
+        "parentChain": chain,
     }))
 }
 
@@ -429,17 +631,30 @@ fn insert_textures(ctx: &mut BuildContext) -> Result<serde_json::Value, String> 
     Ok(serde_json::json!({ "slots": inserted }))
 }
 
+/// The workbench LOTM frame and the packaged lot-unit frame differ by half a
+/// turn. Keep the scene rotation on paths/props/lights/ground, but compensate
+/// only the compiled building so its authored entrance meets the authored path.
+fn workbench_model_rotation(scene_rotation: u32) -> Result<u32, String> {
+    match scene_rotation {
+        0 => Ok(180),
+        90 => Ok(270),
+        180 => Ok(0),
+        270 => Ok(90),
+        other => Err(format!("朝向仅支持 0、90、180、270 度（收到 {other}）")),
+    }
+}
+
 /// 场景模型(LOTM/GLB)→ RW4 编译 + LOD id 分配(缺模型跳过)。
 fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
-    let rotation = ctx
+    let scene_rotation = ctx
         .plan
         .menu
         .as_ref()
         .and_then(|menu| menu.rotation_degrees)
-        // Author orientation (backend settings.rotationDegrees, default 180);
-        // parent-free builds carry it on the menu spec so geometry, ground
-        // and prop/light matrices all share one value.
+        // Author scene orientation (backend settings.rotationDegrees,
+        // default 180). native_profile applies this value to lot columns.
         .unwrap_or(180);
+    let rotation = workbench_model_rotation(scene_rotation)?;
     // Capture the source contract in the stage event before lowering.  This
     // makes a material regression attributable to this processor from the
     // build report, without comparing entire DBPF files by hand.
@@ -451,14 +666,31 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         .as_deref()
         .and_then(|path| project_file(&ctx.root, path).ok())
         .and_then(|path| std::fs::read(path).ok());
+    let route = model_bytes
+        .as_deref()
+        .and_then(|bytes| {
+            super::lotm::is_container(bytes)
+                .then(|| super::lotm::parse(bytes).ok())
+                .flatten()
+        })
+        .and_then(|doc| {
+            super::geometry_route::derive(ctx.plan.intermediate.scene.model_shape.as_deref(), &doc)
+                .ok()
+        });
     let material_contract = model_bytes
         .as_deref()
-        .and_then(|bytes| super::lotm::is_container(bytes).then(|| super::lotm::parse(bytes).ok()).flatten())
-        .map(|doc| serde_json::json!({
-            "materialGroups": doc.materials.len(),
-            "parameterColumns": doc.materials.iter().map(|m| m.param_cols).collect::<Vec<_>>(),
-            "meshCount": doc.meshes.len(),
-        }))
+        .and_then(|bytes| {
+            super::lotm::is_container(bytes)
+                .then(|| super::lotm::parse(bytes).ok())
+                .flatten()
+        })
+        .map(|doc| {
+            serde_json::json!({
+                "materialGroups": doc.materials.len(),
+                "parameterColumns": doc.materials.iter().map(|m| m.param_cols).collect::<Vec<_>>(),
+                "meshCount": doc.meshes.len(),
+            })
+        })
         .unwrap_or(serde_json::Value::Null);
     // G1 材质指纹闸门：源模型 hash + 材质组/参数列/网格 + 六槽实例与载荷
     // + 材质资源数。与 .build/material-baseline.json 对拍；未声明的漂移在
@@ -468,7 +700,7 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             let contract = super::lotm::parse(bytes).ok();
             let fingerprint = super::material_gate::MaterialFingerprint {
                 model_sha256: digest(bytes),
-                model_shape: ctx.plan.intermediate.scene.model_shape.clone(),
+                model_shape: route.as_ref().map(|route| route.name.to_string()),
                 material_groups: contract.as_ref().map_or(0, |doc| doc.materials.len()),
                 parameter_columns: contract
                     .as_ref()
@@ -476,7 +708,10 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
                     .unwrap_or_default(),
                 mesh_count: contract.as_ref().map_or(0, |doc| doc.meshes.len()),
                 texture_slot_instances: ctx.texture_instances,
-                slot_payload_sha256: slot_payload_digest(&ctx.root, &ctx.plan.intermediate.scene.slots),
+                slot_payload_sha256: slot_payload_digest(
+                    &ctx.root,
+                    &ctx.plan.intermediate.scene.slots,
+                ),
                 material_resources: 0, // 在 insert_scene_model 之后回填
             };
             Some((model_key.to_string(), fingerprint))
@@ -487,11 +722,19 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         ctx,
         rotation,
         model_bytes.as_deref(),
-        gate
-            .as_ref()
-            .map(|(key, fingerprint)| (key.clone(), fingerprint.model_sha256.clone(), fingerprint.slot_payload_sha256.clone())),
+        route.as_ref().map(|route| route.name),
+        gate.as_ref().map(|(key, fingerprint)| {
+            (
+                key.clone(),
+                fingerprint.model_sha256.clone(),
+                fingerprint.slot_payload_sha256.clone(),
+            )
+        }),
     )?;
     ctx.model_ids = model_ids;
+    ctx.author_building40 = route
+        .as_ref()
+        .is_some_and(|route| route.name == "building40");
     ctx.material_resource_count = material_resource_count;
     let mut gate_json = serde_json::Value::Null;
     if let Some((model_key, mut fingerprint)) = gate {
@@ -508,11 +751,23 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             "fingerprint": fingerprint,
         });
     }
+    // Record the interpreter decision separately from the author-facing field.
+    let shape_declared = ctx.plan.intermediate.scene.model_shape.clone();
+    let warnings: Vec<String> = Vec::new();
     Ok(serde_json::json!({
         "materialResources": material_resource_count,
         "materialContract": material_contract,
         "materialGate": gate_json,
         "materialCache": cache_state,
+        "sceneRotationDegrees": scene_rotation,
+        "modelRotationDegrees": rotation,
+        "modelShapeDeclared": shape_declared,
+        "geometryRoute": route.as_ref().map(|route| serde_json::json!({
+            "name": route.name,
+            "reason": route.reason,
+            "source": if shape_declared.is_some() { "schema" } else { "inferred" },
+        })),
+        "warnings": warnings,
     }))
 }
 
@@ -523,10 +778,11 @@ fn insert_model_with_cache(
     ctx: &mut BuildContext,
     rotation: u32,
     model_bytes: Option<&[u8]>,
+    effective_shape: Option<&str>,
     gate_key: Option<(String, String, String)>,
 ) -> Result<(Option<super::package::LodModelIds>, usize, &'static str), String> {
     let transform = super::package::scene_model_transform(ctx.scene_document.as_ref());
-    let transform_repr = format!("{transform:?}");
+    let transform_repr = format!("{transform:?};geometry-route={effective_shape:?}");
     let fingerprint_key = gate_key.as_ref().map(|(key, model_sha, slot_sha)| {
         super::build_cache::material_fingerprint(
             &ctx.root,
@@ -567,7 +823,7 @@ fn insert_model_with_cache(
     let (model_ids, material_resource_count) = insert_scene_model(
         &ctx.root,
         &ctx.plan.intermediate.scene.model,
-        ctx.plan.intermediate.scene.model_shape.as_deref(),
+        effective_shape.or(ctx.plan.intermediate.scene.model_shape.as_deref()),
         &mut ctx.resources,
         &ctx.texture_instances,
         ctx.scene_document.as_ref(),
@@ -594,7 +850,15 @@ fn insert_model_with_cache(
         };
         super::build_cache::store_material(&ctx.root, key, &entry, &payloads);
     }
-    Ok((model_ids, material_resource_count, if fingerprint_key.is_some() { "miss" } else { "off" }))
+    Ok((
+        model_ids,
+        material_resource_count,
+        if fingerprint_key.is_some() {
+            "miss"
+        } else {
+            "off"
+        },
+    ))
 }
 
 /// 六槽源文件字节串联摘要：槽实例号受池内分配影响，载荷指纹不受。
@@ -638,10 +902,7 @@ fn validate_paths(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
 
 /// source/plan/scene → source_hash + build_hash(确定性身份)。
 fn compute_identity(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
-    ctx.source_hash = match (
-        &ctx.identity_resources,
-        &ctx.presentation_resources,
-    ) {
+    ctx.source_hash = match (&ctx.identity_resources, &ctx.presentation_resources) {
         (Some(identity), Some(presentation)) => format!(
             "{}:{}:{}",
             connector::fingerprint(&ctx.resources),
@@ -660,14 +921,24 @@ fn compute_identity(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
         ),
         (None, None) => connector::fingerprint(&ctx.resources),
     };
+    if let Some((ground, source_lot)) = &ctx.ground_source {
+        ctx.source_hash = format!(
+            "{}:ground:{}:{}",
+            ctx.source_hash,
+            source_lot,
+            connector::fingerprint(ground)
+        );
+    }
     let plan_bytes = serde_json::to_vec_pretty(&ctx.plan).map_err(|e| e.to_string())?;
-    ctx.build_hash = digest(&serde_json::to_vec(&(
-        ctx.plan.processor_version,
-        &ctx.source_hash,
-        &plan_bytes,
-        &ctx.scene_document_bytes_hash,
-    ))
-    .map_err(|e| e.to_string())?);
+    ctx.build_hash = digest(
+        &serde_json::to_vec(&(
+            ctx.plan.processor_version,
+            &ctx.source_hash,
+            &plan_bytes,
+            &ctx.scene_document_bytes_hash,
+        ))
+        .map_err(|e| e.to_string())?,
+    );
     ctx.plan_bytes = plan_bytes;
     Ok(serde_json::json!({ "buildHash": ctx.build_hash }))
 }
@@ -755,6 +1026,9 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                 ctx.scene_document.as_ref(),
                 &ctx.plan.scene_writes,
                 ctx.model_ids,
+                ctx.ground_source
+                    .as_ref()
+                    .map(|(resources, source_lot)| (resources, *source_lot)),
                 ctx.identity_resources.as_ref(),
                 &ctx.root,
             )?;
@@ -826,12 +1100,29 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
 /// 工作在解析值层，看不见声明元数据——本阶段在编码产物上 fail-closed 校验
 /// 每个数组列的声明步长 ∈ vanilla 全量标定合法表（scan_strides.rs：2385
 /// 文件、每类型恰好一个合法步长、零例外），空数组（vanilla 从不存在）同拒。
+///
+/// /36：游戏基类模板条目（vanilla-shadow-strip 将剥离的 shadow 组）跳过——
+/// 它们是游戏自有字节（原版 9EC474FF 模板就带着 count=0 的 0CABB2FC 数组），
+/// 不归本契约管；/35 把 strip 移到 delta-audit 之后后，本闸门先于 strip 运行，
+/// 不跳过则每个部署构建都会被 vanilla 数据击落。
 fn layout_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     let mut checked = 0usize;
     let mut arrays = 0usize;
+    let mut skipped_shadows = 0usize;
     let mut violations: Vec<String> = Vec::new();
+    let vanilla_shadows = vanilla_shadow_instances();
     for (id, bytes) in ctx.resources.iter() {
         if id.type_id != 0x00B1_B104 {
+            continue;
+        }
+        // The reference snapshot is intentionally readable here for closure
+        // checks, but its vanilla property layout is not our encoded output.
+        // Validate only resources this build actually rewrote/created.
+        if !ctx.resources.is_touched(id) {
+            continue;
+        }
+        if vanilla_shadows.contains(&(id.group, id.instance)) {
+            skipped_shadows += 1;
             continue;
         }
         let file = match sc_properties::PropertyFile::parse(bytes) {
@@ -868,7 +1159,41 @@ fn layout_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
         "status": "ok",
         "property_files": checked,
         "array_columns": arrays,
+        "vanilla_shadows_skipped": skipped_shadows,
     }))
+}
+
+/// unit/lot/template 组：instance 已存在于游戏包的资源 = 游戏自行提供，
+/// 部署包不得携带（遮蔽即事故）。
+const SHADOW_GROUPS: [u32; 7] = [
+    0x40E0_C000,
+    0x40E1_C000,
+    0x40E0_C400,
+    0x40E1_C400,
+    0x48E0_C000,
+    0x41E0_C000,
+    0x41E1_C000,
+];
+
+/// vanilla-shadow-strip 与 layout-contract 共用的 shadow 组表与游戏侧
+/// instance 集（元数据枚举，不解压内容）。OPENSCP_GAME_DATA 缺省（测试
+/// 构建）= 空集（非部署构建，不跳过、不剥离）。
+fn vanilla_shadow_instances() -> std::collections::HashSet<(u32, u32)> {
+    let mut vanilla = std::collections::HashSet::new();
+    let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") else {
+        return vanilla;
+    };
+    for path in crate::game_assets::package_paths(std::path::Path::new(&game_data)) {
+        let Ok(package) = dbpf::Package::open(&path) else {
+            continue;
+        };
+        for entry in package.entries() {
+            if entry.id.type_id == 0x00B1_B104 && SHADOW_GROUPS.contains(&entry.id.group) {
+                vanilla.insert((entry.id.group, entry.id.instance));
+            }
+        }
+    }
+    vanilla
 }
 
 /// vanilla-shadow-strip（2026-11-08 HopeTower 事故后新增）：部署包
@@ -885,41 +1210,22 @@ fn layout_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
 fn vanilla_shadow_strip(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     // 游戏数据路径由应用启动时注入（lib.rs setup → OPENSCP_GAME_DATA）；
     // 测试构建未注入 = 非部署构建，跳过影子检查。
-    let Ok(game_data) = std::env::var("OPENSCP_GAME_DATA") else {
+    if std::env::var("OPENSCP_GAME_DATA").is_err() {
         return Ok(serde_json::json!({
             "status": "skipped",
             "reason": "OPENSCP_GAME_DATA unset (non-deployment build); shadow check skipped",
         }));
-    };
-    let shadow_groups = [
-        0x40E0_C000u32,
-        0x40E1_C000,
-        0x40E0_C400,
-        0x40E1_C400,
-        0x48E0_C000,
-        0x41E0_C000,
-        0x41E1_C000,
-    ];
-    // 游戏侧 instance 集（元数据枚举，不解压内容）
-    let mut vanilla: std::collections::HashSet<(u32, u32)> = Default::default();
-    for path in crate::game_assets::package_paths(std::path::Path::new(game_data.as_str())) {
-        let Ok(package) = dbpf::Package::open(&path) else { continue };
-        for entry in package.entries() {
-            if entry.id.type_id != 0x00B1_B104 || !shadow_groups.contains(&entry.id.group) {
-                continue;
-            }
-            vanilla.insert((entry.id.group, entry.id.instance));
-        }
     }
+    let vanilla = vanilla_shadow_instances();
     let dropped = ctx
         .resources
-        .strip_vanilla_shadows(&shadow_groups, &vanilla);
+        .strip_vanilla_shadows(&SHADOW_GROUPS, &vanilla);
     // 复核：剥离后不允许残留"与 vanilla 撞车"的条目（防御未来回归）。
     // 非撞车的新身份（我们自己的建筑）不受影响。
     let mut remaining: Vec<String> = Vec::new();
     for (id, _bytes) in ctx.resources.iter() {
         if id.type_id == 0x00B1_B104
-            && shadow_groups.contains(&id.group)
+            && SHADOW_GROUPS.contains(&id.group)
             && vanilla.contains(&(id.group, id.instance))
         {
             remaining.push(format!(
@@ -938,6 +1244,239 @@ fn vanilla_shadow_strip(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         "status": "ok",
         "stripped": dropped.len(),
         "dropped": dropped,
+    }))
+}
+
+/// material-binding-contract（2026-11-08 白模事故后新增）：材质绑定字节层
+/// 闸门。模拟游戏读取路径——产物池里每个 RW4 模型的材质纹理行（slot 0..=4）
+/// 必须指向池内存在且非空的 raster（>64B；32B = 仅头部的空壳，tint/palette/
+/// shader 无像素 → 白模）。§7.1 事故：多材质 LOTM 缺 `scene.modelShape` 落进
+/// nh-partitioned 路线，塔 4 LOD 的 slot1/2/3 全指向 32B 空 raster，离线门禁
+/// （资源计数/引用可解析）全绿、实机全白——绑定验证必须做在编码产物层。
+/// fail-closed：报错携带修复指引（声明 nh-atlas），而非"构建通过、实机返工"。
+fn material_binding_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
+    const RASTER_TYPE: u32 = 0x2F4E_681C;
+    const MODEL_TYPE: u32 = 0x2F4E_681B;
+    let empty_rasters: std::collections::HashSet<u32> = ctx
+        .resources
+        .iter()
+        .filter(|(id, bytes)| id.type_id == RASTER_TYPE && bytes.len() <= 64)
+        .map(|(id, _)| id.instance)
+        .collect();
+    let mut models = 0usize;
+    let mut texture_rows = 0usize;
+    let mut violations: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+    for (id, bytes) in ctx.resources.iter() {
+        if id.type_id != MODEL_TYPE {
+            continue;
+        }
+        let file = match rw4::Rw4File::parse(bytes) {
+            Ok(file) => file,
+            Err(error) => {
+                // 夹具/不透明资源可能不是 RW4（与 menu-contract 的容忍一致）；
+                // 真实模型都出自本编译器，解析失败不拦构建只记录。
+                warnings.push(format!(
+                    "{:08X}:{:08X}:{:08X} rw4 parse skipped: {error}",
+                    id.type_id, id.group, id.instance
+                ));
+                continue;
+            }
+        };
+        models += 1;
+        // Native plugin exports intentionally preserve one MATERIAL section
+        // per facade recipe. Their source contract may include a tiny raster
+        // placeholder for an unused slot; that is not the same failure as an
+        // NH/atlas model pointing at an empty raster for its active surface.
+        let native_material_graph = file.sections_of_type(rw4::SectionType::MATERIAL).count() > 4;
+        for section in file.sections_of_type(rw4::SectionType::MATERIAL) {
+            let material = match file.decode_material(bytes, section.number) {
+                Ok(material) => material,
+                Err(_) => continue,
+            };
+            for row in material.texture_refs() {
+                let slot = row.slot & 0xFF;
+                if slot == 0x2D {
+                    continue; // shader-def 引用引擎侧资源，不是 raster
+                }
+                texture_rows += 1;
+                let missing = !ctx.resources.iter().any(|(rid, _)| {
+                    rid.type_id == RASTER_TYPE && rid.instance == row.texture_instance
+                });
+                let empty = empty_rasters.contains(&row.texture_instance);
+                if empty && !native_material_graph {
+                    // 确证白模：raster 在包内但只有头部无像素（§7.1 事故本体）。
+                    violations.push(format!(
+                        "model {:08X} material #{} slot{} -> raster {:08X} is an EMPTY raster (no pixels; renders white). \
+                         Multi-material LOTM needs scene.modelShape \"nh-atlas\" so textures bake into the atlas",
+                        id.instance, section.number, slot, row.texture_instance
+                    ));
+                } else if missing {
+                    // 缺失 raster = 原版自带容忍现象（donor 装饰模型的悬空引用，
+                    // 如 263E0569 链的 EDD00202，全安装无此文件而原版渲染正常）
+                    // → 告警不拦截，保持可见。
+                    warnings.push(format!(
+                        "model {:08X} material #{} slot{} -> raster {:08X} not in package (vanilla-tolerated dangling ref)",
+                        id.instance, section.number, slot, row.texture_instance
+                    ));
+                }
+            }
+        }
+    }
+    if !violations.is_empty() {
+        return Err(format!(
+            "[material-binding-contract] untextured material bindings ({}): {}{}",
+            violations.len(),
+            violations.join("; "),
+            if warnings.is_empty() {
+                String::new()
+            } else {
+                format!("; warnings({}): {}", warnings.len(), warnings.join("; "))
+            }
+        ));
+    }
+    Ok(serde_json::json!({
+        "status": "ok",
+        "models": models,
+        "texture_rows": texture_rows,
+        "empty_rasters": empty_rasters.len(),
+        "dangling_refs": warnings.len(),
+    }))
+}
+
+/// golden-shape（2026-11-08，用户裁决：与 s31 的差距必须在构建期可见）：
+/// ①包内全部 property 实例 = 身份实例（s31：4 个 property 全是 be18da2d）；
+/// ②Asset 引用的 LOD RW4 恰 1 个 mesh（s31：12 sections/1 Mesh；游戏 census
+/// ≤4，孤儿形状 2026-10-29 已记录）；③raster ≤ 6（s31：3 atlas 页 + 1 mask）。
+/// 任何一条不满足 = 构建失败，报错列出违规资源。
+fn golden_shape(ctx: &BuildContext) -> Result<serde_json::Value, String> {
+    let Some(instance) = ctx.menu_instance else {
+        return Ok(serde_json::json!({"status":"skipped","reason":"no menu identity"}));
+    };
+    const PROPERTY: u32 = 0x00B1_B104;
+    const MODEL: u32 = 0x2F4E_681B;
+    const RASTER: u32 = 0x2F4E_681C;
+    let mut violations: Vec<String> = Vec::new();
+    let mut property_files = 0usize;
+    // A custom PathEntry is a declared scene dependency, not a foreign donor
+    // property. Exempt only entries referenced by this document and only in
+    // C400 groups; every other non-identity Property remains a hard failure.
+    let declared_path_entries: std::collections::HashSet<u32> = ctx
+        .scene_document
+        .as_ref()
+        .into_iter()
+        .flat_map(|document| document.paths.iter())
+        .filter_map(|path| {
+            super::path_catalog::resolve(
+                path.kind.as_deref(),
+                path.entry.as_deref(),
+                path.scope_local,
+                path.road_connect,
+            )
+            .ok()
+        })
+        .map(|recipe| recipe.entry_instance)
+        .collect();
+    for (id, _) in ctx.resources.iter() {
+        if id.type_id == PROPERTY {
+            property_files += 1;
+            let declared_path_entry =
+                (id.group & 0xFFFF) == 0xC400 && declared_path_entries.contains(&id.instance);
+            if id.instance != instance && !declared_path_entry {
+                violations.push(format!(
+                    "foreign property {:08X}:{:08X}:{:08X} (identity is {instance:08X})",
+                    id.type_id, id.group, id.instance
+                ));
+            }
+        }
+    }
+    let rasters: Vec<ResourceId> = ctx
+        .resources
+        .iter()
+        .filter(|(id, _)| id.type_id == RASTER)
+        .map(|(id, _)| *id)
+        .collect();
+    if rasters.len() > 6 {
+        violations.push(format!(
+            "{} rasters in package (s31 GOLDEN carries 4: atlas pages + lot mask) —              textures must bake into atlas pages, not ship per-material rasters: {:08X?}",
+            rasters.len(),
+            rasters.iter().take(8).map(|id| id.instance).collect::<Vec<_>>()
+        ));
+    }
+    // LOD 引用 mesh 数 == 1
+    let asset_id = ResourceId {
+        type_id: PROPERTY,
+        group: 0x40E1_C000,
+        instance,
+    };
+    if let Some(bytes) = ctx.resources.get(&asset_id) {
+        if let Ok(file) = sc_properties::PropertyFile::parse(bytes) {
+            for hash in [0x00F9_EFBBu32, 0x00F9_EFBC, 0x00F9_EFBD, 0x00F9_EFBE] {
+                if let Some(property) = file.get(hash) {
+                    if let sc_properties::Kind::Scalar(sc_properties::Value::Key(key)) =
+                        &property.kind
+                    {
+                        let model_id = ResourceId {
+                            type_id: MODEL,
+                            group: 0,
+                            instance: key.instance,
+                        };
+                        if let Some(model_bytes) = ctx.resources.get(&model_id) {
+                            match rw4::Rw4File::parse(model_bytes) {
+                                Ok(model) => {
+                                    let meshes =
+                                        model.sections_of_type(rw4::SectionType::MESH).count();
+                                    if meshes != 1 {
+                                        violations.push(format!(
+                                            "LOD model {:08X} has {meshes} meshes — GOLDEN shape is exactly 1 mesh per RW4                                              (game census ≤4; dozens of meshes = orphan shape, 2026-10-29)",
+                                            key.instance
+                                        ));
+                                    }
+                                }
+                                Err(error) => violations.push(format!(
+                                    "LOD model {:08X} rw4 parse: {error}",
+                                    key.instance
+                                )),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if !violations.is_empty() {
+        return Err(format!(
+            "[golden-shape] package deviates from the s31 GOLDEN shape ({}): {}",
+            violations.len(),
+            violations.join("; ")
+        ));
+    }
+    Ok(serde_json::json!({
+        "status": "ok",
+        "identity": format!("{instance:08X}"),
+        "property_files": property_files,
+        "rasters": rasters.len(),
+    }))
+}
+
+/// identity-closure（2026-11-08，用户验收标准：包里只允许"这一栋楼"）：
+/// 从身份根可达性保留资源，其余（donor lot、模板链、fixture 夹具、孤儿
+/// raster）全部丢弃。产出 = s31 形状的包：property 文件只有身份自己的。
+/// 丢弃清单进台账——每一件被丢的东西都可见、可追溯。
+fn identity_closure(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
+    let Some(instance) = ctx.menu_instance else {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": "no menu identity (not a menu asset)",
+        }));
+    };
+    let dropped = ctx.resources.retain_identity_closure(instance);
+    let preview: Vec<String> = dropped.iter().take(16).cloned().collect();
+    Ok(serde_json::json!({
+        "status": "ok",
+        "identity": format!("{instance:08X}"),
+        "dropped": dropped.len(),
+        "dropped_preview": preview,
     }))
 }
 
@@ -968,7 +1507,10 @@ fn menu_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     let report = super::menu_contract::validate(
         &ctx.resources,
         instance,
-        lot.group,
+        // 产物 lot 叶子固定在 Asset 字典组（40E1C000）——参照可能是 lot-config
+        // （58F0C000，大学路线），二者不是同一层。2026-11-08：把参照组当产物组
+        // 会让 menu-contract 在错误的组里找 lot/模型引用。
+        super::menu::lot_group(),
         donor.map(|(resources, donor_instance)| (resources, donor_instance)),
         ctx.menu_instance.is_some(),
     )?;
@@ -983,7 +1525,9 @@ fn menu_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
 /// 其它任何 changed/added/removed = 阶段失败，**发生在 staging 之前**，
 /// 因此上一次成功产物不会被覆盖（风险隔离）。
 fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
-    use sc_properties::{LOD_MODEL_HASHES, LOT_OVERLAY_OFFSET_HASH, LOT_PLACEMENT_HASH, LOT_SIZE_HASH};
+    use sc_properties::{
+        LOD_MODEL_HASHES, LOT_OVERLAY_OFFSET_HASH, LOT_PLACEMENT_HASH, LOT_SIZE_HASH,
+    };
 
     let writes = &ctx.plan.scene_writes;
     let declared = writes.describe();
@@ -1027,8 +1571,20 @@ fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     if document.lot_offset.is_some() {
         allowed.push(LOT_OVERLAY_OFFSET_HASH);
     }
-    if document.placement.as_ref().is_some_and(|matrix| matrix.len() == 12) {
+    if document
+        .placement
+        .as_ref()
+        .is_some_and(|matrix| matrix.len() == 12)
+    {
         allowed.push(LOT_PLACEMENT_HASH);
+    }
+    allowed.extend(
+        super::scene::ground_values(document)
+            .into_iter()
+            .map(|(hash, _)| hash),
+    );
+    if document.lot_mask.is_some() {
+        allowed.push(sc_properties::LOT_MASK_HASH);
     }
     // LOD 引用按确定性身份重定向；模型存在性由 insert-model 不变量兜底。
     allowed.extend(LOD_MODEL_HASHES);
@@ -1131,7 +1687,9 @@ fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             &identity_allowed,
             &declared,
         )
-        .map_err(|error| format!("menu identity {instance:08X} vs donor {donor_instance:08X}: {error}"))?;
+        .map_err(|error| {
+            format!("menu identity {instance:08X} vs donor {donor_instance:08X}: {error}")
+        })?;
         detail["menuIdentity"] = match report {
             None => serde_json::json!({
                 "status": "pass",
@@ -1191,14 +1749,52 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
         super::resource_closure::complete(&mut written, ctx.resources.all(), &deps)?;
     }
     let output = connector::link(&written)?;
+    let staged_package = staging
+        .path
+        .join(&super::package::package_relative_name(&ctx.plan));
     staging.write(&super::package::package_relative_name(&ctx.plan), &output)?;
-    super::connector::verify(
-        &staging.path.join(&super::package::package_relative_name(&ctx.plan)),
-        &written,
+    super::connector::verify(&staged_package, &written)?;
+    // Validate the actual DBPF read back from disk, not the intermediate pool.
+    // A failed contract aborts before staging.publish(), so a bad package can
+    // never replace the last accepted deliverable.
+    let final_resources = connector::read_source(&staged_package)?;
+    let donor = ctx.menu_instance.and_then(|_| {
+        ctx.identity_resources.as_ref().map(|resources| {
+            let donor_instance = ctx
+                .plan
+                .menu
+                .as_ref()
+                .and_then(|menu| menu.identity_instance)
+                .unwrap_or(super::menu::DALIAN_IDENTITY_INSTANCE);
+            (resources, donor_instance)
+        })
+    });
+    let final_contract = super::written_contract::validate(
+        &final_resources,
+        super::written_contract::WrittenContractSpec {
+            menu_instance: ctx.menu_instance,
+            reference_lot: ctx.reference_lot.as_ref().map(|(id, _)| *id),
+            document: ctx.scene_document.as_ref(),
+            writes: &ctx.plan.scene_writes,
+            model_ids: ctx.model_ids,
+            author_building40: ctx.author_building40,
+            donor,
+            ground_source: ctx
+                .ground_source
+                .as_ref()
+                .map(|(resources, source_lot)| (resources, *source_lot)),
+        },
     )?;
-    ctx.written_count = written.len();
+    staging.write(
+        "reports/written-contract.json",
+        &serde_json::to_vec_pretty(&final_contract.detail).map_err(|error| error.to_string())?,
+    )?;
+    ctx.lowered_units = final_contract.lowered_units;
+    ctx.written_count = final_resources.len();
     let result = M1BuildResult {
-        path: staging.destination.join(&super::package::package_relative_name(&ctx.plan)),
+        path: staging
+            .destination
+            .join(&super::package::package_relative_name(&ctx.plan)),
         schema_hash: ctx.plan.intermediate.schema_hash.clone(),
         build_hash: ctx.build_hash.clone(),
         source_hash: ctx.source_hash.clone(),
@@ -1226,8 +1822,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     )?;
     ctx.result = Some(result);
     let ledger_dir = ctx.root.join(".build").join("ledger");
-    std::fs::create_dir_all(&ledger_dir)
-        .map_err(|error| format!("ledger directory: {error}"))?;
+    std::fs::create_dir_all(&ledger_dir).map_err(|error| format!("ledger directory: {error}"))?;
     let ledger_path = ledger_dir.join(format!("{}.json", ctx.build_hash));
     let ledger = serde_json::to_vec_pretty(ctx.result.as_ref().expect("result set"))
         .map_err(|error| format!("ledger encode: {error}"))?;
@@ -1287,6 +1882,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             "missing": manifest.missing,
         },
         "warnings": closure_warnings,
+        "writtenContract": final_contract.detail,
         "poolDrift": ctx.pool_drift,
     }))
 }
@@ -1296,6 +1892,154 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
 mod stage_tests {
     use super::*;
     use crate::asset_build_m1::plan::plan_from_schema;
+    use sc_properties::{
+        Kind, PropType, Property, PropertyEncoding, PropertyFile, Value as PropValue,
+    };
+
+    /// 构造一个最小 lot property 文件（可选拾取列）。
+    fn lot_property_file(master: bool) -> Vec<u8> {
+        let mut values: Vec<Property> = vec![Property {
+            hash: 0x00B2_CCCB,
+            prop_type: PropType::Key,
+            kind: Kind::Scalar(PropValue::Key(sc_properties::Key {
+                type_id: 0,
+                group: 0,
+                instance: 0xAAAA_0001,
+            })),
+            encoding: PropertyEncoding::default(),
+        }];
+        if master {
+            for hash in [0x00F9_EFBAu32, 0x0CCB_7FC8, 0x0CCB_7FD5] {
+                values.push(Property {
+                    hash,
+                    prop_type: PropType::Float,
+                    kind: Kind::Scalar(PropValue::Float(1.0)),
+                    encoding: PropertyEncoding::default(),
+                });
+            }
+        }
+        PropertyFile {
+            claimed_count: values.len() as u32,
+            values,
+        }
+        .encode_canonical()
+        .unwrap()
+    }
+
+    #[test]
+    fn ground_source_selection_preserves_menu_donor_and_s31_reference_fallback() {
+        let reference = ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x40E1_C000,
+            instance: 0xBE18_DA2D,
+        };
+        let imported = ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x58F0_C000,
+            instance: 0x114A_0EDA,
+        };
+        let resources = connector::Resources::from([(reference, vec![1])]);
+        let document = SceneDocument {
+            lot_mask: Some(super::super::scene::SceneLotMaskKind::Source),
+            ground_source: Some(super::super::scene::SceneGroundSource {
+                lot: imported,
+                package_path: None,
+            }),
+            ..SceneDocument::default()
+        };
+        assert_eq!(
+            select_ground_source_lot(&document, &resources, Some(reference), false).unwrap(),
+            reference,
+            "s31 full same-Lot route falls back to its present reference Lot"
+        );
+        assert_eq!(
+            select_ground_source_lot(&document, &resources, Some(reference), true).unwrap(),
+            imported,
+            "menu route never silently substitutes the schema donor"
+        );
+    }
+
+    #[test]
+    fn reference_lot_master_contract_accepts_master_and_logs_chain() {
+        let mut resources = BuildResources::empty();
+        let master_id = ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x40E1_C000,
+            instance: 0x263E_0569,
+        };
+        resources.insert(master_id, lot_property_file(true));
+        let report = reference_lot_master_contract(
+            &master_id,
+            &resources.get(&master_id).unwrap(),
+            &resources,
+        )
+        .unwrap();
+        assert_eq!(report["status"], "master-ok", "{report}");
+        assert_eq!(report["columns"], 4, "{report}");
+        assert!(report["parentChain"].is_array(), "chain logged: {report}");
+    }
+
+    #[test]
+    fn reference_lot_master_contract_rejects_derived_variant() {
+        // 派生变体：两列（parent 指向主体 + 一个数据列），三要件缺失。
+        let derived_id = ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x40E1_C000,
+            instance: 0x8D00_7745,
+        };
+        let bytes = PropertyFile {
+            claimed_count: 2,
+            values: vec![
+                Property {
+                    hash: 0x00B2_CCCB,
+                    prop_type: PropType::Key,
+                    kind: Kind::Scalar(PropValue::Key(sc_properties::Key {
+                        type_id: 0x00B1_B104,
+                        group: 0x40E1_C000,
+                        instance: 0x263E_0569,
+                    })),
+                    encoding: PropertyEncoding::default(),
+                },
+                Property {
+                    hash: 0x0BBB_CDED,
+                    prop_type: PropType::Int32,
+                    kind: Kind::Scalar(PropValue::Int32(219)),
+                    encoding: PropertyEncoding::default(),
+                },
+            ],
+        }
+        .encode_canonical()
+        .unwrap();
+        let mut resources = BuildResources::empty();
+        resources.insert(
+            ResourceId {
+                type_id: 0x00B1_B104,
+                group: 0x40E1_C000,
+                instance: 0x263E_0569,
+            },
+            lot_property_file(true),
+        );
+        let error = reference_lot_master_contract(&derived_id, &bytes, &resources).unwrap_err();
+        assert!(error.contains("DERIVED variant"), "{error}");
+        assert!(error.contains("00F9EFBA"), "{error}");
+        assert!(error.contains("scan_big_lots"), "{error}");
+        // 继承链进日志：第一跳 = 主体 263E0569（4 列，在包内）。
+        assert!(error.contains("263E0569"), "{error}");
+    }
+
+    #[test]
+    fn reference_lot_master_contract_skips_non_asset_lots() {
+        let resources = BuildResources::empty();
+        let config_id = ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x58F0_C000,
+            instance: 0x2063_CCDD,
+        };
+        let report =
+            reference_lot_master_contract(&config_id, &lot_property_file(false), &resources)
+                .unwrap();
+        assert_eq!(report["status"], "skipped", "{report}");
+    }
 
     fn stage_root(label: &str) -> PathBuf {
         let root = crate::test_scratch::scratch_base()
@@ -1316,12 +2060,35 @@ mod stage_tests {
         .to_string()
     }
 
+    #[test]
+    fn workbench_model_rotation_compensates_only_the_model_half_turn() {
+        assert_eq!(workbench_model_rotation(0).unwrap(), 180);
+        assert_eq!(workbench_model_rotation(90).unwrap(), 270);
+        assert_eq!(workbench_model_rotation(180).unwrap(), 0);
+        assert_eq!(workbench_model_rotation(270).unwrap(), 90);
+        assert!(workbench_model_rotation(45).is_err());
+
+        // Asymmetric point: the default Hope case must preserve the source
+        // direction instead of negating x/y with the scene's 180-degree turn.
+        let matrix =
+            super::super::native_model::rotate_xyz_matrix(workbench_model_rotation(180).unwrap())
+                .unwrap();
+        assert_eq!(
+            super::super::native_model::rotate_point(&matrix, [2.0, 3.0, 4.0]),
+            [2.0, 3.0, 4.0]
+        );
+    }
+
     /// insert-model 独立驱动：不经过 load-inputs/闭包/发布，毫秒级钉住
     /// "模型编译 ⇒ 模型身份 + 材质资源 + 闸门事件"这一保护区契约。
     #[test]
     fn insert_model_compiles_in_isolation() {
         let root = stage_root("insert-model");
-        std::fs::write(root.join("model.lotm"), super::super::e2e_tests::workbench_lotm_with_meshes(2)).unwrap();
+        std::fs::write(
+            root.join("model.lotm"),
+            super::super::e2e_tests::workbench_lotm_with_meshes(2),
+        )
+        .unwrap();
         let plan = plan_from_schema(&model_schema()).unwrap();
         let mut ctx = BuildContext::new(root.canonicalize().unwrap(), plan);
         let detail = insert_model(&mut ctx).unwrap();
@@ -1335,6 +2102,8 @@ mod stage_tests {
             Some(&serde_json::json!("recorded")),
             "gate verdict in stage detail: {detail}"
         );
+        assert_eq!(detail["sceneRotationDegrees"], 180);
+        assert_eq!(detail["modelRotationDegrees"], 0);
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1343,11 +2112,13 @@ mod stage_tests {
         let root = stage_root("invariant-material");
         let plan = plan_from_schema(&model_schema()).unwrap();
         let mut ctx = BuildContext::new(root.clone(), plan);
-        ctx.model_ids = Some([dbpf::ResourceId {
-            type_id: 0x2F4E_681B,
-            group: 0,
-            instance: 1,
-        }; 4]);
+        ctx.model_ids = Some(
+            [dbpf::ResourceId {
+                type_id: 0x2F4E_681B,
+                group: 0,
+                instance: 1,
+            }; 4],
+        );
         ctx.material_resource_count = 0;
         let error = check_invariants("insert-model", &ctx).unwrap_err();
         assert!(error.contains("MATERIAL_NON_EMPTY_WHEN_MODEL"), "{error}");
@@ -1357,8 +2128,7 @@ mod stage_tests {
     #[test]
     fn invariant_slots_count_fires_on_missing_slots() {
         let root = stage_root("invariant-slots");
-        let mut schema: serde_json::Value =
-            serde_json::from_str(&model_schema()).unwrap();
+        let mut schema: serde_json::Value = serde_json::from_str(&model_schema()).unwrap();
         schema["scene"]["slots"] = serde_json::json!({
             "slot0": "slot0.raster", "slot1": "slot1.raster"
         });

@@ -11,7 +11,7 @@
 //! 读 package.json → merge → 原子写回。
 
 use crate::activity::{AppState, CommandError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
@@ -91,7 +91,9 @@ pub fn derive(document: &Value) -> (Value, Vec<String>) {
                                 .and_then(Value::as_str)
                                 .map(str::trim)
                                 .filter(|id| !id.is_empty())
-                                .map(|id| format!("0x{}", id.trim_start_matches("0x").to_uppercase()))
+                                .map(|id| {
+                                    format!("0x{}", id.trim_start_matches("0x").to_uppercase())
+                                })
                         })
                         .collect()
                 })
@@ -136,9 +138,7 @@ pub fn merge(manifest: &mut Value, derived: &Value) -> Value {
     let root = manifest
         .as_object_mut()
         .expect("manifest must be a JSON object");
-    let dependencies = root
-        .entry("dependencies")
-        .or_insert_with(|| json!({}));
+    let dependencies = root.entry("dependencies").or_insert_with(|| json!({}));
     if !dependencies.is_object() {
         *dependencies = json!({});
     }
@@ -162,9 +162,7 @@ pub fn merge(manifest: &mut Value, derived: &Value) -> Value {
         dependencies.insert("menu".into(), menu.clone());
     }
     if let Some(statics) = derived.get("statics").and_then(Value::as_array) {
-        let existing = dependencies
-            .entry("statics")
-            .or_insert_with(|| json!([]));
+        let existing = dependencies.entry("statics").or_insert_with(|| json!([]));
         if !existing.is_array() {
             *existing = json!([]);
         }
@@ -237,10 +235,7 @@ mod tests {
             {"id": "path:1", "type": "pedestrian", "pointIds": []}
         ])));
         assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(
-            derived["resources"]["pathEntries"],
-            json!(["0x418A18B1"])
-        );
+        assert_eq!(derived["resources"]["pathEntries"], json!(["0x418A18B1"]));
     }
 
     #[test]
@@ -262,10 +257,7 @@ mod tests {
             {"id": "path:1", "type": "custom", "entry": "675b61b1"},
             {"id": "path:2", "type": "unknown"}
         ])));
-        assert_eq!(
-            derived["resources"]["pathEntries"],
-            json!(["0x675B61B1"])
-        );
+        assert_eq!(derived["resources"]["pathEntries"], json!(["0x675B61B1"]));
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("paths[1]"), "{warnings:?}");
     }
@@ -335,9 +327,6 @@ mod tests {
         ])));
         let merged = merge(&mut manifest, &derived);
         assert_eq!(merged["resources"]["bundles"], json!(["0x6C042366"]));
-        assert_eq!(
-            merged["resources"]["pathEntries"],
-            json!(["0x418A18B1"])
-        );
+        assert_eq!(merged["resources"]["pathEntries"], json!(["0x418A18B1"]));
     }
 }

@@ -20,8 +20,8 @@
 use super::lotm::LotmDocument;
 use super::template_material;
 use rw4::{Rw4File, SectionType, build_file, writer_section};
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlbPrimitive {
@@ -696,19 +696,24 @@ pub fn compile_lotm_nh_template(
     transform: Option<[f32; 12]>,
     template: &[u8],
 ) -> Result<CompiledNativeModel, String> {
-    let generic = compile_lotm_nh_partitioned(
-        doc,
-        mesh_material,
-        unique_instances,
-        transform,
-    )?;
+    let generic = compile_lotm_nh_partitioned(doc, mesh_material, unique_instances, transform)?;
     let source = Rw4File::parse(&generic.rw4).map_err(|e| format!("generated RW4 parse: {e}"))?;
     let target = Rw4File::parse(template).map_err(|e| format!("template RW4 parse: {e}"))?;
     let mut by_type: HashMap<u32, Vec<Vec<u8>>> = HashMap::new();
     for section in source.sections() {
-        if matches!(section.type_code, SectionType::BLOB | SectionType::VERTEX_ARRAY | SectionType::TRIANGLE_ARRAY | SectionType::MESH | SectionType::BBOX) {
+        if matches!(
+            section.type_code,
+            SectionType::BLOB
+                | SectionType::VERTEX_ARRAY
+                | SectionType::TRIANGLE_ARRAY
+                | SectionType::MESH
+                | SectionType::BBOX
+        ) {
             by_type.entry(section.type_code).or_default().push(
-                source.payload(&generic.rw4, section.number).map_err(|e| e.to_string())?.to_vec(),
+                source
+                    .payload(&generic.rw4, section.number)
+                    .map_err(|e| e.to_string())?
+                    .to_vec(),
             );
         }
     }
@@ -716,16 +721,25 @@ pub fn compile_lotm_nh_template(
     let mut source_to_target = HashMap::new();
     let mut source_by_type = HashMap::<u32, Vec<u32>>::new();
     for section in source.sections() {
-        source_by_type.entry(section.type_code).or_default().push(section.number);
+        source_by_type
+            .entry(section.type_code)
+            .or_default()
+            .push(section.number);
     }
     let mut target_by_type = HashMap::<u32, Vec<u32>>::new();
     for section in target.sections() {
-        target_by_type.entry(section.type_code).or_default().push(section.number);
+        target_by_type
+            .entry(section.type_code)
+            .or_default()
+            .push(section.number);
     }
     let mut source_ordinals = HashMap::<u32, usize>::new();
     for section in source.sections() {
         let ordinal = source_ordinals.entry(section.type_code).or_insert(0);
-        if let Some(target_number) = target_by_type.get(&section.type_code).and_then(|v| v.get(*ordinal)) {
+        if let Some(target_number) = target_by_type
+            .get(&section.type_code)
+            .and_then(|v| v.get(*ordinal))
+        {
             source_to_target.insert(section.number, *target_number);
         }
         *ordinal += 1;
@@ -757,15 +771,26 @@ pub fn compile_lotm_nh_template(
 
     let mut ordinal = HashMap::<u32, usize>::new();
     for section in target.sections() {
-        if !by_type.contains_key(&section.type_code) { continue; }
+        if !by_type.contains_key(&section.type_code) {
+            continue;
+        }
         let index = ordinal.entry(section.type_code).or_insert(0);
         let payload = if section.type_code == SectionType::BLOB {
             blob_payloads.get(&section.number).cloned()
         } else {
-            by_type.get(&section.type_code).and_then(|v| v.get(*index)).cloned()
+            by_type
+                .get(&section.type_code)
+                .and_then(|v| v.get(*index))
+                .cloned()
         };
-        let Some(mut payload) = payload else { continue; };
-        if source_by_type.get(&section.type_code).and_then(|v| v.get(*index)).is_some() {
+        let Some(mut payload) = payload else {
+            continue;
+        };
+        if source_by_type
+            .get(&section.type_code)
+            .and_then(|v| v.get(*index))
+            .is_some()
+        {
             remap_geometry_refs(section.type_code, &mut payload, &source_to_target);
             replacements.insert(section.number, payload);
         }
@@ -797,9 +822,13 @@ fn remap_geometry_refs(type_code: u32, payload: &mut [u8], map: &HashMap<u32, u3
     };
     for word in offsets {
         let at = *word * 4;
-        if at + 4 > payload.len() { continue; }
+        if at + 4 > payload.len() {
+            continue;
+        }
         let old = u32::from_le_bytes(payload[at..at + 4].try_into().unwrap());
-        if let Some(new) = map.get(&old) { payload[at..at + 4].copy_from_slice(&new.to_le_bytes()); }
+        if let Some(new) = map.get(&old) {
+            payload[at..at + 4].copy_from_slice(&new.to_le_bytes());
+        }
     }
 }
 
@@ -891,12 +920,25 @@ pub fn compile_building40_template(
             for i in 0..primitive.positions.len() {
                 let mut position = primitive.positions[i];
                 let mut normal = primitive.normals.get(i).copied().unwrap_or([0.0, 0.0, 1.0]);
-                let mut tangent = primitive.tangents.get(i).copied().unwrap_or([1.0, 0.0, 0.0]);
+                let mut tangent = primitive
+                    .tangents
+                    .get(i)
+                    .copied()
+                    .unwrap_or([1.0, 0.0, 0.0]);
                 if let Some(matrix) = transform {
                     let p = [
-                        position[0] * matrix[0] + position[1] * matrix[3] + position[2] * matrix[6] + matrix[9],
-                        position[0] * matrix[1] + position[1] * matrix[4] + position[2] * matrix[7] + matrix[10],
-                        position[0] * matrix[2] + position[1] * matrix[5] + position[2] * matrix[8] + matrix[11],
+                        position[0] * matrix[0]
+                            + position[1] * matrix[3]
+                            + position[2] * matrix[6]
+                            + matrix[9],
+                        position[0] * matrix[1]
+                            + position[1] * matrix[4]
+                            + position[2] * matrix[7]
+                            + matrix[10],
+                        position[0] * matrix[2]
+                            + position[1] * matrix[5]
+                            + position[2] * matrix[8]
+                            + matrix[11],
                     ];
                     position = p;
                 }
@@ -926,12 +968,14 @@ pub fn compile_building40_template(
                 key[14] = seed as u32;
                 let vertex = *lookup.entry(key).or_insert_with(|| {
                     let mut bytes = [0u8; 40];
-                    bytes[0..12].copy_from_slice(&[
-                        position[0].to_le_bytes(),
-                        position[1].to_le_bytes(),
-                        position[2].to_le_bytes(),
-                    ]
-                    .concat());
+                    bytes[0..12].copy_from_slice(
+                        &[
+                            position[0].to_le_bytes(),
+                            position[1].to_le_bytes(),
+                            position[2].to_le_bytes(),
+                        ]
+                        .concat(),
+                    );
                     let packed_normal = pack_direction(normal).unwrap_or([0, 0, 255, 255]);
                     let packed_tangent = pack_direction(tangent).unwrap_or([255, 0, 0, 255]);
                     bytes[12..16].copy_from_slice(&packed_normal);
@@ -957,23 +1001,42 @@ pub fn compile_building40_template(
             for i in 0..primitive.positions.len() {
                 let mut position = primitive.positions[i];
                 let mut normal = primitive.normals.get(i).copied().unwrap_or([0.0, 0.0, 1.0]);
-                let mut tangent = primitive.tangents.get(i).copied().unwrap_or([1.0, 0.0, 0.0]);
+                let mut tangent = primitive
+                    .tangents
+                    .get(i)
+                    .copied()
+                    .unwrap_or([1.0, 0.0, 0.0]);
                 if let Some(matrix) = transform {
                     position = [
-                        position[0] * matrix[0] + position[1] * matrix[3] + position[2] * matrix[6] + matrix[9],
-                        position[0] * matrix[1] + position[1] * matrix[4] + position[2] * matrix[7] + matrix[10],
-                        position[0] * matrix[2] + position[1] * matrix[5] + position[2] * matrix[8] + matrix[11],
+                        position[0] * matrix[0]
+                            + position[1] * matrix[3]
+                            + position[2] * matrix[6]
+                            + matrix[9],
+                        position[0] * matrix[1]
+                            + position[1] * matrix[4]
+                            + position[2] * matrix[7]
+                            + matrix[10],
+                        position[0] * matrix[2]
+                            + position[1] * matrix[5]
+                            + position[2] * matrix[8]
+                            + matrix[11],
                     ];
                 }
                 position = rotate_point(&rotation, position);
                 normal = rotate_point(&rotation, normal);
                 tangent = rotate_point(&rotation, tangent);
                 let base = primitive.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
-                let top = primitive.facade_uvs.get(i).map(|uv| [uv[2], uv[3]]).unwrap_or([0.0, 0.0]);
+                let top = primitive
+                    .facade_uvs
+                    .get(i)
+                    .map(|uv| [uv[2], uv[3]])
+                    .unwrap_or([0.0, 0.0]);
                 let base = [base[0], 1.0 - base[1]];
                 let top = [top[0], 1.0 - top[1]];
                 let seed = primitive.seeds.get(i).copied().unwrap_or(84);
-                let bits = |values: &[f32]| -> Vec<u32> { values.iter().map(|value| value.to_bits()).collect() };
+                let bits = |values: &[f32]| -> Vec<u32> {
+                    values.iter().map(|value| value.to_bits()).collect()
+                };
                 let mut key = [0u32; 24];
                 key[0..3].copy_from_slice(&bits(&position));
                 key[3..6].copy_from_slice(&bits(&normal));
@@ -1014,7 +1077,9 @@ pub fn compile_building40_template(
         .map(|section| (section.size, section.number))
         .collect();
     blobs.sort_unstable();
-    let (_, vertex_section) = blobs.last().ok_or("building40: template has no vertex BLOB")?;
+    let (_, vertex_section) = blobs
+        .last()
+        .ok_or("building40: template has no vertex BLOB")?;
     let (_, index_section) = blobs
         .get(blobs.len().saturating_sub(2))
         .ok_or("building40: template has no index BLOB")?;

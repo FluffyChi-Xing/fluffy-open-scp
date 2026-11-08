@@ -54,6 +54,8 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
     const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
     const ERROR_SHARING_VIOLATION: i32 = 32;
     const RETRY_DELAYS_MS: [u64; 4] = [25, 50, 100, 200];
+    let source_path = source.to_path_buf();
+    let target_path = target.to_path_buf();
     let source: Vec<u16> = source
         .as_os_str()
         .encode_wide()
@@ -78,8 +80,13 @@ fn install(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
             return Ok(());
         }
         let error = io::Error::last_os_error();
-        if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION) || attempt == RETRY_DELAYS_MS.len()
-        {
+        if error.raw_os_error() == Some(5) {
+            // Some protected/managed project folders reject MoveFileExW while
+            // allowing the ordinary same-volume rename. The temporary file is
+            // already fsynced, so this fallback preserves the atomic boundary.
+            return fs::rename(&source_path, &target_path);
+        }
+        if error.raw_os_error() != Some(ERROR_SHARING_VIOLATION) || attempt == RETRY_DELAYS_MS.len() {
             return Err(error);
         }
         std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAYS_MS[attempt]));

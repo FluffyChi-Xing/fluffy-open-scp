@@ -9,15 +9,15 @@
 //! - 视频导出：ffmpeg（`Tools\ffmpeg\` 或 PATH）
 
 mod activity;
-mod asset_dependencies;
-mod build_queue;
 mod annotations;
 pub(crate) mod asset_build_m0;
 pub mod asset_build_m1;
 pub(crate) mod asset_build_samples;
+mod asset_dependencies;
 mod atomic_fs;
 pub mod blend_native;
 mod blender_service;
+mod build_queue;
 mod debug_tools;
 mod effect_annotations;
 mod effect_resources;
@@ -71,13 +71,12 @@ use mod_project::{
 use overrides::override_scan;
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
-    close_package, export, export_status, list_model_catalog, list_path_entries, list_path_sources,
-    list_prop_bin_catalog, list_resources, open_package, patch_property_overlay,
-    read_decal_dictionary, read_decal_images, read_ecogame_preview, read_erz_preview,
-    export_lot_model_blend, read_image_preview, read_lot_editor_session, read_lot_model_meshes,
-    read_property_preview,
-    read_raster_preview, read_resource_bytes, read_resource_data, read_resource_text,
-    read_resource_text_range, read_rw4_material_textures, read_rw4_preview,
+    close_package, export, export_lot_model_blend, export_status, list_model_catalog,
+    list_path_entries, list_path_sources, list_prop_bin_catalog, list_resources, open_package,
+    patch_property_overlay, read_decal_dictionary, read_decal_images, read_ecogame_preview,
+    read_erz_preview, read_image_preview, read_lot_editor_session, read_lot_model_meshes,
+    read_property_preview, read_raster_preview, read_resource_bytes, read_resource_data,
+    read_resource_text, read_resource_text_range, read_rw4_material_textures, read_rw4_preview,
     read_rw4_section_detail, read_sim_parts, read_wwise_bank, release_prop_model_packages,
     resolve_name, resolve_names, resolve_prop_models, write_export_file,
 };

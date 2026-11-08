@@ -497,7 +497,10 @@ pub async fn read_effect_detail(
                 let (particles, particle_error) =
                     decode_particle_components_prefix(&collection, &bytes);
                 if let Some(error) = particle_error {
-                    diagnostics.push(format!("effect collection {:08X}: {error}", entry.id.instance));
+                    diagnostics.push(format!(
+                        "effect collection {:08X}: {error}",
+                        entry.id.instance
+                    ));
                 }
                 let metas = match decode_meta_particle_components(&collection, &bytes) {
                     Ok(metas) => metas,
@@ -618,9 +621,27 @@ mod tests {
             shader_instance: 0,
             format: 16,
             textures: vec![
-                (0, MaterialTexture { group: 0, instance: 0xA0 }),
-                (1, MaterialTexture { group: 0, instance: 0xB0 }),
-                (2, MaterialTexture { group: 0, instance: 0xC0 }),
+                (
+                    0,
+                    MaterialTexture {
+                        group: 0,
+                        instance: 0xA0,
+                    },
+                ),
+                (
+                    1,
+                    MaterialTexture {
+                        group: 0,
+                        instance: 0xB0,
+                    },
+                ),
+                (
+                    2,
+                    MaterialTexture {
+                        group: 0,
+                        instance: 0xC0,
+                    },
+                ),
             ],
         };
         assert_eq!(

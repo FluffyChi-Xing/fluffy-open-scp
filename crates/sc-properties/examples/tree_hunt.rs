@@ -154,14 +154,8 @@ struct Record {
 
 /// 跨包找记录（resource-group 形态优先，对齐 prop_models find_records 意图）。
 fn find_records<'a>(records: &'a [Record], instance: u32) -> Vec<&'a Record> {
-    let mut hits: Vec<&Record> = records
-        .iter()
-        .filter(|r| r.instance == instance)
-        .collect();
-    hits.sort_by_key(|r| (
-        !RESOURCE_GROUP_LOW.contains(&(r.group as u16)),
-        r.group,
-    ));
+    let mut hits: Vec<&Record> = records.iter().filter(|r| r.instance == instance).collect();
+    hits.sort_by_key(|r| (!RESOURCE_GROUP_LOW.contains(&(r.group as u16)), r.group));
     hits
 }
 
@@ -200,11 +194,7 @@ fn resolve<'a>(
             }
             // 树签名：descriptor + LOD 序号共存
             if has_prop(wf, KEY_TREE_STATE) && has_prop(wf, KEY_LOD_INDEX) {
-                return Some((
-                    "tree_model".into(),
-                    Vec::new(),
-                    true,
-                ));
+                return Some(("tree_model".into(), Vec::new(), true));
             }
             // descriptor 变体
             if let Some(desc) = key_ids(wf, KEY_TREE_STATE).first().copied() {
@@ -276,7 +266,11 @@ fn main() {
             continue;
         };
         println!("resolve-set: {rel} {} entries", pkg.entries().len());
-        for entry in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for entry in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             if let Some(file) = parse_record(&pkg, entry) {
                 resolve_pkgs.push(Record {
                     label: rel.to_string(),
@@ -288,12 +282,20 @@ fn main() {
         }
     }
     for path in ecogame_latest(LIVE_ROOT) {
-        let rel = path.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
+        let rel = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_string();
         let Ok(pkg) = Package::open(&path) else {
             continue;
         };
         let mut n = 0usize;
-        for entry in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for entry in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             if let Some(file) = parse_record(&pkg, entry) {
                 resolve_pkgs.push(Record {
                     label: format!("EcoGame/{rel}"),
@@ -315,7 +317,11 @@ fn main() {
     let prefixes = ["R_", "C_", "I_"];
     let mut rcni_count = [0usize; 3];
     let mut rcni_with_props = 0usize;
-    for entry in gfx.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+    for entry in gfx
+        .entries()
+        .iter()
+        .filter(|e| e.id.type_id == PROPERTY_TYPE)
+    {
         let Some(rec) = registry.instances().get(&entry.id.instance) else {
             continue;
         };
@@ -402,7 +408,11 @@ fn main() {
             let Ok(pkg) = Package::open(&path) else {
                 continue;
             };
-            for entry in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+            for entry in pkg
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == PROPERTY_TYPE)
+            {
                 let Some(file) = parse_record(&pkg, entry) else {
                     continue;
                 };
@@ -436,7 +446,11 @@ fn main() {
                     && !config_seen
                 {
                     config_seen = true;
-                    println!("  配置表 {install} {rel} G {:08X} [{}]:", entry.id.group, name_of(entry.id.instance));
+                    println!(
+                        "  配置表 {install} {rel} G {:08X} [{}]:",
+                        entry.id.group,
+                        name_of(entry.id.instance)
+                    );
                     for col in 0..CONFIG_COL_COUNT {
                         let ids = key_ids(&file, CONFIG_COL_BASE + col);
                         if ids.is_empty() {
@@ -453,14 +467,14 @@ fn main() {
         }
     }
     for (wrapper, locs) in &tree_wrappers {
-        let users: Vec<u32> = explicit_refs
-            .get(wrapper)
-            .cloned()
-            .unwrap_or_default();
+        let users: Vec<u32> = explicit_refs.get(wrapper).cloned().unwrap_or_default();
         let mut uniq_users = users.clone();
         uniq_users.sort_unstable();
         uniq_users.dedup();
-        let rci_users: Vec<&u32> = uniq_users.iter().filter(|u| referenced.contains_key(u)).collect();
+        let rci_users: Vec<&u32> = uniq_users
+            .iter()
+            .filter(|u| referenced.contains_key(u))
+            .collect();
         println!(
             "  wrapper {wrapper:08X} [{}] — 记录 {} 处；被显式引用 resourceID {} 个（R/C/I 图谱内 {}）",
             name_of(*wrapper),
@@ -561,28 +575,46 @@ fn main() {
     // ---- 6) 注册表植物命名实例 → 实体定位（棕榈/仙人掌候查） ----
     println!("\n== 6) 注册表植物命名实例实体定位 ==");
     let plant_words = [
-        "palm", "cactus", "cacti", "tree", "pine", "conifer", "fir", "spruce", "oak",
-        "maple", "birch", "willow", "cypress", "hedge", "shrub", "bush", "bushes",
-        "plant", "flower", "vegetation", "foliage", "coconut", "jungle",
+        "palm",
+        "cactus",
+        "cacti",
+        "tree",
+        "pine",
+        "conifer",
+        "fir",
+        "spruce",
+        "oak",
+        "maple",
+        "birch",
+        "willow",
+        "cypress",
+        "hedge",
+        "shrub",
+        "bush",
+        "bushes",
+        "plant",
+        "flower",
+        "vegetation",
+        "foliage",
+        "coconut",
+        "jungle",
     ];
     let named_plants: Vec<(u32, String)> = registry
         .instances()
         .iter()
         .filter(|(_, r)| {
             let n = r.name.to_lowercase();
-            plant_words
-                .iter()
-                .any(|w| {
-                    let hb = n.as_bytes();                    if let Some(pos) = n.find(w) {
-                        let left_ok = pos == 0 || !hb[pos - 1].is_ascii_alphabetic();
-                        let end = pos + w.len();
-                        let right_ok =
-                            end == hb.len() || !hb[end].is_ascii_alphabetic();
-                        left_ok && right_ok
-                    } else {
-                        false
-                    }
-                })
+            plant_words.iter().any(|w| {
+                let hb = n.as_bytes();
+                if let Some(pos) = n.find(w) {
+                    let left_ok = pos == 0 || !hb[pos - 1].is_ascii_alphabetic();
+                    let end = pos + w.len();
+                    let right_ok = end == hb.len() || !hb[end].is_ascii_alphabetic();
+                    left_ok && right_ok
+                } else {
+                    false
+                }
+            })
         })
         .map(|(id, r)| (*id, r.name.trim().to_string()))
         .collect();
@@ -603,7 +635,10 @@ fn main() {
         let mut locs: Vec<String> = Vec::new();
         for (label, pkg) in &plant_pkgs {
             for e in pkg.entries().iter().filter(|e| e.id.instance == *id) {
-                locs.push(format!("{label} T{:08X} {}B", e.id.type_id, e.decompressed_size));
+                locs.push(format!(
+                    "{label} T{:08X} {}B",
+                    e.id.type_id, e.decompressed_size
+                ));
             }
         }
         if !locs.is_empty() {

@@ -7,10 +7,7 @@ use super::layout::LayoutValues;
 
 /// The plug-in's `engine_tree(m)`: the inner `NY_Facade_Engine` group when
 /// present, otherwise the material's own node tree.
-pub fn engine_tree<'a>(
-    bundle: &'a Bundle,
-    material: &BundleMaterial,
-) -> Option<&'a NodeTree> {
+pub fn engine_tree<'a>(bundle: &'a Bundle, material: &BundleMaterial) -> Option<&'a NodeTree> {
     let tree = bundle.tree(material.tree.as_deref()?)?;
     let engine = tree
         .node("NY_Facade_Engine")
@@ -35,11 +32,7 @@ pub fn surface_uv_name(bundle: &Bundle, material: &BundleMaterial) -> String {
 }
 
 /// UV layer consumed by the body texture pattern (`NY_Resource_Pattern` group).
-pub fn base_uv_name(
-    bundle: &Bundle,
-    material: &BundleMaterial,
-    default: &str,
-) -> String {
+pub fn base_uv_name(bundle: &Bundle, material: &BundleMaterial, default: &str) -> String {
     engine_tree(bundle, material)
         .and_then(|tree| tree.node("NY_Resource_Pattern"))
         .and_then(|node| node.node_tree.as_deref())
@@ -49,11 +42,7 @@ pub fn base_uv_name(
         .unwrap_or_else(|| default.to_string())
 }
 
-fn face_attribute(
-    object: &BundleObject,
-    face_index: usize,
-    name: &str,
-) -> Option<f64> {
+fn face_attribute(object: &BundleObject, face_index: usize, name: &str) -> Option<f64> {
     object
         .mesh
         .as_ref()?
@@ -201,8 +190,8 @@ fn surface_uv_extent(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::dump::Bundle;
+    use super::*;
 
     fn bundle() -> Bundle {
         Bundle::parse(
@@ -231,7 +220,10 @@ mod tests {
         let bundle = bundle();
         let material = bundle.material("m").unwrap();
         assert_eq!(surface_uv_name(&bundle, material), "SURF");
-        assert_eq!(base_uv_name(&bundle, material, "NY_MaterialUV"), "NY_MaterialUV");
+        assert_eq!(
+            base_uv_name(&bundle, material, "NY_MaterialUV"),
+            "NY_MaterialUV"
+        );
     }
 }
 
@@ -253,16 +245,24 @@ pub fn recover(
     state.base_role = if role == "ROOF" { "ROOF" } else { "WALL" }.to_string();
 
     let output = |tree: &NodeTree, name: &str| -> Option<f32> {
-        tree.node(name).and_then(|node| node.output(0)).and_then(|socket| socket.f32())
+        tree.node(name)
+            .and_then(|node| node.output(0))
+            .and_then(|socket| socket.f32())
     };
     let input = |tree: &NodeTree, name: &str, index: usize| -> Option<f32> {
-        tree.node(name).and_then(|node| node.input(index)).and_then(|socket| socket.f32())
+        tree.node(name)
+            .and_then(|node| node.input(index))
+            .and_then(|socket| socket.f32())
     };
     let colour = |tree: &NodeTree, name: &str| -> Option<[f32; 4]> {
-        tree.node(name).and_then(|node| node.output(0)).and_then(|socket| socket.vec4())
+        tree.node(name)
+            .and_then(|node| node.output(0))
+            .and_then(|socket| socket.vec4())
     };
     let input_colour = |tree: &NodeTree, name: &str, index: usize| -> Option<[f32; 4]> {
-        tree.node(name).and_then(|node| node.input(index)).and_then(|socket| socket.vec4())
+        tree.node(name)
+            .and_then(|node| node.input(index))
+            .and_then(|socket| socket.vec4())
     };
     let control = |key: &str, default: f64| -> f64 {
         if let Some(outer) = material_tree.and_then(|tree| tree.node("NY_Facade_Engine")) {
@@ -292,10 +292,15 @@ pub fn recover(
             }
         }
         if !v.contains_key("width") || !v.contains_key("height") {
-            eprintln!("[recover-missing-layout] {} tree={:?}", material.name, material.tree);
+            eprintln!(
+                "[recover-missing-layout] {} tree={:?}",
+                material.name, material.tree
+            );
         }
         let width = *v.get("width").ok_or("window material lacks layout width")?;
-        let height = *v.get("height").ok_or("window material lacks layout height")?;
+        let height = *v
+            .get("height")
+            .ok_or("window material lacks layout height")?;
         let nc = (v.get("nc").copied().unwrap_or(1.0).round() as i32).max(1);
         let ng = (v.get("ng").copied().unwrap_or(1.0).round() as i32).max(1);
         let nr = (v.get("nr").copied().unwrap_or(1.0).round() as i32).max(1);
@@ -304,8 +309,12 @@ pub fn recover(
         let row_pitch = v.get("rowpitch").copied().unwrap_or(height);
         let col_gap = (col_pitch - width).max(0.0);
         let group_gap = (group_pitch - (nc as f64 * width + (nc - 1) as f64 * col_gap)).max(0.0);
-        let span_w = material.prop_f64("ny_span_x").unwrap_or(*v.get("xmax").unwrap_or(&0.0));
-        let span_h = material.prop_f64("ny_span_y").unwrap_or(*v.get("ymax").unwrap_or(&0.0));
+        let span_w = material
+            .prop_f64("ny_span_x")
+            .unwrap_or(*v.get("xmax").unwrap_or(&0.0));
+        let span_h = material
+            .prop_f64("ny_span_y")
+            .unwrap_or(*v.get("ymax").unwrap_or(&0.0));
         let start_x = *v.get("startx").unwrap_or(&0.0);
         let start_y = *v.get("starty").unwrap_or(&0.0);
         let margin = *v.get("xmin").unwrap_or(&0.0);
@@ -313,7 +322,10 @@ pub fn recover(
         let decor_cols = *v.get("decorcols").unwrap_or(&1.0);
         let decor_rows = *v.get("decorrows").unwrap_or(&1.0);
         let decor_inset = *v.get("decoinset").unwrap_or(&0.0);
-        state.style = material.prop_str("ny_style").unwrap_or(&state.style).to_string();
+        state.style = material
+            .prop_str("ny_style")
+            .unwrap_or(&state.style)
+            .to_string();
         state.layout = "GRID".into();
         state.width = width;
         state.height = height;
@@ -327,12 +339,17 @@ pub fn recover(
         state.row_pitch = row_pitch;
         state.margin = margin;
         state.shift_x = start_x
-            - (span_w - (ng as f64 * (nc as f64 * width + (nc - 1) as f64 * col_gap)
-                + (ng - 1) as f64 * group_gap)) / 2.0;
+            - (span_w
+                - (ng as f64 * (nc as f64 * width + (nc - 1) as f64 * col_gap)
+                    + (ng - 1) as f64 * group_gap))
+                / 2.0;
         state.shift_y = start_y
             - (span_h - (nr as f64 * height + (nr - 1) as f64 * (row_pitch - height))) / 2.0;
         state.preserve_frame = *v.get("preserve").unwrap_or(&0.0) != 0.0;
-        state.frame_border = v.get("framex").copied().unwrap_or(0.1)
+        state.frame_border = v
+            .get("framex")
+            .copied()
+            .unwrap_or(0.1)
             .max(v.get("framey").copied().unwrap_or(0.1));
         state.panel = panel_height > 0.0;
         state.panel_height = panel_height.max(0.05);
@@ -366,16 +383,22 @@ pub fn recover(
         if let Some(value) = input(engine, "NY_Surface_Bump", 1) {
             state.wall_normal = value as f64;
         }
-        state.base_uv_mode = material.prop_str("ny_base_uv_mode").unwrap_or("SURFACE").to_string();
+        state.base_uv_mode = material
+            .prop_str("ny_base_uv_mode")
+            .unwrap_or("SURFACE")
+            .to_string();
     } else {
-        let base_colour = input_colour(engine, "NY_BaseTextureColor", 1)
-            .or_else(|| {
-                material_tree
-                    .and_then(|tree| tree.nodes.iter().find(|node| node.node_type == "BSDF_PRINCIPLED"))
-                    .and_then(|node| node.input_named("Base Color"))
-                    .filter(|socket| !socket.linked)
-                    .and_then(|socket| socket.vec4())
-            });
+        let base_colour = input_colour(engine, "NY_BaseTextureColor", 1).or_else(|| {
+            material_tree
+                .and_then(|tree| {
+                    tree.nodes
+                        .iter()
+                        .find(|node| node.node_type == "BSDF_PRINCIPLED")
+                })
+                .and_then(|node| node.input_named("Base Color"))
+                .filter(|socket| !socket.linked)
+                .and_then(|socket| socket.vec4())
+        });
         if let Some(color) = base_colour {
             if state.base_role == "ROOF" {
                 state.roof_color = color;
@@ -383,7 +406,10 @@ pub fn recover(
                 state.wall_color = color;
             }
         }
-        state.roof_style = material.prop_str("ny_roof_style").unwrap_or("FLAT").to_string();
+        state.roof_style = material
+            .prop_str("ny_roof_style")
+            .unwrap_or("FLAT")
+            .to_string();
         state.base_uv_mode = "MATERIAL".into();
     }
 
@@ -400,18 +426,27 @@ pub fn recover(
         .unwrap_or("WINDOW")
         .into();
     if let Some(bsdf) = material_tree.and_then(|tree| {
-        tree.nodes.iter().find(|node| node.node_type == "BSDF_PRINCIPLED")
+        tree.nodes
+            .iter()
+            .find(|node| node.node_type == "BSDF_PRINCIPLED")
     }) {
         if let Some(value) = bsdf.input_named("Metallic").and_then(|socket| socket.f64()) {
             state.base_metallic = value;
         }
-        if let Some(value) = bsdf.input_named("Roughness").and_then(|socket| socket.f64()) {
+        if let Some(value) = bsdf
+            .input_named("Roughness")
+            .and_then(|socket| socket.f64())
+        {
             state.base_roughness = value;
         }
     }
-    for key in ["night_ratio", "night_seed", "night_variation", "relief_strength"] {
+    for key in [
+        "night_ratio",
+        "night_seed",
+        "night_variation",
+        "relief_strength",
+    ] {
         if let Some(node) = engine.node(&format!("NY_Appearance_{key}")) {
-    
             if let Some(value) = node.output(0).and_then(|socket| socket.f64()) {
                 match key {
                     "night_seed" => state.night_seed = value.round() as i32,
@@ -425,9 +460,19 @@ pub fn recover(
 
     if let Some(catalog) = catalog {
         if let Some(pattern) = engine.node("NY_Resource_Pattern") {
-            if let Some(tree) = pattern.node_tree.as_deref().and_then(|name| bundle.tree(name)) {
-                let rect_scale = tree.node("RectScale").and_then(|node| node.input(1)).and_then(|socket| socket.array());
-                let rect_offset = tree.node("RectOffset").and_then(|node| node.input(1)).and_then(|socket| socket.array());
+            if let Some(tree) = pattern
+                .node_tree
+                .as_deref()
+                .and_then(|name| bundle.tree(name))
+            {
+                let rect_scale = tree
+                    .node("RectScale")
+                    .and_then(|node| node.input(1))
+                    .and_then(|socket| socket.array());
+                let rect_offset = tree
+                    .node("RectOffset")
+                    .and_then(|node| node.input(1))
+                    .and_then(|socket| socket.array());
                 if let (Some(rs), Some(ro)) = (rect_scale, rect_offset) {
                     let rw = rs.first().and_then(|value| value.as_f64()).unwrap_or(1.0);
                     let rh = rs.get(1).and_then(|value| value.as_f64()).unwrap_or(1.0);
@@ -437,13 +482,14 @@ pub fn recover(
                     // Blender renames duplicate datablocks with a numeric
                     // suffix (NY_PACK_Copan_slot1.001); match like the plug-in's
                     // startswith('NY_PACK_<pack>_slot1').
-                    let pack = tree.node("Slot1").and_then(|node| node.image.as_deref()).and_then(
-                        |name| {
+                    let pack = tree
+                        .node("Slot1")
+                        .and_then(|node| node.image.as_deref())
+                        .and_then(|name| {
                             let rest = name.strip_prefix("NY_PACK_")?;
                             let cut = rest.find("_slot")?;
                             (cut > 0).then(|| &rest[..cut])
-                        },
-                    );
+                        });
                     if let Some(pack) = pack {
                         let palette_offset = tree
                             .node("PaletteX")
@@ -459,7 +505,11 @@ pub fn recover(
                             .chain(&catalog.modules)
                         {
                             if entry.pack != pack
-                                || entry.rect.iter().zip(&rect).any(|(a, b)| (a - b).abs() >= 1e-6)
+                                || entry
+                                    .rect
+                                    .iter()
+                                    .zip(&rect)
+                                    .any(|(a, b)| (a - b).abs() >= 1e-6)
                             {
                                 continue;
                             }
@@ -493,8 +543,8 @@ pub fn recover(
                                 .and_then(|values| values.first())
                                 .and_then(|value| value.as_f64())
                             {
-                                state.texture_scale =
-                                    value / entry.size.map(|size| size[0]).unwrap_or(2.0).max(0.001);
+                                state.texture_scale = value
+                                    / entry.size.map(|size| size[0]).unwrap_or(2.0).max(0.001);
                             }
                             if let Some(value) = tree
                                 .node("Rotate")
@@ -532,10 +582,14 @@ pub fn recover(
                                 .and_then(|node| node.input(1))
                                 .and_then(|socket| socket.array())
                             {
-                                state.texture_offset_x =
-                                    -values.first().and_then(|value| value.as_f64()).unwrap_or(0.0);
-                                state.texture_offset_y =
-                                    -values.get(1).and_then(|value| value.as_f64()).unwrap_or(0.0);
+                                state.texture_offset_x = -values
+                                    .first()
+                                    .and_then(|value| value.as_f64())
+                                    .unwrap_or(0.0);
+                                state.texture_offset_y = -values
+                                    .get(1)
+                                    .and_then(|value| value.as_f64())
+                                    .unwrap_or(0.0);
                             }
                             // The plug-in reads the pattern group input's
                             // default_value even when the socket is linked,

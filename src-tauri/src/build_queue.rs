@@ -16,8 +16,9 @@ use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
     sync::{
+        Arc, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
-        mpsc, Arc, Mutex, OnceLock,
+        mpsc,
     },
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -329,7 +330,7 @@ pub async fn build_queue_enqueue_project(
     label: Option<String>,
 ) -> Result<Json, crate::activity::CommandError> {
     let root_path = Path::new(&root);
-    let candidate = crate::asset_build_m1::schema_discovery::discover(root_path)
+    let candidate = crate::asset_build_m1::schema_discovery::discover_or_adapt(root_path)
         .map_err(|e| crate::activity::CommandError::new("asset_schema_missing", e))?;
     // 工作台逻辑图 → schema 语义覆盖（菜单/建筑信息/行为）。文档是权威输入：
     // 编译诊断在入队前 fail-closed，错误点名节点 id，不进入构建队列。
@@ -360,20 +361,17 @@ pub async fn build_queue_enqueue_project(
         .map_err(|errors| {
             crate::activity::CommandError::new(
                 "asset_logic_invalid",
-                format!(
-                    "{}: {}",
-                    candidate.document,
-                    errors.join("; ")
-                ),
+                format!("{}: {}", candidate.document, errors.join("; ")),
             )
         })?;
-        crate::asset_build_m1::workbench_logic::apply_to_schema(&mut schema, &compiled)
-            .map_err(|errors| {
+        crate::asset_build_m1::workbench_logic::apply_to_schema(&mut schema, &compiled).map_err(
+            |errors| {
                 crate::activity::CommandError::new(
                     "asset_logic_invalid",
                     format!("{}: {}", candidate.path, errors.join("; ")),
                 )
-            })?;
+            },
+        )?;
         logic_summary = serde_json::json!({
             "menu": compiled.menu.is_some(),
             "labor": compiled.labor.is_some(),

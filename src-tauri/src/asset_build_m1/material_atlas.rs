@@ -52,7 +52,12 @@ pub fn build_tint_atlas(plan: &MaterialPlan) -> Result<TintAtlas, String> {
             ),
             None => RgbaImage::from_pixel(CELL, CELL, image::Rgba([255, 255, 255, 255])),
         };
-        image::imageops::replace(&mut canvas, &cell_image, i64::from(cell_x * CELL), i64::from(cell_y * CELL));
+        image::imageops::replace(
+            &mut canvas,
+            &cell_image,
+            i64::from(cell_x * CELL),
+            i64::from(cell_y * CELL),
+        );
         cells.push([
             CELL as f32 / size as f32,
             CELL as f32 / size as f32,
@@ -113,4 +118,3 @@ mod tests {
         assert_eq!(f32::from_le_bytes(params[16..20].try_into().unwrap()), 1.0);
     }
 }
-

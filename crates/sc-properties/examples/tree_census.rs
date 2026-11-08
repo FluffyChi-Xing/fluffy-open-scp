@@ -42,7 +42,8 @@ const PROP_ID_BASE: u32 = u::PROP_ID_BASE;
 const PROP_BINS: usize = u::PROP_BINS;
 
 const GAME_DATA: &str = r"D:/ea-games/simcity_offline/SimCity：Cites of Tomorrow/SimCityData";
-const ECOGAME: &str = r"D:/ea-games/simcity_offline/SimCity：Cites of Tomorrow/SimCityUserData/EcoGame";
+const ECOGAME: &str =
+    r"D:/ea-games/simcity_offline/SimCity：Cites of Tomorrow/SimCityUserData/EcoGame";
 const REGISTRY: &str = "src-tauri/resources/database_main.s3db";
 
 type Packages = Vec<(String, Package)>;
@@ -142,8 +143,8 @@ struct TreeRecord {
 }
 
 fn main() {
-    let registry = sc_registry::Registry::open(REGISTRY)
-        .expect("open registry; run from repo root");
+    let registry =
+        sc_registry::Registry::open(REGISTRY).expect("open registry; run from repo root");
     let name_of = |instance: u32| -> String {
         registry
             .instances()
@@ -155,7 +156,11 @@ fn main() {
 
     let mut packages: Packages = Vec::new();
     let data = Path::new(GAME_DATA);
-    open("Graphics", data.join("SimCity_Graphics.package"), &mut packages);
+    open(
+        "Graphics",
+        data.join("SimCity_Graphics.package"),
+        &mut packages,
+    );
     open("App", data.join("SimCity_App.package"), &mut packages);
     open("Game", data.join("SimCity_Game.package"), &mut packages);
     open("EP1", data.join("SimCityDataEP1.package"), &mut packages);
@@ -242,7 +247,10 @@ fn main() {
                 continue;
             };
             for id in prop_ids(&file) {
-                referenced.entry(id).or_default().insert(format!("{label}/{c}"));
+                referenced
+                    .entry(id)
+                    .or_default()
+                    .insert(format!("{label}/{c}"));
             }
         }
     }
@@ -269,20 +277,25 @@ fn main() {
             if !has_state {
                 continue;
             }
-            let descriptor = values_of(&file, KEY_TREE_STATE).iter().find_map(|v| match v {
-                Value::Key(k) => Some(k.instance),
-                Value::UInt32(n) => Some(*n),
-                _ => None,
-            });
-            tree_records.entry(entry.id.instance).or_default().push(TreeRecord {
-                instance: entry.id.instance,
-                group: entry.id.group,
-                package: label.clone(),
-                descriptor,
-                lod_index: has_lod.then_some(1u32),
-                has_model_explicit: has_prop(&file, KEY_MODEL_EXPLICIT),
-                has_vehicle_models: has_prop(&file, KEY_VEHICLE_MODELS),
-            });
+            let descriptor = values_of(&file, KEY_TREE_STATE)
+                .iter()
+                .find_map(|v| match v {
+                    Value::Key(k) => Some(k.instance),
+                    Value::UInt32(n) => Some(*n),
+                    _ => None,
+                });
+            tree_records
+                .entry(entry.id.instance)
+                .or_default()
+                .push(TreeRecord {
+                    instance: entry.id.instance,
+                    group: entry.id.group,
+                    package: label.clone(),
+                    descriptor,
+                    lod_index: has_lod.then_some(1u32),
+                    has_model_explicit: has_prop(&file, KEY_MODEL_EXPLICIT),
+                    has_vehicle_models: has_prop(&file, KEY_VEHICLE_MODELS),
+                });
         }
     }
     let signature_trees: BTreeSet<u32> = tree_records
@@ -300,9 +313,11 @@ fn main() {
     println!("\n== 4) 树种 descriptor（G 40002D00 + 0x0E0B99FD 变体数组） ==");
     let mut descriptors: BTreeMap<u32, Vec<(String, Vec<u32>)>> = BTreeMap::new();
     for (label, pkg) in &packages {
-        for entry in pkg.entries().iter().filter(|e| {
-            e.id.type_id == PROPERTY_TYPE && e.id.group == 0x4000_2D00
-        }) {
+        for entry in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE && e.id.group == 0x4000_2D00)
+        {
             let Some(file) = parse_record(pkg, entry) else {
                 continue;
             };
@@ -329,9 +344,11 @@ fn main() {
     let model_loc = |instance: u32| -> Vec<(String, u32)> {
         let mut hits = Vec::new();
         for (label, pkg) in &packages {
-            for e in pkg.entries().iter().filter(|e| {
-                e.id.type_id == RW4_MODEL_TYPE && e.id.instance == instance
-            }) {
+            for e in pkg
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == RW4_MODEL_TYPE && e.id.instance == instance)
+            {
                 hits.push((label.clone(), e.decompressed_size));
             }
         }
@@ -406,7 +423,11 @@ fn main() {
                 .and_then(|r| r.descriptor)
                 .map(|d| format!("{d:08X} [{}]", name_of(d)))
                 .unwrap_or_else(|| "-".into());
-            println!("  {id:08X} [{}] desc={desc} src={:?}", name_of(*id), sources);
+            println!(
+                "  {id:08X} [{}] desc={desc} src={:?}",
+                name_of(*id),
+                sources
+            );
         }
     }
     println!("  → R/C/I 引用的树 resourceID 共 {referenced_trees} 个");
@@ -428,17 +449,18 @@ fn main() {
             };
             referenced_here.extend(prop_ids(&file));
         }
-        println!(
-            "  {label}: prop 引用 {} 个",
-            referenced_here.len()
-        );
+        println!("  {label}: prop 引用 {} 个", referenced_here.len());
         for id in &referenced_here {
             let recs = tree_records.get(id);
             let status = if recs.is_some() {
                 let is_sig = recs
                     .map(|rs| rs.iter().any(|r| r.lod_index.is_some()))
                     .unwrap_or(false);
-                if is_sig { "tree-signature" } else { "tree-state(no-lod)" }
+                if is_sig {
+                    "tree-signature"
+                } else {
+                    "tree-state(no-lod)"
+                }
             } else if referenced.contains_key(id) {
                 "non-tree (R/C/I 图谱内)"
             } else {

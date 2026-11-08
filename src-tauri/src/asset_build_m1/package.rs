@@ -1,19 +1,19 @@
 //! Application orchestration; processors and the connector own their formats.
 use super::{
-    stages,
-    connector,
-    filesystem::{Staging, project_file},
-    atlas_prepare, lotm, material_atlas, materials, native_model,
+    atlas_prepare, connector,
+    filesystem::{project_file, Staging},
+    lotm, material_atlas, materials, native_model,
     plan::plan_from_schema,
     processor::defer_property,
     resource_closure,
     scene::{self, SceneDocument},
+    stages,
 };
 use dbpf::ResourceId;
 use rw4::{Rw4File, SectionType};
 use sc_properties::{
-    Key, Kind, LOD_MODEL_HASHES, LOT_MASK_HASH, LOT_OVERLAY_OFFSET_HASH, LOT_PLACEMENT_HASH,
-    LOT_SIZE_HASH, PropertyFile, Value,
+    Key, Kind, PropertyFile, Value, LOD_MODEL_HASHES, LOT_MASK_HASH, LOT_OVERLAY_OFFSET_HASH,
+    LOT_PLACEMENT_HASH, LOT_SIZE_HASH,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -101,7 +101,125 @@ impl BuildResources {
             if !keep {
                 dropped.push(format!(
                     "{:08X}:{:08X}:{:08X} ({}B)",
-                    id.type_id, id.group, id.instance, bytes.len()
+                    id.type_id,
+                    id.group,
+                    id.instance,
+                    bytes.len()
+                ));
+            }
+            keep
+        });
+        dropped
+    }
+
+    /// 身份闭包（2026-11-08，用户验收标准：包里只允许出现"这一栋楼"）：
+    /// 从身份根（Menu2/Unit/Lot/locale/图标/背景图，instance = 身份）出发，
+    /// 沿引用边走（property 的 Key、RW4 的材质纹理行），可达者保留，其余
+    /// 全部丢弃。00B2CCCB（parent）边**不跟**——继承根由游戏本体提供
+    /// （s31 实证：包内无任何模板/父链条目）。返回被丢弃清单（审计用）。
+    /// 这一步产出 s31 形状的包：property 文件只有身份自己的。
+    pub(crate) fn retain_identity_closure(&mut self, identity: u32) -> Vec<String> {
+        const PROPERTY: u32 = 0x00B1_B104;
+        const MODEL: u32 = 0x2F4E_681B;
+        const RASTER: u32 = 0x2F4E_681C;
+        let is_root = |id: &ResourceId| {
+            (id.type_id == PROPERTY && id.instance == identity)
+                || (id.type_id == 0x0A98_EAF0 && id.group == 0x02FA_BF01 && id.instance == identity)
+                || (id.type_id == 0x2F7D_0004 && id.instance == identity)
+                || (id.type_id == 0x3F86_62EA && id.instance == identity)
+        };
+        let mut reachable: std::collections::HashSet<ResourceId> = Default::default();
+        let mut queue: Vec<ResourceId> =
+            self.all.keys().filter(|id| is_root(id)).cloned().collect();
+        while let Some(id) = queue.pop() {
+            if !self.all.contains_key(&id) || !reachable.insert(id) {
+                continue;
+            }
+            let bytes = match self.all.get(&id) {
+                Some(bytes) => bytes,
+                None => continue,
+            };
+            // property → Key 引用（parent 边除外）
+            if id.type_id == PROPERTY {
+                if let Ok(file) = sc_properties::PropertyFile::parse(bytes) {
+                    for property_value in &file.values {
+                        if property_value.hash == 0x00B2_CCCB {
+                            continue;
+                        }
+                        let mut keys: Vec<sc_properties::Key> = Vec::new();
+                        match &property_value.kind {
+                            Kind::Scalar(Value::Key(key)) => keys.push(*key),
+                            Kind::Array(values) => {
+                                for value in values {
+                                    if let Value::Key(key) = value {
+                                        keys.push(*key);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        for key in keys {
+                            if key.type_id != 0 {
+                                queue.push(ResourceId {
+                                    type_id: key.type_id,
+                                    group: key.group,
+                                    instance: key.instance,
+                                });
+                                continue;
+                            }
+                            // type-0 语义键：按候选类型解析
+                            for (type_id, group) in [
+                                (MODEL, 0),
+                                (RASTER, 0),
+                                (0x2F7D_0004, 0x40E0_2400),
+                                (0x3F86_62EA, 0),
+                                (0x0A98_EAF0, 0x02FA_BF01),
+                            ] {
+                                queue.push(ResourceId {
+                                    type_id,
+                                    group,
+                                    instance: key.instance,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            // RW4 → 材质纹理行引用的 raster
+            if id.type_id == MODEL {
+                if let Ok(file) = Rw4File::parse(bytes) {
+                    for section in file.sections_of_type(SectionType::MATERIAL) {
+                        if let Ok(material) = file.decode_material(bytes, section.number) {
+                            for row in material.texture_refs() {
+                                // slot0 = 参数表 RW4（2F4E681B），slot1..5 = raster
+                                // （2F4E681C）。两种候选都入队，存在的才保留——
+                                // 漏参数表 = 白模（2026-11-08 预览器实测）。
+                                queue.push(ResourceId {
+                                    type_id: MODEL,
+                                    group: 0,
+                                    instance: row.texture_instance,
+                                });
+                                queue.push(ResourceId {
+                                    type_id: RASTER,
+                                    group: 0,
+                                    instance: row.texture_instance,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut dropped: Vec<String> = Vec::new();
+        self.all.retain(|id, bytes| {
+            let keep = reachable.contains(id);
+            if !keep {
+                dropped.push(format!(
+                    "{:08X}:{:08X}:{:08X} ({}B)",
+                    id.type_id,
+                    id.group,
+                    id.instance,
+                    bytes.len()
                 ));
             }
             keep
@@ -128,6 +246,10 @@ impl BuildResources {
     /// left in a cloned Property/RW4 but were not rewritten themselves.
     pub(crate) fn all(&self) -> &connector::Resources {
         &self.all
+    }
+
+    pub(crate) fn is_touched(&self, id: &ResourceId) -> bool {
+        self.touched.contains(id)
     }
 
     /// Full-snapshot swap for the legacy full-output mode (stages.rs).
@@ -162,11 +284,8 @@ fn build_from_schema_inner(
     // G3a 全链复用（用户指令 2026-11-05）："已确认的无变更流程，跑通
     // 构建器自检就能保证结果正确"。输入指纹命中 + 产物包 sha256 自检
     // 通过 → 直接回放上次结果；任何不一致都走全量链重建缓存。
-    let fingerprint = super::build_cache::input_fingerprint(
-        &root,
-        &plan,
-        &plan.intermediate.scene.document,
-    );
+    let fingerprint =
+        super::build_cache::input_fingerprint(&root, &plan, &plan.intermediate.scene.document);
     if let Some(entry) = super::build_cache::lookup_run(&root, &fingerprint) {
         let reuse_detail = serde_json::json!({
             "buildHash": entry.build_hash,
@@ -181,7 +300,10 @@ fn build_from_schema_inner(
             ));
         }
         return Ok(M1BuildResult {
-            path: root.join(".build").join(&entry.build_hash).join(&entry.package_relative),
+            path: root
+                .join(".build")
+                .join(&entry.build_hash)
+                .join(&entry.package_relative),
             schema_hash: entry.schema_hash,
             build_hash: entry.build_hash.clone(),
             source_hash: entry.source_hash,
@@ -191,7 +313,8 @@ fn build_from_schema_inner(
             menu_instance: entry.menu_instance,
             patched_resources: entry.patched_resources,
             scope: "property+scene-model",
-            scene: serde_json::from_value(entry.scene).map_err(|e| format!("run cache scene: {e}"))?,
+            scene: serde_json::from_value(entry.scene)
+                .map_err(|e| format!("run cache scene: {e}"))?,
             events: vec![super::events::finished("cache-reuse", reuse_detail, 0)],
             started_at_ms: entry.submitted_at_ms,
             finished_at_ms: entry.submitted_at_ms,
@@ -345,23 +468,45 @@ pub(crate) fn insert_scene_model(
     let merged = model_shape == Some("merged-single");
     if lotm::is_container(&bytes) {
         let doc = lotm::parse(&bytes)?;
-        // `building40` has one native MATERIAL section whose six texture
-        // slots point at the compiled atlas.  A multi-material LOTM cannot
-        // be passed through this path: the old code emitted every raster but
-        // rewrote the RW4 to the first material, silently leaving the other
-        // meshes with unresolved texture rows (the s10 flat-colour
-        // regression).  Fail at the responsible processor with actionable
-        // provenance instead of publishing a package that only passes a
-        // resource-count/readback check.
-        if model_shape == Some("building40") && doc.materials.len() != 1 {
-            return Err(format!(
-                "building40 material contract: model has {} material groups; expected one atlas material (run the atlas preparation processor before building)",
-                doc.materials.len()
-            ));
+        let route = super::geometry_route::derive(model_shape, &doc)?;
+        let effective_shape = route.name;
+        if effective_shape == "building40" {
+            let author_model = super::author_building40::compile_model_with_transform(
+                &doc,
+                rotation_degrees,
+                transform,
+                include_bytes!("../../resources/sc5/175EFB4E.research-template.rw4"),
+                include_bytes!("../../resources/sc5/collision-source.rw4"),
+            )?;
+            let author_materials = super::author_materials::compile_materials(&doc, true)?;
+            let mut texture_instances = [0u32; 6];
+            for (slot, payload) in author_materials.slots.iter().enumerate() {
+                let type_id = if matches!(slot, 0 | 4 | 5) {
+                    materials::rw4_model_type()
+                } else {
+                    materials::raster_type()
+                };
+                let instance = alloc_free_instance(resources, type_id, payload);
+                let id = ResourceId {
+                    type_id,
+                    group: 0,
+                    instance,
+                };
+                resources.insert(id, payload.clone());
+                texture_instances[slot] = instance;
+            }
+            let rw4 = super::template_material::rewrite_texture_instances(
+                &author_model.compiled.rw4,
+                &texture_instances,
+            )?;
+            let model_ids = insert_compiled_model(resources, &rw4);
+            materials::validate_model_resource_closure(&rw4, resources)
+                .map_err(|error| format!("author Building40 resource closure: {error}"))?;
+            return Ok((Some(model_ids), 6));
         }
         let mut material_plan = materials::resolve_materials(&doc)?;
         let mut atlas_cells: Option<Vec<[f32; 4]>> = None;
-        if model_shape == Some("nh-atlas") {
+        if effective_shape == "nh-atlas" {
             let atlas = material_atlas::build_tint_atlas(&material_plan)?;
             let head = material_plan
                 .unique
@@ -390,8 +535,7 @@ pub(crate) fn insert_scene_model(
         }
         // 鍟嗕笟 LOTM 甯歌涓哄嚑鍗佸埌涓婄櫨涓紪杈戝櫒 mesh銆傛父鎴忔ā鍨嬪姞杞藉櫒鍙帴鍙?        // 灏戦噺褰㈢姸锛涢粯璁よ矾寰勫繀椤昏嚜鍔ㄦ敹鏁涘埌 NH 鍗曞舰鐘讹紝閬垮厤 schema 婕忓啓
         // modelShape 鏃堕噸鏂扮敓鎴愨€滃鍎垮舰鐘垛€漅W4锛堝巻鍙蹭笂鏇惧嚭鐜?105 mesh锛夈€?
-        let safe_nh = doc.meshes.len() > 4;
-        let use_nh_partitioned = model_shape == Some("nh-partitioned") || safe_nh;
+        let use_nh_partitioned = effective_shape == "nh-partitioned";
         // Select a real game RW4 from the reference package as the container
         // skeleton. Geometry is replaced later; its header/material/collision
         // sections remain byte-compatible with the game.
@@ -401,21 +545,24 @@ pub(crate) fn insert_scene_model(
             .transpose()
             .map_err(|error| format!("read native template: {error}"))?
             .or_else(|| {
-                Some(
-                    include_bytes!("../../resources/sc5/175EFB4E.research-template.rw4")
-                        .to_vec(),
-                )
+                Some(include_bytes!("../../resources/sc5/175EFB4E.research-template.rw4").to_vec())
             })
-            .or_else(|| resources
-            .iter()
-            .filter(|(id, bytes)| {
-                id.type_id == materials::rw4_model_type()
-                    && rw4::Rw4File::parse(bytes)
-                        .map(|file| file.sections_of_type(rw4::SectionType::MESH).next().is_some())
-                        .unwrap_or(false)
-            })
-            .min_by_key(|(id, _)| (id.group, id.instance))
-            .map(|(_, bytes)| bytes.clone()));
+            .or_else(|| {
+                resources
+                    .iter()
+                    .filter(|(id, bytes)| {
+                        id.type_id == materials::rw4_model_type()
+                            && rw4::Rw4File::parse(bytes)
+                                .map(|file| {
+                                    file.sections_of_type(rw4::SectionType::MESH)
+                                        .next()
+                                        .is_some()
+                                })
+                                .unwrap_or(false)
+                    })
+                    .min_by_key(|(id, _)| (id.group, id.instance))
+                    .map(|(_, bytes)| bytes.clone())
+            });
         let compiled = if merged {
             // 鍘熺増鍗曞舰鐘讹細鍏ㄩ儴鍑犱綍鍚堝苟 + 鍙紩鐢ㄦ潗璐?0 鐨勫叚妲斤紙鍏朵綑鏉愯川
             // raster 璧勬簮鐓у父鍏ュ簱锛屾ā鍨嬩笉寮曠敤锛夈€?
@@ -435,7 +582,7 @@ pub(crate) fn insert_scene_model(
                 std::slice::from_ref(&head_slots),
                 transform,
             )?
-        } else if model_shape == Some("native-multi") {
+        } else if effective_shape == "native-multi" {
             // Plugin-native multi-material export: keep one RW4 mesh per
             // unique LOTM material. This is the structure the SC5 exporter
             // writes for assets with many window/decal recipes; it must not
@@ -446,7 +593,7 @@ pub(crate) fn insert_scene_model(
                 &material_resources.unique_instances,
                 transform,
             )?
-        } else if model_shape == Some("nh-atlas") {
+        } else if effective_shape == "nh-atlas" {
             let cells = atlas_cells.ok_or("atlas compile: cells missing")?;
             let mesh_cells: Vec<[f32; 4]> = material_plan
                 .mesh_material
@@ -480,7 +627,7 @@ pub(crate) fn insert_scene_model(
                     transform,
                 )?,
             }
-        } else if model_shape == Some("nh-multimaterial") {
+        } else if effective_shape == "nh-multimaterial" {
             // Preserve the four largest facade material groups instead of
             // collapsing every mesh to material 0.  The game's native census
             // allows up to four meshes per model; this keeps the main facade
@@ -491,7 +638,7 @@ pub(crate) fn insert_scene_model(
                 .map(|index| material_resources.unique_instances[*index])
                 .collect();
             native_model::compile_lotm_nh_partitioned(&doc, &mapped, &instances, transform)?
-        } else if model_shape == Some("building40") {
+        } else if effective_shape == "building40" {
             let template = native_template
                 .as_deref()
                 .ok_or("building40 compile: native template missing")?;
@@ -521,7 +668,8 @@ pub(crate) fn insert_scene_model(
                 .first()
                 .copied()
                 .ok_or("building40 compile: head material slots missing")?;
-            let rw4 = super::template_material::rewrite_texture_instances(&compiled.rw4, &head_slots)?;
+            let rw4 =
+                super::template_material::rewrite_texture_instances(&compiled.rw4, &head_slots)?;
             native_model::CompiledNativeModel { rw4, ..compiled }
         } else if use_nh_partitioned {
             // NH 椤剁偣甯冨眬锛坰tride 40 鍘嬬缉娉曠嚎/鍒囩嚎 + facade F4 鍗?UV 娴侊級
@@ -530,7 +678,8 @@ pub(crate) fn insert_scene_model(
             let head = dominant
                 .first()
                 .copied()
-                .ok_or("nh-partitioned compile: material plan empty")? as u32;
+                .ok_or("nh-partitioned compile: material plan empty")?
+                as u32;
             let head_slots = material_resources
                 .unique_instances
                 .get(head as usize)
@@ -563,7 +712,7 @@ pub(crate) fn insert_scene_model(
         let compiled_file = Rw4File::parse(&compiled.rw4)
             .map_err(|error| format!("compiled model parse: {error}"))?;
         let mesh_count = compiled_file.sections_of_type(SectionType::MESH).count();
-        let max_meshes = if model_shape == Some("native-multi") {
+        let max_meshes = if effective_shape == "native-multi" {
             128
         } else {
             4
@@ -573,7 +722,7 @@ pub(crate) fn insert_scene_model(
                 "compiled LOTM model has {mesh_count} RW4 meshes; maximum supported is {max_meshes}"
             ));
         }
-        let model_ids = if model_shape == Some("native-multi") {
+        let model_ids = if effective_shape == "native-multi" {
             // Reuse one multi-material model for all four LOD keys. The four
             // copies were byte-identical; keeping one keeps the package below
             // the loader's practical size limit for a 98-material model.
@@ -620,11 +769,7 @@ fn select_material_groups(
     let mut area = vec![0f64; plan.unique.len()];
     for (mesh_index, glb) in doc.meshes.iter().enumerate() {
         let primitives = native_model::parse_glb_primitives(glb)?;
-        let material = plan
-            .mesh_material
-            .get(mesh_index)
-            .copied()
-            .unwrap_or(0) as usize;
+        let material = plan.mesh_material.get(mesh_index).copied().unwrap_or(0) as usize;
         if material >= area.len() {
             continue;
         }
@@ -647,7 +792,11 @@ fn select_material_groups(
         }
     }
     let mut order: Vec<usize> = (0..area.len()).collect();
-    order.sort_by(|a, b| area[*b].partial_cmp(&area[*a]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|a, b| {
+        area[*b]
+            .partial_cmp(&area[*a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let top: Vec<usize> = order.into_iter().take(max_groups.max(1)).collect();
     if top.is_empty() {
         return Err("multi-material compile: no material groups".into());
@@ -727,7 +876,8 @@ pub(crate) fn apply_property_semantics(
     let Some(bytes) = resources.get(&target).cloned() else {
         return Ok(());
     };
-    if let Some((encoded, units)) = apply_scene_lot_semantics(&bytes, document, model_ids, writes)? {
+    if let Some((encoded, units)) = apply_scene_lot_semantics(&bytes, document, model_ids, writes)?
+    {
         *lowered_units = (*lowered_units).max(units);
         resources.insert(target, encoded);
     }
@@ -777,9 +927,18 @@ pub(crate) fn apply_scene_lot_semantics(
                 touched = true;
             }
         }
+        for (hash, value) in scene::ground_values(document) {
+            set_scalar(&mut file, hash, value);
+            touched = true;
+        }
     }
     if let Some(model_ids) = model_ids {
         touched |= retarget_lod_models(&mut file, model_ids);
+        // A compiled interior material is inert without the per-building
+        // interior controller.  native_profile already writes this field;
+        // keep the cloned-Lot/menu route on the same s31/author contract.
+        set_scalar(&mut file, 0x0F16_9C46, Value::Bool(true));
+        touched = true;
     }
     if !touched {
         return Ok(None);
@@ -794,6 +953,17 @@ pub(crate) fn apply_scene_lot_semantics(
             scene::verify_units(&readback, document, writes)?;
         }
     }
+    if model_ids.is_some()
+        && !matches!(
+            readback.get(0x0F16_9C46).and_then(|property| property.scalar()),
+            Some(Value::Bool(true))
+        )
+    {
+        return Err(
+            "night interior gate: compiled model requires 0F169C46=true after property readback"
+                .into(),
+        );
+    }
     Ok(Some((encoded, lowered_units)))
 }
 
@@ -802,7 +972,11 @@ pub(crate) fn apply_scene_lot_semantics(
 fn retarget_lod_models(file: &mut PropertyFile, model_ids: LodModelIds) -> bool {
     for (index, hash) in LOD_MODEL_HASHES.into_iter().enumerate() {
         let model_id = model_ids[index];
-        match file.values.iter_mut().find(|property| property.hash == hash) {
+        match file
+            .values
+            .iter_mut()
+            .find(|property| property.hash == hash)
+        {
             Some(property) => {
                 property.kind = Kind::Scalar(Value::Key(Key {
                     type_id: model_id.type_id,
@@ -826,24 +1000,40 @@ fn retarget_lod_models(file: &mut PropertyFile, model_ids: LodModelIds) -> bool 
 }
 
 fn set_scalar(file: &mut PropertyFile, hash: u32, value: Value) {
+    let prop_type = scalar_prop_type(&value);
     match file.values.iter_mut().find(|p| p.hash == hash) {
         Some(property) => {
+            property.prop_type = prop_type;
             property.kind = Kind::Scalar(value);
         }
         None => file.values.push(make_scalar_property(hash, value)),
     }
 }
 
-fn make_scalar_property(hash: u32, value: Value) -> sc_properties::Property {
-    let prop_type = match &value {
-        Value::Vector2(_) => sc_properties::PropType::Vector2,
-        Value::Transform(_) => sc_properties::PropType::Transform,
+fn scalar_prop_type(value: &Value) -> sc_properties::PropType {
+    match value {
+        Value::Bool(_) => sc_properties::PropType::Bool,
+        Value::Int32(_) => sc_properties::PropType::Int32,
+        Value::UInt32(_) => sc_properties::PropType::UInt32,
+        Value::Float(_) => sc_properties::PropType::Float,
+        Value::String8(_) => sc_properties::PropType::String8,
+        Value::String16(_) => sc_properties::PropType::String16,
         Value::Key(_) => sc_properties::PropType::Key,
-        _ => sc_properties::PropType::Float,
-    };
+        Value::Text(_) => sc_properties::PropType::Text,
+        Value::Vector2(_) => sc_properties::PropType::Vector2,
+        Value::Vector3(_) => sc_properties::PropType::Vector3,
+        Value::ColorRgb { .. } => sc_properties::PropType::ColorRgb,
+        Value::Vector4(_) => sc_properties::PropType::Vector4,
+        Value::ColorRgba { .. } => sc_properties::PropType::ColorRgba,
+        Value::Transform(_) => sc_properties::PropType::Transform,
+        Value::BoundingBox { .. } => sc_properties::PropType::BoundingBox,
+    }
+}
+
+fn make_scalar_property(hash: u32, value: Value) -> sc_properties::Property {
     sc_properties::Property {
         hash,
-        prop_type,
+        prop_type: scalar_prop_type(&value),
         kind: Kind::Scalar(value),
         encoding: sc_properties::PropertyEncoding::default(),
     }
@@ -1066,12 +1256,8 @@ pub(crate) fn validate_scene_path_semantics(
             .get("roadConnect")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
-        let recipe = match super::path_catalog::resolve(
-            kind,
-            entry_text,
-            scope_local,
-            road_connect,
-        ) {
+        let recipe = match super::path_catalog::resolve(kind, entry_text, scope_local, road_connect)
+        {
             Ok(recipe) => recipe,
             Err(error) => {
                 errors.push(format!("{location}: {error}"));
@@ -1179,4 +1365,41 @@ pub(crate) fn protected_templates(
 /// 无进度包装(命令行/黄金用例入口,行为与带进度版完全一致)。
 pub fn build_from_schema(root: &Path, raw_schema: &str) -> Result<M1BuildResult, String> {
     build_from_schema_inner(root, raw_schema, None)
+}
+
+#[cfg(test)]
+mod night_interior_tests {
+    use super::*;
+
+    #[test]
+    fn compiled_model_enables_interior_controller_only_on_model_writeback() {
+        let source = PropertyFile::default().encode_canonical().unwrap();
+        let unchanged = apply_scene_lot_semantics(
+            &source,
+            None,
+            None,
+            &scene::SceneWrites::default(),
+        )
+        .unwrap();
+        assert!(unchanged.is_none(), "donor-only s31 semantics stay byte-identical");
+
+        let model_ids = std::array::from_fn(|index| ResourceId {
+            type_id: 0x2F4E_681B,
+            group: 0,
+            instance: 0xE2E8_2E9D + index as u32,
+        });
+        let (encoded, _) = apply_scene_lot_semantics(
+            &source,
+            None,
+            Some(model_ids),
+            &scene::SceneWrites::default(),
+        )
+        .unwrap()
+        .expect("compiled model writes the asset property");
+        let readback = PropertyFile::parse(&encoded).unwrap();
+        assert!(matches!(
+            readback.get(0x0F16_9C46).and_then(|property| property.scalar()),
+            Some(Value::Bool(true))
+        ));
+    }
 }

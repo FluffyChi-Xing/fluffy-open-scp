@@ -9,8 +9,9 @@ use std::{fs, path::PathBuf};
 
 /// 每个测试模块可写的临时根目录（调用方自行拼唯一子目录名）。
 pub fn scratch_base() -> PathBuf {
-    let workspace_target =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("test-scratch");
+    let workspace_target = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("test-scratch");
     if fs::create_dir_all(&workspace_target).is_ok() {
         return workspace_target;
     }

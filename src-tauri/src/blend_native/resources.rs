@@ -223,11 +223,7 @@ mod tests {
 
     #[test]
     fn png_round_trip_preserves_pixels() {
-        let image = ImageF32::new(
-            2,
-            1,
-            vec![[1.0, 0.5, 0.25, 1.0], [0.0, 0.25, 0.5, 0.0]],
-        );
+        let image = ImageF32::new(2, 1, vec![[1.0, 0.5, 0.25, 1.0], [0.0, 0.25, 0.5, 0.0]]);
         let png = encode_png(&image, false).unwrap();
         let decoded = decode_png(&png, false).unwrap();
         assert_eq!(decoded.width, 2);

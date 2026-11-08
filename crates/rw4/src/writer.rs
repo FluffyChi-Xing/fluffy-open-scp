@@ -256,8 +256,7 @@ pub fn build_template(
         (16, index_only),
         (20, fixup_total_u32),
     ] {
-        out[fixup_slot + slot..fixup_slot + slot + 4]
-            .copy_from_slice(&value.to_le_bytes());
+        out[fixup_slot + slot..fixup_slot + slot + 4].copy_from_slice(&value.to_le_bytes());
     }
     let _ = block10007;
     out
@@ -280,37 +279,67 @@ pub fn replace_template_sections(
     for section in file.sections() {
         if section.type_code == SectionType::VERTEX_FORMAT {
             let gap = section.pos.saturating_sub(prev_end);
-            if gap > 0 { pieces.push(TemplatePiece::Gap(gap)); }
+            if gap > 0 {
+                pieces.push(TemplatePiece::Gap(gap));
+            }
         }
         prev_end = section.pos + section.size;
-        let payload = replacements.get(&section.number).cloned().unwrap_or_else(|| {
-            file.payload(source, section.number).unwrap_or_default().to_vec()
-        });
+        let payload = replacements
+            .get(&section.number)
+            .cloned()
+            .unwrap_or_else(|| {
+                file.payload(source, section.number)
+                    .unwrap_or_default()
+                    .to_vec()
+            });
         pieces.push(TemplatePiece::Section(SectionSpec {
             type_code: section.type_code,
-            alignment: if section.alignment == 0 { 4 } else { section.alignment },
+            alignment: if section.alignment == 0 {
+                4
+            } else {
+                section.alignment
+            },
             payload,
             fixups: Vec::new(),
         }));
-        if !type_table.contains(&section.type_code) { type_table.push(section.type_code); }
+        if !type_table.contains(&section.type_code) {
+            type_table.push(section.type_code);
+        }
     }
     let mut extras = type_table[5..].to_vec();
     extras.sort_unstable();
     type_table.truncate(5);
     type_table.extend(extras);
-    let w25 = u32::from_le_bytes(source[0x64..0x68].try_into().map_err(|_| "RW4 header truncated")?);
+    let w25 = u32::from_le_bytes(
+        source[0x64..0x68]
+            .try_into()
+            .map_err(|_| "RW4 header truncated")?,
+    );
     let block = find_10007(source).ok_or("RW4 0x10007 block missing")?;
     let block10007 = read_words(source, block + 4, 6).ok_or("RW4 0x10007 block truncated")?;
     // Preserve the source container type (Model 1 vs Texture 0x04000000):
     // texture wrappers rebuilt as Model files fail the game's TextureManager
     // lookup and the author's own verify (`r.file_type==0x04000000`).
-    let file_type_code =
-        u32::from_le_bytes(source.get(28..32).ok_or("RW4 header truncated")?.try_into().unwrap());
-    Ok(build_template(file_type_code, &pieces, &type_table, w25, block10007))
+    let file_type_code = u32::from_le_bytes(
+        source
+            .get(28..32)
+            .ok_or("RW4 header truncated")?
+            .try_into()
+            .unwrap(),
+    );
+    Ok(build_template(
+        file_type_code,
+        &pieces,
+        &type_table,
+        w25,
+        block10007,
+    ))
 }
 
 fn read_words(bytes: &[u8], offset: usize, count: usize) -> Option<[u32; 6]> {
-    if count != 6 || offset.checked_add(24)? > bytes.len() { return None; }
+    if count != 6 || offset.checked_add(24)? > bytes.len() {
+        return None;
+    }
     let mut out = [0u32; 6];
     for (i, word) in out.iter_mut().enumerate() {
         *word = u32::from_le_bytes(bytes[offset + i * 4..offset + i * 4 + 4].try_into().ok()?);
@@ -322,10 +351,14 @@ fn find_10007(bytes: &[u8]) -> Option<usize> {
     let mut off = 0x98usize;
     while off + 4 <= bytes.len() {
         let id = u32::from_le_bytes(bytes[off..off + 4].try_into().ok()?);
-        if id == 0x10007 { return Some(off); }
+        if id == 0x10007 {
+            return Some(off);
+        }
         off += match id {
             0x10004 => 28,
-            0x10005 => 12 + 4 * u32::from_le_bytes(bytes.get(off + 4..off + 8)?.try_into().ok()?) as usize,
+            0x10005 => {
+                12 + 4 * u32::from_le_bytes(bytes.get(off + 4..off + 8)?.try_into().ok()?) as usize
+            }
             0x10006 => 36,
             0x10007 => 28,
             0x10008 => 12,
