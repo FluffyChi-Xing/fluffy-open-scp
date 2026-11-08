@@ -1,0 +1,126 @@
+{
+  "schema": "sc5.native-prop-catalog/1",
+  "version": "2026.11.01.1",
+  "presets": {
+    "tree_a": {
+      "label": "原版乔木 A",
+      "resourceId": "14984C68",
+      "nativeModel": "2F4E681B:00000000:89D658DF",
+      "preferredBin": 12,
+      "defaultScale": 0.25,
+      "tree": true,
+      "previewMesh": "tree_a.mesh.json.gz",
+      "image": "tree_a.png",
+      "modelSha256": "ce46b09a5bb3315bb61fc27afef000351c1aa81052d3ffa5513e90880682ce99",
+      "bounds": [
+        [
+          -17.794736862182617,
+          -19.59261703491211,
+          0.002952875103801489
+        ],
+        [
+          19.53684425354004,
+          18.837717056274414,
+          34.09479522705078
+        ]
+      ],
+      "wrapper": "ADA2724F"
+    },
+    "tree_b": {
+      "label": "原版乔木 B",
+      "resourceId": "14984C69",
+      "nativeModel": "2F4E681B:00000000:1113B131",
+      "preferredBin": 11,
+      "defaultScale": 0.25,
+      "tree": true,
+      "previewMesh": "tree_b.mesh.json.gz",
+      "image": "tree_b.png",
+      "modelSha256": "af835068175bc4f41fdc1da2c5427fecf73797dad43a571f3e2d62a15f793051",
+      "bounds": [
+        [
+          -24.669017791748047,
+          -24.318696975708008,
+          -0.05055522918701172
+        ],
+        [
+          24.620031356811523,
+          24.11346435546875,
+          45.3325309753418
+        ]
+      ],
+      "wrapper": "ADA2724E"
+    },
+    "tree_c": {
+      "label": "原版乔木 C",
+      "resourceId": "14984C6A",
+      "nativeModel": "2F4E681B:00000000:C2FBD178",
+      "preferredBin": 10,
+      "defaultScale": 0.25,
+      "tree": true,
+      "previewMesh": "tree_c.mesh.json.gz",
+      "image": "tree_c.png",
+      "modelSha256": "1353b01fdc3c8f0ce4571983017e39f0c433aedf14e88d2f4b472aa528dfed71",
+      "bounds": [
+        [
+          -15.197579383850098,
+          -15.214461326599121,
+          -0.009135380387306213
+        ],
+        [
+          14.587961196899414,
+          14.584940910339355,
+          47.02610778808594
+        ]
+      ],
+      "wrapper": "ADA2724D"
+    },
+    "tree_conifer": {
+      "label": "原版针叶树",
+      "resourceId": "14984C6B",
+      "nativeModel": "2F4E681B:00000000:4DF43690",
+      "preferredBin": 9,
+      "defaultScale": 0.25,
+      "tree": true,
+      "previewMesh": "tree_conifer.mesh.json.gz",
+      "image": "tree_conifer.png",
+      "modelSha256": "d3a38b9edb83eee33093c1bd715eca9a5b8b95ffacd97b57c08b6169a45b2da6",
+      "bounds": [
+        [
+          -21.954944610595703,
+          -24.036788940429688,
+          -0.5840570330619812
+        ],
+        [
+          23.811140060424805,
+          24.588306427001953,
+          51.21011734008789
+        ]
+      ],
+      "wrapper": "ADA2724C"
+    },
+    "street_furniture": {
+      "label": "原版街道家具组合",
+      "resourceId": "9375C65E",
+      "nativeModel": "2F4E681B:00000000:AD64CB3D",
+      "preferredBin": 0,
+      "defaultScale": 1.0,
+      "tree": false,
+      "previewMesh": "street_furniture.mesh.json.gz",
+      "image": "street_furniture.png",
+      "modelSha256": "81224ec4dd8007896d0210abce7d760c40590ef7d7203160d0f89a8713e9cb8b",
+      "bounds": [
+        [
+          -1.3323040008544922,
+          -3.8685529232025146,
+          0.0
+        ],
+        [
+          1.3323040008544922,
+          3.8685529232025146,
+          2.054084062576294
+        ]
+      ],
+      "wrapper": null
+    }
+  }
+}

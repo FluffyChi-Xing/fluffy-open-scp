@@ -187,3 +187,120 @@ bundle 一网打尽）：
 教训固化：解析值对拍（delta-audit/列 diff）看不见声明元数据——**凡新增
 "写属性文件"的代码路径，门禁加在编码产物的字节层，而不是作者层**。
 processor_version /27→/28。
+
+## 7. Locale 同表遮蔽 + i32 造价 + enabled 死数据（2026-11-08 深夜，HopeTower 观光包）
+
+症状三连：菜单名/描述显示模板默认 "OpenSCP Commercial Tower"；造价 50000 显示
+「免费」；维护费 -1,500/小时 却正常。三个互不相同的根因层，同时命中：
+
+1. **locale 表 TGI 冲突（资源层）**：`0A98EAF0:02FABF01:BF82F7CE` 是
+   `menu.rs::LOCALE_TABLE` 固定常量（FNV-1("openscp/strings")——只保证与
+   *原版* 无冲突，不保证与 *自家其它包* 无冲突）。Commercial_v7 与
+   HopeTower 都写这张表 → 游戏解析到 v7 的行（"OpenSCP Commercial Tower"
+   / "商业地标：.blend 原始工程 parent-free 路线"）。我们的包里
+   「大连希望大厦」一直都在，只是被自家兄弟包遮蔽。修复：19a1b3a 起各路由
+   locale 表 instance = 身份实例；menu-contract 第 8 号检查禁写共享表。
+   **教训：自有"全局唯一"资源，唯一性必须按身份派生，"与 vanilla 不冲突"
+   不等于"与自家包不冲突"。**
+2. **造价位型（字节层）**：原版 SCUnit 成本全 Float32（s31/v7/vanilla 实测
+   一致）；parent-free 路线 `build_unit_leaf` 写 Int32。Int32:50000 按 f32
+   位读 = ~2.1e-41 ≈ 0 → 免费。同包维护费 i32:1500 显示正常纯属该字段解析
+   宽容——不可作为"类型无所谓"的证据。修复：/36 两路由统一 Float；
+   menu-contract 第 7 号检查 fail-closed。**教训：跨引擎字段先抄 vanilla
+   的位型，再抄数值；解析值对拍看不见位型。**
+3. **enabled=false 死数据（工作台层）**：工程面板保存 `editor.workbench.menu`
+   从不写 `enabled:true`（MenuBindingForm 压根没有开关），而
+   `workbench_logic::compile` 对 `enabled!=true` **静默返回 None**——用户在
+   面板里填的名称/描述/造价整套不进构建。本次部署包是手写 schema 绕过工作台
+   构建的，值是"抄"进去的而非"编译"进去的。修复：面板补「启用菜单绑定」
+   开关（i18n zh/en）；编译门对"有内容而未启用"fail-closed 点名报错；
+   前端 menuBindingIssues 同步提示。**教训：UI 写入的数据若编译器有静默
+   跳过分支，必须在跳过前判断"是否填了内容"。**
+
+连带修正：/35 把 vanilla-shadow-strip 移到 delta-audit 后，layout-contract
+（在 strip 之前跑）开始扫到游戏基类模板 9EC474FF 自带的 count=0 数组
+（0CABB2FC）→ 每个部署构建必被 vanilla 数据击落。修复：layout-contract 按
+strip 同款判定跳过游戏自有条目（它们的字节不归本契约管）。
+
+部署记录：修复包 a42cf63e0c25fedb（/36，137 条目，身份 3CAAEFBC——防撞车
+守卫把 3CAAEFBB 让给已部署旧包）；GraphicsCache 隔离 bak-20261108-
+hopetower-fix；存档备份 Games-backup-20261108-hopetower-fix。
+观察点：菜单名=大连希望大厦、描述=编辑器原文、造价 $50,000、维护
+-1,500/小时；白模/白地面另案（材质 raster 已确认在包内，缓存隔离后复测）。
+
+### 7.1 白模/无地面定案（2026-11-08 凌晨，§7 的"另案"收口）
+
+§7 留下的"白模/白地面另案"已定案，两个独立根因，都与打包日志对上：
+
+1. **白模 = 材质编译路线缺 `modelShape: "nh-atlas"`**。大学 schema 带
+   nh-atlas（tint atlas 烧入 + UV 重排），大连 schema 漏写 → 落进自动
+   nh-partitioned 路线 → 塔 4 个 LOD 的材质纹理行 slot1/2/3 指向 3 张
+   **32 字节空 raster**（5FD589D2/1301B5DC/E3C56FA3，tint/palette/shader
+   无像素）→ 白模。`insert-textures {"slots":0}` 与 materialGate 的
+   `textureSlotInstances [0,0,0,0,0,0]` 就是日志里的明文，但当时把它当
+   了指纹字段没当绑定字段读。修复：schema 补 nh-atlas → 22MB tint atlas
+   入包，纹理槽绑真实 raster。新增探针 `model_texture_refs <pkg> 0 ALL`
+   （扫描全部模型引用 ≤64B 空 raster 的材质）：旧包 4 中毒 → 新包 0。
+   **教训：材质绑定验证必须做在编码产物层（RW4 纹理行 → raster 闭包），
+   槽位指纹字段不是绑定证据。**
+2. **无地面 = 参照 lot 是 40 字节 fixture**。Dalian schema 的
+   reference.lot = `40E1C000:8D007745`（golden fixture 极简 lot，2 列），
+   大学用的是 118 列真 lot（C264A268）。游戏本体 34CE7E14 地标模板只有
+   2 列（纯 parent 存根）——挂它不带来地面。修复：参照 lot 换游戏真 lot
+   `40E1C000:263E0569`（132 列，BoundingBox [-44,-60..44,60] 覆盖塔
+   footprint，掩码 raster 17B7CCBD + 地面模型一并入参照包，
+   `add_reference_lot` 工具合并写入）→ 新 lot 132 列全量克隆，
+   menu-contract BoundingBox 过检，delta-audit 132/132 对齐。
+   **教训：full 模式 lot 叶子的列 = 参照 lot 的列；参照是几列，产物就是
+   几列。"挂模板"不等于"有数据"。**
+
+产物 f13155434e47ab02（身份 3CAAEFBB，144 条目）。Tools：probes 新增
+`model_texture_refs`（材质中毒扫描）、examples 新增 `lotm_slots`
+（LOTM 材质槽对拍）、`scan_big_lots`（大地面 lot 普查）、
+`add_reference_lot`（donor lot + 依赖并入参照包）。
+
+## 8. 防复发体系（/37，2026-11-08 定稿）——同类问题不再靠实机试错
+
+§7/§7.1 的五连根因（locale 同表/i32 造价/enabled 死数据/缺 modelShape/
+参照 lot=fixture）逐条对应到构建期门禁，processor_version /37：
+
+| 事故 | 构建期拦截 | 验证方式 |
+|---|---|---|
+| 白模（空 raster 绑定） | `material-binding-contract` 新阶段（vanilla-shadow-strip 后、materialize 前，fail-closed）：产物池每个 RW4 材质纹理行 slot0..5 → raster 必须非空（>64B，32B=空壳即 fail，报错点名 `scene.modelShape="nh-atlas"`）；缺失 raster=告警（原版自带悬空引用，实证 263E0569 链 EDD00202 全安装不存在而原版渲染正常） | 负向验证：去掉 modelShape 重建 → 3 秒被击落，48 违规点名到槽位级（含 4 塔 LOD 的 5FD589D2/1301B5DC/E3C56FA3） |
+| 无地面（参照 lot=派生/fixture 变体） | `load-inputs` 参照 lot 主体契约（fail-closed，仅 40E1C000 lot 适用）：主体三要件（00F9EFBA BoundingBox/0CCB7FC8 LotSize/0CCB7FD5 LotMask）缺一即拒，错误指认"换主体变体"+提示 scan_big_lots；**继承链逐跳进台账**（每跳 instance+列数+是否在包内） | 单测 stage_tests::reference_lot_master_contract_*（主体过/派生拒/非 asset lot 跳过） |
+| modelShape 漏写 | `insert-model` 台账新增 `modelShapeDeclared` 字段 + 漏写时 warnings 点名（写明多材质 LOTM 在自动路线会产空绑定） | 负向构建 warnings 非空 |
+
+**元教训（用户指令 2026-11-08："不允许回归的问题不能每次花几小时实机调"）**：
+每一个能被游戏渲染结果否决的层，都必须有一个对应的字节层门禁，在打包
+3 秒内给出可执行的报错，而不是构建全绿、实机返工。判断标准：门禁的失败
+信息必须包含"改什么"（如：声明 nh-atlas / 换主体 lot），而不只是"坏了"。
+
+新工具：`model_texture_refs <pkg> 0 ALL`（材质中毒扫描，验收新包必跑）、
+`add_reference_lot <game> <tgi> <ref> <out>`（donor lot+模型+raster 二级
+闭包并入参照包）、`scan_big_lots`（大地面主体 lot 普查）、`lotm_slots`
+（LOTM 材质槽对拍）。
+
+## 9. lot 身份污染 + 地面形状 + 丢面（/38，2026-11-08 白天）
+
+三项均由"克隆 donor 而不清洗语义"引发，全部改为**以用户编排为准**：
+
+1. **lot 身份文本列**：`09FB78CB` 是 donor 的名字文本边（Text→locale 表），
+   在白名单里 → 克隆后实机显示 donor 建筑名（「高级煤矿坑」）。剔除后
+   产物 lot 零文本列（`grep -c 'text('` = 0）。**规则：lot 只承载地面与
+   数值，任何 Text 列都属于身份层，不得随地面克隆。**
+2. **地面形状**：LotSize 与遮罩都来自 donor（88×120 长方形），与编辑器里
+   的 80×80 正方形不符。改为：`LotSize/lot_offset/placement` 以工作台文档
+   为准；遮罩按该尺寸**合成**（满覆盖纯色 raster），不再克隆 donor 形状。
+3. **丢面（关键）**：几何完整（`geometry_audit`：LOD0 = 109862 顶点 /
+   50382 面，与 LOTM 源一致），但 `00F9EFBA` 沿用 donor 的 bbox
+   （z max = 56m），而塔高 270m —— 超出包围盒的部分被裁掉，实机表现为
+   "整段楼层消失/露内部"。改为从编译后的 LOD0 模型顶点并集计算真实
+   bbox（本次 z 0→270.31903，与编辑器 270.7m 吻合）。
+   顺带修 `property_edit::set_array` 的步长声明表（BoundingBox 24 /
+   Vector2 8 / Vector3·ColorRgb 12），否则自写 bbox 会被 layout-contract
+   以 item_size 0 击落（门禁正确拦下）。
+
+**元教训**：任何"从 donor 克隆"的字段都必须先问"这是不是用户编排的"；
+用户编排的（尺寸/形状/名字/文案）一律以文档为准，donor 只提供结构性
+数据（父链、列布局）。processor_version /37 → /38（处理器行为变更必须
+bump，本轮曾漏 bump 被发现并补）。

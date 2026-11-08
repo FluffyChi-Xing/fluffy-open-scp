@@ -1,0 +1,69 @@
+{
+  "source": "00B1B104:40E1C000:E0301934",
+  "fields": {
+    "0CAA8F10": {
+      "type": 32,
+      "size": 12
+    },
+    "0CAA8F11": {
+      "type": 32,
+      "size": 12
+    },
+    "0CAA8F12": {
+      "type": 56,
+      "size": 56
+    },
+    "0CAA8F13": {
+      "type": 50,
+      "size": 12
+    },
+    "0CAA8F14": {
+      "type": 13,
+      "size": 4
+    },
+    "0CAA8F15": {
+      "type": 13,
+      "size": 4
+    },
+    "0CAA8F16": {
+      "type": 13,
+      "size": 4
+    },
+    "0CAA8F17": {
+      "type": 18,
+      "size": 16
+    },
+    "0D4C96B4": {
+      "type": 13,
+      "size": 4
+    },
+    "0D4CAD23": {
+      "type": 13,
+      "size": 4
+    },
+    "0E01200F": {
+      "type": 32,
+      "size": 12
+    },
+    "0E4DF244": {
+      "type": 13,
+      "size": 4
+    },
+    "0E98D445": {
+      "type": 1,
+      "size": 1
+    },
+    "0EC4567E": {
+      "type": 13,
+      "size": 4
+    }
+  },
+  "cullTier": 1048449613,
+  "nightPeriod": 311764537,
+  "nightRange": [
+    0.875,
+    0.21527299284934998
+  ],
+  "nativeDirection": "+Y",
+  "unitPowerFlagsVerified": false
+}
