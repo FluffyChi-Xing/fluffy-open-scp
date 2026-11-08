@@ -1,6 +1,6 @@
 # Property Editor 与 Mod Studio 资产闭环计划
 
-日期：2026-10-24
+日期：2026-11-08（现状复核；原计划日期保留在文件名中）
 
 本文记录从 Blender 烘焙模型到游戏内建筑验证的目标流程，以及当前实现边界和后续任务。计划以一个可重复构建的建筑样本为主线，逐步扩展到 decal、特殊建筑和 ER2。
 
@@ -18,6 +18,10 @@ Blender 烘焙模型 → Mod Studio Assets 项目 → 模型 / 材质 / lot / de
 - Menu2 菜单移动、复制、分组、locale、图标、rollover 和 overlay 导出。
 - Menu2 → Unit → bundle → resource → ER2 的静态研究基础。
 - 小学、水泵等样本的规则资源和运行时 delta 采集原型。
+- LOTM/GLB → 原生 RW4 的 M1 编译路径、LOD/包围盒/材质绑定和确定性 DBPF 输出。
+- 新菜单身份注册、locale 按身份隔离、行为绑定和 full 输出的资源闭包。
+- `layout-contract`、`menu-contract`、`delta-audit`、`material-binding-contract` 和
+  参照 lot 主体契约；构建器当前处理器版本为 `openscp.property.m1/39`。
 
 ## P0：第一个可玩的建筑闭环
 
@@ -101,9 +105,12 @@ Blender 烘焙模型 → Mod Studio Assets 项目 → 模型 / 材质 / lot / de
 
 ## 当前主要风险
 
-- GLB 到 RW4 编译器尚未完成。
-- Property/LOTM 编辑结果尚未完整写回游戏资源。
-- Decal 仍未完整接入 Assets 图和构建链。
+- 通用 RW4 任意 section 的编辑和原生材质重组仍不是公开稳定契约；当前稳定路径是
+  资产工作台的 LOTM/GLB 输入和 M1 编译器。
+- Property/LOTM 的语义编辑仍以受控 schema 和场景列族为边界，不能宣称任意属性
+  保真重写。
+- Decal、ER2 通用编译和完整游戏行为闭环仍需按样本逐类验证；已有的菜单/行为样本
+  不能外推为所有建筑类型。
 - ER2 通用编译和游戏加载验证尚未闭合。
 - 普通 overlay 的写出成功不能等同于游戏内生效。
 - 所有新增界面文案必须同时维护 zh-CN 和 en-US。

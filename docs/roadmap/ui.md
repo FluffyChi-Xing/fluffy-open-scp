@@ -5,6 +5,13 @@
 > 核心原则：**fluffy-design-pro 应用壳基本不改，业务开发集中在 `src/pages/`，经 Tauri 封装为 Windows EXE。**
 > **MVP 交付定义：最小可交付产物 = 前后端 P0 阶段打通后的可运行 EXE**（即原 SCP 核心能力的 Rust + Tauri 迁移版：打开/浏览 package、查看资源、属性表与资产目录，异常不崩溃）。对应本文件 U0–U2 完成 + `pnpm tauri build` 出包；U3 起属于 P1 增强，不在 MVP 范围内。
 
+> **当前实现快照（2026-11-08）**：原文 2026-09 的“正在替换/暂不注册”描述是历史
+> 基线。当前路由已包含资源浏览、文档工作区、设置和 `/studio`；资产工作台通过真实
+> `code_flow` Tauri command 读写项目文件，Mod Flow 已接入 Vue Flow。仍需保留的边界
+> 是：浏览器 mock 不能冒充 Tauri 成功，通用 RW4 编辑和完整游戏联动仍属于后续范围。
+> 依据：`src/router/registry.ts`、`src/pages/studio/`、`src-tauri/src/lib.rs`、
+> `src-tauri/src/mod_flow.rs`。
+
 ---
 
 ## 1. 当前前端真实基线（盘点，2026-09-04）
