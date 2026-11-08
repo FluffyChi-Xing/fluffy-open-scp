@@ -59,3 +59,13 @@ __pycache__/
 
 # SC5 Asset Editor 导出器（第三方资源，stage 后本地打包用；发布前确认再分发条款）
 /src-tauri/resources/blender/ny_facade/
+
+# tools/ 是本地临时工作区（迁移工具运行时、流水线脚本等），不入库 2026-11-08
+tools/
+
+# 第三方最新打包器参考源码，仅供本地对拍与迁移
+/investigation/sc5-asset-packager-latest/
+
+# 本地商业版构建输出
+/commercial-build.json
+/commercial-build.log
