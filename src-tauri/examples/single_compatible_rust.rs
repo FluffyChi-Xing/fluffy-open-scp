@@ -11,8 +11,12 @@ use fluffy_open_scp_lib::asset_build_m1::{lotm, single_compatible};
 use std::{env, fs};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let input = env::args().nth(1).ok_or("usage: single_compatible_rust <in.lotm> <out.lotm>")?;
-    let output = env::args().nth(2).ok_or("usage: single_compatible_rust <in.lotm> <out.lotm>")?;
+    let input = env::args()
+        .nth(1)
+        .ok_or("usage: single_compatible_rust <in.lotm> <out.lotm>")?;
+    let output = env::args()
+        .nth(2)
+        .ok_or("usage: single_compatible_rust <in.lotm> <out.lotm>")?;
     let source = lotm::parse(&fs::read(input)?)?;
     let plan = single_compatible::plan_surfaces(&source)?;
     let atlases = single_compatible::render_atlases(&source, &plan)?;

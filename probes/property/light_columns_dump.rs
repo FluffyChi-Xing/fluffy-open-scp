@@ -90,7 +90,10 @@ fn main() {
                 e.id.instance,
                 pf.values.len()
             );
-            for (hash, label) in LIGHT_COLS.iter().chain(TIME_COLS.iter()).chain(OTHER_COLS.iter())
+            for (hash, label) in LIGHT_COLS
+                .iter()
+                .chain(TIME_COLS.iter())
+                .chain(OTHER_COLS.iter())
             {
                 let props: Vec<_> = pf.values.iter().filter(|p| p.hash == *hash).collect();
                 if props.is_empty() {
@@ -99,7 +102,11 @@ fn main() {
                 for p in props {
                     let vs = vals(&p.kind);
                     let show: Vec<String> = vs.iter().take(6).map(|v| v.to_string()).collect();
-                    let light_marker = if *hash == 0x0CAA_8F10 { "  <<LIGHTS" } else { "" };
+                    let light_marker = if *hash == 0x0CAA_8F10 {
+                        "  <<LIGHTS"
+                    } else {
+                        ""
+                    };
                     println!(
                         "  {label:<16} {:08X} type={} n={} [{}]{}",
                         p.hash,

@@ -15,7 +15,10 @@ fn dump(path: &std::path::Path) -> BTreeMap<String, (u64, String)> {
             .map(|byte| format!("{byte:02x}"))
             .collect();
         out.insert(
-            format!("{:08X}:{:08X}:{:08X}", entry.id.type_id, entry.id.group, entry.id.instance),
+            format!(
+                "{:08X}:{:08X}:{:08X}",
+                entry.id.type_id, entry.id.group, entry.id.instance
+            ),
             (bytes.len() as u64, hash),
         );
     }

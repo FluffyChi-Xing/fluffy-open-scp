@@ -18,7 +18,7 @@
 
 use dbpf::Package;
 use sc_properties::{
-    flatten_parent_inheritance_traced, Key, Kind, ParseLimits, PropertyFile, Value, PARENT_HASH,
+    Key, Kind, PARENT_HASH, ParseLimits, PropertyFile, Value, flatten_parent_inheritance_traced,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -71,12 +71,27 @@ const V_ROAD_FIRST_AND_LAST: u32 = 0xCC13_F2B0;
 
 /// 行为族 → 构成属性 hash（任一存在即记族存在）。
 const FAMILIES: &[(&str, &[u32])] = &[
-    ("power_consumer", &[0x0AFB_9882, 0x0B88_904E, 0x0C09_DAA0, 0x0C09_DAB2]),
+    (
+        "power_consumer",
+        &[0x0AFB_9882, 0x0B88_904E, 0x0C09_DAA0, 0x0C09_DAB2],
+    ),
     ("water_consumer", &[0x0C09_DA65, 0x0C09_DA5A, 0x0C09_DA6E]),
     ("garbage_producer", &[0x0C21_6562]),
-    ("jobs", &[0x0A79_17C3, 0x0A79_17C5, 0x0A79_17C6, 0x0A79_17C7, 0x0A79_17C8]),
+    (
+        "jobs",
+        &[
+            0x0A79_17C3,
+            0x0A79_17C5,
+            0x0A79_17C6,
+            0x0A79_17C7,
+            0x0A79_17C8,
+        ],
+    ),
     ("tax", &[0x0A79_17C4]),
-    ("land_value", &[0x0E58_5AE0, 0x0E58_5AE1, 0x0E58_5B00, 0x0E58_5B01]),
+    (
+        "land_value",
+        &[0x0E58_5AE0, 0x0E58_5AE1, 0x0E58_5B00, 0x0E58_5B01],
+    ),
     ("attraction", &[0x0E54_2F39]),
     ("capacity", &[0x0AD7_FAC9]),
     ("maintenance", &[0x09AE_19D7]),
@@ -117,7 +132,9 @@ fn group_allowed(group: u32) -> bool {
 }
 
 fn keys_of(file: &PropertyFile, hash: u32) -> Vec<Key> {
-    let Some(prop) = file.get(hash) else { return vec![] };
+    let Some(prop) = file.get(hash) else {
+        return vec![];
+    };
     match &prop.kind {
         Kind::Scalar(Value::Key(k)) => vec![k.clone()],
         Kind::Array(values) => values
@@ -228,7 +245,11 @@ fn main() {
         let mut read_fail = 0usize;
         let mut parse_fail = 0usize;
         let mut resident = 0usize;
-        for entry in package.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for entry in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             total += 1;
             *group_census
                 .entry(label.clone())
@@ -263,7 +284,9 @@ fn main() {
             label.clone(),
             json!({"total_b1b104": total, "resident": resident, "read_fail": read_fail, "parse_fail": parse_fail}),
         );
-        eprintln!("[load] {label}: {total} 条 B1B104（驻留 {resident}，读失败 {read_fail}，解析失败 {parse_fail}）");
+        eprintln!(
+            "[load] {label}: {total} 条 B1B104（驻留 {resident}，读失败 {read_fail}，解析失败 {parse_fail}）"
+        );
     }
 
     let pkg_label = |idx: usize| pkgs[idx].0.clone();
@@ -274,16 +297,21 @@ fn main() {
         if *group != GROUP_LOT {
             continue;
         }
-        let (flat, _) = flatten_parent_inheritance_traced(
-            file.clone(),
-            |key: &Key| db.get(&(key.group, key.instance)).map(|(_, f)| f.clone()),
-        );
+        let (flat, _) = flatten_parent_inheritance_traced(file.clone(), |key: &Key| {
+            db.get(&(key.group, key.instance)).map(|(_, f)| f.clone())
+        });
         lots.insert(
             *instance,
             LotRec {
                 pkg: pkg_label(*idx),
-                road_connect: keys_of(&flat, P_ROAD_CONNECT).iter().map(|k| k.instance).collect(),
-                scopes: keys_of(&flat, P_PATH_SCOPE).iter().map(|k| k.instance).collect(),
+                road_connect: keys_of(&flat, P_ROAD_CONNECT)
+                    .iter()
+                    .map(|k| k.instance)
+                    .collect(),
+                scopes: keys_of(&flat, P_PATH_SCOPE)
+                    .iter()
+                    .map(|k| k.instance)
+                    .collect(),
                 path_entries: keys_of(&flat, P_PATH_ENTRY_TABLE).len(),
                 path_segments: count_of(&flat, P_PATH_SEGMENTS),
                 board: keys_of(&flat, P_BOARD).first().map(|k| k.instance),
@@ -305,13 +333,19 @@ fn main() {
         }
         menu_total += 1;
         if let Some(parent) = keys_of(file, PARENT_HASH).first() {
-            *menu_parent_hist.entry(format!("{:08X}", parent.instance)).or_default() += 1;
+            *menu_parent_hist
+                .entry(format!("{:08X}", parent.instance))
+                .or_default() += 1;
         }
         for cat in keys_of(file, P_MENU_UICATEGORIES) {
-            *menu_uicat_hist.entry(format!("{:08X}", cat.instance)).or_default() += 1;
+            *menu_uicat_hist
+                .entry(format!("{:08X}", cat.instance))
+                .or_default() += 1;
         }
         if let Some(k) = keys_of(file, P_MENU_CATEGORY_ID).first() {
-            *menu_kcategory_hist.entry(format!("{:08X}", k.instance)).or_default() += 1;
+            *menu_kcategory_hist
+                .entry(format!("{:08X}", k.instance))
+                .or_default() += 1;
         }
         // 标题既可能是 Scalar(Text) 也可能是 text[] 数组（实测 Menu2 为数组）。
         if let Some(prop) = file.get(P_MENU_TITLE) {
@@ -328,14 +362,19 @@ fn main() {
                 _ => {}
             }
             for table in tables {
-                *menu_title_table_hist.entry(format!("{table:08X}")).or_default() += 1;
+                *menu_title_table_hist
+                    .entry(format!("{table:08X}"))
+                    .or_default() += 1;
             }
         }
         if file.get(P_MENU_MODULE_MOUNT).is_some() {
             menu_with_module_mount += 1;
         }
         for unit_key in keys_of(file, P_MENU_UNIT) {
-            menu_units.entry(unit_key.instance).or_default().push(*menu_instance);
+            menu_units
+                .entry(unit_key.instance)
+                .or_default()
+                .push(*menu_instance);
         }
     }
 
@@ -363,16 +402,23 @@ fn main() {
     // property。这里把"无 bundle、无资源 bin、无菜单入口、叶级属性≤12"判为变体；
     // 0 条属性判为空表；其余为 primary。family_stats 默认只统计 primary。
     const VARIANT_MAX_PROPS: usize = 12;
-    let classify_unit =
-        |leaf_props: usize, bundles: &[u32], bins: &BTreeSet<u32>, has_menu: bool| -> &'static str {
-            if leaf_props == 0 {
-                "empty"
-            } else if bundles.is_empty() && bins.is_empty() && !has_menu && leaf_props <= VARIANT_MAX_PROPS {
-                "variant"
-            } else {
-                "primary"
-            }
-        };
+    let classify_unit = |leaf_props: usize,
+                         bundles: &[u32],
+                         bins: &BTreeSet<u32>,
+                         has_menu: bool|
+     -> &'static str {
+        if leaf_props == 0 {
+            "empty"
+        } else if bundles.is_empty()
+            && bins.is_empty()
+            && !has_menu
+            && leaf_props <= VARIANT_MAX_PROPS
+        {
+            "variant"
+        } else {
+            "primary"
+        }
+    };
     let mut units: Vec<UnitRec> = Vec::new();
     let mut unit_freq_own: BTreeMap<u32, usize> = BTreeMap::new();
     let mut unit_freq_flat: BTreeMap<u32, usize> = BTreeMap::new();
@@ -398,10 +444,9 @@ fn main() {
         for prop in &file.values {
             *unit_freq_own.entry(prop.hash).or_default() += 1;
         }
-        let (flat, chain) = flatten_parent_inheritance_traced(
-            file.clone(),
-            |key: &Key| db.get(&(key.group, key.instance)).map(|(_, f)| f.clone()),
-        );
+        let (flat, chain) = flatten_parent_inheritance_traced(file.clone(), |key: &Key| {
+            db.get(&(key.group, key.instance)).map(|(_, f)| f.clone())
+        });
         if file.get(PARENT_HASH).is_some() && chain.is_empty() {
             chain_breaks += 1; // 声明了 parent 但第一跳就解析失败
         }
@@ -444,8 +489,7 @@ fn main() {
                 absorb_bins(bundle_file, &mut all_bins);
             }
         }
-        let bin_bundle_only: BTreeSet<u32> =
-            all_bins.difference(&bin_core).copied().collect();
+        let bin_bundle_only: BTreeSet<u32> = all_bins.difference(&bin_core).copied().collect();
         for res in &all_bins {
             let entry = resource_census.entry(*res).or_insert((0, 0, 0));
             entry.0 += 1;
@@ -672,16 +716,21 @@ fn main() {
 
     let mut board_hist: BTreeMap<String, usize> = BTreeMap::new();
     let mut road_pair_hist: BTreeMap<String, usize> = BTreeMap::new();
-    let scope_name =
-        |v: u32| if v == V_SCOPE_GLOBAL { "Global" } else if v == V_SCOPE_LOCAL { "Local" } else { "?" };
-    let road_name = |v: u32| {
-        match v {
-            V_ROAD_FIRST => "First",
-            V_ROAD_NONE => "None",
-            V_ROAD_LAST => "Last",
-            V_ROAD_FIRST_AND_LAST => "FirstAndLast",
-            _ => "?",
+    let scope_name = |v: u32| {
+        if v == V_SCOPE_GLOBAL {
+            "Global"
+        } else if v == V_SCOPE_LOCAL {
+            "Local"
+        } else {
+            "?"
         }
+    };
+    let road_name = |v: u32| match v {
+        V_ROAD_FIRST => "First",
+        V_ROAD_NONE => "None",
+        V_ROAD_LAST => "Last",
+        V_ROAD_FIRST_AND_LAST => "FirstAndLast",
+        _ => "?",
     };
     for lot in lots.values() {
         if let Some(b) = lot.board {
@@ -702,11 +751,16 @@ fn main() {
         ("garbage", RES_GARBAGE, "garbage_producer"),
     ] {
         let core = units.iter().filter(|u| u.bin_core.contains(&res)).count();
-        let bundle_only = units.iter().filter(|u| u.bin_bundle_only.contains(&res)).count();
+        let bundle_only = units
+            .iter()
+            .filter(|u| u.bin_bundle_only.contains(&res))
+            .count();
         let prop_only = units
             .iter()
             .filter(|u| {
-                u.families.contains(fam) && !u.bin_core.contains(&res) && !u.bin_bundle_only.contains(&res)
+                u.families.contains(fam)
+                    && !u.bin_core.contains(&res)
+                    && !u.bin_bundle_only.contains(&res)
             })
             .count();
         let bin_no_prop = units
@@ -831,10 +885,16 @@ fn main() {
         menu_total,
         chain_breaks
     );
-    println!("{:<18} {:>6} {:>6} {:>8} {:>7} {:>7} {:>9} {:>6}", "family", "total", "own", "inherit", "bund0", "menu-", "lotGF", "noLot");
+    println!(
+        "{:<18} {:>6} {:>6} {:>8} {:>7} {:>7} {:>9} {:>6}",
+        "family", "total", "own", "inherit", "bund0", "menu-", "lotGF", "noLot"
+    );
     for (name, _) in FAMILIES {
         let s = &family_stats[name];
-        let bh0 = s["bundle_count_hist"].get("0").and_then(|v| v.as_u64()).unwrap_or(0);
+        let bh0 = s["bundle_count_hist"]
+            .get("0")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         println!(
             "{:<18} {:>6} {:>6} {:>8} {:>7} {:>7} {:>9} {:>6}",
             name,
@@ -853,10 +913,19 @@ fn main() {
     println!(
         "empty tables: {empty_total}/{resident_total}（4 字节空表），tiny(1-3 props): {tiny_total}"
     );
-    println!("master tables: {}", serde_json::to_string(&master_tables).unwrap_or_default());
-    println!("resource bins: {}", serde_json::to_string(&resource_bin_stats).unwrap_or_default());
+    println!(
+        "master tables: {}",
+        serde_json::to_string(&master_tables).unwrap_or_default()
+    );
+    println!(
+        "resource bins: {}",
+        serde_json::to_string(&resource_bin_stats).unwrap_or_default()
+    );
     println!("lot (scope,connect): {:?}", road_pair_hist);
     println!("bundle shapes: {:?}", bundle_shape_hist);
-    println!("sink entries: {}", serde_json::to_string(&sink_entries).unwrap_or_default());
+    println!(
+        "sink entries: {}",
+        serde_json::to_string(&sink_entries).unwrap_or_default()
+    );
     println!("census -> {}", out_path.display());
 }

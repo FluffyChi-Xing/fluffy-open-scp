@@ -49,5 +49,4 @@ fn main() {
     let temp_path = format!("{out_path}.tmp");
     std::fs::write(&temp_path, payload).expect("write temp");
     println!("wrote {temp_path}");
-
 }

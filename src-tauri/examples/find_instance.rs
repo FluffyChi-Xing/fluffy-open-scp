@@ -10,7 +10,9 @@ fn main() {
         if entry.id.instance == want {
             println!(
                 "{:08X}:{:08X}:{:08X}  {} B",
-                entry.id.type_id, entry.id.group, entry.id.instance,
+                entry.id.type_id,
+                entry.id.group,
+                entry.id.instance,
                 package.read(entry).map(|b| b.len()).unwrap_or(0)
             );
         }

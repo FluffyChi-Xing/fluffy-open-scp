@@ -6,19 +6,23 @@ use sc_properties::{Kind, PropertyFile, Value};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let want: u32 = u32::from_str_radix(
-        args.last().expect("instance").trim_start_matches("0x"),
-        16,
-    )
-    .expect("hex");
+    let want: u32 =
+        u32::from_str_radix(args.last().expect("instance").trim_start_matches("0x"), 16)
+            .expect("hex");
     for path in &args[2..args.len() - 1] {
-        let Ok(package) = Package::open(std::path::Path::new(path)) else { continue };
+        let Ok(package) = Package::open(std::path::Path::new(path)) else {
+            continue;
+        };
         for entry in package.entries() {
             if entry.id.type_id != 0x00B1_B104 || entry.id.instance != want {
                 continue;
             }
-            let Ok(bytes) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&bytes) else { continue };
+            let Ok(bytes) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&bytes) else {
+                continue;
+            };
             let bundles = file.get(0x07E0_AD23).and_then(|p| match &p.kind {
                 Kind::Array(vs) => Some(
                     vs.iter()

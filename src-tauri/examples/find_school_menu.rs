@@ -65,7 +65,10 @@ fn menu_title<'a>(
     let Value::Text(text) = values.first()? else {
         return None;
     };
-    tables.get(&text.table_id)?.get(&text.instance_id.to_string()).map(String::as_str)
+    tables
+        .get(&text.table_id)?
+        .get(&text.instance_id.to_string())
+        .map(String::as_str)
 }
 
 fn describe(file: &PropertyFile, hashes: &[u32]) {
@@ -76,11 +79,12 @@ fn describe(file: &PropertyFile, hashes: &[u32]) {
         let rendered = match &property.kind {
             Kind::Empty => "empty".into(),
             Kind::Scalar(value) => render(value),
-            Kind::Array(values) => {
-                values.iter().map(render).collect::<Vec<_>>().join(", ")
-            }
+            Kind::Array(values) => values.iter().map(render).collect::<Vec<_>>().join(", "),
         };
-        println!("    {:08X} [{}] {}", hash, property.encoding.flags, rendered);
+        println!(
+            "    {:08X} [{}] {}",
+            hash, property.encoding.flags, rendered
+        );
     }
 }
 
@@ -90,7 +94,10 @@ fn render(value: &Value) -> String {
         Value::UInt32(v) => format!("u32:{v}"),
         Value::Float(v) => format!("f32:{v}"),
         Value::Bool(v) => format!("bool:{v}"),
-        Value::Key(key) => format!("key({:08X},{:08X},{:08X})", key.type_id, key.group, key.instance),
+        Value::Key(key) => format!(
+            "key({:08X},{:08X},{:08X})",
+            key.type_id, key.group, key.instance
+        ),
         Value::Text(text) => format!("text({:08X},{})", text.table_id, text.instance_id),
         _ => format!("{value:?}"),
     }
@@ -101,7 +108,14 @@ fn main() {
     let needle = args.get(2).cloned().unwrap_or_else(|| "大學".into());
     let package = Package::open(std::path::Path::new(&args[1])).expect("open scripts");
     let tables = locale_tables(&package);
-    println!("locale tables: {} {:?}", tables.len(), tables.keys().map(|k| format!("{k:08X}")).collect::<Vec<_>>());
+    println!(
+        "locale tables: {} {:?}",
+        tables.len(),
+        tables
+            .keys()
+            .map(|k| format!("{k:08X}"))
+            .collect::<Vec<_>>()
+    );
     let menu_ids: Vec<_> = package
         .entries()
         .iter()
@@ -111,7 +125,9 @@ fn main() {
     println!("menus: {}", menu_ids.len());
     let mut matches = 0;
     for id in &menu_ids {
-        let bytes = package.read(&package.entry(*id).expect("entry")).expect("read");
+        let bytes = package
+            .read(&package.entry(*id).expect("entry"))
+            .expect("read");
         let Ok(menu) = PropertyFile::parse(&bytes) else {
             continue;
         };
@@ -125,9 +141,15 @@ fn main() {
             );
             if edu {
                 println!("=== EDU-MENU {:08X}", id.instance);
-                describe(&menu, &[
-                    HASH_MENU_UNIT, 0x0DB9_FC63, HASH_STAT_TEMPLATE, HASH_STAT_PARAMS,
-                ]);
+                describe(
+                    &menu,
+                    &[
+                        HASH_MENU_UNIT,
+                        0x0DB9_FC63,
+                        HASH_STAT_TEMPLATE,
+                        HASH_STAT_PARAMS,
+                    ],
+                );
                 if let Some(Kind::Scalar(Value::Key(unit_key))) =
                     menu.get(HASH_MENU_UNIT).map(|p| &p.kind)
                 {
@@ -137,12 +159,11 @@ fn main() {
                         instance: unit_key.instance,
                     };
                     if let Some(entry) = package.entry(unit_id) {
-                        if let Ok(unit) =
-                            PropertyFile::parse(&package.read(entry).expect("read"))
-                        {
-                            describe(&unit, &[
-                                HASH_PARENT, HASH_UNIT_CATEGORY, HASH_CAPACITY, 0x0A02_09A5,
-                            ]);
+                        if let Ok(unit) = PropertyFile::parse(&package.read(entry).expect("read")) {
+                            describe(
+                                &unit,
+                                &[HASH_PARENT, HASH_UNIT_CATEGORY, HASH_CAPACITY, 0x0A02_09A5],
+                            );
                         }
                     }
                 }
@@ -161,11 +182,22 @@ fn main() {
                     "=== MENU {:08X}:{:08X}:{:08X} menuUnit->{target:08X}",
                     id.type_id, id.group, id.instance
                 );
-                describe(&menu, &[
-                    HASH_MENU_UNIT, HASH_BUILDING_CATEGORY, HASH_STAT_TEMPLATE, HASH_STAT_PARAMS,
-                    HASH_PARENT, 0x0DB9_FC63, 0x0977_AA8F, 0x0DDE_EE56, 0x0C65_D729, 0x0975_6955,
-                    0x0EC4_80DF,
-                ]);
+                describe(
+                    &menu,
+                    &[
+                        HASH_MENU_UNIT,
+                        HASH_BUILDING_CATEGORY,
+                        HASH_STAT_TEMPLATE,
+                        HASH_STAT_PARAMS,
+                        HASH_PARENT,
+                        0x0DB9_FC63,
+                        0x0977_AA8F,
+                        0x0DDE_EE56,
+                        0x0C65_D729,
+                        0x0975_6955,
+                        0x0EC4_80DF,
+                    ],
+                );
             }
             continue;
         }
@@ -173,7 +205,10 @@ fn main() {
             if std::env::var("DUMP_TITLES").is_ok() {
                 if let Some(Kind::Array(values)) = menu.get(HASH_TITLE).map(|p| &p.kind) {
                     if let Some(Value::Text(t)) = values.first() {
-                        println!("NOTITLE {:08X} text({:08X},{})", id.instance, t.table_id, t.instance_id);
+                        println!(
+                            "NOTITLE {:08X} text({:08X},{})",
+                            id.instance, t.table_id, t.instance_id
+                        );
                     }
                 }
             }

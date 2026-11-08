@@ -8,7 +8,11 @@ fn parse_tgi(s: &str) -> ResourceId {
         .split(':')
         .map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).expect("hex tgi"))
         .collect();
-    ResourceId { type_id: parts[0], group: parts[1], instance: parts[2] }
+    ResourceId {
+        type_id: parts[0],
+        group: parts[1],
+        instance: parts[2],
+    }
 }
 
 fn main() {
@@ -34,7 +38,9 @@ fn main() {
         let bytes = source.read(entry).expect("read");
         println!(
             "+ {:08X}:{:08X}:{:08X} {}B",
-            id.type_id, id.group, id.instance,
+            id.type_id,
+            id.group,
+            id.instance,
             bytes.len()
         );
         map.insert(
@@ -44,10 +50,6 @@ fn main() {
     }
     let entries: Vec<OverlayEntry> = map.into_values().collect();
     drop(target); // ERROR_USER_MAPPED_FILE:写回前必须释放内存映射
-    std::fs::write(
-        &target_path,
-        write_uncompressed_overlay(&entries).unwrap(),
-    )
-    .unwrap();
+    std::fs::write(&target_path, write_uncompressed_overlay(&entries).unwrap()).unwrap();
     println!("wrote {} entries", entries.len());
 }

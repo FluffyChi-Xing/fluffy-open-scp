@@ -41,10 +41,7 @@ fn ints(file: &PropertyFile, hash: u32) -> Vec<i32> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let max_hits: usize = args
-        .get(2)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(12);
+    let max_hits: usize = args.get(2).and_then(|v| v.parse().ok()).unwrap_or(12);
     let package = Package::open(std::path::Path::new(&args[1])).expect("open package");
     let mut bin_hits = 0;
     let mut path_hits = 0;
@@ -53,7 +50,9 @@ fn main() {
             continue;
         }
         let bytes = package.read(entry).expect("read entry");
-        let Ok(file) = PropertyFile::parse(&bytes) else { continue };
+        let Ok(file) = PropertyFile::parse(&bytes) else {
+            continue;
+        };
         let has_bin1 = file.get(0x0C12_EF21).is_some();
         let big_bin = lens(&file, 0x0C12_EF20).unwrap_or(0) >= 2
             || lens(&file, 0x0C12_EF21).unwrap_or(0) >= 2;
@@ -102,5 +101,9 @@ fn main() {
         }
     }
     println!("# bin hits shown: {bin_hits}, multi-path hits shown: {path_hits}");
-    let _ = ResourceId { type_id: 0, group: 0, instance: 0 };
+    let _ = ResourceId {
+        type_id: 0,
+        group: 0,
+        instance: 0,
+    };
 }

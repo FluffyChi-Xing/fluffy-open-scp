@@ -17,7 +17,10 @@ fn render(value: &Value) -> String {
         Value::UInt32(v) => format!("u32:{v}"),
         Value::Float(v) => format!("f32:{v}"),
         Value::Bool(v) => format!("bool:{v}"),
-        Value::Key(key) => format!("key({:08X},{:08X},{:08X})", key.type_id, key.group, key.instance),
+        Value::Key(key) => format!(
+            "key({:08X},{:08X},{:08X})",
+            key.type_id, key.group, key.instance
+        ),
         Value::Text(text) => format!("text({:08X},{})", text.table_id, text.instance_id),
         _ => format!("{value:?}"),
     }
@@ -45,7 +48,8 @@ fn main() {
     println!("units: {}", unit_ids.len());
     let mut found = 0;
     for id in &unit_ids {
-        let Ok(unit) = PropertyFile::parse(&package.read(&package.entry(*id).expect("e")).expect("r"))
+        let Ok(unit) =
+            PropertyFile::parse(&package.read(&package.entry(*id).expect("e")).expect("r"))
         else {
             continue;
         };
@@ -67,10 +71,7 @@ fn main() {
             continue;
         }
         found += 1;
-        println!(
-            "=== EDU unit {:08X} capacity {capacity}",
-            id.instance
-        );
+        println!("=== EDU unit {:08X} capacity {capacity}", id.instance);
         for (label, hash) in [
             ("parent", HASH_PARENT),
             ("category", HASH_UNIT_CATEGORY),

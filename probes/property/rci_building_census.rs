@@ -24,7 +24,8 @@ const H_LOCATION_IDS: u32 = 0x0E1B_AC61;
 const H_LOCATION_XFORMS: u32 = 0x0E1B_AC62;
 
 fn has(file: &PropertyFile, hash: u32) -> bool {
-    file.get(hash).is_some_and(|p| !matches!(p.kind, Kind::Empty))
+    file.get(hash)
+        .is_some_and(|p| !matches!(p.kind, Kind::Empty))
 }
 
 fn key_instance(file: &PropertyFile, hash: u32) -> Option<u32> {
@@ -72,20 +73,29 @@ fn main() {
                 continue;
             }
             let Ok(bytes) = package.read(e) else { continue };
-            let Ok(file) = PropertyFile::parse(&bytes) else { continue };
+            let Ok(file) = PropertyFile::parse(&bytes) else {
+                continue;
+            };
             total += 1;
             *classes.entry(prefix).or_default() += 1;
             let parent = key_instance(&file, H_PARENT).unwrap_or(0);
             let category = key_instance(&file, H_CATEGORY).unwrap_or(0);
             let class = key_instance(&file, H_CLASS).unwrap_or(0);
-            let models = file.values.iter().flat_map(|p| match &p.kind {
-                Kind::Scalar(Value::Key(k)) if k.type_id == MODEL => vec![k.instance],
-                Kind::Array(vs) => vs.iter().filter_map(|v| match v {
-                    Value::Key(k) if k.type_id == MODEL => Some(k.instance),
-                    _ => None,
-                }).collect(),
-                _ => vec![],
-            }).collect::<Vec<_>>();
+            let models = file
+                .values
+                .iter()
+                .flat_map(|p| match &p.kind {
+                    Kind::Scalar(Value::Key(k)) if k.type_id == MODEL => vec![k.instance],
+                    Kind::Array(vs) => vs
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Key(k) if k.type_id == MODEL => Some(k.instance),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => vec![],
+                })
+                .collect::<Vec<_>>();
             let features = [
                 ("parent", has(&file, H_PARENT)),
                 ("category", has(&file, H_CATEGORY)),
@@ -100,7 +110,9 @@ fn main() {
                 ("location_xforms", has(&file, H_LOCATION_XFORMS)),
             ];
             for (label, present) in features {
-                if present { *feature_counts.entry(label).or_default() += 1; }
+                if present {
+                    *feature_counts.entry(label).or_default() += 1;
+                }
             }
             rows.push(format!(
                 "{prefix} {name} I={:08X} parent={parent:08X} category={category:08X} class={class:08X} models={} bins={} binPercent={} paths={} entries={} locations={}/{}",
@@ -117,9 +129,13 @@ fn main() {
         rows.sort();
         println!("=== {} ===", path);
         println!("RCI Unit rows = {}", rows.len());
-        for row in rows { println!("{row}"); }
+        for row in rows {
+            println!("{row}");
+        }
     }
     println!("=== aggregate ===");
     println!("rows={total} classes={classes:?}");
-    for (key, value) in feature_counts { println!("{key}={value}"); }
+    for (key, value) in feature_counts {
+        println!("{key}={value}");
+    }
 }

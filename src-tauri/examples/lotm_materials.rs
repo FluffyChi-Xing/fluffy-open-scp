@@ -6,7 +6,9 @@ use fluffy_open_scp_lib::asset_build_m1::{lotm, materials, native_model};
 use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::args().nth(1).ok_or("usage: lotm_materials <model.lotm>")?;
+    let path = env::args()
+        .nth(1)
+        .ok_or("usage: lotm_materials <model.lotm>")?;
     let bytes = std::fs::read(path)?;
     let doc = lotm::parse(&bytes)?;
     let plan = materials::resolve_materials(&doc)?;
@@ -42,7 +44,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let mut order: Vec<usize> = (0..area.len()).collect();
-    order.sort_by(|a, b| area[*b].partial_cmp(&area[*a]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|a, b| {
+        area[*b]
+            .partial_cmp(&area[*a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     for (rank, material) in order.iter().take(10).enumerate() {
         println!(
             "rank {rank}: material {material} area {:.1} params={:?}",

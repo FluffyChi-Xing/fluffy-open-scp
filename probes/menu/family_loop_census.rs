@@ -13,7 +13,7 @@
 //!     [locale_zh=...] [locale_en=...] [out=tmp/family-loop-census/out.json]
 
 use dbpf::Package;
-use sc_properties::{locale, Key, Kind, ParseLimits, PropertyFile, Value, PARENT_HASH};
+use sc_properties::{Key, Kind, PARENT_HASH, ParseLimits, PropertyFile, Value, locale};
 use sc_registry::Registry;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -43,7 +43,9 @@ const UTIL: [(u32, &str); 3] = [
 ];
 
 fn keys_of(file: &PropertyFile, hash: u32) -> Vec<Key> {
-    let Some(prop) = file.get(hash) else { return vec![] };
+    let Some(prop) = file.get(hash) else {
+        return vec![];
+    };
     match &prop.kind {
         Kind::Scalar(Value::Key(k)) => vec![k.clone()],
         Kind::Array(values) => values
@@ -58,10 +60,14 @@ fn keys_of(file: &PropertyFile, hash: u32) -> Vec<Key> {
 }
 
 fn texts_of(file: &PropertyFile, hash: u32) -> Vec<u32> {
-    let Some(prop) = file.get(hash) else { return vec![] };
+    let Some(prop) = file.get(hash) else {
+        return vec![];
+    };
     let mut out = Vec::new();
     let mut push = |v: &Value| {
-        if let Value::Text(t) = v { out.push(t.instance_id); }
+        if let Value::Text(t) = v {
+            out.push(t.instance_id);
+        }
     };
     match &prop.kind {
         Kind::Scalar(v) => push(v),
@@ -125,30 +131,53 @@ fn main() {
 
     let mut load = |pkgs: &[(String, PathBuf)]| {
         for (_, path) in pkgs {
-            let Ok(package) = Package::open(path) else { continue };
+            let Ok(package) = Package::open(path) else {
+                continue;
+            };
             let pkg_label = label(path);
-            for e in package.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+            for e in package
+                .entries()
+                .iter()
+                .filter(|e| e.id.type_id == PROPERTY_TYPE)
+            {
                 *group_census
                     .entry(pkg_label.clone())
                     .or_default()
                     .entry(format!("{:08X}", e.id.group))
                     .or_default() += 1;
                 let Ok(data) = package.read(e) else { continue };
-                let Ok(file) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else { continue };
+                let Ok(file) = PropertyFile::parse_with_limits(&data, ParseLimits::default())
+                else {
+                    continue;
+                };
                 let group = e.id.group;
                 let suffix = group & 0xFFFF;
-                let rec = Rec { pkg: pkg_label.clone(), file };
+                let rec = Rec {
+                    pkg: pkg_label.clone(),
+                    file,
+                };
                 match suffix {
-                    0xC900 if rec.file.get(P_MENU_UNIT).is_some() => menus.push((e.id.instance, rec)),
+                    0xC900 if rec.file.get(P_MENU_UNIT).is_some() => {
+                        menus.push((e.id.instance, rec))
+                    }
                     0xC000 if (group >> 16) != 0x48 && rec.file.get(P_LOT_LINK).is_some() => {
                         units.insert(e.id.instance, rec);
                     }
-                    0xC000 if (group >> 16) == 0x48 => { templates.insert(e.id.instance, rec.file); }
-                    0xC700 => { bundles.insert(e.id.instance, rec.file); }
-                    0xC500 if rec.file.get(P_SINK_RESOURCE).is_some() => { sinks.insert(e.id.instance, rec.file); }
+                    0xC000 if (group >> 16) == 0x48 => {
+                        templates.insert(e.id.instance, rec.file);
+                    }
+                    0xC700 => {
+                        bundles.insert(e.id.instance, rec.file);
+                    }
+                    0xC500 if rec.file.get(P_SINK_RESOURCE).is_some() => {
+                        sinks.insert(e.id.instance, rec.file);
+                    }
                     0xC400 => {
                         for k in keys_of(&rec.file, 0x0D64_98E8) {
-                            path_filters.entry(k.instance).or_default().insert(e.id.instance);
+                            path_filters
+                                .entry(k.instance)
+                                .or_default()
+                                .insert(e.id.instance);
                         }
                     }
                     0xC600 => {
@@ -169,19 +198,26 @@ fn main() {
 
     let registry = Registry::open(&registry_path).ok();
     let name_of = |id: u32| -> Option<String> {
-        registry.as_ref()
+        registry
+            .as_ref()
             .and_then(|r| r.instances().get(&id))
             .map(|rec| rec.name.trim().to_string())
             .filter(|n| !n.is_empty())
     };
     let load_locale = |p: &PathBuf| -> HashMap<u32, String> {
         let mut map = HashMap::new();
-        let Ok(pkg) = Package::open(p) else { return map };
+        let Ok(pkg) = Package::open(p) else {
+            return map;
+        };
         for e in pkg.entries() {
-            if e.id.type_id != locale::LOCALE_RESOURCE_TYPE { continue; }
+            if e.id.type_id != locale::LOCALE_RESOURCE_TYPE {
+                continue;
+            }
             let Ok(data) = pkg.read(e) else { continue };
             if let Ok(t) = locale::parse_string_table(&data) {
-                for (k, v) in t { map.insert(k, v); }
+                for (k, v) in t {
+                    map.insert(k, v);
+                }
             }
         }
         map
@@ -191,7 +227,10 @@ fn main() {
 
     let flatten = |file: &PropertyFile| -> PropertyFile {
         sc_properties::flatten_parent_inheritance(file.clone(), |key: &Key| {
-            templates.get(&key.instance).cloned().or_else(|| units.get(&key.instance).map(|r| r.file.clone()))
+            templates
+                .get(&key.instance)
+                .cloned()
+                .or_else(|| units.get(&key.instance).map(|r| r.file.clone()))
         })
     };
     let sink_resource = |sink_instance: u32| -> Option<u32> {
@@ -204,7 +243,9 @@ fn main() {
         let bins = keys_of(b, P_BIN_RES).len();
         let sinks = keys_of(b, P_SINK_BIND);
         let srules = keys_of(b, P_SINK_RULE);
-        if bins == 0 || sinks.is_empty() || srules.is_empty() { return None; }
+        if bins == 0 || sinks.is_empty() || srules.is_empty() {
+            return None;
+        }
         let res: Vec<String> = sinks
             .iter()
             .map(|s| {
@@ -217,7 +258,9 @@ fn main() {
             .collect();
         let mut rules: BTreeSet<u32> = keys_of(b, P_RULE_REFS).iter().map(|k| k.instance).collect();
         for i in 0..21 {
-            if count_of(b, P_EVENT_BASE + i) > 0 { rules.insert(P_EVENT_BASE + i); }
+            if count_of(b, P_EVENT_BASE + i) > 0 {
+                rules.insert(P_EVENT_BASE + i);
+            }
         }
         Some(json!({
             "bundle": format!("{bid:08X}"),
@@ -232,7 +275,10 @@ fn main() {
     // —— 逐菜单输出 ——
     let mut rows: Vec<serde_json::Value> = Vec::new();
     for (menu_inst, rec) in &menus {
-        let title = texts_of(&rec.file, P_MENU_TITLE).first().copied().unwrap_or(0);
+        let title = texts_of(&rec.file, P_MENU_TITLE)
+            .first()
+            .copied()
+            .unwrap_or(0);
         let unit_key = keys_of(&rec.file, P_MENU_UNIT).first().cloned();
         let mut row = json!({
             "pkg": rec.pkg,
@@ -249,16 +295,28 @@ fn main() {
                 let flat = flatten(&unit.file);
                 let mut own: BTreeSet<u32> = BTreeSet::new();
                 for lv in P_BUNDLE_ENABLE {
-                    for k in keys_of(&unit.file, lv) { own.insert(k.instance); }
+                    for k in keys_of(&unit.file, lv) {
+                        own.insert(k.instance);
+                    }
                 }
-                for k in keys_of(&unit.file, P_BUNDLE_EXCLUDE) { own.remove(&k.instance); }
+                for k in keys_of(&unit.file, P_BUNDLE_EXCLUDE) {
+                    own.remove(&k.instance);
+                }
                 let mut triples = Vec::new();
                 for bid in &own {
-                    if let Some(t) = triple(*bid) { triples.push(t); }
+                    if let Some(t) = triple(*bid) {
+                        triples.push(t);
+                    }
                 }
-                row["own_bundles"] = json!(own.iter().map(|b| format!("{b:08X}")).collect::<Vec<_>>());
+                row["own_bundles"] =
+                    json!(own.iter().map(|b| format!("{b:08X}")).collect::<Vec<_>>());
                 row["triples"] = json!(triples);
-                row["utilities"] = json!(UTIL.iter().filter(|(id, _)| own.contains(id)).map(|(_, n)| *n).collect::<Vec<_>>());
+                row["utilities"] = json!(
+                    UTIL.iter()
+                        .filter(|(id, _)| own.contains(id))
+                        .map(|(_, n)| *n)
+                        .collect::<Vec<_>>()
+                );
                 row["secondary_units"] = json!(keys_of(&flat, P_SECONDARY).len());
                 row["addon_container"] = json!(flat.get(P_ADDON).is_some());
             } else {
@@ -269,8 +327,18 @@ fn main() {
     }
 
     // —— 汇总 ——
-    let with_triple = rows.iter().filter(|r| r.get("triples").map(|t| t.as_array().map(|a| !a.is_empty()).unwrap_or(false)).unwrap_or(false)).count();
-    let missing = rows.iter().filter(|r| r.get("unit_missing").is_some()).count();
+    let with_triple = rows
+        .iter()
+        .filter(|r| {
+            r.get("triples")
+                .map(|t| t.as_array().map(|a| !a.is_empty()).unwrap_or(false))
+                .unwrap_or(false)
+        })
+        .count();
+    let missing = rows
+        .iter()
+        .filter(|r| r.get("unit_missing").is_some())
+        .count();
     let _ = &mut filter_names;
     let filter_table: Vec<serde_json::Value> = path_filters
         .iter()
@@ -298,13 +366,33 @@ fn main() {
         "units_missing": missing,
         "rows": rows,
     });
-    if let Some(parent) = out.parent() { std::fs::create_dir_all(parent).ok(); }
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
     std::fs::write(&out, serde_json::to_vec_pretty(&doc).unwrap()).expect("write");
-    println!("menus={} with_triple={} unit_missing={}", doc["menus"], doc["menus_with_triple"], doc["units_missing"]);
+    println!(
+        "menus={} with_triple={} unit_missing={}",
+        doc["menus"], doc["menus_with_triple"], doc["units_missing"]
+    );
     for r in doc["rows"].as_array().unwrap() {
-        let title = r["title_en"].as_str().filter(|s| !s.is_empty()).or(r["title_zh"].as_str()).unwrap_or("?");
-        let tr: Vec<String> = r["triples"].as_array().map(|a| a.iter().map(|t| t["bundle"].as_str().unwrap_or("").to_string()).collect()).unwrap_or_default();
-        println!("  {title} | {} | triples {:?}", r["unit"].as_str().unwrap_or("-"), tr);
+        let title = r["title_en"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .or(r["title_zh"].as_str())
+            .unwrap_or("?");
+        let tr: Vec<String> = r["triples"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|t| t["bundle"].as_str().unwrap_or("").to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        println!(
+            "  {title} | {} | triples {:?}",
+            r["unit"].as_str().unwrap_or("-"),
+            tr
+        );
     }
     println!("out -> {}", out.display());
 }

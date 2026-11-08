@@ -14,7 +14,7 @@
 //! 探针输出根 id + 成员标题，便于人工命名。
 
 use dbpf::Package;
-use sc_properties::{locale, Key, Kind, ParseLimits, PropertyFile, Value, PARENT_HASH};
+use sc_properties::{Key, Kind, PARENT_HASH, ParseLimits, PropertyFile, Value, locale};
 use sc_registry::Registry;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -56,7 +56,9 @@ const UTIL_BUNDLES: [(u32, &str); 3] = [
 ];
 
 fn keys_of(file: &PropertyFile, hash: u32) -> Vec<Key> {
-    let Some(prop) = file.get(hash) else { return vec![] };
+    let Some(prop) = file.get(hash) else {
+        return vec![];
+    };
     match &prop.kind {
         Kind::Scalar(Value::Key(k)) => vec![k.clone()],
         Kind::Array(values) => values
@@ -71,10 +73,14 @@ fn keys_of(file: &PropertyFile, hash: u32) -> Vec<Key> {
 }
 
 fn texts_of(file: &PropertyFile, hash: u32) -> Vec<(u32, u32)> {
-    let Some(prop) = file.get(hash) else { return vec![] };
+    let Some(prop) = file.get(hash) else {
+        return vec![];
+    };
     let mut out = Vec::new();
     let mut push = |v: &Value| {
-        if let Value::Text(t) = v { out.push((t.table_id, t.instance_id)); }
+        if let Value::Text(t) = v {
+            out.push((t.table_id, t.instance_id));
+        }
     };
     match &prop.kind {
         Kind::Scalar(v) => push(v),
@@ -120,12 +126,18 @@ fn main() {
     let load = |path: &PathBuf, groups: &[u32]| -> Vec<(u32, u32, PropertyFile)> {
         let pkg = Package::open(path).unwrap_or_else(|e| panic!("open {path:?}: {e}"));
         let mut out = Vec::new();
-        for e in pkg.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for e in pkg
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             if !groups.contains(&e.id.group) {
                 continue;
             }
             let Ok(data) = pkg.read(e) else { continue };
-            let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else { continue };
+            let Ok(f) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else {
+                continue;
+            };
             out.push((e.id.group, e.id.instance, f));
         }
         out
@@ -135,18 +147,30 @@ fn main() {
     let mut template_map: HashMap<u32, PropertyFile> = HashMap::new();
     let mut bundle_map: HashMap<u32, PropertyFile> = HashMap::new();
     let mut sink_map: HashMap<u32, PropertyFile> = HashMap::new();
-    for (group, inst, f) in load(&scripts, &[GROUP_UNIT, GROUP_TEMPLATE, GROUP_BUNDLE, GROUP_SINK]) {
+    for (group, inst, f) in load(
+        &scripts,
+        &[GROUP_UNIT, GROUP_TEMPLATE, GROUP_BUNDLE, GROUP_SINK],
+    ) {
         match group {
-            GROUP_UNIT => { unit_map.insert(inst, f); }
-            GROUP_TEMPLATE => { template_map.insert(inst, f); }
-            GROUP_BUNDLE => { bundle_map.insert(inst, f); }
-            GROUP_SINK => { sink_map.insert(inst, f); }
+            GROUP_UNIT => {
+                unit_map.insert(inst, f);
+            }
+            GROUP_TEMPLATE => {
+                template_map.insert(inst, f);
+            }
+            GROUP_BUNDLE => {
+                bundle_map.insert(inst, f);
+            }
+            GROUP_SINK => {
+                sink_map.insert(inst, f);
+            }
             _ => {}
         }
     }
     let registry = Registry::open(&registry_path).ok();
     let name_of = |id: u32| -> Option<String> {
-        registry.as_ref()
+        registry
+            .as_ref()
             .and_then(|r| r.instances().get(&id))
             .map(|rec| rec.name.trim().to_string())
             .filter(|n| !n.is_empty())
@@ -156,7 +180,9 @@ fn main() {
     for (group, inst, f) in load(&game, &[GROUP_MENU, GROUP_MENU_NODE]) {
         match group {
             GROUP_MENU => menu_records.push((inst, f)),
-            GROUP_MENU_NODE => { menu_nodes.insert(inst, f); }
+            GROUP_MENU_NODE => {
+                menu_nodes.insert(inst, f);
+            }
             _ => {}
         }
     }
@@ -167,18 +193,26 @@ fn main() {
     }
     let mut lot_map: HashMap<u32, PropertyFile> = HashMap::new();
     for (group, inst, f) in load(&game, &[GROUP_LOT]) {
-        if group == GROUP_LOT { lot_map.insert(inst, f); }
+        if group == GROUP_LOT {
+            lot_map.insert(inst, f);
+        }
     }
 
     // —— locale ——
     let load_locale = |path: &PathBuf| -> HashMap<u32, String> {
         let mut map = HashMap::new();
-        let Ok(pkg) = Package::open(path) else { return map };
+        let Ok(pkg) = Package::open(path) else {
+            return map;
+        };
         for e in pkg.entries() {
-            if e.id.type_id != locale::LOCALE_RESOURCE_TYPE { continue; }
+            if e.id.type_id != locale::LOCALE_RESOURCE_TYPE {
+                continue;
+            }
             let Ok(data) = pkg.read(e) else { continue };
             if let Ok(t) = locale::parse_string_table(&data) {
-                for (k, v) in t { map.insert(k, v); }
+                for (k, v) in t {
+                    map.insert(k, v);
+                }
             }
         }
         map
@@ -201,8 +235,12 @@ fn main() {
     let root_of = |mut node: u32| -> u32 {
         let mut seen = BTreeSet::new();
         loop {
-            if !seen.insert(node) { return node; }
-            let Some(n) = menu_nodes.get(&node) else { return node };
+            if !seen.insert(node) {
+                return node;
+            }
+            let Some(n) = menu_nodes.get(&node) else {
+                return node;
+            };
             match keys_of(n, P_PARENT).first() {
                 Some(p) if p.instance != 0 => node = p.instance,
                 _ => return node,
@@ -221,20 +259,25 @@ fn main() {
         let mut rules: BTreeSet<u32> = keys_of(b, P_RULE_REFS).iter().map(|k| k.instance).collect();
         let mut events = 0usize;
         for i in 0..21 {
-            if count_of(b, P_EVENT_BASE + i) > 0 { events += 1; }
-        }
-        let sink_res: Vec<String> = sinks.iter().map(|s| {
-            let instance = sink_map.get(s).and_then(|sv| {
-                keys_of(sv, P_SINK_RESOURCE).first().map(|k| k.instance)
-            });
-            match instance {
-                Some(id) => match name_of(id) {
-                    Some(n) => format!("{id:08X}({n})"),
-                    None => format!("{id:08X}"),
-                },
-                None => "?".into(),
+            if count_of(b, P_EVENT_BASE + i) > 0 {
+                events += 1;
             }
-        }).collect();
+        }
+        let sink_res: Vec<String> = sinks
+            .iter()
+            .map(|s| {
+                let instance = sink_map
+                    .get(s)
+                    .and_then(|sv| keys_of(sv, P_SINK_RESOURCE).first().map(|k| k.instance));
+                match instance {
+                    Some(id) => match name_of(id) {
+                        Some(n) => format!("{id:08X}({n})"),
+                        None => format!("{id:08X}"),
+                    },
+                    None => "?".into(),
+                }
+            })
+            .collect();
         json!({
             "instance": format!("{bid:08X}"),
             "bins": bins.len(),
@@ -271,10 +314,19 @@ fn main() {
     }
     let mut rows: Vec<ToolRow> = Vec::new();
     for (menu_inst, file) in &menu_records {
-        let parent = keys_of(file, P_PARENT).first().map(|k| k.instance).unwrap_or(0);
+        let parent = keys_of(file, P_PARENT)
+            .first()
+            .map(|k| k.instance)
+            .unwrap_or(0);
         let root = root_of(parent);
-        let title = texts_of(file, P_MENU_TITLE).first().map(|(_, id)| *id).unwrap_or(0);
-        let uicats: Vec<u32> = keys_of(file, P_MENU_UICAT).iter().map(|k| k.instance).collect();
+        let title = texts_of(file, P_MENU_TITLE)
+            .first()
+            .map(|(_, id)| *id)
+            .unwrap_or(0);
+        let uicats: Vec<u32> = keys_of(file, P_MENU_UICAT)
+            .iter()
+            .map(|k| k.instance)
+            .collect();
         let mut row = ToolRow {
             menu: *menu_inst,
             root,
@@ -293,21 +345,31 @@ fn main() {
                 let flat = flatten_unit(unit_file);
                 let mut enabled: BTreeSet<u32> = BTreeSet::new();
                 for level in P_BUNDLE_ENABLE {
-                    for k in keys_of(&flat, level) { enabled.insert(k.instance); }
+                    for k in keys_of(&flat, level) {
+                        enabled.insert(k.instance);
+                    }
                 }
-                for k in keys_of(&flat, P_BUNDLE_EXCLUDE) { enabled.remove(&k.instance); }
+                for k in keys_of(&flat, P_BUNDLE_EXCLUDE) {
+                    enabled.remove(&k.instance);
+                }
                 row.all_bundles = enabled.iter().copied().collect();
                 // 自有 bundle（只看 Unit 自身文件，区分"继承"）
                 let mut own: BTreeSet<u32> = BTreeSet::new();
                 for level in P_BUNDLE_ENABLE {
-                    for k in keys_of(unit_file, level) { own.insert(k.instance); }
+                    for k in keys_of(unit_file, level) {
+                        own.insert(k.instance);
+                    }
                 }
-                for k in keys_of(unit_file, P_BUNDLE_EXCLUDE) { own.remove(&k.instance); }
+                for k in keys_of(unit_file, P_BUNDLE_EXCLUDE) {
+                    own.remove(&k.instance);
+                }
                 for bid in &own {
                     row.own_bundles.push(bundle_summary(*bid));
                 }
                 for (ub, name) in UTIL_BUNDLES {
-                    if enabled.contains(&ub) { row.utilities.push(name); }
+                    if enabled.contains(&ub) {
+                        row.utilities.push(name);
+                    }
                 }
                 row.secondary = keys_of(&flat, P_SECONDARY).len();
                 row.addon = flat.get(P_ADDON).is_some();
@@ -319,8 +381,10 @@ fn main() {
                 }
                 if let Some(lot_key) = keys_of(&flat, P_LOT_LINK).first() {
                     if let Some(lot) = lot_map.get(&lot_key.instance) {
-                        let entries: Vec<u32> =
-                            keys_of(lot, 0x0CC8_FE7A).iter().map(|k| k.instance).collect();
+                        let entries: Vec<u32> = keys_of(lot, 0x0CC8_FE7A)
+                            .iter()
+                            .map(|k| k.instance)
+                            .collect();
                         row.lot_paths = Some(entries.len());
                     }
                 }
@@ -365,7 +429,9 @@ fn main() {
     let mut category_names: BTreeMap<String, String> = BTreeMap::new();
     for r in rows.iter().filter(|r| r.unit.is_some()) {
         for cat in &r.uicats {
-            if let Some(n) = name_of(*cat) { category_names.entry(format!("{cat:08X}")).or_insert(n); }
+            if let Some(n) = name_of(*cat) {
+                category_names.entry(format!("{cat:08X}")).or_insert(n);
+            }
         }
     }
     let mut category_groups: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
@@ -388,7 +454,9 @@ fn main() {
             }));
         }
     }
-    if let Some(parent) = sheet.parent() { std::fs::create_dir_all(parent).ok(); }
+    if let Some(parent) = sheet.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
     let doc = json!({
         "menu_records": menu_records.len(),
         "tool_records": rows.iter().filter(|r| r.tool_type.is_some()).count(),
@@ -399,13 +467,25 @@ fn main() {
     });
     std::fs::write(&sheet, serde_json::to_vec_pretty(&doc).unwrap()).expect("write");
 
-    println!("menu={} tools={} plop_entries={} groups={}", menu_records.len(),
+    println!(
+        "menu={} tools={} plop_entries={} groups={}",
+        menu_records.len(),
         rows.iter().filter(|r| r.tool_type.is_some()).count(),
-        rows.iter().filter(|r| r.unit.is_some()).count(), groups.len());
+        rows.iter().filter(|r| r.unit.is_some()).count(),
+        groups.len()
+    );
     for (root, tools) in &groups {
-        let names: Vec<String> = tools.iter().filter(|t| !t.title_en.is_empty())
-            .map(|t| t.title_en.clone()).take(6).collect();
-        println!("root {root:08X} ({} tools): {}", tools.len(), names.join(" | "));
+        let names: Vec<String> = tools
+            .iter()
+            .filter(|t| !t.title_en.is_empty())
+            .map(|t| t.title_en.clone())
+            .take(6)
+            .collect();
+        println!(
+            "root {root:08X} ({} tools): {}",
+            tools.len(),
+            names.join(" | ")
+        );
     }
     println!("sheet -> {}", sheet.display());
 }

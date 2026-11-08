@@ -13,7 +13,7 @@
 //! make_identity_donor 同款探针从游戏包抽取。
 
 use dbpf::{OverlayEntry, Package, ResourceId, write_uncompressed_overlay};
-use sc_properties::{Kind, Property, PropertyFile, PropertyEncoding, PropType, Value};
+use sc_properties::{Kind, PropType, Property, PropertyEncoding, PropertyFile, Value};
 use std::{env, fs, path::Path};
 
 /// 抽取的 donor 链成员（与 reference.package 的 0x00B1B104 清单一致）。
@@ -40,20 +40,32 @@ const DONOR_B1B104: [(u32, u32); 11] = [
 ];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let reference = env::args().nth(1).ok_or("usage: make_golden_fixture <reference.package> <out.package>")?;
-    let out = env::args().nth(2).ok_or("usage: make_golden_fixture <reference.package> <out.package>")?;
+    let reference = env::args()
+        .nth(1)
+        .ok_or("usage: make_golden_fixture <reference.package> <out.package>")?;
+    let out = env::args()
+        .nth(2)
+        .ok_or("usage: make_golden_fixture <reference.package> <out.package>")?;
     let pkg = Package::open(Path::new(&reference))?;
 
     let mut entries: Vec<OverlayEntry> = Vec::new();
     for (type_id, group, instance) in DONOR_MODELS {
-        let id = ResourceId { type_id, group, instance };
+        let id = ResourceId {
+            type_id,
+            group,
+            instance,
+        };
         let entry = pkg
             .entry(id)
             .ok_or_else(|| format!("reference package missing {id:08X?}"))?;
         entries.push(OverlayEntry::new(id, pkg.read(entry)?));
     }
     for (group, instance) in DONOR_B1B104 {
-        let id = ResourceId { type_id: 0x00B1_B104, group, instance };
+        let id = ResourceId {
+            type_id: 0x00B1_B104,
+            group,
+            instance,
+        };
         let entry = pkg
             .entry(id)
             .ok_or_else(|| format!("reference package missing {id:08X?}"))?;
@@ -83,7 +95,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ]);
     entries.push(OverlayEntry::new(
-        ResourceId { type_id: 0x00B1_B104, group: 0x40E1_C000, instance: 0x8D00_7745 },
+        ResourceId {
+            type_id: 0x00B1_B104,
+            group: 0x40E1_C000,
+            instance: 0x8D00_7745,
+        },
         donor_lot,
     ));
 
@@ -93,7 +109,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn donor_lot_file(values: Vec<Property>) -> Vec<u8> {
-    PropertyFile { claimed_count: values.len() as u32, values }
-        .encode_canonical()
-        .unwrap()
+    PropertyFile {
+        claimed_count: values.len() as u32,
+        values,
+    }
+    .encode_canonical()
+    .unwrap()
 }

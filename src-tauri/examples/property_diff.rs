@@ -17,7 +17,10 @@ fn render_value(value: &Value) -> String {
         Value::UInt32(v) => format!("u32:{v}"),
         Value::Float(v) => format!("f32:{v}"),
         Value::Bool(v) => format!("bool:{v}"),
-        Value::Key(key) => format!("key({:08X},{:08X},{:08X})", key.type_id, key.group, key.instance),
+        Value::Key(key) => format!(
+            "key({:08X},{:08X},{:08X})",
+            key.type_id, key.group, key.instance
+        ),
         Value::Text(text) => format!("text({:08X},{})", text.table_id, text.instance_id),
         _ => format!("{value:?}"),
     }
@@ -29,7 +32,11 @@ fn render(file: &PropertyFile) -> BTreeMap<String, String> {
         let rendered = match &property.kind {
             Kind::Empty => "empty".to_string(),
             Kind::Scalar(value) => render_value(value),
-            Kind::Array(values) => values.iter().map(render_value).collect::<Vec<_>>().join(", "),
+            Kind::Array(values) => values
+                .iter()
+                .map(render_value)
+                .collect::<Vec<_>>()
+                .join(", "),
         };
         map.insert(format!("{:08X}", property.hash), rendered);
     }

@@ -9,7 +9,10 @@ fn render(value: &Value) -> String {
         Value::UInt32(v) => format!("u32:{v}"),
         Value::Float(v) => format!("f32:{v}"),
         Value::Bool(v) => format!("bool:{v}"),
-        Value::Key(key) => format!("key({:08X},{:08X},{:08X})", key.type_id, key.group, key.instance),
+        Value::Key(key) => format!(
+            "key({:08X},{:08X},{:08X})",
+            key.type_id, key.group, key.instance
+        ),
         Value::Text(text) => format!("text({:08X},{})", text.table_id, text.instance_id),
         _ => format!("{value:?}"),
     }

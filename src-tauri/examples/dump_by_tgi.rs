@@ -22,7 +22,11 @@ fn main() {
         .map(|p| u32::from_str_radix(p.trim_start_matches("0x"), 16).unwrap())
         .collect();
     let package = Package::open(std::path::Path::new(&args[1])).expect("open");
-    let id = ResourceId { type_id: parts[0], group: parts[1], instance: parts[2] };
+    let id = ResourceId {
+        type_id: parts[0],
+        group: parts[1],
+        instance: parts[2],
+    };
     let entry = package.entry(id).expect("entry not found");
     let file = PropertyFile::parse(&package.read(entry).unwrap()).expect("parse");
     let mut hashes: Vec<u32> = file.values.iter().map(|p| p.hash).collect();
@@ -36,10 +40,22 @@ fn main() {
                 if vs.len() <= 20 {
                     vs.iter().map(render).collect::<Vec<_>>().join(", ")
                 } else {
-                    format!("[{}] {} … {}", vs.len(), render(&vs[0]), render(&vs[vs.len() - 1]))
+                    format!(
+                        "[{}] {} … {}",
+                        vs.len(),
+                        render(&vs[0]),
+                        render(&vs[vs.len() - 1])
+                    )
                 }
             }
         };
-        println!("{hash:08X} {} {rendered}", if property.encoding.flags & 0x8000 != 0 { "V" } else { " " });
+        println!(
+            "{hash:08X} {} {rendered}",
+            if property.encoding.flags & 0x8000 != 0 {
+                "V"
+            } else {
+                " "
+            }
+        );
     }
 }

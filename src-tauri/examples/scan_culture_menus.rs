@@ -25,7 +25,9 @@ fn keys(file: &PropertyFile, hash: u32) -> Vec<u32> {
 fn main() {
     let packages: Vec<String> = std::env::args().skip(1).collect();
     for path in &packages {
-        let Ok(package) = Package::open(std::path::Path::new(path)) else { continue };
+        let Ok(package) = Package::open(std::path::Path::new(path)) else {
+            continue;
+        };
         let name = std::path::Path::new(path)
             .file_name()
             .unwrap_or_default()
@@ -38,8 +40,12 @@ fn main() {
                 continue;
             }
             menu2 += 1;
-            let Ok(bytes) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse(&bytes) else { continue };
+            let Ok(bytes) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse(&bytes) else {
+                continue;
+            };
             let cats = keys(&file, 0x0DB9_FC63);
             if cats.contains(&CULTURE) {
                 with_cat += 1;

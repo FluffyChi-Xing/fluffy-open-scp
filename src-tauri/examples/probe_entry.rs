@@ -8,7 +8,11 @@ fn main() {
         .map(|p| u32::from_str_radix(p.trim_start_matches("0x"), 16).unwrap())
         .collect();
     let package = Package::open(std::path::Path::new(&args[1])).expect("open");
-    let id = ResourceId { type_id: parts[0], group: parts[1], instance: parts[2] };
+    let id = ResourceId {
+        type_id: parts[0],
+        group: parts[1],
+        instance: parts[2],
+    };
     let bytes = package.read(package.entry(id).expect("e")).expect("r");
     match PropertyFile::parse(&bytes) {
         Err(e) => println!("parse Err: {e}"),

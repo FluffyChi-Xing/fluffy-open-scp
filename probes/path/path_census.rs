@@ -16,7 +16,7 @@
 //! instance 在 40E0C400/40E1C400 两处解析。
 
 use dbpf::Package;
-use sc_properties::{Key, Kind, ParseLimits, PropertyFile, Value, PARENT_HASH};
+use sc_properties::{Key, Kind, PARENT_HASH, ParseLimits, PropertyFile, Value};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -50,7 +50,9 @@ const PED_FILTER: u32 = 0x979C_C22E;
 const VEHICLE_FILTER: u32 = 0xC37D_661D;
 
 fn keys_of(file: &PropertyFile, hash: u32) -> Vec<Key> {
-    let Some(prop) = file.get(hash) else { return vec![] };
+    let Some(prop) = file.get(hash) else {
+        return vec![];
+    };
     match &prop.kind {
         Kind::Scalar(Value::Key(k)) => vec![k.clone()],
         Kind::Array(values) => values
@@ -98,15 +100,25 @@ fn main() {
     let allowed = |group: u32| {
         matches!(
             group,
-            GROUP_UNIT | GROUP_LOT | GROUP_MENU | GROUP_PATH_ENTRY_SIM | GROUP_PATH_ENTRY_NS
-                | GROUP_PATH_TMPL_SIM | GROUP_PATH_TMPL_NS | GROUP_TRANSPORT_NS
+            GROUP_UNIT
+                | GROUP_LOT
+                | GROUP_MENU
+                | GROUP_PATH_ENTRY_SIM
+                | GROUP_PATH_ENTRY_NS
+                | GROUP_PATH_TMPL_SIM
+                | GROUP_PATH_TMPL_NS
+                | GROUP_TRANSPORT_NS
         )
     };
     let mut db: HashMap<(u32, u32), (usize, PropertyFile)> = HashMap::new();
     let mut group_census: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
     for (idx, (label, path)) in pkgs.iter().enumerate() {
         let package = Package::open(path).unwrap_or_else(|e| panic!("open {path:?}: {e}"));
-        for entry in package.entries().iter().filter(|e| e.id.type_id == PROPERTY_TYPE) {
+        for entry in package
+            .entries()
+            .iter()
+            .filter(|e| e.id.type_id == PROPERTY_TYPE)
+        {
             *group_census
                 .entry(label.clone())
                 .or_default()
@@ -115,8 +127,12 @@ fn main() {
             if !allowed(entry.id.group) {
                 continue;
             }
-            let Ok(data) = package.read(entry) else { continue };
-            let Ok(file) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else { continue };
+            let Ok(data) = package.read(entry) else {
+                continue;
+            };
+            let Ok(file) = PropertyFile::parse_with_limits(&data, ParseLimits::default()) else {
+                continue;
+            };
             db.entry((entry.id.group, entry.id.instance))
                 .or_insert((idx, file));
         }
@@ -160,13 +176,17 @@ fn main() {
         }
         all_instances.insert(*instance);
         let flat = flatten(file);
-        let filters: Vec<u32> = keys_of(&flat, P_FILTERS).iter().map(|k| k.instance).collect();
+        let filters: Vec<u32> = keys_of(&flat, P_FILTERS)
+            .iter()
+            .map(|k| k.instance)
+            .collect();
         let width = match flat.get(P_WIDTH).map(|p| &p.kind) {
             Some(Kind::Scalar(Value::Float(f))) => Some(*f as f32),
             _ => None,
         };
         let has_geometry = flat.get(P_GEOMETRY).is_some();
-        let is_extrusion = flat.get(P_EXTRUDE_STATIC).is_some() || flat.get(P_EXTRUDE_INVALID).is_some();
+        let is_extrusion =
+            flat.get(P_EXTRUDE_STATIC).is_some() || flat.get(P_EXTRUDE_INVALID).is_some();
         let class = if filters.contains(&PED_FILTER) {
             "pedestrian"
         } else if filters.contains(&VEHICLE_FILTER) {
@@ -274,10 +294,14 @@ fn main() {
                 rec.entry_count = entry_keys.len();
                 rec.pairs = count_of(&lot_flat, P_PATHS) / 2;
                 rec.points = count_of(&lot_flat, P_POINTS);
-                let scopes: Vec<u32> =
-                    keys_of(&lot_flat, P_SCOPE).iter().map(|k| k.instance).collect();
-                let connects: Vec<u32> =
-                    keys_of(&lot_flat, P_CONNECT).iter().map(|k| k.instance).collect();
+                let scopes: Vec<u32> = keys_of(&lot_flat, P_SCOPE)
+                    .iter()
+                    .map(|k| k.instance)
+                    .collect();
+                let connects: Vec<u32> = keys_of(&lot_flat, P_CONNECT)
+                    .iter()
+                    .map(|k| k.instance)
+                    .collect();
                 for scope in &scopes {
                     *rec.scopes.entry(scope_name(*scope)).or_default() += 1;
                 }
@@ -343,11 +367,7 @@ fn main() {
                 continue;
             }
             let has_p = u.classes.get("pedestrian").copied().unwrap_or(0) > 0;
-            let has_v = u
-                .classes
-                .get("vehicle")
-                .copied()
-                .unwrap_or(0)
+            let has_v = u.classes.get("vehicle").copied().unwrap_or(0)
                 + u.classes.get("no_filter").copied().unwrap_or(0)
                 > 0;
             if has_p {
@@ -456,8 +476,14 @@ fn main() {
         println!("  {class:<20} {n}");
     }
     println!("== plop（有菜单） ==");
-    println!("{}", serde_json::to_string_pretty(&summary["plop_with_menu"]).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&summary["plop_with_menu"]).unwrap()
+    );
     println!("== RCI（无菜单） ==");
-    println!("{}", serde_json::to_string_pretty(&summary["rci_no_menu"]).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&summary["rci_no_menu"]).unwrap()
+    );
     println!("census -> {}", out.display());
 }

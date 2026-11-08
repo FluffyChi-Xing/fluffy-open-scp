@@ -5,7 +5,13 @@ use dbpf::Package;
 use sc_properties::{Kind, PropType, PropertyFile};
 use std::collections::BTreeMap;
 
-const GROUPS: [u32; 5] = [0x40E0_C000, 0x40E1_C000, 0x40E0_C400, 0x40E0_C700, 0x0987_8A01];
+const GROUPS: [u32; 5] = [
+    0x40E0_C000,
+    0x40E1_C000,
+    0x40E0_C400,
+    0x40E0_C700,
+    0x0987_8A01,
+];
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -19,7 +25,9 @@ fn main() {
         if entry.id.type_id != 0x00B1_B104 || !GROUPS.contains(&entry.id.group) {
             continue;
         }
-        let Ok(bytes) = package.read(entry) else { continue };
+        let Ok(bytes) = package.read(entry) else {
+            continue;
+        };
         let Ok(file) = PropertyFile::parse(&bytes) else {
             parse_failures += 1;
             continue;
@@ -27,7 +35,8 @@ fn main() {
         files += 1;
         let group = entry.id.group;
         for property in &file.values {
-            let type_name: &'static str = Box::leak(format!("{:?}", property.prop_type).into_boxed_str());
+            let type_name: &'static str =
+                Box::leak(format!("{:?}", property.prop_type).into_boxed_str());
             match &property.kind {
                 Kind::Array(vs) => {
                     let stride_value = property.encoding.array_item_size.unwrap_or(0);

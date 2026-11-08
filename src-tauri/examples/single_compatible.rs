@@ -4,7 +4,7 @@
 //! 46-row Float32 parameter table, then writes a one-material LOTM.
 
 use fluffy_open_scp_lib::asset_build_m1::lotm;
-use image::{imageops::FilterType, RgbaImage};
+use image::{RgbaImage, imageops::FilterType};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
@@ -75,8 +75,12 @@ fn patch_column(glb: &[u8], column: u8) -> Vec<u8> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let input = env::args().nth(1).ok_or("usage: single_compatible <input.lotm> <output.lotm>")?;
-    let output = env::args().nth(2).ok_or("usage: single_compatible <input.lotm> <output.lotm>")?;
+    let input = env::args()
+        .nth(1)
+        .ok_or("usage: single_compatible <input.lotm> <output.lotm>")?;
+    let output = env::args()
+        .nth(2)
+        .ok_or("usage: single_compatible <input.lotm> <output.lotm>")?;
     let bytes = fs::read(input)?;
     let doc = lotm::parse(&bytes)?;
     if doc.materials.is_empty() {
@@ -110,7 +114,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut triple_cell: HashMap<String, usize> = HashMap::new();
     let mut triple_source: Vec<usize> = Vec::new();
     for (i, m) in doc.materials.iter().enumerate() {
-        let key = format!("{}:{}:{}", hash(&png(m, 4)), hash(&png(m, 1)), hash(&png(m, 6)));
+        let key = format!(
+            "{}:{}:{}",
+            hash(&png(m, 4)),
+            hash(&png(m, 1)),
+            hash(&png(m, 6))
+        );
         if !triple_cell.contains_key(&key) {
             triple_cell.insert(key, triple_source.len());
             triple_source.push(i);
@@ -139,7 +148,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Transparent Top placeholder cell (62) avoids a zero region.
     let placeholder = 24usize;
-    let (px, py) = ((placeholder as u32 % GRID) * CELL, (placeholder as u32 / GRID) * CELL);
+    let (px, py) = (
+        (placeholder as u32 % GRID) * CELL,
+        (placeholder as u32 / GRID) * CELL,
+    );
     for y in py..py + 4 {
         for x in px..px + 4 {
             tint.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
@@ -180,7 +192,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             p.resize(16, 0.0);
         }
         let cell = *triple_cell
-            .get(&format!("{}:{}:{}", hash(&png(m, 4)), hash(&png(m, 1)), hash(&png(m, 6))))
+            .get(&format!(
+                "{}:{}:{}",
+                hash(&png(m, 4)),
+                hash(&png(m, 1)),
+                hash(&png(m, 6))
+            ))
             .unwrap_or(&0);
         let cx = ((cell as u32 % GRID) * CELL) as f32;
         let cy = ((cell as u32 / GRID) * CELL) as f32;
