@@ -356,6 +356,9 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
       edit.fieldOverrides,
     ),
   );
+  /** `0x0CAA6841` 路径点闭区间对；驱动视口按路径分组连线。 */
+  const pathPairs = computed<number[]>(() => session.value?.pathPairs ?? []);
+
   const grouping = computed<UnitGrouping>(() => {
     const units = effectiveUnits.value;
     const result: UnitGrouping = {
@@ -529,6 +532,7 @@ export function usePropertyEditorSession(packageId: number, tgi: Tgi) {
     modelState,
     selectedId,
     grouping,
+    pathPairs,
     flatUnits,
     lotSize,
     lotTilePeriod,

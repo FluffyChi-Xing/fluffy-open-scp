@@ -25,6 +25,7 @@ function binding() {
       spawners: [],
       pathPoints: [],
     },
+    pathPairs: [],
     lotSize: null,
     lotTilePeriod: null,
     lotPlacement: null,

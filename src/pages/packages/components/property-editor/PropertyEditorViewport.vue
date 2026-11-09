@@ -24,6 +24,7 @@ import {
   buildRealLightUnit,
   buildUnitObject,
 } from "@/render/exec/three/overlays";
+import { groupPathPointPolylines } from "@/render/plan/path";
 import { kindGroup, stageDecals, stageUnits } from "@/render/session/stages";
 import { stageGround } from "@/render/session/groundStage";
 import { loadSimParts, type SimPart } from "./simAssets";
@@ -76,6 +77,8 @@ const props = defineProps<{
   activeLod: number;
   renderMode: "default" | "refined";
   grouping: UnitGrouping;
+  /** `0x0CAA6841` 闭区间对；按路径分组连线（缺省 = 单折线回退）。 */
+  pathPairs?: number[];
   lotSize: [number, number] | null;
   lotTilePeriod: [number, number] | null;
   /** LotPlacementTransform 行主序 12 floats；地面矩形取其逆对齐建筑。 */
@@ -1715,13 +1718,19 @@ async function assembleScene(
     units: decalUnits.length,
   });
 
-  // 路径折线：按 point_index 排序连接（pathPairs 语义未定，先 best-effort）。
-  const points = [...props.grouping.pathPoints]
-    .filter((point) => point.point)
-    .sort((a, b) => (a.pointIndex ?? a.index) - (b.pointIndex ?? b.index))
-    .map((point) => new THREE.Vector3(...point.point!));
-  const line = buildPathLine(THREE, points);
-  if (line) instance.group("paths").add(line);
+  // 路径折线：按 0x0CAA6841 pathPairs 分组，仅同组内连线（多路径不串线）。
+  const pathGroups = groupPathPointPolylines(
+    props.grouping.pathPoints,
+    props.pathPairs ?? [],
+  );
+  const pathsGroup = instance.group("paths");
+  for (const group of pathGroups) {
+    const points = group.map(
+      (point) => new THREE.Vector3(...point.point!),
+    );
+    const line = buildPathLine(THREE, points);
+    if (line) pathsGroup.add(line);
+  }
 
   if (!keyLightInitialized) {
     instance.setKeyLight(45, 55);

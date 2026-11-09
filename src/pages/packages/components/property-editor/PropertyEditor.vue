@@ -60,6 +60,7 @@ const {
   modelState,
   selectedId,
   grouping,
+  pathPairs,
   flatUnits,
   lotSize,
   lotTilePeriod,
@@ -1109,6 +1110,7 @@ const embeddedPanel = ref<"tree" | "schema" | "library">("tree");
           :active-lod="activeLod"
           :render-mode="effectiveRenderMode"
           :grouping="renderGrouping"
+          :path-pairs="pathPairs"
           :lot-size="lotSize"
           :lot-tile-period="lotTilePeriod"
           :lot-placement="lotPlacement"
