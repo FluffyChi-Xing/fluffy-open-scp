@@ -57,15 +57,12 @@ pub fn derive(explicit: Option<&str>, doc: &LotmDocument) -> Result<GeometryRout
 
 fn route_name(name: &str) -> Result<&'static str, String> {
     match name {
-        // 2026-11-08 用户裁决：拆 mesh 系路线（native-multi/nh-partitioned/
-        // nh-multimaterial）全部移除——游戏 census ≤4 mesh/模型、金样本 1 mesh
-        // （s31 12 sections/1 Mesh），几十 mesh = 孤儿形状（2026-10-29 商业
-        // 样本 105 mesh 只剩 1 个，docs/re/asset-build-sample-iteration）。
-        "merged-single" => Ok("merged-single"),
-        "nh-atlas" => Ok("nh-atlas"),
+        // 2026-11-09：生产几何只允许 Building40（Packager 算法的 Rust 内核）。
+        // nh-atlas / merged-single / 拆 mesh 系一律移除。
         "building40" => Ok("building40"),
         other => Err(format!(
-            "unknown/disallowed geometry route {other:?} (mesh-splitting routes removed:              game census allows ≤4 meshes per model, golden shape is 1)"
+            "unknown/disallowed geometry route {other:?}: production path is \"building40\" only \
+             (Rust asset_build_m1); nh-atlas/merged-single and mesh-splitting routes are removed"
         )),
     }
 }
@@ -145,5 +142,13 @@ mod tests {
         value.mesh_material.pop();
         let error = derive(None, &value).unwrap_err();
         assert!(error.contains("binding is incomplete"), "{error}");
+    }
+
+    #[test]
+    fn rejects_legacy_explicit_routes() {
+        let error = derive(Some("nh-atlas"), &doc(4, 4)).unwrap_err();
+        assert!(error.contains("building40"), "{error}");
+        let error = derive(Some("merged-single"), &doc(4, 4)).unwrap_err();
+        assert!(error.contains("building40"), "{error}");
     }
 }

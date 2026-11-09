@@ -157,6 +157,27 @@ pub fn validate(
     donor: Option<(&Resources, u32)>,
     strict: bool,
 ) -> Result<MenuContractReport, String> {
+    validate_profile(resources, instance, lot_group, donor, strict, false)
+}
+
+pub fn validate_building40(
+    resources: &Resources,
+    instance: u32,
+    lot_group: u32,
+    donor: Option<(&Resources, u32)>,
+    strict: bool,
+) -> Result<MenuContractReport, String> {
+    validate_profile(resources, instance, lot_group, donor, strict, true)
+}
+
+fn validate_profile(
+    resources: &Resources,
+    instance: u32,
+    lot_group: u32,
+    donor: Option<(&Resources, u32)>,
+    strict: bool,
+    building40: bool,
+) -> Result<MenuContractReport, String> {
     let Some(menu) = parse_at(resources, MENU_GROUP, instance) else {
         return Ok(MenuContractReport {
             instance,
@@ -389,12 +410,165 @@ pub fn validate(
         }
     }
 
+    if building40 {
+        checks.extend(validate_complete_building(&menu, &unit, instance)?);
+    }
+
     Ok(MenuContractReport {
         instance,
         categories,
         model_refs,
         checks,
     })
+}
+
+fn validate_complete_building(
+    menu: &PropertyFile,
+    unit: &PropertyFile,
+    instance: u32,
+) -> Result<Vec<String>, String> {
+    // These are presentation fields present in both the s31 GOLDEN menu and
+    // the complete reference candidate, but absent from Hope's 22-field leaf.
+    for hash in [
+        0x08F6_72C7u32,
+        0x09E6_83AC,
+        0x09E6_83AD,
+        0x09E9_1B9C,
+        0x0C7F_4336,
+    ] {
+        if menu.get(hash).is_none() {
+            return Err(format!(
+                "Building40 menu {instance:08X}: required panel field {hash:08X} is missing; the minimal Menu2 leaf is forbidden"
+            ));
+        }
+    }
+    if menu.values.len() < 40 {
+        return Err(format!(
+            "Building40 menu {instance:08X}: only {} property fields; the complete panel donor has 48",
+            menu.values.len()
+        ));
+    }
+    if unit.values.len() < 150 {
+        return Err(format!(
+            "Building40 unit {instance:08X}: only {} property fields; the complete simulation/utility donor is required",
+            unit.values.len()
+        ));
+    }
+
+    let texts = match menu.get(0x0EB1_FC05).map(|property| &property.kind) {
+        Some(Kind::Array(values)) => values
+            .iter()
+            .map(|value| match value {
+                Value::Text(text) => Ok(*text),
+                _ => Err(format!(
+                    "Building40 menu {instance:08X}: 0EB1FC05 contains a non-Text statistic row"
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => {
+            return Err(format!(
+                "Building40 menu {instance:08X}: 0EB1FC05 statistic Text array is missing"
+            ))
+        }
+    };
+    let params = match menu.get(0x0EB1_FC22).map(|property| &property.kind) {
+        Some(Kind::Array(values)) => values
+            .iter()
+            .map(|value| match value {
+                Value::UInt32(hash) => Ok(*hash),
+                _ => Err(format!(
+                    "Building40 menu {instance:08X}: 0EB1FC22 contains a non-UInt32 parameter row"
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => {
+            return Err(format!(
+                "Building40 menu {instance:08X}: 0EB1FC22 statistic parameter array is missing"
+            ))
+        }
+    };
+    if texts.is_empty() || texts.len() != params.len() {
+        return Err(format!(
+            "Building40 menu {instance:08X}: statistic text/parameter rows are empty or misaligned ({} vs {})",
+            texts.len(),
+            params.len()
+        ));
+    }
+    // 2026-11-08/09 菜单乱码：公园 donor 的 2 行统计（含需参数的 0EBCE055）
+    // 缺参时原样打印 ~population_amount:number~。Building40 只接受观光 1 行
+    // 或 s31 GOLDEN 教育 3 行，禁止公园 2 行错位。
+    if texts.len() == 2 {
+        return Err(format!(
+            "Building40 menu {instance:08X}: park-style 2-row statistic panel is forbidden \
+             (causes ~population_amount~ / Title/Left1 placeholders); use tourism 1-row or s31 3-row text↔param"
+        ));
+    }
+    if texts.len() == 1 {
+        if texts[0].table_id != 0x50AA_0BEA
+            || texts[0].instance_id != 0x0EBC_E29A
+            || params[0] != 0x0DA3_EE15
+        {
+            return Err(format!(
+                "Building40 menu {instance:08X}: tourism statistic must be 50AA0BEA:0EBCE29A paired with 0DA3EE15"
+            ));
+        }
+        let numeric = unit.get(0x0DA3_EE15).is_some_and(|property| {
+            matches!(
+                property.kind,
+                Kind::Scalar(Value::Float(_) | Value::Int32(_) | Value::UInt32(_))
+            )
+        });
+        if !numeric {
+            return Err(format!(
+                "Building40 unit {instance:08X}: tourism parameter 0DA3EE15 has no numeric Unit value; the panel would print a template placeholder"
+            ));
+        }
+    }
+    if texts.len() == 3
+        && texts
+            .iter()
+            .any(|text| text.table_id == 0x50AA_0BEA && text.instance_id == 0x0EBC_E055)
+    {
+        // Education / s31 GOLDEN shape: three text↔param pairs must match exactly.
+        let expected = [
+            (0x0D9A_B016u32, 0x0AD9_3A77u32),
+            (0x0D9A_B027, 0x0C3E_9F99),
+            (0x0EBC_E055, 0x0E58_5AE0),
+        ];
+        for (index, (text_instance, param)) in expected.into_iter().enumerate() {
+            if texts[index].table_id != 0x50AA_0BEA
+                || texts[index].instance_id != text_instance
+                || params[index] != param
+            {
+                return Err(format!(
+                    "Building40 menu {instance:08X}: s31 statistic row {index} must be \
+                     50AA0BEA:{text_instance:08X} paired with {param:08X}"
+                ));
+            }
+        }
+    }
+
+    let power_bundle = unit.values.iter().any(|property| {
+        matches!(property.hash, 0x0A02_09A2 | 0x0A02_09A3 | 0x0A02_09A4 | 0x0A02_09A5)
+            && match &property.kind {
+                Kind::Array(values) => values
+                    .iter()
+                    .any(|value| matches!(value, Value::Key(key) if key.instance == 0x4893_9D96)),
+                Kind::Scalar(Value::Key(key)) => key.instance == 0x4893_9D96,
+                _ => false,
+            }
+    });
+    if !power_bundle {
+        return Err(format!(
+            "Building40 unit {instance:08X}: power bundle 48939D96 is absent from A2/A3/A4/A5; refusing an unpowered building"
+        ));
+    }
+    Ok(vec![
+        format!("Building40 panelFields={}", menu.values.len()),
+        format!("Building40 unitFields={}", unit.values.len()),
+        format!("Building40 statisticRows={}", texts.len()),
+        "Building40 powerBundle=48939D96".into(),
+    ])
 }
 
 impl MenuContractReport {
@@ -784,5 +958,128 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("self-map"), "{error}");
+    }
+
+    fn complete_donors() -> (PropertyFile, PropertyFile) {
+        let menu = PropertyFile::parse(include_bytes!(
+            "../../resources/sc5/complete-building-menu.bin"
+        ))
+        .unwrap();
+        let unit = PropertyFile::parse(include_bytes!(
+            "../../resources/sc5/complete-building-unit.bin"
+        ))
+        .unwrap();
+        assert_eq!(menu.values.len(), 48);
+        assert_eq!(unit.values.len(), 175);
+        (menu, unit)
+    }
+
+    #[test]
+    fn building40_accepts_complete_panel_statistics_and_power_closure() {
+        let (menu, unit) = complete_donors();
+        let checks = validate_complete_building(&menu, &unit, INSTANCE).unwrap();
+        assert!(checks.iter().any(|check| check.contains("panelFields=48")));
+        assert!(checks.iter().any(|check| check.contains("powerBundle")));
+    }
+
+    #[test]
+    fn building40_rejects_minimal_menu_and_missing_power_bundle() {
+        let (menu, unit) = complete_donors();
+        let error = validate_complete_building(
+            &PropertyFile::default(),
+            &PropertyFile::default(),
+            INSTANCE,
+        )
+        .unwrap_err();
+        assert!(error.contains("required panel field"), "{error}");
+
+        let mut without_power = unit;
+        without_power.values.retain(|property| property.hash != 0x0A02_09A3);
+        let error = validate_complete_building(&menu, &without_power, INSTANCE).unwrap_err();
+        assert!(error.contains("power bundle 48939D96"), "{error}");
+    }
+
+    #[test]
+    fn building40_tourism_row_requires_its_numeric_unit_parameter() {
+        let (mut menu, unit) = complete_donors();
+        for property in &mut menu.values {
+            match property.hash {
+                0x0EB1_FC05 => {
+                    property.kind = Kind::Array(vec![Value::Text(Text {
+                        table_id: 0x50AA_0BEA,
+                        instance_id: 0x0EBC_E29A,
+                    })]);
+                }
+                0x0EB1_FC22 => property.kind = Kind::Array(vec![Value::UInt32(0x0DA3_EE15)]),
+                _ => {}
+            }
+        }
+        validate_complete_building(&menu, &unit, INSTANCE).unwrap();
+        let mut broken = unit;
+        broken.values.retain(|property| property.hash != 0x0DA3_EE15);
+        let error = validate_complete_building(&menu, &broken, INSTANCE).unwrap_err();
+        assert!(error.contains("template placeholder"), "{error}");
+    }
+
+    #[test]
+    fn building40_rejects_park_style_two_row_statistics() {
+        let (mut menu, unit) = complete_donors();
+        for property in &mut menu.values {
+            match property.hash {
+                0x0EB1_FC05 => {
+                    property.kind = Kind::Array(vec![
+                        Value::Text(Text {
+                            table_id: 0x50AA_0BEA,
+                            instance_id: 0x0D9A_B016,
+                        }),
+                        Value::Text(Text {
+                            table_id: 0x50AA_0BEA,
+                            instance_id: 0x0EBC_E055,
+                        }),
+                    ]);
+                }
+                0x0EB1_FC22 => {
+                    property.kind = Kind::Array(vec![Value::UInt32(0x0AD9_3A77), Value::UInt32(0)])
+                }
+                _ => {}
+            }
+        }
+        let error = validate_complete_building(&menu, &unit, INSTANCE).unwrap_err();
+        assert!(error.contains("park-style 2-row"), "{error}");
+    }
+
+    #[test]
+    fn building40_accepts_s31_three_row_statistics() {
+        let (mut menu, unit) = complete_donors();
+        for property in &mut menu.values {
+            match property.hash {
+                0x0EB1_FC05 => {
+                    property.kind = Kind::Array(vec![
+                        Value::Text(Text {
+                            table_id: 0x50AA_0BEA,
+                            instance_id: 0x0D9A_B016,
+                        }),
+                        Value::Text(Text {
+                            table_id: 0x50AA_0BEA,
+                            instance_id: 0x0D9A_B027,
+                        }),
+                        Value::Text(Text {
+                            table_id: 0x50AA_0BEA,
+                            instance_id: 0x0EBC_E055,
+                        }),
+                    ]);
+                }
+                0x0EB1_FC22 => {
+                    property.kind = Kind::Array(vec![
+                        Value::UInt32(0x0AD9_3A77),
+                        Value::UInt32(0x0C3E_9F99),
+                        Value::UInt32(0x0E58_5AE0),
+                    ])
+                }
+                _ => {}
+            }
+        }
+        let checks = validate_complete_building(&menu, &unit, INSTANCE).unwrap();
+        assert!(checks.iter().any(|check| check.contains("statisticRows=3")));
     }
 }

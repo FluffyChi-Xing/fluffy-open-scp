@@ -171,9 +171,15 @@ pub struct MenuRegistrationSpec {
     pub behavior_category_instance: Option<u32>,
     /// Built-in Unit property donor. The donor preserves the complete
     /// simulation/education field chain while the builder rewrites identity
-    /// links. Supported values are `elementary-school` and `generic-park`.
+    /// links. Supported values are `elementary-school`, `generic-park`, and
+    /// `complete-building`. Prefer letting `behavior_family` fill this from
+    /// workbench leaves instead of hard-coding Building40 → university.
     #[serde(default)]
     pub unit_donor: Option<String>,
+    /// Menu2 骨架：`generic`（扁平通用）或 `complete-building`（s31 大学菜单）。
+    /// 由行为家族适配器写入；缺省时 Building40 仍回落 complete-building（兼容旧 schema）。
+    #[serde(default)]
+    pub menu_skeleton: Option<String>,
     /// Optional elementary-school desk/student capacity override. This maps to
     /// the verified `0x0AD7FAC9` Unit field; it is not a worker/job count.
     #[serde(default)]
@@ -315,11 +321,19 @@ pub fn generate(
     ground_source: Option<(&connector::Resources, ResourceId)>,
     identity: Option<&connector::Resources>,
     root: &std::path::Path,
+    author_building40: bool,
 ) -> Result<MenuResources, String> {
     let instance = alloc_menu_instance(spec, resources);
-    // 0.8.0 parent-free route: generic Asset dictionary + tested-unit.bin
-    // cUnit; props/lights land in the Asset dictionary (author semantics).
-    if spec.parent_free {
+    // Building40 always uses the complete parent-free property recipe. The old
+    // minimal clone route dropped the panel and utility fields even though its
+    // identity-link checks passed. Other geometry routes retain their bytes.
+    if spec.parent_free || author_building40 {
+        if author_building40 && identity.is_some() {
+            return Err(
+                "Building40 does not accept a legacy identity donor; use the complete parent-free property recipe"
+                    .into(),
+            );
+        }
         return generate_parent_free(
             spec,
             resources,
@@ -327,7 +341,9 @@ pub fn generate(
             instance,
             scene_document,
             model_ids,
+            ground_source,
             root,
+            author_building40,
         );
     }
     let lot_bytes = resources.get(&lot_source).ok_or_else(|| {
@@ -449,9 +465,10 @@ pub fn generate(
     Ok(MenuResources { instance, entries })
 }
 
-/// 0.8.0 parent-free identity route: Menu2/icon/locale from the verified
-/// minimal shape, Unit from `tested-unit.bin`, Asset dictionary materialized
-/// from the generic chain (`native_profile::build`).
+/// Parent-free identity route. Building40 uses the complete dictionaries from
+/// the reference candidate (package SHA-256
+/// 50ec8c71b3647ebe3ef8409f3259664c731127641293cbff317bd2ce52398530),
+/// then overlays this asset's identity, tourism/park semantics and scene.
 fn generate_parent_free(
     spec: &MenuRegistrationSpec,
     resources: &connector::Resources,
@@ -459,29 +476,47 @@ fn generate_parent_free(
     instance: u32,
     scene_document: Option<&SceneDocument>,
     model_ids: Option<LodModelIds>,
+    ground_source: Option<(&connector::Resources, ResourceId)>,
     root: &std::path::Path,
+    author_building40: bool,
 ) -> Result<MenuResources, String> {
     let rotation = spec.rotation_degrees.unwrap_or(180);
-    // Menu2 = the FULLY materialized generic menu chain (author parent-free
-    // shape; the reference package carries F970A822 + AF042E9A layers — the
-    // walk must cover both or the tool entry loses its presentation fields
-    // and the game drops it from the menu).
-    let menu2 =
+    // 家族适配器优先；未声明时 Building40 旧默认仍为 complete-building。
+    let skeleton = spec
+        .menu_skeleton
+        .as_deref()
+        .unwrap_or(if author_building40 {
+            "complete-building"
+        } else {
+            "generic"
+        });
+    let menu2 = if skeleton == "complete-building" {
+        let mut file = PropertyFile::parse(include_bytes!(
+            "../../resources/sc5/complete-building-menu.bin"
+        ))
+        .map_err(|error| format!("complete-building-menu.bin parse: {error}"))?;
+        patch_instance_refs(&mut file, 0x4C0E_8889, instance);
+        apply_menu_overrides(&mut file, spec, instance)?;
+        encode(&file)?
+    } else {
         match super::native_profile::flat_chain(resources, super::native_profile::GENERIC_MENU) {
             Ok((mut file, _)) => {
                 apply_menu_overrides(&mut file, spec, instance)?;
                 encode(&file)?
             }
             Err(_) => build_menu2(spec, instance)?,
-        };
+        }
+    };
     let native = super::native_profile::build(
         spec,
         resources,
         ground_lot,
+        ground_source,
         instance,
         scene_document,
         model_ids.as_ref(),
         rotation,
+        author_building40,
     )?;
     let asset_id = ResourceId {
         type_id: PROPERTY_TYPE,

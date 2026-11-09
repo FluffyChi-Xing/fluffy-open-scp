@@ -20,7 +20,10 @@ use sha2::Digest as _;
 use std::path::{Path, PathBuf};
 
 /// 缓存布局版本：语义变化时递增（旧缓存自然失效）。
-const CACHE_VERSION: &str = "g3-3";
+// Bump whenever the Python→Rust Building40/material migration changes the
+// produced model or six-slot resources.  Reusing a pre-migration cache can
+// silently restore an old RW4/texture binding and present as missing windows.
+const CACHE_VERSION: &str = "g3-5-building40-only";
 
 fn digest_bytes(bytes: &[u8]) -> String {
     let digest = sha2::Sha256::digest(bytes);

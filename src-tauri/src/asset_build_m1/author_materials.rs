@@ -27,11 +27,45 @@ pub struct AuthorMaterials {
     pub slots: [Vec<u8>; 6],
 }
 
+const SUPPORTED_NATIVE_ROOM_PROFILES: [&str; 2] = [
+    "native-room-states-transparent-top-v3",
+    "window-relative-relief-hdr-room-v2",
+];
+
+/// Native Rust exports historically omitted the room-state profile and put
+/// emission in even source columns. Building40 cannot repair that loss after
+/// the fact: reject the source with its actual diagnostics instead of emitting
+/// a superficially valid RW4 with missing windows or black night states.
+fn validate_native_room_contract(document: &LotmDocument) -> Result<(), String> {
+    let diagnostics: serde_json::Value = serde_json::from_str(&document.diagnostics)
+        .map_err(|error| format!("author materials: invalid diagnostics JSON: {error}"))?;
+    if diagnostics.get("source").and_then(serde_json::Value::as_str)
+        != Some("OpenSCP native Rust")
+    {
+        return Ok(());
+    }
+    let profile = diagnostics
+        .get("nativeControlProfile")
+        .and_then(serde_json::Value::as_str);
+    if profile.is_some_and(|profile| SUPPORTED_NATIVE_ROOM_PROFILES.contains(&profile)) {
+        return Ok(());
+    }
+    let count = |key: &str| diagnostics.get(key).cloned().unwrap_or(serde_json::Value::Null);
+    Err(format!(
+        "author materials: OpenSCP native Rust source does not satisfy the Building40 native room-state contract: nativeControlProfile={:?}, windows={}, decorPanels={}, nativeMaterials={}; re-export native columns 1/5/9/13 instead of packaging this incomplete source",
+        profile,
+        count("windows"),
+        count("decorPanels"),
+        count("nativeMaterials"),
+    ))
+}
+
 /// Compile the exact parameter table, five images and six package payloads.
 pub fn compile_materials(
     document: &LotmDocument,
     night_only: bool,
 ) -> Result<AuthorMaterials, String> {
+    validate_native_room_contract(document)?;
     let plan = plan_surfaces(document)?;
     let atlases = render_atlases(document, &plan, night_only)?;
     let params_f32 = parameter_table_bytes(&plan);
@@ -193,4 +227,37 @@ mod tests {
             "0232c2abf4fa7bda376b8caa27fb461e65b7f22a2a6c0a8fa2856cb71afc41ae"
         );
     }
+
+    fn diagnostics_document(diagnostics: serde_json::Value) -> LotmDocument {
+        LotmDocument {
+            version: 9,
+            meshes: Vec::new(),
+            materials: Vec::new(),
+            mesh_material: Vec::new(),
+            diagnostics: diagnostics.to_string(),
+        }
+    }
+
+    #[test]
+    fn native_rust_source_without_room_profile_is_rejected_with_counts() {
+        let document = diagnostics_document(serde_json::json!({
+            "source": "OpenSCP native Rust",
+            "windows": 971,
+            "decorPanels": 0,
+            "nativeMaterials": 66
+        }));
+        let error = validate_native_room_contract(&document).unwrap_err();
+        assert!(error.contains("windows=971"), "{error}");
+        assert!(error.contains("native room-state contract"), "{error}");
+    }
+
+    #[test]
+    fn native_rust_source_with_supported_room_profile_is_accepted() {
+        let document = diagnostics_document(serde_json::json!({
+            "source": "OpenSCP native Rust",
+            "nativeControlProfile": "native-room-states-transparent-top-v3"
+        }));
+        validate_native_room_contract(&document).unwrap();
+    }
+
 }

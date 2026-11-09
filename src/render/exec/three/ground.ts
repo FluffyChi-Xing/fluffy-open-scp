@@ -54,5 +54,29 @@ export function createLotDimensions(
     new THREE.LineBasicMaterial({ color: 0x0878fe }),
   );
   object.name = "__lotDimensions";
+  if (plan.streetSide) {
+    const arrowGeometry = new THREE.BufferGeometry();
+    const arrowFlat: number[] = [];
+    for (const point of plan.streetSide.triangles) {
+      arrowFlat.push(point[0], point[1], point[2]);
+    }
+    arrowGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(arrowFlat, 3),
+    );
+    const arrow = new THREE.Mesh(
+      arrowGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xff8a00,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+      }),
+    );
+    arrow.name = "__streetSideArrow";
+    arrow.renderOrder = 4;
+    object.add(arrow);
+  }
   return { object, anchors: plan.anchors };
 }

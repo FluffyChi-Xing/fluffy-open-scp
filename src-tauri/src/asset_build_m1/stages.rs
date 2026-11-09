@@ -631,9 +631,9 @@ fn insert_textures(ctx: &mut BuildContext) -> Result<serde_json::Value, String> 
     Ok(serde_json::json!({ "slots": inserted }))
 }
 
-/// The workbench LOTM frame and the packaged lot-unit frame differ by half a
-/// turn. Keep the scene rotation on paths/props/lights/ground, but compensate
-/// only the compiled building so its authored entrance meets the authored path.
+/// Legacy workbench LOTMs need a half-turn relative to the lot-unit frame.
+/// Building40 follows the reference packager instead: its geometry and every
+/// lot/path/prop/light column use the same authored rotation.
 fn workbench_model_rotation(scene_rotation: u32) -> Result<u32, String> {
     match scene_rotation {
         0 => Ok(180),
@@ -641,6 +641,14 @@ fn workbench_model_rotation(scene_rotation: u32) -> Result<u32, String> {
         180 => Ok(0),
         270 => Ok(90),
         other => Err(format!("朝向仅支持 0、90、180、270 度（收到 {other}）")),
+    }
+}
+
+fn model_rotation(scene_rotation: u32, building40: bool) -> Result<u32, String> {
+    if building40 {
+        workbench_model_rotation(scene_rotation).map(|_| scene_rotation)
+    } else {
+        workbench_model_rotation(scene_rotation)
     }
 }
 
@@ -654,7 +662,6 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         // Author scene orientation (backend settings.rotationDegrees,
         // default 180). native_profile applies this value to lot columns.
         .unwrap_or(180);
-    let rotation = workbench_model_rotation(scene_rotation)?;
     // Capture the source contract in the stage event before lowering.  This
     // makes a material regression attributable to this processor from the
     // build report, without comparing entire DBPF files by hand.
@@ -666,29 +673,38 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         .as_deref()
         .and_then(|path| project_file(&ctx.root, path).ok())
         .and_then(|path| std::fs::read(path).ok());
-    let route = model_bytes
-        .as_deref()
-        .and_then(|bytes| {
-            super::lotm::is_container(bytes)
-                .then(|| super::lotm::parse(bytes).ok())
-                .flatten()
-        })
-        .and_then(|doc| {
-            super::geometry_route::derive(ctx.plan.intermediate.scene.model_shape.as_deref(), &doc)
-                .ok()
-        });
-    let material_contract = model_bytes
-        .as_deref()
-        .and_then(|bytes| {
-            super::lotm::is_container(bytes)
-                .then(|| super::lotm::parse(bytes).ok())
-                .flatten()
-        })
+    let document = model_bytes.as_deref().and_then(|bytes| {
+        super::lotm::is_container(bytes)
+            .then(|| super::lotm::parse(bytes).ok())
+            .flatten()
+    });
+    let route = document.as_ref().and_then(|doc| {
+        super::geometry_route::derive(ctx.plan.intermediate.scene.model_shape.as_deref(), doc).ok()
+    });
+    let rotation = model_rotation(
+        scene_rotation,
+        route.as_ref().is_some_and(|route| route.name == "building40"),
+    )?;
+    let material_contract = document
+        .as_ref()
         .map(|doc| {
+            let diagnostics = serde_json::from_str::<serde_json::Value>(&doc.diagnostics).ok();
+            let diagnostic = |key: &str| {
+                diagnostics
+                    .as_ref()
+                    .and_then(|value| value.get(key))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null)
+            };
             serde_json::json!({
                 "materialGroups": doc.materials.len(),
                 "parameterColumns": doc.materials.iter().map(|m| m.param_cols).collect::<Vec<_>>(),
                 "meshCount": doc.meshes.len(),
+                "source": diagnostic("source"),
+                "nativeControlProfile": diagnostic("nativeControlProfile"),
+                "windows": diagnostic("windows"),
+                "decorPanels": diagnostic("decorPanels"),
+                "nativeMaterials": diagnostic("nativeMaterials"),
             })
         })
         .unwrap_or(serde_json::Value::Null);
@@ -751,6 +767,40 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             "fingerprint": fingerprint,
         });
     }
+    // Building40 production contract (2026-11-09): single compiled model
+    // family + six authored material payloads. The six slots come from the
+    // LOTM's material table (`author_materials`), not the scene's external
+    // texture nodes; `ctx.texture_instances` may legitimately stay zero for a
+    // native LOTM. Window completeness is enforced by the author material
+    // compiler and the material-binding-contract (empty raster) gate below.
+    let mut building40_contract = serde_json::Value::Null;
+    if ctx.author_building40 {
+        if ctx.model_ids.is_none() {
+            return Err(
+                "[insert-model] Building40 route compiled no LOD model ids — refusing empty geometry"
+                    .into(),
+            );
+        }
+        if material_resource_count < 6 {
+            return Err(format!(
+                "[insert-model] Building40 material resource count {material_resource_count} < 6"
+            ));
+        }
+        if let Some(doc) = document.as_ref() {
+            let groups = doc.materials.len();
+            if groups == 0 {
+                return Err(
+                    "[insert-model] Building40 LOTM has zero material groups".into(),
+                );
+            }
+        }
+        building40_contract = serde_json::json!({
+            "lodModels": true,
+            "textureInstances": ctx.texture_instances,
+            "materialResources": material_resource_count,
+            "slot5Interior": ctx.texture_instances[5],
+        });
+    }
     // Record the interpreter decision separately from the author-facing field.
     let shape_declared = ctx.plan.intermediate.scene.model_shape.clone();
     let warnings: Vec<String> = Vec::new();
@@ -759,6 +809,7 @@ fn insert_model(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         "materialContract": material_contract,
         "materialGate": gate_json,
         "materialCache": cache_state,
+        "building40Contract": building40_contract,
         "sceneRotationDegrees": scene_rotation,
         "modelRotationDegrees": rotation,
         "modelShapeDeclared": shape_declared,
@@ -1031,6 +1082,7 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
                     .map(|(resources, source_lot)| (resources, *source_lot)),
                 ctx.identity_resources.as_ref(),
                 &ctx.root,
+                ctx.author_building40,
             )?;
             for (id, bytes) in generated.entries {
                 ctx.resources.insert(id, bytes);
@@ -1253,7 +1305,7 @@ fn vanilla_shadow_strip(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
 /// shader 无像素 → 白模）。§7.1 事故：多材质 LOTM 缺 `scene.modelShape` 落进
 /// nh-partitioned 路线，塔 4 LOD 的 slot1/2/3 全指向 32B 空 raster，离线门禁
 /// （资源计数/引用可解析）全绿、实机全白——绑定验证必须做在编码产物层。
-/// fail-closed：报错携带修复指引（声明 nh-atlas），而非"构建通过、实机返工"。
+/// fail-closed：报错携带修复指引（Building40 六槽），而非"构建通过、实机返工"。
 fn material_binding_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
     const RASTER_TYPE: u32 = 0x2F4E_681C;
     const MODEL_TYPE: u32 = 0x2F4E_681B;
@@ -1308,7 +1360,7 @@ fn material_binding_contract(ctx: &BuildContext) -> Result<serde_json::Value, St
                     // 确证白模：raster 在包内但只有头部无像素（§7.1 事故本体）。
                     violations.push(format!(
                         "model {:08X} material #{} slot{} -> raster {:08X} is an EMPTY raster (no pixels; renders white). \
-                         Multi-material LOTM needs scene.modelShape \"nh-atlas\" so textures bake into the atlas",
+                         Multi-material LOTM must use the Rust Building40 route (omit modelShape or set \"building40\") so six-slot textures compile",
                         id.instance, section.number, slot, row.texture_instance
                     ));
                 } else if missing {
@@ -1504,16 +1556,26 @@ fn menu_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
             (resources, donor_instance)
         })
     });
-    let report = super::menu_contract::validate(
-        &ctx.resources,
-        instance,
-        // 产物 lot 叶子固定在 Asset 字典组（40E1C000）——参照可能是 lot-config
-        // （58F0C000，大学路线），二者不是同一层。2026-11-08：把参照组当产物组
-        // 会让 menu-contract 在错误的组里找 lot/模型引用。
-        super::menu::lot_group(),
-        donor.map(|(resources, donor_instance)| (resources, donor_instance)),
-        ctx.menu_instance.is_some(),
-    )?;
+    let report = if ctx.author_building40 {
+        super::menu_contract::validate_building40(
+            &ctx.resources,
+            instance,
+            super::menu::lot_group(),
+            donor.map(|(resources, donor_instance)| (resources, donor_instance)),
+            ctx.menu_instance.is_some(),
+        )?
+    } else {
+        super::menu_contract::validate(
+            &ctx.resources,
+            instance,
+            // 产物 lot 叶子固定在 Asset 字典组（40E1C000）——参照可能是 lot-config
+            // （58F0C000，大学路线），二者不是同一层。2026-11-08：把参照组当产物组
+            // 会让 menu-contract 在错误的组里找 lot/模型引用。
+            super::menu::lot_group(),
+            donor.map(|(resources, donor_instance)| (resources, donor_instance)),
+            ctx.menu_instance.is_some(),
+        )?
+    };
     Ok(report.to_json())
 }
 
@@ -1588,6 +1650,10 @@ fn delta_audit(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     }
     // LOD 引用按确定性身份重定向；模型存在性由 insert-model 不变量兜底。
     allowed.extend(LOD_MODEL_HASHES);
+    // 编译模型的内景控制器（package.rs 按材质契约写 0F169C46）是构建器
+    // 自有字段，不是作者场景声明；否则每次带内景材质的构建都会被 delta
+    // 审计误判为未声明漂移。
+    allowed.push(0x0F16_9C46);
     if ctx.plan.behavior.is_some() {
         // legacy behavior 原语显式声明路网重写与看板族。
         allowed.extend([
@@ -1783,6 +1849,12 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
                 .ground_source
                 .as_ref()
                 .map(|(resources, source_lot)| (resources, *source_lot)),
+            rotation_degrees: ctx
+                .plan
+                .menu
+                .as_ref()
+                .and_then(|menu| menu.rotation_degrees)
+                .unwrap_or(180),
         },
     )?;
     staging.write(
@@ -2061,21 +2133,22 @@ mod stage_tests {
     }
 
     #[test]
-    fn workbench_model_rotation_compensates_only_the_model_half_turn() {
-        assert_eq!(workbench_model_rotation(0).unwrap(), 180);
-        assert_eq!(workbench_model_rotation(90).unwrap(), 270);
-        assert_eq!(workbench_model_rotation(180).unwrap(), 0);
-        assert_eq!(workbench_model_rotation(270).unwrap(), 90);
-        assert!(workbench_model_rotation(45).is_err());
+    fn building40_preserves_author_rotation_while_legacy_routes_keep_the_half_turn() {
+        for scene in [0, 90, 180, 270] {
+            assert_eq!(model_rotation(scene, true).unwrap(), scene);
+        }
+        assert_eq!(model_rotation(0, false).unwrap(), 180);
+        assert_eq!(model_rotation(90, false).unwrap(), 270);
+        assert_eq!(model_rotation(180, false).unwrap(), 0);
+        assert_eq!(model_rotation(270, false).unwrap(), 90);
+        assert!(model_rotation(45, true).is_err());
+        assert!(model_rotation(45, false).is_err());
 
-        // Asymmetric point: the default Hope case must preserve the source
-        // direction instead of negating x/y with the scene's 180-degree turn.
-        let matrix =
-            super::super::native_model::rotate_xyz_matrix(workbench_model_rotation(180).unwrap())
-                .unwrap();
+        let matrix = super::super::native_model::rotate_xyz_matrix(model_rotation(180, true).unwrap())
+            .unwrap();
         assert_eq!(
             super::super::native_model::rotate_point(&matrix, [2.0, 3.0, 4.0]),
-            [2.0, 3.0, 4.0]
+            [-2.0, -3.0, 4.0]
         );
     }
 
@@ -2103,7 +2176,7 @@ mod stage_tests {
             "gate verdict in stage detail: {detail}"
         );
         assert_eq!(detail["sceneRotationDegrees"], 180);
-        assert_eq!(detail["modelRotationDegrees"], 0);
+        assert_eq!(detail["modelRotationDegrees"], 180);
         let _ = std::fs::remove_dir_all(root);
     }
 

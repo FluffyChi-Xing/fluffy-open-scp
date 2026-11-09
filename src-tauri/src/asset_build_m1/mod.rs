@@ -3,6 +3,7 @@ pub mod atlas_prepare;
 pub mod author_building40;
 pub mod author_materials;
 pub mod behavior;
+pub mod behavior_family;
 pub mod behavior_nodes;
 pub mod build_cache;
 pub mod collision;

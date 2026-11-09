@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/resizable";
 import { isTauri, tauriApi } from "@/api";
 import { useGamePackagesStore } from "@/stores/gamePackages";
+import { useBuildActivityStore } from "@/stores/buildActivity";
 import { useToast } from "@/composables/useToast";
 import {
   classifyCodeFile,
@@ -116,18 +117,48 @@ const standardModKind = computed(() => {
 /**
  * M1 资产打包后台构建：资产项目统一进入 build_queue_enqueue_project，
  * 由后端选择已有 openscp.asset schema 或 Asset Editor workbench adapter。
+ * 入队后可关闭工作台；进度进消息栏 + OpenSCP Actions。
  * Flow 项目仍使用独立的构建/部署按钮。
  */
+const buildBusy = ref(false);
+const buildActivity = useBuildActivityStore();
+
 async function buildM1InBackground(): Promise<boolean> {
+  const root = props.project.folderPath?.trim() ?? "";
+  if (!root || buildBusy.value) return false;
+  buildBusy.value = true;
   try {
     const submitted = await tauriApi.buildQueue.enqueueProject(
-      props.project.folderPath ?? "",
+      root,
       props.project.name,
     );
-    toast.info(t("studio.assetWorkbench.buildQueued", { jobId: submitted.jobId }));
+    buildActivity.rememberProject(root, props.project.name, submitted.jobId);
+    // 入队成功：toast 即时反馈；消息栏由全局 build-queue:event 监听写入。
+    toast.info(
+      t("studio.assetWorkbench.buildQueued", { jobId: submitted.jobId }),
+    );
     return true;
-  } catch {
+  } catch (cause) {
+    const message =
+      cause &&
+      typeof cause === "object" &&
+      "message" in cause &&
+      typeof (cause as { message: unknown }).message === "string"
+        ? (cause as { message: string }).message
+        : cause instanceof Error
+          ? cause.message
+          : String(cause);
+    buildActivity.pushNotice({
+      titleKey: "notification.buildEnqueueFailed",
+      detail: message,
+      tone: "error",
+      projectRoot: root,
+      projectLabel: props.project.name,
+    });
+    toast.error(t("studio.assetWorkbench.buildEnqueueFailed", { error: message }));
     return false;
+  } finally {
+    buildBusy.value = false;
   }
 }
 
@@ -434,7 +465,17 @@ watch(
       </div>
       <div class="heading-actions">
         <span v-if="projectManifest.origin" class="tree-stats">{{ t(projectManifest.origin === 'openscp' ? 'flow.standard' : 'flow.community') }}</span>
-        <button v-if="projectBuildAvailable" class="refresh-button" :disabled="deployBusy" :title="t('flow.ready')" @click="buildM1InBackground">{{ t('flow.build') }}</button>
+        <button
+          v-if="projectBuildAvailable"
+          class="refresh-button"
+          type="button"
+          :disabled="deployBusy || buildBusy"
+          :title="t('studio.assetWorkbench.buildButtonHint')"
+          @click="buildM1InBackground"
+        >
+          <FIcon :name="buildBusy ? 'Loader2' : 'Hammer'" :size="13" aria-label="" />
+          {{ t(buildBusy ? 'studio.assetWorkbench.buildEnqueueing' : 'flow.build') }}
+        </button>
         <button v-if="engineEnabled" class="refresh-button deploy-button" :disabled="!engineReady || deployBusy" :title="t('flow.buildDeployTitle')" @click="buildDeployAndLaunch">
           <FIcon :name="deployBusy ? 'Loader2' : 'Play'" :size="13" aria-label="" />
           {{ t(deployBusy ? 'flow.buildDeploying' : 'flow.buildDeploy') }}

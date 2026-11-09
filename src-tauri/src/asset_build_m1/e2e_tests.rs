@@ -21,17 +21,22 @@ use std::{fs, path::PathBuf};
 /// 合成一个 v9 LOTM 容器：两个 mesh GLB（带 facade UV + tint 列）+ 一个
 /// 六槽材质（png[4]=tint PNG + f32 参数表）。
 fn facade_mesh_glb(offset: f32) -> Vec<u8> {
-    let positions: Vec<f32> = [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [0.0, 0.0, 4.0]]
+    let positions: Vec<f32> = [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [0.0, 4.0, 4.0]]
         .iter()
         .flat_map(|p| [p[0] + offset, p[1], p[2]])
         .collect();
     let normals: Vec<f32> = [[0.0, 1.0, 0.0]; 3].iter().flat_map(|p| *p).collect();
+    // Author Building40 requires a real TANGENT stream (VEC4: xyz + handedness).
+    let tangents: Vec<f32> = [[1.0, 0.0, 0.0, 1.0]; 3]
+        .iter()
+        .flat_map(|p| *p)
+        .collect();
     let uv0: Vec<f32> = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
         .iter()
         .flat_map(|p| *p)
         .collect();
-    // TEXCOORD_1.x = 0.5 → tint 参数列 128；TEXCOORD_2/3 = facade 世界投影。
-    let uv1: Vec<f32> = [[0.5, 0.0, 0.0, 0.0]; 3].iter().flat_map(|p| *p).collect();
+    // TEXCOORD_1.xy = 内景种子（VEC2）；TEXCOORD_2/3 = facade 世界投影。
+    let uv1: Vec<f32> = [[0.5, 0.0]; 3].iter().flat_map(|p| *p).collect();
     let uv2: Vec<f32> = [[20.0, 30.0], [21.0, 30.0], [20.0, 31.0]]
         .iter()
         .flat_map(|p| *p)
@@ -53,6 +58,7 @@ fn facade_mesh_glb(offset: f32) -> Vec<u8> {
     let (uv1_off, uv1_len) = view(f32_bytes(&uv1), &mut bin);
     let (uv2_off, uv2_len) = view(f32_bytes(&uv2), &mut bin);
     let (uv3_off, uv3_len) = view(f32_bytes(&uv3), &mut bin);
+    let (tan_off, tan_len) = view(f32_bytes(&tangents), &mut bin);
     let idx_bytes: Vec<u8> = indices.iter().flat_map(|i| i.to_le_bytes()).collect();
     let (idx_off, idx_len) = view(&idx_bytes, &mut bin);
     let json = serde_json::json!({
@@ -63,18 +69,20 @@ fn facade_mesh_glb(offset: f32) -> Vec<u8> {
         "meshes": [{"primitives": [{
             "attributes": {
                 "POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2,
-                "TEXCOORD_1": 3, "TEXCOORD_2": 4, "TEXCOORD_3": 5
+                "TEXCOORD_1": 3, "TEXCOORD_2": 4, "TEXCOORD_3": 5,
+                "TANGENT": 6
             },
-            "indices": 6
+            "indices": 7
         }]}],
         "accessors": [
             {"componentType": 5126, "count": 3, "type": "VEC3", "bufferView": 0},
             {"componentType": 5126, "count": 3, "type": "VEC3", "bufferView": 1},
             {"componentType": 5126, "count": 3, "type": "VEC2", "bufferView": 2},
-            {"componentType": 5126, "count": 3, "type": "VEC4", "bufferView": 3},
+            {"componentType": 5126, "count": 3, "type": "VEC2", "bufferView": 3},
             {"componentType": 5126, "count": 3, "type": "VEC2", "bufferView": 4},
             {"componentType": 5126, "count": 3, "type": "VEC2", "bufferView": 5},
-            {"componentType": 5123, "count": 3, "type": "SCALAR", "bufferView": 6}
+            {"componentType": 5126, "count": 3, "type": "VEC4", "bufferView": 6},
+            {"componentType": 5123, "count": 3, "type": "SCALAR", "bufferView": 7}
         ],
         "bufferViews": [
             {"buffer": 0, "byteOffset": pos_off, "byteLength": pos_len},
@@ -83,6 +91,7 @@ fn facade_mesh_glb(offset: f32) -> Vec<u8> {
             {"buffer": 0, "byteOffset": uv1_off, "byteLength": uv1_len},
             {"buffer": 0, "byteOffset": uv2_off, "byteLength": uv2_len},
             {"buffer": 0, "byteOffset": uv3_off, "byteLength": uv3_len},
+            {"buffer": 0, "byteOffset": tan_off, "byteLength": tan_len},
             {"buffer": 0, "byteOffset": idx_off, "byteLength": idx_len}
         ],
         "buffers": [{"byteLength": bin.len() as u64}]
@@ -115,6 +124,16 @@ fn tiny_png_bytes() -> Vec<u8> {
     png
 }
 
+/// Author palette atlas minimum: width ≥ 512, height = 16.
+fn palette_png_bytes() -> Vec<u8> {
+    let image = image::RgbaImage::from_raw(512, 16, vec![120u8; 512 * 16 * 4]).unwrap();
+    let mut png = Vec::new();
+    image
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    png
+}
+
 fn workbench_lotm() -> Vec<u8> {
     workbench_lotm_with_meshes(2)
 }
@@ -124,36 +143,50 @@ pub(crate) fn workbench_lotm_with_meshes(meshes: u32) -> Vec<u8> {
     let mut bytes = b"LOTM".to_vec();
     bytes.extend_from_slice(&9u32.to_le_bytes());
     bytes.extend_from_slice(&meshes.to_le_bytes()); // mesh_count
-    for index in 0..meshes {
-        let glb = facade_mesh_glb(index as f32 * 8.0);
+    for _ in 0..meshes {
+        // Overlapping groups keep the fixture bounds stable when a test flips
+        // the mesh count (material-gate 2 → 1) while the reference bbox stays
+        // fixed; the gate itself keys on meshCount/material fingerprint.
+        let glb = facade_mesh_glb(0.0);
         bytes.extend_from_slice(&(glb.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&glb);
     }
-    bytes.extend_from_slice(&1u32.to_le_bytes()); // material_count
-    let tint = tiny_png_bytes();
+    bytes.extend_from_slice(&meshes.to_le_bytes()); // material_count
     let mut params = Vec::new();
     for row in 0..4u32 {
         for value in [row as f32, 1.0, 0.0, 2.0] {
             params.extend_from_slice(&value.to_le_bytes());
         }
     }
-    // PNG 逐张 (len, payload)（8 张，index 4 = tint；与前端 readPng 一致）。
-    for index in 0..8u32 {
-        if index == 4 {
-            bytes.extend_from_slice(&(tint.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(&tint);
-        } else {
-            bytes.extend_from_slice(&0u32.to_le_bytes());
-        }
-    }
-    bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&params);
-    bytes.extend_from_slice(&1u32.to_le_bytes()); // param_cols
+    // Author Building40 route requires one material per mesh group; repeat the
+    // same surface payload for every fixture material so the native contract
+    // (mesh i ↔ material i) holds. All six native slots use a small valid PNG
+    // so the strict material compiler can decode them.
     for _ in 0..meshes {
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // material index
+        for slot in 0..8u32 {
+            let png = if slot == 5 {
+                palette_png_bytes()
+            } else {
+                tiny_png_bytes()
+            };
+            bytes.extend_from_slice(&(png.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&png);
+        }
+        bytes.extend_from_slice(&(params.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&params);
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // param_cols
+    }
+    for index in 0..meshes {
+        bytes.extend_from_slice(&index.to_le_bytes()); // material index
         bytes.push(2); // uv kind
     }
-    bytes.extend_from_slice(&0u32.to_le_bytes()); // diag
+    let diagnostics = serde_json::json!({
+        "source": "fixture",
+        "nativeControlProfile": "native-room-states-transparent-top-v3"
+    })
+    .to_string();
+    bytes.extend_from_slice(&(diagnostics.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(diagnostics.as_bytes());
     bytes
 }
 
@@ -181,8 +214,8 @@ fn source_lot_property() -> Vec<u8> {
                 hash: 0x00F9_EFBA,
                 prop_type: PropType::BoundingBox,
                 kind: Kind::Scalar(Value::BoundingBox {
-                    min: [-96.0, -48.0, 0.0],
-                    max: [96.0, 48.0, 40.0],
+                    min: [-4.0, -4.0, 0.0],
+                    max: [0.0, 0.0, 4.0],
                 }),
                 encoding: PropertyEncoding::default(),
             },
@@ -330,9 +363,13 @@ fn workbench_lotm_builds_all_meshes_with_materials_and_replaces_reference_units(
         .filter(|e| e.id.type_id == 0x2F4E_681B)
         .cloned()
         .collect();
-    // Four independent LOD model resources (NightHouse topology) + one
-    // slot0 parameter-table RW4.
-    assert_eq!(rw4_entries.len(), 5, "4 LOD models + slot0 params RW4");
+    // Building40 emits four LOD models plus the slot0 parameter table and the
+    // slot4/slot5 native texture wrappers (all type 0x2F4E681B).
+    assert_eq!(
+        rw4_entries.len(),
+        7,
+        "4 LOD models + slot0/slot4/slot5 RW4 wrappers"
+    );
     let mut model: Option<dbpf::IndexEntry> = None;
     for entry in &rw4_entries {
         let bytes = output.read(entry).unwrap();
@@ -384,10 +421,13 @@ fn workbench_lotm_builds_all_meshes_with_materials_and_replaces_reference_units(
             "facade FLOAT4 survives the compile"
         );
         let vertex = &decoded.vertices[0];
+        // The author Building40 route packs material group + interior seed into
+        // the vertex color (R=group, A=seed); tint lives in the atlas, not in
+        // COLOR.G (the legacy NH route baked the tint column there).
         assert_eq!(
             vertex.d3d_color_g(),
-            Some(128),
-            "tint column baked into COLOR.G"
+            Some(0),
+            "author route packs group/seed, not the tint column"
         );
     }
     let material = file
@@ -408,7 +448,7 @@ fn workbench_lotm_builds_all_meshes_with_materials_and_replaces_reference_units(
         .read(output.entry(tint_resource).expect("tint raster in package"))
         .unwrap();
     let raster = rw4::RasterImage::parse(&tint_bytes).unwrap();
-    assert_eq!(raster.width, 4, "PNG re-encoded as native raster");
+    assert_eq!(raster.width, 1024, "author tint atlas compiled");
     let params_resource = ResourceId {
         type_id: 0x2F4E_681B,
         group: 0,
@@ -574,7 +614,7 @@ fn material_gate_blocks_silent_model_changes_only() {
         .expect("material fingerprint in stage event");
     assert_eq!(
         gate.pointer("/parameterColumns"),
-        Some(&serde_json::json!([1])),
+        Some(&serde_json::json!([1, 1])),
         "parameter column count is logged key evidence"
     );
     assert_eq!(gate.pointer("/meshCount"), Some(&serde_json::json!(2)));
@@ -2547,7 +2587,7 @@ fn real_r10_workbench_nh_partitioned_package() {
     // 公园工具子分类 07049250 + 公园菜单子根 F970A822 + NightHouse 实证
     // 模板对 565B72B9/34CE7E14）。覆盖 DLC0 不可见资产的方式已证实无用。
     let mut schema: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    schema["scene"]["modelShape"] = serde_json::Value::String("nh-atlas".into());
+    schema["scene"]["modelShape"] = serde_json::Value::String("building40".into());
     schema["semantics"]["menu"] = serde_json::json!({
         "title": "商业塔楼 R10",
         "categoryInstance": "0x07049250",
@@ -2681,7 +2721,7 @@ fn real_r11_menu_identity_verified_tower() {
     let root = fixture.join("commercial-model");
     let raw = fs::read_to_string(root.join("schema.json")).unwrap();
     let mut schema: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    schema["scene"]["modelShape"] = serde_json::Value::String("nh-atlas".into());
+    schema["scene"]["modelShape"] = serde_json::Value::String("building40".into());
     schema["semantics"]["menu"] = serde_json::json!({
         "title": "商业塔楼 R11",
         "categoryInstance": "0x07049250",
@@ -2999,8 +3039,8 @@ fn real_commercial_menu_park_builds_package() {
     let mut schema: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(root.join("schema.json")).unwrap()).unwrap();
     schema["id"] = serde_json::Value::String("commercial-menu-park".into());
-    // 菜单包模型强制 merged-single：105-mesh 分区形状实测令游戏加载崩溃。
-    schema["scene"]["modelShape"] = serde_json::Value::String("merged-single".into());
+    // 菜单包模型强制 Building40：拆 mesh / merged-single 已从生产入口移除。
+    schema["scene"]["modelShape"] = serde_json::Value::String("building40".into());
     schema["semantics"] = serde_json::json!({ "menu": {
         "title": "OpenSCP 商业公园",
         "description": "OpenSCP 资产工作台菜单录入测试（公园面板）",

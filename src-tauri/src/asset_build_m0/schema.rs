@@ -53,9 +53,9 @@ pub struct SceneSchema {
     #[serde(default)]
     pub writes: Vec<String>,
     pub model: Option<String>,
-    /// RW4 编译形状：缺省 = 逐源 mesh 分区（v3 契约）；
-    /// `"merged-single"` = 全部几何合并为最少 mesh + 单材质 + BBox +
-    /// 占位 Raster（原版形状克隆，2026-10-30 崩溃排查）。
+    /// RW4 编译形状。生产路径（2026-11-09）：缺省或显式只能是
+    /// `"building40"`（SC5 Packager 算法的 Rust 内核）。`nh-atlas` /
+    /// `merged-single` 已从生产入口移除。
     #[serde(default, rename = "modelShape")]
     pub model_shape: Option<String>,
     #[serde(default)]
@@ -235,15 +235,16 @@ pub fn validate_schema(schema: &AssetSchemaV2, diagnostics: &mut DiagnosticSet) 
         ));
     }
     if let Some(shape) = &schema.scene.model_shape {
-        // 2026-11-08：拆 mesh 系路线移除（孤儿形状回归，见 geometry_route.rs）。
-        if shape != "merged-single" && shape != "nh-atlas" && shape != "building40" {
+        // 2026-11-09：生产路径只允许 Building40（Rust 迁入的 Packager 建筑核）。
+        if shape != "building40" {
             diagnostics.push(Diagnostic::error(
                 "schema.invalid_model_shape",
                 Some("scene.modelShape".into()),
-                r#"modelShape must be "nh-atlas" (single mesh per LOD with baked tint atlas — the university GOLDEN shape), "merged-single", or "building40". Mesh-splitting routes (nh-partitioned/native-multi/nh-multimaterial) are removed: game census allows ≤4 meshes per model"#,
+                r#"modelShape must be "building40" (or omitted). Production builds use the Rust Building40 kernel; nh-atlas/merged-single and mesh-splitting routes are removed. Do not shell out to SC5 Asset Packager."#,
             ));
         }
     }
+    reject_external_packager_fields(schema, diagnostics);
     if let Some(mode) = &schema.outputs.mode {
         if mode != "delta" && mode != "full" {
             diagnostics.push(Diagnostic::error(
@@ -303,6 +304,32 @@ fn valid_slot(value: &str) -> bool {
         value,
         "slot0" | "slot1" | "slot2" | "slot3" | "slot4" | "slot5"
     )
+}
+
+/// Fail-closed against schemas that still try to drive the Python SC5
+/// Asset Packager (`.pyc` / `backend.command` / external packager keys).
+/// Production packaging is Rust Building40 only (2026-11-09).
+fn reject_external_packager_fields(schema: &AssetSchemaV2, diagnostics: &mut DiagnosticSet) {
+    let blob = serde_json::to_string(schema).unwrap_or_default();
+    let lower = blob.to_ascii_lowercase();
+    let markers = [
+        ("sc5_packager", "sc5_packager"),
+        ("backend.command", "backend.command"),
+        ("\"backend\"", "backend"),
+        (".pyc", ".pyc"),
+        ("externalpackager", "externalPackager"),
+        ("packagercommand", "packagerCommand"),
+    ];
+    for (needle, label) in markers {
+        if lower.contains(needle) {
+            diagnostics.push(Diagnostic::error(
+                "schema.external_packager_forbidden",
+                Some(label.into()),
+                "external SC5 Asset Packager / Python .pyc backends are forbidden; use the Rust asset_build_m1 Building40 path (build_queue_enqueue_project)",
+            ));
+            break;
+        }
+    }
 }
 
 fn validate_relative_file(value: &str, path: &str, diagnostics: &mut DiagnosticSet) {
@@ -369,5 +396,45 @@ mod tests {
             .collect();
         assert!(codes.contains(&"schema.invalid_path"));
         assert!(codes.contains(&"schema.invalid_tgi"));
+    }
+
+    #[test]
+    fn accepts_building40_or_omitted_model_shape() {
+        let mut value: Value = serde_json::from_str(&schema()).unwrap();
+        assert!(parse_schema(&value.to_string()).is_ok());
+        value["scene"]["modelShape"] = Value::String("building40".into());
+        assert!(parse_schema(&value.to_string()).is_ok());
+    }
+
+    #[test]
+    fn rejects_legacy_model_shapes_and_packager_markers() {
+        let mut value: Value = serde_json::from_str(&schema()).unwrap();
+        value["scene"]["modelShape"] = Value::String("nh-atlas".into());
+        let error = parse_schema(&value.to_string()).unwrap_err();
+        assert!(error
+            .diagnostics
+            .items
+            .iter()
+            .any(|item| item.code == "schema.invalid_model_shape"));
+
+        value["scene"]["modelShape"] = Value::String("merged-single".into());
+        let error = parse_schema(&value.to_string()).unwrap_err();
+        assert!(error
+            .diagnostics
+            .items
+            .iter()
+            .any(|item| item.code == "schema.invalid_model_shape"));
+
+        let mut packager = serde_json::from_str::<Value>(&schema()).unwrap();
+        packager["id"] = Value::String("demo_sc5_packager_bridge".into());
+        let error = parse_schema(&packager.to_string()).unwrap_err();
+        assert!(
+            error
+                .diagnostics
+                .items
+                .iter()
+                .any(|item| item.code == "schema.external_packager_forbidden"),
+            "{error:?}"
+        );
     }
 }

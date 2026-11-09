@@ -381,7 +381,7 @@ fn text_value(table_id: u32) -> Value {
     })
 }
 
-fn vector2(property: Option<&Property>) -> Option<[f32; 2]> {
+pub(crate) fn vector2(property: Option<&Property>) -> Option<[f32; 2]> {
     match property.and_then(|p| p.scalar()) {
         Some(Value::Vector2(value)) => Some(*value),
         _ => None,
@@ -416,7 +416,7 @@ fn encode_lot_numeric(property: &Property) -> Result<Property, String> {
 
 /// `asset_transforms.rotate_lot`: rotate the ground mask CCW by
 /// `degrees/90` quarters and transform size/offset/period accordingly.
-fn rotate_lot(
+pub(crate) fn rotate_lot(
     mask: &image::RgbaImage,
     size: [f32; 2],
     offset: [f32; 2],
@@ -598,13 +598,28 @@ fn rotate_matrix(matrix: &[f32], degrees: u32) -> Result<[f32; 12], String> {
 
 const IDENTITY_12: [f32; 12] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
 
+/// Workbench `modelTransform` moves the compiled model inside the lot. Scene
+/// units attached to the building (props/lights/effects/spawners) are authored
+/// in the same model frame, so they must receive the same translation or they
+/// float by the authored offset (observed as a small effect/prop drift).
+/// Full affine composition is only needed when the workbench model transform
+/// carries rotation/scale; the editor's current move tool is translation-only.
+fn apply_model_translation(mut matrix: [f32; 12], scene: &SceneDocument) -> [f32; 12] {
+    if let Some(model) = scene.model_transform {
+        matrix[9] += model[9];
+        matrix[10] += model[10];
+        matrix[11] += model[11];
+    }
+    matrix
+}
+
 /// `prop_contract.compile_fields` driven by the workbench prop units.
 /// Instances group by bin (the field offset); a bin holding several resource
 /// ids writes one merged prototype set — ids = distinct resources in
 /// first-appearance order, transforms = instances concatenated in scene
-/// order, indices = 0..total（vanilla wire 同构：热气球公园 3 原型/17 车位
-/// 一个 bin；2026-11-05 修：同 bin 多组各自写一份同 hash 字段会互相覆盖
-/// 且 slot 序重复——混合停车场/多树 bin 必触发）。
+/// order, indices = each instance's prototype index (the author's one-preset
+/// bin therefore writes one id + N transforms + N zero slots). Mixed-resource
+/// bins must not use 0..N, which silently binds later prototypes to the wrong id.
 fn compile_prop_fields(
     scene: Option<&SceneDocument>,
     degrees: u32,
@@ -612,7 +627,7 @@ fn compile_prop_fields(
     let Some(scene) = scene else {
         return Ok(Vec::new());
     };
-    let mut bins: Vec<(usize, Vec<u32>, Vec<Transform>)> = Vec::new();
+    let mut bins: Vec<(usize, Vec<u32>, Vec<Transform>, Vec<i32>)> = Vec::new();
     for unit in &scene.units {
         let SceneUnit::Prop {
             bin,
@@ -631,6 +646,7 @@ fn compile_prop_fields(
             Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
             None => IDENTITY_12,
         };
+        let matrix = apply_model_translation(matrix, scene);
         let scale = scale.unwrap_or(1.0);
         if !(0.001..=100.0).contains(&scale) {
             return Err("道具缩放超出支持范围".into());
@@ -643,18 +659,26 @@ fn compile_prop_fields(
             matrix: matrix.to_vec(),
         };
         let bin = *bin;
-        match bins.iter_mut().find(|(group_bin, _, _)| *group_bin == bin) {
-            Some((_, resources, records)) => {
-                if !resources.contains(resource) {
-                    resources.push(*resource);
-                }
+        match bins
+            .iter_mut()
+            .find(|(group_bin, _, _, _)| *group_bin == bin)
+        {
+            Some((_, resources, records, indices)) => {
+                let index = match resources.iter().position(|candidate| candidate == resource) {
+                    Some(index) => index,
+                    None => {
+                        resources.push(*resource);
+                        resources.len() - 1
+                    }
+                };
                 records.push(record);
+                indices.push(index as i32);
             }
-            None => bins.push((bin, vec![*resource], vec![record])),
+            None => bins.push((bin, vec![*resource], vec![record], vec![0])),
         }
     }
     let mut out = Vec::new();
-    for (bin, resources, records) in bins {
+    for (bin, resources, records, indices) in bins {
         // Author semantics: the bin value IS the field offset
         // (`fields[202567456+bin]`); the author catalog uses 9..=12 (their
         // trees) and commercial777's control package used 10/11. Pass the
@@ -696,7 +720,7 @@ fn compile_prop_fields(
         out.push(array(
             PROP_INDICES + bin,
             PropType::Int32,
-            (0..records.len() as i32).map(Value::Int32).collect(),
+            indices.into_iter().map(Value::Int32).collect(),
         ));
         out.push(scalar(
             PROP_MARKERS[0] + bin,
@@ -765,6 +789,7 @@ fn compile_light_fields(
             Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
             None => IDENTITY_12,
         };
+        let matrix = apply_model_translation(matrix, scene);
         // Author rows carry POINT/SPOT; LINE passes through verbatim (see
         // LIGHT_LINE_TYPE). Anything unrecognized falls back to POINT.
         let kind = match *light_type {
@@ -922,6 +947,7 @@ fn compile_spawner_fields(
             continue;
         };
         let matrix = rotate_matrix(&transform.matrix, degrees)?;
+        let matrix = apply_model_translation(matrix, scene);
         authored.insert(
             id.instance,
             (
@@ -1016,6 +1042,7 @@ fn compile_effect_fields(
             Some(matrix) => rotate_matrix(&matrix.matrix, degrees)?,
             None => IDENTITY_12,
         };
+        let matrix = apply_model_translation(matrix, scene);
         ids.push(key_value(*effect_id));
         // Encoder invariant: flags 15 ⇔ unknown.is_some()。工作台场景文档
         // 的 effect transform 可能是 flags 15 但无 scale payload——规范化为
@@ -1171,51 +1198,73 @@ fn compile_path_fields(
 
 /// Build the parent-free Unit + Asset identities from the reference package.
 ///
-/// `ground_lot` names the ground/lot property the numeric parcel fields and
-/// the ground raster are read from (author: the sidecar `.lot.package`).
+/// `ground_lot` is the schema fallback. When `ground_source` is present, its
+/// independent snapshot is authoritative for both parcel defaults and pixels.
 /// `instance` is the new shared identity for the Unit/Asset properties.
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     spec: &MenuRegistrationSpec,
     resources: &connector::Resources,
     ground_lot: ResourceId,
+    ground_source: Option<(&connector::Resources, ResourceId)>,
     instance: u32,
     scene: Option<&SceneDocument>,
     model_ids: Option<&LodModelIds>,
     rotation_degrees: u32,
+    author_building40: bool,
 ) -> Result<ParentFreeIdentity, String> {
+    // Prefer explicit donor (behavior_family adapter / schema). Building40 no
+    // longer implies university complete-building when the adapter chose park.
     let donor = spec.unit_donor.as_deref().unwrap_or_else(|| {
         if spec.simulation_template_instance == Some(ELEMENTARY_TEMPLATE) {
             "elementary-school"
+        } else if author_building40 {
+            // Legacy geometry-only Building40 schemas without a family adapter
+            // still use the complete-building skeleton; workbench builds always
+            // enrich unit_donor via behavior_family.
+            "complete-building"
         } else {
             "generic-park"
         }
     });
-    // A school cannot be represented by the generic park Asset chain alone.
-    // The vanilla school Asset carries connected-unit, rollover and
-    // interaction fields that make the education Unit consumable and
-    // removable. Start from that donor, then add any generic fields that are
-    // absent and overlay authored geometry/props below.
-    let (mut asset, sources) = if donor == "elementary-school" {
-        let bytes = include_bytes!("../../resources/sc5/elementary-school-asset.bin");
-        let mut school = PropertyFile::parse(bytes)
-            .map_err(|e| format!("elementary-school-asset.bin parse: {e}"))?;
-        patch_donor_instance_refs(&mut school, ELEMENTARY_ASSET_DONOR.instance, instance);
+    // Keep each behavior family's complete Asset skeleton. In particular, the
+    // Building40 reference is not an elementary school with a different Unit:
+    // the school donor carries education-only columns and empty arrays that the
+    // author's candidate never emits. Start from the matching complete donor,
+    // then add absent generic fields and overlay authored geometry/props below.
+    let (mut asset, sources) = if matches!(donor, "elementary-school" | "complete-building") {
+        let (bytes, label, source) = if donor == "complete-building" {
+            (
+                &include_bytes!("../../resources/sc5/complete-building-asset.bin")[..],
+                "complete-building-asset.bin",
+                ResourceId {
+                    type_id: 0x00B1_B104,
+                    group: ASSET_GROUP,
+                    instance: 0x4C0E_8889,
+                },
+            )
+        } else {
+            (
+                &include_bytes!("../../resources/sc5/elementary-school-asset.bin")[..],
+                "elementary-school-asset.bin",
+                ELEMENTARY_ASSET_DONOR,
+            )
+        };
+        let mut asset = PropertyFile::parse(bytes).map_err(|e| format!("{label} parse: {e}"))?;
+        patch_donor_instance_refs(&mut asset, source.instance, instance);
         let (generic, generic_sources) = flat_chain(resources, GENERIC_ASSET)?;
         for property in generic.values {
-            if school.get(property.hash).is_none() {
-                school.values.push(property);
+            if asset.get(property.hash).is_none() {
+                asset.values.push(property);
             }
         }
-        school.claimed_count = school.values.len() as u32;
+        asset.claimed_count = asset.values.len() as u32;
         let mut sources = vec![format!(
             "{:08X}:{:08X}:{:08X}",
-            ELEMENTARY_ASSET_DONOR.type_id,
-            ELEMENTARY_ASSET_DONOR.group,
-            ELEMENTARY_ASSET_DONOR.instance
+            source.type_id, source.group, source.instance
         )];
         sources.extend(generic_sources);
-        (school, sources)
+        (asset, sources)
     } else if donor == "generic-park" {
         flat_chain(resources, GENERIC_ASSET)?
     } else {
@@ -1279,15 +1328,20 @@ pub fn build(
             "generic menu chain root {GENERIC_MENU} missing from the reference package"
         ));
     }
-    // Ground property: re-encode every numeric Lot field into the Asset
-    // dictionary; anything else must be one of the two ground key fields.
-    let ground_bytes = resources
+    // Ground property: re-encode numeric fields into the Asset dictionary. An
+    // explicit editor ground source is a complete Lot, so unrelated behavior
+    // columns stay in that snapshot; the schema fallback remains minimal/strict.
+    let (ground_resources, ground_lot) = ground_source.unwrap_or((resources, ground_lot));
+    let ground_bytes = ground_resources
         .get(&ground_lot)
-        .ok_or_else(|| format!("ground lot {ground_lot} missing from the reference package"))?;
+        .ok_or_else(|| format!("ground lot {ground_lot} missing from its source snapshot"))?;
     let ground = PropertyFile::parse(ground_bytes).map_err(|e| format!("ground lot parse: {e}"))?;
     for property in &ground.values {
         if LOT_TYPES.iter().any(|(hash, _)| *hash == property.hash) {
             upsert(&mut asset, encode_lot_numeric(property)?);
+            continue;
+        }
+        if ground_source.is_some() {
             continue;
         }
         if property.hash != HASH_PARENT
@@ -1303,17 +1357,29 @@ pub fn build(
         }
     }
     // Parcel geometry, rotated to the asset orientation (author order:
-    // size > offset > period > baseTile > width/depth > ground box).
-    let size =
-        vector2(ground.get(HASH_LOT_SIZE)).ok_or("ground lot is missing LotSize (0x0CCB7FC8)")?;
+    // size > offset > period > baseTile > width/depth > ground box). The scene
+    // is authoritative: a complete donor supplies missing fields, never its own
+    // parcel dimensions over the asset currently being built.
+    let size = match scene.and_then(|document| document.lot_size) {
+        Some(size) => size,
+        None => vector2(ground.get(HASH_LOT_SIZE))
+            .ok_or("ground lot is missing LotSize (0x0CCB7FC8)")?,
+    };
     if size[0] <= 0.0 || size[1] <= 0.0 {
         return Err("invalid parcel dimensions".into());
     }
-    let offset = vector2(ground.get(HASH_LOT_OFFSET)).unwrap_or([0.0, 0.0]);
-    let period = vector2(ground.get(HASH_LOT_PERIOD)).unwrap_or([8.0, 8.0]);
-    let base_tile = match ground.get(HASH_BASE_TILE).and_then(|p| p.scalar()) {
-        Some(Value::Int32(tile)) => *tile,
-        _ => 1,
+    let offset = scene
+        .and_then(|document| document.lot_offset)
+        .unwrap_or_else(|| vector2(ground.get(HASH_LOT_OFFSET)).unwrap_or([0.0, 0.0]));
+    let period = scene
+        .and_then(|document| document.ground_style.tile_period)
+        .unwrap_or_else(|| vector2(ground.get(HASH_LOT_PERIOD)).unwrap_or([8.0, 8.0]));
+    let base_tile = match scene.and_then(|document| document.ground_style.base_tile) {
+        Some(tile) => i32::from(tile),
+        None => match ground.get(HASH_BASE_TILE).and_then(|p| p.scalar()) {
+            Some(Value::Int32(tile)) => *tile,
+            _ => 1,
+        },
     };
     let (mut new_size, mut new_offset, mut new_period) = (size, offset, period);
     let mut mask = None;
@@ -1321,7 +1387,7 @@ pub fn build(
         let Kind::Scalar(Value::Key(key)) = &mask_property.kind else {
             return Err("ground mask is not a Key".into());
         };
-        let raw = resolve_raster(resources, key)?;
+        let raw = resolve_raster(ground_resources, key)?;
         let decoded = decode_ground_raster(&raw)?;
         let (rotated, rotated_size, rotated_offset, rotated_period) =
             rotate_lot(&decoded, size, offset, period, rotation_degrees)?;
@@ -1377,6 +1443,26 @@ pub fn build(
         &mut asset,
         scalar(HASH_BASE_TILE, PropType::Int32, Value::Int32(base_tile)),
     );
+    if let Some(document) = scene {
+        for (hash, value) in super::scene::ground_values(document) {
+            // Period and base tile were consumed above so quarter-turn parcel
+            // rotation remains consistent with the rotated ground raster.
+            if matches!(hash, HASH_LOT_PERIOD | HASH_BASE_TILE) {
+                continue;
+            }
+            let prop_type = match &value {
+                Value::ColorRgba { .. } => PropType::ColorRgba,
+                Value::Vector4(_) => PropType::Vector4,
+                Value::Float(_) => PropType::Float,
+                other => {
+                    return Err(format!(
+                        "unsupported authored ground value {hash:08X}: {other:?}"
+                    ));
+                }
+            };
+            upsert(&mut asset, scalar(hash, prop_type, value));
+        }
+    }
     upsert(
         &mut asset,
         scalar(
@@ -1522,6 +1608,14 @@ pub fn build(
             "../../resources/sc5/elementary-school-unit.bin"
         ))
         .map_err(|e| format!("elementary-school-unit.bin parse: {e}"))?,
+        "complete-building" => {
+            let mut complete = PropertyFile::parse(include_bytes!(
+                "../../resources/sc5/complete-building-unit.bin"
+            ))
+            .map_err(|e| format!("complete-building-unit.bin parse: {e}"))?;
+            patch_donor_instance_refs(&mut complete, 0x4C0E_8889, instance);
+            complete
+        }
         "generic-park" => {
             PropertyFile::parse(include_bytes!("../../resources/sc5/tested-unit.bin"))
                 .map_err(|e| format!("tested-unit.bin parse: {e}"))?
@@ -2072,6 +2166,37 @@ mod tests {
         assert_eq!(transform_header, (0x0C12_EF30, 56, 0x809C, 1, 56));
     }
 
+    #[test]
+    fn prop_slots_map_instances_to_distinct_prototypes() {
+        let units = [10, 10, 20]
+            .into_iter()
+            .map(|resource_id| {
+                json!({
+                    "kind": "prop", "bin": 1, "resourceId": resource_id,
+                    "transform": {"flags": 15, "matrix": IDENTITY_12}
+                })
+            })
+            .collect::<Vec<_>>();
+        let scene = parse_scene(&json!({ "units": units })).expect("three prop instances");
+        let fields = compile_prop_fields(Some(&scene), 0).expect("prop fields");
+        let column = |hash| {
+            fields
+                .iter()
+                .find(|property| property.hash == hash)
+                .and_then(Property::array)
+                .unwrap_or_else(|| panic!("missing {hash:08X}"))
+        };
+        let ids = column(PROP_RESOURCE_KEY + 1);
+        assert_eq!(ids.len(), 2);
+        assert!(matches!(ids[0], Value::Key(Key { instance: 10, .. })));
+        assert!(matches!(ids[1], Value::Key(Key { instance: 20, .. })));
+        assert_eq!(column(PROP_TRANSFORMS + 1).len(), 3);
+        assert_eq!(
+            column(PROP_INDICES + 1),
+            &[Value::Int32(0), Value::Int32(0), Value::Int32(1)]
+        );
+    }
+
     /// Light columns land at the author's hashes with the fixed profile
     /// fields alongside; the point/spot split follows the type hash.
     #[test]
@@ -2135,6 +2260,27 @@ mod tests {
         assert!(encode_lot_numeric(&property).is_err());
         let ok = scalar(0x0D7A_F046, PropType::Float, Value::Float(0.006));
         assert!(encode_lot_numeric(&ok).is_ok());
+    }
+
+    #[test]
+    fn complete_building_asset_donor_has_no_school_only_empty_arrays() {
+        let file = PropertyFile::parse(include_bytes!(
+            "../../resources/sc5/complete-building-asset.bin"
+        ))
+        .expect("complete Building40 Asset donor");
+        assert_eq!(file.values.len(), 125);
+        assert!(file.get(0x0A14_EDB3).is_none());
+        assert!(file.get(0x0A14_EDB4).is_none());
+        assert!(file.values.iter().all(|property| !matches!(
+            &property.kind,
+            Kind::Array(values) if values.is_empty()
+        )));
+        assert_eq!(
+            file.get(0x0F16_9C46).and_then(Property::scalar),
+            Some(&Value::Bool(true))
+        );
+        file.validate_declared_strides()
+            .expect("reference Asset must satisfy the final layout gate");
     }
 
     /// PropertyFile byte layout helper mirroring the author parser:

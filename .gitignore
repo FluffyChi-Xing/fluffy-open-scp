@@ -63,8 +63,9 @@ __pycache__/
 # tools/ 是本地临时工作区（迁移工具运行时、流水线脚本等），不入库 2026-11-08
 tools/
 
-# 第三方最新打包器参考源码，仅供本地对拍与迁移
-/investigation/sc5-asset-packager-latest/
+# investigation/ 是本地逆向调查工作区（反汇编转储、第三方打包器解包源码、对拍图片等），
+# 全部只保留在本地，不入库 2026-11-09
+/investigation/
 
 # 本地商业版构建输出
 /commercial-build.json

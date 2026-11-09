@@ -5,7 +5,8 @@ import {
   buildLotRect,
   placementInverse,
 } from "@/pages/packages/components/property-editor/editorGround";
-import { lotDimensionPlan, lotGroundPlan } from "./ground";
+import { lotDimensionPlan, lotGroundPlan, streetSidePlan } from "./ground";
+import { createLotDimensions } from "../exec/three/ground";
 import { affineToColumnMajor16 } from "../resolve/matrix";
 
 let seed = 0x5eed1234;
@@ -75,5 +76,61 @@ describe("lotDimensionPlan ↔ buildLotDimensions", () => {
 
   it("非法尺寸返回 null", () => {
     expect(lotDimensionPlan([0, 10], 3)).toBeNull();
+  });
+
+  it("带 +Y 临街箭头计划", () => {
+    const plan = lotDimensionPlan([32, 24], 0)!;
+    expect(plan.streetSide).not.toBeNull();
+    expect(plan.streetSide!.tip[0]).toBe(0);
+    expect(plan.streetSide!.tip[1]).toBeGreaterThan(12);
+  });
+});
+
+describe("streetSidePlan", () => {
+  it("箭头跨在 +Y 临街边上并指向 +Y", () => {
+    const plan = streetSidePlan([80, 60])!;
+    const ys = plan.triangles.map((point) => point[1]);
+    expect(plan.tip[0]).toBe(0);
+    expect(plan.tip[1]).toBeGreaterThan(30);
+    expect(Math.min(...ys)).toBeLessThan(30);
+    expect(Math.max(...ys)).toBeGreaterThan(30);
+  });
+
+  it("facing 90 把箭尖旋到 −X", () => {
+    const plan = streetSidePlan([80, 60], 90)!;
+    expect(plan.tip[0]).toBeLessThan(-30);
+    expect(plan.tip[1]).toBeCloseTo(0, 5);
+    expect(plan.facingDegrees).toBe(90);
+  });
+
+  it("尺寸随 lot 缩放并受上下限约束", () => {
+    const span = (plan: ReturnType<typeof streetSidePlan>) => {
+      const ys = plan!.triangles.map((point) => point[1]);
+      return Math.max(...ys) - Math.min(...ys);
+    };
+    expect(span(streetSidePlan([400, 400]))).toBeGreaterThan(
+      span(streetSidePlan([10, 10])),
+    );
+    expect(span(streetSidePlan([400, 400]))).toBeLessThanOrEqual(20);
+  });
+
+  it("非法尺寸返回 null", () => {
+    expect(streetSidePlan(null)).toBeNull();
+    expect(streetSidePlan([0, 10])).toBeNull();
+  });
+
+  it("createLotDimensions 把箭头挂到 dimensions 对象上", () => {
+    const dims = createLotDimensions(THREE, lotDimensionPlan([32, 24], 0)!);
+    const arrow = dims.object.getObjectByName("__streetSideArrow") as
+      | THREE.Mesh
+      | undefined;
+    expect(arrow).toBeTruthy();
+    const positions = (arrow!.geometry as THREE.BufferGeometry).attributes
+      .position.array as Float32Array;
+    let maxY = -Infinity;
+    for (let index = 1; index < positions.length; index += 3) {
+      maxY = Math.max(maxY, positions[index]);
+    }
+    expect(maxY).toBeGreaterThan(12);
   });
 });

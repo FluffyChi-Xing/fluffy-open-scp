@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import { tauriApi } from "@/api";
@@ -9,61 +9,150 @@ import type {
   BuildQueueEventPayload,
   StageEventDto,
 } from "@/api/tauri";
+import { useBuildActivityStore } from "@/stores/buildActivity";
 
 /**
- * OpenSCP Actions 页(P2,2026-11-04):构建队列的运行列表 + 单次运行
- * 的阶段详情(对标 GitHub Actions 列表/job log 两级视图)。任务由
- * 后台 build-queue 单线程串行执行;阶段边界事件经 build-queue:event
- * 实时推送,本面板订阅后刷新列表/详情。入队入口 = 手动粘贴 schema
- * JSON(P3 将由场景编辑器的"打包"按钮自动入队)。
+ * OpenSCP Actions：构建历史 + GitHub Actions 风格步骤耗时/详情日志。
+ * 生产入队入口在场景编辑器「构建」；本面板也可一键构建当前项目。
  */
-const props = defineProps<{ project: string }>();
+const props = defineProps<{
+  project: string;
+  /** 场景编辑器刚入队的任务；打开面板时自动展开详情。 */
+  focusJobId?: string | null;
+}>();
 const { t } = useI18n();
+const buildActivity = useBuildActivityStore();
+
+interface StepView {
+  stage: string;
+  status: "running" | "finished" | "failed";
+  durationMs: number | null;
+  detail: unknown;
+}
 
 const jobs = ref<BuildJobDto[]>([]);
 const selectedId = ref<string | null>(null);
+const expandedStage = ref<string | null>(null);
 const loading = ref(false);
 const schemaText = ref("");
 const enqueueBusy = ref(false);
 const enqueueError = ref("");
-/** 一键构建：构建器自动发现项目内唯一的 openscp.asset schema。 */
 const projectBuildBusy = ref(false);
 const projectBuildError = ref("");
 const projectSchema = ref("");
-/** 本次一键构建的逻辑编译摘要（菜单/岗位/行为节点数 + 警告）。 */
 const projectLogic = ref<{
   menu: boolean;
   labor: boolean;
   behaviors: number;
   warnings: string[];
 } | null>(null);
+const showDiagnostic = ref(false);
+
+const selectedJob = computed(
+  () => jobs.value.find((job) => job.id === selectedId.value) ?? null,
+);
+
+const selectedSteps = computed(() =>
+  selectedJob.value ? stepsFromEvents(selectedJob.value.events) : [],
+);
+
+function stepsFromEvents(events: StageEventDto[]): StepView[] {
+  const order: string[] = [];
+  const map = new Map<string, StepView>();
+  for (const event of events) {
+    if (!map.has(event.stage)) {
+      order.push(event.stage);
+      map.set(event.stage, {
+        stage: event.stage,
+        status: "running",
+        durationMs: null,
+        detail: event.detail,
+      });
+    }
+    const step = map.get(event.stage)!;
+    if (event.kind.type === "started") {
+      step.status = "running";
+      step.detail = event.detail;
+    } else if (event.kind.type === "finished") {
+      step.status = "finished";
+      step.durationMs = event.durationMs;
+      step.detail = event.detail;
+    } else {
+      step.status = "failed";
+      step.durationMs = event.durationMs;
+      step.detail = event.detail;
+    }
+  }
+  return order.map((stage) => map.get(stage)!);
+}
+
+function formatDetail(detail: unknown): string {
+  if (detail == null) return "";
+  if (typeof detail === "string") return detail;
+  try {
+    return JSON.stringify(detail, null, 2);
+  } catch {
+    return String(detail);
+  }
+}
 
 async function refresh() {
+  if (!props.project) return;
   loading.value = true;
   try {
     jobs.value = await tauriApi.buildQueue.list(props.project);
-    if (selectedId.value && !jobs.value.some((job) => job.id === selectedId.value)) {
+    const focus = props.focusJobId;
+    if (focus && jobs.value.some((job) => job.id === focus)) {
+      selectedId.value = focus;
+    } else if (
+      selectedId.value &&
+      !jobs.value.some((job) => job.id === selectedId.value)
+    ) {
       selectedId.value = null;
+      expandedStage.value = null;
     }
   } finally {
     loading.value = false;
   }
 }
-void refresh();
 
-const unlisten = subscribe<BuildQueueEventPayload>(
+watch(
+  () => props.project,
+  () => {
+    selectedId.value = props.focusJobId ?? null;
+    expandedStage.value = null;
+    void refresh();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.focusJobId,
+  (jobId) => {
+    if (jobId) {
+      selectedId.value = jobId;
+      void refresh();
+    }
+  },
+);
+
+const unlistenPromise = subscribe<BuildQueueEventPayload>(
   "build-queue:event",
   (payload) => {
-    // 运行中任务的阶段事件 → 就地更新详情行;状态类事件 → 全量刷新。
     if (payload.event && selectedId.value === payload.jobId) {
       const job = jobs.value.find((item) => item.id === payload.jobId);
-      job?.events.push(payload.event);
+      if (job) {
+        job.events.push(payload.event);
+        if (job.status === "queued") job.status = "running";
+      }
       return;
     }
     void refresh();
   },
-);
-onUnmounted(() => void unlisten.then((off) => off()));
+).catch(() => null);
+onUnmounted(() => {
+  void unlistenPromise.then((off) => off?.());
+});
 
 const statusIcon = (status: BuildJobDto["status"]) =>
   status === "finished"
@@ -71,41 +160,72 @@ const statusIcon = (status: BuildJobDto["status"]) =>
     : status === "failed"
       ? "X"
       : status === "running"
-        ? "Loader"
+        ? "LoaderCircle"
         : "Clock";
 const statusLabel = (status: BuildJobDto["status"]) =>
   t(`studio.assetWorkbench.actionsStatus.${status}`);
 
 function duration(job: BuildJobDto): string {
-  const elapsed = job.durationMs ?? Math.max(0, Date.now() - (job.startedAtMs ?? job.submittedAtMs));
+  const elapsed =
+    job.durationMs ??
+    Math.max(0, Date.now() - (job.startedAtMs ?? job.submittedAtMs));
   return formatDuration(elapsed);
 }
 
 function formatDuration(milliseconds: number | null): string {
   if (milliseconds === null) return "—";
-  if (milliseconds < 1000) return String(milliseconds) + "ms";
-  return (milliseconds / 1000).toFixed(2) + "s";
-}
-
-function eventTime(event: StageEventDto): string {
-  return new Date(event.timestampMs).toLocaleTimeString();
+  if (milliseconds < 1000) return `${milliseconds}ms`;
+  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(2)}s`;
+  const minutes = Math.floor(milliseconds / 60_000);
+  const seconds = ((milliseconds % 60_000) / 1000).toFixed(0);
+  return `${minutes}m ${seconds}s`;
 }
 
 function select(job: BuildJobDto) {
-  selectedId.value = selectedId.value === job.id ? null : job.id;
+  if (selectedId.value === job.id) {
+    selectedId.value = null;
+    expandedStage.value = null;
+    return;
+  }
+  selectedId.value = job.id;
+  expandedStage.value = null;
 }
 
+function toggleStep(stage: string) {
+  expandedStage.value = expandedStage.value === stage ? null : stage;
+}
+
+const stepIcon = (status: StepView["status"]) =>
+  status === "finished"
+    ? "Check"
+    : status === "failed"
+      ? "X"
+      : "LoaderCircle";
+
 async function enqueueProject() {
-  if (projectBuildBusy.value) return;
+  if (projectBuildBusy.value || !props.project) return;
   projectBuildBusy.value = true;
   projectBuildError.value = "";
   try {
     const submitted = await tauriApi.buildQueue.enqueueProject(props.project);
     projectSchema.value = submitted.schema;
     projectLogic.value = submitted.logic ?? null;
+    selectedId.value = submitted.jobId;
+    buildActivity.rememberProject(
+      props.project,
+      buildActivity.lastProjectLabel,
+      submitted.jobId,
+    );
     await refresh();
   } catch (cause) {
-    projectBuildError.value = String(cause);
+    const message =
+      cause &&
+      typeof cause === "object" &&
+      "message" in cause &&
+      typeof (cause as { message: unknown }).message === "string"
+        ? (cause as { message: string }).message
+        : String(cause);
+    projectBuildError.value = message;
   } finally {
     projectBuildBusy.value = false;
   }
@@ -132,120 +252,187 @@ async function enqueueSchema() {
     enqueueBusy.value = false;
   }
 }
-
-const stageKindIcon = (event: StageEventDto) =>
-  event.kind.type === "finished"
-    ? "Check"
-    : event.kind.type === "failed"
-      ? "X"
-      : "Loader";
 </script>
 
 <template>
   <div class="actions-panel">
-    <!-- 一键构建:自动发现项目内 schema;不再需要粘贴/人工比对 -->
-    <div class="project-build">
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="hero-kicker">{{
+          t("studio.assetWorkbench.actionsProductionKicker")
+        }}</span>
+        <p class="hero-note">
+          {{
+            projectSchema
+              ? t("studio.assetWorkbench.actionsBuildProjectSchema", {
+                  path: projectSchema,
+                })
+              : t("studio.assetWorkbench.actionsBuildProjectHint")
+          }}
+        </p>
+        <p v-if="projectLogic" class="hero-logic">
+          {{
+            t("studio.assetWorkbench.actionsBuildLogic", {
+              menu: projectLogic.menu ? "✓" : "—",
+              labor: projectLogic.labor ? "✓" : "—",
+              behaviors: projectLogic.behaviors,
+            })
+          }}
+        </p>
+        <p
+          v-for="warning in projectLogic?.warnings ?? []"
+          :key="warning"
+          class="hero-warning"
+        >
+          {{ warning }}
+        </p>
+        <p v-if="projectBuildError" class="enqueue-error">
+          {{ projectBuildError }}
+        </p>
+      </div>
       <button
         type="button"
-        class="enqueue-button project-build-button"
+        class="build-button"
         :disabled="projectBuildBusy"
         @click="enqueueProject"
       >
-        <FIcon name="Hammer" :size="12" aria-label="" />
-        {{ t("studio.assetWorkbench.actionsBuildProject") }}
-      </button>
-      <p class="project-build-note">
-        {{
-          projectSchema
-            ? t("studio.assetWorkbench.actionsBuildProjectSchema", {
-                path: projectSchema,
-              })
-            : t("studio.assetWorkbench.actionsBuildProjectHint")
-        }}
-      </p>
-      <p v-if="projectLogic" class="project-build-note">
-        {{
-          t("studio.assetWorkbench.actionsBuildLogic", {
-            menu: projectLogic.menu ? "✓" : "—",
-            labor: projectLogic.labor ? "✓" : "—",
-            behaviors: projectLogic.behaviors,
-          })
-        }}
-      </p>
-      <p
-        v-for="warning in projectLogic?.warnings ?? []"
-        :key="warning"
-        class="project-build-note"
-      >
-        {{ warning }}
-      </p>
-      <p v-if="projectBuildError" class="enqueue-error">
-        {{ projectBuildError }}
-      </p>
-    </div>
-    <!-- 手动入队(P3 前的过渡入口:粘贴 schema JSON) -->
-    <details class="enqueue-box">
-      <summary>{{ t("studio.assetWorkbench.actionsEnqueueTitle") }}</summary>
-      <textarea
-        v-model="schemaText"
-        class="schema-input"
-        :placeholder="t('studio.assetWorkbench.actionsEnqueueHint')"
-        spellcheck="false"
-      />
-      <button
-        type="button"
-        class="enqueue-button"
-        :disabled="enqueueBusy || !schemaText.trim()"
-        @click="enqueueSchema"
-      >
-        {{ t("studio.assetWorkbench.actionsEnqueueButton") }}
-      </button>
-      <p v-if="enqueueError" class="enqueue-error">{{ enqueueError }}</p>
-    </details>
-
-    <p v-if="loading && !jobs.length" class="panel-note">
-      {{ t("common.loading") }}
-    </p>
-    <p v-else-if="!jobs.length" class="panel-note">
-      {{ t("studio.assetWorkbench.actionsEmpty") }}
-    </p>
-    <ul v-else class="run-list">
-      <li v-for="job in jobs" :key="job.id">
-        <button
-          type="button"
-          class="run-row"
-          :class="{ selected: selectedId === job.id }"
-          @click="select(job)"
-        >
+        <span class="build-icon" aria-hidden="true">
           <FIcon
-            :name="statusIcon(job.status)"
-            :size="14"
+            :name="projectBuildBusy ? 'LoaderCircle' : 'Hammer'"
+            :size="16"
             aria-label=""
           />
-          <span class="run-id">{{ job.label || job.id }}</span>
-          <span class="run-status">{{ statusLabel(job.status) }}</span>
-          <span class="run-duration">{{ duration(job) }}</span>
-        </button>
-        <!-- 运行详情:阶段步骤行(对标 Actions job log) -->
-        <ol v-if="selectedId === job.id" class="stage-list">
-          <li v-for="(event, index) in job.events" :key="index" class="stage-row">
-            <FIcon :name="stageKindIcon(event)" :size="12" aria-label="" />
-            <span class="stage-name">{{ event.stage }}</span>
-            <span class="stage-kind">{{ event.kind.type }}</span>
-            <span class="stage-time">{{ eventTime(event) }}</span>
-            <span v-if="event.durationMs !== null" class="stage-duration">
-              {{ formatDuration(event.durationMs) }}
+        </span>
+        <span class="build-text">
+          <strong>{{
+            projectBuildBusy
+              ? t("studio.assetWorkbench.buildEnqueueing")
+              : t("studio.assetWorkbench.actionsBuildProject")
+          }}</strong>
+          <small>{{
+            t("studio.assetWorkbench.actionsBuildProjectCaption")
+          }}</small>
+        </span>
+      </button>
+    </section>
+
+    <div class="runs-block">
+      <header class="runs-head">
+        <strong>{{ t("studio.assetWorkbench.actionsTab") }}</strong>
+        <span class="runs-count">{{ jobs.length }}</span>
+      </header>
+
+      <p v-if="loading && !jobs.length" class="panel-note">
+        {{ t("common.loading") }}
+      </p>
+      <div v-else-if="!jobs.length" class="empty-state">
+        <span class="empty-icon" aria-hidden="true">
+          <FIcon name="ClipboardList" :size="18" aria-label="" />
+        </span>
+        <p>{{ t("studio.assetWorkbench.actionsEmpty") }}</p>
+      </div>
+
+      <ul v-else class="run-list">
+        <li v-for="job in jobs" :key="job.id" class="run-item">
+          <button
+            type="button"
+            class="run-row"
+            :class="[`status-${job.status}`, { selected: selectedId === job.id }]"
+            @click="select(job)"
+          >
+            <span class="status-dot" :data-status="job.status" aria-hidden="true">
+              <FIcon :name="statusIcon(job.status)" :size="12" aria-label="" />
             </span>
-          </li>
-          <li v-if="job.error" class="stage-error">{{ job.error }}</li>
-          <li v-else-if="job.result" class="stage-result">
-            {{ t("studio.assetWorkbench.actionsResources") }}:
-            {{ job.result.resourceCount }} · sha256
-            {{ String(job.result.sha256 ?? "").slice(0, 12) }}…
-          </li>
-        </ol>
-      </li>
-    </ul>
+            <span class="run-main">
+              <span class="run-id">{{ job.label || job.id }}</span>
+              <span class="run-meta">
+                <span class="status-pill" :data-status="job.status">{{
+                  statusLabel(job.status)
+                }}</span>
+                <span>{{ new Date(job.submittedAtMs).toLocaleString() }}</span>
+              </span>
+            </span>
+            <span class="run-duration">{{ duration(job) }}</span>
+          </button>
+
+          <div v-if="selectedId === job.id" class="job-detail">
+            <header class="job-detail-head">
+              <strong>{{ t("studio.assetWorkbench.actionsViewDetail") }}</strong>
+              <span v-if="job.durationMs != null">{{
+                formatDuration(job.durationMs)
+              }}</span>
+            </header>
+            <ol class="stage-list">
+              <li
+                v-for="step in selectedSteps"
+                :key="step.stage"
+                class="stage-item"
+              >
+                <button
+                  type="button"
+                  class="stage-row"
+                  @click="toggleStep(step.stage)"
+                >
+                  <FIcon
+                    :name="stepIcon(step.status)"
+                    :size="12"
+                    aria-label=""
+                  />
+                  <span class="stage-name">{{ step.stage }}</span>
+                  <span class="stage-duration">{{
+                    formatDuration(step.durationMs)
+                  }}</span>
+                </button>
+                <pre
+                  v-if="expandedStage === step.stage && formatDetail(step.detail)"
+                  class="stage-log"
+                  >{{ formatDetail(step.detail) }}</pre
+                >
+              </li>
+            </ol>
+            <p v-if="job.error" class="stage-error">{{ job.error }}</p>
+            <p v-else-if="job.result" class="stage-result">
+              {{ t("studio.assetWorkbench.actionsResources") }}:
+              {{ job.result.resourceCount }} · sha256
+              {{ String(job.result.sha256 ?? "").slice(0, 12) }}…
+            </p>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="diagnostic">
+      <button
+        type="button"
+        class="diagnostic-toggle"
+        :aria-expanded="showDiagnostic"
+        @click="showDiagnostic = !showDiagnostic"
+      >
+        <FIcon
+          :name="showDiagnostic ? 'ChevronDown' : 'ChevronRight'"
+          :size="12"
+          aria-label=""
+        />
+        {{ t("studio.assetWorkbench.actionsEnqueueTitle") }}
+      </button>
+      <div v-if="showDiagnostic" class="diagnostic-body">
+        <textarea
+          v-model="schemaText"
+          class="schema-input"
+          :placeholder="t('studio.assetWorkbench.actionsEnqueueHint')"
+          spellcheck="false"
+        />
+        <button
+          type="button"
+          class="diagnostic-button"
+          :disabled="enqueueBusy || !schemaText.trim()"
+          @click="enqueueSchema"
+        >
+          {{ t("studio.assetWorkbench.actionsEnqueueButton") }}
+        </button>
+        <p v-if="enqueueError" class="enqueue-error">{{ enqueueError }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -253,151 +440,415 @@ const stageKindIcon = (event: StageEventDto) =>
 .actions-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
   overflow: auto;
-  padding: 10px;
+  padding: 4px 2px 8px;
 }
-.project-build {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px;
+.hero {
+  align-items: stretch;
+  background:
+    radial-gradient(
+      120% 80% at 100% 0%,
+      color-mix(in srgb, var(--primary, #2563eb) 18%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--surface-elevated) 92%, #1e293b),
+      color-mix(in srgb, var(--surface) 88%, transparent)
+    );
+  border: 1px solid color-mix(in srgb, var(--primary, #2563eb) 22%, var(--border));
+  border-radius: 12px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 14px 16px;
 }
-.project-build-button {
-  align-items: center;
-  display: inline-flex;
-  gap: 5px;
-  justify-content: center;
-  margin-top: 0;
+@media (max-width: 720px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
 }
-.project-build-note {
+.hero-kicker {
+  color: color-mix(in srgb, var(--primary, #60a5fa) 85%, white);
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.hero-note,
+.hero-logic,
+.hero-warning {
   color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  word-break: break-word;
+}
+.hero-logic {
+  margin-top: 6px;
+}
+.hero-warning {
+  color: #fbbf24;
+  margin-top: 4px;
+}
+.build-button {
+  align-items: center;
+  align-self: center;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primary, #3b82f6) 92%, white),
+    var(--primary, #2563eb)
+  );
+  border: 1px solid color-mix(in srgb, var(--primary, #2563eb) 70%, #0f172a);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 18%, transparent) inset,
+    0 8px 20px color-mix(in srgb, var(--primary, #2563eb) 28%, transparent);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 10px;
+  min-height: 48px;
+  min-width: 168px;
+  padding: 8px 14px;
+  text-align: start;
+}
+.build-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.build-button:not(:disabled):hover {
+  filter: brightness(1.05);
+}
+.build-icon {
+  align-items: center;
+  background: color-mix(in srgb, white 16%, transparent);
+  border-radius: 8px;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+.build-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.2;
+}
+.build-text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.build-text small {
+  color: color-mix(in srgb, white 72%, transparent);
+  font-size: 10px;
+}
+.runs-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.runs-head {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: flex;
+  font-size: 11px;
+  gap: 8px;
+  justify-content: space-between;
+  letter-spacing: 0.02em;
+}
+.runs-count {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  min-width: 22px;
+  padding: 1px 7px;
+  text-align: center;
+}
+.empty-state {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface-elevated) 55%, transparent);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--subtle-foreground);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-height: 96px;
+  padding: 18px 16px;
+  text-align: center;
+}
+.empty-icon {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+.empty-state p,
+.panel-note {
+  color: var(--subtle-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+}
+.run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.run-item {
+  display: flex;
+  flex-direction: column;
+}
+.run-row {
+  align-items: center;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--foreground);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 10px;
+  grid-template-columns: 28px 1fr auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: start;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+  width: 100%;
+}
+.run-row:hover {
+  border-color: color-mix(in srgb, var(--primary, #2563eb) 35%, var(--border));
+}
+.run-row.selected {
+  background: color-mix(in srgb, var(--primary, #2563eb) 8%, var(--surface-elevated));
+  border-color: color-mix(in srgb, var(--primary, #2563eb) 55%, var(--border));
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.status-dot {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+.status-dot[data-status="finished"] {
+  background: color-mix(in srgb, #22c55e 18%, transparent);
+  color: #4ade80;
+}
+.status-dot[data-status="failed"] {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  color: #f87171;
+}
+.status-dot[data-status="running"] {
+  background: color-mix(in srgb, #3b82f6 18%, transparent);
+  color: #60a5fa;
+}
+.status-dot[data-status="queued"] {
+  background: color-mix(in srgb, #94a3b8 16%, transparent);
+  color: #94a3b8;
+}
+.run-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.run-id {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-meta {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 6px;
+}
+.status-pill {
+  border-radius: 999px;
+  font-size: 10px;
+  padding: 1px 7px;
+}
+.status-pill[data-status="finished"] {
+  background: color-mix(in srgb, #22c55e 16%, transparent);
+  color: #86efac;
+}
+.status-pill[data-status="failed"] {
+  background: color-mix(in srgb, #ef4444 16%, transparent);
+  color: #fca5a5;
+}
+.status-pill[data-status="running"] {
+  background: color-mix(in srgb, #3b82f6 16%, transparent);
+  color: #93c5fd;
+}
+.status-pill[data-status="queued"] {
+  background: color-mix(in srgb, #94a3b8 14%, transparent);
+  color: #cbd5e1;
+}
+.run-duration {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+.job-detail {
+  background: color-mix(in srgb, var(--surface-elevated) 65%, #0b1220);
+  border: 1px solid color-mix(in srgb, var(--primary, #2563eb) 35%, var(--border));
+  border-radius: 0 0 10px 10px;
+  border-top: 0;
+  margin: 0;
+  padding: 10px 12px 12px;
+}
+.job-detail-head {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: flex;
+  font-size: 11px;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.stage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.stage-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--foreground);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  font-size: 11px;
+  gap: 8px;
+  grid-template-columns: 14px 1fr auto;
+  min-height: 26px;
+  padding: 4px 6px;
+  text-align: start;
+  width: 100%;
+}
+.stage-row:hover {
+  background: var(--surface-hover);
+}
+.stage-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-duration {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  min-width: 48px;
+  text-align: end;
+}
+.stage-log {
+  background: #0b1220;
+  border-radius: 8px;
+  color: #d7e0ea;
+  font-family: var(--font-mono, monospace);
   font-size: 10.5px;
-  margin: 6px 0 0;
+  line-height: 1.45;
+  margin: 0 0 4px 22px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.stage-error {
+  color: var(--danger, #ef4444);
+  font-size: 11px;
+  margin: 8px 0 0;
   word-break: break-all;
 }
-.enqueue-box {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px;
+.stage-result {
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  margin: 8px 0 0;
 }
-.enqueue-box summary {
+.diagnostic {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+.diagnostic-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
   color: var(--muted-foreground);
   cursor: pointer;
+  display: inline-flex;
+  font: inherit;
   font-size: 11px;
+  gap: 4px;
+  padding: 6px 2px;
+}
+.diagnostic-toggle:hover {
+  color: var(--foreground);
+}
+.diagnostic-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 4px;
 }
 .schema-input {
   background: var(--surface-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   color: var(--foreground);
   font-family: var(--font-mono, monospace);
   font-size: 11px;
   height: 96px;
-  margin-top: 6px;
-  padding: 6px;
+  padding: 8px 10px;
   width: 100%;
 }
-.enqueue-button {
-  background: var(--primary, #2563eb);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: #fff;
+.diagnostic-button {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--foreground);
   cursor: pointer;
   font-size: 12px;
-  margin-top: 6px;
-  min-height: 26px;
-  width: 100%;
+  min-height: 28px;
+  padding: 0 12px;
 }
-.enqueue-button:disabled {
+.diagnostic-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 .enqueue-error {
   color: var(--danger, #ef4444);
   font-size: 11px;
-  margin: 4px 0 0;
-  word-break: break-all;
-}
-.panel-note {
-  color: var(--subtle-foreground);
-  font-size: 12px;
-  margin: 8px 0;
-}
-.run-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  list-style: none;
   margin: 0;
-  padding: 0;
-}
-.run-row {
-  align-items: center;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
-  cursor: pointer;
-  display: grid;
-  font: inherit;
-  font-size: 12px;
-  gap: 8px;
-  grid-template-columns: 16px 1fr auto auto;
-  min-height: 28px;
-  padding: 4px 8px;
-  text-align: start;
-  width: 100%;
-}
-.run-row.selected {
-  border-color: var(--primary, #2563eb);
-}
-.run-id {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.run-status,
-.run-duration {
-  color: var(--muted-foreground);
-  font-size: 11px;
-}
-.stage-list {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0 0 0 16px;
-}
-.stage-row {
-  align-items: center;
-  display: flex;
-  font-size: 11px;
-  gap: 6px;
-  min-height: 22px;
-}
-.stage-name {
-  color: var(--foreground);
-}
-.stage-kind {
-  color: var(--muted-foreground);
-}
-.stage-time,
-.stage-duration {
-  color: var(--muted-foreground);
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  margin-left: auto;
-}
-.stage-duration {
-  margin-left: 4px;
-  min-width: 42px;
-  text-align: end;
-}
-.stage-error {
-  color: var(--danger, #ef4444);
-  font-size: 11px;
   word-break: break-all;
-}
-.stage-result {
-  color: var(--subtle-foreground);
-  font-size: 11px;
 }
 </style>

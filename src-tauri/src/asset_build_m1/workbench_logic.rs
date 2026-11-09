@@ -176,6 +176,20 @@ fn compile_menu(
             values.insert(field.into(), json!(value));
         }
     }
+    // 临街朝向：优先 workbench.rotationDegrees（地块 tab），其次 menu 内字段。
+    let rotation = workbench
+        .and_then(|value| value.get("rotationDegrees"))
+        .or_else(|| menu.get("rotationDegrees"))
+        .and_then(Value::as_u64);
+    if let Some(degrees) = rotation {
+        if !matches!(degrees, 0 | 90 | 180 | 270) {
+            errors.push(format!(
+                "rotationDegrees: only 0/90/180/270 are supported (got {degrees})"
+            ));
+        } else {
+            values.insert("rotationDegrees".into(), json!(degrees));
+        }
+    }
     Some(Value::Object(values))
 }
 
@@ -439,6 +453,8 @@ fn compile_logic(
 }
 
 /// 把编译结果覆盖到基础 schema 的 `semantics`（其余段原样保留）。
+/// 有 `scene.model` 时强制 `scene.modelShape=building40`（生产路径钉死；
+/// 工作台只编排场景/逻辑，建筑编译走 Rust Building40 内核）。
 pub fn apply_to_schema(base: &mut Value, compiled: &CompiledLogic) -> Result<(), Vec<String>> {
     let Some(root) = base.as_object_mut() else {
         return Err(vec!["base schema must be a JSON object".into()]);
@@ -472,6 +488,30 @@ pub fn apply_to_schema(base: &mut Value, compiled: &CompiledLogic) -> Result<(),
         }
         semantics.insert("behaviors".into(), json!(compiled.behaviors));
     }
+    pin_building40_model_shape(root)?;
+    Ok(())
+}
+
+fn pin_building40_model_shape(root: &mut Map<String, Value>) -> Result<(), Vec<String>> {
+    let Some(scene) = root.get_mut("scene").and_then(Value::as_object_mut) else {
+        return Ok(());
+    };
+    let has_model = scene
+        .get("model")
+        .and_then(Value::as_str)
+        .is_some_and(|path| !path.trim().is_empty());
+    if !has_model {
+        return Ok(());
+    }
+    if let Some(shape) = scene.get("modelShape").and_then(Value::as_str) {
+        if shape != "building40" {
+            return Err(vec![format!(
+                "scene.modelShape {shape:?} is forbidden for workbench builds; \
+                 production packaging uses Rust Building40 only"
+            )]);
+        }
+    }
+    scene.insert("modelShape".into(), json!("building40"));
     Ok(())
 }
 
@@ -513,6 +553,23 @@ mod tests {
 
     fn empty_logic() -> Value {
         json!({"nodes": [], "edges": [], "params": {}})
+    }
+
+    #[test]
+    fn compiles_rotation_degrees_from_workbench_root() {
+        let mut doc = document(menu(true), empty_logic());
+        doc["editor"]["workbench"]["rotationDegrees"] = json!(90);
+        let compiled = compile(&doc, &|_| true).unwrap();
+        let values = compiled.menu.expect("menu");
+        assert_eq!(values["rotationDegrees"], 90);
+    }
+
+    #[test]
+    fn rejects_invalid_rotation_degrees() {
+        let mut doc = document(menu(true), empty_logic());
+        doc["editor"]["workbench"]["rotationDegrees"] = json!(45);
+        let errors = compile(&doc, &|_| true).unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("rotationDegrees")));
     }
 
     #[test]
@@ -631,6 +688,27 @@ mod tests {
         })
         .unwrap_err();
         assert!(errors.iter().any(|e| e.contains("leaf-1")), "{errors:?}");
+    }
+
+    #[test]
+    fn apply_pins_building40_when_scene_model_present() {
+        let mut base = json!({
+            "$schema": "openscp.asset",
+            "schema_version": 2,
+            "id": "demo",
+            "kind": "building-asset",
+            "reference": {},
+            "scene": {"document": "asset.lot.json", "model": "models/a.lotm"},
+            "semantics": {},
+            "outputs": {"package": "demo.package"}
+        });
+        let compiled = CompiledLogic::default();
+        apply_to_schema(&mut base, &compiled).unwrap();
+        assert_eq!(base["scene"]["modelShape"], "building40");
+
+        base["scene"]["modelShape"] = json!("nh-atlas");
+        let error = apply_to_schema(&mut base, &compiled).unwrap_err();
+        assert!(error[0].contains("Building40"), "{error:?}");
     }
 
     #[test]

@@ -40,7 +40,7 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     if !im.semantics.unit_overrides.is_empty() || !im.semantics.lot_bindings.is_empty() {
         return Err("M1 supports native model lowering, raster slots, scene unit lowering and menu registration; semantics.unitOverrides/lotBindings are not implemented".into());
     }
-    let menu = if im.semantics.menu.is_empty() {
+    let mut menu = if im.semantics.menu.is_empty() {
         None
     } else {
         let spec = super::menu::MenuRegistrationSpec::from_values(&im.semantics.menu)?;
@@ -110,6 +110,12 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
     } else {
         None
     };
+    // IR 叶子 → 家族适配器补齐 menu donor / Menu2 骨架（作者显式字段优先）。
+    if let (Some(spec), Some(program)) = (menu.as_mut(), behavior_program.as_ref()) {
+        if let Some(semantics) = super::behavior_family::semantics_from_program(program) {
+            super::behavior_family::enrich_menu(spec, &semantics);
+        }
+    }
     // Portable output names: avoid Windows devices, streams and trailing-dot aliases.
     let name = &im.output.package;
     let stem = name.trim_end_matches(".package");
@@ -184,18 +190,19 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         // /37：material-binding-contract 闸门（RW4 纹理行 → 非空 raster 闭包，
         // 白模的构建期拦截）+ 参照 lot 主体契约（三要件+继承链日志）+
         // modelShape 漏写关键日志。
+        // /44：生产路径钉死 Rust Building40；schema 拒绝 nh-atlas/merged-single
+        // 与外部 SC5 Packager（.pyc / backend.command）。工作台只编排场景/逻辑，
+        // 建筑编译不经过 Python packager。
         // /42：默认 LOTM9 → 作者 Building40 + 六槽材质直编译；禁止新模型
         // 静默落回 NH atlas/拆 mesh，并使旧模型缓存全部失效。场景属性仍由
         // 自有 menu/scene/path/behavior 处理器负责，不经过作者 build_candidate。
         // /40：identity-closure 阶段——部署包只保留身份可达资源（s31 形状）。
-        // /39：modelShape 缺省 = nh-atlas（大学 GOLDEN 路线固化为引擎默认，
-        // 不再逐模型手填，也不再落进空绑定的自动分片路线）。
         // /38：lot 身份文本列剔除（09FB78CB donor 名字边）+ 地块尺寸/遮罩以
         // 工作台文档为准（80×80 方地）+ BoundingBox=编译模型真实包围盒 +
         // 菜单统计行统一 s31 GOLDEN 三对 text↔param。
         // Bump whenever game-side lowering/geometry contracts change. The
         // run cache must never replay a package built by an older interpreter.
-        processor_version: "openscp.property.m1/42",
+        processor_version: "openscp.property.m1/44",
         scope: "property+scene-model",
         intermediate: im,
         patches: specs,

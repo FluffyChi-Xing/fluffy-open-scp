@@ -450,13 +450,9 @@ pub fn render_atlases(
 }
 
 /// Render one source room into the native 4 variants × 4 occupancy states.
-///
-/// Most source atlases already keep emission in state 1 of each variant. A
-/// second layout seen in native Rust exports stores the same emission in the
-/// preceding (even) column and leaves every native night cell empty. Detect
-/// that layout from the actual sampled room, not from a pack name, and copy
-/// the preceding cell into each night state. Normal atlases keep their exact
-/// original sampling and therefore retain byte-for-byte output.
+/// The source must already use the native column contract. Copying emission
+/// from even columns was a model-specific compensation that hid invalid source
+/// exports and changed the reference packager's pixels, so it is forbidden.
 fn render_room_strip(
     source: &RgbaImage,
     parameters: &[f32; 2],
@@ -475,38 +471,15 @@ fn render_room_strip(
         let xx = (((tile(tx) + state as f64) * scale).rem_euclid(1.0) * room_w).floor() as u32;
         *source.get_pixel(xx, yy[ty as usize])
     };
-    let alpha = |state: u32| -> u64 {
-        (0..64u32)
-            .flat_map(|ty| (0..64u32).map(move |tx| (tx, ty)))
-            .map(|(tx, ty)| pixel(state, tx, ty)[3] as u64)
-            .sum()
-    };
     let apply_night_only = night_only && parameters[0] > 0.0;
-    let night_states = [1u32, 5, 9, 13];
-    let night_alpha: Vec<u64> = night_states.iter().map(|state| alpha(*state)).collect();
-    let paired_alpha: Vec<u64> = night_states.iter().map(|state| alpha(state - 1)).collect();
-    let paired_night_layout = apply_night_only
-        && night_alpha.iter().all(|value| *value == 0)
-        && paired_alpha.iter().any(|value| *value > 0);
-    if paired_night_layout {
-        eprintln!(
-            "author materials: room {room} uses paired source cells; migrating emission into native night states 1/5/9/13"
-        );
-    }
-
     let mut strip = RgbaImage::new(1024, 64);
     let mut sampled_alpha = 0u64;
     let mut output_night_alpha = 0u64;
     for state in 0..16u32 {
-        let source_state = if paired_night_layout && state % 4 == 1 {
-            state - 1
-        } else {
-            state
-        };
         for ty in 0..64u32 {
             for tx in 0..64u32 {
                 sampled_alpha += pixel(state, tx, ty)[3] as u64;
-                let mut value = pixel(source_state, tx, ty);
+                let mut value = pixel(state, tx, ty);
                 if apply_night_only && state % 4 != 1 {
                     value[3] = 0;
                 }
@@ -519,7 +492,7 @@ fn render_room_strip(
     }
     if apply_night_only && sampled_alpha > 0 && output_night_alpha == 0 {
         return Err(format!(
-            "author materials: room {room} has sampled source emission but all native night states are empty; refusing to build a black-night model"
+            "author materials: room {room} has sampled source emission but all native night states are empty; source columns 1/5/9/13 must contain native night emission (even-column migration is forbidden)"
         ));
     }
     Ok(strip)
@@ -753,19 +726,11 @@ mod tests {
     }
 
     #[test]
-    fn paired_room_columns_migrate_emission_into_every_native_night_state() {
+    fn paired_room_columns_are_rejected_instead_of_silently_migrated() {
         let source = room_source(&[0, 2, 4, 6]);
-        let strip = render_room_strip(&source, &[0.125, 0.0], true, 7).unwrap();
-        for state in 0..16u32 {
-            let pixel = strip.get_pixel(state * 64 + 32, 32);
-            if state % 4 == 1 {
-                let source_state = (state - 1) % 8;
-                assert_eq!(pixel[0], (source_state * 20) as u8, "state {state}");
-                assert_eq!(pixel[3], 200, "state {state}");
-            } else {
-                assert_eq!(pixel[3], 0, "state {state}");
-            }
-        }
+        let error = render_room_strip(&source, &[0.125, 0.0], true, 7).unwrap_err();
+        assert!(error.contains("room 7"), "{error}");
+        assert!(error.contains("even-column migration is forbidden"), "{error}");
     }
 
     #[test]
@@ -811,7 +776,9 @@ mod tests {
         let plan = plan_surfaces(&document).expect("plan");
         assert_eq!(plan.width, 1);
         let row = &plan.rows[0];
-        assert!((row[8] - 1.0).abs() < 1e-6);
-        assert!((row[10] - 0.0).abs() < 1e-6);
+        // One source material + the mandatory Top fallback cell ⇒ grid = 2.
+        // The author's fallback is [1/sg, 1/sg, (sg-1)/sg, (sg-1)/sg].
+        assert!((row[8] - 0.5).abs() < 1e-6);
+        assert!((row[10] - 0.5).abs() < 1e-6);
     }
 }

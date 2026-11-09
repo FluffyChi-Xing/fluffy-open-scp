@@ -8,6 +8,27 @@
 import type { Vec3 } from "../contract/types";
 import { affineFromRowMajor12, invertAffine, type AffineRows } from "../resolve/matrix";
 
+/** 临街箭头边角：0=+Y / 90=−X / 180=−Y / 270=+X（相对 +Y 逆时针）。 */
+export type StreetFacingDegrees = 0 | 90 | 180 | 270;
+
+/** 与 Building40 `rotate_xyz_matrix` / `rotate_point` 同口径。 */
+function rotateYawXY(
+  x: number,
+  y: number,
+  degrees: StreetFacingDegrees,
+): [number, number] {
+  switch (degrees) {
+    case 0:
+      return [x, y];
+    case 90:
+      return [-y, x];
+    case 180:
+      return [-x, -y];
+    case 270:
+      return [y, -x];
+  }
+}
+
 export interface LotGroundPlan {
   readonly width: number;
   readonly depth: number;
@@ -50,15 +71,60 @@ export interface DimensionAnchor {
   readonly text: string;
 }
 
+export interface StreetSidePlan {
+  /** 三角化后的箭头轮廓顶点（lot 局部，Z-up）。 */
+  readonly triangles: readonly Vec3[];
+  /** 箭尖（lot 局部）；供调试/后续标签使用。 */
+  readonly tip: Vec3;
+  /** 相对 +Y 的边角（0=+Y / 90=−X / 180=−Y / 270=+X）。 */
+  readonly facingDegrees: StreetFacingDegrees;
+}
+
+/**
+ * 临街侧箭头：游戏 unit-lot 本地系约定 **+Y = 前缘 = 临街侧**
+ * （`docs/re/dev-dump-lot-placement-and-script-resources.md` §2.3；
+ * `docs/re/blender-white-model-six-slot-pipeline-20261023.md` §2.2）。
+ * 模板 straddles +Y 边；`facingDegrees` 用与 Building40 相同的 yaw 旋到所选边。
+ */
+export function streetSidePlan(
+  lotSize: readonly [number, number] | null | undefined,
+  facingDegrees: StreetFacingDegrees = 0,
+): StreetSidePlan | null {
+  if (!lotSize) return null;
+  const [width, depth] = lotSize;
+  if (!(width > 0) || !(depth > 0)) return null;
+  const edge = depth / 2;
+  const size = Math.min(Math.max(Math.min(width, depth) * 0.12, 2), 12);
+  const z = 0.22;
+  const shaftHalf = size * 0.14;
+  const headHalf = size * 0.3;
+  const base = edge - size * 0.55;
+  const shoulder = edge + size * 0.1;
+  const rotate = (x: number, y: number): Vec3 => {
+    const [rx, ry] = rotateYawXY(x, y, facingDegrees);
+    return [rx, ry, z];
+  };
+  const tip = rotate(0, edge + size * 0.75);
+  const triangles: Vec3[] = [
+    rotate(-shaftHalf, base), rotate(shaftHalf, base), rotate(shaftHalf, shoulder),
+    rotate(shaftHalf, shoulder), rotate(-shaftHalf, shoulder), rotate(-shaftHalf, base),
+    rotate(-headHalf, shoulder), rotate(headHalf, shoulder), tip,
+  ];
+  return { triangles, tip, facingDegrees };
+}
+
 export interface LotDimensionPlan {
   readonly points: readonly Vec3[];
   readonly anchors: readonly DimensionAnchor[];
+  /** 临街侧箭头；null = 无 lotSize/非法尺寸。 */
+  readonly streetSide: StreetSidePlan | null;
 }
 
 /** 尺度标注线段与锚点；与旧 buildLotDimensions 的 118–168 行同口径。 */
 export function lotDimensionPlan(
   lotSize: readonly [number, number] | null | undefined,
   height: number,
+  streetFacingDegrees: StreetFacingDegrees = 0,
 ): LotDimensionPlan | null {
   if (!lotSize) return null;
   const [w, d] = lotSize;
@@ -99,5 +165,9 @@ export function lotDimensionPlan(
       text: `${height.toFixed(1)} m`,
     });
   }
-  return { points, anchors };
+  return {
+    points,
+    anchors,
+    streetSide: streetSidePlan(lotSize, streetFacingDegrees),
+  };
 }

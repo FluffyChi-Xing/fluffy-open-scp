@@ -185,6 +185,7 @@ const viewportBindings = computed(() => {
     modelSelectable: editEnabled.value && current.editMode === "draft",
     modelTransform: current.modelTransform,
     modelOrigin: current.modelOrigin,
+    authorRotationDegrees: current.rotationDegrees,
     specMode: 2,
     timeOfDay: timeOfDay.value,
     powered: powered.value,
@@ -1136,7 +1137,9 @@ function templateOf(resourceId: number) {
                     v-else-if="rightTab === 'lot'"
                     :lot-size="ui.lotSize"
                     :edit-mode="ui.editMode"
+                    :rotation-degrees="ui.rotationDegrees"
                     @set-size="asset.setDraftLotSize($event)"
+                    @set-rotation="asset.setRotationDegrees($event)"
                   />
                   <AssetLotLibrary
                     v-else-if="rightTab === 'lotlib'"

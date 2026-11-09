@@ -850,4 +850,5 @@ mod tests {
         assert!(pack_direction([0.0; 3]).is_err());
         assert!(pack_direction([f32::NAN, 0.0, 1.0]).is_err());
     }
+
 }

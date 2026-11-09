@@ -41,6 +41,11 @@ import {
   normalizeLogicGraph,
   type LogicGraph,
 } from "./logicGraph";
+import {
+  DEFAULT_ROTATION_DEGREES,
+  normalizeRotationDegrees,
+  type StreetFacingDegrees,
+} from "./streetFacing";
 import { nextIndexOfKind } from "./clipboard/unitClipboard";
 import {
   usePropertyEditorSession,
@@ -84,6 +89,8 @@ interface WorkbenchSourceBlock {
   logic?: LogicGraph;
   /** 草稿模型伪单元变换（行主序 12 floats）。 */
   modelTransform?: number[] | null;
+  /** 作者朝向（Building40 rotationDegrees；默认 180）。 */
+  rotationDegrees?: number;
   /** 六槽材质绑定（项目内相对路径）。 */
   materialSlots?: MaterialSlotBinding | null;
   /** Blender 原生导出：贴图由 Blender 绑定，工作台不再暴露六槽页。 */
@@ -252,6 +259,8 @@ export function useWorkbenchAsset(project: string) {
   const draftPayload = shallowRef<LotModelPayload | null>(null);
   const draftModelState = ref<ModelState>("pending");
   const draftLotSize = ref<[number, number] | null>(null);
+  /** 作者朝向（写入 semantics.menu.rotationDegrees；默认 180）。 */
+  const rotationDegrees = ref<StreetFacingDegrees>(DEFAULT_ROTATION_DEGREES);
   const draftLoading = ref(false);
   const draftError = ref("");
   /** 草稿地块分层样式：默认中性灰；Lot 库应用后替换为该 Lot 的配置。
@@ -585,6 +594,7 @@ export function useWorkbenchAsset(project: string) {
         modelOrigin: null,
         materialSlots: null,
         modelTransform: null,
+        rotationDegrees: rotationDegrees.value,
         assetName: session.session.value?.assetName ?? sourceLabel.value,
       };
     }
@@ -647,6 +657,7 @@ export function useWorkbenchAsset(project: string) {
           draftGroupVisibility[name] = !draftGroupVisibility[name];
         },
         modelTransform: draftModelTransform.value,
+        rotationDegrees: rotationDegrees.value,
         assetName: sourceLabel.value,
       };
     }
@@ -693,6 +704,7 @@ export function useWorkbenchAsset(project: string) {
           ? nativeTgi.value
           : undefined,
       lotSize: sourceKind.value === "native" ? undefined : draftLotSize.value,
+      rotationDegrees: rotationDegrees.value,
       modelTransform:
         sourceKind.value === "native" ? undefined : draftModelTransform.value,
       materialSlots:
@@ -791,6 +803,7 @@ export function useWorkbenchAsset(project: string) {
     draftLoading.value = false;
     draftError.value = "";
     draftLotSize.value = null;
+    rotationDegrees.value = DEFAULT_ROTATION_DEGREES;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
@@ -839,6 +852,7 @@ export function useWorkbenchAsset(project: string) {
     draftPayload.value = null;
     draftModelState.value = "loading";
     draftLotSize.value = null;
+    rotationDegrees.value = DEFAULT_ROTATION_DEGREES;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceAssetPath.value = assetRelativePath;
@@ -1322,6 +1336,11 @@ export function useWorkbenchAsset(project: string) {
     ];
   }
 
+  /** 临街朝向（地块页签四向选择 → Building40 rotationDegrees）。 */
+  function setRotationDegrees(degrees: StreetFacingDegrees) {
+    rotationDegrees.value = normalizeRotationDegrees(degrees);
+  }
+
   /** Lot 库应用：读取该 Lot 会话并把尺寸/四色分层/边框带/底图格套用到
    * 草稿地块（仅外部导入模型；游戏包资产的地块来自 property，拒绝替换）。
    * 同时载入该 Lot 的 mask/反照率/地表/法线图集——没有这层数据地面只是
@@ -1666,6 +1685,9 @@ export function useWorkbenchAsset(project: string) {
       if (!workbench) return false;
       // 菜单绑定 v2（含旧 {enabled,label,category} 形态迁移）。
       Object.assign(menu, normalizeMenuBinding(workbench.menu));
+      rotationDegrees.value = normalizeRotationDegrees(
+        workbench.rotationDegrees,
+      );
       if (
         workbench.source === "native" &&
         workbench.packagePath &&
@@ -1769,6 +1791,7 @@ export function useWorkbenchAsset(project: string) {
     draftPayload.value = null;
     draftModelState.value = "pending";
     draftLotSize.value = null;
+    rotationDegrees.value = DEFAULT_ROTATION_DEGREES;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
@@ -1815,6 +1838,7 @@ export function useWorkbenchAsset(project: string) {
     persistGroundTextures,
     documentPath: DOCUMENT_PATH,
     draftLotSize,
+    rotationDegrees,
     openNative,
     openDraftAsset,
     placeUnit,
@@ -1833,6 +1857,7 @@ export function useWorkbenchAsset(project: string) {
       focusedPathId.value = id;
     },
     setDraftLotSize,
+    setRotationDegrees,
     applyLotPreset,
     setModelTransform,
     composeSlotMaterials,

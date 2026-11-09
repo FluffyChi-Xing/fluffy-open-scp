@@ -115,6 +115,18 @@ pub struct ResolvedBehavior {
     pub declared_unit_columns: Vec<u32>,
     /// 节点级诊断（进入构建台账，不影响结果）。
     pub notes: Vec<String>,
+    /// 行为家族（适配器解析结果；供 menu/donor/labor 下游消费）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<super::behavior_family::BehaviorFamily>,
+    /// 适配器选择的 Unit donor 名（如 `generic-park`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_donor: Option<String>,
+    /// 适配器选择的 Menu2 骨架（`generic` / `complete-building`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub menu_skeleton: Option<String>,
+    /// 岗位自动接线策略。
+    #[serde(default)]
+    pub labor_profile: super::behavior_family::LaborProfile,
 }
 
 impl ResolvedBehavior {
@@ -292,6 +304,7 @@ fn text(value: &Value) -> String {
 /// 手填值优先：仅当用户未显式写入时才注入默认。
 /// legacy（from_legacy）与逻辑图（compile）两条路径共用。
 pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
+    use super::behavior_family::LaborProfile;
     const JOB_W1: u32 = 0x0A79_17C5;
     const JOB_W2: u32 = 0x0A79_17C6;
     const JOB_W3: u32 = 0x0A79_17C7;
@@ -299,6 +312,28 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
     const JOB_MIN_WORKERS: u32 = 0x0A79_17C8;
     const JOBS_BUNDLE_MAIN: u32 = 0xD07C_5A04;
     const JOBS_BUNDLE_AUX: u32 = 0xF236_BB93;
+    match resolved.labor_profile {
+        LaborProfile::None => return,
+        LaborProfile::AuthorOnly => {
+            // 只补岗位合计；不挂学校 jobs bundle / 学历 / 招工常量。
+            let job_w1 = resolved.set_float_fields.get(&JOB_W1).copied();
+            let job_w2 = resolved.set_float_fields.get(&JOB_W2).copied().unwrap_or(0.0);
+            let job_w3 = resolved.set_float_fields.get(&JOB_W3).copied().unwrap_or(0.0);
+            let Some(w1) = job_w1.filter(|w| *w > 0.0) else {
+                return;
+            };
+            if !resolved.set_float_fields.contains_key(&JOB_TOTAL) {
+                resolved
+                    .set_float_fields
+                    .insert(JOB_TOTAL, w1 + job_w2 + job_w3);
+                if !resolved.declared_unit_columns.contains(&JOB_TOTAL) {
+                    resolved.declared_unit_columns.push(JOB_TOTAL);
+                }
+            }
+            return;
+        }
+        LaborProfile::SchoolSample => {}
+    }
     let job_w1 = resolved.set_float_fields.get(&JOB_W1).copied();
     let job_w2 = resolved.set_float_fields.get(&JOB_W2).copied();
     let job_w3 = resolved.set_float_fields.get(&JOB_W3).copied();
@@ -352,6 +387,11 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
 
 pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBehavior, String> {
     let mut resolved = ResolvedBehavior::default();
+    let intent =
+        super::behavior_family::leaf_intent_from_nodes(nodes, labor.is_some());
+    let family = super::behavior_family::resolve(intent);
+    // 先钉家族策略，再写叶子——labor 接线与 strip 都读 labor_profile。
+    resolved.labor_profile = family.labor_profile;
 
     if let Some(labor) = labor {
         resolved.record_float(JOBS_W1, f64::from(labor.w1), "labor")?;
@@ -418,6 +458,8 @@ pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBeha
             .push(format!("parent template 0x{template:08X} ({node})"));
     }
     apply_labor_auto_wiring(&mut resolved);
+    // 叶子写完后再应用家族适配器（strip 学校残留 / 补 donor·menu 元数据）。
+    super::behavior_family::apply_to_behavior(&mut resolved, &family);
     resolved.declared_lot_columns = lot_columns(
         resolved.lot_board.is_some(),
         resolved.ensure_walk_path
@@ -634,6 +676,50 @@ fn compile_tourism(
     ] {
         if let Some(value) = params.get(key).filter(|value| !value.is_null()) {
             resolved.record_float(hash, number(value, &format!("tourism.{key}"))?, node)?;
+        }
+    }
+    // Tourism assets frequently reuse an education donor. Remove the donor's
+    // school/jobs bundle set explicitly; otherwise the landmark tourism parent
+    // is present but the Unit still runs the school economy. Removing from
+    // `ensure_bundles` too is required because behavior.rs unions that list
+    // after applying remove_bundles.
+    if let Some(value) = params
+        .get("removeBundles")
+        .filter(|value| !value.is_null())
+    {
+        let bundles = match value.as_array() {
+            Some(items) => items
+                .iter()
+                .map(|item| hex(item, "tourism.removeBundles"))
+                .collect::<Result<Vec<_>, _>>()?,
+            None => hex_list(value, "tourism.removeBundles")?,
+        };
+        for bundle in bundles {
+            resolved.ensure_bundles.retain(|candidate| *candidate != bundle);
+            if !resolved.remove_bundles.contains(&bundle) {
+                resolved.remove_bundles.push(bundle);
+            }
+        }
+    }
+    // The shared "complete building" Unit donor is still the s31 university
+    // leaf: student counts, grade distributions, jobs and shift schedules make
+    // the game render a school overlay ("186 学生") even when the parent is the
+    // landmark tourism template. Remove those declared fields explicitly.
+    if let Some(value) = params
+        .get("removeFields")
+        .filter(|value| !value.is_null())
+    {
+        let fields = match value.as_array() {
+            Some(items) => items
+                .iter()
+                .map(|item| hex(item, "tourism.removeFields"))
+                .collect::<Result<Vec<_>, _>>()?,
+            None => hex_list(value, "tourism.removeFields")?,
+        };
+        for field in fields {
+            if !resolved.remove_fields.contains(&field) {
+                resolved.remove_fields.push(field);
+            }
         }
     }
     Ok(())
@@ -886,5 +972,61 @@ mod tests {
     fn unknown_node_type_is_rejected_at_parse() {
         let values = vec![node("x", "teleport", json!({}))];
         assert!(parse_nodes(&values).is_err());
+    }
+
+    #[test]
+    fn park_tourism_family_strips_school_and_keeps_landmark_parent() {
+        let labor = parse_labor(Some(&json!({
+            "w1": 30, "w2": 20, "w3": 0, "minWorkers": 10
+        })))
+        .unwrap()
+        .unwrap();
+        let nodes = vec![
+            node(
+                "leaf-park",
+                "park",
+                json!({"landValue": 500, "landWealth": 3}),
+            ),
+            node(
+                "leaf-tourism",
+                "tourism",
+                json!({
+                    "attraction": 400,
+                    "incomeW1": 11,
+                    "templateInstance": "0x4E01E311"
+                }),
+            ),
+        ];
+        let resolved = compile(Some(labor), &nodes).unwrap();
+        assert_eq!(
+            resolved.family,
+            Some(crate::asset_build_m1::behavior_family::BehaviorFamily::ParkTourism)
+        );
+        assert_eq!(resolved.unit_donor.as_deref(), Some("generic-park"));
+        assert_eq!(resolved.menu_skeleton.as_deref(), Some("generic"));
+        assert_eq!(resolved.parent_template, Some(0x4E01_E311));
+        assert!(resolved.remove_bundles.contains(&0x6C04_2366));
+        assert!(resolved.remove_bundles.contains(&0xD07C_5A04));
+        assert!(resolved.remove_fields.contains(&0x0DA3_EE15));
+        assert!(!resolved.set_float_fields.contains_key(&0x0DA3_EE15));
+        assert_eq!(resolved.set_float_fields[&JOBS_W1], 30.0);
+        assert!(!resolved.ensure_bundles.contains(&0xD07C_5A04));
+    }
+
+    #[test]
+    fn education_family_keeps_school_sample_labor() {
+        let labor = parse_labor(Some(&json!({"w1": 20, "w2": 5, "w3": 0, "minWorkers": 5})))
+            .unwrap()
+            .unwrap();
+        let nodes = vec![node("leaf-1", "education", json!({"capacity": 100}))];
+        let resolved = compile(Some(labor), &nodes).unwrap();
+        assert_eq!(
+            resolved.family,
+            Some(crate::asset_build_m1::behavior_family::BehaviorFamily::Education)
+        );
+        assert_eq!(resolved.unit_donor.as_deref(), Some("elementary-school"));
+        assert!(resolved.ensure_bundles.contains(&0xD07C_5A04));
+        assert_eq!(resolved.set_float_fields[&0x0DA3_EE15], 51.0);
+        assert!(!resolved.remove_fields.contains(&0x0DA3_EE15));
     }
 }

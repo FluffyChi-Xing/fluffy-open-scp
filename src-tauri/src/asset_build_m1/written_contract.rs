@@ -39,6 +39,10 @@ pub(crate) struct WrittenContractSpec<'a> {
     pub author_building40: bool,
     pub donor: Option<(&'a Resources, u32)>,
     pub ground_source: Option<(&'a Resources, ResourceId)>,
+    /// Authored scene rotation used by the builder when rotating the ground
+    /// source mask (`native_profile::rotate_lot`). Required to compare the
+    /// final raster against the same transform instead of raw pixels.
+    pub rotation_degrees: u32,
 }
 
 pub(crate) struct WrittenContractReport {
@@ -64,13 +68,23 @@ pub(crate) fn validate(
     } else {
         spec.reference_lot.expect("lot checked above").group
     };
-    let menu = super::menu_contract::validate(
-        resources,
-        instance,
-        lot_group,
-        spec.donor,
-        spec.menu_instance.is_some(),
-    )?;
+    let menu = if spec.author_building40 {
+        super::menu_contract::validate_building40(
+            resources,
+            instance,
+            lot_group,
+            spec.donor,
+            spec.menu_instance.is_some(),
+        )?
+    } else {
+        super::menu_contract::validate(
+            resources,
+            instance,
+            lot_group,
+            spec.donor,
+            spec.menu_instance.is_some(),
+        )?
+    };
     let lot_id = ResourceId {
         type_id: PROPERTY_TYPE,
         group: lot_group,
@@ -92,7 +106,13 @@ pub(crate) fn validate(
         None => None,
     };
     let (ground_mask, ground_style) = match spec.document {
-        Some(document) => validate_ground(resources, &lot, document, spec.ground_source)?,
+        Some(document) => validate_ground(
+            resources,
+            &lot,
+            document,
+            spec.ground_source,
+            spec.rotation_degrees,
+        )?,
         None => (None, None),
     };
     let models = match spec.model_ids {
@@ -243,6 +263,7 @@ fn validate_ground(
     lot: &PropertyFile,
     document: &SceneDocument,
     ground_source: Option<(&Resources, ResourceId)>,
+    rotation_degrees: u32,
 ) -> Result<(Option<serde_json::Value>, Option<serde_json::Value>), String> {
     let ground_mask = match document.lot_mask {
         Some(SceneLotMaskKind::Source) => {
@@ -268,11 +289,49 @@ fn validate_ground(
                 raster_evidence(source_id, source_bytes)?;
             let (final_report, final_dimensions, final_rgba) =
                 raster_evidence(final_id, final_bytes)?;
-            if source_dimensions != final_dimensions || source_rgba != final_rgba {
+            // The builder rotates the ground source mask by the authored
+            // scene rotation before writing it (`native_profile::rotate_lot`).
+            // Compare against that same transform: raw pixel equality is only
+            // valid at 0°, while a declared 180° parcel rotation is a correct
+            // build, not a source/final mismatch.
+            let size = document
+                .lot_size
+                .or_else(|| super::native_profile::vector2(source_file.get(LOT_SIZE_HASH)))
+                .ok_or("written-contract: source LotMask requires LotSize")?;
+            if size[0] <= 0.0 || size[1] <= 0.0 {
+                return Err("written-contract: source LotMask has invalid LotSize".into());
+            }
+            let offset = document
+                .lot_offset
+                .or_else(|| super::native_profile::vector2(source_file.get(0x0CCB_7FC9)))
+                .unwrap_or([0.0, 0.0]);
+            let period = document
+                .ground_style
+                .tile_period
+                .or_else(|| super::native_profile::vector2(source_file.get(0x0CCB_7FD0)))
+                .unwrap_or([8.0, 8.0]);
+            let source_image = image::RgbaImage::from_raw(
+                source_dimensions.0,
+                source_dimensions.1,
+                source_rgba.clone(),
+            )
+            .ok_or("written-contract: source LotMask dimensions do not match its pixels")?;
+            let (expected_image, _rotated_size, _, _) =
+                super::native_profile::rotate_lot(
+                    &source_image,
+                    size,
+                    offset,
+                    period,
+                    rotation_degrees,
+                )?;
+            let expected_dimensions = expected_image.dimensions();
+            let expected_rgba = expected_image.into_raw();
+            if expected_dimensions != final_dimensions || expected_rgba != final_rgba {
                 return Err(format!(
-                    "written-contract: source LotMask pixel mismatch: source {:?} sha {}, final {:?} sha {}",
-                    source_dimensions,
-                    format!("{:x}", Sha256::digest(&source_rgba)),
+                    "written-contract: source LotMask pixel mismatch after {}° rotation: expected {:?} sha {}, final {:?} sha {}",
+                    rotation_degrees,
+                    expected_dimensions,
+                    format!("{:x}", Sha256::digest(&expected_rgba)),
                     final_dimensions,
                     format!("{:x}", Sha256::digest(&final_rgba)),
                 ));
@@ -282,6 +341,7 @@ fn validate_ground(
                 "sourceLot": source_lot.to_string(),
                 "source": source_report,
                 "final": final_report,
+                "rotationDegrees": rotation_degrees,
                 "pixelExact": true,
             }))
         }
@@ -576,14 +636,32 @@ fn validate_props(
                 _ => None,
             })
             .collect();
+        let mut expected_ids = Vec::<u32>::new();
+        for id in expected.iter().flatten() {
+            if !expected_ids.contains(id) {
+                expected_ids.push(*id);
+            }
+        }
+        let vehicle_bin = bin == 0
+            && expected_ids
+                .iter()
+                .any(|id| (0x0AB4_DFE1..=0x0AB4_DFE3).contains(id));
+        if vehicle_bin {
+            for id in 0x0AB4_DFE1..=0x0AB4_DFE3 {
+                if !expected_ids.contains(&id) {
+                    expected_ids.push(id);
+                }
+            }
+        }
         let ids = array(lot, PROP_ID_BASE + bin as u32);
         let transforms = array(lot, PROP_TRANSFORM_BASE + bin as u32);
         let slots = array(lot, PROP_SLOT_BASE + bin as u32);
-        if ids.len() != expected.len() || transforms.len() != expected.len() {
+        if ids.len() != expected_ids.len() || transforms.len() != expected.len() {
             return Err(format!(
-                "written-contract: prop bin {bin} ids/transforms lengths {}/{} != expected {}",
+                "written-contract: prop bin {bin} prototype/transform lengths {}/{} != expected {}/{}",
                 ids.len(),
                 transforms.len(),
+                expected_ids.len(),
                 expected.len()
             ));
         }
@@ -594,23 +672,30 @@ fn validate_props(
                 expected.len()
             ));
         }
-        for (index, (value, expected_id)) in ids.iter().zip(expected.iter()).enumerate() {
+        for (index, (value, expected_id)) in ids.iter().zip(expected_ids.iter()).enumerate() {
             let Value::Key(key) = value else {
                 return Err(format!(
-                    "written-contract: prop bin {bin} row {index} id is not a Key"
+                    "written-contract: prop bin {bin} prototype {index} id is not a Key"
                 ));
             };
-            if Some(key.instance) != *expected_id {
+            if key.instance != *expected_id {
                 return Err(format!(
-                    "written-contract: prop bin {bin} row {index} resource {:08X} != authored {:?}",
-                    key.instance,
-                    expected_id.map(|id| format!("{id:08X}"))
+                    "written-contract: prop bin {bin} prototype {index} resource {:08X} != authored {expected_id:08X}",
+                    key.instance
+                ));
+            }
+        }
+        for (row, (slot, expected_id)) in slots.iter().zip(expected.iter()).enumerate() {
+            let expected_slot = expected_id.and_then(|id| expected_ids.iter().position(|candidate| *candidate == id));
+            if !matches!(slot, Value::Int32(index) if Some(*index as usize) == expected_slot) {
+                return Err(format!(
+                    "written-contract: prop bin {bin} instance {row} slot {slot:?} does not reference its authored prototype"
                 ));
             }
         }
         report.insert(
             bin.to_string(),
-            serde_json::json!({"count": expected.len()}),
+            serde_json::json!({"count": expected.len(), "prototypes": expected_ids.len()}),
         );
     }
     Ok(serde_json::Value::Object(report))
@@ -1141,6 +1226,7 @@ mod tests {
             &final_lot,
             &document,
             Some((&source, source_lot)),
+            0,
         )
         .unwrap();
         assert_eq!(mask.unwrap().pointer("/final/width"), Some(&json!(4)));
@@ -1168,6 +1254,7 @@ mod tests {
             &final_lot,
             &document,
             Some((&source, source_lot)),
+            0,
         )
         .unwrap_err();
         assert!(error.contains("pixel mismatch"), "{error}");
@@ -1177,6 +1264,7 @@ mod tests {
             &final_lot,
             &document,
             Some((&source, source_lot)),
+            0,
         )
         .unwrap_err();
         assert!(error.contains("final LotMask raster is missing"), "{error}");
