@@ -3,7 +3,6 @@ import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
 import FTypography from "@/components/extensions/FTypography.vue";
-import FSheet from "@/components/ui/FSheet.vue";
 import { useToast } from "@/composables/useToast";
 import { isTauri } from "@/api";
 import { useModProjectsStore } from "@/stores/modProjects";
@@ -11,12 +10,11 @@ import ProjectDashboard from "./components/dashboard/ProjectDashboard.vue";
 import BuildActionsCard from "./components/BuildActionsCard.vue";
 import ProjectFormSheet from "./components/ProjectFormSheet.vue";
 import GroupManagerSheet from "./components/GroupManagerSheet.vue";
-import CodeWorkbench from "./components/CodeWorkbench.vue";
 import type { ModProjectView } from "@/api/tauri";
 
 /**
- * 开发工作台 = 项目管理面板：统计仪表盘 + 项目列表（分组过滤、CRUD）。
- * 「开发」按钮展开全屏 Code 工作台 sheet（项目文件夹的文件树 + 解析预览）。
+ * 开发工作台 = 项目管理面板：统计仪表盘 + 项目列表。
+ * 「详情」进入 GitHub-repo 形态项目页（Code / Develop / Actions / Settings）；
  * 原多工具卡片页在 /studio/overview（头部"面板总览"进入）。
  */
 const { t } = useI18n();
@@ -26,8 +24,6 @@ const store = useModProjectsStore();
 const formOpen = ref(false);
 const editingProject = ref<ModProjectView | null>(null);
 const groupsOpen = ref(false);
-const developOpen = ref(false);
-const developingProject = ref<ModProjectView | null>(null);
 
 onMounted(() => {
   if (isTauri()) void store.loadAll();
@@ -36,16 +32,6 @@ onMounted(() => {
 function openCreate() {
   editingProject.value = null;
   formOpen.value = true;
-}
-
-function openEdit(project: ModProjectView) {
-  editingProject.value = project;
-  formOpen.value = true;
-}
-
-function openDevelop(project: ModProjectView) {
-  developingProject.value = project;
-  developOpen.value = true;
 }
 
 async function submitCreate(
@@ -68,11 +54,6 @@ async function submitUpdate(
   },
 ) {
   await store.updateProject(id, fields);
-}
-
-async function submitDelete(project: ModProjectView) {
-  if (!window.confirm(t("studio.projects.deleteConfirm"))) return;
-  await store.deleteProject(project.id);
 }
 
 /** 历史目录一次性迁移（2026-10-29 目录治理）：旧 mod_root 的项目
@@ -277,32 +258,17 @@ function statusLabel(status: string): string {
               formatDateTime(project.updatedAt)
             }}</span>
             <span class="actions-cell end" role="cell">
-              <button
+              <RouterLink
                 class="row-button develop"
-                type="button"
-                :disabled="!project.folderExists"
-                :title="$t('studio.projects.openHint')"
-                @click="openDevelop(project)"
+                :to="{
+                  name: 'studio-project-detail',
+                  params: { id: String(project.id) },
+                }"
+                :title="$t('studio.projects.detailHint')"
               >
-                <FIcon name="CodeXml" :size="12" aria-label="" />
-                {{ $t("studio.projects.open") }}
-              </button>
-              <button
-                class="row-button"
-                type="button"
-                @click="openEdit(project)"
-              >
-                <FIcon name="Pencil" :size="12" aria-label="" />
-                {{ $t("studio.projects.edit") }}
-              </button>
-              <button
-                class="row-button danger"
-                type="button"
-                @click="submitDelete(project)"
-              >
-                <FIcon name="Trash2" :size="12" aria-label="" />
-                {{ $t("studio.projects.delete") }}
-              </button>
+                <FIcon name="ExternalLink" :size="12" aria-label="" />
+                {{ $t("studio.projects.detail") }}
+              </RouterLink>
             </span>
           </div>
         </div>
@@ -324,21 +290,6 @@ function statusLabel(status: string): string {
         @remove="store.deleteGroup"
       />
 
-      <!-- 开发：全屏 Code 工作台（项目文件夹的文件树 + 解析预览）。
-           v-if 含 developOpen：关闭即卸载整棵子树——工作台持有 three.js
-           视口/选中态/渲染模式等重状态，残留会导致重进带着旧状态且泄漏
-           显存（用户反馈 2026-10-25）。 -->
-      <FSheet
-        v-if="developingProject && developOpen"
-        v-model:open="developOpen"
-        width="100vw"
-        :label="$t('studio.code.sheetTitle')"
-      >
-        <CodeWorkbench
-          :project="developingProject"
-          @close="developOpen = false"
-        />
-      </FSheet>
     </template>
     <p v-else class="web-hint">{{ $t("studio.projects.webHint") }}</p>
   </section>
@@ -590,6 +541,7 @@ function statusLabel(status: string): string {
   min-height: 26px;
   opacity: 0.25;
   padding: 0 8px;
+  text-decoration: none;
 }
 .row:hover .row-button,
 .row-button:focus-visible {

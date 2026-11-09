@@ -15,6 +15,7 @@ import {
   type RasterRgbaResponse,
   type SaveRasterOverlayResult,
   type ModProjectGroup,
+  type ModProjectRepoSummary,
   type ModProjectStats,
   type ModProjectView,
   type OpenPackageResponse,
@@ -178,6 +179,11 @@ export const tauriApi = {
         }),
       remove: (id: number) =>
         command<void>("mod_project_delete", { request: { id } }),
+      /** 详情页：Releases / Languages / package.json 元数据。 */
+      repoSummary: (project: string) =>
+        command<ModProjectRepoSummary>("mod_project_repo_summary", {
+          request: { project },
+        }),
     },
     groups: {
       list: () => command<ModProjectGroup[]>("mod_group_list"),

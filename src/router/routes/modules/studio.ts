@@ -14,6 +14,18 @@ export default {
       },
     },
     {
+      name: "studio-project-detail",
+      path: "studio/projects/:id",
+      component: () => import("@/pages/studio/project/detail.vue"),
+      meta: {
+        titleKey: "navigation.studioProject",
+        icon: "rocket",
+        groupKey: "navigation.modding",
+        order: 1,
+        hideInMenu: true,
+      },
+    },
+    {
       name: "studio-overview",
       path: "studio/overview",
       component: () => import("@/pages/studio/overview.vue"),

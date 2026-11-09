@@ -1246,6 +1246,31 @@ export interface ModProjectStats {
   statusCounts: ModStatusCount[];
   recentActivity: ModDailyCount[];
 }
+/** 项目详情页 Releases：`.build/<hash>/packages/*.package`。 */
+export interface ModProjectRelease {
+  name: string;
+  relativePath: string;
+  buildHash: string;
+  size: number;
+  modifiedMs: number;
+}
+/** 项目源文件扩展名占比（已跳过 .build 等产物目录）。 */
+export interface ModProjectLanguageStat {
+  extension: string;
+  fileCount: number;
+  bytes: number;
+}
+/** `mod_project_repo_summary`：详情页侧栏 + Languages 条。 */
+export interface ModProjectRepoSummary {
+  author: string;
+  version: string;
+  modType: string;
+  description: string;
+  releases: ModProjectRelease[];
+  languages: ModProjectLanguageStat[];
+  languageTruncated: boolean;
+  totalSourceBytes: number;
+}
 export interface ExtensionStat {
   ext: string;
   typeId: number;

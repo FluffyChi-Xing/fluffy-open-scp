@@ -31,6 +31,7 @@ mod map_panel;
 mod media_tools;
 mod mod_flow;
 mod mod_project;
+mod mod_project_repo;
 mod overrides;
 mod package_browser;
 mod package_service;
@@ -68,6 +69,7 @@ use mod_project::{
     mod_project_delete, mod_project_list, mod_project_stats, mod_project_update, setup_status,
     studio_complete_onboarding, studio_legacy_status, studio_set_mod_root, studio_sync_legacy,
 };
+use mod_project_repo::mod_project_repo_summary;
 use overrides::override_scan;
 use package_browser::{list_game_tree, list_package_files};
 use package_service::{
@@ -301,6 +303,7 @@ pub fn run() {
             mod_project_create,
             mod_project_update,
             mod_project_delete,
+            mod_project_repo_summary,
             mod_group_list,
             mod_group_create,
             mod_group_rename,
