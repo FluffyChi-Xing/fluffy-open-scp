@@ -1007,8 +1007,8 @@ mod tests {
         assert_eq!(resolved.parent_template, Some(0x4E01_E311));
         assert!(resolved.remove_bundles.contains(&0x6C04_2366));
         assert!(resolved.remove_bundles.contains(&0xD07C_5A04));
-        assert!(resolved.remove_fields.contains(&0x0DA3_EE15));
-        assert!(!resolved.set_float_fields.contains_key(&0x0DA3_EE15));
+        assert!(!resolved.remove_fields.contains(&0x0DA3_EE15));
+        assert_eq!(resolved.set_float_fields[&0x0DA3_EE15], 51.0);
         assert_eq!(resolved.set_float_fields[&JOBS_W1], 30.0);
         assert!(!resolved.ensure_bundles.contains(&0xD07C_5A04));
     }

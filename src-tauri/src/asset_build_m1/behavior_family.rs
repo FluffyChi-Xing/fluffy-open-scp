@@ -25,10 +25,12 @@ const JOBS_BUNDLE_AUX: u32 = 0xF236_BB93;
 
 /// 从 complete-building / 学校 donor 剥掉的**学校特有**字段。
 /// 不含作者岗位 W1–W3/合计/排班——那些由 LaborProfile 决定是否保留。
+/// 学校特有字段。不含 `0x0DA3EE15`：该列在观光菜单统计行是
+/// 「Visitors per day」参数（menu-contract 强制要求），公园/观光族应
+/// 写成旅客量而不是剥离后留下模板占位符。
 const SCHOOL_RESIDUE_FIELDS: &[u32] = &[
     0x0AD7_FAC9, // student capacity
     0x0AD6_A725, // school hire constant
-    0x0DA3_EE15, // school/shopping sample (also false "visitors/day")
     0x0C0F_2290,
     0x0E26_60C6,
     0x0E3F_65A9,
@@ -40,6 +42,10 @@ const SCHOOL_RESIDUE_FIELDS: &[u32] = &[
     0x0DC1_DB5C,
     0x0DC1_DB5D,
 ];
+
+/// 观光悬浮卡「Visitors per day」实证默认值（a42cf63e / 86e99f6e）。
+const TOURISM_VISITORS_PER_DAY: f64 = 51.0;
+const TOURISM_VISITORS_FIELD: u32 = 0x0DA3_EE15;
 
 const SCHOOL_RESIDUE_BUNDLES: &[u32] = &[
     EDUCATION_BUNDLE_PRIMARY,
@@ -264,6 +270,22 @@ pub fn apply_to_behavior(resolved: &mut ResolvedBehavior, semantics: &FamilySema
         }
     }
 
+    // 观光/公园+观光：补齐菜单统计行参数，避免 strip 学校样本后留下占位符。
+    if matches!(
+        semantics.family,
+        BehaviorFamily::ParkTourism | BehaviorFamily::Tourism
+    ) {
+        resolved.remove_fields.retain(|field| *field != TOURISM_VISITORS_FIELD);
+        if !resolved.set_float_fields.contains_key(&TOURISM_VISITORS_FIELD) {
+            resolved
+                .set_float_fields
+                .insert(TOURISM_VISITORS_FIELD, TOURISM_VISITORS_PER_DAY);
+        }
+        if !resolved.declared_unit_columns.contains(&TOURISM_VISITORS_FIELD) {
+            resolved.declared_unit_columns.push(TOURISM_VISITORS_FIELD);
+        }
+    }
+
     if resolved.behavior_category.is_none() {
         if let Some(category) = semantics.behavior_category {
             resolved.behavior_category = Some(category);
@@ -381,8 +403,11 @@ mod tests {
         assert!(resolved.remove_bundles.contains(&EDUCATION_BUNDLE_COLLEGE));
         assert!(resolved.remove_bundles.contains(&JOBS_BUNDLE_MAIN));
         assert!(!resolved.ensure_bundles.contains(&EDUCATION_BUNDLE_COLLEGE));
-        assert!(resolved.remove_fields.contains(&0x0DA3_EE15));
-        assert!(!resolved.set_float_fields.contains_key(&0x0DA3_EE15));
+        assert!(!resolved.remove_fields.contains(&TOURISM_VISITORS_FIELD));
+        assert_eq!(
+            resolved.set_float_fields.get(&TOURISM_VISITORS_FIELD),
+            Some(&TOURISM_VISITORS_PER_DAY)
+        );
         assert_eq!(resolved.unit_donor.as_deref(), Some("generic-park"));
     }
 }
