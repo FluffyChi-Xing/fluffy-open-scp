@@ -2,23 +2,22 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import {
-  rotationFromStreetFacing,
-  streetFacingFromRotation,
+  STREET_FACING_OPTIONS,
   type StreetFacingDegrees,
 } from "./streetFacing";
 
 /**
- * 右栏「地块」页签：draft 模式下编辑 footprint；四向临街朝向选择
- * （盒模型式四边按钮，默认 +Y 高亮；切换实时驱动 viewport 箭头与模型 yaw）。
+ * 右栏「地块」页签：draft 模式下编辑 footprint；四向临街吸附边选择
+ * （只移动橙色箭头，不旋转建筑）。
  */
 const props = defineProps<{
   lotSize: [number, number] | null;
   editMode: "native" | "draft";
-  rotationDegrees: StreetFacingDegrees;
+  streetFacingDegrees: StreetFacingDegrees;
 }>();
 const emit = defineEmits<{
   "set-size": [size: [number, number]];
-  "set-rotation": [degrees: StreetFacingDegrees];
+  "set-street-facing": [degrees: StreetFacingDegrees];
 }>();
 
 const { t } = useI18n();
@@ -37,24 +36,23 @@ const depth = computed({
   },
 });
 
-const activeFacing = computed(() =>
-  streetFacingFromRotation(props.rotationDegrees),
-);
+const activeFacing = computed(() => props.streetFacingDegrees);
 
 function selectFacing(facing: StreetFacingDegrees) {
-  emit("set-rotation", rotationFromStreetFacing(facing));
+  emit("set-street-facing", facing);
 }
 
-const edges: {
-  facing: StreetFacingDegrees;
-  edge: "posY" | "negX" | "negY" | "posX";
-  className: string;
-}[] = [
-  { facing: 0, edge: "posY", className: "edge-top" },
-  { facing: 90, edge: "negX", className: "edge-left" },
-  { facing: 180, edge: "negY", className: "edge-bottom" },
-  { facing: 270, edge: "posX", className: "edge-right" },
-];
+const edges = STREET_FACING_OPTIONS.map((item) => ({
+  ...item,
+  className:
+    item.edge === "posY"
+      ? "edge-top"
+      : item.edge === "negX"
+        ? "edge-left"
+        : item.edge === "negY"
+          ? "edge-bottom"
+          : "edge-right",
+}));
 </script>
 
 <template>
@@ -87,7 +85,14 @@ const edges: {
       >
         <header class="facing-head">
           <strong>{{ t("studio.assetWorkbench.streetFacingTitle") }}</strong>
-          <span class="facing-deg">{{ rotationDegrees }}°</span>
+          <span class="facing-deg">{{
+            t(
+              `studio.assetWorkbench.streetFacingEdges.${
+                edges.find((item) => item.facing === activeFacing)?.edge ??
+                "posY"
+              }`,
+            )
+          }}</span>
         </header>
         <p class="facing-hint">
           {{ t("studio.assetWorkbench.streetFacingHint") }}
@@ -148,43 +153,40 @@ const edges: {
   gap: 4px;
 }
 .lot-field input {
-  background: var(--surface-elevated);
+  background: var(--background);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   color: var(--foreground);
-  font: inherit;
-  min-height: 28px;
-  padding: 0 8px;
+  font-size: 12px;
+  padding: 6px 8px;
 }
-.lot-field input:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+.lot-hint {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 0;
 }
 .facing-card {
-  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 10px);
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px;
 }
 .facing-head {
-  align-items: center;
+  align-items: baseline;
   display: flex;
   justify-content: space-between;
+  gap: 8px;
 }
 .facing-head strong {
   font-size: 12px;
   font-weight: 600;
 }
 .facing-deg {
-  background: color-mix(in srgb, var(--primary, #2563eb) 16%, transparent);
-  border-radius: 999px;
-  color: var(--primary, #60a5fa);
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  padding: 2px 7px;
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 .facing-hint {
   color: var(--muted-foreground);
@@ -195,74 +197,57 @@ const edges: {
 .facing-box {
   aspect-ratio: 1;
   display: grid;
-  gap: 3px;
+  gap: 6px;
   grid-template-areas:
     ". top ."
     "left core right"
     ". bottom .";
-  grid-template-columns: 28px 1fr 28px;
-  grid-template-rows: 28px 1fr 28px;
-  margin: 2px auto 0;
+  grid-template-columns: 1fr 1.4fr 1fr;
+  grid-template-rows: 1fr 1.4fr 1fr;
+  margin: 0 auto;
   max-width: 220px;
   width: 100%;
 }
 .facing-edge {
   align-items: center;
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
   border: 1px solid var(--border);
+  border-radius: 8px;
   color: var(--muted-foreground);
   cursor: pointer;
   display: flex;
-  font: inherit;
+  flex-direction: column;
   gap: 4px;
   justify-content: center;
-  padding: 0;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-.facing-edge:hover {
-  border-color: color-mix(in srgb, var(--primary, #2563eb) 45%, var(--border));
-  color: var(--foreground);
+  padding: 6px;
 }
 .facing-edge.active {
-  background: color-mix(in srgb, #ff8a00 22%, var(--surface-elevated));
-  border-color: #ff8a00;
-  color: #ffb35c;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #ff8a00 35%, transparent);
+  background: color-mix(in srgb, #f59e0b 22%, var(--background));
+  border-color: #f59e0b;
+  color: var(--foreground);
+}
+.facing-edge:hover {
+  border-color: color-mix(in srgb, #f59e0b 60%, var(--border));
 }
 .edge-top {
-  border-radius: 8px 8px 4px 4px;
-  flex-direction: column;
   grid-area: top;
 }
-.edge-bottom {
-  border-radius: 4px 4px 8px 8px;
-  flex-direction: column-reverse;
-  grid-area: bottom;
-}
 .edge-left {
-  border-radius: 8px 4px 4px 8px;
-  flex-direction: row;
   grid-area: left;
-  writing-mode: vertical-rl;
 }
 .edge-right {
-  border-radius: 4px 8px 8px 4px;
-  flex-direction: row-reverse;
   grid-area: right;
-  writing-mode: vertical-rl;
+}
+.edge-bottom {
+  grid-area: bottom;
 }
 .facing-arrow {
-  background: currentColor;
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  flex-shrink: 0;
-  height: 7px;
-  width: 8px;
-}
-.edge-bottom .facing-arrow {
-  transform: rotate(180deg);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid currentColor;
+  display: block;
+  height: 0;
+  width: 0;
 }
 .edge-left .facing-arrow {
   transform: rotate(-90deg);
@@ -270,27 +255,22 @@ const edges: {
 .edge-right .facing-arrow {
   transform: rotate(90deg);
 }
+.edge-bottom .facing-arrow {
+  transform: rotate(180deg);
+}
 .facing-label {
-  font-size: 9px;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  opacity: 0.9;
+  font-size: 10px;
+  line-height: 1.2;
 }
 .facing-core {
   align-items: center;
-  background: color-mix(in srgb, var(--surface-elevated) 55%, #1a2333);
-  border: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 6px;
-  color: var(--subtle-foreground);
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted-foreground);
   display: flex;
-  font-size: 10px;
+  font-size: 11px;
   grid-area: core;
   justify-content: center;
-}
-.lot-hint {
-  color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 1.5;
-  margin: 0;
 }
 </style>

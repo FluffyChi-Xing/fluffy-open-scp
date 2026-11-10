@@ -8,6 +8,7 @@ import {
   type RasterSchema,
 } from "@/lib/raster-editor/schema";
 import { encodeRgbaPng } from "@/lib/raster-editor/png";
+import { lotSizeForImage } from "@/lib/lot-ground/ground";
 
 export function downloadJson(value: unknown, name: string) {
   const url = URL.createObjectURL(
@@ -113,6 +114,7 @@ export async function saveRasterCopy(
       ...common,
       rasterTgi: resource(0x2f4e681c),
       lotTgi: resource(0x00b1b104),
+      lotSize: lotSizeForImage(s.lot.size, s.image?.width ?? 0, s.image?.height ?? 0),
       colors: s.lot.colors,
       baseTile: s.lot.baseTile,
       borderColors: s.lot.borderColors,

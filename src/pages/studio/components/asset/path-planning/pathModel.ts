@@ -46,6 +46,51 @@ export interface WorkbenchPath {
   pointIds: string[];
 }
 
+/** 保序去重：坏会话曾把同一 pathPoint 写进 pointIds 两次。 */
+function dedupePointIds(ids: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** `pathPoint:{index}` → 全局点下标；非法 id 丢弃。 */
+export function pathPointIdIndex(id: string): number | null {
+  const match = /^pathPoint:(\d+)$/.exec(id);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return Number.isFinite(index) ? index : null;
+}
+
+/**
+ * 工作台 paths → `0x0CAA6841` pathPairs（与 Rust `finish_path_pairs` 对齐）：
+ * 每条路径取引用点 index 的闭区间 (min,max)。视口用它按组连线，避免空 pairs
+ * 回退成全点单折线串线。
+ */
+export function workbenchPathsToPathPairs(
+  paths: readonly { pointIds: readonly string[] }[],
+): number[] {
+  const pairs: number[] = [];
+  for (const path of paths) {
+    const indices: number[] = [];
+    const seen = new Set<number>();
+    for (const id of path.pointIds) {
+      const index = pathPointIdIndex(id);
+      if (index == null || seen.has(index)) continue;
+      seen.add(index);
+      indices.push(index);
+    }
+    if (indices.length === 0) continue;
+    indices.sort((a, b) => a - b);
+    pairs.push(indices[0]!, indices[indices.length - 1]!);
+  }
+  return pairs;
+}
+
 /** 旧文档 → 当前契约的迁移（恢复路径时调用；纯函数、幂等）。 */
 export function normalizeWorkbenchPath(
   raw: Partial<WorkbenchPath> & { entry?: string | null },
@@ -63,7 +108,7 @@ export function normalizeWorkbenchPath(
     source: raw.source,
     scope: raw.scope === "global" ? "global" : "local",
     roadConnect: Boolean(raw.roadConnect),
-    pointIds: raw.pointIds ?? [],
+    pointIds: dedupePointIds(raw.pointIds ?? []),
   };
 }
 

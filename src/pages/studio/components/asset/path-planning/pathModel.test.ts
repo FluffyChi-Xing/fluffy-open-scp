@@ -3,10 +3,12 @@ import type { LotUnitDto } from "@/api/tauri";
 import {
   adoptOrphanPaths,
   nextPathId,
+  normalizeWorkbenchPath,
   pathAutoTangent,
   pathPointPositions,
   recomputePathTangents,
   validateWorkbenchPath,
+  workbenchPathsToPathPairs,
   type WorkbenchPath,
 } from "./pathModel";
 
@@ -147,5 +149,52 @@ describe("adoptOrphanPaths", () => {
   it("returns null when no orphans exist (idempotent)", () => {
     const path: WorkbenchPath = { ...base, pointIds: ["pathPoint:0"] };
     expect(adoptOrphanPaths([path], [pathPointUnit(0, point(0, 0))])).toBeNull();
+  });
+});
+
+describe("workbenchPathsToPathPairs", () => {
+  it("emits closed (min,max) ranges per path like finish_path_pairs", () => {
+    expect(
+      workbenchPathsToPathPairs([
+        { pointIds: ["pathPoint:0", "pathPoint:1", "pathPoint:2", "pathPoint:3"] },
+        {
+          pointIds: [
+            "pathPoint:4",
+            "pathPoint:5",
+            "pathPoint:6",
+            "pathPoint:7",
+            "pathPoint:8",
+            "pathPoint:9",
+            "pathPoint:10",
+            "pathPoint:9",
+            "pathPoint:10",
+            "pathPoint:11",
+          ],
+        },
+      ]),
+    ).toEqual([0, 3, 4, 11]);
+  });
+
+  it("skips empty paths and unknown ids", () => {
+    expect(
+      workbenchPathsToPathPairs([
+        { pointIds: [] },
+        { pointIds: ["nope", "pathPoint:2", "pathPoint:5"] },
+      ]),
+    ).toEqual([2, 5]);
+  });
+});
+
+describe("normalizeWorkbenchPath", () => {
+  it("dedupes repeated pointIds while preserving order", () => {
+    const normalized = normalizeWorkbenchPath({
+      ...base,
+      pointIds: ["pathPoint:4", "pathPoint:5", "pathPoint:4", "pathPoint:6"],
+    });
+    expect(normalized.pointIds).toEqual([
+      "pathPoint:4",
+      "pathPoint:5",
+      "pathPoint:6",
+    ]);
   });
 });

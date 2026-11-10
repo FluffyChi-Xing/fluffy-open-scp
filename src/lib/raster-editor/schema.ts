@@ -211,6 +211,8 @@ export interface RasterSchema {
     borderColors?: [number, number, number][];
     borderPatternIndices?: number[];
     borderWidths?: number[];
+    /** Which LotColor slots (index = mask channel R/G/B/A) the user has bound as materials. */
+    slots?: boolean[];
     target: RasterSource | null;
   };
   decal: {
@@ -315,7 +317,9 @@ export function parseRasterSchema(input: unknown): RasterSchema {
       !numberArray(s.lot.colorHeights, 4, () => true) ||
       !numberArray(s.lot.borderHeights, 4, () => true) ||
       (s.lot.borderColors != null && (!Array.isArray(s.lot.borderColors) || s.lot.borderColors.length !== 4 ||
-       !s.lot.borderColors.every((c: unknown) => c != null && numberArray(c, 3, n => Number.isInteger(n) && n >= 0 && n <= 255)))))
+       !s.lot.borderColors.every((c: unknown) => c != null && numberArray(c, 3, n => Number.isInteger(n) && n >= 0 && n <= 255)))) ||
+      (s.lot.slots != null && (!Array.isArray(s.lot.slots) || s.lot.slots.length !== 4 ||
+       !s.lot.slots.every((used: unknown) => typeof used === "boolean"))))
     throw new Error(t("rasterEditor.text160"));
   if (
     !Array.isArray(s.decal?.colors) ||

@@ -42,8 +42,9 @@ import {
   type LogicGraph,
 } from "./logicGraph";
 import {
-  DEFAULT_ROTATION_DEGREES,
-  normalizeRotationDegrees,
+  DEFAULT_STREET_FACING,
+  normalizeStreetFacing,
+  streetFacingFromLegacyRotation,
   type StreetFacingDegrees,
 } from "./streetFacing";
 import { nextIndexOfKind } from "./clipboard/unitClipboard";
@@ -53,6 +54,12 @@ import {
   type UnitGrouping,
 } from "@/pages/packages/components/property-editor/usePropertyEditorSession";
 import { useGamePackagesStore } from "@/stores/gamePackages";
+import {
+  authoredAlbedoDataUrl,
+  authoredLotStyle,
+  type AuthoredLot,
+} from "@/lib/lot-ground/authored";
+import { loadAuthoredLot } from "./authoredLotStore";
 import {
   emptyMenuBinding,
   normalizeMenuBinding,
@@ -89,7 +96,9 @@ interface WorkbenchSourceBlock {
   logic?: LogicGraph;
   /** 草稿模型伪单元变换（行主序 12 floats）。 */
   modelTransform?: number[] | null;
-  /** 作者朝向（Building40 rotationDegrees；默认 180）。 */
+  /** 临街吸附边（lot 本地角；与模型旋转无关）。 */
+  streetFacingDegrees?: number;
+  /** @deprecated 旧误用字段；加载时迁移为 streetFacingDegrees。 */
   rotationDegrees?: number;
   /** 六槽材质绑定（项目内相对路径）。 */
   materialSlots?: MaterialSlotBinding | null;
@@ -108,6 +117,8 @@ interface WorkbenchSourceBlock {
     /** 来源 Lot 引用：恢复时重新拉取会话取回 mask/albedo/surface 等贴图
      * （贴图 base64 不入文档——code_write_text 有 4MiB 上限）。 */
     sourceLot?: LotPresetRef | null;
+    /** 地块绑定的是项目内自绘地面（assets/lot/authored/）。 */
+    authored?: boolean;
   };
 }
 
@@ -259,8 +270,8 @@ export function useWorkbenchAsset(project: string) {
   const draftPayload = shallowRef<LotModelPayload | null>(null);
   const draftModelState = ref<ModelState>("pending");
   const draftLotSize = ref<[number, number] | null>(null);
-  /** 作者朝向（写入 semantics.menu.rotationDegrees；默认 180）。 */
-  const rotationDegrees = ref<StreetFacingDegrees>(DEFAULT_ROTATION_DEGREES);
+  /** 临街吸附边（写入 workbench.streetFacingDegrees；默认 +Y）。 */
+  const streetFacingDegrees = ref<StreetFacingDegrees>(DEFAULT_STREET_FACING);
   const draftLoading = ref(false);
   const draftError = ref("");
   /** 草稿地块分层样式：默认中性灰；Lot 库应用后替换为该 Lot 的配置。
@@ -269,6 +280,7 @@ export function useWorkbenchAsset(project: string) {
    * 【持久化口径】贴图本身不入文档（4MiB 写回上限），只存 sourceLot
    * 引用，恢复时经 applyLotPreset 重新拉取。 */
   const appliedLot = ref<LotPresetRef | null>(null);
+  const appliedAuthoredLot = ref(false);
   const draftStyle = reactive({
     colors: DRAFT_LOT_DEFAULTS.lotColors.map(
       (color) => [...color] as [number, number, number, number],
@@ -594,7 +606,7 @@ export function useWorkbenchAsset(project: string) {
         modelOrigin: null,
         materialSlots: null,
         modelTransform: null,
-        rotationDegrees: rotationDegrees.value,
+        streetFacingDegrees: streetFacingDegrees.value,
         assetName: session.session.value?.assetName ?? sourceLabel.value,
       };
     }
@@ -657,7 +669,7 @@ export function useWorkbenchAsset(project: string) {
           draftGroupVisibility[name] = !draftGroupVisibility[name];
         },
         modelTransform: draftModelTransform.value,
-        rotationDegrees: rotationDegrees.value,
+        streetFacingDegrees: streetFacingDegrees.value,
         assetName: sourceLabel.value,
       };
     }
@@ -704,7 +716,7 @@ export function useWorkbenchAsset(project: string) {
           ? nativeTgi.value
           : undefined,
       lotSize: sourceKind.value === "native" ? undefined : draftLotSize.value,
-      rotationDegrees: rotationDegrees.value,
+      streetFacingDegrees: streetFacingDegrees.value,
       modelTransform:
         sourceKind.value === "native" ? undefined : draftModelTransform.value,
       materialSlots:
@@ -730,6 +742,7 @@ export function useWorkbenchAsset(project: string) {
               // 文档——code_write_text 有 4MiB 上限（用户实测 limit_exceeded）；
               // 持久化来源 Lot 引用，恢复时重新拉取会话数据。
               sourceLot: appliedLot.value ? { ...appliedLot.value } : null,
+              authored: appliedAuthoredLot.value || undefined,
             },
       menu: {
         ...menu,
@@ -803,7 +816,7 @@ export function useWorkbenchAsset(project: string) {
     draftLoading.value = false;
     draftError.value = "";
     draftLotSize.value = null;
-    rotationDegrees.value = DEFAULT_ROTATION_DEGREES;
+    streetFacingDegrees.value = DEFAULT_STREET_FACING;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
@@ -852,7 +865,7 @@ export function useWorkbenchAsset(project: string) {
     draftPayload.value = null;
     draftModelState.value = "loading";
     draftLotSize.value = null;
-    rotationDegrees.value = DEFAULT_ROTATION_DEGREES;
+    streetFacingDegrees.value = DEFAULT_STREET_FACING;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceAssetPath.value = assetRelativePath;
@@ -1336,9 +1349,11 @@ export function useWorkbenchAsset(project: string) {
     ];
   }
 
-  /** 临街朝向（地块页签四向选择 → Building40 rotationDegrees）。 */
-  function setRotationDegrees(degrees: StreetFacingDegrees) {
-    rotationDegrees.value = normalizeRotationDegrees(degrees);
+  /** 临街吸附边（地块页签四向选择 → 箭头指示；不旋转模型）。 */
+  function setStreetFacingDegrees(degrees: StreetFacingDegrees) {
+    streetFacingDegrees.value = normalizeStreetFacing(degrees);
+    // schemaDocument watcher 会置脏；显式再钉一次，避免漏保存。
+    savedDirty.value = true;
   }
 
   /** Lot 库应用：读取该 Lot 会话并把尺寸/四色分层/边框带/底图格套用到
@@ -1418,14 +1433,37 @@ export function useWorkbenchAsset(project: string) {
       tgi: preset.tgi,
       packagePath: preset.packagePath,
     };
+    appliedAuthoredLot.value = false;
     // 地面贴图标记为待快照:用户点击「保存」时才写入项目
     // (2026-11-04 用户指令:套用不落盘,保存才快照且仅变化时)。
     groundSnapshotDirty.value = true;
     return session.lotSize ?? null;
   }
 
+  /** 绑定项目内自绘地面：尺寸/材质/遮罩来自存档，地表图集取游戏共享图集。 */
+  async function applyAuthoredLot(lot: AuthoredLot): Promise<[number, number]> {
+    if (sourceKind.value !== "glb" && sourceKind.value !== "lotm") {
+      throw new Error("lot_apply_native");
+    }
+    const { lotSize, ...style } = authoredLotStyle(lot);
+    const atlas = await tauriApi.raster.readLotPreviewAtlases().catch(() => null);
+    const dataUrl = (value?: string | null) => (value ? `data:image/png;base64,${value}` : null);
+    draftLotSize.value = lotSize;
+    Object.assign(draftStyle, style, {
+      // 默认渲染模式用 albedo 平面贴图；缺省会回退到 LC mask 并被 alphaTest 镂空。
+      albedoPng: authoredAlbedoDataUrl(lot),
+      surfacePng: dataUrl(atlas?.lotSurfacePng),
+      normalAtlasPng: dataUrl(atlas?.lotNormalAtlasPng),
+    });
+    appliedLot.value = null;
+    appliedAuthoredLot.value = true;
+    groundSnapshotDirty.value = true;
+    return lotSize;
+  }
+
   function resetDraftStyle() {
     appliedLot.value = null;
+    appliedAuthoredLot.value = false;
     draftStyle.colors = DRAFT_LOT_DEFAULTS.lotColors.map(
       (color) => [...color] as [number, number, number, number],
     );
@@ -1685,15 +1723,23 @@ export function useWorkbenchAsset(project: string) {
       if (!workbench) return false;
       // 菜单绑定 v2（含旧 {enabled,label,category} 形态迁移）。
       Object.assign(menu, normalizeMenuBinding(workbench.menu));
-      rotationDegrees.value = normalizeRotationDegrees(
-        workbench.rotationDegrees,
-      );
+      // openNative/openDraftAsset 会把 streetFacing 重置为默认 +Y，
+      // 必须在打开资产之后再套回文档值（否则 -Y 绑定一重进就丢）。
+      const restoredStreetFacing =
+        workbench.streetFacingDegrees != null
+          ? normalizeStreetFacing(workbench.streetFacingDegrees)
+          : workbench.rotationDegrees != null
+            ? streetFacingFromLegacyRotation(
+                normalizeStreetFacing(workbench.rotationDegrees),
+              )
+            : DEFAULT_STREET_FACING;
       if (
         workbench.source === "native" &&
         workbench.packagePath &&
         workbench.tgi
       ) {
         await openNative(workbench.packagePath, workbench.tgi);
+        streetFacingDegrees.value = restoredStreetFacing;
         restoreUnits(parsed);
         void restorePlacedPropModels(parsed);
         return true;
@@ -1706,6 +1752,7 @@ export function useWorkbenchAsset(project: string) {
           nativeBlender: workbench.nativeBlender === true,
           nativeLotm: workbench.nativeLotm,
         });
+        streetFacingDegrees.value = restoredStreetFacing;
         if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
         draftModelTransform.value =
           workbench.modelTransform && workbench.modelTransform.length === 12
@@ -1747,7 +1794,19 @@ export function useWorkbenchAsset(project: string) {
             // 项目文件 = 已持久化状态,恢复不置脏
             groundSnapshotDirty.value = false;
           }
-          if (style.sourceLot) {
+          if (style.authored) {
+            appliedAuthoredLot.value = true;
+            try {
+              const authored = await loadAuthoredLot(project);
+              if (authored) {
+                await applyAuthoredLot(authored);
+                groundSnapshotDirty.value = false;
+              }
+              if (workbench.lotSize) draftLotSize.value = workbench.lotSize;
+            } catch (cause) {
+              console.warn("[workbench] authored lot restore skipped:", cause);
+            }
+          } else if (style.sourceLot) {
             appliedLot.value = { ...style.sourceLot };
             // 【2026-11-03 修复】sourceLot.packageId 跨运行失效曾让
             // applyLotPreset 抛错，被外层 catch 吞掉后 restoreUnits 直接被
@@ -1791,7 +1850,7 @@ export function useWorkbenchAsset(project: string) {
     draftPayload.value = null;
     draftModelState.value = "pending";
     draftLotSize.value = null;
-    rotationDegrees.value = DEFAULT_ROTATION_DEGREES;
+    streetFacingDegrees.value = DEFAULT_STREET_FACING;
     draftModelOrigin.value = null;
     draftMaterialSlots.value = {};
     sourceKind.value = "none";
@@ -1838,7 +1897,7 @@ export function useWorkbenchAsset(project: string) {
     persistGroundTextures,
     documentPath: DOCUMENT_PATH,
     draftLotSize,
-    rotationDegrees,
+    streetFacingDegrees,
     openNative,
     openDraftAsset,
     placeUnit,
@@ -1857,8 +1916,10 @@ export function useWorkbenchAsset(project: string) {
       focusedPathId.value = id;
     },
     setDraftLotSize,
-    setRotationDegrees,
+    setStreetFacingDegrees,
     applyLotPreset,
+    applyAuthoredLot,
+    appliedAuthoredLot,
     setModelTransform,
     composeSlotMaterials,
     slotMaterialsComposing,

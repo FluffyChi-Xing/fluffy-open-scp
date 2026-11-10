@@ -5,8 +5,10 @@ import { useReducedMotion, vMotion } from "motion-v";
 interface Props {
   label?: string;
   width?: string;
+  /** 内容自身使用 Esc（如画布取消草稿）时关闭此项。 */
+  closeOnEscape?: boolean;
 }
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), { closeOnEscape: true });
 const open = defineModel<boolean>("open", { default: false });
 
 /**
@@ -35,7 +37,7 @@ const sheetMotion = computed(() => ({
 }));
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape") open.value = false;
+  if (event.key === "Escape" && props.closeOnEscape) open.value = false;
 }
 window.addEventListener("keydown", onKeydown);
 watch(open, (value) => {

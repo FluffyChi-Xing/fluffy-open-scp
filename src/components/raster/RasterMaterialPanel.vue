@@ -4,9 +4,8 @@ import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 import { matchesDecalProfile } from "@/lib/raster-editor/catalog";
 import FSelect from "@/components/ui/FSelect.vue";
-import LotPatternGrid from "./LotPatternGrid.vue";
 import { Switch } from "@/components/ui/switch";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { isTauri, tauriApi } from "@/api";
 import { useGamePackagesStore } from "@/stores/gamePackages";
 import type { DecalEntryMeta, PropertyDocumentSummary, Tgi } from "@/api/tauri";
@@ -15,10 +14,8 @@ import type {
   RasterSchema,
   RasterSource,
 } from "@/lib/raster-editor/schema";
-import { LOT_PAINT_CHANNELS } from "@/lib/raster-editor/lotPaint";
 const props = defineProps<{ profile: RasterProfile; disabled?: boolean }>();
 const lot = defineModel<RasterSchema["lot"]>("lot", { required: true });
-const layer = defineModel<number>("layer", { default: 0 });
 const decal = defineModel<RasterSchema["decal"]>("decal", { required: true });
 const sampling = defineModel<RasterSchema["sampling"]>("sampling", {
   required: true,
@@ -36,21 +33,6 @@ const busy = ref(false),
 const entries = ref<DecalEntryMeta[]>([]),
   selectedEntry = ref<number | null>(null);
 const isDecal = computed(() => props.profile.startsWith("decal-"));
-const activeMaterial = ref(0);
-watch(activeMaterial, (value) => { layer.value = value; });
-watch(layer, (value) => { activeMaterial.value = Math.max(0, Math.min(3, value)); });
-const lotAtlasPng = ref<string | null>(null);
-const activeChannel = computed(() => LOT_PAINT_CHANNELS[activeMaterial.value] ?? 3);
-const activeColor = computed(() => lot.value.colors[activeChannel.value] ?? lot.value.colors[0]);
-async function loadLotAtlas() {
-  if (!isTauri() || typeof tauriApi.raster.readLotPreviewAtlases !== "function") return;
-  try {
-    lotAtlasPng.value = (await tauriApi.raster.readLotPreviewAtlases())?.lotSurfacePng ?? null;
-  } catch {
-    lotAtlasPng.value = null;
-  }
-}
-onMounted(loadLotAtlas);
 let generation = 0;
 const key = (id: number, tgi: Tgi) => `${id}:${tgi.group}:${tgi.instance}`;
 const documentQuery = ref(""),
@@ -168,42 +150,6 @@ const label = (s: RasterSource | null) =>
   s?.tgi
     ? `0x${s.tgi.instance.toString(16).toUpperCase()}`
     : t("rasterEditor.text048");
-function colorHex(c: number[]) {
-  return (
-    "#" +
-    c
-      .slice(0, 3)
-      .map((n) => n.toString(16).padStart(2, "0"))
-      .join("")
-  );
-}
-function setLotColor(i: number, hex: string) {
-  const colors = lot.value.colors.map(
-    (c) => [...c] as [number, number, number, number],
-  );
-  const channel = LOT_PAINT_CHANNELS[i] ?? 3;
-  colors[channel] = [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-    colors[channel][3],
-  ];
-  lot.value = { ...lot.value, colors };
-  emit("changed");
-}
-function setTile(i: number, tile: number) {
-  const colors = lot.value.colors.map(
-    (c) => [...c] as [number, number, number, number],
-  );
-  const channel = LOT_PAINT_CHANNELS[i] ?? 3;
-  colors[channel][3] = tile;
-  lot.value = { ...lot.value, colors };
-  emit("changed");
-}
-function setBaseTile(tile: number) {
-  lot.value = { ...lot.value, baseTile: tile };
-  emit("changed");
-}
 </script>
 <template>
   <section class="material-panel">
@@ -215,48 +161,6 @@ function setBaseTile(tile: number) {
         {{ t("rasterEditor.text050") }}
       </label>
       <template v-if="profile === 'lot-mask'">
-        <div class="material-tabs" role="tablist" :aria-label="t('rasterEditor.text117')">
-          <button
-            v-for="(c, i) in lot.colors"
-            :key="i"
-            type="button"
-            role="tab"
-            :aria-selected="activeMaterial === i"
-            @click="activeMaterial = i"
-          >
-            <span class="material-swatch" :style="{ backgroundColor: colorHex(c) }" />
-            {{ t(`rasterEditor.materialNames.${i}`) }}
-          </button>
-        </div>
-        <div class="active-material">
-          <label>
-            {{ t("rasterEditor.materialColor") }}
-            <input
-              :disabled="!!lot.target"
-              :value="colorHex(activeColor)"
-              type="color"
-              @input="setLotColor(activeMaterial, ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label>
-            {{ t("rasterEditor.materialPattern") }}
-          </label>
-          <LotPatternGrid
-            :model-value="activeColor[3]"
-            :atlas-png="lotAtlasPng"
-            :disabled="!!lot.target"
-            @update:model-value="setTile(activeMaterial, $event)"
-          />
-        </div>
-        <details class="base-pattern">
-          <summary>{{ t("rasterEditor.basePattern") }}</summary>
-          <LotPatternGrid
-            :model-value="lot.baseTile ?? 8"
-            :atlas-png="lotAtlasPng"
-            :disabled="!!lot.target"
-            @update:model-value="setBaseTile"
-          />
-        </details>
         <p v-if="lot.target">{{ t("rasterEditor.text054") }}</p>
         <p>{{ t("rasterEditor.text055") }} {{ label(lot.target) }}</p>
         <button
@@ -402,43 +306,6 @@ input[type="color"] {
   display: flex;
   gap: 10px;
 }
-.material-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-}
-.material-tabs button {
-  align-items: center;
-  display: flex;
-  gap: 6px;
-  min-height: 30px;
-  overflow: hidden;
-  text-align: start;
-  white-space: nowrap;
-}
-.material-tabs button[aria-selected="true"] {
-  border-color: var(--primary);
-  color: var(--foreground);
-}
-.material-swatch {
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  flex: none;
-  height: 14px;
-  width: 20px;
-}
-.active-material {
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  display: grid;
-  gap: 7px;
-  padding: 8px;
-}
-.base-pattern {
-  display: block;
-  padding-top: 4px;
-}
-.base-pattern summary { cursor: pointer; }
 .color-row label {
   flex: 1;
 }

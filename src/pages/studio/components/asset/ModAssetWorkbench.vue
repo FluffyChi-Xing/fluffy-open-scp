@@ -26,6 +26,7 @@ import { unitId } from "@/pages/packages/components/property-editor/unitGizmos";
 import PropertyEditorStatusBar from "@/pages/packages/components/property-editor/PropertyEditorStatusBar.vue";
 import AssetPathPanel from "./AssetPathPanel.vue";
 import type { PathTypeId } from "./path-planning/pathTypes";
+import { workbenchPathsToPathPairs } from "./path-planning/pathModel";
 import { useEffectPreview } from "@/pages/packages/components/property-editor/effects/useEffectPreview";
 import { useEditorHotkeys } from "@/pages/packages/components/property-editor/useEditorHotkeys";
 import { directModelKey } from "@/pages/packages/components/property-editor/assetCategories";
@@ -42,6 +43,7 @@ import {
   type PlacePayload,
 } from "./useWorkbenchAsset";
 import AssetLotLibrary from "./AssetLotLibrary.vue";
+import type { AuthoredLot } from "@/lib/lot-ground/authored";
 import AssetMaterialSlotsPanel from "./AssetMaterialSlotsPanel.vue";
 import PackageProjectForm from "./PackageProjectForm.vue";
 
@@ -160,8 +162,12 @@ const viewportRef = ref<InstanceType<typeof SchemaPropertyViewport> | null>(
 const viewportBindings = computed(() => {
   const current = ui.value;
   if (!current) return null;
+  // schema 已含 editor.workbench.paths，但 SchemaPropertyViewport 默认
+  // pathPairs=[] → 视口回退全点串线；显式从 draftPaths 换算闭区间对。
+  const pathPairs = workbenchPathsToPathPairs(asset.draftPaths.value);
   return {
     schema: asset.schemaDocument.value,
+    pathPairs,
     modelPayload: current.modelPayload,
     modelLods: current.modelLods,
     activeLod: current.activeLod,
@@ -185,7 +191,7 @@ const viewportBindings = computed(() => {
     modelSelectable: editEnabled.value && current.editMode === "draft",
     modelTransform: current.modelTransform,
     modelOrigin: current.modelOrigin,
-    authorRotationDegrees: current.rotationDegrees,
+    streetFacingDegrees: current.streetFacingDegrees,
     specMode: 2,
     timeOfDay: timeOfDay.value,
     powered: powered.value,
@@ -458,6 +464,31 @@ async function onApplyLotPreset(preset: LotPresetRef) {
   } finally {
     applyingLot.value = false;
   }
+}
+async function onApplyAuthoredLot(lot: AuthoredLot, silent = false) {
+  if (applyingLot.value) return;
+  applyingLot.value = true;
+  try {
+    const size = await asset.applyAuthoredLot(lot);
+    if (!silent) {
+      toast.success(
+        t("rasterEditor.ground.workbench.appliedToast", { width: size[0], depth: size[1] }),
+      );
+    }
+  } catch (cause) {
+    const message = (cause as { message?: string }).message ?? String(cause);
+    toast.error(
+      message === "lot_apply_native"
+        ? t("studio.assetWorkbench.lotApplyNativeHint")
+        : message,
+    );
+  } finally {
+    applyingLot.value = false;
+  }
+}
+/** 已绑定的自绘地面重新编辑后，地块随之刷新。 */
+function onAuthoredLotSaved(lot: AuthoredLot) {
+  if (asset.appliedAuthoredLot.value) void onApplyAuthoredLot(lot, true);
 }
 
 // ---- 导入：模型文件 / TGI 解析 ----
@@ -1137,15 +1168,19 @@ function templateOf(resourceId: number) {
                     v-else-if="rightTab === 'lot'"
                     :lot-size="ui.lotSize"
                     :edit-mode="ui.editMode"
-                    :rotation-degrees="ui.rotationDegrees"
+                    :street-facing-degrees="ui.streetFacingDegrees"
                     @set-size="asset.setDraftLotSize($event)"
-                    @set-rotation="asset.setRotationDegrees($event)"
+                    @set-street-facing="asset.setStreetFacingDegrees($event)"
                   />
                   <AssetLotLibrary
                     v-else-if="rightTab === 'lotlib'"
+                    :project="props.project"
                     :edit-enabled="editEnabled"
                     :edit-mode="ui.editMode"
+                    :authored-bound="asset.appliedAuthoredLot.value"
                     @apply="onApplyLotPreset"
+                    @apply-authored="onApplyAuthoredLot"
+                    @authored-saved="onAuthoredLotSaved"
                   />
                   <AssetMaterialSlotsPanel
                     v-else-if="rightTab === 'slots'"

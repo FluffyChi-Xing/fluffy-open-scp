@@ -33,6 +33,9 @@ JSON 包含用途、Lot 四组 RGB+tile、Decal 颜色/比例/字典/Entry ID、
 - slot1–5 为颜色控制、法线/AO、Shader Map、调色板、室内图集；不把车辆/其他 shader 自动视为 building4。
 - Lot 遮罩原始 A/R/G/B 分别映射 LC4/LC3/LC2/LC1，不能把 A 一概当透明度。
 - LotColor 的 Alpha 是 0–15 图案索引，不是覆盖率；地表图集是单独用途。
+- Lot 地面的用户模型（`src/lib/lot-ground/ground.ts`）只有"底图 + 最多 4 种材质（图集格 + 颜色）+ 米制尺寸"：
+  材质槽下标 = 遮罩通道 R/G/B/A，画笔只写 one-hot 通道，橡皮擦清空全部通道（露出底图）；
+  `lot.slots` 记录哪些槽已绑定材质，缺省时按遮罩覆盖推断。尺寸按 0.75 m/px 换算，保存时把 `lot.size` 作为 `lotSize` 传给后端。
 - Decal 用途是编辑语义，不会重写字典 MaterialId，也不生成 SDF 或配置投影/动画。
 - 独立通道绘制在记录历史之前恢复其他三个通道；通道预览不改原始像素。
 - PNG 使用 `png.ts` 直接编码；避免 Canvas 预乘 Alpha 抹掉透明像素里的 RGB 数据。

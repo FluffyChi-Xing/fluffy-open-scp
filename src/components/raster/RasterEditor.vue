@@ -26,6 +26,10 @@ import RasterSourcePanel from "./RasterSourcePanel.vue";
 import RasterMaterialPanel from "./RasterMaterialPanel.vue";
 import RasterPreviewPanel from "./RasterPreviewPanel.vue";
 import { useRasterSession } from "./useRasterSession";
+import LotGroundSize from "@/components/lot-ground/LotGroundSize.vue";
+import LotMaterialPalette from "@/components/lot-ground/LotMaterialPalette.vue";
+import { useLotGround } from "@/components/lot-ground/useLotGround";
+import { maskSizeForLot, resampleNearest } from "@/lib/lot-ground/ground";
 import {
   PROFILE_BEHAVIOR,
   layerPaint,
@@ -44,6 +48,8 @@ const props = withDefaults(
     initialProfile?: RasterProfile;
     lockedProfile?: boolean;
     busy?: boolean;
+    /** flow 模式主按钮文案（缺省"应用到节点"）。 */
+    applyLabel?: string;
   }>(),
   { mode: "standalone" },
 );
@@ -98,7 +104,21 @@ const locked = computed(() => saving.value || props.busy);
 const descriptor = computed(() =>
   RASTER_PROFILES.find((p) => p.id === profile.value)!,
 );
+const isLot = computed(() => profile.value === "lot-mask");
+const ground = useLotGround({
+  enabled: isLot,
+  lot,
+  doc,
+  metersPerPixel: computed(() => sampling.value.metersPerPixel),
+  changed,
+  applyEdit: (mutate) => canvas.value?.applyEdit(mutate),
+  confirm: () => window.confirm(t("rasterEditor.ground.removeConfirm")),
+});
+const groundSlots = ground.slots;
+const groundActive = ground.activeSlot;
+const groundAtlas = ground.atlas;
 const brushColor = computed<Rgba>(() => {
+  if (isLot.value) return ground.brush.value;
   if (PROFILE_BEHAVIOR[profile.value].layers && channel.value === "rgba")
     return layerPaint(
       profile.value,
@@ -139,11 +159,42 @@ watch(version, () => {
 });
 function replace(action: () => void) {
   if (dirty.value && ready.value && !window.confirm(t("rasterEditor.text001")))
-    return;
+    return false;
   generation++;
   error.value = "";
   status.value = "";
   action();
+  return true;
+}
+function resetLotLayers() {
+  baseLotPixels.value = null;
+  lotOverlayPixels.value = null;
+  lotOverlayTouched.value = null;
+  lotLastPixels.value = null;
+}
+function applyLotSize(size: [number, number]) {
+  const next = maskSizeForLot(size, sampling.value.metersPerPixel);
+  const image = doc.value;
+  if (!image) {
+    if (replace(() => session.create(next.width, next.height))) {
+      lot.value = { ...lot.value, size };
+      resetLotLayers();
+    }
+    return;
+  }
+  if (image.width !== next.width || image.height !== next.height) {
+    if (!window.confirm(t("rasterEditor.ground.resizeConfirm"))) return;
+    const pixels = resampleNearest(image.pixels, image.width, image.height, next.width, next.height);
+    session.install(new RasterDocument(next.width, next.height, pixels), source.value, name.value);
+    resetLotLayers();
+  }
+  lot.value = { ...lot.value, size };
+  changed();
+}
+function onPickLayer(picked: number) {
+  if (isLot.value) ground.pickLayer(picked);
+  else layer.value = picked;
+  tool.value = "brush";
 }
 function image(
   value: { width: number; height: number; pixels: Uint8ClampedArray },
@@ -201,6 +252,7 @@ function composeLotLayers() {
   lotLastPixels.value = doc.value.pixels.slice();
 }
 function onCanvasChange() {
+  if (isLot.value && tool.value !== "eraser") ground.ensureActiveUsed();
   if (profile.value === "lot-mask" && baseLotPixels.value && lotOverlayPixels.value && lotOverlayTouched.value && doc.value) {
     if (!baseLotLocked.value) {
       baseLotPixels.value = doc.value.pixels.slice();
@@ -235,6 +287,10 @@ function pick(rgba: Rgba) {
       .join("");
   alpha.value = rgba[3];
   const picked = pickedLayer(profile.value, rgba);
+  if (isLot.value) {
+    if (picked != null) ground.pickLayer(picked);
+    return;
+  }
   if (picked != null) layer.value = picked;
   if (profile.value === "decal-graffiti" && picked != null)
     alpha.value = rgba[picked];
@@ -314,6 +370,10 @@ async function loadLot(
     saving.value = false;
   }
 }
+defineExpose({
+  /** 当前文档快照；尚无文档时返回 null。 */
+  snapshot: (): RasterSchema | null => (ready.value ? session.snapshot() : null),
+});
 async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
   if (!entry.raster || !entry.id) {
     error.value = t("rasterEditor.text008");
@@ -415,7 +475,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
           :disabled="!ready || locked"
           @click="output()"
         >
-          {{ t("rasterEditor.text018") }}</button
+          {{ applyLabel ?? t("rasterEditor.text018") }}</button
         ><button
           v-else-if="profile === 'lot-mask'"
           class="primary"
@@ -511,13 +571,16 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
               :quantized="profile === 'lot-mask'"
               :channel="channel"
               display-channel="rgba"
-              :lot-layer="profile === 'lot-mask' ? layer : null"
+              :lot-layer="isLot ? ground.canvasLayer.value : null"
               :lot-border-widths="lot.borderWidths"
               :data-channels="PROFILE_BEHAVIOR[profile].dataChannels"
-              :meters-per-pixel="profile === 'lot-mask' ? sampling.metersPerPixel : null"
+              :meters-per-pixel="isLot ? sampling.metersPerPixel : null"
+              :display="ground.display.value"
+              :backdrop="ground.backdrop.value"
+              :erase-all-channels="isLot"
               @change="onCanvasChange"
               @pick-color="pick"
-              @pick-layer="layer = $event; tool = 'brush'"
+              @pick-layer="onPickLayer"
             />
             <RasterToolbar
               v-model:tool="tool"
@@ -576,6 +639,26 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         </details>
       </main>
       <aside v-if="editorStarted" class="inspector">
+        <section v-if="isLot" class="ground-inspector">
+          <LotGroundSize
+            :size="ground.size.value"
+            :meters-per-pixel="sampling.metersPerPixel"
+            :disabled="locked || !!lot.target"
+            @apply="applyLotSize"
+          />
+          <LotMaterialPalette
+            v-model:active="groundActive"
+            :slots="groundSlots"
+            :base-tile="lot.baseTile ?? 8"
+            :atlas-png="groundAtlas"
+            :locked="!!lot.target"
+            :disabled="locked || !doc"
+            :painted="ground.isSlotPainted"
+            @update:slots="ground.setSlots"
+            @update:base-tile="ground.setBaseTile"
+            @remove="ground.remove"
+          />
+        </section>
         <section class="editor-controls">
           <h2>{{ t("rasterEditor.text171") }}</h2>
           <label>{{ t("rasterEditor.text113") }}<input v-model.number="size" type="number" min="1" max="256" /></label>
@@ -584,10 +667,7 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
             <label>{{ t("rasterEditor.text115") }}<input v-model.number="parkingLength" type="number" min="1" max="256" /></label>
             <label>{{ t("rasterEditor.text116") }}<input v-model.number="parkingSpacing" type="number" min="1" max="256" /></label>
           </template>
-          <p v-if="profile === 'lot-mask'" class="lot-semantic-note">
-            {{ t("rasterEditor.lotSemanticNote") }}
-          </p>
-          <template v-else>
+          <template v-if="!isLot">
             <label v-if="!mask && channel === 'rgba'">RGB <input v-model="color" type="color" /></label>
             <label v-if="channel === 'rgba' && (!mask || profile === 'decal-graffiti')">{{ t("rasterEditor.channelStrength") }}<input v-model.number="alpha" type="number" min="0" max="255" /></label>
             <label v-if="channel !== 'rgba'">{{ t("rasterEditor.channelValue", { channel: channel.toUpperCase() }) }}<input v-model.number="channelValue" type="number" min="0" max="255" /></label>
@@ -597,7 +677,6 @@ async function loadDecal(entry: DecalEntryMeta, atlas: RasterSource) {
         <RasterMaterialPanel
           v-if="editorStarted && profile !== 'slot0'"
           v-model:lot="lot"
-          v-model:layer="layer"
           v-model:decal="decal"
           v-model:sampling="sampling"
           :profile="profile"
@@ -888,6 +967,12 @@ button:disabled {
   min-height: 0;
   background: var(--surface-elevated);
   overflow: auto;
+}
+.ground-inspector {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
 }
 .editor-controls {
   display: grid;

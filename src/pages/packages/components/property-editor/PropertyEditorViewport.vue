@@ -56,10 +56,7 @@ import {
 import { createLotDimensions } from "@/render/exec/three/ground";
 import { executeModel } from "@/render/exec/three/model";
 import { buildDecalBody } from "@/render/exec/three/decalBody";
-import {
-  DEFAULT_ROTATION_DEGREES,
-  streetFacingFromRotation,
-} from "@/pages/studio/components/asset/streetFacing";
+import { normalizeStreetFacing } from "@/pages/studio/components/asset/streetFacing";
 
 export type EditorTool = "select" | "translate" | "rotate" | "scale";
 
@@ -181,10 +178,10 @@ const props = defineProps<{
   /** Camera workbench depth-of-field (game meters / aperture / softness). */
   cameraFocus?: { distance: number; aperture: number; softness: number } | null;
   /**
-   * 作者朝向（Building40 rotationDegrees；默认 180）。
-   * 驱动临街箭头边与模型 yaw 预览；与游戏构建同口径。
+   * 临街吸附边（lot 本地角：0=+Y / 90=−X / 180=−Y / 270=+X）。
+   * 只驱动地块橙色箭头，**绝不**旋转模型或单位。
    */
-  authorRotationDegrees?: 0 | 90 | 180 | 270;
+  streetFacingDegrees?: 0 | 90 | 180 | 270;
 }>();
 const emit = defineEmits<{
   select: [id: string | null];
@@ -1481,12 +1478,6 @@ async function assembleScene(
       applySun,
       invalidate: () => instance.invalidate(),
     });
-    if (!ctx.isStale()) {
-      const yaw =
-        ((props.authorRotationDegrees ?? DEFAULT_ROTATION_DEGREES) * Math.PI) /
-        180;
-      instance.group("model").rotation.z = yaw;
-    }
   })();
 
   // 地面线：LotSize 矩形 + placement 逆 + mask 合成（与模型零依赖）。
@@ -1650,13 +1641,8 @@ async function assembleScene(
     const lotHeight = modelBox.isEmpty()
       ? 0
       : Math.max(0, modelBox.max.y - modelBox.min.y);
-    const authorRotation =
-      props.authorRotationDegrees ?? DEFAULT_ROTATION_DEGREES;
-    const dimsPlan = lotDimensionPlan(
-      props.lotSize,
-      lotHeight,
-      streetFacingFromRotation(authorRotation),
-    );
+    const streetFacing = normalizeStreetFacing(props.streetFacingDegrees);
+    const dimsPlan = lotDimensionPlan(props.lotSize, lotHeight, streetFacing);
     const dims = dimsPlan ? createLotDimensions(THREE, dimsPlan) : null;
     if (dims) {
       // 与地面矩形同一矩阵（placement 逆 + overlay 中心偏移），标注贴地边
@@ -1921,7 +1907,7 @@ watch(
     props.lotColors,
     props.lotSize,
     props.lotTilePeriod,
-    props.authorRotationDegrees,
+    props.streetFacingDegrees,
   ],
   () => scheduleRebuild("grouping"),
   { deep: true },

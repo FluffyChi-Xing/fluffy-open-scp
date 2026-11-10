@@ -57,6 +57,12 @@ const props = defineProps<{
   lotLayer?: number | null;
   lotBorderWidths?: number[];
   dataChannels?: boolean;
+  /** 自定义 RGBA 显示（逐像素纯函数）；设置后取代量化/数据通道显示。 */
+  display?: ((pixels: Uint8ClampedArray) => Uint8ClampedArray<ArrayBuffer>) | null;
+  /** 画布平面背景（CSS background），透明像素处可见；缺省为棋盘格。 */
+  backdrop?: string | null;
+  /** 橡皮擦清空全部通道（Lot 地面：擦除 = 露出底图）。 */
+  eraseAllChannels?: boolean;
 }>();
 const emit = defineEmits<{
   change: [];
@@ -149,6 +155,8 @@ function render() {
           props.doc.width,
           props.doc.height,
         )
+      : props.display
+        ? new ImageData(props.display(props.doc.pixels), props.doc.width, props.doc.height)
       : props.quantized
         ? quantizeToImageData(props.doc)
         : props.dataChannels
@@ -169,7 +177,15 @@ defineExpose({
   zoomIn: () => setZoom(zoom.value * 1.25),
   zoomOut: () => setZoom(zoom.value / 1.25),
   setZoom: (value: number) => setZoom(value),
+  applyEdit,
 });
+
+/** 宿主发起的整幅修改（如移除材质）：同样进入撤销栈。 */
+function applyEdit(mutate: (pixels: Uint8ClampedArray) => Rect | null) {
+  cancelDraft();
+  const before = props.doc.pixels.slice();
+  pushEdit(mutate(props.doc.pixels), before);
+}
 
 function setZoom(value: number) {
   zoom.value = Math.min(32, Math.max(0.05, value));
@@ -213,6 +229,7 @@ let polygonDraft: { base: Uint8ClampedArray; vertices: { x: number; y: number }[
 
 function preserveErasedLotLayers(before: Uint8ClampedArray, dirty: Rect | null) {
   if (props.tool !== "eraser" || props.lotLayer == null || props.channel !== "rgba") return;
+  if (props.eraseAllChannels) return;
   if (!dirty) return;
   const selected = [3, 0, 1, 2][props.lotLayer];
   const rect = clampRect(dirty, props.doc);
@@ -637,6 +654,8 @@ function renderRegion(region: Rect) {
   const displayChannel = props.displayChannel ?? "rgba";
   const image = displayChannel !== "rgba"
     ? new ImageData(new Uint8ClampedArray(channelPixels(pixels, displayChannel)), rect.w, rect.h)
+    : props.display
+      ? new ImageData(props.display(pixels), rect.w, rect.h)
     : props.quantized
       ? quantizeToImageData(new RasterDocument(rect.w, rect.h, pixels))
       : new ImageData(new Uint8ClampedArray(props.dataChannels ? dataChannelPixels(pixels) : pixels), rect.w, rect.h);
@@ -705,6 +724,10 @@ watch(
   },
 );
 watch(
+  () => props.display,
+  () => render(),
+);
+watch(
   () => props.tool,
   () => cancelDraft(),
 );
@@ -741,7 +764,7 @@ watch(
       class="canvas-plane"
       :style="{
         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-        background: checkerboard,
+        background: backdrop || checkerboard,
       }"
     >
       <canvas ref="canvas" class="surface" />

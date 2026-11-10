@@ -1,17 +1,16 @@
 /**
- * 临街朝向：作者 rotationDegrees（0/90/180/270）↔ 编辑器箭头边。
+ * 临街吸附边（lot 本地角，相对 +Y 逆时针）。
  *
- * 游戏 lot 本地系 +Y = 临街侧；Building40 默认 rotationDegrees=180
- * （Blender 白模实证）。编辑器箭头默认仍落在 +Y：
- *   streetFacingFromRotation(180) === 0
- * 切换四边时箭头跟着走，构建写入对应 rotationDegrees。
+ * 游戏 lot 默认 +Y 为临街/吸附侧。本模块只表达「哪条边临街」：
+ * - 编辑器橙色箭头指示该边
+ * - **不**旋转模型、单位、地面或路径
+ * - 与 Building40 的模型 `rotationDegrees`（几何朝向）完全正交
  */
 
-import type { StreetFacingDegrees } from "@/render/plan/ground";
+export type StreetFacingDegrees = 0 | 90 | 180 | 270;
 
-export type { StreetFacingDegrees };
-
-export const DEFAULT_ROTATION_DEGREES: StreetFacingDegrees = 180;
+/** 默认临街边：+Y（游戏吸附默认侧）。 */
+export const DEFAULT_STREET_FACING: StreetFacingDegrees = 0;
 
 export const STREET_FACING_OPTIONS = [
   { facing: 0 as StreetFacingDegrees, edge: "posY" as const },
@@ -20,24 +19,20 @@ export const STREET_FACING_OPTIONS = [
   { facing: 270 as StreetFacingDegrees, edge: "posX" as const },
 ];
 
-export function normalizeRotationDegrees(raw: unknown): StreetFacingDegrees {
+export function normalizeStreetFacing(raw: unknown): StreetFacingDegrees {
   const value = typeof raw === "number" ? raw : Number(raw);
   if (value === 0 || value === 90 || value === 180 || value === 270) {
     return value;
   }
-  return DEFAULT_ROTATION_DEGREES;
+  return DEFAULT_STREET_FACING;
 }
 
-/** rotationDegrees → 箭头边角（相对 +Y，逆时针）。默认 180 → 0（+Y）。 */
-export function streetFacingFromRotation(
+/**
+ * 兼容旧 workbench.rotationDegrees（曾被误当作临街边写入）。
+ * 旧口径：rotation 180 ↔ facing 0（+Y）。
+ */
+export function streetFacingFromLegacyRotation(
   rotation: StreetFacingDegrees,
 ): StreetFacingDegrees {
   return ((rotation + 180) % 360) as StreetFacingDegrees;
-}
-
-/** 箭头边角 → rotationDegrees。+Y(0) → 180。 */
-export function rotationFromStreetFacing(
-  facing: StreetFacingDegrees,
-): StreetFacingDegrees {
-  return ((facing + 180) % 360) as StreetFacingDegrees;
 }

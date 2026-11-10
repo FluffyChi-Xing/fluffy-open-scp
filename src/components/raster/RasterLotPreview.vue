@@ -34,7 +34,11 @@ onMounted(() => {
   if (!root.value || typeof IntersectionObserver === "undefined") return;
   visibilityObserver = new IntersectionObserver(([entry]) => {
     visible.value = entry.isIntersecting;
-  }, { root: root.value.closest(".inspector"), threshold: 0.01 });
+  }, {
+    // Lot 库卡片在 `.lot-library` / `.maw-inspector` 内，属性检视在 `.inspector`。
+    root: root.value.closest(".lot-library, .maw-inspector, .inspector"),
+    threshold: 0.01,
+  });
   visibilityObserver.observe(root.value);
 });
 let generation = 0;

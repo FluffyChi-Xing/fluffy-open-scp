@@ -1,13 +1,17 @@
 /**
- * 路径类型目录（2026-11-07）：作者只选"人行道/车辆引道"，entry 与
+ * 路径类型目录（2026-11-07）：作者只选"人行道/普通车辆/校车引道"，entry 与
  * scope/roadConnect 全部由类型配方换算（构建器 `path_catalog.rs` 是同一
  * 份配方的权威实现；本文件是编辑器的只读投影与纯函数层）。
  *
  * 证据基线：docs/design/path-semantic-authoring.md §3.2（原版 entry 聚类，
  * Reference-first——不新建 PathEntry，零索引预算风险）。
+ *
+ * `vehicle` vs `driveway`（2026-11-10）：同 entry `7C9C4FFF`（filter
+ * C37D661D 通用车辆类）；差别是 Local（地块内，拆除干净）vs Global+First
+ * （校车跨城接路网，拆除可能留 stub）。
  */
 
-export type PathTypeId = "pedestrian" | "driveway" | "custom";
+export type PathTypeId = "pedestrian" | "vehicle" | "driveway" | "custom";
 
 export interface PathTypeSpec {
   id: PathTypeId;
@@ -22,7 +26,7 @@ export interface PathTypeSpec {
   roadConnect: boolean;
 }
 
-/** 首版类型表（与 Rust PATH_TYPES 对齐；custom 是高级模式）。 */
+/** 类型表（与 Rust PATH_TYPES 对齐；custom 是高级模式）。 */
 export const PATH_TYPES: readonly PathTypeSpec[] = [
   {
     id: "pedestrian",
@@ -34,10 +38,19 @@ export const PATH_TYPES: readonly PathTypeSpec[] = [
     roadConnect: false,
   },
   {
+    id: "vehicle",
+    labelKey: "studio.assetWorkbench.pathType.vehicle",
+    hintKey: "studio.assetWorkbench.pathType.vehicleHint",
+    icon: "Car",
+    entry: "7C9C4FFF",
+    scope: "local",
+    roadConnect: false,
+  },
+  {
     id: "driveway",
     labelKey: "studio.assetWorkbench.pathType.driveway",
     hintKey: "studio.assetWorkbench.pathType.drivewayHint",
-    icon: "Car",
+    icon: "GraduationCap",
     entry: "7C9C4FFF",
     scope: "global",
     roadConnect: true,
