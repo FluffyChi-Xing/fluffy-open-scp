@@ -433,27 +433,33 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
                 class="package-tabs-scroll"
                 @scroll.passive="updatePackageTabScroll"
               >
-                <button
+                <div
                   v-for="item in opened"
                   :key="item.package.packageId"
                   class="package-tab"
                   :class="{
                     active: item.package.packageId === activePackageId,
                   }"
-                  type="button"
-                  role="tab"
-                  :aria-selected="item.package.packageId === activePackageId"
-                  @click="explorer.choosePackage(item.package.packageId)"
                 >
-                  <FIcon name="Package" :size="14" aria-label="" /><span>{{
-                    item.package.path.split(/[\\/]/).pop()
-                  }}</span
-                  ><span
-                    class="tab-close"
-                    @click.stop="explorer.closePackage(item.package.packageId)"
-                    >×</span
+                  <button
+                    class="package-tab-select"
+                    type="button"
+                    role="tab"
+                    :aria-selected="item.package.packageId === activePackageId"
+                    @click="explorer.choosePackage(item.package.packageId)"
                   >
-                </button>
+                    <FIcon name="Package" :size="14" aria-label="" />
+                    <span>{{ item.package.path.split(/[\\/]/).pop() }}</span>
+                  </button>
+                  <button
+                    class="tab-close"
+                    type="button"
+                    :aria-label="$t('package.closeNamedTab', { name: item.package.path.split(/[\\/]/).pop() })"
+                    @click="explorer.closePackage(item.package.packageId)"
+                  >
+                    <FIcon name="X" :size="12" aria-label="" />
+                  </button>
+                </div>
               </div>
               <button
                 class="tab-scroll-button"
@@ -1028,13 +1034,12 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   border: 0;
   border-inline-end: 1px solid var(--border);
   color: var(--muted-foreground);
-  cursor: pointer;
   display: flex;
+  flex: 0 0 auto;
   font: inherit;
   font-size: 12px;
-  gap: 7px;
   max-width: 210px;
-  padding: 0 11px;
+  padding-inline-end: 5px;
   transition:
     background-color 140ms ease,
     color 140ms ease;
@@ -1049,16 +1054,34 @@ function tgiLabel(tgi: { typeId: number; group: number; instance: number }) {
   color: var(--foreground);
   font-weight: 700;
 }
-.package-tab span:nth-child(2) {
+.package-tab-select {
+  align-items: center;
+  align-self: stretch;
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  padding-inline: 11px 4px;
+  scale: none;
+}
+.package-tab-select svg {
+  flex: none;
+}
+.package-tab-select span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .tab-close {
+  align-items: center;
   border-radius: 4px;
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 24px;
+  justify-content: center;
+  scale: none;
+  width: 24px;
 }
 .tab-close:hover {
   background: var(--surface-hover);

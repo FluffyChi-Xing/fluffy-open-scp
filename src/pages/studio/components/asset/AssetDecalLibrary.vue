@@ -18,6 +18,7 @@ interface DecalPackage {
 
 const { t } = useI18n();
 const packages = useGamePackagesStore();
+const scrollRoot = shallowRef<HTMLElement | null>(null);
 const catalog = shallowRef<DecalPackage[]>([]);
 const expanded = ref(new Set<number>());
 const loading = ref(false);
@@ -59,7 +60,7 @@ function atlasLabel(tgi: Tgi): string {
 </script>
 
 <template>
-  <div class="decal-library">
+  <div ref="scrollRoot" class="decal-library">
     <p v-if="loading" class="decal-library-status">
       <FSpinner size="sm" :label="t('common.loading')" />
     </p>
@@ -88,6 +89,7 @@ function atlasLabel(tgi: Tgi): string {
           <DecalDictionaryGallery
             :package-id="group.packageId"
             :tgi="atlas.tgi"
+            :scroll-root="scrollRoot"
             :placeable="editEnabled"
             compact
             @place="entry => entry.id && emit('place', {

@@ -96,6 +96,7 @@ export interface OpenScpDataSource {
   readDecalDictionary(
     packageId: number,
     tgi: Tgi,
+    metadataOnly?: boolean,
   ): Promise<DecalDictionaryData>;
   /** 按条目下标批量解码缩略图（单次上限 256）。 */
   readDecalImages(

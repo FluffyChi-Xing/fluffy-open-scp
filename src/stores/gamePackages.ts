@@ -12,6 +12,7 @@ import type {
   Tgi,
 } from "@/api/tauri";
 import { useToast } from "@/composables/useToast";
+import { i18n } from "@/locales";
 
 const PAGE_SIZE = 100;
 
@@ -226,41 +227,48 @@ export const useGamePackagesStore = defineStore("gamePackages", () => {
       else if (result.kind === "image" && result.src.startsWith("blob:"))
         URL.revokeObjectURL(result.src);
     } catch {
-      if (request === previewRequest) previewError.value = "资源预览失败";
-      toast.error("资源读取失败");
+      if (request === previewRequest) {
+        previewError.value = "资源预览失败";
+        toast.error("资源读取失败");
+      }
     } finally {
       if (request === previewRequest) previewLoading.value = false;
     }
   }
   async function closePackage(id: number) {
+    const index = opened.value.findIndex((item) => item.package.packageId === id);
+    const closed = opened.value[index];
+    if (!closed) return;
+    opened.value = opened.value.filter((item) => item.package.packageId !== id);
+    if (activePackageId.value === id) {
+      activatePackage(opened.value[index] ?? opened.value.at(-1));
+    }
     try {
       await source.closePackage(id);
-      opened.value = opened.value.filter(
-        (item) => item.package.packageId !== id,
-      );
-      if (activePackageId.value === id) {
-        const next = opened.value.at(-1);
-        activePackageId.value = next?.package.packageId ?? null;
-        activePage.value = next?.resources ?? null;
-        typeFilter.value = null;
-        selected.value = null;
-        releasePreviewUrl();
-        preview.value = null;
-      }
-    } catch {
-      toast.error("Package 关闭失败");
+    } catch (error) {
+      // The backend may already have released this handle.
+      if ((error as { code?: string } | null)?.code === "not_found") return;
+      const current = [...opened.value];
+      current.splice(index, 0, closed);
+      opened.value = current;
+      if (activePackageId.value === null) activatePackage(closed);
+      toast.error(i18n.global.t("package.closeFailed"));
     }
+  }
+  function activatePackage(item: OpenPackageResponse | undefined) {
+    activePackageId.value = item?.package.packageId ?? null;
+    activePage.value = item?.resources ?? null;
+    typeFilter.value = null;
+    selected.value = null;
+    previewRequest += 1;
+    previewLoading.value = false;
+    previewError.value = "";
+    releasePreviewUrl();
+    preview.value = null;
   }
   function choosePackage(id: number) {
     const item = opened.value.find((entry) => entry.package.packageId === id);
-    if (item) {
-      activePackageId.value = id;
-      activePage.value = item.resources;
-      typeFilter.value = null;
-      selected.value = null;
-      releasePreviewUrl();
-      preview.value = null;
-    }
+    if (item) activatePackage(item);
   }
   function tgiLabel(resource: ResourceSummary) {
     return [resource.tgi.typeId, resource.tgi.group, resource.tgi.instance]

@@ -5194,6 +5194,15 @@ pub struct DecalImagesRequest {
     pub indices: Vec<usize>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecalDictionaryRequest {
+    pub package_id: u64,
+    pub tgi: TgiDto,
+    #[serde(default)]
+    pub metadata_only: bool,
+}
+
 /// 跨包定位条目引用的 Raster：对齐原 SCP 的「全局索引按 instance + 类型查找」，
 /// 忽略 Key 自带的 group（原 SCP 同样只比较 instance 与 Raster 类型）。
 fn find_decal_raster(
@@ -5294,6 +5303,7 @@ fn decal_dictionary_data(
     dictionary: sc_properties::DecalDictionary,
     package: &Package,
     manager: &PackageManager,
+    metadata_only: bool,
 ) -> DecalDictionaryData {
     let entries = dictionary
         .entries
@@ -5307,12 +5317,26 @@ fn decal_dictionary_data(
                 aspect_ratio: entry.aspect_ratio,
                 colors: entry.colors,
                 colors_rgba8,
-                raster_status: decal_raster_status(
-                    package,
-                    manager,
-                    entry.raster,
-                    colors_rgba8.is_some(),
-                ),
+                raster_status: if metadata_only {
+                    // A raster reference is enough to schedule a thumbnail.
+                    // Its existence, dimensions and format are checked on demand.
+                    DecalRasterStatus {
+                        found: false,
+                        width: None,
+                        height: None,
+                        pixel_format: None,
+                        decodable: entry.raster.is_some(),
+                        source_package: None,
+                        reason: None,
+                    }
+                } else {
+                    decal_raster_status(
+                        package,
+                        manager,
+                        entry.raster,
+                        colors_rgba8.is_some(),
+                    )
+                },
             }
         })
         .collect();
@@ -5470,7 +5494,7 @@ fn decode_decal_entry(
 #[tauri::command]
 pub async fn read_decal_dictionary(
     state: State<'_, AppState>,
-    request: ReadResourceDataRequest,
+    request: DecalDictionaryRequest,
 ) -> Result<DecalDictionaryData, CommandError> {
     let manager = Arc::clone(&state.packages);
     let store = Arc::clone(&state.store);
@@ -5493,7 +5517,12 @@ pub async fn read_decal_dictionary(
                     "property has no decal dictionary columns".into(),
                 ));
             }
-            Ok(decal_dictionary_data(dictionary, package, manager))
+            Ok(decal_dictionary_data(
+                dictionary,
+                package,
+                manager,
+                request.metadata_only,
+            ))
         },
     )
     .await
