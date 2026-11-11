@@ -38,6 +38,7 @@ pub mod scene;
 pub mod schema_discovery;
 pub mod single_compatible;
 pub mod stages;
+mod street_placement;
 pub mod template_material;
 mod value;
 pub mod workbench_logic;

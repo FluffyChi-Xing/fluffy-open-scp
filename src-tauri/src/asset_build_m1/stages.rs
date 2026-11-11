@@ -2044,6 +2044,30 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
     // A failed contract aborts before staging.publish(), so a bad package can
     // never replace the last accepted deliverable.
     let final_resources = connector::read_source(&staged_package)?;
+    let requested_edge = ctx
+        .plan
+        .menu
+        .as_ref()
+        .and_then(|menu| menu.street_facing_degrees);
+    let placement_turn = super::street_placement::compensation(requested_edge)?;
+    let street_placement = if placement_turn != 0 {
+        let instance = ctx.menu_instance.ok_or("street placement: missing menu identity")?;
+        let asset_id = ResourceId {
+            type_id: super::menu::PROPERTY_TYPE,
+            group: super::menu::lot_group(),
+            instance,
+        };
+        let bytes = written
+            .get(&asset_id)
+            .ok_or("street placement: missing Asset dictionary")?;
+        let asset = PropertyFile::parse(bytes).map_err(|error| error.to_string())?;
+        let Some(transform) = super::street_placement::generated_transform(&asset) else {
+            return Err("street placement: missing generated LotPlacementTransform".into());
+        };
+        Some((requested_edge.unwrap(), transform.clone()))
+    } else {
+        None
+    };
     let donor = ctx.menu_instance.and_then(|_| {
         ctx.identity_resources.as_ref().map(|resources| {
             let donor_instance = ctx
@@ -2069,12 +2093,15 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
                 .ground_source
                 .as_ref()
                 .map(|(resources, source_lot)| (resources, *source_lot)),
-            rotation_degrees: ctx
-                .plan
-                .menu
-                .as_ref()
-                .and_then(|menu| menu.rotation_degrees)
-                .unwrap_or(180),
+            rotation_degrees: super::street_placement::mask_rotation(
+                ctx.plan
+                    .menu
+                    .as_ref()
+                    .and_then(|menu| menu.rotation_degrees)
+                    .unwrap_or(180),
+                placement_turn,
+            ),
+            street_placement,
         },
     )?;
     if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| !p.templates.is_empty()) {

@@ -21,13 +21,17 @@ use super::property_edit::{encode, set_array, set_array_with_flags, set_scalar};
 use super::{connector, materials::raster_type, package::LodModelIds, scene::SceneDocument};
 use dbpf::ResourceId;
 use sc_properties::{
-    Kind, PropType, Property, PropertyEncoding, PropertyFile, Text, Value, LOD_MODEL_HASHES,
-    LOT_MASK_HASH, LOT_SIZE_HASH,
+    Key, Kind, PropType, Property, PropertyEncoding, PropertyFile, Text, Value,
+    LOD_MODEL_HASHES, LOT_MASK_HASH, LOT_SIZE_HASH,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub const PROPERTY_TYPE: u32 = 0x00B1_B104;
+/// 图形单元组：建筑的"非模拟属性"载体（模型引用 / BoundingBox / UnitLocation /
+/// 亮灯开关 0x0E0BE186 lightswhenactive 等）。引擎 cGraphicsUnitInteriors 经
+/// FindUnitNonSimProps 在该组按图形状态 ID 检索——缺失 = 夜景永不亮。
+pub const GRAPHICS_UNIT_GROUP: u32 = 0x42E1_C000;
 /// 工具条目组（Menu2 所在组；地标批在 SimCity_Graphics 包）。
 pub const MENU_GROUP: u32 = 0x09878_A01;
 /// cUnit 叶子组 / Lot 资产配置组 / 模板组（Unit 模板在 48E0C000）。
@@ -198,10 +202,14 @@ pub struct MenuRegistrationSpec {
     /// 克隆；不再克隆参照 lot。`reference.lot` 此时充当 ground 来源。
     #[serde(default)]
     pub parent_free: bool,
-    /// 作者朝向（asset_transforms.rotation_degrees，默认 180）。parent-free
-    /// 路线同时作用于几何旋转、地面 raster/盒与 prop/light 矩阵。
+    /// 模型/场景几何朝向（Building40 打包旋转 mesh/地面/prop）。
+    /// 与临街吸附边正交——地块 tab 不得写入本字段。
     #[serde(default)]
     pub rotation_degrees: Option<u32>,
+    /// 临街吸附边（lot 本地角：0=+Y / 90=−X / 180=−Y / 270=+X）。
+    /// 只表达「哪条边临街」，**不**驱动几何旋转。
+    #[serde(default)]
+    pub street_facing_degrees: Option<u32>,
 }
 
 fn default_tree_decoration() -> bool {
@@ -296,6 +304,7 @@ impl MenuRegistrationSpec {
         if spec.title.trim().is_empty() {
             return Err("menu registration requires a non-empty title".into());
         }
+        super::street_placement::compensation(spec.street_facing_degrees)?;
         Ok(spec)
     }
 }
@@ -345,6 +354,9 @@ pub fn generate(
             root,
             author_building40,
         );
+    }
+    if super::street_placement::compensation(spec.street_facing_degrees)? != 0 {
+        return Err("streetFacingDegrees requires the parent-free building route".into());
     }
     let lot_bytes = resources.get(&lot_source).ok_or_else(|| {
         format!("menu registration: reference lot {lot_source} missing from source package")
@@ -507,7 +519,7 @@ fn generate_parent_free(
             Err(_) => build_menu2(spec, instance)?,
         }
     };
-    let native = super::native_profile::build(
+    let mut native = super::native_profile::build(
         spec,
         resources,
         ground_lot,
@@ -517,6 +529,10 @@ fn generate_parent_free(
         model_ids.as_ref(),
         rotation,
         author_building40,
+    )?;
+    let placement = super::street_placement::apply(
+        &mut native.asset,
+        super::street_placement::compensation(spec.street_facing_degrees)?,
     )?;
     let asset_id = ResourceId {
         type_id: PROPERTY_TYPE,
@@ -531,6 +547,63 @@ fn generate_parent_free(
     let locale = build_locale(spec, instance);
     let icon_png = build_icon_png(spec, instance, root)?;
     let marquee_jpg = build_marquee_jpg(spec, instance, root)?;
+    // 图形单元资源（组 42E1C000）：**所有 parent-free 建筑默认携带**。
+    // 引擎 cGraphicsUnitInteriors::FillFromProps（0x7D4690）从该资源的非模拟
+    // 属性读亮灯开关 0x0E0BE186 lightswhenactive——缺失 = 夜景永不亮
+    // （2026-11-11 希望大厦夜景全黑的根因；19/19 原版地标图形单元都带 true）。
+    // 内容对齐原版形态：parent→自身 Lot、BoundingBox、模型引用 ×4、开关。
+    let graphics_unit = {
+        let mut file = PropertyFile::default();
+        if let Some(placement) = &placement {
+            super::street_placement::write(&mut file, placement);
+        }
+        set_scalar(
+            &mut file,
+            0x00B2_CCCB,
+            PropType::Key,
+            Value::Key(Key {
+                type_id: PROPERTY_TYPE,
+                group: lot_group(),
+                instance,
+            }),
+        );
+        if let Some((min, max)) = model_bounds(resources, model_ids) {
+            set_scalar(
+                &mut file,
+                0x00F9EFBA,
+                PropType::BoundingBox,
+                Value::BoundingBox { min, max },
+            );
+        }
+        for (offset, lod) in model_ids.iter().flatten().enumerate() {
+            set_scalar(
+                &mut file,
+                0x00F9EFBB + offset as u32,
+                PropType::Key,
+                Value::Key(sc_properties::Key {
+                    type_id: lod.type_id,
+                    group: lod.group,
+                    instance: lod.instance,
+                }),
+            );
+        }
+        set_scalar(&mut file, 0x0E0BE186, PropType::Bool, Value::Bool(true));
+        // 内景控制器创建开关（SC5 研究报告《第九阶段》0x0081D020 实证）：
+        // 控制器创建时检查居民/工作人员来源，缺失时**只有图形资产上的
+        // 0F169C46=true 才允许创建**；控制器为空时模型用固定阈值 (1,1,1)
+        // → 永远选中内景图集第 0 列。我们的材质把夜景发光编在第 1 列
+        // → 窗格全黑（十几次反复的真正根因）。
+        // 有控制器后 GetInfo 输出 [q*d*s, q*s, s]：夜里 q=0.85 且 d=0 →
+        // 约 85% 房间选第 1 列 = 窗灯亮；白天 d=1 → 回第 0 列 = 不亮。
+        // 原版编码为 `0f169c46 0001 8000 01`（Bool 标量，flags 0x8000）。
+        set_scalar(&mut file, 0x0F16_9C46, PropType::Bool, Value::Bool(true));
+        let encoded = encode(&file)?;
+        // 构建期硬门槛（防第 N 次回归）：图形单元必须同时声明两个内景开关。
+        // 缺失任一条 = 窗灯必黑（SC5 报告《第九阶段》0x0081D020/0x0081CD60），
+        // 因此在这里直接 fail，而不是等进游戏肉眼发现。
+        verify_interior_controller_contract(&encoded)?;
+        encoded
+    };
     let mut entries = vec![
         (
             ResourceId {
@@ -542,6 +615,14 @@ fn generate_parent_free(
         ),
         (unit_id, encode(&native.unit)?),
         (asset_id, encode(&native.asset)?),
+        (
+            ResourceId {
+                type_id: PROPERTY_TYPE,
+                group: GRAPHICS_UNIT_GROUP,
+                instance,
+            },
+            graphics_unit,
+        ),
         (
             ResourceId {
                 type_id: LOCALE_TYPE,
@@ -908,6 +989,41 @@ fn build_donor_locale(spec: &MenuRegistrationSpec, instance: u32, table: u32) ->
 
 /// 编译后模型的真实包围盒（LOD0 顶点位置并集）。失败 = None（保留 donor
 /// 盒子并保持构建继续；menu-contract 仍会校验 BoundingBox 是否存在）。
+/// 图形单元契约：内景控制器创建/驱动所需的两个布尔开关必须同时为 true。
+///
+/// 依据 SC5 零售引擎研究（`D:/ea-games/simcity_offline/entity/001/第九阶段_内景控制器与昼夜驱动.md`）：
+/// - `0x0081D020` 创建：无居民/工人来源时，只有图形资产 `0F169C46=true` 才建控制器；
+/// - `0x0081CD60` 初始化：读 `0F169C46`（模式）与 `0E0BE186`；
+/// - 控制器为空 → `0x00783BC1` 使用固定阈值 `(1,1,1)` → shader 永远选内景第 0 列，
+///   而本仓库材质把夜景发光编在第 1 列 → 窗格永久全黑。
+///
+/// auto-wiring 顺序（s31 / 原版地标同构）：
+/// 1. 先尝试从宿主单位的居民/工人 bin 创建控制器；
+/// 2. 宿主无对应来源时（例如新建资产工人不足），**图形资源里 0F169C46=true 解除限制**；
+/// 3. 控制器创建成功后按 GetInfo `[q*d*s, q*s, s]` 计算阈值（夜 q=0.85, d=0），
+///    选中内景图集第 1 列（夜景发光帧），白天回第 0 列。
+///
+/// 注意 flags：原版 bool 用标量 flags，在编码层保持默认（本仓库 `set_scalar` 已对齐）；
+/// 资源本身也不属于 `42E1C000` 的整包属性形态。
+
+fn verify_interior_controller_contract(bytes: &[u8]) -> Result<(), String> {
+    const SWITCHES: [(u32, &str); 2] = [
+        (0x0F16_9C46, "interior controller creation (0F169C46)"),
+        (0x0E0B_E186, "lightswhenactive (0E0BE186)"),
+    ];
+    let file = PropertyFile::parse(bytes)
+        .map_err(|error| format!("graphics unit contract: parse: {error}"))?;
+    for (hash, label) in SWITCHES {
+        let value = file.get(hash).and_then(|property| property.scalar());
+        if !matches!(value, Some(Value::Bool(true))) {
+            return Err(format!(
+                "graphics unit contract: {label} must be Bool(true) — without it the                  interior controller falls back to fixed thresholds (1,1,1) and the                  building's night windows stay dark (see SC5 stage-9 interior study)"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn model_bounds(
     resources: &connector::Resources,
     model_ids: Option<LodModelIds>,
@@ -1701,6 +1817,37 @@ fn apply_menu_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn graphics_unit_contract_requires_both_interior_switches() {
+        // 回归防护（夜灯反复十几次的类别）：图形单元缺任一开关 → 构建期直接失败，
+        // 不再等到进游戏才发现窗格全黑。
+        let mut complete = PropertyFile::default();
+        set_scalar(&mut complete, 0x0F16_9C46, PropType::Bool, Value::Bool(true));
+        set_scalar(&mut complete, 0x0E0B_E186, PropType::Bool, Value::Bool(true));
+        let encoded = encode(&complete).unwrap();
+        assert!(verify_interior_controller_contract(&encoded).is_ok());
+
+        // 缺 0F169C46（控制器创建开关）：控制器为空 → 固定阈值 (1,1,1) → 永远第 0 列。
+        let mut no_controller = PropertyFile::default();
+        set_scalar(&mut no_controller, 0x0E0B_E186, PropType::Bool, Value::Bool(true));
+        let error = verify_interior_controller_contract(&encode(&no_controller).unwrap())
+            .unwrap_err();
+        assert!(error.contains("0F169C46"), "{error}");
+
+        // 缺 0E0BE186（运营提亮）：夜里 q=0 时窗灯仍不会按 active 提亮。
+        let mut no_light_switch = PropertyFile::default();
+        set_scalar(&mut no_light_switch, 0x0F16_9C46, PropType::Bool, Value::Bool(true));
+        let error = verify_interior_controller_contract(&encode(&no_light_switch).unwrap())
+            .unwrap_err();
+        assert!(error.contains("0E0BE186"), "{error}");
+
+        // 值写成 false 同样拒绝（存在但关闭 = 同样黑）。
+        let mut disabled = PropertyFile::default();
+        set_scalar(&mut disabled, 0x0F16_9C46, PropType::Bool, Value::Bool(false));
+        set_scalar(&mut disabled, 0x0E0B_E186, PropType::Bool, Value::Bool(true));
+        assert!(verify_interior_controller_contract(&encode(&disabled).unwrap()).is_err());
+    }
 
     #[test]
     fn clone_lot_mask_allocates_a_new_raster_identity() {

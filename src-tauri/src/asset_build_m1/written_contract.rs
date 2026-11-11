@@ -43,6 +43,7 @@ pub(crate) struct WrittenContractSpec<'a> {
     /// source mask (`native_profile::rotate_lot`). Required to compare the
     /// final raster against the same transform instead of raw pixels.
     pub rotation_degrees: u32,
+    pub street_placement: Option<(u32, sc_properties::Transform)>,
 }
 
 pub(crate) struct WrittenContractReport {
@@ -102,9 +103,25 @@ pub(crate) fn validate(
         None
     };
     let scene = match spec.document {
-        Some(document) => Some(validate_scene(resources, &lot, document, spec.writes)?),
+        Some(document) => {
+            let size = document.lot_size.map(|[width, depth]| {
+                if spec.street_placement.is_some() && matches!(spec.rotation_degrees, 90 | 270) {
+                    [depth, width]
+                } else {
+                    [width, depth]
+                }
+            });
+            Some(validate_scene(resources, &lot, document, spec.writes, size)?)
+        }
         None => None,
     };
+    let street_placement = spec
+        .street_placement
+        .as_ref()
+        .map(|(edge, transform)| {
+            super::street_placement::verify(resources, instance, *edge, transform)
+        })
+        .transpose()?;
     let (ground_mask, ground_style) = match spec.document {
         Some(document) => validate_ground(
             resources,
@@ -143,6 +160,7 @@ pub(crate) fn validate(
             "groundStyle": ground_style,
             "loweredUnits": lowered_units,
             "models": models,
+            "streetPlacement": street_placement,
             "resourceCount": resources.len(),
         }),
     })
@@ -224,10 +242,11 @@ fn validate_scene(
     lot: &PropertyFile,
     document: &SceneDocument,
     writes: &SceneWrites,
+    expected_size: Option<[f32; 2]>,
 ) -> Result<serde_json::Value, String> {
     super::scene::verify_units(lot, document, writes)
         .map_err(|error| format!("written-contract: {error}"))?;
-    if let Some(expected) = document.lot_size {
+    if let Some(expected) = expected_size {
         let actual = match lot.get(LOT_SIZE_HASH).map(|property| &property.kind) {
             Some(Kind::Scalar(Value::Vector2(size))) => Some(*size),
             Some(Kind::Array(values)) => values.iter().find_map(|value| match value {
@@ -388,7 +407,14 @@ fn validate_ground(
         None
     } else {
         let mut fields = Vec::new();
-        for (hash, expected) in expected_values {
+        for (hash, mut expected) in expected_values {
+            if hash == 0x0CCB_7FD0
+                && matches!(document.lot_mask, Some(SceneLotMaskKind::Source | SceneLotMaskKind::Authored))
+                && matches!(rotation_degrees, 90 | 270)
+                && let Value::Vector2(period) = &mut expected
+            {
+                period.swap(0, 1);
+            }
             let actual = match lot.get(hash).map(|property| &property.kind) {
                 Some(Kind::Scalar(value)) => value,
                 other => {
@@ -1108,7 +1134,7 @@ mod tests {
     fn final_scene_accepts_shared_global_point_pool() {
         let document = scene();
         let file = lot(&document, &writes());
-        let report = validate_scene(&Resources::new(), &file, &document, &writes()).unwrap();
+        let report = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap();
         assert_eq!(report.pointer("/paths/points"), Some(&json!(3)));
         assert_eq!(report.pointer("/paths/paths"), Some(&json!(2)));
         assert_eq!(report.pointer("/props/1/count"), Some(&json!(1)));
@@ -1119,7 +1145,7 @@ mod tests {
         let document = scene();
         let mut file = lot(&document, &writes());
         file.values.retain(|property| property.hash != PATH_PAIRS);
-        let error = validate_scene(&Resources::new(), &file, &document, &writes()).unwrap_err();
+        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap_err();
         assert!(error.contains("pairs"), "{error}");
     }
 
@@ -1129,7 +1155,7 @@ mod tests {
         let mut file = lot(&document, &writes());
         file.values
             .retain(|property| property.hash != PROP_ID_BASE + 1);
-        let error = validate_scene(&Resources::new(), &file, &document, &writes()).unwrap_err();
+        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap_err();
         assert!(error.contains("prop bin 1"), "{error}");
     }
 
@@ -1139,7 +1165,7 @@ mod tests {
         document.paths[0].kind = Some("custom".into());
         document.paths[0].entry = Some("1234ABCD".into());
         let file = lot(&document, &writes());
-        let error = validate_scene(&Resources::new(), &file, &document, &writes()).unwrap_err();
+        let error = validate_scene(&Resources::new(), &file, &document, &writes(), document.lot_size).unwrap_err();
         assert!(error.contains("custom PathEntry"), "{error}");
     }
 

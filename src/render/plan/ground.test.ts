@@ -98,7 +98,7 @@ describe("streetSidePlan", () => {
 
   it("facing 90 把箭尖旋到 −X", () => {
     const plan = streetSidePlan([80, 60], 90)!;
-    expect(plan.tip[0]).toBeLessThan(-30);
+    expect(plan.tip[0]).toBeLessThan(-40);
     expect(plan.tip[1]).toBeCloseTo(0, 5);
     expect(plan.facingDegrees).toBe(90);
   });

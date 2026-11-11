@@ -93,7 +93,7 @@ export function streetSidePlan(
   if (!lotSize) return null;
   const [width, depth] = lotSize;
   if (!(width > 0) || !(depth > 0)) return null;
-  const edge = depth / 2;
+  const edge = (facingDegrees === 90 || facingDegrees === 270 ? width : depth) / 2;
   const size = Math.min(Math.max(Math.min(width, depth) * 0.12, 2), 12);
   const z = 0.22;
   const shaftHalf = size * 0.14;

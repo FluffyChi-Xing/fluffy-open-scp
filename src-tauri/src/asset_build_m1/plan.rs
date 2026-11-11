@@ -259,7 +259,7 @@ mod tests {
             "semantics": {"menu": {"title": "T"}},
             "outputs": {"package": "000_legacy.package", "mode": "full"}
         });
-        let error = plan_from_schema(&schema.to_string()).unwrap_err();
+        let error = plan_from_schema(&schema.to_string()).err().expect("missing reference Lot");
         assert!(error.contains("reference.lot"), "{error}");
     }
 }

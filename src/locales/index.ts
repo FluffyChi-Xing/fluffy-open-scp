@@ -1015,9 +1015,9 @@ const messages = {
       actionsResources: "资源数",
       actionsStages: "阶段",
       actionsViewDetail: "详情",
-      streetFacingTitle: "临街朝向",
+      streetFacingTitle: "临街放置边",
       streetFacingHint:
-        "点击地块四边选择临街侧；橙色箭头与建筑朝向会实时同步（默认 +Y，对应构建 180°）。",
+        "选择建筑在游戏里贴路的一边。工作台保留模型、地面和附属组件的原有布局。",
       streetFacingLot: "地块",
       streetFacingEdges: {
         posY: "+Y 前",
@@ -3542,9 +3542,9 @@ const messages = {
       actionsResources: "Resources",
       actionsStages: "Stages",
       actionsViewDetail: "Detail",
-      streetFacingTitle: "Street facing",
+      streetFacingTitle: "Street placement edge",
       streetFacingHint:
-        "Click a lot edge to set the street side; the orange arrow and building yaw update live (default +Y → build 180°).",
+        "Choose which edge meets the road in-game. The model, ground, and attachments keep their workbench layout.",
       streetFacingLot: "Lot",
       streetFacingEdges: {
         posY: "+Y front",

@@ -69,6 +69,27 @@ x ∈ ±frontageMin/2（frontage 轴），y ∈ ±depthMin/2（depth 轴）。
 行人图 location space **0xBAFEA257**（1000459 行）= unit-lot 本地空间，走同一条
 FillFromUnit + CalculateUnitLotTransform 链把 lot 本地点映到世界。
 
+### 2.5 工作台的临街放置边
+
+`streetFacingDegrees` 选择地块的贴路侧，`0/90/180/270` 分别对应 `+Y/-X/-Y/+X`。
+工作台只更新临街箭头，模型、路径、道具和灯光仍使用原有的场景坐标。
+
+构建器把选中边的外法线映射到引擎的 `+Y` 前缘。设这次坐标变换为 Q，
+则 `P' = Q ∘ P`，已有放置偏移随坐标系换算。非默认边在 Asset 和图形单元
+字典写入同一个 `0x0DB7FB17`，使用原生的单元素 Transform 数组
+（属性 flags `0x801C`，声明步长 56）。引擎的
+`EA::Variant::operator<cSPTransform>` 通过该数组的首元素读取变换。
+
+`CreateUnitLotGraphics` 用 W 的 `+X/-Y` 基向量采样 LotMask。
+换边后 `W' = W ∘ Q⁻¹`，构建器相应换算地面尺寸、偏移、铺贴周期和遮罩像素。
+地块转过四分之一圈时，构建器还检查 `FillFromProps` 对 frontage 和 depth 的
+包围盒下限。若下限会改变地块在模型坐标中的占地，构建失败并报告所需尺寸。
+成包回读会校验放置属性及地面遮罩。
+
+离线验证覆盖希望大厦的矩形地块四边、商业地标的手绘遮罩，以及大学实验楼
+原有放置偏移。希望大厦和大学实验楼的测试副本分别用 `83 × 83` 和
+`192 × 99` 的地块通过侧边构建。实际贴路效果仍待游戏内验证。
+
 ## 三、脚本资源表解析（离线配方，openscp prop 落地的硬前置）
 
 ### 3.1 主表定位

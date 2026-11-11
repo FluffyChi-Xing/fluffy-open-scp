@@ -1426,6 +1426,8 @@ pub fn build(
             _ => 1,
         },
     };
+    let placement_turn = super::street_placement::compensation(spec.street_facing_degrees)?;
+    let ground_rotation = super::street_placement::mask_rotation(rotation_degrees, placement_turn);
     let (mut new_size, mut new_offset, mut new_period) = (size, offset, period);
     let mut mask = None;
     if let Some(mask_property) = ground.get(GROUND_MASK_HASH) {
@@ -1435,7 +1437,7 @@ pub fn build(
         let raw = resolve_raster(ground_resources, key)?;
         let decoded = decode_ground_raster(&raw)?;
         let (rotated, rotated_size, rotated_offset, rotated_period) =
-            rotate_lot(&decoded, size, offset, period, rotation_degrees)?;
+            rotate_lot(&decoded, size, offset, period, ground_rotation)?;
         let encoded = super::materials::encode_rgba_raster(
             rotated.width(),
             rotated.height(),
@@ -1461,8 +1463,15 @@ pub fn build(
             ),
         );
         new_size = rotated_size;
-        new_offset = rotated_offset;
+        new_offset = if placement_turn == 0 {
+            rotated_offset
+        } else {
+            super::street_placement::ground_offset(offset, (rotation_degrees + placement_turn) % 360)
+        };
         new_period = rotated_period;
+    }
+    if placement_turn != 0 && mask.is_none() {
+        return Err("street placement: ground compensation requires a LotMask".into());
     }
     upsert(
         &mut asset,
@@ -1529,6 +1538,21 @@ pub fn build(
         Some(model_ids) => model_bounds(resources, model_ids)?,
         None => [0.0, 0.0, 0.0, new_size[0], new_size[1], 1.0],
     };
+    if matches!(placement_turn, 90 | 270) {
+        // FillFromProps clamps the parcel extents against the model's
+        // unchanged bounding box. A quarter-turn must preserve the clamped
+        // footprint in model space.
+        let span_x = bounds[3] - bounds[0];
+        let span_y = bounds[4] - bounds[1];
+        if new_size[0].max(span_x) != new_size[0].max(span_y)
+            || new_size[1].max(span_y) != new_size[1].max(span_x)
+        {
+            return Err(format!(
+                "street placement: the game would change the parcel footprint to fit the model bounds; enlarge the Lot to at least {:.2} on both axes before selecting this edge",
+                span_x.max(span_y)
+            ));
+        }
+    }
     upsert(
         &mut asset,
         array(
