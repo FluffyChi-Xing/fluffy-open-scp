@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import FIcon from "@/components/extensions/FIcon.vue";
+import FAlert from "@/components/ui/FAlert.vue";
 import FDropdown from "@/components/ui/FDropdown.vue";
 import FColorPicker from "@/components/ui/FColorPicker.vue";
 import { Switch } from "@/components/ui/switch";
@@ -66,7 +67,7 @@ const CULL_DISTANCES = ["Near", "Mid", "Far", "Max"] as const;
 const cullOpen = ref(false);
 
 interface NumberField {
-  key: "outerRadius" | "innerRadius" | "diffuse" | "length";
+  key: "outerRadius" | "innerRadius" | "diffuse" | "specular" | "length";
   label: string;
   step: number;
   /** 字段适用的灯型；省略 = 全类型。Point 不消费 length（引擎侧仅 Spot 锥长/Line 条长）。 */
@@ -76,6 +77,8 @@ const NUMBER_FIELDS: NumberField[] = [
   { key: "outerRadius", label: "package.lightRadius", step: 0.5 },
   { key: "innerRadius", label: "package.lightInnerRadius", step: 0.5 },
   { key: "diffuse", label: "package.lightDiffuse", step: 0.05 },
+  // 游戏 shader 的 params.y（Ks）：与 diffuse 同量纲、独立高光通道。
+  { key: "specular", label: "package.lightSpecular", step: 0.05 },
   { key: "length", label: "package.lightLength", step: 0.5, types: ["Spot", "Line"] },
 ];
 const numberFields = computed(() => {
@@ -161,6 +164,18 @@ function setColor(hex: string) {
       </section>
     </template>
     <template v-else-if="light">
+      <!-- 属性语义提示：只随灯的元数据出现（用户反馈内/外半径、反射、裁切档
+           对作者是黑箱，需要就地解释，而不是让人去翻文档）。 -->
+      <FAlert type="info" class="light-semantics">
+        <strong>{{ $t("package.lightSemanticsTitle") }}</strong>
+        <ul>
+          <li>{{ $t("package.lightSemanticsRadius") }}</li>
+          <li>{{ $t("package.lightSemanticsInner") }}</li>
+          <li>{{ $t("package.lightSemanticsDiffuse") }}</li>
+          <li>{{ $t("package.lightSemanticsCull") }}</li>
+          <li>{{ $t("package.lightSemanticsVolumetric") }}</li>
+        </ul>
+      </FAlert>
       <!-- 灯光三节：统一左标签/右控件布局；锁定（toolbar 未解锁）时全部禁用 -->
       <section class="panel-section">
         <div class="scale-row">

@@ -245,6 +245,14 @@ export function buildPathLine(
   );
 }
 
+/** 画质档裁切距离（米，用户实测：低→高 = Near/Mid/Far/Max）。 */
+export const LIGHT_CULL_DISTANCE: Record<"Near" | "Mid" | "Far" | "Max", number> = {
+  Near: 10,
+  Mid: 25,
+  Far: 50,
+  Max: 100,
+};
+
 export function buildRealLightUnit(
   THREE: Three,
   unit: LightUnit,
@@ -254,28 +262,76 @@ export function buildRealLightUnit(
   const rgb = new THREE.Color(color[0], color[1], color[2]);
   const radius = Math.max(unit.outerRadius ?? 4, 1);
   const length = lightLength(unit);
-  const intensity = Math.max(unit.diffuse ?? 1, 0.05) * 16;
+  // 游戏侧每盏灯的打包契约（`docs/re/light-uniform-contract-20261111.md`，
+  // 从 App.package 的渲染器 HLSL 反编译得到）：
+  //   position.w    = radius（外半径）      endPosition.w = innerRadius
+  //   params.x = Kd（diffuse）  params.y = Ks（specular/反射）
+  //   denomCone = 1/(innerRadius - radius)，因此内半径必须 ≤ 外半径。
+  // 编辑器此前用 `diffuse × 16` + `distance = radius*2` + `decay = 1`，
+  // 与游戏的两套归一化分母不同源，这是"同一数值两边亮度不一致"的根因。
+  const inner = Math.min(Math.max(unit.innerRadius ?? 0, 0), radius);
+  const intensity = Math.max(unit.diffuse ?? 1, 0.05);
+  // 锥体半角：游戏以「段长 + 外半径」定义锥体，而不是以半径当距离。
+  const coneAngle = Math.min(Math.atan2(radius, Math.max(length, 0.001)), 1.45);
+  // 内外半径差 → 柔边：inner 越接近 radius，过渡越硬。
+  const penumbra = radius > 0.0001 ? Math.min(Math.max(1 - inner / radius, 0), 1) : 0;
 
   if (unit.lightType === "Spot") {
-    const angle = Math.min(Math.atan2(radius, length), 1.45);
-    const spot = new THREE.SpotLight(rgb.getHex(), intensity, radius * 2, angle, 0.5, 1);
+    const spot = new THREE.SpotLight(
+      rgb.getHex(),
+      intensity,
+      length,
+      coneAngle,
+      penumbra,
+      1,
+    );
     spot.target.position.set(0, length, 0);
     group.add(spot, spot.target);
   } else if (unit.lightType === "Line") {
+    // 条形灯 = 沿段长均分的点光；每盏的覆盖半径用外半径（不是段长 × 1.2）。
     const segments = Math.min(Math.max(Math.ceil(length / 8), 2), 4);
     for (let index = 0; index < segments; index += 1) {
       const light = new THREE.PointLight(
         rgb.getHex(),
         intensity / segments,
-        Math.max(length, radius) * 1.2,
+        radius,
         1,
       );
       light.position.set(0, (length * (index + 0.5)) / segments, 0);
       group.add(light);
     }
   } else {
-    group.add(new THREE.PointLight(rgb.getHex(), intensity, radius * 2, 1));
+    group.add(new THREE.PointLight(rgb.getHex(), intensity, radius, 1));
   }
+  // 反射/高光（游戏 params.y = Ks）：three.js 没有「每盏灯独立 specular」，
+  // 用同位置、半径收缩到 35% 的辅助点光近似高光瓣；强度 = Ks，与 Kd 同量纲。
+  // 只在 Ks > 0 时创建，避免给没有反射的灯凭空加光。
+  const specular = Math.max(unit.specular ?? 0, 0);
+  if (specular > 0) {
+    const gloss = new THREE.PointLight(rgb.getHex(), specular, radius * 0.35, 1);
+    if (unit.lightType === "Line") {
+      gloss.position.set(0, length / 2, 0);
+    } else if (unit.lightType === "Spot") {
+      gloss.position.set(0, length, 0);
+    }
+    gloss.name = "__lightSpecular";
+    group.add(gloss);
+  }
+  // 裁切档位（CPU 侧语义，不打包进 shader）：按相机距离决定是否渲染。
+  // 档位阈值来自用户实测的游戏画质档（低→高）：Near<10m、Mid<25m、Far<50m、Max<100m。
+  group.userData.lightCullDistance = unit.cullDistance ?? "Max";
+  group.userData.lightOuterRadius = radius;
+  const cullLimit = LIGHT_CULL_DISTANCE[unit.cullDistance ?? "Max"];
+  const worldPos = new THREE.Vector3();
+  // three.js 每帧对可见对象调用 onBeforeRender：在这里按距离切换**灯本体**的
+  // visible（拾取代理不参与，保证编辑期仍可选中/移动）。
+  group.onBeforeRender = (_renderer, _scene, camera) => {
+    group.getWorldPosition(worldPos);
+    const far = camera.position.distanceTo(worldPos) > cullLimit;
+    for (const child of group.children) {
+      if ((child as { isLight?: boolean }).isLight) child.visible = !far;
+    }
+  };
 
   let proxyGeometry: ThreeNamespace.BufferGeometry;
   if (unit.lightType === "Line") {

@@ -492,6 +492,8 @@ export interface LightUnit {
   outerRadius: number | null;
   innerRadius: number | null;
   diffuse: number | null;
+  /** 高光/反射系数（游戏 params.y = Ks；编辑器旧版本未暴露）。 */
+  specular?: number | null;
   length: number | null;
   cullDistance: "Near" | "Mid" | "Far" | "Max" | null;
   isVolumetric: boolean | null;

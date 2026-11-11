@@ -199,6 +199,7 @@ fn unit_json(
                 "outerRadius",
                 "innerRadius",
                 "diffuse",
+                "specular",
                 "length",
                 "cullDistance",
                 "isVolumetric",
