@@ -7,6 +7,8 @@ import { tauriApi } from "@/api";
 import { useToast } from "@/composables/useToast";
 import MenuBindingForm from "./MenuBindingForm.vue";
 import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
+import BehaviorLeafSheet from "./BehaviorLeafSheet.vue";
+import { useBehaviorConflicts } from "./useBehaviorConflicts";
 import {
   LOGIC_NODE_SPECS,
   addLogicNode,
@@ -17,6 +19,7 @@ import {
   updateLogicParams,
   type BehaviorLeafType,
   type BuildingInfoParams,
+  type LeafParams,
   type LogicGraph,
   type LogicNode,
 } from "./logicGraph";
@@ -49,6 +52,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const toast = useToast();
+const behaviorConflicts = useBehaviorConflicts();
 
 type TabId = "basic" | "menu" | "building" | "behavior" | "dependencies" | "advanced";
 const TABS: { id: TabId; icon: string; labelKey: string }[] = [
@@ -198,7 +202,26 @@ const leafCatalog = computed(() =>
     }),
   ),
 );
-function ensureCore(): LogicNode | null {
+const editingLeafId = ref<string | null>(null);
+const editTrigger = ref<HTMLElement | null>(null);
+const editingLeaf = computed(() => {
+  const leaf = leafNodes.value.find((item) => item.node.id === editingLeafId.value);
+  if (!leaf?.type) return null;
+  return { ...leaf, params: props.logic.params[leaf.node.id] as LeafParams };
+});
+function editLeaf(id: string, event: MouseEvent): void {
+  editTrigger.value = event.currentTarget as HTMLElement;
+  editingLeafId.value = id;
+}
+function closeLeafEditor(): void {
+  editingLeafId.value = null;
+}
+function applyLeafSettings(patch: Record<string, unknown>): void {
+  if (!editingLeaf.value) return;
+  emit("update:logic", updateLogicParams(props.logic, editingLeaf.value.node.id, patch));
+  closeLeafEditor();
+}
+function graphWithCore(): { graph: LogicGraph; node: LogicNode } {
   const core = ensureCoreNode(props.logic, [0, 120]);
   let graph = core.graph;
   if (
@@ -208,19 +231,18 @@ function ensureCore(): LogicNode | null {
   ) {
     graph = connectLogic(graph, core.node.id, "asset", "behavior").graph;
   }
-  emit("update:logic", graph);
-  return core.node;
+  return { graph, node: core.node };
 }
 function addCore(): void {
-  if (!coreNode.value) ensureCore();
+  if (!coreNode.value) emit("update:logic", graphWithCore().graph);
 }
 function addLeaf(type: BehaviorLeafType): void {
-  const core = coreNode.value ?? ensureCore();
-  if (!core) return;
-  const added = addLogicNode(props.logic, leafSpec(type), [0, 260]);
-  let graph = added.graph;
-  graph = connectLogic(graph, added.node.id, core.id, "leaf").graph;
+  if (!behaviorConflicts.canAdd(props.logic, type)) return;
+  const core = graphWithCore();
+  const added = addLogicNode(core.graph, leafSpec(type), [0, 260]);
+  const graph = connectLogic(added.graph, added.node.id, core.node.id, "leaf").graph;
   emit("update:logic", graph);
+  void behaviorConflicts.check(graph, added.node.id);
 }
 function removeNode(id: string): void {
   const result = removeLogicNode(props.logic, id);
@@ -539,9 +561,21 @@ const tabHint = computed(() => {
                 <span>{{ t(leaf.labelKey) }}</span>
                 <code>{{ leaf.node.id }}</code>
                 <button
+                  v-if="leaf.type"
+                  type="button"
+                  :disabled="saving"
+                  :title="t('studio.assetWorkbench.behaviorSheet.edit', { behavior: t(leaf.labelKey) })"
+                  :aria-label="t('studio.assetWorkbench.behaviorSheet.edit', { behavior: t(leaf.labelKey) })"
+                  aria-haspopup="dialog"
+                  @click="editLeaf(leaf.node.id, $event)"
+                >
+                  <FIcon name="Pencil" :size="14" aria-label="" />
+                </button>
+                <button
                   type="button"
                   :disabled="saving"
                   :title="t('studio.assetWorkbench.logicRemove')"
+                  :aria-label="t('studio.assetWorkbench.logicRemove')"
                   @click="removeNode(leaf.node.id)"
                 >
                   <FIcon name="Trash2" :size="12" aria-label="" />
@@ -620,6 +654,16 @@ const tabHint = computed(() => {
         </p>
       </div>
     </div>
+    <BehaviorLeafSheet
+      v-if="editingLeaf"
+      :key="editingLeaf.node.id"
+      :node="editingLeaf.node"
+      :params="editingLeaf.params"
+      :label-key="editingLeaf.labelKey"
+      :trigger="editTrigger"
+      @apply="applyLeafSettings"
+      @close="closeLeafEditor"
+    />
   </section>
 </template>
 
@@ -851,6 +895,16 @@ const tabHint = computed(() => {
   color: var(--muted-foreground);
   cursor: pointer;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: var(--radius-sm);
+}
+.ppf-leaf-list button:hover,
+.ppf-leaf-list button:focus-visible {
+  background: var(--surface);
+  color: var(--foreground);
 }
 .ppf-add-leaves {
   display: flex;

@@ -229,6 +229,15 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
 
     let mut changed = Vec::new();
     let unit = patch_unit(ctx, &unit_id, &program, &mut changed)?;
+    if !program.templates.is_empty() {
+        let bytes = ctx.resources.get(&unit_id).ok_or("BEHAVIOR_TEMPLATE_RESOURCE: Unit")?;
+        let unit = program.templates.patch(bytes)?;
+        ctx.resources.insert(unit_id, unit);
+        changed.push(serde_json::json!({
+            "resource": unit_id.to_string(),
+            "templates": program.templates,
+        }));
+    }
     let lot = patch_lot(ctx, &lot_id, &program, &mut changed)?;
     let locale = match (&program.title_override, &frozen.locale) {
         (Some(title), Some((locale_id, _))) => {
@@ -263,6 +272,10 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     // Invariants, fail-closed: everything outside the declared set is frozen.
     frozen.verify(ctx.resources.all(), &locale, menu2_patched.as_ref())?;
     ensure_behavior_invariants(ctx, &unit_id, &program)?;
+    if let Some(recipe) = &program.native_tourism {
+        recipe.verify(ctx, &unit_id, &lot_id)?;
+    }
+
 
     Ok(serde_json::json!({
         "instance": format!("{instance:08X}"),

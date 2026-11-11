@@ -8,6 +8,8 @@ import ShiftScheduleSlider from "./ShiftScheduleSlider.vue";
 import { Switch } from "@/components/ui/switch";
 import {
   LOGIC_NODE_SPECS,
+  LAND_TEMPLATE_VALUE,
+  RESIDENCE_TEMPLATE_CAPACITY,
   leafSpec,
   type BehaviorCoreParams,
   type BehaviorLeafType,
@@ -17,6 +19,7 @@ import {
   type LogicNode,
   type LogicParams,
   type ParkParams,
+  type ResidenceParams,
   type TourismParams,
   type TreeParams,
   type UtilityMode,
@@ -34,6 +37,7 @@ const props = defineProps<{
   /** 该节点的问题码（已按 node 过滤）。 */
   issues: string[];
   disabled: boolean;
+  embedded?: boolean;
 }>();
 const emit = defineEmits<{
   "update-params": [patch: Record<string, unknown>];
@@ -43,6 +47,11 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const landFields = computed<readonly (keyof LandvalueParams)[]>(() =>
+  (props.params as LandvalueParams).landValueProfile
+    ? ["value", "value2"]
+    : ["value", "wealth", "value2", "wealth2"],
+);
 
 const isCore = computed(() => props.node.kind === "behavior-core");
 const isLeaf = computed(() => props.node.kind === "behavior-leaf");
@@ -118,9 +127,9 @@ const leafOptions = computed(() =>
 </script>
 
 <template>
-  <article class="logic-card" :class="{ invalid: issues.length && !disabled }">
+  <article class="logic-card" :class="{ invalid: issues.length && !disabled, embedded }">
     <Handle
-      v-if="isCore"
+      v-if="isCore && !embedded"
       id="leaf"
       type="target"
       :position="Position.Left"
@@ -132,7 +141,7 @@ const leafOptions = computed(() =>
       :position="Position.Right"
       :style="{ top: '42px' }"
     />
-    <header class="logic-head">
+    <header v-if="!embedded" class="logic-head">
       <FIcon v-if="icon" :name="icon" :size="13" aria-label="" />
       <strong>{{ t(titleKey) }}</strong>
       <span class="logic-id">{{ node.id }}</span>
@@ -142,6 +151,7 @@ const leafOptions = computed(() =>
         :title="t('studio.assetWorkbench.logicDuplicate')"
         :disabled="disabled"
         @click="emit('duplicate')"
+      v-if="!embedded"
       >
         <FIcon name="Copy" :size="12" aria-label="" />
       </button>
@@ -331,7 +341,7 @@ const leafOptions = computed(() =>
             @change="onNumber(w, $event, params as unknown as Record<string, unknown>, 11)"
           />
         </label>
-        <label class="logic-field">
+        <label v-if="!(params as TourismParams).tourismProfile" class="logic-field">
           <span>{{ t("studio.assetWorkbench.leaf.tourism.template") }}</span>
           <input
             :value="(params as TourismParams).templateInstance"
@@ -355,13 +365,16 @@ const leafOptions = computed(() =>
       </template>
 
       <template v-else-if="leafType === 'landvalue'">
-        <label v-for="field in (['value', 'wealth', 'value2', 'wealth2'] as const)" :key="field" class="logic-field">
-          <span>{{ t(`studio.assetWorkbench.leaf.landvalue.${field}`) }}</span>
+        <label v-for="field in landFields" :key="field" class="logic-field">
+          <span>{{ t((params as LandvalueParams).landValueProfile
+            ? `studio.assetWorkbench.behaviorSheet.land-${field}`
+            : `studio.assetWorkbench.leaf.landvalue.${field}`) }}</span>
           <input
             type="number"
-            :value="(params as LandvalueParams)[field]"
+            :placeholder="(params as LandvalueParams).landValueProfile ? String(LAND_TEMPLATE_VALUE) : undefined"
+            :value="(params as LandvalueParams)[field] ?? ''"
             :disabled="disabled"
-            @change="onNumber(field, $event, params as unknown as Record<string, unknown>, 0)"
+            @change="onNumber(field, $event, params as unknown as Record<string, unknown>, (params as LandvalueParams).landValueProfile ? LAND_TEMPLATE_VALUE : 0)"
           />
         </label>
       </template>
@@ -396,6 +409,20 @@ const leafOptions = computed(() =>
 }
 .logic-card.invalid {
   border-color: #8a6a2a;
+      <label v-else-if="leafType === 'residence'" class="logic-field">
+        <span>{{ t("studio.assetWorkbench.behaviorSheet.population") }}</span>
+        <input
+          type="number"
+          min="1"
+          max="100000"
+          step="1"
+          :placeholder="String(RESIDENCE_TEMPLATE_CAPACITY)"
+          :value="(params as ResidenceParams).population ?? ''"
+          :disabled="disabled"
+          @change="onNumber('population', $event, params as unknown as Record<string, unknown>, RESIDENCE_TEMPLATE_CAPACITY)"
+        />
+      </label>
+
 }
 .logic-head {
   align-items: center;
@@ -435,6 +462,12 @@ const leafOptions = computed(() =>
   flex-direction: column;
   gap: 6px;
   padding: 8px;
+}
+.logic-card.embedded {
+  width: 100%;
+  background: var(--surface);
+  border: 0;
+  box-shadow: none;
 }
 .logic-field {
   align-items: center;

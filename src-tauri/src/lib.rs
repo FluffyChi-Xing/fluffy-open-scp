@@ -162,6 +162,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             asset_build_m1::commands::asset_build_m1_build,
+            asset_build_m1::commands::asset_build_m1_check_behavior_bins,
             asset_dependencies::sync_asset_dependencies,
             build_queue::build_queue_enqueue,
             build_queue::build_queue_enqueue_project,

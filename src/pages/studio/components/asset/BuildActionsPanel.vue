@@ -196,6 +196,20 @@ function toggleStep(stage: string) {
 }
 
 const stepIcon = (status: StepView["status"]) =>
+function buildError(message: string): string {
+  const templateDiagnostic = message.match(/\b(BEHAVIOR_TEMPLATE_(?:PROFILE|PARAMETER|RESOURCE|BUNDLE|FIELD)|RESIDENCE_PATH)\b(?:: ([^\r\n]+))?/);
+  if (templateDiagnostic) {
+    const [, code, detail] = templateDiagnostic;
+    const label = t(`studio.assetWorkbench.behaviorSheet.buildError.${code}`);
+    return detail ? `${label} (${detail})` : label;
+  }
+  const diagnostic = message.match(/\bTOURISM_(PROFILE|PARAMETER|QUOTA|MENU|RESOURCE|BUNDLE|ROAD_ACCESS)\b(?:: ([^\r\n]+))?/);
+  if (!diagnostic) return message;
+  const [, code, detail] = diagnostic;
+  const label = t(`studio.assetWorkbench.behaviorSheet.buildError.${code}`);
+  return detail ? `${label} (${detail})` : label;
+}
+
   status === "finished"
     ? "Check"
     : status === "failed"
@@ -287,7 +301,7 @@ async function enqueueSchema() {
           {{ warning }}
         </p>
         <p v-if="projectBuildError" class="enqueue-error">
-          {{ projectBuildError }}
+          {{ buildError(projectBuildError) }}
         </p>
       </div>
       <button
@@ -390,7 +404,7 @@ async function enqueueSchema() {
                 >
               </li>
             </ol>
-            <p v-if="job.error" class="stage-error">{{ job.error }}</p>
+            <p v-if="job.error" class="stage-error">{{ buildError(job.error) }}</p>
             <p v-else-if="job.result" class="stage-result">
               {{ t("studio.assetWorkbench.actionsResources") }}:
               {{ job.result.resourceCount }} · sha256
@@ -430,7 +444,7 @@ async function enqueueSchema() {
         >
           {{ t("studio.assetWorkbench.actionsEnqueueButton") }}
         </button>
-        <p v-if="enqueueError" class="enqueue-error">{{ enqueueError }}</p>
+        <p v-if="enqueueError" class="enqueue-error">{{ buildError(enqueueError) }}</p>
       </div>
     </div>
   </div>

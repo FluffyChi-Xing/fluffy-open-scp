@@ -403,7 +403,7 @@ fn compile_logic(
             .unwrap_or("");
         if !matches!(
             kind,
-            "education" | "tourism" | "park" | "tree" | "landvalue"
+            "education" | "tourism" | "park" | "tree" | "landvalue" | "residence"
         ) {
             errors.push(format!("logic leaf {leaf}: unknown behavior type {kind:?}"));
             continue;

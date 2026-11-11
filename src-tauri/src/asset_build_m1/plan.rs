@@ -202,7 +202,14 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         // 菜单统计行统一 s31 GOLDEN 三对 text↔param。
         // Bump whenever game-side lowering/geometry contracts change. The
         // run cache must never replay a package built by an older interpreter.
-        processor_version: "openscp.property.m1/44",
+        processor_version: if behavior_program
+            .as_ref()
+            .is_some_and(|program| !program.templates.is_empty())
+        {
+            "openscp.property.m1/50"
+        } else {
+            "openscp.property.m1/44"
+        },
         scope: "property+scene-model",
         intermediate: im,
         patches: specs,

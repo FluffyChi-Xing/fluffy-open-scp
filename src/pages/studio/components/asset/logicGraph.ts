@@ -16,6 +16,7 @@ export type LogicNodeKind = "building-info" | "behavior-core" | "behavior-leaf";
 export type BehaviorLeafType =
   | "education"
   | "tourism"
+  | "residence"
   | "park"
   | "tree"
   | "landvalue";
@@ -76,12 +77,29 @@ export interface EducationParams {
 
 export interface TourismParams {
   type: "tourism";
-  attraction: number;
-  incomeW1: number;
-  incomeW2: number;
-  incomeW3: number;
-  templateInstance: string;
+  tourismProfile?: "native-tourism-v1";
+  lodging?: boolean;
+  attraction?: number | null;
+  shoppers?: number | null;
+  quotaW1?: number | null;
+  quotaW2?: number | null;
+  quotaW3?: number | null;
+  incomeW1?: number | null;
+  incomeW2?: number | null;
+  incomeW3?: number | null;
+  templateInstance?: string;
 }
+
+export const TOURISM_TEMPLATE_DEFAULTS = {
+  attraction: 400,
+  shoppers: 175,
+  quotaW1: 100,
+  quotaW2: 50,
+  quotaW3: 25,
+  incomeW1: 10,
+  incomeW2: 10,
+  incomeW3: 10,
+} as const;
 
 export interface ParkParams {
   type: "park";
@@ -99,19 +117,30 @@ export interface TreeParams {
 
 export interface LandvalueParams {
   type: "landvalue";
-  value: number;
-  wealth: number;
-  value2: number;
-  wealth2: number;
+  landValueProfile?: "copan-land-value-v1";
+  value?: number | null;
+  wealth?: number;
+  value2?: number | null;
+  wealth2?: number;
+}
+
+export interface ResidenceParams {
+  type: "residence";
+  residenceProfile?: "copan-residence-v1";
+  population?: number | null;
 }
 
 export type LeafParams =
   | EducationParams
   | TourismParams
   | ParkParams
+export const RESIDENCE_TEMPLATE_CAPACITY = 1100;
+export const LAND_TEMPLATE_VALUE = 500;
+
   | TreeParams
   | LandvalueParams;
 export type LogicParams =
+  | ResidenceParams
   | BuildingInfoParams
   | BehaviorCoreParams
   | LeafParams;
@@ -195,11 +224,18 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     hintKey: "studio.assetWorkbench.logicNode.leafTourismHint",
     defaultParams: () => ({
       type: "tourism",
-      attraction: 400,
-      incomeW1: 11,
-      incomeW2: 11,
-      incomeW3: 11,
-      templateInstance: "4E01E311",
+      tourismProfile: "native-tourism-v1",
+    }),
+  },
+  {
+    kind: "behavior-leaf",
+    leafType: "residence",
+    icon: "House",
+    labelKey: "studio.assetWorkbench.logicNode.leafResidence",
+    hintKey: "studio.assetWorkbench.logicNode.leafResidenceHint",
+    defaultParams: () => ({
+      type: "residence",
+      residenceProfile: "copan-residence-v1",
     }),
   },
   {
@@ -233,10 +269,7 @@ export const LOGIC_NODE_SPECS: readonly LogicNodeSpec[] = [
     hintKey: "studio.assetWorkbench.logicNode.leafLandvalueHint",
     defaultParams: () => ({
       type: "landvalue",
-      value: 500,
-      wealth: 3,
-      value2: 500,
-      wealth2: 2,
+      landValueProfile: "copan-land-value-v1",
     }),
   },
 ];
@@ -558,9 +591,9 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
             issues.push({ code: "leafHashInvalid", nodeId: node.id });
           break;
         case "tourism":
-          if (!numberOk(leaf.attraction))
+          if (leaf.attraction != null && !numberOk(leaf.attraction))
             issues.push({ code: "tourismAttraction", nodeId: node.id });
-          if (!hexOk(leaf.templateInstance))
+          if (!leaf.tourismProfile && leaf.templateInstance != null && !hexOk(leaf.templateInstance))
             issues.push({ code: "leafHashInvalid", nodeId: node.id });
           break;
         case "park":
@@ -568,7 +601,9 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
             issues.push({ code: "landValueInvalid", nodeId: node.id });
           break;
         case "landvalue":
-          if (!numberOk(leaf.value) || !numberOk(leaf.value2))
+          if (leaf.landValueProfile
+            ? [leaf.value, leaf.value2].some((value) => value != null && (!Number.isFinite(value) || Math.abs(value) > 100_000))
+            : !numberOk(leaf.value) || !numberOk(leaf.value2))
             issues.push({ code: "landValueInvalid", nodeId: node.id });
           break;
         case "tree":
@@ -580,6 +615,10 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
   }
   return issues;
 }
+        case "residence":
+          if (leaf.population != null && (!Number.isInteger(leaf.population) || leaf.population < 1 || leaf.population > 100_000))
+            issues.push({ code: "residenceCapacity", nodeId: node.id });
+          break;
 
 // ---- 文档迁移（旧文档没有 logic 块 → 空图） ----
 

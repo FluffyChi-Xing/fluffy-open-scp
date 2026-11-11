@@ -1835,7 +1835,7 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
             (resources, donor_instance)
         })
     });
-    let final_contract = super::written_contract::validate(
+    let mut final_contract = super::written_contract::validate(
         &final_resources,
         super::written_contract::WrittenContractSpec {
             menu_instance: ctx.menu_instance,
@@ -1857,6 +1857,13 @@ fn materialize_and_link(ctx: &mut BuildContext) -> Result<serde_json::Value, Str
                 .unwrap_or(180),
         },
     )?;
+    if let Some(program) = ctx.plan.behavior_program.as_ref().filter(|p| !p.templates.is_empty()) {
+        let instance = ctx.menu_instance.or_else(|| ctx.reference_lot.as_ref().map(|(id, _)| id.instance))
+            .ok_or("BEHAVIOR_TEMPLATE_RESOURCE: missing Unit identity")?;
+        program.templates.verify(&final_resources, instance)?;
+        final_contract.detail["behaviorTemplates"] = serde_json::to_value(&program.templates)
+            .map_err(|error| error.to_string())?;
+    }
     staging.write(
         "reports/written-contract.json",
         &serde_json::to_vec_pretty(&final_contract.detail).map_err(|error| error.to_string())?,

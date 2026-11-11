@@ -70,3 +70,6 @@ tools/
 # 本地商业版构建输出
 /commercial-build.json
 /commercial-build.log
+
+# Local SC5 Packager references
+/reference/

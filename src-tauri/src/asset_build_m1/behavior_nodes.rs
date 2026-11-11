@@ -127,10 +127,14 @@ pub struct ResolvedBehavior {
     /// 岗位自动接线策略。
     #[serde(default)]
     pub labor_profile: super::behavior_family::LaborProfile,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) native_tourism: Option<super::behavior_tourism::NativeTourism>,
+    #[serde(skip_serializing_if = "super::behavior_templates::Templates::is_empty")]
+    pub(super) templates: super::behavior_templates::Templates,
 }
 
 impl ResolvedBehavior {
-    fn record_float(&mut self, hash: u32, value: f64, node: &str) -> Result<(), String> {
+    pub(super) fn record_float(&mut self, hash: u32, value: f64, node: &str) -> Result<(), String> {
         if let Some(previous) = self.set_float_fields.get(&hash) {
             if (previous - value).abs() > 1e-4 {
                 return Err(format!(
@@ -184,7 +188,7 @@ pub fn parse_nodes(values: &[Value]) -> Result<Vec<Value>, String> {
             .ok_or_else(|| format!("behaviors node {id}: missing type"))?;
         if !matches!(
             kind,
-            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue"
+            "utilities-core" | "education" | "tourism" | "park" | "tree" | "landvalue" | "residence"
         ) {
             return Err(format!("behaviors node {id}: unknown type {kind:?}"));
         }
@@ -387,8 +391,15 @@ pub(crate) fn apply_labor_auto_wiring(resolved: &mut ResolvedBehavior) {
 
 pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBehavior, String> {
     let mut resolved = ResolvedBehavior::default();
-    let intent =
-        super::behavior_family::leaf_intent_from_nodes(nodes, labor.is_some());
+    let mut intent = super::behavior_family::leaf_intent_from_nodes(nodes, labor.is_some());
+    let templates = super::behavior_templates::select(nodes)?;
+    if templates.land_value() {
+        intent.landvalue = false;
+    }
+    let native_tourism = super::behavior_tourism::select(nodes)?;
+    if native_tourism.is_some() {
+        intent.tourism = false;
+    }
     let family = super::behavior_family::resolve(intent);
     // 先钉家族策略，再写叶子——labor 接线与 strip 都读 labor_profile。
     resolved.labor_profile = family.labor_profile;
@@ -422,13 +433,19 @@ pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBeha
         let object = node.as_object().expect("parse_nodes validated objects");
         let id = object["id"].as_str().unwrap_or("behavior").to_string();
         let kind = object["type"].as_str().unwrap_or("");
-        let params = object.get("params").cloned().unwrap_or(Value::Null);
+        let mut params = object.get("params").cloned().unwrap_or(Value::Null);
+        if kind == "park" && native_tourism.is_some() {
+            if let Some(params) = params.as_object_mut() {
+                params.remove("attraction");
+            }
+        }
         match kind {
             "utilities-core" => compile_utilities(&mut resolved, &id, &params)?,
             "education" => {
                 compile_education(&mut resolved, &id, &params)?;
                 set_template(&mut parent_template, ELEMENTARY_TEMPLATE, &id)?;
             }
+            "tourism" if native_tourism.is_some() => {}
             "tourism" => {
                 compile_tourism(&mut resolved, &id, &params)?;
                 let template = params
@@ -438,7 +455,10 @@ pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBeha
                     .unwrap_or(LANDMARK_TEMPLATE);
                 set_template(&mut parent_template, template, &id)?;
             }
+            "residence" if templates.residence() => {}
+            "residence" => return Err(format!("BEHAVIOR_TEMPLATE_PROFILE: {id}/residence")),
             "park" => compile_land_values(&mut resolved, &id, &params, true)?,
+            "landvalue" if templates.land_value() => {}
             "landvalue" => compile_land_values(&mut resolved, &id, &params, false)?,
             "tree" => {
                 if flag(params.get("enabled").unwrap_or(&Value::Bool(true))) {
@@ -460,6 +480,12 @@ pub fn compile(labor: Option<LaborSpec>, nodes: &[Value]) -> Result<ResolvedBeha
     apply_labor_auto_wiring(&mut resolved);
     // 叶子写完后再应用家族适配器（strip 学校残留 / 补 donor·menu 元数据）。
     super::behavior_family::apply_to_behavior(&mut resolved, &family);
+    if let Some(recipe) = native_tourism {
+        recipe.apply(&mut resolved)?;
+        resolved.native_tourism = Some(recipe);
+    }
+    templates.reconcile(&mut resolved);
+    resolved.templates = templates;
     resolved.declared_lot_columns = lot_columns(
         resolved.lot_board.is_some(),
         resolved.ensure_walk_path

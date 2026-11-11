@@ -30,6 +30,7 @@ import {
 } from "./menuBinding";
 import type { WorkbenchSourceKind } from "./useWorkbenchAsset";
 import LogicNodeCard from "./LogicNodeCard.vue";
+import { useBehaviorConflicts } from "./useBehaviorConflicts";
 import { useToast } from "@/composables/useToast";
 import {
   LOGIC_NODE_SPECS,
@@ -38,6 +39,7 @@ import {
   duplicateLogicNode,
   ensureCoreNode,
   leafSpec,
+  leafTypeOf,
   logicIssues,
   removeLogicNode,
   updateLogicParams,
@@ -78,6 +80,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const toast = useToast();
+const behaviorConflicts = useBehaviorConflicts();
 const { screenToFlowCoordinate } = useVueFlow();
 
 interface WbNodeData {
@@ -392,10 +395,13 @@ function closeCanvasMenu(): void {
 /** 新增节点：info/core 自动挂到资产锚点；leaf 自动补聚合节点并连线。 */
 function addNode(spec: LogicNodeSpec, position: [number, number]): void {
   let graph = props.logic;
+  let addedLeafId: string | undefined;
   if (spec.kind === "behavior-leaf") {
+    if (spec.leafType && !behaviorConflicts.canAdd(graph, spec.leafType)) return;
     const core = ensureCoreNode(graph, [position[0] - 360, position[1]]);
     graph = core.graph;
     const added = addLogicNode(graph, spec, position);
+    addedLeafId = added.node.id;
     graph = added.graph;
     graph = connectLogic(graph, added.node.id, core.node.id, "leaf").graph;
     if (
@@ -416,6 +422,7 @@ function addNode(spec: LogicNodeSpec, position: [number, number]): void {
     ).graph;
   }
   emit("update:logic", graph);
+  if (addedLeafId) void behaviorConflicts.check(graph, addedLeafId);
 }
 function addNodeFromMenu(spec: LogicNodeSpec): void {
   const menu = canvasMenu.value;
@@ -426,6 +433,7 @@ function addNodeFromMenu(spec: LogicNodeSpec): void {
 
 /** 聚合节点上的「添加行为」：叶子建在右侧并自动连线。 */
 function onAddLeaf(coreId: string, type: BehaviorLeafType): void {
+  if (!behaviorConflicts.canAdd(props.logic, type)) return;
   const core = props.logic.nodes.find((node) => node.id === coreId);
   const spec = leafSpec(type);
   const siblings = props.logic.edges.filter(
@@ -438,6 +446,7 @@ function onAddLeaf(coreId: string, type: BehaviorLeafType): void {
   const added = graph.nodes[graph.nodes.length - 1];
   graph = connectLogic(graph, added.id, coreId, "leaf").graph;
   emit("update:logic", graph);
+  void behaviorConflicts.check(graph, added.id);
 }
 
 function onRemoveNode(id: string): void {
@@ -451,6 +460,9 @@ function onRemoveNode(id: string): void {
   emit("update:logic", result.graph);
 }
 function onDuplicateNode(id: string): void {
+  const node = props.logic.nodes.find((node) => node.id === id);
+  const type = node && leafTypeOf(props.logic, node);
+  if (type && !behaviorConflicts.canAdd(props.logic, type)) return;
   const result = duplicateLogicNode(props.logic, id);
   if (result.node) emit("update:logic", result.graph);
 }
@@ -487,6 +499,7 @@ function onConnect(connection: Connection): void {
     return;
   }
   emit("update:logic", result.graph);
+  if (handle === "leaf") void behaviorConflicts.check(result.graph, source);
 }
 
 /** 双击删除只对逻辑边生效；固定管线边不可删。 */
