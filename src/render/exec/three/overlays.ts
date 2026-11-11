@@ -317,6 +317,22 @@ export function buildRealLightUnit(
     gloss.name = "__lightSpecular";
     group.add(gloss);
   }
+  // 衰减起点（游戏 params.z，denomFalloff = 1/(falloffDist - falloffStart)）：
+  // three.js 的点/聚光灯只有单一衰减曲线，没有"平台区"。这里用一盏覆盖半径
+  // = falloffStart 的辅助点光近似平台，强度取 Kd 的一半，避免叠加过曝。
+  const falloffStart = Math.max(unit.falloffStart ?? 0, 0);
+  if (falloffStart > 0.01) {
+    const plateau = new THREE.PointLight(
+      rgb.getHex(),
+      intensity * 0.5,
+      Math.min(falloffStart, radius),
+      1,
+    );
+    if (unit.lightType === "Line") plateau.position.set(0, length / 2, 0);
+    else if (unit.lightType === "Spot") plateau.position.set(0, length, 0);
+    plateau.name = "__lightFalloffPlateau";
+    group.add(plateau);
+  }
   // 裁切档位（CPU 侧语义，不打包进 shader）：按相机距离决定是否渲染。
   // 档位阈值来自用户实测的游戏画质档（低→高）：Near<10m、Mid<25m、Far<50m、Max<100m。
   group.userData.lightCullDistance = unit.cullDistance ?? "Max";

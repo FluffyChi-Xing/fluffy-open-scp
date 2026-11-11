@@ -200,6 +200,7 @@ fn unit_json(
                 "innerRadius",
                 "diffuse",
                 "specular",
+                "falloffStart",
                 "length",
                 "cullDistance",
                 "isVolumetric",

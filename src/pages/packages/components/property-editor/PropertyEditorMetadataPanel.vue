@@ -67,7 +67,7 @@ const CULL_DISTANCES = ["Near", "Mid", "Far", "Max"] as const;
 const cullOpen = ref(false);
 
 interface NumberField {
-  key: "outerRadius" | "innerRadius" | "diffuse" | "specular" | "length";
+  key: "outerRadius" | "innerRadius" | "diffuse" | "specular" | "falloffStart" | "length";
   label: string;
   step: number;
   /** 字段适用的灯型；省略 = 全类型。Point 不消费 length（引擎侧仅 Spot 锥长/Line 条长）。 */
@@ -79,6 +79,8 @@ const NUMBER_FIELDS: NumberField[] = [
   { key: "diffuse", label: "package.lightDiffuse", step: 0.05 },
   // 游戏 shader 的 params.y（Ks）：与 diffuse 同量纲、独立高光通道。
   { key: "specular", label: "package.lightSpecular", step: 0.05 },
+  // 游戏 params.z：从灯心起开始衰减的距离（0 = 立即开始）。
+  { key: "falloffStart", label: "package.lightFalloffStart", step: 0.1 },
   { key: "length", label: "package.lightLength", step: 0.5, types: ["Spot", "Line"] },
 ];
 const numberFields = computed(() => {

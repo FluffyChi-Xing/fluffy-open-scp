@@ -494,6 +494,8 @@ export interface LightUnit {
   diffuse: number | null;
   /** 高光/反射系数（游戏 params.y = Ks；编辑器旧版本未暴露）。 */
   specular?: number | null;
+  /** 衰减起点（米）：游戏 params.z；0 = 从灯心开始衰减。 */
+  falloffStart?: number | null;
   length: number | null;
   cullDistance: "Near" | "Mid" | "Far" | "Max" | null;
   isVolumetric: boolean | null;
