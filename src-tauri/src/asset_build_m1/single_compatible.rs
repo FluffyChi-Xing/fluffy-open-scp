@@ -313,6 +313,47 @@ fn nearest_resize(source: &RgbaImage, width: u32, height: u32) -> RgbaImage {
 }
 
 /// Render the exact 512-cell layout planned by [`plan_surfaces`].
+/// `compact_2048` 图集降采样（照抄 SC5 Packager `backend_compile.py:122-130`）：
+/// 任一边 > 2048 时按 `ratio = min(2048/w, 2048/h)` 逐通道 BOX 平均缩小。
+/// 只取整数块平均（floor），不做 alpha 预乘、不改变 UV 归一化参数。
+fn compact_2048(image: RgbaImage) -> RgbaImage {
+    let (w, h) = (image.width(), image.height());
+    if w <= 2048 && h <= 2048 {
+        return image;
+    }
+    let ratio = (2048.0f32 / w as f32).min(2048.0f32 / h as f32);
+    let nw = ((w as f32 * ratio).round() as u32).max(1);
+    let nh = ((h as f32 * ratio).round() as u32).max(1);
+    let mut out = RgbaImage::new(nw, nh);
+    let bx = (w as f64 / nw as f64).max(1.0);
+    let by = (h as f64 / nh as f64).max(1.0);
+    for y in 0..nh {
+        let y0 = (y as f64 * by) as u32;
+        let y1 = (((y + 1) as f64 * by) as u32).min(h).max(y0 + 1);
+        for x in 0..nw {
+            let x0 = (x as f64 * bx) as u32;
+            let x1 = (((x + 1) as f64 * bx) as u32).min(w).max(x0 + 1);
+            let mut sum = [0f64; 4];
+            let mut count = 0f64;
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    let p = image.get_pixel(sx, sy).0;
+                    for c in 0..4 {
+                        sum[c] += f64::from(p[c]);
+                    }
+                    count += 1.0;
+                }
+            }
+            let mut px = [0u8; 4];
+            for c in 0..4 {
+                px[c] = (sum[c] / count).floor().clamp(0.0, 255.0) as u8;
+            }
+            out.put_pixel(x, y, image::Rgba(px));
+        }
+    }
+    out
+}
+
 pub fn render_atlases(
     document: &LotmDocument,
     plan: &SurfacePlan,
@@ -389,7 +430,15 @@ pub fn render_atlases(
     let diagnostic: serde_json::Value = serde_json::from_str(&document.diagnostics)
         .map_err(|error| format!("author materials: invalid diagnostics JSON: {error}"))?;
     let profile = diagnostic.get("nativeControlProfile").and_then(serde_json::Value::as_str);
-    let migrate_room_rgb = profile == Some("native-room-states-transparent-top-v3");
+    // OpenSCP native Rust ny-native/1 exports historically omitted the stamp
+    // but already follow the transparent-top-v3 room atlas contract.
+    let implied_transparent_top = profile.is_none()
+        && diagnostic.get("source").and_then(serde_json::Value::as_str)
+            == Some("OpenSCP native Rust")
+        && diagnostic.get("schema").and_then(serde_json::Value::as_str)
+            == Some("openscp.ny-native/1");
+    let migrate_room_rgb =
+        profile == Some("native-room-states-transparent-top-v3") || implied_transparent_top;
     let office_recipe = profile == Some("window-relative-relief-hdr-room-v2");
     let mut interior = RgbaImage::new(plan.room_atlas, plan.room_atlas);
     for (room, parameters) in plan.room_params.iter().enumerate() {
@@ -438,7 +487,7 @@ pub fn render_atlases(
             }
             source = corrected;
         }
-        let strip = render_room_strip(&source, parameters, night_only, room)?;
+        let strip = render_room_strip(&source, parameters, night_only);
         for y in 0..64u32 {
             for x in 0..1024u32 {
                 interior.put_pixel(x, room as u32 * 64 + y, *strip.get_pixel(x, y));
@@ -446,19 +495,21 @@ pub fn render_atlases(
         }
     }
 
+    // compact_2048（基准 `backend_compile.py:122-130`，GUI 推荐档）：tint/normal/
+    // shader 三张图集任一边 >2048 时逐通道 BOX 缩到 2048（palette/interior 不动）。
+    let (tint, normal, shader) =
+        (compact_2048(tint), compact_2048(normal), compact_2048(shader));
     Ok(SurfaceAtlases { tint, normal, shader, palette, interior })
 }
 
 /// Render one source room into the native 4 variants × 4 occupancy states.
-/// The source must already use the native column contract. Copying emission
-/// from even columns was a model-specific compensation that hid invalid source
-/// exports and changed the reference packager's pixels, so it is forbidden.
+/// Match Asset Packager asset_transforms.py::room_strip. An empty night cell
+/// stays empty, including when an unused source cell contains emission.
 fn render_room_strip(
     source: &RgbaImage,
     parameters: &[f32; 2],
     night_only: bool,
-    room: usize,
-) -> Result<RgbaImage, String> {
+) -> RgbaImage {
     let room_h = source.height() as f64;
     let room_w = source.width() as f64;
     let scale = parameters[0] as f64;
@@ -473,29 +524,18 @@ fn render_room_strip(
     };
     let apply_night_only = night_only && parameters[0] > 0.0;
     let mut strip = RgbaImage::new(1024, 64);
-    let mut sampled_alpha = 0u64;
-    let mut output_night_alpha = 0u64;
     for state in 0..16u32 {
         for ty in 0..64u32 {
             for tx in 0..64u32 {
-                sampled_alpha += pixel(state, tx, ty)[3] as u64;
                 let mut value = pixel(state, tx, ty);
                 if apply_night_only && state % 4 != 1 {
                     value[3] = 0;
-                }
-                if state % 4 == 1 {
-                    output_night_alpha += value[3] as u64;
                 }
                 strip.put_pixel(state * 64 + tx, ty, value);
             }
         }
     }
-    if apply_night_only && sampled_alpha > 0 && output_night_alpha == 0 {
-        return Err(format!(
-            "author materials: room {room} has sampled source emission but all native night states are empty; source columns 1/5/9/13 must contain native night emission (even-column migration is forbidden)"
-        ));
-    }
-    Ok(strip)
+    strip
 }
 
 fn patch_tint_column(glb: &[u8], column: u8) -> Vec<u8> {
@@ -726,17 +766,21 @@ mod tests {
     }
 
     #[test]
-    fn paired_room_columns_are_rejected_instead_of_silently_migrated() {
+    fn emission_in_non_night_room_columns_is_cleared_without_migration() {
         let source = room_source(&[0, 2, 4, 6]);
-        let error = render_room_strip(&source, &[0.125, 0.0], true, 7).unwrap_err();
-        assert!(error.contains("room 7"), "{error}");
-        assert!(error.contains("even-column migration is forbidden"), "{error}");
+        let preserved = render_room_strip(&source, &[0.125, 0.0], false);
+        let strip = render_room_strip(&source, &[0.125, 0.0], true);
+        assert!(preserved.pixels().any(|pixel| pixel[3] > 0));
+        for (pixel, original) in strip.pixels().zip(preserved.pixels()) {
+            assert_eq!(pixel.0[..3], original.0[..3]);
+            assert_eq!(pixel[3], 0);
+        }
     }
 
     #[test]
     fn native_room_columns_keep_their_original_night_sampling() {
         let source = room_source(&(0..8).collect::<Vec<_>>());
-        let strip = render_room_strip(&source, &[0.125, 0.0], true, 0).unwrap();
+        let strip = render_room_strip(&source, &[0.125, 0.0], true);
         for state in [1u32, 5, 9, 13] {
             let pixel = strip.get_pixel(state * 64 + 32, 32);
             assert_eq!(pixel[0], ((state % 8) * 20) as u8, "state {state}");
@@ -745,18 +789,10 @@ mod tests {
     }
 
     #[test]
-    fn dark_room_stays_dark_without_triggering_the_emission_gate() {
+    fn dark_room_stays_dark() {
         let source = room_source(&[]);
-        let strip = render_room_strip(&source, &[0.125, 0.0], true, 0).unwrap();
+        let strip = render_room_strip(&source, &[0.125, 0.0], true);
         assert!(strip.pixels().all(|pixel| pixel[3] == 0));
-    }
-
-    #[test]
-    fn room_with_emission_but_no_native_night_output_is_rejected() {
-        let source = room_source(&[2]);
-        let error = render_room_strip(&source, &[0.125, 0.0], true, 11).unwrap_err();
-        assert!(error.contains("room 11"), "{error}");
-        assert!(error.contains("all native night states are empty"), "{error}");
     }
 
     /// Disabled Top regions receive the atlas' bottom-right fallback cell

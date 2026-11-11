@@ -448,7 +448,19 @@ fn validate_complete_building(
             menu.values.len()
         ));
     }
-    if unit.values.len() < 150 {
+    // The stock elementary-school leaf is intentionally short and obtains
+    // common utility bundles from the game's typed Unit template chain.
+    let native_school = scalar_key(unit, 0x00B2_CCCB).is_some_and(|parent| {
+        parent.type_id == PROPERTY_TYPE
+            && parent.group == super::menu::UNIT_TEMPLATE_GROUP
+            && parent.instance == super::menu::ELEMENTARY_TEMPLATE
+    }) && scalar_key(unit, HASH_UNIT_CATEGORY).is_some_and(|category| {
+        category.instance == super::menu::EDUCATION_BEHAVIOR_CATEGORY
+    }) && matches!(
+        unit.get(super::menu::HASH_STUDENT_CAPACITY).and_then(|property| property.scalar()),
+        Some(Value::Float(capacity)) if *capacity > 0.0
+    );
+    if unit.values.len() < 150 && !native_school {
         return Err(format!(
             "Building40 unit {instance:08X}: only {} property fields; the complete simulation/utility donor is required",
             unit.values.len()
@@ -558,7 +570,11 @@ fn validate_complete_building(
                 _ => false,
             }
     });
-    if !power_bundle {
+    let power_excluded = unit.get(0x0A02_09B2).is_some_and(|property| {
+        matches!(&property.kind, Kind::Array(values) if values.iter()
+            .any(|value| matches!(value, Value::Key(key) if key.instance == 0x4893_9D96)))
+    });
+    if !(power_bundle || native_school) || power_excluded {
         return Err(format!(
             "Building40 unit {instance:08X}: power bundle 48939D96 is absent from A2/A3/A4/A5; refusing an unpowered building"
         ));
@@ -567,7 +583,8 @@ fn validate_complete_building(
         format!("Building40 panelFields={}", menu.values.len()),
         format!("Building40 unitFields={}", unit.values.len()),
         format!("Building40 statisticRows={}", texts.len()),
-        "Building40 powerBundle=48939D96".into(),
+        if power_bundle { "Building40 powerBundle=48939D96" }
+        else { "Building40 powerBundle=48939D96 (native school template)" }.into(),
     ])
 }
 

@@ -266,9 +266,10 @@ fn validate_ground(
     rotation_degrees: u32,
 ) -> Result<(Option<serde_json::Value>, Option<serde_json::Value>), String> {
     let ground_mask = match document.lot_mask {
-        Some(SceneLotMaskKind::Source) => {
+        Some(kind @ (SceneLotMaskKind::Source | SceneLotMaskKind::Authored)) => {
+            let authored = kind == SceneLotMaskKind::Authored;
             let (source_resources, source_lot) = ground_source
-                .ok_or("written-contract: lot.mask.kind=source has no source snapshot")?;
+                .ok_or("written-contract: LotMask has no source snapshot")?;
             let source_lot_bytes = source_resources.get(&source_lot).ok_or_else(|| {
                 format!("written-contract: ground source Lot {source_lot} is missing")
             })?;
@@ -336,11 +337,21 @@ fn validate_ground(
                     format!("{:x}", Sha256::digest(&final_rgba)),
                 ));
             }
+            if authored {
+                let expected_pixels = expected_rgba.as_chunks::<4>().0;
+                let expected_raster = super::materials::encode_rgba_raster(
+                    expected_dimensions.0, expected_dimensions.1, expected_pixels,
+                )?;
+                if expected_raster.as_slice() != final_bytes {
+                    return Err("written-contract: authored LotMask raster mip chain differs".into());
+                }
+            }
             Some(serde_json::json!({
-                "kind": "source",
+                "kind": if authored { "authored" } else { "source" },
                 "sourceLot": source_lot.to_string(),
                 "source": source_report,
                 "final": final_report,
+                "finalDimensions": [final_dimensions.0, final_dimensions.1],
                 "rotationDegrees": rotation_degrees,
                 "pixelExact": true,
             }))
@@ -1238,6 +1249,20 @@ mod tests {
             final_lot.get(0x0CCB_7FD6).unwrap().prop_type,
             sc_properties::PropType::Int32
         );
+    }
+
+    #[test]
+    fn final_authored_ground_rejects_altered_mip_pixels() {
+        let (mut document, source, source_lot, final_lot, mut final_resources, final_mask) =
+            source_ground_case();
+        document.lot_mask = Some(SceneLotMaskKind::Authored);
+        let validate = |resources: &Resources| {
+            validate_ground(resources, &final_lot, &document, Some((&source, source_lot)), 0)
+        };
+        assert_eq!(validate(&final_resources).unwrap().0.unwrap()["pixelExact"], true);
+        let raster = final_resources.get_mut(&final_mask).unwrap();
+        *raster.last_mut().unwrap() ^= 1;
+        assert!(validate(&final_resources).unwrap_err().contains("mip chain differs"));
     }
 
     #[test]

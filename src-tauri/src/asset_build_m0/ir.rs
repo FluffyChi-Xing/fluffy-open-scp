@@ -42,6 +42,10 @@ pub struct SceneIr {
     pub model: Option<String>,
     pub model_shape: Option<String>,
     pub slots: BTreeMap<String, String>,
+    /// schema `scene.authoredGround`：自绘地面无 donor（见 SceneSchema）。
+    pub authored_ground: bool,
+    /// schema `scene.nightEmissionPolicy`：夜景发光策略（见 SceneSchema）。
+    pub night_emission_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,6 +121,8 @@ pub fn lower_schema(parsed: &ParsedSchema) -> Result<IntermediateModel, String> 
             // compatibility escape hatch for already-authored schemas.
             model_shape: schema.scene.model_shape.clone(),
             slots: schema.scene.slots.clone(),
+            authored_ground: schema.scene.authored_ground,
+            night_emission_policy: schema.scene.night_emission_policy.clone(),
         },
         semantics: SemanticsIr {
             asset_class: schema.semantics.asset_class.clone(),

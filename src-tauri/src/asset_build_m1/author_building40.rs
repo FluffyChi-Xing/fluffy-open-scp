@@ -198,6 +198,12 @@ pub fn compile_model_with_transform(
     let mut indices = Vec::<u32>::new();
     let mut source_triangles = 0usize;
     let mut removed = 0usize;
+    let rust_export = serde_json::from_str::<Value>(&doc.diagnostics)
+        .ok()
+        .is_some_and(|diagnostics| {
+            diagnostics["schema"] == "openscp.ny-native/1"
+                && diagnostics["source"] == "OpenSCP native Rust"
+        });
     let mut min = [f32::INFINITY; 3];
     let mut max = [f32::NEG_INFINITY; 3];
 
@@ -321,7 +327,7 @@ pub fn compile_model_with_transform(
             remap.push(local);
         }
         let group_offset = group_vertex_start as u32;
-        for triangle in triangle_indices.chunks_exact(3) {
+        for (triangle_no, triangle) in triangle_indices.chunks_exact(3).enumerate() {
             let mapped = [
                 remap[triangle[0] as usize],
                 remap[triangle[1] as usize],
@@ -332,8 +338,18 @@ pub fn compile_model_with_transform(
                 read_f32x3(&vertex[0..12])
             });
             if cross_squared(points) <= 1e-20 {
-                removed += 1;
-                continue;
+                // Editor native_asset.py::addpoly skips collapsed triangles.
+                // Older Rust exports tested before packing positions to f32.
+                // Repair only that known output defect in already saved LOTMs.
+                let [a, b, c] = [triangle[0], triangle[1], triangle[2]]
+                    .map(|index| position.vec3(index as usize));
+                if rust_export && (a == b || b == c || a == c) {
+                    removed += 1;
+                    continue;
+                }
+                return Err(format!(
+                    "author Building40: group {group}: degenerate/zero-area triangle #{triangle_no}                      (baseline compile_geometry_contract.py rejects it; fix the source mesh)"
+                ));
             }
             indices.extend(mapped.map(|index| group_offset + index));
         }

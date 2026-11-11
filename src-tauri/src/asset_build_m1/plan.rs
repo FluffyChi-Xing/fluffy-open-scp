@@ -44,9 +44,13 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         None
     } else {
         let spec = super::menu::MenuRegistrationSpec::from_values(&im.semantics.menu)?;
-        if im.references.lot.is_none() {
+        // 自绘地面无 donor（scene.authoredGround）：lot 身份由构建器从
+        // 项目内合成（native_lot 契约），菜单注册不再克隆 reference.lot。
+        // 参考包仍服务菜单/行为骨架（unit donor 链），那部分不能省。
+        if im.references.lot.is_none() && !im.scene.authored_ground {
             return Err(
-                "semantics.menu requires reference.lot to clone the lot identity from".into(),
+                "semantics.menu requires reference.lot to clone the lot identity from"
+                    .into(),
             );
         }
         Some(spec)
@@ -79,7 +83,7 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
                 .into(),
         );
     }
-    if has_composed && im.references.lot.is_none() {
+    if has_composed && im.references.lot.is_none() && !im.scene.authored_ground {
         return Err(
             "semantics.behaviors/labor require reference.lot to bind the donor identity".into(),
         );
@@ -221,4 +225,41 @@ pub fn plan_from_schema(raw: &str) -> Result<PropertyBuildPlan, String> {
         scene_writes,
         order: ["property", "dbpf", "readback"],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authored_ground_menu_does_not_require_reference_lot() {
+        // donor-free 自绘地面：菜单注册不再克隆 reference.lot（地面由
+        // 构建器从项目内合成）；参考包仍必须提供（菜单/行为骨架）。
+        let schema = serde_json::json!({
+            "$schema": "openscp.asset", "schema_version": 2,
+            "id": "authored", "kind": "building-asset",
+            "reference": {"package": "source.package"},
+            "scene": {"document": "asset.lot.json", "authoredGround": true},
+            "semantics": {"menu": {"title": "T"}},
+            "outputs": {"package": "000_authored.package", "mode": "full"}
+        });
+        let plan = plan_from_schema(&schema.to_string()).unwrap();
+        assert!(plan.menu.is_some());
+        assert!(plan.intermediate.references.lot.is_none());
+        assert!(plan.intermediate.scene.authored_ground);
+    }
+
+    #[test]
+    fn menu_without_reference_lot_still_requires_a_donor_outside_authored_ground() {
+        let schema = serde_json::json!({
+            "$schema": "openscp.asset", "schema_version": 2,
+            "id": "legacy", "kind": "building-asset",
+            "reference": {"package": "source.package"},
+            "scene": {"document": "asset.lot.json"},
+            "semantics": {"menu": {"title": "T"}},
+            "outputs": {"package": "000_legacy.package", "mode": "full"}
+        });
+        let error = plan_from_schema(&schema.to_string()).unwrap_err();
+        assert!(error.contains("reference.lot"), "{error}");
+    }
 }

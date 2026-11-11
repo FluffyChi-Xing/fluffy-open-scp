@@ -458,6 +458,7 @@ pub(crate) fn insert_scene_model(
     slot_instances: &[u32; 6],
     scene_document: Option<&SceneDocument>,
     rotation_degrees: u32,
+    night_emission_policy: Option<&str>,
 ) -> Result<(Option<LodModelIds>, usize), String> {
     let Some(model_path) = model else {
         return Ok((None, 0));
@@ -478,7 +479,19 @@ pub(crate) fn insert_scene_model(
                 include_bytes!("../../resources/sc5/175EFB4E.research-template.rw4"),
                 include_bytes!("../../resources/sc5/collision-source.rw4"),
             )?;
-            let author_materials = super::author_materials::compile_materials(&doc, true)?;
+            // 夜景发光策略（照抄 `backend_compile.py:28-31`，缺口审计 M1）：
+            // 缺省 night-only；preserve-source 保留源 alpha。非法值 fail-closed。
+            let night_only = match night_emission_policy {
+                None => true,
+                Some("night-only") => true,
+                Some("preserve-source") => false,
+                Some(other) => {
+                    return Err(format!(
+                        "scene.nightEmissionPolicy: unsupported {other:?};                          expected \"night-only\" or \"preserve-source\""
+                    ))
+                }
+            };
+            let author_materials = super::author_materials::compile_materials(&doc, night_only)?;
             let mut texture_instances = [0u32; 6];
             for (slot, payload) in author_materials.slots.iter().enumerate() {
                 let type_id = if matches!(slot, 0 | 4 | 5) {

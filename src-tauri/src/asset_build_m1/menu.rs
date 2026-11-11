@@ -965,6 +965,16 @@ fn lot_mask_for_scene(
     ground_source: Option<(&connector::Resources, ResourceId)>,
 ) -> Result<(Option<(ResourceId, Vec<u8>)>, Option<ResourceId>), String> {
     match document.and_then(|document| document.lot_mask) {
+        Some(super::scene::SceneLotMaskKind::Authored) => {
+            // legacy 克隆路线不做 donor-free 合成：authored 地面必须走
+            // parent-free (Building40) 路线（stages 菜单阶段已挡，此处
+            // 防御性断言——合成 mask 属于 ground_source 快照，不属于这里）。
+            return Err(
+                "authored ground requires the parent-free identity route; the legacy \
+                 lot-clone route is not supported"
+                    .into(),
+            );
+        }
         Some(super::scene::SceneLotMaskKind::Source) => {
             let (source_resources, source_lot) = ground_source
                 .ok_or("lot.mask.kind=source requires a resolved source Lot and raster snapshot")?;
@@ -1621,7 +1631,11 @@ fn apply_menu_overrides(
         vec![Value::Int32(spec.ui_position.unwrap_or(11500))],
     );
     set_text_table(file, HASH_TITLE, instance, 1);
-    set_text_table(file, HASH_DESC, instance, 2);
+    if spec.description.as_ref().is_some_and(|text| !text.trim().is_empty()) {
+        set_text_table(file, HASH_DESC, instance, 2);
+    } else {
+        file.values.retain(|property| property.hash != HASH_DESC);
+    }
     let education_behavior = spec.behavior_category_instance == Some(EDUCATION_BEHAVIOR_CATEGORY)
         || spec.unit_donor.as_deref() == Some("elementary-school")
         || spec.simulation_template_instance == Some(ELEMENTARY_TEMPLATE);

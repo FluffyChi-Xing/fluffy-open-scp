@@ -60,6 +60,17 @@ pub struct SceneSchema {
     pub model_shape: Option<String>,
     #[serde(default)]
     pub slots: BTreeMap<String, String>,
+    /// 夜景发光策略（照抄 SC5 Packager `backend_compile.py:28-31,118`）：
+    /// `night-only`（缺省）把非夜景列的 emission alpha 清零；
+    /// `preserve-source` 保留源图 alpha（白天/关闭态也可能发光）。
+    /// 非法值 fail-closed。
+    #[serde(default, rename = "nightEmissionPolicy")]
+    pub night_emission_policy: Option<String>,
+    /// 自绘地面且无 donor lot（2026-11-11）：地面列/mask 由构建器从项目
+    /// 内合成（native_lot 契约），schema 允许缺 reference.lot。与场景文档
+    /// `editor.workbench.lotStyle.authored + sourceLot:null` 对应。
+    #[serde(default, rename = "authoredGround")]
+    pub authored_ground: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

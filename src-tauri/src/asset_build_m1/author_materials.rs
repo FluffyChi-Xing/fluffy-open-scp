@@ -32,10 +32,11 @@ const SUPPORTED_NATIVE_ROOM_PROFILES: [&str; 2] = [
     "window-relative-relief-hdr-room-v2",
 ];
 
-/// Native Rust exports historically omitted the room-state profile and put
-/// emission in even source columns. Building40 cannot repair that loss after
-/// the fact: reject the source with its actual diagnostics instead of emitting
-/// a superficially valid RW4 with missing windows or black night states.
+/// Native Rust exports historically omitted the room-state profile stamp even
+/// when interiors already followed the odd-column night contract (1/5/9/13 via
+/// the Office room sheet). Accept `openscp.ny-native/1` sources that merely
+/// lack the stamp. Room emission follows the reference column sampler.
+/// Reject sources that declare an unsupported native Rust profile.
 fn validate_native_room_contract(document: &LotmDocument) -> Result<(), String> {
     let diagnostics: serde_json::Value = serde_json::from_str(&document.diagnostics)
         .map_err(|error| format!("author materials: invalid diagnostics JSON: {error}"))?;
@@ -48,6 +49,13 @@ fn validate_native_room_contract(document: &LotmDocument) -> Result<(), String> 
         .get("nativeControlProfile")
         .and_then(serde_json::Value::as_str);
     if profile.is_some_and(|profile| SUPPORTED_NATIVE_ROOM_PROFILES.contains(&profile)) {
+        return Ok(());
+    }
+    // Exporter schema without a stamp: use the native room layout.
+    if profile.is_none()
+        && diagnostics.get("schema").and_then(serde_json::Value::as_str)
+            == Some("openscp.ny-native/1")
+    {
         return Ok(());
     }
     let count = |key: &str| diagnostics.get(key).cloned().unwrap_or(serde_json::Value::Null);
@@ -249,6 +257,18 @@ mod tests {
         let error = validate_native_room_contract(&document).unwrap_err();
         assert!(error.contains("windows=971"), "{error}");
         assert!(error.contains("native room-state contract"), "{error}");
+    }
+
+    #[test]
+    fn native_rust_ny_native_schema_without_stamp_is_accepted() {
+        let document = diagnostics_document(serde_json::json!({
+            "schema": "openscp.ny-native/1",
+            "source": "OpenSCP native Rust",
+            "windows": 1056,
+            "decorPanels": 1116,
+            "nativeMaterials": 111
+        }));
+        validate_native_room_contract(&document).unwrap();
     }
 
     #[test]

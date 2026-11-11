@@ -341,37 +341,17 @@ pub async fn build_queue_enqueue_project(
         )
     })?;
     let mut logic_summary = Json::Null;
-    let document_path = root_path.join(&candidate.document);
-    if document_path.is_file() {
-        let bytes = std::fs::read(&document_path).map_err(|error| {
-            crate::activity::CommandError::new(
-                "asset_document_invalid",
-                format!("{}: {error}", candidate.document),
-            )
-        })?;
-        let document: Json = serde_json::from_slice(&bytes).map_err(|error| {
-            crate::activity::CommandError::new(
-                "asset_document_invalid",
-                format!("{}: {error}", candidate.document),
-            )
-        })?;
-        let compiled = crate::asset_build_m1::workbench_logic::compile(&document, &|path| {
-            root_path.join(path).is_file()
-        })
-        .map_err(|errors| {
-            crate::activity::CommandError::new(
-                "asset_logic_invalid",
-                format!("{}: {}", candidate.document, errors.join("; ")),
-            )
-        })?;
-        crate::asset_build_m1::workbench_logic::apply_to_schema(&mut schema, &compiled).map_err(
-            |errors| {
-                crate::activity::CommandError::new(
-                    "asset_logic_invalid",
-                    format!("{}: {}", candidate.path, errors.join("; ")),
-                )
-            },
-        )?;
+    if let Some(compiled) = crate::asset_build_m1::workbench_logic::overlay_document_on_schema(
+        root_path,
+        &mut schema,
+        &candidate.document,
+    )
+    .map_err(|errors| {
+        crate::activity::CommandError::new(
+            "asset_logic_invalid",
+            format!("{}: {}", candidate.document, errors.join("; ")),
+        )
+    })? {
         logic_summary = serde_json::json!({
             "menu": compiled.menu.is_some(),
             "labor": compiled.labor.is_some(),

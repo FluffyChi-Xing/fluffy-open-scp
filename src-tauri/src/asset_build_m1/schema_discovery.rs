@@ -43,6 +43,14 @@ pub fn select(
     if existing.len() == 1 {
         return Ok(existing.remove(0));
     }
+    // Same workbench document → deterministic pick (highest .sN, else stable path).
+    // Different documents still refuse so we never guess across assets.
+    let same_document = existing
+        .windows(2)
+        .all(|pair| pair[0].document == pair[1].document);
+    if same_document {
+        return Ok(pick_preferred_iteration(existing));
+    }
     let mut paths: Vec<&str> = existing
         .iter()
         .map(|candidate| candidate.path.as_str())
@@ -53,6 +61,24 @@ pub fn select(
         paths.len(),
         paths.join(", ")
     ))
+}
+
+/// Prefer `m1.s23.json` over `m1.json` when both target the same document.
+fn pick_preferred_iteration(mut candidates: Vec<SchemaCandidate>) -> SchemaCandidate {
+    candidates.sort_by(|left, right| {
+        iteration_rank(&right.path)
+            .cmp(&iteration_rank(&left.path))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    candidates.remove(0)
+}
+
+fn iteration_rank(path: &str) -> u32 {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let stem = file.strip_suffix(".json").unwrap_or(file);
+    stem.rsplit_once(".s")
+        .and_then(|(_, digits)| digits.parse::<u32>().ok())
+        .unwrap_or(0)
 }
 
 /// 扫描项目并返回唯一资产 schema。
@@ -75,11 +101,18 @@ pub fn discover(root: &Path) -> Result<SchemaCandidate, String> {
 /// referenced package rather than invented in the UI.
 pub fn discover_or_adapt(root: &Path) -> Result<SchemaCandidate, String> {
     match discover(root) {
-        Ok(candidate) => return Ok(candidate),
-        Err(discovery_error) if root.join("asset.lot.json").is_file() => adapt_asset_editor(root)
-            .map_err(|adapter_error| {
+        Ok(candidate) => Ok(candidate),
+        // Adapter is only for projects that never materialized an openscp.asset
+        // schema. Multiple-schema ambiguity must stay fail-closed — do not hide
+        // it behind a second adapter error about sourceLot.packagePath.
+        Err(discovery_error)
+            if discovery_error.starts_with("no asset schema found")
+                && root.join("asset.lot.json").is_file() =>
+        {
+            adapt_asset_editor(root).map_err(|adapter_error| {
                 format!("{discovery_error}; Asset Editor adapter: {adapter_error}")
-            }),
+            })
+        }
         Err(error) => Err(error),
     }
 }
@@ -101,34 +134,74 @@ fn adapt_asset_editor(root: &Path) -> Result<SchemaCandidate, String> {
     if !root.join(model).is_file() {
         return Err(format!("workbench model is missing: {model}"));
     }
-    let source = workbench
-        .pointer("/lotStyle/sourceLot")
-        .ok_or("missing workbench.lotStyle.sourceLot")?;
-    let tgi = source.get("tgi").ok_or("sourceLot.tgi is required")?;
-    let type_id = json_u32(tgi.get("typeId"), "sourceLot.tgi.typeId")?;
-    let group = json_u32(tgi.get("group"), "sourceLot.tgi.group")?;
-    let instance = json_u32(tgi.get("instance"), "sourceLot.tgi.instance")?;
-    let package_source = source
-        .get("packagePath")
-        .and_then(Value::as_str)
-        .ok_or("sourceLot.packagePath is required")?;
-    let source_path = resolve_source_package(package_source)?;
-    let reference_package = root.join("build").join("reference.package");
-    if !reference_package.is_file() {
-        fs::create_dir_all(reference_package.parent().unwrap()).map_err(|e| e.to_string())?;
-        fs::copy(&source_path, &reference_package).map_err(|e| {
-            format!(
-                "copy reference package {} -> {}: {e}",
-                source_path.display(),
-                reference_package.display()
+    // 自绘地面且未绑 donor（authored + sourceLot null）：地面不再需要
+    // donor——构建器从项目内合成（native_lot 契约，scene.authoredGround）；
+    // 参考包只服务菜单/行为骨架。绑了 donor 的文档维持克隆工作流。
+    let authored = workbench.pointer("/lotStyle/authored").and_then(Value::as_bool);
+    let authored_only = authored == Some(true)
+        && workbench
+            .pointer("/lotStyle/sourceLot")
+            .map(Value::is_null)
+            .unwrap_or(true);
+    let source = workbench.pointer("/lotStyle/sourceLot").filter(|s| !s.is_null());
+    let (reference_lot, schema_id) = match source {
+        Some(source) => {
+            let tgi = source.get("tgi").ok_or("sourceLot.tgi is required")?;
+            let type_id = json_u32(tgi.get("typeId"), "sourceLot.tgi.typeId")?;
+            let group = json_u32(tgi.get("group"), "sourceLot.tgi.group")?;
+            let instance = json_u32(tgi.get("instance"), "sourceLot.tgi.instance")?;
+            let package_source = source
+                .get("packagePath")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let source_path = resolve_source_package(package_source).or_else(|primary| {
+                // Workbench lots often record packageId + TGI without a filesystem
+                // path; fall back to the offline game DLC0 package used by resolve.
+                if package_source.is_empty() {
+                    resolve_source_package(
+                        r"D:\ea-games\simcity_offline\SimCity：Cites of Tomorrow\SimCityData\SimCity_DLC0.package",
+                    )
+                    .map_err(|fallback| format!("{primary}; fallback DLC0: {fallback}"))
+                } else {
+                    Err(primary)
+                }
+            })?;
+            let reference_package = root.join("build").join("reference.package");
+            if !reference_package.is_file() {
+                fs::create_dir_all(reference_package.parent().unwrap()).map_err(|e| e.to_string())?;
+                fs::copy(&source_path, &reference_package).map_err(|e| {
+                    format!(
+                        "copy reference package {} -> {}: {e}",
+                        source_path.display(),
+                        reference_package.display()
+                    )
+                })?;
+            } else if fs::read(&source_path).map_err(|e| e.to_string())?
+                != fs::read(&reference_package).map_err(|e| e.to_string())?
+            {
+                return Err("build/reference.package exists but differs from sourceLot.packagePath; archive or replace it explicitly".into());
+            }
+            let donor = select_lot_config(&source_path, type_id, group, instance)?;
+            (
+                Some(format!("{:08X}:{:08X}:{:08X}", donor.0, donor.1, donor.2)),
+                format!("asset-editor-{instance:08X}"),
             )
-        })?;
-    } else if fs::read(&source_path).map_err(|e| e.to_string())?
-        != fs::read(&reference_package).map_err(|e| e.to_string())?
-    {
-        return Err("build/reference.package exists but differs from sourceLot.packagePath; archive or replace it explicitly".into());
-    }
-    let donor = select_lot_config(&source_path, type_id, group, instance)?;
+        }
+        None if authored_only => {
+            // 菜单/行为骨架（unit donor 链）仍需一个参考包；地面不需要。
+            let reference_package = root.join("build").join("reference.package");
+            if !reference_package.is_file() {
+                return Err(
+                    "authored ground needs build/reference.package for the menu and \
+                     behavior skeletons (the ground itself is synthesized): import a \
+                     library lot once to create it, or copy the donor package there"
+                        .into(),
+                );
+            }
+            (None, "asset-editor-authored".to_string())
+        }
+        None => return Err("missing workbench.lotStyle.sourceLot".into()),
+    };
     let output_name = workbench
         .pointer("/menu/label")
         .and_then(Value::as_str)
@@ -139,16 +212,27 @@ fn adapt_asset_editor(root: &Path) -> Result<SchemaCandidate, String> {
         .get("writes")
         .cloned()
         .unwrap_or_else(|| Value::Array(Vec::new()));
+    let scene = if authored_only {
+        serde_json::json!({
+            "document": "asset.lot.json", "model": model,
+            "writes": writes, "authoredGround": true,
+        })
+    } else {
+        serde_json::json!({
+            "document": "asset.lot.json", "model": model, "writes": writes,
+        })
+    };
+    let mut reference = serde_json::json!({"package": "build/reference.package"});
+    if let Some(lot) = reference_lot {
+        reference["lot"] = Value::String(lot);
+    }
     let schema = serde_json::json!({
         "$schema": "openscp.asset",
         "schema_version": 2,
-        "id": format!("asset-editor-{instance:08X}"),
+        "id": schema_id,
         "kind": "building-asset",
-        "reference": {
-            "package": "build/reference.package",
-            "lot": format!("{:08X}:{:08X}:{:08X}", donor.0, donor.1, donor.2)
-        },
-        "scene": {"document": "asset.lot.json", "model": model, "writes": writes},
+        "reference": reference,
+        "scene": scene,
         "semantics": {"properties": [], "lotChange": true},
         "outputs": {"package": format!("000_OpenSCP_{output_name}.package"), "mode": "full"}
     });
@@ -166,7 +250,7 @@ fn json_u32(value: Option<&Value>, field: &str) -> Result<u32, String> {
         .ok_or_else(|| format!("{field} must be an unsigned 32-bit integer"))
 }
 
-fn resolve_source_package(raw: &str) -> Result<PathBuf, String> {
+pub(super) fn resolve_source_package(raw: &str) -> Result<PathBuf, String> {
     let normalized = raw.trim_start_matches(r"\\?\").replace('\\', "/");
     let candidates = [
         PathBuf::from(normalized.replace(
@@ -304,11 +388,11 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_guess_between_two_valid_schemas() {
+    fn refuses_to_guess_across_different_documents() {
         let error = select(
             vec![
-                candidate("schemas/a.json", "asset.lot.json"),
-                candidate("schemas/b.json", "asset.lot.json"),
+                candidate("schemas/a.json", "asset.a.json"),
+                candidate("schemas/b.json", "asset.b.json"),
             ],
             &|_| true,
         )
@@ -318,8 +402,84 @@ mod tests {
     }
 
     #[test]
+    fn prefers_highest_iteration_when_document_matches() {
+        let picked = select(
+            vec![
+                candidate("schemas/assets/m1.json", "asset.lot.json"),
+                candidate("schemas/assets/m1.s23.json", "asset.lot.json"),
+            ],
+            &|_| true,
+        )
+        .unwrap();
+        assert_eq!(picked.path, "schemas/assets/m1.s23.json");
+    }
+
+    #[test]
     fn empty_project_names_the_expected_shape() {
         let error = select(vec![], &|_| true).unwrap_err();
         assert!(error.contains("openscp.asset"), "{error}");
+    }
+
+    #[test]
+    fn adapter_authored_without_reference_package_names_the_skeleton_step() {
+        // 希望大厦「商业地标资产开发」项目回归（2026-11-11）：自绘地面把
+        // sourceLot 落盘为 null 后，adapter 曾报出令人误解的
+        // "sourceLot.tgi is required"。现在地面无需 donor，只剩菜单/行为
+        // 骨架需要参考包——报错要指向 build/reference.package。
+        let root = crate::test_scratch::scratch_base().join(format!(
+            "openscp-adapter-authored-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("assets/models")).unwrap();
+        std::fs::write(root.join("assets/models/tower.glb"), b"stub").unwrap();
+        let document = serde_json::json!({
+            "editor": {"workbench": {
+                "assetPath": "assets/models/tower.glb",
+                "lotStyle": {"sourceLot": null, "authored": true}
+            }}
+        });
+        std::fs::write(root.join("asset.lot.json"), document.to_string()).unwrap();
+        let error = discover_or_adapt(&root).unwrap_err();
+        assert!(error.starts_with("no asset schema found"), "{error}");
+        assert!(
+            error.contains("build/reference.package"),
+            "{error}"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn adapter_authored_with_reference_package_synthesizes_donor_free_schema() {
+        let root = crate::test_scratch::scratch_base().join(format!(
+            "openscp-adapter-authored-ok-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("assets/models")).unwrap();
+        std::fs::create_dir_all(root.join("build")).unwrap();
+        std::fs::write(root.join("assets/models/tower.glb"), b"stub").unwrap();
+        std::fs::write(root.join("build/reference.package"), b"DBPF-stub").unwrap();
+        let document = serde_json::json!({
+            "editor": {"workbench": {
+                "assetPath": "assets/models/tower.glb",
+                "lotStyle": {"sourceLot": null, "authored": true},
+                "writes": ["decals"]
+            }}
+        });
+        std::fs::write(root.join("asset.lot.json"), document.to_string()).unwrap();
+        let candidate = discover_or_adapt(&root).unwrap();
+        let schema: serde_json::Value = serde_json::from_str(&candidate.raw).unwrap();
+        assert_eq!(schema["reference"]["package"], "build/reference.package");
+        assert!(schema["reference"]["lot"].is_null(), "donor-free: no reference.lot");
+        assert_eq!(schema["scene"]["authoredGround"], true);
+        assert_eq!(schema["outputs"]["mode"], "full");
+        std::fs::remove_dir_all(&root).ok();
     }
 }

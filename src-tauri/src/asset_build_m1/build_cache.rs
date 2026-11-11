@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 // Bump whenever the Python→Rust Building40/material migration changes the
 // produced model or six-slot resources.  Reusing a pre-migration cache can
 // silently restore an old RW4/texture binding and present as missing windows.
-const CACHE_VERSION: &str = "g3-5-building40-only";
+pub(super) const CACHE_VERSION: &str = "g3-6-building40-ground-readback";
 
 fn digest_bytes(bytes: &[u8]) -> String {
     let digest = sha2::Sha256::digest(bytes);
@@ -96,6 +96,11 @@ pub(crate) fn input_fingerprint(
     }
     if let Some(hash) = digest_file(&root.join(scene_document)) {
         parts.push(hash);
+    }
+    if plan.intermediate.scene.authored_ground {
+        for path in [super::stages::AUTHORED_GROUND_META, super::stages::AUTHORED_GROUND_MASK] {
+            parts.push(format!("{path}={}", digest_file(&root.join(path)).unwrap_or_default()));
+        }
     }
     if let Ok(bytes) = std::fs::read(root.join(scene_document)) {
         if let Ok(document) = serde_json::from_slice::<serde_json::Value>(&bytes) {
@@ -249,6 +254,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn repainting_authored_mask_invalidates_run_cache() {
+        let root = temp_root("authored-mask");
+        let mask = root.join(super::super::stages::AUTHORED_GROUND_MASK);
+        std::fs::create_dir_all(mask.parent().unwrap()).unwrap();
+        let plan = super::super::plan::plan_from_schema(
+            r#"{"$schema":"openscp.asset","schema_version":2,"id":"paint",
+                "kind":"building-asset","reference":{"package":"reference.package"},
+                "scene":{"document":"asset.lot.json","authoredGround":true},
+                "outputs":{"package":"paint.package","mode":"full"}}"#,
+        ).unwrap();
+        std::fs::write(&mask, [1, 0, 0, 0]).unwrap();
+        let before = input_fingerprint(&root, &plan, "asset.lot.json");
+        std::fs::write(&mask, [0, 1, 0, 0]).unwrap();
+        assert_ne!(before, input_fingerprint(&root, &plan, "asset.lot.json"));
     }
 
     #[test]

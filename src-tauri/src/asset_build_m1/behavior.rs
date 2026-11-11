@@ -200,14 +200,9 @@ pub(crate) fn apply(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     // Identity: menu mode patches the NEW menu identity (menu::generate has
     // already inserted Menu2/Unit/Lot under ctx.menu_instance); otherwise the
     // behavior stays on the frozen reference identity (r7-r10 mode).
-    let lot_ref = ctx
-        .plan
-        .intermediate
-        .references
-        .lot
-        .as_ref()
-        .ok_or("behavior binding requires reference.lot")?;
-    let instance = ctx.menu_instance.unwrap_or(lot_ref.instance);
+    let instance = ctx.menu_instance.or_else(|| {
+        ctx.plan.intermediate.references.lot.map(|lot| lot.instance)
+    }).ok_or("behavior binding requires a menu identity or reference.lot")?;
     let unit_id = ResourceId {
         type_id: PROPERTY_TYPE,
         group: UNIT_GROUP,

@@ -12,6 +12,7 @@
 
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
+use std::path::Path;
 
 /// 编译结果（只含要覆盖的 semantics 段；None = 保持基础 schema 原值）。
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -176,18 +177,20 @@ fn compile_menu(
             values.insert(field.into(), json!(value));
         }
     }
-    // 临街朝向：优先 workbench.rotationDegrees（地块 tab），其次 menu 内字段。
-    let rotation = workbench
-        .and_then(|value| value.get("rotationDegrees"))
-        .or_else(|| menu.get("rotationDegrees"))
+    // 临街吸附边：只写入 streetFacingDegrees，**不**写入 rotationDegrees。
+    // rotationDegrees 是模型/场景几何朝向（Building40 打包用），与吸附边正交；
+    // 由 schema/菜单显式声明，地块 tab 不得再把它当成临街选择。
+    let street_facing = workbench
+        .and_then(|value| value.get("streetFacingDegrees"))
+        .or_else(|| menu.get("streetFacingDegrees"))
         .and_then(Value::as_u64);
-    if let Some(degrees) = rotation {
+    if let Some(degrees) = street_facing {
         if !matches!(degrees, 0 | 90 | 180 | 270) {
             errors.push(format!(
-                "rotationDegrees: only 0/90/180/270 are supported (got {degrees})"
+                "streetFacingDegrees: only 0/90/180/270 are supported (got {degrees})"
             ));
         } else {
-            values.insert("rotationDegrees".into(), json!(degrees));
+            values.insert("streetFacingDegrees".into(), json!(degrees));
         }
     }
     Some(Value::Object(values))
@@ -452,6 +455,86 @@ fn compile_logic(
     (labor, behaviors, true)
 }
 
+/// 读取项目内场景文档，把工作台 menu/logic 覆盖进 schema。
+///
+/// 这是「所见即所得」的强制桥：e2e / CLI / 队列旁路若只喂裸 schema，
+/// 会丢掉 `asset.lot.json` 里用户填写的 labor/地价/观光参数（/40 乱码根因）。
+/// 文档缺失时返回 `Ok(None)`（保持 schema 原值）；文档存在但编译失败则 fail-closed。
+pub fn overlay_document_on_schema(
+    root: &Path,
+    schema: &mut Value,
+    document_rel: &str,
+) -> Result<Option<CompiledLogic>, Vec<String>> {
+    let document_path = root.join(document_rel);
+    if !document_path.is_file() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&document_path).map_err(|error| {
+        vec![format!(
+            "{}: failed to read workbench document: {error}",
+            document_rel
+        )]
+    })?;
+    let document: Value = serde_json::from_slice(&bytes).map_err(|error| {
+        vec![format!(
+            "{}: invalid workbench document JSON: {error}",
+            document_rel
+        )]
+    })?;
+    // Workbench assetPath is the live model binding after delete/re-import.
+    // Schema files often keep a stale scene.model hash; force the document's
+    // current path so packaging matches what the editor is showing.
+    sync_workbench_model(schema, &document, root)?;
+    let compiled = compile(&document, &|path| root.join(path).is_file())?;
+    apply_to_schema(schema, &compiled)?;
+    Ok(Some(compiled))
+}
+
+/// Copy `editor.workbench.assetPath` / `nativeLotm` onto `scene.model`.
+fn sync_workbench_model(
+    schema: &mut Value,
+    document: &Value,
+    root: &Path,
+) -> Result<(), Vec<String>> {
+    let workbench = match document.pointer("/editor/workbench") {
+        Some(Value::Object(workbench)) => workbench,
+        _ => return Ok(()),
+    };
+    let model = workbench
+        .get("assetPath")
+        .or_else(|| workbench.get("nativeLotm"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    let Some(model) = model else {
+        return Ok(());
+    };
+    if !root.join(model).is_file() {
+        return Err(vec![format!(
+            "workbench model is missing: {model} (re-import the .blend/.lotm and save the workbench before building)"
+        )]);
+    }
+    let Some(root_obj) = schema.as_object_mut() else {
+        return Err(vec!["base schema must be a JSON object".into()]);
+    };
+    let scene = root_obj
+        .entry("scene")
+        .or_insert_with(|| json!({}));
+    let Some(scene) = scene.as_object_mut() else {
+        return Err(vec!["base schema scene must be an object".into()]);
+    };
+    scene.insert("model".into(), json!(model));
+    scene.insert("modelShape".into(), json!("building40"));
+    if scene
+        .get("document")
+        .and_then(Value::as_str)
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        scene.insert("document".into(), json!("asset.lot.json"));
+    }
+    Ok(())
+}
+
 /// 把编译结果覆盖到基础 schema 的 `semantics`（其余段原样保留）。
 /// 有 `scene.model` 时强制 `scene.modelShape=building40`（生产路径钉死；
 /// 工作台只编排场景/逻辑，建筑编译走 Rust Building40 内核）。
@@ -487,6 +570,14 @@ pub fn apply_to_schema(base: &mut Value, compiled: &CompiledLogic) -> Result<(),
             }
         }
         semantics.insert("behaviors".into(), json!(compiled.behaviors));
+    }
+    // Old workbench schemas can request a delta even after the document adds
+    // simulation behavior to a new menu identity. The behavior processor
+    // requires a standalone package for that combination.
+    if compiled.menu.is_some() && (compiled.labor.is_some() || !compiled.behaviors.is_empty()) {
+        if let Some(outputs) = root.get_mut("outputs").and_then(Value::as_object_mut) {
+            outputs.insert("mode".into(), json!("full"));
+        }
     }
     pin_building40_model_shape(root)?;
     Ok(())
@@ -556,20 +647,36 @@ mod tests {
     }
 
     #[test]
-    fn compiles_rotation_degrees_from_workbench_root() {
-        let mut doc = document(menu(true), empty_logic());
-        doc["editor"]["workbench"]["rotationDegrees"] = json!(90);
-        let compiled = compile(&doc, &|_| true).unwrap();
-        let values = compiled.menu.expect("menu");
-        assert_eq!(values["rotationDegrees"], 90);
+    fn old_delta_schema_with_new_menu_behavior_builds_a_standalone_package() {
+        let mut schema = json!({"outputs": {"mode": "delta", "package": "test.package"}});
+        let compiled = CompiledLogic {
+            menu: Some(json!({"title": "Test"})),
+            labor: Some(json!({"workers": 5})),
+            behaviors: Vec::new(),
+            logic_present: true,
+            warnings: Vec::new(),
+        };
+        apply_to_schema(&mut schema, &compiled).unwrap();
+        assert_eq!(schema["outputs"]["mode"], "full");
+        assert_eq!(schema["outputs"]["package"], "test.package");
     }
 
     #[test]
-    fn rejects_invalid_rotation_degrees() {
+    fn compiles_street_facing_without_model_rotation() {
         let mut doc = document(menu(true), empty_logic());
-        doc["editor"]["workbench"]["rotationDegrees"] = json!(45);
+        doc["editor"]["workbench"]["streetFacingDegrees"] = json!(90);
+        let compiled = compile(&doc, &|_| true).unwrap();
+        let values = compiled.menu.expect("menu");
+        assert_eq!(values["streetFacingDegrees"], 90);
+        assert!(values.get("rotationDegrees").is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_street_facing_degrees() {
+        let mut doc = document(menu(true), empty_logic());
+        doc["editor"]["workbench"]["streetFacingDegrees"] = json!(45);
         let errors = compile(&doc, &|_| true).unwrap_err();
-        assert!(errors.iter().any(|e| e.contains("rotationDegrees")));
+        assert!(errors.iter().any(|e| e.contains("streetFacingDegrees")));
     }
 
     #[test]
@@ -688,6 +795,46 @@ mod tests {
         })
         .unwrap_err();
         assert!(errors.iter().any(|e| e.contains("leaf-1")), "{errors:?}");
+    }
+
+    #[test]
+    fn overlay_replaces_stale_schema_model_with_workbench_asset_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "openscp-wb-model-sync-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("assets/models")).unwrap();
+        let model = "assets/models/fresh.lotm";
+        std::fs::write(dir.join(model), b"LOTM").unwrap();
+        std::fs::write(
+            dir.join("asset.lot.json"),
+            serde_json::to_vec_pretty(&json!({
+                "editor": {
+                    "workbench": {
+                        "source": "lotm",
+                        "assetPath": model,
+                        "menu": menu(true),
+                        "logic": empty_logic()
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut schema = json!({
+            "scene": {
+                "document": "asset.lot.json",
+                "model": "assets/models/stale.lotm",
+                "modelShape": "building40"
+            },
+            "semantics": {}
+        });
+        overlay_document_on_schema(&dir, &mut schema, "asset.lot.json").unwrap();
+        assert_eq!(schema["scene"]["model"], model);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

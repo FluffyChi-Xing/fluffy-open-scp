@@ -658,8 +658,11 @@ pub fn export(input: &ExportInput<'_>) -> Result<ExportReport, String> {
         group_stats,
         lotm: Vec::new(),
     };
+    // nativeControlProfile matches Building40's accepted room-state contract.
+    // Interiors already place night emission in columns 1/5/9/13 via the Office
+    // room sheet (`resources::office_room_sheet`).
     let diagnostics = format!(
-        "{{\"schema\":\"openscp.ny-native/1\",\"source\":\"OpenSCP native Rust\",\"windows\":{windows},\"decorPanels\":{decor_panels},\"sourceFaces\":{source_faces},\"nativeMaterials\":{},\"warnings\":[],\"decals\":{decals},\"triangles\":{triangles_total}}}",
+        "{{\"schema\":\"openscp.ny-native/1\",\"source\":\"OpenSCP native Rust\",\"nativeControlProfile\":\"native-room-states-transparent-top-v3\",\"windows\":{windows},\"decorPanels\":{decor_panels},\"sourceFaces\":{source_faces},\"nativeMaterials\":{},\"warnings\":[],\"decals\":{decals},\"triangles\":{triangles_total}}}",
         materials.len()
     );
     let document = LotmDocument {
@@ -777,7 +780,10 @@ fn add_polygon(
         let b = positions[index as usize];
         let c = positions[index as usize + 1];
         let cross = cross(sub(b, a), sub(c, a));
-        if dot(cross, cross) > 1e-16 {
+        let a = group.positions[start as usize];
+        let b = group.positions[(start + index) as usize];
+        let c = group.positions[(start + index + 1) as usize];
+        if dot(cross, cross) > 1e-16 && a != b && b != c && a != c {
             group
                 .indices
                 .extend([start, start + index, start + index + 1]);

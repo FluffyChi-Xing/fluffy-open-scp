@@ -21,6 +21,7 @@ use super::plan::PropertyBuildPlan;
 use super::processor::defer_property;
 use super::scene::SceneDocument;
 use dbpf::ResourceId;
+use sc_properties::{PropertyFile, PropType, Value};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -329,6 +330,179 @@ fn select_ground_source_lot(
     }
 }
 
+/// 自绘地面项目文件（useWorkbenchAsset / src/lib/lot-ground/authored.ts
+/// 的持久化契约）。
+pub(super) const AUTHORED_GROUND_META: &str = "assets/lot/authored/ground.json";
+pub(super) const AUTHORED_GROUND_MASK: &str = "assets/lot/authored/mask.rgba";
+/// 游戏共享 lot surface RW4 的规范实例（vanilla 提取，SC5 Asset Editor
+/// lot_native.py 同款 0xA0DA9E6C）。引擎按 instance 跨包解析，无需复制 RW4。
+const NATIVE_SURFACE_MODEL_TYPE: u32 = 0x2F4E_681B;
+const NATIVE_SURFACE_MODEL_INSTANCE: u32 = 0xA0DA_9E6C;
+
+/// 自绘地面快照（donor-free native ground，2026-11-11）：用项目内像素与
+/// scene 列合成 ground_source——地面 exemplar（native_lot 契约）+ authored
+/// mask raster。与 donor 快照同形，native_profile::build 原样消费；菜单/
+/// 行为骨架继续由 reference.package 提供（那部分 donor 不能省）。
+fn authored_ground_snapshot(
+    root: &std::path::Path,
+    document: &SceneDocument,
+) -> Result<Option<(connector::Resources, ResourceId)>, String> {
+    let meta_path = super::filesystem::input_file(root, AUTHORED_GROUND_META)?;
+    let meta: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&meta_path).map_err(|error| format!("{}: {error}", meta_path.display()))?,
+    )
+    .map_err(|error| format!("{}: {error}", meta_path.display()))?;
+    let width = meta
+        .get("width")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| format!("{}: width missing", meta_path.display()))?;
+    let height = meta
+        .get("height")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| format!("{}: height missing", meta_path.display()))?;
+    if width == 0 || height == 0 || width > 16_384 || height > 16_384 {
+        return Err(format!(
+            "{}: invalid mask dimensions {width}x{height}",
+            meta_path.display()
+        ));
+    }
+    let mask_path = super::filesystem::input_file(root, AUTHORED_GROUND_MASK)?;
+    let expected = (width as usize) * (height as usize) * 4;
+    // mask.rgba = 原始 RGBA 字节（authored.ts 契约）；历史/手工文件若存成
+    // base64 文本也兼容——先按长度判别，再按文本解码。
+    let raw = std::fs::read(&mask_path)
+        .map_err(|error| format!("{}: {error}", mask_path.display()))?;
+    let mask_rgba = if raw.len() == expected {
+        raw
+    } else {
+        use base64::Engine as _;
+        let text = String::from_utf8_lossy(&raw);
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(text.trim())
+            .map_err(|error| {
+                format!(
+                    "authored ground mask {} is neither raw RGBA ({expected} bytes) nor \
+                     valid base64: {error}",
+                    mask_path.display()
+                )
+            })?;
+        decoded
+    };
+    if mask_rgba.len() != expected {
+        return Err(format!(
+            "authored ground mask {} has {} bytes, expected {expected} ({width}x{height} RGBA); \
+             delete assets/lot/authored/ and repaint, or re-save the workbench",
+            mask_path.display(),
+            mask_rgba.len()
+        ));
+    }
+    let mask = normalize_authored_ground_mask(width as u32, height as u32, &mask_rgba);
+    let raster = super::materials::encode_rgba_raster(
+        mask.width(), mask.height(), mask.as_raw().as_chunks::<4>().0,
+    )?;
+    let mask_id = ResourceId {
+        type_id: super::materials::raster_type(),
+        group: 0,
+        instance: scratch_instance(b"openscp/authored-ground-mask", &raster),
+    };
+    let exemplar = synthesized_ground_exemplar(document, mask_id)?;
+    let lot_id = ResourceId {
+        type_id: super::native_lot::LOT_TYPE,
+        group: 0,
+        instance: scratch_instance(b"openscp/authored-ground-lot", &exemplar),
+    };
+    Ok(Some((
+        connector::Resources::from([(lot_id, exemplar), (mask_id, raster)]),
+        lot_id,
+    )))
+}
+
+/// The editor samples at texel centers before emitting a power-of-two
+/// raster (SC5 Asset Editor lot_native.py::native_spec and raster_bytes).
+/// A workbench drawing uses meters per pixel, so its input grid can be odd.
+fn normalize_authored_ground_mask(width: u32, height: u32, rgba: &[u8]) -> image::RgbaImage {
+    let out_width = width.next_power_of_two().clamp(16, 2048);
+    let out_height = height.next_power_of_two().clamp(16, 2048);
+    let source = rgba.as_chunks::<4>().0;
+    image::RgbaImage::from_fn(out_width, out_height, |x, y| {
+        let sx = ((2 * x + 1) * width) / (2 * out_width);
+        let sy = ((2 * y + 1) * height) / (2 * out_height);
+        image::Rgba(source[(sy * width + sx) as usize])
+    })
+}
+
+/// 内容哈希实例分配（内容确定、冲突避让——与 menu::alloc_raster_instance
+/// 同契约；快照是独立 Resources，探测针对快照池即可）。
+fn scratch_instance(domain: &[u8], bytes: &[u8]) -> u32 {
+    use sha2::Digest;
+    let mut hash = sha2::Sha256::new();
+    hash.update(domain);
+    hash.update(bytes);
+    u32::from_be_bytes(hash.finalize()[..4].try_into().unwrap()) | 0x8000_0000
+}
+
+/// 合成地面 exemplar：scene 列为权威（`scene::ground_values` 与
+/// written-contract 同一编码：颜色 ColorRgba sRGB→linear、宽度 Float、
+/// 高度 Vector4），加 LotSize/LotOffset 与两个键——LotMask→authored
+/// raster、surface→游戏共享规范实例。
+fn synthesized_ground_exemplar(
+    document: &SceneDocument,
+    mask_id: ResourceId,
+) -> Result<Vec<u8>, String> {
+    let size = document
+        .lot_size
+        .ok_or("authored ground requires lot.size in the scene document")?;
+    let mut file = PropertyFile::default();
+    super::property_edit::set_scalar(
+        &mut file,
+        0x0CCB_7FC8,
+        PropType::Vector2,
+        Value::Vector2(size),
+    );
+    super::property_edit::set_scalar(
+        &mut file,
+        0x0CCB_7FC9,
+        PropType::Vector2,
+        Value::Vector2(document.lot_offset.unwrap_or([0.0, 0.0])),
+    );
+    for (hash, value) in super::scene::ground_values(document) {
+        let prop_type = match &value {
+            Value::Vector2(_) => PropType::Vector2,
+            Value::Vector4(_) => PropType::Vector4,
+            Value::ColorRgba { .. } => PropType::ColorRgba,
+            Value::Float(_) => PropType::Float,
+            Value::Int32(_) => PropType::Int32,
+            other => {
+                return Err(format!(
+                    "authored ground: unsupported ground value for {hash:08X}: {other:?}"
+                ))
+            }
+        };
+        super::property_edit::set_scalar(&mut file, hash, prop_type, value);
+    }
+    super::property_edit::set_scalar(
+        &mut file,
+        0x0CCB_7FD5,
+        PropType::Key,
+        Value::Key(sc_properties::Key {
+            type_id: mask_id.type_id,
+            group: mask_id.group,
+            instance: mask_id.instance,
+        }),
+    );
+    super::property_edit::set_scalar(
+        &mut file,
+        0x0CCB_7FD4,
+        PropType::Key,
+        Value::Key(sc_properties::Key {
+            type_id: NATIVE_SURFACE_MODEL_TYPE,
+            group: 0,
+            instance: NATIVE_SURFACE_MODEL_INSTANCE,
+        }),
+    );
+    super::property_edit::encode(&file)
+}
+
 /// 参考包/身份包/场景文档装载。
 fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
     let source_path = project_file(
@@ -340,7 +514,13 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             .as_deref()
             .ok_or("missing source package")?,
     )?;
-    ctx.resources = BuildResources::from_source(connector::read_source(&source_path)?);
+    let mut reference = connector::read_source(&source_path)?;
+    if ctx.plan.menu.is_some()
+        && ctx.plan.intermediate.scene.model_shape.as_deref() == Some("building40")
+    {
+        super::native_profile::fill_missing_stock_inputs(&mut reference)?;
+    }
+    ctx.resources = BuildResources::from_source(reference);
     // 参照 Lot 原始字节快照（delta-audit 的对照面）。必须在任何处理器改写
     // 池资源之前捕获；后续阶段只写不读这份快照。
     let lot_target = ctx.plan.intermediate.references.lot.map(|tgi| ResourceId {
@@ -392,20 +572,32 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             let snapshot = if ctx.resources.get(&source_lot).is_some() {
                 super::menu::ground_source_snapshot(ctx.resources.all(), source_lot)?
             } else {
-                let package_path = document
+                let package_path = match document
                     .ground_source
                     .as_ref()
                     .and_then(|source| source.package_path.as_deref())
-                    .ok_or_else(|| {
-                        format!(
-                            "ground source Lot {source_lot} is absent from reference.package and sourceLot.packagePath is missing"
-                        )
-                    })?;
-                let package_path = super::filesystem::input_file(&ctx.root, package_path)?;
+                {
+                    Some(path) => super::filesystem::input_file(&ctx.root, path)?,
+                    // Older workbench documents stored only packageId and TGI.
+                    // Resolve the same DLC0 fallback as schema discovery, then
+                    // require the exact recorded TGI in that package.
+                    None => super::schema_discovery::resolve_source_package("")?,
+                };
                 let source_resources = connector::read_source(&package_path)?;
                 super::menu::ground_source_snapshot(&source_resources, source_lot)?
             };
             Some((snapshot, source_lot))
+        }
+        Some(document) if document.lot_mask == Some(super::scene::SceneLotMaskKind::Authored) => {
+            if !ctx.plan.intermediate.scene.authored_ground {
+                return Err(
+                    "scene document is authored-ground (lotStyle.authored, no sourceLot) but \
+                     the schema does not declare scene.authoredGround; rebuild the schema or \
+                     set \"authoredGround\": true"
+                        .into(),
+                );
+            }
+            authored_ground_snapshot(&ctx.root, document)?
         }
         _ => None,
     };
@@ -879,6 +1071,7 @@ fn insert_model_with_cache(
         &ctx.texture_instances,
         ctx.scene_document.as_ref(),
         rotation,
+        ctx.plan.intermediate.scene.night_emission_policy.as_deref(),
     )?;
     if let Some(key) = &fingerprint_key {
         let mut entries = Vec::new();
@@ -938,6 +1131,9 @@ fn validate_paths(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
         .as_ref()
         .is_some_and(SceneDocument::has_semantics)
         && ctx.plan.intermediate.references.lot.is_none()
+        && !(ctx.plan.intermediate.scene.authored_ground
+            && ctx.plan.menu.is_some()
+            && ctx.ground_source.is_some())
     {
         return Err(
             "scene document carries units/paths; reference.lot must name the Lot property to lower them into"
@@ -984,6 +1180,7 @@ fn compute_identity(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
     ctx.build_hash = digest(
         &serde_json::to_vec(&(
             ctx.plan.processor_version,
+            super::build_cache::CACHE_VERSION,
             &ctx.source_hash,
             &plan_bytes,
             &ctx.scene_document_bytes_hash,
@@ -1068,8 +1265,30 @@ fn apply_scene_semantics(ctx: &mut BuildContext) -> Result<serde_json::Value, St
     }
     ctx.menu_instance = match &ctx.plan.menu {
         Some(menu) => {
-            let lot_source = lot_target
-                .ok_or("menu registration requires reference.lot to clone the lot identity")?;
+            let authored_ground = ctx
+                .scene_document
+                .as_ref()
+                .is_some_and(|document| {
+                    document.lot_mask == Some(super::scene::SceneLotMaskKind::Authored)
+                })
+                && ctx.plan.intermediate.scene.authored_ground;
+            if authored_ground && !(menu.parent_free || ctx.author_building40) {
+                return Err(
+                    "authored ground without a donor lot requires the parent-free identity \
+                     route (Building40 model); bind a library lot as the ground donor or \
+                     build from a LOTM model"
+                        .into(),
+                );
+            }
+            // donor-free authored：合成 exemplar 就是 lot_source（parent-free
+            // 路线在 ground_source 在场时不解引用它，仅作 schema 兜底）。
+            let lot_source = lot_target.or_else(|| {
+                if authored_ground {
+                    ctx.ground_source.as_ref().map(|(_, id)| *id)
+                } else {
+                    None
+                }
+            }).ok_or("menu registration requires reference.lot to clone the lot identity")?;
             let generated = super::menu::generate(
                 menu,
                 &ctx.resources,
@@ -1538,13 +1757,14 @@ fn identity_closure(ctx: &mut BuildContext) -> Result<serde_json::Value, String>
 /// 标题 ***/乱码（locale 表/行）、菜单不加载（menuUnit/身份链/类别）、
 /// lot/模型丢失（BoundingBox/LotMask/模型引用）。fail-closed，staging 之前。
 fn menu_contract(ctx: &BuildContext) -> Result<serde_json::Value, String> {
-    let Some(lot) = ctx.plan.intermediate.references.lot else {
+    let Some(instance) = ctx.menu_instance.or_else(|| {
+        ctx.plan.intermediate.references.lot.map(|lot| lot.instance)
+    }) else {
         return Ok(serde_json::json!({
             "status": "skipped",
             "reason": "no reference lot (not a building asset)",
         }));
     };
-    let instance = ctx.menu_instance.unwrap_or(lot.instance);
     let donor = ctx.menu_instance.and_then(|_| {
         ctx.identity_resources.as_ref().map(|resources| {
             let donor_instance = ctx
@@ -2227,6 +2447,85 @@ mod stage_tests {
         let ctx = BuildContext::new(root.clone(), plan);
         check_invariants("insert-model", &ctx).unwrap();
         check_invariants("insert-textures", &ctx).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn authored_ground_snapshot_synthesizes_exemplar_and_raster() {
+        use crate::asset_build_m1::{
+            materials,
+            scene::{self as scene_mod, SceneLotMaskKind},
+        };
+        let root = crate::test_scratch::scratch_base().join(format!(
+            "openscp-authored-ground-{}",
+            std::process::id()
+        ));
+        let dir = root.join("assets/lot/authored");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("ground.json"),
+            r#"{"format":"openscp.lot-ground","version":1,"width":4,"height":4}"#,
+        )
+        .unwrap();
+        let pixels: Vec<u8> = (0..64u8).collect(); // 4x4 RGBA，原始字节（authored.ts 契约）
+        std::fs::write(dir.join("mask.rgba"), &pixels).unwrap();
+        // project_file 对 root 前缀做 canonicalize 对拍（temp_root 同款约定）。
+        let root = root.canonicalize().unwrap();
+        let document = scene_mod::parse_document(&serde_json::json!({
+            "lot": {
+                "size": [80, 80],
+                "tilePeriod": [8, 8],
+                "baseTile": 8,
+                "colors": [
+                    {"rgba": [140, 140, 140, 1], "authored": true},
+                    {"rgba": [26, 26, 26, 4], "authored": true},
+                    {"rgba": [140, 140, 140, 9], "authored": true},
+                    {"rgba": [0, 0, 255, 0], "authored": true}
+                ],
+                "mask": {"kind": "source"}
+            },
+            "editor": {"workbench": {"lotStyle": {"sourceLot": null, "authored": true}}}
+        }))
+        .unwrap();
+        assert_eq!(document.lot_mask, Some(SceneLotMaskKind::Authored));
+        let (snapshot, lot_id) =
+            authored_ground_snapshot(&root, &document).unwrap().unwrap();
+        let exemplar = snapshot.get(&lot_id).unwrap();
+        let file = PropertyFile::parse(exemplar).unwrap();
+        // LotSize 原样（scene 为权威）。
+        assert_eq!(
+            file.get(0x0CCB_7FC8).and_then(|p| p.scalar()),
+            Some(&PropValue::Vector2([80.0, 80.0]))
+        );
+        // surface 键直指游戏共享规范实例；mask 键指向快照内的 raster。
+        let surface = file.get(0x0CCB_7FD4).and_then(|p| p.scalar());
+        let Some(PropValue::Key(surface_key)) = surface else {
+            panic!("surface key missing");
+        };
+        assert_eq!(surface_key.type_id, 0x2F4E_681B);
+        assert_eq!(surface_key.instance, 0xA0DA_9E6C);
+        let mask_hash = file.get(0x0CCB_7FD5).and_then(|p| p.scalar());
+        let Some(PropValue::Key(mask_key)) = mask_hash else {
+            panic!("mask key missing");
+        };
+        assert_eq!(mask_key.type_id, materials::raster_type());
+        let raster = rw4::RasterImage::parse(snapshot.get(&ResourceId {
+            type_id: mask_key.type_id,
+            group: mask_key.group,
+            instance: mask_key.instance,
+        }).expect("mask raster rides the snapshot")).unwrap();
+        assert_eq!((raster.width, raster.height), (16, 16));
+        let rgba = raster.decode_top_mip_rgba().unwrap();
+        assert_eq!(&rgba[..4], &pixels[..4]);
+        assert_eq!(&rgba[rgba.len() - 4..], &pixels[pixels.len() - 4..]);
+        // 颜色列与 ground_values 编码一致（sRGB→linear + 图案索引）。
+        for (hash, value) in scene_mod::ground_values(&document) {
+            assert_eq!(
+                file.get(hash).and_then(|p| p.scalar()),
+                Some(&value),
+                "{hash:08X}"
+            );
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 }

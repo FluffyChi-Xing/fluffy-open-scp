@@ -45,29 +45,15 @@ fn main() {
                 std::process::exit(2);
             }
         };
-        let document_path = root.join(&candidate.document);
-        if document_path.is_file() {
-            let document: Value = match serde_json::from_slice(&std::fs::read(&document_path).unwrap_or_default()) {
-                Ok(document) => document,
-                Err(error) => {
-                    eprintln!("parse document {}: {error}", candidate.document);
-                    std::process::exit(2);
-                }
-            };
-            let compiled = match fluffy_open_scp_lib::asset_build_m1::workbench_logic::compile(
-                &document,
-                &|path| root.join(path).is_file(),
-            ) {
-                Ok(compiled) => compiled,
-                Err(errors) => {
-                    eprintln!("compile workbench: {}", errors.join("; "));
-                    std::process::exit(2);
-                }
-            };
-            if let Err(errors) = fluffy_open_scp_lib::asset_build_m1::workbench_logic::apply_to_schema(&mut schema, &compiled) {
-                eprintln!("apply workbench: {}", errors.join("; "));
-                std::process::exit(2);
-            }
+        if let Err(errors) =
+            fluffy_open_scp_lib::asset_build_m1::workbench_logic::overlay_document_on_schema(
+                &root,
+                &mut schema,
+                &candidate.document,
+            )
+        {
+            eprintln!("apply workbench: {}", errors.join("; "));
+            std::process::exit(2);
         }
         (match serde_json::to_string(&schema) {
             Ok(raw) => raw,

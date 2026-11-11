@@ -127,6 +127,46 @@ pub const GROUND_ATLAS_B: ResourceId = ResourceId {
     group: 0,
     instance: 0x60E7_805D,
 };
+
+/// The author resolves its generic Asset and interaction chains from the game
+/// inventory. Older workbench projects sometimes saved only a DLC ground
+/// package in build/reference.package. Fill only the missing stock inputs.
+pub(super) fn fill_missing_stock_inputs(resources: &mut connector::Resources) -> Result<(), String> {
+    let menu_parent = ResourceId { instance: super::menu::PLOP_MENU_PARENT, ..GENERIC_MENU };
+    if [GENERIC_ASSET, INTERACTION_CHAIN, GENERIC_MENU, menu_parent, GROUND_ATLAS_A, GROUND_ATLAS_B]
+        .iter().all(|id| resources.contains_key(id))
+    {
+        return Ok(());
+    }
+    let asset = |instance| ResourceId { instance, ..GENERIC_ASSET };
+    let game = [
+        GENERIC_ASSET,
+        INTERACTION_CHAIN,
+        GENERIC_MENU,
+        menu_parent,
+        asset(0x2A25_CF66), asset(0xF1CF_C5B0), asset(0xF98B_CB35), asset(0x593B_61D2),
+    ];
+    let graphics = [GROUND_ATLAS_A, GROUND_ATLAS_B];
+    for (name, ids) in [("SimCity_Game.package", game.as_slice()),
+                        ("SimCity_Graphics.package", graphics.as_slice())] {
+        let missing: Vec<_> = ids.iter().copied().filter(|id| !resources.contains_key(id)).collect();
+        if missing.is_empty() {
+            continue;
+        }
+        let dlc = super::schema_discovery::resolve_source_package("")?;
+        let path = dlc.with_file_name(name);
+        let package = dbpf::Package::open(&path)
+            .map_err(|error| format!("stock build input {}: {error}", path.display()))?;
+        for id in missing {
+            let entry = package.entry(id)
+                .ok_or_else(|| format!("stock build input {} is missing {id}", path.display()))?;
+            let bytes = package.read(entry)
+                .map_err(|error| format!("stock build input {id}: {error}"))?;
+            resources.insert(id, bytes);
+        }
+    }
+    Ok(())
+}
 /// Lot numeric fields re-encoded into the Asset dictionary
 /// (`native_property_codec.LOT_TYPES`).
 const LOT_TYPES: &[(u32, PropType)] = &[
@@ -1342,6 +1382,11 @@ pub fn build(
             continue;
         }
         if ground_source.is_some() {
+            // 自绘地面（authored）：快照的 surface 键（0CCB7FD4，直指游戏
+            // 共享规范实例 0xA0DA9E6C）覆盖模板缺省；mask 键由下方独立处理。
+            if property.hash == GROUND_MODEL_KEY {
+                upsert(&mut asset, property.clone());
+            }
             continue;
         }
         if property.hash != HASH_PARENT
@@ -1597,6 +1642,12 @@ pub fn build(
         &mut asset,
         scalar(0x0F16_9C46, PropType::Bool, Value::Bool(true)),
     );
+    // The school donor carries an empty optional footprint. Native
+    // candidate assets omit it when there is no footprint to serialize.
+    asset.values.retain(|property| {
+        !(0x0A14_EDB3..=0x0A14_EDB7).contains(&property.hash)
+            || !matches!(&property.kind, Kind::Array(values) if values.is_empty())
+    });
     asset.claimed_count = asset.values.len() as u32;
 
     // Keep the full Unit donor. A simulation template alone is not enough:

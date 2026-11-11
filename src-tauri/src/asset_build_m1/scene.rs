@@ -81,6 +81,10 @@ pub fn unit_column_hashes() -> Vec<u32> {
 pub enum SceneLotMaskKind {
     Source,
     Synthetic,
+    /// 自绘地面且未绑 donor：mask 像素（assets/lot/authored/mask.rgba）与
+    /// 颜色列全部在项目内合成，引擎侧不再引用 donor 的 LC mask。
+    /// SC5 Asset Editor lot_native.py 的自足 4 资源路径（2026-11-11 接线）。
+    Authored,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -230,7 +234,28 @@ pub fn parse_document(json: &Json) -> Result<SceneDocument, String> {
         };
         document.ground_style = parse_ground_style(lot)?;
     }
-    if let Some(source) = json.pointer("/editor/workbench/lotStyle/sourceLot") {
+    // 自绘地面且未绑 donor（workbench lotStyle.authored 且 sourceLot 为
+    // null/缺失）：地面列全在 lot 块里、mask 像素在项目文件里，走项目内
+    // 合成路径（stages::authored_ground_snapshot）。绑了 donor 的 authored
+    // 文档保持现状（donor 地面列 + scene 尺寸覆盖），不改变已验证资产。
+    let authored_only = json
+        .pointer("/editor/workbench/lotStyle/authored")
+        .and_then(Json::as_bool)
+        == Some(true)
+        && json
+            .pointer("/editor/workbench/lotStyle/sourceLot")
+            .map(Json::is_null)
+            .unwrap_or(true);
+    if authored_only {
+        document.lot_mask = Some(SceneLotMaskKind::Authored);
+    }
+    // sourceLot 显式为 null（自绘地面且未绑 donor）时不在此报错：缺 donor
+    // 的明确指引在 schema_discovery 的 adapter 入队阶段给出；带 reference.lot
+    // 的 schema 也可以合法没有 workbench sourceLot。
+    if let Some(source) = json
+        .pointer("/editor/workbench/lotStyle/sourceLot")
+        .filter(|source| !source.is_null())
+    {
         let lot = source
             .get("tgi")
             .and_then(parse_json_tgi)
@@ -617,7 +642,9 @@ fn parse_f32_array<const N: usize>(
     value: Option<&Json>,
     label: &str,
 ) -> Result<Option<[f32; N]>, String> {
-    let Some(value) = value else {
+    // JSON 显式 null 与键缺失等价（pe_schema 工作流总是写出字段、值可为
+    // null；缺省列族交由 donor 缺省/合成路径兜底）。
+    let Some(value) = value.filter(|value| !value.is_null()) else {
         return Ok(None);
     };
     let values = value
@@ -1828,6 +1855,39 @@ mod tests {
             }
         )));
         assert!(!values.iter().any(|(hash, _)| *hash == 0x0D02_D589));
+    }
+
+    #[test]
+    fn authored_without_donor_switches_mask_kind_to_authored() {
+        // sourceLot 显式 null + authored=true（绘制地面未绑库 lot）：
+        // 地面走项目内合成，mask 语义从 donor 克隆切换为 authored。
+        let document = parse_document(&json!({
+            "lot": {"size": [80, 80], "mask": {"kind": "source"}},
+            "editor": {"workbench": {"lotStyle": {"sourceLot": null, "authored": true}}}
+        }))
+        .unwrap();
+        assert_eq!(document.lot_mask, Some(SceneLotMaskKind::Authored));
+    }
+
+    #[test]
+    fn authored_with_donor_keeps_source_kind() {
+        // 绑了 donor 的 authored 文档保持现状（donor 地面列 + scene 覆盖），
+        // 不改变已验证资产的地面。
+        let document = parse_document(&json!({
+            "lot": {"size": [80, 80], "mask": {"kind": "source"}},
+            "editor": {"workbench": {"lotStyle": {
+                "sourceLot": {"tgi": {"typeId": 11645188, "group": 1106296832, "instance": 75703198}},
+                "authored": true
+            }}}
+        }))
+        .unwrap();
+        assert_eq!(document.lot_mask, Some(SceneLotMaskKind::Source));
+        let without_authored_flag = parse_document(&json!({
+            "lot": {"size": [80, 80], "mask": {"kind": "source"}},
+            "editor": {"workbench": {"lotStyle": {"sourceLot": null}}}
+        }))
+        .unwrap();
+        assert_eq!(without_authored_flag.lot_mask, Some(SceneLotMaskKind::Source));
     }
 
     #[test]
