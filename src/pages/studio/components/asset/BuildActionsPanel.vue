@@ -10,6 +10,7 @@ import type {
   StageEventDto,
 } from "@/api/tauri";
 import { useBuildActivityStore } from "@/stores/buildActivity";
+import { buildQueueErrorKey } from "@/lib/buildQueueError";
 
 /**
  * OpenSCP Actions：构建历史 + GitHub Actions 风格步骤耗时/详情日志。
@@ -34,6 +35,7 @@ const jobs = ref<BuildJobDto[]>([]);
 const selectedId = ref<string | null>(null);
 const expandedStage = ref<string | null>(null);
 const loading = ref(false);
+let refreshRequest = 0;
 const schemaText = ref("");
 const enqueueBusy = ref(false);
 const enqueueError = ref("");
@@ -97,10 +99,18 @@ function formatDetail(detail: unknown): string {
 }
 
 async function refresh() {
-  if (!props.project) return;
+  const request = ++refreshRequest;
+  const project = props.project;
+  if (!project) {
+    jobs.value = [];
+    loading.value = false;
+    return;
+  }
   loading.value = true;
   try {
-    jobs.value = await tauriApi.buildQueue.list(props.project);
+    const nextJobs = await tauriApi.buildQueue.list(project);
+    if (request !== refreshRequest) return;
+    jobs.value = nextJobs;
     const focus = props.focusJobId;
     if (focus && jobs.value.some((job) => job.id === focus)) {
       selectedId.value = focus;
@@ -112,7 +122,7 @@ async function refresh() {
       expandedStage.value = null;
     }
   } finally {
-    loading.value = false;
+    if (request === refreshRequest) loading.value = false;
   }
 }
 
@@ -196,6 +206,8 @@ function toggleStep(stage: string) {
 }
 
 function buildError(message: string): string {
+  const queueError = buildQueueErrorKey(message);
+  if (queueError) return t(queueError);
   const decalDiagnostic = message.match(/\bDECAL_(CATEGORY|FIELD|READBACK|SOURCE)\b(?:: ([^\r\n]+))?/);
   if (decalDiagnostic) {
     const [, code, detail] = decalDiagnostic;
