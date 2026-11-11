@@ -192,13 +192,19 @@ impl BuildQueueManager {
         // (Actions 页实时行)。构建结束后排空并关闭通道。
         let (tx, rx) = mpsc::channel::<StageEvent>();
         let job_id_owned = job_id.to_string();
+        let label = job.label.clone();
         let app_for_stream = self.app.get().cloned();
         let stream = std::thread::Builder::new()
             .name("openscp-build-events".into())
             .spawn(move || {
                 while let Ok(event) = rx.recv() {
                     if let Some(app) = &app_for_stream {
-                        let payload = serde_json::json!({ "jobId": job_id_owned, "event": event });
+                        let payload = serde_json::json!({
+                            "jobId": job_id_owned,
+                            "label": label,
+                            "totalStages": crate::asset_build_m1::stages::CHAIN.len(),
+                            "event": event,
+                        });
                         let _ = app.emit(BUILD_QUEUE_EVENT, payload);
                     }
                 }
@@ -257,6 +263,7 @@ impl BuildQueueManager {
                 "startedAtMs": job.started_at_ms,
                 "finishedAtMs": job.finished_at_ms,
                 "durationMs": job.duration_ms,
+                "totalStages": crate::asset_build_m1::stages::CHAIN.len(),
             });
             let _ = app.emit(BUILD_QUEUE_EVENT, payload);
         }

@@ -2,13 +2,15 @@
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useBuildActivityStore } from "@/stores/buildActivity";
+import { buildQueueErrorKey } from "@/lib/buildQueueError";
 
 const { t } = useI18n();
 const activity = useBuildActivityStore();
 const { notices } = storeToRefs(activity);
 
-function markAllRead() {
-  activity.markAllRead();
+function formatDetail(detail: string): string {
+  const key = buildQueueErrorKey(detail);
+  return key ? t(key) : detail;
 }
 
 function formatTime(ms: number): string {
@@ -28,9 +30,9 @@ function formatTime(ms: number): string {
         v-if="notices.length"
         type="button"
         class="notifications-action"
-        @click="markAllRead"
+        @click="activity.clear()"
       >
-        {{ $t("shell.markAllRead") }}
+        {{ $t("notification.clear") }}
       </button>
     </header>
     <ul v-if="notices.length" class="notifications-list">
@@ -42,9 +44,21 @@ function formatTime(ms: number): string {
       >
         <span class="notification-dot" aria-hidden="true" />
         <div class="notification-text">
-          <p>{{ $t(item.titleKey) }}</p>
+          <div class="notification-heading">
+            <p>{{ (item.status && (item.projectLabel || item.jobId)) || $t(item.titleKey) }}</p>
+            <span v-if="item.status" class="notification-status" :data-status="item.status">
+              {{ $t(`notification.buildStatus.${item.status}`) }}
+            </span>
+          </div>
+          <progress
+            v-if="item.status === 'running'"
+            class="notification-progress"
+            :aria-label="$t('notification.buildProgress')"
+            :max="item.totalStages || 1"
+            :value="item.totalStages ? item.completedStages?.length ?? 0 : undefined"
+          />
           <small v-if="item.detail" class="notification-detail">{{
-            item.detail
+            formatDetail(item.detail)
           }}</small>
           <small>{{ formatTime(item.createdAtMs) }}</small>
         </div>
@@ -125,11 +139,49 @@ function formatTime(ms: number): string {
   background: var(--danger, #ef4444);
   box-shadow: 0 0 0 3px color-mix(in srgb, #ef4444 14%, transparent);
 }
+.notification-text {
+  flex: 1;
+  min-width: 0;
+}
+.notification-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
 .notification-text p {
   color: var(--foreground);
   font-size: 12px;
   line-height: 1.4;
   margin: 0;
+  overflow-wrap: anywhere;
+}
+.notification-status {
+  background: var(--surface-hover);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  flex: none;
+  font-size: 10px;
+  padding: 1px 6px;
+}
+.notification-status[data-status="running"] {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+}
+.notification-status[data-status="finished"] {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+.notification-status[data-status="failed"] {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.notification-progress {
+  accent-color: var(--primary);
+  block-size: 6px;
+  display: block;
+  inline-size: 100%;
+  margin-block: 6px;
 }
 .notification-text small {
   color: var(--subtle-foreground);

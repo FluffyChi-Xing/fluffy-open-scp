@@ -1470,6 +1470,7 @@ export interface BuildJobDto {
 
 export interface BuildQueueEventPayload {
   jobId: string;
+  totalStages?: number;
   status?: BuildJobStatus;
   label?: string | null;
   error?: string | null;
