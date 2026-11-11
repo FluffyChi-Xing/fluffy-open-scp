@@ -136,6 +136,7 @@ const leafOptions = computed(() =>
       :style="{ top: '42px' }"
     />
     <Handle
+      v-if="!embedded"
       id="out"
       type="source"
       :position="Position.Right"
@@ -151,7 +152,6 @@ const leafOptions = computed(() =>
         :title="t('studio.assetWorkbench.logicDuplicate')"
         :disabled="disabled"
         @click="emit('duplicate')"
-      v-if="!embedded"
       >
         <FIcon name="Copy" :size="12" aria-label="" />
       </button>
@@ -364,6 +364,20 @@ const leafOptions = computed(() =>
         </label>
       </template>
 
+      <label v-else-if="leafType === 'residence'" class="logic-field">
+        <span>{{ t("studio.assetWorkbench.behaviorSheet.population") }}</span>
+        <input
+          type="number"
+          min="1"
+          max="100000"
+          step="1"
+          :placeholder="String(RESIDENCE_TEMPLATE_CAPACITY)"
+          :value="(params as ResidenceParams).population ?? ''"
+          :disabled="disabled"
+          @change="onNumber('population', $event, params as unknown as Record<string, unknown>, RESIDENCE_TEMPLATE_CAPACITY)"
+        />
+      </label>
+
       <template v-else-if="leafType === 'landvalue'">
         <label v-for="field in landFields" :key="field" class="logic-field">
           <span>{{ t((params as LandvalueParams).landValueProfile
@@ -407,22 +421,14 @@ const leafOptions = computed(() =>
   color: var(--flow-text, #e6e6e6);
   width: 320px;
 }
+.logic-card.embedded {
+  width: 100%;
+  background: var(--surface);
+  border: 0;
+  box-shadow: none;
+}
 .logic-card.invalid {
   border-color: #8a6a2a;
-      <label v-else-if="leafType === 'residence'" class="logic-field">
-        <span>{{ t("studio.assetWorkbench.behaviorSheet.population") }}</span>
-        <input
-          type="number"
-          min="1"
-          max="100000"
-          step="1"
-          :placeholder="String(RESIDENCE_TEMPLATE_CAPACITY)"
-          :value="(params as ResidenceParams).population ?? ''"
-          :disabled="disabled"
-          @change="onNumber('population', $event, params as unknown as Record<string, unknown>, RESIDENCE_TEMPLATE_CAPACITY)"
-        />
-      </label>
-
 }
 .logic-head {
   align-items: center;
@@ -462,12 +468,6 @@ const leafOptions = computed(() =>
   flex-direction: column;
   gap: 6px;
   padding: 8px;
-}
-.logic-card.embedded {
-  width: 100%;
-  background: var(--surface);
-  border: 0;
-  box-shadow: none;
 }
 .logic-field {
   align-items: center;

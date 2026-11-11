@@ -195,7 +195,6 @@ function toggleStep(stage: string) {
   expandedStage.value = expandedStage.value === stage ? null : stage;
 }
 
-const stepIcon = (status: StepView["status"]) =>
 function buildError(message: string): string {
   const templateDiagnostic = message.match(/\b(BEHAVIOR_TEMPLATE_(?:PROFILE|PARAMETER|RESOURCE|BUNDLE|FIELD)|RESIDENCE_PATH)\b(?:: ([^\r\n]+))?/);
   if (templateDiagnostic) {
@@ -210,6 +209,7 @@ function buildError(message: string): string {
   return detail ? `${label} (${detail})` : label;
 }
 
+const stepIcon = (status: StepView["status"]) =>
   status === "finished"
     ? "Check"
     : status === "failed"

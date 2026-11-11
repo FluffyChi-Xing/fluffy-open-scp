@@ -130,17 +130,17 @@ export interface ResidenceParams {
   population?: number | null;
 }
 
-export type LeafParams =
-  | EducationParams
-  | TourismParams
-  | ParkParams
 export const RESIDENCE_TEMPLATE_CAPACITY = 1100;
 export const LAND_TEMPLATE_VALUE = 500;
 
+export type LeafParams =
+  | EducationParams
+  | TourismParams
+  | ResidenceParams
+  | ParkParams
   | TreeParams
   | LandvalueParams;
 export type LogicParams =
-  | ResidenceParams
   | BuildingInfoParams
   | BehaviorCoreParams
   | LeafParams;
@@ -606,6 +606,10 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
             : !numberOk(leaf.value) || !numberOk(leaf.value2))
             issues.push({ code: "landValueInvalid", nodeId: node.id });
           break;
+        case "residence":
+          if (leaf.population != null && (!Number.isInteger(leaf.population) || leaf.population < 1 || leaf.population > 100_000))
+            issues.push({ code: "residenceCapacity", nodeId: node.id });
+          break;
         case "tree":
           break;
         default:
@@ -615,10 +619,6 @@ export function logicIssues(graph: LogicGraph): LogicIssue[] {
   }
   return issues;
 }
-        case "residence":
-          if (leaf.population != null && (!Number.isInteger(leaf.population) || leaf.population < 1 || leaf.population > 100_000))
-            issues.push({ code: "residenceCapacity", nodeId: node.id });
-          break;
 
 // ---- 文档迁移（旧文档没有 logic 块 → 空图） ----
 
