@@ -702,15 +702,13 @@ cargo run -q -p probes --example vignette_resolve_probe -- `
 
 ## 10. 未决问题
 
-1. `0x40E1E800` 组到底是什么资产（演出？交互点？）——需要按 TGI 反查一次名称/引用方。
-   **本轮进展**：该组下 237 个属性文件带完整 actor 表（actorIDs / modelNames / startPoint /
-   endPoint / vignetteType / speeds / 资源绑定），但**没有任何 lot 引用它们**
-   （`0x0D2E8A55` 的 279 个 id 与它们零交集，且这些 id 在整包别处零引用）。
-   下一步：扫 `SimCity_App.package`/DLC 的实例表，或对 `cVignetteGame::StartGame`
-   取表处下 hook 打印真实 TGI。
+1. **2026-11-12 已解析**。`0x40E1E800` 是基础游戏演出定义组。Lot 的
+   `0x0D2E8A55` 存演出 ID，`0x0D5A28B8` 存定义 Key，`0x0D50908D` 存 sink entry ID。
+   社区大学的两行均解析到同包的定义，详见[社区大学的人群演出与位置锚点](community-college-vignette-spawners-20261112.md)。
 2. 活动文案 id（`0xD606A55*` / `0xD27FACB*`）的字符串在 `SimCity_App.package` 的 UI JS 中，
    尚未追。
-3. `0x0D801143` 列（长度可达 40+ 的位置空间数组）语义未定——可能是"建筑可交互点集合"。
+3. **2026-11-12 已解析**。`0x0D801143` 是定向演员动作的位置空间列，由
+   `cVignetteGame::FillEntryFromProps` 的 `kActorTableDirected` 消费。
 4. 交通规则（ER2 二进制）中 `mTransportID` 的具体取值分布未统计（需要在
    `cEcoUnitRule::Read` 的 stream 层加探针）。
 5. 工厂工装到底走 transport entry 还是演出演员（`GI_Simm_sanitation_*` 在 B1B104 里
