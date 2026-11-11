@@ -196,6 +196,12 @@ function toggleStep(stage: string) {
 }
 
 function buildError(message: string): string {
+  const decalDiagnostic = message.match(/\bDECAL_(CATEGORY|FIELD|READBACK|SOURCE)\b(?:: ([^\r\n]+))?/);
+  if (decalDiagnostic) {
+    const [, code, detail] = decalDiagnostic;
+    const label = t(`studio.assetWorkbench.decalBuildError.${code}`);
+    return detail ? `${label} (${detail})` : label;
+  }
   const templateDiagnostic = message.match(/\b(BEHAVIOR_TEMPLATE_(?:PROFILE|PARAMETER|RESOURCE|BUNDLE|FIELD)|RESIDENCE_PATH)\b(?:: ([^\r\n]+))?/);
   if (templateDiagnostic) {
     const [, code, detail] = templateDiagnostic;

@@ -11,6 +11,7 @@ mod behavior_tourism;
 pub mod build_cache;
 pub mod collision;
 pub mod commands;
+mod decal;
 mod connector;
 pub mod delta_audit;
 pub mod events;

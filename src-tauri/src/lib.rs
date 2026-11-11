@@ -39,6 +39,7 @@ mod pe_schema;
 mod prop_models;
 mod prop_models_section_dump;
 mod raster_catalog;
+mod decal_library;
 mod raster_edit;
 mod render_telemetry;
 mod runtime_observer;
@@ -252,6 +253,8 @@ pub fn run() {
             read_raster_rgba,
             save_raster_overlay,
             list_property_documents,
+            decal_library::list_decal_library,
+            decal_library::resolve_workbench_decal,
             raster_catalog::list_raster_catalog,
             raster_catalog::read_raster_source,
             raster_catalog::read_lot_preview_atlases,

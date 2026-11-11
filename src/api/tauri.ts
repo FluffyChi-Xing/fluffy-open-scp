@@ -587,7 +587,14 @@ export interface DecalUnit {
   scale: number | null;
   depth: number | null;
   materialData: [number, number, number] | null;
+  decalId?: Tgi;
+  decalSource?: WorkbenchDecalSource;
   fields: UnitFieldDto[];
+}
+export interface WorkbenchDecalSource {
+  packagePath: string;
+  atlas: Tgi;
+  rasterPackagePath?: string | null;
 }
 /** 精细渲染贴花纹理：decal 单元按 ID 解析 atlas 条目并四色解码（category+index 对应）。 */
 export interface DecalUnitTexture {

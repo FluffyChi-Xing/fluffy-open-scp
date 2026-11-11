@@ -269,12 +269,20 @@ fn validate_scene(
         None
     };
     let props = validate_props(lot, document, writes)?;
-    Ok(serde_json::json!({
+    let mut report = serde_json::json!({
         "sourceUnits": document.units.len(),
         "lotSize": document.lot_size,
         "paths": paths,
         "props": props,
-    }))
+    });
+    if writes.authoritative || writes.decals {
+        super::decal::verify(lot, document)?;
+        let sources = super::decal::validate_sources(document)?;
+        if !sources.is_empty() {
+            report["decalSources"] = serde_json::json!(sources);
+        }
+    }
+    Ok(report)
 }
 
 fn validate_ground(

@@ -212,7 +212,7 @@ impl PackageManager {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TgiDto {
     pub type_id: u32,
@@ -4960,7 +4960,7 @@ fn resolve_decal_textures(
 /// raster 有两种载体：裸 Raster（`0x2F4E681C`，pixFmt21 直解，招牌/涂鸦/
 /// 废墟家族）与 RW4 纹理资源（`0x2F4E681B`，DXT 解码，破洞家族）。alpha
 /// 通道保留——它是柔和衰减（霓虹光晕），不是二值掩码。
-fn decode_decal_entry_rgba(
+pub(crate) fn decode_decal_entry_rgba(
     entry: &sc_properties::DecalEntry,
     package: &Package,
     manager: &PackageManager,
@@ -5069,7 +5069,7 @@ fn decode_decal_alpha_probe(
 }
 
 /// material 资源（RW4）shader-def 槽（slot 0x2D）引用实例（best-effort）。
-fn resolve_shader_def_instance(
+pub(crate) fn resolve_shader_def_instance(
     material_instance: u32,
     package: &Package,
     manager: &PackageManager,

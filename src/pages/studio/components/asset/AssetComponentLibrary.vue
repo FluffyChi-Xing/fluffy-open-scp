@@ -17,6 +17,7 @@ import {
   type AssetCategory,
 } from "@/pages/packages/components/property-editor/assetCategories";
 import SpawnerLibraryPanel from "@/pages/packages/components/unit-inspector/SpawnerLibraryPanel.vue";
+import AssetDecalLibrary from "./AssetDecalLibrary.vue";
 import type { PlacePayload } from "./useWorkbenchAsset";
 
 /**
@@ -65,6 +66,7 @@ const collapsed = ref(new Set<string>());
 
 const TABS = [
   { id: "props", icon: "Box", label: "package.groupProps" },
+  { id: "decals", icon: "Image", label: "package.groupDecals" },
   { id: "spawners", icon: "MapPin", label: "package.groupSpawners" },
   { id: "effects", icon: "Zap", label: "package.groupEffects" },
   { id: "paths", icon: "Spline", label: "package.groupPaths" },
@@ -400,7 +402,12 @@ function onSpawnerPlace(spawnerId: number | null) {
       </button>
     </div>
 
-    <p v-if="!editEnabled" class="library-locked">
+    <AssetDecalLibrary
+      v-if="activeTab === 'decals'"
+      :edit-enabled="editEnabled"
+      @place="decal => emit('place', { kind: 'decal', decal })"
+    />
+    <p v-else-if="!editEnabled" class="library-locked">
       {{ t("studio.assetWorkbench.unlockFirst") }}
     </p>
     <template v-else>

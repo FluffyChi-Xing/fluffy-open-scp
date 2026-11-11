@@ -60,6 +60,7 @@ import {
   type AuthoredLot,
 } from "@/lib/lot-ground/authored";
 import { loadAuthoredLot } from "./authoredLotStore";
+import { createPlacedDecal, restoreDecalSources, useWorkbenchDecals, writeDecalSources, type DecalSelection } from "./workbenchDecals";
 import {
   emptyMenuBinding,
   normalizeMenuBinding,
@@ -149,7 +150,8 @@ export interface MaterialSlotBinding {
 
 /** 组件库拖放载荷（与 PropertyEditor 放置契约同构）。 */
 export interface PlacePayload {
-  kind: "light" | "prop" | "spawner" | "effect" | "pathPoint";
+  kind: "light" | "prop" | "spawner" | "effect" | "pathPoint" | "decal";
+  decal?: DecalSelection;
   lightType?: "Point" | "Spot" | "Line";
   packageId?: number;
   packagePath?: string;
@@ -542,6 +544,7 @@ export function useWorkbenchAsset(project: string) {
   }
 
   let loadEpoch = 0;
+  const decalPreviews = useWorkbenchDecals();
   /** 六槽组装代数：连续绑定/解绑时旧组装不得覆盖新 payload。 */
   let slotComposeEpoch = 0;
 
@@ -592,7 +595,7 @@ export function useWorkbenchAsset(project: string) {
         lotAlbedoPng: session.lotAlbedoPng.value,
         lotSurfacePng: session.lotSurfacePng.value,
         lotNormalAtlasPng: session.lotNormalAtlasPng.value,
-        decalTextures: session.session.value?.decalTextures ?? [],
+        decalTextures: decalPreviews.texturesFor(session.flatUnits.value, session.session.value?.decalTextures ?? []),
         decalLight: session.decalLight.value,
         propModels: session.propModels.value,
         propTreeIds: session.propTreeIds.value,
@@ -645,7 +648,7 @@ export function useWorkbenchAsset(project: string) {
         lotAlbedoPng: draftStyle.albedoPng,
         lotSurfacePng: draftStyle.surfacePng,
         lotNormalAtlasPng: draftStyle.normalAtlasPng,
-        decalTextures: [],
+        decalTextures: decalPreviews.texturesFor(units, []),
         decalLight: null,
         propModels: new Map<number, LotModelPayload>(),
         propTreeIds: new Set<number>(),
@@ -704,6 +707,7 @@ export function useWorkbenchAsset(project: string) {
       hiddenUnitIds: [...current.hiddenUnits],
       groups: { ...current.groupVisibility },
     });
+    writeDecalSources(document, current.flatUnits);
     const editor = document.editor as Record<string, unknown>;
     editor.workbench = {
       source: sourceKind.value as WorkbenchSourceBlock["source"],
@@ -785,6 +789,7 @@ export function useWorkbenchAsset(project: string) {
 
   function resetEditState() {
     releaseLotModelCache();
+    decalPreviews.reset();
     draftEdit.reset();
     draftWrites.value = new Set();
     draftLogic.value = emptyLogicGraph();
@@ -1325,6 +1330,25 @@ export function useWorkbenchAsset(project: string) {
     return unitId(unit);
   }
 
+  async function placeDecal(
+    decal: DecalSelection,
+    position: Vec3,
+    canPlace: () => boolean,
+  ): Promise<string | null> {
+    const epoch = loadEpoch;
+    const edit = ui.value?.edit;
+    if (!edit) return null;
+    const resolved = await decalPreviews.resolve(decal, true);
+    const current = ui.value;
+    if (!resolved.placement || !current || current.edit !== edit || epoch !== loadEpoch || !canPlace()) return null;
+    const unit = createPlacedDecal(decal.id, resolved.source, resolved.placement, nextIndexOf("decal"), position);
+    edit.addUnit(unit);
+    current.groupVisibility.decals = true;
+    markUnitFamily(unit);
+    selectUnit(unitId(unit));
+    return unitId(unit);
+  }
+
   function deleteUnit(id: string) {
     const edit = ui.value?.edit;
     if (!edit) return;
@@ -1487,10 +1511,14 @@ export function useWorkbenchAsset(project: string) {
   }
 
   // ---- 会话恢复：把文档单元投影进 edit 层（与 PropertyEditor 同口径）----
-  function restoreUnits(document: Record<string, unknown>) {
+  async function restoreUnits(document: Record<string, unknown>) {
     const current = ui.value;
     if (!current) return;
+    const epoch = loadEpoch;
     const restored = unitsFromSchema(document);
+    restoreDecalSources(document, restored);
+    await decalPreviews.restore(restored);
+    if (epoch !== loadEpoch || current.edit !== ui.value?.edit) return;
     const baseUnits: LotUnitDto[] =
       current.editMode === "native"
         ? ((nativeSession.value?.session.value?.units ?? []) as LotUnitDto[])
@@ -1519,6 +1547,7 @@ export function useWorkbenchAsset(project: string) {
       };
     };
     Object.assign(current.groupVisibility, editor?.groups ?? {});
+    draftWrites.value = new Set(editor?.workbench?.writes ?? []);
     if (current.editMode === "draft") {
       // 键位与 schemaDocument 写出侧一致：editor.workbench.paths
       // 陈旧引用自愈 GC:坏会话保存的 pointIds(点已不存在)会永久卡死
@@ -1538,7 +1567,6 @@ export function useWorkbenchAsset(project: string) {
       const adopted = adoptOrphanPaths(draftPaths.value, restored);
       if (adopted) draftPaths.value = adopted;
       // 编辑族声明随文档恢复（旧文档没有该字段 → 由构建器按内容派生）。
-      draftWrites.value = new Set(editor?.workbench?.writes ?? []);
       // 逻辑编排图随文档恢复（旧文档无 logic → 空图，构建行为不变）。
       draftLogic.value = normalizeLogicGraph(editor?.workbench?.logic);
       void resolveProjectRoot();
@@ -1740,7 +1768,7 @@ export function useWorkbenchAsset(project: string) {
       ) {
         await openNative(workbench.packagePath, workbench.tgi);
         streetFacingDegrees.value = restoredStreetFacing;
-        restoreUnits(parsed);
+        await restoreUnits(parsed);
         void restorePlacedPropModels(parsed);
         return true;
       }
@@ -1825,7 +1853,7 @@ export function useWorkbenchAsset(project: string) {
             }
           }
         }
-        restoreUnits(parsed);
+        await restoreUnits(parsed);
         void restorePlacedPropModels(parsed);
         return true;
       }
@@ -1901,6 +1929,7 @@ export function useWorkbenchAsset(project: string) {
     openNative,
     openDraftAsset,
     placeUnit,
+    placeDecal,
     deleteUnit,
     selectUnit,
     draftPaths,

@@ -619,6 +619,17 @@ fn load_inputs(ctx: &mut BuildContext) -> Result<serde_json::Value, String> {
             effective
         };
     }
+    if ctx.plan.scene_writes.decals
+        || (ctx.plan.scene_writes.authoritative
+            && ctx.scene_document.as_ref().is_some_and(|document| {
+                document.units.iter().any(|unit| matches!(unit, super::scene::SceneUnit::Decal { .. }))
+            }))
+    {
+        if let Some(document) = &ctx.scene_document {
+            super::decal::validate_sources(document)?;
+        }
+        ctx.plan.processor_version = "openscp.property.m1/52";
+    }
     // The scene document is an input to the built bytes (unit columns, menu
     // ground numerics, light/prop matrices) but the schema only references it
     // by filename. Fold its bytes into the build hash so a scene-only edit

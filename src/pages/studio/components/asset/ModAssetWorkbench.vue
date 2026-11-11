@@ -217,16 +217,35 @@ watch(
 
 // ---- 组件放置：库条目 pointerdown 拾起 → 视口地面落点放置 ----
 const placementPayload = ref<PlacePayload | null>(null);
-useEventListener(window, "pointerup", (event: PointerEvent) => {
+const placementViewport = ref<HTMLElement | null>(null);
+useEventListener(window, "pointercancel", () => {
+  placementPayload.value = null;
+  document.body.style.cursor = "";
+});
+useEventListener(window, "pointerup", async (event: PointerEvent) => {
   const payload = placementPayload.value;
   if (!payload) return;
   placementPayload.value = null;
   document.body.style.cursor = "";
+  if (!editEnabled.value) return;
+  if (payload.kind === "decal") {
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+    if (!target || !placementViewport.value?.contains(target)) return;
+  }
   const position = viewportRef.value?.groundPointAt(
     event.clientX,
     event.clientY,
   );
   if (!position) return; // 落点不在地面平面（视线朝天）→ 取消
+  if (payload.kind === "decal" && payload.decal) {
+    try {
+      const id = await asset.placeDecal(payload.decal, position, () => editEnabled.value);
+      if (id) pendingSelectId.value = id;
+    } catch {
+      toast.error(t("studio.assetWorkbench.decalPlaceError"));
+    }
+    return;
+  }
   pendingSelectId.value = asset.placeUnit(payload, position);
 });
 
@@ -1014,6 +1033,7 @@ function templateOf(resourceId: number) {
         <Resizable v-else direction="vertical" class="maw-center">
           <ResizablePanel id="maw-viewport" :default-size="64" :min-size="0">
             <div
+              ref="placementViewport"
               class="maw-viewport"
               @pointerdown="onViewportPointerDown"
               @pointerup="onViewportPointerUp"

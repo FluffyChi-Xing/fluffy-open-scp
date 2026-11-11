@@ -175,6 +175,8 @@ pub enum SceneUnit {
     },
     Decal {
         category: usize,
+        id: Option<Key>,
+        source: Option<crate::decal_library::DecalSource>,
         transform: Option<Transform>,
         scale: Option<f32>,
         depth: Option<f32>,
@@ -564,13 +566,21 @@ fn parse_unit(unit: &Json) -> Result<SceneUnit, String> {
             external_id: key_field("externalId"),
             enabled: unit.get("enabled").and_then(Json::as_bool),
         }),
-        "decal" => Ok(SceneUnit::Decal {
-            category: unit.get("category").and_then(parse_json_u32).unwrap_or(0) as usize,
-            transform: transform()?,
-            scale: f32_field(unit.get("scale")),
-            depth: f32_field(unit.get("depth")),
-            material_data: vec3_field(unit.get("materialData")),
-        }),
+        "decal" => {
+            let category = unit.get("category").and_then(parse_json_u32).unwrap_or(0) as usize;
+            Ok(SceneUnit::Decal {
+                category,
+                id: key_field("decalId").or_else(|| super::decal::legacy_id(unit, category)),
+                source: unit.get("decalSource").filter(|source| !source.is_null()).map(|source| {
+                    serde_json::from_value(source.clone())
+                        .map_err(|cause| format!("DECAL_SOURCE: {cause}"))
+                }).transpose()?,
+                transform: transform()?,
+                scale: f32_field(unit.get("scale")),
+                depth: f32_field(unit.get("depth")),
+                material_data: vec3_field(unit.get("materialData")),
+            })
+        }
         "prop" => Ok(SceneUnit::Prop {
             bin: unit.get("bin").and_then(parse_json_u32).unwrap_or(0) as usize,
             resource_id: unit
@@ -893,7 +903,7 @@ fn key_value(key: Key) -> Value {
     Value::Key(key)
 }
 
-fn transform_value(scale: Option<f32>, transform: &Option<Transform>) -> Option<Value> {
+pub(super) fn transform_value(scale: Option<f32>, transform: &Option<Transform>) -> Option<Value> {
     let mut transform = transform.clone()?;
     // The encoder requires (flags == 15) ⇔ unknown.is_some(); flags 15 carries
     // the prop/decal Scale in `unknown`. Scale-less transforms (lights,
@@ -1141,7 +1151,6 @@ pub fn apply_units(
     let mut path_point_ids: Vec<String> = Vec::new();
     let mut path_point_indices: Vec<Option<i32>> = Vec::new();
     let mut prop_bins: std::collections::BTreeMap<usize, ColumnSet> = Default::default();
-    let mut decals: std::collections::BTreeMap<usize, ColumnSet> = Default::default();
     // Light group / night period come from native_profile's author-aligned
     // constants (single source of truth; the decimal-pinned copy is tested
     // in native_profile::tests::light_profile_constants_match_author_json).
@@ -1233,17 +1242,7 @@ pub fn apply_units(
                 ("refs", external_id.map(key_value)),
                 ("enabled", enabled.map(Value::Bool)),
             ]),
-            SceneUnit::Decal {
-                category,
-                transform,
-                scale,
-                depth,
-                material_data,
-            } => decals.entry(*category).or_default().push([
-                ("transforms", transform_value(*scale, transform)),
-                ("depths", depth.map(Value::Float)),
-                ("materials", material_data.map(Value::Vector3)),
-            ]),
+            SceneUnit::Decal { .. } => {}
             SceneUnit::Prop {
                 bin,
                 resource_id,
@@ -1415,31 +1414,8 @@ pub fn apply_units(
             ],
         );
     }
-    for (category, column) in decals {
-        if category >= unit_hash::DECAL_CATEGORIES {
-            continue;
-        }
-        let category = category as u32;
-        column.finish(
-            &mut columns,
-            &[
-                (
-                    unit_hash::DECAL_TRANSFORM_BASE + category,
-                    "transforms",
-                    PropType::Transform,
-                ),
-                (
-                    unit_hash::DECAL_DEPTH_BASE + category,
-                    "depths",
-                    PropType::Float,
-                ),
-                (
-                    unit_hash::DECAL_MATERIAL_BASE + category,
-                    "materials",
-                    PropType::Vector3,
-                ),
-            ],
-        );
+    if authoritative || writes.decals {
+        columns.extend(super::decal::columns(document)?);
     }
     if authoritative || writes.paths {
         finish_path_pairs(document, &path_point_ids, &path_point_indices, &mut columns);
@@ -1549,7 +1525,7 @@ fn finish_path_pairs(
     }
 }
 
-fn array_property(hash: u32, prop_type: PropType, values: Vec<Value>) -> Property {
+pub(super) fn array_property(hash: u32, prop_type: PropType, values: Vec<Value>) -> Property {
     // Fixed-size columns must declare their stride (the canonical encoder
     // validates it). The game loader trusts the declared stride — a wrong
     // stride poisons the whole property file (2026-10-19 Text 实证；2026-11-07
