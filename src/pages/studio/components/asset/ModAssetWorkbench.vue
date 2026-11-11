@@ -61,6 +61,8 @@ const { t } = useI18n();
 const toast = useToast();
 const asset = useWorkbenchAsset(props.project);
 const ui = asset.ui;
+// 两条竖分隔线相邻时，命中区也要保持独立。
+const columnHandleMargins = { coarse: 0, fine: 0 };
 
 // ---- 顶部工具条状态（与 PropertyEditor 渲染控制同口径）----
 const editEnabled = ref(true);
@@ -976,37 +978,41 @@ function templateOf(resourceId: number) {
     </header>
 
     <Resizable direction="horizontal" class="maw-split">
-      <ResizablePanel id="maw-tree" :default-size="17" :min-size="10">
-        <AssetSourceTree
-          ref="treeRef"
-          :project="props.project"
-          :active-asset="asset.sourceAssetPath.value"
-          :selected-path="selectedFile"
-          @select="onTreeSelect"
-          @open-asset="onOpenAsset"
-          @open-package="onOpenPackage"
-          @blend-imported="onBlendImported"
-        />
+      <ResizablePanel id="maw-tree" :default-size="17" :min-size="0">
+        <div class="maw-scroll-pane maw-tree-pane">
+          <AssetSourceTree
+            ref="treeRef"
+            :project="props.project"
+            :active-asset="asset.sourceAssetPath.value"
+            :selected-path="selectedFile"
+            @select="onTreeSelect"
+            @open-asset="onOpenAsset"
+            @open-package="onOpenPackage"
+            @blend-imported="onBlendImported"
+          />
+        </div>
       </ResizablePanel>
       <ResizableHandle
         orientation="horizontal"
+        :hit-area-margins="columnHandleMargins"
         :label="t('studio.assetWorkbench.resizeTree')"
       />
-      <ResizablePanel id="maw-center" :default-size="57" :min-size="30">
-        <PackageProjectForm
-          v-if="isProjectConfig"
-          :project="props.project"
-          :menu="asset.menu"
-          :logic="asset.draftLogic.value"
-          :saved-dirty="asset.savedDirty.value"
-          :save-document="asset.saveDocument"
-          :document-path="asset.documentPath"
-          @update:menu="asset.setMenuBinding($event)"
-          @update:logic="asset.setLogicGraph($event)"
-          @close="selectedFile = null"
-        />
+      <ResizablePanel id="maw-center" :default-size="57" :min-size="0">
+        <div v-if="isProjectConfig" class="maw-scroll-pane maw-config-pane">
+          <PackageProjectForm
+            :project="props.project"
+            :menu="asset.menu"
+            :logic="asset.draftLogic.value"
+            :saved-dirty="asset.savedDirty.value"
+            :save-document="asset.saveDocument"
+            :document-path="asset.documentPath"
+            @update:menu="asset.setMenuBinding($event)"
+            @update:logic="asset.setLogicGraph($event)"
+            @close="selectedFile = null"
+          />
+        </div>
         <Resizable v-else direction="vertical" class="maw-center">
-          <ResizablePanel id="maw-viewport" :default-size="64" :min-size="22">
+          <ResizablePanel id="maw-viewport" :default-size="64" :min-size="0">
             <div
               class="maw-viewport"
               @pointerdown="onViewportPointerDown"
@@ -1078,7 +1084,7 @@ function templateOf(resourceId: number) {
             orientation="vertical"
             :label="t('studio.assetWorkbench.resizeBlueprint')"
           />
-          <ResizablePanel id="maw-blueprint" :default-size="36" :min-size="14">
+          <ResizablePanel id="maw-blueprint" :default-size="36" :min-size="0">
             <AssetBlueprintCanvas
               :source-kind="asset.sourceKind.value"
               :source-label="asset.sourceLabel.value"
@@ -1100,12 +1106,13 @@ function templateOf(resourceId: number) {
       </ResizablePanel>
       <ResizableHandle
         orientation="horizontal"
+        :hit-area-margins="columnHandleMargins"
         :label="t('studio.assetWorkbench.resizeRight')"
       />
-      <ResizablePanel id="maw-right" :default-size="26" :min-size="15">
+      <ResizablePanel id="maw-right" :default-size="26" :min-size="0">
         <Resizable direction="vertical" class="maw-right">
-          <ResizablePanel id="maw-right-tabs" :default-size="52" :min-size="18">
-            <div class="maw-right-panel">
+          <ResizablePanel id="maw-right-tabs" :default-size="52" :min-size="0">
+            <div class="maw-right-panel maw-scroll-pane">
               <div class="maw-tabs" role="tablist">
                 <button
                   v-for="tab in rightTabs"
@@ -1214,9 +1221,9 @@ function templateOf(resourceId: number) {
           <ResizablePanel
             id="maw-right-inspector"
             :default-size="48"
-            :min-size="18"
+            :min-size="0"
           >
-            <div class="maw-inspector">
+            <div class="maw-inspector maw-scroll-pane">
               <template v-if="ui">
                 <UnitInspector
                   :unit="ui.selectedUnit"
@@ -1481,21 +1488,76 @@ function templateOf(resourceId: number) {
   flex: 1;
   min-height: 0;
 }
+.maw-split :deep([data-panel-size="0.0"]) {
+  visibility: hidden;
+}
+.maw-scroll-pane {
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.maw-tree-pane > * {
+  min-inline-size: 150px;
+}
+.maw-config-pane > * {
+  min-inline-size: 500px;
+}
 .maw-center,
 .maw-right {
   height: 100%;
   min-height: 0;
 }
 .maw-viewport {
+  container: scene-viewport / size;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow: clip;
   position: relative;
 }
 .maw-viewport :deep(.viewport-pane) {
   flex: 1;
   min-height: 0;
+  overflow: clip;
+}
+.maw-viewport :deep(.viewport-visibility) {
+  grid-auto-rows: max-content;
+  max-block-size: max(0px, calc(100% - 20px));
+  max-inline-size: calc(50% - 10px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.maw-viewport :deep(.viewport-tools) {
+  max-inline-size: calc(50% - 10px);
+  overflow: auto;
+}
+.maw-viewport :deep(.viewport-toolrail) {
+  max-block-size: max(0px, calc(100% - 58px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.maw-viewport :deep(.viewport-light-panel),
+.maw-viewport :deep(.info-panel) {
+  max-block-size: max(0px, calc(100% - 58px));
+  max-inline-size: calc(100% - 20px);
+  overflow: auto;
+}
+.maw-viewport :deep(.lod-mask) {
+  overflow: auto;
+  place-items: safe center;
+}
+@container scene-viewport (height < 250px) {
+  .maw-viewport :deep(.viewport-toolrail) {
+    top: 48px;
+    transform: none;
+  }
+}
+@container scene-viewport (height < 80px) {
+  .maw-status {
+    display: none;
+  }
 }
 .maw-load-error {
   color: var(--danger);
@@ -1561,6 +1623,11 @@ function templateOf(resourceId: number) {
   height: 100%;
   min-height: 0;
 }
+.maw-tabs,
+.maw-tab-body,
+.maw-inspector > * {
+  min-inline-size: 240px;
+}
 .maw-tabs {
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -1593,9 +1660,8 @@ function templateOf(resourceId: number) {
   font-weight: 600;
 }
 .maw-tab-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  flex: 1 0 64px;
+  overflow: auto;
 }
 .maw-tab-body > * {
   height: 100%;
@@ -1610,11 +1676,6 @@ function templateOf(resourceId: number) {
   margin: 0;
   padding: 20px 10px;
   text-align: center;
-}
-.maw-inspector {
-  height: 100%;
-  min-height: 0;
-  overflow: auto;
 }
 .tgi-body {
   display: flex;
